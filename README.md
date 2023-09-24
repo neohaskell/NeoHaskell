@@ -19,10 +19,8 @@ If you want to learn about NeoHaskell itself, checkout
 This guide is intended for streamlining the process of
 contributing to the NeoHaskell tooling.
 
-The repository is a mono-repo that contains all the
-different parts of NeoHaskell:
-
-- TODO: Add stuff
+The repository will be a mono-repo that contains all the
+different parts of NeoHaskell.
 
 # Installing the required tools
 
