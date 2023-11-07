@@ -1,0 +1,36 @@
+cabal-version:      3.4
+name:               nhcore
+version:            0.0.0
+synopsis:           Core Library for NeoHaskell
+description:        NeoHaskell is a dialect of Haskell that is focused on newcomer-friendliness and productivity.
+homepage:           https://neohaskell.org
+license:            Apache-2.0
+author:             Nikita Tchayka
+maintainer:         nhlib@nickseagull.dev
+copyright:
+build-type:         Simple
+
+common common_cfg
+    ghc-options:    -Wall
+                    -Werror
+
+library
+    import:           common_cfg
+    exposed-modules:  MyLib
+    -- other-modules:
+    -- other-extensions:
+    build-depends:    base ^>=4.16.4.0
+    hs-source-dirs:   src
+    default-language: GHC2021
+
+test-suite nhcore-test
+    import:           common_cfg
+    default-language: GHC2021
+    -- other-modules:
+    -- other-extensions:
+    type:             exitcode-stdio-1.0
+    hs-source-dirs:   test
+    main-is:          Main.hs
+    build-depends:
+        base ^>=4.16.4.0,
+        nhcore
