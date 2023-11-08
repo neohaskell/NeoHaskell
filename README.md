@@ -27,7 +27,7 @@ Design documents are being worked on currently for sharing progress in a stable 
 If you want to learn about NeoHaskell itself, checkout
 [the NeoHaskell website](https://neohaskell.org).
 
-This guide is intended for streamlining the process of
+This guide is intended to streamline the process of
 contributing to the NeoHaskell tooling.
 
 The repository will be a mono-repo that contains all the
