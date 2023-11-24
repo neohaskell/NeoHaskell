@@ -1,7 +1,7 @@
 cabal-version:      3.4
-name:               nhcore
+name:               nhcli
 version:            0.0.0
-synopsis:           Core Library for NeoHaskell
+synopsis:           CLI tool for NeoHaskell
 description:        NeoHaskell is a dialect of Haskell that is focused on newcomer-friendliness and productivity.
 homepage:           https://neohaskell.org
 license:            Apache-2.0
@@ -23,36 +23,15 @@ common common_cfg
 
 library
     import:           common_cfg
-    exposed-modules:
-      Core,
-      Int,
-      Char,
-      Str,
-      Str.Internal,
-      HaskellCompatibility.IO,
-      HaskellCompatibility.List,
-      HaskellCompatibility.String,
-      Promise,
-      Result,
-      Void,
-      Types,
-      Console,
-      Debug,
-      Debug.Panic,
-      Debug.ToDo,
-      Pipe
-
+    exposed-modules:  Neo
     -- other-modules:
     -- other-extensions:
-    build-depends:
-      base ^>=4.16.4.0,
-      ghc-prim ^>= 0.8,
-      text,
-      template-haskell
+    build-depends:    base ^>=4.16.4.0,
+                      nhcore
     hs-source-dirs:   src
     default-language: GHC2021
 
-test-suite nhcore-test
+test-suite nhcli-test
     import:           common_cfg
     default-language: GHC2021
     -- other-modules:
@@ -62,4 +41,14 @@ test-suite nhcore-test
     main-is:          Main.hs
     build-depends:
         base ^>=4.16.4.0,
-        nhcore
+        nhcore,
+        nhcli
+
+executable neo
+    import:           common_cfg
+    main-is:          Main.hs
+    hs-source-dirs:   app
+    build-depends:    base ^>=4.16.4.0,
+                      nhcore,
+                      nhcli
+    default-language: GHC2021
