@@ -20,10 +20,18 @@ common common_cfg
       QuasiQuotes
       ImportQualifiedPost
       OverloadedStrings
+      OverloadedLists
+      OverloadedRecordDot
+      OverloadedRecordUpdate
+      -- Required for OverloadedRecordUpdate
+      RebindableSyntax
+      NamedFieldPuns
 
 library
     import:           common_cfg
-    exposed-modules:  Neo
+    exposed-modules:
+      Neo,
+      Neo.Repl
     -- other-modules:
     -- other-extensions:
     build-depends:    base ^>=4.16.4.0,
