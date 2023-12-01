@@ -1,3 +1,4 @@
 packages:
   core/*.cabal
   cli/*.cabal
+  flux/*.cabal

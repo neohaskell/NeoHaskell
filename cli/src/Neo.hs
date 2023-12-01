@@ -42,6 +42,6 @@ update event state =
 
 -- | Function to handle commands using the configured services.
 handleCommand :: services -> Command -> Promise Void
-handleCommand services command =
+handleCommand _ _ =
   -- Implement command handling using the services here
   todo

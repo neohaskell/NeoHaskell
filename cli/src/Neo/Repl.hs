@@ -25,7 +25,7 @@ data State = State
 
 
 update :: Event -> State -> State
-update event state = todo
+update _ _ = todo
 
 
 -- COMMANDS
@@ -35,4 +35,4 @@ data Command
 
 
 handleCommand :: services -> Command -> Promise Void
-handleCommand services command = todo
+handleCommand _ _ = todo
