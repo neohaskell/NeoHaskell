@@ -2,6 +2,7 @@ module Types (
   module Reexported,
 ) where
 
+import Array as Reexported (Array)
 import Char as Reexported (Char)
 import Int as Reexported (Int)
 import Promise as Reexported (Promise)

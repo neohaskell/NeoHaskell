@@ -33,7 +33,7 @@
 #
 # Will suggest replacing "wibbleMany [myvar]" with "wibbleOne myvar"
 # - error: {lhs: "wibbleMany [x]", rhs: wibbleOne x}
-- error: {lhs: "[x]", rhs: List x}
+- error: {lhs: "[x]", rhs: Array.wrap x}
 
 # The hints are named by the string they display in warning messages.
 # For example, if you see a warning starting like
@@ -62,6 +62,7 @@
 # - ignore: {name: Use const, within: SpecialModule} # Only within certain modules
 - ignore: {name: Eta reduce}
 - ignore: {name: Redundant bracket}
+- ignore: {name: Use newtype instead of data}
 
 
 # Define some custom infix operators
