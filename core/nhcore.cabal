@@ -40,7 +40,8 @@ library
       Debug,
       Debug.Panic,
       Debug.ToDo,
-      Pipe
+      Pipe,
+      Array
 
     -- other-modules:
     -- other-extensions:
