@@ -68,66 +68,66 @@ import Data.Vector qualified as Vector
 
 
 -- | 'Array' is a type that wraps Haskell's 'Vector' to provide a data-last API.
-newtype Array a = Array (Vector a)
+newtype Array item = Array (Vector item)
 
 
 -- | Create an empty array.
-empty :: Array a
+empty :: Array item
 empty = Array Vector.empty
 
 
 -- | Create an array with one element.
-singleton :: a -> Array a
+singleton :: item -> Array item
 singleton = Array . Vector.singleton
 
 
 -- | Convert a list to an array.
-fromList :: [a] -> Array a
+fromList :: [item] -> Array item
 fromList = Array . Vector.fromList
 
 
 -- | Check if an array is empty.
-isEmpty :: Array a -> Bool
+isEmpty :: Array item -> Bool
 isEmpty (Array v) = Vector.null v
 
 
 -- | Get the length of an array.
-length :: Array a -> Int
+length :: Array item -> Int
 length (Array v) = Vector.length v
 
 
 -- | Append two arrays.
-append :: Array a -> Array a -> Array a
+append :: Array item -> Array item -> Array item
 append (Array v1) (Array v2) = Array (v1 Vector.++ v2)
 
 
 -- | Concatenate a list of arrays.
-concat :: [Array a] -> Array a
+concat :: [Array item] -> Array item
 concat = Array . Vector.concat . map (\(Array v) -> v)
 
 
 -- | Map a function over an array.
-map :: (a -> b) -> Array a -> Array b
+map :: (itemA -> itemB) -> Array itemA -> Array itemB
 map f (Array v) = Array (Vector.map f v)
 
 
 -- | Filter all elements that satisfy the predicate.
-filter :: (a -> Bool) -> Array a -> Array a
+filter :: (item -> Bool) -> Array item -> Array item
 filter f (Array v) = Array (Vector.filter f v)
 
 
 -- | Left fold.
-foldl :: (b -> a -> b) -> b -> Array a -> b
+foldl :: (resultItem -> item -> resultItem) -> resultItem -> Array item -> resultItem
 foldl f z (Array v) = Vector.foldl f z v
 
 
 -- | Right fold.
-foldr :: (a -> b -> b) -> b -> Array a -> b
+foldr :: (item -> resultItem -> resultItem) -> resultItem -> Array item -> resultItem
 foldr f z (Array v) = Vector.foldr f z v
 
 
 -- | Convert an array to a list.
-toList :: Array a -> [a]
+toList :: Array item -> [item]
 toList (Array v) = Vector.toList v
 
 -- Additional functions to be implemented...
