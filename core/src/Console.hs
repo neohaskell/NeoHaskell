@@ -6,12 +6,12 @@ import Data.Text.IO qualified as Text
 import Pipe ((|>))
 import Promise (Promise)
 import Promise qualified
-import Str (Str)
-import Str.Internal qualified as StrInternal
+import String (String)
+import String.Internal qualified as StrInternal
 import Void (Void)
 
 
-print :: Str -> Promise Void
+print :: String -> Promise Void
 print message =
   message
     |> StrInternal.extractText

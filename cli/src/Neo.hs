@@ -6,25 +6,23 @@ module Neo (
   handleCommand,
 ) where
 
-import Array qualified
 import Core
+import Neo.Repl qualified as Repl
 
 
 -- | ADT for commands that can be issued to the CLI.
 data Command
-  = ReadLine Str
+  = Repl Repl.Command
 
 
 -- | ADT for events that can be triggered by commands.
 data Event
-  = CodeSent Str
-  | ReplCommandTriggered Str
-  | NaturalLanguageSent Str
+  = ReplEvent Repl.Event
 
 
 -- | Record for the application state.
 data State = State
-  {
+  { repl :: Repl.State
   }
 
 
@@ -33,8 +31,13 @@ data State = State
 -- | Function to update the state based on an event.
 update :: Event -> State -> State
 update event state =
-  -- Implement state transitions based on events here
-  state
+  case event of
+    ReplEvent replEvent -> do
+      let
+        repl =
+          state.repl
+            |> Repl.update replEvent
+      state{repl}
 
 
 -- | Function to handle commands using the configured services.

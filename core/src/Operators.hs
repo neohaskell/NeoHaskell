@@ -1,7 +1,6 @@
 module Operators (
-  module Pipe,
-  module Bool,
+  module Reexported,
 ) where
 
-import Pipe
-import Bool
+import Bool as Reexported ((&&), (||))
+import Pipe as Reexported ((.>), (<.), (<|), (|>))
