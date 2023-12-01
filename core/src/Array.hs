@@ -93,28 +93,31 @@ length (Array v) = Vector.length v
 append :: Array a -> Array a -> Array a
 append (Array v1) (Array v2) = Array (v1 Vector.++ v2)
 
--- | Concatenate a list of arrays.
-concat :: [Array a] -> Array a
-concat = Array . Vector.concat . map (\(Array v) -> v)
+-- | Merge multiple arrays into one.
+mergeArrays :: [Array a] -> Array a
+mergeArrays = Array . Vector.concat . applyToEach (\(Array v) -> v)
 
--- | Map a function over an array.
-map :: (a -> b) -> Array a -> Array b
-map f (Array v) = Array (Vector.map f v)
+-- | Apply a function to each element of an array.
+applyToEach :: (a -> b) -> Array a -> Array b
+applyToEach f (Array v) = Array (Vector.map f v)
 
--- | Filter all elements that satisfy the predicate.
-filter :: (a -> Bool) -> Array a -> Array a
-filter f (Array v) = Array (Vector.filter f v)
+-- | Take elements that satisfy the predicate.
+takeIf :: (a -> Bool) -> Array a -> Array a
+takeIf f (Array v) = Array (Vector.filter f v)
 
--- | Left fold.
-foldl :: (b -> a -> b) -> b -> Array a -> b
-foldl f z (Array v) = Vector.foldl f z v
+-- | Reduce the array from the left.
+reduceFromLeft :: (b -> a -> b) -> b -> Array a -> b
+reduceFromLeft f z (Array v) = Vector.foldl f z v
 
--- | Right fold.
-foldr :: (a -> b -> b) -> b -> Array a -> b
-foldr f z (Array v) = Vector.foldr f z v
+-- | Reduce the array from the right.
+reduceFromRight :: (a -> b -> b) -> b -> Array a -> b
+reduceFromRight f z (Array v) = Vector.foldr f z v
 
 -- | Convert an array to a list.
 toList :: Array a -> [a]
 toList (Array v) = Vector.toList v
 
 -- Additional functions to be implemented...
+-- | Drop elements that satisfy the predicate.
+dropIf :: (a -> Bool) -> Array a -> Array a
+dropIf f (Array v) = Array (Vector.filter (not . f) v)
