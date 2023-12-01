@@ -42,7 +42,8 @@ library
       Debug.Panic,
       Debug.ToDo,
       Pipe,
-      Array
+      Array,
+      Operators
 
     -- other-modules:
     -- other-extensions:
