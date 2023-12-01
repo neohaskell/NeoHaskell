@@ -3,7 +3,6 @@
 -- This module is automatically imported in all the NeoHaskell files,
 module Core (
   module Reexported,
-  todo,
 ) where
 
 import Console as Reexported
