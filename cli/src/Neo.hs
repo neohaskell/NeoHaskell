@@ -7,6 +7,7 @@ module Neo (
 ) where
 
 import Core
+import Array qualified
 
 -- | ADT for commands that can be issued to the CLI.
 data Command
@@ -30,7 +31,7 @@ update event state =
   state
 
 -- | Function to handle commands and register events.
-handleCommand :: Command -> State -> (State, [Event])
+handleCommand :: Command -> State -> (State, Array Event)
 handleCommand command state =
   -- Implement command handling and event registration here
-  (state, [])
+  (state, Array.empty)
