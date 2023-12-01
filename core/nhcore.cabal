@@ -49,6 +49,7 @@ library
       base ^>=4.16.4.0,
       ghc-prim ^>= 0.8,
       text,
+      vector,
       template-haskell
     hs-source-dirs:   src
     default-language: GHC2021
