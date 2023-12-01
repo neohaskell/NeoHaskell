@@ -37,8 +37,8 @@ update event state =
   state
 
 
--- | Function to handle commands and register events.
-handleCommand :: Command -> State -> (State, Array Event)
-handleCommand command state =
-  -- Implement command handling and event registration here
-  (state, Array.empty)
+-- | Function to handle commands using the configured services.
+handleCommand :: services -> Command -> Promise Void
+handleCommand services command =
+  -- Implement command handling using the services here
+  todo
