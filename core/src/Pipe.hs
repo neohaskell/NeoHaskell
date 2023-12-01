@@ -1,7 +1,11 @@
 module Pipe (
   (|>),
   (<|),
+  (.>),
+  (<.),
 ) where
+
+import Data.Function ((.))
 
 
 -- | The forward pipe operator.
@@ -55,3 +59,27 @@ infixl 0 |>
 --   f <| a <| b
 --   f <| (a <| b)
 infixr 0 <|
+
+
+-- | The forward pipe function composition operator,
+-- which allows composing functions in a forward
+-- pipe fashion.
+--
+-- >>> (not .> Array.empty) [1]
+-- True
+(.>) :: (a -> b) -> (b -> c) -> a -> c
+(.>) f g =
+  g . f
+{-# INLINE (.>) #-}
+
+
+-- | The backward pipe function composition operator,
+-- which allows composing functions in a backward
+-- pipe fashion.
+--
+-- >>> (Array.empty <. not) [1]
+-- True
+(<.) :: (b -> c) -> (a -> b) -> a -> c
+(<.) f g =
+  f . g
+{-# INLINE (<.) #-}

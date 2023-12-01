@@ -4,70 +4,75 @@ module Array (
 
   -- * Constructors
   empty,
-  singleton,
-  fromList,
+  wrap,
 
   -- * Basic functions
   isEmpty,
   length,
-  append,
-  concat,
-  map,
-  filter,
-  foldl,
-  foldr,
-  toList,
+  appendArray,
+  flatten,
+  applyToEach,
+  takeIf,
+  reduce,
+  reduceFromRight,
+  dropIf,
+  -- -- * Transformations
+  -- reverse,
+  -- intersperse,
 
-  -- * Transformations
-  reverse,
-  intersperse,
+  -- -- * Subarrays
+  -- slice,
+  -- take,
+  -- drop,
+  -- splitAt,
 
-  -- * Subarrays
-  slice,
-  take,
-  drop,
-  splitAt,
+  -- -- * Searching
+  -- elem,
+  -- notElem,
+  -- find,
+  -- findIndex,
 
-  -- * Searching
-  elem,
-  notElem,
-  find,
-  findIndex,
+  -- -- * Accessing elements
+  -- (!?),
+  -- index,
+  -- head,
+  -- last,
+  -- tail,
+  -- init,
 
-  -- * Accessing elements
-  (!?),
-  index,
-  head,
-  last,
-  tail,
-  init,
+  -- -- * Zipping and unzipping
+  -- pairWith,
+  -- combineWith,
+  -- splitPairs,
 
-  -- * Zipping and unzipping
-  zip,
-  zipWith,
-  unzip,
+  -- -- * Special folds
+  -- allTrue,
+  -- anyTrue,
+  -- anySatisfy,
+  -- allSatisfy,
 
-  -- * Special folds
-  and,
-  or,
-  any,
-  all,
+  -- -- * Set operations
+  -- union,
+  -- intersect,
+  -- difference,
 
-  -- * Set operations
-  union,
-  intersect,
-  difference,
-
-  -- * Conversion
-  toArray,
-  fromArray,
+  -- -- * Additional operations
+  -- sort,
+  -- sortBy,
+  -- deduplicate,
+  -- TODO: Explore Data.Vector.Algorithms and see if there are more interesting ones
 ) where
 
+import Bool (Bool, not)
 import Data.Vector (Vector)
 import Data.Vector qualified as Vector
+import Int (Int)
+import Pipe
 
 
--- | 'Array' is a type that wraps Haskell's 'Vector' to provide a data-last API.
+-- TODO: Add property-based doc-tests for all functions
+
+-- | 'Array' represents a list of items.
 newtype Array item = Array (Vector item)
 
 
@@ -77,57 +82,67 @@ empty = Array Vector.empty
 
 
 -- | Create an array with one element.
-singleton :: item -> Array item
-singleton = Array . Vector.singleton
-
-
--- | Convert a list to an array.
-fromList :: [item] -> Array item
-fromList = Array . Vector.fromList
+wrap :: item -> Array item
+wrap item =
+  Vector.singleton item
+    |> Array
 
 
 -- | Check if an array is empty.
 isEmpty :: Array item -> Bool
-isEmpty (Array v) = Vector.null v
+isEmpty (Array vector) = Vector.null vector
 
 
 -- | Get the length of an array.
 length :: Array item -> Int
-length (Array v) = Vector.length v
+length (Array vector) = Vector.length vector
 
 
 -- | Append two arrays.
-append :: Array item -> Array item -> Array item
-append (Array v1) (Array v2) = Array (v1 Vector.++ v2)
+appendArray :: Array item -> Array item -> Array item
+appendArray (Array v1) (Array v2) = Array (v1 Vector.++ v2)
 
 
--- | Concatenate a list of arrays.
-concat :: [Array item] -> Array item
-concat = Array . Vector.concat . map (\(Array v) -> v)
+-- | Flatten an array of arrays.
+flatten :: Array (Array item) -> Array item
+flatten self =
+  reduce appendArray empty self
 
 
--- | Map a function over an array.
-map :: (itemA -> itemB) -> Array itemA -> Array itemB
-map f (Array v) = Array (Vector.map f v)
+-- | Apply a transformation function to each element of the array.
+applyToEach :: (item -> otherItem) -> Array item -> Array otherItem
+applyToEach transformation self =
+  applyToVector (Vector.map transformation) self
 
 
 -- | Filter all elements that satisfy the predicate.
-filter :: (item -> Bool) -> Array item -> Array item
-filter f (Array v) = Array (Vector.filter f v)
+takeIf :: (item -> Bool) -> Array item -> Array item
+takeIf predicate self =
+  applyToVector (Vector.filter predicate) self
 
 
--- | Left fold.
-foldl :: (resultItem -> item -> resultItem) -> resultItem -> Array item -> resultItem
-foldl f z (Array v) = Vector.foldl f z v
+-- | Filter all elements that do not satisfy the predicate.
+dropIf :: (item -> Bool) -> Array item -> Array item
+dropIf predicate self = do
+  takeIf (predicate .> not) self
 
 
--- | Right fold.
-foldr :: (item -> resultItem -> resultItem) -> resultItem -> Array item -> resultItem
-foldr f z (Array v) = Vector.foldr f z v
+-- | Combines elements of an array using a binary function.
+reduce :: (otherItem -> item -> otherItem) -> otherItem -> Array item -> otherItem
+reduce f z (Array vector) = Vector.foldl f z vector
 
 
--- | Convert an array to a list.
-toList :: Array item -> [item]
-toList (Array v) = Vector.toList v
+-- | Combines elements of an array using a binary function, starting from the right.
+reduceFromRight :: (item -> otherItem -> otherItem) -> otherItem -> Array item -> otherItem
+reduceFromRight f z (Array vector) = Vector.foldr f z vector
+
 
 -- Additional functions to be implemented...
+
+-- PRIVATE
+
+-- | Applies a function to the underlying vector. Used for implementing
+-- the compatibility layer with Data.Vector.
+applyToVector :: (Vector item -> Vector otherItem) -> Array item -> Array otherItem
+applyToVector f (Array vector) = Array (f vector)
+{-# INLINE applyToVector #-}

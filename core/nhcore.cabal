@@ -27,6 +27,7 @@ library
       Core,
       Int,
       Char,
+      Bool,
       Str,
       Str.Internal,
       HaskellCompatibility.IO,
