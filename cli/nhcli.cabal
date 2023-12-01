@@ -22,9 +22,6 @@ common common_cfg
       OverloadedStrings
       OverloadedLists
       OverloadedRecordDot
-      OverloadedRecordUpdate
-      -- Required for OverloadedRecordUpdate
-      RebindableSyntax
       NamedFieldPuns
 
 library
