@@ -10,15 +10,13 @@ import Core
 
 -- | ADT for commands that can be issued to the CLI.
 data Command
-  = ReadLine String
-  deriving (Show, Eq)
+  = ReadLine Str
 
 -- | ADT for events that can be triggered by commands.
 data Event
-  = CodeSent String
-  | ReplCommandTriggered String
-  | NaturalLanguageSent String
-  deriving (Show, Eq)
+  = CodeSent Str
+  | ReplCommandTriggered Str
+  | NaturalLanguageSent Str
 
 -- | Record for the application state.
 data State = State
