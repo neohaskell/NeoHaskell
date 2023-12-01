@@ -49,7 +49,8 @@ library
       Debug.ToDo,
       Pipe,
       Array,
-      Operators
+      Operators,
+      Record
 
     -- other-modules:
     -- other-extensions:
