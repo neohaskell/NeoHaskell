@@ -20,6 +20,12 @@ common common_cfg
       QuasiQuotes
       ImportQualifiedPost
       OverloadedStrings
+      OverloadedLists
+      OverloadedRecordDot
+      OverloadedRecordUpdate
+      -- Required for OverloadedRecordUpdate
+      RebindableSyntax
+      NamedFieldPuns
 
 library
     import:           common_cfg
@@ -28,8 +34,8 @@ library
       Int,
       Char,
       Bool,
-      Str,
-      Str.Internal,
+      String,
+      String.Internal,
       HaskellCompatibility.IO,
       HaskellCompatibility.List,
       HaskellCompatibility.String,
