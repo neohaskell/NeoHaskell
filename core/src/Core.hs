@@ -10,6 +10,7 @@ module Core (
 import Console as Reexported
 import Debug as Reexported (todo)
 import HaskellCompatibility.IO as Reexported (MainFunction)
-import Types as Reexported
-import Record
+import HaskellCompatibility.Syntax as Reexported
 import Operators
+import Record
+import Types as Reexported

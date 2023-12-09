@@ -1,6 +1,8 @@
+{-# LANGUAGE TypeFamilies #-}
+
 module Array (
   -- * Type
-  Array,
+  Array (..),
 
   -- * Constructors
   empty,
@@ -73,34 +75,34 @@ import Pipe
 -- TODO: Add property-based doc-tests for all functions
 
 -- | 'Array' represents a list of items.
-newtype Array item = Array (Vector item)
+newtype Array item = INTERNAL_CORE_ARRAY_CONSTRUCTOR (Vector item)
 
 
 -- | Create an empty array.
 empty :: Array item
-empty = Array Vector.empty
+empty = INTERNAL_CORE_ARRAY_CONSTRUCTOR Vector.empty
 
 
 -- | Create an array with one element.
 wrap :: item -> Array item
 wrap item =
   Vector.singleton item
-    |> Array
+    |> INTERNAL_CORE_ARRAY_CONSTRUCTOR
 
 
 -- | Check if an array is empty.
 isEmpty :: Array item -> Bool
-isEmpty (Array vector) = Vector.null vector
+isEmpty (INTERNAL_CORE_ARRAY_CONSTRUCTOR vector) = Vector.null vector
 
 
 -- | Get the length of an array.
 length :: Array item -> Int
-length (Array vector) = Vector.length vector
+length (INTERNAL_CORE_ARRAY_CONSTRUCTOR vector) = Vector.length vector
 
 
 -- | Append two arrays.
 appendArray :: Array item -> Array item -> Array item
-appendArray (Array v1) (Array v2) = Array (v1 Vector.++ v2)
+appendArray (INTERNAL_CORE_ARRAY_CONSTRUCTOR v1) (INTERNAL_CORE_ARRAY_CONSTRUCTOR v2) = INTERNAL_CORE_ARRAY_CONSTRUCTOR (v1 Vector.++ v2)
 
 
 -- | Flatten an array of arrays.
@@ -129,12 +131,12 @@ dropIf predicate self = do
 
 -- | Combines elements of an array using a binary function.
 reduce :: (otherItem -> item -> otherItem) -> otherItem -> Array item -> otherItem
-reduce f z (Array vector) = Vector.foldl f z vector
+reduce f z (INTERNAL_CORE_ARRAY_CONSTRUCTOR vector) = Vector.foldl f z vector
 
 
 -- | Combines elements of an array using a binary function, starting from the right.
 reduceFromRight :: (item -> otherItem -> otherItem) -> otherItem -> Array item -> otherItem
-reduceFromRight f z (Array vector) = Vector.foldr f z vector
+reduceFromRight f z (INTERNAL_CORE_ARRAY_CONSTRUCTOR vector) = Vector.foldr f z vector
 
 
 -- Additional functions to be implemented...
@@ -144,5 +146,5 @@ reduceFromRight f z (Array vector) = Vector.foldr f z vector
 -- | Applies a function to the underlying vector. Used for implementing
 -- the compatibility layer with Data.Vector.
 applyToVector :: (Vector item -> Vector otherItem) -> Array item -> Array otherItem
-applyToVector f (Array vector) = Array (f vector)
+applyToVector f (INTERNAL_CORE_ARRAY_CONSTRUCTOR vector) = INTERNAL_CORE_ARRAY_CONSTRUCTOR (f vector)
 {-# INLINE applyToVector #-}

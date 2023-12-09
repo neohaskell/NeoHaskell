@@ -19,6 +19,7 @@ common common_cfg
       TemplateHaskell
       QuasiQuotes
       ImportQualifiedPost
+      RebindableSyntax
       OverloadedStrings
       OverloadedLists
       OverloadedRecordDot
@@ -32,10 +33,10 @@ library
       Char,
       Bool,
       String,
-      String.Internal,
       HaskellCompatibility.IO,
       HaskellCompatibility.List,
       HaskellCompatibility.String,
+      HaskellCompatibility.Syntax,
       Promise,
       Result,
       Void,

@@ -19,6 +19,7 @@ common common_cfg
       TemplateHaskell
       QuasiQuotes
       ImportQualifiedPost
+      RebindableSyntax
       OverloadedStrings
       OverloadedLists
       OverloadedRecordDot

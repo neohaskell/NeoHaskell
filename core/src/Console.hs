@@ -3,17 +3,16 @@ module Console (
 ) where
 
 import Data.Text.IO qualified as Text
+import HaskellCompatibility.String (applyToText)
 import Pipe ((|>))
 import Promise (Promise)
 import Promise qualified
 import String (String)
-import String.Internal qualified as StrInternal
 import Void (Void)
 
 
 print :: String -> Promise Void
 print message =
   message
-    |> StrInternal.extractText
-    |> Text.putStrLn
+    |> applyToText Text.putStrLn
     |> Promise.fromIO

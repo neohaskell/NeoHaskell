@@ -9,18 +9,25 @@ module Neo.Repl (
 import Core
 
 
+-- MESSAGES
+
+data Message
+  = EventMessage Event
+  | CommandMessage Command
+  | ViewMessage Ui
+
+
 -- EVENTS
 
 data Event
-  = CodeSent String
-  | ReplCommandTriggered String
-  | NaturalLanguageSent String
+  = InputChanged String
 
 
 -- STATE
 
 data State = State
-  {
+  { history :: Array String,
+    currentCommand :: String
   }
 
 
@@ -36,3 +43,21 @@ data Command
 
 handleCommand :: services -> Command -> Promise Void
 handleCommand _ _ = todo
+
+
+-- Ui
+
+data Ui
+  = Repl
+
+
+-- replUi :: Promise (View Cli Message)
+replUi = do
+  state <- getState
+
+  view
+    [ input
+        [onChange (submit ReadLine)]
+        [ text ""
+        ]
+    ]
