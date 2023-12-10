@@ -1,3 +1,4 @@
+{-# LANGUAGE DataKinds #-}
 {-# LANGUAGE OverloadedLabels #-}
 
 module Neo.Repl (
@@ -8,7 +9,14 @@ module Neo.Repl (
   handleCommand,
 ) where
 
+import Array qualified
 import Core
+
+
+data Agent name command event state query
+
+
+type ReplAgent = Agent "repl" Command Event State Query
 
 
 -- MESSAGES
@@ -16,20 +24,27 @@ import Core
 data Message
   = EventMessage Event
   | CommandMessage Command
-  | ViewMessage Ui
+  | ViewMessage Query
 
 
 -- EVENTS
 
 data Event
   = InputChanged String
+  | InputSubmitted
 
 
 -- STATE
 
 data State = State
-  { history :: Array String
+  { history :: Array HistoryResult
   , currentCommand :: String
+  }
+
+
+data HistoryResult = HistoryResult
+  { command :: String
+  , output :: String
   }
 
 
@@ -50,7 +65,7 @@ handleCommand _ _ = todo
 
 -- Ui
 
-data Ui
+data Query
   = Repl
 
 
@@ -60,15 +75,35 @@ data View viewFormat message
 data Cli
 
 
-replUi :: Promise (View Cli Message)
+replUi :: View Cli Event
 replUi = do
-  state <- getState
+  state <- getState "repl"
 
-  resolveView
-    [ input
-        [ onChange (perform ReadLine)
-        , onSubmit (perform SubmitInput)
-        ]
-        [text "> "]
-    , text state.currentCommand
-    ]
+  let
+    changeHandler =
+      get "value" @String
+        |> putInto InputChanged
+        |> registerEvent
+
+  let
+    submitHandler = do
+      registerEvent InputSubmitted
+
+  let
+    historyUi =
+      state.history
+        |> Array.applyToEach historyResultUi
+
+  cliView do
+    div [] do
+      historyUi
+
+    input [onChange changeHandler, onSubmit submitHandler] do
+      text ("> " + state.currentCommand)
+
+
+historyResultUi :: HistoryResult -> View Cli Event
+historyResultUi historyResult =
+  div [] do
+    text ("> " + historyResult.command)
+    text historyResult.output
