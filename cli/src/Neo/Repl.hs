@@ -1,3 +1,5 @@
+{-# LANGUAGE OverloadedLabels #-}
+
 module Neo.Repl (
   Command (..),
   Event (..),
@@ -26,8 +28,8 @@ data Event
 -- STATE
 
 data State = State
-  { history :: Array String,
-    currentCommand :: String
+  { history :: Array String
+  , currentCommand :: String
   }
 
 
@@ -39,6 +41,7 @@ update _ _ = todo
 
 data Command
   = ReadLine String
+  | SubmitInput
 
 
 handleCommand :: services -> Command -> Promise Void
@@ -51,13 +54,21 @@ data Ui
   = Repl
 
 
--- replUi :: Promise (View Cli Message)
+data View viewFormat message
+
+
+data Cli
+
+
+replUi :: Promise (View Cli Message)
 replUi = do
   state <- getState
 
-  view
+  resolveView
     [ input
-        [onChange (submit ReadLine)]
-        [ text ""
+        [ onChange (perform ReadLine)
+        , onSubmit (perform SubmitInput)
         ]
+        [text "> "]
+    , text state.currentCommand
     ]

@@ -8,7 +8,7 @@ column-limit: 100
 function-arrows: trailing
 
 # How to place commas in multi-line lists, records, etc. (choices: leading or trailing)
-comma-style: trailing
+comma-style: leading
 
 # Styling of import/export lists (choices: leading, trailing, or diff-friendly)
 import-export-style: diff-friendly

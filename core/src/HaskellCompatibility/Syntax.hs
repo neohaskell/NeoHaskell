@@ -10,9 +10,14 @@ module HaskellCompatibility.Syntax (
   fromListN,
   toList,
 
+  -- * Monad
+  (>>),
+  (>>=),
+
   -- * String
   fromString,
 ) where
 
 import HaskellCompatibility.List (fromList, fromListN, toList)
+import HaskellCompatibility.Monad ((>>), (>>=))
 import HaskellCompatibility.String (fromString)

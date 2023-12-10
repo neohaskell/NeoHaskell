@@ -63,6 +63,7 @@
 - ignore: {name: Eta reduce}
 - ignore: {name: Redundant bracket}
 - ignore: {name: Use newtype instead of data}
+- ignore: {name: Use const}
 
 
 # Define some custom infix operators
