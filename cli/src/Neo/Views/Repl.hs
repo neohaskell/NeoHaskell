@@ -28,10 +28,9 @@ replUi :: ViewComponent Cli Event
 replUi = do
   state <- getState "repl"
 
-  let
-    historyUi =
-      state . history
-        |> Array.applyToEach historyResultUi
+  let historyUi =
+        state . history
+          |> Array.applyToEach historyResultUi
 
   cliView do
     div [] do

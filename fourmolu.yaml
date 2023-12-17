@@ -29,7 +29,7 @@ haddock-style: single-line
 haddock-style-module: null
 
 # Styling of let blocks (choices: auto, inline, newline, or mixed)
-let-style: newline
+let-style: inline
 
 # How to align the 'in' keyword with respect to the 'let' keyword (choices: left-align, right-align, or no-space)
 in-style: left-align

@@ -1,12 +1,14 @@
 module Neo.Entities.Repl (
-  ) where
+  entity,
+) where
 
 import Core
+import Result qualified
 
 
 data DefineEntity model event = DefineEntity
   { initialState :: model,
-    updateFunction :: event -> model -> model,
+    updateFunction :: event -> model -> Result model String,
     actFunction :: event -> Promise Void
   }
 
@@ -51,16 +53,20 @@ data Event
 
 ------ UPDATE --------------------------------------------------------------
 
-update :: Event -> Model -> Model
+update :: Event -> Model -> Result Model String
 update event model = case event of
   InputChanged text -> do
-    let
-      currentCommand = text
-    model{currentCommand}
+    let currentCommand = text
+    Result.ok model{currentCommand}
   InputSubmitted -> do
-    let
-      history = model.history + [HistoryResult (model.currentCommand) ""]
-    model{currentCommand = "", history}
+    let newHistoryResult =
+          HistoryResult
+            { command = model.currentCommand,
+              output = ""
+            }
+    let history = model.history + [newHistoryResult]
+    let currentCommand = ""
+    Result.ok model{currentCommand, history}
 
 
 ------ ACT ---------------------------------------------------------------
