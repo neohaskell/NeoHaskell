@@ -57,7 +57,7 @@ update :: Event -> Model -> Result Model String
 update event model = case event of
   InputChanged text -> do
     let currentCommand = text
-    Result.ok model{currentCommand}
+    Result.ok model {currentCommand}
   InputSubmitted -> do
     let newHistoryResult =
           HistoryResult
@@ -66,7 +66,7 @@ update event model = case event of
             }
     let history = model.history + [newHistoryResult]
     let currentCommand = ""
-    Result.ok model{currentCommand, history}
+    Result.ok model {currentCommand, history}
 
 
 ------ ACT ---------------------------------------------------------------

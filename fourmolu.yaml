@@ -17,7 +17,7 @@ import-export-style: diff-friendly
 indent-wheres: false
 
 # Whether to leave a space before an opening record brace
-record-brace-space: false
+record-brace-space: true
 
 # Number of spaces between top-level declarations
 newlines-between-decls: 2
