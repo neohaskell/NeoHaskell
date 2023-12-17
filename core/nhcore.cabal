@@ -22,6 +22,7 @@ common common_cfg
       RebindableSyntax
       OverloadedStrings
       OverloadedLists
+      OverloadedLabels
       OverloadedRecordDot
       NamedFieldPuns
 
@@ -34,10 +35,14 @@ library
       Bool,
       String,
       Dsl,
+      Default,
+      Traits.Addable,
+      HaskellCompatibility.Conversion,
       HaskellCompatibility.IO,
       HaskellCompatibility.List,
       HaskellCompatibility.Monad,
       HaskellCompatibility.String,
+      HaskellCompatibility.Numbers,
       HaskellCompatibility.Syntax,
       Promise,
       Result,

@@ -1,5 +1,6 @@
 module Void (
   Void,
+  void,
 ) where
 
 
@@ -9,3 +10,7 @@ module Void (
 -- It has the exact meaning of the `void` type
 -- in other languages.
 type Void = ()
+
+
+void :: Void
+void = ()

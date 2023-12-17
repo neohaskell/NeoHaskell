@@ -16,8 +16,12 @@ module HaskellCompatibility.Syntax (
 
   -- * String
   fromString,
+
+  -- * Numbers
+  fromInteger,
 ) where
 
 import HaskellCompatibility.List (fromList, fromListN, toList)
 import HaskellCompatibility.Monad ((>>), (>>=))
+import HaskellCompatibility.Numbers (fromInteger)
 import HaskellCompatibility.String (fromString)
