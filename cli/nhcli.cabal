@@ -24,6 +24,8 @@ common common_cfg
       OverloadedLists
       OverloadedRecordDot
       NamedFieldPuns
+      DataKinds
+    build-depends:  optparse-generic
 
 library
     import:           common_cfg
@@ -31,6 +33,7 @@ library
       Neo,
       Neo.Entities.Repl,
       Neo.Views.Repl
+      Neo.Build
     -- other-modules:
     -- other-extensions:
     build-depends:    base ^>=4.16.4.0,
