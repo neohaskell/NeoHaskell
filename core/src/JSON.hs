@@ -1,0 +1,67 @@
+{-# LANGUAGE MonoLocalBinds #-}
+{-# LANGUAGE UndecidableInstances #-}
+
+module JSON where
+
+import Data.Aeson qualified as Aeson
+import Data.Aeson.TH qualified as AesonTH
+import Data.Aeson.Text qualified as Aeson
+import Data.Aeson.Types qualified as AesonType
+import Data.Text.Lazy qualified as LazyText
+import Data.Text.Lazy.Builder qualified as LazyText
+import HaskellCompatibility.Conversion qualified as Convert
+import HaskellCompatibility.Generic
+import Language.Haskell.TH.Syntax qualified as TH
+import Operators
+import Result qualified
+import Traits.Serializable
+import Types
+
+
+newtype JSON = JSON Aeson.Value
+
+
+{-# INLINE serialize #-}
+serialize :: Serializable JSON value => value -> JSON
+serialize = genericSerialize
+
+
+{-# INLINE deserialize #-}
+deserialize :: Serializable JSON value => JSON -> Result value String
+deserialize = genericDeserialize
+
+
+stringify :: Serializable JSON value => value -> String
+stringify value = do
+  let (JSON json) = genericSerialize value
+  json
+    |> Aeson.encodeToTextBuilder
+    |> LazyText.toLazyText
+    |> LazyText.toStrict
+    |> Convert.fromLegacy
+
+
+implementSerializable :: TH.Name -> TH.Q [TH.Dec]
+implementSerializable = do
+  AesonTH.deriveJSON Aeson.defaultOptions
+
+
+instance
+  ( Aeson.ToJSON value,
+    Aeson.FromJSON value
+  ) =>
+  Serializable JSON value
+  where
+  genericSerialize value =
+    Aeson.toJSON value
+      |> JSON
+
+
+  genericDeserialize (JSON json) = do
+    let result = Aeson.fromJSON @value json
+    case result of
+      AesonType.Success decoded ->
+        Result.Ok decoded
+      AesonType.Error error ->
+        Convert.fromLegacy @[Char] @String error
+          |> Result.Error

@@ -37,6 +37,9 @@ library
       Dsl,
       Default,
       Traits.Addable,
+      Traits.Serializable,
+      JSON,
+      JSON.Compatibility,
       HaskellCompatibility.Conversion,
       HaskellCompatibility.Generic,
       HaskellCompatibility.IO,
@@ -64,6 +67,7 @@ library
     build-depends:
       base ^>=4.16.4.0,
       ghc-prim ^>= 0.8,
+      aeson,
       text,
       vector,
       template-haskell

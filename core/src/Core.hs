@@ -3,18 +3,15 @@
 -- This module is automatically imported in all the NeoHaskell files,
 module Core (
   module Reexported,
-  module Record,
-  module Operators,
 ) where
 
 import Console as Reexported
 import Debug as Reexported (todo)
 import Default as Reexported
+import HaskellCompatibility.Generic as Reexported (Generic (..))
 import HaskellCompatibility.IO as Reexported (MainFunction)
 import HaskellCompatibility.Syntax as Reexported
-import HaskellCompatibility.Generic as Reexported (Generic(..))
-import Types as Reexported
-import Kinds as Reexported
-import Operators
-import Record
+import Operators as Reexported
+import Record as Reexported
 import Traits.Addable as Reexported
+import Types as Reexported

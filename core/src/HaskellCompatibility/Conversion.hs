@@ -3,12 +3,14 @@ module HaskellCompatibility.Conversion (
 ) where
 
 import Array qualified
+import Data.Either qualified as GHC
 import Data.Text (Text)
 import Data.Vector (Vector)
 import GHC.IO qualified as GHC
 import HaskellCompatibility.List qualified as HaskellList
 import HaskellCompatibility.String qualified as HaskellString
 import Promise qualified
+import Result qualified
 import String qualified
 import Types
 
@@ -50,3 +52,14 @@ instance LegacyConvertible (Vector item) (Array item) where
 instance LegacyConvertible (GHC.IO a) (Promise a) where
   toLegacy (Promise.INTERNAL_CORE_PROMISE_CONSTRUCTOR io) = io
   fromLegacy = Promise.fromIO
+
+
+instance LegacyConvertible (GHC.Either err ok) (Result ok err) where
+  toLegacy result = case result of
+    Result.Ok a -> GHC.Right a
+    Result.Error b -> GHC.Left b
+
+
+  fromLegacy either = case either of
+    GHC.Left a -> Result.Error a
+    GHC.Right b -> Result.Ok b
