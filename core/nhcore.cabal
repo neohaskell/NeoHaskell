@@ -34,15 +34,11 @@ library
       Char,
       Bool,
       String,
-<<<<<<< HEAD
       Dsl,
       Default,
       Traits.Addable,
       HaskellCompatibility.Conversion,
-=======
-      String.Internal,
       HaskellCompatibility.Generic,
->>>>>>> e20f7b4 (Add kinds and generic)
       HaskellCompatibility.IO,
       HaskellCompatibility.List,
       HaskellCompatibility.Monad,
