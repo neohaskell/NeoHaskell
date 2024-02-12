@@ -12,6 +12,7 @@ import Data.Text.Lazy.Builder qualified as LazyText
 import HaskellCompatibility.Conversion qualified as Convert
 import HaskellCompatibility.Generic
 import Language.Haskell.TH.Syntax qualified as TH
+import Meta (CodeGeneration)
 import Operators
 import Result qualified
 import Traits.Serializable
@@ -25,7 +26,7 @@ format :: Format "JSON"
 format = Format
 
 
-implementSerializable :: TH.Name -> TH.Q [TH.Dec]
+implementSerializable :: DeclarationName -> CodeGeneration [TH.Dec]
 implementSerializable = do
   AesonTH.deriveJSON Aeson.defaultOptions
 
