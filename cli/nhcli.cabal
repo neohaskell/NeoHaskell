@@ -25,7 +25,7 @@ common common_cfg
       OverloadedRecordDot
       NamedFieldPuns
       DataKinds
-    build-depends:  optparse-generic
+    build-depends:  optparse-applicative
 
 library
     import:           common_cfg

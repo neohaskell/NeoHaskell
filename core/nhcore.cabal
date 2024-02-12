@@ -26,6 +26,7 @@ common common_cfg
       OverloadedLabels
       OverloadedRecordDot
       NamedFieldPuns
+      TypeFamilies
 
 library
     import:           common_cfg
@@ -41,7 +42,6 @@ library
       Traits.Addable,
       Traits.Serializable,
       JSON,
-      JSON.Compatibility,
       HaskellCompatibility.Conversion,
       HaskellCompatibility.Generic,
       HaskellCompatibility.IO,
@@ -63,6 +63,7 @@ library
       Pipe,
       Array,
       Operators,
+      Lazy,
       Record
 
     -- other-modules:

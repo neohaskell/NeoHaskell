@@ -3,9 +3,11 @@ module Pipe (
   (<|),
   (.>),
   (<.),
+  type (|>),
 ) where
 
 import Data.Function ((.))
+import Kinds (Type)
 
 
 -- | The forward pipe operator.
@@ -83,3 +85,10 @@ infixr 0 <|
 (<.) f g =
   f . g
 {-# INLINE (<.) #-}
+
+
+-- | The forward pipe type operator for type-level operations.
+--
+-- It is used to pipe types into other types
+type family (|>) (a :: Type) (f :: Type -> Type) :: Type where
+  (|>) a f = f a

@@ -3,6 +3,8 @@ module HaskellCompatibility.Conversion (
 ) where
 
 import Array qualified
+import Bytes (Bytes (..))
+import Data.ByteString (ByteString)
 import Data.Either qualified as GHC
 import Data.Text (Text)
 import Data.Vector (Vector)
@@ -63,3 +65,8 @@ instance LegacyConvertible (GHC.Either err ok) (Result ok err) where
   fromLegacy either = case either of
     GHC.Left a -> Result.Error a
     GHC.Right b -> Result.Ok b
+
+
+instance LegacyConvertible ByteString Bytes where
+  fromLegacy = Bytes.INTERNAL_CORE_BYTES_CONSTRUCTOR
+  toLegacy (Bytes.INTERNAL_CORE_BYTES_CONSTRUCTOR bytes) = bytes

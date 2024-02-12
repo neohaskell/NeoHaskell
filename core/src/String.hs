@@ -4,6 +4,7 @@ module String (
 ) where
 
 import Data.Text qualified as Text
+import HaskellCompatibility.Generic (Generic)
 
 
 -- | 'String' is the primitive type for representing strings in
@@ -12,6 +13,7 @@ newtype String
   = -- | Internal constructor for 'String', you shouldn't use it, instead use the helper functions to operate with the internal values if needed.
     INTERNAL_CORE_STRING_CONSTRUCTOR
       Text.Text
+  deriving (Generic)
 
 
 -- | Append two strings.

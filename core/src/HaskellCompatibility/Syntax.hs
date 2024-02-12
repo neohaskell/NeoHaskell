@@ -19,9 +19,19 @@ module HaskellCompatibility.Syntax (
 
   -- * Numbers
   fromInteger,
+  ifThenElse,
 ) where
 
+import Bool (Bool)
 import HaskellCompatibility.List (fromList, fromListN, toList)
 import HaskellCompatibility.Monad ((>>), (>>=))
 import HaskellCompatibility.Numbers (fromInteger)
 import HaskellCompatibility.String (fromString)
+
+
+ifThenElse :: Bool -> a -> a -> a
+ifThenElse condition true false =
+  if condition
+    then true
+    else false
+{-# INLINE ifThenElse #-}
