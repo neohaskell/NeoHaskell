@@ -1,10 +1,15 @@
 module Traits.Serializable (
   Serializable (..),
+  Format (..),
 ) where
 
+import Meta (TypeString)
 import Types
 
 
-class Serializable (format :: Type) (value :: Type) where
-  genericSerialize :: value -> format
-  genericDeserialize :: format -> Result value String
+data Format (format :: TypeString) = Format
+
+
+class Serializable (format :: TypeString) (from :: Type) (to :: Type) where
+  serialize :: Format format -> from -> to
+  deserialize :: Format format -> to -> Result from String

@@ -21,24 +21,8 @@ import Types
 newtype JSON = JSON Aeson.Value
 
 
-{-# INLINE serialize #-}
-serialize :: Serializable JSON value => value -> JSON
-serialize = genericSerialize
-
-
-{-# INLINE deserialize #-}
-deserialize :: Serializable JSON value => JSON -> Result value String
-deserialize = genericDeserialize
-
-
-stringify :: Serializable JSON value => value -> String
-stringify value = do
-  let (JSON json) = genericSerialize value
-  json
-    |> Aeson.encodeToTextBuilder
-    |> LazyText.toLazyText
-    |> LazyText.toStrict
-    |> Convert.fromLegacy
+format :: Format "JSON"
+format = Format
 
 
 implementSerializable :: TH.Name -> TH.Q [TH.Dec]
@@ -50,14 +34,14 @@ instance
   ( Aeson.ToJSON value,
     Aeson.FromJSON value
   ) =>
-  Serializable JSON value
+  Serializable "JSON" value JSON
   where
-  genericSerialize value =
+  serialize _ value =
     Aeson.toJSON value
       |> JSON
 
 
-  genericDeserialize (JSON json) = do
+  deserialize _ (JSON json) = do
     let result = Aeson.fromJSON @value json
     case result of
       AesonType.Success decoded ->

@@ -15,6 +15,7 @@ common common_cfg
                     -Werror
     default-extensions:
       BlockArguments
+      DataKinds
       NoImplicitPrelude
       TemplateHaskell
       QuasiQuotes
@@ -33,6 +34,7 @@ library
       Int,
       Char,
       Bool,
+      Bytes,
       String,
       Dsl,
       Default,
@@ -48,6 +50,7 @@ library
       HaskellCompatibility.String,
       HaskellCompatibility.Numbers,
       HaskellCompatibility.Syntax,
+      Meta,
       Promise,
       Result,
       Kinds,
@@ -68,6 +71,7 @@ library
       base ^>=4.16.4.0,
       ghc-prim ^>= 0.8,
       aeson,
+      bytestring,
       text,
       vector,
       template-haskell
