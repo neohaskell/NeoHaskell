@@ -23,6 +23,8 @@ class Dsl context where
 
 
   -- TODO: Define `yield` function that is equivalent to `pure` in Haskell.
+  yield :: input -> context input
+
 
   ignoreAndThen :: context output -> context input -> context output
   ignoreAndThen secondExpr self =

@@ -14,8 +14,6 @@ data Args = Args
 -- and whatever?
 -- It'd be nice to have a single internal value-level type representation that people can leverage to write their own
 -- formats. We could fork https://harry.garrood.me/blog/aeson-better-errors/
-JSON.implementSerializable ''Args
-
 
 -- args :: Args.Parser Args
 -- args = do
