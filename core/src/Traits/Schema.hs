@@ -1,9 +1,11 @@
 module Traits.Schema (
-  ) where
+  Schema (..),
+  SchemaDescription (..),
+  SchemaProperty (..),
+  SchemaBuilder (..),
+) where
 
-import Dsl
-import HaskellCompatibility.Generic (Generic)
-import Operators
+import Reflect qualified
 import Types
 
 
@@ -12,7 +14,6 @@ data SchemaDescription = SchemaDescription
     description :: String,
     properties :: Array SchemaProperty
   }
-  deriving (Generic)
 
 
 data SchemaProperty = SchemaProperty
@@ -20,7 +21,6 @@ data SchemaProperty = SchemaProperty
     description :: String,
     shorthand :: Optional String
   }
-  deriving (Generic)
 
 
 -- | `SchemaBuilder` is a data type that allows building a `Schema` for a record in a monadic way.
@@ -50,6 +50,7 @@ data SchemaProperty = SchemaProperty
 -- The monad will accumulate the SchemaDescription type, and the HasField constraints will ensure that
 -- the properties are correctly defined.
 data SchemaBuilder record a = SchemaBuilder
+  deriving (Reflect.Shape, Reflect.TypeInfo)
 
 
 -- TODO: Implement this using a Writer monad (figure out a Writer monad) ((Probably now is the time to figure out the `Ref` DSL to allow creating and modifying variables))
