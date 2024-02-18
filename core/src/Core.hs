@@ -14,4 +14,5 @@ import HaskellCompatibility.Syntax as Reexported
 import Operators as Reexported
 import Record as Reexported
 import Traits.Addable as Reexported
+import Traits.Equatable as Reexported (Equatable)
 import Types as Reexported

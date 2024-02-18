@@ -4,3 +4,4 @@ module Operators (
 
 import Bool as Reexported ((&&), (||))
 import Pipe as Reexported ((.>), (<.), (<|), (|>))
+import Traits.Equatable as Reexported ((!=), (==))

@@ -42,11 +42,12 @@ library
       String,
       Dsl,
       Default,
-      HashMap,
+      Map,
       Traits.Addable,
-      Traits.HasDefault,
-      Traits.HasEquals,
-      Traits.HasVariables,
+      Traits.Defaultable,
+      Traits.Equatable,
+      Traits.VariableHolder,
+      Traits.Ordered,
       Traits.Serializable,
       Traits.Schema,
       JSON,
@@ -87,7 +88,7 @@ library
       text,
       vector,
       transformers,
-      unordered-containers,
+      containers,
       template-haskell
     hs-source-dirs:   src
     default-language: GHC2021

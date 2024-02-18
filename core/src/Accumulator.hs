@@ -10,7 +10,7 @@ import Control.Monad.Trans.State qualified as GhcState
 import Dsl
 import Operators
 import Traits.Addable
-import Traits.HasDefault
+import Traits.Defaultable
 
 
 -- | `Accumulator` is a type that allows to accumulate values in
@@ -53,5 +53,5 @@ push value = do
   InternalAccumulator (GhcState.modify pushToState)
 
 
-accumulate :: (HasDefault value) => Accumulator value -> value
+accumulate :: (Defaultable value) => Accumulator value -> value
 accumulate (InternalAccumulator state) = GhcState.execState state defaultValue

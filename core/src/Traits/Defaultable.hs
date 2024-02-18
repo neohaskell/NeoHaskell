@@ -1,9 +1,9 @@
-module Traits.HasDefault (HasDefault (..)) where
+module Traits.Defaultable (Defaultable (..)) where
 
 
--- | The `HasDefault` trait defines that a type has a default value.
+-- | The `Defaultable` trait defines that a type has a default value.
 -- It is useful to define default values for fields in records, or
 -- to define default values for properties in a schema.
-class HasDefault someType where
+class Defaultable someType where
   -- | The default value for the type.
   defaultValue :: someType
