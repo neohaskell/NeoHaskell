@@ -2,8 +2,9 @@ module HaskellCompatibility.Conversion (
   LegacyConvertible (..),
 ) where
 
-import Array qualified
+import Array
 import Bytes (Bytes (..))
+import Char
 import Data.ByteString (ByteString)
 import Data.Either qualified as GHC
 import Data.Text (Text)
@@ -11,10 +12,10 @@ import Data.Vector (Vector)
 import GHC.IO qualified as GHC
 import HaskellCompatibility.List qualified as HaskellList
 import HaskellCompatibility.String qualified as HaskellString
-import Promise qualified
-import Result qualified
-import String qualified
-import Types
+import Promise
+import Result
+import String
+import Void
 
 
 -- | # LegacyConvertible

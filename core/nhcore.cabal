@@ -34,6 +34,7 @@ library
     import:           common_cfg
     exposed-modules:
       Core,
+      Accumulator,
       Int,
       Char,
       Bool,
@@ -41,10 +42,15 @@ library
       String,
       Dsl,
       Default,
+      HashMap,
       Traits.Addable,
+      Traits.HasDefault,
+      Traits.HasEquals,
+      Traits.HasVariables,
       Traits.Serializable,
       Traits.Schema,
       JSON,
+      Label,
       HaskellCompatibility.Conversion,
       HaskellCompatibility.Generic,
       HaskellCompatibility.IO,
@@ -80,6 +86,8 @@ library
       bytestring,
       text,
       vector,
+      transformers,
+      unordered-containers,
       template-haskell
     hs-source-dirs:   src
     default-language: GHC2021

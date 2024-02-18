@@ -7,8 +7,8 @@ module HaskellCompatibility.List (
 
 import Array (Array (..))
 import Data.Vector qualified as Vector
+import Int
 import Pipe ((|>))
-import Types (Int)
 
 
 -- | A type alias for the Haskell list type.

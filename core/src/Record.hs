@@ -1,5 +1,5 @@
 module Record (
-  getField,
+  HasField (..),
 ) where
 
-import GHC.Records (getField)
+import GHC.Records (HasField (..))

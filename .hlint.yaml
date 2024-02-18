@@ -64,6 +64,8 @@
 - ignore: {name: Redundant bracket}
 - ignore: {name: Use newtype instead of data}
 - ignore: {name: Use const}
+- ignore: {name: Avoid lambda using `infix`}
+- ignore: {name: Use /=}
 
 
 # Define some custom infix operators
