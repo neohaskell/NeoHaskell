@@ -1,13 +1,19 @@
 module Traits.Schema (
   Schema (..),
-  SchemaDescription (..),
-  SchemaProperty (..),
   SchemaBuilder (..),
 ) where
 
+import Accumulator (Accumulator, AccumulatorDsl (..))
+import Data.Coerce (coerce)
 import Debug (todo)
+import Dsl (Dsl (..))
+import HaskellCompatibility.Syntax
+import Label
+import Operators
+import Optional (Optional (None))
 import Record
 import Reflect qualified
+import Traits.Defaultable (Defaultable (..))
 import Types
 
 
@@ -47,14 +53,23 @@ class SchemaDescriptor builder where
 
 
 data RecordSchema = SchemaDescription
-  { recordName :: String,
-    recordDescription :: String,
-    recordProperties :: Array PropertySchema
+  { recordName :: Optional String,
+    recordDescription :: Optional String,
+    recordProperties :: Optional (Array PropertySchema)
   }
 
 
 data RecordSchemaBuilder someType a = RecordSchemaBuilder
   deriving (Reflect.Shape, Reflect.TypeInfo)
+
+
+instance Defaultable RecordSchema where
+  defaultValue =
+    SchemaDescription
+      { recordName = Nothing,
+        recordDescription = Nothing,
+        recordProperties = Nothing
+      }
 
 
 record ::
@@ -65,26 +80,44 @@ record name builder = todo
 
 
 data PropertySchema = PropertySchema
-  { propertyName :: String,
-    propertyDescription :: String,
+  { propertyName :: Optional String,
+    propertyDescription :: Optional String,
     propertyShorthand :: Optional String
   }
   deriving (Reflect.Shape, Reflect.TypeInfo)
 
 
-data PropertySchemaBuilder someType a = PropertySchemaBuilder
-  deriving (Reflect.Shape, Reflect.TypeInfo)
+instance Defaultable PropertySchema where
+  defaultValue =
+    PropertySchema
+      { propertyName = None,
+        propertyDescription = None,
+        propertyShorthand = None
+      }
+
+
+data PropertySchemaDsl someType a = PropertySchemaDsl
+  { value :: (AccumulatorDsl PropertySchema a)
+  }
+
+
+instance Dsl (PropertySchemaDsl someType) where
+  andThen callback self =
+    self.value
+      |> andThen (callback .> getField #value)
+      |> PropertySchemaDsl
+  yield value =
+    yield value
+      |> PropertySchemaDsl
 
 
 property ::
   HasField name someType fieldType =>
   Label name ->
-  PropertySchemaBuilder someType () ->
+  PropertySchemaDsl someType () ->
   RecordSchemaBuilder someType PropertySchema
 property name builder = todo
 
-
--- TODO: Implement this using a Writer monad (figure out a Writer monad) ((Probably now is the time to figure out the `Ref` DSL to allow creating and modifying variables))
 
 class Schema someType where
   schema :: SchemaBuilder someType ()

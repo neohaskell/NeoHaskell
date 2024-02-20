@@ -1,14 +1,17 @@
 module Accumulator (
   Accumulator,
+  AccumulatorDsl (..),
   push,
   accumulate,
 ) where
 
 import Control.Applicative qualified as Ghc
-import Control.Monad qualified as Monad
 import Control.Monad.Trans.State qualified as GhcState
 import Dsl
+import HaskellCompatibility.Monad qualified as Monad
+import Label
 import Operators
+import Record
 import Traits.Addable
 import Traits.Defaultable
 
@@ -27,31 +30,41 @@ import Traits.Defaultable
 --   Accumulator.push [2]
 --   Accumulator.push [3]
 -- ```
-type Accumulator value = InternalAccumulator value ()
+type Accumulator value = AccumulatorDsl value ()
 
 
-newtype InternalAccumulator someType result
-  = InternalAccumulator
-      (GhcState.State someType result)
+data AccumulatorDsl someType result = AcculumatorDsl
+  { value :: GhcState.State someType result
+  }
 
 
-instance Dsl (InternalAccumulator someType) where
-  andThen f (InternalAccumulator stateAction) = InternalAccumulator do
-    stateAction Monad.>>= \result -> case f result of
-      InternalAccumulator nextAction -> nextAction
+-- TODO: Make traits have the `impl` suffix.
+andThenImpl :: (input -> AccumulatorDsl someType output) -> AccumulatorDsl someType input -> AccumulatorDsl someType output
+andThenImpl callback self =
+  self.value
+    |> Monad._andThen (callback .> value)
+    |> AcculumatorDsl
 
 
-  yield value =
-    Ghc.pure value
-      |> InternalAccumulator
+yieldImpl :: value -> AccumulatorDsl someType value
+yieldImpl value =
+  Monad._yield value
+    |> AcculumatorDsl
+
+
+instance Dsl (AccumulatorDsl someType) where
+  andThen = andThenImpl
+
+
+  yield = yieldImpl
 
 
 -- | Pushes a value into the accumulator.
 push :: (Addable value) => value -> Accumulator value
 push value = do
   let pushToState accumulated = accumulated + value
-  InternalAccumulator (GhcState.modify pushToState)
+  AcculumatorDsl (GhcState.modify pushToState)
 
 
 accumulate :: (Defaultable value) => Accumulator value -> value
-accumulate (InternalAccumulator state) = GhcState.execState state defaultValue
+accumulate (AcculumatorDsl state) = GhcState.execState state defaultValue

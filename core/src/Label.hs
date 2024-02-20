@@ -2,6 +2,7 @@ module Label (
   Label,
   LabelLiteral,
   toString,
+  IsLabel (..),
 ) where
 
 import Data.Data qualified as Data
