@@ -1,6 +1,8 @@
+{-# OPTIONS_GHC -Wno-orphans #-}
+
 module Label (
-  Label,
-  LabelLiteral,
+  Label (..),
+  Literal,
   toString,
   IsLabel (..),
 ) where
@@ -24,15 +26,15 @@ data Label (name :: GHC.Symbol) = Label
 
 -- | The `LabelLiteral` trait defines that a label is known at a compile-time. This is used
 -- to ensure that the label is a type-safe string.
-type LabelLiteral name = GHCTypeLits.KnownSymbol name
+type Literal name = GHCTypeLits.KnownSymbol name
 
 
-instance IsLabel name (Label name) where
+instance forall name. Literal name => IsLabel name (Label name) where
   fromLabel = Label
 
 
 -- | Convert a `Label` to a `String`.
-toString :: forall name. (LabelLiteral name) => Label name -> String
+toString :: forall name. (Literal name) => Label name -> String
 toString _ =
   Data.Proxy @name
     |> GHCTypeLits.symbolVal

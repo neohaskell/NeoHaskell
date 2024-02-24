@@ -1,20 +1,25 @@
 module Traits.Schema (
   Schema (..),
-  SchemaBuilder (..),
+  SchemaDefinition (..),
+  SchemaDescriptor (..),
+  shorthand,
+  property,
+  record,
+  definition,
 ) where
 
-import Accumulator (Accumulator, AccumulatorDsl (..))
-import Data.Coerce (coerce)
-import Debug (todo)
+import Accumulator qualified
+import Array (Array)
+import Array qualified
 import Dsl (Dsl (..))
 import HaskellCompatibility.Syntax
 import Label
 import Operators
-import Optional (Optional (None))
+import Optional (Optional (..))
 import Record
 import Reflect qualified
+import String (String)
 import Traits.Defaultable (Defaultable (..))
-import Types
 
 
 -- | `SchemaBuilder` is a data type that allows building a `Schema` for a record in a monadic way.
@@ -42,14 +47,28 @@ import Types
 -- ```
 -- The monad will accumulate the SchemaDescription type, and the HasField constraints will ensure that
 -- the properties are correctly defined.
-data SchemaBuilder someType a = SchemaBuilder
-  deriving (Reflect.Shape, Reflect.TypeInfo)
+data SchemaDefinition
+  = RecordSchemaDefinition RecordSchema
+  | NoSchemaDefinition
 
 
 class SchemaDescriptor builder where
   description :: String -> builder someType ()
-  name :: String -> builder someType ()
-  shorthand :: String -> builder someType ()
+  named :: String -> builder someType ()
+
+
+data SchemaBuilder someType result = SchemaBuilder
+  {value :: Accumulator.AccumulatorDsl SchemaDefinition result}
+
+
+instance Dsl (SchemaBuilder someType) where
+  andThen callback self =
+    self.value
+      |> andThen (\recordSchema -> (callback recordSchema).value)
+      |> SchemaBuilder
+  yield value =
+    yield value
+      |> SchemaBuilder
 
 
 data RecordSchema = SchemaDescription
@@ -59,24 +78,54 @@ data RecordSchema = SchemaDescription
   }
 
 
-data RecordSchemaBuilder someType a = RecordSchemaBuilder
-  deriving (Reflect.Shape, Reflect.TypeInfo)
+data RecordSchemaBuilder someType result = RecordSchemaBuilder
+  {value :: Accumulator.AccumulatorDsl RecordSchema result}
+
+
+instance Dsl (RecordSchemaBuilder someType) where
+  andThen callback self =
+    self.value
+      |> andThen (\recordSchema -> (callback recordSchema).value)
+      |> RecordSchemaBuilder
+  yield value =
+    yield value
+      |> RecordSchemaBuilder
 
 
 instance Defaultable RecordSchema where
   defaultValue =
     SchemaDescription
-      { recordName = Nothing,
-        recordDescription = Nothing,
-        recordProperties = Nothing
+      { recordName = Optional.None,
+        recordDescription = Optional.None,
+        recordProperties = Optional.None
       }
 
 
 record ::
-  String ->
+  forall someType.
+  (Reflect.TypeInfo someType) =>
   RecordSchemaBuilder someType () ->
-  SchemaBuilder someType RecordSchema
-record name builder = todo
+  SchemaBuilder someType ()
+record builder = do
+  let recordName = Reflect.inspectTypeName @someType
+  let recordSchema = do
+        named recordName
+        builder
+  let x = Accumulator.accumulate recordSchema.value
+  let result = do
+        Accumulator.update (\_ -> RecordSchemaDefinition x)
+  SchemaBuilder result
+
+
+instance SchemaDescriptor RecordSchemaBuilder where
+  description txt = RecordSchemaBuilder do
+    let addDescription recordSchema = recordSchema {recordDescription = Some txt}
+    Accumulator.update addDescription
+
+
+  named txt = RecordSchemaBuilder do
+    let addName recordSchema = recordSchema {recordName = Some txt}
+    Accumulator.update addName
 
 
 data PropertySchema = PropertySchema
@@ -84,7 +133,6 @@ data PropertySchema = PropertySchema
     propertyDescription :: Optional String,
     propertyShorthand :: Optional String
   }
-  deriving (Reflect.Shape, Reflect.TypeInfo)
 
 
 instance Defaultable PropertySchema where
@@ -97,14 +145,14 @@ instance Defaultable PropertySchema where
 
 
 data PropertySchemaDsl someType a = PropertySchemaDsl
-  { value :: (AccumulatorDsl PropertySchema a)
+  { value :: (Accumulator.AccumulatorDsl PropertySchema a)
   }
 
 
 instance Dsl (PropertySchemaDsl someType) where
   andThen callback self =
     self.value
-      |> andThen (callback .> getField #value)
+      |> andThen (\propertySchema -> (callback propertySchema).value)
       |> PropertySchemaDsl
   yield value =
     yield value
@@ -112,12 +160,57 @@ instance Dsl (PropertySchemaDsl someType) where
 
 
 property ::
-  HasField name someType fieldType =>
+  forall name someType fieldType.
+  ( HasField name someType fieldType,
+    Label.Literal name
+  ) =>
   Label name ->
-  PropertySchemaDsl someType () ->
-  RecordSchemaBuilder someType PropertySchema
-property name builder = todo
+  PropertySchemaBuilder fieldType () ->
+  RecordSchemaBuilder someType ()
+property nameLabel builder = do
+  let nameValue = Label.toString nameLabel
+  let addProperty recordSchema = do
+        let builderWithName = do
+              named nameValue
+              builder
+        let newPropertySchema = Accumulator.accumulate (builderWithName.value)
+        let props = recordSchema.recordProperties ?? []
+        recordSchema {recordProperties = Some (props |> Array.push newPropertySchema)}
+  RecordSchemaBuilder (Accumulator.update addProperty)
 
 
-class Schema someType where
+data PropertySchemaBuilder someType result = PropertySchemaBuilder
+  {value :: Accumulator.AccumulatorDsl PropertySchema result}
+
+
+instance Dsl (PropertySchemaBuilder someType) where
+  andThen callback self =
+    self.value
+      |> andThen (\propertySchema -> (callback propertySchema).value)
+      |> PropertySchemaBuilder
+  yield value =
+    yield value
+      |> PropertySchemaBuilder
+
+
+instance SchemaDescriptor PropertySchemaBuilder where
+  description txt = PropertySchemaBuilder do
+    let addDescription propertySchema = propertySchema {propertyDescription = Some txt}
+    Accumulator.update addDescription
+  named txt = PropertySchemaBuilder do
+    let addName propertySchema = propertySchema {propertyName = Some txt}
+    Accumulator.update addName
+
+
+shorthand :: String -> PropertySchemaBuilder someType ()
+shorthand txt = PropertySchemaBuilder do
+  let addShorthand propertySchema = propertySchema {propertyShorthand = Some txt}
+  Accumulator.update addShorthand
+
+
+class Reflect.TypeInfo someType => Schema someType where
   schema :: SchemaBuilder someType ()
+
+
+definition :: forall name. Label.Literal name => Label name
+definition = Label.Label

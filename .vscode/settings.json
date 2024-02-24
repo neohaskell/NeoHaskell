@@ -1,3 +1,10 @@
 {
-  "cSpell.words": ["Acculumator", "Defaultable", "NOINLINE", "OVERLAPPABLE"]
+  "cSpell.words": [
+    "Acculumator",
+    "Defaultable",
+    "foldl",
+    "NOINLINE",
+    "OVERLAPPABLE",
+    "snoc"
+  ]
 }

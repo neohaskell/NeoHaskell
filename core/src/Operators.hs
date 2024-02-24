@@ -3,5 +3,6 @@ module Operators (
 ) where
 
 import Bool as Reexported ((&&), (||))
+import Optional as Reexported ((??))
 import Pipe as Reexported ((.>), (<.), (<|), (|>))
 import Traits.Equatable as Reexported ((!=), (==))

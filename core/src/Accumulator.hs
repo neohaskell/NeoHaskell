@@ -3,13 +3,12 @@ module Accumulator (
   AccumulatorDsl (..),
   push,
   accumulate,
+  update,
 ) where
 
-import Control.Applicative qualified as Ghc
 import Control.Monad.Trans.State qualified as GhcState
 import Dsl
 import HaskellCompatibility.Monad qualified as Monad
-import Label
 import Operators
 import Record
 import Traits.Addable
@@ -64,6 +63,13 @@ push :: (Addable value) => value -> Accumulator value
 push value = do
   let pushToState accumulated = accumulated + value
   AcculumatorDsl (GhcState.modify pushToState)
+
+
+-- | Updates the accumulator with a callback.
+update :: (value -> value) -> Accumulator value
+update callback = do
+  let updateState state = state |> callback
+  AcculumatorDsl (GhcState.modify updateState)
 
 
 accumulate :: (Defaultable value) => Accumulator value -> value

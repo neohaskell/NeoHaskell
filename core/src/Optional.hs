@@ -1,6 +1,7 @@
 module Optional (
   Optional (..),
   applyToContents,
+  (??),
 ) where
 
 
@@ -16,3 +17,11 @@ applyToContents transformation self =
     Some value ->
       Some (transformation value)
     None -> None
+
+
+-- | None coalescing operator.
+(??) :: Optional value -> value -> value
+(??) self fallback =
+  case self of
+    Some value -> value
+    None -> fallback

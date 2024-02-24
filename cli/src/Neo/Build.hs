@@ -1,13 +1,21 @@
 module Neo.Build where
 
 import Core
-import JSON qualified
+import Reflect qualified
+import Traits.Schema
 
 
 data Args = Args
   { name :: String
   }
-  deriving (Generic)
+  deriving (Reflect.TypeInfo)
+
+
+instance Schema Args where
+  schema = record do
+    property @"name" definition do
+      description "Name to greet in the application"
+      shorthand "n"
 
 
 -- TODO: Figure out easy parsing for any type. Perhaps some kind of TH schema definition that can be used for JSON, commands,

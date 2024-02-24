@@ -11,6 +11,7 @@ import Default as Reexported
 import HaskellCompatibility.Generic as Reexported (Generic (..))
 import HaskellCompatibility.IO as Reexported (MainFunction)
 import HaskellCompatibility.Syntax as Reexported
+import Label as Reexported (IsLabel (..))
 import Operators as Reexported
 import Record as Reexported
 import Traits.Addable as Reexported

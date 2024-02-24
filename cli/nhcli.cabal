@@ -15,16 +15,22 @@ common common_cfg
                     -Werror
     default-extensions:
       BlockArguments
+      DataKinds
       NoImplicitPrelude
       TemplateHaskell
+      DeriveDataTypeable
       QuasiQuotes
       ImportQualifiedPost
       RebindableSyntax
       OverloadedStrings
       OverloadedLists
+      OverloadedLabels
       OverloadedRecordDot
+      DuplicateRecordFields
       NamedFieldPuns
-      DataKinds
+      TypeFamilies
+
+
     build-depends:  optparse-applicative
 
 library

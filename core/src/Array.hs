@@ -18,6 +18,7 @@ module Array (
   reduce,
   reduceFromRight,
   dropIf,
+  push,
   -- -- * Transformations
   -- reverse,
   -- intersperse,
@@ -137,6 +138,11 @@ reduce f z (INTERNAL_CORE_ARRAY_CONSTRUCTOR vector) = Vector.foldl f z vector
 -- | Combines elements of an array using a binary function, starting from the right.
 reduceFromRight :: (item -> otherItem -> otherItem) -> otherItem -> Array item -> otherItem
 reduceFromRight f z (INTERNAL_CORE_ARRAY_CONSTRUCTOR vector) = Vector.foldr f z vector
+
+
+-- | Adds an item to the end of the array
+push :: item -> Array item -> Array item
+push item (INTERNAL_CORE_ARRAY_CONSTRUCTOR vector) = INTERNAL_CORE_ARRAY_CONSTRUCTOR (Vector.snoc vector item)
 
 
 -- Additional functions to be implemented...

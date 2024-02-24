@@ -1,7 +1,7 @@
-module Neo.Views.Repl () where
+module Neo.Views.Repl (Cli, ViewComponent, View (..)) where
 
-import Core
 
+-- import Core
 
 data View
   = Repl
@@ -12,44 +12,39 @@ data ViewComponent viewFormat message
 
 data Cli
 
+-- changeHandler :: ViewHandler
+-- changeHandler = do
+--   text <- get #value @String
+--   registerEvent (InputChanged text)
 
-changeHandler :: ViewHandler
-changeHandler = do
-  text <- get #value @String
-  registerEvent (InputChanged text)
+-- submitHandler :: ViewHandler
+-- submitHandler = do
+--   registerEvent InputSubmitted
 
+-- replUi :: ViewComponent Cli Event
+-- replUi = do
+--   state <- getState "repl"
 
-submitHandler :: ViewHandler
-submitHandler = do
-  registerEvent InputSubmitted
+--   let historyUi =
+--         state . history
+--           |> Array.applyToEach historyResultUi
 
+--   cliView do
+--     div [] do
+--       historyUi
 
-replUi :: ViewComponent Cli Event
-replUi = do
-  state <- getState "repl"
+--     input [onChange changeHandler, onSubmit submitHandler] do
+--       text ("> " + state . currentCommand)
 
-  let historyUi =
-        state . history
-          |> Array.applyToEach historyResultUi
+-- historyUi :: ViewComponent Cli Event
+-- historyUi = do
+--   state <- getState "repl"
 
-  cliView do
-    div [] do
-      historyUi
+--   state . history
+--     |> Array.applyToEach historyResultUi
 
-    input [onChange changeHandler, onSubmit submitHandler] do
-      text ("> " + state . currentCommand)
-
-
-historyUi :: ViewComponent Cli Event
-historyUi = do
-  state <- getState "repl"
-
-  state . history
-    |> Array.applyToEach historyResultUi
-
-
-historyResultUi :: HistoryResult -> ViewComponent Cli Event
-historyResultUi historyResult =
-  div [] do
-    text ("> " + historyResult . command)
-    text historyResult . output
+-- historyResultUi :: HistoryResult -> ViewComponent Cli Event
+-- historyResultUi historyResult =
+--   div [] do
+--     text ("> " + historyResult . command)
+--     text historyResult . output
