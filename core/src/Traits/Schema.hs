@@ -2,6 +2,8 @@ module Traits.Schema (
   Schema (..),
   SchemaDefinition (..),
   SchemaDescriptor (..),
+  RecordSchema (..),
+  PropertySchema (..),
   shorthand,
   property,
   record,
@@ -71,7 +73,7 @@ instance Dsl (SchemaBuilder someType) where
       |> SchemaBuilder
 
 
-data RecordSchema = SchemaDescription
+data RecordSchema = RecordSchema
   { recordName :: Optional String,
     recordDescription :: Optional String,
     recordProperties :: Optional (Array PropertySchema)
@@ -94,7 +96,7 @@ instance Dsl (RecordSchemaBuilder someType) where
 
 instance Defaultable RecordSchema where
   defaultValue =
-    SchemaDescription
+    RecordSchema
       { recordName = Optional.None,
         recordDescription = Optional.None,
         recordProperties = Optional.None

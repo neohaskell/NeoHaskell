@@ -1,36 +1,39 @@
 module HaskellCompatibility.Monad (
-  (>>=),
-  (>>),
   _andThen,
   _yield,
+  DslMonad (..),
 ) where
 
-import Control.Monad qualified as Monad
-import Dsl (Dsl (..))
-import Pipe ((|>))
+import Control.Applicative qualified as Ghc
+import Control.Monad qualified as Ghc
+import Debug (todo)
+import Traits.Dsl
 
 
-(>>=) :: Dsl context => context input -> (input -> context output) -> context output
-(>>=) firstExpr continuingExpr =
-  firstExpr
-    |> andThen continuingExpr
-{-# INLINE (>>=) #-}
+newtype DslMonad a = DslMonad {runDslMonad :: forall dsl. Dsl dsl => dsl a}
 
 
-_andThen :: Monad.Monad context => (input -> context output) -> context input -> context output
+instance Ghc.Functor DslMonad where
+  fmap = todo
+
+
+instance Ghc.Applicative DslMonad where
+  pure x = DslMonad (yield x)
+  (<*>) = todo
+
+
+instance Ghc.Monad DslMonad where
+  return = Ghc.pure
+  (>>=) = todo
+
+
+_andThen :: Ghc.Monad context => (input -> context output) -> context input -> context output
 _andThen continuingExpr firstExpr =
-  firstExpr Monad.>>= continuingExpr
+  firstExpr Ghc.>>= continuingExpr
 {-# INLINE _andThen #-}
 
 
-_yield :: Monad.Monad context => input -> context input
+_yield :: Ghc.Monad context => input -> context input
 _yield value =
-  Monad.return value
+  Ghc.return value
 {-# INLINE _yield #-}
-
-
-(>>) :: Dsl context => context input -> context output -> context output
-(>>) firstExpr secondExpr =
-  firstExpr
-    |> ignoreAndThen secondExpr
-{-# INLINE (>>) #-}

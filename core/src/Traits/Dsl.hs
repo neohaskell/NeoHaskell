@@ -1,6 +1,7 @@
-module Dsl (Dsl (..)) where
+module Traits.Dsl (Dsl (..), (>>), (>>=)) where
 
 import Pipe ((|>))
+import Traits.Applicable
 
 
 -- | # Dsl
@@ -17,7 +18,7 @@ import Pipe ((|>))
 -- In order to use a type as a DSL, it must implement this trait, at least
 -- for the `andThen` function. As `ignoreAndThen` has a default implementation
 -- that uses `andThen`.
-class Dsl context where
+class Applicable context => Dsl context where
   -- TODO: Maybe should be called `andThenImpl` to force redefinition as monomorphic function?
   andThen :: (input -> context output) -> context input -> context output
 
@@ -30,3 +31,17 @@ class Dsl context where
   ignoreAndThen secondExpr self =
     self
       |> andThen (\_ -> secondExpr)
+
+
+(>>=) :: Dsl context => context input -> (input -> context output) -> context output
+(>>=) firstExpr continuingExpr =
+  firstExpr
+    |> andThen continuingExpr
+{-# INLINE (>>=) #-}
+
+
+(>>) :: Dsl context => context input -> context output -> context output
+(>>) firstExpr secondExpr =
+  firstExpr
+    |> ignoreAndThen secondExpr
+{-# INLINE (>>) #-}
