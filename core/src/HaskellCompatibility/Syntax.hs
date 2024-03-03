@@ -10,10 +10,6 @@ module HaskellCompatibility.Syntax (
   fromListN,
   toList,
 
-  -- * Monad
-  (>>),
-  (>>=),
-
   -- * String
   fromString,
 
@@ -24,7 +20,6 @@ module HaskellCompatibility.Syntax (
 
 import Bool (Bool)
 import HaskellCompatibility.List (fromList, fromListN, toList)
-import HaskellCompatibility.Monad ((>>), (>>=))
 import HaskellCompatibility.Numbers (fromInteger)
 import HaskellCompatibility.String (fromString)
 

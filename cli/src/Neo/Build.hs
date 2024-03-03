@@ -2,6 +2,7 @@ module Neo.Build where
 
 import Core
 import Reflect qualified
+import Traits.Dsl
 import Traits.Schema
 
 

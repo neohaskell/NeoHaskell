@@ -71,7 +71,6 @@ import Data.Vector (Vector)
 import Data.Vector qualified as Vector
 import Int (Int)
 import Pipe
-import Traits.Dsl
 
 
 -- TODO: Add property-based doc-tests for all functions
@@ -144,14 +143,6 @@ reduceFromRight f z (INTERNAL_CORE_ARRAY_CONSTRUCTOR vector) = Vector.foldr f z 
 -- | Adds an item to the end of the array
 push :: item -> Array item -> Array item
 push item (INTERNAL_CORE_ARRAY_CONSTRUCTOR vector) = INTERNAL_CORE_ARRAY_CONSTRUCTOR (Vector.snoc vector item)
-
-
--- | applyDsl is an alias for `mapM`
-applyDsl :: (Dsl context) => (item -> context otherItem) -> Array item -> context (Array otherItem)
-applyDsl f (INTERNAL_CORE_ARRAY_CONSTRUCTOR self) = do
-  result <- Vector.mapM f self
-  INTERNAL_CORE_ARRAY_CONSTRUCTOR result
-    |> yield
 
 
 -- Additional functions to be implemented...

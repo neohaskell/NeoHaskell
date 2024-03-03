@@ -13,6 +13,7 @@ build-type:         Simple
 common common_cfg
     ghc-options:    -Wall
                     -Werror
+                    -fplugin=Clippy
     default-extensions:
       BlockArguments
       DataKinds
@@ -31,7 +32,9 @@ common common_cfg
       TypeFamilies
 
 
-    build-depends:  optparse-applicative
+    build-depends:
+      optparse-applicative,
+      nhclippy
 
 library
     import:           common_cfg
@@ -43,7 +46,8 @@ library
     -- other-modules:
     -- other-extensions:
     build-depends:    base ^>=4.16.4.0,
-                      nhcore
+                      nhcore,
+                      nhclippy
     hs-source-dirs:   src
     default-language: GHC2021
 

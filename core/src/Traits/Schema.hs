@@ -13,7 +13,6 @@ module Traits.Schema (
 import Accumulator qualified
 import Array (Array)
 import Array qualified
-import Dsl (Dsl (..))
 import HaskellCompatibility.Syntax
 import Label
 import Operators
@@ -22,6 +21,7 @@ import Record
 import Reflect qualified
 import String (String)
 import Traits.Defaultable (Defaultable (..))
+import Traits.Dsl (Dsl (..), (>>))
 
 
 -- | `SchemaBuilder` is a data type that allows building a `Schema` for a record in a monadic way.

@@ -66,18 +66,16 @@ replaceMessages conf = do
       errsRef
       ( \msgs -> do
           let (warns, errors) = partitionMessages msgs
-          let warns' = mapBag replaceErrMsgs warns
-          let errors' = mapBag replaceErrMsgs errors
+          let warns' = mapBag (replaceErrMsgs "W") warns
+          let errors' = mapBag (replaceErrMsgs "E") errors
           let newErrors = unionBags errors' warns'
           mkMessages newErrors
       )
 
 
--- (mkMessages . unitBag . replaceErrMsgs)
-
-replaceErrSDoc :: PEnv -> MsgEnvelope DecoratedSDoc -> MsgEnvelope DecoratedSDoc
-replaceErrSDoc env e =
-  (replaceSDocs env) e
+replaceErrSDoc :: PEnv -> Text -> MsgEnvelope DecoratedSDoc -> MsgEnvelope DecoratedSDoc
+replaceErrSDoc env nametype e =
+  (replaceSDocs env nametype) e
 
 
 renderSDoc :: DynFlags -> SDoc -> Text
@@ -90,10 +88,11 @@ renderSDoc dynFlags sdoc = T.pack $ showSDoc dynFlags sdoc
 --       replacedText = replaceText env originalText
 --   in  text (T.unpack replacedText)
 
-replaceSDocs :: PEnv -> MsgEnvelope DecoratedSDoc -> MsgEnvelope DecoratedSDoc
-replaceSDocs env msgEnv = do
+replaceSDocs :: PEnv -> Text -> MsgEnvelope DecoratedSDoc -> MsgEnvelope DecoratedSDoc
+replaceSDocs env nametype msgEnv = do
   let sDocList = unDecorated (errMsgDiagnostic msgEnv)
-  let replacedDiagnostic = replaceSDocsGroup env "D" sDocList
+  -- let msgSpan = errMsgSpan msgEnv
+  let replacedDiagnostic = replaceSDocsGroup env nametype sDocList
   msgEnv {errMsgDiagnostic = mkDecorated replacedDiagnostic}
 
 

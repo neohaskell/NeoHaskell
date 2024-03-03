@@ -7,12 +7,12 @@ module Accumulator (
 ) where
 
 import Control.Monad.Trans.State qualified as GhcState
-import Dsl
 import HaskellCompatibility.Monad qualified as Monad
 import Operators
 import Record
 import Traits.Addable
 import Traits.Defaultable
+import Traits.Dsl
 
 
 -- | `Accumulator` is a type that allows to accumulate values in

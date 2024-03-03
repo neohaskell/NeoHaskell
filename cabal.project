@@ -1,5 +1,5 @@
 packages:
-  core/*.cabal
-  cli/*.cabal
-  flux/*.cabal
-  plugins/clippy/*.cabal
+  */*.cabal
+
+package nhcli
+  ghc-options: "-fplugin=Clippy"
