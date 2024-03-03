@@ -1,12 +1,11 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE TypeApplications #-}
 
 module Clippy (
   plugin,
 ) where
 
-import Control.Exception (SomeException, tryJust)
+import Clippy.Rules qualified as Rules
 import Data.Function
 import Data.IORef
 import Data.String (fromString)
@@ -14,14 +13,12 @@ import Data.Text qualified as T
 import Data.Text.ICU (regex)
 import Data.Text.ICU.Replace (replaceAll)
 import Dhall hiding (map)
-import GHC.Data.Bag (mapBag, unionBags, unitBag)
-import GHC.Driver.Errors
+import GHC.Data.Bag (mapBag, unionBags)
 import GHC.Plugins hiding (Rule, (<>))
 import GHC.Tc.Plugin
 import GHC.Tc.Types (TcLclEnv (tcl_errs), TcPlugin (..), TcPluginResult (TcPluginOk))
 import GHC.Types.Error (mkMessages, partitionMessages)
 import GHC.Utils.Error
-import GHC.Utils.Logger (initLogger)
 import Prelude hiding (print)
 
 
@@ -34,26 +31,13 @@ plugin =
             TcPlugin
               { tcPluginInit = pure (),
                 tcPluginSolve = \_ _ _ _ -> pure $ TcPluginOk [] [],
-                tcPluginStop = const $ loadConfig >>= either cantInitializeWarning replaceMessages
+                tcPluginStop = const $ loadConfig >>= replaceMessages
               },
       pluginRecompile = purePlugin
     }
 
 
-newtype Config = Config {rules :: [Rule]} deriving (Generic)
-
-
-instance FromDhall Config
-
-
-data Rule = Rule
-  { match :: Text,
-    print :: Text
-  }
-  deriving (Generic)
-
-
-instance FromDhall Rule
+newtype Config = Config {rules :: [Rules.Rule]} deriving (Generic)
 
 
 data PEnv = PEnv
@@ -63,22 +47,10 @@ data PEnv = PEnv
   }
 
 
-loadConfig :: TcPluginM (Either String Config)
+loadConfig :: TcPluginM Config
 loadConfig =
-  tcPluginIO
-    . tryJust (Just . show @SomeException)
-    $ inputFile auto "./.clippy.dhall"
-
-
-cantInitializeWarning :: String -> TcPluginM ()
-cantInitializeWarning cause = do
-  env <- getTopEnv
-  let dynFlags = hsc_dflags env
-  logger <- tcPluginIO initLogger
-  let _span = mkGeneralSrcSpan $ mkFastString "ghc-clippy-plugin"
-  let msgDoc = text "Clippy plugin couldn't start. Cause:" $$ text cause
-  let warning = mkPlainWarnMsg _span msgDoc
-  tcPluginIO $ printOrThrowWarnings logger dynFlags $ unitBag warning
+  pure
+    (Config Rules.rules)
 
 
 replaceMessages :: Config -> TcPluginM ()
@@ -136,8 +108,8 @@ replaceText :: PEnv -> Text -> Text
 replaceText env t = foldr replaceRule t (rules . config $ env)
 
 
-replaceRule :: Rule -> Text -> Text
-replaceRule rule = replaceAll (regex [] $ rule & match) (fromString . T.unpack $ rule & print)
+replaceRule :: Rules.Rule -> Text -> Text
+replaceRule rule = replaceAll (regex [] $ rule & Rules.match) (fromString . T.unpack $ rule & Rules.print)
 
 
 wrapGroup :: Text -> [SDoc] -> [SDoc]

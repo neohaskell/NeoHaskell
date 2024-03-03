@@ -1,7 +1,7 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE OverloadedStrings #-}
 
-module Clippy.Rules (Rule (..), config) where
+module Clippy.Rules (Rule (..), rules) where
 
 import Data.Text (Text)
 import GHC.Generics (Generic)
@@ -15,8 +15,8 @@ data Rule = Rule
 
 
 -- Define your configuration as a list of rules directly in Haskell.
-config :: [Rule]
-config =
+rules :: [Rule]
+rules =
   [ Rule "(>>[ICS]>)|(<[ICS]<<)|(>[ICS]>)|(<[ICS]<)" "",
     Rule "Couldn't match type" "Couldn't match",
     Rule "               with" "          with",

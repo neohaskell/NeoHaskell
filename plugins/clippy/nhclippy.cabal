@@ -21,7 +21,6 @@ library
   ghc-options: -fobject-code -Wall -Werror
   build-depends:
       base ^>=4.16.4.0
-    , dhall
     , ghc ^>=9.2
     , text
     , text-icu
