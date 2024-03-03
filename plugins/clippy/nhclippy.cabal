@@ -1,0 +1,29 @@
+cabal-version:  3.4
+name:           nhclippy
+version:        0.0.0
+synopsis:       Clippy plugin for NeoHaskell
+description:    NeoHaskell is a dialect of Haskell that is focused on newcomer-friendliness and productivity.
+homepage:       https://neohaskell.org
+license:        Apache-2.0
+author:         Nikita Tchayka
+maintainer:     nhclippy@nickseagull.dev
+copyright:
+build-type:     Simple
+
+library
+  exposed-modules:
+      Clippy,
+      Clippy.Rules
+  -- other-modules:
+  --     Paths_ghc_clippy_plugin
+  hs-source-dirs:
+      src
+  ghc-options: -fobject-code -Wall -Werror
+  build-depends:
+      base ^>=4.16.4.0
+    , dhall
+    , ghc ^>=9.2
+    , text
+    , text-icu
+    , text-regex-replace
+  default-language: GHC2021

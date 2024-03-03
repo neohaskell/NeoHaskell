@@ -1,8 +1,10 @@
 {
   "cSpell.words": [
     "Acculumator",
+    "clippy",
     "Defaultable",
     "foldl",
+    "fprint",
     "NOINLINE",
     "OVERLAPPABLE",
     "snoc"

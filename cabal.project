@@ -2,3 +2,4 @@ packages:
   core/*.cabal
   cli/*.cabal
   flux/*.cabal
+  plugins/clippy/*.cabal
