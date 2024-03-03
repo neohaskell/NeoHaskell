@@ -9,11 +9,12 @@ import Clippy.Rules qualified as Rules
 import Data.Function
 import Data.IORef
 import Data.String (fromString)
+import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Text.ICU (regex)
 import Data.Text.ICU.Replace (replaceAll)
-import Dhall hiding (map)
 import GHC.Data.Bag (mapBag, unionBags)
+import GHC.Generics (Generic)
 import GHC.Plugins hiding (Rule, (<>))
 import GHC.Tc.Plugin
 import GHC.Tc.Types (TcLclEnv (tcl_errs), TcPlugin (..), TcPluginResult (TcPluginOk))
