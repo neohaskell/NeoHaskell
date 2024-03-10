@@ -4,7 +4,9 @@
 module Neo.Build where
 
 import Core
+import HaskellCompatibility.Conversion qualified as Convert
 import Options.Applicative
+import Options.Applicative.Types qualified as OptParse
 import Promise qualified
 import Schema qualified
 import Schema.Types
@@ -41,6 +43,19 @@ schema = Schema.do
         defaultsTo = 1
       }
   Schema.defines Args {..}
+
+
+toParser :: Schema a -> Parser a
+toParser s = case s of
+  Schema.NullSchema o -> OptParse.NilP (Convert.toLegacy o)
+  Schema.PropertySchema options -> OptParse.OptP (makeOptP options)
+  Schema.PartialSchema f innerSchema -> OptParse.MultP (toParser f) (toParser innerSchema)
+  Schema.AlternativeSchema left right -> OptParse.AltP (toParser left) (toParser right)
+  Schema.ContinuationSchema innerSchema f -> OptParse.BindP (toParser innerSchema) (f .> toParser)
+
+
+makeOptP :: a
+makeOptP = todo -- TODO: Implement makeOptP
 
 
 start :: Promise Void

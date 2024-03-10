@@ -7,11 +7,14 @@ import Bytes (Bytes (..))
 import Char
 import Data.ByteString (ByteString)
 import Data.Either qualified as GHC
+import Data.Maybe qualified as GHC
 import Data.Text (Text)
 import Data.Vector (Vector)
 import GHC.IO qualified as GHC
 import HaskellCompatibility.List qualified as HaskellList
 import HaskellCompatibility.String qualified as HaskellString
+import Optional (Optional)
+import Optional qualified
 import Promise
 import Result
 import String
@@ -66,6 +69,17 @@ instance LegacyConvertible (GHC.Either err ok) (Result ok err) where
   fromLegacy either = case either of
     GHC.Left a -> Result.Error a
     GHC.Right b -> Result.Ok b
+
+
+instance LegacyConvertible (GHC.Maybe a) (Optional a) where
+  fromLegacy maybe = case maybe of
+    GHC.Nothing -> Optional.None
+    GHC.Just a -> Optional.Some a
+
+
+  toLegacy optional = case optional of
+    Optional.None -> GHC.Nothing
+    Optional.Some a -> GHC.Just a
 
 
 instance LegacyConvertible ByteString Bytes where
