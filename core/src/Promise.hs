@@ -4,12 +4,17 @@ module Promise (
   runAsMain,
   fromIO,
   map,
+  yield,
+  andThen,
+  (>>=),
 ) where
 
 -- TODO: Move to compatibility
 import Control.Applicative qualified as HsApplicative
 import Data.Functor qualified as HsFunctor
 import HaskellCompatibility.IO
+import HaskellCompatibility.Monad qualified as Monad
+import Pipe
 import Void (Void)
 
 
@@ -17,7 +22,9 @@ import Void (Void)
 -- evaluated in the future and will return a
 -- `value`.
 -- You await for them using '<-' in a 'do' block.
-newtype Promise value = INTERNAL_CORE_PROMISE_CONSTRUCTOR (IO value)
+newtype Promise value = INTERNAL_CORE_PROMISE_CONSTRUCTOR
+  { value :: IO value
+  }
 
 
 -- | 'wrap' is a constructor for 'Promise's.
@@ -47,3 +54,20 @@ runAsMain (INTERNAL_CORE_PROMISE_CONSTRUCTOR io) =
 fromIO :: IO value -> Promise value
 fromIO io =
   INTERNAL_CORE_PROMISE_CONSTRUCTOR io
+
+
+andThen :: (value -> Promise value2) -> Promise value -> Promise value2
+andThen function (INTERNAL_CORE_PROMISE_CONSTRUCTOR io) =
+  io
+    |> Monad._andThen (function .> value)
+    |> INTERNAL_CORE_PROMISE_CONSTRUCTOR
+
+
+yield :: value -> Promise value
+yield value =
+  Monad._yield value
+    |> INTERNAL_CORE_PROMISE_CONSTRUCTOR
+
+
+(>>=) :: Promise value -> (value -> Promise value2) -> Promise value2
+(>>=) a b = andThen b a

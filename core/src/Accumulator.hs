@@ -4,6 +4,8 @@ module Accumulator (
   push,
   accumulate,
   update,
+  andThen,
+  yield,
 ) where
 
 import Control.Monad.Trans.State qualified as GhcState
@@ -12,7 +14,6 @@ import Operators
 import Record
 import Traits.Addable
 import Traits.Defaultable
-import Traits.Dsl
 
 
 -- | `Accumulator` is a type that allows to accumulate values in
@@ -38,24 +39,18 @@ data AccumulatorDsl someType result = AcculumatorDsl
 
 
 -- TODO: Make traits have the `impl` suffix.
-andThenImpl :: (input -> AccumulatorDsl someType output) -> AccumulatorDsl someType input -> AccumulatorDsl someType output
-andThenImpl callback self =
+andThen ::
+  (input -> AccumulatorDsl someType output) -> AccumulatorDsl someType input -> AccumulatorDsl someType output
+andThen callback self =
   self.value
     |> Monad._andThen (callback .> value)
     |> AcculumatorDsl
 
 
-yieldImpl :: value -> AccumulatorDsl someType value
-yieldImpl value =
+yield :: value -> AccumulatorDsl someType value
+yield value =
   Monad._yield value
     |> AcculumatorDsl
-
-
-instance Dsl (AccumulatorDsl someType) where
-  andThen = andThenImpl
-
-
-  yield = yieldImpl
 
 
 -- | Pushes a value into the accumulator.

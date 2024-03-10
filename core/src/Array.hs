@@ -109,7 +109,7 @@ appendArray (INTERNAL_CORE_ARRAY_CONSTRUCTOR v1) (INTERNAL_CORE_ARRAY_CONSTRUCTO
 -- | Flatten an array of arrays.
 flatten :: Array (Array item) -> Array item
 flatten self =
-  reduce appendArray empty self
+  reduce empty appendArray self
 
 
 -- | Apply a transformation function to each element of the array.

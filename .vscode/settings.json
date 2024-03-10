@@ -5,6 +5,7 @@
     "Defaultable",
     "foldl",
     "fprint",
+    "GADT",
     "NOINLINE",
     "OVERLAPPABLE",
     "snoc"
