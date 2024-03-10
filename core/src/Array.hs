@@ -131,13 +131,13 @@ dropIf predicate self = do
 
 
 -- | Combines elements of an array using a binary function.
-reduce :: (otherItem -> item -> otherItem) -> otherItem -> Array item -> otherItem
-reduce f z (INTERNAL_CORE_ARRAY_CONSTRUCTOR vector) = Vector.foldl f z vector
+reduce :: otherItem -> (otherItem -> item -> otherItem) -> Array item -> otherItem
+reduce z f (INTERNAL_CORE_ARRAY_CONSTRUCTOR vector) = Vector.foldl f z vector
 
 
 -- | Combines elements of an array using a binary function, starting from the right.
-reduceFromRight :: (item -> otherItem -> otherItem) -> otherItem -> Array item -> otherItem
-reduceFromRight f z (INTERNAL_CORE_ARRAY_CONSTRUCTOR vector) = Vector.foldr f z vector
+reduceFromRight :: otherItem -> (item -> otherItem -> otherItem) -> Array item -> otherItem
+reduceFromRight z f (INTERNAL_CORE_ARRAY_CONSTRUCTOR vector) = Vector.foldr f z vector
 
 
 -- | Adds an item to the end of the array
