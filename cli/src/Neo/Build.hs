@@ -4,11 +4,9 @@
 module Neo.Build where
 
 import Core
-import Data.Functor qualified as Functor
 import Data.Monoid qualified as Monoid
-import Data.Typeable qualified as Ghc
+import Data.String qualified as Ghc
 import HaskellCompatibility.Conversion qualified as Convert
-import Language.Haskell.TH qualified as TH
 import Options.Applicative
 import Options.Applicative qualified as OptParse
 import Options.Applicative.Types qualified as OptParse
@@ -60,10 +58,10 @@ toOptParser s = case s of
   Schema.ContinuationSchema innerSchema f -> OptParse.BindP (toOptParser innerSchema) (f .> toOptParser)
 
 
-
-propToOptParser :: forall a. PropertyOptions a -> Parser a
+propToOptParser :: PropertyOptions a -> Parser a
 propToOptParser options = do
-  let parser = $(foo options)
+  let reader = getReader options
+  let parser = OptParse.option reader
   parser
     ( long (options.name |> Convert.toLegacy)
         Monoid.<> metavar (options.placeholder |> Convert.toLegacy)
@@ -72,6 +70,14 @@ propToOptParser options = do
         Monoid.<> value (options.defaultsTo)
         Monoid.<> (if options.hidden then OptParse.hidden else Monoid.mempty)
     )
+
+
+getReader :: PropertyOptions a -> OptParse.ReadM a
+getReader options =
+  case options.schemaType of
+    SchemaText -> unsafeCoerce OptParse.str
+    _ -> todo
+
 
 start :: Promise Void
 start = Promise.do
@@ -82,7 +88,7 @@ start = Promise.do
   --       <> progDesc "Print a greeting for TARGET"
   --       <> header "hello - a test for optparse-applicative"
   --   )
-  args <- Promise.fromIO (execParser opts)
+  _ <- Promise.fromIO (execParser opts)
   print "Hello, World!"
 
 

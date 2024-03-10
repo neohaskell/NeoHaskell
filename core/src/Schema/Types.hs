@@ -1,3 +1,5 @@
+{-# LANGUAGE QualifiedDo #-}
+
 module Schema.Types (
   Schema (..),
   PropertyOptions (..),
@@ -6,12 +8,9 @@ module Schema.Types (
   apply,
   SchemaOperation (..),
   SchemaType (..),
-  foo,
 ) where
 
-import Control.Applicative qualified as GHC
 import HaskellCompatibility.Syntax
-import Language.Haskell.TH qualified as TH
 import Optional qualified
 import Pipe
 import Record
@@ -98,10 +97,3 @@ instance (Defaultable a) => SchemaOperation PropertyOptions a where
 
 instance SchemaOperation Schema a where
   convert x = x
-
-
-foo :: TH.Q (PropertyOptions a -> TH.Exp)
-foo = GHC.pure \options -> case options.schemaType of
-  SchemaText -> [e|strOption|]
-  SchemaBool -> [e|switch|]
-  SchemaInt -> [e|option auto|]
