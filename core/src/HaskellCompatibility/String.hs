@@ -1,12 +1,15 @@
+{-# OPTIONS_GHC -Wno-orphans #-}
+
 module HaskellCompatibility.String (
   stringToCharList,
   stringToDataText,
-  fromString,
+  HaskellCompatibility.String.fromString,
   mapText,
   applyToText,
 ) where
 
 import Char (Char)
+import Data.String (IsString (..))
 import Data.Text qualified as Text
 import HaskellCompatibility.List (HaskellList)
 import Pipe ((|>))
@@ -67,3 +70,7 @@ applyToText :: (Text.Text -> a) -> String -> a
 applyToText f (INTERNAL_CORE_STRING_CONSTRUCTOR text) =
   f text
 {-# INLINE applyToText #-}
+
+
+instance IsString String where
+  fromString = HaskellCompatibility.String.fromString

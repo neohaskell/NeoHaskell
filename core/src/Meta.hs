@@ -4,6 +4,8 @@ module Meta (
   Macro,
   Declaration,
   DeclarationMacro,
+  typed,
+  TypeReference,
 ) where
 
 import GHC.TypeLits qualified as GHC
@@ -23,3 +25,10 @@ type Declaration = TH.Dec
 
 
 type DeclarationMacro = Macro [Declaration]
+
+
+data TypeReference someType = TypeReference
+
+
+typed :: forall someType. TypeReference someType
+typed = TypeReference

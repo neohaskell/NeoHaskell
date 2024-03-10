@@ -7,11 +7,13 @@ module Schema.Common (
   PropertyOptions (..),
   bool,
   int,
+  field,
 ) where
 
 import Bool
 import Debug.ToDo (todo)
 import Int
+import Meta (TypeReference)
 import Schema.Types
 import String
 import Traits.Defaultable
@@ -27,6 +29,10 @@ bool = defaultValue
 
 int :: PropertyOptions Int
 int = defaultValue
+
+
+field :: forall a. (Defaultable a) => TypeReference a -> PropertyOptions a
+field _ = defaultValue
 
 
 andThen :: (input -> Schema output) -> Schema input -> Schema output

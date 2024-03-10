@@ -5,9 +5,13 @@ module Schema.Types (
   yield,
   apply,
   SchemaOperation (..),
+  SchemaType (..),
+  foo,
 ) where
 
+import Control.Applicative qualified as GHC
 import HaskellCompatibility.Syntax
+import Language.Haskell.TH qualified as TH
 import Optional qualified
 import Pipe
 import Record
@@ -40,15 +44,20 @@ apply :: Schema (input -> output) -> Schema input -> Schema output
 apply partialSchema inputSchema = PartialSchema partialSchema inputSchema
 
 
--- We could go ahead and define PropertyOptions like this
---
+data SchemaType
+  = SchemaText
+  | SchemaBool
+  | SchemaInt
+
+
 data PropertyOptions a = PropertyOptions
   { name :: String,
     description :: String,
     shorthand :: Char,
     defaultsTo :: a,
     hidden :: Bool,
-    placeholder :: String
+    placeholder :: String,
+    schemaType :: SchemaType
   }
 
 
@@ -60,7 +69,8 @@ instance (Defaultable a) => Defaultable (PropertyOptions a) where
         shorthand = ' ',
         defaultsTo = defaultValue,
         hidden = False,
-        placeholder = ""
+        placeholder = "",
+        schemaType = SchemaText
       }
 
 
@@ -73,7 +83,8 @@ mapDefault callback options = do
       shorthand = options.shorthand,
       defaultsTo = newDefaultsTo,
       hidden = options.hidden,
-      placeholder = options.placeholder
+      placeholder = options.placeholder,
+      schemaType = SchemaText
     }
 
 
@@ -87,3 +98,10 @@ instance (Defaultable a) => SchemaOperation PropertyOptions a where
 
 instance SchemaOperation Schema a where
   convert x = x
+
+
+foo :: TH.Q (PropertyOptions a -> TH.Exp)
+foo = GHC.pure \options -> case options.schemaType of
+  SchemaText -> [e|strOption|]
+  SchemaBool -> [e|switch|]
+  SchemaInt -> [e|option auto|]
