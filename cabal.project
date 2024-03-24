@@ -1,5 +1,2 @@
 packages:
   */*.cabal
-
-package nhcli
-  ghc-options: "-fplugin=Clippy"
