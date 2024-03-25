@@ -9,5 +9,6 @@
     "NOINLINE",
     "OVERLAPPABLE",
     "snoc"
-  ]
+  ],
+  "haskell.manageHLS": "PATH"
 }

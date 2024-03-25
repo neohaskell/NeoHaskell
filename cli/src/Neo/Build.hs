@@ -25,9 +25,8 @@ data Args = Args
 
 schema :: Schema Args
 schema = Schema.do
-  name <-
-    Schema.text
-      { name = "name",
+  name <- Schema.text
+      {
         description = "Name to greet in the application",
         shorthand = 'n',
         defaultsTo = "World"
