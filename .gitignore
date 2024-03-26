@@ -1,3 +1,9 @@
+# Devenv
+.devenv*
+devenv.local.nix
+
+# direnv
+.direnv
 dist
 dist-*
 cabal-dev
