@@ -5,7 +5,7 @@ module Neo.Build where
 
 import Core
 import Data.Monoid qualified as Monoid
-import Data.String qualified as Ghc
+import Data.String qualified as GHC
 import HaskellCompatibility.Conversion qualified as Convert
 import Options.Applicative
 import Options.Applicative qualified as OptParse
@@ -25,9 +25,9 @@ data Args = Args
 
 schema :: Schema Args
 schema = Schema.do
-  name <- Schema.text
-      {
-        description = "Name to greet in the application",
+  name <-
+    Schema.text
+      { description = "Name to greet in the application",
         shorthand = 'n',
         defaultsTo = "World"
       }
@@ -74,7 +74,7 @@ propToOptParser options = do
 getReader :: PropertyOptions a -> OptParse.ReadM a
 getReader options =
   case options.schemaType of
-    SchemaText -> unsafeCoerce OptParse.str
+    SchemaText -> unsafeCoerce (OptParse.str @GHC.String)
     _ -> todo
 
 

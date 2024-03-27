@@ -10,5 +10,6 @@
     "OVERLAPPABLE",
     "snoc"
   ],
-  "haskell.manageHLS": "PATH"
+  "haskell.manageHLS": "PATH",
+  "nixEnvSelector.nixFile": "${workspaceFolder}/devenv.nix"
 }
