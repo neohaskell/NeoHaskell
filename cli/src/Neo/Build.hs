@@ -25,61 +25,25 @@ data Args = Args
   }
   deriving (Reflect.TypeInfo)
 
+record' #Person do
+  description "A person"
+  property @"name" do
+    description "The name of the person"
+    shorthand 'n'
+  property @"age" do
+    description "The age of the person"
+    shorthand 'a'
+
 
 schema :: Schema Args
 schema = record do
   property @"name" definition do
     description "Name to greet in the application"
-    shorthand "n"
+    shorthand 'n'
 
 
 instance Schematized Args where
   schema_impl = schema
-
-
-argsParser :: Parser Args
-argsParser = do
-  let schemaFoo = schema |> Schema.getDefinition
-  case schemaFoo of
-    Schema.RecordSchemaDefinition recordSchema -> makeParser recordSchema
-    _ -> todo
-
-
-makeParser :: RecordSchema -> Parser Args
-makeParser recordSchema =
-  (recordSchema.recordProperties ?? [])
-    |> Array.applyToEach makePropertyParser
-    |> LegacyList.toList
-    |> Functor.fmap (Functor.fmap _)
-
-
-longNH :: String -> Mod OptionFields a
-longNH name = Convert.toLegacy name |> long
-
-
-helpNH :: String -> Mod OptionFields a
-helpNH descTxt = Convert.toLegacy descTxt |> help
-
-
-makePropertyParser :: (Ghc.IsString a, Ghc.Read a) => PropertySchema -> Parser a
-makePropertyParser propertySchema =
-  do
-    let propName = propertySchema.propertyName ?? ""
-    let longOption = longNH (propName)
-    let shortOption = short (propertySchema.propertyShorthand ?? 'A')
-    let helpOption = helpNH (propertySchema.propertyDescription ?? "NO HELP")
-    let optParser =
-          case propertySchema.propertySchema ?? todo of
-            Schema.PrimitiveSchemaDefinition primitiveSchema -> do
-              case primitiveSchema of
-                Schema.StringSchema -> strOption
-                Schema.IntSchema -> option auto
-                _ -> todo
-            _ -> todo
-    [longOption, shortOption, helpOption]
-      |> LegacyList.toList
-      |> Monoid.mconcat
-      |> optParser
 
 
 start :: Promise Void

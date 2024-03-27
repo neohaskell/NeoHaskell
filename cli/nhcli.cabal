@@ -13,7 +13,6 @@ build-type:         Simple
 common common_cfg
     ghc-options:    -Wall
                     -Werror
-                    -fplugin=Clippy
     default-extensions:
       BlockArguments
       DataKinds
@@ -33,8 +32,7 @@ common common_cfg
 
 
     build-depends:
-      optparse-applicative,
-      nhclippy
+      optparse-applicative
 
 library
     import:           common_cfg
@@ -45,9 +43,8 @@ library
       Neo.Build
     -- other-modules:
     -- other-extensions:
-    build-depends:    base ^>=4.16.4.0,
-                      nhcore,
-                      nhclippy
+    build-depends:    base ^>=4.18,
+                      nhcore
     hs-source-dirs:   src
     default-language: GHC2021
 
@@ -60,7 +57,7 @@ test-suite nhcli-test
     hs-source-dirs:   test
     main-is:          Main.hs
     build-depends:
-        base ^>=4.16.4.0,
+        base ^>=4.18,
         nhcore,
         nhcli
 
@@ -68,7 +65,7 @@ executable neo
     import:           common_cfg
     main-is:          Main.hs
     hs-source-dirs:   app
-    build-depends:    base ^>=4.16.4.0,
+    build-depends:    base ^>=4.18,
                       nhcore,
                       nhcli
     default-language: GHC2021

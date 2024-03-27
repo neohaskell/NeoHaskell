@@ -8,5 +8,6 @@
     "NOINLINE",
     "OVERLAPPABLE",
     "snoc"
-  ]
+  ],
+  "typewriterAutoScroll.enable": false
 }

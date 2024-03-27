@@ -1,3 +1,5 @@
+{-# LANGUAGE QualifiedDo #-}
+
 module Traits.Schema (
   Schematized (..),
   SchemaDefinition (..),
@@ -11,6 +13,7 @@ module Traits.Schema (
   definition,
   Schema,
   getDefinition,
+  record',
 ) where
 
 import Accumulator qualified
@@ -18,10 +21,14 @@ import Array (Array)
 import Array qualified
 import Bool (Bool)
 import Char (Char)
+import Control.Applicative qualified as Ghc
 import Debug.ToDo (todo)
+import HaskellCompatibility.Conversion qualified as Convert
+import HaskellCompatibility.List qualified as Compat
 import HaskellCompatibility.Syntax
 import Int (Int)
 import Label
+import Language.Haskell.TH qualified as TH
 import Operators
 import Optional (Optional (..))
 import Record
@@ -30,6 +37,7 @@ import String (String)
 import Traits.Defaultable (Defaultable (..))
 import Traits.Dsl (Dsl (..), (>>))
 import Void (Void)
+import Prelude qualified
 
 
 -- | `SchemaBuilder` is a data type that allows building a `Schema` for a record in a monadic way.
@@ -184,9 +192,9 @@ instance SchemaDescriptor RecordSchemaBuilder where
 
 
 data PropertySchema = PropertySchema
-  { propertyName :: Optional String,
-    propertyDescription :: Optional String,
-    propertyShorthand :: Optional Char,
+  { propertyName :: String,
+    propertyDescription :: String,
+    propertyShorthand :: Char,
     propertySchema :: Optional SchemaDefinition
   }
 
@@ -194,9 +202,9 @@ data PropertySchema = PropertySchema
 instance Defaultable PropertySchema where
   defaultValue =
     PropertySchema
-      { propertyName = None,
-        propertyDescription = None,
-        propertyShorthand = None,
+      { propertyName = "",
+        propertyDescription = "",
+        propertyShorthand = ' ',
         propertySchema = None
       }
 
@@ -259,16 +267,16 @@ instance Dsl (PropertySchemaBuilder someType) where
 
 instance SchemaDescriptor PropertySchemaBuilder where
   description txt = PropertySchemaBuilder do
-    let addDescription propertySchema = propertySchema {propertyDescription = Some txt}
+    let addDescription propertySchema = propertySchema {propertyDescription = txt}
     Accumulator.update addDescription
   named txt = PropertySchemaBuilder do
-    let addName propertySchema = propertySchema {propertyName = Some txt}
+    let addName propertySchema = propertySchema {propertyName = txt}
     Accumulator.update addName
 
 
-shorthand :: String -> PropertySchemaBuilder someType ()
-shorthand txt = PropertySchemaBuilder do
-  let addShorthand propertySchema = propertySchema {propertyShorthand = Some txt}
+shorthand :: Char -> PropertySchemaBuilder someType ()
+shorthand chr = PropertySchemaBuilder do
+  let addShorthand propertySchema = propertySchema {propertyShorthand = chr}
   Accumulator.update addShorthand
 
 
@@ -284,3 +292,50 @@ class (Reflect.TypeInfo someType) => Schematized someType where
 
 definition :: forall name. (Label.Literal name) => Label name
 definition = Label.Label
+
+
+--- TH
+
+{-
+This `record` function allows writing a record definition like:
+
+record "Person" do
+  description "A person"
+  property #name do
+    description "The name of the person"
+    shorthand 'n'
+  property #age do
+    description "The age of the person"
+    shorthand 'a'
+
+Which results in the type signature of record being
+
+record :: String -> SchemaBuilder someType () -> Q [Dec]
+
+So it will at least generate a data type like
+
+data Person = Person
+  { name :: String,
+    age :: Int
+  }
+
+-}
+record' :: TH.Name -> RecordSchemaBuilder someType () -> TH.Q [TH.Dec]
+record' _ _ = Prelude.do
+  let recordName = todo -- Convert.toLegacy name |> TH.mkName
+  -- let recordSchema = do
+  --       named name
+  --       builder
+  -- let x = Accumulator.accumulate recordSchema.value
+  rr <-
+    TH.dataD
+      ( Array.empty
+          |> Compat.toList
+          |> TH.cxt @TH.Q
+      )
+      recordName
+      (Array.empty |> Compat.toList)
+      (Optional.None @TH.Kind |> Convert.toLegacy)
+      (Array.empty |> Compat.toList)
+      (Array.empty |> Compat.toList)
+  Ghc.pure ([rr] |> Compat.toList)
