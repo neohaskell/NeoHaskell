@@ -19,6 +19,8 @@ module Array (
   reduceFromRight,
   dropIf,
   push,
+  dropMap,
+  dropNones,
   -- -- * Transformations
   -- reverse,
   -- intersperse,
@@ -67,9 +69,13 @@ module Array (
 ) where
 
 import Bool (Bool, not)
+import Data.Maybe qualified as Maybe
 import Data.Vector (Vector)
 import Data.Vector qualified as Vector
+import Function
 import Int (Int)
+import Optional (Optional)
+import Optional qualified
 import Pipe
 
 
@@ -143,6 +149,23 @@ reduceFromRight z f (INTERNAL_CORE_ARRAY_CONSTRUCTOR vector) = Vector.foldr f z 
 -- | Adds an item to the end of the array
 push :: item -> Array item -> Array item
 push item (INTERNAL_CORE_ARRAY_CONSTRUCTOR vector) = INTERNAL_CORE_ARRAY_CONSTRUCTOR (Vector.snoc vector item)
+
+
+-- | Applies a function to each element, dropping the element if the function returns `Optional.None`.
+dropMap :: (item -> Optional otherItem) -> Array item -> Array otherItem
+dropMap transformer self = do
+  let legacyTransformation item =
+        case transformer item of
+          Optional.Some transformedItem -> Maybe.Just transformedItem
+          Optional.None -> Maybe.Nothing
+  applyToVector (Vector.mapMaybe legacyTransformation) self
+{-# INLINE dropMap #-}
+
+
+-- | Drop all `Optional.None` values from the array.
+dropNones :: Array (Optional item) -> Array item
+dropNones = dropMap unchanged
+{-# INLINE dropNones #-}
 
 
 -- Additional functions to be implemented...

@@ -1,9 +1,14 @@
 module Neo (
-  ) where
+  init,
+) where
 
+import Core
+import Neo.Build qualified as Build
 
--- import Core
 
 -- appConfig = App.config do
 --   handle @SomeCommand someHandler
 --   handle @SomeCommand someHandler
+
+init :: Promise Void
+init = Build.init

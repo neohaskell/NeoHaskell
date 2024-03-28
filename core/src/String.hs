@@ -1,8 +1,10 @@
 module String (
   String (INTERNAL_CORE_STRING_CONSTRUCTOR),
   append,
+  isEmpty,
 ) where
 
+import Bool (Bool)
 import Data.Text qualified as Text
 import HaskellCompatibility.Generic (Generic)
 
@@ -20,3 +22,8 @@ newtype String
 append :: String -> String -> String
 append (INTERNAL_CORE_STRING_CONSTRUCTOR s1) (INTERNAL_CORE_STRING_CONSTRUCTOR s2) =
   INTERNAL_CORE_STRING_CONSTRUCTOR (Text.append s1 s2)
+
+
+-- | Checks if a string is empty.
+isEmpty :: String -> Bool
+isEmpty (INTERNAL_CORE_STRING_CONSTRUCTOR s) = Text.null s

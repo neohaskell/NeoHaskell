@@ -78,15 +78,15 @@ getReader options =
     _ -> todo
 
 
-start :: Promise Void
-start = Promise.do
-  let opts = todo
-  -- info
-  --   (sample <**> helper)
-  --   ( fullDesc
-  --       <> progDesc "Print a greeting for TARGET"
-  --       <> header "hello - a test for optparse-applicative"
-  --   )
+init :: Promise Void
+init = Promise.do
+  let opts =
+        info
+          (toOptParser schema <**> helper)
+          ( fullDesc
+              Monoid.<> progDesc ("Print a greeting for TARGET" |> Convert.toLegacy)
+              Monoid.<> header ("hello - a test for optparse-applicative" |> Convert.toLegacy)
+          )
   _ <- Promise.fromIO (execParser opts)
   print "Hello, World!"
 

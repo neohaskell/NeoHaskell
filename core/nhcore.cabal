@@ -41,6 +41,8 @@ library
       Bytes,
       String,
       Default,
+      Function,
+      Cli.Codec,
       Map,
       Traits.Addable,
       Traits.Applicable,

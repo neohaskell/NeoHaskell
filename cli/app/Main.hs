@@ -1,7 +1,7 @@
 import Core
+import Neo qualified
 import Promise qualified
 
 
 main :: MainFunction
-main = Promise.runAsMain do
-  print "I know kung fu."
+main = Promise.runAsMain Neo.init
