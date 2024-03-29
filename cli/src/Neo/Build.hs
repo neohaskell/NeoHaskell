@@ -3,6 +3,7 @@
 
 module Neo.Build where
 
+import Cli.Codec qualified as Codec
 import Core
 import Data.Monoid qualified as Monoid
 import Data.String qualified as GHC
@@ -11,8 +12,6 @@ import Options.Applicative
 import Options.Applicative qualified as OptParse
 import Options.Applicative.Types qualified as OptParse
 import Promise qualified
-import Schema qualified
-import Schema.Types
 import Unsafe.Coerce (unsafeCoerce)
 
 
@@ -23,8 +22,8 @@ data Args = Args
   }
 
 
-schema :: Schema Args
-schema = Schema.do
+schema :: Codec.Decoder Args
+schema = Codec.do
   name <-
     Schema.text
       { description = "Name to greet in the application",
@@ -46,49 +45,6 @@ schema = Schema.do
         defaultsTo = 1
       }
   Schema.defines Args {..}
-
-
-toOptParser :: Schema a -> Parser a
-toOptParser s = case s of
-  Schema.NullSchema o -> OptParse.NilP (Convert.toLegacy o)
-  Schema.PropertySchema options -> (propToOptParser options)
-  Schema.PartialSchema f innerSchema -> OptParse.MultP (toOptParser f) (toOptParser innerSchema)
-  Schema.AlternativeSchema left right -> OptParse.AltP (toOptParser left) (toOptParser right)
-  Schema.ContinuationSchema innerSchema f -> OptParse.BindP (toOptParser innerSchema) (f .> toOptParser)
-
-
-propToOptParser :: PropertyOptions a -> Parser a
-propToOptParser options = do
-  let reader = getReader options
-  let parser = OptParse.option reader
-  parser
-    ( long (options.name |> Convert.toLegacy)
-        Monoid.<> metavar (options.placeholder |> Convert.toLegacy)
-        Monoid.<> help (options.description |> Convert.toLegacy)
-        -- Monoid.<> showDefault
-        Monoid.<> value (options.defaultsTo)
-        Monoid.<> (if options.hidden then OptParse.hidden else Monoid.mempty)
-    )
-
-
-getReader :: PropertyOptions a -> OptParse.ReadM a
-getReader options =
-  case options.schemaType of
-    SchemaText -> unsafeCoerce (OptParse.str @GHC.String)
-    _ -> todo
-
-
-init :: Promise Void
-init = Promise.do
-  let opts =
-        info
-          (toOptParser schema <**> helper)
-          ( fullDesc
-              Monoid.<> progDesc ("Print a greeting for TARGET" |> Convert.toLegacy)
-              Monoid.<> header ("hello - a test for optparse-applicative" |> Convert.toLegacy)
-          )
-  _ <- Promise.fromIO (execParser opts)
-  print "Hello, World!"
 
 
 greet :: Args -> Promise Void
