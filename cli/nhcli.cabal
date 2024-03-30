@@ -14,6 +14,7 @@ common common_cfg
     ghc-options:    -Wall
                     -Werror
     default-extensions:
+      ApplicativeDo
       BlockArguments
       DataKinds
       NoImplicitPrelude
@@ -26,6 +27,7 @@ common common_cfg
       OverloadedLists
       OverloadedLabels
       OverloadedRecordDot
+      QualifiedDo
       DuplicateRecordFields
       NamedFieldPuns
       TypeFamilies

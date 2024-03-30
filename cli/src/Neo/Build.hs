@@ -1,18 +1,15 @@
+{-# LANGUAGE ApplicativeDo #-}
 {-# LANGUAGE QualifiedDo #-}
 {-# LANGUAGE RecordWildCards #-}
 
 module Neo.Build where
 
+import Cli.Codec (Options (..))
 import Cli.Codec qualified as Codec
 import Core
-import Data.Monoid qualified as Monoid
-import Data.String qualified as GHC
-import HaskellCompatibility.Conversion qualified as Convert
-import Options.Applicative
-import Options.Applicative qualified as OptParse
-import Options.Applicative.Types qualified as OptParse
+import Optional qualified
 import Promise qualified
-import Unsafe.Coerce (unsafeCoerce)
+import Traits.Defaultable (with)
 
 
 data Args = Args
@@ -25,30 +22,33 @@ data Args = Args
 schema :: Codec.Decoder Args
 schema = Codec.do
   name <-
-    Schema.text
-      { description = "Name to greet in the application",
-        shorthand = 'n',
-        defaultsTo = "World"
-      }
+    Codec.text
+      with
+        { description = "Name to greet in the application",
+          shorthand = 'n',
+          defaultsTo = Optional.Some "World"
+        }
   quiet <-
-    Schema.bool
-      { name = "quiet",
-        description = "Whether to be quiet",
-        shorthand = 'q',
-        defaultsTo = False
-      }
+    Codec.bool
+      with
+        { name = "quiet",
+          description = "Whether to be quiet",
+          shorthand = 'q',
+          defaultsTo = Optional.Some False
+        }
   enthusiasm <-
-    Schema.int
-      { name = "enthusiasm",
-        description = "How enthusiastically to greet",
-        shorthand = 'e',
-        defaultsTo = 1
-      }
-  Schema.defines Args {..}
+    Codec.int
+      with
+        { name = "enthusiasm",
+          description = "How enthusiastically to greet",
+          shorthand = 'e',
+          defaultsTo = Optional.Some 1
+        }
+  Codec.return Args {..}
 
 
 greet :: Args -> Promise Void
-greet args = do
+greet args = Promise.do
   print ("Hello, " + args.name + "!")
 
 {-

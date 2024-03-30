@@ -7,6 +7,8 @@ module Promise (
   yield,
   andThen,
   (>>=),
+  pure,
+  return,
 ) where
 
 -- TODO: Move to compatibility
@@ -71,3 +73,11 @@ yield value =
 
 (>>=) :: Promise value -> (value -> Promise value2) -> Promise value2
 (>>=) a b = andThen b a
+
+
+pure :: value -> Promise value
+pure = yield
+
+
+return :: value -> Promise value
+return = yield

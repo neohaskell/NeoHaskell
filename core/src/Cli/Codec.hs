@@ -8,11 +8,19 @@ module Cli.Codec (
   bool,
   applyTo,
   map,
+  yield,
+  (Prelude.<*>),
+  Prelude.pure,
+  Prelude.fmap,
+  Prelude.return,
+  (Prelude.>>=),
+  Monad.join,
 ) where
 
 import Array qualified
 import Bool
 import Control.Applicative qualified as Applicative
+import Control.Monad qualified as Monad
 import Data.Functor qualified as Functor
 import Data.Monoid qualified as Monoid
 import HaskellCompatibility.Conversion qualified as Convert
@@ -26,9 +34,10 @@ import Record
 import String qualified
 import Traits.Defaultable
 import Types
+import Prelude qualified
 
 
-data Options a = PropertyOptions
+data Options a = Options
   { name :: String,
     description :: String,
     shorthand :: Char,
@@ -40,7 +49,7 @@ data Options a = PropertyOptions
 
 instance Defaultable (Options a) where
   defaultValue =
-    PropertyOptions
+    Options
       { name = "",
         description = "",
         shorthand = ' ',
@@ -66,8 +75,8 @@ bool = codec (OptParse.switch)
 
 
 yield :: a -> Decoder a
-yield value =
-  INTERNAL_CORE_CODEC_CONSTRUCTOR (Applicative.pure value)
+yield = Applicative.pure
+{-# INLINE yield #-}
 
 
 map :: (a -> b) -> Decoder a -> Decoder b
@@ -80,12 +89,19 @@ applyTo (INTERNAL_CORE_CODEC_CONSTRUCTOR parser) (INTERNAL_CORE_CODEC_CONSTRUCTO
   INTERNAL_CORE_CODEC_CONSTRUCTOR ((selfParser Applicative.<*> parser))
 
 
-andThen :: (a -> Decoder b) -> Decoder a -> Decoder b
-andThen f parser =
-  -- x >>= f = f <$> x <*> pure ()
-  -- but in terms of map, applyTo, and yield
-  map f parser
-    |> applyTo _
+instance Functor.Functor Decoder where
+  fmap :: (a -> b) -> Decoder a -> Decoder b
+  fmap = map
+
+
+instance Applicative.Applicative Decoder where
+  pure :: a -> Decoder a
+  pure value =
+    INTERNAL_CORE_CODEC_CONSTRUCTOR (Applicative.pure value)
+
+
+  (<*>) :: Decoder (input -> output) -> Decoder input -> Decoder output
+  (<*>) = Prelude.flip applyTo
 
 
 -- Private
