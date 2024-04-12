@@ -4,7 +4,7 @@
 
 module Neo.Build where
 
-import Cli.Codec (Options (..))
+import Cli.Codec (CodecConfig (..), Options (..))
 import Cli.Codec qualified as Codec
 import Core
 import Optional qualified
@@ -53,8 +53,15 @@ greet args = Promise.do
 
 
 init :: Promise Void
-init =
-  print "It's chewsday innit"
+init = Promise.do
+  args <-
+    Codec.decode
+      schema
+      with
+        { progDesc = "Print a greeting for NAME",
+          header = "YAHAHOOOO"
+        }
+  greet args
 
 {-
 data Sample = Sample

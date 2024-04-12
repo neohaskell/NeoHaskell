@@ -1,3 +1,4 @@
+{-# LANGUAGE QualifiedDo #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
 
 module Cli.Codec (
@@ -15,23 +16,30 @@ module Cli.Codec (
   Prelude.return,
   (Prelude.>>=),
   Monad.join,
+  decode,
+  CodecConfig (..),
 ) where
 
 import Array qualified
 import Bool
+import Console (print)
 import Control.Applicative qualified as Applicative
 import Control.Monad qualified as Monad
 import Data.Functor qualified as Functor
 import Data.Monoid qualified as Monoid
+import Debug
 import HaskellCompatibility.Conversion qualified as Convert
 import HaskellCompatibility.List qualified as Compat
 import HaskellCompatibility.Syntax
+import Int qualified
 import Operators
 import Optional qualified
 import Options.Applicative qualified as OptParse
 import Options.Applicative.Builder.Internal qualified as OptParserInternal
+import Promise qualified
 import Record
 import String qualified
+import Traits.Addable
 import Traits.Defaultable
 import Types
 import Prelude qualified
@@ -57,6 +65,35 @@ instance Defaultable (Options a) where
         isHidden = False,
         placeholder = ""
       }
+
+
+data CodecConfig = CodecConfig
+  { progDesc :: String,
+    header :: String
+  }
+
+
+instance Defaultable CodecConfig where
+  defaultValue =
+    CodecConfig
+      { progDesc = "",
+        header = ""
+      }
+
+
+decode :: forall a. Decoder a -> CodecConfig -> Promise a
+decode (INTERNAL_CORE_CODEC_CONSTRUCTOR parser) config =
+  Promise.do
+    print "Decoding"
+    let opts =
+          OptParse.info
+            (parser Applicative.<**> OptParse.helper)
+            ( OptParse.fullDesc
+                Monoid.<> OptParse.progDesc (config.progDesc |> Convert.toLegacy)
+                Monoid.<> OptParse.header (config.header |> Convert.toLegacy)
+            )
+    OptParse.execParser opts
+      |> Promise.fromIO
 
 
 newtype Decoder a = INTERNAL_CORE_CODEC_CONSTRUCTOR (OptParse.Parser a)
@@ -113,6 +150,7 @@ codec ::
   Options value ->
   Decoder value
 codec parser props = do
+  let _ = Debug.report "Building codec"
   let nameOption =
         if String.isEmpty props.name
           then Optional.None
@@ -144,9 +182,9 @@ codec parser props = do
               |> Convert.toLegacy
               |> OptParse.metavar @someFields @value
               |> Optional.Some
-  let defaultsToOption =
-        props.defaultsTo
-          |> Optional.applyToContents (OptParse.value @someFields @value)
+  -- let defaultsToOption =
+  --       props.defaultsTo
+  --         |> Optional.applyToContents (OptParse.value @someFields @value)
   let hiddenOption =
         if not props.isHidden
           then Optional.None
@@ -154,8 +192,10 @@ codec parser props = do
             OptParse.hidden @someFields @value
               |> Optional.Some
   let optionalOptions =
-        [nameOption, descriptionOption, shorthandOption, placeholderOption, defaultsToOption, hiddenOption]
+        [nameOption, descriptionOption, shorthandOption, placeholderOption, hiddenOption]
+  let _ = Debug.report "Building codec options"
   let options = Array.dropNones optionalOptions
+  let _ = Debug.report ("Build " + (Array.length options |> Int.toString) + " options")
 
   let mod =
         Compat.toList options
@@ -164,8 +204,8 @@ codec parser props = do
 
 
 instance OptParserInternal.HasValue OptParse.FlagFields where
-  hasValueDummy _ = ()
+  hasValueDummy _ = todo
 
 
 instance OptParserInternal.HasMetavar OptParse.FlagFields where
-  hasMetavarDummy _ = ()
+  hasMetavarDummy _ = todo
