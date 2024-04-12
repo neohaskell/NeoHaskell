@@ -26,15 +26,15 @@ schema = Codec.do
       with
         { description = "Name to greet in the application",
           shorthand = 'n',
-          defaultsTo = Optional.Some "World"
+          defaultsTo = Optional.Some "World",
+          placeholder = "NAME"
         }
   quiet <-
     Codec.bool
       with
         { name = "quiet",
           description = "Whether to be quiet",
-          shorthand = 'q',
-          defaultsTo = Optional.Some False
+          shorthand = 'q'
         }
   enthusiasm <-
     Codec.int
@@ -50,6 +50,11 @@ schema = Codec.do
 greet :: Args -> Promise Void
 greet args = Promise.do
   print ("Hello, " + args.name + "!")
+
+
+init :: Promise Void
+init =
+  print "It's chewsday innit"
 
 {-
 data Sample = Sample
