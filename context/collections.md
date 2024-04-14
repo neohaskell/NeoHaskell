@@ -11,6 +11,8 @@ migrate from one to another (e.g. from an Array to a Stream).
 The collection module will be imported qualified so the functions should
 never include the name of the type as a prefix or suffix.
 
+Note that the implemented functions MUST include the doc comments as per [doc comments file](./documentation.md).
+
 ## Constructors
 
 - `empty`: Constructs an empty collection
