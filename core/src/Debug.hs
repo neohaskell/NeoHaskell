@@ -1,9 +1,9 @@
 module Debug (
   unsafelyPanicAndDie,
   todo,
-  report,
+  spy,
 ) where
 
 import Debug.Panic (unsafelyPanicAndDie)
+import Debug.Spy (spy)
 import Debug.ToDo (todo)
-import Debug.Trace (report)

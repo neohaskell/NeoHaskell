@@ -20,7 +20,7 @@ library
       src
   ghc-options: -Wall -Werror
   build-depends:
-      base ^>=4.18
+      base ^>=4.17
     , ghc ^>=9.2
     , text
     , text-icu

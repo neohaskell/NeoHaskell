@@ -7,7 +7,6 @@ module Neo.Build where
 import Cli.Codec (CodecConfig (..), Options (..))
 import Cli.Codec qualified as Codec
 import Core
-import Optional qualified
 import Promise qualified
 import Traits.Defaultable (with)
 
@@ -26,7 +25,6 @@ schema = Codec.do
       with
         { description = "Name to greet in the application",
           shorthand = 'n',
-          defaultsTo = Optional.Some "World",
           placeholder = "NAME"
         }
   quiet <-
@@ -41,8 +39,7 @@ schema = Codec.do
       with
         { name = "enthusiasm",
           description = "How enthusiastically to greet",
-          shorthand = 'e',
-          defaultsTo = Optional.Some 1
+          shorthand = 'e'
         }
   Codec.return Args {..}
 

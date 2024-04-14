@@ -57,6 +57,7 @@ runAsMain (INTERNAL_CORE_PROMISE_CONSTRUCTOR io) =
 fromIO :: IO value -> Promise value
 fromIO io =
   INTERNAL_CORE_PROMISE_CONSTRUCTOR io
+{-# INLINE fromIO #-}
 
 
 andThen :: (value -> Promise value2) -> Promise value -> Promise value2
