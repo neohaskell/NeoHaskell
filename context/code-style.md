@@ -4,7 +4,7 @@ Code written in this codebase must follow the NeoHaskell code style.
 
 The NeoHaskell code style is as follows:
 
-- `NoImplicitPrelude` is enabled, take that into account. It is enabled in the cabal file so don't write the pragma on top of the file.
+- Don't include it into the file, but `NoImplicitPrelude` is enabled, take that into account.
 - Primitive types like`Int`, `Double`, `Char`, `Bool`, etc. are imported from their own NeoHaskell modules, which are named as the type itself. Not `Data.*`.
 - When importing collections, you will import them from the NeoHaskell module too, e.g. `Vector` instead of `Data.Vector` and `Maybe` instead of `Data.Maybe`.
 - Type parameters in functions will be **always** defined in a `forall` clause.
