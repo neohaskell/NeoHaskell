@@ -5,7 +5,7 @@ module Reflect (Shape, TypeInfo, typeNameOf, inspectTypeName, inspectPackageName
 import Data.Data qualified as Data
 import HaskellCompatibility.Conversion qualified as Convert
 import Operators
-import String
+import Text
 
 
 type Shape = Data.Data
@@ -14,7 +14,7 @@ type Shape = Data.Data
 type TypeInfo = Data.Typeable
 
 
-typeNameOf :: TypeInfo value => value -> String
+typeNameOf :: TypeInfo value => value -> Text
 typeNameOf value =
   Data.typeOf value
     |> Data.typeRepTyCon
@@ -22,7 +22,7 @@ typeNameOf value =
     |> Convert.fromLegacy
 
 
-moduleNameOf :: TypeInfo value => value -> String
+moduleNameOf :: TypeInfo value => value -> Text
 moduleNameOf value =
   Data.typeOf value
     |> Data.typeRepTyCon
@@ -30,7 +30,7 @@ moduleNameOf value =
     |> Convert.fromLegacy
 
 
-packageNameOf :: TypeInfo value => value -> String
+packageNameOf :: TypeInfo value => value -> Text
 packageNameOf value =
   Data.typeOf value
     |> Data.typeRepTyCon
@@ -38,7 +38,7 @@ packageNameOf value =
     |> Convert.fromLegacy
 
 
-inspectTypeName :: forall value. (TypeInfo value) => String
+inspectTypeName :: forall value. (TypeInfo value) => Text
 inspectTypeName =
   Data.typeRep (Data.Proxy @value)
     |> Data.typeRepTyCon
@@ -46,7 +46,7 @@ inspectTypeName =
     |> Convert.fromLegacy
 
 
-inspectModuleName :: forall value. (TypeInfo value) => String
+inspectModuleName :: forall value. (TypeInfo value) => Text
 inspectModuleName =
   Data.typeRep (Data.Proxy @value)
     |> Data.typeRepTyCon
@@ -54,7 +54,7 @@ inspectModuleName =
     |> Convert.fromLegacy
 
 
-inspectPackageName :: forall value. (TypeInfo value) => String
+inspectPackageName :: forall value. (TypeInfo value) => Text
 inspectPackageName =
   Data.typeRep (Data.Proxy @value)
     |> Data.typeRepTyCon

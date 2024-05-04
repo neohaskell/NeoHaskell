@@ -6,11 +6,11 @@ import HaskellCompatibility.List qualified as Convert
 import Pipe
 import Promise (Promise)
 import Promise qualified
-import String (String)
+import Text (Text)
 import System.Environment qualified as GHC
 
 
-getArgs :: Promise (Array String)
+getArgs :: Promise (Array Text)
 getArgs = Promise.do
   legacyArgs <- GHC.getArgs |> Promise.fromIO
   legacyArgs

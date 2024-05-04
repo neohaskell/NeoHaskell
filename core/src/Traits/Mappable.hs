@@ -1,13 +1,26 @@
-module Traits.Mappable (Mappable (..)) where
+module Traits.Mappable (
+  Mappable,
+  Functor (..),
+  map,
+) where
+
+import Data.Functor (Functor (..))
 
 
--- | # Mappable
+-- | The Mappable trait defines the behavior of a type that can be
+-- mapped over.
 --
--- This trait specifies that some type contains a value that can be
--- transformed using a function.
-class Mappable context where
-  -- | # map
-  --
-  -- This function is used to transform the value inside of the context
-  -- using a function.
-  map :: (input -> output) -> context input -> context output
+-- If you want to make a type mappable, you need to implement the
+-- `Functor` trait.
+type Mappable mappable =
+  Functor mappable
+
+
+-- | The `map` function applies a function to each element in a
+-- mappable value.
+map ::
+  (Mappable mappable) =>
+  (typeA -> typeB) ->
+  mappable typeA ->
+  mappable typeB
+map = fmap

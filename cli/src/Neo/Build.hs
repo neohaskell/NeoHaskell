@@ -12,7 +12,7 @@ import Traits.Defaultable (with)
 
 
 data Args = Args
-  { name :: String,
+  { name :: Text,
     quiet :: Bool,
     enthusiasm :: Int
   }
@@ -62,7 +62,7 @@ init = Promise.do
 
 {-
 data Sample = Sample
-  { hello      :: String
+  { hello      :: Text
   , quiet      :: Bool
   , enthusiasm :: Int }
 

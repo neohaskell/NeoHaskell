@@ -14,10 +14,10 @@ import GHC.TypeLits qualified as GHCTypeLits
 import HaskellCompatibility.Conversion qualified as Convert
 import Operators
 import Reflect qualified
-import String
+import Text
 
 
--- | The `Label` type is a type that represents a type-safe string. It can be used to define
+-- | The `Label` type is a type that represents a type-safe text. It can be used to define
 -- fields in records, or to define properties in a schema. It is a type-safe way to define
 -- strings that are used as keys in records or schemas.
 data Label (name :: GHC.Symbol) = Label
@@ -25,7 +25,7 @@ data Label (name :: GHC.Symbol) = Label
 
 
 -- | The `LabelLiteral` trait defines that a label is known at a compile-time. This is used
--- to ensure that the label is a type-safe string.
+-- to ensure that the label is a type-safe text.
 type Literal name = GHCTypeLits.KnownSymbol name
 
 
@@ -33,8 +33,8 @@ instance forall name. Literal name => IsLabel name (Label name) where
   fromLabel = Label
 
 
--- | Convert a `Label` to a `String`.
-toString :: forall name. (Literal name) => Label name -> String
+-- | Convert a `Label` to a `Text`.
+toString :: forall name. (Literal name) => Label name -> Text
 toString _ =
   Data.Proxy @name
     |> GHCTypeLits.symbolVal

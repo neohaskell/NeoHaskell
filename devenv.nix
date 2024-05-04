@@ -5,8 +5,9 @@
   env.GREET = "devenv";
 
   # https://devenv.sh/packages/
-  packages = [
-    pkgs.git
+  packages = with pkgs; [
+    git
+    ghcid
     # pkgs.haskell.packages.ghc963.cabal-install
     # pkgs.haskell.compiler.ghc963
     # pkgs.haskell.packages.ghc963.haskell-language-server
@@ -14,7 +15,7 @@
   ];
 
   # https://devenv.sh/scripts/
-  scripts.hello.exec = "echo hello from $GREET";
+  scripts.watch.exec = "ghcid --command=cabal repl $1";
 
   enterShell = ''
     hello

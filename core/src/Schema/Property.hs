@@ -1,3 +1,0 @@
-module Schema.Property (
-
-) where

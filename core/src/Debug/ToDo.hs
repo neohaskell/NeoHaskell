@@ -2,7 +2,7 @@ module Debug.ToDo (todo) where
 
 import Debug.Panic (unsafelyPanicAndDie)
 import GHC.Stack.Types qualified as GhcStack
-import HaskellCompatibility.String
+import HaskellCompatibility.Text
 
 
 todo :: (GhcStack.HasCallStack) => a

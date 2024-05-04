@@ -8,7 +8,7 @@ module Clippy (
 import Clippy.Rules qualified as Rules
 import Data.Function
 import Data.IORef
-import Data.String (fromString)
+import Data.Text (fromString)
 import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Text.ICU (regex)
