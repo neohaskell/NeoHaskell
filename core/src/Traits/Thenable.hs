@@ -2,6 +2,7 @@ module Traits.Thenable (
   Thenable,
   Monad (..),
   andThen,
+  yield,
 ) where
 
 import Control.Monad (Monad (..), (=<<))
@@ -20,3 +21,8 @@ andThen ::
   thenable a ->
   thenable b
 andThen = (=<<)
+
+
+-- | The `yield` function creates a `Thenable` from a value.
+yield :: (Thenable thenable) => a -> thenable a
+yield = return

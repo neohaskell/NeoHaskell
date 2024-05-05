@@ -7,14 +7,12 @@ module Core (
 
 import Console as Reexported
 import Debug as Reexported (todo)
-import Default as Reexported
 import Function as Reexported
-import HaskellCompatibility.Generic as Reexported (Generic (..))
-import HaskellCompatibility.IO as Reexported (MainFunction)
-import HaskellCompatibility.Syntax as Reexported
 import Label as Reexported (IsLabel (..))
 import Operators as Reexported
 import Record as Reexported
-import Traits.Addable as Reexported
-import Traits.Equatable as Reexported (Equatable)
+import Traits.Appendable as Reexported
+import Traits.Default as Reexported
+import Traits.Mappable as Reexported
+import Traits.Thenable as Reexported
 import Types as Reexported

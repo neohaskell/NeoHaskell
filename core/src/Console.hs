@@ -3,16 +3,11 @@ module Console (
 ) where
 
 import Data.Text.IO qualified as Text
-import HaskellCompatibility.String (applyToText)
 import Pipe ((|>))
-import Promise (Promise)
-import Promise qualified
 import Text (Text)
-import Void (Void)
+import Unit (Unit)
 
 
-print :: Text -> Promise Void
+print :: Text -> IO Unit
 print message =
-  message
-    |> applyToText Text.putStrLn
-    |> Promise.fromIO
+  Text.putStrLn message

@@ -1,13 +1,16 @@
 {
   "cSpell.words": [
     "Acculumator",
+    "Appendable",
     "clippy",
     "Defaultable",
     "foldl",
     "fprint",
     "GADT",
+    "Monoid",
     "NOINLINE",
     "OVERLAPPABLE",
+    "Semigroup",
     "snoc"
   ],
   "haskell.manageHLS": "PATH",

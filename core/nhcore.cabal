@@ -22,7 +22,6 @@ common common_cfg
       QuasiQuotes
       QualifiedDo
       ImportQualifiedPost
-      RebindableSyntax
       OverloadedStrings
       OverloadedLists
       OverloadedLabels
@@ -37,22 +36,20 @@ library
     exposed-modules:
       Core,
       Accumulator,
-      Int,
-      Char,
-      Bool,
+      Basics,
       Bytes,
       Text,
-      Default,
       Function,
       Map,
       Label,
-      Meta,
+      LinkedList,
       Process,
       Result,
-      Reflect,
-      Kinds,
       Unit,
+      Tuple,
       Types,
+      Traits.Appendable,
+      Traits.Default,
       Traits.Mappable,
       Traits.Thenable,
       Console,
@@ -61,11 +58,7 @@ library
       Debug.Panic,
       Debug.ToDo,
       Debug.Spy,
-      Pipe,
-      Array,
-      Operators,
-      Lazy,
-      Record
+      Array
 
     -- other-modules:
     -- other-extensions:
@@ -74,6 +67,7 @@ library
       ghc-prim,
       aeson,
       bytestring,
+      data-default,
       text,
       vector,
       transformers,

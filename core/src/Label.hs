@@ -11,7 +11,6 @@ import Data.Data qualified as Data
 import GHC.Base qualified as GHC
 import GHC.OverloadedLabels (IsLabel (..))
 import GHC.TypeLits qualified as GHCTypeLits
-import HaskellCompatibility.Conversion qualified as Convert
 import Operators
 import Reflect qualified
 import Text
@@ -29,7 +28,7 @@ data Label (name :: GHC.Symbol) = Label
 type Literal name = GHCTypeLits.KnownSymbol name
 
 
-instance forall name. Literal name => IsLabel name (Label name) where
+instance forall name. (Literal name) => IsLabel name (Label name) where
   fromLabel = Label
 
 

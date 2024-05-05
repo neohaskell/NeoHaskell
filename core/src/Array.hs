@@ -20,9 +20,9 @@ module Array (
   append,
   slice,
 
-  -- * Lists
+  -- * LinkedLists
   toList,
-  toIndexedList,
+  toIndexedLinkedList,
 
   -- * Transform
   map,
@@ -32,12 +32,26 @@ module Array (
   filter,
 ) where
 
+import Basics (
+  Bool,
+  Int,
+  clamp,
+  (&&),
+  (+),
+  (-),
+  (<),
+  (<=),
+  (<|),
+  (>>),
+ )
 import Data.Foldable qualified
 import Data.Vector ((!?), (++), (//))
 import Data.Vector qualified
-import List (List)
-import List qualified
+import Int
+import LinkedList (LinkedList)
+import LinkedList qualified
 import Maybe (Maybe (..))
+import Pipe
 import Tuple qualified
 import Prelude (otherwise)
 import Prelude qualified
@@ -67,7 +81,7 @@ empty =
 --
 -- > isEmpty empty == True
 isEmpty :: Array a -> Bool
-isEmpty = unwrap >> Data.Vector.null
+isEmpty = unwrap .> Data.Vector.null
 
 
 -- | Return the length of an array.
@@ -76,8 +90,8 @@ isEmpty = unwrap >> Data.Vector.null
 length :: Array a -> Int
 length =
   unwrap
-    >> Data.Vector.length
-    >> Prelude.fromIntegral
+    .> Data.Vector.length
+    .> Prelude.fromIntegral
 
 
 -- | Initialize an array. @initialize n f@ creates an array of length @n@ with
@@ -91,7 +105,7 @@ initialize n f =
   Array
     <| Data.Vector.generate
       (Prelude.fromIntegral n)
-      (Prelude.fromIntegral >> f)
+      (Prelude.fromIntegral .> f)
 
 
 -- | Creates an array with a given length, filled with a default element.
@@ -106,10 +120,10 @@ repeat n e =
     <| Data.Vector.replicate (Prelude.fromIntegral n) e
 
 
--- | Create an array from a 'List'.
-fromList :: List a -> Array a
+-- | Create an array from a 'LinkedList'.
+fromList :: LinkedList a -> Array a
 fromList =
-  Data.Vector.fromList >> Array
+  Data.Vector.fromList .> Array
 
 
 -- | Return @Just@ the element at the index or @Nothing@ if the index is out of range.
@@ -149,20 +163,20 @@ push a (Array vector) =
 -- | Create a list of elements from an array.
 --
 -- > toList (fromList [3,5,8]) == [3,5,8]
-toList :: Array a -> List a
-toList = unwrap >> Data.Vector.toList
+toList :: Array a -> LinkedList a
+toList = unwrap .> Data.Vector.toList
 
 
 -- | Create an indexed list from an array. Each element of the array will be
 -- paired with its index.
 --
--- > toIndexedList (fromList ["cat","dog"]) == [(0,"cat"), (1,"dog")]
-toIndexedList :: Array a -> List (Int, a)
-toIndexedList =
+-- > toIndexedLinkedList (fromList ["cat","dog"]) == [(0,"cat"), (1,"dog")]
+toIndexedLinkedList :: Array a -> LinkedList (Int, a)
+toIndexedLinkedList =
   unwrap
-    >> Data.Vector.indexed
-    >> Data.Vector.toList
-    >> List.map (Tuple.mapFirst Prelude.fromIntegral)
+    .> Data.Vector.indexed
+    .> Data.Vector.toList
+    .> LinkedList.map (Tuple.mapFirst Prelude.fromIntegral)
 
 
 -- | Reduce an array from the right. Read @foldr@ as fold from the right.
@@ -201,7 +215,7 @@ map f (Array vector) =
 -- > indexedMap (*) (fromList [5,5,5]) == fromList [0,5,10]
 indexedMap :: (Int -> a -> b) -> Array a -> Array b
 indexedMap f (Array vector) =
-  Array (Data.Vector.imap (Prelude.fromIntegral >> f) vector)
+  Array (Data.Vector.imap (Prelude.fromIntegral .> f) vector)
 
 
 -- | Append two arrays to a new one.
@@ -239,8 +253,8 @@ slice from to (Array vector)
     | otherwise = value
   normalize =
     Prelude.fromIntegral
-      >> handleNegative
-      >> clamp 0 len
+      .> handleNegative
+      .> clamp 0 len
   from' = normalize from
   to' = normalize to
   sliceLen = to' - from'

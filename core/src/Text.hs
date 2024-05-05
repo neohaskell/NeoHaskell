@@ -73,10 +73,7 @@ module Text (
 ) where
 
 import Array (Array)
-import Bool (Bool)
-import Char (Char)
 import Data.Text qualified
-import Int
 import Maybe (Maybe)
 import Text.Read qualified
 import Prelude (otherwise)
