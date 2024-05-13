@@ -8,7 +8,7 @@ import Accumulator (Accumulator)
 import Accumulator qualified
 import Basics
 import Data.Map.Strict qualified as HaskellMap
-import Traits.Appendable
+import Traits.Appendable qualified as Appendable
 import Traits.Default (Default (..))
 
 
@@ -20,7 +20,7 @@ instance Default (Map key value) where
   def = empty
 
 
-instance (Eq key, Ord key) => Appendable (Map key value) where
+instance (Eq key, Ord key) => Appendable.Semigroup (Map key value) where
   (<>) = merge
 
 

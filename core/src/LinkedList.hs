@@ -51,7 +51,7 @@ module LinkedList (
   unzip,
 ) where
 
-import Basics (Bool (..), Int, Num, Ord, Ordering (..), (-), (>>))
+import Basics (Bool (..), Int, Num, Ord, Ordering (..), (-), (.>))
 import Data.Foldable qualified
 import Data.List qualified
 import Data.Maybe qualified
@@ -81,7 +81,7 @@ singleton value = [value]
 -- > repeat 3 (0,0) == [(0,0),(0,0),(0,0)]
 repeat :: Int -> a -> LinkedList a
 repeat =
-  Prelude.fromIntegral >> Data.List.replicate
+  Prelude.fromIntegral .> Data.List.replicate
 
 
 -- | Create a list of numbers, every element increasing by one.
@@ -180,7 +180,7 @@ filterMap =
 -- > length [1,2,3] == 3
 length :: LinkedList a -> Int
 length =
-  Data.List.length >> Prelude.fromIntegral
+  Data.List.length .> Prelude.fromIntegral
 
 
 -- | Reverse a list.
@@ -441,7 +441,7 @@ tail list =
 -- > take 2 [1,2,3,4] == [1,2]
 take :: Int -> LinkedList a -> LinkedList a
 take =
-  Prelude.fromIntegral >> Data.List.take
+  Prelude.fromIntegral .> Data.List.take
 
 
 -- | Drop the first *n* members of a list.
@@ -449,7 +449,7 @@ take =
 -- > drop 2 [1,2,3,4] == [3,4]
 drop :: Int -> LinkedList a -> LinkedList a
 drop =
-  Prelude.fromIntegral >> Data.List.drop
+  Prelude.fromIntegral .> Data.List.drop
 
 
 -- | Partition a list based on some test. The first list contains all values

@@ -1,5 +1,6 @@
 module Traits.Appendable (
   Appendable,
+  Data.Semigroup.Semigroup(..),
   (++),
 ) where
 

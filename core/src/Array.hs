@@ -42,16 +42,14 @@ import Basics (
   (<),
   (<=),
   (<|),
-  (>>),
+  (.>),
  )
 import Data.Foldable qualified
 import Data.Vector ((!?), (++), (//))
 import Data.Vector qualified
-import Int
 import LinkedList (LinkedList)
 import LinkedList qualified
 import Maybe (Maybe (..))
-import Pipe
 import Tuple qualified
 import Prelude (otherwise)
 import Prelude qualified

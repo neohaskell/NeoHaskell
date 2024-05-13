@@ -73,6 +73,8 @@ module Text (
 ) where
 
 import Array (Array)
+import Array qualified
+import Basics
 import Data.Text qualified
 import Maybe (Maybe)
 import Text.Read qualified
