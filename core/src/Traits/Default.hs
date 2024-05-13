@@ -1,4 +1,4 @@
-module Traits.Default (Default, defaultValue) where
+module Traits.Default (Default (..), defaultValue) where
 
 import Data.Default
 

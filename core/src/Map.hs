@@ -6,8 +6,8 @@ module Map (
 
 import Accumulator (Accumulator)
 import Accumulator qualified
+import Basics
 import Data.Map.Strict qualified as HaskellMap
-import Operators
 import Traits.Appendable
 import Traits.Default (Default (..))
 
@@ -17,11 +17,11 @@ newtype Map key value
 
 
 instance Default (Map key value) where
-  defaultValue = empty
+  def = empty
 
 
-instance (Eq key, Ord key) => Addable (Map key value) where
-  (+) = merge
+instance (Eq key, Ord key) => Appendable (Map key value) where
+  (<>) = merge
 
 
 -- | Create an empty `Map`.
