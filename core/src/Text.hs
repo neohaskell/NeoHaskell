@@ -74,7 +74,8 @@ module Text (
 
 import Array (Array)
 import Array qualified
-import Basics
+import Basics (Bool, Float, Int, clamp, (+), (-), (.>), (<), (<.), (<=), (|>))
+import Char (Char)
 import Data.Text qualified
 import Maybe (Maybe)
 import Text.Read qualified
@@ -110,7 +111,7 @@ isEmpty = Data.Text.null
 -- > length "" == 0
 length :: Text -> Int
 length =
-  Data.Text.length >> Prelude.fromIntegral
+  Data.Text.length .> Prelude.fromIntegral
 
 
 -- | Reverse a string.
@@ -125,7 +126,7 @@ reverse = Data.Text.reverse
 -- > repeat 3 "ha" == "hahaha"
 repeat :: Int -> Text -> Text
 repeat =
-  Prelude.fromIntegral >> Data.Text.replicate
+  Prelude.fromIntegral .> Data.Text.replicate
 
 
 -- | Replace all occurrences of some substring.
@@ -149,7 +150,9 @@ append = Data.Text.append
 --
 -- > concat ["never","the","less"] == "nevertheless"
 concat :: Array Text -> Text
-concat = Data.Text.concat
+concat arr =
+  Array.toList arr
+    |> Data.Text.concat
 
 
 -- | Split a string using a given separator.
@@ -157,7 +160,9 @@ concat = Data.Text.concat
 -- > split "," "cat,dog,cow"        == ["cat","dog","cow"]
 -- > split "/" "home/evan/Desktop/" == ["home","evan","Desktop", ""]
 split :: Text -> Text -> Array Text
-split = Data.Text.splitOn
+split sep txt =
+  Data.Text.splitOn sep txt
+    |> Array.fromList
 
 
 -- | Put many strings together with a given separator.
@@ -166,21 +171,27 @@ split = Data.Text.splitOn
 -- > join " " ["cat","dog","cow"]       == "cat dog cow"
 -- > join "/" ["home","evan","Desktop"] == "home/evan/Desktop"
 join :: Text -> Array Text -> Text
-join = Data.Text.intercalate
+join txt arr =
+  Array.toList arr
+    |> Data.Text.intercalate txt
 
 
 -- | Break a string into words, splitting on chunks of whitespace.
 --
 -- > words "How are \t you? \n Good?" == ["How","are","you?","Good?"]
 words :: Text -> Array Text
-words = Data.Text.words
+words txt =
+  Data.Text.words txt
+    |> Array.fromList
 
 
 -- | Break a string into lines, splitting on newlines.
 --
 -- > lines "How are you?\nGood?" == ["How are you?", "Good?"]
 lines :: Text -> Array Text
-lines = Data.Text.lines
+lines txt =
+  Data.Text.lines txt
+    |> Array.fromList
 
 
 -- SUBSTRINGS
@@ -204,8 +215,8 @@ slice from to text
     | otherwise = value
   normalize =
     Prelude.fromIntegral
-      >> handleNegative
-      >> clamp 0 len
+      .> handleNegative
+      .> clamp 0 len
   from' = normalize from
   to' = normalize to
 
@@ -215,7 +226,7 @@ slice from to text
 -- > left 2 "Mulder" == "Mu"
 left :: Int -> Text -> Text
 left =
-  Prelude.fromIntegral >> Data.Text.take
+  Prelude.fromIntegral .> Data.Text.take
 
 
 -- | Take /n/ characters from the right side of a string.
@@ -223,7 +234,7 @@ left =
 -- > right 2 "Scully" == "ly"
 right :: Int -> Text -> Text
 right =
-  Prelude.fromIntegral >> Data.Text.takeEnd
+  Prelude.fromIntegral .> Data.Text.takeEnd
 
 
 -- | Drop /n/ characters from the left side of a string.
@@ -231,7 +242,7 @@ right =
 -- > dropLeft 2 "The Lone Gunmen" == "e Lone Gunmen"
 dropLeft :: Int -> Text -> Text
 dropLeft =
-  Prelude.fromIntegral >> Data.Text.drop
+  Prelude.fromIntegral .> Data.Text.drop
 
 
 -- | Drop /n/ characters from the right side of a string.
@@ -239,7 +250,7 @@ dropLeft =
 -- > dropRight 2 "Cigarette Smoking Man" == "Cigarette Smoking M"
 dropRight :: Int -> Text -> Text
 dropRight =
-  Prelude.fromIntegral >> Data.Text.dropEnd
+  Prelude.fromIntegral .> Data.Text.dropEnd
 
 
 -- DETECT SUBSTRINGS
@@ -276,11 +287,12 @@ endsWith = Data.Text.isSuffixOf
 -- > indexes "needle" "haystack" == []
 indexes :: Text -> Text -> Array Int
 indexes n h
-  | isEmpty n = []
+  | isEmpty n = Array.empty
   | otherwise = indexes' n h
  where
   indexes' needle haystack =
     Data.Text.breakOnAll needle haystack
+      |> Array.fromList
       |> Array.map
         ( \(lhs, _) ->
             Data.Text.length lhs
@@ -317,7 +329,7 @@ toLower = Data.Text.toLower
 -- > pad 5 ' ' "121" == " 121 "
 pad :: Int -> Char -> Text -> Text
 pad =
-  Prelude.fromIntegral >> Data.Text.center
+  Prelude.fromIntegral .> Data.Text.center
 
 
 -- | Pad a string on the left until it has a given length.
@@ -327,7 +339,7 @@ pad =
 -- > padLeft 5 '.' "121" == "..121"
 padLeft :: Int -> Char -> Text -> Text
 padLeft =
-  Prelude.fromIntegral >> Data.Text.justifyRight
+  Prelude.fromIntegral .> Data.Text.justifyRight
 
 
 -- | Pad a string on the right until it has a given length.
@@ -337,7 +349,7 @@ padLeft =
 -- > padRight 5 '.' "121" == "121.."
 padRight :: Int -> Char -> Text -> Text
 padRight =
-  Prelude.fromIntegral >> Data.Text.justifyLeft
+  Prelude.fromIntegral .> Data.Text.justifyLeft
 
 
 -- | Get rid of whitespace on both sides of a string.
@@ -390,7 +402,7 @@ toInt text =
 -- > Text.fromInt 123 == "123"
 -- > Text.fromInt -42 == "-42"
 fromInt :: Int -> Text
-fromInt = Data.Text.pack << Prelude.show
+fromInt = Data.Text.pack <. Prelude.show
 
 
 -- FLOAT CONVERSIONS
@@ -424,7 +436,7 @@ toFloat text =
 -- > Text.fromFloat -42 == "-42"
 -- > Text.fromFloat 3.9 == "3.9"
 fromFloat :: Float -> Text
-fromFloat = Data.Text.pack << Prelude.show
+fromFloat = Data.Text.pack <. Prelude.show
 
 
 -- LIST CONVERSIONS
@@ -434,7 +446,9 @@ fromFloat = Data.Text.pack << Prelude.show
 -- > toArray "abc" == ['a','b','c']
 -- > toArray "🙈🙉🙊" == ['🙈','🙉','🙊']
 toArray :: Text -> Array Char
-toArray = Data.Text.unpack
+toArray txt =
+  Data.Text.unpack txt
+    |> Array.fromList
 
 
 -- | Convert a list of characters into a Text. Can be useful if you
@@ -444,7 +458,9 @@ toArray = Data.Text.unpack
 -- > fromArray ['a','b','c'] == "abc"
 -- > fromArray ['🙈','🙉','🙊'] == "🙈🙉🙊"
 fromArray :: Array Char -> Text
-fromArray = Data.Text.pack
+fromArray arr =
+  Array.toList arr
+    |> Data.Text.pack
 
 
 -- CHAR CONVERSIONS
@@ -525,4 +541,4 @@ all = Data.Text.all
 -- > newtype MyType = MyType deriving (Show)
 -- > myTypeText = tshow MyType
 tshow :: (Prelude.Show a) => a -> Text
-tshow = Data.Text.pack << Prelude.show
+tshow = Data.Text.pack <. Prelude.show

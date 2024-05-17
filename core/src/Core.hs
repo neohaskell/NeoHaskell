@@ -5,14 +5,12 @@ module Core (
   module Reexported,
 ) where
 
-import Console as Reexported
-import Debug as Reexported (todo)
+import Basics as Reexported
 import Function as Reexported
-import Label as Reexported (IsLabel (..))
-import Operators as Reexported
-import Record as Reexported
-import Traits.Appendable as Reexported
-import Traits.Default as Reexported
-import Traits.Mappable as Reexported
-import Traits.Thenable as Reexported
-import Types as Reexported
+import Traits.Appendable as Reexported (
+  Appendable,
+  (++),
+ )
+import Traits.Default as Reexported (Default, defaultValue)
+import Traits.Mappable as Reexported (Mappable, map)
+import Traits.Thenable as Reexported (Thenable, andThen)

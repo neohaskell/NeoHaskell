@@ -35,29 +35,22 @@ library
     import:           common_cfg
     exposed-modules:
       Core,
+      Char,
       Accumulator,
       Basics,
       Bytes,
       Text,
       Function,
       Map,
-      Label,
       LinkedList,
-      Process,
       Result,
       Unit,
       Tuple,
-      Types,
       Traits.Appendable,
       Traits.Default,
       Traits.Mappable,
       Traits.Thenable,
-      Console,
       Maybe,
-      Debug,
-      Debug.Panic,
-      Debug.ToDo,
-      Debug.Spy,
       Array
 
     -- other-modules:
