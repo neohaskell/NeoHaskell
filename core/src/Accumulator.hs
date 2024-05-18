@@ -37,7 +37,6 @@ data AccumulatorDsl someType result = AcculumatorDsl
   }
 
 
--- TODO: Make traits have the `impl` suffix.
 andThen ::
   (input -> AccumulatorDsl someType output) -> AccumulatorDsl someType input -> AccumulatorDsl someType output
 andThen callback self =

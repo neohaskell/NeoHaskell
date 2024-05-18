@@ -4,6 +4,10 @@
 
 -- |  Tons of useful functions that get imported by default.
 module Basics (
+  Unit,
+  unit,
+  IO,
+
   -- * Math
   Int,
   Float,
@@ -98,9 +102,10 @@ module Basics (
 ) where
 
 import Data.Bits qualified (xor)
-import Data.Int qualified (Int64)
 import Data.Void qualified (Void, absurd)
 import GHC.Records (HasField (..))
+import IO (IO)
+import Unit (Unit, unit)
 import Prelude (otherwise)
 import Prelude qualified
 
@@ -172,7 +177,7 @@ infixr 9 .>
 -- __Note:__ @Int@ math is well-defined in the range @-2^31@ to @2^31 - 1@.
 --
 -- __Historical Note:__ The name @Int@ comes from the term [integer](https://en.wikipedia.org/wiki/Integer). It appears that the @int@ abbreviation was introduced in [ALGOL 68](https://en.wikipedia.org/wiki/ALGOL_60), shortening it from @integer@ in [ALGOL 60](https://en.wikipedia.org/wiki/ALGOL_68). Today, almost all programming languages use this abbreviation.
-type Int = Data.Int.Int64
+type Int = Prelude.Int
 
 
 -- | A @Float@ is a [floating-point number](https://en.wikipedia.org/wiki/Floating-point_arithmetic). Valid syntax for floats includes:

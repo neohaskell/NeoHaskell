@@ -1,5 +1,7 @@
 {
   "cSpell.words": [
+    "absdir",
+    "absfile",
     "Acculumator",
     "Appendable",
     "clippy",
@@ -10,6 +12,8 @@
     "Monoid",
     "NOINLINE",
     "OVERLAPPABLE",
+    "reldir",
+    "relfile",
     "Semigroup",
     "snoc"
   ],

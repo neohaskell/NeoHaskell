@@ -48,6 +48,10 @@ module Text (
   toArray,
   fromArray,
 
+  -- * LinkedList Conversions
+  toLinkedList,
+  fromLinkedList,
+
   -- * Random stuff to Text
   tshow,
 
@@ -77,6 +81,7 @@ import Array qualified
 import Basics (Bool, Float, Int, clamp, (+), (-), (.>), (<), (<.), (<=), (|>))
 import Char (Char)
 import Data.Text qualified
+import LinkedList (LinkedList)
 import Maybe (Maybe)
 import Text.Read qualified
 import Prelude (otherwise)
@@ -151,7 +156,7 @@ append = Data.Text.append
 -- > concat ["never","the","less"] == "nevertheless"
 concat :: Array Text -> Text
 concat arr =
-  Array.toList arr
+  Array.toLinkedList arr
     |> Data.Text.concat
 
 
@@ -172,7 +177,7 @@ split sep txt =
 -- > join "/" ["home","evan","Desktop"] == "home/evan/Desktop"
 join :: Text -> Array Text -> Text
 join txt arr =
-  Array.toList arr
+  Array.toLinkedList arr
     |> Data.Text.intercalate txt
 
 
@@ -459,8 +464,21 @@ toArray txt =
 -- > fromArray ['🙈','🙉','🙊'] == "🙈🙉🙊"
 fromArray :: Array Char -> Text
 fromArray arr =
-  Array.toList arr
+  Array.toLinkedList arr
     |> Data.Text.pack
+
+
+-- LINKED LIST CONVERSIONS
+
+-- | Convert a Text to a linked list of characters.
+toLinkedList :: Text -> LinkedList Char
+toLinkedList txt =
+  Data.Text.unpack txt
+
+
+-- | Convert a linked list of characters into a Text.
+fromLinkedList :: LinkedList Char -> Text
+fromLinkedList list = Data.Text.pack list
 
 
 -- CHAR CONVERSIONS

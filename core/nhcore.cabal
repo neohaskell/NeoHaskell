@@ -27,6 +27,7 @@ common common_cfg
       OverloadedLabels
       OverloadedRecordDot
       DuplicateRecordFields
+      PackageImports
       NamedFieldPuns
       StrictData
       TypeFamilies
@@ -46,6 +47,11 @@ library
       Result,
       Unit,
       Tuple,
+      Console,
+      Subprocess,
+      IO,
+      Path,
+      File,
       Traits.Appendable,
       Traits.Default,
       Traits.Mappable,
@@ -66,6 +72,8 @@ library
       transformers,
       containers,
       optparse-applicative,
+      path,
+      process,
       template-haskell
     hs-source-dirs:   src
     default-language: GHC2021

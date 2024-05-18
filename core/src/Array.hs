@@ -21,7 +21,7 @@ module Array (
   slice,
 
   -- * LinkedLists
-  toList,
+  toLinkedList,
   toIndexedLinkedList,
 
   -- * Transform
@@ -39,10 +39,10 @@ import Basics (
   (&&),
   (+),
   (-),
+  (.>),
   (<),
   (<=),
   (<|),
-  (.>),
  )
 import Data.Foldable qualified
 import Data.Vector ((!?), (++), (//))
@@ -160,9 +160,9 @@ push a (Array vector) =
 
 -- | Create a list of elements from an array.
 --
--- > toList (fromList [3,5,8]) == [3,5,8]
-toList :: Array a -> LinkedList a
-toList = unwrap .> Data.Vector.toList
+-- > toLinkedList (fromList [3,5,8]) == [3,5,8]
+toLinkedList :: Array a -> LinkedList a
+toLinkedList = unwrap .> Data.Vector.toList
 
 
 -- | Create an indexed list from an array. Each element of the array will be
