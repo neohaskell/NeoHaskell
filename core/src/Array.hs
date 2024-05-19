@@ -29,7 +29,7 @@ module Array (
   indexedMap,
   foldr,
   foldl,
-  filter,
+  takeIf,
 ) where
 
 import Basics (
@@ -194,9 +194,9 @@ foldl f value array =
 
 -- | Keep elements that pass the test.
 --
--- > filter isEven (fromList [1,2,3,4,5,6]) == (fromList [2,4,6])
-filter :: (a -> Bool) -> Array a -> Array a
-filter f (Array vector) =
+-- > takeIf isEven (fromList [1,2,3,4,5,6]) == (fromList [2,4,6])
+takeIf :: (a -> Bool) -> Array a -> Array a
+takeIf f (Array vector) =
   Array (Data.Vector.filter f vector)
 
 
