@@ -4,7 +4,7 @@ All documentation comments (doc-comments) should be clear and concise,
 they shouldn't use Haskell-specific terminology, and instead, they should
 rely on other concepts of the current codebase (the NeoHaskell codebase).
 
-The comments should be written in a way that are familiar to a junior
+The comments should be written in a way that is familiar to a junior TypeScript developer
 TypeScript developer, using concepts from TypeScript as an anchor to
 explain things better.
 
@@ -23,4 +23,4 @@ verified, the doctest will define a property based doctest like so:
 -- prop> \(Small n) -> fib n == fib (n + 2) - fib (n + 1)
 ```
 
-Comments will use markdown format instead of Haddock format.
+Comments will use Markdown format instead of Haddock format.

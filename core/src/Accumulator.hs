@@ -32,7 +32,7 @@ import Traits.Thenable qualified as Thenable
 type Accumulator value = AccumulatorDsl value ()
 
 
-data AccumulatorDsl someType result = AcculumatorDsl
+data AccumulatorDsl someType result = AccumulatorDsl
   { value :: GhcState.State someType result
   }
 

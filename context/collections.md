@@ -1,7 +1,6 @@
 # How to write collection type modules
 
-Collections are a key part of functional programming and the fact that
-their API should be somewhat standard and compatible is a key part
+Collections are a key part of functional programming, and their API should be standard and compatible is a key part
 of the developer experience behind NeoHaskell.
 
 All collection types should define the following functions in order to
