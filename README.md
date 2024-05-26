@@ -27,7 +27,7 @@ Design documents are being worked on currently for sharing progress in a stable 
 If you want to learn about NeoHaskell itself, checkout
 [the NeoHaskell website](https://neohaskell.org).
 
-This guide is intended for streamlining the process of
+This guide is intended to streamline the process of
 contributing to the NeoHaskell tooling.
 
 The repository will be a mono-repo that contains all the
@@ -58,4 +58,4 @@ When opening the project for the first time, you will be prompted to install the
 
 # Collaborate on Discord
 
-It's always better to hack with people, so why not joining the [Discord server](https://discord.gg/invite/wDj3UYzec8)?
+It's always better to hack with people, so why not join the [Discord server](https://discord.gg/invite/wDj3UYzec8)?

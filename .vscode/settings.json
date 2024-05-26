@@ -1,0 +1,22 @@
+{
+  "cSpell.words": [
+    "absdir",
+    "absfile",
+    "Acculumator",
+    "Appendable",
+    "clippy",
+    "Defaultable",
+    "foldl",
+    "fprint",
+    "GADT",
+    "Monoid",
+    "NOINLINE",
+    "OVERLAPPABLE",
+    "reldir",
+    "relfile",
+    "Semigroup",
+    "snoc"
+  ],
+  "haskell.manageHLS": "PATH",
+  "nixEnvSelector.nixFile": "${workspaceFolder}/devenv.nix"
+}
