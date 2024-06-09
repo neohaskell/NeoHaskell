@@ -1,4 +1,4 @@
-module Traits.Thenable (
+module Thenable (
   Thenable,
   Monad (..),
   andThen,

@@ -12,8 +12,8 @@ module Maybe (
 ) where
 
 import Data.Maybe (Maybe (..), fromMaybe)
-import Traits.Mappable qualified as Mappable
-import Traits.Thenable qualified as Thenable
+import Mappable qualified as Mappable
+import Thenable qualified as Thenable
 
 
 -- | Provide a default value, turning an optional value into a normal

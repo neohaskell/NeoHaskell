@@ -1,4 +1,4 @@
-module Traits.Appendable (
+module Appendable (
   Appendable,
   Data.Semigroup.Semigroup(..),
   (++),

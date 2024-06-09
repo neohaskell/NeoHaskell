@@ -1,4 +1,4 @@
-module Traits.Mappable (
+module Mappable (
   Mappable,
   Functor (..),
   map,

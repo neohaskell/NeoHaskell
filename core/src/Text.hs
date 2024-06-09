@@ -52,9 +52,6 @@ module Text (
   toLinkedList,
   fromLinkedList,
 
-  -- * Random stuff to Text
-  tshow,
-
   -- * Formatting
 
   -- | Cosmetic operations such as padding with extra characters or trimming whitespace.
@@ -552,11 +549,3 @@ any = Data.Text.any
 -- > all isDigit "heart" == False
 all :: (Char -> Bool) -> Text -> Bool
 all = Data.Text.all
-
-
--- | Get a Text representation of something Show-able.
---
--- > newtype MyType = MyType deriving (Show)
--- > myTypeText = tshow MyType
-tshow :: (Prelude.Show a) => a -> Text
-tshow = Data.Text.pack <. Prelude.show

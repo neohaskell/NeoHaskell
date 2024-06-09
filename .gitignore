@@ -31,3 +31,6 @@ cabal.project.local~
 .HTF/
 .ghc.environment.*
 .aider*
+
+# hie cradle generated automatically
+hie.yaml

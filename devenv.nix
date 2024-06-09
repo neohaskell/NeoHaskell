@@ -8,14 +8,14 @@
   packages = with pkgs; [
     git
     ghcid
+    haskellPackages.implicit-hie
   ];
 
   # https://devenv.sh/scripts/
   scripts.watch.exec = "ghcid --command=cabal repl $1";
 
   enterShell = ''
-    hello
-    git --version
+    gen-hie > hie.yaml
   '';
 
   # https://devenv.sh/languages/

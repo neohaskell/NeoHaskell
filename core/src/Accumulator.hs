@@ -10,9 +10,9 @@ module Accumulator (
 
 import Basics
 import Control.Monad.Trans.State qualified as GhcState
-import Traits.Appendable
-import Traits.Default
-import Traits.Thenable qualified as Thenable
+import Appendable
+import Default
+import Thenable qualified as Thenable
 
 
 -- | `Accumulator` is a type that allows to accumulate values in

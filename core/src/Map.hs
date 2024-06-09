@@ -8,8 +8,8 @@ import Accumulator (Accumulator)
 import Accumulator qualified
 import Basics
 import Data.Map.Strict qualified as HaskellMap
-import Traits.Appendable qualified as Appendable
-import Traits.Default (Default (..))
+import Appendable qualified as Appendable
+import Default (Default (..))
 
 
 newtype Map key value
