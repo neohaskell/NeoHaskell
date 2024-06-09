@@ -8,10 +8,6 @@
   packages = with pkgs; [
     git
     ghcid
-    # pkgs.haskell.packages.ghc963.cabal-install
-    # pkgs.haskell.compiler.ghc963
-    # pkgs.haskell.packages.ghc963.haskell-language-server
-    # (haskell-language-server.override { supportedGhcVersions = [ "96" ]; })
   ];
 
   # https://devenv.sh/scripts/
