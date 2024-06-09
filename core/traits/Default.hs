@@ -3,13 +3,23 @@
 
 module Default (Default (..), defaultValue) where
 
+import Basics
+import Char (Char)
 import Data.Default
-import Data.Monoid qualified as Monoid
+import Text (Text)
 
 
 defaultValue :: (Default value) => value
 defaultValue = def
 
 
-instance (Monoid.Monoid value) => Default value where
-  def = Monoid.mempty
+instance Default Char where
+  def = '\0'
+
+
+instance Default Text where
+  def = ""
+
+
+instance Default Bool where
+  def = False

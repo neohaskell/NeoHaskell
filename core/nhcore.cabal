@@ -13,6 +13,7 @@ build-type:         Simple
 common common_cfg
     ghc-options:    -Wall
                     -Werror
+                    -fplugin=Data.Record.Anon.Plugin
     default-extensions:
       BlockArguments
       DataKinds
@@ -62,9 +63,11 @@ library
       -- Traits
       Applicable,
       Appendable,
+      Combinable,
       Default,
       Mappable,
       Thenable,
+      ToText,
 
 
     -- other-modules:

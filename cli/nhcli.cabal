@@ -16,6 +16,7 @@ extra-doc-files:    CHANGELOG.md
 common common_cfg
     ghc-options:    -Wall
                     -Werror
+                    -fplugin=Data.Record.Anon.Plugin
     default-extensions:
       BlockArguments
       DataKinds
@@ -42,6 +43,7 @@ library
     -- other-extensions:
     build-depends:
       nhcore,
+      large-anon,
       optparse-applicative
     hs-source-dirs:   src
     default-language: GHC2021

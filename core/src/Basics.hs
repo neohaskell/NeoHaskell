@@ -48,6 +48,7 @@ module Basics (
   (&&),
   (||),
   xor,
+  Prelude.otherwise,
 
   -- * Fancier Math
   modBy,

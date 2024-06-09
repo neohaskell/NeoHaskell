@@ -1,17 +1,13 @@
-{-# OPTIONS_GHC -fplugin=Data.Record.Anon.Plugin #-}
-
 module OptionsParser (
   OptionsParser,
-  FieldInfo,
+  text,
 ) where
 
+import Combinable qualified
 import Core
 import Data.Record.Anon
-import Data.Record.Anon.Advanced qualified as Advanced
 import Data.Record.Anon.Simple (Record)
 import Data.Record.Anon.Simple qualified as Simple
-import Default (defaultValue)
-import GHC.OverloadedLabels (IsLabel (..))
 import Options.Applicative qualified as OptParse
 import Text qualified
 
@@ -29,51 +25,69 @@ type Config value =
   ]
 
 
-newtype NamedFieldToMod value = NamedFieldToMod (Text -> value -> OptParse.Mod OptParse.OptionFields value)
+text :: (SubRow (Config Text) config) => Record config -> OptionsParser Text
+text config =
+  makeModFields config
+    |> OptParse.strOption
+    |> OptionsParser
 
 
-newtype FieldInfo fieldType value = FieldInfo (OptParse.Mod fieldType value)
+makeLongMod :: Text -> OptParse.Mod OptParse.OptionFields a
+makeLongMod "" = Combinable.empty
+makeLongMod longName = OptParse.long (Text.toLinkedList longName)
 
 
-type OptionConverter value =
-  [ "long" := (Text -> OptParse.Mod OptParse.OptionFields value),
-    "short" := (Char -> OptParse.Mod OptParse.OptionFields value),
-    "metavar" := (Text -> OptParse.Mod OptParse.OptionFields value),
-    "help" := (Text -> OptParse.Mod OptParse.OptionFields value),
-    "showDefault" := (Bool -> OptParse.Mod OptParse.OptionFields value),
-    "value" := (value -> OptParse.Mod OptParse.OptionFields value)
-  ]
+makeShortMod :: Char -> OptParse.Mod OptParse.OptionFields a
+makeShortMod '\0' = Combinable.empty
+makeShortMod shortName = OptParse.short shortName
 
 
-optionConverter =
+makeMetavarMod :: Text -> OptParse.Mod OptParse.OptionFields a
+makeMetavarMod "" = Combinable.empty
+makeMetavarMod metavarName = OptParse.metavar (Text.toLinkedList metavarName)
+
+
+makeHelpMod :: Text -> OptParse.Mod OptParse.OptionFields a
+makeHelpMod "" = Combinable.empty
+makeHelpMod helpText = OptParse.help (Text.toLinkedList helpText)
+
+
+makeShowDefaultMod :: (ToText a) => Bool -> OptParse.Mod OptParse.OptionFields a
+makeShowDefaultMod False = Combinable.empty
+makeShowDefaultMod True = OptParse.showDefault
+
+
+makeValueMod ::
+  (Eq value, Default value) =>
+  value ->
+  OptParse.Mod OptParse.OptionFields value
+makeValueMod value
+  | value == defaultValue = Combinable.empty
+  | otherwise = OptParse.value value
+
+
+defaultFieldOptions :: (Default value) => Record (Config value)
+defaultFieldOptions =
   ANON
-    { long = \(longName :: Text) -> OptParse.long (Text.toLinkedList longName),
-      short = \(shortName :: Char) -> OptParse.short shortName,
-      metavar = \(metavarName :: Text) -> OptParse.metavar (Text.toLinkedList metavarName),
-      help = \(helpText :: Text) -> OptParse.help (Text.toLinkedList helpText),
-      showDefault = \(showDefault :: Bool) -> if showDefault then OptParse.showDefault else defaultValue,
-      value = \value -> OptParse.value value
+    { long = defaultValue,
+      short = defaultValue,
+      metavar = defaultValue,
+      help = defaultValue,
+      showDefault = defaultValue,
+      value = defaultValue
     }
 
 
-x =
-  ANON
-    { long = "hello" :: Text,
-      metavar = "TARGET" :: Text,
-      help = "Target for the greeting" :: Text
-    }
-
-
-y = Advanced.ap optionConverter x
-
--- foo :: (KnownFields fields) => Advanced.Record NamedFieldToMod fields -> OptParse.Mod OptParse.OptionFields a
--- foo = fold . map toModField . fromList . recordToList
-
--- toModField :: (IsLabel fieldName fieldType) => (fieldName, fieldType) -> OptParse.Mod OptParse.OptionFields a
--- toModField ("long", longName :: Text) = OptParse.long (unpack longName)
--- toModField ("short", shortName :: Char) = OptParse.short shortName
--- toModField ("metavar", metavarName :: Text) = OptParse.metavar (unpack metavarName)
--- toModField ("help", helpText :: Text) = OptParse.help (unpack helpText)
--- toModField ("showDefault", showDefault :: Bool) = OptParse.showDefault showDefault
--- toModField ("value", value) = OptParse.value value
--- toModField _ = mempty
+makeModFields ::
+  (SubRow (Config value) config, Default value, ToText value, Eq value) =>
+  Record config ->
+  OptParse.Mod OptParse.OptionFields value
+makeModFields cfg = do
+  let config = Simple.inject cfg defaultFieldOptions
+  let longMod = makeLongMod config.long
+  let shortMod = makeShortMod config.short
+  let metavarMod = makeMetavarMod config.metavar
+  let helpMod = makeHelpMod config.help
+  let showDefaultMod = makeShowDefaultMod config.showDefault
+  let valueMod = makeValueMod config.value
+  longMod ++ shortMod ++ metavarMod ++ helpMod ++ showDefaultMod ++ valueMod

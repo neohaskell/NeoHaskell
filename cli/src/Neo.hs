@@ -1,25 +1,29 @@
+{-# OPTIONS_GHC -fplugin=Data.Record.Anon.Plugin #-}
+
 module Neo (main) where
 
-import Console qualified
 import Core
 import Options.Applicative qualified as Opt
+import OptionsParser (OptionsParser)
 import OptionsParser qualified
 
 
-data Sample = Sample
+data ProgramOptions = ProgramOptions
   { hello :: Text,
     quiet :: Bool,
     enthusiasm :: Int
   }
 
 
-sample :: Opt.Parser Sample
-sample = do
+programOptionsParser :: OptionsParser ProgramOptions
+programOptionsParser = do
   hello <-
-    Opt.strOption $
-      Opt.long "hello"
-        <> Opt.metavar "TARGET"
-        <> Opt.help "Target for the greeting"
+    OptionsParser.text
+      ANON
+        { long = "hello",
+          metavar = "TARGET",
+          help = "Target for the greeting"
+        }
 
   quiet <-
     Opt.switch $
@@ -35,7 +39,7 @@ sample = do
         <> Opt.value 1
         <> Opt.metavar "INT"
 
-  yield $ Sample {hello, quiet, enthusiasm}
+  yield ProgramOptions {hello, quiet, enthusiasm}
 
 
 -- main :: IO Unit
@@ -53,6 +57,6 @@ main = greet =<< execParser opts
       )
 
 
-greet :: Sample -> IO ()
-greet (Sample h False _) = print ("Hello, " ++ h ++ "!")
+greet :: ProgramOptions -> IO ()
+greet (ProgramOptions h False _) = print ("Hello, " ++ h ++ "!")
 greet _ = print "Hi"
