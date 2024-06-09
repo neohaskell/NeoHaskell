@@ -42,28 +42,28 @@ andThen ::
 andThen callback self =
   self.value
     |> Thenable.andThen (callback .> value)
-    |> AcculumatorDsl
+    |> AccumulatorDsl
 
 
 yield :: value -> AccumulatorDsl someType value
 yield value =
   Thenable.yield value
-    |> AcculumatorDsl
+    |> AccumulatorDsl
 
 
 -- | Pushes a value into the accumulator.
 push :: (Appendable value) => value -> Accumulator value
 push value = do
   let pushToState accumulated = accumulated ++ value
-  AcculumatorDsl (GhcState.modify pushToState)
+  AccumulatorDsl (GhcState.modify pushToState)
 
 
 -- | Updates the accumulator with a callback.
 update :: (value -> value) -> Accumulator value
 update callback = do
   let updateState state = state |> callback
-  AcculumatorDsl (GhcState.modify updateState)
+  AccumulatorDsl (GhcState.modify updateState)
 
 
 accumulate :: (Default value) => Accumulator value -> value
-accumulate (AcculumatorDsl state) = GhcState.execState state defaultValue
+accumulate (AccumulatorDsl state) = GhcState.execState state defaultValue
