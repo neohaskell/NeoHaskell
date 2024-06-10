@@ -11,6 +11,7 @@
     "GADT",
     "Monoid",
     "NOINLINE",
+    "optparse",
     "OVERLAPPABLE",
     "reldir",
     "relfile",

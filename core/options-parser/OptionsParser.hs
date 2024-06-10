@@ -1,14 +1,20 @@
 module OptionsParser (
   OptionsParser,
   text,
+  parseWith,
 ) where
 
 import Combinable qualified
+import Control.Monad.Trans.Except qualified as Except
+import Control.Monad.Trans.Reader qualified as Reader
 import Core
+import Data.Either qualified as GHC
 import Data.Record.Anon
 import Data.Record.Anon.Simple (Record)
 import Data.Record.Anon.Simple qualified as Simple
 import Options.Applicative qualified as OptParse
+import Options.Applicative.Types qualified as OptParseTypes
+import Result (Result (..))
 import Text qualified
 
 
@@ -29,6 +35,38 @@ text :: (SubRow (Config Text) config) => Record config -> OptionsParser Text
 text config =
   makeModFields config
     |> OptParse.strOption
+    |> OptionsParser
+
+
+-- TODO: Move me to a compatibility layer
+resultToEither :: Result Text value -> GHC.Either OptParse.ParseError value
+resultToEither (Ok val) = GHC.Right val
+resultToEither (Err err) = GHC.Left (OptParse.ErrorMsg (Text.toLinkedList err))
+
+
+-- | Converts a simple parser function to what optparse-applicative expects
+parsingConverter :: (Text -> Result Text value) -> OptParse.ReadM value
+parsingConverter parseFunc =
+  ( \inputStr ->
+      Text.fromLinkedList inputStr
+        |> parseFunc
+        |> resultToEither
+        |> OptParse.pure
+        |> Except.ExceptT
+  )
+    |> Reader.ReaderT
+    |> OptParseTypes.ReadM
+
+
+parseWith ::
+  (SubRow (Config value) config, Default value, ToText value, Eq value) =>
+  (Text -> Result Text value) ->
+  Record config ->
+  OptionsParser value
+parseWith parseFunction config = do
+  let parser = parsingConverter parseFunction
+  makeModFields config
+    |> OptParse.option parser
     |> OptionsParser
 
 
