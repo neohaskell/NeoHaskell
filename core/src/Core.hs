@@ -11,5 +11,6 @@ import Char as Reexported (Char)
 import Console as Reexported (print, readLine)
 import Default as Reexported (Default, defaultValue)
 import Function as Reexported
+import Result as Reexported (Result)
 import Text as Reexported (Text)
 import ToText as Reexported (ToText, toText)

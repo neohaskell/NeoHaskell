@@ -100,11 +100,17 @@ module Basics (
 
   -- * Reexported for records
   HasField (..),
+  Record,
+  Pair (..),
+  ExtendsRecord,
+  mergeRecords,
 ) where
 
 import Data.Bits qualified (xor)
+import Data.Record.Anon
+import Data.Record.Anon.Plugin.Internal.Runtime (Pair (..))
+import Data.Record.Anon.Simple (Record, inject)
 import Data.Void qualified (Void, absurd)
-import GHC.Records (HasField (..))
 import IO (IO)
 import Unit (Unit, unit)
 import Prelude (otherwise)
@@ -848,3 +854,10 @@ type Never = Data.Void.Void
 -- ever calls me!
 never :: Never -> a
 never = Data.Void.absurd
+
+
+type ExtendsRecord a b = SubRow a b
+
+
+mergeRecords :: (ExtendsRecord super sub) => Record sub -> Record super -> Record super
+mergeRecords sub super = inject sub super

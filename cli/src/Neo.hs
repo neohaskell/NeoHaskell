@@ -1,22 +1,24 @@
+{-# LANGUAGE ApplicativeDo #-}
 {-# OPTIONS_GHC -fplugin=Data.Record.Anon.Plugin #-}
 
 module Neo (main) where
 
+import Applicable (Applicative (pure))
 import Core
-import Options.Applicative qualified as Opt
 import OptionsParser (OptionsParser)
 import OptionsParser qualified
 
 
-data ProgramOptions = ProgramOptions
-  { hello :: Text,
-    quiet :: Bool,
-    enthusiasm :: Int
-  }
+type Sample =
+  Record
+    [ "hello" := Text,
+      "quiet" := Bool,
+      "enthusiasm" := Int
+    ]
 
 
-programOptionsParser :: OptionsParser ProgramOptions
-programOptionsParser = do
+sample :: OptionsParser Sample
+sample = do
   hello <-
     OptionsParser.text
       ANON
@@ -26,37 +28,40 @@ programOptionsParser = do
         }
 
   quiet <-
-    Opt.switch $
-      Opt.long "quiet"
-        <> Opt.short 'q'
-        <> Opt.help "Whether to be quiet"
+    OptionsParser.flag
+      ANON
+        { long = "quiet",
+          short = 'q',
+          help = "Whether to be quiet"
+        }
 
   enthusiasm <-
-    Opt.option Opt.auto $
-      Opt.long "enthusiasm"
-        <> Opt.help "How enthusiastically to greet"
-        <> Opt.showDefault
-        <> Opt.value 1
-        <> Opt.metavar "INT"
+    OptionsParser.json
+      ANON
+        { long = "enthusiasm",
+          metavar = "INT",
+          help = "How enthusiastically to greet",
+          showDefault = True,
+          value = 1
+        }
 
-  yield ProgramOptions {hello, quiet, enthusiasm}
+  ANON {hello = hello, quiet = quiet, enthusiasm = enthusiasm}
+    |> pure
 
-
--- main :: IO Unit
--- main = Console.print "Hello world!"
 
 main :: IO ()
-main = greet =<< execParser opts
- where
-  opts =
-    info
-      (sample <**> helper)
-      ( fullDesc
-          <> progDesc "Print a greeting for TARGET"
-          <> header "hello - a test for optparse-applicative"
-      )
+main = do
+  aaa <-
+    OptionsParser.run
+      sample
+      ANON
+        { header = "hello - a test for optparse-applicative",
+          description = "Print a greeting for TARGET"
+        }
+  greet aaa
 
 
-greet :: ProgramOptions -> IO ()
-greet (ProgramOptions h False _) = print ("Hello, " ++ h ++ "!")
-greet _ = print "Hi"
+greet :: Sample -> IO ()
+greet opts
+  | opts.quiet = print "shhh, hi!"
+  | otherwise = print ("Hello, " ++ opts.hello ++ "!")

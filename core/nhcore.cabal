@@ -60,6 +60,9 @@ library
       -- OptionsParser
       OptionsParser,
 
+      -- JSON
+      Json,
+
       -- Traits
       Applicable,
       Appendable,
@@ -90,6 +93,7 @@ library
       template-haskell
     hs-source-dirs:
       src,
+      json,
       traits,
       options-parser
     default-language: GHC2021
