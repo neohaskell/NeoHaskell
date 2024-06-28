@@ -18,6 +18,7 @@ common common_cfg
                     -Werror
                     -fplugin=Data.Record.Anon.Plugin
     default-extensions:
+      ApplicativeDo
       BlockArguments
       DataKinds
       NoImplicitPrelude

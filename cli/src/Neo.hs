@@ -1,6 +1,3 @@
-{-# LANGUAGE ApplicativeDo #-}
-{-# OPTIONS_GHC -fplugin=Data.Record.Anon.Plugin #-}
-
 module Neo (main) where
 
 import Core
