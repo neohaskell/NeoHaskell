@@ -4,24 +4,27 @@ module OptionsParser (
   parseWith,
   json,
   flag,
-  yield,
   run,
 ) where
 
+import Appendable ((++))
 import Basics
+import Char (Char)
 import Combinable qualified
 import Control.Applicative qualified as Applicative
 import Control.Monad.Trans.Except qualified as Except
 import Control.Monad.Trans.Reader qualified as Reader
-import Core
 import Data.Either qualified as GHC
 import Data.Functor qualified as Functor
+import Default (Default, defaultValue)
 import Json qualified
 import Options.Applicative qualified as Opt
 import Options.Applicative qualified as OptParse
 import Options.Applicative.Types qualified as OptParseTypes
 import Result (Result (..))
+import Text (Text)
 import Text qualified
+import ToText (ToText)
 
 
 newtype OptionsParser value = OptionsParser (OptParse.Parser value)
@@ -40,11 +43,6 @@ defaultOptionParserInfo =
     { description = defaultValue,
       header = defaultValue
     }
-
-
-{-# INLINE yield #-}
-yield :: value -> OptionsParser value
-yield value = OptionsParser (OptParse.pure value)
 
 
 run ::

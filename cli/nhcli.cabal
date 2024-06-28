@@ -35,16 +35,15 @@ common common_cfg
       NamedFieldPuns
       StrictData
       TypeFamilies
+    build-depends:
+      nhcore,
+      large-anon,
 
 library
     import:           common_cfg
     exposed-modules:  Neo
     -- other-modules:
     -- other-extensions:
-    build-depends:
-      nhcore,
-      large-anon,
-      optparse-applicative
     hs-source-dirs:   src
     default-language: GHC2021
 
@@ -54,7 +53,6 @@ executable nhcli
     -- other-modules:
     -- other-extensions:
     build-depends:
-        nhcore,
         nhcli
 
     hs-source-dirs:   app
@@ -69,5 +67,4 @@ test-suite nhcli-test
     hs-source-dirs:   test
     main-is:          Main.hs
     build-depends:
-        nhcore,
         nhcli

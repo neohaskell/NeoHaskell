@@ -3,7 +3,6 @@
 
 module Neo (main) where
 
-import Applicable (Applicative (pure))
 import Core
 import OptionsParser (OptionsParser)
 import OptionsParser qualified
@@ -45,8 +44,7 @@ sample = do
           value = 1
         }
 
-  ANON {hello = hello, quiet = quiet, enthusiasm = enthusiasm}
-    |> pure
+  pure (ANON {hello = hello, quiet = quiet, enthusiasm = enthusiasm})
 
 
 main :: IO ()
