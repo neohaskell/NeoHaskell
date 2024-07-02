@@ -20,7 +20,8 @@ sample = do
       ANON
         { long = "hello",
           metavar = "TARGET",
-          help = "Target for the greeting"
+          help = "Target for the greeting",
+          short = 'h'
         }
 
   quiet <-
@@ -37,8 +38,8 @@ sample = do
         { long = "enthusiasm",
           metavar = "INT",
           help = "How enthusiastically to greet",
-          showDefault = True,
-          value = 1
+          short = 'e',
+          value = Just 1
         }
 
   pure (ANON {hello = hello, quiet = quiet, enthusiasm = enthusiasm})
@@ -46,13 +47,7 @@ sample = do
 
 main :: IO ()
 main = do
-  aaa <-
-    OptionsParser.run
-      sample
-      ANON
-        { header = "hello - a test for optparse-applicative",
-          description = "Print a greeting for TARGET"
-        }
+  aaa <- OptionsParser.run sample
   greet aaa
 
 

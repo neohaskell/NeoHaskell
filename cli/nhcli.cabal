@@ -48,7 +48,7 @@ library
     hs-source-dirs:   src
     default-language: GHC2021
 
-executable nhcli
+executable neo
     import:           common_cfg
     main-is:          Main.hs
     -- other-modules:

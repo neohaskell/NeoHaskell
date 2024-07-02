@@ -85,7 +85,7 @@ library
       vector,
       transformers,
       containers,
-      optparse-applicative,
+      opt-env-conf,
       path,
       process,
       large-anon,

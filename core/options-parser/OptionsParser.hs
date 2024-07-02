@@ -10,223 +10,167 @@ module OptionsParser (
 import Appendable ((++))
 import Basics
 import Char (Char)
-import Combinable qualified
 import Control.Applicative qualified as Applicative
-import Control.Monad.Trans.Except qualified as Except
-import Control.Monad.Trans.Reader qualified as Reader
+import Data.Aeson qualified as Json
 import Data.Either qualified as GHC
 import Data.Functor qualified as Functor
+import Data.Version qualified as Version
 import Default (Default, defaultValue)
-import Json qualified
-import Options.Applicative qualified as Opt
-import Options.Applicative qualified as OptParse
-import Options.Applicative.Types qualified as OptParseTypes
+import LinkedList (LinkedList)
+import Maybe (Maybe (..))
+import OptEnvConf qualified
 import Result (Result (..))
-import Text (Text)
-import Text qualified
+import Text (Text, fromLinkedList, toLinkedList)
 import ToText (ToText)
 
 
-newtype OptionsParser value = OptionsParser (OptParse.Parser value)
+newtype OptionsParser value = OptionsParser (OptEnvConf.Parser value)
   deriving (Functor.Functor, Applicative.Applicative)
 
 
-type OptionParserInfo =
-  [ "description" := Text,
-    "header" := Text
+run :: OptionsParser value -> IO value
+run (OptionsParser parser) = do
+  let version = Version.makeVersion [0, 0, 0]
+  OptEnvConf.runParser version parser
+
+
+type TextConfig =
+  [ "help" := Text,
+    "long" := Text,
+    "short" := Char,
+    "metavar" := Text,
+    "value" := Maybe Text
   ]
 
 
-defaultOptionParserInfo :: Record OptionParserInfo
-defaultOptionParserInfo =
+defaultTextConfig :: Record TextConfig
+defaultTextConfig =
   ANON
-    { description = defaultValue,
-      header = defaultValue
+    { help = defaultValue,
+      long = defaultValue,
+      short = defaultValue,
+      metavar = defaultValue,
+      value = Nothing
     }
 
 
-run ::
-  (ExtendsRecord OptionParserInfo info) =>
-  OptionsParser value ->
-  Record info ->
-  IO value
-run (OptionsParser parser) config = do
-  let info = mergeRecords config defaultOptionParserInfo
-  let programDescription =
-        if info.description == ""
-          then Combinable.empty
-          else
-            info.description
-              |> Text.toLinkedList
-              |> Opt.progDesc
-  let programHeader =
-        if info.header == ""
-          then Combinable.empty
-          else
-            info.header
-              |> Text.toLinkedList
-              |> Opt.header
-  let fullParser = OptParse.info (OptParse.helper OptParse.<*> parser) (programDescription ++ programHeader)
-  OptParse.execParser fullParser
+text :: (ExtendsRecord TextConfig config) => Record config -> OptionsParser Text
+text cfg = do
+  let config = mergeRecords cfg defaultTextConfig
+  let textValue = case config.value of
+        Just val -> [OptEnvConf.value val]
+        Nothing -> []
+  let options =
+        [ OptEnvConf.help (config.help |> Text.toLinkedList),
+          OptEnvConf.long (config.long |> Text.toLinkedList),
+          OptEnvConf.short config.short,
+          OptEnvConf.metavar (config.metavar |> Text.toLinkedList),
+          OptEnvConf.reader OptEnvConf.str,
+          OptEnvConf.option
+        ]
+  OptEnvConf.setting (textValue ++ options)
+    |> OptionsParser
 
 
-type OptionConfig value =
-  [ "long" := Text,
+type JsonConfig value =
+  [ "help" := Text,
+    "long" := Text,
     "short" := Char,
     "metavar" := Text,
-    "help" := Text,
-    "showDefault" := Bool,
-    "value" := value
+    "value" := Maybe value
   ]
 
 
-type FlagConfig value =
-  [ "long" := Text,
-    "short" := Char,
-    "help" := Text,
-    "showDefault" := Bool,
-    "value" := value
-  ]
-
-
-text :: (ExtendsRecord (OptionConfig Text) config) => Record config -> OptionsParser Text
-text config =
-  makeOptionFields config
-    |> OptParse.strOption
-    |> OptionsParser
+defaultJsonConfig :: (Default value) => Record (JsonConfig value)
+defaultJsonConfig =
+  ANON
+    { help = defaultValue,
+      long = defaultValue,
+      short = defaultValue,
+      metavar = defaultValue,
+      value = Nothing
+    }
 
 
 json ::
   ( Default value,
     ToText value,
     Eq value,
-    Json.Decodable value,
-    ExtendsRecord (OptionConfig value) config
+    Json.FromJSON value,
+    ExtendsRecord (JsonConfig value) config
   ) =>
   Record config ->
   OptionsParser value
-json config = parseWith Json.decodeText config
+json cfg = do
+  let config = mergeRecords cfg defaultJsonConfig
+  let parseFunction textToParse = do
+        let either = Json.eitherDecodeStrictText textToParse
+        case either of
+          GHC.Left err -> Err (Text.fromLinkedList err)
+          GHC.Right val -> Ok val
+  parseWith (parseFunction) config
 
 
-flag :: (ExtendsRecord (FlagConfig Bool) config) => Record config -> OptionsParser Bool
-flag config =
-  makeFlagFields config
-    |> OptParse.switch
+type FlagConfig =
+  [ "help" := Text,
+    "long" := Text,
+    "short" := Char,
+    "value" := Maybe Bool
+  ]
+
+
+defaultFlagConfig :: Record FlagConfig
+defaultFlagConfig =
+  ANON
+    { help = defaultValue,
+      long = defaultValue,
+      short = defaultValue,
+      value = defaultValue
+    }
+
+
+flag :: (ExtendsRecord FlagConfig config) => Record config -> OptionsParser Bool
+flag cfg = do
+  let config = mergeRecords cfg defaultFlagConfig
+  OptEnvConf.setting
+    [ OptEnvConf.help (config.help |> Text.toLinkedList),
+      OptEnvConf.long (config.long |> Text.toLinkedList),
+      OptEnvConf.short config.short,
+      OptEnvConf.switch True
+    ]
     |> OptionsParser
-
-
--- TODO: Move me to a compatibility layer
-resultToEither :: Result Text value -> GHC.Either OptParse.ParseError value
-resultToEither (Ok val) = GHC.Right val
-resultToEither (Err err) = GHC.Left (OptParse.ErrorMsg (Text.toLinkedList err))
-
-
--- | Converts a simple parser function to what optparse-applicative expects
-parsingConverter :: (Text -> Result Text value) -> OptParse.ReadM value
-parsingConverter parseFunc =
-  ( \inputStr ->
-      Text.fromLinkedList inputStr
-        |> parseFunc
-        |> resultToEither
-        |> OptParse.pure
-        |> Except.ExceptT
-  )
-    |> Reader.ReaderT
-    |> OptParseTypes.ReadM
 
 
 parseWith ::
-  (ExtendsRecord (OptionConfig value) config, Default value, ToText value, Eq value) =>
+  (ToText value) =>
   (Text -> Result Text value) ->
-  Record config ->
+  Record (JsonConfig value) ->
   OptionsParser value
-parseWith parseFunction config = do
-  let parser = parsingConverter parseFunction
-  makeOptionFields config
-    |> OptParse.option parser
+parseWith parseFunc config = do
+  let wrappedParseFunction charList = do
+        let textToParse = Text.fromLinkedList charList
+        let result = parseFunc textToParse
+        resultToEither result
+
+  let reader = OptEnvConf.eitherReader wrappedParseFunction
+
+  let defaultValueConfig = case config.value of
+        Just val -> [OptEnvConf.value val]
+        Nothing -> []
+
+  let options =
+        [ OptEnvConf.help (config.help |> Text.toLinkedList),
+          OptEnvConf.long (config.long |> Text.toLinkedList),
+          OptEnvConf.short config.short,
+          OptEnvConf.metavar (config.metavar |> Text.toLinkedList),
+          OptEnvConf.reader reader,
+          OptEnvConf.option
+        ]
+
+  OptEnvConf.setting (defaultValueConfig ++ options)
     |> OptionsParser
 
 
-makeLongMod :: (OptParse.HasName f) => Text -> OptParse.Mod f a
-makeLongMod "" = Combinable.empty
-makeLongMod longName = OptParse.long (Text.toLinkedList longName)
-
-
-makeShortMod :: (OptParse.HasName f) => Char -> OptParse.Mod f a
-makeShortMod '\0' = Combinable.empty
-makeShortMod shortName = OptParse.short shortName
-
-
-makeMetavarMod :: (OptParse.HasMetavar f) => Text -> OptParse.Mod f a
-makeMetavarMod "" = Combinable.empty
-makeMetavarMod metavarName = OptParse.metavar (Text.toLinkedList metavarName)
-
-
-makeHelpMod :: Text -> OptParse.Mod f a
-makeHelpMod "" = Combinable.empty
-makeHelpMod helpText = OptParse.help (Text.toLinkedList helpText)
-
-
-makeShowDefaultMod :: (ToText a) => Bool -> OptParse.Mod f a
-makeShowDefaultMod False = Combinable.empty
-makeShowDefaultMod True = OptParse.showDefault
-
-
-makeValueMod ::
-  (Eq value, Default value) =>
-  value ->
-  OptParse.Mod OptParse.OptionFields value
-makeValueMod value
-  | value == defaultValue = Combinable.empty
-  | otherwise = OptParse.value value
-
-
-defaultFieldOptions :: (Default value) => Record (OptionConfig value)
-defaultFieldOptions =
-  ANON
-    { long = defaultValue,
-      short = defaultValue,
-      metavar = defaultValue,
-      help = defaultValue,
-      showDefault = defaultValue,
-      value = defaultValue
-    }
-
-
-defaultFlagOptions :: Record (FlagConfig Bool)
-defaultFlagOptions =
-  ANON
-    { long = defaultValue,
-      short = defaultValue,
-      help = defaultValue,
-      showDefault = defaultValue,
-      value = defaultValue
-    }
-
-
-makeOptionFields ::
-  (ExtendsRecord (OptionConfig value) config, Default value, ToText value, Eq value) =>
-  Record config ->
-  OptParse.Mod OptParse.OptionFields value
-makeOptionFields cfg = do
-  let config = mergeRecords cfg defaultFieldOptions
-  let longMod = makeLongMod config.long
-  let shortMod = makeShortMod config.short
-  let metavarMod = makeMetavarMod config.metavar
-  let helpMod = makeHelpMod config.help
-  let showDefaultMod = makeShowDefaultMod config.showDefault
-  let valueMod = makeValueMod config.value
-  longMod ++ shortMod ++ metavarMod ++ helpMod ++ showDefaultMod ++ valueMod
-
-
-makeFlagFields ::
-  (ExtendsRecord (FlagConfig Bool) config) =>
-  Record config ->
-  OptParse.Mod OptParse.FlagFields Bool
-makeFlagFields cfg = do
-  let config = mergeRecords cfg defaultFlagOptions
-  let longMod = makeLongMod config.long
-  let shortMod = makeShortMod config.short
-  let helpMod = makeHelpMod config.help
-  let showDefaultMod = makeShowDefaultMod config.showDefault
-  longMod ++ shortMod ++ helpMod ++ showDefaultMod
+resultToEither :: Result Text value -> GHC.Either (LinkedList Char) value
+resultToEither (Ok val) = GHC.Right val
+resultToEither (Err err) = GHC.Left (Text.toLinkedList err)
