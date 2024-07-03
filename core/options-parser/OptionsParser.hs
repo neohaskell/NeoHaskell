@@ -14,7 +14,6 @@ import Control.Applicative qualified as Applicative
 import Data.Aeson qualified as Json
 import Data.Either qualified as GHC
 import Data.Functor qualified as Functor
-import Data.Version qualified as Version
 import Default (Default, defaultValue)
 import LinkedList (LinkedList)
 import Maybe (Maybe (..))
@@ -22,6 +21,7 @@ import OptEnvConf qualified
 import Result (Result (..))
 import Text (Text, fromLinkedList, toLinkedList)
 import ToText (ToText)
+import Version qualified
 
 
 newtype OptionsParser value = OptionsParser (OptEnvConf.Parser value)
@@ -30,8 +30,11 @@ newtype OptionsParser value = OptionsParser (OptEnvConf.Parser value)
 
 run :: OptionsParser value -> IO value
 run (OptionsParser parser) = do
-  let version = Version.makeVersion [0, 0, 0]
-  OptEnvConf.runParser version parser
+  let versionText = "0.0.0"
+  let ver = case Version.parse versionText of
+        Just v -> v
+        Nothing -> dieWith ("Could not parse version " ++ versionText)
+  OptEnvConf.runParser ver parser
 
 
 type TextConfig =

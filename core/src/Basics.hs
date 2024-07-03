@@ -104,12 +104,15 @@ module Basics (
   Pair (..),
   ExtendsRecord,
   mergeRecords,
+  dieWith,
 ) where
 
 import Data.Bits qualified (xor)
 import Data.Record.Anon
 import Data.Record.Anon.Plugin.Internal.Runtime (Pair (..))
 import Data.Record.Anon.Simple (Record, inject)
+import Data.Text (Text)
+import Data.Text qualified as Text
 import Data.Void qualified (Void, absurd)
 import IO (IO)
 import Unit (Unit, unit)
@@ -861,3 +864,12 @@ type ExtendsRecord a b = SubRow a b
 
 mergeRecords :: (ExtendsRecord super sub) => Record sub -> Record super -> Record super
 mergeRecords sub super = inject sub super
+
+
+-- | Crashes the program with a message. This is useful for debugging, but you
+-- should not use it in production code. If you need to report an error to the
+-- user, use a @Result@
+dieWith :: Text -> a
+dieWith msg =
+  Prelude.error (Text.unpack msg)
+{-# INLINE dieWith #-}

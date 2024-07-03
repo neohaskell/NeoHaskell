@@ -9,11 +9,13 @@ module Maybe (
 
   -- * Chaining Maybes
   andThen,
+  getOrDie,
 ) where
 
+import Basics (dieWith)
 import Data.Maybe (Maybe (..), fromMaybe)
-import Mappable qualified as Mappable
-import Thenable qualified as Thenable
+import Mappable qualified
+import Thenable qualified
 
 
 -- | Provide a default value, turning an optional value into a normal
@@ -86,3 +88,15 @@ map =
 andThen :: (a -> Maybe b) -> Maybe a -> Maybe b
 andThen =
   Thenable.andThen
+
+
+-- | Attempts to retrieve the value from a @Maybe@. If the @Maybe@ is @Nothing@,
+-- the application will crash abruptly.
+getOrDie :: Maybe a -> a
+getOrDie maybe =
+  case maybe of
+    Just value ->
+      value
+    Nothing ->
+      dieWith "Maybe.getOrDie: Got Nothing"
+{-# INLINE getOrDie #-}
