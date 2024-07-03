@@ -5,12 +5,17 @@ module OptionsParser (
   json,
   flag,
   run,
+  yield,
+  commands,
 ) where
 
 import Appendable ((++))
+import Array (Array)
+import Array qualified
 import Basics
 import Char (Char)
 import Control.Applicative qualified as Applicative
+import Control.Applicative qualified as GHC
 import Data.Aeson qualified as Json
 import Data.Either qualified as GHC
 import Data.Functor qualified as Functor
@@ -26,6 +31,10 @@ import Version qualified
 
 newtype OptionsParser value = OptionsParser (OptEnvConf.Parser value)
   deriving (Functor.Functor, Applicative.Applicative)
+
+
+yield :: value -> OptionsParser value
+yield value = GHC.pure value
 
 
 run :: OptionsParser value -> IO value
@@ -177,3 +186,25 @@ parseWith parseFunc config = do
 resultToEither :: Result Text value -> GHC.Either (LinkedList Char) value
 resultToEither (Ok val) = GHC.Right val
 resultToEither (Err err) = GHC.Left (Text.toLinkedList err)
+
+
+type CommandOptions value =
+  Record
+    [ "name" := Text,
+      "description" := Text,
+      "handler" := OptionsParser value
+    ]
+
+
+commands :: Array (CommandOptions value) -> OptionsParser value
+commands commandConfigs = do
+  let cmds =
+        commandConfigs
+          |> Array.map
+            ( \config -> do
+                let (OptionsParser handler) = config.handler
+                OptEnvConf.command (config.name |> Text.toLinkedList) (config.description |> Text.toLinkedList) (handler)
+            )
+          |> Array.toLinkedList
+
+  OptionsParser (OptEnvConf.commands cmds)

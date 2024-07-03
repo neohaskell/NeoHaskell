@@ -42,7 +42,9 @@ common common_cfg
 
 library
     import:           common_cfg
-    exposed-modules:  Neo
+    exposed-modules:
+      Neo,
+      Neo.Build
     -- other-modules:
     -- other-extensions:
     hs-source-dirs:   src

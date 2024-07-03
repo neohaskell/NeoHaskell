@@ -1,57 +1,30 @@
 module Neo (main) where
 
 import Core
+import Neo.Build qualified as Build
 import OptionsParser (OptionsParser)
 import OptionsParser qualified
 
 
-type Sample =
-  Record
-    [ "hello" := Text,
-      "quiet" := Bool,
-      "enthusiasm" := Int
+data Command
+  = Build Build.Command
+
+
+command :: OptionsParser Command
+command =
+  OptionsParser.commands
+    [ ANON
+        { name = "build",
+          description = "Build the project",
+          handler = do
+            cmd <- Build.command
+            OptionsParser.yield (Build cmd)
+        }
     ]
-
-
-sample :: OptionsParser Sample
-sample = do
-  hello <-
-    OptionsParser.text
-      ANON
-        { long = "hello",
-          metavar = "TARGET",
-          help = "Target for the greeting",
-          short = 'h'
-        }
-
-  quiet <-
-    OptionsParser.flag
-      ANON
-        { long = "quiet",
-          short = 'q',
-          help = "Whether to be quiet"
-        }
-
-  enthusiasm <-
-    OptionsParser.json
-      ANON
-        { long = "enthusiasm",
-          metavar = "INT",
-          help = "How enthusiastically to greet",
-          short = 'e',
-          value = Just 1
-        }
-
-  pure (ANON {hello = hello, quiet = quiet, enthusiasm = enthusiasm})
 
 
 main :: IO ()
 main = do
-  aaa <- OptionsParser.run sample
-  greet aaa
-
-
-greet :: Sample -> IO ()
-greet opts
-  | opts.quiet = print "shhh, hi!"
-  | otherwise = print ("Hello, " ++ opts.hello ++ "!")
+  cmd <- OptionsParser.run command
+  case cmd of
+    Build cmd -> Build.commandHandler cmd

@@ -67,6 +67,7 @@
 - ignore: {name: Avoid lambda using `infix`}
 - ignore: {name: Avoid lambda}
 - ignore: {name: Use /=}
+- ignore: {name: Use <$>}
 
 
 # Define some custom infix operators
