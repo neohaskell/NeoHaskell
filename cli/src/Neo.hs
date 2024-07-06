@@ -9,5 +9,6 @@ import OptionsParser qualified
 main :: IO ()
 main = do
   command <- OptionsParser.run Command.decoder
-  services <- Services.init
+  services <- Services.create
   Command.handler services command
+  Services.destroy services

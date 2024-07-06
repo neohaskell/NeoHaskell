@@ -1,4 +1,4 @@
-module Neo.Services (Services, init) where
+module Neo.Services (Services, create, destroy) where
 
 import Core
 
@@ -6,7 +6,13 @@ import Core
 type Services = Unit
 
 
-init :: IO Services
-init = do
-  print "Initializing services"
+create :: IO Services
+create = do
+  print "Creating services"
+  pure unit
+
+
+destroy :: Services -> IO Unit
+destroy _ = do
+  print "Destroying services"
   pure unit
