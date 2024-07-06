@@ -47,6 +47,7 @@ import Basics (
 import Data.Foldable qualified
 import Data.Vector ((!?), (++), (//))
 import Data.Vector qualified
+import GHC.IsList qualified as GHC
 import LinkedList (LinkedList)
 import LinkedList qualified
 import Maybe (Maybe (..))
@@ -60,6 +61,14 @@ import Prelude qualified
 -- dream up.
 newtype Array a = Array (Data.Vector.Vector a)
   deriving (Prelude.Eq, Prelude.Show)
+
+
+instance GHC.IsList (Array a) where
+  type Item (Array a) = a
+
+
+  fromList = fromList
+  toList = toLinkedList
 
 
 -- | Helper function to unwrap an array

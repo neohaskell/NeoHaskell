@@ -105,6 +105,7 @@ module Basics (
   ExtendsRecord,
   mergeRecords,
   dieWith,
+  Prelude.pure,
 ) where
 
 import Data.Bits qualified (xor)

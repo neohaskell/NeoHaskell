@@ -6,7 +6,6 @@ module Core (
 ) where
 
 import Appendable as Reexported ((++))
-import Applicable as Reexported (pure)
 import Basics as Reexported
 import Char as Reexported (Char)
 import Console as Reexported (print, readLine)
