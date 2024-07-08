@@ -11,15 +11,19 @@ data Command
   = Build Build.Command
 
 
+buildDecoder :: OptionsParser Command
+buildDecoder = do
+  command <- Build.decoder
+  pure (Build command)
+
+
 decoder :: OptionsParser Command
 decoder =
   OptionsParser.commands
     [ ANON
         { name = "build",
           description = "Build the project",
-          handler = do
-            command <- Build.decoder
-            pure (Build command)
+          decoder = buildDecoder
         }
     ]
 

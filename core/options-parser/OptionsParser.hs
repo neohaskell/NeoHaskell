@@ -186,7 +186,7 @@ type CommandOptions value =
   Record
     [ "name" := Text,
       "description" := Text,
-      "handler" := OptionsParser value
+      "decoder" := OptionsParser value
     ]
 
 
@@ -196,7 +196,7 @@ commands commandConfigs = do
         commandConfigs
           |> Array.map
             ( \config -> do
-                let (OptionsParser handler) = config.handler
+                let (OptionsParser handler) = config.decoder
                 OptEnvConf.command (config.name |> Text.toLinkedList) (config.description |> Text.toLinkedList) (handler)
             )
           |> Array.toLinkedList

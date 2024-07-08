@@ -103,6 +103,7 @@ module Basics (
   Record,
   Pair (..),
   ExtendsRecord,
+  MergeFields,
   mergeRecords,
   dieWith,
   Prelude.pure,
@@ -861,6 +862,9 @@ never = Data.Void.absurd
 
 
 type ExtendsRecord a b = SubRow a b
+
+
+type MergeFields a b = Data.Record.Anon.Merge a b
 
 
 mergeRecords :: (ExtendsRecord super sub) => Record sub -> Record super -> Record super

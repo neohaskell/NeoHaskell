@@ -73,6 +73,10 @@ library
       Thenable,
       ToText,
 
+      -- Architecture
+      Services,
+      Services.EventStore,
+
 
     -- other-modules:
     -- other-extensions:
@@ -94,6 +98,7 @@ library
       template-haskell
     hs-source-dirs:
       src,
+      architecture,
       json,
       traits,
       options-parser
