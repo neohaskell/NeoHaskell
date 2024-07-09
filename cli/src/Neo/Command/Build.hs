@@ -16,4 +16,4 @@ decoder = pure unit
 handler :: Services -> Command -> IO ()
 handler services _ = do
   print "Running build command"
-  services.events.register Event.BuildTriggered
+  services.events.dispatch Event.BuildTriggered

@@ -16,7 +16,8 @@
     "reldir",
     "relfile",
     "Semigroup",
-    "snoc"
+    "snoc",
+    "Unagi"
   ],
   "haskell.manageHLS": "PATH",
   "nixEnvSelector.nixFile": "${workspaceFolder}/devenv.nix"

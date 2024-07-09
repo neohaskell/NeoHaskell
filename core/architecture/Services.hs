@@ -10,7 +10,9 @@ type CoreServicesFields events =
   '["events" := (EventStore events)]
 
 
-type Make (events :: Type) (userServicesFields :: Record.Fields a) =
-  Record.MergeFields
-    (CoreServicesFields events)
-    userServicesFields
+type Make (events :: Type) (userServicesFields :: Record.Fields Type) =
+  Record
+    ( Record.MergeFields
+        (CoreServicesFields events)
+        userServicesFields
+    )

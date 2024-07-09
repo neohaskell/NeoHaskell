@@ -99,7 +99,7 @@ module Basics (
   Prelude.Num,
 
   -- * Reexported for records
-  HasField (..),
+  GHC.Records.HasField (..),
   Record,
   Pair (..),
   dieWith,
@@ -113,6 +113,8 @@ import Data.Record.Anon.Simple (Record)
 import Data.Text (Text)
 import Data.Text qualified as Text
 import Data.Void qualified (Void, absurd)
+import GHC.Records (HasField (..))
+import GHC.Stack (HasCallStack)
 import IO (IO)
 import Unit (Unit, unit)
 import Prelude (otherwise)
@@ -861,7 +863,7 @@ never = Data.Void.absurd
 -- | Crashes the program with a message. This is useful for debugging, but you
 -- should not use it in production code. If you need to report an error to the
 -- user, use a @Result@
-dieWith :: Text -> a
+dieWith :: (HasCallStack) => Text -> a
 dieWith msg =
   Prelude.error (Text.unpack msg)
 {-# INLINE dieWith #-}
