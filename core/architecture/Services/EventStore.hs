@@ -3,4 +3,6 @@ module Services.EventStore (EventStore) where
 import Core
 
 
-type EventStore = Unit
+type EventStore event =
+  '[ "register" := (event -> IO Unit)
+   ]

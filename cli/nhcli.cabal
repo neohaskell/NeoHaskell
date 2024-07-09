@@ -46,6 +46,7 @@ library
       Neo,
       Neo.Command,
       Neo.Command.Build,
+      Neo.Event,
       Neo.Services,
     -- other-modules:
     -- other-extensions:

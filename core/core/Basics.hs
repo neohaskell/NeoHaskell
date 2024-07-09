@@ -102,9 +102,6 @@ module Basics (
   HasField (..),
   Record,
   Pair (..),
-  ExtendsRecord,
-  MergeFields,
-  mergeRecords,
   dieWith,
   Prelude.pure,
 ) where
@@ -112,7 +109,7 @@ module Basics (
 import Data.Bits qualified (xor)
 import Data.Record.Anon
 import Data.Record.Anon.Plugin.Internal.Runtime (Pair (..))
-import Data.Record.Anon.Simple (Record, inject)
+import Data.Record.Anon.Simple (Record)
 import Data.Text (Text)
 import Data.Text qualified as Text
 import Data.Void qualified (Void, absurd)
@@ -859,16 +856,6 @@ type Never = Data.Void.Void
 -- ever calls me!
 never :: Never -> a
 never = Data.Void.absurd
-
-
-type ExtendsRecord a b = SubRow a b
-
-
-type MergeFields a b = Data.Record.Anon.Merge a b
-
-
-mergeRecords :: (ExtendsRecord super sub) => Record sub -> Record super -> Record super
-mergeRecords sub super = inject sub super
 
 
 -- | Crashes the program with a message. This is useful for debugging, but you

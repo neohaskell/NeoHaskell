@@ -21,6 +21,7 @@ import Default (Default, defaultValue)
 import LinkedList (LinkedList)
 import Maybe (Maybe (..))
 import OptEnvConf qualified
+import Record qualified
 import Result (Result (..))
 import Text (Text, fromLinkedList, toLinkedList)
 import ToText (ToText)
@@ -60,9 +61,9 @@ defaultTextConfig =
     }
 
 
-text :: (ExtendsRecord TextConfig config) => Record config -> OptionsParser Text
+text :: (Record.Extends TextConfig config) => Record config -> OptionsParser Text
 text cfg = do
-  let config = mergeRecords cfg defaultTextConfig
+  let config = cfg |> Record.overrideWith defaultTextConfig
   let textValue = case config.value of
         Just val -> [OptEnvConf.value val]
         Nothing -> []
@@ -103,12 +104,12 @@ json ::
     ToText value,
     Eq value,
     Json.FromJSON value,
-    ExtendsRecord (JsonConfig value) config
+    Record.Extends (JsonConfig value) config
   ) =>
   Record config ->
   OptionsParser value
 json cfg = do
-  let config = mergeRecords cfg defaultJsonConfig
+  let config = cfg |> Record.overrideWith defaultJsonConfig
   let parseFunction textToParse = do
         let either = Json.eitherDecodeStrictText textToParse
         case either of
@@ -135,9 +136,9 @@ defaultFlagConfig =
     }
 
 
-flag :: (ExtendsRecord FlagConfig config) => Record config -> OptionsParser Bool
+flag :: (Record.Extends FlagConfig config) => Record config -> OptionsParser Bool
 flag cfg = do
-  let config = mergeRecords cfg defaultFlagConfig
+  let config = cfg |> Record.overrideWith defaultFlagConfig
   OptEnvConf.setting
     [ OptEnvConf.help (config.help |> Text.toLinkedList),
       OptEnvConf.long (config.long |> Text.toLinkedList),

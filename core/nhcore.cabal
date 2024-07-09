@@ -57,6 +57,7 @@ library
       Maybe,
       Array,
       Version,
+      Record,
 
       -- OptionsParser
       OptionsParser,
@@ -97,7 +98,7 @@ library
       pretty-simple,
       template-haskell
     hs-source-dirs:
-      src,
+      core,
       architecture,
       json,
       traits,
