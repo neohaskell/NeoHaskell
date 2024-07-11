@@ -76,11 +76,8 @@ library
       Thenable,
       ToText,
 
-      -- Architecture
-      Services,
-      Services.EventStore,
-      Services.EventStore.API,
-      Services.EventStore.InMemory,
+      -- Platform
+      Platform,
 
       -- Concurrency
       AsyncIO,
@@ -110,7 +107,7 @@ library
     hs-source-dirs:
       core,
       concurrency,
-      architecture,
+      platform,
       json,
       traits,
       options-parser
