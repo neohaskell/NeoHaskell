@@ -28,15 +28,9 @@ module Char (
   fromCode,
 ) where
 
-import Basics (
-  Bool (..),
-  Int,
-  (&&),
-  (<.),
-  (<=),
- )
+import Basics
 import Data.Char qualified
-import Prelude (Char, otherwise)
+import Prelude (Char)
 import Prelude qualified
 
 

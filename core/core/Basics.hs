@@ -104,6 +104,13 @@ module Basics (
   Pair (..),
   dieWith,
   Prelude.pure,
+
+  -- * Reexported for syntax utility
+  fromInteger,
+  (<*>),
+  (>>=),
+  return,
+  fmap,
 ) where
 
 import Data.Bits qualified (xor)
@@ -117,7 +124,7 @@ import GHC.Records (HasField (..))
 import GHC.Stack (HasCallStack)
 import IO (IO)
 import Unit (Unit, unit)
-import Prelude (otherwise)
+import Prelude (otherwise, fromInteger, (<*>), return, fmap, (>>=))
 import Prelude qualified
 
 
