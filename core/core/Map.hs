@@ -1,38 +1,34 @@
-module Map (
-  Map,
-  build,
-  (-->),
-) where
+module Map
+  ( Map,
+    build,
+    empty,
+    (-->),
+  )
+where
 
 import Accumulator (Accumulator)
 import Accumulator qualified
+import Appendable qualified
 import Basics
 import Data.Map.Strict qualified as HaskellMap
-import Appendable qualified as Appendable
 import Default (Default (..))
-
 
 newtype Map key value
   = Map (HaskellMap.Map key value)
 
-
 instance Default (Map key value) where
   def = empty
 
-
 instance (Eq key, Ord key) => Appendable.Semigroup (Map key value) where
   (<>) = merge
-
 
 -- | Create an empty `Map`.
 empty :: Map key value
 empty = Map HaskellMap.empty
 
-
 -- | Merge two `Map`s.
 merge :: (Eq key, Ord key) => Map key value -> Map key value -> Map key value
 merge (Map left) (Map right) = Map (HaskellMap.union left right)
-
 
 -- | Accumulator operator to build a `Map`
 (-->) ::
@@ -44,7 +40,6 @@ merge (Map left) (Map right) = Map (HaskellMap.union left right)
   HaskellMap.singleton key value
     |> Map
     |> Accumulator.push
-
 
 -- |
 -- A builder API like this can be easily implemented through the

@@ -2,10 +2,14 @@ module Platform
   ( Command,
     CommandHandler,
     CommandHandlerRegistry,
+    globalState,
   )
 where
 
 import Core
+import IO qualified
+import Map qualified
+import Var qualified
 
 {-
 Commands (Command) are essentially a callback that is called after some side effect
@@ -65,3 +69,16 @@ type CommandHandler msg = Unknown -> IO msg
 type CommandHandlerRegistry msg = Map Text (CommandHandler msg)
 
 -- The platform loop should need to initialize the registry as an ioref or smth
+
+type Platform msg =
+  Record
+    '[ "commandHandlers" := CommandHandlerRegistry msg
+     ]
+
+-- TODO: This probably should be a concurrent var
+runtimeState :: Var (Platform msg)
+{-# NOINLINE runtimeState #-}
+runtimeState = IO.dangerouslyRun do
+  let commandHandlers = Map.empty
+  let platform = ANON {commandHandlers = commandHandlers}
+  (Var.new platform)
