@@ -34,11 +34,12 @@ newtype OptionsParser value = OptionsParser (OptEnvConf.Parser value)
 
 run :: OptionsParser value -> IO value
 run (OptionsParser parser) = do
+  let programDescription = "FNORD"
   let versionText = "0.0.0"
   let ver = case Version.parse versionText of
         Just v -> v
         Nothing -> dieWith ("Could not parse version " ++ versionText)
-  OptEnvConf.runParser ver parser
+  OptEnvConf.runParser ver programDescription parser
 
 
 type TextConfig =

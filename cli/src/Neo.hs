@@ -1,14 +1,37 @@
 module Neo (main) where
 
 import Core
-import Neo.Command qualified as Command
-import Neo.Services qualified as Services
-import OptionsParser qualified
+import File qualified
+import Path qualified
+
+
+type Model =
+  Record
+    '[ "project" := Maybe ProjectDefinition
+     ]
+
+
+type ProjectDefinition =
+  Record
+    '[ "path" := Path Absolute Directory,
+       "name" := Text,
+       "version" := Version
+     ]
+
+
+data Message
+  = ProjectFileRead ProjectDefinition
+  | BuildStarted
+
+
+init :: (Model, Command Message)
+init = do
+  let emptyModel = ANON {project = Nothing}
+  let command =
+        File.read "project.json"
+          |> Command.map ProjectFileRead
+  (emptyModel, command)
 
 
 main :: IO ()
-main = do
-  command <- OptionsParser.run Command.decoder
-  services <- Services.create
-  Command.handler services command
-  Services.destroy services
+main = print "Hello world!"

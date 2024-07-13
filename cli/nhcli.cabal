@@ -26,16 +26,20 @@ common common_cfg
       DeriveDataTypeable
       QuasiQuotes
       QualifiedDo
+      ImpredicativeTypes
       ImportQualifiedPost
       OverloadedStrings
       OverloadedLists
       OverloadedLabels
       OverloadedRecordDot
+      OverloadedRecordUpdate
+      RebindableSyntax
       DuplicateRecordFields
       PackageImports
       NamedFieldPuns
       StrictData
       TypeFamilies
+
     build-depends:
       nhcore,
       large-anon,
@@ -44,10 +48,6 @@ library
     import:           common_cfg
     exposed-modules:
       Neo,
-      Neo.Command,
-      Neo.Command.Build,
-      Neo.Event,
-      Neo.Services,
     -- other-modules:
     -- other-extensions:
     hs-source-dirs:   src

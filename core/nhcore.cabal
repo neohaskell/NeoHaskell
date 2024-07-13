@@ -16,6 +16,7 @@ common common_cfg
                     -fplugin=Data.Record.Anon.Plugin
                     -Wno-orphans
     default-extensions:
+      ApplicativeDo
       BlockArguments
       DataKinds
       NoImplicitPrelude
@@ -29,6 +30,8 @@ common common_cfg
       OverloadedLists
       OverloadedLabels
       OverloadedRecordDot
+      OverloadedRecordUpdate
+      RebindableSyntax
       DuplicateRecordFields
       PackageImports
       NamedFieldPuns
@@ -60,6 +63,8 @@ library
       Array,
       Version,
       Record,
+      Unknown,
+      Var,
 
       -- OptionsParser
       OptionsParser,
@@ -77,11 +82,13 @@ library
       ToText,
 
       -- Platform
+      Command,
       Platform,
 
       -- Concurrency
       AsyncIO,
       Channel,
+      ConcurrentVar,
 
 
     -- other-modules:

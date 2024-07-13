@@ -30,6 +30,7 @@ module Array (
   foldr,
   foldl,
   takeIf,
+  flatMap,
 ) where
 
 import Basics (
@@ -43,6 +44,7 @@ import Basics (
   (<),
   (<=),
   (<|),
+  (|>),
  )
 import Data.Foldable qualified
 import Data.Vector ((!?), (++), (//))
@@ -265,3 +267,56 @@ slice from to (Array vector)
   from' = normalize from
   to' = normalize to
   sliceLen = to' - from'
+
+
+-- | Applies a function to each element of an array and flattens the resulting arrays into a single array.
+--
+-- This function takes a function `f` and an array `array`. It applies `f` to each element of `array` and
+-- collects the resulting arrays into a single array. The resulting array is then returned.
+--
+-- The function `f` should take an element of type `a` and return an array of type `Array b`.
+--
+-- The `flatMap` function is implemented using the `map` and `foldr` functions. First, it applies `f` to each
+-- element of `array` using the `map` function. Then, it flattens the resulting arrays into a single array
+-- using the `foldr` function with the `append` function as the folding operation and `empty` as the initial
+-- value. The resulting array is then returned.
+--
+-- The `flatMap` function has the following properties:
+--
+-- prop> flatMap f empty == empty
+-- prop> flatMap f (singleton x) == f x
+-- prop> flatMap f (fromList xs) == concatMap f xs
+--
+-- where `empty` is the empty array, `singleton` creates an array with a single element, and `fromList` creates
+-- an array from a list of elements.
+--
+-- Examples:
+--
+-- >>> let array = fromList [1, 2, 3]
+-- >>> let f x = fromList [x, x + 1]
+-- >>> flatMap f array
+-- [1, 2, 2, 3, 3, 4]
+--
+-- >>> let array = fromList ["Hello", "World"]
+-- >>> let f x = fromList (words x)
+-- >>> flatMap f array
+-- ["Hello", "World"]
+--
+-- >>> let array = fromList [1, 2, 3]
+-- >>> let f x = fromList [x * 2]
+-- >>> flatMap f array
+-- [2, 4, 6]
+--
+-- This function is commonly used in functional programming to apply a function to each element of a nested
+-- data structure and flatten the resulting structure into a single level.
+flatMap ::
+  -- | The function to apply to each element of the array.
+  (a -> Array b) ->
+  -- | The input array.
+  Array a ->
+  -- | The resulting flattened array.
+  Array b
+flatMap f array =
+  array
+    |> map f
+    |> foldr append empty
