@@ -1,16 +1,20 @@
 module Json (
   Decodable,
   Encodable,
+  Aeson.FromJSON,
+  Aeson.ToJSON,
   decodeText,
   encode,
 ) where
 
-import Core
+import Basics
 import Data.Aeson qualified as Aeson
 import Data.Aeson.Text qualified as AesonText
 import Data.Either qualified as Either
 import Data.Text.Lazy qualified as Data.Text
+import Result (Result)
 import Result qualified
+import Text (Text)
 import Text qualified
 
 

@@ -71,13 +71,17 @@ module Text (
   foldr,
   any,
   all,
+  toBytes,
 ) where
 
 import Array (Array)
 import Array qualified
 import Basics
+import Bytes (Bytes)
+import Bytes qualified
 import Char (Char)
 import Data.Text qualified
+import Data.Text.Encoding qualified
 import LinkedList (LinkedList)
 import Maybe (Maybe)
 import Text.Read qualified
@@ -548,3 +552,11 @@ any = Data.Text.any
 -- > all isDigit "heart" == False
 all :: (Char -> Bool) -> Text -> Bool
 all = Data.Text.all
+
+
+-- | Converts a `Text` into `Bytes` using UTF-8 encoding.
+toBytes :: Text -> Bytes
+toBytes text =
+  text
+    |> Data.Text.Encoding.encodeUtf8
+    |> Bytes.INTERNAL_CORE_BYTES_CONSTRUCTOR

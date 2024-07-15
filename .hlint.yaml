@@ -68,6 +68,7 @@
 - ignore: {name: Avoid lambda}
 - ignore: {name: Use /=}
 - ignore: {name: Use <$>}
+- ignore: {name: Replace case with maybe}
 
 
 # Define some custom infix operators

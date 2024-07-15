@@ -73,6 +73,9 @@ library
       -- JSON
       Json,
 
+      -- YAML
+      Yaml,
+
       -- Traits
       Applicable,
       Appendable,
@@ -84,6 +87,7 @@ library
 
       -- Platform
       Command,
+      Html,
       Platform,
 
       -- Concurrency
@@ -103,6 +107,9 @@ library
       data-default,
       text,
       vector,
+      yaml,
+      blaze-html,
+      ihp-hsx,
       transformers,
       containers,
       opt-env-conf,
@@ -117,6 +124,7 @@ library
       concurrency,
       platform,
       json,
+      yaml,
       traits,
       options-parser
     default-language: GHC2021

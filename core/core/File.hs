@@ -1,18 +1,19 @@
 module File (
-  write,
-  read,
   Error (..),
-  readHandler,
-  writeHandler,
+  writeTextHandler,
+  readTextHandler,
+  ReadOptions,
+  readText,
+  WriteTextOptions,
+  writeText,
 ) where
 
 import Basics
 import Command (Command)
 import Command qualified
-import Data.Text.IO qualified
 import Path
-import Result (Result (..))
 import Text (Text)
+import Unknown qualified
 
 
 data Error
@@ -21,25 +22,38 @@ data Error
   | NotReadable
 
 
-read :: Path -> Command (Result Error Text)
-read path =
-  path
-    |> Command.named "File.read"
+type ReadOptions msg =
+  Record
+    '[ "path" := Path,
+       "onSuccess" := (Text -> msg),
+       "onError" := (Error -> msg)
+     ]
 
 
-write :: Path -> Text -> Command (Result Error Unit)
-write path text =
-  (path, text)
-    |> Command.named "File.write"
+readText :: (Unknown.Convertible msg) => ReadOptions msg -> Command msg
+readText options =
+  Command.named "File.read" options
 
 
-readHandler :: Path -> IO Text
-readHandler path =
-  Path.toLinkedList path
-    |> Data.Text.IO.readFile
+type WriteTextOptions msg =
+  Record
+    '[ "path" := Path,
+       "text" := Text,
+       "onSuccess" := msg,
+       "onError" := (Error -> msg)
+     ]
 
 
-writeHandler :: Path -> Text -> IO Unit
-writeHandler path text = do
-  let fp = Path.toLinkedList path
-  Data.Text.IO.writeFile fp text
+writeText :: (Unknown.Convertible msg) => WriteTextOptions msg -> Command msg
+writeText options =
+  Command.named "File.write" options
+
+
+readTextHandler :: (Unknown.Convertible msg) => ReadOptions msg -> IO msg
+readTextHandler _ =
+  dieWith "File.readTextHandler is not implemented yet"
+
+
+writeTextHandler :: (Unknown.Convertible msg) => WriteTextOptions msg -> IO msg
+writeTextHandler _ =
+  dieWith "File.writeTextHandler is not implemented yet"
