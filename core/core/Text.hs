@@ -75,13 +75,12 @@ module Text (
 
 import Array (Array)
 import Array qualified
-import Basics (Bool, Float, Int, clamp, (+), (-), (.>), (<), (<.), (<=), (|>))
+import Basics
 import Char (Char)
 import Data.Text qualified
 import LinkedList (LinkedList)
 import Maybe (Maybe)
 import Text.Read qualified
-import Prelude (otherwise)
 import Prelude qualified
 
 
@@ -164,7 +163,7 @@ concat arr =
 split :: Text -> Text -> Array Text
 split sep txt =
   Data.Text.splitOn sep txt
-    |> Array.fromList
+    |> Array.fromLinkedList
 
 
 -- | Put many strings together with a given separator.
@@ -184,7 +183,7 @@ join txt arr =
 words :: Text -> Array Text
 words txt =
   Data.Text.words txt
-    |> Array.fromList
+    |> Array.fromLinkedList
 
 
 -- | Break a string into lines, splitting on newlines.
@@ -193,7 +192,7 @@ words txt =
 lines :: Text -> Array Text
 lines txt =
   Data.Text.lines txt
-    |> Array.fromList
+    |> Array.fromLinkedList
 
 
 -- SUBSTRINGS
@@ -294,7 +293,7 @@ indexes n h
  where
   indexes' needle haystack =
     Data.Text.breakOnAll needle haystack
-      |> Array.fromList
+      |> Array.fromLinkedList
       |> Array.map
         ( \(lhs, _) ->
             Data.Text.length lhs
@@ -450,7 +449,7 @@ fromFloat = Data.Text.pack <. Prelude.show
 toArray :: Text -> Array Char
 toArray txt =
   Data.Text.unpack txt
-    |> Array.fromList
+    |> Array.fromLinkedList
 
 
 -- | Convert a list of characters into a Text. Can be useful if you

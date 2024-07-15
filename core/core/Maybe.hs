@@ -12,7 +12,7 @@ module Maybe (
   getOrDie,
 ) where
 
-import Basics (dieWith)
+import Basics
 import Data.Maybe (Maybe (..), fromMaybe)
 import Mappable qualified
 import Thenable qualified

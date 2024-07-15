@@ -17,7 +17,6 @@ module Basics (
   (/),
   (//),
   (^),
-  toFloat,
   round,
   floor,
   ceiling,
@@ -100,6 +99,7 @@ module Basics (
 
   -- * Reexported for records
   GHC.Records.HasField (..),
+  setField,
   Record,
   Pair (..),
   dieWith,
@@ -111,20 +111,27 @@ module Basics (
   (>>=),
   return,
   fmap,
+  IsString (..),
+  IsList (..),
+  IsLabel (..),
 ) where
 
 import Data.Bits qualified (xor)
 import Data.Record.Anon
+import Data.Record.Anon.Overloading (setField)
 import Data.Record.Anon.Plugin.Internal.Runtime (Pair (..))
 import Data.Record.Anon.Simple (Record)
+import Data.String (IsString (..))
 import Data.Text (Text)
 import Data.Text qualified as Text
 import Data.Void qualified (Void, absurd)
+import GHC.IsList (IsList (..))
+import GHC.OverloadedLabels (IsLabel (..))
 import GHC.Records (HasField (..))
 import GHC.Stack (HasCallStack)
 import IO (IO)
 import Unit (Unit, unit)
-import Prelude (otherwise, fromInteger, (<*>), return, fmap, (>>=))
+import Prelude (fmap, fromInteger, otherwise, return, (<*>), (>>=))
 import Prelude qualified
 
 
@@ -290,20 +297,6 @@ type Float = Prelude.Double
 (^) :: Float -> Float -> Float
 (^) =
   (Prelude.**)
-
-
--- * Int to Float / Float to Int
-
-
--- | Convert an integer into a float. Useful when mixing @Int@ and @Float@
--- values like this:
---
--- > halfOf :: Int -> Float
--- > halfOf number =
--- >   toFloat number / 2
-toFloat :: Int -> Float
-toFloat =
-  Prelude.fromIntegral
 
 
 -- | Round a number to the nearest integer.

@@ -51,12 +51,12 @@ module LinkedList (
   unzip,
 ) where
 
-import Basics (Bool (..), Int, Num, Ord, Ordering (..), (-), (.>))
+import Basics
 import Data.Foldable qualified
 import Data.List qualified
 import Data.Maybe qualified
-import Maybe (Maybe (..))
 import Mappable qualified as Mappable
+import Maybe (Maybe (..))
 import Thenable qualified as Thenable
 import Prelude qualified
 
@@ -416,7 +416,7 @@ head xs =
   case xs of
     x : _ ->
       Just x
-    [] ->
+    _ ->
       Nothing
 
 
@@ -432,7 +432,7 @@ tail list =
   case list of
     _ : xs ->
       Just xs
-    [] ->
+    _ ->
       Nothing
 
 

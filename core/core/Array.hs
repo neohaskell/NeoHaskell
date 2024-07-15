@@ -7,7 +7,7 @@ module Array (
   empty,
   initialize,
   repeat,
-  fromList,
+  fromLinkedList,
 
   -- * Query
   isEmpty,
@@ -33,19 +33,7 @@ module Array (
   flatMap,
 ) where
 
-import Basics (
-  Bool,
-  Int,
-  clamp,
-  (&&),
-  (+),
-  (-),
-  (.>),
-  (<),
-  (<=),
-  (<|),
-  (|>),
- )
+import Basics
 import Data.Foldable qualified
 import Data.Vector ((!?), (++), (//))
 import Data.Vector qualified
@@ -54,7 +42,6 @@ import LinkedList (LinkedList)
 import LinkedList qualified
 import Maybe (Maybe (..))
 import Tuple qualified
-import Prelude (otherwise)
 import Prelude qualified
 
 
@@ -67,9 +54,7 @@ newtype Array a = Array (Data.Vector.Vector a)
 
 instance GHC.IsList (Array a) where
   type Item (Array a) = a
-
-
-  fromList = fromList
+  fromList = Basics.fromList
   toList = toLinkedList
 
 
@@ -95,7 +80,7 @@ isEmpty = unwrap .> Data.Vector.null
 
 -- | Return the length of an array.
 --
--- > length (fromList [1,2,3]) == 3
+-- > length (fromLinkedList [1,2,3]) == 3
 length :: Array a -> Int
 length =
   unwrap
@@ -106,9 +91,9 @@ length =
 -- | Initialize an array. @initialize n f@ creates an array of length @n@ with
 -- the element at index @i@ initialized to the result of @(f i)@.
 --
--- > initialize 4 identity    == fromList [0,1,2,3]
--- > initialize 4 (\n -> n*n) == fromList [0,1,4,9]
--- > initialize 4 (always 0)  == fromList [0,0,0,0]
+-- > initialize 4 identity    == fromLinkedList [0,1,2,3]
+-- > initialize 4 (\n -> n*n) == fromLinkedList [0,1,4,9]
+-- > initialize 4 (always 0)  == fromLinkedList [0,0,0,0]
 initialize :: Int -> (Int -> a) -> Array a
 initialize n f =
   Array
@@ -119,28 +104,28 @@ initialize n f =
 
 -- | Creates an array with a given length, filled with a default element.
 --
--- > repeat 5 0     == fromList [0,0,0,0,0]
--- > repeat 3 "cat" == fromList ["cat","cat","cat"]
+-- > repeat 5 0     == fromLinkedList [0,0,0,0,0]
+-- > repeat 3 "cat" == fromLinkedList ["cat","cat","cat"]
 --
 -- Notice that @repeat 3 x@ is the same as @initialize 3 (always x)@.
 repeat :: Int -> a -> Array a
-repeat n e =
+repeat n element =
   Array
-    <| Data.Vector.replicate (Prelude.fromIntegral n) e
+    <| Data.Vector.replicate (Prelude.fromIntegral n) element
 
 
 -- | Create an array from a 'LinkedList'.
-fromList :: LinkedList a -> Array a
-fromList =
+fromLinkedList :: LinkedList a -> Array a
+fromLinkedList =
   Data.Vector.fromList .> Array
 
 
 -- | Return @Just@ the element at the index or @Nothing@ if the index is out of range.
 --
--- > get  0   (fromList [0,1,2]) == Just 0
--- > get  2   (fromList [0,1,2]) == Just 2
--- > get  5   (fromList [0,1,2]) == Nothing
--- > get (-1) (fromList [0,1,2]) == Nothing
+-- > get  0   (fromLinkedList [0,1,2]) == Just 0
+-- > get  2   (fromLinkedList [0,1,2]) == Just 2
+-- > get  5   (fromLinkedList [0,1,2]) == Nothing
+-- > get (-1) (fromLinkedList [0,1,2]) == Nothing
 get :: Int -> Array a -> Maybe a
 get i array =
   unwrap array !? Prelude.fromIntegral i
@@ -150,20 +135,20 @@ get i array =
 --
 -- If the index is out of range, the array is unaltered.
 --
--- > set 1 7 (fromList [1,2,3]) == fromList [1,7,3]
+-- > set 1 7 (fromLinkedList [1,2,3]) == fromLinkedList [1,7,3]
 set :: Int -> a -> Array a -> Array a
 set i value array = Array result
  where
   len = length array
   vector = unwrap array
   result
-    | 0 <= i && i < len = vector // [(Prelude.fromIntegral i, value)]
+    | 0 <= i && i < len = vector Data.Vector.// [(Prelude.fromIntegral i, value)]
     | otherwise = vector
 
 
 -- | Push an element onto the end of an array.
 --
--- > push 3 (fromList [1,2]) == fromList [1,2,3]
+-- > push 3 (fromLinkedList [1,2]) == fromLinkedList [1,2,3]
 push :: a -> Array a -> Array a
 push a (Array vector) =
   Array (Data.Vector.snoc vector a)
@@ -171,7 +156,7 @@ push a (Array vector) =
 
 -- | Create a list of elements from an array.
 --
--- > toLinkedList (fromList [3,5,8]) == [3,5,8]
+-- > toLinkedList (fromLinkedList [3,5,8]) == [3,5,8]
 toLinkedList :: Array a -> LinkedList a
 toLinkedList = unwrap .> Data.Vector.toList
 
@@ -179,7 +164,7 @@ toLinkedList = unwrap .> Data.Vector.toList
 -- | Create an indexed list from an array. Each element of the array will be
 -- paired with its index.
 --
--- > toIndexedLinkedList (fromList ["cat","dog"]) == [(0,"cat"), (1,"dog")]
+-- > toIndexedLinkedList (fromLinkedList ["cat","dog"]) == [(0,"cat"), (1,"dog")]
 toIndexedLinkedList :: Array a -> LinkedList (Int, a)
 toIndexedLinkedList =
   unwrap
@@ -197,7 +182,7 @@ foldr f value array = Prelude.foldr f value (unwrap array)
 
 -- | Reduce an array from the left. Read @foldl@ as fold from the left.
 --
--- > foldl (:) [] (fromList [1,2,3]) == [3,2,1]
+-- > foldl (:) [] (fromLinkedList [1,2,3]) == [3,2,1]
 foldl :: (a -> b -> b) -> b -> Array a -> b
 foldl f value array =
   Data.Foldable.foldl' (\a b -> f b a) value (unwrap array)
@@ -205,7 +190,7 @@ foldl f value array =
 
 -- | Keep elements that pass the test.
 --
--- > takeIf isEven (fromList [1,2,3,4,5,6]) == (fromList [2,4,6])
+-- > takeIf isEven (fromLinkedList [1,2,3,4,5,6]) == (fromLinkedList [2,4,6])
 takeIf :: (a -> Bool) -> Array a -> Array a
 takeIf f (Array vector) =
   Array (Data.Vector.filter f vector)
@@ -213,7 +198,7 @@ takeIf f (Array vector) =
 
 -- | Apply a function on every element in an array.
 --
--- > map sqrt (fromList [1,4,9]) == fromList [1,2,3]
+-- > map sqrt (fromLinkedList [1,4,9]) == fromLinkedList [1,2,3]
 map :: (a -> b) -> Array a -> Array b
 map f (Array vector) =
   Array (Data.Vector.map f vector)
@@ -221,7 +206,7 @@ map f (Array vector) =
 
 -- | Apply a function on every element with its index as first argument.
 --
--- > indexedMap (*) (fromList [5,5,5]) == fromList [0,5,10]
+-- > indexedMap (*) (fromLinkedList [5,5,5]) == fromLinkedList [0,5,10]
 indexedMap :: (Int -> a -> b) -> Array a -> Array b
 indexedMap f (Array vector) =
   Array (Data.Vector.imap (Prelude.fromIntegral .> f) vector)
@@ -229,7 +214,7 @@ indexedMap f (Array vector) =
 
 -- | Append two arrays to a new one.
 --
--- > append (repeat 2 42) (repeat 3 81) == fromList [42,42,81,81,81]
+-- > append (repeat 2 42) (repeat 3 81) == fromLinkedList [42,42,81,81,81]
 append :: Array a -> Array a -> Array a
 append (Array first) (Array second) =
   Array (first ++ second)
@@ -240,14 +225,14 @@ append (Array first) (Array second) =
 -- that indicates the end of the slice. The slice extracts up to but not including
 -- @end@.
 --
--- > slice  0  3 (fromList [0,1,2,3,4]) == fromList [0,1,2]
--- > slice  1  4 (fromList [0,1,2,3,4]) == fromList [1,2,3]
+-- > slice  0  3 (fromLinkedList [0,1,2,3,4]) == fromLinkedList [0,1,2]
+-- > slice  1  4 (fromLinkedList [0,1,2,3,4]) == fromLinkedList [1,2,3]
 --
 -- Both the @start@ and @end@ indexes can be negative, indicating an offset from
 -- the end of the array.
 --
--- > slice  1    (-1) (fromList [0,1,2,3,4]) == fromList [1,2,3]
--- > slice  (-2) 5    (fromList [0,1,2,3,4]) == fromList [3,4]
+-- > slice  1    (-1) (fromLinkedList [0,1,2,3,4]) == fromLinkedList [1,2,3]
+-- > slice  (-2) 5    (fromLinkedList [0,1,2,3,4]) == fromLinkedList [3,4]
 --
 -- This makes it pretty easy to @pop@ the last element off of an array:
 -- @slice 0 -1 array@
@@ -285,25 +270,25 @@ slice from to (Array vector)
 --
 -- prop> flatMap f empty == empty
 -- prop> flatMap f (singleton x) == f x
--- prop> flatMap f (fromList xs) == concatMap f xs
+-- prop> flatMap f (fromLinkedList xs) == concatMap f xs
 --
--- where `empty` is the empty array, `singleton` creates an array with a single element, and `fromList` creates
+-- where `empty` is the empty array, `singleton` creates an array with a single element, and `fromLinkedList` creates
 -- an array from a list of elements.
 --
 -- Examples:
 --
--- >>> let array = fromList [1, 2, 3]
--- >>> let f x = fromList [x, x + 1]
+-- >>> let array = fromLinkedList [1, 2, 3]
+-- >>> let f x = fromLinkedList [x, x + 1]
 -- >>> flatMap f array
 -- [1, 2, 2, 3, 3, 4]
 --
--- >>> let array = fromList ["Hello", "World"]
--- >>> let f x = fromList (words x)
+-- >>> let array = fromLinkedList ["Hello", "World"]
+-- >>> let f x = fromLinkedList (words x)
 -- >>> flatMap f array
 -- ["Hello", "World"]
 --
--- >>> let array = fromList [1, 2, 3]
--- >>> let f x = fromList [x * 2]
+-- >>> let array = fromLinkedList [1, 2, 3]
+-- >>> let f x = fromLinkedList [x * 2]
 -- >>> flatMap f array
 -- [2, 4, 6]
 --

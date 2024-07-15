@@ -17,6 +17,7 @@
     "relfile",
     "Semigroup",
     "snoc",
+    "typeclasses",
     "Unagi"
   ],
   "haskell.manageHLS": "PATH",

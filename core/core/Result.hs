@@ -22,7 +22,6 @@ import Basics
 import Mappable qualified
 import Maybe (Maybe (..))
 import Thenable qualified
-import Prelude (fmap)
 import Prelude qualified
 
 

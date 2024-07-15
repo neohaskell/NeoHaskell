@@ -56,6 +56,7 @@ library
       Tuple,
       Console,
       Subprocess,
+      Int,
       IO,
       Path,
       File,
