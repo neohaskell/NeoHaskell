@@ -10,7 +10,7 @@ import Command qualified
 import ConcurrentVar (ConcurrentVar)
 import ConcurrentVar qualified
 import IO qualified
-import Record qualified
+import Map qualified
 import Text (Text)
 
 
@@ -29,13 +29,17 @@ runtimeState = IO.dangerouslyRun ConcurrentVar.new
 
 
 init :: IO ()
-init = dieWith "a"
+init = do
+  ConcurrentVar.set uninitializedPlatform runtimeState
+  pure ()
 
 
 registerCommandHandler :: Text -> Command.Handler msg -> IO ()
 registerCommandHandler commandHandlerName handler = do
   platform <- ConcurrentVar.get runtimeState
-  let newRegistry = Command.insert commandHandlerName handler platform.commandHandlers
+  let newRegistry =
+        platform.commandHandlers
+          |> Map.set commandHandlerName handler
   let newPlatform = platform {commandHandlers = newRegistry}
   runtimeState
     |> ConcurrentVar.set newPlatform

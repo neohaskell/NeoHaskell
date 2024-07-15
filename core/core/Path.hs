@@ -1,14 +1,8 @@
 module Path (
   Path,
-  RelativeTo,
-  Absolute,
-  File,
-  Directory,
+  fromText,
   toLinkedList,
-  relativeFile,
-  absoluteFile,
-  relativeDirectory,
-  absoluteDirectory,
+  toText,
 ) where
 
 -- Import the reexported types and functions
@@ -16,61 +10,27 @@ module Path (
 -- Import qualified for using internally and renaming
 
 import Char (Char)
-import Language.Haskell.TH.Quote qualified
 import LinkedList (LinkedList)
-import "path" Path (File, Path)
-import "path" Path qualified as HsPath
+import Maybe (Maybe (..))
+import Text (Text)
+import Text qualified
 
 
-type RelativeTo = HsPath.Rel
+newtype Path = Path (LinkedList Char) -- We use LinkedList Char to keep compatibility with Haskell's FilePath type
 
 
-type Absolute = HsPath.Abs
+fromText :: Text -> Maybe Path
+fromText text =
+  -- FIXME: Implement proper path parsing by using
+  -- a filepath parsing library
+  Just (Path (Text.toLinkedList text))
 
 
-type Directory = HsPath.Dir
+toText :: Path -> Text
+toText (Path linkedList) =
+  Text.fromLinkedList linkedList
 
 
--- | Required to interact with legacy Haskell functions
-toLinkedList :: Path to fileOrDir -> LinkedList Char
-toLinkedList path = HsPath.toFilePath path
-
-
--- | Template string constructor for creating absolute paths to
--- directories.
---
--- Example:
---
--- > [absoluteDirectory|/home/user|]
-absoluteDirectory :: Language.Haskell.TH.Quote.QuasiQuoter
-absoluteDirectory = HsPath.absdir
-
-
--- | Template string constructor for creating relative paths to
--- directories.
---
--- Example:
---
--- > [relativeDirectory|/home/user|]
-relativeDirectory :: Language.Haskell.TH.Quote.QuasiQuoter
-relativeDirectory = HsPath.reldir
-
-
--- | Template string constructor for creating absolute paths to
--- files.
---
--- Example:
---
--- > [absoluteFile|/home/user/file.txt|]
-absoluteFile :: Language.Haskell.TH.Quote.QuasiQuoter
-absoluteFile = HsPath.absfile
-
-
--- | Template string constructor for creating relative paths to
--- files.
---
--- Example:
---
--- > [relativeFile|/home/user/file.txt|]
-relativeFile :: Language.Haskell.TH.Quote.QuasiQuoter
-relativeFile = HsPath.relfile
+toLinkedList :: Path -> LinkedList Char
+toLinkedList (Path linkedList) =
+  linkedList

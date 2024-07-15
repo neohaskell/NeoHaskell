@@ -109,6 +109,7 @@ module Basics (
   fromInteger,
   (<*>),
   (>>=),
+  (Prelude.>>),
   return,
   fmap,
   IsString (..),

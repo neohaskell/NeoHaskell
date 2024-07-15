@@ -1,8 +1,8 @@
 module Neo (main) where
 
+import Command qualified
 import Core
 import File qualified
-import Path qualified
 
 
 type Model =
@@ -13,7 +13,7 @@ type Model =
 
 type ProjectDefinition =
   Record
-    '[ "path" := Path Absolute Directory,
+    '[ "path" := Path,
        "name" := Text,
        "version" := Version
      ]

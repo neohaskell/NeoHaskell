@@ -6,6 +6,7 @@ module Command (
   none,
   batch,
   map,
+  named,
 ) where
 
 import Array (Array)
@@ -96,3 +97,13 @@ map f (Command commands) =
   commands
     |> Array.push (ANON {name = "map", payload = Unknown.fromValue f})
     |> Command
+
+
+named ::
+  (Unknown.Convertible value, Unknown.Convertible result) =>
+  Text ->
+  value ->
+  Command result
+named name value =
+  Command
+    [(ANON {name = name, payload = Unknown.fromValue value})]

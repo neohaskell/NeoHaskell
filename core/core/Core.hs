@@ -16,7 +16,7 @@ import Function as Reexported
 import LinkedList as Reexported (LinkedList)
 import Map as Reexported (Map)
 import Maybe as Reexported (Maybe (..))
-import Path as Reexported (Absolute, Directory, File, Path, RelativeTo)
+import Path as Reexported (Path)
 import Platform as Reexported (Platform)
 import Result as Reexported (Result)
 import Text as Reexported (Text)
