@@ -32,7 +32,7 @@ type ReadOptions msg =
 
 readText :: (Unknown.Convertible msg) => ReadOptions msg -> Command msg
 readText options =
-  Command.named "File.read" options
+  Command.named "File.readText" options
 
 
 type WriteTextOptions msg =
@@ -46,10 +46,10 @@ type WriteTextOptions msg =
 
 writeText :: (Unknown.Convertible msg) => WriteTextOptions msg -> Command msg
 writeText options =
-  Command.named "File.write" options
+  Command.named "File.writeText" options
 
 
-readTextHandler :: (Unknown.Convertible msg) => ReadOptions msg -> IO msg
+readTextHandler :: forall msg. (Unknown.Convertible msg) => ReadOptions msg -> IO msg
 readTextHandler _ =
   dieWith "File.readTextHandler is not implemented yet"
 

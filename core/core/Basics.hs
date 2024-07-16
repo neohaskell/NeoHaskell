@@ -115,8 +115,10 @@ module Basics (
   IsString (..),
   IsList (..),
   IsLabel (..),
+  Control.Monad.join,
 ) where
 
+import Control.Monad qualified
 import Data.Bits qualified (xor)
 import Data.Record.Anon
 import Data.Record.Anon.Overloading (setField)

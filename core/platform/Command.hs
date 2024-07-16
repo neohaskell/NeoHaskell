@@ -14,6 +14,7 @@ import Array qualified
 import Basics
 import Map (Map)
 import Map qualified
+import Maybe (Maybe)
 import Text (Text)
 import Unknown (Unknown)
 import Unknown qualified
@@ -71,13 +72,13 @@ newtype Command msg
       )
 
 
-type Handler msg = Unknown -> IO msg
+type Handler = Unknown -> IO (Maybe Unknown)
 
 
-type HandlerRegistry msg = Map Text (Handler msg)
+type HandlerRegistry = Map Text Handler
 
 
-emptyRegistry :: Command.HandlerRegistry msg
+emptyRegistry :: Command.HandlerRegistry
 emptyRegistry = Map.empty
 
 

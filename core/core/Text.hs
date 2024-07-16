@@ -13,7 +13,7 @@ module Text (
   append,
   concat,
   split,
-  join,
+  joinWith,
   words,
   lines,
 
@@ -175,8 +175,8 @@ split sep txt =
 -- > join "a" ["H","w","ii","n"]        == "Hawaiian"
 -- > join " " ["cat","dog","cow"]       == "cat dog cow"
 -- > join "/" ["home","evan","Desktop"] == "home/evan/Desktop"
-join :: Text -> Array Text -> Text
-join txt arr =
+joinWith :: Text -> Array Text -> Text
+joinWith txt arr =
   Array.toLinkedList arr
     |> Data.Text.intercalate txt
 

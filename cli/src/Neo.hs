@@ -39,7 +39,7 @@ init = do
   let command =
         File.readText
           ANON
-            { path = [path|project.json|],
+            { path = [path|project.yaml|],
               onSuccess = ProjectFileRead,
               onError = ProjectFileAccessErrored
             }

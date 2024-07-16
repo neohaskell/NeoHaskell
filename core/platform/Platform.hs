@@ -1,3 +1,5 @@
+{-# LANGUAGE AllowAmbiguousTypes #-}
+
 module Platform (
   runtimeState,
   init,
@@ -9,37 +11,50 @@ import Basics
 import Command qualified
 import ConcurrentVar (ConcurrentVar)
 import ConcurrentVar qualified
+import Data.Kind (Type)
+import File qualified
 import IO qualified
 import Map qualified
+import Maybe (Maybe (..))
 import Text (Text)
+import Unknown qualified
 
 
--- The platform loop should need to initialize the registry as an ioref or smth
-
-type Platform msg =
+type Platform =
   Record
-    '[ "commandHandlers" := Command.HandlerRegistry msg
+    '[ "commandHandlers" := Command.HandlerRegistry
      ]
 
 
--- TODO: This probably should be a concurrent var
-runtimeState :: ConcurrentVar (Platform msg)
+runtimeState :: ConcurrentVar Platform
 {-# NOINLINE runtimeState #-}
 runtimeState = IO.dangerouslyRun ConcurrentVar.new
 
 
-init :: IO ()
+init :: forall (msg :: Type). (Unknown.Convertible msg) => IO ()
 init = do
   ConcurrentVar.set uninitializedPlatform runtimeState
+  registerCommandHandler "File.readText" (File.readTextHandler @msg)
   pure ()
 
 
-registerCommandHandler :: Text -> Command.Handler msg -> IO ()
+registerCommandHandler ::
+  forall payload result.
+  (Unknown.Convertible payload, Unknown.Convertible result) =>
+  Text ->
+  (payload -> IO result) ->
+  IO ()
 registerCommandHandler commandHandlerName handler = do
   platform <- ConcurrentVar.get runtimeState
+  let commandHandler payload =
+        case (Unknown.toValue payload) of
+          Nothing -> pure Nothing
+          Just pl -> do
+            result <- handler pl
+            pure (Unknown.fromValue (result :: result) |> Just)
   let newRegistry =
         platform.commandHandlers
-          |> Map.set commandHandlerName handler
+          |> Map.set commandHandlerName commandHandler
   let newPlatform = platform {commandHandlers = newRegistry}
   runtimeState
     |> ConcurrentVar.set newPlatform
@@ -47,5 +62,5 @@ registerCommandHandler commandHandlerName handler = do
 
 -- PRIVATE
 
-uninitializedPlatform :: Platform msg
+uninitializedPlatform :: Platform
 uninitializedPlatform = ANON {commandHandlers = Command.emptyRegistry}
