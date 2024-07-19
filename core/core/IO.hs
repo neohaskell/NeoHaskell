@@ -4,8 +4,10 @@ import GHC.IO (IO)
 import System.IO.Unsafe qualified as GHC
 import Prelude qualified
 
+
 yield :: value -> IO value
 yield = Prelude.pure
+
 
 -- |
 -- `dangerouslyRun` is an alias for `unsafePerformIO`, which allows running an IO action and extracting its result as a pure value. However, it comes with significant risks and should be used with extreme caution, especially for those new to Haskell. Here's why:

@@ -7,17 +7,20 @@ module Command (
   batch,
   map,
   named,
+  processBatch,
 ) where
 
 import Array (Array)
 import Array qualified
 import Basics
+import Console (print)
 import Map (Map)
 import Map qualified
-import Maybe (Maybe)
+import Maybe (Maybe (..), withDefault)
 import Text (Text)
 import Unknown (Unknown)
 import Unknown qualified
+import Var qualified
 
 
 {-
@@ -65,11 +68,16 @@ newtype Command msg
   = Command
       ( Array
           ( Record
-              '[ "name" := Text,
+              '[ "name" := CommandName,
                  "payload" := Unknown
                ]
           )
       )
+
+
+data CommandName
+  = Custom Text
+  | MapCommand
 
 
 type Handler = Unknown -> IO (Maybe Unknown)
@@ -96,9 +104,64 @@ batch commands =
 map :: (Unknown.Convertible a, Unknown.Convertible b) => (a -> b) -> Command a -> Command b
 map f (Command commands) =
   commands
-    |> Array.push (ANON {name = "map", payload = Unknown.fromValue f})
+    |> Array.push (ANON {name = MapCommand, payload = Unknown.fromValue f})
     |> Command
 
+
+processBatch ::
+  forall (value :: Type).
+  (Unknown.Convertible value) =>
+  HandlerRegistry ->
+  Command value ->
+  IO value
+processBatch registry (Command commandBatch) = do
+  currentOutput <- Var.new Nothing
+  commandBatch |> Array.forEach \command -> do
+    case command.name of
+      Custom name' -> do
+        case Map.get name' registry of
+          Just handler -> do
+            result <- handler command.payload
+            case result of
+              Nothing -> pure ()
+              Just result' -> do
+                currentOutput |> Var.set (Just result')
+          Nothing -> do
+            print "Command handler not found"
+            pure ()
+      MapCommand -> do
+        maybeOut <- Var.get currentOutput
+        let out = maybeOut |> Maybe.withDefault (dieWith "No output")
+        let result = Unknown.apply command.payload out
+        case result of
+          Nothing -> do
+            print "Couldn't apply mapping function"
+            pure ()
+          Just output -> currentOutput |> Var.set (Just output)
+
+  out <- Var.get currentOutput
+  case out of
+    Nothing -> do
+      -- TODO: Fix this
+      dieWith "No output"
+    Just out' -> case Unknown.toValue out' of
+      Nothing -> dieWith "Couldn't convert output"
+      Just out'' -> pure out''
+
+
+-- results <-
+--   batch
+--     |> Array.mapM
+--       ( \(ANON {name, payload}) ->
+--           case name of
+--             Custom name' ->
+--               case Map.get name' registry of
+--                 Just handler -> handler payload
+--                 Nothing -> pure Nothing
+--             MapCommand -> pure (Just payload)
+--       )
+-- results
+--   |> Array.mapMaybe identity
 
 named ::
   (Unknown.Convertible value, Unknown.Convertible result) =>
@@ -107,4 +170,4 @@ named ::
   Command result
 named name value =
   Command
-    [(ANON {name = name, payload = Unknown.fromValue value})]
+    [(ANON {name = Custom name, payload = Unknown.fromValue value})]

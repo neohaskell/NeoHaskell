@@ -31,6 +31,7 @@ module Array (
   foldl,
   takeIf,
   flatMap,
+  forEach,
 ) where
 
 import Basics
@@ -305,3 +306,16 @@ flatMap f array =
   array
     |> map f
     |> foldr append empty
+
+
+-- | Emulates a foreach-loop like in other languages.
+--
+-- Example:
+--
+-- >>> forEach [1, 2, 3] (\x -> putStrLn (show x))
+-- 1
+-- 2
+-- 3
+forEach :: forall (element :: Type). (element -> IO ()) -> Array element -> IO ()
+forEach callback self =
+  Data.Foldable.traverse_ callback (unwrap self)

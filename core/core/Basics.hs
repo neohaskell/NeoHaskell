@@ -116,10 +116,12 @@ module Basics (
   IsList (..),
   IsLabel (..),
   Control.Monad.join,
+  Type,
 ) where
 
 import Control.Monad qualified
 import Data.Bits qualified (xor)
+import Data.Kind (Type)
 import Data.Record.Anon
 import Data.Record.Anon.Overloading (setField)
 import Data.Record.Anon.Plugin.Internal.Runtime (Pair (..))

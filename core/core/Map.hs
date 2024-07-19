@@ -4,6 +4,7 @@ module Map (
   empty,
   (-->),
   set,
+  get,
 ) where
 
 import Accumulator (Accumulator)
@@ -12,6 +13,7 @@ import Appendable qualified
 import Basics
 import Data.Map.Strict qualified as HaskellMap
 import Default (Default (..))
+import Maybe (Maybe)
 
 
 newtype Map key value
@@ -70,3 +72,8 @@ build = Accumulator.accumulate
 -- | Set a value in a `Map`.
 set :: (Eq key, Ord key) => key -> value -> Map key value -> Map key value
 set key value (Map map) = Map (HaskellMap.insert key value map)
+
+
+-- | Get the value from a `Map`.
+get :: (Eq key, Ord key) => key -> Map key value -> Maybe value
+get key (Map map) = HaskellMap.lookup key map

@@ -1,7 +1,7 @@
 module Channel (Channel, new, read, write) where
 
+import Basics
 import Control.Concurrent.Chan.Unagi qualified as Unagi
-import Core
 
 
 type Channel value =
