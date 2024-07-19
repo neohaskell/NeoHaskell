@@ -103,7 +103,7 @@ initializePlatform userApp = do
     model <- Var.get modelRef
     nextCommandBatch <- Channel.read commandsQueue
     state <- ConcurrentVar.get runtimeState
-    processed <- Command.processBatch (state.commandHandlers) nextCommandBatch
+    processed <- Command.processBatch state.commandHandlers nextCommandBatch
     let (newModel, newCmd) = update processed model
     modelRef |> Var.set newModel
     commandsQueue |> Channel.write newCmd

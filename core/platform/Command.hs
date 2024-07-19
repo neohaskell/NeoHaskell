@@ -108,6 +108,8 @@ map f (Command commands) =
     |> Command
 
 
+-- FIXME: Rather than applying this complex mapping, we should just setup a subscription for each command and apply the mapping
+-- when the command is triggered, handled, and passed through that subscription
 processBatch ::
   forall (value :: Type).
   (Unknown.Convertible value) =>
