@@ -56,7 +56,7 @@ common common_cfg
       DuplicateRecordFields
       PackageImports
       NamedFieldPuns
-      StrictData
+      Strict
       TypeFamilies
 
 library

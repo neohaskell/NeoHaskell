@@ -49,6 +49,7 @@ module LinkedList (
   drop,
   partition,
   unzip,
+  get,
 ) where
 
 import Basics
@@ -468,3 +469,13 @@ partition =
 unzip :: LinkedList (a, b) -> (LinkedList a, LinkedList b)
 unzip =
   Data.List.unzip
+
+
+-- FIXME: Use safe functions for these
+get :: Int -> LinkedList a -> Maybe a
+get index list =
+  case drop index list of
+    x : _ ->
+      Just x
+    _ ->
+      Nothing
