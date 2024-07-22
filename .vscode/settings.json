@@ -10,6 +10,7 @@
     "fprint",
     "GADT",
     "Monoid",
+    "NEOHASKELL",
     "NOINLINE",
     "optparse",
     "OVERLAPPABLE",

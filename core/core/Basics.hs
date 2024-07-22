@@ -118,6 +118,7 @@ module Basics
     IsLabel (..),
     Control.Monad.join,
     Type,
+    ifThenElse,
   )
 where
 
@@ -126,7 +127,7 @@ import Control.Monad qualified as Monad
 import Data.Bits qualified (xor)
 import Data.Kind (Type)
 import Data.Record.Anon
-import Data.Record.Anon.Overloading (setField)
+import Data.Record.Anon.Overloading (ifThenElse, setField)
 import Data.Record.Anon.Plugin.Internal.Runtime (Pair (..))
 import Data.Record.Anon.Simple (Record)
 import Data.String (IsString (..))

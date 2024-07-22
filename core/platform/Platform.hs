@@ -159,7 +159,7 @@ renderWorker ::
   UserApp model msg ->
   ConcurrentVar model ->
   IO ()
-renderWorker userApp modelRef =
+renderWorker userApp modelRef = do
   Monad.forever do
     print "Getting model"
     model <- ConcurrentVar.get modelRef
@@ -167,8 +167,14 @@ renderWorker userApp modelRef =
     print "Rendering model"
     let view = userApp.view model
 
+    print "Cleaning screen"
+    IO.putStrLn "\ESC[2J"
+
     print "Rendering view"
     view |> IO.print
+
+    print "Sleeping"
+    AsyncIO.sleep (1000000 // 60)
 
 mainWorker ::
   forall (msg :: Type) (model :: Type).
