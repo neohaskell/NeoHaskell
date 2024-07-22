@@ -1,14 +1,15 @@
-module Command (
-  Command,
-  Handler,
-  HandlerRegistry,
-  emptyRegistry,
-  none,
-  batch,
-  map,
-  named,
-  processBatch,
-) where
+module Command
+  ( Command,
+    Handler,
+    HandlerRegistry,
+    emptyRegistry,
+    none,
+    batch,
+    map,
+    named,
+    processBatch,
+  )
+where
 
 import Appendable ((++))
 import Array (Array)
@@ -23,7 +24,6 @@ import ToText (Show (..), toText)
 import Unknown (Unknown)
 import Unknown qualified
 import Var qualified
-
 
 {-
 Commands (Command) are essentially a callback that is called after some side effect
@@ -76,34 +76,26 @@ newtype Command msg
           )
       )
 
-
 data CommandName
   = Custom Text
   | MapCommand
   deriving (Show)
 
-
 type Handler = Unknown -> IO (Maybe Unknown)
-
 
 instance Show Handler where
   show _ = "Handler"
 
-
 type HandlerRegistry = Map Text Handler
-
 
 instance Show HandlerRegistry where
   show _ = "HandlerRegistry"
 
-
 emptyRegistry :: Command.HandlerRegistry
 emptyRegistry = Map.empty
 
-
 none :: Command msg
 none = Command (Array.empty)
-
 
 batch :: Array (Command msg) -> Command msg
 batch commands =
@@ -111,13 +103,11 @@ batch commands =
     |> Array.flatMap (\(Command command) -> command)
     |> Command
 
-
 map :: (Unknown.Convertible a, Unknown.Convertible b) => (a -> b) -> Command a -> Command b
 map f (Command commands) =
   commands
     |> Array.push (ANON {name = MapCommand, payload = Unknown.fromValue f})
     |> Command
-
 
 -- FIXME: Rather than applying this complex mapping, we should just setup a subscription for each command and apply the mapping
 -- when the command is triggered, handled, and passed through that subscription
@@ -126,7 +116,7 @@ processBatch ::
   (Unknown.Convertible value) =>
   HandlerRegistry ->
   Command value ->
-  IO value
+  IO (Maybe value)
 processBatch registry (Command commandBatch) = do
   print "Processing batch"
   print "Creating output var"
@@ -174,12 +164,10 @@ processBatch registry (Command commandBatch) = do
   out <- Var.get currentOutput
   case out of
     Nothing -> do
-      -- TODO: Fix this
-      dieWith "No output"
+      pure Nothing
     Just out' -> case Unknown.toValue out' of
       Nothing -> dieWith "Couldn't convert output"
-      Just out'' -> pure out''
-
+      Just out'' -> pure (Just out'')
 
 -- results <-
 --   batch
