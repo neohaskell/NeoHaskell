@@ -2,6 +2,7 @@ module Channel (Channel, new, read, write) where
 
 import Basics
 import Control.Concurrent.Chan.Unagi qualified as Unagi
+import ToText (Show (..))
 
 
 type Channel value =
@@ -9,6 +10,14 @@ type Channel value =
     '[ "outChannel" := Unagi.OutChan value,
        "inChannel" := Unagi.InChan value
      ]
+
+
+instance Show (Unagi.OutChan value) where
+  show _ = "[OutChan]"
+
+
+instance Show (Unagi.InChan value) where
+  show _ = "[InChan]"
 
 
 new :: IO (Channel value)

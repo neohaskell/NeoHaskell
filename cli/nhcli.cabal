@@ -10,7 +10,6 @@ author:             Nikita Tchayka
 maintainer:         nhlib@nickseagull.dev
 -- copyright:
 build-type:         Simple
-extra-doc-files:    CHANGELOG.md
 -- extra-source-files:
 
 common common_cfg
@@ -60,7 +59,9 @@ executable neo
     -- other-extensions:
     build-depends:
         nhcli
-
+    ghc-options:    -Wall
+                    -Werror
+                    -fplugin=Data.Record.Anon.Plugin
     hs-source-dirs:   app
     default-language: GHC2021
 

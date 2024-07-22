@@ -10,6 +10,7 @@ module Command (
   processBatch,
 ) where
 
+import Appendable ((++))
 import Array (Array)
 import Array qualified
 import Basics
@@ -18,6 +19,7 @@ import Map (Map)
 import Map qualified
 import Maybe (Maybe (..), withDefault)
 import Text (Text)
+import ToText (Show (..), toText)
 import Unknown (Unknown)
 import Unknown qualified
 import Var qualified
@@ -78,12 +80,21 @@ newtype Command msg
 data CommandName
   = Custom Text
   | MapCommand
+  deriving (Show)
 
 
 type Handler = Unknown -> IO (Maybe Unknown)
 
 
+instance Show Handler where
+  show _ = "Handler"
+
+
 type HandlerRegistry = Map Text Handler
+
+
+instance Show HandlerRegistry where
+  show _ = "HandlerRegistry"
 
 
 emptyRegistry :: Command.HandlerRegistry
@@ -117,30 +128,49 @@ processBatch ::
   Command value ->
   IO value
 processBatch registry (Command commandBatch) = do
+  print "Processing batch"
+  print "Creating output var"
   currentOutput <- Var.new Nothing
+
+  print ("Starting command loop with " ++ toText (Array.length commandBatch) ++ " commands")
   commandBatch |> Array.forEach \command -> do
+    print ("Matching command " ++ toText command)
     case command.name of
       Custom name' -> do
+        print ("Custom command " ++ name')
         case Map.get name' registry of
           Just handler -> do
+            print "Handler found, executing"
             result <- handler command.payload
             case result of
-              Nothing -> pure ()
+              Nothing -> do
+                print "Handler returned Nothing"
+                pure ()
               Just result' -> do
+                print "Handler returned Just, setting output"
                 currentOutput |> Var.set (Just result')
           Nothing -> do
             print "Command handler not found"
             pure ()
       MapCommand -> do
+        print "Map command"
         maybeOut <- Var.get currentOutput
+
+        print "Getting output"
         let out = maybeOut |> Maybe.withDefault (dieWith "No output")
+
+        print "Applying mapping function"
         let result = Unknown.apply command.payload out
+
         case result of
           Nothing -> do
             print "Couldn't apply mapping function"
             pure ()
-          Just output -> currentOutput |> Var.set (Just output)
+          Just output -> do
+            print "Setting output"
+            currentOutput |> Var.set (Just output)
 
+  print "Getting final output"
   out <- Var.get currentOutput
   case out of
     Nothing -> do
@@ -171,5 +201,5 @@ named ::
   value ->
   Command result
 named name value =
-  Command
-    [(ANON {name = Custom name, payload = Unknown.fromValue value})]
+  Array.fromLinkedList [(ANON {name = Custom name, payload = Unknown.fromValue value})]
+    |> Command

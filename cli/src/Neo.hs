@@ -1,8 +1,11 @@
+{-# OPTIONS_GHC -fplugin=Data.Record.Anon.Plugin #-}
+
 module Neo (main) where
 
 import Command qualified
 import Core
 import File qualified
+import Platform qualified
 import Result qualified
 import Yaml qualified
 
@@ -78,11 +81,4 @@ view _ =
 
 
 main :: IO ()
-main = do
-  -- TODO: Implement the loop in the platform module
-  let (model, _) = init
-  let (newModel, _) = update BuildStarted model
-  let viewHtml = view newModel
-  viewHtml
-    |> toText
-    |> print
+main = Platform.init (ANON {init = init, view = view, update = update})

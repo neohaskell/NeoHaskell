@@ -7,24 +7,27 @@ module Platform (
   registerCommandHandler,
 ) where
 
+import Appendable ((++))
 import Basics
 import Channel (Channel)
 import Channel qualified
 import Command (Command)
 import Command qualified
-import ConcurrentVar (ConcurrentVar)
-import ConcurrentVar qualified
+import Console (print)
 import Control.Monad qualified as Monad
 import File qualified
+import Html (Html)
 import IO qualified
 import Map qualified
 import Maybe (Maybe (..))
 import Text (Text)
+import ToText (toText)
 import Unknown qualified
+import Var (Var)
 import Var qualified
 
 
-data View
+type View = Html
 
 
 type Platform (msg :: Type) =
@@ -42,19 +45,10 @@ type UserApp (model :: Type) (msg :: Type) =
      ]
 
 
-runtimeState :: forall (msg :: Type). ConcurrentVar (Platform msg)
+runtimeState :: forall (msg :: Type). Var (Maybe (Platform msg))
 {-# NOINLINE runtimeState #-}
-runtimeState = IO.dangerouslyRun ConcurrentVar.new
-
-
-init ::
-  forall (model :: Type) (msg :: Type).
-  (Unknown.Convertible msg) =>
-  UserApp model msg ->
-  IO ()
-init userApp = do
-  initializePlatform userApp
-  pure ()
+runtimeState = do
+  IO.dangerouslyRun (Var.new Nothing)
 
 
 registerCommandHandler ::
@@ -64,50 +58,83 @@ registerCommandHandler ::
   (payload -> IO result) ->
   IO ()
 registerCommandHandler commandHandlerName handler = do
-  platform <- ConcurrentVar.get runtimeState
+  print "Getting state"
+  platform <- getState
+  print ("Got state: " ++ toText platform)
   let commandHandler payload =
         case (Unknown.toValue payload) of
-          Nothing -> pure Nothing
+          Nothing -> do
+            print "Payload is Nothing"
+            pure Nothing
           Just pl -> do
+            print "Payload was Just"
             result <- handler pl
             pure (Unknown.fromValue (result :: result) |> Just)
   let newRegistry =
         platform.commandHandlers
           |> Map.set commandHandlerName commandHandler
   let newPlatform = platform {commandHandlers = newRegistry}
-  runtimeState
-    |> ConcurrentVar.set newPlatform
+  print "Setting state"
+  setState newPlatform
 
 
--- PRIVATE
-
-initializePlatform ::
+init ::
   forall (model :: Type) (msg :: Type).
   (Unknown.Convertible msg) =>
   UserApp model msg ->
   IO ()
-initializePlatform userApp = do
+init userApp = do
+  print "Creating queue"
   commandsQueue <- Channel.new
   let initialPlatform =
         ANON
           { commandHandlers = Command.emptyRegistry,
             commandsQueue = commandsQueue
           }
-  ConcurrentVar.set initialPlatform runtimeState
+  print "Setting state"
+  setState initialPlatform
+  print "Registering default command handlers"
   registerDefaultCommandHandlers @msg
   let (initModel, initCmd) = userApp.init
   let update = userApp.update
+  print "Creating model ref"
   modelRef <- Var.new initModel
+  print "Writing init command"
   commandsQueue |> Channel.write initCmd
+  print "Starting loop"
   Monad.forever do
+    print "Getting model"
     model <- Var.get modelRef
+    print "Reading next command batch"
     nextCommandBatch <- Channel.read commandsQueue
-    state <- ConcurrentVar.get runtimeState
+    print "Getting state"
+    state <- getState
+    print "Processing next command batch"
     processed <- Command.processBatch state.commandHandlers nextCommandBatch
+
+    print "Updating model"
     let (newModel, newCmd) = update processed model
+
+    print "Setting new model"
     modelRef |> Var.set newModel
+
+    print "Writing new command"
     commandsQueue |> Channel.write newCmd
-    pure ()
+
+
+-- PRIVATE
+
+getState :: forall (msg :: Type). IO (Platform msg)
+getState = do
+  maybePlatform <- Var.get runtimeState
+  case maybePlatform of
+    Nothing -> dieWith "Platform is not initialized"
+    Just platform -> pure platform
+
+
+setState :: forall (msg :: Type). Platform msg -> IO ()
+setState value = do
+  runtimeState |> Var.set (Just value)
 
 
 -- TODO: Command Handlers should come in the user app record as a map of
