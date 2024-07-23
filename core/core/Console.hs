@@ -11,6 +11,8 @@ import System.Environment qualified
 import Text (Text, fromLinkedList)
 import ToText (toText)
 
+
+-- TODO: Make this use a centralized monitoring thread
 print :: (Stack.HasCallStack) => Text -> IO Unit
 print text = do
   -- we check that the NEOHASKELL_DEBUG environment variable is set to true
@@ -41,6 +43,7 @@ print text = do
           Data.Text.IO.putStrLn message
         _ -> pure ()
     else pure ()
+
 
 readLine :: IO Text
 readLine = Data.Text.IO.getLine
