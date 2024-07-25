@@ -1,11 +1,12 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
 
-module Platform (
-  runtimeState,
-  init,
-  Platform,
-  registerCommandHandler,
-) where
+module Platform
+  ( runtimeState,
+    init,
+    Platform,
+    registerCommandHandler,
+  )
+where
 
 import Appendable ((++))
 import AsyncIO qualified
@@ -19,7 +20,6 @@ import ConcurrentVar qualified
 import Console (print)
 import Control.Monad qualified as Monad
 import File qualified
-import Html (Html)
 import IO qualified
 import Map qualified
 import Maybe (Maybe (..))
@@ -30,16 +30,13 @@ import Unknown qualified
 import Var (Var)
 import Var qualified
 
-
-type View = Html
-
+type View = Text
 
 type Platform (msg :: Type) =
   Record
     '[ "commandHandlers" := Command.HandlerRegistry,
        "commandsQueue" := Channel (Command msg)
      ]
-
 
 type UserApp (model :: Type) (msg :: Type) =
   Record
@@ -48,12 +45,10 @@ type UserApp (model :: Type) (msg :: Type) =
        "update" := (msg -> model -> (model, Command msg))
      ]
 
-
 runtimeState :: forall (msg :: Type). Var (Maybe (Platform msg))
 {-# NOINLINE runtimeState #-}
 runtimeState = do
   IO.dangerouslyRun (Var.new Nothing)
-
 
 registerCommandHandler ::
   forall payload result.
@@ -80,7 +75,6 @@ registerCommandHandler commandHandlerName handler = do
   let newPlatform = platform {commandHandlers = newRegistry}
   print "Setting state"
   setState newPlatform
-
 
 init ::
   forall (model :: Type) (msg :: Type).
@@ -117,7 +111,6 @@ init userApp = do
 
   mainWorker @msg userApp eventsQueue modelRef commandsQueue
 
-
 -- PRIVATE
 
 getState :: forall (msg :: Type). IO (Platform msg)
@@ -127,11 +120,9 @@ getState = do
     Nothing -> dieWith "Platform is not initialized"
     Just platform -> pure platform
 
-
 setState :: forall (msg :: Type). Platform msg -> IO ()
 setState value = do
   runtimeState |> Var.set (Just value)
-
 
 -- TODO: Command Handlers should come in the user app record as a map of
 -- command names to handlers. This way, the user app can register its own
@@ -140,7 +131,6 @@ setState value = do
 registerDefaultCommandHandlers :: forall (msg :: Type). (Unknown.Convertible msg) => IO ()
 registerDefaultCommandHandlers = do
   registerCommandHandler @(File.ReadOptions msg) @msg "File.readText" (File.readTextHandler @msg)
-
 
 commandWorker ::
   forall (msg :: Type).
@@ -163,7 +153,6 @@ commandWorker commandsQueue eventsQueue =
       Just msg -> do
         eventsQueue |> Channel.write msg
 
-
 renderWorker ::
   forall (model :: Type) (msg :: Type).
   UserApp model msg ->
@@ -185,7 +174,6 @@ renderWorker userApp modelRef = do
 
     print "Sleeping"
     AsyncIO.sleep (1000000 // 60)
-
 
 mainWorker ::
   forall (msg :: Type) (model :: Type).

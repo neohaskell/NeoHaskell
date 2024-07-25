@@ -9,12 +9,10 @@ import Platform qualified
 import Result qualified
 import Yaml qualified
 
-
 type Model =
   Record
     '[ "project" := Maybe ProjectDefinition
      ]
-
 
 type ProjectDefinition =
   Record
@@ -23,7 +21,6 @@ type ProjectDefinition =
        "version" := Version
      ]
 
-
 data Message
   = ProjectFileRead Text
   | ProjectFileAccessErrored File.Error
@@ -31,10 +28,8 @@ data Message
   | BuildStarted
   | BuildFailed FailureReason
 
-
 data FailureReason
   = ProjectFileParseError Text
-
 
 init :: (Model, Command Message)
 init = do
@@ -47,7 +42,6 @@ init = do
               onError = ProjectFileAccessErrored
             }
   (emptyModel, command)
-
 
 update :: Message -> Model -> (Model, Command Message)
 update message model =
@@ -70,15 +64,9 @@ update message model =
     BuildFailed _ ->
       (model, Command.none)
 
-
-view :: Model -> Html
+view :: Model -> Text
 view _ =
-  [html|
-  <div>
-    Hello World!
-  </div>
-|]
-
+  "Hello World!"
 
 main :: IO ()
 main = Platform.init (ANON {init = init, view = view, update = update})
