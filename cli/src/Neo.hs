@@ -13,13 +13,13 @@ import Yaml qualified
 type Model =
   Record
     '[ "project" := Maybe ProjectDefinition,
+       "path" := Maybe Path,
        "status" := Text
      ]
 
 type ProjectDefinition =
   Record
-    '[ "path" := Path,
-       "name" := Text,
+    '[ "name" := Text,
        "version" := Version
      ]
 
@@ -40,6 +40,7 @@ init = do
   let emptyModel =
         ANON
           { project = Nothing,
+            path = Nothing,
             status = "Starting up"
           }
   let command =
