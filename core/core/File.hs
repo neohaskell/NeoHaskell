@@ -1,13 +1,15 @@
-module File (
-  Error (..),
-  writeTextHandler,
-  readTextHandler,
-  ReadOptions,
-  readText,
-  WriteTextOptions,
-  writeText,
-) where
+module File
+  ( Error (..),
+    writeTextHandler,
+    readTextHandler,
+    ReadOptions,
+    readText,
+    WriteTextOptions,
+    writeText,
+  )
+where
 
+import Appendable ((++))
 import Basics
 import Command (Command)
 import Command qualified
@@ -17,15 +19,15 @@ import Data.Text.IO qualified as TIO
 import GHC.IO.Exception qualified as Exception
 import Path (Path)
 import Path qualified
-import Text (Text)
+import Text (Text, toLinkedList)
+import ToText (Show (..))
 import Unknown qualified
-
 
 data Error
   = NotFound
   | NotWritable
   | NotReadable
-
+  deriving (Show)
 
 type ReadOptions msg =
   Record
@@ -34,11 +36,14 @@ type ReadOptions msg =
        "onError" := (Error -> msg)
      ]
 
+instance (Unknown.Convertible a, Unknown.Convertible b) => Show (a -> b) where
+  show _ = do
+    let t = "(" ++ Unknown.getTypeName @a ++ " -> " ++ Unknown.getTypeName @b ++ ")"
+    Text.toLinkedList t
 
 readText :: (Unknown.Convertible msg) => ReadOptions msg -> Command msg
 readText options =
   Command.named "File.readText" options
-
 
 type WriteTextOptions msg =
   Record
@@ -48,11 +53,9 @@ type WriteTextOptions msg =
        "onError" := (Error -> msg)
      ]
 
-
 writeText :: (Unknown.Convertible msg) => WriteTextOptions msg -> Command msg
 writeText options =
   Command.named "File.writeText" options
-
 
 readTextHandler ::
   forall msg.
@@ -65,7 +68,6 @@ readTextHandler options = do
   case result of
     Either.Left _ -> pure (options.onError NotFound)
     Either.Right contents -> pure (options.onSuccess contents)
-
 
 writeTextHandler :: (Unknown.Convertible msg) => WriteTextOptions msg -> IO msg
 writeTextHandler _ =

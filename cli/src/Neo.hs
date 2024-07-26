@@ -7,11 +7,13 @@ import Core
 import File qualified
 import Platform qualified
 import Result qualified
+import ToText (Show)
 import Yaml qualified
 
 type Model =
   Record
-    '[ "project" := Maybe ProjectDefinition
+    '[ "project" := Maybe ProjectDefinition,
+       "status" := Text
      ]
 
 type ProjectDefinition =
@@ -27,13 +29,19 @@ data Message
   | ProjectFileParsed ProjectDefinition
   | BuildStarted
   | BuildFailed FailureReason
+  deriving (Show)
 
 data FailureReason
   = ProjectFileParseError Text
+  deriving (Show)
 
 init :: (Model, Command Message)
 init = do
-  let emptyModel = ANON {project = Nothing}
+  let emptyModel =
+        ANON
+          { project = Nothing,
+            status = "Starting up"
+          }
   let command =
         File.readText
           ANON
@@ -48,25 +56,25 @@ update message model =
   case message of
     ProjectFileRead fileContent -> do
       let parsedContent = Yaml.parse fileContent
+      let newModel = model {status = "Parsing project file"}
       case parsedContent of
         Result.Ok projectDefinition ->
-          model
-            |> update (ProjectFileParsed projectDefinition)
+          (newModel, Command.continueWith (ProjectFileParsed projectDefinition))
         Result.Err _ -> do
           let error = ProjectFileParseError fileContent
-          update (BuildFailed error) model
+          (newModel, Command.continueWith (BuildFailed error))
     ProjectFileAccessErrored _ ->
-      (model, Command.none)
+      (model {status = "File Access Errored"}, Command.none)
     ProjectFileParsed projectDefinition ->
       (model {project = Just projectDefinition}, Command.none)
     BuildStarted ->
-      (model, Command.none)
+      (model {status = "Build Started"}, Command.none)
     BuildFailed _ ->
-      (model, Command.none)
+      (model {status = "Build Failed"}, Command.none)
 
 view :: Model -> Text
-view _ =
-  "Hello World!"
+view m =
+  m.status
 
 main :: IO ()
 main = Platform.init (ANON {init = init, view = view, update = update})

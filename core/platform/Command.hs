@@ -8,6 +8,8 @@ module Command
     map,
     named,
     processBatch,
+    continueWith,
+    continueWithHandler,
   )
 where
 
@@ -75,6 +77,7 @@ newtype Command msg
                ]
           )
       )
+  deriving (Show)
 
 data CommandName
   = Custom Text
@@ -191,3 +194,18 @@ named ::
 named name value =
   Array.fromLinkedList [(ANON {name = Custom name, payload = Unknown.fromValue value})]
     |> Command
+
+continueWith ::
+  (Unknown.Convertible msg) =>
+  msg ->
+  Command msg
+continueWith msg =
+  named "continueWith" msg
+
+continueWithHandler ::
+  forall msg.
+  (Unknown.Convertible msg) =>
+  msg ->
+  IO msg
+continueWithHandler msg =
+  pure msg
