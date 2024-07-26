@@ -117,9 +117,6 @@ init userApp = do
 
   (renderWorker @model @msg userApp modelRef)
 
--- \|> AsyncIO.run
--- \|> discard
-
 -- PRIVATE
 
 getState ::
