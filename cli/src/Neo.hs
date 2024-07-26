@@ -74,7 +74,11 @@ update message model =
 
 view :: Model -> Text
 view m =
-  m.status
+  case m.project of
+    Just project ->
+      toText project
+    Nothing ->
+      m.status
 
 main :: IO ()
 main = Platform.init (ANON {init = init, view = view, update = update})

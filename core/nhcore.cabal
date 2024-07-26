@@ -20,6 +20,8 @@ common common_cfg
       ghc-prim,
       async,
       aeson,
+      brick,
+      vty,
       bytestring,
       data-default,
       text,

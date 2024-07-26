@@ -1,0 +1,5 @@
+# This is a test file that we're using for now to test the
+# build project that we're coding.
+path: some/path/lol
+name: foobar
+version: 1.0.0

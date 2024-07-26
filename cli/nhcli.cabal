@@ -16,6 +16,7 @@ common common_cfg
     ghc-options:    -Wall
                     -Werror
                     -fplugin=Data.Record.Anon.Plugin
+                    -threaded
     default-extensions:
       ApplicativeDo
       BlockArguments

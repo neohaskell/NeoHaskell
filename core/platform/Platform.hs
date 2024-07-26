@@ -11,6 +11,7 @@ where
 import Appendable ((++))
 import AsyncIO qualified
 import Basics
+import Brick qualified
 import Channel (Channel)
 import Channel qualified
 import Command (Command)
@@ -19,14 +20,13 @@ import ConcurrentVar (ConcurrentVar)
 import ConcurrentVar qualified
 import Console (print)
 import Control.Monad qualified as Monad
-import Data.Text.IO qualified
+-- import Data.Text.IO qualified
 import File qualified
 import IO qualified
 import Map qualified
 import Maybe (Maybe (..))
-import System.IO qualified as IO
 import Text (Text)
-import ToText (ToText, toText)
+import ToText (Show (..), ToText, toText)
 import Unknown qualified
 import Var (Var)
 import Var qualified
@@ -110,11 +110,14 @@ init userApp = do
     |> AsyncIO.run
     |> discard
 
-  (renderWorker @model @msg userApp modelRef)
+  mainWorker @msg userApp eventsQueue modelRef commandsQueue
     |> AsyncIO.run
     |> discard
 
-  mainWorker @msg userApp eventsQueue modelRef commandsQueue
+  (renderWorker @model @msg userApp modelRef)
+
+-- \|> AsyncIO.run
+-- \|> discard
 
 -- PRIVATE
 
@@ -164,28 +167,30 @@ commandWorker commandsQueue eventsQueue =
       Just msg -> do
         eventsQueue |> Channel.write msg
 
+data PlatformN = PlatformN
+  deriving (Show, Ord, Eq)
+
 renderWorker ::
   forall (model :: Type) (msg :: Type).
   UserApp model msg ->
   ConcurrentVar model ->
   IO ()
 renderWorker userApp modelRef = do
-  Monad.forever do
-    print "Getting model"
-    model <- ConcurrentVar.peek modelRef
+  -- Monad.forever do
+  print "Getting model"
+  model <- ConcurrentVar.peek modelRef
 
-    print "Rendering model"
-    let view = userApp.view model
+  print "Rendering model"
+  let view = userApp.view model
 
-    print "Cleaning screen"
-    IO.putStrLn "\ESC[2J"
+  print "Rendering view"
+  view
+    |> Brick.txt @PlatformN
+    |> Brick.simpleMain
 
-    print "Rendering view"
-    Data.Text.IO.putStrLn view
+  print "Sleeping"
 
-    print "Sleeping"
-
-    AsyncIO.sleep (1000000 // 60)
+  AsyncIO.sleep (1000000 // 60)
 
 mainWorker ::
   forall (msg :: Type) (model :: Type).
@@ -208,8 +213,12 @@ mainWorker userApp eventsQueue modelRef commandsQueue =
 
     print "Updating model"
     let (newModel, newCmd) = userApp.update msg model
-    print ("New model: " ++ toText newModel)
-    print ("New command: " ++ toText newCmd)
+    print
+      ( "New model: "
+          ++ toText newModel
+          ++ "New command: "
+          ++ toText newCmd
+      )
 
     print "Setting new model"
     modelRef |> ConcurrentVar.set newModel
