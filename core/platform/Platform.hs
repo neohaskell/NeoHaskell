@@ -12,6 +12,8 @@ import Appendable ((++))
 import AsyncIO qualified
 import Basics
 import Brick qualified
+import Brick.BChan (BChan)
+import Brick.BChan qualified
 import Channel (Channel)
 import Channel qualified
 import Command (Command)
@@ -21,7 +23,10 @@ import ConcurrentVar qualified
 import Console (print)
 import Control.Monad qualified as Monad
 -- import Data.Text.IO qualified
+
+-- import Control.Monad.State.Class qualified as MonadState
 import File qualified
+import Graphics.Vty qualified as Vty
 import IO qualified
 import Map qualified
 import Maybe (Maybe (..))
@@ -170,6 +175,10 @@ commandWorker commandsQueue eventsQueue =
 data PlatformN = PlatformN
   deriving (Show, Ord, Eq)
 
+data PlatformEvent (model :: Type)
+  = ModelUpdated model
+  deriving (Show, Ord, Eq)
+
 renderWorker ::
   forall (model :: Type) (msg :: Type).
   UserApp model msg ->
@@ -180,17 +189,47 @@ renderWorker userApp modelRef = do
   print "Getting model"
   model <- ConcurrentVar.peek modelRef
 
-  print "Rendering model"
-  let view = userApp.view model
+  print "Setting up event channel"
+  eventChannel <- Brick.BChan.newBChan 1
+
+  let handleEvent event = case event of
+        Brick.AppEvent (ModelUpdated newModel) -> do
+          Brick.put newModel
+        _ -> Brick.halt
+
+  let brickApp =
+        Brick.App
+          { Brick.appDraw = \state -> [userApp.view state |> Brick.txt @PlatformN],
+            Brick.appChooseCursor = \_ _ -> Nothing,
+            Brick.appHandleEvent = handleEvent,
+            Brick.appStartEvent = pure (),
+            Brick.appAttrMap = \_ -> Brick.attrMap Vty.defAttr []
+          }
+
+  print "Running render model worker"
+  renderModelWorker @model modelRef eventChannel
+    |> AsyncIO.run
+    |> discard
 
   print "Rendering view"
-  view
-    |> Brick.txt @PlatformN
-    |> Brick.simpleMain
+  _ <-
+    Brick.customMainWithDefaultVty
+      (Just eventChannel)
+      brickApp
+      model
+  print "Done rendering"
 
-  print "Sleeping"
-
-  AsyncIO.sleep (1000000 // 60)
+renderModelWorker ::
+  forall (model :: Type).
+  ConcurrentVar model ->
+  BChan (PlatformEvent model) ->
+  IO ()
+renderModelWorker modelRef eventChannel =
+  Monad.forever do
+    print "Peeking model"
+    model <- ConcurrentVar.peek modelRef
+    print "Sending model update event"
+    Brick.BChan.writeBChan eventChannel (ModelUpdated model)
 
 mainWorker ::
   forall (msg :: Type) (model :: Type).
