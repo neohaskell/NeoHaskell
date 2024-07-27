@@ -13,7 +13,33 @@ build-type:         Simple
 common common_cfg
     ghc-options:    -Wall
                     -Werror
+                    -fplugin=Data.Record.Anon.Plugin
+                    -Wno-orphans
+    build-depends:
+      base ^>=4.18,
+      ghc-prim,
+      async,
+      aeson,
+      brick,
+      vty,
+      bytestring,
+      data-default,
+      text,
+      vector,
+      yaml,
+      blaze-html,
+      ihp-hsx,
+      transformers,
+      containers,
+      opt-env-conf,
+      path,
+      process,
+      large-anon,
+      pretty-simple,
+      unagi-chan,
+      template-haskell
     default-extensions:
+      ApplicativeDo
       BlockArguments
       DataKinds
       NoImplicitPrelude
@@ -21,20 +47,24 @@ common common_cfg
       DeriveDataTypeable
       QuasiQuotes
       QualifiedDo
+      ImpredicativeTypes
       ImportQualifiedPost
       OverloadedStrings
       OverloadedLists
       OverloadedLabels
       OverloadedRecordDot
+      OverloadedRecordUpdate
+      RebindableSyntax
       DuplicateRecordFields
       PackageImports
       NamedFieldPuns
-      StrictData
+      Strict
       TypeFamilies
 
 library
     import:           common_cfg
     exposed-modules:
+      -- Core
       Core,
       Char,
       Accumulator,
@@ -49,33 +79,56 @@ library
       Tuple,
       Console,
       Subprocess,
+      Int,
       IO,
       Path,
       File,
-      Traits.Appendable,
-      Traits.Default,
-      Traits.Mappable,
-      Traits.Thenable,
       Maybe,
-      Array
+      Array,
+      Version,
+      Record,
+      Unknown,
+      Var,
+
+      -- OptionsParser
+      OptionsParser,
+
+      -- JSON
+      Json,
+
+      -- YAML
+      Yaml,
+
+      -- Traits
+      Applicable,
+      Appendable,
+      Combinable,
+      Default,
+      Mappable,
+      Thenable,
+      ToText,
+
+      -- Platform
+      Command,
+      Html,
+      Platform,
+
+      -- Concurrency
+      AsyncIO,
+      Channel,
+      ConcurrentVar,
+
 
     -- other-modules:
     -- other-extensions:
-    build-depends:
-      base ^>=4.18,
-      ghc-prim,
-      aeson,
-      bytestring,
-      data-default,
-      text,
-      vector,
-      transformers,
-      containers,
-      optparse-applicative,
-      path,
-      process,
-      template-haskell
-    hs-source-dirs:   src
+    hs-source-dirs:
+      core,
+      concurrency,
+      platform,
+      json,
+      yaml,
+      traits,
+      options-parser
     default-language: GHC2021
 
 test-suite nhcore-test
@@ -88,4 +141,5 @@ test-suite nhcore-test
     main-is:          Main.hs
     build-depends:
         base ^>=4.18,
+        large-anon,
         nhcore

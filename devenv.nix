@@ -8,18 +8,14 @@
   packages = with pkgs; [
     git
     ghcid
-    # pkgs.haskell.packages.ghc963.cabal-install
-    # pkgs.haskell.compiler.ghc963
-    # pkgs.haskell.packages.ghc963.haskell-language-server
-    # (haskell-language-server.override { supportedGhcVersions = [ "96" ]; })
+    haskellPackages.implicit-hie
   ];
 
   # https://devenv.sh/scripts/
   scripts.watch.exec = "ghcid --command=cabal repl $1";
 
   enterShell = ''
-    hello
-    git --version
+    gen-hie > hie.yaml
   '';
 
   # https://devenv.sh/languages/

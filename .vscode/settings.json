@@ -10,12 +10,16 @@
     "fprint",
     "GADT",
     "Monoid",
+    "NEOHASKELL",
     "NOINLINE",
+    "optparse",
     "OVERLAPPABLE",
     "reldir",
     "relfile",
     "Semigroup",
-    "snoc"
+    "snoc",
+    "typeclasses",
+    "Unagi"
   ],
   "haskell.manageHLS": "PATH",
   "nixEnvSelector.nixFile": "${workspaceFolder}/devenv.nix"
