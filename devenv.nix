@@ -15,6 +15,7 @@
   scripts = {
     watch.exec = "ghcid --command=cabal repl $1";
     build.exec = "cabal build all";
+    update.exec = "cabal update";
     neo.exec = "cabal run nhcli -- $@";
   };
 
