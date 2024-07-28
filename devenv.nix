@@ -9,14 +9,19 @@
     git
     ghcid
     haskellPackages.implicit-hie
+    haskellPackages.doctest
   ];
 
   # https://devenv.sh/scripts/
   scripts = {
-    watch.exec = "ghcid --command=cabal repl $1";
-    build.exec = "cabal build all";
-    update.exec = "cabal update";
-    neo.exec = "cabal run nhcli -- $@";
+    run-watch.exec = "ghcid --command=cabal repl $1";
+    run-build.exec = "cabal build all";
+    run-update.exec = "cabal update";
+    run-cli.exec = "cabal run nhcli -- $@";
+    run-test.exec = ''
+      cabal repl nhcore --with-ghc=doctest
+      cabal repl nhcli --with-ghc=doctest
+    '';
   };
 
   enterShell = ''
