@@ -24,6 +24,16 @@ jobs:
 
     - name: Install devenv.sh
       run: nix profile install nixpkgs#devenv
+
+    - name: Cache Cabal
+      uses: actions/cache@v3
+      with:
+        path: |
+          ~/.cabal
+          ./dist-newstyle
+        key: ${{ runner.os }}-${{ hashFiles('**/*.lock') }}
+
+
     
     - name: Update Cabal Hackage list
       run: devenv shell run-update
