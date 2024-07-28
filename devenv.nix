@@ -12,7 +12,11 @@
   ];
 
   # https://devenv.sh/scripts/
-  scripts.watch.exec = "ghcid --command=cabal repl $1";
+  scripts = {
+    watch.exec = "ghcid --command=cabal repl $1";
+    build.exec = "cabal build all";
+    neo.exec = "cabal run nhcli -- $@";
+  };
 
   enterShell = ''
     gen-hie > hie.yaml
