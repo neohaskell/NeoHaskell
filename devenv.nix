@@ -18,9 +18,13 @@
     run-build.exec = "cabal build all";
     run-update.exec = "cabal update";
     run-cli.exec = "cabal run nhcli -- $@";
-    run-test.exec = ''
+    run-core-tests.exec = ''
       cabal repl nhcore --with-ghc=doctest
+      cabal test nhcore
+    '';
+    run-cli-tests.exec = ''
       cabal repl nhcli --with-ghc=doctest
+      cabal test nhcli
     '';
   };
 
