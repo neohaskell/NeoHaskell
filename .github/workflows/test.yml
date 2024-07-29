@@ -8,6 +8,10 @@ on:
     branches:
       - main
 
+defaults:
+  run:
+    shell: devenv shell bash -- -e {0}
+
 jobs:
   tests:
     strategy:
@@ -29,23 +33,22 @@ jobs:
       uses: actions/cache@v3
       with:
         path: |
-          ~/.cabal
-          ./dist-newstyle
+          .devenv/profile
         key: ${{ runner.os }}-${{ hashFiles('**/*.lock') }}
 
 
     
     - name: Update Cabal Hackage list
-      run: devenv shell run-update
-
+      run: run-update
+ 
     # - name: Build the devenv shell and run any pre-commit hooks
     # run: devenv test
 
     - name: Build the project
-      run: devenv shell run-build
+      run: run-build
 
     - name: Run core tests
-      run: devenv shell run-core-tests
+      run: run-core-tests
 
     - name: Run CLI tests
-      run: devenv shell run-cli-tests
+      run: run-cli-tests
