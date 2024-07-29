@@ -1,33 +1,26 @@
 -- | This library fills a bunch of important niches in Elm. A Maybe can help you with optional arguments, error handling, and records with optional fields.
-module Maybe (
-  -- * Definition
-  Maybe (..),
+module Maybe
+  ( -- * Definition
+    Maybe (..),
 
-  -- * Common Helpers
-  withDefault,
-  map,
+    -- * Common Helpers
+    withDefault,
+    map,
 
-  -- * Chaining Maybes
-  andThen,
-  getOrDie,
-) where
+    -- * Chaining Maybes
+    andThen,
+    getOrDie,
+  )
+where
 
 import Basics
 import Data.Maybe (Maybe (..), fromMaybe)
 import Mappable qualified
 import Thenable qualified
 
-
 -- | Provide a default value, turning an optional value into a normal
 -- value.  This comes in handy when paired with functions like
 -- 'Dict.get' which gives back a @Maybe@.
---
--- > >>> withDefault 100 (Just 42)
--- > 42
--- > >>> withDefault 100 Nothing
--- > 100
--- > >>> withDefault "unknown" (Dict.get "Tom" Dict.empty)
--- > "unknown"
 --
 -- __Note:__ This can be overused! Many cases are better handled by a @case@
 -- expression. And if you end up using @withDefault@ a lot, it can be a good sign
@@ -37,21 +30,10 @@ withDefault :: a -> Maybe a -> a
 withDefault =
   Data.Maybe.fromMaybe
 
-
 -- | Transform a @Maybe@ value with a given function:
---
--- > >>> map sqrt (Just 9)
--- > Just 3
--- > >>> map sqrt Nothing
--- > Nothing
--- > >>> map sqrt (String.toFloat "9")
--- > Just 3
--- > >>> map sqrt (String.toFloat "x")
--- > Nothing
 map :: (a -> b) -> Maybe a -> Maybe b
 map =
   Mappable.map
-
 
 -- | Chain together many computations that may fail. It is helpful to see an
 -- equivalent definition:
@@ -88,7 +70,6 @@ map =
 andThen :: (a -> Maybe b) -> Maybe a -> Maybe b
 andThen =
   Thenable.andThen
-
 
 -- | Attempts to retrieve the value from a @Maybe@. If the @Maybe@ is @Nothing@,
 -- the application will crash abruptly.

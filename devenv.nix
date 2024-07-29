@@ -19,7 +19,7 @@
     run-update.exec = "cabal update";
     run-cli.exec = "cabal run nhcli -- $@";
     run-core-tests.exec = ''
-      cabal repl nhcore --with-ghc=doctest && \
+      cabal repl nhcore --with-compiler=doctest && \
       cabal test nhcore
     '';
     run-cli-tests.exec = ''
