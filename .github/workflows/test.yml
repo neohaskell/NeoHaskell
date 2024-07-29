@@ -31,15 +31,18 @@ jobs:
       run: nix profile install nixpkgs#devenv
 
     - name: Cache Cabal
-      uses: actions/cache@v3
+      id: cache
+      uses: actions/cache@v4
       with:
         path: |
+          dist-newstyle
           .devenv/profile
-        key: ${{ runner.os }}-${{ hashFiles('**/*.lock') }}
+        key: ${{ runner.os }}-${{ hashFiles('**/*.cabal') }}-${{ hashFiles('**/*.lock') }}
 
 
     
     - name: Update Cabal Hackage list
+      if: steps.cache.outputs.cache-hit != 'true'
       run: run-update
  
     # - name: Build the devenv shell and run any pre-commit hooks
