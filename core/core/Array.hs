@@ -1,38 +1,39 @@
 -- | Fast immutable arrays. The elements in an array must have the same type.
-module Array (
-  -- * Arrays
-  Array,
+module Array
+  ( -- * Arrays
+    Array,
 
-  -- * Creation
-  empty,
-  initialize,
-  repeat,
-  fromLinkedList,
+    -- * Creation
+    empty,
+    initialize,
+    repeat,
+    fromLinkedList,
 
-  -- * Query
-  isEmpty,
-  length,
-  get,
+    -- * Query
+    isEmpty,
+    length,
+    get,
 
-  -- * Manipulate
-  set,
-  push,
-  append,
-  slice,
+    -- * Manipulate
+    set,
+    push,
+    append,
+    slice,
 
-  -- * LinkedLists
-  toLinkedList,
-  toIndexedLinkedList,
+    -- * LinkedLists
+    toLinkedList,
+    toIndexedLinkedList,
 
-  -- * Transform
-  map,
-  indexedMap,
-  foldr,
-  foldl,
-  takeIf,
-  flatMap,
-  forEach,
-) where
+    -- * Transform
+    map,
+    indexedMap,
+    foldr,
+    foldl,
+    takeIf,
+    flatMap,
+    forEach,
+  )
+where
 
 import Basics
 import Data.Foldable qualified
@@ -42,9 +43,9 @@ import GHC.IsList qualified as GHC
 import LinkedList (LinkedList)
 import LinkedList qualified
 import Maybe (Maybe (..))
+import Test.QuickCheck qualified as QuickCheck
 import Tuple qualified
 import Prelude qualified
-
 
 -- | Representation of fast immutable arrays. You can create arrays of integers
 -- (@Array Int@) or strings (@Array String@) or any other type of value you can
@@ -52,17 +53,19 @@ import Prelude qualified
 newtype Array a = Array (Data.Vector.Vector a)
   deriving (Prelude.Eq, Prelude.Show)
 
+instance (QuickCheck.Arbitrary a) => QuickCheck.Arbitrary (Array a) where
+  arbitrary = do
+    list <- QuickCheck.arbitrary
+    pure (fromLinkedList list)
 
 instance GHC.IsList (Array a) where
   type Item (Array a) = a
   fromList = Basics.fromList
   toList = toLinkedList
 
-
 -- | Helper function to unwrap an array
 unwrap :: Array a -> Data.Vector.Vector a
 unwrap (Array v) = v
-
 
 -- | Return an empty array.
 --
@@ -71,13 +74,11 @@ empty :: Array a
 empty =
   Array Data.Vector.empty
 
-
 -- | Determine if an array is empty.
 --
 -- > isEmpty empty == True
 isEmpty :: Array a -> Bool
 isEmpty = unwrap .> Data.Vector.null
-
 
 -- | Return the length of an array.
 --
@@ -87,7 +88,6 @@ length =
   unwrap
     .> Data.Vector.length
     .> Prelude.fromIntegral
-
 
 -- | Initialize an array. @initialize n f@ creates an array of length @n@ with
 -- the element at index @i@ initialized to the result of @(f i)@.
@@ -102,7 +102,6 @@ initialize n f =
       (Prelude.fromIntegral n)
       (Prelude.fromIntegral .> f)
 
-
 -- | Creates an array with a given length, filled with a default element.
 --
 -- > repeat 5 0     == fromLinkedList [0,0,0,0,0]
@@ -114,12 +113,10 @@ repeat n element =
   Array
     <| Data.Vector.replicate (Prelude.fromIntegral n) element
 
-
 -- | Create an array from a 'LinkedList'.
 fromLinkedList :: LinkedList a -> Array a
 fromLinkedList =
   Data.Vector.fromList .> Array
-
 
 -- | Return @Just@ the element at the index or @Nothing@ if the index is out of range.
 --
@@ -131,7 +128,6 @@ get :: Int -> Array a -> Maybe a
 get i array =
   unwrap array !? Prelude.fromIntegral i
 
-
 -- | Set the element at a particular index. Returns an updated array.
 --
 -- If the index is out of range, the array is unaltered.
@@ -139,13 +135,12 @@ get i array =
 -- > set 1 7 (fromLinkedList [1,2,3]) == fromLinkedList [1,7,3]
 set :: Int -> a -> Array a -> Array a
 set i value array = Array result
- where
-  len = length array
-  vector = unwrap array
-  result
-    | 0 <= i && i < len = vector Data.Vector.// [(Prelude.fromIntegral i, value)]
-    | otherwise = vector
-
+  where
+    len = length array
+    vector = unwrap array
+    result
+      | 0 <= i && i < len = vector Data.Vector.// [(Prelude.fromIntegral i, value)]
+      | otherwise = vector
 
 -- | Push an element onto the end of an array.
 --
@@ -154,13 +149,11 @@ push :: a -> Array a -> Array a
 push a (Array vector) =
   Array (Data.Vector.snoc vector a)
 
-
 -- | Create a list of elements from an array.
 --
 -- > toLinkedList (fromLinkedList [3,5,8]) == [3,5,8]
 toLinkedList :: Array a -> LinkedList a
 toLinkedList = unwrap .> Data.Vector.toList
-
 
 -- | Create an indexed list from an array. Each element of the array will be
 -- paired with its index.
@@ -173,13 +166,11 @@ toIndexedLinkedList =
     .> Data.Vector.toList
     .> LinkedList.map (Tuple.mapFirst Prelude.fromIntegral)
 
-
 -- | Reduce an array from the right. Read @foldr@ as fold from the right.
 --
 -- > foldr (+) 0 (repeat 3 5) == 15
 foldr :: (a -> b -> b) -> b -> Array a -> b
 foldr f value array = Prelude.foldr f value (unwrap array)
-
 
 -- | Reduce an array from the left. Read @foldl@ as fold from the left.
 --
@@ -188,14 +179,12 @@ foldl :: (a -> b -> b) -> b -> Array a -> b
 foldl f value array =
   Data.Foldable.foldl' (\a b -> f b a) value (unwrap array)
 
-
 -- | Keep elements that pass the test.
 --
 -- > takeIf isEven (fromLinkedList [1,2,3,4,5,6]) == (fromLinkedList [2,4,6])
 takeIf :: (a -> Bool) -> Array a -> Array a
 takeIf f (Array vector) =
   Array (Data.Vector.filter f vector)
-
 
 -- | Apply a function on every element in an array.
 --
@@ -204,7 +193,6 @@ map :: (a -> b) -> Array a -> Array b
 map f (Array vector) =
   Array (Data.Vector.map f vector)
 
-
 -- | Apply a function on every element with its index as first argument.
 --
 -- > indexedMap (*) (fromLinkedList [5,5,5]) == fromLinkedList [0,5,10]
@@ -212,14 +200,12 @@ indexedMap :: (Int -> a -> b) -> Array a -> Array b
 indexedMap f (Array vector) =
   Array (Data.Vector.imap (Prelude.fromIntegral .> f) vector)
 
-
 -- | Append two arrays to a new one.
 --
 -- > append (repeat 2 42) (repeat 3 81) == fromLinkedList [42,42,81,81,81]
 append :: Array a -> Array a -> Array a
 append (Array first) (Array second) =
   Array (first ++ second)
-
 
 -- | Get a sub-section of an array: @(slice start end array)@. The @start@ is a
 -- zero-based index where we will start our slice. The @end@ is a zero-based index
@@ -241,19 +227,18 @@ slice :: Int -> Int -> Array a -> Array a
 slice from to (Array vector)
   | sliceLen <= 0 = empty
   | otherwise = Array <| Data.Vector.slice from' sliceLen vector
- where
-  len = Data.Vector.length vector
-  handleNegative value
-    | value < 0 = len + value
-    | otherwise = value
-  normalize =
-    Prelude.fromIntegral
-      .> handleNegative
-      .> clamp 0 len
-  from' = normalize from
-  to' = normalize to
-  sliceLen = to' - from'
-
+  where
+    len = Data.Vector.length vector
+    handleNegative value
+      | value < 0 = len + value
+      | otherwise = value
+    normalize =
+      Prelude.fromIntegral
+        .> handleNegative
+        .> clamp 0 len
+    from' = normalize from
+    to' = normalize to
+    sliceLen = to' - from'
 
 -- | Applies a function to each element of an array and flattens the resulting arrays into a single array.
 --
@@ -266,33 +251,7 @@ slice from to (Array vector)
 -- element of `array` using the `map` function. Then, it flattens the resulting arrays into a single array
 -- using the `foldr` function with the `append` function as the folding operation and `empty` as the initial
 -- value. The resulting array is then returned.
---
--- The `flatMap` function has the following properties:
---
--- prop> flatMap f empty == empty
--- prop> flatMap f (singleton x) == f x
--- prop> flatMap f (fromLinkedList xs) == concatMap f xs
---
--- where `empty` is the empty array, `singleton` creates an array with a single element, and `fromLinkedList` creates
--- an array from a list of elements.
---
--- Examples:
---
--- >>> let array = fromLinkedList [1, 2, 3]
--- >>> let f x = fromLinkedList [x, x + 1]
--- >>> flatMap f array
--- [1, 2, 2, 3, 3, 4]
---
--- >>> let array = fromLinkedList ["Hello", "World"]
--- >>> let f x = fromLinkedList (words x)
--- >>> flatMap f array
--- ["Hello", "World"]
---
--- >>> let array = fromLinkedList [1, 2, 3]
--- >>> let f x = fromLinkedList [x * 2]
--- >>> flatMap f array
--- [2, 4, 6]
---
+
 -- This function is commonly used in functional programming to apply a function to each element of a nested
 -- data structure and flatten the resulting structure into a single level.
 flatMap ::
@@ -307,15 +266,7 @@ flatMap f array =
     |> map f
     |> foldr append empty
 
-
 -- | Emulates a foreach-loop like in other languages.
---
--- Example:
---
--- >>> forEach [1, 2, 3] (\x -> putStrLn (show x))
--- 1
--- 2
--- 3
 forEach :: forall (element :: Type). (element -> IO ()) -> Array element -> IO ()
 forEach callback self =
   Data.Foldable.traverse_ callback (unwrap self)

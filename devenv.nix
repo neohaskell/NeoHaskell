@@ -9,10 +9,23 @@
     git
     ghcid
     haskellPackages.implicit-hie
+    haskellPackages.doctest
   ];
 
   # https://devenv.sh/scripts/
-  scripts.watch.exec = "ghcid --command=cabal repl $1";
+  scripts = {
+    run-watch.exec = "ghcid --command=cabal repl $1";
+    run-build.exec = "cabal build all";
+    run-update.exec = "cabal update";
+    run-cli.exec = "cabal run nhcli -- $@";
+    run-core-tests.exec = ''
+      cabal repl nhcore --with-compiler=doctest && \
+      cabal test nhcore
+    '';
+    run-cli-tests.exec = ''
+      cabal test nhcli
+    '';
+  };
 
   enterShell = ''
     gen-hie > hie.yaml
