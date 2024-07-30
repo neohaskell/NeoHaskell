@@ -69,7 +69,7 @@ update message model =
     ProjectFileParsed projectDefinition ->
       (model {project = Just projectDefinition}, Command.none)
     BuildStarted ->
-      (model {status = "Build Started"}, Command.none)
+      (model {status = "Build Started!"}, Command.none)
     BuildFailed _ ->
       (model {status = "Build Failed"}, Command.none)
 
