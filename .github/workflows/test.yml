@@ -41,7 +41,7 @@ jobs:
           key: ${{ runner.os }}-${{ hashFiles('**/*.cabal') }}-${{ hashFiles('**/*.lock') }}-1 # modify the key if the cache is not working as expected
 
       - name: Update Cabal Hackage list
-        if: steps.cache.outputs.cache-hit != 'true'
+        # if: steps.cache.outputs.cache-hit != 'true'
         run: run-update
 
       # - name: Build the devenv shell and run any pre-commit hooks
