@@ -71,7 +71,7 @@ update message model =
     BuildStarted ->
       (model {status = "Build Started!"}, Command.none)
     BuildFailed _ ->
-      (model {status = "Build Failed"}, Command.none)
+      (model {status = "Build Failed!"}, Command.none)
 
 view :: Model -> Text
 view m =
