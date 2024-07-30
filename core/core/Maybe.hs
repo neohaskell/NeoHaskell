@@ -30,7 +30,7 @@ withDefault :: a -> Maybe a -> a
 withDefault =
   Data.Maybe.fromMaybe
 
--- | Transform a @Maybe@ value with the function:
+-- | Transform a @Maybe@ value with a function:
 map :: (a -> b) -> Maybe a -> Maybe b
 map =
   Mappable.map
