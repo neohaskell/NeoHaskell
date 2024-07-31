@@ -119,6 +119,7 @@ module Basics
     Control.Monad.join,
     Type,
     ifThenElse,
+    Control.Monad.forever,
   )
 where
 

@@ -163,7 +163,7 @@ commandWorker ::
   RuntimeState msg ->
   IO ()
 commandWorker commandsQueue eventsQueue runtimeState =
-  Monad.forever do
+  forever do
     print "Reading next command batch"
     nextCommandBatch <- Channel.read commandsQueue
     print "Getting state"
@@ -229,7 +229,7 @@ renderModelWorker ::
   BChan (PlatformEvent model) ->
   IO ()
 renderModelWorker modelRef eventChannel =
-  Monad.forever do
+  forever do
     print "Peeking model"
     model <- ConcurrentVar.peek modelRef
     print "Sending model update event"
@@ -246,7 +246,7 @@ mainWorker ::
   Channel (Command msg) ->
   IO ()
 mainWorker userApp eventsQueue modelRef commandsQueue =
-  Monad.forever do
+  forever do
     print "Reading next event"
     msg <- Channel.read eventsQueue
 
