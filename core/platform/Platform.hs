@@ -20,7 +20,6 @@ import Command qualified
 import ConcurrentVar (ConcurrentVar)
 import ConcurrentVar qualified
 import Console (print)
-import Control.Monad qualified as Monad
 import File qualified
 import Graphics.Vty qualified as Vty
 import Map qualified
