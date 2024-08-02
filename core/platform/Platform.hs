@@ -8,6 +8,8 @@ module Platform
 where
 
 import Appendable ((++))
+import Array (Array)
+import Array qualified
 import AsyncIO qualified
 import Basics
 import Brick qualified
@@ -26,6 +28,8 @@ import Map qualified
 import Maybe (Maybe (..))
 import Text (Text)
 import ToText (Show (..), ToText, toText)
+import Trigger (Trigger (..))
+import Trigger qualified
 import Unknown qualified
 import Var (Var)
 import Var qualified
@@ -42,6 +46,7 @@ type UserApp (model :: Type) (msg :: Type) =
   Record
     '[ "init" := (model, Command msg),
        "view" := (model -> View),
+       "triggers" := Array (Trigger msg),
        "update" := (msg -> model -> (model, Command msg))
      ]
 
@@ -117,6 +122,18 @@ init userApp = do
   (renderWorker @model @msg userApp modelRef)
 
 -- PRIVATE
+
+runTriggers ::
+  forall (msg :: Type).
+  Array (Trigger msg) ->
+  Channel msg ->
+  IO ()
+runTriggers triggers eventsQueue = do
+  let triggerDispatch (Trigger process) =
+        process (Channel.write eventsQueue)
+  triggers
+    |> Array.map triggerDispatch -- FIXME: Make Async
+    |> Array.iterate
 
 getState ::
   forall (msg :: Type).

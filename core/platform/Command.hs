@@ -112,8 +112,8 @@ map f (Command commands) =
     |> Array.push (ANON {name = MapCommand, payload = Unknown.fromValue f})
     |> Command
 
--- FIXME: Rather than applying this complex mapping, we should just setup a subscription for each command and apply the mapping
--- when the command is triggered, handled, and passed through that subscription
+-- FIXME: Rather than applying this complex mapping, we should just setup a trigger for each command and apply the mapping
+-- when the command is triggered, handled, and passed through that trigger
 processBatch ::
   forall (value :: Type).
   (Unknown.Convertible value) =>

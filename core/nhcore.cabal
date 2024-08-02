@@ -114,7 +114,7 @@ library
       Command,
       Html,
       Platform,
-      Subscription,
+      Trigger,
 
       -- Concurrency
       AsyncIO,
