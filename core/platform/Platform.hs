@@ -29,7 +29,6 @@ import Maybe (Maybe (..))
 import Text (Text)
 import ToText (Show (..), ToText, toText)
 import Trigger (Trigger (..))
-import Trigger qualified
 import Unknown qualified
 import Var (Var)
 import Var qualified
@@ -46,7 +45,7 @@ type UserApp (model :: Type) (msg :: Type) =
   Record
     '[ "init" := (model, Command msg),
        "view" := (model -> View),
-       "triggers" := Array (Trigger msg),
+       "triggers" := (Array (Trigger msg)),
        "update" := (msg -> model -> (model, Command msg))
      ]
 
@@ -119,6 +118,9 @@ init userApp = do
     |> AsyncIO.run
     |> discard
 
+  print "Starting triggers"
+  runTriggers userApp.triggers eventsQueue
+
   (renderWorker @model @msg userApp modelRef)
 
 -- PRIVATE
@@ -129,11 +131,15 @@ runTriggers ::
   Channel msg ->
   IO ()
 runTriggers triggers eventsQueue = do
+  let dispatchEvent event = do
+        eventsQueue |> Channel.write event
+
   let triggerDispatch (Trigger process) =
-        process (Channel.write eventsQueue)
+        process dispatchEvent
+          |> AsyncIO.run
+          |> discard
   triggers
-    |> Array.map triggerDispatch -- FIXME: Make Async
-    |> Array.iterate
+    |> Array.forEach triggerDispatch
 
 getState ::
   forall (msg :: Type).

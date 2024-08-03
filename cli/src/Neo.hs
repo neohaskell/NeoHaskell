@@ -2,18 +2,21 @@
 
 module Neo (main) where
 
+import Array qualified
 import Command qualified
 import Core
 import File qualified
 import Platform qualified
 import Result qualified
 import ToText (Show)
+import Trigger qualified
 import Yaml qualified
 
 type Model =
   Record
     '[ "project" := Maybe ProjectDefinition,
        "path" := Maybe Path,
+       "count" := Int,
        "status" := Text
      ]
 
@@ -28,6 +31,7 @@ data Message
   | ProjectFileAccessErrored File.Error
   | ProjectFileParsed ProjectDefinition
   | BuildStarted
+  | Tick
   | BuildFailed FailureReason
   deriving (Show)
 
@@ -41,6 +45,7 @@ init = do
         ANON
           { project = Nothing,
             path = Nothing,
+            count = 0,
             status = "Starting up"
           }
   let command =
@@ -72,14 +77,32 @@ update message model =
       (model {status = "Build Started!"}, Command.none)
     BuildFailed _ ->
       (model {status = "Build Failed!"}, Command.none)
+    Tick ->
+      ( model
+          { count = model.count + 1,
+            status = "Count: " ++ toText model.count
+          },
+        Command.none
+      )
 
 view :: Model -> Text
 view m =
   case m.project of
     Just project ->
-      toText project
+      m.status ++ "\n\n" ++ toText project
     Nothing ->
       m.status
 
 main :: IO ()
-main = Platform.init (ANON {init = init, view = view, update = update})
+main =
+  Platform.init
+    ( ANON
+        { init = (init),
+          view = (view),
+          triggers =
+            Array.fromLinkedList
+              [ Trigger.everyMilliseconds 1000 (\_ -> Tick)
+              ],
+          update = (update)
+        }
+    )
