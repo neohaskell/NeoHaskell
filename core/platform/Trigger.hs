@@ -1,5 +1,5 @@
 module Trigger
-  ( Trigger,
+  ( Trigger (..),
     new,
     everyMilliseconds,
   )
@@ -34,10 +34,6 @@ everyMilliseconds ::
 everyMilliseconds milliseconds messageConstructor =
   -- TODO: Move to Time module
   new \dispatch -> forever do
-    currentMs <- getCurrentTime
+    let currentMs = 0
     dispatch (messageConstructor currentMs)
     AsyncIO.sleep (milliseconds * 1000)
-
--- FIXME: Implement this function in the Time module
-getCurrentTime :: IO Int
-getCurrentTime = dieWith "Not implemented"
