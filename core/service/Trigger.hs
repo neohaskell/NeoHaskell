@@ -1,12 +1,10 @@
-module Trigger
-  ( Trigger (..),
-    new,
-    everyMilliseconds,
-  )
-where
+module Trigger (
+  Trigger (..),
+  new,
+) where
 
-import AsyncIO qualified
 import Basics
+
 
 -- |
 -- A trigger is a way to listen to a process that's running in the background and
@@ -17,23 +15,11 @@ import Basics
 -- An example Trigger is `Time.every`, which generates an event every specified
 -- milliseconds. When you subscribe to `Time.every`, you pass a callback function that
 -- posts an event to the event queue whenever the process ticks.
-newtype Trigger (message :: Type) = Trigger ((message -> IO ()) -> IO ())
+newtype Trigger (event :: Type) = Trigger ((event -> IO ()) -> IO ())
+
 
 new ::
-  forall (message :: Type).
-  ((message -> IO ()) -> IO ()) ->
-  Trigger message
+  forall (event :: Type).
+  ((event -> IO ()) -> IO ()) ->
+  Trigger event
 new processConstructor = Trigger processConstructor
-
--- | Create a trigger that generates an event every specified milliseconds.
-everyMilliseconds ::
-  forall (message :: Type).
-  Int ->
-  (Int -> message) ->
-  Trigger message
-everyMilliseconds milliseconds messageConstructor =
-  -- TODO: Move to Time module
-  new \dispatch -> forever do
-    let currentMs = 0
-    dispatch (messageConstructor currentMs)
-    AsyncIO.sleep (milliseconds * 1000)

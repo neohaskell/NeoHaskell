@@ -9,7 +9,7 @@ import File qualified
 import Result qualified
 import Service qualified
 import ToText (Show)
-import Trigger qualified
+import Time qualified
 import Yaml qualified
 
 
@@ -29,7 +29,7 @@ type ProjectDefinition =
      ]
 
 
-data Message
+data Event
   = ProjectFileRead Text
   | ProjectFileAccessErrored File.Error
   | ProjectFileParsed ProjectDefinition
@@ -44,7 +44,7 @@ data FailureReason
   deriving (Show)
 
 
-init :: (Model, Action Message)
+init :: (Model, Action Event)
 init = do
   let emptyModel =
         ANON
@@ -63,9 +63,9 @@ init = do
   (emptyModel, action)
 
 
-update :: Message -> Model -> (Model, Action Message)
-update message model =
-  case message of
+update :: Event -> Model -> (Model, Action Event)
+update event model =
+  case event of
     ProjectFileRead fileContent -> do
       let parsedContent = Yaml.parse fileContent
       let newModel = model {status = "Parsing project file"}
@@ -109,7 +109,7 @@ main =
           view = (view),
           triggers =
             Array.fromLinkedList
-              [ Trigger.everyMilliseconds 1000 (\_ -> Tick)
+              [ Time.triggerEveryMilliseconds 1000 (\_ -> Tick)
               ],
           update = (update)
         }

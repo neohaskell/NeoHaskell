@@ -28,7 +28,7 @@ import Var qualified
 
 
 {-
-Commands (Action) are essentially a callback that is called after some side effect
+Actions (Action) are essentially a callback that is called after some side effect
 happens. First, the platform, or the user, will register action handlers that will
 act as effectful functions that will be triggered when the action is submitted
 into the Action queue (this is hidden from the user, and handled by the platform),
@@ -59,11 +59,11 @@ init = (
       |> Action.map AppStarted
     )
 
-The advantage of defining side effects through the usage of commands is that it
+The advantage of defining side effects through the usage of actions is that it
 allows the side effects to be tracked in a queue, which can be inspected in many different
 ways, and also test them in a controlled environment.
 
-This allows for even more interesting features, like allowing to replay the commands without
+This allows for even more interesting features, like allowing to replay the actions without
 actually executing them, or even to serialize them and send them to another platform to be
 executed there. This is the basis for the time-travel debugging feature that Elm has, and
 a great inspiration for the NeoHaskell platform.
@@ -72,7 +72,7 @@ newtype Action msg
   = Action
       ( Array
           ( Record
-              '[ "name" := CommandName,
+              '[ "name" := ActionName,
                  "payload" := Unknown
                ]
           )
@@ -80,9 +80,9 @@ newtype Action msg
   deriving (Show)
 
 
-data CommandName
+data ActionName
   = Custom Text
-  | MapCommand
+  | MapAction
   deriving (Show)
 
 
@@ -109,16 +109,16 @@ none = Action (Array.empty)
 
 
 batch :: Array (Action msg) -> Action msg
-batch commands =
-  commands
+batch actions =
+  actions
     |> Array.flatMap (\(Action action) -> action)
     |> Action
 
 
 map :: (Unknown.Convertible a, Unknown.Convertible b) => (a -> b) -> Action a -> Action b
-map f (Action commands) =
-  commands
-    |> Array.push (ANON {name = MapCommand, payload = Unknown.fromValue f})
+map f (Action actions) =
+  actions
+    |> Array.push (ANON {name = MapAction, payload = Unknown.fromValue f})
     |> Action
 
 
@@ -128,14 +128,14 @@ processBatch ::
   HandlerRegistry ->
   Action value ->
   IO (Maybe value)
-processBatch registry (Action commandBatch) = do
+processBatch registry (Action actionBatch) = do
   print "Processing batch"
   print "Creating output var"
   currentOutput <- Var.new Nothing
 
   -- TODO: Refactor this
-  print ("Starting action loop with " ++ toText (Array.length commandBatch) ++ " commands")
-  commandBatch |> Array.forEach \action -> do
+  print ("Starting action loop with " ++ toText (Array.length actionBatch) ++ " actions")
+  actionBatch |> Array.forEach \action -> do
     print ("Matching action " ++ toText action)
     case action.name of
       Custom name' -> do
@@ -154,7 +154,7 @@ processBatch registry (Action commandBatch) = do
           Nothing -> do
             print "Action handler not found"
             pure ()
-      MapCommand -> do
+      MapAction -> do
         print "Map action"
         maybeOut <- Var.get currentOutput
 
@@ -191,7 +191,7 @@ processBatch registry (Action commandBatch) = do
 --               case Map.get name' registry of
 --                 Just handler -> handler payload
 --                 Nothing -> pure Nothing
---             MapCommand -> pure (Just payload)
+--             MapAction -> pure (Just payload)
 --       )
 -- results
 --   |> Array.mapMaybe identity

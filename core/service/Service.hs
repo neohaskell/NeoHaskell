@@ -3,7 +3,7 @@
 module Service (
   init,
   Service,
-  registerCommandHandler,
+  registerActionHandler,
 ) where
 
 import Action (Action)
@@ -38,8 +38,8 @@ type View = Text
 
 type Service (msg :: Type) =
   Record
-    '[ "commandHandlers" := Action.HandlerRegistry,
-       "commandsQueue" := Channel (Action msg)
+    '[ "actionHandlers" := Action.HandlerRegistry,
+       "actionsQueue" := Channel (Action msg)
      ]
 
 
@@ -55,7 +55,7 @@ type UserApp (model :: Type) (msg :: Type) =
 type RuntimeState (msg :: Type) = Var (Maybe (Service msg))
 
 
-registerCommandHandler ::
+registerActionHandler ::
   forall payload msg.
   ( Unknown.Convertible payload,
     Unknown.Convertible msg,
@@ -66,11 +66,11 @@ registerCommandHandler ::
   (payload -> IO msg) ->
   RuntimeState msg ->
   IO ()
-registerCommandHandler commandHandlerName handler runtimeState = do
+registerActionHandler actionHandlerName handler runtimeState = do
   print "Getting state"
   service <- getState runtimeState
   print ("Got state: " ++ toText service)
-  let commandHandler payload =
+  let actionHandler payload =
         case (Unknown.toValue payload) of
           Nothing -> do
             print "Payload is Nothing"
@@ -80,12 +80,12 @@ registerCommandHandler commandHandlerName handler runtimeState = do
             msg <- handler pl
             pure (Unknown.fromValue (msg :: msg) |> Just)
   let newRegistry =
-        service.commandHandlers
-          |> Map.set commandHandlerName commandHandler
-  let newPlatform = service {commandHandlers = newRegistry}
+        service.actionHandlers
+          |> Map.set actionHandlerName actionHandler
+  let newService = service {actionHandlers = newRegistry}
   print "Setting state"
   runtimeState
-    |> setState newPlatform
+    |> setState newService
 
 
 init ::
@@ -96,30 +96,30 @@ init ::
 init userApp = do
   print "Creating queue"
   runtimeState <- Var.new Nothing
-  commandsQueue <- Channel.new
+  actionsQueue <- Channel.new
   eventsQueue <- Channel.new
-  let initialPlatform =
+  let initialService =
         ANON
-          { commandHandlers = Action.emptyRegistry,
-            commandsQueue = commandsQueue
+          { actionHandlers = Action.emptyRegistry,
+            actionsQueue = actionsQueue
           }
   print "Setting state"
   runtimeState
-    |> setState initialPlatform
+    |> setState initialService
   print "Registering default action handlers"
-  registerDefaultCommandHandlers @msg runtimeState
+  registerDefaultActionHandlers @msg runtimeState
   let (initModel, initCmd) = userApp.init
   print "Creating model ref"
   modelRef <- ConcurrentVar.new
   modelRef |> ConcurrentVar.set initModel
   print "Writing init action"
-  commandsQueue |> Channel.write initCmd
+  actionsQueue |> Channel.write initCmd
   print "Starting loop"
-  (commandWorker @msg commandsQueue eventsQueue runtimeState)
+  (actionWorker @msg actionsQueue eventsQueue runtimeState)
     |> AsyncIO.run
     |> discard
 
-  mainWorker @msg userApp eventsQueue modelRef commandsQueue
+  mainWorker @msg userApp eventsQueue modelRef actionsQueue
     |> AsyncIO.run
     |> discard
 
@@ -153,8 +153,8 @@ getState ::
   RuntimeState msg ->
   IO (Service msg)
 getState runtimeState = do
-  maybePlatform <- Var.get runtimeState
-  case maybePlatform of
+  maybeService <- Var.get runtimeState
+  case maybeService of
     Nothing -> dieWith "Service is not initialized"
     Just service -> pure service
 
@@ -172,49 +172,49 @@ setState value runtimeState = do
 -- action names to handlers. This way, the user app can register its own
 -- action handlers. Ideally also the user could omit the action handlers
 -- and the service would still work with the default action handlers.
-registerDefaultCommandHandlers ::
+registerDefaultActionHandlers ::
   forall (msg :: Type).
   ( Unknown.Convertible msg,
     ToText msg
   ) =>
   RuntimeState msg ->
   IO ()
-registerDefaultCommandHandlers runtimeState = do
+registerDefaultActionHandlers runtimeState = do
   runtimeState
-    |> registerCommandHandler @(File.ReadOptions msg) @msg "File.readText" (File.readTextHandler @msg)
+    |> registerActionHandler @(File.ReadOptions msg) @msg "File.readText" (File.readTextHandler @msg)
 
   runtimeState
-    |> registerCommandHandler "continueWith" (Action.continueWithHandler @msg)
+    |> registerActionHandler "continueWith" (Action.continueWithHandler @msg)
 
 
-commandWorker ::
+actionWorker ::
   forall (msg :: Type).
   (Unknown.Convertible msg) =>
   Channel (Action msg) ->
   Channel msg ->
   RuntimeState msg ->
   IO ()
-commandWorker commandsQueue eventsQueue runtimeState =
+actionWorker actionsQueue eventsQueue runtimeState =
   forever do
     print "Reading next action batch"
-    nextCommandBatch <- Channel.read commandsQueue
+    nextActionBatch <- Channel.read actionsQueue
     print "Getting state"
     state <- getState runtimeState
     print "Processing next action batch"
-    processed <- Action.processBatch state.commandHandlers nextCommandBatch
+    processed <- Action.processBatch state.actionHandlers nextActionBatch
 
     case processed of
       Nothing -> do
-        print "No commands to process"
+        print "No actions to process"
       Just msg -> do
         eventsQueue |> Channel.write msg
 
 
-data PlatformN = PlatformN
+data ServiceN = ServiceN
   deriving (Show, Ord, Eq)
 
 
-data PlatformEvent (model :: Type)
+data ServiceEvent (model :: Type)
   = ModelUpdated model
   deriving (Show, Ord, Eq)
 
@@ -238,7 +238,7 @@ renderWorker userApp modelRef = do
 
   let brickApp =
         Brick.App
-          { Brick.appDraw = \state -> [userApp.view state |> Brick.txt @PlatformN],
+          { Brick.appDraw = \state -> [userApp.view state |> Brick.txt @ServiceN],
             Brick.appChooseCursor = \_ _ -> Nothing,
             Brick.appHandleEvent = handleEvent,
             Brick.appStartEvent = pure (),
@@ -262,7 +262,7 @@ renderWorker userApp modelRef = do
 renderModelWorker ::
   forall (model :: Type).
   ConcurrentVar model ->
-  BChan (PlatformEvent model) ->
+  BChan (ServiceEvent model) ->
   IO ()
 renderModelWorker modelRef eventChannel =
   forever do
@@ -282,7 +282,7 @@ mainWorker ::
   ConcurrentVar model ->
   Channel (Action msg) ->
   IO ()
-mainWorker userApp eventsQueue modelRef commandsQueue =
+mainWorker userApp eventsQueue modelRef actionsQueue =
   forever do
     print "Reading next event"
     msg <- Channel.read eventsQueue
@@ -304,4 +304,4 @@ mainWorker userApp eventsQueue modelRef commandsQueue =
     modelRef |> ConcurrentVar.set newModel
 
     print "Writing new action"
-    commandsQueue |> Channel.write newCmd
+    actionsQueue |> Channel.write newCmd
