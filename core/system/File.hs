@@ -30,11 +30,11 @@ data Error
   deriving (Show)
 
 
-type ReadOptions msg =
+type ReadOptions event =
   Record
     '[ "path" := Path,
-       "onSuccess" := (Text -> msg),
-       "onError" := (Error -> msg)
+       "onSuccess" := (Text -> event),
+       "onError" := (Error -> event)
      ]
 
 
@@ -44,30 +44,30 @@ instance (Unknown.Convertible a, Unknown.Convertible b) => Show (a -> b) where
     Text.toLinkedList t
 
 
-readText :: (Unknown.Convertible msg) => ReadOptions msg -> Action msg
+readText :: (Unknown.Convertible event) => ReadOptions event -> Action event
 readText options =
   Action.named "File.readText" options
 
 
-type WriteTextOptions msg =
+type WriteTextOptions event =
   Record
     '[ "path" := Path,
        "text" := Text,
-       "onSuccess" := msg,
-       "onError" := (Error -> msg)
+       "onSuccess" := event,
+       "onError" := (Error -> event)
      ]
 
 
-writeText :: (Unknown.Convertible msg) => WriteTextOptions msg -> Action msg
+writeText :: (Unknown.Convertible event) => WriteTextOptions event -> Action event
 writeText options =
   Action.named "File.writeText" options
 
 
 readTextHandler ::
-  forall msg.
-  (Unknown.Convertible msg) =>
-  ReadOptions msg ->
-  IO msg
+  forall event.
+  (Unknown.Convertible event) =>
+  ReadOptions event ->
+  IO event
 readTextHandler options = do
   -- TODO: Figure out exceptions module and "raw IO" modules
   result <- options.path |> Path.toLinkedList |> TIO.readFile |> Exception.try @Exception.IOError
@@ -76,6 +76,6 @@ readTextHandler options = do
     Either.Right contents -> pure (options.onSuccess contents)
 
 
-writeTextHandler :: (Unknown.Convertible msg) => WriteTextOptions msg -> IO msg
+writeTextHandler :: (Unknown.Convertible event) => WriteTextOptions event -> IO event
 writeTextHandler _ =
   dieWith "File.writeTextHandler is not implemented yet"

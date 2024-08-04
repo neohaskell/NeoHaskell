@@ -49,10 +49,10 @@ type Model = [
     "someText" := Text
     ]
 
-data Msg
+data Event
     = AppStarted String
 
-init :: (Model, Action Msg)
+init :: (Model, Action Event)
 init = (
     emptyModel,
     FileSystem.readFile "someFile.txt"
@@ -68,7 +68,7 @@ actually executing them, or even to serialize them and send them to another plat
 executed there. This is the basis for the time-travel debugging feature that Elm has, and
 a great inspiration for the NeoHaskell platform.
 -}
-newtype Action msg
+newtype Action event
   = Action
       ( Array
           ( Record
@@ -104,11 +104,11 @@ emptyRegistry :: Action.HandlerRegistry
 emptyRegistry = Map.empty
 
 
-none :: Action msg
+none :: Action event
 none = Action (Array.empty)
 
 
-batch :: Array (Action msg) -> Action msg
+batch :: Array (Action event) -> Action event
 batch actions =
   actions
     |> Array.flatMap (\(Action action) -> action)
@@ -207,17 +207,17 @@ named name value =
 
 
 continueWith ::
-  (Unknown.Convertible msg) =>
-  msg ->
-  Action msg
-continueWith msg =
-  named "continueWith" msg
+  (Unknown.Convertible event) =>
+  event ->
+  Action event
+continueWith event =
+  named "continueWith" event
 
 
 continueWithHandler ::
-  forall msg.
-  (Unknown.Convertible msg) =>
-  msg ->
-  IO msg
-continueWithHandler msg =
-  pure msg
+  forall event.
+  (Unknown.Convertible event) =>
+  event ->
+  IO event
+continueWithHandler event =
+  pure event

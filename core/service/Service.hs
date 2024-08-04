@@ -36,35 +36,35 @@ import Var qualified
 type View = Text
 
 
-type Service (msg :: Type) =
+type Service (event :: Type) =
   Record
     '[ "actionHandlers" := Action.HandlerRegistry,
-       "actionsQueue" := Channel (Action msg)
+       "actionsQueue" := Channel (Action event)
      ]
 
 
-type UserApp (model :: Type) (msg :: Type) =
+type UserApp (model :: Type) (event :: Type) =
   Record
-    '[ "init" := (model, Action msg),
+    '[ "init" := (model, Action event),
        "view" := (model -> View),
-       "triggers" := (Array (Trigger msg)),
-       "update" := (msg -> model -> (model, Action msg))
+       "triggers" := (Array (Trigger event)),
+       "update" := (event -> model -> (model, Action event))
      ]
 
 
-type RuntimeState (msg :: Type) = Var (Maybe (Service msg))
+type RuntimeState (event :: Type) = Var (Maybe (Service event))
 
 
 registerActionHandler ::
-  forall payload msg.
+  forall payload event.
   ( Unknown.Convertible payload,
-    Unknown.Convertible msg,
+    Unknown.Convertible event,
     ToText payload,
-    ToText msg
+    ToText event
   ) =>
   Text ->
-  (payload -> IO msg) ->
-  RuntimeState msg ->
+  (payload -> IO event) ->
+  RuntimeState event ->
   IO ()
 registerActionHandler actionHandlerName handler runtimeState = do
   print "Getting state"
@@ -77,8 +77,8 @@ registerActionHandler actionHandlerName handler runtimeState = do
             pure Nothing
           Just pl -> do
             print ("Payload was Just " ++ toText pl)
-            msg <- handler pl
-            pure (Unknown.fromValue (msg :: msg) |> Just)
+            event <- handler pl
+            pure (Unknown.fromValue (event :: event) |> Just)
   let newRegistry =
         service.actionHandlers
           |> Map.set actionHandlerName actionHandler
@@ -89,9 +89,9 @@ registerActionHandler actionHandlerName handler runtimeState = do
 
 
 init ::
-  forall (model :: Type) (msg :: Type).
-  (Unknown.Convertible msg, ToText msg, ToText model) =>
-  UserApp model msg ->
+  forall (model :: Type) (event :: Type).
+  (Unknown.Convertible event, ToText event, ToText model) =>
+  UserApp model event ->
   IO ()
 init userApp = do
   print "Creating queue"
@@ -107,7 +107,7 @@ init userApp = do
   runtimeState
     |> setState initialService
   print "Registering default action handlers"
-  registerDefaultActionHandlers @msg runtimeState
+  registerDefaultActionHandlers @event runtimeState
   let (initModel, initCmd) = userApp.init
   print "Creating model ref"
   modelRef <- ConcurrentVar.new
@@ -115,26 +115,26 @@ init userApp = do
   print "Writing init action"
   actionsQueue |> Channel.write initCmd
   print "Starting loop"
-  (actionWorker @msg actionsQueue eventsQueue runtimeState)
+  (actionWorker @event actionsQueue eventsQueue runtimeState)
     |> AsyncIO.run
     |> discard
 
-  mainWorker @msg userApp eventsQueue modelRef actionsQueue
+  mainWorker @event userApp eventsQueue modelRef actionsQueue
     |> AsyncIO.run
     |> discard
 
   print "Starting triggers"
   runTriggers userApp.triggers eventsQueue
 
-  (renderWorker @model @msg userApp modelRef)
+  (renderWorker @model @event userApp modelRef)
 
 
 -- PRIVATE
 
 runTriggers ::
-  forall (msg :: Type).
-  Array (Trigger msg) ->
-  Channel msg ->
+  forall (event :: Type).
+  Array (Trigger event) ->
+  Channel event ->
   IO ()
 runTriggers triggers eventsQueue = do
   let dispatchEvent event = do
@@ -149,9 +149,9 @@ runTriggers triggers eventsQueue = do
 
 
 getState ::
-  forall (msg :: Type).
-  RuntimeState msg ->
-  IO (Service msg)
+  forall (event :: Type).
+  RuntimeState event ->
+  IO (Service event)
 getState runtimeState = do
   maybeService <- Var.get runtimeState
   case maybeService of
@@ -160,9 +160,9 @@ getState runtimeState = do
 
 
 setState ::
-  forall (msg :: Type).
-  Service msg ->
-  RuntimeState msg ->
+  forall (event :: Type).
+  Service event ->
+  RuntimeState event ->
   IO ()
 setState value runtimeState = do
   runtimeState |> Var.set (Just value)
@@ -173,26 +173,26 @@ setState value runtimeState = do
 -- action handlers. Ideally also the user could omit the action handlers
 -- and the service would still work with the default action handlers.
 registerDefaultActionHandlers ::
-  forall (msg :: Type).
-  ( Unknown.Convertible msg,
-    ToText msg
+  forall (event :: Type).
+  ( Unknown.Convertible event,
+    ToText event
   ) =>
-  RuntimeState msg ->
+  RuntimeState event ->
   IO ()
 registerDefaultActionHandlers runtimeState = do
   runtimeState
-    |> registerActionHandler @(File.ReadOptions msg) @msg "File.readText" (File.readTextHandler @msg)
+    |> registerActionHandler @(File.ReadOptions event) @event "File.readText" (File.readTextHandler @event)
 
   runtimeState
-    |> registerActionHandler "continueWith" (Action.continueWithHandler @msg)
+    |> registerActionHandler "continueWith" (Action.continueWithHandler @event)
 
 
 actionWorker ::
-  forall (msg :: Type).
-  (Unknown.Convertible msg) =>
-  Channel (Action msg) ->
-  Channel msg ->
-  RuntimeState msg ->
+  forall (event :: Type).
+  (Unknown.Convertible event) =>
+  Channel (Action event) ->
+  Channel event ->
+  RuntimeState event ->
   IO ()
 actionWorker actionsQueue eventsQueue runtimeState =
   forever do
@@ -206,8 +206,8 @@ actionWorker actionsQueue eventsQueue runtimeState =
     case processed of
       Nothing -> do
         print "No actions to process"
-      Just msg -> do
-        eventsQueue |> Channel.write msg
+      Just event -> do
+        eventsQueue |> Channel.write event
 
 
 data ServiceN = ServiceN
@@ -220,8 +220,8 @@ data ServiceEvent (model :: Type)
 
 
 renderWorker ::
-  forall (model :: Type) (msg :: Type).
-  UserApp model msg ->
+  forall (model :: Type) (event :: Type).
+  UserApp model event ->
   ConcurrentVar model ->
   IO ()
 renderWorker userApp modelRef = do
@@ -273,26 +273,26 @@ renderModelWorker modelRef eventChannel =
 
 
 mainWorker ::
-  forall (msg :: Type) (model :: Type).
-  (ToText model, ToText msg) =>
+  forall (event :: Type) (model :: Type).
+  (ToText model, ToText event) =>
   UserApp
     model
-    msg ->
-  Channel msg ->
+    event ->
+  Channel event ->
   ConcurrentVar model ->
-  Channel (Action msg) ->
+  Channel (Action event) ->
   IO ()
 mainWorker userApp eventsQueue modelRef actionsQueue =
   forever do
     print "Reading next event"
-    msg <- Channel.read eventsQueue
+    event <- Channel.read eventsQueue
 
     print "Getting model"
     model <- ConcurrentVar.get modelRef
     print ("Got model: " ++ toText model)
 
     print "Updating model"
-    let (newModel, newCmd) = userApp.update msg model
+    let (newModel, newCmd) = userApp.update event model
     print
       ( "New model: "
           ++ toText newModel
