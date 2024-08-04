@@ -1,12 +1,13 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
 
-module Platform
-  ( init,
-    Platform,
-    registerCommandHandler,
-  )
-where
+module Platform (
+  init,
+  Platform,
+  registerCommandHandler,
+) where
 
+import Action (Action)
+import Action qualified
 import Appendable ((++))
 import Array (Array)
 import Array qualified
@@ -17,8 +18,6 @@ import Brick.BChan (BChan)
 import Brick.BChan qualified
 import Channel (Channel)
 import Channel qualified
-import Command (Command)
-import Command qualified
 import ConcurrentVar (ConcurrentVar)
 import ConcurrentVar qualified
 import Console (print)
@@ -33,23 +32,28 @@ import Unknown qualified
 import Var (Var)
 import Var qualified
 
+
 type View = Text
+
 
 type Platform (msg :: Type) =
   Record
-    '[ "commandHandlers" := Command.HandlerRegistry,
-       "commandsQueue" := Channel (Command msg)
+    '[ "commandHandlers" := Action.HandlerRegistry,
+       "commandsQueue" := Channel (Action msg)
      ]
+
 
 type UserApp (model :: Type) (msg :: Type) =
   Record
-    '[ "init" := (model, Command msg),
+    '[ "init" := (model, Action msg),
        "view" := (model -> View),
        "triggers" := (Array (Trigger msg)),
-       "update" := (msg -> model -> (model, Command msg))
+       "update" := (msg -> model -> (model, Action msg))
      ]
 
+
 type RuntimeState (msg :: Type) = Var (Maybe (Platform msg))
+
 
 registerCommandHandler ::
   forall payload msg.
@@ -83,6 +87,7 @@ registerCommandHandler commandHandlerName handler runtimeState = do
   runtimeState
     |> setState newPlatform
 
+
 init ::
   forall (model :: Type) (msg :: Type).
   (Unknown.Convertible msg, ToText msg, ToText model) =>
@@ -95,19 +100,19 @@ init userApp = do
   eventsQueue <- Channel.new
   let initialPlatform =
         ANON
-          { commandHandlers = Command.emptyRegistry,
+          { commandHandlers = Action.emptyRegistry,
             commandsQueue = commandsQueue
           }
   print "Setting state"
   runtimeState
     |> setState initialPlatform
-  print "Registering default command handlers"
+  print "Registering default action handlers"
   registerDefaultCommandHandlers @msg runtimeState
   let (initModel, initCmd) = userApp.init
   print "Creating model ref"
   modelRef <- ConcurrentVar.new
   modelRef |> ConcurrentVar.set initModel
-  print "Writing init command"
+  print "Writing init action"
   commandsQueue |> Channel.write initCmd
   print "Starting loop"
   (commandWorker @msg commandsQueue eventsQueue runtimeState)
@@ -122,6 +127,7 @@ init userApp = do
   runTriggers userApp.triggers eventsQueue
 
   (renderWorker @model @msg userApp modelRef)
+
 
 -- PRIVATE
 
@@ -141,6 +147,7 @@ runTriggers triggers eventsQueue = do
   triggers
     |> Array.forEach triggerDispatch
 
+
 getState ::
   forall (msg :: Type).
   RuntimeState msg ->
@@ -151,6 +158,7 @@ getState runtimeState = do
     Nothing -> dieWith "Platform is not initialized"
     Just platform -> pure platform
 
+
 setState ::
   forall (msg :: Type).
   Platform msg ->
@@ -159,10 +167,11 @@ setState ::
 setState value runtimeState = do
   runtimeState |> Var.set (Just value)
 
--- TODO: Command Handlers should come in the user app record as a map of
--- command names to handlers. This way, the user app can register its own
--- command handlers. Ideally also the user could omit the command handlers
--- and the platform would still work with the default command handlers.
+
+-- TODO: Action Handlers should come in the user app record as a map of
+-- action names to handlers. This way, the user app can register its own
+-- action handlers. Ideally also the user could omit the action handlers
+-- and the platform would still work with the default action handlers.
 registerDefaultCommandHandlers ::
   forall (msg :: Type).
   ( Unknown.Convertible msg,
@@ -175,23 +184,24 @@ registerDefaultCommandHandlers runtimeState = do
     |> registerCommandHandler @(File.ReadOptions msg) @msg "File.readText" (File.readTextHandler @msg)
 
   runtimeState
-    |> registerCommandHandler "continueWith" (Command.continueWithHandler @msg)
+    |> registerCommandHandler "continueWith" (Action.continueWithHandler @msg)
+
 
 commandWorker ::
   forall (msg :: Type).
   (Unknown.Convertible msg) =>
-  Channel (Command msg) ->
+  Channel (Action msg) ->
   Channel msg ->
   RuntimeState msg ->
   IO ()
 commandWorker commandsQueue eventsQueue runtimeState =
   forever do
-    print "Reading next command batch"
+    print "Reading next action batch"
     nextCommandBatch <- Channel.read commandsQueue
     print "Getting state"
     state <- getState runtimeState
-    print "Processing next command batch"
-    processed <- Command.processBatch state.commandHandlers nextCommandBatch
+    print "Processing next action batch"
+    processed <- Action.processBatch state.commandHandlers nextCommandBatch
 
     case processed of
       Nothing -> do
@@ -199,12 +209,15 @@ commandWorker commandsQueue eventsQueue runtimeState =
       Just msg -> do
         eventsQueue |> Channel.write msg
 
+
 data PlatformN = PlatformN
   deriving (Show, Ord, Eq)
+
 
 data PlatformEvent (model :: Type)
   = ModelUpdated model
   deriving (Show, Ord, Eq)
+
 
 renderWorker ::
   forall (model :: Type) (msg :: Type).
@@ -245,6 +258,7 @@ renderWorker userApp modelRef = do
       model
   print "Done rendering"
 
+
 renderModelWorker ::
   forall (model :: Type).
   ConcurrentVar model ->
@@ -257,6 +271,7 @@ renderModelWorker modelRef eventChannel =
     print "Sending model update event"
     Brick.BChan.writeBChan eventChannel (ModelUpdated model)
 
+
 mainWorker ::
   forall (msg :: Type) (model :: Type).
   (ToText model, ToText msg) =>
@@ -265,7 +280,7 @@ mainWorker ::
     msg ->
   Channel msg ->
   ConcurrentVar model ->
-  Channel (Command msg) ->
+  Channel (Action msg) ->
   IO ()
 mainWorker userApp eventsQueue modelRef commandsQueue =
   forever do
@@ -281,12 +296,12 @@ mainWorker userApp eventsQueue modelRef commandsQueue =
     print
       ( "New model: "
           ++ toText newModel
-          ++ "New command: "
+          ++ "New action: "
           ++ toText newCmd
       )
 
     print "Setting new model"
     modelRef |> ConcurrentVar.set newModel
 
-    print "Writing new command"
+    print "Writing new action"
     commandsQueue |> Channel.write newCmd

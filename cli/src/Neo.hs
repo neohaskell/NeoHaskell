@@ -2,8 +2,8 @@
 
 module Neo (main) where
 
+import Action qualified
 import Array qualified
-import Command qualified
 import Core
 import File qualified
 import Platform qualified
@@ -44,7 +44,7 @@ data FailureReason
   deriving (Show)
 
 
-init :: (Model, Command Message)
+init :: (Model, Action Message)
 init = do
   let emptyModel =
         ANON
@@ -53,17 +53,17 @@ init = do
             count = 0,
             status = "Starting up"
           }
-  let command =
+  let action =
         File.readText
           ANON
             { path = [path|project.yaml|],
               onSuccess = ProjectFileRead,
               onError = ProjectFileAccessErrored
             }
-  (emptyModel, command)
+  (emptyModel, action)
 
 
-update :: Message -> Model -> (Model, Command Message)
+update :: Message -> Model -> (Model, Action Message)
 update message model =
   case message of
     ProjectFileRead fileContent -> do
@@ -71,24 +71,24 @@ update message model =
       let newModel = model {status = "Parsing project file"}
       case parsedContent of
         Result.Ok projectDefinition ->
-          (newModel, Command.continueWith (ProjectFileParsed projectDefinition))
+          (newModel, Action.continueWith (ProjectFileParsed projectDefinition))
         Result.Err _ -> do
           let error = ProjectFileParseError fileContent
-          (newModel, Command.continueWith (BuildFailed error))
+          (newModel, Action.continueWith (BuildFailed error))
     ProjectFileAccessErrored _ ->
-      (model {status = "File Access Errored"}, Command.none)
+      (model {status = "File Access Errored"}, Action.none)
     ProjectFileParsed projectDefinition ->
-      (model {project = Just projectDefinition}, Command.none)
+      (model {project = Just projectDefinition}, Action.none)
     BuildStarted ->
-      (model {status = "Build Started!"}, Command.none)
+      (model {status = "Build Started!"}, Action.none)
     BuildFailed _ ->
-      (model {status = "Build Failed!"}, Command.none)
+      (model {status = "Build Failed!"}, Action.none)
     Tick ->
       ( model
           { count = model.count + 1,
             status = "Count: " ++ toText model.count
           },
-        Command.none
+        Action.none
       )
 
 

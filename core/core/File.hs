@@ -1,18 +1,17 @@
-module File
-  ( Error (..),
-    writeTextHandler,
-    readTextHandler,
-    ReadOptions,
-    readText,
-    WriteTextOptions,
-    writeText,
-  )
-where
+module File (
+  Error (..),
+  writeTextHandler,
+  readTextHandler,
+  ReadOptions,
+  readText,
+  WriteTextOptions,
+  writeText,
+) where
 
+import Action (Action)
+import Action qualified
 import Appendable ((++))
 import Basics
-import Command (Command)
-import Command qualified
 import Control.Exception qualified as Exception
 import Data.Either qualified as Either
 import Data.Text.IO qualified as TIO
@@ -23,11 +22,13 @@ import Text (Text, toLinkedList)
 import ToText (Show (..))
 import Unknown qualified
 
+
 data Error
   = NotFound
   | NotWritable
   | NotReadable
   deriving (Show)
+
 
 type ReadOptions msg =
   Record
@@ -36,14 +37,17 @@ type ReadOptions msg =
        "onError" := (Error -> msg)
      ]
 
+
 instance (Unknown.Convertible a, Unknown.Convertible b) => Show (a -> b) where
   show _ = do
     let t = "(" ++ Unknown.getTypeName @a ++ " -> " ++ Unknown.getTypeName @b ++ ")"
     Text.toLinkedList t
 
-readText :: (Unknown.Convertible msg) => ReadOptions msg -> Command msg
+
+readText :: (Unknown.Convertible msg) => ReadOptions msg -> Action msg
 readText options =
-  Command.named "File.readText" options
+  Action.named "File.readText" options
+
 
 type WriteTextOptions msg =
   Record
@@ -53,9 +57,11 @@ type WriteTextOptions msg =
        "onError" := (Error -> msg)
      ]
 
-writeText :: (Unknown.Convertible msg) => WriteTextOptions msg -> Command msg
+
+writeText :: (Unknown.Convertible msg) => WriteTextOptions msg -> Action msg
 writeText options =
-  Command.named "File.writeText" options
+  Action.named "File.writeText" options
+
 
 readTextHandler ::
   forall msg.
@@ -68,6 +74,7 @@ readTextHandler options = do
   case result of
     Either.Left _ -> pure (options.onError NotFound)
     Either.Right contents -> pure (options.onSuccess contents)
+
 
 writeTextHandler :: (Unknown.Convertible msg) => WriteTextOptions msg -> IO msg
 writeTextHandler _ =

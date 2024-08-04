@@ -111,7 +111,7 @@ library
       ToText,
 
       -- Platform
-      Command,
+      Action,
       Html,
       Platform,
       Trigger,
