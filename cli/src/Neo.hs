@@ -12,6 +12,7 @@ import ToText (Show)
 import Trigger qualified
 import Yaml qualified
 
+
 type Model =
   Record
     '[ "project" := Maybe ProjectDefinition,
@@ -20,11 +21,13 @@ type Model =
        "status" := Text
      ]
 
+
 type ProjectDefinition =
   Record
     '[ "name" := Text,
        "version" := Version
      ]
+
 
 data Message
   = ProjectFileRead Text
@@ -35,9 +38,11 @@ data Message
   | BuildFailed FailureReason
   deriving (Show)
 
+
 data FailureReason
   = ProjectFileParseError Text
   deriving (Show)
+
 
 init :: (Model, Command Message)
 init = do
@@ -56,6 +61,7 @@ init = do
               onError = ProjectFileAccessErrored
             }
   (emptyModel, command)
+
 
 update :: Message -> Model -> (Model, Command Message)
 update message model =
@@ -85,6 +91,7 @@ update message model =
         Command.none
       )
 
+
 view :: Model -> Text
 view m =
   case m.project of
@@ -92,6 +99,7 @@ view m =
       m.status ++ "\n\n" ++ toText project
     Nothing ->
       m.status
+
 
 main :: IO ()
 main =
