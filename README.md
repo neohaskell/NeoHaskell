@@ -11,17 +11,6 @@
 
 ---
 
-# Welcome
-
-This is where the NeoHaskell code will live, once the implementation begins.
-
-If you're confused, this is because the project prioritizes the design and documentation first, and only implementation afterwards!
-
-Take a look at the [GitHub Milestones page](https://github.com/neohaskell/NeoHaskell/milestones) for a rough plan for the implementation.
-
-Design documents are being worked on currently for sharing progress in a stable way with the community. Sorry for the inconvenience! 🙏
-
-<!--
 # Welcome to the contributor guide
 
 If you want to learn about NeoHaskell itself, checkout
@@ -35,12 +24,11 @@ different parts of NeoHaskell.
 
 # Installing the required tools
 
-- Install GHCUP by following [the official instructions](https://www.haskell.org/ghcup/).
-- Run `ghcup tui` and press `s` on the following options:
-  - GHC 9.2.8
-  - Cabal 3.10.1.0
-  - HLS 2.2.0.0
-  - (When prompted for download, press `y` to accept)
+(This assumes that you're using MacOS, WSL2 or Linux)
+
+- Install DevEnv by following [the official instructions](https://devenv.sh/getting-started/).
+- Run `devenv shell`
+- Run `cabal update && cabal build all`
 
 The recommended IDE for any NeoHaskell project is [Visual Studio Code](https://code.visualstudio.com/).
 
@@ -48,13 +36,11 @@ The recommended IDE for any NeoHaskell project is [Visual Studio Code](https://c
 
 - Fork this repository
 - `git clone <url to your fork>`
-- `cd neohaskell && code .`
+- `cd NeoHaskell && code .`
 
 # Install the recommended extensions
 
 When opening the project for the first time, you will be prompted to install the recommended extensions, install them.
-
--->
 
 # Collaborate on Discord
 
