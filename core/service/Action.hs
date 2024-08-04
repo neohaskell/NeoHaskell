@@ -122,8 +122,6 @@ map f (Action commands) =
     |> Action
 
 
--- FIXME: Rather than applying this complex mapping, we should just setup a trigger for each action and apply the mapping
--- when the action is triggered, handled, and passed through that trigger
 processBatch ::
   forall (value :: Type).
   (Unknown.Convertible value) =>
@@ -135,6 +133,7 @@ processBatch registry (Action commandBatch) = do
   print "Creating output var"
   currentOutput <- Var.new Nothing
 
+  -- TODO: Refactor this
   print ("Starting action loop with " ++ toText (Array.length commandBatch) ++ " commands")
   commandBatch |> Array.forEach \action -> do
     print ("Matching action " ++ toText action)
