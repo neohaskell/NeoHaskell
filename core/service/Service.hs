@@ -1,8 +1,8 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
 
-module Platform (
+module Service (
   init,
-  Platform,
+  Service,
   registerCommandHandler,
 ) where
 
@@ -36,7 +36,7 @@ import Var qualified
 type View = Text
 
 
-type Platform (msg :: Type) =
+type Service (msg :: Type) =
   Record
     '[ "commandHandlers" := Action.HandlerRegistry,
        "commandsQueue" := Channel (Action msg)
@@ -52,7 +52,7 @@ type UserApp (model :: Type) (msg :: Type) =
      ]
 
 
-type RuntimeState (msg :: Type) = Var (Maybe (Platform msg))
+type RuntimeState (msg :: Type) = Var (Maybe (Service msg))
 
 
 registerCommandHandler ::
@@ -68,8 +68,8 @@ registerCommandHandler ::
   IO ()
 registerCommandHandler commandHandlerName handler runtimeState = do
   print "Getting state"
-  platform <- getState runtimeState
-  print ("Got state: " ++ toText platform)
+  service <- getState runtimeState
+  print ("Got state: " ++ toText service)
   let commandHandler payload =
         case (Unknown.toValue payload) of
           Nothing -> do
@@ -80,9 +80,9 @@ registerCommandHandler commandHandlerName handler runtimeState = do
             msg <- handler pl
             pure (Unknown.fromValue (msg :: msg) |> Just)
   let newRegistry =
-        platform.commandHandlers
+        service.commandHandlers
           |> Map.set commandHandlerName commandHandler
-  let newPlatform = platform {commandHandlers = newRegistry}
+  let newPlatform = service {commandHandlers = newRegistry}
   print "Setting state"
   runtimeState
     |> setState newPlatform
@@ -151,17 +151,17 @@ runTriggers triggers eventsQueue = do
 getState ::
   forall (msg :: Type).
   RuntimeState msg ->
-  IO (Platform msg)
+  IO (Service msg)
 getState runtimeState = do
   maybePlatform <- Var.get runtimeState
   case maybePlatform of
-    Nothing -> dieWith "Platform is not initialized"
-    Just platform -> pure platform
+    Nothing -> dieWith "Service is not initialized"
+    Just service -> pure service
 
 
 setState ::
   forall (msg :: Type).
-  Platform msg ->
+  Service msg ->
   RuntimeState msg ->
   IO ()
 setState value runtimeState = do
@@ -171,7 +171,7 @@ setState value runtimeState = do
 -- TODO: Action Handlers should come in the user app record as a map of
 -- action names to handlers. This way, the user app can register its own
 -- action handlers. Ideally also the user could omit the action handlers
--- and the platform would still work with the default action handlers.
+-- and the service would still work with the default action handlers.
 registerDefaultCommandHandlers ::
   forall (msg :: Type).
   ( Unknown.Convertible msg,

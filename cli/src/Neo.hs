@@ -6,8 +6,8 @@ import Action qualified
 import Array qualified
 import Core
 import File qualified
-import Platform qualified
 import Result qualified
+import Service qualified
 import ToText (Show)
 import Trigger qualified
 import Yaml qualified
@@ -103,7 +103,7 @@ view m =
 
 main :: IO ()
 main =
-  Platform.init
+  Service.init
     ( ANON
         { init = (init),
           view = (view),

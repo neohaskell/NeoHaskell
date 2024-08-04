@@ -110,10 +110,10 @@ library
       Thenable,
       ToText,
 
-      -- Platform
+      -- Service
       Action,
       Html,
-      Platform,
+      Service,
       Trigger,
 
       -- Concurrency
@@ -127,7 +127,7 @@ library
     hs-source-dirs:
       core,
       concurrency,
-      platform,
+      service,
       json,
       yaml,
       traits,
