@@ -22,4 +22,4 @@ triggerEveryMilliseconds milliseconds messageConstructor =
             |> Nanotime.unPosixTime
             |> Prelude.fromIntegral
     dispatch (messageConstructor currentMs)
-    AsyncIO.sleep (milliseconds * 1000)
+    AsyncIO.sleep milliseconds
