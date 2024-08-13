@@ -97,7 +97,7 @@ library
       Time,
 
       -- OptionsParser
-      OptionsParser,
+      Command,
 
       -- JSON
       Json,
