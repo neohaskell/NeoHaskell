@@ -3,6 +3,7 @@
 module Service (
   init,
   Service,
+  UserApp,
   registerActionHandler,
 ) where
 
@@ -18,11 +19,13 @@ import Brick.BChan (BChan)
 import Brick.BChan qualified
 import Channel (Channel)
 import Channel qualified
+import Command qualified
 import ConcurrentVar (ConcurrentVar)
 import ConcurrentVar qualified
 import Console (print)
 import File qualified
 import Graphics.Vty qualified as Vty
+import IO qualified
 import Map qualified
 import Maybe (Maybe (..))
 import Text (Text)
@@ -39,13 +42,14 @@ type View = Text
 type Service (event :: Type) =
   Record
     '[ "actionHandlers" := Action.HandlerRegistry,
-       "actionsQueue" := Channel (Action event)
+       "actionsQueue" := Channel (Action event),
+       "shouldExit" := Bool
      ]
 
 
 type UserApp (model :: Type) (event :: Type) =
   Record
-    '[ "init" := (model, Action event),
+    '[ "init" := ((model, Action event)),
        "view" := (model -> View),
        "triggers" := (Array (Trigger event)),
        "update" := (event -> model -> (model, Action event))
@@ -101,7 +105,8 @@ init userApp = do
   let initialService =
         ANON
           { actionHandlers = Action.emptyRegistry,
-            actionsQueue = actionsQueue
+            actionsQueue = actionsQueue,
+            shouldExit = False
           }
   print "Setting state"
   runtimeState
@@ -115,18 +120,21 @@ init userApp = do
   print "Writing init action"
   actionsQueue |> Channel.write initCmd
   print "Starting loop"
-  (actionWorker @event actionsQueue eventsQueue runtimeState)
-    |> AsyncIO.run
-    |> discard
+  let actionW =
+        (actionWorker @event actionsQueue eventsQueue runtimeState)
 
-  mainWorker @event userApp eventsQueue modelRef actionsQueue
-    |> AsyncIO.run
-    |> discard
+  let renderW =
+        (renderWorker @model @event userApp modelRef runtimeState)
 
-  print "Starting triggers"
-  runTriggers userApp.triggers eventsQueue
+  let mainW =
+        (mainWorker @event @model userApp eventsQueue modelRef actionsQueue)
 
-  (renderWorker @model @event userApp modelRef)
+  -- Create async tasks for each worker
+  AsyncIO.process actionW \_ -> do
+    AsyncIO.process renderW \_ -> do
+      print "Starting triggers"
+      runTriggers userApp.triggers eventsQueue
+      mainW
 
 
 -- PRIVATE
@@ -184,6 +192,9 @@ registerDefaultActionHandlers runtimeState = do
     |> registerActionHandler @(File.ReadOptions event) @event "File.readText" (File.readTextHandler @event)
 
   runtimeState
+    |> registerActionHandler @(Command.CommandOptions event) @event "Command.parse" (Command.parseHandler @event)
+
+  runtimeState
     |> registerActionHandler "continueWith" (Action.continueWithHandler @event)
 
 
@@ -223,8 +234,17 @@ renderWorker ::
   forall (model :: Type) (event :: Type).
   UserApp model event ->
   ConcurrentVar model ->
+  RuntimeState event ->
   IO ()
-renderWorker userApp modelRef = do
+renderWorker userApp modelRef runtimeState = do
+  -- FIXME: This is a horrible hack
+  AsyncIO.sleep 500
+  print "Getting state"
+  runState <- getState runtimeState
+  when runState.shouldExit do
+    print "Exiting"
+    IO.exitSuccess
+
   print "Getting model"
   model <- ConcurrentVar.peek modelRef
 

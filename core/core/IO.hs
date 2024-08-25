@@ -1,6 +1,8 @@
-module IO (IO, yield, dangerouslyRun) where
+module IO (IO, yield, dangerouslyRun, finally, exitSuccess) where
 
+import Control.Exception qualified as GHC
 import GHC.IO (IO)
+import System.Exit qualified as GHC
 import System.IO.Unsafe qualified as GHC
 import Prelude qualified
 
@@ -23,3 +25,11 @@ yield = Prelude.pure
 -- In general, it's best to avoid `dangerouslyRun`.
 dangerouslyRun :: IO a -> a
 dangerouslyRun = GHC.unsafePerformIO
+
+
+finally :: IO a -> IO b -> IO a
+finally action cleanup = GHC.finally action cleanup
+
+
+exitSuccess :: IO a
+exitSuccess = GHC.exitSuccess

@@ -1,13 +1,18 @@
-module Command(
+module Command (
   OptionsParser,
+  CommandOptions,
   text,
+  path,
   parseWith,
   json,
   flag,
-  run,
+  parse,
+  parseHandler,
   commands,
 ) where
 
+import Action (Action)
+import Action qualified
 import Appendable ((++))
 import Array (Array)
 import Array qualified
@@ -23,15 +28,23 @@ import LinkedList (LinkedList)
 import Maybe (Maybe (..))
 import Maybe qualified
 import OptEnvConf qualified
+import Path (Path)
 import Record qualified
 import Result (Result (..))
 import Text (Text, fromLinkedList, toLinkedList)
-import ToText (ToText)
+import ToText (Show (..), ToText)
+import Unknown qualified
 import Version (version)
 
 
 newtype OptionsParser value = OptionsParser (OptEnvConf.Parser value)
   deriving (Functor.Functor, Applicative.Applicative)
+
+
+instance (Unknown.Convertible value) => Show (OptionsParser value) where
+  show _ = do
+    let typeName = Unknown.getTypeName @value
+    "[OptionsParser " ++ Text.toLinkedList typeName ++ "]"
 
 
 type CommandOptions value =
@@ -43,8 +56,19 @@ type CommandOptions value =
     ]
 
 
-run :: CommandOptions value -> IO value
-run options = do
+newtype Error = Error Text
+  deriving (Show)
+
+
+parse ::
+  (Unknown.Convertible event) =>
+  CommandOptions event ->
+  Action event
+parse options = Action.named "Command.parse" options
+
+
+parseHandler :: CommandOptions event -> IO event
+parseHandler options = do
   let (OptionsParser parser) = options.decoder
   let programDescription = options.description |> Text.toLinkedList
   let ver =
@@ -88,6 +112,44 @@ text cfg = do
           OptEnvConf.option
         ]
   OptEnvConf.setting (textValue ++ options)
+    |> OptionsParser
+
+
+type PathConfig =
+  [ "help" := Text,
+    "long" := Text,
+    "short" := Char,
+    "metavar" := Text,
+    "value" := Maybe Path
+  ]
+
+
+defaultPathConfig :: Record PathConfig
+defaultPathConfig =
+  ANON
+    { help = defaultValue,
+      long = defaultValue,
+      short = defaultValue,
+      metavar = defaultValue,
+      value = Nothing
+    }
+
+
+path :: (Record.Extends PathConfig config) => Record config -> OptionsParser Path
+path cfg = do
+  let config = cfg |> Record.overrideWith defaultPathConfig
+  let pathValue = case config.value of
+        Just val -> [OptEnvConf.value val]
+        Nothing -> []
+  let options =
+        [ OptEnvConf.help (config.help |> Text.toLinkedList),
+          OptEnvConf.long (config.long |> Text.toLinkedList),
+          OptEnvConf.short config.short,
+          OptEnvConf.metavar (config.metavar |> Text.toLinkedList),
+          OptEnvConf.reader OptEnvConf.str,
+          OptEnvConf.option
+        ]
+  OptEnvConf.setting (pathValue ++ options)
     |> OptionsParser
 
 
