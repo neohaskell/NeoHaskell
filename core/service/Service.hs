@@ -17,7 +17,7 @@ import Basics
 import Brick qualified
 import Brick.BChan (BChan)
 import Brick.BChan qualified
-import Channel (Channel)
+import Channel (Channel, read)
 import Channel qualified
 import Command qualified
 import ConcurrentVar (ConcurrentVar)
@@ -28,6 +28,7 @@ import Graphics.Vty qualified as Vty
 import IO qualified
 import Map qualified
 import Maybe (Maybe (..))
+import Result qualified
 import Text (Text)
 import ToText (Show (..), ToText, toText)
 import Trigger (Trigger (..))
@@ -42,8 +43,7 @@ type View = Text
 type Service (event :: Type) =
   Record
     '[ "actionHandlers" := Action.HandlerRegistry,
-       "actionsQueue" := Channel (Action event),
-       "shouldExit" := Bool
+       "actionsQueue" := Channel (Action event)
      ]
 
 
@@ -98,44 +98,54 @@ init ::
   UserApp model event ->
   IO ()
 init userApp = do
-  print "Creating queue"
+  print "[init] Creating queue"
   runtimeState <- Var.new Nothing
   actionsQueue <- Channel.new
   eventsQueue <- Channel.new
   let initialService =
         ANON
           { actionHandlers = Action.emptyRegistry,
-            actionsQueue = actionsQueue,
-            shouldExit = False
+            actionsQueue = actionsQueue
           }
-  print "Setting state"
+  print "[init] Setting state"
   runtimeState
     |> setState initialService
-  print "Registering default action handlers"
+  print "[init] Registering default action handlers"
   registerDefaultActionHandlers @event runtimeState
   let (initModel, initCmd) = userApp.init
-  print "Creating model ref"
+  print "[init] Creating model ref"
   modelRef <- ConcurrentVar.new
   modelRef |> ConcurrentVar.set initModel
-  print "Writing init action"
+  print "[init] Writing init action"
   actionsQueue |> Channel.write initCmd
-  print "Starting loop"
+  print "[init] Starting loop"
   let actionW =
         (actionWorker @event actionsQueue eventsQueue runtimeState)
+          |> IO.finally (print "[init] Action worker exited")
 
   let renderW =
         (renderWorker @model @event userApp modelRef runtimeState)
+          |> IO.finally (print "[init] Render worker exited")
 
   let mainW =
         (mainWorker @event @model userApp eventsQueue modelRef actionsQueue)
 
-  -- Create async tasks for each worker
-  AsyncIO.process actionW \_ -> do
-    AsyncIO.process renderW \_ -> do
-      print "Starting triggers"
+  AsyncIO.process mainW \loopPromise -> do
+    AsyncIO.process renderW \renderPromise -> do
+      print "[init] Starting triggers"
       runTriggers userApp.triggers eventsQueue
-      mainW
+      -- The action worker must be the main loop
+      -- or else it won't be able to exit the program
+      actionW
+        |> IO.finally do
+          print "[init] Cancelling workers"
+          AsyncIO.cancel loopPromise
+          AsyncIO.cancel renderPromise
 
+
+-- AsyncIO.process actionW \_ -> do
+--   AsyncIO.process renderW \_ -> do
+--     mainW
 
 -- PRIVATE
 
@@ -145,6 +155,10 @@ runTriggers ::
   Channel event ->
   IO ()
 runTriggers triggers eventsQueue = do
+  print "[runTriggers] Running triggers"
+
+  print ("[runTriggers] Got " ++ (Array.length triggers |> toText) ++ " triggers")
+
   let dispatchEvent event = do
         eventsQueue |> Channel.write event
 
@@ -152,6 +166,7 @@ runTriggers triggers eventsQueue = do
         process dispatchEvent
           |> AsyncIO.run
           |> discard
+
   triggers
     |> Array.forEach triggerDispatch
 
@@ -207,16 +222,16 @@ actionWorker ::
   IO ()
 actionWorker actionsQueue eventsQueue runtimeState =
   forever do
-    print "Reading next action batch"
+    print "[actionWorker] Reading next action batch"
     nextActionBatch <- Channel.read actionsQueue
-    print "Getting state"
+    print "[actionWorker] Getting state"
     state <- getState runtimeState
-    print "Processing next action batch"
+    print "[actionWorker] Processing next action batch"
     processed <- Action.processBatch state.actionHandlers nextActionBatch
 
     case processed of
       Nothing -> do
-        print "No actions to process"
+        print "[actionWorker] No actions to process"
       Just event -> do
         eventsQueue |> Channel.write event
 
@@ -236,19 +251,19 @@ renderWorker ::
   ConcurrentVar model ->
   RuntimeState event ->
   IO ()
-renderWorker userApp modelRef runtimeState = do
-  -- FIXME: This is a horrible hack
+renderWorker userApp modelRef _ = do
+  -- We wait a little bit to give the other workers a chance to start
+  -- before we start rendering the view. This is also useful for when
+  -- the action worker might exit the program on first execution.
+  -- E.g. when the settings parser fails to parse the command line
+  -- arguments.
   AsyncIO.sleep 500
-  print "Getting state"
-  runState <- getState runtimeState
-  when runState.shouldExit do
-    print "Exiting"
-    IO.exitSuccess
+  print "[renderWorker] Getting state"
 
-  print "Getting model"
+  print "[renderWorker] Getting model"
   model <- ConcurrentVar.peek modelRef
 
-  print "Setting up event channel"
+  print "[renderWorker] Setting up event channel"
   eventChannel <- Brick.BChan.newBChan 1
 
   let handleEvent event = case event of
@@ -265,18 +280,18 @@ renderWorker userApp modelRef runtimeState = do
             Brick.appAttrMap = \_ -> Brick.attrMap Vty.defAttr []
           }
 
-  print "Running render model worker"
+  print "[renderWorker] Running render model worker"
   renderModelWorker @model modelRef eventChannel
     |> AsyncIO.run
     |> discard
 
-  print "Rendering view"
+  print "[renderWorker] Rendering view"
   _ <-
     Brick.customMainWithDefaultVty
       (Just eventChannel)
       brickApp
       model
-  print "Done rendering"
+  print "[renderWorker] Done rendering"
 
 
 renderModelWorker ::
@@ -286,9 +301,9 @@ renderModelWorker ::
   IO ()
 renderModelWorker modelRef eventChannel =
   forever do
-    print "Peeking model"
+    print "[renderModelWorker] Peeking model"
     model <- ConcurrentVar.peek modelRef
-    print "Sending model update event"
+    print "[renderModelWorker] Sending model update event"
     Brick.BChan.writeBChan eventChannel (ModelUpdated model)
 
 
@@ -302,26 +317,39 @@ mainWorker ::
   ConcurrentVar model ->
   Channel (Action event) ->
   IO ()
-mainWorker userApp eventsQueue modelRef actionsQueue =
+mainWorker userApp eventsQueue modelRef actionsQueue = do
+  let handleNoMoreEvents = do
+        AsyncIO.sleep 30000
+        print "[mainWorker] No more events to process after 30 seconds"
+        dieWith "No more events to process"
+
+  let readEvent = do
+        print "[mainWorker] Reading next event"
+        Channel.read eventsQueue
+
   forever do
-    print "Reading next event"
-    event <- Channel.read eventsQueue
+    eventRes <-
+      readEvent
+        |> AsyncIO.withRecovery handleNoMoreEvents
+    case eventRes of
+      Result.Err _ ->
+        handleNoMoreEvents
+      Result.Ok event -> do
+        print "[mainWorker] Getting model"
+        model <- ConcurrentVar.get modelRef
+        print ("[mainWorker] Got model: " ++ toText model)
 
-    print "Getting model"
-    model <- ConcurrentVar.get modelRef
-    print ("Got model: " ++ toText model)
+        print "[mainWorker] Updating model"
+        let (newModel, newCmd) = userApp.update event model
+        print
+          ( "[mainWorker] New model: "
+              ++ toText newModel
+              ++ "New action: "
+              ++ toText newCmd
+          )
 
-    print "Updating model"
-    let (newModel, newCmd) = userApp.update event model
-    print
-      ( "New model: "
-          ++ toText newModel
-          ++ "New action: "
-          ++ toText newCmd
-      )
+        print "[mainWorker] Setting new model"
+        modelRef |> ConcurrentVar.set newModel
 
-    print "Setting new model"
-    modelRef |> ConcurrentVar.set newModel
-
-    print "Writing new action"
-    actionsQueue |> Channel.write newCmd
+        print "[mainWorker] Writing new action"
+        actionsQueue |> Channel.write newCmd

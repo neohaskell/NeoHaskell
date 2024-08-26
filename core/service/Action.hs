@@ -129,50 +129,50 @@ processBatch ::
   Action value ->
   IO (Maybe value)
 processBatch registry (Action actionBatch) = do
-  print "Processing batch"
-  print "Creating output var"
+  print "[processBatch] Processing batch"
+  print "[processBatch] Creating output var"
   currentOutput <- Var.new Nothing
 
   -- TODO: Refactor this
-  print ("Starting action loop with " ++ toText (Array.length actionBatch) ++ " actions")
+  print ("[processBatch] Starting action loop with " ++ toText (Array.length actionBatch) ++ " actions")
   actionBatch |> Array.forEach \action -> do
-    print ("Matching action " ++ toText action)
+    print ("[processBatch] Matching action " ++ toText action)
     case action.name of
       Custom name' -> do
-        print ("Custom action " ++ name')
+        print ("[processBatch] Custom action " ++ name')
         case Map.get name' registry of
           Just handler -> do
-            print "Handler found, executing"
+            print "[processBatch] Handler found, executing"
             result <- handler action.payload
             case result of
               Nothing -> do
-                print "Handler returned Nothing"
+                print "[processBatch] Handler returned Nothing"
                 pure ()
               Just result' -> do
-                print "Handler returned Just, setting output"
+                print "[processBatch] Handler returned Just, setting output"
                 currentOutput |> Var.set (Just result')
           Nothing -> do
-            print "Action handler not found"
+            print "[processBatch] Action handler not found"
             pure ()
       MapAction -> do
-        print "Map action"
+        print "[processBatch] Map action"
         maybeOut <- Var.get currentOutput
 
-        print "Getting output"
-        let out = maybeOut |> Maybe.withDefault (dieWith "No output")
+        print "[processBatch] Getting output"
+        let out = maybeOut |> Maybe.withDefault (dieWith "[processBatch] No output")
 
-        print "Applying mapping function"
+        print "[processBatch] Applying mapping function"
         let result = Unknown.apply action.payload out
 
         case result of
           Nothing -> do
-            print "Couldn't apply mapping function"
+            print "[processBatch] Couldn't apply mapping function"
             pure ()
           Just output -> do
-            print "Setting output"
+            print "[processBatch] Setting output"
             currentOutput |> Var.set (Just output)
 
-  print "Getting final output"
+  print "[processBatch] Getting final output"
   out <- Var.get currentOutput
   case out of
     Nothing -> do
