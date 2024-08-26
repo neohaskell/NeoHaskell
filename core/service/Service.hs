@@ -43,7 +43,8 @@ type View = Text
 type Service (event :: Type) =
   Record
     '[ "actionHandlers" := Action.HandlerRegistry,
-       "actionsQueue" := Channel (Action event)
+       "actionsQueue" := Channel (Action event),
+       "shouldExit" := Bool
      ]
 
 
@@ -105,7 +106,8 @@ init userApp = do
   let initialService =
         ANON
           { actionHandlers = Action.emptyRegistry,
-            actionsQueue = actionsQueue
+            actionsQueue = actionsQueue,
+            shouldExit = False
           }
   print "[init] Setting state"
   runtimeState
@@ -121,25 +123,29 @@ init userApp = do
   print "[init] Starting loop"
   let actionW =
         (actionWorker @event actionsQueue eventsQueue runtimeState)
-          |> IO.finally (print "[init] Action worker exited")
+          |> IO.finally do
+            runtimeState
+              |> modifyState (\s -> s {shouldExit = True})
+            print "[init] Action worker exited"
 
   let renderW =
         (renderWorker @model @event userApp modelRef runtimeState)
           |> IO.finally (print "[init] Render worker exited")
 
   let mainW =
-        (mainWorker @event @model userApp eventsQueue modelRef actionsQueue)
+        (mainWorker @event @model userApp eventsQueue modelRef actionsQueue runtimeState)
+          |> IO.finally (print "[init] Main worker exited")
 
-  AsyncIO.process mainW \loopPromise -> do
+  AsyncIO.process actionW \actionPromise -> do
     AsyncIO.process renderW \renderPromise -> do
       print "[init] Starting triggers"
       runTriggers userApp.triggers eventsQueue
       -- The action worker must be the main loop
       -- or else it won't be able to exit the program
-      actionW
+      mainW
         |> IO.finally do
           print "[init] Cancelling workers"
-          AsyncIO.cancel loopPromise
+          AsyncIO.cancel actionPromise
           AsyncIO.cancel renderPromise
 
 
@@ -189,6 +195,17 @@ setState ::
   IO ()
 setState value runtimeState = do
   runtimeState |> Var.set (Just value)
+
+
+modifyState ::
+  forall (event :: Type).
+  (Service event -> Service event) ->
+  RuntimeState event ->
+  IO ()
+modifyState f runtimeState = do
+  currentState <- getState runtimeState
+  let newState = f currentState
+  runtimeState |> setState newState
 
 
 -- TODO: Action Handlers should come in the user app record as a map of
@@ -316,8 +333,9 @@ mainWorker ::
   Channel event ->
   ConcurrentVar model ->
   Channel (Action event) ->
+  RuntimeState event ->
   IO ()
-mainWorker userApp eventsQueue modelRef actionsQueue = do
+mainWorker userApp eventsQueue modelRef actionsQueue runtimeState = do
   let handleNoMoreEvents = do
         AsyncIO.sleep 30000
         print "[mainWorker] No more events to process after 30 seconds"
@@ -328,6 +346,10 @@ mainWorker userApp eventsQueue modelRef actionsQueue = do
         Channel.read eventsQueue
 
   forever do
+    currentState <- getState runtimeState
+    when currentState.shouldExit do
+      print "[mainWorker] Exiting"
+      IO.exitSuccess
     eventRes <-
       readEvent
         |> AsyncIO.withRecovery handleNoMoreEvents
