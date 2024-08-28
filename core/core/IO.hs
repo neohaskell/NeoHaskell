@@ -1,4 +1,4 @@
-module IO (IO, yield, dangerouslyRun, finally, exitSuccess) where
+module IO (IO, yield, dangerouslyRun, finally, exitSuccess, catchAny) where
 
 import Control.Exception qualified as GHC
 import GHC.IO (IO)
@@ -33,3 +33,7 @@ finally action cleanup = GHC.finally action cleanup
 
 exitSuccess :: IO a
 exitSuccess = GHC.exitSuccess
+
+
+catchAny :: (GHC.SomeException -> IO a) -> IO a -> IO a
+catchAny handler action = GHC.catch action handler
