@@ -254,22 +254,21 @@ actionWorker actionsQueue eventsQueue runtimeState = loop
         print "[actionWorker] Reading next action batch"
         nextActionBatch <- Channel.read actionsQueue
         print "[actionWorker] Getting state"
-        state <- getState runtimeState
+        state' <- getState runtimeState
         print "[actionWorker] Processing next action batch"
-        result <- Action.processBatch state.actionHandlers nextActionBatch
+        result <- Action.processBatch state'.actionHandlers nextActionBatch
 
         case result of
-          Continue Nothing -> do
+          Action.Continue Nothing -> do
             print "[actionWorker] No actions to process"
             loop
-          Continue (Just event) -> do
+          Action.Continue (Just event) -> do
             eventsQueue |> Channel.write event
             loop
-          Exit code -> do
-            print $ "[actionWorker] Exiting with code: " ++ show code
-            IO.exitWith $ ExitFailure code
-          Error msg -> do
-            print $ "[actionWorker] Error: " ++ msg
+          Action.Error msg -> do
+            "[actionWorker] Error: "
+              ++ msg
+              |> print
             -- Decide whether to continue or exit based on the error
             -- For now, we'll continue, but you might want to exit for certain errors
             loop

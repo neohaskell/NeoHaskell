@@ -22,7 +22,6 @@ import IO qualified
 import Map (Map)
 import Map qualified
 import Maybe (Maybe (..))
-import Maybe qualified
 import Text (Text)
 import ToText (Show (..), toText)
 import Unknown (Unknown)
@@ -72,16 +71,15 @@ actually executing them, or even to serialize them and send them to another plat
 executed there. This is the basis for the time-travel debugging feature that Elm has, and
 a great inspiration for the NeoHaskell platform.
 -}
-newtype Action event
-  = Action
-      ( Array
-          ( Record
-              '[ "name" := ActionName,
-                 "payload" := Unknown
-               ]
-          )
-      )
+newtype Action event = Action (Array ActionRecord)
   deriving (Show)
+
+
+type ActionRecord =
+  Record
+    '[ "name" := ActionName,
+       "payload" := Unknown
+     ]
 
 
 data ActionName
@@ -156,11 +154,11 @@ processBatch registry (Action actionBatch) = do
           Just out'' -> pure (Continue (Just out''))
     Error msg -> pure (Error msg)
  where
-  processAction :: Var (Maybe Unknown) -> ActionResult value -> ActionName -> IO (ActionResult value)
+  processAction :: Var (Maybe Unknown) -> ActionResult value -> ActionRecord -> IO (ActionResult value)
   processAction _ (Error msg) _ = pure (Error msg)
   processAction currentOutput (Continue _) action = do
     print ("[processBatch] Matching action " ++ toText action)
-    if shouldExit action
+    if shouldExit action.name
       then do
         print "[processBatch] Exit action detected, terminating"
         IO.exitSuccess -- or IO.exitWith (ExitFailure code) if you need a specific exit code
