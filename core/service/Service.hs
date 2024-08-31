@@ -2,7 +2,6 @@
 
 module Service (
   init,
-  Service,
   UserApp,
   registerActionHandler,
 ) where
@@ -29,23 +28,15 @@ import Graphics.Vty qualified as Vty
 import IO qualified
 import Map qualified
 import Maybe (Maybe (..))
+import Service.RuntimeState qualified as RuntimeState
 import Text (Text)
 import ToText (Show (..), ToText, toText)
 import Trigger (Trigger (..))
 import Unknown qualified
-import Var (Var)
 import Var qualified
 
 
 type View = Text
-
-
-type Service (event :: Type) =
-  Record
-    '[ "actionHandlers" := Action.HandlerRegistry,
-       "actionsQueue" := Channel (Action event),
-       "shouldExit" := Bool
-     ]
 
 
 type UserApp (model :: Type) (event :: Type) =
@@ -57,9 +48,6 @@ type UserApp (model :: Type) (event :: Type) =
      ]
 
 
-type RuntimeState (event :: Type) = Var (Maybe (Service event))
-
-
 registerActionHandler ::
   forall payload event.
   ( Unknown.Convertible payload,
@@ -69,11 +57,11 @@ registerActionHandler ::
   ) =>
   Text ->
   (payload -> IO event) ->
-  RuntimeState event ->
+  RuntimeState.Reference event ->
   IO ()
 registerActionHandler actionHandlerName handler runtimeState = do
   print "Getting state"
-  service <- getState runtimeState
+  service <- RuntimeState.get runtimeState
   print ("Got state: " ++ toText service)
   let actionHandler payload =
         case (Unknown.toValue payload) of
@@ -90,7 +78,7 @@ registerActionHandler actionHandlerName handler runtimeState = do
   let newService = service {actionHandlers = newRegistry}
   print "Setting state"
   runtimeState
-    |> setState newService
+    |> RuntimeState.set newService
 
 
 init ::
@@ -111,7 +99,7 @@ init userApp = do
           }
   print "[init] Setting state"
   runtimeState
-    |> setState initialService
+    |> RuntimeState.set initialService
   print "[init] Registering default action handlers"
   registerDefaultActionHandlers @event runtimeState
   let (initModel, initCmd) = userApp.init
@@ -125,7 +113,7 @@ init userApp = do
         print ("[init] EXCEPTION: " ++ toText exception)
         print ("[init] " ++ threadName ++ " cleanup")
         print "[init] Cleaning up"
-        runtimeState |> modifyState (\s -> s {shouldExit = True})
+        runtimeState |> RuntimeState.modify (\s -> s {shouldExit = True})
         case Control.Exception.fromException exception of
           Just Control.Exception.UserInterrupt -> do
             print "[init] Exiting"
@@ -152,15 +140,6 @@ init userApp = do
       mainW
 
 
--- \|> IO.finally do
---   print "[init] Cancelling workers"
---   AsyncIO.cancel actionPromise
---   AsyncIO.cancel renderPromise
-
--- AsyncIO.process actionW \_ -> do
---   AsyncIO.process renderW \_ -> do
---     mainW
-
 -- PRIVATE
 
 runTriggers ::
@@ -185,37 +164,6 @@ runTriggers triggers eventsQueue = do
     |> Array.forEach triggerDispatch
 
 
-getState ::
-  forall (event :: Type).
-  RuntimeState event ->
-  IO (Service event)
-getState runtimeState = do
-  maybeService <- Var.get runtimeState
-  case maybeService of
-    Nothing -> dieWith "Service is not initialized"
-    Just service -> pure service
-
-
-setState ::
-  forall (event :: Type).
-  Service event ->
-  RuntimeState event ->
-  IO ()
-setState value runtimeState = do
-  runtimeState |> Var.set (Just value)
-
-
-modifyState ::
-  forall (event :: Type).
-  (Service event -> Service event) ->
-  RuntimeState event ->
-  IO ()
-modifyState f runtimeState = do
-  currentState <- getState runtimeState
-  let newState = f currentState
-  runtimeState |> setState newState
-
-
 -- TODO: Action Handlers should come in the user app record as a map of
 -- action names to handlers. This way, the user app can register its own
 -- action handlers. Ideally also the user could omit the action handlers
@@ -225,7 +173,7 @@ registerDefaultActionHandlers ::
   ( Unknown.Convertible event,
     ToText event
   ) =>
-  RuntimeState event ->
+  RuntimeState.Reference event ->
   IO ()
 registerDefaultActionHandlers runtimeState = do
   runtimeState
@@ -243,13 +191,13 @@ actionWorker ::
   (Unknown.Convertible event) =>
   Channel (Action event) ->
   Channel event ->
-  RuntimeState event ->
+  RuntimeState.Reference event ->
   IO ()
 actionWorker actionsQueue eventsQueue runtimeState = loop
  where
   loop = do
     print "[actionWorker] Checking exit condition"
-    state <- getState runtimeState
+    state <- RuntimeState.get runtimeState
     if state.shouldExit
       then do
         print "[actionWorker] Exiting due to shouldExit flag"
@@ -258,7 +206,7 @@ actionWorker actionsQueue eventsQueue runtimeState = loop
         print "[actionWorker] Reading next action batch"
         nextActionBatch <- Channel.read actionsQueue
         print "[actionWorker] Getting state"
-        state' <- getState runtimeState
+        state' <- RuntimeState.get runtimeState
         print "[actionWorker] Processing next action batch"
         result <- Action.processBatch state'.actionHandlers nextActionBatch
 
@@ -292,7 +240,7 @@ renderWorker ::
   forall (model :: Type) (event :: Type).
   UserApp model event ->
   ConcurrentVar model ->
-  RuntimeState event ->
+  RuntimeState.Reference event ->
   IO ()
 renderWorker userApp modelRef runtimeState = do
   -- We wait a little bit to give the other workers a chance to start
@@ -302,7 +250,7 @@ renderWorker userApp modelRef runtimeState = do
   -- arguments.
   AsyncIO.sleep 500
   print "[renderWorker] Getting state"
-  state <- getState runtimeState
+  state <- RuntimeState.get runtimeState
   if state.shouldExit
     then do
       print "[renderWorker] Exiting"
@@ -349,11 +297,11 @@ renderModelWorker ::
   forall (model :: Type) (event :: Type).
   ConcurrentVar model ->
   BChan (ServiceEvent model) ->
-  RuntimeState event ->
+  RuntimeState.Reference event ->
   IO ()
 renderModelWorker modelRef eventChannel runtimeState =
   forever do
-    state <- getState runtimeState
+    state <- RuntimeState.get runtimeState
     if state.shouldExit
       then do
         print "[renderModelWorker] Exiting"
@@ -374,30 +322,16 @@ mainWorker ::
   Channel event ->
   ConcurrentVar model ->
   Channel (Action event) ->
-  RuntimeState event ->
+  RuntimeState.Reference event ->
   IO ()
-mainWorker userApp eventsQueue modelRef actionsQueue runtimeState = do
-  -- let handleNoMoreEvents = do
-  --       AsyncIO.sleep 20
-  --       print "[mainWorker] No more events to process after 30 seconds"
-
-  let readEvent = do
-        print "[mainWorker] Reading next event"
-        Channel.read eventsQueue
-
+mainWorker userApp eventsQueue modelRef actionsQueue runtimeState =
   forever do
-    currentState <- getState runtimeState
+    currentState <- RuntimeState.get runtimeState
     when currentState.shouldExit do
       print "[mainWorker] Exiting"
       IO.exitSuccess
-    event <-
-      readEvent
-    -- \|> AsyncIO.withRecovery handleNoMoreEvents
-    -- case eventRes of
-    --   Result.Err _ ->
-    --     -- handleNoMoreEvents
-    --     pure ()
-    --   Result.Ok event -> do
+    print "[mainWorker] Reading next event"
+    event <- Channel.read eventsQueue
     print "[mainWorker] Getting model"
     model <- ConcurrentVar.get modelRef
     print ("[mainWorker] Got model: " ++ toText model)
