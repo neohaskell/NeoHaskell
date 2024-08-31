@@ -1,4 +1,4 @@
-module IO (IO, yield, dangerouslyRun, finally, exitSuccess, catchAny) where
+module IO (IO, yield, dangerouslyRun, finally, exitSuccess, catchAny, onException) where
 
 import Control.Exception qualified as GHC
 import GHC.IO (IO)
@@ -29,6 +29,10 @@ dangerouslyRun = GHC.unsafePerformIO
 
 finally :: IO a -> IO b -> IO a
 finally action cleanup = GHC.finally action cleanup
+
+
+onException :: IO a -> IO b -> IO a
+onException action cleanup = GHC.onException action cleanup
 
 
 exitSuccess :: IO a

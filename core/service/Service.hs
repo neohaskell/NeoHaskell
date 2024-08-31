@@ -23,12 +23,12 @@ import Command qualified
 import ConcurrentVar (ConcurrentVar)
 import ConcurrentVar qualified
 import Console (print)
+import Control.Exception qualified
 import File qualified
 import Graphics.Vty qualified as Vty
 import IO qualified
 import Map qualified
 import Maybe (Maybe (..))
-import Result qualified
 import Text (Text)
 import ToText (Show (..), ToText, toText)
 import Trigger (Trigger (..))
@@ -121,37 +121,41 @@ init userApp = do
   print "[init] Writing init action"
   actionsQueue |> Channel.write initCmd
   print "[init] Starting loop"
-  let cleanup = do
+  let cleanup threadName exception = do
+        print ("[init] EXCEPTION: " ++ toText exception)
+        print ("[init] " ++ threadName ++ " cleanup")
         print "[init] Cleaning up"
         runtimeState |> modifyState (\s -> s {shouldExit = True})
-        -- Wait for a short time to allow other workers to exit gracefully
-        AsyncIO.sleep 1000
-        print "[init] Exiting"
-        IO.exitSuccess
+        case Control.Exception.fromException exception of
+          Just Control.Exception.UserInterrupt -> do
+            print "[init] Exiting"
+            IO.exitSuccess
+          _ -> pure ()
   let actionW =
         (actionWorker @event actionsQueue eventsQueue runtimeState)
-          |> IO.finally cleanup
+          |> IO.catchAny (cleanup "actionWorker")
 
   let renderW =
         (renderWorker @model @event userApp modelRef runtimeState)
-          |> IO.finally cleanup
+          |> IO.catchAny (cleanup "renderWorker")
 
   let mainW =
         (mainWorker @event @model userApp eventsQueue modelRef actionsQueue runtimeState)
-          |> IO.finally cleanup
+          |> IO.catchAny (cleanup "mainWorker")
 
-  AsyncIO.process actionW \actionPromise -> do
-    AsyncIO.process renderW \renderPromise -> do
+  AsyncIO.process actionW \_ -> do
+    AsyncIO.process renderW \_ -> do
       print "[init] Starting triggers"
       runTriggers userApp.triggers eventsQueue
       -- The action worker must be the main loop
       -- or else it won't be able to exit the program
       mainW
-        |> IO.finally do
-          print "[init] Cancelling workers"
-          AsyncIO.cancel actionPromise
-          AsyncIO.cancel renderPromise
 
+
+-- \|> IO.finally do
+--   print "[init] Cancelling workers"
+--   AsyncIO.cancel actionPromise
+--   AsyncIO.cancel renderPromise
 
 -- AsyncIO.process actionW \_ -> do
 --   AsyncIO.process renderW \_ -> do
@@ -280,6 +284,7 @@ data ServiceN = ServiceN
 
 data ServiceEvent (model :: Type)
   = ModelUpdated model
+  | ExitRender
   deriving (Show, Ord, Eq)
 
 
@@ -289,7 +294,7 @@ renderWorker ::
   ConcurrentVar model ->
   RuntimeState event ->
   IO ()
-renderWorker userApp modelRef _ = do
+renderWorker userApp modelRef runtimeState = do
   -- We wait a little bit to give the other workers a chance to start
   -- before we start rendering the view. This is also useful for when
   -- the action worker might exit the program on first execution.
@@ -297,52 +302,66 @@ renderWorker userApp modelRef _ = do
   -- arguments.
   AsyncIO.sleep 500
   print "[renderWorker] Getting state"
+  state <- getState runtimeState
+  if state.shouldExit
+    then do
+      print "[renderWorker] Exiting"
+      IO.exitSuccess
+    else do
+      print "[renderWorker] Getting model"
+      model <- ConcurrentVar.peek modelRef
 
-  print "[renderWorker] Getting model"
-  model <- ConcurrentVar.peek modelRef
+      print "[renderWorker] Setting up event channel"
+      eventChannel <- Brick.BChan.newBChan 1
 
-  print "[renderWorker] Setting up event channel"
-  eventChannel <- Brick.BChan.newBChan 1
+      let handleEvent event = case event of
+            Brick.AppEvent (ModelUpdated newModel) -> do
+              Brick.put newModel
+            Brick.AppEvent ExitRender -> do
+              Brick.halt
+            _ -> Brick.halt
 
-  let handleEvent event = case event of
-        Brick.AppEvent (ModelUpdated newModel) -> do
-          Brick.put newModel
-        _ -> Brick.halt
+      let brickApp =
+            Brick.App
+              { Brick.appDraw = \s -> [userApp.view s |> Brick.txt @ServiceN],
+                Brick.appChooseCursor = \_ _ -> Nothing,
+                Brick.appHandleEvent = handleEvent,
+                Brick.appStartEvent = pure (),
+                Brick.appAttrMap = \_ -> Brick.attrMap Vty.defAttr []
+              }
 
-  let brickApp =
-        Brick.App
-          { Brick.appDraw = \state -> [userApp.view state |> Brick.txt @ServiceN],
-            Brick.appChooseCursor = \_ _ -> Nothing,
-            Brick.appHandleEvent = handleEvent,
-            Brick.appStartEvent = pure (),
-            Brick.appAttrMap = \_ -> Brick.attrMap Vty.defAttr []
-          }
+      print "[renderWorker] Running render model worker"
+      renderModelWorker @model modelRef eventChannel runtimeState
+        |> AsyncIO.run
+        |> discard
 
-  print "[renderWorker] Running render model worker"
-  renderModelWorker @model modelRef eventChannel
-    |> AsyncIO.run
-    |> discard
-
-  print "[renderWorker] Rendering view"
-  _ <-
-    Brick.customMainWithDefaultVty
-      (Just eventChannel)
-      brickApp
-      model
-  print "[renderWorker] Done rendering"
+      print "[renderWorker] Rendering view"
+      _ <-
+        Brick.customMainWithDefaultVty
+          (Just eventChannel)
+          brickApp
+          model
+      print "[renderWorker] Done rendering"
 
 
 renderModelWorker ::
-  forall (model :: Type).
+  forall (model :: Type) (event :: Type).
   ConcurrentVar model ->
   BChan (ServiceEvent model) ->
+  RuntimeState event ->
   IO ()
-renderModelWorker modelRef eventChannel =
+renderModelWorker modelRef eventChannel runtimeState =
   forever do
-    print "[renderModelWorker] Peeking model"
-    model <- ConcurrentVar.peek modelRef
-    print "[renderModelWorker] Sending model update event"
-    Brick.BChan.writeBChan eventChannel (ModelUpdated model)
+    state <- getState runtimeState
+    if state.shouldExit
+      then do
+        print "[renderModelWorker] Exiting"
+        Brick.BChan.writeBChan eventChannel ExitRender
+      else do
+        -- print "[renderModelWorker] Peeking model"
+        model <- ConcurrentVar.peek modelRef
+        -- print "[renderModelWorker] Sending model update event"
+        Brick.BChan.writeBChan eventChannel (ModelUpdated model)
 
 
 mainWorker ::
@@ -357,10 +376,9 @@ mainWorker ::
   RuntimeState event ->
   IO ()
 mainWorker userApp eventsQueue modelRef actionsQueue runtimeState = do
-  let handleNoMoreEvents = do
-        AsyncIO.sleep 30000
-        print "[mainWorker] No more events to process after 30 seconds"
-        dieWith "No more events to process"
+  -- let handleNoMoreEvents = do
+  --       AsyncIO.sleep 20
+  --       print "[mainWorker] No more events to process after 30 seconds"
 
   let readEvent = do
         print "[mainWorker] Reading next event"
@@ -371,28 +389,29 @@ mainWorker userApp eventsQueue modelRef actionsQueue runtimeState = do
     when currentState.shouldExit do
       print "[mainWorker] Exiting"
       IO.exitSuccess
-    eventRes <-
+    event <-
       readEvent
-        |> AsyncIO.withRecovery handleNoMoreEvents
-    case eventRes of
-      Result.Err _ ->
-        handleNoMoreEvents
-      Result.Ok event -> do
-        print "[mainWorker] Getting model"
-        model <- ConcurrentVar.get modelRef
-        print ("[mainWorker] Got model: " ++ toText model)
+    -- \|> AsyncIO.withRecovery handleNoMoreEvents
+    -- case eventRes of
+    --   Result.Err _ ->
+    --     -- handleNoMoreEvents
+    --     pure ()
+    --   Result.Ok event -> do
+    print "[mainWorker] Getting model"
+    model <- ConcurrentVar.get modelRef
+    print ("[mainWorker] Got model: " ++ toText model)
 
-        print "[mainWorker] Updating model"
-        let (newModel, newCmd) = userApp.update event model
-        print
-          ( "[mainWorker] New model: "
-              ++ toText newModel
-              ++ "New action: "
-              ++ toText newCmd
-          )
+    print "[mainWorker] Updating model"
+    let (newModel, newCmd) = userApp.update event model
+    print
+      ( "[mainWorker] New model: "
+          ++ toText newModel
+          ++ "New action: "
+          ++ toText newCmd
+      )
 
-        print "[mainWorker] Setting new model"
-        modelRef |> ConcurrentVar.set newModel
+    print "[mainWorker] Setting new model"
+    modelRef |> ConcurrentVar.set newModel
 
-        print "[mainWorker] Writing new action"
-        actionsQueue |> Channel.write newCmd
+    print "[mainWorker] Writing new action"
+    actionsQueue |> Channel.write newCmd
