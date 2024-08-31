@@ -336,11 +336,12 @@ renderWorker userApp modelRef runtimeState = do
         |> discard
 
       print "[renderWorker] Rendering view"
-      _ <-
+      (_, vty) <-
         Brick.customMainWithDefaultVty
           (Just eventChannel)
           brickApp
           model
+      Vty.shutdown vty
       print "[renderWorker] Done rendering"
 
 
