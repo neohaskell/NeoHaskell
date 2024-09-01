@@ -338,12 +338,7 @@ mainWorker userApp eventsQueue modelRef actionsQueue runtimeState =
 
     print "[mainWorker] Updating model"
     let (newModel, newCmd) = userApp.update event model
-    print
-      ( "[mainWorker] New model: "
-          ++ toText newModel
-          ++ "New action: "
-          ++ toText newCmd
-      )
+    print [fmt|[mainWorker] New model: {toText newModel} - New action: {toText newCmd}|]
 
     print "[mainWorker] Setting new model"
     modelRef |> ConcurrentVar.set newModel

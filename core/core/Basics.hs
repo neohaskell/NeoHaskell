@@ -93,6 +93,9 @@ module Basics (
   never,
   discard,
 
+  -- * Text interpolation helper
+  fmt,
+
   -- * Often-implemented typeclasses
   Prelude.Eq,
   Prelude.Ord,
@@ -140,7 +143,9 @@ import GHC.OverloadedLabels (IsLabel (..))
 import GHC.Records (HasField (..))
 import GHC.Stack (HasCallStack)
 import IO (IO)
+import Language.Haskell.TH.Quote (QuasiQuoter)
 import Mappable (Mappable)
+import PyF qualified
 import Unit (Unit, unit)
 import Prelude (fmap, fromInteger, otherwise, return, (<*>), (>>=))
 import Prelude qualified
@@ -771,7 +776,7 @@ always a _ =
 -- It can help you avoid parentheses, which can be nice sometimes. Maybe you want
 -- to apply a function to a @case@ expression? That sort of thing.
 (<|) :: (a -> b) -> a -> b
-f <| x = f x
+fun <| x = fun x
 
 
 -- | Saying @x |> f@ is exactly the same as @f x@.
@@ -804,7 +809,7 @@ f <| x = f x
 -- named. It has a type annotation. It is much more self-documenting that way!
 -- Testing the logic gets easier too. Nice side benefit!
 (|>) :: a -> (a -> b) -> b
-x |> f = f x
+x |> fun = fun x
 
 
 -- | Function composition, passing results along in the suggested direction. For
@@ -886,3 +891,7 @@ discard ::
   mappable value ->
   mappable ()
 discard = Monad.void
+
+
+fmt :: QuasiQuoter
+fmt = PyF.fmt
