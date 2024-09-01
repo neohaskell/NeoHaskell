@@ -150,7 +150,7 @@ runTriggers ::
 runTriggers triggers eventsQueue = do
   print "[runTriggers] Running triggers"
 
-  print ("[runTriggers] Got " ++ (Array.length triggers |> toText) ++ " triggers")
+  print [fmt|"[runTriggers] Got {Array.length triggers |> toText} triggers|]
 
   let dispatchEvent event = do
         eventsQueue |> Channel.write event
