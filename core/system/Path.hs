@@ -28,6 +28,10 @@ newtype Path = Path (LinkedList Char) -- We use LinkedList Char to keep compatib
   deriving (Lift, ToText.Show, Eq, Ord, Json.FromJSON, Json.ToJSON)
 
 
+instance IsString Path where
+  fromString = Path
+
+
 fromText :: Text -> Maybe Path
 fromText text =
   -- FIXME: Implement proper path parsing by using

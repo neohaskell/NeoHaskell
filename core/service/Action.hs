@@ -10,6 +10,7 @@ module Action (
   processBatch,
   continueWith,
   continueWithHandler,
+  ActionResult (..),
 ) where
 
 import Appendable ((++))
@@ -17,13 +18,15 @@ import Array (Array)
 import Array qualified
 import Basics
 import Console (print)
+import IO qualified
 import Map (Map)
 import Map qualified
-import Maybe (Maybe (..), withDefault)
+import Maybe (Maybe (..))
 import Text (Text)
 import ToText (Show (..), toText)
 import Unknown (Unknown)
 import Unknown qualified
+import Var (Var)
 import Var qualified
 
 
@@ -68,16 +71,15 @@ actually executing them, or even to serialize them and send them to another plat
 executed there. This is the basis for the time-travel debugging feature that Elm has, and
 a great inspiration for the NeoHaskell platform.
 -}
-newtype Action event
-  = Action
-      ( Array
-          ( Record
-              '[ "name" := ActionName,
-                 "payload" := Unknown
-               ]
-          )
-      )
+newtype Action event = Action (Array ActionRecord)
   deriving (Show)
+
+
+type ActionRecord =
+  Record
+    '[ "name" := ActionName,
+       "payload" := Unknown
+     ]
 
 
 data ActionName
@@ -122,79 +124,92 @@ map f (Action actions) =
     |> Action
 
 
+data ActionResult value
+  = Continue (Maybe value)
+  | Error Text
+
+
 processBatch ::
   forall (value :: Type).
   (Unknown.Convertible value) =>
   HandlerRegistry ->
   Action value ->
-  IO (Maybe value)
+  IO (ActionResult value)
 processBatch registry (Action actionBatch) = do
-  print "Processing batch"
-  print "Creating output var"
+  print "[processBatch] Processing batch"
+  print "[processBatch] Creating output var"
   currentOutput <- Var.new Nothing
 
-  -- TODO: Refactor this
-  print ("Starting action loop with " ++ toText (Array.length actionBatch) ++ " actions")
-  actionBatch |> Array.forEach \action -> do
-    print ("Matching action " ++ toText action)
-    case action.name of
-      Custom name' -> do
-        print ("Custom action " ++ name')
-        case Map.get name' registry of
-          Just handler -> do
-            print "Handler found, executing"
-            result <- handler action.payload
-            case result of
-              Nothing -> do
-                print "Handler returned Nothing"
-                pure ()
-              Just result' -> do
-                print "Handler returned Just, setting output"
-                currentOutput |> Var.set (Just result')
-          Nothing -> do
-            print "Action handler not found"
-            pure ()
-      MapAction -> do
-        print "Map action"
-        maybeOut <- Var.get currentOutput
+  print ("[processBatch] Starting action loop with " ++ toText (Array.length actionBatch) ++ " actions")
+  result <- actionBatch |> Array.foldM (processAction currentOutput) (Continue Nothing)
 
-        print "Getting output"
-        let out = maybeOut |> Maybe.withDefault (dieWith "No output")
+  case result of
+    Continue _ -> do
+      print "[processBatch] Getting final output"
+      out <- Var.get currentOutput
+      case out of
+        Nothing -> pure (Continue Nothing)
+        Just out' -> case Unknown.toValue out' of
+          Nothing -> pure (Error "Couldn't convert output")
+          Just out'' -> pure (Continue (Just out''))
+    Error msg -> pure (Error msg)
+ where
+  processAction :: Var (Maybe Unknown) -> ActionResult value -> ActionRecord -> IO (ActionResult value)
+  processAction _ (Error msg) _ = pure (Error msg)
+  processAction currentOutput (Continue _) action = do
+    print ("[processBatch] Matching action " ++ toText action)
+    if shouldExit action.name
+      then do
+        print "[processBatch] Exit action detected, terminating"
+        IO.exitSuccess -- or IO.exitWith (ExitFailure code) if you need a specific exit code
+      else case action.name of
+        Custom name' -> handleCustomAction name' action.payload currentOutput
+        MapAction -> handleMapAction action.payload currentOutput
 
-        print "Applying mapping function"
-        let result = Unknown.apply action.payload out
-
+  handleCustomAction :: Text -> Unknown -> Var (Maybe Unknown) -> IO (ActionResult value)
+  handleCustomAction name' payload currentOutput = do
+    print ("[processBatch] Custom action " ++ name')
+    case Map.get name' registry of
+      Just handler -> do
+        print "[processBatch] Handler found, executing"
+        result <- handler payload
         case result of
           Nothing -> do
-            print "Couldn't apply mapping function"
-            pure ()
+            print "[processBatch] Handler returned Nothing"
+            pure (Continue Nothing)
+          Just result' -> do
+            print "[processBatch] Handler returned Just, setting output"
+            currentOutput |> Var.set (Just result')
+            let res = Unknown.toValue result'
+            pure (Continue res)
+      Nothing -> do
+        print "[processBatch] Action handler not found"
+        pure (Error ("Action handler not found for: " ++ name'))
+
+  handleMapAction :: Unknown -> Var (Maybe Unknown) -> IO (ActionResult value)
+  handleMapAction payload currentOutput = do
+    print "[processBatch] Map action"
+    maybeOut <- Var.get currentOutput
+    case maybeOut of
+      Nothing -> pure (Error "[processBatch] No output to map")
+      Just out -> do
+        print "[processBatch] Applying mapping function"
+        case Unknown.apply payload out of
+          Nothing -> do
+            print "[processBatch] Couldn't apply mapping function"
+            pure (Error "Couldn't apply mapping function")
           Just output -> do
-            print "Setting output"
+            print "[processBatch] Setting output"
             currentOutput |> Var.set (Just output)
+            let res = Unknown.toValue output
+            pure (Continue res)
 
-  print "Getting final output"
-  out <- Var.get currentOutput
-  case out of
-    Nothing -> do
-      pure Nothing
-    Just out' -> case Unknown.toValue out' of
-      Nothing -> dieWith "Couldn't convert output"
-      Just out'' -> pure (Just out'')
+  shouldExit :: ActionName -> Bool
+  shouldExit actionName =
+    case actionName of
+      Custom "exit" -> True
+      _ -> False
 
-
--- results <-
---   batch
---     |> Array.mapM
---       ( \(ANON {name, payload}) ->
---           case name of
---             Custom name' ->
---               case Map.get name' registry of
---                 Just handler -> handler payload
---                 Nothing -> pure Nothing
---             MapAction -> pure (Just payload)
---       )
--- results
---   |> Array.mapMaybe identity
 
 named ::
   (Unknown.Convertible value, Unknown.Convertible result) =>

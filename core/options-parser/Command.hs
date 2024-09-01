@@ -1,13 +1,18 @@
-module OptionsParser (
+module Command (
   OptionsParser,
+  CommandOptions,
   text,
+  path,
   parseWith,
   json,
   flag,
-  run,
+  parse,
+  parseHandler,
   commands,
 ) where
 
+import Action (Action)
+import Action qualified
 import Appendable ((++))
 import Array (Array)
 import Array qualified
@@ -17,28 +22,58 @@ import Control.Applicative qualified as Applicative
 import Data.Aeson qualified as Json
 import Data.Either qualified as GHC
 import Data.Functor qualified as Functor
+import Data.Version (Version)
 import Default (Default, defaultValue)
 import LinkedList (LinkedList)
 import Maybe (Maybe (..))
+import Maybe qualified
 import OptEnvConf qualified
+import Path (Path)
 import Record qualified
 import Result (Result (..))
 import Text (Text, fromLinkedList, toLinkedList)
-import ToText (ToText)
-import Version qualified
+import ToText (Show (..), ToText)
+import Unknown qualified
+import Version (version)
 
 
 newtype OptionsParser value = OptionsParser (OptEnvConf.Parser value)
   deriving (Functor.Functor, Applicative.Applicative)
 
 
-run :: OptionsParser value -> IO value
-run (OptionsParser parser) = do
-  let programDescription = "FNORD"
-  let versionText = "0.0.0"
-  let ver = case Version.parse versionText of
-        Just v -> v
-        Nothing -> dieWith ("Could not parse version " ++ versionText)
+instance (Unknown.Convertible value) => Show (OptionsParser value) where
+  show _ = do
+    let typeName = Unknown.getTypeName @value
+    "[OptionsParser " ++ Text.toLinkedList typeName ++ "]"
+
+
+type CommandOptions value =
+  Record
+    [ "name" := Text,
+      "description" := Text,
+      "version" := Maybe Version,
+      "decoder" := OptionsParser value
+    ]
+
+
+newtype Error = Error Text
+  deriving (Show)
+
+
+parse ::
+  (Unknown.Convertible event) =>
+  CommandOptions event ->
+  Action event
+parse options = Action.named "Command.parse" options
+
+
+parseHandler :: CommandOptions event -> IO event
+parseHandler options = do
+  let (OptionsParser parser) = options.decoder
+  let programDescription = options.description |> Text.toLinkedList
+  let ver =
+        options.version
+          |> Maybe.withDefault [version|0.0.0|]
   OptEnvConf.runParser ver programDescription parser
 
 
@@ -77,6 +112,44 @@ text cfg = do
           OptEnvConf.option
         ]
   OptEnvConf.setting (textValue ++ options)
+    |> OptionsParser
+
+
+type PathConfig =
+  [ "help" := Text,
+    "long" := Text,
+    "short" := Char,
+    "metavar" := Text,
+    "value" := Maybe Path
+  ]
+
+
+defaultPathConfig :: Record PathConfig
+defaultPathConfig =
+  ANON
+    { help = defaultValue,
+      long = defaultValue,
+      short = defaultValue,
+      metavar = defaultValue,
+      value = Nothing
+    }
+
+
+path :: (Record.Extends PathConfig config) => Record config -> OptionsParser Path
+path cfg = do
+  let config = cfg |> Record.overrideWith defaultPathConfig
+  let pathValue = case config.value of
+        Just val -> [OptEnvConf.value val]
+        Nothing -> []
+  let options =
+        [ OptEnvConf.help (config.help |> Text.toLinkedList),
+          OptEnvConf.long (config.long |> Text.toLinkedList),
+          OptEnvConf.short config.short,
+          OptEnvConf.metavar (config.metavar |> Text.toLinkedList),
+          OptEnvConf.reader OptEnvConf.str,
+          OptEnvConf.option
+        ]
+  OptEnvConf.setting (pathValue ++ options)
     |> OptionsParser
 
 
@@ -182,14 +255,6 @@ parseWith parseFunc config = do
 resultToEither :: Result Text value -> GHC.Either (LinkedList Char) value
 resultToEither (Ok val) = GHC.Right val
 resultToEither (Err err) = GHC.Left (Text.toLinkedList err)
-
-
-type CommandOptions value =
-  Record
-    [ "name" := Text,
-      "description" := Text,
-      "decoder" := OptionsParser value
-    ]
 
 
 commands :: Array (CommandOptions value) -> OptionsParser value
