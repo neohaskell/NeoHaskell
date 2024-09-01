@@ -119,6 +119,10 @@ library
       Action,
       Html,
       Service,
+      Service.ActionWorker,
+      Service.Core,
+      Service.EventWorker,
+      Service.RenderWorker,
       Service.RuntimeState,
       Trigger,
 
