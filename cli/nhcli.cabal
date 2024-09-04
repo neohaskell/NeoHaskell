@@ -42,7 +42,6 @@ common common_cfg
 
     build-depends:
       nhcore,
-      large-anon,
 
 library
     import:           common_cfg
