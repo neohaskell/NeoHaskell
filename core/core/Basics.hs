@@ -103,9 +103,6 @@ module Basics (
 
   -- * Reexported for records
   GHC.Records.HasField (..),
-  setField,
-  Record,
-  Pair (..),
   dieWith,
   Prelude.pure,
 
@@ -121,7 +118,6 @@ module Basics (
   IsLabel (..),
   Control.Monad.join,
   Type,
-  ifThenElse,
   Control.Monad.forever,
   Control.Monad.when,
 ) where
@@ -130,10 +126,6 @@ import Control.Monad qualified
 import Control.Monad qualified as Monad
 import Data.Bits qualified (xor)
 import Data.Kind (Type)
-import Data.Record.Anon
-import Data.Record.Anon.Overloading (ifThenElse, setField)
-import Data.Record.Anon.Plugin.Internal.Runtime (Pair (..))
-import Data.Record.Anon.Simple (Record)
 import Data.String (IsString (..))
 import Data.Text (Text)
 import Data.Text qualified as Text

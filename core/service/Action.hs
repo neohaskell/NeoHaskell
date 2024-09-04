@@ -1,5 +1,3 @@
-{-# OPTIONS_GHC -fplugin=Data.Record.Anon.Plugin #-}
-
 module Action (
   Action,
   Handler,
@@ -77,11 +75,11 @@ newtype Action event = Action (Array ActionRecord)
   deriving (Show)
 
 
-type ActionRecord =
-  Record
-    '[ "name" := ActionName,
-       "payload" := Unknown
-     ]
+data ActionRecord = ActionRecord
+  { name :: ActionName,
+    payload :: Unknown
+  }
+  deriving (Show)
 
 
 data ActionName
@@ -122,7 +120,7 @@ batch actions =
 map :: (Unknown.Convertible a, Unknown.Convertible b) => (a -> b) -> Action a -> Action b
 map f (Action actions) =
   actions
-    |> Array.push (ANON {name = MapAction, payload = Unknown.fromValue f})
+    |> Array.push (ActionRecord {name = MapAction, payload = Unknown.fromValue f})
     |> Action
 
 
@@ -219,7 +217,7 @@ named ::
   value ->
   Action result
 named name value =
-  Array.fromLinkedList [(ANON {name = Custom name, payload = Unknown.fromValue value})]
+  Array.fromLinkedList [(ActionRecord {name = Custom name, payload = Unknown.fromValue value})]
     |> Action
 
 

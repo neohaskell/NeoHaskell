@@ -1,7 +1,5 @@
-{-# OPTIONS_GHC -fplugin=Data.Record.Anon.Plugin #-}
-
 module Service.RuntimeState (
-  RuntimeState,
+  RuntimeState (..),
   Reference,
   get,
   set,
@@ -20,18 +18,18 @@ import File qualified
 import Map qualified
 import Maybe (Maybe (..))
 import Text (Text)
-import ToText (ToText, toText)
+import ToText (Show (..), ToText, toText)
 import Unknown qualified
 import Var (Var)
 import Var qualified
 
 
-type RuntimeState (event :: Type) =
-  Record
-    '[ "actionHandlers" := Action.HandlerRegistry,
-       "actionsQueue" := Channel (Action event),
-       "shouldExit" := Bool
-     ]
+data RuntimeState (event :: Type) = RuntimeState
+  { actionHandlers :: Action.HandlerRegistry,
+    actionsQueue :: Channel (Action event),
+    shouldExit :: Bool
+  }
+  deriving (Show)
 
 
 type Reference event = Var (Maybe (RuntimeState event))

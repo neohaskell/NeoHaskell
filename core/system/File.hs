@@ -1,12 +1,10 @@
-{-# OPTIONS_GHC -fplugin=Data.Record.Anon.Plugin #-}
-
 module File (
   Error (..),
   writeTextHandler,
   readTextHandler,
-  ReadOptions,
+  ReadOptions (..),
   readText,
-  WriteTextOptions,
+  WriteTextOptions (..),
   writeText,
 ) where
 
@@ -32,12 +30,12 @@ data Error
   deriving (Show)
 
 
-type ReadOptions event =
-  Record
-    '[ "path" := Path,
-       "onSuccess" := (Text -> event),
-       "onError" := (Error -> event)
-     ]
+data ReadOptions event = ReadOptions
+  { path :: Path,
+    onSuccess :: (Text -> event),
+    onError :: (Error -> event)
+  }
+  deriving (Show)
 
 
 instance (Unknown.Convertible a, Unknown.Convertible b) => Show (a -> b) where
@@ -51,13 +49,13 @@ readText options =
   Action.named "File.readText" options
 
 
-type WriteTextOptions event =
-  Record
-    '[ "path" := Path,
-       "text" := Text,
-       "onSuccess" := event,
-       "onError" := (Error -> event)
-     ]
+data WriteTextOptions event = WriteTextOptions
+  { path :: Path,
+    text :: Text,
+    onSuccess :: event,
+    onError :: (Error -> event)
+  }
+  deriving (Show)
 
 
 writeText :: (Unknown.Convertible event) => WriteTextOptions event -> Action event

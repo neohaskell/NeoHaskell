@@ -34,7 +34,6 @@ common common_cfg
       path,
       nanotime,
       process,
-      large-anon,
       pretty-simple,
       unagi-chan,
       QuickCheck,
@@ -56,8 +55,6 @@ common common_cfg
       OverloadedLists
       OverloadedLabels
       OverloadedRecordDot
-      OverloadedRecordUpdate
-      RebindableSyntax
       DuplicateRecordFields
       PackageImports
       NamedFieldPuns
@@ -154,5 +151,4 @@ test-suite nhcore-test
     main-is:          Main.hs
     build-depends:
         base ^>=4.18,
-        large-anon,
         nhcore

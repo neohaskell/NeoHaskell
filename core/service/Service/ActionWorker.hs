@@ -1,5 +1,3 @@
-{-# OPTIONS_GHC -fplugin=Data.Record.Anon.Plugin #-}
-
 module Service.ActionWorker (run) where
 
 import Action (Action)

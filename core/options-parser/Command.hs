@@ -1,8 +1,6 @@
-{-# OPTIONS_GHC -fplugin=Data.Record.Anon.Plugin #-}
-
 module Command (
   OptionsParser,
-  CommandOptions,
+  CommandOptions (..),
   text,
   path,
   parseWith,
@@ -25,13 +23,12 @@ import Data.Aeson qualified as Json
 import Data.Either qualified as GHC
 import Data.Functor qualified as Functor
 import Data.Version (Version)
-import Default (Default, defaultValue)
+import Default (Default (..), defaultValue)
 import LinkedList (LinkedList)
 import Maybe (Maybe (..))
 import Maybe qualified
 import OptEnvConf qualified
 import Path (Path)
-import Record qualified
 import Result (Result (..))
 import Text (Text, fromLinkedList, toLinkedList)
 import ToText (Show (..), ToText)
@@ -49,13 +46,13 @@ instance (Unknown.Convertible value) => Show (OptionsParser value) where
     "[OptionsParser " ++ Text.toLinkedList typeName ++ "]"
 
 
-type CommandOptions value =
-  Record
-    [ "name" := Text,
-      "description" := Text,
-      "version" := Maybe Version,
-      "decoder" := OptionsParser value
-    ]
+data CommandOptions value = CommandOptions
+  { name :: Text,
+    description :: Text,
+    version :: Maybe Version,
+    decoder :: OptionsParser value
+  }
+  deriving (Show)
 
 
 newtype Error = Error Text
@@ -75,22 +72,22 @@ parseHandler options = do
   let programDescription = options.description |> Text.toLinkedList
   let ver =
         options.version
-          |> Maybe.withDefault [version|0.0.0|]
+          |> Maybe.withDefault [Version.version|0.0.0|]
   OptEnvConf.runParser ver programDescription parser
 
 
-type TextConfig =
-  [ "help" := Text,
-    "long" := Text,
-    "short" := Char,
-    "metavar" := Text,
-    "value" := Maybe Text
-  ]
+data TextConfig = TextConfig
+  { help :: Text,
+    long :: Text,
+    short :: Char,
+    metavar :: Text,
+    value :: Maybe Text
+  }
 
 
-defaultTextConfig :: Record TextConfig
+defaultTextConfig :: TextConfig
 defaultTextConfig =
-  ANON
+  TextConfig
     { help = defaultValue,
       long = defaultValue,
       short = defaultValue,
@@ -99,9 +96,12 @@ defaultTextConfig =
     }
 
 
-text :: (Record.Extends TextConfig config) => Record config -> OptionsParser Text
-text cfg = do
-  let config = cfg |> Record.overrideWith defaultTextConfig
+instance Default TextConfig where
+  def = defaultTextConfig
+
+
+text :: TextConfig -> OptionsParser Text
+text config = do
   let textValue = case config.value of
         Just val -> [OptEnvConf.value val]
         Nothing -> []
@@ -117,18 +117,18 @@ text cfg = do
     |> OptionsParser
 
 
-type PathConfig =
-  [ "help" := Text,
-    "long" := Text,
-    "short" := Char,
-    "metavar" := Text,
-    "value" := Maybe Path
-  ]
+data PathConfig = PathConfig
+  { help :: Text,
+    long :: Text,
+    short :: Char,
+    metavar :: Text,
+    value :: Maybe Path
+  }
 
 
-defaultPathConfig :: Record PathConfig
+defaultPathConfig :: PathConfig
 defaultPathConfig =
-  ANON
+  PathConfig
     { help = defaultValue,
       long = defaultValue,
       short = defaultValue,
@@ -137,9 +137,12 @@ defaultPathConfig =
     }
 
 
-path :: (Record.Extends PathConfig config) => Record config -> OptionsParser Path
-path cfg = do
-  let config = cfg |> Record.overrideWith defaultPathConfig
+instance Default PathConfig where
+  def = defaultPathConfig
+
+
+path :: PathConfig -> OptionsParser Path
+path config = do
   let pathValue = case config.value of
         Just val -> [OptEnvConf.value val]
         Nothing -> []
@@ -155,18 +158,18 @@ path cfg = do
     |> OptionsParser
 
 
-type JsonConfig value =
-  [ "help" := Text,
-    "long" := Text,
-    "short" := Char,
-    "metavar" := Text,
-    "value" := Maybe value
-  ]
+data JsonConfig value = JsonConfig
+  { help :: Text,
+    long :: Text,
+    short :: Char,
+    metavar :: Text,
+    value :: Maybe value
+  }
 
 
-defaultJsonConfig :: (Default value) => Record (JsonConfig value)
+defaultJsonConfig :: (Default value) => (JsonConfig value)
 defaultJsonConfig =
-  ANON
+  JsonConfig
     { help = defaultValue,
       long = defaultValue,
       short = defaultValue,
@@ -175,17 +178,19 @@ defaultJsonConfig =
     }
 
 
+instance (Default value) => Default (JsonConfig value) where
+  def = defaultJsonConfig
+
+
 json ::
   ( Default value,
     ToText value,
     Eq value,
-    Json.FromJSON value,
-    Record.Extends (JsonConfig value) config
+    Json.FromJSON value
   ) =>
-  Record config ->
+  JsonConfig value ->
   OptionsParser value
-json cfg = do
-  let config = cfg |> Record.overrideWith defaultJsonConfig
+json config = do
   let parseFunction textToParse = do
         let either = Json.eitherDecodeStrictText textToParse
         case either of
@@ -194,17 +199,17 @@ json cfg = do
   parseWith (parseFunction) config
 
 
-type FlagConfig =
-  [ "help" := Text,
-    "long" := Text,
-    "short" := Char,
-    "value" := Maybe Bool
-  ]
+data FlagConfig = FlagConfig
+  { help :: Text,
+    long :: Text,
+    short :: Char,
+    value :: Maybe Bool
+  }
 
 
-defaultFlagConfig :: Record FlagConfig
+defaultFlagConfig :: FlagConfig
 defaultFlagConfig =
-  ANON
+  FlagConfig
     { help = defaultValue,
       long = defaultValue,
       short = defaultValue,
@@ -212,9 +217,12 @@ defaultFlagConfig =
     }
 
 
-flag :: (Record.Extends FlagConfig config) => Record config -> OptionsParser Bool
-flag cfg = do
-  let config = cfg |> Record.overrideWith defaultFlagConfig
+instance Default FlagConfig where
+  def = defaultFlagConfig
+
+
+flag :: FlagConfig -> OptionsParser Bool
+flag config = do
   OptEnvConf.setting
     [ OptEnvConf.help (config.help |> Text.toLinkedList),
       OptEnvConf.long (config.long |> Text.toLinkedList),
@@ -227,7 +235,7 @@ flag cfg = do
 parseWith ::
   (ToText value) =>
   (Text -> Result Text value) ->
-  Record (JsonConfig value) ->
+  JsonConfig value ->
   OptionsParser value
 parseWith parseFunc config = do
   let wrappedParseFunction charList = do

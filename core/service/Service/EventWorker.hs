@@ -1,5 +1,3 @@
-{-# OPTIONS_GHC -fplugin=Data.Record.Anon.Plugin #-}
-
 module Service.EventWorker (run) where
 
 import Action (Action)
@@ -10,7 +8,7 @@ import ConcurrentVar (ConcurrentVar)
 import ConcurrentVar qualified
 import Console (print)
 import IO qualified
-import Service.Core (UserApp)
+import Service.Core
 import Service.RuntimeState qualified as RuntimeState
 import ToText (ToText, toText)
 

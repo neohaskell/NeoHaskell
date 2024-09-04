@@ -1,5 +1,4 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
-{-# OPTIONS_GHC -fplugin=Data.Record.Anon.Plugin #-}
 
 module Service (
   init,
@@ -22,6 +21,7 @@ import IO qualified
 import Maybe (Maybe (..))
 import Service.ActionWorker qualified as ActionWorker
 import Service.Core (UserApp)
+import Service.Core qualified as Core
 import Service.EventWorker qualified as EventWorker
 import Service.RenderWorker qualified as RenderWorker
 import Service.RuntimeState qualified as RuntimeState
@@ -42,7 +42,7 @@ init userApp = do
   actionsQueue <- Channel.new
   eventsQueue <- Channel.new
   let initialService =
-        ANON
+        RuntimeState.RuntimeState
           { actionHandlers = Action.emptyRegistry,
             actionsQueue = actionsQueue,
             shouldExit = False
@@ -64,7 +64,7 @@ init userApp = do
         print ("[init] EXCEPTION: " ++ toText exception)
         print ("[init] " ++ threadName ++ " cleanup")
         print "[init] Cleaning up"
-        runtimeState |> RuntimeState.modify (\s -> s {shouldExit = True})
+        runtimeState |> RuntimeState.modify (\s -> s {RuntimeState.shouldExit = True})
         case Control.Exception.fromException exception of
           Just Control.Exception.UserInterrupt -> do
             print "[init] Exiting"
