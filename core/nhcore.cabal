@@ -127,6 +127,10 @@ library
       Channel,
       ConcurrentVar,
 
+      -- Http
+      Http,
+      Http.Client
+
 
     -- other-modules:
     -- other-extensions:
@@ -138,6 +142,7 @@ library
       yaml,
       traits,
       system,
+      http,
       options-parser
     default-language: GHC2021
 
