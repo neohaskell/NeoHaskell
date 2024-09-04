@@ -1,3 +1,5 @@
+{-# OPTIONS_GHC -fplugin=Data.Record.Anon.Plugin #-}
+
 module Channel (Channel, new, read, write) where
 
 import Basics

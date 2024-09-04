@@ -13,7 +13,6 @@ build-type:         Simple
 common common_cfg
     ghc-options:    -Wall
                     -Werror
-                    -fplugin=Data.Record.Anon.Plugin
                     -Wno-orphans
     build-depends:
       base ^>=4.18,
