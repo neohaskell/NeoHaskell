@@ -3,10 +3,12 @@ module Html (
   html,
 ) where
 
-import IHP.HSX.QQ qualified
-import Language.Haskell.TH.Quote qualified
-import Text.Blaze.Html (Html)
+import Basics
+import Language.Haskell.TH.Quote (QuasiQuoter)
 
 
-html :: Language.Haskell.TH.Quote.QuasiQuoter
-html = IHP.HSX.QQ.hsx
+data Html
+
+
+html :: QuasiQuoter
+html = dieWith "not implemented"

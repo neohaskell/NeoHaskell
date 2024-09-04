@@ -25,10 +25,8 @@ common common_cfg
       data-default,
       text,
       vector,
-      yaml,
-      blaze-html,
-      ihp-hsx,
       transformers,
+      http-conduit,
       containers,
       opt-env-conf,
       path,
@@ -99,9 +97,6 @@ library
       -- JSON
       Json,
 
-      -- YAML
-      Yaml,
-
       -- Traits
       Applicable,
       Appendable,
@@ -139,7 +134,6 @@ library
       concurrency,
       service,
       json,
-      yaml,
       traits,
       system,
       http,
