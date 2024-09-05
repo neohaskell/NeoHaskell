@@ -18,6 +18,7 @@ import Array (Array)
 import Array qualified
 import Basics
 import Console (print)
+import IO (IO)
 import IO qualified
 import Map (Map)
 import Map qualified
@@ -91,15 +92,7 @@ data ActionName
 type Handler = Unknown -> IO (Maybe Unknown)
 
 
-instance Show Handler where
-  show _ = "Handler"
-
-
 type HandlerRegistry = Map Text Handler
-
-
-instance Show HandlerRegistry where
-  show _ = "HandlerRegistry"
 
 
 emptyRegistry :: Action.HandlerRegistry

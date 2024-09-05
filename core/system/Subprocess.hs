@@ -3,6 +3,7 @@ module Subprocess (open) where
 import Array (Array)
 import Array qualified
 import Basics
+import IO (IO)
 import IO qualified
 import System.Exit qualified
 import System.Process qualified

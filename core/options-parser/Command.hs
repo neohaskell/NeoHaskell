@@ -24,6 +24,7 @@ import Data.Either qualified as GHC
 import Data.Functor qualified as Functor
 import Data.Version (Version)
 import Default (Default (..), defaultValue)
+import IO (IO)
 import LinkedList (LinkedList)
 import Maybe (Maybe (..))
 import Maybe qualified

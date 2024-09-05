@@ -10,11 +10,11 @@ import Service qualified
 import ToText (Show (..))
 
 
-type State =
-  Record
-    '[ "foo" := Text,
-       "bar" := Text
-     ]
+data State
+  = Record
+      '[ "foo" := Text,
+         "bar" := Text
+       ]
 
 
 data Event

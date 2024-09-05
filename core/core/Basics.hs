@@ -6,7 +6,6 @@
 module Basics (
   Unit,
   unit,
-  IO,
 
   -- * Math
   Int,
@@ -134,7 +133,6 @@ import GHC.IsList (IsList (..))
 import GHC.OverloadedLabels (IsLabel (..))
 import GHC.Records (HasField (..))
 import GHC.Stack (HasCallStack)
-import IO (IO)
 import Language.Haskell.TH.Quote (QuasiQuoter)
 import Mappable (Mappable)
 import PyF qualified

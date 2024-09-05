@@ -6,6 +6,7 @@ import Basics
 import Control.Concurrent qualified as Ghc
 import Control.Concurrent.Async qualified as GhcAsync
 import Data.Either qualified as Either
+import IO (IO)
 import Result (Result)
 import Result qualified
 

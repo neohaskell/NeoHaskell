@@ -14,6 +14,7 @@ import Console as Reexported (print, readLine)
 import Default as Reexported (Default (..), defaultValue)
 import Function as Reexported
 import Html as Reexported (Html, html)
+import IO as Reexported (IO)
 import LinkedList as Reexported (LinkedList)
 import Map as Reexported (Map)
 import Maybe as Reexported (Maybe (..))

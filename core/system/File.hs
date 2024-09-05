@@ -10,15 +10,15 @@ module File (
 
 import Action (Action)
 import Action qualified
-import Appendable ((++))
 import Basics
 import Control.Exception qualified as Exception
 import Data.Either qualified as Either
 import Data.Text.IO qualified as TIO
 import GHC.IO.Exception qualified as Exception
+import IO (IO)
 import Path (Path)
 import Path qualified
-import Text (Text, toLinkedList)
+import Text (Text)
 import ToText (Show (..))
 import Unknown qualified
 
@@ -36,12 +36,6 @@ data ReadOptions event = ReadOptions
     onError :: (Error -> event)
   }
   deriving (Show)
-
-
-instance (Unknown.Convertible a, Unknown.Convertible b) => Show (a -> b) where
-  show _ = do
-    let t = "(" ++ Unknown.getTypeName @a ++ " -> " ++ Unknown.getTypeName @b ++ ")"
-    Text.toLinkedList t
 
 
 readText :: (Unknown.Convertible event) => ReadOptions event -> Action event

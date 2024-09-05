@@ -75,6 +75,7 @@ module Text (
   -- * Bytes Conversions
   toBytes,
   fromBytes,
+  convert,
 ) where
 
 import Array (Array)
@@ -569,3 +570,7 @@ fromBytes :: Bytes -> Text
 fromBytes (Bytes.INTERNAL_CORE_BYTES_CONSTRUCTOR bytes) =
   bytes
     |> Data.Text.Encoding.decodeUtf8
+
+
+convert :: (IsString s) => Text -> s
+convert text = Data.Text.unpack text |> fromString

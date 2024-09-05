@@ -15,6 +15,8 @@ import Channel (Channel)
 import Command qualified
 import Console (print)
 import File qualified
+import Http qualified
+import IO (IO)
 import Map qualified
 import Maybe (Maybe (..))
 import Text (Text)
@@ -119,3 +121,6 @@ registerDefaultActionHandlers runtimeState = do
 
   runtimeState
     |> registerActionHandler "continueWith" (Action.continueWithHandler @event)
+
+  runtimeState
+    |> registerActionHandler Http.getActionName (Http.getActionHandler @event)

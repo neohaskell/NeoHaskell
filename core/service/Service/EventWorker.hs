@@ -7,6 +7,7 @@ import Channel qualified
 import ConcurrentVar (ConcurrentVar)
 import ConcurrentVar qualified
 import Console (print)
+import IO (IO)
 import IO qualified
 import Service.Core
 import Service.RuntimeState qualified as RuntimeState

@@ -6,6 +6,7 @@ import Basics
 import Channel (Channel)
 import Channel qualified
 import Console (print)
+import IO (IO)
 import IO qualified
 import Maybe (Maybe (..))
 import Service.RuntimeState qualified as RuntimeState

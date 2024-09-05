@@ -7,7 +7,6 @@ module Service (
 ) where
 
 import Action qualified
-import Appendable ((++))
 import Array (Array)
 import Array qualified
 import AsyncIO qualified
@@ -17,6 +16,7 @@ import Channel qualified
 import ConcurrentVar qualified
 import Console (print)
 import Control.Exception qualified
+import IO (IO)
 import IO qualified
 import Maybe (Maybe (..))
 import Service.ActionWorker qualified as ActionWorker
@@ -25,6 +25,7 @@ import Service.Core qualified as Core
 import Service.EventWorker qualified as EventWorker
 import Service.RenderWorker qualified as RenderWorker
 import Service.RuntimeState qualified as RuntimeState
+import Text (Text)
 import ToText (ToText, toText)
 import Trigger (Trigger (..))
 import Unknown qualified
@@ -60,9 +61,9 @@ init userApp = do
   print "[init] Writing init action"
   actionsQueue |> Channel.write initCmd
   print "[init] Starting loop"
-  let cleanup threadName exception = do
-        print ("[init] EXCEPTION: " ++ toText exception)
-        print ("[init] " ++ threadName ++ " cleanup")
+  let cleanup :: Text -> Control.Exception.SomeException -> IO ()
+      cleanup threadName exception = do
+        print [fmt|[init] EXCEPTION in {threadName}: {toText exception}|]
         print "[init] Cleaning up"
         runtimeState |> RuntimeState.modify (\s -> s {RuntimeState.shouldExit = True})
         case Control.Exception.fromException exception of
