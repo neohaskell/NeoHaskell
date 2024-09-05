@@ -4,16 +4,16 @@ module Http.Client (
   get,
   getActionHandler,
   getActionName,
-  expectText,
+  expectJson,
   request,
   withUrl,
   addHeader,
 ) where
 
 import Action qualified
-import Bytes (Bytes (INTERNAL_CORE_BYTES_CONSTRUCTOR), unwrap)
 import Core
 import IO qualified
+import Json qualified
 import Map qualified
 import Maybe qualified
 import Network.HTTP.Simple qualified as Http
@@ -30,7 +30,7 @@ moduleName = "Http.Client"
 data Request (event :: Type) = Request
   { url :: Maybe Text,
     headers :: Map Text Text,
-    mapper :: Maybe (Result Error Bytes -> event)
+    mapper :: Maybe (Result Error Json.Value -> event)
   }
   deriving (Show)
 
@@ -63,13 +63,13 @@ addHeader key value options =
 
 
 data Error = Error Text
+  deriving (Show)
 
 
-expectText :: (Result Error Text -> event) -> Request event -> Request event
-expectText userMapper options = do
-  let mapper res = res |> Result.map (Text.fromBytes) |> userMapper
+expectJson :: (Result Error Json.Value -> event) -> Request event -> Request event
+expectJson userMapper options = do
   options
-    { mapper = Just mapper
+    { mapper = Just userMapper
     }
 
 
@@ -89,6 +89,12 @@ getActionHandler options = do
   let mapper = options.mapper |> Maybe.withDefault (dieWith "mapper is required")
   let url = options.url |> Maybe.withDefault (dieWith "url is required")
 
+  let actualMapping res = do
+        log [fmt|Mapping response:{toText res}|]
+        res
+          |> mapper
+          |> pure
+
   log "Parsing request"
   r <- Text.toLinkedList url |> HttpSimple.parseRequest
 
@@ -96,10 +102,10 @@ getActionHandler options = do
   let req =
         options.headers
           |> Map.reduce r \key value acc ->
-            HttpSimple.addRequestHeader (Text.convert key) (Text.toBytes value |> Bytes.unwrap) acc
+            HttpSimple.addRequestHeader (Text.convert key) (Text.convert value) acc
 
   log "Performing request"
-  res <- HttpSimple.httpBS req |> IO.try
+  res <- HttpSimple.httpJSON req |> IO.try
   response <-
     case res of
       Err err -> errorHandler err
@@ -108,9 +114,7 @@ getActionHandler options = do
   log "Returning"
   response
     |> Result.map Http.getResponseBody
-    |> Result.map Bytes.INTERNAL_CORE_BYTES_CONSTRUCTOR
-    |> mapper
-    |> pure
+    |> actualMapping
 
 
 log :: Text -> IO ()

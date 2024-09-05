@@ -1,6 +1,7 @@
 module Json (
   Decodable,
   Encodable,
+  Aeson.Value,
   Aeson.FromJSON,
   Aeson.ToJSON,
   decodeText,
