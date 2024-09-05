@@ -16,6 +16,7 @@ module Result (
   toMaybe,
   fromMaybe,
   mapError,
+  fromEither,
 ) where
 
 import Basics
@@ -166,3 +167,14 @@ fromMaybe error maybe =
   case maybe of
     Just something -> Ok something
     Nothing -> Err error
+
+
+-- | Compatibility function to integrate with Haskell's @Either@ type.
+--
+-- > fromEither (Prelude.Right 42) == Ok 42
+-- > fromEither (Prelude.Left "nope") == Err "nope"
+fromEither :: Prelude.Either a b -> Result a b
+fromEither either =
+  case either of
+    Prelude.Left a -> Err a
+    Prelude.Right b -> Ok b

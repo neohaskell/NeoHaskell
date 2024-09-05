@@ -71,7 +71,10 @@ module Text (
   foldr,
   any,
   all,
+
+  -- * Bytes Conversions
   toBytes,
+  fromBytes,
 ) where
 
 import Array (Array)
@@ -560,3 +563,9 @@ toBytes text =
   text
     |> Data.Text.Encoding.encodeUtf8
     |> Bytes.INTERNAL_CORE_BYTES_CONSTRUCTOR
+
+
+fromBytes :: Bytes -> Text
+fromBytes (Bytes.INTERNAL_CORE_BYTES_CONSTRUCTOR bytes) =
+  bytes
+    |> Data.Text.Encoding.decodeUtf8
