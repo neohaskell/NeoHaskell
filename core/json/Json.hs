@@ -6,6 +6,8 @@ module Json (
   Aeson.ToJSON,
   decodeText,
   encode,
+  decode,
+  encodeText,
 ) where
 
 import Basics
@@ -31,7 +33,17 @@ decodeText text = case Aeson.eitherDecodeStrictText text of
   Either.Right value -> Result.Ok value
 
 
-encode :: (Encodable value) => value -> Text
-encode value =
+encodeText :: (Encodable value) => value -> Text
+encodeText value =
   AesonText.encodeToLazyText value
     |> Data.Text.toStrict
+
+
+encode :: (Encodable value) => value -> Aeson.Value
+encode = Aeson.toJSON
+
+
+decode :: (Decodable value) => Aeson.Value -> Result Text value
+decode value = case Aeson.fromJSON value of
+  Aeson.Error error -> Result.Err (Text.fromLinkedList error)
+  Aeson.Success val -> Result.Ok val

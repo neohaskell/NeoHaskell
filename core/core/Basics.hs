@@ -119,6 +119,7 @@ module Basics (
   Type,
   Control.Monad.forever,
   Control.Monad.when,
+  GHC.Generics.Generic,
 ) where
 
 import Control.Monad qualified
@@ -129,6 +130,7 @@ import Data.String (IsString (..))
 import Data.Text (Text)
 import Data.Text qualified as Text
 import Data.Void qualified (Void, absurd)
+import GHC.Generics qualified
 import GHC.IsList (IsList (..))
 import GHC.OverloadedLabels (IsLabel (..))
 import GHC.Records (HasField (..))
