@@ -133,7 +133,7 @@ processBatch registry (Action actionBatch) = do
   print "[processBatch] Creating output var"
   currentOutput <- Var.new Nothing
 
-  print ("[processBatch] Starting action loop with " ++ toText (Array.length actionBatch) ++ " actions")
+  print [fmt|[processBatch] Starting action loop with {Array.length actionBatch} actions|]
   result <- actionBatch |> Array.foldM (processAction currentOutput) (Continue Nothing)
 
   case result of
@@ -150,7 +150,7 @@ processBatch registry (Action actionBatch) = do
   processAction :: Var (Maybe Unknown) -> ActionResult value -> ActionRecord -> IO (ActionResult value)
   processAction _ (Error msg) _ = pure (Error msg)
   processAction currentOutput (Continue _) action = do
-    print ("[processBatch] Matching action " ++ toText action)
+    print [fmt|[processBatch] Matching action {toText action}|]
     if shouldExit action.name
       then do
         print "[processBatch] Exit action detected, terminating"
@@ -177,7 +177,7 @@ processBatch registry (Action actionBatch) = do
             pure (Continue res)
       Nothing -> do
         print "[processBatch] Action handler not found"
-        pure (Error ("Action handler not found for: " ++ name'))
+        pure (Error [fmt|Action handler not found for: {name'}|])
 
   handleMapAction :: Unknown -> Var (Maybe Unknown) -> IO (ActionResult value)
   handleMapAction payload currentOutput = do
