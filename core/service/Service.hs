@@ -1,8 +1,8 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
 
 module Service (
-  init,
-  UserApp,
+  run,
+  UserApp (..),
   RuntimeState.registerActionHandler,
 ) where
 
@@ -32,12 +32,12 @@ import Unknown qualified
 import Var qualified
 
 
-init ::
+run ::
   forall (model :: Type) (event :: Type).
   (Unknown.Convertible event, ToText event, ToText model) =>
   UserApp model event ->
   IO ()
-init userApp = do
+run userApp = do
   print "[init] Creating queue"
   runtimeState <- Var.new Nothing
   actionsQueue <- Channel.new

@@ -11,6 +11,7 @@ module File (
 import Action (Action)
 import Action qualified
 import Basics
+import Console (print)
 import Control.Exception qualified as Exception
 import Data.Either qualified as Either
 import Data.Text.IO qualified as TIO
@@ -58,16 +59,21 @@ writeText options =
 
 
 readTextHandler ::
-  forall event.
   (Unknown.Convertible event) =>
   ReadOptions event ->
   IO event
 readTextHandler options = do
   -- TODO: Figure out exceptions module and "raw IO" modules
+  let p = Path.toText options.path
+  print [fmt|[[File.readText] Attempting to read file: {p}|]
   result <- options.path |> Path.toLinkedList |> TIO.readFile |> Exception.try @Exception.IOError
   case result of
-    Either.Left _ -> pure (options.onError NotFound)
-    Either.Right contents -> pure (options.onSuccess contents)
+    Either.Left _ -> do
+      print "[File.readText] File not found"
+      pure (options.onError NotFound)
+    Either.Right contents -> do
+      print [fmt|[[File.readText] File contents: {contents}|]
+      pure (options.onSuccess contents)
 
 
 writeTextHandler :: (Unknown.Convertible event) => WriteTextOptions event -> IO event

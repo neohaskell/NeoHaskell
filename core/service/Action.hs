@@ -164,7 +164,7 @@ processBatch registry (Action actionBatch) = do
     print ("[processBatch] Custom action " ++ name')
     case Map.get name' registry of
       Just handler -> do
-        print "[processBatch] Handler found, executing"
+        print [fmt|[processBatch] Handler found, executing {name'} to payload {toText payload}|]
         result <- handler payload
         case result of
           Nothing -> do
