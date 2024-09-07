@@ -37,6 +37,7 @@ common common_cfg
       QuickCheck,
       quickcheck-instances,
       PyF,
+      toml-parser,
       template-haskell
     default-extensions:
       ApplicativeDo
@@ -97,6 +98,9 @@ library
       -- JSON
       Json,
 
+      -- TOML
+      Toml,
+
       -- Traits
       Applicable,
       Appendable,
@@ -134,6 +138,7 @@ library
       concurrency,
       service,
       json,
+      toml,
       traits,
       system,
       http,
