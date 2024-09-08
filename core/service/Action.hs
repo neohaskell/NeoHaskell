@@ -1,5 +1,6 @@
 module Action (
-  Action,
+  Action (..),
+  Untyped (..),
   Handler,
   HandlerRegistry,
   emptyRegistry,
@@ -73,6 +74,10 @@ executed there. This is the basis for the time-travel debugging feature that Elm
 a great inspiration for the NeoHaskell platform.
 -}
 newtype Action event = Action (Array ActionRecord)
+  deriving (Show)
+
+
+newtype Untyped = Untyped (Array ActionRecord)
   deriving (Show)
 
 

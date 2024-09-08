@@ -7,6 +7,7 @@ module Unknown (
   Convertible,
   apply,
   getTypeName,
+  getUnknownTypeName,
 ) where
 
 import Appendable ((++))
@@ -56,6 +57,12 @@ getTypeName ::
   Text
 getTypeName =
   typeRep (Data.Proxy.Proxy @a) |> toText
+
+
+-- | Gets the name of the type of an unknown value
+getUnknownTypeName :: Unknown -> Text
+getUnknownTypeName (Unknown dynamic) =
+  Data.Dynamic.dynTypeRep dynamic |> toText
 
 
 instance (Convertible a, Convertible b) => Show (a -> b) where

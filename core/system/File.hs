@@ -19,6 +19,7 @@ import GHC.IO.Exception qualified as Exception
 import IO (IO)
 import Path (Path)
 import Path qualified
+import Result (Result (..))
 import Text (Text)
 import ToText (Show (..))
 import Unknown qualified
@@ -31,15 +32,13 @@ data Error
   deriving (Show)
 
 
-data ReadOptions event = ReadOptions
-  { path :: Path,
-    onSuccess :: (Text -> event),
-    onError :: (Error -> event)
+data ReadOptions = ReadOptions
+  { path :: Path
   }
   deriving (Show)
 
 
-readText :: (Unknown.Convertible event) => ReadOptions event -> Action event
+readText :: ReadOptions -> Action (Result Error Text)
 readText options =
   Action.named "File.readText" options
 
@@ -58,10 +57,7 @@ writeText options =
   Action.named "File.writeText" options
 
 
-readTextHandler ::
-  (Unknown.Convertible event) =>
-  ReadOptions event ->
-  IO event
+readTextHandler :: ReadOptions -> IO (Result Error Text)
 readTextHandler options = do
   -- TODO: Figure out exceptions module and "raw IO" modules
   let p = Path.toText options.path
@@ -70,10 +66,10 @@ readTextHandler options = do
   case result of
     Either.Left _ -> do
       print "[File.readText] File not found"
-      pure (options.onError NotFound)
+      pure (Err NotFound)
     Either.Right contents -> do
       print [fmt|[[File.readText] File contents: {contents}|]
-      pure (options.onSuccess contents)
+      pure (Ok contents)
 
 
 writeTextHandler :: (Unknown.Convertible event) => WriteTextOptions event -> IO event

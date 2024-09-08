@@ -46,13 +46,14 @@ update :: BuildEvent -> State -> (State, Action BuildEvent)
 update event state =
   case event of
     BuildStarted -> do
+      let handle res = case res of
+            Ok text -> ReadProjectFile text
+            Err _ -> ProjectFileNotFound
       let opts =
             File.ReadOptions
-              { path = "foo.txt",
-                onSuccess = \txt -> ReadProjectFile txt,
-                onError = \_ -> ProjectFileNotFound
+              { path = "foo.txt"
               }
-      (state, File.readText opts)
+      (state, File.readText opts |> Action.map handle)
     ReadProjectFile text -> do
       let newState = state {message = text}
       (newState, Action.none)
