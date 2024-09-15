@@ -1,6 +1,5 @@
 module Action (
   Action (..),
-  Untyped (..),
   Handler,
   HandlerRegistry,
   emptyRegistry,
@@ -14,7 +13,6 @@ module Action (
   ActionResult (..),
 ) where
 
-import Appendable ((++))
 import Array (Array)
 import Array qualified
 import Basics
@@ -25,7 +23,7 @@ import Map (Map)
 import Map qualified
 import Maybe (Maybe (..))
 import Text (Text)
-import ToText (Show (..), toText)
+import ToText (Show (..), ToText, toText)
 import Unknown (Unknown)
 import Unknown qualified
 import Var (Var)
@@ -77,10 +75,6 @@ newtype Action event = Action (Array ActionRecord)
   deriving (Show)
 
 
-newtype Untyped = Untyped (Array ActionRecord)
-  deriving (Show)
-
-
 data ActionRecord = ActionRecord
   { name :: ActionName,
     payload :: Unknown
@@ -122,20 +116,17 @@ map f (Action actions) =
     |> Action
 
 
-data ActionResult value
-  = Continue (Maybe value)
+data ActionResult
+  = Continue (Maybe Unknown)
   | Error Text
 
 
 processBatch ::
-  forall (value :: Type).
-  (Unknown.Convertible value) =>
   HandlerRegistry ->
-  Action value ->
-  IO (ActionResult value)
+  Action anyEvent ->
+  IO (ActionResult)
 processBatch registry (Action actionBatch) = do
   print "[processBatch] Processing batch"
-  print "[processBatch] Creating output var"
   currentOutput <- Var.new Nothing
 
   print [fmt|[processBatch] Starting action loop with {Array.length actionBatch} actions|]
@@ -145,46 +136,36 @@ processBatch registry (Action actionBatch) = do
     Continue _ -> do
       print "[processBatch] Getting final output"
       out <- Var.get currentOutput
-      case out of
-        Nothing -> pure (Continue Nothing)
-        Just out' -> case Unknown.toValue out' of
-          Nothing -> pure (Error "Couldn't convert output")
-          Just out'' -> pure (Continue (Just out''))
+      pure (Continue out) -- Output is still Unknown
     Error msg -> pure (Error msg)
  where
-  processAction :: Var (Maybe Unknown) -> ActionResult value -> ActionRecord -> IO (ActionResult value)
+  processAction :: Var (Maybe Unknown) -> ActionResult -> ActionRecord -> IO (ActionResult)
   processAction _ (Error msg) _ = pure (Error msg)
   processAction currentOutput (Continue _) action = do
-    print [fmt|[processBatch] Matching action {toText action}|]
     if shouldExit action.name
-      then do
-        print "[processBatch] Exit action detected, terminating"
-        IO.exitSuccess -- or IO.exitWith (ExitFailure code) if you need a specific exit code
+      then IO.exitSuccess
       else case action.name of
         Custom name' -> handleCustomAction name' action.payload currentOutput
         MapAction -> handleMapAction action.payload currentOutput
 
-  handleCustomAction :: Text -> Unknown -> Var (Maybe Unknown) -> IO (ActionResult value)
+  handleCustomAction :: Text -> Unknown -> Var (Maybe Unknown) -> IO (ActionResult)
   handleCustomAction name' payload currentOutput = do
-    print ("[processBatch] Custom action " ++ name')
     case Map.get name' registry of
       Just handler -> do
-        print [fmt|[processBatch] Handler found, executing {name'} to payload {toText payload}|]
+        print [fmt|Found handler for {name'}|]
         result <- handler payload
+        print [fmt|Handler {name'} returned: {toText result}|]
         case result of
           Nothing -> do
-            print "[processBatch] Handler returned Nothing"
+            print [fmt|Handler {name'} returned nothing|]
             pure (Continue Nothing)
           Just result' -> do
-            print "[processBatch] Handler returned Just, setting output"
+            print [fmt|Setting output to {toText result'}|]
             currentOutput |> Var.set (Just result')
-            let res = Unknown.toValue result'
-            pure (Continue res)
-      Nothing -> do
-        print "[processBatch] Action handler not found"
-        pure (Error [fmt|Action handler not found for: {name'}|])
+            pure (Continue (Just result'))
+      Nothing -> pure (Error [fmt|Action handler not found for: {name'}|])
 
-  handleMapAction :: Unknown -> Var (Maybe Unknown) -> IO (ActionResult value)
+  handleMapAction :: Unknown -> Var (Maybe Unknown) -> IO (ActionResult)
   handleMapAction payload currentOutput = do
     print "[processBatch] Map action"
     maybeOut <- Var.get currentOutput
@@ -192,6 +173,7 @@ processBatch registry (Action actionBatch) = do
       Nothing -> pure (Error "[processBatch] No output to map")
       Just out -> do
         print "[processBatch] Applying mapping function"
+        -- Apply the mapping function directly to the Unknown values
         case Unknown.apply payload out of
           Nothing -> do
             print "[processBatch] Couldn't apply mapping function"
@@ -199,8 +181,7 @@ processBatch registry (Action actionBatch) = do
           Just output -> do
             print "[processBatch] Setting output"
             currentOutput |> Var.set (Just output)
-            let res = Unknown.toValue output
-            pure (Continue res)
+            pure (Continue (Just output))
 
   shouldExit :: ActionName -> Bool
   shouldExit actionName =
@@ -210,7 +191,7 @@ processBatch registry (Action actionBatch) = do
 
 
 named ::
-  (Unknown.Convertible value, Unknown.Convertible result) =>
+  (Unknown.Convertible value) =>
   Text ->
   value ->
   Action result
@@ -229,7 +210,7 @@ continueWith event =
 
 continueWithHandler ::
   forall event.
-  (Unknown.Convertible event) =>
+  (Unknown.Convertible event, ToText event) =>
   event ->
   IO event
 continueWithHandler event =

@@ -14,7 +14,7 @@ import Appendable ((++))
 import Basics
 import Data.Dynamic qualified
 import Data.Proxy qualified
-import Data.Typeable (Typeable, typeRep)
+import Data.Typeable (TypeRep, Typeable, typeRep)
 import Maybe (Maybe)
 import Maybe qualified
 import Text (Text)
@@ -23,7 +23,10 @@ import ToText
 
 
 -- | The 'Unknown' type represents a dynamically typed value.
-newtype Unknown = Unknown Data.Dynamic.Dynamic
+data Unknown = Unknown
+  { value :: Data.Dynamic.Dynamic,
+    typeRepresentation :: TypeRep
+  }
   deriving (Show, Typeable)
 
 
@@ -33,21 +36,22 @@ type Convertible value = Typeable value
 
 -- | Convert a value of any type to 'Unknown'.
 fromValue :: (Typeable value) => value -> Unknown
-fromValue value =
-  Unknown (Data.Dynamic.toDyn value)
+fromValue value = do
+  let dynamicValue = Data.Dynamic.toDyn value
+  Unknown dynamicValue (Data.Dynamic.dynTypeRep dynamicValue)
 
 
 -- | Convert an 'Unknown' value back to its original type, if possible.
 toValue :: (Typeable value) => Unknown -> Maybe value
-toValue (Unknown dynamic) =
+toValue (Unknown dynamic _) =
   Data.Dynamic.fromDynamic dynamic
 
 
 -- | Applies a function that is inside the 'Unknown' value.
 apply :: Unknown -> Unknown -> Maybe Unknown
-apply (Unknown f) (Unknown x) =
+apply (Unknown f _) (Unknown x _) =
   Data.Dynamic.dynApply f x
-    |> Maybe.map Unknown
+    |> Maybe.map \result -> Unknown result (Data.Dynamic.dynTypeRep result)
 
 
 -- | Returns the name of the type
@@ -61,8 +65,8 @@ getTypeName =
 
 -- | Gets the name of the type of an unknown value
 getUnknownTypeName :: Unknown -> Text
-getUnknownTypeName (Unknown dynamic) =
-  Data.Dynamic.dynTypeRep dynamic |> toText
+getUnknownTypeName (Unknown _ typeRepresentation) =
+  toText typeRepresentation
 
 
 instance (Convertible a, Convertible b) => Show (a -> b) where

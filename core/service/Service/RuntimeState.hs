@@ -8,36 +8,39 @@ module Service.RuntimeState (
   registerDefaultActionHandlers,
 ) where
 
+import Action (Action)
 import Action qualified
 import Basics
 import Channel (Channel)
 import Command qualified
 import Console (print)
 import File qualified
-import Http qualified
 import IO (IO)
 import Map qualified
 import Maybe (Maybe (..))
-import ToText (Show (..), toText)
+import Text (Text)
+import ToText (Show (..), ToText, toText)
+import Unknown (Unknown)
 import Unknown qualified
 import Var (Var)
 import Var qualified
 
 
-data RuntimeState = RuntimeState
+data RuntimeState (event :: Type) = RuntimeState
   { actionHandlers :: Action.HandlerRegistry,
-    actionsQueue :: Channel Action.Untyped,
+    actionsQueue :: Channel (Action event),
     shouldExit :: Bool
   }
   deriving (Show)
 
 
-type Reference = Var (Maybe (RuntimeState))
+type Reference (event :: Type) = Var (Maybe (RuntimeState event))
 
 
 get ::
-  Reference ->
-  IO (RuntimeState)
+  forall (event :: Type).
+  Reference event ->
+  IO (RuntimeState event)
 get runtimeState = do
   maybeService <- Var.get runtimeState
   case maybeService of
@@ -46,16 +49,18 @@ get runtimeState = do
 
 
 set ::
-  RuntimeState ->
-  Reference ->
+  forall (event :: Type).
+  RuntimeState event ->
+  Reference event ->
   IO ()
 set value runtimeState = do
   runtimeState |> Var.set (Just value)
 
 
 modify ::
-  (RuntimeState -> RuntimeState) ->
-  Reference ->
+  forall (event :: Type).
+  (RuntimeState event -> RuntimeState event) ->
+  Reference event ->
   IO ()
 modify f runtimeState = do
   currentState <- get runtimeState
@@ -69,23 +74,25 @@ registerActionHandler ::
     Unknown.Convertible event,
     Show payload
   ) =>
-  (payload -> IO event) ->
-  Reference ->
+  Text ->
+  (payload -> IO Unknown) ->
+  Reference event ->
   IO ()
-registerActionHandler handler runtimeState = do
+registerActionHandler actionHandlerName handler runtimeState = do
   print "Getting state"
   service <- runtimeState |> get
   print [fmt|Got state: {toText service}|]
-  let actionHandler payload =
+  let actionHandler payload = do
+        print [fmt|Handling action {actionHandlerName} with payload {toText payload}|]
         case (Unknown.toValue payload) of
           Nothing -> do
             print "Payload is Nothing"
             pure Nothing
           Just pl -> do
             print [fmt|Payload was Just {toText pl}|]
-            event <- handler pl
-            pure (Unknown.fromValue (event :: event) |> Just)
-  let actionHandlerName = Unknown.getTypeName @(payload -> IO event)
+            result <- handler pl
+            pure (Just result)
+  -- let actionHandlerName = Unknown.getTypeName @(payload -> IO event)
   let newRegistry =
         service.actionHandlers
           |> Map.set actionHandlerName actionHandler
@@ -99,16 +106,21 @@ registerActionHandler handler runtimeState = do
 -- action names to handlers. This way, the user app can register its own
 -- action handlers. Ideally also the user could omit the action handlers
 -- and the service would still work with the default action handlers.
-registerDefaultActionHandlers :: Reference -> IO ()
+registerDefaultActionHandlers ::
+  forall (event :: Type).
+  (Unknown.Convertible event, ToText event) =>
+  Reference event ->
+  IO ()
 registerDefaultActionHandlers runtimeState = do
+  let mkHandler :: forall (p :: Type) (e :: Type). (Unknown.Convertible e) => (p -> IO e) -> p -> IO Unknown
+      mkHandler h input = do
+        res <- h input
+        pure (Unknown.fromValue res)
   runtimeState
-    |> registerActionHandler File.readTextHandler
+    |> registerActionHandler "File.readText" (mkHandler File.readTextHandler)
 
   runtimeState
-    |> registerActionHandler Command.parseHandler
+    |> registerActionHandler "Command.parse" (mkHandler @(Command.CommandOptions event) @event Command.parseHandler)
 
   runtimeState
-    |> registerActionHandler Action.continueWithHandler
-
-  runtimeState
-    |> registerActionHandler Http.getActionHandler
+    |> registerActionHandler "continueWith" (mkHandler @event @event Action.continueWithHandler)
