@@ -48,7 +48,7 @@ init = do
           Command.CommandOptions
             { name = "neo",
               description = "NeoHaskell's console helper",
-              version = Just [version|0.0.0|],
+              version = Just [version|0.5.0|],
               decoder = commandParser
             }
   (emptyState, action)
