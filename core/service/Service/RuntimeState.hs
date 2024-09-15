@@ -15,6 +15,7 @@ import Channel (Channel)
 import Command qualified
 import Console (print)
 import File qualified
+import Http qualified
 import IO (IO)
 import Map qualified
 import Maybe (Maybe (..))
@@ -124,3 +125,6 @@ registerDefaultActionHandlers runtimeState = do
 
   runtimeState
     |> registerActionHandler "continueWith" (mkHandler @event @event Action.continueWithHandler)
+
+  runtimeState
+    |> registerActionHandler "Http.get" (mkHandler @(Http.Request event) @event Http.getActionHandler)
