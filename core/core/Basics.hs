@@ -6,7 +6,6 @@
 module Basics (
   Unit,
   unit,
-  IO,
 
   -- * Math
   Int,
@@ -103,9 +102,6 @@ module Basics (
 
   -- * Reexported for records
   GHC.Records.HasField (..),
-  setField,
-  Record,
-  Pair (..),
   dieWith,
   Prelude.pure,
 
@@ -121,28 +117,24 @@ module Basics (
   IsLabel (..),
   Control.Monad.join,
   Type,
-  ifThenElse,
   Control.Monad.forever,
   Control.Monad.when,
+  GHC.Generics.Generic,
 ) where
 
 import Control.Monad qualified
 import Control.Monad qualified as Monad
 import Data.Bits qualified (xor)
 import Data.Kind (Type)
-import Data.Record.Anon
-import Data.Record.Anon.Overloading (ifThenElse, setField)
-import Data.Record.Anon.Plugin.Internal.Runtime (Pair (..))
-import Data.Record.Anon.Simple (Record)
 import Data.String (IsString (..))
 import Data.Text (Text)
 import Data.Text qualified as Text
 import Data.Void qualified (Void, absurd)
+import GHC.Generics qualified
 import GHC.IsList (IsList (..))
 import GHC.OverloadedLabels (IsLabel (..))
 import GHC.Records (HasField (..))
 import GHC.Stack (HasCallStack)
-import IO (IO)
 import Language.Haskell.TH.Quote (QuasiQuoter)
 import Mappable (Mappable)
 import PyF qualified

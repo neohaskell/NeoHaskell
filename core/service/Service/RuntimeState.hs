@@ -1,5 +1,5 @@
 module Service.RuntimeState (
-  RuntimeState,
+  RuntimeState (..),
   Reference,
   get,
   set,
@@ -15,24 +15,27 @@ import Channel (Channel)
 import Command qualified
 import Console (print)
 import File qualified
+import Http qualified
+import IO (IO)
 import Map qualified
 import Maybe (Maybe (..))
 import Text (Text)
-import ToText (ToText, toText)
+import ToText (Show (..), ToText, toText)
+import Unknown (Unknown)
 import Unknown qualified
 import Var (Var)
 import Var qualified
 
 
-type RuntimeState (event :: Type) =
-  Record
-    '[ "actionHandlers" := Action.HandlerRegistry,
-       "actionsQueue" := Channel (Action event),
-       "shouldExit" := Bool
-     ]
+data RuntimeState (event :: Type) = RuntimeState
+  { actionHandlers :: Action.HandlerRegistry,
+    actionsQueue :: Channel (Action event),
+    shouldExit :: Bool
+  }
+  deriving (Show)
 
 
-type Reference event = Var (Maybe (RuntimeState event))
+type Reference (event :: Type) = Var (Maybe (RuntimeState event))
 
 
 get ::
@@ -67,29 +70,30 @@ modify f runtimeState = do
 
 
 registerActionHandler ::
-  forall payload event.
+  forall (payload :: Type) (event :: Type).
   ( Unknown.Convertible payload,
     Unknown.Convertible event,
-    ToText payload,
-    ToText event
+    Show payload
   ) =>
   Text ->
-  (payload -> IO event) ->
+  (payload -> IO Unknown) ->
   Reference event ->
   IO ()
 registerActionHandler actionHandlerName handler runtimeState = do
   print "Getting state"
   service <- runtimeState |> get
   print [fmt|Got state: {toText service}|]
-  let actionHandler payload =
+  let actionHandler payload = do
+        print [fmt|Handling action {actionHandlerName} with payload {toText payload}|]
         case (Unknown.toValue payload) of
           Nothing -> do
             print "Payload is Nothing"
             pure Nothing
           Just pl -> do
             print [fmt|Payload was Just {toText pl}|]
-            event <- handler pl
-            pure (Unknown.fromValue (event :: event) |> Just)
+            result <- handler pl
+            pure (Just result)
+  -- let actionHandlerName = Unknown.getTypeName @(payload -> IO event)
   let newRegistry =
         service.actionHandlers
           |> Map.set actionHandlerName actionHandler
@@ -105,17 +109,22 @@ registerActionHandler actionHandlerName handler runtimeState = do
 -- and the service would still work with the default action handlers.
 registerDefaultActionHandlers ::
   forall (event :: Type).
-  ( Unknown.Convertible event,
-    ToText event
-  ) =>
+  (Unknown.Convertible event, ToText event) =>
   Reference event ->
   IO ()
 registerDefaultActionHandlers runtimeState = do
+  let mkHandler :: forall (p :: Type) (e :: Type). (Unknown.Convertible e) => (p -> IO e) -> p -> IO Unknown
+      mkHandler h input = do
+        res <- h input
+        pure (Unknown.fromValue res)
   runtimeState
-    |> registerActionHandler @(File.ReadOptions event) @event "File.readText" (File.readTextHandler @event)
+    |> registerActionHandler "File.readText" (mkHandler File.readTextHandler)
 
   runtimeState
-    |> registerActionHandler @(Command.CommandOptions event) @event "Command.parse" (Command.parseHandler @event)
+    |> registerActionHandler "Command.parse" (mkHandler @(Command.CommandOptions event) @event Command.parseHandler)
 
   runtimeState
-    |> registerActionHandler "continueWith" (Action.continueWithHandler @event)
+    |> registerActionHandler "continueWith" (mkHandler @event @event Action.continueWithHandler)
+
+  runtimeState
+    |> registerActionHandler "Http.get" (mkHandler @(Http.Request event) @event Http.getActionHandler)

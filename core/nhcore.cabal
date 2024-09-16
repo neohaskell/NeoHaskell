@@ -1,6 +1,6 @@
 cabal-version:      3.4
 name:               nhcore
-version:            0.3.1
+version:            0.5.0
 synopsis:           Core Library for NeoHaskell
 description:        NeoHaskell is a dialect of Haskell that is focused on newcomer-friendliness and productivity.
 homepage:           https://neohaskell.org
@@ -13,7 +13,6 @@ build-type:         Simple
 common common_cfg
     ghc-options:    -Wall
                     -Werror
-                    -fplugin=Data.Record.Anon.Plugin
                     -Wno-orphans
     build-depends:
       base ^>=4.18,
@@ -26,21 +25,19 @@ common common_cfg
       data-default,
       text,
       vector,
-      yaml,
-      blaze-html,
-      ihp-hsx,
       transformers,
+      http-conduit,
       containers,
       opt-env-conf,
       path,
       nanotime,
       process,
-      large-anon,
       pretty-simple,
       unagi-chan,
       QuickCheck,
       quickcheck-instances,
       PyF,
+      toml-parser,
       template-haskell
     default-extensions:
       ApplicativeDo
@@ -57,8 +54,6 @@ common common_cfg
       OverloadedLists
       OverloadedLabels
       OverloadedRecordDot
-      OverloadedRecordUpdate
-      RebindableSyntax
       DuplicateRecordFields
       PackageImports
       NamedFieldPuns
@@ -103,8 +98,8 @@ library
       -- JSON
       Json,
 
-      -- YAML
-      Yaml,
+      -- TOML
+      Toml,
 
       -- Traits
       Applicable,
@@ -131,6 +126,10 @@ library
       Channel,
       ConcurrentVar,
 
+      -- Http
+      Http,
+      Http.Client
+
 
     -- other-modules:
     -- other-extensions:
@@ -139,9 +138,10 @@ library
       concurrency,
       service,
       json,
-      yaml,
+      toml,
       traits,
       system,
+      http,
       options-parser
     default-language: GHC2021
 
@@ -155,5 +155,4 @@ test-suite nhcore-test
     main-is:          Main.hs
     build-depends:
         base ^>=4.18,
-        large-anon,
         nhcore

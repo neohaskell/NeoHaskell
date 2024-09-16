@@ -11,6 +11,7 @@ import ConcurrentVar (ConcurrentVar)
 import ConcurrentVar qualified
 import Console (print)
 import Graphics.Vty qualified as Vty
+import IO (IO)
 import IO qualified
 import Maybe (Maybe (..))
 import Service.Core
@@ -59,7 +60,9 @@ run userApp modelRef runtimeState = do
               Brick.put newModel
             Brick.AppEvent ExitRender -> do
               Brick.halt
-            _ -> Brick.halt
+            Brick.VtyEvent (Vty.EvKey (Vty.KChar 'c') [Vty.MCtrl]) -> do
+              Brick.halt
+            _ -> Brick.continueWithoutRedraw
 
       let brickApp =
             Brick.App

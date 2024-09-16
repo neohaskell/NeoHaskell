@@ -40,6 +40,7 @@ import Data.Foldable qualified
 import Data.Vector ((!?), (++), (//))
 import Data.Vector qualified
 import GHC.IsList qualified as GHC
+import IO (IO)
 import LinkedList (LinkedList)
 import LinkedList qualified
 import Maybe (Maybe (..))

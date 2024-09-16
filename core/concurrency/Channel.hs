@@ -2,14 +2,15 @@ module Channel (Channel, new, read, write) where
 
 import Basics
 import Control.Concurrent.Chan.Unagi qualified as Unagi
+import IO (IO)
 import ToText (Show (..))
 
 
-type Channel value =
-  Record
-    '[ "outChannel" := Unagi.OutChan value,
-       "inChannel" := Unagi.InChan value
-     ]
+data Channel value = Channel
+  { outChannel :: Unagi.OutChan value,
+    inChannel :: Unagi.InChan value
+  }
+  deriving (Show)
 
 
 instance Show (Unagi.OutChan value) where
@@ -23,7 +24,7 @@ instance Show (Unagi.InChan value) where
 new :: IO (Channel value)
 new = do
   (in_, out) <- Unagi.newChan
-  pure ANON {outChannel = out, inChannel = in_}
+  pure Channel {outChannel = out, inChannel = in_}
 
 
 read :: Channel value -> IO value

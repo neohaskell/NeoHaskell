@@ -4,6 +4,7 @@ module Trigger (
 ) where
 
 import Basics
+import IO (IO)
 
 
 -- |

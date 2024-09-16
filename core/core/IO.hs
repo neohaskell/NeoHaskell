@@ -1,7 +1,18 @@
-module IO (IO, yield, dangerouslyRun, finally, exitSuccess, catchAny, onException) where
+module IO (
+  IO,
+  yield,
+  dangerouslyRun,
+  finally,
+  exitSuccess,
+  catchAny,
+  onException,
+  map,
+  try,
+) where
 
 import Control.Exception qualified as GHC
 import GHC.IO (IO)
+import Result (Result (..))
 import System.Exit qualified as GHC
 import System.IO.Unsafe qualified as GHC
 import Prelude qualified
@@ -9,6 +20,10 @@ import Prelude qualified
 
 yield :: value -> IO value
 yield = Prelude.pure
+
+
+map :: (a -> b) -> IO a -> IO b
+map = Prelude.fmap
 
 
 -- |
@@ -41,3 +56,11 @@ exitSuccess = GHC.exitSuccess
 
 catchAny :: (GHC.SomeException -> IO a) -> IO a -> IO a
 catchAny handler action = GHC.catch action handler
+
+
+try :: IO a -> IO (Result GHC.SomeException a)
+try action = do
+  res <- GHC.try action
+  case res of
+    Prelude.Left e -> Prelude.pure (Err e)
+    Prelude.Right a -> Prelude.pure (Ok a)

@@ -5,82 +5,50 @@ import Array (Array)
 import Array qualified
 import Command qualified
 import Core
-import Path qualified
+import Neo.Build qualified as Build
 import Service qualified
-import ToText (Show (..))
 
 
-type State =
-  Record
-    '[ "foo" := Text,
-       "bar" := Text
-     ]
+data State = State
+  { build :: Build.State
+  }
+  deriving (Show, Eq, Ord)
 
 
 data Event
-  = Transpile TranspilationStartedEvent
+  = Build Build.Event
   | NoOp
   deriving (Show, Eq, Ord)
 
 
-type TranspilationStartedEvent =
-  Record
-    '[ "inputPath" := Path,
-       "outputPath" := Path
-     ]
-
-
 commandParser :: Command.OptionsParser Event
 commandParser = do
-  let transpile =
-        ANON
-          { name = "transpile",
-            description = "Transpile a file or directory",
+  let build =
+        Command.CommandOptions
+          { name = "build",
+            description = "build a file or directory",
             version = Nothing,
-            decoder = transpileParser
+            decoder = buildParser
           }
   Command.commands
-    (Array.fromLinkedList [transpile])
+    (Array.fromLinkedList [build])
 
 
-transpileParser :: Command.OptionsParser Event
-transpileParser = do
-  event <- transpilationParser
-  pure (Transpile event)
-
-
-transpilationParser :: Command.OptionsParser TranspilationStartedEvent
-transpilationParser = do
-  inputPath <-
-    Command.path
-      ANON
-        { help = "Path to the input file or directory",
-          long = "input",
-          short = 'i',
-          metavar = "PATH"
-        }
-
-  outputPath <-
-    Command.path
-      ANON
-        { help = "Path to the output file or directory",
-          long = "output",
-          short = 'o',
-          metavar = "PATH"
-        }
-
-  pure ANON {inputPath = inputPath, outputPath = outputPath}
+buildParser :: Command.OptionsParser Event
+buildParser = do
+  event <- Build.commandParser
+  pure (Build event)
 
 
 init :: (State, Action Event)
 init = do
-  let emptyState = ANON {foo = "foo", bar = "bar"}
+  let emptyState = State {build = Build.initialState}
   let action =
         Command.parse
-          ANON
+          Command.CommandOptions
             { name = "neo",
               description = "NeoHaskell's console helper",
-              version = Just [version|0.0.0|],
+              version = Just [version|0.5.0|],
               decoder = commandParser
             }
   (emptyState, action)
@@ -89,9 +57,10 @@ init = do
 update :: Event -> State -> (State, Action Event)
 update event state =
   case event of
-    Transpile transpilationStartedEvent -> do
-      let newState = state {foo = "Transpilation started", bar = transpilationStartedEvent.inputPath |> Path.toText}
-      let action = Action.none
+    Build buildEvent -> do
+      let (newBuildState, buildAction) = Build.update buildEvent state.build
+      let newState = state {build = newBuildState}
+      let action = buildAction |> Action.map Build
       (newState, action)
     NoOp -> do
       let newState = state
@@ -100,7 +69,10 @@ update event state =
 
 
 view :: State -> Text
-view _ = "Hello, world!"
+view s =
+  if s.build.message == ""
+    then "Loading"
+    else s.build.message
 
 
 triggers :: Array (Trigger Event)
@@ -108,8 +80,11 @@ triggers = Array.empty
 
 
 main :: IO ()
-main = do
-  let app :: Service.UserApp State Event
-      app =
-        ANON {init = init, view = view, triggers = triggers, update = update}
-  Service.init app
+main =
+  Service.run
+    Service.UserApp
+      { init = init,
+        view = view,
+        triggers = triggers,
+        update = update
+      }

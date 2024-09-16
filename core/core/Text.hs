@@ -71,7 +71,11 @@ module Text (
   foldr,
   any,
   all,
+
+  -- * Bytes Conversions
   toBytes,
+  fromBytes,
+  convert,
 ) where
 
 import Array (Array)
@@ -560,3 +564,13 @@ toBytes text =
   text
     |> Data.Text.Encoding.encodeUtf8
     |> Bytes.INTERNAL_CORE_BYTES_CONSTRUCTOR
+
+
+fromBytes :: Bytes -> Text
+fromBytes (Bytes.INTERNAL_CORE_BYTES_CONSTRUCTOR bytes) =
+  bytes
+    |> Data.Text.Encoding.decodeUtf8
+
+
+convert :: (IsString s) => Text -> s
+convert text = Data.Text.unpack text |> fromString

@@ -4,6 +4,7 @@ import Appendable ((++))
 import Basics
 import Data.Text.IO qualified
 import GHC.Stack qualified as Stack
+import IO (IO)
 import LinkedList qualified
 import Maybe (Maybe (..))
 import Maybe qualified

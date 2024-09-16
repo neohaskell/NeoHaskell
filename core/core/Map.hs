@@ -5,6 +5,7 @@ module Map (
   (-->),
   set,
   get,
+  reduce,
 ) where
 
 import Accumulator (Accumulator)
@@ -14,10 +15,12 @@ import Basics
 import Data.Map.Strict qualified as HaskellMap
 import Default (Default (..))
 import Maybe (Maybe)
+import ToText
 
 
 newtype Map key value
   = Map (HaskellMap.Map key value)
+  deriving (Show)
 
 
 instance Default (Map key value) where
@@ -77,3 +80,8 @@ set key value (Map map) = Map (HaskellMap.insert key value map)
 -- | Get the value from a `Map`.
 get :: (Eq key, Ord key) => key -> Map key value -> Maybe value
 get key (Map map) = HaskellMap.lookup key map
+
+
+-- | Reduce a `Map`.
+reduce :: acc -> (key -> value -> acc -> acc) -> Map key value -> acc
+reduce acc f (Map map) = HaskellMap.foldrWithKey f acc map
