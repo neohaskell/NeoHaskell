@@ -104,8 +104,8 @@ update event state =
           let newState = state {messages = newMessages}
           let newEvent = ProjectFileParsed config
           update newEvent newState
-        Err _ -> do
-          let newMessages = state.messages |> Array.push "Failed to parse project file"
+        Err err -> do
+          let newMessages = state.messages |> Array.push [fmt|Failed to parse project file: {err} |]
           let newState = state {messages = newMessages}
           let newEvent = FailedToParseProjectFile text
           update newEvent newState
