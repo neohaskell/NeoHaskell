@@ -13,6 +13,7 @@ import Array qualified
 import Command qualified
 import Core
 import File qualified
+import Json qualified
 import Text qualified
 
 
@@ -22,10 +23,28 @@ data BuildConfig = BuildConfig
   deriving (Show, Eq, Ord)
 
 
+data ProjectConfig = ProjectConfig
+  { name :: Text,
+    version :: Version,
+    description :: Text,
+    author :: Text,
+    license :: Text
+  }
+  deriving (Show, Eq, Ord, Generic)
+
+
+instance Json.FromJSON ProjectConfig
+
+
+instance Json.ToJSON ProjectConfig
+
+
 data Event
   = BuildStarted BuildConfig
   | ProjectFileNotFound
   | ReadProjectFile Text
+  | FailedToParseProjectFile Text
+  | ProjectFileParsed ProjectConfig
   deriving (Show, Eq, Ord)
 
 
@@ -79,14 +98,33 @@ update event state =
       let newState = state {config = Just config, messages = newMessages}
       (newState, File.readText opts |> Action.map handleRes)
     ReadProjectFile text -> do
-      let newMessages = state.messages |> Array.push text
-      let newState = state {messages = newMessages}
-      (newState, Action.none)
+      case Json.decodeText text of
+        Ok config -> do
+          let newMessages = state.messages |> Array.push "Project file parsed"
+          let newState = state {messages = newMessages}
+          let newEvent = ProjectFileParsed config
+          update newEvent newState
+        Err _ -> do
+          let newMessages = state.messages |> Array.push "Failed to parse project file"
+          let newState = state {messages = newMessages}
+          let newEvent = FailedToParseProjectFile text
+          update newEvent newState
     ProjectFileNotFound -> do
       let newMessages =
             state.messages
               |> Array.push "Project file not found"
-              |> Array.push "Press CTRL+C to exit"
+      let newState = state {messages = newMessages}
+      (newState, Action.none)
+    FailedToParseProjectFile text -> do
+      let newMessages =
+            state.messages
+              |> Array.push [fmt|Failed to parse project file: {text}|]
+      let newState = state {messages = newMessages}
+      (newState, Action.none)
+    ProjectFileParsed config -> do
+      let newMessages =
+            state.messages
+              |> Array.push [fmt|Project file parsed: {toText config}|]
       let newState = state {messages = newMessages}
       (newState, Action.none)
 

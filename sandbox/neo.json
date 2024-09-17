@@ -1,0 +1,7 @@
+{
+  "name": "example-package",
+  "version": "1.0.0",
+  "description": "An example package.json file",
+  "author": "Your Name",
+  "license": "ISC"
+}

@@ -152,7 +152,7 @@ processBatch registry (Action actionBatch) = do
   handleCustomAction name' payload currentOutput = do
     case Map.get name' registry of
       Just handler -> do
-        print [fmt|Found handler for {name'}|]
+        print [fmt|Found handler for {name'}, calling with {toText payload}|]
         result <- handler payload
         print [fmt|Handler {name'} returned: {toText result}|]
         case result of
@@ -213,5 +213,6 @@ continueWithHandler ::
   (Unknown.Convertible event, ToText event) =>
   event ->
   IO event
-continueWithHandler event =
+continueWithHandler event = do
+  print [fmt|Continuing with {toText event}|]
   pure event
