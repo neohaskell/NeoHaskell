@@ -69,10 +69,8 @@ update event state =
 
 
 view :: State -> Text
-view s =
-  if s.build.message == ""
-    then "Loading"
-    else s.build.message
+view state =
+  Build.view state.build
 
 
 triggers :: Array (Trigger Event)

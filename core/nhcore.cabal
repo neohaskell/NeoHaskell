@@ -51,7 +51,6 @@ common common_cfg
       ImpredicativeTypes
       ImportQualifiedPost
       OverloadedStrings
-      OverloadedLists
       OverloadedLabels
       OverloadedRecordDot
       DuplicateRecordFields

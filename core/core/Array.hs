@@ -53,7 +53,7 @@ import Prelude qualified
 -- (@Array Int@) or strings (@Array String@) or any other type of value you can
 -- dream up.
 newtype Array a = Array (Data.Vector.Vector a)
-  deriving (Prelude.Eq, Prelude.Show)
+  deriving (Prelude.Eq, Prelude.Show, Prelude.Ord)
 
 
 instance (QuickCheck.Arbitrary a) => QuickCheck.Arbitrary (Array a) where

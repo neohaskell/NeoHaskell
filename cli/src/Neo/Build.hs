@@ -8,9 +8,12 @@ module Neo.Build (
 ) where
 
 import Action qualified
+import Array (Array)
+import Array qualified
 import Command qualified
 import Core
 import File qualified
+import Text qualified
 
 
 data BuildConfig = BuildConfig
@@ -47,7 +50,8 @@ commandParser = do
 
 
 data State = State
-  { message :: Text
+  { messages :: Array Text,
+    config :: Maybe BuildConfig
   }
   deriving (Show, Eq, Ord)
 
@@ -55,7 +59,8 @@ data State = State
 initialState :: State
 initialState =
   State
-    { message = "Build Started"
+    { messages = Array.empty,
+      config = Nothing
     }
 
 
@@ -70,14 +75,34 @@ update event state =
             File.ReadOptions
               { path = config.projectFile
               }
-      (state, File.readText opts |> Action.map handleRes)
+      let newMessages = state.messages |> Array.push "Reading project file"
+      let newState = state {config = Just config, messages = newMessages}
+      (newState, File.readText opts |> Action.map handleRes)
     ReadProjectFile text -> do
-      let newState = state {message = text}
+      let newMessages = state.messages |> Array.push text
+      let newState = state {messages = newMessages}
       (newState, Action.none)
     ProjectFileNotFound -> do
-      let newState = state {message = "Project file not found"}
+      let newMessages =
+            state.messages
+              |> Array.push "Project file not found"
+              |> Array.push "Press CTRL+C to exit"
+      let newState = state {messages = newMessages}
       (newState, Action.none)
 
 
 view :: State -> View
-view = dieWith "Not implemented yet"
+view state = do
+  let configText = toText state.config
+  let messagesText =
+        state.messages
+          |> Text.joinWith "\n\n"
+  [fmt|
+=============
+Config:
+  {configText}
+=============
+
+
+{messagesText}
+  |]
