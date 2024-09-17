@@ -10,6 +10,7 @@ module Command (
   parse,
   parseHandler,
   commands,
+  map,
 ) where
 
 import Action (Action)
@@ -40,6 +41,10 @@ import Version (version)
 
 newtype OptionsParser value = OptionsParser (OptEnvConf.Parser value)
   deriving (Functor.Functor, Applicative.Applicative)
+
+
+map :: (a -> b) -> OptionsParser a -> OptionsParser b
+map f (OptionsParser parser) = OptionsParser (OptEnvConf.fmap f parser)
 
 
 instance (Unknown.Convertible value) => Show (OptionsParser value) where

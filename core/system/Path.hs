@@ -25,7 +25,11 @@ import ToText qualified
 
 
 newtype Path = Path (LinkedList Char) -- We use LinkedList Char to keep compatibility with Haskell's FilePath type
-  deriving (Lift, ToText.Show, Eq, Ord, Json.FromJSON, Json.ToJSON)
+  deriving (Lift, Eq, Ord, Json.FromJSON, Json.ToJSON)
+
+
+instance ToText.Show Path where
+  show (Path p) = p
 
 
 instance IsString Path where
