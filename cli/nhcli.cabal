@@ -38,6 +38,7 @@ common common_cfg
 
     build-depends:
       nhcore,
+      Cabal,
 
 library
     import:           common_cfg

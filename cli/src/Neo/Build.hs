@@ -125,7 +125,7 @@ update event state =
       let newState = state {messages = newMessages}
       (newState, Action.none)
     ProjectFileParsed config -> do
-      let buildDir = [path|.neohaskell|]
+      let buildDir = [path|.neo|]
       let handleRes result = case result of
             Ok _ -> BuildDirectoryCreated buildDir
             Err _ -> FailedToCreateBuildDirectory buildDir
