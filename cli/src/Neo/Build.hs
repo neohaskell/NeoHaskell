@@ -12,6 +12,7 @@ import Array (Array)
 import Array qualified
 import Command qualified
 import Core
+import Directory qualified
 import File qualified
 import Json qualified
 import Text qualified
@@ -45,6 +46,8 @@ data Event
   | ReadProjectFile Text
   | FailedToParseProjectFile Text
   | ProjectFileParsed ProjectConfig
+  | BuildDirectoryCreated Path
+  | FailedToCreateBuildDirectory Path
   deriving (Show, Eq, Ord)
 
 
@@ -122,9 +125,32 @@ update event state =
       let newState = state {messages = newMessages}
       (newState, Action.none)
     ProjectFileParsed config -> do
+      let buildDir = [path|.neohaskell|]
+      let handleRes result = case result of
+            Ok _ -> BuildDirectoryCreated buildDir
+            Err _ -> FailedToCreateBuildDirectory buildDir
       let newMessages =
             state.messages
               |> Array.push [fmt|Project file parsed: {toText config}|]
+      let newState = state {messages = newMessages}
+      ( newState,
+        Directory.create
+          ( Directory.CreateOptions
+              { path = buildDir
+              }
+          )
+          |> Action.map handleRes
+        )
+    BuildDirectoryCreated dirPath -> do
+      let newMessages =
+            state.messages
+              |> Array.push [fmt|Build directory created: {toText dirPath}|]
+      let newState = state {messages = newMessages}
+      (newState, Action.none)
+    FailedToCreateBuildDirectory dirPath -> do
+      let newMessages =
+            state.messages
+              |> Array.push [fmt|Failed to create build directory: {toText dirPath}|]
       let newState = state {messages = newMessages}
       (newState, Action.none)
 

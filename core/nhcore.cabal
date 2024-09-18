@@ -25,6 +25,7 @@ common common_cfg
       data-default,
       text,
       vector,
+      directory,
       transformers,
       http-conduit,
       containers,
@@ -87,6 +88,7 @@ library
 
       -- System
       File,
+      Directory,
       Subprocess,
       Path,
       Time,

@@ -14,6 +14,7 @@ import Basics
 import Channel (Channel)
 import Command qualified
 import Console (print)
+import Directory qualified
 import File qualified
 import Http qualified
 import IO (IO)
@@ -117,8 +118,12 @@ registerDefaultActionHandlers runtimeState = do
       mkHandler h input = do
         res <- h input
         pure (Unknown.fromValue res)
+
   runtimeState
     |> registerActionHandler "File.readText" (mkHandler File.readTextHandler)
+
+  runtimeState
+    |> registerActionHandler "Directory.create" (mkHandler Directory.createHandler)
 
   runtimeState
     |> registerActionHandler "Command.parse" (mkHandler @(Command.CommandOptions event) @event Command.parseHandler)
