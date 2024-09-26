@@ -1,23 +1,17 @@
 module Neo (main) where
 
 import Action qualified
-import Array (Array)
 import Array qualified
 import Command qualified
 import Core
 import Neo.Build qualified as Build
+import Neo.Core.Event (Event (..))
 import Service qualified
 
 
 data State = State
   { build :: Build.State
   }
-  deriving (Show, Eq, Ord)
-
-
-data Event
-  = Build Build.Event
-  | NoOp
   deriving (Show, Eq, Ord)
 
 

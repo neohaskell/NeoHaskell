@@ -45,6 +45,12 @@ library
     exposed-modules:
       Neo,
       Neo.Build,
+      Neo.Build.Event,
+      Neo.Build.State,
+      Neo.Build.View,
+      Neo.Core.CommandFlags,
+      Neo.Core.Event,
+      Neo.Core.ProjectConfiguration,
     -- other-modules:
     -- other-extensions:
     hs-source-dirs:   src

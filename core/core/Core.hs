@@ -7,6 +7,7 @@ module Core (
 
 import Action as Reexported (Action)
 import Appendable as Reexported ((++))
+import Array as Reexported (Array)
 import Basics as Reexported
 import Char as Reexported (Char)
 import ConcurrentVar as Reexported (ConcurrentVar)
