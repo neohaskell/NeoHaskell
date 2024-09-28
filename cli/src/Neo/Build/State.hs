@@ -53,6 +53,8 @@ update event state =
       buildDirectoryCreated dirPath state
     Event.FailedToCreateBuildDirectory dirPath ->
       failedToCreateBuildDirectory dirPath state
+    Event.NixBuildStarted ->
+      nixBuildStarted state
 
 
 buildStarted :: CommandFlags -> State -> (State, Action Event)
@@ -64,8 +66,9 @@ buildStarted config state = do
         File.ReadOptions
           { path = config.projectFile
           }
-  let newMessages = state.messages |> Array.push "Reading project file"
-  let newState = state {config = Just config, messages = newMessages}
+  let newState =
+        state
+          |> pushMessage "Reading project file"
   let nextAction = File.readText opts |> Action.map handleRes
   (newState, nextAction)
 
@@ -74,32 +77,32 @@ projectFileRead :: Text -> State -> (State, Action Event)
 projectFileRead text state = do
   case Json.decodeText text of
     Ok config -> do
-      let newMessages = state.messages |> Array.push "Project file parsed"
-      let newState = state {messages = newMessages}
+      let newState =
+            state
+              |> pushMessage "Project file parsed"
       let newEvent = Event.ProjectFileParsed config
       update newEvent newState
     Err err -> do
-      let newMessages = state.messages |> Array.push [fmt|Failed to parse project file: {err} |]
-      let newState = state {messages = newMessages}
+      let newState =
+            state
+              |> pushMessage [fmt|Failed to parse project file: {err} |]
       let newEvent = Event.FailedToParseProjectFile text
       update newEvent newState
 
 
 projectFileNotFound :: State -> (State, Action Event)
 projectFileNotFound state = do
-  let newMessages =
-        state.messages
-          |> Array.push "Project file not found"
-  let newState = state {messages = newMessages}
+  let newState =
+        state
+          |> pushMessage "Project file not found"
   (newState, Action.none)
 
 
 failedToParseProjectFile :: Text -> State -> (State, Action Event)
 failedToParseProjectFile text state = do
-  let newMessages =
-        state.messages
-          |> Array.push [fmt|Failed to parse project file: {text}|]
-  let newState = state {messages = newMessages}
+  let newState =
+        state
+          |> pushMessage [fmt|Failed to parse project file: {text}|]
   (newState, Action.none)
 
 
@@ -109,10 +112,9 @@ projectFileParsed config state = do
   let handleRes result = case result of
         Ok _ -> Event.BuildDirectoryCreated buildDir
         Err _ -> Event.FailedToCreateBuildDirectory buildDir
-  let newMessages =
-        state.messages
-          |> Array.push [fmt|Project file parsed: {toText config}|]
-  let newState = state {messages = newMessages}
+  let newState =
+        state
+          |> pushMessage [fmt|Project file parsed: {toText config}|]
   ( newState,
     Directory.create
       ( Directory.CreateOptions
@@ -125,17 +127,26 @@ projectFileParsed config state = do
 
 buildDirectoryCreated :: Path -> State -> (State, Action Event)
 buildDirectoryCreated dirPath state = do
-  let newMessages =
-        state.messages
-          |> Array.push [fmt|Build directory created: {toText dirPath}|]
-  let newState = state {messages = newMessages}
+  let newState =
+        state
+          |> pushMessage [fmt|Build directory created: {toText dirPath}|]
   (newState, Action.none)
 
 
 failedToCreateBuildDirectory :: Path -> State -> (State, Action Event)
 failedToCreateBuildDirectory dirPath state = do
-  let newMessages =
-        state.messages
-          |> Array.push [fmt|Failed to create build directory: {toText dirPath}|]
-  let newState = state {messages = newMessages}
+  let newState =
+        state
+          |> pushMessage [fmt|Failed to create build directory: {toText dirPath}|]
   (newState, Action.none)
+
+
+nixBuildStarted :: State -> (State, Action Event)
+nixBuildStarted = dieWith "not implemented"
+
+
+-- PRIVATE --
+
+pushMessage :: Text -> State -> State
+pushMessage message state =
+  state {messages = state.messages |> Array.push message}

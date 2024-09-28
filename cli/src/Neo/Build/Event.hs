@@ -19,6 +19,7 @@ data Event
   | ProjectFileParsed ProjectConfiguration
   | BuildDirectoryCreated Path
   | FailedToCreateBuildDirectory Path
+  | NixBuildStarted
   deriving (Show, Eq, Ord)
 
 
