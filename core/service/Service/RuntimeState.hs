@@ -20,6 +20,7 @@ import Http qualified
 import IO (IO)
 import Map qualified
 import Maybe (Maybe (..))
+import Subprocess qualified
 import Text (Text)
 import ToText (Show (..), ToText, toText)
 import Unknown (Unknown)
@@ -133,3 +134,6 @@ registerDefaultActionHandlers runtimeState = do
 
   runtimeState
     |> registerActionHandler "Http.get" (mkHandler @(Http.Request event) @event Http.getActionHandler)
+
+  runtimeState
+    |> registerActionHandler "Subprocess.open" (mkHandler Subprocess.openHandler)

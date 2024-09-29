@@ -54,6 +54,7 @@ library
       Neo.Build.View,
       Neo.Core.CommandFlags,
       Neo.Core.ProjectConfiguration,
+      Neo.Core.ProjectConfiguration.Cabal,
     -- other-modules:
     -- other-extensions:
     hs-source-dirs:   src

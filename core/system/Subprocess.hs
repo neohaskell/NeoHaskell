@@ -1,5 +1,11 @@
-module Subprocess (open) where
+module Subprocess (
+  OpenOptions (..),
+  open,
+  openHandler,
+) where
 
+import Action (Action)
+import Action qualified
 import Array (Array)
 import Array qualified
 import Basics
@@ -9,6 +15,7 @@ import System.Exit qualified
 import System.Process qualified
 import Text (Text)
 import Text qualified
+import ToText (Show)
 
 
 data Completion = Completion
@@ -16,11 +23,24 @@ data Completion = Completion
     stdout :: Text,
     stderr :: Text
   }
-  deriving (Eq, Ord)
+  deriving (Eq, Ord, Show)
 
 
-open :: Text -> Array Text -> IO Completion
-open executable arguments = do
+data OpenOptions = OpenOptions
+  { executable :: Text,
+    arguments :: Array Text
+  }
+  deriving (Eq, Ord, Show)
+
+
+open :: OpenOptions -> Action Completion
+open options =
+  options
+    |> Action.named "Subprocess.open"
+
+
+openHandler :: OpenOptions -> IO Completion
+openHandler OpenOptions {executable, arguments} = do
   let exec = Text.toLinkedList executable
   let args = Array.map Text.toLinkedList arguments |> Array.toLinkedList
   (ec, out, err) <- System.Process.readProcessWithExitCode exec args ""
