@@ -1,11 +1,12 @@
 module Neo (
   run,
-  fromText
+  fromText,
 ) where
 
 import Array qualified
 import Command qualified
 import Core
+import File qualified
 import Json qualified
 
 
@@ -70,7 +71,20 @@ handleCommand :: NeoCommand -> IO ()
 handleCommand command =
   case command of
     Build flags -> do
-      toText flags |> print
+      let readOpts = File.ReadOptions {path = flags.projectFile}
+      configTxt <- File.readTextHandler readOpts
+      case configTxt of
+        Err err -> toText err |> print
+        Ok txt -> do
+          case Json.decodeText txt of
+            Err err -> print err
+            Ok config -> handleBuild config
+
+
+handleBuild :: ProjectConfiguration -> IO ()
+handleBuild config =
+  toText config
+    |> print
 
 
 -- Project config
