@@ -1,6 +1,7 @@
 module Neo.Core.ProjectConfiguration (
   ProjectConfiguration (..),
   fromText,
+  toCabal,
 ) where
 
 import Core
