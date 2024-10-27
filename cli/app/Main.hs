@@ -1,16 +1,8 @@
 module Main where
 
 import Core
-import qualified Neo
-import Service qualified
+import Neo qualified
 
 
-main :: IO Unit
-main =
-  Service.run
-    Service.UserApp
-      { init = Neo.init,
-        view = Neo.view,
-        triggers = Neo.triggers,
-        update = Neo.update
-      }
+main :: IO ()
+main = Neo.run
