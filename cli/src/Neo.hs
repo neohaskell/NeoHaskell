@@ -82,10 +82,43 @@ handleCommand command =
 
 
 handleBuild :: ProjectConfiguration -> IO ()
-handleBuild config =
-  toText config
-    |> print
+handleBuild config = do
+  let nixFile = makeNixFile config
+  print nixFile
 
+makeNixFile :: ProjectConfiguration -> Text
+makeNixFile ProjectConfiguration{name} =
+  --FIXME: inflect properly the name of the project in the different places of the nix file
+  [fmt|
+let
+  myNixPkgs = import <nixpkgs> {
+    overlays = [myNixPkgsOverlay];
+  };
+
+  myNixPkgsOverlay = (nixSelf: nixSuper: {
+    myHaskellPackages = nixSelf.haskellPackages.override (oldHaskellPkgs: {
+      overrides = nixSelf.lib.composeExtensions (oldHaskellPkgs.overrides or (_: _: {}))  myHaskellPkgsOverlay;
+    });
+  });
+
+  myHaskellPkgsOverlay = (hSelf: hSuper: {
+    myProject = hSelf.callCabal2nix "{name}" ./. {};
+  });
+
+  myDevTools = with myNixPkgs; [
+    cabal-install
+    haskellPackages.ghcid
+  ];
+
+  myShellHook = ''
+    alias repl="cabal new-repl"
+  '';
+in
+myNixPkgs.myHaskellPackages.myProject.env.overrideAttrs (oldEnv: {
+  nativeBuildInputs = oldEnv.nativeBuildInputs ++ myDevTools;
+  shellHook = myShellHook;
+})
+  |]
 
 -- Project config
 
