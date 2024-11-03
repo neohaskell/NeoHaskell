@@ -3,6 +3,7 @@ module Json (
   Encodable,
   Aeson.Value,
   Aeson.FromJSON,
+  Aeson.FromJSONKey,
   Aeson.ToJSON,
   decodeText,
   encode,

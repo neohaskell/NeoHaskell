@@ -1,44 +1,30 @@
 module Map (
   Map,
   build,
-  empty,
+  HaskellMap.empty,
   (-->),
   set,
   get,
   reduce,
+  merge,
+  entries
 ) where
 
+import Array (Array)
+import Array qualified
 import Accumulator (Accumulator)
 import Accumulator qualified
-import Appendable qualified
 import Basics
 import Data.Map.Strict qualified as HaskellMap
-import Default (Default (..))
+import Data.Map.Strict (Map)
 import Maybe (Maybe)
-import ToText
 
 
-newtype Map key value
-  = Map (HaskellMap.Map key value)
-  deriving (Show)
-
-
-instance Default (Map key value) where
-  def = empty
-
-
-instance (Eq key, Ord key) => Appendable.Semigroup (Map key value) where
-  (<>) = merge
-
-
--- | Create an empty `Map`.
-empty :: Map key value
-empty = Map HaskellMap.empty
 
 
 -- | Merge two `Map`s.
 merge :: (Eq key, Ord key) => Map key value -> Map key value -> Map key value
-merge (Map left) (Map right) = Map (HaskellMap.union left right)
+merge left right = HaskellMap.union left right
 
 
 -- | Accumulator operator to build a `Map`
@@ -49,7 +35,6 @@ merge (Map left) (Map right) = Map (HaskellMap.union left right)
   Accumulator (Map key value)
 (-->) key value =
   HaskellMap.singleton key value
-    |> Map
     |> Accumulator.push
 
 
@@ -74,14 +59,19 @@ build = Accumulator.accumulate
 
 -- | Set a value in a `Map`.
 set :: (Eq key, Ord key) => key -> value -> Map key value -> Map key value
-set key value (Map map) = Map (HaskellMap.insert key value map)
+set key value map = (HaskellMap.insert key value map)
 
 
 -- | Get the value from a `Map`.
 get :: (Eq key, Ord key) => key -> Map key value -> Maybe value
-get key (Map map) = HaskellMap.lookup key map
+get key map = HaskellMap.lookup key map
 
 
 -- | Reduce a `Map`.
 reduce :: acc -> (key -> value -> acc -> acc) -> Map key value -> acc
-reduce acc f (Map map) = HaskellMap.foldrWithKey f acc map
+reduce acc f map = HaskellMap.foldrWithKey f acc map
+
+
+-- | Converts a map to an array of tuples
+entries :: Map key value -> Array (key, value)
+entries self = HaskellMap.toList self |> Array.fromLinkedList

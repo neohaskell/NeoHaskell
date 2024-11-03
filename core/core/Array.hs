@@ -30,6 +30,7 @@ module Array (
   foldr,
   foldl,
   takeIf,
+  dropIf,
   flatMap,
   forEach,
   foldM,
@@ -204,6 +205,13 @@ foldl f value array =
 takeIf :: (a -> Bool) -> Array a -> Array a
 takeIf f (Array vector) =
   Array (Data.Vector.filter f vector)
+
+-- | Drop elements that pass the test.
+--
+-- > dropIf isEven (fromLinkedList [1,2,3,4,5,6]) == (fromLinkedList [1,3,5])
+dropIf :: (a -> Bool) -> Array a -> Array a
+dropIf f (Array vector) =
+  Array (Data.Vector.filter (f .> not) vector)
 
 
 -- | Apply a function on every element in an array.

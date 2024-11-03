@@ -1,3 +1,4 @@
+{-# OPTIONS_GHC -fno-warn-name-shadowing #-}
 module Neo (
   run,
   fromText,
@@ -8,6 +9,9 @@ import Command qualified
 import Core
 import File qualified
 import Json qualified
+import Version qualified
+import Text qualified
+import Map qualified
 
 
 data CommonFlags = CommonFlags
@@ -84,26 +88,32 @@ handleCommand command =
 handleBuild :: ProjectConfiguration -> IO ()
 handleBuild config = do
   let nixFile = makeNixFile config
-  print nixFile
+  let cabalFile = makeCabalFile config
+  print [fmt|NIX FILE:
+  {nixFile}
+
+
+  CABAL FILE:
+  {cabalFile}|]
 
 makeNixFile :: ProjectConfiguration -> Text
 makeNixFile ProjectConfiguration{name} =
   --FIXME: inflect properly the name of the project in the different places of the nix file
   [fmt|
 let
-  myNixPkgs = import <nixpkgs> {
+  myNixPkgs = import <nixpkgs> {{
     overlays = [myNixPkgsOverlay];
-  };
+  }};
 
-  myNixPkgsOverlay = (nixSelf: nixSuper: {
-    myHaskellPackages = nixSelf.haskellPackages.override (oldHaskellPkgs: {
-      overrides = nixSelf.lib.composeExtensions (oldHaskellPkgs.overrides or (_: _: {}))  myHaskellPkgsOverlay;
-    });
-  });
+  myNixPkgsOverlay = (nixSelf: nixSuper: {{
+    myHaskellPackages = nixSelf.haskellPackages.override (oldHaskellPkgs: {{
+      overrides = nixSelf.lib.composeExtensions (oldHaskellPkgs.overrides or (_: _: {{}}))  myHaskellPkgsOverlay;
+    }});
+  }});
 
-  myHaskellPkgsOverlay = (hSelf: hSuper: {
-    myProject = hSelf.callCabal2nix "{name}" ./. {};
-  });
+  myHaskellPkgsOverlay = (hSelf: hSuper: {{
+    myProject = hSelf.callCabal2nix "{name}" ./. {{}};
+  }});
 
   myDevTools = with myNixPkgs; [
     cabal-install
@@ -114,18 +124,28 @@ let
     alias repl="cabal new-repl"
   '';
 in
-myNixPkgs.myHaskellPackages.myProject.env.overrideAttrs (oldEnv: {
+myNixPkgs.myHaskellPackages.myProject.env.overrideAttrs (oldEnv: {{
   nativeBuildInputs = oldEnv.nativeBuildInputs ++ myDevTools;
   shellHook = myShellHook;
-})
+}})
   |]
 
 makeCabalFile :: ProjectConfiguration -> Text
-makeCabalFile ProjectConfiguration{name, version, description, license} =
+makeCabalFile ProjectConfiguration{name, version, description, license, author, dependencies} = do
+  let vText =  Version.toText version
+  let makeDep (k, v)
+        | v |> Text.trim |> Text.startsWith "^" = [fmt|{k} ^>= {v |> Text.replace "^" ""}|]
+        | otherwise = [fmt|{k} == {v}|]
+  let deps =
+        dependencies
+          |> Map.entries
+          |> Array.map makeDep
+          |> Array.push [fmt|nhcore|]
+          |> Text.joinWith ", "
   [fmt|
 cabal-version:      3.4
 name:               {name}
-version:            {toText version}
+version:            {vText}
 synopsis:           {description}
 license:            {license}
 author:             {author}
@@ -156,7 +176,7 @@ common common_cfg
       TypeFamilies
 
     build-depends:
-      nhcore
+      {deps}
 
 library
     import:           common_cfg
@@ -189,7 +209,8 @@ data ProjectConfiguration = ProjectConfiguration
     version :: Version,
     description :: Text,
     author :: Text,
-    license :: Text
+    license :: Text,
+    dependencies :: Map Text Text
   }
   deriving (Show, Eq, Ord, Generic)
 

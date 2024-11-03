@@ -3,5 +3,8 @@
   "version": "1.0.0",
   "description": "An example package.json file",
   "author": "Your Name",
-  "license": "ISC"
+  "license": "ISC",
+  "dependencies": {
+    "brick": "^2.5"
+  }
 }

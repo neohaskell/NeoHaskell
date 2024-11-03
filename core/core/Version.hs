@@ -1,7 +1,9 @@
 {-# OPTIONS_GHC -Wno-orphans #-}
 
-module Version (Version, version, parse) where
+module Version (Version, version, parse
+    , toText) where
 
+import Array qualified
 import Basics
 import Char (Char)
 import Control.Monad.Fail qualified as GHC
@@ -19,6 +21,7 @@ import Maybe (Maybe (..))
 import Text (Text)
 import Text qualified
 import Text.ParserCombinators.ReadP qualified as ReadP
+import ToText qualified
 
 
 instance TH.Lift Version where
@@ -82,3 +85,17 @@ parseVersionExp input =
       case GHC.find (\(_, remaining) -> remaining == "") parses of
         Just (v, "") -> [|v|]
         _ -> GHC.fail "Invalid version format, must be in the form A.B.C-XYZ"
+
+toText :: Version -> Text
+toText (Version branch tags) = do
+  let textTags =
+        Array.fromLinkedList tags
+          |> Array.map Text.fromLinkedList
+          |> Text.joinWith "-"
+  let textBranch =
+        Array.fromLinkedList branch
+          |> Array.map ToText.toText
+          |> Text.joinWith "."
+  Array.fromLinkedList [textBranch, textTags]
+    |> Array.dropIf Text.isEmpty
+    |> Text.joinWith "-"
