@@ -120,6 +120,68 @@ myNixPkgs.myHaskellPackages.myProject.env.overrideAttrs (oldEnv: {
 })
   |]
 
+makeCabalFile :: ProjectConfiguration -> Text
+makeCabalFile ProjectConfiguration{name, version, description, license} =
+  [fmt|
+cabal-version:      3.4
+name:               {name}
+version:            {toText version}
+synopsis:           {description}
+license:            {license}
+author:             {author}
+
+common common_cfg
+    ghc-options:    -Wall
+                    -Werror
+                    -threaded
+    default-language: GHC2021
+    default-extensions:
+      ApplicativeDo
+      BlockArguments
+      DataKinds
+      NoImplicitPrelude
+      TemplateHaskell
+      DeriveDataTypeable
+      QuasiQuotes
+      QualifiedDo
+      ImpredicativeTypes
+      ImportQualifiedPost
+      OverloadedStrings
+      OverloadedLabels
+      OverloadedRecordDot
+      DuplicateRecordFields
+      PackageImports
+      NamedFieldPuns
+      Strict
+      TypeFamilies
+
+    build-depends:
+      nhcore
+
+library
+    import:           common_cfg
+    exposed-modules:
+      Neo,
+    -- other-modules:
+    -- other-extensions:
+    hs-source-dirs:   src
+
+executable neo
+    import:           common_cfg
+    main-is:          Main.hs
+    build-depends:
+        {name}
+    hs-source-dirs:   app
+
+test-suite {name}-test
+    import:           common_cfg
+    type:             exitcode-stdio-1.0
+    hs-source-dirs:   test
+    main-is:          Main.hs
+    build-depends:
+        {name}
+  |]
+
 -- Project config
 
 data ProjectConfiguration = ProjectConfiguration
