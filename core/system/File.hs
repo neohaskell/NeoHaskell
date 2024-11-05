@@ -3,6 +3,7 @@ module File (
   readTextHandler,
   ReadOptions (..),
   readText,
+  writeText,
 ) where
 
 import Action (Action)
@@ -51,3 +52,17 @@ readTextHandler options = do
     Either.Right contents -> do
       print [fmt|[[File.readText] File contents: {contents}|]
       pure (Ok contents)
+
+
+writeText :: Path -> Text -> IO (Result Error ())
+writeText path textToWrite = do
+  result <-
+    TIO.writeFile (Path.toLinkedList path) textToWrite
+      |> Exception.try @Exception.IOError
+  case result of
+    Either.Left _ -> do
+      print "[File.writeText] File not found"
+      pure (Err NotFound)
+    Either.Right _ -> do
+      print [fmt|[[File.writeText] Written to file|]
+      pure (Ok ())

@@ -6,6 +6,7 @@
 module Basics (
   Unit,
   unit,
+  pass,
 
   -- * Math
   Int,
@@ -122,6 +123,8 @@ module Basics (
   GHC.Generics.Generic,
 ) where
 
+import Applicable (Applicable)
+import Applicable qualified
 import Control.Monad qualified
 import Control.Monad qualified as Monad
 import Data.Bits qualified (xor)
@@ -887,3 +890,11 @@ discard = Monad.void
 
 fmt :: QuasiQuoter
 fmt = PyF.fmt
+
+
+-- | Do nothing, return unit
+pass ::
+  forall (applicable :: Type -> Type).
+  (Applicable applicable) =>
+  applicable ()
+pass = Applicable.pure ()

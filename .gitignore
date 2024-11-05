@@ -36,3 +36,5 @@ cabal.project.local~
 hie.yaml
 
 .neo
+sandbox/*.cabal
+sandbox/*.nix

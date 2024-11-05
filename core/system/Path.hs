@@ -4,12 +4,11 @@ module Path (
   toLinkedList,
   toText,
   path,
+  joinPaths,
 ) where
 
--- Import the reexported types and functions
-
--- Import qualified for using internally and renaming
-
+import Array (Array)
+import Array qualified
 import Basics
 import Char (Char)
 import Control.Monad.Fail qualified as Monad
@@ -19,6 +18,7 @@ import Language.Haskell.TH.Syntax (Lift)
 import Language.Haskell.TH.Syntax qualified as TH
 import LinkedList (LinkedList)
 import Maybe (Maybe (..))
+import Maybe qualified
 import Text (Text)
 import Text qualified
 import ToText qualified
@@ -65,3 +65,14 @@ toText (Path linkedList) =
 toLinkedList :: Path -> LinkedList Char
 toLinkedList (Path linkedList) =
   linkedList
+
+
+-- | Joins paths in a cross-platform way
+-- TODO: Make this cross platform lol
+joinPaths :: Array Path -> Path
+joinPaths paths =
+  paths
+    |> Array.map toText
+    |> Text.joinWith "/"
+    |> fromText
+    |> Maybe.getOrDie

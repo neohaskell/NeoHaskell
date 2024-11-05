@@ -1,4 +1,5 @@
 {-# OPTIONS_GHC -fno-warn-name-shadowing #-}
+
 module Neo (
   run,
   fromText,
@@ -9,9 +10,10 @@ import Command qualified
 import Core
 import File qualified
 import Json qualified
-import Version qualified
-import Text qualified
 import Map qualified
+import Path qualified
+import Text qualified
+import Version qualified
 
 
 data CommonFlags = CommonFlags
@@ -89,16 +91,36 @@ handleBuild :: ProjectConfiguration -> IO ()
 handleBuild config = do
   let nixFile = makeNixFile config
   let cabalFile = makeCabalFile config
-  print [fmt|NIX FILE:
+  let rootFolder = [path|sandbox|]
+  let nixPath = [path|shell.nix|]
+  let cabalPath = [path|example.cabal|]
+  let nixFileName =
+        Array.fromLinkedList [rootFolder, nixPath]
+          |> Path.joinPaths
+  let cabalFileName =
+        Array.fromLinkedList [rootFolder, cabalPath]
+          |> Path.joinPaths
+  res1 <- File.writeText nixFileName nixFile
+  case res1 of
+    Err err ->
+      dieWith (toText err)
+    Ok _ -> do
+      res2 <- File.writeText cabalFileName cabalFile
+      case res2 of
+        Err err -> dieWith (toText err)
+        Ok _ -> pass
+  print
+    [fmt|NIX FILE:
   {nixFile}
 
 
   CABAL FILE:
   {cabalFile}|]
 
+
 makeNixFile :: ProjectConfiguration -> Text
-makeNixFile ProjectConfiguration{name} =
-  --FIXME: inflect properly the name of the project in the different places of the nix file
+makeNixFile ProjectConfiguration {name} =
+  -- FIXME: inflect properly the name of the project in the different places of the nix file
   [fmt|
 let
   myNixPkgs = import <nixpkgs> {{
@@ -130,9 +152,10 @@ myNixPkgs.myHaskellPackages.myProject.env.overrideAttrs (oldEnv: {{
 }})
   |]
 
+
 makeCabalFile :: ProjectConfiguration -> Text
-makeCabalFile ProjectConfiguration{name, version, description, license, author, dependencies} = do
-  let vText =  Version.toText version
+makeCabalFile ProjectConfiguration {name, version, description, license, author, dependencies} = do
+  let vText = Version.toText version
   let makeDep (k, v)
         | v |> Text.trim |> Text.startsWith "^" = [fmt|{k} ^>= {v |> Text.replace "^" ""}|]
         | otherwise = [fmt|{k} == {v}|]
@@ -201,6 +224,7 @@ test-suite {name}-test
     build-depends:
         {name}
   |]
+
 
 -- Project config
 
