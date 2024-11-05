@@ -23,7 +23,7 @@ import Map (Map)
 import Map qualified
 import Maybe (Maybe (..))
 import Text (Text)
-import ToText (Show (..), ToText, toText)
+import ToText (Show (..), ToText, toPrettyText)
 import Unknown (Unknown)
 import Unknown qualified
 import Var (Var)
@@ -152,15 +152,15 @@ processBatch registry (Action actionBatch) = do
   handleCustomAction name' payload currentOutput = do
     case Map.get name' registry of
       Just handler -> do
-        print [fmt|Found handler for {name'}, calling with {toText payload}|]
+        print [fmt|Found handler for {name'}, calling with {toPrettyText payload}|]
         result <- handler payload
-        print [fmt|Handler {name'} returned: {toText result}|]
+        print [fmt|Handler {name'} returned: {toPrettyText result}|]
         case result of
           Nothing -> do
             print [fmt|Handler {name'} returned nothing|]
             pure (Continue Nothing)
           Just result' -> do
-            print [fmt|Setting output to {toText result'}|]
+            print [fmt|Setting output to {toPrettyText result'}|]
             currentOutput |> Var.set (Just result')
             pure (Continue (Just result'))
       Nothing -> pure (Error [fmt|Action handler not found for: {name'}|])
@@ -214,5 +214,5 @@ continueWithHandler ::
   event ->
   IO event
 continueWithHandler event = do
-  print [fmt|Continuing with {toText event}|]
+  print [fmt|Continuing with {toPrettyText event}|]
   pure event

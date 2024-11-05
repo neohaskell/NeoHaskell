@@ -13,7 +13,7 @@ import Basics
 import Result (Result (..))
 import Text (Text)
 import Text qualified
-import ToText (toText)
+import ToText (toPrettyText)
 import "toml-parser" Toml qualified as TomlP
 import "toml-parser" Toml.Schema qualified as TomlS
 
@@ -40,4 +40,4 @@ decodeText text = case TomlP.decode text of
 encodeText :: (Encodable value) => value -> Text
 encodeText value =
   TomlP.encode value
-    |> toText
+    |> toPrettyText

@@ -60,13 +60,13 @@ getTypeName ::
   (Typeable a) =>
   Text
 getTypeName =
-  typeRep (Data.Proxy.Proxy @a) |> toText
+  typeRep (Data.Proxy.Proxy @a) |> toPrettyText
 
 
 -- | Gets the name of the type of an unknown value
 getUnknownTypeName :: Unknown -> Text
 getUnknownTypeName (Unknown _ typeRepresentation) =
-  toText typeRepresentation
+  toPrettyText typeRepresentation
 
 
 instance (Convertible a, Convertible b) => Show (a -> b) where

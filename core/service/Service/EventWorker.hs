@@ -11,7 +11,7 @@ import IO (IO)
 import IO qualified
 import Service.Core
 import Service.RuntimeState qualified as RuntimeState
-import ToText (ToText, toText)
+import ToText (ToText, toPrettyText)
 
 
 run ::
@@ -35,11 +35,11 @@ run userApp eventsQueue modelRef actionsQueue runtimeState =
     event <- Channel.read eventsQueue
     print "Getting model"
     model <- ConcurrentVar.get modelRef
-    print [fmt|Got model: {toText model}|]
+    print [fmt|Got model: {toPrettyText model}|]
 
     print "Updating model"
     let (newModel, newCmd) = userApp.update event model
-    print [fmt|New model: {toText newModel} - New action: {toText newCmd}|]
+    print [fmt|New model: {toPrettyText newModel} - New action: {toPrettyText newCmd}|]
 
     print "Setting new model"
     modelRef |> ConcurrentVar.set newModel

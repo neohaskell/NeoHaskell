@@ -84,13 +84,13 @@ get options = Action.named getActionName options
 getActionHandler :: Request event -> IO event
 getActionHandler options = do
   let errorHandler err = do
-        log [fmt|Error occurred! {toText err}|]
-        toText err |> Error |> Err |> pure
+        log [fmt|Error occurred! {toPrettyText err}|]
+        toPrettyText err |> Error |> Err |> pure
   let mapper = options.mapper |> Maybe.withDefault (dieWith "mapper is required")
   let url = options.url |> Maybe.withDefault (dieWith "url is required")
 
   let actualMapping res = do
-        log [fmt|Mapping response:{toText res}|]
+        log [fmt|Mapping response:{toPrettyText res}|]
         res
           |> mapper
           |> pure

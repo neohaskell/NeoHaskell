@@ -1,5 +1,6 @@
 module Subprocess (
   OpenOptions (..),
+  Completion (..),
   open,
   openHandler,
 ) where
@@ -11,6 +12,9 @@ import Array qualified
 import Basics
 import IO (IO)
 import IO qualified
+import Maybe qualified
+import Path (Path)
+import Path qualified
 import System.Exit qualified
 import System.Process qualified
 import Text (Text)
@@ -28,7 +32,8 @@ data Completion = Completion
 
 data OpenOptions = OpenOptions
   { executable :: Text,
-    arguments :: Array Text
+    arguments :: Array Text,
+    directory :: Path
   }
   deriving (Eq, Ord, Show)
 
@@ -40,10 +45,20 @@ open options =
 
 
 openHandler :: OpenOptions -> IO Completion
-openHandler OpenOptions {executable, arguments} = do
+openHandler OpenOptions {executable, arguments, directory} = do
   let exec = Text.toLinkedList executable
   let args = Array.map Text.toLinkedList arguments |> Array.toLinkedList
-  (ec, out, err) <- System.Process.readProcessWithExitCode exec args ""
+  let processToExecute =
+        ( System.Process.proc
+            exec
+            args
+        )
+          { System.Process.cwd =
+              directory
+                |> Path.toLinkedList
+                |> Maybe.Just
+          }
+  (ec, out, err) <- System.Process.readCreateProcessWithExitCode processToExecute ""
   let exitCode = case ec of
         System.Exit.ExitSuccess -> 0
         System.Exit.ExitFailure code -> code

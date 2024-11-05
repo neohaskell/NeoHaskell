@@ -22,7 +22,7 @@ import Map qualified
 import Maybe (Maybe (..))
 import Subprocess qualified
 import Text (Text)
-import ToText (Show (..), ToText, toText)
+import ToText (Show (..), ToText, toPrettyText)
 import Unknown (Unknown)
 import Unknown qualified
 import Var (Var)
@@ -84,15 +84,15 @@ registerActionHandler ::
 registerActionHandler actionHandlerName handler runtimeState = do
   print "Getting state"
   service <- runtimeState |> get
-  print [fmt|Got state: {toText service}|]
+  print [fmt|Got state: {toPrettyText service}|]
   let actionHandler payload = do
-        print [fmt|Handling action {actionHandlerName} with payload {toText payload}|]
+        print [fmt|Handling action {actionHandlerName} with payload {toPrettyText payload}|]
         case (Unknown.toValue payload) of
           Nothing -> do
             print "Payload is Nothing"
             pure Nothing
           Just pl -> do
-            print [fmt|Payload was Just {toText pl}|]
+            print [fmt|Payload was Just {toPrettyText pl}|]
             result <- handler pl
             pure (Just result)
   -- let actionHandlerName = Unknown.getTypeName @(payload -> IO event)

@@ -1,7 +1,11 @@
 {-# OPTIONS_GHC -Wno-orphans #-}
 
-module Version (Version, version, parse
-    , toText) where
+module Version (
+  Version,
+  version,
+  parse,
+  toText,
+) where
 
 import Array qualified
 import Basics
@@ -85,6 +89,7 @@ parseVersionExp input =
       case GHC.find (\(_, remaining) -> remaining == "") parses of
         Just (v, "") -> [|v|]
         _ -> GHC.fail "Invalid version format, must be in the form A.B.C-XYZ"
+
 
 toText :: Version -> Text
 toText (Version branch tags) = do

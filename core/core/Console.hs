@@ -10,7 +10,7 @@ import Maybe (Maybe (..))
 import Maybe qualified
 import System.Environment qualified
 import Text (Text, fromLinkedList)
-import ToText (toText)
+import ToText (toPrettyText)
 
 
 -- TODO: Make this use a centralized monitoring thread
@@ -37,9 +37,9 @@ print text = do
                   ++ ":"
                   ++ Text.fromLinkedList (Stack.srcLocFile loc)
                   ++ ":"
-                  ++ (Stack.srcLocStartLine loc |> toText)
+                  ++ (Stack.srcLocStartLine loc |> toPrettyText)
                   ++ ":"
-                  ++ (Stack.srcLocStartCol loc |> toText)
+                  ++ (Stack.srcLocStartCol loc |> toPrettyText)
           let message = "[" ++ (coolLoc) ++ "]: " ++ text
           Data.Text.IO.putStrLn message
         _ -> pure ()

@@ -26,7 +26,7 @@ import Service.EventWorker qualified as EventWorker
 import Service.RenderWorker qualified as RenderWorker
 import Service.RuntimeState qualified as RuntimeState
 import Text (Text)
-import ToText (ToText, toText)
+import ToText (ToText, toPrettyText)
 import Trigger (Trigger (..))
 import Unknown qualified
 import Var qualified
@@ -63,7 +63,7 @@ run userApp = do
   print "[init] Starting loop"
   let cleanup :: Text -> Control.Exception.SomeException -> IO ()
       cleanup threadName exception = do
-        print [fmt|[init] EXCEPTION in {threadName}: {toText exception}|]
+        print [fmt|[init] EXCEPTION in {threadName}: {toPrettyText exception}|]
         print "[init] Cleaning up"
         runtimeState |> RuntimeState.modify (\s -> s {RuntimeState.shouldExit = True})
         case Control.Exception.fromException exception of
@@ -102,7 +102,7 @@ runTriggers ::
 runTriggers triggers eventsQueue = do
   print "[runTriggers] Running triggers"
 
-  print [fmt|"[runTriggers] Got {Array.length triggers |> toText} triggers|]
+  print [fmt|"[runTriggers] Got {Array.length triggers |> toPrettyText} triggers|]
 
   let dispatchEvent event = do
         eventsQueue |> Channel.write event
