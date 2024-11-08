@@ -85,6 +85,7 @@ library
       Record,
       Unknown,
       Var,
+      Task,
 
       -- System
       File,

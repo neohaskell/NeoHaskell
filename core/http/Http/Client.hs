@@ -86,8 +86,8 @@ getActionHandler options = do
   let errorHandler err = do
         log [fmt|Error occurred! {toPrettyText err}|]
         toPrettyText err |> Error |> Err |> pure
-  let mapper = options.mapper |> Maybe.withDefault (dieWith "mapper is required")
-  let url = options.url |> Maybe.withDefault (dieWith "url is required")
+  let mapper = options.mapper |> Maybe.withDefault (panic "mapper is required")
+  let url = options.url |> Maybe.withDefault (panic "url is required")
 
   let actualMapping res = do
         log [fmt|Mapping response:{toPrettyText res}|]

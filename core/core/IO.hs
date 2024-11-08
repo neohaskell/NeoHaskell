@@ -8,6 +8,8 @@ module IO (
   onException,
   map,
   try,
+  apply,
+  andThen,
 ) where
 
 import Control.Exception qualified as GHC
@@ -24,6 +26,17 @@ yield = Prelude.pure
 
 map :: (a -> b) -> IO a -> IO b
 map = Prelude.fmap
+
+
+apply :: IO (a -> b) -> IO a -> IO b
+apply ioFunction self =
+  ioFunction Prelude.<*> self
+
+
+andThen :: (a -> IO b) -> IO a -> IO b
+andThen f self = do
+  a <- self
+  f a
 
 
 -- |

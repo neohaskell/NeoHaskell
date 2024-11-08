@@ -89,12 +89,12 @@ handleCommand command =
             Ok config -> handleBuild config
 
 
-handleBuild :: ProjectConfiguration -> IO ()
+handleBuild :: ProjectConfiguration -> Task BuildError ()
 handleBuild config = do
   let nixFile = makeNixFile config
   let cabalFile = makeCabalFile config
   let rootFolder = [path|sandbox|]
-  let nixPath = [path|shell.nix|]
+  let nixPath = [path|devenv.nix|]
   let cabalPath = [path|example.cabal|]
   let nixFileName =
         Array.fromLinkedList [rootFolder, nixPath]
@@ -105,11 +105,11 @@ handleBuild config = do
   res1 <- File.writeText nixFileName nixFile
   case res1 of
     Err err ->
-      dieWith (toPrettyText err)
+      panic (toPrettyText err)
     Ok _ -> do
       res2 <- File.writeText cabalFileName cabalFile
       case res2 of
-        Err err -> dieWith (toPrettyText err)
+        Err err -> panic (toPrettyText err)
         Ok _ -> do
           let openOpts =
                 Subprocess.OpenOptions
@@ -121,7 +121,7 @@ handleBuild config = do
           if completion.exitCode != 0
             then do
               let err = completion.stderr
-              dieWith
+              panic
                 [fmt|Oops, the build failed:
 
               {err}|]
@@ -129,37 +129,17 @@ handleBuild config = do
 
 
 makeNixFile :: ProjectConfiguration -> Text
-makeNixFile ProjectConfiguration {name} =
+makeNixFile _ =
   -- FIXME: inflect properly the name of the project in the different places of the nix file
-  [fmt|
-let
-  myNixPkgs = import <nixpkgs> {{
-    overlays = [myNixPkgsOverlay];
-  }};
+  [fmt|{{ inputs, pkgs, ... }}:
 
-  myNixPkgsOverlay = (nixSelf: nixSuper: {{
-    myHaskellPackages = nixSelf.haskellPackages.override (oldHaskellPkgs: {{
-      overrides = nixSelf.lib.composeExtensions (oldHaskellPkgs.overrides or (_: _: {{}}))  myHaskellPkgsOverlay;
-    }});
-  }});
-
-  myHaskellPkgsOverlay = (hSelf: hSuper: {{
-    myProject = hSelf.callCabal2nix "{name}" ./. {{}};
-  }});
-
-  myDevTools = with myNixPkgs; [
-    cabal-install
-    haskellPackages.ghcid
+{{
+  packages = with pkgs; [
+    haskellPackages.implicit-hie
+    haskellPackages.doctest
   ];
-
-  myShellHook = ''
-    alias repl="cabal new-repl"
-  '';
-in
-myNixPkgs.myHaskellPackages.myProject.env.overrideAttrs (oldEnv: {{
-  nativeBuildInputs = oldEnv.nativeBuildInputs ++ myDevTools;
-  shellHook = myShellHook;
-}})
+  languages.haskell.enable = true;
+}}
   |]
 
 

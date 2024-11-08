@@ -103,7 +103,7 @@ module Basics (
 
   -- * Reexported for records
   GHC.Records.HasField (..),
-  dieWith,
+  panic,
   Prelude.pure,
 
   -- * Reexported for syntax utility
@@ -874,10 +874,10 @@ never = Data.Void.absurd
 -- | Crashes the program with a message. This is useful for debugging, but you
 -- should not use it in production code. If you need to report an error to the
 -- user, use a @Result@
-dieWith :: (HasCallStack) => Text -> a
-dieWith msg =
+panic :: (HasCallStack) => Text -> a
+panic msg =
   Prelude.error (Text.unpack msg)
-{-# INLINE dieWith #-}
+{-# INLINE panic #-}
 
 
 discard ::

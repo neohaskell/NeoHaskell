@@ -51,9 +51,9 @@ path =
         case fromText (Text.fromLinkedList text) of
           Just p -> TH.lift p
           Nothing -> Monad.fail "Invalid path",
-      Quote.quotePat = dieWith "path constructor can only be used in expressions",
-      Quote.quoteType = dieWith "path constructor can only be used in expressions",
-      Quote.quoteDec = dieWith "path constructor can only be used in expressions"
+      Quote.quotePat = panic "path constructor can only be used in expressions",
+      Quote.quoteType = panic "path constructor can only be used in expressions",
+      Quote.quoteDec = panic "path constructor can only be used in expressions"
     }
 
 

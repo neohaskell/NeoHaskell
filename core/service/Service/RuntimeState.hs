@@ -47,7 +47,7 @@ get ::
 get runtimeState = do
   maybeService <- Var.get runtimeState
   case maybeService of
-    Nothing -> dieWith "Service is not initialized"
+    Nothing -> panic "Service is not initialized"
     Just service -> pure service
 
 
