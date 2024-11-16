@@ -13,7 +13,7 @@ import Action qualified
 import Basics
 import Channel (Channel)
 import Command qualified
-import Console (print)
+import Console (log)
 import Directory qualified
 import File qualified
 import Http qualified
@@ -82,17 +82,17 @@ registerActionHandler ::
   Reference event ->
   IO ()
 registerActionHandler actionHandlerName handler runtimeState = do
-  print "Getting state"
+  log "Getting state"
   service <- runtimeState |> get
-  print [fmt|Got state: {toPrettyText service}|]
+  log [fmt|Got state: {toPrettyText service}|]
   let actionHandler payload = do
-        print [fmt|Handling action {actionHandlerName} with payload {toPrettyText payload}|]
+        log [fmt|Handling action {actionHandlerName} with payload {toPrettyText payload}|]
         case (Unknown.toValue payload) of
           Nothing -> do
-            print "Payload is Nothing"
+            log "Payload is Nothing"
             pure Nothing
           Just pl -> do
-            print [fmt|Payload was Just {toPrettyText pl}|]
+            log [fmt|Payload was Just {toPrettyText pl}|]
             result <- handler pl
             pure (Just result)
   -- let actionHandlerName = Unknown.getTypeName @(payload -> IO event)
@@ -100,7 +100,7 @@ registerActionHandler actionHandlerName handler runtimeState = do
         service.actionHandlers
           |> Map.set actionHandlerName actionHandler
   let newService = service {actionHandlers = newRegistry}
-  print "Setting state"
+  log "Setting state"
   runtimeState
     |> set newService
 

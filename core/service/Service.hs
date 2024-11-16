@@ -14,7 +14,7 @@ import Basics
 import Channel (Channel)
 import Channel qualified
 import ConcurrentVar qualified
-import Console (print)
+import Console (log)
 import Control.Exception qualified
 import IO (IO)
 import IO qualified
@@ -38,7 +38,7 @@ run ::
   UserApp model event ->
   IO ()
 run userApp = do
-  print "[init] Creating queue"
+  log "[init] Creating queue"
   runtimeState <- Var.new Nothing
   actionsQueue <- Channel.new
   eventsQueue <- Channel.new
@@ -48,27 +48,27 @@ run userApp = do
             actionsQueue = actionsQueue,
             shouldExit = False
           }
-  print "[init] Setting state"
+  log "[init] Setting state"
   runtimeState
     |> RuntimeState.set initialService
-  print "[init] Registering default action handlers"
+  log "[init] Registering default action handlers"
   runtimeState
     |> RuntimeState.registerDefaultActionHandlers @event
   let (initModel, initCmd) = userApp.init
-  print "[init] Creating model ref"
+  log "[init] Creating model ref"
   modelRef <- ConcurrentVar.new
   modelRef |> ConcurrentVar.set initModel
-  print "[init] Writing init action"
+  log "[init] Writing init action"
   actionsQueue |> Channel.write initCmd
-  print "[init] Starting loop"
+  log "[init] Starting loop"
   let cleanup :: Text -> Control.Exception.SomeException -> IO ()
       cleanup threadName exception = do
-        print [fmt|[init] EXCEPTION in {threadName}: {toPrettyText exception}|]
-        print "[init] Cleaning up"
+        log [fmt|[init] EXCEPTION in {threadName}: {toPrettyText exception}|]
+        log "[init] Cleaning up"
         runtimeState |> RuntimeState.modify (\s -> s {RuntimeState.shouldExit = True})
         case Control.Exception.fromException exception of
           Just Control.Exception.UserInterrupt -> do
-            print "[init] Exiting"
+            log "[init] Exiting"
             IO.exitSuccess
           _ -> pure ()
   let actionWorker =
@@ -85,7 +85,7 @@ run userApp = do
 
   AsyncIO.process actionWorker \_ -> do
     AsyncIO.process renderWorker \_ -> do
-      print "[init] Starting triggers"
+      log "[init] Starting triggers"
       runTriggers userApp.triggers eventsQueue
       -- The action worker must be the main loop
       -- or else it won't be able to exit the program
@@ -100,9 +100,9 @@ runTriggers ::
   Channel event ->
   IO ()
 runTriggers triggers eventsQueue = do
-  print "[runTriggers] Running triggers"
+  log "[runTriggers] Running triggers"
 
-  print [fmt|"[runTriggers] Got {Array.length triggers |> toPrettyText} triggers|]
+  log [fmt|"[runTriggers] Got {Array.length triggers |> toPrettyText} triggers|]
 
   let dispatchEvent event = do
         eventsQueue |> Channel.write event

@@ -8,7 +8,7 @@ module Directory (
 import Action (Action)
 import Action qualified
 import Basics
-import Console (print)
+import Console (log)
 import Control.Exception qualified as Exception
 import Data.Either qualified as Either
 import GHC.IO.Exception qualified as Exception
@@ -43,7 +43,7 @@ create options =
 createHandler :: CreateOptions -> IO (Result Error Unit)
 createHandler options = do
   let p = Path.toText options.path
-  print [fmt|[[Directory.create] Attempting to create directory: {p}|]
+  log [fmt|[[Directory.create] Attempting to create directory: {p}|]
   let createDirAction =
         options.path
           |> Path.toLinkedList
@@ -55,8 +55,8 @@ createHandler options = do
         then do
           pure (Ok unit)
         else do
-          print "[Directory.create] Failed to create directory"
+          log "[Directory.create] Failed to create directory"
           pure (Err NotWritable)
     Either.Right _ -> do
-      print [fmt|[[Directory.create] Directory created: {p}|]
+      log [fmt|[[Directory.create] Directory created: {p}|]
       pure (Ok unit)

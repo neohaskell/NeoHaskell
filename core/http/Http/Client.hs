@@ -115,7 +115,3 @@ getActionHandler options = do
   response
     |> Result.map Http.getResponseBody
     |> actualMapping
-
-
-log :: Text -> IO ()
-log msg = print [fmt|[{moduleName}] {msg}|]

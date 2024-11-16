@@ -14,6 +14,7 @@ import Map qualified
 import Path qualified
 import Subprocess (Completion (..))
 import Subprocess qualified
+import Task qualified
 import Text qualified
 import Version qualified
 
@@ -29,7 +30,7 @@ data NeoCommand
   deriving (Show, Eq, Ord)
 
 
-run :: IO ()
+run :: Task _ Unit
 run = do
   let parser =
         Command.CommandOptions
@@ -75,18 +76,29 @@ flagsParser = do
   pure (CommonFlags {projectFile = projectFilePath})
 
 
-handleCommand :: NeoCommand -> IO ()
+data Error
+  = BuildE BuildError
+  | Other
+  deriving (Show)
+
+
+handleCommand :: NeoCommand -> Task Error ()
 handleCommand command =
   case command of
     Build flags -> do
-      let readOpts = File.ReadOptions {path = flags.projectFile}
-      configTxt <- File.readTextHandler readOpts
-      case configTxt of
-        Err err -> toPrettyText err |> print
-        Ok txt -> do
-          case Json.decodeText txt of
-            Err err -> print err
-            Ok config -> handleBuild config
+      txt <- File.readText flags.projectFile |> Task.mapError (\_ -> Other)
+      case Json.decodeText txt of
+        Err err -> panic err
+        Ok config ->
+          handleBuild config
+            |> Task.mapError (\e -> BuildE e)
+
+
+data BuildError
+  = NixFileError
+  | CabalFileError
+  | BuildError Text
+  deriving (Show)
 
 
 handleBuild :: ProjectConfiguration -> Task BuildError ()
@@ -102,30 +114,23 @@ handleBuild config = do
   let cabalFileName =
         Array.fromLinkedList [rootFolder, cabalPath]
           |> Path.joinPaths
-  res1 <- File.writeText nixFileName nixFile
-  case res1 of
-    Err err ->
-      panic (toPrettyText err)
-    Ok _ -> do
-      res2 <- File.writeText cabalFileName cabalFile
-      case res2 of
-        Err err -> panic (toPrettyText err)
-        Ok _ -> do
-          let openOpts =
-                Subprocess.OpenOptions
-                  { executable = "cabal",
-                    arguments = Array.fromLinkedList ["build"],
-                    directory = rootFolder
-                  }
-          completion <- Subprocess.openHandler openOpts
-          if completion.exitCode != 0
-            then do
-              let err = completion.stderr
-              panic
-                [fmt|Oops, the build failed:
+  File.writeText nixFileName nixFile
+    |> Task.mapError (\_ -> NixFileError)
 
-              {err}|]
-            else print completion.stdout
+  File.writeText cabalFileName cabalFile
+    |> Task.mapError (\_ -> CabalFileError)
+
+  completion <- Subprocess.open "cabal" (Array.fromLinkedList ["build"]) rootFolder
+  if completion.exitCode != 0
+    then
+      do
+        let err = completion.stderr
+        [fmt|Oops, the build failed:
+
+      {err}|]
+        |> BuildError
+        |> Task.throw
+    else print completion.stdout
 
 
 makeNixFile :: ProjectConfiguration -> Text

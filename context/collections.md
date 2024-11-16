@@ -16,7 +16,7 @@ Note that the implemented functions MUST include the doc comments as per [doc co
 
 - `empty`: Constructs an empty collection
 
-- `wrap`: Constructs a collection of one element
+- `yield`: Constructs a collection of one element
 
 ## Basic functions
 

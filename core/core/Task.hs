@@ -1,6 +1,6 @@
 module Task (
     Task (..),
-    wrap,
+    yield,
     throw,
     map,
     apply,
@@ -8,12 +8,18 @@ module Task (
     run,
     runOrPanic,
     mapError,
+    fromFailableIO,
+    fromIO,
 ) where
 
 import Applicable (Applicative (pure))
 import Applicable qualified
 import Basics
+import Control.Exception (Exception)
+import Control.Exception qualified as Exception
+import Control.Monad.IO.Class qualified as Monad
 import Control.Monad.Trans.Except (ExceptT, runExceptT, throwE, withExceptT)
+import Data.Either qualified as Either
 import IO (IO)
 import IO qualified
 import Mappable (Functor)
@@ -29,8 +35,8 @@ newtype Task err value = Task
     deriving (Functor, Applicable.Applicative, Monad)
 
 
-wrap :: value -> Task () value
-wrap value = Task (Applicable.pure value)
+yield :: value -> Task _ value
+yield value = Task (Applicable.pure value)
 
 
 throw :: err -> Task err value
@@ -73,3 +79,27 @@ runOrPanic task = do
     let reducer (Result.Ok value) = IO.yield value
         reducer (Result.Err err) = panic (toPrettyText err)
     task |> run reducer
+
+
+-- fromFailableIO is the reverse of run
+-- it receives an io, an exception catcher, and returns a task
+-- the task will run the io and catch exceptions
+-- if an exception is caught, it will be passed to the exception catcher
+-- if no exception is caught, the result will be passed to the success handler
+fromFailableIO ::
+    forall exception result.
+    (Exception exception) =>
+    IO result ->
+    Task exception result
+fromFailableIO io = do
+    result <- io |> Exception.try @exception |> Monad.liftIO |> Task
+    case result of
+        Either.Left exception -> throw exception
+        Either.Right value -> pure value
+
+
+fromIO :: IO value -> Task _ value
+fromIO io =
+    io
+        |> Monad.liftIO
+        |> Task

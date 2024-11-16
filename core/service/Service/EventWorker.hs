@@ -6,7 +6,7 @@ import Channel (Channel)
 import Channel qualified
 import ConcurrentVar (ConcurrentVar)
 import ConcurrentVar qualified
-import Console (print)
+import Console (log)
 import IO (IO)
 import IO qualified
 import Service.Core
@@ -29,20 +29,20 @@ run userApp eventsQueue modelRef actionsQueue runtimeState =
   forever do
     currentState <- RuntimeState.get runtimeState
     when currentState.shouldExit do
-      print "Exiting"
+      log "Exiting"
       IO.exitSuccess
-    print "Reading next event"
+    log "Reading next event"
     event <- Channel.read eventsQueue
-    print "Getting model"
+    log "Getting model"
     model <- ConcurrentVar.get modelRef
-    print [fmt|Got model: {toPrettyText model}|]
+    log [fmt|Got model: {toPrettyText model}|]
 
-    print "Updating model"
+    log "Updating model"
     let (newModel, newCmd) = userApp.update event model
-    print [fmt|New model: {toPrettyText newModel} - New action: {toPrettyText newCmd}|]
+    log [fmt|New model: {toPrettyText newModel} - New action: {toPrettyText newCmd}|]
 
-    print "Setting new model"
+    log "Setting new model"
     modelRef |> ConcurrentVar.set newModel
 
-    print "Writing new action"
+    log "Writing new action"
     actionsQueue |> Channel.write newCmd

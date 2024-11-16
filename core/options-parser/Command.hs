@@ -26,13 +26,14 @@ import Data.Either qualified as GHC
 import Data.Functor qualified as Functor
 import Data.Version (Version)
 import Default (Default (..), defaultValue)
-import IO (IO)
 import LinkedList (LinkedList)
 import Maybe (Maybe (..))
 import Maybe qualified
 import OptEnvConf qualified
 import Path (Path)
 import Result (Result (..))
+import Task (Task)
+import Task qualified
 import Text (Text, fromLinkedList, toLinkedList)
 import ToText (Show (..), ToText)
 import Unknown qualified
@@ -73,7 +74,7 @@ parse ::
 parse options = Action.named "Command.parse" options
 
 
-parseHandler :: CommandOptions event -> IO event
+parseHandler :: CommandOptions event -> Task _ event
 parseHandler options = do
   let (OptionsParser parser) = options.decoder
   let programDescription = options.description |> Text.toLinkedList
@@ -81,6 +82,7 @@ parseHandler options = do
         options.version
           |> Maybe.withDefault [Version.version|0.0.0|]
   OptEnvConf.runParser ver programDescription parser
+    |> Task.fromIO
 
 
 data TextConfig = TextConfig

@@ -16,7 +16,7 @@ module Action (
 import Array (Array)
 import Array qualified
 import Basics
-import Console (print)
+import Console (log)
 import IO (IO)
 import IO qualified
 import Map (Map)
@@ -126,15 +126,15 @@ processBatch ::
   Action anyEvent ->
   IO (ActionResult)
 processBatch registry (Action actionBatch) = do
-  print "[processBatch] Processing batch"
+  log "[processBatch] Processing batch"
   currentOutput <- Var.new Nothing
 
-  print [fmt|[processBatch] Starting action loop with {Array.length actionBatch} actions|]
+  log [fmt|[processBatch] Starting action loop with {Array.length actionBatch} actions|]
   result <- actionBatch |> Array.foldM (processAction currentOutput) (Continue Nothing)
 
   case result of
     Continue _ -> do
-      print "[processBatch] Getting final output"
+      log "[processBatch] Getting final output"
       out <- Var.get currentOutput
       pure (Continue out) -- Output is still Unknown
     Error msg -> pure (Error msg)
@@ -152,34 +152,34 @@ processBatch registry (Action actionBatch) = do
   handleCustomAction name' payload currentOutput = do
     case Map.get name' registry of
       Just handler -> do
-        print [fmt|Found handler for {name'}, calling with {toPrettyText payload}|]
+        log [fmt|Found handler for {name'}, calling with {toPrettyText payload}|]
         result <- handler payload
-        print [fmt|Handler {name'} returned: {toPrettyText result}|]
+        log [fmt|Handler {name'} returned: {toPrettyText result}|]
         case result of
           Nothing -> do
-            print [fmt|Handler {name'} returned nothing|]
+            log [fmt|Handler {name'} returned nothing|]
             pure (Continue Nothing)
           Just result' -> do
-            print [fmt|Setting output to {toPrettyText result'}|]
+            log [fmt|Setting output to {toPrettyText result'}|]
             currentOutput |> Var.set (Just result')
             pure (Continue (Just result'))
       Nothing -> pure (Error [fmt|Action handler not found for: {name'}|])
 
   handleMapAction :: Unknown -> Var (Maybe Unknown) -> IO (ActionResult)
   handleMapAction payload currentOutput = do
-    print "[processBatch] Map action"
+    log "[processBatch] Map action"
     maybeOut <- Var.get currentOutput
     case maybeOut of
       Nothing -> pure (Error "[processBatch] No output to map")
       Just out -> do
-        print "[processBatch] Applying mapping function"
+        log "[processBatch] Applying mapping function"
         -- Apply the mapping function directly to the Unknown values
         case Unknown.apply payload out of
           Nothing -> do
-            print "[processBatch] Couldn't apply mapping function"
+            log "[processBatch] Couldn't apply mapping function"
             pure (Error "Couldn't apply mapping function")
           Just output -> do
-            print "[processBatch] Setting output"
+            log "[processBatch] Setting output"
             currentOutput |> Var.set (Just output)
             pure (Continue (Just output))
 
@@ -214,5 +214,5 @@ continueWithHandler ::
   event ->
   IO event
 continueWithHandler event = do
-  print [fmt|Continuing with {toPrettyText event}|]
+  log [fmt|Continuing with {toPrettyText event}|]
   pure event

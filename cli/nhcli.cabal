@@ -16,6 +16,7 @@ common common_cfg
     ghc-options:    -Wall
                     -Werror
                     -threaded
+                    -fno-warn-partial-type-signatures
     default-extensions:
       ApplicativeDo
       BlockArguments
@@ -35,6 +36,7 @@ common common_cfg
       NamedFieldPuns
       Strict
       TypeFamilies
+      PartialTypeSignatures
 
     build-depends:
       nhcore,

@@ -9,7 +9,7 @@ import Brick.BChan (BChan)
 import Brick.BChan qualified
 import ConcurrentVar (ConcurrentVar)
 import ConcurrentVar qualified
-import Console (print)
+import Console (log)
 import Graphics.Vty qualified as Vty
 import IO (IO)
 import IO qualified
@@ -42,17 +42,17 @@ run userApp modelRef runtimeState = do
   -- E.g. when the settings parser fails to parse the command line
   -- arguments.
   AsyncIO.sleep 500
-  print "Getting state"
+  log "Getting state"
   state <- RuntimeState.get runtimeState
   if state.shouldExit
     then do
-      print "Exiting"
+      log "Exiting"
       IO.exitSuccess
     else do
-      print "Getting model"
+      log "Getting model"
       model <- ConcurrentVar.peek modelRef
 
-      print "Setting up event channel"
+      log "Setting up event channel"
       eventChannel <- Brick.BChan.newBChan 1
 
       let handleEvent event = case event of
@@ -73,19 +73,19 @@ run userApp modelRef runtimeState = do
                 Brick.appAttrMap = \_ -> Brick.attrMap Vty.defAttr []
               }
 
-      print "Running render model worker"
+      log "Running render model worker"
       renderModelWorker @model modelRef eventChannel runtimeState
         |> AsyncIO.run
         |> discard
 
-      print "Rendering view"
+      log "Rendering view"
       (_, vty) <-
         Brick.customMainWithDefaultVty
           (Just eventChannel)
           brickApp
           model
       Vty.shutdown vty
-      print "Done rendering"
+      log "Done rendering"
 
 
 renderModelWorker ::
@@ -99,10 +99,10 @@ renderModelWorker modelRef eventChannel runtimeState =
     state <- RuntimeState.get runtimeState
     if state.shouldExit
       then do
-        print "[renderModelWorker] Exiting"
+        log "[renderModelWorker] Exiting"
         Brick.BChan.writeBChan eventChannel ExitRender
       else do
-        -- print "[renderModelWorker] Peeking model"
+        -- log "[renderModelWorker] Peeking model"
         model <- ConcurrentVar.peek modelRef
-        -- print "[renderModelWorker] Sending model update event"
+        -- log "[renderModelWorker] Sending model update event"
         Brick.BChan.writeBChan eventChannel (ModelUpdated model)

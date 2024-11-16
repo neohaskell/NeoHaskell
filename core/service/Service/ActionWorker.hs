@@ -5,7 +5,7 @@ import Action qualified
 import Basics
 import Channel (Channel)
 import Channel qualified
-import Console (print)
+import Console (log)
 import IO (IO)
 import IO qualified
 import Maybe (Maybe (..))
@@ -23,22 +23,22 @@ run ::
 run actionsQueue eventsQueue runtimeState = loop
  where
   loop = do
-    print "Checking exit condition"
+    log "Checking exit condition"
     state <- RuntimeState.get runtimeState
     if state.shouldExit
       then do
-        print "Exiting due to shouldExit flag"
+        log "Exiting due to shouldExit flag"
         IO.exitSuccess
       else do
-        print "Reading next action batch"
+        log "Reading next action batch"
         nextActionBatch <- Channel.read actionsQueue
-        print "Getting state"
+        log "Getting state"
         state' <- RuntimeState.get runtimeState
-        print "Processing next action batch"
+        log "Processing next action batch"
         result <- Action.processBatch state'.actionHandlers nextActionBatch
         case result of
           Action.Continue Nothing -> do
-            print "No actions to process"
+            log "No actions to process"
             loop
           Action.Continue (Just unknownEvent) -> do
             -- Attempt to convert to the top-level event type
@@ -47,8 +47,8 @@ run actionsQueue eventsQueue runtimeState = loop
                 eventsQueue |> Channel.write event
                 loop
               Nothing -> do
-                print "Error: Could not convert event to the expected event type"
+                log "Error: Could not convert event to the expected event type"
                 loop
           Action.Error msg -> do
-            print [fmt|Error: {msg}|]
+            log [fmt|Error: {msg}|]
             loop
