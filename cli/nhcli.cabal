@@ -17,6 +17,7 @@ common common_cfg
                     -Werror
                     -threaded
                     -fno-warn-partial-type-signatures
+                    -fno-warn-name-shadowing
     default-extensions:
       ApplicativeDo
       BlockArguments
@@ -147,6 +148,8 @@ library
     exposed-modules:
       Neo,
       Neo.Build,
+      Neo.Core,
+      Neo.Core.ProjectConfiguration,
     -- other-modules:
     -- other-extensions:
     hs-source-dirs:   src

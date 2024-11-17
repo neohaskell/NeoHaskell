@@ -6,6 +6,7 @@
     "Appendable",
     "clippy",
     "Defaultable",
+    "devenv",
     "foldl",
     "fprint",
     "GADT",

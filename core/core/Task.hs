@@ -22,6 +22,7 @@ import Control.Monad.Trans.Except (ExceptT, runExceptT, throwE, withExceptT)
 import Data.Either qualified as Either
 import IO (IO)
 import IO qualified
+import Main.Utf8 (withUtf8)
 import Mappable (Functor)
 import Mappable qualified
 import Result (Result)
@@ -72,13 +73,16 @@ run reducer task =
         |> runExceptT
         |> IO.map Result.fromEither
         |> IO.andThen reducer
+        |> withUtf8
 
 
 runOrPanic :: (Show err) => Task err value -> IO value
 runOrPanic task = do
     let reducer (Result.Ok value) = IO.yield value
         reducer (Result.Err err) = panic (toPrettyText err)
-    task |> run reducer
+    task
+        |> run reducer
+        |> withUtf8
 
 
 -- fromFailableIO is the reverse of run
