@@ -22,15 +22,20 @@ data Error
 handle :: ProjectConfiguration -> Task Error ()
 handle config = do
     let rootFolder = [path|.|]
+    let nixFileName = [path|default.nix|]
     let cabalFileName = [path|example.cabal|]
 
     let nixFile = Nix.template config
     let cabalFile = Cabal.template config
 
+    File.writeText nixFileName nixFile
+        |> Task.mapError (\_ -> NixFileError)
+
     File.writeText cabalFileName cabalFile
         |> Task.mapError (\_ -> CabalFileError)
 
-    completion <- Subprocess.open "nix-build" (Array.fromLinkedList ["-E", nixFile]) rootFolder
+    completion <- Subprocess.open "nix-build" (Array.fromLinkedList []) rootFolder
+    -- completion <- Subprocess.open "nix-build" (Array.fromLinkedList ["-E", nixFile]) rootFolder
     if completion.exitCode != 0
         then errorOut completion.stderr
         else print completion.stdout

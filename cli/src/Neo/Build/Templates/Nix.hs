@@ -17,13 +17,15 @@ template _ =
   TODO: Consider dropping developPackage in favor of making the package
   out of neo.json. Although maybe that could lead to IDEs not being able
   to find the source code.
+
+  TODO: Figure out how to do caching here
   -}
   [fmt|{{ nixpkgs ? import <nixpkgs> {{}} }}:
   let
     neoHaskellGitHub = builtins.fetchTarball
           "https://github.com/NeoHaskell/NeoHaskell/archive/refs/heads/dev.tar.gz";
   in
-    nixpkgs.haskellPackages.developPackage {{
+    nixpkgs.haskell.packages."ghc965".developPackage {{
       root = ./.;
       source-overrides = {{
         nhcore = "${{neoHaskellGitHub}}/core";
