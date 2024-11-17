@@ -13,6 +13,10 @@ template _ =
   Also: https://srid.ca/haskell-nix
 
   FIXME: Pin GHC to specific version so packages aren't broken
+
+  TODO: Consider dropping developPackage in favor of making the package
+  out of neo.json. Although maybe that could lead to IDEs not being able
+  to find the source code.
   -}
   [fmt|{{ nixpkgs ? import <nixpkgs> {{}} }}:
   let
