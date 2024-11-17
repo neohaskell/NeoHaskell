@@ -34,7 +34,7 @@ handle config = do
     File.writeText cabalFileName cabalFile
         |> Task.mapError (\_ -> CabalFileError)
 
-    completion <- Subprocess.open "nix" (Array.fromLinkedList ["build", "-f", "default.nix"]) rootFolder
+    completion <- Subprocess.open "nix-build" (Array.fromLinkedList []) rootFolder
     if completion.exitCode != 0
         then errorOut completion.stderr
         else print completion.stdout

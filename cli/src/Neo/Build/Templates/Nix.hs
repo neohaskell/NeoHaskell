@@ -9,5 +9,20 @@ template :: ProjectConfiguration -> Text
 template _ =
   {-
   https://github.com/NixOS/nixpkgs/blob/777a9707e72e6dbbbdf9033c44f237154c64e9f7/pkgs/development/haskell-modules/make-package-set.nix#L227-L254
+
+  Also: https://srid.ca/haskell-nix
+
+  FIXME: Pin GHC to specific version so packages aren't broken
   -}
-  [fmt|{{ nixpkgs ? import <nixpkgs> {{}} }}: nixpkgs.haskellPackages.developPackage {{ root = ./.; }}|]
+  [fmt|{{ nixpkgs ? import <nixpkgs> {{}} }}:
+  let
+    neoHaskellGitHub = builtins.fetchTarball
+          "https://github.com/NeoHaskell/NeoHaskell/archive/refs/heads/dev.tar.gz";
+  in
+    nixpkgs.haskellPackages.developPackage {{
+      root = ./.;
+      source-overrides = {{
+        nhcore = "${{neoHaskellGitHub}}/core";
+      }};
+    }}
+  |]
