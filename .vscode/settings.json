@@ -13,6 +13,7 @@
     "Monoid",
     "Nanotime",
     "NEOHASKELL",
+    "nixpkgs",
     "NOINLINE",
     "optparse",
     "OVERLAPPABLE",

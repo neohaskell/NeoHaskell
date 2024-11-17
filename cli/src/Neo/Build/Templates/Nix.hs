@@ -1,18 +1,13 @@
-module Neo.Build.Templates.Nix where
+module Neo.Build.Templates.Nix (
+  template,
+) where
 
 import Neo.Core
 
 
 template :: ProjectConfiguration -> Text
 template _ =
-    -- FIXME: inflect properly the name of the project in the different places of the nix file
-    [fmt|{{ inputs, pkgs, ... }}:
-
-{{
-  packages = with pkgs; [
-    haskellPackages.implicit-hie
-    haskellPackages.doctest
-  ];
-  languages.haskell.enable = true;
-}}
-  |]
+  {-
+  https://github.com/NixOS/nixpkgs/blob/777a9707e72e6dbbbdf9033c44f237154c64e9f7/pkgs/development/haskell-modules/make-package-set.nix#L227-L254
+  -}
+  [fmt|{{ nixpkgs ? import <nixpkgs> {{}} }}: nixpkgs.haskellPackages.developPackage {{ root = ./.; }}|]

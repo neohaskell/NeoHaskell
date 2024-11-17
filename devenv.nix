@@ -14,10 +14,12 @@
 
   # https://devenv.sh/scripts/
   scripts = {
+    # To emulate the running of the CLI
+    neo.exec = "cabal run nhcli -- $@";
+
     run-watch.exec = "ghcid --command=cabal repl $1";
     run-build.exec = "cabal build all";
     run-update.exec = "cabal update";
-    run-cli.exec = "cabal run nhcli -- $@";
     run-core-tests.exec = ''
       cabal repl nhcore --with-compiler=doctest && \
       cabal test nhcore
