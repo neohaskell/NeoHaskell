@@ -1,15 +1,16 @@
-module Json (
-  Decodable,
-  Encodable,
-  Aeson.Value,
-  Aeson.FromJSON,
-  Aeson.FromJSONKey,
-  Aeson.ToJSON,
-  decodeText,
-  encode,
-  decode,
-  encodeText,
-) where
+module Json
+  ( Decodable,
+    Encodable,
+    Aeson.Value,
+    Aeson.FromJSON,
+    Aeson.FromJSONKey,
+    Aeson.ToJSON,
+    decodeText,
+    encode,
+    decode,
+    encodeText,
+  )
+where
 
 import Basics
 import Data.Aeson qualified as Aeson
@@ -21,28 +22,24 @@ import Result qualified
 import Text (Text)
 import Text qualified
 
-
 type Decodable value = Aeson.FromJSON value
-
 
 type Encodable value = Aeson.ToJSON value
 
-
 decodeText :: (Decodable value) => Text -> Result Text value
-decodeText text = case Aeson.eitherDecodeStrictText text of
-  Either.Left error -> Result.Err (Text.fromLinkedList error)
-  Either.Right value -> Result.Ok value
-
+decodeText text = do
+  let bs = Text.convert text
+  case Aeson.eitherDecodeStrict bs of
+    Either.Left error -> Result.Err (Text.fromLinkedList error)
+    Either.Right value -> Result.Ok value
 
 encodeText :: (Encodable value) => value -> Text
 encodeText value =
   AesonText.encodeToLazyText value
     |> Data.Text.toStrict
 
-
 encode :: (Encodable value) => value -> Aeson.Value
 encode = Aeson.toJSON
-
 
 decode :: (Decodable value) => Aeson.Value -> Result Text value
 decode value = case Aeson.fromJSON value of

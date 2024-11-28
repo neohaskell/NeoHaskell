@@ -30,7 +30,7 @@ common common_cfg
       transformers,
       http-conduit,
       containers,
-      opt-env-conf,
+      optparse-applicative,
       path,
       nanotime,
       process,
@@ -39,7 +39,6 @@ common common_cfg
       QuickCheck,
       quickcheck-instances,
       PyF,
-      toml-parser,
       with-utf8,
       template-haskell
     default-extensions:
@@ -102,9 +101,6 @@ library
 
       -- JSON
       Json,
-
-      -- TOML
-      Toml,
 
       -- Traits
       Applicable,
