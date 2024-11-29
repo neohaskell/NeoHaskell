@@ -9,8 +9,10 @@ import Text qualified
 import Version qualified
 
 
+-- FIXME: Bring here discovered modules in the folders
 template :: ProjectConfiguration -> Text
 template ProjectConfiguration {name, version, description, license, author, dependencies} = do
+    -- FIXME: Move onto a separate version handling module
     let vText = Version.toText version
     let makeDep (k, v)
             | v |> Text.trim |> Text.startsWith "^" = [fmt|{k} ^>= {v |> Text.replace "^" ""}|]

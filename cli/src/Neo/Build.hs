@@ -22,6 +22,7 @@ handle :: ProjectConfiguration -> Task Error ()
 handle config = do
   let rootFolder = [path|.|]
   let nixFileName = [path|default.nix|]
+  -- FIXME: Read the project name from config instead
   let cabalFileName = [path|example.cabal|]
 
   let nixFile = Nix.template config
@@ -33,6 +34,8 @@ handle config = do
   File.writeText cabalFileName cabalFile
     |> Task.mapError (\_ -> CabalFileError)
 
+  -- FIXME: Create another thread that renders the output of the build via streaming.
+  -- As right now there's no output at all
   completion <- Subprocess.open "nix-build" (Array.fromLinkedList []) rootFolder
   -- completion <- Subprocess.open "nix-build" (Array.fromLinkedList ["-E", nixFile]) rootFolder
   if completion.exitCode != 0
