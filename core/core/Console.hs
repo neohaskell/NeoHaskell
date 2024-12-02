@@ -14,11 +14,9 @@ import Task qualified
 import Text (Text, fromLinkedList)
 import ToText (toPrettyText)
 
-
 print :: Text -> Task _ Unit
 print text = Task.fromIO do
   Data.Text.IO.putStrLn text
-
 
 -- TODO: Make this use a centralized monitoring thread
 log :: (Stack.HasCallStack) => Text -> IO Unit
@@ -51,7 +49,6 @@ log text = do
           Data.Text.IO.putStrLn message
         _ -> pure ()
     else pure ()
-
 
 readLine :: IO Text
 readLine = Data.Text.IO.getLine

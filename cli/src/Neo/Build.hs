@@ -6,9 +6,11 @@ where
 
 import Array qualified
 import File qualified
+import Maybe qualified
 import Neo.Build.Templates.Cabal qualified as Cabal
 import Neo.Build.Templates.Nix qualified as Nix
 import Neo.Core
+import Path qualified
 import Subprocess qualified
 import Task qualified
 
@@ -20,11 +22,13 @@ data Error
 
 handle :: ProjectConfiguration -> Task Error ()
 handle config = do
+  let projectName = config.name
   let rootFolder = [path|.|]
   let nixFileName = [path|default.nix|]
-  -- FIXME: Read the project name from config instead
-  let cabalFileName = [path|example.cabal|]
-
+  let cabalFileName =
+        [fmt|{projectName}.cabal|]
+          |> Path.fromText
+          |> Maybe.getOrDie -- TODO: Make better error handling here
   let nixFile = Nix.template config
   let cabalFile = Cabal.template config
 
