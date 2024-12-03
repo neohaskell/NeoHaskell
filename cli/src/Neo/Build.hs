@@ -5,6 +5,7 @@ module Neo.Build
 where
 
 import Array qualified
+import Directory qualified
 import File qualified
 import Maybe qualified
 import Neo.Build.Templates.Cabal qualified as Cabal
@@ -17,13 +18,13 @@ import Task qualified
 data Error
   = NixFileError
   | CabalFileError
-  | Error Text
+  | CustomError Text
   deriving (Show)
 
-handle :: ProjectConfiguration -> Task Error ()
+handle :: ProjectConfiguration -> Task Error Unit
 handle config = do
   let projectName = config.name
-  let rootFolder = [path|.|]
+  let rootFolder = [path|.neohaskell|]
   let nixFileName = [path|default.nix|]
   let cabalFileName =
         [fmt|{projectName}.cabal|]
@@ -31,11 +32,20 @@ handle config = do
           |> Maybe.getOrDie -- TODO: Make better error handling here
   let nixFile = Nix.template config
   let cabalFile = Cabal.template config
+  let nixFilePath =
+        Array.fromLinkedList [rootFolder, nixFileName]
+          |> Path.joinPaths
+  let cabalFilePath =
+        Array.fromLinkedList [rootFolder, cabalFileName]
+          |> Path.joinPaths
 
-  File.writeText nixFileName nixFile
+  Directory.create rootFolder
+    |> Task.mapError (\_ -> [fmt|Could not create directory {Path.toText rootFolder}|] |> CustomError)
+
+  File.writeText nixFilePath nixFile
     |> Task.mapError (\_ -> NixFileError)
 
-  File.writeText cabalFileName cabalFile
+  File.writeText cabalFilePath cabalFile
     |> Task.mapError (\_ -> CabalFileError)
 
   -- FIXME: Create another thread that renders the output of the build via streaming.
@@ -50,5 +60,5 @@ errorOut :: Text -> Task Error _
 errorOut err =
   [fmt|Oops the build failed:
     {err}|]
-    |> Error
+    |> CustomError
     |> Task.throw
