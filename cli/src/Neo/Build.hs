@@ -1,8 +1,7 @@
-module Neo.Build
-  ( handle,
-    Error (..),
-  )
-where
+module Neo.Build (
+  handle,
+  Error (..),
+) where
 
 import Array qualified
 import Directory qualified
@@ -16,11 +15,13 @@ import Subprocess qualified
 import Task qualified
 import ToText qualified
 
+
 data Error
   = NixFileError
   | CabalFileError
   | CustomError Text
   deriving (Show)
+
 
 handle :: ProjectConfiguration -> Task Error Unit
 handle config = do
@@ -40,13 +41,16 @@ handle config = do
         Array.fromLinkedList [rootFolder, cabalFileName]
           |> Path.joinPaths
 
-  fps <-
+  -- TODO: Remember to copy using https://hackage.haskell.org/package/directory-1.3.8.1/docs/System-Directory.html#v:copyFileWithMetadata
+  -- I mean into .neohaskell
+
+  filepaths <-
     Directory.walk [path|src|]
       |> Task.mapError (\_ -> CustomError "WALK ERROR")
 
-  let files = fps |> Array.takeIf (Path.endsWith ".hs")
+  let haskellFiles = filepaths |> Array.takeIf (Path.endsWith ".hs")
 
-  ToText.toText files |> CustomError |> Task.throw
+  ToText.toText haskellFiles |> CustomError |> Task.throw
 
   Directory.create rootFolder
     |> Task.mapError (\_ -> [fmt|Could not create directory {Path.toText rootFolder}|] |> CustomError)
@@ -64,6 +68,7 @@ handle config = do
   if completion.exitCode != 0
     then errorOut completion.stderr
     else print completion.stdout
+
 
 errorOut :: Text -> Task Error _
 errorOut err =
