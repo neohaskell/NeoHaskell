@@ -14,6 +14,7 @@ import Neo.Core
 import Path qualified
 import Subprocess qualified
 import Task qualified
+import ToText qualified
 
 data Error
   = NixFileError
@@ -38,6 +39,14 @@ handle config = do
   let cabalFilePath =
         Array.fromLinkedList [rootFolder, cabalFileName]
           |> Path.joinPaths
+
+  fps <-
+    Directory.walk [path|src|]
+      |> Task.mapError (\_ -> CustomError "WALK ERROR")
+
+  let files = fps |> Array.takeIf (Path.endsWith ".hs")
+
+  ToText.toText files |> CustomError |> Task.throw
 
   Directory.create rootFolder
     |> Task.mapError (\_ -> [fmt|Could not create directory {Path.toText rootFolder}|] |> CustomError)

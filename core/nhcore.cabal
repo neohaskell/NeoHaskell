@@ -40,7 +40,9 @@ common common_cfg
       quickcheck-instances,
       PyF,
       with-utf8,
+      dir-traverse,
       template-haskell
+
     default-extensions:
       ApplicativeDo
       BlockArguments

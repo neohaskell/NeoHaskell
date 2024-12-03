@@ -1,10 +1,12 @@
 module Path
   ( Path,
     fromText,
+    fromLinkedList,
     toLinkedList,
     toText,
     path,
     joinPaths,
+    endsWith,
   )
 where
 
@@ -43,6 +45,11 @@ fromText text =
   -- a filepath parsing library
   Just (Path (Text.toLinkedList text))
 
+fromLinkedList :: LinkedList Char -> Maybe Path
+fromLinkedList list =
+  Text.fromLinkedList list
+    |> fromText
+
 -- | Smart text constructor to make a path from a text literal
 path :: Quote.QuasiQuoter
 path =
@@ -73,3 +80,8 @@ joinPaths paths =
     |> Text.joinWith "/"
     |> fromText
     |> Maybe.getOrDie
+
+endsWith :: Text -> Path -> Bool
+endsWith txt self =
+  Path.toText self
+    |> Text.endsWith txt

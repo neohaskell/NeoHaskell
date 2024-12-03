@@ -3,21 +3,26 @@ module Directory
     createAction,
     CreateOptions (..),
     create,
+    walk,
   )
 where
 
 import Action (Action)
 import Action qualified
+import Array (Array)
+import Array qualified
 import Basics
 import Console qualified
 import Control.Exception qualified as Exception
 import Data.Either qualified as Either
 import GHC.IO.Exception qualified as Exception
+import Maybe qualified
 import Path (Path)
 import Path qualified
 import Result (Result (..))
 import System.Directory qualified
 import System.Directory.Internal.Prelude qualified as Exception
+import System.Directory.Recursive qualified as RecursiveDir
 import System.IO.Error (alreadyExistsErrorType)
 import Task (Task)
 import Task qualified
@@ -27,6 +32,7 @@ data Error
   = NotFound
   | NotWritable
   | NotReadable
+  | WalkError
   deriving (Show)
 
 data CreateOptions = CreateOptions
@@ -58,4 +64,23 @@ create dirPath = do
           Task.throw NotWritable
     Either.Right _ -> do
       log [fmt|[[Directory.create] Directory created: {p}|]
-      pure unit
+      Task.yield unit
+
+walk :: Path -> Task Error (Array Path)
+walk dirPath = do
+  let log m = Console.log m |> Task.fromIO
+  let p = Path.toText dirPath
+  let walkDirAction =
+        dirPath
+          |> Path.toLinkedList
+          |> RecursiveDir.getDirRecursive
+  result <- Exception.try @Exception.IOError walkDirAction |> Task.fromIO
+  case result of
+    Either.Left err -> do
+      log [fmt|[Directory.walk] Failed to walk directory {p}: {show err}|]
+      Task.throw WalkError
+    Either.Right fps -> do
+      log [fmt|[Directory.walk] Directory {p} walked|]
+      Array.fromLinkedList fps
+        |> Array.map (\fp -> Path.fromLinkedList fp |> Maybe.getOrDie)
+        |> Task.yield
