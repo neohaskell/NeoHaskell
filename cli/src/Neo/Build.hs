@@ -50,6 +50,21 @@ handle config = do
 
   let haskellFiles = filepaths |> Array.takeIf (Path.endsWith ".hs")
 
+  -- let concatString :: Path -> Text
+  --     concatString pathElement = do
+  --       let pathText = Path.toText pathElement
+  --       let pathParts = Text.split "/" pathText
+  --       ""
+
+  -- -- haskellFiles = [src/A.hs,src/A/Lol.hs,src/A/B/Haha.hs,src/A/B/C/Rofl.hs]
+  -- -- Convert to:
+  -- -- modules = A, A.Lol, A.B, A.B.C
+  -- let convertToModuleNames :: Array Path -> Array Text
+  --     convertToModuleNames paths =
+  --       do
+  --         paths
+  --         |> Array.map concatString
+
   ToText.toText haskellFiles |> CustomError |> Task.throw
 
   Directory.create rootFolder

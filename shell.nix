@@ -1,6 +1,6 @@
 { pkgs ? import ./nix/nixpkgs.nix { }  }:
 pkgs.mkShell rec {
-  buildInputs = [ 
+  buildInputs = [
     # Haskell dev tools
     pkgs.ghc
     pkgs.haskell-language-server

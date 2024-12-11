@@ -1,11 +1,10 @@
-module Directory
-  ( Error (..),
-    createAction,
-    CreateOptions (..),
-    create,
-    walk,
-  )
-where
+module Directory (
+  Error (..),
+  createAction,
+  CreateOptions (..),
+  create,
+  walk,
+) where
 
 import Action (Action)
 import Action qualified
@@ -26,7 +25,10 @@ import System.Directory.Recursive qualified as RecursiveDir
 import System.IO.Error (alreadyExistsErrorType)
 import Task (Task)
 import Task qualified
+import Text qualified
 import ToText (Show (..))
+import ToText qualified
+
 
 data Error
   = NotFound
@@ -35,14 +37,17 @@ data Error
   | WalkError
   deriving (Show)
 
+
 data CreateOptions = CreateOptions
   { path :: Path
   }
   deriving (Show)
 
+
 createAction :: CreateOptions -> Action (Result Error Unit)
 createAction options =
   Action.named "Directory.create" options
+
 
 create :: Path -> Task Error Unit
 create dirPath = do
@@ -66,6 +71,7 @@ create dirPath = do
       log [fmt|[[Directory.create] Directory created: {p}|]
       Task.yield unit
 
+
 walk :: Path -> Task Error (Array Path)
 walk dirPath = do
   let log m = Console.log m |> Task.fromIO
@@ -81,6 +87,17 @@ walk dirPath = do
       Task.throw WalkError
     Either.Right fps -> do
       log [fmt|[Directory.walk] Directory {p} walked|]
-      Array.fromLinkedList fps
-        |> Array.map (\fp -> Path.fromLinkedList fp |> Maybe.getOrDie)
-        |> Task.yield
+      let paths = Array.fromLinkedList fps
+      let numPathChars =
+            if Text.endsWith "/" p
+              then Text.length p
+              else Text.length p + 1
+      let trimInitialSrc pathElement =
+            Text.fromLinkedList pathElement
+              |> Text.dropLeft numPathChars
+              |> Path.fromText
+              |> Maybe.getOrDie
+      log [fmt|[Directory.walk] Paths: {ToText.toText paths}|]
+      let trimmedPaths = paths |> Array.map trimInitialSrc
+      log [fmt|[Directory.walk] Trimmed paths: {ToText.toText trimmedPaths}|]
+      Task.yield trimmedPaths
