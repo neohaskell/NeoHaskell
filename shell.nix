@@ -1,4 +1,4 @@
-{ pkgs ? import ./nix/nixpkgs.nix { }  }:
+{ pkgs ? import ./nix/nixpkgs.nix { } }:
 pkgs.mkShell rec {
   buildInputs = [
     # Haskell dev tools
@@ -11,6 +11,7 @@ pkgs.mkShell rec {
     # Nix dev tools
     pkgs.nil
     pkgs.nixfmt-classic
+    pkgs.nixpkgs-fmt
 
     # Required native libs
     pkgs.pkg-config

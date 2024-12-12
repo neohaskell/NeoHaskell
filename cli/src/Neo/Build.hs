@@ -13,7 +13,7 @@ import Neo.Core
 import Path qualified
 import Subprocess qualified
 import Task qualified
-import ToText qualified
+import Text qualified
 
 
 data Error
@@ -25,6 +25,7 @@ data Error
 
 handle :: ProjectConfiguration -> Task Error Unit
 handle config = do
+  let haskellExtension = ".hs"
   let projectName = config.name
   let rootFolder = [path|.neohaskell|]
   let nixFileName = [path|default.nix|]
@@ -33,7 +34,6 @@ handle config = do
           |> Path.fromText
           |> Maybe.getOrDie -- TODO: Make better error handling here
   let nixFile = Nix.template config
-  let cabalFile = Cabal.template config
   let nixFilePath =
         Array.fromLinkedList [rootFolder, nixFileName]
           |> Path.joinPaths
@@ -43,29 +43,29 @@ handle config = do
 
   -- TODO: Remember to copy using https://hackage.haskell.org/package/directory-1.3.8.1/docs/System-Directory.html#v:copyFileWithMetadata
   -- I mean into .neohaskell
+  Directory.copy [path|src|] rootFolder
+    |> Task.mapError (\_ -> CustomError "COPY ERROR")
 
   filepaths <-
     Directory.walk [path|src|]
       |> Task.mapError (\_ -> CustomError "WALK ERROR")
 
-  let haskellFiles = filepaths |> Array.takeIf (Path.endsWith ".hs")
+  let haskellFiles = filepaths |> Array.takeIf (Path.endsWith haskellExtension)
 
-  -- let concatString :: Path -> Text
-  --     concatString pathElement = do
-  --       let pathText = Path.toText pathElement
-  --       let pathParts = Text.split "/" pathText
-  --       ""
-
-  -- -- haskellFiles = [src/A.hs,src/A/Lol.hs,src/A/B/Haha.hs,src/A/B/C/Rofl.hs]
+  -- -- haskellFiles = [A.hs,A/Lol.hs,A/B/Haha.hs,A/B/C/Rofl.hs]
   -- -- Convert to:
-  -- -- modules = A, A.Lol, A.B, A.B.C
-  -- let convertToModuleNames :: Array Path -> Array Text
-  --     convertToModuleNames paths =
-  --       do
-  --         paths
-  --         |> Array.map concatString
+  -- -- modules = [A, A.Lol, A.B, A.B.C]
+  let convertToModule filepath = do
+        let pathText = Path.toText filepath
+        -- first we remove the extension
+        let pathWithoutExtension = Text.dropRight (Text.length haskellExtension) pathText
+        -- then we split on the path separator
+        let pathParts = Text.split "/" pathWithoutExtension
+        -- then we convert each part to a module name
+        pathParts |> Text.joinWith "."
 
-  ToText.toText haskellFiles |> CustomError |> Task.throw
+  let modules = haskellFiles |> Array.map convertToModule
+  let cabalFile = Cabal.template config modules
 
   Directory.create rootFolder
     |> Task.mapError (\_ -> [fmt|Could not create directory {Path.toText rootFolder}|] |> CustomError)

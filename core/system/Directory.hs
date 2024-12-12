@@ -4,6 +4,7 @@ module Directory (
   CreateOptions (..),
   create,
   walk,
+  copy,
 ) where
 
 import Action (Action)
@@ -69,6 +70,26 @@ create dirPath = do
           Task.throw NotWritable
     Either.Right _ -> do
       log [fmt|[[Directory.create] Directory created: {p}|]
+      Task.yield unit
+
+
+copy :: Path -> Path -> Task Error Unit
+copy src dest = do
+  let log m = Console.log m |> Task.fromIO
+  let srcP = Path.toText src
+  let destP = Path.toText dest
+  log [fmt|[[Directory.copy] Attempting to copy {srcP} to {destP}|]
+  let copyFileAction =
+        src
+          |> Path.toLinkedList
+          |> System.Directory.copyFile (Path.toLinkedList dest)
+  result <- Exception.try @Exception.IOError copyFileAction |> Task.fromIO
+  case result of
+    Either.Left err -> do
+      log [fmt|[Directory.copy] Failed to copy {srcP} to {destP}: {show err}|]
+      Task.throw NotWritable
+    Either.Right _ -> do
+      log [fmt|[Directory.copy] Copied {srcP} to {destP}|]
       Task.yield unit
 
 
