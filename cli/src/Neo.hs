@@ -12,6 +12,7 @@ import File qualified
 import Json qualified
 import Neo.Build qualified as Build
 import Task qualified
+import Text qualified
 
 
 data CommonFlags = CommonFlags
@@ -27,7 +28,17 @@ data NeoCommand
 
 run :: Task _ Unit
 run = do
-  Console.print "NEOHASKELL IS IN ITS EARLY DAYS, HERE BE DRAGONS, BEWARE!"
+  let message1 = "⚠️ NEOHASKELL IS IN ITS EARLY DAYS ⚠️"
+  let message2 = "HERE BE DRAGONS, BEWARE!"
+  let msgLength = Text.length message1 + 4
+  let paddedMessage1 = message1 |> Text.pad msgLength ' '
+  let paddedMessage2 = message2 |> Text.pad msgLength ' '
+  Console.print ""
+  Console.print ""
+  Console.print paddedMessage1
+  Console.print paddedMessage2
+  Console.print ""
+  Console.print ""
   let parser =
         Command.CommandOptions
           { name = "neo",

@@ -31,5 +31,5 @@
     "Unagi"
   ],
   "haskell.manageHLS": "PATH",
-  "nixEnvSelector.nixFile": "${workspaceFolder}/devenv.nix"
+  "nixEnvSelector.nixFile": "${workspaceFolder}/shell.nix"
 }

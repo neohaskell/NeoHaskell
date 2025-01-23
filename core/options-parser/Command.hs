@@ -1,18 +1,17 @@
-module Command
-  ( OptionsParser,
-    CommandOptions (..),
-    PathConfig (..),
-    text,
-    path,
-    parseWith,
-    json,
-    flag,
-    parse,
-    parseHandler,
-    commands,
-    map,
-  )
-where
+module Command (
+  OptionsParser,
+  CommandOptions (..),
+  PathConfig (..),
+  text,
+  path,
+  parseWith,
+  json,
+  flag,
+  parse,
+  parseHandler,
+  commands,
+  map,
+) where
 
 import Action (Action)
 import Action qualified
@@ -32,6 +31,7 @@ import Default (Default (..), defaultValue)
 import LinkedList (LinkedList)
 import Mappable qualified
 import Maybe (Maybe (..))
+import Maybe qualified
 import Options.Applicative qualified as OptParse
 import Path (Path)
 import Result (Result (..))
@@ -41,17 +41,22 @@ import Text (Text, fromLinkedList, toLinkedList)
 import Text qualified
 import ToText (Show (..), ToText)
 import Unknown qualified
+import Version qualified
+
 
 newtype OptionsParser value = OptionsParser (OptParse.Parser value)
   deriving (Functor.Functor, Applicative.Applicative)
 
+
 map :: (a -> b) -> OptionsParser a -> OptionsParser b
 map f (OptionsParser parser) = OptionsParser (Mappable.fmap f parser)
+
 
 instance (Unknown.Convertible value) => Show (OptionsParser value) where
   show _ = do
     let typeName = Unknown.getTypeName @value
     "[OptionsParser " ++ Text.toLinkedList typeName ++ "]"
+
 
 data CommandOptions value = CommandOptions
   { name :: Text,
@@ -61,8 +66,10 @@ data CommandOptions value = CommandOptions
   }
   deriving (Show)
 
+
 newtype Error = Error Text
   deriving (Show)
+
 
 parse ::
   (Unknown.Convertible event) =>
@@ -70,16 +77,21 @@ parse ::
   Action event
 parse options = Action.named "Command.parse" options
 
+
 parseHandler :: CommandOptions event -> Task _ event
 parseHandler options = do
   let (OptionsParser parser) = options.decoder
-  let programDescription = options.description |> Text.toLinkedList
-  -- let ver =
-  --       options.version
-  --         |> Maybe.withDefault [Version.version|0.0.0|]
-  let foo = OptParse.info parser (OptParse.progDesc programDescription)
+  let ver =
+        options.version
+          |> Maybe.withDefault [Version.version|0.0.0|]
+          |> Version.toText
+  let programDescription =
+        [fmt|{options.description} - Version {ver}|]
+          |> Text.toLinkedList
+  let foo = OptParse.info (parser OptParse.<**> OptParse.helper) (OptParse.progDesc programDescription)
   OptParse.execParser foo
     |> Task.fromIO
+
 
 data TextConfig = TextConfig
   { help :: Text,
@@ -88,6 +100,7 @@ data TextConfig = TextConfig
     metavar :: Text,
     value :: Maybe Text
   }
+
 
 defaultTextConfig :: TextConfig
 defaultTextConfig =
@@ -99,8 +112,10 @@ defaultTextConfig =
       value = Nothing
     }
 
+
 instance Default TextConfig where
   def = defaultTextConfig
+
 
 text :: TextConfig -> OptionsParser Text
 text config =
@@ -115,10 +130,11 @@ text config =
             OptParse.metavar (config.metavar |> Text.toLinkedList)
           ]
             ++ textValue
-            |> setting
+              |> setting
 
     OptParse.option OptParse.str options
     |> OptionsParser
+
 
 data PathConfig = PathConfig
   { help :: Text,
@@ -127,6 +143,7 @@ data PathConfig = PathConfig
     metavar :: Text,
     value :: Maybe Path
   }
+
 
 defaultPathConfig :: PathConfig
 defaultPathConfig =
@@ -138,8 +155,10 @@ defaultPathConfig =
       value = Nothing
     }
 
+
 instance Default PathConfig where
   def = defaultPathConfig
+
 
 path :: PathConfig -> OptionsParser Path
 path config = do
@@ -156,6 +175,7 @@ path config = do
     |> OptParse.option OptParse.str
     |> OptionsParser
 
+
 data JsonConfig value = JsonConfig
   { help :: Text,
     long :: Text,
@@ -163,6 +183,7 @@ data JsonConfig value = JsonConfig
     metavar :: Text,
     value :: Maybe value
   }
+
 
 defaultJsonConfig :: (Default value) => (JsonConfig value)
 defaultJsonConfig =
@@ -174,8 +195,10 @@ defaultJsonConfig =
       value = Nothing
     }
 
+
 instance (Default value) => Default (JsonConfig value) where
   def = defaultJsonConfig
+
 
 json ::
   ( Default value,
@@ -193,12 +216,14 @@ json config = do
           GHC.Right val -> Ok val
   parseWith (parseFunction) config
 
+
 data FlagConfig = FlagConfig
   { help :: Text,
     long :: Text,
     short :: Char,
     value :: Maybe Bool
   }
+
 
 defaultFlagConfig :: FlagConfig
 defaultFlagConfig =
@@ -209,8 +234,10 @@ defaultFlagConfig =
       value = defaultValue
     }
 
+
 instance Default FlagConfig where
   def = defaultFlagConfig
+
 
 flag :: FlagConfig -> OptionsParser Bool
 flag config = do
@@ -221,6 +248,7 @@ flag config = do
     ]
     |> OptParse.switch
     |> OptionsParser
+
 
 parseWith ::
   (ToText value) =>
@@ -250,9 +278,11 @@ parseWith parseFunc config = do
     |> OptParse.option reader
     |> OptionsParser
 
+
 resultToEither :: Result Text value -> GHC.Either (LinkedList Char) value
 resultToEither (Ok val) = GHC.Right val
 resultToEither (Err err) = GHC.Left (Text.toLinkedList err)
+
 
 commands :: Array (CommandOptions value) -> OptionsParser value
 commands commandConfigs = do
@@ -269,6 +299,7 @@ commands commandConfigs = do
           |> Combinable.mconcat
 
   OptionsParser (OptParse.subparser cmds)
+
 
 -- Private
 
