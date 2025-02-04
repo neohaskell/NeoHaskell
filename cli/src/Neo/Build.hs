@@ -14,6 +14,7 @@ import Path qualified
 import Subprocess qualified
 import Task qualified
 import Text qualified
+import ToText (toText)
 
 
 data Error
@@ -44,7 +45,7 @@ handle config = do
   -- TODO: Remember to copy using https://hackage.haskell.org/package/directory-1.3.8.1/docs/System-Directory.html#v:copyFileWithMetadata
   -- I mean into .neohaskell
   Directory.copy [path|src|] rootFolder
-    |> Task.mapError (\_ -> CustomError "COPY ERROR")
+    |> Task.mapError (\e -> CustomError (toText e))
 
   filepaths <-
     Directory.walk [path|src|]

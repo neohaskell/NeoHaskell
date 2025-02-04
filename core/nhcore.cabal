@@ -41,7 +41,9 @@ common common_cfg
       PyF,
       with-utf8,
       dir-traverse,
+      Cabal,
       template-haskell
+
 
     default-extensions:
       ApplicativeDo

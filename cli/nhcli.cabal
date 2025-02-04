@@ -41,7 +41,6 @@ common common_cfg
 
     build-depends:
       nhcore,
-      Cabal,
 
 
 

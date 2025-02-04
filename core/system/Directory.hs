@@ -15,6 +15,8 @@ import Basics
 import Console qualified
 import Control.Exception qualified as Exception
 import Data.Either qualified as Either
+import Distribution.Simple.Utils qualified as Cabal
+import Distribution.Verbosity qualified as CabalVerbosity
 import GHC.IO.Exception qualified as Exception
 import Maybe qualified
 import Path (Path)
@@ -80,9 +82,9 @@ copy src dest = do
   let destP = Path.toText dest
   log [fmt|[[Directory.copy] Attempting to copy {srcP} to {destP}|]
   let copyFileAction =
-        src
+        dest
           |> Path.toLinkedList
-          |> System.Directory.copyFile (Path.toLinkedList dest)
+          |> Cabal.copyDirectoryRecursive CabalVerbosity.silent (Path.toLinkedList src)
   result <- Exception.try @Exception.IOError copyFileAction |> Task.fromIO
   case result of
     Either.Left err -> do
