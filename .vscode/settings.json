@@ -6,15 +6,22 @@
     "Appendable",
     "clippy",
     "Defaultable",
+    "devenv",
+    "dont",
     "foldl",
     "fprint",
     "GADT",
+    "hlint",
     "Monoid",
     "Nanotime",
     "NEOHASKELL",
+    "nhcore",
+    "nixfmt",
+    "nixpkgs",
     "NOINLINE",
     "optparse",
     "OVERLAPPABLE",
+    "pkgs",
     "Posix",
     "reldir",
     "relfile",
@@ -24,5 +31,5 @@
     "Unagi"
   ],
   "haskell.manageHLS": "PATH",
-  "nixEnvSelector.nixFile": "${workspaceFolder}/devenv.nix"
+  "nixEnvSelector.nixFile": "${workspaceFolder}/shell.nix"
 }

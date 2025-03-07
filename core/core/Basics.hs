@@ -6,6 +6,7 @@
 module Basics (
   Unit,
   unit,
+  pass,
 
   -- * Math
   Int,
@@ -102,7 +103,7 @@ module Basics (
 
   -- * Reexported for records
   GHC.Records.HasField (..),
-  dieWith,
+  panic,
   Prelude.pure,
 
   -- * Reexported for syntax utility
@@ -122,6 +123,8 @@ module Basics (
   GHC.Generics.Generic,
 ) where
 
+import Applicable (Applicable)
+import Applicable qualified
 import Control.Monad qualified
 import Control.Monad qualified as Monad
 import Data.Bits qualified (xor)
@@ -871,10 +874,10 @@ never = Data.Void.absurd
 -- | Crashes the program with a message. This is useful for debugging, but you
 -- should not use it in production code. If you need to report an error to the
 -- user, use a @Result@
-dieWith :: (HasCallStack) => Text -> a
-dieWith msg =
+panic :: (HasCallStack) => Text -> a
+panic msg =
   Prelude.error (Text.unpack msg)
-{-# INLINE dieWith #-}
+{-# INLINE panic #-}
 
 
 discard ::
@@ -887,3 +890,11 @@ discard = Monad.void
 
 fmt :: QuasiQuoter
 fmt = PyF.fmt
+
+
+-- | Do nothing, return unit
+pass ::
+  forall (applicable :: Type -> Type).
+  (Applicable applicable) =>
+  applicable ()
+pass = Applicable.pure ()

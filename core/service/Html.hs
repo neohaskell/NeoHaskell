@@ -11,4 +11,4 @@ data Html
 
 
 html :: QuasiQuoter
-html = dieWith "not implemented"
+html = panic "not implemented"

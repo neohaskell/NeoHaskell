@@ -1,28 +1,57 @@
-module Neo (main) where
+{-# OPTIONS_GHC -fno-warn-name-shadowing #-}
 
-import Action qualified
-import Array (Array)
+module Neo (
+  run,
+) where
+
 import Array qualified
 import Command qualified
+import Console qualified
 import Core
+import File qualified
+import Json qualified
 import Neo.Build qualified as Build
-import Service qualified
+import Task qualified
+import Text qualified
 
 
-data State = State
-  { build :: Build.State
+data CommonFlags = CommonFlags
+  { projectFile :: Path
   }
   deriving (Show, Eq, Ord)
 
 
-data Event
-  = Build Build.Event
-  | NoOp
+data NeoCommand
+  = Build CommonFlags
   deriving (Show, Eq, Ord)
 
 
-commandParser :: Command.OptionsParser Event
-commandParser = do
+run :: Task _ Unit
+run = do
+  let message1 = "⚠️ NEOHASKELL IS IN ITS EARLY DAYS ⚠️"
+  let message2 = "HERE BE DRAGONS, BEWARE!"
+  let msgLength = Text.length message1 + 4
+  let paddedMessage1 = message1 |> Text.pad msgLength ' '
+  let paddedMessage2 = message2 |> Text.pad msgLength ' '
+  Console.print ""
+  Console.print ""
+  Console.print paddedMessage1
+  Console.print paddedMessage2
+  Console.print ""
+  Console.print ""
+  let parser =
+        Command.CommandOptions
+          { name = "neo",
+            description = "NeoHaskell's console helper",
+            version = Just [Core.version|0.5.0|],
+            decoder = commandsParser
+          }
+  cmd <- Command.parseHandler parser
+  handleCommand cmd
+
+
+commandsParser :: Command.OptionsParser NeoCommand
+commandsParser = do
   let build =
         Command.CommandOptions
           { name = "build",
@@ -34,57 +63,39 @@ commandParser = do
     (Array.fromLinkedList [build])
 
 
-buildParser :: Command.OptionsParser Event
+buildParser :: Command.OptionsParser NeoCommand
 buildParser = do
-  event <- Build.commandParser
-  pure (Build event)
+  common <- flagsParser
+  pure (Build common)
 
 
-init :: (State, Action Event)
-init = do
-  let emptyState = State {build = Build.initialState}
-  let action =
-        Command.parse
-          Command.CommandOptions
-            { name = "neo",
-              description = "NeoHaskell's console helper",
-              version = Just [version|0.5.0|],
-              decoder = commandParser
-            }
-  (emptyState, action)
+flagsParser :: Command.OptionsParser CommonFlags
+flagsParser = do
+  projectFilePath <-
+    Command.path
+      Command.PathConfig
+        { metavar = "PATH",
+          short = 'c',
+          help = "Path to the project configuration file",
+          long = "projectConfig",
+          value = Just [path|neo.json|]
+        }
+  pure (CommonFlags {projectFile = projectFilePath})
 
 
-update :: Event -> State -> (State, Action Event)
-update event state =
-  case event of
-    Build buildEvent -> do
-      let (newBuildState, buildAction) = Build.update buildEvent state.build
-      let newState = state {build = newBuildState}
-      let action = buildAction |> Action.map Build
-      (newState, action)
-    NoOp -> do
-      let newState = state
-      let action = Action.none
-      (newState, action)
+data Error
+  = BuildError Build.Error
+  | Other
+  deriving (Show)
 
 
-view :: State -> Text
-view s =
-  if s.build.message == ""
-    then "Loading"
-    else s.build.message
-
-
-triggers :: Array (Trigger Event)
-triggers = Array.empty
-
-
-main :: IO ()
-main =
-  Service.run
-    Service.UserApp
-      { init = init,
-        view = view,
-        triggers = triggers,
-        update = update
-      }
+handleCommand :: NeoCommand -> Task Error ()
+handleCommand command =
+  case command of
+    Build flags -> do
+      txt <- File.readText flags.projectFile |> Task.mapError (\_ -> Other)
+      case Json.decodeText txt of
+        Err err -> panic err
+        Ok config ->
+          Build.handle config
+            |> Task.mapError (\e -> BuildError e)

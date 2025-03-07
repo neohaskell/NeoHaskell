@@ -1,2 +1,3 @@
 packages:
-  */*.cabal
+  cli/*.cabal
+  core/*.cabal

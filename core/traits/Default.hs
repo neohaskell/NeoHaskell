@@ -3,7 +3,6 @@
 
 module Default (Default (..), defaultValue) where
 
-import Basics
 import Char (Char)
 import Data.Default
 import Text (Text)
@@ -21,5 +20,3 @@ instance Default Text where
   def = ""
 
 
-instance Default Bool where
-  def = False

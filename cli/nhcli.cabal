@@ -16,6 +16,8 @@ common common_cfg
     ghc-options:    -Wall
                     -Werror
                     -threaded
+                    -fno-warn-partial-type-signatures
+                    -fno-warn-name-shadowing
     default-extensions:
       ApplicativeDo
       BlockArguments
@@ -28,7 +30,6 @@ common common_cfg
       ImpredicativeTypes
       ImportQualifiedPost
       OverloadedStrings
-      OverloadedLists
       OverloadedLabels
       OverloadedRecordDot
       DuplicateRecordFields
@@ -36,15 +37,22 @@ common common_cfg
       NamedFieldPuns
       Strict
       TypeFamilies
+      PartialTypeSignatures
 
     build-depends:
       nhcore,
+
+
 
 library
     import:           common_cfg
     exposed-modules:
       Neo,
       Neo.Build,
+      Neo.Build.Templates.Cabal,
+      Neo.Build.Templates.Nix,
+      Neo.Core,
+      Neo.Core.ProjectConfiguration,
     -- other-modules:
     -- other-extensions:
     hs-source-dirs:   src

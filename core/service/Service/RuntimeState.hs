@@ -13,14 +13,16 @@ import Action qualified
 import Basics
 import Channel (Channel)
 import Command qualified
-import Console (print)
+import Console (log)
+import Directory qualified
 import File qualified
 import Http qualified
 import IO (IO)
 import Map qualified
 import Maybe (Maybe (..))
+import Subprocess qualified
 import Text (Text)
-import ToText (Show (..), ToText, toText)
+import ToText (Show (..), ToText, toPrettyText)
 import Unknown (Unknown)
 import Unknown qualified
 import Var (Var)
@@ -45,7 +47,7 @@ get ::
 get runtimeState = do
   maybeService <- Var.get runtimeState
   case maybeService of
-    Nothing -> dieWith "Service is not initialized"
+    Nothing -> panic "Service is not initialized"
     Just service -> pure service
 
 
@@ -80,17 +82,17 @@ registerActionHandler ::
   Reference event ->
   IO ()
 registerActionHandler actionHandlerName handler runtimeState = do
-  print "Getting state"
+  log "Getting state"
   service <- runtimeState |> get
-  print [fmt|Got state: {toText service}|]
+  log [fmt|Got state: {toPrettyText service}|]
   let actionHandler payload = do
-        print [fmt|Handling action {actionHandlerName} with payload {toText payload}|]
+        log [fmt|Handling action {actionHandlerName} with payload {toPrettyText payload}|]
         case (Unknown.toValue payload) of
           Nothing -> do
-            print "Payload is Nothing"
+            log "Payload is Nothing"
             pure Nothing
           Just pl -> do
-            print [fmt|Payload was Just {toText pl}|]
+            log [fmt|Payload was Just {toPrettyText pl}|]
             result <- handler pl
             pure (Just result)
   -- let actionHandlerName = Unknown.getTypeName @(payload -> IO event)
@@ -98,7 +100,7 @@ registerActionHandler actionHandlerName handler runtimeState = do
         service.actionHandlers
           |> Map.set actionHandlerName actionHandler
   let newService = service {actionHandlers = newRegistry}
-  print "Setting state"
+  log "Setting state"
   runtimeState
     |> set newService
 
@@ -117,8 +119,12 @@ registerDefaultActionHandlers runtimeState = do
       mkHandler h input = do
         res <- h input
         pure (Unknown.fromValue res)
+
   runtimeState
     |> registerActionHandler "File.readText" (mkHandler File.readTextHandler)
+
+  runtimeState
+    |> registerActionHandler "Directory.create" (mkHandler Directory.createHandler)
 
   runtimeState
     |> registerActionHandler "Command.parse" (mkHandler @(Command.CommandOptions event) @event Command.parseHandler)
@@ -128,3 +134,6 @@ registerDefaultActionHandlers runtimeState = do
 
   runtimeState
     |> registerActionHandler "Http.get" (mkHandler @(Http.Request event) @event Http.getActionHandler)
+
+  runtimeState
+    |> registerActionHandler "Subprocess.open" (mkHandler Subprocess.openHandler)

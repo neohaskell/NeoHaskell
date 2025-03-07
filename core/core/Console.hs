@@ -1,4 +1,4 @@
-module Console (print, readLine) where
+module Console (log, readLine, print) where
 
 import Appendable ((++))
 import Basics
@@ -9,13 +9,18 @@ import LinkedList qualified
 import Maybe (Maybe (..))
 import Maybe qualified
 import System.Environment qualified
+import Task (Task)
+import Task qualified
 import Text (Text, fromLinkedList)
-import ToText (toText)
+import ToText (toPrettyText)
 
+print :: Text -> Task _ Unit
+print text = Task.fromIO do
+  Data.Text.IO.putStrLn text
 
 -- TODO: Make this use a centralized monitoring thread
-print :: (Stack.HasCallStack) => Text -> IO Unit
-print text = do
+log :: (Stack.HasCallStack) => Text -> IO Unit
+log text = do
   -- we check that the NEOHASKELL_DEBUG environment variable is set to true
   -- if it isn´t we dont do anything
   maybeDebug <- System.Environment.lookupEnv "NEOHASKELL_DEBUG"
@@ -37,14 +42,13 @@ print text = do
                   ++ ":"
                   ++ Text.fromLinkedList (Stack.srcLocFile loc)
                   ++ ":"
-                  ++ (Stack.srcLocStartLine loc |> toText)
+                  ++ (Stack.srcLocStartLine loc |> toPrettyText)
                   ++ ":"
-                  ++ (Stack.srcLocStartCol loc |> toText)
+                  ++ (Stack.srcLocStartCol loc |> toPrettyText)
           let message = "[" ++ (coolLoc) ++ "]: " ++ text
           Data.Text.IO.putStrLn message
         _ -> pure ()
     else pure ()
-
 
 readLine :: IO Text
 readLine = Data.Text.IO.getLine

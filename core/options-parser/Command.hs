@@ -10,6 +10,7 @@ module Command (
   parse,
   parseHandler,
   commands,
+  map,
 ) where
 
 import Action (Action)
@@ -19,27 +20,36 @@ import Array (Array)
 import Array qualified
 import Basics
 import Char (Char)
+import Combinable (Combinable)
+import Combinable qualified
 import Control.Applicative qualified as Applicative
 import Data.Aeson qualified as Json
 import Data.Either qualified as GHC
 import Data.Functor qualified as Functor
 import Data.Version (Version)
 import Default (Default (..), defaultValue)
-import IO (IO)
 import LinkedList (LinkedList)
+import Mappable qualified
 import Maybe (Maybe (..))
 import Maybe qualified
-import OptEnvConf qualified
+import Options.Applicative qualified as OptParse
 import Path (Path)
 import Result (Result (..))
+import Task (Task)
+import Task qualified
 import Text (Text, fromLinkedList, toLinkedList)
+import Text qualified
 import ToText (Show (..), ToText)
 import Unknown qualified
-import Version (version)
+import Version qualified
 
 
-newtype OptionsParser value = OptionsParser (OptEnvConf.Parser value)
+newtype OptionsParser value = OptionsParser (OptParse.Parser value)
   deriving (Functor.Functor, Applicative.Applicative)
+
+
+map :: (a -> b) -> OptionsParser a -> OptionsParser b
+map f (OptionsParser parser) = OptionsParser (Mappable.fmap f parser)
 
 
 instance (Unknown.Convertible value) => Show (OptionsParser value) where
@@ -68,14 +78,19 @@ parse ::
 parse options = Action.named "Command.parse" options
 
 
-parseHandler :: CommandOptions event -> IO event
+parseHandler :: CommandOptions event -> Task _ event
 parseHandler options = do
   let (OptionsParser parser) = options.decoder
-  let programDescription = options.description |> Text.toLinkedList
   let ver =
         options.version
           |> Maybe.withDefault [Version.version|0.0.0|]
-  OptEnvConf.runParser ver programDescription parser
+          |> Version.toText
+  let programDescription =
+        [fmt|{options.description} - Version {ver}|]
+          |> Text.toLinkedList
+  let foo = OptParse.info (parser OptParse.<**> OptParse.helper) (OptParse.progDesc programDescription)
+  OptParse.execParser foo
+    |> Task.fromIO
 
 
 data TextConfig = TextConfig
@@ -103,19 +118,21 @@ instance Default TextConfig where
 
 
 text :: TextConfig -> OptionsParser Text
-text config = do
-  let textValue = case config.value of
-        Just val -> [OptEnvConf.value val]
-        Nothing -> []
-  let options =
-        [ OptEnvConf.help (config.help |> Text.toLinkedList),
-          OptEnvConf.long (config.long |> Text.toLinkedList),
-          OptEnvConf.short config.short,
-          OptEnvConf.metavar (config.metavar |> Text.toLinkedList),
-          OptEnvConf.reader OptEnvConf.str,
-          OptEnvConf.option
-        ]
-  OptEnvConf.setting (textValue ++ options)
+text config =
+  do
+    let textValue = case config.value of
+          Just val -> [OptParse.value val]
+          Nothing -> []
+    let options =
+          [ OptParse.help (config.help |> Text.toLinkedList),
+            OptParse.long (config.long |> Text.toLinkedList),
+            OptParse.short config.short,
+            OptParse.metavar (config.metavar |> Text.toLinkedList)
+          ]
+            ++ textValue
+              |> setting
+
+    OptParse.option OptParse.str options
     |> OptionsParser
 
 
@@ -146,17 +163,16 @@ instance Default PathConfig where
 path :: PathConfig -> OptionsParser Path
 path config = do
   let pathValue = case config.value of
-        Just val -> [OptEnvConf.value val]
+        Just val -> [OptParse.value val]
         Nothing -> []
   let options =
-        [ OptEnvConf.help (config.help |> Text.toLinkedList),
-          OptEnvConf.long (config.long |> Text.toLinkedList),
-          OptEnvConf.short config.short,
-          OptEnvConf.metavar (config.metavar |> Text.toLinkedList),
-          OptEnvConf.reader OptEnvConf.str,
-          OptEnvConf.option
+        [ OptParse.help (config.help |> Text.toLinkedList),
+          OptParse.long (config.long |> Text.toLinkedList),
+          OptParse.short config.short,
+          OptParse.metavar (config.metavar |> Text.toLinkedList)
         ]
-  OptEnvConf.setting (pathValue ++ options)
+  setting (pathValue ++ options)
+    |> OptParse.option OptParse.str
     |> OptionsParser
 
 
@@ -194,7 +210,7 @@ json ::
   OptionsParser value
 json config = do
   let parseFunction textToParse = do
-        let either = Json.eitherDecodeStrictText textToParse
+        let either = Json.eitherDecodeStrict (Text.convert textToParse)
         case either of
           GHC.Left err -> Err (Text.fromLinkedList err)
           GHC.Right val -> Ok val
@@ -225,12 +241,12 @@ instance Default FlagConfig where
 
 flag :: FlagConfig -> OptionsParser Bool
 flag config = do
-  OptEnvConf.setting
-    [ OptEnvConf.help (config.help |> Text.toLinkedList),
-      OptEnvConf.long (config.long |> Text.toLinkedList),
-      OptEnvConf.short config.short,
-      OptEnvConf.switch True
+  setting
+    [ OptParse.help (config.help |> Text.toLinkedList),
+      OptParse.long (config.long |> Text.toLinkedList),
+      OptParse.short config.short
     ]
+    |> OptParse.switch
     |> OptionsParser
 
 
@@ -245,22 +261,21 @@ parseWith parseFunc config = do
         let result = parseFunc textToParse
         resultToEither result
 
-  let reader = OptEnvConf.eitherReader wrappedParseFunction
+  let reader = OptParse.eitherReader wrappedParseFunction
 
   let defaultValueConfig = case config.value of
-        Just val -> [OptEnvConf.value val]
+        Just val -> [OptParse.value val]
         Nothing -> []
 
   let options =
-        [ OptEnvConf.help (config.help |> Text.toLinkedList),
-          OptEnvConf.long (config.long |> Text.toLinkedList),
-          OptEnvConf.short config.short,
-          OptEnvConf.metavar (config.metavar |> Text.toLinkedList),
-          OptEnvConf.reader reader,
-          OptEnvConf.option
+        [ OptParse.help (config.help |> Text.toLinkedList),
+          OptParse.long (config.long |> Text.toLinkedList),
+          OptParse.short config.short,
+          OptParse.metavar (config.metavar |> Text.toLinkedList)
         ]
 
-  OptEnvConf.setting (defaultValueConfig ++ options)
+  setting (defaultValueConfig ++ options)
+    |> OptParse.option reader
     |> OptionsParser
 
 
@@ -276,8 +291,18 @@ commands commandConfigs = do
           |> Array.map
             ( \config -> do
                 let (OptionsParser handler) = config.decoder
-                OptEnvConf.command (config.name |> Text.toLinkedList) (config.description |> Text.toLinkedList) (handler)
+                let name = (config.name |> Text.toLinkedList)
+                let description = OptParse.info handler (config.description |> Text.toLinkedList |> OptParse.progDesc)
+                OptParse.command name description
             )
           |> Array.toLinkedList
+          |> Combinable.mconcat
 
-  OptionsParser (OptEnvConf.commands cmds)
+  OptionsParser (OptParse.subparser cmds)
+
+
+-- Private
+
+-- Helper function to make porting to opt-env-conf in the future easily
+setting :: (Combinable m) => [m] -> m
+setting = Combinable.mconcat

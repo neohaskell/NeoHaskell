@@ -26,8 +26,8 @@ different parts of NeoHaskell.
 
 (This assumes that you're using MacOS, WSL2 or Linux)
 
-- Install DevEnv by following [the official instructions](https://devenv.sh/getting-started/).
-- Run `devenv shell`
+- Install [Nix](https://nixos.org/download/)
+- Run `nix-shell`
 - Run `cabal update && cabal build all`
 
 The recommended IDE for any NeoHaskell project is [Visual Studio Code](https://code.visualstudio.com/).

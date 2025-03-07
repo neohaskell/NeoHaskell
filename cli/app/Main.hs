@@ -1,8 +1,9 @@
 module Main where
 
 import Core
-import qualified Neo
+import Neo qualified
+import Task qualified
 
 
-main :: IO Unit
-main = Neo.main
+main :: IO ()
+main = Task.runOrPanic Neo.run

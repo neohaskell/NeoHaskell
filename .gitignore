@@ -34,3 +34,10 @@ cabal.project.local~
 
 # hie cradle generated automatically
 hie.yaml
+
+.neo
+sandbox/*.cabal
+sandbox/*.nix
+
+example.cabal
+result

@@ -30,9 +30,12 @@ module Array (
   foldr,
   foldl,
   takeIf,
+  dropIf,
   flatMap,
   forEach,
   foldM,
+  dropWhile,
+  takeWhile,
 ) where
 
 import Basics
@@ -53,7 +56,7 @@ import Prelude qualified
 -- (@Array Int@) or strings (@Array String@) or any other type of value you can
 -- dream up.
 newtype Array a = Array (Data.Vector.Vector a)
-  deriving (Prelude.Eq, Prelude.Show)
+  deriving (Prelude.Eq, Prelude.Show, Prelude.Ord)
 
 
 instance (QuickCheck.Arbitrary a) => QuickCheck.Arbitrary (Array a) where
@@ -206,6 +209,14 @@ takeIf f (Array vector) =
   Array (Data.Vector.filter f vector)
 
 
+-- | Drop elements that pass the test.
+--
+-- > dropIf isEven (fromLinkedList [1,2,3,4,5,6]) == (fromLinkedList [1,3,5])
+dropIf :: (a -> Bool) -> Array a -> Array a
+dropIf f (Array vector) =
+  Array (Data.Vector.filter (f .> not) vector)
+
+
 -- | Apply a function on every element in an array.
 --
 -- > map sqrt (fromLinkedList [1,4,9]) == fromLinkedList [1,2,3]
@@ -302,3 +313,15 @@ foldM :: forall (a :: Type) (b :: Type). (b -> a -> IO b) -> b -> Array a -> IO 
 foldM f initial self =
   unwrap self
     |> Data.Foldable.foldlM f initial
+
+
+-- | Drop elements from the beginning of an array until the given predicate
+-- returns false.
+dropWhile :: forall (value :: Type). (value -> Bool) -> Array value -> Array value
+dropWhile predicate (Array vector) = Array (Data.Vector.dropWhile predicate vector)
+
+
+-- | Keep elements from the beginning of an array until the given predicate
+-- returns false.
+takeWhile :: forall (value :: Type). (value -> Bool) -> Array value -> Array value
+takeWhile predicate (Array vector) = Array (Data.Vector.takeWhile predicate vector)

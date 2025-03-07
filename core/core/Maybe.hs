@@ -1,22 +1,22 @@
 -- | This library fills a bunch of important niches in Elm. A Maybe can help you with optional arguments, error handling, and records with optional fields.
-module Maybe
-  ( -- * Definition
-    Maybe (..),
+module Maybe (
+  -- * Definition
+  Maybe (..),
 
-    -- * Common Helpers
-    withDefault,
-    map,
+  -- * Common Helpers
+  withDefault,
+  map,
 
-    -- * Chaining Maybes
-    andThen,
-    getOrDie,
-  )
-where
+  -- * Chaining Maybes
+  andThen,
+  getOrDie,
+) where
 
 import Basics
 import Data.Maybe (Maybe (..), fromMaybe)
 import Mappable qualified
 import Thenable qualified
+
 
 -- | Provide a default value, turning an optional value into a normal
 -- value.  This comes in handy when paired with functions like
@@ -30,10 +30,12 @@ withDefault :: a -> Maybe a -> a
 withDefault =
   Data.Maybe.fromMaybe
 
+
 -- | Transform a @Maybe@ value with a function:
 map :: (a -> b) -> Maybe a -> Maybe b
 map =
   Mappable.map
+
 
 -- | Chain together many computations that may fail. It is helpful to see an
 -- equivalent definition:
@@ -71,6 +73,7 @@ andThen :: (a -> Maybe b) -> Maybe a -> Maybe b
 andThen =
   Thenable.andThen
 
+
 -- | Attempts to retrieve the value from a @Maybe@. If the @Maybe@ is @Nothing@,
 -- the application will crash abruptly.
 getOrDie :: Maybe a -> a
@@ -79,5 +82,5 @@ getOrDie maybe =
     Just value ->
       value
     Nothing ->
-      dieWith "Maybe.getOrDie: Got Nothing"
+      panic "Maybe.getOrDie: Got Nothing"
 {-# INLINE getOrDie #-}

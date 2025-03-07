@@ -1,66 +1,94 @@
 module Neo.Build (
-  Event,
-  BuildEvent (..),
-  State (..),
-  commandParser,
-  initialState,
-  update,
-  view,
+  handle,
+  Error (..),
 ) where
 
-import Action qualified
-import Command qualified
-import Core
+import Array qualified
+import Directory qualified
 import File qualified
+import Maybe qualified
+import Neo.Build.Templates.Cabal qualified as Cabal
+import Neo.Build.Templates.Nix qualified as Nix
+import Neo.Core
+import Path qualified
+import Subprocess qualified
+import Task qualified
+import Text qualified
+import ToText (toText)
 
 
-type Event = BuildEvent
+data Error
+  = NixFileError
+  | CabalFileError
+  | CustomError Text
+  deriving (Show)
 
 
-data BuildEvent
-  = BuildStarted
-  | ProjectFileNotFound
-  | ReadProjectFile Text
-  deriving (Show, Eq, Ord)
+handle :: ProjectConfiguration -> Task Error Unit
+handle config = do
+  let haskellExtension = ".hs"
+  let projectName = config.name
+  let rootFolder = [path|.neohaskell|]
+  let nixFileName = [path|default.nix|]
+  let cabalFileName =
+        [fmt|{projectName}.cabal|]
+          |> Path.fromText
+          |> Maybe.getOrDie -- TODO: Make better error handling here
+  let nixFile = Nix.template config
+  let nixFilePath =
+        Array.fromLinkedList [rootFolder, nixFileName]
+          |> Path.joinPaths
+  let cabalFilePath =
+        Array.fromLinkedList [rootFolder, cabalFileName]
+          |> Path.joinPaths
+
+  -- TODO: Remember to copy using https://hackage.haskell.org/package/directory-1.3.8.1/docs/System-Directory.html#v:copyFileWithMetadata
+  -- I mean into .neohaskell
+  Directory.copy [path|src|] rootFolder
+    |> Task.mapError (\e -> CustomError (toText e))
+
+  filepaths <-
+    Directory.walk [path|src|]
+      |> Task.mapError (\_ -> CustomError "WALK ERROR")
+
+  let haskellFiles = filepaths |> Array.takeIf (Path.endsWith haskellExtension)
+
+  -- -- haskellFiles = [A.hs,A/Lol.hs,A/B/Haha.hs,A/B/C/Rofl.hs]
+  -- -- Convert to:
+  -- -- modules = [A, A.Lol, A.B, A.B.C]
+  let convertToModule filepath = do
+        let pathText = Path.toText filepath
+        -- first we remove the extension
+        let pathWithoutExtension = Text.dropRight (Text.length haskellExtension) pathText
+        -- then we split on the path separator
+        let pathParts = Text.split "/" pathWithoutExtension
+        -- then we convert each part to a module name
+        pathParts |> Text.joinWith "."
+
+  let modules = haskellFiles |> Array.map convertToModule
+  let cabalFile = Cabal.template config modules
+
+  Directory.create rootFolder
+    |> Task.mapError (\_ -> [fmt|Could not create directory {Path.toText rootFolder}|] |> CustomError)
+
+  File.writeText nixFilePath nixFile
+    |> Task.mapError (\_ -> NixFileError)
+
+  File.writeText cabalFilePath cabalFile
+    |> Task.mapError (\_ -> CabalFileError)
+
+  -- FIXME: Create another thread that renders the output of the build via streaming.
+  -- As right now there's no output at all
+  completion <- Subprocess.open "nix-build" (Array.fromLinkedList []) rootFolder
+  -- completion <- Subprocess.open "nix-build" (Array.fromLinkedList ["-E", nixFile]) rootFolder
+  if completion.exitCode != 0
+    then errorOut completion.stderr
+    else print completion.stdout
 
 
-commandParser :: Command.OptionsParser BuildEvent
-commandParser = do
-  pure BuildStarted
-
-
-data State = State
-  { message :: Text
-  }
-  deriving (Show, Eq, Ord)
-
-
-initialState :: State
-initialState =
-  State
-    { message = "Build Started"
-    }
-
-
-update :: BuildEvent -> State -> (State, Action BuildEvent)
-update event state =
-  case event of
-    BuildStarted -> do
-      let handleRes res = case res of
-            Ok text -> ReadProjectFile text
-            Err _ -> ProjectFileNotFound
-      let opts =
-            File.ReadOptions
-              { path = "foo.txt"
-              }
-      (state, File.readText opts |> Action.map handleRes)
-    ReadProjectFile text -> do
-      let newState = state {message = text}
-      (newState, Action.none)
-    ProjectFileNotFound -> do
-      let newState = state {message = "Project file not found"}
-      (newState, Action.none)
-
-
-view :: State -> View
-view = dieWith "Not implemented yet"
+errorOut :: Text -> Task Error _
+errorOut err =
+  [fmt|Oops the build failed:
+    {err}|]
+    |> CustomError
+    |> Task.throw
