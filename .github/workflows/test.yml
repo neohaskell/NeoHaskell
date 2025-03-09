@@ -37,7 +37,7 @@ jobs:
         run: nix-shell --run "cabal update"
 
       - name: Build the project
-        run: nix-shell --run "cabal build"
+        run: nix-shell --run "cabal build all"
 
       - name: Run core tests
         run: nix-shell --run "cabal test core"
