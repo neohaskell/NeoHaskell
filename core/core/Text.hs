@@ -76,6 +76,13 @@ module Text (
   toBytes,
   fromBytes,
   convert,
+
+  -- * Casing Conversions
+  toPascalCase,
+  toCamelCase,
+  toTitleCase,
+  toSnakeCase,
+  toKebabCase,
 ) where
 
 import Array (Array)
@@ -86,6 +93,7 @@ import Bytes qualified
 import Char (Char)
 import Data.Text qualified
 import Data.Text.Encoding qualified
+import Data.Text.Manipulate qualified as Manipulate
 import LinkedList (LinkedList)
 import Maybe (Maybe)
 import Text.Read qualified
@@ -574,3 +582,28 @@ fromBytes (Bytes.INTERNAL_CORE_BYTES_CONSTRUCTOR bytes) =
 
 convert :: (IsString s) => Text -> s
 convert text = Data.Text.unpack text |> fromString
+
+
+toPascalCase :: Text -> Text
+toPascalCase txt =
+  Manipulate.toPascal txt
+
+
+toCamelCase :: Text -> Text
+toCamelCase txt =
+  Manipulate.toCamel txt
+
+
+toTitleCase :: Text -> Text
+toTitleCase txt =
+  Manipulate.toTitle txt
+
+
+toSnakeCase :: Text -> Text
+toSnakeCase txt =
+  Manipulate.toSnake txt
+
+
+toKebabCase :: Text -> Text
+toKebabCase txt =
+  Manipulate.toSpinal txt

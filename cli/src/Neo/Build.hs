@@ -7,6 +7,7 @@ import Array qualified
 import Directory qualified
 import File qualified
 import Maybe qualified
+import Neo.Build.Templates.AppMain qualified as AppMain
 import Neo.Build.Templates.Cabal qualified as Cabal
 import Neo.Build.Templates.Nix qualified as Nix
 import Neo.Core
@@ -28,7 +29,7 @@ handle :: ProjectConfiguration -> Task Error Unit
 handle config = do
   let haskellExtension = ".hs"
   let projectName = config.name
-  let rootFolder = [path|.neohaskell|]
+  let rootFolder = [path|nhout|]
   let nixFileName = [path|default.nix|]
   let cabalFileName =
         [fmt|{projectName}.cabal|]
@@ -41,10 +42,19 @@ handle config = do
   let cabalFilePath =
         Array.fromLinkedList [rootFolder, cabalFileName]
           |> Path.joinPaths
+  let targetAppFolder =
+        Array.fromLinkedList [rootFolder, "app"]
+          |> Path.joinPaths
+  let targetAppPath =
+        Array.fromLinkedList [targetAppFolder, "Main.hs"]
+          |> Path.joinPaths
+  let targetSrcFolder =
+        Array.fromLinkedList [rootFolder, "src"]
+          |> Path.joinPaths
 
   -- TODO: Remember to copy using https://hackage.haskell.org/package/directory-1.3.8.1/docs/System-Directory.html#v:copyFileWithMetadata
   -- I mean into .neohaskell
-  Directory.copy [path|src|] rootFolder
+  Directory.copy [path|src|] targetSrcFolder
     |> Task.mapError (\e -> CustomError (toText e))
 
   filepaths <-
@@ -67,9 +77,13 @@ handle config = do
 
   let modules = haskellFiles |> Array.map convertToModule
   let cabalFile = Cabal.template config modules
+  let appMainFile = AppMain.template config
 
   Directory.create rootFolder
     |> Task.mapError (\_ -> [fmt|Could not create directory {Path.toText rootFolder}|] |> CustomError)
+
+  Directory.create targetAppFolder
+    |> Task.mapError (\_ -> [fmt|Could not create directory {Path.toText targetAppFolder}|] |> CustomError)
 
   File.writeText nixFilePath nixFile
     |> Task.mapError (\_ -> NixFileError)
@@ -77,10 +91,12 @@ handle config = do
   File.writeText cabalFilePath cabalFile
     |> Task.mapError (\_ -> CabalFileError)
 
+  File.writeText targetAppPath appMainFile
+    |> Task.mapError (\_ -> CustomError "Could not write app main file")
+
   -- FIXME: Create another thread that renders the output of the build via streaming.
   -- As right now there's no output at all
-  completion <- Subprocess.open "nix-build" (Array.fromLinkedList []) rootFolder
-  -- completion <- Subprocess.open "nix-build" (Array.fromLinkedList ["-E", nixFile]) rootFolder
+  completion <- Subprocess.openInherit "nix-build" (Array.fromLinkedList []) rootFolder Subprocess.InheritBOTH
   if completion.exitCode != 0
     then errorOut completion.stderr
     else print completion.stdout

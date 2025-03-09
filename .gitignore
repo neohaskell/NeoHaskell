@@ -35,7 +35,7 @@ cabal.project.local~
 # hie cradle generated automatically
 hie.yaml
 
-.neo
+nhout
 sandbox/*.cabal
 sandbox/*.nix
 

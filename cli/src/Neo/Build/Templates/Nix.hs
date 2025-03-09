@@ -17,7 +17,7 @@ pinnedNixpkgs =
 
 
 template :: ProjectConfiguration -> Text
-template _ =
+template ProjectConfiguration {name} =
   {-
   https://github.com/NixOS/nixpkgs/blob/777a9707e72e6dbbbdf9033c44f237154c64e9f7/pkgs/development/haskell-modules/make-package-set.nix#L227-L254
 
@@ -32,12 +32,14 @@ template _ =
   [fmt|{{ pkgs ? ({pinnedNixpkgs}) {{}} }}:
   let
     neoHaskellGitHub = builtins.fetchTarball
-          "https://github.com/NeoHaskell/NeoHaskell/archive/refs/heads/dev.tar.gz";
+          "https://github.com/NeoHaskell/NeoHaskell/archive/refs/heads/main.tar.gz";
   in
     pkgs.haskellPackages.developPackage {{
+      name = "{name}";
       root = ./.;
+      returnShellEnv = false;
       source-overrides = {{
         nhcore = "${{neoHaskellGitHub}}/core";
       }};
-    }}
+    }} // {{ name = "{name}"; }}
   |]

@@ -27,6 +27,7 @@ common common_cfg
       text,
       vector,
       directory,
+      text-manipulate,
       transformers,
       http-conduit,
       containers,

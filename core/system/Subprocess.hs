@@ -1,7 +1,9 @@
 module Subprocess (
   OpenOptions (..),
   Completion (..),
+  InheritStream (..),
   open,
+  openInherit,
 ) where
 
 import Array (Array)
@@ -35,8 +37,21 @@ data OpenOptions = OpenOptions
   deriving (Eq, Ord, Show)
 
 
-open :: Text -> Array Text -> Path -> Task _ Completion
-open executable arguments directory = do
+data InheritStream
+  = InheritSTDOUT
+  | InheritSTDERR
+  | InheritBOTH
+  | InheritNONE
+  deriving (Eq, Ord, Show)
+
+
+openInherit :: Text -> Array Text -> Path -> InheritStream -> Task _ Completion
+openInherit executable arguments directory inheritStream = do
+  let (stdoutStream, stderrStream) = case inheritStream of
+        InheritSTDOUT -> (System.Process.Inherit, System.Process.CreatePipe)
+        InheritSTDERR -> (System.Process.CreatePipe, System.Process.Inherit)
+        InheritBOTH -> (System.Process.Inherit, System.Process.Inherit)
+        InheritNONE -> (System.Process.CreatePipe, System.Process.CreatePipe)
   let exec = Text.toLinkedList executable
   let args = Array.map Text.toLinkedList arguments |> Array.toLinkedList
   let processToExecute =
@@ -47,14 +62,23 @@ open executable arguments directory = do
           { System.Process.cwd =
               directory
                 |> Path.toLinkedList
-                |> Maybe.Just
+                |> Maybe.Just,
+            System.Process.std_out = stdoutStream,
+            System.Process.std_err = stderrStream
           }
-  (ec, out, err) <-
-    System.Process.readCreateProcessWithExitCode processToExecute ""
+  (_, _, _, ph) <-
+    -- System.Process.readCreateProcessWithExitCode processToExecute ""
+    System.Process.createProcess processToExecute
       |> Task.fromIO
+  ec <- System.Process.waitForProcess ph |> Task.fromIO
   let exitCode = case ec of
         System.Exit.ExitSuccess -> 0
         System.Exit.ExitFailure code -> code
-  let stdout = Text.fromLinkedList out
-  let stderr = Text.fromLinkedList err
+  let stdout = ""
+  let stderr = ""
   Task.yield Completion {exitCode, stdout, stderr}
+
+
+open :: Text -> Array Text -> Path -> Task _ Completion
+open executable arguments directory =
+  openInherit executable arguments directory InheritNONE
