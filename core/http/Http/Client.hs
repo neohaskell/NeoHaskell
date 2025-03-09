@@ -2,60 +2,49 @@ module Http.Client (
   Request (..),
   Error (..),
   get,
-  getActionHandler,
-  getActionName,
-  expectJson,
+  post,
   request,
   withUrl,
   addHeader,
 ) where
 
-import Action qualified
 import Core
-import IO qualified
 import Json qualified
 import Map qualified
 import Maybe qualified
 import Network.HTTP.Simple qualified as Http
 import Network.HTTP.Simple qualified as HttpSimple
-import Result qualified
+import Task qualified
 import Text qualified
-import Unknown qualified
 
 
-moduleName :: Text
-moduleName = "Http.Client"
-
-
-data Request (event :: Type) = Request
+data Request = Request
   { url :: Maybe Text,
-    headers :: Map Text Text,
-    mapper :: Maybe (Result Error Json.Value -> event)
+    headers :: Map Text Text
   }
   deriving (Show)
 
 
-instance Default (Request event) where
+instance Default Request where
   def =
     Request
       { url = Nothing,
-        mapper = Nothing,
         headers = Map.empty
       }
 
 
-request :: Request event
+request :: Request
 request = def
 
 
-withUrl :: Text -> Request event -> Request event
+withUrl :: Text -> Request -> Request
 withUrl url options =
   options
     { url = Just url
     }
 
 
-addHeader :: Text -> Text -> Request event -> Request event
+addHeader :: Text -> Text -> Request -> Request
 addHeader key value options =
   options
     { headers = options.headers |> Map.set key value
@@ -66,34 +55,12 @@ data Error = Error Text
   deriving (Show)
 
 
-expectJson :: (Result Error Json.Value -> event) -> Request event -> Request event
-expectJson userMapper options = do
-  options
-    { mapper = Just userMapper
-    }
-
-
-getActionName :: Text
-getActionName = [fmt|{moduleName}.get|]
-
-
-get :: (Unknown.Convertible event) => Request event -> Action event
-get options = Action.named getActionName options
-
-
-getActionHandler :: Request event -> IO event
-getActionHandler options = do
-  let errorHandler err = do
-        log [fmt|Error occurred! {toPrettyText err}|]
-        toPrettyText err |> Error |> Err |> pure
-  let mapper = options.mapper |> Maybe.withDefault (panic "mapper is required")
+get ::
+  (Json.FromJSON response) =>
+  Request ->
+  Task Error response
+get options = Task.fromIO do
   let url = options.url |> Maybe.withDefault (panic "url is required")
-
-  let actualMapping res = do
-        log [fmt|Mapping response:{toPrettyText res}|]
-        res
-          |> mapper
-          |> pure
 
   log "Parsing request"
   r <- Text.toLinkedList url |> HttpSimple.parseRequest
@@ -105,13 +72,36 @@ getActionHandler options = do
             HttpSimple.addRequestHeader (Text.convert key) (Text.convert value) acc
 
   log "Performing request"
-  res <- HttpSimple.httpJSON req |> IO.try
-  response <-
-    case res of
-      Err err -> errorHandler err
-      Ok response -> pure (Ok response)
+  response <- HttpSimple.httpJSON req
 
   log "Returning"
-  response
-    |> Result.map Http.getResponseBody
-    |> actualMapping
+  Http.getResponseBody response
+    |> pure
+
+
+-- | Performs a POST request
+post ::
+  (Json.FromJSON response, Json.ToJSON requestBody) =>
+  Request ->
+  requestBody ->
+  Task Error response
+post options body = Task.fromIO do
+  let url = options.url |> Maybe.withDefault (panic "url is required")
+
+  log "Parsing request"
+  r <- Text.toLinkedList url |> HttpSimple.parseRequest
+
+  log "Setting headers"
+  let req =
+        options.headers
+          |> Map.reduce r \key value acc ->
+            HttpSimple.addRequestHeader (Text.convert key) (Text.convert value) acc
+              |> HttpSimple.setRequestMethod "POST"
+              |> HttpSimple.setRequestBodyJSON body
+
+  log "Performing request"
+  response <- HttpSimple.httpJSON req
+
+  log "Returning"
+  Http.getResponseBody response
+    |> pure

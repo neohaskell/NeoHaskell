@@ -3,6 +3,7 @@ pkgs.mkShell rec {
   buildInputs = [
     # Haskell dev tools
     pkgs.ghc
+    pkgs.cabal-install
     pkgs.haskell-language-server
     pkgs.ormolu
     pkgs.hlint

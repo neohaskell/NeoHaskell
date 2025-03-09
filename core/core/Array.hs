@@ -7,6 +7,7 @@ module Array (
   empty,
   initialize,
   repeat,
+  wrap,
   fromLinkedList,
 
   -- * Query
@@ -36,6 +37,11 @@ module Array (
   foldM,
   dropWhile,
   takeWhile,
+
+  -- * Partitioning?
+  partitionBy,
+  splitFirst,
+  any,
 ) where
 
 import Basics
@@ -56,7 +62,7 @@ import Prelude qualified
 -- (@Array Int@) or strings (@Array String@) or any other type of value you can
 -- dream up.
 newtype Array a = Array (Data.Vector.Vector a)
-  deriving (Prelude.Eq, Prelude.Show, Prelude.Ord)
+  deriving (Prelude.Eq, Prelude.Show, Prelude.Ord, Generic)
 
 
 instance (QuickCheck.Arbitrary a) => QuickCheck.Arbitrary (Array a) where
@@ -125,6 +131,11 @@ repeat :: Int -> a -> Array a
 repeat n element =
   Array
     <| Data.Vector.replicate (Prelude.fromIntegral n) element
+
+
+-- | Wraps an element into an array
+wrap :: a -> Array a
+wrap element = fromLinkedList [element]
 
 
 -- | Create an array from a 'LinkedList'.
@@ -302,7 +313,8 @@ flatMap f array =
     |> foldr append empty
 
 
--- | Emulates a foreach-loop like in other languages.
+-- | Emulates a foreach-loop like in other languages
+-- FIXME: https://github.com/neohaskell/NeoHaskell/issues/126
 forEach :: forall (element :: Type). (element -> IO ()) -> Array element -> IO ()
 forEach callback self =
   Data.Foldable.traverse_ callback (unwrap self)
@@ -325,3 +337,34 @@ dropWhile predicate (Array vector) = Array (Data.Vector.dropWhile predicate vect
 -- returns false.
 takeWhile :: forall (value :: Type). (value -> Bool) -> Array value -> Array value
 takeWhile predicate (Array vector) = Array (Data.Vector.takeWhile predicate vector)
+
+
+-- | Partition an array into two subarrays based on a predicate.
+-- The first array contains elements that satisfy the predicate,
+-- while the second contains elements that do not.
+--
+-- > partitionBy isEven (fromLinkedList [1,2,3,4,5,6]) == (fromLinkedList [2,4,6], fromLinkedList [1,3,5])
+partitionBy :: forall (value :: Type). (value -> Bool) -> Array value -> (Array value, Array value)
+partitionBy predicate (Array vector) = do
+  let (matching, nonMatching) = Data.Vector.partition predicate vector
+  (Array matching, Array nonMatching)
+
+
+-- | Split an array into its first element and the remaining elements.
+-- If the array is empty, return `Nothing`.
+--
+-- > splitFirst (fromLinkedList [1,2,3]) == Just (1, fromLinkedList [2,3])
+splitFirst :: forall (value :: Type). Array value -> Maybe (value, Array value)
+splitFirst (Array vector) = do
+  case Data.Vector.uncons vector of
+    Nothing -> Nothing
+    Just (first, rest) -> Just (first, Array rest)
+
+
+-- | Checks if any element in an array satisfies a given predicate.
+-- Returns `True` if at least one element matches, otherwise `False`.
+--
+-- > any isEven (fromLinkedList [1,3,5,6]) == True
+-- > any isEven (fromLinkedList [1,3,5]) == False
+any :: forall (value :: Type). (value -> Bool) -> Array value -> Bool
+any predicate (Array vector) = Data.Vector.any predicate vector
