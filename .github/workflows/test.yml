@@ -10,7 +10,7 @@ on:
 
 defaults:
   run:
-    shell: nix-shell --rul "bash -e {0}"
+    shell: nix-shell --run "bash -e {0}"
 
 jobs:
   tests:
