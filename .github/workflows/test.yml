@@ -8,9 +8,9 @@ on:
     branches:
       - main
 
-defaults:
-  run:
-    shell: nix-shell --run "bash -e {0}"
+# defaults:
+#   run:
+#     shell: nix-shell --run "bash -e {0}"
 
 jobs:
   tests:
