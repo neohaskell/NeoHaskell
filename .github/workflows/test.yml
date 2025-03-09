@@ -8,10 +8,6 @@ on:
     branches:
       - main
 
-defaults:
-  run:
-    shell: nix-shell --run "bash -e {0}"
-
 jobs:
   tests:
     strategy:
@@ -21,7 +17,7 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-      - uses: cachix/install-nix-action@v26
+      - uses: cachix/install-nix-action@v27
       - name: Cache Cabal
         id: cache
         uses: actions/cache@v4
@@ -34,13 +30,13 @@ jobs:
 
       - name: Update Cabal Hackage list
         # if: steps.cache.outputs.cache-hit != 'true'
-        run: cabal update
+        run: nix-shell --run "cabal update"
 
       - name: Build the project
-        run: cabal build all
+        run: nix-shell --run "cabal build"
 
       - name: Run core tests
-        run: cabal test core
+        run: nix-shell --run "cabal test core"
 
       - name: Run CLI tests
-        run: cabal test cli
+        run: nix-shell --run "cabal test cli"
