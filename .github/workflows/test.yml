@@ -8,9 +8,9 @@ on:
     branches:
       - main
 
-# defaults:
-#   run:
-#     shell: nix-shell --run "bash -e {0}"
+defaults:
+  run:
+    shell: nix-shell --run "bash -e {0}"
 
 jobs:
   tests:
@@ -34,13 +34,13 @@ jobs:
 
       - name: Update Cabal Hackage list
         # if: steps.cache.outputs.cache-hit != 'true'
-        run: cabal --enable-nix update
+        run: cabal update
 
       - name: Build the project
-        run: cabal --enable-nix build all
+        run: cabal build all
 
       - name: Run core tests
-        run: cabal --enable-nix test core
+        run: cabal test core
 
       - name: Run CLI tests
-        run: cabal --enable-nix test cli
+        run: cabal test cli
