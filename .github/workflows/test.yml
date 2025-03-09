@@ -10,7 +10,7 @@ on:
 
 defaults:
   run:
-    shell: devenv shell bash -- -e {0}
+    shell: nix-shell --rul "bash -e {0}"
 
 jobs:
   tests:
@@ -22,14 +22,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: cachix/install-nix-action@v26
-      - uses: cachix/cachix-action@v14
-        with:
-          name: devenv
-
-      - name: Install devenv.sh
-        shell: sh
-        run: nix profile install nixpkgs#devenv
-
       - name: Cache Cabal
         id: cache
         uses: actions/cache@v4
@@ -42,16 +34,13 @@ jobs:
 
       - name: Update Cabal Hackage list
         # if: steps.cache.outputs.cache-hit != 'true'
-        run: run-update
-
-      # - name: Build the devenv shell and run any pre-commit hooks
-      # run: devenv test
+        run: cabal --enable-nix update
 
       - name: Build the project
-        run: run-build
+        run: cabal --enable-nix build all
 
       - name: Run core tests
-        run: run-core-tests
+        run: cabal --enable-nix test core
 
       - name: Run CLI tests
-        run: run-cli-tests
+        run: cabal --enable-nix test cli
