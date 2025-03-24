@@ -11,6 +11,7 @@ import Core
 import File qualified
 import Json qualified
 import Neo.Build qualified as Build
+import Neo.Run qualified as Run
 import Task qualified
 import Text qualified
 
@@ -23,6 +24,7 @@ data CommonFlags = CommonFlags
 
 data NeoCommand
   = Build CommonFlags
+  | Run CommonFlags
   deriving (Show, Eq, Ord)
 
 
@@ -55,18 +57,31 @@ commandsParser = do
   let build =
         Command.CommandOptions
           { name = "build",
-            description = "build a file or directory",
+            description = "build the project",
             version = Nothing,
             decoder = buildParser
           }
+  let run =
+        Command.CommandOptions
+          { name = "run",
+            description = "run the project",
+            version = Nothing,
+            decoder = runParser
+          }
   Command.commands
-    (Array.fromLinkedList [build])
+    (Array.fromLinkedList [build, run])
 
 
 buildParser :: Command.OptionsParser NeoCommand
 buildParser = do
   common <- flagsParser
   pure (Build common)
+
+
+runParser :: Command.OptionsParser NeoCommand
+runParser = do
+  common <- flagsParser
+  pure (Run common)
 
 
 flagsParser :: Command.OptionsParser CommonFlags
@@ -85,6 +100,7 @@ flagsParser = do
 
 data Error
   = BuildError Build.Error
+  | RunError Run.Error
   | Other
   deriving (Show)
 
@@ -99,3 +115,12 @@ handleCommand command =
         Ok config ->
           Build.handle config
             |> Task.mapError (\e -> BuildError e)
+    Run flags -> do
+      txt <- File.readText flags.projectFile |> Task.mapError (\_ -> Other)
+      case Json.decodeText txt of
+        Err err -> panic err
+        Ok config -> do
+          Build.handle config
+            |> Task.mapError (\e -> BuildError e)
+          Run.handle config
+            |> Task.mapError (\e -> RunError e)
