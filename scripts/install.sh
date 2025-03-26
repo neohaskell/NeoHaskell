@@ -4,7 +4,7 @@ set -euo pipefail
 
 fail() {
     echo ""
-    echo "     ❌ Oops! The installation script encountered an error."
+    echo "neo: ❌ Oops! The installation script encountered an error."
     echo ""
     echo "     If it's taking you more than 15 minutes to figure out,"
     echo "     consider it a bug in the installer, not your fault."
