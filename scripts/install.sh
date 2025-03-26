@@ -31,3 +31,5 @@ echo "📦 Installing NeoHaskell from GitHub..."
 nix-env -if https://github.com/neohaskell/NeoHaskell/archive/refs/heads/main.tar.gz
 
 echo "✅ NeoHaskell installed successfully!"
+echo ""
+echo "Try running 'neo --help' to see what you can do with it."
