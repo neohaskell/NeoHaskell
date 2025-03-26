@@ -30,7 +30,7 @@ data NeoCommand
   deriving (Show, Eq, Ord)
 
 
-run :: Task _ Unit
+run :: Task Text Unit
 run = do
   let message1 = "⚠️ NEOHASKELL IS IN ITS EARLY DAYS ⚠️"
   let message2 = "HERE BE DRAGONS, BEWARE!"
@@ -52,6 +52,21 @@ run = do
           }
   cmd <- Command.parseHandler parser
   handleCommand cmd
+    |> Task.mapError
+      \e ->
+        [fmt|
+Neo: While running your command, I've encountered an error:
+     {errorToText e}
+
+     It looks like your last command failed. Remember, if it is taking
+     you more than 15 minutes to figure it out, it is a bug in the system.
+
+     Please go to:
+
+     https://github.com/neohaskell/neohaskell/issues/new
+
+     And report it. I'll be waiting for you.
+    |]
 
 
 commandsParser :: Command.OptionsParser NeoCommand
@@ -132,7 +147,34 @@ data Error
   | RunError Run.Error
   | NewError New.Error
   | Other
-  deriving (Show)
+
+
+errorToText :: Error -> Text
+errorToText err =
+  case err of
+    BuildError buildError ->
+      [fmt|Error building the project, check the logs above for more details.
+
+
+        Here's some more info though:
+
+        {toPrettyText buildError}|]
+    RunError runError ->
+      [fmt|Error running the project, check the logs above for more details.
+
+
+        Here's some more info though:
+
+        {toPrettyText runError}|]
+    NewError newError ->
+      [fmt|Error creating the project, check the logs above for more details.
+
+
+        Here's some more info though:
+
+        {toPrettyText newError}|]
+    Other ->
+      [fmt|An unknown error occurred, check the logs above for more details.|]
 
 
 handleCommand :: NeoCommand -> Task Error ()

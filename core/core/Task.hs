@@ -1,17 +1,17 @@
-module Task
-  ( Task (..),
-    yield,
-    throw,
-    map,
-    apply,
-    andThen,
-    run,
-    runOrPanic,
-    mapError,
-    fromFailableIO,
-    fromIO,
-  )
-where
+module Task (
+  Task (..),
+  yield,
+  throw,
+  map,
+  apply,
+  andThen,
+  run,
+  runOrPanic,
+  mapError,
+  fromFailableIO,
+  fromIO,
+  runMain,
+) where
 
 import Applicable (Applicative (pure))
 import Applicable qualified
@@ -21,6 +21,7 @@ import Control.Exception qualified as Exception
 import Control.Monad.IO.Class qualified as Monad
 import Control.Monad.Trans.Except (ExceptT, runExceptT, throwE, withExceptT)
 import Data.Either qualified as Either
+import Data.Text.IO qualified as GHCText
 import IO (IO)
 import IO qualified
 import Main.Utf8 (withUtf8)
@@ -28,21 +29,27 @@ import Mappable (Functor)
 import Mappable qualified
 import Result (Result)
 import Result qualified
+import Text (Text)
 import Thenable (Monad)
 import ToText (Show, toPrettyText)
+
 
 newtype Task err value = Task
   {runTask :: (ExceptT err IO) value}
   deriving (Functor, Applicable.Applicative, Monad)
 
+
 yield :: value -> Task _ value
 yield value = Task (Applicable.pure value)
+
 
 throw :: err -> Task err _
 throw err = Task (throwE err)
 
+
 map :: (input -> output) -> Task err input -> Task err output
 map f self = Task (Mappable.map f (runTask self))
+
 
 mapError :: (err1 -> err2) -> Task err1 value -> Task err2 value
 mapError f self =
@@ -50,13 +57,16 @@ mapError f self =
     |> withExceptT f
     |> Task
 
+
 apply :: Task err (input -> output) -> Task err input -> Task err output
 apply taskFunction self = Task (Applicable.apply (runTask taskFunction) (runTask self))
+
 
 andThen :: (input -> Task err output) -> Task err input -> Task err output
 andThen f self = Task do
   value <- runTask self
   runTask (f value)
+
 
 -- TODO: Figure out the best API to ensure that the main function is just a Task that cannot fail and returns a unit
 
@@ -68,6 +78,7 @@ run reducer task =
     |> IO.andThen reducer
     |> withUtf8
 
+
 runOrPanic :: (Show err) => Task err value -> IO value
 runOrPanic task = do
   let reducer (Result.Ok value) = IO.yield value
@@ -75,6 +86,16 @@ runOrPanic task = do
   task
     |> run reducer
     |> withUtf8
+
+
+runMain :: Task Text Unit -> IO Unit
+runMain task = do
+  let reducer (Result.Ok _) = IO.yield ()
+      reducer (Result.Err err) = GHCText.putStrLn err
+  task
+    |> run reducer
+    |> withUtf8
+
 
 -- fromFailableIO is the reverse of run
 -- it receives an io, an exception catcher, and returns a task
@@ -91,6 +112,7 @@ fromFailableIO io = do
   case result of
     Either.Left exception -> throw exception
     Either.Right value -> yield value
+
 
 fromIO :: IO value -> Task _ value
 fromIO io =
