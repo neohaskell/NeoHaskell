@@ -52,8 +52,6 @@ handle config = do
         Array.fromLinkedList [rootFolder, "src"]
           |> Path.joinPaths
 
-  -- TODO: Remember to copy using https://hackage.haskell.org/package/directory-1.3.8.1/docs/System-Directory.html#v:copyFileWithMetadata
-  -- I mean into .neohaskell
   Directory.copy [path|src|] targetSrcFolder
     |> Task.mapError (\e -> CustomError (toText e))
 
@@ -63,16 +61,10 @@ handle config = do
 
   let haskellFiles = filepaths |> Array.takeIf (Path.endsWith haskellExtension)
 
-  -- -- haskellFiles = [A.hs,A/Lol.hs,A/B/Haha.hs,A/B/C/Rofl.hs]
-  -- -- Convert to:
-  -- -- modules = [A, A.Lol, A.B, A.B.C]
   let convertToModule filepath = do
         let pathText = Path.toText filepath
-        -- first we remove the extension
         let pathWithoutExtension = Text.dropRight (Text.length haskellExtension) pathText
-        -- then we split on the path separator
         let pathParts = Text.split "/" pathWithoutExtension
-        -- then we convert each part to a module name
         pathParts |> Text.joinWith "."
 
   let modules = haskellFiles |> Array.map convertToModule
