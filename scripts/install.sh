@@ -23,7 +23,7 @@ trap fail ERR
 
 if ! command -v nix &> /dev/null; then
     echo "⚙️  Nix is not installed. Installing Nix with Determinate Systems..."
-    curl --proto '=https' --tlsv1.2 -sSf -L https://install.determinate.systems/nix | sh -s -- install --determinate -- --yes
+    curl --proto '=https' --tlsv1.2 -sSf -L https://install.determinate.systems/nix | sh -s -- install --determinate
     . /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh
 fi
 
