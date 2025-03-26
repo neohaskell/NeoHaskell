@@ -11,16 +11,20 @@ module Task (
   fromFailableIO,
   fromIO,
   runMain,
+  forEach,
 ) where
 
 import Applicable (Applicative (pure))
 import Applicable qualified
+import Array (Array)
+import Array qualified
 import Basics
 import Control.Exception (Exception)
 import Control.Exception qualified as Exception
 import Control.Monad.IO.Class qualified as Monad
 import Control.Monad.Trans.Except (ExceptT, runExceptT, throwE, withExceptT)
 import Data.Either qualified as Either
+import Data.Foldable qualified
 import Data.Text.IO qualified as GHCText
 import IO (IO)
 import IO qualified
@@ -119,3 +123,12 @@ fromIO io =
   io
     |> Monad.liftIO
     |> Task
+
+
+forEach ::
+  forall (element :: Type) (err :: Type).
+  (element -> Task err Unit) ->
+  Array element ->
+  Task err Unit
+forEach callback array =
+  Data.Foldable.traverse_ callback (Array.unwrap array)

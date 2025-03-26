@@ -33,7 +33,6 @@ module Array (
   takeIf,
   dropIf,
   flatMap,
-  forEach,
   foldM,
   dropWhile,
   takeWhile,
@@ -42,6 +41,9 @@ module Array (
   partitionBy,
   splitFirst,
   any,
+
+  -- * Compatibility
+  unwrap,
 ) where
 
 import Basics
@@ -311,13 +313,6 @@ flatMap f array =
   array
     |> map f
     |> foldr append empty
-
-
--- | Emulates a foreach-loop like in other languages
--- FIXME: https://github.com/neohaskell/NeoHaskell/issues/126
-forEach :: forall (element :: Type). (element -> IO ()) -> Array element -> IO ()
-forEach callback self =
-  Data.Foldable.traverse_ callback (unwrap self)
 
 
 -- | TODO: Find a better name for this function.
