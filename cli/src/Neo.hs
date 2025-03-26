@@ -11,6 +11,7 @@ import Core
 import File qualified
 import Json qualified
 import Neo.Build qualified as Build
+import Neo.New qualified as New
 import Neo.Run qualified as Run
 import Task qualified
 import Text qualified
@@ -25,6 +26,7 @@ data CommonFlags = CommonFlags
 data NeoCommand
   = Build CommonFlags
   | Run CommonFlags
+  | New New.ProjectName
   deriving (Show, Eq, Ord)
 
 
@@ -54,6 +56,13 @@ run = do
 
 commandsParser :: Command.OptionsParser NeoCommand
 commandsParser = do
+  let new =
+        Command.CommandOptions
+          { name = "new",
+            description = "create a new project",
+            version = Nothing,
+            decoder = newParser
+          }
   let build =
         Command.CommandOptions
           { name = "build",
@@ -69,7 +78,7 @@ commandsParser = do
             decoder = runParser
           }
   Command.commands
-    (Array.fromLinkedList [build, run])
+    (Array.fromLinkedList [new, build, run])
 
 
 buildParser :: Command.OptionsParser NeoCommand
@@ -82,6 +91,12 @@ runParser :: Command.OptionsParser NeoCommand
 runParser = do
   common <- flagsParser
   pure (Run common)
+
+
+newParser :: Command.OptionsParser NeoCommand
+newParser = do
+  projectName <- projectNameParser
+  pure (New projectName)
 
 
 flagsParser :: Command.OptionsParser CommonFlags
@@ -98,9 +113,24 @@ flagsParser = do
   pure (CommonFlags {projectFile = projectFilePath})
 
 
+projectNameParser :: Command.OptionsParser New.ProjectName
+projectNameParser = do
+  projectName <-
+    Command.text
+      Command.TextConfig
+        { metavar = "NAME",
+          short = 'n',
+          help = "Name of the project",
+          long = "name",
+          value = Nothing
+        }
+  pure (New.ProjectName projectName)
+
+
 data Error
   = BuildError Build.Error
   | RunError Run.Error
+  | NewError New.Error
   | Other
   deriving (Show)
 
@@ -124,3 +154,6 @@ handleCommand command =
             |> Task.mapError (\e -> BuildError e)
           Run.handle config
             |> Task.mapError (\e -> RunError e)
+    New projectName -> do
+      New.handle projectName
+        |> Task.mapError (\e -> NewError e)
