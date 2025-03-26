@@ -6,4 +6,4 @@ import Task qualified
 
 
 main :: IO ()
-main = Task.runOrPanic Neo.run
+main = Task.runMain Neo.run
