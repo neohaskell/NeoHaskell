@@ -54,6 +54,9 @@ library
       Neo.Build.Templates.AppMain,
       Neo.Core,
       Neo.Core.ProjectConfiguration,
+      Neo.New,
+      Neo.New.Templates.NeoJson,
+      Neo.New.Templates.MainModule,
       Neo.Run,
     -- other-modules:
     -- other-extensions:

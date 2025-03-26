@@ -2,6 +2,7 @@ module Command (
   OptionsParser,
   CommandOptions (..),
   PathConfig (..),
+  TextConfig (..),
   text,
   path,
   parseWith,
