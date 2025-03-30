@@ -12,7 +12,7 @@ import Appendable
 import Basics
 import Control.Monad.Trans.State qualified as GhcState
 import Default
-import Thenable qualified as Thenable
+import Thenable qualified
 
 
 -- | `Accumulator` is a type that allows to accumulate values in

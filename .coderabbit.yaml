@@ -7,17 +7,14 @@ reviews:
   profile: assertive
   request_changes_workflow: true
   high_level_summary: true
-  high_level_summary_placeholder: '@coderabbitai summary'
-  auto_title_placeholder: '@coderabbitai'
+  high_level_summary_placeholder: "@coderabbitai summary"
+  auto_title_placeholder: "@coderabbitai"
   review_status: true
   poem: true
   collapse_walkthrough: false
   sequence_diagrams: true
   path_filters: []
   path_instructions:
-    - path: ".hlint.yaml"
-      instructions: |
-        Ignore this file
     - path: "*.hs"
       instructions: |
         Remember that this is a NeoHaskell file. NeoHaskell is a
