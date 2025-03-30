@@ -42,6 +42,13 @@ The recommended IDE for any NeoHaskell project is [Visual Studio Code](https://c
 
 When opening the project for the first time, you will be prompted to install the recommended extensions, install them.
 
+# Code Formatting
+
+This project uses the fourmolu formatter for consistent Haskell code styling. When using VS Code with the recommended extensions:
+
+- Code will automatically format on save
+- The formatter settings are controlled by the fourmolu.yaml file in the root directory
+
 # Collaborate on Discord
 
 It's always better to hack with people, so why not join the [Discord server](https://discord.gg/invite/wDj3UYzec8)?
