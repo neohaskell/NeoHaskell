@@ -2,13 +2,14 @@ cabal-version:      3.4
 name:               nhcli
 version:            0.6.0
 synopsis:           Command Line Tool for NeoHaskell
--- description:
+description:        NeoHaskell is a dialect of Haskell that is focused on newcomer-friendliness and productivity.
 homepage:           https://neohaskell.org
 license:            Apache-2.0
 license-file:       LICENSE
 author:             Nikita Tchayka
 maintainer:         nhlib@nickseagull.dev
--- copyright:
+copyright:          
+category:           Development
 build-type:         Simple
 -- extra-source-files:
 

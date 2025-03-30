@@ -8,6 +8,7 @@ license:            Apache-2.0
 author:             Nikita Tchayka
 maintainer:         nhlib@nickseagull.dev
 copyright:
+category:           Development
 build-type:         Simple
 
 common common_cfg
