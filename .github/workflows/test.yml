@@ -39,6 +39,9 @@ jobs:
       - name: Build the project
         run: nix-shell --run "cabal build all"
 
+      - name: Check formatting
+        run: nix-shell --run "fourmolu --mode check ."
+
       - name: Run core tests
         run: nix-shell --run "cabal test core"
 
