@@ -28,7 +28,7 @@ different parts of NeoHaskell.
 
 - Install [Nix](https://nixos.org/download/)
 - Run `nix-shell`
-- Run `cabal update && cabal build all --flag=development`
+- Run `cabal update && cabal build all`
 
 The recommended IDE for any NeoHaskell project is [Visual Studio Code](https://code.visualstudio.com/).
 
@@ -56,6 +56,13 @@ To run manually:
 
 ```sh
 hlint .
+```
+
+## Changing dependencies
+
+```sh
+# Change dependencies in .cabal files
+cabal freeze --flag development
 ```
 
 ## Collaborate on Discord
