@@ -39,6 +39,9 @@ jobs:
       - name: Build the project
         run: nix-shell --run "cabal build all"
 
+      - name: Run HLint
+        run: nix-shell --run "hlint ."
+
       - name: Check formatting
         run: nix-shell --run "fourmolu --mode check ."
 
