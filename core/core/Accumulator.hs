@@ -8,9 +8,9 @@ module Accumulator (
   yield,
 ) where
 
+import Appendable
 import Basics
 import Control.Monad.Trans.State qualified as GhcState
-import Appendable
 import Default
 import Thenable qualified as Thenable
 

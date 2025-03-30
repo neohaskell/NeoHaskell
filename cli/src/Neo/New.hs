@@ -65,7 +65,8 @@ handle (ProjectName projectName) = do
   File.writeText moduleFilePath (MainModule.template moduleName)
     |> Task.mapError (\_ -> CustomError "Could not write module file")
 
-  print [fmt|Created project {projectName} at ./{Path.toText projectDir}
+  print
+    [fmt|Created project {projectName} at ./{Path.toText projectDir}
 
 To build your project:
   cd {Path.toText projectDir}

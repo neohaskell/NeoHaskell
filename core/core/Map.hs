@@ -7,19 +7,17 @@ module Map (
   get,
   reduce,
   merge,
-  entries
+  entries,
 ) where
 
-import Array (Array)
-import Array qualified
 import Accumulator (Accumulator)
 import Accumulator qualified
+import Array (Array)
+import Array qualified
 import Basics
-import Data.Map.Strict qualified as HaskellMap
 import Data.Map.Strict (Map)
+import Data.Map.Strict qualified as HaskellMap
 import Maybe (Maybe)
-
-
 
 
 -- | Merge two `Map`s.

@@ -1,6 +1,6 @@
 module Neo.Core.ProjectConfiguration (
-    ProjectConfiguration (..),
-    fromText,
+  ProjectConfiguration (..),
+  fromText,
 ) where
 
 import Core
@@ -8,14 +8,14 @@ import Json qualified
 
 
 data ProjectConfiguration = ProjectConfiguration
-    { name :: Text,
-      version :: Version,
-      description :: Text,
-      author :: Text,
-      license :: Text,
-      dependencies :: Map Text Text
-    }
-    deriving (Show, Eq, Ord, Generic)
+  { name :: Text,
+    version :: Version,
+    description :: Text,
+    author :: Text,
+    license :: Text,
+    dependencies :: Map Text Text
+  }
+  deriving (Show, Eq, Ord, Generic)
 
 
 -- | We allow the `ProjectConfiguration` type to be converted from JSON.
