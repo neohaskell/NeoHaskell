@@ -94,6 +94,7 @@ library
       Unknown,
       Var,
       Task,
+      Toml,
 
       -- System
       File,
