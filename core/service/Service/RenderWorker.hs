@@ -2,20 +2,20 @@ module Service.RenderWorker (
   run,
 ) where
 
-import AsyncIO qualified
+import qualified AsyncIO
 import Basics
-import Brick qualified
+import qualified Brick
 import Brick.BChan (BChan)
-import Brick.BChan qualified
+import qualified Brick.BChan
 import ConcurrentVar (ConcurrentVar)
-import ConcurrentVar qualified
+import qualified ConcurrentVar
 import Console (log)
-import Graphics.Vty qualified as Vty
+import qualified Graphics.Vty as Vty
 import IO (IO)
-import IO qualified
+import qualified IO
 import Maybe (Maybe (..))
 import Service.Core
-import Service.RuntimeState qualified as RuntimeState
+import qualified Service.RuntimeState as RuntimeState
 import ToText (Show)
 
 
@@ -44,7 +44,7 @@ run userApp modelRef runtimeState = do
   AsyncIO.sleep 500
   log "Getting state"
   state <- RuntimeState.get runtimeState
-  if state.shouldExit
+  if state . shouldExit
     then do
       log "Exiting"
       IO.exitSuccess
@@ -66,7 +66,7 @@ run userApp modelRef runtimeState = do
 
       let brickApp =
             Brick.App
-              { Brick.appDraw = \s -> [userApp.view s |> Brick.txt @RenderTag],
+              { Brick.appDraw = \s -> [userApp . view s |> Brick.txt @RenderTag],
                 Brick.appChooseCursor = \_ _ -> Nothing,
                 Brick.appHandleEvent = handleEvent,
                 Brick.appStartEvent = pure (),
@@ -97,7 +97,7 @@ renderModelWorker ::
 renderModelWorker modelRef eventChannel runtimeState =
   forever do
     state <- RuntimeState.get runtimeState
-    if state.shouldExit
+    if state . shouldExit
       then do
         log "[renderModelWorker] Exiting"
         Brick.BChan.writeBChan eventChannel ExitRender

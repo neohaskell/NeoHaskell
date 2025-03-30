@@ -1,16 +1,16 @@
 module Service.ActionWorker (run) where
 
 import Action (Action)
-import Action qualified
+import qualified Action
 import Basics
 import Channel (Channel)
-import Channel qualified
+import qualified Channel
 import Console (log)
 import IO (IO)
-import IO qualified
+import qualified IO
 import Maybe (Maybe (..))
-import Service.RuntimeState qualified as RuntimeState
-import Unknown qualified
+import qualified Service.RuntimeState as RuntimeState
+import qualified Unknown
 
 
 run ::
@@ -25,7 +25,7 @@ run actionsQueue eventsQueue runtimeState = loop
   loop = do
     log "Checking exit condition"
     state <- RuntimeState.get runtimeState
-    if state.shouldExit
+    if state . shouldExit
       then do
         log "Exiting due to shouldExit flag"
         IO.exitSuccess
@@ -35,7 +35,7 @@ run actionsQueue eventsQueue runtimeState = loop
         log "Getting state"
         state' <- RuntimeState.get runtimeState
         log "Processing next action batch"
-        result <- Action.processBatch state'.actionHandlers nextActionBatch
+        result <- Action.processBatch state' . actionHandlers nextActionBatch
         case result of
           Action.Continue Nothing -> do
             log "No actions to process"

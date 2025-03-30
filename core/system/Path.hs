@@ -1,14 +1,13 @@
-module Path
-  ( Path,
-    fromText,
-    fromLinkedList,
-    toLinkedList,
-    toText,
-    path,
-    joinPaths,
-    endsWith,
-  )
-where
+module Path (
+  Path,
+  fromText,
+  fromLinkedList,
+  toLinkedList,
+  toText,
+  path,
+  joinPaths,
+  endsWith,
+) where
 
 import Appendable (Semigroup (..))
 import Array (Array)
@@ -27,17 +26,22 @@ import Text (Text)
 import Text qualified
 import ToText qualified
 
+
 newtype Path = Path (LinkedList Char) -- We use LinkedList Char to keep compatibility with Haskell's FilePath type
   deriving (Lift, Eq, Ord, Json.FromJSON, Json.ToJSON)
+
 
 instance ToText.Show Path where
   show (Path p) = p
 
+
 instance IsString Path where
   fromString = Path
 
+
 instance Semigroup Path where
   (Path path1) <> (Path path2) = Path (path1 <> path2)
+
 
 fromText :: Text -> Maybe Path
 fromText text =
@@ -45,10 +49,12 @@ fromText text =
   -- a filepath parsing library
   Just (Path (Text.toLinkedList text))
 
+
 fromLinkedList :: LinkedList Char -> Maybe Path
 fromLinkedList list =
   Text.fromLinkedList list
     |> fromText
+
 
 -- | Smart text constructor to make a path from a text literal
 path :: Quote.QuasiQuoter
@@ -63,13 +69,16 @@ path =
       Quote.quoteDec = panic "path constructor can only be used in expressions"
     }
 
+
 toText :: Path -> Text
 toText (Path linkedList) =
   Text.fromLinkedList linkedList
 
+
 toLinkedList :: Path -> LinkedList Char
 toLinkedList (Path linkedList) =
   linkedList
+
 
 -- | Joins paths in a cross-platform way
 -- TODO: Make this cross platform lol
@@ -80,6 +89,7 @@ joinPaths paths =
     |> Text.joinWith "/"
     |> fromText
     |> Maybe.getOrDie
+
 
 endsWith :: Text -> Path -> Bool
 endsWith txt self =

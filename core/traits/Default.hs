@@ -18,5 +18,3 @@ instance Default Char where
 
 instance Default Text where
   def = ""
-
-

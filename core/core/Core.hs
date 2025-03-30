@@ -11,7 +11,7 @@ import Array as Reexported (Array)
 import Basics as Reexported
 import Char as Reexported (Char)
 import ConcurrentVar as Reexported (ConcurrentVar)
-import Console as Reexported (log, readLine, print)
+import Console as Reexported (log, print, readLine)
 import Default as Reexported (Default (..), defaultValue)
 import Function as Reexported
 -- import Html as Reexported (Html, html)
@@ -29,3 +29,4 @@ import Trigger as Reexported (Trigger)
 import Unknown as Reexported (Unknown)
 import Var as Reexported (Var)
 import Version as Reexported (Version, version)
+

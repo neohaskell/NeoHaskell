@@ -1,8 +1,8 @@
 module Var (Var, new, get, set) where
 
 import Basics
-import IO (IO)
 import Data.IORef qualified as GHC
+import IO (IO)
 
 
 newtype Var value = Var (GHC.IORef value)

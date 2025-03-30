@@ -1,6 +1,6 @@
 module Appendable (
   Appendable,
-  Data.Semigroup.Semigroup(..),
+  Data.Semigroup.Semigroup (..),
   (++),
 ) where
 

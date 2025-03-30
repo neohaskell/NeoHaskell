@@ -9,24 +9,24 @@ module Service.RuntimeState (
 ) where
 
 import Action (Action)
-import Action qualified
+import qualified Action
 import Basics
 import Channel (Channel)
-import Command qualified
+import qualified Command
 import Console (log)
-import Directory qualified
-import File qualified
-import Http qualified
+import qualified Directory
+import qualified File
+import qualified Http
 import IO (IO)
-import Map qualified
+import qualified Map
 import Maybe (Maybe (..))
-import Subprocess qualified
+import qualified Subprocess
 import Text (Text)
 import ToText (Show (..), ToText, toPrettyText)
 import Unknown (Unknown)
-import Unknown qualified
+import qualified Unknown
 import Var (Var)
-import Var qualified
+import qualified Var
 
 
 data RuntimeState (event :: Type) = RuntimeState
@@ -97,7 +97,8 @@ registerActionHandler actionHandlerName handler runtimeState = do
             pure (Just result)
   -- let actionHandlerName = Unknown.getTypeName @(payload -> IO event)
   let newRegistry =
-        service.actionHandlers
+        service
+          . actionHandlers
           |> Map.set actionHandlerName actionHandler
   let newService = service {actionHandlers = newRegistry}
   log "Setting state"

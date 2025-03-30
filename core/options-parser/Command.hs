@@ -131,7 +131,7 @@ text config =
             OptParse.metavar (config.metavar |> Text.toLinkedList)
           ]
             ++ textValue
-              |> setting
+            |> setting
 
     OptParse.option OptParse.str options
     |> OptionsParser
