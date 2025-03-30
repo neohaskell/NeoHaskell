@@ -5,7 +5,7 @@ pkgs.mkShell rec {
     pkgs.ghc
     pkgs.cabal-install
     pkgs.haskell-language-server
-    pkgs.ormolu
+    pkgs.fourmolu
     pkgs.hlint
     pkgs.haskellPackages.zlib
 
