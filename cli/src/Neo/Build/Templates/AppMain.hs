@@ -12,8 +12,8 @@ template
     [fmt|module Main where
 
 import Core
-import Task qualified
-import {mainModuleName} qualified
+import qualified Task
+import qualified {mainModuleName}
 
 main :: IO ()
 main = Task.runOrPanic {mainModuleName}.run

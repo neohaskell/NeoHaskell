@@ -3,14 +3,14 @@ module Service.EventWorker (run) where
 import Action (Action)
 import Basics
 import Channel (Channel)
-import Channel qualified
+import qualified Channel
 import ConcurrentVar (ConcurrentVar)
-import ConcurrentVar qualified
+import qualified ConcurrentVar
 import Console (log)
 import IO (IO)
-import IO qualified
+import qualified IO
 import Service.Core
-import Service.RuntimeState qualified as RuntimeState
+import qualified Service.RuntimeState as RuntimeState
 import ToText (ToText, toPrettyText)
 
 
@@ -28,7 +28,7 @@ run ::
 run userApp eventsQueue modelRef actionsQueue runtimeState =
   forever do
     currentState <- RuntimeState.get runtimeState
-    when currentState.shouldExit do
+    when currentState . shouldExit do
       log "Exiting"
       IO.exitSuccess
     log "Reading next event"
@@ -38,7 +38,7 @@ run userApp eventsQueue modelRef actionsQueue runtimeState =
     log [fmt|Got model: {toPrettyText model}|]
 
     log "Updating model"
-    let (newModel, newCmd) = userApp.update event model
+    let (newModel, newCmd) = userApp . update event model
     log [fmt|New model: {toPrettyText newModel} - New action: {toPrettyText newCmd}|]
 
     log "Setting new model"

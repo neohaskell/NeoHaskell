@@ -6,30 +6,30 @@ module Service (
   RuntimeState.registerActionHandler,
 ) where
 
-import Action qualified
+import qualified Action
 import Array (Array)
-import Array qualified
-import AsyncIO qualified
+import qualified Array
+import qualified AsyncIO
 import Basics
 import Channel (Channel)
-import Channel qualified
-import ConcurrentVar qualified
+import qualified Channel
+import qualified ConcurrentVar
 import Console (log)
-import Control.Exception qualified
+import qualified Control.Exception
 import IO (IO)
-import IO qualified
+import qualified IO
 import Maybe (Maybe (..))
-import Service.ActionWorker qualified as ActionWorker
+import qualified Service.ActionWorker as ActionWorker
 import Service.Core (UserApp)
-import Service.Core qualified as Core
-import Service.EventWorker qualified as EventWorker
-import Service.RenderWorker qualified as RenderWorker
-import Service.RuntimeState qualified as RuntimeState
+import qualified Service.Core as Core
+import qualified Service.EventWorker as EventWorker
+import qualified Service.RenderWorker as RenderWorker
+import qualified Service.RuntimeState as RuntimeState
 import Text (Text)
 import ToText (ToText, toPrettyText)
 import Trigger (Trigger (..))
-import Unknown qualified
-import Var qualified
+import qualified Unknown
+import qualified Var
 
 
 run ::
@@ -54,7 +54,7 @@ run userApp = do
   log "[init] Registering default action handlers"
   runtimeState
     |> RuntimeState.registerDefaultActionHandlers @event
-  let (initModel, initCmd) = userApp.init
+  let (initModel, initCmd) = userApp . init
   log "[init] Creating model ref"
   modelRef <- ConcurrentVar.new
   modelRef |> ConcurrentVar.set initModel
@@ -86,7 +86,7 @@ run userApp = do
   AsyncIO.process actionWorker \_ -> do
     AsyncIO.process renderWorker \_ -> do
       log "[init] Starting triggers"
-      runTriggers userApp.triggers eventsQueue
+      runTriggers userApp . triggers eventsQueue
       -- The action worker must be the main loop
       -- or else it won't be able to exit the program
       eventWorker
