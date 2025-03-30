@@ -30,13 +30,15 @@
     "typeclasses",
     "Unagi"
   ],
-  "haskell.manageHLS": "PATH",
   "nixEnvSelector.nixFile": "${workspaceFolder}/shell.nix",
+  // Haskell
+  "haskell.manageHLS": "PATH",
   "[haskell]": {
     "editor.formatOnSave": true,
     "editor.defaultFormatter": "haskell.haskell"
   },
   "haskell.formattingProvider": "fourmolu",
+  // JSON
   "[json]": {
     "editor.defaultFormatter": "esbenp.prettier-vscode",
     "editor.formatOnSave": true
