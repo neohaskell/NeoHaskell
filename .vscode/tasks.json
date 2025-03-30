@@ -4,7 +4,7 @@
     {
       "type": "process",
       "command": "cabal",
-      "args": ["--enable-nix", "build", "all"],
+      "args": ["--enable-nix", "build", "all", "--flag=development"],
       "label": "cabal: build all",
       "presentation": {
         "echo": true,

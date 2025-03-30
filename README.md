@@ -28,7 +28,7 @@ different parts of NeoHaskell.
 
 - Install [Nix](https://nixos.org/download/)
 - Run `nix-shell`
-- Run `cabal update && cabal build all`
+- Run `cabal update && cabal build all --flag=development`
 
 The recommended IDE for any NeoHaskell project is [Visual Studio Code](https://code.visualstudio.com/).
 

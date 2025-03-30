@@ -11,9 +11,20 @@ copyright:
 category:           Development
 build-type:         Simple
 
+flag development
+    description: Enable development mode with stricter warnings
+    manual:      True
+    default:     False
+
 common common_cfg
-    ghc-options:    -Wall
-                    -Werror
+    if flag(development)
+        ghc-options:  -Wall
+                      -Wno-orphans
+                      -fno-warn-partial-type-signatures
+                      -- Werror not allowed by Hackage
+                      -Werror
+    else
+        ghc-options:  -Wall
                     -Wno-orphans
                     -fno-warn-partial-type-signatures
     build-depends:
