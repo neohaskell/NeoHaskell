@@ -56,9 +56,9 @@ import Basics
 import Data.Foldable qualified
 import Data.List qualified
 import Data.Maybe qualified
-import Mappable qualified as Mappable
+import Mappable qualified
 import Maybe (Maybe (..))
-import Thenable qualified as Thenable
+import Thenable qualified
 import Prelude qualified
 
 
