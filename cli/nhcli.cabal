@@ -41,7 +41,7 @@ common common_cfg
       PartialTypeSignatures
 
     build-depends:
-      nhcore,
+      nhcore ==0.6.0,
 
 
 
