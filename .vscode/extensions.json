@@ -1,7 +1,8 @@
 {
-	"recommendations": [
-		"streetsidesoftware.code-spell-checker",
-		"haskell.haskell",
-		"arrterian.nix-env-selector"
-	]
+  "recommendations": [
+    "streetsidesoftware.code-spell-checker",
+    "haskell.haskell",
+    "arrterian.nix-env-selector",
+    "esbenp.prettier-vscode"
+  ]
 }
