@@ -1,6 +1,6 @@
 module Toml (
-    Decodable,
-    Encodable,
+  Decodable,
+  Encodable,
 ) where
 
 

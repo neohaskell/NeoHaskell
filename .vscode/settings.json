@@ -38,6 +38,7 @@
     "editor.defaultFormatter": "haskell.haskell"
   },
   "haskell.formattingProvider": "fourmolu",
+  "haskell.plugin.fourmolu.config.external": true,
   // JSON
   "[json]": {
     "editor.defaultFormatter": "esbenp.prettier-vscode",
