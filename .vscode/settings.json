@@ -31,5 +31,10 @@
     "Unagi"
   ],
   "haskell.manageHLS": "PATH",
-  "nixEnvSelector.nixFile": "${workspaceFolder}/shell.nix"
+  "nixEnvSelector.nixFile": "${workspaceFolder}/shell.nix",
+  "[haskell]": {
+    "editor.formatOnSave": true,
+    "editor.defaultFormatter": "haskell.haskell"
+  },
+  "haskell.formattingProvider": "fourmolu",
 }
