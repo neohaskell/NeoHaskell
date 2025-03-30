@@ -2,22 +2,36 @@ cabal-version:      3.4
 name:               nhcli
 version:            0.6.0
 synopsis:           Command Line Tool for NeoHaskell
--- description:
+description:        NeoHaskell is a dialect of Haskell that is focused on newcomer-friendliness and productivity.
 homepage:           https://neohaskell.org
 license:            Apache-2.0
 license-file:       LICENSE
 author:             Nikita Tchayka
 maintainer:         nhlib@nickseagull.dev
--- copyright:
+copyright:          
+category:           Development
 build-type:         Simple
 -- extra-source-files:
 
+flag development
+    description: Enable development mode with stricter warnings
+    manual:      True
+    default:     False
+
 common common_cfg
-    ghc-options:    -Wall
-                    -Werror
-                    -threaded
-                    -fno-warn-partial-type-signatures
-                    -fno-warn-name-shadowing
+    if flag(development)
+        ghc-options:  -Wall
+                      -threaded
+                      -fno-warn-partial-type-signatures
+                      -fno-warn-name-shadowing
+                      -- Werror not allowed by Hackage
+                      -Werror
+    else
+        ghc-options:  -Wall
+                      -threaded
+                      -fno-warn-partial-type-signatures
+                      -fno-warn-name-shadowing
+
     default-extensions:
       ApplicativeDo
       BlockArguments
@@ -40,7 +54,7 @@ common common_cfg
       PartialTypeSignatures
 
     build-depends:
-      nhcore,
+      nhcore ==0.6.0,
 
 
 
@@ -70,8 +84,6 @@ executable neo
     -- other-extensions:
     build-depends:
         nhcli
-    ghc-options:    -Wall
-                    -Werror
     hs-source-dirs:   app
     default-language: GHC2021
 
