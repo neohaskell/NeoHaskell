@@ -49,6 +49,15 @@ This project uses the fourmolu formatter for consistent Haskell code styling. Wh
 - Code will automatically format on save
 - The formatter settings are controlled by the fourmolu.yaml file in the root directory
 
+## Linting
+
+This project uses hlint, it will automatically be run in VSCode by the recommended extension.
+To run manually:
+
+```sh
+hlint .
+```
+
 ## Collaborate on Discord
 
 It's always better to hack with people, so why not join the [Discord server](https://discord.gg/invite/wDj3UYzec8)?
