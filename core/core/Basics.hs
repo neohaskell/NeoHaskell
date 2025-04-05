@@ -242,7 +242,8 @@ type Float = Prelude.Double
 -- collection. It is a wrapper around @a@. But the constructor is not exported,
 -- so you cannot create a @Positive@ number directly, except by using the constructor
 newtype Positive a = Positive a
-  deriving (Prelude.Eq, Prelude.Ord, Prelude.Show, Prelude.Read, Prelude.Num, Prelude.Real, Prelude.Enum, Prelude.Integral)
+  deriving
+    (Prelude.Eq, Prelude.Ord, Prelude.Show, Prelude.Read, Prelude.Num, Prelude.Real, Prelude.Enum, Prelude.Integral)
 
 
 -- | Add two numbers. The @number@ type variable means this operation can be
