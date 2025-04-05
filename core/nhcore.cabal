@@ -135,6 +135,7 @@ library
       Action,
       Trigger,
       Service.Event,
+      Service.EventStore,
 
       -- Concurrency
       AsyncIO,
