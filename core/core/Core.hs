@@ -27,6 +27,6 @@ import Text as Reexported (Text)
 import ToText as Reexported (Show, ToText, toPrettyText)
 import Trigger as Reexported (Trigger)
 import Unknown as Reexported (Unknown)
+import Uuid as Reexported (Uuid)
 import Var as Reexported (Var)
 import Version as Reexported (Version, version)
-
