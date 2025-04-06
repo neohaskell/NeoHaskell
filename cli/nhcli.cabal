@@ -13,11 +13,6 @@ category:           Development
 build-type:         Simple
 -- extra-source-files:
 
-flag development
-    description: Enable development mode with stricter warnings
-    manual:      True
-    default:     False
-
 common common_cfg
     ghc-options:  -Wall
                   -threaded

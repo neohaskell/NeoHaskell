@@ -11,11 +11,6 @@ copyright:
 category:           Development
 build-type:         Simple
 
-flag development
-    description: Enable development mode with stricter warnings
-    manual:      True
-    default:     False
-
 common common_cfg
     ghc-options:  -Wall
                   -Wno-orphans
@@ -23,7 +18,7 @@ common common_cfg
                   -fno-warn-name-shadowing
                   -Werror
     build-depends:
-      base ^=4.18,
+      base ^>=4.18,
       ghc-prim ,
       async ,
       aeson ,
