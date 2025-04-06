@@ -4,11 +4,12 @@ module Uuid (
 ) where
 
 import Basics
-import ToText(Show)
+import Data.UUID qualified as UUID
+import Data.UUID.V4 qualified as V4
 import Task (Task)
 import Task qualified
-import Data.UUID.V4 qualified as V4
-import Data.UUID qualified as UUID
+import ToText (Show)
+
 
 newtype Uuid = Uuid (UUID.UUID)
   deriving (Eq, Ord, Show)

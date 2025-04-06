@@ -11,6 +11,9 @@ module Basics (
   -- * Math
   Int,
   Float,
+  Positive,
+  makePositive,
+  makePositiveOrPanic,
   (+),
   (-),
   (*),
@@ -234,6 +237,30 @@ type Int = Prelude.Int
 -- chip that is not backwards compatible with any widely-used assembly
 -- language.
 type Float = Prelude.Double
+
+
+-- | A @Positive@ number is a number that is greater than zero. It is used to
+-- represent things like the length of a list or the number of items in a
+-- collection. It is a wrapper around @a@. But the constructor is not exported,
+-- so you cannot create a @Positive@ number directly, except by using the constructor
+newtype Positive a = Positive a
+  deriving
+    (Prelude.Eq, Prelude.Ord, Prelude.Show, Prelude.Read, Prelude.Num, Prelude.Real, Prelude.Enum, Prelude.Integral)
+
+
+-- | Create a Positive number from a regular number.
+-- Returns Nothing if the input is not positive ( > 0).
+makePositive :: (Prelude.Ord number, Prelude.Num number) => number -> Prelude.Maybe (Positive number)
+makePositive number = if number > 0 then Prelude.Just (Positive number) else Prelude.Nothing
+
+
+-- | Create a Positive number from a regular number.
+-- Panics if the input is not positive.
+makePositiveOrPanic :: (Prelude.Ord number, Prelude.Num number, Prelude.Show number) => number -> Positive number
+makePositiveOrPanic number =
+  if number > 0
+    then Positive number
+    else panic ("Expected a positive number, but got: " Prelude.<> Text.pack (Prelude.show number))
 
 
 -- | Add two numbers. The @number@ type variable means this operation can be
