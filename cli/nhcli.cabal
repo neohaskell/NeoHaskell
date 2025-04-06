@@ -8,7 +8,7 @@ license:            Apache-2.0
 license-file:       LICENSE
 author:             Nikita Tchayka
 maintainer:         nhlib@nickseagull.dev
-copyright:          
+copyright:
 category:           Development
 build-type:         Simple
 -- extra-source-files:
@@ -19,18 +19,11 @@ flag development
     default:     False
 
 common common_cfg
-    if flag(development)
-        ghc-options:  -Wall
-                      -threaded
-                      -fno-warn-partial-type-signatures
-                      -fno-warn-name-shadowing
-                      -- Werror not allowed by Hackage
-                      -Werror
-    else
-        ghc-options:  -Wall
-                      -threaded
-                      -fno-warn-partial-type-signatures
-                      -fno-warn-name-shadowing
+    ghc-options:  -Wall
+                  -threaded
+                  -fno-warn-partial-type-signatures
+                  -fno-warn-name-shadowing
+                  -Werror
 
     default-extensions:
       ApplicativeDo
@@ -54,7 +47,7 @@ common common_cfg
       PartialTypeSignatures
 
     build-depends:
-      nhcore ==0.6.0,
+      nhcore,
 
 
 
