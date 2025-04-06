@@ -247,17 +247,20 @@ newtype Positive a = Positive a
   deriving
     (Prelude.Eq, Prelude.Ord, Prelude.Show, Prelude.Read, Prelude.Num, Prelude.Real, Prelude.Enum, Prelude.Integral)
 
+
 -- | Create a Positive number from a regular number.
 -- Returns Nothing if the input is not positive ( > 0).
 makePositive :: (Prelude.Ord number, Prelude.Num number) => number -> Prelude.Maybe (Positive number)
 makePositive number = if number > 0 then Prelude.Just (Positive number) else Prelude.Nothing
 
+
 -- | Create a Positive number from a regular number.
--- Panics if the input is not positive (> 0).
+-- Panics if the input is not positive.
 makePositiveOrPanic :: (Prelude.Ord number, Prelude.Num number, Prelude.Show number) => number -> Positive number
-makePositiveOrPanic number = if number > 0
-                      then Positive number
-                      else panic ("Expected a positive number, but got: " Prelude.<> Text.pack (Prelude.show number))
+makePositiveOrPanic number =
+  if number > 0
+    then Positive number
+    else panic ("Expected a positive number, but got: " Prelude.<> Text.pack (Prelude.show number))
 
 
 -- | Add two numbers. The @number@ type variable means this operation can be
