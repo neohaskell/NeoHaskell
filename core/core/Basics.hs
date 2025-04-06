@@ -13,7 +13,7 @@ module Basics (
   Float,
   Positive,
   makePositive,
-  makePositiveOrDie,
+  makePositiveOrPanic,
   (+),
   (-),
   (*),
@@ -254,8 +254,8 @@ makePositive number = if number > 0 then Prelude.Just (Positive number) else Pre
 
 -- | Create a Positive number from a regular number.
 -- Panics if the input is not positive (> 0).
-makePositiveOrDie :: (Prelude.Ord number, Prelude.Num number, Prelude.Show number) => number -> Positive number
-makePositiveOrDie number = if number > 0
+makePositiveOrPanic :: (Prelude.Ord number, Prelude.Num number, Prelude.Show number) => number -> Positive number
+makePositiveOrPanic number = if number > 0
                       then Positive number
                       else panic ("Expected a positive number, but got: " Prelude.<> Text.pack (Prelude.show number))
 
