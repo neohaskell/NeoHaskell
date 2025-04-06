@@ -58,13 +58,6 @@ To run manually:
 hlint .
 ```
 
-## Changing dependencies
-
-```sh
-# Change dependencies in .cabal files
-cabal freeze --flag development
-```
-
 ## Collaborate on Discord
 
 It's always better to hack with people, so why not join the [Discord server](https://discord.gg/invite/wDj3UYzec8)?

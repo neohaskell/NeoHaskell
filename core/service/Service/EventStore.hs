@@ -1,6 +1,7 @@
 module Service.EventStore (
   EventStore (..),
   Limit (..),
+  Error (..),
 ) where
 
 import Core
