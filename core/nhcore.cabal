@@ -115,6 +115,7 @@ library
       -- Traits
       Applicable,
       Appendable,
+      Collection,
       Combinable,
       Default,
       Mappable,
