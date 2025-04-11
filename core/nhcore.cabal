@@ -117,6 +117,7 @@ library
       -- Traits
       Applicable,
       Appendable,
+      Collection,
       Combinable,
       Default,
       Mappable,
@@ -175,6 +176,7 @@ test-suite nhcore-test
     default-language: GHC2021
     other-modules:
       Service.EventStore.InMemorySpec,
+      Core.DocTestSpec
     -- other-extensions:
     type:             exitcode-stdio-1.0
     hs-source-dirs:   test
@@ -183,3 +185,5 @@ test-suite nhcore-test
         base,
         nhcore,
         hspec,
+        doctest
+    build-tool-depends: hspec-discover:hspec-discover
