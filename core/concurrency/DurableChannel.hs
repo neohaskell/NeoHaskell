@@ -1,25 +1,26 @@
 module DurableChannel (DurableChannel, new, read, write) where
 
-import Array (Array, fromLinkedList)
+import Array (Array)
+import Array qualified
 import Basics
 import Channel (Channel)
 import Channel qualified
+import ConcurrentVar (ConcurrentVar)
+import ConcurrentVar qualified
 import Task (Task)
 import Task qualified
-import ToText (Show (..))
 
 
 data DurableChannel value = DurableChannel
   { channel :: Channel value,
-    values :: Array value
+    values :: ConcurrentVar (Array value)
   }
-  deriving (Show)
 
 
 new :: Task _ (DurableChannel value)
 new = do
   channel <- Channel.new
-  let values = Array.fromLinkedList []
+  values <- ConcurrentVar.containing Array.empty
   Task.yield DurableChannel {channel, values}
 
 
@@ -29,5 +30,9 @@ read self =
 
 
 write :: value -> DurableChannel value -> Task _ Unit
-write _ _ =
-  panic "not defined yet"
+write value self = do
+  self.values
+    |> ConcurrentVar.modify (Array.append value)
+
+  self.channel
+    |> Channel.write value
