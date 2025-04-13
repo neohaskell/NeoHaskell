@@ -12,6 +12,7 @@
     "fprint",
     "GADT",
     "hlint",
+    "Inspectable",
     "Monoid",
     "Nanotime",
     "NEOHASKELL",

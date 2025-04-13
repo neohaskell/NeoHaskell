@@ -127,6 +127,9 @@ library
       Service.Event,
       Service.EventStore,
 
+      -- Reflection
+      TypeName,
+
       -- Concurrency
       AsyncIO,
       Channel,
@@ -148,6 +151,7 @@ library
       traits,
       system,
       http,
+      reflection,
       options-parser
     default-language: GHC2021
 
