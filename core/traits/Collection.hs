@@ -6,39 +6,41 @@ import Maybe (Maybe (..))
 import Prelude qualified
 
 
--- | The Collection trait defines the behavior of a sequence whose
+-- | The Collection typeclass defines the behavior of a sequence whose
 -- elements can be traversed and accessed by an indexed subscript.
-data Collection collection
-  = Collection collection
+class Collection collection where
+  type Item collection
 
+  countImpl   :: collection -> Int
+  emptyImpl   :: collection
+  isEmptyImpl :: collection -> Bool
+  lengthImpl  :: collection -> Int
+  getImpl     :: collection -> Int -> Maybe (Item collection)
+  appendImpl  :: collection -> collection -> collection
+  firstImpl   :: collection -> Maybe (Item collection)
+  lastImpl    :: collection -> Maybe (Item collection)
 
-countImpl :: (Collection collection) -> Prelude.Int
-countImpl = Prelude.undefined
+-- | Wrapper functions without the Impl suffix
+count :: Collection c => c -> Int
+count = countImpl
 
+empty :: Collection c => c
+empty = emptyImpl
 
-emptyImpl :: (Collection collection)
-emptyImpl = Prelude.undefined
+isEmpty :: Collection c => c -> Bool
+isEmpty = isEmptyImpl
 
+length :: Collection c => c -> Int
+length = lengthImpl
 
-isEmptyImpl :: (Collection collection) -> Prelude.Bool
-isEmptyImpl = Prelude.undefined
+get :: Collection c => c -> Int -> Maybe (Item c)
+get = getImpl
 
+append :: Collection c => c -> c -> c
+append = appendImpl
 
-lengthImpl :: (Collection collection) -> Prelude.Int
-lengthImpl = Prelude.undefined
+first :: Collection c => c -> Maybe (Item c)
+first = firstImpl
 
-
-getImpl :: (Collection collection) -> Prelude.Int -> Maybe b
-getImpl = Prelude.undefined
-
-
-appendImpl :: (Collection collection) -> (Collection collection) -> (Collection collection)
-appendImpl = Prelude.undefined
-
-
-firstImpl :: (Collection collection) -> Maybe b
-firstImpl = Prelude.undefined
-
-
-lastImpl :: (Collection collection) -> Maybe b
-lastImpl = Prelude.undefined
+last :: Collection c => c -> Maybe (Item c)
+last = lastImpl
