@@ -47,6 +47,7 @@ module Array (
 ) where
 
 import Basics
+import Collection qualified as CL
 import Data.Foldable qualified
 import Data.Vector ((!?), (++), (//))
 import Data.Vector qualified
@@ -65,6 +66,16 @@ import Prelude qualified
 -- dream up.
 newtype Array a = Array (Data.Vector.Vector a)
   deriving (Prelude.Eq, Prelude.Show, Prelude.Ord, Generic)
+
+
+instance CL.Collection (Array a) where
+  type Item (Array a) = a
+
+
+  countImpl (Collection c) =
+    (unwrap . CL.unwrap)
+      .> Data.Vector.length
+      .> Prelude.fromIntegral
 
 
 instance (QuickCheck.Arbitrary a) => QuickCheck.Arbitrary (Array a) where
