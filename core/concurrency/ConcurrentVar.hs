@@ -48,7 +48,7 @@ set value (ConcurrentVar ref) =
 
 
 modify ::
-  (value -> transformedValue) -> ConcurrentVar value -> Task _ Unit
+  (value -> value) -> ConcurrentVar value -> Task _ Unit
 modify transformer (ConcurrentVar ref) =
-  GHC.modifyMVar_ ref (\x -> transformer x |> pure)
+  GHC.modifyMVar_ ref (transformer .> pure)
     |> Task.fromIO

@@ -7,13 +7,16 @@ import Channel (Channel)
 import Channel qualified
 import ConcurrentVar (ConcurrentVar)
 import ConcurrentVar qualified
+import Lock (Lock)
+import Lock qualified
 import Task (Task)
 import Task qualified
 
 
 data DurableChannel value = DurableChannel
   { channel :: Channel value,
-    values :: ConcurrentVar (Array value)
+    values :: ConcurrentVar (Array value),
+    lock :: Lock
   }
 
 
@@ -21,7 +24,8 @@ new :: Task _ (DurableChannel value)
 new = do
   channel <- Channel.new
   values <- ConcurrentVar.containing Array.empty
-  Task.yield DurableChannel {channel, values}
+  lock <- Lock.new
+  Task.yield DurableChannel {channel, values, lock}
 
 
 read :: DurableChannel value -> Task _ value
@@ -30,9 +34,9 @@ read self =
 
 
 write :: value -> DurableChannel value -> Task _ Unit
-write value self = do
+write value self = Lock.with self.lock do
   self.values
-    |> ConcurrentVar.modify (Array.append value)
+    |> ConcurrentVar.modify (Array.push value)
 
   self.channel
     |> Channel.write value

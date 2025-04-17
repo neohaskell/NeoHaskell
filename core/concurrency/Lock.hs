@@ -1,7 +1,11 @@
-module Lock (Lock, new, read, write) where
+module Lock (
+  Lock,
+  new,
+  acquire,
+  release,
+  with,
+) where
 
-import Array (Array)
-import Array qualified
 import Basics
 import ConcurrentVar (ConcurrentVar)
 import ConcurrentVar qualified
@@ -27,4 +31,12 @@ acquire self =
 
 release :: Lock -> Task _ Unit
 release self = do
-  ConcurrentVar.set unit
+  ConcurrentVar.set unit self.lock
+
+
+with :: Lock -> Task _ Unit -> Task _ Unit
+with self task = do
+  -- FIXME: use resourceT or try/catch/finally
+  acquire self
+  task -- will deadlock on panic
+  release self
