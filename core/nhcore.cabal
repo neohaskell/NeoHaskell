@@ -135,6 +135,7 @@ library
       Channel,
       DurableChannel,
       ConcurrentVar,
+      Lock,
 
       -- Http
       Http,
