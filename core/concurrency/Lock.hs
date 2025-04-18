@@ -9,6 +9,7 @@ module Lock (
 import Basics
 import ConcurrentVar (ConcurrentVar)
 import ConcurrentVar qualified
+import Control.Exception qualified
 import Task (Task)
 import Task qualified
 
@@ -35,8 +36,10 @@ release self = do
 
 
 with :: Lock -> Task _ Unit -> Task _ Unit
-with self task = do
-  -- FIXME: use resourceT or try/catch/finally
-  acquire self
-  task -- will deadlock on panic
-  release self
+with self task =
+  do
+    Control.Exception.bracket
+      (acquire self |> Task.runNoErrors)
+      (\_ -> release self |> Task.runNoErrors)
+      (\_ -> task |> Task.runNoErrors)
+    |> Task.fromIO
