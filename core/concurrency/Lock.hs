@@ -35,7 +35,7 @@ release self = do
   ConcurrentVar.set unit self.lock
 
 
-with :: Lock -> Task _ Unit -> Task _ Unit
+with :: Lock -> Task _ value -> Task _ value
 with self task =
   do
     Control.Exception.bracket

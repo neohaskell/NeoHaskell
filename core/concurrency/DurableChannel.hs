@@ -1,4 +1,4 @@
-module DurableChannel (DurableChannel, new, read, write, last) where
+module DurableChannel (DurableChannel, new, read, write, last, checkAndWrite) where
 
 import Array (Array)
 import Array qualified
@@ -37,10 +37,31 @@ read self =
 write :: value -> DurableChannel value -> Task _ Unit
 write value self =
   Lock.with self.lock do
-    self.values
-      |> ConcurrentVar.modify (Array.push value)
-    self.channel
-      |> Channel.write value
+    writeNoLock value self
+
+
+writeNoLock :: value -> DurableChannel value -> Task _ Unit
+writeNoLock value self = do
+  self.values
+    |> ConcurrentVar.modify (Array.push value)
+  self.channel
+    |> Channel.write value
+
+
+checkAndWrite ::
+  (Array value -> Bool) ->
+  value ->
+  DurableChannel value ->
+  Task _ Bool
+checkAndWrite predicate value self =
+  Lock.with self.lock do
+    values <- ConcurrentVar.peek self.values
+    if predicate values
+      then do
+        writeNoLock value self
+        Task.yield True
+      else do
+        Task.yield False
 
 
 -- | Gets the last element in the channel.
