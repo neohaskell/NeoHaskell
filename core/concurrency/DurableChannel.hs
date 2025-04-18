@@ -1,4 +1,4 @@
-module DurableChannel (DurableChannel, new, read, write) where
+module DurableChannel (DurableChannel, new, read, write, last) where
 
 import Array (Array)
 import Array qualified
@@ -9,6 +9,7 @@ import ConcurrentVar (ConcurrentVar)
 import ConcurrentVar qualified
 import Lock (Lock)
 import Lock qualified
+import Maybe (Maybe)
 import Task (Task)
 import Task qualified
 
@@ -40,3 +41,10 @@ write value self =
       |> ConcurrentVar.modify (Array.push value)
     self.channel
       |> Channel.write value
+
+
+-- | Gets the last element in the channel.
+last :: DurableChannel value -> Task _ (Maybe value)
+last self = do
+  values <- ConcurrentVar.peek self.values
+  Task.yield (Array.last values)

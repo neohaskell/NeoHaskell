@@ -44,6 +44,7 @@ module Array (
 
   -- * Compatibility
   unwrap,
+  last,
 ) where
 
 import Basics
@@ -363,3 +364,11 @@ splitFirst (Array vector) = do
 -- > any isEven (fromLinkedList [1,3,5]) == False
 any :: forall (value :: Type). (value -> Bool) -> Array value -> Bool
 any predicate (Array vector) = Data.Vector.any predicate vector
+
+
+-- | Returns the last element in the array.
+-- If the array is empty, returns `Nothing`.
+last :: forall (value :: Type). Array value -> Maybe value
+last (Array vector) = do
+  let len = Data.Vector.length vector
+  vector Data.Vector.!? len

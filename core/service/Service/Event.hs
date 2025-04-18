@@ -1,5 +1,5 @@
 module Service.Event (
-  Event,
+  Event (..),
   StreamId (..),
   StreamPosition (..),
 ) where
