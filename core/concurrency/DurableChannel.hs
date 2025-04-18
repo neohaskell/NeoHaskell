@@ -34,9 +34,9 @@ read self =
 
 
 write :: value -> DurableChannel value -> Task _ Unit
-write value self = Lock.with self.lock do
-  self.values
-    |> ConcurrentVar.modify (Array.push value)
-
-  self.channel
-    |> Channel.write value
+write value self =
+  Lock.with self.lock do
+    self.values
+      |> ConcurrentVar.modify (Array.push value)
+    self.channel
+      |> Channel.write value

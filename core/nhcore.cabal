@@ -126,6 +126,8 @@ library
       Trigger,
       Service.Event,
       Service.EventStore,
+      Service.EventStore.Core,
+      Service.EventStore.InMemory,
 
       -- Reflection
       TypeName,
