@@ -6,6 +6,7 @@ module ConcurrentVar (
   set,
   peek,
   modify,
+  modifyReturning,
 ) where
 
 import Basics
@@ -51,4 +52,17 @@ modify ::
   (value -> value) -> ConcurrentVar value -> Task _ Unit
 modify transformer (ConcurrentVar ref) =
   GHC.modifyMVar_ ref (transformer .> pure)
+    |> Task.fromIO
+
+
+-- | Modifies the value in the ConcurrentVar and returns an additional value.
+-- The callback function that is passed must return a task that calculates a
+-- tuple of the new value and the additional value.
+modifyReturning ::
+  (value -> Task _ (value, a)) ->
+  ConcurrentVar value ->
+  Task _ a
+modifyReturning modifier (ConcurrentVar ref) = do
+  let ioModifier value = Task.runNoErrors (modifier value)
+  GHC.modifyMVar ref ioModifier
     |> Task.fromIO

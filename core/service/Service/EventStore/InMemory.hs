@@ -44,28 +44,19 @@ newEmptyStreamStore = do
   Task.yield StreamStore {globalLock, streams}
 
 
--- | Gets the durable channel for a stream.
-getStreamChannel :: StreamId -> StreamStore -> Task _ (Maybe (DurableChannel Event))
-getStreamChannel streamId store = do
-  streamsMap <- ConcurrentVar.peek store.streams
-  let channel = streamsMap |> Map.get streamId
-  Task.yield channel
-
-
 -- | Idempotently create a stream.
 ensureStream :: StreamId -> StreamStore -> Task _ (DurableChannel Event)
 ensureStream streamId store = do
-  maybeChannel <- getStreamChannel streamId store
-  case maybeChannel of
-    Just channel -> Task.yield channel
-    Nothing -> do
-      channel <- DurableChannel.new
-      store.streams
-        -- FIXME: Instead of performing the check outside,
-        -- we should instead perform the Map.get inside the modify
-        |> ConcurrentVar.modify (Map.set streamId channel)
-        |> Lock.with store.globalLock
-      Task.yield channel
+  let modifier streamMap = do
+        case streamMap |> Map.get streamId of
+          Just channel -> do
+            Task.yield (streamMap, channel)
+          Nothing -> do
+            channel <- DurableChannel.new
+            Task.yield (streamMap |> Map.set streamId channel, channel)
+  store.streams
+    |> ConcurrentVar.modifyReturning modifier
+    |> Lock.with store.globalLock
 
 
 appendToStreamImpl ::
@@ -84,11 +75,9 @@ appendToStreamImpl store streamId expectedPosition event = do
           Nothing -> Task.yield (StreamPosition 0)
           Just event -> Task.yield event.position
 
-  let lockAndAppend :: DurableChannel Event -> Task _ StreamPosition
-      lockAndAppend channel = do
-        channel
-          |> DurableChannel.write event
-          |> Lock.with store.globalLock -- FIXME: We shouldn't be using the global lock here.
+  let appendEvent :: DurableChannel Event -> Task _ StreamPosition
+      appendEvent channel = do
+        channel |> DurableChannel.write event
         let (StreamPosition pos) = expectedPosition
         Task.yield (pos + 1 |> StreamPosition)
 
@@ -100,6 +89,6 @@ appendToStreamImpl store streamId expectedPosition event = do
         (ConcurrencyConflict streamId expectedPosition expected)
         |> Task.throw
     else do
-      lockAndAppend channel
+      appendEvent channel
 
 -- FIXME: Take into considerations: https://chatgpt.com/share/68027542-d4c8-800a-ae5b-44995f0ceb34
