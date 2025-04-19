@@ -2,10 +2,9 @@
 
 module Collection (
   Collection (..),
-  count,
+  length,
   empty,
   isEmpty,
-  length,
   get,
   append,
   first,
@@ -22,19 +21,18 @@ class Collection collection where
   type Item collection
 
 
-  countImpl :: collection -> Int
+  lengthImpl :: collection -> Int
   emptyImpl :: collection
   isEmptyImpl :: collection -> Bool
-  lengthImpl :: collection -> Int
-  getImpl :: collection -> Int -> Maybe (Collection.Item collection)
+  getImpl :: Int -> collection -> Maybe (Collection.Item collection)
   appendImpl :: collection -> collection -> collection
   firstImpl :: collection -> Maybe (Collection.Item collection)
   lastImpl :: collection -> Maybe (Collection.Item collection)
 
 
 -- | Wrapper functions without the Impl suffix
-count :: (Collection c) => c -> Int
-count = countImpl
+length :: (Collection c) => c -> Int
+length = lengthImpl
 
 
 empty :: (Collection c) => c
@@ -45,11 +43,7 @@ isEmpty :: (Collection c) => c -> Bool
 isEmpty = isEmptyImpl
 
 
-length :: (Collection c) => c -> Int
-length = lengthImpl
-
-
-get :: (Collection c) => c -> Int -> Maybe (Collection.Item c)
+get :: (Collection c) => Int -> c -> Maybe (Collection.Item c)
 get = getImpl
 
 

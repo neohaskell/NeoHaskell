@@ -72,10 +72,36 @@ instance CL.Collection (Array a) where
   type Item (Array a) = a
 
 
-  countImpl =
+  lengthImpl =
     unwrap
       .> Data.Vector.length
       .> Prelude.fromIntegral
+
+
+  emptyImpl =
+    Array Data.Vector.empty
+
+
+  isEmptyImpl = unwrap .> Data.Vector.null
+
+
+  getImpl i array =
+    unwrap array !? Prelude.fromIntegral i
+
+
+  appendImpl (Array first) (Array second) =
+    Array (first ++ second)
+
+
+  firstImpl = unwrap .> (!? 0)
+
+
+  lastImpl =
+    unwrap
+      .> \v ->
+        if Data.Vector.null v
+          then Nothing
+          else Just (Data.Vector.last v)
 
 
 instance (QuickCheck.Arbitrary a) => QuickCheck.Arbitrary (Array a) where
@@ -99,25 +125,21 @@ unwrap (Array v) = v
 --
 -- > length empty == 0
 empty :: Array a
-empty =
-  Array Data.Vector.empty
+empty = CL.emptyImpl
 
 
 -- | Determine if an array is empty.
 --
 -- > isEmpty empty == True
 isEmpty :: Array a -> Bool
-isEmpty = unwrap .> Data.Vector.null
+isEmpty = CL.isEmptyImpl
 
 
 -- | Return the length of an array.
 --
 -- > length (fromLinkedList [1,2,3]) == 3
 length :: Array a -> Int
-length =
-  unwrap
-    .> Data.Vector.length
-    .> Prelude.fromIntegral
+length = CL.lengthImpl
 
 
 -- | Initialize an array. @initialize n f@ creates an array of length @n@ with
@@ -164,8 +186,7 @@ fromLinkedList =
 -- > get  5   (fromLinkedList [0,1,2]) == Nothing
 -- > get (-1) (fromLinkedList [0,1,2]) == Nothing
 get :: Int -> Array a -> Maybe a
-get i array =
-  unwrap array !? Prelude.fromIntegral i
+get = CL.getImpl
 
 
 -- | Set the element at a particular index. Returns an updated array.
@@ -261,8 +282,7 @@ indexedMap f (Array vector) =
 --
 -- > append (repeat 2 42) (repeat 3 81) == fromLinkedList [42,42,81,81,81]
 append :: Array a -> Array a -> Array a
-append (Array first) (Array second) =
-  Array (first ++ second)
+append = CL.appendImpl
 
 
 -- | Get a sub-section of an array: @(slice start end array)@. The @start@ is a
