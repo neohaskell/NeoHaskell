@@ -1,8 +1,7 @@
 {-# LANGUAGE TypeFamilies #-}
 
 module Collection (
-  Collection,
-  Item,
+  Collection (..),
   count,
   empty,
   isEmpty,
@@ -11,7 +10,6 @@ module Collection (
   append,
   first,
   last,
-  unwrap,
 ) where
 
 import Basics hiding (Item)
@@ -65,8 +63,3 @@ first = firstImpl
 
 last :: (Collection c) => c -> Maybe (Collection.Item c)
 last = lastImpl
-
-
--- | Helper function to unwrap a Collection
-unwrap :: Collection a -> a
-unwrap (Collection c) = c

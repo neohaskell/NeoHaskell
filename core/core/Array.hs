@@ -72,8 +72,8 @@ instance CL.Collection (Array a) where
   type Item (Array a) = a
 
 
-  countImpl (Collection c) =
-    (unwrap . CL.unwrap)
+  countImpl =
+    unwrap
       .> Data.Vector.length
       .> Prelude.fromIntegral
 
