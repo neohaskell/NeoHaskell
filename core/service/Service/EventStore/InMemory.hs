@@ -2,6 +2,7 @@ module Service.EventStore.InMemory (
   new,
 ) where
 
+import Array qualified
 import ConcurrentVar qualified
 import Core
 import DurableChannel qualified
@@ -68,27 +69,20 @@ appendToStreamImpl ::
 appendToStreamImpl store streamId expectedPosition event = do
   channel <- store |> ensureStream streamId
 
-  let getLastPosition :: DurableChannel Event -> Task _ StreamPosition
-      getLastPosition channel = do
-        lastEvent <- channel |> DurableChannel.last
-        case lastEvent of
-          Nothing -> Task.yield (StreamPosition 0)
-          Just event -> Task.yield event.position
+  let appendCondition :: Array Event -> Bool
+      appendCondition events =
+        case Array.last events of
+          Nothing -> True
+          Just lastEvent ->
+            lastEvent.position == expectedPosition
 
-  let appendEvent :: DurableChannel Event -> Task _ StreamPosition
-      appendEvent channel = do
-        channel |> DurableChannel.write event
-        let (StreamPosition pos) = expectedPosition
-        Task.yield (pos + 1 |> StreamPosition)
-
-  -- FIXME: This should be check-then-write that is atomic at the channel level.
-  expected <- getLastPosition channel
-  if expected != expectedPosition
-    then
-      do
-        (ConcurrencyConflict streamId expectedPosition expected)
+  hasWritten <- channel |> DurableChannel.checkAndWrite appendCondition event
+  if hasWritten
+    then do
+      let (StreamPosition pos) = expectedPosition
+      Task.yield (pos + 1 |> StreamPosition)
+    else
+      (ConcurrencyConflict streamId expectedPosition)
         |> Task.throw
-    else do
-      appendEvent channel
 
 -- FIXME: Take into considerations: https://chatgpt.com/share/68027542-d4c8-800a-ae5b-44995f0ceb34

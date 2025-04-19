@@ -15,7 +15,7 @@ newtype Limit = Limit (Positive Int)
 data Error
   = StreamNotFound StreamId
   | EventNotFound StreamId StreamPosition
-  | ConcurrencyConflict StreamId StreamPosition StreamPosition -- expected vs actual
+  | ConcurrencyConflict StreamId StreamPosition
   | StorageFailure Text -- Generic storage errors with message
   deriving (Eq, Show)
 
