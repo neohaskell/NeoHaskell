@@ -89,6 +89,15 @@ instance CL.Collection (Array a) where
     unwrap array !? Prelude.fromIntegral i
 
 
+  setImpl i value array = Array result
+   where
+    len = length array
+    vector = unwrap array
+    result
+      | 0 <= i && i < len = vector Data.Vector.// [(Prelude.fromIntegral i, value)]
+      | otherwise = vector
+
+
   appendImpl (Array first) (Array second) =
     Array (first ++ second)
 
@@ -195,13 +204,7 @@ get = CL.getImpl
 --
 -- > set 1 7 (fromLinkedList [1,2,3]) == fromLinkedList [1,7,3]
 set :: Int -> a -> Array a -> Array a
-set i value array = Array result
- where
-  len = length array
-  vector = unwrap array
-  result
-    | 0 <= i && i < len = vector Data.Vector.// [(Prelude.fromIntegral i, value)]
-    | otherwise = vector
+set = CL.setImpl
 
 
 -- | Push an element onto the end of an array.

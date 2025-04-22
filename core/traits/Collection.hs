@@ -25,6 +25,7 @@ class Collection collection where
   emptyImpl :: collection
   isEmptyImpl :: collection -> Bool
   getImpl :: Int -> collection -> Maybe (Collection.Item collection)
+  setImpl :: Int -> Collection.Item collection -> collection -> collection
   appendImpl :: collection -> collection -> collection
   firstImpl :: collection -> Maybe (Collection.Item collection)
   lastImpl :: collection -> Maybe (Collection.Item collection)
