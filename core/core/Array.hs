@@ -13,6 +13,7 @@ module Array (
   -- * Query
   isEmpty,
   length,
+  indices,
   get,
 
   -- * Manipulate
@@ -113,6 +114,12 @@ instance CL.Collection (Array a) where
           else Just (Data.Vector.last v)
 
 
+  indicesImpl =
+    unwrap
+      .> \v ->
+        Data.Vector.toList (Data.Vector.generate (Data.Vector.length v) Prelude.id)
+
+
 instance (QuickCheck.Arbitrary a) => QuickCheck.Arbitrary (Array a) where
   arbitrary = do
     list <- QuickCheck.arbitrary
@@ -149,6 +156,13 @@ isEmpty = CL.isEmptyImpl
 -- > length (fromLinkedList [1,2,3]) == 3
 length :: Array a -> Int
 length = CL.lengthImpl
+
+
+-- | The indices that are valid for subscripting the collection, in ascending order.
+--
+-- > indices (fromLinkedList [1,2,3]) == [0,1,2]
+indices :: Array a -> [Int]
+indices = CL.indicesImpl
 
 
 -- | Initialize an array. @initialize n f@ creates an array of length @n@ with

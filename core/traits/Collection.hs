@@ -29,6 +29,7 @@ class Collection collection where
   appendImpl :: collection -> collection -> collection
   firstImpl :: collection -> Maybe (Collection.Item collection)
   lastImpl :: collection -> Maybe (Collection.Item collection)
+  indicesImpl :: collection -> [Int]
 
 
 -- | Wrapper functions without the Impl suffix
