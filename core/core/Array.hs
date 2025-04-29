@@ -48,7 +48,8 @@ module Array (
 ) where
 
 import Basics
-import Collection qualified as CL
+import Collection qualified
+import Collection (Collection(..))
 import Data.Foldable qualified
 import Data.Vector ((!?), (++), (//))
 import Data.Vector qualified
