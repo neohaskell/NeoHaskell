@@ -48,8 +48,7 @@ module Array (
 ) where
 
 import Basics
-import Collection qualified
-import Collection (Collection(..))
+import Collection (Collection (..))
 import Data.Foldable qualified
 import Data.Vector ((!?), (++), (//))
 import Data.Vector qualified
@@ -70,55 +69,19 @@ newtype Array a = Array (Data.Vector.Vector a)
   deriving (Prelude.Eq, Prelude.Show, Prelude.Ord, Generic)
 
 
-instance CL.Collection (Array a) where
+instance Collection (Array a) where
   type Item (Array a) = a
 
 
-  lengthImpl =
-    unwrap
-      .> Data.Vector.length
-      .> Prelude.fromIntegral
-
-
-  emptyImpl =
-    Array Data.Vector.empty
-
-
-  isEmptyImpl = unwrap .> Data.Vector.null
-
-
-  getImpl i array =
-    unwrap array !? Prelude.fromIntegral i
-
-
-  setImpl i value array = Array result
-   where
-    len = length array
-    vector = unwrap array
-    result
-      | 0 <= i && i < len = vector Data.Vector.// [(Prelude.fromIntegral i, value)]
-      | otherwise = vector
-
-
-  appendImpl (Array first) (Array second) =
-    Array (first ++ second)
-
-
-  firstImpl = unwrap .> (!? 0)
-
-
-  lastImpl =
-    unwrap
-      .> \v ->
-        if Data.Vector.null v
-          then Nothing
-          else Just (Data.Vector.last v)
-
-
-  indicesImpl =
-    unwrap
-      .> \v ->
-        Data.Vector.toList (Data.Vector.generate (Data.Vector.length v) Prelude.id)
+  lengthImpl = length
+  emptyImpl = empty
+  isEmptyImpl = isEmpty
+  getImpl = get
+  setImpl = set
+  appendImpl = append
+  firstImpl = first
+  lastImpl = last
+  indicesImpl = indices
 
 
 instance (QuickCheck.Arbitrary a) => QuickCheck.Arbitrary (Array a) where
@@ -142,28 +105,31 @@ unwrap (Array v) = v
 --
 -- > length empty == 0
 empty :: Array a
-empty = CL.emptyImpl
+empty = Array Data.Vector.empty
 
 
 -- | Determine if an array is empty.
 --
 -- > isEmpty empty == True
 isEmpty :: Array a -> Bool
-isEmpty = CL.isEmptyImpl
+isEmpty = unwrap .> Data.Vector.null
 
 
 -- | Return the length of an array.
 --
 -- > length (fromLinkedList [1,2,3]) == 3
 length :: Array a -> Int
-length = CL.lengthImpl
+length = length
 
 
 -- | The indices that are valid for subscripting the collection, in ascending order.
 --
 -- > indices (fromLinkedList [1,2,3]) == [0,1,2]
 indices :: Array a -> [Int]
-indices = CL.indicesImpl
+indices =
+  unwrap
+    .> \v ->
+      Data.Vector.toList (Data.Vector.generate (Data.Vector.length v) Prelude.id)
 
 
 -- | Initialize an array. @initialize n f@ creates an array of length @n@ with
@@ -210,7 +176,28 @@ fromLinkedList =
 -- > get  5   (fromLinkedList [0,1,2]) == Nothing
 -- > get (-1) (fromLinkedList [0,1,2]) == Nothing
 get :: Int -> Array a -> Maybe a
-get = CL.getImpl
+get i array = unwrap array !? Prelude.fromIntegral i
+
+
+-- | Return @Just@ the first element or @Nothing@ if the index is empty.
+--
+-- > first (fromLinkedList [0,1,2]) == Just 0
+-- > first (fromLinkedList [])      == Nothing
+first :: Array a -> Maybe a
+first = unwrap .> (!? 0)
+
+
+-- | Return @Just@ the last element or @Nothing@ if the index is empty.
+--
+-- > last (fromLinkedList [0,1,2]) == Just 2
+-- > last (fromLinkedList [])      == Nothing
+last :: Array a -> Maybe a
+last =
+  unwrap
+    .> \v ->
+      if Data.Vector.null v
+        then Nothing
+        else Just (Data.Vector.last v)
 
 
 -- | Set the element at a particular index. Returns an updated array.
@@ -219,7 +206,13 @@ get = CL.getImpl
 --
 -- > set 1 7 (fromLinkedList [1,2,3]) == fromLinkedList [1,7,3]
 set :: Int -> a -> Array a -> Array a
-set = CL.setImpl
+set i value array = Array result
+ where
+  len = length array
+  vector = unwrap array
+  result
+    | 0 <= i && i < len = vector Data.Vector.// [(Prelude.fromIntegral i, value)]
+    | otherwise = vector
 
 
 -- | Push an element onto the end of an array.
@@ -300,7 +293,8 @@ indexedMap f (Array vector) =
 --
 -- > append (repeat 2 42) (repeat 3 81) == fromLinkedList [42,42,81,81,81]
 append :: Array a -> Array a -> Array a
-append = CL.appendImpl
+append (Array first) (Array second) =
+  Array (first ++ second)
 
 
 -- | Get a sub-section of an array: @(slice start end array)@. The @start@ is a
