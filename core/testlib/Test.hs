@@ -18,7 +18,6 @@ module Test (
   before,
   beforeWith,
   after,
-  afterWith,
   around,
   aroundWith,
   parallel,
@@ -28,6 +27,7 @@ module Test (
 ) where
 
 import Control.Exception qualified as Exception
+import Core
 import IO (IO)
 import IO qualified
 import Result (Result)
@@ -123,11 +123,6 @@ beforeWith = Hspec.beforeWith
 -- | Run an IO action after each test
 after :: IO a -> Hspec.Spec -> Hspec.Spec
 after = Hspec.after
-
-
--- | Run an IO action after each test with a specific value
-afterWith :: a -> (a -> IO b) -> Hspec.Spec -> Hspec.Spec
-afterWith = Hspec.afterWith
 
 
 -- | Run an IO action around each test
