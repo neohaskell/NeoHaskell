@@ -4,6 +4,7 @@
     "haskell.haskell",
     "arrterian.nix-env-selector",
     "esbenp.prettier-vscode",
-    "lunaryorn.hlint"
+    "lunaryorn.hlint",
+    "davidanson.vscode-markdownlint"
   ]
 }
