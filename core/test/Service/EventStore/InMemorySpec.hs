@@ -45,7 +45,7 @@ spec = do
             let expectedCount = Array.length originalEvents
             events <- store.readStreamForwardFrom streamId (Event.StreamPosition 0) expectedCount
             let isCorrectCount = Array.length events == expectedCount
-            let isCorrectOrder = events |> Array.map (.position) |> (==) positions
+            let isCorrectOrder = events |> Array.map (\v -> v.position) |> (==) positions
             let isCorrectContent = events == originalEvents
             Task.yield (isCorrectCount && isCorrectOrder && isCorrectContent)
 
