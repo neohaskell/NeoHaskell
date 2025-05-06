@@ -46,6 +46,7 @@ common common_cfg
       dir-traverse ,
       Cabal ,
       uuid ,
+      hspec,
       template-haskell
 
 
@@ -141,7 +142,10 @@ library
 
       -- Http
       Http,
-      Http.Client
+      Http.Client,
+
+      -- Test
+      Test,
 
 
     -- other-modules:
@@ -156,17 +160,20 @@ library
       system,
       http,
       reflection,
+      testlib,
       options-parser
     default-language: GHC2021
 
 test-suite nhcore-test
     import:           common_cfg
     default-language: GHC2021
-    -- other-modules:
+    other-modules:
+      Service.EventStore.InMemorySpec,
     -- other-extensions:
     type:             exitcode-stdio-1.0
     hs-source-dirs:   test
     main-is:          Main.hs
     build-depends:
         base ^>=4.18,
-        nhcore
+        nhcore,
+        hspec,

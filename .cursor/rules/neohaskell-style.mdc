@@ -9,6 +9,8 @@ description: "Treat all .hs files in this project as NeoHaskell, not classic Has
 
 ## NeoHaskell quick-start
 
+* Don't include it into the file, but `NoImplicitPrelude` is enabled, take that into account.
+* Code **WILL NEVER** be written as point-free style, and instead it will always be typed as explicit function application.
 * **Pipe operator** `|>` is preferred over nested `$`.
 * Imports are NeoHaskell style, which means that a module will be always imported two times, once unqualified, importing the type of the module explicitly, and another time right below in a post-qualified way.
   * Good example
@@ -22,6 +24,7 @@ description: "Treat all .hs files in this project as NeoHaskell, not classic Has
     import Service.Event (Event(..), new, foobar)   -- BAD! things that aren't the type aren't allowed
     import Service.Event qualified as E   -- BAD! Qualification name must be the last part of the module
     ```
+* Modules from `base` will always be imported with a `Ghc` prefix in their qualification, in order to explicitly set boundaries.
 * Intermediate bindings are defined in `do` blocks. EVEN ON RETURNING TYPES THAT ARE NOT MONADS. `let..in` and `where` are forbidden.
   * Good example
   ```hs
@@ -48,6 +51,10 @@ description: "Treat all .hs files in this project as NeoHaskell, not classic Has
     x = 2
     y = 3
   ```
+
+* Type parameters in functions will be **always** defined in a `forall` clause.
+
+* Type parameters will always be named as their intent, and not with short letters. For example, instead of `Array a`, one will write `Array value`.
 
 * Pattern matching is only allowed in `case..of` expressions, other kinds are disallowed:
   * Good example

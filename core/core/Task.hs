@@ -13,6 +13,7 @@ module Task (
   runMain,
   forEach,
   runNoErrors,
+  mapArray,
 ) where
 
 import Applicable (Applicative (pure))
@@ -22,6 +23,7 @@ import Array qualified
 import Basics
 import Control.Exception (Exception)
 import Control.Exception qualified as Exception
+import Control.Monad qualified
 import Control.Monad.IO.Class qualified as Monad
 import Control.Monad.Trans.Except (ExceptT)
 import Control.Monad.Trans.Except qualified as Except
@@ -145,3 +147,14 @@ forEach ::
   Task err Unit
 forEach callback array =
   Data.Foldable.traverse_ callback (Array.unwrap array)
+
+
+mapArray :: (element -> Task err output) -> Array element -> Task err (Array output)
+mapArray f array =
+  Array.unwrap array
+    |> Control.Monad.mapM f
+    |> Task.map Array.fromLegacy
+
+-- array
+--   |> Array.map f
+--   |> Task.forEach

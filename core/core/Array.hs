@@ -44,6 +44,7 @@ module Array (
 
   -- * Compatibility
   unwrap,
+  fromLegacy,
   last,
 ) where
 
@@ -372,3 +373,9 @@ last :: forall (value :: Type). Array value -> Maybe value
 last (Array vector) = do
   let len = Data.Vector.length vector
   vector Data.Vector.!? len
+
+
+-- | Convert a Haskell Vector to a NeoHaskell Array.
+-- Only use this for compatibility with legacy code.
+fromLegacy :: Data.Vector.Vector a -> Array a
+fromLegacy = Array
