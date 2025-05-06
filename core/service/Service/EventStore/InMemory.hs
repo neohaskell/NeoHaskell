@@ -84,5 +84,3 @@ appendToStreamImpl store streamId expectedPosition event = do
     else
       (ConcurrencyConflict streamId expectedPosition)
         |> Task.throw
-
--- FIXME: Take into considerations: https://chatgpt.com/share/68027542-d4c8-800a-ae5b-44995f0ceb34
