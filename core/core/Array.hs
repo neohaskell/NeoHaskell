@@ -82,6 +82,7 @@ instance Collection (Array a) where
   firstImpl = first
   lastImpl = last
   indicesImpl = indices
+  mapImpl = map
 
 
 instance (QuickCheck.Arbitrary a) => QuickCheck.Arbitrary (Array a) where

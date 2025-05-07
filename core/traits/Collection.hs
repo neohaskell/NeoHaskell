@@ -6,9 +6,12 @@ module Collection (
   empty,
   isEmpty,
   get,
+  set,
   append,
   first,
   last,
+  indices,
+  map,
 ) where
 
 import Basics hiding (Item)
@@ -30,7 +33,10 @@ class Collection collection where
   firstImpl :: collection -> Maybe (Collection.Item collection)
   lastImpl :: collection -> Maybe (Collection.Item collection)
   indicesImpl :: collection -> [Int]
+  mapImpl :: (Collection.Item collection -> Collection.Item collection) -> collection -> collection
 
+
+-- containsImpl :: (Collection.Item collection) -> collection -> Bool
 
 -- | Wrapper functions without the Impl suffix
 length :: (Collection c) => c -> Int
@@ -49,6 +55,10 @@ get :: (Collection c) => Int -> c -> Maybe (Collection.Item c)
 get = getImpl
 
 
+set :: (Collection c) => Int -> (Collection.Item c) -> c -> c
+set = setImpl
+
+
 append :: (Collection c) => c -> c -> c
 append = appendImpl
 
@@ -59,3 +69,11 @@ first = firstImpl
 
 last :: (Collection c) => c -> Maybe (Collection.Item c)
 last = lastImpl
+
+
+indices :: (Collection c) => c -> [Int]
+indices = indicesImpl
+
+
+map :: (Collection c) => (Collection.Item c -> Collection.Item c) -> c -> c
+map = mapImpl
