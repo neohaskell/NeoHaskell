@@ -8,7 +8,7 @@ import Core
 
 
 data Event = Event
-  { id :: Uuid,
+  { id :: Text, -- FIXME: Use Uuid
     streamId :: StreamId,
     position :: StreamPosition
   }

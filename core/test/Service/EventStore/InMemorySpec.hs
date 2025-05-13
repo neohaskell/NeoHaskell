@@ -1,10 +1,10 @@
 module Service.EventStore.InMemorySpec where
 
-import Array (Array (..))
 import Array qualified
 import Core
 import Service.Event (Event (..))
 import Service.Event qualified as Event
+import Service.EventStore.Core qualified as EventStore
 import Service.EventStore.InMemory qualified as InMemory
 import Task qualified
 import Test
@@ -13,12 +13,9 @@ import Test
 spec :: Spec
 spec = do
   describe "InMemoryEventStore" do
-    it "should be able to append an event to a stream" do
-      panic "not implemented"
-
     it "should maintain total ordering per stream with 1M events" do
       -- Create a new event store
-      store <- InMemory.new
+      store <- InMemory.new |> runTask
 
       -- Create a stream ID for testing
       let streamId = Event.StreamId "test-stream"
@@ -33,23 +30,23 @@ spec = do
               Event {id, streamId, position}
 
       -- Append all events sequentially
-      let appendEvents :: Array Event -> Task _ (Array Event.StreamPosition)
+      let appendEvents :: Array Event -> Task EventStore.Error (Array Event.StreamPosition)
           appendEvents events = do
             events |> Task.mapArray \event -> do
               let expectedPosition = event.position
               store.appendToStream streamId expectedPosition event
 
+      positions <- appendEvents generatedEvents |> runTask
       -- Read back all events to verify
-      let verifyEvents :: Array Event -> Array Event.StreamPosition -> Task _ Bool
-          verifyEvents originalEvents positions = do
-            let expectedCount = Array.length originalEvents
-            events <- store.readStreamForwardFrom streamId (Event.StreamPosition 0) expectedCount
-            let isCorrectCount = Array.length events == expectedCount
-            let isCorrectOrder = events |> Array.map (\v -> v.position) |> (==) positions
-            let isCorrectContent = events == originalEvents
-            Task.yield (isCorrectCount && isCorrectOrder && isCorrectContent)
+      let expectedCount = Array.length generatedEvents
+      events <-
+        store.readStreamForwardFrom streamId (Event.StreamPosition 0) (EventStore.Limit (Positive expectedCount)) |> runTask
 
-      -- Run the test
-      positions <- appendEvents generatedEvents
-      isCorrect <- verifyEvents generatedEvents positions |> runTask
-      isCorrect |> shouldBe True
+      -- let isCorrectCount = Array.length events == expectedCount
+      Array.length events |> shouldBe expectedCount
+
+      -- let isCorrectOrder = events |> Array.map (\v -> v.position) |> (==) positions
+      events |> Array.map (\v -> v.position) |> shouldBe positions
+
+      -- let isCorrectContent = events == generatedEvents
+      events |> shouldBe generatedEvents

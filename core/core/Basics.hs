@@ -11,7 +11,7 @@ module Basics (
   -- * Math
   Int,
   Float,
-  Positive,
+  Positive (..),
   makePositive,
   makePositiveOrPanic,
   (+),
