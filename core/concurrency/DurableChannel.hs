@@ -1,4 +1,4 @@
-module DurableChannel (DurableChannel, new, read, write, last, checkAndWrite) where
+module DurableChannel (DurableChannel, new, read, write, last, checkAndWrite, getAndTransform) where
 
 import Array (Array)
 import Array qualified
@@ -69,3 +69,13 @@ last :: DurableChannel value -> Task _ (Maybe value)
 last self = do
   values <- ConcurrentVar.peek self.values
   Task.yield (Array.last values)
+
+
+-- | Allows transforming and returning the array inside a lock
+getAndTransform :: (Array value -> Array value) -> DurableChannel value -> Task _ (Array value)
+getAndTransform transform self =
+  Lock.with self.lock do
+    values <- ConcurrentVar.peek self.values
+    values
+      |> transform
+      |> Task.yield

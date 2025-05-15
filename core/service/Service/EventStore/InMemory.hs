@@ -22,10 +22,10 @@ new = do
   let eventStore =
         EventStore
           { appendToStream = appendToStreamImpl store,
-            readStreamForwardFrom = panic "not implemented yet",
-            readStreamBackwardFrom = panic "not implemented yet",
-            readAllStreamEvents = panic "not implemented yet",
-            readAllEventsForwardFrom = panic "not implemented yet"
+            readStreamForwardFrom = readStreamForwardFromImpl store,
+            readStreamBackwardFrom = readStreamBackwardFromImpl store,
+            readAllStreamEvents = panic "readAllStreamEvents not implemented yet",
+            readAllEventsForwardFrom = panic "readAllEventsForwardFrom not implemented yet"
           }
   Task.yield eventStore
 
@@ -84,3 +84,33 @@ appendToStreamImpl store streamId expectedPosition event = do
     else
       (ConcurrencyConflict streamId expectedPosition)
         |> Task.throw
+
+
+readStreamForwardFromImpl ::
+  StreamStore ->
+  StreamId ->
+  StreamPosition ->
+  Limit ->
+  Task Error (Array Event)
+readStreamForwardFromImpl store streamId position (Limit (Positive limit)) = do
+  channel <- store |> ensureStream streamId
+  channel
+    |> DurableChannel.getAndTransform \events ->
+      events
+        |> Array.dropWhile (\event -> event.position <= position)
+        |> Array.take limit
+
+
+readStreamBackwardFromImpl ::
+  StreamStore ->
+  StreamId ->
+  StreamPosition ->
+  Limit ->
+  Task Error (Array Event)
+readStreamBackwardFromImpl store streamId position (Limit (Positive limit)) = do
+  channel <- store |> ensureStream streamId
+  channel
+    |> DurableChannel.getAndTransform \events ->
+      events
+        |> Array.dropIf (\event -> event.position > position)
+        |> Array.reduce (\event acc -> if Array.length acc < limit then Array.push event acc else acc) Array.empty
