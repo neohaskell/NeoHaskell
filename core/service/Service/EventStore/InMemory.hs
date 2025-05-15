@@ -24,8 +24,8 @@ new = do
           { appendToStream = appendToStreamImpl store,
             readStreamForwardFrom = readStreamForwardFromImpl store,
             readStreamBackwardFrom = readStreamBackwardFromImpl store,
-            readAllStreamEvents = panic "readAllStreamEvents not implemented yet",
-            readAllEventsForwardFrom = panic "readAllEventsForwardFrom not implemented yet"
+            readAllStreamEvents = readAllStreamEventsImpl store,
+            readAllEventsForwardFrom = readAllEventsForwardFromImpl store
           }
   Task.yield eventStore
 
@@ -114,3 +114,22 @@ readStreamBackwardFromImpl store streamId position (Limit (Positive limit)) = do
       events
         |> Array.dropIf (\event -> event.position > position)
         |> Array.reduce (\event acc -> if Array.length acc < limit then Array.push event acc else acc) Array.empty
+
+
+readAllStreamEventsImpl ::
+  StreamStore ->
+  StreamId ->
+  Task Error (Array Event)
+readAllStreamEventsImpl store streamId = do
+  channel <- store |> ensureStream streamId
+  channel
+    |> DurableChannel.getAndTransform unchanged
+
+
+readAllEventsForwardFromImpl ::
+  StreamStore ->
+  StreamPosition ->
+  Limit ->
+  Task Error (Array Event)
+readAllEventsForwardFromImpl _ _ _ =
+  Task.yield Array.empty

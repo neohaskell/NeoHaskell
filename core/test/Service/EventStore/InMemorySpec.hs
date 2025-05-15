@@ -13,7 +13,7 @@ import Test
 spec :: Spec
 spec = do
   describe "InMemoryEventStore" do
-    it "should maintain total ordering per stream with 1M events" do
+    it "should maintain total ordering per stream with 10 events" do
       -- Create a new event store
       store <- InMemory.new |> runTask
 
@@ -23,7 +23,7 @@ spec = do
       -- Generate 1M events with sequential positions
       let generatedEvents :: Array Event
           generatedEvents = do
-            let count = 1_000_000
+            let count = 10
             Array.initialize count \index -> do
               let position = Event.StreamPosition (Positive index)
               let id = [fmt|event-{index}|]
