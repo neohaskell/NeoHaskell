@@ -12,6 +12,7 @@ module Command (
   parseHandler,
   commands,
   map,
+  yield,
 ) where
 
 import Action (Action)
@@ -300,6 +301,10 @@ commands commandConfigs = do
           |> Combinable.mconcat
 
   OptionsParser (OptParse.subparser cmds)
+
+
+yield :: a -> OptionsParser a
+yield val = Applicative.pure val
 
 
 -- Private

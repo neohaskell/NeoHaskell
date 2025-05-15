@@ -107,7 +107,7 @@ module Basics (
   -- * Reexported for records
   GHC.Records.HasField (..),
   panic,
-  Prelude.pure,
+  pure,
 
   -- * Reexported for syntax utility
   fromInteger,
@@ -145,7 +145,7 @@ import Language.Haskell.TH.Quote (QuasiQuoter)
 import Mappable (Mappable)
 import PyF qualified
 import Unit (Unit, unit)
-import Prelude (fmap, fromInteger, otherwise, return, (<*>), (>>=))
+import Prelude (fmap, fromInteger, otherwise, pure, return, (<*>), (>>=))
 import Prelude qualified
 
 
