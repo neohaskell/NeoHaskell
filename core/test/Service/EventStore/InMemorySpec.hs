@@ -1,6 +1,7 @@
 module Service.EventStore.InMemorySpec where
 
 import Array qualified
+import Console qualified
 import Core
 import Service.Event (Event (..))
 import Service.Event qualified as Event
@@ -8,6 +9,7 @@ import Service.EventStore.Core qualified as EventStore
 import Service.EventStore.InMemory qualified as InMemory
 import Task qualified
 import Test
+import ToText (toText)
 
 
 spec :: Spec
@@ -33,6 +35,9 @@ spec = do
       let appendEvents :: Array Event -> Task EventStore.Error (Array Event.StreamPosition)
           appendEvents events = do
             events |> Task.mapArray \event -> do
+              let id = toText event.id
+              let position = toText event.position
+              Console.print [fmt|Appending event {id} at position {position}|]
               let expectedPosition = event.position
               store.appendToStream streamId expectedPosition event
 
@@ -41,6 +46,10 @@ spec = do
       let expectedCount = Array.length generatedEvents
       events <-
         store.readStreamForwardFrom streamId (Event.StreamPosition 0) (EventStore.Limit (Positive expectedCount)) |> runTask
+
+      let eventsText = toPrettyText events
+      let eventsCount = Array.length events |> toText
+      Console.print [fmt|Events[{eventsCount}]: {eventsText}|] |> runTask @Text
 
       -- let isCorrectCount = Array.length events == expectedCount
       Array.length events |> shouldBe expectedCount

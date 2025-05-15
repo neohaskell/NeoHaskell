@@ -97,7 +97,7 @@ readStreamForwardFromImpl store streamId position (Limit (Positive limit)) = do
   channel
     |> DurableChannel.getAndTransform \events ->
       events
-        |> Array.dropWhile (\event -> event.position <= position)
+        |> Array.dropWhile (\event -> event.position < position)
         |> Array.take limit
 
 
