@@ -25,6 +25,7 @@ data AppendResult = AppendResult
   { localPosition :: StreamPosition,
     globalPosition :: StreamPosition
   }
+  deriving (Eq, Show)
 
 
 -- | An interface for the operations of an event store

@@ -44,7 +44,7 @@ it name = Hspec.it (Text.toLinkedList name)
 
 -- | Assert that two values are equal
 shouldBe :: (Show a, Eq a) => a -> a -> Hspec.Expectation
-shouldBe = Hspec.shouldBe
+shouldBe expected actual = Hspec.shouldBe actual expected
 
 
 -- | Assert that a value satisfies a predicate
