@@ -78,9 +78,7 @@ appendToStreamImpl store streamId expectedPosition event = do
 
   hasWritten <- channel |> DurableChannel.checkAndWrite appendCondition event
   if hasWritten
-    then do
-      let (StreamPosition pos) = expectedPosition
-      Task.yield (pos + 1 |> StreamPosition)
+    then Task.yield expectedPosition
     else
       (ConcurrencyConflict streamId expectedPosition)
         |> Task.throw

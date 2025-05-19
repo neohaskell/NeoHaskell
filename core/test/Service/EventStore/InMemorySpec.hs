@@ -39,17 +39,13 @@ spec = do
               let position = toText event.position
               Console.print [fmt|Appending event {id} at position {position}|]
               let expectedPosition = event.position
-              store.appendToStream streamId expectedPosition event
+              event |> store.appendToStream streamId expectedPosition
 
       positions <- appendEvents generatedEvents |> runTask
       -- Read back all events to verify
       let expectedCount = Array.length generatedEvents
       events <-
         store.readStreamForwardFrom streamId (Event.StreamPosition 0) (EventStore.Limit (Positive expectedCount)) |> runTask
-
-      let eventsText = toPrettyText events
-      let eventsCount = Array.length events |> toText
-      Console.print [fmt|Events[{eventsCount}]: {eventsText}|] |> runTask @Text
 
       -- let isCorrectCount = Array.length events == expectedCount
       Array.length events |> shouldBe expectedCount
