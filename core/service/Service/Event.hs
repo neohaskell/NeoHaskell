@@ -10,7 +10,8 @@ import Core
 data Event = Event
   { id :: Text, -- FIXME: Use Uuid
     streamId :: StreamId,
-    position :: StreamPosition
+    position :: StreamPosition, -- Local position in stream
+    globalPosition :: Maybe StreamPosition
   }
   deriving (Eq, Show, Ord, Generic)
 

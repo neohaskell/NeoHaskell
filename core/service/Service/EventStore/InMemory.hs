@@ -33,7 +33,8 @@ new = do
 -- PRIVATE
 
 data StreamStore = StreamStore
-  { streams :: ConcurrentVar (Map StreamId (DurableChannel Event)),
+  { globalStream :: (DurableChannel Event),
+    streams :: ConcurrentVar (Map StreamId (DurableChannel Event)),
     globalLock :: Lock
   }
 
@@ -41,11 +42,12 @@ data StreamStore = StreamStore
 newEmptyStreamStore :: Task _ StreamStore
 newEmptyStreamStore = do
   globalLock <- Lock.new
+  globalStream <- DurableChannel.new
   streams <- ConcurrentVar.containing Map.empty
-  Task.yield StreamStore {globalLock, streams}
+  Task.yield StreamStore {globalLock, streams, globalStream}
 
 
--- | Idempotently create a stream.
+-- | Idempotent stream creation.
 ensureStream :: StreamId -> StreamStore -> Task _ (DurableChannel Event)
 ensureStream streamId store = do
   let modifier streamMap = do
@@ -65,7 +67,7 @@ appendToStreamImpl ::
   StreamId ->
   StreamPosition ->
   Event ->
-  Task Error StreamPosition
+  Task Error AppendResult
 appendToStreamImpl store streamId expectedPosition event = do
   channel <- store |> ensureStream streamId
 
@@ -76,9 +78,20 @@ appendToStreamImpl store streamId expectedPosition event = do
           Just lastEvent ->
             lastEvent.position == expectedPosition
 
+  let globalPositionModifier :: Int -> Event
+      globalPositionModifier index = do
+        let globalPos = Just (StreamPosition (Positive (index + 1)))
+        event {Service.Event.globalPosition = globalPos}
+
   hasWritten <- channel |> DurableChannel.checkAndWrite appendCondition event
   if hasWritten
-    then Task.yield expectedPosition
+    then do
+      globalIndex <-
+        store.globalStream
+          |> DurableChannel.writeWithIndex globalPositionModifier
+      let localPosition = expectedPosition
+      let globalPosition = StreamPosition (Positive globalIndex)
+      Task.yield AppendResult {localPosition, globalPosition}
     else
       (ConcurrencyConflict streamId expectedPosition)
         |> Task.throw

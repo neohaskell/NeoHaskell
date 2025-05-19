@@ -1,4 +1,4 @@
-module DurableChannel (DurableChannel, new, read, write, last, checkAndWrite, getAndTransform) where
+module DurableChannel (DurableChannel, new, read, write, last, checkAndWrite, getAndTransform, writeWithIndex) where
 
 import Array (Array)
 import Array qualified
@@ -38,6 +38,22 @@ write :: value -> DurableChannel value -> Task _ Unit
 write value self =
   Lock.with self.lock do
     writeNoLock value self
+
+
+-- | Like write, but passes the index of the value to the function
+-- so that the function can return the indexed value.
+writeWithIndex :: (Int -> value) -> DurableChannel value -> Task _ Int
+writeWithIndex f self = do
+  Lock.with self.lock do
+    let modifier v = do
+          let index = Array.length v
+          Task.yield (v, index)
+    index <-
+      self.values
+        |> ConcurrentVar.modifyReturning modifier
+    let value = f index
+    self |> writeNoLock value
+    Task.yield index
 
 
 writeNoLock :: value -> DurableChannel value -> Task _ Unit
