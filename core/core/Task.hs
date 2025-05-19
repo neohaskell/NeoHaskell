@@ -14,6 +14,7 @@ module Task (
   forEach,
   runNoErrors,
   mapArray,
+  runResult,
 ) where
 
 import Applicable (Applicative (pure))
@@ -77,6 +78,13 @@ andThen f self = Task do
 
 
 -- TODO: Figure out the best API to ensure that the main function is just a Task that cannot fail and returns a unit
+
+runResult :: Task err value -> IO (Result err value)
+runResult task = do
+  runTask task
+    |> Except.runExceptT
+    |> IO.map Result.fromEither
+
 
 run :: (Result err value -> IO value) -> Task err value -> IO value
 run reducer task = do

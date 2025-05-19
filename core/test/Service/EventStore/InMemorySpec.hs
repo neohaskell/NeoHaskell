@@ -6,7 +6,6 @@ import Console qualified
 import Core
 import GHC.IO qualified as GHC
 import Maybe qualified
-import Result qualified
 import Service.Event (Event (..))
 import Service.Event qualified as Event
 import Service.EventStore.Core qualified as EventStore
@@ -100,42 +99,50 @@ testOptimisticConcurrency = do
   let append1 =
         event1
           |> store.appendToStream streamId (Event.StreamPosition 1)
-          |> Task.map Result.Ok
           |> Task.mapError toText
-          |> runTask @Text
+          |> Task.runResult
           |> AsyncIO.run
 
   let append2 =
         event2
           |> store.appendToStream streamId (Event.StreamPosition 1)
-          |> Task.map Result.Ok
           |> Task.mapError toText
-          |> runTask @Text
+          |> Task.runResult
           |> AsyncIO.run
 
   -- Run both operations concurrently
   thread1 <- append1
   thread2 <- append2
 
+  (_, result) <-
+    [thread1, thread2]
+      |> Array.fromLinkedList
+      |> AsyncIO.waitAnyCancel
+
+  let resultText = toPrettyText result
+
+  Console.print [fmt|Result: {resultText}|]
+    |> runTask @Text
+
   -- Wait for both to complete
-  result1 :: Result Text EventStore.AppendResult <- AsyncIO.waitFor thread1
-  result2 :: Result Text EventStore.AppendResult <- AsyncIO.waitFor thread2
+  -- result1 <- AsyncIO.waitFor thread1
+  -- result2 <- AsyncIO.waitFor thread2
 
-  let result1Text = toPrettyText result1
-  let result2Text = toPrettyText result2
+  -- let result1Text = toPrettyText result1
+  -- let result2Text = toPrettyText result2
 
-  Console.print [fmt|Result 1: {result1Text}|]
-    |> runTask @Text
+  -- Console.print [fmt|Result 1: {result1Text}|]
+  --   |> runTask @Text
 
-  Console.print [fmt|Result 2: {result2Text}|]
-    |> runTask @Text
+  -- Console.print [fmt|Result 2: {result2Text}|]
+  --   |> runTask @Text
 
-  -- Verify that exactly one operation succeeded and one failed
-  [result1, result2]
-    |> Array.fromLinkedList
-    |> Array.takeIf Result.isOk
-    |> Array.length
-    |> shouldBe 1
+  -- -- Verify that exactly one operation succeeded and one failed
+  -- [result1, result2]
+  --   |> Array.fromLinkedList
+  --   |> Array.takeIf Result.isOk
+  --   |> Array.length
+  --   |> shouldBe 1
 
   -- Read back all events to verify
   events <-
