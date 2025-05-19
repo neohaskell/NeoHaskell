@@ -34,6 +34,7 @@ in pkgs.mkShell rec {
   ] ++ pre-commit.pre-commit-check.enabledPackages;
 
   shellHook = ''
+    unset TEMP TMP TEMPDIR TMPDIR   # Required for nix-shell to work
     ${pre-commit.pre-commit-check.shellHook}
   '';
 
