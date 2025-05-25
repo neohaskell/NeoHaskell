@@ -71,10 +71,22 @@ checkAndWrite ::
   Task _ Bool
 checkAndWrite predicate value self =
   Lock.with self.lock do
-    values <- ConcurrentVar.peek self.values
-    if predicate values
+    let modifier values = do
+          if predicate values
+            then do
+              let newValues = Array.push value values
+              Task.yield (newValues, True)
+            else do
+              Task.yield (values, False)
+
+    wasWritten <-
+      self.values
+        |> ConcurrentVar.modifyReturning modifier
+
+    if wasWritten
       then do
-        writeNoLock value self
+        self.channel
+          |> Channel.write value
         Task.yield True
       else do
         Task.yield False

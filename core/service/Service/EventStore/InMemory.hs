@@ -72,11 +72,10 @@ appendToStreamImpl store streamId expectedPosition event = do
   channel <- store |> ensureStream streamId
 
   let appendCondition :: Array Event -> Bool
-      appendCondition events =
-        case Array.last events of
-          Nothing -> True
-          Just lastEvent ->
-            lastEvent.position == expectedPosition
+      appendCondition events = do
+        let currentLength = Array.length events
+        let (StreamPosition (Positive pos)) = expectedPosition
+        pos == currentLength
 
   let globalPositionModifier :: Int -> Event
       globalPositionModifier index = do

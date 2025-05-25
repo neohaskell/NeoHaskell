@@ -2,7 +2,6 @@ module Service.EventStore.InMemorySpec where
 
 import Array qualified
 import AsyncIO qualified
-import Console qualified
 import Core
 import GHC.IO qualified as GHC
 import Maybe qualified
@@ -114,45 +113,15 @@ testOptimisticConcurrency = do
   thread1 <- append1
   thread2 <- append2
 
-  (_, result) <-
-    [thread1, thread2]
-      |> Array.fromLinkedList
-      |> AsyncIO.waitAnyCancel
-
-  let resultText = toPrettyText result
-
-  Console.print [fmt|Result: {resultText}|]
-    |> runTask @Text
-
-  -- Wait for both to complete
-  -- result1 <- AsyncIO.waitFor thread1
-  -- result2 <- AsyncIO.waitFor thread2
-
-  -- let result1Text = toPrettyText result1
-  -- let result2Text = toPrettyText result2
-
-  -- Console.print [fmt|Result 1: {result1Text}|]
-  --   |> runTask @Text
-
-  -- Console.print [fmt|Result 2: {result2Text}|]
-  --   |> runTask @Text
-
-  -- -- Verify that exactly one operation succeeded and one failed
-  -- [result1, result2]
-  --   |> Array.fromLinkedList
-  --   |> Array.takeIf Result.isOk
-  --   |> Array.length
-  --   |> shouldBe 1
+  [thread1, thread2]
+    |> Array.fromLinkedList
+    |> AsyncIO.waitAnyCancel
+    |> discard
 
   -- Read back all events to verify
   events <-
     store.readStreamForwardFrom streamId (Event.StreamPosition 0) (EventStore.Limit (Positive 10))
       |> runTask
-
-  let eventsText = toPrettyText events
-
-  Console.print [fmt|Read events: {eventsText}|]
-    |> runTask @Text
 
   -- We should have exactly 2 events (initial + one successful append)
   events
