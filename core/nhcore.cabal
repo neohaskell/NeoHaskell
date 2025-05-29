@@ -146,6 +146,7 @@ library
 
       -- Test
       Test,
+      Test.Service.EventStore,
 
 
     -- other-modules:
