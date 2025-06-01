@@ -122,7 +122,6 @@ module Basics (
   Control.Monad.join,
   Type,
   Control.Monad.forever,
-  Control.Monad.when,
   GHC.Generics.Generic,
 ) where
 

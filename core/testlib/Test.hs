@@ -20,6 +20,7 @@ module Test (
   parallel,
   sequential,
   runTask,
+  fail,
 ) where
 
 import Array qualified
@@ -38,49 +39,65 @@ describe name = Hspec.describe (Text.toLinkedList name)
 
 
 -- | Define a test case
-it :: (Hspec.Example a) => Text -> a -> Hspec.SpecWith (Hspec.Arg a)
-it name = Hspec.it (Text.toLinkedList name)
+it :: (Show err) => Text -> (Task err Unit) -> Spec
+it name block =
+  block
+    |> Task.runOrPanic
+    |> Hspec.it (Text.toLinkedList name)
 
 
 -- | Assert that two values are equal
-shouldBe :: (Show a, Eq a) => a -> a -> Hspec.Expectation
-shouldBe expected actual = Hspec.shouldBe actual expected
+shouldBe :: (Show a, Eq a) => a -> a -> Task err Unit
+shouldBe expected actual = do
+  Task.fromIO (Hspec.shouldBe actual expected)
 
 
 -- | Assert that a value satisfies a predicate
-shouldSatisfy :: (Show a) => (a -> Bool) -> a -> Hspec.Expectation
-shouldSatisfy predicate value = Hspec.shouldSatisfy value predicate
+shouldSatisfy :: (Show a) => (a -> Bool) -> a -> Task err Unit
+shouldSatisfy predicate value = do
+  Task.fromIO (Hspec.shouldSatisfy value predicate)
 
 
 -- | Assert that an array contains another array
-shouldContain :: (Show a, Eq a) => Array a -> Array a -> Hspec.Expectation
-shouldContain expected actual = Hspec.shouldContain (Array.toLinkedList expected) (Array.toLinkedList actual)
+shouldContain :: (Show a, Eq a) => Array a -> Array a -> Task err Unit
+shouldContain expected actual = do
+  Task.fromIO (Hspec.shouldContain (Array.toLinkedList expected) (Array.toLinkedList actual))
 
 
 -- | Assert that an array does not contain another array
-shouldNotContain :: (Show a, Eq a) => Array a -> Array a -> Hspec.Expectation
-shouldNotContain expected actual = Hspec.shouldNotContain (Array.toLinkedList expected) (Array.toLinkedList actual)
+shouldNotContain :: (Show a, Eq a) => Array a -> Array a -> Task err Unit
+shouldNotContain expected actual = do
+  Task.fromIO (Hspec.shouldNotContain (Array.toLinkedList expected) (Array.toLinkedList actual))
 
 
 -- | Assert that a text starts with a prefix
-shouldStartWith :: Text -> Text -> Hspec.Expectation
-shouldStartWith prefix text = Hspec.shouldStartWith (Text.toLinkedList text) (Text.toLinkedList prefix)
+shouldStartWith :: Text -> Text -> Task err Unit
+shouldStartWith prefix text = do
+  Task.fromIO (Hspec.shouldStartWith (Text.toLinkedList text) (Text.toLinkedList prefix))
 
 
 -- | Assert that a string ends with a suffix
-shouldEndWith :: Text -> Text -> Hspec.Expectation
-shouldEndWith suffix text = Hspec.shouldEndWith (Text.toLinkedList text) (Text.toLinkedList suffix)
+shouldEndWith :: Text -> Text -> Task err Unit
+shouldEndWith suffix text = do
+  Task.fromIO (Hspec.shouldEndWith (Text.toLinkedList text) (Text.toLinkedList suffix))
 
 
 -- | Assert that two lists contain the same elements, regardless of order
-shouldMatchList :: (Show a, Eq a) => Array a -> Array a -> Hspec.Expectation
-shouldMatchList expected actual = Hspec.shouldMatchList (Array.toLinkedList actual) (Array.toLinkedList expected)
+shouldMatchList :: (Show a, Eq a) => Array a -> Array a -> Task err Unit
+shouldMatchList expected actual = do
+  Task.fromIO (Hspec.shouldMatchList (Array.toLinkedList actual) (Array.toLinkedList expected))
 
 
 -- | Assert that a task returns a specific value
-shouldReturn :: (Show a, Eq a, Show err) => a -> Task err a -> Hspec.Expectation
-shouldReturn expected actual =
-  Hspec.shouldReturn (Task.runOrPanic actual) expected
+shouldReturn :: (Show a, Eq a, Show err) => a -> Task err a -> Task err2 Unit
+shouldReturn expected actual = do
+  Task.fromIO (Hspec.shouldReturn (Task.runOrPanic actual) expected)
+
+
+-- | Fail the test with a message
+fail :: Text -> Task err Unit
+fail message = do
+  Task.fromIO (Hspec.expectationFailure (Text.toLinkedList message))
 
 
 -- | Mark a test as pending
@@ -94,8 +111,11 @@ pendingWith reason = Hspec.pendingWith (Text.toLinkedList reason)
 
 
 -- | Mark a test as pending (alternative syntax)
-xit :: (Hspec.Example a) => Text -> a -> Hspec.SpecWith (Hspec.Arg a)
-xit name = Hspec.xit (Text.toLinkedList name)
+xit :: (Show err) => Text -> (Task err Unit) -> Spec
+xit name block =
+  block
+    |> Task.runOrPanic
+    |> Hspec.xit (Text.toLinkedList name)
 
 
 -- | Mark a group of tests as pending

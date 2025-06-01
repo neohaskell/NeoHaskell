@@ -38,6 +38,7 @@ module Array (
   takeWhile,
   take,
   drop,
+  indexed,
 
   -- * Partitioning?
   partitionBy,
@@ -48,6 +49,7 @@ module Array (
   unwrap,
   fromLegacy,
   last,
+  zip,
 ) where
 
 import Basics
@@ -391,3 +393,13 @@ take n (Array vector) = Array (Data.Vector.take n vector)
 -- | Drop the first n elements of an array.
 drop :: Int -> Array a -> Array a
 drop n (Array vector) = Array (Data.Vector.drop n vector)
+
+
+-- | Convert an array into an array of tuples, where the first element of the tuple is the index of the element.
+indexed :: Array a -> Array (Int, a)
+indexed (Array vector) = Array (Data.Vector.indexed vector)
+
+
+-- | Zip two arrays into a new array of tuples.
+zip :: Array b -> Array a -> Array (a, b)
+zip (Array second) (Array first) = Array (Data.Vector.zip first second)

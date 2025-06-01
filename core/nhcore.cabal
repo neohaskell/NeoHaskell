@@ -134,7 +134,7 @@ library
       TypeName,
 
       -- Concurrency
-      AsyncIO,
+      AsyncTask,
       Channel,
       DurableChannel,
       ConcurrentVar,

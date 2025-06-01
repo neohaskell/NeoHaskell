@@ -15,6 +15,8 @@ module Task (
   runNoErrors,
   mapArray,
   runResult,
+  unless,
+  when,
 ) where
 
 import Applicable (Applicative (pure))
@@ -163,6 +165,18 @@ mapArray f array =
     |> Control.Monad.mapM f
     |> Task.map Array.fromLegacy
 
--- array
---   |> Array.map f
---   |> Task.forEach
+
+-- | Run a task if a condition is false
+unless :: Bool -> Task err Unit -> Task err Unit
+unless condition task =
+  if condition
+    then Applicable.pure unit
+    else task
+
+
+-- | Run a task if a condition is true
+when :: Bool -> Task err Unit -> Task err Unit
+when condition task =
+  if condition
+    then task
+    else Applicable.pure unit
