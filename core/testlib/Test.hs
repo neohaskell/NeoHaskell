@@ -19,6 +19,7 @@ module Test (
   sequential,
   runTask,
   fail,
+  beforeAll,
 ) where
 
 import Array qualified
@@ -28,20 +29,19 @@ import Test.Hspec qualified as Hspec
 import Text qualified
 
 
-type Spec = Hspec.Spec
+type Spec a = Hspec.SpecWith a
 
 
 -- | Describe a group of tests
-describe :: Text -> Hspec.Spec -> Hspec.Spec
+describe :: Text -> Spec Unit -> Spec Unit
 describe name = Hspec.describe (Text.toLinkedList name)
 
 
 -- | Define a test case
-it :: (Show err) => Text -> (Task err Unit) -> Spec
+it :: (Show err) => Text -> (context -> Task err Unit) -> Spec context
 it name block =
-  block
-    |> Task.runOrPanic
-    |> Hspec.it (Text.toLinkedList name)
+  Hspec.it (Text.toLinkedList name) \ctx -> do
+    block ctx |> Task.runOrPanic
 
 
 -- | Marks a test as pending
@@ -52,7 +52,7 @@ pending name =
 
 
 -- | Assert that two values are equal
-shouldBe :: (Show a, Eq a) => a -> a -> Task err Unit
+shouldBe :: (Show a, Eq a) => a -> a -> Task Text Unit
 shouldBe expected actual = do
   Task.fromIO (Hspec.shouldBe actual expected)
 
@@ -106,13 +106,17 @@ fail message = do
 
 
 -- | Mark a group of tests as pending
-xdescribe :: Text -> Hspec.Spec -> Hspec.Spec
+xdescribe :: Text -> Spec Unit -> Spec Unit
 xdescribe name = Hspec.xdescribe (Text.toLinkedList name)
 
 
--- | Run an IO action before each test
--- before :: Task _ a -> (a -> Hspec.Spec) -> Hspec.Spec
--- before = Hspec.before
+-- | Run a Task before the tests
+beforeAll :: (Show err) => Task err a -> (Spec a) -> Spec Unit
+beforeAll beforeTask block =
+  Hspec.beforeAll
+    (Task.runOrPanic beforeTask)
+    block
+
 
 -- -- | Run an IO action before each test with a specific value
 -- beforeWith :: a -> (a -> Task _ b) -> (b -> Hspec.Spec) -> Hspec.Spec
