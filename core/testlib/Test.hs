@@ -14,8 +14,6 @@ module Test (
   shouldMatchList,
   shouldReturn,
   pending,
-  pendingWith,
-  xit,
   xdescribe,
   parallel,
   sequential,
@@ -44,6 +42,13 @@ it name block =
   block
     |> Task.runOrPanic
     |> Hspec.it (Text.toLinkedList name)
+
+
+-- | Marks a test as pending
+pending :: Text -> Task err Unit
+pending name =
+  Hspec.pendingWith (Text.toLinkedList name)
+    |> Task.fromIO
 
 
 -- | Assert that two values are equal
@@ -98,24 +103,6 @@ shouldReturn expected actual = do
 fail :: Text -> Task err Unit
 fail message = do
   Task.fromIO (Hspec.expectationFailure (Text.toLinkedList message))
-
-
--- | Mark a test as pending
-pending :: Hspec.Expectation
-pending = Hspec.pending
-
-
--- | Mark a test as pending with a reason
-pendingWith :: Text -> Hspec.Expectation
-pendingWith reason = Hspec.pendingWith (Text.toLinkedList reason)
-
-
--- | Mark a test as pending (alternative syntax)
-xit :: (Show err) => Text -> (Task err Unit) -> Spec
-xit name block =
-  block
-    |> Task.runOrPanic
-    |> Hspec.xit (Text.toLinkedList name)
 
 
 -- | Mark a group of tests as pending
