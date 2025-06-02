@@ -141,5 +141,6 @@ readAllEventsForwardFromImpl ::
   StreamPosition ->
   Limit ->
   Task Error (Array Event)
-readAllEventsForwardFromImpl _ _ _ =
-  Task.yield Array.empty
+readAllEventsForwardFromImpl store (StreamPosition (Positive position)) (Limit (Positive limit)) = do
+  allGlobalEvents <- store.globalStream |> DurableChannel.getAndTransform unchanged
+  allGlobalEvents |> Array.drop position |> Array.take limit |> Task.yield

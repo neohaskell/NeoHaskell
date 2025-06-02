@@ -26,7 +26,7 @@ spec newStore = do
         let shouldHaveCorrectNumberOfEvents eventStream = do
               eventStream
                 |> Array.length
-                |> shouldBe context.streamCount
+                |> shouldBe context.eventsPerStream
         context.eventStreams |> Task.forEach shouldHaveCorrectNumberOfEvents
 
       it "has the events correctly ordered within the stream" \context -> do
@@ -42,8 +42,9 @@ spec newStore = do
 
       it "has the correct number of events globally" \context -> do
         let expectedTotalEvents = context.streamCount * context.eventsPerStream
+        let limit = EventStore.Limit (Positive expectedTotalEvents)
         allGlobalEvents <-
-          context.store.readAllEventsForwardFrom (Event.StreamPosition 0) (EventStore.Limit (Positive expectedTotalEvents))
+          context.store.readAllEventsForwardFrom (Event.StreamPosition 0) limit
             |> Task.mapError toText
         allGlobalEvents
           |> Array.length
