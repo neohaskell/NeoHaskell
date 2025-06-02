@@ -14,7 +14,20 @@ import ToText (toText)
 spec :: Task Text EventStore -> Spec Unit
 spec newStore = do
   describe "Individual Stream Ordering" do
-    beforeAll (Context.initialize newStore 10) do
+    specWithCount newStore 10
+    specWithCount newStore 100
+    specWithCount newStore 1000
+    specWithCount newStore 10000
+
+
+-- TODO: Enable these with an environment variable
+-- specWithCount newStore 100000
+-- specWithCount newStore 1000000
+
+specWithCount :: Task Text EventStore -> Int -> Spec Unit
+specWithCount newStore eventCount = do
+  describe [fmt|testing with {toText eventCount} events|] do
+    beforeAll (Context.initialize newStore eventCount) do
       it "has the correct number of events" \ctx -> do
         let startPosition = Event.StreamPosition 0
         let limit = EventStore.Limit (Positive ctx.eventCount)
@@ -24,7 +37,7 @@ spec newStore = do
         Array.length events
           |> shouldBe ctx.eventCount
 
-      it "has the correct positions" \ctx -> do
+      it "has the correct order" \ctx -> do
         let startPosition = Event.StreamPosition 0
         let limit = EventStore.Limit (Positive ctx.eventCount)
         events <-
