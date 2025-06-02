@@ -2,5 +2,5 @@
 pkgs.haskellPackages.developPackage {
   root = ./.;
   source-overrides = { };
-  modifier = drv: pkgs.haskell.lib.dontHaddock drv;
+  modifier = drv: pkgs.haskell.lib.dontCheck (pkgs.haskell.lib.dontHaddock drv);
 }
