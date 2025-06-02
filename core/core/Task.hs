@@ -17,6 +17,7 @@ module Task (
   runResult,
   unless,
   when,
+  recover,
 ) where
 
 import Applicable (Applicative (pure))
@@ -71,6 +72,10 @@ mapError f self =
 
 apply :: Task err (input -> output) -> Task err input -> Task err output
 apply taskFunction self = Task (Applicable.apply (runTask taskFunction) (runTask self))
+
+
+recover :: (err -> Task err value) -> Task err value -> Task err value
+recover f self = Task (Except.catchE (runTask self) (runTask <. f))
 
 
 andThen :: (input -> Task err output) -> Task err input -> Task err output

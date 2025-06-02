@@ -1,4 +1,4 @@
-module AsyncTask (AsyncTask, run, waitFor, sleep, process, waitAnyCancel, withRecovery, cancel) where
+module AsyncTask (AsyncTask, run, waitFor, sleep, process, waitAnyCancel, withRecovery, cancel, runConcurrentlyAndDiscard) where
 
 import Array (Array)
 import Array qualified
@@ -65,4 +65,10 @@ cancel :: (Show err) => AsyncTask a -> Task err Unit
 cancel asyncTask =
   asyncTask
     |> GhcAsync.cancel
+    |> Task.fromIO
+
+
+runConcurrentlyAndDiscard :: (Show err) => (Task err a, Task err b) -> Task err Unit
+runConcurrentlyAndDiscard (async1, async2) =
+  GhcAsync.concurrently_ (Task.runOrPanic async1) (Task.runOrPanic async2)
     |> Task.fromIO

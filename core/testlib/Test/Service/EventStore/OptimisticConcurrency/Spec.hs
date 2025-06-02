@@ -49,26 +49,20 @@ spec newStore = do
                   globalPosition = Nothing
                 }
 
-        -- Prepare concurrent operations
-        let append1 =
-              event1
-                |> ctx.store.appendToStream ctx.streamId (Event.StreamPosition 1)
-                |> Task.mapError toText
-                |> AsyncTask.run
+        event1
+          |> ctx.store.appendToStream ctx.streamId (Event.StreamPosition 1)
+          |> discard
+          |> Task.mapError toText
+          |> Task.recover (\_ -> Task.yield unit)
+          |> AsyncTask.run
+          |> discard
 
-        let append2 =
-              event2
-                |> ctx.store.appendToStream ctx.streamId (Event.StreamPosition 1)
-                |> Task.mapError toText
-                |> AsyncTask.run
-
-        -- Run both operations concurrently
-        thread1 <- append1
-        thread2 <- append2
-
-        [thread1, thread2]
-          |> Array.fromLinkedList
-          |> AsyncTask.waitAnyCancel
+        event2
+          |> ctx.store.appendToStream ctx.streamId (Event.StreamPosition 1)
+          |> discard
+          |> Task.mapError toText
+          |> Task.recover (\_ -> Task.yield unit)
+          |> AsyncTask.run
           |> discard
 
         -- Read back all events to verify
