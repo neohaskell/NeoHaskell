@@ -149,6 +149,8 @@ library
       Test.Service.EventStore,
       Test.Service.EventStore.GlobalStreamOrdering.Context,
       Test.Service.EventStore.GlobalStreamOrdering.Spec,
+      Test.Service.EventStore.IndividualStreamOrdering.Spec,
+      Test.Service.EventStore.IndividualStreamOrdering.Context,
 
     -- other-modules:
     -- other-extensions:

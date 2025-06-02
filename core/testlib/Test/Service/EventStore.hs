@@ -13,47 +13,6 @@ import Test
 import ToText (toText)
 
 
-testStreamOrderingSequential :: EventStore -> Int -> Task Text Unit
-testStreamOrderingSequential store count = do
-  -- Create a stream ID for testing
-  let streamId = Event.StreamId "test-stream"
-
-  -- Generate events with sequential positions
-  let generatedEvents :: Array Event
-      generatedEvents = do
-        Array.initialize count \index -> do
-          let position = Event.StreamPosition (Positive index)
-          let id = [fmt|event-{index}|]
-          Event {id, streamId, position, globalPosition = Nothing}
-
-  -- Append all events sequentially
-  let appendEvents :: Array Event -> Task EventStore.Error (Array Event.StreamPosition)
-      appendEvents events = do
-        events |> Task.mapArray \event -> do
-          let expectedPosition = event.position
-          result <- event |> store.appendToStream streamId expectedPosition
-          Task.yield result.localPosition
-
-  positions <- appendEvents generatedEvents |> Task.mapError toText
-
-  -- Read back all events to verify
-  let expectedCount = Array.length generatedEvents
-  events <-
-    store.readStreamForwardFrom streamId (Event.StreamPosition 0) (EventStore.Limit (Positive expectedCount))
-      |> Task.mapError toText
-
-  -- Verify the results
-  Array.length events
-    |> shouldBe expectedCount
-
-  events
-    |> Array.map (\v -> v.position)
-    |> shouldBe positions
-
-  events
-    |> shouldBe generatedEvents
-
-
 testOptimisticConcurrency :: EventStore -> Task _ Unit
 testOptimisticConcurrency store = do
   -- Create a stream ID for testing
