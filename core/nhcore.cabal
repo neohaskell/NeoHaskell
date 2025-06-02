@@ -115,6 +115,7 @@ library
       -- Traits
       Applicable,
       Appendable,
+      Collection,
       Combinable,
       Default,
       Mappable,
@@ -161,4 +162,12 @@ test-suite nhcore-test
     main-is:          Main.hs
     build-depends:
         base ^>=4.18,
+        doctest ^>=0.24.0,
+        QuickCheck ,
+        vector ,
+        Basics,
+        Collection,
+        LinkedList,
+        Maybe,
+        Tuple,
         nhcore

@@ -1,7 +1,12 @@
 module Main (main) where
 
 import Core
+import Test.DocTest
 
 
 main :: IO ()
-main = log "Test suite not yet implemented."
+main =
+  doctest
+    [ "-isrc",
+      "core/Array.hs"
+    ]
