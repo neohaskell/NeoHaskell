@@ -151,6 +151,8 @@ library
       Test.Service.EventStore.GlobalStreamOrdering.Spec,
       Test.Service.EventStore.IndividualStreamOrdering.Spec,
       Test.Service.EventStore.IndividualStreamOrdering.Context,
+      Test.Service.EventStore.OptimisticConcurrency.Spec,
+      Test.Service.EventStore.OptimisticConcurrency.Context,
 
     -- other-modules:
     -- other-extensions:
