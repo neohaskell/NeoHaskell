@@ -49,21 +49,24 @@ spec newStore = do
                   globalPosition = Nothing
                 }
 
-        event1
-          |> ctx.store.appendToStream ctx.streamId (Event.StreamPosition 1)
-          |> discard
-          |> Task.mapError toText
-          |> Task.recover (\_ -> Task.yield unit)
-          |> AsyncTask.run
-          |> discard
+        event1Task <-
+          event1
+            |> ctx.store.appendToStream ctx.streamId (Event.StreamPosition 1)
+            |> discard
+            |> Task.mapError toText
+            |> Task.recover (\_ -> Task.yield unit)
+            |> AsyncTask.run
 
-        event2
-          |> ctx.store.appendToStream ctx.streamId (Event.StreamPosition 1)
-          |> discard
-          |> Task.mapError toText
-          |> Task.recover (\_ -> Task.yield unit)
-          |> AsyncTask.run
-          |> discard
+        event2Task <-
+          event2
+            |> ctx.store.appendToStream ctx.streamId (Event.StreamPosition 1)
+            |> discard
+            |> Task.mapError toText
+            |> Task.recover (\_ -> Task.yield unit)
+            |> AsyncTask.run
+
+        AsyncTask.waitFor event1Task
+        AsyncTask.waitFor event2Task
 
         -- Read back all events to verify
         events <-
