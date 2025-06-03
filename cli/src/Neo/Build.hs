@@ -32,7 +32,7 @@ handle config = do
   let rootFolder = [path|nhout|]
   let nixFileName = [path|default.nix|]
   let cabalFileName =
-        [fmt|{projectName}.cabal|]
+        [fmt|#{projectName}.cabal|]
           |> Path.fromText
           |> Maybe.getOrDie -- TODO: Make better error handling here
   let nixFile = Nix.template config
@@ -72,10 +72,10 @@ handle config = do
   let appMainFile = AppMain.template config
 
   Directory.create rootFolder
-    |> Task.mapError (\_ -> [fmt|Could not create directory {Path.toText rootFolder}|] |> CustomError)
+    |> Task.mapError (\_ -> [fmt|Could not create directory #{Path.toText rootFolder}|] |> CustomError)
 
   Directory.create targetAppFolder
-    |> Task.mapError (\_ -> [fmt|Could not create directory {Path.toText targetAppFolder}|] |> CustomError)
+    |> Task.mapError (\_ -> [fmt|Could not create directory #{Path.toText targetAppFolder}|] |> CustomError)
 
   File.writeText nixFilePath nixFile
     |> Task.mapError (\_ -> NixFileError)
@@ -97,6 +97,6 @@ handle config = do
 errorOut :: Text -> Task Error _
 errorOut err =
   [fmt|Oops the build failed:
-    {err}|]
+    #{err}|]
     |> CustomError
     |> Task.throw

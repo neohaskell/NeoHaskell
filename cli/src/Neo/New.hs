@@ -42,7 +42,7 @@ handle (ProjectName projectName) = do
         projectName
           |> Text.toPascalCase
   let moduleFileName =
-        [fmt|{moduleName}.hs|]
+        [fmt|#{moduleName}.hs|]
           |> Path.fromText
           |> Maybe.getOrDie -- TODO: Handle this better
   let moduleFilePath =
@@ -54,25 +54,25 @@ handle (ProjectName projectName) = do
           |> Path.joinPaths
 
   Directory.create projectDir
-    |> Task.mapError (\_ -> [fmt|Could not create directory {Path.toText projectDir}|] |> CustomError)
+    |> Task.mapError (\_ -> [fmt|Could not create directory #{Path.toText projectDir}|] |> CustomError)
 
   File.writeText configFilePath (NeoJson.template kebabName)
     |> Task.mapError (\_ -> CustomError "Could not write config file")
 
   Directory.create srcDir
-    |> Task.mapError (\_ -> [fmt|Could not create directory {Path.toText srcDir}|] |> CustomError)
+    |> Task.mapError (\_ -> [fmt|Could not create directory #{Path.toText srcDir}|] |> CustomError)
 
   File.writeText moduleFilePath (MainModule.template moduleName)
     |> Task.mapError (\_ -> CustomError "Could not write module file")
 
   print
-    [fmt|Created project {projectName} at ./{Path.toText projectDir}
+    [fmt|Created project #{projectName} at ./#{Path.toText projectDir}
 
 To build your project:
-  cd {Path.toText projectDir}
+  cd #{Path.toText projectDir}
   neo build
 
 To run your project:
-  cd {Path.toText projectDir}
+  cd #{Path.toText projectDir}
   neo run
 |]

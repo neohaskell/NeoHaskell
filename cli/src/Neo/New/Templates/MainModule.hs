@@ -5,7 +5,7 @@ import Core
 
 template :: Text -> Text
 template moduleName = do
-  [fmt|module {moduleName} where
+  [fmt|module #{moduleName} where
 
 import Core
 

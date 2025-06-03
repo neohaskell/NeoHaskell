@@ -8,14 +8,11 @@ module Command (
   parseWith,
   json,
   flag,
-  parse,
   parseHandler,
   commands,
   map,
 ) where
 
-import Action (Action)
-import Action qualified
 import Appendable ((++))
 import Array (Array)
 import Array qualified
@@ -72,13 +69,6 @@ newtype Error = Error Text
   deriving (Show)
 
 
-parse ::
-  (Unknown.Convertible event) =>
-  CommandOptions event ->
-  Action event
-parse options = Action.named "Command.parse" options
-
-
 parseHandler :: CommandOptions event -> Task _ event
 parseHandler options = do
   let (OptionsParser parser) = options.decoder
@@ -86,8 +76,9 @@ parseHandler options = do
         options.version
           |> Maybe.withDefault [Version.version|0.0.0|]
           |> Version.toText
+  let description = options.description
   let programDescription =
-        [fmt|{options.description} - Version {ver}|]
+        [fmt|#{description} - Version #{ver}|]
           |> Text.toLinkedList
   let foo = OptParse.info (parser OptParse.<**> OptParse.helper) (OptParse.progDesc programDescription)
   OptParse.execParser foo

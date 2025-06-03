@@ -12,6 +12,8 @@
     "fprint",
     "GADT",
     "hlint",
+    "Hspec",
+    "Inspectable",
     "Monoid",
     "Nanotime",
     "NEOHASKELL",
@@ -27,6 +29,7 @@
     "relfile",
     "Semigroup",
     "snoc",
+    "testlib",
     "typeclasses",
     "Unagi"
   ],

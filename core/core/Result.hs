@@ -17,6 +17,8 @@ module Result (
   fromMaybe,
   mapError,
   fromEither,
+  isOk,
+  isErr,
 ) where
 
 import Basics
@@ -178,3 +180,25 @@ fromEither either =
   case either of
     Prelude.Left a -> Err a
     Prelude.Right b -> Ok b
+
+
+-- | Check if a Result is Ok. Returns True if the Result is Ok, False if it is Err.
+--
+-- > isOk (Ok 42) == True
+-- > isOk (Err "nope") == False
+isOk :: Result a b -> Bool
+isOk result =
+  case result of
+    Ok _ -> True
+    Err _ -> False
+
+
+-- | Check if a Result is Err. Returns True if the Result is Err, False if it is Ok.
+--
+-- > isErr (Ok 42) == False
+-- > isErr (Err "nope") == True
+isErr :: Result a b -> Bool
+isErr result =
+  case result of
+    Ok _ -> False
+    Err _ -> True

@@ -2,8 +2,10 @@ module Channel (Channel, new, read, write) where
 
 import Basics
 import Control.Concurrent.Chan.Unagi qualified as Unagi
-import IO (IO)
+import Task (Task)
+import Task qualified
 import ToText (Show (..))
+import TypeName qualified
 
 
 data Channel value = Channel
@@ -13,23 +15,31 @@ data Channel value = Channel
   deriving (Show)
 
 
-instance Show (Unagi.OutChan value) where
-  show _ = "[OutChan]"
+instance (TypeName.Inspectable value) => Show (Unagi.OutChan value) where
+  show _ = do
+    let typeName = TypeName.reflect @value
+    [fmt|[OutChan #{typeName}]|]
 
 
-instance Show (Unagi.InChan value) where
-  show _ = "[InChan]"
+instance (TypeName.Inspectable value) => Show (Unagi.InChan value) where
+  show _ = do
+    let typeName = TypeName.reflect @value
+    [fmt|[InChan #{typeName}]|]
 
 
-new :: IO (Channel value)
+new :: Task _ (Channel value)
 new = do
-  (in_, out) <- Unagi.newChan
-  pure Channel {outChannel = out, inChannel = in_}
+  (inChannel, outChannel) <- Task.fromIO Unagi.newChan
+  Task.yield Channel {outChannel, inChannel}
 
 
-read :: Channel value -> IO value
-read self = Unagi.readChan (self.outChannel)
+read :: Channel value -> Task _ value
+read self =
+  Unagi.readChan (self.outChannel)
+    |> Task.fromIO
 
 
-write :: value -> Channel value -> IO ()
-write value self = Unagi.writeChan (self.inChannel) value
+write :: value -> Channel value -> Task _ Unit
+write value self =
+  Unagi.writeChan (self.inChannel) value
+    |> Task.fromIO

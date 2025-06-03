@@ -8,6 +8,7 @@ module Map (
   reduce,
   merge,
   entries,
+  contains,
 ) where
 
 import Accumulator (Accumulator)
@@ -73,3 +74,9 @@ reduce acc f map = HaskellMap.foldrWithKey f acc map
 -- | Converts a map to an array of tuples
 entries :: Map key value -> Array (key, value)
 entries self = HaskellMap.toList self |> Array.fromLinkedList
+
+
+-- | Checks if a key exists in a map
+contains :: (Eq key, Ord key) => key -> Map key value -> Bool
+contains key map = HaskellMap.member key map
+{-# INLINE contains #-}

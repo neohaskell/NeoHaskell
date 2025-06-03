@@ -21,6 +21,7 @@ in pkgs.mkShell rec {
     pkgs.fourmolu
     pkgs.hlint
     pkgs.haskellPackages.zlib
+    pkgs.haskellPackages.hspec-discover
 
     # Nix dev tools
     pkgs.nil

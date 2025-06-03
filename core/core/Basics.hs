@@ -11,7 +11,7 @@ module Basics (
   -- * Math
   Int,
   Float,
-  Positive,
+  Positive (..),
   makePositive,
   makePositiveOrPanic,
   (+),
@@ -122,7 +122,6 @@ module Basics (
   Control.Monad.join,
   Type,
   Control.Monad.forever,
-  Control.Monad.when,
   GHC.Generics.Generic,
 ) where
 
@@ -133,6 +132,7 @@ import Control.Monad qualified as Monad
 import Data.Bits qualified (xor)
 import Data.Kind (Type)
 import Data.String (IsString (..))
+import Data.String.Interpolate qualified as StringInterpolate
 import Data.Text (Text)
 import Data.Text qualified as Text
 import Data.Void qualified (Void, absurd)
@@ -143,7 +143,6 @@ import GHC.Records (HasField (..))
 import GHC.Stack (HasCallStack)
 import Language.Haskell.TH.Quote (QuasiQuoter)
 import Mappable (Mappable)
-import PyF qualified
 import Unit (Unit, unit)
 import Prelude (fmap, fromInteger, otherwise, return, (<*>), (>>=))
 import Prelude qualified
@@ -916,7 +915,7 @@ discard = Monad.void
 
 
 fmt :: QuasiQuoter
-fmt = PyF.fmt
+fmt = StringInterpolate.i
 
 
 -- | Do nothing, return unit

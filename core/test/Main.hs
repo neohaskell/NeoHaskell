@@ -1,7 +1,2 @@
-module Main (main) where
+{-# OPTIONS_GHC -F -pgmF hspec-discover #-}
 
-import Core
-
-
-main :: IO ()
-main = log "Test suite not yet implemented."

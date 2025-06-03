@@ -29,17 +29,17 @@ template ProjectConfiguration {name} =
 
   TODO: Figure out how to do caching here
   -}
-  [fmt|{{ pkgs ? ({pinnedNixpkgs}) {{}} }}:
+  [fmt|{{ pkgs ? (#{pinnedNixpkgs}) {{}} }}:
   let
     neoHaskellGitHub = builtins.fetchTarball
           "https://github.com/NeoHaskell/NeoHaskell/archive/refs/heads/main.tar.gz";
   in
     pkgs.haskellPackages.developPackage {{
-      name = "{name}";
+      name = "#{name}";
       root = ./.;
       returnShellEnv = false;
       source-overrides = {{
         nhcore = "${{neoHaskellGitHub}}/core";
       }};
-    }} // {{ name = "{name}"; }}
+    }} // {{ name = "#{name}"; }}
   |]

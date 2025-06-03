@@ -6,7 +6,7 @@ import Core
 template :: Text -> Text
 template projectName = do
   [fmt|{{
-  "name": "{projectName}",
+  "name": "#{projectName}",
   "version": "0.0.1",
   "description": "Your project's description",
   "author": "Your Name",

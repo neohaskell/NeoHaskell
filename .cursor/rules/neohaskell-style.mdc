@@ -1,0 +1,124 @@
+---
+description: 
+globs: *.hs
+alwaysApply: false
+---
+---
+description: "Treat all .hs files in this project as NeoHaskell, not classic Haskell"
+---
+
+## NeoHaskell quick-start
+
+* Don't include it into the file, but `NoImplicitPrelude` is enabled, take that into account.
+* Code **WILL NEVER** be written as point-free style, and instead it will always be typed as explicit function application.
+* **Pipe operator** `|>` is preferred over nested `$`.
+* Imports are NeoHaskell style, which means that a module will be always imported two times, once unqualified, importing the type of the module explicitly, and another time right below in a post-qualified way.
+  * Good example
+    ```hs
+    import Service.Event (Event(..))
+    import Service.Event qualified as Event
+    ```
+  * Bad example
+    ```hs
+    import Service.Event   -- BAD! This imports everything
+    import Service.Event (Event(..), new, foobar)   -- BAD! things that aren't the type aren't allowed
+    import Service.Event qualified as E   -- BAD! Qualification name must be the last part of the module
+    ```
+* Modules from `base` will always be imported with a `Ghc` prefix in their qualification, in order to explicitly set boundaries.
+* Intermediate bindings are defined in `do` blocks. EVEN ON RETURNING TYPES THAT ARE NOT MONADS. `let..in` and `where` are forbidden.
+  * Good example
+  ```hs
+  foo :: Int
+  foo = do
+    let x = 2
+    let y = 3
+    x + y
+  ```
+  * Bad example
+  ```hs
+  foo :: Int
+  foo = 
+    let 
+        x = 2
+        y = 3
+    in         -- BAD! let..in is not allowed
+        x + y
+
+  foo :: Int
+  foo =
+    x + y
+   where     -- BAD! where is not allowed
+    x = 2
+    y = 3
+  ```
+
+* Type parameters in functions will be **always** defined in a `forall` clause.
+
+* Type parameters will always be named as their intent, and not with short letters. For example, instead of `Array a`, one will write `Array value`.
+
+* Pattern matching is only allowed in `case..of` expressions, other kinds are disallowed:
+  * Good example
+  ```hs
+  isJust :: Maybe a -> Bool
+  isJust value =
+    case value of
+        Just _ -> 
+            True
+        Nothing ->
+            False
+  ```
+  * Bad example
+  ```hs
+  isJust :: Maybe a -> Bool
+  isJust (Just _) = True   -- BAD!
+  isJust Nothing = False   -- BAD!
+  ```
+
+* Haskell's ecosystem modules **are never imported** unless explicitly asked by the user.
+  * Instead, the modules defined under [nhcore.cabal](mdc:core/nhcore.cabal) will be used.
+  * It is better to generate a data-type that doesn't exist and needed for the task rather than
+    using a Haskell ecosystem module.
+  * Good example
+  ```hs
+  import Array (Array(..))
+  import Array qualified
+  import Text (Text(..))
+  import Text qualified
+
+  wordLengths :: Array Text -> Array Int
+  wordLengths words =
+    words |> Array.map Text.length
+  ```
+  * Bad example
+  ```hs
+  import qualified Data.Text as T  -- BAD!
+  import qualified Data.Vector as V -- BAD!
+
+  wordLengths :: V.Vector T.Text -> V.Vector Int
+  wordLengths words =
+    words |> V.map T.length
+  ```
+
+* `Either` is never used, instead we use the isomorphic equivalent, `Result`
+
+* For concatenating strings, one uses the `[fmt|Hello {name}!|]` form, using the `fmt` quasiquoter.
+
+* For `do` blocks for types that might be an Applicative or Monad. What will be used is `<TypeName>.yield`, and not `pure` or `return`.
+  * Good example
+  ```hs
+  foo :: Task _ Int
+  foo = do
+    x <- bar
+    y <- baz
+    Task.yield (x + y)
+  ```
+  * Bad example
+  ```hs
+  foo :: Task _ Int
+  foo = do
+    x <- bar
+    y <- baz
+    return (x + y)   -- BAD!
+    -- also bad:
+    pure (x + y)    -- BAD!
+  ```
