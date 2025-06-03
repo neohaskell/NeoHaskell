@@ -58,10 +58,11 @@ writeWithIndex f self = do
 
 writeNoLock :: value -> DurableChannel value -> Task _ Unit
 writeNoLock value self = do
-  self.values
-    |> ConcurrentVar.modify (Array.push value)
+  -- Write to channel first to ensure consistency
   self.channel
     |> Channel.write value
+  self.values
+    |> ConcurrentVar.modify (Array.push value)
 
 
 checkAndWrite ::
