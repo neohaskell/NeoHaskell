@@ -376,7 +376,7 @@ any predicate (Array vector) = Data.Vector.any predicate vector
 last :: forall (value :: Type). Array value -> Maybe value
 last (Array vector) = do
   let len = Data.Vector.length vector
-  vector Data.Vector.!? len
+  vector Data.Vector.!? (len - 1)
 
 
 -- | Convert a Haskell Vector to a NeoHaskell Array.
