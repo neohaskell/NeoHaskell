@@ -93,6 +93,8 @@ checkAndWrite predicate value self =
 
 
 -- | Gets the last element in the channel.
+-- Note: This operation is not synchronized with writes and may return
+-- stale data if called during concurrent modifications.
 last :: DurableChannel value -> Task _ (Maybe value)
 last self = do
   values <- ConcurrentVar.peek self.values
