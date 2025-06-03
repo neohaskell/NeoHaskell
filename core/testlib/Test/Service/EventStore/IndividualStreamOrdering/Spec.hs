@@ -26,7 +26,7 @@ spec newStore = do
 
 specWithCount :: Task Text EventStore -> Int -> Spec Unit
 specWithCount newStore eventCount = do
-  describe [fmt|testing with {toText eventCount} events|] do
+  describe [fmt|testing with #{toText eventCount} events|] do
     beforeAll (Context.initialize newStore eventCount) do
       it "has the correct number of events" \ctx -> do
         let startPosition = Event.StreamPosition 0

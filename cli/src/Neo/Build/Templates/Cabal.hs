@@ -18,8 +18,8 @@ template
     -- FIXME: Move onto a separate version handling module
     let vText = Version.toText version
     let makeDep (k, v)
-          | v |> Text.trim |> Text.startsWith "^" = [fmt|{k} ^>= {v |> Text.replace "^" ""}|]
-          | otherwise = [fmt|{k} == {v}|]
+          | v |> Text.trim |> Text.startsWith "^" = [fmt|#{k} ^>= #{v |> Text.replace "^" ""}|]
+          | otherwise = [fmt|#{k} == #{v}|]
     let deps =
           dependencies
             |> Map.entries
@@ -38,11 +38,11 @@ template
 -- OR IN THE NEOHASKELL DISCORD SERVER.
 -- YOU CAN JOIN IT THROUGH THE LINK IN
 -- https://neohaskell.org
-name:               {name}
-version:            {vText}
-synopsis:           {description}
-license:            {license}
-author:             {author}
+name:               #{name}
+version:            #{vText}
+synopsis:           #{description}
+license:            #{license}
+author:             #{author}
 
 common common_cfg
     ghc-options:    -Wall
@@ -70,19 +70,19 @@ common common_cfg
       TypeFamilies
 
     build-depends:
-      {deps}
+      #{deps}
 
 library
     import:           common_cfg
     exposed-modules:
-      {mods}
+      #{mods}
     hs-source-dirs:   src
 
-executable {execName}
+executable #{execName}
     import:           common_cfg
     main-is:          Main.hs
     build-depends:
-        {name}
+        #{name}
     hs-source-dirs:   app
 
   |]

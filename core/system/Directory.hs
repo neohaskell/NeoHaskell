@@ -1,14 +1,11 @@
 module Directory (
   Error (..),
-  createAction,
   CreateOptions (..),
   create,
   walk,
   copy,
 ) where
 
-import Action (Action)
-import Action qualified
 import Array (Array)
 import Array qualified
 import Basics
@@ -21,7 +18,6 @@ import GHC.IO.Exception qualified as Exception
 import Maybe qualified
 import Path (Path)
 import Path qualified
-import Result (Result (..))
 import System.Directory qualified
 import System.Directory.Internal.Prelude qualified as Exception
 import System.Directory.Recursive qualified as RecursiveDir
@@ -47,16 +43,11 @@ data CreateOptions = CreateOptions
   deriving (Show)
 
 
-createAction :: CreateOptions -> Action (Result Error Unit)
-createAction options =
-  Action.named "Directory.create" options
-
-
 create :: Path -> Task Error Unit
 create dirPath = do
   let log m = Console.log m |> Task.fromIO
   let p = Path.toText dirPath
-  log [fmt|[[Directory.create] Attempting to create directory: {p}|]
+  log [fmt|[[Directory.create] Attempting to create directory: #{p}|]
   let createDirAction =
         dirPath
           |> Path.toLinkedList
@@ -71,7 +62,7 @@ create dirPath = do
           log "[Directory.create] Failed to create directory"
           Task.throw NotWritable
     Either.Right _ -> do
-      log [fmt|[[Directory.create] Directory created: {p}|]
+      log [fmt|[[Directory.create] Directory created: #{p}|]
       Task.yield unit
 
 
@@ -80,7 +71,7 @@ copy src dest = do
   let log m = Console.log m |> Task.fromIO
   let srcP = Path.toText src
   let destP = Path.toText dest
-  log [fmt|[[Directory.copy] Attempting to copy {srcP} to {destP}|]
+  log [fmt|[[Directory.copy] Attempting to copy #{srcP} to #{destP}|]
   let copyFileAction =
         dest
           |> Path.toLinkedList
@@ -88,10 +79,10 @@ copy src dest = do
   result <- Exception.try @Exception.IOError copyFileAction |> Task.fromIO
   case result of
     Either.Left err -> do
-      log [fmt|[Directory.copy] Failed to copy {srcP} to {destP}: {show err}|]
+      log [fmt|[Directory.copy] Failed to copy #{srcP} to #{destP}: #{show err}|]
       Task.throw NotWritable
     Either.Right _ -> do
-      log [fmt|[Directory.copy] Copied {srcP} to {destP}|]
+      log [fmt|[Directory.copy] Copied #{srcP} to #{destP}|]
       Task.yield unit
 
 
@@ -106,10 +97,10 @@ walk dirPath = do
   result <- Exception.try @Exception.IOError walkDirAction |> Task.fromIO
   case result of
     Either.Left err -> do
-      log [fmt|[Directory.walk] Failed to walk directory {p}: {show err}|]
+      log [fmt|[Directory.walk] Failed to walk directory #{p}: #{show err}|]
       Task.throw WalkError
     Either.Right fps -> do
-      log [fmt|[Directory.walk] Directory {p} walked|]
+      log [fmt|[Directory.walk] Directory #{p} walked|]
       let paths = Array.fromLinkedList fps
       let numPathChars =
             if Text.endsWith "/" p
@@ -120,7 +111,7 @@ walk dirPath = do
               |> Text.dropLeft numPathChars
               |> Path.fromText
               |> Maybe.getOrDie
-      log [fmt|[Directory.walk] Paths: {ToText.toText paths}|]
+      log [fmt|[Directory.walk] Paths: #{ToText.toText paths}|]
       let trimmedPaths = paths |> Array.map trimInitialSrc
-      log [fmt|[Directory.walk] Trimmed paths: {ToText.toText trimmedPaths}|]
+      log [fmt|[Directory.walk] Trimmed paths: #{ToText.toText trimmedPaths}|]
       Task.yield trimmedPaths

@@ -18,13 +18,13 @@ data Channel value = Channel
 instance (TypeName.Inspectable value) => Show (Unagi.OutChan value) where
   show _ = do
     let typeName = TypeName.reflect @value
-    [fmt|[OutChan {typeName}]|]
+    [fmt|[OutChan #{typeName}]|]
 
 
 instance (TypeName.Inspectable value) => Show (Unagi.InChan value) where
   show _ = do
     let typeName = TypeName.reflect @value
-    [fmt|[InChan {typeName}]|]
+    [fmt|[InChan #{typeName}]|]
 
 
 new :: Task _ (Channel value)

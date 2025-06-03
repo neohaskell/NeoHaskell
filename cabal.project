@@ -1,5 +1,3 @@
-nix: True
-
 packages:
   cli/*.cabal
   core/*.cabal

@@ -24,7 +24,7 @@ initialize newStore streamCount = do
   let streamIds :: Array Event.StreamId
       streamIds = do
         Array.initialize streamCount \index -> do
-          Event.StreamId [fmt|stream-{index}|]
+          Event.StreamId [fmt|stream-#{index}|]
 
   -- Create events for each stream (2 events per stream for testing)
   let eventsPerStream = 2
@@ -34,7 +34,7 @@ initialize newStore streamCount = do
           Array.initialize eventsPerStream \eventIndex -> do
             let streamIdText = case streamId of Event.StreamId text -> text
             Event
-              { id = [fmt|event-{streamIdText}-{eventIndex}|],
+              { id = [fmt|event-#{streamIdText}-#{eventIndex}|],
                 streamId = streamId,
                 position = Event.StreamPosition (Positive eventIndex),
                 globalPosition = Nothing

@@ -28,7 +28,7 @@ initialize newStore eventCount = do
   let streamId = Event.StreamId "test-stream"
   let generatedEvents = Array.initialize eventCount \index -> do
         let position = Event.StreamPosition (Positive index)
-        let id = [fmt|event-{index}|]
+        let id = [fmt|event-#{index}|]
         Event {id, streamId, position, globalPosition = Nothing}
   -- Append all events sequentially
   let appendEvents :: Array Event -> Task EventStore.Error (Array Event.StreamPosition)

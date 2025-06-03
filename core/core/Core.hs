@@ -5,7 +5,6 @@ module Core (
   module Reexported,
 ) where
 
-import Action as Reexported (Action)
 import Appendable as Reexported ((++))
 import Array as Reexported (Array)
 import Basics as Reexported

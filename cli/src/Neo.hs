@@ -56,7 +56,7 @@ run = do
       \e ->
         [fmt|
 Neo: While running your command, I've encountered an error:
-     {errorToText e}
+     #{errorToText e}
 
      It looks like your last command failed. Remember, if it is taking
      you more than 15 minutes to figure it out, it is a bug in the system.
@@ -158,21 +158,21 @@ errorToText err =
 
         Here's some more info though:
 
-        {toPrettyText buildError}|]
+        #{toPrettyText buildError}|]
     RunError runError ->
       [fmt|Error running the project, check the logs above for more details.
 
 
         Here's some more info though:
 
-        {toPrettyText runError}|]
+        #{toPrettyText runError}|]
     NewError newError ->
       [fmt|Error creating the project, check the logs above for more details.
 
 
         Here's some more info though:
 
-        {toPrettyText newError}|]
+        #{toPrettyText newError}|]
     Other ->
       [fmt|An unknown error occurred, check the logs above for more details.|]
 
