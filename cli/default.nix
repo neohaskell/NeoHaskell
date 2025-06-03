@@ -1,4 +1,4 @@
-{ pkgs ? import ../nix/nixpkgs.nix { } }:
+{ }:
 let nixpkgs = import ../nix/nixpkgs.nix { };
 in nixpkgs.haskellPackages.developPackage {
   root = ./.;
