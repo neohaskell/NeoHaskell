@@ -105,7 +105,7 @@ run reducer task = do
 runNoErrors :: Task Never value -> IO value
 runNoErrors task = do
   let reducer (Result.Ok value) = IO.yield value
-      reducer (Result.Err _) = panic "Task.runNoErrors: Task failed with an error"
+      reducer (Result.Err _) = panic "Task.runNoErrors: Impossible error in Task Never - this indicates a type system violation"
   runTask task
     |> Except.runExceptT
     |> IO.map Result.fromEither
