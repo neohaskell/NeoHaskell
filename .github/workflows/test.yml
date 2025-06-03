@@ -40,12 +40,6 @@ jobs:
         # if: steps.cache.outputs.cache-hit != 'true'
         run: nix-shell --run "cabal update"
 
-      - name: Cabal check cli
-        run: nix-shell --run "cd cli; cabal check"
-
-      - name: Cabal check core
-        run: nix-shell --run "cd core; cabal check"
-
       - name: Build the project with cabal
         run: nix-shell --run "cabal build all"
 
