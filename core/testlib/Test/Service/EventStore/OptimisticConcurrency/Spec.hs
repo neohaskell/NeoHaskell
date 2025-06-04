@@ -8,6 +8,7 @@ import Service.Event (Event (..))
 import Service.Event qualified as Event
 import Service.EventStore (EventStore)
 import Service.EventStore.Core qualified as EventStore
+import Result qualified
 import Task qualified
 import Test
 import Test.Service.EventStore.OptimisticConcurrency.Context qualified as Context
@@ -54,7 +55,7 @@ spec newStore = do
             |> ctx.store.appendToStream ctx.streamId (Event.StreamPosition 1)
             |> discard
             |> Task.mapError toText
-            |> Task.recover (\_ -> Task.yield unit)
+            |> Task.toResult
             |> AsyncTask.run
 
         event2Task <-
@@ -62,11 +63,23 @@ spec newStore = do
             |> ctx.store.appendToStream ctx.streamId (Event.StreamPosition 1)
             |> discard
             |> Task.mapError toText
-            |> Task.recover (\_ -> Task.yield unit)
+            |> Task.toResult
             |> AsyncTask.run
 
-        AsyncTask.waitFor event1Task
-        AsyncTask.waitFor event2Task
+        result1 <- AsyncTask.waitFor event1Task
+        result2 <- AsyncTask.waitFor event2Task
+
+        let successes =
+              (if Result.isOk result1 then 1 else 0)
+                + (if Result.isOk result2 then 1 else 0)
+
+        successes |> shouldBe 1
+
+        let failures =
+              (if Result.isErr result1 then 1 else 0)
+                + (if Result.isErr result2 then 1 else 0)
+
+        failures |> shouldBe 1
 
         -- Read back all events to verify
         events <-

@@ -15,6 +15,7 @@ module Task (
   runNoErrors,
   mapArray,
   runResult,
+  toResult,
   unless,
   when,
   recover,
@@ -91,6 +92,15 @@ runResult task = do
   runTask task
     |> Except.runExceptT
     |> IO.map Result.fromEither
+
+-- | Execute a 'Task' and capture its result as a new 'Task'.
+--   Useful when running tasks concurrently and you need to
+--   inspect whether they succeeded or failed.
+toResult :: Task err value -> Task Unit (Result err value)
+toResult task =
+  task
+    |> runResult
+    |> fromIO
 
 
 run :: (Result err value -> IO value) -> Task err value -> IO value
