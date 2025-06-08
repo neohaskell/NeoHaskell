@@ -50,6 +50,7 @@ module Array (
   fromLegacy,
   last,
   zip,
+  sumIntegers,
 ) where
 
 import Basics
@@ -403,3 +404,8 @@ indexed (Array vector) = Array (Data.Vector.indexed vector)
 -- | Zip two arrays into a new array of tuples.
 zip :: Array b -> Array a -> Array (a, b)
 zip (Array second) (Array first) = Array (Data.Vector.zip first second)
+
+
+-- | Adds up all the integers in an array.
+sumIntegers :: Array Int -> Int
+sumIntegers (Array vector) = Data.Vector.sum vector

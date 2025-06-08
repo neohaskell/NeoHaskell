@@ -4,6 +4,7 @@ import Array qualified
 import AsyncTask qualified
 import Core
 import Maybe qualified
+import Result qualified
 import Service.Event (Event (..))
 import Service.Event qualified as Event
 import Service.EventStore (EventStore)
@@ -49,24 +50,24 @@ spec newStore = do
                   globalPosition = Nothing
                 }
 
-        event1Task <-
-          event1
-            |> ctx.store.appendToStream ctx.streamId (Event.StreamPosition 1)
-            |> discard
-            |> Task.mapError toText
-            |> Task.recover (\_ -> Task.yield unit)
-            |> AsyncTask.run
+        let event1Task =
+              event1
+                |> ctx.store.appendToStream ctx.streamId (Event.StreamPosition 1)
+                |> discard
+                |> Task.asResult
 
-        event2Task <-
-          event2
-            |> ctx.store.appendToStream ctx.streamId (Event.StreamPosition 1)
-            |> discard
-            |> Task.mapError toText
-            |> Task.recover (\_ -> Task.yield unit)
-            |> AsyncTask.run
+        let event2Task =
+              event2
+                |> ctx.store.appendToStream ctx.streamId (Event.StreamPosition 1)
+                |> discard
+                |> Task.asResult
 
-        AsyncTask.waitFor event1Task
-        AsyncTask.waitFor event2Task
+        (event1, event2) <- AsyncTask.runConcurrently (event1Task, event2Task)
+
+        Array.fromLinkedList [event1, event2]
+          |> Array.map (\x -> if Result.isOk x then 1 else 0)
+          |> Array.sumIntegers
+          |> shouldBe 1
 
         -- Read back all events to verify
         events <-

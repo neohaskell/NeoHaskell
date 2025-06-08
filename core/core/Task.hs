@@ -18,6 +18,7 @@ module Task (
   unless,
   when,
   recover,
+  asResult,
 ) where
 
 import Applicable (Applicative (pure))
@@ -74,8 +75,14 @@ apply :: Task err (input -> output) -> Task err input -> Task err output
 apply taskFunction self = Task (Applicable.apply (runTask taskFunction) (runTask self))
 
 
-recover :: (err -> Task err value) -> Task err value -> Task err value
+recover :: (err -> Task err2 value) -> Task err value -> Task err2 value
 recover f self = Task (Except.catchE (runTask self) (runTask <. f))
+
+
+asResult :: Task err value -> Task err2 (Result err value)
+asResult task =
+  runResult task
+    |> fromIO
 
 
 andThen :: (input -> Task err output) -> Task err input -> Task err output
