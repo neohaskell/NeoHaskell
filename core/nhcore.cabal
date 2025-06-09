@@ -106,6 +106,7 @@ library
       Subprocess,
       Path,
       Time,
+      Environment,
 
       -- OptionsParser
       Command,

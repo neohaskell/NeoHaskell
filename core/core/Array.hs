@@ -51,6 +51,7 @@ module Array (
   last,
   zip,
   sumIntegers,
+  reverse,
 ) where
 
 import Basics
@@ -409,3 +410,8 @@ zip (Array second) (Array first) = Array (Data.Vector.zip first second)
 -- | Adds up all the integers in an array.
 sumIntegers :: Array Int -> Int
 sumIntegers (Array vector) = Data.Vector.sum vector
+
+
+-- | Reverse an array.
+reverse :: Array a -> Array a
+reverse (Array vector) = Array (Data.Vector.reverse vector)
