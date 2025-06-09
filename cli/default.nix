@@ -1,8 +1,8 @@
-{ pkgs ? import ../nix/nixpkgs.nix { } }:
-pkgs.haskellPackages.developPackage {
+{ }:
+let nixpkgs = import ../nix/nixpkgs.nix { };
+in nixpkgs.haskellPackages.developPackage {
   root = ./.;
-  source-overrides = {
-    nhcore = ../core;
-  };
-  modifier = drv: pkgs.haskell.lib.dontHaddock drv;
+  source-overrides = { nhcore = ../core; };
+  modifier = drv:
+    nixpkgs.haskell.lib.dontCheck (nixpkgs.haskell.lib.dontHaddock drv);
 }

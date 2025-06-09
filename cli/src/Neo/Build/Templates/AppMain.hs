@@ -13,8 +13,8 @@ template
 
 import Core
 import qualified Task
-import qualified {mainModuleName}
+import qualified #{mainModuleName}
 
 main :: IO ()
-main = Task.runOrPanic {mainModuleName}.run
+main = Task.runOrPanic #{mainModuleName}.run
 |]

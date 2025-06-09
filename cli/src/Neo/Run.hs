@@ -21,7 +21,7 @@ handle config = do
   let projectName = config.name
   let rootFolder = [path|nhout|]
   completion <-
-    Subprocess.openInherit [fmt|./result/bin/{projectName}|] (Array.fromLinkedList []) rootFolder Subprocess.InheritBOTH
+    Subprocess.openInherit [fmt|./result/bin/#{projectName}|] (Array.fromLinkedList []) rootFolder Subprocess.InheritBOTH
   if completion.exitCode != 0
     then errorOut completion.stderr
     else print completion.stdout
@@ -30,6 +30,6 @@ handle config = do
 errorOut :: Text -> Task Error _
 errorOut err =
   [fmt|Oops running failed:
-    {err}|]
+    #{err}|]
     |> CustomError
     |> Task.throw

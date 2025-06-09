@@ -28,7 +28,7 @@ module Array (
   -- * Transform
   map,
   indexedMap,
-  foldr,
+  reduce,
   foldl,
   takeIf,
   dropIf,
@@ -36,6 +36,9 @@ module Array (
   foldM,
   dropWhile,
   takeWhile,
+  take,
+  drop,
+  indexed,
 
   -- * Partitioning?
   partitionBy,
@@ -44,6 +47,11 @@ module Array (
 
   -- * Compatibility
   unwrap,
+  fromLegacy,
+  last,
+  zip,
+  sumIntegers,
+  reverse,
 ) where
 
 import Basics
@@ -199,11 +207,11 @@ toIndexedLinkedList =
     .> LinkedList.map (Tuple.mapFirst Prelude.fromIntegral)
 
 
--- | Reduce an array from the right. Read @foldr@ as fold from the right.
+-- | Reduce an array from the right. Read @reduce@ as fold from the right.
 --
--- > foldr (+) 0 (repeat 3 5) == 15
-foldr :: (a -> b -> b) -> b -> Array a -> b
-foldr f value array = Prelude.foldr f value (unwrap array)
+-- > reduce (+) 0 (repeat 3 5) == 15
+reduce :: (a -> b -> b) -> b -> Array a -> b
+reduce f value array = Prelude.foldr f value (unwrap array)
 
 
 -- | Reduce an array from the left. Read @foldl@ as fold from the left.
@@ -295,9 +303,9 @@ slice from to (Array vector)
 --
 -- The function `f` should take an element of type `a` and return an array of type `Array b`.
 --
--- The `flatMap` function is implemented using the `map` and `foldr` functions. First, it applies `f` to each
+-- The `flatMap` function is implemented using the `map` and `reduce` functions. First, it applies `f` to each
 -- element of `array` using the `map` function. Then, it flattens the resulting arrays into a single array
--- using the `foldr` function with the `append` function as the folding operation and `empty` as the initial
+-- using the `reduce` function with the `append` function as the folding operation and `empty` as the initial
 -- value. The resulting array is then returned.
 
 -- This function is commonly used in functional programming to apply a function to each element of a nested
@@ -312,7 +320,7 @@ flatMap ::
 flatMap f array =
   array
     |> map f
-    |> foldr append empty
+    |> reduce append empty
 
 
 -- | TODO: Find a better name for this function.
@@ -363,3 +371,47 @@ splitFirst (Array vector) = do
 -- > any isEven (fromLinkedList [1,3,5]) == False
 any :: forall (value :: Type). (value -> Bool) -> Array value -> Bool
 any predicate (Array vector) = Data.Vector.any predicate vector
+
+
+-- | Returns the last element in the array.
+-- If the array is empty, returns `Nothing`.
+last :: forall (value :: Type). Array value -> Maybe value
+last (Array vector) = do
+  let len = Data.Vector.length vector
+  vector Data.Vector.!? (len - 1)
+
+
+-- | Convert a Haskell Vector to a NeoHaskell Array.
+-- Only use this for compatibility with legacy code.
+fromLegacy :: Data.Vector.Vector a -> Array a
+fromLegacy = Array
+
+
+-- | Take the first n elements of an array.
+take :: Int -> Array a -> Array a
+take n (Array vector) = Array (Data.Vector.take n vector)
+
+
+-- | Drop the first n elements of an array.
+drop :: Int -> Array a -> Array a
+drop n (Array vector) = Array (Data.Vector.drop n vector)
+
+
+-- | Convert an array into an array of tuples, where the first element of the tuple is the index of the element.
+indexed :: Array a -> Array (Int, a)
+indexed (Array vector) = Array (Data.Vector.indexed vector)
+
+
+-- | Zip two arrays into a new array of tuples.
+zip :: Array b -> Array a -> Array (a, b)
+zip (Array second) (Array first) = Array (Data.Vector.zip first second)
+
+
+-- | Adds up all the integers in an array.
+sumIntegers :: Array Int -> Int
+sumIntegers (Array vector) = Data.Vector.sum vector
+
+
+-- | Reverse an array.
+reverse :: Array a -> Array a
+reverse (Array vector) = Array (Data.Vector.reverse vector)

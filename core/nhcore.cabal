@@ -18,7 +18,7 @@ common common_cfg
                   -fno-warn-name-shadowing
                   -Werror
     build-depends:
-      base ^>=4.18,
+      base,
       ghc-prim ,
       async ,
       aeson ,
@@ -41,11 +41,12 @@ common common_cfg
       unagi-chan ,
       QuickCheck ,
       quickcheck-instances ,
-      PyF ,
+      string-interpolate ,
       with-utf8 ,
       dir-traverse ,
       Cabal ,
       uuid ,
+      hspec,
       template-haskell
 
 
@@ -105,6 +106,7 @@ library
       Subprocess,
       Path,
       Time,
+      Environment,
 
       -- OptionsParser
       Command,
@@ -122,20 +124,35 @@ library
       ToText,
 
       -- Service
-      Action,
       Trigger,
       Service.Event,
       Service.EventStore,
+      Service.EventStore.Core,
+      Service.EventStore.InMemory,
+
+      -- Reflection
+      TypeName,
 
       -- Concurrency
-      AsyncIO,
+      AsyncTask,
       Channel,
+      DurableChannel,
       ConcurrentVar,
+      Lock,
 
       -- Http
       Http,
-      Http.Client
+      Http.Client,
 
+      -- Test
+      Test,
+      Test.Service.EventStore,
+      Test.Service.EventStore.GlobalStreamOrdering.Context,
+      Test.Service.EventStore.GlobalStreamOrdering.Spec,
+      Test.Service.EventStore.IndividualStreamOrdering.Spec,
+      Test.Service.EventStore.IndividualStreamOrdering.Context,
+      Test.Service.EventStore.OptimisticConcurrency.Spec,
+      Test.Service.EventStore.OptimisticConcurrency.Context,
 
     -- other-modules:
     -- other-extensions:
@@ -148,17 +165,21 @@ library
       traits,
       system,
       http,
+      reflection,
+      testlib,
       options-parser
     default-language: GHC2021
 
 test-suite nhcore-test
     import:           common_cfg
     default-language: GHC2021
-    -- other-modules:
+    other-modules:
+      Service.EventStore.InMemorySpec,
     -- other-extensions:
     type:             exitcode-stdio-1.0
     hs-source-dirs:   test
     main-is:          Main.hs
     build-depends:
-        base ^>=4.18,
-        nhcore
+        base,
+        nhcore,
+        hspec,
