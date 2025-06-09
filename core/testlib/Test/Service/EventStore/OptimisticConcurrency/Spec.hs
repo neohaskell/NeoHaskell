@@ -63,9 +63,9 @@ spec newStore = do
                 |> discard
                 |> Task.asResult
 
-        (event1, event2) <- AsyncTask.runConcurrently (event1Task, event2Task)
+        (result1, result2) <- AsyncTask.runConcurrently (event1Task, event2Task)
 
-        Array.fromLinkedList [event1, event2]
+        Array.fromLinkedList [result1, result2]
           |> Array.map (\x -> if Result.isOk x then 1 else 0)
           |> Array.sumIntegers
           |> shouldBe 1
