@@ -32,6 +32,7 @@ spec newStore = do
         initialEvent
           |> ctx.store.appendToStream ctx.streamId (Event.StreamPosition 0)
           |> Task.mapError toText
+          |> discard
 
         -- Create two identical events both expecting to append at position 1
         let event1 =
