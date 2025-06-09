@@ -20,10 +20,13 @@ module Test (
   runTask,
   fail,
   beforeAll,
+  whenEnvVar,
 ) where
 
 import Array qualified
+import Control.Monad qualified
 import Core
+import Environment qualified
 import Task qualified
 import Test.Hspec qualified as Hspec
 import Text qualified
@@ -148,3 +151,16 @@ sequential = Hspec.sequential
 runTask :: (Show err) => Task err a -> _
 runTask task =
   task |> Task.runOrPanic
+
+
+-- | Runs a block of tests if an environment variable is set
+whenEnvVar :: Text -> Spec Unit -> Spec Unit
+whenEnvVar envVarName block = do
+  x <-
+    Environment.getVariable envVarName
+      |> Task.recover (\_ -> pure "")
+      |> Task.runOrPanic @Text @Text
+      |> Hspec.runIO
+
+  Control.Monad.when (x != "") do
+    block

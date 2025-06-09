@@ -19,10 +19,10 @@ spec newStore = do
     specWithCount newStore 1000
     specWithCount newStore 10000
 
+    whenEnvVar "TEST_EVENT_COUNT" do
+      specWithCount newStore 100000
+      specWithCount newStore 1000000
 
--- TODO: Enable these with an environment variable
--- specWithCount newStore 100000
--- specWithCount newStore 1000000
 
 specWithCount :: Task Text EventStore -> Int -> Spec Unit
 specWithCount newStore eventCount = do
