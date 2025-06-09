@@ -19,6 +19,7 @@ module Result (
   fromEither,
   isOk,
   isErr,
+  toEither,
 ) where
 
 import Basics
@@ -180,6 +181,13 @@ fromEither either =
   case either of
     Prelude.Left a -> Err a
     Prelude.Right b -> Ok b
+
+
+toEither :: Result a b -> Prelude.Either a b
+toEither result =
+  case result of
+    Ok value -> Prelude.Right value
+    Err error -> Prelude.Left error
 
 
 -- | Check if a Result is Ok. Returns True if the Result is Ok, False if it is Err.

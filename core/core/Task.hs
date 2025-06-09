@@ -19,6 +19,7 @@ module Task (
   when,
   recover,
   asResult,
+  fromIOResult,
 ) where
 
 import Applicable (Applicative (pure))
@@ -45,6 +46,7 @@ import Result qualified
 import Text (Text)
 import Thenable (Monad)
 import ToText (Show, toPrettyText)
+import Prelude qualified
 
 
 newtype Task err value = Task
@@ -159,6 +161,14 @@ fromIO :: IO value -> Task _ value
 fromIO io =
   io
     |> Monad.liftIO
+    |> Task
+
+
+fromIOResult :: (Show err) => IO (Result err value) -> Task err value
+fromIOResult io =
+  io
+    |> Prelude.fmap Result.toEither
+    |> Except.ExceptT
     |> Task
 
 

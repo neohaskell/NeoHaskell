@@ -4,19 +4,13 @@ module AsyncTask (
   waitFor,
   sleep,
   process,
-  waitAnyCancel,
-  withRecovery,
-  cancel,
-  runConcurrentlyAndDiscard,
   runConcurrently,
 ) where
 
-import Array (Array)
-import Array qualified
 import Basics
 import Control.Concurrent qualified as Ghc
 import Control.Concurrent.Async qualified as GhcAsync
-import Data.Either qualified as Either
+import GHC.IO qualified as GHC
 import Result (Result)
 import Result qualified
 import Task (Task)
@@ -24,27 +18,31 @@ import Task qualified
 import ToText (Show)
 
 
-type AsyncTask result = GhcAsync.Async result
+newtype AsyncTask err result = AsyncTask (GhcAsync.Async (Result err result))
 
 
-run :: (Show err) => Task err result -> Task err (AsyncTask result)
+run :: (Show err) => Task err result -> Task err (AsyncTask err result)
 run task =
-  Task.runOrPanic task
+  Task.runResult task
     |> GhcAsync.async
     |> Task.fromIO
+    |> Task.map AsyncTask
 
 
-waitFor :: (Show err) => AsyncTask result -> Task err result
-waitFor self =
+waitFor :: (Show err) => AsyncTask err result -> Task err result
+waitFor (AsyncTask self) =
   GhcAsync.wait self
-    |> Task.fromIO
+    |> Task.fromIOResult
 
 
-process :: (Show err) => Task err a -> (AsyncTask a -> Task err b) -> Task err b
-process task process =
-  (\asyncTask -> process asyncTask |> Task.runOrPanic)
-    |> GhcAsync.withAsync (Task.runOrPanic task)
-    |> Task.fromIO
+process :: forall err a b. (Show err) => Task err a -> (AsyncTask err a -> Task err b) -> Task err b
+process task processor =
+  do
+    let internalProcessor :: GhcAsync.Async (Result err a) -> GHC.IO (Result err b)
+        internalProcessor t = AsyncTask t |> processor |> Task.runResult
+    internalProcessor
+    |> GhcAsync.withAsync (Task.runResult task)
+    |> Task.fromIOResult
 
 
 sleep :: Int -> Task Never Unit
@@ -54,37 +52,10 @@ sleep milliseconds =
     |> Task.fromIO
 
 
-withRecovery :: (Show err) => Task err error -> Task err result -> Task err (Result error result)
-withRecovery errorTask resultTask = do
-  let errorIO = Task.runOrPanic errorTask
-  let resultIO = Task.runOrPanic resultTask
-  result <- GhcAsync.race errorIO resultIO |> Task.fromIO
-  case result of
-    Either.Left a -> pure (Result.Err a)
-    Either.Right a -> pure (Result.Ok a)
-
-
-waitAnyCancel :: (Show err) => Array (AsyncTask a) -> Task err (AsyncTask a, a)
-waitAnyCancel arr = do
-  let asyncList =
-        Array.toLinkedList arr
-  (async, result) <- GhcAsync.waitAnyCancel asyncList |> Task.fromIO
-  pure (async, result)
-
-
-cancel :: (Show err) => AsyncTask a -> Task err Unit
-cancel asyncTask =
-  asyncTask
-    |> GhcAsync.cancel
-    |> Task.fromIO
-
-
-runConcurrentlyAndDiscard :: (Show err) => (Task err a, Task err b) -> Task err Unit
-runConcurrentlyAndDiscard (async1, async2) =
-  GhcAsync.concurrently_ (Task.runOrPanic async1) (Task.runOrPanic async2)
-    |> Task.fromIO
-
-
 runConcurrently :: (Show err) => (Task err a, Task err b) -> Task err (a, b)
-runConcurrently (task1, task2) = Task.fromIO do
-  GhcAsync.concurrently (Task.runOrPanic task1) (Task.runOrPanic task2)
+runConcurrently (task1, task2) = Task.fromIOResult do
+  res <- GhcAsync.concurrently (Task.runResult task1) (Task.runResult task2)
+  case res of
+    (Result.Ok a, Result.Ok b) -> pure (Result.Ok (a, b))
+    (Result.Err err, _) -> pure (Result.Err err)
+    (_, Result.Err err) -> pure (Result.Err err)
