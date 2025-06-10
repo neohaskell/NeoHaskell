@@ -16,6 +16,15 @@
       "contributions": [
         "code"
       ]
+    },
+    {
+      "login": "DavideWalder",
+      "name": "Davide Walder",
+      "avatar_url": "https://avatars.githubusercontent.com/u/58290976?v=4",
+      "profile": "https://github.com/DavideWalder",
+      "contributions": [
+        "infra"
+      ]
     }
   ]
 }
