@@ -1,4 +1,21 @@
 {
-  "projectName": "neohaskell",
-  "projectOwner": "neohaskell"
+  "projectName": "NeoHaskell",
+  "projectOwner": "neohaskell",
+  "files": [
+    "README.md"
+  ],
+  "commitType": "docs",
+  "commitConvention": "angular",
+  "contributorsPerLine": 7,
+  "contributors": [
+    {
+      "login": "NickSeagull",
+      "name": "Nick Seagull",
+      "avatar_url": "https://avatars.githubusercontent.com/u/7448243?v=4",
+      "profile": "https://github.com/NickSeagull",
+      "contributions": [
+        "code"
+      ]
+    }
+  ]
 }
