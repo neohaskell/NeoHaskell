@@ -7,6 +7,9 @@
   <p>
     It is designed to be easy to learn and use, while also being powerful enough to release your app with minimum effort and maximum confidence.
   </p>
+  <a href="#contributors">
+    <img src="https://img.shields.io/github/all-contributors/neohaskell/neohaskell?color=ee8449&style=flat-square" alt="All Contributors" />
+  </a>
 </div>
 
 ---
@@ -61,3 +64,14 @@ hlint .
 ## Collaborate on Discord
 
 It's always better to hack with people, so why not join the [Discord server](https://discord.gg/invite/wDj3UYzec8)?
+
+## Contributors
+
+<!-- ALL-CONTRIBUTORS-LIST:START - Do not remove or modify this section -->
+<!-- prettier-ignore-start -->
+<!-- markdownlint-disable -->
+
+<!-- markdownlint-restore -->
+<!-- prettier-ignore-end -->
+
+<!-- ALL-CONTRIBUTORS-LIST:END -->
