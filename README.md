@@ -75,6 +75,7 @@ It's always better to hack with people, so why not join the [Discord server](htt
     <tr>
       <td align="center" valign="top" width="14.28%"><a href="https://github.com/NickSeagull"><img src="https://avatars.githubusercontent.com/u/7448243?v=4?s=100" width="100px;" alt="Nick Seagull"/><br /><sub><b>Nick Seagull</b></sub></a><br /><a href="#code-NickSeagull" title="Code">💻</a></td>
       <td align="center" valign="top" width="14.28%"><a href="https://github.com/DavideWalder"><img src="https://avatars.githubusercontent.com/u/58290976?v=4?s=100" width="100px;" alt="Davide Walder"/><br /><sub><b>Davide Walder</b></sub></a><br /><a href="#infra-DavideWalder" title="Infrastructure (Hosting, Build-Tools, etc)">🚇</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/SiriusStarr"><img src="https://avatars.githubusercontent.com/u/2049163?v=4?s=100" width="100px;" alt="ScribblyBirb"/><br /><sub><b>ScribblyBirb</b></sub></a><br /><a href="#ideas-siriusstarr" title="Ideas, Planning, & Feedback">🤔</a></td>
     </tr>
   </tbody>
 </table>
