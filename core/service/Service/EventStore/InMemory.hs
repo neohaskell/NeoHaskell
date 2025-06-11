@@ -74,12 +74,12 @@ appendToStreamImpl store streamId expectedPosition event = do
   let appendCondition :: Array Event -> Bool
       appendCondition events = do
         let currentLength = Array.length events
-        let (StreamPosition (Positive pos)) = expectedPosition
+        let (StreamPosition (Natural pos)) = expectedPosition
         pos == currentLength
 
   let globalPositionModifier :: Int -> Event
       globalPositionModifier index = do
-        let globalPos = Just (StreamPosition (Positive (index + 1)))
+        let globalPos = Just (StreamPosition (Natural (index + 1)))
         event {Service.Event.globalPosition = globalPos}
 
   hasWritten <- channel |> DurableChannel.checkAndWrite appendCondition event
@@ -89,7 +89,7 @@ appendToStreamImpl store streamId expectedPosition event = do
         store.globalStream
           |> DurableChannel.writeWithIndex globalPositionModifier
       let localPosition = expectedPosition
-      let globalPosition = StreamPosition (Positive globalIndex)
+      let globalPosition = StreamPosition (Natural globalIndex)
       Task.yield AppendResult {localPosition, globalPosition}
     else
       (ConcurrencyConflict streamId expectedPosition)
@@ -102,7 +102,7 @@ readStreamForwardFromImpl ::
   StreamPosition ->
   Limit ->
   Task Error (Array Event)
-readStreamForwardFromImpl store streamId position (Limit (Positive limit)) = do
+readStreamForwardFromImpl store streamId position (Limit (Natural limit)) = do
   channel <- store |> ensureStream streamId
   channel
     |> DurableChannel.getAndTransform \events ->
@@ -117,7 +117,7 @@ readStreamBackwardFromImpl ::
   StreamPosition ->
   Limit ->
   Task Error (Array Event)
-readStreamBackwardFromImpl store streamId position (Limit (Positive limit)) = do
+readStreamBackwardFromImpl store streamId position (Limit (Natural limit)) = do
   channel <- store |> ensureStream streamId
   channel
     |> DurableChannel.getAndTransform \events ->
@@ -142,6 +142,6 @@ readAllEventsForwardFromImpl ::
   StreamPosition ->
   Limit ->
   Task Error (Array Event)
-readAllEventsForwardFromImpl store (StreamPosition (Positive position)) (Limit (Positive limit)) = do
+readAllEventsForwardFromImpl store (StreamPosition (Natural position)) (Limit (Natural limit)) = do
   allGlobalEvents <- store.globalStream |> DurableChannel.getAndTransform unchanged
   allGlobalEvents |> Array.drop position |> Array.take limit |> Task.yield

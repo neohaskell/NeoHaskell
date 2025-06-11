@@ -30,7 +30,7 @@ specWithCount newStore eventCount = do
     beforeAll (Context.initialize newStore eventCount) do
       it "has the correct number of events" \ctx -> do
         let startPosition = Event.StreamPosition 0
-        let limit = EventStore.Limit (Positive ctx.eventCount)
+        let limit = EventStore.Limit (Natural ctx.eventCount)
         events <-
           ctx.store.readStreamForwardFrom ctx.streamId startPosition limit
             |> Task.mapError toText
@@ -39,7 +39,7 @@ specWithCount newStore eventCount = do
 
       it "has the correct order" \ctx -> do
         let startPosition = Event.StreamPosition 0
-        let limit = EventStore.Limit (Positive ctx.eventCount)
+        let limit = EventStore.Limit (Natural ctx.eventCount)
         events <-
           ctx.store.readStreamForwardFrom ctx.streamId startPosition limit
             |> Task.mapError toText
@@ -49,7 +49,7 @@ specWithCount newStore eventCount = do
 
       it "has all the events" \ctx -> do
         let startPosition = Event.StreamPosition 0
-        let limit = EventStore.Limit (Positive ctx.eventCount)
+        let limit = EventStore.Limit (Natural ctx.eventCount)
         events <-
           ctx.store.readStreamForwardFrom ctx.streamId startPosition limit
             |> Task.mapError toText

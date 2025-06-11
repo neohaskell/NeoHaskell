@@ -27,7 +27,7 @@ initialize newStore eventCount = do
   store <- newStore
   let streamId = Event.StreamId "test-stream"
   let generatedEvents = Array.initialize eventCount \index -> do
-        let position = Event.StreamPosition (Positive index)
+        let position = Event.StreamPosition (Natural index)
         let id = [fmt|event-#{index}|]
         Event {id, streamId, position, globalPosition = Nothing}
   -- Append all events sequentially

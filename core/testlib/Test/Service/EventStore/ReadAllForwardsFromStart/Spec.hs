@@ -1,4 +1,4 @@
-module Test.Service.EventStore.GlobalStreamOrdering.Spec (spec) where
+module Test.Service.EventStore.ReadAllForwardsFromStart.Spec (spec) where
 
 import Array qualified
 import Core
@@ -8,8 +8,8 @@ import Service.EventStore (EventStore (..))
 import Service.EventStore qualified as EventStore
 import Task qualified
 import Test
-import Test.Service.EventStore.GlobalStreamOrdering.Context (Context (..))
-import Test.Service.EventStore.GlobalStreamOrdering.Context qualified as Context
+import Test.Service.EventStore.ReadAllForwardsFromStart.Context (Context (..))
+import Test.Service.EventStore.ReadAllForwardsFromStart.Context qualified as Context
 import ToText (toText)
 
 

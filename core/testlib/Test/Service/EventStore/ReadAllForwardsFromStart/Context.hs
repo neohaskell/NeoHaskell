@@ -1,4 +1,4 @@
-module Test.Service.EventStore.GlobalStreamOrdering.Context (Context (..), initialize) where
+module Test.Service.EventStore.ReadAllForwardsFromStart.Context (Context (..), initialize) where
 
 import Array qualified
 import Core

@@ -9,7 +9,7 @@ import Core
 import Service.Event (Event, StreamId, StreamPosition)
 
 
-newtype Limit = Limit (Positive Int)
+newtype Limit = Limit (Natural Int)
   deriving (Eq, Show, Ord, Generic)
 
 
