@@ -5,19 +5,19 @@ module Test.Service.EventStore.IndividualStreamOrdering.Context (
 
 import Array qualified
 import Core
-import Service.Event (Event (..))
 import Service.Event qualified as Event
 import Service.EventStore (EventStore)
 import Service.EventStore.Core qualified as EventStore
 import Task qualified
 import ToText (toText)
+import Uuid qualified
 
 
 data Context = Context
   { eventCount :: Int,
     streamId :: Event.StreamId,
     store :: EventStore,
-    generatedEvents :: Array Event,
+    generatedEvents :: Array Event.InsertionEvent,
     positions :: Array Event.StreamPosition
   }
 
@@ -25,16 +25,20 @@ data Context = Context
 initialize :: Task Text EventStore -> Int -> Task Text Context
 initialize newStore eventCount = do
   store <- newStore
-  let streamId = Event.StreamId "test-stream"
-  let generatedEvents = Array.initialize eventCount \index -> do
-        let position = Event.StreamPosition (Natural index)
-        let id = [fmt|event-#{index}|]
-        Event {id, streamId, position, globalPosition = Nothing}
+  streamId <- Uuid.generate |> Task.map Event.StreamId
+  entityId <- Uuid.generate |> Task.map Event.EntityId
+  generatedEvents <-
+    Array.fromLinkedList [0 .. eventCount] |> Task.mapArray \index -> do
+      let localPosition = Event.StreamPosition (index)
+      id <- Uuid.generate
+      Event.InsertionEvent {id, streamId, entityId, localPosition}
+        |> Task.yield
+
   -- Append all events sequentially
-  let appendEvents :: Array Event -> Task EventStore.Error (Array Event.StreamPosition)
+  let appendEvents :: Array Event.InsertionEvent -> Task EventStore.Error (Array Event.StreamPosition)
       appendEvents events = do
         events |> Task.mapArray \event -> do
-          result <- event |> store.appendToStream streamId event.position
+          result <- event |> store.appendToStream
           Task.yield result.localPosition
 
   positions <- generatedEvents |> appendEvents |> Task.mapError toText

@@ -2,7 +2,6 @@ module Service.EventStore.Core (
   EventStore (..),
   Error (..),
   Limit (..),
-  AppendResult (..),
 ) where
 
 import Core
@@ -21,18 +20,11 @@ data Error
   deriving (Eq, Show)
 
 
-data AppendResult = AppendResult
-  { localPosition :: StreamPosition,
-    globalPosition :: StreamPosition
-  }
-  deriving (Eq, Show)
-
-
 -- | An interface for the operations of an event store
 data EventStore = EventStore
   { -- | Append an event to a stream at a given expected revision.
     --   Returns the local and global stream position if successful, or an Error on conflict or failure.
-    appendToStream :: InsertionEvent -> Task Error AppendResult,
+    appendToStream :: InsertionEvent -> Task Error Event,
     -- | Read events from a stream in forward direction starting from a given revision.
     --   Returns an array of events or an Error.
     readStreamForwardFrom :: StreamId -> StreamPosition -> Limit -> Task Error (Array Event),

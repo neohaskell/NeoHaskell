@@ -9,6 +9,7 @@ import DurableChannel qualified
 import Lock qualified
 import Map qualified
 import Service.Event
+import Service.Event qualified as Event
 import Service.EventStore.Core
 import Task qualified
 
@@ -64,33 +65,37 @@ ensureStream streamId store = do
 
 appendToStreamImpl ::
   StreamStore ->
-  StreamId ->
-  StreamPosition ->
-  Event ->
-  Task Error AppendResult
-appendToStreamImpl store streamId expectedPosition event = do
+  InsertionEvent ->
+  Task Error Event
+appendToStreamImpl store event = do
+  let id = event.id
+  let localPosition = event.localPosition
+  let entityId = event.entityId
+  let streamId = event.streamId
+  let expectedPosition = localPosition
   channel <- store |> ensureStream streamId
 
   let appendCondition :: Array Event -> Bool
       appendCondition events = do
         let currentLength = Array.length events
-        let (StreamPosition (Natural pos)) = expectedPosition
+        let (StreamPosition (pos)) = expectedPosition
         pos == currentLength
 
   let globalPositionModifier :: Int -> Event
-      globalPositionModifier index = do
-        let globalPos = Just (StreamPosition (Natural (index + 1)))
-        event {Service.Event.globalPosition = globalPos}
+      globalPositionModifier index =
+        event
+          |> Event.fromInsertionEvent (StreamPosition (index))
 
-  hasWritten <- channel |> DurableChannel.checkAndWrite appendCondition event
+  hasWritten <-
+    channel |> DurableChannel.checkAndWrite appendCondition (event |> Event.fromInsertionEvent (StreamPosition (0)))
   if hasWritten
     then do
       globalIndex <-
         store.globalStream
           |> DurableChannel.writeWithIndex globalPositionModifier
       let localPosition = expectedPosition
-      let globalPosition = StreamPosition (Natural globalIndex)
-      Task.yield AppendResult {localPosition, globalPosition}
+      let globalPosition = StreamPosition (globalIndex)
+      Task.yield Event {id, streamId, entityId, localPosition, globalPosition}
     else
       (ConcurrencyConflict streamId expectedPosition)
         |> Task.throw
@@ -107,7 +112,7 @@ readStreamForwardFromImpl store streamId position (Limit (Natural limit)) = do
   channel
     |> DurableChannel.getAndTransform \events ->
       events
-        |> Array.dropWhile (\event -> event.position < position)
+        |> Array.dropWhile (\event -> event.localPosition < position)
         |> Array.take limit
 
 
@@ -122,7 +127,7 @@ readStreamBackwardFromImpl store streamId position (Limit (Natural limit)) = do
   channel
     |> DurableChannel.getAndTransform \events ->
       events
-        |> Array.takeIf (\event -> event.position <= position)
+        |> Array.takeIf (\event -> event.localPosition <= position)
         |> Array.reverse
         |> Array.take limit
 
@@ -142,6 +147,6 @@ readAllEventsForwardFromImpl ::
   StreamPosition ->
   Limit ->
   Task Error (Array Event)
-readAllEventsForwardFromImpl store (StreamPosition (Natural position)) (Limit (Natural limit)) = do
+readAllEventsForwardFromImpl store (StreamPosition (position)) (Limit (Natural limit)) = do
   allGlobalEvents <- store.globalStream |> DurableChannel.getAndTransform unchanged
   allGlobalEvents |> Array.drop position |> Array.take limit |> Task.yield

@@ -6,6 +6,8 @@ module Test.Service.EventStore.OptimisticConcurrency.Context (
 import Core
 import Service.Event qualified as Event
 import Service.EventStore (EventStore)
+import Task qualified
+import Uuid qualified
 
 
 data Context = Context
@@ -17,5 +19,5 @@ data Context = Context
 initialize :: Task Text EventStore -> Task Text Context
 initialize newStore = do
   store <- newStore
-  let streamId = Event.StreamId "test-stream"
+  streamId <- Uuid.generate |> Task.map Event.StreamId
   pure Context {store, streamId}

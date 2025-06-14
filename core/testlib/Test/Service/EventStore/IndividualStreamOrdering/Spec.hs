@@ -44,7 +44,7 @@ specWithCount newStore eventCount = do
           ctx.store.readStreamForwardFrom ctx.streamId startPosition limit
             |> Task.mapError toText
         events
-          |> Array.map (\v -> v.position)
+          |> Array.map (\v -> v.localPosition)
           |> shouldBe ctx.positions
 
       it "has all the events" \ctx -> do
@@ -53,5 +53,6 @@ specWithCount newStore eventCount = do
         events <-
           ctx.store.readStreamForwardFrom ctx.streamId startPosition limit
             |> Task.mapError toText
+        let expectedEvents = ctx.generatedEvents |> Array.map (Event.fromInsertionEvent (Event.StreamPosition 0))
         events
-          |> shouldBe ctx.generatedEvents
+          |> shouldBe expectedEvents

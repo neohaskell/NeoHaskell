@@ -147,8 +147,6 @@ library
       -- Test
       Test,
       Test.Service.EventStore,
-      Test.Service.EventStore.ReadAllForwardsFromStart.Context,
-      Test.Service.EventStore.ReadAllForwardsFromStart.Spec,
       Test.Service.EventStore.GlobalStreamOrdering.Context,
       Test.Service.EventStore.GlobalStreamOrdering.Spec,
       Test.Service.EventStore.IndividualStreamOrdering.Spec,

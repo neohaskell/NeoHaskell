@@ -4,6 +4,7 @@ module Service.Event (
   StreamId (..),
   StreamPosition (..),
   EntityId (..),
+  fromInsertionEvent,
 ) where
 
 import Core
@@ -38,3 +39,15 @@ data InsertionEvent = InsertionEvent
     localPosition :: StreamPosition
   }
   deriving (Eq, Show, Ord, Generic)
+
+
+-- | Convert an insertion event to an event with a global position.
+fromInsertionEvent :: StreamPosition -> InsertionEvent -> Event
+fromInsertionEvent globalPosition event =
+  Event
+    { id = event.id,
+      streamId = event.streamId,
+      entityId = event.entityId,
+      localPosition = event.localPosition,
+      globalPosition
+    }
