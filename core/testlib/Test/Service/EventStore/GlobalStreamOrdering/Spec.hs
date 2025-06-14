@@ -31,8 +31,8 @@ spec newStore = do
 
       it "has the events correctly ordered within the stream" \context -> do
         let shouldMatchPosition (index, event) = do
-              event.position
-                |> shouldBe (Event.StreamPosition (Natural index))
+              event.localPosition
+                |> shouldBe (Event.StreamPosition (index))
         let shouldHaveCorrectOrdering eventStream = do
               eventStream
                 |> Array.indexed
@@ -56,18 +56,14 @@ spec newStore = do
           context.store.readAllEventsForwardFrom (Event.StreamPosition 0) (EventStore.Limit (Natural expectedTotalEvents))
             |> Task.mapError toText
         allGlobalEvents |> Task.forEach \event -> do
-          case event.globalPosition of
-            Nothing ->
-              fail "Event should have a global position assigned"
-            Just globalPos ->
-              globalPos |> shouldSatisfy (\pos -> pos >= Event.StreamPosition 0)
+          event.globalPosition |> shouldSatisfy (\pos -> pos >= Event.StreamPosition 0)
 
       it "can read events from a specific position" \context -> do
         let expectedTotalEvents = context.streamCount * context.eventsPerStream
         let midPoint = expectedTotalEvents // 2
         laterGlobalEvents <-
           context.store.readAllEventsForwardFrom
-            (Event.StreamPosition (Natural midPoint))
+            (Event.StreamPosition (midPoint))
             (EventStore.Limit (Natural expectedTotalEvents))
             |> Task.mapError toText
         laterGlobalEvents
@@ -86,11 +82,7 @@ spec newStore = do
 
           let matchPositions :: (Event, Event) -> Task _ Unit
               matchPositions (earlier, later) =
-                case (earlier.globalPosition, later.globalPosition) of
-                  (Just earlierPos, Just laterPos) ->
-                    earlierPos |> shouldSatisfy (\pos -> pos <= laterPos)
-                  _ ->
-                    fail "Event should have a global position assigned"
+                earlier.globalPosition |> shouldSatisfy (\pos -> pos <= later.globalPosition)
 
           eventPairs
             |> Task.mapArray matchPositions
