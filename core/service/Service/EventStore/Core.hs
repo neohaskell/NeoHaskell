@@ -6,7 +6,7 @@ module Service.EventStore.Core (
 ) where
 
 import Core
-import Service.Event (Event, StreamId, StreamPosition)
+import Service.Event (Event, InsertionEvent, StreamId, StreamPosition)
 
 
 newtype Limit = Limit (Natural Int)
@@ -32,7 +32,7 @@ data AppendResult = AppendResult
 data EventStore = EventStore
   { -- | Append an event to a stream at a given expected revision.
     --   Returns the local and global stream position if successful, or an Error on conflict or failure.
-    appendToStream :: StreamId -> StreamPosition -> Event -> Task Error AppendResult,
+    appendToStream :: InsertionEvent -> Task Error AppendResult,
     -- | Read events from a stream in forward direction starting from a given revision.
     --   Returns an array of events or an Error.
     readStreamForwardFrom :: StreamId -> StreamPosition -> Limit -> Task Error (Array Event),

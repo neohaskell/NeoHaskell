@@ -52,9 +52,11 @@ module Array (
   zip,
   sumIntegers,
   reverse,
+  flatten,
 ) where
 
 import Basics
+import Control.Monad qualified
 import Data.Foldable qualified
 import Data.Vector ((!?), (++), (//))
 import Data.Vector qualified
@@ -416,3 +418,8 @@ sumIntegers (Array vector) = Data.Vector.sum vector
 -- | Reverse an array.
 reverse :: Array a -> Array a
 reverse (Array vector) = Array (Data.Vector.reverse vector)
+
+
+-- | Flatten an array of arrays into a single array.
+flatten :: Array (Array a) -> Array a
+flatten (Array vector) = Array (Control.Monad.join (Data.Vector.map unwrap vector))
