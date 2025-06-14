@@ -94,7 +94,8 @@ unwrap (Array v) = v
 
 -- | Return an empty array.
 --
--- > length empty == 0
+-- >>> empty :: Array Int
+-- Array []
 empty :: Array a
 empty =
   Array Data.Vector.empty

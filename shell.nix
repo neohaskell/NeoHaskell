@@ -22,6 +22,7 @@ in pkgs.mkShell rec {
     pkgs.hlint
     pkgs.haskellPackages.zlib
     pkgs.haskellPackages.hspec-discover
+    pkgs.haskellPackages.doctest
 
     # Nix dev tools
     pkgs.nil
@@ -36,6 +37,14 @@ in pkgs.mkShell rec {
   shellHook = ''
     unset TEMP TMP TEMPDIR TMPDIR   # Required for nix-shell to work
     ${pre-commit.pre-commit-check.shellHook}
+
+    run-doctests-verbose() {
+      cabal repl --with-compiler=doctest --repl-options=--verbose core
+    }
+    
+    run-doctests() {
+      cabal repl --with-compiler=doctest core
+    }
   '';
 
   # Required for cabal to find the location of zlib and other native libraries
