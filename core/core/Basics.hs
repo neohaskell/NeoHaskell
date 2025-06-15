@@ -123,6 +123,7 @@ module Basics (
   Type,
   Control.Monad.forever,
   GHC.Generics.Generic,
+  GHC.Stack.HasCallStack,
 ) where
 
 import Applicable (Applicable)
