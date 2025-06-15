@@ -107,7 +107,7 @@ readStreamForwardFromImpl ::
   StreamPosition ->
   Limit ->
   Task Error (Array Event)
-readStreamForwardFromImpl store streamId position (Limit (Natural limit)) = do
+readStreamForwardFromImpl store streamId position (Limit (limit)) = do
   channel <- store |> ensureStream streamId
   channel
     |> DurableChannel.getAndTransform \events ->
@@ -122,7 +122,7 @@ readStreamBackwardFromImpl ::
   StreamPosition ->
   Limit ->
   Task Error (Array Event)
-readStreamBackwardFromImpl store streamId position (Limit (Natural limit)) = do
+readStreamBackwardFromImpl store streamId position (Limit (limit)) = do
   channel <- store |> ensureStream streamId
   channel
     |> DurableChannel.getAndTransform \events ->
@@ -147,6 +147,6 @@ readAllEventsForwardFromImpl ::
   StreamPosition ->
   Limit ->
   Task Error (Array Event)
-readAllEventsForwardFromImpl store (StreamPosition (position)) (Limit (Natural limit)) = do
+readAllEventsForwardFromImpl store (StreamPosition (position)) (Limit (limit)) = do
   allGlobalEvents <- store.globalStream |> DurableChannel.getAndTransform unchanged
   allGlobalEvents |> Array.drop position |> Array.take limit |> Task.yield

@@ -8,7 +8,7 @@ import Core
 import Service.Event (Event, InsertionEvent, StreamId, StreamPosition)
 
 
-newtype Limit = Limit (Natural Int)
+newtype Limit = Limit Int
   deriving (Eq, Show, Ord, Generic)
 
 

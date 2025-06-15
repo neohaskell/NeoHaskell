@@ -42,7 +42,7 @@ spec newStore = do
 
       it "has the correct number of events globally" \context -> do
         let expectedTotalEvents = context.streamCount * context.eventsPerStream
-        let limit = EventStore.Limit (Natural expectedTotalEvents)
+        let limit = EventStore.Limit (expectedTotalEvents)
         allGlobalEvents <-
           context.store.readAllEventsForwardFrom (Event.StreamPosition 0) limit
             |> Task.mapError toText
@@ -53,7 +53,7 @@ spec newStore = do
       it "has all events with assigned global positions" \context -> do
         let expectedTotalEvents = context.streamCount * context.eventsPerStream
         allGlobalEvents <-
-          context.store.readAllEventsForwardFrom (Event.StreamPosition 0) (EventStore.Limit (Natural expectedTotalEvents))
+          context.store.readAllEventsForwardFrom (Event.StreamPosition 0) (EventStore.Limit (expectedTotalEvents))
             |> Task.mapError toText
         allGlobalEvents |> Task.forEach \event -> do
           event.globalPosition |> shouldSatisfy (\pos -> pos >= Event.StreamPosition 0)
@@ -64,7 +64,7 @@ spec newStore = do
         laterGlobalEvents <-
           context.store.readAllEventsForwardFrom
             (Event.StreamPosition (midPoint))
-            (EventStore.Limit (Natural expectedTotalEvents))
+            (EventStore.Limit (expectedTotalEvents))
             |> Task.mapError toText
         laterGlobalEvents
           |> Array.length
@@ -73,7 +73,7 @@ spec newStore = do
       it "has the events globally ordered" \context -> do
         let expectedTotalEvents = context.streamCount * context.eventsPerStream
         allGlobalEvents <-
-          context.store.readAllEventsForwardFrom (Event.StreamPosition 0) (EventStore.Limit (Natural expectedTotalEvents))
+          context.store.readAllEventsForwardFrom (Event.StreamPosition 0) (EventStore.Limit (expectedTotalEvents))
             |> Task.mapError toText
         Task.unless ((Array.length allGlobalEvents) <= 1) do
           let eventPairs =

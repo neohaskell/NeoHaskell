@@ -78,7 +78,7 @@ spec newStore = do
 
         -- Read back all events to verify
         events <-
-          ctx.store.readStreamForwardFrom ctx.streamId (Event.StreamPosition 0) (EventStore.Limit (Natural 10))
+          ctx.store.readStreamForwardFrom ctx.streamId (Event.StreamPosition 0) (EventStore.Limit (10))
             |> Task.mapError toText
 
         -- We should have exactly 2 events (initial + one successful append)
