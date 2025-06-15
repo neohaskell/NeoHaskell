@@ -58,56 +58,56 @@ pending name =
 
 
 -- | Assert that two values are equal
-shouldBe :: (Show a, Eq a) => a -> a -> Task Text Unit
+shouldBe :: (HasCallStack, Show a, Eq a) => a -> a -> Task Text Unit
 shouldBe expected actual = do
   Task.fromIO (Hspec.shouldBe actual expected)
 {-# INLINE shouldBe #-}
 
 
 -- | Assert that a value satisfies a predicate
-shouldSatisfy :: (Show a) => (a -> Bool) -> a -> Task err Unit
+shouldSatisfy :: (HasCallStack, Show a) => (a -> Bool) -> a -> Task err Unit
 shouldSatisfy predicate value = do
   Task.fromIO (Hspec.shouldSatisfy value predicate)
 {-# INLINE shouldSatisfy #-}
 
 
 -- | Assert that an array contains another array
-shouldContain :: (Show a, Eq a) => Array a -> Array a -> Task err Unit
+shouldContain :: (HasCallStack, Show a, Eq a) => Array a -> Array a -> Task err Unit
 shouldContain expected actual = do
   Task.fromIO (Hspec.shouldContain (Array.toLinkedList expected) (Array.toLinkedList actual))
 {-# INLINE shouldContain #-}
 
 
 -- | Assert that an array does not contain another array
-shouldNotContain :: (Show a, Eq a) => Array a -> Array a -> Task err Unit
+shouldNotContain :: (HasCallStack, Show a, Eq a) => Array a -> Array a -> Task err Unit
 shouldNotContain expected actual = do
   Task.fromIO (Hspec.shouldNotContain (Array.toLinkedList expected) (Array.toLinkedList actual))
 {-# INLINE shouldNotContain #-}
 
 
 -- | Assert that a text starts with a prefix
-shouldStartWith :: Text -> Text -> Task err Unit
+shouldStartWith :: (HasCallStack) => Text -> Text -> Task err Unit
 shouldStartWith prefix text = do
   Task.fromIO (Hspec.shouldStartWith (Text.toLinkedList text) (Text.toLinkedList prefix))
 {-# INLINE shouldStartWith #-}
 
 
 -- | Assert that a string ends with a suffix
-shouldEndWith :: Text -> Text -> Task err Unit
+shouldEndWith :: (HasCallStack) => Text -> Text -> Task err Unit
 shouldEndWith suffix text = do
   Task.fromIO (Hspec.shouldEndWith (Text.toLinkedList text) (Text.toLinkedList suffix))
 {-# INLINE shouldEndWith #-}
 
 
 -- | Assert that two lists contain the same elements, regardless of order
-shouldMatchList :: (Show a, Eq a) => Array a -> Array a -> Task err Unit
+shouldMatchList :: (HasCallStack, Show a, Eq a) => Array a -> Array a -> Task err Unit
 shouldMatchList expected actual = do
   Task.fromIO (Hspec.shouldMatchList (Array.toLinkedList actual) (Array.toLinkedList expected))
 {-# INLINE shouldMatchList #-}
 
 
 -- | Assert that a task returns a specific value
-shouldReturn :: (Show a, Eq a, Show err) => a -> Task err a -> Task err2 Unit
+shouldReturn :: (HasCallStack, Show a, Eq a, Show err) => a -> Task err a -> Task err2 Unit
 shouldReturn expected actual = do
   Task.fromIO (Hspec.shouldReturn (Task.runOrPanic actual) expected)
 {-# INLINE shouldReturn #-}

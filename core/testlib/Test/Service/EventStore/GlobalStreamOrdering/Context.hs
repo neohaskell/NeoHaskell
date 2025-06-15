@@ -24,7 +24,7 @@ initialize newStore streamCount = do
   -- Create multiple streams with events
   let getStreamIds :: Task Text (Array Event.StreamId)
       getStreamIds =
-        Array.fromLinkedList [0 .. streamCount]
+        Array.fromLinkedList [0 .. streamCount - 1]
           |> Task.mapArray \_ -> do
             id <- Uuid.generate
             Event.StreamId id |> Task.yield
@@ -35,15 +35,14 @@ initialize newStore streamCount = do
       getAllEvents = do
         streamIds <- getStreamIds
         foo <-
-          streamIds |> Task.mapArray \_ ->
-            Array.fromLinkedList [0 .. eventsPerStream]
+          streamIds |> Task.mapArray \streamId ->
+            Array.fromLinkedList [0 .. eventsPerStream - 1]
               |> Task.mapArray \eventIndex -> do
                 id <- Uuid.generate
                 entityId <- Uuid.generate
-                streamId <- Uuid.generate
                 Event.InsertionEvent
                   { id = id,
-                    streamId = Event.StreamId streamId,
+                    streamId = streamId,
                     entityId = Event.EntityId entityId,
                     localPosition = Event.StreamPosition eventIndex
                   }
