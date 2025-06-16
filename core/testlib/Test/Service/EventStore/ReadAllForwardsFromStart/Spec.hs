@@ -28,36 +28,36 @@ specWithCount :: Task Text EventStore -> Int -> Spec Unit
 specWithCount newStore eventCount = do
   describe [fmt|testing with #{toText eventCount} events|] do
     beforeAll (Context.initialize newStore eventCount) do
-      it "reads all events from start in order" \ctx -> do
+      it "reads all events from start in order" \context -> do
         let startPosition = Event.StreamPosition 0
-        let limit = EventStore.Limit (ctx.eventCount * 2) -- Double the limit since we have two entities
+        let limit = EventStore.Limit (context.eventCount * 2) -- Double the limit since we have two entities
         events <-
-          ctx.store.readStreamForwardFrom ctx.streamId startPosition limit
+          context.store.readStreamForwardFrom context.streamId startPosition limit
             |> Task.mapError toText
 
         -- Check that we got the expected number of events
         Array.length events
-          |> shouldBe (ctx.eventCount * 2)
+          |> shouldBe (context.eventCount * 2)
 
-      it "has all events in order" \ctx -> do
+      it "has all events in order" \context -> do
         let startPosition = Event.StreamPosition 0
-        let limit = EventStore.Limit (ctx.eventCount * 2) -- Double the limit since we have two entities
+        let limit = EventStore.Limit (context.eventCount * 2)
         events <-
-          ctx.store.readStreamForwardFrom ctx.streamId startPosition limit
+          context.store.readStreamForwardFrom context.streamId startPosition limit
             |> Task.mapError toText
 
-        -- Check that events are in order by global position
         let positions = events |> Array.map (\e -> e.globalPosition)
         positions |> shouldHaveIncreasingOrder
 
-      it "has all events from the entity1 in order" \ctx -> do
+      it "has all events from entity1 in order" \context -> do
         let startPosition = Event.StreamPosition 0
-        let limit = EventStore.Limit (ctx.eventCount * 2) -- Double the limit since we have two entities
+        let limit = EventStore.Limit (context.eventCount * 2)
+
         events <-
-          ctx.store.readStreamForwardFrom ctx.streamId startPosition limit
+          context.store.readStreamForwardFrom context.streamId startPosition limit
             |> Task.mapError toText
 
-        -- Check that we got the correct number of events from our entity
-        let eventsFromEntity = events |> Array.takeIf (\e -> e.entityId == ctx.entity1Id)
-        Array.length eventsFromEntity
-          |> shouldBe ctx.eventCount
+        let eventsFromEntity = events |> Array.takeIf (\event -> event.entityId == context.entity1Id)
+        eventsFromEntity
+          |> Array.length
+          |> shouldBe context.eventCount

@@ -51,8 +51,8 @@ describe name = Hspec.describe (Text.toLinkedList name)
 -- | Define a test case
 it :: (Show err) => Text -> (context -> Task err Unit) -> Spec context
 it name block =
-  Hspec.it (Text.toLinkedList name) \ctx -> do
-    block ctx |> Task.runOrPanic
+  Hspec.it (Text.toLinkedList name) \context -> do
+    block context |> Task.runOrPanic
 {-# INLINE it #-}
 
 

@@ -20,7 +20,7 @@ spec :: Task Text EventStore -> Spec Unit
 spec newStore = do
   describe "Optimistic Concurrency" do
     beforeAll (Context.initialize newStore) do
-      it "will only allow one event to be appended, when two writers try to append at the same time" \ctx -> do
+      it "will only allow one event to be appended, when two writers try to append at the same time" \context -> do
         entityId <- Uuid.generate |> Task.map Event.EntityId
 
         initialEventId <- Uuid.generate
@@ -28,13 +28,13 @@ spec newStore = do
         let initialEvent =
               Event.InsertionEvent
                 { id = initialEventId,
-                  streamId = ctx.streamId,
+                  streamId = context.streamId,
                   entityId,
                   localPosition = Event.StreamPosition 0
                 }
 
         initialEvent
-          |> ctx.store.appendToStream
+          |> context.store.appendToStream
           |> Task.mapError toText
           |> discard
 
@@ -43,7 +43,7 @@ spec newStore = do
         let event1 =
               Event.InsertionEvent
                 { id = event1Id,
-                  streamId = ctx.streamId,
+                  streamId = context.streamId,
                   entityId,
                   localPosition = Event.StreamPosition 1
                 }
@@ -52,20 +52,20 @@ spec newStore = do
         let event2 =
               Event.InsertionEvent
                 { id = event2Id,
-                  streamId = ctx.streamId,
+                  streamId = context.streamId,
                   entityId,
                   localPosition = Event.StreamPosition 1
                 }
 
         let event1Task =
               event1
-                |> ctx.store.appendToStream
+                |> context.store.appendToStream
                 |> discard
                 |> Task.asResult
 
         let event2Task =
               event2
-                |> ctx.store.appendToStream
+                |> context.store.appendToStream
                 |> discard
                 |> Task.asResult
 
@@ -78,7 +78,7 @@ spec newStore = do
 
         -- Read back all events to verify
         events <-
-          ctx.store.readStreamForwardFrom ctx.streamId (Event.StreamPosition 0) (EventStore.Limit (10))
+          context.store.readStreamForwardFrom context.streamId (Event.StreamPosition 0) (EventStore.Limit (10))
             |> Task.mapError toText
 
         -- We should have exactly 2 events (initial + one successful append)

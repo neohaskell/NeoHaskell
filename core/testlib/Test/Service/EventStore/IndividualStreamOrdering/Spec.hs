@@ -28,31 +28,31 @@ specWithCount :: Task Text EventStore -> Int -> Spec Unit
 specWithCount newStore eventCount = do
   describe [fmt|testing with #{toText eventCount} events|] do
     beforeAll (Context.initialize newStore eventCount) do
-      it "has the correct number of events" \ctx -> do
+      it "has the correct number of events" \context -> do
         let startPosition = Event.StreamPosition 0
-        let limit = EventStore.Limit (ctx.eventCount)
+        let limit = EventStore.Limit (context.eventCount)
         events <-
-          ctx.store.readStreamForwardFrom ctx.streamId startPosition limit
+          context.store.readStreamForwardFrom context.streamId startPosition limit
             |> Task.mapError toText
         Array.length events
-          |> shouldBe ctx.eventCount
+          |> shouldBe context.eventCount
 
-      it "has the correct order" \ctx -> do
+      it "has the correct order" \context -> do
         let startPosition = Event.StreamPosition 0
-        let limit = EventStore.Limit (ctx.eventCount)
+        let limit = EventStore.Limit (context.eventCount)
         events <-
-          ctx.store.readStreamForwardFrom ctx.streamId startPosition limit
+          context.store.readStreamForwardFrom context.streamId startPosition limit
             |> Task.mapError toText
         events
           |> Array.map (\v -> v.localPosition)
-          |> shouldBe ctx.positions
+          |> shouldBe context.positions
 
-      it "has all the events" \ctx -> do
+      it "has all the events" \context -> do
         let startPosition = Event.StreamPosition 0
-        let limit = EventStore.Limit (ctx.eventCount)
+        let limit = EventStore.Limit (context.eventCount)
         events <-
-          ctx.store.readStreamForwardFrom ctx.streamId startPosition limit
+          context.store.readStreamForwardFrom context.streamId startPosition limit
             |> Task.mapError toText
-        let expectedEvents = ctx.generatedEvents |> Array.map (Event.fromInsertionEvent (Event.StreamPosition 0))
+        let expectedEvents = context.generatedEvents |> Array.map (Event.fromInsertionEvent (Event.StreamPosition 0))
         events
           |> shouldBe expectedEvents
