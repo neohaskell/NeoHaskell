@@ -13,6 +13,7 @@ module Test (
   shouldEndWith,
   shouldMatchList,
   shouldReturn,
+  shouldHaveIncreasingOrder,
   pending,
   xdescribe,
   parallel,
@@ -21,6 +22,7 @@ module Test (
   fail,
   beforeAll,
   whenEnvVar,
+  shouldHaveDecreasingOrder,
 ) where
 
 import Array qualified
@@ -182,3 +184,45 @@ whenEnvVar envVarName block = do
   Control.Monad.when (x != "") do
     block
 {-# INLINE whenEnvVar #-}
+
+
+-- | Assert that an array is in increasing order
+shouldHaveIncreasingOrder :: (HasCallStack, Show a, Ord a, IsString err) => Array a -> Task err Unit
+shouldHaveIncreasingOrder array = do
+  array
+    |> Array.indexed
+    |> Array.take (Array.length array - 1)
+    |> Task.forEach
+      ( \(index, value) -> do
+          case Array.get (index + 1) array of
+            Just nextValue ->
+              value |> shouldSatisfy (\v -> v < nextValue)
+            Nothing ->
+              fail
+                [fmt|Should never happen: shouldHaveIncreasingOrder: index is out of bounds.
+            
+Please report this as a bug at the NeoHaskell GitHub issue tracker:
+https://github.com/NeoHaskell/NeoHaskell/issues|]
+      )
+{-# INLINE shouldHaveIncreasingOrder #-}
+
+
+-- | Assert that an array is in decreasing order
+shouldHaveDecreasingOrder :: (HasCallStack, Show a, Ord a, IsString err) => Array a -> Task err Unit
+shouldHaveDecreasingOrder array =
+  array
+    |> Array.indexed
+    |> Array.take (Array.length array - 1)
+    |> Task.forEach
+      ( \(index, value) -> do
+          case array |> Array.get (index + 1) of
+            Just nextValue ->
+              value |> shouldSatisfy (\v -> v > nextValue)
+            Nothing ->
+              fail
+                [fmt|Should never happen: shouldHaveDecreasingOrder: index is out of bounds.
+            
+Please report this as a bug at the NeoHaskell GitHub issue tracker:
+https://github.com/NeoHaskell/NeoHaskell/issues|]
+      )
+{-# INLINE shouldHaveDecreasingOrder #-}

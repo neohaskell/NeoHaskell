@@ -153,6 +153,8 @@ library
       Test.Service.EventStore.IndividualStreamOrdering.Context,
       Test.Service.EventStore.OptimisticConcurrency.Spec,
       Test.Service.EventStore.OptimisticConcurrency.Context,
+      Test.Service.EventStore.ReadAllForwardsFromStart.Spec,
+      Test.Service.EventStore.ReadAllForwardsFromStart.Context,
 
     -- other-modules:
     -- other-extensions:
