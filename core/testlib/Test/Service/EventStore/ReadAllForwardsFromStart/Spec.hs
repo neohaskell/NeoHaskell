@@ -39,11 +39,25 @@ specWithCount newStore eventCount = do
         Array.length events
           |> shouldBe (ctx.eventCount * 2)
 
+      it "has all events in order" \ctx -> do
+        let startPosition = Event.StreamPosition 0
+        let limit = EventStore.Limit (ctx.eventCount * 2) -- Double the limit since we have two entities
+        events <-
+          ctx.store.readStreamForwardFrom ctx.streamId startPosition limit
+            |> Task.mapError toText
+
         -- Check that events are in order by global position
         let positions = events |> Array.map (\e -> e.globalPosition)
         positions |> shouldHaveIncreasingOrder
 
+      it "has all events from the entity1 in order" \ctx -> do
+        let startPosition = Event.StreamPosition 0
+        let limit = EventStore.Limit (ctx.eventCount * 2) -- Double the limit since we have two entities
+        events <-
+          ctx.store.readStreamForwardFrom ctx.streamId startPosition limit
+            |> Task.mapError toText
+
         -- Check that we got the correct number of events from our entity
-        let eventsFromEntity = events |> Array.takeIf (\e -> e.entityId == ctx.entityId)
+        let eventsFromEntity = events |> Array.takeIf (\e -> e.entityId == ctx.entity1Id)
         Array.length eventsFromEntity
           |> shouldBe ctx.eventCount

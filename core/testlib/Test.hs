@@ -23,6 +23,10 @@ module Test (
   beforeAll,
   whenEnvVar,
   shouldHaveDecreasingOrder,
+  shouldBeLessThanOrEqual,
+  shouldBeGreaterThanOrEqual,
+  shouldBeLessThan,
+  shouldBeGreaterThan,
 ) where
 
 import Array qualified
@@ -32,6 +36,7 @@ import Environment qualified
 import Task qualified
 import Test.Hspec qualified as Hspec
 import Text qualified
+import ToText (toText)
 
 
 type Spec a = Hspec.SpecWith a
@@ -196,7 +201,7 @@ shouldHaveIncreasingOrder array = do
       ( \(index, value) -> do
           case Array.get (index + 1) array of
             Just nextValue ->
-              value |> shouldSatisfy (\v -> v < nextValue)
+              value |> shouldBeLessThan nextValue
             Nothing ->
               fail
                 [fmt|Should never happen: shouldHaveIncreasingOrder: index is out of bounds.
@@ -217,7 +222,7 @@ shouldHaveDecreasingOrder array =
       ( \(index, value) -> do
           case array |> Array.get (index + 1) of
             Just nextValue ->
-              value |> shouldSatisfy (\v -> v > nextValue)
+              value |> shouldBeGreaterThan nextValue
             Nothing ->
               fail
                 [fmt|Should never happen: shouldHaveDecreasingOrder: index is out of bounds.
@@ -226,3 +231,43 @@ Please report this as a bug at the NeoHaskell GitHub issue tracker:
 https://github.com/NeoHaskell/NeoHaskell/issues|]
       )
 {-# INLINE shouldHaveDecreasingOrder #-}
+
+
+-- | Assert that a value is less than or equal to a maximum value
+shouldBeLessThanOrEqual :: (HasCallStack, Show a, Ord a, IsString err) => a -> a -> Task err Unit
+shouldBeLessThanOrEqual value maximum = do
+  let msg = [fmt|#{toText value} is not less than or equal to #{toText maximum}|]
+  if value <= maximum
+    then Task.yield unit
+    else msg |> fail
+{-# INLINE shouldBeLessThanOrEqual #-}
+
+
+-- | Assert that a value is greater than or equal to a minimum value
+shouldBeGreaterThanOrEqual :: (HasCallStack, Show a, Ord a, IsString err) => a -> a -> Task err Unit
+shouldBeGreaterThanOrEqual value minimum = do
+  let msg = [fmt|#{toText value} is not greater than or equal to #{toText minimum}|]
+  if value >= minimum
+    then Task.yield unit
+    else msg |> fail
+{-# INLINE shouldBeGreaterThanOrEqual #-}
+
+
+-- | Assert that a value is less than a maximum value
+shouldBeLessThan :: (HasCallStack, Show a, Ord a, IsString err) => a -> a -> Task err Unit
+shouldBeLessThan value maximum = do
+  let msg = [fmt|#{toText value} is not less than #{toText maximum}|]
+  if value < maximum
+    then Task.yield unit
+    else msg |> fail
+{-# INLINE shouldBeLessThan #-}
+
+
+-- | Assert that a value is greater than a minimum value
+shouldBeGreaterThan :: (HasCallStack, Show a, Ord a, IsString err) => a -> a -> Task err Unit
+shouldBeGreaterThan value minimum = do
+  let msg = [fmt|#{toText value} is not greater than #{toText minimum}|]
+  if value > minimum
+    then Task.yield unit
+    else msg |> fail
+{-# INLINE shouldBeGreaterThan #-}
