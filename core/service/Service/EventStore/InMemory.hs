@@ -35,7 +35,7 @@ new = do
 
 data StreamStore = StreamStore
   { globalStream :: (DurableChannel Event),
-    streams :: ConcurrentVar (Map StreamId (DurableChannel Event)),
+    streams :: ConcurrentVar (Map (EntityId, StreamId) (DurableChannel Event)),
     globalLock :: Lock
   }
 
@@ -49,15 +49,15 @@ newEmptyStreamStore = do
 
 
 -- | Idempotent stream creation.
-ensureStream :: StreamId -> StreamStore -> Task _ (DurableChannel Event)
-ensureStream streamId store = do
+ensureStream :: EntityId -> StreamId -> StreamStore -> Task _ (DurableChannel Event)
+ensureStream entityId streamId store = do
   let modifier streamMap = do
-        case streamMap |> Map.get streamId of
+        case streamMap |> Map.get (entityId, streamId) of
           Just channel -> do
             Task.yield (streamMap, channel)
           Nothing -> do
             channel <- DurableChannel.new
-            Task.yield (streamMap |> Map.set streamId channel, channel)
+            Task.yield (streamMap |> Map.set (entityId, streamId) channel, channel)
   store.streams
     |> ConcurrentVar.modifyReturning modifier
     |> Lock.with store.globalLock
@@ -73,7 +73,7 @@ appendToStreamImpl store event = do
   let entityId = event.entityId
   let streamId = event.streamId
   let expectedPosition = localPosition
-  channel <- store |> ensureStream streamId
+  channel <- store |> ensureStream entityId streamId
 
   let appendCondition :: Array Event -> Bool
       appendCondition events = do
@@ -103,12 +103,13 @@ appendToStreamImpl store event = do
 
 readStreamForwardFromImpl ::
   StreamStore ->
+  EntityId ->
   StreamId ->
   StreamPosition ->
   Limit ->
   Task Error (Array Event)
-readStreamForwardFromImpl store streamId position (Limit (limit)) = do
-  channel <- store |> ensureStream streamId
+readStreamForwardFromImpl store entityId streamId position (Limit (limit)) = do
+  channel <- store |> ensureStream entityId streamId
   channel
     |> DurableChannel.getAndTransform \events ->
       events
@@ -118,12 +119,13 @@ readStreamForwardFromImpl store streamId position (Limit (limit)) = do
 
 readStreamBackwardFromImpl ::
   StreamStore ->
+  EntityId ->
   StreamId ->
   StreamPosition ->
   Limit ->
   Task Error (Array Event)
-readStreamBackwardFromImpl store streamId position (Limit (limit)) = do
-  channel <- store |> ensureStream streamId
+readStreamBackwardFromImpl store entityId streamId position (Limit (limit)) = do
+  channel <- store |> ensureStream entityId streamId
   channel
     |> DurableChannel.getAndTransform \events ->
       events
@@ -134,10 +136,11 @@ readStreamBackwardFromImpl store streamId position (Limit (limit)) = do
 
 readAllStreamEventsImpl ::
   StreamStore ->
+  EntityId ->
   StreamId ->
   Task Error (Array Event)
-readAllStreamEventsImpl store streamId = do
-  channel <- store |> ensureStream streamId
+readAllStreamEventsImpl store entityId streamId = do
+  channel <- store |> ensureStream entityId streamId
   channel
     |> DurableChannel.getAndTransform unchanged
 

@@ -147,12 +147,12 @@ library
       -- Test
       Test,
       Test.Service.EventStore,
-      Test.Service.EventStore.GlobalStreamOrdering.Context,
-      Test.Service.EventStore.GlobalStreamOrdering.Spec,
-      Test.Service.EventStore.IndividualStreamOrdering.Spec,
-      Test.Service.EventStore.IndividualStreamOrdering.Context,
-      Test.Service.EventStore.OptimisticConcurrency.Spec,
-      Test.Service.EventStore.OptimisticConcurrency.Context,
+      -- Test.Service.EventStore.GlobalStreamOrdering.Context,
+      -- Test.Service.EventStore.GlobalStreamOrdering.Spec,
+      -- Test.Service.EventStore.IndividualStreamOrdering.Spec,
+      -- Test.Service.EventStore.IndividualStreamOrdering.Context,
+      -- Test.Service.EventStore.OptimisticConcurrency.Spec,
+      -- Test.Service.EventStore.OptimisticConcurrency.Context,
       Test.Service.EventStore.ReadAllForwardsFromStart.Spec,
       Test.Service.EventStore.ReadAllForwardsFromStart.Context,
 

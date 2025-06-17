@@ -32,7 +32,7 @@ specWithCount newStore eventCount = do
         let startPosition = Event.StreamPosition 0
         let limit = EventStore.Limit (context.eventCount * 2) -- Double the limit since we have two entities
         events <-
-          context.store.readStreamForwardFrom context.streamId startPosition limit
+          context.store.readAllStreamEvents startPosition limit
             |> Task.mapError toText
 
         -- Check that we got the expected number of events

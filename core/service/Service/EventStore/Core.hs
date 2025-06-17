@@ -5,7 +5,7 @@ module Service.EventStore.Core (
 ) where
 
 import Core
-import Service.Event (Event, InsertionEvent, StreamId, StreamPosition)
+import Service.Event (EntityId, Event, InsertionEvent, StreamId, StreamPosition)
 
 
 newtype Limit = Limit Int
@@ -27,13 +27,13 @@ data EventStore = EventStore
     appendToStream :: InsertionEvent -> Task Error Event,
     -- | Read events from a stream in forward direction starting from a given revision.
     --   Returns an array of events or an Error.
-    readStreamForwardFrom :: StreamId -> StreamPosition -> Limit -> Task Error (Array Event),
+    readStreamForwardFrom :: EntityId -> StreamId -> StreamPosition -> Limit -> Task Error (Array Event),
     -- | Read events from a stream in backward direction starting from a given revision.
     --   Useful for looking at recent events.
-    readStreamBackwardFrom :: StreamId -> StreamPosition -> Limit -> Task Error (Array Event),
+    readStreamBackwardFrom :: EntityId -> StreamId -> StreamPosition -> Limit -> Task Error (Array Event),
     -- | Read all events from a given stream.
     --   Equivalent to calling 'readStreamForwardFrom' with revision 0 and a high max count.
-    readAllStreamEvents :: StreamId -> Task Error (Array Event),
+    readAllStreamEvents :: EntityId -> StreamId -> Task Error (Array Event),
     -- | Read a slice of all events across all streams starting from a global position.
     --   Useful for projections or audit logs.
     readAllEventsForwardFrom :: StreamPosition -> Limit -> Task Error (Array Event)
