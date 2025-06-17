@@ -10,6 +10,9 @@
   <a href="#contributors">
     <img src="https://img.shields.io/github/all-contributors/neohaskell/neohaskell?color=ee8449&style=flat-square" alt="All Contributors" />
   </a>
+  <a href="https://vscode.dev/redirect?url=vscode://ms-vscode-remote.remote-containers/cloneInVolume?url=https://github.com/neohaskell/neohaskell">
+    <img src="https://img.shields.io/static/v1?label=Dev%20Containers&message=Open&color=blue&style=flat-square" alt="Open in Dev Containers" />
+  </a>
 </div>
 
 ---

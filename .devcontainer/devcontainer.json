@@ -31,10 +31,6 @@
       "extensions": [
         // select nix environment
         "arrterian.nix-env-selector"
-
-        // extra extensions
-        //"fsevenm.run-it-on",
-        //"jnoortheen.nix-ide"
       ]
     }
   },
