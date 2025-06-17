@@ -1,0 +1,50 @@
+{
+  "name": "devcontainer-project",
+  "dockerFile": "Dockerfile",
+  "context": "${localWorkspaceFolder}",
+  "build": {
+    "args": {
+      "USER_UID": "${localEnv:USER_UID}",
+      "USER_GID": "${localEnv:USER_GID}"
+    },
+  },
+
+  // run arguments passed to docker
+  "runArgs": [
+    "--security-opt", "label=disable"
+  ],
+
+  "containerEnv": {
+     // extensions to preload before other extensions
+    "PRELOAD_EXTENSIONS": "arrterian.nix-env-selector"
+  },
+
+   // disable command overriding and updating remote user ID
+  "overrideCommand": false,
+  "userEnvProbe": "loginShell",
+  "updateRemoteUserUID": false,
+
+  // build development environment on creation, make sure you already have shell.nix
+  "onCreateCommand": "nix-shell --command 'echo done building nix dev environment'",
+
+  // Add the IDs of extensions you want installed when the container is created.
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        // select nix environment
+        "arrterian.nix-env-selector",
+
+        // extra extensions
+        //"fsevenm.run-it-on",
+        //"jnoortheen.nix-ide",
+        //"ms-python.python"
+      ]
+    }
+  },
+
+  // Use 'forwardPorts' to make a list of ports inside the container available locally.
+  "forwardPorts": [],
+
+  // Use 'postCreateCommand' to run commands after the container is created.
+  // "postCreateCommand": "go version",
+}
