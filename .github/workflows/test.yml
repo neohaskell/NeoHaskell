@@ -4,10 +4,17 @@ on:
   pull_request:
     branches:
       - main
+    paths:
+      - "core/**"
+      - "cli/**"
+      - "nix/**"
   push:
     branches:
       - main
-
+    paths:
+      - "core/**"
+      - "cli/**"
+      - "nix/**"
 jobs:
   tests:
     strategy:
