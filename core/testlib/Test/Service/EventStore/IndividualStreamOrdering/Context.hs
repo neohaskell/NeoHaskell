@@ -15,6 +15,7 @@ import Uuid qualified
 
 data Context = Context
   { eventCount :: Int,
+    entityId :: Event.EntityId,
     streamId :: Event.StreamId,
     store :: EventStore,
     generatedEvents :: Array Event.InsertionEvent,
@@ -43,4 +44,4 @@ initialize newStore eventCount = do
 
   positions <- generatedEvents |> appendEvents |> Task.mapError toText
 
-  return Context {eventCount, streamId, store, generatedEvents, positions}
+  return Context {eventCount, streamId, store, generatedEvents, positions, entityId}

@@ -32,7 +32,7 @@ specWithCount newStore eventCount = do
         let startPosition = Event.StreamPosition 0
         let limit = EventStore.Limit (context.eventCount)
         events <-
-          context.store.readStreamForwardFrom context.streamId startPosition limit
+          context.store.readStreamForwardFrom context.entityId context.streamId startPosition limit
             |> Task.mapError toText
         Array.length events
           |> shouldBe context.eventCount
@@ -41,7 +41,7 @@ specWithCount newStore eventCount = do
         let startPosition = Event.StreamPosition 0
         let limit = EventStore.Limit (context.eventCount)
         events <-
-          context.store.readStreamForwardFrom context.streamId startPosition limit
+          context.store.readStreamForwardFrom context.entityId context.streamId startPosition limit
             |> Task.mapError toText
         events
           |> Array.map (\v -> v.localPosition)
@@ -51,7 +51,7 @@ specWithCount newStore eventCount = do
         let startPosition = Event.StreamPosition 0
         let limit = EventStore.Limit (context.eventCount)
         events <-
-          context.store.readStreamForwardFrom context.streamId startPosition limit
+          context.store.readStreamForwardFrom context.entityId context.streamId startPosition limit
             |> Task.mapError toText
         let expectedEvents = context.generatedEvents |> Array.map (Event.fromInsertionEvent (Event.StreamPosition 0))
         events
