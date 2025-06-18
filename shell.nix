@@ -29,6 +29,9 @@ in pkgs.mkShell rec {
     pkgs.nixfmt-classic
     pkgs.nixpkgs-fmt
 
+    # Website
+    pkgs.nodejs
+
     # Required native libs
     pkgs.pkg-config
     pkgs.zlib
