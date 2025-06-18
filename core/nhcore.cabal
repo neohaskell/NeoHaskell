@@ -22,8 +22,6 @@ common common_cfg
       ghc-prim ,
       async ,
       aeson ,
-      brick ,
-      vty ,
       bytestring ,
       data-default ,
       text ,
@@ -98,7 +96,6 @@ library
       Unknown,
       Var,
       Task,
-      Toml,
 
       -- System
       File,
@@ -163,7 +160,6 @@ library
       concurrency,
       service,
       json,
-      toml,
       traits,
       system,
       http,
