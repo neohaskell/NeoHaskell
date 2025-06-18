@@ -22,12 +22,13 @@ initialize :: Task Text EventStore -> Int -> Task Text Context
 initialize newStore streamCount = do
   store <- newStore
   -- Create multiple streams with events
-  let getStreamIds :: Task Text (Array Event.StreamId)
+  let getStreamIds :: Task Text (Array (Event.EntityId, Event.StreamId))
       getStreamIds =
         Array.fromLinkedList [0 .. streamCount - 1]
           |> Task.mapArray \_ -> do
-            id <- Uuid.generate
-            Event.StreamId id |> Task.yield
+            entityId <- Uuid.generate
+            streamId <- Uuid.generate
+            (Event.EntityId entityId, Event.StreamId streamId) |> Task.yield
 
   -- Create events for each stream (2 events per stream for testing)
   let eventsPerStream = 2 :: Int
@@ -35,15 +36,14 @@ initialize newStore streamCount = do
       getAllEvents = do
         streamIds <- getStreamIds
         foo <-
-          streamIds |> Task.mapArray \streamId ->
+          streamIds |> Task.mapArray \(entityId, streamId) ->
             Array.fromLinkedList [0 .. eventsPerStream - 1]
               |> Task.mapArray \eventIndex -> do
                 id <- Uuid.generate
-                entityId <- Uuid.generate
                 Event.InsertionEvent
                   { id = id,
                     streamId = streamId,
-                    entityId = Event.EntityId entityId,
+                    entityId = entityId,
                     localPosition = Event.StreamPosition eventIndex
                   }
                   |> Task.yield
@@ -66,16 +66,15 @@ initialize newStore streamCount = do
   eventStreams <-
     streamIds
       |> Task.mapArray
-        ( \streamId ->
-            streamId
-              |> store.readAllStreamEvents
+        ( \(entityId, streamId) ->
+            store.readAllStreamEvents entityId streamId
               |> Task.mapError toText
         )
 
   Task.yield
     Context
       { streamCount,
-        eventsPerStream = eventsPerStream,
+        eventsPerStream,
         eventStreams,
         store
       }
