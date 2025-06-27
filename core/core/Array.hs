@@ -132,14 +132,20 @@ isEmpty = unwrap .> Data.Vector.null
 
 -- | Return the length of an array.
 --
--- > length (fromLinkedList [1,2,3]) == 3
+-- >>> length (Array (Data.Vector.fromList [1,2,3] :: Data.Vector.Vector Int))
+-- 3
+-- >>> length empty
+-- 0
 length :: Array a -> Int
-length = length
+length = unwrap .> Data.Vector.length
 
 
 -- | The indices that are valid for subscripting the collection, in ascending order.
 --
--- > indices (fromLinkedList [1,2,3]) == [0,1,2]
+-- >>> indices (Array (Data.Vector.fromList [1,2,3] :: Data.Vector.Vector Int))
+-- [0,1,2]
+-- >>> indices empty
+-- []
 indices :: Array a -> [Int]
 indices =
   unwrap
