@@ -120,7 +120,12 @@ empty = Array Data.Vector.empty
 
 -- | Determine if an array is empty.
 --
--- > isEmpty empty == True
+-- >>> isEmpty empty
+-- True
+-- >>> isEmpty (Array (Data.Vector.singleton 'a'))
+-- False
+-- >>> isEmpty (Array (Data.Vector.fromList [1,2,3] :: Data.Vector.Vector Int))
+-- False
 isEmpty :: Array a -> Bool
 isEmpty = unwrap .> Data.Vector.null
 
