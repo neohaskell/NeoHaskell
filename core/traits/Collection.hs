@@ -15,6 +15,9 @@ module Collection (
 ) where
 
 import Basics hiding (Item)
+import Data.Vector qualified
+import IO (IO)
+import LinkedList (LinkedList)
 import Maybe (Maybe (..))
 
 
@@ -34,7 +37,42 @@ class Collection collection where
   lastImpl :: collection -> Maybe (Collection.Item collection)
   indicesImpl :: collection -> [Int]
   mapImpl :: (Collection.Item collection -> Collection.Item collection) -> collection -> collection
+  repeatImpl :: Int -> Collection.Item collection -> collection
+  wrapImpl :: Collection.Item collection -> collection
+  fromLinkedListImpl :: LinkedList (Collection.Item collection) -> collection
+  pushImpl :: Collection.Item collection -> collection -> collection
+  toLinkedListImpl :: collection -> LinkedList (Collection.Item collection)
+  toIndexedLinkedListImpl :: collection -> LinkedList (Int, Collection.Item collection)
+  reduceImpl ::
+    (Collection.Item collection -> Collection.Item collection -> Collection.Item collection) ->
+    Collection.Item collection ->
+    collection ->
+    Collection.Item collection
+  foldlImpl ::
+    (Collection.Item collection -> Collection.Item collection -> Collection.Item collection) ->
+    Collection.Item collection ->
+    collection ->
+    Collection.Item collection
+  takeIfImpl :: (Collection.Item collection -> Bool) -> collection -> collection
+  dropIfImpl :: (Collection.Item collection -> Bool) -> collection -> collection
+  indexedMapImpl :: (Int -> Collection.Item collection -> Collection.Item collection) -> collection -> collection
+  sliceImpl :: Int -> Int -> collection -> collection
+  flatMapImpl :: (Collection.Item collection -> collection) -> collection -> collection
+  foldMImpl :: forall (a :: Type) (b :: Type). (b -> a -> IO b) -> b -> collection -> IO b
 
+
+-- dropWhileImpl :: forall (value :: Type). (value -> Bool) -> collection -> collection
+-- takeWhileImpl :: forall (value :: Type). (value -> Bool) -> collection -> collection
+-- partitionByImpl :: forall (value :: Type). (value -> Bool) -> collection -> (collection, collection)
+-- splitFirstImpl :: forall (value :: Type). collection -> Maybe (value, collection)
+-- anyImpl :: forall (value :: Type). (value -> Bool) -> collection -> Bool
+-- fromLegacyImpl :: Data.Vector.Vector a -> collection
+-- takeImpl :: Int -> collection -> collection
+-- dropImpl :: Int -> collection -> collection
+-- indexedImpl :: collection -> collection
+-- zipImpl :: collection -> collection -> collection
+-- sumIntegersImpl :: collection -> Int
+-- reverseImpl :: collection -> collection
 
 -- containsImpl :: (Collection.Item collection) -> collection -> Bool
 
