@@ -52,23 +52,29 @@ initialize newStore streamCount = do
   streamIds <- getStreamIds
   allEvents <- getAllEvents
 
+  allEvents |> Task.forEach \e -> do
+    let entityId = e.entityId
+    let streamId = e.streamId
+    print [fmt|#{entityId} / #{streamId}|]
+
   -- Append all events to their respective streams
   allEvents
-    |> Task.mapArray
-      ( \event ->
-          event
-            |> store.appendToStream
-            |> Task.mapError toText
-      )
-    |> discard
+    |> Task.forEach \event ->
+      event
+        |> store.appendToStream
+        |> Task.mapError toText
+        |> discard
 
   -- Test readAllStreamEvents for each individual stream
   eventStreams <-
     streamIds
       |> Task.mapArray
-        ( \(entityId, streamId) ->
-            store.readAllStreamEvents entityId streamId
-              |> Task.mapError toText
+        ( \(entityId, streamId) -> do
+            result <-
+              store.readAllStreamEvents entityId streamId
+                |> Task.mapError toText
+            print [fmt|#{entityId} / #{streamId} / #{result}|]
+            pure result
         )
 
   Task.yield
