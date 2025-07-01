@@ -58,21 +58,20 @@ class Collection collection where
   indexedMapImpl :: (Int -> Collection.Item collection -> Collection.Item collection) -> collection -> collection
   sliceImpl :: Int -> Int -> collection -> collection
   flatMapImpl :: (Collection.Item collection -> collection) -> collection -> collection
-  foldMImpl :: forall (a :: Type) (b :: Type). (b -> a -> IO b) -> b -> collection -> IO b
+  foldMImpl :: forall (b :: Type). (b -> Collection.Item collection -> IO b) -> b -> collection -> IO b
+  dropWhileImpl :: (Collection.Item collection -> Bool) -> collection -> collection
+  takeWhileImpl :: (Collection.Item collection -> Bool) -> collection -> collection
+  partitionByImpl :: (Collection.Item collection -> Bool) -> collection -> (collection, collection)
+  splitFirstImpl :: collection -> Maybe (Collection.Item collection, collection)
+  anyImpl :: (Collection.Item collection -> Bool) -> collection -> Bool
+  fromLegacyImpl :: Data.Vector.Vector (Collection.Item collection) -> collection
+  takeImpl :: Int -> collection -> collection
+  dropImpl :: Int -> collection -> collection
+  indexedImpl :: collection -> collection
+  zipImpl :: collection -> collection -> collection
+  sumIntegersImpl :: collection -> Int
+  reverseImpl :: collection -> collection
 
-
--- dropWhileImpl :: forall (value :: Type). (value -> Bool) -> collection -> collection
--- takeWhileImpl :: forall (value :: Type). (value -> Bool) -> collection -> collection
--- partitionByImpl :: forall (value :: Type). (value -> Bool) -> collection -> (collection, collection)
--- splitFirstImpl :: forall (value :: Type). collection -> Maybe (value, collection)
--- anyImpl :: forall (value :: Type). (value -> Bool) -> collection -> Bool
--- fromLegacyImpl :: Data.Vector.Vector a -> collection
--- takeImpl :: Int -> collection -> collection
--- dropImpl :: Int -> collection -> collection
--- indexedImpl :: collection -> collection
--- zipImpl :: collection -> collection -> collection
--- sumIntegersImpl :: collection -> Int
--- reverseImpl :: collection -> collection
 
 -- containsImpl :: (Collection.Item collection) -> collection -> Bool
 
