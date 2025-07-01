@@ -123,6 +123,9 @@ library
       -- Service
       Trigger,
       Service.Event,
+      Service.Event.EntityId,
+      Service.Event.StreamId,
+      Service.Event.StreamPosition,
       Service.EventStore,
       Service.EventStore.Core,
       Service.EventStore.InMemory,

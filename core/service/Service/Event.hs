@@ -8,18 +8,9 @@ module Service.Event (
 ) where
 
 import Core
-
-
-newtype StreamId = StreamId Uuid
-  deriving (Eq, Show, Ord, Generic)
-
-
-newtype StreamPosition = StreamPosition Int
-  deriving (Eq, Show, Ord, Generic)
-
-
-newtype EntityId = EntityId Uuid
-  deriving (Eq, Show, Ord, Generic)
+import Service.Event.EntityId (EntityId (..))
+import Service.Event.StreamId (StreamId (..))
+import Service.Event.StreamPosition (StreamPosition (..))
 
 
 data Event = Event

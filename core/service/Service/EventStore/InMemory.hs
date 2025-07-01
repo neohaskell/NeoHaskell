@@ -78,7 +78,7 @@ appendToStreamImpl store event = do
   let appendCondition :: Array Event -> Bool
       appendCondition events = do
         let currentLength = Array.length events
-        let (StreamPosition (pos)) = expectedPosition
+        let (StreamPosition pos) = expectedPosition
         pos == currentLength
 
   let globalPositionModifier :: Int -> Event
