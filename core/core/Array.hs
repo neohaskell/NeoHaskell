@@ -13,6 +13,7 @@ module Array (
   -- * Query
   isEmpty,
   length,
+  indices,
   get,
 
   -- * Manipulate
@@ -55,6 +56,7 @@ module Array (
 ) where
 
 import Basics
+import Collection (Collection (..))
 import Data.Foldable qualified
 import Data.Vector ((!?), (++), (//))
 import Data.Vector qualified
@@ -73,6 +75,45 @@ import Prelude qualified
 -- dream up.
 newtype Array a = Array (Data.Vector.Vector a)
   deriving (Prelude.Eq, Prelude.Show, Prelude.Ord, Generic)
+
+
+instance Collection Array where
+  lengthImpl = length
+  emptyImpl = empty
+  isEmptyImpl = isEmpty
+  getImpl = get
+  setImpl = set
+  appendImpl = append
+  firstImpl = first
+  lastImpl = last
+  indicesImpl = indices
+  mapImpl = map
+  repeatImpl = repeat
+  wrapImpl = wrap
+  fromLinkedListImpl = fromLinkedList
+  pushImpl = push
+  toLinkedListImpl = toLinkedList
+  toIndexedLinkedListImpl = toIndexedLinkedList
+  reduceImpl = reduce
+  foldlImpl = foldl
+  takeIfImpl = takeIf
+  dropIfImpl = dropIf
+  indexedMapImpl = indexedMap
+  sliceImpl = slice
+  flatMapImpl = flatMap
+  foldMImpl = foldM
+  dropWhileImpl = dropWhile
+  takeWhileImpl = takeWhile
+  partitionByImpl = partitionBy
+  splitFirstImpl = splitFirst
+  anyImpl = any
+  fromLegacyImpl = fromLegacy
+  takeImpl = take
+  dropImpl = drop
+  indexedImpl = indexed
+  zipImpl = zip
+  sumIntegersImpl = sumIntegers
+  reverseImpl = reverse
 
 
 instance (QuickCheck.Arbitrary a) => QuickCheck.Arbitrary (Array a) where
@@ -97,25 +138,42 @@ unwrap (Array v) = v
 -- >>> empty :: Array Int
 -- Array []
 empty :: Array a
-empty =
-  Array Data.Vector.empty
+empty = Array Data.Vector.empty
 
 
 -- | Determine if an array is empty.
 --
--- > isEmpty empty == True
+-- >>> isEmpty empty
+-- True
+-- >>> isEmpty (Array (Data.Vector.singleton 'a'))
+-- False
+-- >>> isEmpty (Array (Data.Vector.fromList [1,2,3] :: Data.Vector.Vector Int))
+-- False
 isEmpty :: Array a -> Bool
 isEmpty = unwrap .> Data.Vector.null
 
 
 -- | Return the length of an array.
 --
--- > length (fromLinkedList [1,2,3]) == 3
+-- >>> length (Array (Data.Vector.fromList [1,2,3] :: Data.Vector.Vector Int))
+-- 3
+-- >>> length empty
+-- 0
 length :: Array a -> Int
-length =
+length = unwrap .> Data.Vector.length
+
+
+-- | The indices that are valid for subscripting the collection, in ascending order.
+--
+-- >>> indices (Array (Data.Vector.fromList [1,2,3] :: Data.Vector.Vector Int))
+-- [0,1,2]
+-- >>> indices empty
+-- []
+indices :: Array a -> [Int]
+indices =
   unwrap
-    .> Data.Vector.length
-    .> Prelude.fromIntegral
+    .> \v ->
+      Data.Vector.toList (Data.Vector.generate (Data.Vector.length v) Prelude.id)
 
 
 -- | Initialize an array. @initialize n f@ creates an array of length @n@ with
@@ -162,8 +220,15 @@ fromLinkedList =
 -- > get  5   (fromLinkedList [0,1,2]) == Nothing
 -- > get (-1) (fromLinkedList [0,1,2]) == Nothing
 get :: Int -> Array a -> Maybe a
-get i array =
-  unwrap array !? Prelude.fromIntegral i
+get i array = unwrap array !? Prelude.fromIntegral i
+
+
+-- | Return @Just@ the first element or @Nothing@ if the index is empty.
+--
+-- > first (fromLinkedList [0,1,2]) == Just 0
+-- > first (fromLinkedList [])      == Nothing
+first :: Array a -> Maybe a
+first = unwrap .> (!? 0)
 
 
 -- | Set the element at a particular index. Returns an updated array.
@@ -376,6 +441,8 @@ any predicate (Array vector) = Data.Vector.any predicate vector
 
 -- | Returns the last element in the array.
 -- If the array is empty, returns `Nothing`.
+-- > last (fromLinkedList [0,1,2]) == Just 2
+-- > last (fromLinkedList [])      == Nothing
 last :: forall (value :: Type). Array value -> Maybe value
 last (Array vector) = do
   let len = Data.Vector.length vector
