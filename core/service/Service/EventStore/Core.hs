@@ -36,5 +36,9 @@ data EventStore = EventStore
     readAllStreamEvents :: EntityId -> StreamId -> Task Error (Array Event),
     -- | Read a slice of all events across all streams starting from a global position.
     --   Useful for projections or audit logs.
-    readAllEventsForwardFrom :: StreamPosition -> Limit -> Task Error (Array Event)
+    readAllEventsForwardFrom :: StreamPosition -> Limit -> Task Error (Array Event),
+    -- | Read a slice of all events across all streams backward from a global position.
+    --   Returns events in reverse chronological order (most recent first).
+    --   Useful for recent event analysis and debugging.
+    readAllEventsBackwardFrom :: StreamPosition -> Limit -> Task Error (Array Event)
   }

@@ -26,7 +26,8 @@ new = do
             readStreamForwardFrom = readStreamForwardFromImpl store,
             readStreamBackwardFrom = readStreamBackwardFromImpl store,
             readAllStreamEvents = readAllStreamEventsImpl store,
-            readAllEventsForwardFrom = readAllEventsForwardFromImpl store
+            readAllEventsForwardFrom = readAllEventsForwardFromImpl store,
+            readAllEventsBackwardFrom = readAllEventsBackwardFromImpl store
           }
   Task.yield eventStore
 
@@ -153,3 +154,21 @@ readAllEventsForwardFromImpl ::
 readAllEventsForwardFromImpl store (StreamPosition (position)) (Limit (limit)) = do
   allGlobalEvents <- store.globalStream |> DurableChannel.getAndTransform unchanged
   allGlobalEvents |> Array.drop position |> Array.take limit |> Task.yield
+
+
+readAllEventsBackwardFromImpl ::
+  StreamStore ->
+  StreamPosition ->
+  Limit ->
+  Task Error (Array Event)
+readAllEventsBackwardFromImpl store (StreamPosition (position)) (Limit (limit)) = do
+  allGlobalEvents <- store.globalStream |> DurableChannel.getAndTransform unchanged
+  allGlobalEvents
+    |> Array.takeIf
+      ( \event -> do
+          let (StreamPosition eventPos) = event.globalPosition
+          eventPos <= position
+      )
+    |> Array.reverse
+    |> Array.take limit
+    |> Task.yield
