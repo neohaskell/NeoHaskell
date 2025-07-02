@@ -23,19 +23,20 @@ initialize newStore streamCount = do
   store <- newStore
   -- Create multiple streams with events
   let getStreamIds :: Task Text (Array (Event.EntityId, Event.StreamId))
-      getStreamIds =
+      getStreamIds = do
         Array.fromLinkedList [0 .. streamCount - 1]
           |> Task.mapArray \_ -> do
             entityId <- Uuid.generate
             streamId <- Uuid.generate
             (Event.EntityId entityId, Event.StreamId streamId) |> Task.yield
 
+  streamIds <- getStreamIds
+
   -- Create events for each stream (2 events per stream for testing)
   let eventsPerStream = 2 :: Int
   let getAllEvents :: Task Text (Array Event.InsertionEvent)
       getAllEvents = do
-        streamIds <- getStreamIds
-        foo <-
+        insertionEvents <-
           streamIds |> Task.mapArray \(entityId, streamId) ->
             Array.fromLinkedList [0 .. eventsPerStream - 1]
               |> Task.mapArray \eventIndex -> do
@@ -47,15 +48,9 @@ initialize newStore streamCount = do
                     localPosition = Event.StreamPosition eventIndex
                   }
                   |> Task.yield
-        Array.flatten foo |> Task.yield
+        Array.flatten insertionEvents |> Task.yield
 
-  streamIds <- getStreamIds
   allEvents <- getAllEvents
-
-  allEvents |> Task.forEach \e -> do
-    let entityId = e.entityId
-    let streamId = e.streamId
-    print [fmt|#{entityId} / #{streamId}|]
 
   -- Append all events to their respective streams
   allEvents
