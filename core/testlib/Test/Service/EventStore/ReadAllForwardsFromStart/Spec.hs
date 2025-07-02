@@ -59,3 +59,49 @@ specWithCount newStore eventCount = do
         eventsFromEntity
           |> Array.length
           |> shouldBe context.eventCount
+
+      it "supports partial reads with resumption from global position" \context -> do
+        let totalEvents = context.eventCount * 2
+        let batchSize = 3 -- Small batch to force multiple reads
+
+        -- Read all events in batches, resuming from last position
+        let readInBatches :: Event.StreamPosition -> Array Event.Event -> Task Text (Array Event.Event)
+            readInBatches currentPosition accumulatedEvents = do
+              batch <-
+                context.store.readAllEventsForwardFrom currentPosition (EventStore.Limit batchSize)
+                  |> Task.mapError toText
+
+              case Array.length batch of
+                0 ->
+                  -- No more events, return accumulated
+                  Task.yield accumulatedEvents
+                batchLength -> do
+                  let newAccumulated = Array.append accumulatedEvents batch
+                  case Array.get (batchLength - 1) batch of
+                    Just lastEvent -> do
+                      -- Resume from next position after last read event
+                      let Event.StreamPosition lastPos = lastEvent.globalPosition
+                      let nextPosition = Event.StreamPosition (lastPos + 1)
+                      readInBatches nextPosition newAccumulated
+                    Nothing ->
+                      -- This should never happen if batchLength > 0
+                      Task.yield newAccumulated
+
+        allEventsBatched <- readInBatches (Event.StreamPosition 0) Array.empty
+
+        -- Compare with single read to ensure no events lost/duplicated
+        allEventsSingle <-
+          context.store.readAllEventsForwardFrom (Event.StreamPosition 0) (EventStore.Limit totalEvents)
+            |> Task.mapError toText
+
+        -- Should have same number of events
+        Array.length allEventsBatched
+          |> shouldBe (Array.length allEventsSingle)
+
+        -- Should have exact same events in same order
+        allEventsBatched
+          |> shouldBe allEventsSingle
+
+        -- Global positions should be strictly increasing across all batches
+        let globalPositions = allEventsBatched |> Array.map (\e -> e.globalPosition)
+        globalPositions |> shouldHaveIncreasingOrder
