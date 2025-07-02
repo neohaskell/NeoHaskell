@@ -12,7 +12,6 @@ import Service.EventStore.Core qualified as EventStore
 import Task qualified
 import Test
 import Test.Service.EventStore.OptimisticConcurrency.Context qualified as Context
-import ToText (toText)
 import Uuid qualified
 
 
@@ -78,7 +77,7 @@ spec newStore = do
 
         -- Read back all events to verify
         events <-
-          context.store.readStreamForwardFrom context.streamId (Event.StreamPosition 0) (EventStore.Limit (10))
+          context.store.readStreamForwardFrom entityId context.streamId (Event.StreamPosition 0) (EventStore.Limit (10))
             |> Task.mapError toText
 
         -- We should have exactly 2 events (initial + one successful append)
