@@ -31,14 +31,16 @@ data EventStore = EventStore
     -- | Read events from a stream in backward direction starting from a given revision.
     --   Useful for looking at recent events.
     readStreamBackwardFrom :: EntityId -> StreamId -> StreamPosition -> Limit -> Task Error (Array Event),
-    -- | Read all events from a given stream.
-    --   Equivalent to calling 'readStreamForwardFrom' with revision 0 and a high max count.
+    -- | Read all events from a specific stream for a given entity.
+    --   Returns an array of events or an Error.
     readAllStreamEvents :: EntityId -> StreamId -> Task Error (Array Event),
-    -- | Read a slice of all events across all streams starting from a global position.
-    --   Useful for projections or audit logs.
+    -- | Read events from the global stream in forward direction starting from a given global position.
+    --   This reads across all streams and entities.
     readAllEventsForwardFrom :: StreamPosition -> Limit -> Task Error (Array Event),
-    -- | Read a slice of all events across all streams backward from a global position.
-    --   Returns events in reverse chronological order (most recent first).
-    --   Useful for recent event analysis and debugging.
-    readAllEventsBackwardFrom :: StreamPosition -> Limit -> Task Error (Array Event)
+    -- | Read events from the global stream in backward direction starting from a given global position.
+    --   This reads across all streams and entities in reverse order.
+    readAllEventsBackwardFrom :: StreamPosition -> Limit -> Task Error (Array Event),
+    -- | Read events from the global stream in forward direction starting from a given global position,
+    --   but only for specific entities. Useful for event sourcing projections that only care about certain entities.
+    readAllEventsForwardFromFiltered :: StreamPosition -> Limit -> Array EntityId -> Task Error (Array Event)
   }
