@@ -14,6 +14,8 @@ module Array (
   isEmpty,
   length,
   get,
+  maximum,
+  minimum,
 
   -- * Manipulate
   set,
@@ -423,3 +425,13 @@ reverse (Array vector) = Array (Data.Vector.reverse vector)
 -- | Flatten an array of arrays into a single array.
 flatten :: Array (Array a) -> Array a
 flatten (Array vector) = Array (Control.Monad.join (Data.Vector.map unwrap vector))
+
+
+-- | Find the maximum element in an array.
+maximum :: forall (value :: Type). (Ord value) => Array value -> value
+maximum (Array vector) = Data.Vector.maximum vector
+
+
+-- | Find the minimum element in an array.
+minimum :: forall (value :: Type). (Ord value) => Array value -> value
+minimum (Array vector) = Data.Vector.minimum vector
