@@ -105,3 +105,38 @@ specWithCount newStore eventCount = do
         -- Global positions should be strictly increasing across all batches
         let globalPositions = allEventsBatched |> Array.map (\e -> e.globalPosition)
         globalPositions |> shouldHaveIncreasingOrder
+
+      it "reads from arbitrary middle position with correct skip count" \context -> do
+        -- First, find the global position of the 5th event (arbitrary middle position)
+        let skipCount = 5
+        let limit = EventStore.Limit skipCount
+        firstEvents <-
+          context.store.readAllEventsForwardFrom (Event.StreamPosition 0) limit
+            |> Task.mapError toText
+
+        case Array.get (skipCount - 1) firstEvents of
+          Nothing ->
+            fail "Expected to find the 5th event for skip test"
+          Just fifthEvent -> do
+            let startPosition = fifthEvent.globalPosition
+            let Event.StreamPosition startPos = startPosition
+            let readFromPosition = Event.StreamPosition (startPos + 1) -- Read from after the 5th event
+
+            -- Read remaining events from that position
+            let remainingLimit = EventStore.Limit (context.eventCount * 2)
+            remainingEvents <-
+              context.store.readAllEventsForwardFrom readFromPosition remainingLimit
+                |> Task.mapError toText
+
+            -- Should get exactly (totalEvents - skipCount) events
+            let expectedRemaining = (context.eventCount * 2) - skipCount -- Removed the -1 since position+1 logic was wrong
+            Array.length remainingEvents
+              |> shouldBe expectedRemaining
+
+            -- All events should have positions > startPosition
+            remainingEvents |> Task.forEach \event -> do
+              event.globalPosition |> shouldBeGreaterThan startPosition
+
+            -- Events should still be in increasing order
+            let positions = remainingEvents |> Array.map (\e -> e.globalPosition)
+            positions |> shouldHaveIncreasingOrder
