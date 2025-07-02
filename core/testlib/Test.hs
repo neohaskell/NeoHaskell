@@ -36,7 +36,6 @@ import Environment qualified
 import Task qualified
 import Test.Hspec qualified as Hspec
 import Text qualified
-import ToText (toText)
 
 
 type Spec a = Hspec.SpecWith a

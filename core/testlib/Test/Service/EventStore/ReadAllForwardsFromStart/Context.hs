@@ -9,7 +9,6 @@ import Service.Event qualified as Event
 import Service.EventStore (EventStore)
 import Service.EventStore.Core qualified as EventStore
 import Task qualified
-import ToText (toText)
 import Uuid qualified
 
 

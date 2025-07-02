@@ -8,7 +8,6 @@ import Service.EventStore.Core qualified as EventStore
 import Task qualified
 import Test
 import Test.Service.EventStore.ReadAllForwardsFromStart.Context qualified as Context
-import ToText (toText)
 
 
 spec :: Task Text EventStore -> Spec Unit
