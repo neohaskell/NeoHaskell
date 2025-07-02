@@ -15,7 +15,7 @@ import Test.Service.EventStore.GlobalStreamOrdering.Context qualified as Context
 spec :: Task Text EventStore -> Spec Unit
 spec newStore = do
   describe "Global Stream Ordering" do
-    beforeAll (Context.initialize newStore 1) do
+    beforeAll (Context.initialize newStore 10) do
       it "has the correct number of streams" \context -> do
         context.eventStreams
           |> Array.length
