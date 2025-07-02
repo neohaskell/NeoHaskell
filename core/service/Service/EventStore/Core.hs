@@ -42,5 +42,8 @@ data EventStore = EventStore
     readAllEventsBackwardFrom :: StreamPosition -> Limit -> Task Error (Array Event),
     -- | Read events from the global stream in forward direction starting from a given global position,
     --   but only for specific entities. Useful for event sourcing projections that only care about certain entities.
-    readAllEventsForwardFromFiltered :: StreamPosition -> Limit -> Array EntityId -> Task Error (Array Event)
+    readAllEventsForwardFromFiltered :: StreamPosition -> Limit -> Array EntityId -> Task Error (Array Event),
+    -- | Read events from the global stream in backward direction starting from a given global position,
+    --   but only for specific entities. Useful for filtered historical analysis and debugging.
+    readAllEventsBackwardFromFiltered :: StreamPosition -> Limit -> Array EntityId -> Task Error (Array Event)
   }
