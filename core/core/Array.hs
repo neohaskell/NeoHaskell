@@ -77,10 +77,7 @@ newtype Array a = Array (Data.Vector.Vector a)
   deriving (Prelude.Eq, Prelude.Show, Prelude.Ord, Generic)
 
 
-instance Collection (Array a) where
-  type Item (Array a) = a
-
-
+instance Collection Array where
   lengthImpl = length
   emptyImpl = empty
   isEmptyImpl = isEmpty
@@ -91,83 +88,31 @@ instance Collection (Array a) where
   lastImpl = last
   indicesImpl = indices
   mapImpl = map
-
-
   repeatImpl = repeat
-
-
   wrapImpl = wrap
-
-
   fromLinkedListImpl = fromLinkedList
-
-
   pushImpl = push
-
-
   toLinkedListImpl = toLinkedList
-
-
   toIndexedLinkedListImpl = toIndexedLinkedList
-
-
   reduceImpl = reduce
-
-
   foldlImpl = foldl
-
-
   takeIfImpl = takeIf
-
-
   dropIfImpl = dropIf
-
-
   indexedMapImpl = indexedMap
-
-
   sliceImpl = slice
-
-
   flatMapImpl = flatMap
-
-
   foldMImpl = foldM
-
-
   dropWhileImpl = dropWhile
-
-
   takeWhileImpl = takeWhile
-
-
   partitionByImpl = partitionBy
-
-
   splitFirstImpl = splitFirst
-
-
   anyImpl = any
-
-
   fromLegacyImpl = fromLegacy
-
-
   takeImpl = take
-
-
   dropImpl = drop
-
-
   indexedImpl = indexed
-
-
   zipImpl = zip
-
-
   sumIntegersImpl = sumIntegers
-
-
   reverseImpl = reverse
 
 
