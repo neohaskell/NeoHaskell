@@ -130,7 +130,7 @@ specWithCount newStore eventCount = do
                 |> Task.mapError toText
 
             -- Should get exactly (totalEvents - skipCount) events
-            let expectedRemaining = (context.eventCount * 2) - skipCount -- Removed the -1 since position+1 logic was wrong
+            let expectedRemaining = (context.eventCount * 2) - skipCount
             Array.length remainingEvents
               |> shouldBe expectedRemaining
 

@@ -267,9 +267,6 @@ specWithCount newStore eventCount = do
         positions |> shouldHaveDecreasingOrder
 
       it "reading before specific position with entity filter (C# test scenario)" \context -> do
-        -- This test replicates the exact C# test scenario:
-        -- Read backwards from a position, filtered by entity, expecting events BEFORE that position
-
         -- Get the position after first few events (simulating the C# eventsBefore)
         let beforeCount = 7 -- Arbitrary middle position
         let beforeLimit = EventStore.Limit beforeCount
