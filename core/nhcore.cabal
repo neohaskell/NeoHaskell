@@ -155,6 +155,8 @@ library
       Test.Service.EventStore.OptimisticConcurrency.Context,
       Test.Service.EventStore.ReadAllForwardsFromStart.Spec,
       Test.Service.EventStore.ReadAllForwardsFromStart.Context,
+      Test.Service.EventStore.ReadAllBackwardsFromEnd.Spec,
+      Test.Service.EventStore.ReadAllBackwardsFromEnd.Context,
 
     -- other-modules:
     -- other-extensions:
