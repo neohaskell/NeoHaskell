@@ -2,6 +2,7 @@ module Test.Service.EventStore.IndividualStreamOrdering.Spec where
 
 import Array qualified
 import Core
+import Service.Event (Event (..))
 import Service.Event qualified as Event
 import Service.EventStore (EventStore)
 import Service.EventStore.Core qualified as EventStore
@@ -89,3 +90,36 @@ specWithCount newStore eventCount = do
 
         -- Should have the expected number of events
         Array.length events |> shouldBe context.eventCount
+
+      it "reads from middle position and gets remaining events (C# test scenario)" \context -> do
+        -- Test reading from middle position, equivalent to C# test "ReadStreamForwardsFromPosition"
+        let halfwayPoint = context.eventCount // 2
+        let startPosition = Event.StreamPosition halfwayPoint
+        let limit = EventStore.Limit (context.eventCount) -- Large enough to get all remaining events
+        eventsFromMiddle <-
+          context.store.readStreamForwardFrom context.entityId context.streamId startPosition limit
+            |> Task.mapError toText
+
+        -- Should read exactly the second half of events
+        let expectedRemainingCount = context.eventCount - halfwayPoint
+        Array.length eventsFromMiddle |> shouldBe expectedRemainingCount
+
+        -- All events should have local positions >= startPosition
+        eventsFromMiddle |> Task.forEach \event -> do
+          event.localPosition |> shouldBeGreaterThanOrEqual startPosition
+
+        -- Global positions should still be strictly increasing
+        let globalPositions = eventsFromMiddle |> Array.map (\e -> e.globalPosition)
+        globalPositions |> shouldHaveIncreasingOrder
+
+        -- Each event should have the correct entity ID
+        eventsFromMiddle |> Task.forEach \event -> do
+          event.entityId |> shouldBe context.entityId
+
+        -- Each event should have the correct stream ID
+        eventsFromMiddle |> Task.forEach \event -> do
+          event.streamId |> shouldBe context.streamId
+
+-- Validate that we got the correct events (the second half)
+-- The position validation already ensures we have the right events
+-- Additional detailed validation could be added if needed
