@@ -84,21 +84,21 @@ appendToStreamImpl store event = do
         let (StreamPosition pos) = expectedPosition
         pos == currentLength
 
-  let globalPositionModifier :: Int -> Event
-      globalPositionModifier index =
-        event
-          |> Event.fromInsertionEvent (StreamPosition (index))
+  -- First, get the global index from the global stream
+  globalIndex <-
+    store.globalStream
+      |> DurableChannel.writeWithIndex (\index -> event |> Event.fromInsertionEvent (StreamPosition index))
 
+  -- Now create the event with the correct global position
+  let globalPosition = StreamPosition globalIndex
+  let finalEvent = Event {id, streamId, entityId, localPosition, globalPosition}
+
+  -- Write to the individual stream with the correctly positioned event
   hasWritten <-
-    channel |> DurableChannel.checkAndWrite appendCondition (event |> Event.fromInsertionEvent (StreamPosition (0)))
+    channel |> DurableChannel.checkAndWrite appendCondition finalEvent
+
   if hasWritten
-    then do
-      globalIndex <-
-        store.globalStream
-          |> DurableChannel.writeWithIndex globalPositionModifier
-      let localPosition = expectedPosition
-      let globalPosition = StreamPosition (globalIndex)
-      Task.yield Event {id, streamId, entityId, localPosition, globalPosition}
+    then Task.yield finalEvent
     else
       (ConcurrencyConflict streamId expectedPosition)
         |> Task.throw
