@@ -96,3 +96,81 @@ spec newStore = do
           |> Array.get 1
           |> Maybe.map (\event -> event.id)
           |> shouldSatisfy (\id -> id == Just event1Id || id == Just event2Id)
+
+      it "gives consistency error when stream position is not up to date" \context -> do
+        entityId <- Uuid.generate |> Task.map Event.EntityId
+
+        -- Insert 5 events to get the stream to position 5
+        let insertEventAtPosition position = do
+              eventId <- Uuid.generate
+              let event =
+                    Event.InsertionEvent
+                      { id = eventId,
+                        streamId = context.streamId,
+                        entityId,
+                        localPosition = Event.StreamPosition position
+                      }
+              event
+                |> context.store.appendToStream
+                |> Task.mapError toText
+
+        -- Insert events at positions 0, 1, 2, 3, 4
+        Array.fromLinkedList [0, 1, 2, 3, 4]
+          |> Task.mapArray insertEventAtPosition
+          |> discard
+
+        -- Try to insert at an outdated position (position 2, when current is 5)
+        -- This should fail with ConcurrencyConflict
+        staleEventId <- Uuid.generate
+        let staleEvent =
+              Event.InsertionEvent
+                { id = staleEventId,
+                  streamId = context.streamId,
+                  entityId,
+                  localPosition = Event.StreamPosition 2
+                }
+
+        staleResult <-
+          staleEvent
+            |> context.store.appendToStream
+            |> Task.asResult
+
+        -- Should fail with ConcurrencyConflict
+        staleResult
+          |> Result.isErr
+          |> shouldBe True
+
+        -- Try to insert at the correct position (position 5)
+        -- This should succeed
+        correctEventId <- Uuid.generate
+        let correctEvent =
+              Event.InsertionEvent
+                { id = correctEventId,
+                  streamId = context.streamId,
+                  entityId,
+                  localPosition = Event.StreamPosition 5
+                }
+
+        correctResult <-
+          correctEvent
+            |> context.store.appendToStream
+            |> Task.mapError toText
+
+        -- Should succeed and have the correct local position
+        correctResult.localPosition
+          |> shouldBe (Event.StreamPosition 5)
+
+        -- Verify final stream state has 6 events
+        finalEvents <-
+          context.store.readStreamForwardFrom entityId context.streamId (Event.StreamPosition 0) (EventStore.Limit 10)
+            |> Task.mapError toText
+
+        finalEvents
+          |> Array.length
+          |> shouldBe 6
+
+        -- Last event should be our correctly inserted event
+        finalEvents
+          |> Array.get 5
+          |> Maybe.map (\event -> event.id)
+          |> shouldBe (Just correctEventId)
