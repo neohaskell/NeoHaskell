@@ -5,6 +5,7 @@ module Test.Service.EventStore.ReadAllBackwardsFromEnd.Context (
 
 import Array qualified
 import Core
+import Maybe qualified
 import Service.Event qualified as Event
 import Service.EventStore (EventStore)
 import Service.EventStore.Core qualified as EventStore
@@ -64,6 +65,7 @@ initialize newStore eventCount = do
         allInserted
           |> Array.map (\event -> event.globalPosition)
           |> Array.maximum
+          |> Maybe.withDefault (Event.StreamPosition 0)
 
   return
     Context

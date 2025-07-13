@@ -428,10 +428,18 @@ flatten (Array vector) = Array (Control.Monad.join (Data.Vector.map unwrap vecto
 
 
 -- | Find the maximum element in an array.
-maximum :: forall (value :: Type). (Ord value) => Array value -> value
-maximum (Array vector) = Data.Vector.maximum vector
+-- If the array is empty, returns `Nothing`.
+maximum :: forall (value :: Type). (Ord value) => Array value -> Maybe value
+maximum (Array vector) =
+  if Data.Vector.null vector
+    then Nothing
+    else Just (Data.Vector.maximum vector)
 
 
 -- | Find the minimum element in an array.
-minimum :: forall (value :: Type). (Ord value) => Array value -> value
-minimum (Array vector) = Data.Vector.minimum vector
+-- If the array is empty, returns `Nothing`.
+minimum :: forall (value :: Type). (Ord value) => Array value -> Maybe value
+minimum (Array vector) =
+  if Data.Vector.null vector
+    then Nothing
+    else Just (Data.Vector.minimum vector)
