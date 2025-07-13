@@ -498,6 +498,83 @@ spec newStore = do
         -- Clean up subscription
         context.store.unsubscribe subscriptionId |> Task.mapError toText |> discard
 
+      it "subscribes from specific position - receives events after specified global position" \context -> do
+        entity1Id <- Uuid.generate |> Task.map Event.EntityId
+        entity2Id <- Uuid.generate |> Task.map Event.EntityId
+        stream1Id <- Uuid.generate |> Task.map Event.StreamId
+        stream2Id <- Uuid.generate |> Task.map Event.StreamId
+
+        -- Insert FIRST batch of events to create historical data
+        let eventCount = 5
+        firstBatchEvents1 <- createTestEventsForEntity stream1Id entity1Id eventCount 0
+
+        -- Append first batch and capture the global position
+        let appendEvent event = context.store.appendToStream event |> Task.mapError toText
+        firstBatchResults <-
+          firstBatchEvents1 |> Task.mapArray (\event -> context.store.appendToStream event |> Task.mapError toText)
+
+        -- Get the global position after the first batch (this is our subscription point)
+        positionAfterFirstBatch <- case firstBatchResults |> Array.last of
+          Just lastEvent -> Task.yield lastEvent.globalPosition
+          Nothing -> Task.throw "No events in first batch"
+
+        -- Set up subscription tracking
+        receivedEvents <- ConcurrentVar.containing (Array.empty :: Array Event)
+
+        let subscriber event = do
+              -- Only track events from our test entities
+              if event.entityId == entity1Id || event.entityId == entity2Id
+                then receivedEvents |> ConcurrentVar.modify (Array.push event)
+                else Task.yield ()
+              Task.yield () :: Task EventStore.Error Unit
+
+        -- Subscribe from the specific position (should receive events AFTER this position)
+        subscriptionId <-
+          context.store.subscribeToAllEventsFromPosition positionAfterFirstBatch subscriber |> Task.mapError toText
+
+        -- Wait a bit for subscription to process historical events
+        AsyncTask.sleep 50 |> Task.mapError toText
+
+        -- Insert SECOND batch of events (these should definitely be received)
+        secondBatchEvents1 <- createTestEventsForEntity stream1Id entity1Id eventCount eventCount
+        secondBatchEvents2 <- createTestEventsForEntity stream2Id entity2Id eventCount 0
+
+        -- Append second batch
+        secondBatchEvents1 |> Task.mapArray appendEvent |> discard
+        secondBatchEvents2 |> Task.mapArray appendEvent |> discard
+
+        -- Wait for events to be processed
+        AsyncTask.sleep 100 |> Task.mapError toText
+
+        -- Verify we received exactly eventCount * 2 events (from second batch only)
+        received <- ConcurrentVar.get receivedEvents
+
+        let (Event.StreamPosition expectedAfterPos) = positionAfterFirstBatch
+
+        -- Should have received exactly eventCount * 2 events (second batch only)
+        received |> Array.length |> shouldBe (eventCount * 2)
+
+        -- All received events should have global positions AFTER our subscription position
+        let eventsWithWrongPosition =
+              received
+                |> Array.takeIf
+                  ( \event -> do
+                      let (Event.StreamPosition eventGlobalPos) = event.globalPosition
+                      eventGlobalPos <= expectedAfterPos
+                  )
+
+        eventsWithWrongPosition |> Array.length |> shouldBe 0
+
+        -- Events should be properly partitioned by entity
+        let entity1Events = received |> Array.takeIf (\event -> event.entityId == entity1Id)
+        let entity2Events = received |> Array.takeIf (\event -> event.entityId == entity2Id)
+
+        entity1Events |> Array.length |> shouldBe eventCount
+        entity2Events |> Array.length |> shouldBe eventCount
+
+        -- Clean up subscription
+        context.store.unsubscribe subscriptionId |> Task.mapError toText |> discard
+
 
 createTestEventsForEntity :: Event.StreamId -> Event.EntityId -> Int -> Int -> Task _ (Array Event.InsertionEvent)
 createTestEventsForEntity streamId entityId count startPosition = do

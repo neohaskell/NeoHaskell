@@ -32,6 +32,7 @@ new = do
             readAllEventsForwardFromFiltered = readAllEventsForwardFromFilteredImpl store,
             readAllEventsBackwardFromFiltered = readAllEventsBackwardFromFilteredImpl store,
             subscribeToAllEvents = subscribeToAllEventsImpl store,
+            subscribeToAllEventsFromPosition = subscribeToAllEventsFromPositionImpl store,
             subscribeToEntityEvents = subscribeToEntityEventsImpl store,
             subscribeToStreamEvents = subscribeToStreamEventsImpl store,
             unsubscribe = unsubscribeImpl store
@@ -262,6 +263,26 @@ subscribeToAllEventsImpl store handler = do
   Task.yield subscriptionId
 
 
+subscribeToAllEventsFromPositionImpl ::
+  StreamStore ->
+  StreamPosition ->
+  (Event -> Task Error Unit) ->
+  Task Error SubscriptionId
+subscribeToAllEventsFromPositionImpl store fromPosition handler = do
+  subscriptionId <- generateSubscriptionId
+  let subscription = Subscription {subscriptionType = AllEvents, handler}
+
+  -- First, add the subscription for future events
+  store.subscriptions
+    |> ConcurrentVar.modify (Map.set subscriptionId subscription)
+    |> Lock.with store.globalLock
+
+  -- Then, deliver historical events from the specified position
+  deliverHistoricalEvents store fromPosition handler subscriptionId
+
+  Task.yield subscriptionId
+
+
 subscribeToEntityEventsImpl ::
   StreamStore ->
   EntityId ->
@@ -345,3 +366,32 @@ notifySubscriber subscription event = do
   case result of
     Ok _ -> Task.yield ()
     Err _ -> Task.yield () -- Silently ignore subscriber errors to maintain store reliability
+
+
+deliverHistoricalEvents :: StreamStore -> StreamPosition -> (Event -> Task Error Unit) -> SubscriptionId -> Task _ Unit
+deliverHistoricalEvents store fromPosition handler _subscriptionId = do
+  -- Read all events from the specified position onwards
+  let (StreamPosition startPos) = fromPosition
+  allGlobalEvents <- store.globalStream |> DurableChannel.getAndTransform unchanged
+
+  let historicalEvents =
+        allGlobalEvents
+          |> Array.takeIf
+            ( \event -> do
+                let (StreamPosition eventPos) = event.globalPosition
+                eventPos > startPos
+            )
+
+  -- Deliver each historical event to the subscriber synchronously
+  historicalEvents
+    |> Task.mapArray (\event -> notifySubscriberSafely handler event)
+    |> discard
+
+
+notifySubscriberSafely :: (Event -> Task Error Unit) -> Event -> Task _ Unit
+notifySubscriberSafely handler event = do
+  -- Execute subscriber handler and catch any errors
+  result <- handler event |> Task.asResult
+  case result of
+    Ok _ -> Task.yield ()
+    Err _ -> Task.yield () -- Silently ignore subscriber errors
