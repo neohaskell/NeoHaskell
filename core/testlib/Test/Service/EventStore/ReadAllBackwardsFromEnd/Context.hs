@@ -57,12 +57,9 @@ initialize newStore eventCount = do
       |> Task.mapArray (\event -> event |> store.appendToStream)
       |> Task.mapError toText
 
-  let allEvents = entity1Events |> Array.append entity2Events
-  let allInserted = entity1Inserted |> Array.append entity2Inserted
-
-  -- Find the maximum global position for backward reading tests
-  let maxGlobalPosition = do
-        allInserted
+  let maxGlobalPosition =
+        entity1Inserted
+          |> Array.append entity2Inserted
           |> Array.map (\event -> event.globalPosition)
           |> Array.maximum
           |> Maybe.withDefault (Event.StreamPosition 0)
@@ -72,7 +69,7 @@ initialize newStore eventCount = do
       { eventCount,
         streamId,
         store,
-        generatedEvents = allEvents,
+        generatedEvents = entity1Events |> Array.append entity2Events,
         maxGlobalPosition,
         entity1Id,
         entity2Id
