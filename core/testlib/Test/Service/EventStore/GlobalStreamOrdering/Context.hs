@@ -63,12 +63,9 @@ initialize newStore streamCount = do
   eventStreams <-
     streamIds
       |> Task.mapArray
-        ( \(entityId, streamId) -> do
-            result <-
-              store.readAllStreamEvents entityId streamId
-                |> Task.mapError toText
-            print [fmt|#{entityId} / #{streamId} / #{result}|]
-            pure result
+        ( \(entityId, streamId) ->
+            store.readAllStreamEvents entityId streamId
+              |> Task.mapError toText
         )
 
   Task.yield
