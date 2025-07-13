@@ -154,3 +154,52 @@ specWithCount newStore eventCount = do
         let expectedPositions = Array.fromLinkedList [0 .. halfwayPoint] |> Array.map Event.StreamPosition
         let actualPositions = eventsBackward |> Array.map (\e -> e.localPosition) |> Array.reverse
         actualPositions |> shouldBe expectedPositions
+
+      it "reads backward from the end of stream with all events (C# test scenario)" \context -> do
+        -- Test reading backward from the end, equivalent to C# test "ReadStreamBackwardsFromTheEnd"
+        -- To read from the end, we need a position higher than the last event position
+        let lastEventPosition = Event.StreamPosition (context.eventCount - 1)
+        let endPosition = Event.StreamPosition (context.eventCount) -- One past the last event
+        let limit = EventStore.Limit (context.eventCount)
+
+        allEventsBackward <-
+          context.store.readStreamBackwardFrom context.entityId context.streamId endPosition limit
+            |> Task.mapError toText
+
+        -- Should read all events in the stream
+        Array.length allEventsBackward |> shouldBe context.eventCount
+
+        -- All events should have local positions < endPosition (strict less than)
+        allEventsBackward |> Task.forEach \event -> do
+          event.localPosition |> shouldBeLessThan endPosition
+
+        -- Global positions should be in decreasing order (backward reading)
+        let globalPositions = allEventsBackward |> Array.map (\e -> e.globalPosition)
+        globalPositions |> shouldHaveDecreasingOrder
+
+        -- Each event should have the correct entity ID
+        allEventsBackward |> Task.forEach \event -> do
+          event.entityId |> shouldBe context.entityId
+
+        -- Each event should have the correct stream ID
+        allEventsBackward |> Task.forEach \event -> do
+          event.streamId |> shouldBe context.streamId
+
+        -- Verify we get all events in reverse order (positions eventCount-1 down to 0)
+        let expectedPositions = Array.fromLinkedList [context.eventCount - 1, context.eventCount - 2 .. 0] |> Array.map Event.StreamPosition
+        let actualPositions = allEventsBackward |> Array.map (\e -> e.localPosition)
+        actualPositions |> shouldBe expectedPositions
+
+        -- First event should be the last one written (highest local position)
+        case Array.get 0 allEventsBackward of
+          Nothing ->
+            fail "Expected to find first event in backward read from end"
+          Just firstEvent -> do
+            firstEvent.localPosition |> shouldBe lastEventPosition
+
+        -- Last event should be the first one written (position 0)
+        case Array.get (Array.length allEventsBackward - 1) allEventsBackward of
+          Nothing ->
+            fail "Expected to find last event in backward read from end"
+          Just lastEvent -> do
+            lastEvent.localPosition |> shouldBe (Event.StreamPosition 0)
