@@ -34,7 +34,7 @@ initialize newStore eventCount = do
   let generateEvents :: Event.EntityId -> Task Text (Array Event.InsertionEvent)
       generateEvents entityId = do
         Array.fromLinkedList [0 .. eventCount - 1] |> Task.mapArray \index -> do
-          let localPosition = Event.StreamPosition (index)
+          let localPosition = Event.StreamPosition index
           id <- Uuid.generate
           Event.InsertionEvent
             { id,
