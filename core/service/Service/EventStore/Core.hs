@@ -59,6 +59,9 @@ data EventStore = EventStore
     -- | Subscribe to all events from a specific global position onwards. This allows catching up
     --   from historical events and then receiving new events as they are appended.
     subscribeToAllEventsFromPosition :: StreamPosition -> (Event -> Task Error Unit) -> Task Error SubscriptionId,
+    -- | Subscribe to all events from the very beginning of the event store. This delivers ALL
+    --   historical events first, then continues with new events as they are appended.
+    subscribeToAllEventsFromStart :: (Event -> Task Error Unit) -> Task Error SubscriptionId,
     -- | Subscribe to events for a specific entity. The subscriber function will be called
     --   only for events belonging to the specified entity.
     subscribeToEntityEvents :: EntityId -> (Event -> Task Error Unit) -> Task Error SubscriptionId,

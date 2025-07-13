@@ -33,6 +33,7 @@ new = do
             readAllEventsBackwardFromFiltered = readAllEventsBackwardFromFilteredImpl store,
             subscribeToAllEvents = subscribeToAllEventsImpl store,
             subscribeToAllEventsFromPosition = subscribeToAllEventsFromPositionImpl store,
+            subscribeToAllEventsFromStart = subscribeToAllEventsFromStartImpl store,
             subscribeToEntityEvents = subscribeToEntityEventsImpl store,
             subscribeToStreamEvents = subscribeToStreamEventsImpl store,
             unsubscribe = unsubscribeImpl store
@@ -283,6 +284,25 @@ subscribeToAllEventsFromPositionImpl store fromPosition handler = do
   Task.yield subscriptionId
 
 
+subscribeToAllEventsFromStartImpl ::
+  StreamStore ->
+  (Event -> Task Error Unit) ->
+  Task Error SubscriptionId
+subscribeToAllEventsFromStartImpl store handler = do
+  subscriptionId <- generateSubscriptionId
+  let subscription = Subscription {subscriptionType = AllEvents, handler}
+
+  -- First, add the subscription for future events
+  store.subscriptions
+    |> ConcurrentVar.modify (Map.set subscriptionId subscription)
+    |> Lock.with store.globalLock
+
+  -- Then, deliver ALL historical events from the very beginning (position -1)
+  deliverHistoricalEventsFromStart store handler subscriptionId
+
+  Task.yield subscriptionId
+
+
 subscribeToEntityEventsImpl ::
   StreamStore ->
   EntityId ->
@@ -384,6 +404,17 @@ deliverHistoricalEvents store fromPosition handler _subscriptionId = do
 
   -- Deliver each historical event to the subscriber synchronously
   historicalEvents
+    |> Task.mapArray (\event -> notifySubscriberSafely handler event)
+    |> discard
+
+
+deliverHistoricalEventsFromStart :: StreamStore -> (Event -> Task Error Unit) -> SubscriptionId -> Task _ Unit
+deliverHistoricalEventsFromStart store handler _subscriptionId = do
+  -- Read ALL events from the very beginning (no position filter)
+  allGlobalEvents <- store.globalStream |> DurableChannel.getAndTransform unchanged
+
+  -- Deliver each historical event to the subscriber synchronously
+  allGlobalEvents
     |> Task.mapArray (\event -> notifySubscriberSafely handler event)
     |> discard
 
