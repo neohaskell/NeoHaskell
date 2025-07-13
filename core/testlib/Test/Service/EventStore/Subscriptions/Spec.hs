@@ -439,6 +439,81 @@ spec newStore = do
           |> Task.mapError toText
           |> discard
 
+      it "subscribes from now on - only receives events appended after subscription" \context -> do
+        entity1Id <- Uuid.generate |> Task.map Event.EntityId
+        entity2Id <- Uuid.generate |> Task.map Event.EntityId
+        stream1Id <- Uuid.generate |> Task.map Event.StreamId
+        stream2Id <- Uuid.generate |> Task.map Event.StreamId
+
+        -- Insert events for both entities BEFORE subscribing (these should NOT be received)
+        let eventCount = 5
+        preSubscriptionEvents1 <- createTestEventsForEntity stream1Id entity1Id eventCount 0
+        preSubscriptionEvents2 <- createTestEventsForEntity stream2Id entity2Id eventCount 0
+
+        -- Append pre-subscription events
+        let appendEvent event = context.store.appendToStream event |> Task.mapError toText
+        preSubscriptionEvents1 |> Task.mapArray appendEvent |> discard
+        preSubscriptionEvents2 |> Task.mapArray appendEvent |> discard
+
+        -- Now set up subscription tracking
+        receivedEvents <- ConcurrentVar.containing (Array.empty :: Array Event)
+
+        let subscriber event = do
+              -- Only track events from our test entities
+              if event.entityId == entity1Id || event.entityId == entity2Id
+                then receivedEvents |> ConcurrentVar.modify (Array.push event)
+                else Task.yield ()
+              Task.yield () :: Task EventStore.Error Unit
+
+        -- Subscribe to all events (this should only receive NEW events "from now on")
+        subscriptionId <- context.store.subscribeToAllEvents subscriber |> Task.mapError toText
+
+        -- Wait a bit to ensure subscription is active
+        AsyncTask.sleep 10 |> Task.mapError toText
+
+        -- Insert events for both entities AFTER subscribing (these SHOULD be received)
+        postSubscriptionEvents1 <- createTestEventsForEntity stream1Id entity1Id eventCount eventCount
+        postSubscriptionEvents2 <- createTestEventsForEntity stream2Id entity2Id eventCount eventCount
+
+        -- Append post-subscription events
+        postSubscriptionEvents1 |> Task.mapArray appendEvent |> discard
+        postSubscriptionEvents2 |> Task.mapArray appendEvent |> discard
+
+        -- Wait for events to be processed
+        AsyncTask.sleep 100 |> Task.mapError toText
+
+        -- Verify we received exactly the post-subscription events
+        received <- ConcurrentVar.get receivedEvents
+
+        -- Should have received exactly eventCount * 2 events (only post-subscription)
+        received |> Array.length |> shouldBe (eventCount * 2)
+
+        -- Events should be properly ordered within each entity
+        let entity1Events = received |> Array.takeIf (\event -> event.entityId == entity1Id)
+        let entity2Events = received |> Array.takeIf (\event -> event.entityId == entity2Id)
+
+        entity1Events |> Array.length |> shouldBe eventCount
+        entity2Events |> Array.length |> shouldBe eventCount
+
+        -- Clean up subscription
+        context.store.unsubscribe subscriptionId |> Task.mapError toText |> discard
+
+
+createTestEventsForEntity :: Event.StreamId -> Event.EntityId -> Int -> Int -> Task _ (Array Event.InsertionEvent)
+createTestEventsForEntity streamId entityId count startPosition = do
+  let createEvent position = do
+        eventId <- Uuid.generate
+        Task.yield
+          Event.InsertionEvent
+            { id = eventId,
+              streamId,
+              entityId,
+              localPosition = Event.StreamPosition position
+            }
+
+  Array.fromLinkedList [startPosition .. (startPosition + count - 1)]
+    |> Task.mapArray createEvent
+
 
 createRapidTestEventsFromPosition ::
   Event.StreamId -> Event.EntityId -> Int -> Int -> Task _ (Array Event.InsertionEvent)
