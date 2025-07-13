@@ -128,7 +128,7 @@ specWithCount newStore eventCount = do
         let positions = eventsFromMid |> Array.map (\e -> e.globalPosition)
         positions |> shouldHaveDecreasingOrder
 
-      it "reading from position 0 returns empty array" \context -> do
+      it "reading from position 0 returns only the event at position 0" \context -> do
         let limit = EventStore.Limit 10
         events <-
           context.store.readAllEventsBackwardFrom (Event.StreamPosition 0) limit
@@ -266,8 +266,7 @@ specWithCount newStore eventCount = do
         let positions = filteredEvents |> Array.map (\e -> e.globalPosition)
         positions |> shouldHaveDecreasingOrder
 
-      it "reading before specific position with entity filter (C# test scenario)" \context -> do
-        -- Get the position after first few events (simulating the C# eventsBefore)
+      it "reading before specific position with entity filter" \context -> do
         let beforeCount = 7 -- Arbitrary middle position
         let beforeLimit = EventStore.Limit beforeCount
         beforeEvents <-

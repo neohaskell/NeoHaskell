@@ -69,7 +69,7 @@ specWithCount newStore eventCount = do
           event.streamId |> shouldBe expectedEvent.streamId
           event.localPosition |> shouldBe expectedEvent.localPosition
 
-      it "has global positions in strictly increasing order (C# test scenario)" \context -> do
+      it "has global positions in strictly increasing order" \context -> do
         let startPosition = Event.StreamPosition 0
         let limit = EventStore.Limit (context.eventCount)
         events <-
@@ -91,8 +91,7 @@ specWithCount newStore eventCount = do
         -- Should have the expected number of events
         Array.length events |> shouldBe context.eventCount
 
-      it "reads from middle position and gets remaining events (C# test scenario)" \context -> do
-        -- Test reading from middle position, equivalent to C# test "ReadStreamForwardsFromPosition"
+      it "reads from middle position and gets remaining events" \context -> do
         let halfwayPoint = context.eventCount // 2
         let startPosition = Event.StreamPosition halfwayPoint
         let limit = EventStore.Limit (context.eventCount) -- Large enough to get all remaining events
@@ -120,8 +119,7 @@ specWithCount newStore eventCount = do
         eventsFromMiddle |> Task.forEach \event -> do
           event.streamId |> shouldBe context.streamId
 
-      it "reads backward from middle position with correct count (C# test scenario)" \context -> do
-        -- Test reading backward from middle position, equivalent to C# test "ReadStreamBackwardsFromPosition"
+      it "reads backward from middle position with correct count" \context -> do
         let halfwayPoint = context.eventCount // 2
         let readFromPosition = Event.StreamPosition (halfwayPoint + 1) -- Read from position after halfway point
         let limit = EventStore.Limit (context.eventCount) -- Large enough to get all events before position
@@ -155,8 +153,7 @@ specWithCount newStore eventCount = do
         let actualPositions = eventsBackward |> Array.map (\e -> e.localPosition) |> Array.reverse
         actualPositions |> shouldBe expectedPositions
 
-      it "reads backward from the end of stream with all events (C# test scenario)" \context -> do
-        -- Test reading backward from the end, equivalent to C# test "ReadStreamBackwardsFromTheEnd"
+      it "reads backward from the end of stream with all events" \context -> do
         -- To read from the end, we need a position higher than the last event position
         let lastEventPosition = Event.StreamPosition (context.eventCount - 1)
         let endPosition = Event.StreamPosition (context.eventCount) -- One past the last event
