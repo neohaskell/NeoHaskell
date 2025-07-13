@@ -120,6 +120,37 @@ specWithCount newStore eventCount = do
         eventsFromMiddle |> Task.forEach \event -> do
           event.streamId |> shouldBe context.streamId
 
--- Validate that we got the correct events (the second half)
--- The position validation already ensures we have the right events
--- Additional detailed validation could be added if needed
+      it "reads backward from middle position with correct count (C# test scenario)" \context -> do
+        -- Test reading backward from middle position, equivalent to C# test "ReadStreamBackwardsFromPosition"
+        let halfwayPoint = context.eventCount // 2
+        let readFromPosition = Event.StreamPosition (halfwayPoint + 1) -- Read from position after halfway point
+        let limit = EventStore.Limit (context.eventCount) -- Large enough to get all events before position
+        eventsBackward <-
+          context.store.readStreamBackwardFrom context.entityId context.streamId readFromPosition limit
+            |> Task.mapError toText
+
+        -- Test expects exactly half the events (not including the readFromPosition)
+        -- For 10 events (0-9), reading backward from position 6 with < gives us positions 0-5 (6 events)
+        let expectedBackwardCount = halfwayPoint + 1 -- positions 0 through halfwayPoint
+        Array.length eventsBackward |> shouldBe expectedBackwardCount
+
+        -- All events should have local positions < readFromPosition (strict less than)
+        eventsBackward |> Task.forEach \event -> do
+          event.localPosition |> shouldBeLessThan readFromPosition
+
+        -- Global positions should be in decreasing order (backward reading)
+        let globalPositions = eventsBackward |> Array.map (\e -> e.globalPosition)
+        globalPositions |> shouldHaveDecreasingOrder
+
+        -- Each event should have the correct entity ID
+        eventsBackward |> Task.forEach \event -> do
+          event.entityId |> shouldBe context.entityId
+
+        -- Each event should have the correct stream ID
+        eventsBackward |> Task.forEach \event -> do
+          event.streamId |> shouldBe context.streamId
+
+        -- Verify we get the expected range of events (positions 0 through halfwayPoint)
+        let expectedPositions = Array.fromLinkedList [0 .. halfwayPoint] |> Array.map Event.StreamPosition
+        let actualPositions = eventsBackward |> Array.map (\e -> e.localPosition) |> Array.reverse
+        actualPositions |> shouldBe expectedPositions

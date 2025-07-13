@@ -132,7 +132,7 @@ readStreamBackwardFromImpl store entityId streamId position (Limit (limit)) = do
   channel
     |> DurableChannel.getAndTransform \events ->
       events
-        |> Array.takeIf (\event -> event.localPosition <= position)
+        |> Array.takeIf (\event -> event.localPosition < position)
         |> Array.reverse
         |> Array.take limit
 
