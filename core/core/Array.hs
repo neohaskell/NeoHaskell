@@ -14,6 +14,8 @@ module Array (
   isEmpty,
   length,
   get,
+  maximum,
+  minimum,
 
   -- * Manipulate
   set,
@@ -52,9 +54,11 @@ module Array (
   zip,
   sumIntegers,
   reverse,
+  flatten,
 ) where
 
 import Basics
+import Control.Monad qualified
 import Data.Foldable qualified
 import Data.Vector ((!?), (++), (//))
 import Data.Vector qualified
@@ -416,3 +420,26 @@ sumIntegers (Array vector) = Data.Vector.sum vector
 -- | Reverse an array.
 reverse :: Array a -> Array a
 reverse (Array vector) = Array (Data.Vector.reverse vector)
+
+
+-- | Flatten an array of arrays into a single array.
+flatten :: Array (Array a) -> Array a
+flatten (Array vector) = Array (Control.Monad.join (Data.Vector.map unwrap vector))
+
+
+-- | Find the maximum element in an array.
+-- If the array is empty, returns `Nothing`.
+maximum :: forall (value :: Type). (Ord value) => Array value -> Maybe value
+maximum (Array vector) =
+  if Data.Vector.null vector
+    then Nothing
+    else Just (Data.Vector.maximum vector)
+
+
+-- | Find the minimum element in an array.
+-- If the array is empty, returns `Nothing`.
+minimum :: forall (value :: Type). (Ord value) => Array value -> Maybe value
+minimum (Array vector) =
+  if Data.Vector.null vector
+    then Nothing
+    else Just (Data.Vector.minimum vector)

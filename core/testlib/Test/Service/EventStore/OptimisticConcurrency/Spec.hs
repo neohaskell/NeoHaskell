@@ -12,54 +12,59 @@ import Service.EventStore.Core qualified as EventStore
 import Task qualified
 import Test
 import Test.Service.EventStore.OptimisticConcurrency.Context qualified as Context
-import ToText (toText)
+import Uuid qualified
 
 
 spec :: Task Text EventStore -> Spec Unit
 spec newStore = do
   describe "Optimistic Concurrency" do
     beforeAll (Context.initialize newStore) do
-      it "will only allow one event to be appended, when two writers try to append at the same time" \ctx -> do
+      it "will only allow one event to be appended, when two writers try to append at the same time" \context -> do
+        entityId <- Uuid.generate |> Task.map Event.EntityId
+
+        initialEventId <- Uuid.generate
         -- First, append an initial event to position 0
         let initialEvent =
-              Event
-                { id = "event-0",
-                  streamId = ctx.streamId,
-                  position = Event.StreamPosition 0,
-                  globalPosition = Nothing
+              Event.InsertionEvent
+                { id = initialEventId,
+                  streamId = context.streamId,
+                  entityId,
+                  localPosition = Event.StreamPosition 0
                 }
 
         initialEvent
-          |> ctx.store.appendToStream ctx.streamId (Event.StreamPosition 0)
+          |> context.store.appendToStream
           |> Task.mapError toText
           |> discard
 
         -- Create two identical events both expecting to append at position 1
+        event1Id <- Uuid.generate
         let event1 =
-              Event
-                { id = "event-1-writer1",
-                  streamId = ctx.streamId,
-                  position = Event.StreamPosition 1,
-                  globalPosition = Nothing
+              Event.InsertionEvent
+                { id = event1Id,
+                  streamId = context.streamId,
+                  entityId,
+                  localPosition = Event.StreamPosition 1
                 }
 
+        event2Id <- Uuid.generate
         let event2 =
-              Event
-                { id = "event-1-writer2",
-                  streamId = ctx.streamId,
-                  position = Event.StreamPosition 1,
-                  globalPosition = Nothing
+              Event.InsertionEvent
+                { id = event2Id,
+                  streamId = context.streamId,
+                  entityId,
+                  localPosition = Event.StreamPosition 1
                 }
 
         let event1Task =
               event1
-                |> ctx.store.appendToStream ctx.streamId (Event.StreamPosition 1)
+                |> context.store.appendToStream
                 |> discard
                 |> Task.asResult
 
         let event2Task =
               event2
-                |> ctx.store.appendToStream ctx.streamId (Event.StreamPosition 1)
+                |> context.store.appendToStream
                 |> discard
                 |> Task.asResult
 
@@ -72,7 +77,7 @@ spec newStore = do
 
         -- Read back all events to verify
         events <-
-          ctx.store.readStreamForwardFrom ctx.streamId (Event.StreamPosition 0) (EventStore.Limit (Positive 10))
+          context.store.readStreamForwardFrom entityId context.streamId (Event.StreamPosition 0) (EventStore.Limit (10))
             |> Task.mapError toText
 
         -- We should have exactly 2 events (initial + one successful append)
@@ -84,12 +89,88 @@ spec newStore = do
         events
           |> Array.get 0
           |> Maybe.map (\event -> event.id)
-          |> Maybe.withDefault ("No event found")
-          |> shouldBe "event-0"
+          |> shouldBe (Just initialEventId)
 
         -- The second event should be one of our concurrent events
         events
           |> Array.get 1
           |> Maybe.map (\event -> event.id)
-          |> Maybe.withDefault ("No event found")
-          |> shouldStartWith "event-1-writer"
+          |> shouldSatisfy (\id -> id == Just event1Id || id == Just event2Id)
+
+      it "gives consistency error when stream position is not up to date" \context -> do
+        entityId <- Uuid.generate |> Task.map Event.EntityId
+
+        -- Insert 5 events to get the stream to position 5
+        let insertEventAtPosition position = do
+              eventId <- Uuid.generate
+              let event =
+                    Event.InsertionEvent
+                      { id = eventId,
+                        streamId = context.streamId,
+                        entityId,
+                        localPosition = Event.StreamPosition position
+                      }
+              event
+                |> context.store.appendToStream
+                |> Task.mapError toText
+
+        -- Insert events at positions 0, 1, 2, 3, 4
+        Array.fromLinkedList [0, 1, 2, 3, 4]
+          |> Task.mapArray insertEventAtPosition
+          |> discard
+
+        -- Try to insert at an outdated position (position 2, when current is 5)
+        -- This should fail with ConcurrencyConflict
+        staleEventId <- Uuid.generate
+        let staleEvent =
+              Event.InsertionEvent
+                { id = staleEventId,
+                  streamId = context.streamId,
+                  entityId,
+                  localPosition = Event.StreamPosition 2
+                }
+
+        staleResult <-
+          staleEvent
+            |> context.store.appendToStream
+            |> Task.asResult
+
+        -- Should fail with ConcurrencyConflict
+        staleResult
+          |> Result.isErr
+          |> shouldBe True
+
+        -- Try to insert at the correct position (position 5)
+        -- This should succeed
+        correctEventId <- Uuid.generate
+        let correctEvent =
+              Event.InsertionEvent
+                { id = correctEventId,
+                  streamId = context.streamId,
+                  entityId,
+                  localPosition = Event.StreamPosition 5
+                }
+
+        correctResult <-
+          correctEvent
+            |> context.store.appendToStream
+            |> Task.mapError toText
+
+        -- Should succeed and have the correct local position
+        correctResult.localPosition
+          |> shouldBe (Event.StreamPosition 5)
+
+        -- Verify final stream state has 6 events
+        finalEvents <-
+          context.store.readStreamForwardFrom entityId context.streamId (Event.StreamPosition 0) (EventStore.Limit 10)
+            |> Task.mapError toText
+
+        finalEvents
+          |> Array.length
+          |> shouldBe 6
+
+        -- Last event should be our correctly inserted event
+        finalEvents
+          |> Array.get 5
+          |> Maybe.map (\event -> event.id)
+          |> shouldBe (Just correctEventId)
