@@ -157,6 +157,9 @@ library
       Test.Service.EventStore.ReadAllForwardsFromStart.Context,
       Test.Service.EventStore.ReadAllBackwardsFromEnd.Spec,
       Test.Service.EventStore.ReadAllBackwardsFromEnd.Context,
+      Test.Service.EventStore.Subscriptions.Spec,
+      Test.Service.EventStore.Subscriptions.SimpleSpec,
+      Test.Service.EventStore.Subscriptions.Context,
 
     -- other-modules:
     -- other-extensions:

@@ -1,0 +1,61 @@
+module Test.Service.EventStore.Subscriptions.SimpleSpec (spec) where
+
+import Array qualified
+import ConcurrentVar qualified
+import Core
+import Service.Event (Event (..))
+import Service.Event qualified as Event
+import Service.EventStore (EventStore (..))
+import Service.EventStore.Core qualified as EventStore
+import Task qualified
+import Test
+import Uuid qualified
+
+
+spec :: Task Text EventStore -> Spec Unit
+spec newStore = do
+  describe "Event Store Subscriptions" do
+    it "can subscribe and receive events" \_ -> do
+      store <- newStore
+
+      -- Create test data
+      streamId <- Uuid.generate |> Task.map Event.StreamId
+      entityId <- Uuid.generate |> Task.map Event.EntityId
+      eventId <- Uuid.generate
+
+      let testEvent =
+            Event.InsertionEvent
+              { id = eventId,
+                streamId,
+                entityId,
+                localPosition = Event.StreamPosition 0
+              }
+
+      -- Create a shared variable to collect received events
+      receivedEvents <- ConcurrentVar.containing (Array.empty :: Array Event)
+
+      -- Define subscriber function that collects events
+      let subscriber event = do
+            receivedEvents |> ConcurrentVar.modify (Array.push event)
+            Task.yield () :: Task EventStore.Error Unit
+
+      -- Subscribe to all events
+      subscriptionId <-
+        store.subscribeToAllEvents subscriber
+          |> Task.mapError toText
+
+      -- Append test event
+      store.appendToStream testEvent
+        |> Task.mapError toText
+        |> discard
+
+      -- Check that we received the event
+      received <- ConcurrentVar.get receivedEvents
+      received
+        |> Array.length
+        |> shouldBe 1
+
+      -- Clean up subscription
+      store.unsubscribe subscriptionId
+        |> Task.mapError toText
+        |> discard
