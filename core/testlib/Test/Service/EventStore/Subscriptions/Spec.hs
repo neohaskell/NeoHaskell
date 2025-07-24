@@ -4,6 +4,7 @@ import Array qualified
 import AsyncTask qualified
 import ConcurrentVar qualified
 import Core
+import Result qualified
 import Service.Event (Event (..))
 import Service.Event qualified as Event
 import Service.EventStore (EventStore (..))
@@ -228,11 +229,7 @@ spec newStore = do
 
         -- Event store operation should succeed
         appendResult
-          |> shouldSatisfy
-            ( \result -> case result of
-                Ok _ -> True
-                Err _ -> False
-            )
+          |> shouldSatisfy Result.isOk
 
         -- Wait a bit for async processing
         AsyncTask.sleep 50 |> Task.mapError toText
