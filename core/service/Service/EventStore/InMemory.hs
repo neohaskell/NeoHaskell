@@ -3,6 +3,7 @@ module Service.EventStore.InMemory (
 ) where
 
 import Array qualified
+import AsyncTask qualified
 import ConcurrentVar qualified
 import Core
 import DurableChannel qualified
@@ -12,6 +13,7 @@ import Service.Event
 import Service.Event qualified as Event
 import Service.EventStore.Core
 import Task qualified
+import Uuid qualified
 
 
 -- | For the in-memory event store, we will use a ConcurrentVar that stores
@@ -22,24 +24,55 @@ new = do
   store <- newEmptyStreamStore
   let eventStore =
         EventStore
-          { appendToStream = appendToStreamImpl store,
+          { appendToStream = appendToStreamWithNotification store,
             readStreamForwardFrom = readStreamForwardFromImpl store,
             readStreamBackwardFrom = readStreamBackwardFromImpl store,
             readAllStreamEvents = readAllStreamEventsImpl store,
             readAllEventsForwardFrom = readAllEventsForwardFromImpl store,
             readAllEventsBackwardFrom = readAllEventsBackwardFromImpl store,
             readAllEventsForwardFromFiltered = readAllEventsForwardFromFilteredImpl store,
-            readAllEventsBackwardFromFiltered = readAllEventsBackwardFromFilteredImpl store
+            readAllEventsBackwardFromFiltered = readAllEventsBackwardFromFilteredImpl store,
+            subscribeToAllEvents = subscribeToAllEventsImpl store,
+            subscribeToAllEventsFromPosition = subscribeToAllEventsFromPositionImpl store,
+            subscribeToAllEventsFromStart = subscribeToAllEventsFromStartImpl store,
+            subscribeToEntityEvents = subscribeToEntityEventsImpl store,
+            subscribeToStreamEvents = subscribeToStreamEventsImpl store,
+            unsubscribe = unsubscribeImpl store
           }
   Task.yield eventStore
 
 
 -- PRIVATE
 
+appendToStreamWithNotification ::
+  StreamStore ->
+  InsertionEvent ->
+  Task Error Event
+appendToStreamWithNotification store event = do
+  finalEvent <- appendToStreamImpl store event
+  -- Notify subscribers AFTER the event has been successfully stored and locks are released
+  notifySubscribers store finalEvent
+  Task.yield finalEvent
+
+
 data StreamStore = StreamStore
   { globalStream :: (DurableChannel Event),
     streams :: ConcurrentVar (Map (EntityId, StreamId) (DurableChannel Event)),
-    globalLock :: Lock
+    globalLock :: Lock,
+    subscriptions :: ConcurrentVar (Map SubscriptionId Subscription)
+  }
+
+
+data SubscriptionType
+  = AllEvents
+  | EntityEvents EntityId
+  | StreamEvents EntityId StreamId
+  deriving (Eq, Show)
+
+
+data Subscription = Subscription
+  { subscriptionType :: SubscriptionType,
+    handler :: Event -> Task Error Unit
   }
 
 
@@ -48,7 +81,8 @@ newEmptyStreamStore = do
   globalLock <- Lock.new
   globalStream <- DurableChannel.new
   streams <- ConcurrentVar.containing Map.empty
-  Task.yield StreamStore {globalLock, streams, globalStream}
+  subscriptions <- ConcurrentVar.containing Map.empty
+  Task.yield StreamStore {globalLock, streams, globalStream, subscriptions}
 
 
 -- | Idempotent stream creation.
@@ -98,7 +132,8 @@ appendToStreamImpl store event = do
     channel |> DurableChannel.checkAndWrite appendCondition finalEvent
 
   if hasWritten
-    then Task.yield finalEvent
+    then do
+      Task.yield finalEvent
     else
       (ConcurrencyConflict streamId expectedPosition)
         |> Task.throw
@@ -213,3 +248,176 @@ readAllEventsBackwardFromFilteredImpl store (StreamPosition (position)) (Limit (
     |> Array.takeIf (\event -> entityIds |> Array.any (\entityId -> entityId == event.entityId))
     |> Array.take limit
     |> Task.yield
+
+
+-- SUBSCRIPTION IMPLEMENTATIONS
+
+subscribeToAllEventsImpl ::
+  StreamStore ->
+  (Event -> Task Error Unit) ->
+  Task Error SubscriptionId
+subscribeToAllEventsImpl store handler = do
+  subscriptionId <- generateSubscriptionId
+  let subscription = Subscription {subscriptionType = AllEvents, handler}
+  store.subscriptions
+    |> ConcurrentVar.modify (Map.set subscriptionId subscription)
+    |> Lock.with store.globalLock
+  Task.yield subscriptionId
+
+
+subscribeToAllEventsFromPositionImpl ::
+  StreamStore ->
+  StreamPosition ->
+  (Event -> Task Error Unit) ->
+  Task Error SubscriptionId
+subscribeToAllEventsFromPositionImpl store fromPosition handler = do
+  subscriptionId <- generateSubscriptionId
+  let subscription = Subscription {subscriptionType = AllEvents, handler}
+
+  -- First, add the subscription for future events
+  store.subscriptions
+    |> ConcurrentVar.modify (Map.set subscriptionId subscription)
+    |> Lock.with store.globalLock
+
+  -- Then, deliver historical events from the specified position
+  deliverHistoricalEvents store fromPosition handler
+
+  Task.yield subscriptionId
+
+
+subscribeToAllEventsFromStartImpl ::
+  StreamStore ->
+  (Event -> Task Error Unit) ->
+  Task Error SubscriptionId
+subscribeToAllEventsFromStartImpl store handler = do
+  subscriptionId <- generateSubscriptionId
+  let subscription = Subscription {subscriptionType = AllEvents, handler}
+
+  -- First, add the subscription for future events
+  store.subscriptions
+    |> ConcurrentVar.modify (Map.set subscriptionId subscription)
+    |> Lock.with store.globalLock
+
+  -- Then, deliver ALL historical events from the very beginning (position -1)
+  deliverHistoricalEventsFromStart store handler subscriptionId
+
+  Task.yield subscriptionId
+
+
+subscribeToEntityEventsImpl ::
+  StreamStore ->
+  EntityId ->
+  (Event -> Task Error Unit) ->
+  Task Error SubscriptionId
+subscribeToEntityEventsImpl store entityId handler = do
+  subscriptionId <- generateSubscriptionId
+  let subscription = Subscription {subscriptionType = EntityEvents entityId, handler}
+  store.subscriptions
+    |> ConcurrentVar.modify (Map.set subscriptionId subscription)
+    |> Lock.with store.globalLock
+  Task.yield subscriptionId
+
+
+subscribeToStreamEventsImpl ::
+  StreamStore ->
+  EntityId ->
+  StreamId ->
+  (Event -> Task Error Unit) ->
+  Task Error SubscriptionId
+subscribeToStreamEventsImpl store entityId streamId handler = do
+  subscriptionId <- generateSubscriptionId
+  let subscription = Subscription {subscriptionType = StreamEvents entityId streamId, handler}
+  store.subscriptions
+    |> ConcurrentVar.modify (Map.set subscriptionId subscription)
+    |> Lock.with store.globalLock
+  Task.yield subscriptionId
+
+
+unsubscribeImpl ::
+  StreamStore ->
+  SubscriptionId ->
+  Task Error Unit
+unsubscribeImpl store subscriptionId = do
+  store.subscriptions
+    |> ConcurrentVar.modify (Map.remove subscriptionId)
+    |> Lock.with store.globalLock
+
+
+-- SUBSCRIPTION HELPER FUNCTIONS
+
+generateSubscriptionId :: Task _ SubscriptionId
+generateSubscriptionId = do
+  uuid <- Uuid.generate
+  uuid |> toText |> SubscriptionId |> Task.yield
+
+
+notifySubscribers :: forall err. (Show err) => StreamStore -> Event -> Task err Unit
+notifySubscribers store event = do
+  -- Get subscriptions snapshot without locks
+  allSubscriptions <- ConcurrentVar.peek store.subscriptions
+  let relevantSubscriptions =
+        allSubscriptions
+          |> Map.entries
+          |> Array.takeIf (\(_, subscription) -> shouldNotify subscription.subscriptionType event)
+
+  -- Notify each subscriber in fire-and-forget manner using async tasks
+  relevantSubscriptions
+    |> Task.mapArray (\(_, subscription) -> AsyncTask.run (notifySubscriber subscription event))
+    |> discard
+
+
+shouldNotify :: SubscriptionType -> Event -> Bool
+shouldNotify subscriptionType event =
+  case subscriptionType of
+    AllEvents -> True
+    EntityEvents entityId -> event.entityId == entityId
+    StreamEvents entityId streamId -> event.entityId == entityId && event.streamId == streamId
+
+
+notifySubscriber :: Subscription -> Event -> Task _ Unit
+notifySubscriber subscription event = do
+  -- Execute subscriber handler and catch any errors to prevent failures from affecting the event store
+  result <- subscription.handler event |> Task.asResult
+  case result of
+    Ok _ -> Task.yield ()
+    Err _ -> Task.yield () -- Silently ignore subscriber errors to maintain store reliability
+
+
+deliverHistoricalEvents :: StreamStore -> StreamPosition -> (Event -> Task Error Unit) -> Task _ Unit
+deliverHistoricalEvents store fromPosition handler = do
+  -- Read all events from the specified position onwards
+  let (StreamPosition startPos) = fromPosition
+  allGlobalEvents <- store.globalStream |> DurableChannel.getAndTransform unchanged
+
+  let historicalEvents =
+        allGlobalEvents
+          |> Array.takeIf
+            ( \event -> do
+                let (StreamPosition eventPos) = event.globalPosition
+                eventPos > startPos
+            )
+
+  -- Deliver each historical event to the subscriber synchronously
+  historicalEvents
+    |> Task.mapArray (\event -> notifySubscriberSafely handler event)
+    |> discard
+
+
+deliverHistoricalEventsFromStart :: StreamStore -> (Event -> Task Error Unit) -> SubscriptionId -> Task _ Unit
+deliverHistoricalEventsFromStart store handler _subscriptionId = do
+  -- Read ALL events from the very beginning (no position filter)
+  allGlobalEvents <- store.globalStream |> DurableChannel.getAndTransform unchanged
+
+  -- Deliver each historical event to the subscriber synchronously
+  allGlobalEvents
+    |> Task.mapArray (\event -> notifySubscriberSafely handler event)
+    |> discard
+
+
+notifySubscriberSafely :: (Event -> Task Error Unit) -> Event -> Task _ Unit
+notifySubscriberSafely handler event = do
+  -- Execute subscriber handler and catch any errors
+  result <- handler event |> Task.asResult
+  case result of
+    Ok _ -> Task.yield ()
+    Err _ -> Task.yield () -- Silently ignore subscriber errors

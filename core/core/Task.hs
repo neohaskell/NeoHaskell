@@ -20,6 +20,7 @@ module Task (
   recover,
   asResult,
   fromIOResult,
+  forever,
 ) where
 
 import Applicable (Applicative (pure))
@@ -224,3 +225,17 @@ when condition task =
     then task
     else Applicable.pure unit
 {-# INLINE when #-}
+
+
+-- | Run a task indefinitely until it throws an exception
+-- The exception will be caught and returned as an error
+forever :: Task err Unit -> Task err Unit
+forever task = Task do
+  let loop = do
+        result <- Monad.liftIO (Except.runExceptT (runTask task))
+        case result of
+          Either.Left err -> Except.throwE err -- Propagate the error and exit the loop
+          Either.Right _ -> loop -- Continue the loop
+      {-# INLINE loop #-}
+  loop
+{-# INLINE forever #-}

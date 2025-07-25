@@ -1,6 +1,6 @@
 cabal-version:      3.4
 name:               nhcore
-version:            0.6.0
+version:            0.7.0
 synopsis:           Core Library for NeoHaskell
 description:        NeoHaskell is a dialect of Haskell that is focused on newcomer-friendliness and productivity.
 homepage:           https://neohaskell.org
@@ -157,6 +157,9 @@ library
       Test.Service.EventStore.ReadAllForwardsFromStart.Context,
       Test.Service.EventStore.ReadAllBackwardsFromEnd.Spec,
       Test.Service.EventStore.ReadAllBackwardsFromEnd.Context,
+      Test.Service.EventStore.Subscriptions.Spec,
+      Test.Service.EventStore.Subscriptions.SimpleSpec,
+      Test.Service.EventStore.Subscriptions.Context,
 
     -- other-modules:
     -- other-extensions:
