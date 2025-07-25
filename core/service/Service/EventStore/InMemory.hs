@@ -280,7 +280,7 @@ subscribeToAllEventsFromPositionImpl store fromPosition handler = do
     |> Lock.with store.globalLock
 
   -- Then, deliver historical events from the specified position
-  deliverHistoricalEvents store fromPosition handler subscriptionId
+  deliverHistoricalEvents store fromPosition handler
 
   Task.yield subscriptionId
 
@@ -383,8 +383,8 @@ notifySubscriber subscription event = do
     Err _ -> Task.yield () -- Silently ignore subscriber errors to maintain store reliability
 
 
-deliverHistoricalEvents :: StreamStore -> StreamPosition -> (Event -> Task Error Unit) -> SubscriptionId -> Task _ Unit
-deliverHistoricalEvents store fromPosition handler _subscriptionId = do
+deliverHistoricalEvents :: StreamStore -> StreamPosition -> (Event -> Task Error Unit) -> Task _ Unit
+deliverHistoricalEvents store fromPosition handler = do
   -- Read all events from the specified position onwards
   let (StreamPosition startPos) = fromPosition
   allGlobalEvents <- store.globalStream |> DurableChannel.getAndTransform unchanged
