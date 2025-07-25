@@ -1,6 +1,7 @@
 module Test.Service.EventStore.Subscriptions.SimpleSpec (spec) where
 
 import Array qualified
+import AsyncTask qualified
 import ConcurrentVar qualified
 import Core
 import Service.Event (Event (..))
@@ -48,6 +49,9 @@ spec newStore = do
       store.appendToStream testEvent
         |> Task.mapError toText
         |> discard
+
+      -- Wait briefly for async notifications to complete
+      AsyncTask.sleep 10 |> Task.mapError (\_ -> "timeout")
 
       -- Check that we received the event
       received <- ConcurrentVar.get receivedEvents
