@@ -183,9 +183,14 @@ indices =
 -- | Initialize an array. @initialize n f@ creates an array of length @n@ with
 -- the element at index @i@ initialized to the result of @(f i)@.
 --
--- > initialize 4 identity    == fromLinkedList [0,1,2,3]
--- > initialize 4 (\n -> n*n) == fromLinkedList [0,1,4,9]
--- > initialize 4 (always 0)  == fromLinkedList [0,0,0,0]
+-- >>> initialize 4 identity
+-- Array [0,1,2,3]
+
+-- > initialize 4 (\n -> n*n)
+-- Array [0,1,4,9]
+
+-- > initialize 4 (always 0)
+-- Array [0,0,0,0]
 initialize :: Int -> (Int -> a) -> Array a
 initialize n f =
   Array
@@ -196,9 +201,12 @@ initialize n f =
 
 -- | Creates an array with a given length, filled with a default element.
 --
--- > repeat 5 0     == fromLinkedList [0,0,0,0,0]
--- > repeat 3 "cat" == fromLinkedList ["cat","cat","cat"]
---
+-- >>> repeat 5 (0 :: Int)
+-- Array [0,0,0,0,0]
+
+-- >>> repeat 3 "cat"
+-- Array ["cat","cat","cat"]
+
 -- Notice that @repeat 3 x@ is the same as @initialize 3 (always x)@.
 repeat :: Int -> a -> Array a
 repeat n element =
@@ -207,6 +215,10 @@ repeat n element =
 
 
 -- | Wraps an element into an array
+
+-- >>> wrap (0 :: Int)
+-- Array [0]
+
 wrap :: a -> Array a
 wrap element = fromLinkedList [element]
 
@@ -219,18 +231,27 @@ fromLinkedList =
 
 -- | Return @Just@ the element at the index or @Nothing@ if the index is out of range.
 --
--- > get  0   (fromLinkedList [0,1,2]) == Just 0
--- > get  2   (fromLinkedList [0,1,2]) == Just 2
--- > get  5   (fromLinkedList [0,1,2]) == Nothing
--- > get (-1) (fromLinkedList [0,1,2]) == Nothing
+-- >>> get 0 (fromLinkedList [0,1,2] :: Array Int)
+-- Just 0
+
+-- >>> get 2   (fromLinkedList [0,1,2] :: Array Int)
+-- Just 2
+-- >>> get 5   (fromLinkedList [0,1,2] :: Array Int)
+-- Nothing
+-- >>> get (-1) (fromLinkedList [0,1,2] :: Array Int)
+-- Nothing
+
 get :: Int -> Array a -> Maybe a
 get i array = unwrap array !? Prelude.fromIntegral i
 
 
 -- | Return @Just@ the first element or @Nothing@ if the index is empty.
 --
--- > first (fromLinkedList [0,1,2]) == Just 0
--- > first (fromLinkedList [])      == Nothing
+-- >>> first (fromLinkedList [0,1,2] :: Array Int)
+-- Just 0
+
+-- > first (fromLinkedList [] :: Array Int)
+-- Nothing
 first :: Array a -> Maybe a
 first = unwrap .> (!? 0)
 
