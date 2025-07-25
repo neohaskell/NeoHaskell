@@ -9,6 +9,7 @@ module Map (
   merge,
   entries,
   contains,
+  remove,
 ) where
 
 import Accumulator (Accumulator)
@@ -80,3 +81,8 @@ entries self = HaskellMap.toList self |> Array.fromLinkedList
 contains :: (Eq key, Ord key) => key -> Map key value -> Bool
 contains key map = HaskellMap.member key map
 {-# INLINE contains #-}
+
+
+-- | Removes an element from the map
+remove :: (Ord key) => key -> Map key value -> Map key value
+remove key self = HaskellMap.delete key self

@@ -43,7 +43,10 @@ spec newStore = do
           |> Task.mapArray appendEvent
           |> discard
 
-        -- Check that we received the events (they should be there immediately with synchronous notification)
+        -- Wait briefly for async notifications to complete
+        AsyncTask.sleep 10 |> Task.mapError (\_ -> "timeout")
+
+        -- Check that we received the events
         received <- ConcurrentVar.get receivedEvents
         received
           |> Array.length
@@ -112,7 +115,7 @@ spec newStore = do
           |> discard
 
         -- Wait a bit for async processing
-        AsyncTask.sleep 50 |> Task.mapError toText
+        AsyncTask.sleep 50 |> Task.mapError (\_ -> "timeout")
 
         -- Check that we only received events for our entity
         received <- ConcurrentVar.get receivedEvents
@@ -181,7 +184,7 @@ spec newStore = do
           |> discard
 
         -- Wait a bit for async processing
-        AsyncTask.sleep 50 |> Task.mapError toText
+        AsyncTask.sleep 50 |> Task.mapError (\_ -> "timeout")
 
         -- Check that we only received events for our stream
         received <- ConcurrentVar.get receivedEvents
@@ -232,7 +235,7 @@ spec newStore = do
           |> shouldSatisfy Result.isOk
 
         -- Wait a bit for async processing
-        AsyncTask.sleep 50 |> Task.mapError toText
+        AsyncTask.sleep 50 |> Task.mapError (\_ -> "timeout")
 
         -- Event should still be readable from store
         events <-
@@ -303,7 +306,7 @@ spec newStore = do
           |> discard
 
         -- Wait for async processing
-        AsyncTask.sleep 50 |> Task.mapError toText
+        AsyncTask.sleep 50 |> Task.mapError (\_ -> "timeout")
 
         -- All subscribers should have received all events
         received1 <- ConcurrentVar.get subscriber1Events
@@ -355,7 +358,7 @@ spec newStore = do
             Task.throw "No test event"
 
         -- Wait for processing
-        AsyncTask.sleep 50 |> Task.mapError toText
+        AsyncTask.sleep 50 |> Task.mapError (\_ -> "timeout")
 
         -- Unsubscribe
         context.store.unsubscribe subscriptionId
@@ -379,7 +382,7 @@ spec newStore = do
             Task.throw "No test event"
 
         -- Wait for potential processing
-        AsyncTask.sleep 50 |> Task.mapError toText
+        AsyncTask.sleep 50 |> Task.mapError (\_ -> "timeout")
 
         -- Should only have received the first event
         received <- ConcurrentVar.get receivedEvents
@@ -414,7 +417,7 @@ spec newStore = do
           |> discard
 
         -- Wait for all async processing to complete
-        AsyncTask.sleep 100 |> Task.mapError toText
+        AsyncTask.sleep 100 |> Task.mapError (\_ -> "timeout")
 
         -- Verify all events were received
         received <- ConcurrentVar.get receivedEvents
@@ -466,7 +469,7 @@ spec newStore = do
         subscriptionId <- context.store.subscribeToAllEvents subscriber |> Task.mapError toText
 
         -- Wait a bit to ensure subscription is active
-        AsyncTask.sleep 10 |> Task.mapError toText
+        AsyncTask.sleep 10 |> Task.mapError (\_ -> "timeout")
 
         -- Insert events for both entities AFTER subscribing (these SHOULD be received)
         postSubscriptionEvents1 <- createTestEventsForEntity stream1Id entity1Id eventCount eventCount
@@ -477,7 +480,7 @@ spec newStore = do
         postSubscriptionEvents2 |> Task.mapArray appendEvent |> discard
 
         -- Wait for events to be processed
-        AsyncTask.sleep 100 |> Task.mapError toText
+        AsyncTask.sleep 100 |> Task.mapError (\_ -> "timeout")
 
         -- Verify we received exactly the post-subscription events
         received <- ConcurrentVar.get receivedEvents
@@ -530,7 +533,7 @@ spec newStore = do
           context.store.subscribeToAllEventsFromPosition positionAfterFirstBatch subscriber |> Task.mapError toText
 
         -- Wait a bit for subscription to process historical events
-        AsyncTask.sleep 50 |> Task.mapError toText
+        AsyncTask.sleep 50 |> Task.mapError (\_ -> "timeout")
 
         -- Insert SECOND batch of events (these should definitely be received)
         secondBatchEvents1 <- createTestEventsForEntity stream1Id entity1Id eventCount eventCount
@@ -541,7 +544,7 @@ spec newStore = do
         secondBatchEvents2 |> Task.mapArray appendEvent |> discard
 
         -- Wait for events to be processed
-        AsyncTask.sleep 100 |> Task.mapError toText
+        AsyncTask.sleep 100 |> Task.mapError (\_ -> "timeout")
 
         -- Verify we received exactly eventCount * 2 events (from second batch only)
         received <- ConcurrentVar.get receivedEvents

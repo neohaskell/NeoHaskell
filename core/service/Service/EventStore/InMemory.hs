@@ -3,6 +3,7 @@ module Service.EventStore.InMemory (
 ) where
 
 import Array qualified
+import AsyncTask qualified
 import ConcurrentVar qualified
 import Core
 import DurableChannel qualified
@@ -338,13 +339,7 @@ unsubscribeImpl ::
   Task Error Unit
 unsubscribeImpl store subscriptionId = do
   store.subscriptions
-    |> ConcurrentVar.modify
-      ( \subs ->
-          subs
-            |> Map.entries
-            |> Array.takeIf (\(id, _) -> id != subscriptionId)
-            |> Array.reduce (\(k, v) acc -> Map.set k v acc) Map.empty
-      )
+    |> ConcurrentVar.modify (Map.remove subscriptionId)
     |> Lock.with store.globalLock
 
 
@@ -356,7 +351,7 @@ generateSubscriptionId = do
   uuid |> toText |> SubscriptionId |> Task.yield
 
 
-notifySubscribers :: StreamStore -> Event -> Task _ Unit
+notifySubscribers :: forall err. (Show err) => StreamStore -> Event -> Task err Unit
 notifySubscribers store event = do
   -- Get subscriptions snapshot without locks
   allSubscriptions <- ConcurrentVar.peek store.subscriptions
@@ -365,9 +360,9 @@ notifySubscribers store event = do
           |> Map.entries
           |> Array.takeIf (\(_, subscription) -> shouldNotify subscription.subscriptionType event)
 
-  -- Notify each subscriber, catching errors to prevent them from affecting the store
+  -- Notify each subscriber in fire-and-forget manner using async tasks
   relevantSubscriptions
-    |> Task.mapArray (\(_, subscription) -> notifySubscriber subscription event)
+    |> Task.mapArray (\(_, subscription) -> AsyncTask.run (notifySubscriber subscription event))
     |> discard
 
 
