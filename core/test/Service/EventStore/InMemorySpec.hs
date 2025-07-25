@@ -5,7 +5,6 @@ import Service.EventStore.InMemory qualified as InMemory
 import Task qualified
 import Test
 import Test.Service.EventStore qualified as EventStore
-import ToText (toText)
 
 
 spec :: Spec Unit

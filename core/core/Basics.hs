@@ -11,9 +11,9 @@ module Basics (
   -- * Math
   Int,
   Float,
-  Positive (..),
-  makePositive,
-  makePositiveOrPanic,
+  Natural (..),
+  makeNatural,
+  makeNaturalOrPanic,
   (+),
   (-),
   (*),
@@ -123,6 +123,7 @@ module Basics (
   Type,
   Control.Monad.forever,
   GHC.Generics.Generic,
+  GHC.Stack.HasCallStack,
 ) where
 
 import Applicable (Applicable)
@@ -238,27 +239,27 @@ type Int = Prelude.Int
 type Float = Prelude.Double
 
 
--- | A @Positive@ number is a number that is greater than zero. It is used to
+-- | A @Natural@ number is a number that is greater than zero. It is used to
 -- represent things like the length of a list or the number of items in a
 -- collection. It is a wrapper around @a@. But the constructor is not exported,
--- so you cannot create a @Positive@ number directly, except by using the constructor
-newtype Positive a = Positive a
+-- so you cannot create a @Natural@ number directly, except by using the constructor
+newtype Natural a = Natural a
   deriving
     (Prelude.Eq, Prelude.Ord, Prelude.Show, Prelude.Read, Prelude.Num, Prelude.Real, Prelude.Enum, Prelude.Integral)
 
 
--- | Create a Positive number from a regular number.
+-- | Create a Natural number from a regular number.
 -- Returns Nothing if the input is not positive ( > 0).
-makePositive :: (Prelude.Ord number, Prelude.Num number) => number -> Prelude.Maybe (Positive number)
-makePositive number = if number > 0 then Prelude.Just (Positive number) else Prelude.Nothing
+makeNatural :: (Prelude.Ord number, Prelude.Num number) => number -> Prelude.Maybe (Natural number)
+makeNatural number = if number > 0 then Prelude.Just (Natural number) else Prelude.Nothing
 
 
--- | Create a Positive number from a regular number.
+-- | Create a Natural number from a regular number.
 -- Panics if the input is not positive.
-makePositiveOrPanic :: (Prelude.Ord number, Prelude.Num number, Prelude.Show number) => number -> Positive number
-makePositiveOrPanic number =
+makeNaturalOrPanic :: (Prelude.Ord number, Prelude.Num number, Prelude.Show number) => number -> Natural number
+makeNaturalOrPanic number =
   if number > 0
-    then Positive number
+    then Natural number
     else panic ("Expected a positive number, but got: " Prelude.<> Text.pack (Prelude.show number))
 
 

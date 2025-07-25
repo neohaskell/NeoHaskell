@@ -1,29 +1,44 @@
 module Service.Event (
   Event (..),
+  InsertionEvent (..),
   StreamId (..),
   StreamPosition (..),
+  EntityId (..),
+  fromInsertionEvent,
 ) where
 
 import Core
+import Service.Event.EntityId (EntityId (..))
+import Service.Event.StreamId (StreamId (..))
+import Service.Event.StreamPosition (StreamPosition (..))
 
 
 data Event = Event
-  { id :: Text, -- FIXME: Use Uuid
+  { id :: Uuid,
     streamId :: StreamId,
-    position :: StreamPosition, -- Local position in stream
-
-    -- | Global position across all streams. Nothing when event is created
-    -- but not yet persisted to the global stream; Just when assigned a
-    -- position in the global event ordering. Used for global event queries
-    -- and maintaining causal ordering across different streams.
-    globalPosition :: Maybe StreamPosition
+    entityId :: EntityId,
+    localPosition :: StreamPosition,
+    globalPosition :: StreamPosition
   }
   deriving (Eq, Show, Ord, Generic)
 
 
-newtype StreamId = StreamId Text
+data InsertionEvent = InsertionEvent
+  { id :: Uuid,
+    streamId :: StreamId,
+    entityId :: EntityId,
+    localPosition :: StreamPosition
+  }
   deriving (Eq, Show, Ord, Generic)
 
 
-newtype StreamPosition = StreamPosition (Positive Int)
-  deriving (Eq, Show, Ord, Generic)
+-- | Convert an insertion event to an event with a global position.
+fromInsertionEvent :: StreamPosition -> InsertionEvent -> Event
+fromInsertionEvent globalPosition event =
+  Event
+    { id = event.id,
+      streamId = event.streamId,
+      entityId = event.entityId,
+      localPosition = event.localPosition,
+      globalPosition
+    }

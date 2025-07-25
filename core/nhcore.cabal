@@ -22,8 +22,6 @@ common common_cfg
       ghc-prim ,
       async ,
       aeson ,
-      brick ,
-      vty ,
       bytestring ,
       data-default ,
       text ,
@@ -98,7 +96,6 @@ library
       Unknown,
       Var,
       Task,
-      Toml,
 
       -- System
       File,
@@ -127,6 +124,9 @@ library
       -- Service
       Trigger,
       Service.Event,
+      Service.Event.EntityId,
+      Service.Event.StreamId,
+      Service.Event.StreamPosition,
       Service.EventStore,
       Service.EventStore.Core,
       Service.EventStore.InMemory,
@@ -154,6 +154,10 @@ library
       Test.Service.EventStore.IndividualStreamOrdering.Context,
       Test.Service.EventStore.OptimisticConcurrency.Spec,
       Test.Service.EventStore.OptimisticConcurrency.Context,
+      Test.Service.EventStore.ReadAllForwardsFromStart.Spec,
+      Test.Service.EventStore.ReadAllForwardsFromStart.Context,
+      Test.Service.EventStore.ReadAllBackwardsFromEnd.Spec,
+      Test.Service.EventStore.ReadAllBackwardsFromEnd.Context,
 
     -- other-modules:
     -- other-extensions:
@@ -162,7 +166,6 @@ library
       concurrency,
       service,
       json,
-      toml,
       traits,
       system,
       http,
