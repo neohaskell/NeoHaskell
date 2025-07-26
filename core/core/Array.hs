@@ -13,6 +13,7 @@ module Array (
   -- * Query
   isEmpty,
   length,
+  indices,
   get,
   maximum,
   minimum,
@@ -58,6 +59,7 @@ module Array (
 ) where
 
 import Basics
+import Collection (Collection (..))
 import Control.Monad qualified
 import Data.Foldable qualified
 import Data.Vector ((!?), (++), (//))
@@ -77,6 +79,45 @@ import Prelude qualified
 -- dream up.
 newtype Array a = Array (Data.Vector.Vector a)
   deriving (Prelude.Eq, Prelude.Show, Prelude.Ord, Generic)
+
+
+instance Collection Array where
+  lengthImpl = length
+  emptyImpl = empty
+  isEmptyImpl = isEmpty
+  getImpl = get
+  setImpl = set
+  appendImpl = append
+  firstImpl = first
+  lastImpl = last
+  indicesImpl = indices
+  mapImpl = map
+  repeatImpl = repeat
+  wrapImpl = wrap
+  fromLinkedListImpl = fromLinkedList
+  pushImpl = push
+  toLinkedListImpl = toLinkedList
+  toIndexedLinkedListImpl = toIndexedLinkedList
+  reduceImpl = reduce
+  foldlImpl = foldl
+  takeIfImpl = takeIf
+  dropIfImpl = dropIf
+  indexedMapImpl = indexedMap
+  sliceImpl = slice
+  flatMapImpl = flatMap
+  foldMImpl = foldM
+  dropWhileImpl = dropWhile
+  takeWhileImpl = takeWhile
+  partitionByImpl = partitionBy
+  splitFirstImpl = splitFirst
+  anyImpl = any
+  fromLegacyImpl = fromLegacy
+  takeImpl = take
+  dropImpl = drop
+  indexedImpl = indexed
+  zipImpl = zip
+  sumIntegersImpl = sumIntegers
+  reverseImpl = reverse
 
 
 instance (QuickCheck.Arbitrary a) => QuickCheck.Arbitrary (Array a) where
@@ -101,33 +142,55 @@ unwrap (Array v) = v
 -- >>> empty :: Array Int
 -- Array []
 empty :: Array a
-empty =
-  Array Data.Vector.empty
+empty = Array Data.Vector.empty
 
 
 -- | Determine if an array is empty.
 --
--- > isEmpty empty == True
+-- >>> isEmpty empty
+-- True
+-- >>> isEmpty (Array (Data.Vector.singleton 'a'))
+-- False
+-- >>> isEmpty (Array (Data.Vector.fromList [1,2,3] :: Data.Vector.Vector Int))
+-- False
 isEmpty :: Array a -> Bool
 isEmpty = unwrap .> Data.Vector.null
 
 
 -- | Return the length of an array.
 --
--- > length (fromLinkedList [1,2,3]) == 3
+-- >>> length (Array (Data.Vector.fromList [1,2,3] :: Data.Vector.Vector Int))
+-- 3
+-- >>> length empty
+-- 0
 length :: Array a -> Int
-length =
+length = unwrap .> Data.Vector.length
+
+
+-- | The indices that are valid for subscripting the collection, in ascending order.
+--
+-- >>> indices (Array (Data.Vector.fromList [1,2,3] :: Data.Vector.Vector Int))
+-- [0,1,2]
+-- >>> indices empty
+-- []
+indices :: Array a -> [Int]
+indices =
   unwrap
-    .> Data.Vector.length
-    .> Prelude.fromIntegral
+    .> \v ->
+      Data.Vector.toList (Data.Vector.generate (Data.Vector.length v) Prelude.id)
 
 
 -- | Initialize an array. @initialize n f@ creates an array of length @n@ with
 -- the element at index @i@ initialized to the result of @(f i)@.
 --
--- > initialize 4 identity    == fromLinkedList [0,1,2,3]
--- > initialize 4 (\n -> n*n) == fromLinkedList [0,1,4,9]
--- > initialize 4 (always 0)  == fromLinkedList [0,0,0,0]
+-- >>> initialize 4 identity
+-- Array [0,1,2,3]
+
+-- > initialize 4 (\n -> n*n)
+-- Array [0,1,4,9]
+
+-- > initialize 4 (always 0)
+-- Array [0,0,0,0]
 initialize :: Int -> (Int -> a) -> Array a
 initialize n f =
   Array
@@ -138,9 +201,12 @@ initialize n f =
 
 -- | Creates an array with a given length, filled with a default element.
 --
--- > repeat 5 0     == fromLinkedList [0,0,0,0,0]
--- > repeat 3 "cat" == fromLinkedList ["cat","cat","cat"]
---
+-- >>> repeat 5 (0 :: Int)
+-- Array [0,0,0,0,0]
+
+-- >>> repeat 3 "cat"
+-- Array ["cat","cat","cat"]
+
 -- Notice that @repeat 3 x@ is the same as @initialize 3 (always x)@.
 repeat :: Int -> a -> Array a
 repeat n element =
@@ -149,6 +215,10 @@ repeat n element =
 
 
 -- | Wraps an element into an array
+
+-- >>> wrap (0 :: Int)
+-- Array [0]
+
 wrap :: a -> Array a
 wrap element = fromLinkedList [element]
 
@@ -161,20 +231,40 @@ fromLinkedList =
 
 -- | Return @Just@ the element at the index or @Nothing@ if the index is out of range.
 --
--- > get  0   (fromLinkedList [0,1,2]) == Just 0
--- > get  2   (fromLinkedList [0,1,2]) == Just 2
--- > get  5   (fromLinkedList [0,1,2]) == Nothing
--- > get (-1) (fromLinkedList [0,1,2]) == Nothing
+-- >>> get 0 (fromLinkedList [0,1,2] :: Array Int)
+-- Just 0
+
+-- >>> get 2   (fromLinkedList [0,1,2] :: Array Int)
+-- Just 2
+-- >>> get 5   (fromLinkedList [0,1,2] :: Array Int)
+-- Nothing
+-- >>> get (-1) (fromLinkedList [0,1,2] :: Array Int)
+-- Nothing
+
 get :: Int -> Array a -> Maybe a
-get i array =
-  unwrap array !? Prelude.fromIntegral i
+get i array = unwrap array !? Prelude.fromIntegral i
+
+
+-- | Return @Just@ the first element or @Nothing@ if the index is empty.
+--
+-- >>> first (fromLinkedList [0,1,2] :: Array Int)
+-- Just 0
+
+-- > first (fromLinkedList [] :: Array Int)
+-- Nothing
+first :: Array a -> Maybe a
+first = unwrap .> (!? 0)
 
 
 -- | Set the element at a particular index. Returns an updated array.
 --
 -- If the index is out of range, the array is unaltered.
 --
--- > set 1 7 (fromLinkedList [1,2,3]) == fromLinkedList [1,7,3]
+-- >>> set 1 7 (fromLinkedList [1,2,3] :: Array Int)
+-- Array [1,7,3]
+
+-- >>> set 3 7 (fromLinkedList [1,2,3] :: Array Int)
+-- Array [1,2,3]
 set :: Int -> a -> Array a -> Array a
 set i value array = Array result
  where
@@ -187,7 +277,8 @@ set i value array = Array result
 
 -- | Push an element onto the end of an array.
 --
--- > push 3 (fromLinkedList [1,2]) == fromLinkedList [1,2,3]
+-- >>> push 3 (fromLinkedList [1,2] :: Array Int)
+-- Array [1,2,3]
 push :: a -> Array a -> Array a
 push a (Array vector) =
   Array (Data.Vector.snoc vector a)
@@ -195,7 +286,8 @@ push a (Array vector) =
 
 -- | Create a list of elements from an array.
 --
--- > toLinkedList (fromLinkedList [3,5,8]) == [3,5,8]
+-- >>> toLinkedList (fromLinkedList [3,5,8] :: Array Int)
+-- [3,5,8]
 toLinkedList :: Array a -> LinkedList a
 toLinkedList = unwrap .> Data.Vector.toList
 
@@ -203,7 +295,8 @@ toLinkedList = unwrap .> Data.Vector.toList
 -- | Create an indexed list from an array. Each element of the array will be
 -- paired with its index.
 --
--- > toIndexedLinkedList (fromLinkedList ["cat","dog"]) == [(0,"cat"), (1,"dog")]
+-- > toIndexedLinkedList (fromLinkedList ["cat","dog"])
+-- [(0,"cat"), (1,"dog")]
 toIndexedLinkedList :: Array a -> LinkedList (Int, a)
 toIndexedLinkedList =
   unwrap
@@ -214,14 +307,16 @@ toIndexedLinkedList =
 
 -- | Reduce an array from the right. Read @reduce@ as fold from the right.
 --
--- > reduce (+) 0 (repeat 3 5) == 15
+-- >>> reduce (+) 0 (repeat 3 5 :: Array Int)
+-- 15
 reduce :: (a -> b -> b) -> b -> Array a -> b
 reduce f value array = Prelude.foldr f value (unwrap array)
 
 
 -- | Reduce an array from the left. Read @foldl@ as fold from the left.
 --
--- > foldl (:) [] (fromLinkedList [1,2,3]) == [3,2,1]
+-- >>> foldl (:) [] (fromLinkedList [1,2,3] :: Array Int)
+-- [3,2,1]
 foldl :: (a -> b -> b) -> b -> Array a -> b
 foldl f value array =
   Data.Foldable.foldl' (\a b -> f b a) value (unwrap array)
@@ -229,7 +324,8 @@ foldl f value array =
 
 -- | Keep elements that pass the test.
 --
--- > takeIf isEven (fromLinkedList [1,2,3,4,5,6]) == (fromLinkedList [2,4,6])
+-- >>> takeIf Prelude.even (fromLinkedList [1,2,3,4,5,6] :: Array Int)
+-- Array [2,4,6]
 takeIf :: (a -> Bool) -> Array a -> Array a
 takeIf f (Array vector) =
   Array (Data.Vector.filter f vector)
@@ -237,7 +333,8 @@ takeIf f (Array vector) =
 
 -- | Drop elements that pass the test.
 --
--- > dropIf isEven (fromLinkedList [1,2,3,4,5,6]) == (fromLinkedList [1,3,5])
+-- >>> dropIf Prelude.even (fromLinkedList [1,2,3,4,5,6] :: Array Int)
+-- Array [1,3,5]
 dropIf :: (a -> Bool) -> Array a -> Array a
 dropIf f (Array vector) =
   Array (Data.Vector.filter (f .> not) vector)
@@ -245,7 +342,8 @@ dropIf f (Array vector) =
 
 -- | Apply a function on every element in an array.
 --
--- > map sqrt (fromLinkedList [1,4,9]) == fromLinkedList [1,2,3]
+-- >>> map sqrt (fromLinkedList [1,4,9] :: Array Float)
+-- Array [1.0,2.0,3.0]
 map :: (a -> b) -> Array a -> Array b
 map f (Array vector) =
   Array (Data.Vector.map f vector)
@@ -253,7 +351,8 @@ map f (Array vector) =
 
 -- | Apply a function on every element with its index as first argument.
 --
--- > indexedMap (*) (fromLinkedList [5,5,5]) == fromLinkedList [0,5,10]
+-- >>> indexedMap (*) (fromLinkedList [5,5,5] :: Array Int)
+-- Array [0,5,10]
 indexedMap :: (Int -> a -> b) -> Array a -> Array b
 indexedMap f (Array vector) =
   Array (Data.Vector.imap (Prelude.fromIntegral .> f) vector)
@@ -380,6 +479,8 @@ any predicate (Array vector) = Data.Vector.any predicate vector
 
 -- | Returns the last element in the array.
 -- If the array is empty, returns `Nothing`.
+-- > last (fromLinkedList [0,1,2]) == Just 2
+-- > last (fromLinkedList [])      == Nothing
 last :: forall (value :: Type). Array value -> Maybe value
 last (Array vector) = do
   let len = Data.Vector.length vector
