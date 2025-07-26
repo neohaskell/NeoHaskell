@@ -260,7 +260,11 @@ first = unwrap .> (!? 0)
 --
 -- If the index is out of range, the array is unaltered.
 --
--- > set 1 7 (fromLinkedList [1,2,3]) == fromLinkedList [1,7,3]
+-- >>> set 1 7 (fromLinkedList [1,2,3] :: Array Int)
+-- Array [1,7,3]
+
+-- >>> set 3 7 (fromLinkedList [1,2,3] :: Array Int)
+-- Array [1,2,3]
 set :: Int -> a -> Array a -> Array a
 set i value array = Array result
  where
@@ -273,7 +277,8 @@ set i value array = Array result
 
 -- | Push an element onto the end of an array.
 --
--- > push 3 (fromLinkedList [1,2]) == fromLinkedList [1,2,3]
+-- >>> push 3 (fromLinkedList [1,2] :: Array Int)
+-- Array [1,2,3]
 push :: a -> Array a -> Array a
 push a (Array vector) =
   Array (Data.Vector.snoc vector a)
@@ -281,7 +286,8 @@ push a (Array vector) =
 
 -- | Create a list of elements from an array.
 --
--- > toLinkedList (fromLinkedList [3,5,8]) == [3,5,8]
+-- >>> toLinkedList (fromLinkedList [3,5,8] :: Array Int)
+-- [3,5,8]
 toLinkedList :: Array a -> LinkedList a
 toLinkedList = unwrap .> Data.Vector.toList
 
@@ -289,7 +295,8 @@ toLinkedList = unwrap .> Data.Vector.toList
 -- | Create an indexed list from an array. Each element of the array will be
 -- paired with its index.
 --
--- > toIndexedLinkedList (fromLinkedList ["cat","dog"]) == [(0,"cat"), (1,"dog")]
+-- > toIndexedLinkedList (fromLinkedList ["cat","dog"])
+-- [(0,"cat"), (1,"dog")]
 toIndexedLinkedList :: Array a -> LinkedList (Int, a)
 toIndexedLinkedList =
   unwrap
@@ -300,14 +307,16 @@ toIndexedLinkedList =
 
 -- | Reduce an array from the right. Read @reduce@ as fold from the right.
 --
--- > reduce (+) 0 (repeat 3 5) == 15
+-- >>> reduce (+) 0 (repeat 3 5 :: Array Int)
+-- 15
 reduce :: (a -> b -> b) -> b -> Array a -> b
 reduce f value array = Prelude.foldr f value (unwrap array)
 
 
 -- | Reduce an array from the left. Read @foldl@ as fold from the left.
 --
--- > foldl (:) [] (fromLinkedList [1,2,3]) == [3,2,1]
+-- >>> foldl (:) [] (fromLinkedList [1,2,3] :: Array Int)
+-- [3,2,1]
 foldl :: (a -> b -> b) -> b -> Array a -> b
 foldl f value array =
   Data.Foldable.foldl' (\a b -> f b a) value (unwrap array)
@@ -315,7 +324,8 @@ foldl f value array =
 
 -- | Keep elements that pass the test.
 --
--- > takeIf isEven (fromLinkedList [1,2,3,4,5,6]) == (fromLinkedList [2,4,6])
+-- >>> takeIf Prelude.even (fromLinkedList [1,2,3,4,5,6] :: Array Int)
+-- Array [2,4,6]
 takeIf :: (a -> Bool) -> Array a -> Array a
 takeIf f (Array vector) =
   Array (Data.Vector.filter f vector)
@@ -323,7 +333,8 @@ takeIf f (Array vector) =
 
 -- | Drop elements that pass the test.
 --
--- > dropIf isEven (fromLinkedList [1,2,3,4,5,6]) == (fromLinkedList [1,3,5])
+-- >>> dropIf Prelude.even (fromLinkedList [1,2,3,4,5,6] :: Array Int)
+-- Array [1,3,5]
 dropIf :: (a -> Bool) -> Array a -> Array a
 dropIf f (Array vector) =
   Array (Data.Vector.filter (f .> not) vector)
@@ -331,7 +342,8 @@ dropIf f (Array vector) =
 
 -- | Apply a function on every element in an array.
 --
--- > map sqrt (fromLinkedList [1,4,9]) == fromLinkedList [1,2,3]
+-- >>> map sqrt (fromLinkedList [1,4,9] :: Array Float)
+-- Array [1.0,2.0,3.0]
 map :: (a -> b) -> Array a -> Array b
 map f (Array vector) =
   Array (Data.Vector.map f vector)
@@ -339,7 +351,8 @@ map f (Array vector) =
 
 -- | Apply a function on every element with its index as first argument.
 --
--- > indexedMap (*) (fromLinkedList [5,5,5]) == fromLinkedList [0,5,10]
+-- >>> indexedMap (*) (fromLinkedList [5,5,5] :: Array Int)
+-- Array [0,5,10]
 indexedMap :: (Int -> a -> b) -> Array a -> Array b
 indexedMap f (Array vector) =
   Array (Data.Vector.imap (Prelude.fromIntegral .> f) vector)
