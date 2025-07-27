@@ -5,5 +5,5 @@
   "author": "Your Name",
   "license": "MIT",
   "dependencies": {},
-  "override_neohaskell": "file:///home/nick/Source/NeoHaskell"
+  "overrideNeohaskell": "main"
 }

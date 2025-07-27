@@ -1,5 +1,5 @@
 { pkgs }:
-{ neoJsonPath, srcPath ? null }:
+{ neoJsonPath, neoHaskellSource, srcPath ? null }:
 let
   neoConfig = builtins.fromJSON (builtins.readFile neoJsonPath);
   projectDir = builtins.dirOf neoJsonPath;
@@ -37,28 +37,11 @@ let
     EOF
   '';
 
-  # Handle different override types from neo.json
-  neoHaskellOverride = neoConfig.override_neohaskell or "https://github.com/NeoHaskell/NeoHaskell/archive/refs/heads/main.tar.gz";
-  
-  neoHaskellSource = 
-    if pkgs.lib.hasPrefix "file://" neoHaskellOverride then
-      # Local file path - strip file:// prefix and convert to path
-      /. + (builtins.substring 7 (builtins.stringLength neoHaskellOverride) neoHaskellOverride)
-    else if pkgs.lib.hasPrefix "https://" neoHaskellOverride then
-      # HTTPS URL - use fetchTarball
-      builtins.fetchTarball neoHaskellOverride
-    else
-      # Assume it's a commit SHA/branch - build GitHub URL
-      builtins.fetchTarball "https://github.com/NeoHaskell/NeoHaskell/archive/${neoHaskellOverride}.tar.gz";
-
-in
   # Build the actual Haskell project using the generated files
-  pkgs.haskellPackages.developPackage {
-    name = neoConfig.name;
-    root = generatedFiles;
-    returnShellEnv = false;
-    source-overrides = {
-      nhcore = neoHaskellSource + "/core";
-    };
-    modifier = drv: pkgs.haskell.lib.dontCheck (pkgs.haskell.lib.dontHaddock drv);
-  }
+in pkgs.haskellPackages.developPackage {
+  name = neoConfig.name;
+  root = generatedFiles;
+  returnShellEnv = false;
+  source-overrides = { nhcore = neoHaskellSource + "/core"; };
+  modifier = drv: pkgs.haskell.lib.dontCheck (pkgs.haskell.lib.dontHaddock drv);
+}

@@ -83,6 +83,13 @@ module Text (
   toTitleCase,
   toSnakeCase,
   toKebabCase,
+
+  -- * Casing Checks
+  isPascalCase,
+  isCamelCase,
+  isTitleCase,
+  isSnakeCase,
+  isKebabCase,
 ) where
 
 import Array (Array)
@@ -607,3 +614,55 @@ toSnakeCase txt =
 toKebabCase :: Text -> Text
 toKebabCase txt =
   Manipulate.toSpinal txt
+
+
+-- | Check if a text matches a specific casing by comparing it with the output
+-- of a casing conversion function.
+checkCasing :: (Text -> Text) -> Text -> Bool
+checkCasing casingFunction txt =
+  casingFunction txt == txt
+
+
+-- | Check if a text is in PascalCase.
+--
+-- > isPascalCase "HelloWorld" == True
+-- > isPascalCase "helloWorld" == False
+-- > isPascalCase "hello_world" == False
+isPascalCase :: Text -> Bool
+isPascalCase = checkCasing toPascalCase
+
+
+-- | Check if a text is in camelCase.
+--
+-- > isCamelCase "helloWorld" == True
+-- > isCamelCase "HelloWorld" == False
+-- > isCamelCase "hello_world" == False
+isCamelCase :: Text -> Bool
+isCamelCase = checkCasing toCamelCase
+
+
+-- | Check if a text is in Title Case.
+--
+-- > isTitleCase "Hello World" == True
+-- > isTitleCase "hello world" == False
+-- > isTitleCase "HELLO WORLD" == False
+isTitleCase :: Text -> Bool
+isTitleCase = checkCasing toTitleCase
+
+
+-- | Check if a text is in snake_case.
+--
+-- > isSnakeCase "hello_world" == True
+-- > isSnakeCase "helloWorld" == False
+-- > isSnakeCase "hello-world" == False
+isSnakeCase :: Text -> Bool
+isSnakeCase = checkCasing toSnakeCase
+
+
+-- | Check if a text is in kebab-case.
+--
+-- > isKebabCase "hello-world" == True
+-- > isKebabCase "helloWorld" == False
+-- > isKebabCase "hello_world" == False
+isKebabCase :: Text -> Bool
+isKebabCase = checkCasing toKebabCase
