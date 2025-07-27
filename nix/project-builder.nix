@@ -14,24 +14,37 @@ let
 
   modules = utils.discoverModules actualSrcPath;
 
-in pkgs.runCommand "neo-project-${neoConfig.name}" { } ''
-  mkdir -p $out/app $out/src
+  # Generate project structure first
+  generatedFiles = pkgs.runCommand "neo-project-files-${neoConfig.name}" { } ''
+    mkdir -p $out/app $out/src
 
-  # Copy source files if they exist
-  if [ -d "${actualSrcPath}" ]; then
-    cp -r ${actualSrcPath}/* $out/src/ 2>/dev/null || true
-  fi
+    # Copy source files if they exist
+    if [ -d "${actualSrcPath}" ]; then
+      cp -r ${actualSrcPath}/* $out/src/ 2>/dev/null || true
+    fi
 
-  # Generate project files
-  cat > $out/${neoConfig.name}.cabal << 'EOF'
-  ${generators.cabal { inherit neoConfig modules; }}
-  EOF
+    # Generate project files
+    cat > $out/${neoConfig.name}.cabal << 'EOF'
+    ${generators.cabal { inherit neoConfig modules; }}
+    EOF
 
-  cat > $out/default.nix << 'EOF'
-  ${generators.defaultNix { inherit neoConfig; }}
-  EOF
+    cat > $out/default.nix << 'EOF'
+    ${generators.defaultNix { inherit neoConfig; }}
+    EOF
 
-  cat > $out/app/Main.hs << 'EOF'
-  ${generators.main { inherit neoConfig; }}
-  EOF
-''
+    cat > $out/app/Main.hs << 'EOF'
+    ${generators.main { inherit neoConfig; }}
+    EOF
+  '';
+
+in
+  # Build the actual Haskell project using the generated files
+  pkgs.haskellPackages.developPackage {
+    name = neoConfig.name;
+    root = generatedFiles;
+    returnShellEnv = false;
+    source-overrides = {
+      nhcore = ../core;
+    };
+    modifier = drv: pkgs.haskell.lib.dontCheck (pkgs.haskell.lib.dontHaddock drv);
+  }
