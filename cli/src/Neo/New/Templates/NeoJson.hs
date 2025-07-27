@@ -5,12 +5,12 @@ import Core
 
 template :: Text -> Text
 template projectName = do
-  [fmt|{{
+  [fmt|{
   "name": "#{projectName}",
   "version": "0.0.1",
   "description": "Your project's description",
   "author": "Your Name",
   "license": "ISC",
-  "dependencies": {{
-  }}
-}}|]
+  "dependencies": {
+  }
+}|]
