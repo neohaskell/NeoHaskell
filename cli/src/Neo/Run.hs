@@ -4,6 +4,7 @@ module Neo.Run (
 ) where
 
 import Array qualified
+import Directory qualified
 import Neo.Core
 import Subprocess qualified
 import Task qualified
@@ -11,7 +12,7 @@ import Task qualified
 
 data Error
   = NixFileError
-  | CabalFileError
+  | DirectoryError Directory.Error
   | CustomError Text
   deriving (Show)
 
@@ -19,7 +20,7 @@ data Error
 handle :: ProjectConfiguration -> Task Error Unit
 handle config = do
   let projectName = config.name
-  let rootFolder = [path|nhout|]
+  rootFolder <- Directory.getCurrent |> Task.mapError DirectoryError
   completion <-
     Subprocess.openInherit [fmt|./result/bin/#{projectName}|] (Array.fromLinkedList []) rootFolder Subprocess.InheritBOTH
   if completion.exitCode != 0
