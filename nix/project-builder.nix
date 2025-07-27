@@ -3,7 +3,9 @@
 let
   neoConfig = builtins.fromJSON (builtins.readFile neoJsonPath);
   projectDir = builtins.dirOf neoJsonPath;
-  actualSrcPath = if srcPath != null then srcPath else (projectDir + "/src");
+  actualSrcPath = if srcPath != null then srcPath else "${projectDir}/src";
+  # Convert string path to Nix path for sandbox access
+  srcPathValue = if srcPath != null then /. + srcPath else projectDir + "/src";
 
   utils = import ./utils/modules.nix { inherit pkgs; };
   generators = {
@@ -19,9 +21,18 @@ let
     mkdir -p $out/app $out/src
 
     # Copy source files if they exist
-    if [ -d "${actualSrcPath}" ]; then
-      cp -r ${actualSrcPath}/* $out/src/ 2>/dev/null || true
-    fi
+    echo "Copying from: ${srcPathValue}"
+    echo "Source structure before copy:"
+    find ${srcPathValue} -type f -name "*.hs" || true
+    cp -r ${srcPathValue}/. $out/src/ 2>/dev/null || true
+    echo "Destination structure after copy:"
+    find $out/src -type f -name "*.hs" || true
+
+    # Debug: show discovered modules
+    echo "Discovered modules: ${builtins.toJSON modules}"
+    echo "Discovered modules: ${
+      builtins.toJSON modules
+    }" > /tmp/neo-debug-modules.txt
 
     # Generate project files
     cat > $out/${neoConfig.name}.cabal << 'EOF'
