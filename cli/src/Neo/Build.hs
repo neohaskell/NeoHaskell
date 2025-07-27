@@ -39,9 +39,9 @@ let
   lib = import (nhroot + "/nix/lib.nix") {};
 in
   lib.buildNeoProject {
-    neoJsonPath = #{neoPathText};
+    neoJsonPath = "#{neoPathText}";
     neoHaskellSource = #{neoHaskellSource};
-    srcPath = #{rootPathText}/src;
+    srcPath = "#{rootPathText}/src";
   }
   |]
   let nixBuildParams = Array.fromLinkedList ["--show-trace", "-E", buildExpression]
