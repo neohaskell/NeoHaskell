@@ -4,5 +4,6 @@
   "description": "An example neo.json file",
   "author": "Your Name",
   "license": "MIT",
-  "dependencies": {}
+  "dependencies": {},
+  "override_neohaskell": "file:///home/nick/Source/NeoHaskell"
 }
