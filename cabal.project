@@ -1,6 +1,3 @@
 packages:
   cli/*.cabal
   core/*.cabal
-
-package nhcore
-  tests: True
