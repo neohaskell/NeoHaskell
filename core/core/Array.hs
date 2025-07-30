@@ -185,11 +185,9 @@ indices =
 --
 -- >>> initialize 4 identity
 -- Array [0,1,2,3]
-
--- > initialize 4 (\n -> n*n)
+-- >>> initialize 4 (\n -> n*n)
 -- Array [0,1,4,9]
-
--- > initialize 4 (always 0)
+-- >>> initialize 4 (always (0 :: Int))
 -- Array [0,0,0,0]
 initialize :: Int -> (Int -> a) -> Array a
 initialize n f =
@@ -203,8 +201,7 @@ initialize n f =
 --
 -- >>> repeat 5 (0 :: Int)
 -- Array [0,0,0,0,0]
-
--- >>> repeat 3 "cat"
+-- >>> repeat 3 ("cat" :: Prelude.String)
 -- Array ["cat","cat","cat"]
 
 -- Notice that @repeat 3 x@ is the same as @initialize 3 (always x)@.
@@ -215,10 +212,8 @@ repeat n element =
 
 
 -- | Wraps an element into an array
-
 -- >>> wrap (0 :: Int)
 -- Array [0]
-
 wrap :: a -> Array a
 wrap element = fromLinkedList [element]
 
@@ -233,14 +228,12 @@ fromLinkedList =
 --
 -- >>> get 0 (fromLinkedList [0,1,2] :: Array Int)
 -- Just 0
-
 -- >>> get 2   (fromLinkedList [0,1,2] :: Array Int)
 -- Just 2
 -- >>> get 5   (fromLinkedList [0,1,2] :: Array Int)
 -- Nothing
 -- >>> get (-1) (fromLinkedList [0,1,2] :: Array Int)
 -- Nothing
-
 get :: Int -> Array a -> Maybe a
 get i array = unwrap array !? Prelude.fromIntegral i
 
@@ -249,8 +242,7 @@ get i array = unwrap array !? Prelude.fromIntegral i
 --
 -- >>> first (fromLinkedList [0,1,2] :: Array Int)
 -- Just 0
-
--- > first (fromLinkedList [] :: Array Int)
+-- >>> first (fromLinkedList [] :: Array Int)
 -- Nothing
 first :: Array a -> Maybe a
 first = unwrap .> (!? 0)
@@ -262,7 +254,6 @@ first = unwrap .> (!? 0)
 --
 -- >>> set 1 7 (fromLinkedList [1,2,3] :: Array Int)
 -- Array [1,7,3]
-
 -- >>> set 3 7 (fromLinkedList [1,2,3] :: Array Int)
 -- Array [1,2,3]
 set :: Int -> a -> Array a -> Array a
@@ -295,8 +286,8 @@ toLinkedList = unwrap .> Data.Vector.toList
 -- | Create an indexed list from an array. Each element of the array will be
 -- paired with its index.
 --
--- > toIndexedLinkedList (fromLinkedList ["cat","dog"])
--- [(0,"cat"), (1,"dog")]
+-- >>> toIndexedLinkedList (fromLinkedList ["cat","dog"] :: Array Prelude.String)
+-- [(0,"cat"),(1,"dog")]
 toIndexedLinkedList :: Array a -> LinkedList (Int, a)
 toIndexedLinkedList =
   unwrap
@@ -360,7 +351,8 @@ indexedMap f (Array vector) =
 
 -- | Append two arrays to a new one.
 --
--- > append (repeat 2 42) (repeat 3 81) == fromLinkedList [42,42,81,81,81]
+-- >>> append (repeat 2 42) (repeat 3 81) :: Array Int
+-- Array [42,42,81,81,81]
 append :: Array a -> Array a -> Array a
 append (Array first) (Array second) =
   Array (first ++ second)
@@ -371,14 +363,18 @@ append (Array first) (Array second) =
 -- that indicates the end of the slice. The slice extracts up to but not including
 -- @end@.
 --
--- > slice  0  3 (fromLinkedList [0,1,2,3,4]) == fromLinkedList [0,1,2]
--- > slice  1  4 (fromLinkedList [0,1,2,3,4]) == fromLinkedList [1,2,3]
+-- >>> slice  0  3 (fromLinkedList [0,1,2,3,4] :: Array Int)
+-- Array [0,1,2]
+-- >>> slice  1  4 (fromLinkedList [0,1,2,3,4] :: Array Int)
+-- Array [1,2,3]
 --
 -- Both the @start@ and @end@ indexes can be negative, indicating an offset from
 -- the end of the array.
 --
--- > slice  1    (-1) (fromLinkedList [0,1,2,3,4]) == fromLinkedList [1,2,3]
--- > slice  (-2) 5    (fromLinkedList [0,1,2,3,4]) == fromLinkedList [3,4]
+-- >>> slice  1    (-1) (fromLinkedList [0,1,2,3,4] :: Array Int)
+-- Array [1,2,3]
+-- >>> slice  (-2) 5    (fromLinkedList [0,1,2,3,4] :: Array Int)
+-- Array [3,4]
 --
 -- This makes it pretty easy to @pop@ the last element off of an array:
 -- @slice 0 -1 array@
@@ -414,6 +410,12 @@ slice from to (Array vector)
 
 -- This function is commonly used in functional programming to apply a function to each element of a nested
 -- data structure and flatten the resulting structure into a single level.
+-- >>> flatMap (\n -> fromLinkedList [n, n]) (fromLinkedList [1, 2, 3] :: Array Int)
+-- Array [1,1,2,2,3,3]
+-- >>> flatMap (\n -> if n > 1 then fromLinkedList [show n] else empty) (fromLinkedList [0, 1, 2, 3] :: Array Int)
+-- Array ["2","3"]
+-- >>> flatMap (\s -> fromLinkedList [s, s]) (empty :: Array String)
+-- Array []
 flatMap ::
   -- | The function to apply to each element of the array.
   (a -> Array b) ->
@@ -426,6 +428,12 @@ flatMap f array =
     |> map f
     |> reduce append empty
 
+
+-- >>> foldM (\acc x -> do { putStrLn ("Adding " ++ show x ++ " to " ++ show acc); pure (acc + x) }) 0 (fromLinkedList [10, 5, 2] :: Array Int)
+-- Adding 10 to 0
+-- Adding 5 to 10
+-- Adding 2 to 15
+-- 17
 
 -- | TODO: Find a better name for this function.
 foldM :: forall (a :: Type) (b :: Type). (b -> a -> IO b) -> b -> Array a -> IO b
@@ -450,7 +458,8 @@ takeWhile predicate (Array vector) = Array (Data.Vector.takeWhile predicate vect
 -- The first array contains elements that satisfy the predicate,
 -- while the second contains elements that do not.
 --
--- > partitionBy isEven (fromLinkedList [1,2,3,4,5,6]) == (fromLinkedList [2,4,6], fromLinkedList [1,3,5])
+-- >>> partitionBy Prelude.even (fromLinkedList [1,2,3,4,5,6] :: Array Int)
+-- (Array [2,4,6],Array [1,3,5])
 partitionBy :: forall (value :: Type). (value -> Bool) -> Array value -> (Array value, Array value)
 partitionBy predicate (Array vector) = do
   let (matching, nonMatching) = Data.Vector.partition predicate vector
@@ -460,7 +469,8 @@ partitionBy predicate (Array vector) = do
 -- | Split an array into its first element and the remaining elements.
 -- If the array is empty, return `Nothing`.
 --
--- > splitFirst (fromLinkedList [1,2,3]) == Just (1, fromLinkedList [2,3])
+-- >>> splitFirst (fromLinkedList [1,2,3] :: Array Int)
+-- Just (1,Array [2,3])
 splitFirst :: forall (value :: Type). Array value -> Maybe (value, Array value)
 splitFirst (Array vector) = do
   case Data.Vector.uncons vector of
@@ -471,16 +481,20 @@ splitFirst (Array vector) = do
 -- | Checks if any element in an array satisfies a given predicate.
 -- Returns `True` if at least one element matches, otherwise `False`.
 --
--- > any isEven (fromLinkedList [1,3,5,6]) == True
--- > any isEven (fromLinkedList [1,3,5]) == False
+-- >>> any Prelude.even (fromLinkedList [1,3,5,6] :: Array Int)
+-- True
+-- >>> any Prelude.even (fromLinkedList [1,3,5] :: Array Int)
+-- False
 any :: forall (value :: Type). (value -> Bool) -> Array value -> Bool
 any predicate (Array vector) = Data.Vector.any predicate vector
 
 
 -- | Returns the last element in the array.
 -- If the array is empty, returns `Nothing`.
--- > last (fromLinkedList [0,1,2]) == Just 2
--- > last (fromLinkedList [])      == Nothing
+-- >>> last (fromLinkedList [0,1,2] :: Array Int)
+-- Just 2
+-- >>> last (fromLinkedList [] :: Array Int)
+-- Nothing
 last :: forall (value :: Type). Array value -> Maybe value
 last (Array vector) = do
   let len = Data.Vector.length vector
