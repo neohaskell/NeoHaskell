@@ -57,6 +57,7 @@ library
       Neo.New.Templates.NeoJson,
       Neo.New.Templates.MainModule,
       Neo.Run,
+      Neo.Shell,
     -- other-modules:
     -- other-extensions:
     hs-source-dirs:   src
