@@ -149,9 +149,9 @@ empty = Array Data.Vector.empty
 --
 -- >>> isEmpty empty
 -- True
--- >>> isEmpty (Array (Data.Vector.singleton 'a'))
+-- >>> isEmpty (Array.fromLinkedList ['a'])
 -- False
--- >>> isEmpty (Array (Data.Vector.fromList [1,2,3] :: Data.Vector.Vector Int))
+-- >>> isEmpty (Array.fromLinkedList ['a', 'b', 'c']))
 -- False
 isEmpty :: Array a -> Bool
 isEmpty = unwrap .> Data.Vector.null
@@ -201,7 +201,7 @@ initialize n f =
 --
 -- >>> repeat 5 (0 :: Int)
 -- Array [0,0,0,0,0]
--- >>> repeat 3 ("cat" :: Prelude.String)
+-- >>> repeat 3 ("cat" :: Text)
 -- Array ["cat","cat","cat"]
 
 -- Notice that @repeat 3 x@ is the same as @initialize 3 (always x)@.
@@ -306,7 +306,7 @@ reduce f value array = Prelude.foldr f value (unwrap array)
 
 -- | Reduce an array from the left. Read @foldl@ as fold from the left.
 --
--- >>> foldl (:) [] (fromLinkedList [1,2,3] :: Array Int)
+-- >>> (fromLinkedList [1,2,3] :: Array Int) |> foldl append empty 
 -- [3,2,1]
 foldl :: (a -> b -> b) -> b -> Array a -> b
 foldl f value array =
