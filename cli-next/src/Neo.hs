@@ -1,17 +1,8 @@
 module Neo where
 
-import qualified Console
+import Console qualified
 import Core
-import qualified Neo.Model as Model
-
--- Import the organized event model modules
-import Neo.Domain.Build.Types
-import Neo.Domain.Build.Commands
-import Neo.Domain.Build.Events
-import Neo.Domain.Build.Entity
-import Neo.ReadModels.Build.ProjectConfig
-import Neo.ReadModels.Build.BuildStatus
-import Neo.ReadModels.Build.BuildResult
+import Neo.Model qualified as Model
 
 
 run :: Task Text ()
