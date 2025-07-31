@@ -60,7 +60,7 @@ class Collection (f :: Type -> Type) where
 
   fromLegacyImpl :: Data.Vector.Vector a -> f a
   lastImpl :: f a -> Maybe a
-  zipImpl :: f a -> f b -> f (b, a)
+  zipImpl :: f a -> f b -> f (a, b)
   sumIntegersImpl :: f Int -> Int
   reverseImpl :: f a -> f a
 

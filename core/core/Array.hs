@@ -444,12 +444,20 @@ foldM f initial self =
 
 -- | Drop elements from the beginning of an array until the given predicate
 -- returns false.
+-- >>> dropWhile (< 3) (fromLinkedList [1,2,3,4,1] :: Array Int)
+-- Array [3,4,1]
+-- >>> dropWhile (< 9) (fromLinkedList [1,2,3] :: Array Int)
+-- Array []
 dropWhile :: forall (value :: Type). (value -> Bool) -> Array value -> Array value
 dropWhile predicate (Array vector) = Array (Data.Vector.dropWhile predicate vector)
 
 
 -- | Keep elements from the beginning of an array until the given predicate
 -- returns false.
+-- >>> takeWhile (< 3) (fromLinkedList [1,2,3,4,1] :: Array Int)
+-- Array [1,2]
+-- >>> takeWhile (< 0) (fromLinkedList [1,2,3] :: Array Int)
+-- Array []
 takeWhile :: forall (value :: Type). (value -> Bool) -> Array value -> Array value
 takeWhile predicate (Array vector) = Array (Data.Vector.takeWhile predicate vector)
 
@@ -503,47 +511,81 @@ last (Array vector) = do
 
 -- | Convert a Haskell Vector to a NeoHaskell Array.
 -- Only use this for compatibility with legacy code.
+-- >>> fromLegacy (Data.Vector.fromList [1,2,3] :: Data.Vector.Vector Int)
+-- Array [1,2,3]
 fromLegacy :: Data.Vector.Vector a -> Array a
 fromLegacy = Array
 
 
 -- | Take the first n elements of an array.
+-- >>> take 2 (fromLinkedList [1,2,3] :: Array Int)
+-- Array [1,2]
+-- >>> take 0 (fromLinkedList [1,2,3] :: Array Int)
+-- Array []
 take :: Int -> Array a -> Array a
 take n (Array vector) = Array (Data.Vector.take n vector)
 
 
 -- | Drop the first n elements of an array.
+-- >>> drop 2 (fromLinkedList [1,2,3] :: Array Int)
+-- Array [3]
+-- >>> drop 0 (fromLinkedList [1,2,3] :: Array Int)
+-- Array [1,2,3]
 drop :: Int -> Array a -> Array a
 drop n (Array vector) = Array (Data.Vector.drop n vector)
 
 
 -- | Convert an array into an array of tuples, where the first element of the tuple is the index of the element.
+-- >>> indexed (fromLinkedList [1,2,3] :: Array Int)
+-- Array [(0,1),(1,2),(2,3)]
+-- >>> indexed (fromLinkedList [] :: Array Int)
+-- Array []
 indexed :: Array a -> Array (Int, a)
 indexed (Array vector) = Array (Data.Vector.indexed vector)
 
 
 -- | Zip two arrays into a new array of tuples.
-zip :: Array b -> Array a -> Array (a, b)
-zip (Array second) (Array first) = Array (Data.Vector.zip first second)
+-- >>> zip (fromLinkedList [1,2,3] :: Array Int) (fromLinkedList [4,5,6] :: Array Int)
+-- Array [(1,4),(2,5),(3,6)]
+-- >>> zip (fromLinkedList [] :: Array Int) (fromLinkedList [] :: Array Int)
+-- Array []
+zip :: Array a -> Array b -> Array (a, b)
+zip (Array first) (Array second) = Array (Data.Vector.zip first second)
 
 
 -- | Adds up all the integers in an array.
+-- >>> sumIntegers (fromLinkedList [1,2,3] :: Array Int)
+-- 6
+-- >>> sumIntegers (fromLinkedList [] :: Array Int)
+-- 0
 sumIntegers :: Array Int -> Int
 sumIntegers (Array vector) = Data.Vector.sum vector
 
 
 -- | Reverse an array.
+-- >>> reverse (fromLinkedList [1,2,3] :: Array Int)
+-- Array [3,2,1]
+-- >>> reverse (fromLinkedList [] :: Array Int)
+-- Array []
 reverse :: Array a -> Array a
 reverse (Array vector) = Array (Data.Vector.reverse vector)
 
 
 -- | Flatten an array of arrays into a single array.
+-- >>> flatten (fromLinkedList [ (fromLinkedList [1,2] :: Array Int), (fromLinkedList [3] :: Array Int) ])
+-- Array [1,2,3]
+-- >>> flatten (fromLinkedList [] :: Array (Array Int))
+-- Array []
 flatten :: Array (Array a) -> Array a
 flatten (Array vector) = Array (Control.Monad.join (Data.Vector.map unwrap vector))
 
 
 -- | Find the maximum element in an array.
 -- If the array is empty, returns `Nothing`.
+-- >>> maximum (fromLinkedList [1,2,3] :: Array Int)
+-- Just 3
+-- >>> maximum (fromLinkedList [] :: Array Int)
+-- Nothing
 maximum :: forall (value :: Type). (Ord value) => Array value -> Maybe value
 maximum (Array vector) =
   if Data.Vector.null vector
@@ -553,6 +595,10 @@ maximum (Array vector) =
 
 -- | Find the minimum element in an array.
 -- If the array is empty, returns `Nothing`.
+-- >>> minimum (fromLinkedList [1,2,3] :: Array Int)
+-- Just 1
+-- >>> minimum (fromLinkedList [] :: Array Int)
+-- Nothing
 minimum :: forall (value :: Type). (Ord value) => Array value -> Maybe value
 minimum (Array vector) =
   if Data.Vector.null vector
