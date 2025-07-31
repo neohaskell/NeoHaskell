@@ -39,8 +39,7 @@ let
 in
   lib.shellForNeoProject {
     neoJsonPath = "#{neoPathText}";
-    neoHaskellSource = nhroot;
-    srcPath = "#{rootPathText}/src";
+    neoHaskellSource = nhroot;    srcPath = "#{rootPathText}/src";
   }
   |]
   let nixShellParams = Array.fromLinkedList ["--show-trace", "-E", shellExpression]
