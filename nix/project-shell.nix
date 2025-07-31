@@ -49,15 +49,42 @@ let
   '';
 
   # Build the shell environment using developPackage like the builder does
-in pkgs.haskellPackages.developPackage {
-  name = neoConfig.name;
-  root = generatedFiles;
-  returnShellEnv = true;
-  source-overrides = { nhcore = neoHaskellSource + "/core"; };
-  modifier = drv: pkgs.haskell.lib.addBuildTools drv (with pkgs.haskellPackages; [
-    cabal-install
-    haskell-language-server
-    fourmolu
-    hlint
-  ]);
-}
+  devShell = pkgs.haskellPackages.developPackage {
+    name = neoConfig.name;
+    root = generatedFiles;
+    returnShellEnv = true;
+    source-overrides = { nhcore = /. + (toString neoHaskellSource) + "/core"; };
+    modifier = drv: pkgs.haskell.lib.addBuildTools drv (with pkgs.haskellPackages; [
+      cabal-install
+      haskell-language-server
+      fourmolu
+      hlint
+    ]);
+  };
+in devShell.overrideAttrs (oldAttrs: {
+  shellHook = (oldAttrs.shellHook or "") + ''
+    # Use the correct package database path
+    PACKAGE_DB="$NIX_GHC_LIBDIR/package.conf.d"
+    
+    # Generate hie.yaml for HLS using direct cradle to avoid polluting user directory
+    cat > ${projectDir}/hie.yaml << EOF
+    cradle:
+      direct:
+        arguments:
+          - "-i${actualSrcPath}"
+          - "-package-db"
+          - "$PACKAGE_DB"
+          - "-hide-all-packages"
+          - "-package"
+          - "base"
+          - "-package"
+          - "nhcore"
+    EOF
+    
+    echo "NeoHaskell development environment ready!"
+    echo "Generated project files: ${generatedFiles}"
+    echo "HLS configuration: ${projectDir}/hie.yaml"
+    echo "Package DB: $PACKAGE_DB"
+    echo "Package DB exists: $(test -d "$PACKAGE_DB" && echo "YES" || echo "NO")"
+  '';
+})
