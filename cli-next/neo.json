@@ -5,5 +5,5 @@
   "author": "Nikita Tchayka",
   "license": "Apache-2.0",
   "dependencies": {},
-  "overrideNeohaskell": "file:///Users/nick/Source/NeoHaskell"
+  "overrideNeohaskell": "fa8dfe8e76008762b88dd0b95f6d4c4b79a84896"
 }

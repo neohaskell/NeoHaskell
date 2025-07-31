@@ -48,41 +48,16 @@ let
     EOF
   '';
 
-  # Build the shell environment with HLS
-  haskellPackages = pkgs.haskellPackages.override {
-    overrides = self: super: {
-      nhcore = self.callCabal2nix "nhcore" (neoHaskellSource + "/core") {};
-    };
-  };
-
-in haskellPackages.shellFor {
-  packages = p: [
-    (p.callCabal2nix neoConfig.name generatedFiles {})
-  ];
-  buildInputs = with haskellPackages; [
+  # Build the shell environment using developPackage like the builder does
+in pkgs.haskellPackages.developPackage {
+  name = neoConfig.name;
+  root = generatedFiles;
+  returnShellEnv = true;
+  source-overrides = { nhcore = neoHaskellSource + "/core"; };
+  modifier = drv: pkgs.haskell.lib.addBuildTools drv (with pkgs.haskellPackages; [
     cabal-install
     haskell-language-server
     fourmolu
     hlint
-  ];
-  shellHook = ''
-    echo "Welcome to the NeoHaskell development shell!"
-    echo ""
-    echo "Generated files are available at: ${generatedFiles}"
-    echo ""
-    echo "Available commands:"
-    echo "  cabal build     - Build the project"
-    echo "  cabal run       - Run the project"
-    echo "  cabal repl      - Open a REPL"
-    echo "  haskell-language-server - HLS is available for your IDE"
-    echo ""
-    echo "For best IDE experience, make sure your editor is configured to use:"
-    echo "  - Working directory: ${projectDir}"
-    echo "  - Cabal file: ${generatedFiles}/${neoConfig.name}.cabal"
-    echo ""
-    
-    # Set up the environment to use the generated files
-    export CABAL_DIR="${generatedFiles}"
-    export HIE_BIOS_CRADLE="{\"cradle\":{\"cabal\":{\"component\":\"lib:${neoConfig.name}\"}}}"
-  '';
+  ]);
 }
