@@ -14,7 +14,7 @@ data BuildResultView = BuildResultView
     duration :: Int, -- seconds
     outputPath :: Maybe Path,
     errorSummary :: Maybe ErrorDetails,
-    timestamp :: Time
+    timestamp :: Int
   }
   deriving (Show)
 
