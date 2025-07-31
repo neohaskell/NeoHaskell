@@ -3,6 +3,9 @@
   # Main function that user projects will call
   buildNeoProject = import ./project-builder.nix { inherit pkgs; };
   
+  # Shell function for development environment
+  shellForNeoProject = import ./project-shell.nix { inherit pkgs; };
+  
   # Individual generators (for advanced usage)
   generators = {
     cabal = import ./generators/cabal.nix { inherit pkgs; };
