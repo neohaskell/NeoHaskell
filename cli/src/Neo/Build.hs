@@ -38,7 +38,7 @@ let
   nhroot = (#{neoHaskellSource});
   lib = import (nhroot + "/nix/lib.nix") {};
 in
-  lib.buildNeoProject {
+  lib.buildNeoProjectHaskellNix {
     neoJsonPath = "#{neoPathText}";
     neoHaskellSource = #{neoHaskellSource};
     srcPath = "#{rootPathText}/src";

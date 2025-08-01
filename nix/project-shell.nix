@@ -6,6 +6,7 @@ let
     common.setupProject { inherit neoJsonPath neoHaskellSource srcPath; };
   generatedFiles = common.generateProjectFiles {
     inherit (project) neoConfig srcPathValue modules generators;
+    inherit neoHaskellSource;
   };
 
   # Build the shell environment using developPackage like the builder does
