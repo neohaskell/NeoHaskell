@@ -49,13 +49,13 @@
     };
 
   # Common generated files
-  generateProjectFiles = { neoConfig, srcPathValue, modules, generators }:
+  generateProjectFiles = { neoConfig, srcPathValue, modules, generators, neoHaskellSource ? null }:
     pkgs.runCommand "nhs-${neoConfig.name}" { } ''
       mkdir -p $out/app $out/src
       cp -r ${srcPathValue}/. $out/src/ 2>/dev/null || true
 
       cat > $out/${neoConfig.name}.cabal << 'EOF'
-      ${generators.cabal { inherit neoConfig modules; }}
+      ${generators.cabal { inherit neoConfig modules neoHaskellSource; }}
       EOF
 
       cat > $out/default.nix << 'EOF'

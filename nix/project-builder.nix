@@ -5,6 +5,7 @@ let
   project = common.setupProject { inherit neoJsonPath neoHaskellSource srcPath; };
   generatedFiles = common.generateProjectFiles {
     inherit (project) neoConfig srcPathValue modules generators;
+    inherit neoHaskellSource;
   };
 
 in pkgs.haskellPackages.developPackage {
