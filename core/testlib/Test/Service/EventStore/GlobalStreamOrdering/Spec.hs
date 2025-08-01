@@ -75,9 +75,7 @@ spec newStore = do
           context.store.readAllEventsForwardFrom (Event.StreamPosition 0) (EventStore.Limit (expectedTotalEvents))
             |> Task.mapError toText
         Task.unless ((Array.length allGlobalEvents) <= 1) do
-          let eventPairs =
-                allGlobalEvents
-                  |> Array.zip (Array.drop 1 allGlobalEvents)
+          let eventPairs = Array.zip allGlobalEvents (Array.drop 1 allGlobalEvents)
 
           let matchPositions :: (Event, Event) -> Task _ Unit
               matchPositions (earlier, later) =
