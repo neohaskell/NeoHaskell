@@ -43,6 +43,15 @@
       "contributions": [
         "test"
       ]
+    },
+    {
+      "login": "ussgarci",
+      "name": "Steven Garcia",
+      "avatar_url": "https://avatars.githubusercontent.com/u/91670077?v=4",
+      "profile": "https://github.com/ussgarci",
+      "contributions": [
+        "code"
+      ]
     }
   ]
 }
