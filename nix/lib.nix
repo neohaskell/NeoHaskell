@@ -23,11 +23,9 @@ in {
   # New haskell.nix versions
   buildNeoProjectHaskellNix = import ./project-builder-haskellnix.nix { 
     pkgs = pkgsWithHaskellNix; 
-    haskell-nix = pkgsWithHaskellNix.haskell;
   };
   shellForNeoProjectHaskellNix = import ./project-shell-haskellnix.nix { 
     pkgs = pkgsWithHaskellNix;
-    haskell-nix = pkgsWithHaskellNix.haskell;
   };
   
   # Individual generators (for advanced usage)

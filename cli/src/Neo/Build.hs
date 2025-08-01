@@ -1,6 +1,5 @@
 module Neo.Build (
   handle,
-  parseNeoHaskellSource,
   Error (..),
 ) where
 
@@ -11,7 +10,6 @@ import Neo.Core
 import Path qualified
 import Subprocess qualified
 import Task qualified
-import Text qualified
 
 
 data Error
@@ -29,18 +27,17 @@ handle config = do
   rootPath <- Directory.getCurrent |> Task.mapError DirectoryError
   let neoPathText = Array.fromLinkedList [rootPath, [path|neo.json|]] |> Path.joinPaths |> Path.toText
   let rootPathText = rootPath |> Path.toText
-  let defaultOverride = "https://github.com/NeoHaskell/NeoHaskell/archive/refs/heads/main.tar.gz"
+  let defaultOverride = "main"
   let override = config.overrideNeohaskell |> Maybe.withDefault defaultOverride
-  let neoHaskellSource = parseNeoHaskellSource override
+  let neoHaskellCommit = override
   let buildExpression =
         [fmt|
 let
-  nhroot = (#{neoHaskellSource});
-  lib = import (nhroot + "/nix/lib.nix") {};
+  lib = import (builtins.fetchTarball "https://github.com/NeoHaskell/NeoHaskell/archive/#{neoHaskellCommit}.tar.gz" + "/nix/lib.nix") {};
 in
   lib.buildNeoProjectHaskellNix {
     neoJsonPath = "#{neoPathText}";
-    neoHaskellSource = #{neoHaskellSource};
+    neoHaskellCommit = "#{neoHaskellCommit}";
     srcPath = "#{rootPathText}/src";
   }
   |]
@@ -59,16 +56,3 @@ errorOut err =
     |> Task.throw
 
 
-parseNeoHaskellSource :: Text -> Text
-parseNeoHaskellSource override = do
-  let filePrefix = "file://"
-  let httpsPrefix = "https://"
-  case True of
-    _ | Text.startsWith filePrefix override -> do
-      let path = override |> Text.dropLeft (Text.length filePrefix)
-      [fmt|/. + "#{path}"|]
-    _
-      | Text.startsWith httpsPrefix override ->
-          [fmt|builtins.fetchTarball "#{override}"|]
-    _ ->
-      [fmt|builtins.fetchTarball "https://github.com/NeoHaskell/NeoHaskell/archive/#{override}.tar.gz"|]

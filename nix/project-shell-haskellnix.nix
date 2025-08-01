@@ -1,15 +1,15 @@
-{ pkgs, haskell-nix }:
-{ neoJsonPath, neoHaskellSource, srcPath ? null }:
+{ pkgs }:
+{ neoJsonPath, neoHaskellCommit, srcPath ? null }:
 
 let
   common = import ./common.nix { inherit pkgs; };
-  project = common.setupProject { inherit neoJsonPath neoHaskellSource srcPath; };
+  project = common.setupProject { inherit neoJsonPath neoHaskellCommit srcPath; };
   generatedFiles = common.generateProjectFiles {
     inherit (project) neoConfig srcPathValue modules generators;
-    inherit neoHaskellSource;
+    inherit neoHaskellCommit;
   };
   
-  haskellProject = haskell-nix.cabalProject {
+  haskellProject = pkgs.haskell-nix.cabalProject {
     src = generatedFiles;
     compiler-nix-name = "ghc984";
   };
