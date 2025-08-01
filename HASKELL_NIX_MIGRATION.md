@@ -248,3 +248,57 @@ This migration:
 5. **Minimal code changes** - Just new nix files and updated function calls in CLI
 
 The key insight is that we're not changing how users interact with NeoHaskell, just the underlying nix implementation that was causing issues on macOS ARM64.
+
+## Performance Optimization: Binary Cache Setup
+
+**IMPORTANT**: The first build with haskell.nix will be extremely slow (potentially hours) because it builds GHC and all dependencies from source. To avoid this, configure IOHK's binary cache.
+
+### Setup Binary Cache
+
+Add these settings to your Nix configuration to use IOHK's pre-built binaries:
+
+#### Option 1: User-level configuration
+Create/edit `~/.config/nix/nix.conf`:
+```
+extra-trusted-public-keys = hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ=
+extra-substituters = https://cache.iog.io
+```
+
+#### Option 2: System-level configuration
+Edit `/etc/nix/nix.conf`:
+```
+extra-trusted-public-keys = hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ=
+extra-substituters = https://cache.iog.io
+```
+
+#### Option 3: NixOS configuration
+Add to `/etc/nixos/configuration.nix`:
+```nix
+{
+  nix.settings.trusted-public-keys = [
+    "hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ="
+  ];
+  nix.settings.substituters = [
+    "https://cache.iog.io"
+  ];
+}
+```
+
+### Why This Matters
+
+- **Without cache**: First build takes hours (building GHC from source)
+- **With cache**: First build takes minutes (downloading pre-built binaries)
+- **Critical**: This is the #1 issue people have with haskell.nix - always configure the cache first
+
+### Verification
+
+After configuration, restart the Nix daemon:
+```bash
+# macOS
+sudo launchctl kickstart -k system/org.nixos.nix-daemon
+
+# Linux
+sudo systemctl restart nix-daemon
+```
+
+Then test that cache is working by checking if builds download instead of compile.

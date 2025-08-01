@@ -27,7 +27,7 @@
   ghcFlags = ghcOptions ++ (map (ext: "-X${ext}") languageExtensions);
 
   # Common project setup
-  setupProject = { neoJsonPath, neoHaskellSource, srcPath ? null }:
+  setupProject = { neoJsonPath, neoHaskellCommit, srcPath ? null }:
     let
       neoConfig = builtins.fromJSON (builtins.readFile neoJsonPath);
       projectDir = builtins.dirOf neoJsonPath;
@@ -38,6 +38,7 @@
       utils = import ./utils/modules.nix { inherit pkgs; };
       generators = {
         cabal = import ./generators/cabal.nix { inherit pkgs; };
+        cabalProject = import ./generators/cabal-project.nix { inherit pkgs; };
         main = import ./generators/main.nix { inherit pkgs; };
         defaultNix = import ./generators/default-nix.nix { inherit pkgs; };
       };
@@ -49,13 +50,17 @@
     };
 
   # Common generated files
-  generateProjectFiles = { neoConfig, srcPathValue, modules, generators, neoHaskellSource ? null }:
+  generateProjectFiles = { neoConfig, srcPathValue, modules, generators, neoHaskellCommit ? null }:
     pkgs.runCommand "nhs-${neoConfig.name}" { } ''
       mkdir -p $out/app $out/src
       cp -r ${srcPathValue}/. $out/src/ 2>/dev/null || true
 
       cat > $out/${neoConfig.name}.cabal << 'EOF'
-      ${generators.cabal { inherit neoConfig modules neoHaskellSource; }}
+      ${generators.cabal { inherit neoConfig modules; neoHaskellSource = null; }}
+      EOF
+
+      cat > $out/cabal.project << 'EOF'
+      ${generators.cabalProject { inherit neoHaskellCommit; }}
       EOF
 
       cat > $out/default.nix << 'EOF'
