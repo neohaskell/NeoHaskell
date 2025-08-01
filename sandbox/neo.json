@@ -1,9 +1,0 @@
-{
-  "name": "sandbox",
-  "version": "1.0.0",
-  "description": "An example neo.json file",
-  "author": "Your Name",
-  "license": "ISC",
-  "dependencies": {
-  }
-}

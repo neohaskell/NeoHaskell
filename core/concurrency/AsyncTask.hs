@@ -45,7 +45,7 @@ process task processor =
     |> Task.fromIOResult
 
 
-sleep :: Int -> Task Never Unit
+sleep :: Int -> Task _ Unit
 sleep milliseconds =
   (milliseconds * 1000)
     |> Ghc.threadDelay

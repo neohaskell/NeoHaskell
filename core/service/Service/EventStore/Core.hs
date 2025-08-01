@@ -2,6 +2,7 @@ module Service.EventStore.Core (
   EventStore (..),
   Error (..),
   Limit (..),
+  SubscriptionId (..),
 ) where
 
 import Core
@@ -12,11 +13,17 @@ newtype Limit = Limit Int
   deriving (Eq, Show, Ord, Generic)
 
 
+newtype SubscriptionId = SubscriptionId Text
+  deriving (Eq, Show, Ord, Generic)
+
+
 data Error
   = StreamNotFound StreamId
   | EventNotFound StreamId StreamPosition
   | ConcurrencyConflict StreamId StreamPosition
   | StorageFailure Text -- Generic storage errors with message
+  | SubscriptionNotFound SubscriptionId
+  | SubscriptionError SubscriptionId Text -- Subscription-specific errors
   deriving (Eq, Show)
 
 
@@ -45,5 +52,23 @@ data EventStore = EventStore
     readAllEventsForwardFromFiltered :: StreamPosition -> Limit -> Array EntityId -> Task Error (Array Event),
     -- | Read events from the global stream in backward direction starting from a given global position,
     --   but only for specific entities. Useful for filtered historical analysis and debugging.
-    readAllEventsBackwardFromFiltered :: StreamPosition -> Limit -> Array EntityId -> Task Error (Array Event)
+    readAllEventsBackwardFromFiltered :: StreamPosition -> Limit -> Array EntityId -> Task Error (Array Event),
+    -- | Subscribe to all events in the event store. The subscriber function will be called
+    --   for every event that gets appended. Returns a SubscriptionId for unsubscribing.
+    subscribeToAllEvents :: (Event -> Task Error Unit) -> Task Error SubscriptionId,
+    -- | Subscribe to all events from a specific global position onwards. This allows catching up
+    --   from historical events and then receiving new events as they are appended.
+    subscribeToAllEventsFromPosition :: StreamPosition -> (Event -> Task Error Unit) -> Task Error SubscriptionId,
+    -- | Subscribe to all events from the very beginning of the event store. This delivers ALL
+    --   historical events first, then continues with new events as they are appended.
+    subscribeToAllEventsFromStart :: (Event -> Task Error Unit) -> Task Error SubscriptionId,
+    -- | Subscribe to events for a specific entity. The subscriber function will be called
+    --   only for events belonging to the specified entity.
+    subscribeToEntityEvents :: EntityId -> (Event -> Task Error Unit) -> Task Error SubscriptionId,
+    -- | Subscribe to events for a specific stream within an entity. The subscriber function
+    --   will be called only for events in the specified entity and stream.
+    subscribeToStreamEvents :: EntityId -> StreamId -> (Event -> Task Error Unit) -> Task Error SubscriptionId,
+    -- | Unsubscribe from event notifications. After this call, the subscriber function
+    --   will no longer be called for new events.
+    unsubscribe :: SubscriptionId -> Task Error Unit
   }

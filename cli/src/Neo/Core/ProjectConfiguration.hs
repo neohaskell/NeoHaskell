@@ -13,7 +13,8 @@ data ProjectConfiguration = ProjectConfiguration
     description :: Text,
     author :: Text,
     license :: Text,
-    dependencies :: Map Text Text
+    dependencies :: Map Text Text,
+    overrideNeohaskell :: Maybe Text
   }
   deriving (Show, Eq, Ord, Generic)
 

@@ -122,7 +122,6 @@ module Basics (
   IsLabel (..),
   Control.Monad.join,
   Type,
-  Control.Monad.forever,
   GHC.Generics.Generic,
   GHC.Stack.HasCallStack,
 ) where

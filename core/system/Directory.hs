@@ -4,6 +4,7 @@ module Directory (
   create,
   walk,
   copy,
+  getCurrent,
 ) where
 
 import Array (Array)
@@ -115,3 +116,22 @@ walk dirPath = do
       let trimmedPaths = paths |> Array.map trimInitialSrc
       log [fmt|[Directory.walk] Trimmed paths: #{ToText.toText trimmedPaths}|]
       Task.yield trimmedPaths
+
+
+getCurrent :: Task Error Path
+getCurrent = do
+  let log m = Console.log m |> Task.fromIO
+  log "[Directory.getCurrent] Getting current working directory"
+  result <- Exception.try @Exception.IOError System.Directory.getCurrentDirectory |> Task.fromIO
+  case result of
+    Either.Left err -> do
+      log [fmt|[Directory.getCurrent] Failed to get current directory: #{show err}|]
+      Task.throw NotReadable
+    Either.Right currentDir -> do
+      log [fmt|[Directory.getCurrent] Current directory: #{currentDir}|]
+      let result =
+            currentDir
+              |> Path.fromLinkedList
+      case result of
+        Maybe.Just path -> Task.yield path
+        Maybe.Nothing -> Task.throw NotReadable
