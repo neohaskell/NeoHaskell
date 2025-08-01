@@ -245,7 +245,7 @@ get i array = unwrap array !? Prelude.fromIntegral i
 -- >>> first (fromLinkedList [] :: Array Int)
 -- Nothing
 first :: Array a -> Maybe a
-first = unwrap .> (!? 0)
+first = get 0
 
 
 -- | Set the element at a particular index. Returns an updated array.
