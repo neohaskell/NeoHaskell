@@ -64,6 +64,7 @@ import Control.Monad qualified
 import Data.Foldable qualified
 import Data.Vector ((!?), (++), (//))
 import Data.Vector qualified
+import Function qualified
 import GHC.IsList qualified as GHC
 import IO (IO)
 import LinkedList (LinkedList)
@@ -177,7 +178,7 @@ indices :: Array a -> Array Int
 indices =
   unwrap
     .> \v ->
-      Array (Data.Vector.generate (Data.Vector.length v) unchanged)
+      Array (Data.Vector.generate (Data.Vector.length v) Function.unchanged)
 
 
 -- | Initialize an array. @initialize n f@ creates an array of length @n@ with
