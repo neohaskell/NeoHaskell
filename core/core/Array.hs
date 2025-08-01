@@ -177,7 +177,7 @@ indices :: Array a -> Array Int
 indices =
   unwrap
     .> \v ->
-      Array (Data.Vector.generate (Data.Vector.length v) Prelude.id)
+      Array (Data.Vector.generate (Data.Vector.length v) unchanged)
 
 
 -- | Initialize an array. @initialize n f@ creates an array of length @n@ with
