@@ -12,6 +12,7 @@
     "fourmolu",
     "fprint",
     "GADT",
+    "HIEYAML",
     "hlint",
     "Hspec",
     "Impredicative",
