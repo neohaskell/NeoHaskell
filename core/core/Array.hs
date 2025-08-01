@@ -546,12 +546,12 @@ indexed (Array vector) = Array (Data.Vector.indexed vector)
 
 
 -- | Zip two arrays into a new array of tuples.
--- >>> zip (fromLinkedList [1,2,3] :: Array Int) (fromLinkedList [4,5,6] :: Array Int)
+-- >>> (fromLinkedList [1,2,3] :: Array Int) |> zip (fromLinkedList [4,5,6] :: Array Int)
 -- Array [(1,4),(2,5),(3,6)]
--- >>> zip (fromLinkedList [] :: Array Int) (fromLinkedList [] :: Array Int)
+-- >>> (fromLinkedList [] :: Array Int) |> zip (fromLinkedList [] :: Array Int)
 -- Array []
-zip :: Array a -> Array b -> Array (a, b)
-zip (Array first) (Array second) = Array (Data.Vector.zip first second)
+zip :: Array b -> Array a -> Array (a, b)
+zip (Array second) (Array first) = Array (Data.Vector.zip first second)
 
 
 -- | Adds up all the integers in an array.

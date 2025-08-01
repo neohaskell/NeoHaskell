@@ -95,7 +95,7 @@ class Collection (f :: Type -> Type) where
 
   fromLegacyImpl :: Data.Vector.Vector a -> f a
   lastImpl :: f a -> Maybe a
-  zipImpl :: f a -> f b -> f (a, b)
+  zipImpl :: f b -> f a -> f (a, b)
   sumIntegersImpl :: f Int -> Int
   reverseImpl :: f a -> f a
 
@@ -268,7 +268,7 @@ last = lastImpl
 
 
 -- | Zips two collections together.
-zip :: (Collection f) => f a -> f b -> f (a, b)
+zip :: (Collection f) => f b -> f a -> f (a, b)
 zip = zipImpl
 
 
