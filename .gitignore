@@ -41,3 +41,5 @@ sandbox/*.nix
 
 example.cabal
 result
+
+.claude/settings.local.json
