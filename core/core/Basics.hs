@@ -54,6 +54,7 @@ module Basics (
 
   -- * Fancier Math
   modBy,
+  isEven,
   remainderBy,
   negate,
   abs,
@@ -538,6 +539,11 @@ xor =
 modBy :: Int -> Int -> Int
 modBy =
   Prelude.flip Prelude.mod
+
+
+-- | Checks if an integral number is even.
+isEven :: (Prelude.Integral a) => a -> Bool
+isEven = Prelude.even
 
 
 -- | Get the remainder after division. Here are bunch of examples of dividing by four:

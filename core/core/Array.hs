@@ -151,7 +151,7 @@ empty = Array Data.Vector.empty
 -- True
 -- >>> isEmpty (Array.fromLinkedList ['a'])
 -- False
--- >>> isEmpty (Array.fromLinkedList ['a', 'b', 'c']))
+-- >>> isEmpty (Array.fromLinkedList ['a', 'b', 'c'])
 -- False
 isEmpty :: Array a -> Bool
 isEmpty = unwrap .> Data.Vector.null
@@ -170,14 +170,14 @@ length = unwrap .> Data.Vector.length
 -- | The indices that are valid for subscripting the collection, in ascending order.
 --
 -- >>> indices (Array (Data.Vector.fromList [1,2,3] :: Data.Vector.Vector Int))
--- [0,1,2]
+-- Array [0,1,2]
 -- >>> indices empty
--- []
-indices :: Array a -> [Int]
+-- Array []
+indices :: Array a -> Array Int
 indices =
   unwrap
     .> \v ->
-      Data.Vector.toList (Data.Vector.generate (Data.Vector.length v) Prelude.id)
+      Array (Data.Vector.generate (Data.Vector.length v) Prelude.id)
 
 
 -- | Initialize an array. @initialize n f@ creates an array of length @n@ with
@@ -201,8 +201,8 @@ initialize n f =
 --
 -- >>> repeat 5 (0 :: Int)
 -- Array [0,0,0,0,0]
--- >>> repeat 3 ("cat" :: Text)
--- Array ["cat","cat","cat"]
+-- >>> repeat 0 (0 :: Int)
+-- Array []
 
 -- Notice that @repeat 3 x@ is the same as @initialize 3 (always x)@.
 repeat :: Int -> a -> Array a
@@ -286,8 +286,8 @@ toLinkedList = unwrap .> Data.Vector.toList
 -- | Create an indexed list from an array. Each element of the array will be
 -- paired with its index.
 --
--- >>> toIndexedLinkedList (fromLinkedList ["cat","dog"] :: Array Prelude.String)
--- [(0,"cat"),(1,"dog")]
+-- >>> toIndexedLinkedList (fromLinkedList [6,7] :: Array Int)
+-- [(0,6),(1,7)]
 toIndexedLinkedList :: Array a -> LinkedList (Int, a)
 toIndexedLinkedList =
   unwrap
@@ -306,8 +306,8 @@ reduce f value array = Prelude.foldr f value (unwrap array)
 
 -- | Reduce an array from the left. Read @foldl@ as fold from the left.
 --
--- >>> (fromLinkedList [1,2,3] :: Array Int) |> foldl append empty 
--- [3,2,1]
+-- >>> (fromLinkedList [1,2,3] :: Array Int) |> foldl (+) 0
+-- 6
 foldl :: (a -> b -> b) -> b -> Array a -> b
 foldl f value array =
   Data.Foldable.foldl' (\a b -> f b a) value (unwrap array)
@@ -315,7 +315,7 @@ foldl f value array =
 
 -- | Keep elements that pass the test.
 --
--- >>> takeIf Prelude.even (fromLinkedList [1,2,3,4,5,6] :: Array Int)
+-- >>> takeIf Basics.isEven (fromLinkedList [1,2,3,4,5,6] :: Array Int)
 -- Array [2,4,6]
 takeIf :: (a -> Bool) -> Array a -> Array a
 takeIf f (Array vector) =
@@ -324,7 +324,7 @@ takeIf f (Array vector) =
 
 -- | Drop elements that pass the test.
 --
--- >>> dropIf Prelude.even (fromLinkedList [1,2,3,4,5,6] :: Array Int)
+-- >>> dropIf Basics.isEven (fromLinkedList [1,2,3,4,5,6] :: Array Int)
 -- Array [1,3,5]
 dropIf :: (a -> Bool) -> Array a -> Array a
 dropIf f (Array vector) =
@@ -466,7 +466,7 @@ takeWhile predicate (Array vector) = Array (Data.Vector.takeWhile predicate vect
 -- The first array contains elements that satisfy the predicate,
 -- while the second contains elements that do not.
 --
--- >>> partitionBy Prelude.even (fromLinkedList [1,2,3,4,5,6] :: Array Int)
+-- >>> partitionBy Basics.isEven (fromLinkedList [1,2,3,4,5,6] :: Array Int)
 -- (Array [2,4,6],Array [1,3,5])
 partitionBy :: forall (value :: Type). (value -> Bool) -> Array value -> (Array value, Array value)
 partitionBy predicate (Array vector) = do
@@ -489,9 +489,9 @@ splitFirst (Array vector) = do
 -- | Checks if any element in an array satisfies a given predicate.
 -- Returns `True` if at least one element matches, otherwise `False`.
 --
--- >>> any Prelude.even (fromLinkedList [1,3,5,6] :: Array Int)
+-- >>> any Basics.isEven (fromLinkedList [1,3,5,6] :: Array Int)
 -- True
--- >>> any Prelude.even (fromLinkedList [1,3,5] :: Array Int)
+-- >>> any Basics.isEven (fromLinkedList [1,3,5] :: Array Int)
 -- False
 any :: forall (value :: Type). (value -> Bool) -> Array value -> Bool
 any predicate (Array vector) = Data.Vector.any predicate vector

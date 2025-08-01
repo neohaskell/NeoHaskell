@@ -23,7 +23,7 @@ class Collection (f :: Type -> Type) where
 
   isEmptyImpl :: f a -> Bool
   lengthImpl :: f a -> Int
-  indicesImpl :: f a -> [Int]
+  indicesImpl :: f a -> f Int
   getImpl :: Int -> f a -> Maybe a
   firstImpl :: f a -> Maybe a
 
