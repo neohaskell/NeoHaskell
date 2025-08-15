@@ -15,7 +15,6 @@
     "HIEYAML",
     "hlint",
     "Hspec",
-    "Impredicative",
     "Inspectable",
     "Monoid",
     "Nanotime",
@@ -34,8 +33,7 @@
     "snoc",
     "testlib",
     "typeclasses",
-    "Unagi",
-    "Werror"
+    "Unagi"
   ],
   "nixEnvSelector.nixFile": "${workspaceFolder}/shell.nix",
   // Haskell

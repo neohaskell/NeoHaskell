@@ -51,6 +51,9 @@ library
     exposed-modules:
       Neo,
       Neo.Build,
+      Neo.Build.Templates.Cabal,
+      Neo.Build.Templates.Nix,
+      Neo.Build.Templates.AppMain,
       Neo.Core,
       Neo.Core.ProjectConfiguration,
       Neo.New,

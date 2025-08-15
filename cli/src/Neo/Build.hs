@@ -5,7 +5,11 @@ module Neo.Build (
 
 import Array qualified
 import Directory qualified
+import File qualified
 import Maybe qualified
+import Neo.Build.Templates.AppMain qualified as AppMain
+import Neo.Build.Templates.Cabal qualified as Cabal
+import Neo.Build.Templates.Nix qualified as Nix
 import Neo.Core
 import Path qualified
 import Subprocess qualified
@@ -14,35 +18,75 @@ import Task qualified
 
 data Error
   = NixFileError
-  | DirectoryError (Directory.Error)
+  | CabalFileError
   | CustomError Text
   deriving (Show)
 
 
 handle :: ProjectConfiguration -> Task Error Unit
 handle config = do
-  -- FIXME: Validate config first, should be done as semantic types,
-  -- so that validation can be done in the deserialization automatically
+  let haskellExtension = ".hs"
+  let projectName = config.name
+  let rootFolder = [path|nhout|]
+  let nixFileName = [path|default.nix|]
+  let cabalFileName =
+        [fmt|#{projectName}.cabal|]
+          |> Path.fromText
+          |> Maybe.getOrDie -- TODO: Make better error handling here
+  let nixFile = Nix.template config
+  let nixFilePath =
+        Array.fromLinkedList [rootFolder, nixFileName]
+          |> Path.joinPaths
+  let cabalFilePath =
+        Array.fromLinkedList [rootFolder, cabalFileName]
+          |> Path.joinPaths
+  let targetAppFolder =
+        Array.fromLinkedList [rootFolder, "app"]
+          |> Path.joinPaths
+  let targetAppPath =
+        Array.fromLinkedList [targetAppFolder, "Main.hs"]
+          |> Path.joinPaths
+  let targetSrcFolder =
+        Array.fromLinkedList [rootFolder, "src"]
+          |> Path.joinPaths
 
-  rootPath <- Directory.getCurrent |> Task.mapError DirectoryError
-  let neoPathText = Array.fromLinkedList [rootPath, [path|neo.json|]] |> Path.joinPaths |> Path.toText
-  let rootPathText = rootPath |> Path.toText
-  let defaultOverride = "main"
-  let override = config.overrideNeohaskell |> Maybe.withDefault defaultOverride
-  let neoHaskellCommit = override
-  let buildExpression =
-        [fmt|
-let
-  lib = import (builtins.fetchTarball "https://github.com/NeoHaskell/NeoHaskell/archive/#{neoHaskellCommit}.tar.gz" + "/nix/lib.nix") {};
-in
-  lib.buildNeoProjectHaskellNix {
-    neoJsonPath = "#{neoPathText}";
-    neoHaskellCommit = "#{neoHaskellCommit}";
-    srcPath = "#{rootPathText}/src";
-  }
-  |]
-  let nixBuildParams = Array.fromLinkedList ["--show-trace", "-E", buildExpression]
-  completion <- Subprocess.openInherit "nix-build" nixBuildParams rootPath Subprocess.InheritBOTH
+  Directory.copy [path|src|] targetSrcFolder
+    |> Task.mapError (\e -> CustomError (toText e))
+
+  filepaths <-
+    Directory.walk [path|src|]
+      |> Task.mapError (\_ -> CustomError "WALK ERROR")
+
+  let haskellFiles = filepaths |> Array.takeIf (Path.endsWith haskellExtension)
+
+  let convertToModule filepath = do
+        let pathText = Path.toText filepath
+        let pathWithoutExtension = Text.dropRight (Text.length haskellExtension) pathText
+        let pathParts = Text.split "/" pathWithoutExtension
+        pathParts |> Text.joinWith "."
+
+  let modules = haskellFiles |> Array.map convertToModule
+  let cabalFile = Cabal.template config modules
+  let appMainFile = AppMain.template config
+
+  Directory.create rootFolder
+    |> Task.mapError (\_ -> [fmt|Could not create directory #{Path.toText rootFolder}|] |> CustomError)
+
+  Directory.create targetAppFolder
+    |> Task.mapError (\_ -> [fmt|Could not create directory #{Path.toText targetAppFolder}|] |> CustomError)
+
+  File.writeText nixFilePath nixFile
+    |> Task.mapError (\_ -> NixFileError)
+
+  File.writeText cabalFilePath cabalFile
+    |> Task.mapError (\_ -> CabalFileError)
+
+  File.writeText targetAppPath appMainFile
+    |> Task.mapError (\_ -> CustomError "Could not write app main file")
+
+  -- FIXME: Create another thread that renders the output of the build via streaming.
+  -- As right now there's no output at all
+  completion <- Subprocess.openInherit "nix-build" (Array.fromLinkedList []) rootFolder Subprocess.InheritBOTH
   if completion.exitCode != 0
     then errorOut completion.stderr
     else print completion.stdout
@@ -54,5 +98,3 @@ errorOut err =
     #{err}|]
     |> CustomError
     |> Task.throw
-
-
