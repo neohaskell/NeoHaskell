@@ -1,0 +1,59 @@
+cabal-version:      3.4
+name:               neo-sandbox
+version:            0.0.1
+author:             Nikita Tchayka
+build-type:         Simple
+-- extra-source-files:
+
+common common_cfg
+    ghc-options:  -Wall
+                  -threaded
+                  -fno-warn-partial-type-signatures
+                  -fno-warn-name-shadowing
+                  -Werror
+
+    default-extensions:
+      ApplicativeDo
+      BlockArguments
+      DataKinds
+      NoImplicitPrelude
+      TemplateHaskell
+      DeriveDataTypeable
+      QuasiQuotes
+      QualifiedDo
+      ImpredicativeTypes
+      ImportQualifiedPost
+      OverloadedStrings
+      OverloadedLabels
+      OverloadedRecordDot
+      DuplicateRecordFields
+      PackageImports
+      NamedFieldPuns
+      Strict
+      TypeFamilies
+      PartialTypeSignatures
+
+    build-depends:
+      base,
+      template-haskell,
+
+
+
+library
+    import:           common_cfg
+    exposed-modules:
+      NeoSandbox,
+    -- other-modules:
+    -- other-extensions:
+    hs-source-dirs:   src
+    default-language: GHC2021
+
+executable neo-sandbox
+    import:           common_cfg
+    main-is:          Launcher.hs
+    -- other-modules:
+    -- other-extensions:
+    build-depends:
+        neo-sandbox
+    hs-source-dirs:   .launcher
+    default-language: GHC2021

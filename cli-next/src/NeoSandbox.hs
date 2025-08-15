@@ -1,7 +1,7 @@
 module NeoSandbox where
 
-import Prelude
+import Core
 
 
-foo :: Int
-foo = 42
+run :: Task Text Unit
+run = print "Hi"

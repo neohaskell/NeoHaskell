@@ -15,17 +15,47 @@ template
   ProjectConfiguration {name, version, description, license, author, dependencies}
   modules = do
     let execName = Text.toKebabCase name
-    -- FIXME: Move onto a separate version handling module
     let vText = Version.toText version
-    let makeDep (k, v)
-          | v |> Text.trim |> Text.startsWith "^" = [fmt|#{k} ^>= #{v |> Text.replace "^" ""}|]
-          | otherwise = [fmt|#{k} == #{v}|]
+    let makeDep (k, _) = k
     let deps =
           dependencies
             |> Map.entries
             |> Array.map makeDep
             |> Array.push [fmt|nhcore|]
             |> Text.joinWith ", "
+
+    let ghcOptionsStr =
+          [fmt|-Wall
+                  -threaded
+                  -fno-warn-partial-type-signatures
+                  -fno-warn-name-shadowing
+                  -Werror
+    |] ::
+            Text
+
+    let extensionsStr =
+          [fmt|
+      ApplicativeDo
+      BlockArguments
+      DataKinds
+      NoImplicitPrelude
+      TemplateHaskell
+      DeriveDataTypeable
+      QuasiQuotes
+      QualifiedDo
+      ImpredicativeTypes
+      ImportQualifiedPost
+      OverloadedStrings
+      OverloadedLabels
+      OverloadedRecordDot
+      DuplicateRecordFields
+      PackageImports
+      NamedFieldPuns
+      Strict
+      TypeFamilies
+      PartialTypeSignatures
+    |] ::
+            Text
 
     let mods = modules |> Text.joinWith ", "
     [fmt|cabal-version:      3.4
@@ -44,14 +74,14 @@ synopsis:           #{description}
 license:            #{license}
 author:             #{author}
 
-  common common_cfg
-      ghc-options:    ${ghcOptionsStr}
+common common_cfg
+      ghc-options:    #{ghcOptionsStr}
       default-language: GHC2021
       default-extensions:
-        ${extensionsStr}
+        #{extensionsStr}
 
-    build-depends:
-      #{deps}
+      build-depends:
+        #{deps}
 
 library
     import:           common_cfg
