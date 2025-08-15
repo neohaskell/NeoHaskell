@@ -34,28 +34,28 @@ template
             Text
 
     let extensionsStr =
-          [fmt|
-      ApplicativeDo
-      BlockArguments
-      DataKinds
-      NoImplicitPrelude
-      TemplateHaskell
-      DeriveDataTypeable
-      QuasiQuotes
-      QualifiedDo
-      ImpredicativeTypes
-      ImportQualifiedPost
-      OverloadedStrings
-      OverloadedLabels
-      OverloadedRecordDot
-      DuplicateRecordFields
-      PackageImports
-      NamedFieldPuns
-      Strict
-      TypeFamilies
-      PartialTypeSignatures
-    |] ::
-            Text
+          [ "ApplicativeDo",
+            "BlockArguments",
+            "DataKinds",
+            "NoImplicitPrelude",
+            "TemplateHaskell",
+            "DeriveDataTypeable",
+            "QuasiQuotes",
+            "QualifiedDo",
+            "ImpredicativeTypes",
+            "ImportQualifiedPost",
+            "OverloadedStrings",
+            "OverloadedLabels",
+            "OverloadedRecordDot",
+            "DuplicateRecordFields",
+            "PackageImports",
+            "NamedFieldPuns",
+            "Strict",
+            "TypeFamilies",
+            "PartialTypeSignatures"
+          ]
+            |> Array.fromLinkedList
+            |> Text.joinWith ", "
 
     let mods = modules |> Text.joinWith ", "
     [fmt|cabal-version:      3.4

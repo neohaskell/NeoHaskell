@@ -28,7 +28,7 @@ handle :: ProjectConfiguration -> Task Error Unit
 handle config = do
   let haskellExtension = ".hs"
   let projectName = config.name
-  let rootFolder = [path|nhout|]
+  let rootFolder = [path|.|]
   let nixFileName = [path|default.nix|]
   let cabalFileName =
         [fmt|#{projectName}.cabal|]
@@ -47,12 +47,6 @@ handle config = do
   let targetAppPath =
         Array.fromLinkedList [targetAppFolder, "Main.hs"]
           |> Path.joinPaths
-  let targetSrcFolder =
-        Array.fromLinkedList [rootFolder, "src"]
-          |> Path.joinPaths
-
-  Directory.copy [path|src|] targetSrcFolder
-    |> Task.mapError (\e -> CustomError (toText e))
 
   filepaths <-
     Directory.walk [path|src|]
@@ -69,9 +63,6 @@ handle config = do
   let modules = haskellFiles |> Array.map convertToModule
   let cabalFile = Cabal.template config modules
   let appMainFile = AppMain.template config
-
-  Directory.create rootFolder
-    |> Task.mapError (\_ -> [fmt|Could not create directory #{Path.toText rootFolder}|] |> CustomError)
 
   Directory.create targetAppFolder
     |> Task.mapError (\_ -> [fmt|Could not create directory #{Path.toText targetAppFolder}|] |> CustomError)
