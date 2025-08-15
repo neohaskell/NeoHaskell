@@ -14,6 +14,7 @@ import Neo.Core
 import Path qualified
 import Subprocess qualified
 import Task qualified
+import Text qualified
 
 
 data Error

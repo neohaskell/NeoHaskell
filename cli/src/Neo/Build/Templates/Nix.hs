@@ -18,17 +18,6 @@ pinnedNixpkgs =
 
 template :: ProjectConfiguration -> Text
 template ProjectConfiguration {name} =
-  {-
-  https://github.com/NixOS/nixpkgs/blob/777a9707e72e6dbbbdf9033c44f237154c64e9f7/pkgs/development/haskell-modules/make-package-set.nix#L227-L254
-
-  Also: https://srid.ca/haskell-nix
-
-  TODO: Consider dropping developPackage in favor of making the package
-  out of neo.json. Although maybe that could lead to IDEs not being able
-  to find the source code.
-
-  TODO: Figure out how to do caching here
-  -}
   [fmt|{{ pkgs ? (#{pinnedNixpkgs}) {{}} }}:
   let
     neoHaskellGitHub = builtins.fetchTarball

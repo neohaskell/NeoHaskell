@@ -24,6 +24,7 @@ common common_cfg
       aeson ,
       bytestring ,
       data-default ,
+      file-embed,
       text ,
       vector ,
       directory ,
