@@ -11,7 +11,7 @@ maintainer:         nhlib@nickseagull.dev
 copyright:
 category:           Development
 build-type:         Simple
--- extra-source-files:
+extra-source-files: ../nix/haskellnix.nix, ../nix/haskell-project.nix
 
 common common_cfg
     ghc-options:  -Wall
@@ -52,6 +52,7 @@ library
       Neo,
       Neo.Build,
       Neo.Build.Templates.Cabal,
+      Neo.Build.Templates.CabalProject,
       Neo.Build.Templates.Nix,
       Neo.Build.Templates.AppMain,
       Neo.Core,
