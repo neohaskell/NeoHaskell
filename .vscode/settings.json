@@ -12,6 +12,7 @@
     "fourmolu",
     "fprint",
     "GADT",
+    "haskellnix",
     "HIEYAML",
     "hlint",
     "Hspec",

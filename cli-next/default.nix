@@ -1,10 +1,5 @@
-{ pkgs ? import <nixpkgs> { }, haskellNix ? import (pkgs.fetchFromGitHub {
-  owner = "input-output-hk";
-  repo = "haskell.nix";
-  # Pin to a recent commit - you may want to update this
-  rev = "4d493449406ec91db804511a6d15b6f076ba40e7"; # or specific commit hash
-  sha256 = "sha256-CHNMDgFfpTV5WkVhmMLf5d5qaLUjgeoziVgmgnhPGrI=";
-}) { pkgSet = pkgs; } }:
+{ pkgs ? import <nixpkgs> { }
+, haskellNix ? import ../nix/haskellnix.nix { pkgSet = pkgs; } }:
 
 let
   # Apply haskell.nix overlay
@@ -24,4 +19,3 @@ let
   flake = pkgsWithOverlay.neo-sandboxProject.flake { };
 
 in flake.packages."neo-sandbox:exe:neo-sandbox"
-

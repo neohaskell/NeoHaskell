@@ -46,8 +46,8 @@ writeText path textToWrite =
 static :: Quote.QuasiQuoter
 static =
   Quote.QuasiQuoter
-    { Quote.quoteExp = \filePath -> do
-        TH.appE (TH.varE 'FileEmbed.embedFile) (TH.litE (TH.stringL filePath)),
+    { Quote.quoteExp = \filePath ->
+        FileEmbed.embedFile filePath,
       Quote.quotePat = \_ -> GHC.fail "File.static cannot be used in patterns",
       Quote.quoteType = \_ -> GHC.fail "File.static cannot be used in types",
       Quote.quoteDec = \_ -> GHC.fail "File.static cannot be used in declarations"

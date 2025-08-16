@@ -2,6 +2,7 @@ module Neo.Build.Templates.Nix (
   template,
 ) where
 
+import File qualified
 import Neo.Core
 
 
@@ -14,6 +15,10 @@ pinnedNixpkgs =
       sha256 = "03b5i7almr4v68b677qqnbyvrmqdxq02gks7q1jr6kfm2j51bgw5";
   })
   |]
+
+
+haskellNix :: Text
+haskellNix = [File.static|README.md|]
 
 
 template :: ProjectConfiguration -> Text
