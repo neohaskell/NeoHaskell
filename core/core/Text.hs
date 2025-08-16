@@ -684,5 +684,5 @@ fromStaticFile =
         [|Data.Text.Encoding.decodeUtf8 $(FileEmbed.embedFile filePath)|],
       Quote.quotePat = \_ -> GHC.fail "Text.fromStaticFile cannot be used in patterns",
       Quote.quoteType = \_ -> GHC.fail "Text.fromStaticFile cannot be used in types",
-      Quote.quoteDec = \_ -> GHC.fail "Text.fromStaticFile canbs <-  used in declarations"
+      Quote.quoteDec = \_ -> GHC.fail "Text.fromStaticFile cannot be used in declarations"
     }
