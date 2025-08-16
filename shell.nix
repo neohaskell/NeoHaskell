@@ -1,4 +1,4 @@
-{ pkgs ? import ./nix/nixpkgs.nix { } }:
+{ pkgs ? import ./nix/nixpkgs.nix { }, }:
 let
   nix-pre-commit-hooks = import (builtins.fetchTarball
     "https://github.com/cachix/git-hooks.nix/tarball/master");
@@ -9,7 +9,10 @@ in let
       src = ./.;
       # If your hooks are intrusive, avoid running on each commit with a default_states like this:
       # default_stages = ["manual" "pre-push"];
-      hooks = { fourmolu.enable = true; };
+      hooks = {
+        fourmolu.enable = true;
+        nixfmt-classic.enable = true;
+      };
     };
   };
 in pkgs.mkShell rec {
@@ -44,7 +47,7 @@ in pkgs.mkShell rec {
     run-doctests-verbose() {
       cabal repl --with-compiler=doctest --repl-options=--verbose core
     }
-    
+
     run-doctests() {
       cabal repl --with-compiler=doctest core
     }
