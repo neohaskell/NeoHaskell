@@ -5,44 +5,82 @@ module Neo.Shell (
 
 import Array qualified
 import Directory qualified
+import File qualified
 import Maybe qualified
+import Neo.Build.Templates.AppMain qualified as AppMain
+import Neo.Build.Templates.Cabal qualified as Cabal
+import Neo.Build.Templates.CabalProject qualified as CabalProject
+import Neo.Build.Templates.Nix qualified as Nix
 import Neo.Core
 import Path qualified
 import Subprocess qualified
 import Task qualified
+import Text qualified
 
 
 data Error
   = NixFileError
-  | DirectoryError (Directory.Error)
+  | CabalFileError
   | CustomError Text
   deriving (Show)
 
 
 handle :: ProjectConfiguration -> Task Error Unit
 handle config = do
-  -- FIXME: Validate config first, should be done as semantic types,
-  -- so that validation can be done in the deserialization automatically
+  let haskellExtension = ".hs"
+  let projectName = config.name
+  let rootFolder = [path|.|]
+  let cabalFileName =
+        [fmt|#{projectName}.cabal|]
+          |> Path.fromText
+          |> Maybe.getOrDie -- TODO: Make better error handling here
+  let cabalProjectFileName = [path|cabal.project|]
+  let nixFile = Nix.template config
+  let cabalFilePath =
+        Array.fromLinkedList [rootFolder, cabalFileName]
+          |> Path.joinPaths
+  let targetAppFolder =
+        Array.fromLinkedList [rootFolder, ".launcher"]
+          |> Path.joinPaths
+  let targetAppPath =
+        Array.fromLinkedList [targetAppFolder, "Main.hs"]
+          |> Path.joinPaths
 
-  rootPath <- Directory.getCurrent |> Task.mapError DirectoryError
-  let neoPathText = Array.fromLinkedList [rootPath, [path|neo.json|]] |> Path.joinPaths |> Path.toText
-  let rootPathText = rootPath |> Path.toText
-  let defaultOverride = "https://github.com/NeoHaskell/NeoHaskell/archive/refs/heads/main.tar.gz"
-  let override = config.overrideNeohaskell |> Maybe.withDefault defaultOverride
-  let neoHaskellCommit = override
+  filepaths <-
+    Directory.walk [path|src|]
+      |> Task.mapError (\_ -> CustomError "WALK ERROR")
+
+  let haskellFiles = filepaths |> Array.takeIf (Path.endsWith haskellExtension)
+
+  let convertToModule filepath = do
+        let pathText = Path.toText filepath
+        let pathWithoutExtension = Text.dropRight (Text.length haskellExtension) pathText
+        let pathParts = Text.split "/" pathWithoutExtension
+        pathParts |> Text.joinWith "."
+
+  let modules = haskellFiles |> Array.map convertToModule
+  let cabalFile = Cabal.template config modules
+  let cabalProjectFile = CabalProject.template
+  let appMainFile = AppMain.template config
+
+  Directory.create targetAppFolder
+    |> Task.mapError (\_ -> [fmt|Could not create directory #{Path.toText targetAppFolder}|] |> CustomError)
+
+  File.writeText cabalFilePath cabalFile
+    |> Task.mapError (\_ -> CabalFileError)
+
+  File.writeText cabalProjectFileName cabalProjectFile
+    |> Task.mapError (\_ -> CabalFileError)
+
+  File.writeText targetAppPath appMainFile
+    |> Task.mapError (\_ -> CustomError "Could not write app main file")
+
+  -- Use nix-shell with the expression wrapped in parentheses and .env appended
   let shellExpression =
-        [fmt|
-let
-  lib = import (builtins.fetchTarball "https://github.com/NeoHaskell/NeoHaskell/archive/#{neoHaskellCommit}.tar.gz" + "/nix/lib.nix") {};
-in
-  lib.shellForNeoProjectHaskellNix {
-    neoJsonPath = "#{neoPathText}";
-    neoHaskellCommit = "#{neoHaskellCommit}";
-    srcPath = "#{rootPathText}/src";
-  }
-  |]
-  let nixShellParams = Array.fromLinkedList ["--show-trace", "-E", shellExpression]
-  completion <- Subprocess.openInherit "nix-shell" nixShellParams rootPath Subprocess.InheritBOTH
+        [fmt|{ pkgs ? import <nixpkgs> {} }:
+  ( (#{nixFile}) { inherit pkgs; } ).env|]
+  completion <-
+    Subprocess.openInherit "nix-shell" (Array.fromLinkedList ["-E", shellExpression]) rootFolder Subprocess.InheritBOTH
   if completion.exitCode != 0
     then errorOut completion.stderr
     else Task.yield ()
@@ -54,5 +92,3 @@ errorOut err =
     #{err}|]
     |> CustomError
     |> Task.throw
-
-
