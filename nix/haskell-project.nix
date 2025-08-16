@@ -1,5 +1,5 @@
-{ pkgs ? import <nixpkgs> { }
-, haskellNix ? import (import ./haskellnix.nix { inherit pkgs; }) { inherit pkgs; } }:
+{ pkgs ? import <nixpkgs> { }, haskellNix ?
+  import (import ./haskellnix.nix { inherit pkgs; }) { inherit pkgs; } }:
 
 # Generic function to create a Haskell project template
 projectName: src:
@@ -9,7 +9,7 @@ let
     overlays = [
       haskellNix.overlay
       (final: _prev: {
-        "${projectName}Project" = final.haskell-nix.project' {
+        "${projectName}Project" = final.haskell-nix.cabalProject {
           inherit src;
           compiler-nix-name = "ghc910";
         };
