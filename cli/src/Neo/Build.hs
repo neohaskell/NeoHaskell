@@ -9,6 +9,7 @@ import File qualified
 import Maybe qualified
 import Neo.Build.Templates.AppMain qualified as AppMain
 import Neo.Build.Templates.Cabal qualified as Cabal
+import Neo.Build.Templates.CabalProject qualified as CabalProject
 import Neo.Build.Templates.Nix qualified as Nix
 import Neo.Core
 import Path qualified
@@ -34,6 +35,7 @@ handle config = do
         [fmt|#{projectName}.cabal|]
           |> Path.fromText
           |> Maybe.getOrDie -- TODO: Make better error handling here
+  let cabalProjectFileName = [path|cabal.project|]
   let nixFile = Nix.template config
   let nixFilePath =
         Array.fromLinkedList [rootFolder, nixFileName]
@@ -62,6 +64,7 @@ handle config = do
 
   let modules = haskellFiles |> Array.map convertToModule
   let cabalFile = Cabal.template config modules
+  let cabalProjectFile = CabalProject.template
   let appMainFile = AppMain.template config
 
   Directory.create targetAppFolder
@@ -71,6 +74,9 @@ handle config = do
     |> Task.mapError (\_ -> NixFileError)
 
   File.writeText cabalFilePath cabalFile
+    |> Task.mapError (\_ -> CabalFileError)
+
+  File.writeText cabalProjectFileName cabalProjectFile
     |> Task.mapError (\_ -> CabalFileError)
 
   File.writeText targetAppPath appMainFile
