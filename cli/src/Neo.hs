@@ -13,6 +13,7 @@ import Json qualified
 import Neo.Build qualified as Build
 import Neo.New qualified as New
 import Neo.Run qualified as Run
+import Neo.Shell qualified as Shell
 import Task qualified
 import Text qualified
 
@@ -27,6 +28,7 @@ data NeoCommand
   = Build CommonFlags
   | Run CommonFlags
   | New New.ProjectName
+  | Shell CommonFlags
   deriving (Show, Eq, Ord)
 
 
@@ -47,7 +49,7 @@ run = do
         Command.CommandOptions
           { name = "neo",
             description = "NeoHaskell's console helper",
-            version = Just [Core.version|0.8.2|],
+            version = Just [Core.version|0.9.0|],
             decoder = commandsParser
           }
   cmd <- Command.parseHandler parser
@@ -92,8 +94,15 @@ commandsParser = do
             version = Nothing,
             decoder = runParser
           }
+  let shell =
+        Command.CommandOptions
+          { name = "shell",
+            description = "open a virtual environment shell",
+            version = Nothing,
+            decoder = shellParser
+          }
   Command.commands
-    (Array.fromLinkedList [new, build, run])
+    (Array.fromLinkedList [new, build, run, shell])
 
 
 buildParser :: Command.OptionsParser NeoCommand
@@ -112,6 +121,12 @@ newParser :: Command.OptionsParser NeoCommand
 newParser = do
   projectName <- projectNameParser
   pure (New projectName)
+
+
+shellParser :: Command.OptionsParser NeoCommand
+shellParser = do
+  common <- flagsParser
+  pure (Shell common)
 
 
 flagsParser :: Command.OptionsParser CommonFlags
@@ -146,6 +161,7 @@ data Error
   = BuildError Build.Error
   | RunError Run.Error
   | NewError New.Error
+  | ShellError Shell.Error
   | Other
 
 
@@ -173,6 +189,13 @@ errorToText err =
         Here's some more info though:
 
         #{toPrettyText newError}|]
+    ShellError shellError ->
+      [fmt|Error opening shell, check the logs above for more details.
+
+
+        Here's some more info though:
+
+        #{toPrettyText shellError}|]
     Other ->
       [fmt|An unknown error occurred, check the logs above for more details.|]
 
@@ -199,3 +222,10 @@ handleCommand command =
     New projectName -> do
       New.handle projectName
         |> Task.mapError (\e -> NewError e)
+    Shell flags -> do
+      txt <- File.readText flags.projectFile |> Task.mapError (\_ -> Other)
+      case Json.decodeText txt of
+        Err err -> panic err
+        Ok config ->
+          Shell.handle config
+            |> Task.mapError (\e -> ShellError e)

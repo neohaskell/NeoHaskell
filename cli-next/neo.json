@@ -1,9 +1,9 @@
 {
-  "name": "neo",
-  "version": "0.0.0",
-  "description": "The NeoHaskell command line helper",
-  "author": "Nikita Tchayka",
-  "license": "Apache-2.0",
-  "dependencies": {},
-  "overrideNeohaskell": "file:///home/nick/Source/NeoHaskell"
+  "name": "neo-sandbox",
+  "version": "0.0.1",
+  "description": "Your project's description",
+  "author": "Your Name",
+  "license": "ISC",
+  "dependencies": {
+  }
 }

@@ -1,4 +1,4 @@
-module Neo.Build (
+module Neo.Shell (
   handle,
   Error (..),
 ) where
@@ -75,18 +75,19 @@ handle config = do
   File.writeText targetAppPath appMainFile
     |> Task.mapError (\_ -> CustomError "Could not write app main file")
 
-  -- FIXME: Create another thread that renders the output of the build via streaming.
-  -- As right now there's no output at all
+  let shellExpression =
+        [fmt|{ pkgs ? import <nixpkgs> {} }:
+  ( (#{nixFile}) { inherit pkgs; } ).env|]
   completion <-
-    Subprocess.openInherit "nix-build" (Array.fromLinkedList ["-E", nixFile]) rootFolder Subprocess.InheritBOTH
+    Subprocess.openInherit "nix-shell" (Array.fromLinkedList ["-E", shellExpression]) rootFolder Subprocess.InheritBOTH
   if completion.exitCode != 0
     then errorOut completion.stderr
-    else print completion.stdout
+    else Task.yield ()
 
 
 errorOut :: Text -> Task Error _
 errorOut err =
-  [fmt|Oops the build failed:
+  [fmt|Oops the shell failed:
     #{err}|]
     |> CustomError
     |> Task.throw

@@ -2,6 +2,10 @@
 
 set -euo pipefail
 
+# Binary cache configuration
+BINARY_CACHE_SUBSTITUTERS="https://cache.iog.io"
+BINARY_CACHE_PUBLIC_KEYS="hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ="
+
 fail() {
     echo ""
     echo "neo: ❌ Oops! The installation script encountered an error."
@@ -27,9 +31,66 @@ if ! command -v nix &> /dev/null; then
     . /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh
 fi
 
+echo "🚀 Setting up binary caches to speed up builds..."
+echo ""
+echo "NeoHaskell can use pre-built binaries from cache servers to dramatically"
+echo "speed up installation (from hours to minutes). This requires sudo access"
+echo "to modify /etc/nix/nix.conf."
+echo ""
+read -p "Add binary caches? (recommended, requires sudo) [Y/n]: " -n 1 -r
+echo ""
+
+if [[ $REPLY =~ ^[Nn]$ ]]; then
+    echo "⚠️  Skipping binary cache setup. Expect longer build times (potentially hours)."
+else
+    echo "🔧 Adding binary cache configuration..."
+    
+    # Create /etc/nix/nix.conf if it doesn't exist
+    if [ ! -f /etc/nix/nix.conf ]; then
+        echo "Creating /etc/nix/nix.conf..."
+        sudo mkdir -p /etc/nix
+        sudo touch /etc/nix/nix.conf
+    fi
+    
+    # Check if the substituters line exists
+    if sudo grep -q "^extra-substituters" /etc/nix/nix.conf; then
+        # Add to existing line if not already present
+        if ! sudo grep -q "$BINARY_CACHE_SUBSTITUTERS" /etc/nix/nix.conf; then
+            escaped_substituters=$(printf '%s\n' "$BINARY_CACHE_SUBSTITUTERS" | sed 's/[[\.*^$()+?{|]/\\&/g')
+            sudo sed -i "/^extra-substituters/s/$/ $escaped_substituters/" /etc/nix/nix.conf
+        fi
+    else
+        # Add new line
+        echo "extra-substituters = $BINARY_CACHE_SUBSTITUTERS" | sudo tee -a /etc/nix/nix.conf > /dev/null
+    fi
+    
+    # Check if the trusted-public-keys line exists
+    if sudo grep -q "^extra-trusted-public-keys" /etc/nix/nix.conf; then
+        # Add to existing line if not already present
+        if ! sudo grep -q "$BINARY_CACHE_PUBLIC_KEYS" /etc/nix/nix.conf; then
+            escaped_keys=$(printf '%s\n' "$BINARY_CACHE_PUBLIC_KEYS" | sed 's/[[\.*^$()+?{|]/\\&/g')
+            sudo sed -i "/^extra-trusted-public-keys/s/$/ $escaped_keys/" /etc/nix/nix.conf
+        fi
+    else
+        # Add new line
+        echo "extra-trusted-public-keys = $BINARY_CACHE_PUBLIC_KEYS" | sudo tee -a /etc/nix/nix.conf > /dev/null
+    fi
+    
+    echo "✅ Binary cache configuration added successfully!"
+fi
+
+echo ""
 echo "📦 Installing NeoHaskell from GitHub..."
 nix-env -if https://github.com/neohaskell/NeoHaskell/archive/refs/heads/main.tar.gz
 
 echo "✅ NeoHaskell installed successfully!"
 echo ""
 echo "Try running 'neo --help' to see what you can do with it."
+echo ""
+echo ""
+echo "If the command is not found, try running"
+echo ""
+echo '. /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh'
+echo ""
+echo "first. Or restart your shell."
+echo ""

@@ -1,6 +1,6 @@
 cabal-version:      3.4
 name:               nhcli
-version:            0.8.2
+version:            0.9.0
 synopsis:           Command Line Tool for NeoHaskell
 description:        NeoHaskell is a dialect of Haskell that is focused on newcomer-friendliness and productivity.
 homepage:           https://neohaskell.org
@@ -11,7 +11,7 @@ maintainer:         nhlib@nickseagull.dev
 copyright:
 category:           Development
 build-type:         Simple
--- extra-source-files:
+extra-source-files: ../nix/haskellnix.nix, ../nix/haskell-project.nix
 
 common common_cfg
     ghc-options:  -Wall
@@ -51,12 +51,17 @@ library
     exposed-modules:
       Neo,
       Neo.Build,
+      Neo.Build.Templates.Cabal,
+      Neo.Build.Templates.CabalProject,
+      Neo.Build.Templates.Nix,
+      Neo.Build.Templates.AppMain,
       Neo.Core,
       Neo.Core.ProjectConfiguration,
       Neo.New,
       Neo.New.Templates.NeoJson,
       Neo.New.Templates.MainModule,
       Neo.Run,
+      Neo.Shell,
     -- other-modules:
     -- other-extensions:
     hs-source-dirs:   src

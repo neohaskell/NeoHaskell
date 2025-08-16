@@ -41,3 +41,13 @@ sandbox/*.nix
 
 example.cabal
 result
+
+.claude/settings.local.json
+
+cli-next/default.nix
+
+cli-next/cabal.project
+
+cli-next/.launcher/
+
+cli-next/neo-sandbox.cabal
