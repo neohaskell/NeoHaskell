@@ -19,7 +19,7 @@ data Error
 handle :: ProjectConfiguration -> Task Error Unit
 handle config = do
   let projectName = config.name
-  let rootFolder = [path|nhout|]
+  let rootFolder = [path|.|]
   completion <-
     Subprocess.openInherit [fmt|./result/bin/#{projectName}|] (Array.fromLinkedList []) rootFolder Subprocess.InheritBOTH
   if completion.exitCode != 0
