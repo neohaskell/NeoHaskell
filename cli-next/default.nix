@@ -1,6 +1,6 @@
 { pkgs ? import <nixpkgs> { } }:
 
-let
-  createHaskellProject = import ../nix/haskell-project.nix { inherit pkgs; };
-
-in createHaskellProject "neo-sandbox" ./.
+(import ../nix/haskell-project.nix { inherit pkgs; }) {
+  projectName = "neo-sandbox";
+  src = ./.;
+}

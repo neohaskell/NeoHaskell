@@ -2,7 +2,7 @@
   import (import ./haskellnix.nix { inherit pkgs; }) { inherit pkgs; } }:
 
 # Generic function to create a Haskell project template
-projectName: src:
+{ projectName, src }:
 let
   # Apply haskell.nix overlay
   pkgsWithOverlay = import haskellNix.sources.nixpkgs-unstable {
