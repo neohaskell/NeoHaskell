@@ -43,3 +43,5 @@ example.cabal
 result
 
 .claude/settings.local.json
+
+cli-next/default.nix
