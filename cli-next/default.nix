@@ -1,21 +1,6 @@
-{ pkgs ? import <nixpkgs> { }
-, haskellNix ? import ../nix/haskellnix.nix { pkgSet = pkgs; } }:
+{ pkgs ? import <nixpkgs> { } }:
 
 let
-  # Apply haskell.nix overlay
-  pkgsWithOverlay = import haskellNix.sources.nixpkgs-unstable {
-    overlays = [
-      haskellNix.overlay
-      (final: _prev: {
-        neo-sandboxProject = final.haskell-nix.project' {
-          src = ./.;
-          compiler-nix-name = "ghc910";
-        };
-      })
-    ];
-    inherit (haskellNix) config;
-  };
+  createHaskellProject = import ../nix/haskell-project.nix { inherit pkgs; };
 
-  flake = pkgsWithOverlay.neo-sandboxProject.flake { };
-
-in flake.packages."neo-sandbox:exe:neo-sandbox"
+in createHaskellProject "neo-sandbox" ./.

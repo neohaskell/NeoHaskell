@@ -1,3 +1,4 @@
+{ pkgs }:
 pkgs.fetchFromGitHub {
   owner = "input-output-hk";
   repo = "haskell.nix";
