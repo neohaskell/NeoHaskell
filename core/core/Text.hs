@@ -90,6 +90,9 @@ module Text (
   isTitleCase,
   isSnakeCase,
   isKebabCase,
+
+  -- * File Embedding
+  fromStaticFile,
 ) where
 
 import Array (Array)
@@ -98,9 +101,12 @@ import Basics
 import Bytes (Bytes)
 import Bytes qualified
 import Char (Char)
+import Control.Monad.Fail qualified as GHC
+import Data.FileEmbed qualified as FileEmbed
 import Data.Text qualified
 import Data.Text.Encoding qualified
 import Data.Text.Manipulate qualified as Manipulate
+import Language.Haskell.TH.Quote qualified as Quote
 import LinkedList (LinkedList)
 import Maybe (Maybe)
 import Text.Read qualified
@@ -666,3 +672,17 @@ isSnakeCase = checkCasing toSnakeCase
 -- > isKebabCase "hello_world" == False
 isKebabCase :: Text -> Bool
 isKebabCase = checkCasing toKebabCase
+
+
+-- | A macro for embedding static file contents as Text at compile time.
+--
+-- > content = [fromStaticFile|data/config.txt|]
+fromStaticFile :: Quote.QuasiQuoter
+fromStaticFile =
+  Quote.QuasiQuoter
+    { Quote.quoteExp = \filePath -> do
+        [|Data.Text.Encoding.decodeUtf8 $(FileEmbed.embedFile filePath)|],
+      Quote.quotePat = \_ -> GHC.fail "Text.fromStaticFile cannot be used in patterns",
+      Quote.quoteType = \_ -> GHC.fail "Text.fromStaticFile cannot be used in types",
+      Quote.quoteDec = \_ -> GHC.fail "Text.fromStaticFile canbs <-  used in declarations"
+    }

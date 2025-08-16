@@ -2,8 +2,8 @@ module Neo.Build.Templates.Nix (
   template,
 ) where
 
-import File qualified
 import Neo.Core
+import Text qualified
 
 
 -- FIXME: Use file-embed instead of duplicating this and what's in `nix/nixpkgs.nix`
@@ -18,7 +18,7 @@ pinnedNixpkgs =
 
 
 haskellNix :: Text
-haskellNix = [File.static|README.md|]
+haskellNix = [Text.fromStaticFile|./nix/haskellnix.nix|]
 
 
 template :: ProjectConfiguration -> Text
