@@ -30,16 +30,12 @@ handle config = do
   let haskellExtension = ".hs"
   let projectName = config.name
   let rootFolder = [path|.|]
-  let nixFileName = [path|default.nix|]
   let cabalFileName =
         [fmt|#{projectName}.cabal|]
           |> Path.fromText
           |> Maybe.getOrDie -- TODO: Make better error handling here
   let cabalProjectFileName = [path|cabal.project|]
   let nixFile = Nix.template config
-  let nixFilePath =
-        Array.fromLinkedList [rootFolder, nixFileName]
-          |> Path.joinPaths
   let cabalFilePath =
         Array.fromLinkedList [rootFolder, cabalFileName]
           |> Path.joinPaths
@@ -70,9 +66,6 @@ handle config = do
   Directory.create targetAppFolder
     |> Task.mapError (\_ -> [fmt|Could not create directory #{Path.toText targetAppFolder}|] |> CustomError)
 
-  File.writeText nixFilePath nixFile
-    |> Task.mapError (\_ -> NixFileError)
-
   File.writeText cabalFilePath cabalFile
     |> Task.mapError (\_ -> CabalFileError)
 
@@ -84,7 +77,8 @@ handle config = do
 
   -- FIXME: Create another thread that renders the output of the build via streaming.
   -- As right now there's no output at all
-  completion <- Subprocess.openInherit "nix-build" (Array.fromLinkedList []) rootFolder Subprocess.InheritBOTH
+  completion <-
+    Subprocess.openInherit "nix-build" (Array.fromLinkedList ["-E", nixFile]) rootFolder Subprocess.InheritBOTH
   if completion.exitCode != 0
     then errorOut completion.stderr
     else print completion.stdout
