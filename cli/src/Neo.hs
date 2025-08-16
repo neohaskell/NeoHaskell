@@ -97,7 +97,7 @@ commandsParser = do
   let shell =
         Command.CommandOptions
           { name = "shell",
-            description = "open a development shell with HLS support",
+            description = "open a virtual environment shell",
             version = Nothing,
             decoder = shellParser
           }

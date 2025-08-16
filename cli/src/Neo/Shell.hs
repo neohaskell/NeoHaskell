@@ -75,7 +75,6 @@ handle config = do
   File.writeText targetAppPath appMainFile
     |> Task.mapError (\_ -> CustomError "Could not write app main file")
 
-  -- Use nix-shell with the expression wrapped in parentheses and .env appended
   let shellExpression =
         [fmt|{ pkgs ? import <nixpkgs> {} }:
   ( (#{nixFile}) { inherit pkgs; } ).env|]
