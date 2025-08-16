@@ -44,7 +44,7 @@ handle config = do
         Array.fromLinkedList [rootFolder, cabalFileName]
           |> Path.joinPaths
   let targetAppFolder =
-        Array.fromLinkedList [rootFolder, "app"]
+        Array.fromLinkedList [rootFolder, ".launcher"]
           |> Path.joinPaths
   let targetAppPath =
         Array.fromLinkedList [targetAppFolder, "Main.hs"]

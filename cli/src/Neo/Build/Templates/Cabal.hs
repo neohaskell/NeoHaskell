@@ -94,6 +94,6 @@ executable #{execName}
     main-is:          Main.hs
     build-depends:
         #{name}
-    hs-source-dirs:   app
+    hs-source-dirs:   .launcher
 
   |]
