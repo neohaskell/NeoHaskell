@@ -1,7 +1,7 @@
 { pkgs }:
 
 # Generic function to create a Haskell project template
-{ packages, mainPackageName }:
+{ packages, mainPackageName, executableName }:
 let
   haskellNix = import (pkgs.fetchFromGitHub {
     owner = "input-output-hk";
@@ -15,7 +15,7 @@ let
       haskellNix.overlay
       (final: _prev:
         builtins.listToAttrs (builtins.map (packageName: {
-          name = "${packageName}Project";
+          name = "${packageName}";
           value = final.haskell-nix.cabalProject {
             src = packages.${packageName};
             compiler-nix-name = "ghc910";
@@ -25,6 +25,6 @@ let
     inherit (haskellNix) config;
   };
 
-  flake = pkgsWithOverlay."${mainPackageName}Project".flake { };
+  flake = pkgsWithOverlay."${mainPackageName}".flake { };
 
-in flake.packages."${mainPackageName}:exe:${mainPackageName}"
+in flake.packages."${executableName}"

@@ -22,6 +22,7 @@ in (hp { inherit pkgs;  }) {
     "#{name}" = ./.;
   };
   mainPackageName = "#{name}";
+  executableName = "#{name}:exe:#{name}";
 }
 
   |]

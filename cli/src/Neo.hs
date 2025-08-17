@@ -49,7 +49,7 @@ run = do
         Command.CommandOptions
           { name = "neo",
             description = "NeoHaskell's console helper",
-            version = Just [Core.version|0.9.0|],
+            version = Just [Core.version|0.9.1|],
             decoder = commandsParser
           }
   cmd <- Command.parseHandler parser

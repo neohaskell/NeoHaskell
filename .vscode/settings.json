@@ -20,6 +20,7 @@
     "Monoid",
     "Nanotime",
     "NEOHASKELL",
+    "nhcli",
     "nhcore",
     "nixfmt",
     "nixpkgs",
