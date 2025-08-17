@@ -45,31 +45,19 @@ if [[ $REPLY =~ ^[Nn]$ ]]; then
 else
     echo "🔧 Adding binary cache configuration..."
     
-    # Create /etc/nix/nix.conf if it doesn't exist
-    if [ ! -f /etc/nix/nix.conf ]; then
-        echo "Creating /etc/nix/nix.conf..."
-        sudo mkdir -p /etc/nix
-        sudo touch /etc/nix/nix.conf
+    # Add binary cache configuration to custom config file
+    sudo mkdir -p /etc/nix
+    if [ ! -f /etc/nix/nix.custom.conf ]; then
+        echo "Creating /etc/nix/nix.custom.conf..."
+        sudo touch /etc/nix/nix.custom.conf
     fi
     
-    # Add to existing extra-substituters line or create new one
-    if sudo grep -q "^extra-substituters" /etc/nix/nix.conf; then
-        # Check if our substituter is already present
-        if ! sudo grep -q "$BINARY_CACHE_SUBSTITUTERS" /etc/nix/nix.conf; then
-            sudo sed -i "/^extra-substituters/s|$| $BINARY_CACHE_SUBSTITUTERS|" /etc/nix/nix.conf
-        fi
-    else
-        echo "extra-substituters = $BINARY_CACHE_SUBSTITUTERS" | sudo tee -a /etc/nix/nix.conf > /dev/null
+    # Append our config if not already present
+    if ! sudo grep -q "$BINARY_CACHE_SUBSTITUTERS" /etc/nix/nix.custom.conf; then
+        echo "extra-substituters = $BINARY_CACHE_SUBSTITUTERS" | sudo tee -a /etc/nix/nix.custom.conf > /dev/null
     fi
-    
-    # Add to existing extra-trusted-public-keys line or create new one
-    if sudo grep -q "^extra-trusted-public-keys" /etc/nix/nix.conf; then
-        # Check if our key is already present
-        if ! sudo grep -q "$BINARY_CACHE_PUBLIC_KEYS" /etc/nix/nix.conf; then
-            sudo sed -i "/^extra-trusted-public-keys/s|$| $BINARY_CACHE_PUBLIC_KEYS|" /etc/nix/nix.conf
-        fi
-    else
-        echo "extra-trusted-public-keys = $BINARY_CACHE_PUBLIC_KEYS" | sudo tee -a /etc/nix/nix.conf > /dev/null
+    if ! sudo grep -q "$BINARY_CACHE_PUBLIC_KEYS" /etc/nix/nix.custom.conf; then
+        echo "extra-trusted-public-keys = $BINARY_CACHE_PUBLIC_KEYS" | sudo tee -a /etc/nix/nix.custom.conf > /dev/null
     fi
     
     echo "✅ Binary cache configuration added successfully!"
