@@ -61,6 +61,35 @@ else
     fi
     
     echo "✅ Binary cache configuration added successfully!"
+    
+    # Restart nix daemon to pick up new configuration
+    echo "🔄 Restarting Nix daemon to apply configuration changes..."
+    
+    # Detect platform and restart daemon accordingly
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        # macOS
+        if sudo launchctl kickstart -k system/org.nixos.nix-daemon 2>/dev/null; then
+            echo "✅ Nix daemon restarted successfully on macOS"
+        else
+            echo "⚠️  Failed to restart nix daemon on macOS - configuration will take effect on next restart"
+        fi
+    elif command -v systemctl &> /dev/null; then
+        # Linux with systemd (including WSL with systemd)
+        if sudo systemctl restart nix-daemon.service 2>/dev/null; then
+            echo "✅ Nix daemon restarted successfully"
+        else
+            echo "⚠️  Failed to restart nix daemon - configuration will take effect on next restart"
+        fi
+    else
+        # WSL or Linux without systemd - try pkill approach
+        echo "🔄 Attempting to restart nix daemon..."
+        if sudo pkill nix-daemon 2>/dev/null; then
+            echo "✅ Nix daemon stopped - it will restart automatically on next use"
+        else
+            echo "⚠️  Cannot automatically restart nix daemon on this system"
+            echo "    Configuration will take effect when you restart your shell or reboot"
+        fi
+    fi
 fi
 
 echo ""
