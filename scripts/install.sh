@@ -52,27 +52,23 @@ else
         sudo touch /etc/nix/nix.conf
     fi
     
-    # Check if the substituters line exists
+    # Add to existing extra-substituters line or create new one
     if sudo grep -q "^extra-substituters" /etc/nix/nix.conf; then
-        # Add to existing line if not already present
+        # Check if our substituter is already present
         if ! sudo grep -q "$BINARY_CACHE_SUBSTITUTERS" /etc/nix/nix.conf; then
-            escaped_substituters=$(printf '%s\n' "$BINARY_CACHE_SUBSTITUTERS" | sed 's/[[\.*^$()+?{|]/\\&/g')
-            sudo sed -i "/^extra-substituters/s/$/ $escaped_substituters/" /etc/nix/nix.conf
+            sudo sed -i "/^extra-substituters/s|$| $BINARY_CACHE_SUBSTITUTERS|" /etc/nix/nix.conf
         fi
     else
-        # Add new line
         echo "extra-substituters = $BINARY_CACHE_SUBSTITUTERS" | sudo tee -a /etc/nix/nix.conf > /dev/null
     fi
     
-    # Check if the trusted-public-keys line exists
+    # Add to existing extra-trusted-public-keys line or create new one
     if sudo grep -q "^extra-trusted-public-keys" /etc/nix/nix.conf; then
-        # Add to existing line if not already present
+        # Check if our key is already present
         if ! sudo grep -q "$BINARY_CACHE_PUBLIC_KEYS" /etc/nix/nix.conf; then
-            escaped_keys=$(printf '%s\n' "$BINARY_CACHE_PUBLIC_KEYS" | sed 's/[[\.*^$()+?{|]/\\&/g')
-            sudo sed -i "/^extra-trusted-public-keys/s/$/ $escaped_keys/" /etc/nix/nix.conf
+            sudo sed -i "/^extra-trusted-public-keys/s|$| $BINARY_CACHE_PUBLIC_KEYS|" /etc/nix/nix.conf
         fi
     else
-        # Add new line
         echo "extra-trusted-public-keys = $BINARY_CACHE_PUBLIC_KEYS" | sudo tee -a /etc/nix/nix.conf > /dev/null
     fi
     
