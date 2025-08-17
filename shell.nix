@@ -1,1 +1,1 @@
-{ pkgs ? import <nixpkgs> { } }: ((import ./default.nix { inherit pkgs; }).env)
+{ pkgs ? import <nixpkgs> { } }: ((import ./common.nix { inherit pkgs; }).shell)

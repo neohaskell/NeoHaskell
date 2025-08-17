@@ -1,6 +1,5 @@
 { pkgs }:
 
-# Generic function to create a Haskell project template
 { packages, mainPackageName, executableName }:
 let
   haskellNix = import (pkgs.fetchFromGitHub {
@@ -9,7 +8,6 @@ let
     rev = "4d493449406ec91db804511a6d15b6f076ba40e7";
     sha256 = "sha256-CHNMDgFfpTV5WkVhmMLf5d5qaLUjgeoziVgmgnhPGrI=";
   }) { inherit pkgs; };
-  # Apply haskell.nix overlay
   pkgsWithOverlay = import haskellNix.sources.nixpkgs-unstable {
     overlays = [
       haskellNix.overlay
@@ -25,6 +23,22 @@ let
     inherit (haskellNix) config;
   };
 
-  flake = pkgsWithOverlay."${mainPackageName}".flake { };
+  pkg = pkgsWithOverlay."${mainPackageName}";
 
-in flake.packages."${executableName}"
+in {
+  shell = pkg.shellFor {
+    tools = {
+      cabal = { };
+      hlint = { };
+      haskell-language-server = { };
+    };
+    buildInputs = [
+      pkgs.nil
+      pkgs.nixfmt-classic
+      pkgs.nixpkgs-fmt
+      pkgs.pkg-config
+      pkgs.zlib
+    ];
+  };
+  package = (pkg.flake { }).packages."${executableName}";
+}

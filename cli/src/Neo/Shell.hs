@@ -75,9 +75,10 @@ handle config = do
   File.writeText targetAppPath appMainFile
     |> Task.mapError (\_ -> CustomError "Could not write app main file")
 
-  let shellExpression =
+  let shellExpression :: Text =
         [fmt|{ pkgs ? import <nixpkgs> {} }:
-  ( (#{nixFile}) { inherit pkgs; } ).env|]
+  ( (#{nixFile}) { inherit pkgs; } ).shell|]
+
   completion <-
     Subprocess.openInherit "nix-shell" (Array.fromLinkedList ["-E", shellExpression]) rootFolder Subprocess.InheritBOTH
   if completion.exitCode != 0
