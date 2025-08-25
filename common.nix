@@ -1,4 +1,4 @@
-{ pkgs ? import <nixpkgs> { } }:
+{ pkgs ? import ./nix/nixpkgs.nix { } }:
 
 let hp = import ./cli/nix/haskell-project.nix { inherit pkgs; };
 in (hp {
