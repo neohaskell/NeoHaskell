@@ -31,6 +31,7 @@ in {
       cabal = { };
       hlint = { };
       haskell-language-server = { };
+      hspec-discover = { };
     };
     buildInputs = [
       pkgs.nil
