@@ -1,1 +1,2 @@
-import ./cli/default.nix
+{ pkgs ? import ./nix/nixpkgs.nix { } }:
+((import ./common.nix { inherit pkgs; }).package)

@@ -1,6 +1,10 @@
+# Pinned nixpkgs for NeoHaskell project
+# Last updated: 2025-08-25
+# Commit from nixos-unstable branch (2025-08-19)
 import (builtins.fetchTarball {
-  name = "nixpkgs-054144e5";
-  url =
-    "https://github.com/nixos/nixpkgs/archive/054144e516ca1e3cf5706d5c3427d350eaa107af.tar.gz";
-  sha256 = "0ixd2mc9kkmr8mz20ah2j7akgwllxsjv94ah895zgi9b9q1h25ka";
+  name = "nixpkgs-20075955";
+  url = "https://github.com/nixos/nixpkgs/archive/20075955deac2583bb12f07151c2df830ef346b4.tar.gz";
+  # To get the sha256, run:
+  # nix-prefetch-url --unpack https://github.com/nixos/nixpkgs/archive/20075955deac2583bb12f07151c2df830ef346b4.tar.gz
+  sha256 = "1s3lxb33cwazlx72pygcbcc76bbgbhdil6q9bhqbzbjxj001zk0w";
 })

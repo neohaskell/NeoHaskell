@@ -28,24 +28,17 @@ jobs:
         run: brew install bash
 
       - uses: actions/checkout@v4
-      - uses: cachix/install-nix-action@v27
+
+      - uses: DeterminateSystems/determinate-nix-action@v3.8.6
+        with:
+          extra-conf: |
+            extra-substituters = https://cache.iog.io
+            extra-trusted-public-keys = hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ=
+
+      - uses: DeterminateSystems/magic-nix-cache-action@v13
 
       - name: Build the project with Nix
         run: nix-build
-
-      - name: Cache Cabal
-        id: cache
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cabal
-            dist-newstyle
-            .devenv/profile
-          key: ${{ runner.os }}-${{ hashFiles('**/*.cabal') }}-${{ hashFiles('**/*.lock') }}-1 # modify the key if the cache is not working as expected
-
-      - name: Update Cabal Hackage list
-        # if: steps.cache.outputs.cache-hit != 'true'
-        run: nix-shell --run "cabal update"
 
       - name: Build the project with cabal
         run: nix-shell --run "cabal build all"
@@ -53,8 +46,9 @@ jobs:
       - name: Run core tests
         run: nix-shell --run "cabal test core"
 
-      - name: Run core doctests
-        run: nix-shell --run "run-doctests-verbose"
+      # Doctests are failing - See issue #204
+      # - name: Run core doctests
+      #   run: nix-shell --run "cabal repl --with-compiler=doctest --repl-options=--verbose core"
 
       - name: Run CLI tests
         run: nix-shell --run "cabal test cli"

@@ -18,8 +18,11 @@ let
   hp = (#{haskellProject});
 
 in (hp { inherit pkgs;  }) {
-  projectName = "#{name}";
-  src = ./.;
+  packages = {
+    "#{name}" = ./.;
+  };
+  mainPackageName = "#{name}";
+  executableName = "#{name}:exe:#{name}";
 }
 
   |]

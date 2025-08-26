@@ -1,28 +1,45 @@
 { pkgs }:
 
-# Generic function to create a Haskell project template
-{ projectName, src }:
+{ packages, mainPackageName, executableName }:
 let
   haskellNix = import (pkgs.fetchFromGitHub {
     owner = "input-output-hk";
     repo = "haskell.nix";
     rev = "4d493449406ec91db804511a6d15b6f076ba40e7";
     sha256 = "sha256-CHNMDgFfpTV5WkVhmMLf5d5qaLUjgeoziVgmgnhPGrI=";
-  }) { inherit pkgs; };
-  # Apply haskell.nix overlay
+  }) { };
   pkgsWithOverlay = import haskellNix.sources.nixpkgs-unstable {
     overlays = [
       haskellNix.overlay
-      (final: _prev: {
-        "${projectName}Project" = final.haskell-nix.cabalProject {
-          inherit src;
-          compiler-nix-name = "ghc910";
-        };
-      })
+      (final: _prev:
+        builtins.listToAttrs (builtins.map (packageName: {
+          name = "${packageName}";
+          value = final.haskell-nix.cabalProject {
+            src = packages.${packageName};
+            compiler-nix-name = "ghc910";
+          };
+        }) (builtins.attrNames packages)))
     ];
     inherit (haskellNix) config;
   };
 
-  flake = pkgsWithOverlay."${projectName}Project".flake { };
+  pkg = pkgsWithOverlay."${mainPackageName}";
 
-in flake.packages."${projectName}:exe:${projectName}"
+in {
+  shell = pkg.shellFor {
+    tools = {
+      cabal = { };
+      hlint = { };
+      haskell-language-server = { };
+      hspec-discover = { };
+    };
+    buildInputs = [
+      pkgs.nil
+      pkgs.nixfmt-classic
+      pkgs.nixpkgs-fmt
+      pkgs.pkg-config
+      pkgs.zlib
+    ];
+  };
+  package = (pkg.flake { }).packages."${executableName}";
+}

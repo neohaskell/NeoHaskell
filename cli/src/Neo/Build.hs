@@ -75,10 +75,12 @@ handle config = do
   File.writeText targetAppPath appMainFile
     |> Task.mapError (\_ -> CustomError "Could not write app main file")
 
-  -- FIXME: Create another thread that renders the output of the build via streaming.
-  -- As right now there's no output at all
+  let buildExpression :: Text =
+        [fmt|{ pkgs ? import <nixpkgs> {} }:
+  ( (#{nixFile}) { inherit pkgs; } ).package|]
+
   completion <-
-    Subprocess.openInherit "nix-build" (Array.fromLinkedList ["-E", nixFile]) rootFolder Subprocess.InheritBOTH
+    Subprocess.openInherit "nix-build" (Array.fromLinkedList ["-E", buildExpression]) rootFolder Subprocess.InheritBOTH
   if completion.exitCode != 0
     then errorOut completion.stderr
     else print completion.stdout
