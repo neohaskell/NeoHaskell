@@ -38,20 +38,6 @@ jobs:
       - name: Build the project with Nix
         run: nix-build
 
-      - name: Cache Cabal
-        id: cache
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cabal
-            dist-newstyle
-            .devenv/profile
-          key: ${{ runner.os }}-${{ hashFiles('**/*.cabal') }}-${{ hashFiles('**/*.lock') }}-1 # modify the key if the cache is not working as expected
-
-      - name: Update Cabal Hackage list
-        # if: steps.cache.outputs.cache-hit != 'true'
-        run: nix-shell --run "cabal update"
-
       - name: Build the project with cabal
         run: nix-shell --run "cabal build all"
 
