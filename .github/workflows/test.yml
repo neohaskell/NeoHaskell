@@ -28,7 +28,12 @@ jobs:
         run: brew install bash
 
       - uses: actions/checkout@v4
-      - uses: DeterminateSystems/determinate-nix-action@main
+
+      - uses: DeterminateSystems/determinate-nix-action@v3.8.6
+        with:
+          extra-conf: |
+            extra-substituters = https://cache.iog.io
+            extra-trusted-public-keys = hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ=
 
       - name: Build the project with Nix
         run: nix-build
