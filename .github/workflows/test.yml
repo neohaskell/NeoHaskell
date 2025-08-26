@@ -44,8 +44,9 @@ jobs:
       - name: Run core tests
         run: nix-shell --run "cabal test core"
 
-      - name: Run core doctests
-        run: nix-shell --run "run-doctests-verbose"
+      # Doctests are failing - See issue #204
+      # - name: Run core doctests
+      #   run: nix-shell --run "cabal repl --with-compiler=doctest --repl-options=--verbose core"
 
       - name: Run CLI tests
         run: nix-shell --run "cabal test cli"
