@@ -1,193 +1,189 @@
-cabal-version:      3.4
-name:               nhcore
-version:            0.9.1
-synopsis:           Core Library for NeoHaskell
-description:        NeoHaskell is a dialect of Haskell that is focused on newcomer-friendliness and productivity.
-homepage:           https://neohaskell.org
-license:            Apache-2.0
-author:             Nikita Tchayka
-maintainer:         nhlib@nickseagull.dev
+cabal-version: 3.4
+name: nhcore
+version: 0.9.1
+synopsis: Core Library for NeoHaskell
+description: NeoHaskell is a dialect of Haskell that is focused on newcomer-friendliness and productivity.
+homepage: https://neohaskell.org
+license: Apache-2.0
+author: Nikita Tchayka
+maintainer: nhlib@nickseagull.dev
 copyright:
-category:           Development
-build-type:         Simple
+category: Development
+build-type: Simple
 
 common common_cfg
-    ghc-options:  -Wall
-                  -Wno-orphans
-                  -fno-warn-partial-type-signatures
-                  -fno-warn-name-shadowing
-                  -Werror
-    build-depends:
-      base,
-      ghc-prim ,
-      async ,
-      aeson ,
-      bytestring ,
-      data-default ,
-      file-embed,
-      text ,
-      vector ,
-      directory ,
-      text-manipulate ,
-      transformers ,
-      http-conduit ,
-      containers ,
-      optparse-applicative ,
-      path ,
-      nanotime ,
-      process ,
-      pretty-simple ,
-      unagi-chan ,
-      QuickCheck ,
-      quickcheck-instances ,
-      string-interpolate ,
-      with-utf8 ,
-      dir-traverse ,
-      Cabal ,
-      uuid ,
-      hspec,
-      template-haskell
+  ghc-options:
+    -Wall
+    -Wno-orphans
+    -fno-warn-partial-type-signatures
+    -fno-warn-name-shadowing
+    -Werror
 
+  build-depends:
+    Cabal,
+    QuickCheck,
+    aeson,
+    async,
+    base,
+    bytestring,
+    containers,
+    data-default,
+    dir-traverse,
+    directory,
+    file-embed,
+    ghc-prim,
+    hspec,
+    http-conduit,
+    large-anon,
+    large-generics,
+    nanotime,
+    optparse-applicative,
+    path,
+    pretty-simple,
+    process,
+    quickcheck-instances,
+    string-interpolate,
+    template-haskell,
+    text,
+    text-manipulate,
+    transformers,
+    unagi-chan,
+    uuid,
+    vector,
+    with-utf8,
 
-    default-extensions:
-      ApplicativeDo
-      BlockArguments
-      DataKinds
-      NoImplicitPrelude
-      TemplateHaskell
-      DeriveDataTypeable
-      QuasiQuotes
-      QualifiedDo
-      ImpredicativeTypes
-      ImportQualifiedPost
-      OverloadedStrings
-      OverloadedLabels
-      OverloadedRecordDot
-      DuplicateRecordFields
-      PackageImports
-      NamedFieldPuns
-      Strict
-      TypeFamilies
-      PartialTypeSignatures
+  default-extensions:
+    ApplicativeDo
+    BlockArguments
+    DataKinds
+    DeriveDataTypeable
+    DuplicateRecordFields
+    ImportQualifiedPost
+    ImpredicativeTypes
+    NamedFieldPuns
+    NoImplicitPrelude
+    OverloadedLabels
+    OverloadedRecordDot
+    OverloadedStrings
+    PackageImports
+    PartialTypeSignatures
+    QualifiedDo
+    QuasiQuotes
+    Strict
+    TemplateHaskell
+    TypeFamilies
 
 library
-    import:           common_cfg
-    exposed-modules:
-      -- Core
-      Core,
-      Char,
-      Accumulator,
-      Basics,
-      Bytes,
-      Text,
-      Function,
-      Map,
-      LinkedList,
-      Result,
-      Unit,
-      Uuid,
-      Tuple,
-      Console,
-      Int,
-      IO,
-      Maybe,
-      Array,
-      Version,
-      Record,
-      Unknown,
-      Var,
-      Task,
+  import: common_cfg
+  exposed-modules:
+    -- Core
+    -- System
+    -- OptionsParser
+    -- JSON
+    -- Traits
+    -- Service
+    -- Meta
+    -- Concurrency
+    -- Http
+    -- Test
+    Accumulator
+    Appendable
+    Applicable
+    Array
+    AsyncTask
+    Basics
+    Bytes
+    Channel
+    Char
+    Collection
+    Combinable
+    Command
+    ConcurrentVar
+    Console
+    Core
+    Default
+    Directory
+    DurableChannel
+    Environment
+    File
+    Function
+    Http
+    Http.Client
+    IO
+    Int
+    Json
+    LinkedList
+    Lock
+    Map
+    Mappable
+    Maybe
+    Path
+    Record
+    Result
+    Service.Event
+    Service.Event.EntityId
+    Service.Event.StreamId
+    Service.Event.StreamPosition
+    Service.EventStore
+    Service.EventStore.Core
+    Service.EventStore.InMemory
+    Subprocess
+    Task
+    Test
+    Test.Service.EventStore
+    Test.Service.EventStore.GlobalStreamOrdering.Context
+    Test.Service.EventStore.GlobalStreamOrdering.Spec
+    Test.Service.EventStore.IndividualStreamOrdering.Context
+    Test.Service.EventStore.IndividualStreamOrdering.Spec
+    Test.Service.EventStore.OptimisticConcurrency.Context
+    Test.Service.EventStore.OptimisticConcurrency.Spec
+    Test.Service.EventStore.ReadAllBackwardsFromEnd.Context
+    Test.Service.EventStore.ReadAllBackwardsFromEnd.Spec
+    Test.Service.EventStore.ReadAllForwardsFromStart.Context
+    Test.Service.EventStore.ReadAllForwardsFromStart.Spec
+    Test.Service.EventStore.Subscriptions.Context
+    Test.Service.EventStore.Subscriptions.SimpleSpec
+    Test.Service.EventStore.Subscriptions.Spec
+    Text
+    Thenable
+    Time
+    ToText
+    Trigger
+    Tuple
+    TypeName
+    Unit
+    Unknown
+    Uuid
+    Var
+    Version
 
-      -- System
-      File,
-      Directory,
-      Subprocess,
-      Path,
-      Time,
-      Environment,
+  -- other-modules:
+  -- other-extensions:
+  hs-source-dirs:
+    core
+    concurrency
+    service
+    json
+    traits
+    system
+    http
+    meta
+    testlib
+    options-parser
 
-      -- OptionsParser
-      Command,
-
-      -- JSON
-      Json,
-
-      -- Traits
-      Applicable,
-      Appendable,
-      Collection,
-      Combinable,
-      Default,
-      Mappable,
-      Thenable,
-      ToText,
-
-      -- Service
-      Trigger,
-      Service.Event,
-      Service.Event.EntityId,
-      Service.Event.StreamId,
-      Service.Event.StreamPosition,
-      Service.EventStore,
-      Service.EventStore.Core,
-      Service.EventStore.InMemory,
-
-      -- Reflection
-      TypeName,
-
-      -- Concurrency
-      AsyncTask,
-      Channel,
-      DurableChannel,
-      ConcurrentVar,
-      Lock,
-
-      -- Http
-      Http,
-      Http.Client,
-
-      -- Test
-      Test,
-      Test.Service.EventStore,
-      Test.Service.EventStore.GlobalStreamOrdering.Context,
-      Test.Service.EventStore.GlobalStreamOrdering.Spec,
-      Test.Service.EventStore.IndividualStreamOrdering.Spec,
-      Test.Service.EventStore.IndividualStreamOrdering.Context,
-      Test.Service.EventStore.OptimisticConcurrency.Spec,
-      Test.Service.EventStore.OptimisticConcurrency.Context,
-      Test.Service.EventStore.ReadAllForwardsFromStart.Spec,
-      Test.Service.EventStore.ReadAllForwardsFromStart.Context,
-      Test.Service.EventStore.ReadAllBackwardsFromEnd.Spec,
-      Test.Service.EventStore.ReadAllBackwardsFromEnd.Context,
-      Test.Service.EventStore.Subscriptions.Spec,
-      Test.Service.EventStore.Subscriptions.SimpleSpec,
-      Test.Service.EventStore.Subscriptions.Context,
-
-    -- other-modules:
-    -- other-extensions:
-    hs-source-dirs:
-      core,
-      concurrency,
-      service,
-      json,
-      traits,
-      system,
-      http,
-      reflection,
-      testlib,
-      options-parser
-    default-language: GHC2021
+  default-language: GHC2021
 
 test-suite nhcore-test
-    import:           common_cfg
-    default-language: GHC2021
-    other-modules:
-      Service.EventStore.InMemorySpec,
-    -- other-extensions:
-    type:             exitcode-stdio-1.0
-    hs-source-dirs:   test
-    main-is:          Main.hs
-    build-depends:
-        base,
-        nhcore,
-        hspec,
+  import: common_cfg
+  default-language: GHC2021
+  other-modules:
+    Service.EventStore.InMemorySpec
+
+  -- other-extensions:
+  type: exitcode-stdio-1.0
+  hs-source-dirs: test
+  main-is: Main.hs
+  build-depends:
+    base,
+    hspec,
+    nhcore,
