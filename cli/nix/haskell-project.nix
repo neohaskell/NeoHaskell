@@ -32,6 +32,9 @@ in {
       hlint = { };
       haskell-language-server = { };
       hspec-discover = { };
+      ghcid = { };
+      cabal-gild = { };
+      fourmolu = { };
     };
     buildInputs = [
       pkgs.nil
