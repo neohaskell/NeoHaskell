@@ -34,8 +34,6 @@ common common_cfg
     ghc-prim,
     hspec,
     http-conduit,
-    large-anon,
-    large-generics,
     nanotime,
     optparse-applicative,
     path,

@@ -5,8 +5,8 @@ let
   haskellNix = import (pkgs.fetchFromGitHub {
     owner = "input-output-hk";
     repo = "haskell.nix";
-    rev = "4d493449406ec91db804511a6d15b6f076ba40e7";
-    sha256 = "sha256-CHNMDgFfpTV5WkVhmMLf5d5qaLUjgeoziVgmgnhPGrI=";
+    rev = "8244bb25bacd06f80fb7d79537eede0d6449faf6";
+    sha256 = "sha256-Nx7bintaRzBarcV3S92xw5P68CdE+9/KkwjWibThd/M=";
   }) { };
   pkgsWithOverlay = import haskellNix.sources.nixpkgs-unstable {
     overlays = [
@@ -16,7 +16,7 @@ let
           name = "${packageName}";
           value = final.haskell-nix.cabalProject {
             src = packages.${packageName};
-            compiler-nix-name = "ghc910";
+            compiler-nix-name = "ghc98";
           };
         }) (builtins.attrNames packages)))
     ];
