@@ -35,7 +35,6 @@ import Test.Hspec qualified as Hspec
 import Text qualified
 
 
-
 type Spec a = Hspec.SpecWith a
 
 
@@ -46,7 +45,7 @@ describe name = Hspec.describe (Text.toLinkedList name)
 
 
 -- | Define a test case
-it :: (Show err) => Text -> (context -> Task err Unit) -> Spec context
+it :: Text -> (context -> Task Text Unit) -> Spec context
 it name block =
   Hspec.it (Text.toLinkedList name) \context -> do
     block context |> Task.runOrPanic
@@ -54,7 +53,7 @@ it name block =
 
 
 -- | Marks a test as pending
-pending :: Text -> Task err Unit
+pending :: Text -> Task Text Unit
 pending name =
   Hspec.pendingWith (Text.toLinkedList name)
     |> Task.fromIO
@@ -69,42 +68,42 @@ shouldBe expected actual = do
 
 
 -- | Assert that a value satisfies a predicate
-shouldSatisfy :: (HasCallStack, Show a) => (a -> Bool) -> a -> Task err Unit
+shouldSatisfy :: (HasCallStack, Show a) => (a -> Bool) -> a -> Task Text Unit
 shouldSatisfy predicate value = do
   Task.fromIO (Hspec.shouldSatisfy value predicate)
 {-# INLINE shouldSatisfy #-}
 
 
 -- | Assert that an array contains another array
-shouldContain :: (HasCallStack, Show a, Eq a) => Array a -> Array a -> Task err Unit
+shouldContain :: (HasCallStack, Show a, Eq a) => Array a -> Array a -> Task Text Unit
 shouldContain expected actual = do
   Task.fromIO (Hspec.shouldContain (Array.toLinkedList expected) (Array.toLinkedList actual))
 {-# INLINE shouldContain #-}
 
 
 -- | Assert that an array does not contain another array
-shouldNotContain :: (HasCallStack, Show a, Eq a) => Array a -> Array a -> Task err Unit
+shouldNotContain :: (HasCallStack, Show a, Eq a) => Array a -> Array a -> Task Text Unit
 shouldNotContain expected actual = do
   Task.fromIO (Hspec.shouldNotContain (Array.toLinkedList expected) (Array.toLinkedList actual))
 {-# INLINE shouldNotContain #-}
 
 
 -- | Assert that a text starts with a prefix
-shouldStartWith :: (HasCallStack) => Text -> Text -> Task err Unit
+shouldStartWith :: (HasCallStack) => Text -> Text -> Task Text Unit
 shouldStartWith prefix text = do
   Task.fromIO (Hspec.shouldStartWith (Text.toLinkedList text) (Text.toLinkedList prefix))
 {-# INLINE shouldStartWith #-}
 
 
 -- | Assert that a string ends with a suffix
-shouldEndWith :: (HasCallStack) => Text -> Text -> Task err Unit
+shouldEndWith :: (HasCallStack) => Text -> Text -> Task Text Unit
 shouldEndWith suffix text = do
   Task.fromIO (Hspec.shouldEndWith (Text.toLinkedList text) (Text.toLinkedList suffix))
 {-# INLINE shouldEndWith #-}
 
 
 -- | Assert that two lists contain the same elements, regardless of order
-shouldMatchList :: (HasCallStack, Show a, Eq a) => Array a -> Array a -> Task err Unit
+shouldMatchList :: (HasCallStack, Show a, Eq a) => Array a -> Array a -> Task Text Unit
 shouldMatchList expected actual = do
   Task.fromIO (Hspec.shouldMatchList (Array.toLinkedList actual) (Array.toLinkedList expected))
 {-# INLINE shouldMatchList #-}
@@ -118,7 +117,7 @@ shouldReturn expected actual = do
 
 
 -- | Fail the test with a message
-fail :: Text -> Task err Unit
+fail :: Text -> Task Text Unit
 fail message = do
   Task.fromIO (Hspec.expectationFailure (Text.toLinkedList message))
 {-# INLINE fail #-}
@@ -189,7 +188,7 @@ whenEnvVar envVarName block = do
 
 
 -- | Assert that an array is in increasing order
-shouldHaveIncreasingOrder :: (HasCallStack, Show a, Ord a, IsString err) => Array a -> Task err Unit
+shouldHaveIncreasingOrder :: (HasCallStack, Show a, Ord a) => Array a -> Task Text Unit
 shouldHaveIncreasingOrder array = do
   array
     |> Array.indexed
@@ -210,7 +209,7 @@ https://github.com/NeoHaskell/NeoHaskell/issues|]
 
 
 -- | Assert that an array is in decreasing order
-shouldHaveDecreasingOrder :: (HasCallStack, Show a, Ord a, IsString err) => Array a -> Task err Unit
+shouldHaveDecreasingOrder :: (HasCallStack, Show a, Ord a) => Array a -> Task Text Unit
 shouldHaveDecreasingOrder array =
   array
     |> Array.indexed
@@ -231,7 +230,7 @@ https://github.com/NeoHaskell/NeoHaskell/issues|]
 
 
 -- | Assert that a value is less than or equal to a maximum value
-shouldBeLessThanOrEqual :: (HasCallStack, Show a, Ord a, IsString err) => a -> a -> Task err Unit
+shouldBeLessThanOrEqual :: (HasCallStack, Show a, Ord a) => a -> a -> Task Text Unit
 shouldBeLessThanOrEqual maximum value = do
   let msg = [fmt|#{toText value} is not less than or equal to #{toText maximum}|]
   if value <= maximum
@@ -241,7 +240,7 @@ shouldBeLessThanOrEqual maximum value = do
 
 
 -- | Assert that a value is greater than or equal to a minimum value
-shouldBeGreaterThanOrEqual :: (HasCallStack, Show a, Ord a, IsString err) => a -> a -> Task err Unit
+shouldBeGreaterThanOrEqual :: (HasCallStack, Show a, Ord a) => a -> a -> Task Text Unit
 shouldBeGreaterThanOrEqual minimum value = do
   let msg = [fmt|#{toText value} is not greater than or equal to #{toText minimum}|]
   if value >= minimum
@@ -251,7 +250,7 @@ shouldBeGreaterThanOrEqual minimum value = do
 
 
 -- | Assert that a value is less than a maximum value
-shouldBeLessThan :: (HasCallStack, Show a, Ord a, IsString err) => a -> a -> Task err Unit
+shouldBeLessThan :: (HasCallStack, Show a, Ord a) => a -> a -> Task Text Unit
 shouldBeLessThan maximum value = do
   let msg = [fmt|#{toText value} is not less than #{toText maximum}|]
   if value < maximum
@@ -261,7 +260,7 @@ shouldBeLessThan maximum value = do
 
 
 -- | Assert that a value is greater than a minimum value
-shouldBeGreaterThan :: (HasCallStack, Show a, Ord a, IsString err) => a -> a -> Task err Unit
+shouldBeGreaterThan :: (HasCallStack, Show a, Ord a) => a -> a -> Task Text Unit
 shouldBeGreaterThan minimum value = do
   let msg = [fmt|#{toText value} is not greater than #{toText minimum}|]
   if value > minimum

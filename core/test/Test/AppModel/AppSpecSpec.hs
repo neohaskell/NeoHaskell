@@ -9,4 +9,4 @@ spec =
   describe "AppSpec" do
     describe "verify" do
       it "fails" \_ -> do
-        fail @Text "not implemented"
+        fail "not implemented"
