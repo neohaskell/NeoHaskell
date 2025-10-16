@@ -128,6 +128,7 @@ library
     Subprocess
     Task
     Test
+    Test.AppModel
     Test.Service.EventStore
     Test.Service.EventStore.GlobalStreamOrdering.Context
     Test.Service.EventStore.GlobalStreamOrdering.Spec

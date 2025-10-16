@@ -1,4 +1,6 @@
 module Test (
+  module Reexported,
+
   -- * Types
   Spec,
 
@@ -34,6 +36,7 @@ import Control.Monad qualified
 import Core
 import Environment qualified
 import Task qualified
+import Test.AppModel as Reexported
 import Test.Hspec qualified as Hspec
 import Text qualified
 
@@ -204,7 +207,7 @@ shouldHaveIncreasingOrder array = do
             Nothing ->
               fail
                 [fmt|Should never happen: shouldHaveIncreasingOrder: index is out of bounds.
-            
+
 Please report this as a bug at the NeoHaskell GitHub issue tracker:
 https://github.com/NeoHaskell/NeoHaskell/issues|]
       )
@@ -225,7 +228,7 @@ shouldHaveDecreasingOrder array =
             Nothing ->
               fail
                 [fmt|Should never happen: shouldHaveDecreasingOrder: index is out of bounds.
-            
+
 Please report this as a bug at the NeoHaskell GitHub issue tracker:
 https://github.com/NeoHaskell/NeoHaskell/issues|]
       )
