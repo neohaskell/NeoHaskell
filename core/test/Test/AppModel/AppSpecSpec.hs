@@ -1,6 +1,7 @@
 module Test.AppModel.AppSpecSpec where
 
 import Core
+import Task qualified
 import Test
 import Test.AppSpec.Core (AppSpec (..))
 import Test.AppSpec.Verify qualified as Verify
@@ -12,14 +13,17 @@ spec =
     describe "verify" do
       it "does not verify any scenario if there aren't any" \_ -> do
         let appSpec = AppSpec @MyAppModel
+        ops <- mockVerifyOps
 
-        _ <- Verify.run mockVerifyOps appSpec
+        Verify.run ops appSpec
 
-        fail "not implemented"
+        ops.verifyScenarioCalls
+          |> testRef shouldBe 0
 
 
 data MyAppModel = MyAppModel
 
 
-mockVerifyOps :: Verify.Ops
-mockVerifyOps = Verify.Ops
+mockVerifyOps :: Task Text Verify.Ops
+mockVerifyOps =
+  Task.yield Verify.Ops
