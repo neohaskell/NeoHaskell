@@ -1,11 +1,13 @@
 module Test.AppSpec.Verify where
 
 import Core
+import Task qualified
 import Test.AppSpec.Core
 
 
-run :: ops -> AppSpec appModel -> Task Text Unit
-run = panic "not implemented"
+run :: Ops -> AppSpec appModel -> Task Text Unit
+run _ _ = do
+  Task.yield unit
 
 
 data Ops = Ops

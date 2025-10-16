@@ -2,7 +2,6 @@ module Var (Var, new, get, set) where
 
 import Basics
 import Data.IORef qualified as GHC
-import IO (IO)
 import Task (Task)
 import Task qualified
 

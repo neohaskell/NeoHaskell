@@ -5,6 +5,10 @@ import Task qualified
 import Test
 import Test.AppSpec.Core (AppSpec (..))
 import Test.AppSpec.Verify qualified as Verify
+import Var qualified
+
+
+data MyAppModel = MyAppModel
 
 
 spec :: Spec Unit
@@ -13,17 +17,21 @@ spec =
     describe "verify" do
       it "does not verify any scenario if there aren't any" \_ -> do
         let appSpec = AppSpec @MyAppModel
-        ops <- mockVerifyOps
+        (ops, observe) <- mockVerifyOps
 
         Verify.run ops appSpec
 
-        ops.verifyScenarioCalls
+        observe.verifyScenarioCalls
           |> varContents shouldBe 0
 
 
-data MyAppModel = MyAppModel
+data VerifyObserve = VerifyObserve
+  { verifyScenarioCalls :: Var Int
+  }
 
 
-mockVerifyOps :: Task Text Verify.Ops
-mockVerifyOps =
-  Task.yield Verify.Ops
+mockVerifyOps :: Task Text (Verify.Ops, VerifyObserve)
+mockVerifyOps = do
+  verifyScenarioCalls <- Var.new 0
+  let verifyObserver = VerifyObserve {verifyScenarioCalls}
+  Task.yield (Verify.Ops, verifyObserver)
