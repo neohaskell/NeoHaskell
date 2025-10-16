@@ -29,6 +29,7 @@ module Test (
   shouldBeGreaterThanOrEqual,
   shouldBeLessThan,
   shouldBeGreaterThan,
+  verifyAppSpec,
 ) where
 
 import Array qualified
@@ -273,3 +274,9 @@ shouldBeGreaterThan minimum value = do
     then Task.yield unit
     else msg |> fail
 {-# INLINE shouldBeGreaterThan #-}
+
+
+verifyAppSpec :: AppSpec appModel -> Spec Unit
+verifyAppSpec =
+  panic "not implemented"
+{-# INLINE verifyAppSpec #-}

@@ -1,9 +1,6 @@
 module NeoNext where
 
-import Applicable (Applicative)
 import Core
-import Mappable (Functor)
-import Thenable (Monad)
 
 
 data ShellCommand = ShellCommand

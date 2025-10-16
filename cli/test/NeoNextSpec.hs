@@ -6,7 +6,8 @@ import Test
 
 
 spec :: Spec Unit
-spec = panic "not implemented yet"
+spec = describe "Neo CLI" do
+  verifyAppSpec appSpec
 
 
 appSpec :: AppSpec AppModel
