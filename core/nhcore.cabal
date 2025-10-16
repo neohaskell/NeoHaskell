@@ -129,6 +129,7 @@ library
     Task
     Test
     Test.AppModel
+    Test.AppModel.AppSpec
     Test.Service.EventStore
     Test.Service.EventStore.GlobalStreamOrdering.Context
     Test.Service.EventStore.GlobalStreamOrdering.Spec
@@ -143,6 +144,7 @@ library
     Test.Service.EventStore.Subscriptions.Context
     Test.Service.EventStore.Subscriptions.SimpleSpec
     Test.Service.EventStore.Subscriptions.Spec
+    Test.Spec
     Text
     Thenable
     Time

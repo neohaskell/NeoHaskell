@@ -11,15 +11,22 @@ module Test.AppModel (
   receivedCommand,
   registeredEvent,
   executedTask,
+  verifyAppSpec,
 ) where
 
 import Applicable (Applicative)
 import Core
 import Mappable (Functor)
+import Test.AppModel.AppSpec (AppSpec)
+import Test.AppModel.AppSpec qualified as AppSpec
+import Test.Spec (Spec)
 import Thenable (Monad)
 
 
-data AppSpec (appModel :: Type)
+verifyAppSpec :: AppSpec appModel -> Spec Unit
+verifyAppSpec =
+  AppSpec.verify
+{-# INLINE verifyAppSpec #-}
 
 
 specificationFor ::
