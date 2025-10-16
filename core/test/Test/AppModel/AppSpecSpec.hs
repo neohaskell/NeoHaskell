@@ -18,7 +18,7 @@ spec =
         Verify.run ops appSpec
 
         ops.verifyScenarioCalls
-          |> testRef shouldBe 0
+          |> varContents shouldBe 0
 
 
 data MyAppModel = MyAppModel

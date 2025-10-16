@@ -24,6 +24,7 @@ module Test.Spec (
   shouldBeGreaterThanOrEqual,
   shouldBeLessThan,
   shouldBeGreaterThan,
+  varContents,
 ) where
 
 import Array qualified
@@ -33,6 +34,7 @@ import Environment qualified
 import Task qualified
 import Test.Hspec qualified as Hspec
 import Text qualified
+import Var qualified
 
 
 type Spec a = Hspec.SpecWith a
@@ -267,3 +269,16 @@ shouldBeGreaterThan minimum value = do
     then Task.yield unit
     else msg |> fail
 {-# INLINE shouldBeGreaterThan #-}
+
+
+-- | Modifier that allows asserting the contents of a Var
+varContents ::
+  (HasCallStack, Show a, Ord a) =>
+  (a -> a -> Task Text Unit) ->
+  a ->
+  Var a ->
+  Task Text Unit
+varContents assert expected var = do
+  actual <- Var.get var
+  assert expected actual
+{-# INLINE varContents #-}
