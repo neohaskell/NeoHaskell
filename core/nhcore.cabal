@@ -128,8 +128,9 @@ library
     Subprocess
     Task
     Test
-    Test.AppModel
-    Test.AppModel.AppSpec
+    Test.AppSpec
+    Test.AppSpec.Core
+    Test.AppSpec.Verify
     Test.Service.EventStore
     Test.Service.EventStore.GlobalStreamOrdering.Context
     Test.Service.EventStore.GlobalStreamOrdering.Spec

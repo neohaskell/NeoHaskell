@@ -1,6 +1,6 @@
 {-# OPTIONS_GHC -Wno-missing-methods #-}
 
-module Test.AppModel (
+module Test.AppSpec (
   AppSpec,
   specificationFor,
   ScenarioDef,
@@ -17,14 +17,13 @@ module Test.AppModel (
 import Applicable (Applicative)
 import Core
 import Mappable (Functor)
-import Test.AppModel.AppSpec (AppSpec)
-import Test.AppModel.AppSpec qualified as AppSpec
-import Test.Spec (Spec)
+import Test.AppSpec.Core (AppSpec)
+import Test.AppSpec.Verify qualified as Verify
 import Thenable (Monad)
 
 
-verifyAppSpec :: AppSpec appModel -> Spec Unit
-verifyAppSpec = AppSpec.verify AppSpec.defaultOps
+verifyAppSpec :: AppSpec appModel -> Task Text Unit
+verifyAppSpec = Verify.run Verify.defaultOps
 {-# INLINE verifyAppSpec #-}
 
 
