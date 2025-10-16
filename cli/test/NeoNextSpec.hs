@@ -7,7 +7,8 @@ import Test
 
 spec :: Spec Unit
 spec = describe "Neo CLI" do
-  verifyAppSpec appSpec
+  it "has the app spec verified" \_ -> do
+    verifyAppSpec appSpec
 
 
 appSpec :: AppSpec AppModel
