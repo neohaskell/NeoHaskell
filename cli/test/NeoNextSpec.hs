@@ -12,6 +12,6 @@ spec = panic "not implemented yet"
 appSpec :: AppSpec AppModel
 appSpec = specificationFor appModel do
   scenario "neo shell runs a shell" do
-    given receivedCommand ShellCommand
-    expect registeredEvent ShellTriggered
-    and executedTask InteractiveProcess
+    given (receivedCommand ShellCommand)
+    expect (registeredEvent ShellTriggered)
+    and (executedTask InteractiveProcess)
