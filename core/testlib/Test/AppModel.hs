@@ -24,8 +24,7 @@ import Thenable (Monad)
 
 
 verifyAppSpec :: AppSpec appModel -> Spec Unit
-verifyAppSpec =
-  AppSpec.verify
+verifyAppSpec = AppSpec.verify AppSpec.defaultOps
 {-# INLINE verifyAppSpec #-}
 
 

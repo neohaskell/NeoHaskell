@@ -1,4 +1,9 @@
-module Test.AppModel.AppSpec where
+module Test.AppModel.AppSpec (
+  AppSpec,
+  verify,
+  Ops (..),
+  defaultOps,
+) where
 
 import Core
 import Test.Spec
@@ -7,5 +12,12 @@ import Test.Spec
 data AppSpec (appModel :: Type)
 
 
-verify :: AppSpec appModel -> Spec Unit
+verify :: ops -> AppSpec appModel -> Spec Unit
 verify = panic "not implemented"
+
+
+data Ops = Ops
+
+
+defaultOps :: Ops
+defaultOps = Ops
