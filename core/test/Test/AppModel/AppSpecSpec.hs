@@ -11,6 +11,10 @@ import Var qualified
 data MyAppModel = MyAppModel
 
 
+testAppModel :: MyAppModel
+testAppModel = MyAppModel
+
+
 spec :: Spec Unit
 spec =
   describe "AppSpec" do
@@ -23,6 +27,19 @@ spec =
 
         observe.verifyScenarioCalls
           |> varContents shouldBe 0
+
+      it "does verify a single scenario" \_ -> do
+        let appSpec =
+              specificationFor testAppModel do
+                scenario "test scenario" do
+                  emptyScenario
+
+        (ops, observe) <- mockVerifyOps
+
+        Verify.run ops appSpec
+
+        observe.verifyScenarioCalls
+          |> varContents shouldBe 1
 
 
 data VerifyObserve = VerifyObserve

@@ -12,6 +12,7 @@ module Test.AppSpec (
   registeredEvent,
   executedTask,
   verifyAppSpec,
+  emptyScenario,
 ) where
 
 import Applicable (Applicative)
@@ -28,8 +29,18 @@ verifyAppSpec = Verify.run Verify.defaultOps
 
 
 specificationFor ::
-  appModel -> t appModel -> AppSpec appModel
+  appModel -> Scenarios appModel -> AppSpec appModel
 specificationFor _ = panic "not implemented"
+
+
+data Scenarios (appModel :: Type)
+  deriving (Functor)
+
+
+instance Applicative Scenarios
+
+
+instance Monad Scenarios
 
 
 data ScenarioDef (appModel :: Type)
@@ -43,8 +54,12 @@ instance Monad ScenarioDef
 
 
 scenario ::
-  Text -> ScenarioDef appModel -> t appModel
+  Text -> ScenarioDef appModel -> Scenarios appModel
 scenario _ = panic "not implemented"
+
+
+emptyScenario :: ScenarioDef appModel
+emptyScenario = panic "not implemented"
 
 
 given ::
