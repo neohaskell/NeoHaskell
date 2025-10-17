@@ -7,5 +7,5 @@ import Test
 spec :: Spec Unit
 spec =
   describe "specification for" do
-    it "fails" \_ -> do
+    it "can build an empty" \_ -> do
       fail "not implemented"
