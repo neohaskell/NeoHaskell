@@ -180,7 +180,7 @@ test-suite nhcore-test
   default-language: GHC2021
   other-modules:
     Service.EventStore.InMemorySpec
-    Test.AppModel.AppSpecSpec
+    Test.AppSpec.VerifySpec
 
   -- other-extensions:
   type: exitcode-stdio-1.0
