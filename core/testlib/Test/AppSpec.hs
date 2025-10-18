@@ -3,6 +3,8 @@
 module Test.AppSpec (
   AppSpec,
   specificationFor,
+  Scenarios (..),
+  noScenarios,
   ScenarioDef,
   scenario,
   given,
@@ -13,13 +15,12 @@ module Test.AppSpec (
   executedTask,
   verifyAppSpec,
   emptyScenario,
-  noScenarios,
 ) where
 
 import Applicable (Applicative)
 import Core
 import Mappable (Functor)
-import Test.AppSpec.Core (AppSpec)
+import Test.AppSpec.Core (AppSpec (..))
 import Test.AppSpec.Verify qualified as Verify
 import Thenable (Monad)
 
@@ -31,10 +32,10 @@ verifyAppSpec = Verify.run Verify.defaultOps
 
 specificationFor ::
   appModel -> Scenarios appModel -> AppSpec appModel
-specificationFor _ = panic "not implemented"
+specificationFor _ _ = AppSpec
 
 
-data Scenarios (appModel :: Type)
+data Scenarios (appModel :: Type) = Scenarios
   deriving (Functor)
 
 
