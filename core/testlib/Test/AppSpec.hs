@@ -46,7 +46,7 @@ instance Monad Scenarios
 
 
 noScenarios :: Scenarios appModel
-noScenarios = panic "not implemented"
+noScenarios = Scenarios
 
 
 data ScenarioDef (appModel :: Type)
