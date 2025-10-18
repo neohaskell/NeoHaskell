@@ -13,6 +13,7 @@ module Test.AppSpec (
   executedTask,
   verifyAppSpec,
   emptyScenario,
+  noScenarios,
 ) where
 
 import Applicable (Applicative)
@@ -41,6 +42,10 @@ instance Applicative Scenarios
 
 
 instance Monad Scenarios
+
+
+noScenarios :: Scenarios appModel
+noScenarios = panic "not implemented"
 
 
 data ScenarioDef (appModel :: Type)
