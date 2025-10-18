@@ -1,5 +1,3 @@
-{-# OPTIONS_GHC -Wno-missing-methods #-}
-
 module Test.AppSpec (
   AppSpec,
   specificationFor,
@@ -37,7 +35,7 @@ noScenarios = panic "noScenarios: not implemented"
 
 scenario ::
   Text -> Scenario appModel -> AppSpec appModel
-scenario _ = panic "not implemented"
+scenario _ = panic "scenario: not implemented"
 
 
 verifyAppSpec :: AppSpec appModel -> Task Text Unit
@@ -46,31 +44,31 @@ verifyAppSpec = Verify.run Verify.defaultOps
 
 
 emptyScenario :: Scenario appModel
-emptyScenario = panic "not implemented"
+emptyScenario = panic "emptyScenario: not implemented"
 
 
 given ::
   commandPattern -> Scenario appModel
-given = panic "not implemented"
+given = panic "given: not implemented"
 
 
 expect ::
   outcomePattern -> Scenario appModel
-expect = panic "not implemented"
+expect = panic "expect: not implemented"
 
 
 and ::
   outcomePattern -> Scenario appModel
-and = panic "not implemented"
+and = panic "and: not implemented"
 
 
 receivedCommand :: adapter
-receivedCommand = panic "not implemented"
+receivedCommand = panic "receivedCommand: not implemented"
 
 
 registeredEvent :: adapter
-registeredEvent = panic "not implemented"
+registeredEvent = panic "registeredEvent: not implemented"
 
 
 executedTask :: adapter
-executedTask = panic "not implemented"
+executedTask = panic "executedTask: not implemented"
