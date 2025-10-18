@@ -30,7 +30,10 @@ specificationFor _ _ =
 
 
 noScenarios :: AppSpec appModel
-noScenarios = panic "noScenarios: not implemented"
+noScenarios =
+  AppSpec
+    { scenarios = Array.empty
+    }
 
 
 scenario ::
