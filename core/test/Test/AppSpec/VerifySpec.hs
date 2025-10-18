@@ -3,7 +3,7 @@ module Test.AppSpec.VerifySpec where
 import Core
 import Task qualified
 import Test
-import Test.AppSpec.Core (AppSpec (..))
+import Test.AppSpec.AppSpec (AppSpec (..))
 import Test.AppSpec.Verify qualified as Verify
 import Var qualified
 

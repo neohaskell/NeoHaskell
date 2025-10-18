@@ -1,4 +1,4 @@
-module Test.AppSpec.SpecificationForSpec where
+module Test.AppSpec.AppSpecSpec where
 
 import Core
 import Test

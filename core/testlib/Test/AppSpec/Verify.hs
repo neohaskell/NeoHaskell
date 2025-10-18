@@ -2,7 +2,7 @@ module Test.AppSpec.Verify where
 
 import Core
 import Task qualified
-import Test.AppSpec.Core
+import Test.AppSpec.AppSpec
 
 
 run :: Ops -> AppSpec appModel -> Task Text Unit

@@ -79,7 +79,7 @@ import Prelude qualified
 -- (@Array Int@) or strings (@Array String@) or any other type of value you can
 -- dream up.
 newtype Array a = Array (Data.Vector.Vector a)
-  deriving (Prelude.Eq, Prelude.Show, Prelude.Ord, Generic)
+  deriving (Prelude.Eq, Prelude.Show, Prelude.Ord, Prelude.Functor, Generic)
 
 
 instance Collection Array where

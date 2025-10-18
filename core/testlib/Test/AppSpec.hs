@@ -5,7 +5,7 @@ module Test.AppSpec (
   specificationFor,
   Scenarios (..),
   noScenarios,
-  ScenarioDef,
+  ScenarioDef (..),
   scenario,
   given,
   expect,
@@ -18,9 +18,10 @@ module Test.AppSpec (
 ) where
 
 import Applicable (Applicative)
+import Array qualified
 import Core
 import Mappable (Functor)
-import Test.AppSpec.Core (AppSpec (..))
+import Test.AppSpec.AppSpec (AppSpec (..))
 import Test.AppSpec.Verify qualified as Verify
 import Thenable (Monad)
 
@@ -31,55 +32,31 @@ verifyAppSpec = Verify.run Verify.defaultOps
 
 
 specificationFor ::
-  appModel -> Scenarios appModel -> AppSpec appModel
+  appModel -> AppSpec appModel -> AppSpec appModel
 specificationFor _ _ = AppSpec
 
 
-data Scenarios (appModel :: Type) = Scenarios
-  deriving (Functor)
-
-
-instance Applicative Scenarios
-
-
-instance Monad Scenarios
-
-
-noScenarios :: Scenarios appModel
-noScenarios = Scenarios
-
-
-data ScenarioDef (appModel :: Type)
-  deriving (Functor)
-
-
-instance Applicative ScenarioDef
-
-
-instance Monad ScenarioDef
-
-
 scenario ::
-  Text -> ScenarioDef appModel -> Scenarios appModel
+  Text -> Scenario appModel -> AppSpec appModel
 scenario _ = panic "not implemented"
 
 
-emptyScenario :: ScenarioDef appModel
+emptyScenario :: Scenario appModel
 emptyScenario = panic "not implemented"
 
 
 given ::
-  commandPattern -> ScenarioDef appModel
+  commandPattern -> Scenario appModel
 given = panic "not implemented"
 
 
 expect ::
-  outcomePattern -> ScenarioDef appModel
+  outcomePattern -> Scenario appModel
 expect = panic "not implemented"
 
 
 and ::
-  outcomePattern -> ScenarioDef appModel
+  outcomePattern -> Scenario appModel
 and = panic "not implemented"
 
 
