@@ -3,7 +3,6 @@ module Test.AppSpec.VerifySpec where
 import Core
 import Task qualified
 import Test
-import Test.AppSpec.AppSpec (AppSpec (..))
 import Test.AppSpec.Verify qualified as Verify
 import Var qualified
 
@@ -19,7 +18,7 @@ spec :: Spec Unit
 spec =
   describe "verification" do
     it "does not verify any scenario if there aren't any" \_ -> do
-      let appSpec = AppSpec @MyAppModel
+      let appSpec = specificationFor testAppModel noScenarios
       (ops, observe) <- mockVerifyOps
 
       Verify.run ops appSpec

@@ -1,9 +1,10 @@
 module Test.AppSpec.AppSpecSpec where
 
+import Array qualified
 import Core
 import Test
-import Test.AppSpec (ScenarioDef (..))
-import Test.AppSpec.Core (AppSpec (..))
+import Test.AppSpec.AppSpec (AppSpec (..))
+import Test.AppSpec.Scenario (ScenarioDSL (..))
 
 
 data TestAppModel = TestAppModel
@@ -17,7 +18,10 @@ spec :: Spec Unit
 spec =
   describe "specification for" do
     it "can build an empty app spec" \_ -> do
-      let expectedAppSpec = AppSpec @TestAppModel
+      let expectedAppSpec :: AppSpec TestAppModel =
+            AppSpec
+              { scenarios = Array.empty
+              }
 
       let actualAppSpec = specificationFor testAppModel noScenarios
 
@@ -27,8 +31,8 @@ spec =
       let expectedAppSpec :: AppSpec TestAppModel =
             AppSpec
               { scenarios =
-                  Array.fromList
-                    [ ScenarioDef
+                  Array.fromLinkedList
+                    [ ScenarioDSL
                         { name = "test scenario"
                         }
                     ]

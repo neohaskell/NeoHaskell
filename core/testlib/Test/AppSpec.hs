@@ -3,9 +3,7 @@
 module Test.AppSpec (
   AppSpec,
   specificationFor,
-  Scenarios (..),
-  noScenarios,
-  ScenarioDef (..),
+  Scenario,
   scenario,
   given,
   expect,
@@ -15,30 +13,36 @@ module Test.AppSpec (
   executedTask,
   verifyAppSpec,
   emptyScenario,
+  noScenarios,
 ) where
 
-import Applicable (Applicative)
 import Array qualified
 import Core
-import Mappable (Functor)
 import Test.AppSpec.AppSpec (AppSpec (..))
+import Test.AppSpec.Scenario (Scenario)
 import Test.AppSpec.Verify qualified as Verify
-import Thenable (Monad)
-
-
-verifyAppSpec :: AppSpec appModel -> Task Text Unit
-verifyAppSpec = Verify.run Verify.defaultOps
-{-# INLINE verifyAppSpec #-}
 
 
 specificationFor ::
   appModel -> AppSpec appModel -> AppSpec appModel
-specificationFor _ _ = AppSpec
+specificationFor _ _ =
+  AppSpec
+    { scenarios = Array.empty
+    }
+
+
+noScenarios :: AppSpec appModel
+noScenarios = panic "noScenarios: not implemented"
 
 
 scenario ::
   Text -> Scenario appModel -> AppSpec appModel
 scenario _ = panic "not implemented"
+
+
+verifyAppSpec :: AppSpec appModel -> Task Text Unit
+verifyAppSpec = Verify.run Verify.defaultOps
+{-# INLINE verifyAppSpec #-}
 
 
 emptyScenario :: Scenario appModel
