@@ -18,6 +18,7 @@ import Array qualified
 import Core
 import Test.AppSpec.AppSpec (AppSpec (..))
 import Test.AppSpec.Scenario (Scenario)
+import Test.AppSpec.Scenario qualified as Scenario
 import Test.AppSpec.Verify qualified as Verify
 
 
@@ -37,8 +38,19 @@ noScenarios =
 
 
 scenario ::
-  Text -> Scenario appModel -> AppSpec appModel
-scenario _ = panic "scenario: not implemented"
+  Text ->
+  Scenario.ScenarioSteps appModel Unit ->
+  AppSpec appModel
+scenario name steps =
+  AppSpec
+    { scenarios =
+        Array.fromLinkedList
+          [ Scenario.Scenario
+              { name,
+                steps
+              }
+          ]
+    }
 
 
 verifyAppSpec :: AppSpec appModel -> Task Text Unit
@@ -46,8 +58,8 @@ verifyAppSpec = Verify.run Verify.defaultOps
 {-# INLINE verifyAppSpec #-}
 
 
-emptyScenario :: Scenario appModel
-emptyScenario = panic "emptyScenario: not implemented"
+emptyScenario :: Scenario.ScenarioSteps appModel Unit
+emptyScenario = Scenario.empty
 
 
 given ::

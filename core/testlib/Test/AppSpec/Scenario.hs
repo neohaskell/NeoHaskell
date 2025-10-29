@@ -18,12 +18,10 @@ data Scenario (appModel :: Type) = Scenario
 
 
 empty :: ScenarioSteps appModel Unit
-empty = panic "empty: not implemented"
+empty = ScenarioSteps
 
 
 data ScenarioSteps (appModel :: Type) (result :: Type) = ScenarioSteps
-  { name :: Text
-  }
   deriving (Eq, Show, Ord)
 
 
