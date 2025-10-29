@@ -45,3 +45,26 @@ spec =
               scenario "test scenario" emptyScenario
 
       actualAppSpec |> shouldBe expectedAppSpec
+
+    it "can build an app spec with two scenarios" \_ -> do
+      let expectedAppSpec :: AppSpec TestAppModel =
+            AppSpec
+              { scenarios =
+                  Array.fromLinkedList
+                    [ Scenario
+                        { name = "test scenario 1",
+                          steps = Scenario.empty
+                        },
+                      Scenario
+                        { name = "test scenario 2",
+                          steps = Scenario.empty
+                        }
+                    ]
+              }
+
+      let actualAppSpec =
+            specificationFor testAppModel do
+              scenario "test scenario 1" emptyScenario
+              scenario "test scenario 2" emptyScenario
+
+      actualAppSpec |> shouldBe expectedAppSpec
