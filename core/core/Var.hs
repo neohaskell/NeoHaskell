@@ -1,4 +1,4 @@
-module Var (Var, new, get, set) where
+module Var (Var, new, get, set, increment, decrement) where
 
 import Basics
 import Data.IORef qualified as GHC
@@ -24,4 +24,20 @@ get (Var ref) =
 set :: value -> Var value -> Task err Unit
 set value (Var ref) =
   GHC.writeIORef ref value
+    |> Task.fromIO
+
+
+increment ::
+  (Num number) =>
+  Var number -> Task err Unit
+increment (Var ref) =
+  GHC.modifyIORef ref (+ 1)
+    |> Task.fromIO
+
+
+decrement ::
+  (Num number) =>
+  Var number -> Task err Unit
+decrement (Var ref) =
+  GHC.modifyIORef ref (\n -> n - 1)
     |> Task.fromIO

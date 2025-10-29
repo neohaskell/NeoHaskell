@@ -45,8 +45,14 @@ data VerifyObserve = VerifyObserve
   }
 
 
-mockVerifyOps :: Task Text (Verify.Ops, VerifyObserve)
+mockVerifyOps :: Task Text (Verify.Ops appModel, VerifyObserve)
 mockVerifyOps = do
   verifyScenarioCalls <- Var.new 0
+
+  let verifyScenario :: Scenario appModel -> Task Text Unit
+      verifyScenario _ = Var.increment verifyScenarioCalls
+
   let verifyObserver = VerifyObserve {verifyScenarioCalls}
-  Task.yield (Verify.Ops, verifyObserver)
+
+  let ops = Verify.Ops {verifyScenario}
+  Task.yield (ops, verifyObserver)
