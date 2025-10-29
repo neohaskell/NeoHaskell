@@ -24,10 +24,7 @@ import Test.AppSpec.Verify qualified as Verify
 
 specificationFor ::
   appModel -> AppSpec appModel -> AppSpec appModel
-specificationFor _ _ =
-  AppSpec
-    { scenarios = Array.empty
-    }
+specificationFor _ spec = spec
 
 
 noScenarios :: AppSpec appModel
