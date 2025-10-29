@@ -4,7 +4,8 @@ import Array qualified
 import Core
 import Test
 import Test.AppSpec.AppSpec (AppSpec (..))
-import Test.AppSpec.Scenario (ScenarioDSL (..))
+import Test.AppSpec.Scenario (Scenario (..))
+import Test.AppSpec.Scenario qualified as Scenario
 
 
 data TestAppModel = TestAppModel
@@ -32,8 +33,9 @@ spec =
             AppSpec
               { scenarios =
                   Array.fromLinkedList
-                    [ ScenarioDSL
-                        { name = "test scenario"
+                    [ Scenario
+                        { name = "test scenario",
+                          steps = Scenario.empty
                         }
                     ]
               }

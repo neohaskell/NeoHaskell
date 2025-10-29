@@ -1,6 +1,7 @@
 module Test.AppSpec.Scenario (
-  Scenario,
+  Scenario (..),
   ScenarioDSL (..),
+  empty,
 ) where
 
 import Applicable (Applicative)
@@ -9,8 +10,15 @@ import Mappable (Functor)
 import Thenable (Monad)
 
 
-type Scenario (appModel :: Type) =
-  ScenarioDSL (appModel :: Type) Unit
+data Scenario (appModel :: Type) = Scenario
+  { name :: Text,
+    steps :: ScenarioDSL appModel Unit
+  }
+  deriving (Eq, Show, Ord)
+
+
+empty :: ScenarioDSL appModel Unit
+empty = panic "empty: not implemented"
 
 
 data ScenarioDSL (appModel :: Type) (result :: Type) = ScenarioDSL
