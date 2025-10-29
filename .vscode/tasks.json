@@ -34,7 +34,7 @@
         "clear": false
       },
       "group": {
-        "kind": "build",
+        "kind": "test",
         "isDefault": true
       },
       "problemMatcher": []
@@ -53,7 +53,7 @@
         "clear": false
       },
       "group": {
-        "kind": "build",
+        "kind": "test",
         "isDefault": true
       },
       "problemMatcher": []

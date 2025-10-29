@@ -1,7 +1,5 @@
 module NeoNext where
 
-import Core
-
 
 data ShellCommand = ShellCommand
 
@@ -13,8 +11,8 @@ data ShellTriggered = ShellTriggered
 data InteractiveProcess = InteractiveProcess
 
 
-data AppModel
+data AppModel = AppModel
 
 
 appModel :: AppModel
-appModel = panic "not implemented"
+appModel = AppModel
