@@ -1,6 +1,6 @@
 module Test.AppSpec.Scenario (
   Scenario (..),
-  ScenarioDSL (..),
+  ScenarioSteps (..),
   empty,
 ) where
 
@@ -12,35 +12,35 @@ import Thenable (Monad)
 
 data Scenario (appModel :: Type) = Scenario
   { name :: Text,
-    steps :: ScenarioDSL appModel Unit
+    steps :: ScenarioSteps appModel Unit
   }
   deriving (Eq, Show, Ord)
 
 
-empty :: ScenarioDSL appModel Unit
+empty :: ScenarioSteps appModel Unit
 empty = panic "empty: not implemented"
 
 
-data ScenarioDSL (appModel :: Type) (result :: Type) = ScenarioDSL
+data ScenarioSteps (appModel :: Type) (result :: Type) = ScenarioSteps
   { name :: Text
   }
   deriving (Eq, Show, Ord)
 
 
-instance Functor (ScenarioDSL appModel) where
-  fmap :: (a -> b) -> ScenarioDSL appModel a -> ScenarioDSL appModel b
+instance Functor (ScenarioSteps appModel) where
+  fmap :: (a -> b) -> ScenarioSteps appModel a -> ScenarioSteps appModel b
   fmap = panic "fmap: not implemented"
 
 
-instance Applicative (ScenarioDSL appModel) where
-  pure :: a -> ScenarioDSL appModel a
+instance Applicative (ScenarioSteps appModel) where
+  pure :: a -> ScenarioSteps appModel a
   pure = panic "pure: not implemented"
 
 
-  (<*>) :: ScenarioDSL appModel (a -> b) -> ScenarioDSL appModel a -> ScenarioDSL appModel b
+  (<*>) :: ScenarioSteps appModel (a -> b) -> ScenarioSteps appModel a -> ScenarioSteps appModel b
   (<*>) = panic "<*>: not implemented"
 
 
-instance Monad (ScenarioDSL appModel) where
-  (>>=) :: ScenarioDSL appModel a -> (a -> ScenarioDSL appModel b) -> ScenarioDSL appModel b
+instance Monad (ScenarioSteps appModel) where
+  (>>=) :: ScenarioSteps appModel a -> (a -> ScenarioSteps appModel b) -> ScenarioSteps appModel b
   (>>=) = panic ">>=: not implemented"
