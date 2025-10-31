@@ -16,30 +16,30 @@ module Test.AppSpec (
 
 import Array qualified
 import Core
-import Test.AppSpec.AppSpec (AppSpec (..))
+import Test.AppSpec.AppSpec (AppSpec (..), AppSpecSteps (..))
+import Test.AppSpec.AppSpec qualified as AppSpec
 import Test.AppSpec.Scenario (Scenario)
 import Test.AppSpec.Scenario qualified as Scenario
 import Test.AppSpec.Verify qualified as Verify
 
 
 specificationFor ::
-  appModel -> AppSpec appModel -> AppSpec appModel
-specificationFor _ spec = spec
+  appModel -> AppSpecSteps appModel Unit -> AppSpec appModel
+specificationFor _ steps =
+  AppSpec.fromSteps steps
 
 
-noScenarios :: AppSpec appModel
+noScenarios :: AppSpecSteps appModel Unit
 noScenarios =
-  AppSpec
-    { scenarios = Array.empty
-    }
+  AppSpec.emptySteps
 
 
 scenario ::
   Text ->
   Scenario.ScenarioSteps appModel Unit ->
-  AppSpec appModel
+  AppSpecSteps appModel Unit
 scenario name steps =
-  AppSpec
+  AppSpecSteps
     { scenarios =
         Array.fromLinkedList
           [ Scenario.Scenario
