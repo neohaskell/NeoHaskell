@@ -14,5 +14,6 @@
   shell.tools.cabal = "latest";
   shell.tools.hlint = "latest";
   shell.tools.fourmolu = "latest";
+  shell.tools.hspec-discover = "latest";
   shell.tools.haskell-language-server = "latest";
 }
