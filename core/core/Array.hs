@@ -56,6 +56,7 @@ module Array (
   sumIntegers,
   reverse,
   flatten,
+  prepend,
 ) where
 
 import Basics
@@ -352,11 +353,20 @@ indexedMap f (Array vector) =
 
 -- | Append two arrays to a new one.
 --
--- >>> append (repeat 2 42) (repeat 3 81) :: Array Int
+-- >>> (repeat 2 42) |> append (repeat 3 81) :: Array Int
 -- Array [42,42,81,81,81]
 append :: Array a -> Array a -> Array a
-append (Array first) (Array second) =
-  Array (first ++ second)
+append (Array other) (Array self) =
+  Array (self ++ other)
+
+
+-- | Prepend two arrays to a new one.
+--
+-- >>> (repeat 2 42) |> append (repeat 3 81) :: Array Int
+-- Array [81,81,81,42,42]
+prepend :: Array a -> Array a -> Array a
+prepend (Array other) (Array self) =
+  Array (other ++ self)
 
 
 -- | Get a sub-section of an array: @(slice start end array)@. The @start@ is a
