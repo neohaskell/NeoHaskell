@@ -37,7 +37,7 @@
     "typeclasses",
     "Unagi"
   ],
-  "nixEnvSelector.nixFile": "${workspaceFolder}/shell.nix",
+  "nixEnvSelector.nixFile": "${workspaceFolder}/flake.nix",
   // Haskell
   "haskell.manageHLS": "PATH",
   "[haskell]": {
