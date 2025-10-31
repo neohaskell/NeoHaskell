@@ -22,37 +22,53 @@ data AppSpec (appModel :: Type) = AppSpec
 fromSteps :: AppSpecSteps appModel Unit -> AppSpec appModel
 fromSteps steps =
   AppSpec
-    { scenarios = steps.scenarios
+    { scenarios = steps.stepScenarios
     }
 
 
 emptySteps :: AppSpecSteps appModel Unit
 emptySteps =
   AppSpecSteps
-    { scenarios = Array.empty
+    { stepScenarios = Array.empty,
+      result = unit
     }
 
 
 data AppSpecSteps (appModel :: Type) (result :: Type) = AppSpecSteps
-  { scenarios :: Array (Scenario appModel)
+  { stepScenarios :: Array (Scenario appModel),
+    result :: result
   }
-  deriving (Eq, Show, Ord)
-
-
-instance Functor (AppSpecSteps appModel) where
-  fmap :: (a -> b) -> AppSpecSteps appModel a -> AppSpecSteps appModel b
-  fmap = panic "fmap: not implemented"
+  deriving (Eq, Show, Ord, Functor)
 
 
 instance Applicative (AppSpecSteps appModel) where
-  pure :: a -> AppSpecSteps appModel a
-  pure = panic "pure: not implemented"
+  pure :: result -> AppSpecSteps appModel result
+  pure result =
+    emptySteps {result = result}
 
 
-  (<*>) :: AppSpecSteps appModel (a -> b) -> AppSpecSteps appModel a -> AppSpecSteps appModel b
-  (<*>) = panic "<*>: not implemented"
+  (<*>) ::
+    AppSpecSteps appModel (inputResult -> outputResult) ->
+    AppSpecSteps appModel inputResult ->
+    AppSpecSteps appModel outputResult
+  (<*>) mapper valueCarrier = do
+    let mapperFunction = mapper.result
+    let value = valueCarrier.result
+    AppSpecSteps
+      { stepScenarios = mapper.stepScenarios |> Array.append valueCarrier.stepScenarios,
+        result = mapperFunction value
+      }
 
 
 instance Monad (AppSpecSteps appModel) where
-  (>>=) :: AppSpecSteps appModel a -> (a -> AppSpecSteps appModel b) -> AppSpecSteps appModel b
-  (>>=) = panic ">>=: not implemented"
+  (>>=) ::
+    AppSpecSteps appModel inputResult ->
+    (inputResult -> AppSpecSteps appModel outputResult) ->
+    AppSpecSteps appModel outputResult
+  (>>=) valueCarrier mapperFunction = do
+    let value = valueCarrier.result
+    let result = mapperFunction value
+    let scenarios = valueCarrier.stepScenarios |> Array.append result.stepScenarios
+    result
+      { stepScenarios = scenarios
+      }

@@ -39,8 +39,8 @@ scenario ::
   Scenario.ScenarioSteps appModel Unit ->
   AppSpecSteps appModel Unit
 scenario name steps =
-  AppSpecSteps
-    { scenarios =
+  AppSpec.emptySteps
+    { stepScenarios =
         Array.fromLinkedList
           [ Scenario.Scenario
               { name,
