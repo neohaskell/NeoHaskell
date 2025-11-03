@@ -77,7 +77,7 @@ specWithCount newStore eventCount = do
                   -- No more events, return accumulated
                   Task.yield accumulatedEvents
                 batchLength -> do
-                  let newAccumulated = Array.append accumulatedEvents batch
+                  let newAccumulated = accumulatedEvents |> Array.append batch
                   case Array.get (batchLength - 1) batch of
                     Just lastEvent -> do
                       -- Resume from position before the last read event

@@ -60,17 +60,17 @@ emptyScenario = Scenario.empty
 
 
 given ::
-  commandPattern -> Scenario appModel
+  commandPattern -> Scenario.ScenarioSteps appModel Unit
 given = panic "given: not implemented"
 
 
 expect ::
-  outcomePattern -> Scenario appModel
+  outcomePattern -> Scenario.ScenarioSteps appModel Unit
 expect = panic "expect: not implemented"
 
 
 and ::
-  outcomePattern -> Scenario appModel
+  outcomePattern -> Scenario.ScenarioSteps appModel Unit
 and = panic "and: not implemented"
 
 
