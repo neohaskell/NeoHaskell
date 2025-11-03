@@ -5,6 +5,7 @@
     "arrterian.nix-env-selector",
     "esbenp.prettier-vscode",
     "lunaryorn.hlint",
-    "davidanson.vscode-markdownlint"
+    "davidanson.vscode-markdownlint",
+    "pinage404.nix-extension-pack"
   ]
 }

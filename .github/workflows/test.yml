@@ -37,18 +37,18 @@ jobs:
 
       - uses: DeterminateSystems/magic-nix-cache-action@v13
 
-      - name: Build the project with Nix
-        run: nix-build
+      # - name: Build the project with Nix
+      #   run: nix build
 
       - name: Build the project with cabal
-        run: nix-shell --run "cabal build all"
+        run: nix develop --command cabal build all
 
       - name: Run core tests
-        run: nix-shell --run "cabal test core"
+        run: nix develop --command cabal test core
 
       # Doctests are failing - See issue #204
       # - name: Run core doctests
       #   run: nix-shell --run "cabal repl --with-compiler=doctest --repl-options=--verbose core"
 
       - name: Run CLI tests
-        run: nix-shell --run "cabal test cli"
+        run: nix develop --command cabal test cli

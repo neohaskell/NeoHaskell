@@ -4,7 +4,7 @@
     {
       "type": "process",
       "command": "cabal",
-      "args": ["--enable-nix", "build", "all"],
+      "args": ["build", "all"],
       "label": "cabal: build all",
       "presentation": {
         "echo": true,
@@ -17,7 +17,46 @@
       "group": {
         "kind": "build",
         "isDefault": true
-      }
+      },
+      "problemMatcher": []
+    },
+    {
+      "type": "process",
+      "command": "cabal",
+      "args": ["test", "core"],
+      "label": "cabal: test core",
+      "presentation": {
+        "echo": true,
+        "reveal": "silent",
+        "focus": false,
+        "panel": "shared",
+        "showReuseMessage": true,
+        "clear": false
+      },
+      "group": {
+        "kind": "test",
+        "isDefault": true
+      },
+      "problemMatcher": []
+    },
+    {
+      "type": "process",
+      "command": "cabal",
+      "args": ["test", "all"],
+      "label": "cabal: test all",
+      "presentation": {
+        "echo": true,
+        "reveal": "silent",
+        "focus": false,
+        "panel": "shared",
+        "showReuseMessage": true,
+        "clear": false
+      },
+      "group": {
+        "kind": "test",
+        "isDefault": true
+      },
+      "problemMatcher": []
     }
   ]
 }

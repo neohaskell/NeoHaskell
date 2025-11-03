@@ -3,11 +3,10 @@ module Neo.Build.Templates.Nix (
 ) where
 
 import Neo.Core
-import Text qualified
 
 
 haskellProject :: Text
-haskellProject = [Text.fromStaticFile|./nix/haskell-project.nix|]
+haskellProject = panic "FIXME: Should use the new flake"
 
 
 template :: ProjectConfiguration -> Text
