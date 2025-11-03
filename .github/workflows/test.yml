@@ -37,8 +37,8 @@ jobs:
 
       - uses: DeterminateSystems/magic-nix-cache-action@v13
 
-      - name: Build the project with Nix
-        run: nix build
+      # - name: Build the project with Nix
+      #   run: nix build
 
       - name: Build the project with cabal
         run: nix develop --command cabal build all
