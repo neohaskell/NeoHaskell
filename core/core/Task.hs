@@ -22,6 +22,7 @@ module Task (
   fromIOResult,
   forever,
   errorAsResult,
+  fromIOEither,
 ) where
 
 import Applicable (Applicative (pure))
@@ -191,6 +192,14 @@ fromIOResult io =
     |> Except.ExceptT
     |> Task
 {-# INLINE fromIOResult #-}
+
+
+fromIOEither :: (Show err) => IO (Prelude.Either err value) -> Task err value
+fromIOEither io =
+  io
+    |> Except.ExceptT
+    |> Task
+{-# INLINE fromIOEither #-}
 
 
 forEach ::

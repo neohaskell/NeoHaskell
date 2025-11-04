@@ -14,10 +14,11 @@ spec = do
   describe "PostgresEventStore" do
     let config =
           Postgres.Config
-            { host = "neohaskell",
+            { host = "postgres",
               databaseName = "neohaskell",
               user = "neohaskell",
-              password = "neohaskell"
+              password = "neohaskell",
+              port = 5432
             }
     describe "new method" do
       it "acquires the connection" \_ -> do

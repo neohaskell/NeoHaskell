@@ -8,6 +8,9 @@ module Service.EventStore.Postgres.Internal (
 
 import Core
 import Hasql.Connection qualified as Hasql
+import Hasql.Connection.Setting qualified as ConnectionSetting
+import Hasql.Connection.Setting.Connection qualified as ConnectionSettingConnection
+import Hasql.Connection.Setting.Connection.Param qualified as Param
 import Service.Event
 import Service.EventStore.Core
 import Task qualified
@@ -17,9 +20,23 @@ data Config = Config
   { host :: Text,
     databaseName :: Text,
     user :: Text,
-    password :: Text
+    password :: Text,
+    port :: Int
   }
   deriving (Eq, Ord, Show)
+
+
+toConnectionSettings :: Config -> LinkedList ConnectionSetting.Setting
+toConnectionSettings cfg = do
+  let params =
+        ConnectionSettingConnection.params
+          [ Param.host cfg.host,
+            Param.port (fromIntegral cfg.port),
+            Param.dbname cfg.databaseName,
+            Param.user cfg.user,
+            Param.password cfg.password
+          ]
+  [params |> ConnectionSetting.connection]
 
 
 data Connection
@@ -32,10 +49,18 @@ data Ops = Ops
   }
 
 
-defaultOps :: Ops
-defaultOps =
+defaultOps :: Config -> Ops
+defaultOps cfg = do
+  let acquireImpl = do
+        connection <-
+          cfg
+            |> toConnectionSettings
+            |> Hasql.acquire
+            |> Task.fromIOEither
+            |> Task.mapError toText
+        Task.yield (Connection connection)
   Ops
-    { acquire = panic "acquire - not implemented" |> Task.yield
+    { acquire = acquireImpl
     }
 
 

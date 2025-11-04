@@ -112,6 +112,7 @@ module Basics (
 
   -- * Reexported for syntax utility
   fromInteger,
+  fromIntegral,
   (<*>),
   (>>=),
   (Prelude.>>),
@@ -930,3 +931,7 @@ pass ::
   (Applicable applicable) =>
   applicable ()
 pass = Applicable.pure ()
+
+
+fromIntegral :: (Prelude.Integral a, Prelude.Num b) => a -> b
+fromIntegral = Prelude.fromIntegral
