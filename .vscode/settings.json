@@ -13,6 +13,7 @@
     "fprint",
     "GADT",
     "haskellnix",
+    "Hasql",
     "HIEYAML",
     "hlint",
     "Hspec",

@@ -50,6 +50,7 @@ common common_cfg
     uuid,
     vector,
     with-utf8,
+    strict,
 
   default-extensions:
     ApplicativeDo
@@ -127,6 +128,7 @@ library
     Service.EventStore.Core
     Service.EventStore.InMemory
     Service.EventStore.Postgres
+    Service.EventStore.Postgres.Internal
     Subprocess
     Task
     Test
