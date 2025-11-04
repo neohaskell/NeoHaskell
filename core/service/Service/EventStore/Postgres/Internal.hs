@@ -1,4 +1,10 @@
-module Service.EventStore.Postgres.Internal (Config (..), Ops (..), new, defaultOps) where
+module Service.EventStore.Postgres.Internal (
+  Config (..),
+  Connection (..),
+  Ops (..),
+  new,
+  defaultOps,
+) where
 
 import Core
 import Hasql.Connection qualified as Hasql
@@ -16,8 +22,13 @@ data Config = Config
   deriving (Eq, Ord, Show)
 
 
+data Connection
+  = Connection Hasql.Connection
+  | MockConnection
+
+
 data Ops = Ops
-  { acquire :: Task Text Hasql.Connection
+  { acquire :: Task Text Connection
   }
 
 

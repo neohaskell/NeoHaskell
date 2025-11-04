@@ -1,7 +1,6 @@
 module Service.EventStore.PostgresSpec where
 
 import Core
-import Hasql.Connection qualified as Hasql
 import Service.EventStore.Postgres qualified as Postgres
 import Service.EventStore.Postgres.Internal qualified as Internal
 import Task qualified
@@ -42,10 +41,10 @@ mockNewOps :: Task Text (Internal.Ops, NewObserve)
 mockNewOps = do
   acquireCalls <- Var.new 0
 
-  let acquire :: Task Text Hasql.Connection
+  let acquire :: Task Text Internal.Connection
       acquire = do
         Var.increment acquireCalls
-        panic "acquire - mock implementation"
+        Task.yield Internal.MockConnection
 
   let newObserver = NewObserve {acquireCalls}
 
