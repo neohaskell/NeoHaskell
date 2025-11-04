@@ -11,14 +11,14 @@ createEventsTableSession =
             CREATE TABLE Events (
                 EventId UUID NOT NULL,
                 GlobalPosition BIGSERIAL NOT NULL,
-                StreamPosition BIGINT NOT NULL,
+                LocalPosition BIGINT NOT NULL,
                 InlinedStreamId VARCHAR(4000) NOT NULL,
-                Swimlane VARCHAR(255) NOT NULL,
+                Entity VARCHAR(255) NOT NULL,
                 EventType VARCHAR(255) NOT NULL,
                 EventData BYTEA NOT NULL,
                 Metadata BYTEA NULL,
                 CONSTRAINT PK_Events PRIMARY KEY (GlobalPosition),
                 CONSTRAINT UK_Events_EventId UNIQUE (EventId),
-                CONSTRAINT UK_Events_Stream UNIQUE (Swimlane, InlinedStreamId, StreamPosition)
+                CONSTRAINT UK_Events_Stream UNIQUE (Entity, InlinedStreamId, LocalPosition)
             )
           |]
