@@ -115,6 +115,4 @@ getAndTransform transform self =
 -- | Modifies the channel array atomically
 modify :: (Array value -> Array value) -> DurableChannel value -> Task _ Unit
 modify transform self =
-  Lock.with self.lock do
-    values <- ConcurrentVar.peek self.values
-    self.values |> ConcurrentVar.set (transform values)
+  self.values |> ConcurrentVar.modify (transform)

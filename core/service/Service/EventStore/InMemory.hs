@@ -432,7 +432,7 @@ truncateStreamImpl store entityId streamId position = do
         case streamMap |> Map.get key of
           Nothing -> Task.yield (streamMap, StreamNotFound entityId streamId |> Just)
           Just chan -> do
-            chan |> DurableChannel.modify (Array.dropWhile (\p -> p.localPosition <= position))
+            chan |> DurableChannel.modify (Array.dropWhile (\p -> p.localPosition < position))
             Task.yield (streamMap, Nothing)
 
   maybeErr <- streams |> ConcurrentVar.modifyReturning foo
