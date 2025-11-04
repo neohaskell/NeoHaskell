@@ -32,6 +32,7 @@ common common_cfg
     directory,
     file-embed,
     ghc-prim,
+    hasql,
     hspec,
     http-conduit,
     nanotime,

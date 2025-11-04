@@ -17,6 +17,7 @@
     fourmolu = "latest";
     hspec-discover = "latest";
     haskell-language-server = "latest";
+    cabal-gild = "latest";
   };
   shell.buildInputs = with pkgs; [ git nixfmt-classic ];
 }
