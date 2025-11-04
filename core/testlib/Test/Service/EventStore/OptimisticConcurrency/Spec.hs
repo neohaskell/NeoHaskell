@@ -174,3 +174,42 @@ spec newStore = do
           |> Array.get 5
           |> Maybe.map (\event -> event.id)
           |> shouldBe (Just correctEventId)
+
+      it "insertion is idempotent by event id" \context -> do
+        entityId <- Uuid.generate |> Task.map Event.EntityId
+
+        -- Create 10 events with specific IDs (same as C# EventCount)
+        eventsToInsert <-
+          Array.fromLinkedList [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+            |> Task.mapArray
+              ( \position -> do
+                  eventId <- Uuid.generate
+                  Task.yield
+                    Event.InsertionEvent
+                      { id = eventId,
+                        streamId = context.streamId,
+                        entityId,
+                        localPosition = Event.StreamPosition position
+                      }
+              )
+
+        -- Insert all events the first time - should succeed
+        eventsToInsert
+          |> Task.mapArray (\event -> context.store.appendToStream event |> Task.mapError toText)
+          |> discard
+
+        -- Insert the exact same events again (same IDs, same everything)
+        -- This should be idempotent - either skip duplicates or succeed without duplicating
+        eventsToInsert
+          |> Task.mapArray (\event -> context.store.appendToStream event |> Task.asResult)
+          |> discard
+
+        -- Read the stream - should have exactly 10 events (not 20)
+        finalEvents <-
+          context.store.readStreamForwardFrom entityId context.streamId (Event.StreamPosition 0) (EventStore.Limit 20)
+            |> Task.mapError toText
+
+        -- Should have exactly 10 events (idempotency - no duplicates)
+        finalEvents
+          |> Array.length
+          |> shouldBe 10

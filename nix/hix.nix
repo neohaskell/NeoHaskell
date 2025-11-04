@@ -1,6 +1,6 @@
 { pkgs, ... }: {
   name = "neohaskell";
-  compiler-nix-name = "ghc910"; # Version of GHC to use
+  compiler-nix-name = "ghc98"; # Version of GHC to use
 
   # Cross compilation support:
   # crossPlatforms = p: pkgs.lib.optionals pkgs.stdenv.hostPlatform.isx86_64 ([
@@ -19,5 +19,5 @@
     haskell-language-server = "latest";
     cabal-gild = "latest";
   };
-  shell.buildInputs = with pkgs; [ git nixfmt-classic ];
+  shell.buildInputs = with pkgs; [ git nixfmt-classic postgresql ];
 }
