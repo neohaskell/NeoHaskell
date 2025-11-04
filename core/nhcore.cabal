@@ -145,6 +145,8 @@ library
     Test.Service.EventStore.ReadAllBackwardsFromEnd.Spec
     Test.Service.EventStore.ReadAllForwardsFromStart.Context
     Test.Service.EventStore.ReadAllForwardsFromStart.Spec
+    Test.Service.EventStore.StreamTruncation.Context
+    Test.Service.EventStore.StreamTruncation.Spec
     Test.Service.EventStore.Subscriptions.Context
     Test.Service.EventStore.Subscriptions.SimpleSpec
     Test.Service.EventStore.Subscriptions.Spec
