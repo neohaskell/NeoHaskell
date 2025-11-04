@@ -16,15 +16,12 @@ import Task qualified
 import Uuid qualified
 
 
--- | For the in-memory event store, we will use a ConcurrentVar that stores
--- a map of stream IDs to a MutableArray of events.
--- This is the simplest way to have an EventStore that can be used in a test environment.
 new :: Task Error EventStore
 new = do
   store <- newEmptyStreamStore
   let eventStore =
         EventStore
-          { appendToStream = appendToStreamWithNotification store,
+          { appendToStream = appendToStreamImpl store,
             readStreamForwardFrom = readStreamForwardFromImpl store,
             readStreamBackwardFrom = readStreamBackwardFromImpl store,
             readAllStreamEvents = readAllStreamEventsImpl store,
@@ -44,11 +41,11 @@ new = do
 
 -- PRIVATE
 
-appendToStreamWithNotification ::
+appendToStreamImpl ::
   StreamStore ->
   InsertionEvent ->
   Task Error Event
-appendToStreamWithNotification store event = do
+appendToStreamImpl store event = do
   finalEvent <- appendToStreamImpl store event
   -- Notify subscribers AFTER the event has been successfully stored and locks are released
   notifySubscribers store finalEvent
