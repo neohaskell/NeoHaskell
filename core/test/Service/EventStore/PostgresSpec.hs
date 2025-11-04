@@ -14,7 +14,7 @@ spec = do
   describe "PostgresEventStore" do
     let config =
           Postgres.Config
-            { host = "postgres",
+            { host = "localhost",
               databaseName = "neohaskell",
               user = "neohaskell",
               password = "neohaskell",
