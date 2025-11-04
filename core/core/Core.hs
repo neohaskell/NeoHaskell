@@ -12,6 +12,7 @@ import Channel as Reexported (Channel)
 import Char as Reexported (Char)
 import ConcurrentVar as Reexported (ConcurrentVar)
 import Console as Reexported (log, print, readLine)
+import DateTime as Reexported (DateTime)
 import Default as Reexported (Default (..), defaultValue)
 import DurableChannel as Reexported (DurableChannel)
 import Function as Reexported

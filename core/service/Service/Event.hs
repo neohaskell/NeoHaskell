@@ -14,8 +14,7 @@ import Service.Event.StreamPosition (StreamPosition (..))
 
 
 data Event = Event
-  { id :: Uuid,
-    streamId :: StreamId,
+  { streamId :: StreamId,
     entityId :: EntityId,
     localPosition :: StreamPosition,
     globalPosition :: StreamPosition
@@ -23,11 +22,30 @@ data Event = Event
   deriving (Eq, Show, Ord, Generic)
 
 
-data InsertionEvent = InsertionEvent
-  { id :: Uuid,
-    streamId :: StreamId,
+data InsertionEvent eventType = InsertionEvent
+  { streamId :: StreamId,
     entityId :: EntityId,
-    localPosition :: StreamPosition
+    localPosition :: StreamPosition,
+    insertions :: Array (Insertion eventType)
+  }
+  deriving (Eq, Show, Ord, Generic)
+
+
+data EventMetadata = EventMetadata
+  { relatedUserSub :: Maybe Text,
+    correlationId :: Maybe Text,
+    causationId :: Maybe Text,
+    createdAt :: DateTime,
+    localPosition :: Maybe StreamPosition,
+    globalPosition :: Maybe StreamPosition
+  }
+  deriving (Eq, Show, Ord, Generic)
+
+
+data Insertion eventType = Insertion
+  { id :: Uuid,
+    event :: eventType,
+    metadata :: EventMetadata
   }
   deriving (Eq, Show, Ord, Generic)
 

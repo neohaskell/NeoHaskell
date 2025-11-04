@@ -102,6 +102,7 @@ library
     ConcurrentVar
     Console
     Core
+    DateTime
     Default
     Directory
     DurableChannel
