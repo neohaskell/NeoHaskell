@@ -4,6 +4,8 @@
     "absfile",
     "Acculumator",
     "Appendable",
+    "BIGSERIAL",
+    "BYTEA",
     "clippy",
     "dbname",
     "Defaultable",
@@ -37,7 +39,8 @@
     "snoc",
     "testlib",
     "typeclasses",
-    "Unagi"
+    "Unagi",
+    "VARCHAR"
   ],
   "nixEnvSelector.nixFile": "${workspaceFolder}/flake.nix",
   // Haskell

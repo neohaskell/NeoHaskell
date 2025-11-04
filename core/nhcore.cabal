@@ -33,6 +33,7 @@ common common_cfg
     file-embed,
     ghc-prim,
     hasql,
+    hasql-th,
     hspec,
     http-conduit,
     nanotime,
@@ -41,6 +42,7 @@ common common_cfg
     pretty-simple,
     process,
     quickcheck-instances,
+    strict,
     string-interpolate,
     template-haskell,
     text,
@@ -50,7 +52,6 @@ common common_cfg
     uuid,
     vector,
     with-utf8,
-    strict,
 
   default-extensions:
     ApplicativeDo
@@ -129,6 +130,7 @@ library
     Service.EventStore.InMemory
     Service.EventStore.Postgres
     Service.EventStore.Postgres.Internal
+    Service.EventStore.Postgres.Internal.Sessions
     Subprocess
     Task
     Test
