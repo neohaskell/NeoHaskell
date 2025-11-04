@@ -84,7 +84,8 @@ defaultOps = do
 
 new :: Ops -> Config -> Task Text EventStore
 new ops cfg = do
-  _ <- ops.acquire cfg
+  connection <- ops.acquire cfg
+  ops.initializeTable connection
   let eventStore =
         EventStore
           { appendToStream = appendToStreamImpl,
