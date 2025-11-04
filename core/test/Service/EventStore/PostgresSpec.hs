@@ -29,25 +29,40 @@ spec = do
         observe.acquireCalls
           |> varContents shouldBe 1
 
+      it "initializes the table" \_ -> do
+        (ops, observe) <- mockNewOps
+        Internal.new ops config
+          |> Task.mapError toText
+          |> discard
+        observe.initializeTableCalls
+          |> varContents shouldBe 1
+
     let newStore = Postgres.new config |> Task.mapError toText
     EventStore.spec newStore
 
 
 data NewObserve = NewObserve
-  { acquireCalls :: Var Int
+  { acquireCalls :: Var Int,
+    initializeTableCalls :: Var Int
   }
 
 
 mockNewOps :: Task Text (Internal.Ops, NewObserve)
 mockNewOps = do
   acquireCalls <- Var.new 0
+  initializeTableCalls <- Var.new 0
 
-  let acquire :: Task Text Internal.Connection
-      acquire = do
+  let acquire :: Internal.Config -> Task Text Internal.Connection
+      acquire _ = do
         Var.increment acquireCalls
         Task.yield Internal.MockConnection
 
-  let newObserver = NewObserve {acquireCalls}
+  let initializeTable :: Internal.Connection -> Task Text Unit
+      initializeTable _ = do
+        Var.increment initializeTableCalls
+        Task.yield unit
 
-  let ops = Internal.Ops {acquire}
+  let newObserver = NewObserve {acquireCalls, initializeTableCalls}
+
+  let ops = Internal.Ops {acquire, initializeTable}
   Task.yield (ops, newObserver)

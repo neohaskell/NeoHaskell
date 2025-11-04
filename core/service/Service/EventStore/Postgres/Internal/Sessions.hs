@@ -4,7 +4,7 @@ import Core
 import Hasql.Session qualified as Session
 
 
-createEventsTableSession :: Session.Session ()
+createEventsTableSession :: Session.Session Unit
 createEventsTableSession =
   Session.sql
     [fmt|

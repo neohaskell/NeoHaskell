@@ -11,8 +11,11 @@ import Hasql.Connection qualified as Hasql
 import Hasql.Connection.Setting qualified as ConnectionSetting
 import Hasql.Connection.Setting.Connection qualified as ConnectionSettingConnection
 import Hasql.Connection.Setting.Connection.Param qualified as Param
+import Hasql.Session qualified as Session
+import Result qualified
 import Service.Event
 import Service.EventStore.Core
+import Service.EventStore.Postgres.Internal.Sessions qualified as Sessions
 import Task qualified
 
 
@@ -45,7 +48,8 @@ data Connection
 
 
 data Ops = Ops
-  { acquire :: Config -> Task Text Connection
+  { acquire :: Config -> Task Text Connection,
+    initializeTable :: Connection -> Task Text Unit
   }
 
 
@@ -59,8 +63,22 @@ defaultOps = do
             |> Task.fromIOEither
             |> Task.mapError toText
         Task.yield (Connection connection)
+  let initializeTableImpl connection = do
+        let session = Sessions.createEventsTableSession
+        case connection of
+          MockConnection -> pass
+          Connection conn -> do
+            result <- Session.run session conn |> Task.fromIO |> Task.map Result.fromEither
+            case result of
+              Result.Err _ ->
+                -- FIXME: Add logging saying that the table already exists
+                pass
+              Result.Ok _ ->
+                -- FIXME: Add logging saying that the table was created
+                pass
   Ops
-    { acquire = acquireImpl
+    { acquire = acquireImpl,
+      initializeTable = initializeTableImpl
     }
 
 
