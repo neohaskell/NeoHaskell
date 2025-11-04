@@ -18,7 +18,7 @@ newtype SubscriptionId = SubscriptionId Text
 
 
 data Error
-  = StreamNotFound StreamId
+  = StreamNotFound EntityId StreamId
   | EventNotFound StreamId StreamPosition
   | ConcurrencyConflict StreamId StreamPosition
   | StorageFailure Text -- Generic storage errors with message

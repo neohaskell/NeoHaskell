@@ -25,7 +25,8 @@ new = do
             subscribeToAllEventsFromStart = subscribeToAllEventsFromStartImpl,
             subscribeToEntityEvents = subscribeToEntityEventsImpl,
             subscribeToStreamEvents = subscribeToStreamEventsImpl,
-            unsubscribe = unsubscribeImpl
+            unsubscribe = unsubscribeImpl,
+            truncateStream = truncateStreamImpl
           }
   Task.yield eventStore
 
@@ -84,3 +85,7 @@ subscribeToStreamEventsImpl = panic "Postgres.subscribeToStreamEventsImpl - Not 
 
 unsubscribeImpl :: SubscriptionId -> Task Error Unit
 unsubscribeImpl = panic "Postgres.unsubscribeImpl - Not implemented yet"
+
+
+truncateStreamImpl :: EntityId -> StreamId -> StreamPosition -> Task Error Unit
+truncateStreamImpl = panic "truncateStreamImpl - not implemented"

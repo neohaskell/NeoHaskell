@@ -21,6 +21,7 @@ module Task (
   asResult,
   fromIOResult,
   forever,
+  errorAsResult,
 ) where
 
 import Applicable (Applicative (pure))
@@ -42,6 +43,7 @@ import IO qualified
 import Main.Utf8 (withUtf8)
 import Mappable (Functor)
 import Mappable qualified
+import Maybe (Maybe (..))
 import Result (Result)
 import Result qualified
 import Text (Text)
@@ -239,3 +241,18 @@ forever task = Task do
       {-# INLINE loop #-}
   loop
 {-# INLINE forever #-}
+
+
+-- | Returns the error as the result
+errorAsResult :: Task err Unit -> Task Never (Maybe err)
+errorAsResult task =
+  runTask task
+    |> Except.mapExceptT
+      ( \x -> do
+          result <- x
+          case result of
+            Either.Right _ -> pure (Either.Right Nothing)
+            Either.Left err -> pure (Either.Right (Just err))
+      )
+    |> Task
+{-# INLINE errorAsResult #-}

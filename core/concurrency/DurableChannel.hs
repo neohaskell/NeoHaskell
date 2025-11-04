@@ -1,4 +1,4 @@
-module DurableChannel (DurableChannel, new, read, write, last, checkAndWrite, getAndTransform, writeWithIndex) where
+module DurableChannel (DurableChannel, new, read, write, last, checkAndWrite, getAndTransform, writeWithIndex, modify) where
 
 import Array (Array)
 import Array qualified
@@ -110,3 +110,11 @@ getAndTransform transform self =
     values
       |> transform
       |> Task.yield
+
+
+-- | Modifies the channel array atomically
+modify :: (Array value -> Array value) -> DurableChannel value -> Task _ Unit
+modify transform self =
+  Lock.with self.lock do
+    values <- ConcurrentVar.peek self.values
+    self.values |> ConcurrentVar.set (transform values)

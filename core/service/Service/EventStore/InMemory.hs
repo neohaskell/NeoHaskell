@@ -421,5 +421,21 @@ notifySubscriberSafely handler event = do
     Err _ -> Task.yield () -- Silently ignore subscriber errors
 
 
-truncateStreamImpl :: EventStore -> EntityId -> StreamId -> StreamPosition -> Task Error Unit
-truncateStreamImpl = panic "truncateStreamImpl - not implemented"
+truncateStreamImpl :: StreamStore -> EntityId -> StreamId -> StreamPosition -> Task Error Unit
+truncateStreamImpl store entityId streamId position = do
+  let streams = store.streams
+  let foo ::
+        Map (EntityId, StreamId) (DurableChannel Event) ->
+        Task Never (Map (EntityId, StreamId) (DurableChannel Event), Maybe Error)
+      foo streamMap = do
+        let key = (entityId, streamId)
+        case streamMap |> Map.get key of
+          Nothing -> Task.yield (streamMap, StreamNotFound entityId streamId |> Just)
+          Just chan -> do
+            chan |> DurableChannel.modify (Array.dropWhile (\p -> p.localPosition <= position))
+            Task.yield (streamMap, Nothing)
+
+  maybeErr <- streams |> ConcurrentVar.modifyReturning foo
+  case maybeErr of
+    Nothing -> pass
+    Just err -> Task.throw err
