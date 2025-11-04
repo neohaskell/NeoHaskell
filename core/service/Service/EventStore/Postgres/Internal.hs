@@ -45,13 +45,13 @@ data Connection
 
 
 data Ops = Ops
-  { acquire :: Task Text Connection
+  { acquire :: Config -> Task Text Connection
   }
 
 
-defaultOps :: Config -> Ops
-defaultOps cfg = do
-  let acquireImpl = do
+defaultOps :: Ops
+defaultOps = do
+  let acquireImpl cfg = do
         connection <-
           cfg
             |> toConnectionSettings
@@ -65,8 +65,8 @@ defaultOps cfg = do
 
 
 new :: Ops -> Config -> Task Text EventStore
-new ops _ = do
-  _ <- ops.acquire
+new ops cfg = do
+  _ <- ops.acquire cfg
   let eventStore =
         EventStore
           { appendToStream = appendToStreamImpl,
