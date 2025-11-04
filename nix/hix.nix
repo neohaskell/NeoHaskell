@@ -18,5 +18,5 @@
     hspec-discover = "latest";
     haskell-language-server = "latest";
   };
-  shell.buildInputs = with pkgs; [ nixfmt-classic ];
+  shell.buildInputs = with pkgs; [ git nixfmt-classic ];
 }

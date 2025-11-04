@@ -3,6 +3,7 @@ module Service.EventStore.Postgres (
 ) where
 
 import Core
+import Service.Event
 import Service.EventStore.Core
 import Task qualified
 
@@ -11,19 +12,75 @@ new :: Task Error EventStore
 new = do
   let eventStore =
         EventStore
-          { appendToStream = panic "appendToStream: Not implemented yet",
-            readStreamForwardFrom = panic "readStreamForwardFrom: Not implemented yet",
-            readStreamBackwardFrom = panic "readStreamBackwardFrom: Not implemented yet",
-            readAllStreamEvents = panic "readAllStreamEvents: Not implemented yet",
-            readAllEventsForwardFrom = panic "readAllEventsForwardFrom: Not implemented yet",
-            readAllEventsBackwardFrom = panic "readAllEventsBackwardFrom: Not implemented yet",
-            readAllEventsForwardFromFiltered = panic "readAllEventsForwardFromFiltered: Not implemented yet",
-            readAllEventsBackwardFromFiltered = panic "readAllEventsBackwardFromFiltered: Not implemented yet",
-            subscribeToAllEvents = panic "subscribeToAllEvents: Not implemented yet",
-            subscribeToAllEventsFromPosition = panic "subscribeToAllEventsFromPosition: Not implemented yet",
-            subscribeToAllEventsFromStart = panic "subscribeToAllEventsFromStart: Not implemented yet",
-            subscribeToEntityEvents = panic "subscribeToEntityEvents: Not implemented yet",
-            subscribeToStreamEvents = panic "subscribeToStreamEvents: Not implemented yet",
-            unsubscribe = panic "unsubscribe: Not implemented yet"
+          { appendToStream = appendToStreamImpl,
+            readStreamForwardFrom = readStreamForwardFromImpl,
+            readStreamBackwardFrom = readStreamBackwardFromImpl,
+            readAllStreamEvents = readAllStreamEventsImpl,
+            readAllEventsForwardFrom = readAllEventsForwardFromImpl,
+            readAllEventsBackwardFrom = readAllEventsBackwardFromImpl,
+            readAllEventsForwardFromFiltered = readAllEventsForwardFromFilteredImpl,
+            readAllEventsBackwardFromFiltered = readAllEventsBackwardFromFilteredImpl,
+            subscribeToAllEvents = subscribeToAllEventsImpl,
+            subscribeToAllEventsFromPosition = subscribeToAllEventsFromPositionImpl,
+            subscribeToAllEventsFromStart = subscribeToAllEventsFromStartImpl,
+            subscribeToEntityEvents = subscribeToEntityEventsImpl,
+            subscribeToStreamEvents = subscribeToStreamEventsImpl,
+            unsubscribe = unsubscribeImpl
           }
   Task.yield eventStore
+
+
+appendToStreamImpl :: InsertionEvent -> Task Error Event
+appendToStreamImpl = panic "Postgres.appendToStreamImpl - Not implemented yet"
+
+
+readStreamForwardFromImpl :: EntityId -> StreamId -> StreamPosition -> Limit -> Task Error (Array Event)
+readStreamForwardFromImpl = panic "Postgres.readStreamForwardFromImpl - Not implemented yet"
+
+
+readStreamBackwardFromImpl :: EntityId -> StreamId -> StreamPosition -> Limit -> Task Error (Array Event)
+readStreamBackwardFromImpl = panic "Postgres.readStreamBackwardFromImpl - Not implemented yet"
+
+
+readAllStreamEventsImpl :: EntityId -> StreamId -> Task Error (Array Event)
+readAllStreamEventsImpl = panic "Postgres.readAllStreamEventsImpl - Not implemented yet"
+
+
+readAllEventsForwardFromImpl :: StreamPosition -> Limit -> Task Error (Array Event)
+readAllEventsForwardFromImpl = panic "Postgres.readAllEventsForwardFromImpl - Not implemented yet"
+
+
+readAllEventsBackwardFromImpl :: StreamPosition -> Limit -> Task Error (Array Event)
+readAllEventsBackwardFromImpl = panic "Postgres.readAllEventsBackwardFromImpl - Not implemented yet"
+
+
+readAllEventsForwardFromFilteredImpl :: StreamPosition -> Limit -> Array EntityId -> Task Error (Array Event)
+readAllEventsForwardFromFilteredImpl = panic "Postgres.readAllEventsForwardFromFilteredImpl - Not implemented yet"
+
+
+readAllEventsBackwardFromFilteredImpl :: StreamPosition -> Limit -> Array EntityId -> Task Error (Array Event)
+readAllEventsBackwardFromFilteredImpl = panic "Postgres.readAllEventsBackwardFromFilteredImpl - Not implemented yet"
+
+
+subscribeToAllEventsImpl :: (Event -> Task Error Unit) -> Task Error SubscriptionId
+subscribeToAllEventsImpl = panic "Postgres.subscribeToAllEventsImpl - Not implemented yet"
+
+
+subscribeToAllEventsFromPositionImpl :: StreamPosition -> (Event -> Task Error Unit) -> Task Error SubscriptionId
+subscribeToAllEventsFromPositionImpl = panic "Postgres.subscribeToAllEventsFromPositionImpl - Not implemented yet"
+
+
+subscribeToAllEventsFromStartImpl :: (Event -> Task Error Unit) -> Task Error SubscriptionId
+subscribeToAllEventsFromStartImpl = panic "Postgres.subscribeToAllEventsFromStartImpl - Not implemented yet"
+
+
+subscribeToEntityEventsImpl :: EntityId -> (Event -> Task Error Unit) -> Task Error SubscriptionId
+subscribeToEntityEventsImpl = panic "Postgres.subscribeToEntityEventsImpl - Not implemented yet"
+
+
+subscribeToStreamEventsImpl :: EntityId -> StreamId -> (Event -> Task Error Unit) -> Task Error SubscriptionId
+subscribeToStreamEventsImpl = panic "Postgres.subscribeToStreamEventsImpl - Not implemented yet"
+
+
+unsubscribeImpl :: SubscriptionId -> Task Error Unit
+unsubscribeImpl = panic "Postgres.unsubscribeImpl - Not implemented yet"
