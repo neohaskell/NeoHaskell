@@ -17,5 +17,9 @@ spec = do
               user = "neohaskell",
               password = "neohaskell"
             }
+    describe "new method" do
+      it "acquires the connection" \_ -> do
+        pass
+
     let newStore = Postgres.new config |> Task.mapError toText
     EventStore.spec newStore
