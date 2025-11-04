@@ -1,4 +1,5 @@
 module Service.EventStore.Postgres (
+  Config (..),
   new,
 ) where
 
@@ -8,8 +9,17 @@ import Service.EventStore.Core
 import Task qualified
 
 
-new :: Task Error EventStore
-new = do
+data Config = Config
+  { host :: Text,
+    databaseName :: Text,
+    user :: Text,
+    password :: Text
+  }
+  deriving (Eq, Ord, Show)
+
+
+new :: Config -> Task Error EventStore
+new _ = do
   let eventStore =
         EventStore
           { appendToStream = appendToStreamImpl,
