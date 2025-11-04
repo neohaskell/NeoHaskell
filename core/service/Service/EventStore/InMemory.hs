@@ -34,7 +34,8 @@ new = do
             subscribeToAllEventsFromStart = subscribeToAllEventsFromStartImpl store,
             subscribeToEntityEvents = subscribeToEntityEventsImpl store,
             subscribeToStreamEvents = subscribeToStreamEventsImpl store,
-            unsubscribe = unsubscribeImpl store
+            unsubscribe = unsubscribeImpl store,
+            truncateStream = truncateStreamImpl store
           }
   Task.yield eventStore
 
@@ -418,3 +419,7 @@ notifySubscriberSafely handler event = do
   case result of
     Ok _ -> Task.yield ()
     Err _ -> Task.yield () -- Silently ignore subscriber errors
+
+
+truncateStreamImpl :: EventStore -> EntityId -> StreamId -> StreamPosition -> Task Error Unit
+truncateStreamImpl = panic "truncateStreamImpl - not implemented"

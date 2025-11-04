@@ -24,6 +24,7 @@ data Error
   | StorageFailure Text -- Generic storage errors with message
   | SubscriptionNotFound SubscriptionId
   | SubscriptionError SubscriptionId Text -- Subscription-specific errors
+  | TruncationError
   deriving (Eq, Show)
 
 
@@ -70,5 +71,7 @@ data EventStore = EventStore
     subscribeToStreamEvents :: EntityId -> StreamId -> (Event -> Task Error Unit) -> Task Error SubscriptionId,
     -- | Unsubscribe from event notifications. After this call, the subscriber function
     --   will no longer be called for new events.
-    unsubscribe :: SubscriptionId -> Task Error Unit
+    unsubscribe :: SubscriptionId -> Task Error Unit,
+    -- | Removes all the events up to a position
+    truncateStream :: EntityId -> StreamId -> StreamPosition -> Task Error Unit
   }
