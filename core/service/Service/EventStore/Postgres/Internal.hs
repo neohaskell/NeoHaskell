@@ -40,7 +40,8 @@ defaultOps =
 
 
 new :: Ops -> Config -> Task Text EventStore
-new _ _ = do
+new ops _ = do
+  _ <- ops.acquire
   let eventStore =
         EventStore
           { appendToStream = appendToStreamImpl,
