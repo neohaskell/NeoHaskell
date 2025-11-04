@@ -125,6 +125,7 @@ library
     Service.EventStore
     Service.EventStore.Core
     Service.EventStore.InMemory
+    Service.EventStore.Postgres
     Subprocess
     Task
     Test
@@ -181,6 +182,7 @@ test-suite nhcore-test
   default-language: GHC2021
   other-modules:
     Service.EventStore.InMemorySpec
+    Service.EventStore.PostgresSpec
     Test.AppSpec.AppSpecSpec
     Test.AppSpec.VerifySpec
 

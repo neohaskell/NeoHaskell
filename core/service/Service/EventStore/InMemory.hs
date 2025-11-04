@@ -16,9 +16,6 @@ import Task qualified
 import Uuid qualified
 
 
--- | For the in-memory event store, we will use a ConcurrentVar that stores
--- a map of stream IDs to a MutableArray of events.
--- This is the simplest way to have an EventStore that can be used in a test environment.
 new :: Task Error EventStore
 new = do
   store <- newEmptyStreamStore
