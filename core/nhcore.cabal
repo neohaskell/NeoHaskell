@@ -124,6 +124,7 @@ library
     Result
     Service.Event
     Service.Event.EntityName
+    Service.Event.EventMetadata
     Service.Event.StreamId
     Service.Event.StreamPosition
     Service.EventStore
@@ -140,6 +141,7 @@ library
     Test.AppSpec.Scenario
     Test.AppSpec.Verify
     Test.Service.EventStore
+    Test.Service.EventStore.Core
     Test.Service.EventStore.GlobalStreamOrdering.Context
     Test.Service.EventStore.GlobalStreamOrdering.Spec
     Test.Service.EventStore.IndividualStreamOrdering.Context

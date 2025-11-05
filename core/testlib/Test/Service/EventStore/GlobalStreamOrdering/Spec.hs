@@ -8,11 +8,12 @@ import Service.EventStore (EventStore (..))
 import Service.EventStore qualified as EventStore
 import Task qualified
 import Test
+import Test.Service.EventStore.Core (MyEvent)
 import Test.Service.EventStore.GlobalStreamOrdering.Context (Context (..))
 import Test.Service.EventStore.GlobalStreamOrdering.Context qualified as Context
 
 
-spec :: Task Text EventStore -> Spec Unit
+spec :: Task Text (EventStore MyEvent) -> Spec Unit
 spec newStore = do
   describe "Global Stream Ordering" do
     beforeAll (Context.initialize newStore 10) do
@@ -31,7 +32,7 @@ spec newStore = do
       it "has the events correctly ordered within the stream" \context -> do
         let shouldMatchPosition (index, event) = do
               event.localPosition
-                |> shouldBe (Event.StreamPosition (index))
+                |> shouldBe (Event.StreamPosition (fromIntegral index))
         let shouldHaveCorrectOrdering eventStream = do
               eventStream
                 |> Array.indexed
@@ -62,7 +63,7 @@ spec newStore = do
         let midPoint = expectedTotalEvents // 2
         laterGlobalEvents <-
           context.store.readAllEventsForwardFrom
-            (Event.StreamPosition (midPoint))
+            (Event.StreamPosition (fromIntegral midPoint))
             (EventStore.Limit (expectedTotalEvents))
             |> Task.mapError toText
         laterGlobalEvents

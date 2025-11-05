@@ -5,14 +5,15 @@ module Service.Event (
   StreamPosition (..),
   EntityName (..),
   InsertionType (..),
+  Insertion (..),
   InsertionSuccess (..),
   InsertionFailure (..),
   payloadFromEvents,
 ) where
 
 import Core
-import DateTime qualified
 import Service.Event.EntityName (EntityName (..))
+import Service.Event.EventMetadata (EventMetadata (..))
 import Service.Event.StreamId (StreamId (..))
 import Service.Event.StreamPosition (StreamPosition (..))
 import Task qualified
@@ -67,31 +68,6 @@ payloadFromEvents entityName streamId events = do
         entityName,
         insertions,
         insertionType
-      }
-
-
-data EventMetadata = EventMetadata
-  { relatedUserSub :: Maybe Text,
-    correlationId :: Maybe Text,
-    causationId :: Maybe Text,
-    createdAt :: DateTime,
-    localPosition :: Maybe StreamPosition,
-    globalPosition :: Maybe StreamPosition
-  }
-  deriving (Eq, Show, Ord, Generic)
-
-
-newMetadata :: Task _ EventMetadata
-newMetadata = do
-  now <- DateTime.now
-  Task.yield
-    EventMetadata
-      { relatedUserSub = Nothing,
-        correlationId = Nothing,
-        causationId = Nothing,
-        createdAt = now,
-        localPosition = Nothing,
-        globalPosition = Nothing
       }
 
 

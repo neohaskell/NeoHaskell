@@ -4,8 +4,10 @@ import Array qualified
 import Core
 import Service.Event (Event (..))
 import Service.Event qualified as Event
+import Service.Event.EventMetadata qualified as EventMetadata
 import Service.EventStore (EventStore (..))
 import Task qualified
+import Test.Service.EventStore.Core (MyEvent (..))
 import Uuid qualified
 
 
@@ -13,11 +15,11 @@ data Context = Context
   { streamCount :: Int,
     eventsPerStream :: Int,
     eventStreams :: Array (Array Event),
-    store :: EventStore
+    store :: EventStore MyEvent
   }
 
 
-initialize :: Task Text EventStore -> Int -> Task Text Context
+initialize :: Task Text (EventStore MyEvent) -> Int -> Task Text Context
 initialize newStore streamCount = do
   store <- newStore
   -- Create multiple streams with events
@@ -25,7 +27,7 @@ initialize newStore streamCount = do
       getStreamIds = do
         Array.fromLinkedList [0 .. streamCount - 1]
           |> Task.mapArray \_ -> do
-            entityName <- Uuid.generate
+            entityName <- Uuid.generate |> Task.map toText
             streamId <- Uuid.generate
             (Event.EntityName entityName, Event.StreamId streamId) |> Task.yield
 
@@ -33,21 +35,30 @@ initialize newStore streamCount = do
 
   -- Create events for each stream (2 events per stream for testing)
   let eventsPerStream = 2 :: Int
-  let getAllEvents :: Task Text (Array Event.InsertionPayload)
-      getAllEvents = do
-        insertionPayloads <-
-          streamIds |> Task.mapArray \(entityName, streamId) ->
+  let getAllEvents :: Task Text (Array (Event.InsertionPayload MyEvent))
+      getAllEvents =
+        streamIds |> Task.mapArray \(entityName, streamId) -> do
+          insertions <-
             Array.fromLinkedList [0 .. eventsPerStream - 1]
               |> Task.mapArray \eventIndex -> do
                 id <- Uuid.generate
-                Event.InsertionPayload
-                  { streamId = streamId,
-                    entityName = entityName,
-                    insertionType = AnyStreamState,
-                    localPosition = Event.StreamPosition eventIndex
-                  }
-                  |> Task.yield
-        Array.flatten insertionPayloads |> Task.yield
+                newMetadata <- EventMetadata.new
+                let event = MyEvent
+                let localPosition = fromIntegral eventIndex |> Event.StreamPosition |> Just
+                let metadata = newMetadata {EventMetadata.localPosition = localPosition}
+                Task.yield
+                  Event.Insertion
+                    { id = id,
+                      event = event,
+                      metadata = metadata
+                    }
+          Task.yield
+            Event.InsertionPayload
+              { streamId = streamId,
+                entityName = entityName,
+                insertionType = Event.AnyStreamState,
+                insertions
+              }
 
   allEvents <- getAllEvents
 
@@ -55,7 +66,7 @@ initialize newStore streamCount = do
   allEvents
     |> Task.forEach \event ->
       event
-        |> store.appendToStream
+        |> store.insert
         |> Task.mapError toText
         |> discard
 
