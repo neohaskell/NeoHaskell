@@ -41,9 +41,9 @@ initialize newStore streamCount = do
               |> Task.mapArray \eventIndex -> do
                 id <- Uuid.generate
                 Event.InsertionPayload
-                  { id = id,
-                    streamId = streamId,
+                  { streamId = streamId,
                     entityName = entityName,
+                    insertionType = AnyStreamState,
                     localPosition = Event.StreamPosition eventIndex
                   }
                   |> Task.yield
