@@ -131,13 +131,16 @@ insertImpl store payload = do
   channel <- store |> ensureStream entityName streamId
 
   let appendCondition :: Array (Event eventType) -> Bool
-      appendCondition events = do
-        let currentLength =
-              Array.length events
-        let (StreamPosition pos) =
-              expectedPosition
-        fromIntegral pos
-          == currentLength
+      appendCondition events =
+        let currentLength = Array.length events
+            (StreamPosition pos) = expectedPosition
+            positionMatches = fromIntegral pos == currentLength
+         in case payload.insertionType of
+              AnyStreamState -> True
+              StreamCreation -> currentLength == 0 && positionMatches
+              ExistingStream -> currentLength > 0 && positionMatches
+              InsertAfter (StreamPosition afterPos) ->
+                fromIntegral afterPos < currentLength && positionMatches
 
   -- First, get the global index from the global stream
   globalIndex <-
