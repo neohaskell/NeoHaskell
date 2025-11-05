@@ -145,7 +145,11 @@ spec newStore = do
         let insertEventAtPosition position = do
               eventId <- Uuid.generate
               metadata <- EventMetadata.new
-              let metadata' = metadata {EventMetadata.localPosition = Just (Event.StreamPosition position)}
+              let metadata' =
+                    metadata
+                      { EventMetadata.localPosition = Just (Event.StreamPosition position),
+                        EventMetadata.eventId = eventId
+                      }
               let insertion =
                     Event.Insertion
                       { id = eventId,
@@ -176,7 +180,11 @@ spec newStore = do
         -- This should fail with ConcurrencyConflict
         staleEventId <- Uuid.generate
         staleMetadata <- EventMetadata.new
-        let staleMetadata' = staleMetadata {EventMetadata.localPosition = Just (Event.StreamPosition 2)}
+        let staleMetadata' =
+              staleMetadata
+                { EventMetadata.localPosition = Just (Event.StreamPosition 2),
+                  EventMetadata.eventId = staleEventId
+                }
         let staleInsertion =
               Event.Insertion
                 { id = staleEventId,
@@ -205,7 +213,11 @@ spec newStore = do
         -- This should succeed
         correctEventId <- Uuid.generate
         correctMetadata <- EventMetadata.new
-        let correctMetadata' = correctMetadata {EventMetadata.localPosition = Just (Event.StreamPosition 5)}
+        let correctMetadata' =
+              correctMetadata
+                { EventMetadata.localPosition = Just (Event.StreamPosition 5),
+                  EventMetadata.eventId = correctEventId
+                }
         let correctInsertion =
               Event.Insertion
                 { id = correctEventId,
