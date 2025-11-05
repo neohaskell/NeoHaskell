@@ -5,6 +5,7 @@ import Core
 import Maybe qualified
 import Service.Event (Event (..))
 import Service.Event qualified as Event
+import Service.Event.EventMetadata (EventMetadata (..))
 import Service.EventStore (EventStore (..))
 import Service.EventStore.Core qualified as EventStore
 import Task qualified
@@ -69,13 +70,13 @@ spec newStore = do
         -- Verify the remaining events start at position 5
         eventsAfterTruncate
           |> Array.get 0
-          |> Maybe.map (\event -> event.localPosition)
+          |> Maybe.map (\event -> event.metadata.localPosition |> Maybe.getOrDie)
           |> shouldBe (Just (Event.StreamPosition 5))
 
         -- Verify the last event is at position 9
         eventsAfterTruncate
           |> Array.get (expectedCount - 1)
-          |> Maybe.map (\event -> event.localPosition)
+          |> Maybe.map (\event -> event.metadata.localPosition |> Maybe.getOrDie)
           |> shouldBe (Just (Event.StreamPosition 9))
 
       it "truncating at position 0 removes all events" \context -> do
