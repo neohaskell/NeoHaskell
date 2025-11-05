@@ -3,6 +3,7 @@ module Service.EventStore.InMemory (
 ) where
 
 import Array qualified
+import AsyncTask qualified
 import ConcurrentVar qualified
 import Core
 import DurableChannel qualified
@@ -153,17 +154,9 @@ insertImpl store payload = do
   hasWritten <-
     channel |> DurableChannel.checkAndWrite appendCondition finalEvents
 
-  -- Task.throw
-  --   ( StorageFailure
-  --       [fmt|
-  -- CURRVALS -#{toText currVals}
-  -- ------
-  -- HASWRITTEN - #{toText hasWritten}
-  -- \|]
-  --   )
-
   if hasWritten
     then do
+      finalEvents |> Task.forEach (notifySubscribers store)
       let finalEvent = finalEvents |> Array.last |> Maybe.getOrDie
       Task.yield
         InsertionSuccess
@@ -387,34 +380,37 @@ generateSubscriptionId = do
   uuid |> toText |> SubscriptionId |> Task.yield
 
 
--- notifySubscribers :: forall err. (Show err) => StreamStore eventType -> Event -> Task err Unit
--- notifySubscribers store event = do
---   -- Get subscriptions snapshot without locks
---   allSubscriptions <- ConcurrentVar.peek store.subscriptions
---   let relevantSubscriptions =
---         allSubscriptions
---           |> Map.entries
---           |> Array.takeIf (\(_, subscription) -> shouldNotify subscription.subscriptionType event)
+notifySubscribers :: (Show err) => StreamStore eventType -> Event eventType -> Task err Unit
+notifySubscribers store event = do
+  -- Get subscriptions snapshot without locks
+  allSubscriptions <- ConcurrentVar.peek store.subscriptions
+  let relevantSubscriptions =
+        allSubscriptions
+          |> Map.entries
+          |> Array.takeIf (\(_, subscription) -> shouldNotify subscription.subscriptionType event)
 
---   -- Notify each subscriber in fire-and-forget manner using async tasks
---   relevantSubscriptions
---     |> Task.mapArray (\(_, subscription) -> AsyncTask.run (notifySubscriber subscription event))
---     |> discard
+  -- Notify each subscriber in fire-and-forget manner using async tasks
+  relevantSubscriptions
+    |> Task.mapArray (\(_, subscription) -> AsyncTask.run (notifySubscriber subscription event))
+    |> discard
 
--- shouldNotify :: SubscriptionType -> Event -> Bool
--- shouldNotify subscriptionType event =
---   case subscriptionType of
---     AllEvents -> True
---     EntityEvents entityName -> event.entityName == entityName
---     StreamEvents entityName streamId -> event.entityName == entityName && event.streamId == streamId
 
--- notifySubscriber :: Subscription -> Event -> Task _ Unit
--- notifySubscriber subscription event = do
---   -- Execute subscriber handler and catch any errors to prevent failures from affecting the event store
---   result <- subscription.handler event |> Task.asResult
---   case result of
---     Ok _ -> Task.yield ()
---     Err _ -> Task.yield () -- Silently ignore subscriber errors to maintain store reliability
+shouldNotify :: SubscriptionType -> Event eventType -> Bool
+shouldNotify subscriptionType event =
+  case subscriptionType of
+    AllEvents -> True
+    EntityEvents entityName -> event.entityName == entityName
+    StreamEvents entityName streamId -> event.entityName == entityName && event.streamId == streamId
+
+
+notifySubscriber :: Subscription eventType -> Event eventType -> Task _ Unit
+notifySubscriber subscription event = do
+  -- Execute subscriber handler and catch any errors to prevent failures from affecting the event store
+  result <- subscription.handler event |> Task.asResult
+  case result of
+    Ok _ -> Task.yield ()
+    Err _ -> Task.yield () -- Silently ignore subscriber errors to maintain store reliability
+
 
 deliverHistoricalEvents ::
   StreamStore eventType -> StreamPosition -> (Event eventType -> Task Error Unit) -> Task _ Unit
