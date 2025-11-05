@@ -2,8 +2,10 @@ module Test.Service.EventStore.ReadAllForwardsFromStart.Spec where
 
 import Array qualified
 import Core
+import Maybe qualified
 import Service.Event (Event (..))
 import Service.Event qualified as Event
+import Service.Event.EventMetadata (EventMetadata (..))
 import Service.EventStore (EventStore (..))
 import Service.EventStore.Core qualified as EventStore
 import Task qualified
@@ -48,7 +50,7 @@ specWithCount newStore eventCount = do
           context.store.readAllEventsForwardFrom startPosition limit
             |> Task.mapError toText
 
-        let positions = events |> Array.map (\e -> e.globalPosition)
+        let positions = events |> Array.map (\e -> e.metadata.globalPosition |> Maybe.getOrDie)
         positions |> shouldHaveIncreasingOrder
 
       it "has all events from entity1 in order" \context -> do
@@ -69,7 +71,7 @@ specWithCount newStore eventCount = do
         let batchSize = 3 -- Small batch to force multiple reads
 
         -- Read all events in batches, resuming from last position
-        let readInBatches :: Event.StreamPosition -> Array Event.Event -> Task Text (Array Event.Event)
+        let readInBatches :: Event.StreamPosition -> Array (Event.Event MyEvent) -> Task Text (Array (Event.Event MyEvent))
             readInBatches currentPosition accumulatedEvents = do
               batch <-
                 context.store.readAllEventsForwardFrom currentPosition (EventStore.Limit batchSize)
@@ -84,7 +86,7 @@ specWithCount newStore eventCount = do
                   case Array.get (batchLength - 1) batch of
                     Just lastEvent -> do
                       -- Resume from next position after last read event
-                      let Event.StreamPosition lastPos = lastEvent.globalPosition
+                      let Event.StreamPosition lastPos = lastEvent.metadata.globalPosition |> Maybe.getOrDie
                       let nextPosition = Event.StreamPosition (lastPos + 1)
                       readInBatches nextPosition newAccumulated
                     Nothing ->
@@ -107,7 +109,7 @@ specWithCount newStore eventCount = do
           |> shouldBe allEventsSingle
 
         -- Global positions should be strictly increasing across all batches
-        let globalPositions = allEventsBatched |> Array.map (\e -> e.globalPosition)
+        let globalPositions = allEventsBatched |> Array.map (\e -> e.metadata.globalPosition |> Maybe.getOrDie)
         globalPositions |> shouldHaveIncreasingOrder
 
       it "reads from arbitrary middle position with correct skip count" \context -> do
@@ -122,7 +124,7 @@ specWithCount newStore eventCount = do
           Nothing ->
             fail "Expected to find the 5th event for skip test"
           Just fifthEvent -> do
-            let startPosition = fifthEvent.globalPosition
+            let startPosition = fifthEvent.metadata.globalPosition |> Maybe.getOrDie
             let Event.StreamPosition startPos = startPosition
             let readFromPosition = Event.StreamPosition (startPos + 1) -- Read from after the 5th event
 
@@ -139,10 +141,10 @@ specWithCount newStore eventCount = do
 
             -- All events should have positions > startPosition
             remainingEvents |> Task.forEach \event -> do
-              event.globalPosition |> shouldBeGreaterThan startPosition
+              event.metadata.globalPosition |> Maybe.getOrDie |> shouldBeGreaterThan startPosition
 
             -- Events should still be in increasing order
-            let positions = remainingEvents |> Array.map (\e -> e.globalPosition)
+            let positions = remainingEvents |> Array.map (\e -> e.metadata.globalPosition |> Maybe.getOrDie)
             positions |> shouldHaveIncreasingOrder
 
       it "filters events by single entity ID from start" \context -> do
@@ -163,7 +165,7 @@ specWithCount newStore eventCount = do
           |> shouldBe context.eventCount
 
         -- Should be in increasing global position order
-        let positions = filteredEvents |> Array.map (\e -> e.globalPosition)
+        let positions = filteredEvents |> Array.map (\e -> e.metadata.globalPosition |> Maybe.getOrDie)
         positions |> shouldHaveIncreasingOrder
 
       it "filters events by multiple entity IDs from start" \context -> do
@@ -187,7 +189,7 @@ specWithCount newStore eventCount = do
           |> shouldBe (context.eventCount * 2)
 
         -- Should be in increasing global position order
-        let positions = filteredEvents |> Array.map (\e -> e.globalPosition)
+        let positions = filteredEvents |> Array.map (\e -> e.metadata.globalPosition |> Maybe.getOrDie)
         positions |> shouldHaveIncreasingOrder
 
       it "filters events by entity ID from middle position" \context -> do
@@ -202,7 +204,7 @@ specWithCount newStore eventCount = do
           Nothing ->
             fail "Expected to find the 5th event for position test"
           Just fifthEvent -> do
-            let startPosition = fifthEvent.globalPosition
+            let startPosition = fifthEvent.metadata.globalPosition |> Maybe.getOrDie
             let Event.StreamPosition startPos = startPosition
             let readFromPosition = Event.StreamPosition (startPos + 1)
             let entityFilter = Array.fromLinkedList [context.entity1Id]
@@ -218,10 +220,10 @@ specWithCount newStore eventCount = do
 
             -- All events should have position > startPosition
             filteredEvents |> Task.forEach \event -> do
-              event.globalPosition |> shouldBeGreaterThan startPosition
+              event.metadata.globalPosition |> Maybe.getOrDie |> shouldBeGreaterThan startPosition
 
             -- Should be in increasing global position order
-            let positions = filteredEvents |> Array.map (\e -> e.globalPosition)
+            let positions = filteredEvents |> Array.map (\e -> e.metadata.globalPosition |> Maybe.getOrDie)
             positions |> shouldHaveIncreasingOrder
 
       it "returns empty array when filtering by non-existent entity" \context -> do
@@ -275,5 +277,5 @@ specWithCount newStore eventCount = do
         filteredEvents |> shouldBe allEvents
 
         -- Should maintain global position ordering
-        let positions = filteredEvents |> Array.map (\e -> e.globalPosition)
+        let positions = filteredEvents |> Array.map (\e -> e.metadata.globalPosition |> Maybe.getOrDie)
         positions |> shouldHaveIncreasingOrder
