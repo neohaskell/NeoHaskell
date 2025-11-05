@@ -111,51 +111,55 @@ insertImpl :: InsertionPayload eventType -> Task Error InsertionSuccess
 insertImpl _ = panic "Postgres.insertImpl - Not implemented yet" |> Task.yield
 
 
-readStreamForwardFromImpl :: EntityName -> StreamId -> StreamPosition -> Limit -> Task Error (Array Event)
+readStreamForwardFromImpl :: EntityName -> StreamId -> StreamPosition -> Limit -> Task Error (Array (Event eventType))
 readStreamForwardFromImpl _ _ _ _ = panic "Postgres.readStreamForwardFromImpl - Not implemented yet" |> Task.yield
 
 
-readStreamBackwardFromImpl :: EntityName -> StreamId -> StreamPosition -> Limit -> Task Error (Array Event)
+readStreamBackwardFromImpl :: EntityName -> StreamId -> StreamPosition -> Limit -> Task Error (Array (Event eventType))
 readStreamBackwardFromImpl _ _ _ _ = panic "Postgres.readStreamBackwardFromImpl - Not implemented yet" |> Task.yield
 
 
-readAllStreamEventsImpl :: EntityName -> StreamId -> Task Error (Array Event)
+readAllStreamEventsImpl :: EntityName -> StreamId -> Task Error (Array (Event eventType))
 readAllStreamEventsImpl _ _ = panic "Postgres.readAllStreamEventsImpl - Not implemented yet" |> Task.yield
 
 
-readAllEventsForwardFromImpl :: StreamPosition -> Limit -> Task Error (Array Event)
+readAllEventsForwardFromImpl :: StreamPosition -> Limit -> Task Error (Array (Event eventType))
 readAllEventsForwardFromImpl _ _ = panic "Postgres.readAllEventsForwardFromImpl - Not implemented yet" |> Task.yield
 
 
-readAllEventsBackwardFromImpl :: StreamPosition -> Limit -> Task Error (Array Event)
+readAllEventsBackwardFromImpl :: StreamPosition -> Limit -> Task Error (Array (Event eventType))
 readAllEventsBackwardFromImpl _ _ = panic "Postgres.readAllEventsBackwardFromImpl - Not implemented yet" |> Task.yield
 
 
-readAllEventsForwardFromFilteredImpl :: StreamPosition -> Limit -> Array EntityName -> Task Error (Array Event)
+readAllEventsForwardFromFilteredImpl ::
+  StreamPosition -> Limit -> Array EntityName -> Task Error (Array (Event eventType))
 readAllEventsForwardFromFilteredImpl _ _ _ = panic "Postgres.readAllEventsForwardFromFilteredImpl - Not implemented yet" |> Task.yield
 
 
-readAllEventsBackwardFromFilteredImpl :: StreamPosition -> Limit -> Array EntityName -> Task Error (Array Event)
+readAllEventsBackwardFromFilteredImpl ::
+  StreamPosition -> Limit -> Array EntityName -> Task Error (Array (Event eventType))
 readAllEventsBackwardFromFilteredImpl _ _ _ = panic "Postgres.readAllEventsBackwardFromFilteredImpl - Not implemented yet" |> Task.yield
 
 
-subscribeToAllEventsImpl :: (Event -> Task Error Unit) -> Task Error SubscriptionId
+subscribeToAllEventsImpl :: (Event eventType -> Task Error Unit) -> Task Error SubscriptionId
 subscribeToAllEventsImpl _ = panic "Postgres.subscribeToAllEventsImpl - Not implemented yet" |> Task.yield
 
 
-subscribeToAllEventsFromPositionImpl :: StreamPosition -> (Event -> Task Error Unit) -> Task Error SubscriptionId
+subscribeToAllEventsFromPositionImpl ::
+  StreamPosition -> (Event eventType -> Task Error Unit) -> Task Error SubscriptionId
 subscribeToAllEventsFromPositionImpl _ _ = panic "Postgres.subscribeToAllEventsFromPositionImpl - Not implemented yet" |> Task.yield
 
 
-subscribeToAllEventsFromStartImpl :: (Event -> Task Error Unit) -> Task Error SubscriptionId
+subscribeToAllEventsFromStartImpl :: (Event eventType -> Task Error Unit) -> Task Error SubscriptionId
 subscribeToAllEventsFromStartImpl _ = panic "Postgres.subscribeToAllEventsFromStartImpl - Not implemented yet" |> Task.yield
 
 
-subscribeToEntityEventsImpl :: EntityName -> (Event -> Task Error Unit) -> Task Error SubscriptionId
+subscribeToEntityEventsImpl :: EntityName -> (Event eventType -> Task Error Unit) -> Task Error SubscriptionId
 subscribeToEntityEventsImpl _ _ = panic "Postgres.subscribeToEntityEventsImpl - Not implemented yet" |> Task.yield
 
 
-subscribeToStreamEventsImpl :: EntityName -> StreamId -> (Event -> Task Error Unit) -> Task Error SubscriptionId
+subscribeToStreamEventsImpl ::
+  EntityName -> StreamId -> (Event eventType -> Task Error Unit) -> Task Error SubscriptionId
 subscribeToStreamEventsImpl _ _ _ = panic "Postgres.subscribeToStreamEventsImpl - Not implemented yet" |> Task.yield
 
 
