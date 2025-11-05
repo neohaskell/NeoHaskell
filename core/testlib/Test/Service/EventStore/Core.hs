@@ -27,7 +27,8 @@ newInsertion index = do
           |> Just
   let metadata =
         newMetadata
-          { EventMetadata.localPosition = localPosition
+          { EventMetadata.localPosition = localPosition,
+            EventMetadata.eventId = id
           }
   Task.yield
     Event.Insertion

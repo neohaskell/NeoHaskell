@@ -76,7 +76,7 @@ checkAndWrite predicate values self =
     let modifier currentValues = do
           if predicate currentValues
             then do
-              let newValues = Array.append values currentValues
+              let newValues = currentValues |> Array.append values
               Task.yield (newValues, True)
             else do
               Task.yield (currentValues, False)

@@ -32,7 +32,8 @@ specWithCount newStore eventCount = do
   describe [fmt|testing with #{toText eventCount} events|] do
     beforeAll (Context.initialize newStore eventCount) do
       it "has the correct number of events" \context -> do
-        let startPosition = Event.StreamPosition 0
+        let startPosition =
+              Event.StreamPosition 0
         let limit = EventStore.Limit (context.eventCount)
         events <-
           context.store.readStreamForwardFrom context.entityName context.streamId startPosition limit

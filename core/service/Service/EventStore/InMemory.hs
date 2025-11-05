@@ -16,7 +16,7 @@ import Task qualified
 import Uuid qualified
 
 
-new :: Task Error (EventStore eventType)
+new :: (Show eventType) => Task Error (EventStore eventType)
 new = do
   store <- newEmptyStreamStore
   let eventStore =
@@ -57,6 +57,7 @@ fromInsertionPayload (StreamPosition globalPosition) payload =
 
 
 insertWithNotification ::
+  (Show eventType) =>
   StreamStore eventType ->
   InsertionPayload eventType ->
   Task Error InsertionSuccess
@@ -114,6 +115,7 @@ ensureStream entityName streamId store = do
 
 
 insertImpl ::
+  (Show eventType) =>
   StreamStore eventType ->
   InsertionPayload eventType ->
   Task Error InsertionSuccess
@@ -122,17 +124,19 @@ insertImpl store payload = do
   let streamId = payload.streamId
   let expectedPosition =
         payload.insertions
-          |> Array.map (\i -> i.metadata.localPosition)
-          |> Array.maximum
-          |> Maybe.flatten
+          |> Array.map (\i -> i.metadata.localPosition |> Maybe.withDefault (StreamPosition 0))
+          |> Array.minimum
           |> Maybe.withDefault (StreamPosition 0)
   channel <- store |> ensureStream entityName streamId
 
   let appendCondition :: Array (Event eventType) -> Bool
       appendCondition events = do
-        let currentLength = Array.length events
-        let (StreamPosition pos) = expectedPosition
-        pos == fromIntegral currentLength
+        let currentLength =
+              Array.length events
+        let (StreamPosition pos) =
+              expectedPosition
+        fromIntegral pos
+          == currentLength
 
   -- First, get the global index from the global stream
   globalIndex <-
@@ -143,9 +147,20 @@ insertImpl store payload = do
   let globalPosition = StreamPosition (fromIntegral globalIndex)
   let finalEvents = payload |> fromInsertionPayload globalPosition
 
+  -- currVals <- channel |> DurableChannel.getAndTransform unchanged
+
   -- Write to the individual stream with the correctly positioned event
   hasWritten <-
     channel |> DurableChannel.checkAndWrite appendCondition finalEvents
+
+  -- Task.throw
+  --   ( StorageFailure
+  --       [fmt|
+  -- CURRVALS -#{toText currVals}
+  -- ------
+  -- HASWRITTEN - #{toText hasWritten}
+  -- \|]
+  --   )
 
   if hasWritten
     then do

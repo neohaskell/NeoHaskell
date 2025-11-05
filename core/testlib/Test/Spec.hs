@@ -1,7 +1,9 @@
+{- HLINT ignore "Use camelCase" -}
 module Test.Spec (
   Spec,
   describe,
   it,
+  only_it,
   shouldBe,
   shouldSatisfy,
   shouldContain,
@@ -52,6 +54,14 @@ it name block =
   Hspec.it (Text.toLinkedList name) \context -> do
     block context |> Task.runOrPanic
 {-# INLINE it #-}
+
+
+-- | Define a test case
+only_it :: Text -> (context -> Task Text Unit) -> Spec context
+only_it name block =
+  Hspec.xit (Text.toLinkedList name) \context -> do
+    block context |> Task.runOrPanic
+{-# INLINE only_it #-}
 
 
 -- | Marks a test as pending
