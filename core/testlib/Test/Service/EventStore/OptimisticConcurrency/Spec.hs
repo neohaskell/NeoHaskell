@@ -7,6 +7,7 @@ import Maybe qualified
 import Result qualified
 import Service.Event (Event (..))
 import Service.Event qualified as Event
+import Service.Event.EventMetadata (EventMetadata (..))
 import Service.Event.EventMetadata qualified as EventMetadata
 import Service.EventStore (EventStore)
 import Service.EventStore.Core qualified as EventStore
@@ -115,13 +116,13 @@ spec newStore = do
         -- The first event should be our initial event
         events
           |> Array.get 0
-          |> Maybe.map (\event -> event.id)
+          |> Maybe.map (\event -> event.metadata.eventId)
           |> shouldBe (Just initialEventId)
 
         -- The second event should be one of our concurrent events
         events
           |> Array.get 1
-          |> Maybe.map (\event -> event.id)
+          |> Maybe.map (\event -> event.metadata.eventId)
           |> shouldSatisfy (\id -> id == Just event1Id || id == Just event2Id)
 
       it "gives consistency error when stream position is not up to date" \context -> do
@@ -228,7 +229,7 @@ spec newStore = do
         -- Last event should be our correctly inserted event
         finalEvents
           |> Array.get 5
-          |> Maybe.map (\event -> event.id)
+          |> Maybe.map (\event -> event.metadata.eventId)
           |> shouldBe (Just correctEventId)
 
       it "insertion is idempotent by event id" \context -> do

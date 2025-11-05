@@ -7,10 +7,12 @@ import Core
 import DateTime qualified
 import Service.Event.StreamPosition (StreamPosition)
 import Task qualified
+import Uuid qualified
 
 
 data EventMetadata = EventMetadata
-  { relatedUserSub :: Maybe Text,
+  { eventId :: Uuid,
+    relatedUserSub :: Maybe Text,
     correlationId :: Maybe Text,
     causationId :: Maybe Text,
     createdAt :: DateTime,
@@ -22,10 +24,12 @@ data EventMetadata = EventMetadata
 
 new :: Task _ EventMetadata
 new = do
+  id <- Uuid.generate
   now <- DateTime.now
   Task.yield
     EventMetadata
-      { relatedUserSub = Nothing,
+      { eventId = id,
+        relatedUserSub = Nothing,
         correlationId = Nothing,
         causationId = Nothing,
         createdAt = now,

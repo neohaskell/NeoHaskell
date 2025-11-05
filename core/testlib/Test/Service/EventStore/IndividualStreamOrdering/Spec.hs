@@ -2,6 +2,7 @@ module Test.Service.EventStore.IndividualStreamOrdering.Spec where
 
 import Array qualified
 import Core
+import Maybe qualified
 import Service.Event (Event (..))
 import Service.Event qualified as Event
 import Service.Event.EventMetadata (EventMetadata (..))
@@ -48,7 +49,7 @@ specWithCount newStore eventCount = do
             |> Task.mapError toText
         events
           |> Task.forEach \event ->
-            event.localPosition |> shouldBe context.position
+            event.metadata.localPosition |> Maybe.getOrDie |> shouldBe context.position
 
       it "has all the events" \context -> do
         let startPosition = Event.StreamPosition 0
@@ -71,10 +72,10 @@ specWithCount newStore eventCount = do
         -- Each event should have the correct core properties
         eventPairs |> Task.forEach \((payload, insertion), event) -> do
           -- Validate event ID, entity ID, stream ID, and local position
-          event.id |> shouldBe insertion.id
+          event.metadata.eventId |> shouldBe insertion.id
           event.entityName |> shouldBe payload.entityName
           event.streamId |> shouldBe payload.streamId
-          (Just event.localPosition)
+          (event.metadata.localPosition)
             |> shouldBe insertion.metadata.localPosition
 
       it "has global positions in strictly increasing order" \context -> do
@@ -85,7 +86,7 @@ specWithCount newStore eventCount = do
             |> Task.mapError toText
 
         -- Global positions should be strictly increasing
-        let globalPositions = events |> Array.map (\e -> e.globalPosition)
+        let globalPositions = events |> Array.map (\e -> e.metadata.globalPosition)
         globalPositions |> shouldHaveIncreasingOrder
 
         -- Each event should have the correct entity ID
@@ -113,10 +114,10 @@ specWithCount newStore eventCount = do
 
         -- All events should have local positions >= startPosition
         eventsFromMiddle |> Task.forEach \event -> do
-          event.localPosition |> shouldBeGreaterThanOrEqual startPosition
+          event.metadata.localPosition |> Maybe.getOrDie |> shouldBeGreaterThanOrEqual startPosition
 
         -- Global positions should still be strictly increasing
-        let globalPositions = eventsFromMiddle |> Array.map (\e -> e.globalPosition)
+        let globalPositions = eventsFromMiddle |> Array.map (\e -> e.metadata.globalPosition |> Maybe.getOrDie)
         globalPositions |> shouldHaveIncreasingOrder
 
         -- Each event should have the correct entity ID
@@ -142,10 +143,10 @@ specWithCount newStore eventCount = do
 
         -- All events should have local positions < readFromPosition (strict less than)
         eventsBackward |> Task.forEach \event -> do
-          event.localPosition |> shouldBeLessThan readFromPosition
+          event.metadata.localPosition |> Maybe.getOrDie |> shouldBeLessThan readFromPosition
 
         -- Global positions should be in decreasing order (backward reading)
-        let globalPositions = eventsBackward |> Array.map (\e -> e.globalPosition)
+        let globalPositions = eventsBackward |> Array.map (\e -> e.metadata.globalPosition |> Maybe.getOrDie)
         globalPositions |> shouldHaveDecreasingOrder
 
         -- Each event should have the correct entity ID
