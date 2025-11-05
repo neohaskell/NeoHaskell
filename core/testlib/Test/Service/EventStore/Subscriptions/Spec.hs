@@ -4,9 +4,11 @@ import Array qualified
 import AsyncTask qualified
 import ConcurrentVar qualified
 import Core
+import Maybe qualified
 import Result qualified
 import Service.Event (Event (..))
 import Service.Event qualified as Event
+import Service.Event.EventMetadata (EventMetadata (..))
 import Service.EventStore (EventStore (..))
 import Service.EventStore.Core qualified as EventStore
 import Task qualified
@@ -59,7 +61,7 @@ spec newStore = do
           |> shouldSatisfy
             ( \maybeEvent ->
                 case maybeEvent of
-                  Just event -> event.localPosition == Event.StreamPosition 0
+                  Just event -> event.metadata.localPosition |> Maybe.getOrDie |> (==) (Event.StreamPosition 0)
                   Nothing -> False
             )
 
@@ -390,7 +392,8 @@ spec newStore = do
           |> Array.indexed
           |> Task.forEach
             ( \(index, event) -> do
-                event.localPosition
+                event.metadata.localPosition
+                  |> Maybe.getOrDie
                   |> shouldBe (Event.StreamPosition (11 + index |> fromIntegral))
             )
 
@@ -523,7 +526,7 @@ spec newStore = do
               received
                 |> Array.takeIf
                   ( \event -> do
-                      let (Event.StreamPosition eventGlobalPos) = event.globalPosition
+                      let (Event.StreamPosition eventGlobalPos) = event.metadata.globalPosition |> Maybe.getOrDie
                       eventGlobalPos <= expectedAfterPos
                   )
 
