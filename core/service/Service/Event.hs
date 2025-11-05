@@ -1,5 +1,5 @@
 module Service.Event (
-  Event (..),
+  StoredEvent (..),
   InsertionPayload (..),
   StreamId (..),
   StreamPosition (..),
@@ -21,14 +21,12 @@ import Task qualified
 import Uuid qualified
 
 
-data Event = Event
-  { id :: Uuid,
+data StoredEvent eventType = StoredEvent
+  { entityName :: EntityName,
     streamId :: StreamId,
-    entityName :: EntityName,
-    localPosition :: StreamPosition,
-    globalPosition :: StreamPosition
+    event :: eventType,
+    metadata :: EventMetadata
   }
-  deriving (Eq, Show, Ord, Generic)
 
 
 data InsertionType
