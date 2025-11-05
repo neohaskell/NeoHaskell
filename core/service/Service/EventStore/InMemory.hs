@@ -10,6 +10,7 @@ import Lock qualified
 import Map qualified
 import Service.Event
 import Service.Event.EventMetadata (EventMetadata)
+import Service.Event.EventMetadata qualified as EventMetadata
 import Service.EventStore.Core
 import Task qualified
 import Uuid qualified
@@ -40,6 +41,19 @@ new = do
 
 
 -- PRIVATE
+
+fromInsertionPayload :: StreamPosition -> InsertionPayload eventType -> Array (StoredEvent eventType)
+fromInsertionPayload globalPosition payload =
+  payload.insertions
+    |> Array.map \insertion -> do
+      let newMetadata = insertion.metadata {EventMetadata.globalPosition = Just globalPosition}
+      StoredEvent
+        { entityName = payload.entityName,
+          streamId = payload.streamId,
+          metadata = newMetadata,
+          event = insertion.event
+        }
+
 
 insertWithNotification ::
   StreamStore eventType ->

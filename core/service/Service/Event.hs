@@ -27,6 +27,7 @@ data StoredEvent eventType = StoredEvent
     event :: eventType,
     metadata :: EventMetadata
   }
+  deriving (Eq, Show, Ord, Generic)
 
 
 data InsertionType
