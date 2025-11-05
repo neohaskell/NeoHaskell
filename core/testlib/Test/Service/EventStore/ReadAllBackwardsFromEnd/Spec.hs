@@ -2,16 +2,19 @@ module Test.Service.EventStore.ReadAllBackwardsFromEnd.Spec where
 
 import Array qualified
 import Core
+import Service.Event (Event (..))
 import Service.Event qualified as Event
-import Service.EventStore (EventStore)
+import Service.EventStore (EventStore (..))
 import Service.EventStore.Core qualified as EventStore
 import Task qualified
 import Test
+import Test.Service.EventStore.Core (MyEvent)
+import Test.Service.EventStore.ReadAllBackwardsFromEnd.Context (Context (..))
 import Test.Service.EventStore.ReadAllBackwardsFromEnd.Context qualified as Context
 import Uuid qualified
 
 
-spec :: Task Text EventStore -> Spec Unit
+spec :: Task Text (EventStore MyEvent) -> Spec Unit
 spec newStore = do
   describe "Read All Backwards From End" do
     specWithCount newStore 10
@@ -24,12 +27,12 @@ spec newStore = do
       specWithCount newStore 1000000
 
 
-specWithCount :: Task Text EventStore -> Int -> Spec Unit
+specWithCount :: Task Text (EventStore MyEvent) -> Int -> Spec Unit
 specWithCount newStore eventCount = do
   describe [fmt|testing with #{toText eventCount} events|] do
     beforeAll (Context.initialize newStore eventCount) do
       it "reads all events from end in reverse order" \context -> do
-        let limit = EventStore.Limit (context.eventCount * 2) -- Double the limit since we have two entities
+        let limit = EventStore.Limit (fromIntegral (context.eventCount * 2)) -- Double the limit since we have two entities
         events <-
           context.store.readAllEventsBackwardFrom context.maxGlobalPosition limit
             |> Task.mapError toText
@@ -38,7 +41,7 @@ specWithCount newStore eventCount = do
           |> shouldBe (context.eventCount * 2)
 
       it "has all events in decreasing order" \context -> do
-        let limit = EventStore.Limit (context.eventCount * 2)
+        let limit = EventStore.Limit (fromIntegral (context.eventCount * 2))
         events <-
           context.store.readAllEventsBackwardFrom context.maxGlobalPosition limit
             |> Task.mapError toText
@@ -47,7 +50,7 @@ specWithCount newStore eventCount = do
         positions |> shouldHaveDecreasingOrder
 
       it "has all events from entity1 in reverse order" \context -> do
-        let limit = EventStore.Limit (context.eventCount * 2)
+        let limit = EventStore.Limit (fromIntegral (context.eventCount * 2))
         events <-
           context.store.readAllEventsBackwardFrom context.maxGlobalPosition limit
             |> Task.mapError toText
@@ -62,7 +65,7 @@ specWithCount newStore eventCount = do
         localPositions |> shouldHaveDecreasingOrder
 
       it "supports partial reads with resumption from global position (backwards)" \context -> do
-        let totalEvents = context.eventCount * 2
+        let totalEvents = fromIntegral (context.eventCount * 2)
         let batchSize = 3 -- Small batch to force multiple reads
 
         -- Read all events in batches backward, resuming from previous position
@@ -113,8 +116,8 @@ specWithCount newStore eventCount = do
 
       it "can read from middle position backward" \context -> do
         let Event.StreamPosition maxPos = context.maxGlobalPosition
-        let midPosition = Event.StreamPosition (maxPos // 2)
-        let limit = EventStore.Limit (context.eventCount * 2)
+        let midPosition = Event.StreamPosition (fromIntegral ((fromIntegral maxPos :: Int) // 2))
+        let limit = EventStore.Limit (fromIntegral (context.eventCount * 2))
 
         eventsFromMid <-
           context.store.readAllEventsBackwardFrom midPosition limit
@@ -138,7 +141,7 @@ specWithCount newStore eventCount = do
           |> Array.length
           |> shouldBe 1 -- Should contain only the event at position 0
       it "filters events by single entity ID from end position" \context -> do
-        let limit = EventStore.Limit (context.eventCount * 2)
+        let limit = EventStore.Limit (fromIntegral (context.eventCount * 2))
         let entityFilter = Array.fromLinkedList [context.entity1Id]
 
         filteredEvents <-
@@ -158,7 +161,7 @@ specWithCount newStore eventCount = do
         positions |> shouldHaveDecreasingOrder
 
       it "filters events by multiple entity IDs from end position" \context -> do
-        let limit = EventStore.Limit (context.eventCount * 2)
+        let limit = EventStore.Limit (fromIntegral (context.eventCount * 2))
         let entityFilter = Array.fromLinkedList [context.entity1Id, context.entity2Id]
 
         filteredEvents <-
@@ -188,13 +191,13 @@ specWithCount newStore eventCount = do
           context.store.readAllEventsForwardFrom (Event.StreamPosition 0) firstLimit
             |> Task.mapError toText
 
-        case Array.get (skipCount - 1) firstEvents of
+        case Array.get (fromIntegral (skipCount - 1)) firstEvents of
           Nothing ->
             fail "Expected to find the 5th event for backward position test"
           Just fifthEvent -> do
             let startPosition = fifthEvent.globalPosition
             let entityFilter = Array.fromLinkedList [context.entity1Id]
-            let limit = EventStore.Limit (context.eventCount * 2)
+            let limit = EventStore.Limit (fromIntegral (context.eventCount * 2))
 
             filteredEvents <-
               context.store.readAllEventsBackwardFromFiltered startPosition limit entityFilter
@@ -214,7 +217,8 @@ specWithCount newStore eventCount = do
 
       it "returns empty array when filtering by non-existent entity backward" \context -> do
         let limit = EventStore.Limit 100
-        nonExistentEntityName <- Uuid.generate |> Task.map Event.EntityName
+        nonExistentEntityText <- Uuid.generate |> Task.map toText
+        let nonExistentEntityName = Event.EntityName nonExistentEntityText
         let entityFilter = Array.fromLinkedList [nonExistentEntityName]
 
         filteredEvents <-
@@ -246,7 +250,7 @@ specWithCount newStore eventCount = do
         positions |> shouldHaveDecreasingOrder
 
       it "maintains global order when filtering mixed entities backward" \context -> do
-        let limit = EventStore.Limit (context.eventCount * 2)
+        let limit = EventStore.Limit (fromIntegral (context.eventCount * 2))
         let entityFilter = Array.fromLinkedList [context.entity1Id, context.entity2Id]
 
         -- Get all events without filtering for comparison
@@ -273,13 +277,13 @@ specWithCount newStore eventCount = do
           context.store.readAllEventsForwardFrom (Event.StreamPosition 0) beforeLimit
             |> Task.mapError toText
 
-        case Array.get (beforeCount - 1) beforeEvents of
+        case Array.get (fromIntegral (beforeCount - 1)) beforeEvents of
           Nothing ->
             fail "Expected to find the middle event for before position test"
           Just beforeEvent -> do
             let beforePosition = beforeEvent.globalPosition
             let entityFilter = Array.fromLinkedList [context.entity1Id]
-            let limit = EventStore.Limit (context.eventCount * 2)
+            let limit = EventStore.Limit (fromIntegral (context.eventCount * 2))
 
             -- Read backwards from before position, filtered by entity1
             filteredEvents <-
