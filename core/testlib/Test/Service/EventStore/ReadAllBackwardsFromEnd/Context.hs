@@ -10,6 +10,7 @@ import Service.Event qualified as Event
 import Service.EventStore (EventStore)
 import Service.EventStore.Core qualified as EventStore
 import Task qualified
+import Test.Service.EventStore.Core (MyEvent, newInsertion)
 import Uuid qualified
 
 
@@ -18,29 +19,30 @@ data Context = Context
     entity1Id :: Event.EntityName,
     entity2Id :: Event.EntityName,
     streamId :: Event.StreamId,
-    store :: EventStore,
-    generatedEvents :: Array Event.InsertionPayload,
+    store :: EventStore MyEvent,
+    generatedEvents :: Array (Event.InsertionPayload MyEvent),
     maxGlobalPosition :: Event.StreamPosition
   }
 
 
-initialize :: Task Text EventStore -> Int -> Task Text Context
+initialize :: Task Text (EventStore MyEvent) -> Int -> Task Text Context
 initialize newStore eventCount = do
   store <- newStore
   streamId <- Uuid.generate |> Task.map Event.StreamId
-  entity1Id <- Uuid.generate |> Task.map Event.EntityName
-  entity2Id <- Uuid.generate |> Task.map Event.EntityName
+  entity1IdText <- Uuid.generate |> Task.map toText
+  let entity1Id = Event.EntityName entity1IdText
+  entity2IdText <- Uuid.generate |> Task.map toText
+  let entity2Id = Event.EntityName entity2IdText
 
-  let generateEvents :: Event.EntityName -> Task Text (Array Event.InsertionPayload)
+  let generateEvents :: Event.EntityName -> Task Text (Array (Event.InsertionPayload MyEvent))
       generateEvents entityName = do
         Array.fromLinkedList [0 .. eventCount - 1] |> Task.mapArray \index -> do
-          let localPosition = Event.StreamPosition index
-          id <- Uuid.generate
+          insertions <- Array.fromLinkedList [index] |> Task.mapArray newInsertion
           Event.InsertionPayload
-            { id,
-              streamId,
+            { streamId,
               entityName,
-              localPosition
+              insertionType = Event.AnyStreamState,
+              insertions
             }
             |> Task.yield
 
@@ -49,12 +51,12 @@ initialize newStore eventCount = do
 
   entity1Inserted <-
     entity1Events
-      |> Task.mapArray (\event -> event |> store.appendToStream)
+      |> Task.mapArray (\payload -> payload |> store.insert)
       |> Task.mapError toText
 
   entity2Inserted <-
     entity2Events
-      |> Task.mapArray (\event -> event |> store.appendToStream)
+      |> Task.mapArray (\payload -> payload |> store.insert)
       |> Task.mapError toText
 
   let maxGlobalPosition =
