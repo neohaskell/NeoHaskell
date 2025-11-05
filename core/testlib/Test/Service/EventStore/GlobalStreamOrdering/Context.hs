@@ -7,7 +7,7 @@ import Service.Event qualified as Event
 import Service.Event.EventMetadata qualified as EventMetadata
 import Service.EventStore (EventStore (..))
 import Task qualified
-import Test.Service.EventStore.Core (MyEvent (..))
+import Test.Service.EventStore.Core (MyEvent (..), newInsertion)
 import Uuid qualified
 
 
@@ -40,18 +40,7 @@ initialize newStore streamCount = do
         streamIds |> Task.mapArray \(entityName, streamId) -> do
           insertions <-
             Array.fromLinkedList [0 .. eventsPerStream - 1]
-              |> Task.mapArray \eventIndex -> do
-                id <- Uuid.generate
-                newMetadata <- EventMetadata.new
-                let event = MyEvent
-                let localPosition = fromIntegral eventIndex |> Event.StreamPosition |> Just
-                let metadata = newMetadata {EventMetadata.localPosition = localPosition}
-                Task.yield
-                  Event.Insertion
-                    { id = id,
-                      event = event,
-                      metadata = metadata
-                    }
+              |> Task.mapArray newInsertion
           Task.yield
             Event.InsertionPayload
               { streamId = streamId,
