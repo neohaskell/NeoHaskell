@@ -29,7 +29,11 @@ spec newStore = do
         -- First, append an initial event to position 0
         initialEventId <- Uuid.generate
         initialMetadata <- EventMetadata.new
-        let initialMetadata' = initialMetadata {EventMetadata.localPosition = Just (Event.StreamPosition 0)}
+        let initialMetadata' =
+              initialMetadata
+                { EventMetadata.localPosition = Just (Event.StreamPosition 0),
+                  EventMetadata.eventId = initialEventId
+                }
         let initialInsertion =
               Event.Insertion
                 { id = initialEventId,
@@ -52,7 +56,11 @@ spec newStore = do
         -- Create two identical events both expecting to append at position 1
         event1Id <- Uuid.generate
         event1Metadata <- EventMetadata.new
-        let event1Metadata' = event1Metadata {EventMetadata.localPosition = Just (Event.StreamPosition 1)}
+        let event1Metadata' =
+              event1Metadata
+                { EventMetadata.localPosition = Just (Event.StreamPosition 1),
+                  EventMetadata.eventId = event1Id
+                }
         let event1Insertion =
               Event.Insertion
                 { id = event1Id,
@@ -69,7 +77,11 @@ spec newStore = do
 
         event2Id <- Uuid.generate
         event2Metadata <- EventMetadata.new
-        let event2Metadata' = event2Metadata {EventMetadata.localPosition = Just (Event.StreamPosition 1)}
+        let event2Metadata' =
+              event2Metadata
+                { EventMetadata.localPosition = Just (Event.StreamPosition 1),
+                  EventMetadata.eventId = event2Id
+                }
         let event2Insertion =
               Event.Insertion
                 { id = event2Id,
