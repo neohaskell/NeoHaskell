@@ -19,7 +19,8 @@ data Context = Context
     streamId :: Event.StreamId,
     store :: EventStore MyEvent,
     payload :: Event.InsertionPayload MyEvent,
-    position :: Event.StreamPosition
+    position :: Event.StreamPosition,
+    positions :: Array Event.StreamPosition
   }
 
 
@@ -36,7 +37,8 @@ initialize newStore eventCountNumber = do
 
   insertResult <- payload |> store.insert |> Task.mapError toText
   let position = insertResult.localPosition
+  let positions = Array.fromLinkedList [0 .. eventCountNumber - 1] |> Array.map (fromIntegral .> Event.StreamPosition)
 
   let eventCount = fromIntegral eventCountNumber
 
-  return Context {eventCount, streamId, store, payload, position, entityName}
+  return Context {eventCount, streamId, store, payload, position, positions, entityName}

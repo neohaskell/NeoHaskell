@@ -49,8 +49,12 @@ specWithCount newStore eventCount = do
           context.store.readStreamForwardFrom context.entityName context.streamId startPosition limit
             |> Task.mapError toText
         events
-          |> Task.forEach \event ->
-            event.metadata.localPosition |> Maybe.getOrDie |> shouldBe context.position
+          |> Array.map
+            ( \event ->
+                event.metadata.localPosition
+                  |> Maybe.getOrDie
+            )
+          |> shouldBe context.positions
 
       it "has all the events" \context -> do
         let startPosition = Event.StreamPosition 0
