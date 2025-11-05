@@ -86,7 +86,7 @@ specWithCount newStore eventCount = do
             |> Task.mapError toText
 
         -- Global positions should be strictly increasing
-        let globalPositions = events |> Array.map (\e -> e.metadata.globalPosition)
+        let globalPositions = events |> Array.map (\e -> e.metadata.globalPosition |> Maybe.getOrDie)
         globalPositions |> shouldHaveIncreasingOrder
 
         -- Each event should have the correct entity ID
@@ -159,7 +159,7 @@ specWithCount newStore eventCount = do
 
         -- Verify we get the expected range of events (positions 0 through halfwayPoint)
         let expectedPositions = Array.fromLinkedList [0 .. halfwayPoint] |> Array.map (fromIntegral .> Event.StreamPosition)
-        let actualPositions = eventsBackward |> Array.map (\e -> e.localPosition) |> Array.reverse
+        let actualPositions = eventsBackward |> Array.map (\e -> e.metadata.localPosition |> Maybe.getOrDie) |> Array.reverse
         actualPositions |> shouldBe expectedPositions
 
       it "reads backward from the end of stream with all events" \context -> do
@@ -177,10 +177,10 @@ specWithCount newStore eventCount = do
 
         -- All events should have local positions < endPosition (strict less than)
         allEventsBackward |> Task.forEach \event -> do
-          event.localPosition |> shouldBeLessThan endPosition
+          event.metadata.localPosition |> Maybe.getOrDie |> shouldBeLessThan endPosition
 
         -- Global positions should be in decreasing order (backward reading)
-        let globalPositions = allEventsBackward |> Array.map (\e -> e.globalPosition)
+        let globalPositions = allEventsBackward |> Array.map (\e -> e.metadata.globalPosition |> Maybe.getOrDie)
         globalPositions |> shouldHaveDecreasingOrder
 
         -- Each event should have the correct entity ID
@@ -193,7 +193,7 @@ specWithCount newStore eventCount = do
 
         -- Verify we get all events in reverse order (positions eventCount-1 down to 0)
         let expectedPositions = Array.fromLinkedList [context.eventCount - 1, context.eventCount - 2 .. 0] |> Array.map Event.StreamPosition
-        let actualPositions = allEventsBackward |> Array.map (\e -> e.localPosition)
+        let actualPositions = allEventsBackward |> Array.map (\e -> e.metadata.localPosition |> Maybe.getOrDie)
         actualPositions |> shouldBe expectedPositions
 
         -- First event should be the last one written (highest local position)
@@ -201,11 +201,11 @@ specWithCount newStore eventCount = do
           Nothing ->
             fail "Expected to find first event in backward read from end"
           Just firstEvent -> do
-            firstEvent.localPosition |> shouldBe lastEventPosition
+            firstEvent.metadata.localPosition |> Maybe.getOrDie |> shouldBe lastEventPosition
 
         -- Last event should be the first one written (position 0)
         case Array.get (Array.length allEventsBackward - 1) allEventsBackward of
           Nothing ->
             fail "Expected to find last event in backward read from end"
           Just lastEvent -> do
-            lastEvent.localPosition |> shouldBe (Event.StreamPosition 0)
+            lastEvent.metadata.localPosition |> Maybe.getOrDie |> shouldBe (Event.StreamPosition 0)
