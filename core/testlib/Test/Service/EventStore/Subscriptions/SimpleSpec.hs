@@ -35,7 +35,7 @@ spec newStore = do
               }
 
       -- Create a shared variable to collect received events
-      receivedEvents <- ConcurrentVar.containing (Array.empty :: Array Event)
+      receivedEvents <- ConcurrentVar.containing (Array.empty :: Array (Event MyEvent))
 
       -- Define subscriber function that collects events
       let subscriber event = do

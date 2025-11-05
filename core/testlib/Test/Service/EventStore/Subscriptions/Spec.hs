@@ -23,7 +23,7 @@ spec newStore = do
     beforeAll (Context.initialize newStore) do
       it "allows subscribing to all events and receives them when appended" \context -> do
         -- Create a shared variable to collect received events
-        receivedEvents <- ConcurrentVar.containing (Array.empty :: Array Event)
+        receivedEvents <- ConcurrentVar.containing (Array.empty :: Array (Event MyEvent))
 
         -- Define subscriber function that collects events
         let subscriber event = do
@@ -83,7 +83,7 @@ spec newStore = do
                 }
 
         -- Create a shared variable to collect received events
-        receivedEvents <- ConcurrentVar.containing (Array.empty :: Array Event)
+        receivedEvents <- ConcurrentVar.containing (Array.empty :: Array (Event MyEvent))
 
         -- Define subscriber function that collects events
         let subscriber event = do
@@ -145,7 +145,7 @@ spec newStore = do
                 }
 
         -- Create a shared variable to collect received events
-        receivedEvents <- ConcurrentVar.containing (Array.empty :: Array Event)
+        receivedEvents <- ConcurrentVar.containing (Array.empty :: Array (Event MyEvent))
 
         -- Define subscriber function that collects events
         let subscriber event = do
@@ -238,9 +238,9 @@ spec newStore = do
 
       it "supports multiple concurrent subscribers without interference" \context -> do
         -- Create multiple shared variables for different subscribers
-        subscriber1Events <- ConcurrentVar.containing (Array.empty :: Array Event)
-        subscriber2Events <- ConcurrentVar.containing (Array.empty :: Array Event)
-        subscriber3Events <- ConcurrentVar.containing (Array.empty :: Array Event)
+        subscriber1Events <- ConcurrentVar.containing (Array.empty :: Array (Event MyEvent))
+        subscriber2Events <- ConcurrentVar.containing (Array.empty :: Array (Event MyEvent))
+        subscriber3Events <- ConcurrentVar.containing (Array.empty :: Array (Event MyEvent))
 
         -- Define different subscriber functions
         let subscriber1 event = do
@@ -303,7 +303,7 @@ spec newStore = do
 
       it "stops delivering events after unsubscription" \context -> do
         -- Create a shared variable to collect received events
-        receivedEvents <- ConcurrentVar.containing (Array.empty :: Array Event)
+        receivedEvents <- ConcurrentVar.containing (Array.empty :: Array (Event MyEvent))
 
         -- Define subscriber function
         let subscriber event = do
@@ -352,7 +352,7 @@ spec newStore = do
 
       it "handles high-frequency event publishing without data loss" \context -> do
         -- Create a shared variable to collect received events
-        receivedEvents <- ConcurrentVar.containing (Array.empty :: Array Event)
+        receivedEvents <- ConcurrentVar.containing (Array.empty :: Array (Event MyEvent))
 
         -- Define subscriber function that tracks events
         let subscriber event = do
@@ -418,7 +418,7 @@ spec newStore = do
         preSubscriptionEvents2 |> Task.mapArray insertEvent |> discard
 
         -- Now set up subscription tracking
-        receivedEvents <- ConcurrentVar.containing (Array.empty :: Array Event)
+        receivedEvents <- ConcurrentVar.containing (Array.empty :: Array (Event MyEvent))
 
         let subscriber event = do
               -- Only track events from our test entities
@@ -483,7 +483,7 @@ spec newStore = do
           Nothing -> Task.throw "No events in first batch"
 
         -- Set up subscription tracking
-        receivedEvents <- ConcurrentVar.containing (Array.empty :: Array Event)
+        receivedEvents <- ConcurrentVar.containing (Array.empty :: Array (Event MyEvent))
 
         let subscriber event = do
               -- Only track events from our test entities
