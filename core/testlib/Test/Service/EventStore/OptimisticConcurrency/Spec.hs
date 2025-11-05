@@ -7,64 +7,91 @@ import Maybe qualified
 import Result qualified
 import Service.Event (Event (..))
 import Service.Event qualified as Event
+import Service.Event.EventMetadata qualified as EventMetadata
 import Service.EventStore (EventStore)
 import Service.EventStore.Core qualified as EventStore
 import Task qualified
 import Test
+import Test.Service.EventStore.Core (MyEvent (..))
 import Test.Service.EventStore.OptimisticConcurrency.Context qualified as Context
 import Uuid qualified
 
 
-spec :: Task Text EventStore -> Spec Unit
+spec :: Task Text (EventStore MyEvent) -> Spec Unit
 spec newStore = do
   describe "Optimistic Concurrency" do
     beforeAll (Context.initialize newStore) do
       it "will only allow one event to be appended, when two writers try to append at the same time" \context -> do
-        entityName <- Uuid.generate |> Task.map Event.EntityName
+        entityNameText <- Uuid.generate |> Task.map toText
+        let entityName = Event.EntityName entityNameText
 
-        initialEventId <- Uuid.generate
         -- First, append an initial event to position 0
-        let initialEvent =
-              Event.InsertionPayload
+        initialEventId <- Uuid.generate
+        initialMetadata <- EventMetadata.new
+        let initialMetadata' = initialMetadata {EventMetadata.localPosition = Just (Event.StreamPosition 0)}
+        let initialInsertion =
+              Event.Insertion
                 { id = initialEventId,
-                  streamId = context.streamId,
+                  event = MyEvent,
+                  metadata = initialMetadata'
+                }
+        let initialPayload =
+              Event.InsertionPayload
+                { streamId = context.streamId,
                   entityName,
-                  localPosition = Event.StreamPosition 0
+                  insertionType = Event.StreamCreation,
+                  insertions = Array.fromLinkedList [initialInsertion]
                 }
 
-        initialEvent
-          |> context.store.appendToStream
+        initialPayload
+          |> context.store.insert
           |> Task.mapError toText
           |> discard
 
         -- Create two identical events both expecting to append at position 1
         event1Id <- Uuid.generate
-        let event1 =
-              Event.InsertionPayload
+        event1Metadata <- EventMetadata.new
+        let event1Metadata' = event1Metadata {EventMetadata.localPosition = Just (Event.StreamPosition 1)}
+        let event1Insertion =
+              Event.Insertion
                 { id = event1Id,
-                  streamId = context.streamId,
+                  event = MyEvent,
+                  metadata = event1Metadata'
+                }
+        let event1Payload =
+              Event.InsertionPayload
+                { streamId = context.streamId,
                   entityName,
-                  localPosition = Event.StreamPosition 1
+                  insertionType = Event.InsertAfter (Event.StreamPosition 0),
+                  insertions = Array.fromLinkedList [event1Insertion]
                 }
 
         event2Id <- Uuid.generate
-        let event2 =
-              Event.InsertionPayload
+        event2Metadata <- EventMetadata.new
+        let event2Metadata' = event2Metadata {EventMetadata.localPosition = Just (Event.StreamPosition 1)}
+        let event2Insertion =
+              Event.Insertion
                 { id = event2Id,
-                  streamId = context.streamId,
+                  event = MyEvent,
+                  metadata = event2Metadata'
+                }
+        let event2Payload =
+              Event.InsertionPayload
+                { streamId = context.streamId,
                   entityName,
-                  localPosition = Event.StreamPosition 1
+                  insertionType = Event.InsertAfter (Event.StreamPosition 0),
+                  insertions = Array.fromLinkedList [event2Insertion]
                 }
 
         let event1Task =
-              event1
-                |> context.store.appendToStream
+              event1Payload
+                |> context.store.insert
                 |> discard
                 |> Task.asResult
 
         let event2Task =
-              event2
-                |> context.store.appendToStream
+              event2Payload
+                |> context.store.insert
                 |> discard
                 |> Task.asResult
 
@@ -98,20 +125,33 @@ spec newStore = do
           |> shouldSatisfy (\id -> id == Just event1Id || id == Just event2Id)
 
       it "gives consistency error when stream position is not up to date" \context -> do
-        entityName <- Uuid.generate |> Task.map Event.EntityName
+        entityNameText <- Uuid.generate |> Task.map toText
+        let entityName = Event.EntityName entityNameText
 
-        -- Insert 5 events to get the stream to position 5
+        -- Insert 5 events to get the stream to position 4 (0-indexed)
         let insertEventAtPosition position = do
               eventId <- Uuid.generate
-              let event =
-                    Event.InsertionPayload
+              metadata <- EventMetadata.new
+              let metadata' = metadata {EventMetadata.localPosition = Just (Event.StreamPosition position)}
+              let insertion =
+                    Event.Insertion
                       { id = eventId,
-                        streamId = context.streamId,
-                        entityName,
-                        localPosition = Event.StreamPosition position
+                        event = MyEvent,
+                        metadata = metadata'
                       }
-              event
-                |> context.store.appendToStream
+              let insertionType =
+                    case position of
+                      0 -> Event.StreamCreation
+                      _ -> Event.InsertAfter (Event.StreamPosition (position - 1))
+              let payload =
+                    Event.InsertionPayload
+                      { streamId = context.streamId,
+                        entityName,
+                        insertionType,
+                        insertions = Array.fromLinkedList [insertion]
+                      }
+              payload
+                |> context.store.insert
                 |> Task.mapError toText
 
         -- Insert events at positions 0, 1, 2, 3, 4
@@ -119,20 +159,28 @@ spec newStore = do
           |> Task.mapArray insertEventAtPosition
           |> discard
 
-        -- Try to insert at an outdated position (position 2, when current is 5)
+        -- Try to insert at an outdated position (position 2, when current is at 4)
         -- This should fail with ConcurrencyConflict
         staleEventId <- Uuid.generate
-        let staleEvent =
-              Event.InsertionPayload
+        staleMetadata <- EventMetadata.new
+        let staleMetadata' = staleMetadata {EventMetadata.localPosition = Just (Event.StreamPosition 2)}
+        let staleInsertion =
+              Event.Insertion
                 { id = staleEventId,
-                  streamId = context.streamId,
+                  event = MyEvent,
+                  metadata = staleMetadata'
+                }
+        let stalePayload =
+              Event.InsertionPayload
+                { streamId = context.streamId,
                   entityName,
-                  localPosition = Event.StreamPosition 2
+                  insertionType = Event.InsertAfter (Event.StreamPosition 1),
+                  insertions = Array.fromLinkedList [staleInsertion]
                 }
 
         staleResult <-
-          staleEvent
-            |> context.store.appendToStream
+          stalePayload
+            |> context.store.insert
             |> Task.asResult
 
         -- Should fail with ConcurrencyConflict
@@ -143,17 +191,25 @@ spec newStore = do
         -- Try to insert at the correct position (position 5)
         -- This should succeed
         correctEventId <- Uuid.generate
-        let correctEvent =
-              Event.InsertionPayload
+        correctMetadata <- EventMetadata.new
+        let correctMetadata' = correctMetadata {EventMetadata.localPosition = Just (Event.StreamPosition 5)}
+        let correctInsertion =
+              Event.Insertion
                 { id = correctEventId,
-                  streamId = context.streamId,
+                  event = MyEvent,
+                  metadata = correctMetadata'
+                }
+        let correctPayload =
+              Event.InsertionPayload
+                { streamId = context.streamId,
                   entityName,
-                  localPosition = Event.StreamPosition 5
+                  insertionType = Event.InsertAfter (Event.StreamPosition 4),
+                  insertions = Array.fromLinkedList [correctInsertion]
                 }
 
         correctResult <-
-          correctEvent
-            |> context.store.appendToStream
+          correctPayload
+            |> context.store.insert
             |> Task.mapError toText
 
         -- Should succeed and have the correct local position
@@ -176,7 +232,8 @@ spec newStore = do
           |> shouldBe (Just correctEventId)
 
       it "insertion is idempotent by event id" \context -> do
-        entityName <- Uuid.generate |> Task.map Event.EntityName
+        entityNameText <- Uuid.generate |> Task.map toText
+        let entityName = Event.EntityName entityNameText
 
         -- Create 10 events with specific IDs (same as C# EventCount)
         eventsToInsert <-
@@ -184,24 +241,36 @@ spec newStore = do
             |> Task.mapArray
               ( \position -> do
                   eventId <- Uuid.generate
+                  metadata <- EventMetadata.new
+                  let metadata' = metadata {EventMetadata.localPosition = Just (Event.StreamPosition position)}
+                  let insertion =
+                        Event.Insertion
+                          { id = eventId,
+                            event = MyEvent,
+                            metadata = metadata'
+                          }
+                  let insertionType =
+                        case position of
+                          0 -> Event.StreamCreation
+                          _ -> Event.InsertAfter (Event.StreamPosition (position - 1))
                   Task.yield
                     Event.InsertionPayload
-                      { id = eventId,
-                        streamId = context.streamId,
+                      { streamId = context.streamId,
                         entityName,
-                        localPosition = Event.StreamPosition position
+                        insertionType,
+                        insertions = Array.fromLinkedList [insertion]
                       }
               )
 
         -- Insert all events the first time - should succeed
         eventsToInsert
-          |> Task.mapArray (\event -> context.store.appendToStream event |> Task.mapError toText)
+          |> Task.mapArray (\payload -> context.store.insert payload |> Task.mapError toText)
           |> discard
 
         -- Insert the exact same events again (same IDs, same everything)
         -- This should be idempotent - either skip duplicates or succeed without duplicating
         eventsToInsert
-          |> Task.mapArray (\event -> context.store.appendToStream event |> Task.asResult)
+          |> Task.mapArray (\payload -> context.store.insert payload |> Task.asResult)
           |> discard
 
         -- Read the stream - should have exactly 10 events (not 20)
