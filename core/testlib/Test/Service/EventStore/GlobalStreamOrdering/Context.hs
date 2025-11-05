@@ -4,7 +4,6 @@ import Array qualified
 import Core
 import Service.Event (Event (..))
 import Service.Event qualified as Event
-import Service.Event.EventMetadata qualified as EventMetadata
 import Service.EventStore (EventStore (..))
 import Task qualified
 import Test.Service.EventStore.Core (MyEvent (..), newInsertion)

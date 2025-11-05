@@ -151,7 +151,7 @@ readStreamForwardFromImpl store entityName streamId position (Limit (limit)) = d
     |> DurableChannel.getAndTransform \events ->
       events
         |> Array.dropWhile (\event -> event.localPosition < position)
-        |> Array.take limit
+        |> Array.take (fromIntegral limit)
 
 
 readStreamBackwardFromImpl ::
@@ -168,7 +168,7 @@ readStreamBackwardFromImpl store entityName streamId position (Limit (limit)) = 
       events
         |> Array.takeIf (\event -> event.localPosition < position)
         |> Array.reverse
-        |> Array.take limit
+        |> Array.take (fromIntegral limit)
 
 
 readAllStreamEventsImpl ::
@@ -189,7 +189,7 @@ readAllEventsForwardFromImpl ::
   Task Error (Array Event)
 readAllEventsForwardFromImpl store (StreamPosition (position)) (Limit (limit)) = do
   allGlobalEvents <- store.globalStream |> DurableChannel.getAndTransform unchanged
-  allGlobalEvents |> Array.drop (fromIntegral position) |> Array.take limit |> Task.yield
+  allGlobalEvents |> Array.drop (fromIntegral position) |> Array.take (fromIntegral limit) |> Task.yield
 
 
 readAllEventsBackwardFromImpl ::
@@ -206,7 +206,7 @@ readAllEventsBackwardFromImpl store (StreamPosition (position)) (Limit (limit)) 
           eventPos <= position
       )
     |> Array.reverse
-    |> Array.take limit
+    |> Array.take (fromIntegral limit)
     |> Task.yield
 
 
@@ -225,7 +225,7 @@ readAllEventsForwardFromFilteredImpl store (StreamPosition (position)) (Limit (l
           eventPos >= position
       )
     |> Array.takeIf (\event -> entityNames |> Array.any (\entityName -> entityName == event.entityName))
-    |> Array.take limit
+    |> Array.take (fromIntegral limit)
     |> Task.yield
 
 
@@ -245,7 +245,7 @@ readAllEventsBackwardFromFilteredImpl store (StreamPosition (position)) (Limit (
       )
     |> Array.reverse
     |> Array.takeIf (\event -> entityNames |> Array.any (\entityName -> entityName == event.entityName))
-    |> Array.take limit
+    |> Array.take (fromIntegral limit)
     |> Task.yield
 
 
