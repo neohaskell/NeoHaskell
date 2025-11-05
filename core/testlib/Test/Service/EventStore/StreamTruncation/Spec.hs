@@ -5,36 +5,38 @@ import Core
 import Maybe qualified
 import Service.Event (Event (..))
 import Service.Event qualified as Event
-import Service.EventStore (EventStore)
+import Service.EventStore (EventStore (..))
 import Service.EventStore.Core qualified as EventStore
 import Task qualified
 import Test
+import Test.Service.EventStore.Core (MyEvent, newInsertion)
 import Test.Service.EventStore.StreamTruncation.Context qualified as Context
 import Uuid qualified
 
 
-spec :: Task Text EventStore -> Spec Unit
+spec :: Task Text (EventStore MyEvent) -> Spec Unit
 spec newStore = do
   describe "Stream Truncation" do
     beforeAll (Context.initialize newStore) do
       it "truncates stream keeping events from position onwards" \context -> do
-        entityName <- Uuid.generate |> Task.map Event.EntityName
+        entityNameText <- Uuid.generate |> Task.map toText
+        let entityName = Event.EntityName entityNameText
 
         -- Insert 10 events at positions 0-9
         let eventCount = 10
         Array.fromLinkedList [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
           |> Task.mapArray
             ( \position -> do
-                eventId <- Uuid.generate
-                let event =
+                insertions <- Array.fromLinkedList [position] |> Task.mapArray newInsertion
+                let payload =
                       Event.InsertionPayload
-                        { id = eventId,
-                          streamId = context.streamId,
+                        { streamId = context.streamId,
                           entityName,
-                          localPosition = Event.StreamPosition position
+                          insertionType = Event.AnyStreamState,
+                          insertions
                         }
-                event
-                  |> context.store.appendToStream
+                payload
+                  |> context.store.insert
                   |> Task.mapError toText
             )
           |> discard
@@ -49,7 +51,7 @@ spec newStore = do
           |> shouldBe eventCount
 
         -- Truncate at position 5 (eventCount / 2 = 10 / 2 = 5)
-        let truncatePosition = Event.StreamPosition (eventCount // 2)
+        let truncatePosition = Event.StreamPosition (fromIntegral (eventCount // 2))
         context.store.truncateStream entityName context.streamId truncatePosition
           |> Task.mapError toText
 
@@ -77,22 +79,23 @@ spec newStore = do
           |> shouldBe (Just (Event.StreamPosition 9))
 
       it "truncating at position 0 removes all events" \context -> do
-        entityName <- Uuid.generate |> Task.map Event.EntityName
+        entityNameText <- Uuid.generate |> Task.map toText
+        let entityName = Event.EntityName entityNameText
 
         -- Insert 5 events
         Array.fromLinkedList [0, 1, 2, 3, 4]
           |> Task.mapArray
             ( \position -> do
-                eventId <- Uuid.generate
-                let event =
+                insertions <- Array.fromLinkedList [position] |> Task.mapArray newInsertion
+                let payload =
                       Event.InsertionPayload
-                        { id = eventId,
-                          streamId = context.streamId,
+                        { streamId = context.streamId,
                           entityName,
-                          localPosition = Event.StreamPosition position
+                          insertionType = Event.AnyStreamState,
+                          insertions
                         }
-                event
-                  |> context.store.appendToStream
+                payload
+                  |> context.store.insert
                   |> Task.mapError toText
             )
           |> discard
@@ -111,22 +114,23 @@ spec newStore = do
           |> shouldBe 5
 
       it "truncating at position beyond stream length keeps all events" \context -> do
-        entityName <- Uuid.generate |> Task.map Event.EntityName
+        entityNameText <- Uuid.generate |> Task.map toText
+        let entityName = Event.EntityName entityNameText
 
         -- Insert 5 events
         Array.fromLinkedList [0, 1, 2, 3, 4]
           |> Task.mapArray
             ( \position -> do
-                eventId <- Uuid.generate
-                let event =
+                insertions <- Array.fromLinkedList [position] |> Task.mapArray newInsertion
+                let payload =
                       Event.InsertionPayload
-                        { id = eventId,
-                          streamId = context.streamId,
+                        { streamId = context.streamId,
                           entityName,
-                          localPosition = Event.StreamPosition position
+                          insertionType = Event.AnyStreamState,
+                          insertions
                         }
-                event
-                  |> context.store.appendToStream
+                payload
+                  |> context.store.insert
                   |> Task.mapError toText
             )
           |> discard
