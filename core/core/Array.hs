@@ -53,6 +53,7 @@ module Array (
   fromLegacy,
   last,
   zip,
+  zipWith,
   sumIntegers,
   reverse,
   flatten,
@@ -562,6 +563,17 @@ indexed (Array vector) = Array (Data.Vector.indexed vector)
 -- Array []
 zip :: Array b -> Array a -> Array (a, b)
 zip (Array second) (Array first) = Array (Data.Vector.zip first second)
+
+
+-- | Zip two arrays with a combining function. Data-last pattern allows piping.
+-- >>> (fromLinkedList [1,2,3] :: Array Int) |> zipWith (+) (fromLinkedList [4,5,6] :: Array Int)
+-- Array [5,7,9]
+-- >>> (fromLinkedList [1,2] :: Array Int) |> zipWith (*) (fromLinkedList [10,20,30] :: Array Int)
+-- Array [10,40]
+-- >>> (fromLinkedList [] :: Array Int) |> zipWith (+) (fromLinkedList [] :: Array Int)
+-- Array []
+zipWith :: (a -> b -> c) -> Array b -> Array a -> Array c
+zipWith f (Array second) (Array first) = Array (Data.Vector.zipWith f first second)
 
 
 -- | Adds up all the integers in an array.

@@ -14,7 +14,7 @@ import Uuid qualified
 
 
 data Context = Context
-  { eventCount :: Int,
+  { eventCount :: Int64,
     entityName :: Event.EntityName,
     streamId :: Event.StreamId,
     store :: EventStore MyEvent,
@@ -24,17 +24,19 @@ data Context = Context
 
 
 initialize :: Task Text (EventStore MyEvent) -> Int -> Task Text Context
-initialize newStore eventCount = do
+initialize newStore eventCountNumber = do
   store <- newStore
   streamId <- Uuid.generate |> Task.map Event.StreamId
   entityName <- Uuid.generate |> Task.map (toText .> Event.EntityName)
   insertions <-
-    Array.fromLinkedList [0 .. eventCount - 1]
+    Array.fromLinkedList [0 .. eventCountNumber - 1]
       |> Task.mapArray
         newInsertion
   let payload = Event.InsertionPayload {streamId, entityName, insertionType = Event.AnyStreamState, insertions}
 
   insertResult <- payload |> store.insert |> Task.mapError toText
   let position = insertResult.localPosition
+
+  let eventCount = fromIntegral eventCountNumber
 
   return Context {eventCount, streamId, store, payload, position, entityName}

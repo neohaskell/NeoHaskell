@@ -14,6 +14,7 @@ module Service.Event (
 import Core
 import Service.Event.EntityName (EntityName (..))
 import Service.Event.EventMetadata (EventMetadata (..))
+import Service.Event.EventMetadata qualified as EventMetadata
 import Service.Event.StreamId (StreamId (..))
 import Service.Event.StreamPosition (StreamPosition (..))
 import Task qualified
@@ -21,7 +22,8 @@ import Uuid qualified
 
 
 data Event = Event
-  { streamId :: StreamId,
+  { id :: Uuid,
+    streamId :: StreamId,
     entityName :: EntityName,
     localPosition :: StreamPosition,
     globalPosition :: StreamPosition
@@ -49,7 +51,7 @@ data InsertionPayload eventType = InsertionPayload
 eventToInsertion :: eventType -> Task _ (Insertion eventType)
 eventToInsertion event = do
   id <- Uuid.generate
-  metadata <- newMetadata
+  metadata <- EventMetadata.new
   Task.yield
     Insertion
       { id,

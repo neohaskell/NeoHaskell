@@ -9,7 +9,7 @@ import Core
 import Service.Event (EntityName, Event, InsertionFailure, InsertionPayload, InsertionSuccess, StreamId, StreamPosition)
 
 
-newtype Limit = Limit Int
+newtype Limit = Limit Int64
   deriving (Eq, Show, Ord, Generic)
 
 
