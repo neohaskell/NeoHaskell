@@ -41,6 +41,7 @@ spec newStore = do
         let insertEvent event = do
               context.store.insert event
                 |> Task.mapError toText
+
         context.testEvents
           |> Array.take 3
           |> Task.mapArray insertEvent
