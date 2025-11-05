@@ -4,6 +4,7 @@ import Array qualified
 import Core
 import Service.Event (Event (..))
 import Service.Event qualified as Event
+import Service.Event.EventMetadata (EventMetadata (..))
 import Service.EventStore (EventStore (..))
 import Service.EventStore qualified as EventStore
 import Task qualified
@@ -31,8 +32,8 @@ spec newStore = do
 
       it "has the events correctly ordered within the stream" \context -> do
         let shouldMatchPosition (index, event) = do
-              event.localPosition
-                |> shouldBe (Event.StreamPosition (fromIntegral index))
+              event.metadata.localPosition
+                |> shouldBe (Event.StreamPosition (fromIntegral index) |> Just)
         let shouldHaveCorrectOrdering eventStream = do
               eventStream
                 |> Array.indexed
@@ -56,7 +57,7 @@ spec newStore = do
           context.store.readAllEventsForwardFrom (Event.StreamPosition 0) (EventStore.Limit (expectedTotalEvents))
             |> Task.mapError toText
         allGlobalEvents |> Task.forEach \event -> do
-          event.globalPosition |> shouldSatisfy (\pos -> pos >= Event.StreamPosition 0)
+          event.metadata.globalPosition |> shouldSatisfy (\pos -> pos >= (Event.StreamPosition 0 |> Just))
 
       it "can read events from a specific position" \context -> do
         let expectedTotalEvents = context.streamCount * context.eventsPerStream
@@ -80,9 +81,9 @@ spec newStore = do
                 allGlobalEvents
                   |> Array.zip (Array.drop 1 allGlobalEvents)
 
-          let matchPositions :: (Event, Event) -> Task _ Unit
+          let matchPositions :: (Event MyEvent, Event MyEvent) -> Task _ Unit
               matchPositions (earlier, later) =
-                earlier.globalPosition |> shouldSatisfy (\pos -> pos <= later.globalPosition)
+                earlier.metadata.globalPosition |> shouldSatisfy (\pos -> pos <= later.metadata.globalPosition)
 
           eventPairs
             |> Task.mapArray matchPositions

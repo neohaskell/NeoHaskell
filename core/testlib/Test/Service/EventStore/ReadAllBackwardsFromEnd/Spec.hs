@@ -2,8 +2,10 @@ module Test.Service.EventStore.ReadAllBackwardsFromEnd.Spec where
 
 import Array qualified
 import Core
+import Maybe qualified
 import Service.Event (Event (..))
 import Service.Event qualified as Event
+import Service.Event.EventMetadata (EventMetadata (..))
 import Service.EventStore (EventStore (..))
 import Service.EventStore.Core qualified as EventStore
 import Task qualified
@@ -46,7 +48,7 @@ specWithCount newStore eventCount = do
           context.store.readAllEventsBackwardFrom context.maxGlobalPosition limit
             |> Task.mapError toText
 
-        let positions = events |> Array.map (\e -> e.globalPosition)
+        let positions = events |> Array.map (\e -> e.metadata.globalPosition |> Maybe.getOrDie)
         positions |> shouldHaveDecreasingOrder
 
       it "has all events from entity1 in reverse order" \context -> do
@@ -61,7 +63,7 @@ specWithCount newStore eventCount = do
           |> shouldBe context.eventCount
 
         -- Events should be in reverse local position order within the entity
-        let localPositions = eventsFromEntity1 |> Array.map (\e -> e.localPosition)
+        let localPositions = eventsFromEntity1 |> Array.map (\e -> e.metadata.localPosition |> Maybe.getOrDie)
         localPositions |> shouldHaveDecreasingOrder
 
       it "supports partial reads with resumption from global position (backwards)" \context -> do
@@ -69,7 +71,7 @@ specWithCount newStore eventCount = do
         let batchSize = 3 -- Small batch to force multiple reads
 
         -- Read all events in batches backward, resuming from previous position
-        let readInBatchesBackward :: Event.StreamPosition -> Array Event.Event -> Task Text (Array Event.Event)
+        let readInBatchesBackward :: Event.StreamPosition -> Array (Event.Event MyEvent) -> Task Text (Array (Event.Event MyEvent))
             readInBatchesBackward currentPosition accumulatedEvents = do
               batch <-
                 context.store.readAllEventsBackwardFrom currentPosition (EventStore.Limit batchSize)
@@ -84,7 +86,7 @@ specWithCount newStore eventCount = do
                   case Array.get (batchLength - 1) batch of
                     Just lastEvent -> do
                       -- Resume from position before the last read event
-                      let Event.StreamPosition lastPos = lastEvent.globalPosition
+                      let Event.StreamPosition lastPos = lastEvent.metadata.globalPosition |> Maybe.getOrDie
                       if lastPos > 0
                         then do
                           let nextPosition = Event.StreamPosition (lastPos - 1)
@@ -111,7 +113,7 @@ specWithCount newStore eventCount = do
           |> shouldBe allEventsSingle
 
         -- Global positions should be strictly decreasing across all batches
-        let globalPositions = allEventsBatched |> Array.map (\e -> e.globalPosition)
+        let globalPositions = allEventsBatched |> Array.map (\e -> e.metadata.globalPosition |> Maybe.getOrDie)
         globalPositions |> shouldHaveDecreasingOrder
 
       it "can read from middle position backward" \context -> do
@@ -125,10 +127,10 @@ specWithCount newStore eventCount = do
 
         -- Should have events with positions <= midPosition
         eventsFromMid |> Task.forEach \event -> do
-          event.globalPosition |> shouldBeLessThanOrEqual midPosition
+          event.metadata.globalPosition |> Maybe.getOrDie |> shouldBeLessThanOrEqual midPosition
 
         -- Should be in decreasing order
-        let positions = eventsFromMid |> Array.map (\e -> e.globalPosition)
+        let positions = eventsFromMid |> Array.map (\e -> e.metadata.globalPosition |> Maybe.getOrDie)
         positions |> shouldHaveDecreasingOrder
 
       it "reading from position 0 returns only the event at position 0" \context -> do
@@ -157,7 +159,7 @@ specWithCount newStore eventCount = do
           |> shouldBe context.eventCount
 
         -- Should be in decreasing global position order
-        let positions = filteredEvents |> Array.map (\e -> e.globalPosition)
+        let positions = filteredEvents |> Array.map (\e -> e.metadata.globalPosition |> Maybe.getOrDie)
         positions |> shouldHaveDecreasingOrder
 
       it "filters events by multiple entity IDs from end position" \context -> do

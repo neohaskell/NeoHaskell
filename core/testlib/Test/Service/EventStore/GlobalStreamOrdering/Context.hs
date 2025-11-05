@@ -13,7 +13,7 @@ import Uuid qualified
 data Context = Context
   { streamCount :: Int,
     eventsPerStream :: Int,
-    eventStreams :: Array (Array Event),
+    eventStreams :: Array (Array (Event MyEvent)),
     store :: EventStore MyEvent
   }
 
