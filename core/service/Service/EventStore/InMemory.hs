@@ -45,8 +45,9 @@ new = do
 fromInsertionPayload :: StreamPosition -> InsertionPayload eventType -> Array (StoredEvent eventType)
 fromInsertionPayload globalPosition payload =
   payload.insertions
-    |> Array.map \insertion -> do
-      let newMetadata = insertion.metadata {EventMetadata.globalPosition = Just globalPosition}
+    |> Array.indexed
+    |> Array.map \(index, insertion) -> do
+      let newMetadata = insertion.metadata {EventMetadata.globalPosition = Just globalPosition + fromIntegral index}
       StoredEvent
         { entityName = payload.entityName,
           streamId = payload.streamId,
