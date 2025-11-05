@@ -8,10 +8,10 @@ module Service.EventStore.Core (
 import Core
 import Service.Event (
   EntityName,
+  Event,
   InsertionFailure,
   InsertionPayload,
   InsertionSuccess,
-  StoredEvent,
   StreamId,
   StreamPosition,
  )
@@ -43,45 +43,45 @@ data EventStore eventType = EventStore
     insert :: InsertionPayload eventType -> Task Error InsertionSuccess,
     -- | Read events from a stream in forward direction starting from a given revision.
     --   Returns an array of events or an Error.
-    readStreamForwardFrom :: EntityName -> StreamId -> StreamPosition -> Limit -> Task Error (Array (StoredEvent eventType)),
+    readStreamForwardFrom :: EntityName -> StreamId -> StreamPosition -> Limit -> Task Error (Array (Event eventType)),
     -- | Read events from a stream in backward direction starting from a given revision.
     --   Useful for looking at recent events.
     readStreamBackwardFrom ::
-      EntityName -> StreamId -> StreamPosition -> Limit -> Task Error (Array (StoredEvent eventType)),
+      EntityName -> StreamId -> StreamPosition -> Limit -> Task Error (Array (Event eventType)),
     -- | Read all events from a specific stream for a given entity.
     --   Returns an array of events or an Error.
-    readAllStreamEvents :: EntityName -> StreamId -> Task Error (Array (StoredEvent eventType)),
+    readAllStreamEvents :: EntityName -> StreamId -> Task Error (Array (Event eventType)),
     -- | Read events from the global stream in forward direction starting from a given global position.
     --   This reads across all streams and entities.
-    readAllEventsForwardFrom :: StreamPosition -> Limit -> Task Error (Array (StoredEvent eventType)),
+    readAllEventsForwardFrom :: StreamPosition -> Limit -> Task Error (Array (Event eventType)),
     -- | Read events from the global stream in backward direction starting from a given global position.
     --   This reads across all streams and entities in reverse order.
-    readAllEventsBackwardFrom :: StreamPosition -> Limit -> Task Error (Array (StoredEvent eventType)),
+    readAllEventsBackwardFrom :: StreamPosition -> Limit -> Task Error (Array (Event eventType)),
     -- | Read events from the global stream in forward direction starting from a given global position,
     --   but only for specific entities. Useful for event sourcing projections that only care about certain entities.
     readAllEventsForwardFromFiltered ::
-      StreamPosition -> Limit -> Array EntityName -> Task Error (Array (StoredEvent eventType)),
+      StreamPosition -> Limit -> Array EntityName -> Task Error (Array (Event eventType)),
     -- | Read events from the global stream in backward direction starting from a given global position,
     --   but only for specific entities. Useful for filtered historical analysis and debugging.
     readAllEventsBackwardFromFiltered ::
-      StreamPosition -> Limit -> Array EntityName -> Task Error (Array (StoredEvent eventType)),
+      StreamPosition -> Limit -> Array EntityName -> Task Error (Array (Event eventType)),
     -- | Subscribe to all events in the event store. The subscriber function will be called
     --   for every event that gets appended. Returns a SubscriptionId for unsubscribing.
-    subscribeToAllEvents :: ((StoredEvent eventType) -> Task Error Unit) -> Task Error SubscriptionId,
+    subscribeToAllEvents :: ((Event eventType) -> Task Error Unit) -> Task Error SubscriptionId,
     -- | Subscribe to all events from a specific global position onwards. This allows catching up
     --   from historical events and then receiving new events as they are appended.
     subscribeToAllEventsFromPosition ::
-      StreamPosition -> ((StoredEvent eventType) -> Task Error Unit) -> Task Error SubscriptionId,
+      StreamPosition -> ((Event eventType) -> Task Error Unit) -> Task Error SubscriptionId,
     -- | Subscribe to all events from the very beginning of the event store. This delivers ALL
     --   historical events first, then continues with new events as they are appended.
-    subscribeToAllEventsFromStart :: ((StoredEvent eventType) -> Task Error Unit) -> Task Error SubscriptionId,
+    subscribeToAllEventsFromStart :: ((Event eventType) -> Task Error Unit) -> Task Error SubscriptionId,
     -- | Subscribe to events for a specific entity. The subscriber function will be called
     --   only for events belonging to the specified entity.
-    subscribeToEntityEvents :: EntityName -> ((StoredEvent eventType) -> Task Error Unit) -> Task Error SubscriptionId,
+    subscribeToEntityEvents :: EntityName -> ((Event eventType) -> Task Error Unit) -> Task Error SubscriptionId,
     -- | Subscribe to events for a specific stream within an entity. The subscriber function
     --   will be called only for events in the specified entity and stream.
     subscribeToStreamEvents ::
-      EntityName -> StreamId -> ((StoredEvent eventType) -> Task Error Unit) -> Task Error SubscriptionId,
+      EntityName -> StreamId -> ((Event eventType) -> Task Error Unit) -> Task Error SubscriptionId,
     -- | Unsubscribe from event notifications. After this call, the subscriber function
     --   will no longer be called for new events.
     unsubscribe :: SubscriptionId -> Task Error Unit,
