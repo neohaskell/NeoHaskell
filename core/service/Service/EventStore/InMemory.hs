@@ -10,7 +10,6 @@ import Lock qualified
 import Map qualified
 import Maybe qualified
 import Service.Event
-import Service.Event.EventMetadata (EventMetadata)
 import Service.Event.EventMetadata qualified as EventMetadata
 import Service.EventStore.Core
 import Task qualified
@@ -44,11 +43,11 @@ new = do
 -- PRIVATE
 
 fromInsertionPayload :: StreamPosition -> InsertionPayload eventType -> Array (StoredEvent eventType)
-fromInsertionPayload globalPosition payload =
+fromInsertionPayload (StreamPosition globalPosition) payload =
   payload.insertions
     |> Array.indexed
     |> Array.map \(index, insertion) -> do
-      let newMetadata = insertion.metadata {EventMetadata.globalPosition = Just globalPosition + fromIntegral index}
+      let newMetadata = insertion.metadata {EventMetadata.globalPosition = Just (StreamPosition (globalPosition + fromIntegral index))}
       StoredEvent
         { entityName = payload.entityName,
           streamId = payload.streamId,
@@ -173,7 +172,7 @@ readStreamForwardFromImpl store entityName streamId position (Limit (limit)) = d
   channel
     |> DurableChannel.getAndTransform \events ->
       events
-        |> Array.dropWhile (\event -> event.localPosition < position)
+        |> Array.dropWhile (\event -> event.metadata.localPosition < Just position)
         |> Array.take (fromIntegral limit)
 
 
@@ -189,7 +188,7 @@ readStreamBackwardFromImpl store entityName streamId position (Limit (limit)) = 
   channel
     |> DurableChannel.getAndTransform \events ->
       events
-        |> Array.takeIf (\event -> event.localPosition < position)
+        |> Array.takeIf (\event -> event.metadata.localPosition < Just position)
         |> Array.reverse
         |> Array.take (fromIntegral limit)
 
@@ -225,7 +224,7 @@ readAllEventsBackwardFromImpl store (StreamPosition (position)) (Limit (limit)) 
   allGlobalEvents
     |> Array.takeIf
       ( \event -> do
-          let (StreamPosition eventPos) = event.globalPosition
+          let (StreamPosition eventPos) = event.metadata.globalPosition |> Maybe.withDefault (StreamPosition 0)
           eventPos <= position
       )
     |> Array.reverse
@@ -244,7 +243,7 @@ readAllEventsForwardFromFilteredImpl store (StreamPosition (position)) (Limit (l
   allGlobalEvents
     |> Array.takeIf
       ( \event -> do
-          let (StreamPosition eventPos) = event.globalPosition
+          let (StreamPosition eventPos) = event.metadata.globalPosition |> Maybe.withDefault (StreamPosition 0)
           eventPos >= position
       )
     |> Array.takeIf (\event -> entityNames |> Array.any (\entityName -> entityName == event.entityName))
@@ -263,7 +262,7 @@ readAllEventsBackwardFromFilteredImpl store (StreamPosition (position)) (Limit (
   allGlobalEvents
     |> Array.takeIf
       ( \event -> do
-          let (StreamPosition eventPos) = event.globalPosition
+          let (StreamPosition eventPos) = event.metadata.globalPosition |> Maybe.withDefault (StreamPosition 0)
           eventPos <= position
       )
     |> Array.reverse
@@ -413,7 +412,7 @@ deliverHistoricalEvents store fromPosition handler = do
         allGlobalEvents
           |> Array.takeIf
             ( \event -> do
-                let (StreamPosition eventPos) = event.globalPosition
+                let (StreamPosition eventPos) = event.metadata.globalPosition |> Maybe.withDefault (StreamPosition 0)
                 eventPos > startPos
             )
 
@@ -455,7 +454,7 @@ truncateStreamImpl store entityName streamId position = do
         case streamMap |> Map.get key of
           Nothing -> Task.yield (streamMap, StreamNotFound entityName streamId |> Just)
           Just chan -> do
-            chan |> DurableChannel.modify (Array.dropWhile (\p -> p.localPosition < position))
+            chan |> DurableChannel.modify (Array.dropWhile (\p -> p.metadata.localPosition < Just position))
             Task.yield (streamMap, Nothing)
 
   maybeErr <- streams |> ConcurrentVar.modifyReturning foo
