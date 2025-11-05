@@ -10,10 +10,11 @@ import Service.EventStore (EventStore (..))
 import Service.EventStore.Core qualified as EventStore
 import Task qualified
 import Test
+import Test.Service.EventStore.Core (MyEvent, newInsertion)
 import Uuid qualified
 
 
-spec :: Task Text EventStore -> Spec Unit
+spec :: Task Text (EventStore MyEvent) -> Spec Unit
 spec newStore = do
   describe "Event Store Subscriptions" do
     it "can subscribe and receive events" \_ -> do
@@ -21,15 +22,16 @@ spec newStore = do
 
       -- Create test data
       streamId <- Uuid.generate |> Task.map Event.StreamId
-      entityName <- Uuid.generate |> Task.map Event.EntityName
-      eventId <- Uuid.generate
+      entityNameText <- Uuid.generate |> Task.map toText
+      let entityName = Event.EntityName entityNameText
+      insertion <- newInsertion 0
 
       let testEvent =
             Event.InsertionPayload
-              { id = eventId,
-                streamId,
+              { streamId,
                 entityName,
-                localPosition = Event.StreamPosition 0
+                insertionType = Event.AnyStreamState,
+                insertions = Array.fromLinkedList [insertion]
               }
 
       -- Create a shared variable to collect received events
@@ -45,8 +47,8 @@ spec newStore = do
         store.subscribeToAllEvents subscriber
           |> Task.mapError toText
 
-      -- Append test event
-      store.appendToStream testEvent
+      -- Insert test event
+      store.insert testEvent
         |> Task.mapError toText
         |> discard
 

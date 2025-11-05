@@ -9,22 +9,24 @@ import Service.Event (EntityName, StreamId)
 import Service.Event qualified as Event
 import Service.EventStore (EventStore)
 import Task qualified
+import Test.Service.EventStore.Core (MyEvent, newInsertion)
 import Uuid qualified
 
 
 data Context = Context
-  { store :: EventStore,
+  { store :: EventStore MyEvent,
     streamId :: StreamId,
     entityName :: EntityName,
-    testEvents :: Array Event.InsertionPayload
+    testEvents :: Array (Event.InsertionPayload MyEvent)
   }
 
 
-initialize :: Task Text EventStore -> Task _ Context
+initialize :: Task Text (EventStore MyEvent) -> Task _ Context
 initialize newStore = do
   store <- newStore
   streamId <- Uuid.generate |> Task.map Event.StreamId
-  entityName <- Uuid.generate |> Task.map Event.EntityName
+  entityNameText <- Uuid.generate |> Task.map toText
+  let entityName = Event.EntityName entityNameText
 
   -- Create test insertion events
   testEvents <- createTestEvents streamId entityName 5
@@ -32,16 +34,16 @@ initialize newStore = do
   Task.yield Context {store, streamId, entityName, testEvents}
 
 
-createTestEvents :: StreamId -> EntityName -> Int -> Task _ (Array Event.InsertionPayload)
+createTestEvents :: StreamId -> EntityName -> Int -> Task _ (Array (Event.InsertionPayload MyEvent))
 createTestEvents streamId entityName count = do
-  let createEvent position = do
-        eventId <- Uuid.generate
+  let createEvent index = do
+        insertions <- Array.fromLinkedList [index] |> Task.mapArray newInsertion
         Task.yield
           Event.InsertionPayload
-            { id = eventId,
-              streamId,
+            { streamId,
               entityName,
-              localPosition = Event.StreamPosition position
+              insertionType = Event.AnyStreamState,
+              insertions
             }
 
   Array.fromLinkedList [0 .. (count - 1)]
