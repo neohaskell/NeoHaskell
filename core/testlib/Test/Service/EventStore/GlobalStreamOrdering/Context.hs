@@ -21,33 +21,33 @@ initialize :: Task Text EventStore -> Int -> Task Text Context
 initialize newStore streamCount = do
   store <- newStore
   -- Create multiple streams with events
-  let getStreamIds :: Task Text (Array (Event.EntityId, Event.StreamId))
+  let getStreamIds :: Task Text (Array (Event.EntityName, Event.StreamId))
       getStreamIds = do
         Array.fromLinkedList [0 .. streamCount - 1]
           |> Task.mapArray \_ -> do
-            entityId <- Uuid.generate
+            entityName <- Uuid.generate
             streamId <- Uuid.generate
-            (Event.EntityId entityId, Event.StreamId streamId) |> Task.yield
+            (Event.EntityName entityName, Event.StreamId streamId) |> Task.yield
 
   streamIds <- getStreamIds
 
   -- Create events for each stream (2 events per stream for testing)
   let eventsPerStream = 2 :: Int
-  let getAllEvents :: Task Text (Array Event.InsertionEvent)
+  let getAllEvents :: Task Text (Array Event.InsertionPayload)
       getAllEvents = do
-        insertionEvents <-
-          streamIds |> Task.mapArray \(entityId, streamId) ->
+        InsertionPayloads <-
+          streamIds |> Task.mapArray \(entityName, streamId) ->
             Array.fromLinkedList [0 .. eventsPerStream - 1]
               |> Task.mapArray \eventIndex -> do
                 id <- Uuid.generate
-                Event.InsertionEvent
+                Event.InsertionPayload
                   { id = id,
                     streamId = streamId,
-                    entityId = entityId,
+                    entityName = entityName,
                     localPosition = Event.StreamPosition eventIndex
                   }
                   |> Task.yield
-        Array.flatten insertionEvents |> Task.yield
+        Array.flatten InsertionPayloads |> Task.yield
 
   allEvents <- getAllEvents
 
@@ -63,8 +63,8 @@ initialize newStore streamCount = do
   eventStreams <-
     streamIds
       |> Task.mapArray
-        ( \(entityId, streamId) ->
-            store.readAllStreamEvents entityId streamId
+        ( \(entityName, streamId) ->
+            store.readAllStreamEvents entityName streamId
               |> Task.mapError toText
         )
 

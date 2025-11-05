@@ -32,7 +32,7 @@ specWithCount newStore eventCount = do
         let startPosition = Event.StreamPosition 0
         let limit = EventStore.Limit (context.eventCount)
         events <-
-          context.store.readStreamForwardFrom context.entityId context.streamId startPosition limit
+          context.store.readStreamForwardFrom context.entityName context.streamId startPosition limit
             |> Task.mapError toText
         Array.length events
           |> shouldBe context.eventCount
@@ -41,7 +41,7 @@ specWithCount newStore eventCount = do
         let startPosition = Event.StreamPosition 0
         let limit = EventStore.Limit (context.eventCount)
         events <-
-          context.store.readStreamForwardFrom context.entityId context.streamId startPosition limit
+          context.store.readStreamForwardFrom context.entityName context.streamId startPosition limit
             |> Task.mapError toText
         events
           |> Array.map (\v -> v.localPosition)
@@ -51,7 +51,7 @@ specWithCount newStore eventCount = do
         let startPosition = Event.StreamPosition 0
         let limit = EventStore.Limit (context.eventCount)
         events <-
-          context.store.readStreamForwardFrom context.entityId context.streamId startPosition limit
+          context.store.readStreamForwardFrom context.entityName context.streamId startPosition limit
             |> Task.mapError toText
 
         -- Validate the important properties without hardcoding global positions
@@ -65,7 +65,7 @@ specWithCount newStore eventCount = do
         eventPairs |> Task.forEach \(event, expectedEvent) -> do
           -- Validate event ID, entity ID, stream ID, and local position
           event.id |> shouldBe expectedEvent.id
-          event.entityId |> shouldBe expectedEvent.entityId
+          event.entityName |> shouldBe expectedEvent.entityName
           event.streamId |> shouldBe expectedEvent.streamId
           event.localPosition |> shouldBe expectedEvent.localPosition
 
@@ -73,7 +73,7 @@ specWithCount newStore eventCount = do
         let startPosition = Event.StreamPosition 0
         let limit = EventStore.Limit (context.eventCount)
         events <-
-          context.store.readStreamForwardFrom context.entityId context.streamId startPosition limit
+          context.store.readStreamForwardFrom context.entityName context.streamId startPosition limit
             |> Task.mapError toText
 
         -- Global positions should be strictly increasing
@@ -82,7 +82,7 @@ specWithCount newStore eventCount = do
 
         -- Each event should have the correct entity ID
         events |> Task.forEach \event -> do
-          event.entityId |> shouldBe context.entityId
+          event.entityName |> shouldBe context.entityName
 
         -- Each event should have the correct stream ID
         events |> Task.forEach \event -> do
@@ -96,7 +96,7 @@ specWithCount newStore eventCount = do
         let startPosition = Event.StreamPosition halfwayPoint
         let limit = EventStore.Limit (context.eventCount) -- Large enough to get all remaining events
         eventsFromMiddle <-
-          context.store.readStreamForwardFrom context.entityId context.streamId startPosition limit
+          context.store.readStreamForwardFrom context.entityName context.streamId startPosition limit
             |> Task.mapError toText
 
         -- Should read exactly the second half of events
@@ -113,7 +113,7 @@ specWithCount newStore eventCount = do
 
         -- Each event should have the correct entity ID
         eventsFromMiddle |> Task.forEach \event -> do
-          event.entityId |> shouldBe context.entityId
+          event.entityName |> shouldBe context.entityName
 
         -- Each event should have the correct stream ID
         eventsFromMiddle |> Task.forEach \event -> do
@@ -124,7 +124,7 @@ specWithCount newStore eventCount = do
         let readFromPosition = Event.StreamPosition (halfwayPoint + 1) -- Read from position after halfway point
         let limit = EventStore.Limit (context.eventCount) -- Large enough to get all events before position
         eventsBackward <-
-          context.store.readStreamBackwardFrom context.entityId context.streamId readFromPosition limit
+          context.store.readStreamBackwardFrom context.entityName context.streamId readFromPosition limit
             |> Task.mapError toText
 
         -- Test expects exactly half the events (not including the readFromPosition)
@@ -142,7 +142,7 @@ specWithCount newStore eventCount = do
 
         -- Each event should have the correct entity ID
         eventsBackward |> Task.forEach \event -> do
-          event.entityId |> shouldBe context.entityId
+          event.entityName |> shouldBe context.entityName
 
         -- Each event should have the correct stream ID
         eventsBackward |> Task.forEach \event -> do
@@ -160,7 +160,7 @@ specWithCount newStore eventCount = do
         let limit = EventStore.Limit (context.eventCount)
 
         allEventsBackward <-
-          context.store.readStreamBackwardFrom context.entityId context.streamId endPosition limit
+          context.store.readStreamBackwardFrom context.entityName context.streamId endPosition limit
             |> Task.mapError toText
 
         -- Should read all events in the stream
@@ -176,7 +176,7 @@ specWithCount newStore eventCount = do
 
         -- Each event should have the correct entity ID
         allEventsBackward |> Task.forEach \event -> do
-          event.entityId |> shouldBe context.entityId
+          event.entityName |> shouldBe context.entityName
 
         -- Each event should have the correct stream ID
         allEventsBackward |> Task.forEach \event -> do

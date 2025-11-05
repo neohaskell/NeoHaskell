@@ -1,31 +1,43 @@
 module Service.Event (
   Event (..),
-  InsertionEvent (..),
+  InsertionPayload (..),
   StreamId (..),
   StreamPosition (..),
-  EntityId (..),
-  fromInsertionEvent,
+  EntityName (..),
+  fromInsertionPayload,
+  InsertionType (..),
+  InsertionSuccess (..),
+  InsertionFailure (..),
 ) where
 
 import Core
-import Service.Event.EntityId (EntityId (..))
+import Maybe qualified
+import Service.Event.EntityName (EntityName (..))
 import Service.Event.StreamId (StreamId (..))
 import Service.Event.StreamPosition (StreamPosition (..))
 
 
 data Event = Event
   { streamId :: StreamId,
-    entityId :: EntityId,
+    entityName :: EntityName,
     localPosition :: StreamPosition,
     globalPosition :: StreamPosition
   }
   deriving (Eq, Show, Ord, Generic)
 
 
-data InsertionEvent eventType = InsertionEvent
+data InsertionType
+  = StreamCreation
+  | InsertAfter StreamPosition
+  | ExistingStream
+  | AnyStreamState
+  deriving (Eq, Show, Ord, Generic)
+
+
+data InsertionPayload eventType = InsertionPayload
   { streamId :: StreamId,
-    entityId :: EntityId,
-    localPosition :: StreamPosition,
+    entityName :: EntityName,
+    insertionType :: InsertionType,
     insertions :: Array (Insertion eventType)
   }
   deriving (Eq, Show, Ord, Generic)
@@ -50,13 +62,15 @@ data Insertion eventType = Insertion
   deriving (Eq, Show, Ord, Generic)
 
 
--- | Convert an insertion event to an event with a global position.
-fromInsertionEvent :: StreamPosition -> InsertionEvent -> Event
-fromInsertionEvent globalPosition event =
-  Event
-    { id = event.id,
-      streamId = event.streamId,
-      entityId = event.entityId,
-      localPosition = event.localPosition,
-      globalPosition
-    }
+data InsertionSuccess = InsertionSuccess
+  { globalPosition :: StreamPosition,
+    localPosition :: StreamPosition
+  }
+  deriving (Eq, Show, Ord, Generic)
+
+
+data InsertionFailure
+  = ConsistencyCheckFailed
+  | InsertionFailed
+  | PayloadTooLarge
+  deriving (Eq, Show, Ord, Generic)

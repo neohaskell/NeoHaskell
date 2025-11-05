@@ -107,19 +107,19 @@ new ops cfg = do
   Task.yield eventStore
 
 
-appendToStreamImpl :: InsertionEvent -> Task Error Event
+appendToStreamImpl :: InsertionPayload -> Task Error Event
 appendToStreamImpl _ = panic "Postgres.appendToStreamImpl - Not implemented yet" |> Task.yield
 
 
-readStreamForwardFromImpl :: EntityId -> StreamId -> StreamPosition -> Limit -> Task Error (Array Event)
+readStreamForwardFromImpl :: EntityName -> StreamId -> StreamPosition -> Limit -> Task Error (Array Event)
 readStreamForwardFromImpl _ _ _ _ = panic "Postgres.readStreamForwardFromImpl - Not implemented yet" |> Task.yield
 
 
-readStreamBackwardFromImpl :: EntityId -> StreamId -> StreamPosition -> Limit -> Task Error (Array Event)
+readStreamBackwardFromImpl :: EntityName -> StreamId -> StreamPosition -> Limit -> Task Error (Array Event)
 readStreamBackwardFromImpl _ _ _ _ = panic "Postgres.readStreamBackwardFromImpl - Not implemented yet" |> Task.yield
 
 
-readAllStreamEventsImpl :: EntityId -> StreamId -> Task Error (Array Event)
+readAllStreamEventsImpl :: EntityName -> StreamId -> Task Error (Array Event)
 readAllStreamEventsImpl _ _ = panic "Postgres.readAllStreamEventsImpl - Not implemented yet" |> Task.yield
 
 
@@ -131,11 +131,11 @@ readAllEventsBackwardFromImpl :: StreamPosition -> Limit -> Task Error (Array Ev
 readAllEventsBackwardFromImpl _ _ = panic "Postgres.readAllEventsBackwardFromImpl - Not implemented yet" |> Task.yield
 
 
-readAllEventsForwardFromFilteredImpl :: StreamPosition -> Limit -> Array EntityId -> Task Error (Array Event)
+readAllEventsForwardFromFilteredImpl :: StreamPosition -> Limit -> Array EntityName -> Task Error (Array Event)
 readAllEventsForwardFromFilteredImpl _ _ _ = panic "Postgres.readAllEventsForwardFromFilteredImpl - Not implemented yet" |> Task.yield
 
 
-readAllEventsBackwardFromFilteredImpl :: StreamPosition -> Limit -> Array EntityId -> Task Error (Array Event)
+readAllEventsBackwardFromFilteredImpl :: StreamPosition -> Limit -> Array EntityName -> Task Error (Array Event)
 readAllEventsBackwardFromFilteredImpl _ _ _ = panic "Postgres.readAllEventsBackwardFromFilteredImpl - Not implemented yet" |> Task.yield
 
 
@@ -151,11 +151,11 @@ subscribeToAllEventsFromStartImpl :: (Event -> Task Error Unit) -> Task Error Su
 subscribeToAllEventsFromStartImpl _ = panic "Postgres.subscribeToAllEventsFromStartImpl - Not implemented yet" |> Task.yield
 
 
-subscribeToEntityEventsImpl :: EntityId -> (Event -> Task Error Unit) -> Task Error SubscriptionId
+subscribeToEntityEventsImpl :: EntityName -> (Event -> Task Error Unit) -> Task Error SubscriptionId
 subscribeToEntityEventsImpl _ _ = panic "Postgres.subscribeToEntityEventsImpl - Not implemented yet" |> Task.yield
 
 
-subscribeToStreamEventsImpl :: EntityId -> StreamId -> (Event -> Task Error Unit) -> Task Error SubscriptionId
+subscribeToStreamEventsImpl :: EntityName -> StreamId -> (Event -> Task Error Unit) -> Task Error SubscriptionId
 subscribeToStreamEventsImpl _ _ _ = panic "Postgres.subscribeToStreamEventsImpl - Not implemented yet" |> Task.yield
 
 
@@ -163,5 +163,5 @@ unsubscribeImpl :: SubscriptionId -> Task Error Unit
 unsubscribeImpl _ = panic "Postgres.unsubscribeImpl - Not implemented yet" |> Task.yield
 
 
-truncateStreamImpl :: EntityId -> StreamId -> StreamPosition -> Task Error Unit
+truncateStreamImpl :: EntityName -> StreamId -> StreamPosition -> Task Error Unit
 truncateStreamImpl _ _ _ = panic "Postgres.truncateStreamImpl - Not implemented yet" |> Task.yield

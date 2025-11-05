@@ -5,7 +5,7 @@ module Test.Service.EventStore.Subscriptions.Context (
 
 import Array qualified
 import Core
-import Service.Event (EntityId, StreamId)
+import Service.Event (EntityName, StreamId)
 import Service.Event qualified as Event
 import Service.EventStore (EventStore)
 import Task qualified
@@ -15,8 +15,8 @@ import Uuid qualified
 data Context = Context
   { store :: EventStore,
     streamId :: StreamId,
-    entityId :: EntityId,
-    testEvents :: Array Event.InsertionEvent
+    entityName :: EntityName,
+    testEvents :: Array Event.InsertionPayload
   }
 
 
@@ -24,23 +24,23 @@ initialize :: Task Text EventStore -> Task _ Context
 initialize newStore = do
   store <- newStore
   streamId <- Uuid.generate |> Task.map Event.StreamId
-  entityId <- Uuid.generate |> Task.map Event.EntityId
+  entityName <- Uuid.generate |> Task.map Event.EntityName
 
   -- Create test insertion events
-  testEvents <- createTestEvents streamId entityId 5
+  testEvents <- createTestEvents streamId entityName 5
 
-  Task.yield Context {store, streamId, entityId, testEvents}
+  Task.yield Context {store, streamId, entityName, testEvents}
 
 
-createTestEvents :: StreamId -> EntityId -> Int -> Task _ (Array Event.InsertionEvent)
-createTestEvents streamId entityId count = do
+createTestEvents :: StreamId -> EntityName -> Int -> Task _ (Array Event.InsertionPayload)
+createTestEvents streamId entityName count = do
   let createEvent position = do
         eventId <- Uuid.generate
         Task.yield
-          Event.InsertionEvent
+          Event.InsertionPayload
             { id = eventId,
               streamId,
-              entityId,
+              entityName,
               localPosition = Event.StreamPosition position
             }
 

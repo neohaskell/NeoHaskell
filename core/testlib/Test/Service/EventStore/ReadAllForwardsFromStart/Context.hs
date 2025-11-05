@@ -14,11 +14,11 @@ import Uuid qualified
 
 data Context = Context
   { eventCount :: Int,
-    entity1Id :: Event.EntityId,
-    entity2Id :: Event.EntityId,
+    entity1Id :: Event.EntityName,
+    entity2Id :: Event.EntityName,
     streamId :: Event.StreamId,
     store :: EventStore,
-    generatedEvents :: Array Event.InsertionEvent,
+    generatedEvents :: Array Event.InsertionPayload,
     positions :: Array Event.StreamPosition
   }
 
@@ -27,18 +27,18 @@ initialize :: Task Text EventStore -> Int -> Task Text Context
 initialize newStore eventCount = do
   store <- newStore
   streamId <- Uuid.generate |> Task.map Event.StreamId
-  entity1Id <- Uuid.generate |> Task.map Event.EntityId
-  entity2Id <- Uuid.generate |> Task.map Event.EntityId
+  entity1Id <- Uuid.generate |> Task.map Event.EntityName
+  entity2Id <- Uuid.generate |> Task.map Event.EntityName
 
-  let generateEvents :: Event.EntityId -> Task Text (Array Event.InsertionEvent)
-      generateEvents entityId = do
+  let generateEvents :: Event.EntityName -> Task Text (Array Event.InsertionPayload)
+      generateEvents entityName = do
         Array.fromLinkedList [0 .. eventCount - 1] |> Task.mapArray \index -> do
           let localPosition = Event.StreamPosition (index)
           id <- Uuid.generate
-          Event.InsertionEvent
+          Event.InsertionPayload
             { id,
               streamId,
-              entityId,
+              entityName,
               localPosition
             }
             |> Task.yield

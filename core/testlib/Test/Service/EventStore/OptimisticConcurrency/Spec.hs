@@ -20,15 +20,15 @@ spec newStore = do
   describe "Optimistic Concurrency" do
     beforeAll (Context.initialize newStore) do
       it "will only allow one event to be appended, when two writers try to append at the same time" \context -> do
-        entityId <- Uuid.generate |> Task.map Event.EntityId
+        entityName <- Uuid.generate |> Task.map Event.EntityName
 
         initialEventId <- Uuid.generate
         -- First, append an initial event to position 0
         let initialEvent =
-              Event.InsertionEvent
+              Event.InsertionPayload
                 { id = initialEventId,
                   streamId = context.streamId,
-                  entityId,
+                  entityName,
                   localPosition = Event.StreamPosition 0
                 }
 
@@ -40,19 +40,19 @@ spec newStore = do
         -- Create two identical events both expecting to append at position 1
         event1Id <- Uuid.generate
         let event1 =
-              Event.InsertionEvent
+              Event.InsertionPayload
                 { id = event1Id,
                   streamId = context.streamId,
-                  entityId,
+                  entityName,
                   localPosition = Event.StreamPosition 1
                 }
 
         event2Id <- Uuid.generate
         let event2 =
-              Event.InsertionEvent
+              Event.InsertionPayload
                 { id = event2Id,
                   streamId = context.streamId,
-                  entityId,
+                  entityName,
                   localPosition = Event.StreamPosition 1
                 }
 
@@ -77,7 +77,7 @@ spec newStore = do
 
         -- Read back all events to verify
         events <-
-          context.store.readStreamForwardFrom entityId context.streamId (Event.StreamPosition 0) (EventStore.Limit (10))
+          context.store.readStreamForwardFrom entityName context.streamId (Event.StreamPosition 0) (EventStore.Limit (10))
             |> Task.mapError toText
 
         -- We should have exactly 2 events (initial + one successful append)
@@ -98,16 +98,16 @@ spec newStore = do
           |> shouldSatisfy (\id -> id == Just event1Id || id == Just event2Id)
 
       it "gives consistency error when stream position is not up to date" \context -> do
-        entityId <- Uuid.generate |> Task.map Event.EntityId
+        entityName <- Uuid.generate |> Task.map Event.EntityName
 
         -- Insert 5 events to get the stream to position 5
         let insertEventAtPosition position = do
               eventId <- Uuid.generate
               let event =
-                    Event.InsertionEvent
+                    Event.InsertionPayload
                       { id = eventId,
                         streamId = context.streamId,
-                        entityId,
+                        entityName,
                         localPosition = Event.StreamPosition position
                       }
               event
@@ -123,10 +123,10 @@ spec newStore = do
         -- This should fail with ConcurrencyConflict
         staleEventId <- Uuid.generate
         let staleEvent =
-              Event.InsertionEvent
+              Event.InsertionPayload
                 { id = staleEventId,
                   streamId = context.streamId,
-                  entityId,
+                  entityName,
                   localPosition = Event.StreamPosition 2
                 }
 
@@ -144,10 +144,10 @@ spec newStore = do
         -- This should succeed
         correctEventId <- Uuid.generate
         let correctEvent =
-              Event.InsertionEvent
+              Event.InsertionPayload
                 { id = correctEventId,
                   streamId = context.streamId,
-                  entityId,
+                  entityName,
                   localPosition = Event.StreamPosition 5
                 }
 
@@ -162,7 +162,7 @@ spec newStore = do
 
         -- Verify final stream state has 6 events
         finalEvents <-
-          context.store.readStreamForwardFrom entityId context.streamId (Event.StreamPosition 0) (EventStore.Limit 10)
+          context.store.readStreamForwardFrom entityName context.streamId (Event.StreamPosition 0) (EventStore.Limit 10)
             |> Task.mapError toText
 
         finalEvents
@@ -176,7 +176,7 @@ spec newStore = do
           |> shouldBe (Just correctEventId)
 
       it "insertion is idempotent by event id" \context -> do
-        entityId <- Uuid.generate |> Task.map Event.EntityId
+        entityName <- Uuid.generate |> Task.map Event.EntityName
 
         -- Create 10 events with specific IDs (same as C# EventCount)
         eventsToInsert <-
@@ -185,10 +185,10 @@ spec newStore = do
               ( \position -> do
                   eventId <- Uuid.generate
                   Task.yield
-                    Event.InsertionEvent
+                    Event.InsertionPayload
                       { id = eventId,
                         streamId = context.streamId,
-                        entityId,
+                        entityName,
                         localPosition = Event.StreamPosition position
                       }
               )
@@ -206,7 +206,7 @@ spec newStore = do
 
         -- Read the stream - should have exactly 10 events (not 20)
         finalEvents <-
-          context.store.readStreamForwardFrom entityId context.streamId (Event.StreamPosition 0) (EventStore.Limit 20)
+          context.store.readStreamForwardFrom entityName context.streamId (Event.StreamPosition 0) (EventStore.Limit 20)
             |> Task.mapError toText
 
         -- Should have exactly 10 events (idempotency - no duplicates)

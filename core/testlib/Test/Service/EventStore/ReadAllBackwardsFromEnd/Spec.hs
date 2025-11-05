@@ -52,7 +52,7 @@ specWithCount newStore eventCount = do
           context.store.readAllEventsBackwardFrom context.maxGlobalPosition limit
             |> Task.mapError toText
 
-        let eventsFromEntity1 = events |> Array.takeIf (\event -> event.entityId == context.entity1Id)
+        let eventsFromEntity1 = events |> Array.takeIf (\event -> event.entityName == context.entity1Id)
         eventsFromEntity1
           |> Array.length
           |> shouldBe context.eventCount
@@ -147,7 +147,7 @@ specWithCount newStore eventCount = do
 
         -- Should only contain events from entity1
         filteredEvents |> Task.forEach \event -> do
-          event.entityId |> shouldBe context.entity1Id
+          event.entityName |> shouldBe context.entity1Id
 
         -- Should have exactly eventCount events (all from entity1)
         Array.length filteredEvents
@@ -166,8 +166,8 @@ specWithCount newStore eventCount = do
             |> Task.mapError toText
 
         -- Should contain events from both entities
-        let entity1Events = filteredEvents |> Array.takeIf (\e -> e.entityId == context.entity1Id)
-        let entity2Events = filteredEvents |> Array.takeIf (\e -> e.entityId == context.entity2Id)
+        let entity1Events = filteredEvents |> Array.takeIf (\e -> e.entityName == context.entity1Id)
+        let entity2Events = filteredEvents |> Array.takeIf (\e -> e.entityName == context.entity2Id)
 
         Array.length entity1Events |> shouldBe context.eventCount
         Array.length entity2Events |> shouldBe context.eventCount
@@ -202,7 +202,7 @@ specWithCount newStore eventCount = do
 
             -- Should only contain events from entity1
             filteredEvents |> Task.forEach \event -> do
-              event.entityId |> shouldBe context.entity1Id
+              event.entityName |> shouldBe context.entity1Id
 
             -- All events should have position <= startPosition
             filteredEvents |> Task.forEach \event -> do
@@ -214,8 +214,8 @@ specWithCount newStore eventCount = do
 
       it "returns empty array when filtering by non-existent entity backward" \context -> do
         let limit = EventStore.Limit 100
-        nonExistentEntityId <- Uuid.generate |> Task.map Event.EntityId
-        let entityFilter = Array.fromLinkedList [nonExistentEntityId]
+        nonExistentEntityName <- Uuid.generate |> Task.map Event.EntityName
+        let entityFilter = Array.fromLinkedList [nonExistentEntityName]
 
         filteredEvents <-
           context.store.readAllEventsBackwardFromFiltered context.maxGlobalPosition limit entityFilter
@@ -238,7 +238,7 @@ specWithCount newStore eventCount = do
 
         -- All events should be from our target entities
         filteredEvents |> Task.forEach \event -> do
-          let isFromTargetEntity = (event.entityId == context.entity1Id) || (event.entityId == context.entity2Id)
+          let isFromTargetEntity = (event.entityName == context.entity1Id) || (event.entityName == context.entity2Id)
           isFromTargetEntity |> shouldBe True
 
         -- Should be in decreasing order
@@ -288,7 +288,7 @@ specWithCount newStore eventCount = do
 
             -- All events should be from entity1
             filteredEvents |> Task.forEach \event -> do
-              event.entityId |> shouldBe context.entity1Id
+              event.entityName |> shouldBe context.entity1Id
 
             -- All events should have position <= beforePosition (reading BEFORE or AT that position)
             filteredEvents |> Task.forEach \event -> do

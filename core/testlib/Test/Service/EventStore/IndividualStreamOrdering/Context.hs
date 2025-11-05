@@ -14,10 +14,10 @@ import Uuid qualified
 
 data Context = Context
   { eventCount :: Int,
-    entityId :: Event.EntityId,
+    entityName :: Event.EntityName,
     streamId :: Event.StreamId,
     store :: EventStore,
-    generatedEvents :: Array Event.InsertionEvent,
+    generatedEvents :: Array Event.InsertionPayload,
     positions :: Array Event.StreamPosition
   }
 
@@ -26,16 +26,16 @@ initialize :: Task Text EventStore -> Int -> Task Text Context
 initialize newStore eventCount = do
   store <- newStore
   streamId <- Uuid.generate |> Task.map Event.StreamId
-  entityId <- Uuid.generate |> Task.map Event.EntityId
+  entityName <- Uuid.generate |> Task.map Event.EntityName
   generatedEvents <-
     Array.fromLinkedList [0 .. eventCount - 1] |> Task.mapArray \index -> do
       let localPosition = Event.StreamPosition (index)
       id <- Uuid.generate
-      Event.InsertionEvent {id, streamId, entityId, localPosition}
+      Event.InsertionPayload {id, streamId, entityName, localPosition}
         |> Task.yield
 
   -- Append all events sequentially
-  let appendEvents :: Array Event.InsertionEvent -> Task EventStore.Error (Array Event.StreamPosition)
+  let appendEvents :: Array Event.InsertionPayload -> Task EventStore.Error (Array Event.StreamPosition)
       appendEvents events = do
         events |> Task.mapArray \event -> do
           result <- event |> store.appendToStream
@@ -43,4 +43,4 @@ initialize newStore eventCount = do
 
   positions <- generatedEvents |> appendEvents |> Task.mapError toText
 
-  return Context {eventCount, streamId, store, generatedEvents, positions, entityId}
+  return Context {eventCount, streamId, store, generatedEvents, positions, entityName}

@@ -69,14 +69,14 @@ spec newStore = do
 
       it "allows subscribing to specific entity events only" \context -> do
         -- Create another entity and stream to test filtering
-        otherEntityId <- Uuid.generate |> Task.map Event.EntityId
+        otherEntityName <- Uuid.generate |> Task.map Event.EntityName
         otherStreamId <- Uuid.generate |> Task.map Event.StreamId
         otherEventId <- Uuid.generate
         let otherEvent =
-              Event.InsertionEvent
+              Event.InsertionPayload
                 { id = otherEventId,
                   streamId = otherStreamId,
-                  entityId = otherEntityId,
+                  entityName = otherEntityName,
                   localPosition = Event.StreamPosition 0
                 }
 
@@ -90,17 +90,17 @@ spec newStore = do
 
         -- Subscribe only to our test entity events
         subscriptionId <-
-          context.store.subscribeToEntityEvents context.entityId subscriber
+          context.store.subscribeToEntityEvents context.entityName subscriber
             |> Task.mapError toText
 
         -- Append event for our entity (use position 3 since first test used 0,1,2)
         case context.testEvents |> Array.get 0 of
           Just event -> do
             let adjustedEvent =
-                  Event.InsertionEvent
+                  Event.InsertionPayload
                     { id = event.id,
                       streamId = event.streamId,
-                      entityId = event.entityId,
+                      entityName = event.entityName,
                       localPosition = Event.StreamPosition 3
                     }
             context.store.appendToStream adjustedEvent
@@ -128,7 +128,7 @@ spec newStore = do
           |> shouldSatisfy
             ( \maybeEvent ->
                 case maybeEvent of
-                  Just event -> event.entityId == context.entityId
+                  Just event -> event.entityName == context.entityName
                   Nothing -> False
             )
 
@@ -142,10 +142,10 @@ spec newStore = do
         otherStreamId <- Uuid.generate |> Task.map Event.StreamId
         otherEventId <- Uuid.generate
         let otherEvent =
-              Event.InsertionEvent
+              Event.InsertionPayload
                 { id = otherEventId,
                   streamId = otherStreamId,
-                  entityId = context.entityId,
+                  entityName = context.entityName,
                   localPosition = Event.StreamPosition 0
                 }
 
@@ -159,17 +159,17 @@ spec newStore = do
 
         -- Subscribe only to our test stream events
         subscriptionId <-
-          context.store.subscribeToStreamEvents context.entityId context.streamId subscriber
+          context.store.subscribeToStreamEvents context.entityName context.streamId subscriber
             |> Task.mapError toText
 
         -- Append event for our stream (use position 4 since previous tests used 0,1,2,3)
         case context.testEvents |> Array.get 0 of
           Just event -> do
             let adjustedEvent =
-                  Event.InsertionEvent
+                  Event.InsertionPayload
                     { id = event.id,
                       streamId = event.streamId,
-                      entityId = event.entityId,
+                      entityName = event.entityName,
                       localPosition = Event.StreamPosition 4
                     }
             context.store.appendToStream adjustedEvent
@@ -197,7 +197,7 @@ spec newStore = do
           |> shouldSatisfy
             ( \maybeEvent ->
                 case maybeEvent of
-                  Just event -> event.streamId == context.streamId && event.entityId == context.entityId
+                  Just event -> event.streamId == context.streamId && event.entityName == context.entityName
                   Nothing -> False
             )
 
@@ -220,10 +220,10 @@ spec newStore = do
         appendResult <- case context.testEvents |> Array.get 0 of
           Just event -> do
             let adjustedEvent =
-                  Event.InsertionEvent
+                  Event.InsertionPayload
                     { id = event.id,
                       streamId = event.streamId,
-                      entityId = event.entityId,
+                      entityName = event.entityName,
                       localPosition = Event.StreamPosition 5
                     }
             context.store.appendToStream adjustedEvent |> Task.asResult
@@ -240,7 +240,7 @@ spec newStore = do
         -- Event should still be readable from store
         events <-
           context.store.readStreamForwardFrom
-            context.entityId
+            context.entityName
             context.streamId
             (Event.StreamPosition 0)
             (EventStore.Limit 1)
@@ -286,10 +286,10 @@ spec newStore = do
 
         -- Append multiple events (use positions 6, 7, 8)
         let createAdjustedEvent baseEvent position = do
-              Event.InsertionEvent
+              Event.InsertionPayload
                 { id = baseEvent.id,
                   streamId = baseEvent.streamId,
-                  entityId = baseEvent.entityId,
+                  entityName = baseEvent.entityName,
                   localPosition = Event.StreamPosition position
                 }
         adjustedEvents <- case (context.testEvents |> Array.get 0, context.testEvents |> Array.get 1, context.testEvents |> Array.get 2) of
@@ -345,10 +345,10 @@ spec newStore = do
         case context.testEvents |> Array.get 0 of
           Just event -> do
             let adjustedEvent =
-                  Event.InsertionEvent
+                  Event.InsertionPayload
                     { id = event.id,
                       streamId = event.streamId,
-                      entityId = event.entityId,
+                      entityName = event.entityName,
                       localPosition = Event.StreamPosition 9
                     }
             context.store.appendToStream adjustedEvent
@@ -369,10 +369,10 @@ spec newStore = do
         case context.testEvents |> Array.get 1 of
           Just event -> do
             let adjustedEvent =
-                  Event.InsertionEvent
+                  Event.InsertionPayload
                     { id = event.id,
                       streamId = event.streamId,
-                      entityId = event.entityId,
+                      entityName = event.entityName,
                       localPosition = Event.StreamPosition 10
                     }
             context.store.appendToStream adjustedEvent
@@ -406,7 +406,7 @@ spec newStore = do
 
         -- Rapidly append many events (start from position 11)
         let rapidEventCount = 50
-        rapidEvents <- createRapidTestEventsFromPosition context.streamId context.entityId rapidEventCount 11
+        rapidEvents <- createRapidTestEventsFromPosition context.streamId context.entityName rapidEventCount 11
 
         -- Append all events as quickly as possible
         let appendEvent event = do
@@ -440,8 +440,8 @@ spec newStore = do
           |> discard
 
       it "subscribes from now on - only receives events appended after subscription" \context -> do
-        entity1Id <- Uuid.generate |> Task.map Event.EntityId
-        entity2Id <- Uuid.generate |> Task.map Event.EntityId
+        entity1Id <- Uuid.generate |> Task.map Event.EntityName
+        entity2Id <- Uuid.generate |> Task.map Event.EntityName
         stream1Id <- Uuid.generate |> Task.map Event.StreamId
         stream2Id <- Uuid.generate |> Task.map Event.StreamId
 
@@ -460,7 +460,7 @@ spec newStore = do
 
         let subscriber event = do
               -- Only track events from our test entities
-              if event.entityId == entity1Id || event.entityId == entity2Id
+              if event.entityName == entity1Id || event.entityName == entity2Id
                 then receivedEvents |> ConcurrentVar.modify (Array.push event)
                 else Task.yield ()
               Task.yield () :: Task EventStore.Error Unit
@@ -489,8 +489,8 @@ spec newStore = do
         received |> Array.length |> shouldBe (eventCount * 2)
 
         -- Events should be properly ordered within each entity
-        let entity1Events = received |> Array.takeIf (\event -> event.entityId == entity1Id)
-        let entity2Events = received |> Array.takeIf (\event -> event.entityId == entity2Id)
+        let entity1Events = received |> Array.takeIf (\event -> event.entityName == entity1Id)
+        let entity2Events = received |> Array.takeIf (\event -> event.entityName == entity2Id)
 
         entity1Events |> Array.length |> shouldBe eventCount
         entity2Events |> Array.length |> shouldBe eventCount
@@ -499,8 +499,8 @@ spec newStore = do
         context.store.unsubscribe subscriptionId |> Task.mapError toText |> discard
 
       it "subscribes from specific position - receives events after specified global position" \context -> do
-        entity1Id <- Uuid.generate |> Task.map Event.EntityId
-        entity2Id <- Uuid.generate |> Task.map Event.EntityId
+        entity1Id <- Uuid.generate |> Task.map Event.EntityName
+        entity2Id <- Uuid.generate |> Task.map Event.EntityName
         stream1Id <- Uuid.generate |> Task.map Event.StreamId
         stream2Id <- Uuid.generate |> Task.map Event.StreamId
 
@@ -523,7 +523,7 @@ spec newStore = do
 
         let subscriber event = do
               -- Only track events from our test entities
-              if event.entityId == entity1Id || event.entityId == entity2Id
+              if event.entityName == entity1Id || event.entityName == entity2Id
                 then receivedEvents |> ConcurrentVar.modify (Array.push event)
                 else Task.yield ()
               Task.yield () :: Task EventStore.Error Unit
@@ -566,8 +566,8 @@ spec newStore = do
         eventsWithWrongPosition |> Array.length |> shouldBe 0
 
         -- Events should be properly partitioned by entity
-        let entity1Events = received |> Array.takeIf (\event -> event.entityId == entity1Id)
-        let entity2Events = received |> Array.takeIf (\event -> event.entityId == entity2Id)
+        let entity1Events = received |> Array.takeIf (\event -> event.entityName == entity1Id)
+        let entity2Events = received |> Array.takeIf (\event -> event.entityName == entity2Id)
 
         entity1Events |> Array.length |> shouldBe eventCount
         entity2Events |> Array.length |> shouldBe eventCount
@@ -576,15 +576,15 @@ spec newStore = do
         context.store.unsubscribe subscriptionId |> Task.mapError toText |> discard
 
 
-createTestEventsForEntity :: Event.StreamId -> Event.EntityId -> Int -> Int -> Task _ (Array Event.InsertionEvent)
-createTestEventsForEntity streamId entityId count startPosition = do
+createTestEventsForEntity :: Event.StreamId -> Event.EntityName -> Int -> Int -> Task _ (Array Event.InsertionPayload)
+createTestEventsForEntity streamId entityName count startPosition = do
   let createEvent position = do
         eventId <- Uuid.generate
         Task.yield
-          Event.InsertionEvent
+          Event.InsertionPayload
             { id = eventId,
               streamId,
-              entityId,
+              entityName,
               localPosition = Event.StreamPosition position
             }
 
@@ -593,15 +593,15 @@ createTestEventsForEntity streamId entityId count startPosition = do
 
 
 createRapidTestEventsFromPosition ::
-  Event.StreamId -> Event.EntityId -> Int -> Int -> Task _ (Array Event.InsertionEvent)
-createRapidTestEventsFromPosition streamId entityId count startPosition = do
+  Event.StreamId -> Event.EntityName -> Int -> Int -> Task _ (Array Event.InsertionPayload)
+createRapidTestEventsFromPosition streamId entityName count startPosition = do
   let createEvent position = do
         eventId <- Uuid.generate
         Task.yield
-          Event.InsertionEvent
+          Event.InsertionPayload
             { id = eventId,
               streamId,
-              entityId,
+              entityName,
               localPosition = Event.StreamPosition position
             }
 

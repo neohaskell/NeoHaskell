@@ -10,6 +10,7 @@ module Basics (
 
   -- * Math
   Int,
+  Int64,
   Float,
   Natural (..),
   makeNatural,
@@ -132,6 +133,7 @@ import Applicable qualified
 import Control.Monad qualified
 import Control.Monad qualified as Monad
 import Data.Bits qualified (xor)
+import Data.Int (Int64)
 import Data.Kind (Type)
 import Data.String (IsString (..))
 import Data.String.Interpolate qualified as StringInterpolate

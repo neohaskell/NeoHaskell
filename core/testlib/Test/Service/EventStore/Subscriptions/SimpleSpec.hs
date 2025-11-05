@@ -21,14 +21,14 @@ spec newStore = do
 
       -- Create test data
       streamId <- Uuid.generate |> Task.map Event.StreamId
-      entityId <- Uuid.generate |> Task.map Event.EntityId
+      entityName <- Uuid.generate |> Task.map Event.EntityName
       eventId <- Uuid.generate
 
       let testEvent =
-            Event.InsertionEvent
+            Event.InsertionPayload
               { id = eventId,
                 streamId,
-                entityId,
+                entityName,
                 localPosition = Event.StreamPosition 0
               }
 
