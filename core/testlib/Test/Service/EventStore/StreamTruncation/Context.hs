@@ -7,16 +7,17 @@ import Core
 import Service.Event qualified as Event
 import Service.EventStore (EventStore)
 import Task qualified
+import Test.Service.EventStore.Core (MyEvent)
 import Uuid qualified
 
 
 data Context = Context
-  { store :: EventStore,
+  { store :: EventStore MyEvent,
     streamId :: Event.StreamId
   }
 
 
-initialize :: Task Text EventStore -> Task Text Context
+initialize :: Task Text (EventStore MyEvent) -> Task Text Context
 initialize newStore = do
   store <- newStore
   streamId <- Uuid.generate |> Task.map Event.StreamId
