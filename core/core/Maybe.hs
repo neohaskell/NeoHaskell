@@ -6,6 +6,7 @@ module Maybe (
   -- * Common Helpers
   withDefault,
   map,
+  flatten,
 
   -- * Chaining Maybes
   andThen,
@@ -14,6 +15,7 @@ module Maybe (
 
 import Basics
 import Data.Maybe (Maybe (..), fromMaybe)
+import Function (unchanged)
 import Mappable qualified
 import Thenable qualified
 
@@ -84,3 +86,9 @@ getOrDie maybe =
     Nothing ->
       panic "Maybe.getOrDie: Got Nothing"
 {-# INLINE getOrDie #-}
+
+
+flatten :: Maybe (Maybe a) -> Maybe a
+flatten maybe =
+  maybe |> andThen unchanged
+{-# INLINE flatten #-}

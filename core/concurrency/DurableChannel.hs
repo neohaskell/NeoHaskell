@@ -68,18 +68,18 @@ writeNoLock values self = do
 
 checkAndWrite ::
   (Array value -> Bool) ->
-  value ->
+  Array value ->
   DurableChannel value ->
   Task _ Bool
-checkAndWrite predicate value self =
+checkAndWrite predicate values self =
   Lock.with self.lock do
-    let modifier values = do
-          if predicate values
+    let modifier currentValues = do
+          if predicate currentValues
             then do
-              let newValues = Array.push value values
+              let newValues = Array.append values currentValues
               Task.yield (newValues, True)
             else do
-              Task.yield (values, False)
+              Task.yield (currentValues, False)
 
     wasWritten <-
       self.values
@@ -87,8 +87,8 @@ checkAndWrite predicate value self =
 
     if wasWritten
       then do
-        self.channel
-          |> Channel.write value
+        values |> Task.forEach \value ->
+          self.channel |> Channel.write value
         Task.yield True
       else do
         Task.yield False

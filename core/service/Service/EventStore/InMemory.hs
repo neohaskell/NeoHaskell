@@ -8,6 +8,7 @@ import Core
 import DurableChannel qualified
 import Lock qualified
 import Map qualified
+import Maybe qualified
 import Service.Event
 import Service.Event.EventMetadata (EventMetadata)
 import Service.Event.EventMetadata qualified as EventMetadata
@@ -118,12 +119,14 @@ insertImpl ::
   InsertionPayload eventType ->
   Task Error InsertionSuccess
 insertImpl store payload = do
-  let metadata = payload.metadata
-  let id = metadata.id
-  let localPosition = metadata.localPosition
-  let entityName = metadata.entityName
-  let streamId = metadata.streamId
-  let expectedPosition = localPosition
+  let entityName = payload.entityName
+  let streamId = payload.streamId
+  let expectedPosition =
+        payload.insertions
+          |> Array.map (\i -> i.metadata.localPosition)
+          |> Array.maximum
+          |> Maybe.flatten
+          |> Maybe.withDefault (StreamPosition 0)
   channel <- store |> ensureStream entityName streamId
 
   let appendCondition :: Array (StoredEvent eventType) -> Bool
@@ -139,17 +142,22 @@ insertImpl store payload = do
 
   -- Now create the event with the correct global position
   let globalPosition = StreamPosition (fromIntegral globalIndex)
-  let finalEvent = InsertionSuccess {localPosition, globalPosition}
+  let finalEvents = payload |> fromInsertionPayload globalPosition
 
   -- Write to the individual stream with the correctly positioned event
   hasWritten <-
-    channel |> DurableChannel.checkAndWrite appendCondition finalEvent
+    channel |> DurableChannel.checkAndWrite appendCondition finalEvents
 
   if hasWritten
     then do
-      Task.yield finalEvent
+      let finalEvent = finalEvents |> Array.last |> Maybe.getOrDie
+      Task.yield
+        InsertionSuccess
+          { localPosition = finalEvent.metadata.localPosition |> Maybe.withDefault (StreamPosition 0),
+            globalPosition = finalEvent.metadata.globalPosition |> Maybe.withDefault (StreamPosition 0)
+          }
     else
-      (ConcurrencyConflict streamId expectedPosition)
+      (InsertionError ConsistencyCheckFailed)
         |> Task.throw
 
 
