@@ -82,13 +82,13 @@ defaultOps = do
     }
 
 
-new :: Ops -> Config -> Task Text EventStore
+new :: Ops -> Config -> Task Text (EventStore eventType)
 new ops cfg = do
   connection <- ops.acquire cfg
   ops.initializeTable connection
   let eventStore =
         EventStore
-          { appendToStream = appendToStreamImpl,
+          { insert = insertImpl,
             readStreamForwardFrom = readStreamForwardFromImpl,
             readStreamBackwardFrom = readStreamBackwardFromImpl,
             readAllStreamEvents = readAllStreamEventsImpl,
@@ -107,8 +107,8 @@ new ops cfg = do
   Task.yield eventStore
 
 
-appendToStreamImpl :: InsertionPayload -> Task Error Event
-appendToStreamImpl _ = panic "Postgres.appendToStreamImpl - Not implemented yet" |> Task.yield
+insertImpl :: InsertionPayload eventType -> Task Error InsertionSuccess
+insertImpl _ = panic "Postgres.insertImpl - Not implemented yet" |> Task.yield
 
 
 readStreamForwardFromImpl :: EntityName -> StreamId -> StreamPosition -> Limit -> Task Error (Array Event)

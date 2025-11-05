@@ -4,17 +4,19 @@ module Service.Event (
   StreamId (..),
   StreamPosition (..),
   EntityName (..),
-  fromInsertionPayload,
   InsertionType (..),
   InsertionSuccess (..),
   InsertionFailure (..),
+  payloadFromEvents,
 ) where
 
 import Core
-import Maybe qualified
+import DateTime qualified
 import Service.Event.EntityName (EntityName (..))
 import Service.Event.StreamId (StreamId (..))
 import Service.Event.StreamPosition (StreamPosition (..))
+import Task qualified
+import Uuid qualified
 
 
 data Event = Event
@@ -43,6 +45,31 @@ data InsertionPayload eventType = InsertionPayload
   deriving (Eq, Show, Ord, Generic)
 
 
+eventToInsertion :: eventType -> Task _ (Insertion eventType)
+eventToInsertion event = do
+  id <- Uuid.generate
+  metadata <- newMetadata
+  Task.yield
+    Insertion
+      { id,
+        event,
+        metadata
+      }
+
+
+payloadFromEvents :: EntityName -> StreamId -> Array eventType -> Task _ (InsertionPayload eventType)
+payloadFromEvents entityName streamId events = do
+  insertions <- events |> Task.mapArray eventToInsertion
+  let insertionType = AnyStreamState
+  Task.yield
+    InsertionPayload
+      { streamId,
+        entityName,
+        insertions,
+        insertionType
+      }
+
+
 data EventMetadata = EventMetadata
   { relatedUserSub :: Maybe Text,
     correlationId :: Maybe Text,
@@ -52,6 +79,20 @@ data EventMetadata = EventMetadata
     globalPosition :: Maybe StreamPosition
   }
   deriving (Eq, Show, Ord, Generic)
+
+
+newMetadata :: Task _ EventMetadata
+newMetadata = do
+  now <- DateTime.now
+  Task.yield
+    EventMetadata
+      { relatedUserSub = Nothing,
+        correlationId = Nothing,
+        causationId = Nothing,
+        createdAt = now,
+        localPosition = Nothing,
+        globalPosition = Nothing
+      }
 
 
 data Insertion eventType = Insertion

@@ -9,5 +9,5 @@ import Service.EventStore.Postgres.Internal (Config (..))
 import Service.EventStore.Postgres.Internal qualified as Internal
 
 
-new :: Config -> Task Text EventStore
+new :: Config -> Task Text (EventStore eventType)
 new config = Internal.new Internal.defaultOps config

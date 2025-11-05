@@ -35,7 +35,7 @@ initialize newStore streamCount = do
   let eventsPerStream = 2 :: Int
   let getAllEvents :: Task Text (Array Event.InsertionPayload)
       getAllEvents = do
-        InsertionPayloads <-
+        insertionPayloads <-
           streamIds |> Task.mapArray \(entityName, streamId) ->
             Array.fromLinkedList [0 .. eventsPerStream - 1]
               |> Task.mapArray \eventIndex -> do
@@ -47,7 +47,7 @@ initialize newStore streamCount = do
                     localPosition = Event.StreamPosition eventIndex
                   }
                   |> Task.yield
-        Array.flatten InsertionPayloads |> Task.yield
+        Array.flatten insertionPayloads |> Task.yield
 
   allEvents <- getAllEvents
 
