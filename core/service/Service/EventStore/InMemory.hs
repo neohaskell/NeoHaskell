@@ -101,42 +101,40 @@ insertImpl ::
   StreamStore ->
   InsertionPayload eventType ->
   Task Error InsertionSuccess
-insertImpl _ _ =
-  panic "InMemory.insertImpl - not implemented yet"
+insertImpl store payload = do
+  let id = event.id
+  let localPosition = event.localPosition
+  let entityName = event.entityName
+  let streamId = event.streamId
+  let expectedPosition = localPosition
+  channel <- store |> ensureStream entityName streamId
 
+  let appendCondition :: Array Event -> Bool
+      appendCondition events = do
+        let currentLength = Array.length events
+        let (StreamPosition pos) = expectedPosition
+        pos == fromIntegral currentLength
 
--- let id = event.id
--- let localPosition = event.localPosition
--- let entityName = event.entityName
--- let streamId = event.streamId
--- let expectedPosition = localPosition
--- channel <- store |> ensureStream entityName streamId
+  -- First, get the global index from the global stream
+  globalIndex <-
+    store.globalStream
+      |> DurableChannel.writeWithIndex (\index -> event |> Event.fromInsertionPayload (fromIntegral index |> StreamPosition))
 
--- let appendCondition :: Array Event -> Bool
---     appendCondition events = do
---       let currentLength = Array.length events
---       let (StreamPosition pos) = expectedPosition
---       pos == fromIntegral currentLength
+  -- Now create the event with the correct global position
+  let globalPosition = StreamPosition (fromIntegral globalIndex)
+  let finalEvent = InsertionSuccess {localPosition, globalPosition}
 
--- -- First, get the global index from the global stream
--- globalIndex <-
---   store.globalStream
---     |> DurableChannel.writeWithIndex (\index -> event |> Event.fromInsertionPayload (fromIntegral index |> StreamPosition))
+  -- Write to the individual stream with the correctly positioned event
+  hasWritten <-
+    channel |> DurableChannel.checkAndWrite appendCondition finalEvent
 
--- -- Now create the event with the correct global position
--- let globalPosition = StreamPosition (fromIntegral globalIndex)
--- let finalEvent = InsertionSuccess {localPosition, globalPosition}
+  if hasWritten
+    then do
+      Task.yield finalEvent
+    else
+      (ConcurrencyConflict streamId expectedPosition)
+        |> Task.throw
 
--- -- Write to the individual stream with the correctly positioned event
--- hasWritten <-
---   channel |> DurableChannel.checkAndWrite appendCondition finalEvent
-
--- if hasWritten
---   then do
---     Task.yield finalEvent
---   else
---     (ConcurrencyConflict streamId expectedPosition)
---       |> Task.throw
 
 readStreamForwardFromImpl ::
   StreamStore ->
