@@ -182,7 +182,7 @@ specWithCount newStore eventCount = do
           |> shouldBe (context.eventCount * 2)
 
         -- Should be in decreasing global position order
-        let positions = filteredEvents |> Array.map (\e -> e.globalPosition)
+        let positions = filteredEvents |> Array.map (\e -> e.metadata.globalPosition |> Maybe.getOrDie)
         positions |> shouldHaveDecreasingOrder
 
       it "filters events by entity ID from middle position backward" \context -> do
@@ -197,7 +197,7 @@ specWithCount newStore eventCount = do
           Nothing ->
             fail "Expected to find the 5th event for backward position test"
           Just fifthEvent -> do
-            let startPosition = fifthEvent.globalPosition
+            let startPosition = fifthEvent.metadata.globalPosition |> Maybe.getOrDie
             let entityFilter = Array.fromLinkedList [context.entity1Id]
             let limit = EventStore.Limit (fromIntegral (context.eventCount * 2))
 
@@ -211,10 +211,10 @@ specWithCount newStore eventCount = do
 
             -- All events should have position <= startPosition
             filteredEvents |> Task.forEach \event -> do
-              event.globalPosition |> shouldBeLessThanOrEqual startPosition
+              event.metadata.globalPosition |> Maybe.getOrDie |> shouldBeLessThanOrEqual startPosition
 
             -- Should be in decreasing global position order
-            let positions = filteredEvents |> Array.map (\e -> e.globalPosition)
+            let positions = filteredEvents |> Array.map (\e -> e.metadata.globalPosition |> Maybe.getOrDie)
             positions |> shouldHaveDecreasingOrder
 
       it "returns empty array when filtering by non-existent entity backward" \context -> do
@@ -248,7 +248,7 @@ specWithCount newStore eventCount = do
           isFromTargetEntity |> shouldBe True
 
         -- Should be in decreasing order
-        let positions = filteredEvents |> Array.map (\e -> e.globalPosition)
+        let positions = filteredEvents |> Array.map (\e -> e.metadata.globalPosition |> Maybe.getOrDie)
         positions |> shouldHaveDecreasingOrder
 
       it "maintains global order when filtering mixed entities backward" \context -> do
@@ -269,7 +269,7 @@ specWithCount newStore eventCount = do
         filteredEvents |> shouldBe allEvents
 
         -- Should maintain decreasing global position ordering
-        let positions = filteredEvents |> Array.map (\e -> e.globalPosition)
+        let positions = filteredEvents |> Array.map (\e -> e.metadata.globalPosition |> Maybe.getOrDie)
         positions |> shouldHaveDecreasingOrder
 
       it "reading before specific position with entity filter" \context -> do
@@ -283,7 +283,7 @@ specWithCount newStore eventCount = do
           Nothing ->
             fail "Expected to find the middle event for before position test"
           Just beforeEvent -> do
-            let beforePosition = beforeEvent.globalPosition
+            let beforePosition = beforeEvent.metadata.globalPosition |> Maybe.getOrDie
             let entityFilter = Array.fromLinkedList [context.entity1Id]
             let limit = EventStore.Limit (fromIntegral (context.eventCount * 2))
 
@@ -298,10 +298,10 @@ specWithCount newStore eventCount = do
 
             -- All events should have position <= beforePosition (reading BEFORE or AT that position)
             filteredEvents |> Task.forEach \event -> do
-              event.globalPosition |> shouldBeLessThanOrEqual beforePosition
+              event.metadata.globalPosition |> Maybe.getOrDie |> shouldBeLessThanOrEqual beforePosition
 
             -- Should be in decreasing global position order
-            let positions = filteredEvents |> Array.map (\e -> e.globalPosition)
+            let positions = filteredEvents |> Array.map (\e -> e.metadata.globalPosition |> Maybe.getOrDie)
             positions |> shouldHaveDecreasingOrder
 
             -- Should have at least some events (the ones that were inserted before beforePosition)
