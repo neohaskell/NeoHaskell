@@ -10,6 +10,7 @@ module Basics (
 
   -- * Math
   Int,
+  Int64,
   Float,
   Natural (..),
   makeNatural,
@@ -112,6 +113,7 @@ module Basics (
 
   -- * Reexported for syntax utility
   fromInteger,
+  fromIntegral,
   (<*>),
   (>>=),
   (Prelude.>>),
@@ -131,6 +133,7 @@ import Applicable qualified
 import Control.Monad qualified
 import Control.Monad qualified as Monad
 import Data.Bits qualified (xor)
+import Data.Int (Int64)
 import Data.Kind (Type)
 import Data.String (IsString (..))
 import Data.String.Interpolate qualified as StringInterpolate
@@ -930,3 +933,7 @@ pass ::
   (Applicable applicable) =>
   applicable ()
 pass = Applicable.pure ()
+
+
+fromIntegral :: (Prelude.Integral a, Prelude.Num b) => a -> b
+fromIntegral = Prelude.fromIntegral

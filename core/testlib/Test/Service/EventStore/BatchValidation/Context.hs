@@ -1,4 +1,4 @@
-module Test.Service.EventStore.OptimisticConcurrency.Context (
+module Test.Service.EventStore.BatchValidation.Context (
   Context (..),
   initialize,
 ) where
@@ -20,5 +20,6 @@ data Context = Context
 initialize :: Task Text (EventStore MyEvent) -> Task Text Context
 initialize newStore = do
   store <- newStore
-  streamId <- Uuid.generate |> Task.map Event.StreamId
-  pure Context {store, streamId}
+  streamIdUuid <- Uuid.generate
+  let streamId = Event.StreamId streamIdUuid
+  Task.yield Context {store, streamId}

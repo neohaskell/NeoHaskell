@@ -21,6 +21,8 @@ module Task (
   asResult,
   fromIOResult,
   forever,
+  errorAsResult,
+  fromIOEither,
 ) where
 
 import Applicable (Applicative (pure))
@@ -42,6 +44,7 @@ import IO qualified
 import Main.Utf8 (withUtf8)
 import Mappable (Functor)
 import Mappable qualified
+import Maybe (Maybe (..))
 import Result (Result)
 import Result qualified
 import Text (Text)
@@ -191,6 +194,14 @@ fromIOResult io =
 {-# INLINE fromIOResult #-}
 
 
+fromIOEither :: (Show err) => IO (Prelude.Either err value) -> Task err value
+fromIOEither io =
+  io
+    |> Except.ExceptT
+    |> Task
+{-# INLINE fromIOEither #-}
+
+
 forEach ::
   forall (element :: Type) (err :: Type).
   (element -> Task err Unit) ->
@@ -239,3 +250,18 @@ forever task = Task do
       {-# INLINE loop #-}
   loop
 {-# INLINE forever #-}
+
+
+-- | Returns the error as the result
+errorAsResult :: Task err Unit -> Task Never (Maybe err)
+errorAsResult task =
+  runTask task
+    |> Except.mapExceptT
+      ( \x -> do
+          result <- x
+          case result of
+            Either.Right _ -> pure (Either.Right Nothing)
+            Either.Left err -> pure (Either.Right (Just err))
+      )
+    |> Task
+{-# INLINE errorAsResult #-}

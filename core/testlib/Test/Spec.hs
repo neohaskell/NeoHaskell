@@ -1,8 +1,11 @@
+{- HLINT ignore "Use camelCase" -}
 module Test.Spec (
   Spec,
   describe,
   it,
+  only_it,
   shouldBe,
+  shouldNotBe,
   shouldSatisfy,
   shouldContain,
   shouldNotContain,
@@ -18,6 +21,7 @@ module Test.Spec (
   runTask,
   fail,
   beforeAll,
+  before,
   whenEnvVar,
   shouldHaveDecreasingOrder,
   shouldBeLessThanOrEqual,
@@ -54,6 +58,14 @@ it name block =
 {-# INLINE it #-}
 
 
+-- | Define a focused test case (runs only this test)
+only_it :: Text -> (context -> Task Text Unit) -> Spec context
+only_it name block =
+  Hspec.fit (Text.toLinkedList name) \context -> do
+    block context |> Task.runOrPanic
+{-# INLINE only_it #-}
+
+
 -- | Marks a test as pending
 pending :: Text -> Task Text Unit
 pending name =
@@ -67,6 +79,13 @@ shouldBe :: (HasCallStack, Show a, Eq a) => a -> a -> Task Text Unit
 shouldBe expected actual = do
   Task.fromIO (Hspec.shouldBe actual expected)
 {-# INLINE shouldBe #-}
+
+
+-- | Assert that two values are not equal
+shouldNotBe :: (HasCallStack, Show a, Eq a) => a -> a -> Task Text Unit
+shouldNotBe expected actual = do
+  Task.fromIO (Hspec.shouldNotBe actual expected)
+{-# INLINE shouldNotBe #-}
 
 
 -- | Assert that a value satisfies a predicate
@@ -138,6 +157,15 @@ beforeAll beforeTask block =
     (Task.runOrPanic beforeTask)
     block
 {-# INLINE beforeAll #-}
+
+
+-- | Run a Task before each test
+before :: (HasCallStack, Show err) => Task err a -> (Spec a) -> Spec Unit
+before beforeTask block =
+  Hspec.before
+    (Task.runOrPanic beforeTask)
+    block
+{-# INLINE before #-}
 
 
 -- -- | Run an IO action before each test with a specific value

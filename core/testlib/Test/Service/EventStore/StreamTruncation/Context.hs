@@ -1,4 +1,4 @@
-module Test.Service.EventStore.OptimisticConcurrency.Context (
+module Test.Service.EventStore.StreamTruncation.Context (
   Context (..),
   initialize,
 ) where

@@ -4,7 +4,10 @@
     "absfile",
     "Acculumator",
     "Appendable",
+    "BIGSERIAL",
+    "BYTEA",
     "clippy",
+    "dbname",
     "Defaultable",
     "devenv",
     "dont",
@@ -13,6 +16,7 @@
     "fprint",
     "GADT",
     "haskellnix",
+    "Hasql",
     "HIEYAML",
     "hlint",
     "Hspec",
@@ -35,7 +39,8 @@
     "snoc",
     "testlib",
     "typeclasses",
-    "Unagi"
+    "Unagi",
+    "VARCHAR"
   ],
   "nixEnvSelector.nixFile": "${workspaceFolder}/flake.nix",
   // Haskell

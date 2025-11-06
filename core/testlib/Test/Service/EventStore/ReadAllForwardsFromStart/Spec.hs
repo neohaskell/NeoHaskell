@@ -2,16 +2,21 @@ module Test.Service.EventStore.ReadAllForwardsFromStart.Spec where
 
 import Array qualified
 import Core
+import Maybe qualified
+import Service.Event (Event (..))
 import Service.Event qualified as Event
-import Service.EventStore (EventStore)
+import Service.Event.EventMetadata (EventMetadata (..))
+import Service.EventStore (EventStore (..))
 import Service.EventStore.Core qualified as EventStore
 import Task qualified
 import Test
+import Test.Service.EventStore.Core (MyEvent)
+import Test.Service.EventStore.ReadAllForwardsFromStart.Context (Context (..))
 import Test.Service.EventStore.ReadAllForwardsFromStart.Context qualified as Context
 import Uuid qualified
 
 
-spec :: Task Text EventStore -> Spec Unit
+spec :: Task Text (EventStore MyEvent) -> Spec Unit
 spec newStore = do
   describe "Read All Forwards From Start" do
     specWithCount newStore 10
@@ -24,13 +29,13 @@ spec newStore = do
       specWithCount newStore 1000000
 
 
-specWithCount :: Task Text EventStore -> Int -> Spec Unit
+specWithCount :: Task Text (EventStore MyEvent) -> Int -> Spec Unit
 specWithCount newStore eventCount = do
   describe [fmt|testing with #{toText eventCount} events|] do
     beforeAll (Context.initialize newStore eventCount) do
       it "reads all events from start in order" \context -> do
         let startPosition = Event.StreamPosition 0
-        let limit = EventStore.Limit (context.eventCount * 2) -- Double the limit since we have two entities
+        let limit = EventStore.Limit (fromIntegral (context.eventCount * 2)) -- Double the limit since we have two entities
         events <-
           context.store.readAllEventsForwardFrom startPosition limit
             |> Task.mapError toText
@@ -40,33 +45,33 @@ specWithCount newStore eventCount = do
 
       it "has all events in order" \context -> do
         let startPosition = Event.StreamPosition 0
-        let limit = EventStore.Limit (context.eventCount * 2)
+        let limit = EventStore.Limit (fromIntegral (context.eventCount * 2))
         events <-
           context.store.readAllEventsForwardFrom startPosition limit
             |> Task.mapError toText
 
-        let positions = events |> Array.map (\e -> e.globalPosition)
+        let positions = events |> Array.map (\e -> e.metadata.globalPosition |> Maybe.getOrDie)
         positions |> shouldHaveIncreasingOrder
 
       it "has all events from entity1 in order" \context -> do
         let startPosition = Event.StreamPosition 0
-        let limit = EventStore.Limit (context.eventCount * 2)
+        let limit = EventStore.Limit (fromIntegral (context.eventCount * 2))
 
         events <-
           context.store.readStreamForwardFrom context.entity1Id context.streamId startPosition limit
             |> Task.mapError toText
 
-        let eventsFromEntity = events |> Array.takeIf (\event -> event.entityId == context.entity1Id)
+        let eventsFromEntity = events |> Array.takeIf (\event -> event.entityName == context.entity1Id)
         eventsFromEntity
           |> Array.length
           |> shouldBe context.eventCount
 
       it "supports partial reads with resumption from global position" \context -> do
-        let totalEvents = context.eventCount * 2
+        let totalEvents = fromIntegral (context.eventCount * 2)
         let batchSize = 3 -- Small batch to force multiple reads
 
         -- Read all events in batches, resuming from last position
-        let readInBatches :: Event.StreamPosition -> Array Event.Event -> Task Text (Array Event.Event)
+        let readInBatches :: Event.StreamPosition -> Array (Event.Event MyEvent) -> Task Text (Array (Event.Event MyEvent))
             readInBatches currentPosition accumulatedEvents = do
               batch <-
                 context.store.readAllEventsForwardFrom currentPosition (EventStore.Limit batchSize)
@@ -81,7 +86,7 @@ specWithCount newStore eventCount = do
                   case Array.get (batchLength - 1) batch of
                     Just lastEvent -> do
                       -- Resume from next position after last read event
-                      let Event.StreamPosition lastPos = lastEvent.globalPosition
+                      let Event.StreamPosition lastPos = lastEvent.metadata.globalPosition |> Maybe.getOrDie
                       let nextPosition = Event.StreamPosition (lastPos + 1)
                       readInBatches nextPosition newAccumulated
                     Nothing ->
@@ -104,7 +109,7 @@ specWithCount newStore eventCount = do
           |> shouldBe allEventsSingle
 
         -- Global positions should be strictly increasing across all batches
-        let globalPositions = allEventsBatched |> Array.map (\e -> e.globalPosition)
+        let globalPositions = allEventsBatched |> Array.map (\e -> e.metadata.globalPosition |> Maybe.getOrDie)
         globalPositions |> shouldHaveIncreasingOrder
 
       it "reads from arbitrary middle position with correct skip count" \context -> do
@@ -115,36 +120,36 @@ specWithCount newStore eventCount = do
           context.store.readAllEventsForwardFrom (Event.StreamPosition 0) limit
             |> Task.mapError toText
 
-        case Array.get (skipCount - 1) firstEvents of
+        case Array.get (fromIntegral (skipCount - 1)) firstEvents of
           Nothing ->
             fail "Expected to find the 5th event for skip test"
           Just fifthEvent -> do
-            let startPosition = fifthEvent.globalPosition
+            let startPosition = fifthEvent.metadata.globalPosition |> Maybe.getOrDie
             let Event.StreamPosition startPos = startPosition
             let readFromPosition = Event.StreamPosition (startPos + 1) -- Read from after the 5th event
 
             -- Read remaining events from that position
-            let remainingLimit = EventStore.Limit (context.eventCount * 2)
+            let remainingLimit = EventStore.Limit (fromIntegral (context.eventCount * 2))
             remainingEvents <-
               context.store.readAllEventsForwardFrom readFromPosition remainingLimit
                 |> Task.mapError toText
 
             -- Should get exactly (totalEvents - skipCount) events
-            let expectedRemaining = (context.eventCount * 2) - skipCount
+            let expectedRemaining = (context.eventCount * 2 |> fromIntegral) - skipCount
             Array.length remainingEvents
-              |> shouldBe expectedRemaining
+              |> shouldBe (fromIntegral expectedRemaining)
 
             -- All events should have positions > startPosition
             remainingEvents |> Task.forEach \event -> do
-              event.globalPosition |> shouldBeGreaterThan startPosition
+              event.metadata.globalPosition |> Maybe.getOrDie |> shouldBeGreaterThan startPosition
 
             -- Events should still be in increasing order
-            let positions = remainingEvents |> Array.map (\e -> e.globalPosition)
+            let positions = remainingEvents |> Array.map (\e -> e.metadata.globalPosition |> Maybe.getOrDie)
             positions |> shouldHaveIncreasingOrder
 
       it "filters events by single entity ID from start" \context -> do
         let startPosition = Event.StreamPosition 0
-        let limit = EventStore.Limit (context.eventCount * 2)
+        let limit = EventStore.Limit (fromIntegral (context.eventCount * 2))
         let entityFilter = Array.fromLinkedList [context.entity1Id]
 
         filteredEvents <-
@@ -153,19 +158,19 @@ specWithCount newStore eventCount = do
 
         -- Should only contain events from entity1
         filteredEvents |> Task.forEach \event -> do
-          event.entityId |> shouldBe context.entity1Id
+          event.entityName |> shouldBe context.entity1Id
 
         -- Should have exactly eventCount events (all from entity1)
         Array.length filteredEvents
           |> shouldBe context.eventCount
 
         -- Should be in increasing global position order
-        let positions = filteredEvents |> Array.map (\e -> e.globalPosition)
+        let positions = filteredEvents |> Array.map (\e -> e.metadata.globalPosition |> Maybe.getOrDie)
         positions |> shouldHaveIncreasingOrder
 
       it "filters events by multiple entity IDs from start" \context -> do
         let startPosition = Event.StreamPosition 0
-        let limit = EventStore.Limit (context.eventCount * 2)
+        let limit = EventStore.Limit (fromIntegral (context.eventCount * 2))
         let entityFilter = Array.fromLinkedList [context.entity1Id, context.entity2Id]
 
         filteredEvents <-
@@ -173,8 +178,8 @@ specWithCount newStore eventCount = do
             |> Task.mapError toText
 
         -- Should contain events from both entities
-        let entity1Events = filteredEvents |> Array.takeIf (\e -> e.entityId == context.entity1Id)
-        let entity2Events = filteredEvents |> Array.takeIf (\e -> e.entityId == context.entity2Id)
+        let entity1Events = filteredEvents |> Array.takeIf (\e -> e.entityName == context.entity1Id)
+        let entity2Events = filteredEvents |> Array.takeIf (\e -> e.entityName == context.entity2Id)
 
         Array.length entity1Events |> shouldBe context.eventCount
         Array.length entity2Events |> shouldBe context.eventCount
@@ -184,7 +189,7 @@ specWithCount newStore eventCount = do
           |> shouldBe (context.eventCount * 2)
 
         -- Should be in increasing global position order
-        let positions = filteredEvents |> Array.map (\e -> e.globalPosition)
+        let positions = filteredEvents |> Array.map (\e -> e.metadata.globalPosition |> Maybe.getOrDie)
         positions |> shouldHaveIncreasingOrder
 
       it "filters events by entity ID from middle position" \context -> do
@@ -195,15 +200,15 @@ specWithCount newStore eventCount = do
           context.store.readAllEventsForwardFrom (Event.StreamPosition 0) firstLimit
             |> Task.mapError toText
 
-        case Array.get (skipCount - 1) firstEvents of
+        case Array.get (fromIntegral (skipCount - 1)) firstEvents of
           Nothing ->
             fail "Expected to find the 5th event for position test"
           Just fifthEvent -> do
-            let startPosition = fifthEvent.globalPosition
+            let startPosition = fifthEvent.metadata.globalPosition |> Maybe.getOrDie
             let Event.StreamPosition startPos = startPosition
             let readFromPosition = Event.StreamPosition (startPos + 1)
             let entityFilter = Array.fromLinkedList [context.entity1Id]
-            let limit = EventStore.Limit (context.eventCount * 2)
+            let limit = EventStore.Limit (fromIntegral (context.eventCount * 2))
 
             filteredEvents <-
               context.store.readAllEventsForwardFromFiltered readFromPosition limit entityFilter
@@ -211,21 +216,22 @@ specWithCount newStore eventCount = do
 
             -- Should only contain events from entity1
             filteredEvents |> Task.forEach \event -> do
-              event.entityId |> shouldBe context.entity1Id
+              event.entityName |> shouldBe context.entity1Id
 
             -- All events should have position > startPosition
             filteredEvents |> Task.forEach \event -> do
-              event.globalPosition |> shouldBeGreaterThan startPosition
+              event.metadata.globalPosition |> Maybe.getOrDie |> shouldBeGreaterThan startPosition
 
             -- Should be in increasing global position order
-            let positions = filteredEvents |> Array.map (\e -> e.globalPosition)
+            let positions = filteredEvents |> Array.map (\e -> e.metadata.globalPosition |> Maybe.getOrDie)
             positions |> shouldHaveIncreasingOrder
 
       it "returns empty array when filtering by non-existent entity" \context -> do
         let startPosition = Event.StreamPosition 0
         let limit = EventStore.Limit 100
-        nonExistentEntityId <- Uuid.generate |> Task.map Event.EntityId
-        let entityFilter = Array.fromLinkedList [nonExistentEntityId]
+        nonExistentEntityText <- Uuid.generate |> Task.map toText
+        let nonExistentEntityName = Event.EntityName nonExistentEntityText
+        let entityFilter = Array.fromLinkedList [nonExistentEntityName]
 
         filteredEvents <-
           context.store.readAllEventsForwardFromFiltered startPosition limit entityFilter
@@ -249,12 +255,12 @@ specWithCount newStore eventCount = do
 
         -- All events should be from our target entities
         filteredEvents |> Task.forEach \event -> do
-          let isFromTargetEntity = (event.entityId == context.entity1Id) || (event.entityId == context.entity2Id)
+          let isFromTargetEntity = (event.entityName == context.entity1Id) || (event.entityName == context.entity2Id)
           isFromTargetEntity |> shouldBe True
 
       it "maintains global order when filtering mixed entities" \context -> do
         let startPosition = Event.StreamPosition 0
-        let limit = EventStore.Limit (context.eventCount * 2)
+        let limit = EventStore.Limit (fromIntegral (context.eventCount * 2))
         let entityFilter = Array.fromLinkedList [context.entity1Id, context.entity2Id]
 
         -- Get all events without filtering for comparison
@@ -271,5 +277,5 @@ specWithCount newStore eventCount = do
         filteredEvents |> shouldBe allEvents
 
         -- Should maintain global position ordering
-        let positions = filteredEvents |> Array.map (\e -> e.globalPosition)
+        let positions = filteredEvents |> Array.map (\e -> e.metadata.globalPosition |> Maybe.getOrDie)
         positions |> shouldHaveIncreasingOrder

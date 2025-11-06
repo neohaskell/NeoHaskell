@@ -1,44 +1,95 @@
 module Service.Event (
   Event (..),
-  InsertionEvent (..),
+  InsertionPayload (..),
   StreamId (..),
   StreamPosition (..),
-  EntityId (..),
-  fromInsertionEvent,
+  EntityName (..),
+  InsertionType (..),
+  Insertion (..),
+  InsertionSuccess (..),
+  InsertionFailure (..),
+  payloadFromEvents,
 ) where
 
 import Core
-import Service.Event.EntityId (EntityId (..))
+import Service.Event.EntityName (EntityName (..))
+import Service.Event.EventMetadata (EventMetadata (..))
+import Service.Event.EventMetadata qualified as EventMetadata
 import Service.Event.StreamId (StreamId (..))
 import Service.Event.StreamPosition (StreamPosition (..))
+import Task qualified
+import Uuid qualified
 
 
-data Event = Event
-  { id :: Uuid,
+data Event eventType = Event
+  { entityName :: EntityName,
     streamId :: StreamId,
-    entityId :: EntityId,
-    localPosition :: StreamPosition,
-    globalPosition :: StreamPosition
+    event :: eventType,
+    metadata :: EventMetadata
   }
   deriving (Eq, Show, Ord, Generic)
 
 
-data InsertionEvent = InsertionEvent
+data InsertionType
+  = StreamCreation
+  | InsertAfter StreamPosition
+  | ExistingStream
+  | AnyStreamState
+  deriving (Eq, Show, Ord, Generic)
+
+
+data InsertionPayload eventType = InsertionPayload
+  { streamId :: StreamId,
+    entityName :: EntityName,
+    insertionType :: InsertionType,
+    insertions :: Array (Insertion eventType)
+  }
+  deriving (Eq, Show, Ord, Generic)
+
+
+eventToInsertion :: eventType -> Task _ (Insertion eventType)
+eventToInsertion event = do
+  id <- Uuid.generate
+  metadata <- EventMetadata.new
+  Task.yield
+    Insertion
+      { id,
+        event,
+        metadata
+      }
+
+
+payloadFromEvents :: EntityName -> StreamId -> Array eventType -> Task _ (InsertionPayload eventType)
+payloadFromEvents entityName streamId events = do
+  insertions <- events |> Task.mapArray eventToInsertion
+  let insertionType = AnyStreamState
+  Task.yield
+    InsertionPayload
+      { streamId,
+        entityName,
+        insertions,
+        insertionType
+      }
+
+
+data Insertion eventType = Insertion
   { id :: Uuid,
-    streamId :: StreamId,
-    entityId :: EntityId,
+    event :: eventType,
+    metadata :: EventMetadata
+  }
+  deriving (Eq, Show, Ord, Generic)
+
+
+data InsertionSuccess = InsertionSuccess
+  { globalPosition :: StreamPosition,
     localPosition :: StreamPosition
   }
   deriving (Eq, Show, Ord, Generic)
 
 
--- | Convert an insertion event to an event with a global position.
-fromInsertionEvent :: StreamPosition -> InsertionEvent -> Event
-fromInsertionEvent globalPosition event =
-  Event
-    { id = event.id,
-      streamId = event.streamId,
-      entityId = event.entityId,
-      localPosition = event.localPosition,
-      globalPosition
-    }
+data InsertionFailure
+  = ConsistencyCheckFailed
+  | InsertionFailed
+  | PayloadTooLarge
+  | EmptyPayload
+  deriving (Eq, Show, Ord, Generic)

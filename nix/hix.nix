@@ -11,9 +11,13 @@
   # ]);
 
   # Tools to include in the development shell
-  shell.tools.cabal = "latest";
-  shell.tools.hlint = "latest";
-  shell.tools.fourmolu = "latest";
-  shell.tools.hspec-discover = "latest";
-  shell.tools.haskell-language-server = "latest";
+  shell.tools = {
+    cabal = "latest";
+    hlint = "latest";
+    fourmolu = "latest";
+    hspec-discover = "latest";
+    haskell-language-server = "latest";
+    cabal-gild = "latest";
+  };
+  shell.buildInputs = with pkgs; [ git nixfmt-classic postgresql ];
 }

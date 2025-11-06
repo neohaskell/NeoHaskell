@@ -6,11 +6,11 @@ module Service.Event.StreamPosition (
 import Core
 
 
-newtype StreamPosition = StreamPosition Int
+newtype StreamPosition = StreamPosition Int64
   deriving (Eq, Show, Ord, Generic)
 
 
-new :: Int -> Maybe StreamPosition
+new :: Int64 -> Maybe StreamPosition
 new position = do
   if position < 0
     then Nothing

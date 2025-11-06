@@ -1,4 +1,4 @@
-module DurableChannel (DurableChannel, new, read, write, last, checkAndWrite, getAndTransform, writeWithIndex) where
+module DurableChannel (DurableChannel, new, read, write, last, checkAndWrite, getAndTransform, writeWithIndex, modify) where
 
 import Array (Array)
 import Array qualified
@@ -34,15 +34,15 @@ read self =
   Channel.read self.channel
 
 
-write :: value -> DurableChannel value -> Task _ Unit
-write value self =
+write :: Array value -> DurableChannel value -> Task _ Unit
+write values self =
   Lock.with self.lock do
-    writeNoLock value self
+    writeNoLock values self
 
 
 -- | Like write, but passes the index of the value to the function
 -- so that the function can return the indexed value.
-writeWithIndex :: (Int -> value) -> DurableChannel value -> Task _ Int
+writeWithIndex :: (Int -> Array value) -> DurableChannel value -> Task _ Int
 writeWithIndex f self = do
   Lock.with self.lock do
     let modifier v = do
@@ -56,29 +56,30 @@ writeWithIndex f self = do
     Task.yield index
 
 
-writeNoLock :: value -> DurableChannel value -> Task _ Unit
-writeNoLock value self = do
+writeNoLock :: Array value -> DurableChannel value -> Task _ Unit
+writeNoLock values self = do
   -- Write to channel first to ensure consistency
-  self.channel
-    |> Channel.write value
+  values |> Task.forEach \value -> do
+    self.channel
+      |> Channel.write value
   self.values
-    |> ConcurrentVar.modify (Array.push value)
+    |> ConcurrentVar.modify (Array.append values)
 
 
 checkAndWrite ::
   (Array value -> Bool) ->
-  value ->
+  Array value ->
   DurableChannel value ->
   Task _ Bool
-checkAndWrite predicate value self =
+checkAndWrite predicate values self =
   Lock.with self.lock do
-    let modifier values = do
-          if predicate values
+    let modifier currentValues = do
+          if predicate currentValues
             then do
-              let newValues = Array.push value values
+              let newValues = currentValues |> Array.append values
               Task.yield (newValues, True)
             else do
-              Task.yield (values, False)
+              Task.yield (currentValues, False)
 
     wasWritten <-
       self.values
@@ -86,8 +87,8 @@ checkAndWrite predicate value self =
 
     if wasWritten
       then do
-        self.channel
-          |> Channel.write value
+        values |> Task.forEach \value ->
+          self.channel |> Channel.write value
         Task.yield True
       else do
         Task.yield False
@@ -110,3 +111,9 @@ getAndTransform transform self =
     values
       |> transform
       |> Task.yield
+
+
+-- | Modifies the channel array atomically
+modify :: (Array value -> Array value) -> DurableChannel value -> Task _ Unit
+modify transform self =
+  self.values |> ConcurrentVar.modify (transform)

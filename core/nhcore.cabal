@@ -32,6 +32,8 @@ common common_cfg
     directory,
     file-embed,
     ghc-prim,
+    hasql,
+    hasql-th,
     hspec,
     http-conduit,
     nanotime,
@@ -40,6 +42,7 @@ common common_cfg
     pretty-simple,
     process,
     quickcheck-instances,
+    strict,
     string-interpolate,
     template-haskell,
     text,
@@ -99,6 +102,7 @@ library
     ConcurrentVar
     Console
     Core
+    DateTime
     Default
     Directory
     DurableChannel
@@ -119,12 +123,16 @@ library
     Record
     Result
     Service.Event
-    Service.Event.EntityId
+    Service.Event.EntityName
+    Service.Event.EventMetadata
     Service.Event.StreamId
     Service.Event.StreamPosition
     Service.EventStore
     Service.EventStore.Core
     Service.EventStore.InMemory
+    Service.EventStore.Postgres
+    Service.EventStore.Postgres.Internal
+    Service.EventStore.Postgres.Internal.Sessions
     Subprocess
     Task
     Test
@@ -133,16 +141,22 @@ library
     Test.AppSpec.Scenario
     Test.AppSpec.Verify
     Test.Service.EventStore
+    Test.Service.EventStore.BatchValidation.Context
+    Test.Service.EventStore.BatchValidation.Spec
+    Test.Service.EventStore.Core
     Test.Service.EventStore.GlobalStreamOrdering.Context
     Test.Service.EventStore.GlobalStreamOrdering.Spec
     Test.Service.EventStore.IndividualStreamOrdering.Context
     Test.Service.EventStore.IndividualStreamOrdering.Spec
+    Test.Service.EventStore.LocalPositionStamping.Spec
     Test.Service.EventStore.OptimisticConcurrency.Context
     Test.Service.EventStore.OptimisticConcurrency.Spec
     Test.Service.EventStore.ReadAllBackwardsFromEnd.Context
     Test.Service.EventStore.ReadAllBackwardsFromEnd.Spec
     Test.Service.EventStore.ReadAllForwardsFromStart.Context
     Test.Service.EventStore.ReadAllForwardsFromStart.Spec
+    Test.Service.EventStore.StreamTruncation.Context
+    Test.Service.EventStore.StreamTruncation.Spec
     Test.Service.EventStore.Subscriptions.Context
     Test.Service.EventStore.Subscriptions.SimpleSpec
     Test.Service.EventStore.Subscriptions.Spec
@@ -181,6 +195,7 @@ test-suite nhcore-test
   default-language: GHC2021
   other-modules:
     Service.EventStore.InMemorySpec
+    Service.EventStore.PostgresSpec
     Test.AppSpec.AppSpecSpec
     Test.AppSpec.VerifySpec
 

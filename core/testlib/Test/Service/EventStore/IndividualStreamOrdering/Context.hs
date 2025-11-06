@@ -9,38 +9,36 @@ import Service.Event qualified as Event
 import Service.EventStore (EventStore)
 import Service.EventStore.Core qualified as EventStore
 import Task qualified
+import Test.Service.EventStore.Core (MyEvent, newInsertion)
 import Uuid qualified
 
 
 data Context = Context
-  { eventCount :: Int,
-    entityId :: Event.EntityId,
+  { eventCount :: Int64,
+    entityName :: Event.EntityName,
     streamId :: Event.StreamId,
-    store :: EventStore,
-    generatedEvents :: Array Event.InsertionEvent,
+    store :: EventStore MyEvent,
+    payload :: Event.InsertionPayload MyEvent,
+    position :: Event.StreamPosition,
     positions :: Array Event.StreamPosition
   }
 
 
-initialize :: Task Text EventStore -> Int -> Task Text Context
-initialize newStore eventCount = do
+initialize :: Task Text (EventStore MyEvent) -> Int -> Task Text Context
+initialize newStore eventCountNumber = do
   store <- newStore
   streamId <- Uuid.generate |> Task.map Event.StreamId
-  entityId <- Uuid.generate |> Task.map Event.EntityId
-  generatedEvents <-
-    Array.fromLinkedList [0 .. eventCount - 1] |> Task.mapArray \index -> do
-      let localPosition = Event.StreamPosition (index)
-      id <- Uuid.generate
-      Event.InsertionEvent {id, streamId, entityId, localPosition}
-        |> Task.yield
+  entityName <- Uuid.generate |> Task.map (toText .> Event.EntityName)
+  insertions <-
+    Array.fromLinkedList [0 .. eventCountNumber - 1]
+      |> Task.mapArray
+        newInsertion
+  let payload = Event.InsertionPayload {streamId, entityName, insertionType = Event.AnyStreamState, insertions}
 
-  -- Append all events sequentially
-  let appendEvents :: Array Event.InsertionEvent -> Task EventStore.Error (Array Event.StreamPosition)
-      appendEvents events = do
-        events |> Task.mapArray \event -> do
-          result <- event |> store.appendToStream
-          Task.yield result.localPosition
+  insertResult <- payload |> store.insert |> Task.mapError toText
+  let position = insertResult.localPosition
+  let positions = Array.fromLinkedList [0 .. eventCountNumber - 1] |> Array.map (fromIntegral .> Event.StreamPosition)
 
-  positions <- generatedEvents |> appendEvents |> Task.mapError toText
+  let eventCount = fromIntegral eventCountNumber
 
-  return Context {eventCount, streamId, store, generatedEvents, positions, entityId}
+  return Context {eventCount, streamId, store, payload, position, positions, entityName}
