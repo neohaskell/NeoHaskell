@@ -307,3 +307,142 @@ spec newStore = do
         finalEvents
           |> Array.length
           |> shouldBe 10
+
+      it "global stream has no gaps when concurrent writes fail consistency check" \context -> do
+        entityNameText <- Uuid.generate |> Task.map toText
+        let entityName = Event.EntityName entityNameText
+
+        -- First, append an initial event to position 0
+        initialEventId <- Uuid.generate
+        initialMetadata <- EventMetadata.new
+        let initialMetadata' =
+              initialMetadata
+                { EventMetadata.localPosition = Just (Event.StreamPosition 0),
+                  EventMetadata.eventId = initialEventId
+                }
+        let initialInsertion =
+              Event.Insertion
+                { id = initialEventId,
+                  event = MyEvent,
+                  metadata = initialMetadata'
+                }
+        let initialPayload =
+              Event.InsertionPayload
+                { streamId = context.streamId,
+                  entityName,
+                  insertionType = Event.StreamCreation,
+                  insertions = Array.fromLinkedList [initialInsertion]
+                }
+
+        initialPayload
+          |> context.store.insert
+          |> Task.mapError toText
+          |> discard
+
+        -- Create two identical events both expecting to append at position 1
+        -- One will succeed and one will fail the consistency check
+        event1Id <- Uuid.generate
+        event1Metadata <- EventMetadata.new
+        let event1Metadata' =
+              event1Metadata
+                { EventMetadata.localPosition = Just (Event.StreamPosition 1),
+                  EventMetadata.eventId = event1Id
+                }
+        let event1Insertion =
+              Event.Insertion
+                { id = event1Id,
+                  event = MyEvent,
+                  metadata = event1Metadata'
+                }
+        let event1Payload =
+              Event.InsertionPayload
+                { streamId = context.streamId,
+                  entityName,
+                  insertionType = Event.InsertAfter (Event.StreamPosition 0),
+                  insertions = Array.fromLinkedList [event1Insertion]
+                }
+
+        event2Id <- Uuid.generate
+        event2Metadata <- EventMetadata.new
+        let event2Metadata' =
+              event2Metadata
+                { EventMetadata.localPosition = Just (Event.StreamPosition 1),
+                  EventMetadata.eventId = event2Id
+                }
+        let event2Insertion =
+              Event.Insertion
+                { id = event2Id,
+                  event = MyEvent,
+                  metadata = event2Metadata'
+                }
+        let event2Payload =
+              Event.InsertionPayload
+                { streamId = context.streamId,
+                  entityName,
+                  insertionType = Event.InsertAfter (Event.StreamPosition 0),
+                  insertions = Array.fromLinkedList [event2Insertion]
+                }
+
+        let event1Task =
+              event1Payload
+                |> context.store.insert
+                |> Task.asResult
+
+        let event2Task =
+              event2Payload
+                |> context.store.insert
+                |> Task.asResult
+
+        -- Run both inserts concurrently - one should fail
+        (result1, result2) <- AsyncTask.runConcurrently (event1Task, event2Task)
+
+        -- Verify that exactly one succeeded and one failed
+        let successCount =
+              Array.fromLinkedList [result1, result2]
+                |> Array.map (\x -> if Result.isOk x then 1 else 0)
+                |> Array.sumIntegers
+
+        successCount |> shouldBe 1
+
+        -- Now check the global stream for gaps
+        -- Read all global events starting from position 0
+        allGlobalEvents <-
+          context.store.readAllEventsForwardFrom (Event.StreamPosition 0) (EventStore.Limit 100)
+            |> Task.mapError toText
+
+        -- Filter to only events from this test (matching our entity name)
+        let ourEvents =
+              allGlobalEvents
+                |> Array.takeIf (\event -> event.entityName == entityName)
+
+        -- We should have exactly 2 events (initial + one successful concurrent write)
+        -- If we have 3 events, it means the failed write still went to the global stream
+        ourEvents
+          |> Array.length
+          |> shouldBe 2
+
+        -- Verify that the events in the global stream match what's in the individual stream
+        streamEvents <-
+          context.store.readStreamForwardFrom entityName context.streamId (Event.StreamPosition 0) (EventStore.Limit 10)
+            |> Task.mapError toText
+
+        -- The individual stream should only have the events that passed the consistency check
+        streamEvents
+          |> Array.length
+          |> shouldBe 2
+
+        -- Check that global positions are consecutive with no gaps
+        -- Extract all global positions
+        let globalPositions =
+              ourEvents
+                |> Array.map (\event -> event.metadata.globalPosition |> Maybe.getOrDie)
+                |> Array.map (\(Event.StreamPosition pos) -> pos)
+
+        -- Check consecutive positions: each position should be exactly 1 more than the previous
+        let positionPairs =
+              globalPositions
+                |> Array.zip (Array.drop 1 globalPositions)
+
+        positionPairs
+          |> Task.forEach \(firstPos, secondPos) -> do
+            secondPos |> shouldBe (firstPos + 1)
