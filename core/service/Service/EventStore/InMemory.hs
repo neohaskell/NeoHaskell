@@ -22,7 +22,7 @@ new = do
   store <- newEmptyStreamStore
   let eventStore =
         EventStore
-          { insert = insertWithNotification store,
+          { insert = insertImpl store,
             readStreamForwardFrom = readStreamForwardFromImpl store,
             readStreamBackwardFrom = readStreamBackwardFromImpl store,
             readAllStreamEvents = readAllStreamEventsImpl store,
@@ -55,19 +55,6 @@ fromInsertionPayload (StreamPosition globalPosition) payload =
           metadata = newMetadata,
           event = insertion.event
         }
-
-
-insertWithNotification ::
-  (Show eventType) =>
-  StreamStore eventType ->
-  InsertionPayload eventType ->
-  Task Error InsertionSuccess
-insertWithNotification store event = do
-  finalEvent <- insertImpl store event
-  -- Notify subscribers AFTER the event has been successfully stored and locks are released
-  -- FIXME: Now finalEvent is not an event, but rather a position
-  -- notifySubscribers store finalEvent
-  Task.yield finalEvent
 
 
 data StreamStore eventType = StreamStore
@@ -135,7 +122,7 @@ insertImpl store payload = do
         let currentLength = Array.length events
             (StreamPosition pos) = expectedPosition
             positionMatches = fromIntegral pos == currentLength
-         in case payload.insertionType of
+        in  case payload.insertionType of
               AnyStreamState -> True
               StreamCreation -> currentLength == 0 && positionMatches
               ExistingStream -> currentLength > 0 && positionMatches
