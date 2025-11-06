@@ -8,6 +8,7 @@ import Maybe qualified
 import Service.Event (Event (..))
 import Service.Event qualified as Event
 import Service.Event.EventMetadata (EventMetadata (..))
+import Service.Event.EventMetadata qualified as EventMetadata
 import Service.EventStore (EventStore)
 import Service.EventStore.Core qualified as EventStore
 import Task qualified
@@ -123,3 +124,112 @@ spec newStore = do
                 )
 
       actualPositions |> shouldBe expectedPositions
+
+    it "preserves caller-provided local positions when explicitly set" \_ -> do
+      store <- newStore
+      let entityName = Event.EntityName "TestEntity"
+      streamId <- Uuid.generate |> Task.map Event.StreamId
+
+      -- Create first insertion with explicit local position
+      id1 <- Uuid.generate
+      metadata1 <- EventMetadata.new
+      let insertion1 =
+            Event.Insertion
+              { id = id1,
+                event = MyEvent,
+                metadata = metadata1 {EventMetadata.localPosition = Just (Event.StreamPosition 0)}
+              }
+
+      let payload1 =
+            Event.InsertionPayload
+              { streamId,
+                entityName,
+                insertionType = Event.StreamCreation,
+                insertions = Array.fromLinkedList [insertion1]
+              }
+
+      _result1 <- store.insert payload1 |> Task.mapError toText
+
+      -- Create second insertion with explicit local position
+      id2 <- Uuid.generate
+      metadata2 <- EventMetadata.new
+      let insertion2 =
+            Event.Insertion
+              { id = id2,
+                event = MyEvent,
+                metadata = metadata2 {EventMetadata.localPosition = Just (Event.StreamPosition 1)}
+              }
+
+      let payload2 =
+            Event.InsertionPayload
+              { streamId,
+                entityName,
+                insertionType = Event.ExistingStream,
+                insertions = Array.fromLinkedList [insertion2]
+              }
+
+      _result2 <- store.insert payload2 |> Task.mapError toText
+
+      -- Read back and verify positions were preserved
+      allEvents <- store.readAllStreamEvents entityName streamId |> Task.mapError toText
+      Array.length allEvents |> shouldBe 2
+
+      -- Both events should have their explicitly-set local positions
+      case Array.get 0 allEvents of
+        Nothing -> fail "Expected first event"
+        Just event1 ->
+          event1.metadata.localPosition |> shouldBe (Just (Event.StreamPosition 0))
+
+      case Array.get 1 allEvents of
+        Nothing -> fail "Expected second event"
+        Just event2 ->
+          event2.metadata.localPosition |> shouldBe (Just (Event.StreamPosition 1))
+
+    it "auto-assigns sequential positions when localPosition is Nothing" \_ -> do
+      store <- newStore
+      let entityName = Event.EntityName "TestEntity"
+      streamId <- Uuid.generate |> Task.map Event.StreamId
+
+      -- Create insertions with NO local position (Nothing)
+      id1 <- Uuid.generate
+      metadata1 <- EventMetadata.new
+      let insertion1 =
+            Event.Insertion
+              { id = id1,
+                event = MyEvent,
+                metadata = metadata1 {EventMetadata.localPosition = Nothing}
+              }
+
+      id2 <- Uuid.generate
+      metadata2 <- EventMetadata.new
+      let insertion2 =
+            Event.Insertion
+              { id = id2,
+                event = MyEvent,
+                metadata = metadata2 {EventMetadata.localPosition = Nothing}
+              }
+
+      let payload =
+            Event.InsertionPayload
+              { streamId,
+                entityName,
+                insertionType = Event.AnyStreamState,
+                insertions = Array.fromLinkedList [insertion1, insertion2]
+              }
+
+      _result <- store.insert payload |> Task.mapError toText
+
+      -- Read back events
+      allEvents <- store.readAllStreamEvents entityName streamId |> Task.mapError toText
+      Array.length allEvents |> shouldBe 2
+
+      -- Events should have auto-assigned sequential positions
+      case Array.get 0 allEvents of
+        Nothing -> fail "Expected first event"
+        Just event1 ->
+          event1.metadata.localPosition |> shouldBe (Just (Event.StreamPosition 0))
+
+      case Array.get 1 allEvents of
+        Nothing -> fail "Expected second event"
+        Just event2 ->
+          event2.metadata.localPosition |> shouldBe (Just (Event.StreamPosition 1))
