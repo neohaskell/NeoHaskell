@@ -31,7 +31,7 @@ data Error
   | StorageFailure Text -- Generic storage errors with message
   | SubscriptionNotFound SubscriptionId
   | SubscriptionError SubscriptionId Text -- Subscription-specific errors
-  | TruncationError
+  | TruncationError EntityName StreamId StreamPosition Text -- Stream truncation errors with context
   | InsertionError InsertionFailure
   deriving (Eq, Show)
 
