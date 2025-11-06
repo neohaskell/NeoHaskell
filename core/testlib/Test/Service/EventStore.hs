@@ -7,6 +7,7 @@ import Test.Service.EventStore.BatchValidation.Spec qualified as BatchValidation
 import Test.Service.EventStore.Core (MyEvent)
 import Test.Service.EventStore.GlobalStreamOrdering.Spec qualified as GlobalStreamOrdering
 import Test.Service.EventStore.IndividualStreamOrdering.Spec qualified as IndividualStreamOrdering
+import Test.Service.EventStore.LocalPositionStamping.Spec qualified as LocalPositionStamping
 import Test.Service.EventStore.OptimisticConcurrency.Spec qualified as OptimisticConcurrency
 import Test.Service.EventStore.ReadAllBackwardsFromEnd.Spec qualified as ReadAllBackwardsFromEnd
 import Test.Service.EventStore.ReadAllForwardsFromStart.Spec qualified as ReadAllForwardsFromStart
@@ -27,3 +28,4 @@ spec newStore = do
     SimpleSubscriptions.spec newStore
     Subscriptions.spec newStore
     BatchValidation.spec newStore
+    LocalPositionStamping.spec newStore
