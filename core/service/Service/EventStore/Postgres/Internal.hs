@@ -1,32 +1,22 @@
 module Service.EventStore.Postgres.Internal (
   Config (..),
-  Connection (..),
   Ops (..),
   new,
   defaultOps,
 ) where
 
 import Array qualified
-import AsyncTask qualified
 import Core
-import Data.ByteString qualified as ByteString
-import Data.UUID qualified as UUID
-import Data.Vector qualified as Vector
 import Hasql.Connection qualified as Hasql
 import Hasql.Connection.Setting qualified as ConnectionSetting
 import Hasql.Connection.Setting.Connection qualified as ConnectionSettingConnection
 import Hasql.Connection.Setting.Connection.Param qualified as Param
-import Hasql.Session qualified as Session
-import Json qualified
 import Result qualified
 import Service.Event
 import Service.Event.EventMetadata (EventMetadata (..))
-import Service.Event.EventMetadata qualified as EventMetadata
 import Service.EventStore.Core
 import Service.EventStore.Postgres.Internal.Sessions qualified as Sessions
 import Task qualified
-import Uuid (Uuid)
-import Uuid qualified
 
 
 data Config = Config
@@ -52,44 +42,28 @@ toConnectionSettings cfg = do
   [params |> ConnectionSetting.connection]
 
 
-data Connection
-  = Connection Hasql.Connection
-  | MockConnection
-
-
 data Ops = Ops
-  { acquire :: Config -> Task Text Connection,
-    initializeTable :: Connection -> Task Text Unit
+  { acquire :: Config -> Task Text Sessions.Connection,
+    initializeTable :: Sessions.Connection -> Task Text Unit
   }
 
 
 defaultOps :: Ops
 defaultOps = do
-  let acquireImpl cfg = do
-        connection <-
-          cfg
-            |> toConnectionSettings
-            |> Hasql.acquire
-            |> Task.fromIOEither
-            |> Task.mapError toText
-        Task.yield (Connection connection)
-  let initializeTableImpl connection = do
-        let session = Sessions.createEventsTableSession
-        case connection of
-          MockConnection -> pass
-          Connection conn -> do
-            result <- Session.run session conn |> Task.fromIO |> Task.map Result.fromEither
-            case result of
-              Result.Err _ ->
-                -- FIXME: Add logging saying that the table already exists
-                pass
-              Result.Ok _ ->
-                -- FIXME: Add logging saying that the table was created
-                pass
-  Ops
-    { acquire = acquireImpl,
-      initializeTable = initializeTableImpl
-    }
+  let acquire cfg =
+        toConnectionSettings cfg
+          |> Hasql.acquire
+          |> Task.fromIOEither
+          |> Task.mapError toText
+          |> Task.map Sessions.Connection
+
+  let initializeTable connection =
+        connection
+          |> Sessions.run Sessions.createEventsTableSession
+          |> Task.mapError toText
+          |> discard
+
+  Ops {acquire, initializeTable}
 
 
 new :: Ops -> Config -> Task Text (EventStore eventType)
@@ -120,29 +94,23 @@ new ops cfg = do
 insertImpl :: Ops -> Config -> InsertionPayload eventType -> Task Error InsertionSuccess
 insertImpl ops cfg payload = do
   conn <- ops.acquire cfg |> Task.mapError (InsertionError InsertionFailed |> always)
-  case conn of
-    MockConnection -> do
-      Task.yield
-        InsertionSuccess
-          { globalPosition = StreamPosition 0,
-            localPosition = StreamPosition 0
-          }
-    Connection _ -> do
-      let payloadEventIds =
-            payload.insertions
-              |> Array.map (\i -> i.metadata.eventId)
+  let payloadEventIds =
+        payload.insertions
+          |> Array.map (\i -> i.metadata.eventId)
 
-      let insertionsCount = payload.insertions |> Array.length
+  alreadyExistingIds <- Sessions.selectExistingIdsSession
 
-      if insertionsCount <= 0
-        then Task.throw (InsertionError EmptyPayload)
-        else pass
+  let insertionsCount = payload.insertions |> Array.length
 
-      if insertionsCount > 100
-        then Task.throw (InsertionError PayloadTooLarge)
-        else pass
+  if insertionsCount <= 0
+    then Task.throw (InsertionError EmptyPayload)
+    else pass
 
-      Task.throw (InsertionError InsertionFailed)
+  if insertionsCount > 100
+    then Task.throw (InsertionError PayloadTooLarge)
+    else pass
+
+  Task.throw (InsertionError InsertionFailed)
 
 
 readStreamForwardFromImpl :: EntityName -> StreamId -> StreamPosition -> Limit -> Task Error (Array (Event eventType))
