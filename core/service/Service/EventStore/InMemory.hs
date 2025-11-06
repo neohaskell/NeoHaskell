@@ -43,12 +43,20 @@ new = do
 
 -- PRIVATE
 
-fromInsertionPayload :: StreamPosition -> InsertionPayload eventType -> Array (Event eventType)
-fromInsertionPayload (StreamPosition globalPosition) payload =
+fromInsertionPayload :: StreamPosition -> Int -> InsertionPayload eventType -> Array (Event eventType)
+fromInsertionPayload (StreamPosition globalPosition) streamLength payload =
   payload.insertions
     |> Array.indexed
     |> Array.map \(index, insertion) -> do
-      let newMetadata = insertion.metadata {EventMetadata.globalPosition = Just (StreamPosition (globalPosition + fromIntegral index))}
+      let globalPos = StreamPosition (globalPosition + fromIntegral index)
+      let localPos = case insertion.metadata.localPosition of
+            Just pos -> pos
+            Nothing -> StreamPosition (fromIntegral streamLength + fromIntegral index)
+      let newMetadata =
+            insertion.metadata
+              { EventMetadata.globalPosition = Just globalPos,
+                EventMetadata.localPosition = Just localPos
+              }
       Event
         { entityName = payload.entityName,
           streamId = payload.streamId,
@@ -143,15 +151,16 @@ insertImpl store payload = do
     Lock.with store.globalLock do
       currentStreamEvents <- channel |> DurableChannel.getAndTransform unchanged
       let consistencyCheckPassed = appendCondition currentStreamEvents
+      let streamLength = Array.length currentStreamEvents
 
       if consistencyCheckPassed
         then do
           globalIndex <-
             store.globalStream
-              |> DurableChannel.writeWithIndex (\index -> payload |> fromInsertionPayload (fromIntegral index |> StreamPosition))
+              |> DurableChannel.writeWithIndex (\index -> payload |> fromInsertionPayload (fromIntegral index |> StreamPosition) streamLength)
 
           let globalPosition = StreamPosition (fromIntegral globalIndex)
-          let finalEvents = payload |> fromInsertionPayload globalPosition
+          let finalEvents = payload |> fromInsertionPayload globalPosition streamLength
           channel |> DurableChannel.checkAndWrite appendCondition finalEvents |> discard
 
           finalEvents |> Task.forEach (notifySubscribers store)
