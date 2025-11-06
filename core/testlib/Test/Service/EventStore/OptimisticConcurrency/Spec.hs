@@ -267,7 +267,11 @@ spec newStore = do
               ( \position -> do
                   eventId <- Uuid.generate
                   metadata <- EventMetadata.new
-                  let metadata' = metadata {EventMetadata.localPosition = Just (Event.StreamPosition position)}
+                  let metadata' =
+                        metadata
+                          { EventMetadata.localPosition = Just (Event.StreamPosition position),
+                            EventMetadata.eventId = eventId
+                          }
                   let insertion =
                         Event.Insertion
                           { id = eventId,
