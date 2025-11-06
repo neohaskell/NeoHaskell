@@ -21,6 +21,7 @@ module Test.Spec (
   runTask,
   fail,
   beforeAll,
+  before,
   whenEnvVar,
   shouldHaveDecreasingOrder,
   shouldBeLessThanOrEqual,
@@ -156,6 +157,15 @@ beforeAll beforeTask block =
     (Task.runOrPanic beforeTask)
     block
 {-# INLINE beforeAll #-}
+
+
+-- | Run a Task before each test
+before :: (HasCallStack, Show err) => Task err a -> (Spec a) -> Spec Unit
+before beforeTask block =
+  Hspec.before
+    (Task.runOrPanic beforeTask)
+    block
+{-# INLINE before #-}
 
 
 -- -- | Run an IO action before each test with a specific value

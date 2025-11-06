@@ -18,7 +18,7 @@ import Uuid qualified
 spec :: Task Text (EventStore MyEvent) -> Spec Unit
 spec newStore = do
   describe "Stream Truncation" do
-    beforeAll (Context.initialize newStore) do
+    before (Context.initialize newStore) do
       it "truncates stream keeping events from position onwards" \context -> do
         entityNameText <- Uuid.generate |> Task.map toText
         let entityName = Event.EntityName entityNameText
