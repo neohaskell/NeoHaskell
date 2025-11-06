@@ -129,10 +129,8 @@ insertImpl store payload = do
               InsertAfter (StreamPosition afterPos) ->
                 fromIntegral afterPos < currentLength && positionMatches
 
-  -- Use the global lock to coordinate both the consistency check and global stream write
   result <-
     Lock.with store.globalLock do
-      -- First, check consistency on the individual stream
       currentStreamEvents <- channel |> DurableChannel.getAndTransform unchanged
       let consistencyCheckPassed = appendCondition currentStreamEvents
 
