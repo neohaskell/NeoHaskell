@@ -4,10 +4,17 @@ module Service.Event.StreamPosition (
 ) where
 
 import Core
+import Json (FromJSON, ToJSON)
 
 
 newtype StreamPosition = StreamPosition Int64
   deriving (Eq, Show, Ord, Generic)
+
+
+instance ToJSON StreamPosition
+
+
+instance FromJSON StreamPosition
 
 
 new :: Int64 -> Maybe StreamPosition

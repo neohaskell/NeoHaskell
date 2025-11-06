@@ -8,6 +8,7 @@ import Hasql.Connection qualified as Hasql
 import Hasql.Session qualified as Session
 import Hasql.Statement qualified as Hasql
 import Hasql.TH qualified as TH
+import Json qualified
 import Mappable qualified
 import Maybe qualified
 import Result qualified
@@ -19,6 +20,17 @@ import Uuid qualified
 data Connection
   = Connection Hasql.Connection
   | MockConnection
+
+
+data EventInsertionRecord = EventInsertionRecord
+  { eventId :: Uuid,
+    localPosition :: Int64,
+    inlinedStreamId :: Text,
+    entity :: Text,
+    eventData :: Json.Value,
+    metadata :: Json.Value
+  }
+  deriving (Eq, Ord, Show, Generic)
 
 
 run ::
@@ -49,7 +61,6 @@ createEventsTableSession =
                 LocalPosition BIGINT NOT NULL,
                 InlinedStreamId VARCHAR(4000) NOT NULL,
                 Entity VARCHAR(255) NOT NULL,
-                EventType VARCHAR(255) NOT NULL,
                 EventData BYTEA NOT NULL,
                 Metadata BYTEA NULL,
                 CONSTRAINT PK_Events PRIMARY KEY (GlobalPosition),
@@ -65,7 +76,7 @@ selectExistingIdsSession ids = do
         [TH.vectorStatement|
     SELECT EventId :: uuid
     FROM Events
-    WHERE EventId IN ($1 :: uuid[])
+    WHERE EventId = ANY ($1 :: uuid[])
   |]
   let params = toLegacyUuids ids
   Session.statement params s
@@ -94,8 +105,8 @@ selectLatestEventInStream (EntityName entityName) (StreamId streamId) = do
   let s :: Hasql.Statement (Text, Text) (Maybe (Int64, Int64)) =
         [TH.maybeStatement|
     SELECT GlobalPosition :: int8, LocalPosition :: int8
-    FROM Events
-    WHERE Entity = $1 :: text AND InlinedStreamId = $2 :: text
+    FROM events
+    WHERE entity = $1 :: text AND InlinedStreamId = $2 :: text
     ORDER BY LocalPosition DESC
     LIMIT 1
   |]

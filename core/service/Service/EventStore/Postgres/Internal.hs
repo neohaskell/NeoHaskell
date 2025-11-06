@@ -3,6 +3,7 @@ module Service.EventStore.Postgres.Internal (
   Ops (..),
   new,
   defaultOps,
+  Sessions.Connection (..),
 ) where
 
 import Array qualified
@@ -12,9 +13,12 @@ import Hasql.Connection qualified as Hasql
 import Hasql.Connection.Setting qualified as ConnectionSetting
 import Hasql.Connection.Setting.Connection qualified as ConnectionSettingConnection
 import Hasql.Connection.Setting.Connection.Param qualified as Param
+import Json qualified
 import Maybe qualified
 import Service.Event
+import Service.Event.EntityName qualified as EntityName
 import Service.Event.EventMetadata (EventMetadata (..))
+import Service.Event.StreamId qualified as StreamId
 import Service.EventStore.Core
 import Service.EventStore.Postgres.Internal.Sessions qualified as Sessions
 import Task qualified
@@ -67,7 +71,11 @@ defaultOps = do
   Ops {acquire, initializeTable}
 
 
-new :: Ops -> Config -> Task Text (EventStore eventType)
+new ::
+  (Json.Encodable eventType) =>
+  Ops ->
+  Config ->
+  Task Text (EventStore eventType)
 new ops cfg = do
   connection <- ops.acquire cfg
   ops.initializeTable connection
@@ -92,7 +100,12 @@ new ops cfg = do
   Task.yield eventStore
 
 
-insertImpl :: Ops -> Config -> InsertionPayload eventType -> Task Error InsertionSuccess
+insertImpl ::
+  (Json.Encodable eventType) =>
+  Ops ->
+  Config ->
+  InsertionPayload eventType ->
+  Task Error InsertionSuccess
 insertImpl ops cfg payload = do
   conn <- ops.acquire cfg |> Task.mapError (toText .> InsertionFailed .> InsertionError)
   let payloadEventIds =
@@ -136,7 +149,17 @@ insertImpl ops cfg payload = do
                 latestPositions
                   |> Maybe.map (\(_, StreamPosition localPos) -> localPos + 1)
                   |> Maybe.withDefault 0
-      Task.throw (InsertionError (InsertionFailed "woops"))
+      let insertionRecords =
+            insertions |> Array.indexed |> Array.map \(idx, i) -> do
+              Sessions.EventInsertionRecord
+                { eventId = i.metadata.eventId,
+                  localPosition = offset + fromIntegral idx,
+                  inlinedStreamId = payload.streamId |> StreamId.toText,
+                  entity = payload.entityName |> EntityName.toText,
+                  eventData = Json.encode i.event,
+                  metadata = Json.encode i.metadata
+                }
+      Task.throw (InsertionError (InsertionFailed (toText insertionRecords)))
 
 
 readStreamForwardFromImpl :: EntityName -> StreamId -> StreamPosition -> Limit -> Task Error (Array (Event eventType))

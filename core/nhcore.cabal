@@ -36,7 +36,7 @@ common common_cfg
     hasql-th,
     hspec,
     http-conduit,
-    nanotime,
+    time,
     optparse-applicative,
     path,
     pretty-simple,

@@ -6,6 +6,7 @@ import Service.EventStore.Postgres.Internal qualified as Internal
 import Task qualified
 import Test
 import Test.Service.EventStore qualified as EventStore
+import Test.Service.EventStore.Core (MyEvent)
 import Var qualified
 
 
@@ -23,7 +24,7 @@ spec = do
     describe "new method" do
       it "acquires the connection" \_ -> do
         (ops, observe) <- mockNewOps
-        Internal.new ops config
+        Internal.new @MyEvent ops config
           |> Task.mapError toText
           |> discard
         observe.acquireCalls
@@ -31,7 +32,7 @@ spec = do
 
       it "initializes the table" \_ -> do
         (ops, observe) <- mockNewOps
-        Internal.new ops config
+        Internal.new @MyEvent ops config
           |> Task.mapError toText
           |> discard
         observe.initializeTableCalls
