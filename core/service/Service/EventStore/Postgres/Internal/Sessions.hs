@@ -8,7 +8,7 @@ createEventsTableSession :: Session.Session Unit
 createEventsTableSession =
   Session.sql
     [fmt|
-            CREATE TABLE Events (
+            CREATE TABLE IF NOT EXISTS Events (
                 EventId UUID NOT NULL,
                 GlobalPosition BIGSERIAL NOT NULL,
                 LocalPosition BIGINT NOT NULL,
