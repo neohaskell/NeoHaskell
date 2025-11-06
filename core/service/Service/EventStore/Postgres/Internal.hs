@@ -104,7 +104,15 @@ insertImpl ops cfg payload = do
       |> Sessions.run conn
       |> Task.mapError (toText .> InsertionFailed .> InsertionError)
 
-  let insertionsCount = payload.insertions |> Array.length
+  let insertions =
+        payload.insertions
+          |> Array.dropIf
+            ( \i ->
+                alreadyExistingIds
+                  |> Array.contains i.metadata.eventId
+            )
+
+  let insertionsCount = insertions |> Array.length
 
   if insertionsCount <= 0
     then Task.throw (InsertionError EmptyPayload)

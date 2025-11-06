@@ -17,6 +17,7 @@ module Array (
   get,
   maximum,
   minimum,
+  contains,
 
   -- * Manipulate
   set,
@@ -633,6 +634,20 @@ minimum (Array vector) =
   if Data.Vector.null vector
     then Nothing
     else Just (Data.Vector.minimum vector)
+
+
+-- | Check if an array contains a specific element.
+--
+-- >>> contains 2 (fromLinkedList [1,2,3] :: Array Int)
+-- True
+-- >>> contains 5 (fromLinkedList [1,2,3] :: Array Int)
+-- False
+-- >>> contains 1 (fromLinkedList [] :: Array Int)
+-- False
+contains :: forall (value :: Type). (Eq value) => value -> Array value -> Bool
+contains element array = do
+  let checkElement arrayElement = arrayElement == element
+  any checkElement array
 
 
 -- | Extract all `Just` values from an array of `Maybe` values, discarding `Nothing`.
