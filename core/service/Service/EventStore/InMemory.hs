@@ -129,33 +129,38 @@ insertImpl store payload = do
               InsertAfter (StreamPosition afterPos) ->
                 fromIntegral afterPos < currentLength && positionMatches
 
-  -- First, get the global index from the global stream
-  globalIndex <-
-    store.globalStream
-      |> DurableChannel.writeWithIndex (\index -> payload |> fromInsertionPayload (fromIntegral index |> StreamPosition))
+  -- Use the global lock to coordinate both the consistency check and global stream write
+  result <-
+    Lock.with store.globalLock do
+      -- First, check consistency on the individual stream
+      currentStreamEvents <- channel |> DurableChannel.getAndTransform unchanged
+      let consistencyCheckPassed = appendCondition currentStreamEvents
 
-  -- Now create the event with the correct global position
-  let globalPosition = StreamPosition (fromIntegral globalIndex)
-  let finalEvents = payload |> fromInsertionPayload globalPosition
+      if consistencyCheckPassed
+        then do
+          globalIndex <-
+            store.globalStream
+              |> DurableChannel.writeWithIndex (\index -> payload |> fromInsertionPayload (fromIntegral index |> StreamPosition))
 
-  -- currVals <- channel |> DurableChannel.getAndTransform unchanged
+          let globalPosition = StreamPosition (fromIntegral globalIndex)
+          let finalEvents = payload |> fromInsertionPayload globalPosition
+          channel |> DurableChannel.checkAndWrite appendCondition finalEvents |> discard
 
-  -- Write to the individual stream with the correctly positioned event
-  hasWritten <-
-    channel |> DurableChannel.checkAndWrite appendCondition finalEvents
+          finalEvents |> Task.forEach (notifySubscribers store)
+          let finalEvent = finalEvents |> Array.last |> Maybe.getOrDie
+          Task.yield
+            ( Ok
+                InsertionSuccess
+                  { localPosition = finalEvent.metadata.localPosition |> Maybe.withDefault (StreamPosition 0),
+                    globalPosition = finalEvent.metadata.globalPosition |> Maybe.withDefault (StreamPosition 0)
+                  }
+            )
+        else do
+          Task.yield (Err ConsistencyCheckFailed)
 
-  if hasWritten
-    then do
-      finalEvents |> Task.forEach (notifySubscribers store)
-      let finalEvent = finalEvents |> Array.last |> Maybe.getOrDie
-      Task.yield
-        InsertionSuccess
-          { localPosition = finalEvent.metadata.localPosition |> Maybe.withDefault (StreamPosition 0),
-            globalPosition = finalEvent.metadata.globalPosition |> Maybe.withDefault (StreamPosition 0)
-          }
-    else
-      (InsertionError ConsistencyCheckFailed)
-        |> Task.throw
+  case result of
+    Ok success -> Task.yield success
+    Err errorType -> (InsertionError errorType) |> Task.throw
 
 
 readStreamForwardFromImpl ::
