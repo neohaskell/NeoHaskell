@@ -79,7 +79,7 @@ spec newStore = do
           |> Maybe.map (\event -> event.metadata.localPosition |> Maybe.getOrDie)
           |> shouldBe (Just (Event.StreamPosition 9))
 
-      it "truncating at position 0 removes all events" \context -> do
+      it "truncating at position 0 keeps all events" \context -> do
         entityNameText <- Uuid.generate |> Task.map toText
         let entityName = Event.EntityName entityNameText
 
@@ -114,7 +114,7 @@ spec newStore = do
           |> Array.length
           |> shouldBe 5
 
-      it "truncating at position beyond stream length keeps all events" \context -> do
+      it "truncating at position beyond stream length removes all events" \context -> do
         entityNameText <- Uuid.generate |> Task.map toText
         let entityName = Event.EntityName entityNameText
 
