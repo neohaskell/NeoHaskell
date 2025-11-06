@@ -5,6 +5,7 @@ module Test.Spec (
   it,
   only_it,
   shouldBe,
+  shouldNotBe,
   shouldSatisfy,
   shouldContain,
   shouldNotContain,
@@ -77,6 +78,13 @@ shouldBe :: (HasCallStack, Show a, Eq a) => a -> a -> Task Text Unit
 shouldBe expected actual = do
   Task.fromIO (Hspec.shouldBe actual expected)
 {-# INLINE shouldBe #-}
+
+
+-- | Assert that two values are not equal
+shouldNotBe :: (HasCallStack, Show a, Eq a) => a -> a -> Task Text Unit
+shouldNotBe expected actual = do
+  Task.fromIO (Hspec.shouldNotBe actual expected)
+{-# INLINE shouldNotBe #-}
 
 
 -- | Assert that a value satisfies a predicate

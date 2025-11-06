@@ -91,4 +91,5 @@ data InsertionFailure
   = ConsistencyCheckFailed
   | InsertionFailed
   | PayloadTooLarge
+  | EmptyPayload
   deriving (Eq, Show, Ord, Generic)

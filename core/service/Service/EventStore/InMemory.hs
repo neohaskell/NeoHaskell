@@ -108,6 +108,16 @@ insertImpl ::
   InsertionPayload eventType ->
   Task Error InsertionSuccess
 insertImpl store payload = do
+  let insertionsCount = payload.insertions |> Array.length
+
+  if insertionsCount <= 0
+    then Task.throw (InsertionError EmptyPayload)
+    else pass
+
+  if insertionsCount > 100
+    then Task.throw (InsertionError PayloadTooLarge)
+    else pass
+
   let entityName = payload.entityName
   let streamId = payload.streamId
   let expectedPosition =

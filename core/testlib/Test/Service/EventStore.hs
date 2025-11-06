@@ -3,6 +3,7 @@ module Test.Service.EventStore where
 import Core
 import Service.EventStore.Core (EventStore)
 import Test
+import Test.Service.EventStore.BatchValidation.Spec qualified as BatchValidation
 import Test.Service.EventStore.Core (MyEvent)
 import Test.Service.EventStore.GlobalStreamOrdering.Spec qualified as GlobalStreamOrdering
 import Test.Service.EventStore.IndividualStreamOrdering.Spec qualified as IndividualStreamOrdering
@@ -25,3 +26,4 @@ spec newStore = do
     StreamTruncation.spec newStore
     SimpleSubscriptions.spec newStore
     Subscriptions.spec newStore
+    BatchValidation.spec newStore

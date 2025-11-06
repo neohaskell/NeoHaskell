@@ -141,6 +141,8 @@ library
     Test.AppSpec.Scenario
     Test.AppSpec.Verify
     Test.Service.EventStore
+    Test.Service.EventStore.BatchValidation.Context
+    Test.Service.EventStore.BatchValidation.Spec
     Test.Service.EventStore.Core
     Test.Service.EventStore.GlobalStreamOrdering.Context
     Test.Service.EventStore.GlobalStreamOrdering.Spec
