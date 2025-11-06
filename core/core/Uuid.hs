@@ -1,6 +1,7 @@
 module Uuid (
   Uuid,
   generate,
+  toLegacy,
 ) where
 
 import Basics
@@ -19,3 +20,7 @@ generate :: Task _ Uuid
 generate = do
   uuid <- Task.fromIO V4.nextRandom
   Task.yield (Uuid uuid)
+
+
+toLegacy :: Uuid -> UUID.UUID
+toLegacy (Uuid uuid) = uuid

@@ -42,6 +42,7 @@ module Array (
   take,
   drop,
   indexed,
+  getJusts,
 
   -- * Partitioning?
   partitionBy,
@@ -627,3 +628,25 @@ minimum (Array vector) =
   if Data.Vector.null vector
     then Nothing
     else Just (Data.Vector.minimum vector)
+
+
+-- | Extract all `Just` values from an array of `Maybe` values, discarding `Nothing`.
+--
+-- >>> getJusts (fromLinkedList [Just 1, Nothing, Just 3, Nothing, Just 5] :: Array (Maybe Int))
+-- Array [1,3,5]
+-- >>> getJusts (fromLinkedList [Nothing, Nothing] :: Array (Maybe Int))
+-- Array []
+-- >>> getJusts (fromLinkedList [Just 1, Just 2] :: Array (Maybe Int))
+-- Array [1,2]
+-- >>> getJusts (fromLinkedList [] :: Array (Maybe Int))
+-- Array []
+getJusts :: forall (value :: Type). Array (Maybe value) -> Array value
+getJusts array = do
+  let filterJusts maybeValue = case maybeValue of
+        Just _ -> True
+        Nothing -> False
+  let unwrapJust maybeValue = case maybeValue of
+        Just value -> value
+        Nothing -> Prelude.undefined
+  let justValues = takeIf filterJusts array
+  map unwrapJust justValues
