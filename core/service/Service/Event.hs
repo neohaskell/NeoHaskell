@@ -89,7 +89,7 @@ data InsertionSuccess = InsertionSuccess
 
 data InsertionFailure
   = ConsistencyCheckFailed
-  | InsertionFailed
+  | InsertionFailed Text
   | PayloadTooLarge
   | EmptyPayload
   deriving (Eq, Show, Ord, Generic)

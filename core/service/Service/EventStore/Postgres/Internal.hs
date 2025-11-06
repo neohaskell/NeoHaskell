@@ -7,6 +7,7 @@ module Service.EventStore.Postgres.Internal (
 
 import Array qualified
 import Core
+import Default ()
 import Hasql.Connection qualified as Hasql
 import Hasql.Connection.Setting qualified as ConnectionSetting
 import Hasql.Connection.Setting.Connection qualified as ConnectionSettingConnection
@@ -58,8 +59,8 @@ defaultOps = do
           |> Task.map Sessions.Connection
 
   let initializeTable connection =
-        connection
-          |> Sessions.run Sessions.createEventsTableSession
+        Sessions.createEventsTableSession
+          |> Sessions.run connection
           |> Task.mapError toText
           |> discard
 
@@ -93,12 +94,15 @@ new ops cfg = do
 
 insertImpl :: Ops -> Config -> InsertionPayload eventType -> Task Error InsertionSuccess
 insertImpl ops cfg payload = do
-  conn <- ops.acquire cfg |> Task.mapError (InsertionError InsertionFailed |> always)
+  conn <- ops.acquire cfg |> Task.mapError (toText .> InsertionFailed .> InsertionError)
   let payloadEventIds =
         payload.insertions
           |> Array.map (\i -> i.metadata.eventId)
 
-  alreadyExistingIds <- Sessions.selectExistingIdsSession
+  alreadyExistingIds <-
+    Sessions.selectExistingIdsSession payloadEventIds
+      |> Sessions.run conn
+      |> Task.mapError (toText .> InsertionFailed .> InsertionError)
 
   let insertionsCount = payload.insertions |> Array.length
 
@@ -110,7 +114,7 @@ insertImpl ops cfg payload = do
     then Task.throw (InsertionError PayloadTooLarge)
     else pass
 
-  Task.throw (InsertionError InsertionFailed)
+  Task.throw (InsertionError (InsertionFailed "woops"))
 
 
 readStreamForwardFromImpl :: EntityName -> StreamId -> StreamPosition -> Limit -> Task Error (Array (Event eventType))

@@ -1,10 +1,17 @@
 module Service.EventStore.Postgres.Internal.Sessions where
 
+import Array qualified
 import Core
+import Data.UUID qualified as UUID
+import Data.Vector (Vector)
 import Hasql.Connection qualified as Hasql
 import Hasql.Session qualified as Session
+import Hasql.Statement qualified as Hasql
+import Hasql.TH qualified as TH
+import Mappable qualified
 import Result qualified
 import Task qualified
+import Uuid qualified
 
 
 data Connection
@@ -12,8 +19,12 @@ data Connection
   | MockConnection
 
 
-run :: (Default result) => Session.Session result -> Connection -> Task Session.SessionError result
-run session connection = do
+run ::
+  (Default result) =>
+  Connection ->
+  Session.Session result ->
+  Task Session.SessionError result
+run connection session = do
   case connection of
     MockConnection ->
       Task.yield defaultValue
@@ -44,3 +55,30 @@ createEventsTableSession =
                 CONSTRAINT UK_Events_Stream UNIQUE (Entity, InlinedStreamId, LocalPosition)
             )
           |]
+
+
+selectExistingIdsSession :: Array Uuid -> Session.Session (Array Uuid)
+selectExistingIdsSession ids = do
+  let s :: Hasql.Statement (Vector UUID.UUID) (Vector UUID.UUID) =
+        [TH.vectorStatement|
+    SELECT EventId :: uuid
+    FROM Events
+    WHERE EventId IN ($1 :: uuid[])
+  |]
+  let params = toLegacyUuids ids
+  Session.statement params s
+    |> Mappable.map fromLegacyUuids
+
+
+toLegacyUuids :: Array Uuid -> Vector UUID.UUID
+toLegacyUuids ids =
+  ids
+    |> Array.map (Uuid.toLegacy)
+    |> Array.unwrap
+
+
+fromLegacyUuids :: Vector UUID.UUID -> Array Uuid
+fromLegacyUuids legacyIds =
+  legacyIds
+    |> Array.fromLegacy
+    |> Array.map (Uuid.fromLegacy)

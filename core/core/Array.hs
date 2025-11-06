@@ -64,6 +64,7 @@ module Array (
 import Basics
 import Collection (Collection (..))
 import Control.Monad qualified
+import Data.Default (Default (..))
 import Data.Foldable qualified
 import Data.Vector ((!?), (++), (//))
 import Data.Vector qualified
@@ -83,6 +84,10 @@ import Prelude qualified
 -- dream up.
 newtype Array a = Array (Data.Vector.Vector a)
   deriving (Prelude.Eq, Prelude.Show, Prelude.Ord, Prelude.Functor, Generic)
+
+
+instance (Default a) => Default (Array a) where
+  def = fromLinkedList [def, def, def]
 
 
 instance Collection Array where
