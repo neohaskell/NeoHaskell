@@ -9,8 +9,9 @@ import Hasql.Session qualified as Session
 import Hasql.Statement qualified as Hasql
 import Hasql.TH qualified as TH
 import Mappable qualified
+import Maybe qualified
 import Result qualified
-import Service.Event (EntityName, StreamId, StreamPosition)
+import Service.Event (EntityName (..), StreamId (..), StreamPosition (..))
 import Task qualified
 import Uuid qualified
 
@@ -88,5 +89,20 @@ fromLegacyUuids legacyIds =
 selectLatestEventInStream ::
   EntityName ->
   StreamId ->
-  Session.Session (StreamPosition, StreamPosition)
-selectLatestEventInStream = panic "selectLatestEventInStream : not implemented"
+  Session.Session (Maybe (StreamPosition, StreamPosition))
+selectLatestEventInStream (EntityName entityName) (StreamId streamId) = do
+  let s :: Hasql.Statement (Text, Text) (Maybe (Int64, Int64)) =
+        [TH.maybeStatement|
+    SELECT GlobalPosition :: int8, LocalPosition :: int8
+    FROM Events
+    WHERE Entity = $1 :: text AND InlinedStreamId = $2 :: text
+    ORDER BY LocalPosition DESC
+    LIMIT 1
+  |]
+  let streamIdText = Uuid.toText streamId
+  let params = (entityName, streamIdText)
+  Session.statement params s
+    |> Mappable.map
+      ( Maybe.map \(globalPos, localPos) ->
+          (StreamPosition globalPos, StreamPosition localPos)
+      )

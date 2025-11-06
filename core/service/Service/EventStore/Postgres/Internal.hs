@@ -12,7 +12,7 @@ import Hasql.Connection qualified as Hasql
 import Hasql.Connection.Setting qualified as ConnectionSetting
 import Hasql.Connection.Setting.Connection qualified as ConnectionSettingConnection
 import Hasql.Connection.Setting.Connection.Param qualified as Param
-import Result qualified
+import Maybe qualified
 import Service.Event
 import Service.Event.EventMetadata (EventMetadata (..))
 import Service.EventStore.Core
@@ -118,16 +118,25 @@ insertImpl ops cfg payload = do
     then Task.throw (InsertionError PayloadTooLarge)
     else pass
 
-  latestStreamEvent <-
+  latestPositions <-
     Sessions.selectLatestEventInStream payload.entityName payload.streamId
       |> Sessions.run conn
       |> Task.mapError (toText .> InsertionFailed .> InsertionError)
 
   if insertionsCount <= 0
-    then Task.throw (InsertionError EmptyPayload)
-    else pass
-
-  Task.throw (InsertionError (InsertionFailed "woops"))
+    then do
+      let (latestGlobalPos, latestLocalPos) =
+            latestPositions |> Maybe.withDefault (StreamPosition 0, StreamPosition 0)
+      Task.yield InsertionSuccess {localPosition = latestLocalPos, globalPosition = latestGlobalPos}
+    else do
+      let offset =
+            case payload.insertionType of
+              InsertAfter (StreamPosition pos) -> pos + 1
+              _ ->
+                latestPositions
+                  |> Maybe.map (\(_, StreamPosition localPos) -> localPos + 1)
+                  |> Maybe.withDefault 0
+      Task.throw (InsertionError (InsertionFailed "woops"))
 
 
 readStreamForwardFromImpl :: EntityName -> StreamId -> StreamPosition -> Limit -> Task Error (Array (Event eventType))

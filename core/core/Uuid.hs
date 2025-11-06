@@ -3,10 +3,12 @@ module Uuid (
   generate,
   toLegacy,
   fromLegacy,
+  toText,
 ) where
 
 import Basics
 import Data.Default (Default (..))
+import Data.Text (Text)
 import Data.UUID qualified as UUID
 import Data.UUID.V4 qualified as V4
 import Task (Task)
@@ -34,3 +36,8 @@ toLegacy (Uuid uuid) = uuid
 
 fromLegacy :: UUID.UUID -> Uuid
 fromLegacy uuid = Uuid uuid
+
+
+toText :: Uuid -> Text
+toText (Uuid uuid) = do
+  UUID.toText uuid
