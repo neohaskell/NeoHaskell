@@ -105,8 +105,8 @@ selectLatestEventInStream (EntityName entityName) (StreamId streamId) = do
   let s :: Hasql.Statement (Text, Text) (Maybe (Int64, Int64)) =
         [TH.maybeStatement|
     SELECT GlobalPosition :: int8, LocalPosition :: int8
-    FROM events
-    WHERE entity = $1 :: text AND InlinedStreamId = $2 :: text
+    FROM Events
+    WHERE Entity = $1 :: text AND InlinedStreamId = $2 :: text
     ORDER BY LocalPosition DESC
     LIMIT 1
   |]
