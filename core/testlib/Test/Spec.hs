@@ -58,10 +58,10 @@ it name block =
 {-# INLINE it #-}
 
 
--- | Define a test case
+-- | Define a focused test case (runs only this test)
 only_it :: Text -> (context -> Task Text Unit) -> Spec context
 only_it name block =
-  Hspec.xit (Text.toLinkedList name) \context -> do
+  Hspec.fit (Text.toLinkedList name) \context -> do
     block context |> Task.runOrPanic
 {-# INLINE only_it #-}
 
