@@ -157,7 +157,8 @@ insertImpl store payload = do
         then do
           globalIndex <-
             store.globalStream
-              |> DurableChannel.writeWithIndex (\index -> payload |> fromInsertionPayload (fromIntegral index |> StreamPosition) streamLength)
+              |> DurableChannel.writeWithIndex
+                (\index -> payload |> fromInsertionPayload (fromIntegral index |> StreamPosition) streamLength)
 
           let globalPosition = StreamPosition (fromIntegral globalIndex)
           let finalEvents = payload |> fromInsertionPayload globalPosition streamLength
@@ -469,10 +470,10 @@ notifySubscriberSafely handler event = do
 truncateStreamImpl :: StreamStore eventType -> EntityName -> StreamId -> StreamPosition -> Task Error Unit
 truncateStreamImpl store entityName streamId position = do
   let streams = store.streams
-  let foo ::
+  let performTruncation ::
         Map (EntityName, StreamId) (DurableChannel (Event eventType)) ->
         Task Never (Map (EntityName, StreamId) (DurableChannel (Event eventType)), Maybe Error)
-      foo streamMap = do
+      performTruncation streamMap = do
         let key = (entityName, streamId)
         case streamMap |> Map.get key of
           Nothing -> Task.yield (streamMap, StreamNotFound entityName streamId |> Just)
@@ -480,7 +481,7 @@ truncateStreamImpl store entityName streamId position = do
             chan |> DurableChannel.modify (Array.dropWhile (\p -> p.metadata.localPosition < Just position))
             Task.yield (streamMap, Nothing)
 
-  maybeErr <- streams |> ConcurrentVar.modifyReturning foo
+  maybeErr <- streams |> ConcurrentVar.modifyReturning performTruncation
   case maybeErr of
     Nothing -> pass
     Just err -> Task.throw err
