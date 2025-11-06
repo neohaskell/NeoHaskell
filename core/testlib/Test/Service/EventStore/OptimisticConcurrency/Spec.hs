@@ -260,7 +260,6 @@ spec newStore = do
         entityNameText <- Uuid.generate |> Task.map toText
         let entityName = Event.EntityName entityNameText
 
-        -- Create 10 events with specific IDs (same as C# EventCount)
         eventsToInsert <-
           Array.fromLinkedList [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
             |> Task.mapArray
