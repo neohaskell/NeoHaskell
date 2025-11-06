@@ -114,12 +114,17 @@ insertImpl ops cfg payload = do
 
   let insertionsCount = insertions |> Array.length
 
-  if insertionsCount <= 0
-    then Task.throw (InsertionError EmptyPayload)
-    else pass
-
   if insertionsCount > 100
     then Task.throw (InsertionError PayloadTooLarge)
+    else pass
+
+  latestStreamEvent <-
+    Sessions.selectLatestEventInStream payload.entityName payload.streamId
+      |> Sessions.run conn
+      |> Task.mapError (toText .> InsertionFailed .> InsertionError)
+
+  if insertionsCount <= 0
+    then Task.throw (InsertionError EmptyPayload)
     else pass
 
   Task.throw (InsertionError (InsertionFailed "woops"))

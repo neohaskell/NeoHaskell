@@ -10,6 +10,7 @@ import Hasql.Statement qualified as Hasql
 import Hasql.TH qualified as TH
 import Mappable qualified
 import Result qualified
+import Service.Event (EntityName, StreamId, StreamPosition)
 import Task qualified
 import Uuid qualified
 
@@ -82,3 +83,10 @@ fromLegacyUuids legacyIds =
   legacyIds
     |> Array.fromLegacy
     |> Array.map (Uuid.fromLegacy)
+
+
+selectLatestEventInStream ::
+  EntityName ->
+  StreamId ->
+  Session.Session (StreamPosition, StreamPosition)
+selectLatestEventInStream = panic "selectLatestEventInStream : not implemented"

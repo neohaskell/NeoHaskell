@@ -15,3 +15,7 @@ new position = do
   if position < 0
     then Nothing
     else Just (StreamPosition position)
+
+
+instance Default StreamPosition where
+  def = StreamPosition 0
