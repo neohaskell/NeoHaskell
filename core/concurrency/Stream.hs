@@ -33,6 +33,7 @@ data StreamMessage value
 
 -- | Stream is a Channel of StreamMessages
 newtype Stream value = Stream (Channel (StreamMessage value))
+  deriving (Show)
 
 
 -- | Create a new stream
