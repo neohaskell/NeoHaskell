@@ -8,6 +8,7 @@ import Service.Event qualified as Event
 import Service.Event.EventMetadata (EventMetadata (..))
 import Service.EventStore (EventStore (..))
 import Service.EventStore.Core qualified as EventStore
+import Stream qualified
 import Task qualified
 import Test
 import Test.Service.EventStore.Core (MyEvent, newInsertion)
@@ -46,6 +47,7 @@ spec newStore = do
         eventsBeforeTruncate <-
           context.store.readStreamForwardFrom entityName context.streamId (Event.StreamPosition 0) (EventStore.Limit 20)
             |> Task.mapError toText
+            |> Task.andThen Stream.toArray
 
         eventsBeforeTruncate
           |> Array.length
@@ -60,6 +62,7 @@ spec newStore = do
         eventsAfterTruncate <-
           context.store.readStreamForwardFrom entityName context.streamId (Event.StreamPosition 0) (EventStore.Limit 20)
             |> Task.mapError toText
+            |> Task.andThen Stream.toArray
 
         -- Should have 5 events remaining (positions 5, 6, 7, 8, 9)
         let expectedCount = eventCount - (eventCount // 2)
@@ -109,6 +112,7 @@ spec newStore = do
         eventsAfterTruncate <-
           context.store.readStreamForwardFrom entityName context.streamId (Event.StreamPosition 0) (EventStore.Limit 20)
             |> Task.mapError toText
+            |> Task.andThen Stream.toArray
 
         eventsAfterTruncate
           |> Array.length
@@ -144,6 +148,7 @@ spec newStore = do
         eventsAfterTruncate <-
           context.store.readStreamForwardFrom entityName context.streamId (Event.StreamPosition 0) (EventStore.Limit 20)
             |> Task.mapError toText
+            |> Task.andThen Stream.toArray
 
         eventsAfterTruncate
           |> Array.length

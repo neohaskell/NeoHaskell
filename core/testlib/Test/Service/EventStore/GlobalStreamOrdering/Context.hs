@@ -5,6 +5,7 @@ import Core
 import Service.Event (Event (..))
 import Service.Event qualified as Event
 import Service.EventStore (EventStore (..))
+import Stream qualified
 import Task qualified
 import Test.Service.EventStore.Core (MyEvent (..), newInsertion)
 import Uuid qualified
@@ -62,9 +63,11 @@ initialize newStore streamCount = do
   eventStreams <-
     streamIds
       |> Task.mapArray
-        ( \(entityName, streamId) ->
-            store.readAllStreamEvents entityName streamId
-              |> Task.mapError toText
+        ( \(entityName, streamId) -> do
+            stream <-
+              store.readAllStreamEvents entityName streamId
+                |> Task.mapError toText
+            Stream.toArray stream
         )
 
   Task.yield

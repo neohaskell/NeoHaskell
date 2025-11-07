@@ -11,6 +11,7 @@ import Service.Event.EventMetadata (EventMetadata (..))
 import Service.Event.EventMetadata qualified as EventMetadata
 import Service.EventStore (EventStore)
 import Service.EventStore.Core qualified as EventStore
+import Stream qualified
 import Task qualified
 import Test
 import Test.Service.EventStore.Core (MyEvent (..))
@@ -119,6 +120,7 @@ spec newStore = do
         events <-
           context.store.readStreamForwardFrom entityName context.streamId (Event.StreamPosition 0) (EventStore.Limit (10))
             |> Task.mapError toText
+            |> Task.andThen Stream.toArray
 
         -- We should have exactly 2 events (initial + one successful append)
         events
@@ -245,6 +247,7 @@ spec newStore = do
         finalEvents <-
           context.store.readStreamForwardFrom entityName context.streamId (Event.StreamPosition 0) (EventStore.Limit 10)
             |> Task.mapError toText
+            |> Task.andThen Stream.toArray
 
         finalEvents
           |> Array.length
@@ -305,6 +308,7 @@ spec newStore = do
         finalEvents <-
           context.store.readStreamForwardFrom entityName context.streamId (Event.StreamPosition 0) (EventStore.Limit 20)
             |> Task.mapError toText
+            |> Task.andThen Stream.toArray
 
         -- Should have exactly 10 events (idempotency - no duplicates)
         finalEvents
@@ -412,6 +416,7 @@ spec newStore = do
         allGlobalEvents <-
           context.store.readAllEventsForwardFrom (Event.StreamPosition 0) (EventStore.Limit 100)
             |> Task.mapError toText
+            |> Task.andThen Stream.toArray
 
         -- Filter to only events from this test (matching our entity name)
         let ourEvents =
@@ -428,6 +433,7 @@ spec newStore = do
         streamEvents <-
           context.store.readStreamForwardFrom entityName context.streamId (Event.StreamPosition 0) (EventStore.Limit 10)
             |> Task.mapError toText
+            |> Task.andThen Stream.toArray
 
         -- The individual stream should only have the events that passed the consistency check
         streamEvents

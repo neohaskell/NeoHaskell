@@ -11,6 +11,7 @@ import Service.Event qualified as Event
 import Service.Event.EventMetadata (EventMetadata (..))
 import Service.EventStore (EventStore (..))
 import Service.EventStore.Core qualified as EventStore
+import Stream qualified
 import Task qualified
 import Test
 import Test.Service.EventStore.Core (MyEvent, newInsertion)
@@ -229,6 +230,7 @@ spec newStore = do
             (Event.StreamPosition 0)
             (EventStore.Limit 1)
             |> Task.mapError toText
+            |> Task.andThen Stream.toArray
 
         events
           |> Array.length

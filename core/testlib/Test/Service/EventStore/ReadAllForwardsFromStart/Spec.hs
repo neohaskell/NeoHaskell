@@ -8,6 +8,7 @@ import Service.Event qualified as Event
 import Service.Event.EventMetadata (EventMetadata (..))
 import Service.EventStore (EventStore (..))
 import Service.EventStore.Core qualified as EventStore
+import Stream qualified
 import Task qualified
 import Test
 import Test.Service.EventStore.Core (MyEvent)
@@ -39,6 +40,7 @@ specWithCount newStore eventCount = do
         events <-
           context.store.readAllEventsForwardFrom startPosition limit
             |> Task.mapError toText
+            |> Task.andThen Stream.toArray
 
         Array.length events
           |> shouldBe (context.eventCount * 2)
@@ -49,6 +51,7 @@ specWithCount newStore eventCount = do
         events <-
           context.store.readAllEventsForwardFrom startPosition limit
             |> Task.mapError toText
+            |> Task.andThen Stream.toArray
 
         let positions = events |> Array.map (\e -> e.metadata.globalPosition |> Maybe.getOrDie)
         positions |> shouldHaveIncreasingOrder
@@ -60,6 +63,7 @@ specWithCount newStore eventCount = do
         events <-
           context.store.readStreamForwardFrom context.entity1Id context.streamId startPosition limit
             |> Task.mapError toText
+            |> Task.andThen Stream.toArray
 
         let eventsFromEntity = events |> Array.takeIf (\event -> event.entityName == context.entity1Id)
         eventsFromEntity
@@ -76,6 +80,7 @@ specWithCount newStore eventCount = do
               batch <-
                 context.store.readAllEventsForwardFrom currentPosition (EventStore.Limit batchSize)
                   |> Task.mapError toText
+                  |> Task.andThen Stream.toArray
 
               case Array.length batch of
                 0 ->
@@ -99,6 +104,7 @@ specWithCount newStore eventCount = do
         allEventsSingle <-
           context.store.readAllEventsForwardFrom (Event.StreamPosition 0) (EventStore.Limit totalEvents)
             |> Task.mapError toText
+            |> Task.andThen Stream.toArray
 
         -- Should have same number of events
         Array.length allEventsBatched
@@ -119,6 +125,7 @@ specWithCount newStore eventCount = do
         firstEvents <-
           context.store.readAllEventsForwardFrom (Event.StreamPosition 0) limit
             |> Task.mapError toText
+            |> Task.andThen Stream.toArray
 
         case Array.get (fromIntegral (skipCount - 1)) firstEvents of
           Nothing ->
@@ -133,6 +140,7 @@ specWithCount newStore eventCount = do
             remainingEvents <-
               context.store.readAllEventsForwardFrom readFromPosition remainingLimit
                 |> Task.mapError toText
+                |> Task.andThen Stream.toArray
 
             -- Should get exactly (totalEvents - skipCount) events
             let expectedRemaining = (context.eventCount * 2 |> fromIntegral) - skipCount
@@ -155,6 +163,7 @@ specWithCount newStore eventCount = do
         filteredEvents <-
           context.store.readAllEventsForwardFromFiltered startPosition limit entityFilter
             |> Task.mapError toText
+            |> Task.andThen Stream.toArray
 
         -- Should only contain events from entity1
         filteredEvents |> Task.forEach \event -> do
@@ -176,6 +185,7 @@ specWithCount newStore eventCount = do
         filteredEvents <-
           context.store.readAllEventsForwardFromFiltered startPosition limit entityFilter
             |> Task.mapError toText
+            |> Task.andThen Stream.toArray
 
         -- Should contain events from both entities
         let entity1Events = filteredEvents |> Array.takeIf (\e -> e.entityName == context.entity1Id)
@@ -199,6 +209,7 @@ specWithCount newStore eventCount = do
         firstEvents <-
           context.store.readAllEventsForwardFrom (Event.StreamPosition 0) firstLimit
             |> Task.mapError toText
+            |> Task.andThen Stream.toArray
 
         case Array.get (fromIntegral (skipCount - 1)) firstEvents of
           Nothing ->
@@ -213,6 +224,7 @@ specWithCount newStore eventCount = do
             filteredEvents <-
               context.store.readAllEventsForwardFromFiltered readFromPosition limit entityFilter
                 |> Task.mapError toText
+                |> Task.andThen Stream.toArray
 
             -- Should only contain events from entity1
             filteredEvents |> Task.forEach \event -> do
@@ -236,6 +248,7 @@ specWithCount newStore eventCount = do
         filteredEvents <-
           context.store.readAllEventsForwardFromFiltered startPosition limit entityFilter
             |> Task.mapError toText
+            |> Task.andThen Stream.toArray
 
         Array.length filteredEvents
           |> shouldBe 0
@@ -248,6 +261,7 @@ specWithCount newStore eventCount = do
         filteredEvents <-
           context.store.readAllEventsForwardFromFiltered startPosition smallLimit entityFilter
             |> Task.mapError toText
+            |> Task.andThen Stream.toArray
 
         -- Should return exactly 3 events (the limit)
         Array.length filteredEvents
@@ -267,11 +281,13 @@ specWithCount newStore eventCount = do
         allEvents <-
           context.store.readAllEventsForwardFrom startPosition limit
             |> Task.mapError toText
+            |> Task.andThen Stream.toArray
 
         -- Get filtered events
         filteredEvents <-
           context.store.readAllEventsForwardFromFiltered startPosition limit entityFilter
             |> Task.mapError toText
+            |> Task.andThen Stream.toArray
 
         -- Filtered events should be exactly the same as all events (since we're filtering by both entities)
         filteredEvents |> shouldBe allEvents

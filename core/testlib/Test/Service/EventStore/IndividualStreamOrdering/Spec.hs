@@ -8,6 +8,7 @@ import Service.Event qualified as Event
 import Service.Event.EventMetadata (EventMetadata (..))
 import Service.EventStore (EventStore)
 import Service.EventStore.Core qualified as EventStore
+import Stream qualified
 import Task qualified
 import Test
 import Test.Service.EventStore.Core (MyEvent)
@@ -38,6 +39,7 @@ specWithCount newStore eventCount = do
         events <-
           context.store.readStreamForwardFrom context.entityName context.streamId startPosition limit
             |> Task.mapError toText
+            |> Task.andThen Stream.toArray
         Array.length events
           |> fromIntegral
           |> shouldBe context.eventCount
@@ -48,6 +50,7 @@ specWithCount newStore eventCount = do
         events <-
           context.store.readStreamForwardFrom context.entityName context.streamId startPosition limit
             |> Task.mapError toText
+            |> Task.andThen Stream.toArray
         events
           |> Array.map
             ( \event ->
@@ -62,6 +65,7 @@ specWithCount newStore eventCount = do
         events <-
           context.store.readStreamForwardFrom context.entityName context.streamId startPosition limit
             |> Task.mapError toText
+            |> Task.andThen Stream.toArray
 
         -- Validate the important properties without hardcoding global positions
         -- since global positions are assigned dynamically based on append order
@@ -89,6 +93,7 @@ specWithCount newStore eventCount = do
         events <-
           context.store.readStreamForwardFrom context.entityName context.streamId startPosition limit
             |> Task.mapError toText
+            |> Task.andThen Stream.toArray
 
         -- Global positions should be strictly increasing
         let globalPositions = events |> Array.map (\e -> e.metadata.globalPosition |> Maybe.getOrDie)
@@ -112,6 +117,7 @@ specWithCount newStore eventCount = do
         eventsFromMiddle <-
           context.store.readStreamForwardFrom context.entityName context.streamId startPosition limit
             |> Task.mapError toText
+            |> Task.andThen Stream.toArray
 
         -- Should read exactly the second half of events
         let expectedRemainingCount = (fromIntegral context.eventCount) - halfwayPoint
@@ -140,6 +146,7 @@ specWithCount newStore eventCount = do
         eventsBackward <-
           context.store.readStreamBackwardFrom context.entityName context.streamId readFromPosition limit
             |> Task.mapError toText
+            |> Task.andThen Stream.toArray
 
         -- Test expects exactly half the events (not including the readFromPosition)
         -- For 10 events (0-9), reading backward from position 6 with < gives us positions 0-5 (6 events)
@@ -176,6 +183,7 @@ specWithCount newStore eventCount = do
         allEventsBackward <-
           context.store.readStreamBackwardFrom context.entityName context.streamId endPosition limit
             |> Task.mapError toText
+            |> Task.andThen Stream.toArray
 
         -- Should read all events in the stream
         Array.length allEventsBackward |> fromIntegral |> shouldBe context.eventCount

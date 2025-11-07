@@ -23,6 +23,8 @@ import Service.Event.EventMetadata (EventMetadata (..))
 import Service.Event.StreamId qualified as StreamId
 import Service.EventStore.Core
 import Service.EventStore.Postgres.Internal.Sessions qualified as Sessions
+import Stream (Stream)
+import Stream qualified
 import Task qualified
 import Text qualified
 
@@ -231,24 +233,34 @@ insertGo ops cfg payload = do
           Task.yield (InsertionSuccess {localPosition, globalPosition})
 
 
-readStreamForwardFromImpl :: EntityName -> StreamId -> StreamPosition -> Limit -> Task Error (Array (Event eventType))
-readStreamForwardFromImpl _ _ _ _ = panic "Postgres.readStreamForwardFromImpl - Not implemented yet" |> Task.yield
+readStreamForwardFromImpl :: EntityName -> StreamId -> StreamPosition -> Limit -> Task Error (Stream (Event eventType))
+readStreamForwardFromImpl _ _ _ _ = do
+  _ <- panic "Postgres.readStreamForwardFromImpl - Not implemented yet"
+  Stream.fromArray Array.empty
 
 
-readStreamBackwardFromImpl :: EntityName -> StreamId -> StreamPosition -> Limit -> Task Error (Array (Event eventType))
-readStreamBackwardFromImpl _ _ _ _ = panic "Postgres.readStreamBackwardFromImpl - Not implemented yet" |> Task.yield
+readStreamBackwardFromImpl :: EntityName -> StreamId -> StreamPosition -> Limit -> Task Error (Stream (Event eventType))
+readStreamBackwardFromImpl _ _ _ _ = do
+  _ <- panic "Postgres.readStreamBackwardFromImpl - Not implemented yet"
+  Stream.fromArray Array.empty
 
 
-readAllStreamEventsImpl :: EntityName -> StreamId -> Task Error (Array (Event eventType))
-readAllStreamEventsImpl _ _ = panic "Postgres.readAllStreamEventsImpl - Not implemented yet" |> Task.yield
+readAllStreamEventsImpl :: EntityName -> StreamId -> Task Error (Stream (Event eventType))
+readAllStreamEventsImpl _ _ = do
+  _ <- panic "Postgres.readAllStreamEventsImpl - Not implemented yet"
+  Stream.fromArray Array.empty
 
 
-readAllEventsForwardFromImpl :: StreamPosition -> Limit -> Task Error (Array (Event eventType))
-readAllEventsForwardFromImpl _ _ = panic "Postgres.readAllEventsForwardFromImpl - Not implemented yet" |> Task.yield
+readAllEventsForwardFromImpl :: StreamPosition -> Limit -> Task Error (Stream (Event eventType))
+readAllEventsForwardFromImpl _ _ = do
+  _ <- panic "Postgres.readAllEventsForwardFromImpl - Not implemented yet"
+  Stream.fromArray Array.empty
 
 
-readAllEventsBackwardFromImpl :: StreamPosition -> Limit -> Task Error (Array (Event eventType))
-readAllEventsBackwardFromImpl _ _ = panic "Postgres.readAllEventsBackwardFromImpl - Not implemented yet" |> Task.yield
+readAllEventsBackwardFromImpl :: StreamPosition -> Limit -> Task Error (Stream (Event eventType))
+readAllEventsBackwardFromImpl _ _ = do
+  _ <- panic "Postgres.readAllEventsBackwardFromImpl - Not implemented yet"
+  Stream.fromArray Array.empty
 
 
 -- data RelativePosition
@@ -310,13 +322,17 @@ readAllEventsBackwardFromImpl _ _ = panic "Postgres.readAllEventsBackwardFromImp
 --   Task.yield (panic "performReadAllStreamEvents: Not implemented yet")
 
 readAllEventsForwardFromFilteredImpl ::
-  StreamPosition -> Limit -> Array EntityName -> Task Error (Array (Event eventType))
-readAllEventsForwardFromFilteredImpl _ _ _ = panic "Postgres.readAllEventsForwardFromFilteredImpl - Not implemented yet" |> Task.yield
+  StreamPosition -> Limit -> Array EntityName -> Task Error (Stream (Event eventType))
+readAllEventsForwardFromFilteredImpl _ _ _ = do
+  _ <- panic "Postgres.readAllEventsForwardFromFilteredImpl - Not implemented yet"
+  Stream.fromArray Array.empty
 
 
 readAllEventsBackwardFromFilteredImpl ::
-  StreamPosition -> Limit -> Array EntityName -> Task Error (Array (Event eventType))
-readAllEventsBackwardFromFilteredImpl _ _ _ = panic "Postgres.readAllEventsBackwardFromFilteredImpl - Not implemented yet" |> Task.yield
+  StreamPosition -> Limit -> Array EntityName -> Task Error (Stream (Event eventType))
+readAllEventsBackwardFromFilteredImpl _ _ _ = do
+  _ <- panic "Postgres.readAllEventsBackwardFromFilteredImpl - Not implemented yet"
+  Stream.fromArray Array.empty
 
 
 subscribeToAllEventsImpl :: (Event eventType -> Task Error Unit) -> Task Error SubscriptionId

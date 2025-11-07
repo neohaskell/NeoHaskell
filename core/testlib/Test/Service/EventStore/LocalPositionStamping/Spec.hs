@@ -11,6 +11,7 @@ import Service.Event.EventMetadata (EventMetadata (..))
 import Service.Event.EventMetadata qualified as EventMetadata
 import Service.EventStore (EventStore)
 import Service.EventStore.Core qualified as EventStore
+import Stream qualified
 import Task qualified
 import Test
 import Test.Service.EventStore.Core (MyEvent (..))
@@ -42,6 +43,7 @@ spec newStore = do
       storedEvents <-
         store.readStreamForwardFrom entityName streamId startPosition limit
           |> Task.mapError toText
+          |> Task.andThen Stream.toArray
 
       -- Verify we got 3 events back
       Array.length storedEvents |> shouldBe 3
@@ -107,7 +109,7 @@ spec newStore = do
       _result2 <- store.insert payload2 |> Task.mapError toText
 
       -- Read all events
-      allEvents <- store.readAllStreamEvents entityName streamId |> Task.mapError toText
+      allEvents <- store.readAllStreamEvents entityName streamId |> Task.mapError toText |> Task.andThen Stream.toArray
       Array.length allEvents |> shouldBe 5
 
       -- Verify local positions are sequential from 0 to 4
@@ -171,7 +173,7 @@ spec newStore = do
       _result2 <- store.insert payload2 |> Task.mapError toText
 
       -- Read back and verify positions were preserved
-      allEvents <- store.readAllStreamEvents entityName streamId |> Task.mapError toText
+      allEvents <- store.readAllStreamEvents entityName streamId |> Task.mapError toText |> Task.andThen Stream.toArray
       Array.length allEvents |> shouldBe 2
 
       -- Both events should have their explicitly-set local positions
@@ -220,7 +222,7 @@ spec newStore = do
       _result <- store.insert payload |> Task.mapError toText
 
       -- Read back events
-      allEvents <- store.readAllStreamEvents entityName streamId |> Task.mapError toText
+      allEvents <- store.readAllStreamEvents entityName streamId |> Task.mapError toText |> Task.andThen Stream.toArray
       Array.length allEvents |> shouldBe 2
 
       -- Events should have auto-assigned sequential positions
