@@ -417,6 +417,7 @@ spec newStore = do
           context.store.readAllEventsForwardFrom (Event.StreamPosition 0) (EventStore.Limit 100)
             |> Task.mapError toText
             |> Task.andThen Stream.toArray
+            |> Task.map EventStore.collectAllEvents
 
         -- Filter to only events from this test (matching our entity name)
         let ourEvents =

@@ -251,13 +251,13 @@ readAllStreamEventsImpl _ _ = do
   Stream.fromArray Array.empty
 
 
-readAllEventsForwardFromImpl :: StreamPosition -> Limit -> Task Error (Stream (Event eventType))
+readAllEventsForwardFromImpl :: StreamPosition -> Limit -> Task Error (Stream (ReadAllMessage eventType))
 readAllEventsForwardFromImpl _ _ = do
   _ <- panic "Postgres.readAllEventsForwardFromImpl - Not implemented yet"
   Stream.fromArray Array.empty
 
 
-readAllEventsBackwardFromImpl :: StreamPosition -> Limit -> Task Error (Stream (Event eventType))
+readAllEventsBackwardFromImpl :: StreamPosition -> Limit -> Task Error (Stream (ReadAllMessage eventType))
 readAllEventsBackwardFromImpl _ _ = do
   _ <- panic "Postgres.readAllEventsBackwardFromImpl - Not implemented yet"
   Stream.fromArray Array.empty
@@ -312,7 +312,7 @@ readAllEventsBackwardFromImpl _ _ = do
 --   Maybe ReadDirection ->
 --   Maybe (Array EntityName) ->
 --   StreamId ->
---   Task PostgresStoreError (Array (Event eventType))
+--   Task PostgresStoreError (Stream (Event eventType))
 -- performReadAllStreamEvents ops cfg relative readDirection entityNames streamId = do
 --   conn <- ops.acquire cfg |> Task.mapError ConnectionAcquisitionError
 --   let direction = toPostgresDirection relative readDirection
@@ -322,14 +322,14 @@ readAllEventsBackwardFromImpl _ _ = do
 --   Task.yield (panic "performReadAllStreamEvents: Not implemented yet")
 
 readAllEventsForwardFromFilteredImpl ::
-  StreamPosition -> Limit -> Array EntityName -> Task Error (Stream (Event eventType))
+  StreamPosition -> Limit -> Array EntityName -> Task Error (Stream (ReadAllMessage eventType))
 readAllEventsForwardFromFilteredImpl _ _ _ = do
   _ <- panic "Postgres.readAllEventsForwardFromFilteredImpl - Not implemented yet"
   Stream.fromArray Array.empty
 
 
 readAllEventsBackwardFromFilteredImpl ::
-  StreamPosition -> Limit -> Array EntityName -> Task Error (Stream (Event eventType))
+  StreamPosition -> Limit -> Array EntityName -> Task Error (Stream (ReadAllMessage eventType))
 readAllEventsBackwardFromFilteredImpl _ _ _ = do
   _ <- panic "Postgres.readAllEventsBackwardFromFilteredImpl - Not implemented yet"
   Stream.fromArray Array.empty

@@ -60,6 +60,7 @@ module Array (
   reverse,
   flatten,
   prepend,
+  pushBack,
 ) where
 
 import Basics
@@ -283,6 +284,15 @@ set i value array = Array result
 push :: a -> Array a -> Array a
 push a (Array vector) =
   Array (Data.Vector.snoc vector a)
+
+
+-- | Prepends an element onto the end of an array.
+--
+-- >>> push 3 (fromLinkedList [1,2] :: Array Int)
+-- Array [1,2,3]
+pushBack :: a -> Array a -> Array a
+pushBack a (Array vector) =
+  Array (Data.Vector.cons a vector)
 
 
 -- | Create a list of elements from an array.

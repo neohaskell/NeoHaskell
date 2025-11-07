@@ -82,7 +82,7 @@ consume ::
   Task Text accumulator
 consume folder initial stream = do
   let loop accumulator = do
-        maybeItem <- readNext stream |> Task.mapError identity
+        maybeItem <- readNext stream
         case maybeItem of
           Nothing -> Task.yield accumulator
           Just item -> do
@@ -103,6 +103,7 @@ toArray stream = do
 fromArray :: Array value -> Task error (Stream value)
 fromArray array = do
   stream <- new
-  Task.forEach (\item -> writeItem item stream) array
+  array
+    |> Task.forEach (\item -> writeItem item stream)
   end stream
   Task.yield stream

@@ -7,6 +7,7 @@ import Service.Event qualified as Event
 import Service.Event.EventMetadata (EventMetadata (..))
 import Service.EventStore (EventStore (..))
 import Service.EventStore qualified as EventStore
+import Service.EventStore.Core qualified as Event
 import Stream qualified
 import Task qualified
 import Test
@@ -59,6 +60,7 @@ spec newStore = do
           context.store.readAllEventsForwardFrom (Event.StreamPosition 0) (EventStore.Limit (expectedTotalEvents))
             |> Task.mapError toText
             |> Task.andThen Stream.toArray
+            |> Task.map Event.collectAllEvents
         allGlobalEvents |> Task.forEach \event -> do
           event.metadata.globalPosition |> shouldSatisfy (\pos -> pos >= (Event.StreamPosition 0 |> Just))
 
@@ -81,6 +83,7 @@ spec newStore = do
           context.store.readAllEventsForwardFrom (Event.StreamPosition 0) (EventStore.Limit (expectedTotalEvents))
             |> Task.mapError toText
             |> Task.andThen Stream.toArray
+            |> Task.map Event.collectAllEvents
         Task.unless ((Array.length allGlobalEvents) <= 1) do
           let eventPairs =
                 allGlobalEvents
