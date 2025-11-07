@@ -27,6 +27,7 @@ common common_cfg
     base,
     bytestring,
     containers,
+    contravariant-extras,
     data-default,
     dir-traverse,
     directory,

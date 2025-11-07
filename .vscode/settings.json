@@ -7,6 +7,7 @@
     "BIGSERIAL",
     "BYTEA",
     "clippy",
+    "contrazip",
     "dbname",
     "Defaultable",
     "devenv",

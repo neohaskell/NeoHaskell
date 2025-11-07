@@ -1,11 +1,17 @@
 module Service.EventStore.Postgres.Internal.Sessions where
 
 import Array qualified
+import Contravariant.Extras qualified as Contravariant
 import Core
+import Data.Functor.Contravariant ((>$<))
 import Data.UUID qualified as UUID
 import Data.Vector (Vector)
+import Data.Vector qualified as Vector
 import Hasql.Connection qualified as Hasql
+import Hasql.Decoders qualified as Decoders
+import Hasql.Encoders qualified as Encoders
 import Hasql.Session qualified as Session
+import Hasql.Statement (Statement (..))
 import Hasql.Statement qualified as Hasql
 import Hasql.TH qualified as TH
 import Json qualified
@@ -61,8 +67,8 @@ createEventsTableSession =
                 LocalPosition BIGINT NOT NULL,
                 InlinedStreamId VARCHAR(4000) NOT NULL,
                 Entity VARCHAR(255) NOT NULL,
-                EventData BYTEA NOT NULL,
-                Metadata BYTEA NULL,
+                EventData JSONB NOT NULL,
+                Metadata JSONB NULL,
                 CONSTRAINT PK_Events PRIMARY KEY (GlobalPosition),
                 CONSTRAINT UK_Events_EventId UNIQUE (EventId),
                 CONSTRAINT UK_Events_Stream UNIQUE (Entity, InlinedStreamId, LocalPosition)
@@ -117,3 +123,38 @@ selectLatestEventInStream (EntityName entityName) (StreamId streamId) = do
       ( Maybe.map \(globalPos, localPos) ->
           (StreamPosition globalPos, StreamPosition localPos)
       )
+
+
+insertRecordsIntoStream ::
+  Array EventInsertionRecord ->
+  Session.Session Unit
+insertRecordsIntoStream events = do
+  let statement :: Statement (Vector EventInsertionRecord) Unit =
+        Statement sql encoder decoder True
+       where
+        sql =
+          "INSERT INTO Events (EventId, LocalPosition, InlinedStreamId, Entity, EventData, Metadata) SELECT * FROM UNNEST ($1, $2, $3, $4, $5, $6)"
+        encoder =
+          extractFields
+            >$< Contravariant.contrazip6
+              (Encoders.param (Encoders.nonNullable (Encoders.foldableArray (Encoders.nonNullable Encoders.uuid))))
+              (Encoders.param (Encoders.nonNullable (Encoders.foldableArray (Encoders.nonNullable Encoders.int8))))
+              (Encoders.param (Encoders.nonNullable (Encoders.foldableArray (Encoders.nonNullable Encoders.text))))
+              (Encoders.param (Encoders.nonNullable (Encoders.foldableArray (Encoders.nonNullable Encoders.text))))
+              (Encoders.param (Encoders.nonNullable (Encoders.foldableArray (Encoders.nonNullable Encoders.jsonb))))
+              (Encoders.param (Encoders.nonNullable (Encoders.foldableArray (Encoders.nonNullable Encoders.jsonb))))
+        decoder =
+          Decoders.noResult
+        extractFields vec =
+          Vector.unzip6
+            ( vec |> Mappable.map \(record :: EventInsertionRecord) ->
+                ( Uuid.toLegacy record.eventId,
+                  record.localPosition,
+                  record.inlinedStreamId,
+                  record.entity,
+                  record.eventData,
+                  record.metadata
+                )
+            )
+  let vectorEvents = events |> Array.unwrap
+  Session.statement vectorEvents statement
