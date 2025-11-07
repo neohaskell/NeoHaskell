@@ -426,26 +426,6 @@ slice from to (Array vector)
   sliceLen = to' - from'
 
 
--- | Applies a function to each element of an array and flattens the resulting arrays into a single array.
---
--- This function takes a function `f` and an array `array`. It applies `f` to each element of `array` and
--- collects the resulting arrays into a single array. The resulting array is then returned.
---
--- The function `f` should take an element of type `a` and return an array of type `Array b`.
---
--- The `flatMap` function is implemented using the `map` and `reduce` functions. First, it applies `f` to each
--- element of `array` using the `map` function. Then, it flattens the resulting arrays into a single array
--- using the `reduce` function with the `append` function as the folding operation and `empty` as the initial
--- value. The resulting array is then returned.
-
--- This function is commonly used in functional programming to apply a function to each element of a nested
--- data structure and flatten the resulting structure into a single level.
--- >>> flatMap (\n -> fromLinkedList [n, n]) (fromLinkedList [1, 2, 3] :: Array Int)
--- Array [1,1,2,2,3,3]
--- >>> flatMap (\n -> if n > 1 then fromLinkedList [show n] else empty) (fromLinkedList [0, 1, 2, 3] :: Array Int)
--- Array ["2","3"]
--- >>> flatMap (\s -> fromLinkedList [s, s]) (empty :: Array String)
--- Array []
 flatMap ::
   -- | The function to apply to each element of the array.
   (a -> Array b) ->
