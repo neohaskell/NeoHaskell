@@ -31,19 +31,20 @@ data StreamMessage value
 
 
 -- | Stream is a Channel of StreamMessages
-type Stream value = Channel (StreamMessage value)
+newtype Stream value = Stream (Channel (StreamMessage value))
 
 
 -- | Create a new stream
 new :: forall value error. Task error (Stream value)
 new =
   Channel.new
+    |> Task.map Stream
 
 
 -- | Read next item from stream (blocks if empty)
 -- Returns Nothing when stream ends, throws error if stream errors
 readNext :: Stream value -> Task Text (Maybe value)
-readNext stream = do
+readNext (Stream stream) = do
   msg <- Channel.read stream
   case msg of
     Item value -> Task.yield (Just value)
@@ -53,20 +54,20 @@ readNext stream = do
 
 -- | Write an item to the stream
 writeItem :: value -> Stream value -> Task error Unit
-writeItem item stream = do
+writeItem item (Stream stream) = do
   let message = Item item
   Channel.write message stream
 
 
 -- | Signal end of stream
 endStream :: Stream value -> Task error Unit
-endStream stream = do
+endStream (Stream stream) = do
   Channel.write EndOfStream stream
 
 
 -- | Signal error in stream
 errorStream :: Text -> Stream value -> Task error Unit
-errorStream err stream = do
+errorStream err (Stream stream) = do
   Channel.write (StreamError err) stream
 
 
@@ -78,13 +79,13 @@ consumeStream ::
   Stream value ->
   Task Text accumulator
 consumeStream folder initial stream = do
-  let loop accum = do
+  let loop accumulator = do
         maybeItem <- readNext stream |> Task.mapError identity
         case maybeItem of
-          Nothing -> Task.yield accum
+          Nothing -> Task.yield accumulator
           Just item -> do
-            nextAccum <- folder accum item
-            loop nextAccum
+            nextAccumulator <- folder accumulator item
+            loop nextAccumulator
       {-# INLINE loop #-}
   loop initial
 
@@ -92,15 +93,4 @@ consumeStream folder initial stream = do
 -- | Convert stream to array
 streamToArray :: Stream value -> Task Text (Array value)
 streamToArray stream = do
-  let loop accumulator = do
-        maybeItem <- readNext stream
-        case maybeItem of
-          Nothing -> do
-            let result = Array.reverse accumulator
-            Task.yield result
-          Just item -> do
-            accumulator
-              |> Array.prepend (Array.wrap item)
-              |> loop
-      {-# INLINE loop #-}
-  loop Array.empty
+  consumeStream (\accumulator item -> Task.yield (Array.push item accumulator)) Array.empty stream
