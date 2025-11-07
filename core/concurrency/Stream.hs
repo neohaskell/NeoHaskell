@@ -35,7 +35,7 @@ type Stream value = Channel (StreamMessage value)
 
 
 -- | Create a new stream
-new :: Task error (Stream value)
+new :: forall value error. Task error (Stream value)
 new =
   Channel.new
 

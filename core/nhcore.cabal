@@ -198,6 +198,7 @@ test-suite nhcore-test
   other-modules:
     Service.EventStore.InMemorySpec
     Service.EventStore.PostgresSpec
+    StreamSpec
     Test.AppSpec.AppSpecSpec
     Test.AppSpec.VerifySpec
 
