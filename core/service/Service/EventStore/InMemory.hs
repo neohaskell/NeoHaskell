@@ -13,7 +13,7 @@ import Maybe qualified
 import Service.Event
 import Service.Event.EventMetadata qualified as EventMetadata
 import Service.EventStore.Core
-import Stream (Stream)
+import Stream (Stream, fromArray)
 import Task qualified
 import Uuid qualified
 
@@ -191,11 +191,13 @@ readStreamForwardFromImpl ::
   Task Error (Stream (Event eventType))
 readStreamForwardFromImpl store entityName streamId position (Limit (limit)) = do
   channel <- store |> ensureStream entityName streamId
-  channel
-    |> DurableChannel.getAndTransform \events ->
-      events
-        |> Array.dropWhile (\event -> event.metadata.localPosition < Just position)
-        |> Array.take (fromIntegral limit)
+  items <-
+    channel
+      |> DurableChannel.getAndTransform \events ->
+        events
+          |> Array.dropWhile (\event -> event.metadata.localPosition < Just position)
+          |> Array.take (fromIntegral limit)
+  Stream.fromArray items
 
 
 readStreamBackwardFromImpl ::
@@ -207,12 +209,14 @@ readStreamBackwardFromImpl ::
   Task Error (Stream (Event eventType))
 readStreamBackwardFromImpl store entityName streamId position (Limit (limit)) = do
   channel <- store |> ensureStream entityName streamId
-  channel
-    |> DurableChannel.getAndTransform \events ->
-      events
-        |> Array.takeIf (\event -> event.metadata.localPosition < Just position)
-        |> Array.reverse
-        |> Array.take (fromIntegral limit)
+  items <-
+    channel
+      |> DurableChannel.getAndTransform \events ->
+        events
+          |> Array.takeIf (\event -> event.metadata.localPosition < Just position)
+          |> Array.reverse
+          |> Array.take (fromIntegral limit)
+  Stream.fromArray items
 
 
 readAllStreamEventsImpl ::
@@ -222,8 +226,10 @@ readAllStreamEventsImpl ::
   Task Error (Stream (Event eventType))
 readAllStreamEventsImpl store entityName streamId = do
   channel <- store |> ensureStream entityName streamId
-  channel
-    |> DurableChannel.getAndTransform unchanged
+  items <-
+    channel
+      |> DurableChannel.getAndTransform unchanged
+  Stream.fromArray items
 
 
 readAllEventsForwardFromImpl ::
@@ -233,7 +239,8 @@ readAllEventsForwardFromImpl ::
   Task Error (Stream (Event eventType))
 readAllEventsForwardFromImpl store (StreamPosition (position)) (Limit (limit)) = do
   allGlobalEvents <- store.globalStream |> DurableChannel.getAndTransform unchanged
-  allGlobalEvents |> Array.drop (fromIntegral position) |> Array.take (fromIntegral limit) |> Task.yield
+  let items = allGlobalEvents |> Array.drop (fromIntegral position) |> Array.take (fromIntegral limit)
+  Stream.fromArray items
 
 
 readAllEventsBackwardFromImpl ::
@@ -243,15 +250,16 @@ readAllEventsBackwardFromImpl ::
   Task Error (Stream (Event eventType))
 readAllEventsBackwardFromImpl store (StreamPosition (position)) (Limit (limit)) = do
   allGlobalEvents <- store.globalStream |> DurableChannel.getAndTransform unchanged
-  allGlobalEvents
-    |> Array.takeIf
-      ( \event -> do
-          let (StreamPosition eventPos) = event.metadata.globalPosition |> Maybe.withDefault (StreamPosition 0)
-          eventPos <= position
-      )
-    |> Array.reverse
-    |> Array.take (fromIntegral limit)
-    |> Task.yield
+  let items =
+        allGlobalEvents
+          |> Array.takeIf
+            ( \event -> do
+                let (StreamPosition eventPos) = event.metadata.globalPosition |> Maybe.withDefault (StreamPosition 0)
+                eventPos <= position
+            )
+          |> Array.reverse
+          |> Array.take (fromIntegral limit)
+  Stream.fromArray items
 
 
 readAllEventsForwardFromFilteredImpl ::
@@ -262,15 +270,16 @@ readAllEventsForwardFromFilteredImpl ::
   Task Error (Stream (Event eventType))
 readAllEventsForwardFromFilteredImpl store (StreamPosition (position)) (Limit (limit)) entityNames = do
   allGlobalEvents <- store.globalStream |> DurableChannel.getAndTransform unchanged
-  allGlobalEvents
-    |> Array.takeIf
-      ( \event -> do
-          let (StreamPosition eventPos) = event.metadata.globalPosition |> Maybe.withDefault (StreamPosition 0)
-          eventPos >= position
-      )
-    |> Array.takeIf (\event -> entityNames |> Array.any (\entityName -> entityName == event.entityName))
-    |> Array.take (fromIntegral limit)
-    |> Task.yield
+  let items =
+        allGlobalEvents
+          |> Array.takeIf
+            ( \event -> do
+                let (StreamPosition eventPos) = event.metadata.globalPosition |> Maybe.withDefault (StreamPosition 0)
+                eventPos >= position
+            )
+          |> Array.takeIf (\event -> entityNames |> Array.any (\entityName -> entityName == event.entityName))
+          |> Array.take (fromIntegral limit)
+  Stream.fromArray items
 
 
 readAllEventsBackwardFromFilteredImpl ::
@@ -281,16 +290,17 @@ readAllEventsBackwardFromFilteredImpl ::
   Task Error (Stream (Event eventType))
 readAllEventsBackwardFromFilteredImpl store (StreamPosition (position)) (Limit (limit)) entityNames = do
   allGlobalEvents <- store.globalStream |> DurableChannel.getAndTransform unchanged
-  allGlobalEvents
-    |> Array.takeIf
-      ( \event -> do
-          let (StreamPosition eventPos) = event.metadata.globalPosition |> Maybe.withDefault (StreamPosition 0)
-          eventPos <= position
-      )
-    |> Array.reverse
-    |> Array.takeIf (\event -> entityNames |> Array.any (\entityName -> entityName == event.entityName))
-    |> Array.take (fromIntegral limit)
-    |> Task.yield
+  let items =
+        allGlobalEvents
+          |> Array.takeIf
+            ( \event -> do
+                let (StreamPosition eventPos) = event.metadata.globalPosition |> Maybe.withDefault (StreamPosition 0)
+                eventPos <= position
+            )
+          |> Array.reverse
+          |> Array.takeIf (\event -> entityNames |> Array.any (\entityName -> entityName == event.entityName))
+          |> Array.take (fromIntegral limit)
+  Stream.fromArray items
 
 
 -- SUBSCRIPTION IMPLEMENTATIONS

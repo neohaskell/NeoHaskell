@@ -88,6 +88,45 @@ spec = do
           Ok _ -> fail "Expected error but got Ok"
           Err err -> err |> shouldBe "error after items"
 
+    describe "fromArray" do
+      it "creates stream from empty array" \_ -> do
+        let arr = Array.empty @Int
+        stream <- Stream.fromArray arr
+        result <- Stream.toArray stream
+        result |> shouldBe Array.empty
+
+      it "creates stream from array with single item" \_ -> do
+        let arr = Array.fromLinkedList [42 :: Int]
+        stream <- Stream.fromArray arr
+        result <- Stream.toArray stream
+        result |> shouldBe arr
+
+      it "creates stream from array with multiple items" \_ -> do
+        let arr = Array.fromLinkedList [1, 2, 3, 4, 5 :: Int]
+        stream <- Stream.fromArray arr
+        result <- Stream.toArray stream
+        result |> shouldBe arr
+
+      it "creates stream from large array" \_ -> do
+        let arr = Array.initialize 1000 identity
+        stream <- Stream.fromArray arr
+        result <- Stream.toArray stream
+        result |> shouldBe arr
+
+      it "can read items one by one from array stream" \_ -> do
+        let arr = Array.fromLinkedList [10, 20, 30 :: Int]
+        stream <- Stream.fromArray arr
+
+        item1 <- Stream.readNext stream
+        item2 <- Stream.readNext stream
+        item3 <- Stream.readNext stream
+        item4 <- Stream.readNext stream
+
+        item1 |> shouldBe (Just 10)
+        item2 |> shouldBe (Just 20)
+        item3 |> shouldBe (Just 30)
+        item4 |> shouldBe Nothing
+
     describe "toArray" do
       it "converts empty stream to empty array" \_ -> do
         stream <- Stream.new @Int

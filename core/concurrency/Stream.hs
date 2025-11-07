@@ -8,6 +8,7 @@ module Stream (
   pushError,
   consume,
   toArray,
+  fromArray,
 ) where
 
 import Array (Array)
@@ -94,3 +95,13 @@ consume folder initial stream = do
 toArray :: Stream value -> Task Text (Array value)
 toArray stream = do
   consume (\accumulator item -> Task.yield (Array.push item accumulator)) Array.empty stream
+
+
+-- | Create a stream from an array
+-- All items from the array will be written to the stream, followed by an end signal
+fromArray :: Array value -> Task error (Stream value)
+fromArray array = do
+  stream <- new
+  Task.forEach (\item -> writeItem item stream) array
+  end stream
+  Task.yield stream
