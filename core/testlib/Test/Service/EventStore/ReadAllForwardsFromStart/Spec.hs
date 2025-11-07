@@ -54,11 +54,6 @@ specWithCount newStore eventCount = do
             |> Task.andThen Stream.toArray
             |> Task.map EventStore.collectAllEvents
 
-        Task.throw
-          [fmt|
-        GOT EVENTS - #{toText events}
-        |]
-
         let positions = events |> Array.map (\e -> e.metadata.globalPosition |> Maybe.getOrDie)
         positions |> shouldHaveIncreasingOrder
 

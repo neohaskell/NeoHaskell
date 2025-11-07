@@ -53,6 +53,7 @@ module Array (
   -- * Compatibility
   unwrap,
   fromLegacy,
+  first,
   last,
   zip,
   zipWith,

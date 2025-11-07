@@ -132,7 +132,7 @@ insertImpl store payload = do
   let expectedPosition =
         payload.insertions
           |> Array.map (\i -> i.metadata.localPosition |> Maybe.withDefault (StreamPosition 0))
-          |> Array.minimum
+          |> Array.first
           |> Maybe.withDefault (StreamPosition 0)
   channel <- store |> ensureStream entityName streamId
 
