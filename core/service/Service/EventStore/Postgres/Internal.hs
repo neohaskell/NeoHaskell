@@ -103,6 +103,12 @@ new ops cfg = do
   Task.yield eventStore
 
 
+data PostgresStoreError
+  = SessionError Session.SessionError
+  | ConnectionAcquisitionError Text
+  | CoreInsertionError InsertionFailure
+
+
 insertImpl ::
   (Json.Encodable eventType) =>
   Ops ->
@@ -133,12 +139,6 @@ insertImpl ops cfg consistencyRetryCount payload = do
               insertImpl ops cfg (consistencyRetryCount + 1) payload
             else
               Task.throw (InsertionError (InsertionFailed "Insertion failed after 100 retries"))
-
-
-data PostgresStoreError
-  = SessionError Session.SessionError
-  | ConnectionAcquisitionError Text
-  | CoreInsertionError InsertionFailure
 
 
 insertGo ::
