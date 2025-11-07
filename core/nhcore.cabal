@@ -134,6 +134,7 @@ library
     Service.EventStore.Postgres
     Service.EventStore.Postgres.Internal
     Service.EventStore.Postgres.Internal.Sessions
+    Stream
     Subprocess
     Task
     Test

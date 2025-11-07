@@ -251,6 +251,64 @@ readAllEventsBackwardFromImpl :: StreamPosition -> Limit -> Task Error (Array (E
 readAllEventsBackwardFromImpl _ _ = panic "Postgres.readAllEventsBackwardFromImpl - Not implemented yet" |> Task.yield
 
 
+-- data RelativePosition
+--   = Start
+--   | End
+--   deriving (Eq, Show, Ord, Generic)
+
+-- data ReadDirection
+--   = Forwards
+--   | Backwards
+--   deriving (Eq, Show, Ord, Generic)
+
+-- toPostgresDirection :: Maybe RelativePosition -> Maybe ReadDirection -> Text
+-- toPostgresDirection pos dir = do
+--   case (pos, dir) of
+--     (Just Start, _) -> "ASC"
+--     (Just End, _) -> "DESC"
+--     (Nothing, Just Forwards) -> "ASC"
+--     (Nothing, Just Backwards) -> "DESC"
+--     (Nothing, Nothing) -> "ASC"
+
+-- toPostgresGlobalPositionComparison :: Maybe ReadDirection -> Text
+-- toPostgresGlobalPositionComparison dir =
+--   case dir of
+--     Just Backwards -> "<"
+--     _ -> ">="
+
+-- toPostgresPosition :: Maybe RelativePosition -> Maybe ReadDirection -> Int64
+-- toPostgresPosition pos dir =
+--   case (pos, dir) of
+--     (Just Start, _) -> 0
+--     (Just End, _) -> maxValue
+--     (Nothing, Just Forwards) -> 0
+--     (Nothing, Just Backwards) -> maxValue
+--     (Nothing, Nothing) -> 0
+
+-- toPostgresEntityFilters :: Maybe (Array EntityName) -> Text
+-- toPostgresEntityFilters maybeEntityNames = do
+--   let entityNames = maybeEntityNames |> Maybe.withDefault Array.empty
+--   let entityNamesText = entityNames |> Array.map EntityName.toText |> Text.joinWith ", "
+--   if (entityNames |> Array.length) == 0
+--     then ""
+--     else [fmt| AND Entity = ANY (#{entityNamesText})|]
+
+-- performReadAllStreamEvents ::
+--   Ops ->
+--   Config ->
+--   Maybe RelativePosition ->
+--   Maybe ReadDirection ->
+--   Maybe (Array EntityName) ->
+--   StreamId ->
+--   Task PostgresStoreError (Array (Event eventType))
+-- performReadAllStreamEvents ops cfg relative readDirection entityNames streamId = do
+--   conn <- ops.acquire cfg |> Task.mapError ConnectionAcquisitionError
+--   let direction = toPostgresDirection relative readDirection
+--   let positionFilter = toPostgresGlobalPositionComparison readDirection
+--   let position = toPostgresPosition relative readDirection
+--   let entityFilters = toPostgresEntityFilters entityNames
+--   Task.yield (panic "performReadAllStreamEvents: Not implemented yet")
+
 readAllEventsForwardFromFilteredImpl ::
   StreamPosition -> Limit -> Array EntityName -> Task Error (Array (Event eventType))
 readAllEventsForwardFromFilteredImpl _ _ _ = panic "Postgres.readAllEventsForwardFromFilteredImpl - Not implemented yet" |> Task.yield
