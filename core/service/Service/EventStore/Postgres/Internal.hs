@@ -159,6 +159,10 @@ insertImpl ops cfg payload = do
                   eventData = Json.encode i.event,
                   metadata = Json.encode i.metadata
                 }
+      Sessions.insertRecordsIntoStream insertionRecords
+        |> Sessions.run conn
+        |> Task.mapError (toText .> InsertionFailed .> InsertionError)
+
       Task.throw (InsertionError (InsertionFailed (toText insertionRecords)))
 
 
