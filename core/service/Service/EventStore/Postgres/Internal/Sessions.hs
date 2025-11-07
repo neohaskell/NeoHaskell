@@ -125,6 +125,26 @@ selectLatestEventInStream (EntityName entityName) (StreamId streamId) = do
       )
 
 
+selectInsertedEvent ::
+  Uuid ->
+  Session.Session (Maybe (StreamPosition, StreamPosition))
+selectInsertedEvent eventId = do
+  let s :: Hasql.Statement UUID.UUID (Maybe (Int64, Int64)) =
+        [TH.maybeStatement|
+    SELECT GlobalPosition :: int8, LocalPosition :: int8
+    FROM Events
+    WHERE EventId = $1 :: uuid
+    ORDER BY LocalPosition DESC
+    LIMIT 1
+  |]
+  let params = Uuid.toLegacy eventId
+  Session.statement params s
+    |> Mappable.map
+      ( Maybe.map \(globalPos, localPos) ->
+          (StreamPosition globalPos, StreamPosition localPos)
+      )
+
+
 insertRecordsIntoStream ::
   Array EventInsertionRecord ->
   Session.Session Unit

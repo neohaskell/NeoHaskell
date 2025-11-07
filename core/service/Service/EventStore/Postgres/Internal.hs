@@ -13,6 +13,7 @@ import Hasql.Connection qualified as Hasql
 import Hasql.Connection.Setting qualified as ConnectionSetting
 import Hasql.Connection.Setting.Connection qualified as ConnectionSettingConnection
 import Hasql.Connection.Setting.Connection.Param qualified as Param
+import Hasql.Session qualified as Session
 import Json qualified
 import Maybe qualified
 import Service.Event
@@ -107,7 +108,27 @@ insertImpl ::
   InsertionPayload eventType ->
   Task Error InsertionSuccess
 insertImpl ops cfg payload = do
-  conn <- ops.acquire cfg |> Task.mapError (toText .> InsertionFailed .> InsertionError)
+  res <- insertGo ops cfg payload |> Task.asResult
+  case res of
+    Ok success -> Task.yield success
+    Err err -> Task.throw err
+
+
+data PostgresStoreError
+  = SessionError Session.SessionError
+  | ConnectionAcquisitionError Text
+  | CoreInsertionError InsertionFailure
+
+
+insertGo ::
+  (Json.Encodable eventType) =>
+  Ops ->
+  Config ->
+  InsertionPayload eventType ->
+  Task PostgresStoreError InsertionSuccess
+insertGo ops cfg payload = do
+  conn <- ops.acquire cfg |> Task.mapError ConnectionAcquisitionError
+
   let payloadEventIds =
         payload.insertions
           |> Array.map (\i -> i.metadata.eventId)
@@ -115,7 +136,7 @@ insertImpl ops cfg payload = do
   alreadyExistingIds <-
     Sessions.selectExistingIdsSession payloadEventIds
       |> Sessions.run conn
-      |> Task.mapError (toText .> InsertionFailed .> InsertionError)
+      |> Task.mapError SessionError
 
   let insertions =
         payload.insertions
@@ -128,19 +149,19 @@ insertImpl ops cfg payload = do
   let insertionsCount = insertions |> Array.length
 
   if insertionsCount > 100
-    then Task.throw (InsertionError PayloadTooLarge)
+    then Task.throw (CoreInsertionError PayloadTooLarge)
     else pass
 
   latestPositions <-
     Sessions.selectLatestEventInStream payload.entityName payload.streamId
       |> Sessions.run conn
-      |> Task.mapError (toText .> InsertionFailed .> InsertionError)
+      |> Task.mapError SessionError
 
   if insertionsCount <= 0
     then do
-      let (latestGlobalPos, latestLocalPos) =
+      let (globalPosition, localPosition) =
             latestPositions |> Maybe.withDefault (StreamPosition 0, StreamPosition 0)
-      Task.yield InsertionSuccess {localPosition = latestLocalPos, globalPosition = latestGlobalPos}
+      Task.yield InsertionSuccess {localPosition, globalPosition}
     else do
       let offset =
             case payload.insertionType of
@@ -161,9 +182,25 @@ insertImpl ops cfg payload = do
                 }
       Sessions.insertRecordsIntoStream insertionRecords
         |> Sessions.run conn
-        |> Task.mapError (toText .> InsertionFailed .> InsertionError)
+        |> Task.mapError SessionError
 
-      Task.throw (InsertionError (InsertionFailed (toText insertionRecords)))
+      case insertionRecords |> Array.last of
+        Nothing ->
+          "The impossible happened: no insertions were available during insertion"
+            |> InsertionFailed
+            |> CoreInsertionError
+            |> Task.throw
+        Just lastInsertion -> do
+          lastEventPositions <-
+            Sessions.selectInsertedEvent (lastInsertion.eventId)
+              |> Sessions.run conn
+              |> Task.mapError SessionError
+
+          let (globalPosition, localPosition) =
+                lastEventPositions
+                  |> Maybe.withDefault (StreamPosition 0, StreamPosition 0)
+
+          Task.yield (InsertionSuccess {localPosition, globalPosition})
 
 
 readStreamForwardFromImpl :: EntityName -> StreamId -> StreamPosition -> Limit -> Task Error (Array (Event eventType))
