@@ -7,6 +7,7 @@ module Service.EventStore.Postgres.Internal (
 ) where
 
 import Array qualified
+import AsyncTask qualified
 import Core
 import Default ()
 import Hasql.Connection qualified as Hasql
@@ -23,6 +24,7 @@ import Service.Event.StreamId qualified as StreamId
 import Service.EventStore.Core
 import Service.EventStore.Postgres.Internal.Sessions qualified as Sessions
 import Task qualified
+import Text qualified
 
 
 data Config = Config
@@ -82,7 +84,7 @@ new ops cfg = do
   ops.initializeTable connection
   let eventStore =
         EventStore
-          { insert = insertImpl ops cfg,
+          { insert = insertImpl ops cfg 0,
             readStreamForwardFrom = readStreamForwardFromImpl,
             readStreamBackwardFrom = readStreamBackwardFromImpl,
             readAllStreamEvents = readAllStreamEventsImpl,
@@ -105,13 +107,32 @@ insertImpl ::
   (Json.Encodable eventType) =>
   Ops ->
   Config ->
+  Int ->
   InsertionPayload eventType ->
   Task Error InsertionSuccess
-insertImpl ops cfg payload = do
+insertImpl ops cfg consistencyRetryCount payload = do
   res <- insertGo ops cfg payload |> Task.asResult
   case res of
-    Ok success -> Task.yield success
-    Err err -> Task.throw err
+    Ok success ->
+      Task.yield success
+    Err (ConnectionAcquisitionError err) ->
+      Task.throw (StorageFailure err)
+    Err (CoreInsertionError err) ->
+      Task.throw (InsertionError err)
+    Err (SessionError err) -> do
+      let isEventsUniqueKeyViolation err =
+            (err |> toText |> Text.contains "\"2627\"")
+              && (err |> toText |> Text.toLower |> Text.contains "uk_events_stream")
+      if (err |> isEventsUniqueKeyViolation) && (payload.insertionType != AnyStreamState)
+        then
+          Task.throw (InsertionError ConsistencyCheckFailed)
+        else
+          if (err |> isEventsUniqueKeyViolation) && (payload.insertionType == AnyStreamState) && (consistencyRetryCount < 100)
+            then do
+              AsyncTask.sleep (consistencyRetryCount + 1)
+              insertImpl ops cfg (consistencyRetryCount + 1) payload
+            else
+              Task.throw (InsertionError (InsertionFailed "Insertion failed after 100 retries"))
 
 
 data PostgresStoreError
