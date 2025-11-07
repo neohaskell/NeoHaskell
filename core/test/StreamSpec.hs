@@ -44,11 +44,11 @@ spec = do
         result <- Stream.readNext stream
         result |> shouldBe (Just ("text" :: Text))
 
-    describe "endStream" do
+    describe "end" do
       it "signals end of stream" \_ -> do
         stream <- Stream.new @Int
         Stream.writeItem (42 :: Int) stream
-        Stream.endStream stream
+        Stream.end stream
 
         result1 <- Stream.readNext stream
         result2 <- Stream.readNext stream
@@ -58,14 +58,14 @@ spec = do
 
       it "returns nothing when stream is empty and ended" \_ -> do
         stream <- Stream.new @Int
-        Stream.endStream stream
+        Stream.end stream
         result <- Stream.readNext stream
         result |> shouldBe Nothing
 
-    describe "errorStream" do
+    describe "pushError" do
       it "throws error when error is written to stream" \_ -> do
         stream <- Stream.new @Int
-        Stream.errorStream "test error" stream
+        Stream.pushError "test error" stream
 
         taskResult <- Stream.readNext stream |> Task.asResult
         case taskResult of
@@ -76,7 +76,7 @@ spec = do
         stream <- Stream.new @Int
         Stream.writeItem (1 :: Int) stream
         Stream.writeItem (2 :: Int) stream
-        Stream.errorStream "error after items" stream
+        Stream.pushError "error after items" stream
 
         result1 <- Stream.readNext stream
         result2 <- Stream.readNext stream
@@ -88,18 +88,18 @@ spec = do
           Ok _ -> fail "Expected error but got Ok"
           Err err -> err |> shouldBe "error after items"
 
-    describe "streamToArray" do
+    describe "toArray" do
       it "converts empty stream to empty array" \_ -> do
         stream <- Stream.new @Int
-        Stream.endStream stream
-        result <- Stream.streamToArray stream
+        Stream.end stream
+        result <- Stream.toArray stream
         result |> shouldBe Array.empty
 
       it "converts stream with single item to array" \_ -> do
         stream <- Stream.new @Int
         Stream.writeItem 42 stream
-        Stream.endStream stream
-        result <- Stream.streamToArray stream
+        Stream.end stream
+        result <- Stream.toArray stream
         result |> shouldBe (Array.fromLinkedList [42])
 
       it "converts stream with multiple items to array" \_ -> do
@@ -109,36 +109,36 @@ spec = do
         Stream.writeItem 3 stream
         Stream.writeItem 4 stream
         Stream.writeItem 5 stream
-        Stream.endStream stream
+        Stream.end stream
 
-        result <- Stream.streamToArray stream
+        result <- Stream.toArray stream
         result |> shouldBe (Array.fromLinkedList [1, 2, 3, 4, 5])
 
       it "converts stream with many items to array" \_ -> do
         stream <- Stream.new
         let items = Array.initialize 100 identity
         items |> Task.forEach (\item -> Stream.writeItem item stream)
-        Stream.endStream stream
+        Stream.end stream
 
-        result <- Stream.streamToArray stream
+        result <- Stream.toArray stream
         result |> shouldBe items
 
       it "throws error when stream errors during conversion" \_ -> do
         stream <- Stream.new @Int
         Stream.writeItem (1 :: Int) stream
-        Stream.errorStream "conversion error" stream
+        Stream.pushError "conversion error" stream
 
-        taskResult <- Stream.streamToArray stream |> Task.asResult
+        taskResult <- Stream.toArray stream |> Task.asResult
         case taskResult of
           Ok _ -> fail "Expected error but got Ok"
           Err err -> err |> shouldBe "conversion error"
 
-    describe "consumeStream" do
+    describe "consume" do
       it "consumes empty stream" \_ -> do
         stream <- Stream.new @Int
-        Stream.endStream stream
+        Stream.end stream
 
-        result <- Stream.consumeStream (\accumulator item -> Task.yield (accumulator + item)) 0 stream
+        result <- Stream.consume (\accumulator item -> Task.yield (accumulator + item)) 0 stream
         result |> shouldBe 0
 
       it "sums numbers from stream" \_ -> do
@@ -148,9 +148,9 @@ spec = do
         Stream.writeItem 3 stream
         Stream.writeItem 4 stream
         Stream.writeItem 5 stream
-        Stream.endStream stream
+        Stream.end stream
 
-        result <- Stream.consumeStream (\accumulator item -> Task.yield (accumulator + item)) 0 stream
+        result <- Stream.consume (\accumulator item -> Task.yield (accumulator + item)) 0 stream
         result |> shouldBe 15
 
       it "concatenates strings from stream" \_ -> do
@@ -158,9 +158,9 @@ spec = do
         Stream.writeItem "hello" stream
         Stream.writeItem " " stream
         Stream.writeItem "world" stream
-        Stream.endStream stream
+        Stream.end stream
 
-        result <- Stream.consumeStream (\accumulator item -> Task.yield (accumulator ++ item)) "" stream
+        result <- Stream.consume (\accumulator item -> Task.yield (accumulator ++ item)) "" stream
         result |> shouldBe "hello world"
 
       it "builds array from stream" \_ -> do
@@ -168,10 +168,10 @@ spec = do
         Stream.writeItem 1 stream
         Stream.writeItem 2 stream
         Stream.writeItem 3 stream
-        Stream.endStream stream
+        Stream.end stream
 
         result <-
-          Stream.consumeStream
+          Stream.consume
             (\accumulator item -> Task.yield (Array.push item accumulator))
             Array.empty
             stream
@@ -181,10 +181,10 @@ spec = do
       it "handles error during fold operation" \_ -> do
         stream <- Stream.new @Int
         Stream.writeItem 1 stream
-        Stream.errorStream "fold error" stream
+        Stream.pushError "fold error" stream
 
         taskResult <-
-          Stream.consumeStream (\accumulator item -> Task.yield (accumulator + item)) 0 stream
+          Stream.consume (\accumulator item -> Task.yield (accumulator + item)) 0 stream
             |> Task.asResult
 
         case taskResult of
@@ -199,10 +199,10 @@ spec = do
               Stream.writeItem (1 :: Int) stream
               Stream.writeItem (2 :: Int) stream
               Stream.writeItem (3 :: Int) stream
-              Stream.endStream stream
+              Stream.end stream
 
         let reader = do
-              Stream.streamToArray stream
+              Stream.toArray stream
 
         writerTask <- AsyncTask.run writer
         result <- reader
@@ -216,11 +216,11 @@ spec = do
 
         Stream.writeItem "a" stream1
         Stream.writeItem "x" stream2
-        Stream.endStream stream1
-        Stream.endStream stream2
+        Stream.end stream1
+        Stream.end stream2
 
-        task1 <- AsyncTask.run (Stream.streamToArray stream1)
-        task2 <- AsyncTask.run (Stream.streamToArray stream2)
+        task1 <- AsyncTask.run (Stream.toArray stream1)
+        task2 <- AsyncTask.run (Stream.toArray stream2)
 
         result1 <- AsyncTask.waitFor task1
         result2 <- AsyncTask.waitFor task2
@@ -235,10 +235,10 @@ spec = do
               Stream.writeItem 1 stream
               Stream.writeItem 2 stream
               Stream.writeItem 3 stream
-              Stream.endStream stream
+              Stream.end stream
 
         let consumer = do
-              Stream.streamToArray stream
+              Stream.toArray stream
 
         producerTask <- AsyncTask.run producer
         result <- consumer
@@ -278,7 +278,7 @@ spec = do
 
         let asyncWriter = do
               Stream.writeItem (99 :: Int) stream
-              Stream.endStream stream
+              Stream.end stream
 
         writerTask <- AsyncTask.run asyncWriter
         result <- Stream.readNext stream
@@ -288,7 +288,7 @@ spec = do
 
       it "handles stream with only errors" \_ -> do
         stream <- Stream.new @Int
-        Stream.errorStream "immediate error" stream
+        Stream.pushError "immediate error" stream
 
         taskResult <- Stream.readNext stream |> Task.asResult
         case taskResult of
@@ -301,8 +301,8 @@ spec = do
         let items = Array.initialize count identity
 
         Task.forEach (\item -> Stream.writeItem item stream) items
-        Stream.endStream stream
+        Stream.end stream
 
-        result <- Stream.streamToArray stream
+        result <- Stream.toArray stream
         Array.length result |> shouldBe count
         result |> shouldBe items

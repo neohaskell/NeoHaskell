@@ -4,10 +4,10 @@ module Stream (
   new,
   readNext,
   writeItem,
-  endStream,
-  errorStream,
-  consumeStream,
-  streamToArray,
+  end,
+  pushError,
+  consume,
+  toArray,
 ) where
 
 import Array (Array)
@@ -60,25 +60,25 @@ writeItem item (Stream stream) = do
 
 
 -- | Signal end of stream
-endStream :: Stream value -> Task error Unit
-endStream (Stream stream) = do
+end :: Stream value -> Task error Unit
+end (Stream stream) = do
   Channel.write EndOfStream stream
 
 
 -- | Signal error in stream
-errorStream :: Text -> Stream value -> Task error Unit
-errorStream err (Stream stream) = do
+pushError :: Text -> Stream value -> Task error Unit
+pushError err (Stream stream) = do
   Channel.write (StreamError err) stream
 
 
 -- | Consume stream with a fold function
-consumeStream ::
+consume ::
   forall accumulator value.
   (accumulator -> value -> Task Text accumulator) ->
   accumulator ->
   Stream value ->
   Task Text accumulator
-consumeStream folder initial stream = do
+consume folder initial stream = do
   let loop accumulator = do
         maybeItem <- readNext stream |> Task.mapError identity
         case maybeItem of
@@ -91,6 +91,6 @@ consumeStream folder initial stream = do
 
 
 -- | Convert stream to array
-streamToArray :: Stream value -> Task Text (Array value)
-streamToArray stream = do
-  consumeStream (\accumulator item -> Task.yield (Array.push item accumulator)) Array.empty stream
+toArray :: Stream value -> Task Text (Array value)
+toArray stream = do
+  consume (\accumulator item -> Task.yield (Array.push item accumulator)) Array.empty stream
