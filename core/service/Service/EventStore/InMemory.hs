@@ -13,7 +13,8 @@ import Maybe qualified
 import Service.Event
 import Service.Event.EventMetadata qualified as EventMetadata
 import Service.EventStore.Core
-import Stream (Stream, fromArray)
+import Stream (Stream)
+import Stream qualified
 import Task qualified
 import Uuid qualified
 

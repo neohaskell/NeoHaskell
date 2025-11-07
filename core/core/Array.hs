@@ -456,7 +456,7 @@ flatMap ::
 flatMap f array =
   array
     |> map f
-    |> reduce append empty
+    |> foldl append empty
 
 
 -- >>> foldM (\acc x -> do { putStrLn ("Adding " ++ show x ++ " to " ++ show acc); pure (acc + x) }) 0 (fromLinkedList [10, 5, 2] :: Array Int)
