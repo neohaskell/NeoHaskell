@@ -277,9 +277,8 @@ performReadAllStreamEvents ::
   Maybe RelativePosition ->
   Maybe ReadDirection ->
   Maybe (Array EntityName) ->
-  StreamId ->
   Task PostgresStoreError (Stream (ReadAllMessage eventType))
-performReadAllStreamEvents ops cfg stream (ReadingRefs {notifiedReadingRef, cancellationRef}) relative readDirection entityNames streamId = do
+performReadAllStreamEvents ops cfg stream (ReadingRefs {notifiedReadingRef, cancellationRef}) relative readDirection entityNames = do
   conn <- ops.acquire cfg |> Task.mapError ConnectionAcquisitionError
 
   breakLoopRef <- Var.new False
@@ -301,6 +300,7 @@ performReadAllStreamEvents ops cfg stream (ReadingRefs {notifiedReadingRef, canc
     hasNotifiedReadingStarted <- Var.get notifiedReadingRef
     Task.unless (hasNotifiedReadingStarted) do
       stream |> Stream.writeItem ReadingStarted
+      notifiedReadingRef |> Var.set True
 
     Task.when (records |> Array.isEmpty) do
       breakLoopRef |> Var.set True
@@ -309,6 +309,7 @@ performReadAllStreamEvents ops cfg stream (ReadingRefs {notifiedReadingRef, canc
       let evt :: Result Text (ReadAllMessage eventType) = do
             event <- Json.decode record.eventData
             metadata <- Json.decode record.metadata
+            let streamId = record.inlinedStreamId |> StreamId.fromText
             Event
               { entityName = record.entityName |> EntityName,
                 streamId,
