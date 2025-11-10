@@ -56,7 +56,7 @@ toPostgresDirection pos dir = do
 toPostgresGlobalPositionComparison :: Maybe ReadDirection -> Text
 toPostgresGlobalPositionComparison dir =
   case dir of
-    Just Backwards -> "<"
+    Just Backwards -> "<="
     _ -> ">="
 
 

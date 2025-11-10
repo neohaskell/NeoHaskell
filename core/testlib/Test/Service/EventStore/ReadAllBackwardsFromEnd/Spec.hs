@@ -156,7 +156,7 @@ specWithCount newStore eventCount = do
 
         events
           |> Array.length
-          |> shouldBe 1 -- Should contain only the event at position 0
+          |> shouldBe 1
       it "filters events by single entity ID from end position" \context -> do
         let limit = EventStore.Limit (fromIntegral (context.eventCount * 2))
         let entityFilter = Array.fromLinkedList [context.entity1Id]
