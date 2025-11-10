@@ -4,6 +4,7 @@ module Service.EventStore.Core (
   Limit (..),
   SubscriptionId (..),
   ReadAllMessage (..),
+  ToxicContents (..),
   collectAllEvents,
 ) where
 
@@ -41,10 +42,20 @@ data Error
   deriving (Eq, Show)
 
 
+data ToxicContents = ToxicContents
+  { locator :: Text,
+    metadata :: Json.Value,
+    globalPosition :: StreamPosition,
+    localPosition :: StreamPosition,
+    additionalInfo :: Text
+  }
+  deriving (Eq, Show)
+
+
 data ReadAllMessage eventType
   = ReadingStarted
   | AllEvent (Event eventType)
-  | ToxicAllEvent Text Json.Value StreamPosition StreamPosition
+  | ToxicAllEvent ToxicContents
   | Checkpoint StreamPosition
   | Terminated Text
   | CaughtUp

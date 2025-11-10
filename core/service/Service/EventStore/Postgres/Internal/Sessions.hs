@@ -1,6 +1,8 @@
 module Service.EventStore.Postgres.Internal.Sessions where
 
+import Applicable qualified
 import Array qualified
+import Bytes qualified
 import Contravariant.Extras qualified as Contravariant
 import Core
 import Data.Functor.Contravariant ((>$<))
@@ -18,9 +20,14 @@ import Json qualified
 import Mappable qualified
 import Maybe qualified
 import Result qualified
-import Service.Event (EntityName (..), StreamId (..), StreamPosition (..))
+import Service.Event (EntityName (..), Event, StreamId (..), StreamPosition (..))
+import Service.EventStore.Postgres.Internal.Core
+import Service.EventStore.Postgres.Internal.PostgresEventRecord (PostgresEventRecord)
+import Service.EventStore.Postgres.Internal.PostgresEventRecord qualified as PostgresEventRecord
 import Task qualified
+import Text qualified
 import Uuid qualified
+import Var qualified
 
 
 data Connection
@@ -178,3 +185,31 @@ insertRecordsIntoStream events = do
             )
   let vectorEvents = events |> Array.unwrap
   Session.statement vectorEvents statement
+
+
+selectEventBatch ::
+  Var Int64 ->
+  Maybe RelativePosition ->
+  Maybe ReadDirection ->
+  Maybe (Array EntityName) ->
+  Task PostgresStoreError (Session.Session (Array (PostgresEventRecord)))
+selectEventBatch positionRef relative readDirection entityNames = do
+  let direction = toPostgresDirection relative readDirection
+  let positionComparison = toPostgresGlobalPositionComparison readDirection
+  position <- Var.get positionRef
+  let entityFilters = toPostgresEntityFilters entityNames
+  let positionFilter :: Text = [fmt|GlobalPosition #{positionComparison} #{position}|]
+  let query :: Text =
+        [fmt|
+            SELECT EventId, GlobalPosition, LocalPosition, InlinedStreamId, Entity, EventData, Metadata
+            FROM Events
+            WHERE #{positionFilter}#{entityFilters}
+            ORDER BY GlobalPosition #{direction}
+            LIMIT #{batchSize}
+          |]
+  let encoder = Encoders.noParams
+  let decoder = Decoders.rowVector PostgresEventRecord.rowDecoder
+  let statement :: Statement () (Array PostgresEventRecord) =
+        Statement (query |> Text.toBytes |> Bytes.unwrap) encoder decoder True
+          |> Mappable.map Array.fromLegacy
+  Session.statement unit statement |> Task.yield

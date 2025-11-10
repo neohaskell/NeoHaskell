@@ -17,16 +17,20 @@ import Hasql.Connection.Setting.Connection.Param qualified as Param
 import Hasql.Session qualified as Session
 import Json qualified
 import Maybe qualified
+import Result qualified
 import Service.Event
 import Service.Event.EntityName qualified as EntityName
 import Service.Event.EventMetadata (EventMetadata (..))
 import Service.Event.StreamId qualified as StreamId
 import Service.EventStore.Core
+import Service.EventStore.Postgres.Internal.Core
+import Service.EventStore.Postgres.Internal.PostgresEventRecord (PostgresEventRecord (..))
 import Service.EventStore.Postgres.Internal.Sessions qualified as Sessions
 import Stream (Stream)
 import Stream qualified
 import Task qualified
 import Text qualified
+import Var qualified
 
 
 data Config = Config
@@ -110,12 +114,6 @@ new ops cfg = do
             truncateStream = truncateStreamImpl
           }
   Task.yield eventStore
-
-
-data PostgresStoreError
-  = SessionError Session.SessionError
-  | ConnectionAcquisitionError Text
-  | CoreInsertionError InsertionFailure
 
 
 insertImpl ::
@@ -263,69 +261,85 @@ readAllEventsBackwardFromImpl _ _ = do
   Stream.fromArray Array.empty
 
 
-data RelativePosition
-  = Start
-  | End
-  deriving (Eq, Show, Ord, Generic)
-
-
-data ReadDirection
-  = Forwards
-  | Backwards
-  deriving (Eq, Show, Ord, Generic)
-
-
-toPostgresDirection :: Maybe RelativePosition -> Maybe ReadDirection -> Text
-toPostgresDirection pos dir = do
-  case (pos, dir) of
-    (Just Start, _) -> "ASC"
-    (Just End, _) -> "DESC"
-    (Nothing, Just Forwards) -> "ASC"
-    (Nothing, Just Backwards) -> "DESC"
-    (Nothing, Nothing) -> "ASC"
-
-
-toPostgresGlobalPositionComparison :: Maybe ReadDirection -> Text
-toPostgresGlobalPositionComparison dir =
-  case dir of
-    Just Backwards -> "<"
-    _ -> ">="
-
-
-toPostgresPosition :: Maybe RelativePosition -> Maybe ReadDirection -> Int64
-toPostgresPosition pos dir =
-  case (pos, dir) of
-    (Just Start, _) -> 0
-    (Just End, _) -> maxValue
-    (Nothing, Just Forwards) -> 0
-    (Nothing, Just Backwards) -> maxValue
-    (Nothing, Nothing) -> 0
-
-
-toPostgresEntityFilters :: Maybe (Array EntityName) -> Text
-toPostgresEntityFilters maybeEntityNames = do
-  let entityNames = maybeEntityNames |> Maybe.withDefault Array.empty
-  let entityNamesText = entityNames |> Array.map EntityName.toText |> Text.joinWith ", "
-  if (entityNames |> Array.length) == 0
-    then ""
-    else [fmt| AND Entity = ANY (#{entityNamesText})|]
+data ReadingRefs = ReadingRefs
+  { notifiedReadingRef :: Var Bool,
+    cancellationRef :: Var Bool
+  }
 
 
 performReadAllStreamEvents ::
+  forall eventType.
+  (Json.Decodable eventType) =>
   Ops ->
   Config ->
+  Stream (ReadAllMessage eventType) ->
+  ReadingRefs ->
   Maybe RelativePosition ->
   Maybe ReadDirection ->
   Maybe (Array EntityName) ->
   StreamId ->
-  Task PostgresStoreError (Stream (Event eventType))
-performReadAllStreamEvents ops cfg relative readDirection entityNames streamId = do
+  Task PostgresStoreError (Stream (ReadAllMessage eventType))
+performReadAllStreamEvents ops cfg stream (ReadingRefs {notifiedReadingRef, cancellationRef}) relative readDirection entityNames streamId = do
   conn <- ops.acquire cfg |> Task.mapError ConnectionAcquisitionError
-  let direction = toPostgresDirection relative readDirection
-  let positionFilter = toPostgresGlobalPositionComparison readDirection
-  let position = toPostgresPosition relative readDirection
-  let entityFilters = toPostgresEntityFilters entityNames
-  Task.yield (panic "performReadAllStreamEvents: Not implemented yet")
+
+  breakLoopRef <- Var.new False
+  let shouldKeepReading = do
+        shouldBreak <- Var.get breakLoopRef
+        isCancelled <- Var.get cancellationRef
+        Task.yield (not shouldBreak && not isCancelled)
+
+  positionRef <- Var.new (toPostgresPosition relative readDirection)
+
+  Task.while (shouldKeepReading) do
+    selectSession <- Sessions.selectEventBatch positionRef relative readDirection entityNames
+    records <-
+      selectSession
+        |> Sessions.run conn
+        |> Task.mapError
+          SessionError
+
+    hasNotifiedReadingStarted <- Var.get notifiedReadingRef
+    Task.unless (hasNotifiedReadingStarted) do
+      stream |> Stream.writeItem ReadingStarted
+
+    Task.when (records |> Array.isEmpty) do
+      breakLoopRef |> Var.set True
+
+    records |> Task.forEach \record -> do
+      let evt :: Result Text (ReadAllMessage eventType) = do
+            event <- Json.decode record.eventData
+            metadata <- Json.decode record.metadata
+            Event
+              { entityName = record.entityName |> EntityName,
+                streamId,
+                event,
+                metadata
+              }
+              |> AllEvent
+              |> Result.Ok
+      case evt of
+        Ok goodEvent ->
+          stream |> Stream.writeItem goodEvent
+        Err err -> do
+          let entityName = record.entityName
+          let streamId = record.inlinedStreamId
+          let locator = [fmt|#{entityName}#{streamId}|]
+          let toxicEvt =
+                ToxicContents
+                  { locator = locator,
+                    metadata = record.metadata,
+                    globalPosition = (StreamPosition record.globalPosition),
+                    localPosition = (StreamPosition record.localPosition),
+                    additionalInfo = err
+                  }
+                  |> ToxicAllEvent
+          stream |> Stream.writeItem toxicEvt
+          positionRef |> Var.set record.globalPosition
+
+    Task.when (Array.length records < batchSize) do
+      breakLoopRef |> Var.set True
+
+  Task.yield stream
 
 
 readAllEventsForwardFromFilteredImpl ::

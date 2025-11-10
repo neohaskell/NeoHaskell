@@ -37,7 +37,7 @@ common common_cfg
     hasql-th,
     hspec,
     http-conduit,
-    time,
+    monad-loops,
     optparse-applicative,
     path,
     pretty-simple,
@@ -48,6 +48,7 @@ common common_cfg
     template-haskell,
     text,
     text-manipulate,
+    time,
     transformers,
     unagi-chan,
     uuid,
@@ -133,6 +134,8 @@ library
     Service.EventStore.InMemory
     Service.EventStore.Postgres
     Service.EventStore.Postgres.Internal
+    Service.EventStore.Postgres.Internal.Core
+    Service.EventStore.Postgres.Internal.PostgresEventRecord
     Service.EventStore.Postgres.Internal.Sessions
     Stream
     Subprocess

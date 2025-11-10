@@ -18,6 +18,7 @@ import Data.Maybe (Maybe (..), fromMaybe)
 import Function (unchanged)
 import Mappable qualified
 import Thenable qualified
+import Prelude qualified
 
 
 -- | Provide a default value, turning an optional value into a normal

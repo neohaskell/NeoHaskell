@@ -17,6 +17,7 @@ import Data.Aeson qualified as Aeson
 import Data.Aeson.Text qualified as AesonText
 import Data.Either qualified as Either
 import Data.Text.Lazy qualified as Data.Text
+import Default (Default (..))
 import Result (Result)
 import Result qualified
 import Text (Text)
@@ -57,3 +58,7 @@ instance (Aeson.FromJSON a) => Aeson.FromJSON (Array a)
 
 
 instance (Aeson.ToJSON a) => Aeson.ToJSON (Array a)
+
+
+instance Default Aeson.Value where
+  def = Aeson.Null
