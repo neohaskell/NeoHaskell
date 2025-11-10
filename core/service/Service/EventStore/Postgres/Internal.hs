@@ -103,9 +103,9 @@ new ops cfg = do
             readStreamBackwardFrom = readStreamBackwardFromImpl,
             readAllStreamEvents = readAllStreamEventsImpl,
             readAllEventsForwardFrom = readAllEventsForwardFromImpl ops cfg,
-            readAllEventsBackwardFrom = readAllEventsBackwardFromImpl,
-            readAllEventsForwardFromFiltered = readAllEventsForwardFromFilteredImpl,
-            readAllEventsBackwardFromFiltered = readAllEventsBackwardFromFilteredImpl,
+            readAllEventsBackwardFrom = readAllEventsBackwardFromImpl ops cfg,
+            readAllEventsForwardFromFiltered = readAllEventsForwardFromFilteredImpl ops cfg,
+            readAllEventsBackwardFromFiltered = readAllEventsBackwardFromFilteredImpl ops cfg,
             subscribeToAllEvents = subscribeToAllEventsImpl,
             subscribeToAllEventsFromPosition = subscribeToAllEventsFromPositionImpl,
             subscribeToAllEventsFromStart = subscribeToAllEventsFromStartImpl,
@@ -267,10 +267,57 @@ readAllEventsForwardFromImpl ops config streamPosition limit = do
     |> Task.mapError (toText .> ReadingAllError)
 
 
-readAllEventsBackwardFromImpl :: StreamPosition -> Limit -> Task Error (Stream (ReadAllMessage eventType))
-readAllEventsBackwardFromImpl _ _ = do
-  _ <- panic "Postgres.readAllEventsBackwardFromImpl - Not implemented yet"
-  Stream.fromArray Array.empty
+readAllEventsBackwardFromImpl ::
+  (Json.Decodable eventType) =>
+  Ops ->
+  Config ->
+  StreamPosition ->
+  Limit ->
+  Task Error (Stream (ReadAllMessage eventType))
+readAllEventsBackwardFromImpl ops config streamPosition limit = do
+  readingRefs <- newReadingRefs
+  stream <- Stream.new
+  -- FIXME: pass relative properly
+  let relative = Before streamPosition |> Just
+  let readDirection = Just Backwards
+  performReadAllStreamEvents ops config stream readingRefs limit relative readDirection Nothing
+    |> Task.mapError (toText .> ReadingAllError)
+
+
+readAllEventsForwardFromFilteredImpl ::
+  (Json.Decodable eventType) =>
+  Ops ->
+  Config ->
+  StreamPosition ->
+  Limit ->
+  Array EntityName ->
+  Task Error (Stream (ReadAllMessage eventType))
+readAllEventsForwardFromFilteredImpl ops config streamPosition limit entityNames = do
+  readingRefs <- newReadingRefs
+  stream <- Stream.new
+  -- FIXME: pass relative properly
+  let relative = FromAndAfter streamPosition |> Just
+  let readDirection = Just Forwards
+  performReadAllStreamEvents ops config stream readingRefs limit relative readDirection (Just entityNames)
+    |> Task.mapError (toText .> ReadingAllError)
+
+
+readAllEventsBackwardFromFilteredImpl ::
+  (Json.Decodable eventType) =>
+  Ops ->
+  Config ->
+  StreamPosition ->
+  Limit ->
+  Array EntityName ->
+  Task Error (Stream (ReadAllMessage eventType))
+readAllEventsBackwardFromFilteredImpl ops config streamPosition limit entityNames = do
+  readingRefs <- newReadingRefs
+  stream <- Stream.new
+  -- FIXME: pass relative properly
+  let relative = Before streamPosition |> Just
+  let readDirection = Just Backwards
+  performReadAllStreamEvents ops config stream readingRefs limit relative readDirection (Just entityNames)
+    |> Task.mapError (toText .> ReadingAllError)
 
 
 data ReadingRefs = ReadingRefs
@@ -374,20 +421,6 @@ performReadAllStreamEvents
 
     stream |> Stream.end
     Task.yield stream
-
-
-readAllEventsForwardFromFilteredImpl ::
-  StreamPosition -> Limit -> Array EntityName -> Task Error (Stream (ReadAllMessage eventType))
-readAllEventsForwardFromFilteredImpl _ _ _ = do
-  _ <- panic "Postgres.readAllEventsForwardFromFilteredImpl - Not implemented yet"
-  Stream.fromArray Array.empty
-
-
-readAllEventsBackwardFromFilteredImpl ::
-  StreamPosition -> Limit -> Array EntityName -> Task Error (Stream (ReadAllMessage eventType))
-readAllEventsBackwardFromFilteredImpl _ _ _ = do
-  _ <- panic "Postgres.readAllEventsBackwardFromFilteredImpl - Not implemented yet"
-  Stream.fromArray Array.empty
 
 
 subscribeToAllEventsImpl :: (Event eventType -> Task Error Unit) -> Task Error SubscriptionId
