@@ -14,12 +14,23 @@ data PostgresStoreError
   = SessionError Session.SessionError
   | ConnectionAcquisitionError Text
   | CoreInsertionError Event.InsertionFailure
+  deriving (Eq, Show)
 
 
 data RelativePosition
   = Start
   | End
+  | FromAndAfter Event.StreamPosition
+  | Before Event.StreamPosition
   deriving (Eq, Show, Ord, Generic)
+
+
+relativePositionToInt64 :: Maybe RelativePosition -> Maybe Int64
+relativePositionToInt64 pos =
+  case pos of
+    Just (FromAndAfter (Event.StreamPosition p)) -> Just p
+    Just (Before (Event.StreamPosition p)) -> Just p
+    _ -> Nothing
 
 
 data ReadDirection
@@ -37,9 +48,9 @@ toPostgresDirection pos dir = do
   case (pos, dir) of
     (Just Start, _) -> "ASC"
     (Just End, _) -> "DESC"
-    (Nothing, Just Forwards) -> "ASC"
-    (Nothing, Just Backwards) -> "DESC"
-    (Nothing, Nothing) -> "ASC"
+    (_, Just Forwards) -> "ASC"
+    (_, Just Backwards) -> "DESC"
+    (_, Nothing) -> "ASC"
 
 
 toPostgresGlobalPositionComparison :: Maybe ReadDirection -> Text
@@ -54,9 +65,9 @@ toPostgresPosition pos dir =
   case (pos, dir) of
     (Just Start, _) -> 0
     (Just End, _) -> maxValue
-    (Nothing, Just Forwards) -> 0
-    (Nothing, Just Backwards) -> maxValue
-    (Nothing, Nothing) -> 0
+    (p, Just Forwards) -> relativePositionToInt64 p |> Maybe.withDefault 0
+    (p, Just Backwards) -> relativePositionToInt64 p |> Maybe.withDefault maxValue
+    _ -> 0
 
 
 toPostgresEntityFilters :: Maybe (Array EntityName) -> Text

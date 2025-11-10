@@ -88,7 +88,9 @@ defaultOps = do
 
 
 new ::
-  (Json.Encodable eventType) =>
+  ( Json.Encodable eventType,
+    Json.Decodable eventType
+  ) =>
   Ops ->
   Config ->
   Task Text (EventStore eventType)
@@ -101,7 +103,7 @@ new ops cfg = do
             readStreamForwardFrom = readStreamForwardFromImpl,
             readStreamBackwardFrom = readStreamBackwardFromImpl,
             readAllStreamEvents = readAllStreamEventsImpl,
-            readAllEventsForwardFrom = readAllEventsForwardFromImpl,
+            readAllEventsForwardFrom = readAllEventsForwardFromImpl ops cfg,
             readAllEventsBackwardFrom = readAllEventsBackwardFromImpl,
             readAllEventsForwardFromFiltered = readAllEventsForwardFromFilteredImpl,
             readAllEventsBackwardFromFiltered = readAllEventsBackwardFromFilteredImpl,
@@ -249,10 +251,21 @@ readAllStreamEventsImpl _ _ = do
   Stream.fromArray Array.empty
 
 
-readAllEventsForwardFromImpl :: StreamPosition -> Limit -> Task Error (Stream (ReadAllMessage eventType))
-readAllEventsForwardFromImpl _ _ = do
-  _ <- panic "Postgres.readAllEventsForwardFromImpl - Not implemented yet"
-  Stream.fromArray Array.empty
+readAllEventsForwardFromImpl ::
+  (Json.Decodable eventType) =>
+  Ops ->
+  Config ->
+  StreamPosition ->
+  Limit ->
+  Task Error (Stream (ReadAllMessage eventType))
+readAllEventsForwardFromImpl ops config streamPosition limit = do
+  readingRefs <- newReadingRefs
+  stream <- Stream.new
+  -- FIXME: pass relative properly
+  let relative = FromAndAfter streamPosition |> Just
+  let readDirection = Just Forwards
+  performReadAllStreamEvents ops config stream readingRefs limit relative readDirection Nothing
+    |> Task.mapError (toText .> ReadingAllError)
 
 
 readAllEventsBackwardFromImpl :: StreamPosition -> Limit -> Task Error (Stream (ReadAllMessage eventType))
@@ -267,6 +280,13 @@ data ReadingRefs = ReadingRefs
   }
 
 
+newReadingRefs :: Task Error ReadingRefs
+newReadingRefs = do
+  notifiedReadingRef <- Var.new False
+  cancellationRef <- Var.new False
+  Task.yield ReadingRefs {notifiedReadingRef, cancellationRef}
+
+
 performReadAllStreamEvents ::
   forall eventType.
   (Json.Decodable eventType) =>
@@ -274,73 +294,87 @@ performReadAllStreamEvents ::
   Config ->
   Stream (ReadAllMessage eventType) ->
   ReadingRefs ->
+  Limit ->
   Maybe RelativePosition ->
   Maybe ReadDirection ->
   Maybe (Array EntityName) ->
   Task PostgresStoreError (Stream (ReadAllMessage eventType))
-performReadAllStreamEvents ops cfg stream (ReadingRefs {notifiedReadingRef, cancellationRef}) relative readDirection entityNames = do
-  conn <- ops.acquire cfg |> Task.mapError ConnectionAcquisitionError
+performReadAllStreamEvents
+  ops
+  cfg
+  stream
+  (ReadingRefs {notifiedReadingRef, cancellationRef})
+  (Limit limit)
+  relative
+  readDirection
+  entityNames = do
+    conn <- ops.acquire cfg |> Task.mapError ConnectionAcquisitionError
 
-  breakLoopRef <- Var.new False
-  let shouldKeepReading = do
-        shouldBreak <- Var.get breakLoopRef
-        isCancelled <- Var.get cancellationRef
-        Task.yield (not shouldBreak && not isCancelled)
+    breakLoopRef <- Var.new False
+    remainingLimitRef <- Var.new limit
+    let shouldKeepReading = do
+          shouldBreak <- Var.get breakLoopRef
+          isCancelled <- Var.get cancellationRef
+          remainingLimit <- Var.get remainingLimitRef
+          Task.yield (not shouldBreak && not isCancelled && remainingLimit <= 0)
 
-  positionRef <- Var.new (toPostgresPosition relative readDirection)
+    positionRef <- Var.new (toPostgresPosition relative readDirection)
 
-  Task.while (shouldKeepReading) do
-    selectSession <- Sessions.selectEventBatch positionRef relative readDirection entityNames
-    records <-
-      selectSession
-        |> Sessions.run conn
-        |> Task.mapError
-          SessionError
+    Task.while (shouldKeepReading) do
+      selectSession <- Sessions.selectEventBatch positionRef relative readDirection entityNames
+      records <-
+        selectSession
+          |> Sessions.run conn
+          |> Task.mapError
+            SessionError
 
-    hasNotifiedReadingStarted <- Var.get notifiedReadingRef
-    Task.unless (hasNotifiedReadingStarted) do
-      stream |> Stream.writeItem ReadingStarted
-      notifiedReadingRef |> Var.set True
+      hasNotifiedReadingStarted <- Var.get notifiedReadingRef
+      Task.unless (hasNotifiedReadingStarted) do
+        stream |> Stream.writeItem ReadingStarted
+        notifiedReadingRef |> Var.set True
 
-    Task.when (records |> Array.isEmpty) do
-      breakLoopRef |> Var.set True
+      Task.when (records |> Array.isEmpty) do
+        breakLoopRef |> Var.set True
 
-    records |> Task.forEach \record -> do
-      let evt :: Result Text (ReadAllMessage eventType) = do
-            event <- Json.decode record.eventData
-            metadata <- Json.decode record.metadata
-            let streamId = record.inlinedStreamId |> StreamId.fromText
-            Event
-              { entityName = record.entityName |> EntityName,
-                streamId,
-                event,
-                metadata
-              }
-              |> AllEvent
-              |> Result.Ok
-      case evt of
-        Ok goodEvent ->
-          stream |> Stream.writeItem goodEvent
-        Err err -> do
-          let entityName = record.entityName
-          let streamId = record.inlinedStreamId
-          let locator = [fmt|#{entityName}#{streamId}|]
-          let toxicEvt =
-                ToxicContents
-                  { locator = locator,
-                    metadata = record.metadata,
-                    globalPosition = (StreamPosition record.globalPosition),
-                    localPosition = (StreamPosition record.localPosition),
-                    additionalInfo = err
-                  }
-                  |> ToxicAllEvent
-          stream |> Stream.writeItem toxicEvt
-          positionRef |> Var.set record.globalPosition
+      records |> Task.forEach \record -> do
+        let evt :: Result Text (ReadAllMessage eventType) = do
+              event <- Json.decode record.eventData
+              metadata <- Json.decode record.metadata
+              let streamId = record.inlinedStreamId |> StreamId.fromText
+              Event
+                { entityName = record.entityName |> EntityName,
+                  streamId,
+                  event,
+                  metadata
+                }
+                |> AllEvent
+                |> Result.Ok
+        case evt of
+          Ok goodEvent ->
+            stream |> Stream.writeItem goodEvent
+          Err err -> do
+            let entityName = record.entityName
+            let streamId = record.inlinedStreamId
+            let locator = [fmt|#{entityName}#{streamId}|]
+            let toxicEvt =
+                  ToxicContents
+                    { locator = locator,
+                      metadata = record.metadata,
+                      globalPosition = (StreamPosition record.globalPosition),
+                      localPosition = (StreamPosition record.localPosition),
+                      additionalInfo = err
+                    }
+                    |> ToxicAllEvent
+            stream |> Stream.writeItem toxicEvt
+            positionRef |> Var.set record.globalPosition
 
-    Task.when (Array.length records < batchSize) do
-      breakLoopRef |> Var.set True
+      Var.decrement remainingLimitRef
 
-  Task.yield stream
+      Task.when (Array.length records < batchSize) do
+        breakLoopRef |> Var.set True
+
+    stream |> Stream.end
+    Task.yield stream
 
 
 readAllEventsForwardFromFilteredImpl ::

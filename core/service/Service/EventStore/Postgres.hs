@@ -10,5 +10,8 @@ import Service.EventStore.Postgres.Internal (Config (..))
 import Service.EventStore.Postgres.Internal qualified as Internal
 
 
-new :: (Json.Encodable eventType) => Config -> Task Text (EventStore eventType)
+new ::
+  (Json.Decodable eventType, Json.Encodable eventType) =>
+  Config ->
+  Task Text (EventStore eventType)
 new config = Internal.new Internal.defaultOps config

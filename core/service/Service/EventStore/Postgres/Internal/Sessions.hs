@@ -21,6 +21,7 @@ import Mappable qualified
 import Maybe qualified
 import Result qualified
 import Service.Event (EntityName (..), Event, StreamId (..), StreamPosition (..))
+import Service.Event.StreamId qualified as StreamId
 import Service.EventStore.Postgres.Internal.Core
 import Service.EventStore.Postgres.Internal.PostgresEventRecord (PostgresEventRecord)
 import Service.EventStore.Postgres.Internal.PostgresEventRecord qualified as PostgresEventRecord
@@ -114,7 +115,7 @@ selectLatestEventInStream ::
   EntityName ->
   StreamId ->
   Session.Session (Maybe (StreamPosition, StreamPosition))
-selectLatestEventInStream (EntityName entityName) (StreamId streamId) = do
+selectLatestEventInStream (EntityName entityName) (StreamId streamIdText) = do
   let s :: Hasql.Statement (Text, Text) (Maybe (Int64, Int64)) =
         [TH.maybeStatement|
     SELECT GlobalPosition :: int8, LocalPosition :: int8
@@ -123,7 +124,6 @@ selectLatestEventInStream (EntityName entityName) (StreamId streamId) = do
     ORDER BY LocalPosition DESC
     LIMIT 1
   |]
-  let streamIdText = Uuid.toText streamId
   let params = (entityName, streamIdText)
   Session.statement params s
     |> Mappable.map

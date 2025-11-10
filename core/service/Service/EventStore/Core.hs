@@ -39,6 +39,7 @@ data Error
   | SubscriptionError SubscriptionId Text -- Subscription-specific errors
   | TruncationError EntityName StreamId StreamPosition Text -- Stream truncation errors with context
   | InsertionError InsertionFailure
+  | ReadingAllError Text
   deriving (Eq, Show)
 
 
