@@ -20,6 +20,7 @@ import Result qualified
 import Service.Event
 import Service.Event.EntityName qualified as EntityName
 import Service.Event.EventMetadata (EventMetadata (..))
+import Service.Event.EventMetadata qualified as EventMetadata
 import Service.Event.StreamId qualified as StreamId
 import Service.EventStore.Core
 import Service.EventStore.Postgres.Internal.Core
@@ -388,8 +389,12 @@ performReadAllStreamEvents
       records |> Task.forEach \record -> do
         let evt :: Result Text (ReadAllMessage eventType) = do
               event <- Json.decode record.eventData
-              metadata <- Json.decode record.metadata
+              m <- Json.decode record.metadata
               let streamId = record.inlinedStreamId |> StreamId.fromText
+              let metadata =
+                    m
+                      { EventMetadata.globalPosition = Just (StreamPosition record.globalPosition)
+                      }
               Event
                 { entityName = record.entityName |> EntityName,
                   streamId,
