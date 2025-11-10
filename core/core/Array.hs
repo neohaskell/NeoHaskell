@@ -433,10 +433,9 @@ flatMap ::
   Array a ->
   -- | The resulting flattened array.
   Array b
-flatMap f array =
-  array
-    |> map f
-    |> foldl append empty
+flatMap f (Array vector) = do
+  let unwrappingF = f .> unwrap
+  vector |> Data.Vector.concatMap unwrappingF |> Array
 
 
 -- >>> foldM (\acc x -> do { putStrLn ("Adding " ++ show x ++ " to " ++ show acc); pure (acc + x) }) 0 (fromLinkedList [10, 5, 2] :: Array Int)
