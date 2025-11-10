@@ -54,7 +54,6 @@ data NewObserve = NewObserve
 
 dropPostgres :: Internal.Ops -> Postgres.Config -> Task Text Unit
 dropPostgres ops config = do
-  print "D-D-D-D-D-DROP THE (DATA)BASE"
   connection <- ops.acquire config
   res <-
     Sessions.dropEventsTableSession
