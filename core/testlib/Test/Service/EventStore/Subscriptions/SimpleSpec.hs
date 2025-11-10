@@ -6,6 +6,7 @@ import ConcurrentVar qualified
 import Core
 import Service.Event (Event (..))
 import Service.Event qualified as Event
+import Service.Event.StreamId qualified as StreamId
 import Service.EventStore (EventStore (..))
 import Service.EventStore.Core qualified as EventStore
 import Task qualified
@@ -21,7 +22,7 @@ spec newStore = do
       store <- newStore
 
       -- Create test data
-      streamId <- Uuid.generate |> Task.map Event.StreamId
+      streamId <- StreamId.new
       entityNameText <- Uuid.generate |> Task.map toText
       let entityName = Event.EntityName entityNameText
       insertion <- newInsertion 0

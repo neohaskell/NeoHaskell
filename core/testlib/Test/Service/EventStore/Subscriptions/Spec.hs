@@ -9,6 +9,7 @@ import Result qualified
 import Service.Event (Event (..))
 import Service.Event qualified as Event
 import Service.Event.EventMetadata (EventMetadata (..))
+import Service.Event.StreamId qualified as StreamId
 import Service.EventStore (EventStore (..))
 import Service.EventStore.Core qualified as EventStore
 import Stream qualified
@@ -76,7 +77,7 @@ spec newStore = do
         -- Create another entity and stream to test filtering
         otherEntityNameText <- Uuid.generate |> Task.map toText
         let otherEntityName = Event.EntityName otherEntityNameText
-        otherStreamId <- Uuid.generate |> Task.map Event.StreamId
+        otherStreamId <- StreamId.new
         otherInsertion <- newInsertion 0
         let otherEvent =
               Event.InsertionPayload
@@ -138,7 +139,7 @@ spec newStore = do
 
       it "allows subscribing to specific stream events only" \context -> do
         -- Create another stream to test filtering
-        otherStreamId <- Uuid.generate |> Task.map Event.StreamId
+        otherStreamId <- StreamId.new
         otherInsertion <- newInsertion 0
         let otherEvent =
               Event.InsertionPayload
@@ -410,8 +411,8 @@ spec newStore = do
         let entity1Id = Event.EntityName entity1IdText
         entity2IdText <- Uuid.generate |> Task.map toText
         let entity2Id = Event.EntityName entity2IdText
-        stream1Id <- Uuid.generate |> Task.map Event.StreamId
-        stream2Id <- Uuid.generate |> Task.map Event.StreamId
+        stream1Id <- StreamId.new
+        stream2Id <- StreamId.new
 
         -- Insert events for both entities BEFORE subscribing (these should NOT be received)
         let eventCount = 5
@@ -471,8 +472,8 @@ spec newStore = do
         let entity1Id = Event.EntityName entity1IdText
         entity2IdText <- Uuid.generate |> Task.map toText
         let entity2Id = Event.EntityName entity2IdText
-        stream1Id <- Uuid.generate |> Task.map Event.StreamId
-        stream2Id <- Uuid.generate |> Task.map Event.StreamId
+        stream1Id <- StreamId.new
+        stream2Id <- StreamId.new
 
         -- Insert FIRST batch of events to create historical data
         let eventCount = 5

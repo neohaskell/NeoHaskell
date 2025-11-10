@@ -6,6 +6,7 @@ module Test.Service.EventStore.ReadAllForwardsFromStart.Context (
 import Array qualified
 import Core
 import Service.Event qualified as Event
+import Service.Event.StreamId qualified as StreamId
 import Service.EventStore (EventStore)
 import Service.EventStore.Core qualified as EventStore
 import Task qualified
@@ -27,7 +28,7 @@ data Context = Context
 initialize :: Task Text (EventStore MyEvent) -> Int -> Task Text Context
 initialize newStore eventCount = do
   store <- newStore
-  streamId <- Uuid.generate |> Task.map Event.StreamId
+  streamId <- StreamId.new
   entity1IdText <- Uuid.generate |> Task.map toText
   let entity1Id = Event.EntityName entity1IdText
   entity2IdText <- Uuid.generate |> Task.map toText
