@@ -82,6 +82,14 @@ createEventsTableSession =
           |]
 
 
+dropEventsTableSession :: Session.Session Unit
+dropEventsTableSession =
+  Session.sql
+    [fmt|
+            DROP TABLE IF EXISTS Events
+          |]
+
+
 selectExistingIdsSession :: Array Uuid -> Session.Session (Array Uuid)
 selectExistingIdsSession ids = do
   let s :: Hasql.Statement (Vector UUID.UUID) (Vector UUID.UUID) =

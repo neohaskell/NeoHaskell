@@ -33,7 +33,7 @@ spec newStore = do
 specWithCount :: Task Text (EventStore MyEvent) -> Int -> Spec Unit
 specWithCount newStore eventCount = do
   describe [fmt|testing with #{toText eventCount} events|] do
-    beforeAll (Context.initialize newStore eventCount) do
+    before (Context.initialize newStore eventCount) do
       it "reads all events from start in order" \context -> do
         let startPosition = Event.StreamPosition 0
         let limit = EventStore.Limit (fromIntegral (context.eventCount * 2)) -- Double the limit since we have two entities

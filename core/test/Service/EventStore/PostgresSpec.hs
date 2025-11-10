@@ -3,6 +3,7 @@ module Service.EventStore.PostgresSpec where
 import Core
 import Service.EventStore.Postgres qualified as Postgres
 import Service.EventStore.Postgres.Internal qualified as Internal
+import Service.EventStore.Postgres.Internal.Sessions qualified as Sessions
 import Task qualified
 import Test
 import Test.Service.EventStore qualified as EventStore
@@ -38,7 +39,10 @@ spec = do
         observe.initializeTableCalls
           |> varContents shouldBe 1
 
-    let newStore = Postgres.new config |> Task.mapError toText
+    let newStore = do
+          let ops = Internal.defaultOps
+          dropPostgres ops config
+          Postgres.new config |> Task.mapError toText
     EventStore.spec newStore
 
 
@@ -46,6 +50,21 @@ data NewObserve = NewObserve
   { acquireCalls :: Var Int,
     initializeTableCalls :: Var Int
   }
+
+
+dropPostgres :: Internal.Ops -> Postgres.Config -> Task Text Unit
+dropPostgres ops config = do
+  print "D-D-D-D-D-DROP THE (DATA)BASE"
+  connection <- ops.acquire config
+  res <-
+    Sessions.dropEventsTableSession
+      |> Sessions.run connection
+      |> Task.mapError toText
+      |> Task.asResult
+  case res of
+    Ok _ -> Task.yield unit
+    Err err ->
+      Task.throw err
 
 
 mockNewOps :: Task Text (Internal.Ops, NewObserve)
