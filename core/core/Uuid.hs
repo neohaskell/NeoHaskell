@@ -14,17 +14,21 @@ import Data.UUID.V4 qualified as V4
 import Json (FromJSON, ToJSON)
 import Task (Task)
 import Task qualified
-import ToText (Show)
+import ToText (Show (..))
 
 
 newtype Uuid = Uuid (UUID.UUID)
-  deriving (Eq, Ord, Show, Generic)
+  deriving (Eq, Ord, Generic)
 
 
 instance ToJSON Uuid
 
 
 instance FromJSON Uuid
+
+
+instance Show Uuid where
+  show (Uuid uuid) = show uuid
 
 
 instance Default Uuid where

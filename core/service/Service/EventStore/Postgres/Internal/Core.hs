@@ -72,8 +72,9 @@ toPostgresPosition pos dir =
 
 toPostgresEntityFilters :: Maybe (Array EntityName) -> Text
 toPostgresEntityFilters maybeEntityNames = do
+  let nameToText (EntityName.EntityName n) = [fmt|'#{n}'|]
   let entityNames = maybeEntityNames |> Maybe.withDefault Array.empty
-  let entityNamesText = entityNames |> Array.map EntityName.toText |> Text.joinWith ", "
+  let entityNamesText = entityNames |> Array.map nameToText |> Text.joinWith ", "
   if (entityNames |> Array.length) == 0
     then ""
-    else [fmt| AND Entity = ANY (#{entityNamesText})|]
+    else [fmt| AND Entity = ANY(ARRAY[#{entityNamesText}])|]
