@@ -259,6 +259,7 @@ specWithCount newStore eventCount = do
           context.store.readAllEventsForwardFromFiltered startPosition limit entityFilter
             |> Task.mapError toText
             |> Task.andThen Stream.toArray
+            |> Task.map EventStore.collectAllEvents
 
         Array.length filteredEvents
           |> shouldBe 0
