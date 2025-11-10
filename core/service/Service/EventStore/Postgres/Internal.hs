@@ -156,6 +156,9 @@ insertGo ::
   InsertionPayload eventType ->
   Task PostgresStoreError InsertionSuccess
 insertGo ops cfg payload = do
+  Task.when (payload.insertions |> Array.isEmpty) do
+    Task.throw (CoreInsertionError EmptyPayload)
+
   conn <- ops.acquire cfg |> Task.mapError ConnectionAcquisitionError
 
   let payloadEventIds =
