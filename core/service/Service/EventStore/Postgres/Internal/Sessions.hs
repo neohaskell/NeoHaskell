@@ -1,6 +1,5 @@
 module Service.EventStore.Postgres.Internal.Sessions where
 
-import Applicable qualified
 import Array qualified
 import Bytes qualified
 import Contravariant.Extras qualified as Contravariant
@@ -20,8 +19,7 @@ import Json qualified
 import Mappable qualified
 import Maybe qualified
 import Result qualified
-import Service.Event (EntityName (..), Event, StreamId (..), StreamPosition (..))
-import Service.Event.StreamId qualified as StreamId
+import Service.Event (EntityName (..), StreamId (..), StreamPosition (..))
 import Service.EventStore.Postgres.Internal.Core
 import Service.EventStore.Postgres.Internal.PostgresEventRecord (PostgresEventRecord)
 import Service.EventStore.Postgres.Internal.PostgresEventRecord qualified as PostgresEventRecord

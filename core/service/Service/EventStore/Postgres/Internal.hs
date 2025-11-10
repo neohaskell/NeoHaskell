@@ -14,7 +14,6 @@ import Hasql.Connection qualified as Hasql
 import Hasql.Connection.Setting qualified as ConnectionSetting
 import Hasql.Connection.Setting.Connection qualified as ConnectionSettingConnection
 import Hasql.Connection.Setting.Connection.Param qualified as Param
-import Hasql.Session qualified as Session
 import Json qualified
 import Maybe qualified
 import Result qualified
