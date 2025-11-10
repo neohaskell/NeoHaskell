@@ -40,6 +40,7 @@ specWithCount newStore eventCount = do
           context.store.readAllEventsBackwardFrom context.maxGlobalPosition limit
             |> Task.mapError toText
             |> Task.andThen Stream.toArray
+            |> Task.map EventStore.collectAllEvents
 
         Array.length events
           |> shouldBe (context.eventCount * 2)
@@ -151,6 +152,7 @@ specWithCount newStore eventCount = do
           context.store.readAllEventsBackwardFrom (Event.StreamPosition 0) limit
             |> Task.mapError toText
             |> Task.andThen Stream.toArray
+            |> Task.map EventStore.collectAllEvents
 
         events
           |> Array.length
@@ -248,6 +250,7 @@ specWithCount newStore eventCount = do
           context.store.readAllEventsBackwardFromFiltered context.maxGlobalPosition limit entityFilter
             |> Task.mapError toText
             |> Task.andThen Stream.toArray
+            |> Task.map EventStore.collectAllEvents
 
         Array.length filteredEvents
           |> shouldBe 0

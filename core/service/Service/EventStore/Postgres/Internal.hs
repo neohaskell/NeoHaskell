@@ -403,26 +403,30 @@ performReadAllStreamEvents
                 }
                 |> AllEvent
                 |> Result.Ok
-        case evt of
-          Ok goodEvent ->
-            stream |> Stream.writeItem goodEvent
-          Err err -> do
-            let entityName = record.entityName
-            let streamId = record.inlinedStreamId
-            let locator = [fmt|#{entityName}#{streamId}|]
-            let toxicEvt =
-                  ToxicContents
-                    { locator = locator,
-                      metadata = record.metadata,
-                      globalPosition = (StreamPosition record.globalPosition),
-                      localPosition = (StreamPosition record.localPosition),
-                      additionalInfo = err
-                    }
-                    |> ToxicAllEvent
-            stream |> Stream.writeItem toxicEvt
-            positionRef |> Var.set record.globalPosition
-
-      Var.decrement remainingLimitRef
+        remainingLimit <- Var.get remainingLimitRef
+        if remainingLimit <= 0
+          then
+            pass
+          else do
+            case evt of
+              Ok goodEvent -> do
+                stream |> Stream.writeItem goodEvent
+              Err err -> do
+                let entityName = record.entityName
+                let streamId = record.inlinedStreamId
+                let locator = [fmt|#{entityName}#{streamId}|]
+                let toxicEvt =
+                      ToxicContents
+                        { locator = locator,
+                          metadata = record.metadata,
+                          globalPosition = (StreamPosition record.globalPosition),
+                          localPosition = (StreamPosition record.localPosition),
+                          additionalInfo = err
+                        }
+                        |> ToxicAllEvent
+                stream |> Stream.writeItem toxicEvt
+                positionRef |> Var.set record.globalPosition
+            Var.decrement remainingLimitRef
 
       Task.when (Array.length records < batchSize) do
         breakLoopRef |> Var.set True
