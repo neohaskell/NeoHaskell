@@ -365,7 +365,7 @@ performReadAllStreamEvents
           shouldBreak <- Var.get breakLoopRef
           isCancelled <- Var.get cancellationRef
           remainingLimit <- Var.get remainingLimitRef
-          Task.yield (not shouldBreak && not isCancelled && remainingLimit <= 0)
+          Task.yield (not shouldBreak && not isCancelled && remainingLimit > 0)
 
     positionRef <- Var.new (toPostgresPosition relative readDirection)
 

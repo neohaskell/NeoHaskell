@@ -41,6 +41,7 @@ specWithCount newStore eventCount = do
           context.store.readAllEventsForwardFrom startPosition limit
             |> Task.mapError toText
             |> Task.andThen Stream.toArray
+            |> Task.map EventStore.collectAllEvents
 
         Array.length events
           |> shouldBe (context.eventCount * 2)
