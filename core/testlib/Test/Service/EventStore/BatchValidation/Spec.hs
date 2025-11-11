@@ -4,7 +4,7 @@ import Array qualified
 import Core
 import Result qualified
 import Service.Event qualified as Event
-import Service.EventStore (EventStore)
+import Service.EventStore (EventStore, collectStreamEvents)
 import Service.EventStore.Core qualified as EventStore
 import Stream qualified
 import Task qualified
@@ -104,6 +104,7 @@ spec newStore = do
         allEvents <- Stream.toArray stream
 
         allEvents
+          |> collectStreamEvents
           |> Array.length
           |> shouldBe 100
 
@@ -141,6 +142,7 @@ spec newStore = do
         allEvents <- Stream.toArray stream
 
         allEvents
+          |> collectStreamEvents
           |> Array.length
           |> shouldBe 99
 
