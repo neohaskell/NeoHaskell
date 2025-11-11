@@ -46,10 +46,11 @@ spec newStore = do
       it "has the correct number of events globally" \context -> do
         let expectedTotalEvents = context.streamCount * context.eventsPerStream |> fromIntegral
         let limit = EventStore.Limit (expectedTotalEvents)
-        allGlobalEvents <-
+        allGlobalMessages <-
           context.store.readAllEventsForwardFrom (Event.StreamPosition 0) limit
             |> Task.mapError toText
             |> Task.andThen Stream.toArray
+        let allGlobalEvents = Event.collectAllEvents allGlobalMessages
         allGlobalEvents
           |> Array.length
           |> shouldBe (context.streamCount * context.eventsPerStream)
@@ -67,12 +68,13 @@ spec newStore = do
       it "can read events from a specific position" \context -> do
         let expectedTotalEvents = context.streamCount * context.eventsPerStream
         let midPoint = expectedTotalEvents // 2
-        laterGlobalEvents <-
+        laterGlobalMessages <-
           context.store.readAllEventsForwardFrom
             (Event.StreamPosition (fromIntegral midPoint))
             (EventStore.Limit (expectedTotalEvents |> fromIntegral))
             |> Task.mapError toText
             |> Task.andThen Stream.toArray
+        let laterGlobalEvents = Event.collectAllEvents laterGlobalMessages
         laterGlobalEvents
           |> Array.length
           |> shouldSatisfy (\count -> count <= expectedTotalEvents - midPoint)

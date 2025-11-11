@@ -309,10 +309,11 @@ spec newStore = do
           |> discard
 
         -- Read the stream - should have exactly 10 events (not 20)
-        finalEvents <-
+        finalMessages <-
           context.store.readStreamForwardFrom entityName context.streamId (Event.StreamPosition 0) (EventStore.Limit 20)
             |> Task.mapError toText
             |> Task.andThen Stream.toArray
+        let finalEvents = EventStore.collectStreamEvents finalMessages
 
         -- Should have exactly 10 events (idempotency - no duplicates)
         finalEvents
@@ -435,10 +436,11 @@ spec newStore = do
           |> shouldBe 2
 
         -- Verify that the events in the global stream match what's in the individual stream
-        streamEvents <-
+        streamMessages <-
           context.store.readStreamForwardFrom entityName context.streamId (Event.StreamPosition 0) (EventStore.Limit 10)
             |> Task.mapError toText
             |> Task.andThen Stream.toArray
+        let streamEvents = EventStore.collectStreamEvents streamMessages
 
         -- The individual stream should only have the events that passed the consistency check
         streamEvents
