@@ -137,6 +137,7 @@ library
     Service.EventStore.Postgres.Internal
     Service.EventStore.Postgres.Internal.Core
     Service.EventStore.Postgres.Internal.PostgresEventRecord
+    Service.EventStore.Postgres.Internal.SubscriptionStore
     Service.EventStore.Postgres.Internal.Sessions
     Stream
     Subprocess
