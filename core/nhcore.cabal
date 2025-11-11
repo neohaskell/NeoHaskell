@@ -34,6 +34,7 @@ common common_cfg
     file-embed,
     ghc-prim,
     hasql,
+    hasql-notifications,
     hasql-th,
     hspec,
     http-conduit,
