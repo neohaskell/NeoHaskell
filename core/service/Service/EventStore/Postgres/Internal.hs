@@ -244,33 +244,15 @@ readStreamForwardFromImpl ::
   StreamId ->
   StreamPosition ->
   Limit ->
-  Task Error (Stream (Event eventType))
+  Task Error (Stream (ReadStreamMessage eventType))
 readStreamForwardFromImpl ops cfg entityName streamId streamPosition limit = do
   readingRefs <- newReadingRefs
   stream <- Stream.new
   let relative = FromAndAfter streamPosition |> Just
   let readDirection = Just Forwards
 
-  _ <- performReadStreamEvents ops cfg stream readingRefs entityName streamId limit relative readDirection
+  performReadStreamEvents ops cfg stream readingRefs entityName streamId limit relative readDirection
     |> Task.mapError (toText .> StorageFailure)
-
-  -- Create an event stream that will filter out only Event messages
-  eventStream <- Stream.new
-
-  -- Launch background task to convert the stream
-  _ <- AsyncTask.run do
-    let processMessage :: Task Error Unit = do
-          msgResult <- Stream.readNext stream |> Task.asResult
-          case msgResult of
-            Err _ -> eventStream |> Stream.end |> Task.mapError StorageFailure
-            Ok Nothing -> eventStream |> Stream.end |> Task.mapError StorageFailure
-            Ok (Just (StreamEvent evt)) -> do
-              _ <- eventStream |> Stream.writeItem evt |> Task.mapError StorageFailure
-              processMessage
-            Ok (Just _) -> processMessage
-    processMessage
-
-  Task.yield eventStream
 
 
 readStreamBackwardFromImpl ::
@@ -281,33 +263,15 @@ readStreamBackwardFromImpl ::
   StreamId ->
   StreamPosition ->
   Limit ->
-  Task Error (Stream (Event eventType))
+  Task Error (Stream (ReadStreamMessage eventType))
 readStreamBackwardFromImpl ops cfg entityName streamId streamPosition limit = do
   readingRefs <- newReadingRefs
   stream <- Stream.new
   let relative = Before streamPosition |> Just
   let readDirection = Just Backwards
 
-  _ <- performReadStreamEvents ops cfg stream readingRefs entityName streamId limit relative readDirection
+  performReadStreamEvents ops cfg stream readingRefs entityName streamId limit relative readDirection
     |> Task.mapError (toText .> StorageFailure)
-
-  -- Create an event stream that will filter out only Event messages
-  eventStream <- Stream.new
-
-  -- Launch background task to convert the stream
-  _ <- AsyncTask.run do
-    let processMessage :: Task Error Unit = do
-          msgResult <- Stream.readNext stream |> Task.asResult
-          case msgResult of
-            Err _ -> eventStream |> Stream.end |> Task.mapError StorageFailure
-            Ok Nothing -> eventStream |> Stream.end |> Task.mapError StorageFailure
-            Ok (Just (StreamEvent evt)) -> do
-              _ <- eventStream |> Stream.writeItem evt |> Task.mapError StorageFailure
-              processMessage
-            Ok (Just _) -> processMessage
-    processMessage
-
-  Task.yield eventStream
 
 
 readAllStreamEventsImpl ::
@@ -316,7 +280,7 @@ readAllStreamEventsImpl ::
   Config ->
   EntityName ->
   StreamId ->
-  Task Error (Stream (Event eventType))
+  Task Error (Stream (ReadStreamMessage eventType))
 readAllStreamEventsImpl ops cfg entityName streamId = do
   readingRefs <- newReadingRefs
   stream <- Stream.new
@@ -324,26 +288,8 @@ readAllStreamEventsImpl ops cfg entityName streamId = do
   let relative = Just Start
   let readDirection = Just Forwards
 
-  _ <- performReadStreamEvents ops cfg stream readingRefs entityName streamId limit relative readDirection
+  performReadStreamEvents ops cfg stream readingRefs entityName streamId limit relative readDirection
     |> Task.mapError (toText .> StorageFailure)
-
-  -- Create an event stream that will filter out only Event messages
-  eventStream <- Stream.new
-
-  -- Launch background task to convert the stream
-  _ <- AsyncTask.run do
-    let processMessage :: Task Error Unit = do
-          msgResult <- Stream.readNext stream |> Task.asResult
-          case msgResult of
-            Err _ -> eventStream |> Stream.end |> Task.mapError StorageFailure
-            Ok Nothing -> eventStream |> Stream.end |> Task.mapError StorageFailure
-            Ok (Just (StreamEvent evt)) -> do
-              _ <- eventStream |> Stream.writeItem evt |> Task.mapError StorageFailure
-              processMessage
-            Ok (Just _) -> processMessage
-    processMessage
-
-  Task.yield eventStream
 
 
 readAllEventsForwardFromImpl ::

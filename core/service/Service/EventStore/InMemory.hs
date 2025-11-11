@@ -189,15 +189,16 @@ readStreamForwardFromImpl ::
   StreamId ->
   StreamPosition ->
   Limit ->
-  Task Error (Stream (Event eventType))
+  Task Error (Stream (ReadStreamMessage eventType))
 readStreamForwardFromImpl store entityName streamId position (Limit (limit)) = do
   channel <- store |> ensureStream entityName streamId
-  items <-
+  events <-
     channel
       |> DurableChannel.getAndTransform \events ->
         events
           |> Array.dropWhile (\event -> event.metadata.localPosition < Just position)
           |> Array.take (fromIntegral limit)
+  let items = events |> Array.map StreamEvent
   Stream.fromArray items
 
 
@@ -207,16 +208,17 @@ readStreamBackwardFromImpl ::
   StreamId ->
   StreamPosition ->
   Limit ->
-  Task Error (Stream (Event eventType))
+  Task Error (Stream (ReadStreamMessage eventType))
 readStreamBackwardFromImpl store entityName streamId position (Limit (limit)) = do
   channel <- store |> ensureStream entityName streamId
-  items <-
+  events <-
     channel
       |> DurableChannel.getAndTransform \events ->
         events
           |> Array.takeIf (\event -> event.metadata.localPosition < Just position)
           |> Array.reverse
           |> Array.take (fromIntegral limit)
+  let items = events |> Array.map StreamEvent
   Stream.fromArray items
 
 
@@ -224,12 +226,13 @@ readAllStreamEventsImpl ::
   StreamStore eventType ->
   EntityName ->
   StreamId ->
-  Task Error (Stream (Event eventType))
+  Task Error (Stream (ReadStreamMessage eventType))
 readAllStreamEventsImpl store entityName streamId = do
   channel <- store |> ensureStream entityName streamId
-  items <-
+  events <-
     channel
       |> DurableChannel.getAndTransform unchanged
+  let items = events |> Array.map StreamEvent
   Stream.fromArray items
 
 

@@ -97,15 +97,15 @@ data EventStore eventType = EventStore
     --   Returns the local and global stream position if successful, or an error on conflict or failure.
     insert :: InsertionPayload eventType -> Task Error InsertionSuccess,
     -- | Read events from a stream in forward direction starting from a given revision.
-    --   Returns an array of events or an Error.
-    readStreamForwardFrom :: EntityName -> StreamId -> StreamPosition -> Limit -> Task Error (Stream (Event eventType)),
+    --   Returns a stream of ReadStreamMessage or an Error.
+    readStreamForwardFrom :: EntityName -> StreamId -> StreamPosition -> Limit -> Task Error (Stream (ReadStreamMessage eventType)),
     -- | Read events from a stream in backward direction starting from a given revision.
     --   Useful for looking at recent events.
     readStreamBackwardFrom ::
-      EntityName -> StreamId -> StreamPosition -> Limit -> Task Error (Stream (Event eventType)),
+      EntityName -> StreamId -> StreamPosition -> Limit -> Task Error (Stream (ReadStreamMessage eventType)),
     -- | Read all events from a specific stream for a given entity.
-    --   Returns an array of events or an Error.
-    readAllStreamEvents :: EntityName -> StreamId -> Task Error (Stream (Event eventType)),
+    --   Returns a stream of ReadStreamMessage or an Error.
+    readAllStreamEvents :: EntityName -> StreamId -> Task Error (Stream (ReadStreamMessage eventType)),
     -- | Read events from the global stream in forward direction starting from a given global position.
     --   This reads across all streams and entities.
     readAllEventsForwardFrom :: StreamPosition -> Limit -> Task Error (Stream (ReadAllMessage eventType)),
