@@ -21,9 +21,17 @@ data Error
   | OtherError
 
 
+type GlobalSubscriptionCallback eventType =
+  ReadAllMessage eventType -> Task Error Unit
+
+
+type StreamSubscriptionCallback eventType =
+  ReadStreamMessage eventType -> Task Error Unit
+
+
 data SubscriptionStore eventType = SubscriptionStore
-  { globalSubscriptions :: ConcurrentVar (Array (ReadAllMessage eventType -> Task Error Unit)),
-    streamSubscriptions :: ConcurrentVar (Map StreamId (Array (ReadStreamMessage eventType -> Task Error Unit)))
+  { globalSubscriptions :: ConcurrentVar (Array (GlobalSubscriptionCallback eventType)),
+    streamSubscriptions :: ConcurrentVar (Map StreamId (Array (StreamSubscriptionCallback eventType)))
   }
 
 
@@ -34,14 +42,14 @@ new = do
   Task.yield (SubscriptionStore {globalSubscriptions, streamSubscriptions})
 
 
-addGlobalSubscription :: (ReadAllMessage eventType -> Task Error Unit) -> SubscriptionStore eventType -> Task Error Unit
+addGlobalSubscription :: GlobalSubscriptionCallback eventType -> SubscriptionStore eventType -> Task Error Unit
 addGlobalSubscription subscription store = do
   store.globalSubscriptions
     |> ConcurrentVar.modify (Array.push subscription)
 
 
 addStreamSubscription ::
-  StreamId -> (ReadStreamMessage eventType -> Task Error Unit) -> SubscriptionStore eventType -> Task Error Unit
+  StreamId -> StreamSubscriptionCallback eventType -> SubscriptionStore eventType -> Task Error Unit
 addStreamSubscription streamId subscription store = do
   store.streamSubscriptions |> ConcurrentVar.modify \subscriptionsMap -> do
     let currentSubscriptions = subscriptionsMap |> Map.get streamId |> Maybe.withDefault Array.empty
