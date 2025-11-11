@@ -232,7 +232,8 @@ selectStreamEventBatch positionRef (EntityName entityName) (StreamId streamIdTex
   let direction = toPostgresDirection relative readDirection
   position <- Var.get positionRef
   let positionComparison = toPostgresLocalPositionComparison readDirection
-  let positionFilter :: Text =
+  let positionFilter :: Text
+      positionFilter =
         case relative of
           Just Start -> ""
           Just End -> ""

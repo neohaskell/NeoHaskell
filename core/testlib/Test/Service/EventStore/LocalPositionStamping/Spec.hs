@@ -41,10 +41,12 @@ spec newStore = do
       -- Read back the events
       let startPosition = Event.StreamPosition 0
       let limit = EventStore.Limit 10
-      storedEvents <-
+      streamMessages <-
         store.readStreamForwardFrom entityName streamId startPosition limit
           |> Task.mapError toText
           |> Task.andThen Stream.toArray
+
+      let storedEvents = EventStore.collectStreamEvents streamMessages
 
       -- Verify we got 3 events back
       Array.length storedEvents |> shouldBe 3
@@ -110,7 +112,8 @@ spec newStore = do
       _result2 <- store.insert payload2 |> Task.mapError toText
 
       -- Read all events
-      allEvents <- store.readAllStreamEvents entityName streamId |> Task.mapError toText |> Task.andThen Stream.toArray
+      streamMessages <- store.readAllStreamEvents entityName streamId |> Task.mapError toText |> Task.andThen Stream.toArray
+      let allEvents = EventStore.collectStreamEvents streamMessages
       Array.length allEvents |> shouldBe 5
 
       -- Verify local positions are sequential from 0 to 4
@@ -174,7 +177,8 @@ spec newStore = do
       _result2 <- store.insert payload2 |> Task.mapError toText
 
       -- Read back and verify positions were preserved
-      allEvents <- store.readAllStreamEvents entityName streamId |> Task.mapError toText |> Task.andThen Stream.toArray
+      streamMessages <- store.readAllStreamEvents entityName streamId |> Task.mapError toText |> Task.andThen Stream.toArray
+      let allEvents = EventStore.collectStreamEvents streamMessages
       Array.length allEvents |> shouldBe 2
 
       -- Both events should have their explicitly-set local positions
@@ -223,7 +227,8 @@ spec newStore = do
       _result <- store.insert payload |> Task.mapError toText
 
       -- Read back events
-      allEvents <- store.readAllStreamEvents entityName streamId |> Task.mapError toText |> Task.andThen Stream.toArray
+      streamMessages <- store.readAllStreamEvents entityName streamId |> Task.mapError toText |> Task.andThen Stream.toArray
+      let allEvents = EventStore.collectStreamEvents streamMessages
       Array.length allEvents |> shouldBe 2
 
       -- Events should have auto-assigned sequential positions

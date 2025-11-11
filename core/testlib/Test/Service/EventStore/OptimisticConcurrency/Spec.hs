@@ -117,10 +117,12 @@ spec newStore = do
           |> shouldBe 1
 
         -- Read back all events to verify
-        events <-
+        streamMessages <-
           context.store.readStreamForwardFrom entityName context.streamId (Event.StreamPosition 0) (EventStore.Limit (10))
             |> Task.mapError toText
             |> Task.andThen Stream.toArray
+
+        let events = EventStore.collectStreamEvents streamMessages
 
         -- We should have exactly 2 events (initial + one successful append)
         events
@@ -244,10 +246,12 @@ spec newStore = do
           |> shouldBe (Event.StreamPosition 5)
 
         -- Verify final stream state has 6 events
-        finalEvents <-
+        finalStreamMessages <-
           context.store.readStreamForwardFrom entityName context.streamId (Event.StreamPosition 0) (EventStore.Limit 10)
             |> Task.mapError toText
             |> Task.andThen Stream.toArray
+
+        let finalEvents = EventStore.collectStreamEvents finalStreamMessages
 
         finalEvents
           |> Array.length

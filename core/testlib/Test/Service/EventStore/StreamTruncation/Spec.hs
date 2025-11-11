@@ -44,10 +44,12 @@ spec newStore = do
           |> discard
 
         -- Verify all 10 events are there
-        eventsBeforeTruncate <-
+        eventsBeforeTruncateMessages <-
           context.store.readStreamForwardFrom entityName context.streamId (Event.StreamPosition 0) (EventStore.Limit 20)
             |> Task.mapError toText
             |> Task.andThen Stream.toArray
+
+        let eventsBeforeTruncate = EventStore.collectStreamEvents eventsBeforeTruncateMessages
 
         eventsBeforeTruncate
           |> Array.length
@@ -59,10 +61,12 @@ spec newStore = do
           |> Task.mapError toText
 
         -- Read after truncation
-        eventsAfterTruncate <-
+        eventsAfterTruncateMessages <-
           context.store.readStreamForwardFrom entityName context.streamId (Event.StreamPosition 0) (EventStore.Limit 20)
             |> Task.mapError toText
             |> Task.andThen Stream.toArray
+
+        let eventsAfterTruncate = EventStore.collectStreamEvents eventsAfterTruncateMessages
 
         -- Should have 5 events remaining (positions 5, 6, 7, 8, 9)
         let expectedCount = eventCount - (eventCount // 2)
@@ -109,10 +113,12 @@ spec newStore = do
           |> Task.mapError toText
 
         -- Read after truncation - should still have all events (nothing before 0)
-        eventsAfterTruncate <-
+        eventsAfterTruncateMessages <-
           context.store.readStreamForwardFrom entityName context.streamId (Event.StreamPosition 0) (EventStore.Limit 20)
             |> Task.mapError toText
             |> Task.andThen Stream.toArray
+
+        let eventsAfterTruncate = EventStore.collectStreamEvents eventsAfterTruncateMessages
 
         eventsAfterTruncate
           |> Array.length
@@ -145,10 +151,12 @@ spec newStore = do
           |> Task.mapError toText
 
         -- Read after truncation - should have no events (all removed)
-        eventsAfterTruncate <-
+        eventsAfterTruncateMessages <-
           context.store.readStreamForwardFrom entityName context.streamId (Event.StreamPosition 0) (EventStore.Limit 20)
             |> Task.mapError toText
             |> Task.andThen Stream.toArray
+
+        let eventsAfterTruncate = EventStore.collectStreamEvents eventsAfterTruncateMessages
 
         eventsAfterTruncate
           |> Array.length

@@ -62,11 +62,12 @@ specWithCount newStore eventCount = do
         let startPosition = Event.StreamPosition 0
         let limit = EventStore.Limit (fromIntegral (context.eventCount * 2))
 
-        events <-
+        streamMessages <-
           context.store.readStreamForwardFrom context.entity1Id context.streamId startPosition limit
             |> Task.mapError toText
             |> Task.andThen Stream.toArray
 
+        let events = EventStore.collectStreamEvents streamMessages
         let eventsFromEntity = events |> Array.takeIf (\event -> event.entityName == context.entity1Id)
         eventsFromEntity
           |> Array.length
