@@ -4,8 +4,10 @@ module Service.EventStore.Core (
   Limit (..),
   SubscriptionId (..),
   ReadAllMessage (..),
+  ReadStreamMessage (..),
   ToxicContents (..),
   collectAllEvents,
+  collectStreamEvents,
 ) where
 
 import Array qualified
@@ -64,11 +66,27 @@ data ReadAllMessage eventType
   deriving (Eq, Show)
 
 
+data ReadStreamMessage eventType
+  = StreamReadingStarted
+  | StreamEvent (Event eventType)
+  | ToxicStreamEvent ToxicContents
+  deriving (Eq, Show)
+
+
 collectAllEvents :: Array (ReadAllMessage eventType) -> Array (Event eventType)
 collectAllEvents messages = do
   let extractEvent message =
         case message of
           AllEvent evt -> Array.wrap evt
+          _ -> Array.empty
+  messages |> Array.flatMap extractEvent
+
+
+collectStreamEvents :: Array (ReadStreamMessage eventType) -> Array (Event eventType)
+collectStreamEvents messages = do
+  let extractEvent message =
+        case message of
+          StreamEvent evt -> Array.wrap evt
           _ -> Array.empty
   messages |> Array.flatMap extractEvent
 

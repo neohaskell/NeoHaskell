@@ -100,9 +100,9 @@ new ops cfg = do
   let eventStore =
         EventStore
           { insert = insertImpl ops cfg 0,
-            readStreamForwardFrom = readStreamForwardFromImpl,
-            readStreamBackwardFrom = readStreamBackwardFromImpl,
-            readAllStreamEvents = readAllStreamEventsImpl,
+            readStreamForwardFrom = readStreamForwardFromImpl ops cfg,
+            readStreamBackwardFrom = readStreamBackwardFromImpl ops cfg,
+            readAllStreamEvents = readAllStreamEventsImpl ops cfg,
             readAllEventsForwardFrom = readAllEventsForwardFromImpl ops cfg,
             readAllEventsBackwardFrom = readAllEventsBackwardFromImpl ops cfg,
             readAllEventsForwardFromFiltered = readAllEventsForwardFromFilteredImpl ops cfg,
@@ -236,22 +236,114 @@ insertGo ops cfg payload = do
           Task.yield (InsertionSuccess {localPosition, globalPosition})
 
 
-readStreamForwardFromImpl :: EntityName -> StreamId -> StreamPosition -> Limit -> Task Error (Stream (Event eventType))
-readStreamForwardFromImpl _ _ _ _ = do
-  _ <- panic "Postgres.readStreamForwardFromImpl - Not implemented yet"
-  Stream.fromArray Array.empty
+readStreamForwardFromImpl ::
+  (Json.Decodable eventType) =>
+  Ops ->
+  Config ->
+  EntityName ->
+  StreamId ->
+  StreamPosition ->
+  Limit ->
+  Task Error (Stream (Event eventType))
+readStreamForwardFromImpl ops cfg entityName streamId streamPosition limit = do
+  readingRefs <- newReadingRefs
+  stream <- Stream.new
+  let relative = FromAndAfter streamPosition |> Just
+  let readDirection = Just Forwards
+
+  _ <- performReadStreamEvents ops cfg stream readingRefs entityName streamId limit relative readDirection
+    |> Task.mapError (toText .> StorageFailure)
+
+  -- Create an event stream that will filter out only Event messages
+  eventStream <- Stream.new
+
+  -- Launch background task to convert the stream
+  _ <- AsyncTask.run do
+    let processMessage :: Task Error Unit = do
+          msgResult <- Stream.readNext stream |> Task.asResult
+          case msgResult of
+            Err _ -> eventStream |> Stream.end |> Task.mapError StorageFailure
+            Ok Nothing -> eventStream |> Stream.end |> Task.mapError StorageFailure
+            Ok (Just (StreamEvent evt)) -> do
+              _ <- eventStream |> Stream.writeItem evt |> Task.mapError StorageFailure
+              processMessage
+            Ok (Just _) -> processMessage
+    processMessage
+
+  Task.yield eventStream
 
 
-readStreamBackwardFromImpl :: EntityName -> StreamId -> StreamPosition -> Limit -> Task Error (Stream (Event eventType))
-readStreamBackwardFromImpl _ _ _ _ = do
-  _ <- panic "Postgres.readStreamBackwardFromImpl - Not implemented yet"
-  Stream.fromArray Array.empty
+readStreamBackwardFromImpl ::
+  (Json.Decodable eventType) =>
+  Ops ->
+  Config ->
+  EntityName ->
+  StreamId ->
+  StreamPosition ->
+  Limit ->
+  Task Error (Stream (Event eventType))
+readStreamBackwardFromImpl ops cfg entityName streamId streamPosition limit = do
+  readingRefs <- newReadingRefs
+  stream <- Stream.new
+  let relative = Before streamPosition |> Just
+  let readDirection = Just Backwards
+
+  _ <- performReadStreamEvents ops cfg stream readingRefs entityName streamId limit relative readDirection
+    |> Task.mapError (toText .> StorageFailure)
+
+  -- Create an event stream that will filter out only Event messages
+  eventStream <- Stream.new
+
+  -- Launch background task to convert the stream
+  _ <- AsyncTask.run do
+    let processMessage :: Task Error Unit = do
+          msgResult <- Stream.readNext stream |> Task.asResult
+          case msgResult of
+            Err _ -> eventStream |> Stream.end |> Task.mapError StorageFailure
+            Ok Nothing -> eventStream |> Stream.end |> Task.mapError StorageFailure
+            Ok (Just (StreamEvent evt)) -> do
+              _ <- eventStream |> Stream.writeItem evt |> Task.mapError StorageFailure
+              processMessage
+            Ok (Just _) -> processMessage
+    processMessage
+
+  Task.yield eventStream
 
 
-readAllStreamEventsImpl :: EntityName -> StreamId -> Task Error (Stream (Event eventType))
-readAllStreamEventsImpl _ _ = do
-  _ <- panic "Postgres.readAllStreamEventsImpl - Not implemented yet"
-  Stream.fromArray Array.empty
+readAllStreamEventsImpl ::
+  (Json.Decodable eventType) =>
+  Ops ->
+  Config ->
+  EntityName ->
+  StreamId ->
+  Task Error (Stream (Event eventType))
+readAllStreamEventsImpl ops cfg entityName streamId = do
+  readingRefs <- newReadingRefs
+  stream <- Stream.new
+  let limit = Limit maxValue  -- Read all events
+  let relative = Just Start
+  let readDirection = Just Forwards
+
+  _ <- performReadStreamEvents ops cfg stream readingRefs entityName streamId limit relative readDirection
+    |> Task.mapError (toText .> StorageFailure)
+
+  -- Create an event stream that will filter out only Event messages
+  eventStream <- Stream.new
+
+  -- Launch background task to convert the stream
+  _ <- AsyncTask.run do
+    let processMessage :: Task Error Unit = do
+          msgResult <- Stream.readNext stream |> Task.asResult
+          case msgResult of
+            Err _ -> eventStream |> Stream.end |> Task.mapError StorageFailure
+            Ok Nothing -> eventStream |> Stream.end |> Task.mapError StorageFailure
+            Ok (Just (StreamEvent evt)) -> do
+              _ <- eventStream |> Stream.writeItem evt |> Task.mapError StorageFailure
+              processMessage
+            Ok (Just _) -> processMessage
+    processMessage
+
+  Task.yield eventStream
 
 
 readAllEventsForwardFromImpl ::
@@ -463,3 +555,119 @@ unsubscribeImpl _ = panic "Postgres.unsubscribeImpl - Not implemented yet" |> Ta
 
 truncateStreamImpl :: EntityName -> StreamId -> StreamPosition -> Task Error Unit
 truncateStreamImpl _ _ _ = panic "Postgres.truncateStreamImpl - Not implemented yet" |> Task.yield
+
+
+performReadStreamEvents ::
+  forall eventType.
+  (Json.Decodable eventType) =>
+  Ops ->
+  Config ->
+  Stream (ReadStreamMessage eventType) ->
+  ReadingRefs ->
+  EntityName ->
+  StreamId ->
+  Limit ->
+  Maybe RelativePosition ->
+  Maybe ReadDirection ->
+  Task PostgresStoreError (Stream (ReadStreamMessage eventType))
+performReadStreamEvents
+  ops
+  cfg
+  stream
+  (ReadingRefs {notifiedReadingRef, cancellationRef})
+  entityName
+  streamId
+  (Limit limit)
+  relative
+  readDirection = do
+    conn <- ops.acquire cfg |> Task.mapError ConnectionAcquisitionError
+
+    breakLoopRef <- Var.new False
+    remainingLimitRef <- Var.new limit
+    offsetRef <- Var.new (0 :: Int64)
+
+    let shouldKeepReading = do
+          shouldBreak <- Var.get breakLoopRef
+          isCancelled <- Var.get cancellationRef
+          remainingLimit <- Var.get remainingLimitRef
+          Task.yield (not shouldBreak && not isCancelled && remainingLimit > 0)
+
+    -- Determine starting position based on relative position
+    let streamPosition =
+          case relative of
+            Just (FromAndAfter (StreamPosition p)) -> p
+            Just (Before (StreamPosition p)) -> p
+            Just Start -> 0
+            Just End -> maxValue
+            Nothing -> 0
+
+    positionRef <- Var.new streamPosition
+
+    Task.while (shouldKeepReading) do
+      selectSession <- Sessions.selectStreamEventBatch positionRef entityName streamId relative readDirection
+      records <-
+        selectSession
+          |> Sessions.run conn
+          |> Task.mapError SessionError
+
+      hasNotifiedReadingStarted <- Var.get notifiedReadingRef
+      Task.unless (hasNotifiedReadingStarted) do
+        stream |> Stream.writeItem StreamReadingStarted
+        notifiedReadingRef |> Var.set True
+
+      Task.when (records |> Array.isEmpty) do
+        breakLoopRef |> Var.set True
+
+      records |> Task.forEach \record -> do
+        let evt :: Result Text (ReadStreamMessage eventType) = do
+              event <- Json.decode record.eventData
+              m <- Json.decode record.metadata
+              let metadata =
+                    m
+                      { EventMetadata.globalPosition = Just (StreamPosition record.globalPosition),
+                        EventMetadata.localPosition = Just (StreamPosition record.localPosition)
+                      }
+              Event
+                { entityName,
+                  streamId,
+                  event,
+                  metadata
+                }
+                |> StreamEvent
+                |> Result.Ok
+
+        remainingLimit <- Var.get remainingLimitRef
+        if remainingLimit <= 0
+          then
+            pass
+          else do
+            case evt of
+              Ok goodEvent -> do
+                stream |> Stream.writeItem goodEvent
+                -- Update position for next batch
+                positionRef |> Var.set record.localPosition
+              Err err -> do
+                let locator = [fmt|#{EntityName.toText entityName}#{StreamId.toText streamId}|]
+                let toxicEvt =
+                      ToxicContents
+                        { locator = locator,
+                          metadata = record.metadata,
+                          globalPosition = StreamPosition record.globalPosition,
+                          localPosition = StreamPosition record.localPosition,
+                          additionalInfo = err
+                        }
+                        |> ToxicStreamEvent
+                stream |> Stream.writeItem toxicEvt
+                positionRef |> Var.set record.localPosition
+            Var.decrement remainingLimitRef
+
+      -- Check if we got fewer records than batch size (means we're at the end)
+      Task.when (Array.length records < batchSize) do
+        breakLoopRef |> Var.set True
+
+      -- Update offset for next batch if continuing
+      currentOffset <- Var.get offsetRef
+      offsetRef |> Var.set (currentOffset + fromIntegral batchSize)
+
+    stream |> Stream.end
+    Task.yield stream

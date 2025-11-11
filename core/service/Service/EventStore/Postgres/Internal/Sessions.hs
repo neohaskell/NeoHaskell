@@ -219,3 +219,35 @@ selectEventBatch positionRef relative readDirection entityNames = do
         Statement (query |> Text.toBytes |> Bytes.unwrap) encoder decoder True
           |> Mappable.map Array.fromLegacy
   Session.statement unit statement |> Task.yield
+
+
+selectStreamEventBatch ::
+  Var Int64 ->
+  EntityName ->
+  StreamId ->
+  Maybe RelativePosition ->
+  Maybe ReadDirection ->
+  Task PostgresStoreError (Session.Session (Array (PostgresEventRecord)))
+selectStreamEventBatch positionRef (EntityName entityName) (StreamId streamIdText) relative readDirection = do
+  let direction = toPostgresDirection relative readDirection
+  position <- Var.get positionRef
+  let positionComparison = toPostgresLocalPositionComparison readDirection
+  let positionFilter :: Text =
+        case relative of
+          Just Start -> ""
+          Just End -> ""
+          _ -> [fmt| AND LocalPosition #{positionComparison} #{position}|]
+  let query :: Text =
+        [fmt|
+            SELECT EventId, GlobalPosition, LocalPosition, InlinedStreamId, Entity, EventData, Metadata
+            FROM Events
+            WHERE Entity = '#{entityName}' AND InlinedStreamId = '#{streamIdText}'#{positionFilter}
+            ORDER BY GlobalPosition #{direction}
+            LIMIT #{batchSize}
+          |]
+  let encoder = Encoders.noParams
+  let decoder = Decoders.rowVector PostgresEventRecord.rowDecoder
+  let statement :: Statement () (Array PostgresEventRecord) =
+        Statement (query |> Text.toBytes |> Bytes.unwrap) encoder decoder True
+          |> Mappable.map Array.fromLegacy
+  Session.statement unit statement |> Task.yield
