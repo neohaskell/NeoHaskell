@@ -113,7 +113,7 @@ new ops cfg = do
             subscribeToEntityEvents = subscribeToEntityEventsImpl,
             subscribeToStreamEvents = subscribeToStreamEventsImpl,
             unsubscribe = unsubscribeImpl,
-            truncateStream = truncateStreamImpl
+            truncateStream = truncateStreamImpl ops cfg
           }
   Task.yield eventStore
 
@@ -499,8 +499,24 @@ unsubscribeImpl :: SubscriptionId -> Task Error Unit
 unsubscribeImpl _ = panic "Postgres.unsubscribeImpl - Not implemented yet" |> Task.yield
 
 
-truncateStreamImpl :: EntityName -> StreamId -> StreamPosition -> Task Error Unit
-truncateStreamImpl _ _ _ = panic "Postgres.truncateStreamImpl - Not implemented yet" |> Task.yield
+truncateStreamImpl :: Ops -> Config -> EntityName -> StreamId -> StreamPosition -> Task Error Unit
+truncateStreamImpl ops cfg entityName streamId truncateBefore = do
+  res <-
+    truncateStreamGo ops cfg entityName streamId truncateBefore
+      |> Task.asResult
+  case res of
+    Ok _ ->
+      Task.yield unit
+    Err err ->
+      Task.throw (StorageFailure (toText err))
+
+
+truncateStreamGo :: Ops -> Config -> EntityName -> StreamId -> StreamPosition -> Task PostgresStoreError Unit
+truncateStreamGo ops cfg entityName streamId truncateBefore = do
+  conn <- ops.acquire cfg |> Task.mapError ConnectionAcquisitionError
+  Sessions.truncateStreamSession entityName streamId truncateBefore
+    |> Sessions.run conn
+    |> Task.mapError SessionError
 
 
 performReadStreamEvents ::

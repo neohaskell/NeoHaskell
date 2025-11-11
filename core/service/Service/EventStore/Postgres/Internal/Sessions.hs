@@ -252,3 +252,20 @@ selectStreamEventBatch positionRef (EntityName entityName) (StreamId streamIdTex
         Statement (query |> Text.toBytes |> Bytes.unwrap) encoder decoder True
           |> Mappable.map Array.fromLegacy
   Session.statement unit statement |> Task.yield
+
+
+truncateStreamSession ::
+  EntityName ->
+  StreamId ->
+  StreamPosition ->
+  Session.Session Unit
+truncateStreamSession (EntityName entityName) (StreamId streamIdText) (StreamPosition truncateBefore) = do
+  let s :: Hasql.Statement (Text, Text, Int64) Unit =
+        [TH.resultlessStatement|
+    DELETE FROM Events
+    WHERE Entity = $1 :: text
+      AND InlinedStreamId = $2 :: text
+      AND LocalPosition < $3 :: int8
+  |]
+  let params = (entityName, streamIdText, truncateBefore)
+  Session.statement params s
