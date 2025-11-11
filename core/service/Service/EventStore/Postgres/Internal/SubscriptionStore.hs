@@ -10,6 +10,7 @@ import Array qualified
 import ConcurrentVar qualified
 import Core
 import Map qualified
+import Maybe qualified
 import Service.Event (StreamId)
 import Service.EventStore (ReadAllMessage, ReadStreamMessage)
 import Task qualified
@@ -42,7 +43,6 @@ addGlobalSubscription subscription store = do
 addStreamSubscription ::
   StreamId -> (ReadStreamMessage eventType -> Task Error Unit) -> SubscriptionStore eventType -> Task Error Unit
 addStreamSubscription streamId subscription store = do
-  store.streamSubscriptions |> ConcurrentVar.modify \streamSubs ->
-    case streamSubs |> Map.get streamId of
-      Nothing -> streamSubs |> Map.set streamId (Array.wrap subscription)
-      Just subs -> streamSubs |> Map.set streamId (subs |> Array.push subscription)
+  store.streamSubscriptions |> ConcurrentVar.modify \subscriptionsMap -> do
+    let currentSubscriptions = subscriptionsMap |> Map.get streamId |> Maybe.withDefault Array.empty
+    subscriptionsMap |> Map.set streamId (currentSubscriptions |> Array.push subscription)
