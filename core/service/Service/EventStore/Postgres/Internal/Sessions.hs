@@ -90,6 +90,38 @@ dropEventsTableSession =
           |]
 
 
+createEventNotificationTriggerFunctionSession :: Session.Session Unit
+createEventNotificationTriggerFunctionSession =
+  Session.sql
+    [fmt|
+            CREATE OR REPLACE FUNCTION notify_event_inserted() RETURNS trigger AS $$
+            BEGIN
+              PERFORM pg_notify(
+                NEW.InlinedStreamId,
+                json_build_object(
+                  'EventId', NEW.EventId,
+                  'GlobalPosition', NEW.GlobalPosition,
+                  'StreamId', NEW.InlinedStreamId,
+                  'EventData', NEW.EventData
+                )::text
+              );
+              RETURN NEW;
+            END;
+            $$ LANGUAGE plpgsql;
+          |]
+
+
+createEventNotificationTriggerSession :: Session.Session Unit
+createEventNotificationTriggerSession =
+  Session.sql
+    [fmt|
+            CREATE TRIGGER notify_event_insert
+            AFTER INSERT ON Events
+            FOR EACH ROW
+            EXECUTE FUNCTION notify_event_inserted();
+          |]
+
+
 selectExistingIdsSession :: Array Uuid -> Session.Session (Array Uuid)
 selectExistingIdsSession ids = do
   let s :: Hasql.Statement (Vector UUID.UUID) (Vector UUID.UUID) =

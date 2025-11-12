@@ -78,6 +78,30 @@ defaultOps = do
             |> Task.mapError toText
             |> Task.asResult
         case res of
+          Ok _ -> pass
+          Err err ->
+            if err |> Text.contains "\"2714\""
+              then pass
+              else Task.throw err
+
+        triggerFunctionRes <-
+          Sessions.createEventNotificationTriggerFunctionSession
+            |> Sessions.run connection
+            |> Task.mapError toText
+            |> Task.asResult
+        case triggerFunctionRes of
+          Ok _ -> pass
+          Err err ->
+            if err |> Text.contains "\"2714\""
+              then pass
+              else Task.throw err
+
+        triggerRes <-
+          Sessions.createEventNotificationTriggerSession
+            |> Sessions.run connection
+            |> Task.mapError toText
+            |> Task.asResult
+        case triggerRes of
           Ok _ -> Task.yield unit
           Err err ->
             if err |> Text.contains "\"2714\""
