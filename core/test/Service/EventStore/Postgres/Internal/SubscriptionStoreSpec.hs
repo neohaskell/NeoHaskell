@@ -272,11 +272,31 @@ spec = do
         event <- createTestEvent |> Task.mapError toText
 
         -- Dispatch - if parallel, should take ~100ms; if serial, would take ~500ms
-        store |> SubscriptionStore.dispatch streamId (StreamEvent event) |> Task.mapError toText
+        -- We allow up to 250ms (generous buffer for parallel execution)
+        timedOut <- ConcurrentVar.containing False
 
-        -- Verify all callbacks were executed
-        count <- ConcurrentVar.get executionCount
-        count |> shouldBe 5
+        let dispatchTask = do
+              store |> SubscriptionStore.dispatch streamId (StreamEvent event) |> Task.mapError toText
+
+        let timeoutTask = do
+              AsyncTask.sleep 250
+              timedOut |> ConcurrentVar.set True
+
+        -- Start both tasks
+        dispatchAsync <- AsyncTask.run dispatchTask
+        _ <- AsyncTask.run timeoutTask
+
+        -- Wait for dispatch to complete
+        AsyncTask.waitFor dispatchAsync
+
+        -- Check if we timed out
+        didTimeout <- ConcurrentVar.get timedOut
+        if didTimeout
+          then Test.fail "Test timed out - callbacks appear to be running serially instead of in parallel"
+          else do
+            -- Dispatch completed successfully within timeout
+            count <- ConcurrentVar.get executionCount
+            count |> shouldBe 5
 
 
 -- Helper function to create a test event

@@ -70,42 +70,19 @@ getStreamSubscriptions streamId store = do
 
 dispatch :: StreamId -> ReadStreamMessage eventType -> SubscriptionStore eventType -> Task Error Unit
 dispatch streamId message store = do
-  -- Get subscriptions
   streamSubs <- store |> getStreamSubscriptions streamId
   globalSubs <- store.globalSubscriptions |> ConcurrentVar.peek
-
-  -- Convert ReadStreamMessage to ReadAllMessage for global subscriptions
   let globalMessage = streamMessageToAllMessage message
 
-  -- Execute stream subscriptions in parallel, ignoring individual failures
-  streamAsyncTasks <-
-    streamSubs
-      |> Task.mapArray
-        ( \callback -> do
-            let safeCallback = do
-                  _ <- callback message |> Task.asResult
-                  Task.yield ()
-            AsyncTask.run safeCallback
-        )
+  let wrapCallback :: msg -> (msg -> Task Error Unit) -> Task Text Unit
+      wrapCallback msg callback = do
+        callback msg |> Task.asResult |> discard
 
-  -- Execute global subscriptions in parallel, ignoring individual failures
-  globalAsyncTasks <-
-    globalSubs
-      |> Task.mapArray
-        ( \callback -> do
-            let safeCallback = do
-                  _ <- callback globalMessage |> Task.asResult
-                  Task.yield ()
-            AsyncTask.run safeCallback
-        )
+  let streamCallbacks = streamSubs |> Array.map (wrapCallback message)
+  let globalCallbacks = globalSubs |> Array.map (wrapCallback globalMessage)
+  let allCallbacks = streamCallbacks |> Array.append globalCallbacks
 
-  -- Wait for all stream subscriptions to complete
-  streamAsyncTasks |> Task.forEach AsyncTask.waitFor
-
-  -- Wait for all global subscriptions to complete
-  globalAsyncTasks |> Task.forEach AsyncTask.waitFor
-
-  Task.yield ()
+  allCallbacks |> AsyncTask.forEachConcurrently
 
 
 streamMessageToAllMessage :: ReadStreamMessage eventType -> ReadAllMessage eventType
