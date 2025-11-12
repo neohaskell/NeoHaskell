@@ -206,6 +206,7 @@ test-suite nhcore-test
     StreamSpec
     Test.AppSpec.AppSpecSpec
     Test.AppSpec.VerifySpec
+    Service.EventStore.Postgres.Internal.SubscriptionStoreSpec
 
   -- other-extensions:
   type: exitcode-stdio-1.0

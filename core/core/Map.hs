@@ -11,6 +11,7 @@ module Map (
   contains,
   remove,
   getOrElse,
+  size,
 ) where
 
 import Accumulator (Accumulator)
@@ -95,3 +96,8 @@ contains key map = HaskellMap.member key map
 -- | Removes an element from the map
 remove :: (Ord key) => key -> Map key value -> Map key value
 remove key self = HaskellMap.delete key self
+
+
+-- | Returns the size of the map
+size :: Map key value -> Int
+size self = HaskellMap.size self

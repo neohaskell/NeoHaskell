@@ -5,10 +5,10 @@ module Service.EventStore.Postgres.Internal.SubscriptionStore (
   addGlobalSubscription,
   addStreamSubscription,
   getStreamSubscriptions,
+  dispatch,
 ) where
 
 import Array qualified
-import AsyncTask qualified
 import ConcurrentVar qualified
 import Core
 import Map qualified
@@ -20,6 +20,7 @@ import Task qualified
 data Error
   = UserHandlerError Text
   | OtherError
+  deriving (Show)
 
 
 type GlobalSubscriptionCallback eventType =
@@ -67,7 +68,7 @@ getStreamSubscriptions streamId store = do
 
 
 dispatch :: StreamId -> ReadStreamMessage eventType -> SubscriptionStore eventType -> Task Error Unit
-dispatch streamId message store = do
-  globalSubs <- store.globalSubscriptions |> ConcurrentVar.peek
-  streamSubscriptions <- store |> getStreamSubscriptions streamId
+dispatch _ _ _ = do
+  -- globalSubs <- store.globalSubscriptions |> ConcurrentVar.peek
+  -- streamSubscriptions <- store |> getStreamSubscriptions streamId
   Task.yield (panic "implement")
