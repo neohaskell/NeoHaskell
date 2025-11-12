@@ -9,6 +9,7 @@ module Service.EventStore.Postgres.Internal.SubscriptionStore (
 ) where
 
 import Array qualified
+import AsyncTask qualified
 import ConcurrentVar qualified
 import Core
 import Map qualified
@@ -77,20 +78,32 @@ dispatch streamId message store = do
   let globalMessage = streamMessageToAllMessage message
 
   -- Execute stream subscriptions in parallel, ignoring individual failures
-  streamSubs
-    |> Task.forEach
-      ( \callback -> do
-          _ <- callback message |> Task.asResult
-          Task.yield ()
-      )
+  streamAsyncTasks <-
+    streamSubs
+      |> Task.mapArray
+        ( \callback -> do
+            let safeCallback = do
+                  _ <- callback message |> Task.asResult
+                  Task.yield ()
+            AsyncTask.run safeCallback
+        )
 
   -- Execute global subscriptions in parallel, ignoring individual failures
-  globalSubs
-    |> Task.forEach
-      ( \callback -> do
-          _ <- callback globalMessage |> Task.asResult
-          Task.yield ()
-      )
+  globalAsyncTasks <-
+    globalSubs
+      |> Task.mapArray
+        ( \callback -> do
+            let safeCallback = do
+                  _ <- callback globalMessage |> Task.asResult
+                  Task.yield ()
+            AsyncTask.run safeCallback
+        )
+
+  -- Wait for all stream subscriptions to complete
+  streamAsyncTasks |> Task.forEach AsyncTask.waitFor
+
+  -- Wait for all global subscriptions to complete
+  globalAsyncTasks |> Task.forEach AsyncTask.waitFor
 
   Task.yield ()
 

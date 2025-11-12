@@ -249,6 +249,35 @@ spec = do
         count <- ConcurrentVar.get successCount
         count |> shouldBe 2
 
+      it "executes callbacks in parallel (not serially)" \_ -> do
+        store <- SubscriptionStore.new |> Task.mapError toText
+        streamId <- StreamId.new
+
+        executionCount <- ConcurrentVar.containing (0 :: Int)
+
+        -- Each callback sleeps for 100ms
+        let callback _msg = do
+              AsyncTask.sleep 100
+              executionCount |> ConcurrentVar.modify (\n -> n + 1)
+              Task.yield ()
+
+        -- Add 5 callbacks
+        store |> SubscriptionStore.addStreamSubscription streamId callback |> Task.mapError toText
+        store |> SubscriptionStore.addStreamSubscription streamId callback |> Task.mapError toText
+        store |> SubscriptionStore.addStreamSubscription streamId callback |> Task.mapError toText
+        store |> SubscriptionStore.addStreamSubscription streamId callback |> Task.mapError toText
+        store |> SubscriptionStore.addStreamSubscription streamId callback |> Task.mapError toText
+
+        -- Create a test event
+        event <- createTestEvent |> Task.mapError toText
+
+        -- Dispatch - if parallel, should take ~100ms; if serial, would take ~500ms
+        store |> SubscriptionStore.dispatch streamId (StreamEvent event) |> Task.mapError toText
+
+        -- Verify all callbacks were executed
+        count <- ConcurrentVar.get executionCount
+        count |> shouldBe 5
+
 
 -- Helper function to create a test event
 createTestEvent :: Task Error (Event MyEvent)
