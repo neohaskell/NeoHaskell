@@ -81,6 +81,7 @@ handle config = do
 
   completion <-
     Subprocess.openInherit "nix-shell" (Array.fromLinkedList ["-E", shellExpression]) rootFolder Subprocess.InheritBOTH
+      |> Task.mapError (\_ -> CustomError "Failed to open the shell")
   if completion.exitCode != 0
     then errorOut completion.stderr
     else Task.yield ()

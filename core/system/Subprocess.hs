@@ -9,6 +9,7 @@ module Subprocess (
 import Array (Array)
 import Array qualified
 import Basics
+import GHC.IO.Exception qualified as Exception
 import Maybe qualified
 import Path (Path)
 import Path qualified
@@ -45,7 +46,12 @@ data InheritStream
   deriving (Eq, Ord, Show)
 
 
-openInherit :: Text -> Array Text -> Path -> InheritStream -> Task _ Completion
+data Error
+  = NotExecutable
+  deriving (Show)
+
+
+openInherit :: Text -> Array Text -> Path -> InheritStream -> Task Error Completion
 openInherit executable arguments directory inheritStream = do
   let (stdoutStream, stderrStream) = case inheritStream of
         InheritSTDOUT -> (System.Process.Inherit, System.Process.CreatePipe)
@@ -69,8 +75,12 @@ openInherit executable arguments directory inheritStream = do
   (_, _, _, ph) <-
     -- System.Process.readCreateProcessWithExitCode processToExecute ""
     System.Process.createProcess processToExecute
-      |> Task.fromIO
-  ec <- System.Process.waitForProcess ph |> Task.fromIO
+      |> Task.fromFailableIO @Exception.IOError
+      |> Task.mapError (\_ -> NotExecutable)
+  ec <-
+    System.Process.waitForProcess ph
+      |> Task.fromFailableIO @Exception.IOError
+      |> Task.mapError (\_ -> NotExecutable)
   let exitCode = case ec of
         System.Exit.ExitSuccess -> 0
         System.Exit.ExitFailure code -> code
@@ -79,6 +89,6 @@ openInherit executable arguments directory inheritStream = do
   Task.yield Completion {exitCode, stdout, stderr}
 
 
-open :: Text -> Array Text -> Path -> Task _ Completion
+open :: Text -> Array Text -> Path -> Task Error Completion
 open executable arguments directory =
   openInherit executable arguments directory InheritNONE

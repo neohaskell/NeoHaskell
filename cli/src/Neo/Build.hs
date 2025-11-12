@@ -81,6 +81,7 @@ handle config = do
 
   completion <-
     Subprocess.openInherit "nix-build" (Array.fromLinkedList ["-E", buildExpression]) rootFolder Subprocess.InheritBOTH
+      |> Task.mapError (\_ -> CustomError "Failed to run nix-build")
   if completion.exitCode != 0
     then errorOut completion.stderr
     else print completion.stdout

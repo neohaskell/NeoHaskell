@@ -22,6 +22,7 @@ handle config = do
   let rootFolder = [path|.|]
   completion <-
     Subprocess.openInherit [fmt|./result/bin/#{projectName}|] (Array.fromLinkedList []) rootFolder Subprocess.InheritBOTH
+      |> Task.mapError (\_ -> CustomError "Failed to run the built application")
   if completion.exitCode != 0
     then errorOut completion.stderr
     else print completion.stdout
