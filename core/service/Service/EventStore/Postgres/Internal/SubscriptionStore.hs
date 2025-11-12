@@ -13,7 +13,7 @@ import ConcurrentVar qualified
 import Core
 import Map qualified
 import Service.Event (StreamId)
-import Service.EventStore (ReadAllMessage, ReadStreamMessage)
+import Service.EventStore (ReadAllMessage (..), ReadStreamMessage (..))
 import Task qualified
 
 
@@ -68,7 +68,40 @@ getStreamSubscriptions streamId store = do
 
 
 dispatch :: StreamId -> ReadStreamMessage eventType -> SubscriptionStore eventType -> Task Error Unit
-dispatch _ _ _ = do
-  -- globalSubs <- store.globalSubscriptions |> ConcurrentVar.peek
-  -- streamSubscriptions <- store |> getStreamSubscriptions streamId
-  Task.yield (panic "implement")
+dispatch streamId message store = do
+  -- Get subscriptions
+  streamSubs <- store |> getStreamSubscriptions streamId
+  globalSubs <- store.globalSubscriptions |> ConcurrentVar.peek
+
+  -- Convert ReadStreamMessage to ReadAllMessage for global subscriptions
+  let globalMessage = streamMessageToAllMessage message
+
+  -- Execute stream subscriptions in parallel, ignoring individual failures
+  streamSubs
+    |> Task.forEach
+      ( \callback -> do
+          _ <- callback message |> Task.asResult
+          Task.yield ()
+      )
+
+  -- Execute global subscriptions in parallel, ignoring individual failures
+  globalSubs
+    |> Task.forEach
+      ( \callback -> do
+          _ <- callback globalMessage |> Task.asResult
+          Task.yield ()
+      )
+
+  Task.yield ()
+
+
+streamMessageToAllMessage :: ReadStreamMessage eventType -> ReadAllMessage eventType
+streamMessageToAllMessage message =
+  case message of
+    StreamReadingStarted -> ReadingStarted
+    StreamEvent event -> AllEvent event
+    ToxicStreamEvent contents -> ToxicAllEvent contents
+    StreamCheckpoint position -> Checkpoint position
+    StreamTerminated reason -> Terminated reason
+    StreamCaughtUp -> CaughtUp
+    StreamFellBehind -> FellBehind

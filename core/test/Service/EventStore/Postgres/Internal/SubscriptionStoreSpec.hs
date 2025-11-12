@@ -188,6 +188,67 @@ spec = do
         count <- ConcurrentVar.get executionCount
         count |> shouldBe 3
 
+      it "dispatches messages to both stream and global subscriptions" \_ -> do
+        store <- SubscriptionStore.new |> Task.mapError toText
+        streamId <- StreamId.new
+
+        streamExecutionCount <- ConcurrentVar.containing (0 :: Int)
+        globalExecutionCount <- ConcurrentVar.containing (0 :: Int)
+
+        let streamCallback _msg = do
+              streamExecutionCount |> ConcurrentVar.modify (\n -> n + 1)
+              Task.yield ()
+
+        let globalCallback _msg = do
+              globalExecutionCount |> ConcurrentVar.modify (\n -> n + 1)
+              Task.yield ()
+
+        -- Add 2 stream subscriptions and 2 global subscriptions
+        store |> SubscriptionStore.addStreamSubscription streamId streamCallback |> Task.mapError toText
+        store |> SubscriptionStore.addStreamSubscription streamId streamCallback |> Task.mapError toText
+        store |> SubscriptionStore.addGlobalSubscription globalCallback |> Task.mapError toText
+        store |> SubscriptionStore.addGlobalSubscription globalCallback |> Task.mapError toText
+
+        -- Create a test event
+        event <- createTestEvent |> Task.mapError toText
+
+        -- Dispatch the message
+        store |> SubscriptionStore.dispatch streamId (StreamEvent event) |> Task.mapError toText
+
+        -- Verify all callbacks were executed
+        streamCount <- ConcurrentVar.get streamExecutionCount
+        globalCount <- ConcurrentVar.get globalExecutionCount
+        streamCount |> shouldBe 2
+        globalCount |> shouldBe 2
+
+      it "handles callback failures gracefully" \_ -> do
+        store <- SubscriptionStore.new |> Task.mapError toText
+        streamId <- StreamId.new
+
+        successCount <- ConcurrentVar.containing (0 :: Int)
+
+        let failingCallback _msg = Task.throw OtherError
+
+        let successCallback _msg = do
+              successCount |> ConcurrentVar.modify (\n -> n + 1)
+              Task.yield ()
+
+        -- Add a mix of failing and successful callbacks
+        store |> SubscriptionStore.addStreamSubscription streamId failingCallback |> Task.mapError toText
+        store |> SubscriptionStore.addStreamSubscription streamId successCallback |> Task.mapError toText
+        store |> SubscriptionStore.addStreamSubscription streamId failingCallback |> Task.mapError toText
+        store |> SubscriptionStore.addStreamSubscription streamId successCallback |> Task.mapError toText
+
+        -- Create a test event
+        event <- createTestEvent |> Task.mapError toText
+
+        -- Dispatch the message - should not fail even though some callbacks fail
+        store |> SubscriptionStore.dispatch streamId (StreamEvent event) |> Task.mapError toText
+
+        -- Verify successful callbacks were executed despite failures
+        count <- ConcurrentVar.get successCount
+        count |> shouldBe 2
+
 
 -- Helper function to create a test event
 createTestEvent :: Task Error (Event MyEvent)
