@@ -72,41 +72,17 @@ defaultOps = do
           |> Task.map Sessions.Connection
 
   let initializeTable connection = do
-        res <-
-          Sessions.createEventsTableSession
-            |> Sessions.run connection
-            |> Task.mapError toText
-            |> Task.asResult
-        case res of
-          Ok _ -> pass
-          Err err ->
-            if err |> Text.contains "\"2714\""
-              then pass
-              else Task.throw err
+        Sessions.createEventsTableSession
+          |> Sessions.run connection
+          |> Task.mapError toText
 
-        triggerFunctionRes <-
-          Sessions.createEventNotificationTriggerFunctionSession
-            |> Sessions.run connection
-            |> Task.mapError toText
-            |> Task.asResult
-        case triggerFunctionRes of
-          Ok _ -> pass
-          Err err ->
-            if err |> Text.contains "\"2714\""
-              then pass
-              else Task.throw err
+        Sessions.createEventNotificationTriggerFunctionSession
+          |> Sessions.run connection
+          |> Task.mapError toText
 
-        triggerRes <-
-          Sessions.createEventNotificationTriggerSession
-            |> Sessions.run connection
-            |> Task.mapError toText
-            |> Task.asResult
-        case triggerRes of
-          Ok _ -> Task.yield unit
-          Err err ->
-            if err |> Text.contains "\"2714\""
-              then Task.yield unit
-              else Task.throw err
+        Sessions.createEventNotificationTriggerSession
+          |> Sessions.run connection
+          |> Task.mapError toText
 
   Ops {acquire, initializeTable}
 
@@ -308,7 +284,7 @@ readAllStreamEventsImpl ::
 readAllStreamEventsImpl ops cfg entityName streamId = do
   readingRefs <- newReadingRefs
   stream <- Stream.new
-  let limit = Limit maxValue  -- Read all events
+  let limit = Limit maxValue -- Read all events
   let relative = Just Start
   let readDirection = Just Forwards
 
