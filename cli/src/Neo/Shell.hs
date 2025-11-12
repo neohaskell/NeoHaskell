@@ -83,7 +83,7 @@ handle config = do
     Subprocess.openInherit "nix-shell" (Array.fromLinkedList ["-E", shellExpression]) rootFolder Subprocess.InheritBOTH
   if completion.exitCode != 0
     then errorOut completion.stderr
-    else Task.yield ()
+    else Task.yield unit
 
 
 errorOut :: Text -> Task Error _

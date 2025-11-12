@@ -41,7 +41,7 @@ spec newStore = do
       -- Define subscriber function that collects events
       let subscriber event = do
             receivedEvents |> ConcurrentVar.modify (Array.push event)
-            Task.yield () :: Task EventStore.Error Unit
+            Task.yield unit :: Task EventStore.Error Unit
 
       -- Subscribe to all events
       subscriptionId <-

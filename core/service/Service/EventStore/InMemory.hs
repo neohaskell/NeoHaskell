@@ -443,8 +443,8 @@ notifySubscriber subscription event = do
   -- Execute subscriber handler and catch any errors to prevent failures from affecting the event store
   result <- subscription.handler event |> Task.asResult
   case result of
-    Ok _ -> Task.yield ()
-    Err _ -> Task.yield () -- Silently ignore subscriber errors to maintain store reliability
+    Ok _ -> Task.yield unit
+    Err _ -> Task.yield unit -- Silently ignore subscriber errors to maintain store reliability
 
 
 deliverHistoricalEvents ::
@@ -485,8 +485,8 @@ notifySubscriberSafely handler event = do
   -- Execute subscriber handler and catch any errors
   result <- handler event |> Task.asResult
   case result of
-    Ok _ -> Task.yield ()
-    Err _ -> Task.yield () -- Silently ignore subscriber errors
+    Ok _ -> Task.yield unit
+    Err _ -> Task.yield unit -- Silently ignore subscriber errors
 
 
 truncateStreamImpl :: StreamStore eventType -> EntityName -> StreamId -> StreamPosition -> Task Error Unit

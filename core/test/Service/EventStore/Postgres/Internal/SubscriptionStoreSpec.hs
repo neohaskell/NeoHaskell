@@ -32,7 +32,7 @@ spec = do
       it "adds a global subscription" \_ -> do
         store <- SubscriptionStore.new |> Task.mapError toText
 
-        let callback _msg = Task.yield ()
+        let callback _msg = Task.yield unit
 
         store |> SubscriptionStore.addGlobalSubscription callback |> Task.mapError toText
 
@@ -42,9 +42,9 @@ spec = do
       it "adds multiple global subscriptions" \_ -> do
         store <- SubscriptionStore.new |> Task.mapError toText
 
-        let callback1 _msg = Task.yield ()
-        let callback2 _msg = Task.yield ()
-        let callback3 _msg = Task.yield ()
+        let callback1 _msg = Task.yield unit
+        let callback2 _msg = Task.yield unit
+        let callback3 _msg = Task.yield unit
 
         store |> SubscriptionStore.addGlobalSubscription callback1 |> Task.mapError toText
         store |> SubscriptionStore.addGlobalSubscription callback2 |> Task.mapError toText
@@ -57,7 +57,7 @@ spec = do
         store <- SubscriptionStore.new |> Task.mapError toText
         streamId <- StreamId.new
 
-        let callback _msg = Task.yield ()
+        let callback _msg = Task.yield unit
 
         store |> SubscriptionStore.addStreamSubscription streamId callback |> Task.mapError toText
 
@@ -68,9 +68,9 @@ spec = do
         store <- SubscriptionStore.new |> Task.mapError toText
         streamId <- StreamId.new
 
-        let callback1 _msg = Task.yield ()
-        let callback2 _msg = Task.yield ()
-        let callback3 _msg = Task.yield ()
+        let callback1 _msg = Task.yield unit
+        let callback2 _msg = Task.yield unit
+        let callback3 _msg = Task.yield unit
 
         store |> SubscriptionStore.addStreamSubscription streamId callback1 |> Task.mapError toText
         store |> SubscriptionStore.addStreamSubscription streamId callback2 |> Task.mapError toText
@@ -85,7 +85,7 @@ spec = do
         streamId2 <- StreamId.new
         streamId3 <- StreamId.new
 
-        let callback _msg = Task.yield ()
+        let callback _msg = Task.yield unit
 
         store |> SubscriptionStore.addStreamSubscription streamId1 callback |> Task.mapError toText
         store |> SubscriptionStore.addStreamSubscription streamId1 callback |> Task.mapError toText
@@ -114,7 +114,7 @@ spec = do
         streamId2 <- StreamId.new
         streamId3 <- StreamId.new
 
-        let callback _msg = Task.yield ()
+        let callback _msg = Task.yield unit
 
         -- Add subscriptions to all streams concurrently
         let addToStream1 = do
@@ -143,7 +143,7 @@ spec = do
       it "handles large numbers of subscriptions" \_ -> do
         store <- SubscriptionStore.new |> Task.mapError toText
 
-        let callback _msg = Task.yield ()
+        let callback _msg = Task.yield unit
         let count = 100
 
         -- Add many global subscriptions
@@ -171,7 +171,7 @@ spec = do
 
         let callback _msg = do
               executionCount |> ConcurrentVar.modify (\n -> n + 1)
-              Task.yield ()
+              Task.yield unit
 
         -- Add subscriptions
         store |> SubscriptionStore.addStreamSubscription streamId callback |> Task.mapError toText
@@ -197,11 +197,11 @@ spec = do
 
         let streamCallback _msg = do
               streamExecutionCount |> ConcurrentVar.modify (\n -> n + 1)
-              Task.yield ()
+              Task.yield unit
 
         let globalCallback _msg = do
               globalExecutionCount |> ConcurrentVar.modify (\n -> n + 1)
-              Task.yield ()
+              Task.yield unit
 
         -- Add 2 stream subscriptions and 2 global subscriptions
         store |> SubscriptionStore.addStreamSubscription streamId streamCallback |> Task.mapError toText
@@ -231,7 +231,7 @@ spec = do
 
         let successCallback _msg = do
               successCount |> ConcurrentVar.modify (\n -> n + 1)
-              Task.yield ()
+              Task.yield unit
 
         -- Add a mix of failing and successful callbacks
         store |> SubscriptionStore.addStreamSubscription streamId failingCallback |> Task.mapError toText
@@ -259,7 +259,7 @@ spec = do
         let callback _msg = do
               AsyncTask.sleep 100
               executionCount |> ConcurrentVar.modify (\n -> n + 1)
-              Task.yield ()
+              Task.yield unit
 
         -- Add 5 callbacks
         store |> SubscriptionStore.addStreamSubscription streamId callback |> Task.mapError toText
