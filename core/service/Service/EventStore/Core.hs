@@ -70,6 +70,10 @@ data ReadStreamMessage eventType
   = StreamReadingStarted
   | StreamEvent (Event eventType)
   | ToxicStreamEvent ToxicContents
+  | StreamCheckpoint StreamPosition
+  | StreamTerminated Text
+  | StreamCaughtUp
+  | StreamFellBehind
   deriving (Eq, Show)
 
 
@@ -98,7 +102,8 @@ data EventStore eventType = EventStore
     insert :: InsertionPayload eventType -> Task Error InsertionSuccess,
     -- | Read events from a stream in forward direction starting from a given revision.
     --   Returns a stream of ReadStreamMessage or an Error.
-    readStreamForwardFrom :: EntityName -> StreamId -> StreamPosition -> Limit -> Task Error (Stream (ReadStreamMessage eventType)),
+    readStreamForwardFrom ::
+      EntityName -> StreamId -> StreamPosition -> Limit -> Task Error (Stream (ReadStreamMessage eventType)),
     -- | Read events from a stream in backward direction starting from a given revision.
     --   Useful for looking at recent events.
     readStreamBackwardFrom ::

@@ -10,6 +10,7 @@ module Map (
   entries,
   contains,
   remove,
+  getOrElse,
 ) where
 
 import Accumulator (Accumulator)
@@ -20,6 +21,7 @@ import Basics
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as HaskellMap
 import Maybe (Maybe)
+import Maybe qualified
 
 
 -- | Merge two `Map`s.
@@ -65,6 +67,13 @@ set key value map = (HaskellMap.insert key value map)
 -- | Get the value from a `Map`.
 get :: (Eq key, Ord key) => key -> Map key value -> Maybe value
 get key map = HaskellMap.lookup key map
+
+
+-- | Get the value from a `Map`, defaulting to a value
+getOrElse :: (Eq key, Ord key) => key -> value -> Map key value -> value
+getOrElse key defaultValue map =
+  get key map
+    |> Maybe.withDefault defaultValue
 
 
 -- | Reduce a `Map`.

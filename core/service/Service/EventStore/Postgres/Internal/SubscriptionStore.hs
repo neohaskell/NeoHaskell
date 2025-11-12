@@ -4,13 +4,14 @@ module Service.EventStore.Postgres.Internal.SubscriptionStore (
   new,
   addGlobalSubscription,
   addStreamSubscription,
+  getStreamSubscriptions,
 ) where
 
 import Array qualified
+import AsyncTask qualified
 import ConcurrentVar qualified
 import Core
 import Map qualified
-import Maybe qualified
 import Service.Event (StreamId)
 import Service.EventStore (ReadAllMessage, ReadStreamMessage)
 import Task qualified
@@ -52,5 +53,21 @@ addStreamSubscription ::
   StreamId -> StreamSubscriptionCallback eventType -> SubscriptionStore eventType -> Task Error Unit
 addStreamSubscription streamId subscription store = do
   store.streamSubscriptions |> ConcurrentVar.modify \subscriptionsMap -> do
-    let currentSubscriptions = subscriptionsMap |> Map.get streamId |> Maybe.withDefault Array.empty
+    let currentSubscriptions = subscriptionsMap |> Map.getOrElse streamId Array.empty
     subscriptionsMap |> Map.set streamId (currentSubscriptions |> Array.push subscription)
+
+
+getStreamSubscriptions ::
+  StreamId -> SubscriptionStore eventType -> Task Error (Array (StreamSubscriptionCallback eventType))
+getStreamSubscriptions streamId store = do
+  subscriptionsMap <- store.streamSubscriptions |> ConcurrentVar.peek
+  subscriptionsMap
+    |> Map.getOrElse streamId Array.empty
+    |> Task.yield
+
+
+dispatch :: StreamId -> ReadStreamMessage eventType -> SubscriptionStore eventType -> Task Error Unit
+dispatch streamId message store = do
+  globalSubs <- store.globalSubscriptions |> ConcurrentVar.peek
+  streamSubscriptions <- store |> getStreamSubscriptions streamId
+  Task.yield (panic "implement")
