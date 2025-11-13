@@ -47,7 +47,7 @@ data InheritStream
 
 
 data Error
-  = NotExecutable
+  = ProcessError Text
   deriving (Show)
 
 
@@ -76,11 +76,11 @@ openInherit executable arguments directory inheritStream = do
     -- System.Process.readCreateProcessWithExitCode processToExecute ""
     System.Process.createProcess processToExecute
       |> Task.fromFailableIO @Exception.IOError
-      |> Task.mapError (\_ -> NotExecutable)
+      |> Task.mapError (\err -> ProcessError [fmt|#{err}|])
   ec <-
     System.Process.waitForProcess ph
       |> Task.fromFailableIO @Exception.IOError
-      |> Task.mapError (\_ -> NotExecutable)
+      |> Task.mapError (\err -> ProcessError [fmt|#{err}|])
   let exitCode = case ec of
         System.Exit.ExitSuccess -> 0
         System.Exit.ExitFailure code -> code
