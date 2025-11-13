@@ -234,6 +234,7 @@ spec newStore = do
             |> Task.andThen Stream.toArray
 
         events
+          |> EventStore.collectStreamEvents
           |> Array.length
           |> shouldBe 1
 
