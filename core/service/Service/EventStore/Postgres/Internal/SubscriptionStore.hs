@@ -6,6 +6,7 @@ module Service.EventStore.Postgres.Internal.SubscriptionStore (
   addStreamSubscription,
   getStreamSubscriptions,
   dispatch,
+  removeSubscription,
 ) where
 
 import Array qualified
@@ -87,3 +88,17 @@ dispatch streamId message store = do
   let allCallbacks = streamCallbacks |> Array.append globalCallbacks
 
   allCallbacks |> AsyncTask.forEachConcurrently
+
+
+removeSubscription :: SubscriptionId -> SubscriptionStore eventType -> Task Error Unit
+removeSubscription subId store = do
+  -- Remove from global subscriptions
+  store.globalSubscriptions
+    |> ConcurrentVar.modify (Map.remove subId)
+
+  -- Remove from all stream subscriptions
+  store.streamSubscriptions |> ConcurrentVar.modify \subscriptionsMap -> do
+    subscriptionsMap
+      |> Map.mapValues (\streamSubs -> streamSubs |> Map.remove subId)
+
+  Task.yield ()

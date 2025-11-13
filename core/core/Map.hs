@@ -14,6 +14,7 @@ module Map (
   length,
   values,
   keys,
+  mapValues,
 ) where
 
 import Accumulator (Accumulator)
@@ -113,3 +114,8 @@ remove key self = HaskellMap.delete key self
 -- | Returns the length of the map
 length :: Map key value -> Int
 length self = HaskellMap.size self
+
+
+-- | Maps a function over the values in a map
+mapValues :: (valueA -> valueB) -> Map key valueA -> Map key valueB
+mapValues f self = HaskellMap.map f self

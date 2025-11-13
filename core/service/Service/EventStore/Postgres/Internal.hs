@@ -124,7 +124,7 @@ new ops cfg = do
             subscribeToAllEventsFromStart = subscribeToAllEventsFromStartImpl,
             subscribeToEntityEvents = subscribeToEntityEventsImpl,
             subscribeToStreamEvents = subscribeToStreamEventsImpl,
-            unsubscribe = unsubscribeImpl,
+            unsubscribe = unsubscribeImpl subscriptionStore,
             truncateStream = truncateStreamImpl ops cfg
           }
   Task.yield eventStore
@@ -523,6 +523,7 @@ unsubscribeImpl :: SubscriptionStore eventType -> SubscriptionId -> Task Error U
 unsubscribeImpl store id =
   store
     |> SubscriptionStore.removeSubscription id
+    |> Task.mapError (\err -> SubscriptionError id (err |> toText))
 
 
 truncateStreamImpl :: Ops eventType -> Config -> EntityName -> StreamId -> StreamPosition -> Task Error Unit

@@ -56,9 +56,6 @@ handler store streamIdLegacyBytes payloadLegacyBytes = do
           |> Bytes.fromLegacy
           |> Json.decodeBytes
           |> Result.andThen Sessions.insertionRecordToEvent
-  GHC.putStrLn "GOT SOMETHING"
-  GHC.putStrLn (toText streamId)
-  GHC.putStrLn (toText payloadLegacyBytes)
   case decodingResult of
     Err err -> do
       -- FIXME: Implement proper logging here
