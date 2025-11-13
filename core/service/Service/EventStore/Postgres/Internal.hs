@@ -26,6 +26,7 @@ import Service.EventStore.Core
 import Service.EventStore.Postgres.Internal.Core
 import Service.EventStore.Postgres.Internal.PostgresEventRecord (PostgresEventRecord (..))
 import Service.EventStore.Postgres.Internal.Sessions qualified as Sessions
+import Service.EventStore.Postgres.Internal.SubscriptionStore qualified as SubscriptionStore
 import Stream (Stream)
 import Stream qualified
 import Task qualified
@@ -97,6 +98,7 @@ new ::
 new ops cfg = do
   connection <- ops.acquire cfg
   ops.initializeTable connection
+  subscriptionStore <- SubscriptionStore.new |> Task.mapError toText
   let eventStore =
         EventStore
           { insert = insertImpl ops cfg 0,
