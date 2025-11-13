@@ -9,7 +9,6 @@ import Service.Event (Event (..))
 import Service.Event qualified as Event
 import Service.Event.EventMetadata qualified as EventMetadata
 import Service.Event.StreamId qualified as StreamId
-import Service.EventStore.Core (ReadStreamMessage (..))
 import Service.EventStore.Postgres.Internal.SubscriptionStore (Error (..), SubscriptionStore (..))
 import Service.EventStore.Postgres.Internal.SubscriptionStore qualified as SubscriptionStore
 import Task qualified
@@ -182,7 +181,7 @@ spec = do
         event <- createTestEvent |> Task.mapError toText
 
         -- Dispatch the message
-        store |> SubscriptionStore.dispatch streamId (StreamEvent event) |> Task.mapError toText
+        store |> SubscriptionStore.dispatch streamId (event) |> Task.mapError toText
 
         -- Verify all callbacks were executed
         count <- ConcurrentVar.get executionCount
@@ -213,7 +212,7 @@ spec = do
         event <- createTestEvent |> Task.mapError toText
 
         -- Dispatch the message
-        store |> SubscriptionStore.dispatch streamId (StreamEvent event) |> Task.mapError toText
+        store |> SubscriptionStore.dispatch streamId (event) |> Task.mapError toText
 
         -- Verify all callbacks were executed
         streamCount <- ConcurrentVar.get streamExecutionCount
@@ -243,7 +242,7 @@ spec = do
         event <- createTestEvent |> Task.mapError toText
 
         -- Dispatch the message - should not fail even though some callbacks fail
-        store |> SubscriptionStore.dispatch streamId (StreamEvent event) |> Task.mapError toText
+        store |> SubscriptionStore.dispatch streamId (event) |> Task.mapError toText
 
         -- Verify successful callbacks were executed despite failures
         count <- ConcurrentVar.get successCount
@@ -276,7 +275,7 @@ spec = do
         timedOut <- ConcurrentVar.containing False
 
         let dispatchTask = do
-              store |> SubscriptionStore.dispatch streamId (StreamEvent event) |> Task.mapError toText
+              store |> SubscriptionStore.dispatch streamId (event) |> Task.mapError toText
 
         let timeoutTask = do
               AsyncTask.sleep 250
