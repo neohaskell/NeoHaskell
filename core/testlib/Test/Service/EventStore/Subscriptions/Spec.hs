@@ -24,7 +24,7 @@ import Uuid qualified
 spec :: Task Text (EventStore MyEvent) -> Spec Unit
 spec newStore = do
   describe "Event Store Subscriptions" do
-    beforeAll (Context.initialize newStore) do
+    before (Context.initialize newStore) do
       it "allows subscribing to all events and receives them when appended" \context -> do
         -- Create a shared variable to collect received events
         receivedEvents <- ConcurrentVar.containing (Array.empty :: Array (Event MyEvent))
@@ -439,7 +439,7 @@ spec newStore = do
         subscriptionId <- context.store.subscribeToAllEvents subscriber |> Task.mapError toText
 
         -- Wait a bit to ensure subscription is active
-        AsyncTask.sleep 10 |> Task.mapError (\_ -> "timeout")
+        AsyncTask.sleep 100 |> Task.mapError (\_ -> "timeout")
 
         -- Insert events for both entities AFTER subscribing (these SHOULD be received)
         postSubscriptionEvents1 <- createTestEventsForEntity stream1Id entity1Id eventCount eventCount
@@ -454,6 +454,11 @@ spec newStore = do
 
         -- Verify we received exactly the post-subscription events
         received <- ConcurrentVar.get receivedEvents
+
+        print
+          [fmt|$$$$$$$$$$$$
+        RECEIVED: #{toText received}
+        $$$$$$$$$$$$$|]
 
         -- Should have received exactly eventCount * 2 events (only post-subscription)
         received |> Array.length |> shouldBe (eventCount * 2)

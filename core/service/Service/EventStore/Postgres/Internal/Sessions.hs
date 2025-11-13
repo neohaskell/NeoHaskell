@@ -20,6 +20,8 @@ import Mappable qualified
 import Maybe qualified
 import Result qualified
 import Service.Event (EntityName (..), Event (..), StreamId (..), StreamPosition (..))
+import Service.Event.EventMetadata (EventMetadata (..))
+import Service.Event.EventMetadata qualified as EventMetadata
 import Service.EventStore.Postgres.Internal.Core
 import Service.EventStore.Postgres.Internal.PostgresEventRecord (PostgresEventRecord)
 import Service.EventStore.Postgres.Internal.PostgresEventRecord qualified as PostgresEventRecord
@@ -55,7 +57,12 @@ insertionRecordToEvent ::
   Result Text (Event eventType)
 insertionRecordToEvent record = do
   event <- Json.decode record.eventData
-  metadata <- Json.decode record.metadata
+  rawMetadata <- Json.decode record.metadata
+  let metadata =
+        rawMetadata
+          { EventMetadata.globalPosition = record.globalPosition |> Maybe.map StreamPosition,
+            localPosition = record.localPosition |> StreamPosition |> Just
+          }
   let entityName = EntityName record.entity
   let streamId = StreamId record.inlinedStreamId
   Event {event, metadata, entityName, streamId} |> Ok
