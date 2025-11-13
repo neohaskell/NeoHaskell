@@ -25,7 +25,7 @@ spec = do
         globalSubs <- store.globalSubscriptions |> ConcurrentVar.peek
         streamSubs <- store.streamSubscriptions |> ConcurrentVar.peek
 
-        globalSubs |> Array.length |> shouldBe 0
+        globalSubs |> Map.length |> shouldBe 0
         streamSubs |> Map.length |> shouldBe 0
 
       it "adds a global subscription" \_ -> do
@@ -33,10 +33,10 @@ spec = do
 
         let callback _msg = Task.yield unit
 
-        store |> SubscriptionStore.addGlobalSubscription callback |> Task.mapError toText
+        store |> SubscriptionStore.addGlobalSubscription callback |> discard |> Task.mapError toText
 
         globalSubs <- store.globalSubscriptions |> ConcurrentVar.peek
-        globalSubs |> Array.length |> shouldBe 1
+        globalSubs |> Map.length |> shouldBe 1
 
       it "adds multiple global subscriptions" \_ -> do
         store <- SubscriptionStore.new |> Task.mapError toText
@@ -45,12 +45,12 @@ spec = do
         let callback2 _msg = Task.yield unit
         let callback3 _msg = Task.yield unit
 
-        store |> SubscriptionStore.addGlobalSubscription callback1 |> Task.mapError toText
-        store |> SubscriptionStore.addGlobalSubscription callback2 |> Task.mapError toText
-        store |> SubscriptionStore.addGlobalSubscription callback3 |> Task.mapError toText
+        store |> SubscriptionStore.addGlobalSubscription callback1 |> discard |> Task.mapError toText
+        store |> SubscriptionStore.addGlobalSubscription callback2 |> discard |> Task.mapError toText
+        store |> SubscriptionStore.addGlobalSubscription callback3 |> discard |> Task.mapError toText
 
         globalSubs <- store.globalSubscriptions |> ConcurrentVar.peek
-        globalSubs |> Array.length |> shouldBe 3
+        globalSubs |> Map.length |> shouldBe 3
 
       it "adds a stream subscription" \_ -> do
         store <- SubscriptionStore.new |> Task.mapError toText
@@ -58,10 +58,10 @@ spec = do
 
         let callback _msg = Task.yield unit
 
-        store |> SubscriptionStore.addStreamSubscription streamId callback |> Task.mapError toText
+        store |> SubscriptionStore.addStreamSubscription streamId callback |> discard |> Task.mapError toText
 
         subscriptions <- store |> SubscriptionStore.getStreamSubscriptions streamId |> Task.mapError toText
-        subscriptions |> Array.length |> shouldBe 1
+        subscriptions |> Map.length |> shouldBe 1
 
       it "adds multiple subscriptions to the same stream" \_ -> do
         store <- SubscriptionStore.new |> Task.mapError toText
@@ -71,12 +71,12 @@ spec = do
         let callback2 _msg = Task.yield unit
         let callback3 _msg = Task.yield unit
 
-        store |> SubscriptionStore.addStreamSubscription streamId callback1 |> Task.mapError toText
-        store |> SubscriptionStore.addStreamSubscription streamId callback2 |> Task.mapError toText
-        store |> SubscriptionStore.addStreamSubscription streamId callback3 |> Task.mapError toText
+        store |> SubscriptionStore.addStreamSubscription streamId callback1 |> discard |> Task.mapError toText
+        store |> SubscriptionStore.addStreamSubscription streamId callback2 |> discard |> Task.mapError toText
+        store |> SubscriptionStore.addStreamSubscription streamId callback3 |> discard |> Task.mapError toText
 
         subscriptions <- store |> SubscriptionStore.getStreamSubscriptions streamId |> Task.mapError toText
-        subscriptions |> Array.length |> shouldBe 3
+        subscriptions |> Map.length |> shouldBe 3
 
       it "keeps subscriptions for different streams separate" \_ -> do
         store <- SubscriptionStore.new |> Task.mapError toText
@@ -86,25 +86,25 @@ spec = do
 
         let callback _msg = Task.yield unit
 
-        store |> SubscriptionStore.addStreamSubscription streamId1 callback |> Task.mapError toText
-        store |> SubscriptionStore.addStreamSubscription streamId1 callback |> Task.mapError toText
-        store |> SubscriptionStore.addStreamSubscription streamId2 callback |> Task.mapError toText
-        store |> SubscriptionStore.addStreamSubscription streamId3 callback |> Task.mapError toText
+        store |> SubscriptionStore.addStreamSubscription streamId1 callback |> discard |> Task.mapError toText
+        store |> SubscriptionStore.addStreamSubscription streamId1 callback |> discard |> Task.mapError toText
+        store |> SubscriptionStore.addStreamSubscription streamId2 callback |> discard |> Task.mapError toText
+        store |> SubscriptionStore.addStreamSubscription streamId3 callback |> discard |> Task.mapError toText
 
         subs1 <- store |> SubscriptionStore.getStreamSubscriptions streamId1 |> Task.mapError toText
         subs2 <- store |> SubscriptionStore.getStreamSubscriptions streamId2 |> Task.mapError toText
         subs3 <- store |> SubscriptionStore.getStreamSubscriptions streamId3 |> Task.mapError toText
 
-        subs1 |> Array.length |> shouldBe 2
-        subs2 |> Array.length |> shouldBe 1
-        subs3 |> Array.length |> shouldBe 1
+        subs1 |> Map.length |> shouldBe 2
+        subs2 |> Map.length |> shouldBe 1
+        subs3 |> Map.length |> shouldBe 1
 
       it "returns empty array for stream with no subscriptions" \_ -> do
         store <- SubscriptionStore.new |> Task.mapError toText
         streamId <- StreamId.new
 
         subscriptions <- store |> SubscriptionStore.getStreamSubscriptions streamId |> Task.mapError toText
-        subscriptions |> Array.length |> shouldBe 0
+        subscriptions |> Map.length |> shouldBe 0
 
     describe "Concurrent Modifications" do
       it "handles concurrent additions to different streams" \_ -> do
@@ -118,15 +118,18 @@ spec = do
         -- Add subscriptions to all streams concurrently
         let addToStream1 = do
               Array.fromLinkedList ([1 .. 5] :: [Int])
-                |> Task.forEach (\_ -> store |> SubscriptionStore.addStreamSubscription streamId1 callback |> Task.mapError toText)
+                |> Task.forEach
+                  (\_ -> store |> SubscriptionStore.addStreamSubscription streamId1 callback |> discard |> Task.mapError toText)
 
         let addToStream2 = do
               Array.fromLinkedList ([1 .. 5] :: [Int])
-                |> Task.forEach (\_ -> store |> SubscriptionStore.addStreamSubscription streamId2 callback |> Task.mapError toText)
+                |> Task.forEach
+                  (\_ -> store |> SubscriptionStore.addStreamSubscription streamId2 callback |> discard |> Task.mapError toText)
 
         let addToStream3 = do
               Array.fromLinkedList ([1 .. 5] :: [Int])
-                |> Task.forEach (\_ -> store |> SubscriptionStore.addStreamSubscription streamId3 callback |> Task.mapError toText)
+                |> Task.forEach
+                  (\_ -> store |> SubscriptionStore.addStreamSubscription streamId3 callback |> discard |> Task.mapError toText)
 
         (_, (_, _)) <- AsyncTask.runConcurrently (addToStream1, AsyncTask.runConcurrently (addToStream2, addToStream3))
 
@@ -156,10 +159,11 @@ spec = do
         -- Add many stream subscriptions
         streamId <- StreamId.new
         Array.fromLinkedList ([1 .. count] :: [Int])
-          |> Task.forEach (\_ -> store |> SubscriptionStore.addStreamSubscription streamId callback |> Task.mapError toText)
+          |> Task.forEach
+            (\_ -> store |> SubscriptionStore.addStreamSubscription streamId callback |> discard |> Task.mapError toText)
 
         streamSubs <- store |> SubscriptionStore.getStreamSubscriptions streamId |> Task.mapError toText
-        streamSubs |> Array.length |> shouldBe count
+        streamSubs |> Map.length |> shouldBe count
 
     describe "Dispatch Functionality" do
       it "dispatches messages to stream subscriptions" \_ -> do
@@ -173,9 +177,9 @@ spec = do
               Task.yield unit
 
         -- Add subscriptions
-        store |> SubscriptionStore.addStreamSubscription streamId callback |> Task.mapError toText
-        store |> SubscriptionStore.addStreamSubscription streamId callback |> Task.mapError toText
-        store |> SubscriptionStore.addStreamSubscription streamId callback |> Task.mapError toText
+        store |> SubscriptionStore.addStreamSubscription streamId callback |> discard |> Task.mapError toText
+        store |> SubscriptionStore.addStreamSubscription streamId callback |> discard |> Task.mapError toText
+        store |> SubscriptionStore.addStreamSubscription streamId callback |> discard |> Task.mapError toText
 
         -- Create a test event
         event <- createTestEvent |> Task.mapError toText
@@ -203,10 +207,10 @@ spec = do
               Task.yield unit
 
         -- Add 2 stream subscriptions and 2 global subscriptions
-        store |> SubscriptionStore.addStreamSubscription streamId streamCallback |> Task.mapError toText
-        store |> SubscriptionStore.addStreamSubscription streamId streamCallback |> Task.mapError toText
-        store |> SubscriptionStore.addGlobalSubscription globalCallback |> Task.mapError toText
-        store |> SubscriptionStore.addGlobalSubscription globalCallback |> Task.mapError toText
+        store |> SubscriptionStore.addStreamSubscription streamId streamCallback |> discard |> Task.mapError toText
+        store |> SubscriptionStore.addStreamSubscription streamId streamCallback |> discard |> Task.mapError toText
+        store |> SubscriptionStore.addGlobalSubscription globalCallback |> discard |> Task.mapError toText
+        store |> SubscriptionStore.addGlobalSubscription globalCallback |> discard |> Task.mapError toText
 
         -- Create a test event
         event <- createTestEvent |> Task.mapError toText
@@ -233,10 +237,10 @@ spec = do
               Task.yield unit
 
         -- Add a mix of failing and successful callbacks
-        store |> SubscriptionStore.addStreamSubscription streamId failingCallback |> Task.mapError toText
-        store |> SubscriptionStore.addStreamSubscription streamId successCallback |> Task.mapError toText
-        store |> SubscriptionStore.addStreamSubscription streamId failingCallback |> Task.mapError toText
-        store |> SubscriptionStore.addStreamSubscription streamId successCallback |> Task.mapError toText
+        store |> SubscriptionStore.addStreamSubscription streamId failingCallback |> discard |> Task.mapError toText
+        store |> SubscriptionStore.addStreamSubscription streamId successCallback |> discard |> Task.mapError toText
+        store |> SubscriptionStore.addStreamSubscription streamId failingCallback |> discard |> Task.mapError toText
+        store |> SubscriptionStore.addStreamSubscription streamId successCallback |> discard |> Task.mapError toText
 
         -- Create a test event
         event <- createTestEvent |> Task.mapError toText
@@ -261,11 +265,11 @@ spec = do
               Task.yield unit
 
         -- Add 5 callbacks
-        store |> SubscriptionStore.addStreamSubscription streamId callback |> Task.mapError toText
-        store |> SubscriptionStore.addStreamSubscription streamId callback |> Task.mapError toText
-        store |> SubscriptionStore.addStreamSubscription streamId callback |> Task.mapError toText
-        store |> SubscriptionStore.addStreamSubscription streamId callback |> Task.mapError toText
-        store |> SubscriptionStore.addStreamSubscription streamId callback |> Task.mapError toText
+        store |> SubscriptionStore.addStreamSubscription streamId callback |> discard |> Task.mapError toText
+        store |> SubscriptionStore.addStreamSubscription streamId callback |> discard |> Task.mapError toText
+        store |> SubscriptionStore.addStreamSubscription streamId callback |> discard |> Task.mapError toText
+        store |> SubscriptionStore.addStreamSubscription streamId callback |> discard |> Task.mapError toText
+        store |> SubscriptionStore.addStreamSubscription streamId callback |> discard |> Task.mapError toText
 
         -- Create a test event
         event <- createTestEvent |> Task.mapError toText
