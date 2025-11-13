@@ -225,6 +225,7 @@ insertGo ops cfg payload = do
               Sessions.EventInsertionRecord
                 { eventId = i.metadata.eventId,
                   localPosition = offset + fromIntegral idx,
+                  globalPosition = Nothing,
                   inlinedStreamId = payload.streamId |> StreamId.toText,
                   entity = payload.entityName |> EntityName.toText,
                   eventData = Json.encode i.event,
@@ -518,8 +519,10 @@ subscribeToStreamEventsImpl ::
 subscribeToStreamEventsImpl _ _ _ = panic "Postgres.subscribeToStreamEventsImpl - Not implemented yet" |> Task.yield
 
 
-unsubscribeImpl :: SubscriptionId -> Task Error Unit
-unsubscribeImpl _ = panic "Postgres.unsubscribeImpl - Not implemented yet" |> Task.yield
+unsubscribeImpl :: SubscriptionStore eventType -> SubscriptionId -> Task Error Unit
+unsubscribeImpl store id =
+  store
+    |> SubscriptionStore.removeSubscription id
 
 
 truncateStreamImpl :: Ops eventType -> Config -> EntityName -> StreamId -> StreamPosition -> Task Error Unit

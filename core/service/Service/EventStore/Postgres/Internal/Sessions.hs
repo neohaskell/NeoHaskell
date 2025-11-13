@@ -19,7 +19,7 @@ import Json qualified
 import Mappable qualified
 import Maybe qualified
 import Result qualified
-import Service.Event (EntityName (..), StreamId (..), StreamPosition (..))
+import Service.Event (EntityName (..), Event (..), StreamId (..), StreamPosition (..))
 import Service.EventStore.Postgres.Internal.Core
 import Service.EventStore.Postgres.Internal.PostgresEventRecord (PostgresEventRecord)
 import Service.EventStore.Postgres.Internal.PostgresEventRecord qualified as PostgresEventRecord
@@ -36,6 +36,7 @@ data Connection
 
 data EventInsertionRecord = EventInsertionRecord
   { eventId :: Uuid,
+    globalPosition :: Maybe Int64,
     localPosition :: Int64,
     inlinedStreamId :: Text,
     entity :: Text,
@@ -43,6 +44,21 @@ data EventInsertionRecord = EventInsertionRecord
     metadata :: Json.Value
   }
   deriving (Eq, Ord, Show, Generic)
+
+
+instance Json.FromJSON EventInsertionRecord
+
+
+insertionRecordToEvent ::
+  (Json.FromJSON eventType) =>
+  EventInsertionRecord ->
+  Result Text (Event eventType)
+insertionRecordToEvent record = do
+  event <- Json.decode record.eventData
+  metadata <- Json.decode record.metadata
+  let entityName = EntityName record.entity
+  let streamId = StreamId record.inlinedStreamId
+  Event {event, metadata, entityName, streamId} |> Ok
 
 
 run ::
@@ -68,13 +84,13 @@ createEventsTableSession =
   Session.sql
     [fmt|
             CREATE TABLE IF NOT EXISTS Events (
-                EventId UUID NOT NULL,
-                GlobalPosition BIGSERIAL NOT NULL,
-                LocalPosition BIGINT NOT NULL,
-                InlinedStreamId VARCHAR(4000) NOT NULL,
-                Entity VARCHAR(255) NOT NULL,
-                EventData JSONB NOT NULL,
-                Metadata JSONB NULL,
+                eventId UUID NOT NULL,
+                globalPosition BIGSERIAL NOT NULL,
+                localPosition BIGINT NOT NULL,
+                inlinedStreamId VARCHAR(4000) NOT NULL,
+                entity VARCHAR(255) NOT NULL,
+                eventData JSONB NOT NULL,
+                metadata JSONB NULL,
                 CONSTRAINT PK_Events PRIMARY KEY (GlobalPosition),
                 CONSTRAINT UK_Events_EventId UNIQUE (EventId),
                 CONSTRAINT UK_Events_Stream UNIQUE (Entity, InlinedStreamId, LocalPosition)
@@ -99,10 +115,24 @@ createEventNotificationTriggerFunctionSession =
               PERFORM pg_notify(
                 NEW.InlinedStreamId,
                 json_build_object(
-                  'EventId', NEW.EventId,
-                  'GlobalPosition', NEW.GlobalPosition,
-                  'StreamId', NEW.InlinedStreamId,
-                  'EventData', NEW.EventData
+                  'eventId', NEW.eventId,
+                  'globalPosition', NEW.globalPosition,
+                  'localPosition', NEW.localPosition,
+                  'inlinedStreamId', NEW.inlinedStreamId,
+                  'eventData', NEW.eventData,
+                  'metadata', NEW.metadata
+                )::text
+              );
+              PERFORM pg_notify(
+                'global',
+                json_build_object(
+                  'eventId', NEW.eventId,
+                  'globalPosition', NEW.globalPosition,
+                  'localPosition', NEW.localPosition,
+                  'inlinedStreamId', NEW.inlinedStreamId,
+                  'entity', NEW.entity,
+                  'eventData', NEW.eventData,
+                  'metadata', NEW.metadata
                 )::text
               );
               RETURN NEW;

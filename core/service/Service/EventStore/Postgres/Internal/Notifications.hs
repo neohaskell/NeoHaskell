@@ -7,7 +7,7 @@ import Data.ByteString qualified
 import Data.Text.IO qualified as GHC
 import Hasql.Notifications qualified as HasqlNotifications
 import Json qualified
-import Service.Event (Event)
+import Result qualified
 import Service.Event.StreamId qualified as StreamId
 import Service.EventStore.Postgres.Internal.Sessions qualified as Sessions
 import Service.EventStore.Postgres.Internal.SubscriptionStore (SubscriptionStore)
@@ -26,7 +26,11 @@ connectTo conn store =
   case conn of
     Sessions.MockConnection ->
       pass
-    Sessions.Connection connection ->
+    Sessions.Connection connection -> do
+      let channelToListen = HasqlNotifications.toPgIdentifier "global"
+      HasqlNotifications.listen connection channelToListen
+        |> Task.fromIO
+        |> discard
       connection
         |> HasqlNotifications.waitForNotifications (handler store)
         |> Task.fromIO
@@ -50,7 +54,11 @@ handler store streamIdLegacyBytes payloadLegacyBytes = do
   let decodingResult =
         payloadLegacyBytes
           |> Bytes.fromLegacy
-          |> Json.decodeBytes @(Event eventType)
+          |> Json.decodeBytes
+          |> Result.andThen Sessions.insertionRecordToEvent
+  GHC.putStrLn "GOT SOMETHING"
+  GHC.putStrLn (toText streamId)
+  GHC.putStrLn (toText payloadLegacyBytes)
   case decodingResult of
     Err err -> do
       -- FIXME: Implement proper logging here
