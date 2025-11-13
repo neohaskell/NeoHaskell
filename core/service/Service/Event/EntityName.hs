@@ -11,6 +11,9 @@ newtype EntityName = EntityName Text
   deriving (Eq, Show, Ord, Generic)
 
 
+instance Json.ToJSON EntityName
+
+
 instance Json.FromJSON EntityName
 
 

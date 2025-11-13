@@ -68,7 +68,7 @@ data Ops eventType = Ops
 
 
 defaultOps ::
-  (Json.Decodable eventType) =>
+  (Json.FromJSON eventType) =>
   Ops eventType
 defaultOps = do
   let acquire cfg =
@@ -98,8 +98,8 @@ defaultOps = do
 
 
 new ::
-  ( Json.Encodable eventType,
-    Json.Decodable eventType
+  ( Json.ToJSON eventType,
+    Json.FromJSON eventType
   ) =>
   Ops eventType ->
   Config ->
@@ -131,7 +131,10 @@ new ops cfg = do
 
 
 insertImpl ::
-  (Json.Encodable eventType) =>
+  forall eventType.
+  ( Json.FromJSON eventType,
+    Json.ToJSON eventType
+  ) =>
   Ops eventType ->
   Config ->
   Int ->
@@ -165,7 +168,7 @@ insertImpl ops cfg consistencyRetryCount payload = do
 
 
 insertGo ::
-  (Json.Encodable eventType) =>
+  (Json.ToJSON eventType) =>
   Ops eventType ->
   Config ->
   InsertionPayload eventType ->
@@ -251,7 +254,7 @@ insertGo ops cfg payload = do
 
 
 readStreamForwardFromImpl ::
-  (Json.Decodable eventType) =>
+  (Json.FromJSON eventType) =>
   Ops eventType ->
   Config ->
   EntityName ->
@@ -270,7 +273,7 @@ readStreamForwardFromImpl ops cfg entityName streamId streamPosition limit = do
 
 
 readStreamBackwardFromImpl ::
-  (Json.Decodable eventType) =>
+  (Json.FromJSON eventType) =>
   Ops eventType ->
   Config ->
   EntityName ->
@@ -289,7 +292,7 @@ readStreamBackwardFromImpl ops cfg entityName streamId streamPosition limit = do
 
 
 readAllStreamEventsImpl ::
-  (Json.Decodable eventType) =>
+  (Json.FromJSON eventType) =>
   Ops eventType ->
   Config ->
   EntityName ->
@@ -307,7 +310,7 @@ readAllStreamEventsImpl ops cfg entityName streamId = do
 
 
 readAllEventsForwardFromImpl ::
-  (Json.Decodable eventType) =>
+  (Json.FromJSON eventType) =>
   Ops eventType ->
   Config ->
   StreamPosition ->
@@ -324,7 +327,7 @@ readAllEventsForwardFromImpl ops config streamPosition limit = do
 
 
 readAllEventsBackwardFromImpl ::
-  (Json.Decodable eventType) =>
+  (Json.FromJSON eventType) =>
   Ops eventType ->
   Config ->
   StreamPosition ->
@@ -341,7 +344,7 @@ readAllEventsBackwardFromImpl ops config streamPosition limit = do
 
 
 readAllEventsForwardFromFilteredImpl ::
-  (Json.Decodable eventType) =>
+  (Json.FromJSON eventType) =>
   Ops eventType ->
   Config ->
   StreamPosition ->
@@ -359,7 +362,7 @@ readAllEventsForwardFromFilteredImpl ops config streamPosition limit entityNames
 
 
 readAllEventsBackwardFromFilteredImpl ::
-  (Json.Decodable eventType) =>
+  (Json.FromJSON eventType) =>
   Ops eventType ->
   Config ->
   StreamPosition ->
@@ -391,7 +394,7 @@ newReadingRefs = do
 
 performReadAllStreamEvents ::
   forall eventType.
-  (Json.Decodable eventType) =>
+  (Json.FromJSON eventType) =>
   Ops eventType ->
   Config ->
   Stream (ReadAllMessage eventType) ->
@@ -541,7 +544,7 @@ truncateStreamGo ops cfg entityName streamId truncateBefore = do
 
 performReadStreamEvents ::
   forall eventType.
-  (Json.Decodable eventType) =>
+  (Json.FromJSON eventType) =>
   Ops eventType ->
   Config ->
   Stream (ReadStreamMessage eventType) ->

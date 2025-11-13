@@ -42,6 +42,9 @@ data InsertionType
   deriving (Eq, Show, Ord, Generic)
 
 
+instance Json.ToJSON InsertionType
+
+
 data InsertionPayload eventType = InsertionPayload
   { streamId :: StreamId,
     entityName :: EntityName,
@@ -49,6 +52,9 @@ data InsertionPayload eventType = InsertionPayload
     insertions :: Array (Insertion eventType)
   }
   deriving (Eq, Show, Ord, Generic)
+
+
+instance (Json.ToJSON eventType) => Json.ToJSON (InsertionPayload eventType)
 
 
 eventToInsertion :: eventType -> Task _ (Insertion eventType)
@@ -82,6 +88,9 @@ data Insertion eventType = Insertion
     metadata :: EventMetadata
   }
   deriving (Eq, Show, Ord, Generic)
+
+
+instance (Json.ToJSON eventType) => Json.ToJSON (Insertion eventType)
 
 
 data InsertionSuccess = InsertionSuccess

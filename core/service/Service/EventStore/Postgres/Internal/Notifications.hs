@@ -1,5 +1,6 @@
 module Service.EventStore.Postgres.Internal.Notifications where
 
+import AsyncTask qualified
 import Bytes qualified
 import Core
 import Data.ByteString qualified
@@ -29,11 +30,13 @@ connectTo conn store =
       connection
         |> HasqlNotifications.waitForNotifications (handler store)
         |> Task.fromIO
+        |> AsyncTask.run
+        |> discard
 
 
 handler ::
   forall eventType.
-  (Json.Decodable eventType) =>
+  (Json.FromJSON eventType) =>
   SubscriptionStore eventType ->
   Data.ByteString.ByteString ->
   Data.ByteString.ByteString ->

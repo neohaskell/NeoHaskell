@@ -48,7 +48,7 @@ new = do
 
 addGlobalSubscription :: SubscriptionCallback eventType -> SubscriptionStore eventType -> Task Error SubscriptionId
 addGlobalSubscription subscription store = do
-  subId <- Uuid.generate |> Task.map (toText .> SubscriptionId)
+  subId <- Uuid.generate |> Task.map (\result -> result |> toText |> SubscriptionId)
   store.globalSubscriptions
     |> ConcurrentVar.modify (Map.set subId subscription)
   Task.yield subId

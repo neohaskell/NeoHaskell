@@ -47,6 +47,9 @@ spec newStore = do
         store.subscribeToAllEvents subscriber
           |> Task.mapError toText
 
+      -- Wait briefly for async notifications to complete
+      AsyncTask.sleep 10 |> Task.mapError (\_ -> "timeout")
+
       -- Insert test event
       store.insert testEvent
         |> Task.mapError toText

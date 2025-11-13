@@ -15,6 +15,9 @@ newtype StreamId = StreamId Text
   deriving (Eq, Show, Ord, Generic)
 
 
+instance Json.ToJSON StreamId
+
+
 instance Json.FromJSON StreamId
 
 
