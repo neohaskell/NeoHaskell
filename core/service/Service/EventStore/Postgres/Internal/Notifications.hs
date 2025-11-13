@@ -25,9 +25,10 @@ connectTo conn store =
   case conn of
     Sessions.MockConnection ->
       pass
-    Sessions.Connection connection -> do
-      HasqlNotifications.waitForNotifications (handler store) connection |> Task.fromIO
-      Task.yield (panic "lol")
+    Sessions.Connection connection ->
+      connection
+        |> HasqlNotifications.waitForNotifications (handler store)
+        |> Task.fromIO
 
 
 handler ::
