@@ -4,6 +4,7 @@ module Service.EventStore.Postgres.Internal (
   new,
   defaultOps,
   Sessions.Connection (..),
+  SubscriptionStore.SubscriptionStore (..),
 ) where
 
 import Array qualified
@@ -26,6 +27,7 @@ import Service.EventStore.Core
 import Service.EventStore.Postgres.Internal.Core
 import Service.EventStore.Postgres.Internal.PostgresEventRecord (PostgresEventRecord (..))
 import Service.EventStore.Postgres.Internal.Sessions qualified as Sessions
+import Service.EventStore.Postgres.Internal.SubscriptionStore (SubscriptionStore)
 import Service.EventStore.Postgres.Internal.SubscriptionStore qualified as SubscriptionStore
 import Stream (Stream)
 import Stream qualified
@@ -57,13 +59,14 @@ toConnectionSettings cfg = do
   [params |> ConnectionSetting.connection]
 
 
-data Ops = Ops
+data Ops eventType = Ops
   { acquire :: Config -> Task Text Sessions.Connection,
-    initializeTable :: Sessions.Connection -> Task Text Unit
+    initializeTable :: Sessions.Connection -> Task Text Unit,
+    initializeSubscriptions :: SubscriptionStore eventType -> Sessions.Connection -> Task Text Unit
   }
 
 
-defaultOps :: Ops
+defaultOps :: Ops eventType
 defaultOps = do
   let acquire cfg =
         toConnectionSettings cfg
@@ -77,6 +80,7 @@ defaultOps = do
           |> Sessions.run connection
           |> Task.mapError toText
 
+  let initializeSubscriptions _ connection = do
         Sessions.createEventNotificationTriggerFunctionSession
           |> Sessions.run connection
           |> Task.mapError toText
@@ -85,20 +89,21 @@ defaultOps = do
           |> Sessions.run connection
           |> Task.mapError toText
 
-  Ops {acquire, initializeTable}
+  Ops {acquire, initializeTable, initializeSubscriptions}
 
 
 new ::
   ( Json.Encodable eventType,
     Json.Decodable eventType
   ) =>
-  Ops ->
+  Ops eventType ->
   Config ->
   Task Text (EventStore eventType)
 new ops cfg = do
   connection <- ops.acquire cfg
   ops.initializeTable connection
   subscriptionStore <- SubscriptionStore.new |> Task.mapError toText
+  ops.initializeSubscriptions subscriptionStore connection
   let eventStore =
         EventStore
           { insert = insertImpl ops cfg 0,
@@ -122,7 +127,7 @@ new ops cfg = do
 
 insertImpl ::
   (Json.Encodable eventType) =>
-  Ops ->
+  Ops eventType ->
   Config ->
   Int ->
   InsertionPayload eventType ->
@@ -154,7 +159,7 @@ insertImpl ops cfg consistencyRetryCount payload = do
 
 insertGo ::
   (Json.Encodable eventType) =>
-  Ops ->
+  Ops eventType ->
   Config ->
   InsertionPayload eventType ->
   Task PostgresStoreError InsertionSuccess
@@ -240,7 +245,7 @@ insertGo ops cfg payload = do
 
 readStreamForwardFromImpl ::
   (Json.Decodable eventType) =>
-  Ops ->
+  Ops eventType ->
   Config ->
   EntityName ->
   StreamId ->
@@ -259,7 +264,7 @@ readStreamForwardFromImpl ops cfg entityName streamId streamPosition limit = do
 
 readStreamBackwardFromImpl ::
   (Json.Decodable eventType) =>
-  Ops ->
+  Ops eventType ->
   Config ->
   EntityName ->
   StreamId ->
@@ -278,7 +283,7 @@ readStreamBackwardFromImpl ops cfg entityName streamId streamPosition limit = do
 
 readAllStreamEventsImpl ::
   (Json.Decodable eventType) =>
-  Ops ->
+  Ops eventType ->
   Config ->
   EntityName ->
   StreamId ->
@@ -296,7 +301,7 @@ readAllStreamEventsImpl ops cfg entityName streamId = do
 
 readAllEventsForwardFromImpl ::
   (Json.Decodable eventType) =>
-  Ops ->
+  Ops eventType ->
   Config ->
   StreamPosition ->
   Limit ->
@@ -313,7 +318,7 @@ readAllEventsForwardFromImpl ops config streamPosition limit = do
 
 readAllEventsBackwardFromImpl ::
   (Json.Decodable eventType) =>
-  Ops ->
+  Ops eventType ->
   Config ->
   StreamPosition ->
   Limit ->
@@ -330,7 +335,7 @@ readAllEventsBackwardFromImpl ops config streamPosition limit = do
 
 readAllEventsForwardFromFilteredImpl ::
   (Json.Decodable eventType) =>
-  Ops ->
+  Ops eventType ->
   Config ->
   StreamPosition ->
   Limit ->
@@ -348,7 +353,7 @@ readAllEventsForwardFromFilteredImpl ops config streamPosition limit entityNames
 
 readAllEventsBackwardFromFilteredImpl ::
   (Json.Decodable eventType) =>
-  Ops ->
+  Ops eventType ->
   Config ->
   StreamPosition ->
   Limit ->
@@ -380,7 +385,7 @@ newReadingRefs = do
 performReadAllStreamEvents ::
   forall eventType.
   (Json.Decodable eventType) =>
-  Ops ->
+  Ops eventType ->
   Config ->
   Stream (ReadAllMessage eventType) ->
   ReadingRefs ->
@@ -501,7 +506,7 @@ unsubscribeImpl :: SubscriptionId -> Task Error Unit
 unsubscribeImpl _ = panic "Postgres.unsubscribeImpl - Not implemented yet" |> Task.yield
 
 
-truncateStreamImpl :: Ops -> Config -> EntityName -> StreamId -> StreamPosition -> Task Error Unit
+truncateStreamImpl :: Ops eventType -> Config -> EntityName -> StreamId -> StreamPosition -> Task Error Unit
 truncateStreamImpl ops cfg entityName streamId truncateBefore = do
   res <-
     truncateStreamGo ops cfg entityName streamId truncateBefore
@@ -513,7 +518,7 @@ truncateStreamImpl ops cfg entityName streamId truncateBefore = do
       Task.throw (StorageFailure (toText err))
 
 
-truncateStreamGo :: Ops -> Config -> EntityName -> StreamId -> StreamPosition -> Task PostgresStoreError Unit
+truncateStreamGo :: Ops eventType -> Config -> EntityName -> StreamId -> StreamPosition -> Task PostgresStoreError Unit
 truncateStreamGo ops cfg entityName streamId truncateBefore = do
   conn <- ops.acquire cfg |> Task.mapError ConnectionAcquisitionError
   Sessions.truncateStreamSession entityName streamId truncateBefore
@@ -524,7 +529,7 @@ truncateStreamGo ops cfg entityName streamId truncateBefore = do
 performReadStreamEvents ::
   forall eventType.
   (Json.Decodable eventType) =>
-  Ops ->
+  Ops eventType ->
   Config ->
   Stream (ReadStreamMessage eventType) ->
   ReadingRefs ->

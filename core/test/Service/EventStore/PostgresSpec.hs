@@ -48,11 +48,12 @@ spec = do
 
 data NewObserve = NewObserve
   { acquireCalls :: Var Int,
-    initializeTableCalls :: Var Int
+    initializeTableCalls :: Var Int,
+    initializeSubscriptionsCalls :: Var Int
   }
 
 
-dropPostgres :: Internal.Ops -> Postgres.Config -> Task Text Unit
+dropPostgres :: Internal.Ops eventType -> Postgres.Config -> Task Text Unit
 dropPostgres ops config = do
   connection <- ops.acquire config
   res <-
@@ -66,10 +67,11 @@ dropPostgres ops config = do
       Task.throw err
 
 
-mockNewOps :: Task Text (Internal.Ops, NewObserve)
+mockNewOps :: Task Text (Internal.Ops eventType, NewObserve)
 mockNewOps = do
   acquireCalls <- Var.new 0
   initializeTableCalls <- Var.new 0
+  initializeSubscriptionsCalls <- Var.new 0
 
   let acquire :: Internal.Config -> Task Text Internal.Connection
       acquire _ = do
@@ -81,7 +83,12 @@ mockNewOps = do
         Var.increment initializeTableCalls
         Task.yield unit
 
-  let newObserver = NewObserve {acquireCalls, initializeTableCalls}
+  let initializeSubscriptions :: Internal.SubscriptionStore eventType -> Internal.Connection -> Task Text Unit
+      initializeSubscriptions _ _ = do
+        Var.increment initializeSubscriptionsCalls
+        Task.yield unit
 
-  let ops = Internal.Ops {acquire, initializeTable}
+  let newObserver = NewObserve {acquireCalls, initializeTableCalls, initializeSubscriptionsCalls}
+
+  let ops = Internal.Ops {acquire, initializeTable, initializeSubscriptions}
   Task.yield (ops, newObserver)
