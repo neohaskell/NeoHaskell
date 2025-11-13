@@ -8,6 +8,7 @@ module Service.EventStore.Core (
   ToxicContents (..),
   collectAllEvents,
   collectStreamEvents,
+  streamMessageToAllMessage,
 ) where
 
 import Array qualified
@@ -75,6 +76,18 @@ data ReadStreamMessage eventType
   | StreamCaughtUp
   | StreamFellBehind
   deriving (Eq, Show)
+
+
+streamMessageToAllMessage :: ReadStreamMessage eventType -> ReadAllMessage eventType
+streamMessageToAllMessage message =
+  case message of
+    StreamReadingStarted -> ReadingStarted
+    StreamEvent event -> AllEvent event
+    ToxicStreamEvent contents -> ToxicAllEvent contents
+    StreamCheckpoint position -> Checkpoint position
+    StreamTerminated reason -> Terminated reason
+    StreamCaughtUp -> CaughtUp
+    StreamFellBehind -> FellBehind
 
 
 collectAllEvents :: Array (ReadAllMessage eventType) -> Array (Event eventType)

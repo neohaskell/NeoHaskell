@@ -83,15 +83,3 @@ dispatch streamId message store = do
   let allCallbacks = streamCallbacks |> Array.append globalCallbacks
 
   allCallbacks |> AsyncTask.forEachConcurrently
-
-
-streamMessageToAllMessage :: ReadStreamMessage eventType -> ReadAllMessage eventType
-streamMessageToAllMessage message =
-  case message of
-    StreamReadingStarted -> ReadingStarted
-    StreamEvent event -> AllEvent event
-    ToxicStreamEvent contents -> ToxicAllEvent contents
-    StreamCheckpoint position -> Checkpoint position
-    StreamTerminated reason -> Terminated reason
-    StreamCaughtUp -> CaughtUp
-    StreamFellBehind -> FellBehind
