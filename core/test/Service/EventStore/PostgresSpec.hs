@@ -48,7 +48,7 @@ spec = do
           |> varContents shouldBe 1
 
     let newStore = do
-          let ops = Internal.defaultOps
+          let ops = Internal.defaultOps @MyEvent
           dropPostgres ops config
           Postgres.new config |> Task.mapError toText
     EventStore.spec newStore

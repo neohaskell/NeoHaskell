@@ -67,7 +67,9 @@ data Ops eventType = Ops
   }
 
 
-defaultOps :: Ops eventType
+defaultOps ::
+  (Json.Decodable eventType) =>
+  Ops eventType
 defaultOps = do
   let acquire cfg =
         toConnectionSettings cfg
