@@ -12,6 +12,7 @@
     "Defaultable",
     "devenv",
     "dont",
+    "elems",
     "foldl",
     "fourmolu",
     "fprint",

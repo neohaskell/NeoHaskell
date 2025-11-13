@@ -146,6 +146,8 @@ insertImpl ops cfg consistencyRetryCount payload = do
       Task.throw (StorageFailure err)
     Err (CoreInsertionError err) ->
       Task.throw (InsertionError err)
+    Err (SubscriptionStoreError identifier err) ->
+      Task.throw (SubscriptionError (SubscriptionId identifier) (toText err))
     Err (SessionError err) -> do
       let isEventsUniqueKeyViolation err =
             (err |> toText |> Text.contains "\"2627\"")
@@ -485,8 +487,14 @@ performReadAllStreamEvents
     Task.yield stream
 
 
-subscribeToAllEventsImpl :: (Event eventType -> Task Error Unit) -> Task Error SubscriptionId
-subscribeToAllEventsImpl _ = panic "Postgres.subscribeToAllEventsImpl - Not implemented yet" |> Task.yield
+subscribeToAllEventsImpl ::
+  SubscriptionStore eventType ->
+  (Event eventType -> Task Error Unit) ->
+  Task Error SubscriptionId
+subscribeToAllEventsImpl store callback = do
+  store
+    |> SubscriptionStore.addGlobalSubscription callback
+    |> Task.mapError (\err -> SubscriptionError (SubscriptionId "global") (err |> toText))
 
 
 subscribeToAllEventsFromPositionImpl ::

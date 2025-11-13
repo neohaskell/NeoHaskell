@@ -7,6 +7,7 @@ import Maybe qualified
 import Service.Event qualified as Event
 import Service.Event.EntityName (EntityName)
 import Service.Event.EntityName qualified as EntityName
+import Service.EventStore.Core qualified as SubscriptionStore
 import Text qualified
 
 
@@ -14,6 +15,7 @@ data PostgresStoreError
   = SessionError Session.SessionError
   | ConnectionAcquisitionError Text
   | CoreInsertionError Event.InsertionFailure
+  | SubscriptionStoreError Text SubscriptionStore.Error
   deriving (Eq, Show)
 
 

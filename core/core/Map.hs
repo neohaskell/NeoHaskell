@@ -11,7 +11,9 @@ module Map (
   contains,
   remove,
   getOrElse,
-  size,
+  length,
+  values,
+  keys,
 ) where
 
 import Accumulator (Accumulator)
@@ -87,6 +89,16 @@ entries :: Map key value -> Array (key, value)
 entries self = HaskellMap.toList self |> Array.fromLinkedList
 
 
+-- | Gets all the values in a map
+values :: Map key value -> Array value
+values self = HaskellMap.elems self |> Array.fromLinkedList
+
+
+-- | Gets all the keys in a map
+keys :: Map key key -> Array key
+keys self = HaskellMap.keys self |> Array.fromLinkedList
+
+
 -- | Checks if a key exists in a map
 contains :: (Eq key, Ord key) => key -> Map key value -> Bool
 contains key map = HaskellMap.member key map
@@ -98,6 +110,6 @@ remove :: (Ord key) => key -> Map key value -> Map key value
 remove key self = HaskellMap.delete key self
 
 
--- | Returns the size of the map
-size :: Map key value -> Int
-size self = HaskellMap.size self
+-- | Returns the length of the map
+length :: Map key value -> Int
+length self = HaskellMap.size self

@@ -26,7 +26,7 @@ spec = do
         streamSubs <- store.streamSubscriptions |> ConcurrentVar.peek
 
         globalSubs |> Array.length |> shouldBe 0
-        streamSubs |> Map.size |> shouldBe 0
+        streamSubs |> Map.length |> shouldBe 0
 
       it "adds a global subscription" \_ -> do
         store <- SubscriptionStore.new |> Task.mapError toText
@@ -135,9 +135,9 @@ spec = do
         subs2 <- store |> SubscriptionStore.getStreamSubscriptions streamId2 |> Task.mapError toText
         subs3 <- store |> SubscriptionStore.getStreamSubscriptions streamId3 |> Task.mapError toText
 
-        subs1 |> Array.length |> shouldBe 5
-        subs2 |> Array.length |> shouldBe 5
-        subs3 |> Array.length |> shouldBe 5
+        subs1 |> Map.length |> shouldBe 5
+        subs2 |> Map.length |> shouldBe 5
+        subs3 |> Map.length |> shouldBe 5
 
       it "handles large numbers of subscriptions" \_ -> do
         store <- SubscriptionStore.new |> Task.mapError toText
@@ -147,11 +147,11 @@ spec = do
 
         -- Add many global subscriptions
         Array.fromLinkedList ([1 .. count] :: [Int])
-          |> Task.forEach (\_ -> store |> SubscriptionStore.addGlobalSubscription callback |> Task.mapError toText)
+          |> Task.forEach (\_ -> store |> SubscriptionStore.addGlobalSubscription callback |> discard |> Task.mapError toText)
 
         -- Verify count
         globalSubs <- store.globalSubscriptions |> ConcurrentVar.peek
-        globalSubs |> Array.length |> shouldBe count
+        globalSubs |> Map.length |> shouldBe count
 
         -- Add many stream subscriptions
         streamId <- StreamId.new
