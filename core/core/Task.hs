@@ -24,6 +24,7 @@ module Task (
   errorAsResult,
   fromIOEither,
   while,
+  ignoreError,
 ) where
 
 import Applicable (Applicative (pure))
@@ -275,3 +276,13 @@ while :: Task err Bool -> Task err Unit -> Task err Unit
 while condition action = Task do
   Loops.whileM_ (runTask condition) (runTask action)
 {-# INLINE while #-}
+
+
+-- | Ignores error on unit result
+ignoreError :: Task err Unit -> Task _ Unit
+ignoreError task = do
+  result <- task |> asResult
+  case result of
+    Result.Err _ -> yield unit
+    Result.Ok res -> yield res
+{-# INLINE ignoreError #-}
