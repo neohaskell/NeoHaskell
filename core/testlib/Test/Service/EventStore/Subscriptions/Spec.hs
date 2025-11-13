@@ -445,6 +445,14 @@ spec newStore = do
         postSubscriptionEvents1 <- createTestEventsForEntity stream1Id entity1Id eventCount eventCount
         postSubscriptionEvents2 <- createTestEventsForEntity stream2Id entity2Id eventCount eventCount
 
+        print
+          [fmt|$$$$$$$$$$$$
+        PRE SUB 1: #{preSubscriptionEvents1 |> Array.length |> toText }
+        PRE SUB 2: #{preSubscriptionEvents2 |> Array.length |> toText }
+        POST SUB 1: #{postSubscriptionEvents1 |> Array.length |> toText }
+        POST SUB 2: #{postSubscriptionEvents2 |> Array.length |> toText }
+        $$$$$$$$$$$$$|]
+
         -- Insert post-subscription events
         postSubscriptionEvents1 |> Task.mapArray insertEvent |> discard
         postSubscriptionEvents2 |> Task.mapArray insertEvent |> discard
@@ -455,9 +463,11 @@ spec newStore = do
         -- Verify we received exactly the post-subscription events
         received <- ConcurrentVar.get receivedEvents
 
+        let rcv = received |> Array.map (\r -> r.metadata) |> toText
+
         print
           [fmt|$$$$$$$$$$$$
-        RECEIVED: #{toText received}
+        RECEIVED: #{rcv}
         $$$$$$$$$$$$$|]
 
         -- Should have received exactly eventCount * 2 events (only post-subscription)
