@@ -8,9 +8,9 @@ import Hasql.Notifications qualified as HasqlNotifications
 import Json qualified
 import Service.Event (Event)
 import Service.Event.StreamId qualified as StreamId
-import Service.EventStore.Core (ReadStreamMessage)
 import Service.EventStore.Postgres.Internal.Sessions qualified as Sessions
 import Service.EventStore.Postgres.Internal.SubscriptionStore (SubscriptionStore)
+import Service.EventStore.Postgres.Internal.SubscriptionStore qualified as SubscriptionStore
 import Task qualified
 import Text qualified
 
@@ -52,4 +52,12 @@ handler store streamIdLegacyBytes payloadLegacyBytes = do
       -- FIXME: Implement proper logging here
       GHC.putStrLn (err)
     Ok payload -> do
-      pure (panic "YOOOOO")
+      result <-
+        store
+          |> SubscriptionStore.dispatch streamId payload
+          |> Task.runResult
+      case result of
+        Err err -> do
+          -- FIXME: Implement proper logging here
+          GHC.putStrLn (toText err)
+        Ok _ -> pass
