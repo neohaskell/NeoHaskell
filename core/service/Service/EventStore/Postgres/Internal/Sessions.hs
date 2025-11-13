@@ -115,10 +115,18 @@ createEventNotificationTriggerSession :: Session.Session Unit
 createEventNotificationTriggerSession =
   Session.sql
     [fmt|
-            CREATE TRIGGER notify_event_insert
-            AFTER INSERT ON Events
-            FOR EACH ROW
-            EXECUTE FUNCTION notify_event_inserted();
+            DO $$
+            BEGIN
+              IF NOT EXISTS (
+                SELECT 1 FROM pg_trigger
+                WHERE tgname = 'notify_event_insert'
+              ) THEN
+                CREATE TRIGGER notify_event_insert
+                AFTER INSERT ON Events
+                FOR EACH ROW
+                EXECUTE FUNCTION notify_event_inserted();
+              END IF;
+            END $$;
           |]
 
 
