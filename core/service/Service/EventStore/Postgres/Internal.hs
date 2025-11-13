@@ -25,6 +25,7 @@ import Service.Event.EventMetadata qualified as EventMetadata
 import Service.Event.StreamId qualified as StreamId
 import Service.EventStore.Core
 import Service.EventStore.Postgres.Internal.Core
+import Service.EventStore.Postgres.Internal.Notifications qualified as Notifications
 import Service.EventStore.Postgres.Internal.PostgresEventRecord (PostgresEventRecord (..))
 import Service.EventStore.Postgres.Internal.Sessions qualified as Sessions
 import Service.EventStore.Postgres.Internal.SubscriptionStore (SubscriptionStore)
@@ -80,7 +81,7 @@ defaultOps = do
           |> Sessions.run connection
           |> Task.mapError toText
 
-  let initializeSubscriptions _ connection = do
+  let initializeSubscriptions subscriptionStore connection = do
         Sessions.createEventNotificationTriggerFunctionSession
           |> Sessions.run connection
           |> Task.mapError toText
@@ -88,6 +89,8 @@ defaultOps = do
         Sessions.createEventNotificationTriggerSession
           |> Sessions.run connection
           |> Task.mapError toText
+
+        subscriptionStore |> Notifications.connectTo connection
 
   Ops {acquire, initializeTable, initializeSubscriptions}
 

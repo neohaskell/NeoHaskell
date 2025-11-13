@@ -136,9 +136,10 @@ library
     Service.EventStore.Postgres
     Service.EventStore.Postgres.Internal
     Service.EventStore.Postgres.Internal.Core
+    Service.EventStore.Postgres.Internal.Notifications
     Service.EventStore.Postgres.Internal.PostgresEventRecord
-    Service.EventStore.Postgres.Internal.SubscriptionStore
     Service.EventStore.Postgres.Internal.Sessions
+    Service.EventStore.Postgres.Internal.SubscriptionStore
     Stream
     Subprocess
     Task
@@ -202,11 +203,11 @@ test-suite nhcore-test
   default-language: GHC2021
   other-modules:
     Service.EventStore.InMemorySpec
+    Service.EventStore.Postgres.Internal.SubscriptionStoreSpec
     Service.EventStore.PostgresSpec
     StreamSpec
     Test.AppSpec.AppSpecSpec
     Test.AppSpec.VerifySpec
-    Service.EventStore.Postgres.Internal.SubscriptionStoreSpec
 
   -- other-extensions:
   type: exitcode-stdio-1.0
