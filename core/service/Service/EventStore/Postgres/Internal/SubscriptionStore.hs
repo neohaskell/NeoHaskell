@@ -15,6 +15,7 @@ import Core
 import Map qualified
 import Service.Event (StreamId)
 import Service.EventStore (ReadAllMessage (..), ReadStreamMessage (..))
+import Service.EventStore.Core (streamMessageToAllMessage)
 import Task qualified
 
 
