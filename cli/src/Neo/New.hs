@@ -9,9 +9,11 @@ import Directory qualified
 import File qualified
 import Maybe qualified
 import Neo.Core
+import Neo.New.Templates.GitIgnore qualified as GitIgnore
 import Neo.New.Templates.MainModule qualified as MainModule
 import Neo.New.Templates.NeoJson qualified as NeoJson
 import Path qualified
+import Subprocess qualified
 import Task qualified
 import Text qualified
 
@@ -24,6 +26,33 @@ data Error
   = CabalFileError
   | CustomError Text
   deriving (Show)
+
+
+openGit :: Array Text -> Path -> Task Error Unit
+openGit arguments projectDir = do
+  completion <-
+    Subprocess.open "git" arguments projectDir
+      |> Task.mapError (\err -> CustomError [fmt|Git command failed: #{err}|])
+  if completion.exitCode != 0
+    then Task.throw (CustomError completion.stderr)
+    else Task.yield ()
+
+
+initGit :: Path -> Task Error Unit
+initGit projectDir = do
+  let gitingoreFileName = [path|.gitignore|]
+  let gitignoreFilePath =
+        Array.fromLinkedList [projectDir, gitingoreFileName]
+          |> Path.joinPaths
+
+  openGit (Array.fromLinkedList ["init"]) projectDir
+
+  File.writeText gitignoreFilePath GitIgnore.template
+    |> Task.mapError (\_ -> CustomError "Could not write .gitignore file")
+
+  openGit (Array.fromLinkedList ["add", "."]) projectDir
+
+  openGit (Array.fromLinkedList ["commit", "-m", "Initial NeoHaskell project"]) projectDir
 
 
 handle :: ProjectName -> Task Error Unit
@@ -64,6 +93,15 @@ handle (ProjectName projectName) = do
 
   File.writeText moduleFilePath (MainModule.template moduleName)
     |> Task.mapError (\_ -> CustomError "Could not write module file")
+
+  initGitResult <- initGit projectDir |> Task.errorAsResult |> Task.mapError never
+  case initGitResult of
+    Nothing -> Task.yield ()
+    Just err ->
+      print
+        [fmt|Warning: Could not initialize git repository
+#{toPrettyText err}
+|]
 
   print
     [fmt|Created project #{projectName} at ./#{Path.toText projectDir}
