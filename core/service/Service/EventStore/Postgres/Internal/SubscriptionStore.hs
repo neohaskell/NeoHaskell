@@ -26,7 +26,7 @@ data Error
 
 
 type SubscriptionCallback eventType =
-  Event eventType -> Task Error Unit
+  Event eventType -> Task Text Unit
 
 
 type Subscriptions eventType =
@@ -78,7 +78,7 @@ dispatch streamId message store = do
   streamSubs <- store |> getStreamSubscriptions streamId
   globalSubs <- store.globalSubscriptions |> ConcurrentVar.peek
 
-  let wrapCallback :: msg -> (msg -> Task Error Unit) -> Task Text Unit
+  let wrapCallback :: msg -> (msg -> Task Text Unit) -> Task Text Unit
       wrapCallback msg callback = do
         callback msg |> Task.asResult |> discard
 

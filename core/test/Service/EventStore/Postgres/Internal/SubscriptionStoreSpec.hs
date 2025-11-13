@@ -230,7 +230,7 @@ spec = do
 
         successCount <- ConcurrentVar.containing (0 :: Int)
 
-        let failingCallback _msg = Task.throw OtherError
+        let failingCallback _msg = Task.throw "failed on purpose"
 
         let successCallback _msg = do
               successCount |> ConcurrentVar.modify (\n -> n + 1)

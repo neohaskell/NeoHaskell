@@ -84,7 +84,7 @@ data SubscriptionType
 
 data Subscription eventType = Subscription
   { subscriptionType :: SubscriptionType,
-    handler :: Event eventType -> Task Error Unit
+    handler :: Event eventType -> Task Text Unit
   }
 
 
@@ -318,7 +318,7 @@ readAllEventsBackwardFromFilteredImpl store (StreamPosition (position)) (Limit (
 
 subscribeToAllEventsImpl ::
   StreamStore eventType ->
-  (Event eventType -> Task Error Unit) ->
+  (Event eventType -> Task Text Unit) ->
   Task Error SubscriptionId
 subscribeToAllEventsImpl store handler = do
   subscriptionId <- generateSubscriptionId
@@ -332,7 +332,7 @@ subscribeToAllEventsImpl store handler = do
 subscribeToAllEventsFromPositionImpl ::
   StreamStore eventType ->
   StreamPosition ->
-  (Event eventType -> Task Error Unit) ->
+  (Event eventType -> Task Text Unit) ->
   Task Error SubscriptionId
 subscribeToAllEventsFromPositionImpl store fromPosition handler = do
   subscriptionId <- generateSubscriptionId
@@ -351,7 +351,7 @@ subscribeToAllEventsFromPositionImpl store fromPosition handler = do
 
 subscribeToAllEventsFromStartImpl ::
   StreamStore eventType ->
-  (Event eventType -> Task Error Unit) ->
+  (Event eventType -> Task Text Unit) ->
   Task Error SubscriptionId
 subscribeToAllEventsFromStartImpl store handler = do
   subscriptionId <- generateSubscriptionId
@@ -371,7 +371,7 @@ subscribeToAllEventsFromStartImpl store handler = do
 subscribeToEntityEventsImpl ::
   StreamStore eventType ->
   EntityName ->
-  (Event eventType -> Task Error Unit) ->
+  (Event eventType -> Task Text Unit) ->
   Task Error SubscriptionId
 subscribeToEntityEventsImpl store entityName handler = do
   subscriptionId <- generateSubscriptionId
@@ -386,7 +386,7 @@ subscribeToStreamEventsImpl ::
   StreamStore eventType ->
   EntityName ->
   StreamId ->
-  (Event eventType -> Task Error Unit) ->
+  (Event eventType -> Task Text Unit) ->
   Task Error SubscriptionId
 subscribeToStreamEventsImpl store entityName streamId handler = do
   subscriptionId <- generateSubscriptionId
@@ -448,7 +448,7 @@ notifySubscriber subscription event = do
 
 
 deliverHistoricalEvents ::
-  StreamStore eventType -> StreamPosition -> (Event eventType -> Task Error Unit) -> Task _ Unit
+  StreamStore eventType -> StreamPosition -> (Event eventType -> Task Text Unit) -> Task _ Unit
 deliverHistoricalEvents store fromPosition handler = do
   -- Read all events from the specified position onwards
   let (StreamPosition startPos) = fromPosition
@@ -469,7 +469,7 @@ deliverHistoricalEvents store fromPosition handler = do
 
 
 deliverHistoricalEventsFromStart ::
-  StreamStore eventType -> (Event eventType -> Task Error Unit) -> SubscriptionId -> Task _ Unit
+  StreamStore eventType -> (Event eventType -> Task Text Unit) -> SubscriptionId -> Task _ Unit
 deliverHistoricalEventsFromStart store handler _subscriptionId = do
   -- Read ALL events from the very beginning (no position filter)
   allGlobalEvents <- store.globalStream |> DurableChannel.getAndTransform unchanged
@@ -480,7 +480,7 @@ deliverHistoricalEventsFromStart store handler _subscriptionId = do
     |> discard
 
 
-notifySubscriberSafely :: (Event eventType -> Task Error Unit) -> Event eventType -> Task _ Unit
+notifySubscriberSafely :: (Event eventType -> Task Text Unit) -> Event eventType -> Task _ Unit
 notifySubscriberSafely handler event = do
   -- Execute subscriber handler and catch any errors
   result <- handler event |> Task.asResult

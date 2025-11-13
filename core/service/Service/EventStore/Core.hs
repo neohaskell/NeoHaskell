@@ -140,21 +140,21 @@ data EventStore eventType = EventStore
       StreamPosition -> Limit -> Array EntityName -> Task Error (Stream (ReadAllMessage eventType)),
     -- | Subscribe to all events in the event store. The subscriber function will be called
     --   for every event that gets appended. Returns a SubscriptionId for unsubscribing.
-    subscribeToAllEvents :: ((Event eventType) -> Task Error Unit) -> Task Error SubscriptionId,
+    subscribeToAllEvents :: ((Event eventType) -> Task Text Unit) -> Task Error SubscriptionId,
     -- | Subscribe to all events from a specific global position onwards. This allows catching up
     --   from historical events and then receiving new events as they are appended.
     subscribeToAllEventsFromPosition ::
-      StreamPosition -> ((Event eventType) -> Task Error Unit) -> Task Error SubscriptionId,
+      StreamPosition -> ((Event eventType) -> Task Text Unit) -> Task Error SubscriptionId,
     -- | Subscribe to all events from the very beginning of the event store. This delivers ALL
     --   historical events first, then continues with new events as they are appended.
-    subscribeToAllEventsFromStart :: ((Event eventType) -> Task Error Unit) -> Task Error SubscriptionId,
+    subscribeToAllEventsFromStart :: ((Event eventType) -> Task Text Unit) -> Task Error SubscriptionId,
     -- | Subscribe to events for a specific entity. The subscriber function will be called
     --   only for events belonging to the specified entity.
-    subscribeToEntityEvents :: EntityName -> ((Event eventType) -> Task Error Unit) -> Task Error SubscriptionId,
+    subscribeToEntityEvents :: EntityName -> ((Event eventType) -> Task Text Unit) -> Task Error SubscriptionId,
     -- | Subscribe to events for a specific stream within an entity. The subscriber function
     --   will be called only for events in the specified entity and stream.
     subscribeToStreamEvents ::
-      EntityName -> StreamId -> ((Event eventType) -> Task Error Unit) -> Task Error SubscriptionId,
+      EntityName -> StreamId -> ((Event eventType) -> Task Text Unit) -> Task Error SubscriptionId,
     -- | Unsubscribe from event notifications. After this call, the subscriber function
     --   will no longer be called for new events.
     unsubscribe :: SubscriptionId -> Task Error Unit,

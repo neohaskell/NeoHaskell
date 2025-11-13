@@ -32,7 +32,7 @@ spec newStore = do
         -- Define subscriber function that collects events
         let subscriber event = do
               receivedEvents |> ConcurrentVar.modify (Array.push event)
-              Task.yield unit :: Task EventStore.Error Unit
+              Task.yield unit :: Task Text Unit
 
         -- Subscribe to all events
         subscriptionId <-
@@ -93,7 +93,7 @@ spec newStore = do
         -- Define subscriber function that collects events
         let subscriber event = do
               receivedEvents |> ConcurrentVar.modify (Array.push event)
-              Task.yield unit :: Task EventStore.Error Unit
+              Task.yield unit :: Task Text Unit
 
         -- Subscribe only to our test entity events
         subscriptionId <-
@@ -155,7 +155,7 @@ spec newStore = do
         -- Define subscriber function that collects events
         let subscriber event = do
               receivedEvents |> ConcurrentVar.modify (Array.push event)
-              Task.yield unit :: Task EventStore.Error Unit
+              Task.yield unit :: Task Text Unit
 
         -- Subscribe only to our test stream events
         subscriptionId <-
@@ -202,7 +202,7 @@ spec newStore = do
       it "handles subscription errors gracefully without affecting event store operations" \context -> do
         -- Create a subscriber that always fails
         let failingSubscriber _event = do
-              Task.throw (EventStore.StorageFailure "Subscriber intentionally failed") :: Task EventStore.Error Unit
+              Task.throw "Subscriber intentionally failed" :: Task Text Unit
 
         -- Subscribe with failing function
         subscriptionId <-
@@ -251,13 +251,13 @@ spec newStore = do
         -- Define different subscriber functions
         let subscriber1 event = do
               subscriber1Events |> ConcurrentVar.modify (Array.push event)
-              Task.yield unit :: Task EventStore.Error Unit
+              Task.yield unit :: Task Text Unit
         let subscriber2 event = do
               subscriber2Events |> ConcurrentVar.modify (Array.push event)
-              Task.yield unit :: Task EventStore.Error Unit
+              Task.yield unit :: Task Text Unit
         let subscriber3 event = do
               subscriber3Events |> ConcurrentVar.modify (Array.push event)
-              Task.yield unit :: Task EventStore.Error Unit
+              Task.yield unit :: Task Text Unit
 
         -- Subscribe all three concurrently
         subscriptionIds <-
@@ -314,7 +314,7 @@ spec newStore = do
         -- Define subscriber function
         let subscriber event = do
               receivedEvents |> ConcurrentVar.modify (Array.push event)
-              Task.yield unit :: Task EventStore.Error Unit
+              Task.yield unit :: Task Text Unit
 
         -- Subscribe to all events
         subscriptionId <-
@@ -363,7 +363,7 @@ spec newStore = do
         -- Define subscriber function that tracks events
         let subscriber event = do
               receivedEvents |> ConcurrentVar.modify (Array.push event)
-              Task.yield unit :: Task EventStore.Error Unit
+              Task.yield unit :: Task Text Unit
 
         -- Subscribe to all events
         subscriptionId <-
@@ -432,7 +432,7 @@ spec newStore = do
               if event.entityName == entity1Id || event.entityName == entity2Id
                 then receivedEvents |> ConcurrentVar.modify (Array.push event)
                 else Task.yield unit
-              Task.yield unit :: Task EventStore.Error Unit
+              Task.yield unit :: Task Text Unit
 
         -- Subscribe to all events (this should only receive NEW events "from now on")
         subscriptionId <- context.store.subscribeToAllEvents subscriber |> Task.mapError toText
@@ -497,7 +497,7 @@ spec newStore = do
               if event.entityName == entity1Id || event.entityName == entity2Id
                 then receivedEvents |> ConcurrentVar.modify (Array.push event)
                 else Task.yield unit
-              Task.yield unit :: Task EventStore.Error Unit
+              Task.yield unit :: Task Text Unit
 
         -- Subscribe from the specific position (should receive events AFTER this position)
         subscriptionId <-
