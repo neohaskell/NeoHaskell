@@ -15,6 +15,7 @@ import ConcurrentVar qualified
 import Core
 import Map qualified
 import Service.Event (Event, StreamId)
+import Service.Event.StreamId (StreamId (..))
 import Service.EventStore.Core (SubscriptionId (..))
 import Task qualified
 import Uuid qualified
@@ -78,14 +79,16 @@ dispatch :: StreamId -> Event eventType -> SubscriptionStore eventType -> Task E
 dispatch streamId message store = do
   streamSubs <- store |> getStreamSubscriptions streamId
   globalSubs <- store.globalSubscriptions |> ConcurrentVar.peek
+  let (StreamId streamName) = streamId
 
   let wrapCallback :: msg -> (msg -> Task Text Unit) -> Task Text Unit
       wrapCallback msg callback = do
         callback msg |> Task.asResult |> discard
 
-  let streamCallbacks = streamSubs |> Map.values |> Array.map (wrapCallback message)
-  let globalCallbacks = globalSubs |> Map.values |> Array.map (wrapCallback message)
-  let allCallbacks = streamCallbacks |> Array.append globalCallbacks
+  let allCallbacks =
+        if streamName == "global"
+          then globalSubs |> Map.values |> Array.map (wrapCallback message)
+          else streamSubs |> Map.values |> Array.map (wrapCallback message)
 
   allCallbacks |> AsyncTask.forEachConcurrently
 
