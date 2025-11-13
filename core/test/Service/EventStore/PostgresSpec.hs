@@ -39,6 +39,14 @@ spec = do
         observe.initializeTableCalls
           |> varContents shouldBe 1
 
+      it "initializes the subscriptions" \_ -> do
+        (ops, observe) <- mockNewOps
+        Internal.new @MyEvent ops config
+          |> Task.mapError toText
+          |> discard
+        observe.initializeSubscriptionsCalls
+          |> varContents shouldBe 1
+
     let newStore = do
           let ops = Internal.defaultOps
           dropPostgres ops config
