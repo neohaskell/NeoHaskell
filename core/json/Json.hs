@@ -9,10 +9,13 @@ module Json (
   encode,
   decode,
   encodeText,
+  decodeBytes,
 ) where
 
 import Array (Array)
 import Basics
+import Bytes (Bytes)
+import Bytes qualified
 import Data.Aeson qualified as Aeson
 import Data.Aeson.Text qualified as AesonText
 import Data.Either qualified as Either
@@ -33,6 +36,14 @@ type Encodable value = Aeson.ToJSON value
 decodeText :: (Decodable value) => Text -> Result Text value
 decodeText text = do
   let bs = Text.convert text
+  case Aeson.eitherDecodeStrict bs of
+    Either.Left error -> Result.Err (Text.fromLinkedList error)
+    Either.Right value -> Result.Ok value
+
+
+decodeBytes :: (Decodable value) => Bytes -> Result Text value
+decodeBytes bytes = do
+  let bs = bytes |> Bytes.unwrap
   case Aeson.eitherDecodeStrict bs of
     Either.Left error -> Result.Err (Text.fromLinkedList error)
     Either.Right value -> Result.Ok value

@@ -75,7 +75,7 @@ data ReadStreamMessage eventType
   | StreamTerminated Text
   | StreamCaughtUp
   | StreamFellBehind
-  deriving (Eq, Show)
+  deriving (Eq, Show, Generic)
 
 
 streamMessageToAllMessage :: ReadStreamMessage eventType -> ReadAllMessage eventType

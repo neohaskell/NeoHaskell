@@ -12,6 +12,7 @@ module Service.Event (
 ) where
 
 import Core
+import Json qualified
 import Service.Event.EntityName (EntityName (..))
 import Service.Event.EventMetadata (EventMetadata (..))
 import Service.Event.EventMetadata qualified as EventMetadata
@@ -28,6 +29,9 @@ data Event eventType = Event
     metadata :: EventMetadata
   }
   deriving (Eq, Show, Ord, Generic)
+
+
+instance (Json.FromJSON eventType) => Json.FromJSON (Event eventType)
 
 
 data InsertionType
