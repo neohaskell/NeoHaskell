@@ -4,7 +4,7 @@ import Core
 
 
 template :: Text
-template = do
+template =
   [fmt|\# NeoHaskell build outputs
 .neo/
 dist/

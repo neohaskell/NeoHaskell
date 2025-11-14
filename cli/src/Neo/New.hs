@@ -40,9 +40,9 @@ openGit arguments projectDir = do
 
 initGit :: Path -> Task Error Unit
 initGit projectDir = do
-  let gitingoreFileName = [path|.gitignore|]
+  let gitignoreFileName = [path|.gitignore|]
   let gitignoreFilePath =
-        Array.fromLinkedList [projectDir, gitingoreFileName]
+        Array.fromLinkedList [projectDir, gitignoreFileName]
           |> Path.joinPaths
 
   openGit (Array.fromLinkedList ["init"]) projectDir
