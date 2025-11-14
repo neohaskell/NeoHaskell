@@ -16,11 +16,8 @@ on:
       - "cli/**"
       - "nix/**"
 jobs:
-  tests:
-    strategy:
-      matrix:
-        os: [ubuntu-latest, macos-latest]
-    runs-on: ${{ matrix.os }}
+  tests-linux:
+    runs-on: ubuntu-latest
 
     services:
       postgres:
@@ -38,12 +35,40 @@ jobs:
           --health-retries 5
 
     steps:
+      - uses: actions/checkout@v5
+
+      - uses: DeterminateSystems/determinate-nix-action@v3.12.2
+        with:
+          extra-conf: |
+            extra-substituters = https://cache.iog.io
+            extra-trusted-public-keys = hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ=
+
+      - uses: DeterminateSystems/magic-nix-cache-action@v13
+
+      # - name: Build the project with Nix
+      #   run: nix build
+
+      - name: Build the project with cabal
+        run: nix develop --command cabal build all
+
+      - name: Run core tests
+        run: nix develop --command cabal test core
+
+      # Doctests are failing - See issue #204
+      # - name: Run core doctests
+      #   run: nix-shell --run "cabal repl --with-compiler=doctest --repl-options=--verbose core"
+
+      - name: Run CLI tests
+        run: nix develop --command cabal test cli
+
+  tests-macos:
+    runs-on: macos-latest
+
+    steps:
       - name: Install current Bash on macOS
-        if: runner.os == 'macOS'
         run: brew install bash
 
       - name: Start PostgreSQL on macOS
-        if: runner.os == 'macOS'
         run: |
           brew install postgresql@16
           brew services start postgresql@16
