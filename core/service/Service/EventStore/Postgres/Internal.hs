@@ -123,7 +123,7 @@ new ops cfg = do
             subscribeToAllEventsFromPosition = subscribeToAllEventsFromPositionImpl ops cfg subscriptionStore,
             subscribeToAllEventsFromStart = subscribeToAllEventsFromStartImpl,
             subscribeToEntityEvents = subscribeToEntityEventsImpl,
-            subscribeToStreamEvents = subscribeToStreamEventsImpl,
+            subscribeToStreamEvents = subscribeToStreamEventsImpl ops cfg subscriptionStore,
             unsubscribe = unsubscribeImpl subscriptionStore,
             truncateStream = truncateStreamImpl ops cfg
           }
@@ -573,8 +573,29 @@ subscribeToEntityEventsImpl _ _ = panic "Postgres.subscribeToEntityEventsImpl - 
 
 
 subscribeToStreamEventsImpl ::
-  EntityName -> StreamId -> (Event eventType -> Task Text Unit) -> Task Error SubscriptionId
-subscribeToStreamEventsImpl _ _ _ = panic "Postgres.subscribeToStreamEventsImpl - Not implemented yet" |> Task.yield
+  forall eventType.
+  (Json.FromJSON eventType) =>
+  Ops eventType ->
+  Config ->
+  SubscriptionStore eventType ->
+  EntityName ->
+  StreamId ->
+  (Event eventType -> Task Text Unit) ->
+  Task Error SubscriptionId
+subscribeToStreamEventsImpl ops cfg store entityName streamId callback = do
+  conn <- ops.acquire cfg |> Task.mapError (toText .> StorageFailure)
+
+  -- Subscribe to the stream-specific notification channel
+  Notifications.subscribeToStream conn streamId
+    |> Task.mapError StorageFailure
+
+  currentMaxPosition <-
+    Sessions.selectMaxGlobalPosition
+      |> Sessions.run conn
+      |> Task.mapError (toText .> StorageFailure)
+  store
+    |> SubscriptionStore.addStreamSubscriptionFromPosition entityName streamId currentMaxPosition callback
+    |> Task.mapError (\err -> SubscriptionError (SubscriptionId "stream") (err |> toText))
 
 
 unsubscribeImpl :: SubscriptionStore eventType -> SubscriptionId -> Task Error Unit

@@ -1,4 +1,7 @@
-module Service.EventStore.Postgres.Internal.Notifications where
+module Service.EventStore.Postgres.Internal.Notifications (
+  connectTo,
+  subscribeToStream,
+) where
 
 import AsyncTask qualified
 import Bytes qualified
@@ -8,12 +11,11 @@ import Data.Text.IO qualified as GHC
 import Hasql.Notifications qualified as HasqlNotifications
 import Json qualified
 import Result qualified
-import Service.Event.StreamId qualified as StreamId
+import Service.Event (Event (..), StreamId)
 import Service.EventStore.Postgres.Internal.Sessions qualified as Sessions
 import Service.EventStore.Postgres.Internal.SubscriptionStore (SubscriptionStore)
 import Service.EventStore.Postgres.Internal.SubscriptionStore qualified as SubscriptionStore
 import Task qualified
-import Text qualified
 
 
 connectTo ::
@@ -38,6 +40,21 @@ connectTo conn store =
         |> discard
 
 
+subscribeToStream ::
+  Sessions.Connection ->
+  StreamId ->
+  Task Text Unit
+subscribeToStream conn streamId =
+  case conn of
+    Sessions.MockConnection ->
+      pass
+    Sessions.Connection connection -> do
+      let channelToListen = HasqlNotifications.toPgIdentifier (toText streamId)
+      HasqlNotifications.listen connection channelToListen
+        |> Task.fromIO
+        |> discard
+
+
 handler ::
   forall eventType.
   (Json.FromJSON eventType) =>
@@ -45,12 +62,7 @@ handler ::
   Data.ByteString.ByteString ->
   Data.ByteString.ByteString ->
   IO ()
-handler store streamIdLegacyBytes payloadLegacyBytes = do
-  let streamId =
-        streamIdLegacyBytes
-          |> Bytes.fromLegacy
-          |> Text.fromBytes
-          |> StreamId.fromText
+handler store _channelName payloadLegacyBytes = do
   let decodingResult =
         payloadLegacyBytes
           |> Bytes.fromLegacy
@@ -60,10 +72,10 @@ handler store streamIdLegacyBytes payloadLegacyBytes = do
     Err err -> do
       -- FIXME: Implement proper logging here
       GHC.putStrLn (err)
-    Ok payload -> do
+    Ok event -> do
       result <-
         store
-          |> SubscriptionStore.dispatch streamId payload
+          |> SubscriptionStore.dispatch event.streamId event
           |> Task.runResult
       case result of
         Err err -> do

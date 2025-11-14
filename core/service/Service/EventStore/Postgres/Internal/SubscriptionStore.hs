@@ -5,6 +5,7 @@ module Service.EventStore.Postgres.Internal.SubscriptionStore (
   addGlobalSubscription,
   addGlobalSubscriptionFromPosition,
   addStreamSubscription,
+  addStreamSubscriptionFromPosition,
   getStreamSubscriptions,
   dispatch,
   removeSubscription,
@@ -15,7 +16,7 @@ import AsyncTask qualified
 import ConcurrentVar qualified
 import Core
 import Map qualified
-import Service.Event (Event (..), StreamId, StreamPosition)
+import Service.Event (EntityName, Event (..), StreamId, StreamPosition)
 import Service.Event.EventMetadata (EventMetadata (..))
 import Service.EventStore.Core (SubscriptionId (..))
 import Task qualified
@@ -34,8 +35,10 @@ type SubscriptionCallback eventType =
 
 data SubscriptionInfo eventType = SubscriptionInfo
   { callback :: SubscriptionCallback eventType,
-    startingGlobalPosition :: Maybe StreamPosition
+    startingGlobalPosition :: Maybe StreamPosition,
+    entityNameFilter :: Maybe EntityName
   }
+  deriving (Show)
 
 
 type Subscriptions eventType =
@@ -58,7 +61,7 @@ new = do
 addGlobalSubscription :: SubscriptionCallback eventType -> SubscriptionStore eventType -> Task Error SubscriptionId
 addGlobalSubscription callback store = do
   subId <- Uuid.generate |> Task.map (\result -> result |> toText |> SubscriptionId)
-  let subscriptionInfo = SubscriptionInfo {callback, startingGlobalPosition = Nothing}
+  let subscriptionInfo = SubscriptionInfo {callback, startingGlobalPosition = Nothing, entityNameFilter = Nothing}
   store.globalSubscriptions
     |> ConcurrentVar.modify (Map.set subId subscriptionInfo)
   Task.yield subId
@@ -67,17 +70,28 @@ addGlobalSubscription callback store = do
 addGlobalSubscriptionFromPosition :: Maybe StreamPosition -> SubscriptionCallback eventType -> SubscriptionStore eventType -> Task Error SubscriptionId
 addGlobalSubscriptionFromPosition startingPosition callback store = do
   subId <- Uuid.generate |> Task.map (\result -> result |> toText |> SubscriptionId)
-  let subscriptionInfo = SubscriptionInfo {callback, startingGlobalPosition = startingPosition}
+  let subscriptionInfo = SubscriptionInfo {callback, startingGlobalPosition = startingPosition, entityNameFilter = Nothing}
   store.globalSubscriptions
     |> ConcurrentVar.modify (Map.set subId subscriptionInfo)
   Task.yield subId
 
 
 addStreamSubscription ::
-  StreamId -> SubscriptionCallback eventType -> SubscriptionStore eventType -> Task Error SubscriptionId
-addStreamSubscription streamId callback store = do
+  EntityName -> StreamId -> SubscriptionCallback eventType -> SubscriptionStore eventType -> Task Error SubscriptionId
+addStreamSubscription entityName streamId callback store = do
   subId <- Uuid.generate |> Task.map (toText .> SubscriptionId)
-  let subscriptionInfo = SubscriptionInfo {callback, startingGlobalPosition = Nothing}
+  let subscriptionInfo = SubscriptionInfo {callback, startingGlobalPosition = Nothing, entityNameFilter = Just entityName}
+  store.streamSubscriptions |> ConcurrentVar.modify \subscriptionsMap -> do
+    let currentSubscriptions = subscriptionsMap |> Map.getOrElse streamId Map.empty
+    subscriptionsMap |> Map.set streamId (currentSubscriptions |> Map.set subId subscriptionInfo)
+  Task.yield subId
+
+
+addStreamSubscriptionFromPosition ::
+  EntityName -> StreamId -> Maybe StreamPosition -> SubscriptionCallback eventType -> SubscriptionStore eventType -> Task Error SubscriptionId
+addStreamSubscriptionFromPosition entityName streamId startingPosition callback store = do
+  subId <- Uuid.generate |> Task.map (toText .> SubscriptionId)
+  let subscriptionInfo = SubscriptionInfo {callback, startingGlobalPosition = startingPosition, entityNameFilter = Just entityName}
   store.streamSubscriptions |> ConcurrentVar.modify \subscriptionsMap -> do
     let currentSubscriptions = subscriptionsMap |> Map.getOrElse streamId Map.empty
     subscriptionsMap |> Map.set streamId (currentSubscriptions |> Map.set subId subscriptionInfo)
@@ -100,9 +114,13 @@ dispatch streamId message store = do
 
   let shouldDispatchToSubscription :: SubscriptionInfo eventType -> Bool
       shouldDispatchToSubscription subInfo = do
-        case (subInfo.startingGlobalPosition, message.metadata.globalPosition) of
-          (Just startPos, Just eventPos) -> eventPos > startPos
-          _ -> True
+        let positionCheck = case (subInfo.startingGlobalPosition, message.metadata.globalPosition) of
+              (Just startPos, Just eventPos) -> eventPos > startPos
+              _ -> True
+        let entityNameCheck = case subInfo.entityNameFilter of
+              Just filterEntityName -> message.entityName == filterEntityName
+              Nothing -> True
+        positionCheck && entityNameCheck
 
   let wrapCallback :: msg -> (msg -> Task Text Unit) -> Task Text Unit
       wrapCallback msg callback = do
