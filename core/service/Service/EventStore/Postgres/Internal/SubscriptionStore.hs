@@ -3,6 +3,7 @@ module Service.EventStore.Postgres.Internal.SubscriptionStore (
   Error (..),
   new,
   addGlobalSubscription,
+  addGlobalSubscriptionFromPosition,
   addStreamSubscription,
   getStreamSubscriptions,
   dispatch,
@@ -14,7 +15,8 @@ import AsyncTask qualified
 import ConcurrentVar qualified
 import Core
 import Map qualified
-import Service.Event (Event, StreamId)
+import Service.Event (Event (..), StreamId, StreamPosition)
+import Service.Event.EventMetadata (EventMetadata (..))
 import Service.Event.StreamId (StreamId (..))
 import Service.EventStore.Core (SubscriptionId (..))
 import Task qualified
@@ -31,8 +33,14 @@ type SubscriptionCallback eventType =
   Event eventType -> Task Text Unit
 
 
+data SubscriptionInfo eventType = SubscriptionInfo
+  { callback :: SubscriptionCallback eventType,
+    startingGlobalPosition :: Maybe StreamPosition
+  }
+
+
 type Subscriptions eventType =
-  Map SubscriptionId (SubscriptionCallback eventType)
+  Map SubscriptionId (SubscriptionInfo eventType)
 
 
 data SubscriptionStore eventType = SubscriptionStore
@@ -49,20 +57,31 @@ new = do
 
 
 addGlobalSubscription :: SubscriptionCallback eventType -> SubscriptionStore eventType -> Task Error SubscriptionId
-addGlobalSubscription subscription store = do
+addGlobalSubscription callback store = do
   subId <- Uuid.generate |> Task.map (\result -> result |> toText |> SubscriptionId)
+  let subscriptionInfo = SubscriptionInfo {callback, startingGlobalPosition = Nothing}
   store.globalSubscriptions
-    |> ConcurrentVar.modify (Map.set subId subscription)
+    |> ConcurrentVar.modify (Map.set subId subscriptionInfo)
+  Task.yield subId
+
+
+addGlobalSubscriptionFromPosition :: Maybe StreamPosition -> SubscriptionCallback eventType -> SubscriptionStore eventType -> Task Error SubscriptionId
+addGlobalSubscriptionFromPosition startingPosition callback store = do
+  subId <- Uuid.generate |> Task.map (\result -> result |> toText |> SubscriptionId)
+  let subscriptionInfo = SubscriptionInfo {callback, startingGlobalPosition = startingPosition}
+  store.globalSubscriptions
+    |> ConcurrentVar.modify (Map.set subId subscriptionInfo)
   Task.yield subId
 
 
 addStreamSubscription ::
   StreamId -> SubscriptionCallback eventType -> SubscriptionStore eventType -> Task Error SubscriptionId
-addStreamSubscription streamId subscription store = do
+addStreamSubscription streamId callback store = do
   subId <- Uuid.generate |> Task.map (toText .> SubscriptionId)
+  let subscriptionInfo = SubscriptionInfo {callback, startingGlobalPosition = Nothing}
   store.streamSubscriptions |> ConcurrentVar.modify \subscriptionsMap -> do
     let currentSubscriptions = subscriptionsMap |> Map.getOrElse streamId Map.empty
-    subscriptionsMap |> Map.set streamId (currentSubscriptions |> Map.set subId subscription)
+    subscriptionsMap |> Map.set streamId (currentSubscriptions |> Map.set subId subscriptionInfo)
   Task.yield subId
 
 
@@ -81,14 +100,28 @@ dispatch streamId message store = do
   globalSubs <- store.globalSubscriptions |> ConcurrentVar.peek
   let (StreamId streamName) = streamId
 
+  let shouldDispatchToSubscription :: SubscriptionInfo eventType -> Bool
+      shouldDispatchToSubscription subInfo = do
+        case (subInfo.startingGlobalPosition, message.metadata.globalPosition) of
+          (Just startPos, Just eventPos) -> eventPos > startPos
+          _ -> True
+
   let wrapCallback :: msg -> (msg -> Task Text Unit) -> Task Text Unit
       wrapCallback msg callback = do
         callback msg |> Task.asResult |> discard
 
   let allCallbacks =
         if streamName == "global"
-          then globalSubs |> Map.values |> Array.map (wrapCallback message)
-          else streamSubs |> Map.values |> Array.map (wrapCallback message)
+          then
+            globalSubs
+              |> Map.values
+              |> Array.takeIf shouldDispatchToSubscription
+              |> Array.map (\subInfo -> wrapCallback message subInfo.callback)
+          else
+            streamSubs
+              |> Map.values
+              |> Array.takeIf shouldDispatchToSubscription
+              |> Array.map (\subInfo -> wrapCallback message subInfo.callback)
 
   allCallbacks |> AsyncTask.forEachConcurrently
 

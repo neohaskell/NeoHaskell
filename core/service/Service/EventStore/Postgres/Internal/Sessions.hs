@@ -215,6 +215,17 @@ selectLatestEventInStream (EntityName entityName) (StreamId streamIdText) = do
       )
 
 
+selectMaxGlobalPosition :: Session.Session (Maybe StreamPosition)
+selectMaxGlobalPosition = do
+  let s :: Hasql.Statement () (Maybe Int64) =
+        [TH.singletonStatement|
+    SELECT MAX(GlobalPosition) :: int8?
+    FROM Events
+  |]
+  Session.statement () s
+    |> Mappable.map (Maybe.map StreamPosition)
+
+
 selectInsertedEvent ::
   Uuid ->
   Session.Session (Maybe (StreamPosition, StreamPosition))

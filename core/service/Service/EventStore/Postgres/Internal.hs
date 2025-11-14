@@ -119,7 +119,7 @@ new ops cfg = do
             readAllEventsBackwardFrom = readAllEventsBackwardFromImpl ops cfg,
             readAllEventsForwardFromFiltered = readAllEventsForwardFromFilteredImpl ops cfg,
             readAllEventsBackwardFromFiltered = readAllEventsBackwardFromFilteredImpl ops cfg,
-            subscribeToAllEvents = subscribeToAllEventsImpl subscriptionStore,
+            subscribeToAllEvents = subscribeToAllEventsImpl ops cfg subscriptionStore,
             subscribeToAllEventsFromPosition = subscribeToAllEventsFromPositionImpl,
             subscribeToAllEventsFromStart = subscribeToAllEventsFromStartImpl,
             subscribeToEntityEvents = subscribeToEntityEventsImpl,
@@ -492,12 +492,19 @@ performReadAllStreamEvents
 
 
 subscribeToAllEventsImpl ::
+  Ops eventType ->
+  Config ->
   SubscriptionStore eventType ->
   (Event eventType -> Task Text Unit) ->
   Task Error SubscriptionId
-subscribeToAllEventsImpl store callback = do
+subscribeToAllEventsImpl ops cfg store callback = do
+  conn <- ops.acquire cfg |> Task.mapError (toText .> StorageFailure)
+  currentMaxPosition <-
+    Sessions.selectMaxGlobalPosition
+      |> Sessions.run conn
+      |> Task.mapError (toText .> StorageFailure)
   store
-    |> SubscriptionStore.addGlobalSubscription callback
+    |> SubscriptionStore.addGlobalSubscriptionFromPosition currentMaxPosition callback
     |> Task.mapError (\err -> SubscriptionError (SubscriptionId "global") (err |> toText))
 
 
