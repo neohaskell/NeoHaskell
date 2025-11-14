@@ -17,7 +17,6 @@ import Core
 import Map qualified
 import Service.Event (Event (..), StreamId, StreamPosition)
 import Service.Event.EventMetadata (EventMetadata (..))
-import Service.Event.StreamId (StreamId (..))
 import Service.EventStore.Core (SubscriptionId (..))
 import Task qualified
 import Uuid qualified
@@ -98,7 +97,6 @@ dispatch :: StreamId -> Event eventType -> SubscriptionStore eventType -> Task E
 dispatch streamId message store = do
   streamSubs <- store |> getStreamSubscriptions streamId
   globalSubs <- store.globalSubscriptions |> ConcurrentVar.peek
-  let (StreamId streamName) = streamId
 
   let shouldDispatchToSubscription :: SubscriptionInfo eventType -> Bool
       shouldDispatchToSubscription subInfo = do
@@ -110,18 +108,22 @@ dispatch streamId message store = do
       wrapCallback msg callback = do
         callback msg |> Task.asResult |> discard
 
-  let allCallbacks =
-        if streamName == "global"
-          then
-            globalSubs
-              |> Map.values
-              |> Array.takeIf shouldDispatchToSubscription
-              |> Array.map (\subInfo -> wrapCallback message subInfo.callback)
-          else
-            streamSubs
-              |> Map.values
-              |> Array.takeIf shouldDispatchToSubscription
-              |> Array.map (\subInfo -> wrapCallback message subInfo.callback)
+  -- Global subscriptions receive ALL events
+  let globalCallbacks =
+        globalSubs
+          |> Map.values
+          |> Array.takeIf shouldDispatchToSubscription
+          |> Array.map (\subInfo -> wrapCallback message subInfo.callback)
+
+  -- Stream subscriptions only receive events for their specific stream
+  let streamCallbacks =
+        streamSubs
+          |> Map.values
+          |> Array.takeIf shouldDispatchToSubscription
+          |> Array.map (\subInfo -> wrapCallback message subInfo.callback)
+
+  -- Combine both and execute all callbacks
+  let allCallbacks = globalCallbacks |> Array.append streamCallbacks
 
   allCallbacks |> AsyncTask.forEachConcurrently
 
