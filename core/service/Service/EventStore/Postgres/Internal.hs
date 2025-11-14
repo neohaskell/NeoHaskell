@@ -676,7 +676,6 @@ performReadStreamEvents
 
     breakLoopRef <- Var.new False
     remainingLimitRef <- Var.new limit
-    offsetRef <- Var.new (0 :: Int64)
 
     let shouldKeepReading = do
           shouldBreak <- Var.get breakLoopRef
@@ -756,10 +755,6 @@ performReadStreamEvents
       -- Check if we got fewer records than batch size (means we're at the end)
       Task.when (Array.length records < batchSize) do
         breakLoopRef |> Var.set True
-
-      -- Update offset for next batch if continuing
-      currentOffset <- Var.get offsetRef
-      offsetRef |> Var.set (currentOffset + fromIntegral batchSize)
 
     stream |> Stream.end
     Task.yield stream

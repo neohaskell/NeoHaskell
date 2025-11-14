@@ -101,7 +101,13 @@ createEventsTableSession =
                 CONSTRAINT PK_Events PRIMARY KEY (GlobalPosition),
                 CONSTRAINT UK_Events_EventId UNIQUE (EventId),
                 CONSTRAINT UK_Events_Stream UNIQUE (Entity, InlinedStreamId, LocalPosition)
-            ); ALTER SEQUENCE events_globalposition_seq MINVALUE 0  RESTART WITH 0;
+            );
+            DO $$
+            BEGIN
+              IF NOT EXISTS (SELECT 1 FROM Events LIMIT 1) THEN
+                ALTER SEQUENCE events_globalposition_seq MINVALUE 0 RESTART WITH 0;
+              END IF;
+            END $$;
           |]
 
 
