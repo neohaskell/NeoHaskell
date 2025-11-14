@@ -6,7 +6,10 @@ module Service.EventStore.Postgres.Internal.SubscriptionStore (
   addGlobalSubscriptionFromPosition,
   addStreamSubscription,
   addStreamSubscriptionFromPosition,
+  addEntitySubscription,
+  addEntitySubscriptionFromPosition,
   getStreamSubscriptions,
+  getEntitySubscriptions,
   dispatch,
   removeSubscription,
 ) where
@@ -47,7 +50,8 @@ type Subscriptions eventType =
 
 data SubscriptionStore eventType = SubscriptionStore
   { globalSubscriptions :: ConcurrentVar (Subscriptions eventType),
-    streamSubscriptions :: ConcurrentVar (Map StreamId (Subscriptions eventType))
+    streamSubscriptions :: ConcurrentVar (Map StreamId (Subscriptions eventType)),
+    entitySubscriptions :: ConcurrentVar (Map EntityName (Subscriptions eventType))
   }
 
 
@@ -55,7 +59,8 @@ new :: Task Error (SubscriptionStore eventType)
 new = do
   globalSubscriptions <- ConcurrentVar.containing Map.empty
   streamSubscriptions <- ConcurrentVar.containing Map.empty
-  Task.yield (SubscriptionStore {globalSubscriptions, streamSubscriptions})
+  entitySubscriptions <- ConcurrentVar.containing Map.empty
+  Task.yield (SubscriptionStore {globalSubscriptions, streamSubscriptions, entitySubscriptions})
 
 
 addGlobalSubscription :: SubscriptionCallback eventType -> SubscriptionStore eventType -> Task Error SubscriptionId
@@ -98,6 +103,28 @@ addStreamSubscriptionFromPosition entityName streamId startingPosition callback 
   Task.yield subId
 
 
+addEntitySubscription ::
+  EntityName -> SubscriptionCallback eventType -> SubscriptionStore eventType -> Task Error SubscriptionId
+addEntitySubscription entityName callback store = do
+  subId <- Uuid.generate |> Task.map (toText .> SubscriptionId)
+  let subscriptionInfo = SubscriptionInfo {callback, startingGlobalPosition = Nothing, entityNameFilter = Just entityName}
+  store.entitySubscriptions |> ConcurrentVar.modify \subscriptionsMap -> do
+    let currentSubscriptions = subscriptionsMap |> Map.getOrElse entityName Map.empty
+    subscriptionsMap |> Map.set entityName (currentSubscriptions |> Map.set subId subscriptionInfo)
+  Task.yield subId
+
+
+addEntitySubscriptionFromPosition ::
+  EntityName -> Maybe StreamPosition -> SubscriptionCallback eventType -> SubscriptionStore eventType -> Task Error SubscriptionId
+addEntitySubscriptionFromPosition entityName startingPosition callback store = do
+  subId <- Uuid.generate |> Task.map (toText .> SubscriptionId)
+  let subscriptionInfo = SubscriptionInfo {callback, startingGlobalPosition = startingPosition, entityNameFilter = Just entityName}
+  store.entitySubscriptions |> ConcurrentVar.modify \subscriptionsMap -> do
+    let currentSubscriptions = subscriptionsMap |> Map.getOrElse entityName Map.empty
+    subscriptionsMap |> Map.set entityName (currentSubscriptions |> Map.set subId subscriptionInfo)
+  Task.yield subId
+
+
 getStreamSubscriptions ::
   StreamId -> SubscriptionStore eventType -> Task Error (Subscriptions eventType)
 getStreamSubscriptions streamId store = do
@@ -107,9 +134,19 @@ getStreamSubscriptions streamId store = do
     |> Task.yield
 
 
+getEntitySubscriptions ::
+  EntityName -> SubscriptionStore eventType -> Task Error (Subscriptions eventType)
+getEntitySubscriptions entityName store = do
+  subscriptionsMap <- store.entitySubscriptions |> ConcurrentVar.peek
+  subscriptionsMap
+    |> Map.getOrElse entityName Map.empty
+    |> Task.yield
+
+
 dispatch :: StreamId -> Event eventType -> SubscriptionStore eventType -> Task Error Unit
 dispatch streamId message store = do
   streamSubs <- store |> getStreamSubscriptions streamId
+  entitySubs <- store |> getEntitySubscriptions message.entityName
   globalSubs <- store.globalSubscriptions |> ConcurrentVar.peek
 
   let shouldDispatchToSubscription :: SubscriptionInfo eventType -> Bool
@@ -140,8 +177,15 @@ dispatch streamId message store = do
           |> Array.takeIf shouldDispatchToSubscription
           |> Array.map (\subInfo -> wrapCallback message subInfo.callback)
 
-  -- Combine both and execute all callbacks
-  let allCallbacks = globalCallbacks |> Array.append streamCallbacks
+  -- Entity subscriptions receive all events for their specific entity
+  let entityCallbacks =
+        entitySubs
+          |> Map.values
+          |> Array.takeIf shouldDispatchToSubscription
+          |> Array.map (\subInfo -> wrapCallback message subInfo.callback)
+
+  -- Combine all and execute all callbacks
+  let allCallbacks = globalCallbacks |> Array.append streamCallbacks |> Array.append entityCallbacks
 
   allCallbacks |> AsyncTask.forEachConcurrently
 
@@ -156,5 +200,10 @@ removeSubscription subId store = do
   store.streamSubscriptions |> ConcurrentVar.modify \subscriptionsMap -> do
     subscriptionsMap
       |> Map.mapValues (\streamSubs -> streamSubs |> Map.remove subId)
+
+  -- Remove from all entity subscriptions
+  store.entitySubscriptions |> ConcurrentVar.modify \subscriptionsMap -> do
+    subscriptionsMap
+      |> Map.mapValues (\entitySubs -> entitySubs |> Map.remove subId)
 
   Task.yield ()

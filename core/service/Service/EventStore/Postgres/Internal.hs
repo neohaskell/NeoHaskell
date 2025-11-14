@@ -122,7 +122,7 @@ new ops cfg = do
             subscribeToAllEvents = subscribeToAllEventsImpl ops cfg subscriptionStore,
             subscribeToAllEventsFromPosition = subscribeToAllEventsFromPositionImpl ops cfg subscriptionStore,
             subscribeToAllEventsFromStart = subscribeToAllEventsFromStartImpl,
-            subscribeToEntityEvents = subscribeToEntityEventsImpl,
+            subscribeToEntityEvents = subscribeToEntityEventsImpl ops cfg subscriptionStore,
             subscribeToStreamEvents = subscribeToStreamEventsImpl ops cfg subscriptionStore,
             unsubscribe = unsubscribeImpl subscriptionStore,
             truncateStream = truncateStreamImpl ops cfg
@@ -568,8 +568,22 @@ subscribeToAllEventsFromStartImpl :: (Event eventType -> Task Text Unit) -> Task
 subscribeToAllEventsFromStartImpl _ = panic "Postgres.subscribeToAllEventsFromStartImpl - Not implemented yet" |> Task.yield
 
 
-subscribeToEntityEventsImpl :: EntityName -> (Event eventType -> Task Text Unit) -> Task Error SubscriptionId
-subscribeToEntityEventsImpl _ _ = panic "Postgres.subscribeToEntityEventsImpl - Not implemented yet" |> Task.yield
+subscribeToEntityEventsImpl ::
+  Ops eventType ->
+  Config ->
+  SubscriptionStore eventType ->
+  EntityName ->
+  (Event eventType -> Task Text Unit) ->
+  Task Error SubscriptionId
+subscribeToEntityEventsImpl ops cfg store entityName callback = do
+  conn <- ops.acquire cfg |> Task.mapError (toText .> StorageFailure)
+  currentMaxPosition <-
+    Sessions.selectMaxGlobalPosition
+      |> Sessions.run conn
+      |> Task.mapError (toText .> StorageFailure)
+  store
+    |> SubscriptionStore.addEntitySubscriptionFromPosition entityName currentMaxPosition callback
+    |> Task.mapError (\err -> SubscriptionError (SubscriptionId "entity") (err |> toText))
 
 
 subscribeToStreamEventsImpl ::
