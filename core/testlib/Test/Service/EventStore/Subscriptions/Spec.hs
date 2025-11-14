@@ -371,9 +371,9 @@ spec newStore = do
           context.store.subscribeToAllEvents subscriber
             |> Task.mapError toText
 
-        -- Rapidly insert many events (start from position 11)
+        -- Rapidly insert many events
         let rapidEventCount = 50
-        rapidEvents <- createRapidTestEventsFromPosition context.streamId context.entityName rapidEventCount 11
+        rapidEvents <- createRapidTestEventsFromPosition context.streamId context.entityName rapidEventCount 0
 
         -- Insert all events as quickly as possible
         let insertEvent event = do
@@ -392,14 +392,14 @@ spec newStore = do
           |> Array.length
           |> shouldBe rapidEventCount
 
-        -- Verify events are in order (starting from position 11)
+        -- Verify events are in order (starting from position 0 in this stream)
         received
           |> Array.indexed
           |> Task.forEach
             ( \(index, event) -> do
                 event.metadata.localPosition
                   |> Maybe.getOrDie
-                  |> shouldBe (Event.StreamPosition (11 + index |> fromIntegral))
+                  |> shouldBe (Event.StreamPosition (index |> fromIntegral))
             )
 
         -- Clean up subscription
