@@ -5,7 +5,7 @@ module AsyncTask (
   sleep,
   process,
   runConcurrently,
-  forEachConcurrently,
+  runAllIgnoringErrors,
 ) where
 
 import Array (Array)
@@ -76,8 +76,8 @@ runConcurrently (task1, task2) = Task.fromIOResult do
 -- Note: If any task fails, this function continues executing the other tasks and ignores
 -- the failure. This is useful for scenarios like dispatching events to multiple listeners
 -- where one listener failing shouldn't prevent others from receiving the event.
-forEachConcurrently :: (Show err) => Array (Task err a) -> Task err2 Unit
-forEachConcurrently tasks = do
+runAllIgnoringErrors :: (Show err) => Array (Task err a) -> Task _ Unit
+runAllIgnoringErrors tasks = do
   let executeTask task = do
         Task.runResult task
   tasks

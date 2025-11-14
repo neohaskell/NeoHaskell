@@ -96,7 +96,7 @@ values self = HaskellMap.elems self |> Array.fromLinkedList
 
 
 -- | Gets all the keys in a map
-keys :: Map key key -> Array key
+keys :: Map key value -> Array key
 keys self = HaskellMap.keys self |> Array.fromLinkedList
 
 

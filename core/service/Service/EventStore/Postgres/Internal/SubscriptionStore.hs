@@ -72,7 +72,8 @@ addGlobalSubscription callback store = do
   Task.yield subId
 
 
-addGlobalSubscriptionFromPosition :: Maybe StreamPosition -> SubscriptionCallback eventType -> SubscriptionStore eventType -> Task Error SubscriptionId
+addGlobalSubscriptionFromPosition ::
+  Maybe StreamPosition -> SubscriptionCallback eventType -> SubscriptionStore eventType -> Task Error SubscriptionId
 addGlobalSubscriptionFromPosition startingPosition callback store = do
   subId <- Uuid.generate |> Task.map (\result -> result |> toText |> SubscriptionId)
   let subscriptionInfo = SubscriptionInfo {callback, startingGlobalPosition = startingPosition, entityNameFilter = Nothing}
@@ -93,7 +94,12 @@ addStreamSubscription entityName streamId callback store = do
 
 
 addStreamSubscriptionFromPosition ::
-  EntityName -> StreamId -> Maybe StreamPosition -> SubscriptionCallback eventType -> SubscriptionStore eventType -> Task Error SubscriptionId
+  EntityName ->
+  StreamId ->
+  Maybe StreamPosition ->
+  SubscriptionCallback eventType ->
+  SubscriptionStore eventType ->
+  Task Error SubscriptionId
 addStreamSubscriptionFromPosition entityName streamId startingPosition callback store = do
   subId <- Uuid.generate |> Task.map (toText .> SubscriptionId)
   let subscriptionInfo = SubscriptionInfo {callback, startingGlobalPosition = startingPosition, entityNameFilter = Just entityName}
@@ -115,7 +121,11 @@ addEntitySubscription entityName callback store = do
 
 
 addEntitySubscriptionFromPosition ::
-  EntityName -> Maybe StreamPosition -> SubscriptionCallback eventType -> SubscriptionStore eventType -> Task Error SubscriptionId
+  EntityName ->
+  Maybe StreamPosition ->
+  SubscriptionCallback eventType ->
+  SubscriptionStore eventType ->
+  Task Error SubscriptionId
 addEntitySubscriptionFromPosition entityName startingPosition callback store = do
   subId <- Uuid.generate |> Task.map (toText .> SubscriptionId)
   let subscriptionInfo = SubscriptionInfo {callback, startingGlobalPosition = startingPosition, entityNameFilter = Just entityName}
@@ -187,7 +197,7 @@ dispatch streamId message store = do
   -- Combine all and execute all callbacks
   let allCallbacks = globalCallbacks |> Array.append streamCallbacks |> Array.append entityCallbacks
 
-  allCallbacks |> AsyncTask.forEachConcurrently
+  allCallbacks |> AsyncTask.runAllIgnoringErrors
 
 
 removeSubscription :: SubscriptionId -> SubscriptionStore eventType -> Task Error Unit

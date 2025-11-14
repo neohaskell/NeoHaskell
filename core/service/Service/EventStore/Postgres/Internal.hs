@@ -153,7 +153,7 @@ insertImpl ops cfg consistencyRetryCount payload = do
       Task.throw (SubscriptionError (SubscriptionId identifier) (toText err))
     Err (SessionError err) -> do
       let isEventsUniqueKeyViolation err =
-            (err |> toText |> Text.contains "\"2627\"")
+            (err |> toText |> Text.contains "\"23505\"")
               && (err |> toText |> Text.toLower |> Text.contains "uk_events_stream")
       if (err |> isEventsUniqueKeyViolation) && (payload.insertionType != AnyStreamState)
         then
@@ -164,7 +164,7 @@ insertImpl ops cfg consistencyRetryCount payload = do
               AsyncTask.sleep (consistencyRetryCount + 1)
               insertImpl ops cfg (consistencyRetryCount + 1) payload
             else
-              Task.throw (InsertionError (InsertionFailed "Insertion failed after 100 retries"))
+              Task.throw (InsertionError (InsertionFailed (toText err)))
 
 
 insertGo ::
@@ -467,6 +467,7 @@ performReadAllStreamEvents
             case evt of
               Ok goodEvent -> do
                 stream |> Stream.writeItem goodEvent
+                positionRef |> Var.set record.globalPosition
               Err err -> do
                 let entityName = record.entityName
                 let streamId = record.inlinedStreamId

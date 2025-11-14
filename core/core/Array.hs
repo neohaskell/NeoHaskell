@@ -77,6 +77,7 @@ import IO (IO)
 import LinkedList (LinkedList)
 import LinkedList qualified
 import Maybe (Maybe (..))
+import Maybe qualified
 import Test.QuickCheck qualified as QuickCheck
 import Tuple qualified
 import Prelude qualified
@@ -290,7 +291,7 @@ push a (Array vector) =
 -- | Prepends an element onto the end of an array.
 --
 -- >>> push 3 (fromLinkedList [1,2] :: Array Int)
--- Array [1,2,3]
+-- Array [3,1,2]
 pushBack :: a -> Array a -> Array a
 pushBack a (Array vector) =
   Array (Data.Vector.cons a vector)
@@ -650,13 +651,11 @@ contains element array = do
 -- Array [1,2]
 -- >>> getJusts (fromLinkedList [] :: Array (Maybe Int))
 -- Array []
-getJusts :: forall (value :: Type). Array (Maybe value) -> Array value
-getJusts array = do
-  let filterJusts maybeValue = case maybeValue of
-        Just _ -> True
-        Nothing -> False
-  let unwrapJust maybeValue = case maybeValue of
-        Just value -> value
-        Nothing -> Prelude.undefined
-  let justValues = takeIf filterJusts array
-  map unwrapJust justValues
+getJusts :: Array (Maybe value) -> Array value
+getJusts self = do
+  let maybeItemToArray item =
+        item
+          |> Maybe.map wrap
+          |> Maybe.withDefault empty
+  self
+    |> flatMap maybeItemToArray
