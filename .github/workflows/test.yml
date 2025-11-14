@@ -71,11 +71,16 @@ jobs:
       - name: Start PostgreSQL on macOS
         run: |
           brew install postgresql@16
+
+          # Add PostgreSQL to PATH (keg-only formula)
+          echo "/opt/homebrew/opt/postgresql@16/bin" >> $GITHUB_PATH
+          export PATH="/opt/homebrew/opt/postgresql@16/bin:$PATH"
+
           brew services start postgresql@16
 
           # Wait for PostgreSQL to start
           for i in {1..30}; do
-            if pg_isready > /dev/null 2>&1; then
+            if /opt/homebrew/opt/postgresql@16/bin/pg_isready > /dev/null 2>&1; then
               break
             fi
             echo "Waiting for PostgreSQL to start..."
@@ -83,8 +88,8 @@ jobs:
           done
 
           # Create user with password and database
-          psql postgres -c "CREATE USER neohaskell WITH PASSWORD 'neohaskell' SUPERUSER CREATEDB CREATEROLE LOGIN;"
-          psql postgres -c "CREATE DATABASE neohaskell OWNER neohaskell;"
+          /opt/homebrew/opt/postgresql@16/bin/psql postgres -c "CREATE USER neohaskell WITH PASSWORD 'neohaskell' SUPERUSER CREATEDB CREATEROLE LOGIN;"
+          /opt/homebrew/opt/postgresql@16/bin/psql postgres -c "CREATE DATABASE neohaskell OWNER neohaskell;"
 
       - uses: actions/checkout@v5
 
