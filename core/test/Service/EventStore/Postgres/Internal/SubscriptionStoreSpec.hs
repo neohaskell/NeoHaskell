@@ -174,7 +174,7 @@ spec = do
       it "dispatches messages to stream subscriptions" \_ -> do
         store <- SubscriptionStore.new |> Task.mapError toText
         streamId <- StreamId.new
-        let entityName = Event.EntityName "test-entity"
+        let entityName = Event.EntityName "TestEntity"
 
         executionCount <- ConcurrentVar.containing (0 :: Int)
 
@@ -200,7 +200,7 @@ spec = do
       it "dispatches messages to both stream and global subscriptions" \_ -> do
         store <- SubscriptionStore.new |> Task.mapError toText
         streamId <- StreamId.new
-        let entityName = Event.EntityName "test-entity"
+        let entityName = Event.EntityName "TestEntity"
 
         streamExecutionCount <- ConcurrentVar.containing (0 :: Int)
         globalExecutionCount <- ConcurrentVar.containing (0 :: Int)
@@ -234,7 +234,7 @@ spec = do
       it "handles callback failures gracefully" \_ -> do
         store <- SubscriptionStore.new |> Task.mapError toText
         streamId <- StreamId.new
-        let entityName = Event.EntityName "test-entity"
+        let entityName = Event.EntityName "TestEntity"
 
         successCount <- ConcurrentVar.containing (0 :: Int)
 
@@ -263,7 +263,7 @@ spec = do
       it "executes callbacks in parallel (not serially)" \_ -> do
         store <- SubscriptionStore.new |> Task.mapError toText
         streamId <- StreamId.new
-        let entityName = Event.EntityName "test-entity"
+        let entityName = Event.EntityName "TestEntity"
 
         executionCount <- ConcurrentVar.containing (0 :: Int)
 
