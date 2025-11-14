@@ -75,17 +75,16 @@ jobs:
 
           # Wait for PostgreSQL to start
           for i in {1..30}; do
-            if pg_isready -h localhost > /dev/null 2>&1; then
+            if pg_isready > /dev/null 2>&1; then
               break
             fi
             echo "Waiting for PostgreSQL to start..."
             sleep 1
           done
 
-          # Create user and database
-          createuser -s neohaskell || true
-          psql -U $(whoami) -c "ALTER USER neohaskell WITH PASSWORD 'neohaskell';" || true
-          createdb -U neohaskell neohaskell || true
+          # Create user with password and database
+          psql postgres -c "CREATE USER neohaskell WITH PASSWORD 'neohaskell' SUPERUSER CREATEDB CREATEROLE LOGIN;"
+          psql postgres -c "CREATE DATABASE neohaskell OWNER neohaskell;"
 
       - uses: actions/checkout@v5
 
