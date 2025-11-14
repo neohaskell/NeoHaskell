@@ -121,7 +121,7 @@ new ops cfg = do
             readAllEventsBackwardFromFiltered = readAllEventsBackwardFromFilteredImpl ops cfg,
             subscribeToAllEvents = subscribeToAllEventsImpl ops cfg subscriptionStore,
             subscribeToAllEventsFromPosition = subscribeToAllEventsFromPositionImpl ops cfg subscriptionStore,
-            subscribeToAllEventsFromStart = subscribeToAllEventsFromStartImpl,
+            subscribeToAllEventsFromStart = subscribeToAllEventsFromStartImpl ops cfg subscriptionStore,
             subscribeToEntityEvents = subscribeToEntityEventsImpl ops cfg subscriptionStore,
             subscribeToStreamEvents = subscribeToStreamEventsImpl ops cfg subscriptionStore,
             unsubscribe = unsubscribeImpl subscriptionStore,
@@ -564,8 +564,17 @@ subscribeToAllEventsFromPositionImpl ops cfg store startPosition callback = do
     |> Task.mapError (\err -> SubscriptionError (SubscriptionId "fromPosition") (err |> toText))
 
 
-subscribeToAllEventsFromStartImpl :: (Event eventType -> Task Text Unit) -> Task Error SubscriptionId
-subscribeToAllEventsFromStartImpl _ = panic "Postgres.subscribeToAllEventsFromStartImpl - Not implemented yet" |> Task.yield
+subscribeToAllEventsFromStartImpl ::
+  forall eventType.
+  (Json.FromJSON eventType) =>
+  Ops eventType ->
+  Config ->
+  SubscriptionStore eventType ->
+  (Event eventType -> Task Text Unit) ->
+  Task Error SubscriptionId
+subscribeToAllEventsFromStartImpl ops cfg store callback = do
+  -- Subscribe from the very beginning (position 0)
+  subscribeToAllEventsFromPositionImpl ops cfg store (StreamPosition 0) callback
 
 
 subscribeToEntityEventsImpl ::

@@ -547,6 +547,69 @@ spec newStore = do
         -- Clean up subscription
         context.store.unsubscribe subscriptionId |> Task.mapError toText |> discard
 
+      it "subscribes from start - receives ALL events including historical ones" \context -> do
+        entity1IdText <- Uuid.generate |> Task.map toText
+        let entity1Id = Event.EntityName entity1IdText
+        entity2IdText <- Uuid.generate |> Task.map toText
+        let entity2Id = Event.EntityName entity2IdText
+        stream1Id <- StreamId.new
+        stream2Id <- StreamId.new
+
+        -- Insert FIRST batch of events BEFORE subscribing (historical data)
+        let eventCount = 5
+        firstBatchEvents1 <- createTestEventsForEntity stream1Id entity1Id eventCount 0
+        firstBatchEvents2 <- createTestEventsForEntity stream2Id entity2Id eventCount 0
+
+        -- Insert first batch
+        let insertEvent event = context.store.insert event |> Task.mapError toText
+        firstBatchEvents1 |> Task.mapArray insertEvent |> discard
+        firstBatchEvents2 |> Task.mapArray insertEvent |> discard
+
+        -- Set up subscription tracking
+        receivedEvents <- ConcurrentVar.containing (Array.empty :: Array (Event MyEvent))
+
+        let subscriber event = do
+              -- Only track events from our test entities
+              if event.entityName == entity1Id || event.entityName == entity2Id
+                then receivedEvents |> ConcurrentVar.modify (Array.push event)
+                else Task.yield unit
+              Task.yield unit :: Task Text Unit
+
+        -- Subscribe from the START (should receive ALL events including historical ones)
+        subscriptionId <-
+          context.store.subscribeToAllEventsFromStart subscriber |> Task.mapError toText
+
+        -- Wait for subscription to process historical events (catch-up phase)
+        AsyncTask.sleep 100 |> Task.mapError (\_ -> "timeout")
+
+        -- Insert SECOND batch of events AFTER subscribing (live events)
+        secondBatchEvents1 <- createTestEventsForEntity stream1Id entity1Id eventCount eventCount
+        secondBatchEvents2 <- createTestEventsForEntity stream2Id entity2Id eventCount eventCount
+
+        -- Insert second batch
+        secondBatchEvents1 |> Task.mapArray insertEvent |> discard
+        secondBatchEvents2 |> Task.mapArray insertEvent |> discard
+
+        -- Wait for live events to be processed
+        AsyncTask.sleep 100 |> Task.mapError (\_ -> "timeout")
+
+        -- Verify we received ALL events (both historical and live)
+        received <- ConcurrentVar.get receivedEvents
+
+        -- Should have received eventCount * 4 total events
+        -- (first batch: 5 entity1 + 5 entity2, second batch: 5 entity1 + 5 entity2)
+        received |> Array.length |> shouldBe (eventCount * 4)
+
+        -- Events should be properly partitioned by entity
+        let entity1Events = received |> Array.takeIf (\event -> event.entityName == entity1Id)
+        let entity2Events = received |> Array.takeIf (\event -> event.entityName == entity2Id)
+
+        entity1Events |> Array.length |> shouldBe (eventCount * 2)
+        entity2Events |> Array.length |> shouldBe (eventCount * 2)
+
+        -- Clean up subscription
+        context.store.unsubscribe subscriptionId |> Task.mapError toText |> discard
+
 
 createTestEventsForEntity ::
   Event.StreamId -> Event.EntityName -> Int -> Int -> Task _ (Array (Event.InsertionPayload MyEvent))
