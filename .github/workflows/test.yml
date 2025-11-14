@@ -22,10 +22,45 @@ jobs:
         os: [ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.os }}
 
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: neohaskell
+          POSTGRES_PASSWORD: neohaskell
+          POSTGRES_DB: neohaskell
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U neohaskell"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
     steps:
       - name: Install current Bash on macOS
         if: runner.os == 'macOS'
         run: brew install bash
+
+      - name: Start PostgreSQL on macOS
+        if: runner.os == 'macOS'
+        run: |
+          brew install postgresql@16
+          brew services start postgresql@16
+
+          # Wait for PostgreSQL to start
+          for i in {1..30}; do
+            if pg_isready -h localhost > /dev/null 2>&1; then
+              break
+            fi
+            echo "Waiting for PostgreSQL to start..."
+            sleep 1
+          done
+
+          # Create user and database
+          createuser -s neohaskell || true
+          psql -U $(whoami) -c "ALTER USER neohaskell WITH PASSWORD 'neohaskell';" || true
+          createdb -U neohaskell neohaskell || true
 
       - uses: actions/checkout@v5
 
