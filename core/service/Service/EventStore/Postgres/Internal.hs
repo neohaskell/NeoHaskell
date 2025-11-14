@@ -120,7 +120,7 @@ new ops cfg = do
             readAllEventsForwardFromFiltered = readAllEventsForwardFromFilteredImpl ops cfg,
             readAllEventsBackwardFromFiltered = readAllEventsBackwardFromFilteredImpl ops cfg,
             subscribeToAllEvents = subscribeToAllEventsImpl ops cfg subscriptionStore,
-            subscribeToAllEventsFromPosition = subscribeToAllEventsFromPositionImpl,
+            subscribeToAllEventsFromPosition = subscribeToAllEventsFromPositionImpl ops cfg subscriptionStore,
             subscribeToAllEventsFromStart = subscribeToAllEventsFromStartImpl,
             subscribeToEntityEvents = subscribeToEntityEventsImpl,
             subscribeToStreamEvents = subscribeToStreamEventsImpl,
@@ -509,8 +509,59 @@ subscribeToAllEventsImpl ops cfg store callback = do
 
 
 subscribeToAllEventsFromPositionImpl ::
-  StreamPosition -> (Event eventType -> Task Text Unit) -> Task Error SubscriptionId
-subscribeToAllEventsFromPositionImpl _ _ = panic "Postgres.subscribeToAllEventsFromPositionImpl - Not implemented yet" |> Task.yield
+  forall eventType.
+  (Json.FromJSON eventType) =>
+  Ops eventType ->
+  Config ->
+  SubscriptionStore eventType ->
+  StreamPosition ->
+  (Event eventType -> Task Text Unit) ->
+  Task Error SubscriptionId
+subscribeToAllEventsFromPositionImpl ops cfg store startPosition callback = do
+  -- Catch up loop: read historical events and process them
+  let catchUp currentPosition = do
+        conn <- ops.acquire cfg |> Task.mapError (toText .> StorageFailure)
+
+        -- Get current max position
+        maxPosition <-
+          Sessions.selectMaxGlobalPosition
+            |> Sessions.run conn
+            |> Task.mapError (toText .> StorageFailure)
+
+        case maxPosition of
+          Nothing -> do
+            -- No events in database, just subscribe from now
+            Task.yield currentPosition
+          Just maxPos -> do
+            if maxPos <= currentPosition
+              then do
+                -- No new events, we're caught up
+                Task.yield currentPosition
+              else do
+                -- Read events from currentPosition to maxPos
+                let limit = Limit maxValue -- Read all available events
+                eventStream <-
+                  readAllEventsForwardFromImpl ops cfg currentPosition limit
+                    |> Task.mapError (\_ -> StorageFailure "Failed to read events during catch-up")
+
+                -- Collect all events from the stream
+                events <- eventStream |> Stream.toArray |> Task.mapError (toText .> StorageFailure)
+
+                -- Process each event serially through the callback
+                events
+                  |> collectAllEvents
+                  |> Task.forEach (\event -> callback event |> Task.asResult |> discard)
+
+                -- Check if more events were added while processing
+                catchUp maxPos
+
+  -- Start catch-up from the requested position
+  finalPosition <- catchUp startPosition
+
+  -- Now subscribe from the final position onwards
+  store
+    |> SubscriptionStore.addGlobalSubscriptionFromPosition (Just finalPosition) callback
+    |> Task.mapError (\err -> SubscriptionError (SubscriptionId "fromPosition") (err |> toText))
 
 
 subscribeToAllEventsFromStartImpl :: (Event eventType -> Task Text Unit) -> Task Error SubscriptionId
