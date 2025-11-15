@@ -203,6 +203,10 @@ library
 test-suite nhcore-test
   import: common_cfg
   default-language: GHC2021
+  ghc-options:
+    -rtsopts
+    -with-rtsopts=-N
+
   other-modules:
     Service.EventStore.InMemorySpec
     Service.EventStore.Postgres.Internal.SubscriptionStoreSpec

@@ -82,7 +82,6 @@ defaultOps ::
   Ops eventType
 defaultOps = do
   let acquire cfg = do
-        print [fmt|acquiring connection|]
         toConnectionSettings cfg
           |> toConnectionPoolSettings
           |> HasqlPool.acquire
@@ -107,7 +106,6 @@ defaultOps = do
         subscriptionStore |> Notifications.connectTo connection
 
   let release connection = do
-        print [fmt|releasing connection|]
         case connection of
           Sessions.MockConnection ->
             pass
@@ -122,7 +120,6 @@ withConnection ::
   Config -> (Sessions.Connection -> Task PostgresStoreError result) -> Ops eventType -> Task PostgresStoreError result
 withConnection cfg callback ops = do
   connection <- ops.acquire cfg |> Task.mapError ConnectionAcquisitionError
-  print [fmt|running callback|]
   result <- callback connection |> Task.asResult
   ops.release connection |> Task.mapError ConnectionReleaseError
   case result of
@@ -135,12 +132,10 @@ withConnectionAndError ::
   Config -> (Sessions.Connection -> Task Error result) -> Ops eventType -> Task Error result
 withConnectionAndError cfg callback ops = do
   connection <- ops.acquire cfg |> Task.mapError (ConnectionAcquisitionError .> toText .> StorageFailure)
-  print [fmt|running callback|]
   result <- callback connection |> Task.asResult
   ops.release connection |> Task.mapError (ConnectionReleaseError .> toText .> StorageFailure)
   case result of
     Ok res -> do
-      print [fmt|res: #{toText res}|]
       Task.yield res
     Err err ->
       Task.throw err
