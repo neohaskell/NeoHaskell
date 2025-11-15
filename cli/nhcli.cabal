@@ -57,6 +57,7 @@ library
     Neo.Core
     Neo.Core.ProjectConfiguration
     Neo.New
+    Neo.New.Templates.GitIgnore
     Neo.New.Templates.MainModule
     Neo.New.Templates.NeoJson
     Neo.Run
