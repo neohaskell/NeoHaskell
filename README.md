@@ -82,6 +82,7 @@ It's always better to hack with people, so why not join the [Discord server](htt
       <td align="center" valign="top" width="14.28%"><a href="https://github.com/JYCabello"><img src="https://avatars.githubusercontent.com/u/11141026?v=4?s=100" width="100px;" alt="Yeray Cabello"/><br /><sub><b>Yeray Cabello</b></sub></a><br /><a href="#test-JYCabello" title="Tests">⚠️</a> <a href="#ideas-JYCabello" title="Ideas, Planning, & Feedback">🤔</a></td>
       <td align="center" valign="top" width="14.28%"><a href="https://github.com/ussgarci"><img src="https://avatars.githubusercontent.com/u/91670077?v=4?s=100" width="100px;" alt="Steven Garcia"/><br /><sub><b>Steven Garcia</b></sub></a><br /><a href="#code-ussgarci" title="Code">💻</a></td>
       <td align="center" valign="top" width="14.28%"><a href="https://github.com/DeviousStoat"><img src="https://avatars.githubusercontent.com/u/74479846?v=4?s=100" width="100px;" alt="Thomas"/><br /><sub><b>Thomas</b></sub></a><br /><a href="#code-DeviousStoat" title="Code">💻</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/verogarp"><img src="https://avatars.githubusercontent.com/u/9210219?v=4?s=100" width="100px;" alt="Verónica García Pulido"/><br /><sub><b>Verónica García Pulido</b></sub></a><br /><a href="#doc-verogarp" title="Documentation">📖</a></td>
     </tr>
   </tbody>
 </table>
