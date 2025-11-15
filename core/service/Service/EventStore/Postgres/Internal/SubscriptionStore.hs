@@ -29,7 +29,7 @@ import Uuid qualified
 data Error
   = UserHandlerError Text
   | OtherError
-  deriving (Show)
+  deriving (Eq, Show)
 
 
 type SubscriptionCallback eventType =

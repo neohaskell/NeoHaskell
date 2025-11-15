@@ -18,6 +18,7 @@ common common_cfg
     -fno-warn-partial-type-signatures
     -fno-warn-name-shadowing
     -Werror
+    -threaded
 
   build-depends:
     Cabal,
@@ -35,6 +36,7 @@ common common_cfg
     ghc-prim,
     hasql,
     hasql-notifications,
+    hasql-pool,
     hasql-th,
     hspec,
     http-conduit,

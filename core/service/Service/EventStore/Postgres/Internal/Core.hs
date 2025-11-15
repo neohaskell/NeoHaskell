@@ -2,18 +2,21 @@ module Service.EventStore.Postgres.Internal.Core where
 
 import Array qualified
 import Core
-import Hasql.Session qualified as Session
+import Hasql.Pool qualified as HasqlPool
 import Maybe qualified
 import Service.Event qualified as Event
 import Service.Event.EntityName (EntityName)
 import Service.Event.EntityName qualified as EntityName
-import Service.EventStore.Core qualified as SubscriptionStore
+import Service.EventStore.Postgres.Internal.SubscriptionStore qualified as SubscriptionStore
 import Text qualified
 
 
 data PostgresStoreError
-  = SessionError Session.SessionError
+  = SessionError HasqlPool.UsageError
   | ConnectionAcquisitionError Text
+  | ConnectionReleaseError Text
+  | TableInitializationError Text
+  | SubscriptionInitializationError Text
   | CoreInsertionError Event.InsertionFailure
   | SubscriptionStoreError Text SubscriptionStore.Error
   deriving (Eq, Show)

@@ -8,6 +8,7 @@ import Bytes qualified
 import Core
 import Data.ByteString qualified
 import Data.Text.IO qualified as GHC
+import Hasql.Connection qualified as Hasql
 import Hasql.Notifications qualified as HasqlNotifications
 import Json qualified
 import Result qualified
@@ -21,38 +22,30 @@ import Task qualified
 connectTo ::
   forall eventType.
   (Json.FromJSON eventType) =>
-  Sessions.Connection ->
+  Hasql.Connection ->
   SubscriptionStore eventType ->
   Task Text Unit
-connectTo conn store =
-  case conn of
-    Sessions.MockConnection ->
-      pass
-    Sessions.Connection connection -> do
-      let channelToListen = HasqlNotifications.toPgIdentifier "global"
-      HasqlNotifications.listen connection channelToListen
-        |> Task.fromIO
-        |> discard
-      connection
-        |> HasqlNotifications.waitForNotifications (handler store)
-        |> Task.fromIO
-        |> AsyncTask.run
-        |> discard
+connectTo connection store = do
+  let channelToListen = HasqlNotifications.toPgIdentifier "global"
+  HasqlNotifications.listen connection channelToListen
+    |> Task.fromIO
+    |> discard
+  connection
+    |> HasqlNotifications.waitForNotifications (handler store)
+    |> Task.fromIO
+    |> AsyncTask.run
+    |> discard
 
 
 subscribeToStream ::
-  Sessions.Connection ->
+  Hasql.Connection ->
   StreamId ->
   Task Text Unit
-subscribeToStream conn streamId =
-  case conn of
-    Sessions.MockConnection ->
-      pass
-    Sessions.Connection connection -> do
-      let channelToListen = HasqlNotifications.toPgIdentifier (toText streamId)
-      HasqlNotifications.listen connection channelToListen
-        |> Task.fromIO
-        |> discard
+subscribeToStream connection streamId = do
+  let channelToListen = HasqlNotifications.toPgIdentifier (toText streamId)
+  HasqlNotifications.listen connection channelToListen
+    |> Task.fromIO
+    |> discard
 
 
 handler ::

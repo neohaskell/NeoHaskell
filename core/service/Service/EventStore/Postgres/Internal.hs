@@ -5,6 +5,7 @@ module Service.EventStore.Postgres.Internal (
   defaultOps,
   Sessions.Connection (..),
   SubscriptionStore.SubscriptionStore (..),
+  withConnection,
 ) where
 
 import Array qualified
@@ -13,8 +14,11 @@ import Core
 import Default ()
 import Hasql.Connection qualified as Hasql
 import Hasql.Connection.Setting qualified as ConnectionSetting
+import Hasql.Connection.Setting qualified as Hasql
 import Hasql.Connection.Setting.Connection qualified as ConnectionSettingConnection
 import Hasql.Connection.Setting.Connection.Param qualified as Param
+import Hasql.Pool qualified as HasqlPool
+import Hasql.Pool.Config qualified as HasqlPoolConfig
 import Json qualified
 import Maybe qualified
 import Result qualified
@@ -47,7 +51,12 @@ data Config = Config
   deriving (Eq, Ord, Show)
 
 
-toConnectionSettings :: Config -> LinkedList ConnectionSetting.Setting
+toConnectionPoolSettings :: LinkedList Hasql.Setting -> HasqlPoolConfig.Config
+toConnectionPoolSettings settings = do
+  [HasqlPoolConfig.staticConnectionSettings settings] |> HasqlPoolConfig.settings
+
+
+toConnectionSettings :: Config -> LinkedList Hasql.Setting
 toConnectionSettings cfg = do
   let params =
         ConnectionSettingConnection.params
@@ -62,8 +71,9 @@ toConnectionSettings cfg = do
 
 data Ops eventType = Ops
   { acquire :: Config -> Task Text Sessions.Connection,
+    release :: Sessions.Connection -> Task Text Unit,
     initializeTable :: Sessions.Connection -> Task Text Unit,
-    initializeSubscriptions :: SubscriptionStore eventType -> Sessions.Connection -> Task Text Unit
+    initializeSubscriptions :: SubscriptionStore eventType -> Config -> Task Text Unit
   }
 
 
@@ -71,30 +81,69 @@ defaultOps ::
   (Json.FromJSON eventType) =>
   Ops eventType
 defaultOps = do
-  let acquire cfg =
+  let acquire cfg = do
+        print [fmt|acquiring connection|]
         toConnectionSettings cfg
-          |> Hasql.acquire
-          |> Task.fromIOEither
-          |> Task.mapError toText
-          |> Task.map Sessions.Connection
+          |> toConnectionPoolSettings
+          |> HasqlPool.acquire
+          |> Task.fromIO
+          |> Task.map (Sessions.Connection)
 
   let initializeTable connection = do
         Sessions.createEventsTableSession
           |> Sessions.run connection
           |> Task.mapError toText
 
-  let initializeSubscriptions subscriptionStore connection = do
+  let initializeSubscriptions subscriptionStore cfg = do
+        connection <- Hasql.acquire (toConnectionSettings cfg) |> Task.fromIOEither |> Task.mapError toText
         Sessions.createEventNotificationTriggerFunctionSession
-          |> Sessions.run connection
+          |> Sessions.runConnection connection
           |> Task.mapError toText
 
         Sessions.createEventNotificationTriggerSession
-          |> Sessions.run connection
+          |> Sessions.runConnection connection
           |> Task.mapError toText
 
         subscriptionStore |> Notifications.connectTo connection
 
-  Ops {acquire, initializeTable, initializeSubscriptions}
+  let release connection = do
+        print [fmt|releasing connection|]
+        case connection of
+          Sessions.MockConnection ->
+            pass
+          Sessions.Connection conn ->
+            HasqlPool.release conn
+              |> Task.fromIO @Unit
+
+  Ops {acquire, initializeTable, initializeSubscriptions, release}
+
+
+withConnection ::
+  Config -> (Sessions.Connection -> Task PostgresStoreError result) -> Ops eventType -> Task PostgresStoreError result
+withConnection cfg callback ops = do
+  connection <- ops.acquire cfg |> Task.mapError ConnectionAcquisitionError
+  print [fmt|running callback|]
+  result <- callback connection |> Task.asResult
+  ops.release connection |> Task.mapError ConnectionReleaseError
+  case result of
+    Ok res -> Task.yield res
+    Err err -> Task.throw err
+
+
+withConnectionAndError ::
+  (Show result) =>
+  Config -> (Sessions.Connection -> Task Error result) -> Ops eventType -> Task Error result
+withConnectionAndError cfg callback ops = do
+  connection <- ops.acquire cfg |> Task.mapError (ConnectionAcquisitionError .> toText .> StorageFailure)
+  print [fmt|running callback|]
+  result <- callback connection |> Task.asResult
+  ops.release connection |> Task.mapError (ConnectionReleaseError .> toText .> StorageFailure)
+  case result of
+    Ok res -> do
+      print [fmt|res: #{toText res}|]
+      Task.yield res
+    Err err ->
+      Task.throw err
 
 
 new ::
@@ -104,30 +153,35 @@ new ::
   Ops eventType ->
   Config ->
   Task Text (EventStore eventType)
-new ops cfg = do
-  connection <- ops.acquire cfg
-  ops.initializeTable connection
-  subscriptionStore <- SubscriptionStore.new |> Task.mapError toText
-  ops.initializeSubscriptions subscriptionStore connection
-  let eventStore =
-        EventStore
-          { insert = insertImpl ops cfg 0,
-            readStreamForwardFrom = readStreamForwardFromImpl ops cfg,
-            readStreamBackwardFrom = readStreamBackwardFromImpl ops cfg,
-            readAllStreamEvents = readAllStreamEventsImpl ops cfg,
-            readAllEventsForwardFrom = readAllEventsForwardFromImpl ops cfg,
-            readAllEventsBackwardFrom = readAllEventsBackwardFromImpl ops cfg,
-            readAllEventsForwardFromFiltered = readAllEventsForwardFromFilteredImpl ops cfg,
-            readAllEventsBackwardFromFiltered = readAllEventsBackwardFromFilteredImpl ops cfg,
-            subscribeToAllEvents = subscribeToAllEventsImpl ops cfg subscriptionStore,
-            subscribeToAllEventsFromPosition = subscribeToAllEventsFromPositionImpl ops cfg subscriptionStore,
-            subscribeToAllEventsFromStart = subscribeToAllEventsFromStartImpl ops cfg subscriptionStore,
-            subscribeToEntityEvents = subscribeToEntityEventsImpl ops cfg subscriptionStore,
-            subscribeToStreamEvents = subscribeToStreamEventsImpl ops cfg subscriptionStore,
-            unsubscribe = unsubscribeImpl subscriptionStore,
-            truncateStream = truncateStreamImpl ops cfg
-          }
-  Task.yield eventStore
+new ops cfg =
+  ops
+    |> withConnection
+      cfg
+      ( \connection -> do
+          ops.initializeTable connection |> Task.mapError (TableInitializationError)
+          subscriptionStore <- SubscriptionStore.new |> Task.mapError (toText .> SubscriptionInitializationError)
+          ops.initializeSubscriptions subscriptionStore cfg |> Task.mapError (SubscriptionInitializationError)
+          let eventStore =
+                EventStore
+                  { insert = insertImpl ops cfg 0,
+                    readStreamForwardFrom = readStreamForwardFromImpl ops cfg,
+                    readStreamBackwardFrom = readStreamBackwardFromImpl ops cfg,
+                    readAllStreamEvents = readAllStreamEventsImpl ops cfg,
+                    readAllEventsForwardFrom = readAllEventsForwardFromImpl ops cfg,
+                    readAllEventsBackwardFrom = readAllEventsBackwardFromImpl ops cfg,
+                    readAllEventsForwardFromFiltered = readAllEventsForwardFromFilteredImpl ops cfg,
+                    readAllEventsBackwardFromFiltered = readAllEventsBackwardFromFilteredImpl ops cfg,
+                    subscribeToAllEvents = subscribeToAllEventsImpl ops cfg subscriptionStore,
+                    subscribeToAllEventsFromPosition = subscribeToAllEventsFromPositionImpl ops cfg subscriptionStore,
+                    subscribeToAllEventsFromStart = subscribeToAllEventsFromStartImpl ops cfg subscriptionStore,
+                    subscribeToEntityEvents = subscribeToEntityEventsImpl ops cfg subscriptionStore,
+                    subscribeToStreamEvents = subscribeToStreamEventsImpl ops cfg subscriptionStore,
+                    unsubscribe = unsubscribeImpl subscriptionStore,
+                    truncateStream = truncateStreamImpl ops cfg
+                  }
+          Task.yield eventStore
+      )
+    |> Task.mapError toText
 
 
 insertImpl ::
@@ -146,6 +200,12 @@ insertImpl ops cfg consistencyRetryCount payload = do
     Ok success ->
       Task.yield success
     Err (ConnectionAcquisitionError err) ->
+      Task.throw (StorageFailure err)
+    Err (ConnectionReleaseError err) ->
+      Task.throw (StorageFailure err)
+    Err (TableInitializationError err) ->
+      Task.throw (StorageFailure err)
+    Err (SubscriptionInitializationError err) ->
       Task.throw (StorageFailure err)
     Err (CoreInsertionError err) ->
       Task.throw (InsertionError err)
@@ -173,85 +233,84 @@ insertGo ::
   Config ->
   InsertionPayload eventType ->
   Task PostgresStoreError InsertionSuccess
-insertGo ops cfg payload = do
-  Task.when (payload.insertions |> Array.isEmpty) do
-    Task.throw (CoreInsertionError EmptyPayload)
+insertGo ops cfg payload =
+  ops |> withConnection cfg \conn -> do
+    Task.when (payload.insertions |> Array.isEmpty) do
+      Task.throw (CoreInsertionError EmptyPayload)
 
-  conn <- ops.acquire cfg |> Task.mapError ConnectionAcquisitionError
+    let payloadEventIds =
+          payload.insertions
+            |> Array.map (\i -> i.metadata.eventId)
 
-  let payloadEventIds =
-        payload.insertions
-          |> Array.map (\i -> i.metadata.eventId)
-
-  alreadyExistingIds <-
-    Sessions.selectExistingIdsSession payloadEventIds
-      |> Sessions.run conn
-      |> Task.mapError SessionError
-
-  let insertions =
-        payload.insertions
-          |> Array.dropIf
-            ( \i ->
-                alreadyExistingIds
-                  |> Array.contains i.metadata.eventId
-            )
-
-  let insertionsCount = insertions |> Array.length
-
-  if insertionsCount > 100
-    then Task.throw (CoreInsertionError PayloadTooLarge)
-    else pass
-
-  latestPositions <-
-    Sessions.selectLatestEventInStream payload.entityName payload.streamId
-      |> Sessions.run conn
-      |> Task.mapError SessionError
-
-  if insertionsCount <= 0
-    then do
-      let (globalPosition, localPosition) =
-            latestPositions |> Maybe.withDefault (StreamPosition 0, StreamPosition 0)
-      Task.yield InsertionSuccess {localPosition, globalPosition}
-    else do
-      let offset =
-            case payload.insertionType of
-              InsertAfter (StreamPosition pos) -> pos + 1
-              _ ->
-                latestPositions
-                  |> Maybe.map (\(_, StreamPosition localPos) -> localPos + 1)
-                  |> Maybe.withDefault 0
-      let insertionRecords =
-            insertions |> Array.indexed |> Array.map \(idx, i) -> do
-              Sessions.EventInsertionRecord
-                { eventId = i.metadata.eventId,
-                  localPosition = offset + fromIntegral idx,
-                  globalPosition = Nothing,
-                  inlinedStreamId = payload.streamId |> StreamId.toText,
-                  entity = payload.entityName |> EntityName.toText,
-                  eventData = Json.encode i.event,
-                  metadata = Json.encode i.metadata
-                }
-      Sessions.insertRecordsIntoStream insertionRecords
+    alreadyExistingIds <-
+      Sessions.selectExistingIdsSession payloadEventIds
         |> Sessions.run conn
         |> Task.mapError SessionError
 
-      case insertionRecords |> Array.last of
-        Nothing ->
-          "The impossible happened: no insertions were available during insertion"
-            |> InsertionFailed
-            |> CoreInsertionError
-            |> Task.throw
-        Just lastInsertion -> do
-          lastEventPositions <-
-            Sessions.selectInsertedEvent (lastInsertion.eventId)
-              |> Sessions.run conn
-              |> Task.mapError SessionError
+    let insertions =
+          payload.insertions
+            |> Array.dropIf
+              ( \i ->
+                  alreadyExistingIds
+                    |> Array.contains i.metadata.eventId
+              )
 
-          let (globalPosition, localPosition) =
-                lastEventPositions
-                  |> Maybe.withDefault (StreamPosition 0, StreamPosition 0)
+    let insertionsCount = insertions |> Array.length
 
-          Task.yield (InsertionSuccess {localPosition, globalPosition})
+    if insertionsCount > 100
+      then Task.throw (CoreInsertionError PayloadTooLarge)
+      else pass
+
+    latestPositions <-
+      Sessions.selectLatestEventInStream payload.entityName payload.streamId
+        |> Sessions.run conn
+        |> Task.mapError SessionError
+
+    if insertionsCount <= 0
+      then do
+        let (globalPosition, localPosition) =
+              latestPositions |> Maybe.withDefault (StreamPosition 0, StreamPosition 0)
+        Task.yield InsertionSuccess {localPosition, globalPosition}
+      else do
+        let offset =
+              case payload.insertionType of
+                InsertAfter (StreamPosition pos) -> pos + 1
+                _ ->
+                  latestPositions
+                    |> Maybe.map (\(_, StreamPosition localPos) -> localPos + 1)
+                    |> Maybe.withDefault 0
+        let insertionRecords =
+              insertions |> Array.indexed |> Array.map \(idx, i) -> do
+                Sessions.EventInsertionRecord
+                  { eventId = i.metadata.eventId,
+                    localPosition = offset + fromIntegral idx,
+                    globalPosition = Nothing,
+                    inlinedStreamId = payload.streamId |> StreamId.toText,
+                    entity = payload.entityName |> EntityName.toText,
+                    eventData = Json.encode i.event,
+                    metadata = Json.encode i.metadata
+                  }
+        Sessions.insertRecordsIntoStream insertionRecords
+          |> Sessions.run conn
+          |> Task.mapError SessionError
+
+        case insertionRecords |> Array.last of
+          Nothing ->
+            "The impossible happened: no insertions were available during insertion"
+              |> InsertionFailed
+              |> CoreInsertionError
+              |> Task.throw
+          Just lastInsertion -> do
+            lastEventPositions <-
+              Sessions.selectInsertedEvent (lastInsertion.eventId)
+                |> Sessions.run conn
+                |> Task.mapError SessionError
+
+            let (globalPosition, localPosition) =
+                  lastEventPositions
+                    |> Maybe.withDefault (StreamPosition 0, StreamPosition 0)
+
+            Task.yield (InsertionSuccess {localPosition, globalPosition})
 
 
 readStreamForwardFromImpl ::
@@ -413,83 +472,82 @@ performReadAllStreamEvents
   (Limit limit)
   relative
   readDirection
-  entityNames = do
-    conn <- ops.acquire cfg |> Task.mapError ConnectionAcquisitionError
+  entityNames =
+    ops |> withConnection cfg \conn -> do
+      breakLoopRef <- Var.new False
+      remainingLimitRef <- Var.new limit
+      let shouldKeepReading = do
+            shouldBreak <- Var.get breakLoopRef
+            isCancelled <- Var.get cancellationRef
+            remainingLimit <- Var.get remainingLimitRef
+            Task.yield (not shouldBreak && not isCancelled && remainingLimit > 0)
 
-    breakLoopRef <- Var.new False
-    remainingLimitRef <- Var.new limit
-    let shouldKeepReading = do
-          shouldBreak <- Var.get breakLoopRef
-          isCancelled <- Var.get cancellationRef
-          remainingLimit <- Var.get remainingLimitRef
-          Task.yield (not shouldBreak && not isCancelled && remainingLimit > 0)
+      positionRef <- Var.new (toPostgresPosition relative readDirection)
 
-    positionRef <- Var.new (toPostgresPosition relative readDirection)
+      Task.while (shouldKeepReading) do
+        selectSession <- Sessions.selectEventBatch positionRef relative readDirection entityNames
+        records <-
+          selectSession
+            |> Sessions.run conn
+            |> Task.mapError
+              SessionError
 
-    Task.while (shouldKeepReading) do
-      selectSession <- Sessions.selectEventBatch positionRef relative readDirection entityNames
-      records <-
-        selectSession
-          |> Sessions.run conn
-          |> Task.mapError
-            SessionError
+        hasNotifiedReadingStarted <- Var.get notifiedReadingRef
+        Task.unless (hasNotifiedReadingStarted) do
+          stream |> Stream.writeItem ReadingStarted
+          notifiedReadingRef |> Var.set True
 
-      hasNotifiedReadingStarted <- Var.get notifiedReadingRef
-      Task.unless (hasNotifiedReadingStarted) do
-        stream |> Stream.writeItem ReadingStarted
-        notifiedReadingRef |> Var.set True
+        Task.when (records |> Array.isEmpty) do
+          breakLoopRef |> Var.set True
 
-      Task.when (records |> Array.isEmpty) do
-        breakLoopRef |> Var.set True
-
-      records |> Task.forEach \record -> do
-        let evt :: Result Text (ReadAllMessage eventType) = do
-              event <- Json.decode record.eventData
-              m <- Json.decode record.metadata
-              let streamId = record.inlinedStreamId |> StreamId.fromText
-              let metadata =
-                    m
-                      { EventMetadata.globalPosition = Just (StreamPosition record.globalPosition)
-                      }
-              Event
-                { entityName = record.entityName |> EntityName,
-                  streamId,
-                  event,
-                  metadata
-                }
-                |> AllEvent
-                |> Result.Ok
-        remainingLimit <- Var.get remainingLimitRef
-        if remainingLimit <= 0
-          then
-            pass
-          else do
-            case evt of
-              Ok goodEvent -> do
-                stream |> Stream.writeItem goodEvent
-                positionRef |> Var.set record.globalPosition
-              Err err -> do
-                let entityName = record.entityName
-                let streamId = record.inlinedStreamId
-                let locator = [fmt|#{entityName}#{streamId}|]
-                let toxicEvt =
-                      ToxicContents
-                        { locator = locator,
-                          metadata = record.metadata,
-                          globalPosition = (StreamPosition record.globalPosition),
-                          localPosition = (StreamPosition record.localPosition),
-                          additionalInfo = err
+        records |> Task.forEach \record -> do
+          let evt :: Result Text (ReadAllMessage eventType) = do
+                event <- Json.decode record.eventData
+                m <- Json.decode record.metadata
+                let streamId = record.inlinedStreamId |> StreamId.fromText
+                let metadata =
+                      m
+                        { EventMetadata.globalPosition = Just (StreamPosition record.globalPosition)
                         }
-                        |> ToxicAllEvent
-                stream |> Stream.writeItem toxicEvt
-                positionRef |> Var.set record.globalPosition
-            Var.decrement remainingLimitRef
+                Event
+                  { entityName = record.entityName |> EntityName,
+                    streamId,
+                    event,
+                    metadata
+                  }
+                  |> AllEvent
+                  |> Result.Ok
+          remainingLimit <- Var.get remainingLimitRef
+          if remainingLimit <= 0
+            then
+              pass
+            else do
+              case evt of
+                Ok goodEvent -> do
+                  stream |> Stream.writeItem goodEvent
+                  positionRef |> Var.set record.globalPosition
+                Err err -> do
+                  let entityName = record.entityName
+                  let streamId = record.inlinedStreamId
+                  let locator = [fmt|#{entityName}#{streamId}|]
+                  let toxicEvt =
+                        ToxicContents
+                          { locator = locator,
+                            metadata = record.metadata,
+                            globalPosition = (StreamPosition record.globalPosition),
+                            localPosition = (StreamPosition record.localPosition),
+                            additionalInfo = err
+                          }
+                          |> ToxicAllEvent
+                  stream |> Stream.writeItem toxicEvt
+                  positionRef |> Var.set record.globalPosition
+              Var.decrement remainingLimitRef
 
-      Task.when (Array.length records < batchSize) do
-        breakLoopRef |> Var.set True
+        Task.when (Array.length records < batchSize) do
+          breakLoopRef |> Var.set True
 
-    stream |> Stream.end
-    Task.yield stream
+      stream |> Stream.end
+      Task.yield stream
 
 
 subscribeToAllEventsImpl ::
@@ -499,14 +557,19 @@ subscribeToAllEventsImpl ::
   (Event eventType -> Task Text Unit) ->
   Task Error SubscriptionId
 subscribeToAllEventsImpl ops cfg store callback = do
-  conn <- ops.acquire cfg |> Task.mapError (toText .> StorageFailure)
-  currentMaxPosition <-
-    Sessions.selectMaxGlobalPosition
-      |> Sessions.run conn
-      |> Task.mapError (toText .> StorageFailure)
-  store
-    |> SubscriptionStore.addGlobalSubscriptionFromPosition currentMaxPosition callback
-    |> Task.mapError (\err -> SubscriptionError (SubscriptionId "global") (err |> toText))
+  ops |> withConnectionAndError cfg \conn -> do
+    currentMaxPosition <-
+      Sessions.selectMaxGlobalPosition
+        |> Sessions.run conn
+        |> Task.mapError (SessionError .> toText .> StorageFailure)
+    store
+      |> SubscriptionStore.addGlobalSubscriptionFromPosition currentMaxPosition callback
+      |> Task.mapError
+        ( \err ->
+            SubscriptionStoreError "global" err
+              |> toText
+              |> SubscriptionError (SubscriptionId "global")
+        )
 
 
 subscribeToAllEventsFromPositionImpl ::
@@ -520,41 +583,40 @@ subscribeToAllEventsFromPositionImpl ::
   Task Error SubscriptionId
 subscribeToAllEventsFromPositionImpl ops cfg store startPosition callback = do
   -- Catch up loop: read historical events and process them
-  let catchUp currentPosition = do
-        conn <- ops.acquire cfg |> Task.mapError (toText .> StorageFailure)
+  let catchUp currentPosition =
+        ops |> withConnectionAndError cfg \conn -> do
+          -- Get current max position
+          maxPosition <-
+            Sessions.selectMaxGlobalPosition
+              |> Sessions.run conn
+              |> Task.mapError (toText .> StorageFailure)
 
-        -- Get current max position
-        maxPosition <-
-          Sessions.selectMaxGlobalPosition
-            |> Sessions.run conn
-            |> Task.mapError (toText .> StorageFailure)
+          case maxPosition of
+            Nothing -> do
+              -- No events in database, just subscribe from now
+              Task.yield currentPosition
+            Just maxPos -> do
+              if maxPos <= currentPosition
+                then do
+                  -- No new events, we're caught up
+                  Task.yield currentPosition
+                else do
+                  -- Read events from currentPosition to maxPos
+                  let limit = Limit maxValue -- Read all available events
+                  eventStream <-
+                    readAllEventsForwardFromImpl ops cfg currentPosition limit
+                      |> Task.mapError (\_ -> StorageFailure "Failed to read events during catch-up")
 
-        case maxPosition of
-          Nothing -> do
-            -- No events in database, just subscribe from now
-            Task.yield currentPosition
-          Just maxPos -> do
-            if maxPos <= currentPosition
-              then do
-                -- No new events, we're caught up
-                Task.yield currentPosition
-              else do
-                -- Read events from currentPosition to maxPos
-                let limit = Limit maxValue -- Read all available events
-                eventStream <-
-                  readAllEventsForwardFromImpl ops cfg currentPosition limit
-                    |> Task.mapError (\_ -> StorageFailure "Failed to read events during catch-up")
+                  -- Collect all events from the stream
+                  events <- eventStream |> Stream.toArray |> Task.mapError (toText .> StorageFailure)
 
-                -- Collect all events from the stream
-                events <- eventStream |> Stream.toArray |> Task.mapError (toText .> StorageFailure)
+                  -- Process each event serially through the callback
+                  events
+                    |> collectAllEvents
+                    |> Task.forEach (\event -> callback event |> Task.asResult |> discard)
 
-                -- Process each event serially through the callback
-                events
-                  |> collectAllEvents
-                  |> Task.forEach (\event -> callback event |> Task.asResult |> discard)
-
-                -- Check if more events were added while processing
-                catchUp maxPos
+                  -- Check if more events were added while processing
+                  catchUp maxPos
 
   -- Start catch-up from the requested position
   finalPosition <- catchUp startPosition
@@ -585,15 +647,15 @@ subscribeToEntityEventsImpl ::
   EntityName ->
   (Event eventType -> Task Text Unit) ->
   Task Error SubscriptionId
-subscribeToEntityEventsImpl ops cfg store entityName callback = do
-  conn <- ops.acquire cfg |> Task.mapError (toText .> StorageFailure)
-  currentMaxPosition <-
-    Sessions.selectMaxGlobalPosition
-      |> Sessions.run conn
-      |> Task.mapError (toText .> StorageFailure)
-  store
-    |> SubscriptionStore.addEntitySubscriptionFromPosition entityName currentMaxPosition callback
-    |> Task.mapError (\err -> SubscriptionError (SubscriptionId "entity") (err |> toText))
+subscribeToEntityEventsImpl ops cfg store entityName callback =
+  ops |> withConnectionAndError cfg \conn -> do
+    currentMaxPosition <-
+      Sessions.selectMaxGlobalPosition
+        |> Sessions.run conn
+        |> Task.mapError (toText .> StorageFailure)
+    store
+      |> SubscriptionStore.addEntitySubscriptionFromPosition entityName currentMaxPosition callback
+      |> Task.mapError (\err -> SubscriptionError (SubscriptionId "entity") (err |> toText))
 
 
 subscribeToStreamEventsImpl ::
@@ -606,20 +668,23 @@ subscribeToStreamEventsImpl ::
   StreamId ->
   (Event eventType -> Task Text Unit) ->
   Task Error SubscriptionId
-subscribeToStreamEventsImpl ops cfg store entityName streamId callback = do
-  conn <- ops.acquire cfg |> Task.mapError (toText .> StorageFailure)
+subscribeToStreamEventsImpl ops cfg store entityName streamId callback =
+  ops |> withConnectionAndError cfg \conn -> do
+    -- Subscribe to the stream-specific notification channel
+    connection <-
+      Hasql.acquire (toConnectionSettings cfg)
+        |> Task.fromIOEither
+        |> Task.mapError (\err -> SubscriptionError (SubscriptionId "stream") (err |> toText))
+    Notifications.subscribeToStream connection streamId
+      |> Task.mapError StorageFailure
 
-  -- Subscribe to the stream-specific notification channel
-  Notifications.subscribeToStream conn streamId
-    |> Task.mapError StorageFailure
-
-  currentMaxPosition <-
-    Sessions.selectMaxGlobalPosition
-      |> Sessions.run conn
-      |> Task.mapError (toText .> StorageFailure)
-  store
-    |> SubscriptionStore.addStreamSubscriptionFromPosition entityName streamId currentMaxPosition callback
-    |> Task.mapError (\err -> SubscriptionError (SubscriptionId "stream") (err |> toText))
+    currentMaxPosition <-
+      Sessions.selectMaxGlobalPosition
+        |> Sessions.run conn
+        |> Task.mapError (toText .> StorageFailure)
+    store
+      |> SubscriptionStore.addStreamSubscriptionFromPosition entityName streamId currentMaxPosition callback
+      |> Task.mapError (\err -> SubscriptionError (SubscriptionId "stream") (err |> toText))
 
 
 unsubscribeImpl :: SubscriptionStore eventType -> SubscriptionId -> Task Error Unit
@@ -642,11 +707,11 @@ truncateStreamImpl ops cfg entityName streamId truncateBefore = do
 
 
 truncateStreamGo :: Ops eventType -> Config -> EntityName -> StreamId -> StreamPosition -> Task PostgresStoreError Unit
-truncateStreamGo ops cfg entityName streamId truncateBefore = do
-  conn <- ops.acquire cfg |> Task.mapError ConnectionAcquisitionError
-  Sessions.truncateStreamSession entityName streamId truncateBefore
-    |> Sessions.run conn
-    |> Task.mapError SessionError
+truncateStreamGo ops cfg entityName streamId truncateBefore =
+  ops |> withConnection cfg \conn -> do
+    Sessions.truncateStreamSession entityName streamId truncateBefore
+      |> Sessions.run conn
+      |> Task.mapError SessionError
 
 
 performReadStreamEvents ::
@@ -671,90 +736,89 @@ performReadStreamEvents
   streamId
   (Limit limit)
   relative
-  readDirection = do
-    conn <- ops.acquire cfg |> Task.mapError ConnectionAcquisitionError
+  readDirection =
+    ops |> withConnection cfg \conn -> do
+      breakLoopRef <- Var.new False
+      remainingLimitRef <- Var.new limit
 
-    breakLoopRef <- Var.new False
-    remainingLimitRef <- Var.new limit
+      let shouldKeepReading = do
+            shouldBreak <- Var.get breakLoopRef
+            isCancelled <- Var.get cancellationRef
+            remainingLimit <- Var.get remainingLimitRef
+            Task.yield (not shouldBreak && not isCancelled && remainingLimit > 0)
 
-    let shouldKeepReading = do
-          shouldBreak <- Var.get breakLoopRef
-          isCancelled <- Var.get cancellationRef
-          remainingLimit <- Var.get remainingLimitRef
-          Task.yield (not shouldBreak && not isCancelled && remainingLimit > 0)
+      -- Determine starting position based on relative position
+      let streamPosition =
+            case relative of
+              Just (FromAndAfter (StreamPosition p)) -> p
+              Just (Before (StreamPosition p)) -> p
+              Just Start -> 0
+              Just End -> maxValue
+              Nothing -> 0
 
-    -- Determine starting position based on relative position
-    let streamPosition =
-          case relative of
-            Just (FromAndAfter (StreamPosition p)) -> p
-            Just (Before (StreamPosition p)) -> p
-            Just Start -> 0
-            Just End -> maxValue
-            Nothing -> 0
+      positionRef <- Var.new streamPosition
 
-    positionRef <- Var.new streamPosition
+      Task.while (shouldKeepReading) do
+        selectSession <- Sessions.selectStreamEventBatch positionRef entityName streamId relative readDirection
+        records <-
+          selectSession
+            |> Sessions.run conn
+            |> Task.mapError SessionError
 
-    Task.while (shouldKeepReading) do
-      selectSession <- Sessions.selectStreamEventBatch positionRef entityName streamId relative readDirection
-      records <-
-        selectSession
-          |> Sessions.run conn
-          |> Task.mapError SessionError
+        hasNotifiedReadingStarted <- Var.get notifiedReadingRef
+        Task.unless (hasNotifiedReadingStarted) do
+          stream |> Stream.writeItem StreamReadingStarted
+          notifiedReadingRef |> Var.set True
 
-      hasNotifiedReadingStarted <- Var.get notifiedReadingRef
-      Task.unless (hasNotifiedReadingStarted) do
-        stream |> Stream.writeItem StreamReadingStarted
-        notifiedReadingRef |> Var.set True
+        Task.when (records |> Array.isEmpty) do
+          breakLoopRef |> Var.set True
 
-      Task.when (records |> Array.isEmpty) do
-        breakLoopRef |> Var.set True
-
-      records |> Task.forEach \record -> do
-        let evt :: Result Text (ReadStreamMessage eventType) = do
-              event <- Json.decode record.eventData
-              m <- Json.decode record.metadata
-              let metadata =
-                    m
-                      { EventMetadata.globalPosition = Just (StreamPosition record.globalPosition),
-                        EventMetadata.localPosition = Just (StreamPosition record.localPosition)
-                      }
-              Event
-                { entityName,
-                  streamId,
-                  event,
-                  metadata
-                }
-                |> StreamEvent
-                |> Result.Ok
-
-        remainingLimit <- Var.get remainingLimitRef
-        if remainingLimit <= 0
-          then
-            pass
-          else do
-            case evt of
-              Ok goodEvent -> do
-                stream |> Stream.writeItem goodEvent
-                -- Update position for next batch
-                positionRef |> Var.set record.localPosition
-              Err err -> do
-                let locator = [fmt|#{EntityName.toText entityName}#{StreamId.toText streamId}|]
-                let toxicEvt =
-                      ToxicContents
-                        { locator = locator,
-                          metadata = record.metadata,
-                          globalPosition = StreamPosition record.globalPosition,
-                          localPosition = StreamPosition record.localPosition,
-                          additionalInfo = err
+        records |> Task.forEach \record -> do
+          let evt :: Result Text (ReadStreamMessage eventType) = do
+                event <- Json.decode record.eventData
+                m <- Json.decode record.metadata
+                let metadata =
+                      m
+                        { EventMetadata.globalPosition = Just (StreamPosition record.globalPosition),
+                          EventMetadata.localPosition = Just (StreamPosition record.localPosition)
                         }
-                        |> ToxicStreamEvent
-                stream |> Stream.writeItem toxicEvt
-                positionRef |> Var.set record.localPosition
-            Var.decrement remainingLimitRef
+                Event
+                  { entityName,
+                    streamId,
+                    event,
+                    metadata
+                  }
+                  |> StreamEvent
+                  |> Result.Ok
 
-      -- Check if we got fewer records than batch size (means we're at the end)
-      Task.when (Array.length records < batchSize) do
-        breakLoopRef |> Var.set True
+          remainingLimit <- Var.get remainingLimitRef
+          if remainingLimit <= 0
+            then
+              pass
+            else do
+              case evt of
+                Ok goodEvent -> do
+                  stream |> Stream.writeItem goodEvent
+                  -- Update position for next batch
+                  positionRef |> Var.set record.localPosition
+                Err err -> do
+                  let locator = [fmt|#{EntityName.toText entityName}#{StreamId.toText streamId}|]
+                  let toxicEvt =
+                        ToxicContents
+                          { locator = locator,
+                            metadata = record.metadata,
+                            globalPosition = StreamPosition record.globalPosition,
+                            localPosition = StreamPosition record.localPosition,
+                            additionalInfo = err
+                          }
+                          |> ToxicStreamEvent
+                  stream |> Stream.writeItem toxicEvt
+                  positionRef |> Var.set record.localPosition
+              Var.decrement remainingLimitRef
 
-    stream |> Stream.end
-    Task.yield stream
+        -- Check if we got fewer records than batch size (means we're at the end)
+        Task.when (Array.length records < batchSize) do
+          breakLoopRef |> Var.set True
+
+      stream |> Stream.end
+      Task.yield stream

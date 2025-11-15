@@ -51,7 +51,7 @@ describe name = Hspec.describe (Text.toLinkedList name)
 
 
 -- | Define a test case
-it :: Text -> (context -> Task Text Unit) -> Spec context
+it :: (HasCallStack) => Text -> (context -> Task Text Unit) -> Spec context
 it name block =
   Hspec.it (Text.toLinkedList name) \context -> do
     block context |> Task.runOrPanic
@@ -59,7 +59,7 @@ it name block =
 
 
 -- | Define a focused test case (runs only this test)
-only_it :: Text -> (context -> Task Text Unit) -> Spec context
+only_it :: (HasCallStack) => Text -> (context -> Task Text Unit) -> Spec context
 only_it name block =
   Hspec.fit (Text.toLinkedList name) \context -> do
     block context |> Task.runOrPanic
@@ -197,14 +197,14 @@ sequential = Hspec.sequential
 
 
 -- | Run a Task in a test
-runTask :: (Show err) => Task err a -> _
+runTask :: (HasCallStack) => (Show err) => Task err a -> _
 runTask task =
   task |> Task.runOrPanic
 {-# INLINE runTask #-}
 
 
 -- | Runs a block of tests if an environment variable is set
-whenEnvVar :: Text -> Spec Unit -> Spec Unit
+whenEnvVar :: (HasCallStack) => Text -> Spec Unit -> Spec Unit
 whenEnvVar envVarName block = do
   x <-
     Environment.getVariable envVarName

@@ -3,6 +3,7 @@ module Service.EventStore.PostgresSpec where
 import Core
 import Service.EventStore.Postgres qualified as Postgres
 import Service.EventStore.Postgres.Internal qualified as Internal
+import Service.EventStore.Postgres.Internal.Core qualified as PostgresCore
 import Service.EventStore.Postgres.Internal.Sessions qualified as Sessions
 import Task qualified
 import Test
@@ -62,17 +63,21 @@ data NewObserve = NewObserve
 
 
 dropPostgres :: Internal.Ops eventType -> Postgres.Config -> Task Text Unit
-dropPostgres ops config = do
-  connection <- ops.acquire config
-  res <-
-    Sessions.dropEventsTableSession
-      |> Sessions.run connection
-      |> Task.mapError toText
-      |> Task.asResult
-  case res of
-    Ok _ -> Task.yield unit
-    Err err ->
-      Task.throw err
+dropPostgres ops config =
+  ops
+    |> Internal.withConnection
+      config
+      ( \connection -> do
+          res <-
+            Sessions.dropEventsTableSession
+              |> Sessions.run connection
+              |> Task.asResult
+          case res of
+            Ok _ -> Task.yield unit
+            Err err ->
+              Task.throw (err |> PostgresCore.SessionError)
+      )
+    |> Task.mapError (toText)
 
 
 mockNewOps :: Task Text (Internal.Ops eventType, NewObserve)
@@ -80,6 +85,7 @@ mockNewOps = do
   acquireCalls <- Var.new 0
   initializeTableCalls <- Var.new 0
   initializeSubscriptionsCalls <- Var.new 0
+  releaseCalls <- Var.new (0 :: Int)
 
   let acquire :: Internal.Config -> Task Text Internal.Connection
       acquire _ = do
@@ -91,12 +97,17 @@ mockNewOps = do
         Var.increment initializeTableCalls
         Task.yield unit
 
-  let initializeSubscriptions :: Internal.SubscriptionStore eventType -> Internal.Connection -> Task Text Unit
+  let initializeSubscriptions :: Internal.SubscriptionStore eventType -> Internal.Config -> Task Text Unit
       initializeSubscriptions _ _ = do
         Var.increment initializeSubscriptionsCalls
         Task.yield unit
 
+  let release :: Internal.Connection -> Task Text Unit
+      release _ = do
+        Var.increment releaseCalls
+        Task.yield unit
+
   let newObserver = NewObserve {acquireCalls, initializeTableCalls, initializeSubscriptionsCalls}
 
-  let ops = Internal.Ops {acquire, initializeTable, initializeSubscriptions}
+  let ops = Internal.Ops {acquire, initializeTable, initializeSubscriptions, release}
   Task.yield (ops, newObserver)

@@ -8,9 +8,10 @@ import Data.Functor.Contravariant ((>$<))
 import Data.UUID qualified as UUID
 import Data.Vector (Vector)
 import Data.Vector qualified as Vector
-import Hasql.Connection qualified as Hasql
+import Hasql.Connection qualified as HasqlConnection
 import Hasql.Decoders qualified as Decoders
 import Hasql.Encoders qualified as Encoders
+import Hasql.Pool qualified as HasqlPool
 import Hasql.Session qualified as Session
 import Hasql.Statement (Statement (..))
 import Hasql.Statement qualified as Hasql
@@ -32,7 +33,7 @@ import Var qualified
 
 
 data Connection
-  = Connection Hasql.Connection
+  = Connection HasqlPool.Pool
   | MockConnection
 
 
@@ -72,18 +73,32 @@ run ::
   (Default result) =>
   Connection ->
   Session.Session result ->
-  Task Session.SessionError result
+  Task HasqlPool.UsageError result
 run connection session = do
   case connection of
     MockConnection ->
       Task.yield defaultValue
-    Connection conn -> do
-      result <- Session.run session conn |> Task.fromIO |> Task.map Result.fromEither
+    Connection pool -> do
+      result <- HasqlPool.use pool session |> Task.fromIO |> Task.map Result.fromEither
       case result of
-        Result.Err err ->
+        Result.Err err -> do
           Task.throw err
-        Result.Ok res ->
+        Result.Ok res -> do
           Task.yield res
+
+
+runConnection ::
+  (Default result) =>
+  HasqlConnection.Connection ->
+  Session.Session result ->
+  Task Session.SessionError result
+runConnection connection session = do
+  result <- Session.run session connection |> Task.fromIO |> Task.map Result.fromEither
+  case result of
+    Result.Err err -> do
+      Task.throw err
+    Result.Ok res -> do
+      Task.yield res
 
 
 createEventsTableSession :: Session.Session Unit
