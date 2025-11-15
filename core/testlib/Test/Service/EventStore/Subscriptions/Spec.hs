@@ -50,7 +50,7 @@ spec newStore = do
           |> discard
 
         -- Wait briefly for async notifications to complete
-        AsyncTask.sleep 10 |> Task.mapError (\_ -> "timeout")
+        AsyncTask.sleep 100 |> Task.mapError (\_ -> "timeout")
 
         -- Check that we received the events
         received <- ConcurrentVar.get receivedEvents

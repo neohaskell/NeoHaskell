@@ -49,6 +49,7 @@ module Array (
   partitionBy,
   splitFirst,
   any,
+  chunksOf,
 
   -- * Compatibility
   unwrap,
@@ -659,3 +660,32 @@ getJusts self = do
           |> Maybe.withDefault empty
   self
     |> flatMap maybeItemToArray
+
+
+-- | Split an array into chunks of a given size.
+-- The last chunk may contain fewer elements if the array length is not evenly divisible.
+--
+-- >>> chunksOf 2 (fromLinkedList [1,2,3,4,5] :: Array Int)
+-- Array [Array [1,2],Array [3,4],Array [5]]
+-- >>> chunksOf 3 (fromLinkedList [1,2,3,4,5,6] :: Array Int)
+-- Array [Array [1,2,3],Array [4,5,6]]
+-- >>> chunksOf 1 (fromLinkedList [1,2,3] :: Array Int)
+-- Array [Array [1],Array [2],Array [3]]
+-- >>> chunksOf 5 (fromLinkedList [1,2] :: Array Int)
+-- Array [Array [1,2]]
+-- >>> chunksOf 2 (fromLinkedList [] :: Array Int)
+-- Array []
+chunksOf :: Int -> Array a -> Array (Array a)
+chunksOf n (Array vector) = do
+  let chunks =
+        Data.Vector.toList vector
+          |> chunkList n
+          |> LinkedList.map Data.Vector.fromList
+          |> Data.Vector.fromList
+  Array (Data.Vector.map Array chunks)
+ where
+  chunkList :: Int -> [a] -> [[a]]
+  chunkList _ [] = []
+  chunkList size xs = do
+    let (chunk, rest) = Prelude.splitAt size xs
+    chunk : chunkList size rest

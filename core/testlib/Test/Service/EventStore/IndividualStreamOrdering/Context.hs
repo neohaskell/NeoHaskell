@@ -19,8 +19,7 @@ data Context = Context
     entityName :: Event.EntityName,
     streamId :: Event.StreamId,
     store :: EventStore MyEvent,
-    payload :: Event.InsertionPayload MyEvent,
-    position :: Event.StreamPosition,
+    allInsertions :: Array (Event.Insertion MyEvent),
     positions :: Array Event.StreamPosition
   }
 
@@ -30,16 +29,17 @@ initialize newStore eventCountNumber = do
   store <- newStore
   streamId <- StreamId.new
   entityName <- Uuid.generate |> Task.map (toText .> Event.EntityName)
-  insertions <-
+  allInsertions <-
     Array.fromLinkedList [0 .. eventCountNumber - 1]
       |> Task.mapArray
         newInsertion
-  let payload = Event.InsertionPayload {streamId, entityName, insertionType = Event.AnyStreamState, insertions}
 
-  insertResult <- payload |> store.insert |> Task.mapError toText
-  let position = insertResult.localPosition
+  -- Insert events in chunks of 100 (batch size limit)
+  allInsertions |> Array.chunksOf 100 |> Task.forEach \chunk -> do
+    let payload = Event.InsertionPayload {streamId, entityName, insertionType = Event.AnyStreamState, insertions = chunk}
+    payload |> store.insert |> Task.mapError toText |> discard
+
   let positions = Array.fromLinkedList [0 .. eventCountNumber - 1] |> Array.map (fromIntegral .> Event.StreamPosition)
-
   let eventCount = fromIntegral eventCountNumber
 
-  return Context {eventCount, streamId, store, payload, position, positions, entityName}
+  return Context {eventCount, streamId, store, allInsertions, positions, entityName}

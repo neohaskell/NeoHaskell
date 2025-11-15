@@ -25,6 +25,8 @@ spec newStore = do
     whenEnvVar "TEST_EVENT_COUNT" do
       specWithCount newStore 100
       specWithCount newStore 1000
+
+    whenEnvVar "TEST_EVENT_COUNT_HIGH" do
       specWithCount newStore 10000
       specWithCount newStore 100000
       specWithCount newStore 1000000

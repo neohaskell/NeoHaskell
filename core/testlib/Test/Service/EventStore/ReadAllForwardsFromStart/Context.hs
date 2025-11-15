@@ -34,38 +34,52 @@ initialize newStore eventCount = do
   entity2IdText <- Uuid.generate |> Task.map toText
   let entity2Id = Event.EntityName entity2IdText
 
-  let generateEvents :: Event.EntityName -> Task Text (Array (Event.InsertionPayload MyEvent))
-      generateEvents entityName = do
-        Array.fromLinkedList [0 .. eventCount - 1] |> Task.mapArray \index -> do
-          insertions <- Array.fromLinkedList [index] |> Task.mapArray newInsertion
-          Event.InsertionPayload
-            { streamId,
-              entityName,
-              insertionType = Event.AnyStreamState,
-              insertions
-            }
-            |> Task.yield
+  -- Generate all insertions for both entities
+  entity1Insertions <- Array.fromLinkedList [0 .. eventCount - 1] |> Task.mapArray newInsertion
+  entity2Insertions <- Array.fromLinkedList [0 .. eventCount - 1] |> Task.mapArray newInsertion
 
-  entity1Events <- generateEvents entity1Id
-  entity2Events <- generateEvents entity2Id
+  -- Insert entity1 events in chunks of 100 (batch size limit)
+  entity1Insertions |> Array.chunksOf 100 |> Task.forEach \chunk -> do
+    let payload = Event.InsertionPayload {streamId, entityName = entity1Id, insertionType = Event.AnyStreamState, insertions = chunk}
+    payload |> store.insert |> Task.mapError toText |> discard
 
-  entity1Inserted <-
-    entity1Events
-      |> Task.mapArray (\payload -> payload |> store.insert)
-      |> Task.mapError toText
+  -- Insert entity2 events in chunks of 100 (batch size limit)
+  entity2Insertions |> Array.chunksOf 100 |> Task.forEach \chunk -> do
+    let payload = Event.InsertionPayload {streamId, entityName = entity2Id, insertionType = Event.AnyStreamState, insertions = chunk}
+    payload |> store.insert |> Task.mapError toText |> discard
+
+  -- Create payload wrappers for compatibility (not used in tests, but kept for API consistency)
+  let entity1Events =
+        entity1Insertions
+          |> Array.map
+            ( \insertion ->
+                Event.InsertionPayload
+                  { streamId,
+                    entityName = entity1Id,
+                    insertionType = Event.AnyStreamState,
+                    insertions = Array.wrap insertion
+                  }
+            )
+
+  let entity2Events =
+        entity2Insertions
+          |> Array.map
+            ( \insertion ->
+                Event.InsertionPayload
+                  { streamId,
+                    entityName = entity2Id,
+                    insertionType = Event.AnyStreamState,
+                    insertions = Array.wrap insertion
+                  }
+            )
 
   let entity1Positions =
-        entity1Inserted
-          |> Array.map (\result -> result.localPosition)
-
-  entity2Inserted <-
-    entity2Events
-      |> Task.mapArray (\payload -> payload |> store.insert)
-      |> Task.mapError toText
+        Array.fromLinkedList [0 .. eventCount - 1]
+          |> Array.map (fromIntegral .> Event.StreamPosition)
 
   let entity2Positions =
-        entity2Inserted
-          |> Array.map (\result -> result.localPosition)
+        Array.fromLinkedList [0 .. eventCount - 1]
+          |> Array.map (fromIntegral .> Event.StreamPosition)
 
   let allEvents = entity1Events |> Array.append entity2Events
   let allPositions = entity1Positions |> Array.append entity2Positions

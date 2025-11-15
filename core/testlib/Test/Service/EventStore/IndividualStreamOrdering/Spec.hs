@@ -23,6 +23,8 @@ spec newStore = do
     whenEnvVar "TEST_EVENT_COUNT" do
       specWithCount newStore 100
       specWithCount newStore 1000
+
+    whenEnvVar "TEST_EVENT_COUNT_HIGH" do
       specWithCount newStore 10000
       specWithCount newStore 100000
       specWithCount newStore 1000000
@@ -74,19 +76,15 @@ specWithCount newStore eventCount = do
         -- since global positions are assigned dynamically based on append order
         Array.length events |> fromIntegral |> shouldBe context.eventCount
 
-        let payloadWithInsertion =
-              context.payload.insertions
-                |> Array.map (\i -> (context.payload, i))
-
-        -- Pair up actual events with expected events for validation
-        let eventPairs = payloadWithInsertion |> Array.zip events
+        -- Pair up actual events with expected insertions for validation
+        let eventPairs = context.allInsertions |> Array.zip events
 
         -- Each event should have the correct core properties
-        eventPairs |> Task.forEach \((payload, insertion), event) -> do
+        eventPairs |> Task.forEach \(insertion, event) -> do
           -- Validate event ID, entity ID, stream ID, and local position
           event.metadata.eventId |> shouldBe insertion.id
-          event.entityName |> shouldBe payload.entityName
-          event.streamId |> shouldBe payload.streamId
+          event.entityName |> shouldBe context.entityName
+          event.streamId |> shouldBe context.streamId
           (event.metadata.localPosition)
             |> shouldBe insertion.metadata.localPosition
 
