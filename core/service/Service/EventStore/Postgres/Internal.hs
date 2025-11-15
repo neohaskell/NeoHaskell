@@ -520,7 +520,12 @@ performReadAllStreamEvents
               case evt of
                 Ok goodEvent -> do
                   stream |> Stream.writeItem goodEvent
-                  positionRef |> Var.set record.globalPosition
+                  -- Update position for next batch
+                  -- For forward: increment by 1 (since we use >= comparison)
+                  -- For backward: decrement by 1 (since we use <= comparison for global position)
+                  case readDirection of
+                    Just Backwards -> positionRef |> Var.set (record.globalPosition - 1)
+                    _ -> positionRef |> Var.set (record.globalPosition + 1)
                 Err err -> do
                   let entityName = record.entityName
                   let streamId = record.inlinedStreamId
@@ -535,7 +540,12 @@ performReadAllStreamEvents
                           }
                           |> ToxicAllEvent
                   stream |> Stream.writeItem toxicEvt
-                  positionRef |> Var.set record.globalPosition
+                  -- Update position for next batch
+                  -- For forward: increment by 1 (since we use >= comparison)
+                  -- For backward: decrement by 1 (since we use <= comparison for global position)
+                  case readDirection of
+                    Just Backwards -> positionRef |> Var.set (record.globalPosition - 1)
+                    _ -> positionRef |> Var.set (record.globalPosition + 1)
               Var.decrement remainingLimitRef
 
         Task.when (Array.length records < batchSize) do
@@ -795,7 +805,11 @@ performReadStreamEvents
                 Ok goodEvent -> do
                   stream |> Stream.writeItem goodEvent
                   -- Update position for next batch
-                  positionRef |> Var.set record.localPosition
+                  -- For forward: increment by 1 (since we use >= comparison)
+                  -- For backward: keep same position (since we use < comparison which already excludes it)
+                  case readDirection of
+                    Just Backwards -> positionRef |> Var.set record.localPosition
+                    _ -> positionRef |> Var.set (record.localPosition + 1)
                 Err err -> do
                   let locator = [fmt|#{EntityName.toText entityName}#{StreamId.toText streamId}|]
                   let toxicEvt =
@@ -808,7 +822,12 @@ performReadStreamEvents
                           }
                           |> ToxicStreamEvent
                   stream |> Stream.writeItem toxicEvt
-                  positionRef |> Var.set record.localPosition
+                  -- Update position for next batch
+                  -- For forward: increment by 1 (since we use >= comparison)
+                  -- For backward: keep same position (since we use < comparison which already excludes it)
+                  case readDirection of
+                    Just Backwards -> positionRef |> Var.set record.localPosition
+                    _ -> positionRef |> Var.set (record.localPosition + 1)
               Var.decrement remainingLimitRef
 
         -- Check if we got fewer records than batch size (means we're at the end)

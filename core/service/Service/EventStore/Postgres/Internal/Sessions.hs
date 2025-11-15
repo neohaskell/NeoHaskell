@@ -352,7 +352,7 @@ selectStreamEventBatch positionRef (EntityName entityName) (StreamId streamIdTex
             SELECT EventId, GlobalPosition, LocalPosition, InlinedStreamId, Entity, EventData, Metadata
             FROM Events
             WHERE Entity = '#{entityName}' AND InlinedStreamId = '#{streamIdText}'#{positionFilter}
-            ORDER BY GlobalPosition #{direction}
+            ORDER BY LocalPosition #{direction}
             LIMIT #{batchSize}
           |]
   let encoder = Encoders.noParams
