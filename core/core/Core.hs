@@ -8,6 +8,7 @@ module Core (
 import Appendable as Reexported ((++))
 import Array as Reexported (Array)
 import Basics as Reexported
+import Bytes as Reexported (Bytes)
 import Channel as Reexported (Channel)
 import Char as Reexported (Char)
 import ConcurrentVar as Reexported (ConcurrentVar)
@@ -33,4 +34,3 @@ import Unknown as Reexported (Unknown)
 import Uuid as Reexported (Uuid)
 import Var as Reexported (Var)
 import Version as Reexported (Version, version)
-

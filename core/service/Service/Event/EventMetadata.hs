@@ -5,6 +5,7 @@ module Service.Event.EventMetadata (
 
 import Core
 import DateTime qualified
+import Json (FromJSON, ToJSON)
 import Service.Event.StreamPosition (StreamPosition)
 import Task qualified
 import Uuid qualified
@@ -20,6 +21,12 @@ data EventMetadata = EventMetadata
     globalPosition :: Maybe StreamPosition
   }
   deriving (Eq, Show, Ord, Generic)
+
+
+instance ToJSON EventMetadata
+
+
+instance FromJSON EventMetadata
 
 
 new :: Task _ EventMetadata

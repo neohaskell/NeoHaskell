@@ -4,22 +4,27 @@ module DateTime (
 ) where
 
 import Basics
-import Nanotime qualified
+import Data.Time.Clock qualified as Clock
+import Json (FromJSON, ToJSON)
 import Task (Task)
 import Task qualified
 import ToText (Show)
 
 
--- | A @DateTime@ represents a point in time using POSIX time (seconds since
--- the Unix epoch, 1970-01-01 00:00:00 UTC).
-newtype DateTime = DateTime Nanotime.PosixTime
-  deriving (Eq, Ord, Show)
+newtype DateTime = DateTime Clock.UTCTime
+  deriving (Eq, Ord, Show, Generic)
+
+
+instance FromJSON DateTime
+
+
+instance ToJSON DateTime
 
 
 now :: Task _ DateTime
 now = do
   posixTime <-
-    Nanotime.currentTime @Nanotime.PosixTime
+    Clock.getCurrentTime
       |> Task.fromIO
   posixTime
     |> DateTime

@@ -12,6 +12,7 @@ module Service.Event (
 ) where
 
 import Core
+import Json qualified
 import Service.Event.EntityName (EntityName (..))
 import Service.Event.EventMetadata (EventMetadata (..))
 import Service.Event.EventMetadata qualified as EventMetadata
@@ -30,12 +31,18 @@ data Event eventType = Event
   deriving (Eq, Show, Ord, Generic)
 
 
+instance (Json.FromJSON eventType) => Json.FromJSON (Event eventType)
+
+
 data InsertionType
   = StreamCreation
   | InsertAfter StreamPosition
   | ExistingStream
   | AnyStreamState
   deriving (Eq, Show, Ord, Generic)
+
+
+instance Json.ToJSON InsertionType
 
 
 data InsertionPayload eventType = InsertionPayload
@@ -45,6 +52,9 @@ data InsertionPayload eventType = InsertionPayload
     insertions :: Array (Insertion eventType)
   }
   deriving (Eq, Show, Ord, Generic)
+
+
+instance (Json.ToJSON eventType) => Json.ToJSON (InsertionPayload eventType)
 
 
 eventToInsertion :: eventType -> Task _ (Insertion eventType)
@@ -80,6 +90,9 @@ data Insertion eventType = Insertion
   deriving (Eq, Show, Ord, Generic)
 
 
+instance (Json.ToJSON eventType) => Json.ToJSON (Insertion eventType)
+
+
 data InsertionSuccess = InsertionSuccess
   { globalPosition :: StreamPosition,
     localPosition :: StreamPosition
@@ -89,7 +102,7 @@ data InsertionSuccess = InsertionSuccess
 
 data InsertionFailure
   = ConsistencyCheckFailed
-  | InsertionFailed
+  | InsertionFailed Text
   | PayloadTooLarge
   | EmptyPayload
   deriving (Eq, Show, Ord, Generic)

@@ -1,6 +1,7 @@
 module Test.Service.EventStore.Core (MyEvent (..), newInsertion) where
 
 import Core
+import Json qualified
 import Service.Event qualified as Event
 import Service.Event.EventMetadata qualified as EventMetadata
 import Task qualified
@@ -10,6 +11,12 @@ import Uuid qualified
 data MyEvent
   = MyEvent
   deriving (Eq, Show, Ord, Generic)
+
+
+instance Json.ToJSON MyEvent
+
+
+instance Json.FromJSON MyEvent
 
 
 instance Default MyEvent where

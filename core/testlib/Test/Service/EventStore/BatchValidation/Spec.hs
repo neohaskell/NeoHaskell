@@ -4,8 +4,9 @@ import Array qualified
 import Core
 import Result qualified
 import Service.Event qualified as Event
-import Service.EventStore (EventStore)
+import Service.EventStore (EventStore, collectStreamEvents)
 import Service.EventStore.Core qualified as EventStore
+import Stream qualified
 import Task qualified
 import Test
 import Test.Service.EventStore.BatchValidation.Context qualified as Context
@@ -97,11 +98,13 @@ spec newStore = do
           |> shouldBe (Event.StreamPosition 99)
 
         -- Verify all 100 events were inserted
-        allEvents <-
+        stream <-
           context.store.readAllStreamEvents entityName context.streamId
             |> Task.mapError toText
+        allEvents <- Stream.toArray stream
 
         allEvents
+          |> collectStreamEvents
           |> Array.length
           |> shouldBe 100
 
@@ -133,11 +136,13 @@ spec newStore = do
           |> shouldBe (Event.StreamPosition 98)
 
         -- Verify all 99 events were inserted
-        allEvents <-
+        stream <-
           context.store.readAllStreamEvents entityName context.streamId
             |> Task.mapError toText
+        allEvents <- Stream.toArray stream
 
         allEvents
+          |> collectStreamEvents
           |> Array.length
           |> shouldBe 99
 

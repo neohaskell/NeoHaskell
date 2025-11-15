@@ -1,6 +1,4 @@
 module Json (
-  Decodable,
-  Encodable,
   Aeson.Value,
   Aeson.FromJSON,
   Aeson.FromJSONKey,
@@ -9,27 +7,25 @@ module Json (
   encode,
   decode,
   encodeText,
+  decodeBytes,
 ) where
 
 import Array (Array)
 import Basics
+import Bytes (Bytes)
+import Bytes qualified
 import Data.Aeson qualified as Aeson
 import Data.Aeson.Text qualified as AesonText
 import Data.Either qualified as Either
 import Data.Text.Lazy qualified as Data.Text
+import Default (Default (..))
 import Result (Result)
 import Result qualified
 import Text (Text)
 import Text qualified
 
 
-type Decodable value = Aeson.FromJSON value
-
-
-type Encodable value = Aeson.ToJSON value
-
-
-decodeText :: (Decodable value) => Text -> Result Text value
+decodeText :: (Aeson.FromJSON value) => Text -> Result Text value
 decodeText text = do
   let bs = Text.convert text
   case Aeson.eitherDecodeStrict bs of
@@ -37,17 +33,25 @@ decodeText text = do
     Either.Right value -> Result.Ok value
 
 
-encodeText :: (Encodable value) => value -> Text
+decodeBytes :: (Aeson.FromJSON value) => Bytes -> Result Text value
+decodeBytes bytes = do
+  let bs = bytes |> Bytes.unwrap
+  case Aeson.eitherDecodeStrict bs of
+    Either.Left error -> Result.Err (Text.fromLinkedList error)
+    Either.Right value -> Result.Ok value
+
+
+encodeText :: (Aeson.ToJSON value) => value -> Text
 encodeText value =
   AesonText.encodeToLazyText value
     |> Data.Text.toStrict
 
 
-encode :: (Encodable value) => value -> Aeson.Value
+encode :: (Aeson.ToJSON value) => value -> Aeson.Value
 encode = Aeson.toJSON
 
 
-decode :: (Decodable value) => Aeson.Value -> Result Text value
+decode :: (Aeson.FromJSON value) => Aeson.Value -> Result Text value
 decode value = case Aeson.fromJSON value of
   Aeson.Error error -> Result.Err (Text.fromLinkedList error)
   Aeson.Success val -> Result.Ok val
@@ -57,3 +61,7 @@ instance (Aeson.FromJSON a) => Aeson.FromJSON (Array a)
 
 
 instance (Aeson.ToJSON a) => Aeson.ToJSON (Array a)
+
+
+instance Default Aeson.Value where
+  def = Aeson.Null

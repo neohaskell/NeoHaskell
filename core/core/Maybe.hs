@@ -78,7 +78,7 @@ andThen =
 
 -- | Attempts to retrieve the value from a @Maybe@. If the @Maybe@ is @Nothing@,
 -- the application will crash abruptly.
-getOrDie :: Maybe a -> a
+getOrDie :: (HasCallStack) => Maybe a -> a
 getOrDie maybe =
   case maybe of
     Just value ->

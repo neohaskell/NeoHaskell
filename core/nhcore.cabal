@@ -18,6 +18,7 @@ common common_cfg
     -fno-warn-partial-type-signatures
     -fno-warn-name-shadowing
     -Werror
+    -threaded
 
   build-depends:
     Cabal,
@@ -27,16 +28,19 @@ common common_cfg
     base,
     bytestring,
     containers,
+    contravariant-extras,
     data-default,
     dir-traverse,
     directory,
     file-embed,
     ghc-prim,
     hasql,
+    hasql-notifications,
+    hasql-pool,
     hasql-th,
     hspec,
     http-conduit,
-    nanotime,
+    monad-loops,
     optparse-applicative,
     path,
     pretty-simple,
@@ -47,6 +51,7 @@ common common_cfg
     template-haskell,
     text,
     text-manipulate,
+    time,
     transformers,
     unagi-chan,
     uuid,
@@ -132,7 +137,12 @@ library
     Service.EventStore.InMemory
     Service.EventStore.Postgres
     Service.EventStore.Postgres.Internal
+    Service.EventStore.Postgres.Internal.Core
+    Service.EventStore.Postgres.Internal.Notifications
+    Service.EventStore.Postgres.Internal.PostgresEventRecord
     Service.EventStore.Postgres.Internal.Sessions
+    Service.EventStore.Postgres.Internal.SubscriptionStore
+    Stream
     Subprocess
     Task
     Test
@@ -193,9 +203,15 @@ library
 test-suite nhcore-test
   import: common_cfg
   default-language: GHC2021
+  ghc-options:
+    -rtsopts
+    -with-rtsopts=-N
+
   other-modules:
     Service.EventStore.InMemorySpec
+    Service.EventStore.Postgres.Internal.SubscriptionStoreSpec
     Service.EventStore.PostgresSpec
+    StreamSpec
     Test.AppSpec.AppSpecSpec
     Test.AppSpec.VerifySpec
 

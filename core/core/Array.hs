@@ -17,6 +17,7 @@ module Array (
   get,
   maximum,
   minimum,
+  contains,
 
   -- * Manipulate
   set,
@@ -42,6 +43,7 @@ module Array (
   take,
   drop,
   indexed,
+  getJusts,
 
   -- * Partitioning?
   partitionBy,
@@ -51,6 +53,7 @@ module Array (
   -- * Compatibility
   unwrap,
   fromLegacy,
+  first,
   last,
   zip,
   zipWith,
@@ -58,11 +61,13 @@ module Array (
   reverse,
   flatten,
   prepend,
+  pushBack,
 ) where
 
 import Basics
 import Collection (Collection (..))
 import Control.Monad qualified
+import Data.Default (Default (..))
 import Data.Foldable qualified
 import Data.Vector ((!?), (++), (//))
 import Data.Vector qualified
@@ -72,6 +77,7 @@ import IO (IO)
 import LinkedList (LinkedList)
 import LinkedList qualified
 import Maybe (Maybe (..))
+import Maybe qualified
 import Test.QuickCheck qualified as QuickCheck
 import Tuple qualified
 import Prelude qualified
@@ -82,6 +88,10 @@ import Prelude qualified
 -- dream up.
 newtype Array a = Array (Data.Vector.Vector a)
   deriving (Prelude.Eq, Prelude.Show, Prelude.Ord, Prelude.Functor, Generic)
+
+
+instance (Default a) => Default (Array a) where
+  def = fromLinkedList [def, def, def]
 
 
 instance Collection Array where
@@ -278,6 +288,15 @@ push a (Array vector) =
   Array (Data.Vector.snoc vector a)
 
 
+-- | Prepends an element onto the end of an array.
+--
+-- >>> push 3 (fromLinkedList [1,2] :: Array Int)
+-- Array [3,1,2]
+pushBack :: a -> Array a -> Array a
+pushBack a (Array vector) =
+  Array (Data.Vector.cons a vector)
+
+
 -- | Create a list of elements from an array.
 --
 -- >>> toLinkedList (fromLinkedList [3,5,8] :: Array Int)
@@ -408,26 +427,6 @@ slice from to (Array vector)
   sliceLen = to' - from'
 
 
--- | Applies a function to each element of an array and flattens the resulting arrays into a single array.
---
--- This function takes a function `f` and an array `array`. It applies `f` to each element of `array` and
--- collects the resulting arrays into a single array. The resulting array is then returned.
---
--- The function `f` should take an element of type `a` and return an array of type `Array b`.
---
--- The `flatMap` function is implemented using the `map` and `reduce` functions. First, it applies `f` to each
--- element of `array` using the `map` function. Then, it flattens the resulting arrays into a single array
--- using the `reduce` function with the `append` function as the folding operation and `empty` as the initial
--- value. The resulting array is then returned.
-
--- This function is commonly used in functional programming to apply a function to each element of a nested
--- data structure and flatten the resulting structure into a single level.
--- >>> flatMap (\n -> fromLinkedList [n, n]) (fromLinkedList [1, 2, 3] :: Array Int)
--- Array [1,1,2,2,3,3]
--- >>> flatMap (\n -> if n > 1 then fromLinkedList [show n] else empty) (fromLinkedList [0, 1, 2, 3] :: Array Int)
--- Array ["2","3"]
--- >>> flatMap (\s -> fromLinkedList [s, s]) (empty :: Array String)
--- Array []
 flatMap ::
   -- | The function to apply to each element of the array.
   (a -> Array b) ->
@@ -435,10 +434,9 @@ flatMap ::
   Array a ->
   -- | The resulting flattened array.
   Array b
-flatMap f array =
-  array
-    |> map f
-    |> reduce append empty
+flatMap f (Array vector) = do
+  let unwrappingF = f .> unwrap
+  vector |> Data.Vector.concatMap unwrappingF |> Array
 
 
 -- >>> foldM (\acc x -> do { putStrLn ("Adding " ++ show x ++ " to " ++ show acc); pure (acc + x) }) 0 (fromLinkedList [10, 5, 2] :: Array Int)
@@ -627,3 +625,37 @@ minimum (Array vector) =
   if Data.Vector.null vector
     then Nothing
     else Just (Data.Vector.minimum vector)
+
+
+-- | Check if an array contains a specific element.
+--
+-- >>> contains 2 (fromLinkedList [1,2,3] :: Array Int)
+-- True
+-- >>> contains 5 (fromLinkedList [1,2,3] :: Array Int)
+-- False
+-- >>> contains 1 (fromLinkedList [] :: Array Int)
+-- False
+contains :: forall (value :: Type). (Eq value) => value -> Array value -> Bool
+contains element array = do
+  let checkElement arrayElement = arrayElement == element
+  any checkElement array
+
+
+-- | Extract all `Just` values from an array of `Maybe` values, discarding `Nothing`.
+--
+-- >>> getJusts (fromLinkedList [Just 1, Nothing, Just 3, Nothing, Just 5] :: Array (Maybe Int))
+-- Array [1,3,5]
+-- >>> getJusts (fromLinkedList [Nothing, Nothing] :: Array (Maybe Int))
+-- Array []
+-- >>> getJusts (fromLinkedList [Just 1, Just 2] :: Array (Maybe Int))
+-- Array [1,2]
+-- >>> getJusts (fromLinkedList [] :: Array (Maybe Int))
+-- Array []
+getJusts :: Array (Maybe value) -> Array value
+getJusts self = do
+  let maybeItemToArray item =
+        item
+          |> Maybe.map wrap
+          |> Maybe.withDefault empty
+  self
+    |> flatMap maybeItemToArray

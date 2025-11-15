@@ -6,8 +6,8 @@ import ConcurrentVar qualified
 import Core
 import Service.Event (Event (..))
 import Service.Event qualified as Event
+import Service.Event.StreamId qualified as StreamId
 import Service.EventStore (EventStore (..))
-import Service.EventStore.Core qualified as EventStore
 import Task qualified
 import Test
 import Test.Service.EventStore.Core (MyEvent, newInsertion)
@@ -21,7 +21,7 @@ spec newStore = do
       store <- newStore
 
       -- Create test data
-      streamId <- Uuid.generate |> Task.map Event.StreamId
+      streamId <- StreamId.new
       entityNameText <- Uuid.generate |> Task.map toText
       let entityName = Event.EntityName entityNameText
       insertion <- newInsertion 0
@@ -40,7 +40,7 @@ spec newStore = do
       -- Define subscriber function that collects events
       let subscriber event = do
             receivedEvents |> ConcurrentVar.modify (Array.push event)
-            Task.yield () :: Task EventStore.Error Unit
+            Task.yield unit :: Task Text Unit
 
       -- Subscribe to all events
       subscriptionId <-

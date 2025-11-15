@@ -42,17 +42,21 @@ write values self =
 
 -- | Like write, but passes the index of the value to the function
 -- so that the function can return the indexed value.
+-- The function f should return an array of values to be written.
+-- Returns the starting index where the values were written.
 writeWithIndex :: (Int -> Array value) -> DurableChannel value -> Task _ Int
 writeWithIndex f self = do
   Lock.with self.lock do
-    let modifier v = do
-          let index = Array.length v
-          Task.yield (v, index)
-    index <-
-      self.values
-        |> ConcurrentVar.modifyReturning modifier
-    let value = f index
-    self |> writeNoLock value
+    -- Get the current index
+    currentValues <- ConcurrentVar.peek self.values
+    let index = Array.length currentValues
+
+    -- Create the values using the index
+    let values = f index
+
+    -- Write all values atomically
+    self |> writeNoLock values
+
     Task.yield index
 
 

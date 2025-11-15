@@ -9,8 +9,10 @@ import Result qualified
 import Service.Event (Event (..))
 import Service.Event qualified as Event
 import Service.Event.EventMetadata (EventMetadata (..))
+import Service.Event.StreamId qualified as StreamId
 import Service.EventStore (EventStore (..))
 import Service.EventStore.Core qualified as EventStore
+import Stream qualified
 import Task qualified
 import Test
 import Test.Service.EventStore.Core (MyEvent, newInsertion)
@@ -22,7 +24,7 @@ import Uuid qualified
 spec :: Task Text (EventStore MyEvent) -> Spec Unit
 spec newStore = do
   describe "Event Store Subscriptions" do
-    beforeAll (Context.initialize newStore) do
+    before (Context.initialize newStore) do
       it "allows subscribing to all events and receives them when appended" \context -> do
         -- Create a shared variable to collect received events
         receivedEvents <- ConcurrentVar.containing (Array.empty :: Array (Event MyEvent))
@@ -30,7 +32,7 @@ spec newStore = do
         -- Define subscriber function that collects events
         let subscriber event = do
               receivedEvents |> ConcurrentVar.modify (Array.push event)
-              Task.yield () :: Task EventStore.Error Unit
+              Task.yield unit :: Task Text Unit
 
         -- Subscribe to all events
         subscriptionId <-
@@ -75,7 +77,7 @@ spec newStore = do
         -- Create another entity and stream to test filtering
         otherEntityNameText <- Uuid.generate |> Task.map toText
         let otherEntityName = Event.EntityName otherEntityNameText
-        otherStreamId <- Uuid.generate |> Task.map Event.StreamId
+        otherStreamId <- StreamId.new
         otherInsertion <- newInsertion 0
         let otherEvent =
               Event.InsertionPayload
@@ -91,7 +93,7 @@ spec newStore = do
         -- Define subscriber function that collects events
         let subscriber event = do
               receivedEvents |> ConcurrentVar.modify (Array.push event)
-              Task.yield () :: Task EventStore.Error Unit
+              Task.yield unit :: Task Text Unit
 
         -- Subscribe only to our test entity events
         subscriptionId <-
@@ -137,7 +139,7 @@ spec newStore = do
 
       it "allows subscribing to specific stream events only" \context -> do
         -- Create another stream to test filtering
-        otherStreamId <- Uuid.generate |> Task.map Event.StreamId
+        otherStreamId <- StreamId.new
         otherInsertion <- newInsertion 0
         let otherEvent =
               Event.InsertionPayload
@@ -153,7 +155,7 @@ spec newStore = do
         -- Define subscriber function that collects events
         let subscriber event = do
               receivedEvents |> ConcurrentVar.modify (Array.push event)
-              Task.yield () :: Task EventStore.Error Unit
+              Task.yield unit :: Task Text Unit
 
         -- Subscribe only to our test stream events
         subscriptionId <-
@@ -200,7 +202,7 @@ spec newStore = do
       it "handles subscription errors gracefully without affecting event store operations" \context -> do
         -- Create a subscriber that always fails
         let failingSubscriber _event = do
-              Task.throw (EventStore.StorageFailure "Subscriber intentionally failed") :: Task EventStore.Error Unit
+              Task.throw "Subscriber intentionally failed" :: Task Text Unit
 
         -- Subscribe with failing function
         subscriptionId <-
@@ -229,8 +231,10 @@ spec newStore = do
             (Event.StreamPosition 0)
             (EventStore.Limit 1)
             |> Task.mapError toText
+            |> Task.andThen Stream.toArray
 
         events
+          |> EventStore.collectStreamEvents
           |> Array.length
           |> shouldBe 1
 
@@ -248,13 +252,13 @@ spec newStore = do
         -- Define different subscriber functions
         let subscriber1 event = do
               subscriber1Events |> ConcurrentVar.modify (Array.push event)
-              Task.yield () :: Task EventStore.Error Unit
+              Task.yield unit :: Task Text Unit
         let subscriber2 event = do
               subscriber2Events |> ConcurrentVar.modify (Array.push event)
-              Task.yield () :: Task EventStore.Error Unit
+              Task.yield unit :: Task Text Unit
         let subscriber3 event = do
               subscriber3Events |> ConcurrentVar.modify (Array.push event)
-              Task.yield () :: Task EventStore.Error Unit
+              Task.yield unit :: Task Text Unit
 
         -- Subscribe all three concurrently
         subscriptionIds <-
@@ -311,7 +315,7 @@ spec newStore = do
         -- Define subscriber function
         let subscriber event = do
               receivedEvents |> ConcurrentVar.modify (Array.push event)
-              Task.yield () :: Task EventStore.Error Unit
+              Task.yield unit :: Task Text Unit
 
         -- Subscribe to all events
         subscriptionId <-
@@ -360,16 +364,16 @@ spec newStore = do
         -- Define subscriber function that tracks events
         let subscriber event = do
               receivedEvents |> ConcurrentVar.modify (Array.push event)
-              Task.yield () :: Task EventStore.Error Unit
+              Task.yield unit :: Task Text Unit
 
         -- Subscribe to all events
         subscriptionId <-
           context.store.subscribeToAllEvents subscriber
             |> Task.mapError toText
 
-        -- Rapidly insert many events (start from position 11)
+        -- Rapidly insert many events
         let rapidEventCount = 50
-        rapidEvents <- createRapidTestEventsFromPosition context.streamId context.entityName rapidEventCount 11
+        rapidEvents <- createRapidTestEventsFromPosition context.streamId context.entityName rapidEventCount 0
 
         -- Insert all events as quickly as possible
         let insertEvent event = do
@@ -388,14 +392,14 @@ spec newStore = do
           |> Array.length
           |> shouldBe rapidEventCount
 
-        -- Verify events are in order (starting from position 11)
+        -- Verify events are in order (starting from position 0 in this stream)
         received
           |> Array.indexed
           |> Task.forEach
             ( \(index, event) -> do
                 event.metadata.localPosition
                   |> Maybe.getOrDie
-                  |> shouldBe (Event.StreamPosition (11 + index |> fromIntegral))
+                  |> shouldBe (Event.StreamPosition (index |> fromIntegral))
             )
 
         -- Clean up subscription
@@ -408,8 +412,8 @@ spec newStore = do
         let entity1Id = Event.EntityName entity1IdText
         entity2IdText <- Uuid.generate |> Task.map toText
         let entity2Id = Event.EntityName entity2IdText
-        stream1Id <- Uuid.generate |> Task.map Event.StreamId
-        stream2Id <- Uuid.generate |> Task.map Event.StreamId
+        stream1Id <- StreamId.new
+        stream2Id <- StreamId.new
 
         -- Insert events for both entities BEFORE subscribing (these should NOT be received)
         let eventCount = 5
@@ -428,14 +432,14 @@ spec newStore = do
               -- Only track events from our test entities
               if event.entityName == entity1Id || event.entityName == entity2Id
                 then receivedEvents |> ConcurrentVar.modify (Array.push event)
-                else Task.yield ()
-              Task.yield () :: Task EventStore.Error Unit
+                else Task.yield unit
+              Task.yield unit :: Task Text Unit
 
         -- Subscribe to all events (this should only receive NEW events "from now on")
         subscriptionId <- context.store.subscribeToAllEvents subscriber |> Task.mapError toText
 
         -- Wait a bit to ensure subscription is active
-        AsyncTask.sleep 10 |> Task.mapError (\_ -> "timeout")
+        AsyncTask.sleep 100 |> Task.mapError (\_ -> "timeout")
 
         -- Insert events for both entities AFTER subscribing (these SHOULD be received)
         postSubscriptionEvents1 <- createTestEventsForEntity stream1Id entity1Id eventCount eventCount
@@ -469,8 +473,8 @@ spec newStore = do
         let entity1Id = Event.EntityName entity1IdText
         entity2IdText <- Uuid.generate |> Task.map toText
         let entity2Id = Event.EntityName entity2IdText
-        stream1Id <- Uuid.generate |> Task.map Event.StreamId
-        stream2Id <- Uuid.generate |> Task.map Event.StreamId
+        stream1Id <- StreamId.new
+        stream2Id <- StreamId.new
 
         -- Insert FIRST batch of events to create historical data
         let eventCount = 5
@@ -493,8 +497,8 @@ spec newStore = do
               -- Only track events from our test entities
               if event.entityName == entity1Id || event.entityName == entity2Id
                 then receivedEvents |> ConcurrentVar.modify (Array.push event)
-                else Task.yield ()
-              Task.yield () :: Task EventStore.Error Unit
+                else Task.yield unit
+              Task.yield unit :: Task Text Unit
 
         -- Subscribe from the specific position (should receive events AFTER this position)
         subscriptionId <-
@@ -539,6 +543,69 @@ spec newStore = do
 
         entity1Events |> Array.length |> shouldBe eventCount
         entity2Events |> Array.length |> shouldBe eventCount
+
+        -- Clean up subscription
+        context.store.unsubscribe subscriptionId |> Task.mapError toText |> discard
+
+      it "subscribes from start - receives ALL events including historical ones" \context -> do
+        entity1IdText <- Uuid.generate |> Task.map toText
+        let entity1Id = Event.EntityName entity1IdText
+        entity2IdText <- Uuid.generate |> Task.map toText
+        let entity2Id = Event.EntityName entity2IdText
+        stream1Id <- StreamId.new
+        stream2Id <- StreamId.new
+
+        -- Insert FIRST batch of events BEFORE subscribing (historical data)
+        let eventCount = 5
+        firstBatchEvents1 <- createTestEventsForEntity stream1Id entity1Id eventCount 0
+        firstBatchEvents2 <- createTestEventsForEntity stream2Id entity2Id eventCount 0
+
+        -- Insert first batch
+        let insertEvent event = context.store.insert event |> Task.mapError toText
+        firstBatchEvents1 |> Task.mapArray insertEvent |> discard
+        firstBatchEvents2 |> Task.mapArray insertEvent |> discard
+
+        -- Set up subscription tracking
+        receivedEvents <- ConcurrentVar.containing (Array.empty :: Array (Event MyEvent))
+
+        let subscriber event = do
+              -- Only track events from our test entities
+              if event.entityName == entity1Id || event.entityName == entity2Id
+                then receivedEvents |> ConcurrentVar.modify (Array.push event)
+                else Task.yield unit
+              Task.yield unit :: Task Text Unit
+
+        -- Subscribe from the START (should receive ALL events including historical ones)
+        subscriptionId <-
+          context.store.subscribeToAllEventsFromStart subscriber |> Task.mapError toText
+
+        -- Wait for subscription to process historical events (catch-up phase)
+        AsyncTask.sleep 100 |> Task.mapError (\_ -> "timeout")
+
+        -- Insert SECOND batch of events AFTER subscribing (live events)
+        secondBatchEvents1 <- createTestEventsForEntity stream1Id entity1Id eventCount eventCount
+        secondBatchEvents2 <- createTestEventsForEntity stream2Id entity2Id eventCount eventCount
+
+        -- Insert second batch
+        secondBatchEvents1 |> Task.mapArray insertEvent |> discard
+        secondBatchEvents2 |> Task.mapArray insertEvent |> discard
+
+        -- Wait for live events to be processed
+        AsyncTask.sleep 100 |> Task.mapError (\_ -> "timeout")
+
+        -- Verify we received ALL events (both historical and live)
+        received <- ConcurrentVar.get receivedEvents
+
+        -- Should have received eventCount * 4 total events
+        -- (first batch: 5 entity1 + 5 entity2, second batch: 5 entity1 + 5 entity2)
+        received |> Array.length |> shouldBe (eventCount * 4)
+
+        -- Events should be properly partitioned by entity
+        let entity1Events = received |> Array.takeIf (\event -> event.entityName == entity1Id)
+        let entity2Events = received |> Array.takeIf (\event -> event.entityName == entity2Id)
+
+        entity1Events |> Array.length |> shouldBe (eventCount * 2)
+        entity2Events |> Array.length |> shouldBe (eventCount * 2)
 
         -- Clean up subscription
         context.store.unsubscribe subscriptionId |> Task.mapError toText |> discard

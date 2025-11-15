@@ -10,6 +10,11 @@ module Map (
   entries,
   contains,
   remove,
+  getOrElse,
+  length,
+  values,
+  keys,
+  mapValues,
 ) where
 
 import Accumulator (Accumulator)
@@ -20,6 +25,7 @@ import Basics
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as HaskellMap
 import Maybe (Maybe)
+import Maybe qualified
 
 
 -- | Merge two `Map`s.
@@ -67,6 +73,13 @@ get :: (Eq key, Ord key) => key -> Map key value -> Maybe value
 get key map = HaskellMap.lookup key map
 
 
+-- | Get the value from a `Map`, defaulting to a value
+getOrElse :: (Eq key, Ord key) => key -> value -> Map key value -> value
+getOrElse key defaultValue map =
+  get key map
+    |> Maybe.withDefault defaultValue
+
+
 -- | Reduce a `Map`.
 reduce :: acc -> (key -> value -> acc -> acc) -> Map key value -> acc
 reduce acc f map = HaskellMap.foldrWithKey f acc map
@@ -75,6 +88,16 @@ reduce acc f map = HaskellMap.foldrWithKey f acc map
 -- | Converts a map to an array of tuples
 entries :: Map key value -> Array (key, value)
 entries self = HaskellMap.toList self |> Array.fromLinkedList
+
+
+-- | Gets all the values in a map
+values :: Map key value -> Array value
+values self = HaskellMap.elems self |> Array.fromLinkedList
+
+
+-- | Gets all the keys in a map
+keys :: Map key value -> Array key
+keys self = HaskellMap.keys self |> Array.fromLinkedList
 
 
 -- | Checks if a key exists in a map
@@ -86,3 +109,13 @@ contains key map = HaskellMap.member key map
 -- | Removes an element from the map
 remove :: (Ord key) => key -> Map key value -> Map key value
 remove key self = HaskellMap.delete key self
+
+
+-- | Returns the length of the map
+length :: Map key value -> Int
+length self = HaskellMap.size self
+
+
+-- | Maps a function over the values in a map
+mapValues :: (valueA -> valueB) -> Map key valueA -> Map key valueB
+mapValues f self = HaskellMap.map f self

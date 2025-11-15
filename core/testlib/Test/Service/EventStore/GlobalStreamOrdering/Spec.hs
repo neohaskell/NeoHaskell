@@ -7,6 +7,8 @@ import Service.Event qualified as Event
 import Service.Event.EventMetadata (EventMetadata (..))
 import Service.EventStore (EventStore (..))
 import Service.EventStore qualified as EventStore
+import Service.EventStore.Core qualified as Event
+import Stream qualified
 import Task qualified
 import Test
 import Test.Service.EventStore.Core (MyEvent)
@@ -44,9 +46,11 @@ spec newStore = do
       it "has the correct number of events globally" \context -> do
         let expectedTotalEvents = context.streamCount * context.eventsPerStream |> fromIntegral
         let limit = EventStore.Limit (expectedTotalEvents)
-        allGlobalEvents <-
+        allGlobalMessages <-
           context.store.readAllEventsForwardFrom (Event.StreamPosition 0) limit
             |> Task.mapError toText
+            |> Task.andThen Stream.toArray
+        let allGlobalEvents = Event.collectAllEvents allGlobalMessages
         allGlobalEvents
           |> Array.length
           |> shouldBe (context.streamCount * context.eventsPerStream)
@@ -56,17 +60,21 @@ spec newStore = do
         allGlobalEvents <-
           context.store.readAllEventsForwardFrom (Event.StreamPosition 0) (EventStore.Limit (expectedTotalEvents))
             |> Task.mapError toText
+            |> Task.andThen Stream.toArray
+            |> Task.map Event.collectAllEvents
         allGlobalEvents |> Task.forEach \event -> do
           event.metadata.globalPosition |> shouldSatisfy (\pos -> pos >= (Event.StreamPosition 0 |> Just))
 
       it "can read events from a specific position" \context -> do
         let expectedTotalEvents = context.streamCount * context.eventsPerStream
         let midPoint = expectedTotalEvents // 2
-        laterGlobalEvents <-
+        laterGlobalMessages <-
           context.store.readAllEventsForwardFrom
             (Event.StreamPosition (fromIntegral midPoint))
             (EventStore.Limit (expectedTotalEvents |> fromIntegral))
             |> Task.mapError toText
+            |> Task.andThen Stream.toArray
+        let laterGlobalEvents = Event.collectAllEvents laterGlobalMessages
         laterGlobalEvents
           |> Array.length
           |> shouldSatisfy (\count -> count <= expectedTotalEvents - midPoint)
@@ -76,6 +84,8 @@ spec newStore = do
         allGlobalEvents <-
           context.store.readAllEventsForwardFrom (Event.StreamPosition 0) (EventStore.Limit (expectedTotalEvents))
             |> Task.mapError toText
+            |> Task.andThen Stream.toArray
+            |> Task.map Event.collectAllEvents
         Task.unless ((Array.length allGlobalEvents) <= 1) do
           let eventPairs =
                 allGlobalEvents

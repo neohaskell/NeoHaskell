@@ -63,6 +63,8 @@ module Basics (
   sqrt,
   logBase,
   e,
+  maxValue,
+  minValue,
 
   -- * Angles
   degrees,
@@ -618,6 +620,24 @@ logBase =
 e :: Float
 e =
   Prelude.exp 1
+
+
+-- | Get the maximum value for a bounded type.
+--
+-- > maxValue :: Int  -- returns the maximum Int value
+-- > maxValue :: Bool -- returns True
+maxValue :: (Prelude.Bounded a) => a
+maxValue =
+  Prelude.maxBound
+
+
+-- | Get the minimum value for a bounded type.
+--
+-- > minValue :: Int  -- returns the minimum Int value
+-- > minValue :: Bool -- returns False
+minValue :: (Prelude.Bounded a) => a
+minValue =
+  Prelude.minBound
 
 
 -- | Convert radians to standard Elm angles (radians).

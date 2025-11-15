@@ -11,6 +11,7 @@ import Service.Event.EventMetadata (EventMetadata (..))
 import Service.Event.EventMetadata qualified as EventMetadata
 import Service.EventStore (EventStore)
 import Service.EventStore.Core qualified as EventStore
+import Stream qualified
 import Task qualified
 import Test
 import Test.Service.EventStore.Core (MyEvent (..))
@@ -116,9 +117,12 @@ spec newStore = do
           |> shouldBe 1
 
         -- Read back all events to verify
-        events <-
+        streamMessages <-
           context.store.readStreamForwardFrom entityName context.streamId (Event.StreamPosition 0) (EventStore.Limit (10))
             |> Task.mapError toText
+            |> Task.andThen Stream.toArray
+
+        let events = EventStore.collectStreamEvents streamMessages
 
         -- We should have exactly 2 events (initial + one successful append)
         events
@@ -242,9 +246,12 @@ spec newStore = do
           |> shouldBe (Event.StreamPosition 5)
 
         -- Verify final stream state has 6 events
-        finalEvents <-
+        finalStreamMessages <-
           context.store.readStreamForwardFrom entityName context.streamId (Event.StreamPosition 0) (EventStore.Limit 10)
             |> Task.mapError toText
+            |> Task.andThen Stream.toArray
+
+        let finalEvents = EventStore.collectStreamEvents finalStreamMessages
 
         finalEvents
           |> Array.length
@@ -260,7 +267,6 @@ spec newStore = do
         entityNameText <- Uuid.generate |> Task.map toText
         let entityName = Event.EntityName entityNameText
 
-        -- Create 10 events with specific IDs (same as C# EventCount)
         eventsToInsert <-
           Array.fromLinkedList [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
             |> Task.mapArray
@@ -303,9 +309,11 @@ spec newStore = do
           |> discard
 
         -- Read the stream - should have exactly 10 events (not 20)
-        finalEvents <-
+        finalMessages <-
           context.store.readStreamForwardFrom entityName context.streamId (Event.StreamPosition 0) (EventStore.Limit 20)
             |> Task.mapError toText
+            |> Task.andThen Stream.toArray
+        let finalEvents = EventStore.collectStreamEvents finalMessages
 
         -- Should have exactly 10 events (idempotency - no duplicates)
         finalEvents
@@ -413,6 +421,8 @@ spec newStore = do
         allGlobalEvents <-
           context.store.readAllEventsForwardFrom (Event.StreamPosition 0) (EventStore.Limit 100)
             |> Task.mapError toText
+            |> Task.andThen Stream.toArray
+            |> Task.map EventStore.collectAllEvents
 
         -- Filter to only events from this test (matching our entity name)
         let ourEvents =
@@ -426,9 +436,11 @@ spec newStore = do
           |> shouldBe 2
 
         -- Verify that the events in the global stream match what's in the individual stream
-        streamEvents <-
+        streamMessages <-
           context.store.readStreamForwardFrom entityName context.streamId (Event.StreamPosition 0) (EventStore.Limit 10)
             |> Task.mapError toText
+            |> Task.andThen Stream.toArray
+        let streamEvents = EventStore.collectStreamEvents streamMessages
 
         -- The individual stream should only have the events that passed the consistency check
         streamEvents

@@ -23,6 +23,8 @@ module Task (
   forever,
   errorAsResult,
   fromIOEither,
+  while,
+  ignoreError,
 ) where
 
 import Applicable (Applicative (pure))
@@ -34,6 +36,7 @@ import Control.Exception (Exception)
 import Control.Exception qualified as Exception
 import Control.Monad qualified
 import Control.Monad.IO.Class qualified as Monad
+import Control.Monad.Loops qualified as Loops
 import Control.Monad.Trans.Except (ExceptT)
 import Control.Monad.Trans.Except qualified as Except
 import Data.Either qualified as Either
@@ -265,3 +268,21 @@ errorAsResult task =
       )
     |> Task
 {-# INLINE errorAsResult #-}
+
+
+-- | Repeatedly run a task while a condition is true
+-- The condition is checked before each iteration
+while :: Task err Bool -> Task err Unit -> Task err Unit
+while condition action = Task do
+  Loops.whileM_ (runTask condition) (runTask action)
+{-# INLINE while #-}
+
+
+-- | Ignores error on unit result
+ignoreError :: Task err Unit -> Task _ Unit
+ignoreError task = do
+  result <- task |> asResult
+  case result of
+    Result.Err _ -> yield unit
+    Result.Ok res -> yield res
+{-# INLINE ignoreError #-}

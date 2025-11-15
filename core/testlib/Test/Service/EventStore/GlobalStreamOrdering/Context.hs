@@ -4,7 +4,10 @@ import Array qualified
 import Core
 import Service.Event (Event (..))
 import Service.Event qualified as Event
+import Service.Event.StreamId qualified as StreamId
 import Service.EventStore (EventStore (..))
+import Service.EventStore.Core qualified as EventStore
+import Stream qualified
 import Task qualified
 import Test.Service.EventStore.Core (MyEvent (..), newInsertion)
 import Uuid qualified
@@ -27,8 +30,8 @@ initialize newStore streamCount = do
         Array.fromLinkedList [0 .. streamCount - 1]
           |> Task.mapArray \_ -> do
             entityName <- Uuid.generate |> Task.map toText
-            streamId <- Uuid.generate
-            (Event.EntityName entityName, Event.StreamId streamId) |> Task.yield
+            streamId <- StreamId.new
+            (Event.EntityName entityName, streamId) |> Task.yield
 
   streamIds <- getStreamIds
 
@@ -62,9 +65,12 @@ initialize newStore streamCount = do
   eventStreams <-
     streamIds
       |> Task.mapArray
-        ( \(entityName, streamId) ->
-            store.readAllStreamEvents entityName streamId
-              |> Task.mapError toText
+        ( \(entityName, streamId) -> do
+            streamMessages <-
+              store.readAllStreamEvents entityName streamId
+                |> Task.mapError toText
+                |> Task.andThen Stream.toArray
+            EventStore.collectStreamEvents streamMessages |> Task.yield
         )
 
   Task.yield

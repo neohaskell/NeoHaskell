@@ -5,10 +5,9 @@ module Test.Service.EventStore.OptimisticConcurrency.Context (
 
 import Core
 import Service.Event qualified as Event
+import Service.Event.StreamId qualified as StreamId
 import Service.EventStore (EventStore)
-import Task qualified
 import Test.Service.EventStore.Core (MyEvent)
-import Uuid qualified
 
 
 data Context = Context
@@ -20,5 +19,5 @@ data Context = Context
 initialize :: Task Text (EventStore MyEvent) -> Task Text Context
 initialize newStore = do
   store <- newStore
-  streamId <- Uuid.generate |> Task.map Event.StreamId
+  streamId <- StreamId.new
   pure Context {store, streamId}

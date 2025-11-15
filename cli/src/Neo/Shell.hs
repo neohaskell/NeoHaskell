@@ -84,7 +84,7 @@ handle config = do
       |> Task.mapError (\err -> CustomError [fmt|Failed to open the shell: #{err}|])
   if completion.exitCode != 0
     then errorOut completion.stderr
-    else Task.yield ()
+    else Task.yield unit
 
 
 errorOut :: Text -> Task Error _

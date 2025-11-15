@@ -7,6 +7,7 @@ import Array qualified
 import Core
 import Service.Event (EntityName, StreamId)
 import Service.Event qualified as Event
+import Service.Event.StreamId qualified as StreamId
 import Service.EventStore (EventStore)
 import Task qualified
 import Test.Service.EventStore.Core (MyEvent, newInsertion)
@@ -24,7 +25,7 @@ data Context = Context
 initialize :: Task Text (EventStore MyEvent) -> Task _ Context
 initialize newStore = do
   store <- newStore
-  streamId <- Uuid.generate |> Task.map Event.StreamId
+  streamId <- StreamId.new
   entityNameText <- Uuid.generate |> Task.map toText
   let entityName = Event.EntityName entityNameText
 

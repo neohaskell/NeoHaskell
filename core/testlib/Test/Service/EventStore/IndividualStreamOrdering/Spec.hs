@@ -8,6 +8,7 @@ import Service.Event qualified as Event
 import Service.Event.EventMetadata (EventMetadata (..))
 import Service.EventStore (EventStore)
 import Service.EventStore.Core qualified as EventStore
+import Stream qualified
 import Task qualified
 import Test
 import Test.Service.EventStore.Core (MyEvent)
@@ -35,9 +36,11 @@ specWithCount newStore eventCount = do
         let startPosition =
               Event.StreamPosition 0
         let limit = EventStore.Limit (context.eventCount)
-        events <-
+        streamMessages <-
           context.store.readStreamForwardFrom context.entityName context.streamId startPosition limit
             |> Task.mapError toText
+            |> Task.andThen Stream.toArray
+        let events = EventStore.collectStreamEvents streamMessages
         Array.length events
           |> fromIntegral
           |> shouldBe context.eventCount
@@ -45,9 +48,11 @@ specWithCount newStore eventCount = do
       it "has the correct order" \context -> do
         let startPosition = Event.StreamPosition 0
         let limit = EventStore.Limit (context.eventCount)
-        events <-
+        streamMessages <-
           context.store.readStreamForwardFrom context.entityName context.streamId startPosition limit
             |> Task.mapError toText
+            |> Task.andThen Stream.toArray
+        let events = EventStore.collectStreamEvents streamMessages
         events
           |> Array.map
             ( \event ->
@@ -59,9 +64,11 @@ specWithCount newStore eventCount = do
       it "has all the events" \context -> do
         let startPosition = Event.StreamPosition 0
         let limit = EventStore.Limit (context.eventCount)
-        events <-
+        streamMessages <-
           context.store.readStreamForwardFrom context.entityName context.streamId startPosition limit
             |> Task.mapError toText
+            |> Task.andThen Stream.toArray
+        let events = EventStore.collectStreamEvents streamMessages
 
         -- Validate the important properties without hardcoding global positions
         -- since global positions are assigned dynamically based on append order
@@ -86,9 +93,11 @@ specWithCount newStore eventCount = do
       it "has global positions in strictly increasing order" \context -> do
         let startPosition = Event.StreamPosition 0
         let limit = EventStore.Limit (context.eventCount)
-        events <-
+        streamMessages <-
           context.store.readStreamForwardFrom context.entityName context.streamId startPosition limit
             |> Task.mapError toText
+            |> Task.andThen Stream.toArray
+        let events = EventStore.collectStreamEvents streamMessages
 
         -- Global positions should be strictly increasing
         let globalPositions = events |> Array.map (\e -> e.metadata.globalPosition |> Maybe.getOrDie)
@@ -109,9 +118,11 @@ specWithCount newStore eventCount = do
         let halfwayPoint = (fromIntegral context.eventCount) // 2
         let startPosition = Event.StreamPosition (fromIntegral halfwayPoint)
         let limit = EventStore.Limit (context.eventCount) -- Large enough to get all remaining events
-        eventsFromMiddle <-
+        streamMessages <-
           context.store.readStreamForwardFrom context.entityName context.streamId startPosition limit
             |> Task.mapError toText
+            |> Task.andThen Stream.toArray
+        let eventsFromMiddle = EventStore.collectStreamEvents streamMessages
 
         -- Should read exactly the second half of events
         let expectedRemainingCount = (fromIntegral context.eventCount) - halfwayPoint
@@ -137,9 +148,11 @@ specWithCount newStore eventCount = do
         let halfwayPoint = (fromIntegral context.eventCount) // 2
         let readFromPosition = Event.StreamPosition (halfwayPoint + 1 |> fromIntegral) -- Read from position after halfway point
         let limit = EventStore.Limit (context.eventCount) -- Large enough to get all events before position
-        eventsBackward <-
+        streamMessages <-
           context.store.readStreamBackwardFrom context.entityName context.streamId readFromPosition limit
             |> Task.mapError toText
+            |> Task.andThen Stream.toArray
+        let eventsBackward = EventStore.collectStreamEvents streamMessages
 
         -- Test expects exactly half the events (not including the readFromPosition)
         -- For 10 events (0-9), reading backward from position 6 with < gives us positions 0-5 (6 events)
@@ -173,9 +186,11 @@ specWithCount newStore eventCount = do
         let endPosition = Event.StreamPosition (context.eventCount) -- One past the last event
         let limit = EventStore.Limit (context.eventCount)
 
-        allEventsBackward <-
+        streamMessages <-
           context.store.readStreamBackwardFrom context.entityName context.streamId endPosition limit
             |> Task.mapError toText
+            |> Task.andThen Stream.toArray
+        let allEventsBackward = EventStore.collectStreamEvents streamMessages
 
         -- Should read all events in the stream
         Array.length allEventsBackward |> fromIntegral |> shouldBe context.eventCount

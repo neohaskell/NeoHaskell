@@ -6,6 +6,7 @@ module Test.Service.EventStore.IndividualStreamOrdering.Context (
 import Array qualified
 import Core
 import Service.Event qualified as Event
+import Service.Event.StreamId qualified as StreamId
 import Service.EventStore (EventStore)
 import Service.EventStore.Core qualified as EventStore
 import Task qualified
@@ -27,7 +28,7 @@ data Context = Context
 initialize :: Task Text (EventStore MyEvent) -> Int -> Task Text Context
 initialize newStore eventCountNumber = do
   store <- newStore
-  streamId <- Uuid.generate |> Task.map Event.StreamId
+  streamId <- StreamId.new
   entityName <- Uuid.generate |> Task.map (toText .> Event.EntityName)
   insertions <-
     Array.fromLinkedList [0 .. eventCountNumber - 1]
