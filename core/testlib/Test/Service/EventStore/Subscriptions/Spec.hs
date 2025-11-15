@@ -29,9 +29,11 @@ spec newStore = do
         -- Create a shared variable to collect received events
         receivedEvents <- ConcurrentVar.containing (Array.empty :: Array (Event MyEvent))
 
-        -- Define subscriber function that collects events
+        -- Define subscriber function that collects events (filtering by entity to avoid cross-test interference)
         let subscriber event = do
-              receivedEvents |> ConcurrentVar.modify (Array.push event)
+              if event.entityName == context.entityName
+                then receivedEvents |> ConcurrentVar.modify (Array.push event)
+                else Task.yield unit
               Task.yield unit :: Task Text Unit
 
         -- Subscribe to all events
