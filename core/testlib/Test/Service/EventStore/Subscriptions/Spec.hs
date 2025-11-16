@@ -21,6 +21,18 @@ import Test.Service.EventStore.Subscriptions.Context qualified as Context
 import Uuid qualified
 
 
+-- Helper function to filter events by entity name to avoid cross-test interference
+entityFilteredSubscriber ::
+  Event.EntityName ->
+  (Event MyEvent -> Task Text Unit) ->
+  Event MyEvent ->
+  Task Text Unit
+entityFilteredSubscriber targetEntity handler event = do
+  if event.entityName == targetEntity
+    then handler event
+    else Task.yield unit
+
+
 spec :: Task Text (EventStore MyEvent) -> Spec Unit
 spec newStore = do
   describe "Event Store Subscriptions" do
@@ -30,9 +42,9 @@ spec newStore = do
         receivedEvents <- ConcurrentVar.containing (Array.empty :: Array (Event MyEvent))
 
         -- Define subscriber function that collects events
-        let subscriber event = do
+        let collectEvent event = do
               receivedEvents |> ConcurrentVar.modify (Array.push event)
-              Task.yield unit :: Task Text Unit
+        let subscriber = entityFilteredSubscriber context.entityName collectEvent
 
         -- Subscribe to all events
         subscriptionId <-
@@ -201,8 +213,9 @@ spec newStore = do
 
       it "handles subscription errors gracefully without affecting event store operations" \context -> do
         -- Create a subscriber that always fails
-        let failingSubscriber _event = do
+        let failingHandler _event = do
               Task.throw "Subscriber intentionally failed" :: Task Text Unit
+        let failingSubscriber = entityFilteredSubscriber context.entityName failingHandler
 
         -- Subscribe with failing function
         subscriptionId <-
@@ -250,15 +263,12 @@ spec newStore = do
         subscriber3Events <- ConcurrentVar.containing (Array.empty :: Array (Event MyEvent))
 
         -- Define different subscriber functions
-        let subscriber1 event = do
-              subscriber1Events |> ConcurrentVar.modify (Array.push event)
-              Task.yield unit :: Task Text Unit
-        let subscriber2 event = do
-              subscriber2Events |> ConcurrentVar.modify (Array.push event)
-              Task.yield unit :: Task Text Unit
-        let subscriber3 event = do
-              subscriber3Events |> ConcurrentVar.modify (Array.push event)
-              Task.yield unit :: Task Text Unit
+        let collectToVar1 event = subscriber1Events |> ConcurrentVar.modify (Array.push event)
+        let collectToVar2 event = subscriber2Events |> ConcurrentVar.modify (Array.push event)
+        let collectToVar3 event = subscriber3Events |> ConcurrentVar.modify (Array.push event)
+        let subscriber1 = entityFilteredSubscriber context.entityName collectToVar1
+        let subscriber2 = entityFilteredSubscriber context.entityName collectToVar2
+        let subscriber3 = entityFilteredSubscriber context.entityName collectToVar3
 
         -- Subscribe all three concurrently
         subscriptionIds <-
@@ -313,9 +323,8 @@ spec newStore = do
         receivedEvents <- ConcurrentVar.containing (Array.empty :: Array (Event MyEvent))
 
         -- Define subscriber function
-        let subscriber event = do
-              receivedEvents |> ConcurrentVar.modify (Array.push event)
-              Task.yield unit :: Task Text Unit
+        let collectEvent event = receivedEvents |> ConcurrentVar.modify (Array.push event)
+        let subscriber = entityFilteredSubscriber context.entityName collectEvent
 
         -- Subscribe to all events
         subscriptionId <-
@@ -362,9 +371,8 @@ spec newStore = do
         receivedEvents <- ConcurrentVar.containing (Array.empty :: Array (Event MyEvent))
 
         -- Define subscriber function that tracks events
-        let subscriber event = do
-              receivedEvents |> ConcurrentVar.modify (Array.push event)
-              Task.yield unit :: Task Text Unit
+        let collectEvent event = receivedEvents |> ConcurrentVar.modify (Array.push event)
+        let subscriber = entityFilteredSubscriber context.entityName collectEvent
 
         -- Subscribe to all events
         subscriptionId <-
