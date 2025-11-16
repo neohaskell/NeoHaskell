@@ -202,9 +202,11 @@ spec newStore = do
           |> discard
 
       it "handles subscription errors gracefully without affecting event store operations" \context -> do
-        -- Create a subscriber that always fails
-        let failingSubscriber _event = do
-              Task.throw "Subscriber intentionally failed" :: Task Text Unit
+        -- Create a subscriber that always fails (filtering by entity to avoid cross-test interference)
+        let failingSubscriber event = do
+              if event.entityName == context.entityName
+                then Task.throw "Subscriber intentionally failed" :: Task Text Unit
+                else Task.yield unit
 
         -- Subscribe with failing function
         subscriptionId <-
@@ -251,15 +253,21 @@ spec newStore = do
         subscriber2Events <- ConcurrentVar.containing (Array.empty :: Array (Event MyEvent))
         subscriber3Events <- ConcurrentVar.containing (Array.empty :: Array (Event MyEvent))
 
-        -- Define different subscriber functions
+        -- Define different subscriber functions (filtering by entity to avoid cross-test interference)
         let subscriber1 event = do
-              subscriber1Events |> ConcurrentVar.modify (Array.push event)
+              if event.entityName == context.entityName
+                then subscriber1Events |> ConcurrentVar.modify (Array.push event)
+                else Task.yield unit
               Task.yield unit :: Task Text Unit
         let subscriber2 event = do
-              subscriber2Events |> ConcurrentVar.modify (Array.push event)
+              if event.entityName == context.entityName
+                then subscriber2Events |> ConcurrentVar.modify (Array.push event)
+                else Task.yield unit
               Task.yield unit :: Task Text Unit
         let subscriber3 event = do
-              subscriber3Events |> ConcurrentVar.modify (Array.push event)
+              if event.entityName == context.entityName
+                then subscriber3Events |> ConcurrentVar.modify (Array.push event)
+                else Task.yield unit
               Task.yield unit :: Task Text Unit
 
         -- Subscribe all three concurrently
@@ -314,9 +322,11 @@ spec newStore = do
         -- Create a shared variable to collect received events
         receivedEvents <- ConcurrentVar.containing (Array.empty :: Array (Event MyEvent))
 
-        -- Define subscriber function
+        -- Define subscriber function (filtering by entity to avoid cross-test interference)
         let subscriber event = do
-              receivedEvents |> ConcurrentVar.modify (Array.push event)
+              if event.entityName == context.entityName
+                then receivedEvents |> ConcurrentVar.modify (Array.push event)
+                else Task.yield unit
               Task.yield unit :: Task Text Unit
 
         -- Subscribe to all events
@@ -363,9 +373,11 @@ spec newStore = do
         -- Create a shared variable to collect received events
         receivedEvents <- ConcurrentVar.containing (Array.empty :: Array (Event MyEvent))
 
-        -- Define subscriber function that tracks events
+        -- Define subscriber function that tracks events (filtering by entity to avoid cross-test interference)
         let subscriber event = do
-              receivedEvents |> ConcurrentVar.modify (Array.push event)
+              if event.entityName == context.entityName
+                then receivedEvents |> ConcurrentVar.modify (Array.push event)
+                else Task.yield unit
               Task.yield unit :: Task Text Unit
 
         -- Subscribe to all events
