@@ -19,30 +19,11 @@ data Error
   deriving (Eq, Show)
 
 
--- | An entity reducer is responsible for fetching an entity's current state
---   by reading all events from the event store and applying a reduction function.
---
---   The reducer takes an initial state and a reduce function that applies events
---   to update the state.
 data EntityReducer state event = EntityReducer
-  { -- | Fetch an entity's current state by entity name and stream ID.
-    --   Reads all events from the event store and applies the reduction function
-    --   to compute the current state.
-    fetch :: EntityName -> StreamId -> Task Error state
+  { fetch :: EntityName -> StreamId -> Task Error state
   }
 
 
--- | Create a new entity reducer with the given event store, initial state, and reduce function.
---
---   The reduce function takes the current state and an event, and returns the new state
---   after applying the event.
---
---   Example:
---
---   @
---   reducer <- Entity.new eventStore initialState applyEvent
---   state <- reducer.fetch entityName streamId
---   @
 new ::
   forall state event.
   EventStore event ->
