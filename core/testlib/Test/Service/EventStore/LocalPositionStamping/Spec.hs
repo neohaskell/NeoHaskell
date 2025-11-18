@@ -87,14 +87,32 @@ spec newStore = do
       Array.length captured |> shouldBe 2
 
       -- THIS IS THE BUG: Subscribers should receive events with local positions
-      captured
-        |> Array.indexed
-        |> Task.forEach \(index, event) -> do
-          case event.metadata.localPosition of
-            Nothing ->
-              fail [fmt|Subscriber received event at index #{toText index} with no local position!|]
-            Just (Event.StreamPosition pos) ->
-              pos |> shouldBe (fromIntegral index)
+      -- Due to async notifications, events may arrive in any order, so we check
+      -- that we have the expected set of positions (0 and 1) rather than assuming order
+
+      -- First verify all events have local positions
+      captured |> Task.forEach \event -> do
+        case event.metadata.localPosition of
+          Nothing -> fail "Subscriber received event with no local position!"
+          Just _ -> Task.yield unit
+
+      -- Check we received both position 0 and position 1 (in any order)
+      let hasPosition pos =
+            captured
+              |> Array.takeIf
+                ( \event ->
+                    case event.metadata.localPosition of
+                      Just (Event.StreamPosition p) -> p == pos
+                      Nothing -> False
+                )
+              |> Array.length
+              |> (== 1)
+
+      Task.unless (hasPosition 0) do
+        fail "Expected to receive event with local position 0"
+
+      Task.unless (hasPosition 1) do
+        fail "Expected to receive event with local position 1"
 
     it "derives local positions from stream length at insert time" \_ -> do
       store <- newStore
