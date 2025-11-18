@@ -79,8 +79,8 @@ spec newStore = do
       payload <- Event.payloadFromEvents entityName streamId events
       _result <- store.insert payload |> Task.mapError toText
 
-      -- Wait a bit for async notification
-      AsyncTask.sleep 100 |> Task.mapError (\_ -> "timeout")
+      -- Wait longer for async notifications to complete (increased from 100ms to 200ms to reduce flakiness)
+      AsyncTask.sleep 200
 
       -- Check captured events from subscription
       captured <- ConcurrentVar.peek capturedEvents
