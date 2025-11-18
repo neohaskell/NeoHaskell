@@ -227,7 +227,7 @@ spec newStoreAndReducer = do
                   metadata <- EventMetadata.new
                   let metadata' =
                         metadata
-                          { EventMetadata.localPosition = Just (Event.StreamPosition (fromIntegral index)),
+                          { EventMetadata.localPosition = Just (Event.StreamPosition (fromIntegral (index + 1))),
                             EventMetadata.eventId = eventId
                           }
                   Task.yield
