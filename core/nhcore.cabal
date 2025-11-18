@@ -127,8 +127,8 @@ library
     Path
     Record
     Result
-    Service.Entity
-    Service.Entity.Core
+    Service.EntityFetcher
+    Service.EntityFetcher.Core
     Service.Event
     Service.Event.EntityName
     Service.Event.EventMetadata
@@ -152,10 +152,10 @@ library
     Test.AppSpec.AppSpec
     Test.AppSpec.Scenario
     Test.AppSpec.Verify
-    Test.Service.Entity
-    Test.Service.Entity.Core
-    Test.Service.Entity.Fetch.Context
-    Test.Service.Entity.Fetch.Spec
+    Test.Service.EntityFetcher
+    Test.Service.EntityFetcher.Core
+    Test.Service.EntityFetcher.Fetch.Context
+    Test.Service.EntityFetcher.Fetch.Spec
     Test.Service.EventStore
     Test.Service.EventStore.BatchValidation.Context
     Test.Service.EventStore.BatchValidation.Spec

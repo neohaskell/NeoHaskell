@@ -1,10 +1,10 @@
-module Test.Service.Entity.Fetch.Spec where
+module Test.Service.EntityFetcher.Fetch.Spec where
 
 import Array qualified
 import Core
 import Result qualified
-import Service.Entity.Core (EntityReducer)
-import Service.Entity.Core qualified as Entity
+import Service.EntityFetcher.Core (EntityFetcher)
+import Service.EntityFetcher.Core qualified as EntityFetcher
 import Service.Event qualified as Event
 import Service.Event.EventMetadata qualified as EventMetadata
 import Service.Event.StreamId qualified as StreamId
@@ -12,21 +12,21 @@ import Service.EventStore (EventStore)
 import Service.EventStore.Core qualified as EventStore
 import Task qualified
 import Test
-import Test.Service.Entity.Core (BankAccountEvent (..), BankAccountState (..))
-import Test.Service.Entity.Fetch.Context qualified as Context
+import Test.Service.EntityFetcher.Core (BankAccountEvent (..), BankAccountState (..))
+import Test.Service.EntityFetcher.Fetch.Context qualified as Context
 import Uuid qualified
 
 
 spec ::
-  Task Text (EventStore BankAccountEvent, EntityReducer BankAccountState BankAccountEvent) ->
+  Task Text (EventStore BankAccountEvent, EntityFetcher BankAccountState BankAccountEvent) ->
   Spec Unit
-spec newStoreAndReducer = do
+spec newStoreAndFetcher = do
   describe "Entity Fetch" do
-    before (Context.initialize newStoreAndReducer) do
+    before (Context.initialize newStoreAndFetcher) do
       it "fetches an entity with no events and returns initial state" \context -> do
         -- Fetch from a stream that doesn't exist yet
         result <-
-          context.reducer.fetch context.entityName context.streamId
+          context.fetcher.fetch context.entityName context.streamId
             |> Task.asResult
 
         -- Should succeed with initial state (version 0)
@@ -72,7 +72,7 @@ spec newStoreAndReducer = do
 
         -- Fetch the entity
         state <-
-          context.reducer.fetch context.entityName context.streamId
+          context.fetcher.fetch context.entityName context.streamId
             |> Task.mapError toText
 
         -- Should have the correct state after applying one event
@@ -134,7 +134,7 @@ spec newStoreAndReducer = do
 
         -- Fetch the entity
         state <-
-          context.reducer.fetch context.entityName context.streamId
+          context.fetcher.fetch context.entityName context.streamId
             |> Task.mapError toText
 
         -- Should have correct state: 50 + 100 - 30 + 20 = 140
@@ -202,11 +202,11 @@ spec newStoreAndReducer = do
 
         -- Fetch both entities
         state1 <-
-          context.reducer.fetch context.entityName context.streamId
+          context.fetcher.fetch context.entityName context.streamId
             |> Task.mapError toText
 
         state2 <-
-          context.reducer.fetch context.entityName streamId2
+          context.fetcher.fetch context.entityName streamId2
             |> Task.mapError toText
 
         -- Should have different states
@@ -288,7 +288,7 @@ spec newStoreAndReducer = do
 
         -- Fetch the entity
         state <-
-          context.reducer.fetch context.entityName context.streamId
+          context.fetcher.fetch context.entityName context.streamId
             |> Task.mapError toText
 
         -- Should have correct balance: 0 + (100 * 1) = 100
@@ -299,7 +299,7 @@ spec newStoreAndReducer = do
         let wrongEntityName = Event.EntityName "NonExistentEntity"
 
         result <-
-          context.reducer.fetch wrongEntityName context.streamId
+          context.fetcher.fetch wrongEntityName context.streamId
             |> Task.asResult
 
         -- This should succeed with initial state (empty stream)
@@ -362,15 +362,15 @@ spec newStoreAndReducer = do
 
         -- Fetch multiple times - should always return same version
         state1 <-
-          context.reducer.fetch context.entityName context.streamId
+          context.fetcher.fetch context.entityName context.streamId
             |> Task.mapError toText
 
         state2 <-
-          context.reducer.fetch context.entityName context.streamId
+          context.fetcher.fetch context.entityName context.streamId
             |> Task.mapError toText
 
         state3 <-
-          context.reducer.fetch context.entityName context.streamId
+          context.fetcher.fetch context.entityName context.streamId
             |> Task.mapError toText
 
         -- All fetches should return same version
@@ -436,7 +436,7 @@ spec newStoreAndReducer = do
 
         -- Fetch the entity
         state <-
-          context.reducer.fetch context.entityName context.streamId
+          context.fetcher.fetch context.entityName context.streamId
             |> Task.mapError toText
 
         -- Account should be closed

@@ -1,15 +1,15 @@
-module Test.Service.Entity.Core (
+module Test.Service.EntityFetcher.Core (
   BankAccountEvent (..),
   BankAccountState (..),
   initialState,
   applyEvent,
-  newReducer,
+  newFetcher,
 ) where
 
 import Core
 import Json qualified
-import Service.Entity.Core (EntityReducer)
-import Service.Entity.Core qualified as Entity
+import Service.EntityFetcher.Core (EntityFetcher)
+import Service.EntityFetcher.Core qualified as EntityFetcher
 import Service.EventStore.Core (EventStore)
 import Test.Service.EventStore.Core (BankAccountEvent (..))
 
@@ -67,7 +67,7 @@ applyEvent state event = do
         }
 
 
--- | Create a new entity reducer for bank accounts
-newReducer :: EventStore BankAccountEvent -> Task Entity.Error (EntityReducer BankAccountState BankAccountEvent)
-newReducer eventStore = do
-  Entity.new eventStore initialState applyEvent
+-- | Create a new entity fetcher for bank accounts
+newFetcher :: EventStore BankAccountEvent -> Task EntityFetcher.Error (EntityFetcher BankAccountState BankAccountEvent)
+newFetcher eventStore = do
+  EntityFetcher.new eventStore initialState applyEvent

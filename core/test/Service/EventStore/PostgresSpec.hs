@@ -7,8 +7,8 @@ import Service.EventStore.Postgres.Internal.Core qualified as PostgresCore
 import Service.EventStore.Postgres.Internal.Sessions qualified as Sessions
 import Task qualified
 import Test
-import Test.Service.Entity qualified as Entity
-import Test.Service.Entity.Core qualified as EntityCore
+import Test.Service.EntityFetcher qualified as EntityFetcher
+import Test.Service.EntityFetcher.Core qualified as EntityFetcherCore
 import Test.Service.EventStore qualified as EventStore
 import Test.Service.EventStore.Core (BankAccountEvent)
 import Var qualified
@@ -56,11 +56,11 @@ spec = do
           Postgres.new config |> Task.mapError toText
     EventStore.spec newStore
 
-    let newStoreAndReducer = do
+    let newStoreAndFetcher = do
           store <- newStore
-          reducer <- EntityCore.newReducer store |> Task.mapError toText
-          Task.yield (store, reducer)
-    Entity.spec newStoreAndReducer
+          fetcher <- EntityFetcherCore.newFetcher store |> Task.mapError toText
+          Task.yield (store, fetcher)
+    EntityFetcher.spec newStoreAndFetcher
 
 
 data NewObserve = NewObserve

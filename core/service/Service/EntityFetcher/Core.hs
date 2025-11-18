@@ -1,5 +1,5 @@
-module Service.Entity.Core (
-  EntityReducer (..),
+module Service.EntityFetcher.Core (
+  EntityFetcher (..),
   Error (..),
   new,
 ) where
@@ -19,12 +19,12 @@ data Error
   deriving (Eq, Show)
 
 
--- | An entity reducer is responsible for fetching an entity's current state
+-- | An entity fetcher is responsible for fetching an entity's current state
 --   by reading all events from the event store and applying a reduction function.
 --
---   The reducer takes an initial state and a reduce function that applies events
+--   The fetcher takes an initial state and a reduce function that applies events
 --   to update the state.
-data EntityReducer state event = EntityReducer
+data EntityFetcher state event = EntityFetcher
   { -- | Fetch an entity's current state by entity name and stream ID.
     --   Reads all events from the event store and applies the reduction function
     --   to compute the current state.
@@ -32,7 +32,7 @@ data EntityReducer state event = EntityReducer
   }
 
 
--- | Create a new entity reducer with the given event store, initial state, and reduce function.
+-- | Create a new entity fetcher with the given event store, initial state, and reduce function.
 --
 --   The reduce function takes the current state and an event, and returns the new state
 --   after applying the event.
@@ -40,30 +40,35 @@ data EntityReducer state event = EntityReducer
 --   Example:
 --
 --   @
---   reducer <- Entity.new eventStore initialState applyEvent
---   state <- reducer.fetch entityName streamId
+--   fetcher <- EntityFetcher.new eventStore initialState applyEvent
+--   state <- fetcher.fetch entityName streamId
 --   @
 new ::
   forall state event.
   EventStore event ->
   state ->
   (state -> event -> state) ->
-  Task Error (EntityReducer state event)
+  Task Error (EntityFetcher state event)
 new eventStore initialState reduceFunction = do
   let fetchImpl entityName streamId = do
+        -- Read all events for this entity stream
         streamMessages <-
           eventStore.readAllStreamEvents entityName streamId
             |> Task.mapError EventStoreError
 
+        -- Consume the stream, applying the reduction function to each event
+        -- This processes events one-by-one without loading everything into memory
         finalState <-
           streamMessages
             |> Stream.consume
               ( \state message -> do
                   case message of
+                    -- Only process actual events, ignore other message types
                     EventStore.StreamEvent event -> do
                       let eventData = event.event
                       let newState = reduceFunction state eventData
                       Task.yield newState
+                    -- For all other message types, keep state unchanged
                     _ -> Task.yield state
               )
               initialState
@@ -72,6 +77,6 @@ new eventStore initialState reduceFunction = do
         Task.yield finalState
 
   Task.yield
-    EntityReducer
+    EntityFetcher
       { fetch = fetchImpl
       }

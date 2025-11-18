@@ -4,20 +4,20 @@ import Core
 import Service.EventStore.InMemory qualified as InMemory
 import Task qualified
 import Test
-import Test.Service.Entity qualified as Entity
-import Test.Service.Entity.Core qualified as EntityCore
+import Test.Service.EntityFetcher qualified as EntityFetcher
+import Test.Service.EntityFetcher.Core qualified as EntityFetcherCore
 import Test.Service.EventStore qualified as EventStore
 
 
 spec :: Spec Unit
 spec = do
   describe "InMemoryEventStore" do
-    let newStore = InMemory.new @EntityCore.BankAccountEvent |> Task.mapError toText
+    let newStore = InMemory.new @EntityFetcherCore.BankAccountEvent |> Task.mapError toText
     EventStore.spec newStore
 
-    let newStoreAndReducer = do
+    let newStoreAndFetcher = do
           store <- newStore
-          reducer <- EntityCore.newReducer store |> Task.mapError toText
-          Task.yield (store, reducer)
+          fetcher <- EntityFetcherCore.newFetcher store |> Task.mapError toText
+          Task.yield (store, fetcher)
 
-    Entity.spec newStoreAndReducer
+    EntityFetcher.spec newStoreAndFetcher
