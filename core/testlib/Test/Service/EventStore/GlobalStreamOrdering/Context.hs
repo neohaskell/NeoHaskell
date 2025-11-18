@@ -9,19 +9,19 @@ import Service.EventStore (EventStore (..))
 import Service.EventStore.Core qualified as EventStore
 import Stream qualified
 import Task qualified
-import Test.Service.EventStore.Core (MyEvent (..), newInsertion)
+import Test.Service.EventStore.Core (BankAccountEvent (..), newInsertion)
 import Uuid qualified
 
 
 data Context = Context
   { streamCount :: Int,
     eventsPerStream :: Int,
-    eventStreams :: Array (Array (Event MyEvent)),
-    store :: EventStore MyEvent
+    eventStreams :: Array (Array (Event BankAccountEvent)),
+    store :: EventStore BankAccountEvent
   }
 
 
-initialize :: Task Text (EventStore MyEvent) -> Int -> Task Text Context
+initialize :: Task Text (EventStore BankAccountEvent) -> Int -> Task Text Context
 initialize newStore streamCount = do
   store <- newStore
   -- Create multiple streams with events
@@ -37,7 +37,7 @@ initialize newStore streamCount = do
 
   -- Create events for each stream (2 events per stream for testing)
   let eventsPerStream = 2 :: Int
-  let getAllEvents :: Task Text (Array (Event.InsertionPayload MyEvent))
+  let getAllEvents :: Task Text (Array (Event.InsertionPayload BankAccountEvent))
       getAllEvents =
         streamIds |> Task.mapArray \(entityName, streamId) -> do
           insertions <-

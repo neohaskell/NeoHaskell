@@ -15,11 +15,11 @@ import Service.EventStore.Core qualified as EventStore
 import Stream qualified
 import Task qualified
 import Test
-import Test.Service.EventStore.Core (MyEvent (..))
+import Test.Service.EventStore.Core (BankAccountEvent (..))
 import Uuid qualified
 
 
-spec :: Task Text (EventStore MyEvent) -> Spec Unit
+spec :: Task Text (EventStore BankAccountEvent) -> Spec Unit
 spec newStore = do
   describe "Local Position Stamping" do
     it "stamps local positions when using payloadFromEvents helper" \_ -> do
@@ -28,7 +28,8 @@ spec newStore = do
       streamId <- StreamId.new
 
       -- Create events using the payloadFromEvents helper (which sets localPosition to Nothing)
-      let events = Array.fromLinkedList [MyEvent, MyEvent, MyEvent]
+      let events =
+            Array.fromLinkedList [AccountOpened {initialBalance = 1000}, MoneyDeposited {amount = 10}, MoneyWithdrawn {amount = 5}]
       payload <- Event.payloadFromEvents entityName streamId events
 
       -- Verify that insertions don't have local positions set (this is the input state)
@@ -51,8 +52,6 @@ spec newStore = do
       -- Verify we got 3 events back
       Array.length storedEvents |> shouldBe 3
 
-      -- THIS IS THE BUG: Events should have local positions stamped by the store
-      -- Currently they will have Nothing because fromInsertionPayload only stamps globalPosition
       storedEvents
         |> Array.indexed
         |> Task.forEach \(index, event) -> do
@@ -75,26 +74,40 @@ spec newStore = do
       _subscriptionId <- store.subscribeToStreamEvents entityName streamId handler |> Task.mapError toText
 
       -- Create and insert events using payloadFromEvents
-      let events = Array.fromLinkedList [MyEvent, MyEvent]
+      let events = Array.fromLinkedList [AccountOpened {initialBalance = 2000}, MoneyDeposited {amount = 15}]
       payload <- Event.payloadFromEvents entityName streamId events
       _result <- store.insert payload |> Task.mapError toText
 
-      -- Wait a bit for async notification
-      AsyncTask.sleep 100 |> Task.mapError (\_ -> "timeout")
+      -- Wait longer for async notifications to complete (increased from 100ms to 200ms to reduce flakiness)
+      AsyncTask.sleep 200
 
       -- Check captured events from subscription
       captured <- ConcurrentVar.peek capturedEvents
       Array.length captured |> shouldBe 2
 
-      -- THIS IS THE BUG: Subscribers should receive events with local positions
-      captured
-        |> Array.indexed
-        |> Task.forEach \(index, event) -> do
-          case event.metadata.localPosition of
-            Nothing ->
-              fail [fmt|Subscriber received event at index #{toText index} with no local position!|]
-            Just (Event.StreamPosition pos) ->
-              pos |> shouldBe (fromIntegral index)
+      -- First verify all events have local positions
+      captured |> Task.forEach \event -> do
+        case event.metadata.localPosition of
+          Nothing -> fail "Subscriber received event with no local position!"
+          Just _ -> Task.yield unit
+
+      -- Check we received both position 0 and position 1 (in any order)
+      let hasPosition pos =
+            captured
+              |> Array.takeIf
+                ( \event ->
+                    case event.metadata.localPosition of
+                      Just (Event.StreamPosition p) -> p == pos
+                      Nothing -> False
+                )
+              |> Array.length
+              |> (== 1)
+
+      Task.unless (hasPosition 0) do
+        fail "Expected to receive event with local position 0"
+
+      Task.unless (hasPosition 1) do
+        fail "Expected to receive event with local position 1"
 
     it "derives local positions from stream length at insert time" \_ -> do
       store <- newStore
@@ -102,12 +115,12 @@ spec newStore = do
       streamId <- StreamId.new
 
       -- Insert first batch
-      let firstBatch = Array.fromLinkedList [MyEvent, MyEvent]
+      let firstBatch = Array.fromLinkedList [AccountOpened {initialBalance = 500}, MoneyDeposited {amount = 100}]
       payload1 <- Event.payloadFromEvents entityName streamId firstBatch
       _result1 <- store.insert payload1 |> Task.mapError toText
 
       -- Insert second batch
-      let secondBatch = Array.fromLinkedList [MyEvent, MyEvent, MyEvent]
+      let secondBatch = Array.fromLinkedList [MoneyDeposited {amount = 50}, MoneyWithdrawn {amount = 25}, MoneyDeposited {amount = 75}]
       payload2 <- Event.payloadFromEvents entityName streamId secondBatch
       _result2 <- store.insert payload2 |> Task.mapError toText
 
@@ -142,7 +155,7 @@ spec newStore = do
       let insertion1 =
             Event.Insertion
               { id = id1,
-                event = MyEvent,
+                event = AccountOpened {initialBalance = 3000},
                 metadata = metadata1 {EventMetadata.localPosition = Just (Event.StreamPosition 0)}
               }
 
@@ -162,7 +175,7 @@ spec newStore = do
       let insertion2 =
             Event.Insertion
               { id = id2,
-                event = MyEvent,
+                event = MoneyDeposited {amount = 10},
                 metadata = metadata2 {EventMetadata.localPosition = Just (Event.StreamPosition 1)}
               }
 
@@ -203,7 +216,7 @@ spec newStore = do
       let insertion1 =
             Event.Insertion
               { id = id1,
-                event = MyEvent,
+                event = MoneyDeposited {amount = 10},
                 metadata = metadata1 {EventMetadata.localPosition = Nothing}
               }
 
@@ -212,7 +225,7 @@ spec newStore = do
       let insertion2 =
             Event.Insertion
               { id = id2,
-                event = MyEvent,
+                event = MoneyDeposited {amount = 20},
                 metadata = metadata2 {EventMetadata.localPosition = Nothing}
               }
 

@@ -13,7 +13,7 @@ import Service.EventStore.Postgres.Internal.SubscriptionStore (Error (..), Subsc
 import Service.EventStore.Postgres.Internal.SubscriptionStore qualified as SubscriptionStore
 import Task qualified
 import Test
-import Test.Service.EventStore.Core (MyEvent (..))
+import Test.Service.EventStore.Core (BankAccountEvent (..))
 
 
 spec :: Spec Unit
@@ -312,12 +312,12 @@ spec = do
 
 
 -- Helper function to create a test event
-createTestEvent :: Task Error (Event MyEvent)
+createTestEvent :: Task Error (Event BankAccountEvent)
 createTestEvent = do
   metadata <- EventMetadata.new
   streamId <- StreamId.new
   let entityName = Event.EntityName "TestEntity"
-  let event = MyEvent
+  let event = MoneyDeposited {amount = 100}
   Task.yield
     Event
       { entityName = entityName,

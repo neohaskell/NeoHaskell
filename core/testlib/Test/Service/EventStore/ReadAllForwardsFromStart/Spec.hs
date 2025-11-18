@@ -11,13 +11,13 @@ import Service.EventStore.Core qualified as EventStore
 import Stream qualified
 import Task qualified
 import Test
-import Test.Service.EventStore.Core (MyEvent)
+import Test.Service.EventStore.Core (BankAccountEvent)
 import Test.Service.EventStore.ReadAllForwardsFromStart.Context (Context (..))
 import Test.Service.EventStore.ReadAllForwardsFromStart.Context qualified as Context
 import Uuid qualified
 
 
-spec :: Task Text (EventStore MyEvent) -> Spec Unit
+spec :: Task Text (EventStore BankAccountEvent) -> Spec Unit
 spec newStore = do
   describe "Read All Forwards From Start" do
     specWithCount newStore 10
@@ -32,7 +32,7 @@ spec newStore = do
       specWithCount newStore 1000000
 
 
-specWithCount :: Task Text (EventStore MyEvent) -> Int -> Spec Unit
+specWithCount :: Task Text (EventStore BankAccountEvent) -> Int -> Spec Unit
 specWithCount newStore eventCount = do
   describe [fmt|testing with #{toText eventCount} events|] do
     before (Context.initialize newStore eventCount) do
@@ -80,7 +80,7 @@ specWithCount newStore eventCount = do
         let batchSize = 3 -- Small batch to force multiple reads
 
         -- Read all events in batches, resuming from last position
-        let readInBatches :: Event.StreamPosition -> Array (Event.Event MyEvent) -> Task Text (Array (Event.Event MyEvent))
+        let readInBatches :: Event.StreamPosition -> Array (Event.Event BankAccountEvent) -> Task Text (Array (Event.Event BankAccountEvent))
             readInBatches currentPosition accumulatedEvents = do
               batch <-
                 context.store.readAllEventsForwardFrom currentPosition (EventStore.Limit batchSize)
