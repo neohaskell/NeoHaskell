@@ -28,7 +28,8 @@ spec newStore = do
       streamId <- StreamId.new
 
       -- Create events using the payloadFromEvents helper (which sets localPosition to Nothing)
-      let events = Array.fromLinkedList [AccountOpened {initialBalance = 1000}, MoneyDeposited {amount = 10}, MoneyWithdrawn {amount = 5}]
+      let events =
+            Array.fromLinkedList [AccountOpened {initialBalance = 1000}, MoneyDeposited {amount = 10}, MoneyWithdrawn {amount = 5}]
       payload <- Event.payloadFromEvents entityName streamId events
 
       -- Verify that insertions don't have local positions set (this is the input state)
@@ -51,8 +52,6 @@ spec newStore = do
       -- Verify we got 3 events back
       Array.length storedEvents |> shouldBe 3
 
-      -- THIS IS THE BUG: Events should have local positions stamped by the store
-      -- Currently they will have Nothing because fromInsertionPayload only stamps globalPosition
       storedEvents
         |> Array.indexed
         |> Task.forEach \(index, event) -> do
@@ -85,10 +84,6 @@ spec newStore = do
       -- Check captured events from subscription
       captured <- ConcurrentVar.peek capturedEvents
       Array.length captured |> shouldBe 2
-
-      -- THIS IS THE BUG: Subscribers should receive events with local positions
-      -- Due to async notifications, events may arrive in any order, so we check
-      -- that we have the expected set of positions (0 and 1) rather than assuming order
 
       -- First verify all events have local positions
       captured |> Task.forEach \event -> do
