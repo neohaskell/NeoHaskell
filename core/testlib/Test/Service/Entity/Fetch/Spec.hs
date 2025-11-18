@@ -22,7 +22,7 @@ spec ::
   Spec Unit
 spec newStoreAndReducer = do
   describe "Entity Fetch" do
-    beforeAll (Context.initialize newStoreAndReducer) do
+    before (Context.initialize newStoreAndReducer) do
       it "fetches an entity with no events and returns initial state" \context -> do
         -- Fetch from a stream that doesn't exist yet
         result <-
