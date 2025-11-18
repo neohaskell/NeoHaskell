@@ -72,7 +72,7 @@ new eventStore initialState reduceFunction = do
                     _ -> Task.yield state
               )
               initialState
-            |> Task.mapError (EventStoreError <. EventStore.StorageFailure)
+            |> Task.mapError (\errorText -> EventStoreError (EventStore.StorageFailure errorText))
 
         Task.yield finalState
 
