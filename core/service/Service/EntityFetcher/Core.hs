@@ -34,7 +34,7 @@ data EntityFetcher state event = EntityFetcher
 
 -- | Create a new entity fetcher with the given event store, initial state, and reduce function.
 --
---   The reduce function takes the current state and an event, and returns the new state
+--   The reduce function takes an event and the current state, and returns the new state
 --   after applying the event.
 --
 --   Example:
@@ -47,7 +47,7 @@ new ::
   forall state event.
   EventStore event ->
   state ->
-  (state -> event -> state) ->
+  (event -> state -> state) ->
   Task Error (EntityFetcher state event)
 new eventStore initialState reduceFunction = do
   let fetchImpl entityName streamId = do
@@ -66,7 +66,7 @@ new eventStore initialState reduceFunction = do
                     -- Only process actual events, ignore other message types
                     EventStore.StreamEvent event -> do
                       let eventData = event.event
-                      let newState = reduceFunction state eventData
+                      let newState = reduceFunction eventData state
                       Task.yield newState
                     -- For all other message types, keep state unchanged
                     _ -> Task.yield state

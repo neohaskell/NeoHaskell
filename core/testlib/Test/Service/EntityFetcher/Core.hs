@@ -40,8 +40,8 @@ initialState =
 
 
 -- | Apply a bank account event to the current state
-applyEvent :: BankAccountState -> BankAccountEvent -> BankAccountState
-applyEvent state event = do
+applyEvent :: BankAccountEvent -> BankAccountState -> BankAccountState
+applyEvent event state = do
   let newVersion = state.version + 1
   case event of
     AccountOpened {initialBalance} ->
