@@ -214,7 +214,6 @@ test-suite nhcore-test
     -with-rtsopts=-N
 
   other-modules:
-    Service.EntitySpec
     Service.EventStore.InMemorySpec
     Service.EventStore.Postgres.Internal.SubscriptionStoreSpec
     Service.EventStore.PostgresSpec

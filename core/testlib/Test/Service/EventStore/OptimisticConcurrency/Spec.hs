@@ -14,12 +14,12 @@ import Service.EventStore.Core qualified as EventStore
 import Stream qualified
 import Task qualified
 import Test
-import Test.Service.EventStore.Core (MyEvent (..))
+import Test.Service.EventStore.Core (BankAccountEvent (..))
 import Test.Service.EventStore.OptimisticConcurrency.Context qualified as Context
 import Uuid qualified
 
 
-spec :: Task Text (EventStore MyEvent) -> Spec Unit
+spec :: Task Text (EventStore BankAccountEvent) -> Spec Unit
 spec newStore = do
   describe "Optimistic Concurrency" do
     beforeAll (Context.initialize newStore) do
@@ -38,7 +38,7 @@ spec newStore = do
         let initialInsertion =
               Event.Insertion
                 { id = initialEventId,
-                  event = MyEvent,
+                  event = AccountOpened {initialBalance = 1000},
                   metadata = initialMetadata'
                 }
         let initialPayload =
@@ -65,7 +65,7 @@ spec newStore = do
         let event1Insertion =
               Event.Insertion
                 { id = event1Id,
-                  event = MyEvent,
+                  event = MoneyDeposited {amount = 10},
                   metadata = event1Metadata'
                 }
         let event1Payload =
@@ -86,7 +86,7 @@ spec newStore = do
         let event2Insertion =
               Event.Insertion
                 { id = event2Id,
-                  event = MyEvent,
+                  event = MoneyDeposited {amount = 20},
                   metadata = event2Metadata'
                 }
         let event2Payload =
@@ -157,7 +157,7 @@ spec newStore = do
               let insertion =
                     Event.Insertion
                       { id = eventId,
-                        event = MyEvent,
+                        event = MoneyDeposited {amount = 50},
                         metadata = metadata'
                       }
               let insertionType =
@@ -192,7 +192,7 @@ spec newStore = do
         let staleInsertion =
               Event.Insertion
                 { id = staleEventId,
-                  event = MyEvent,
+                  event = MoneyWithdrawn {amount = 15},
                   metadata = staleMetadata'
                 }
         let stalePayload =
@@ -225,7 +225,7 @@ spec newStore = do
         let correctInsertion =
               Event.Insertion
                 { id = correctEventId,
-                  event = MyEvent,
+                  event = MoneyDeposited {amount = 30},
                   metadata = correctMetadata'
                 }
         let correctPayload =
@@ -281,7 +281,7 @@ spec newStore = do
                   let insertion =
                         Event.Insertion
                           { id = eventId,
-                            event = MyEvent,
+                            event = MoneyDeposited {amount = 100},
                             metadata = metadata'
                           }
                   let insertionType =
@@ -335,7 +335,7 @@ spec newStore = do
         let initialInsertion =
               Event.Insertion
                 { id = initialEventId,
-                  event = MyEvent,
+                  event = AccountOpened {initialBalance = 2000},
                   metadata = initialMetadata'
                 }
         let initialPayload =
@@ -363,7 +363,7 @@ spec newStore = do
         let event1Insertion =
               Event.Insertion
                 { id = event1Id,
-                  event = MyEvent,
+                  event = MoneyDeposited {amount = 40},
                   metadata = event1Metadata'
                 }
         let event1Payload =
@@ -384,7 +384,7 @@ spec newStore = do
         let event2Insertion =
               Event.Insertion
                 { id = event2Id,
-                  event = MyEvent,
+                  event = MoneyWithdrawn {amount = 25},
                   metadata = event2Metadata'
                 }
         let event2Payload =

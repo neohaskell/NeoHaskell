@@ -11,12 +11,12 @@ import Service.EventStore.Core qualified as Event
 import Stream qualified
 import Task qualified
 import Test
-import Test.Service.EventStore.Core (MyEvent)
+import Test.Service.EventStore.Core (BankAccountEvent)
 import Test.Service.EventStore.GlobalStreamOrdering.Context (Context (..))
 import Test.Service.EventStore.GlobalStreamOrdering.Context qualified as Context
 
 
-spec :: Task Text (EventStore MyEvent) -> Spec Unit
+spec :: Task Text (EventStore BankAccountEvent) -> Spec Unit
 spec newStore = do
   describe "Global Stream Ordering" do
     beforeAll (Context.initialize newStore 10) do
@@ -91,7 +91,7 @@ spec newStore = do
                 allGlobalEvents
                   |> Array.zip (Array.drop 1 allGlobalEvents)
 
-          let matchPositions :: (Event MyEvent, Event MyEvent) -> Task _ Unit
+          let matchPositions :: (Event BankAccountEvent, Event BankAccountEvent) -> Task _ Unit
               matchPositions (earlier, later) =
                 earlier.metadata.globalPosition |> shouldSatisfy (\pos -> pos <= later.metadata.globalPosition)
 

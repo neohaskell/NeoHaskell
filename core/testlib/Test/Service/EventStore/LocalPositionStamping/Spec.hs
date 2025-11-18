@@ -15,11 +15,11 @@ import Service.EventStore.Core qualified as EventStore
 import Stream qualified
 import Task qualified
 import Test
-import Test.Service.EventStore.Core (MyEvent (..))
+import Test.Service.EventStore.Core (BankAccountEvent (..))
 import Uuid qualified
 
 
-spec :: Task Text (EventStore MyEvent) -> Spec Unit
+spec :: Task Text (EventStore BankAccountEvent) -> Spec Unit
 spec newStore = do
   describe "Local Position Stamping" do
     it "stamps local positions when using payloadFromEvents helper" \_ -> do
@@ -28,7 +28,7 @@ spec newStore = do
       streamId <- StreamId.new
 
       -- Create events using the payloadFromEvents helper (which sets localPosition to Nothing)
-      let events = Array.fromLinkedList [MyEvent, MyEvent, MyEvent]
+      let events = Array.fromLinkedList [AccountOpened {initialBalance = 1000}, MoneyDeposited {amount = 10}, MoneyWithdrawn {amount = 5}]
       payload <- Event.payloadFromEvents entityName streamId events
 
       -- Verify that insertions don't have local positions set (this is the input state)
@@ -75,7 +75,7 @@ spec newStore = do
       _subscriptionId <- store.subscribeToStreamEvents entityName streamId handler |> Task.mapError toText
 
       -- Create and insert events using payloadFromEvents
-      let events = Array.fromLinkedList [MyEvent, MyEvent]
+      let events = Array.fromLinkedList [AccountOpened {initialBalance = 2000}, MoneyDeposited {amount = 15}]
       payload <- Event.payloadFromEvents entityName streamId events
       _result <- store.insert payload |> Task.mapError toText
 
@@ -102,12 +102,12 @@ spec newStore = do
       streamId <- StreamId.new
 
       -- Insert first batch
-      let firstBatch = Array.fromLinkedList [MyEvent, MyEvent]
+      let firstBatch = Array.fromLinkedList [AccountOpened {initialBalance = 500}, MoneyDeposited {amount = 100}]
       payload1 <- Event.payloadFromEvents entityName streamId firstBatch
       _result1 <- store.insert payload1 |> Task.mapError toText
 
       -- Insert second batch
-      let secondBatch = Array.fromLinkedList [MyEvent, MyEvent, MyEvent]
+      let secondBatch = Array.fromLinkedList [MoneyDeposited {amount = 50}, MoneyWithdrawn {amount = 25}, MoneyDeposited {amount = 75}]
       payload2 <- Event.payloadFromEvents entityName streamId secondBatch
       _result2 <- store.insert payload2 |> Task.mapError toText
 
@@ -142,7 +142,7 @@ spec newStore = do
       let insertion1 =
             Event.Insertion
               { id = id1,
-                event = MyEvent,
+                event = AccountOpened {initialBalance = 3000},
                 metadata = metadata1 {EventMetadata.localPosition = Just (Event.StreamPosition 0)}
               }
 
@@ -162,7 +162,7 @@ spec newStore = do
       let insertion2 =
             Event.Insertion
               { id = id2,
-                event = MyEvent,
+                event = MoneyDeposited {amount = 10},
                 metadata = metadata2 {EventMetadata.localPosition = Just (Event.StreamPosition 1)}
               }
 
@@ -203,7 +203,7 @@ spec newStore = do
       let insertion1 =
             Event.Insertion
               { id = id1,
-                event = MyEvent,
+                event = MoneyDeposited {amount = 10},
                 metadata = metadata1 {EventMetadata.localPosition = Nothing}
               }
 
@@ -212,7 +212,7 @@ spec newStore = do
       let insertion2 =
             Event.Insertion
               { id = id2,
-                event = MyEvent,
+                event = MoneyDeposited {amount = 20},
                 metadata = metadata2 {EventMetadata.localPosition = Nothing}
               }
 

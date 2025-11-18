@@ -10,19 +10,19 @@ import Service.Event qualified as Event
 import Service.Event.StreamId qualified as StreamId
 import Service.EventStore (EventStore)
 import Task qualified
-import Test.Service.EventStore.Core (MyEvent, newInsertion)
+import Test.Service.EventStore.Core (BankAccountEvent, newInsertion)
 import Uuid qualified
 
 
 data Context = Context
-  { store :: EventStore MyEvent,
+  { store :: EventStore BankAccountEvent,
     streamId :: StreamId,
     entityName :: EntityName,
-    testEvents :: Array (Event.InsertionPayload MyEvent)
+    testEvents :: Array (Event.InsertionPayload BankAccountEvent)
   }
 
 
-initialize :: Task Text (EventStore MyEvent) -> Task _ Context
+initialize :: Task Text (EventStore BankAccountEvent) -> Task _ Context
 initialize newStore = do
   store <- newStore
   streamId <- StreamId.new
@@ -35,7 +35,7 @@ initialize newStore = do
   Task.yield Context {store, streamId, entityName, testEvents}
 
 
-createTestEvents :: StreamId -> EntityName -> Int -> Task _ (Array (Event.InsertionPayload MyEvent))
+createTestEvents :: StreamId -> EntityName -> Int -> Task _ (Array (Event.InsertionPayload BankAccountEvent))
 createTestEvents streamId entityName count = do
   let createEvent index = do
         insertions <- Array.fromLinkedList [index] |> Task.mapArray newInsertion

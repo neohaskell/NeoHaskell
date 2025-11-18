@@ -18,12 +18,11 @@ import Uuid qualified
 
 
 spec ::
-  Task Text (EventStore BankAccountEvent) ->
-  Task Text (EntityReducer BankAccountState BankAccountEvent) ->
+  Task Text (EventStore BankAccountEvent, EntityReducer BankAccountState BankAccountEvent) ->
   Spec Unit
-spec newStore newReducer = do
+spec newStoreAndReducer = do
   describe "Entity Fetch" do
-    beforeAll (Context.initialize newStore newReducer) do
+    beforeAll (Context.initialize newStoreAndReducer) do
       it "fetches an entity with no events and returns initial state" \context -> do
         -- Fetch from a stream that doesn't exist yet
         result <-
@@ -130,7 +129,7 @@ spec newStore newReducer = do
                   |> Task.mapError toText
                   |> discard
             )
-          |> Task.forEach unchanged
+          |> Task.mapArray identity
           |> discard
 
         -- Fetch the entity
@@ -284,7 +283,7 @@ spec newStore newReducer = do
                   |> Task.mapError toText
                   |> discard
             )
-          |> Task.forEach unchanged
+          |> Task.mapArray identity
           |> discard
 
         -- Fetch the entity
@@ -358,7 +357,7 @@ spec newStore newReducer = do
                   |> Task.mapError toText
                   |> discard
             )
-          |> Task.forEach unchanged
+          |> Task.mapArray identity
           |> discard
 
         -- Fetch multiple times - should always return same version
@@ -432,7 +431,7 @@ spec newStore newReducer = do
                   |> Task.mapError toText
                   |> discard
             )
-          |> Task.forEach unchanged
+          |> Task.mapArray identity
           |> discard
 
         -- Fetch the entity

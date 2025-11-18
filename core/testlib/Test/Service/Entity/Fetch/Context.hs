@@ -20,12 +20,10 @@ data Context = Context
 
 
 initialize ::
-  Task Text (EventStore BankAccountEvent) ->
-  Task Text (EntityReducer BankAccountState BankAccountEvent) ->
+  Task Text (EventStore BankAccountEvent, EntityReducer BankAccountState BankAccountEvent) ->
   Task Text Context
-initialize newStore newReducer = do
-  store <- newStore
-  reducer <- newReducer
+initialize newStoreAndReducer = do
+  (store, reducer) <- newStoreAndReducer
   streamId <- StreamId.new
   let entityName = Event.EntityName "BankAccount"
   pure Context {store, reducer, streamId, entityName}

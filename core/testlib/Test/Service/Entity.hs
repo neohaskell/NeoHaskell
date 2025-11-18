@@ -9,7 +9,7 @@ import Test.Service.Entity.Fetch.Spec qualified as Fetch
 
 
 spec ::
-  Task Text (EventStore BankAccountEvent) -> Task Text (EntityReducer BankAccountState BankAccountEvent) -> Spec Unit
-spec newStore newReducer = do
+  Task Text (EventStore BankAccountEvent, EntityReducer BankAccountState BankAccountEvent) -> Spec Unit
+spec newStoreAndReducer = do
   describe "Entity Reducer Specification Tests" do
-    Fetch.spec newStore newReducer
+    Fetch.spec newStoreAndReducer

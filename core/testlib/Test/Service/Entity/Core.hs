@@ -11,25 +11,7 @@ import Json qualified
 import Service.Entity.Core (EntityReducer)
 import Service.Entity.Core qualified as Entity
 import Service.EventStore.Core (EventStore)
-
-
--- | Example domain events for a bank account
-data BankAccountEvent
-  = AccountOpened {initialBalance :: Int}
-  | MoneyDeposited {amount :: Int}
-  | MoneyWithdrawn {amount :: Int}
-  | AccountClosed
-  deriving (Eq, Show, Ord, Generic)
-
-
-instance Json.ToJSON BankAccountEvent
-
-
-instance Json.FromJSON BankAccountEvent
-
-
-instance Default BankAccountEvent where
-  def = AccountOpened {initialBalance = 0}
+import Test.Service.EventStore.Core (BankAccountEvent (..))
 
 
 -- | Example entity state for a bank account

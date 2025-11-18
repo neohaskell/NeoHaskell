@@ -8,16 +8,16 @@ import Service.Event qualified as Event
 import Service.Event.StreamId qualified as StreamId
 import Service.EventStore (EventStore)
 import Task qualified
-import Test.Service.EventStore.Core (MyEvent)
+import Test.Service.EventStore.Core (BankAccountEvent)
 
 
 data Context = Context
-  { store :: EventStore MyEvent,
+  { store :: EventStore BankAccountEvent,
     streamId :: Event.StreamId
   }
 
 
-initialize :: Task Text (EventStore MyEvent) -> Task Text Context
+initialize :: Task Text (EventStore BankAccountEvent) -> Task Text Context
 initialize newStore = do
   store <- newStore
   streamId <- StreamId.new
