@@ -2,10 +2,15 @@ module Test.Service.Entity.Core (
   BankAccountEvent (..),
   BankAccountState (..),
   initialState,
+  applyEvent,
+  newReducer,
 ) where
 
 import Core
 import Json qualified
+import Service.Entity.Core (EntityReducer)
+import Service.Entity.Core qualified as Entity
+import Service.EventStore.Core (EventStore)
 
 
 -- | Example domain events for a bank account
@@ -50,3 +55,37 @@ initialState =
       isOpen = False,
       version = 0
     }
+
+
+-- | Apply a bank account event to the current state
+applyEvent :: BankAccountState -> BankAccountEvent -> BankAccountState
+applyEvent state event = do
+  let newVersion = state.version + 1
+  case event of
+    AccountOpened {initialBalance} ->
+      BankAccountState
+        { balance = initialBalance,
+          isOpen = True,
+          version = newVersion
+        }
+    MoneyDeposited {amount} ->
+      state
+        { balance = state.balance + amount,
+          version = newVersion
+        }
+    MoneyWithdrawn {amount} ->
+      state
+        { balance = state.balance - amount,
+          version = newVersion
+        }
+    AccountClosed ->
+      state
+        { isOpen = False,
+          version = newVersion
+        }
+
+
+-- | Create a new entity reducer for bank accounts
+newReducer :: EventStore BankAccountEvent -> Task Entity.Error (EntityReducer BankAccountState BankAccountEvent)
+newReducer eventStore = do
+  Entity.new eventStore initialState applyEvent

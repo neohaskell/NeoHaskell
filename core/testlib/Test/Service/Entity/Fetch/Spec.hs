@@ -2,19 +2,17 @@ module Test.Service.Entity.Fetch.Spec where
 
 import Array qualified
 import Core
-import Maybe qualified
 import Result qualified
 import Service.Entity.Core (EntityReducer)
 import Service.Entity.Core qualified as Entity
-import Service.Event (Event (..))
 import Service.Event qualified as Event
 import Service.Event.EventMetadata qualified as EventMetadata
+import Service.Event.StreamId qualified as StreamId
 import Service.EventStore (EventStore)
 import Service.EventStore.Core qualified as EventStore
-import Stream qualified
 import Task qualified
 import Test
-import Test.Service.Entity.Core (BankAccountEvent (..), BankAccountState (..), initialState)
+import Test.Service.Entity.Core (BankAccountEvent (..), BankAccountState (..))
 import Test.Service.Entity.Fetch.Context qualified as Context
 import Uuid qualified
 
@@ -111,7 +109,7 @@ spec newStore newReducer = do
                         metadata = metadata'
                       }
               )
-            |> Task.forEach unchanged
+            |> Task.mapArray identity
 
         insertions
           |> Array.indexedMap
@@ -130,6 +128,7 @@ spec newStore newReducer = do
                 payload
                   |> context.store.insert
                   |> Task.mapError toText
+                  |> discard
             )
           |> Task.forEach unchanged
           |> discard
@@ -146,7 +145,7 @@ spec newStore newReducer = do
 
       it "fetches different entities independently" \context -> do
         -- Create a second stream with different events
-        streamId2 <- Event.StreamId.new
+        streamId2 <- StreamId.new
 
         -- Insert events to first stream
         eventId1 <- Uuid.generate
@@ -222,7 +221,7 @@ spec newStore newReducer = do
         let eventCount = 100
 
         insertions <-
-          Array.range 0 (eventCount - 1)
+          Array.initialize eventCount identity
             |> Array.map
               ( \index -> do
                   eventId <- Uuid.generate
@@ -239,7 +238,7 @@ spec newStore newReducer = do
                         metadata = metadata'
                       }
               )
-            |> Task.forEach unchanged
+            |> Task.mapArray identity
 
         -- Insert opening event first
         openEventId <- Uuid.generate
@@ -283,6 +282,7 @@ spec newStore newReducer = do
                 payload
                   |> context.store.insert
                   |> Task.mapError toText
+                  |> discard
             )
           |> Task.forEach unchanged
           |> discard
@@ -337,7 +337,7 @@ spec newStore newReducer = do
                         metadata = metadata'
                       }
               )
-            |> Task.forEach unchanged
+            |> Task.mapArray identity
 
         insertions
           |> Array.indexedMap
@@ -356,6 +356,7 @@ spec newStore newReducer = do
                 payload
                   |> context.store.insert
                   |> Task.mapError toText
+                  |> discard
             )
           |> Task.forEach unchanged
           |> discard
@@ -410,7 +411,7 @@ spec newStore newReducer = do
                         metadata = metadata'
                       }
               )
-            |> Task.forEach unchanged
+            |> Task.mapArray identity
 
         insertions
           |> Array.indexedMap
@@ -429,6 +430,7 @@ spec newStore newReducer = do
                 payload
                   |> context.store.insert
                   |> Task.mapError toText
+                  |> discard
             )
           |> Task.forEach unchanged
           |> discard
