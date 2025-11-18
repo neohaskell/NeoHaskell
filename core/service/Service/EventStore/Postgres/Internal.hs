@@ -762,9 +762,21 @@ performReadStreamEvents
               Nothing -> 0
 
       positionRef <- Var.new streamPosition
+      -- Track if this is the first batch to use relative position correctly
+      isFirstBatchRef <- Var.new True
 
       Task.while (shouldKeepReading) do
-        selectSession <- Sessions.selectStreamEventBatch positionRef entityName streamId relative readDirection
+        isFirstBatch <- Var.get isFirstBatchRef
+        -- Use the original relative position for the first batch, then switch to position-based
+        currentRelative <-
+          if isFirstBatch
+            then Task.yield relative
+            else do
+              -- For subsequent batches, use FromAndAfter with current position
+              -- The position has already been incremented, so this avoids duplicates
+              currentPos <- Var.get positionRef
+              Task.yield (Just (FromAndAfter (StreamPosition currentPos)))
+        selectSession <- Sessions.selectStreamEventBatch positionRef entityName streamId currentRelative readDirection
         records <-
           selectSession
             |> Sessions.run conn
@@ -774,6 +786,10 @@ performReadStreamEvents
         Task.unless (hasNotifiedReadingStarted) do
           stream |> Stream.writeItem StreamReadingStarted
           notifiedReadingRef |> Var.set True
+
+        -- Mark that we've completed the first batch
+        Task.when (isFirstBatch) do
+          isFirstBatchRef |> Var.set False
 
         Task.when (records |> Array.isEmpty) do
           breakLoopRef |> Var.set True
