@@ -132,6 +132,7 @@ library
     Service.Event.EventMetadata
     Service.Event.StreamId
     Service.Event.StreamPosition
+    Service.Entity.Core
     Service.EventStore
     Service.EventStore.Core
     Service.EventStore.InMemory

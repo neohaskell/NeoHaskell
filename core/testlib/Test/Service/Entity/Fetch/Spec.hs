@@ -111,7 +111,7 @@ spec newStore newReducer = do
                         metadata = metadata'
                       }
               )
-            |> Task.sequenceArray
+            |> Task.forEach unchanged
 
         insertions
           |> Array.indexedMap
@@ -131,7 +131,7 @@ spec newStore newReducer = do
                   |> context.store.insert
                   |> Task.mapError toText
             )
-          |> Task.sequenceArray
+          |> Task.forEach unchanged
           |> discard
 
         -- Fetch the entity
@@ -239,7 +239,7 @@ spec newStore newReducer = do
                         metadata = metadata'
                       }
               )
-            |> Task.sequenceArray
+            |> Task.forEach unchanged
 
         -- Insert opening event first
         openEventId <- Uuid.generate
@@ -284,7 +284,7 @@ spec newStore newReducer = do
                   |> context.store.insert
                   |> Task.mapError toText
             )
-          |> Task.sequenceArray
+          |> Task.forEach unchanged
           |> discard
 
         -- Fetch the entity
@@ -296,7 +296,6 @@ spec newStore newReducer = do
         state.balance |> shouldBe 100
         state.isOpen |> shouldBe True
         state.version |> shouldBe 101 -- Opening event + 100 deposits
-
       it "returns error when fetching from non-existent entity type" \context -> do
         let wrongEntityName = Event.EntityName "NonExistentEntity"
 
@@ -338,7 +337,7 @@ spec newStore newReducer = do
                         metadata = metadata'
                       }
               )
-            |> Task.sequenceArray
+            |> Task.forEach unchanged
 
         insertions
           |> Array.indexedMap
@@ -358,7 +357,7 @@ spec newStore newReducer = do
                   |> context.store.insert
                   |> Task.mapError toText
             )
-          |> Task.sequenceArray
+          |> Task.forEach unchanged
           |> discard
 
         -- Fetch multiple times - should always return same version
@@ -411,7 +410,7 @@ spec newStore newReducer = do
                         metadata = metadata'
                       }
               )
-            |> Task.sequenceArray
+            |> Task.forEach unchanged
 
         insertions
           |> Array.indexedMap
@@ -431,7 +430,7 @@ spec newStore newReducer = do
                   |> context.store.insert
                   |> Task.mapError toText
             )
-          |> Task.sequenceArray
+          |> Task.forEach unchanged
           |> discard
 
         -- Fetch the entity
