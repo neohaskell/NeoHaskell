@@ -1,6 +1,7 @@
+{-# LANGUAGE AllowAmbiguousTypes #-}
+
 module Service.Command.Core (
   Command (..),
-  TenantCommand (..),
   CommandResult (..),
 ) where
 
