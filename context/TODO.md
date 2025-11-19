@@ -88,7 +88,10 @@ These components enable developers to actually build applications using the even
 
 **Example code:**
 
+**Regular Command (non-tenant):**
+
 ```haskell
+-- Command data type
 data AddItemToCart = AddItemToCart
   { cartId :: Uuid,
     itemId :: Uuid,
@@ -99,8 +102,12 @@ data AddItemToCart = AddItemToCart
 instance FromJSON AddItemToCart
 instance ToJSON AddItemToCart
 
-instance Command AddItemToCart CartEntity where
-  entityId = cartId
+-- Command instance for CartEntity
+instance Command AddItemToCart where
+  type Entity = CartEntity
+
+  entityId cmd =
+    EntityId cmd.cartId
 
   decide :: AddItemToCart -> Maybe CartEntity -> CommandResult CartEvent
   decide cmd entity =
@@ -114,20 +121,89 @@ instance Command AddItemToCart CartEntity where
           |> AcceptCommand ExistingStream
 ```
 
+**Tenant Command:**
+
+```haskell
+-- Tenant command data type
+data CreateOrder = CreateOrder
+  { orderId :: Uuid,
+    customerId :: Uuid,
+    items :: Array OrderItem
+  }
+  deriving (Eq, Show, Ord, Generic)
+
+instance FromJSON CreateOrder
+instance ToJSON CreateOrder
+
+-- TenantCommand instance for OrderEntity
+instance TenantCommand CreateOrder where
+  type Entity = OrderEntity
+
+  entityId cmd tenantId =
+    EntityId (cmd.tenantId ++ "-" ++ cmd.orderId)
+
+  decide :: CreateOrder -> Maybe OrderEntity -> Uuid -> CommandResult OrderEvent
+  decide cmd entity tenantId =
+    case entity of
+      Just _existingOrder ->
+        RejectCommand "Order already exists"
+
+      Nothing -> do
+        let event = OrderCreated
+              { orderId = cmd.orderId,
+                tenantId = tenantId,
+                customerId = cmd.customerId,
+                items = cmd.items
+              }
+        Array.ofLinkedList [ event ]
+          |> AcceptCommand CreateStream
+```
+
+**Command Result Types:**
+
+```haskell
+data CommandResult event
+  = AcceptCommand StreamAction (Array event)
+  | RejectCommand Text
+
+data StreamAction
+  = CreateStream      -- Create a new stream (entity doesn't exist)
+  | ExistingStream    -- Append to existing stream (entity exists)
+```
+
+**Typeclass Definitions:**
+
+```haskell
+-- Regular command (non-tenant)
+class Command command where
+  type Entity
+  entityId :: command -> EntityId
+  decide :: command -> Maybe entity -> CommandResult event
+
+-- Tenant command (multi-tenant)
+class TenantCommand command where
+  type Entity
+  entityId :: command -> Uuid -> EntityId  -- Tenant ID may influence entity ID
+  decide :: command -> Maybe entity -> Uuid -> CommandResult event
+```
+
 **Tasks:**
 
 **Core Command Types:**
 
 - [ ] Create `Service.Command` module with base types
-- [ ] Define `Command` typeclass with methods:
-  - `decide :: command -> Option entity -> CommandResult event` - Business logic decision
-  - `getEntityId :: command -> EntityId` - Extract target entity ID
-- [ ] Define `TenantCommand` typeclass with methods:
-  - `decide :: command -> Option entity -> Uuid -> CommandResult event` - Includes tenant ID
-  - `getEntityId :: command -> Uuid -> EntityId` - Tenant-scoped entity ID
-- [ ] Create command result types:
-  - `CommandAccepted` with entity ID
-  - `CommandRejected` with error text
+- [ ] Define `CommandResult` data type:
+  - `AcceptCommand :: StreamAction -> Array event -> CommandResult event`
+  - `RejectCommand :: Text -> CommandResult event`
+- [ ] Define `StreamAction` data type:
+  - `CreateStream` - Create new stream (entity doesn't exist yet)
+  - `ExistingStream` - Append to existing stream (entity already exists)
+- [ ] Define `Command` typeclass (multi-parameter: `command entity event`):
+  - `entityId :: command -> Uuid` - Extract target entity ID from command
+  - `decide :: command -> Maybe entity -> CommandResult event` - Business logic decision
+- [ ] Define `TenantCommand` typeclass (multi-parameter: `command entity event`):
+  - `entityId :: command -> Uuid -> Uuid` - Extract entity ID (may depend on tenant)
+  - `decide :: command -> Maybe entity -> Uuid -> CommandResult event` - Includes tenant ID in decision
 
 **Command Context (Minimal):**
 
@@ -145,35 +221,47 @@ instance Command AddItemToCart CartEntity where
 
 **Deliverables:**
 
-- `core/service/Service/Command.hs` - Base command types and typeclass
-- `core/service/Service/Command/TenantCommand.hs` - Tenant-scoped commands
-- `core/service/Service/Command/Context.hs` - Command context (minimal)
+- `core/service/Service/Command.hs` - Base command types, `Command` typeclass, `CommandResult`, `StreamAction`
+- `core/service/Service/Command/TenantCommand.hs` - `TenantCommand` typeclass for multi-tenant scenarios
+- `core/service/Service/Command/Context.hs` - Command context (minimal - correlation ID, timestamp, causation ID)
 - Example command implementations:
-  - Regular command (e.g., `OpenBankAccount`, `DepositMoney`)
-  - Tenant command (e.g., `CreateOrder`, `AssignTask`)
+  - Regular command: `AddItemToCart`, `RemoveItemFromCart`, `CheckoutCart`
+  - Tenant command: `CreateOrder`, `CancelOrder`, `AssignTask`
 - Unit tests for command decision logic
 - Documentation with examples
 
 **Design Considerations:**
 
 - Commands are data structures with behavior via typeclass instances
+- Use multi-parameter type classes: `Command command entity event` and `TenantCommand command entity event`
 - Separate `Command` and `TenantCommand` for single-tenant vs multi-tenant scenarios
-- Decision logic (`decide`) is pure - takes state, returns events or error text
-- Commands do NOT handle validation (keep them simple)
+- Decision logic (`decide`) is pure - takes entity state, returns `CommandResult`
+- `CommandResult` is either:
+  - `AcceptCommand StreamAction (Array event)` - Command succeeded, emit events
+  - `RejectCommand Text` - Command rejected with error message
+- `StreamAction` indicates stream creation strategy:
+  - `CreateStream` - Create new stream (for entity creation commands)
+  - `ExistingStream` - Append to existing stream (for entity update commands)
+- Entity ID extracted via `entityId` method (pure function from command data)
+- Entity state is `Maybe entity`:
+  - `Nothing` means entity doesn't exist yet (typical for creation commands)
+  - `Just entity` means entity exists (typical for update commands)
+- Command handler will use `StreamAction` to determine correct event store insertion type
+- Commands do NOT handle validation (keep them simple for MVP)
 - Commands do NOT handle authorization (all commands open during development)
-- No idempotency support yet (will be added later)
-- No file attachment support yet (will be added later)
-- Must follow NeoHaskell style (explicit imports, no point-free, `Result` not `Either`)
-- Use `StrongId` types for entity IDs (type-safe identifiers)
-- Error is simple `Text` for now (not complex error types)
-- Commands should not directly access event store - that's CommandHandler's job
+- No idempotency support yet (will be added in section 1.7.3)
+- No file attachment support yet (will be added in section 1.7.4)
+- Must follow NeoHaskell style (explicit imports, no point-free, `do` blocks)
+- Use `Uuid` for entity IDs (simple and straightforward)
+- Error is simple `Text` in `RejectCommand` (not complex error types for MVP)
+- Commands should not directly access event store - that's CommandHandler's responsibility
 
-**Deferred Features (moved to Phase 2+):**
+**Deferred Features (moved to Phase 1.7 - Post-MVP):**
 
-- Validation infrastructure → See section 1.2.1 (after Read Models)
-- Authorization infrastructure → See section 1.2.2 (after Read Models)
-- Idempotency support → See section 1.2.3 (after Read Models)
-- File attachment support → See section 1.2.4 (after Read Models)
+- Validation infrastructure → See section 1.7.1 (after Read Models)
+- Authorization infrastructure → See section 1.7.2 (after Read Models)
+- Idempotency support → See section 1.7.3 (after Read Models)
+- File attachment support → See section 1.7.4 (after Read Models)
 
 ---
 
