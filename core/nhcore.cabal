@@ -127,6 +127,9 @@ library
     Path
     Record
     Result
+    Service.Command
+    Service.Command.Core
+    Service.Command.TenantCommand
     Service.EntityFetcher
     Service.EntityFetcher.Core
     Service.Event
@@ -152,6 +155,14 @@ library
     Test.AppSpec.AppSpec
     Test.AppSpec.Scenario
     Test.AppSpec.Verify
+    Test.Service.Command
+    Test.Service.Command.Core
+    Test.Service.Command.Decide.Context
+    Test.Service.Command.Decide.Spec
+    Test.Service.CommandHandler
+    Test.Service.CommandHandler.Core
+    Test.Service.CommandHandler.Execute.Context
+    Test.Service.CommandHandler.Execute.Spec
     Test.Service.EntityFetcher
     Test.Service.EntityFetcher.Core
     Test.Service.EntityFetcher.Fetch.Context
