@@ -31,71 +31,179 @@ This document outlines the roadmap for completing the NeoHaskell Event Sourcing 
 
 These components enable developers to actually build applications using the event store.
 
-### 1.1 Entity Pattern Implementation
+### 1.1 Entity Pattern Implementation ✅ COMPLETED
 
 **Priority:** CRITICAL
 **Estimated Effort:** Medium
 **Dependencies:** None (builds on existing Event Store)
 
-**Tasks:**
+**Status:** Completed in PR #226 - "Add Entity Fetcher Service for Event Sourcing"
 
-- [ ] Create `Service.Entity` module
-- [ ] Define `Entity` typeclass with methods:
-  - `applyEvent` - Apply event to update entity state
-  - `handleCommand` - Process command and emit events or error
-- [ ] Implement entity state reconstruction via event replay
-- [ ] Add version tracking to entity state
-- [ ] Create helper functions for entity loading from event store
-- [ ] Document entity design patterns for NeoHaskell style
+**Completed Tasks:**
 
-**Deliverables:**
+- [x] Create `Service.EntityFetcher` module (implements entity fetching pattern)
+- [x] Implement entity state reconstruction via event replay using reduction function
+- [x] Add version tracking to entity state (via custom state types)
+- [x] Create helper functions for entity loading from event store (`fetch` method)
+- [x] Document entity design patterns for NeoHaskell style (via examples and tests)
 
-- `core/service/Service/Entity.hs`
-- Example entity implementation (e.g., `BankAccount`, `ShoppingCart`)
-- Unit tests using Given-When-Then pattern
-- Documentation in CLAUDE.md
+**Note:** The implementation uses `EntityFetcher` with a reduction function pattern instead of a typeclass-based `Entity` pattern. This provides:
 
-**Design Considerations:**
+- Clean separation: `applyEvent` is provided as a reduction function
+- Command handling is intentionally separated (will be in CommandHandler module)
+- Pure entity state reconstruction via event replay
+- Efficient streaming-based event consumption
 
-- Must follow NeoHaskell coding style (no point-free, explicit imports, etc.)
-- Use `Result` for validation errors
-- Entities should be pure (no IO in business logic)
-- State type should be explicit, not hidden
+**Deliverables Completed:**
+
+- ✅ [core/service/Service/EntityFetcher.hs](core/service/Service/EntityFetcher.hs)
+- ✅ [core/service/Service/EntityFetcher/Core.hs](core/service/Service/EntityFetcher/Core.hs)
+- ✅ Example entity implementation: `BankAccount` with state and events in test helpers
+- ✅ Comprehensive unit tests covering:
+  - Basic entity fetching (empty, single event, multiple events)
+  - Independent entity streams
+  - Large event counts (100+ events with performance boundaries)
+  - Concurrent fetch operations
+  - Error scenarios and edge cases
+  - Performance testing with 10, 100, and 1000 events
+- ✅ Tests follow Given-When-Then pattern
+- ✅ Both InMemory and Postgres event store implementations tested
+
+**Design Decisions:**
+
+- ✅ Follows NeoHaskell coding style (explicit imports, no point-free, `do` blocks)
+- ✅ Uses reduction function pattern: `(event -> state -> state)`
+- ✅ Entities are pure (no IO in business logic - reduction function is pure)
+- ✅ State type is explicit (not hidden)
+- ✅ Streaming-based event consumption for memory efficiency
+- ✅ Version tracking is responsibility of entity state (not enforced by framework)
 
 ---
 
 ### 1.2 Command Infrastructure
 
 **Priority:** CRITICAL
-**Estimated Effort:** Small
-**Dependencies:** None
+**Estimated Effort:** Medium
+**Dependencies:** 1.1 Entity Pattern (EntityFetcher)
 
 **Tasks:**
 
-- [ ] Create `Service.Command` module
-- [ ] Define `Command` typeclass for command metadata
-- [ ] Create command validation helpers
-- [ ] Implement command ID generation (UUID)
-- [ ] Add command metadata types:
-  - Command ID
+**Core Command Types:**
+
+- [ ] Create `Service.Command` module with base types
+- [ ] Define `Command` typeclass with methods:
+  - `validate :: command -> Array Text` - Returns validation errors
+  - `decide :: command -> Option entity -> Option UserSecurity -> Result (Array Event) ValidationError` - Business logic decision
+  - `getEntityId :: command -> Option UserSecurity -> Option StrongId` - Extract target entity ID
+- [ ] Define `TenantCommand` typeclass (extends Command) with:
+  - `decide :: command -> Option entity -> Option UserSecurity -> Uuid -> Result (Array Event) ValidationError` - Includes tenant ID
+  - `getEntityId :: command -> Option UserSecurity -> Uuid -> Option StrongId` - Tenant-scoped entity ID
+- [ ] Create command result types:
+  - `CommandAccepted` with entity ID
+  - `ValidationError` with error messages
+  - `ConflictError` for concurrency conflicts
+  - `ForbiddenError` for authorization failures
+  - `NotFoundError` for missing entities
+
+**Command Metadata & Context:**
+
+- [ ] Implement `CommandContext` type with:
+  - Correlation ID (UUID for tracing)
+  - Causation ID (what triggered this command)
+  - User/actor security context (`Option UserSecurity`)
+  - Tenant ID (`Option Uuid` for multi-tenancy)
   - Timestamp
-  - User/actor context
-  - Correlation ID
-  - Expected entity version
-- [ ] Document command naming conventions (imperative, e.g., PlaceOrder)
+- [ ] Create `UserSecurity` type for authentication:
+  - User ID/Subject
+  - Roles/Claims
+  - Tenant memberships
+- [ ] Add command metadata helpers for context propagation
+
+**Validation Infrastructure:**
+
+- [ ] Create validation helper functions:
+  - Nullability/required field validation
+  - Format validation utilities
+  - Business rule validation helpers
+- [ ] Implement validation result aggregation
+- [ ] Add custom validation support (JsonLogic or similar rules engine)
+- [ ] Create validation error message builders
+
+**Authorization Infrastructure:**
+
+- [ ] Define authorization types:
+  - `AuthOptions`: Everyone, Authenticated, RequireRoles, Custom
+  - Custom authorization function type: `(Option UserSecurity -> Option entity -> command -> Result Unit AuthError)`
+- [ ] Implement authorization checking before command execution
+- [ ] Add tenant-scoped authorization (ensure user belongs to tenant)
+- [ ] Create authorization error types
+
+**Idempotency Support:**
+
+- [ ] Create `IdempotencyKey` type (newtype wrapper for Text/UUID)
+- [ ] Define idempotency cache entity/state:
+  - Key (IdempotencyKey)
+  - State (Pending/Accepted/Rejected)
+  - Stored result (success or error)
+  - Lock expiration timestamp
+- [ ] Implement idempotency events:
+  - `IdempotentCommandStarted` - Lock acquired
+  - `IdempotentCommandAccepted` - Stored success result
+  - `IdempotentCommandRejected` - Stored error result
+- [ ] Add idempotency key validation (reject invalid keys like "undefined", "null", etc.)
+
+**File Attachment Support:**
+
+- [ ] Create `AttachedFile` type with ID and optional tags
+- [ ] Implement file validation:
+  - Check file exists in system
+  - Verify file not deleted
+  - Confirm file ownership/permissions
+- [ ] Add file confirmation events:
+  - `FileConfirmed` - Mark file as used by command
+  - `FileTagged` - Add metadata tags to file
+- [ ] Create helpers to extract files from command properties
+
+**Testing Infrastructure:**
+
+- [ ] Create command testing helpers:
+  - Mock entity state builders
+  - Mock user security contexts
+  - Command execution test harness
+- [ ] Add validation testing utilities
+- [ ] Create authorization testing helpers
+- [ ] Implement idempotency testing scenarios
 
 **Deliverables:**
 
-- `core/service/Service/Command.hs`
-- Example command types
-- Validation utilities
-- Documentation
+- `core/service/Service/Command.hs` - Base command types and typeclass
+- `core/service/Service/Command/TenantCommand.hs` - Tenant-scoped commands
+- `core/service/Service/Command/Context.hs` - Command context and metadata
+- `core/service/Service/Command/Validation.hs` - Validation utilities
+- `core/service/Service/Command/Authorization.hs` - Auth types and helpers
+- `core/service/Service/Command/Idempotency.hs` - Idempotency support
+- `core/service/Service/Command/FileAttachment.hs` - File handling
+- Example command implementations:
+  - Regular command (e.g., `OpenBankAccount`, `DepositMoney`)
+  - Tenant command (e.g., `CreateOrder`, `AssignTask`)
+- Comprehensive unit tests
+- Documentation with examples
 
 **Design Considerations:**
 
-- Commands are simple data structures (no behavior)
-- Commands express intent and can fail
-- Include routing information (entity ID)
+- Commands are data structures with behavior via typeclass instances
+- Separate `Command` and `TenantCommand` for single-tenant vs multi-tenant scenarios
+- Commands express intent and contain validation logic
+- Decision logic (`decide`) is pure - takes state, returns events or errors
+- Support both simple validation (nullability, format) and complex rules (JsonLogic)
+- Idempotency prevents duplicate command execution
+- File attachments are first-class citizens with lifecycle management
+- Authorization happens before command execution
+- Tenant isolation enforced at framework level
+- Must follow NeoHaskell style (explicit imports, no point-free, `Result` not `Either`)
+- Use `StrongId` types for entity IDs (type-safe identifiers)
+- Validation errors are `Array Text` for multiple error messages
+- Commands should not directly access event store - that's CommandHandler's job
 
 ---
 
