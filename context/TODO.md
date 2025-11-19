@@ -106,8 +106,8 @@ instance ToJSON AddItemToCart
 instance Command AddItemToCart where
   type Entity = CartEntity
 
-  entityId cmd =
-    EntityId cmd.cartId
+  streamId cmd =
+    StreamId cmd.cartId
 
   decide :: AddItemToCart -> Maybe CartEntity -> CommandResult CartEvent
   decide cmd entity =
@@ -118,7 +118,7 @@ instance Command AddItemToCart where
       Just cart -> do
         let event = ItemAdded { cartId = cart.id, itemId = cmd.itemId, amount = cmd.amount }
         Array.ofLinkedList [ event ]
-          |> AcceptCommand ExistingStream
+          |> AcceptCommand ExistingStream  -- Append to existing stream
 ```
 
 **Tenant Command:**
@@ -139,8 +139,8 @@ instance ToJSON CreateOrder
 instance TenantCommand CreateOrder where
   type Entity = OrderEntity
 
-  entityId cmd tenantId =
-    EntityId (cmd.tenantId ++ "-" ++ cmd.orderId)
+  streamId cmd tenantId =
+    StreamId (tenantId.toText ++ "-" ++ cmd.orderId.toText)
 
   decide :: CreateOrder -> Maybe OrderEntity -> Uuid -> CommandResult OrderEvent
   decide cmd entity tenantId =
@@ -156,19 +156,29 @@ instance TenantCommand CreateOrder where
                 items = cmd.items
               }
         Array.ofLinkedList [ event ]
-          |> AcceptCommand CreateStream
+          |> AcceptCommand StreamCreation  -- Create new stream
 ```
 
 **Command Result Types:**
 
 ```haskell
 data CommandResult event
-  = AcceptCommand StreamAction (Array event)
+  = AcceptCommand InsertionType (Array event)
   | RejectCommand Text
 
-data StreamAction
-  = CreateStream      -- Create a new stream (entity doesn't exist)
-  | ExistingStream    -- Append to existing stream (entity exists)
+-- InsertionType is already defined in Service.Event:
+data InsertionType
+  = StreamCreation              -- Create a new stream (entity doesn't exist)
+  | InsertAfter StreamPosition  -- Append after specific position (for optimistic concurrency)
+  | ExistingStream              -- Append to existing stream (any position)
+  | AnyStreamState              -- Insert regardless of stream state
+
+-- Usage guide:
+-- - Use `StreamCreation` when creating a new entity (entity is Nothing)
+-- - Use `ExistingStream` when updating an existing entity (entity is Just)
+-- - Use `InsertAfter position` when you need optimistic concurrency control
+--   (check that entity hasn't changed since you loaded it)
+-- - Use `AnyStreamState` for idempotent operations that work regardless of state
 ```
 
 **Typeclass Definitions:**
@@ -177,14 +187,14 @@ data StreamAction
 -- Regular command (non-tenant)
 class Command command where
   type Entity
-  entityId :: command -> EntityId
-  decide :: command -> Maybe entity -> CommandResult event
+  streamId :: command -> StreamId
+  decide :: command -> Maybe Entity -> CommandResult event
 
 -- Tenant command (multi-tenant)
 class TenantCommand command where
   type Entity
-  entityId :: command -> Uuid -> EntityId  -- Tenant ID may influence entity ID
-  decide :: command -> Maybe entity -> Uuid -> CommandResult event
+  streamId :: command -> Uuid -> StreamId  -- Tenant ID may influence stream ID
+  decide :: command -> Maybe Entity -> Uuid -> CommandResult event
 ```
 
 **Tasks:**
@@ -193,17 +203,17 @@ class TenantCommand command where
 
 - [ ] Create `Service.Command` module with base types
 - [ ] Define `CommandResult` data type:
-  - `AcceptCommand :: StreamAction -> Array event -> CommandResult event`
+  - `AcceptCommand :: InsertionType -> Array event -> CommandResult event`
   - `RejectCommand :: Text -> CommandResult event`
-- [ ] Define `StreamAction` data type:
-  - `CreateStream` - Create new stream (entity doesn't exist yet)
-  - `ExistingStream` - Append to existing stream (entity already exists)
-- [ ] Define `Command` typeclass (multi-parameter: `command entity event`):
-  - `entityId :: command -> Uuid` - Extract target entity ID from command
-  - `decide :: command -> Maybe entity -> CommandResult event` - Business logic decision
-- [ ] Define `TenantCommand` typeclass (multi-parameter: `command entity event`):
-  - `entityId :: command -> Uuid -> Uuid` - Extract entity ID (may depend on tenant)
-  - `decide :: command -> Maybe entity -> Uuid -> CommandResult event` - Includes tenant ID in decision
+- [ ] Note: Reuse existing `InsertionType` from `Service.Event` (don't create new type)
+- [ ] Define `Command` typeclass with associated type:
+  - Associated type: `Entity`
+  - `streamId :: command -> StreamId` - Extract target stream ID from command
+  - `decide :: command -> Maybe Entity -> CommandResult event` - Business logic decision
+- [ ] Define `TenantCommand` typeclass with associated type:
+  - Associated type: `Entity`
+  - `streamId :: command -> Uuid -> StreamId` - Extract stream ID (may depend on tenant)
+  - `decide :: command -> Maybe Entity -> Uuid -> CommandResult event` - Includes tenant ID in decision
 
 **Command Context (Minimal):**
 
@@ -233,26 +243,31 @@ class TenantCommand command where
 **Design Considerations:**
 
 - Commands are data structures with behavior via typeclass instances
-- Use multi-parameter type classes: `Command command entity event` and `TenantCommand command entity event`
+- Use typeclasses with associated type `Entity`: `Command command` and `TenantCommand command`
 - Separate `Command` and `TenantCommand` for single-tenant vs multi-tenant scenarios
 - Decision logic (`decide`) is pure - takes entity state, returns `CommandResult`
 - `CommandResult` is either:
-  - `AcceptCommand StreamAction (Array event)` - Command succeeded, emit events
+  - `AcceptCommand InsertionType (Array event)` - Command succeeded, emit events
   - `RejectCommand Text` - Command rejected with error message
-- `StreamAction` indicates stream creation strategy:
-  - `CreateStream` - Create new stream (for entity creation commands)
+- Reuse existing `InsertionType` from `Service.Event`:
+  - `StreamCreation` - Create new stream (for entity creation commands)
   - `ExistingStream` - Append to existing stream (for entity update commands)
-- Entity ID extracted via `entityId` method (pure function from command data)
-- Entity state is `Maybe entity`:
+  - `InsertAfter StreamPosition` - Append after specific position (for optimistic concurrency control)
+  - `AnyStreamState` - Insert regardless of stream state (for idempotent operations)
+- Stream ID extracted via `streamId` method (pure function from command data)
+- Returns `StreamId` type (wrapper around UUID, already exists in `Service.Event`)
+- Entity state is `Maybe Entity`:
   - `Nothing` means entity doesn't exist yet (typical for creation commands)
   - `Just entity` means entity exists (typical for update commands)
-- Command handler will use `StreamAction` to determine correct event store insertion type
+- Command handler will use `InsertionType` to determine correct event store insertion strategy
+- For most commands, use either `StreamCreation` or `ExistingStream`
+- Advanced commands can use `InsertAfter` for optimistic concurrency (when entity version matters)
 - Commands do NOT handle validation (keep them simple for MVP)
 - Commands do NOT handle authorization (all commands open during development)
 - No idempotency support yet (will be added in section 1.7.3)
 - No file attachment support yet (will be added in section 1.7.4)
 - Must follow NeoHaskell style (explicit imports, no point-free, `do` blocks)
-- Use `Uuid` for entity IDs (simple and straightforward)
+- Use `StreamId` wrapper for stream IDs (type-safe, wraps UUID)
 - Error is simple `Text` in `RejectCommand` (not complex error types for MVP)
 - Commands should not directly access event store - that's CommandHandler's responsibility
 
