@@ -80,10 +80,10 @@ These components enable developers to actually build applications using the even
 
 ---
 
-### 1.2 Command Infrastructure
+### 1.2 Command Infrastructure (Simplified)
 
 **Priority:** CRITICAL
-**Estimated Effort:** Medium
+**Estimated Effort:** Small
 **Dependencies:** 1.1 Entity Pattern (EntityFetcher)
 
 **Tasks:**
@@ -92,118 +92,60 @@ These components enable developers to actually build applications using the even
 
 - [ ] Create `Service.Command` module with base types
 - [ ] Define `Command` typeclass with methods:
-  - `validate :: command -> Array Text` - Returns validation errors
-  - `decide :: command -> Option entity -> Option UserSecurity -> Result (Array Event) ValidationError` - Business logic decision
-  - `getEntityId :: command -> Option UserSecurity -> Option StrongId` - Extract target entity ID
-- [ ] Define `TenantCommand` typeclass (extends Command) with:
-  - `decide :: command -> Option entity -> Option UserSecurity -> Uuid -> Result (Array Event) ValidationError` - Includes tenant ID
-  - `getEntityId :: command -> Option UserSecurity -> Uuid -> Option StrongId` - Tenant-scoped entity ID
+  - `decide :: command -> Option entity -> Result (Array event) Text` - Business logic decision
+  - `getEntityId :: command -> Option StrongId` - Extract target entity ID
+- [ ] Define `TenantCommand` typeclass with methods:
+  - `decide :: command -> Option entity -> Uuid -> Result (Array event) Text` - Includes tenant ID
+  - `getEntityId :: command -> Uuid -> Option StrongId` - Tenant-scoped entity ID
 - [ ] Create command result types:
   - `CommandAccepted` with entity ID
-  - `ValidationError` with error messages
-  - `ConflictError` for concurrency conflicts
-  - `ForbiddenError` for authorization failures
-  - `NotFoundError` for missing entities
+  - `CommandRejected` with error text
 
-**Command Metadata & Context:**
+**Command Context (Minimal):**
 
-- [ ] Implement `CommandContext` type with:
+- [ ] Implement basic `CommandContext` type with:
   - Correlation ID (UUID for tracing)
-  - Causation ID (what triggered this command)
-  - User/actor security context (`Option UserSecurity`)
-  - Tenant ID (`Option Uuid` for multi-tenancy)
   - Timestamp
-- [ ] Create `UserSecurity` type for authentication:
-  - User ID/Subject
-  - Roles/Claims
-  - Tenant memberships
-- [ ] Add command metadata helpers for context propagation
-
-**Validation Infrastructure:**
-
-- [ ] Create validation helper functions:
-  - Nullability/required field validation
-  - Format validation utilities
-  - Business rule validation helpers
-- [ ] Implement validation result aggregation
-- [ ] Add custom validation support (JsonLogic or similar rules engine)
-- [ ] Create validation error message builders
-
-**Authorization Infrastructure:**
-
-- [ ] Define authorization types:
-  - `AuthOptions`: Everyone, Authenticated, RequireRoles, Custom
-  - Custom authorization function type: `(Option UserSecurity -> Option entity -> command -> Result Unit AuthError)`
-- [ ] Implement authorization checking before command execution
-- [ ] Add tenant-scoped authorization (ensure user belongs to tenant)
-- [ ] Create authorization error types
-
-**Idempotency Support:**
-
-- [ ] Create `IdempotencyKey` type (newtype wrapper for Text/UUID)
-- [ ] Define idempotency cache entity/state:
-  - Key (IdempotencyKey)
-  - State (Pending/Accepted/Rejected)
-  - Stored result (success or error)
-  - Lock expiration timestamp
-- [ ] Implement idempotency events:
-  - `IdempotentCommandStarted` - Lock acquired
-  - `IdempotentCommandAccepted` - Stored success result
-  - `IdempotentCommandRejected` - Stored error result
-- [ ] Add idempotency key validation (reject invalid keys like "undefined", "null", etc.)
-
-**File Attachment Support:**
-
-- [ ] Create `AttachedFile` type with ID and optional tags
-- [ ] Implement file validation:
-  - Check file exists in system
-  - Verify file not deleted
-  - Confirm file ownership/permissions
-- [ ] Add file confirmation events:
-  - `FileConfirmed` - Mark file as used by command
-  - `FileTagged` - Add metadata tags to file
-- [ ] Create helpers to extract files from command properties
+  - Optional causation ID (what triggered this command)
 
 **Testing Infrastructure:**
 
 - [ ] Create command testing helpers:
   - Mock entity state builders
-  - Mock user security contexts
   - Command execution test harness
-- [ ] Add validation testing utilities
-- [ ] Create authorization testing helpers
-- [ ] Implement idempotency testing scenarios
+- [ ] Add unit tests for command decision logic
 
 **Deliverables:**
 
 - `core/service/Service/Command.hs` - Base command types and typeclass
 - `core/service/Service/Command/TenantCommand.hs` - Tenant-scoped commands
-- `core/service/Service/Command/Context.hs` - Command context and metadata
-- `core/service/Service/Command/Validation.hs` - Validation utilities
-- `core/service/Service/Command/Authorization.hs` - Auth types and helpers
-- `core/service/Service/Command/Idempotency.hs` - Idempotency support
-- `core/service/Service/Command/FileAttachment.hs` - File handling
+- `core/service/Service/Command/Context.hs` - Command context (minimal)
 - Example command implementations:
   - Regular command (e.g., `OpenBankAccount`, `DepositMoney`)
   - Tenant command (e.g., `CreateOrder`, `AssignTask`)
-- Comprehensive unit tests
+- Unit tests for command decision logic
 - Documentation with examples
 
 **Design Considerations:**
 
 - Commands are data structures with behavior via typeclass instances
 - Separate `Command` and `TenantCommand` for single-tenant vs multi-tenant scenarios
-- Commands express intent and contain validation logic
-- Decision logic (`decide`) is pure - takes state, returns events or errors
-- Support both simple validation (nullability, format) and complex rules (JsonLogic)
-- Idempotency prevents duplicate command execution
-- File attachments are first-class citizens with lifecycle management
-- Authorization happens before command execution
-- Tenant isolation enforced at framework level
+- Decision logic (`decide`) is pure - takes state, returns events or error text
+- Commands do NOT handle validation (keep them simple)
+- Commands do NOT handle authorization (all commands open during development)
+- No idempotency support yet (will be added later)
+- No file attachment support yet (will be added later)
 - Must follow NeoHaskell style (explicit imports, no point-free, `Result` not `Either`)
 - Use `StrongId` types for entity IDs (type-safe identifiers)
-- Validation errors are `Array Text` for multiple error messages
+- Error is simple `Text` for now (not complex error types)
 - Commands should not directly access event store - that's CommandHandler's job
+
+**Deferred Features (moved to Phase 2+):**
+
+- Validation infrastructure → See section 1.2.1 (after Read Models)
+- Authorization infrastructure → See section 1.2.2 (after Read Models)
+- Idempotency support → See section 1.2.3 (after Read Models)
+- File attachment support → See section 1.2.4 (after Read Models)
 
 ---
 
@@ -357,6 +299,194 @@ These components enable developers to actually build applications using the even
 - No shared types between commands and queries
 - Cache when appropriate
 - Handle stale reads gracefully
+
+---
+
+### 1.7 Command Extensions (Post-MVP)
+
+These features extend the basic command infrastructure after the core CQRS read side is complete.
+
+---
+
+#### 1.7.1 Command Validation Infrastructure
+
+**Priority:** MEDIUM
+**Estimated Effort:** Small-Medium
+**Dependencies:** 1.2 Commands, 1.6 Query Handlers
+
+**Tasks:**
+
+- [ ] Create `Service.Command.Validation` module
+- [ ] Add `validate` method to `Command` and `TenantCommand` typeclasses:
+  - `validate :: command -> Array Text` - Returns validation errors
+- [ ] Create validation helper functions:
+  - Required field validation
+  - Format validation utilities (email, phone, etc.)
+  - Range validation (min/max values)
+  - Pattern matching validation
+- [ ] Implement validation result aggregation
+- [ ] Add custom validation support (JsonLogic or similar rules engine)
+- [ ] Create validation error message builders
+- [ ] Update `decide` to return `Result (Array event) ValidationError` instead of `Text`
+
+**Deliverables:**
+
+- `core/service/Service/Command/Validation.hs`
+- Validation helper utilities
+- JsonLogic-style rule engine integration
+- Updated command examples with validation
+- Unit tests for validation logic
+- Documentation
+
+**Design Considerations:**
+
+- Keep validation separate from business logic (decide)
+- Validation runs before `decide` is called
+- Support both simple and complex validation rules
+- Validation errors should be user-friendly
+- Consider i18n for error messages
+
+---
+
+#### 1.7.2 Command Authorization Infrastructure
+
+**Priority:** MEDIUM
+**Estimated Effort:** Medium
+**Dependencies:** 1.2 Commands, 1.7.1 Validation
+
+**Tasks:**
+
+- [ ] Create `Service.Command.Authorization` module
+- [ ] Define `UserSecurity` type:
+  - User ID/Subject
+  - Roles/Claims
+  - Tenant memberships
+  - Custom attributes
+- [ ] Define authorization types:
+  - `AuthOptions`: Everyone, Authenticated, RequireRoles, RequireClaims, Custom
+  - Custom authorization function: `(Option UserSecurity -> Option entity -> command -> Result Unit AuthError)`
+- [ ] Update `Command` typeclass:
+  - Add `getEntityId :: command -> Option UserSecurity -> Option StrongId`
+  - Add `decide :: command -> Option entity -> Option UserSecurity -> Result (Array event) ValidationError`
+- [ ] Update `TenantCommand` typeclass:
+  - Add `getEntityId :: command -> Option UserSecurity -> Uuid -> Option StrongId`
+  - Add `decide :: command -> Option entity -> Option UserSecurity -> Uuid -> Result (Array event) ValidationError`
+- [ ] Implement authorization checking in CommandHandler
+- [ ] Add tenant-scoped authorization (ensure user belongs to tenant)
+- [ ] Create authorization error types
+
+**Deliverables:**
+
+- `core/service/Service/Command/Authorization.hs`
+- `UserSecurity` type and helpers
+- Authorization checking utilities
+- Role-based access control (RBAC) support
+- Tenant isolation enforcement
+- Unit tests for authorization
+- Documentation with security best practices
+
+**Design Considerations:**
+
+- Authorization happens before command execution
+- Fail fast - check auth before loading entity
+- Tenant isolation enforced at framework level
+- Support both coarse-grained (role-based) and fine-grained (entity-level) authorization
+- Custom authorization for complex scenarios
+- Audit all authorization failures
+
+---
+
+#### 1.7.3 Command Idempotency Support
+
+**Priority:** MEDIUM
+**Estimated Effort:** Medium
+**Dependencies:** 1.2 Commands, 1.3 Command Handlers, 1.7.2 Authorization
+
+**Tasks:**
+
+- [ ] Create `Service.Command.Idempotency` module
+- [ ] Create `IdempotencyKey` type (newtype wrapper for Text/UUID)
+- [ ] Define idempotency cache entity/state:
+  - Key (IdempotencyKey)
+  - State (Pending/Accepted/Rejected)
+  - Stored result (success or error)
+  - Lock expiration timestamp
+  - Locked at timestamp
+- [ ] Implement idempotency events:
+  - `IdempotentCommandStarted` - Lock acquired
+  - `IdempotentCommandAccepted` - Stored success result
+  - `IdempotentCommandRejected` - Stored error result
+- [ ] Add idempotency key validation (reject invalid keys like "undefined", "null", etc.)
+- [ ] Implement lock-based duplicate prevention
+- [ ] Add lock timeout handling (stale lock cleanup)
+- [ ] Create idempotency projection for cache state
+
+**Deliverables:**
+
+- `core/service/Service/Command/Idempotency.hs`
+- `IdempotencyKey` type and validation
+- Idempotency cache entity
+- Lock management utilities
+- Integration with CommandHandler
+- Unit tests for idempotency scenarios
+- Documentation on idempotent command design
+
+**Design Considerations:**
+
+- Idempotency prevents duplicate command execution
+- Use locks to prevent concurrent execution
+- Store both success and failure results
+- Lock timeout prevents indefinite blocking
+- Idempotency key should be client-generated
+- Consider storage cleanup for old cache entries
+- At-most-once execution guarantee
+
+---
+
+#### 1.7.4 Command File Attachment Support
+
+**Priority:** LOW
+**Estimated Effort:** Small-Medium
+**Dependencies:** 1.2 Commands, 1.3 Command Handlers
+
+**Tasks:**
+
+- [ ] Create `Service.Command.FileAttachment` module
+- [ ] Create `AttachedFile` type with:
+  - File ID (UUID)
+  - Optional tags/metadata
+  - Optional content type
+- [ ] Create `FileUpload` entity for file lifecycle management
+- [ ] Implement file validation:
+  - Check file exists in system
+  - Verify file not deleted
+  - Confirm file ownership/permissions (if using auth)
+- [ ] Add file confirmation events:
+  - `FileConfirmed` - Mark file as used by command
+  - `FileTagged` - Add metadata tags to file
+- [ ] Create helpers to extract files from command properties (reflection-based)
+- [ ] Add file validation to command execution pipeline
+
+**Deliverables:**
+
+- `core/service/Service/Command/FileAttachment.hs`
+- `AttachedFile` type
+- `FileUpload` entity
+- File validation utilities
+- File lifecycle events
+- Integration with CommandHandler
+- Unit tests
+- Documentation on file handling patterns
+
+**Design Considerations:**
+
+- Files are first-class citizens with lifecycle management
+- Files confirmed when command succeeds
+- Orphaned files can be cleaned up
+- Consider file size limits
+- Consider storage backend abstraction
+- Support multiple files per command
+- File validation happens before command execution
 
 ---
 
