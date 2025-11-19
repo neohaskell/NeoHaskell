@@ -86,17 +86,45 @@ These components enable developers to actually build applications using the even
 **Estimated Effort:** Small
 **Dependencies:** 1.1 Entity Pattern (EntityFetcher)
 
+**Example code:**
+
+```haskell
+data AddItemToCart = AddItemToCart
+  { cartId :: Uuid,
+    itemId :: Uuid,
+    amount :: Positive Int
+  }
+  deriving (Eq, Show, Ord, Generic)
+
+instance FromJSON AddItemToCart
+instance ToJSON AddItemToCart
+
+instance Command AddItemToCart CartEntity where
+  entityId = cartId
+
+  decide :: AddItemToCart -> Maybe CartEntity -> CommandResult CartEvent
+  decide cmd entity =
+    case entity of
+      Nothing ->
+        RejectCommand "Cart does not exist"
+
+      Just cart -> do
+        let event = ItemAdded { cartId = cart.id, itemId = cmd.itemId, amount = cmd.amount }
+        Array.ofLinkedList [ event ]
+          |> AcceptCommand ExistingStream
+```
+
 **Tasks:**
 
 **Core Command Types:**
 
 - [ ] Create `Service.Command` module with base types
 - [ ] Define `Command` typeclass with methods:
-  - `decide :: command -> Option entity -> Result (Array event) Text` - Business logic decision
-  - `getEntityId :: command -> Option StrongId` - Extract target entity ID
+  - `decide :: command -> Option entity -> CommandResult event` - Business logic decision
+  - `getEntityId :: command -> EntityId` - Extract target entity ID
 - [ ] Define `TenantCommand` typeclass with methods:
-  - `decide :: command -> Option entity -> Uuid -> Result (Array event) Text` - Includes tenant ID
-  - `getEntityId :: command -> Uuid -> Option StrongId` - Tenant-scoped entity ID
+  - `decide :: command -> Option entity -> Uuid -> CommandResult event` - Includes tenant ID
+  - `getEntityId :: command -> Uuid -> EntityId` - Tenant-scoped entity ID
 - [ ] Create command result types:
   - `CommandAccepted` with entity ID
   - `CommandRejected` with error text
