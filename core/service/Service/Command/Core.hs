@@ -17,44 +17,42 @@ data CommandResult event
   deriving (Eq, Show, Ord, Generic)
 
 
--- | Command typeclass for regular (non-tenant) commands.
+-- | Command typeclass for commands.
 --   Commands represent the intent to change entity state.
 --   The `decide` method contains the business logic that determines
 --   whether the command should be accepted or rejected.
 class Command command where
   -- | The entity type that this command operates on
-  type Entity
+  type Entity command
 
 
-  -- | Extract the stream ID from the command.
-  --   This determines which entity stream the command targets.
-  streamId :: command -> StreamId
+  type Multitenant command :: Bool
+  type Multitenant command = False
 
 
-  -- | Make a decision about the command given the current entity state.
-  --   Returns either:
-  --   - AcceptCommand with InsertionType and events to append
-  --   - RejectCommand with an error message
-  --
-  --   The entity parameter is Maybe Entity:
-  --   - Nothing means the entity doesn't exist yet (typical for creation commands)
-  --   - Just entity means the entity exists (typical for update commands)
-  decide :: command -> Maybe Entity -> CommandResult event
+  streamId :: StreamIdSignature (Multitenant command) command
 
 
--- | TenantCommand typeclass for multi-tenant commands.
---   Similar to Command but includes a tenant ID parameter.
---   This allows commands to be scoped to specific tenants.
-class TenantCommand command where
-  -- | The entity type that this command operates on
-  type Entity
+  decide :: DecideSignature (Multitenant command) command (Entity command) event
 
 
-  -- | Extract the stream ID from the command, potentially incorporating the tenant ID.
-  --   This allows tenant-scoped entity identification.
-  streamId :: command -> Uuid -> StreamId
+-- | Extract the stream ID from the command.
+--   This determines which entity stream the command targets.
+type family StreamIdSignature (isTenant :: Bool) command where
+  StreamIdSignature 'False command = command -> StreamId
+  StreamIdSignature 'True command = Uuid -> command -> StreamId
 
 
-  -- | Make a decision about the command given the current entity state and tenant ID.
-  --   The tenant ID can be used in business logic and event generation.
-  decide :: command -> Maybe Entity -> Uuid -> CommandResult event
+-- | Make a decision about the command given the current entity state.
+--   Returns either:
+--   - AcceptCommand with InsertionType and events to append
+--   - RejectCommand with an error message
+--
+--   The entity parameter is Maybe Entity:
+--   - Nothing means the entity doesn't exist yet (typical for creation commands)
+--   - Just entity means the entity exists (typical for update commands)
+type family DecideSignature (isTenant :: Bool) command entity event where
+  DecideSignature 'False command entity event =
+    command -> Maybe entity -> CommandResult event
+  DecideSignature 'True command entity event =
+    Uuid -> command -> Maybe entity -> CommandResult event

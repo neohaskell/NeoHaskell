@@ -26,6 +26,7 @@
     "Inspectable",
     "MINVALUE",
     "Monoid",
+    "Multitenant",
     "Nanotime",
     "NEOHASKELL",
     "nhcli",
