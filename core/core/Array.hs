@@ -18,6 +18,7 @@ module Array (
   maximum,
   minimum,
   contains,
+  find,
 
   -- * Manipulate
   set,
@@ -640,6 +641,19 @@ contains :: forall (value :: Type). (Eq value) => value -> Array value -> Bool
 contains element array = do
   let checkElement arrayElement = arrayElement == element
   any checkElement array
+
+
+-- | Find the first element in an array that satisfies a predicate.
+-- Returns `Just` the element if found, `Nothing` otherwise.
+--
+-- >>> find (\x -> x > 2) (fromLinkedList [1,2,3,4,5] :: Array Int)
+-- Just 3
+-- >>> find (\x -> x > 10) (fromLinkedList [1,2,3,4,5] :: Array Int)
+-- Nothing
+-- >>> find (\x -> x == 2) (fromLinkedList [] :: Array Int)
+-- Nothing
+find :: forall (value :: Type). (value -> Bool) -> Array value -> Maybe value
+find predicate (Array vector) = Data.Vector.find predicate vector
 
 
 -- | Extract all `Just` values from an array of `Maybe` values, discarding `Nothing`.

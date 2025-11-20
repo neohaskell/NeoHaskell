@@ -3,28 +3,18 @@ module Test.Service.Command.Core (
   AddItemToCart (..),
   RemoveItemFromCart (..),
   CheckoutCart (..),
-  -- Order Command Examples (Tenant)
-  CreateOrder (..),
-  CancelOrder (..),
   -- Cart Entity
   CartEntity (..),
   CartEvent (..),
   initialCartState,
   applyCartEvent,
-  -- Order Entity (Tenant)
-  OrderEntity (..),
-  OrderEvent (..),
-  OrderItem (..),
-  initialOrderState,
-  applyOrderEvent,
 ) where
 
 import Array qualified
 import Core
 import Json qualified
-import Service.Command (Command (..), CommandResult (..))
+import Service.Command (Command (..), CommandResult (..), EventOf)
 import Service.Event (InsertionType (..))
-import Service.Event.StreamId (StreamId)
 import Service.Event.StreamId qualified as StreamId
 import Uuid qualified
 
@@ -79,8 +69,7 @@ instance Json.FromJSON CheckoutCart
 data CartEntity = CartEntity
   { cartId :: Uuid,
     cartItems :: Array (Uuid, Int), -- (itemId, quantity)
-    cartCheckedOut :: Bool,
-    cartVersion :: Int
+    cartCheckedOut :: Bool
   }
   deriving (Eq, Show, Ord, Generic)
 
@@ -99,6 +88,9 @@ data CartEvent
   deriving (Eq, Show, Ord, Generic)
 
 
+type instance EventOf CartEntity = CartEvent
+
+
 instance Json.ToJSON CartEvent
 
 
@@ -110,39 +102,33 @@ initialCartState =
   CartEntity
     { cartId = def,
       cartItems = Array.empty,
-      cartCheckedOut = False,
-      cartVersion = 0
+      cartCheckedOut = False
     }
 
 
 applyCartEvent :: CartEvent -> CartEntity -> CartEntity
 applyCartEvent event state = do
-  let newVersion = state.version + 1
   case event of
     CartCreated {cartId} ->
       CartEntity
         { cartId = cartId,
           cartItems = Array.empty,
-          cartCheckedOut = False,
-          cartVersion = newVersion
+          cartCheckedOut = False
         }
     ItemAdded {itemId, amount} -> do
-      let existingItems = state.items
+      let existingItems = state.cartItems
       let updatedItems = addOrUpdateItem existingItems itemId amount
       state
-        { cartItems = updatedItems,
-          cartVersion = newVersion
+        { cartItems = updatedItems
         }
     ItemRemoved {itemId} -> do
-      let updatedItems = Array.dropIf (\(id, _) -> id == itemId) state.items
+      let updatedItems = Array.dropIf (\(id, _) -> id == itemId) state.cartItems
       state
-        { cartItems = updatedItems,
-          cartVersion = newVersion
+        { cartItems = updatedItems
         }
     CartCheckedOut {} ->
       state
-        { cartCheckedOut = True,
-          cartVersion = newVersion
+        { cartCheckedOut = True
         }
 
 
@@ -162,31 +148,32 @@ addOrUpdateItem items itemId amount = do
 -- ============================================================================
 
 instance Command AddItemToCart where
-  type Entity AddItemToCart = CartEntity
+  type EntityOf AddItemToCart = CartEntity
 
 
   streamId cmd = cmd.cartId |> Uuid.toText |> StreamId.fromText
 
 
-  decide :: AddItemToCart -> CartEntity -> CommandResult CartEvent
+  decide :: AddItemToCart -> Maybe CartEntity -> CommandResult CartEvent
   decide cmd entity =
     case entity of
       Nothing ->
         RejectCommand "Cart does not exist"
       Just cart -> do
-        if cart.checkedOut
-          then RejectCommand "Cannot add items to a checked out cart"
-          else do
-            let event = ItemAdded {cartId = cart.id, itemId = cmd.itemId, amount = cmd.amount}
-            Array.fromLinkedList [event]
+        if cart.cartCheckedOut
+          then
+            RejectCommand "Cannot add items to a checked out cart"
+          else
+            ItemAdded {cartId = cart.cartId, itemId = cmd.itemId, amount = cmd.amount}
+              |> Array.wrap
               |> AcceptCommand ExistingStream
 
 
 instance Command RemoveItemFromCart where
-  type Entity RemoveItemFromCart = CartEntity
+  type EntityOf RemoveItemFromCart = CartEntity
 
 
-  streamId cmd = StreamId.fromText cmd.cartId
+  streamId cmd = cmd.cartId |> Uuid.toText |> StreamId.fromText
 
 
   decide cmd entity =
@@ -194,212 +181,36 @@ instance Command RemoveItemFromCart where
       Nothing ->
         RejectCommand "Cart does not exist"
       Just cart -> do
-        if cart.checkedOut
+        if cart.cartCheckedOut
           then RejectCommand "Cannot remove items from a checked out cart"
           else do
-            let hasItem = Array.any (\(id, _) -> id == cmd.itemId) cart.items
+            let hasItem = Array.any (\(id, _) -> id == cmd.itemId) cart.cartItems
             if not hasItem
               then RejectCommand "Item not in cart"
               else do
-                let event = ItemRemoved {cartId = cart.id, itemId = cmd.itemId}
-                Array.ofLinkedList [event]
+                let event = ItemRemoved {cartId = cart.cartId, itemId = cmd.itemId}
+                Array.fromLinkedList [event]
                   |> AcceptCommand ExistingStream
 
 
 instance Command CheckoutCart where
-  type Entity CheckoutCart = CartEntity
+  type EntityOf CheckoutCart = CartEntity
 
 
-  streamId cmd = StreamId.fromText cmd.cartId
+  streamId cmd = cmd.cartId |> Uuid.toText |> StreamId.fromText
 
 
-  decide cmd entity =
+  decide _ entity =
     case entity of
       Nothing ->
         RejectCommand "Cart does not exist"
       Just cart -> do
-        if cart.checkedOut
+        if cart.cartCheckedOut
           then RejectCommand "Cart already checked out"
           else do
-            if Array.isEmpty cart.items
+            if Array.isEmpty cart.cartItems
               then RejectCommand "Cannot checkout empty cart"
               else do
-                let event = CartCheckedOut {cartId = cart.id}
-                Array.ofLinkedList [event]
+                let event = CartCheckedOut {cartId = cart.cartId}
+                Array.fromLinkedList [event]
                   |> AcceptCommand ExistingStream
-
-
--- ============================================================================
--- Order Commands (Tenant)
--- ============================================================================
-
-data OrderItem = OrderItem
-  { productId :: Uuid,
-    quantity :: Int,
-    price :: Int -- in cents
-  }
-  deriving (Eq, Show, Ord, Generic)
-
-
-instance Json.ToJSON OrderItem
-
-
-instance Json.FromJSON OrderItem
-
-
-data CreateOrder = CreateOrder
-  { orderId :: Uuid,
-    customerId :: Uuid,
-    items :: Array OrderItem
-  }
-  deriving (Eq, Show, Ord, Generic)
-
-
-instance Json.ToJSON CreateOrder
-
-
-instance Json.FromJSON CreateOrder
-
-
-data CancelOrder = CancelOrder
-  { orderId :: Uuid
-  }
-  deriving (Eq, Show, Ord, Generic)
-
-
-instance Json.ToJSON CancelOrder
-
-
-instance Json.FromJSON CancelOrder
-
-
--- ============================================================================
--- Order Entity and Events
--- ============================================================================
-
-data OrderEntity = OrderEntity
-  { id :: Uuid,
-    tenantId :: Uuid,
-    customerId :: Uuid,
-    items :: Array OrderItem,
-    cancelled :: Bool,
-    version :: Int
-  }
-  deriving (Eq, Show, Ord, Generic)
-
-
-instance Json.ToJSON OrderEntity
-
-
-instance Json.FromJSON OrderEntity
-
-
-data OrderEvent
-  = OrderCreated
-      { orderId :: Uuid,
-        tenantId :: Uuid,
-        customerId :: Uuid,
-        items :: Array OrderItem
-      }
-  | OrderCancelled {orderId :: Uuid}
-  deriving (Eq, Show, Ord, Generic)
-
-
-instance Json.ToJSON OrderEvent
-
-
-instance Json.FromJSON OrderEvent
-
-
-initialOrderState :: OrderEntity
-initialOrderState =
-  OrderEntity
-    { id = Uuid.nil,
-      tenantId = Uuid.nil,
-      customerId = Uuid.nil,
-      items = Array.empty,
-      cancelled = False,
-      version = 0
-    }
-
-
-applyOrderEvent :: OrderEvent -> OrderEntity -> OrderEntity
-applyOrderEvent event state = do
-  let newVersion = state.version + 1
-  case event of
-    OrderCreated {orderId, tenantId, customerId, items} ->
-      OrderEntity
-        { id = orderId,
-          tenantId = tenantId,
-          customerId = customerId,
-          items = items,
-          cancelled = False,
-          version = newVersion
-        }
-    OrderCancelled {} ->
-      state
-        { cancelled = True,
-          version = newVersion
-        }
-
-
--- ============================================================================
--- Order Command Instances (Tenant)
--- ============================================================================
-
-instance Command CreateOrder where
-  type Entity CreateOrder = OrderEntity
-
-
-  type Multitenant CreateOrder = True
-
-
-  streamId cmd tenantId = do
-    let tenantText = Uuid.toText tenantId
-    let orderText = Uuid.toText cmd.orderId
-    StreamId.fromText (tenantText ++ "-" ++ orderText)
-
-
-  decide cmd entity tenantId =
-    case entity of
-      Just _existingOrder ->
-        RejectCommand "Order already exists"
-      Nothing -> do
-        if Array.isEmpty cmd.items
-          then RejectCommand "Cannot create order with no items"
-          else do
-            let event =
-                  OrderCreated
-                    { orderId = cmd.orderId,
-                      tenantId = tenantId,
-                      customerId = cmd.customerId,
-                      items = cmd.items
-                    }
-            Array.ofLinkedList [event]
-              |> AcceptCommand StreamCreation
-
-
-instance Command CancelOrder where
-  type Entity CancelOrder = OrderEntity
-
-
-  type Multitenant CancelOrder = True
-
-
-  streamId cmd tenantId = do
-    let tenantText = Uuid.toText tenantId
-    let orderText = Uuid.toText cmd.orderId
-    StreamId.fromText (tenantText ++ "-" ++ orderText)
-
-
-  decide cmd entity _tenantId =
-    case entity of
-      Nothing ->
-        RejectCommand "Order does not exist"
-      Just order -> do
-        if order.cancelled
-          then RejectCommand "Order already cancelled"
-          else do
-            let event = OrderCancelled {orderId = order.id}
-            Array.ofLinkedList [event]
-              |> AcceptCommand ExistingStream

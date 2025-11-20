@@ -129,7 +129,6 @@ library
     Result
     Service.Command
     Service.Command.Core
-    Service.Command.TenantCommand
     Service.EntityFetcher
     Service.EntityFetcher.Core
     Service.Event
