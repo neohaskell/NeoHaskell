@@ -2,7 +2,6 @@ module Test.Service.Command.Decide.Spec where
 
 import Array qualified
 import Core
-import Result qualified
 import Service.Command (Command (..), CommandResult (..))
 import Service.Event (InsertionType (..))
 import Test
@@ -30,11 +29,11 @@ spec = do
 
 cartCommandSpecs :: Spec Unit
 cartCommandSpecs = do
-  before Context.initialize do
-    describe "AddItemToCart" do
+  describe "AddItemToCart" do
+    before Context.initialize do
       it "rejects when cart doesn't exist" \context -> do
         let cmd = AddItemToCart {cartId = context.cartId, itemId = context.itemId1, amount = 5}
-        let result = decide cmd (Nothing :: Maybe CartEntity)
+        let result = decide @AddItemToCart cmd Nothing
 
         case result of
           RejectCommand msg -> do
@@ -50,11 +49,11 @@ cartCommandSpecs = do
                   cartCheckedOut = False
                 }
         let cmd = AddItemToCart {cartId = context.cartId, itemId = context.itemId1, amount = 5}
-        let result = decide cmd (Just cart)
+        let result = decide @AddItemToCart cmd (Just cart)
 
         case result of
-          RejectCommand msg ->
-            fail [fmt|Expected acceptance but got rejection: {msg}|]
+          RejectCommand _ ->
+            fail "Expected acceptance but got rejection"
           AcceptCommand insertionType events -> do
             insertionType |> shouldBe ExistingStream
             Array.length events |> shouldBe 1
@@ -73,7 +72,7 @@ cartCommandSpecs = do
                   cartCheckedOut = True
                 }
         let cmd = AddItemToCart {cartId = context.cartId, itemId = context.itemId2, amount = 2}
-        let result = decide cmd (Just cart)
+        let result = decide @AddItemToCart cmd (Just cart)
 
         case result of
           RejectCommand msg -> do
@@ -83,15 +82,16 @@ cartCommandSpecs = do
 
       it "generates correct StreamId" \context -> do
         let cmd = AddItemToCart {cartId = context.cartId, itemId = context.itemId1, amount = 5}
-        let sid = streamId cmd
+        let sid = streamId @AddItemToCart cmd
 
         -- StreamId should wrap the cartId
         sid |> shouldSatisfy (\_ -> True) -- Basic existence check
 
-    describe "RemoveItemFromCart" do
+  describe "RemoveItemFromCart" do
+    before Context.initialize do
       it "rejects when cart doesn't exist" \context -> do
         let cmd = RemoveItemFromCart {cartId = context.cartId, itemId = context.itemId1}
-        let result = decide cmd (Nothing :: Maybe CartEntity)
+        let result = decide @RemoveItemFromCart cmd Nothing
 
         case result of
           RejectCommand msg -> do
@@ -107,7 +107,7 @@ cartCommandSpecs = do
                   cartCheckedOut = False
                 }
         let cmd = RemoveItemFromCart {cartId = context.cartId, itemId = context.itemId2}
-        let result = decide cmd (Just cart)
+        let result = decide @RemoveItemFromCart cmd (Just cart)
 
         case result of
           RejectCommand msg -> do
@@ -123,11 +123,11 @@ cartCommandSpecs = do
                   cartCheckedOut = False
                 }
         let cmd = RemoveItemFromCart {cartId = context.cartId, itemId = context.itemId1}
-        let result = decide cmd (Just cart)
+        let result = decide @RemoveItemFromCart cmd (Just cart)
 
         case result of
-          RejectCommand msg ->
-            fail [fmt|Expected acceptance but got rejection: {msg}|]
+          RejectCommand _ ->
+            fail "Expected acceptance but got rejection"
           AcceptCommand insertionType events -> do
             insertionType |> shouldBe ExistingStream
             Array.length events |> shouldBe 1
@@ -145,7 +145,7 @@ cartCommandSpecs = do
                   cartCheckedOut = True
                 }
         let cmd = RemoveItemFromCart {cartId = context.cartId, itemId = context.itemId1}
-        let result = decide cmd (Just cart)
+        let result = decide @RemoveItemFromCart cmd (Just cart)
 
         case result of
           RejectCommand msg -> do
@@ -153,10 +153,11 @@ cartCommandSpecs = do
           AcceptCommand _ _ ->
             fail "Expected rejection but got acceptance"
 
-    describe "CheckoutCart" do
+  describe "CheckoutCart" do
+    before Context.initialize do
       it "rejects when cart doesn't exist" \context -> do
         let cmd = CheckoutCart {cartId = context.cartId}
-        let result = decide cmd (Nothing :: Maybe CartEntity)
+        let result = decide @CheckoutCart cmd Nothing
 
         case result of
           RejectCommand msg -> do
@@ -172,7 +173,7 @@ cartCommandSpecs = do
                   cartCheckedOut = False
                 }
         let cmd = CheckoutCart {cartId = context.cartId}
-        let result = decide cmd (Just cart)
+        let result = decide @CheckoutCart cmd (Just cart)
 
         case result of
           RejectCommand msg -> do
@@ -188,11 +189,11 @@ cartCommandSpecs = do
                   cartCheckedOut = False
                 }
         let cmd = CheckoutCart {cartId = context.cartId}
-        let result = decide cmd (Just cart)
+        let result = decide @CheckoutCart cmd (Just cart)
 
         case result of
-          RejectCommand msg ->
-            fail [fmt|Expected acceptance but got rejection: {msg}|]
+          RejectCommand _ ->
+            fail "Expected acceptance but got rejection"
           AcceptCommand insertionType events -> do
             insertionType |> shouldBe ExistingStream
             Array.length events |> shouldBe 1
@@ -210,7 +211,7 @@ cartCommandSpecs = do
                   cartCheckedOut = True
                 }
         let cmd = CheckoutCart {cartId = context.cartId}
-        let result = decide cmd (Just cart)
+        let result = decide @CheckoutCart cmd (Just cart)
 
         case result of
           RejectCommand msg -> do
@@ -221,8 +222,8 @@ cartCommandSpecs = do
 
 edgeCaseSpecs :: Spec Unit
 edgeCaseSpecs = do
-  before Context.initialize do
-    describe "Event Application" do
+  describe "Event Application" do
+    before Context.initialize do
       it "cart state evolves correctly through multiple events" \context -> do
         let cartCreated = CartCreated {cartId = context.cartId}
         let state1 = applyCartEvent cartCreated initialCartState
@@ -250,7 +251,8 @@ edgeCaseSpecs = do
 
         state5.cartCheckedOut |> shouldBe True
 
-    describe "Multiple Commands in Sequence" do
+  describe "Multiple Commands in Sequence" do
+    before Context.initialize do
       it "can add multiple items to cart" \context -> do
         -- Start with a cart
         let cart =
@@ -262,7 +264,7 @@ edgeCaseSpecs = do
 
         -- Add first item
         let cmd1 = AddItemToCart {cartId = context.cartId, itemId = context.itemId1, amount = 3}
-        let result1 = decide cmd1 (Just cart)
+        let result1 = decide @AddItemToCart cmd1 (Just cart)
 
         case result1 of
           AcceptCommand _ events1 -> do
@@ -272,7 +274,7 @@ edgeCaseSpecs = do
 
                 -- Add second item
                 let cmd2 = AddItemToCart {cartId = context.cartId, itemId = context.itemId2, amount = 5}
-                let result2 = decide cmd2 (Just state2)
+                let result2 = decide @AddItemToCart cmd2 (Just state2)
 
                 case result2 of
                   AcceptCommand _ events2 -> do
@@ -281,11 +283,12 @@ edgeCaseSpecs = do
                         let state3 = applyCartEvent event2 state2
                         Array.length state3.cartItems |> shouldBe 2
                       Nothing -> fail "Expected event in events2"
-                  RejectCommand msg -> fail [fmt|Second command failed: {msg}|]
+                  RejectCommand _ -> fail "Second command failed"
               Nothing -> fail "Expected event in events1"
-          RejectCommand msg -> fail [fmt|First command failed: {msg}|]
+          RejectCommand _ -> fail "First command failed"
 
-    describe "Business Rule Validation" do
+  describe "Business Rule Validation" do
+    before Context.initialize do
       it "maintains cart state integrity" \context -> do
         let cart =
               CartEntity
@@ -296,7 +299,7 @@ edgeCaseSpecs = do
 
         -- Try to checkout (should succeed)
         let checkoutCmd = CheckoutCart {cartId = context.cartId}
-        let checkoutResult = decide checkoutCmd (Just cart)
+        let checkoutResult = decide @CheckoutCart checkoutCmd (Just cart)
 
         case checkoutResult of
           AcceptCommand _ events -> do
@@ -306,12 +309,12 @@ edgeCaseSpecs = do
 
                 -- Now try to add item to checked out cart (should fail)
                 let addCmd = AddItemToCart {cartId = context.cartId, itemId = context.itemId2, amount = 5}
-                let addResult = decide addCmd (Just checkedOutCart)
+                let addResult = decide @AddItemToCart addCmd (Just checkedOutCart)
 
                 case addResult of
-                  RejectCommand msg -> do
-                    shouldSatisfy msg (\m -> toText m |> (\t -> True)) -- Just verify it doesn't error
+                  RejectCommand _ -> do
+                    pure unit -- Just verify it rejects
                   AcceptCommand _ _ ->
                     fail "Should not be able to add items to checked out cart"
               Nothing -> fail "Expected checkout event"
-          RejectCommand msg -> fail [fmt|Checkout failed: {msg}|]
+          RejectCommand _ -> fail "Checkout failed"
