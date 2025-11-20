@@ -72,5 +72,6 @@
     "editor.defaultFormatter": "esbenp.prettier-vscode",
     "editor.formatOnSave": true
   },
-  "discord.enabled": true
+  "discord.enabled": true,
+  "vscord.enabled": true
 }
