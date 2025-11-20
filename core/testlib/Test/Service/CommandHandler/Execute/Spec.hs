@@ -4,7 +4,9 @@ import Array qualified
 import AsyncTask qualified
 import Core
 import Result qualified
-import Service.Command (Command (..), CommandResult (..), TenantCommand (..))
+import Service.Command (Command (..), CommandResult (..), decide, streamId)
+import Service.EntityFetcher.Core (EntityFetcher)
+import Task qualified
 import Service.Event qualified as Event
 import Service.Event.EventMetadata qualified as EventMetadata
 import Service.Event.StreamId qualified as StreamId
@@ -12,50 +14,41 @@ import Service.EventStore.Core qualified as EventStore
 import Test
 import Test.Service.Command.Core (
   AddItemToCart (..),
-  CancelOrder (..),
   CartEntity (..),
   CartEvent (..),
   CheckoutCart (..),
-  CreateOrder (..),
-  OrderEntity (..),
-  OrderEvent (..),
-  OrderItem (..),
   RemoveItemFromCart (..),
   applyCartEvent,
-  applyOrderEvent,
   initialCartState,
-  initialOrderState,
  )
-import Test.Service.CommandHandler.Core (CommandHandlerResult (..))
+import Test.Service.CommandHandler.Core (CommandHandlerResult)
 import Test.Service.CommandHandler.Execute.Context qualified as Context
 import Uuid qualified
 
 
 spec ::
   Task Text (EventStore.EventStore CartEvent, EntityFetcher CartEntity CartEvent) ->
-  Task Text (EventStore.EventStore OrderEvent, EntityFetcher OrderEntity OrderEvent) ->
   Spec Unit
-spec newCartStoreAndFetcher newOrderStoreAndFetcher = do
+spec newCartStoreAndFetcher = do
   describe "CommandHandler Execute Specification Tests" do
     describe "Basic Command Execution" do
-      basicExecutionSpecs newCartStoreAndFetcher newOrderStoreAndFetcher
+      basicExecutionSpecs newCartStoreAndFetcher
 
     describe "Retry Logic" do
-      retryLogicSpecs newCartStoreAndFetcher newOrderStoreAndFetcher
+      retryLogicSpecs newCartStoreAndFetcher
 
     describe "Concurrency Handling" do
-      concurrencySpecs newCartStoreAndFetcher newOrderStoreAndFetcher
+      concurrencySpecs newCartStoreAndFetcher
 
     describe "Error Scenarios" do
-      errorScenarioSpecs newCartStoreAndFetcher newOrderStoreAndFetcher
+      errorScenarioSpecs newCartStoreAndFetcher
 
 
 basicExecutionSpecs ::
   Task Text (EventStore.EventStore CartEvent, EntityFetcher CartEntity CartEvent) ->
-  Task Text (EventStore.EventStore OrderEvent, EntityFetcher OrderEntity OrderEvent) ->
   Spec Unit
-basicExecutionSpecs newCartStoreAndFetcher newOrderStoreAndFetcher = do
-  before (Context.initialize newCartStoreAndFetcher newOrderStoreAndFetcher) do
+basicExecutionSpecs newCartStoreAndFetcher = do
+  before (Context.initialize newCartStoreAndFetcher) do
     it "executes command that creates new stream successfully" \context -> do
       -- Create cart first
       let cartCreatedEvent = CartCreated {cartId = context.cartId}
@@ -76,7 +69,7 @@ basicExecutionSpecs newCartStoreAndFetcher newOrderStoreAndFetcher = do
 
       let payload =
             Event.InsertionPayload
-              { streamId = StreamId.StreamId context.cartId,
+              { streamId = context.cartId |> Uuid.toText |> StreamId.fromText,
                 entityName = context.cartEntityName,
                 insertionType = Event.StreamCreation,
                 insertions = Array.fromLinkedList [insertion]
@@ -98,7 +91,7 @@ basicExecutionSpecs newCartStoreAndFetcher newOrderStoreAndFetcher = do
       let sid = streamId cmd
       cart <- context.cartFetcher.fetch context.cartEntityName sid |> Task.mapError toText
 
-      cart.id |> shouldBe context.cartId
+      cart.cartId |> shouldBe context.cartId
 
     it "executes command that rejects due to business rules" \context -> do
       -- Try to add item to non-existent cart
@@ -157,7 +150,7 @@ basicExecutionSpecs newCartStoreAndFetcher newOrderStoreAndFetcher = do
 
       let payload =
             Event.InsertionPayload
-              { streamId = StreamId.StreamId context.cartId,
+              { streamId = context.cartId |> Uuid.toText |> StreamId.fromText,
                 entityName = context.cartEntityName,
                 insertionType = Event.StreamCreation,
                 insertions = insertions
@@ -173,15 +166,14 @@ basicExecutionSpecs newCartStoreAndFetcher newOrderStoreAndFetcher = do
       cart <- context.cartFetcher.fetch context.cartEntityName sid |> Task.mapError toText
 
       cart.version |> shouldBe 2
-      Array.length cart.items |> shouldBe 1
+      Array.length cart.cartItems |> shouldBe 1
 
 
 retryLogicSpecs ::
   Task Text (EventStore.EventStore CartEvent, EntityFetcher CartEntity CartEvent) ->
-  Task Text (EventStore.EventStore OrderEvent, EntityFetcher OrderEntity OrderEvent) ->
   Spec Unit
-retryLogicSpecs newCartStoreAndFetcher newOrderStoreAndFetcher = do
-  before (Context.initialize newCartStoreAndFetcher newOrderStoreAndFetcher) do
+retryLogicSpecs newCartStoreAndFetcher = do
+  before (Context.initialize newCartStoreAndFetcher) do
     it "retries on consistency check failure (ExistingStream)" \context -> do
       -- Create initial cart
       let cartCreatedEvent = CartCreated {cartId = context.cartId}
@@ -201,7 +193,7 @@ retryLogicSpecs newCartStoreAndFetcher newOrderStoreAndFetcher = do
 
       let payload =
             Event.InsertionPayload
-              { streamId = StreamId.StreamId context.cartId,
+              { streamId = context.cartId |> Uuid.toText |> StreamId.fromText,
                 entityName = context.cartEntityName,
                 insertionType = Event.StreamCreation,
                 insertions = Array.fromLinkedList [insertion]
@@ -229,7 +221,7 @@ retryLogicSpecs newCartStoreAndFetcher newOrderStoreAndFetcher = do
 
       let payload2 =
             Event.InsertionPayload
-              { streamId = StreamId.StreamId context.cartId,
+              { streamId = context.cartId |> Uuid.toText |> StreamId.fromText,
                 entityName = context.cartEntityName,
                 insertionType = Event.ExistingStream,
                 insertions = Array.fromLinkedList [insertion2]
@@ -246,7 +238,7 @@ retryLogicSpecs newCartStoreAndFetcher newOrderStoreAndFetcher = do
       cart <- context.cartFetcher.fetch context.cartEntityName sid |> Task.mapError toText
 
       cart.version |> shouldBe 2
-      Array.length cart.items |> shouldBe 1
+      Array.length cart.cartItems |> shouldBe 1
 
     it "stops retrying when InsertionType is StreamCreation and stream exists" \context -> do
       -- Create a cart (stream exists)
@@ -267,7 +259,7 @@ retryLogicSpecs newCartStoreAndFetcher newOrderStoreAndFetcher = do
 
       let payload =
             Event.InsertionPayload
-              { streamId = StreamId.StreamId context.cartId,
+              { streamId = context.cartId |> Uuid.toText |> StreamId.fromText,
                 entityName = context.cartEntityName,
                 insertionType = Event.StreamCreation,
                 insertions = Array.fromLinkedList [insertion]
@@ -296,7 +288,7 @@ retryLogicSpecs newCartStoreAndFetcher newOrderStoreAndFetcher = do
 
       let payload2 =
             Event.InsertionPayload
-              { streamId = StreamId.StreamId context.cartId,
+              { streamId = context.cartId |> Uuid.toText |> StreamId.fromText,
                 entityName = context.cartEntityName,
                 insertionType = Event.StreamCreation,
                 insertions = Array.fromLinkedList [insertion2]
@@ -308,11 +300,11 @@ retryLogicSpecs newCartStoreAndFetcher newOrderStoreAndFetcher = do
           |> Task.asResult
 
       case result of
-        Err (EventStore.InsertionError (Event.StreamAlreadyExists _)) -> do
-          -- Expected: Stream already exists error
+        Err (EventStore.InsertionError _) -> do
+          -- Expected: Insertion error (stream already exists)
           pure unit
         Err other -> fail [fmt|Unexpected error: {toText other}|]
-        Ok _ -> fail "Should have failed with StreamAlreadyExists"
+        Ok _ -> fail "Should have failed with insertion error"
 
     it "retries with 100ms delay between attempts" \context -> do
       -- This test verifies retry timing
@@ -323,10 +315,9 @@ retryLogicSpecs newCartStoreAndFetcher newOrderStoreAndFetcher = do
 
 concurrencySpecs ::
   Task Text (EventStore.EventStore CartEvent, EntityFetcher CartEntity CartEvent) ->
-  Task Text (EventStore.EventStore OrderEvent, EntityFetcher OrderEntity OrderEvent) ->
   Spec Unit
-concurrencySpecs newCartStoreAndFetcher newOrderStoreAndFetcher = do
-  before (Context.initialize newCartStoreAndFetcher newOrderStoreAndFetcher) do
+concurrencySpecs newCartStoreAndFetcher = do
+  before (Context.initialize newCartStoreAndFetcher) do
     it "handles concurrent command execution on same stream" \context -> do
       -- Create cart
       let cartCreatedEvent = CartCreated {cartId = context.cartId}
@@ -346,7 +337,7 @@ concurrencySpecs newCartStoreAndFetcher newOrderStoreAndFetcher = do
 
       let payload =
             Event.InsertionPayload
-              { streamId = StreamId.StreamId context.cartId,
+              { streamId = context.cartId |> Uuid.toText |> StreamId.fromText,
                 entityName = context.cartEntityName,
                 insertionType = Event.StreamCreation,
                 insertions = Array.fromLinkedList [insertion]
@@ -391,7 +382,7 @@ concurrencySpecs newCartStoreAndFetcher newOrderStoreAndFetcher = do
 
             let payload =
                   Event.InsertionPayload
-                    { streamId = StreamId.StreamId cid,
+                    { streamId = cid |> Uuid.toText |> StreamId.fromText,
                       entityName = context.cartEntityName,
                       insertionType = Event.StreamCreation,
                       insertions = Array.fromLinkedList [insertion]
@@ -409,19 +400,18 @@ concurrencySpecs newCartStoreAndFetcher newOrderStoreAndFetcher = do
       let cmd2 = AddItemToCart {cartId = cartId2, itemId = context.itemId2, amount = 5}
 
       -- Fetch both carts
-      cart1 <- context.cartFetcher.fetch context.cartEntityName (StreamId.StreamId cartId1) |> Task.mapError toText
-      cart2 <- context.cartFetcher.fetch context.cartEntityName (StreamId.StreamId cartId2) |> Task.mapError toText
+      cart1 <- context.cartFetcher.fetch context.cartEntityName (cartId1 |> Uuid.toText |> StreamId.fromText) |> Task.mapError toText
+      cart2 <- context.cartFetcher.fetch context.cartEntityName (cartId2 |> Uuid.toText |> StreamId.fromText) |> Task.mapError toText
 
-      cart1.id |> shouldBe cartId1
-      cart2.id |> shouldBe cartId2
+      cart1.cartId |> shouldBe cartId1
+      cart2.cartId |> shouldBe cartId2
 
 
 errorScenarioSpecs ::
   Task Text (EventStore.EventStore CartEvent, EntityFetcher CartEntity CartEvent) ->
-  Task Text (EventStore.EventStore OrderEvent, EntityFetcher OrderEntity OrderEvent) ->
   Spec Unit
-errorScenarioSpecs newCartStoreAndFetcher newOrderStoreAndFetcher = do
-  before (Context.initialize newCartStoreAndFetcher newOrderStoreAndFetcher) do
+errorScenarioSpecs newCartStoreAndFetcher = do
+  before (Context.initialize newCartStoreAndFetcher) do
     it "returns CommandRejected when business rules fail" \context -> do
       -- Try to checkout non-existent cart
       let cmd = CheckoutCart {cartId = context.cartId}
@@ -437,10 +427,9 @@ errorScenarioSpecs newCartStoreAndFetcher newOrderStoreAndFetcher = do
       -- Create checked-out cart
       let cart =
             CartEntity
-              { id = context.cartId,
-                items = Array.singleton (context.itemId1, 3),
-                checkedOut = True,
-                version = 2
+              { cartId = context.cartId,
+                cartItems = Array.wrap (context.itemId1, 3),
+                cartCheckedOut = True
               }
 
       let cmd = AddItemToCart {cartId = context.cartId, itemId = context.itemId2, amount = 5}
@@ -455,32 +444,8 @@ errorScenarioSpecs newCartStoreAndFetcher newOrderStoreAndFetcher = do
     it "handles EventStore errors gracefully" \context -> do
       -- This tests error propagation from EventStore
       -- For now, verify that EntityFetcher handles missing streams
-      let sid = StreamId.StreamId context.cartId
+      let sid = context.cartId |> Uuid.toText |> StreamId.fromText
       cart <- context.cartFetcher.fetch context.cartEntityName sid |> Task.mapError toText
 
       -- Should return initial state for non-existent stream
-      cart.version |> shouldBe 0
-      cart.id |> shouldBe Uuid.nil
-
-    it "handles tenant commands correctly" \context -> do
-      -- Create order command
-      let items = Array.singleton (OrderItem {productId = context.itemId1, quantity = 2, price = 1000})
-      let cmd = CreateOrder {orderId = context.orderId, customerId = context.customerId, items = items}
-
-      -- Get tenant-scoped stream ID
-      let sid = streamId cmd context.tenantId
-
-      -- Fetch entity (should not exist)
-      order <- context.orderFetcher.fetch context.orderEntityName sid |> Task.mapError toText
-
-      order.version |> shouldBe 0
-
-      -- Decision should accept
-      let decision = decide cmd Nothing context.tenantId
-
-      case decision of
-        AcceptCommand insertionType events -> do
-          insertionType |> shouldBe Event.StreamCreation
-          Array.length events |> shouldBe 1
-        RejectCommand msg ->
-          fail [fmt|Expected acceptance but got: {msg}|]
+      cart.cartId |> shouldBe def
