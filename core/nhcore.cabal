@@ -129,6 +129,8 @@ library
     Result
     Service.Command
     Service.Command.Core
+    Service.CommandHandler
+    Service.CommandHandler.Core
     Service.EntityFetcher
     Service.EntityFetcher.Core
     Service.Event

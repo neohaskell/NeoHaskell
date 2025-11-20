@@ -2,7 +2,8 @@ module Test.Service.CommandHandler.Execute.Spec where
 
 import Array qualified
 import Core
-import Service.Command (Command (..), CommandResult (..), decide, streamId)
+import Service.Command (Command (..), streamId)
+import Service.CommandHandler (CommandHandlerResult (CommandAccepted, CommandFailed, CommandRejected))
 import Service.CommandHandler qualified as CommandHandler
 import Service.EntityFetcher.Core (EntityFetcher (..))
 import Service.Event qualified as Event
@@ -79,31 +80,35 @@ basicExecutionSpecs newCartStoreAndFetcher = do
       -- Expected: Should fetch entity, call decide, insert event, return success
       let cmd = AddItemToCart {cartId = context.cartId, itemId = context.itemId1, amount = 5}
 
-      result <- CommandHandler.execute context.cartStore context.cartFetcher context.cartEntityName cmd |> Task.mapError toText
+      result <- CommandHandler.execute context.cartStore context.cartFetcher context.cartEntityName cmd
 
       -- Should succeed
       case result of
-        CommandAccepted -> do
+        CommandAccepted {} -> do
           -- Verify event was inserted by fetching updated cart
           let sid = streamId @AddItemToCart cmd
           cart <- context.cartFetcher.fetch context.cartEntityName sid |> Task.mapError toText
 
           cart.cartId |> shouldBe context.cartId
           Array.length cart.cartItems |> shouldBe 1
-        CommandRejected msg ->
-          fail [fmt|Expected CommandAccepted, got CommandRejected: {msg}|]
+        CommandRejected _msg ->
+          fail "Expected CommandAccepted, got CommandRejected"
+        CommandFailed _err _ ->
+          fail "Expected CommandAccepted, got CommandFailed"
 
     it "executes command that rejects due to business rules" \context -> do
       -- Try to add item to non-existent cart
       let cmd = AddItemToCart {cartId = context.cartId, itemId = context.itemId1, amount = 5}
 
-      result <- CommandHandler.execute context.cartStore context.cartFetcher context.cartEntityName cmd |> Task.mapError toText
+      result <- CommandHandler.execute context.cartStore context.cartFetcher context.cartEntityName cmd
 
       case result of
         CommandRejected msg -> do
           msg |> shouldBe "Cart does not exist"
-        CommandAccepted ->
+        CommandAccepted {} ->
           fail "Expected CommandRejected, got CommandAccepted"
+        CommandFailed _err _ ->
+          fail "Expected CommandRejected, got CommandFailed"
 
     it "appends events to existing stream successfully" \context -> do
       -- Create cart with initial item
@@ -152,18 +157,20 @@ basicExecutionSpecs newCartStoreAndFetcher = do
       -- Now add another item using CommandHandler
       let cmd = AddItemToCart {cartId = context.cartId, itemId = context.itemId2, amount = 7}
 
-      result <- CommandHandler.execute context.cartStore context.cartFetcher context.cartEntityName cmd |> Task.mapError toText
+      result <- CommandHandler.execute context.cartStore context.cartFetcher context.cartEntityName cmd
 
       case result of
-        CommandAccepted -> do
+        CommandAccepted {} -> do
           -- Verify both items are in cart
           let sid = streamId @AddItemToCart cmd
           cart <- context.cartFetcher.fetch context.cartEntityName sid |> Task.mapError toText
 
           cart.cartId |> shouldBe context.cartId
           Array.length cart.cartItems |> shouldBe 2
-        CommandRejected msg ->
-          fail [fmt|Expected CommandAccepted, got CommandRejected: {msg}|]
+        CommandRejected _msg ->
+          fail "Expected CommandAccepted, got CommandRejected"
+        CommandFailed _err _ ->
+          fail "Expected CommandAccepted, got CommandFailed"
 
 
 retryLogicSpecs ::
@@ -233,18 +240,20 @@ retryLogicSpecs newCartStoreAndFetcher = do
       -- CommandHandler should detect stale state and retry
       let cmd = AddItemToCart {cartId = context.cartId, itemId = context.itemId1, amount = 1}
 
-      result <- CommandHandler.execute context.cartStore context.cartFetcher context.cartEntityName cmd |> Task.mapError toText
+      result <- CommandHandler.execute context.cartStore context.cartFetcher context.cartEntityName cmd
 
       case result of
-        CommandAccepted -> do
+        CommandAccepted {} -> do
           -- Verify command succeeded after retry
           let sid = streamId @AddItemToCart cmd
           cart <- context.cartFetcher.fetch context.cartEntityName sid |> Task.mapError toText
 
           -- Should have both items now (item2 from concurrent insert, item1 from this command)
           Array.length cart.cartItems |> shouldBe 2
-        CommandRejected msg ->
-          fail [fmt|Expected CommandAccepted after retry, got CommandRejected: {msg}|]
+        CommandRejected _msg ->
+          fail "Expected CommandAccepted after retry, got CommandRejected"
+        CommandFailed _err _ ->
+          fail "Expected CommandAccepted after retry, got CommandFailed"
 
     it "stops retrying when InsertionType is StreamCreation and stream exists" \context -> do
       -- Create a cart (stream exists)
@@ -359,12 +368,19 @@ concurrencySpecs newCartStoreAndFetcher = do
       let cmd2 = AddItemToCart {cartId = context.cartId, itemId = context.itemId2, amount = 5}
 
       -- Both commands should eventually succeed with retry logic
-      result1 <- CommandHandler.execute context.cartStore context.cartFetcher context.cartEntityName cmd1 |> Task.mapError toText
-      result2 <- CommandHandler.execute context.cartStore context.cartFetcher context.cartEntityName cmd2 |> Task.mapError toText
+      result1 <- CommandHandler.execute context.cartStore context.cartFetcher context.cartEntityName cmd1
+      result2 <- CommandHandler.execute context.cartStore context.cartFetcher context.cartEntityName cmd2
 
       -- Both should succeed
-      result1 |> shouldBe CommandAccepted
-      result2 |> shouldBe CommandAccepted
+      case result1 of
+        CommandAccepted {} -> pure unit
+        CommandRejected _msg -> fail "Command 1 rejected"
+        CommandFailed _err _ -> fail "Command 1 failed"
+
+      case result2 of
+        CommandAccepted {} -> pure unit
+        CommandRejected _msg -> fail "Command 2 rejected"
+        CommandFailed _err _ -> fail "Command 2 failed"
 
       -- Verify final state has both items
       let sid = streamId @AddItemToCart cmd1
@@ -413,12 +429,19 @@ concurrencySpecs newCartStoreAndFetcher = do
       let cmd1 = AddItemToCart {cartId = cartId1, itemId = context.itemId1, amount = 3}
       let cmd2 = AddItemToCart {cartId = cartId2, itemId = context.itemId2, amount = 5}
 
-      result1 <- CommandHandler.execute context.cartStore context.cartFetcher context.cartEntityName cmd1 |> Task.mapError toText
-      result2 <- CommandHandler.execute context.cartStore context.cartFetcher context.cartEntityName cmd2 |> Task.mapError toText
+      result1 <- CommandHandler.execute context.cartStore context.cartFetcher context.cartEntityName cmd1
+      result2 <- CommandHandler.execute context.cartStore context.cartFetcher context.cartEntityName cmd2
 
       -- Both should succeed without retries
-      result1 |> shouldBe CommandAccepted
-      result2 |> shouldBe CommandAccepted
+      case result1 of
+        CommandAccepted {} -> pure unit
+        CommandRejected _msg -> fail "Command 1 rejected"
+        CommandFailed _err _ -> fail "Command 1 failed"
+
+      case result2 of
+        CommandAccepted {} -> pure unit
+        CommandRejected _msg -> fail "Command 2 rejected"
+        CommandFailed _err _ -> fail "Command 2 failed"
 
       -- Verify both carts have their items
       cart1 <- context.cartFetcher.fetch context.cartEntityName (cartId1 |> Uuid.toText |> StreamId.fromText) |> Task.mapError toText
@@ -439,13 +462,15 @@ errorScenarioSpecs newCartStoreAndFetcher = do
       -- Try to checkout non-existent cart
       let cmd = CheckoutCart {cartId = context.cartId}
 
-      result <- CommandHandler.execute context.cartStore context.cartFetcher context.cartEntityName cmd |> Task.mapError toText
+      result <- CommandHandler.execute context.cartStore context.cartFetcher context.cartEntityName cmd
 
       case result of
         CommandRejected msg -> do
           msg |> shouldBe "Cart does not exist"
-        CommandAccepted ->
+        CommandAccepted {} ->
           fail "Expected CommandRejected, got CommandAccepted"
+        CommandFailed _err _ ->
+          fail "Expected CommandRejected, got CommandFailed"
 
     it "returns CommandRejected when cart is already checked out" \context -> do
       -- Create cart and check it out
@@ -493,24 +518,28 @@ errorScenarioSpecs newCartStoreAndFetcher = do
       -- Try to add item to checked out cart
       let cmd = AddItemToCart {cartId = context.cartId, itemId = context.itemId2, amount = 5}
 
-      result <- CommandHandler.execute context.cartStore context.cartFetcher context.cartEntityName cmd |> Task.mapError toText
+      result <- CommandHandler.execute context.cartStore context.cartFetcher context.cartEntityName cmd
 
       case result of
         CommandRejected msg -> do
           msg |> shouldBe "Cannot add items to a checked out cart"
-        CommandAccepted ->
+        CommandAccepted {} ->
           fail "Expected CommandRejected, got CommandAccepted"
+        CommandFailed _err _ ->
+          fail "Expected CommandRejected, got CommandFailed"
 
     it "handles EventStore errors gracefully" \context -> do
       -- Test that CommandHandler properly propagates errors from EventStore
       -- When trying to add to non-existent cart, should reject (not crash)
       let cmd = AddItemToCart {cartId = context.cartId, itemId = context.itemId1, amount = 5}
 
-      result <- CommandHandler.execute context.cartStore context.cartFetcher context.cartEntityName cmd |> Task.mapError toText
+      result <- CommandHandler.execute context.cartStore context.cartFetcher context.cartEntityName cmd
 
       -- Should get CommandRejected (business rule), not an error
       case result of
         CommandRejected msg -> do
           msg |> shouldBe "Cart does not exist"
-        CommandAccepted ->
+        CommandAccepted {} ->
           fail "Expected CommandRejected, got CommandAccepted"
+        CommandFailed _err _ ->
+          fail "Expected CommandRejected, got CommandFailed"
