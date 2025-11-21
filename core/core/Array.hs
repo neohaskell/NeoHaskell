@@ -92,8 +92,8 @@ newtype Array a = Array (Data.Vector.Vector a)
   deriving (Prelude.Eq, Prelude.Show, Prelude.Ord, Prelude.Functor, Generic)
 
 
-instance (Default a) => Default (Array a) where
-  def = fromLinkedList [def, def, def]
+instance Default (Array a) where
+  def = Array.empty
 
 
 instance Collection Array where
@@ -143,7 +143,8 @@ instance (QuickCheck.Arbitrary a) => QuickCheck.Arbitrary (Array a) where
 
 instance GHC.IsList (Array a) where
   type Item (Array a) = a
-  fromList = Basics.fromList
+  fromList =
+    fromLinkedList
   toList = toLinkedList
 
 

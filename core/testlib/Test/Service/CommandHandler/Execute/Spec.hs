@@ -19,6 +19,7 @@ import Test.Service.Command.Core (
   CheckoutCart (..),
  )
 import Test.Service.CommandHandler.Execute.Context qualified as Context
+import Text qualified
 import Uuid qualified
 
 
@@ -91,10 +92,10 @@ basicExecutionSpecs newCartStoreAndFetcher = do
 
           cart.cartId |> shouldBe context.cartId
           Array.length cart.cartItems |> shouldBe 1
-        CommandRejected _msg ->
-          fail "Expected CommandAccepted, got CommandRejected"
-        CommandFailed _err _ ->
-          fail "Expected CommandAccepted, got CommandFailed"
+        CommandRejected msg ->
+          fail (Text.append "Expected CommandAccepted, got CommandRejected: " msg)
+        CommandFailed err _ ->
+          fail (Text.append "Expected CommandAccepted, got CommandFailed: " err)
 
     it "executes command that rejects due to business rules" \context -> do
       -- Try to add item to non-existent cart
