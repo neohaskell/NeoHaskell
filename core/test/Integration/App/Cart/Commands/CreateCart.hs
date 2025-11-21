@@ -34,13 +34,3 @@ decide _ entity = do
 
 
 deriveCommand ''CreateCart
-
-
--- VVVVVV      should be auto generated       VVVVVV
-
-type instance EntityOf CreateCart = Entity
-
-
-instance Command CreateCart where
-  getEntityIdImpl = getEntityId
-  decideImpl = decide
