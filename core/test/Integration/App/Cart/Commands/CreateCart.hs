@@ -16,9 +16,6 @@ data CreateCart = CreateCart
   deriving (Generic)
 
 
-type Entity = CartEntity
-
-
 getEntityId :: CreateCart -> Maybe Text
 getEntityId _ = Nothing
 
@@ -31,6 +28,12 @@ decide _ entity = do
     Nothing -> do
       cartCreatedId <- Decision.generateUuid
       Decision.acceptNew [CartCreated {cartCreatedId}]
+
+
+type Entity = CartEntity
+
+
+type MultiTenancy = False
 
 
 deriveCommand ''CreateCart

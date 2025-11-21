@@ -78,17 +78,29 @@ deriveCommand someName = do
           (TH.TySynEqn Nothing (TH.ConT entityOfName `TH.AppT` TH.ConT someName) (TH.ConT entityType))
 
   -- instance Command CreateCart where
+  --   type IsMultiTenant CreateCart = MultiTenancy (if MultiTenancy type exists)
   --   getEntityIdImpl = getEntityId
   --   decideImpl = decide
+  maybeMultiTenancy <- TH.lookupTypeName "MultiTenancy"
   commandClassName <- TH.lookupTypeName "Command" >>= orError "FIXME: Command type class not found"
+
+  let multiTenancyDecl = case maybeMultiTenancy of
+        Just multiTenancyType ->
+          [ TH.TySynInstD
+              (TH.TySynEqn Nothing (TH.ConT (TH.mkName "IsMultiTenant") `TH.AppT` TH.ConT someName) (TH.ConT multiTenancyType))
+          ]
+        Nothing -> []
+
   let commandInstance =
         TH.InstanceD
           Nothing
           []
           (TH.ConT commandClassName `TH.AppT` TH.ConT someName)
-          [ TH.ValD (TH.VarP (TH.mkName "getEntityIdImpl")) (TH.NormalB (TH.VarE getEntityId)) [],
-            TH.ValD (TH.VarP (TH.mkName "decideImpl")) (TH.NormalB (TH.VarE decide)) []
-          ]
+          ( multiTenancyDecl
+              ++ [ TH.ValD (TH.VarP (TH.mkName "getEntityIdImpl")) (TH.NormalB (TH.VarE getEntityId)) [],
+                   TH.ValD (TH.VarP (TH.mkName "decideImpl")) (TH.NormalB (TH.VarE decide)) []
+                 ]
+          )
 
   pure [entityTypeInstance, commandInstance]
 {-# INLINE deriveCommand #-}

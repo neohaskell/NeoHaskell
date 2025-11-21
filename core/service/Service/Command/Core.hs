@@ -34,7 +34,7 @@ type family EntityOf (command :: Type) :: Type
 
 
 class Command command where
-  type IsMultiTenant command :: Bool
+  type IsMultiTenant (command :: Type) :: Bool
   type IsMultiTenant command = False
 
 
