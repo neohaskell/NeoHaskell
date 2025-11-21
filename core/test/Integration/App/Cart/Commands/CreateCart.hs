@@ -29,7 +29,7 @@ decide _ entity = do
       Decision.reject "Cart already exists!"
     Nothing -> do
       cartCreatedId <- Decision.generateUuid
-      Decision.accept StreamCreation [CartCreated {cartCreatedId}]
+      Decision.acceptNew [CartCreated {cartCreatedId}]
 
 
 -- VVVVVV      should be auto generated     VVVVVV
