@@ -33,7 +33,7 @@ decide _ entity = do
 type Entity = CartEntity
 
 
-type MultiTenancy = False
+type MultiTenancy = True
 
 
 deriveCommand ''CreateCart
