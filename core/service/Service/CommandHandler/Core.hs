@@ -4,13 +4,16 @@ module Service.CommandHandler.Core (
   CommandHandler (..),
   CommandHandlerResult (..),
   execute,
+  deriveCommand,
 ) where
 
+import Control.Monad.Fail qualified as MonadFail
 import Core
-import Service.Command (EventOf)
+import Language.Haskell.TH.Lib qualified as THLib
+import Language.Haskell.TH.Syntax qualified as TH
+import Maybe qualified
 import Service.EntityFetcher.Core (EntityFetcher)
 import Service.Event (EntityName)
-import Service.Event.StreamId (StreamId)
 import Service.EventStore.Core (EventStore)
 import Task qualified
 
@@ -53,3 +56,19 @@ execute ::
   Task error CommandHandlerResult
 execute _eventStore _entityFetcher _entityName _command = do
   Task.yield (panic "Service.CommandHandler.execute not yet implemented")
+
+
+deriveCommand :: TH.Name -> THLib.DecsQ
+deriveCommand someName = do
+  let orError errMsg mVal =
+        case mVal of
+          Just x -> pure x
+          Nothing -> MonadFail.fail errMsg
+  maybeEntityType <- TH.lookupTypeName "Entity"
+  maybeGetEntityId <- TH.lookupValueName "getEntityId"
+  maybeDecide <- TH.lookupValueName "decide"
+  entityType <- maybeEntityType |> orError "FIXME: This module doesn't have an Entity type"
+  getEntityId <- maybeGetEntityId |> orError "FIXME: This module doesn't have a getEntityId function"
+  decide <- maybeDecide |> orError "FIXME: This module doesn't have a decide function"
+  MonadFail.fail "Undefined"
+{-# INLINE deriveCommand #-}

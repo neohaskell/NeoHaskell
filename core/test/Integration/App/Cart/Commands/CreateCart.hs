@@ -9,6 +9,7 @@ module Integration.App.Cart.Commands.CreateCart (
 import Core
 import Decision qualified
 import Integration.App.Cart.Core
+import Service.CommandHandler.Core (deriveCommand)
 
 
 data CreateCart = CreateCart
@@ -22,7 +23,7 @@ getEntityId :: CreateCart -> Maybe Text
 getEntityId _ = Nothing
 
 
-decide :: CreateCart -> Maybe Entity -> Decision CartEvent
+decide :: CreateCart -> Maybe CartEntity -> Decision CartEvent
 decide _ entity = do
   case entity of
     Just _ ->
@@ -32,7 +33,10 @@ decide _ entity = do
       Decision.acceptNew [CartCreated {cartCreatedId}]
 
 
--- VVVVVV      should be auto generated     VVVVVV
+deriveCommand ''CreateCart
+
+
+-- VVVVVV      should be auto generated       VVVVVV
 
 type instance EntityOf CreateCart = Entity
 
