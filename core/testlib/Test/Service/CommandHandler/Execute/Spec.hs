@@ -2,7 +2,6 @@ module Test.Service.CommandHandler.Execute.Spec where
 
 import Array qualified
 import Core
-import Service.Command (Command (..), streamId)
 import Service.CommandHandler (CommandHandlerResult (CommandAccepted, CommandFailed, CommandRejected))
 import Service.CommandHandler qualified as CommandHandler
 import Service.EntityFetcher.Core (EntityFetcher (..))
@@ -445,8 +444,10 @@ concurrencySpecs newCartStoreAndFetcher = do
         CommandFailed _err _ -> fail "Command 2 failed"
 
       -- Verify both carts have their items
-      cart1 <- context.cartFetcher.fetch context.cartEntityName (cartId1 |> Uuid.toText |> StreamId.fromText) |> Task.mapError toText
-      cart2 <- context.cartFetcher.fetch context.cartEntityName (cartId2 |> Uuid.toText |> StreamId.fromText) |> Task.mapError toText
+      cart1 <-
+        context.cartFetcher.fetch context.cartEntityName (cartId1 |> Uuid.toText |> StreamId.fromText) |> Task.mapError toText
+      cart2 <-
+        context.cartFetcher.fetch context.cartEntityName (cartId2 |> Uuid.toText |> StreamId.fromText) |> Task.mapError toText
 
       cart1.cartId |> shouldBe cartId1
       cart2.cartId |> shouldBe cartId2

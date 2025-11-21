@@ -8,7 +8,6 @@ import Data.Time.Clock qualified as Clock
 import Json (FromJSON, ToJSON)
 import Task (Task)
 import Task qualified
-import ToText (Show)
 
 
 newtype DateTime = DateTime Clock.UTCTime

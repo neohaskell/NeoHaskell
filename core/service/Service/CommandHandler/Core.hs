@@ -7,7 +7,7 @@ module Service.CommandHandler.Core (
 ) where
 
 import Core
-import Service.Command (Command (..), EventOf)
+import Service.Command (EventOf)
 import Service.EntityFetcher.Core (EntityFetcher)
 import Service.Event (EntityName)
 import Service.Event.StreamId (StreamId)
@@ -32,7 +32,6 @@ data CommandHandlerResult
   deriving (Eq, Show, Ord, Generic)
 
 
--- | CommandHandler handles command execution with retry logic and event persistence
 data CommandHandler event = CommandHandler
   { eventStore :: EventStore event,
     maxRetries :: Int,
@@ -41,22 +40,14 @@ data CommandHandler event = CommandHandler
   deriving (Generic)
 
 
--- | Execute a command against an entity stream
---
---   This function:
---   1. Fetches the current entity state using the EntityFetcher
---   2. Calls the command's decide function with the entity state
---   3. If accepted, inserts the events into the EventStore
---   4. Handles optimistic concurrency by retrying on consistency failures
---   5. Returns CommandHandlerResult indicating success, rejection, or failure
 execute ::
-  forall command entity event error.
+  forall command commandEntity commandEvent appEvent error.
   ( Command command,
-    entity ~ EntityOf command,
-    event ~ EventOf entity
+    commandEntity ~ EntityOf command,
+    commandEvent ~ EventOf commandEntity
   ) =>
-  EventStore event ->
-  EntityFetcher entity event ->
+  EventStore appEvent ->
+  EntityFetcher commandEntity commandEvent ->
   EntityName ->
   command ->
   Task error CommandHandlerResult

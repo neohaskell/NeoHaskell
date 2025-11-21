@@ -6,9 +6,13 @@ module Service.Command.Core (
   EventOf,
 ) where
 
-import Core
+import Array (Array)
+import Basics
+import Maybe (Maybe)
 import Service.Event (InsertionType)
 import Service.Event.StreamId (StreamId)
+import Text (Text)
+import Uuid (Uuid)
 
 
 -- | Result of a command decision.

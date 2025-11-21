@@ -20,7 +20,6 @@ import Maybe (Maybe (..))
 import Task (Task)
 import Task qualified
 import Text (Text)
-import ToText (Show (..))
 
 
 -- | Message wrapper that signals stream state

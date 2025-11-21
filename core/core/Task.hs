@@ -52,7 +52,7 @@ import Result (Result)
 import Result qualified
 import Text (Text)
 import Thenable (Monad)
-import ToText (Show, toPrettyText)
+import ToText (toPrettyText)
 import Prelude qualified
 
 

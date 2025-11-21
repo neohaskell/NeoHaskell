@@ -13,7 +13,7 @@ module Test.Service.Command.Core (
 import Array qualified
 import Core
 import Json qualified
-import Service.Command (Command (..), CommandResult (..), EventOf)
+import Service.Command (CommandResult (..), EventOf)
 import Service.Event (InsertionType (..))
 import Service.Event.StreamId qualified as StreamId
 import Uuid qualified

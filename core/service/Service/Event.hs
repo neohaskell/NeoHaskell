@@ -11,14 +11,18 @@ module Service.Event (
   payloadFromEvents,
 ) where
 
-import Core
+import Array (Array)
+import Basics
 import Json qualified
 import Service.Event.EntityName (EntityName (..))
 import Service.Event.EventMetadata (EventMetadata (..))
 import Service.Event.EventMetadata qualified as EventMetadata
 import Service.Event.StreamId (StreamId (..))
 import Service.Event.StreamPosition (StreamPosition (..))
+import Task (Task (..))
 import Task qualified
+import Text (Text)
+import Uuid (Uuid)
 import Uuid qualified
 
 

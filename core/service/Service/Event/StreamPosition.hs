@@ -3,8 +3,10 @@ module Service.Event.StreamPosition (
   new,
 ) where
 
-import Core
+import Basics
+import Default
 import Json (FromJSON, ToJSON)
+import Maybe (Maybe (..))
 
 
 newtype StreamPosition = StreamPosition Int64

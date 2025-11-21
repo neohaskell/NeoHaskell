@@ -2,7 +2,7 @@ module Test.Service.Command.Decide.Spec where
 
 import Array qualified
 import Core
-import Service.Command (Command (..), CommandResult (..))
+import Service.Command (CommandResult (..))
 import Service.Event (InsertionType (..))
 import Test
 import Test.Service.Command.Core (
@@ -86,7 +86,6 @@ cartCommandSpecs = do
 
         -- StreamId should wrap the cartId
         sid |> shouldSatisfy (\_ -> True) -- Basic existence check
-
   describe "RemoveItemFromCart" do
     before Context.initialize do
       it "rejects when cart doesn't exist" \context -> do

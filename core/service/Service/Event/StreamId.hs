@@ -5,9 +5,11 @@ module Service.Event.StreamId (
   fromText,
 ) where
 
-import Core hiding (toText)
+import Basics
 import Json qualified
+import Task (Task)
 import Task qualified
+import Text (Text)
 import Uuid qualified
 
 

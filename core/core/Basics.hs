@@ -128,6 +128,7 @@ module Basics (
   Type,
   GHC.Generics.Generic,
   GHC.Stack.HasCallStack,
+  Show (..),
 ) where
 
 import Applicable (Applicable)
@@ -150,7 +151,7 @@ import GHC.Stack (HasCallStack)
 import Language.Haskell.TH.Quote (QuasiQuoter)
 import Mappable (Mappable)
 import Unit (Unit, unit)
-import Prelude (fmap, fromInteger, otherwise, return, (<*>), (>>=))
+import Prelude (Show (..), fmap, fromInteger, otherwise, return, (<*>), (>>=))
 import Prelude qualified
 
 
