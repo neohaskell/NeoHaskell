@@ -86,7 +86,7 @@ deriveCommand someName = do
   maybeMultiTenancy <- TH.lookupTypeName "MultiTenancy"
   commandClassName <- TH.lookupTypeName "Command" >>= orError "FIXME: Command type class not found"
 
-  -- Validate function signatures when MultiTenancy is True
+  -- Validate function signatures based on MultiTenancy setting
   case maybeMultiTenancy of
     Just multiTenancyName -> do
       multiTenancyInfo <- TH.reify multiTenancyName
@@ -96,6 +96,7 @@ deriveCommand someName = do
             _ -> False
       if isMultiTenancyTrue
         then do
+          -- MultiTenancy = True: must have Uuid parameter
           getEntityIdInfo <- TH.reify getEntityId
           decideInfo <- TH.reify decide
           case getEntityIdInfo of
@@ -134,8 +135,92 @@ Current signature doesn't include Uuid as first parameter.
 Please update your decide function to accept a Uuid tenant ID as the first argument.
 |]
             _ -> pure ()
-        else pure ()
-    Nothing -> pure ()
+        else do
+          -- MultiTenancy = False: must NOT have Uuid parameter
+          getEntityIdInfo <- TH.reify getEntityId
+          decideInfo <- TH.reify decide
+          case getEntityIdInfo of
+            TH.VarI _ getEntityIdType _ -> do
+              let typeStr = THPpr.pprint getEntityIdType
+              if "Uuid.Uuid" `GhcList.elem` GhcList.words typeStr
+                then
+                  MonadFail.fail
+                    [fmt|
+ERROR: 'getEntityId' has incorrect signature.
+
+Expected signature (when MultiTenancy = False):
+  getEntityId :: #{TH.nameBase someName} -> Maybe Text
+
+Current signature:
+  getEntityId :: #{typeStr}
+
+The function should NOT have Uuid as a parameter when MultiTenancy is False.
+|]
+                else pure ()
+            _ -> pure ()
+          case decideInfo of
+            TH.VarI _ decideType _ -> do
+              let typeStr = THPpr.pprint decideType
+              if "Uuid.Uuid" `GhcList.elem` GhcList.words typeStr
+                then
+                  MonadFail.fail
+                    [fmt|
+ERROR: 'decide' has incorrect signature.
+
+Expected signature (when MultiTenancy = False):
+  decide :: #{TH.nameBase someName} -> Maybe #{TH.nameBase entityType} -> Decision event
+
+Current signature:
+  decide :: #{typeStr}
+
+The function should NOT have Uuid as a parameter when MultiTenancy is False.
+|]
+                else pure ()
+            _ -> pure ()
+    Nothing -> do
+      -- MultiTenancy undefined: must NOT have Uuid parameter
+      getEntityIdInfo <- TH.reify getEntityId
+      decideInfo <- TH.reify decide
+      case getEntityIdInfo of
+        TH.VarI _ getEntityIdType _ -> do
+          let typeStr = THPpr.pprint getEntityIdType
+          if "Uuid.Uuid" `GhcList.elem` GhcList.words typeStr
+            then
+              MonadFail.fail
+                [fmt|
+ERROR: 'getEntityId' has incorrect signature.
+
+Expected signature (when MultiTenancy is undefined):
+  getEntityId :: #{TH.nameBase someName} -> Maybe Text
+
+Current signature:
+  getEntityId :: #{typeStr}
+
+The function should NOT have Uuid as a parameter.
+If you need multi-tenancy, define: type MultiTenancy = True
+|]
+            else pure ()
+        _ -> pure ()
+      case decideInfo of
+        TH.VarI _ decideType _ -> do
+          let typeStr = THPpr.pprint decideType
+          if "Uuid.Uuid" `GhcList.elem` GhcList.words typeStr
+            then
+              MonadFail.fail
+                [fmt|
+ERROR: 'decide' has incorrect signature.
+
+Expected signature (when MultiTenancy is undefined):
+  decide :: #{TH.nameBase someName} -> Maybe #{TH.nameBase entityType} -> Decision event
+
+Current signature:
+  decide :: #{typeStr}
+
+The function should NOT have Uuid as a parameter.
+If you need multi-tenancy, define: type MultiTenancy = True
+|]
+            else pure ()
+        _ -> pure ()
 
   let multiTenancyDecl = case maybeMultiTenancy of
         Just multiTenancyType ->

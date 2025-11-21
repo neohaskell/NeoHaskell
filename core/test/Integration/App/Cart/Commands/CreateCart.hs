@@ -16,7 +16,7 @@ data CreateCart = CreateCart
   deriving (Generic)
 
 
-getEntityId :: Uuid -> CreateCart -> Maybe Text
+getEntityId :: CreateCart -> Maybe Text
 getEntityId _ = Nothing
 
 
@@ -31,9 +31,6 @@ decide _ entity = do
 
 
 type Entity = CartEntity
-
-
-type MultiTenancy = True
 
 
 deriveCommand ''CreateCart
