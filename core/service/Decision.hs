@@ -72,8 +72,8 @@ runDecision = go
     GenUuid -> do
       uuid <- Uuid.generate
       f uuid |> go
-    Accept s events -> Accepted s events |> Task.yield
-    Reject reason -> Rejected reason |> Task.yield
+    Accept _ _ -> Task.throw "Accept must be the last statement"
+    Reject _ -> Task.throw "Reject must be the last statement"
     Return a -> go (f a)
     Bind m' f' -> go (Bind m' (\x -> Bind (f' x) f))
   go GenUuid = Task.throw "Unbound GenUuid"
