@@ -108,6 +108,7 @@ library
     Console
     Core
     DateTime
+    Decision
     Default
     Directory
     DurableChannel

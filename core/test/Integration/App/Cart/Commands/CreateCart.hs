@@ -1,3 +1,5 @@
+{-# LANGUAGE OverloadedLists #-}
+
 module Integration.App.Cart.Commands.CreateCart (
   CreateCart (..),
   getEntityId,
@@ -5,7 +7,8 @@ module Integration.App.Cart.Commands.CreateCart (
 ) where
 
 import Core
-import Integration.App.Cart.Entity (CartEntity)
+import Integration.App.Cart.Core
+import Uuid qualified
 
 
 data CreateCart = CreateCart
@@ -15,12 +18,18 @@ data CreateCart = CreateCart
 type Entity = CartEntity
 
 
-getEntityId :: CreateCart -> StreamId
-getEntityId _ = panic "Not implemented"
+getEntityId :: CreateCart -> Maybe Text
+getEntityId _ = Nothing
 
 
-decide :: CreateCart -> Maybe Entity -> CommandResult CartEvent
-decide = panic "Not implemented"
+decide :: CreateCart -> Maybe Entity -> Decision CartEvent
+decide _ entity = do
+  case entity of
+    Just _ ->
+      Decision.reject "Cart already exists!"
+    Nothing -> do
+      cartCreatedId <- Decision.generateUuid
+      Decision.accept StreamCreation [CartCreated {cartCreatedId}]
 
 
 -- VVVVVV      should be auto generated     VVVVVV

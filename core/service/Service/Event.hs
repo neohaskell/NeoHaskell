@@ -2,6 +2,7 @@ module Service.Event (
   Event (..),
   InsertionPayload (..),
   StreamId (..),
+  ToStreamId (..),
   StreamPosition (..),
   EntityName (..),
   InsertionType (..),
@@ -17,7 +18,7 @@ import Json qualified
 import Service.Event.EntityName (EntityName (..))
 import Service.Event.EventMetadata (EventMetadata (..))
 import Service.Event.EventMetadata qualified as EventMetadata
-import Service.Event.StreamId (StreamId (..))
+import Service.Event.StreamId (StreamId (..), ToStreamId (..))
 import Service.Event.StreamPosition (StreamPosition (..))
 import Task (Task (..))
 import Task qualified

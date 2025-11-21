@@ -23,4 +23,6 @@ data CartItem = CartItem
   deriving (Generic)
 
 
-data CartEvent = CartEvent
+data CartEvent
+  = CartCreated {cartCreatedId :: Uuid}
+  deriving (Generic)

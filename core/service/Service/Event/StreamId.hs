@@ -1,5 +1,6 @@
 module Service.Event.StreamId (
   StreamId (..),
+  ToStreamId (..),
   new,
   toText,
   fromText,
@@ -35,3 +36,11 @@ toText (StreamId id) = id
 
 fromText :: Text -> StreamId
 fromText id = StreamId id
+
+
+class ToStreamId idType where
+  toStreamId :: idType -> StreamId
+
+
+instance ToStreamId StreamId where
+  toStreamId id = id
