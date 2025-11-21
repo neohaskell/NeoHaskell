@@ -147,10 +147,10 @@ addOrUpdateItem items itemId amount = do
 -- Cart Command Instances
 -- ============================================================================
 
+type instance EntityOf AddItemToCart = CartEntity
+
+
 instance Command AddItemToCart where
-  type EntityOf AddItemToCart = CartEntity
-
-
   streamId cmd = cmd.cartId |> Uuid.toText |> StreamId.fromText
 
 
@@ -169,10 +169,10 @@ instance Command AddItemToCart where
               |> AcceptCommand ExistingStream
 
 
+type instance EntityOf RemoveItemFromCart = CartEntity
+
+
 instance Command RemoveItemFromCart where
-  type EntityOf RemoveItemFromCart = CartEntity
-
-
   streamId cmd = cmd.cartId |> Uuid.toText |> StreamId.fromText
 
 
@@ -193,10 +193,10 @@ instance Command RemoveItemFromCart where
                   |> AcceptCommand ExistingStream
 
 
+type instance EntityOf CheckoutCart = CartEntity
+
+
 instance Command CheckoutCart where
-  type EntityOf CheckoutCart = CartEntity
-
-
   streamId cmd = cmd.cartId |> Uuid.toText |> StreamId.fromText
 
 

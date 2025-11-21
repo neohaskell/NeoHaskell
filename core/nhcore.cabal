@@ -227,6 +227,8 @@ test-suite nhcore-test
 
   other-modules:
     Integration.App
+    Integration.App.Cart.Commands.CreateCart
+    Integration.App.Cart.Entity
     Service.CommandHandlerSpec
     Service.EventStore.InMemorySpec
     Service.EventStore.Postgres.Internal.SubscriptionStoreSpec
