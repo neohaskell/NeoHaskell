@@ -2,7 +2,6 @@ module Test.Service.Command.Decide.Spec where
 
 import Array qualified
 import Core
-import Service.Command (CommandResult (..))
 import Service.Event (InsertionType (..))
 import Test
 import Test.Service.Command.Core (
