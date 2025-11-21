@@ -39,17 +39,17 @@ class Command command where
   type IsMultiTenant command = False
 
 
-  streamId :: StreamIdFunction (IsMultiTenant command) command
+  getEntityIdImpl :: GetEntityIdFunction (IsMultiTenant command) command
 
 
-  decide :: DecideFunction (IsMultiTenant command) command (EntityOf command) (EventOf (EntityOf command))
+  decideImpl :: DecideFunction (IsMultiTenant command) command (EntityOf command) (EventOf (EntityOf command))
 
 
 -- | Extract the stream ID from the command.
 --   This determines which entity stream the command targets.
-type family StreamIdFunction (isTenant :: Bool) command where
-  StreamIdFunction 'False command = command -> StreamId
-  StreamIdFunction 'True command = Uuid -> command -> StreamId
+type family GetEntityIdFunction (isTenant :: Bool) command where
+  GetEntityIdFunction False command = command -> StreamId
+  GetEntityIdFunction True command = Uuid -> command -> StreamId
 
 
 -- | Make a decision about the command given the current entity state.
