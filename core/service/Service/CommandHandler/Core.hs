@@ -9,7 +9,9 @@ module Service.CommandHandler.Core (
 
 import Control.Monad.Fail qualified as MonadFail
 import Core
+import Data.List qualified as GhcList
 import Language.Haskell.TH.Lib qualified as THLib
+import Language.Haskell.TH.Ppr qualified as THPpr
 import Language.Haskell.TH.Syntax qualified as TH
 import Maybe qualified
 import Service.EntityFetcher.Core (EntityFetcher)
@@ -83,6 +85,57 @@ deriveCommand someName = do
   --   decideImpl = decide
   maybeMultiTenancy <- TH.lookupTypeName "MultiTenancy"
   commandClassName <- TH.lookupTypeName "Command" >>= orError "FIXME: Command type class not found"
+
+  -- Validate function signatures when MultiTenancy is True
+  case maybeMultiTenancy of
+    Just multiTenancyName -> do
+      multiTenancyInfo <- TH.reify multiTenancyName
+      let isMultiTenancyTrue = case multiTenancyInfo of
+            TH.TyConI (TH.TySynD _ _ (TH.PromotedT trueName)) ->
+              TH.nameBase trueName == "True"
+            _ -> False
+      if isMultiTenancyTrue
+        then do
+          getEntityIdInfo <- TH.reify getEntityId
+          decideInfo <- TH.reify decide
+          case getEntityIdInfo of
+            TH.VarI _ getEntityIdType _ -> do
+              let typeStr = THPpr.pprint getEntityIdType
+              case typeStr of
+                str | "Uuid.Uuid" `GhcList.elem` GhcList.words str -> pure ()
+                _ ->
+                  MonadFail.fail
+                    [fmt|
+ERROR: When MultiTenancy is set to True, 'getEntityId' must have Uuid as first parameter.
+
+Expected signature:
+  getEntityId :: Uuid -> #{TH.nameBase someName} -> Maybe Text
+
+Current signature doesn't include Uuid as first parameter.
+
+Please update your getEntityId function to accept a Uuid tenant ID as the first argument.
+|]
+            _ -> pure ()
+          case decideInfo of
+            TH.VarI _ decideType _ -> do
+              let typeStr = show decideType
+              case typeStr of
+                str | "Uuid.Uuid" `GhcList.elem` GhcList.words str -> pure ()
+                _ ->
+                  MonadFail.fail
+                    [fmt|
+ERROR: When MultiTenancy is set to True, 'decide' must have Uuid as first parameter.
+
+Expected signature:
+  decide :: Uuid -> #{TH.nameBase someName} -> Maybe #{TH.nameBase entityType} -> Decision event
+
+Current signature doesn't include Uuid as first parameter.
+
+Please update your decide function to accept a Uuid tenant ID as the first argument.
+|]
+            _ -> pure ()
+        else pure ()
+    Nothing -> pure ()
 
   let multiTenancyDecl = case maybeMultiTenancy of
         Just multiTenancyType ->

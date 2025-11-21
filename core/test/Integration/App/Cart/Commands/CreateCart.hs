@@ -16,7 +16,7 @@ data CreateCart = CreateCart
   deriving (Generic)
 
 
-getEntityId :: CreateCart -> Maybe Text
+getEntityId :: Uuid -> CreateCart -> Maybe Text
 getEntityId _ = Nothing
 
 
