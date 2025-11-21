@@ -7,4 +7,22 @@ data CreateCart = CreateCart
   deriving (Generic)
 
 
-instance Command CreateCart
+type instance EntityOf CreateCart = CartEntity
+
+
+instance Command CreateCart where
+  streamId _ = panic "Not implemented"
+
+
+data CartEntity = CartEntity
+  { cartId :: Uuid,
+    items :: Array CartItem
+  }
+  deriving (Generic)
+
+
+data CartItem = CartItem
+  { productId :: Uuid,
+    amount :: Natural Int
+  }
+  deriving (Generic)

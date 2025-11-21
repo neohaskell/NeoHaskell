@@ -4,6 +4,7 @@ module Service.Command.Core (
   Command (..),
   CommandResult (..),
   EventOf,
+  EntityOf,
 ) where
 
 import Array (Array)
@@ -23,16 +24,18 @@ data CommandResult event
   deriving (Eq, Show, Ord, Generic)
 
 
+type family EntityOf (command :: Type) :: Type
+
+
 -- | Command typeclass for commands.
 --   Commands represent the intent to change entity state.
 --   The `decide` method contains the business logic that determines
 --   whether the command should be accepted or rejected.
 class Command command where
   -- | The entity type that this command operates on
-  type EntityOf command
-
-
   type IsMultiTenant command :: Bool
+
+
   type IsMultiTenant command = False
 
 
