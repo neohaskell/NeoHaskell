@@ -1,24 +1,24 @@
 module Decision (
   Decision (..),
+  DecisionContext (..),
   generateUuid,
+  accept,
+  reject,
+  runDecision,
 ) where
 
 import Applicable
 import Array (Array)
 import Basics
-import Control.Monad qualified as Applicative
 import Control.Monad qualified as Monad
-import Control.Monad.Trans.Class qualified as Monad
-import Control.Monad.Trans.Reader (ReaderT)
-import Control.Monad.Trans.Reader qualified as Reader
 import Mappable
-import Service.Command.Core (CommandResult)
+import Service.Command.Core (CommandResult (..))
 import Service.Event (InsertionType)
 import Task (Task)
 import Task qualified
 import Text (Text)
 import Thenable
-import Uuid (Uuid, generate)
+import Uuid (Uuid)
 
 
 data Decision a where
@@ -56,26 +56,24 @@ reject :: Text -> Decision a
 reject reason = Reject reason
 
 
--- Interpreter
-data DecisionResult a
-  = Accepted InsertionType (Array a)
-  | Rejected Text
-  deriving (Show, Eq)
+data DecisionContext = DecisionContext
+  { genUuid :: Task Text Uuid
+  }
 
 
-runDecision :: Decision a -> Task Text (DecisionResult a)
-runDecision = go
+runDecision :: (HasCallStack) => DecisionContext -> Decision a -> Task Text (CommandResult a)
+runDecision ctx = go
  where
-  go :: forall a. Decision a -> Task Text (DecisionResult a)
+  go :: forall a. (HasCallStack) => Decision a -> Task Text (CommandResult a)
   go (Return _) = Task.throw "Decision didn't terminate with accept/reject"
   go (Bind m f) = case m of
     GenUuid -> do
-      uuid <- Uuid.generate
+      uuid <- ctx.genUuid
       f uuid |> go
     Accept _ _ -> Task.throw "Accept must be the last statement"
     Reject _ -> Task.throw "Reject must be the last statement"
     Return a -> go (f a)
     Bind m' f' -> go (Bind m' (\x -> Bind (f' x) f))
   go GenUuid = Task.throw "Unbound GenUuid"
-  go (Accept s events) = Accepted s events |> Task.yield
-  go (Reject reason) = Rejected reason |> Task.yield
+  go (Accept s events) = AcceptCommand s events |> Task.yield
+  go (Reject reason) = RejectCommand reason |> Task.yield
