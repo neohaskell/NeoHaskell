@@ -113,19 +113,101 @@ deriveCommand someName = do
           Just x -> pure x
           Nothing -> MonadFail.fail errMsg
 
+  let commandNameStr = TH.nameBase someName
+
   maybeEntityType <- TH.lookupTypeName "EntityOf"
   maybeGetEntityId <- TH.lookupValueName "getEntityId"
   maybeDecide <- TH.lookupValueName "decide"
-  entityType <- maybeEntityType |> orError "FIXME: This module doesn't have an EntityOf type"
-  getEntityId <- maybeGetEntityId |> orError "FIXME: This module doesn't have a getEntityId function"
-  decide <- maybeDecide |> orError "FIXME: This module doesn't have a decide function"
+
+  entityType <-
+    maybeEntityType
+      |> orError
+        [fmt|
+ERROR: Missing EntityOf type instance for command '#{commandNameStr}'.
+
+Commands need to specify which entity type they operate on. This allows the command
+handler to fetch the current state of the entity before deciding whether to accept
+or reject the command.
+
+Please add the following type instance to your module:
+
+  type instance EntityOf #{commandNameStr} = YourEntityType
+
+Example:
+  -- If your command operates on a Cart entity:
+  type instance EntityOf #{commandNameStr} = CartEntity
+
+For reference, refer to the documentation: FIXME: ADD DOCS LINK
+|]
+
+  getEntityId <-
+    maybeGetEntityId
+      |> orError
+        [fmt|
+ERROR: Missing 'getEntityId' function for command '#{commandNameStr}'.
+
+The 'getEntityId' function extracts the entity identifier from your command.
+This ID is used to fetch the current state of the entity from the event store.
+
+Please add the following function to your module:
+
+  getEntityId :: #{commandNameStr} -> Maybe Text
+  getEntityId command = ...
+
+If your command creates a new entity (no existing ID), return Nothing:
+  getEntityId _ = Nothing
+
+If your command operates on an existing entity, extract and return its ID:
+  getEntityId cmd = Just cmd.entityId
+
+For reference, see: core/test/Integration/App/Cart/Commands/CreateCart.hs
+|]
+
+  decide <-
+    maybeDecide
+      |> orError
+        [fmt|
+ERROR: Missing 'decide' function for command '#{commandNameStr}'.
+
+The 'decide' function contains your business logic. It receives the command and
+the current entity state (if it exists), and returns a Decision to either accept
+or reject the command.
+
+Please add the following function to your module:
+
+  decide :: #{commandNameStr} -> Maybe YourEntityType -> Decision YourEventType
+  decide command maybeEntity = ...
+
+Example implementations:
+
+  -- For creating a new entity:
+  decide _ entity = do
+    case entity of
+      Just _ -> Decision.reject "Entity already exists"
+      Nothing -> Decision.acceptNew [EntityCreated]
+
+  -- For updating an existing entity:
+  decide cmd entity = do
+    case entity of
+      Nothing -> Decision.reject "Entity not found"
+      Just existingEntity -> Decision.accept existingEntity [EntityUpdated]
+
+For reference, see: core/test/Integration/App/Cart/Commands/CreateCart.hs
+|]
 
   maybeMultiTenancy <- TH.lookupTypeName "MultiTenancy"
-  commandClassName <- TH.lookupTypeName "Command" >>= orError "FIXME: Command type class not found"
+  commandClassName <-
+    TH.lookupTypeName "Command"
+      >>= orError
+        [fmt|
+ERROR: Command type class not found.
+
+This is an internal error - the Command type class should be available from
+Service.Command.Core. Please ensure you have imported the necessary modules.
+|]
 
   multiTenancyMode <- determineMultiTenancyMode maybeMultiTenancy
 
-  let commandNameStr = TH.nameBase someName
   let entityTypeStr = TH.nameBase entityType
 
   let getEntityIdFuncInfo =

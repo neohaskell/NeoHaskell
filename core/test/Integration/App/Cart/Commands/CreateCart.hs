@@ -30,7 +30,6 @@ decide _ entity = do
       Decision.acceptNew [CartCreated {cartCreatedId}]
 
 
-type instance EntityOf CreateCart = CartEntity
-
+-- type instance EntityOf CreateCart = CartEntity
 
 deriveCommand ''CreateCart
