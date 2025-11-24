@@ -1,5 +1,3 @@
-{-# LANGUAGE AllowAmbiguousTypes #-}
-
 module Service.CommandHandler.TH (
   deriveCommand,
 ) where
@@ -56,26 +54,31 @@ buildErrorMessage ::
   MultiTenancyMode ->
   String
 buildErrorMessage functionName expectedSig currentSig mode = do
-  let modeDescription = case mode of
+  let modeDescription :: String
+      modeDescription = case mode of
         MustHaveUuid ->
           "When MultiTenancy is set to True"
         MustNotHaveUuid ->
           "When MultiTenancy is False or undefined"
-  let additionalHelp = case mode of
+  let additionalHelp :: String
+      additionalHelp = case mode of
         MustHaveUuid ->
-          "Please update your " ++ functionName ++ " function to accept a Uuid tenant ID as the first argument."
+          [fmt|Please update your #{functionName} function to accept a Uuid tenant ID as the first argument.|]
         MustNotHaveUuid ->
-          "The function should NOT have Uuid as a parameter when MultiTenancy is False.\nIf you need multi-tenancy, define: type MultiTenancy = True"
-  "ERROR: '"
-    ++ functionName
-    ++ "' has incorrect signature.\n\n"
-    ++ modeDescription
-    ++ ":\nExpected signature:\n  "
-    ++ expectedSig
-    ++ "\n\nCurrent signature:\n  "
-    ++ currentSig
-    ++ "\n\n"
-    ++ additionalHelp
+          [fmt|The function should NOT have Uuid as a parameter when MultiTenancy is False.
+If you need multi-tenancy, define: type MultiTenancy = True|]
+  [fmt|
+ERROR: '#{functionName}' has incorrect signature.
+
+#{modeDescription}:
+Expected signature:
+  #{expectedSig}
+
+Current signature:
+  #{currentSig}
+
+#{additionalHelp}
+|]
 
 
 validateFunctionSignature ::
@@ -113,7 +116,7 @@ deriveCommand someName = do
   maybeEntityType <- TH.lookupTypeName "EntityOf"
   maybeGetEntityId <- TH.lookupValueName "getEntityId"
   maybeDecide <- TH.lookupValueName "decide"
-  entityType <- maybeEntityType |> orError "FIXME: This module doesn't have an Entity type"
+  entityType <- maybeEntityType |> orError "FIXME: This module doesn't have an EntityOf type"
   getEntityId <- maybeGetEntityId |> orError "FIXME: This module doesn't have a getEntityId function"
   decide <- maybeDecide |> orError "FIXME: This module doesn't have a decide function"
 
