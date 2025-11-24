@@ -33,7 +33,7 @@ jobs:
           --health-timeout 5s --health-retries 5
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
 
       - uses: DeterminateSystems/determinate-nix-action@v3.13.2
         with:
@@ -89,7 +89,7 @@ jobs:
           /opt/homebrew/opt/postgresql@16/bin/psql postgres -c "CREATE USER neohaskell WITH PASSWORD 'neohaskell' SUPERUSER CREATEDB CREATEROLE LOGIN;"
           /opt/homebrew/opt/postgresql@16/bin/psql postgres -c "CREATE DATABASE neohaskell OWNER neohaskell;"
 
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
 
       - uses: DeterminateSystems/determinate-nix-action@v3.13.2
         with:
