@@ -193,10 +193,8 @@ Please add the following function to your module:
 If your command creates a new entity (no existing ID), return Nothing:
   getEntityId _ = Nothing
 
-If your command operates on an existing entity, extract and return its ID:
-  getEntityId cmd = Just cmd.entityId
 
-For reference, see: core/test/Integration/App/Cart/Commands/CreateCart.hs
+For more information on what commands and entities are, take a look at the docs: FIXME: ADD DOCS
 |]
 
   decide <-
@@ -219,16 +217,16 @@ Example implementations:
   -- For creating a new entity:
   decide _ entity = do
     case entity of
-      Just _ -> Decision.reject "Entity already exists"
-      Nothing -> Decision.acceptNew [EntityCreated]
+      Just _ -> Decision.reject "Cart already exists"
+      Nothing -> Decision.acceptNew [CartCreated]
 
   -- For updating an existing entity:
   decide cmd entity = do
     case entity of
-      Nothing -> Decision.reject "Entity not found"
-      Just existingEntity -> Decision.accept existingEntity [EntityUpdated]
+      Nothing -> Decision.reject "Cart not found"
+      Just existingEntity -> Decision.acceptExisting [CartRenamed]
 
-For reference, see: core/test/Integration/App/Cart/Commands/CreateCart.hs
+For more information on what commands and entities are, take a look at the docs: FIXME: ADD DOCS
 |]
 
   maybeMultiTenancy <- TH.lookupTypeName "MultiTenancy"
@@ -238,7 +236,7 @@ For reference, see: core/test/Integration/App/Cart/Commands/CreateCart.hs
         [fmt|
 ERROR: Command type class not found.
 
-This is an internal error - the Command type class should be available from
+Please ensure you have `import Core` at the top of your module.
 Service.Command.Core. Please ensure you have imported the necessary modules.
 |]
 
