@@ -2,11 +2,13 @@ module Test.Service.CommandHandler.Execute.Spec where
 
 import Array qualified
 import Core
+import Maybe qualified
 import Service.CommandHandler (CommandHandlerResult (CommandAccepted, CommandFailed, CommandRejected))
 import Service.CommandHandler qualified as CommandHandler
 import Service.EntityFetcher.Core (EntityFetcher (..))
 import Service.Event qualified as Event
 import Service.Event.EventMetadata qualified as EventMetadata
+import Service.Event.StreamId (StreamId (..))
 import Service.Event.StreamId qualified as StreamId
 import Service.EventStore.Core qualified as EventStore
 import Task qualified
@@ -86,7 +88,7 @@ basicExecutionSpecs newCartStoreAndFetcher = do
       case result of
         CommandAccepted {} -> do
           -- Verify event was inserted by fetching updated cart
-          let sid = getEntityIdImpl @AddItemToCart cmd
+          let sid = getEntityIdImpl @AddItemToCart cmd |> (Maybe.getOrDie .> StreamId)
           cart <- context.cartFetcher.fetch context.cartEntityName sid |> Task.mapError toText
 
           cart.cartId |> shouldBe context.cartId
@@ -162,7 +164,7 @@ basicExecutionSpecs newCartStoreAndFetcher = do
       case result of
         CommandAccepted {} -> do
           -- Verify both items are in cart
-          let sid = getEntityIdImpl @AddItemToCart cmd
+          let sid = getEntityIdImpl @AddItemToCart cmd |> (Maybe.getOrDie .> StreamId)
           cart <- context.cartFetcher.fetch context.cartEntityName sid |> Task.mapError toText
 
           cart.cartId |> shouldBe context.cartId
@@ -245,7 +247,7 @@ retryLogicSpecs newCartStoreAndFetcher = do
       case result of
         CommandAccepted {} -> do
           -- Verify command succeeded after retry
-          let sid = getEntityIdImpl @AddItemToCart cmd
+          let sid = getEntityIdImpl @AddItemToCart cmd |> (Maybe.getOrDie .> StreamId)
           cart <- context.cartFetcher.fetch context.cartEntityName sid |> Task.mapError toText
 
           -- Should have both items now (item2 from concurrent insert, item1 from this command)
@@ -383,7 +385,7 @@ concurrencySpecs newCartStoreAndFetcher = do
         CommandFailed _err _ -> fail "Command 2 failed"
 
       -- Verify final state has both items
-      let sid = getEntityIdImpl @AddItemToCart cmd1
+      let sid = getEntityIdImpl @AddItemToCart cmd1 |> (Maybe.getOrDie .> StreamId)
       cart <- context.cartFetcher.fetch context.cartEntityName sid |> Task.mapError toText
 
       cart.cartId |> shouldBe context.cartId
