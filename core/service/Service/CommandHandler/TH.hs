@@ -115,14 +115,28 @@ deriveCommand someName = do
 
   let commandNameStr = TH.nameBase someName
 
-  maybeEntityType <- TH.lookupTypeName "EntityOf"
   maybeGetEntityId <- TH.lookupValueName "getEntityId"
   maybeDecide <- TH.lookupValueName "decide"
 
+  -- Try to resolve the EntityOf type instance for this command
+  -- We use reifyInstances to check if there's a type instance defined
+  entityTypeFamilyName <- TH.lookupTypeName "EntityOf"
+  entityTypeInstances <-
+    case entityTypeFamilyName of
+      Nothing ->
+        MonadFail.fail
+          [fmt|
+ERROR: EntityOf type family not found.
+
+Please ensure you have `import Core` at the top of your module.
+|]
+      Just typeFamilyName -> TH.reifyInstances typeFamilyName [TH.ConT someName]
+
   entityType <-
-    maybeEntityType
-      |> orError
-        [fmt|
+    case entityTypeInstances of
+      [] ->
+        MonadFail.fail
+          [fmt|
 ERROR: Missing EntityOf type instance for command '#{commandNameStr}'.
 
 Commands need to specify which entity type they operate on. This allows the command
@@ -133,11 +147,33 @@ Please add the following type instance to your module:
 
   type instance EntityOf #{commandNameStr} = YourEntityType
 
-Example:
-  -- If your command operates on a Cart entity:
-  type instance EntityOf #{commandNameStr} = CartEntity
+For more information on what commands and entities are, take a look at the docs: FIXME: ADD DOCS
+|]
+      (TH.TySynInstD (TH.TySynEqn _ _ entityTypeExpr) : _) ->
+        case entityTypeExpr of
+          TH.ConT name -> pure name
+          _ ->
+            MonadFail.fail
+              [fmt|
+ERROR: EntityOf type instance for '#{commandNameStr}' must be a concrete type.
 
-For reference, refer to the documentation: FIXME: ADD DOCS LINK
+The EntityOf type instance should map to a specific entity type, not a type variable
+or complex type expression.
+
+Current definition resolves to: #{THPpr.pprint entityTypeExpr}
+
+Please ensure your type instance uses a concrete entity type:
+
+  type instance EntityOf #{commandNameStr} = YourEntityType
+|]
+      _ ->
+        MonadFail.fail
+          [fmt|
+ERROR: Unexpected EntityOf type instance format for '#{commandNameStr}'.
+
+Please ensure your type instance follows this format:
+
+  type instance EntityOf #{commandNameStr} = YourEntityType
 |]
 
   getEntityId <-
