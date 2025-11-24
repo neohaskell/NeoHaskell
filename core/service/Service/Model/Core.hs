@@ -18,11 +18,11 @@ import Basics
 import Control.Monad qualified as Monad
 import Data.Monoid (Monoid (..))
 import Data.Semigroup (Semigroup (..))
-import Data.Set (Set)
-import Data.Set qualified as Set
 import Default (Default)
 import Default qualified
 import Mappable
+import Set (Set)
+import Set qualified
 import Text (Text)
 import Thenable hiding (yield)
 import Type.Reflection (Typeable)
@@ -59,9 +59,9 @@ instance Monad Model where
     let result = f m.value
     Model
       { value = result.value,
-        entities = Set.union m.entities result.entities,
-        eventTypes = Set.union m.eventTypes result.eventTypes,
-        commands = Set.union m.commands result.commands
+        entities = m.entities |> Set.union result.entities,
+        eventTypes = m.eventTypes |> Set.union result.eventTypes,
+        commands = m.commands |> Set.union result.commands
       }
 
 
@@ -69,9 +69,9 @@ instance Semigroup (Model a) where
   m1 <> m2 =
     Model
       { value = m2.value,
-        entities = Set.union m1.entities m2.entities,
-        eventTypes = Set.union m1.eventTypes m2.eventTypes,
-        commands = Set.union m1.commands m2.commands
+        entities = m1.entities |> Set.union m2.entities,
+        eventTypes = m1.eventTypes |> Set.union m2.eventTypes,
+        commands = m1.commands |> Set.union m2.commands
       }
 
 
@@ -161,6 +161,6 @@ hasCommand m = do
 -- | Check if a model is empty (has no registered types)
 isEmpty :: Model a -> Bool
 isEmpty m =
-  Set.null m.entities
-    && Set.null m.eventTypes
-    && Set.null m.commands
+  Set.isEmpty m.entities
+    && Set.isEmpty m.eventTypes
+    && Set.isEmpty m.commands
