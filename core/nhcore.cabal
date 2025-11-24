@@ -144,6 +144,8 @@ library
     Service.EventStore.Core
     Service.EventStore.InMemory
     Service.EventStore.Postgres
+    Service.Model
+    Service.Model.Core
     Service.EventStore.Postgres.Internal
     Service.EventStore.Postgres.Internal.Core
     Service.EventStore.Postgres.Internal.Notifications
@@ -239,6 +241,7 @@ test-suite nhcore-test
     StreamSpec
     Test.AppSpec.AppSpecSpec
     Test.AppSpec.VerifySpec
+    Test.ModelSpec
 
   -- other-extensions:
   type: exitcode-stdio-1.0

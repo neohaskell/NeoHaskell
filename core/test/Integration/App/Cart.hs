@@ -7,7 +7,7 @@ import Integration.App.Cart.Commands.CreateCart (CreateCart)
 import Integration.App.Cart.Core (CartEntity, CartEvent)
 
 
-model :: Model
+model :: Model Unit
 model = do
   entity @CartEntity
   events @CartEvent
