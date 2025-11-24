@@ -13,7 +13,7 @@ import Service.CommandHandler.Core (deriveCommand)
 
 
 data CreateCart = CreateCart
-  deriving (Generic)
+  deriving (Generic, Typeable)
 
 
 getEntityId :: CreateCart -> Maybe Text

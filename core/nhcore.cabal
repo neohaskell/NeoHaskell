@@ -229,6 +229,7 @@ test-suite nhcore-test
 
   other-modules:
     Integration.App
+    Integration.App.Cart
     Integration.App.Cart.Commands.CreateCart
     Integration.App.Cart.Core
     Service.CommandHandlerSpec
