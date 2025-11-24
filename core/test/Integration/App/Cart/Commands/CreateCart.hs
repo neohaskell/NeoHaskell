@@ -20,7 +20,7 @@ getEntityId :: CreateCart -> Maybe Text
 getEntityId _ = Nothing
 
 
-decide :: Uuid -> CreateCart -> Maybe CartEntity -> Decision CartEvent
+decide :: CreateCart -> Maybe CartEntity -> Decision CartEvent
 decide _ entity = do
   case entity of
     Just _ ->

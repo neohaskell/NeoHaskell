@@ -132,6 +132,7 @@ library
     Service.Command.Core
     Service.CommandHandler
     Service.CommandHandler.Core
+    Service.CommandHandler.TH
     Service.EntityFetcher
     Service.EntityFetcher.Core
     Service.Event
