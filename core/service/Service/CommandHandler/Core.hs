@@ -13,7 +13,6 @@ import Data.List qualified as GhcList
 import Language.Haskell.TH.Lib qualified as THLib
 import Language.Haskell.TH.Ppr qualified as THPpr
 import Language.Haskell.TH.Syntax qualified as TH
-import Maybe qualified
 import Service.EntityFetcher.Core (EntityFetcher)
 import Service.Event (EntityName)
 import Service.EventStore.Core (EventStore)

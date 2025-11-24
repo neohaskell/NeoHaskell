@@ -5,7 +5,7 @@ module Service.EntityFetcher.Core (
 ) where
 
 import Core
-import Service.Event (EntityName, Event (..), StreamId)
+import Service.Event (EntityName, Event (..))
 import Service.EventStore.Core (EventStore)
 import Service.EventStore.Core qualified as EventStore
 import Stream qualified

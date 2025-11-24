@@ -5,7 +5,7 @@ module Test.Service.EventStore.Subscriptions.Context (
 
 import Array qualified
 import Core
-import Service.Event (EntityName, StreamId)
+import Service.Event (EntityName)
 import Service.Event qualified as Event
 import Service.Event.StreamId qualified as StreamId
 import Service.EventStore (EventStore)

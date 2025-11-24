@@ -12,7 +12,7 @@ import Hasql.Connection qualified as Hasql
 import Hasql.Notifications qualified as HasqlNotifications
 import Json qualified
 import Result qualified
-import Service.Event (Event (..), StreamId)
+import Service.Event (Event (..))
 import Service.EventStore.Postgres.Internal.Sessions qualified as Sessions
 import Service.EventStore.Postgres.Internal.SubscriptionStore (SubscriptionStore)
 import Service.EventStore.Postgres.Internal.SubscriptionStore qualified as SubscriptionStore
