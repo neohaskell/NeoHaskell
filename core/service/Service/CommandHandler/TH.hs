@@ -7,32 +7,29 @@ module Service.CommandHandler.TH (
 import Control.Monad.Fail qualified as MonadFail
 import Core
 import Data.List qualified as GhcList
+import GHC.Base (String)
 import Language.Haskell.TH.Lib qualified as THLib
 import Language.Haskell.TH.Ppr qualified as THPpr
 import Language.Haskell.TH.Syntax qualified as TH
 
 
-deriveCommand :: TH.Name -> THLib.DecsQ
-deriveCommand someName = do
-  let orError errMsg mVal =
-        case mVal of
-          Just x -> pure x
-          Nothing -> MonadFail.fail errMsg
-  maybeEntityType <- TH.lookupTypeName "EntityOf"
-  maybeGetEntityId <- TH.lookupValueName "getEntityId"
-  maybeDecide <- TH.lookupValueName "decide"
-  entityType <- maybeEntityType |> orError "FIXME: This module doesn't have an Entity type"
-  getEntityId <- maybeGetEntityId |> orError "FIXME: This module doesn't have a getEntityId function"
-  decide <- maybeDecide |> orError "FIXME: This module doesn't have a decide function"
+data MultiTenancyMode
+  = MustHaveUuid
+  | MustNotHaveUuid
+  deriving (Eq, Show)
 
-  -- instance Command CreateCart where
-  --   type IsMultiTenant CreateCart = MultiTenancy (if MultiTenancy type exists)
-  --   getEntityIdImpl = getEntityId
-  --   decideImpl = decide
-  maybeMultiTenancy <- TH.lookupTypeName "MultiTenancy"
-  commandClassName <- TH.lookupTypeName "Command" >>= orError "FIXME: Command type class not found"
 
-  -- Validate function signatures based on MultiTenancy setting
+data FunctionInfo = FunctionInfo
+  { functionName :: String,
+    thName :: TH.Name,
+    expectedSignatureWithUuid :: String,
+    expectedSignatureWithoutUuid :: String
+  }
+  deriving (Generic)
+
+
+determineMultiTenancyMode :: Maybe TH.Name -> TH.Q MultiTenancyMode
+determineMultiTenancyMode maybeMultiTenancy = do
   case maybeMultiTenancy of
     Just multiTenancyName -> do
       multiTenancyInfo <- TH.reify multiTenancyName
@@ -41,132 +38,112 @@ deriveCommand someName = do
               TH.nameBase trueName == "True"
             _ -> False
       if isMultiTenancyTrue
-        then do
-          -- MultiTenancy = True: must have Uuid parameter
-          getEntityIdInfo <- TH.reify getEntityId
-          decideInfo <- TH.reify decide
-          case getEntityIdInfo of
-            TH.VarI _ getEntityIdType _ -> do
-              let typeStr = THPpr.pprint getEntityIdType
-              case typeStr of
-                str | "Uuid.Uuid" `GhcList.elem` GhcList.words str -> pure ()
-                _ ->
-                  MonadFail.fail
-                    [fmt|
-ERROR: When MultiTenancy is set to True, 'getEntityId' must have Uuid as first parameter.
+        then pure MustHaveUuid
+        else pure MustNotHaveUuid
+    Nothing -> pure MustNotHaveUuid
 
-Expected signature:
-  getEntityId :: Uuid -> #{TH.nameBase someName} -> Maybe Text
 
-Current signature doesn't include Uuid as first parameter.
+checkTypeContainsUuid :: String -> Bool
+checkTypeContainsUuid typeStr = do
+  let words = typeStr |> GhcList.words
+  "Uuid.Uuid" `GhcList.elem` words
 
-Please update your getEntityId function to accept a Uuid tenant ID as the first argument.
-|]
-            _ -> pure ()
-          case decideInfo of
-            TH.VarI _ decideType _ -> do
-              let typeStr = show decideType
-              case typeStr of
-                str | "Uuid.Uuid" `GhcList.elem` GhcList.words str -> pure ()
-                _ ->
-                  MonadFail.fail
-                    [fmt|
-ERROR: When MultiTenancy is set to True, 'decide' must have Uuid as first parameter.
 
-Expected signature:
-  decide :: Uuid -> #{TH.nameBase someName} -> Maybe #{TH.nameBase entityType} -> Decision event
+buildErrorMessage ::
+  String ->
+  String ->
+  String ->
+  MultiTenancyMode ->
+  String
+buildErrorMessage functionName expectedSig currentSig mode = do
+  let modeDescription = case mode of
+        MustHaveUuid ->
+          "When MultiTenancy is set to True"
+        MustNotHaveUuid ->
+          "When MultiTenancy is False or undefined"
+  let additionalHelp = case mode of
+        MustHaveUuid ->
+          "Please update your " ++ functionName ++ " function to accept a Uuid tenant ID as the first argument."
+        MustNotHaveUuid ->
+          "The function should NOT have Uuid as a parameter when MultiTenancy is False.\nIf you need multi-tenancy, define: type MultiTenancy = True"
+  "ERROR: '"
+    ++ functionName
+    ++ "' has incorrect signature.\n\n"
+    ++ modeDescription
+    ++ ":\nExpected signature:\n  "
+    ++ expectedSig
+    ++ "\n\nCurrent signature:\n  "
+    ++ currentSig
+    ++ "\n\n"
+    ++ additionalHelp
 
-Current signature doesn't include Uuid as first parameter.
 
-Please update your decide function to accept a Uuid tenant ID as the first argument.
-|]
-            _ -> pure ()
+validateFunctionSignature ::
+  FunctionInfo ->
+  MultiTenancyMode ->
+  TH.Name ->
+  TH.Q ()
+validateFunctionSignature funcInfo mode _commandName = do
+  functionInfo <- TH.reify funcInfo.thName
+  case functionInfo of
+    TH.VarI _ functionType _ -> do
+      let typeStr = THPpr.pprint functionType
+      let hasUuid = checkTypeContainsUuid typeStr
+      let isValid = case mode of
+            MustHaveUuid -> hasUuid
+            MustNotHaveUuid -> not hasUuid
+      if isValid
+        then pure ()
         else do
-          -- MultiTenancy = False: must NOT have Uuid parameter
-          getEntityIdInfo <- TH.reify getEntityId
-          decideInfo <- TH.reify decide
-          case getEntityIdInfo of
-            TH.VarI _ getEntityIdType _ -> do
-              let typeStr = THPpr.pprint getEntityIdType
-              if "Uuid.Uuid" `GhcList.elem` GhcList.words typeStr
-                then
-                  MonadFail.fail
-                    [fmt|
-ERROR: 'getEntityId' has incorrect signature.
+          let expectedSig = case mode of
+                MustHaveUuid -> funcInfo.expectedSignatureWithUuid
+                MustNotHaveUuid -> funcInfo.expectedSignatureWithoutUuid
+          let errorMsg = buildErrorMessage funcInfo.functionName expectedSig typeStr mode
+          MonadFail.fail errorMsg
+    _ -> pure ()
 
-Expected signature (when MultiTenancy = False):
-  getEntityId :: #{TH.nameBase someName} -> Maybe Text
 
-Current signature:
-  getEntityId :: #{typeStr}
+deriveCommand :: TH.Name -> THLib.DecsQ
+deriveCommand someName = do
+  let orError errMsg mVal =
+        case mVal of
+          Just x -> pure x
+          Nothing -> MonadFail.fail errMsg
 
-The function should NOT have Uuid as a parameter when MultiTenancy is False.
-|]
-                else pure ()
-            _ -> pure ()
-          case decideInfo of
-            TH.VarI _ decideType _ -> do
-              let typeStr = THPpr.pprint decideType
-              if "Uuid.Uuid" `GhcList.elem` GhcList.words typeStr
-                then
-                  MonadFail.fail
-                    [fmt|
-ERROR: 'decide' has incorrect signature.
+  maybeEntityType <- TH.lookupTypeName "EntityOf"
+  maybeGetEntityId <- TH.lookupValueName "getEntityId"
+  maybeDecide <- TH.lookupValueName "decide"
+  entityType <- maybeEntityType |> orError "FIXME: This module doesn't have an Entity type"
+  getEntityId <- maybeGetEntityId |> orError "FIXME: This module doesn't have a getEntityId function"
+  decide <- maybeDecide |> orError "FIXME: This module doesn't have a decide function"
 
-Expected signature (when MultiTenancy = False):
-  decide :: #{TH.nameBase someName} -> Maybe #{TH.nameBase entityType} -> Decision event
+  maybeMultiTenancy <- TH.lookupTypeName "MultiTenancy"
+  commandClassName <- TH.lookupTypeName "Command" >>= orError "FIXME: Command type class not found"
 
-Current signature:
-  decide :: #{typeStr}
+  multiTenancyMode <- determineMultiTenancyMode maybeMultiTenancy
 
-The function should NOT have Uuid as a parameter when MultiTenancy is False.
-|]
-                else pure ()
-            _ -> pure ()
-    Nothing -> do
-      -- MultiTenancy undefined: must NOT have Uuid parameter
-      getEntityIdInfo <- TH.reify getEntityId
-      decideInfo <- TH.reify decide
-      case getEntityIdInfo of
-        TH.VarI _ getEntityIdType _ -> do
-          let typeStr = THPpr.pprint getEntityIdType
-          if "Uuid.Uuid" `GhcList.elem` GhcList.words typeStr
-            then
-              MonadFail.fail
-                [fmt|
-ERROR: 'getEntityId' has incorrect signature.
+  let commandNameStr = TH.nameBase someName
+  let entityTypeStr = TH.nameBase entityType
 
-Expected signature (when MultiTenancy is undefined):
-  getEntityId :: #{TH.nameBase someName} -> Maybe Text
+  let getEntityIdFuncInfo =
+        FunctionInfo
+          { functionName = "getEntityId",
+            thName = getEntityId,
+            expectedSignatureWithUuid = "getEntityId :: Uuid -> " ++ commandNameStr ++ " -> Maybe Text",
+            expectedSignatureWithoutUuid = "getEntityId :: " ++ commandNameStr ++ " -> Maybe Text"
+          }
 
-Current signature:
-  getEntityId :: #{typeStr}
+  let decideFuncInfo =
+        FunctionInfo
+          { functionName = "decide",
+            thName = decide,
+            expectedSignatureWithUuid =
+              "decide :: Uuid -> " ++ commandNameStr ++ " -> Maybe " ++ entityTypeStr ++ " -> Decision event",
+            expectedSignatureWithoutUuid = "decide :: " ++ commandNameStr ++ " -> Maybe " ++ entityTypeStr ++ " -> Decision event"
+          }
 
-The function should NOT have Uuid as a parameter.
-If you need multi-tenancy, define: type MultiTenancy = True
-|]
-            else pure ()
-        _ -> pure ()
-      case decideInfo of
-        TH.VarI _ decideType _ -> do
-          let typeStr = THPpr.pprint decideType
-          if "Uuid.Uuid" `GhcList.elem` GhcList.words typeStr
-            then
-              MonadFail.fail
-                [fmt|
-ERROR: 'decide' has incorrect signature.
-
-Expected signature (when MultiTenancy is undefined):
-  decide :: #{TH.nameBase someName} -> Maybe #{TH.nameBase entityType} -> Decision event
-
-Current signature:
-  decide :: #{typeStr}
-
-The function should NOT have Uuid as a parameter.
-If you need multi-tenancy, define: type MultiTenancy = True
-|]
-            else pure ()
-        _ -> pure ()
+  validateFunctionSignature getEntityIdFuncInfo multiTenancyMode someName
+  validateFunctionSignature decideFuncInfo multiTenancyMode someName
 
   let multiTenancyDecl = case maybeMultiTenancy of
         Just multiTenancyType ->
