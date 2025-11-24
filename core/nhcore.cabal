@@ -128,6 +128,7 @@ library
     Path
     Record
     Result
+    Set
     Service.Command
     Service.Command.Core
     Service.CommandHandler
@@ -238,6 +239,7 @@ test-suite nhcore-test
     Service.EventStore.InMemorySpec
     Service.EventStore.Postgres.Internal.SubscriptionStoreSpec
     Service.EventStore.PostgresSpec
+    SetSpec
     StreamSpec
     Test.AppSpec.AppSpecSpec
     Test.AppSpec.VerifySpec

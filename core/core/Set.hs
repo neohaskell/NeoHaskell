@@ -41,14 +41,12 @@ module Set (
   fromLegacy,
 ) where
 
-import Basics
 import Array (Array)
 import Array qualified
+import Basics
 import Data.Default (Default (..))
 import Data.Set qualified
 import LinkedList (LinkedList)
-import LinkedList qualified
-import Maybe (Maybe (..))
 import Prelude qualified
 
 
@@ -73,7 +71,7 @@ unwrap (Set s) = s
 -- >>> empty :: Set Int
 -- Set []
 empty :: forall (value :: Type). (Prelude.Ord value) => Set value
-empty = panic "Set.empty: not implemented"
+empty = Set Data.Set.empty
 
 
 -- | Determine if a set is empty.
@@ -83,7 +81,7 @@ empty = panic "Set.empty: not implemented"
 -- >>> isEmpty (singleton (0 :: Int))
 -- False
 isEmpty :: forall (value :: Type). Set value -> Bool
-isEmpty = panic "Set.isEmpty: not implemented"
+isEmpty = unwrap .> Data.Set.null
 
 
 -- | Return the number of elements in a set.
@@ -93,21 +91,21 @@ isEmpty = panic "Set.isEmpty: not implemented"
 -- >>> size empty
 -- 0
 size :: forall (value :: Type). Set value -> Int
-size = panic "Set.size: not implemented"
+size = unwrap .> Data.Set.size .> Prelude.fromIntegral
 
 
 -- | Wraps an element into a set with a single element.
 -- >>> wrap (0 :: Int)
 -- Set [0]
 wrap :: forall (value :: Type). (Prelude.Ord value) => value -> Set value
-wrap = panic "Set.wrap: not implemented"
+wrap = singleton
 
 
 -- | Create a set with a single element.
 -- >>> singleton (0 :: Int)
 -- Set [0]
 singleton :: forall (value :: Type). (Prelude.Ord value) => value -> Set value
-singleton = panic "Set.singleton: not implemented"
+singleton element = Set (Data.Set.singleton element)
 
 
 -- | Create a set from a 'LinkedList'.
@@ -115,7 +113,7 @@ singleton = panic "Set.singleton: not implemented"
 -- >>> fromLinkedList [1,2,3,2,1] :: Set Int
 -- Set [1,2,3]
 fromLinkedList :: forall (value :: Type). (Prelude.Ord value) => LinkedList value -> Set value
-fromLinkedList = panic "Set.fromLinkedList: not implemented"
+fromLinkedList = Data.Set.fromList .> Set
 
 
 -- | Create a set from an 'Array'.
@@ -123,7 +121,9 @@ fromLinkedList = panic "Set.fromLinkedList: not implemented"
 -- >>> fromArray (Array.fromLinkedList [1,2,3,2,1] :: Array Int) :: Set Int
 -- Set [1,2,3]
 fromArray :: forall (value :: Type). (Prelude.Ord value) => Array value -> Set value
-fromArray = panic "Set.fromArray: not implemented"
+fromArray array = do
+  let linkedList = Array.toLinkedList array
+  fromLinkedList linkedList
 
 
 -- | Insert an element into a set.
@@ -133,7 +133,9 @@ fromArray = panic "Set.fromArray: not implemented"
 -- >>> insert 2 (fromLinkedList [1,2,3] :: Set Int)
 -- Set [1,2,3]
 insert :: forall (value :: Type). (Prelude.Ord value) => value -> Set value -> Set value
-insert = panic "Set.insert: not implemented"
+insert element set = do
+  let dataSet = unwrap set
+  Set (Data.Set.insert element dataSet)
 
 
 -- | Remove an element from a set. If the element is not present, the set is unchanged.
@@ -143,7 +145,9 @@ insert = panic "Set.insert: not implemented"
 -- >>> remove 4 (fromLinkedList [1,2,3] :: Set Int)
 -- Set [1,2,3]
 remove :: forall (value :: Type). (Prelude.Ord value) => value -> Set value -> Set value
-remove = panic "Set.remove: not implemented"
+remove element set = do
+  let dataSet = unwrap set
+  Set (Data.Set.delete element dataSet)
 
 
 -- | Check if a value is in the set.
@@ -153,7 +157,9 @@ remove = panic "Set.remove: not implemented"
 -- >>> contains 4 (fromLinkedList [1,2,3] :: Set Int)
 -- False
 contains :: forall (value :: Type). (Prelude.Ord value) => value -> Set value -> Bool
-contains = panic "Set.contains: not implemented"
+contains element set = do
+  let dataSet = unwrap set
+  Data.Set.member element dataSet
 
 
 -- | Check if a value is a member of the set. Alias for 'contains'.
@@ -161,7 +167,7 @@ contains = panic "Set.contains: not implemented"
 -- >>> member 2 (fromLinkedList [1,2,3] :: Set Int)
 -- True
 member :: forall (value :: Type). (Prelude.Ord value) => value -> Set value -> Bool
-member = panic "Set.member: not implemented"
+member = contains
 
 
 -- | Combine two sets into a new set containing all elements from both.
@@ -169,7 +175,10 @@ member = panic "Set.member: not implemented"
 -- >>> union (fromLinkedList [1,2] :: Set Int) (fromLinkedList [2,3] :: Set Int)
 -- Set [1,2,3]
 union :: forall (value :: Type). (Prelude.Ord value) => Set value -> Set value -> Set value
-union = panic "Set.union: not implemented"
+union other self = do
+  let selfSet = unwrap self
+  let otherSet = unwrap other
+  Set (Data.Set.union selfSet otherSet)
 
 
 -- | Get the intersection of two sets (elements present in both).
@@ -177,7 +186,10 @@ union = panic "Set.union: not implemented"
 -- >>> intersection (fromLinkedList [1,2,3] :: Set Int) (fromLinkedList [2,3,4] :: Set Int)
 -- Set [2,3]
 intersection :: forall (value :: Type). (Prelude.Ord value) => Set value -> Set value -> Set value
-intersection = panic "Set.intersection: not implemented"
+intersection other self = do
+  let selfSet = unwrap self
+  let otherSet = unwrap other
+  Set (Data.Set.intersection selfSet otherSet)
 
 
 -- | Get the difference of two sets (elements in the first but not the second).
@@ -185,7 +197,10 @@ intersection = panic "Set.intersection: not implemented"
 -- >>> difference (fromLinkedList [1,2,3] :: Set Int) (fromLinkedList [2,3,4] :: Set Int)
 -- Set [1]
 difference :: forall (value :: Type). (Prelude.Ord value) => Set value -> Set value -> Set value
-difference = panic "Set.difference: not implemented"
+difference other self = do
+  let selfSet = unwrap self
+  let otherSet = unwrap other
+  Set (Data.Set.difference selfSet otherSet)
 
 
 -- | Convert a set to a 'LinkedList'. The elements will be in ascending order.
@@ -193,7 +208,7 @@ difference = panic "Set.difference: not implemented"
 -- >>> toLinkedList (fromLinkedList [3,1,2] :: Set Int)
 -- [1,2,3]
 toLinkedList :: forall (value :: Type). Set value -> LinkedList value
-toLinkedList = panic "Set.toLinkedList: not implemented"
+toLinkedList = unwrap .> Data.Set.toList
 
 
 -- | Convert a set to an 'Array'. The elements will be in ascending order.
@@ -201,7 +216,9 @@ toLinkedList = panic "Set.toLinkedList: not implemented"
 -- >>> toArray (fromLinkedList [3,1,2] :: Set Int)
 -- Array [1,2,3]
 toArray :: forall (value :: Type). Set value -> Array value
-toArray = panic "Set.toArray: not implemented"
+toArray set = do
+  let linkedList = toLinkedList set
+  Array.fromLinkedList linkedList
 
 
 -- | Apply a function to every element in a set.
@@ -209,7 +226,9 @@ toArray = panic "Set.toArray: not implemented"
 -- >>> map (\x -> x * 2) (fromLinkedList [1,2,3] :: Set Int)
 -- Set [2,4,6]
 map :: forall (a :: Type) (b :: Type). (Prelude.Ord b) => (a -> b) -> Set a -> Set b
-map = panic "Set.map: not implemented"
+map f set = do
+  let dataSet = unwrap set
+  Set (Data.Set.map f dataSet)
 
 
 -- | Keep elements that pass the test.
@@ -217,7 +236,9 @@ map = panic "Set.map: not implemented"
 -- >>> takeIf Basics.isEven (fromLinkedList [1,2,3,4,5,6] :: Set Int)
 -- Set [2,4,6]
 takeIf :: forall (value :: Type). (value -> Bool) -> Set value -> Set value
-takeIf = panic "Set.takeIf: not implemented"
+takeIf predicate set = do
+  let dataSet = unwrap set
+  Set (Data.Set.filter predicate dataSet)
 
 
 -- | Drop elements that pass the test.
@@ -225,7 +246,9 @@ takeIf = panic "Set.takeIf: not implemented"
 -- >>> dropIf Basics.isEven (fromLinkedList [1,2,3,4,5,6] :: Set Int)
 -- Set [1,3,5]
 dropIf :: forall (value :: Type). (value -> Bool) -> Set value -> Set value
-dropIf = panic "Set.dropIf: not implemented"
+dropIf predicate set = do
+  let invertedPredicate = predicate .> not
+  takeIf invertedPredicate set
 
 
 -- | Reduce a set from the right.
@@ -233,7 +256,9 @@ dropIf = panic "Set.dropIf: not implemented"
 -- >>> reduce (+) 0 (fromLinkedList [1,2,3] :: Set Int)
 -- 6
 reduce :: forall (a :: Type) (b :: Type). (a -> b -> b) -> b -> Set a -> b
-reduce = panic "Set.reduce: not implemented"
+reduce f initial set = do
+  let dataSet = unwrap set
+  Data.Set.foldr f initial dataSet
 
 
 -- | Reduce a set from the left.
@@ -241,7 +266,9 @@ reduce = panic "Set.reduce: not implemented"
 -- >>> foldl (+) 0 (fromLinkedList [1,2,3] :: Set Int)
 -- 6
 foldl :: forall (a :: Type) (b :: Type). (a -> b -> b) -> b -> Set a -> b
-foldl = panic "Set.foldl: not implemented"
+foldl f initial set = do
+  let dataSet = unwrap set
+  Data.Set.foldl' (Prelude.flip f) initial dataSet
 
 
 -- | Convert a Haskell Set to a NeoHaskell Set.
@@ -249,4 +276,4 @@ foldl = panic "Set.foldl: not implemented"
 -- >>> fromLegacy (Data.Set.fromList [1,2,3] :: Data.Set.Set Int)
 -- Set [1,2,3]
 fromLegacy :: forall (value :: Type). Data.Set.Set value -> Set value
-fromLegacy = panic "Set.fromLegacy: not implemented"
+fromLegacy = Set

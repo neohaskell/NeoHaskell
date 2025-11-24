@@ -1,3 +1,5 @@
+{-# LANGUAGE AllowAmbiguousTypes #-}
+
 module Service.Model.Core (
   Model (..),
   entity,
