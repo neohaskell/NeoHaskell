@@ -65,18 +65,12 @@ deriveCommand someName = do
         case mVal of
           Just x -> pure x
           Nothing -> MonadFail.fail errMsg
-  maybeEntityType <- TH.lookupTypeName "Entity"
+  maybeEntityType <- TH.lookupTypeName "EntityOf"
   maybeGetEntityId <- TH.lookupValueName "getEntityId"
   maybeDecide <- TH.lookupValueName "decide"
   entityType <- maybeEntityType |> orError "FIXME: This module doesn't have an Entity type"
   getEntityId <- maybeGetEntityId |> orError "FIXME: This module doesn't have a getEntityId function"
   decide <- maybeDecide |> orError "FIXME: This module doesn't have a decide function"
-
-  -- type instance EntityOf CreateCart = Entity
-  entityOfName <- TH.lookupTypeName "EntityOf" >>= orError "FIXME: EntityOf type family not found"
-  let entityTypeInstance =
-        TH.TySynInstD
-          (TH.TySynEqn Nothing (TH.ConT entityOfName `TH.AppT` TH.ConT someName) (TH.ConT entityType))
 
   -- instance Command CreateCart where
   --   type IsMultiTenant CreateCart = MultiTenancy (if MultiTenancy type exists)
@@ -239,5 +233,5 @@ If you need multi-tenancy, define: type MultiTenancy = True
                  ]
           )
 
-  pure [entityTypeInstance, commandInstance]
+  pure [commandInstance]
 {-# INLINE deriveCommand #-}

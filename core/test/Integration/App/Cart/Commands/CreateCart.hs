@@ -20,7 +20,7 @@ getEntityId :: CreateCart -> Maybe Text
 getEntityId _ = Nothing
 
 
-decide :: CreateCart -> Maybe CartEntity -> Decision CartEvent
+decide :: Uuid -> CreateCart -> Maybe CartEntity -> Decision CartEvent
 decide _ entity = do
   case entity of
     Just _ ->
@@ -30,7 +30,7 @@ decide _ entity = do
       Decision.acceptNew [CartCreated {cartCreatedId}]
 
 
-type Entity = CartEntity
+type instance EntityOf CreateCart = CartEntity
 
 
 deriveCommand ''CreateCart
