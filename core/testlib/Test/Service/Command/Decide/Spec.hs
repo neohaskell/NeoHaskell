@@ -2,7 +2,6 @@ module Test.Service.Command.Decide.Spec where
 
 import Array qualified
 import Core
-import Service.Event (InsertionType (..))
 import Test
 import Test.Service.Command.Core (
   AddItemToCart (..),
@@ -18,7 +17,7 @@ import Test.Service.Command.Decide.Context qualified as Context
 
 spec :: Spec Unit
 spec = do
-  describe "Command Decide Specification Tests" do
+  describe "Command decideImpl Specification Tests" do
     describe "Regular Commands (Cart)" do
       cartCommandSpecs
 
@@ -32,7 +31,7 @@ cartCommandSpecs = do
     before Context.initialize do
       it "rejects when cart doesn't exist" \context -> do
         let cmd = AddItemToCart {cartId = context.cartId, itemId = context.itemId1, amount = 5}
-        let result = decide @AddItemToCart cmd Nothing
+        let result = decideImpl @AddItemToCart cmd Nothing
 
         case result of
           RejectCommand msg -> do
@@ -48,7 +47,7 @@ cartCommandSpecs = do
                   cartCheckedOut = False
                 }
         let cmd = AddItemToCart {cartId = context.cartId, itemId = context.itemId1, amount = 5}
-        let result = decide @AddItemToCart cmd (Just cart)
+        let result = decideImpl @AddItemToCart cmd (Just cart)
 
         case result of
           RejectCommand _ ->
@@ -71,7 +70,7 @@ cartCommandSpecs = do
                   cartCheckedOut = True
                 }
         let cmd = AddItemToCart {cartId = context.cartId, itemId = context.itemId2, amount = 2}
-        let result = decide @AddItemToCart cmd (Just cart)
+        let result = decideImpl @AddItemToCart cmd (Just cart)
 
         case result of
           RejectCommand msg -> do
@@ -89,7 +88,7 @@ cartCommandSpecs = do
     before Context.initialize do
       it "rejects when cart doesn't exist" \context -> do
         let cmd = RemoveItemFromCart {cartId = context.cartId, itemId = context.itemId1}
-        let result = decide @RemoveItemFromCart cmd Nothing
+        let result = decideImpl @RemoveItemFromCart cmd Nothing
 
         case result of
           RejectCommand msg -> do
@@ -105,7 +104,7 @@ cartCommandSpecs = do
                   cartCheckedOut = False
                 }
         let cmd = RemoveItemFromCart {cartId = context.cartId, itemId = context.itemId2}
-        let result = decide @RemoveItemFromCart cmd (Just cart)
+        let result = decideImpl @RemoveItemFromCart cmd (Just cart)
 
         case result of
           RejectCommand msg -> do
@@ -121,7 +120,7 @@ cartCommandSpecs = do
                   cartCheckedOut = False
                 }
         let cmd = RemoveItemFromCart {cartId = context.cartId, itemId = context.itemId1}
-        let result = decide @RemoveItemFromCart cmd (Just cart)
+        let result = decideImpl @RemoveItemFromCart cmd (Just cart)
 
         case result of
           RejectCommand _ ->
@@ -143,7 +142,7 @@ cartCommandSpecs = do
                   cartCheckedOut = True
                 }
         let cmd = RemoveItemFromCart {cartId = context.cartId, itemId = context.itemId1}
-        let result = decide @RemoveItemFromCart cmd (Just cart)
+        let result = decideImpl @RemoveItemFromCart cmd (Just cart)
 
         case result of
           RejectCommand msg -> do
@@ -155,7 +154,7 @@ cartCommandSpecs = do
     before Context.initialize do
       it "rejects when cart doesn't exist" \context -> do
         let cmd = CheckoutCart {cartId = context.cartId}
-        let result = decide @CheckoutCart cmd Nothing
+        let result = decideImpl @CheckoutCart cmd Nothing
 
         case result of
           RejectCommand msg -> do
@@ -171,7 +170,7 @@ cartCommandSpecs = do
                   cartCheckedOut = False
                 }
         let cmd = CheckoutCart {cartId = context.cartId}
-        let result = decide @CheckoutCart cmd (Just cart)
+        let result = decideImpl @CheckoutCart cmd (Just cart)
 
         case result of
           RejectCommand msg -> do
@@ -187,7 +186,7 @@ cartCommandSpecs = do
                   cartCheckedOut = False
                 }
         let cmd = CheckoutCart {cartId = context.cartId}
-        let result = decide @CheckoutCart cmd (Just cart)
+        let result = decideImpl @CheckoutCart cmd (Just cart)
 
         case result of
           RejectCommand _ ->
@@ -209,7 +208,7 @@ cartCommandSpecs = do
                   cartCheckedOut = True
                 }
         let cmd = CheckoutCart {cartId = context.cartId}
-        let result = decide @CheckoutCart cmd (Just cart)
+        let result = decideImpl @CheckoutCart cmd (Just cart)
 
         case result of
           RejectCommand msg -> do
@@ -262,7 +261,7 @@ edgeCaseSpecs = do
 
         -- Add first item
         let cmd1 = AddItemToCart {cartId = context.cartId, itemId = context.itemId1, amount = 3}
-        let result1 = decide @AddItemToCart cmd1 (Just cart)
+        let result1 = decideImpl @AddItemToCart cmd1 (Just cart)
 
         case result1 of
           AcceptCommand _ events1 -> do
@@ -272,7 +271,7 @@ edgeCaseSpecs = do
 
                 -- Add second item
                 let cmd2 = AddItemToCart {cartId = context.cartId, itemId = context.itemId2, amount = 5}
-                let result2 = decide @AddItemToCart cmd2 (Just state2)
+                let result2 = decideImpl @AddItemToCart cmd2 (Just state2)
 
                 case result2 of
                   AcceptCommand _ events2 -> do
@@ -297,7 +296,7 @@ edgeCaseSpecs = do
 
         -- Try to checkout (should succeed)
         let checkoutCmd = CheckoutCart {cartId = context.cartId}
-        let checkoutResult = decide @CheckoutCart checkoutCmd (Just cart)
+        let checkoutResult = decideImpl @CheckoutCart checkoutCmd (Just cart)
 
         case checkoutResult of
           AcceptCommand _ events -> do
@@ -307,7 +306,7 @@ edgeCaseSpecs = do
 
                 -- Now try to add item to checked out cart (should fail)
                 let addCmd = AddItemToCart {cartId = context.cartId, itemId = context.itemId2, amount = 5}
-                let addResult = decide @AddItemToCart addCmd (Just checkedOutCart)
+                let addResult = decideImpl @AddItemToCart addCmd (Just checkedOutCart)
 
                 case addResult of
                   RejectCommand _ -> do

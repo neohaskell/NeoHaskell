@@ -12,10 +12,8 @@ module Test.Service.Command.Core (
 
 import Array qualified
 import Core
+import Decision qualified
 import Json qualified
-import Service.Command (EventOf)
-import Service.Event (InsertionType (..))
-import Service.Event.StreamId qualified as StreamId
 import Uuid qualified
 
 
@@ -151,66 +149,66 @@ type instance EntityOf AddItemToCart = CartEntity
 
 
 instance Command AddItemToCart where
-  streamId cmd = cmd.cartId |> Uuid.toText |> StreamId.fromText
+  getEntityIdImpl cmd = cmd.cartId |> Uuid.toText |> Just
 
 
-  decide :: AddItemToCart -> Maybe CartEntity -> CommandResult CartEvent
-  decide cmd entity =
+  decideImpl :: AddItemToCart -> Maybe CartEntity -> Decision CartEvent
+  decideImpl cmd entity =
     case entity of
       Nothing ->
-        RejectCommand "Cart does not exist"
+        Decision.reject "Cart does not exist"
       Just cart -> do
         if cart.cartCheckedOut
           then
-            RejectCommand "Cannot add items to a checked out cart"
+            Decision.reject "Cannot add items to a checked out cart"
           else
             ItemAdded {cartId = cart.cartId, itemId = cmd.itemId, amount = cmd.amount}
               |> Array.wrap
-              |> AcceptCommand ExistingStream
+              |> Decision.acceptExisting
 
 
 type instance EntityOf RemoveItemFromCart = CartEntity
 
 
 instance Command RemoveItemFromCart where
-  streamId cmd = cmd.cartId |> Uuid.toText |> StreamId.fromText
+  getEntityIdImpl cmd = cmd.cartId |> Uuid.toText |> Just
 
 
-  decide cmd entity =
+  decideImpl cmd entity =
     case entity of
       Nothing ->
-        RejectCommand "Cart does not exist"
+        Decision.reject "Cart does not exist"
       Just cart -> do
         if cart.cartCheckedOut
-          then RejectCommand "Cannot remove items from a checked out cart"
+          then Decision.reject "Cannot remove items from a checked out cart"
           else do
             let hasItem = Array.any (\(id, _) -> id == cmd.itemId) cart.cartItems
             if not hasItem
-              then RejectCommand "Item not in cart"
+              then Decision.reject "Item not in cart"
               else do
                 let event = ItemRemoved {cartId = cart.cartId, itemId = cmd.itemId}
                 Array.fromLinkedList [event]
-                  |> AcceptCommand ExistingStream
+                  |> Decision.acceptExisting
 
 
 type instance EntityOf CheckoutCart = CartEntity
 
 
 instance Command CheckoutCart where
-  streamId cmd = cmd.cartId |> Uuid.toText |> StreamId.fromText
+  getEntityIdImpl cmd = cmd.cartId |> Uuid.toText |> Just
 
 
-  decide _ entity =
+  decideImpl _ entity =
     case entity of
       Nothing ->
-        RejectCommand "Cart does not exist"
+        Decision.reject "Cart does not exist"
       Just cart -> do
         if cart.cartCheckedOut
-          then RejectCommand "Cart already checked out"
+          then Decision.reject "Cart already checked out"
           else do
             if Array.isEmpty cart.cartItems
-              then RejectCommand "Cannot checkout empty cart"
+              then Decision.reject "Cannot checkout empty cart"
               else do
                 let event = CartCheckedOut {cartId = cart.cartId}
                 Array.fromLinkedList [event]
-                  |> AcceptCommand ExistingStream
+                  |> Decision.acceptExisting
