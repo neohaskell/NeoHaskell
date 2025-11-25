@@ -37,14 +37,14 @@ spec :: Spec Unit
 spec = do
   describe "Model Monad behavior" do
     it "can build an empty model" \_ -> do
-      let emptyModel :: Model Unit
+      let emptyModel :: Model '[] Unit
           emptyModel = yield unit
 
       -- Should be able to extract the unit value
       extract emptyModel |> shouldBe unit
 
     it "can define a model with a single entity" \_ -> do
-      let singleEntityModel :: Model Unit
+      let singleEntityModel :: Model '[] Unit
           singleEntityModel = do
             entity @TestEntity1
             yield unit
@@ -53,7 +53,7 @@ spec = do
       extract singleEntityModel |> shouldBe unit
 
     it "can define a model with entity and events" \_ -> do
-      let entityEventsModel :: Model Unit
+      let entityEventsModel :: Model '[] Unit
           entityEventsModel = do
             entity @TestEntity1
             events @TestEvent1
@@ -62,7 +62,7 @@ spec = do
       extract entityEventsModel |> shouldBe unit
 
     it "can define a model with entity, events, and command" \_ -> do
-      let fullModel :: Model Unit
+      let fullModel :: Model '[] Unit
           fullModel = do
             entity @TestEntity1
             events @TestEvent1
@@ -72,12 +72,12 @@ spec = do
       extract fullModel |> shouldBe unit
 
     it "supports monadic composition with bind" \_ -> do
-      let model1 :: Model Text
+      let model1 :: Model '[] Text
           model1 = do
             entity @TestEntity1
             yield "first"
 
-      let model2 :: Text -> Model Text
+      let model2 :: Text -> Model '[] Text
           model2 prefix = do
             _ <- entity @TestEntity2
             yield (prefix ++ "-second")
@@ -89,12 +89,12 @@ spec = do
       extract composedModel |> shouldBe "first-second"
 
     it "preserves model definitions through monadic composition" \_ -> do
-      let model1 :: Model Unit
+      let model1 :: Model '[] Unit
           model1 = do
             entity @TestEntity1
             events @TestEvent1
 
-      let model2 :: Model Unit
+      let model2 :: Model '[] Unit
           model2 = do
             entity @TestEntity2
             events @TestEvent2
@@ -111,20 +111,20 @@ spec = do
 
   describe "Model Monoid behavior" do
     it "has an identity element (mempty)" \_ -> do
-      let emptyModel :: Model Unit
+      let emptyModel :: Model '[] Unit
           emptyModel = mempty
 
       extract emptyModel |> shouldBe unit
       isEmpty emptyModel |> shouldBe True
 
     it "combines two models with mappend" \_ -> do
-      let model1 :: Model Unit
+      let model1 :: Model '[] Unit
           model1 = do
             entity @TestEntity1
             events @TestEvent1
             yield unit
 
-      let model2 :: Model Unit
+      let model2 :: Model '[] Unit
           model2 = do
             entity @TestEntity2
             events @TestEvent2
@@ -139,7 +139,7 @@ spec = do
       hasEvents @TestEvent2 combinedModel |> shouldBe True
 
     it "satisfies monoid left identity: mempty <> x = x" \_ -> do
-      let model1 :: Model Unit
+      let model1 :: Model '[] Unit
           model1 = do
             entity @TestEntity1
             events @TestEvent1
@@ -150,7 +150,7 @@ spec = do
       leftIdentity |> shouldBe model1
 
     it "satisfies monoid right identity: x <> mempty = x" \_ -> do
-      let model1 :: Model Unit
+      let model1 :: Model '[] Unit
           model1 = do
             entity @TestEntity1
             events @TestEvent1
@@ -161,17 +161,17 @@ spec = do
       rightIdentity |> shouldBe model1
 
     it "satisfies monoid associativity: (x <> y) <> z = x <> (y <> z)" \_ -> do
-      let model1 :: Model Unit
+      let model1 :: Model '[] Unit
           model1 = do
             entity @TestEntity1
             yield unit
 
-      let model2 :: Model Unit
+      let model2 :: Model '[] Unit
           model2 = do
             events @TestEvent1
             yield unit
 
-      let model3 :: Model Unit
+      let model3 :: Model '[] Unit
           model3 = do
             command @TestCommand1
             yield unit
@@ -182,18 +182,18 @@ spec = do
       leftAssoc |> shouldBe rightAssoc
 
     it "can combine multiple models into one" \_ -> do
-      let cartModel :: Model Unit
+      let cartModel :: Model '[] Unit
           cartModel = do
             entity @CartEntity
             events @CartEvent
             command @CreateCart
 
-      let testModel1 :: Model Unit
+      let testModel1 :: Model '[] Unit
           testModel1 = do
             entity @TestEntity1
             events @TestEvent1
 
-      let testModel2 :: Model Unit
+      let testModel2 :: Model '[] Unit
           testModel2 = do
             entity @TestEntity2
             events @TestEvent2
