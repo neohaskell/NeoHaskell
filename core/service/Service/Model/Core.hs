@@ -43,56 +43,86 @@ data Model (commands :: [Type]) a = Model
   deriving (Eq, Show, Generic)
 
 
+-- | Apply a function to the value inside a Model
+mapValue :: forall cmds a b. (a -> b) -> Model cmds a -> Model cmds b
+mapValue f m =
+  Model
+    { value = f m.value,
+      entities = m.entities,
+      eventTypes = m.eventTypes,
+      commandNames = m.commandNames
+    }
+
+
+-- | Create a Model with just a value
+pureValue :: forall cmds a. a -> Model cmds a
+pureValue a =
+  Model
+    { value = a,
+      entities = Set.empty,
+      eventTypes = Set.empty,
+      commandNames = Set.empty
+    }
+
+
+-- | Apply a function wrapped in a Model to a value wrapped in a Model
+applyValue :: forall cmds a b. Model cmds (a -> b) -> Model cmds a -> Model cmds b
+applyValue = Monad.ap
+
+
+-- | Sequentially compose two Models, passing the value from the first as an argument to the second
+bindValue :: forall cmds a b. Model cmds a -> (a -> Model cmds b) -> Model cmds b
+bindValue m f = do
+  let result = f m.value
+  Model
+    { value = result.value,
+      entities = m.entities |> Set.union result.entities,
+      eventTypes = m.eventTypes |> Set.union result.eventTypes,
+      commandNames = m.commandNames |> Set.union result.commandNames
+    }
+
+
+-- | Combine two Models, keeping the second's value and merging their metadata
+appendModel :: forall cmds a. Model cmds a -> Model cmds a -> Model cmds a
+appendModel m1 m2 =
+  Model
+    { value = m2.value,
+      entities = m1.entities |> Set.union m2.entities,
+      eventTypes = m1.eventTypes |> Set.union m2.eventTypes,
+      commandNames = m1.commandNames |> Set.union m2.commandNames
+    }
+
+
+-- | Create an empty Model with a default value
+emptyModel :: forall a. (Default a) => Model '[] a
+emptyModel =
+  Model
+    { value = Default.def,
+      entities = Set.empty,
+      eventTypes = Set.empty,
+      commandNames = Set.empty
+    }
+
+
 instance Functor (Model cmds) where
-  fmap f m =
-    Model
-      { value = f m.value,
-        entities = m.entities,
-        eventTypes = m.eventTypes,
-        commandNames = m.commandNames
-      }
+  fmap = mapValue
 
 
 instance Applicative (Model cmds) where
-  pure a =
-    Model
-      { value = a,
-        entities = Set.empty,
-        eventTypes = Set.empty,
-        commandNames = Set.empty
-      }
-  (<*>) = Monad.ap
+  pure = pureValue
+  (<*>) = applyValue
 
 
 instance Monad (Model cmds) where
-  m >>= f = do
-    let result = f m.value
-    Model
-      { value = result.value,
-        entities = m.entities |> Set.union result.entities,
-        eventTypes = m.eventTypes |> Set.union result.eventTypes,
-        commandNames = m.commandNames |> Set.union result.commandNames
-      }
+  (>>=) = bindValue
 
 
 instance Semigroup (Model cmds a) where
-  m1 <> m2 =
-    Model
-      { value = m2.value,
-        entities = m1.entities |> Set.union m2.entities,
-        eventTypes = m1.eventTypes |> Set.union m2.eventTypes,
-        commandNames = m1.commandNames |> Set.union m2.commandNames
-      }
+  (<>) = appendModel
 
 
 instance (Default a) => Monoid (Model '[] a) where
-  mempty =
-    Model
-      { value = Default.def,
-        entities = Set.empty,
-        eventTypes = Set.empty,
-        commandNames = Set.empty
-      }
+  mempty = emptyModel
 
 
 -- | Create a Model with just a value
