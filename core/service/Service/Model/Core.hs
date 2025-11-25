@@ -31,12 +31,6 @@ import Type.Reflection (Typeable)
 import TypeName qualified
 
 
--- | Type family for concatenating type-level lists
-type family Append (xs :: [Type]) (ys :: [Type]) :: [Type] where
-  Append '[] ys = ys
-  Append (x ': xs) ys = x ': Append xs ys
-
-
 -- | Model represents an event-sourced application model definition
 -- It tracks entities, events, and commands in a monadic DSL
 -- The first type parameter is a type-level list tracking command types

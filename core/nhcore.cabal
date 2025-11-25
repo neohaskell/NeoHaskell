@@ -40,6 +40,7 @@ common common_cfg
     hasql-th,
     hspec,
     http-conduit,
+    large-anon,
     monad-loops,
     optparse-applicative,
     path,
