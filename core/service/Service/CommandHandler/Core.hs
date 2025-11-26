@@ -87,7 +87,6 @@ execute eventStore entityFetcher entityName command = do
     Just entityId -> do
       let streamId = toStreamId entityId
       fetchEntity streamId
-
     Nothing -> do
       -- No entity ID means we're creating a new entity
       Task.yield (Nothing, Nothing)
@@ -99,7 +98,7 @@ execute eventStore entityFetcher entityName command = do
   let maxRetries = 10
 
   let retryLoop retryCount currentEntity currentStreamId = do
-        -- Create decision context
+        -- TODO: Extract decision context into service context
         let decisionContext =
               Command.DecisionContext
                 { genUuid = Uuid.generate
@@ -115,12 +114,12 @@ execute eventStore entityFetcher entityName command = do
               CommandRejected
                 { reason = reason
                 }
-
           AcceptCommand insertionType events -> do
             -- Determine the stream ID
             finalStreamId <- case currentStreamId of
               Just sid -> Task.yield sid
               Nothing -> do
+                -- FIXME: HOW TO MAKE THIS WORK??
                 -- Must extract from first event (for new entities)
                 -- This requires the event to have a field we can use as stream ID
                 -- For now, we'll generate a new UUID and convert to StreamId
@@ -131,7 +130,6 @@ execute eventStore entityFetcher entityName command = do
             -- Build insertion payload
             payload <-
               Event.payloadFromEvents entityName finalStreamId events
-                |> Task.mapError (\errorText -> errorText)
 
             -- Map insertion types appropriately:
             -- ExistingStream and StreamCreation are checked by Decision.accept* functions,
@@ -157,7 +155,6 @@ execute eventStore entityFetcher entityName command = do
                       eventsAppended = eventsCount,
                       retriesAttempted = retryCount
                     }
-
               Err (EventStore.InsertionError Event.ConsistencyCheckFailed) -> do
                 -- Concurrency conflict, retry if we haven't exceeded max retries
                 if retryCount < maxRetries
@@ -171,7 +168,6 @@ execute eventStore entityFetcher entityName command = do
                       Ok freshEntity -> do
                         -- Retry with fresh state
                         retryLoop (retryCount + 1) (Just freshEntity) (Just finalStreamId)
-
                       Err _refetchError -> do
                         -- Stream disappeared or other error, retry with Nothing
                         retryLoop (retryCount + 1) Nothing (Just finalStreamId)
@@ -181,7 +177,6 @@ execute eventStore entityFetcher entityName command = do
                         { error = "Max retries exceeded due to concurrent modifications",
                           retriesAttempted = retryCount
                         }
-
               Err _eventStoreError -> do
                 let errorText = "Event store error during insertion"
                 Task.yield
