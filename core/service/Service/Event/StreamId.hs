@@ -44,3 +44,7 @@ class ToStreamId idType where
 
 instance ToStreamId StreamId where
   toStreamId id = id
+
+
+instance ToStreamId Text where
+  toStreamId text = StreamId text

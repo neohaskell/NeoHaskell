@@ -7,12 +7,20 @@ module Service.CommandHandler.Core (
   deriveCommand,
 ) where
 
+import Array qualified
 import Core
+import Service.Command.Core qualified as Command
 import Service.CommandHandler.TH (deriveCommand)
 import Service.EntityFetcher.Core (EntityFetcher)
-import Service.Event (EntityName)
+import Service.EntityFetcher.Core qualified as EntityFetcher
+import Service.Event (EntityName, InsertionPayload (..))
+import Service.Event qualified as Event
+import Service.Event.StreamId qualified as StreamId
 import Service.EventStore.Core (EventStore)
+import Service.EventStore.Core qualified as EventStore
 import Task qualified
+import ToText qualified
+import Uuid qualified
 
 
 -- | Result of executing a command through the CommandHandler
@@ -41,109 +49,146 @@ data CommandHandler event = CommandHandler
 
 
 execute ::
-  forall command commandEntity commandEvent appEvent error.
+  forall command commandEntity commandEvent.
   ( Command command,
     commandEntity ~ EntityOf command,
-    commandEvent ~ EventOf commandEntity
+    commandEvent ~ EventOf commandEntity,
+    ToStreamId (EntityIdType command),
+    IsMultiTenant command ~ 'False
   ) =>
-  EventStore appEvent ->
+  EventStore commandEvent ->
   EntityFetcher commandEntity commandEvent ->
   EntityName ->
   command ->
-  Task error CommandHandlerResult
-execute _eventStore _entityFetcher _entityName _command = do
-  -- ┌─────────────────────────────────────────────────────────────────────────┐
-  -- │ IMPLEMENTATION PLAN: Command Handler Execution Algorithm                │
-  -- └─────────────────────────────────────────────────────────────────────────┘
-  --
-  -- This function implements the core command execution flow with optimistic
-  -- concurrency control and automatic retry logic for handling concurrent
-  -- modifications.
-  --
+  Task Text CommandHandlerResult
+execute eventStore entityFetcher entityName command = do
   -- ┌─────────────────────────────────────────────────────────────────────────┐
   -- │ PHASE 1: ENTITY RESOLUTION                                              │
   -- └─────────────────────────────────────────────────────────────────────────┘
-  --
-  -- 1. Call command.getEntityIdImpl to extract entity ID
-  --    - Returns Maybe EntityIdType (Text or custom type)
-  --    - Nothing means creating a new entity
-  --    - Just entityId means operating on existing entity
-  --
-  -- 2. If entityId exists (Some):
-  --    a. Convert EntityIdType to StreamId using ToStreamId trait
-  --    b. Call entityFetcher.fetch with entityName and streamId
-  --    c. On success: store entity state and stream version
-  --    d. On EntityFetcher.EventStoreError (EventStore.StreamNotFound):
-  --       - Set entity = Nothing (stream doesn't exist yet)
-  --       - Set currentStreamVersion = Nothing
-  --    e. On other errors: propagate error
-  --
-  -- 3. If entityId is Nothing:
-  --    - Set entity = Nothing (new entity creation)
-  --    - Set currentStreamVersion = Nothing
-  --
+
+  -- Extract the entity ID from the command
+  let maybeEntityId = (getEntityIdImpl @command) command
+
+  -- Helper function to fetch entity with error handling
+  let fetchEntity streamId = do
+        result <-
+          entityFetcher.fetch entityName streamId
+            |> Task.asResult
+
+        case result of
+          Ok entity -> do
+            Task.yield (Just entity, Just streamId)
+          Err _fetchError -> do
+            -- If fetch fails (e.g., stream not found), treat as new entity
+            Task.yield (Nothing, Just streamId)
+
+  -- Resolve the entity state based on whether we have an entity ID
+  (maybeEntity, maybeStreamId) <- case maybeEntityId of
+    Just entityId -> do
+      let streamId = toStreamId entityId
+      fetchEntity streamId
+
+    Nothing -> do
+      -- No entity ID means we're creating a new entity
+      Task.yield (Nothing, Nothing)
+
   -- ┌─────────────────────────────────────────────────────────────────────────┐
   -- │ PHASE 2: DECISION & PERSISTENCE (with retry loop)                       │
   -- └─────────────────────────────────────────────────────────────────────────┘
-  --
-  -- 4. Setup retry loop:
-  --    - maxRetries = 10
-  --    - retryCount = 0
-  --
-  -- 5. Decision phase:
-  --    a. Create DecisionContext with Uuid.generate as genUuid
-  --    b. Call command.decideImpl with current entity state
-  --       - Takes: command, Maybe entity
-  --       - Returns: Decision commandEvent
-  --    c. Call runDecision with context and decision
-  --       - Returns: Task Text (CommandResult commandEvent)
-  --    d. Handle CommandResult:
-  --       - RejectCommand reason -> return CommandRejected
-  --       - AcceptCommand insertionType events -> continue to step 6
-  --
-  -- 6. Extract or generate stream ID:
-  --    - If we had maybeEntityId from step 1: use that
-  --    - Otherwise: extract from first event in events array
-  --      (events must have at least one element for new entities)
-  --
-  -- 7. Build InsertionPayload:
-  --    a. Convert events to insertions using eventToInsertion helper
-  --       - Generates UUID for each event
-  --       - Creates EventMetadata for each event
-  --    b. Build InsertionPayload:
-  --       - entityName: from parameter
-  --       - streamId: from step 6
-  --       - insertionType: from CommandResult
-  --       - insertions: from step 7a
-  --
-  -- 8. Persist events:
-  --    a. Call eventStore.insert with payload
-  --    b. On Success (InsertionSuccess):
-  --       - Return CommandAccepted with streamId, event count, retry count
-  --    c. On Error (InsertionError ConsistencyCheckFailed):
-  --       - If retryCount < maxRetries:
-  --         * Increment retryCount
-  --         * Re-fetch entity (go back to step 2 with same streamId)
-  --         * Continue loop (go back to step 5)
-  --       - Else: Return CommandFailed "Max retries exceeded"
-  --    d. On other EventStore errors:
-  --       - Return CommandFailed with error message
-  --
-  -- ┌─────────────────────────────────────────────────────────────────────────┐
-  -- │ KEY INVARIANTS                                                           │
-  -- └─────────────────────────────────────────────────────────────────────────┘
-  --
-  -- - The retry loop ensures optimistic concurrency:
-  --   When concurrent commands modify the same stream, one succeeds and others
-  --   retry with the updated state
-  --
-  -- - The insertionType from Decision determines consistency guarantees:
-  --   * StreamCreation: fails if stream exists
-  --   * ExistingStream: fails if stream doesn't exist
-  --   * InsertAfter pos: fails if stream position doesn't match
-  --   * AnyStreamState: always succeeds (least safe)
-  --
-  -- - Entity fetcher returns current state by replaying all events
-  --   This ensures decisions are made on the latest state after retries
-  --
-  Task.yield (panic "Service.CommandHandler.execute not yet implemented")
+
+  let maxRetries = 10
+
+  let retryLoop retryCount currentEntity currentStreamId = do
+        -- Create decision context
+        let decisionContext =
+              Command.DecisionContext
+                { genUuid = Uuid.generate
+                }
+
+        -- Execute the decision logic
+        let decision = (decideImpl @command) command currentEntity
+        commandResult <- Command.runDecision decisionContext decision
+
+        case commandResult of
+          RejectCommand reason -> do
+            Task.yield
+              CommandRejected
+                { reason = reason
+                }
+
+          AcceptCommand insertionType events -> do
+            -- Determine the stream ID
+            finalStreamId <- case currentStreamId of
+              Just sid -> Task.yield sid
+              Nothing -> do
+                -- Must extract from first event (for new entities)
+                -- This requires the event to have a field we can use as stream ID
+                -- For now, we'll generate a new UUID and convert to StreamId
+                uuid <- Uuid.generate
+                let streamId = StreamId.fromText (ToText.toText uuid)
+                Task.yield streamId
+
+            -- Build insertion payload
+            payload <-
+              Event.payloadFromEvents entityName finalStreamId events
+                |> Task.mapError (\errorText -> errorText)
+
+            -- Map insertion types appropriately:
+            -- ExistingStream and StreamCreation are checked by Decision.accept* functions,
+            -- but for EventStore we use AnyStreamState since we don't track exact positions
+            -- Only InsertAfter carries position information
+            let finalInsertionType = case insertionType of
+                  InsertAfter pos -> InsertAfter pos
+                  _ -> AnyStreamState
+
+            let payloadWithType = payload {insertionType = finalInsertionType}
+
+            -- Persist to event store
+            insertResult <-
+              eventStore.insert payloadWithType
+                |> Task.asResult
+
+            case insertResult of
+              Ok _success -> do
+                let eventsCount = Array.length events
+                Task.yield
+                  CommandAccepted
+                    { streamId = finalStreamId,
+                      eventsAppended = eventsCount,
+                      retriesAttempted = retryCount
+                    }
+
+              Err (EventStore.InsertionError Event.ConsistencyCheckFailed) -> do
+                -- Concurrency conflict, retry if we haven't exceeded max retries
+                if retryCount < maxRetries
+                  then do
+                    -- Re-fetch the entity with latest state using the helper
+                    refetchResult <-
+                      entityFetcher.fetch entityName finalStreamId
+                        |> Task.asResult
+
+                    case refetchResult of
+                      Ok freshEntity -> do
+                        -- Retry with fresh state
+                        retryLoop (retryCount + 1) (Just freshEntity) (Just finalStreamId)
+
+                      Err _refetchError -> do
+                        -- Stream disappeared or other error, retry with Nothing
+                        retryLoop (retryCount + 1) Nothing (Just finalStreamId)
+                  else do
+                    Task.yield
+                      CommandFailed
+                        { error = "Max retries exceeded due to concurrent modifications",
+                          retriesAttempted = retryCount
+                        }
+
+              Err _eventStoreError -> do
+                let errorText = "Event store error during insertion"
+                Task.yield
+                  CommandFailed
+                    { error = errorText,
+                      retriesAttempted = retryCount
+                    }
+
+  -- Start the retry loop
+  retryLoop 0 maybeEntity maybeStreamId
