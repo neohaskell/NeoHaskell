@@ -28,7 +28,7 @@ data EntityFetcher state event = EntityFetcher
   { -- | Fetch an entity's current state by entity name and stream ID.
     --   Reads all events from the event store and applies the reduction function
     --   to compute the current state.
-    fetch :: EntityName -> StreamId -> Task Error state
+    fetch :: EntityName -> StreamId -> Task Error (Maybe state)
   }
 
 
@@ -60,7 +60,7 @@ new eventStore initialState reduceFunction = do
         -- This processes events one-by-one without loading everything into memory
         finalState <-
           streamMessages
-            |> Stream.consume
+            |> Stream.consumeMaybe
               ( \state message -> do
                   case message of
                     -- Only process actual events, ignore other message types

@@ -3,6 +3,7 @@ module Test.Service.EntityFetcher.Fetch.Spec where
 import Array qualified
 import AsyncTask qualified
 import Core
+import Maybe qualified
 import Result qualified
 import Service.EntityFetcher.Core (EntityFetcher)
 import Service.EntityFetcher.Core qualified as EntityFetcher
@@ -28,6 +29,7 @@ spec newStoreAndFetcher = do
         -- Fetch from a stream that doesn't exist yet
         result <-
           context.fetcher.fetch context.entityName context.streamId
+            |> Task.map Maybe.getOrDie
             |> Task.asResult
 
         -- Should succeed with initial state (version 0)
@@ -74,6 +76,7 @@ spec newStoreAndFetcher = do
         -- Fetch the entity
         state <-
           context.fetcher.fetch context.entityName context.streamId
+            |> Task.map Maybe.getOrDie
             |> Task.mapError toText
 
         -- Should have the correct state after applying one event
@@ -136,6 +139,7 @@ spec newStoreAndFetcher = do
         -- Fetch the entity
         state <-
           context.fetcher.fetch context.entityName context.streamId
+            |> Task.map Maybe.getOrDie
             |> Task.mapError toText
 
         -- Should have correct state: 50 + 100 - 30 + 20 = 140
@@ -204,10 +208,12 @@ spec newStoreAndFetcher = do
         -- Fetch both entities
         state1 <-
           context.fetcher.fetch context.entityName context.streamId
+            |> Task.map Maybe.getOrDie
             |> Task.mapError toText
 
         state2 <-
           context.fetcher.fetch context.entityName streamId2
+            |> Task.map Maybe.getOrDie
             |> Task.mapError toText
 
         -- Should have different states
@@ -290,6 +296,7 @@ spec newStoreAndFetcher = do
         -- Fetch the entity
         state <-
           context.fetcher.fetch context.entityName context.streamId
+            |> Task.map Maybe.getOrDie
             |> Task.mapError toText
 
         -- Should have correct balance: 0 + (100 * 1) = 100
@@ -364,14 +371,17 @@ spec newStoreAndFetcher = do
         -- Fetch multiple times - should always return same version
         state1 <-
           context.fetcher.fetch context.entityName context.streamId
+            |> Task.map Maybe.getOrDie
             |> Task.mapError toText
 
         state2 <-
           context.fetcher.fetch context.entityName context.streamId
+            |> Task.map Maybe.getOrDie
             |> Task.mapError toText
 
         state3 <-
           context.fetcher.fetch context.entityName context.streamId
+            |> Task.map Maybe.getOrDie
             |> Task.mapError toText
 
         -- All fetches should return same version
@@ -438,6 +448,7 @@ spec newStoreAndFetcher = do
         -- Fetch the entity
         state <-
           context.fetcher.fetch context.entityName context.streamId
+            |> Task.map Maybe.getOrDie
             |> Task.mapError toText
 
         -- Account should be closed
@@ -452,6 +463,7 @@ spec newStoreAndFetcher = do
           let nonExistentEntity = Event.EntityName ""
           result <-
             context.fetcher.fetch nonExistentEntity context.streamId
+              |> Task.map Maybe.getOrDie
               |> Task.asResult
 
           -- Should return initial state (empty stream case)
@@ -493,9 +505,15 @@ spec newStoreAndFetcher = do
           fetch2 <- AsyncTask.run (context.fetcher.fetch context.entityName context.streamId |> Task.mapError toText)
           fetch3 <- AsyncTask.run (context.fetcher.fetch context.entityName context.streamId |> Task.mapError toText)
 
-          state1 <- AsyncTask.waitFor fetch1
-          state2 <- AsyncTask.waitFor fetch2
-          state3 <- AsyncTask.waitFor fetch3
+          state1 <-
+            AsyncTask.waitFor fetch1
+              |> Task.map Maybe.getOrDie
+          state2 <-
+            AsyncTask.waitFor fetch2
+              |> Task.map Maybe.getOrDie
+          state3 <-
+            AsyncTask.waitFor fetch3
+              |> Task.map Maybe.getOrDie
 
           -- All fetches should return the same consistent state
           state1.balance |> shouldBe 1000
@@ -533,7 +551,9 @@ spec newStoreAndFetcher = do
             |> discard
 
           -- Start a fetch
-          fetchTask <- AsyncTask.run (context.fetcher.fetch context.entityName context.streamId |> Task.mapError toText)
+          fetchTask <-
+            AsyncTask.run
+              (context.fetcher.fetch context.entityName context.streamId |> Task.mapError toText)
 
           -- Concurrently insert more events
           eventId2 <- Uuid.generate
@@ -562,7 +582,7 @@ spec newStoreAndFetcher = do
             |> discard
 
           -- Wait for fetch to complete
-          (state :: BankAccountState) <- AsyncTask.waitFor fetchTask
+          (state :: BankAccountState) <- AsyncTask.waitFor fetchTask |> Task.map Maybe.getOrDie
 
           -- The fetch should see either the old or new state consistently
           -- (could be 500 or 600 depending on timing, but should be consistent)
@@ -577,6 +597,7 @@ spec newStoreAndFetcher = do
           unusedStreamId <- StreamId.new
           result <-
             context.fetcher.fetch context.entityName unusedStreamId
+              |> Task.map Maybe.getOrDie
               |> Task.asResult
 
           case result of
@@ -623,6 +644,7 @@ spec newStoreAndFetcher = do
           -- We just verify the fetcher still works correctly
           state <-
             context.fetcher.fetch context.entityName context.streamId
+              |> Task.map Maybe.getOrDie
               |> Task.mapError toText
 
           -- Should have the event applied only once
@@ -638,6 +660,7 @@ spec newStoreAndFetcher = do
 
           result <-
             context.fetcher.fetch longName unusedStreamId
+              |> Task.map Maybe.getOrDie
               |> Task.asResult
 
           case result of
@@ -676,7 +699,10 @@ spec newStoreAndFetcher = do
           -- Fetch the same entity 10 times rapidly
           Array.initialize 10 identity
             |> Task.forEach \_ -> do
-              state <- context.fetcher.fetch context.entityName context.streamId |> Task.mapError toText
+              state <-
+                context.fetcher.fetch context.entityName context.streamId
+                  |> Task.mapError toText
+                  |> Task.map Maybe.getOrDie
               state.balance |> shouldBe 250
               state.version |> shouldBe 1
 
@@ -686,6 +712,7 @@ spec newStoreAndFetcher = do
       whenEnvVar "TEST_EVENT_COUNT" do
         performanceBoundariesWithCount newStoreAndFetcher 100
         performanceBoundariesWithCount newStoreAndFetcher 1000
+
 
 performanceBoundariesWithCount ::
   Task Text (EventStore BankAccountEvent, EntityFetcher BankAccountState BankAccountEvent) ->
@@ -764,6 +791,7 @@ performanceBoundariesWithCount newStoreAndFetcher eventCount = do
         state <-
           context.fetcher.fetch context.entityName context.streamId
             |> Task.mapError toText
+            |> Task.map Maybe.getOrDie
 
         state.balance |> shouldBe eventCount
         state.version |> shouldBe (eventCount + 1) -- Opening + deposits

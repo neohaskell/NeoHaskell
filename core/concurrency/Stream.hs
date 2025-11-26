@@ -7,6 +7,7 @@ module Stream (
   end,
   pushError,
   consume,
+  consumeMaybe,
   toArray,
   fromArray,
 ) where
@@ -17,6 +18,7 @@ import Basics
 import Channel (Channel)
 import Channel qualified
 import Maybe (Maybe (..))
+import Maybe qualified as Maybe
 import Task (Task)
 import Task qualified
 import Text (Text)
@@ -89,6 +91,26 @@ consume folder initial stream = do
             loop nextAccumulator
       {-# INLINE loop #-}
   loop initial
+
+
+-- | Consume stream with a fold function, returning Nothing if stream is empty
+consumeMaybe ::
+  forall accumulator value.
+  (accumulator -> value -> Task Text accumulator) ->
+  accumulator ->
+  Stream value ->
+  Task Text (Maybe accumulator)
+consumeMaybe folder initial stream = do
+  let loop maybeAccumulator = do
+        maybeItem <- readNext stream
+        case maybeItem of
+          Nothing -> Task.yield maybeAccumulator
+          Just item -> do
+            let currentAccumulator = Maybe.withDefault initial maybeAccumulator
+            nextAccumulator <- folder currentAccumulator item
+            loop (Just nextAccumulator)
+      {-# INLINE loop #-}
+  loop Nothing
 
 
 -- | Convert stream to array

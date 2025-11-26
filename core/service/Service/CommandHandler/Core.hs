@@ -76,9 +76,9 @@ execute eventStore entityFetcher entityName command = do
             |> Task.asResult
 
         case result of
-          Ok entity -> do
+          Ok (Just entity) -> do
             Task.yield (Just entity, Just streamId)
-          Err _fetchError -> do
+          _ -> do
             -- If fetch fails (e.g., stream not found), treat as new entity
             Task.yield (Nothing, Just streamId)
 
@@ -126,7 +126,6 @@ execute eventStore entityFetcher entityName command = do
                       Nothing -> Just "Cannot update entity: entity does not exist"
                       Just _ -> Nothing
                   _ -> Nothing -- InsertAfter and AnyStreamState don't have these constraints
-
             case validationError of
               Just errorMsg ->
                 Task.yield
@@ -182,10 +181,10 @@ execute eventStore entityFetcher entityName command = do
                             |> Task.asResult
 
                         case refetchResult of
-                          Ok freshEntity -> do
+                          Ok (Just freshEntity) -> do
                             -- Retry with fresh state
                             retryLoop (retryCount + 1) (Just freshEntity) (Just finalStreamId)
-                          Err _refetchError -> do
+                          _ -> do
                             -- Stream disappeared or other error, retry with Nothing
                             retryLoop (retryCount + 1) Nothing (Just finalStreamId)
                       else do

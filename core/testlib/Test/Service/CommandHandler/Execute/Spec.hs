@@ -89,7 +89,10 @@ basicExecutionSpecs newCartStoreAndFetcher = do
         CommandAccepted {} -> do
           -- Verify event was inserted by fetching updated cart
           let sid = getEntityIdImpl @AddItemToCart cmd |> (Maybe.getOrDie .> StreamId)
-          cart <- context.cartFetcher.fetch context.cartEntityName sid |> Task.mapError toText
+          cart <-
+            context.cartFetcher.fetch context.cartEntityName sid
+              |> Task.mapError toText
+              |> Task.map Maybe.getOrDie
 
           cart.cartId |> shouldBe context.cartId
           Array.length cart.cartItems |> shouldBe 1
@@ -165,7 +168,10 @@ basicExecutionSpecs newCartStoreAndFetcher = do
         CommandAccepted {} -> do
           -- Verify both items are in cart
           let sid = getEntityIdImpl @AddItemToCart cmd |> (Maybe.getOrDie .> StreamId)
-          cart <- context.cartFetcher.fetch context.cartEntityName sid |> Task.mapError toText
+          cart <-
+            context.cartFetcher.fetch context.cartEntityName sid
+              |> Task.mapError toText
+              |> Task.map Maybe.getOrDie
 
           cart.cartId |> shouldBe context.cartId
           Array.length cart.cartItems |> shouldBe 2
@@ -248,7 +254,10 @@ retryLogicSpecs newCartStoreAndFetcher = do
         CommandAccepted {} -> do
           -- Verify command succeeded after retry
           let sid = getEntityIdImpl @AddItemToCart cmd |> (Maybe.getOrDie .> StreamId)
-          cart <- context.cartFetcher.fetch context.cartEntityName sid |> Task.mapError toText
+          cart <-
+            context.cartFetcher.fetch context.cartEntityName sid
+              |> Task.mapError toText
+              |> Task.map Maybe.getOrDie
 
           -- Should have both items now (item2 from concurrent insert, item1 from this command)
           Array.length cart.cartItems |> shouldBe 2
@@ -386,7 +395,10 @@ concurrencySpecs newCartStoreAndFetcher = do
 
       -- Verify final state has both items
       let sid = getEntityIdImpl @AddItemToCart cmd1 |> (Maybe.getOrDie .> StreamId)
-      cart <- context.cartFetcher.fetch context.cartEntityName sid |> Task.mapError toText
+      cart <-
+        context.cartFetcher.fetch context.cartEntityName sid
+          |> Task.mapError toText
+          |> Task.map Maybe.getOrDie
 
       cart.cartId |> shouldBe context.cartId
       Array.length cart.cartItems |> shouldBe 2
@@ -447,9 +459,13 @@ concurrencySpecs newCartStoreAndFetcher = do
 
       -- Verify both carts have their items
       cart1 <-
-        context.cartFetcher.fetch context.cartEntityName (cartId1 |> Uuid.toText |> StreamId.fromText) |> Task.mapError toText
+        context.cartFetcher.fetch context.cartEntityName (cartId1 |> Uuid.toText |> StreamId.fromText)
+          |> Task.mapError toText
+          |> Task.map Maybe.getOrDie
       cart2 <-
-        context.cartFetcher.fetch context.cartEntityName (cartId2 |> Uuid.toText |> StreamId.fromText) |> Task.mapError toText
+        context.cartFetcher.fetch context.cartEntityName (cartId2 |> Uuid.toText |> StreamId.fromText)
+          |> Task.mapError toText
+          |> Task.map Maybe.getOrDie
 
       cart1.cartId |> shouldBe cartId1
       cart2.cartId |> shouldBe cartId2
