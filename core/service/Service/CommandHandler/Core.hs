@@ -115,75 +115,92 @@ execute eventStore entityFetcher entityName command = do
                 { reason = reason
                 }
           AcceptCommand insertionType events -> do
-            -- Determine the stream ID
-            finalStreamId <- case currentStreamId of
-              Just sid -> Task.yield sid
-              Nothing -> do
-                -- FIXME: HOW TO MAKE THIS WORK??
-                -- Must extract from first event (for new entities)
-                -- This requires the event to have a field we can use as stream ID
-                -- For now, we'll generate a new UUID and convert to StreamId
-                uuid <- Uuid.generate
-                let streamId = StreamId.fromText (ToText.toText uuid)
-                Task.yield streamId
+            -- Validate insertion type constraints against current entity state
+            let validationError = case insertionType of
+                  StreamCreation ->
+                    case currentEntity of
+                      Just _ -> Just "Cannot create entity: entity already exists"
+                      Nothing -> Nothing
+                  ExistingStream ->
+                    case currentEntity of
+                      Nothing -> Just "Cannot update entity: entity does not exist"
+                      Just _ -> Nothing
+                  _ -> Nothing -- InsertAfter and AnyStreamState don't have these constraints
 
-            -- Build insertion payload
-            payload <-
-              Event.payloadFromEvents entityName finalStreamId events
-
-            -- Map insertion types appropriately:
-            -- ExistingStream and StreamCreation are checked by Decision.accept* functions,
-            -- but for EventStore we use AnyStreamState since we don't track exact positions
-            -- Only InsertAfter carries position information
-            let finalInsertionType = case insertionType of
-                  InsertAfter pos -> InsertAfter pos
-                  _ -> AnyStreamState
-
-            let payloadWithType = payload {insertionType = finalInsertionType}
-
-            -- Persist to event store
-            insertResult <-
-              eventStore.insert payloadWithType
-                |> Task.asResult
-
-            case insertResult of
-              Ok _success -> do
-                let eventsCount = Array.length events
+            case validationError of
+              Just errorMsg ->
                 Task.yield
-                  CommandAccepted
-                    { streamId = finalStreamId,
-                      eventsAppended = eventsCount,
-                      retriesAttempted = retryCount
+                  CommandRejected
+                    { reason = errorMsg
                     }
-              Err (EventStore.InsertionError Event.ConsistencyCheckFailed) -> do
-                -- Concurrency conflict, retry if we haven't exceeded max retries
-                if retryCount < maxRetries
-                  then do
-                    -- Re-fetch the entity with latest state using the helper
-                    refetchResult <-
-                      entityFetcher.fetch entityName finalStreamId
-                        |> Task.asResult
+              Nothing -> do
+                -- Determine the stream ID
+                finalStreamId <- case currentStreamId of
+                  Just sid -> Task.yield sid
+                  Nothing -> do
+                    -- Must extract from first event (for new entities)
+                    -- This requires the event to have a field we can use as stream ID
+                    -- For now, we'll generate a new UUID and convert to StreamId
+                    uuid <- Uuid.generate
+                    let streamId = StreamId.fromText (ToText.toText uuid)
+                    Task.yield streamId
 
-                    case refetchResult of
-                      Ok freshEntity -> do
-                        -- Retry with fresh state
-                        retryLoop (retryCount + 1) (Just freshEntity) (Just finalStreamId)
-                      Err _refetchError -> do
-                        -- Stream disappeared or other error, retry with Nothing
-                        retryLoop (retryCount + 1) Nothing (Just finalStreamId)
-                  else do
+                -- Build insertion payload
+                payload <-
+                  Event.payloadFromEvents entityName finalStreamId events
+
+                -- Map insertion types to EventStore types:
+                -- We use AnyStreamState for most cases since we don't track exact positions
+                -- Only InsertAfter carries position information
+                let finalInsertionType = case insertionType of
+                      InsertAfter pos -> InsertAfter pos
+                      _ -> AnyStreamState
+
+                let payloadWithType = payload {insertionType = finalInsertionType}
+
+                -- Persist to event store
+                insertResult <-
+                  eventStore.insert payloadWithType
+                    |> Task.asResult
+
+                case insertResult of
+                  Ok _success -> do
+                    let eventsCount = Array.length events
                     Task.yield
-                      CommandFailed
-                        { error = "Max retries exceeded due to concurrent modifications",
+                      CommandAccepted
+                        { streamId = finalStreamId,
+                          eventsAppended = eventsCount,
                           retriesAttempted = retryCount
                         }
-              Err _eventStoreError -> do
-                let errorText = "Event store error during insertion"
-                Task.yield
-                  CommandFailed
-                    { error = errorText,
-                      retriesAttempted = retryCount
-                    }
+                  Err (EventStore.InsertionError Event.ConsistencyCheckFailed) -> do
+                    -- Concurrency conflict, retry if we haven't exceeded max retries
+                    if retryCount < maxRetries
+                      then do
+                        -- Re-fetch the entity with latest state using the helper
+                        refetchResult <-
+                          entityFetcher.fetch entityName finalStreamId
+                            |> Task.asResult
+
+                        case refetchResult of
+                          Ok freshEntity -> do
+                            -- Retry with fresh state
+                            retryLoop (retryCount + 1) (Just freshEntity) (Just finalStreamId)
+                          Err _refetchError -> do
+                            -- Stream disappeared or other error, retry with Nothing
+                            retryLoop (retryCount + 1) Nothing (Just finalStreamId)
+                      else do
+                        Task.yield
+                          CommandFailed
+                            { error = "Max retries exceeded due to concurrent modifications",
+                              retriesAttempted = retryCount
+                            }
+                  Err _eventStoreError -> do
+                    let errorText = "Event store error during insertion"
+                    Task.yield
+                      CommandFailed
+                        { error = errorText,
+                          retriesAttempted = retryCount
+                        }
 
   -- Start the retry loop
   retryLoop 0 maybeEntity maybeStreamId
