@@ -25,25 +25,19 @@ spec ::
 spec newStoreAndFetcher = do
   describe "Entity Fetch" do
     before (Context.initialize newStoreAndFetcher) do
-      it "fetches an entity with no events and returns initial state" \context -> do
+      it "fetches an entity with no events and returns Nothing" \context -> do
         -- Fetch from a stream that doesn't exist yet
-        result <-
+        maybeState <-
           context.fetcher.fetch context.entityName context.streamId
-            |> Task.map Maybe.getOrDie
-            |> Task.asResult
+            |> Task.mapError toText
 
-        -- Should succeed with initial state (version 0)
-        result
-          |> Result.isOk
-          |> shouldBe True
-
-        case result of
-          Ok state -> do
-            state.balance |> shouldBe 0
-            state.isOpen |> shouldBe False
-            state.version |> shouldBe 0
-          Err _ -> do
-            fail "Expected successful fetch but got error"
+        -- Should return Nothing when there are no events
+        case maybeState of
+          Just _ -> do
+            fail "Expected Nothing for empty stream but got Some state"
+          Nothing -> do
+            -- This is the expected behavior
+            Task.yield unit
 
       it "fetches an entity with a single event and applies it correctly" \context -> do
         -- Insert one event: AccountOpened
@@ -461,17 +455,14 @@ spec newStoreAndFetcher = do
         it "handles non-existent entity type gracefully" \context -> do
           -- Try to fetch from an entity type that doesn't exist
           let nonExistentEntity = Event.EntityName ""
-          result <-
+          maybeState <-
             context.fetcher.fetch nonExistentEntity context.streamId
-              |> Task.map Maybe.getOrDie
-              |> Task.asResult
+              |> Task.mapError toText
 
-          -- Should return initial state (empty stream case)
-          case result of
-            Ok state -> do
-              state.balance |> shouldBe 0
-              state.version |> shouldBe 0
-            Err _ -> fail "Expected Ok but got Err"
+          -- Should return Nothing for empty stream (no events)
+          case maybeState of
+            Just _ -> fail "Expected Nothing for non-existent entity type but got Some state"
+            Nothing -> Task.yield unit
 
         it "handles concurrent fetches of the same entity" \context -> do
           -- Insert some events first
@@ -595,17 +586,14 @@ spec newStoreAndFetcher = do
           -- This tests that the fetcher doesn't crash with unusual input
           -- Note: StreamId is generated via UUID, so we use a valid one but unused stream
           unusedStreamId <- StreamId.new
-          result <-
+          maybeState <-
             context.fetcher.fetch context.entityName unusedStreamId
-              |> Task.map Maybe.getOrDie
-              |> Task.asResult
+              |> Task.mapError toText
 
-          case result of
-            Ok state -> do
-              -- Should return initial state for non-existent stream
-              state.balance |> shouldBe 0
-              state.version |> shouldBe 0
-            Err _ -> fail "Expected Ok but got Err"
+          case maybeState of
+            Just _ -> do
+              fail "Expected Nothing for non-existent stream but got Some state"
+            Nothing -> Task.yield unit
 
         it "handles duplicate event IDs gracefully" \context -> do
           -- Insert event with specific ID
@@ -658,16 +646,14 @@ spec newStoreAndFetcher = do
                   "VeryLongEntityNameVeryLongEntityNameVeryLongEntityNameVeryLongEntityNameVeryLongEntityNameVeryLongEntityNameVeryLongEntityNameVeryLongEntityNameVeryLongEntityNameVeryLongEntityName"
           unusedStreamId <- StreamId.new
 
-          result <-
+          maybeState <-
             context.fetcher.fetch longName unusedStreamId
-              |> Task.map Maybe.getOrDie
-              |> Task.asResult
+              |> Task.mapError toText
 
-          case result of
-            Ok state -> do
-              state.balance |> shouldBe 0
-              state.version |> shouldBe 0
-            Err _ -> fail "Expected Ok but got Err for long entity name"
+          case maybeState of
+            Just _ -> do
+              fail "Expected Nothing for unused stream with long entity name but got Some state"
+            Nothing -> Task.yield unit
 
         it "handles rapid successive fetches" \context -> do
           -- Insert an event

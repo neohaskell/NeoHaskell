@@ -487,13 +487,15 @@ performReadAllStreamEvents
             |> Task.mapError
               SessionError
 
-        hasNotifiedReadingStarted <- Var.get notifiedReadingRef
-        Task.unless (hasNotifiedReadingStarted) do
-          stream |> Stream.writeItem ReadingStarted
-          notifiedReadingRef |> Var.set True
-
         Task.when (records |> Array.isEmpty) do
           breakLoopRef |> Var.set True
+
+        -- Only notify reading started if we have records to process
+        Task.unless (records |> Array.isEmpty) do
+          hasNotifiedReadingStarted <- Var.get notifiedReadingRef
+          Task.unless (hasNotifiedReadingStarted) do
+            stream |> Stream.writeItem ReadingStarted
+            notifiedReadingRef |> Var.set True
 
         records |> Task.forEach \record -> do
           let evt :: Result Text (ReadAllMessage eventType) = do
@@ -782,17 +784,19 @@ performReadStreamEvents
             |> Sessions.run conn
             |> Task.mapError SessionError
 
-        hasNotifiedReadingStarted <- Var.get notifiedReadingRef
-        Task.unless (hasNotifiedReadingStarted) do
-          stream |> Stream.writeItem StreamReadingStarted
-          notifiedReadingRef |> Var.set True
-
         -- Mark that we've completed the first batch
         Task.when (isFirstBatch) do
           isFirstBatchRef |> Var.set False
 
         Task.when (records |> Array.isEmpty) do
           breakLoopRef |> Var.set True
+
+        -- Only notify reading started if we have records to process
+        Task.unless (records |> Array.isEmpty) do
+          hasNotifiedReadingStarted <- Var.get notifiedReadingRef
+          Task.unless (hasNotifiedReadingStarted) do
+            stream |> Stream.writeItem StreamReadingStarted
+            notifiedReadingRef |> Var.set True
 
         records |> Task.forEach \record -> do
           let evt :: Result Text (ReadStreamMessage eventType) = do
