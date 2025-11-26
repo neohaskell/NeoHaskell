@@ -3,18 +3,18 @@ module Test.Service.CommandHandler where
 import Array qualified
 import Core
 import Service.EntityFetcher qualified as EntityFetcher
-import Service.EventStore.InMemory qualified as InMemory
+import Service.EventStore.Core (EventStore)
 import Task qualified
 import Test
 import Test.Service.Command.Core (CartEntity (..), CartEvent (..), applyCartEvent)
 import Test.Service.CommandHandler.Execute.Spec qualified as Execute
 
 
-spec :: Spec Unit
-spec = do
+spec :: Task Text (EventStore CartEvent) -> Spec Unit
+spec newStore = do
   describe "CommandHandler Specification Tests" do
     let newCartStoreAndFetcher = do
-          store <- InMemory.new @CartEvent |> Task.mapError toText
+          store <- newStore
           let initialState =
                 CartEntity
                   { cartId = def,

@@ -7,7 +7,9 @@ import Service.EventStore.Postgres.Internal.Core qualified as PostgresCore
 import Service.EventStore.Postgres.Internal.Sessions qualified as Sessions
 import Task qualified
 import Test
-import Test.Service.EntityFetcher qualified as EntityFetcher
+import Test.Service.Command.Core (CartEvent)
+import Test.Service.CommandHandler qualified as CommandHandler
+import Test.Service.EntityFetcher qualified as EntityFetcherSpec
 import Test.Service.EntityFetcher.Core qualified as EntityFetcherCore
 import Test.Service.EventStore qualified as EventStore
 import Test.Service.EventStore.Core (BankAccountEvent)
@@ -60,7 +62,13 @@ spec = do
           store <- newStore
           fetcher <- EntityFetcherCore.newFetcher store |> Task.mapError toText
           Task.yield (store, fetcher)
-    EntityFetcher.spec newStoreAndFetcher
+    EntityFetcherSpec.spec newStoreAndFetcher
+
+    let newCartStore = do
+          let ops = Internal.defaultOps @CartEvent
+          dropPostgres ops config
+          Postgres.new config |> Task.mapError toText
+    CommandHandler.spec newCartStore
 
 
 data NewObserve = NewObserve
