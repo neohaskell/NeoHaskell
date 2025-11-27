@@ -19,6 +19,7 @@ import Default (Default)
 import Default qualified
 import Record (Record)
 import Record qualified
+import Service.Command (NameOf)
 
 
 -- | Model represents an event-sourced application model definition
@@ -123,12 +124,18 @@ data CommandDefinition (command :: Type) = CommandDefinition
 -- | Register a command type in the model
 command ::
   forall (commandType :: Type) (commandName :: Symbol).
-  Record.Field commandName -> Model '[commandName Record.:= CommandDefinition commandType] Unit
-command field = do
+  ( commandName ~ NameOf commandType,
+    IsLabel commandName (Record.Field commandName)
+  ) =>
+  Model '[commandName Record.:= CommandDefinition commandType] Unit
+command = do
+  let field = fromLabel @commandName
+  let definition = CommandDefinition
   Model
     { value = unit,
       commandNames =
-        Record.insert field CommandDefinition Record.empty
+        Record.empty
+          |> Record.insert field definition
     }
 
 

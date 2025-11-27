@@ -272,6 +272,16 @@ Service.Command.Core. Please ensure you have imported the necessary modules.
           ]
         Nothing -> []
 
+  -- Generate NameOf type instance
+  nameOfTypeFamilyName <-
+    TH.lookupTypeName "NameOf"
+      >>= orError
+        [fmt|
+ERROR: NameOf type family not found.
+
+Please ensure you have `import Core` at the top of your module.
+|]
+
   -- Generate KnownHash instance for the command name
   knownHashClassName <-
     TH.lookupTypeName "KnownHash"
@@ -286,6 +296,11 @@ Please ensure you have `import Core` at the top of your module.
 
   -- Compute hash at compile time using hashable
   let commandHash = Hashable.hash commandNameStr
+
+  -- Generate: type instance NameOf CommandName = "CommandName"
+  let nameOfInstance =
+        TH.TySynInstD
+          (TH.TySynEqn Nothing (TH.ConT nameOfTypeFamilyName `TH.AppT` TH.ConT someName) commandNameLit)
 
   -- Generate: instance KnownHash "CommandName" where
   --             hashVal _ = <computed hash>
@@ -314,5 +329,5 @@ Please ensure you have `import Core` at the top of your module.
                  ]
           )
 
-  pure [knownHashInstance, commandInstance]
+  pure [nameOfInstance, knownHashInstance, commandInstance]
 {-# INLINE deriveCommand #-}

@@ -8,6 +8,7 @@ module Service.Command.Core (
   Decision (..),
   DecisionContext (..),
   runDecision,
+  NameOf,
 ) where
 
 import Applicable
@@ -28,6 +29,9 @@ data CommandResult event
   = AcceptCommand InsertionType (Array event)
   | RejectCommand Text
   deriving (Eq, Show, Ord, Generic)
+
+
+type family NameOf (t :: Type) :: Symbol
 
 
 type family EntityOf (command :: Type) :: Type

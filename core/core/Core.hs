@@ -26,7 +26,7 @@ import Maybe as Reexported (Maybe (..))
 import Path as Reexported (Path, path)
 import Record as Reexported (KnownHash (..), Record)
 import Result as Reexported (Result (..))
-import Service.Command as Reexported (Command (..), CommandResult (..), EntityOf, EventOf)
+import Service.Command as Reexported (Command (..), CommandResult (..), EntityOf, EventOf, NameOf)
 import Service.Event as Reexported (InsertionType (..), StreamId, ToStreamId (..))
 import Service.Model as Reexported (
   Model (..),
