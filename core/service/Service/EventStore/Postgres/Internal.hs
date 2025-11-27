@@ -261,6 +261,19 @@ insertGo ops cfg payload =
         |> Sessions.run conn
         |> Task.mapError SessionError
 
+    -- Check stream existence constraint for StreamCreation
+    case payload.insertionType of
+      StreamCreation -> do
+        case latestPositions of
+          Just _ -> do
+            -- Stream already exists, cannot create
+            Task.throw (CoreInsertionError ConsistencyCheckFailed)
+          Nothing -> do
+            -- Stream doesn't exist, can proceed
+            pass
+      _ -> do
+        pass
+
     if insertionsCount <= 0
       then do
         let (globalPosition, localPosition) =
