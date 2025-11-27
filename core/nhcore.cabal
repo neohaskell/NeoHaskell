@@ -38,6 +38,7 @@ common common_cfg
     hasql-notifications,
     hasql-pool,
     hasql-th,
+    hashable,
     hspec,
     http-conduit,
     large-anon,
