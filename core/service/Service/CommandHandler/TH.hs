@@ -271,6 +271,31 @@ Service.Command.Core. Please ensure you have imported the necessary modules.
           ]
         Nothing -> []
 
+  -- Generate KnownHash instance for the command name
+  knownHashClassName <-
+    TH.lookupTypeName "KnownHash"
+      >>= orError
+        [fmt|
+ERROR: KnownHash type class not found.
+
+Please ensure you have `import Core` at the top of your module.
+|]
+
+  let commandNameLit = TH.LitT (TH.StrTyLit commandNameStr)
+
+  -- Generate: instance KnownHash "CommandName" where
+  --             hashVal _ = <computed hash>
+  let knownHashInstance =
+        TH.InstanceD
+          Nothing
+          []
+          (TH.ConT knownHashClassName `TH.AppT` commandNameLit)
+          [ TH.ValD
+              (TH.VarP (TH.mkName "hashVal"))
+              (TH.NormalB (TH.VarE (TH.mkName "hashVal")))
+              []
+          ]
+
   let commandInstance =
         TH.InstanceD
           Nothing
@@ -282,5 +307,5 @@ Service.Command.Core. Please ensure you have imported the necessary modules.
                  ]
           )
 
-  pure [commandInstance]
+  pure [knownHashInstance, commandInstance]
 {-# INLINE deriveCommand #-}
