@@ -11,6 +11,7 @@ import Json qualified
 import Task (Task)
 import Task qualified
 import Text (Text)
+import Uuid (Uuid)
 import Uuid qualified
 
 
@@ -48,3 +49,7 @@ instance ToStreamId StreamId where
 
 instance ToStreamId Text where
   toStreamId text = StreamId text
+
+
+instance ToStreamId Uuid where
+  toStreamId uuid = uuid |> Uuid.toText |> StreamId

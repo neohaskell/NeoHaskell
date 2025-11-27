@@ -8,7 +8,6 @@ import Service.CommandHandler qualified as CommandHandler
 import Service.EntityFetcher.Core (EntityFetcher (..))
 import Service.Event qualified as Event
 import Service.Event.EventMetadata qualified as EventMetadata
-import Service.Event.StreamId (StreamId (..))
 import Service.Event.StreamId qualified as StreamId
 import Service.EventStore.Core qualified as EventStore
 import Task qualified
@@ -88,7 +87,7 @@ basicExecutionSpecs newCartStoreAndFetcher = do
       case result of
         CommandAccepted {} -> do
           -- Verify event was inserted by fetching updated cart
-          let sid = getEntityIdImpl @AddItemToCart cmd |> (Maybe.getOrDie .> StreamId)
+          let sid = getEntityIdImpl @AddItemToCart cmd |> (Maybe.getOrDie .> Uuid.toText .> StreamId.fromText)
           cart <-
             context.cartFetcher.fetch context.cartEntityName sid
               |> Task.mapError toText
@@ -167,7 +166,7 @@ basicExecutionSpecs newCartStoreAndFetcher = do
       case result of
         CommandAccepted {} -> do
           -- Verify both items are in cart
-          let sid = getEntityIdImpl @AddItemToCart cmd |> (Maybe.getOrDie .> StreamId)
+          let sid = getEntityIdImpl @AddItemToCart cmd |> (Maybe.getOrDie .> Uuid.toText .> StreamId.fromText)
           cart <-
             context.cartFetcher.fetch context.cartEntityName sid
               |> Task.mapError toText
@@ -253,7 +252,7 @@ retryLogicSpecs newCartStoreAndFetcher = do
       case result of
         CommandAccepted {} -> do
           -- Verify command succeeded after retry
-          let sid = getEntityIdImpl @AddItemToCart cmd |> (Maybe.getOrDie .> StreamId)
+          let sid = getEntityIdImpl @AddItemToCart cmd |> (Maybe.getOrDie .> Uuid.toText .> StreamId.fromText)
           cart <-
             context.cartFetcher.fetch context.cartEntityName sid
               |> Task.mapError toText
@@ -394,7 +393,7 @@ concurrencySpecs newCartStoreAndFetcher = do
         CommandFailed _err _ -> fail "Command 2 failed"
 
       -- Verify final state has both items
-      let sid = getEntityIdImpl @AddItemToCart cmd1 |> (Maybe.getOrDie .> StreamId)
+      let sid = getEntityIdImpl @AddItemToCart cmd1 |> (Maybe.getOrDie .> Uuid.toText .> StreamId.fromText)
       cart <-
         context.cartFetcher.fetch context.cartEntityName sid
           |> Task.mapError toText
