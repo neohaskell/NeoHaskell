@@ -4,7 +4,6 @@ module Integration.App.Cart (
 
 import Core
 import Integration.App.Cart.Commands.CreateCart (CreateCart)
-import Integration.App.Cart.Core (CartEntity, CartEvent)
 import Service.Model.Core qualified as Model
 
 

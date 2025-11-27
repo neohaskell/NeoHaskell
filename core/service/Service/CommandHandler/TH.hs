@@ -4,6 +4,7 @@ module Service.CommandHandler.TH (
 
 import Control.Monad.Fail qualified as MonadFail
 import Core
+import Data.Hashable qualified as Hashable
 import Data.List qualified as GhcList
 import GHC.Base (String)
 import Language.Haskell.TH.Lib qualified as THLib
@@ -283,6 +284,9 @@ Please ensure you have `import Core` at the top of your module.
 
   let commandNameLit = TH.LitT (TH.StrTyLit commandNameStr)
 
+  -- Compute hash at compile time using hashable
+  let commandHash = Hashable.hash commandNameStr
+
   -- Generate: instance KnownHash "CommandName" where
   --             hashVal _ = <computed hash>
   let knownHashInstance =
@@ -290,10 +294,13 @@ Please ensure you have `import Core` at the top of your module.
           Nothing
           []
           (TH.ConT knownHashClassName `TH.AppT` commandNameLit)
-          [ TH.ValD
-              (TH.VarP (TH.mkName "hashVal"))
-              (TH.NormalB (TH.VarE (TH.mkName "hashVal")))
-              []
+          [ TH.FunD
+              (TH.mkName "hashVal")
+              [ TH.Clause
+                  [TH.WildP]
+                  (TH.NormalB (TH.LitE (TH.IntegerL (fromIntegral commandHash))))
+                  []
+              ]
           ]
 
   let commandInstance =
