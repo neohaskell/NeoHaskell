@@ -24,10 +24,20 @@ import Lock as Reexported (Lock)
 import Map as Reexported (Map)
 import Maybe as Reexported (Maybe (..))
 import Path as Reexported (Path, path)
+import Record as Reexported (Record)
 import Result as Reexported (Result (..))
 import Service.Command as Reexported (Command (..), CommandResult (..), EntityOf, EventOf)
 import Service.Event as Reexported (InsertionType (..), StreamId, ToStreamId (..))
-import Service.Model as Reexported (Model (..), command, entity, events, extract, hasCommand, hasEntity, hasEvents, isEmpty, yield)
+import Service.Model as Reexported (
+  Model (..),
+  command,
+  entity,
+  events,
+  extract,
+  hasEntity,
+  hasEvents,
+  yield,
+ )
 import Task as Reexported (Task)
 import Text as Reexported (Text)
 import ToText as Reexported (ToText, toPrettyText, toText)

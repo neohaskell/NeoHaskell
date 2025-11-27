@@ -129,6 +129,7 @@ module Basics (
   GHC.Generics.Generic,
   GHC.Stack.HasCallStack,
   Show (..),
+  GHCBase.Symbol,
 ) where
 
 import Applicable (Applicable)
@@ -143,6 +144,7 @@ import Data.String.Interpolate qualified as StringInterpolate
 import Data.Text (Text)
 import Data.Text qualified as Text
 import Data.Void qualified (Void, absurd)
+import GHC.Base qualified as GHCBase
 import GHC.Generics qualified
 import GHC.IsList (IsList (..))
 import GHC.OverloadedLabels (IsLabel (..))

@@ -1,6 +1,4 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
-{-# LANGUAGE TypeFamilies #-}
-{-# LANGUAGE UndecidableInstances #-}
 
 module Service.Model.Core (
   Model (..),
@@ -10,23 +8,26 @@ module Service.Model.Core (
   extract,
   hasEntity,
   hasEvents,
-  hasCommand,
-  isEmpty,
   yield,
+  (>>=),
+  pure,
+  (<*>),
+  appendModel,
+  emptyModel,
+  fmap,
+  (>>),
+  return,
+  join,
 ) where
 
-import Applicable (Applicative (..))
-import Basics
-import Control.Monad qualified as Monad
-import Data.Monoid (Monoid (..))
-import Data.Semigroup (Semigroup (..))
+import Basics hiding (fmap, join, pure, return, (<*>), (>>), (>>=))
 import Default (Default)
 import Default qualified
-import Mappable
+import Record (Record)
+import Record qualified
 import Set (Set)
 import Set qualified
 import Text (Text)
-import Thenable hiding (yield)
 import Type.Reflection (Typeable)
 import TypeName qualified
 
@@ -34,18 +35,18 @@ import TypeName qualified
 -- | Model represents an event-sourced application model definition
 -- It tracks entities, events, and commands in a monadic DSL
 -- The first type parameter is a type-level list tracking command types
-data Model (commands :: [Type]) a = Model
+data Model (commands :: Record.Row Type) a = Model
   { value :: a,
     entities :: Set Text,
     eventTypes :: Set Text,
-    commandNames :: Set Text
+    commandNames :: Record commands
   }
-  deriving (Eq, Show, Generic)
+  deriving (Generic)
 
 
 -- | Apply a function to the value inside a Model
-mapValue :: forall cmds a b. (a -> b) -> Model cmds a -> Model cmds b
-mapValue f m =
+fmap :: forall cmds a b. (a -> b) -> Model cmds a -> Model cmds b
+fmap f m =
   Model
     { value = f m.value,
       entities = m.entities,
@@ -55,41 +56,41 @@ mapValue f m =
 
 
 -- | Create a Model with just a value
-pureValue :: forall cmds a. a -> Model cmds a
+pureValue :: forall a. a -> Model '[] a
 pureValue a =
   Model
     { value = a,
       entities = Set.empty,
       eventTypes = Set.empty,
-      commandNames = Set.empty
+      commandNames = Record.empty
     }
 
 
 -- | Apply a function wrapped in a Model to a value wrapped in a Model
 applyValue :: forall cmds a b. Model cmds (a -> b) -> Model cmds a -> Model cmds b
-applyValue = Monad.ap
+applyValue fn x = fn <*> x
 
 
 -- | Sequentially compose two Models, passing the value from the first as an argument to the second
-bindValue :: forall cmds a b. Model cmds a -> (a -> Model cmds b) -> Model cmds b
+bindValue :: forall cmds1 cmds2 a b. Model cmds1 a -> (a -> Model cmds2 b) -> Model (Record.Merge cmds1 cmds2) b
 bindValue m f = do
   let result = f m.value
   Model
     { value = result.value,
       entities = m.entities |> Set.union result.entities,
       eventTypes = m.eventTypes |> Set.union result.eventTypes,
-      commandNames = m.commandNames |> Set.union result.commandNames
+      commandNames = Record.merge m.commandNames result.commandNames
     }
 
 
 -- | Combine two Models, keeping the second's value and merging their metadata
-appendModel :: forall cmds a. Model cmds a -> Model cmds a -> Model cmds a
+appendModel :: forall cmds1 cmds2 a. Model cmds1 a -> Model cmds2 a -> Model (Record.Merge cmds1 cmds2) a
 appendModel m1 m2 =
   Model
     { value = m2.value,
       entities = m1.entities |> Set.union m2.entities,
       eventTypes = m1.eventTypes |> Set.union m2.eventTypes,
-      commandNames = m1.commandNames |> Set.union m2.commandNames
+      commandNames = Record.merge m1.commandNames m2.commandNames
     }
 
 
@@ -100,75 +101,85 @@ emptyModel =
     { value = Default.def,
       entities = Set.empty,
       eventTypes = Set.empty,
-      commandNames = Set.empty
+      commandNames = Record.empty
     }
 
 
-instance Functor (Model cmds) where
-  fmap = mapValue
+pure :: a -> Model '[] a
+pure = pureValue
 
 
-instance Applicative (Model cmds) where
-  pure = pureValue
-  (<*>) = applyValue
+return :: a -> Model '[] a
+return = pure
 
 
-instance Monad (Model cmds) where
-  (>>=) = bindValue
+(<*>) :: Model cmds (a -> b) -> Model cmds a -> Model cmds b
+(<*>) = applyValue
 
 
-instance Semigroup (Model cmds a) where
-  (<>) = appendModel
+(>>=) :: Model cmds1 a -> (a -> Model cmds2 b) -> Model (Record.Merge cmds1 cmds2) b
+(>>=) = bindValue
 
 
-instance (Default a) => Monoid (Model '[] a) where
-  mempty = emptyModel
+(>>) :: Model cmds1 a -> (Model cmds2 b) -> Model (Record.Merge cmds1 cmds2) b
+(>>) a b = bindValue a (\_ -> b)
+
+
+-- | Flatten a nested Model structure
+join :: forall cmds1 cmds2 a. Model cmds1 (Model cmds2 a) -> Model (Record.Merge cmds1 cmds2) a
+join m = bindValue m (\innerModel -> innerModel)
 
 
 -- | Create a Model with just a value
-yield :: forall cmds a. a -> Model cmds a
+yield :: forall a. a -> Model '[] a
 yield a =
   Model
     { value = a,
       entities = Set.empty,
       eventTypes = Set.empty,
-      commandNames = Set.empty
+      commandNames = Record.empty
     }
 
 
 -- | Register an entity type in the model
-entity :: forall (entityType :: Type) cmds. (Typeable entityType) => Model cmds Unit
+entity :: forall (entityType :: Type). (Typeable entityType) => Model '[] Unit
 entity = do
   let typeName = TypeName.reflect @entityType
   Model
     { value = unit,
       entities = Set.singleton typeName,
       eventTypes = Set.empty,
-      commandNames = Set.empty
+      commandNames = Record.empty
     }
 
 
 -- | Register event types in the model
-events :: forall (eventType :: Type) cmds. (Typeable eventType) => Model cmds Unit
+events :: forall (eventType :: Type). (Typeable eventType) => Model '[] Unit
 events = do
   let typeName = TypeName.reflect @eventType
   Model
     { value = unit,
       entities = Set.empty,
       eventTypes = Set.singleton typeName,
-      commandNames = Set.empty
+      commandNames = Record.empty
     }
 
 
+-- | Proxy to store the type of the command
+data CommandDefinition (command :: Type) = CommandDefinition
+
+
 -- | Register a command type in the model
-command :: forall (commandType :: Type) cmds. (Typeable commandType) => Model cmds Unit
-command = do
-  let typeName = TypeName.reflect @commandType
+command ::
+  forall (commandType :: Type) (commandName :: Symbol).
+  Record.Field commandName -> Model '[commandName Record.:= CommandDefinition commandType] Unit
+command field = do
   Model
     { value = unit,
       entities = Set.empty,
       eventTypes = Set.empty,
-      commandNames = Set.singleton typeName
+      commandNames =
+        Record.insert field CommandDefinition Record.empty
     }
 
 
@@ -189,18 +200,3 @@ hasEvents :: forall (eventType :: Type) cmds a. (Typeable eventType) => Model cm
 hasEvents m = do
   let typeName = TypeName.reflect @eventType
   Set.member typeName m.eventTypes
-
-
--- | Check if a command type is registered in the model
-hasCommand :: forall (commandType :: Type) cmds a. (Typeable commandType) => Model cmds a -> Bool
-hasCommand m = do
-  let typeName = TypeName.reflect @commandType
-  Set.member typeName m.commandNames
-
-
--- | Check if a model is empty (has no registered types)
-isEmpty :: forall cmds a. Model cmds a -> Bool
-isEmpty m =
-  Set.isEmpty m.entities
-    && Set.isEmpty m.eventTypes
-    && Set.isEmpty m.commandNames
