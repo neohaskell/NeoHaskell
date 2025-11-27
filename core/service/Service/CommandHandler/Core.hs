@@ -64,10 +64,6 @@ execute ::
   command ->
   Task Text CommandHandlerResult
 execute eventStore entityFetcher entityName command = do
-  -- ┌─────────────────────────────────────────────────────────────────────────┐
-  -- │ PHASE 1: ENTITY RESOLUTION                                              │
-  -- └─────────────────────────────────────────────────────────────────────────┘
-
   -- Extract the entity ID from the command
   let maybeEntityId = (getEntityIdImpl @command) command
 
@@ -92,10 +88,6 @@ execute eventStore entityFetcher entityName command = do
     Nothing -> do
       -- No entity ID means we're creating a new entity
       Task.yield (Nothing, Nothing)
-
-  -- ┌─────────────────────────────────────────────────────────────────────────┐
-  -- │ PHASE 2: DECISION & PERSISTENCE (with retry loop)                       │
-  -- └─────────────────────────────────────────────────────────────────────────┘
 
   let maxRetries = 10
 
