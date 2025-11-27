@@ -144,8 +144,9 @@ validateFunctionSignature ::
   FunctionInfo ->
   MultiTenancyMode ->
   String ->
+  String ->
   TH.Q ()
-validateFunctionSignature funcInfo mode expectedEntityIdType = do
+validateFunctionSignature funcInfo mode expectedEntityIdType commandName = do
   functionInfo <- TH.reify funcInfo.thName
   case functionInfo of
     TH.VarI _ functionType _ -> do
@@ -184,10 +185,10 @@ Current return type:
   #{actualReturn}
 
 The return type must be 'Maybe #{expectedEntityIdType}' because by default:
-  type instance EntityIdType YourCommand = #{expectedEntityIdType}
+  type instance EntityIdType #{commandName} = #{expectedEntityIdType}
 
 If you want to use a different entity ID type, you can define:
-  type instance EntityIdType YourCommand = YourIdType
+  type instance EntityIdType #{commandName} = YourIdType
 |]
             else do
               let funcName = funcInfo.functionName
@@ -389,8 +390,8 @@ For more information on what commands and entities are, take a look at the docs:
             expectedSignatureWithoutUuid = "decide :: " ++ commandNameStr ++ " -> Maybe " ++ entityTypeStr ++ " -> Decision event"
           }
 
-  validateFunctionSignature getEntityIdFuncInfo multiTenancyMode entityIdTypeStr
-  validateFunctionSignature decideFuncInfo multiTenancyMode entityIdTypeStr
+  validateFunctionSignature getEntityIdFuncInfo multiTenancyMode entityIdTypeStr commandNameStr
+  validateFunctionSignature decideFuncInfo multiTenancyMode entityIdTypeStr commandNameStr
 
   let multiTenancyDecl = case maybeMultiTenancy of
         Just multiTenancyType ->
