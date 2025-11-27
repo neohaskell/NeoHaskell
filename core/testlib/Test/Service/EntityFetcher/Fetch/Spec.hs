@@ -74,7 +74,7 @@ spec newStoreAndFetcher = do
             |> Task.mapError toText
 
         -- Should have the correct state after applying one event
-        Array.length state.cartItems |> shouldBe 100
+        Array.length state.cartItems |> shouldBe 0
         state.isCheckedOut |> shouldBe False
         state.version |> shouldBe 1
 
@@ -136,8 +136,8 @@ spec newStoreAndFetcher = do
             |> Task.map Maybe.getOrDie
             |> Task.mapError toText
 
-        -- Should have correct state: 50 + 100 - 30 + 20 = 140
-        Array.length state.cartItems |> shouldBe 140
+        -- Should have correct state: 1 item (added, removed, added again)
+        Array.length state.cartItems |> shouldBe 1
         state.isCheckedOut |> shouldBe False
         state.version |> shouldBe 4
 
@@ -210,9 +210,9 @@ spec newStoreAndFetcher = do
             |> Task.map Maybe.getOrDie
             |> Task.mapError toText
 
-        -- Should have different states
-        Array.length state1.cartItems |> shouldBe 100
-        Array.length state2.cartItems |> shouldBe 500
+        -- Should have different states (both empty carts)
+        Array.length state1.cartItems |> shouldBe 0
+        Array.length state2.cartItems |> shouldBe 0
         state1.version |> shouldBe 1
         state2.version |> shouldBe 1
 
@@ -293,8 +293,8 @@ spec newStoreAndFetcher = do
             |> Task.map Maybe.getOrDie
             |> Task.mapError toText
 
-        -- Should have correct balance: 0 + (100 * 1) = 100
-        Array.length state.cartItems |> shouldBe 100
+        -- Should have 1 item (same item added 100 times)
+        Array.length state.cartItems |> shouldBe 1
         state.isCheckedOut |> shouldBe False
         state.version |> shouldBe 101 -- Opening event + 100 deposits
       it "returns error when fetching from non-existent entity type" \context -> do
@@ -383,17 +383,17 @@ spec newStoreAndFetcher = do
         state2.version |> shouldBe 3
         state3.version |> shouldBe 3
 
-        -- All should have same balance
-        Array.length state1.cartItems |> shouldBe 125
-        Array.length state2.cartItems |> shouldBe 125
-        Array.length state3.cartItems |> shouldBe 125
+        -- All should have same items (item was added then removed, so 0)
+        Array.length state1.cartItems |> shouldBe 0
+        Array.length state2.cartItems |> shouldBe 0
+        Array.length state3.cartItems |> shouldBe 0
 
       it "correctly handles closed account state" \context -> do
-        -- Insert events including account closure
+        -- Insert events: create cart, add item, then checkout
         let events =
               Array.fromLinkedList
                 [ CartCreated {entityId = def},
-                  ItemRemoved {entityId = def, itemId = def},
+                  ItemAdded {entityId = def, itemId = def, amount = 5},
                   CartCheckedOut {entityId = def}
                 ]
 
@@ -445,9 +445,9 @@ spec newStoreAndFetcher = do
             |> Task.map Maybe.getOrDie
             |> Task.mapError toText
 
-        -- Account should be closed
-        Array.length state.cartItems |> shouldBe 100
-        state.isCheckedOut |> shouldBe False
+        -- Cart should be checked out with 1 item
+        Array.length state.cartItems |> shouldBe 1
+        state.isCheckedOut |> shouldBe True
         state.version |> shouldBe 3
 
     describe "Error Scenarios" do
@@ -506,10 +506,10 @@ spec newStoreAndFetcher = do
             AsyncTask.waitFor fetch3
               |> Task.map Maybe.getOrDie
 
-          -- All fetches should return the same consistent state
-          Array.length state1.cartItems |> shouldBe 1000
-          Array.length state2.cartItems |> shouldBe 1000
-          Array.length state3.cartItems |> shouldBe 1000
+          -- All fetches should return the same consistent state (empty cart)
+          Array.length state1.cartItems |> shouldBe 0
+          Array.length state2.cartItems |> shouldBe 0
+          Array.length state3.cartItems |> shouldBe 0
           state1.version |> shouldBe 1
           state2.version |> shouldBe 1
           state3.version |> shouldBe 1
@@ -576,8 +576,8 @@ spec newStoreAndFetcher = do
           (state :: CartState) <- AsyncTask.waitFor fetchTask |> Task.map Maybe.getOrDie
 
           -- The fetch should see either the old or new state consistently
-          -- (could be 500 or 600 depending on timing, but should be consistent)
-          ((Array.length state.cartItems >= 500) && (Array.length state.cartItems <= 600)) |> shouldBe True
+          -- (could be 0 or 1 depending on timing, but should be consistent)
+          ((Array.length state.cartItems >= 0) && (Array.length state.cartItems <= 1)) |> shouldBe True
           state.isCheckedOut |> shouldBe False
 
     describe "Edge Cases" do
@@ -635,8 +635,8 @@ spec newStoreAndFetcher = do
               |> Task.map Maybe.getOrDie
               |> Task.mapError toText
 
-          -- Should have the event applied only once
-          Array.length state.cartItems |> shouldBe 100
+          -- Should have the event applied only once (empty cart)
+          Array.length state.cartItems |> shouldBe 0
           state.version |> shouldBe 1
 
         it "handles very long entity names" \context -> do
@@ -689,7 +689,7 @@ spec newStoreAndFetcher = do
                 context.fetcher.fetch context.entityName context.streamId
                   |> Task.mapError toText
                   |> Task.map Maybe.getOrDie
-              Array.length state.cartItems |> shouldBe 250
+              Array.length state.cartItems |> shouldBe 0
               state.version |> shouldBe 1
 
     describe "Performance Boundaries" do
@@ -779,5 +779,5 @@ performanceBoundariesWithCount newStoreAndFetcher eventCount = do
             |> Task.mapError toText
             |> Task.map Maybe.getOrDie
 
-        Array.length state.cartItems |> shouldBe eventCount
+        Array.length state.cartItems |> shouldBe 1 -- Same item added eventCount times
         state.version |> shouldBe (eventCount + 1) -- Opening + deposits
