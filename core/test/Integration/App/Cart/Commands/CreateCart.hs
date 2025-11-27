@@ -1,5 +1,3 @@
-{-# LANGUAGE OverloadedLists #-}
-
 module Integration.App.Cart.Commands.CreateCart (
   CreateCart (..),
   getEntityId,
