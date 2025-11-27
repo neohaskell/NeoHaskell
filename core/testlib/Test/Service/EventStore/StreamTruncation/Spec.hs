@@ -11,12 +11,12 @@ import Service.EventStore.Core qualified as EventStore
 import Stream qualified
 import Task qualified
 import Test
-import Test.Service.EventStore.Core (BankAccountEvent, newInsertion)
+import Test.Service.EventStore.Core (CartEvent, newInsertion)
 import Test.Service.EventStore.StreamTruncation.Context qualified as Context
 import Uuid qualified
 
 
-spec :: Task Text (EventStore BankAccountEvent) -> Spec Unit
+spec :: Task Text (EventStore CartEvent) -> Spec Unit
 spec newStore = do
   describe "Stream Truncation" do
     before (Context.initialize newStore) do

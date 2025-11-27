@@ -15,11 +15,11 @@ import Service.EventStore.Core qualified as EventStore
 import Stream qualified
 import Task qualified
 import Test
-import Test.Service.EventStore.Core (BankAccountEvent (..))
+import Test.Service.EventStore.Core (CartEvent (..))
 import Uuid qualified
 
 
-spec :: Task Text (EventStore BankAccountEvent) -> Spec Unit
+spec :: Task Text (EventStore CartEvent) -> Spec Unit
 spec newStore = do
   describe "Local Position Stamping" do
     it "stamps local positions when using payloadFromEvents helper" \_ -> do
@@ -29,7 +29,7 @@ spec newStore = do
 
       -- Create events using the payloadFromEvents helper (which sets localPosition to Nothing)
       let events =
-            Array.fromLinkedList [AccountOpened {initialBalance = 1000}, MoneyDeposited {amount = 10}, MoneyWithdrawn {amount = 5}]
+            Array.fromLinkedList [CartCreated {entityId = def}, ItemAdded {entityId = def, itemId = def, amount = 10}, ItemRemoved {entityId = def, itemId = def}]
       payload <- Event.payloadFromEvents entityName streamId events
 
       -- Verify that insertions don't have local positions set (this is the input state)
@@ -74,7 +74,7 @@ spec newStore = do
       _subscriptionId <- store.subscribeToStreamEvents entityName streamId handler |> Task.mapError toText
 
       -- Create and insert events using payloadFromEvents
-      let events = Array.fromLinkedList [AccountOpened {initialBalance = 2000}, MoneyDeposited {amount = 15}]
+      let events = Array.fromLinkedList [CartCreated {entityId = def}, ItemAdded {entityId = def, itemId = def, amount = 15}]
       payload <- Event.payloadFromEvents entityName streamId events
       _result <- store.insert payload |> Task.mapError toText
 
@@ -115,12 +115,12 @@ spec newStore = do
       streamId <- StreamId.new
 
       -- Insert first batch
-      let firstBatch = Array.fromLinkedList [AccountOpened {initialBalance = 500}, MoneyDeposited {amount = 100}]
+      let firstBatch = Array.fromLinkedList [CartCreated {entityId = def}, ItemAdded {entityId = def, itemId = def, amount = 100}]
       payload1 <- Event.payloadFromEvents entityName streamId firstBatch
       _result1 <- store.insert payload1 |> Task.mapError toText
 
       -- Insert second batch
-      let secondBatch = Array.fromLinkedList [MoneyDeposited {amount = 50}, MoneyWithdrawn {amount = 25}, MoneyDeposited {amount = 75}]
+      let secondBatch = Array.fromLinkedList [ItemAdded {entityId = def, itemId = def, amount = 50}, ItemRemoved {entityId = def, itemId = def}, ItemAdded {entityId = def, itemId = def, amount = 75}]
       payload2 <- Event.payloadFromEvents entityName streamId secondBatch
       _result2 <- store.insert payload2 |> Task.mapError toText
 
@@ -155,7 +155,7 @@ spec newStore = do
       let insertion1 =
             Event.Insertion
               { id = id1,
-                event = AccountOpened {initialBalance = 3000},
+                event = CartCreated {entityId = def},
                 metadata = metadata1 {EventMetadata.localPosition = Just (Event.StreamPosition 0)}
               }
 
@@ -175,7 +175,7 @@ spec newStore = do
       let insertion2 =
             Event.Insertion
               { id = id2,
-                event = MoneyDeposited {amount = 10},
+                event = ItemAdded {entityId = def, itemId = def, amount = 10},
                 metadata = metadata2 {EventMetadata.localPosition = Just (Event.StreamPosition 1)}
               }
 
@@ -216,7 +216,7 @@ spec newStore = do
       let insertion1 =
             Event.Insertion
               { id = id1,
-                event = MoneyDeposited {amount = 10},
+                event = ItemAdded {entityId = def, itemId = def, amount = 10},
                 metadata = metadata1 {EventMetadata.localPosition = Nothing}
               }
 
@@ -225,7 +225,7 @@ spec newStore = do
       let insertion2 =
             Event.Insertion
               { id = id2,
-                event = MoneyDeposited {amount = 20},
+                event = ItemAdded {entityId = def, itemId = def, amount = 20},
                 metadata = metadata2 {EventMetadata.localPosition = Nothing}
               }
 

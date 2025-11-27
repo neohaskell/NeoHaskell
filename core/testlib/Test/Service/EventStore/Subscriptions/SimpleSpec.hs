@@ -10,11 +10,11 @@ import Service.Event.StreamId qualified as StreamId
 import Service.EventStore (EventStore (..))
 import Task qualified
 import Test
-import Test.Service.EventStore.Core (BankAccountEvent, newInsertion)
+import Test.Service.EventStore.Core (CartEvent, newInsertion)
 import Uuid qualified
 
 
-spec :: Task Text (EventStore BankAccountEvent) -> Spec Unit
+spec :: Task Text (EventStore CartEvent) -> Spec Unit
 spec newStore = do
   describe "Event Store Subscriptions" do
     it "can subscribe and receive events" \_ -> do
@@ -35,7 +35,7 @@ spec newStore = do
               }
 
       -- Create a shared variable to collect received events
-      receivedEvents <- ConcurrentVar.containing (Array.empty :: Array (Event BankAccountEvent))
+      receivedEvents <- ConcurrentVar.containing (Array.empty :: Array (Event CartEvent))
 
       -- Define subscriber function that collects events
       let subscriber event = do

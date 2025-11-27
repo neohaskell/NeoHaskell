@@ -10,7 +10,7 @@ import Service.Event.StreamId qualified as StreamId
 import Service.EventStore (EventStore)
 import Service.EventStore.Core qualified as EventStore
 import Task qualified
-import Test.Service.EventStore.Core (BankAccountEvent, newInsertion)
+import Test.Service.EventStore.Core (CartEvent, newInsertion)
 import Uuid qualified
 
 
@@ -19,13 +19,13 @@ data Context = Context
     entity1Id :: Event.EntityName,
     entity2Id :: Event.EntityName,
     streamId :: Event.StreamId,
-    store :: EventStore BankAccountEvent,
-    generatedEvents :: Array (Event.InsertionPayload BankAccountEvent),
+    store :: EventStore CartEvent,
+    generatedEvents :: Array (Event.InsertionPayload CartEvent),
     positions :: Array Event.StreamPosition
   }
 
 
-initialize :: Task Text (EventStore BankAccountEvent) -> Int -> Task Text Context
+initialize :: Task Text (EventStore CartEvent) -> Int -> Task Text Context
 initialize newStore eventCount = do
   store <- newStore
   streamId <- StreamId.new

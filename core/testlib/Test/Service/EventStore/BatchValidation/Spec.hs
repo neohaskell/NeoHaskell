@@ -10,11 +10,11 @@ import Stream qualified
 import Task qualified
 import Test
 import Test.Service.EventStore.BatchValidation.Context qualified as Context
-import Test.Service.EventStore.Core (BankAccountEvent (..), newInsertion)
+import Test.Service.EventStore.Core (CartEvent (..), newInsertion)
 import Uuid qualified
 
 
-spec :: Task Text (EventStore BankAccountEvent) -> Spec Unit
+spec :: Task Text (EventStore CartEvent) -> Spec Unit
 spec newStore = do
   describe "Batch Operation Validation" do
     beforeAll (Context.initialize newStore) do

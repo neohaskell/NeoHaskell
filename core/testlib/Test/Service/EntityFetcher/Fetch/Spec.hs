@@ -14,13 +14,13 @@ import Service.EventStore (EventStore)
 import Service.EventStore.Core qualified as EventStore
 import Task qualified
 import Test
-import Test.Service.EntityFetcher.Core (BankAccountEvent (..), BankAccountState (..))
+import Test.Service.EntityFetcher.Core (CartEvent (..), CartState (..))
 import Test.Service.EntityFetcher.Fetch.Context qualified as Context
 import Uuid qualified
 
 
 spec ::
-  Task Text (EventStore BankAccountEvent, EntityFetcher BankAccountState BankAccountEvent) ->
+  Task Text (EventStore CartEvent, EntityFetcher CartState CartEvent) ->
   Spec Unit
 spec newStoreAndFetcher = do
   describe "Entity Fetch" do
@@ -51,7 +51,7 @@ spec newStoreAndFetcher = do
         let insertion =
               Event.Insertion
                 { id = eventId,
-                  event = AccountOpened {initialBalance = 100},
+                  event = CartCreated {entityId = def},
                   metadata = metadata'
                 }
         let payload =
@@ -74,18 +74,18 @@ spec newStoreAndFetcher = do
             |> Task.mapError toText
 
         -- Should have the correct state after applying one event
-        state.balance |> shouldBe 100
-        state.isOpen |> shouldBe True
+        Array.length state.cartItems |> shouldBe 100
+        state.isCheckedOut |> shouldBe False
         state.version |> shouldBe 1
 
       it "fetches an entity with multiple events and applies them in order" \context -> do
         -- Insert multiple events in sequence
         let events =
               Array.fromLinkedList
-                [ AccountOpened {initialBalance = 50},
-                  MoneyDeposited {amount = 100},
-                  MoneyWithdrawn {amount = 30},
-                  MoneyDeposited {amount = 20}
+                [ CartCreated {entityId = def},
+                  ItemAdded {entityId = def, itemId = def, amount = 100},
+                  ItemRemoved {entityId = def, itemId = def},
+                  ItemAdded {entityId = def, itemId = def, amount = 20}
                 ]
 
         insertions <-
@@ -137,8 +137,8 @@ spec newStoreAndFetcher = do
             |> Task.mapError toText
 
         -- Should have correct state: 50 + 100 - 30 + 20 = 140
-        state.balance |> shouldBe 140
-        state.isOpen |> shouldBe True
+        Array.length state.cartItems |> shouldBe 140
+        state.isCheckedOut |> shouldBe False
         state.version |> shouldBe 4
 
       it "fetches different entities independently" \context -> do
@@ -156,7 +156,7 @@ spec newStoreAndFetcher = do
         let insertion1 =
               Event.Insertion
                 { id = eventId1,
-                  event = AccountOpened {initialBalance = 100},
+                  event = CartCreated {entityId = def},
                   metadata = metadata1'
                 }
         let payload1 =
@@ -183,7 +183,7 @@ spec newStoreAndFetcher = do
         let insertion2 =
               Event.Insertion
                 { id = eventId2,
-                  event = AccountOpened {initialBalance = 500},
+                  event = CartCreated {entityId = def},
                   metadata = metadata2'
                 }
         let payload2 =
@@ -211,8 +211,8 @@ spec newStoreAndFetcher = do
             |> Task.mapError toText
 
         -- Should have different states
-        state1.balance |> shouldBe 100
-        state2.balance |> shouldBe 500
+        Array.length state1.cartItems |> shouldBe 100
+        Array.length state2.cartItems |> shouldBe 500
         state1.version |> shouldBe 1
         state2.version |> shouldBe 1
 
@@ -234,7 +234,7 @@ spec newStoreAndFetcher = do
                   Task.yield
                     Event.Insertion
                       { id = eventId,
-                        event = MoneyDeposited {amount = 1}, -- Deposit 1 each time
+                        event = ItemAdded {entityId = def, itemId = def, amount = 1}, -- Deposit 1 each time
                         metadata = metadata'
                       }
               )
@@ -251,7 +251,7 @@ spec newStoreAndFetcher = do
         let openInsertion =
               Event.Insertion
                 { id = openEventId,
-                  event = AccountOpened {initialBalance = 0},
+                  event = CartCreated {entityId = def},
                   metadata = openMetadata'
                 }
         let openPayload =
@@ -294,8 +294,8 @@ spec newStoreAndFetcher = do
             |> Task.mapError toText
 
         -- Should have correct balance: 0 + (100 * 1) = 100
-        state.balance |> shouldBe 100
-        state.isOpen |> shouldBe True
+        Array.length state.cartItems |> shouldBe 100
+        state.isCheckedOut |> shouldBe False
         state.version |> shouldBe 101 -- Opening event + 100 deposits
       it "returns error when fetching from non-existent entity type" \context -> do
         let wrongEntityName = Event.EntityName "NonExistentEntity"
@@ -315,9 +315,9 @@ spec newStoreAndFetcher = do
         -- Insert 3 events
         let events =
               Array.fromLinkedList
-                [ AccountOpened {initialBalance = 100},
-                  MoneyDeposited {amount = 50},
-                  MoneyWithdrawn {amount = 25}
+                [ CartCreated {entityId = def},
+                  ItemAdded {entityId = def, itemId = def, amount = 50},
+                  ItemRemoved {entityId = def, itemId = def}
                 ]
 
         insertions <-
@@ -384,17 +384,17 @@ spec newStoreAndFetcher = do
         state3.version |> shouldBe 3
 
         -- All should have same balance
-        state1.balance |> shouldBe 125
-        state2.balance |> shouldBe 125
-        state3.balance |> shouldBe 125
+        Array.length state1.cartItems |> shouldBe 125
+        Array.length state2.cartItems |> shouldBe 125
+        Array.length state3.cartItems |> shouldBe 125
 
       it "correctly handles closed account state" \context -> do
         -- Insert events including account closure
         let events =
               Array.fromLinkedList
-                [ AccountOpened {initialBalance = 200},
-                  MoneyWithdrawn {amount = 100},
-                  AccountClosed
+                [ CartCreated {entityId = def},
+                  ItemRemoved {entityId = def, itemId = def},
+                  CartCheckedOut {entityId = def}
                 ]
 
         insertions <-
@@ -446,8 +446,8 @@ spec newStoreAndFetcher = do
             |> Task.mapError toText
 
         -- Account should be closed
-        state.balance |> shouldBe 100
-        state.isOpen |> shouldBe False
+        Array.length state.cartItems |> shouldBe 100
+        state.isCheckedOut |> shouldBe False
         state.version |> shouldBe 3
 
     describe "Error Scenarios" do
@@ -476,7 +476,7 @@ spec newStoreAndFetcher = do
           let insertion =
                 Event.Insertion
                   { id = eventId,
-                    event = AccountOpened {initialBalance = 1000},
+                    event = CartCreated {entityId = def},
                     metadata = metadata'
                   }
           let payload =
@@ -507,9 +507,9 @@ spec newStoreAndFetcher = do
               |> Task.map Maybe.getOrDie
 
           -- All fetches should return the same consistent state
-          state1.balance |> shouldBe 1000
-          state2.balance |> shouldBe 1000
-          state3.balance |> shouldBe 1000
+          Array.length state1.cartItems |> shouldBe 1000
+          Array.length state2.cartItems |> shouldBe 1000
+          Array.length state3.cartItems |> shouldBe 1000
           state1.version |> shouldBe 1
           state2.version |> shouldBe 1
           state3.version |> shouldBe 1
@@ -526,7 +526,7 @@ spec newStoreAndFetcher = do
           let insertion =
                 Event.Insertion
                   { id = eventId,
-                    event = AccountOpened {initialBalance = 500},
+                    event = CartCreated {entityId = def},
                     metadata = metadata'
                   }
           let payload =
@@ -557,7 +557,7 @@ spec newStoreAndFetcher = do
           let insertion2 =
                 Event.Insertion
                   { id = eventId2,
-                    event = MoneyDeposited {amount = 100},
+                    event = ItemAdded {entityId = def, itemId = def, amount = 100},
                     metadata = metadata2'
                   }
           let payload2 =
@@ -573,12 +573,12 @@ spec newStoreAndFetcher = do
             |> discard
 
           -- Wait for fetch to complete
-          (state :: BankAccountState) <- AsyncTask.waitFor fetchTask |> Task.map Maybe.getOrDie
+          (state :: CartState) <- AsyncTask.waitFor fetchTask |> Task.map Maybe.getOrDie
 
           -- The fetch should see either the old or new state consistently
           -- (could be 500 or 600 depending on timing, but should be consistent)
-          ((state.balance >= 500) && (state.balance <= 600)) |> shouldBe True
-          state.isOpen |> shouldBe True
+          ((Array.length state.cartItems >= 500) && (Array.length state.cartItems <= 600)) |> shouldBe True
+          state.isCheckedOut |> shouldBe False
 
     describe "Edge Cases" do
       before (Context.initialize newStoreAndFetcher) do
@@ -607,7 +607,7 @@ spec newStoreAndFetcher = do
           let insertion =
                 Event.Insertion
                   { id = eventId,
-                    event = AccountOpened {initialBalance = 100},
+                    event = CartCreated {entityId = def},
                     metadata = metadata'
                   }
           let payload =
@@ -636,7 +636,7 @@ spec newStoreAndFetcher = do
               |> Task.mapError toText
 
           -- Should have the event applied only once
-          state.balance |> shouldBe 100
+          Array.length state.cartItems |> shouldBe 100
           state.version |> shouldBe 1
 
         it "handles very long entity names" \context -> do
@@ -667,7 +667,7 @@ spec newStoreAndFetcher = do
           let insertion =
                 Event.Insertion
                   { id = eventId,
-                    event = AccountOpened {initialBalance = 250},
+                    event = CartCreated {entityId = def},
                     metadata = metadata'
                   }
           let payload =
@@ -689,7 +689,7 @@ spec newStoreAndFetcher = do
                 context.fetcher.fetch context.entityName context.streamId
                   |> Task.mapError toText
                   |> Task.map Maybe.getOrDie
-              state.balance |> shouldBe 250
+              Array.length state.cartItems |> shouldBe 250
               state.version |> shouldBe 1
 
     describe "Performance Boundaries" do
@@ -701,7 +701,7 @@ spec newStoreAndFetcher = do
 
 
 performanceBoundariesWithCount ::
-  Task Text (EventStore BankAccountEvent, EntityFetcher BankAccountState BankAccountEvent) ->
+  Task Text (EventStore CartEvent, EntityFetcher CartState CartEvent) ->
   Int ->
   Spec Unit
 performanceBoundariesWithCount newStoreAndFetcher eventCount = do
@@ -719,7 +719,7 @@ performanceBoundariesWithCount newStoreAndFetcher eventCount = do
         let openInsertion =
               Event.Insertion
                 { id = openEventId,
-                  event = AccountOpened {initialBalance = 0},
+                  event = CartCreated {entityId = def},
                   metadata = openMetadata'
                 }
         let openPayload =
@@ -749,7 +749,7 @@ performanceBoundariesWithCount newStoreAndFetcher eventCount = do
                   Task.yield
                     Event.Insertion
                       { id = eventId,
-                        event = MoneyDeposited {amount = 1},
+                        event = ItemAdded {entityId = def, itemId = def, amount = 1},
                         metadata = metadata'
                       }
               )
@@ -779,5 +779,5 @@ performanceBoundariesWithCount newStoreAndFetcher eventCount = do
             |> Task.mapError toText
             |> Task.map Maybe.getOrDie
 
-        state.balance |> shouldBe eventCount
+        Array.length state.cartItems |> shouldBe eventCount
         state.version |> shouldBe (eventCount + 1) -- Opening + deposits
