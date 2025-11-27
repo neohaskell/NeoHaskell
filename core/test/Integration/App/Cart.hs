@@ -1,11 +1,11 @@
 module Integration.App.Cart (
-  model,
+  serviceDefinition,
 ) where
 
 import Core
 import Integration.App.Cart.Commands.CreateCart (CreateCart)
 
 
-model :: Model _ Unit
-model = do
+serviceDefinition :: ServiceDefinition _ Unit
+serviceDefinition = do
   command @CreateCart

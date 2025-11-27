@@ -28,8 +28,8 @@ import Record as Reexported (KnownHash (..), Record)
 import Result as Reexported (Result (..))
 import Service.Command as Reexported (Command (..), CommandResult (..), EntityOf, EventOf, NameOf)
 import Service.Event as Reexported (InsertionType (..), StreamId, ToStreamId (..))
-import Service.Model as Reexported (
-  Model (..),
+import Service.ServiceDefinition as Reexported (
+  ServiceDefinition (..),
   command,
   extract,
   yield,

@@ -153,8 +153,8 @@ library
     Service.EventStore.Postgres.Internal.PostgresEventRecord
     Service.EventStore.Postgres.Internal.Sessions
     Service.EventStore.Postgres.Internal.SubscriptionStore
-    Service.Model
-    Service.Model.Core
+    Service.ServiceDefinition
+    Service.ServiceDefinition.Core
     Set
     Stream
     Subprocess
@@ -246,7 +246,7 @@ test-suite nhcore-test
     StreamSpec
     Test.AppSpec.AppSpecSpec
     Test.AppSpec.VerifySpec
-    Test.ModelSpec
+    Test.ServiceDefinitionSpec
 
   -- other-extensions:
   type: exitcode-stdio-1.0
