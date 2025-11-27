@@ -34,11 +34,11 @@ common common_cfg
     directory,
     file-embed,
     ghc-prim,
+    hashable,
     hasql,
     hasql-notifications,
     hasql-pool,
     hasql-th,
-    hashable,
     hspec,
     http-conduit,
     large-anon,
@@ -246,7 +246,6 @@ test-suite nhcore-test
     StreamSpec
     Test.AppSpec.AppSpecSpec
     Test.AppSpec.VerifySpec
-    Test.Model.TypeLevelSpec
     Test.ModelSpec
 
   -- other-extensions:
