@@ -43,7 +43,7 @@ class Command command where
 
 
   type EntityIdType command :: Type
-  type EntityIdType command = Text
+  type EntityIdType command = Uuid
 
 
   getEntityIdImpl :: GetEntityIdFunction (IsMultiTenant command) command (EntityIdType command)

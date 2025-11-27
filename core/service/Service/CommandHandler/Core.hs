@@ -15,11 +15,10 @@ import Service.EntityFetcher.Core (EntityFetcher)
 import Service.EntityFetcher.Core qualified as EntityFetcher
 import Service.Event (EntityName, InsertionPayload (..))
 import Service.Event qualified as Event
-import Service.Event.StreamId qualified as StreamId
 import Service.EventStore.Core (EventStore)
 import Service.EventStore.Core qualified as EventStore
 import Task qualified
-import ToText qualified
+import Text qualified
 import Uuid qualified
 
 
@@ -53,7 +52,10 @@ execute ::
   ( Command command,
     commandEntity ~ EntityOf command,
     commandEvent ~ EventOf commandEntity,
+    HasField "entityId" commandEvent (EntityIdType command),
     ToStreamId (EntityIdType command),
+    Eq (EntityIdType command),
+    Show (EntityIdType command),
     IsMultiTenant command ~ 'False
   ) =>
   EventStore commandEvent ->
@@ -137,12 +139,21 @@ execute eventStore entityFetcher entityName command = do
                 finalStreamId <- case currentStreamId of
                   Just sid -> Task.yield sid
                   Nothing -> do
-                    -- Must extract from first event (for new entities)
-                    -- This requires the event to have a field we can use as stream ID
-                    -- For now, we'll generate a new UUID and convert to StreamId
-                    uuid <- Uuid.generate
-                    let streamId = StreamId.fromText (ToText.toText uuid)
-                    Task.yield streamId
+                    let eventEntityIds = events |> Array.map (\e -> e.entityId)
+                    -- Check if all entity IDs are the same
+                    case Array.first eventEntityIds of
+                      Nothing -> do
+                        Task.throw "No events to extract entity ID from"
+                      Just firstId -> do
+                        let matchingCount = eventEntityIds |> Array.takeIf (\id -> id == firstId) |> Array.length
+                        let totalCount = Array.length eventEntityIds
+                        if matchingCount == totalCount
+                          then do
+                            let streamId = toStreamId firstId
+                            Task.yield streamId
+                          else do
+                            let idsText = eventEntityIds |> Array.map toText |> Text.joinWith ", "
+                            Task.throw [fmt|Events have different entity IDs: #{idsText}|]
 
                 -- Build insertion payload
                 payload <-

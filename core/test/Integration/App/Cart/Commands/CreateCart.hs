@@ -10,13 +10,14 @@ import Core
 import Decision qualified
 import Integration.App.Cart.Core
 import Service.CommandHandler.Core (deriveCommand)
+import Uuid qualified
 
 
 data CreateCart = CreateCart
   deriving (Generic, Typeable)
 
 
-getEntityId :: CreateCart -> Maybe Text
+getEntityId :: CreateCart -> Maybe Uuid
 getEntityId _ = Nothing
 
 
@@ -26,8 +27,8 @@ decide _ entity = do
     Just _ ->
       Decision.reject "Cart already exists!"
     Nothing -> do
-      cartCreatedId <- Decision.generateUuid
-      Decision.acceptNew [CartCreated {cartCreatedId}]
+      id <- Decision.generateUuid
+      Decision.acceptNew [CartCreated {entityId = Uuid.toText id}]
 
 
 type instance EntityOf CreateCart = CartEntity

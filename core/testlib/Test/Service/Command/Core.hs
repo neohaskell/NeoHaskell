@@ -79,10 +79,10 @@ instance Json.FromJSON CartEntity
 
 
 data CartEvent
-  = CartCreated {cartId :: Uuid}
-  | ItemAdded {cartId :: Uuid, itemId :: Uuid, amount :: Int}
-  | ItemRemoved {cartId :: Uuid, itemId :: Uuid}
-  | CartCheckedOut {cartId :: Uuid}
+  = CartCreated {entityId :: Uuid}
+  | ItemAdded {entityId :: Uuid, itemId :: Uuid, amount :: Int}
+  | ItemRemoved {entityId :: Uuid, itemId :: Uuid}
+  | CartCheckedOut {entityId :: Uuid}
   deriving (Eq, Show, Ord, Generic)
 
 
@@ -107,9 +107,9 @@ initialCartState =
 applyCartEvent :: CartEvent -> CartEntity -> CartEntity
 applyCartEvent event state = do
   case event of
-    CartCreated {cartId} ->
+    CartCreated {entityId} ->
       CartEntity
-        { cartId = cartId,
+        { cartId = entityId,
           cartItems = Array.empty,
           cartCheckedOut = False
         }
@@ -149,7 +149,7 @@ type instance EntityOf AddItemToCart = CartEntity
 
 
 instance Command AddItemToCart where
-  getEntityIdImpl cmd = cmd.cartId |> Uuid.toText |> Just
+  getEntityIdImpl cmd = cmd.cartId |> Just
 
 
   decideImpl :: AddItemToCart -> Maybe CartEntity -> Decision CartEvent
@@ -162,7 +162,7 @@ instance Command AddItemToCart where
           then
             Decision.reject "Cannot add items to a checked out cart"
           else
-            ItemAdded {cartId = cart.cartId, itemId = cmd.itemId, amount = cmd.amount}
+            ItemAdded {entityId = cart.cartId, itemId = cmd.itemId, amount = cmd.amount}
               |> Array.wrap
               |> Decision.acceptExisting
 
@@ -171,7 +171,7 @@ type instance EntityOf RemoveItemFromCart = CartEntity
 
 
 instance Command RemoveItemFromCart where
-  getEntityIdImpl cmd = cmd.cartId |> Uuid.toText |> Just
+  getEntityIdImpl cmd = cmd.cartId |> Just
 
 
   decideImpl cmd entity =
@@ -186,7 +186,7 @@ instance Command RemoveItemFromCart where
             if not hasItem
               then Decision.reject "Item not in cart"
               else do
-                let event = ItemRemoved {cartId = cart.cartId, itemId = cmd.itemId}
+                let event = ItemRemoved {entityId = cart.cartId, itemId = cmd.itemId}
                 Array.fromLinkedList [event]
                   |> Decision.acceptExisting
 
@@ -195,7 +195,7 @@ type instance EntityOf CheckoutCart = CartEntity
 
 
 instance Command CheckoutCart where
-  getEntityIdImpl cmd = cmd.cartId |> Uuid.toText |> Just
+  getEntityIdImpl cmd = cmd.cartId |> Just
 
 
   decideImpl _ entity =
@@ -209,6 +209,6 @@ instance Command CheckoutCart where
             if Array.isEmpty cart.cartItems
               then Decision.reject "Cannot checkout empty cart"
               else do
-                let event = CartCheckedOut {cartId = cart.cartId}
+                let event = CartCheckedOut {entityId = cart.cartId}
                 Array.fromLinkedList [event]
                   |> Decision.acceptExisting
