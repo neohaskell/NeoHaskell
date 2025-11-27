@@ -44,8 +44,42 @@ determineMultiTenancyMode maybeMultiTenancy = do
 
 checkTypeContainsUuid :: String -> Bool
 checkTypeContainsUuid typeStr = do
-  let words = typeStr |> GhcList.words
-  "Uuid.Uuid" `GhcList.elem` words
+  -- Split by "->" to get parts of the function signature
+  let parts = typeStr |> splitOn "->"
+  -- Check if Uuid appears in any part BEFORE the last part (which is the return type)
+  -- We want to check if Uuid is a parameter, not in the return type
+  case parts of
+    [] -> False
+    [_] -> False -- No arrows, so no parameters
+    _ -> do
+      -- Get all parts except the last one (return type)
+      let parameterParts = parts |> GhcList.init
+      -- Check if any parameter part contains "Uuid"
+      parameterParts
+        |> GhcList.any (\part -> "Uuid" `isInfixOf` part)
+
+
+-- Helper function to split string by a delimiter
+splitOn :: String -> String -> [String]
+splitOn delimiter str = do
+  let go acc current remaining =
+        case remaining of
+          [] -> GhcList.reverse (GhcList.reverse current : acc)
+          c : rest -> do
+            if GhcList.take (GhcList.length delimiter) remaining == delimiter
+              then go (GhcList.reverse current : acc) [] (GhcList.drop (GhcList.length delimiter) remaining)
+              else go acc (c : current) rest
+  go [] [] str
+
+
+-- Helper function to check if a string is an infix of another
+isInfixOf :: String -> String -> Bool
+isInfixOf needle haystack = do
+  let go [] _ = True
+      go _ [] = False
+      go n h@(_ : hs) =
+        (GhcList.take (GhcList.length n) h == n) || go n hs
+  go needle haystack
 
 
 buildErrorMessage ::
