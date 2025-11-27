@@ -1,4 +1,5 @@
 module Service.ServiceDefinition.Core (
+  Service,
   ServiceDefinition (..),
   command,
   extract,
@@ -20,6 +21,9 @@ import Default qualified
 import Record (Record)
 import Record qualified
 import Service.Command (NameOf)
+
+
+type Service commands = ServiceDefinition commands Unit
 
 
 -- | ServiceDefinition represents an event-sourced application service definition
@@ -56,7 +60,9 @@ applyValue fn x = fn <*> x
 
 
 -- | Sequentially compose two ServiceDefinitions, passing the value from the first as an argument to the second
-bindValue :: forall cmds1 cmds2 a b. ServiceDefinition cmds1 a -> (a -> ServiceDefinition cmds2 b) -> ServiceDefinition (Record.Merge cmds1 cmds2) b
+bindValue ::
+  forall cmds1 cmds2 a b.
+  ServiceDefinition cmds1 a -> (a -> ServiceDefinition cmds2 b) -> ServiceDefinition (Record.Merge cmds1 cmds2) b
 bindValue m f = do
   let result = f m.value
   ServiceDefinition
@@ -66,7 +72,9 @@ bindValue m f = do
 
 
 -- | Combine two ServiceDefinitions, keeping the second's value and merging their metadata
-appendServiceDefinition :: forall cmds1 cmds2 a. ServiceDefinition cmds1 a -> ServiceDefinition cmds2 a -> ServiceDefinition (Record.Merge cmds1 cmds2) a
+appendServiceDefinition ::
+  forall cmds1 cmds2 a.
+  ServiceDefinition cmds1 a -> ServiceDefinition cmds2 a -> ServiceDefinition (Record.Merge cmds1 cmds2) a
 appendServiceDefinition m1 m2 =
   ServiceDefinition
     { value = m2.value,
@@ -104,7 +112,9 @@ return = pure
 
 
 -- | Flatten a nested ServiceDefinition structure
-join :: forall cmds1 cmds2 a. ServiceDefinition cmds1 (ServiceDefinition cmds2 a) -> ServiceDefinition (Record.Merge cmds1 cmds2) a
+join ::
+  forall cmds1 cmds2 a.
+  ServiceDefinition cmds1 (ServiceDefinition cmds2 a) -> ServiceDefinition (Record.Merge cmds1 cmds2) a
 join m = bindValue m (\innerModel -> innerModel)
 
 
