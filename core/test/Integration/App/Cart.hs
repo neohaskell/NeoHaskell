@@ -10,7 +10,4 @@ import Service.Model.Core qualified as Model
 
 model :: Model _ Unit
 model = Model.do
-  entity @CartEntity
-  events @CartEvent
-  -- Commands
   command @CreateCart #CreateCart

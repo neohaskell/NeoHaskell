@@ -1,13 +1,7 @@
-{-# LANGUAGE AllowAmbiguousTypes #-}
-
 module Service.Model.Core (
   Model (..),
-  entity,
-  events,
   command,
   extract,
-  hasEntity,
-  hasEvents,
   yield,
   (>>=),
   pure,
@@ -25,20 +19,13 @@ import Default (Default)
 import Default qualified
 import Record (Record)
 import Record qualified
-import Set (Set)
-import Set qualified
-import Text (Text)
-import Type.Reflection (Typeable)
-import TypeName qualified
 
 
 -- | Model represents an event-sourced application model definition
--- It tracks entities, events, and commands in a monadic DSL
+-- It tracks commands in a monadic DSL
 -- The first type parameter is a type-level list tracking command types
 data Model (commands :: Record.Row Type) a = Model
   { value :: a,
-    entities :: Set Text,
-    eventTypes :: Set Text,
     commandNames :: Record commands
   }
   deriving (Generic)
@@ -49,8 +36,6 @@ fmap :: forall cmds a b. (a -> b) -> Model cmds a -> Model cmds b
 fmap f m =
   Model
     { value = f m.value,
-      entities = m.entities,
-      eventTypes = m.eventTypes,
       commandNames = m.commandNames
     }
 
@@ -60,8 +45,6 @@ pureValue :: forall a. a -> Model '[] a
 pureValue a =
   Model
     { value = a,
-      entities = Set.empty,
-      eventTypes = Set.empty,
       commandNames = Record.empty
     }
 
@@ -77,8 +60,6 @@ bindValue m f = do
   let result = f m.value
   Model
     { value = result.value,
-      entities = m.entities |> Set.union result.entities,
-      eventTypes = m.eventTypes |> Set.union result.eventTypes,
       commandNames = Record.merge m.commandNames result.commandNames
     }
 
@@ -88,8 +69,6 @@ appendModel :: forall cmds1 cmds2 a. Model cmds1 a -> Model cmds2 a -> Model (Re
 appendModel m1 m2 =
   Model
     { value = m2.value,
-      entities = m1.entities |> Set.union m2.entities,
-      eventTypes = m1.eventTypes |> Set.union m2.eventTypes,
       commandNames = Record.merge m1.commandNames m2.commandNames
     }
 
@@ -99,8 +78,6 @@ emptyModel :: forall a. (Default a) => Model '[] a
 emptyModel =
   Model
     { value = Default.def,
-      entities = Set.empty,
-      eventTypes = Set.empty,
       commandNames = Record.empty
     }
 
@@ -135,32 +112,6 @@ yield :: forall a. a -> Model '[] a
 yield a =
   Model
     { value = a,
-      entities = Set.empty,
-      eventTypes = Set.empty,
-      commandNames = Record.empty
-    }
-
-
--- | Register an entity type in the model
-entity :: forall (entityType :: Type). (Typeable entityType) => Model '[] Unit
-entity = do
-  let typeName = TypeName.reflect @entityType
-  Model
-    { value = unit,
-      entities = Set.singleton typeName,
-      eventTypes = Set.empty,
-      commandNames = Record.empty
-    }
-
-
--- | Register event types in the model
-events :: forall (eventType :: Type). (Typeable eventType) => Model '[] Unit
-events = do
-  let typeName = TypeName.reflect @eventType
-  Model
-    { value = unit,
-      entities = Set.empty,
-      eventTypes = Set.singleton typeName,
       commandNames = Record.empty
     }
 
@@ -176,8 +127,6 @@ command ::
 command field = do
   Model
     { value = unit,
-      entities = Set.empty,
-      eventTypes = Set.empty,
       commandNames =
         Record.insert field CommandDefinition Record.empty
     }
@@ -186,17 +135,3 @@ command field = do
 -- | Extract the value from a Model
 extract :: forall cmds a. Model cmds a -> a
 extract m = m.value
-
-
--- | Check if an entity type is registered in the model
-hasEntity :: forall (entityType :: Type) cmds a. (Typeable entityType) => Model cmds a -> Bool
-hasEntity m = do
-  let typeName = TypeName.reflect @entityType
-  Set.member typeName m.entities
-
-
--- | Check if an event type is registered in the model
-hasEvents :: forall (eventType :: Type) cmds a. (Typeable eventType) => Model cmds a -> Bool
-hasEvents m = do
-  let typeName = TypeName.reflect @eventType
-  Set.member typeName m.eventTypes

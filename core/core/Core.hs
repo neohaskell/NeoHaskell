@@ -31,11 +31,7 @@ import Service.Event as Reexported (InsertionType (..), StreamId, ToStreamId (..
 import Service.Model as Reexported (
   Model (..),
   command,
-  entity,
-  events,
   extract,
-  hasEntity,
-  hasEvents,
   yield,
  )
 import Task as Reexported (Task)
