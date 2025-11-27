@@ -42,8 +42,8 @@ determineMultiTenancyMode maybeMultiTenancy = do
     Nothing -> pure MustNotHaveUuid
 
 
-checkTypeContainsUuid :: String -> Bool
-checkTypeContainsUuid typeStr = do
+checkTypeContainsUuidParam :: String -> Bool
+checkTypeContainsUuidParam typeStr = do
   -- Split by "->" to get parts of the function signature
   let parts = typeStr |> splitOn "->"
   -- Check if Uuid appears in any part BEFORE the last part (which is the return type)
@@ -57,6 +57,30 @@ checkTypeContainsUuid typeStr = do
       -- Check if any parameter part contains "Uuid"
       parameterParts
         |> GhcList.any (\part -> "Uuid" `isInfixOf` part)
+
+
+-- Extract the return type from a function signature
+extractReturnType :: String -> String
+extractReturnType typeStr = do
+  let parts = typeStr |> splitOn "->"
+  case parts of
+    [] -> ""
+    _ -> parts |> GhcList.last |> GhcList.words |> GhcList.unwords
+
+
+-- Check if the return type matches the expected entity ID type
+checkReturnTypeMatches :: String -> String -> Bool
+checkReturnTypeMatches typeStr expectedIdType = do
+  let returnType = extractReturnType typeStr
+  -- The return type should be "Maybe <EntityIdType>"
+  -- We normalize both by removing module prefixes for comparison
+  let normalizeType t =
+        t
+          |> GhcList.words
+          |> GhcList.map (\w -> w |> splitOn "." |> GhcList.last)
+          |> GhcList.unwords
+  let expectedReturn = "Maybe " ++ expectedIdType
+  normalizeType returnType == normalizeType expectedReturn
 
 
 -- Helper function to split string by a delimiter
@@ -119,25 +143,56 @@ Current signature:
 validateFunctionSignature ::
   FunctionInfo ->
   MultiTenancyMode ->
-  TH.Name ->
+  String ->
   TH.Q ()
-validateFunctionSignature funcInfo mode _commandName = do
+validateFunctionSignature funcInfo mode expectedEntityIdType = do
   functionInfo <- TH.reify funcInfo.thName
   case functionInfo of
     TH.VarI _ functionType _ -> do
       let typeStr = THPpr.pprint functionType
-      let hasUuid = checkTypeContainsUuid typeStr
-      let isValid = case mode of
-            MustHaveUuid -> hasUuid
-            MustNotHaveUuid -> not hasUuid
-      if isValid
+      let hasUuidParam = checkTypeContainsUuidParam typeStr
+
+      -- Check multi-tenancy parameter requirement
+      let paramValid = case mode of
+            MustHaveUuid -> hasUuidParam
+            MustNotHaveUuid -> not hasUuidParam
+
+      -- Check return type matches (only for getEntityId, not decide)
+      let returnTypeValid =
+            (funcInfo.functionName != "getEntityId") || checkReturnTypeMatches typeStr expectedEntityIdType
+
+      if paramValid && returnTypeValid
         then pure ()
         else do
           let expectedSig = case mode of
                 MustHaveUuid -> funcInfo.expectedSignatureWithUuid
                 MustNotHaveUuid -> funcInfo.expectedSignatureWithoutUuid
-          let errorMsg = buildErrorMessage funcInfo.functionName expectedSig typeStr mode
-          MonadFail.fail errorMsg
+
+          if not returnTypeValid
+            then do
+              let actualReturn = extractReturnType typeStr
+              let expectedReturn = "Maybe " ++ expectedEntityIdType
+              let funcName = funcInfo.functionName
+              MonadFail.fail
+                [fmt|
+ERROR: '#{funcName}' has incorrect return type.
+
+Expected return type:
+  #{expectedReturn}
+
+Current return type:
+  #{actualReturn}
+
+The return type must be 'Maybe #{expectedEntityIdType}' because by default:
+  type instance EntityIdType YourCommand = #{expectedEntityIdType}
+
+If you want to use a different entity ID type, you can define:
+  type instance EntityIdType YourCommand = YourIdType
+|]
+            else do
+              let funcName = funcInfo.functionName
+              let errorMsg = buildErrorMessage funcName expectedSig typeStr mode
+              MonadFail.fail errorMsg
     _ -> pure ()
 
 
@@ -334,8 +389,8 @@ For more information on what commands and entities are, take a look at the docs:
             expectedSignatureWithoutUuid = "decide :: " ++ commandNameStr ++ " -> Maybe " ++ entityTypeStr ++ " -> Decision event"
           }
 
-  validateFunctionSignature getEntityIdFuncInfo multiTenancyMode someName
-  validateFunctionSignature decideFuncInfo multiTenancyMode someName
+  validateFunctionSignature getEntityIdFuncInfo multiTenancyMode entityIdTypeStr
+  validateFunctionSignature decideFuncInfo multiTenancyMode entityIdTypeStr
 
   let multiTenancyDecl = case maybeMultiTenancy of
         Just multiTenancyType ->
