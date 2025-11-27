@@ -231,28 +231,28 @@ edgeCaseSpecs = do
   describe "Event Application" do
     before Context.initialize do
       it "cart state evolves correctly through multiple events" \context -> do
-        let cartCreated = CartCreated {cartId = context.cartId}
+        let cartCreated = CartCreated {entityId = context.cartId}
         let state1 = applyCartEvent cartCreated initialCartState
 
         state1.cartId |> shouldBe context.cartId
         Array.length state1.cartItems |> shouldBe 0
 
-        let itemAdded1 = ItemAdded {cartId = context.cartId, itemId = context.itemId1, amount = 3}
+        let itemAdded1 = ItemAdded {entityId = context.cartId, itemId = context.itemId1, amount = 3}
         let state2 = applyCartEvent itemAdded1 state1
 
         Array.length state2.cartItems |> shouldBe 1
 
-        let itemAdded2 = ItemAdded {cartId = context.cartId, itemId = context.itemId2, amount = 5}
+        let itemAdded2 = ItemAdded {entityId = context.cartId, itemId = context.itemId2, amount = 5}
         let state3 = applyCartEvent itemAdded2 state2
 
         Array.length state3.cartItems |> shouldBe 2
 
-        let itemRemoved = ItemRemoved {cartId = context.cartId, itemId = context.itemId1}
+        let itemRemoved = ItemRemoved {entityId = context.cartId, itemId = context.itemId1}
         let state4 = applyCartEvent itemRemoved state3
 
         Array.length state4.cartItems |> shouldBe 1
 
-        let checkedOut = CartCheckedOut {cartId = context.cartId}
+        let checkedOut = CartCheckedOut {entityId = context.cartId}
         let state5 = applyCartEvent checkedOut state4
 
         state5.cartCheckedOut |> shouldBe True

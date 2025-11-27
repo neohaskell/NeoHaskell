@@ -177,6 +177,54 @@ Please ensure your type instance follows this format:
   type instance EntityOf #{commandNameStr} = YourEntityType
 |]
 
+  -- Try to resolve the EntityIdType type instance for this command
+  -- EntityIdType is an associated type family in the Command class
+  -- Look up EntityIdType associated type family
+  entityIdTypeFamilyName <- TH.lookupTypeName "EntityIdType"
+
+  entityIdTypeInstances <-
+    case entityIdTypeFamilyName of
+      Nothing ->
+        -- If we can't find EntityIdType, default to Uuid
+        pure []
+      Just typeFamilyName -> TH.reifyInstances typeFamilyName [TH.ConT someName]
+
+  entityIdType <-
+    case entityIdTypeInstances of
+      [] -> do
+        -- No instance defined, use the default type Uuid
+        maybeUuidType <- TH.lookupTypeName "Uuid"
+        case maybeUuidType of
+          Just uuidType -> pure uuidType
+          Nothing ->
+            MonadFail.fail
+              [fmt|
+ERROR: Uuid type not found and no EntityIdType instance defined.
+
+Please ensure you have `import Core` at the top of your module.
+|]
+      (TH.TySynInstD (TH.TySynEqn _ _ entityIdTypeExpr) : _) ->
+        case entityIdTypeExpr of
+          TH.ConT name -> pure name
+          _ ->
+            MonadFail.fail
+              [fmt|
+ERROR: EntityIdType instance for '#{commandNameStr}' must be a concrete type.
+
+The EntityIdType should be a specific type, not a type variable or complex type expression.
+
+Current definition resolves to: #{THPpr.pprint entityIdTypeExpr}
+
+Please ensure your EntityIdType uses a concrete type like Uuid or Text.
+|]
+      _ ->
+        MonadFail.fail
+          [fmt|
+ERROR: Unexpected EntityIdType instance format for '#{commandNameStr}'.
+|]
+
+  let entityIdTypeStr = TH.nameBase entityIdType
+
   getEntityId <-
     maybeGetEntityId
       |> orError
@@ -188,7 +236,7 @@ This ID is used to fetch the current state of the entity from the event store.
 
 Please add the following function to your module:
 
-  getEntityId :: #{commandNameStr} -> Maybe Text
+  getEntityId :: #{commandNameStr} -> Maybe #{entityIdTypeStr}
   getEntityId command = ...
 
 If your command creates a new entity (no existing ID), return Nothing:
@@ -231,16 +279,6 @@ For more information on what commands and entities are, take a look at the docs:
 |]
 
   maybeMultiTenancy <- TH.lookupTypeName "MultiTenancy"
-  commandClassName <-
-    TH.lookupTypeName "Command"
-      >>= orError
-        [fmt|
-ERROR: Command type class not found.
-
-Please ensure you have `import Core` at the top of your module.
-Service.Command.Core. Please ensure you have imported the necessary modules.
-|]
-
   multiTenancyMode <- determineMultiTenancyMode maybeMultiTenancy
 
   let entityTypeStr = TH.nameBase entityType
@@ -249,8 +287,8 @@ Service.Command.Core. Please ensure you have imported the necessary modules.
         FunctionInfo
           { functionName = "getEntityId",
             thName = getEntityId,
-            expectedSignatureWithUuid = "getEntityId :: Uuid -> " ++ commandNameStr ++ " -> Maybe Text",
-            expectedSignatureWithoutUuid = "getEntityId :: " ++ commandNameStr ++ " -> Maybe Text"
+            expectedSignatureWithUuid = "getEntityId :: Uuid -> " ++ commandNameStr ++ " -> Maybe " ++ entityIdTypeStr,
+            expectedSignatureWithoutUuid = "getEntityId :: " ++ commandNameStr ++ " -> Maybe " ++ entityIdTypeStr
           }
 
   let decideFuncInfo =
@@ -288,6 +326,16 @@ Please ensure you have `import Core` at the top of your module.
       >>= orError
         [fmt|
 ERROR: KnownHash type class not found.
+
+Please ensure you have `import Core` at the top of your module.
+|]
+
+  -- Lookup Command class for instance generation
+  commandClassName <-
+    TH.lookupTypeName "Command"
+      >>= orError
+        [fmt|
+ERROR: Command type class not found.
 
 Please ensure you have `import Core` at the top of your module.
 |]

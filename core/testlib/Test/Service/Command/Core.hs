@@ -14,7 +14,7 @@ import Array qualified
 import Core
 import Decision qualified
 import Json qualified
-import Uuid qualified
+import Uuid ()
 
 
 -- ============================================================================

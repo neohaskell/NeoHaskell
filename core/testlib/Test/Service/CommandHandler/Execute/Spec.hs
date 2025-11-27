@@ -49,7 +49,7 @@ basicExecutionSpecs newCartStoreAndFetcher = do
   before (Context.initialize newCartStoreAndFetcher) do
     it "executes command that creates new stream successfully" \context -> do
       -- Create cart first
-      let cartCreatedEvent = CartCreated {cartId = context.cartId}
+      let cartCreatedEvent = CartCreated {entityId = context.cartId}
       eventId <- Uuid.generate
       metadata <- EventMetadata.new
       let metadata' =
@@ -117,8 +117,8 @@ basicExecutionSpecs newCartStoreAndFetcher = do
 
     it "appends events to existing stream successfully" \context -> do
       -- Create cart with initial item
-      let cartCreatedEvent = CartCreated {cartId = context.cartId}
-      let itemAddedEvent = ItemAdded {cartId = context.cartId, itemId = context.itemId1, amount = 3}
+      let cartCreatedEvent = CartCreated {entityId = context.cartId}
+      let itemAddedEvent = ItemAdded {entityId = context.cartId, itemId = context.itemId1, amount = 3}
 
       eventId1 <- Uuid.generate
       eventId2 <- Uuid.generate
@@ -188,7 +188,7 @@ retryLogicSpecs newCartStoreAndFetcher = do
   before (Context.initialize newCartStoreAndFetcher) do
     it "retries on consistency check failure (ExistingStream)" \context -> do
       -- Create initial cart
-      let cartCreatedEvent = CartCreated {cartId = context.cartId}
+      let cartCreatedEvent = CartCreated {entityId = context.cartId}
       eventId <- Uuid.generate
       metadata <- EventMetadata.new
 
@@ -217,7 +217,7 @@ retryLogicSpecs newCartStoreAndFetcher = do
         |> discard
 
       -- Simulate concurrent modification by inserting another event
-      let concurrentEvent = ItemAdded {cartId = context.cartId, itemId = context.itemId2, amount = 10}
+      let concurrentEvent = ItemAdded {entityId = context.cartId, itemId = context.itemId2, amount = 10}
       eventId2 <- Uuid.generate
 
       let insertion2 =
@@ -268,7 +268,7 @@ retryLogicSpecs newCartStoreAndFetcher = do
 
     it "stops retrying when InsertionType is StreamCreation and stream exists" \context -> do
       -- Create a cart (stream exists)
-      let cartCreatedEvent = CartCreated {cartId = context.cartId}
+      let cartCreatedEvent = CartCreated {entityId = context.cartId}
       eventId <- Uuid.generate
       metadata <- EventMetadata.new
 
@@ -298,7 +298,7 @@ retryLogicSpecs newCartStoreAndFetcher = do
 
       -- Try to create the stream again with StreamCreation
       -- This should fail immediately without retrying
-      let anotherCreatedEvent = CartCreated {cartId = context.cartId}
+      let anotherCreatedEvent = CartCreated {entityId = context.cartId}
       eventId2 <- Uuid.generate
 
       let insertion2 =
@@ -346,7 +346,7 @@ concurrencySpecs newCartStoreAndFetcher = do
   before (Context.initialize newCartStoreAndFetcher) do
     it "handles concurrent command execution on same stream" \context -> do
       -- Create cart
-      let cartCreatedEvent = CartCreated {cartId = context.cartId}
+      let cartCreatedEvent = CartCreated {entityId = context.cartId}
       eventId <- Uuid.generate
       metadata <- EventMetadata.new
 
@@ -409,7 +409,7 @@ concurrencySpecs newCartStoreAndFetcher = do
       cartId2 <- Uuid.generate
 
       let createCart cid = do
-            let event = CartCreated {cartId = cid}
+            let event = CartCreated {entityId = cid}
             eid <- Uuid.generate
             metadata <- EventMetadata.new
 
@@ -494,9 +494,9 @@ errorScenarioSpecs newCartStoreAndFetcher = do
 
     it "returns CommandRejected when cart is already checked out" \context -> do
       -- Create cart and check it out
-      let cartCreatedEvent = CartCreated {cartId = context.cartId}
-      let itemAddedEvent = ItemAdded {cartId = context.cartId, itemId = context.itemId1, amount = 3}
-      let checkedOutEvent = CartCheckedOut {cartId = context.cartId}
+      let cartCreatedEvent = CartCreated {entityId = context.cartId}
+      let itemAddedEvent = ItemAdded {entityId = context.cartId, itemId = context.itemId1, amount = 3}
+      let checkedOutEvent = CartCheckedOut {entityId = context.cartId}
 
       eventId1 <- Uuid.generate
       eventId2 <- Uuid.generate
