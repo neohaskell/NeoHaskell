@@ -102,7 +102,7 @@ commandsParser = do
             decoder = shellParser
           }
   Command.commands
-    (Array.fromLinkedList [new, build, run, shell])
+    ([new, build, run, shell])
 
 
 buildParser :: Command.OptionsParser NeoCommand

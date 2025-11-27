@@ -3,7 +3,6 @@ module Test.Service.EventStore.Subscriptions.Context (
   initialize,
 ) where
 
-import Array qualified
 import Core
 import Service.Event (EntityName)
 import Service.Event qualified as Event
@@ -38,7 +37,7 @@ initialize newStore = do
 createTestEvents :: StreamId -> EntityName -> Int -> Task _ (Array (Event.InsertionPayload CartEvent))
 createTestEvents streamId entityName count = do
   let createEvent index = do
-        insertions <- Array.fromLinkedList [index] |> Task.mapArray newInsertion
+        insertions <- [index] |> Task.mapArray newInsertion
         Task.yield
           Event.InsertionPayload
             { streamId,
@@ -47,5 +46,5 @@ createTestEvents streamId entityName count = do
               insertions
             }
 
-  Array.fromLinkedList [0 .. (count - 1)]
+  [0 .. (count - 1)]
     |> Task.mapArray createEvent

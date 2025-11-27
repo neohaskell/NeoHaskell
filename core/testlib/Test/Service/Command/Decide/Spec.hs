@@ -125,7 +125,7 @@ cartCommandSpecs = do
         let cart =
               CartEntity
                 { cartId = context.cartId,
-                  cartItems = Array.fromLinkedList [(context.itemId1, 3), (context.itemId2, 5)],
+                  cartItems = [(context.itemId1, 3), (context.itemId2, 5)],
                   cartCheckedOut = False
                 }
         let cmd = RemoveItemFromCart {cartId = context.cartId, itemId = context.itemId1}

@@ -59,7 +59,7 @@ spec newStoreAndFetcher = do
                 { streamId = context.streamId,
                   entityName = context.entityName,
                   insertionType = Event.StreamCreation,
-                  insertions = Array.fromLinkedList [insertion]
+                  insertions = [insertion]
                 }
 
         payload
@@ -120,7 +120,7 @@ spec newStoreAndFetcher = do
                         { streamId = context.streamId,
                           entityName = context.entityName,
                           insertionType,
-                          insertions = Array.fromLinkedList [insertion]
+                          insertions = [insertion]
                         }
                 payload
                   |> context.store.insert
@@ -164,7 +164,7 @@ spec newStoreAndFetcher = do
                 { streamId = context.streamId,
                   entityName = context.entityName,
                   insertionType = Event.StreamCreation,
-                  insertions = Array.fromLinkedList [insertion1]
+                  insertions = [insertion1]
                 }
 
         payload1
@@ -191,7 +191,7 @@ spec newStoreAndFetcher = do
                 { streamId = streamId2,
                   entityName = context.entityName,
                   insertionType = Event.StreamCreation,
-                  insertions = Array.fromLinkedList [insertion2]
+                  insertions = [insertion2]
                 }
 
         payload2
@@ -259,7 +259,7 @@ spec newStoreAndFetcher = do
                 { streamId = context.streamId,
                   entityName = context.entityName,
                   insertionType = Event.StreamCreation,
-                  insertions = Array.fromLinkedList [openInsertion]
+                  insertions = [openInsertion]
                 }
 
         openPayload
@@ -277,7 +277,7 @@ spec newStoreAndFetcher = do
                         { streamId = context.streamId,
                           entityName = context.entityName,
                           insertionType,
-                          insertions = Array.fromLinkedList [insertion]
+                          insertions = [insertion]
                         }
                 payload
                   |> context.store.insert
@@ -352,7 +352,7 @@ spec newStoreAndFetcher = do
                         { streamId = context.streamId,
                           entityName = context.entityName,
                           insertionType,
-                          insertions = Array.fromLinkedList [insertion]
+                          insertions = [insertion]
                         }
                 payload
                   |> context.store.insert
@@ -429,7 +429,7 @@ spec newStoreAndFetcher = do
                         { streamId = context.streamId,
                           entityName = context.entityName,
                           insertionType,
-                          insertions = Array.fromLinkedList [insertion]
+                          insertions = [insertion]
                         }
                 payload
                   |> context.store.insert
@@ -484,7 +484,7 @@ spec newStoreAndFetcher = do
                   { streamId = context.streamId,
                     entityName = context.entityName,
                     insertionType = Event.StreamCreation,
-                    insertions = Array.fromLinkedList [insertion]
+                    insertions = [insertion]
                   }
           payload
             |> context.store.insert
@@ -534,7 +534,7 @@ spec newStoreAndFetcher = do
                   { streamId = context.streamId,
                     entityName = context.entityName,
                     insertionType = Event.StreamCreation,
-                    insertions = Array.fromLinkedList [insertion]
+                    insertions = [insertion]
                   }
           payload
             |> context.store.insert
@@ -565,7 +565,7 @@ spec newStoreAndFetcher = do
                   { streamId = context.streamId,
                     entityName = context.entityName,
                     insertionType = Event.InsertAfter (Event.StreamPosition 0),
-                    insertions = Array.fromLinkedList [insertion2]
+                    insertions = [insertion2]
                   }
           payload2
             |> context.store.insert
@@ -615,7 +615,7 @@ spec newStoreAndFetcher = do
                   { streamId = context.streamId,
                     entityName = context.entityName,
                     insertionType = Event.StreamCreation,
-                    insertions = Array.fromLinkedList [insertion]
+                    insertions = [insertion]
                   }
           payload
             |> context.store.insert
@@ -675,7 +675,7 @@ spec newStoreAndFetcher = do
                   { streamId = context.streamId,
                     entityName = context.entityName,
                     insertionType = Event.StreamCreation,
-                    insertions = Array.fromLinkedList [insertion]
+                    insertions = [insertion]
                   }
           payload
             |> context.store.insert
@@ -727,7 +727,7 @@ performanceBoundariesWithCount newStoreAndFetcher eventCount = do
                 { streamId = context.streamId,
                   entityName = context.entityName,
                   insertionType = Event.StreamCreation,
-                  insertions = Array.fromLinkedList [openInsertion]
+                  insertions = [openInsertion]
                 }
         openPayload
           |> context.store.insert

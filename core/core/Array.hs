@@ -165,9 +165,9 @@ empty = Array Data.Vector.empty
 --
 -- >>> isEmpty empty
 -- True
--- >>> isEmpty (Array.fromLinkedList ['a'])
+-- >>> isEmpty (['a'])
 -- False
--- >>> isEmpty (Array.fromLinkedList ['a', 'b', 'c'])
+-- >>> isEmpty (['a', 'b', 'c'])
 -- False
 isEmpty :: Array a -> Bool
 isEmpty = unwrap .> Data.Vector.null

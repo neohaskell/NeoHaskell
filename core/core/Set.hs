@@ -118,7 +118,7 @@ fromLinkedList = Data.Set.fromList .> Set
 
 -- | Create a set from an 'Array'.
 --
--- >>> fromArray (Array.fromLinkedList [1,2,3,2,1] :: Array Int) :: Set Int
+-- >>> fromArray ([1,2,3,2,1] :: Array Int) :: Set Int
 -- Set [1,2,3]
 fromArray :: forall (value :: Type). (Prelude.Ord value) => Array value -> Set value
 fromArray array = do

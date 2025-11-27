@@ -174,7 +174,7 @@ specWithCount newStore eventCount = do
           event.streamId |> shouldBe context.streamId
 
         -- Verify we get the expected range of events (positions 0 through halfwayPoint)
-        let expectedPositions = Array.fromLinkedList [0 .. halfwayPoint] |> Array.map (fromIntegral .> Event.StreamPosition)
+        let expectedPositions = [0 .. halfwayPoint] |> Array.map (fromIntegral .> Event.StreamPosition)
         let actualPositions = eventsBackward |> Array.map (\e -> e.metadata.localPosition |> Maybe.getOrDie) |> Array.reverse
         actualPositions |> shouldBe expectedPositions
 
@@ -210,7 +210,7 @@ specWithCount newStore eventCount = do
           event.streamId |> shouldBe context.streamId
 
         -- Verify we get all events in reverse order (positions eventCount-1 down to 0)
-        let expectedPositions = Array.fromLinkedList [context.eventCount - 1, context.eventCount - 2 .. 0] |> Array.map Event.StreamPosition
+        let expectedPositions = [context.eventCount - 1, context.eventCount - 2 .. 0] |> Array.map Event.StreamPosition
         let actualPositions = allEventsBackward |> Array.map (\e -> e.metadata.localPosition |> Maybe.getOrDie)
         actualPositions |> shouldBe expectedPositions
 

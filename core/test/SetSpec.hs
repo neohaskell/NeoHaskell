@@ -44,7 +44,7 @@ spec = do
       Set.contains 5 setFromList |> shouldBe True
 
     it "creates a set from an Array" \_ -> do
-      let array = Array.fromLinkedList [1, 2, 3, 2, 1] :: Array Int
+      let array = [1, 2, 3, 2, 1] :: Array Int
       let setFromArray = Set.fromArray array
       Set.size setFromArray |> shouldBe 3
       Set.contains 1 setFromArray |> shouldBe True
@@ -188,7 +188,7 @@ spec = do
     it "converts set to Array in sorted order" \_ -> do
       let testSet = Set.fromLinkedList [3, 1, 4, 1, 5, 9, 2, 6] :: Set Int
       let array = Set.toArray testSet
-      array |> shouldBe (Array.fromLinkedList [1, 2, 3, 4, 5, 6, 9])
+      array |> shouldBe ([1, 2, 3, 4, 5, 6, 9])
 
     it "converts empty set to empty Array" \_ -> do
       let emptySet = Set.empty :: Set Int
@@ -201,9 +201,9 @@ spec = do
       resultList |> shouldBe [1, 2, 5, 8]
 
     it "round-trip Array -> Set -> Array removes duplicates and sorts" \_ -> do
-      let originalArray = Array.fromLinkedList [5, 2, 8, 2, 1, 5] :: Array Int
+      let originalArray = [5, 2, 8, 2, 1, 5] :: Array Int
       let resultArray = originalArray |> Set.fromArray |> Set.toArray
-      resultArray |> shouldBe (Array.fromLinkedList [1, 2, 5, 8])
+      resultArray |> shouldBe ([1, 2, 5, 8])
 
   describe "Set transform operations" do
     it "maps a function over a set" \_ -> do
@@ -393,5 +393,3 @@ spec = do
       Set.contains 1 neoSet |> shouldBe True
       Set.contains 2 neoSet |> shouldBe True
       Set.contains 3 neoSet |> shouldBe True
-
-

@@ -36,8 +36,8 @@ initialize newStore eventCount = do
   let entity2Id = Event.EntityName entity2IdText
 
   -- Generate all insertions for both entities
-  entity1Insertions <- Array.fromLinkedList [0 .. eventCount - 1] |> Task.mapArray newInsertion
-  entity2Insertions <- Array.fromLinkedList [0 .. eventCount - 1] |> Task.mapArray newInsertion
+  entity1Insertions <- [0 .. eventCount - 1] |> Task.mapArray newInsertion
+  entity2Insertions <- [0 .. eventCount - 1] |> Task.mapArray newInsertion
 
   -- Insert entity1 events in chunks of 100 (batch size limit) and track results
   entity1Results <-

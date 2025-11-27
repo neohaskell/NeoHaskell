@@ -26,10 +26,10 @@ spec newStore = do
 
         -- Insert 10 events at positions 0-9
         let eventCount = 10
-        Array.fromLinkedList [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+        [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
           |> Task.mapArray
             ( \position -> do
-                insertions <- Array.fromLinkedList [position] |> Task.mapArray newInsertion
+                insertions <- [position] |> Task.mapArray newInsertion
                 let payload =
                       Event.InsertionPayload
                         { streamId = context.streamId,
@@ -91,10 +91,10 @@ spec newStore = do
         let entityName = Event.EntityName entityNameText
 
         -- Insert 5 events
-        Array.fromLinkedList [0, 1, 2, 3, 4]
+        [0, 1, 2, 3, 4]
           |> Task.mapArray
             ( \position -> do
-                insertions <- Array.fromLinkedList [position] |> Task.mapArray newInsertion
+                insertions <- [position] |> Task.mapArray newInsertion
                 let payload =
                       Event.InsertionPayload
                         { streamId = context.streamId,
@@ -129,10 +129,10 @@ spec newStore = do
         let entityName = Event.EntityName entityNameText
 
         -- Insert 5 events
-        Array.fromLinkedList [0, 1, 2, 3, 4]
+        [0, 1, 2, 3, 4]
           |> Task.mapArray
             ( \position -> do
-                insertions <- Array.fromLinkedList [position] |> Task.mapArray newInsertion
+                insertions <- [position] |> Task.mapArray newInsertion
                 let payload =
                       Event.InsertionPayload
                         { streamId = context.streamId,

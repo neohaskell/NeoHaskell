@@ -48,7 +48,7 @@ spec newStore = do
 
         -- Create 101 insertions (exceeding the limit of 100)
         insertions <-
-          Array.fromLinkedList [0 .. 100]
+          [0 .. 100]
             |> Task.mapArray newInsertion
 
         let oversizedPayload =
@@ -76,7 +76,7 @@ spec newStore = do
 
         -- Create exactly 100 insertions (at the limit)
         insertions <-
-          Array.fromLinkedList [0 .. 99]
+          [0 .. 99]
             |> Task.mapArray newInsertion
 
         let maxSizePayload =
@@ -114,7 +114,7 @@ spec newStore = do
 
         -- Create 99 insertions (just under the limit)
         insertions <-
-          Array.fromLinkedList [0 .. 98]
+          [0 .. 98]
             |> Task.mapArray newInsertion
 
         let largeBatchPayload =
@@ -178,7 +178,7 @@ spec newStore = do
         let entityName = Event.EntityName entityNameText
 
         insertions <-
-          Array.fromLinkedList [0 .. 100]
+          [0 .. 100]
             |> Task.mapArray newInsertion
 
         let oversizedPayload =

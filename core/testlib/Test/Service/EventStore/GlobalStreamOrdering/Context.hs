@@ -1,6 +1,5 @@
 module Test.Service.EventStore.GlobalStreamOrdering.Context (Context (..), initialize) where
 
-import Array qualified
 import Core
 import Service.Event (Event (..))
 import Service.Event qualified as Event
@@ -27,7 +26,7 @@ initialize newStore streamCount = do
   -- Create multiple streams with events
   let getStreamIds :: Task Text (Array (Event.EntityName, Event.StreamId))
       getStreamIds = do
-        Array.fromLinkedList [0 .. streamCount - 1]
+        [0 .. streamCount - 1]
           |> Task.mapArray \_ -> do
             entityName <- Uuid.generate |> Task.map toText
             streamId <- StreamId.new
@@ -41,7 +40,7 @@ initialize newStore streamCount = do
       getAllEvents =
         streamIds |> Task.mapArray \(entityName, streamId) -> do
           insertions <-
-            Array.fromLinkedList [0 .. eventsPerStream - 1]
+            [0 .. eventsPerStream - 1]
               |> Task.mapArray newInsertion
           Task.yield
             Event.InsertionPayload

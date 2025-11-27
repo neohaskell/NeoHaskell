@@ -187,7 +187,7 @@ instance Command RemoveItemFromCart where
               then Decision.reject "Item not in cart"
               else do
                 let event = ItemRemoved {entityId = cart.cartId, itemId = cmd.itemId}
-                Array.fromLinkedList [event]
+                [event]
                   |> Decision.acceptExisting
 
 
@@ -210,5 +210,5 @@ instance Command CheckoutCart where
               then Decision.reject "Cannot checkout empty cart"
               else do
                 let event = CartCheckedOut {entityId = cart.cartId}
-                Array.fromLinkedList [event]
+                [event]
                   |> Decision.acceptExisting

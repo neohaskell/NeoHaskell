@@ -167,7 +167,7 @@ specWithCount newStore eventCount = do
       it "filters events by single entity ID from start" \context -> do
         let startPosition = Event.StreamPosition 0
         let limit = EventStore.Limit (fromIntegral (context.eventCount * 2))
-        let entityFilter = Array.fromLinkedList [context.entity1Id]
+        let entityFilter = [context.entity1Id]
 
         filteredEvents <-
           context.store.readAllEventsForwardFromFiltered startPosition limit entityFilter
@@ -190,7 +190,7 @@ specWithCount newStore eventCount = do
       it "filters events by multiple entity IDs from start" \context -> do
         let startPosition = Event.StreamPosition 0
         let limit = EventStore.Limit (fromIntegral (context.eventCount * 2))
-        let entityFilter = Array.fromLinkedList [context.entity1Id, context.entity2Id]
+        let entityFilter = [context.entity1Id, context.entity2Id]
 
         filteredEvents <-
           context.store.readAllEventsForwardFromFiltered startPosition limit entityFilter
@@ -230,7 +230,7 @@ specWithCount newStore eventCount = do
             let startPosition = fifthEvent.metadata.globalPosition |> Maybe.getOrDie
             let Event.StreamPosition startPos = startPosition
             let readFromPosition = Event.StreamPosition (startPos + 1)
-            let entityFilter = Array.fromLinkedList [context.entity1Id]
+            let entityFilter = [context.entity1Id]
             let limit = EventStore.Limit (fromIntegral (context.eventCount * 2))
 
             filteredEvents <-
@@ -256,7 +256,7 @@ specWithCount newStore eventCount = do
         let limit = EventStore.Limit 100
         nonExistentEntityText <- Uuid.generate |> Task.map toText
         let nonExistentEntityName = Event.EntityName nonExistentEntityText
-        let entityFilter = Array.fromLinkedList [nonExistentEntityName]
+        let entityFilter = [nonExistentEntityName]
 
         filteredEvents <-
           context.store.readAllEventsForwardFromFiltered startPosition limit entityFilter
@@ -270,7 +270,7 @@ specWithCount newStore eventCount = do
       it "respects limit when filtering by entity" \context -> do
         let startPosition = Event.StreamPosition 0
         let smallLimit = EventStore.Limit 3 -- Small limit to test
-        let entityFilter = Array.fromLinkedList [context.entity1Id, context.entity2Id]
+        let entityFilter = [context.entity1Id, context.entity2Id]
 
         filteredEvents <-
           context.store.readAllEventsForwardFromFiltered startPosition smallLimit entityFilter
@@ -290,7 +290,7 @@ specWithCount newStore eventCount = do
       it "maintains global order when filtering mixed entities" \context -> do
         let startPosition = Event.StreamPosition 0
         let limit = EventStore.Limit (fromIntegral (context.eventCount * 2))
-        let entityFilter = Array.fromLinkedList [context.entity1Id, context.entity2Id]
+        let entityFilter = [context.entity1Id, context.entity2Id]
 
         -- Get all events without filtering for comparison
         allEvents <-

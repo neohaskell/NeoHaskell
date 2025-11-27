@@ -42,17 +42,17 @@ initGit :: Path -> Task Error Unit
 initGit projectDir = do
   let gitignoreFileName = [path|.gitignore|]
   let gitignoreFilePath =
-        Array.fromLinkedList [projectDir, gitignoreFileName]
+        [projectDir, gitignoreFileName]
           |> Path.joinPaths
 
-  openGit (Array.fromLinkedList ["init"]) projectDir
+  openGit (["init"]) projectDir
 
   File.writeText gitignoreFilePath GitIgnore.template
     |> Task.mapError (\_ -> CustomError "Could not write .gitignore file")
 
-  openGit (Array.fromLinkedList ["add", "."]) projectDir
+  openGit (["add", "."]) projectDir
 
-  openGit (Array.fromLinkedList ["commit", "-m", "Initial NeoHaskell project"]) projectDir
+  openGit (["commit", "-m", "Initial NeoHaskell project"]) projectDir
 
 
 handle :: ProjectName -> Task Error Unit
@@ -64,7 +64,7 @@ handle (ProjectName projectName) = do
           |> Path.fromText
           |> Maybe.getOrDie -- TODO: Handle this better
   let srcDir =
-        Array.fromLinkedList [projectDir, "src"]
+        [projectDir, "src"]
           |> Path.joinPaths
 
   let moduleName =
@@ -75,11 +75,11 @@ handle (ProjectName projectName) = do
           |> Path.fromText
           |> Maybe.getOrDie -- TODO: Handle this better
   let moduleFilePath =
-        Array.fromLinkedList [srcDir, moduleFileName]
+        [srcDir, moduleFileName]
           |> Path.joinPaths
   let configFileName = [path|neo.json|]
   let configFilePath =
-        Array.fromLinkedList [projectDir, configFileName]
+        [projectDir, configFileName]
           |> Path.joinPaths
 
   Directory.create projectDir

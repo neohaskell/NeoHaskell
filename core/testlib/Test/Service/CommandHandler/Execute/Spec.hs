@@ -69,7 +69,7 @@ basicExecutionSpecs newCartStoreAndFetcher = do
               { streamId = context.cartId |> Uuid.toText |> StreamId.fromText,
                 entityName = context.cartEntityName,
                 insertionType = Event.StreamCreation,
-                insertions = Array.fromLinkedList [insertion]
+                insertions = [insertion]
               }
 
       payload
@@ -207,7 +207,7 @@ retryLogicSpecs newCartStoreAndFetcher = do
               { streamId = context.cartId |> Uuid.toText |> StreamId.fromText,
                 entityName = context.cartEntityName,
                 insertionType = Event.StreamCreation,
-                insertions = Array.fromLinkedList [insertion]
+                insertions = [insertion]
               }
 
       payload
@@ -235,7 +235,7 @@ retryLogicSpecs newCartStoreAndFetcher = do
               { streamId = context.cartId |> Uuid.toText |> StreamId.fromText,
                 entityName = context.cartEntityName,
                 insertionType = Event.ExistingStream,
-                insertions = Array.fromLinkedList [insertion2]
+                insertions = [insertion2]
               }
 
       payload2
@@ -287,7 +287,7 @@ retryLogicSpecs newCartStoreAndFetcher = do
               { streamId = context.cartId |> Uuid.toText |> StreamId.fromText,
                 entityName = context.cartEntityName,
                 insertionType = Event.StreamCreation,
-                insertions = Array.fromLinkedList [insertion]
+                insertions = [insertion]
               }
 
       payload
@@ -316,7 +316,7 @@ retryLogicSpecs newCartStoreAndFetcher = do
               { streamId = context.cartId |> Uuid.toText |> StreamId.fromText,
                 entityName = context.cartEntityName,
                 insertionType = Event.StreamCreation,
-                insertions = Array.fromLinkedList [insertion2]
+                insertions = [insertion2]
               }
 
       result <-
@@ -365,7 +365,7 @@ concurrencySpecs newCartStoreAndFetcher = do
               { streamId = context.cartId |> Uuid.toText |> StreamId.fromText,
                 entityName = context.cartEntityName,
                 insertionType = Event.StreamCreation,
-                insertions = Array.fromLinkedList [insertion]
+                insertions = [insertion]
               }
 
       payload
@@ -428,7 +428,7 @@ concurrencySpecs newCartStoreAndFetcher = do
                     { streamId = cid |> Uuid.toText |> StreamId.fromText,
                       entityName = context.cartEntityName,
                       insertionType = Event.StreamCreation,
-                      insertions = Array.fromLinkedList [insertion]
+                      insertions = [insertion]
                     }
 
             payload

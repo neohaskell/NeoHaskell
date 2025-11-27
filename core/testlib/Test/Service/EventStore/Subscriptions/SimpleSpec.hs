@@ -31,7 +31,7 @@ spec newStore = do
               { streamId,
                 entityName,
                 insertionType = Event.AnyStreamState,
-                insertions = Array.fromLinkedList [insertion]
+                insertions = [insertion]
               }
 
       -- Create a shared variable to collect received events

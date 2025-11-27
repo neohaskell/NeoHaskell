@@ -96,7 +96,7 @@ spec newStore = do
                 { streamId = otherStreamId,
                   entityName = otherEntityName,
                   insertionType = Event.AnyStreamState,
-                  insertions = Array.fromLinkedList [otherInsertion]
+                  insertions = [otherInsertion]
                 }
 
         -- Create a shared variable to collect received events
@@ -158,7 +158,7 @@ spec newStore = do
                 { streamId = otherStreamId,
                   entityName = context.entityName,
                   insertionType = Event.AnyStreamState,
-                  insertions = Array.fromLinkedList [otherInsertion]
+                  insertions = [otherInsertion]
                 }
 
         -- Create a shared variable to collect received events
@@ -286,7 +286,7 @@ spec newStore = do
         adjustedEvents <- case (context.testEvents |> Array.get 0, context.testEvents |> Array.get 1, context.testEvents |> Array.get 2) of
           (Just event1, Just event2, Just event3) -> do
             Task.yield
-              (Array.fromLinkedList [event1, event2, event3])
+              ([event1, event2, event3])
           _ -> do
             Task.throw "Not enough test events"
         let insertEvent event = do
@@ -623,7 +623,7 @@ createTestEventsForEntity ::
   Event.StreamId -> Event.EntityName -> Int -> Int -> Task _ (Array (Event.InsertionPayload CartEvent))
 createTestEventsForEntity streamId entityName count startPosition = do
   let createEvent position = do
-        insertions <- Array.fromLinkedList [position] |> Task.mapArray newInsertion
+        insertions <- [position] |> Task.mapArray newInsertion
         Task.yield
           Event.InsertionPayload
             { streamId,
@@ -632,7 +632,7 @@ createTestEventsForEntity streamId entityName count startPosition = do
               insertions
             }
 
-  Array.fromLinkedList [startPosition .. (startPosition + count - 1)]
+  [startPosition .. (startPosition + count - 1)]
     |> Task.mapArray createEvent
 
 
@@ -640,7 +640,7 @@ createRapidTestEventsFromPosition ::
   Event.StreamId -> Event.EntityName -> Int -> Int -> Task _ (Array (Event.InsertionPayload CartEvent))
 createRapidTestEventsFromPosition streamId entityName count startPosition = do
   let createEvent position = do
-        insertions <- Array.fromLinkedList [position] |> Task.mapArray newInsertion
+        insertions <- [position] |> Task.mapArray newInsertion
         Task.yield
           Event.InsertionPayload
             { streamId,
@@ -649,5 +649,5 @@ createRapidTestEventsFromPosition streamId entityName count startPosition = do
               insertions
             }
 
-  Array.fromLinkedList [startPosition .. (startPosition + count - 1)]
+  [startPosition .. (startPosition + count - 1)]
     |> Task.mapArray createEvent

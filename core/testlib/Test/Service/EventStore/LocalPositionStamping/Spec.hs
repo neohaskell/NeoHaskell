@@ -29,7 +29,10 @@ spec newStore = do
 
       -- Create events using the payloadFromEvents helper (which sets localPosition to Nothing)
       let events =
-            Array.fromLinkedList [CartCreated {entityId = def}, ItemAdded {entityId = def, itemId = def, amount = 10}, ItemRemoved {entityId = def, itemId = def}]
+            [ CartCreated {entityId = def},
+              ItemAdded {entityId = def, itemId = def, amount = 10},
+              ItemRemoved {entityId = def, itemId = def}
+            ]
       payload <- Event.payloadFromEvents entityName streamId events
 
       -- Verify that insertions don't have local positions set (this is the input state)
@@ -74,7 +77,7 @@ spec newStore = do
       _subscriptionId <- store.subscribeToStreamEvents entityName streamId handler |> Task.mapError toText
 
       -- Create and insert events using payloadFromEvents
-      let events = Array.fromLinkedList [CartCreated {entityId = def}, ItemAdded {entityId = def, itemId = def, amount = 15}]
+      let events = [CartCreated {entityId = def}, ItemAdded {entityId = def, itemId = def, amount = 15}]
       payload <- Event.payloadFromEvents entityName streamId events
       _result <- store.insert payload |> Task.mapError toText
 
@@ -115,12 +118,16 @@ spec newStore = do
       streamId <- StreamId.new
 
       -- Insert first batch
-      let firstBatch = Array.fromLinkedList [CartCreated {entityId = def}, ItemAdded {entityId = def, itemId = def, amount = 100}]
+      let firstBatch = [CartCreated {entityId = def}, ItemAdded {entityId = def, itemId = def, amount = 100}]
       payload1 <- Event.payloadFromEvents entityName streamId firstBatch
       _result1 <- store.insert payload1 |> Task.mapError toText
 
       -- Insert second batch
-      let secondBatch = Array.fromLinkedList [ItemAdded {entityId = def, itemId = def, amount = 50}, ItemRemoved {entityId = def, itemId = def}, ItemAdded {entityId = def, itemId = def, amount = 75}]
+      let secondBatch =
+            [ ItemAdded {entityId = def, itemId = def, amount = 50},
+              ItemRemoved {entityId = def, itemId = def},
+              ItemAdded {entityId = def, itemId = def, amount = 75}
+            ]
       payload2 <- Event.payloadFromEvents entityName streamId secondBatch
       _result2 <- store.insert payload2 |> Task.mapError toText
 
@@ -131,7 +138,7 @@ spec newStore = do
 
       -- Verify local positions are sequential from 0 to 4
       let expectedPositions =
-            Array.fromLinkedList [0 :: Int, 1, 2, 3, 4]
+            [0 :: Int, 1, 2, 3, 4]
               |> Array.map (fromIntegral .> Event.StreamPosition)
 
       let actualPositions =
@@ -164,7 +171,7 @@ spec newStore = do
               { streamId,
                 entityName,
                 insertionType = Event.StreamCreation,
-                insertions = Array.fromLinkedList [insertion1]
+                insertions = [insertion1]
               }
 
       _result1 <- store.insert payload1 |> Task.mapError toText
@@ -184,7 +191,7 @@ spec newStore = do
               { streamId,
                 entityName,
                 insertionType = Event.ExistingStream,
-                insertions = Array.fromLinkedList [insertion2]
+                insertions = [insertion2]
               }
 
       _result2 <- store.insert payload2 |> Task.mapError toText
@@ -234,7 +241,7 @@ spec newStore = do
               { streamId,
                 entityName,
                 insertionType = Event.AnyStreamState,
-                insertions = Array.fromLinkedList [insertion1, insertion2]
+                insertions = [insertion1, insertion2]
               }
 
       _result <- store.insert payload |> Task.mapError toText
