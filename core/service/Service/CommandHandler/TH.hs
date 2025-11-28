@@ -68,19 +68,23 @@ extractReturnType typeStr = do
     _ -> parts |> GhcList.last |> GhcList.words |> GhcList.unwords
 
 
+-- Normalize a type string by removing module qualifiers (e.g., "GHC.Maybe.Maybe" -> "Maybe")
+normalizeTypeString :: String -> String
+normalizeTypeString t =
+  t
+    |> GhcList.words
+    |> GhcList.map (\w -> w |> splitOn "." |> GhcList.last)
+    |> GhcList.unwords
+
+
 -- Check if the return type matches the expected entity ID type
 checkReturnTypeMatches :: String -> String -> Bool
 checkReturnTypeMatches typeStr expectedIdType = do
   let returnType = extractReturnType typeStr
   -- The return type should be "Maybe <EntityIdType>"
   -- We normalize both by removing module prefixes for comparison
-  let normalizeType t =
-        t
-          |> GhcList.words
-          |> GhcList.map (\w -> w |> splitOn "." |> GhcList.last)
-          |> GhcList.unwords
   let expectedReturn = "Maybe " ++ expectedIdType
-  normalizeType returnType == normalizeType expectedReturn
+  normalizeTypeString returnType == normalizeTypeString expectedReturn
 
 
 -- Helper function to split string by a delimiter
@@ -171,7 +175,7 @@ validateFunctionSignature funcInfo mode expectedEntityIdType commandName = do
 
           if not returnTypeValid
             then do
-              let actualReturn = extractReturnType typeStr
+              let actualReturn = extractReturnType typeStr |> normalizeTypeString
               let expectedReturn = "Maybe " ++ expectedEntityIdType
               let funcName = funcInfo.functionName
               MonadFail.fail
@@ -192,7 +196,8 @@ If you want to use a different entity ID type, you can define:
 |]
             else do
               let funcName = funcInfo.functionName
-              let errorMsg = buildErrorMessage funcName expectedSig typeStr mode
+              let normalizedSig = typeStr |> normalizeTypeString
+              let errorMsg = buildErrorMessage funcName expectedSig normalizedSig mode
               MonadFail.fail errorMsg
     _ -> pure ()
 
