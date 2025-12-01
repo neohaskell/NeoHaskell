@@ -21,6 +21,7 @@ import Default qualified
 import Record (Record)
 import Record qualified
 import Service.Command (NameOf)
+import Service.Command.Core (Command)
 
 
 type Service commands = ServiceDefinition commands Unit
@@ -134,7 +135,8 @@ data CommandDefinition (command :: Type) = CommandDefinition
 -- | Register a command type in the service definition
 command ::
   forall (commandType :: Type) (commandName :: Symbol).
-  ( commandName ~ NameOf commandType,
+  ( Command commandType,
+    commandName ~ NameOf commandType,
     IsLabel commandName (Record.Field commandName)
   ) =>
   ServiceDefinition '[commandName Record.:= CommandDefinition commandType] Unit
