@@ -18,6 +18,7 @@ module Service.ServiceDefinition.Core (
 import Basics hiding (fmap, join, pure, return, (<*>), (>>), (>>=))
 import Default (Default)
 import Default qualified
+import Function (unchanged)
 import Record (Record)
 import Record qualified
 import Service.Command (NameOf)
@@ -116,7 +117,7 @@ return = pure
 join ::
   forall cmds1 cmds2 a.
   ServiceDefinition cmds1 (ServiceDefinition cmds2 a) -> ServiceDefinition (Record.Merge cmds1 cmds2) a
-join m = bindValue m (\innerModel -> innerModel)
+join m = bindValue m unchanged
 
 
 -- | Create a ServiceDefinition with just a value
