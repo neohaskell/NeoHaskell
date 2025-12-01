@@ -38,12 +38,16 @@ type family EntityOf (command :: Type) :: Type
 
 
 class Command command where
-  type IsMultiTenant (command :: Type) :: Bool
+  type IsMultiTenant command :: Bool
   type IsMultiTenant command = False
 
 
   type EntityIdType command :: Type
   type EntityIdType command = Uuid
+
+
+  type SerializationProtocols command :: [Symbol]
+  type SerializationProtocols command = '["JSON"]
 
 
   getEntityIdImpl :: GetEntityIdFunction (IsMultiTenant command) command (EntityIdType command)
