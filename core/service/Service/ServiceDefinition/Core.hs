@@ -31,9 +31,13 @@ type Service commands = ServiceDefinition commands Unit
 -- | ServiceDefinition represents an event-sourced application service definition
 -- It tracks commands in a monadic DSL
 -- The first type parameter is a type-level list tracking command types
-data ServiceDefinition (commands :: Record.Row Type) a = ServiceDefinition
-  { value :: a,
-    commandNames :: Record commands
+data
+  ServiceDefinition
+    (commands :: Record.Row Type)
+    (value :: Type)
+  = ServiceDefinition
+  { commandNames :: Record commands,
+    value :: value
   }
   deriving (Generic)
 
