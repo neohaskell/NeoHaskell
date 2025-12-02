@@ -156,6 +156,14 @@ library
     Service.EventStore.Postgres.Internal.SubscriptionStore
     Service.ServiceDefinition
     Service.ServiceDefinition.Core
+    Service.Adapter
+    Service.Adapter.Direct
+    Service.Definition
+    Service.Definition.TypeLevel
+    Service.Definition.Validation
+    Service.Error
+    Service.Protocol
+    Service.Runtime
     Set
     Stream
     Subprocess

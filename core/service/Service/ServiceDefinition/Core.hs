@@ -1,7 +1,11 @@
 module Service.ServiceDefinition.Core (
   Service,
   ServiceDefinition (..),
+  CommandDefinition(..),
+  service,
+  expose,
   command,
+  deploy,
   extract,
   yield,
   (>>=),
@@ -16,125 +20,184 @@ module Service.ServiceDefinition.Core (
 ) where
 
 import Basics hiding (fmap, join, pure, return, (<*>), (>>), (>>=))
+import Task (Task)
+import Task qualified
 import Default (Default)
 import Default qualified
 import Function (unchanged)
+import GHC.TypeLits (KnownSymbol)
 import Record (Record)
 import Record qualified
+import Service.Adapter (ServiceAdapter(..))
 import Service.Command (NameOf)
 import Service.Command.Core (Command)
+import Service.Definition.TypeLevel (Union)
+import Service.Definition.Validation (ValidateProtocols)
+import Service.Error (ServiceError(..))
+import Service.Protocol (TransportProtocols)
+import Service.Runtime (ServiceRuntime(..))
 
 
-type Service commands = ServiceDefinition commands Unit
+type Service commands reqProtos provProtos adapters = ServiceDefinition commands reqProtos provProtos adapters Unit
 
 
--- | ServiceDefinition represents an event-sourced application service definition
--- It tracks commands in a monadic DSL
--- The first type parameter is a type-level list tracking command types
-data
-  ServiceDefinition
-    (commands :: Record.Row Type)
-    (value :: Type)
+-- | ServiceDefinition represents a service with transport protocol tracking
+-- It accumulates commands, required protocols, provided protocols, and adapters
+-- The type parameters track this information at the type level
+data ServiceDefinition
+  (commands :: Record.Row Type)           -- Row type of all registered commands
+  (requiredProtocols :: [Symbol])         -- Type-level list of protocols needed by commands
+  (providedProtocols :: [Symbol])         -- Type-level list of protocols with adapters
+  (adapters :: Record.Row Type)           -- Row type of adapter instances
+  (value :: Type)                         -- Monadic value parameter
   = ServiceDefinition
   { commandNames :: Record commands,
+    adapterRecord :: Record adapters,
     value :: value
   }
   deriving (Generic)
 
+-- | Proxy to store the type of the command
+data CommandDefinition (commandType :: Type) = CommandDefinition
+
+
+-- | Create an empty service definition
+-- Starting point for building a service
+service :: ServiceDefinition '[] '[] '[] '[] Unit
+service = ServiceDefinition
+  { commandNames = Record.empty,
+    adapterRecord = Record.empty,
+    value = unit
+  }
+
+-- | Register an adapter in the service definition
+-- Declares "this service exposes its commands via this protocol"
+expose ::
+  forall adapter protocol.
+  ( ServiceAdapter adapter,
+    protocol ~ AdapterProtocol adapter,
+    KnownSymbol protocol,
+    IsLabel protocol (Record.Field protocol)
+  ) =>
+  adapter ->
+  ServiceDefinition '[] '[] '[protocol] '[protocol Record.:= adapter] Unit
+expose adapter = ServiceDefinition
+  { commandNames = Record.empty,
+    adapterRecord = Record.empty |> Record.insert (fromLabel @protocol) adapter,
+    value = unit
+  }
+
+-- | Deploy a service definition into a runnable service runtime
+-- This is the validation boundary where protocol checking occurs
+deploy ::
+  forall commands reqProtos provProtos adapters.
+  ( ValidateProtocols reqProtos provProtos
+  ) =>
+  ServiceDefinition commands reqProtos provProtos adapters Unit ->
+  Task ServiceError ServiceRuntime
+deploy _serviceDef = do
+  -- TODO: Initialize adapters and build routing table
+  -- This is a placeholder implementation
+  Task.yield ServiceRuntime
+    { execute = \commandName _bytes -> Task.throw (CommandNotFound commandName),
+      shutdown = Task.yield unit
+    }
 
 -- | Apply a function to the value inside a ServiceDefinition
-fmap :: forall cmds a b. (a -> b) -> ServiceDefinition cmds a -> ServiceDefinition cmds b
+fmap :: forall cmds reqProtos provProtos adapters a b. (a -> b) -> ServiceDefinition cmds reqProtos provProtos adapters a -> ServiceDefinition cmds reqProtos provProtos adapters b
 fmap f m =
   ServiceDefinition
     { value = f m.value,
-      commandNames = m.commandNames
+      commandNames = m.commandNames,
+      adapterRecord = m.adapterRecord
     }
 
 
 -- | Create a ServiceDefinition with just a value
-pureValue :: forall a. a -> ServiceDefinition '[] a
+pureValue :: forall a. a -> ServiceDefinition '[] '[] '[] '[] a
 pureValue a =
   ServiceDefinition
     { value = a,
-      commandNames = Record.empty
+      commandNames = Record.empty,
+      adapterRecord = Record.empty
     }
 
 
 -- | Apply a function wrapped in a ServiceDefinition to a value wrapped in a ServiceDefinition
-applyValue :: forall cmds a b. ServiceDefinition cmds (a -> b) -> ServiceDefinition cmds a -> ServiceDefinition cmds b
+applyValue :: forall cmds reqProtos provProtos adapters a b. ServiceDefinition cmds reqProtos provProtos adapters (a -> b) -> ServiceDefinition cmds reqProtos provProtos adapters a -> ServiceDefinition cmds reqProtos provProtos adapters b
 applyValue fn x = fn <*> x
 
 
 -- | Sequentially compose two ServiceDefinitions, passing the value from the first as an argument to the second
 bindValue ::
-  forall cmds1 cmds2 a b.
-  ServiceDefinition cmds1 a -> (a -> ServiceDefinition cmds2 b) -> ServiceDefinition (Record.Merge cmds1 cmds2) b
+  forall cmds1 cmds2 req1 req2 prov1 prov2 adp1 adp2 a b.
+  ServiceDefinition cmds1 req1 prov1 adp1 a -> (a -> ServiceDefinition cmds2 req2 prov2 adp2 b) -> ServiceDefinition (Record.Merge cmds1 cmds2) (Union req1 req2) (Union prov1 prov2) (Record.Merge adp1 adp2) b
 bindValue m f = do
   let result = f m.value
   ServiceDefinition
     { value = result.value,
-      commandNames = Record.merge m.commandNames result.commandNames
+      commandNames = Record.merge m.commandNames result.commandNames,
+      adapterRecord = Record.merge m.adapterRecord result.adapterRecord
     }
 
 
 -- | Combine two ServiceDefinitions, keeping the second's value and merging their metadata
 appendServiceDefinition ::
-  forall cmds1 cmds2 a.
-  ServiceDefinition cmds1 a -> ServiceDefinition cmds2 a -> ServiceDefinition (Record.Merge cmds1 cmds2) a
+  forall cmds1 cmds2 req1 req2 prov1 prov2 adp1 adp2 a.
+  ServiceDefinition cmds1 req1 prov1 adp1 a -> ServiceDefinition cmds2 req2 prov2 adp2 a -> ServiceDefinition (Record.Merge cmds1 cmds2) (Union req1 req2) (Union prov1 prov2) (Record.Merge adp1 adp2) a
 appendServiceDefinition m1 m2 =
   ServiceDefinition
     { value = m2.value,
-      commandNames = Record.merge m1.commandNames m2.commandNames
+      commandNames = Record.merge m1.commandNames m2.commandNames,
+      adapterRecord = Record.merge m1.adapterRecord m2.adapterRecord
     }
 
 
 -- | Create an empty ServiceDefinition with a default value
-emptyServiceDefinition :: forall a. (Default a) => ServiceDefinition '[] a
+emptyServiceDefinition :: forall a. (Default a) => ServiceDefinition '[] '[] '[] '[] a
 emptyServiceDefinition =
   ServiceDefinition
     { value = Default.def,
-      commandNames = Record.empty
+      commandNames = Record.empty,
+      adapterRecord = Record.empty
     }
 
 
-pure :: a -> ServiceDefinition '[] a
+pure :: a -> ServiceDefinition '[] '[] '[] '[] a
 pure = pureValue
 
 
-return :: a -> ServiceDefinition '[] a
+return :: a -> ServiceDefinition '[] '[] '[] '[] a
 return = pure
 
 
-(<*>) :: ServiceDefinition cmds (a -> b) -> ServiceDefinition cmds a -> ServiceDefinition cmds b
+(<*>) :: ServiceDefinition cmds reqProtos provProtos adapters (a -> b) -> ServiceDefinition cmds reqProtos provProtos adapters a -> ServiceDefinition cmds reqProtos provProtos adapters b
 (<*>) = applyValue
 
 
-(>>=) :: ServiceDefinition cmds1 a -> (a -> ServiceDefinition cmds2 b) -> ServiceDefinition (Record.Merge cmds1 cmds2) b
+(>>=) :: ServiceDefinition cmds1 req1 prov1 adp1 a -> (a -> ServiceDefinition cmds2 req2 prov2 adp2 b) -> ServiceDefinition (Record.Merge cmds1 cmds2) (Union req1 req2) (Union prov1 prov2) (Record.Merge adp1 adp2) b
 (>>=) = bindValue
 
 
-(>>) :: ServiceDefinition cmds1 a -> (ServiceDefinition cmds2 b) -> ServiceDefinition (Record.Merge cmds1 cmds2) b
+(>>) :: ServiceDefinition cmds1 req1 prov1 adp1 a -> ServiceDefinition cmds2 req2 prov2 adp2 b -> ServiceDefinition (Record.Merge cmds1 cmds2) (Union req1 req2) (Union prov1 prov2) (Record.Merge adp1 adp2) b
 (>>) a b = bindValue a (\_ -> b)
 
 
 -- | Flatten a nested ServiceDefinition structure
 join ::
-  forall cmds1 cmds2 a.
-  ServiceDefinition cmds1 (ServiceDefinition cmds2 a) -> ServiceDefinition (Record.Merge cmds1 cmds2) a
+  forall cmds1 cmds2 req1 req2 prov1 prov2 adp1 adp2 a.
+  ServiceDefinition cmds1 req1 prov1 adp1 (ServiceDefinition cmds2 req2 prov2 adp2 a) -> ServiceDefinition (Record.Merge cmds1 cmds2) (Union req1 req2) (Union prov1 prov2) (Record.Merge adp1 adp2) a
 join m = bindValue m unchanged
 
 
 -- | Create a ServiceDefinition with just a value
-yield :: forall a. a -> ServiceDefinition '[] a
+yield :: forall a. a -> ServiceDefinition '[] '[] '[] '[] a
 yield a =
   ServiceDefinition
     { value = a,
-      commandNames = Record.empty
+      commandNames = Record.empty,
+      adapterRecord = Record.empty
     }
-
-
--- | Proxy to store the type of the command
-data CommandDefinition (command :: Type) = CommandDefinition
 
 
 -- | Register a command type in the service definition
@@ -144,7 +207,7 @@ command ::
     commandName ~ NameOf commandType,
     IsLabel commandName (Record.Field commandName)
   ) =>
-  ServiceDefinition '[commandName Record.:= CommandDefinition commandType] Unit
+  ServiceDefinition '[commandName Record.:= CommandDefinition commandType] (TransportProtocols commandType) '[] '[] Unit
 command = do
   let field = fromLabel @commandName
   let definition = CommandDefinition
@@ -152,10 +215,11 @@ command = do
     { value = unit,
       commandNames =
         Record.empty
-          |> Record.insert field definition
+          |> Record.insert field definition,
+      adapterRecord = Record.empty
     }
 
 
 -- | Extract the value from a ServiceDefinition
-extract :: forall cmds a. ServiceDefinition cmds a -> a
+extract :: forall cmds reqProtos provProtos adapters a. ServiceDefinition cmds reqProtos provProtos adapters a -> a
 extract m = m.value
