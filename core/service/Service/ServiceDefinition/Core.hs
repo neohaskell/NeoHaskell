@@ -96,10 +96,24 @@ deploy ::
   ServiceDefinition commands reqProtos provProtos adapters Unit ->
   Task ServiceError ServiceRuntime
 deploy _serviceDef = do
-  -- TODO: Initialize adapters and build routing table
-  -- This is a placeholder implementation
+  -- TODO: Complete implementation
+  -- 1. Initialize all adapters from serviceDef.adapterRecord
+  -- 2. Build command routing table from serviceDef.commandNames
+  -- 3. Create execute function that:
+  --    a. Looks up command by name in commandNames
+  --    b. Deserializes the Bytes payload to the command type
+  --    c. Gets the command's TransportProtocols
+  --    d. Finds a matching adapter from the initialized adapters
+  --    e. Instantiates CommandHandler with EventStore
+  --    f. Executes the command's decide function
+  --    g. Serializes the result back to Bytes
+
   Task.yield ServiceRuntime
-    { execute = \commandName _bytes -> Task.throw (CommandNotFound commandName),
+    { execute = \commandName _bytes -> do
+        -- Look up command in serviceDef.commandNames
+        -- If not found, throw CommandNotFound
+        -- Otherwise, execute through appropriate adapter
+        Task.throw (CommandNotFound commandName),
       shutdown = Task.yield unit
     }
 

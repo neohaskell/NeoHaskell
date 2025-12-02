@@ -63,15 +63,22 @@ instance ServiceAdapter DirectAdapter where
       }
 
   -- | Execute a command through the Direct adapter
+  -- Note: The command has already been looked up and deserialized by ServiceRuntime
+  -- The adapter's role is to:
+  -- 1. Run the command through CommandHandler (which executes the Decision)
+  -- 2. Handle the CommandHandlerResult
+  -- 3. Serialize the result back to Bytes
   executeCommand _adapter state _commandName _bytes = do
     -- Check if adapter is shutdown
     if state.isShutdown
       then Task.throw ServiceAlreadyShutdown
       else do
-        -- TODO: Implement actual command execution
-        -- 1. Decode bytes to command using Aeson
-        -- 2. Execute via CommandHandler
-        -- 3. Encode result to bytes
+        -- TODO: Actual implementation will:
+        -- 1. Receive the already-deserialized command from ServiceRuntime
+        -- 2. Get or create CommandHandler with EventStore and EntityFetcher
+        -- 3. Execute command through CommandHandler.execute
+        -- 4. Transform CommandHandlerResult to appropriate response
+        -- 5. Serialize response to Bytes
         -- For now, return empty bytes as placeholder
         Task.yield (Bytes.fromLegacy "")
 

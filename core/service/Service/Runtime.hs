@@ -13,9 +13,11 @@ import Task (Task)
 import Text (Text)
 
 -- | ServiceRuntime is the deployed, runnable form of a service
--- It provides command execution and shutdown capabilities
+-- It provides command lookup, execution and shutdown capabilities
 data ServiceRuntime = ServiceRuntime
-  { -- | Execute a command by name with a Bytes payload
+  { -- | Find a command by name and execute it with a Bytes payload
+    -- The runtime looks up the command in the service definition,
+    -- instantiates the appropriate handler, and delegates to the adapter
     execute :: Text -> Bytes -> Task ServiceError Bytes,
     -- | Gracefully shutdown all adapters
     shutdown :: Task ServiceError Unit

@@ -20,6 +20,7 @@ class TransportProtocol (protocolName :: Symbol) where
   -- | Runtime state type for this protocol
   type ProtocolState protocolName :: Type
 
--- | Type family to get the list of transport protocols for a command
--- Each command type can declare which protocols it supports
+-- | Type family to get the list of transport protocols supported by a command
+-- Each command type declares which protocols it can be executed through
+-- For example: type TransportProtocols CreateCart = '["Direct", "REST"]
 type family TransportProtocols (commandType :: Type) :: [Symbol]
