@@ -4,7 +4,6 @@ module Neo.New (
   ProjectName (..),
 ) where
 
-import Array qualified
 import Directory qualified
 import File qualified
 import Maybe qualified

@@ -4,7 +4,6 @@ module Neo (
   run,
 ) where
 
-import Array qualified
 import Command qualified
 import Console qualified
 import Core

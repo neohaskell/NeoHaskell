@@ -3,7 +3,6 @@ module Neo.Run (
   Error (..),
 ) where
 
-import Array qualified
 import Neo.Core
 import Subprocess qualified
 import Task qualified
