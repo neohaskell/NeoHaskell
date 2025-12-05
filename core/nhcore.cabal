@@ -30,6 +30,7 @@ common common_cfg
     containers,
     contravariant-extras,
     data-default,
+    deepseq,
     dir-traverse,
     directory,
     file-embed,
@@ -48,6 +49,7 @@ common common_cfg
     pretty-simple,
     process,
     quickcheck-instances,
+    should-not-typecheck,
     strict,
     string-interpolate,
     template-haskell,
@@ -132,13 +134,19 @@ library
     Path
     Record
     Result
+    Service.Adapter
+    Service.Adapter.Direct
     Service.Command
     Service.Command.Core
     Service.CommandHandler
     Service.CommandHandler.Core
     Service.CommandHandler.TH
+    Service.Definition
+    Service.Definition.TypeLevel
+    Service.Definition.Validation
     Service.EntityFetcher
     Service.EntityFetcher.Core
+    Service.Error
     Service.Event
     Service.Event.EntityName
     Service.Event.EventMetadata
@@ -154,16 +162,10 @@ library
     Service.EventStore.Postgres.Internal.PostgresEventRecord
     Service.EventStore.Postgres.Internal.Sessions
     Service.EventStore.Postgres.Internal.SubscriptionStore
-    Service.ServiceDefinition
-    Service.ServiceDefinition.Core
-    Service.Adapter
-    Service.Adapter.Direct
-    Service.Definition
-    Service.Definition.TypeLevel
-    Service.Definition.Validation
-    Service.Error
     Service.Protocol
     Service.Runtime
+    Service.ServiceDefinition
+    Service.ServiceDefinition.Core
     Set
     Stream
     Subprocess
@@ -173,6 +175,7 @@ library
     Test.AppSpec.AppSpec
     Test.AppSpec.Scenario
     Test.AppSpec.Verify
+    Test.CompileTime
     Test.Service.Command
     Test.Service.Command.Core
     Test.Service.Command.Decide.Context
