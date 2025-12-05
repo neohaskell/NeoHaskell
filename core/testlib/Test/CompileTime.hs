@@ -17,7 +17,7 @@ import Test.ShouldNotTypecheck qualified as ShouldNotTypecheck
 
 -- | Assert that an expression should not typecheck.
 -- This is useful for testing type-level constraints and validation.
--- Note: Requires {-# LANGUAGE DeferredTypeErrors #-} in test files.
+-- Note: Requires {-# OPTIONS_GHC -fdefer-type-errors #-} in test files.
 --
 -- Example:
 -- @

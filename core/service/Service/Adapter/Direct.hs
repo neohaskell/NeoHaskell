@@ -8,6 +8,7 @@
 module Service.Adapter.Direct (
   -- * Direct Adapter
   DirectAdapter(..),
+  DirectAdapterState(..),
   DirectConfig(..),
   defaultConfig,
 ) where
