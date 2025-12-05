@@ -5,6 +5,7 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE QualifiedDo #-}
 {-# OPTIONS_GHC -fdefer-type-errors #-}
 
 module Service.TransportProtocolSpec where
@@ -182,10 +183,10 @@ spec = do
 
     it "accumulates protocols from commands" \_ -> do
       -- This should compile - Direct adapter provided for Direct-only command
-      let serviceDef =
+      let serviceDef = Service.do
             Service.service
-            Service.>> Service.expose (DirectAdapter defaultConfig)
-            Service.>> Service.command @CreateCartCommand
+            Service.expose (DirectAdapter defaultConfig)
+            Service.command @CreateCartCommand
 
       -- Successfully deploy (compile-time check passes)
       result <- Service.deploy serviceDef |> Task.mapError toText |> Task.asResult
@@ -195,11 +196,11 @@ spec = do
 
     it "allows extra adapters beyond requirements" \_ -> do
       -- Having more adapters than needed should be fine
-      let serviceDef =
+      let serviceDef = Service.do
             Service.service
-            Service.>> Service.expose (DirectAdapter defaultConfig)
+            Service.expose (DirectAdapter defaultConfig)
             -- Could add REST adapter here too, even though not needed
-            Service.>> Service.command @InternalCommand  -- Requires no protocols
+            Service.command @InternalCommand  -- Requires no protocols
 
       _runtime <- Service.deploy serviceDef |> Task.mapError toText
       Task.yield unit
@@ -207,29 +208,25 @@ spec = do
   describe "Compile-Time Protocol Validation" do
     it "should not compile when required adapter is missing" \_ ->
       shouldNotTypecheck (
-        -- CreateCartCommand requires Direct, but no adapter provided
-        let serviceDef = Service.service Service.>> Service.command @CreateCartCommand
-        in Service.deploy serviceDef
+        Service.deploy (Service.service Service.>> Service.command @CreateCartCommand)
       )
 
     it "should not compile when some adapters are missing" \_ ->
       shouldNotTypecheck (
-        -- AddItemCommand requires both Direct and REST, only Direct provided
-        let serviceDef =
-              Service.service
-              Service.>> Service.expose (DirectAdapter defaultConfig)
-              Service.>> Service.command @AddItemCommand
-        in Service.deploy serviceDef
+        Service.deploy (
+          Service.service
+          Service.>> Service.expose (DirectAdapter defaultConfig)
+          Service.>> Service.command @AddItemCommand
+        )
       )
 
     it "should not compile with multiple missing adapters" \_ ->
       shouldNotTypecheck (
-        -- Multiple commands with different requirements, none provided
-        let serviceDef =
-              Service.service
-              Service.>> Service.command @CreateCartCommand  -- Requires Direct
-              Service.>> Service.command @AddItemCommand      -- Requires Direct, REST
-        in Service.deploy serviceDef
+        Service.deploy (
+          Service.service
+          Service.>> Service.command @CreateCartCommand  -- Requires Direct
+          Service.>> Service.command @AddItemCommand      -- Requires Direct, REST
+        )
       )
 
   describe "DirectAdapter Behavior" do
@@ -260,10 +257,10 @@ spec = do
   describe "Service Composition" do
     it "composes multiple commands with same protocol" \_ -> do
       -- Both commands require Direct, one adapter suffices
-      let serviceDef =
+      let serviceDef = Service.do
             Service.service
-            Service.>> Service.expose (DirectAdapter defaultConfig)
-            Service.>> Service.command @CreateCartCommand
+            Service.expose (DirectAdapter defaultConfig)
+            Service.command @CreateCartCommand
             -- Add more Direct-only commands here
 
       _runtime <- Service.deploy serviceDef |> Task.mapError toText
@@ -272,8 +269,12 @@ spec = do
     it "maintains type safety through composition" \_ -> do
       -- The monadic interface should properly track protocols
       let step1 = Service.service
-      let step2 = step1 Service.>> Service.expose (DirectAdapter defaultConfig)
-      let step3 = step2 Service.>> Service.command @CreateCartCommand
+      let step2 = Service.do
+            step1
+            Service.expose (DirectAdapter defaultConfig)
+      let step3 = Service.do
+            step2
+            Service.command @CreateCartCommand
 
       _runtime <- Service.deploy step3 |> Task.mapError toText
       Task.yield unit
