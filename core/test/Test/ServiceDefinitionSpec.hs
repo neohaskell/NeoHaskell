@@ -5,15 +5,6 @@ import Service.ServiceDefinition.Core qualified as ServiceDefinition
 import Test
 
 
--- Test command types for service definition testing
-data TestCommand1 = TestCommand1
-  deriving (Generic, Typeable)
-
-
-data TestCommand2 = TestCommand2
-  deriving (Generic, Typeable)
-
-
 spec :: Spec Unit
 spec = do
   describe "ServiceDefinition Monad behavior" do
