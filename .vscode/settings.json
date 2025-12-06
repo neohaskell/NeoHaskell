@@ -6,6 +6,7 @@
     "Appendable",
     "BIGSERIAL",
     "BYTEA",
+    "bytestring",
     "clippy",
     "contrazip",
     "dbname",
@@ -24,8 +25,10 @@
     "hlint",
     "Hspec",
     "Inspectable",
+    "mempty",
     "MINVALUE",
     "Monoid",
+    "Multitenant",
     "Nanotime",
     "NEOHASKELL",
     "nhcli",
@@ -38,6 +41,7 @@
     "pkgs",
     "plpgsql",
     "Posix",
+    "quickcheck",
     "reldir",
     "relfile",
     "Semigroup",
@@ -70,5 +74,7 @@
   "[markdown]": {
     "editor.defaultFormatter": "esbenp.prettier-vscode",
     "editor.formatOnSave": true
-  }
+  },
+  "discord.enabled": true,
+  "vscord.enabled": true
 }

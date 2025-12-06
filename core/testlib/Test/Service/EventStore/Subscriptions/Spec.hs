@@ -15,7 +15,7 @@ import Service.EventStore.Core qualified as EventStore
 import Stream qualified
 import Task qualified
 import Test
-import Test.Service.EventStore.Core (BankAccountEvent, newInsertion)
+import Test.Service.EventStore.Core (CartEvent, newInsertion)
 import Test.Service.EventStore.Subscriptions.Context (Context (..))
 import Test.Service.EventStore.Subscriptions.Context qualified as Context
 import Uuid qualified
@@ -24,8 +24,8 @@ import Uuid qualified
 -- Helper function to filter events by entity name to avoid cross-test interference
 entityFilteredSubscriber ::
   Event.EntityName ->
-  (Event BankAccountEvent -> Task Text Unit) ->
-  Event BankAccountEvent ->
+  (Event CartEvent -> Task Text Unit) ->
+  Event CartEvent ->
   Task Text Unit
 entityFilteredSubscriber targetEntity handler event = do
   if event.entityName == targetEntity
@@ -33,13 +33,13 @@ entityFilteredSubscriber targetEntity handler event = do
     else Task.yield unit
 
 
-spec :: Task Text (EventStore BankAccountEvent) -> Spec Unit
+spec :: Task Text (EventStore CartEvent) -> Spec Unit
 spec newStore = do
   describe "Event Store Subscriptions" do
     before (Context.initialize newStore) do
       it "allows subscribing to all events and receives them when appended" \context -> do
         -- Create a shared variable to collect received events
-        receivedEvents <- ConcurrentVar.containing (Array.empty :: Array (Event BankAccountEvent))
+        receivedEvents <- ConcurrentVar.containing (Array.empty :: Array (Event CartEvent))
 
         -- Define subscriber function that collects events
         let collectEvent event = do
@@ -96,11 +96,11 @@ spec newStore = do
                 { streamId = otherStreamId,
                   entityName = otherEntityName,
                   insertionType = Event.AnyStreamState,
-                  insertions = Array.fromLinkedList [otherInsertion]
+                  insertions = [otherInsertion]
                 }
 
         -- Create a shared variable to collect received events
-        receivedEvents <- ConcurrentVar.containing (Array.empty :: Array (Event BankAccountEvent))
+        receivedEvents <- ConcurrentVar.containing (Array.empty :: Array (Event CartEvent))
 
         -- Define subscriber function that collects events
         let subscriber event = do
@@ -158,11 +158,11 @@ spec newStore = do
                 { streamId = otherStreamId,
                   entityName = context.entityName,
                   insertionType = Event.AnyStreamState,
-                  insertions = Array.fromLinkedList [otherInsertion]
+                  insertions = [otherInsertion]
                 }
 
         -- Create a shared variable to collect received events
-        receivedEvents <- ConcurrentVar.containing (Array.empty :: Array (Event BankAccountEvent))
+        receivedEvents <- ConcurrentVar.containing (Array.empty :: Array (Event CartEvent))
 
         -- Define subscriber function that collects events
         let subscriber event = do
@@ -258,9 +258,9 @@ spec newStore = do
 
       it "supports multiple concurrent subscribers without interference" \context -> do
         -- Create multiple shared variables for different subscribers
-        subscriber1Events <- ConcurrentVar.containing (Array.empty :: Array (Event BankAccountEvent))
-        subscriber2Events <- ConcurrentVar.containing (Array.empty :: Array (Event BankAccountEvent))
-        subscriber3Events <- ConcurrentVar.containing (Array.empty :: Array (Event BankAccountEvent))
+        subscriber1Events <- ConcurrentVar.containing (Array.empty :: Array (Event CartEvent))
+        subscriber2Events <- ConcurrentVar.containing (Array.empty :: Array (Event CartEvent))
+        subscriber3Events <- ConcurrentVar.containing (Array.empty :: Array (Event CartEvent))
 
         -- Define different subscriber functions
         let collectToVar1 event = subscriber1Events |> ConcurrentVar.modify (Array.push event)
@@ -286,7 +286,7 @@ spec newStore = do
         adjustedEvents <- case (context.testEvents |> Array.get 0, context.testEvents |> Array.get 1, context.testEvents |> Array.get 2) of
           (Just event1, Just event2, Just event3) -> do
             Task.yield
-              (Array.fromLinkedList [event1, event2, event3])
+              ([event1, event2, event3])
           _ -> do
             Task.throw "Not enough test events"
         let insertEvent event = do
@@ -320,7 +320,7 @@ spec newStore = do
 
       it "stops delivering events after unsubscription" \context -> do
         -- Create a shared variable to collect received events
-        receivedEvents <- ConcurrentVar.containing (Array.empty :: Array (Event BankAccountEvent))
+        receivedEvents <- ConcurrentVar.containing (Array.empty :: Array (Event CartEvent))
 
         -- Define subscriber function
         let collectEvent event = receivedEvents |> ConcurrentVar.modify (Array.push event)
@@ -368,7 +368,7 @@ spec newStore = do
 
       it "handles high-frequency event publishing without data loss" \context -> do
         -- Create a shared variable to collect received events
-        receivedEvents <- ConcurrentVar.containing (Array.empty :: Array (Event BankAccountEvent))
+        receivedEvents <- ConcurrentVar.containing (Array.empty :: Array (Event CartEvent))
 
         -- Define subscriber function that tracks events
         let collectEvent event = receivedEvents |> ConcurrentVar.modify (Array.push event)
@@ -434,7 +434,7 @@ spec newStore = do
         preSubscriptionEvents2 |> Task.mapArray insertEvent |> discard
 
         -- Now set up subscription tracking
-        receivedEvents <- ConcurrentVar.containing (Array.empty :: Array (Event BankAccountEvent))
+        receivedEvents <- ConcurrentVar.containing (Array.empty :: Array (Event CartEvent))
 
         let subscriber event = do
               -- Only track events from our test entities
@@ -499,7 +499,7 @@ spec newStore = do
           Nothing -> Task.throw "No events in first batch"
 
         -- Set up subscription tracking
-        receivedEvents <- ConcurrentVar.containing (Array.empty :: Array (Event BankAccountEvent))
+        receivedEvents <- ConcurrentVar.containing (Array.empty :: Array (Event CartEvent))
 
         let subscriber event = do
               -- Only track events from our test entities
@@ -574,7 +574,7 @@ spec newStore = do
         firstBatchEvents2 |> Task.mapArray insertEvent |> discard
 
         -- Set up subscription tracking
-        receivedEvents <- ConcurrentVar.containing (Array.empty :: Array (Event BankAccountEvent))
+        receivedEvents <- ConcurrentVar.containing (Array.empty :: Array (Event CartEvent))
 
         let subscriber event = do
               -- Only track events from our test entities
@@ -620,10 +620,10 @@ spec newStore = do
 
 
 createTestEventsForEntity ::
-  Event.StreamId -> Event.EntityName -> Int -> Int -> Task _ (Array (Event.InsertionPayload BankAccountEvent))
+  Event.StreamId -> Event.EntityName -> Int -> Int -> Task _ (Array (Event.InsertionPayload CartEvent))
 createTestEventsForEntity streamId entityName count startPosition = do
   let createEvent position = do
-        insertions <- Array.fromLinkedList [position] |> Task.mapArray newInsertion
+        insertions <- [position] |> Task.mapArray newInsertion
         Task.yield
           Event.InsertionPayload
             { streamId,
@@ -632,15 +632,15 @@ createTestEventsForEntity streamId entityName count startPosition = do
               insertions
             }
 
-  Array.fromLinkedList [startPosition .. (startPosition + count - 1)]
+  [startPosition .. (startPosition + count - 1)]
     |> Task.mapArray createEvent
 
 
 createRapidTestEventsFromPosition ::
-  Event.StreamId -> Event.EntityName -> Int -> Int -> Task _ (Array (Event.InsertionPayload BankAccountEvent))
+  Event.StreamId -> Event.EntityName -> Int -> Int -> Task _ (Array (Event.InsertionPayload CartEvent))
 createRapidTestEventsFromPosition streamId entityName count startPosition = do
   let createEvent position = do
-        insertions <- Array.fromLinkedList [position] |> Task.mapArray newInsertion
+        insertions <- [position] |> Task.mapArray newInsertion
         Task.yield
           Event.InsertionPayload
             { streamId,
@@ -649,5 +649,5 @@ createRapidTestEventsFromPosition streamId entityName count startPosition = do
               insertions
             }
 
-  Array.fromLinkedList [startPosition .. (startPosition + count - 1)]
+  [startPosition .. (startPosition + count - 1)]
     |> Task.mapArray createEvent

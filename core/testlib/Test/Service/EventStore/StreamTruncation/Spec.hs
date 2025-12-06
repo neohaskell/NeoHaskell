@@ -11,12 +11,12 @@ import Service.EventStore.Core qualified as EventStore
 import Stream qualified
 import Task qualified
 import Test
-import Test.Service.EventStore.Core (BankAccountEvent, newInsertion)
+import Test.Service.EventStore.Core (CartEvent, newInsertion)
 import Test.Service.EventStore.StreamTruncation.Context qualified as Context
 import Uuid qualified
 
 
-spec :: Task Text (EventStore BankAccountEvent) -> Spec Unit
+spec :: Task Text (EventStore CartEvent) -> Spec Unit
 spec newStore = do
   describe "Stream Truncation" do
     before (Context.initialize newStore) do
@@ -26,10 +26,10 @@ spec newStore = do
 
         -- Insert 10 events at positions 0-9
         let eventCount = 10
-        Array.fromLinkedList [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+        [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
           |> Task.mapArray
             ( \position -> do
-                insertions <- Array.fromLinkedList [position] |> Task.mapArray newInsertion
+                insertions <- [position] |> Task.mapArray newInsertion
                 let payload =
                       Event.InsertionPayload
                         { streamId = context.streamId,
@@ -91,10 +91,10 @@ spec newStore = do
         let entityName = Event.EntityName entityNameText
 
         -- Insert 5 events
-        Array.fromLinkedList [0, 1, 2, 3, 4]
+        [0, 1, 2, 3, 4]
           |> Task.mapArray
             ( \position -> do
-                insertions <- Array.fromLinkedList [position] |> Task.mapArray newInsertion
+                insertions <- [position] |> Task.mapArray newInsertion
                 let payload =
                       Event.InsertionPayload
                         { streamId = context.streamId,
@@ -129,10 +129,10 @@ spec newStore = do
         let entityName = Event.EntityName entityNameText
 
         -- Insert 5 events
-        Array.fromLinkedList [0, 1, 2, 3, 4]
+        [0, 1, 2, 3, 4]
           |> Task.mapArray
             ( \position -> do
-                insertions <- Array.fromLinkedList [position] |> Task.mapArray newInsertion
+                insertions <- [position] |> Task.mapArray newInsertion
                 let payload =
                       Event.InsertionPayload
                         { streamId = context.streamId,

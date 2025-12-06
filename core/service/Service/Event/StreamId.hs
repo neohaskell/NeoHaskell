@@ -1,13 +1,17 @@
 module Service.Event.StreamId (
   StreamId (..),
+  ToStreamId (..),
   new,
   toText,
   fromText,
 ) where
 
-import Core hiding (toText)
+import Basics
 import Json qualified
+import Task (Task)
 import Task qualified
+import Text (Text)
+import Uuid (Uuid)
 import Uuid qualified
 
 
@@ -33,3 +37,19 @@ toText (StreamId id) = id
 
 fromText :: Text -> StreamId
 fromText id = StreamId id
+
+
+class ToStreamId idType where
+  toStreamId :: idType -> StreamId
+
+
+instance ToStreamId StreamId where
+  toStreamId id = id
+
+
+instance ToStreamId Text where
+  toStreamId text = StreamId text
+
+
+instance ToStreamId Uuid where
+  toStreamId uuid = uuid |> Uuid.toText |> StreamId

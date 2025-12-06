@@ -8,22 +8,22 @@ import Service.EntityFetcher.Core (EntityFetcher)
 import Service.Event qualified as Event
 import Service.Event.StreamId qualified as StreamId
 import Service.EventStore (EventStore)
-import Test.Service.EntityFetcher.Core (BankAccountEvent, BankAccountState)
+import Test.Service.EntityFetcher.Core (CartEvent, CartState)
 
 
 data Context = Context
-  { store :: EventStore BankAccountEvent,
-    fetcher :: EntityFetcher BankAccountState BankAccountEvent,
+  { store :: EventStore CartEvent,
+    fetcher :: EntityFetcher CartState CartEvent,
     streamId :: Event.StreamId,
     entityName :: Event.EntityName
   }
 
 
 initialize ::
-  Task Text (EventStore BankAccountEvent, EntityFetcher BankAccountState BankAccountEvent) ->
+  Task Text (EventStore CartEvent, EntityFetcher CartState CartEvent) ->
   Task Text Context
 initialize newStoreAndFetcher = do
   (store, fetcher) <- newStoreAndFetcher
   streamId <- StreamId.new
-  let entityName = Event.EntityName "BankAccount"
+  let entityName = Event.EntityName "Cart"
   pure Context {store, fetcher, streamId, entityName}

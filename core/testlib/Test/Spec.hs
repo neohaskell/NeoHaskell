@@ -138,7 +138,7 @@ shouldReturn expected actual = do
 
 
 -- | Fail the test with a message
-fail :: Text -> Task Text Unit
+fail :: (HasCallStack) => Text -> Task Text Unit
 fail message = do
   Task.fromIO (Hspec.expectationFailure (Text.toLinkedList message))
 {-# INLINE fail #-}

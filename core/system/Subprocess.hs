@@ -19,7 +19,6 @@ import Task (Task)
 import Task qualified
 import Text (Text)
 import Text qualified
-import ToText (Show)
 
 
 data Completion = Completion

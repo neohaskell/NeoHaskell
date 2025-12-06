@@ -20,7 +20,6 @@ import Service.Event (
   InsertionFailure,
   InsertionPayload,
   InsertionSuccess,
-  StreamId,
   StreamPosition,
  )
 import Stream (Stream)

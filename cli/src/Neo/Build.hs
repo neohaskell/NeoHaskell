@@ -37,13 +37,13 @@ handle config = do
   let cabalProjectFileName = [path|cabal.project|]
   let nixFile = Nix.template config
   let cabalFilePath =
-        Array.fromLinkedList [rootFolder, cabalFileName]
+        [rootFolder, cabalFileName]
           |> Path.joinPaths
   let targetAppFolder =
-        Array.fromLinkedList [rootFolder, ".launcher"]
+        [rootFolder, ".launcher"]
           |> Path.joinPaths
   let targetAppPath =
-        Array.fromLinkedList [targetAppFolder, "Main.hs"]
+        [targetAppFolder, "Main.hs"]
           |> Path.joinPaths
 
   filepaths <-
@@ -80,7 +80,7 @@ handle config = do
   ( (#{nixFile}) { inherit pkgs; } ).package|]
 
   completion <-
-    Subprocess.openInherit "nix-build" (Array.fromLinkedList ["-E", buildExpression]) rootFolder Subprocess.InheritBOTH
+    Subprocess.openInherit "nix-build" (["-E", buildExpression]) rootFolder Subprocess.InheritBOTH
       |> Task.mapError (\err -> CustomError [fmt|Failed to run nix-build: #{err}|])
   if completion.exitCode != 0
     then errorOut completion.stderr

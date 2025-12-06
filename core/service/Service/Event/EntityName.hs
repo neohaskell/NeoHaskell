@@ -3,8 +3,9 @@ module Service.Event.EntityName (
   toText,
 ) where
 
-import Core hiding (toText)
+import Basics
 import Json qualified
+import Text (Text)
 
 
 newtype EntityName = EntityName Text

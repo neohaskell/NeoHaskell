@@ -14,7 +14,6 @@ import Data.UUID.V4 qualified as V4
 import Json (FromJSON, ToJSON)
 import Task (Task)
 import Task qualified
-import ToText (Show (..))
 
 
 newtype Uuid = Uuid (UUID.UUID)

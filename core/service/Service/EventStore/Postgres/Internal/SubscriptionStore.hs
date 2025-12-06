@@ -19,7 +19,7 @@ import AsyncTask qualified
 import ConcurrentVar qualified
 import Core
 import Map qualified
-import Service.Event (EntityName, Event (..), StreamId, StreamPosition)
+import Service.Event (EntityName, Event (..), StreamPosition)
 import Service.Event.EventMetadata (EventMetadata (..))
 import Service.EventStore.Core (SubscriptionId (..))
 import Task qualified

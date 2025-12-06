@@ -3,11 +3,16 @@ module Service.Event.EventMetadata (
   new,
 ) where
 
-import Core
+import Basics
+import DateTime (DateTime)
 import DateTime qualified
 import Json (FromJSON, ToJSON)
+import Maybe (Maybe (..))
 import Service.Event.StreamPosition (StreamPosition)
+import Task (Task)
 import Task qualified
+import Text (Text)
+import Uuid (Uuid)
 import Uuid qualified
 
 

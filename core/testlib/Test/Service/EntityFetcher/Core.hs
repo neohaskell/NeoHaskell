@@ -1,73 +1,91 @@
 module Test.Service.EntityFetcher.Core (
-  BankAccountEvent (..),
-  BankAccountState (..),
+  CartEvent (..),
+  CartState (..),
   initialState,
   applyEvent,
   newFetcher,
 ) where
 
+import Array qualified
 import Core
 import Json qualified
 import Service.EntityFetcher.Core (EntityFetcher)
 import Service.EntityFetcher.Core qualified as EntityFetcher
 import Service.EventStore.Core (EventStore)
-import Test.Service.EventStore.Core (BankAccountEvent (..))
+import Test.Service.EventStore.Core (CartEvent (..))
 
 
--- | Example entity state for a bank account
-data BankAccountState = BankAccountState
-  { balance :: Int,
-    isOpen :: Bool,
+-- | Example entity state for a shopping cart
+data CartState = CartState
+  { cartId :: Maybe Uuid,
+    cartItems :: Array (Uuid, Int),
+    isCheckedOut :: Bool,
     version :: Int
   }
   deriving (Eq, Show, Ord, Generic)
 
 
-instance Json.ToJSON BankAccountState
+instance Json.ToJSON CartState
 
 
-instance Json.FromJSON BankAccountState
+instance Json.FromJSON CartState
 
 
--- | Initial state for a new bank account
-initialState :: BankAccountState
+-- | Initial state for a new cart
+initialState :: CartState
 initialState =
-  BankAccountState
-    { balance = 0,
-      isOpen = False,
+  CartState
+    { cartId = Nothing,
+      cartItems = Array.empty,
+      isCheckedOut = False,
       version = 0
     }
 
 
--- | Apply a bank account event to the current state
-applyEvent :: BankAccountEvent -> BankAccountState -> BankAccountState
+-- | Apply a cart event to the current state
+applyEvent :: CartEvent -> CartState -> CartState
 applyEvent event state = do
   let newVersion = state.version + 1
   case event of
-    AccountOpened {initialBalance} ->
-      BankAccountState
-        { balance = initialBalance,
-          isOpen = True,
+    CartCreated {entityId} ->
+      CartState
+        { cartId = Just entityId,
+          cartItems = Array.empty,
+          isCheckedOut = False,
           version = newVersion
         }
-    MoneyDeposited {amount} ->
+    ItemAdded {itemId, amount} -> do
+      let existingItems = state.cartItems
+      let updatedItems = addOrUpdateItem existingItems itemId amount
       state
-        { balance = state.balance + amount,
+        { cartItems = updatedItems,
           version = newVersion
         }
-    MoneyWithdrawn {amount} ->
+    ItemRemoved {itemId} -> do
+      let updatedItems = Array.dropIf (\(id, _) -> id == itemId) state.cartItems
       state
-        { balance = state.balance - amount,
+        { cartItems = updatedItems,
           version = newVersion
         }
-    AccountClosed ->
+    CartCheckedOut {} ->
       state
-        { isOpen = False,
+        { isCheckedOut = True,
           version = newVersion
         }
 
 
--- | Create a new entity fetcher for bank accounts
-newFetcher :: EventStore BankAccountEvent -> Task EntityFetcher.Error (EntityFetcher BankAccountState BankAccountEvent)
+addOrUpdateItem :: Array (Uuid, Int) -> Uuid -> Int -> Array (Uuid, Int)
+addOrUpdateItem items itemId amount = do
+  let existing = Array.find (\(id, _) -> id == itemId) items
+  case existing of
+    Just (_, currentAmount) -> do
+      let filtered = Array.takeIf (\(id, _) -> id != itemId) items
+      Array.append filtered (Array.wrap (itemId, currentAmount + amount))
+    Nothing ->
+      Array.append items (Array.wrap (itemId, amount))
+
+
+-- | Create a new entity fetcher for carts
+newFetcher :: EventStore CartEvent -> Task EntityFetcher.Error (EntityFetcher CartState CartEvent)
 newFetcher eventStore = do
   EntityFetcher.new eventStore initialState applyEvent

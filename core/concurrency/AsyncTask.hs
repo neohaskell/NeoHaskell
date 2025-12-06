@@ -18,7 +18,6 @@ import Result (Result)
 import Result qualified
 import Task (Task)
 import Task qualified
-import ToText (Show)
 
 
 newtype AsyncTask err result = AsyncTask (GhcAsync.Async (Result err result))

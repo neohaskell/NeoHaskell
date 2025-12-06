@@ -4,7 +4,6 @@ module Neo (
   run,
 ) where
 
-import Array qualified
 import Command qualified
 import Console qualified
 import Core
@@ -102,7 +101,7 @@ commandsParser = do
             decoder = shellParser
           }
   Command.commands
-    (Array.fromLinkedList [new, build, run, shell])
+    ([new, build, run, shell])
 
 
 buildParser :: Command.OptionsParser NeoCommand

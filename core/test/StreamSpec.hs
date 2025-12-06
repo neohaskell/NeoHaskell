@@ -96,13 +96,13 @@ spec = do
         result |> shouldBe Array.empty
 
       it "creates stream from array with single item" \_ -> do
-        let arr = Array.fromLinkedList [42 :: Int]
+        let arr = [42 :: Int]
         stream <- Stream.fromArray arr
         result <- Stream.toArray stream
         result |> shouldBe arr
 
       it "creates stream from array with multiple items" \_ -> do
-        let arr = Array.fromLinkedList [1, 2, 3, 4, 5 :: Int]
+        let arr = [1, 2, 3, 4, 5 :: Int]
         stream <- Stream.fromArray arr
         result <- Stream.toArray stream
         result |> shouldBe arr
@@ -114,7 +114,7 @@ spec = do
         result |> shouldBe arr
 
       it "can read items one by one from array stream" \_ -> do
-        let arr = Array.fromLinkedList [10, 20, 30 :: Int]
+        let arr = [10, 20, 30 :: Int]
         stream <- Stream.fromArray arr
 
         item1 <- Stream.readNext stream
@@ -139,7 +139,7 @@ spec = do
         Stream.writeItem 42 stream
         Stream.end stream
         result <- Stream.toArray stream
-        result |> shouldBe (Array.fromLinkedList [42])
+        result |> shouldBe ([42])
 
       it "converts stream with multiple items to array" \_ -> do
         stream <- Stream.new @Int
@@ -151,7 +151,7 @@ spec = do
         Stream.end stream
 
         result <- Stream.toArray stream
-        result |> shouldBe (Array.fromLinkedList [1, 2, 3, 4, 5])
+        result |> shouldBe ([1, 2, 3, 4, 5])
 
       it "converts stream with many items to array" \_ -> do
         stream <- Stream.new
@@ -215,7 +215,7 @@ spec = do
             Array.empty
             stream
 
-        result |> shouldBe (Array.fromLinkedList [1, 2, 3])
+        result |> shouldBe ([1, 2, 3])
 
       it "handles error during fold operation" \_ -> do
         stream <- Stream.new @Int
@@ -247,7 +247,7 @@ spec = do
         result <- reader
         AsyncTask.waitFor writerTask
 
-        result |> shouldBe (Array.fromLinkedList [1, 2, 3])
+        result |> shouldBe ([1, 2, 3])
 
       it "handles multiple concurrent readers on different streams" \_ -> do
         stream1 <- Stream.new @Text
@@ -264,8 +264,8 @@ spec = do
         result1 <- AsyncTask.waitFor task1
         result2 <- AsyncTask.waitFor task2
 
-        result1 |> shouldBe (Array.fromLinkedList ["a"])
-        result2 |> shouldBe (Array.fromLinkedList ["x"])
+        result1 |> shouldBe (["a"])
+        result2 |> shouldBe (["x"])
 
       it "handles slow producer with fast consumer" \_ -> do
         stream <- Stream.new @Int
@@ -283,7 +283,7 @@ spec = do
         result <- consumer
         AsyncTask.waitFor producerTask
 
-        result |> shouldBe (Array.fromLinkedList [1, 2, 3])
+        result |> shouldBe ([1, 2, 3])
 
     describe "StreamMessage" do
       it "Item message wraps a value" \_ -> do

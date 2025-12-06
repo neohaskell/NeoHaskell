@@ -37,7 +37,7 @@ import Task (Task)
 import Task qualified
 import Text (Text, fromLinkedList, toLinkedList)
 import Text qualified
-import ToText (Show (..), ToText)
+import ToText (ToText)
 import Unknown qualified
 import Version qualified
 
@@ -122,7 +122,7 @@ text config =
             OptParse.metavar (config.metavar |> Text.toLinkedList)
           ]
             ++ textValue
-            |> setting
+              |> setting
 
     OptParse.option OptParse.str options
     |> OptionsParser

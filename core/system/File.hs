@@ -12,7 +12,6 @@ import Path qualified
 import Task (Task)
 import Task qualified
 import Text (Text)
-import ToText (Show (..))
 
 
 data Error

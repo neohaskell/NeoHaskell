@@ -4,7 +4,7 @@ import Core
 import Service.EventStore.Core (EventStore)
 import Test
 import Test.Service.EventStore.BatchValidation.Spec qualified as BatchValidation
-import Test.Service.EventStore.Core (BankAccountEvent)
+import Test.Service.EventStore.Core (CartEvent)
 import Test.Service.EventStore.GlobalStreamOrdering.Spec qualified as GlobalStreamOrdering
 import Test.Service.EventStore.IndividualStreamOrdering.Spec qualified as IndividualStreamOrdering
 import Test.Service.EventStore.LocalPositionStamping.Spec qualified as LocalPositionStamping
@@ -16,7 +16,7 @@ import Test.Service.EventStore.Subscriptions.SimpleSpec qualified as SimpleSubsc
 import Test.Service.EventStore.Subscriptions.Spec qualified as Subscriptions
 
 
-spec :: Task Text (EventStore BankAccountEvent) -> Spec Unit
+spec :: Task Text (EventStore CartEvent) -> Spec Unit
 spec newStore = do
   describe "Event Store Specification Tests" do
     ReadAllForwardsFromStart.spec newStore
