@@ -251,6 +251,7 @@ test-suite nhcore-test
     Integration.App.Cart
     Integration.App.Cart.Commands.CreateCart
     Integration.App.Cart.Core
+    Service.CommandSpec
     Service.CommandHandlerSpec
     Service.EventStore.InMemorySpec
     Service.EventStore.Postgres.Internal.SubscriptionStoreSpec

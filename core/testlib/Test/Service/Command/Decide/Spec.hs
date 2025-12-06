@@ -91,8 +91,12 @@ cartCommandSpecs = do
         let cmd = AddItemToCart {cartId = context.cartId, itemId = context.itemId1, amount = 5}
         let sid = getEntityIdImpl @AddItemToCart cmd
 
-        -- StreamId should wrap the cartId
-        sid |> shouldSatisfy (\_ -> True) -- Basic existence check
+        -- StreamId should wrap the cartId from the command
+        sid |> shouldBe (Just context.cartId)
+
+        -- Also verify it would fail for a different cartId
+        let differentId = context.itemId1 -- Using itemId as a different Uuid
+        sid |> shouldNotBe (Just differentId)
   describe "RemoveItemFromCart" do
     before Context.initialize do
       it "rejects when cart doesn't exist" \context -> do
