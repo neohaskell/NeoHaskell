@@ -2,7 +2,6 @@ module Service.ServiceDefinition.Core (
   Service,
   ServiceDefinition (..),
   CommandDefinition(..),
-  service,
   expose,
   command,
   deploy,
@@ -60,15 +59,6 @@ data ServiceDefinition
 -- | Proxy to store the type of the command
 data CommandDefinition (commandType :: Type) = CommandDefinition
 
-
--- | Create an empty service definition
--- Starting point for building a service
-service :: ServiceDefinition '[] '[] '[] '[] Unit
-service = ServiceDefinition
-  { commandNames = Record.empty,
-    adapterRecord = Record.empty,
-    value = unit
-  }
 
 -- | Register an adapter in the service definition
 -- Declares "this service exposes its commands via this protocol"
@@ -194,7 +184,11 @@ return = pure
 
 
 (>>) :: ServiceDefinition cmds1 req1 prov1 adp1 a -> ServiceDefinition cmds2 req2 prov2 adp2 b -> ServiceDefinition (Record.Merge cmds1 cmds2) (Union req1 req2) (Union prov1 prov2) (Record.Merge adp1 adp2) b
-(>>) a b = bindValue a (\_ -> b)
+(>>) m1 m2 = ServiceDefinition
+  { value = m2.value,
+    commandNames = Record.merge m1.commandNames m2.commandNames,
+    adapterRecord = Record.merge m1.adapterRecord m2.adapterRecord
+  }
 
 
 -- | Flatten a nested ServiceDefinition structure

@@ -18,7 +18,7 @@ spec :: Spec Unit
 spec = do
   describe "ServiceDefinition Monad behavior" do
     it "can build an empty service definition" \_ -> do
-      let emptyServiceDefinition = ServiceDefinition.service
+      let emptyServiceDefinition = ServiceDefinition.emptyServiceDefinition :: ServiceDefinition.ServiceDefinition '[] '[] '[] '[] Unit
 
       -- Should be able to extract the unit value
       ServiceDefinition.extract emptyServiceDefinition |> shouldBe unit

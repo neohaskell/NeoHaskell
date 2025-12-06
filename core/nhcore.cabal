@@ -141,7 +141,6 @@ library
     Service.CommandHandler
     Service.CommandHandler.Core
     Service.CommandHandler.TH
-    Service.Definition
     Service.Definition.TypeLevel
     Service.Definition.Validation
     Service.EntityFetcher
