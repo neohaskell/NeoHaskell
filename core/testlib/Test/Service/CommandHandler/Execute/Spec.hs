@@ -1,6 +1,7 @@
 module Test.Service.CommandHandler.Execute.Spec where
 
 import Array qualified
+import AsyncTask qualified
 import Core
 import Maybe qualified
 import Service.CommandHandler (CommandHandlerResult (CommandAccepted, CommandFailed, CommandRejected))
@@ -377,9 +378,12 @@ concurrencySpecs newCartStoreAndFetcher = do
       let cmd1 = AddItemToCart {cartId = context.cartId, itemId = context.itemId1, amount = 3}
       let cmd2 = AddItemToCart {cartId = context.cartId, itemId = context.itemId2, amount = 5}
 
-      -- Both commands should eventually succeed with retry logic
-      result1 <- CommandHandler.execute context.cartStore context.cartFetcher context.cartEntityName cmd1
-      result2 <- CommandHandler.execute context.cartStore context.cartFetcher context.cartEntityName cmd2
+      -- Both commands should execute concurrently with retry logic
+      (result1, result2) <-
+        AsyncTask.runConcurrently
+          ( CommandHandler.execute context.cartStore context.cartFetcher context.cartEntityName cmd1,
+            CommandHandler.execute context.cartStore context.cartFetcher context.cartEntityName cmd2
+          )
 
       -- Both should succeed
       case result1 of

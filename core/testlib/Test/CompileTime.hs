@@ -6,14 +6,15 @@ module Test.CompileTime (
   shouldTypecheck,
 
   -- * Re-exports from should-not-typecheck
-  NFData(..),
+  NFData (..),
 ) where
 
-import Core
-import Control.DeepSeq (NFData(..), force)
+import Control.DeepSeq (NFData (..), force)
 import Control.Exception (evaluate)
+import Core
 import Task qualified
 import Test.ShouldNotTypecheck qualified as ShouldNotTypecheck
+
 
 -- | Assert that an expression should not typecheck.
 -- This is useful for testing type-level constraints and validation.
@@ -30,11 +31,12 @@ import Test.ShouldNotTypecheck qualified as ShouldNotTypecheck
 -- it "should reject invalid type family application" \_ -> do
 --   shouldNotTypecheck (undefined :: MyTypeFamily Int String)
 -- @
-shouldNotTypecheck :: forall value. (NFData value) => (() ~ () => value) -> Task Text Unit
+shouldNotTypecheck :: forall value. (HasCallStack, NFData value) => ((() ~ ()) => value) -> Task Text Unit
 shouldNotTypecheck expression = do
   -- shouldNotTypecheck from the library returns an Assertion (IO ())
   -- We need to convert it to our Task type
   Task.fromIO (ShouldNotTypecheck.shouldNotTypecheck expression)
+
 
 -- | Assert that an expression should typecheck.
 -- This is the opposite of shouldNotTypecheck - it verifies that valid code compiles.
