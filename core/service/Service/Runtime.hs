@@ -1,9 +1,6 @@
-{-# LANGUAGE DataKinds #-}
-{-# LANGUAGE TypeFamilies #-}
-
 module Service.Runtime (
   -- * Service Runtime
-  ServiceRuntime(..),
+  ServiceRuntime (..),
 ) where
 
 import Basics
@@ -11,6 +8,7 @@ import Bytes (Bytes)
 import Service.Error (ServiceError)
 import Task (Task)
 import Text (Text)
+
 
 -- | ServiceRuntime is the deployed, runnable form of a service
 -- It provides command lookup, execution and shutdown capabilities
