@@ -22,7 +22,7 @@ spec newStore = do
                     cartItems = Array.empty,
                     cartCheckedOut = False
                   }
-          fetcher <- EntityFetcher.new store initialState applyCartEvent |> Task.mapError (\err -> toText err |> toText)
+          fetcher <- EntityFetcher.new store initialState applyCartEvent |> Task.mapError toText
           pure (store, fetcher)
 
     Execute.spec newCartStoreAndFetcher
