@@ -119,12 +119,7 @@ fmap f m =
 
 -- | Create a ServiceDefinition with just a value
 pureValue :: forall a. a -> ServiceDefinition '[] '[] '[] '[] a
-pureValue a =
-  ServiceDefinition
-    { value = a,
-      commandNames = Record.empty,
-      adapterRecord = Record.empty
-    }
+pureValue = yield
 
 
 -- | Apply a function wrapped in a ServiceDefinition to a value wrapped in a ServiceDefinition
