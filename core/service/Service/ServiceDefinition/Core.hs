@@ -124,7 +124,12 @@ pureValue = yield
 
 -- | Apply a function wrapped in a ServiceDefinition to a value wrapped in a ServiceDefinition
 applyValue :: forall cmds reqProtos provProtos adapters a b. ServiceDefinition cmds reqProtos provProtos adapters (a -> b) -> ServiceDefinition cmds reqProtos provProtos adapters a -> ServiceDefinition cmds reqProtos provProtos adapters b
-applyValue fn x = fn <*> x
+applyValue fnDef valDef =
+  ServiceDefinition
+    { value = fnDef.value valDef.value,  -- Apply the function to the value
+      commandNames = valDef.commandNames,  -- Keep the metadata from the value (both should have same type)
+      adapterRecord = valDef.adapterRecord  -- Keep the adapter metadata from the value
+    }
 
 
 -- | Sequentially compose two ServiceDefinitions, passing the value from the first as an argument to the second
