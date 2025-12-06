@@ -83,7 +83,9 @@ common common_cfg
     QuasiQuotes
     Strict
     TemplateHaskell
+    TypeApplications
     TypeFamilies
+    TypeOperators
 
 library
   import: common_cfg

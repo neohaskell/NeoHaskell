@@ -1,13 +1,6 @@
-{-# LANGUAGE DataKinds #-}
-{-# LANGUAGE TypeApplications #-}
-{-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE AllowAmbiguousTypes #-}
-{-# LANGUAGE DeriveGeneric #-}
-{-# LANGUAGE TypeOperators #-}
-{-# LANGUAGE OverloadedLabels #-}
 {-# OPTIONS_GHC -fdefer-type-errors -Wno-deferred-type-errors #-}
-{-# OPTIONS_GHC -fplugin=Data.Record.Anon.Plugin #-}
 
 module Service.TransportProtocolSpec where
 
@@ -28,9 +21,10 @@ import Task qualified
 import Test
 
 -- ============================================================================
--- KnownHash instances for command names
+-- KnownHash instances for command names and protocol names
 -- ============================================================================
 
+-- Command name instances
 instance KnownHash "CreateCartCommand" where
   hashVal _ = 1234567890  -- Some unique hash value
 
@@ -39,6 +33,13 @@ instance KnownHash "AddItemCommand" where
 
 instance KnownHash "InternalCommand" where
   hashVal _ = 3456789012  -- Some unique hash value
+
+-- Protocol name instances
+instance KnownHash "Direct" where
+  hashVal _ = 4567890123  -- Some unique hash value
+
+instance KnownHash "REST" where
+  hashVal _ = 5678901234  -- Some unique hash value
 
 -- ============================================================================
 -- NFData instances for shouldNotTypecheck
