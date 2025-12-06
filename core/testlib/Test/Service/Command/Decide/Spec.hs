@@ -7,12 +7,12 @@ import Test
 import Test.Service.Command.Core (
   AddItemToCart (..),
   CartEntity (..),
-  CartEvent (..),
   CheckoutCart (..),
   RemoveItemFromCart (..),
   applyCartEvent,
   initialCartState,
  )
+import Test.Service.EventStore.Core (CartEvent (..))
 import Test.Service.Command.Decide.Context qualified as Context
 import Uuid qualified
 

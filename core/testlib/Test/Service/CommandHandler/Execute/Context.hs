@@ -8,7 +8,8 @@ import Service.EntityFetcher.Core (EntityFetcher)
 import Service.Event qualified as Event
 import Service.Event.StreamId qualified as StreamId
 import Service.EventStore (EventStore)
-import Test.Service.Command.Core (CartEntity, CartEvent)
+import Test.Service.Command.Core (CartEntity)
+import Test.Service.EventStore.Core (CartEvent)
 import Uuid qualified
 
 

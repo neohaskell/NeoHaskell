@@ -6,7 +6,8 @@ import Service.EntityFetcher qualified as EntityFetcher
 import Service.EventStore.Core (EventStore)
 import Task qualified
 import Test
-import Test.Service.Command.Core (CartEntity (..), CartEvent (..), applyCartEvent)
+import Test.Service.Command.Core (CartEntity (..), applyCartEvent)
+import Test.Service.EventStore.Core (CartEvent (..))
 import Test.Service.CommandHandler.Execute.Spec qualified as Execute
 
 

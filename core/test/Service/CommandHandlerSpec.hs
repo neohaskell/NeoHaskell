@@ -4,7 +4,7 @@ import Core
 import Service.EventStore.InMemory qualified as InMemory
 import Task qualified
 import Test
-import Test.Service.Command.Core (CartEvent)
+import Test.Service.EventStore.Core (CartEvent)
 import Test.Service.CommandHandler qualified as CommandHandler
 
 

@@ -5,7 +5,6 @@ module Test.Service.Command.Core (
   CheckoutCart (..),
   -- Cart Entity
   CartEntity (..),
-  CartEvent (..),
   initialCartState,
   applyCartEvent,
 ) where
@@ -14,6 +13,7 @@ import Array qualified
 import Core
 import Decision qualified
 import Json qualified
+import Test.Service.EventStore.Core (CartEvent (..))
 import Uuid ()
 
 
@@ -78,21 +78,7 @@ instance Json.ToJSON CartEntity
 instance Json.FromJSON CartEntity
 
 
-data CartEvent
-  = CartCreated {entityId :: Uuid}
-  | ItemAdded {entityId :: Uuid, itemId :: Uuid, amount :: Int}
-  | ItemRemoved {entityId :: Uuid, itemId :: Uuid}
-  | CartCheckedOut {entityId :: Uuid}
-  deriving (Eq, Show, Ord, Generic)
-
-
 type instance EventOf CartEntity = CartEvent
-
-
-instance Json.ToJSON CartEvent
-
-
-instance Json.FromJSON CartEvent
 
 
 initialCartState :: CartEntity

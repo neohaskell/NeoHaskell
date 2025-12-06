@@ -15,9 +15,9 @@ import Test
 import Test.Service.Command.Core (
   AddItemToCart (..),
   CartEntity (..),
-  CartEvent (..),
   CheckoutCart (..),
  )
+import Test.Service.EventStore.Core (CartEvent (..))
 import Test.Service.CommandHandler.Execute.Context qualified as Context
 import Text qualified
 import Uuid qualified
