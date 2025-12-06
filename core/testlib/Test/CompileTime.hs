@@ -1,5 +1,3 @@
-{-# LANGUAGE TemplateHaskell #-}
-
 module Test.CompileTime (
   -- * Compile-time assertions
   shouldNotTypecheck,
