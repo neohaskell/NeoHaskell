@@ -5,9 +5,9 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE TypeOperators #-}
-{-# LANGUAGE QualifiedDo #-}
-{-# LANGUAGE RebindableSyntax #-}
+{-# LANGUAGE OverloadedLabels #-}
 {-# OPTIONS_GHC -fdefer-type-errors -Wno-deferred-type-errors #-}
+{-# OPTIONS_GHC -fplugin=Data.Record.Anon.Plugin #-}
 
 module Service.TransportProtocolSpec where
 
@@ -26,6 +26,39 @@ import Service.ServiceDefinition.Core qualified as Service
 import Service.Runtime (ServiceRuntime(..))
 import Task qualified
 import Test
+
+-- ============================================================================
+-- KnownHash instances for command names
+-- ============================================================================
+
+instance KnownHash "CreateCartCommand" where
+  hashVal _ = 1234567890  -- Some unique hash value
+
+instance KnownHash "AddItemCommand" where
+  hashVal _ = 2345678901  -- Some unique hash value
+
+instance KnownHash "InternalCommand" where
+  hashVal _ = 3456789012  -- Some unique hash value
+
+-- ============================================================================
+-- NFData instances for shouldNotTypecheck
+-- ============================================================================
+
+instance NFData ServiceRuntime where
+  rnf ServiceRuntime {} =
+    -- We can't deeply evaluate functions, so just return ()
+    ()
+
+instance NFData ServiceError where
+  rnf CommandNotFound {} = ()
+  rnf ServiceAlreadyShutdown = ()
+  rnf AdapterNotFound {} = ()
+  rnf CommandExecutionFailed {} = ()
+  rnf AdapterInitializationFailed {} = ()
+  rnf CommandDecodingFailed {} = ()
+
+instance (NFData e, NFData a) => NFData (Task e a) where
+  rnf _ = () -- Tasks are IO-based, can't deeply evaluate
 
 -- ============================================================================
 -- Helper functions
@@ -236,7 +269,7 @@ spec = do
       let adapter = DirectAdapter { config = defaultConfig }
       let shutdownState = DirectAdapterState { isShutdown = True }
 
-      result <- executeCommand adapter shutdownState "test" (Bytes.fromLegacy "{}")
+      result <- executeCommand adapter shutdownState ("test" :: Text) (Bytes.fromLegacy "{}")
                   |> Task.asResult
 
       case result of
@@ -248,7 +281,7 @@ spec = do
       state <- initializeAdapter adapter |> Task.mapError toText
 
       -- Currently returns empty bytes (placeholder)
-      result <- executeCommand adapter state "test" (Bytes.fromLegacy "{}") |> Task.mapError toText
+      result <- executeCommand adapter state ("test" :: Text) (Bytes.fromLegacy "{}") |> Task.mapError toText
       result |> shouldBe (Bytes.fromLegacy "")
 
   describe "Service Composition" do
