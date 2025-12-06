@@ -577,7 +577,7 @@ spec newStoreAndFetcher = do
 
           -- The fetch should see either the old or new state consistently
           -- (could be 0 or 1 depending on timing, but should be consistent)
-          ((Array.length state.cartItems >= 0) && (Array.length state.cartItems <= 1)) |> shouldBe True
+          ((Array.length state.cartItems == 0) || (Array.length state.cartItems == 1)) |> shouldBe True
           state.isCheckedOut |> shouldBe False
 
     describe "Edge Cases" do
