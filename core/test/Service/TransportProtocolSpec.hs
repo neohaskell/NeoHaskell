@@ -219,7 +219,7 @@ spec = do
     it "accumulates protocols from commands" \_ -> do
       -- This should compile - Direct adapter provided for Direct-only command
       let serviceDef =
-            Service.expose (DirectAdapter defaultConfig) Service.>>
+            Service.useServer (DirectAdapter defaultConfig) Service.>>
             Service.command @CreateCartCommand
 
       -- Successfully deploy (compile-time check passes)
@@ -231,7 +231,7 @@ spec = do
     it "allows extra adapters beyond requirements" \_ -> do
       -- Having more adapters than needed should be fine
       let serviceDef =
-            Service.expose (DirectAdapter defaultConfig) Service.>>
+            Service.useServer (DirectAdapter defaultConfig) Service.>>
             -- Could add REST adapter here too, even though not needed
             Service.command @InternalCommand  -- Requires no protocols
 
@@ -271,7 +271,7 @@ spec = do
     it "composes multiple commands with same protocol" \_ -> do
       -- Both commands require Direct, one adapter suffices
       let serviceDef =
-            Service.expose (DirectAdapter defaultConfig) Service.>>
+            Service.useServer (DirectAdapter defaultConfig) Service.>>
             Service.command @CreateCartCommand
             -- Add more Direct-only commands here
 
@@ -280,7 +280,7 @@ spec = do
 
     it "maintains type safety through composition" \_ -> do
       -- The monadic interface should properly track protocols
-      let step1 = Service.expose (DirectAdapter defaultConfig)
+      let step1 = Service.useServer (DirectAdapter defaultConfig)
       let step2 = step1 Service.>> Service.command @CreateCartCommand
 
       _runtime <- Service.deploy step2 |> Task.mapError toText

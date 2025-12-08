@@ -30,5 +30,5 @@ type family CheckMissingProtocols (missing :: [Symbol]) (required :: [Symbol]) (
       'Text "Provided protocols: " ':<>: 'ShowType provided ':$$:
       'Text "Missing protocols:  " ':<>: 'ShowType missing ':$$:
       'Text "" ':$$:
-      'Text "To fix: Use 'expose' to add adapters for the missing protocols."
+      'Text "To fix: Use 'useServer' to add adapters for the missing protocols."
     )

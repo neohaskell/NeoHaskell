@@ -3,7 +3,7 @@ module Service.ServiceDefinition.Core (
   ServiceDefinition (..),
   CommandDefinition (..),
   new,
-  expose,
+  useServer,
   command,
   deploy,
   merge,
@@ -58,8 +58,8 @@ new =
 
 
 -- | Register an adapter in the service definition
--- Declares "this service exposes its commands via this protocol"
-expose ::
+-- Declares "this service uses this server adapter to expose its commands"
+useServer ::
   forall adapter protocol cmds reqProtos provProtos adapters.
   ( ServiceAdapter adapter,
     protocol ~ AdapterProtocol adapter,
@@ -73,7 +73,7 @@ expose ::
     (Union reqProtos '[])
     (Union provProtos '[protocol])
     (Record.Merge adapters '[protocol Record.:= adapter])
-expose adapter serviceDef = do
+useServer adapter serviceDef = do
   let adapterDef :: ServiceDefinition '[] '[] '[protocol] '[protocol Record.:= adapter]
       adapterDef =
         ServiceDefinition
