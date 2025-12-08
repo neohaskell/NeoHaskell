@@ -7,7 +7,9 @@ module Integration.App.Cart.Commands.CreateCart (
 import Core
 import Decision qualified
 import Integration.App.Cart.Core
+import Service.Apis.WebApi (WebApi)
 import Service.CommandHandler.Core (deriveCommand)
+import Service.Protocol (ApiFor)
 
 
 data CreateCart = CreateCart
@@ -29,6 +31,9 @@ decide _ entity = do
 
 
 type instance EntityOf CreateCart = CartEntity
+
+
+type instance ApiFor CreateCart = '[WebApi]
 
 
 deriveCommand ''CreateCart

@@ -28,12 +28,9 @@ import Record as Reexported (KnownHash (..), Record)
 import Result as Reexported (Result (..))
 import Service.Command as Reexported (Command (..), CommandResult (..), EntityOf, EventOf, NameOf)
 import Service.Event as Reexported (InsertionType (..), StreamId, ToStreamId (..))
-import Service.ServiceDefinition as Reexported (
+import Service.ServiceDefinition.Core as Reexported (
   Service,
   ServiceDefinition (..),
-  command,
-  extract,
-  yield,
  )
 import Task as Reexported (Task)
 import Text as Reexported (Text)

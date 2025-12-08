@@ -1,26 +1,29 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE TypeFamilies #-}
-{-# LANGUAGE KindSignatures #-}
 
 module Service.Protocol (
-  -- * Transport Protocol
-  TransportProtocol(..),
-  TransportProtocols,
+  -- * Server API
+  ServerApi(..),
+  ApiFor,
 ) where
 
 import Basics
 
--- | Type class for transport protocols
--- Each protocol specifies its configuration and runtime state types
--- This is primarily a marker class for type-level protocol tracking
-class TransportProtocol (protocolName :: Symbol) where
-  -- | Configuration type for this protocol
-  type ProtocolConfig protocolName :: Type
+-- | Type class for server APIs
+-- Each API type can specify configuration and runtime state
+-- This is primarily a marker class for type-level API tracking
+class ServerApi (api :: Type) where
+  -- | Unique name for this server API (used for storage keying)
+  type ServerName api :: Symbol
 
-  -- | Runtime state type for this protocol
-  type ProtocolState protocolName :: Type
+  -- | Configuration type for this API
+  type ApiConfig api :: Type
 
--- | Type family to get the list of transport protocols supported by a command
--- Each command type declares which protocols it can be executed through
--- For example: type TransportProtocols CreateCart = '["Direct", "REST"]
-type family TransportProtocols (commandType :: Type) :: [Symbol]
+  -- | Runtime state type for this API
+  type ApiState api :: Type
+
+-- | Type family to get the list of API types required by a command
+-- Each command type declares which API types it needs to be exposed through
+-- For example: type instance ApiFor CreateCart = '[WebApi, GrpcApi]
+-- Where WebApi and GrpcApi are types that carry configuration
+type family ApiFor (commandType :: Type) :: [Type]

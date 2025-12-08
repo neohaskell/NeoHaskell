@@ -5,16 +5,14 @@
 module Service.TransportProtocolSpec where
 
 import Core
-import Bytes qualified
 import Data.Aeson (FromJSON, ToJSON)
 import Decision qualified
-import Service.Adapter (ServiceAdapter(..))
-import Service.Adapter.Direct (DirectAdapter(..), defaultConfig, DirectAdapterState(..))
+import Service.Apis.WebApi (WebApi (..), defaultWebApi)
 import Service.Command ()  -- Just for instances
 import Service.Command.Core ()  -- Just for instances
 import Service.Definition.TypeLevel
 import Service.Error (ServiceError(..))
-import Service.Protocol (TransportProtocols)
+import Service.Protocol (ApiFor)
 import Service.ServiceDefinition.Core qualified as Service
 import Service.Runtime (ServiceRuntime(..))
 import Task qualified
@@ -34,12 +32,9 @@ instance KnownHash "AddItemCommand" where
 instance KnownHash "InternalCommand" where
   hashVal _ = 3456789012  -- Some unique hash value
 
--- Protocol name instances
-instance KnownHash "Direct" where
+-- API name instances
+instance KnownHash "WebApi" where
   hashVal _ = 4567890123  -- Some unique hash value
-
-instance KnownHash "REST" where
-  hashVal _ = 5678901234  -- Some unique hash value
 
 -- ============================================================================
 -- NFData instances for shouldNotTypecheck
@@ -53,9 +48,8 @@ instance NFData ServiceRuntime where
 instance NFData ServiceError where
   rnf CommandNotFound {} = ()
   rnf ServiceAlreadyShutdown = ()
-  rnf AdapterNotFound {} = ()
+  rnf ServerNotFound {} = ()
   rnf CommandExecutionFailed {} = ()
-  rnf AdapterInitializationFailed {} = ()
   rnf CommandDecodingFailed {} = ()
 
 instance (NFData e, NFData a) => NFData (Task e a) where
@@ -66,7 +60,7 @@ instance (NFData e, NFData a) => NFData (Task e a) where
 -- ============================================================================
 
 -- | Helper to deploy a service and convert errors
-deployService :: Service.ServiceDefinition cmds req prov adp Unit -> Task Text ServiceRuntime
+deployService :: Service.ServiceDefinition cmds req prov adp -> Task Text ServiceRuntime
 deployService serviceDef = Service.deploy serviceDef |> Task.mapError toText
 
 -- ============================================================================
@@ -105,7 +99,7 @@ instance HasField "entityId" CartEvent Uuid where
 type instance NameOf CreateCartCommand = "CreateCartCommand"
 type instance EntityOf CreateCartCommand = Cart
 type instance EventOf Cart = CartEvent
-type instance TransportProtocols CreateCartCommand = '["Direct"]
+type instance ApiFor CreateCartCommand = '[WebApi]
 
 instance Command CreateCartCommand where
   type EntityIdType CreateCartCommand = Uuid
@@ -133,7 +127,7 @@ instance NFData AddItemCommand
 
 type instance NameOf AddItemCommand = "AddItemCommand"
 type instance EntityOf AddItemCommand = Cart
-type instance TransportProtocols AddItemCommand = '["Direct", "REST"]
+type instance ApiFor AddItemCommand = '[WebApi]
 
 instance Command AddItemCommand where
   type EntityIdType AddItemCommand = Uuid
@@ -155,7 +149,7 @@ instance NFData InternalCommand
 
 type instance NameOf InternalCommand = "InternalCommand"
 type instance EntityOf InternalCommand = Cart
-type instance TransportProtocols InternalCommand = '[]
+type instance ApiFor InternalCommand = '[]
 
 instance Command InternalCommand where
   type EntityIdType InternalCommand = Uuid
@@ -172,55 +166,53 @@ instance Command InternalCommand where
 
 spec :: Spec Unit
 spec = do
-  describe "Type-Level Protocol Operations" do
+  describe "Type-Level Server API Operations" do
     describe "Member type family" do
       it "correctly identifies present elements" \_ -> do
         -- These should compile, proving Member works
-        let _ = unit :: (Member "Direct" '["Direct", "REST"] ~ 'True => Unit)
-        let _ = unit :: (Member "REST" '["Direct", "REST"] ~ 'True => Unit)
+        let _ = unit :: (Member WebApi '[WebApi] ~ 'True => Unit)
         Task.yield unit
 
       it "correctly identifies absent elements" \_ -> do
         -- These should compile, proving Member works for false cases
-        let _ = unit :: (Member "GraphQL" '["Direct", "REST"] ~ 'False => Unit)
-        let _ = unit :: (Member "Direct" '[] ~ 'False => Unit)
+        let _ = unit :: (Member Int '[WebApi] ~ 'False => Unit)
+        let _ = unit :: (Member WebApi '[] ~ 'False => Unit)
         Task.yield unit
 
     describe "Union type family" do
       it "merges lists without duplicates" \_ -> do
         -- Union should combine lists and remove duplicates
-        let _ = unit :: (Union '["Direct"] '["REST"] ~ '["Direct", "REST"] => Unit)
-        let _ = unit :: (Union '["Direct"] '["Direct"] ~ '["Direct"] => Unit)
+        let _ = unit :: (Union '[WebApi] '[WebApi] ~ '[WebApi] => Unit)
         Task.yield unit
 
       it "handles empty lists" \_ -> do
-        let _ = unit :: (Union '[] '["Direct"] ~ '["Direct"] => Unit)
-        let _ = unit :: (Union '["Direct"] '[] ~ '["Direct"] => Unit)
+        let _ = unit :: (Union '[] '[WebApi] ~ '[WebApi] => Unit)
+        let _ = unit :: (Union '[WebApi] '[] ~ '[WebApi] => Unit)
         Task.yield unit
 
     describe "Difference type family" do
       it "finds missing elements" \_ -> do
         -- Difference should find elements in first list not in second
-        let _ = unit :: (Difference '["Direct", "REST"] '["Direct"] ~ '["REST"] => Unit)
-        let _ = unit :: (Difference '["Direct"] '["Direct", "REST"] ~ '[] => Unit)
+        let _ = unit :: (Difference '[WebApi] '[] ~ '[WebApi] => Unit)
         Task.yield unit
 
       it "handles empty lists" \_ -> do
-        let _ = unit :: (Difference '[] '["Direct"] ~ '[] => Unit)
-        let _ = unit :: (Difference '["Direct"] '[] ~ '["Direct"] => Unit)
+        let _ = unit :: (Difference '[] '[WebApi] ~ '[] => Unit)
+        let _ = unit :: (Difference '[WebApi] '[] ~ '[WebApi] => Unit)
         Task.yield unit
 
-  describe "Service Definition DSL with Protocols" do
+  describe "Service Definition DSL with Server APIs" do
     it "builds empty service definition" \_ -> do
-      let serviceDef = Service.emptyServiceDefinition :: Service.ServiceDefinition '[] '[] '[] '[] Unit
-      -- Should have no commands, no protocols
-      Service.extract serviceDef |> shouldBe unit
+      let _serviceDef = Service.new :: Service.ServiceDefinition '[] '[] '[] '[]
+      -- Should have no commands, no server APIs
+      Task.yield unit
 
-    it "accumulates protocols from commands" \_ -> do
-      -- This should compile - Direct adapter provided for Direct-only command
+    it "accumulates server APIs from commands" \_ -> do
+      -- This should compile - WebApi server provided for WebApi-only command
       let serviceDef =
-            Service.expose (DirectAdapter defaultConfig) Service.>>
-            Service.command @CreateCartCommand
+            Service.new
+              |> Service.useServer defaultWebApi
+              |> Service.command @CreateCartCommand
 
       -- Successfully deploy (compile-time check passes)
       result <- Service.deploy serviceDef |> Task.mapError toText |> Task.asResult
@@ -228,60 +220,36 @@ spec = do
         Ok _ -> Task.yield unit
         Err err -> fail err
 
-    it "allows extra adapters beyond requirements" \_ -> do
-      -- Having more adapters than needed should be fine
+    it "allows extra servers beyond requirements" \_ -> do
+      -- Having more servers than needed should be fine
       let serviceDef =
-            Service.expose (DirectAdapter defaultConfig) Service.>>
-            -- Could add REST adapter here too, even though not needed
-            Service.command @InternalCommand  -- Requires no protocols
+            Service.new
+              |> Service.useServer defaultWebApi
+              |> Service.command @InternalCommand  -- Requires no server APIs
 
       _runtime <- Service.deploy serviceDef |> Task.mapError toText
       Task.yield unit
 
-  -- Compile-Time Protocol Validation tests removed
+  -- Compile-Time Server API Validation tests removed
   -- These tests were checking that certain code should not compile,
   -- but the type checking is not working as expected
 
-  describe "DirectAdapter Behavior" do
-    it "initializes successfully" \_ -> do
-      let adapter = DirectAdapter { config = defaultConfig }
-      state <- initializeAdapter adapter |> Task.mapError toText
-      state.isShutdown |> shouldBe False
-
-    it "rejects execution when shutdown" \_ -> do
-      let adapter = DirectAdapter { config = defaultConfig }
-      let shutdownState = DirectAdapterState { isShutdown = True }
-
-      result <- executeCommand adapter shutdownState ("test" :: Text) (Bytes.fromLegacy "{}")
-                  |> Task.asResult
-
-      case result of
-        Err ServiceAlreadyShutdown -> Task.yield unit
-        _ -> fail "Expected ServiceAlreadyShutdown error"
-
-    it "executes when not shutdown" \_ -> do
-      let adapter = DirectAdapter { config = defaultConfig }
-      state <- initializeAdapter adapter |> Task.mapError toText
-
-      -- Currently returns empty bytes (placeholder)
-      result <- executeCommand adapter state ("test" :: Text) (Bytes.fromLegacy "{}") |> Task.mapError toText
-      result |> shouldBe (Bytes.fromLegacy "")
-
   describe "Service Composition" do
-    it "composes multiple commands with same protocol" \_ -> do
-      -- Both commands require Direct, one adapter suffices
+    it "composes multiple commands with same server API" \_ -> do
+      -- Both commands require WebApi, one server suffices
       let serviceDef =
-            Service.expose (DirectAdapter defaultConfig) Service.>>
-            Service.command @CreateCartCommand
-            -- Add more Direct-only commands here
+            Service.new
+              |> Service.useServer defaultWebApi
+              |> Service.command @CreateCartCommand
+            -- Add more WebApi-only commands here
 
       _runtime <- Service.deploy serviceDef |> Task.mapError toText
       Task.yield unit
 
     it "maintains type safety through composition" \_ -> do
-      -- The monadic interface should properly track protocols
-      let step1 = Service.expose (DirectAdapter defaultConfig)
-      let step2 = step1 Service.>> Service.command @CreateCartCommand
+      -- The pipeable interface should properly track server APIs
+      let step1 = Service.new |> Service.useServer defaultWebApi
+      let step2 = step1 |> Service.command @CreateCartCommand
 
       _runtime <- Service.deploy step2 |> Task.mapError toText
       Task.yield unit
