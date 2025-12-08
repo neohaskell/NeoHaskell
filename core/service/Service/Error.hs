@@ -21,7 +21,7 @@ data ServiceError
     CommandDecodingFailed Text
   | -- | Command execution failed with the given error message
     CommandExecutionFailed Text
-  | -- | Adapter for the given protocol name was not found
+  | -- | Adapter for the given server API was not found
     AdapterNotFound Text
   | -- | Service has already been shut down
     ServiceAlreadyShutdown

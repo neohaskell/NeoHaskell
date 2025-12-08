@@ -8,7 +8,7 @@ import Core
 import Decision qualified
 import Integration.App.Cart.Core
 import Service.CommandHandler.Core (deriveCommand)
-import Service.Protocol (TransportProtocols)
+import Service.Protocol (ApiFor)
 
 
 data CreateCart = CreateCart
@@ -32,7 +32,7 @@ decide _ entity = do
 type instance EntityOf CreateCart = CartEntity
 
 
-type instance TransportProtocols CreateCart = '["WebApi"]
+type instance ApiFor CreateCart = '["WebApi"]
 
 
 deriveCommand ''CreateCart

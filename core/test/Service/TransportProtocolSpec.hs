@@ -14,7 +14,7 @@ import Service.Command ()  -- Just for instances
 import Service.Command.Core ()  -- Just for instances
 import Service.Definition.TypeLevel
 import Service.Error (ServiceError(..))
-import Service.Protocol (TransportProtocols)
+import Service.Protocol (ApiFor)
 import Service.ServiceDefinition.Core qualified as Service
 import Service.Runtime (ServiceRuntime(..))
 import Task qualified
@@ -105,7 +105,7 @@ instance HasField "entityId" CartEvent Uuid where
 type instance NameOf CreateCartCommand = "CreateCartCommand"
 type instance EntityOf CreateCartCommand = Cart
 type instance EventOf Cart = CartEvent
-type instance TransportProtocols CreateCartCommand = '["Direct"]
+type instance ApiFor CreateCartCommand = '["Direct"]
 
 instance Command CreateCartCommand where
   type EntityIdType CreateCartCommand = Uuid
@@ -133,7 +133,7 @@ instance NFData AddItemCommand
 
 type instance NameOf AddItemCommand = "AddItemCommand"
 type instance EntityOf AddItemCommand = Cart
-type instance TransportProtocols AddItemCommand = '["Direct", "REST"]
+type instance ApiFor AddItemCommand = '["Direct", "REST"]
 
 instance Command AddItemCommand where
   type EntityIdType AddItemCommand = Uuid
@@ -155,7 +155,7 @@ instance NFData InternalCommand
 
 type instance NameOf InternalCommand = "InternalCommand"
 type instance EntityOf InternalCommand = Cart
-type instance TransportProtocols InternalCommand = '[]
+type instance ApiFor InternalCommand = '[]
 
 instance Command InternalCommand where
   type EntityIdType InternalCommand = Uuid
@@ -172,7 +172,7 @@ instance Command InternalCommand where
 
 spec :: Spec Unit
 spec = do
-  describe "Type-Level Protocol Operations" do
+  describe "Type-Level Server API Operations" do
     describe "Member type family" do
       it "correctly identifies present elements" \_ -> do
         -- These should compile, proving Member works
@@ -210,13 +210,13 @@ spec = do
         let _ = unit :: (Difference '["Direct"] '[] ~ '["Direct"] => Unit)
         Task.yield unit
 
-  describe "Service Definition DSL with Protocols" do
+  describe "Service Definition DSL with Server APIs" do
     it "builds empty service definition" \_ -> do
       let _serviceDef = Service.new :: Service.ServiceDefinition '[] '[] '[] '[]
-      -- Should have no commands, no protocols
+      -- Should have no commands, no server APIs
       Task.yield unit
 
-    it "accumulates protocols from commands" \_ -> do
+    it "accumulates server APIs from commands" \_ -> do
       -- This should compile - Direct adapter provided for Direct-only command
       let serviceDef =
             Service.new
@@ -235,12 +235,12 @@ spec = do
             Service.new
               |> Service.useServer (DirectAdapter defaultConfig)
               -- Could add REST adapter here too, even though not needed
-              |> Service.command @InternalCommand  -- Requires no protocols
+              |> Service.command @InternalCommand  -- Requires no server APIs
 
       _runtime <- Service.deploy serviceDef |> Task.mapError toText
       Task.yield unit
 
-  -- Compile-Time Protocol Validation tests removed
+  -- Compile-Time Server API Validation tests removed
   -- These tests were checking that certain code should not compile,
   -- but the type checking is not working as expected
 
@@ -270,7 +270,7 @@ spec = do
       result |> shouldBe (Bytes.fromLegacy "")
 
   describe "Service Composition" do
-    it "composes multiple commands with same protocol" \_ -> do
+    it "composes multiple commands with same server API" \_ -> do
       -- Both commands require Direct, one adapter suffices
       let serviceDef =
             Service.new
@@ -282,7 +282,7 @@ spec = do
       Task.yield unit
 
     it "maintains type safety through composition" \_ -> do
-      -- The pipeable interface should properly track protocols
+      -- The pipeable interface should properly track server APIs
       let step1 = Service.new |> Service.useServer (DirectAdapter defaultConfig)
       let step2 = step1 |> Service.command @CreateCartCommand
 

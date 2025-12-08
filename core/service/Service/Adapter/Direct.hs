@@ -17,7 +17,7 @@ import Basics
 import Bytes qualified
 import Service.Adapter (ServiceAdapter(..))
 import Service.Error (ServiceError(..))
-import Service.Protocol (TransportProtocol(..))
+import Service.Protocol (ServerApi(..))
 import Task qualified
 
 -- | Configuration for the Direct adapter
@@ -45,10 +45,10 @@ data DirectAdapterState = DirectAdapterState
   { isShutdown :: Bool
   }
 
--- | Direct is a transport protocol for in-process execution
-instance TransportProtocol "Direct" where
-  type ProtocolConfig "Direct" = DirectConfig
-  type ProtocolState "Direct" = DirectAdapterState
+-- | Direct is a server API for in-process execution
+instance ServerApi "Direct" where
+  type ApiConfig "Direct" = DirectConfig
+  type ApiState "Direct" = DirectAdapterState
 
 -- | ServiceAdapter instance for DirectAdapter
 instance ServiceAdapter DirectAdapter where
