@@ -5,12 +5,9 @@
 module Service.TransportProtocolSpec where
 
 import Core
-import Bytes qualified
 import Data.Aeson (FromJSON, ToJSON)
 import Decision qualified
-import Service.Adapter (ServiceAdapter(..))
-import Service.Adapter.Direct (defaultAdapter, DirectAdapterState(..))
-import Service.Apis.WebApi (WebApi (..))
+import Service.Apis.WebApi (WebApi (..), defaultWebApi)
 import Service.Command ()  -- Just for instances
 import Service.Command.Core ()  -- Just for instances
 import Service.Definition.TypeLevel
@@ -51,9 +48,8 @@ instance NFData ServiceRuntime where
 instance NFData ServiceError where
   rnf CommandNotFound {} = ()
   rnf ServiceAlreadyShutdown = ()
-  rnf AdapterNotFound {} = ()
+  rnf ServerNotFound {} = ()
   rnf CommandExecutionFailed {} = ()
-  rnf AdapterInitializationFailed {} = ()
   rnf CommandDecodingFailed {} = ()
 
 instance (NFData e, NFData a) => NFData (Task e a) where
@@ -212,10 +208,10 @@ spec = do
       Task.yield unit
 
     it "accumulates server APIs from commands" \_ -> do
-      -- This should compile - WebApi adapter provided for WebApi-only command
+      -- This should compile - WebApi server provided for WebApi-only command
       let serviceDef =
             Service.new
-              |> Service.useServer defaultAdapter
+              |> Service.useServer defaultWebApi
               |> Service.command @CreateCartCommand
 
       -- Successfully deploy (compile-time check passes)
@@ -224,11 +220,11 @@ spec = do
         Ok _ -> Task.yield unit
         Err err -> fail err
 
-    it "allows extra adapters beyond requirements" \_ -> do
-      -- Having more adapters than needed should be fine
+    it "allows extra servers beyond requirements" \_ -> do
+      -- Having more servers than needed should be fine
       let serviceDef =
             Service.new
-              |> Service.useServer defaultAdapter
+              |> Service.useServer defaultWebApi
               |> Service.command @InternalCommand  -- Requires no server APIs
 
       _runtime <- Service.deploy serviceDef |> Task.mapError toText
@@ -238,34 +234,12 @@ spec = do
   -- These tests were checking that certain code should not compile,
   -- but the type checking is not working as expected
 
-  describe "DirectAdapter Behavior" do
-    it "initializes successfully" \_ -> do
-      state <- initializeAdapter defaultAdapter |> Task.mapError toText
-      state.isShutdown |> shouldBe False
-
-    it "rejects execution when shutdown" \_ -> do
-      let shutdownState = DirectAdapterState { isShutdown = True }
-
-      result <- executeCommand defaultAdapter shutdownState ("test" :: Text) (Bytes.fromLegacy "{}")
-                  |> Task.asResult
-
-      case result of
-        Err ServiceAlreadyShutdown -> Task.yield unit
-        _ -> fail "Expected ServiceAlreadyShutdown error"
-
-    it "executes when not shutdown" \_ -> do
-      state <- initializeAdapter defaultAdapter |> Task.mapError toText
-
-      -- Currently returns empty bytes (placeholder)
-      result <- executeCommand defaultAdapter state ("test" :: Text) (Bytes.fromLegacy "{}") |> Task.mapError toText
-      result |> shouldBe (Bytes.fromLegacy "")
-
   describe "Service Composition" do
     it "composes multiple commands with same server API" \_ -> do
-      -- Both commands require WebApi, one adapter suffices
+      -- Both commands require WebApi, one server suffices
       let serviceDef =
             Service.new
-              |> Service.useServer defaultAdapter
+              |> Service.useServer defaultWebApi
               |> Service.command @CreateCartCommand
             -- Add more WebApi-only commands here
 
@@ -274,7 +248,7 @@ spec = do
 
     it "maintains type safety through composition" \_ -> do
       -- The pipeable interface should properly track server APIs
-      let step1 = Service.new |> Service.useServer defaultAdapter
+      let step1 = Service.new |> Service.useServer defaultWebApi
       let step2 = step1 |> Service.command @CreateCartCommand
 
       _runtime <- Service.deploy step2 |> Task.mapError toText
