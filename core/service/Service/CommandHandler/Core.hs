@@ -50,6 +50,24 @@ data CommandHandler event = CommandHandler
   deriving (Generic)
 
 
+-- | Wait with exponential backoff and jitter for retries.
+-- Starts at 10ms, doubles each retry, capped at 1 second.
+-- Adds random jitter between 50% and 100% of calculated delay.
+awaitWithJitter :: Int -> Task _ Unit
+awaitWithJitter retryCount = do
+  -- Calculate exponential backoff: 10ms * 2^retryCount
+  let retryCountFloat = Int.toFloat retryCount
+  let baseDelayFloat = 10.0 * (2.0 ^ retryCountFloat)
+  let baseDelayMs = Float.toInt baseDelayFloat
+  let cappedDelay = min baseDelayMs 1000 -- Cap at 1 second
+
+  -- Add jitter: randomize between 50% and 100% of the delay
+  jitteredDelay <- Int.getRandomBetween (cappedDelay // 2) cappedDelay
+
+  -- Wait for the calculated duration
+  AsyncTask.sleep jitteredDelay
+
+
 execute ::
   forall command commandEntity commandEvent.
   ( Command command,
@@ -185,16 +203,8 @@ execute eventStore entityFetcher entityName command = do
                     -- Concurrency conflict, retry if we haven't exceeded max retries
                     if retryCount < maxRetries
                       then do
-                        -- Apply exponential backoff with jitter before retrying
-                        -- Base delay starts at 10ms, doubles each retry, with random jitter
-                        let retryCountFloat = Int.toFloat retryCount
-                        let baseDelayFloat = 10.0 * (2.0 ^ retryCountFloat) -- 10ms, 20ms, 40ms, 80ms, etc.
-                        let baseDelayMs = Float.toInt baseDelayFloat
-                        let maxDelayMs = min baseDelayMs 1000 -- Cap at 1 second
-
-                        -- Add jitter: randomize between 50% and 100% of the calculated delay
-                        jitteredDelay <- Int.getRandomBetween (maxDelayMs // 2) maxDelayMs
-                        AsyncTask.sleep jitteredDelay
+                        -- Wait with exponential backoff and jitter
+                        awaitWithJitter retryCount
 
                         -- Re-fetch the entity with latest state
                         refetchResult <-
