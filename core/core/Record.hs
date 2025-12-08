@@ -1,4 +1,6 @@
-module Record (Record) where
+module Record (
+  module Reexported,
+) where
 
-
-data Record a
+import Data.Record.Anon as Reexported
+import Data.Record.Anon.Simple as Reexported

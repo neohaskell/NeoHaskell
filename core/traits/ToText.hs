@@ -11,7 +11,6 @@ import Basics
 import Data.Text.Lazy qualified as LazyText
 import Text (Text, fromLinkedList)
 import Text.Pretty.Simple qualified as PS
-import Prelude (Show (..))
 
 
 type ToText value = Show value

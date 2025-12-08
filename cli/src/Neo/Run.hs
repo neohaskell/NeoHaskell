@@ -3,7 +3,6 @@ module Neo.Run (
   Error (..),
 ) where
 
-import Array qualified
 import Neo.Core
 import Subprocess qualified
 import Task qualified
@@ -21,7 +20,7 @@ handle config = do
   let projectName = config.name
   let rootFolder = [path|.|]
   completion <-
-    Subprocess.openInherit [fmt|./result/bin/#{projectName}|] (Array.fromLinkedList []) rootFolder Subprocess.InheritBOTH
+    Subprocess.openInherit [fmt|./result/bin/#{projectName}|] ([]) rootFolder Subprocess.InheritBOTH
       |> Task.mapError (\err -> CustomError [fmt|Failed to run the built application: #{err}|])
   if completion.exitCode != 0
     then errorOut completion.stderr

@@ -4,7 +4,6 @@ import Basics
 import Control.Concurrent.Chan.Unagi qualified as Unagi
 import Task (Task)
 import Task qualified
-import ToText (Show (..))
 import TypeName qualified
 
 

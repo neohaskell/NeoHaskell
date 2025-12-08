@@ -101,6 +101,6 @@ toText (Version branch tags) = do
         Array.fromLinkedList branch
           |> Array.map ToText.toText
           |> Text.joinWith "."
-  Array.fromLinkedList [textBranch, textTags]
+  [textBranch, textTags]
     |> Array.dropIf Text.isEmpty
     |> Text.joinWith "-"

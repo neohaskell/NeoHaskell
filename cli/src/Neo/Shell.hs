@@ -37,13 +37,13 @@ handle config = do
   let cabalProjectFileName = [path|cabal.project|]
   let nixFile = Nix.template config
   let cabalFilePath =
-        Array.fromLinkedList [rootFolder, cabalFileName]
+        [rootFolder, cabalFileName]
           |> Path.joinPaths
   let targetAppFolder =
-        Array.fromLinkedList [rootFolder, ".launcher"]
+        [rootFolder, ".launcher"]
           |> Path.joinPaths
   let targetAppPath =
-        Array.fromLinkedList [targetAppFolder, "Main.hs"]
+        [targetAppFolder, "Main.hs"]
           |> Path.joinPaths
 
   filepaths <-
@@ -80,7 +80,7 @@ handle config = do
   ( (#{nixFile}) { inherit pkgs; } ).shell|]
 
   completion <-
-    Subprocess.openInherit "nix-shell" (Array.fromLinkedList ["-E", shellExpression]) rootFolder Subprocess.InheritBOTH
+    Subprocess.openInherit "nix-shell" (["-E", shellExpression]) rootFolder Subprocess.InheritBOTH
       |> Task.mapError (\err -> CustomError [fmt|Failed to open the shell: #{err}|])
   if completion.exitCode != 0
     then errorOut completion.stderr

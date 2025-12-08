@@ -1,4 +1,4 @@
-module Test.Service.EventStore.Core (BankAccountEvent (..), newInsertion) where
+module Test.Service.EventStore.Core (CartEvent (..), newInsertion) where
 
 import Core
 import Json qualified
@@ -8,30 +8,31 @@ import Task qualified
 import Uuid qualified
 
 
--- | Example domain events for a bank account
-data BankAccountEvent
-  = AccountOpened {initialBalance :: Int}
-  | MoneyDeposited {amount :: Int}
-  | MoneyWithdrawn {amount :: Int}
-  | AccountClosed
+-- | Example domain events for a shopping cart
+data CartEvent
+  = CartCreated {entityId :: Uuid}
+  | ItemAdded {entityId :: Uuid, itemId :: Uuid, amount :: Int}
+  | ItemRemoved {entityId :: Uuid, itemId :: Uuid}
+  | CartCheckedOut {entityId :: Uuid}
   deriving (Eq, Show, Ord, Generic)
 
 
-instance Json.ToJSON BankAccountEvent
+instance Json.ToJSON CartEvent
 
 
-instance Json.FromJSON BankAccountEvent
+instance Json.FromJSON CartEvent
 
 
-instance Default BankAccountEvent where
-  def = AccountOpened {initialBalance = 0}
+instance Default CartEvent where
+  def = CartCreated {entityId = def}
 
 
-newInsertion :: Int -> Task _ (Event.Insertion BankAccountEvent)
+newInsertion :: Int -> Task _ (Event.Insertion CartEvent)
 newInsertion index = do
   id <- Uuid.generate
+  entityUuid <- Uuid.generate
   newMetadata <- EventMetadata.new
-  let event = MoneyDeposited {amount = 10} -- Simple default event for tests
+  let event = ItemAdded {entityId = entityUuid, itemId = id, amount = 10} -- Simple default event for tests
   let localPosition =
         fromIntegral index
           |> Event.StreamPosition

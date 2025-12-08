@@ -12,7 +12,7 @@ import Test.Service.EventStore qualified as EventStore
 spec :: Spec Unit
 spec = do
   describe "InMemoryEventStore" do
-    let newStore = InMemory.new @EntityFetcherCore.BankAccountEvent |> Task.mapError toText
+    let newStore = InMemory.new @EntityFetcherCore.CartEvent |> Task.mapError toText
     EventStore.spec newStore
 
     let newStoreAndFetcher = do

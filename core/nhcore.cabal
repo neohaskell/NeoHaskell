@@ -30,22 +30,27 @@ common common_cfg
     containers,
     contravariant-extras,
     data-default,
+    deepseq,
     dir-traverse,
     directory,
     file-embed,
     ghc-prim,
+    hashable,
     hasql,
     hasql-notifications,
     hasql-pool,
     hasql-th,
     hspec,
     http-conduit,
+    large-anon,
     monad-loops,
     optparse-applicative,
     path,
     pretty-simple,
     process,
     quickcheck-instances,
+    random,
+    should-not-typecheck,
     strict,
     string-interpolate,
     template-haskell,
@@ -67,8 +72,10 @@ common common_cfg
     ImportQualifiedPost
     ImpredicativeTypes
     NamedFieldPuns
+    NoFieldSelectors
     NoImplicitPrelude
     OverloadedLabels
+    OverloadedLists
     OverloadedRecordDot
     OverloadedStrings
     PackageImports
@@ -77,7 +84,9 @@ common common_cfg
     QuasiQuotes
     Strict
     TemplateHaskell
+    TypeApplications
     TypeFamilies
+    TypeOperators
 
 library
   import: common_cfg
@@ -108,6 +117,7 @@ library
     Console
     Core
     DateTime
+    Decision
     Default
     Directory
     DurableChannel
@@ -118,6 +128,7 @@ library
     Http.Client
     IO
     Int
+    Float
     Json
     LinkedList
     Lock
@@ -127,8 +138,18 @@ library
     Path
     Record
     Result
+    Service.Adapter
+    Service.Adapter.Direct
+    Service.Command
+    Service.Command.Core
+    Service.CommandHandler
+    Service.CommandHandler.Core
+    Service.CommandHandler.TH
+    Service.Definition.TypeLevel
+    Service.Definition.Validation
     Service.EntityFetcher
     Service.EntityFetcher.Core
+    Service.Error
     Service.Event
     Service.Event.EntityName
     Service.Event.EventMetadata
@@ -144,6 +165,11 @@ library
     Service.EventStore.Postgres.Internal.PostgresEventRecord
     Service.EventStore.Postgres.Internal.Sessions
     Service.EventStore.Postgres.Internal.SubscriptionStore
+    Service.Protocol
+    Service.Runtime
+    Service.ServiceDefinition
+    Service.ServiceDefinition.Core
+    Set
     Stream
     Subprocess
     Task
@@ -152,6 +178,15 @@ library
     Test.AppSpec.AppSpec
     Test.AppSpec.Scenario
     Test.AppSpec.Verify
+    Test.CompileTime
+    Test.Service.Command
+    Test.Service.Command.Core
+    Test.Service.Command.Decide.Context
+    Test.Service.Command.Decide.Spec
+    Test.Service.CommandHandler
+    Test.Service.CommandHandler.Core
+    Test.Service.CommandHandler.Execute.Context
+    Test.Service.CommandHandler.Execute.Spec
     Test.Service.EntityFetcher
     Test.Service.EntityFetcher.Core
     Test.Service.EntityFetcher.Fetch.Context
@@ -214,12 +249,22 @@ test-suite nhcore-test
     -with-rtsopts=-N
 
   other-modules:
+    Integration.App
+    Integration.App.Cart
+    Integration.App.Cart.Commands.CreateCart
+    Integration.App.Cart.Core
+    Service.CommandSpec
+    Service.CommandHandlerSpec
     Service.EventStore.InMemorySpec
     Service.EventStore.Postgres.Internal.SubscriptionStoreSpec
     Service.EventStore.PostgresSpec
+    SetSpec
     StreamSpec
     Test.AppSpec.AppSpecSpec
     Test.AppSpec.VerifySpec
+    Test.ServiceDefinitionSpec
+    Service.TransportProtocolSpec
+    Service.ServiceDefinitionApplicativeSpec
 
   -- other-extensions:
   type: exitcode-stdio-1.0

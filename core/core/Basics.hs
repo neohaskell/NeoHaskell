@@ -128,6 +128,8 @@ module Basics (
   Type,
   GHC.Generics.Generic,
   GHC.Stack.HasCallStack,
+  Show (..),
+  GHCBase.Symbol,
 ) where
 
 import Applicable (Applicable)
@@ -142,6 +144,7 @@ import Data.String.Interpolate qualified as StringInterpolate
 import Data.Text (Text)
 import Data.Text qualified as Text
 import Data.Void qualified (Void, absurd)
+import GHC.Base qualified as GHCBase
 import GHC.Generics qualified
 import GHC.IsList (IsList (..))
 import GHC.OverloadedLabels (IsLabel (..))
@@ -150,7 +153,7 @@ import GHC.Stack (HasCallStack)
 import Language.Haskell.TH.Quote (QuasiQuoter)
 import Mappable (Mappable)
 import Unit (Unit, unit)
-import Prelude (fmap, fromInteger, otherwise, return, (<*>), (>>=))
+import Prelude (Show (..), fmap, fromInteger, otherwise, return, (<*>), (>>=))
 import Prelude qualified
 
 

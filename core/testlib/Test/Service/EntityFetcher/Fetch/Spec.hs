@@ -4,7 +4,7 @@ import Array qualified
 import AsyncTask qualified
 import Core
 import Result qualified
-import Service.EntityFetcher.Core (EntityFetcher)
+import Service.EntityFetcher.Core (EntityFetcher, EntityFetchResult (..))
 import Service.EntityFetcher.Core qualified as EntityFetcher
 import Service.Event qualified as Event
 import Service.Event.EventMetadata qualified as EventMetadata
@@ -13,35 +13,38 @@ import Service.EventStore (EventStore)
 import Service.EventStore.Core qualified as EventStore
 import Task qualified
 import Test
-import Test.Service.EntityFetcher.Core (BankAccountEvent (..), BankAccountState (..))
+import Test.Service.EntityFetcher.Core (CartEvent (..), CartState (..))
 import Test.Service.EntityFetcher.Fetch.Context qualified as Context
 import Uuid qualified
 
 
+-- Helper to convert EntityFetchResult to Maybe for test compatibility
+fetchResultToMaybe :: EntityFetchResult state -> Maybe state
+fetchResultToMaybe result = do
+  case result of
+    EntityFound state -> Just state
+    EntityNotFound -> Nothing
+
+
 spec ::
-  Task Text (EventStore BankAccountEvent, EntityFetcher BankAccountState BankAccountEvent) ->
+  Task Text (EventStore CartEvent, EntityFetcher CartState CartEvent) ->
   Spec Unit
 spec newStoreAndFetcher = do
   describe "Entity Fetch" do
     before (Context.initialize newStoreAndFetcher) do
-      it "fetches an entity with no events and returns initial state" \context -> do
+      it "fetches an entity with no events and returns EntityNotFound" \context -> do
         -- Fetch from a stream that doesn't exist yet
-        result <-
+        fetchResult <-
           context.fetcher.fetch context.entityName context.streamId
-            |> Task.asResult
+            |> Task.mapError toText
 
-        -- Should succeed with initial state (version 0)
-        result
-          |> Result.isOk
-          |> shouldBe True
-
-        case result of
-          Ok state -> do
-            state.balance |> shouldBe 0
-            state.isOpen |> shouldBe False
-            state.version |> shouldBe 0
-          Err _ -> do
-            fail "Expected successful fetch but got error"
+        -- Should return EntityNotFound when there are no events
+        case fetchResult of
+          EntityFound _ -> do
+            fail "Expected EntityNotFound for empty stream but got EntityFound"
+          EntityNotFound -> do
+            -- This is the expected behavior
+            Task.yield unit
 
       it "fetches an entity with a single event and applies it correctly" \context -> do
         -- Insert one event: AccountOpened
@@ -55,7 +58,7 @@ spec newStoreAndFetcher = do
         let insertion =
               Event.Insertion
                 { id = eventId,
-                  event = AccountOpened {initialBalance = 100},
+                  event = CartCreated {entityId = def},
                   metadata = metadata'
                 }
         let payload =
@@ -63,7 +66,7 @@ spec newStoreAndFetcher = do
                 { streamId = context.streamId,
                   entityName = context.entityName,
                   insertionType = Event.StreamCreation,
-                  insertions = Array.fromLinkedList [insertion]
+                  insertions = [insertion]
                 }
 
         payload
@@ -75,20 +78,24 @@ spec newStoreAndFetcher = do
         state <-
           context.fetcher.fetch context.entityName context.streamId
             |> Task.mapError toText
+            |> Task.andThen (\result -> case result of
+                EntityFound s -> Task.yield s
+                EntityNotFound -> Task.throw "Expected entity to exist but got EntityNotFound"
+              )
 
         -- Should have the correct state after applying one event
-        state.balance |> shouldBe 100
-        state.isOpen |> shouldBe True
+        Array.length state.cartItems |> shouldBe 0
+        state.isCheckedOut |> shouldBe False
         state.version |> shouldBe 1
 
       it "fetches an entity with multiple events and applies them in order" \context -> do
         -- Insert multiple events in sequence
         let events =
               Array.fromLinkedList
-                [ AccountOpened {initialBalance = 50},
-                  MoneyDeposited {amount = 100},
-                  MoneyWithdrawn {amount = 30},
-                  MoneyDeposited {amount = 20}
+                [ CartCreated {entityId = def},
+                  ItemAdded {entityId = def, itemId = def, amount = 100},
+                  ItemRemoved {entityId = def, itemId = def},
+                  ItemAdded {entityId = def, itemId = def, amount = 20}
                 ]
 
         insertions <-
@@ -123,7 +130,7 @@ spec newStoreAndFetcher = do
                         { streamId = context.streamId,
                           entityName = context.entityName,
                           insertionType,
-                          insertions = Array.fromLinkedList [insertion]
+                          insertions = [insertion]
                         }
                 payload
                   |> context.store.insert
@@ -137,10 +144,14 @@ spec newStoreAndFetcher = do
         state <-
           context.fetcher.fetch context.entityName context.streamId
             |> Task.mapError toText
+            |> Task.andThen (\result -> case result of
+                EntityFound s -> Task.yield s
+                EntityNotFound -> Task.throw "Expected entity to exist but got EntityNotFound"
+              )
 
-        -- Should have correct state: 50 + 100 - 30 + 20 = 140
-        state.balance |> shouldBe 140
-        state.isOpen |> shouldBe True
+        -- Should have correct state: 1 item (added, removed, added again)
+        Array.length state.cartItems |> shouldBe 1
+        state.isCheckedOut |> shouldBe False
         state.version |> shouldBe 4
 
       it "fetches different entities independently" \context -> do
@@ -158,7 +169,7 @@ spec newStoreAndFetcher = do
         let insertion1 =
               Event.Insertion
                 { id = eventId1,
-                  event = AccountOpened {initialBalance = 100},
+                  event = CartCreated {entityId = def},
                   metadata = metadata1'
                 }
         let payload1 =
@@ -166,7 +177,7 @@ spec newStoreAndFetcher = do
                 { streamId = context.streamId,
                   entityName = context.entityName,
                   insertionType = Event.StreamCreation,
-                  insertions = Array.fromLinkedList [insertion1]
+                  insertions = [insertion1]
                 }
 
         payload1
@@ -185,7 +196,7 @@ spec newStoreAndFetcher = do
         let insertion2 =
               Event.Insertion
                 { id = eventId2,
-                  event = AccountOpened {initialBalance = 500},
+                  event = CartCreated {entityId = def},
                   metadata = metadata2'
                 }
         let payload2 =
@@ -193,7 +204,7 @@ spec newStoreAndFetcher = do
                 { streamId = streamId2,
                   entityName = context.entityName,
                   insertionType = Event.StreamCreation,
-                  insertions = Array.fromLinkedList [insertion2]
+                  insertions = [insertion2]
                 }
 
         payload2
@@ -205,14 +216,22 @@ spec newStoreAndFetcher = do
         state1 <-
           context.fetcher.fetch context.entityName context.streamId
             |> Task.mapError toText
+            |> Task.andThen (\result -> case result of
+                EntityFound s -> Task.yield s
+                EntityNotFound -> Task.throw "Expected entity to exist but got EntityNotFound"
+              )
 
         state2 <-
           context.fetcher.fetch context.entityName streamId2
             |> Task.mapError toText
+            |> Task.andThen (\result -> case result of
+                EntityFound s -> Task.yield s
+                EntityNotFound -> Task.throw "Expected entity to exist but got EntityNotFound"
+              )
 
-        -- Should have different states
-        state1.balance |> shouldBe 100
-        state2.balance |> shouldBe 500
+        -- Should have different states (both empty carts)
+        Array.length state1.cartItems |> shouldBe 0
+        Array.length state2.cartItems |> shouldBe 0
         state1.version |> shouldBe 1
         state2.version |> shouldBe 1
 
@@ -234,7 +253,7 @@ spec newStoreAndFetcher = do
                   Task.yield
                     Event.Insertion
                       { id = eventId,
-                        event = MoneyDeposited {amount = 1}, -- Deposit 1 each time
+                        event = ItemAdded {entityId = def, itemId = def, amount = 1}, -- Deposit 1 each time
                         metadata = metadata'
                       }
               )
@@ -251,7 +270,7 @@ spec newStoreAndFetcher = do
         let openInsertion =
               Event.Insertion
                 { id = openEventId,
-                  event = AccountOpened {initialBalance = 0},
+                  event = CartCreated {entityId = def},
                   metadata = openMetadata'
                 }
         let openPayload =
@@ -259,7 +278,7 @@ spec newStoreAndFetcher = do
                 { streamId = context.streamId,
                   entityName = context.entityName,
                   insertionType = Event.StreamCreation,
-                  insertions = Array.fromLinkedList [openInsertion]
+                  insertions = [openInsertion]
                 }
 
         openPayload
@@ -277,7 +296,7 @@ spec newStoreAndFetcher = do
                         { streamId = context.streamId,
                           entityName = context.entityName,
                           insertionType,
-                          insertions = Array.fromLinkedList [insertion]
+                          insertions = [insertion]
                         }
                 payload
                   |> context.store.insert
@@ -291,10 +310,14 @@ spec newStoreAndFetcher = do
         state <-
           context.fetcher.fetch context.entityName context.streamId
             |> Task.mapError toText
+            |> Task.andThen (\result -> case result of
+                EntityFound s -> Task.yield s
+                EntityNotFound -> Task.throw "Expected entity to exist but got EntityNotFound"
+              )
 
-        -- Should have correct balance: 0 + (100 * 1) = 100
-        state.balance |> shouldBe 100
-        state.isOpen |> shouldBe True
+        -- Should have 1 item (same item added 100 times)
+        Array.length state.cartItems |> shouldBe 1
+        state.isCheckedOut |> shouldBe False
         state.version |> shouldBe 101 -- Opening event + 100 deposits
       it "returns error when fetching from non-existent entity type" \context -> do
         let wrongEntityName = Event.EntityName "NonExistentEntity"
@@ -314,9 +337,9 @@ spec newStoreAndFetcher = do
         -- Insert 3 events
         let events =
               Array.fromLinkedList
-                [ AccountOpened {initialBalance = 100},
-                  MoneyDeposited {amount = 50},
-                  MoneyWithdrawn {amount = 25}
+                [ CartCreated {entityId = def},
+                  ItemAdded {entityId = def, itemId = def, amount = 50},
+                  ItemRemoved {entityId = def, itemId = def}
                 ]
 
         insertions <-
@@ -351,7 +374,7 @@ spec newStoreAndFetcher = do
                         { streamId = context.streamId,
                           entityName = context.entityName,
                           insertionType,
-                          insertions = Array.fromLinkedList [insertion]
+                          insertions = [insertion]
                         }
                 payload
                   |> context.store.insert
@@ -365,32 +388,44 @@ spec newStoreAndFetcher = do
         state1 <-
           context.fetcher.fetch context.entityName context.streamId
             |> Task.mapError toText
+            |> Task.andThen (\result -> case result of
+                EntityFound s -> Task.yield s
+                EntityNotFound -> Task.throw "Expected entity to exist but got EntityNotFound"
+              )
 
         state2 <-
           context.fetcher.fetch context.entityName context.streamId
             |> Task.mapError toText
+            |> Task.andThen (\result -> case result of
+                EntityFound s -> Task.yield s
+                EntityNotFound -> Task.throw "Expected entity to exist but got EntityNotFound"
+              )
 
         state3 <-
           context.fetcher.fetch context.entityName context.streamId
             |> Task.mapError toText
+            |> Task.andThen (\result -> case result of
+                EntityFound s -> Task.yield s
+                EntityNotFound -> Task.throw "Expected entity to exist but got EntityNotFound"
+              )
 
         -- All fetches should return same version
         state1.version |> shouldBe 3
         state2.version |> shouldBe 3
         state3.version |> shouldBe 3
 
-        -- All should have same balance
-        state1.balance |> shouldBe 125
-        state2.balance |> shouldBe 125
-        state3.balance |> shouldBe 125
+        -- All should have same items (item was added then removed, so 0)
+        Array.length state1.cartItems |> shouldBe 0
+        Array.length state2.cartItems |> shouldBe 0
+        Array.length state3.cartItems |> shouldBe 0
 
       it "correctly handles closed account state" \context -> do
-        -- Insert events including account closure
+        -- Insert events: create cart, add item, then checkout
         let events =
               Array.fromLinkedList
-                [ AccountOpened {initialBalance = 200},
-                  MoneyWithdrawn {amount = 100},
-                  AccountClosed
+                [ CartCreated {entityId = def},
+                  ItemAdded {entityId = def, itemId = def, amount = 5},
+                  CartCheckedOut {entityId = def}
                 ]
 
         insertions <-
@@ -425,7 +460,7 @@ spec newStoreAndFetcher = do
                         { streamId = context.streamId,
                           entityName = context.entityName,
                           insertionType,
-                          insertions = Array.fromLinkedList [insertion]
+                          insertions = [insertion]
                         }
                 payload
                   |> context.store.insert
@@ -439,10 +474,14 @@ spec newStoreAndFetcher = do
         state <-
           context.fetcher.fetch context.entityName context.streamId
             |> Task.mapError toText
+            |> Task.andThen (\result -> case result of
+                EntityFound s -> Task.yield s
+                EntityNotFound -> Task.throw "Expected entity to exist but got EntityNotFound"
+              )
 
-        -- Account should be closed
-        state.balance |> shouldBe 100
-        state.isOpen |> shouldBe False
+        -- Cart should be checked out with 1 item
+        Array.length state.cartItems |> shouldBe 1
+        state.isCheckedOut |> shouldBe True
         state.version |> shouldBe 3
 
     describe "Error Scenarios" do
@@ -450,16 +489,14 @@ spec newStoreAndFetcher = do
         it "handles non-existent entity type gracefully" \context -> do
           -- Try to fetch from an entity type that doesn't exist
           let nonExistentEntity = Event.EntityName ""
-          result <-
+          fetchResult <-
             context.fetcher.fetch nonExistentEntity context.streamId
-              |> Task.asResult
+              |> Task.mapError toText
 
-          -- Should return initial state (empty stream case)
-          case result of
-            Ok state -> do
-              state.balance |> shouldBe 0
-              state.version |> shouldBe 0
-            Err _ -> fail "Expected Ok but got Err"
+          -- Should return EntityNotFound for empty stream (no events)
+          case fetchResult of
+            EntityFound _ -> fail "Expected EntityNotFound for non-existent entity type but got EntityFound"
+            EntityNotFound -> Task.yield unit
 
         it "handles concurrent fetches of the same entity" \context -> do
           -- Insert some events first
@@ -473,7 +510,7 @@ spec newStoreAndFetcher = do
           let insertion =
                 Event.Insertion
                   { id = eventId,
-                    event = AccountOpened {initialBalance = 1000},
+                    event = CartCreated {entityId = def},
                     metadata = metadata'
                   }
           let payload =
@@ -481,7 +518,7 @@ spec newStoreAndFetcher = do
                   { streamId = context.streamId,
                     entityName = context.entityName,
                     insertionType = Event.StreamCreation,
-                    insertions = Array.fromLinkedList [insertion]
+                    insertions = [insertion]
                   }
           payload
             |> context.store.insert
@@ -493,14 +530,29 @@ spec newStoreAndFetcher = do
           fetch2 <- AsyncTask.run (context.fetcher.fetch context.entityName context.streamId |> Task.mapError toText)
           fetch3 <- AsyncTask.run (context.fetcher.fetch context.entityName context.streamId |> Task.mapError toText)
 
-          state1 <- AsyncTask.waitFor fetch1
-          state2 <- AsyncTask.waitFor fetch2
-          state3 <- AsyncTask.waitFor fetch3
+          state1 <-
+            AsyncTask.waitFor fetch1
+              |> Task.andThen (\result -> case result of
+                EntityFound s -> Task.yield s
+                EntityNotFound -> Task.throw "Expected entity to exist but got EntityNotFound"
+              )
+          state2 <-
+            AsyncTask.waitFor fetch2
+              |> Task.andThen (\result -> case result of
+                EntityFound s -> Task.yield s
+                EntityNotFound -> Task.throw "Expected entity to exist but got EntityNotFound"
+              )
+          state3 <-
+            AsyncTask.waitFor fetch3
+              |> Task.andThen (\result -> case result of
+                EntityFound s -> Task.yield s
+                EntityNotFound -> Task.throw "Expected entity to exist but got EntityNotFound"
+              )
 
-          -- All fetches should return the same consistent state
-          state1.balance |> shouldBe 1000
-          state2.balance |> shouldBe 1000
-          state3.balance |> shouldBe 1000
+          -- All fetches should return the same consistent state (empty cart)
+          Array.length state1.cartItems |> shouldBe 0
+          Array.length state2.cartItems |> shouldBe 0
+          Array.length state3.cartItems |> shouldBe 0
           state1.version |> shouldBe 1
           state2.version |> shouldBe 1
           state3.version |> shouldBe 1
@@ -517,7 +569,7 @@ spec newStoreAndFetcher = do
           let insertion =
                 Event.Insertion
                   { id = eventId,
-                    event = AccountOpened {initialBalance = 500},
+                    event = CartCreated {entityId = def},
                     metadata = metadata'
                   }
           let payload =
@@ -525,7 +577,7 @@ spec newStoreAndFetcher = do
                   { streamId = context.streamId,
                     entityName = context.entityName,
                     insertionType = Event.StreamCreation,
-                    insertions = Array.fromLinkedList [insertion]
+                    insertions = [insertion]
                   }
           payload
             |> context.store.insert
@@ -533,7 +585,9 @@ spec newStoreAndFetcher = do
             |> discard
 
           -- Start a fetch
-          fetchTask <- AsyncTask.run (context.fetcher.fetch context.entityName context.streamId |> Task.mapError toText)
+          fetchTask <-
+            AsyncTask.run
+              (context.fetcher.fetch context.entityName context.streamId |> Task.mapError toText)
 
           -- Concurrently insert more events
           eventId2 <- Uuid.generate
@@ -546,7 +600,7 @@ spec newStoreAndFetcher = do
           let insertion2 =
                 Event.Insertion
                   { id = eventId2,
-                    event = MoneyDeposited {amount = 100},
+                    event = ItemAdded {entityId = def, itemId = def, amount = 100},
                     metadata = metadata2'
                   }
           let payload2 =
@@ -554,7 +608,7 @@ spec newStoreAndFetcher = do
                   { streamId = context.streamId,
                     entityName = context.entityName,
                     insertionType = Event.InsertAfter (Event.StreamPosition 0),
-                    insertions = Array.fromLinkedList [insertion2]
+                    insertions = [insertion2]
                   }
           payload2
             |> context.store.insert
@@ -562,12 +616,15 @@ spec newStoreAndFetcher = do
             |> discard
 
           -- Wait for fetch to complete
-          (state :: BankAccountState) <- AsyncTask.waitFor fetchTask
+          (state :: CartState) <- AsyncTask.waitFor fetchTask |> Task.andThen (\result -> case result of
+              EntityFound s -> Task.yield s
+              EntityNotFound -> Task.throw "Expected entity to exist but got EntityNotFound"
+            )
 
           -- The fetch should see either the old or new state consistently
-          -- (could be 500 or 600 depending on timing, but should be consistent)
-          ((state.balance >= 500) && (state.balance <= 600)) |> shouldBe True
-          state.isOpen |> shouldBe True
+          -- (could be 0 or 1 depending on timing, but should be consistent)
+          ((Array.length state.cartItems == 0) || (Array.length state.cartItems == 1)) |> shouldBe True
+          state.isCheckedOut |> shouldBe False
 
     describe "Edge Cases" do
       before (Context.initialize newStoreAndFetcher) do
@@ -575,16 +632,14 @@ spec newStoreAndFetcher = do
           -- This tests that the fetcher doesn't crash with unusual input
           -- Note: StreamId is generated via UUID, so we use a valid one but unused stream
           unusedStreamId <- StreamId.new
-          result <-
+          fetchResult <-
             context.fetcher.fetch context.entityName unusedStreamId
-              |> Task.asResult
+              |> Task.mapError toText
 
-          case result of
-            Ok state -> do
-              -- Should return initial state for non-existent stream
-              state.balance |> shouldBe 0
-              state.version |> shouldBe 0
-            Err _ -> fail "Expected Ok but got Err"
+          case fetchResult of
+            EntityFound _ -> do
+              fail "Expected EntityNotFound for non-existent stream but got EntityFound"
+            EntityNotFound -> Task.yield unit
 
         it "handles duplicate event IDs gracefully" \context -> do
           -- Insert event with specific ID
@@ -598,7 +653,7 @@ spec newStoreAndFetcher = do
           let insertion =
                 Event.Insertion
                   { id = eventId,
-                    event = AccountOpened {initialBalance = 100},
+                    event = CartCreated {entityId = def},
                     metadata = metadata'
                   }
           let payload =
@@ -606,7 +661,7 @@ spec newStoreAndFetcher = do
                   { streamId = context.streamId,
                     entityName = context.entityName,
                     insertionType = Event.StreamCreation,
-                    insertions = Array.fromLinkedList [insertion]
+                    insertions = [insertion]
                   }
           payload
             |> context.store.insert
@@ -624,9 +679,13 @@ spec newStoreAndFetcher = do
           state <-
             context.fetcher.fetch context.entityName context.streamId
               |> Task.mapError toText
+              |> Task.andThen (\result -> case result of
+                EntityFound s -> Task.yield s
+                EntityNotFound -> Task.throw "Expected entity to exist but got EntityNotFound"
+              )
 
-          -- Should have the event applied only once
-          state.balance |> shouldBe 100
+          -- Should have the event applied only once (empty cart)
+          Array.length state.cartItems |> shouldBe 0
           state.version |> shouldBe 1
 
         it "handles very long entity names" \context -> do
@@ -636,15 +695,14 @@ spec newStoreAndFetcher = do
                   "VeryLongEntityNameVeryLongEntityNameVeryLongEntityNameVeryLongEntityNameVeryLongEntityNameVeryLongEntityNameVeryLongEntityNameVeryLongEntityNameVeryLongEntityNameVeryLongEntityName"
           unusedStreamId <- StreamId.new
 
-          result <-
+          fetchResult <-
             context.fetcher.fetch longName unusedStreamId
-              |> Task.asResult
+              |> Task.mapError toText
 
-          case result of
-            Ok state -> do
-              state.balance |> shouldBe 0
-              state.version |> shouldBe 0
-            Err _ -> fail "Expected Ok but got Err for long entity name"
+          case fetchResult of
+            EntityFound _ -> do
+              fail "Expected EntityNotFound for unused stream with long entity name but got EntityFound"
+            EntityNotFound -> Task.yield unit
 
         it "handles rapid successive fetches" \context -> do
           -- Insert an event
@@ -658,7 +716,7 @@ spec newStoreAndFetcher = do
           let insertion =
                 Event.Insertion
                   { id = eventId,
-                    event = AccountOpened {initialBalance = 250},
+                    event = CartCreated {entityId = def},
                     metadata = metadata'
                   }
           let payload =
@@ -666,7 +724,7 @@ spec newStoreAndFetcher = do
                   { streamId = context.streamId,
                     entityName = context.entityName,
                     insertionType = Event.StreamCreation,
-                    insertions = Array.fromLinkedList [insertion]
+                    insertions = [insertion]
                   }
           payload
             |> context.store.insert
@@ -676,8 +734,14 @@ spec newStoreAndFetcher = do
           -- Fetch the same entity 10 times rapidly
           Array.initialize 10 identity
             |> Task.forEach \_ -> do
-              state <- context.fetcher.fetch context.entityName context.streamId |> Task.mapError toText
-              state.balance |> shouldBe 250
+              state <-
+                context.fetcher.fetch context.entityName context.streamId
+                  |> Task.mapError toText
+                  |> Task.andThen (\result -> case result of
+                      EntityFound s -> Task.yield s
+                      EntityNotFound -> Task.throw "Expected entity to exist but got EntityNotFound"
+                    )
+              Array.length state.cartItems |> shouldBe 0
               state.version |> shouldBe 1
 
     describe "Performance Boundaries" do
@@ -687,8 +751,9 @@ spec newStoreAndFetcher = do
         performanceBoundariesWithCount newStoreAndFetcher 100
         performanceBoundariesWithCount newStoreAndFetcher 1000
 
+
 performanceBoundariesWithCount ::
-  Task Text (EventStore BankAccountEvent, EntityFetcher BankAccountState BankAccountEvent) ->
+  Task Text (EventStore CartEvent, EntityFetcher CartState CartEvent) ->
   Int ->
   Spec Unit
 performanceBoundariesWithCount newStoreAndFetcher eventCount = do
@@ -706,7 +771,7 @@ performanceBoundariesWithCount newStoreAndFetcher eventCount = do
         let openInsertion =
               Event.Insertion
                 { id = openEventId,
-                  event = AccountOpened {initialBalance = 0},
+                  event = CartCreated {entityId = def},
                   metadata = openMetadata'
                 }
         let openPayload =
@@ -714,7 +779,7 @@ performanceBoundariesWithCount newStoreAndFetcher eventCount = do
                 { streamId = context.streamId,
                   entityName = context.entityName,
                   insertionType = Event.StreamCreation,
-                  insertions = Array.fromLinkedList [openInsertion]
+                  insertions = [openInsertion]
                 }
         openPayload
           |> context.store.insert
@@ -736,7 +801,7 @@ performanceBoundariesWithCount newStoreAndFetcher eventCount = do
                   Task.yield
                     Event.Insertion
                       { id = eventId,
-                        event = MoneyDeposited {amount = 1},
+                        event = ItemAdded {entityId = def, itemId = def, amount = 1},
                         metadata = metadata'
                       }
               )
@@ -764,6 +829,10 @@ performanceBoundariesWithCount newStoreAndFetcher eventCount = do
         state <-
           context.fetcher.fetch context.entityName context.streamId
             |> Task.mapError toText
+            |> Task.andThen (\result -> case result of
+                EntityFound s -> Task.yield s
+                EntityNotFound -> Task.throw "Expected entity to exist but got EntityNotFound"
+              )
 
-        state.balance |> shouldBe eventCount
+        Array.length state.cartItems |> shouldBe 1 -- Same item added eventCount times
         state.version |> shouldBe (eventCount + 1) -- Opening + deposits

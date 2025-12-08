@@ -10,7 +10,7 @@ import Service.Event.StreamId qualified as StreamId
 import Service.EventStore (EventStore)
 import Service.EventStore.Core qualified as EventStore
 import Task qualified
-import Test.Service.EventStore.Core (BankAccountEvent, newInsertion)
+import Test.Service.EventStore.Core (CartEvent, newInsertion)
 import Uuid qualified
 
 
@@ -19,13 +19,13 @@ data Context = Context
     entity1Id :: Event.EntityName,
     entity2Id :: Event.EntityName,
     streamId :: Event.StreamId,
-    store :: EventStore BankAccountEvent,
-    generatedEvents :: Array (Event.InsertionPayload BankAccountEvent),
+    store :: EventStore CartEvent,
+    generatedEvents :: Array (Event.InsertionPayload CartEvent),
     positions :: Array Event.StreamPosition
   }
 
 
-initialize :: Task Text (EventStore BankAccountEvent) -> Int -> Task Text Context
+initialize :: Task Text (EventStore CartEvent) -> Int -> Task Text Context
 initialize newStore eventCount = do
   store <- newStore
   streamId <- StreamId.new
@@ -35,8 +35,8 @@ initialize newStore eventCount = do
   let entity2Id = Event.EntityName entity2IdText
 
   -- Generate all insertions for both entities
-  entity1Insertions <- Array.fromLinkedList [0 .. eventCount - 1] |> Task.mapArray newInsertion
-  entity2Insertions <- Array.fromLinkedList [0 .. eventCount - 1] |> Task.mapArray newInsertion
+  entity1Insertions <- [0 .. eventCount - 1] |> Task.mapArray newInsertion
+  entity2Insertions <- [0 .. eventCount - 1] |> Task.mapArray newInsertion
 
   -- Insert entity1 events in chunks of 100 (batch size limit)
   entity1Insertions |> Array.chunksOf 100 |> Task.forEach \chunk -> do
@@ -74,11 +74,11 @@ initialize newStore eventCount = do
             )
 
   let entity1Positions =
-        Array.fromLinkedList [0 .. eventCount - 1]
+        [0 .. eventCount - 1]
           |> Array.map (fromIntegral .> Event.StreamPosition)
 
   let entity2Positions =
-        Array.fromLinkedList [0 .. eventCount - 1]
+        [0 .. eventCount - 1]
           |> Array.map (fromIntegral .> Event.StreamPosition)
 
   let allEvents = entity1Events |> Array.append entity2Events

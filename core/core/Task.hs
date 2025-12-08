@@ -52,7 +52,7 @@ import Result (Result)
 import Result qualified
 import Text (Text)
 import Thenable (Monad)
-import ToText (Show, toPrettyText)
+import ToText (toPrettyText)
 import Prelude qualified
 
 
@@ -72,25 +72,25 @@ throw err = Task (Except.throwE err)
 
 
 map :: (input -> output) -> Task err input -> Task err output
-map f self = Task (Mappable.map f (runTask self))
+map f self = Task (Mappable.map f (self.runTask))
 {-# INLINE map #-}
 
 
 mapError :: (err1 -> err2) -> Task err1 value -> Task err2 value
 mapError f self =
-  runTask self
+  self.runTask
     |> Except.withExceptT f
     |> Task
 {-# INLINE mapError #-}
 
 
 apply :: Task err (input -> output) -> Task err input -> Task err output
-apply taskFunction self = Task (Applicable.apply (runTask taskFunction) (runTask self))
+apply taskFunction self = Task (Applicable.apply (taskFunction.runTask) (self.runTask))
 {-# INLINE apply #-}
 
 
 recover :: (err -> Task err2 value) -> Task err value -> Task err2 value
-recover f self = Task (Except.catchE (runTask self) (runTask <. f))
+recover f self = Task (Except.catchE (self.runTask) (\it -> (f it).runTask))
 {-# INLINE recover #-}
 
 
@@ -103,8 +103,8 @@ asResult task =
 
 andThen :: (input -> Task err output) -> Task err input -> Task err output
 andThen f self = Task do
-  value <- runTask self
-  runTask (f value)
+  value <- self.runTask
+  (f value).runTask
 {-# INLINE andThen #-}
 
 
@@ -112,7 +112,7 @@ andThen f self = Task do
 
 runResult :: Task err value -> IO (Result err value)
 runResult task = do
-  runTask task
+  task.runTask
     |> Except.runExceptT
     |> IO.map Result.fromEither
 {-# INLINE runResult #-}
@@ -120,7 +120,7 @@ runResult task = do
 
 run :: (Result err value -> IO value) -> Task err value -> IO value
 run reducer task = do
-  runTask task
+  task.runTask
     |> Except.runExceptT
     |> IO.map Result.fromEither
     |> IO.andThen reducer
@@ -132,7 +132,7 @@ runNoErrors :: Task Never value -> IO value
 runNoErrors task = do
   let reducer (Result.Ok value) = IO.yield value
       reducer (Result.Err _) = panic "Task.runNoErrors: Impossible error in Task Never - this indicates a type system violation"
-  runTask task
+  task.runTask
     |> Except.runExceptT
     |> IO.map Result.fromEither
     |> IO.andThen reducer
@@ -246,7 +246,7 @@ when condition task =
 forever :: Task err Unit -> Task err Unit
 forever task = Task do
   let loop = do
-        result <- Monad.liftIO (Except.runExceptT (runTask task))
+        result <- Monad.liftIO (Except.runExceptT (task.runTask))
         case result of
           Either.Left err -> Except.throwE err -- Propagate the error and exit the loop
           Either.Right _ -> loop -- Continue the loop
@@ -258,7 +258,7 @@ forever task = Task do
 -- | Returns the error as the result
 errorAsResult :: Task err Unit -> Task Never (Maybe err)
 errorAsResult task =
-  runTask task
+  task.runTask
     |> Except.mapExceptT
       ( \x -> do
           result <- x
@@ -274,7 +274,7 @@ errorAsResult task =
 -- The condition is checked before each iteration
 while :: Task err Bool -> Task err Unit -> Task err Unit
 while condition action = Task do
-  Loops.whileM_ (runTask condition) (runTask action)
+  Loops.whileM_ (condition.runTask) (action.runTask)
 {-# INLINE while #-}
 
 

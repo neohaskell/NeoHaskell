@@ -14,12 +14,12 @@ import Service.EventStore.Core qualified as EventStore
 import Stream qualified
 import Task qualified
 import Test
-import Test.Service.EventStore.Core (BankAccountEvent (..))
+import Test.Service.EventStore.Core (CartEvent (..))
 import Test.Service.EventStore.OptimisticConcurrency.Context qualified as Context
 import Uuid qualified
 
 
-spec :: Task Text (EventStore BankAccountEvent) -> Spec Unit
+spec :: Task Text (EventStore CartEvent) -> Spec Unit
 spec newStore = do
   describe "Optimistic Concurrency" do
     beforeAll (Context.initialize newStore) do
@@ -38,7 +38,7 @@ spec newStore = do
         let initialInsertion =
               Event.Insertion
                 { id = initialEventId,
-                  event = AccountOpened {initialBalance = 1000},
+                  event = CartCreated {entityId = def},
                   metadata = initialMetadata'
                 }
         let initialPayload =
@@ -46,7 +46,7 @@ spec newStore = do
                 { streamId = context.streamId,
                   entityName,
                   insertionType = Event.StreamCreation,
-                  insertions = Array.fromLinkedList [initialInsertion]
+                  insertions = [initialInsertion]
                 }
 
         initialPayload
@@ -65,7 +65,7 @@ spec newStore = do
         let event1Insertion =
               Event.Insertion
                 { id = event1Id,
-                  event = MoneyDeposited {amount = 10},
+                  event = ItemAdded {entityId = def, itemId = def, amount = 10},
                   metadata = event1Metadata'
                 }
         let event1Payload =
@@ -73,7 +73,7 @@ spec newStore = do
                 { streamId = context.streamId,
                   entityName,
                   insertionType = Event.InsertAfter (Event.StreamPosition 0),
-                  insertions = Array.fromLinkedList [event1Insertion]
+                  insertions = [event1Insertion]
                 }
 
         event2Id <- Uuid.generate
@@ -86,7 +86,7 @@ spec newStore = do
         let event2Insertion =
               Event.Insertion
                 { id = event2Id,
-                  event = MoneyDeposited {amount = 20},
+                  event = ItemAdded {entityId = def, itemId = def, amount = 20},
                   metadata = event2Metadata'
                 }
         let event2Payload =
@@ -94,7 +94,7 @@ spec newStore = do
                 { streamId = context.streamId,
                   entityName,
                   insertionType = Event.InsertAfter (Event.StreamPosition 0),
-                  insertions = Array.fromLinkedList [event2Insertion]
+                  insertions = [event2Insertion]
                 }
 
         let event1Task =
@@ -111,7 +111,7 @@ spec newStore = do
 
         (result1, result2) <- AsyncTask.runConcurrently (event1Task, event2Task)
 
-        Array.fromLinkedList [result1, result2]
+        [result1, result2]
           |> Array.map (\x -> if Result.isOk x then 1 else 0)
           |> Array.sumIntegers
           |> shouldBe 1
@@ -157,7 +157,7 @@ spec newStore = do
               let insertion =
                     Event.Insertion
                       { id = eventId,
-                        event = MoneyDeposited {amount = 50},
+                        event = ItemAdded {entityId = def, itemId = def, amount = 50},
                         metadata = metadata'
                       }
               let insertionType =
@@ -169,14 +169,14 @@ spec newStore = do
                       { streamId = context.streamId,
                         entityName,
                         insertionType,
-                        insertions = Array.fromLinkedList [insertion]
+                        insertions = [insertion]
                       }
               payload
                 |> context.store.insert
                 |> Task.mapError toText
 
         -- Insert events at positions 0, 1, 2, 3, 4
-        Array.fromLinkedList [0, 1, 2, 3, 4]
+        [0, 1, 2, 3, 4]
           |> Task.mapArray insertEventAtPosition
           |> discard
 
@@ -192,7 +192,7 @@ spec newStore = do
         let staleInsertion =
               Event.Insertion
                 { id = staleEventId,
-                  event = MoneyWithdrawn {amount = 15},
+                  event = ItemRemoved {entityId = def, itemId = def},
                   metadata = staleMetadata'
                 }
         let stalePayload =
@@ -200,7 +200,7 @@ spec newStore = do
                 { streamId = context.streamId,
                   entityName,
                   insertionType = Event.InsertAfter (Event.StreamPosition 1),
-                  insertions = Array.fromLinkedList [staleInsertion]
+                  insertions = [staleInsertion]
                 }
 
         staleResult <-
@@ -225,7 +225,7 @@ spec newStore = do
         let correctInsertion =
               Event.Insertion
                 { id = correctEventId,
-                  event = MoneyDeposited {amount = 30},
+                  event = ItemAdded {entityId = def, itemId = def, amount = 30},
                   metadata = correctMetadata'
                 }
         let correctPayload =
@@ -233,7 +233,7 @@ spec newStore = do
                 { streamId = context.streamId,
                   entityName,
                   insertionType = Event.InsertAfter (Event.StreamPosition 4),
-                  insertions = Array.fromLinkedList [correctInsertion]
+                  insertions = [correctInsertion]
                 }
 
         correctResult <-
@@ -268,7 +268,7 @@ spec newStore = do
         let entityName = Event.EntityName entityNameText
 
         eventsToInsert <-
-          Array.fromLinkedList [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+          [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
             |> Task.mapArray
               ( \position -> do
                   eventId <- Uuid.generate
@@ -281,7 +281,7 @@ spec newStore = do
                   let insertion =
                         Event.Insertion
                           { id = eventId,
-                            event = MoneyDeposited {amount = 100},
+                            event = ItemAdded {entityId = def, itemId = def, amount = 100},
                             metadata = metadata'
                           }
                   let insertionType =
@@ -293,7 +293,7 @@ spec newStore = do
                       { streamId = context.streamId,
                         entityName,
                         insertionType,
-                        insertions = Array.fromLinkedList [insertion]
+                        insertions = [insertion]
                       }
               )
 
@@ -335,7 +335,7 @@ spec newStore = do
         let initialInsertion =
               Event.Insertion
                 { id = initialEventId,
-                  event = AccountOpened {initialBalance = 2000},
+                  event = CartCreated {entityId = def},
                   metadata = initialMetadata'
                 }
         let initialPayload =
@@ -343,7 +343,7 @@ spec newStore = do
                 { streamId = context.streamId,
                   entityName,
                   insertionType = Event.StreamCreation,
-                  insertions = Array.fromLinkedList [initialInsertion]
+                  insertions = [initialInsertion]
                 }
 
         initialPayload
@@ -363,7 +363,7 @@ spec newStore = do
         let event1Insertion =
               Event.Insertion
                 { id = event1Id,
-                  event = MoneyDeposited {amount = 40},
+                  event = ItemAdded {entityId = def, itemId = def, amount = 40},
                   metadata = event1Metadata'
                 }
         let event1Payload =
@@ -371,7 +371,7 @@ spec newStore = do
                 { streamId = context.streamId,
                   entityName,
                   insertionType = Event.InsertAfter (Event.StreamPosition 0),
-                  insertions = Array.fromLinkedList [event1Insertion]
+                  insertions = [event1Insertion]
                 }
 
         event2Id <- Uuid.generate
@@ -384,7 +384,7 @@ spec newStore = do
         let event2Insertion =
               Event.Insertion
                 { id = event2Id,
-                  event = MoneyWithdrawn {amount = 25},
+                  event = ItemRemoved {entityId = def, itemId = def},
                   metadata = event2Metadata'
                 }
         let event2Payload =
@@ -392,7 +392,7 @@ spec newStore = do
                 { streamId = context.streamId,
                   entityName,
                   insertionType = Event.InsertAfter (Event.StreamPosition 0),
-                  insertions = Array.fromLinkedList [event2Insertion]
+                  insertions = [event2Insertion]
                 }
 
         let event1Task =
@@ -410,7 +410,7 @@ spec newStore = do
 
         -- Verify that exactly one succeeded and one failed
         let successCount =
-              Array.fromLinkedList [result1, result2]
+              [result1, result2]
                 |> Array.map (\x -> if Result.isOk x then 1 else 0)
                 |> Array.sumIntegers
 

@@ -26,7 +26,6 @@ import System.IO.Error (alreadyExistsErrorType)
 import Task (Task)
 import Task qualified
 import Text qualified
-import ToText (Show (..))
 import ToText qualified
 
 

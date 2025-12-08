@@ -1,0 +1,67 @@
+name: "Test macOS"
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "core/**"
+      - "cli/**"
+      - "nix/**"
+
+jobs:
+  tests-macos:
+    runs-on: macos-latest
+
+    steps:
+      - name: Install current Bash on macOS
+        run: brew install bash
+
+      - name: Start PostgreSQL on macOS
+        run: |
+          brew install postgresql@16
+
+          # Add PostgreSQL to PATH (keg-only formula)
+          echo "/opt/homebrew/opt/postgresql@16/bin" >> $GITHUB_PATH
+          export PATH="/opt/homebrew/opt/postgresql@16/bin:$PATH"
+
+          brew services start postgresql@16
+
+          # Wait for PostgreSQL to start
+          for i in {1..30}; do
+            if /opt/homebrew/opt/postgresql@16/bin/pg_isready > /dev/null 2>&1; then
+              break
+            fi
+            echo "Waiting for PostgreSQL to start..."
+            sleep 1
+          done
+
+          # Create user with password and database
+          /opt/homebrew/opt/postgresql@16/bin/psql postgres -c "CREATE USER neohaskell WITH PASSWORD 'neohaskell' SUPERUSER CREATEDB CREATEROLE LOGIN;"
+          /opt/homebrew/opt/postgresql@16/bin/psql postgres -c "CREATE DATABASE neohaskell OWNER neohaskell;"
+
+      - uses: actions/checkout@v6
+
+      - uses: DeterminateSystems/determinate-nix-action@v3.13.2
+        with:
+          extra-conf: |
+            extra-substituters = https://cache.iog.io
+            extra-trusted-public-keys = hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ=
+
+      - uses: DeterminateSystems/magic-nix-cache-action@v13
+
+      # - name: Build the project with Nix
+      #   run: nix build
+
+      - name: Build the project with cabal
+        run: nix develop --command cabal build all
+
+      - name: Run core tests
+        run: nix develop --command cabal test core
+
+      # Doctests are failing - See issue #204
+      # - name: Run core doctests
+      #   run: nix-shell --run "cabal repl --with-compiler=doctest --repl-options=--verbose core"
+
+      - name: Run CLI tests
+        run: nix develop --command cabal test cli

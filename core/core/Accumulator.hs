@@ -41,7 +41,7 @@ andThen ::
   (input -> AccumulatorDsl someType output) -> AccumulatorDsl someType input -> AccumulatorDsl someType output
 andThen callback self =
   self.value
-    |> Thenable.andThen (callback .> value)
+    |> Thenable.andThen (\it -> (callback it).value)
     |> AccumulatorDsl
 
 
