@@ -31,4 +31,7 @@ decide _ entity = do
 type instance EntityOf CreateCart = CartEntity
 
 
+type instance ApiFor CreateCart = '[WebApi]
+
+
 deriveCommand ''CreateCart
