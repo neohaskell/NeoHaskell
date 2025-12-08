@@ -8,7 +8,10 @@ module Service.CommandHandler.Core (
 ) where
 
 import Array qualified
+import AsyncTask qualified
 import Core
+import Float qualified
+import Int qualified
 import Service.Command.Core qualified as Command
 import Service.CommandHandler.TH (deriveCommand)
 import Service.EntityFetcher.Core (EntityFetcher, EntityFetchResult (..))
@@ -182,6 +185,17 @@ execute eventStore entityFetcher entityName command = do
                     -- Concurrency conflict, retry if we haven't exceeded max retries
                     if retryCount < maxRetries
                       then do
+                        -- Apply exponential backoff with jitter before retrying
+                        -- Base delay starts at 10ms, doubles each retry, with random jitter
+                        let retryCountFloat = Int.toFloat retryCount
+                        let baseDelayFloat = 10.0 * (2.0 ^ retryCountFloat) -- 10ms, 20ms, 40ms, 80ms, etc.
+                        let baseDelayMs = Float.toInt baseDelayFloat
+                        let maxDelayMs = min baseDelayMs 1000 -- Cap at 1 second
+
+                        -- Add jitter: randomize between 50% and 100% of the calculated delay
+                        jitteredDelay <- Int.getRandomBetween (maxDelayMs // 2) maxDelayMs
+                        AsyncTask.sleep jitteredDelay
+
                         -- Re-fetch the entity with latest state
                         refetchResult <-
                           entityFetcher.fetch entityName finalStreamId

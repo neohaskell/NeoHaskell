@@ -49,6 +49,7 @@ common common_cfg
     pretty-simple,
     process,
     quickcheck-instances,
+    random,
     should-not-typecheck,
     strict,
     string-interpolate,
@@ -127,6 +128,7 @@ library
     Http.Client
     IO
     Int
+    Float
     Json
     LinkedList
     Lock
