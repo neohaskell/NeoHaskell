@@ -140,6 +140,7 @@ library
     Result
     Service.Adapter
     Service.Adapter.Direct
+    Service.Apis.WebApi
     Service.Command
     Service.Command.Core
     Service.CommandHandler

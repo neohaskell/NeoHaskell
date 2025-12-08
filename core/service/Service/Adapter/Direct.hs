@@ -1,71 +1,65 @@
 {-# LANGUAGE DataKinds #-}
-{-# LANGUAGE TypeFamilies #-}
-{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TypeFamilies #-}
 
 module Service.Adapter.Direct (
-  -- * Direct API
-  DirectApi(..),
   -- * Direct Adapter
-  DirectAdapter(..),
-  DirectAdapterState(..),
-  defaultConfig,
+  DirectAdapter (..),
+  DirectAdapterState (..),
+  defaultAdapter,
 ) where
 
 import Basics
 import Bytes qualified
-import Service.Adapter (ServiceAdapter(..))
-import Service.Error (ServiceError(..))
-import Service.Protocol (ServerApi(..))
+import Service.Adapter (ServiceAdapter (..))
+import Service.Apis.WebApi (WebApi, defaultWebApi)
+import Service.Error (ServiceError (..))
 import Task qualified
 
--- | Direct API type - carries configuration for direct (in-process) execution
-data DirectApi = DirectApi
-  { -- | Number of retries on failure
-    retryCount :: Int
-  }
-  deriving (Eq, Show, Generic)
-
--- | Default configuration for DirectApi
-defaultConfig :: DirectApi
-defaultConfig = DirectApi
-  { retryCount = 0
-  }
 
 -- | Direct adapter that executes commands in-process
 -- Despite being "direct", it still operates on the Bytes interface
+-- Uses WebApi for configuration
 data DirectAdapter = DirectAdapter
-  { config :: DirectApi
+  { config :: WebApi
   }
   deriving (Eq, Show, Generic)
+
+
+-- | Default DirectAdapter configuration
+defaultAdapter :: DirectAdapter
+defaultAdapter =
+  DirectAdapter
+    { config = defaultWebApi
+    }
+
 
 -- | Runtime state for the Direct adapter
 data DirectAdapterState = DirectAdapterState
   { isShutdown :: Bool
   }
 
--- | Direct is a server API for in-process execution
-instance ServerApi DirectApi where
-  type ServerName DirectApi = "Direct"
-  type ApiConfig DirectApi = DirectApi
-  type ApiState DirectApi = DirectAdapterState
 
 -- | ServiceAdapter instance for DirectAdapter
 instance ServiceAdapter DirectAdapter where
-  type AdapterApi DirectAdapter = DirectApi
+  type AdapterApi DirectAdapter = WebApi
   type AdapterState DirectAdapter = DirectAdapterState
 
-  -- | Initialize the Direct adapter
+
+  -- \| Initialize the Direct adapter
   initializeAdapter _adapter = do
     -- TODO: Get or create CommandHandler instance
     -- For now, create a placeholder
-    Task.yield DirectAdapterState
-      { isShutdown = False
-      }
+    Task.yield
+      DirectAdapterState
+        { isShutdown = False
+        }
 
-  -- | Execute a command through the Direct adapter
+
+  -- \| Execute a command through the Direct adapter
   -- Note: The command has already been looked up and deserialized by ServiceRuntime
   -- The adapter's role is to:
   -- 1. Run the command through CommandHandler (which executes the Decision)
@@ -85,7 +79,8 @@ instance ServiceAdapter DirectAdapter where
         -- For now, return empty bytes as placeholder
         Task.yield (Bytes.fromLegacy "")
 
-  -- | Shutdown the Direct adapter
+
+  -- \| Shutdown the Direct adapter
   shutdownAdapter _adapter _state = do
     -- Mark as shutdown
     Task.yield unit
