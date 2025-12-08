@@ -9,4 +9,4 @@ import Integration.App.Cart.Commands.CreateCart (CreateCart)
 service :: Service _ _ _ _
 service =
   Service.new
-    |> Service.merge (Service.command @CreateCart)
+    |> Service.command @CreateCart

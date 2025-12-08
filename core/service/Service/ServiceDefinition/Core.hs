@@ -57,18 +57,26 @@ new = ServiceDefinition
 -- | Register an adapter in the service definition
 -- Declares "this service exposes its commands via this protocol"
 expose ::
-  forall adapter protocol.
+  forall adapter protocol cmds reqProtos provProtos adapters.
   ( ServiceAdapter adapter,
     protocol ~ AdapterProtocol adapter,
     KnownSymbol protocol,
     IsLabel protocol (Record.Field protocol)
   ) =>
+  ServiceDefinition cmds reqProtos provProtos adapters ->
   adapter ->
-  ServiceDefinition '[] '[] '[protocol] '[protocol Record.:= adapter]
-expose adapter = ServiceDefinition
-  { commandNames = Record.empty,
-    adapterRecord = Record.empty |> Record.insert (fromLabel @protocol) adapter
-  }
+  ServiceDefinition
+    (Record.Merge cmds '[])
+    (Union reqProtos '[])
+    (Union provProtos '[protocol])
+    (Record.Merge adapters '[protocol Record.:= adapter])
+expose serviceDef adapter = do
+  let adapterDef :: ServiceDefinition '[] '[] '[protocol] '[protocol Record.:= adapter]
+      adapterDef = ServiceDefinition
+        { commandNames = Record.empty,
+          adapterRecord = Record.empty |> Record.insert (fromLabel @protocol) adapter
+        }
+  merge serviceDef adapterDef
 
 -- | Deploy a service definition into a runnable service runtime
 -- This is the validation boundary where protocol checking occurs
@@ -117,18 +125,25 @@ merge m1 m2 =
 
 -- | Register a command type in the service definition
 command ::
-  forall (commandType :: Type) (commandName :: Symbol).
+  forall (commandType :: Type) (commandName :: Symbol) cmds reqProtos provProtos adapters.
   ( Command commandType,
     commandName ~ NameOf commandType,
     IsLabel commandName (Record.Field commandName)
   ) =>
-  ServiceDefinition '[commandName Record.:= CommandDefinition commandType] (TransportProtocols commandType) '[] '[]
-command = do
+  ServiceDefinition cmds reqProtos provProtos adapters ->
+  ServiceDefinition
+    (Record.Merge cmds '[commandName Record.:= CommandDefinition commandType])
+    (Union reqProtos (TransportProtocols commandType))
+    (Union provProtos '[])
+    (Record.Merge adapters '[])
+command serviceDef = do
   let field = fromLabel @commandName
   let definition = CommandDefinition
-  ServiceDefinition
-    { commandNames =
-        Record.empty
-          |> Record.insert field definition,
-      adapterRecord = Record.empty
-    }
+  let commandDef :: ServiceDefinition '[commandName Record.:= CommandDefinition commandType] (TransportProtocols commandType) '[] '[]
+      commandDef = ServiceDefinition
+        { commandNames =
+            Record.empty
+              |> Record.insert field definition,
+          adapterRecord = Record.empty
+        }
+  merge serviceDef commandDef
