@@ -91,16 +91,6 @@ common common_cfg
 library
   import: common_cfg
   exposed-modules:
-    -- Core
-    -- System
-    -- OptionsParser
-    -- JSON
-    -- Traits
-    -- Service
-    -- Meta
-    -- Concurrency
-    -- Http
-    -- Test
     Accumulator
     Appendable
     Applicable
@@ -123,12 +113,12 @@ library
     DurableChannel
     Environment
     File
+    Float
     Function
     Http
     Http.Client
     IO
     Int
-    Float
     Json
     LinkedList
     Lock
@@ -138,6 +128,7 @@ library
     Path
     Record
     Result
+    Service
     Service.Apis.WebApi
     Service.Command
     Service.Command.Core
@@ -252,16 +243,16 @@ test-suite nhcore-test
     Integration.App.Cart
     Integration.App.Cart.Commands.CreateCart
     Integration.App.Cart.Core
-    Service.CommandSpec
     Service.CommandHandlerSpec
+    Service.CommandSpec
     Service.EventStore.InMemorySpec
     Service.EventStore.Postgres.Internal.SubscriptionStoreSpec
     Service.EventStore.PostgresSpec
+    Service.TransportProtocolSpec
     SetSpec
     StreamSpec
     Test.AppSpec.AppSpecSpec
     Test.AppSpec.VerifySpec
-    Service.TransportProtocolSpec
 
   -- other-extensions:
   type: exitcode-stdio-1.0

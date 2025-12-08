@@ -1,5 +1,5 @@
-{-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE AllowAmbiguousTypes #-}
+{-# LANGUAGE UndecidableInstances #-}
 {-# OPTIONS_GHC -fdefer-type-errors -Wno-deferred-type-errors #-}
 
 module Service.TransportProtocolSpec where
@@ -7,16 +7,20 @@ module Service.TransportProtocolSpec where
 import Core
 import Data.Aeson (FromJSON, ToJSON)
 import Decision qualified
-import Service.Apis.WebApi (WebApi (..), defaultWebApi)
-import Service.Command ()  -- Just for instances
-import Service.Command.Core ()  -- Just for instances
+import Service.Apis.WebApi (WebApi (..))
+import Service.Apis.WebApi qualified as WebApi
+import Service.Command ()
+-- Just for instances
+import Service.Command.Core ()
+-- Just for instances
 import Service.Definition.TypeLevel
-import Service.Error (ServiceError(..))
+import Service.Error (ServiceError (..))
 import Service.Protocol (ApiFor)
+import Service.Runtime (ServiceRuntime (..))
 import Service.ServiceDefinition.Core qualified as Service
-import Service.Runtime (ServiceRuntime(..))
 import Task qualified
 import Test
+
 
 -- ============================================================================
 -- KnownHash instances for command names and protocol names
@@ -24,17 +28,21 @@ import Test
 
 -- Command name instances
 instance KnownHash "CreateCartCommand" where
-  hashVal _ = 1234567890  -- Some unique hash value
+  hashVal _ = 1234567890 -- Some unique hash value
+
 
 instance KnownHash "AddItemCommand" where
-  hashVal _ = 2345678901  -- Some unique hash value
+  hashVal _ = 2345678901 -- Some unique hash value
+
 
 instance KnownHash "InternalCommand" where
-  hashVal _ = 3456789012  -- Some unique hash value
+  hashVal _ = 3456789012 -- Some unique hash value
+
 
 -- API name instances
 instance KnownHash "WebApi" where
-  hashVal _ = 4567890123  -- Some unique hash value
+  hashVal _ = 4567890123 -- Some unique hash value
+
 
 -- ============================================================================
 -- NFData instances for shouldNotTypecheck
@@ -45,6 +53,7 @@ instance NFData ServiceRuntime where
     -- We can't deeply evaluate functions, so just return ()
     ()
 
+
 instance NFData ServiceError where
   rnf CommandNotFound {} = ()
   rnf ServiceAlreadyShutdown = ()
@@ -52,8 +61,10 @@ instance NFData ServiceError where
   rnf CommandExecutionFailed {} = ()
   rnf CommandDecodingFailed {} = ()
 
+
 instance (NFData e, NFData a) => NFData (Task e a) where
   rnf _ = () -- Tasks are IO-based, can't deeply evaluate
+
 
 -- ============================================================================
 -- Helper functions
@@ -62,6 +73,7 @@ instance (NFData e, NFData a) => NFData (Task e a) where
 -- | Helper to deploy a service and convert errors
 deployService :: Service.ServiceDefinition cmds req prov adp -> Task Text ServiceRuntime
 deployService serviceDef = Service.deploy serviceDef |> Task.mapError toText
+
 
 -- ============================================================================
 -- Test Commands with different protocol requirements
@@ -73,9 +85,15 @@ data CreateCartCommand = CreateCartCommand
   }
   deriving (Show, Eq, Generic)
 
+
 instance FromJSON CreateCartCommand
+
+
 instance ToJSON CreateCartCommand
+
+
 instance NFData CreateCartCommand
+
 
 -- | Command entity type
 data Cart = Cart
@@ -85,27 +103,39 @@ data Cart = Cart
   }
   deriving (Show, Eq, Generic)
 
+
 -- | Cart events
 data CartEvent
-  = CartCreated { cartId :: Uuid, customerId :: Uuid }
-  | ItemAdded { cartId :: Uuid, itemId :: Text }
+  = CartCreated {cartId :: Uuid, customerId :: Uuid}
+  | ItemAdded {cartId :: Uuid, itemId :: Text}
   deriving (Show, Eq, Generic)
+
 
 instance HasField "entityId" CartEvent Uuid where
   getField (CartCreated {cartId}) = cartId
   getField (ItemAdded {cartId}) = cartId
 
+
 -- Define the type families for the command
 type instance NameOf CreateCartCommand = "CreateCartCommand"
+
+
 type instance EntityOf CreateCartCommand = Cart
+
+
 type instance EventOf Cart = CartEvent
+
+
 type instance ApiFor CreateCartCommand = '[WebApi]
+
 
 instance Command CreateCartCommand where
   type EntityIdType CreateCartCommand = Uuid
 
+
   getEntityIdImpl :: CreateCartCommand -> Maybe Uuid
-  getEntityIdImpl _ = Nothing  -- New entity, no ID yet
+  getEntityIdImpl _ = Nothing -- New entity, no ID yet
+
 
   decideImpl :: CreateCartCommand -> Maybe Cart -> Decision CartEvent
   decideImpl cmd Nothing = do
@@ -114,6 +144,7 @@ instance Command CreateCartCommand where
   decideImpl _ (Just _) =
     Decision.reject "Cart already exists"
 
+
 -- | Command that requires both Direct and REST protocols
 data AddItemCommand = AddItemCommand
   { cartId :: Uuid,
@@ -121,19 +152,32 @@ data AddItemCommand = AddItemCommand
   }
   deriving (Show, Eq, Generic)
 
+
 instance FromJSON AddItemCommand
+
+
 instance ToJSON AddItemCommand
+
+
 instance NFData AddItemCommand
 
+
 type instance NameOf AddItemCommand = "AddItemCommand"
+
+
 type instance EntityOf AddItemCommand = Cart
+
+
 type instance ApiFor AddItemCommand = '[WebApi]
+
 
 instance Command AddItemCommand where
   type EntityIdType AddItemCommand = Uuid
 
+
   getEntityIdImpl :: AddItemCommand -> Maybe Uuid
   getEntityIdImpl cmd = Just cmd.cartId
+
 
   decideImpl :: AddItemCommand -> Maybe Cart -> Decision CartEvent
   decideImpl cmd (Just _) =
@@ -141,24 +185,35 @@ instance Command AddItemCommand where
   decideImpl _ Nothing =
     Decision.reject "Cart does not exist"
 
+
 -- | Command with no transport protocol requirements (for testing)
 data InternalCommand = InternalCommand
   deriving (Show, Eq, Generic)
 
+
 instance NFData InternalCommand
 
+
 type instance NameOf InternalCommand = "InternalCommand"
+
+
 type instance EntityOf InternalCommand = Cart
+
+
 type instance ApiFor InternalCommand = '[]
+
 
 instance Command InternalCommand where
   type EntityIdType InternalCommand = Uuid
 
+
   getEntityIdImpl :: InternalCommand -> Maybe Uuid
   getEntityIdImpl _ = Nothing
 
+
   decideImpl :: InternalCommand -> Maybe Cart -> Decision CartEvent
   decideImpl _ _ = Decision.reject "Internal only"
+
 
 -- ============================================================================
 -- Type-Level Operation Tests
@@ -170,35 +225,35 @@ spec = do
     describe "Member type family" do
       it "correctly identifies present elements" \_ -> do
         -- These should compile, proving Member works
-        let _ = unit :: (Member WebApi '[WebApi] ~ 'True => Unit)
+        let _ = unit :: ((Member WebApi '[WebApi] ~ 'True) => Unit)
         Task.yield unit
 
       it "correctly identifies absent elements" \_ -> do
         -- These should compile, proving Member works for false cases
-        let _ = unit :: (Member Int '[WebApi] ~ 'False => Unit)
-        let _ = unit :: (Member WebApi '[] ~ 'False => Unit)
+        let _ = unit :: ((Member Int '[WebApi] ~ 'False) => Unit)
+        let _ = unit :: ((Member WebApi '[] ~ 'False) => Unit)
         Task.yield unit
 
     describe "Union type family" do
       it "merges lists without duplicates" \_ -> do
         -- Union should combine lists and remove duplicates
-        let _ = unit :: (Union '[WebApi] '[WebApi] ~ '[WebApi] => Unit)
+        let _ = unit :: ((Union '[WebApi] '[WebApi] ~ '[WebApi]) => Unit)
         Task.yield unit
 
       it "handles empty lists" \_ -> do
-        let _ = unit :: (Union '[] '[WebApi] ~ '[WebApi] => Unit)
-        let _ = unit :: (Union '[WebApi] '[] ~ '[WebApi] => Unit)
+        let _ = unit :: ((Union '[] '[WebApi] ~ '[WebApi]) => Unit)
+        let _ = unit :: ((Union '[WebApi] '[] ~ '[WebApi]) => Unit)
         Task.yield unit
 
     describe "Difference type family" do
       it "finds missing elements" \_ -> do
         -- Difference should find elements in first list not in second
-        let _ = unit :: (Difference '[WebApi] '[] ~ '[WebApi] => Unit)
+        let _ = unit :: ((Difference '[WebApi] '[] ~ '[WebApi]) => Unit)
         Task.yield unit
 
       it "handles empty lists" \_ -> do
-        let _ = unit :: (Difference '[] '[WebApi] ~ '[] => Unit)
-        let _ = unit :: (Difference '[WebApi] '[] ~ '[WebApi] => Unit)
+        let _ = unit :: ((Difference '[] '[WebApi] ~ '[]) => Unit)
+        let _ = unit :: ((Difference '[WebApi] '[] ~ '[WebApi]) => Unit)
         Task.yield unit
 
   describe "Service Definition DSL with Server APIs" do
@@ -211,7 +266,7 @@ spec = do
       -- This should compile - WebApi server provided for WebApi-only command
       let serviceDef =
             Service.new
-              |> Service.useServer defaultWebApi
+              |> Service.useServer WebApi.server
               |> Service.command @CreateCartCommand
 
       -- Successfully deploy (compile-time check passes)
@@ -224,9 +279,8 @@ spec = do
       -- Having more servers than needed should be fine
       let serviceDef =
             Service.new
-              |> Service.useServer defaultWebApi
-              |> Service.command @InternalCommand  -- Requires no server APIs
-
+              |> Service.useServer WebApi.server
+              |> Service.command @InternalCommand -- Requires no server APIs
       _runtime <- Service.deploy serviceDef |> Task.mapError toText
       Task.yield unit
 
@@ -239,16 +293,16 @@ spec = do
       -- Both commands require WebApi, one server suffices
       let serviceDef =
             Service.new
-              |> Service.useServer defaultWebApi
+              |> Service.useServer WebApi.server
               |> Service.command @CreateCartCommand
-            -- Add more WebApi-only commands here
+      -- Add more WebApi-only commands here
 
       _runtime <- Service.deploy serviceDef |> Task.mapError toText
       Task.yield unit
 
     it "maintains type safety through composition" \_ -> do
       -- The pipeable interface should properly track server APIs
-      let step1 = Service.new |> Service.useServer defaultWebApi
+      let step1 = Service.new |> Service.useServer WebApi.server
       let step2 = step1 |> Service.command @CreateCartCommand
 
       _runtime <- Service.deploy step2 |> Task.mapError toText

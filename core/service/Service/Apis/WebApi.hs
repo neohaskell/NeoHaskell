@@ -4,10 +4,11 @@
 module Service.Apis.WebApi (
   -- * Web API
   WebApi (..),
-  defaultWebApi,
+  server,
 ) where
 
 import Basics
+import Service.CommandHandler.TH (deriveKnownHash)
 import Service.Protocol (ServerApi (..))
 import Text (Text)
 
@@ -23,8 +24,8 @@ data WebApi = WebApi
 
 
 -- | Default WebApi configuration
-defaultWebApi :: WebApi
-defaultWebApi =
+server :: WebApi
+server =
   WebApi
     { port = 8080,
       host = "localhost"
@@ -36,3 +37,6 @@ instance ServerApi WebApi where
   type ServerName WebApi = "WebApi"
   type ApiConfig WebApi = WebApi
   type ApiState WebApi = ()
+
+
+deriveKnownHash "WebApi"
