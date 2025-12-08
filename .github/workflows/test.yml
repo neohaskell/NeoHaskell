@@ -33,9 +33,9 @@ jobs:
           --health-timeout 5s --health-retries 5
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
 
-      - uses: DeterminateSystems/determinate-nix-action@v3.12.2
+      - uses: DeterminateSystems/determinate-nix-action@v3.13.2
         with:
           extra-conf: |
             extra-substituters = https://cache.iog.io
