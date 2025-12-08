@@ -6,7 +6,7 @@ import Core
 import Maybe qualified
 import Service.CommandHandler (CommandHandlerResult (CommandAccepted, CommandFailed, CommandRejected))
 import Service.CommandHandler qualified as CommandHandler
-import Service.EntityFetcher.Core (EntityFetcher (..))
+import Service.EntityFetcher.Core (EntityFetcher (..), EntityFetchResult (..))
 import Service.Event qualified as Event
 import Service.Event.EventMetadata qualified as EventMetadata
 import Service.Event.StreamId qualified as StreamId
@@ -92,7 +92,10 @@ basicExecutionSpecs newCartStoreAndFetcher = do
           cart <-
             context.cartFetcher.fetch context.cartEntityName sid
               |> Task.mapError toText
-              |> Task.map Maybe.getOrDie
+              |> Task.andThen (\result -> case result of
+                  EntityFound s -> Task.yield s
+                  EntityNotFound -> Task.throw "Expected entity to exist but got EntityNotFound"
+                )
 
           cart.cartId |> shouldBe context.cartId
           Array.length cart.cartItems |> shouldBe 1
@@ -171,7 +174,10 @@ basicExecutionSpecs newCartStoreAndFetcher = do
           cart <-
             context.cartFetcher.fetch context.cartEntityName sid
               |> Task.mapError toText
-              |> Task.map Maybe.getOrDie
+              |> Task.andThen (\result -> case result of
+                  EntityFound s -> Task.yield s
+                  EntityNotFound -> Task.throw "Expected entity to exist but got EntityNotFound"
+                )
 
           cart.cartId |> shouldBe context.cartId
           Array.length cart.cartItems |> shouldBe 2
@@ -257,7 +263,10 @@ retryLogicSpecs newCartStoreAndFetcher = do
           cart <-
             context.cartFetcher.fetch context.cartEntityName sid
               |> Task.mapError toText
-              |> Task.map Maybe.getOrDie
+              |> Task.andThen (\result -> case result of
+                  EntityFound s -> Task.yield s
+                  EntityNotFound -> Task.throw "Expected entity to exist but got EntityNotFound"
+                )
 
           -- Should have both items now (item2 from concurrent insert, item1 from this command)
           Array.length cart.cartItems |> shouldBe 2
@@ -401,7 +410,10 @@ concurrencySpecs newCartStoreAndFetcher = do
       cart <-
         context.cartFetcher.fetch context.cartEntityName sid
           |> Task.mapError toText
-          |> Task.map Maybe.getOrDie
+          |> Task.andThen (\result -> case result of
+              EntityFound s -> Task.yield s
+              EntityNotFound -> Task.throw "Expected entity to exist but got EntityNotFound"
+            )
 
       cart.cartId |> shouldBe context.cartId
       Array.length cart.cartItems |> shouldBe 2
@@ -464,11 +476,17 @@ concurrencySpecs newCartStoreAndFetcher = do
       cart1 <-
         context.cartFetcher.fetch context.cartEntityName (cartId1 |> Uuid.toText |> StreamId.fromText)
           |> Task.mapError toText
-          |> Task.map Maybe.getOrDie
+          |> Task.andThen (\result -> case result of
+              EntityFound s -> Task.yield s
+              EntityNotFound -> Task.throw "Expected entity to exist but got EntityNotFound"
+            )
       cart2 <-
         context.cartFetcher.fetch context.cartEntityName (cartId2 |> Uuid.toText |> StreamId.fromText)
           |> Task.mapError toText
-          |> Task.map Maybe.getOrDie
+          |> Task.andThen (\result -> case result of
+              EntityFound s -> Task.yield s
+              EntityNotFound -> Task.throw "Expected entity to exist but got EntityNotFound"
+            )
 
       cart1.cartId |> shouldBe cartId1
       cart2.cartId |> shouldBe cartId2

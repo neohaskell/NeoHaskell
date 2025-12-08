@@ -11,7 +11,7 @@ import Array qualified
 import Core
 import Service.Command.Core qualified as Command
 import Service.CommandHandler.TH (deriveCommand)
-import Service.EntityFetcher.Core (EntityFetcher)
+import Service.EntityFetcher.Core (EntityFetcher, EntityFetchResult (..))
 import Service.EntityFetcher.Core qualified as EntityFetcher
 import Service.Event (EntityName, InsertionPayload (..))
 import Service.Event qualified as Event
@@ -74,11 +74,15 @@ execute eventStore entityFetcher entityName command = do
             |> Task.asResult
 
         case result of
-          Ok (Just entity) -> do
+          Ok (EntityFound entity) -> do
             Task.yield (Just entity, Just streamId)
-          _ -> do
-            -- If fetch fails (e.g., stream not found), treat as new entity
+          Ok EntityNotFound -> do
+            -- No events for this stream yet, entity doesn't exist
             Task.yield (Nothing, Just streamId)
+          Err error -> do
+            -- Actual error occurred (network, permissions, corruption)
+            -- Re-throw the error to propagate it properly
+            Task.throw (toText error)
 
   -- Resolve the entity state based on whether we have an entity ID
   (maybeEntity, maybeStreamId) <- case maybeEntityId of
@@ -178,18 +182,21 @@ execute eventStore entityFetcher entityName command = do
                     -- Concurrency conflict, retry if we haven't exceeded max retries
                     if retryCount < maxRetries
                       then do
-                        -- Re-fetch the entity with latest state using the helper
+                        -- Re-fetch the entity with latest state
                         refetchResult <-
                           entityFetcher.fetch entityName finalStreamId
                             |> Task.asResult
 
                         case refetchResult of
-                          Ok (Just freshEntity) -> do
+                          Ok (EntityFound freshEntity) -> do
                             -- Retry with fresh state
                             retryLoop (retryCount + 1) (Just freshEntity) (Just finalStreamId)
-                          _ -> do
-                            -- Stream disappeared or other error, retry with Nothing
+                          Ok EntityNotFound -> do
+                            -- Entity doesn't exist, retry with Nothing
                             retryLoop (retryCount + 1) Nothing (Just finalStreamId)
+                          Err _error -> do
+                            -- Actual fetch error occurred, propagate it
+                            Task.throw "Failed to refetch entity for retry"
                       else do
                         Task.yield
                           CommandFailed

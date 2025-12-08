@@ -3,9 +3,8 @@ module Test.Service.EntityFetcher.Fetch.Spec where
 import Array qualified
 import AsyncTask qualified
 import Core
-import Maybe qualified
 import Result qualified
-import Service.EntityFetcher.Core (EntityFetcher)
+import Service.EntityFetcher.Core (EntityFetcher, EntityFetchResult (..))
 import Service.EntityFetcher.Core qualified as EntityFetcher
 import Service.Event qualified as Event
 import Service.Event.EventMetadata qualified as EventMetadata
@@ -19,23 +18,31 @@ import Test.Service.EntityFetcher.Fetch.Context qualified as Context
 import Uuid qualified
 
 
+-- Helper to convert EntityFetchResult to Maybe for test compatibility
+fetchResultToMaybe :: EntityFetchResult state -> Maybe state
+fetchResultToMaybe result = do
+  case result of
+    EntityFound state -> Just state
+    EntityNotFound -> Nothing
+
+
 spec ::
   Task Text (EventStore CartEvent, EntityFetcher CartState CartEvent) ->
   Spec Unit
 spec newStoreAndFetcher = do
   describe "Entity Fetch" do
     before (Context.initialize newStoreAndFetcher) do
-      it "fetches an entity with no events and returns Nothing" \context -> do
+      it "fetches an entity with no events and returns EntityNotFound" \context -> do
         -- Fetch from a stream that doesn't exist yet
-        maybeState <-
+        fetchResult <-
           context.fetcher.fetch context.entityName context.streamId
             |> Task.mapError toText
 
-        -- Should return Nothing when there are no events
-        case maybeState of
-          Just _ -> do
-            fail "Expected Nothing for empty stream but got Some state"
-          Nothing -> do
+        -- Should return EntityNotFound when there are no events
+        case fetchResult of
+          EntityFound _ -> do
+            fail "Expected EntityNotFound for empty stream but got EntityFound"
+          EntityNotFound -> do
             -- This is the expected behavior
             Task.yield unit
 
@@ -70,8 +77,11 @@ spec newStoreAndFetcher = do
         -- Fetch the entity
         state <-
           context.fetcher.fetch context.entityName context.streamId
-            |> Task.map Maybe.getOrDie
             |> Task.mapError toText
+            |> Task.andThen (\result -> case result of
+                EntityFound s -> Task.yield s
+                EntityNotFound -> Task.throw "Expected entity to exist but got EntityNotFound"
+              )
 
         -- Should have the correct state after applying one event
         Array.length state.cartItems |> shouldBe 0
@@ -133,8 +143,11 @@ spec newStoreAndFetcher = do
         -- Fetch the entity
         state <-
           context.fetcher.fetch context.entityName context.streamId
-            |> Task.map Maybe.getOrDie
             |> Task.mapError toText
+            |> Task.andThen (\result -> case result of
+                EntityFound s -> Task.yield s
+                EntityNotFound -> Task.throw "Expected entity to exist but got EntityNotFound"
+              )
 
         -- Should have correct state: 1 item (added, removed, added again)
         Array.length state.cartItems |> shouldBe 1
@@ -202,13 +215,19 @@ spec newStoreAndFetcher = do
         -- Fetch both entities
         state1 <-
           context.fetcher.fetch context.entityName context.streamId
-            |> Task.map Maybe.getOrDie
             |> Task.mapError toText
+            |> Task.andThen (\result -> case result of
+                EntityFound s -> Task.yield s
+                EntityNotFound -> Task.throw "Expected entity to exist but got EntityNotFound"
+              )
 
         state2 <-
           context.fetcher.fetch context.entityName streamId2
-            |> Task.map Maybe.getOrDie
             |> Task.mapError toText
+            |> Task.andThen (\result -> case result of
+                EntityFound s -> Task.yield s
+                EntityNotFound -> Task.throw "Expected entity to exist but got EntityNotFound"
+              )
 
         -- Should have different states (both empty carts)
         Array.length state1.cartItems |> shouldBe 0
@@ -290,8 +309,11 @@ spec newStoreAndFetcher = do
         -- Fetch the entity
         state <-
           context.fetcher.fetch context.entityName context.streamId
-            |> Task.map Maybe.getOrDie
             |> Task.mapError toText
+            |> Task.andThen (\result -> case result of
+                EntityFound s -> Task.yield s
+                EntityNotFound -> Task.throw "Expected entity to exist but got EntityNotFound"
+              )
 
         -- Should have 1 item (same item added 100 times)
         Array.length state.cartItems |> shouldBe 1
@@ -365,18 +387,27 @@ spec newStoreAndFetcher = do
         -- Fetch multiple times - should always return same version
         state1 <-
           context.fetcher.fetch context.entityName context.streamId
-            |> Task.map Maybe.getOrDie
             |> Task.mapError toText
+            |> Task.andThen (\result -> case result of
+                EntityFound s -> Task.yield s
+                EntityNotFound -> Task.throw "Expected entity to exist but got EntityNotFound"
+              )
 
         state2 <-
           context.fetcher.fetch context.entityName context.streamId
-            |> Task.map Maybe.getOrDie
             |> Task.mapError toText
+            |> Task.andThen (\result -> case result of
+                EntityFound s -> Task.yield s
+                EntityNotFound -> Task.throw "Expected entity to exist but got EntityNotFound"
+              )
 
         state3 <-
           context.fetcher.fetch context.entityName context.streamId
-            |> Task.map Maybe.getOrDie
             |> Task.mapError toText
+            |> Task.andThen (\result -> case result of
+                EntityFound s -> Task.yield s
+                EntityNotFound -> Task.throw "Expected entity to exist but got EntityNotFound"
+              )
 
         -- All fetches should return same version
         state1.version |> shouldBe 3
@@ -442,8 +473,11 @@ spec newStoreAndFetcher = do
         -- Fetch the entity
         state <-
           context.fetcher.fetch context.entityName context.streamId
-            |> Task.map Maybe.getOrDie
             |> Task.mapError toText
+            |> Task.andThen (\result -> case result of
+                EntityFound s -> Task.yield s
+                EntityNotFound -> Task.throw "Expected entity to exist but got EntityNotFound"
+              )
 
         -- Cart should be checked out with 1 item
         Array.length state.cartItems |> shouldBe 1
@@ -455,14 +489,14 @@ spec newStoreAndFetcher = do
         it "handles non-existent entity type gracefully" \context -> do
           -- Try to fetch from an entity type that doesn't exist
           let nonExistentEntity = Event.EntityName ""
-          maybeState <-
+          fetchResult <-
             context.fetcher.fetch nonExistentEntity context.streamId
               |> Task.mapError toText
 
-          -- Should return Nothing for empty stream (no events)
-          case maybeState of
-            Just _ -> fail "Expected Nothing for non-existent entity type but got Some state"
-            Nothing -> Task.yield unit
+          -- Should return EntityNotFound for empty stream (no events)
+          case fetchResult of
+            EntityFound _ -> fail "Expected EntityNotFound for non-existent entity type but got EntityFound"
+            EntityNotFound -> Task.yield unit
 
         it "handles concurrent fetches of the same entity" \context -> do
           -- Insert some events first
@@ -498,13 +532,22 @@ spec newStoreAndFetcher = do
 
           state1 <-
             AsyncTask.waitFor fetch1
-              |> Task.map Maybe.getOrDie
+              |> Task.andThen (\result -> case result of
+                EntityFound s -> Task.yield s
+                EntityNotFound -> Task.throw "Expected entity to exist but got EntityNotFound"
+              )
           state2 <-
             AsyncTask.waitFor fetch2
-              |> Task.map Maybe.getOrDie
+              |> Task.andThen (\result -> case result of
+                EntityFound s -> Task.yield s
+                EntityNotFound -> Task.throw "Expected entity to exist but got EntityNotFound"
+              )
           state3 <-
             AsyncTask.waitFor fetch3
-              |> Task.map Maybe.getOrDie
+              |> Task.andThen (\result -> case result of
+                EntityFound s -> Task.yield s
+                EntityNotFound -> Task.throw "Expected entity to exist but got EntityNotFound"
+              )
 
           -- All fetches should return the same consistent state (empty cart)
           Array.length state1.cartItems |> shouldBe 0
@@ -573,7 +616,10 @@ spec newStoreAndFetcher = do
             |> discard
 
           -- Wait for fetch to complete
-          (state :: CartState) <- AsyncTask.waitFor fetchTask |> Task.map Maybe.getOrDie
+          (state :: CartState) <- AsyncTask.waitFor fetchTask |> Task.andThen (\result -> case result of
+              EntityFound s -> Task.yield s
+              EntityNotFound -> Task.throw "Expected entity to exist but got EntityNotFound"
+            )
 
           -- The fetch should see either the old or new state consistently
           -- (could be 0 or 1 depending on timing, but should be consistent)
@@ -586,14 +632,14 @@ spec newStoreAndFetcher = do
           -- This tests that the fetcher doesn't crash with unusual input
           -- Note: StreamId is generated via UUID, so we use a valid one but unused stream
           unusedStreamId <- StreamId.new
-          maybeState <-
+          fetchResult <-
             context.fetcher.fetch context.entityName unusedStreamId
               |> Task.mapError toText
 
-          case maybeState of
-            Just _ -> do
-              fail "Expected Nothing for non-existent stream but got Some state"
-            Nothing -> Task.yield unit
+          case fetchResult of
+            EntityFound _ -> do
+              fail "Expected EntityNotFound for non-existent stream but got EntityFound"
+            EntityNotFound -> Task.yield unit
 
         it "handles duplicate event IDs gracefully" \context -> do
           -- Insert event with specific ID
@@ -632,8 +678,11 @@ spec newStoreAndFetcher = do
           -- We just verify the fetcher still works correctly
           state <-
             context.fetcher.fetch context.entityName context.streamId
-              |> Task.map Maybe.getOrDie
               |> Task.mapError toText
+              |> Task.andThen (\result -> case result of
+                EntityFound s -> Task.yield s
+                EntityNotFound -> Task.throw "Expected entity to exist but got EntityNotFound"
+              )
 
           -- Should have the event applied only once (empty cart)
           Array.length state.cartItems |> shouldBe 0
@@ -646,14 +695,14 @@ spec newStoreAndFetcher = do
                   "VeryLongEntityNameVeryLongEntityNameVeryLongEntityNameVeryLongEntityNameVeryLongEntityNameVeryLongEntityNameVeryLongEntityNameVeryLongEntityNameVeryLongEntityNameVeryLongEntityName"
           unusedStreamId <- StreamId.new
 
-          maybeState <-
+          fetchResult <-
             context.fetcher.fetch longName unusedStreamId
               |> Task.mapError toText
 
-          case maybeState of
-            Just _ -> do
-              fail "Expected Nothing for unused stream with long entity name but got Some state"
-            Nothing -> Task.yield unit
+          case fetchResult of
+            EntityFound _ -> do
+              fail "Expected EntityNotFound for unused stream with long entity name but got EntityFound"
+            EntityNotFound -> Task.yield unit
 
         it "handles rapid successive fetches" \context -> do
           -- Insert an event
@@ -688,7 +737,10 @@ spec newStoreAndFetcher = do
               state <-
                 context.fetcher.fetch context.entityName context.streamId
                   |> Task.mapError toText
-                  |> Task.map Maybe.getOrDie
+                  |> Task.andThen (\result -> case result of
+                      EntityFound s -> Task.yield s
+                      EntityNotFound -> Task.throw "Expected entity to exist but got EntityNotFound"
+                    )
               Array.length state.cartItems |> shouldBe 0
               state.version |> shouldBe 1
 
@@ -777,7 +829,10 @@ performanceBoundariesWithCount newStoreAndFetcher eventCount = do
         state <-
           context.fetcher.fetch context.entityName context.streamId
             |> Task.mapError toText
-            |> Task.map Maybe.getOrDie
+            |> Task.andThen (\result -> case result of
+                EntityFound s -> Task.yield s
+                EntityNotFound -> Task.throw "Expected entity to exist but got EntityNotFound"
+              )
 
         Array.length state.cartItems |> shouldBe 1 -- Same item added eventCount times
         state.version |> shouldBe (eventCount + 1) -- Opening + deposits
