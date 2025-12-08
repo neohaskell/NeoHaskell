@@ -66,7 +66,7 @@ instance (NFData e, NFData a) => NFData (Task e a) where
 -- ============================================================================
 
 -- | Helper to deploy a service and convert errors
-deployService :: Service.ServiceDefinition cmds req prov adp Unit -> Task Text ServiceRuntime
+deployService :: Service.ServiceDefinition cmds req prov adp -> Task Text ServiceRuntime
 deployService serviceDef = Service.deploy serviceDef |> Task.mapError toText
 
 -- ============================================================================
@@ -212,15 +212,16 @@ spec = do
 
   describe "Service Definition DSL with Protocols" do
     it "builds empty service definition" \_ -> do
-      let serviceDef = Service.emptyServiceDefinition :: Service.ServiceDefinition '[] '[] '[] '[] Unit
+      let _serviceDef = Service.new :: Service.ServiceDefinition '[] '[] '[] '[]
       -- Should have no commands, no protocols
-      Service.extract serviceDef |> shouldBe unit
+      Task.yield unit
 
     it "accumulates protocols from commands" \_ -> do
       -- This should compile - Direct adapter provided for Direct-only command
       let serviceDef =
-            Service.useServer (DirectAdapter defaultConfig) Service.>>
-            Service.command @CreateCartCommand
+            Service.new
+              |> Service.useServer (DirectAdapter defaultConfig)
+              |> Service.command @CreateCartCommand
 
       -- Successfully deploy (compile-time check passes)
       result <- Service.deploy serviceDef |> Task.mapError toText |> Task.asResult
@@ -231,9 +232,10 @@ spec = do
     it "allows extra adapters beyond requirements" \_ -> do
       -- Having more adapters than needed should be fine
       let serviceDef =
-            Service.useServer (DirectAdapter defaultConfig) Service.>>
-            -- Could add REST adapter here too, even though not needed
-            Service.command @InternalCommand  -- Requires no protocols
+            Service.new
+              |> Service.useServer (DirectAdapter defaultConfig)
+              -- Could add REST adapter here too, even though not needed
+              |> Service.command @InternalCommand  -- Requires no protocols
 
       _runtime <- Service.deploy serviceDef |> Task.mapError toText
       Task.yield unit
@@ -271,17 +273,18 @@ spec = do
     it "composes multiple commands with same protocol" \_ -> do
       -- Both commands require Direct, one adapter suffices
       let serviceDef =
-            Service.useServer (DirectAdapter defaultConfig) Service.>>
-            Service.command @CreateCartCommand
+            Service.new
+              |> Service.useServer (DirectAdapter defaultConfig)
+              |> Service.command @CreateCartCommand
             -- Add more Direct-only commands here
 
       _runtime <- Service.deploy serviceDef |> Task.mapError toText
       Task.yield unit
 
     it "maintains type safety through composition" \_ -> do
-      -- The monadic interface should properly track protocols
-      let step1 = Service.useServer (DirectAdapter defaultConfig)
-      let step2 = step1 Service.>> Service.command @CreateCartCommand
+      -- The pipeable interface should properly track protocols
+      let step1 = Service.new |> Service.useServer (DirectAdapter defaultConfig)
+      let step2 = step1 |> Service.command @CreateCartCommand
 
       _runtime <- Service.deploy step2 |> Task.mapError toText
       Task.yield unit

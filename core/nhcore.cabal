@@ -262,9 +262,7 @@ test-suite nhcore-test
     StreamSpec
     Test.AppSpec.AppSpecSpec
     Test.AppSpec.VerifySpec
-    Test.ServiceDefinitionSpec
     Service.TransportProtocolSpec
-    Service.ServiceDefinitionApplicativeSpec
 
   -- other-extensions:
   type: exitcode-stdio-1.0

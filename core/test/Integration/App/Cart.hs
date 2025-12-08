@@ -4,6 +4,7 @@ module Integration.App.Cart (
 
 import Core
 import Integration.App.Cart.Commands.CreateCart (CreateCart)
+import Service.ServiceDefinition qualified as Service
 
 
 service :: Service _ _ _ _
