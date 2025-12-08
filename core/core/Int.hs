@@ -48,5 +48,7 @@ getRandom = do
 -- >>> -- percentChance is now a random percentage
 getRandomBetween :: Int -> Int -> Task _ Int
 getRandomBetween minValue maxValue = do
-  value <- Task.fromIO (Random.randomRIO (minValue, maxValue))
+  let lowerBound = min minValue maxValue
+  let upperBound = max minValue maxValue
+  value <- Task.fromIO (Random.randomRIO (lowerBound, upperBound))
   Task.yield value
