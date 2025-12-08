@@ -31,9 +31,6 @@ import Service.Event as Reexported (InsertionType (..), StreamId, ToStreamId (..
 import Service.ServiceDefinition as Reexported (
   Service,
   ServiceDefinition (..),
-  command,
-  extract,
-  yield,
  )
 import Task as Reexported (Task)
 import Text as Reexported (Text)
