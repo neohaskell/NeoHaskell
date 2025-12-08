@@ -15,8 +15,8 @@ import Task (Task)
 -- | Type class for service adapters
 -- Defines how an adapter integrates with the service
 class ServiceAdapter (adapter :: Type) where
-  -- | The protocol this adapter implements
-  type AdapterProtocol adapter :: Symbol
+  -- | The server API type this adapter implements
+  type AdapterApi adapter :: Type
 
 
   -- | Initialize the adapter with its configuration

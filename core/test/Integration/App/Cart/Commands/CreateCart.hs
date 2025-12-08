@@ -1,5 +1,6 @@
 module Integration.App.Cart.Commands.CreateCart (
   CreateCart (..),
+  WebApi (..),
   getEntityId,
   decide,
 ) where
@@ -9,6 +10,13 @@ import Decision qualified
 import Integration.App.Cart.Core
 import Service.CommandHandler.Core (deriveCommand)
 import Service.Protocol (ApiFor)
+
+
+-- | WebApi type for testing - carries HTTP API configuration
+data WebApi = WebApi
+  { port :: Int
+  }
+  deriving (Eq, Show, Generic, Typeable)
 
 
 data CreateCart = CreateCart
@@ -32,7 +40,7 @@ decide _ entity = do
 type instance EntityOf CreateCart = CartEntity
 
 
-type instance ApiFor CreateCart = '["WebApi"]
+type instance ApiFor CreateCart = '[WebApi]
 
 
 deriveCommand ''CreateCart

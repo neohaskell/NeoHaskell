@@ -19,7 +19,7 @@ import Service.Command.Core (Command)
 import Service.Definition.TypeLevel (Union)
 import Service.Definition.Validation (ValidateServers)
 import Service.Error (ServiceError (..))
-import Service.Protocol (ApiFor)
+import Service.Protocol (ApiFor, ServerApi (..))
 import Service.Runtime (ServiceRuntime (..))
 import Task (Task)
 import Task qualified
@@ -34,8 +34,8 @@ type Service commands reqServers provServers adapters = ServiceDefinition comman
 data
   ServiceDefinition
     (commands :: Record.Row Type) -- Row type of all registered commands
-    (requiredServers :: [Symbol]) -- Type-level list of server APIs needed by commands
-    (providedServers :: [Symbol]) -- Type-level list of server APIs with adapters
+    (requiredServers :: [Type]) -- Type-level list of server API types needed by commands
+    (providedServers :: [Type]) -- Type-level list of server API types with adapters
     (adapters :: Record.Row Type) -- Row type of adapter instances
   = ServiceDefinition
   { commandNames :: Record commands,
@@ -60,11 +60,13 @@ new =
 -- | Register an adapter in the service definition
 -- Declares "this service uses this server adapter to expose its commands"
 useServer ::
-  forall adapter serverApi cmds reqServers provServers adapters.
+  forall adapter serverApi serverName cmds reqServers provServers adapters.
   ( ServiceAdapter adapter,
-    serverApi ~ AdapterProtocol adapter,
-    KnownSymbol serverApi,
-    IsLabel serverApi (Record.Field serverApi)
+    serverApi ~ AdapterApi adapter,
+    ServerApi serverApi,
+    serverName ~ ServerName serverApi,
+    KnownSymbol serverName,
+    IsLabel serverName (Record.Field serverName)
   ) =>
   adapter ->
   ServiceDefinition cmds reqServers provServers adapters ->
@@ -72,13 +74,13 @@ useServer ::
     (Record.Merge cmds '[])
     (Union reqServers '[])
     (Union provServers '[serverApi])
-    (Record.Merge adapters '[serverApi Record.:= adapter])
+    (Record.Merge adapters '[serverName Record.:= adapter])
 useServer adapter serviceDef = do
-  let adapterDef :: ServiceDefinition '[] '[] '[serverApi] '[serverApi Record.:= adapter]
+  let adapterDef :: ServiceDefinition '[] '[] '[serverApi] '[serverName Record.:= adapter]
       adapterDef =
         ServiceDefinition
           { commandNames = Record.empty,
-            adapterRecord = Record.empty |> Record.insert (fromLabel @serverApi) adapter
+            adapterRecord = Record.empty |> Record.insert (fromLabel @serverName) adapter
           }
   merge serviceDef adapterDef
 

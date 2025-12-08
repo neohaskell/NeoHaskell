@@ -10,16 +10,20 @@ module Service.Protocol (
 import Basics
 
 -- | Type class for server APIs
--- Each API specifies its configuration and runtime state types
+-- Each API type can specify configuration and runtime state
 -- This is primarily a marker class for type-level API tracking
-class ServerApi (apiName :: Symbol) where
+class ServerApi (api :: Type) where
+  -- | Unique name for this server API (used for storage keying)
+  type ServerName api :: Symbol
+
   -- | Configuration type for this API
-  type ApiConfig apiName :: Type
+  type ApiConfig api :: Type
 
   -- | Runtime state type for this API
-  type ApiState apiName :: Type
+  type ApiState api :: Type
 
--- | Type family to get the list of APIs required by a command
--- Each command type declares which APIs it needs to be exposed through
--- For example: type instance ApiFor CreateCart = '["WebApi", "GrpcApi"]
-type family ApiFor (commandType :: Type) :: [Symbol]
+-- | Type family to get the list of API types required by a command
+-- Each command type declares which API types it needs to be exposed through
+-- For example: type instance ApiFor CreateCart = '[WebApi, GrpcApi]
+-- Where WebApi and GrpcApi are types that carry configuration
+type family ApiFor (commandType :: Type) :: [Type]

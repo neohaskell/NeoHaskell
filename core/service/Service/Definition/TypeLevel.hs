@@ -12,16 +12,16 @@ module Service.Definition.TypeLevel (
 
 import Basics
 
--- | Type family to check if a symbol is a member of a type-level list
+-- | Type family to check if a type is a member of a type-level list
 -- Returns 'True if the element is in the list, 'False otherwise
-type family Member (element :: Symbol) (list :: [Symbol]) :: Bool where
+type family Member (element :: Type) (list :: [Type]) :: Bool where
   Member element '[] = 'False
   Member element (element ': rest) = 'True
   Member element (other ': rest) = Member element rest
 
 -- | Type family to compute the union of two type-level lists
 -- Eliminates duplicates from the result
-type family Union (list1 :: [Symbol]) (list2 :: [Symbol]) :: [Symbol] where
+type family Union (list1 :: [Type]) (list2 :: [Type]) :: [Type] where
   Union '[] list2 = list2
   Union (head ': tail) list2 =
     If (Member head list2)
@@ -35,7 +35,7 @@ type family If (condition :: Bool) (ifTrue :: value) (ifFalse :: value) :: value
 
 -- | Type family to compute the difference of two type-level lists
 -- Returns elements present in the first list but absent from the second
-type family Difference (list1 :: [Symbol]) (list2 :: [Symbol]) :: [Symbol] where
+type family Difference (list1 :: [Type]) (list2 :: [Type]) :: [Type] where
   Difference '[] list2 = '[]
   Difference (head ': tail) list2 =
     If (Member head list2)

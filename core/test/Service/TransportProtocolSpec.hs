@@ -9,12 +9,12 @@ import Bytes qualified
 import Data.Aeson (FromJSON, ToJSON)
 import Decision qualified
 import Service.Adapter (ServiceAdapter(..))
-import Service.Adapter.Direct (DirectAdapter(..), defaultConfig, DirectAdapterState(..))
+import Service.Adapter.Direct (DirectAdapter(..), DirectApi(..), defaultConfig, DirectAdapterState(..))
 import Service.Command ()  -- Just for instances
 import Service.Command.Core ()  -- Just for instances
 import Service.Definition.TypeLevel
 import Service.Error (ServiceError(..))
-import Service.Protocol (ApiFor)
+import Service.Protocol (ApiFor, ServerApi(..))
 import Service.ServiceDefinition.Core qualified as Service
 import Service.Runtime (ServiceRuntime(..))
 import Task qualified
@@ -101,11 +101,22 @@ instance HasField "entityId" CartEvent Uuid where
   getField (CartCreated {cartId}) = cartId
   getField (ItemAdded {cartId}) = cartId
 
+-- | REST API type for testing
+data RestApi = RestApi
+  { restPort :: Int
+  }
+  deriving (Eq, Show, Generic, Typeable)
+
+instance ServerApi RestApi where
+  type ServerName RestApi = "REST"
+  type ApiConfig RestApi = RestApi
+  type ApiState RestApi = ()
+
 -- Define the type families for the command
 type instance NameOf CreateCartCommand = "CreateCartCommand"
 type instance EntityOf CreateCartCommand = Cart
 type instance EventOf Cart = CartEvent
-type instance ApiFor CreateCartCommand = '["Direct"]
+type instance ApiFor CreateCartCommand = '[DirectApi]
 
 instance Command CreateCartCommand where
   type EntityIdType CreateCartCommand = Uuid
@@ -133,7 +144,7 @@ instance NFData AddItemCommand
 
 type instance NameOf AddItemCommand = "AddItemCommand"
 type instance EntityOf AddItemCommand = Cart
-type instance ApiFor AddItemCommand = '["Direct", "REST"]
+type instance ApiFor AddItemCommand = '[DirectApi, RestApi]
 
 instance Command AddItemCommand where
   type EntityIdType AddItemCommand = Uuid
@@ -176,38 +187,38 @@ spec = do
     describe "Member type family" do
       it "correctly identifies present elements" \_ -> do
         -- These should compile, proving Member works
-        let _ = unit :: (Member "Direct" '["Direct", "REST"] ~ 'True => Unit)
-        let _ = unit :: (Member "REST" '["Direct", "REST"] ~ 'True => Unit)
+        let _ = unit :: (Member DirectApi '[DirectApi, RestApi] ~ 'True => Unit)
+        let _ = unit :: (Member RestApi '[DirectApi, RestApi] ~ 'True => Unit)
         Task.yield unit
 
       it "correctly identifies absent elements" \_ -> do
         -- These should compile, proving Member works for false cases
-        let _ = unit :: (Member "GraphQL" '["Direct", "REST"] ~ 'False => Unit)
-        let _ = unit :: (Member "Direct" '[] ~ 'False => Unit)
+        let _ = unit :: (Member Int '[DirectApi, RestApi] ~ 'False => Unit)
+        let _ = unit :: (Member DirectApi '[] ~ 'False => Unit)
         Task.yield unit
 
     describe "Union type family" do
       it "merges lists without duplicates" \_ -> do
         -- Union should combine lists and remove duplicates
-        let _ = unit :: (Union '["Direct"] '["REST"] ~ '["Direct", "REST"] => Unit)
-        let _ = unit :: (Union '["Direct"] '["Direct"] ~ '["Direct"] => Unit)
+        let _ = unit :: (Union '[DirectApi] '[RestApi] ~ '[DirectApi, RestApi] => Unit)
+        let _ = unit :: (Union '[DirectApi] '[DirectApi] ~ '[DirectApi] => Unit)
         Task.yield unit
 
       it "handles empty lists" \_ -> do
-        let _ = unit :: (Union '[] '["Direct"] ~ '["Direct"] => Unit)
-        let _ = unit :: (Union '["Direct"] '[] ~ '["Direct"] => Unit)
+        let _ = unit :: (Union '[] '[DirectApi] ~ '[DirectApi] => Unit)
+        let _ = unit :: (Union '[DirectApi] '[] ~ '[DirectApi] => Unit)
         Task.yield unit
 
     describe "Difference type family" do
       it "finds missing elements" \_ -> do
         -- Difference should find elements in first list not in second
-        let _ = unit :: (Difference '["Direct", "REST"] '["Direct"] ~ '["REST"] => Unit)
-        let _ = unit :: (Difference '["Direct"] '["Direct", "REST"] ~ '[] => Unit)
+        let _ = unit :: (Difference '[DirectApi, RestApi] '[DirectApi] ~ '[RestApi] => Unit)
+        let _ = unit :: (Difference '[DirectApi] '[DirectApi, RestApi] ~ '[] => Unit)
         Task.yield unit
 
       it "handles empty lists" \_ -> do
-        let _ = unit :: (Difference '[] '["Direct"] ~ '[] => Unit)
-        let _ = unit :: (Difference '["Direct"] '[] ~ '["Direct"] => Unit)
+        let _ = unit :: (Difference '[] '[DirectApi] ~ '[] => Unit)
+        let _ = unit :: (Difference '[DirectApi] '[] ~ '[DirectApi] => Unit)
         Task.yield unit
 
   describe "Service Definition DSL with Server APIs" do

@@ -6,10 +6,11 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 
 module Service.Adapter.Direct (
+  -- * Direct API
+  DirectApi(..),
   -- * Direct Adapter
   DirectAdapter(..),
   DirectAdapterState(..),
-  DirectConfig(..),
   defaultConfig,
 ) where
 
@@ -20,23 +21,23 @@ import Service.Error (ServiceError(..))
 import Service.Protocol (ServerApi(..))
 import Task qualified
 
--- | Configuration for the Direct adapter
-data DirectConfig = DirectConfig
+-- | Direct API type - carries configuration for direct (in-process) execution
+data DirectApi = DirectApi
   { -- | Number of retries on failure
     retryCount :: Int
   }
   deriving (Eq, Show, Generic)
 
--- | Default configuration for DirectAdapter
-defaultConfig :: DirectConfig
-defaultConfig = DirectConfig
+-- | Default configuration for DirectApi
+defaultConfig :: DirectApi
+defaultConfig = DirectApi
   { retryCount = 0
   }
 
 -- | Direct adapter that executes commands in-process
 -- Despite being "direct", it still operates on the Bytes interface
 data DirectAdapter = DirectAdapter
-  { config :: DirectConfig
+  { config :: DirectApi
   }
   deriving (Eq, Show, Generic)
 
@@ -46,13 +47,14 @@ data DirectAdapterState = DirectAdapterState
   }
 
 -- | Direct is a server API for in-process execution
-instance ServerApi "Direct" where
-  type ApiConfig "Direct" = DirectConfig
-  type ApiState "Direct" = DirectAdapterState
+instance ServerApi DirectApi where
+  type ServerName DirectApi = "Direct"
+  type ApiConfig DirectApi = DirectApi
+  type ApiState DirectApi = DirectAdapterState
 
 -- | ServiceAdapter instance for DirectAdapter
 instance ServiceAdapter DirectAdapter where
-  type AdapterProtocol DirectAdapter = "Direct"
+  type AdapterApi DirectAdapter = DirectApi
   type AdapterState DirectAdapter = DirectAdapterState
 
   -- | Initialize the Direct adapter
