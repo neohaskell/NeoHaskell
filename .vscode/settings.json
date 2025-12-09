@@ -5,6 +5,7 @@
     "Acculumator",
     "Appendable",
     "BIGSERIAL",
+    "blackbox",
     "BYTEA",
     "bytestring",
     "clippy",
