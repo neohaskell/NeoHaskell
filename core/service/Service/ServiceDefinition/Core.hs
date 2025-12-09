@@ -12,7 +12,9 @@ module Service.ServiceDefinition.Core (
   __internal_runServiceMain,
 ) where
 
+import Array (Array, empty)
 import Basics
+import Console qualified
 import GHC.IO qualified as GHC
 import GHC.TypeLits (KnownSymbol)
 import Record (Record)
@@ -25,6 +27,7 @@ import Service.Error (ServiceError (..))
 import Service.Protocol (ApiFor, ServerApi (..))
 import Task (Task)
 import Task qualified
+import Text (Text)
 
 
 type Service commands reqServers provServers servers = ServiceDefinition commands reqServers provServers servers
@@ -40,7 +43,7 @@ data
     (providedServers :: [Type]) -- Type-level list of server API types registered
     (servers :: Record.Row Type) -- Row type of registered server instances
   = ServiceDefinition
-  { commandNames :: Record commands,
+  { commands :: Record commands,
     serverRecord :: Record servers
   }
   deriving (Generic)
@@ -55,13 +58,15 @@ data ServiceRuntime = ServiceRuntime
 
 -- | Proxy to store the type of the command
 data CommandDefinition (commandType :: Type) = CommandDefinition
+  { requiredServers :: Array Text
+  }
 
 
 -- | Create a new empty service definition
 new :: ServiceDefinition '[] '[] '[] '[]
 new =
   ServiceDefinition
-    { commandNames = Record.empty,
+    { commands = Record.empty,
       serverRecord = Record.empty
     }
 
@@ -88,7 +93,7 @@ useServer server serviceDef = do
   let serverDef :: ServiceDefinition '[] '[] '[serverApi] '[serverName Record.:= serverApi]
       serverDef =
         ServiceDefinition
-          { commandNames = Record.empty,
+          { commands = Record.empty,
             serverRecord = Record.empty |> Record.insert (fromLabel @serverName) server
           }
   merge serviceDef serverDef
@@ -133,7 +138,7 @@ merge ::
     (Record.Merge srv1 srv2)
 merge m1 m2 =
   ServiceDefinition
-    { commandNames = Record.merge m1.commandNames m2.commandNames,
+    { commands = Record.merge m1.commandNames m2.commandNames,
       serverRecord = Record.merge m1.serverRecord m2.serverRecord
     }
 
@@ -153,12 +158,15 @@ command ::
     (Record.Merge servers '[])
 command serviceDef = do
   let field = fromLabel @commandName
-  let definition = CommandDefinition
+  let definition =
+        CommandDefinition
+          { requiredServers = Array.empty
+          }
   let commandDef ::
         ServiceDefinition '[commandName Record.:= CommandDefinition commandType] (ApiFor commandType) '[] '[]
       commandDef =
         ServiceDefinition
-          { commandNames =
+          { commands =
               Record.empty
                 |> Record.insert field definition,
             serverRecord = Record.empty
@@ -166,5 +174,9 @@ command serviceDef = do
   merge serviceDef commandDef
 
 
-__internal_runServiceMain :: ServiceDefinition _ _ _ _ -> GHC.IO Unit
-__internal_runServiceMain = panic "__internal_runServiceMain not implemented yet"
+__internal_runServiceMain :: ServiceDefinition commands _ _ _ -> GHC.IO Unit
+__internal_runServiceMain serviceDefinition = Task.runOrPanic do
+  serviceDefinition.commands
+    |> Task.forEach \command -> do
+      Console.print (toText command.requiredServers)
+  panic "__internal_runServiceMain reached end"

@@ -36,8 +36,9 @@ server =
 -- | WebApi is a server API for HTTP-based communication
 instance ServerApi WebApi where
   type ServerName WebApi = "WebApi"
-  type ApiConfig WebApi = WebApi
-  type ApiState WebApi = ()
+
+
+  runServer _ = panic "runServer -not implemented"
 
 
 deriveKnownHash "WebApi"
