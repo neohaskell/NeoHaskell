@@ -15,6 +15,7 @@ build-type: Simple
 common common_cfg
   ghc-options:
     -Wall
+    -Wno-orphans
     -threaded
     -fno-warn-partial-type-signatures
     -fno-warn-name-shadowing
