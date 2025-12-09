@@ -1,4 +1,4 @@
-module Testbed.Cart (
+module Testbed.Cart.Service (
   service,
 ) where
 
