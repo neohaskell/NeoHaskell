@@ -177,6 +177,7 @@ command serviceDef = do
 __internal_runServiceMain :: ServiceDefinition commands _ _ _ -> GHC.IO Unit
 __internal_runServiceMain serviceDefinition = Task.runOrPanic do
   serviceDefinition.commands
+    -- this must be reduced using the  AllFields constraint in Record
     |> Task.forEach \command -> do
       Console.print (toText command.requiredServers)
   panic "__internal_runServiceMain reached end"
