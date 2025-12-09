@@ -8,6 +8,7 @@ module Service.Apis.WebApi (
 ) where
 
 import Basics
+import Record (KnownHash (..))
 import Service.CommandHandler.TH (deriveKnownHash)
 import Service.Protocol (ServerApi (..))
 import Text (Text)
