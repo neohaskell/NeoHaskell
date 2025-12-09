@@ -25,6 +25,7 @@
     "HIEYAML",
     "hlint",
     "Hspec",
+    "Impredicative",
     "Inspectable",
     "mempty",
     "MINVALUE",
@@ -34,6 +35,7 @@
     "NEOHASKELL",
     "nhcli",
     "nhcore",
+    "nhtestbed",
     "nixfmt",
     "nixpkgs",
     "NOINLINE",
@@ -51,7 +53,8 @@
     "tgname",
     "typeclasses",
     "Unagi",
-    "VARCHAR"
+    "VARCHAR",
+    "Werror"
   ],
   "nixEnvSelector.nixFile": "${workspaceFolder}/flake.nix",
   // Haskell
