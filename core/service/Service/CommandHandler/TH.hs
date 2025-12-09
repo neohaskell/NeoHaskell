@@ -1,5 +1,5 @@
 module Service.CommandHandler.TH (
-  deriveCommand,
+  command,
   deriveKnownHash,
 ) where
 
@@ -247,8 +247,8 @@ Please ensure you have `import Core` at the top of your module.
 {-# INLINE deriveKnownHash #-}
 
 
-deriveCommand :: TH.Name -> THLib.DecsQ
-deriveCommand someName = do
+command :: TH.Name -> THLib.DecsQ
+command someName = do
   let orError errMsg mVal =
         case mVal of
           Just x -> pure x
@@ -492,4 +492,4 @@ Please ensure you have `import Core` at the top of your module.
           )
 
   pure ([nameOfInstance, commandInstance] ++ knownHashInstance)
-{-# INLINE deriveCommand #-}
+{-# INLINE command #-}

@@ -6,10 +6,10 @@ module Testbed.Cart.Commands.CreateCart (
 
 import Core
 import Decision qualified
-import Testbed.Cart.Core
 import Service.Apis.WebApi (WebApi)
-import Service.CommandHandler.Core (deriveCommand)
+import Service.CommandHandler.Core (command)
 import Service.Protocol (ApiFor)
+import Testbed.Cart.Core
 
 
 data CreateCart = CreateCart
@@ -36,4 +36,4 @@ type instance EntityOf CreateCart = CartEntity
 type instance ApiFor CreateCart = '[WebApi]
 
 
-deriveCommand ''CreateCart
+command ''CreateCart

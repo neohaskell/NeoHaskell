@@ -1,9 +1,10 @@
 module Testbed.Service (
-    service
+  service,
 ) where
 
 import Core
 import Testbed.Cart.Service qualified as CartService
 
 
+service :: Service _ _ _ _
 service = CartService.service
