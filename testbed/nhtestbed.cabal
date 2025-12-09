@@ -29,6 +29,7 @@ common common_cfg
     ImportQualifiedPost
     ImpredicativeTypes
     NamedFieldPuns
+    NoFieldSelectors
     NoImplicitPrelude
     OverloadedLabels
     OverloadedLists
@@ -40,7 +41,9 @@ common common_cfg
     QuasiQuotes
     Strict
     TemplateHaskell
+    TypeApplications
     TypeFamilies
+    TypeOperators
 
   build-depends:
     nhcore
