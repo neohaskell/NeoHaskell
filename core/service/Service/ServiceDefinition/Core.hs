@@ -1,3 +1,4 @@
+{- HLINT ignore "Use camelCase" -}
 module Service.ServiceDefinition.Core (
   Service,
   ServiceDefinition (..),
@@ -7,10 +8,11 @@ module Service.ServiceDefinition.Core (
   command,
   makeRunnable,
   merge,
+  __internal_runServiceMain,
 ) where
 
 import Basics
-import Bytes (Bytes)
+import GHC.IO qualified as GHC
 import GHC.TypeLits (KnownSymbol)
 import Record (Record)
 import Record qualified
@@ -22,7 +24,6 @@ import Service.Error (ServiceError (..))
 import Service.Protocol (ApiFor, ServerApi (..))
 import Task (Task)
 import Task qualified
-import Text (Text)
 
 
 type Service commands reqServers provServers servers = ServiceDefinition commands reqServers provServers servers
@@ -47,12 +48,7 @@ data
 -- | ServiceRuntime is the deployed, runnable form of a service
 -- It provides command lookup, execution and shutdown capabilities
 data ServiceRuntime = ServiceRuntime
-  { -- | Find a command by name and execute it with a Bytes payload
-    -- The runtime looks up the command in the service definition,
-    -- instantiates the appropriate handler, and delegates to the adapter
-    execute :: Text -> Bytes -> Task ServiceError Bytes,
-    -- | Gracefully shutdown all adapters
-    shutdown :: Task ServiceError Unit
+  { shutdown :: Task ServiceError Unit
   }
 
 
@@ -71,6 +67,8 @@ new =
 
 -- | Register a server in the service definition
 -- Declares "this service uses this server to expose its commands"
+-- FIXME: Should fail to compile if the server already has been provided, if not we could have
+-- inconsistent behavior when picking up configs
 useServer ::
   forall serverApi serverName cmds reqServers provServers servers.
   ( ServerApi serverApi,
@@ -117,12 +115,7 @@ makeRunnable _serviceDef = do
 
   Task.yield
     ServiceRuntime
-      { execute = \commandName _bytes -> do
-          -- Look up command in serviceDef.commandNames
-          -- If not found, throw CommandNotFound
-          -- Otherwise, execute through appropriate server
-          Task.throw (CommandNotFound commandName),
-        shutdown = Task.yield unit
+      { shutdown = Task.yield unit
       }
 
 
@@ -170,3 +163,7 @@ command serviceDef = do
             serverRecord = Record.empty
           }
   merge serviceDef commandDef
+
+
+__internal_runServiceMain :: ServiceDefinition _ _ _ _ -> GHC.IO Unit
+__internal_runServiceMain = panic "__internal_runServiceMain not implemented yet"
