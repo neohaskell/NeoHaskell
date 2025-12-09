@@ -19,5 +19,5 @@
     haskell-language-server = "latest";
     cabal-gild = "latest";
   };
-  shell.buildInputs = with pkgs; [ git nixfmt-classic postgresql ];
+  shell.buildInputs = with pkgs; [ git nixfmt-classic postgresql hurl ];
 }
