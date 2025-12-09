@@ -5,11 +5,12 @@ module Service.ServiceDefinition.Core (
   new,
   useServer,
   command,
-  deploy,
+  makeRunnable,
   merge,
 ) where
 
 import Basics
+import Bytes (Bytes)
 import GHC.TypeLits (KnownSymbol)
 import Record (Record)
 import Record qualified
@@ -19,9 +20,9 @@ import Service.Definition.TypeLevel (Union)
 import Service.Definition.Validation (ValidateServers)
 import Service.Error (ServiceError (..))
 import Service.Protocol (ApiFor, ServerApi (..))
-import Service.Runtime (ServiceRuntime (..))
 import Task (Task)
 import Task qualified
+import Text (Text)
 
 
 type Service commands reqServers provServers servers = ServiceDefinition commands reqServers provServers servers
@@ -41,6 +42,18 @@ data
     serverRecord :: Record servers
   }
   deriving (Generic)
+
+
+-- | ServiceRuntime is the deployed, runnable form of a service
+-- It provides command lookup, execution and shutdown capabilities
+data ServiceRuntime = ServiceRuntime
+  { -- | Find a command by name and execute it with a Bytes payload
+    -- The runtime looks up the command in the service definition,
+    -- instantiates the appropriate handler, and delegates to the adapter
+    execute :: Text -> Bytes -> Task ServiceError Bytes,
+    -- | Gracefully shutdown all adapters
+    shutdown :: Task ServiceError Unit
+  }
 
 
 -- | Proxy to store the type of the command
@@ -84,12 +97,12 @@ useServer server serviceDef = do
 
 -- | Deploy a service definition into a runnable service runtime
 -- This is the validation boundary where server API checking occurs
-deploy ::
+makeRunnable ::
   forall commands reqServers provServers servers.
   (ValidateServers reqServers provServers) =>
   ServiceDefinition commands reqServers provServers servers ->
   Task ServiceError ServiceRuntime
-deploy _serviceDef = do
+makeRunnable _serviceDef = do
   -- TODO: Complete implementation
   -- 1. Access server configs from serviceDef.serverRecord
   -- 2. Build command routing table from serviceDef.commandNames
@@ -119,7 +132,11 @@ merge ::
   forall cmds1 cmds2 reqServers1 reqServers2 provServers1 provServers2 srv1 srv2.
   ServiceDefinition cmds1 reqServers1 provServers1 srv1 ->
   ServiceDefinition cmds2 reqServers2 provServers2 srv2 ->
-  ServiceDefinition (Record.Merge cmds1 cmds2) (Union reqServers1 reqServers2) (Union provServers1 provServers2) (Record.Merge srv1 srv2)
+  ServiceDefinition
+    (Record.Merge cmds1 cmds2)
+    (Union reqServers1 reqServers2)
+    (Union provServers1 provServers2)
+    (Record.Merge srv1 srv2)
 merge m1 m2 =
   ServiceDefinition
     { commandNames = Record.merge m1.commandNames m2.commandNames,

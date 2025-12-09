@@ -156,7 +156,6 @@ library
     Service.EventStore.Postgres.Internal.Sessions
     Service.EventStore.Postgres.Internal.SubscriptionStore
     Service.Protocol
-    Service.Runtime
     Service.ServiceDefinition
     Service.ServiceDefinition.Core
     Set

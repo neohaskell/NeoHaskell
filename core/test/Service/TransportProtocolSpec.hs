@@ -72,7 +72,7 @@ instance (NFData e, NFData a) => NFData (Task e a) where
 
 -- | Helper to deploy a service and convert errors
 deployService :: Service.ServiceDefinition cmds req prov adp -> Task Text ServiceRuntime
-deployService serviceDef = Service.deploy serviceDef |> Task.mapError toText
+deployService serviceDef = Service.makeRunnable serviceDef |> Task.mapError toText
 
 
 -- ============================================================================
@@ -270,7 +270,7 @@ spec = do
               |> Service.command @CreateCartCommand
 
       -- Successfully deploy (compile-time check passes)
-      result <- Service.deploy serviceDef |> Task.mapError toText |> Task.asResult
+      result <- Service.makeRunnable serviceDef |> Task.mapError toText |> Task.asResult
       case result of
         Ok _ -> Task.yield unit
         Err err -> fail err
@@ -281,7 +281,7 @@ spec = do
             Service.new
               |> Service.useServer WebApi.server
               |> Service.command @InternalCommand -- Requires no server APIs
-      _runtime <- Service.deploy serviceDef |> Task.mapError toText
+      _runtime <- Service.makeRunnable serviceDef |> Task.mapError toText
       Task.yield unit
 
   -- Compile-Time Server API Validation tests removed
@@ -297,7 +297,7 @@ spec = do
               |> Service.command @CreateCartCommand
       -- Add more WebApi-only commands here
 
-      _runtime <- Service.deploy serviceDef |> Task.mapError toText
+      _runtime <- Service.makeRunnable serviceDef |> Task.mapError toText
       Task.yield unit
 
     it "maintains type safety through composition" \_ -> do
@@ -305,5 +305,5 @@ spec = do
       let step1 = Service.new |> Service.useServer WebApi.server
       let step2 = step1 |> Service.command @CreateCartCommand
 
-      _runtime <- Service.deploy step2 |> Task.mapError toText
+      _runtime <- Service.makeRunnable step2 |> Task.mapError toText
       Task.yield unit
