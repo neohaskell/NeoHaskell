@@ -2,6 +2,7 @@
 module Service.ServiceDefinition.Core (
   Service,
   ServiceDefinition (..),
+  ServiceRuntime (..),
   CommandDefinition (..),
   new,
   useServer,

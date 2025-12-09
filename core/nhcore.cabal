@@ -238,10 +238,6 @@ test-suite nhcore-test
     -with-rtsopts=-N
 
   other-modules:
-    Integration.App
-    Integration.App.Cart
-    Integration.App.Cart.Commands.CreateCart
-    Integration.App.Cart.Core
     Service.CommandHandlerSpec
     Service.CommandSpec
     Service.EventStore.InMemorySpec

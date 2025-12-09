@@ -16,7 +16,7 @@ import Service.Command.Core ()
 import Service.Definition.TypeLevel
 import Service.Error (ServiceError (..))
 import Service.Protocol (ApiFor)
-import Service.Runtime (ServiceRuntime (..))
+import Service.ServiceDefinition.Core (ServiceRuntime (..))
 import Service.ServiceDefinition.Core qualified as Service
 import Task qualified
 import Test
@@ -37,11 +37,6 @@ instance KnownHash "AddItemCommand" where
 
 instance KnownHash "InternalCommand" where
   hashVal _ = 3456789012 -- Some unique hash value
-
-
--- API name instances
-instance KnownHash "WebApi" where
-  hashVal _ = 4567890123 -- Some unique hash value
 
 
 -- ============================================================================
