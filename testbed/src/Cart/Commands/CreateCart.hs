@@ -1,4 +1,4 @@
-module Integration.App.Cart.Commands.CreateCart (
+module Cart.Commands.CreateCart (
   CreateCart (..),
   getEntityId,
   decide,
@@ -6,7 +6,7 @@ module Integration.App.Cart.Commands.CreateCart (
 
 import Core
 import Decision qualified
-import Integration.App.Cart.Core
+import Cart.Core
 import Service.Apis.WebApi (WebApi)
 import Service.CommandHandler.Core (deriveCommand)
 import Service.Protocol (ApiFor)

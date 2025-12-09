@@ -1,9 +1,9 @@
-module Integration.App.Cart (
+module Cart (
   service,
 ) where
 
 import Core
-import Integration.App.Cart.Commands.CreateCart (CreateCart)
+import Cart.Commands.CreateCart (CreateCart)
 import Service qualified
 import Service.Apis.WebApi qualified as WebApi
 
