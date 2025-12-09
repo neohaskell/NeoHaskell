@@ -1,9 +1,9 @@
-module Cart (
+module Testbed.Cart (
   service,
 ) where
 
 import Core
-import Cart.Commands.CreateCart (CreateCart)
+import Testbed.Cart.Commands.CreateCart (CreateCart)
 import Service qualified
 import Service.Apis.WebApi qualified as WebApi
 

@@ -1,4 +1,4 @@
-module Cart.Commands.CreateCart (
+module Testbed.Cart.Commands.CreateCart (
   CreateCart (..),
   getEntityId,
   decide,
@@ -6,7 +6,7 @@ module Cart.Commands.CreateCart (
 
 import Core
 import Decision qualified
-import Cart.Core
+import Testbed.Cart.Core
 import Service.Apis.WebApi (WebApi)
 import Service.CommandHandler.Core (deriveCommand)
 import Service.Protocol (ApiFor)

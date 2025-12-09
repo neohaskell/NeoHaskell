@@ -48,9 +48,9 @@ common common_cfg
 library
   import: common_cfg
   exposed-modules:
-    Cart
-    Cart.Commands.CreateCart
-    Cart.Core
+    Testbed.Cart
+    Testbed.Cart.Commands.CreateCart
+    Testbed.Cart.Core
 
   hs-source-dirs: src
   default-language: GHC2021

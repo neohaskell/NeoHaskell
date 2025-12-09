@@ -1,6 +1,6 @@
 module Main where
 
-import Cart qualified
+import Testbed.Cart qualified as Cart
 import Core
 import Service qualified
 
