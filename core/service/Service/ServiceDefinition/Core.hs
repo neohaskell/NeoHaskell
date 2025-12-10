@@ -166,6 +166,6 @@ runService commandDefinitions = do
     let respond :: Bytes -> Task Text Unit
         respond bb = do
           let bt = Text.fromBytes bb
-          Console.print [fmt|#{cmdName} RESPOND: #{bt}|]
-    let fakeBody = "FAKEBODY" |> Text.toBytes
+          Console.print [fmt|/commands/#{cmdName} - RESPOND: #{bt}|]
+    let fakeBody = "FAKE BODY" |> Text.toBytes
     ep fakeBody respond
