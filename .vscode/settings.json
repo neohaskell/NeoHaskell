@@ -9,6 +9,7 @@
     "BYTEA",
     "bytestring",
     "clippy",
+    "cmap",
     "contrazip",
     "dbname",
     "Defaultable",

@@ -46,10 +46,6 @@ class Command command where
   type EntityIdType command = Uuid
 
 
-  type SerializationProtocols command :: [Symbol]
-  type SerializationProtocols command = '["JSON"]
-
-
   getEntityIdImpl :: GetEntityIdFunction (IsMultiTenant command) command (EntityIdType command)
 
 
