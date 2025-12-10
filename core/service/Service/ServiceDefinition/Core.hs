@@ -81,10 +81,9 @@ command ::
     Record.KnownSymbol commandName,
     CommandInspect (CommandDefinition commandName cmd)
   ) =>
-  Record.Proxy cmd ->
   Service originalCommands ->
   Service ((commandName 'Record.:= CommandDefinition commandName cmd) ': originalCommands)
-command _ serviceDefinition = do
+command serviceDefinition = do
   let cmdName :: Record.Field commandName = fromLabel
   let cmdVal :: Record.I (CommandDefinition commandName cmd) =
         Record.I

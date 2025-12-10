@@ -3,7 +3,6 @@ module Testbed.Cart.Service (
 ) where
 
 import Core
-import Record qualified
 import Service qualified
 import Testbed.Cart.Commands.AddItem (AddItem)
 import Testbed.Cart.Commands.CreateCart (CreateCart)
@@ -12,5 +11,5 @@ import Testbed.Cart.Commands.CreateCart (CreateCart)
 service :: Service _
 service =
   Service.new
-    |> Service.command (Record.Proxy @CreateCart)
-    |> Service.command (Record.Proxy @AddItem)
+    |> Service.command @CreateCart
+    |> Service.command @AddItem
