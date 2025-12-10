@@ -88,7 +88,7 @@ useServer ::
   serverApi ->
   ServiceDefinition cmds reqServers provServers servers ->
   ServiceDefinition
-    (Record.Merge cmds '[])
+    cmds
     (Union reqServers '[])
     (Union provServers '[serverApi])
     (Record.Merge servers '[serverName Record.:= serverApi])
@@ -97,7 +97,9 @@ useServer server serviceDef = do
       serverDef =
         ServiceDefinition
           { commands = Record.empty,
-            serverRecord = Record.empty |> Record.insert (fromLabel @serverName) (Record.I server)
+            serverRecord =
+              Record.empty
+                |> Record.insert (fromLabel @serverName) (Record.I server)
           }
   merge serviceDef serverDef
 
@@ -132,6 +134,13 @@ makeRunnable _serviceDef = do
 -- This is used for piping operations with |>
 merge ::
   forall cmds1 cmds2 reqServers1 reqServers2 provServers1 provServers2 srv1 srv2.
+  ( Record.SubRow
+      (Record.Merge cmds1 cmds2)
+      (Record.Merge cmds1 cmds2),
+    Record.SubRow
+      (Record.Merge srv1 srv2)
+      (Record.Merge srv1 srv2)
+  ) =>
   ServiceDefinition cmds1 reqServers1 provServers1 srv1 ->
   ServiceDefinition cmds2 reqServers2 provServers2 srv2 ->
   ServiceDefinition
@@ -141,8 +150,8 @@ merge ::
     (Record.Merge srv1 srv2)
 merge m1 m2 =
   ServiceDefinition
-    { commands = Record.merge m1.commands m2.commands,
-      serverRecord = Record.merge m1.serverRecord m2.serverRecord
+    { commands = Record.project (Record.merge m1.commands m2.commands),
+      serverRecord = Record.project (Record.merge m1.serverRecord m2.serverRecord)
     }
 
 
@@ -178,7 +187,7 @@ command serviceDef = do
 
 
 __internal_runServiceMain ::
-  (Record.KnownFields commands, Record.AllFields commands Show) => ServiceDefinition commands _ _ _ -> GHC.IO Unit
+  (Record.AllFields commands Show) => ServiceDefinition commands _ _ _ -> GHC.IO Unit
 __internal_runServiceMain serviceDefinition = Task.runOrPanic @Text do
   serviceDefinition.commands
     -- this must be reduced using the  AllFields constraint in Record
@@ -189,13 +198,13 @@ __internal_runServiceMain serviceDefinition = Task.runOrPanic @Text do
 
 
 reduceWithServer ::
-  (Record.KnownFields commands, Record.AllFields commands Show) => Record commands -> Array Text
+  (Record.AllFields commands Show) => Record commands -> Array Text
 reduceWithServer commands = do
   commands
     |> showAllFields
 
 
-showAllFields :: (Record.KnownFields r, Record.AllFields r Show) => Record.ContextRecord Record.I r -> Array Text
+showAllFields :: (Record.AllFields r Show) => Record.ContextRecord Record.I r -> Array Text
 showAllFields rec =
   rec
     |> Record.cmap (Record.Proxy @Show) (\(Record.I x) -> Record.K (toText x))

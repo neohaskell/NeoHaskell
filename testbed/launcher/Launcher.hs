@@ -1,8 +1,8 @@
 module Main where
 
-import Testbed.Service qualified
 import Core
 import Service qualified
+import Testbed.Service qualified
 
 
 main :: IO ()
