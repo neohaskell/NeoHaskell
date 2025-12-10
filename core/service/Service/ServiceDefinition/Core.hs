@@ -52,9 +52,10 @@ class CommandInspect cmd where
   type Cmd cmd
 
 
-  -- commandName ::
-  --   cmd ->
-  --   Text
+  commandName ::
+    cmd ->
+    Text
+
 
   buildCmdEP ::
     Record.Proxy cmd ->
@@ -70,8 +71,9 @@ instance
   type Cmd (CommandDefinition name api cmd) = cmd
 
 
-  -- commandName :: (Record.KnownSymbol name) => CommandDefinition name api cmd -> Text
-  -- commandName _ = getSymbolText (Record.Proxy @name)
+  commandName :: (Record.KnownSymbol name) => CommandDefinition name api cmd -> Text
+  commandName _ = getSymbolText (Record.Proxy @name)
+
 
   buildCmdEP ::
     Record.Proxy (CommandDefinition name api cmd) ->
@@ -152,18 +154,18 @@ runService commandDefinitions = do
         ( CommandInspect (cmdDef),
           cmd ~ Cmd cmdDef
         ) =>
-        Record.I (cmdDef) -> Record.K ApiEndpointHandler (cmdDef)
-      mapper (Record.I _) = Record.K (buildCmdEP (Record.Proxy @cmdDef) (Record.Proxy) (Record.Proxy @cmd))
+        Record.I (cmdDef) -> Record.K (Text, ApiEndpointHandler) (cmdDef)
+      mapper (Record.I x) = Record.K (commandName x, buildCmdEP (Record.Proxy @cmdDef) (Record.Proxy) (Record.Proxy @cmd))
 
-  let xs :: Array ApiEndpointHandler =
+  let xs :: Array (Text, ApiEndpointHandler) =
         commandDefinitions
           |> Record.cmap (Record.Proxy @CommandInspect) mapper
           |> Record.collapse
           |> Array.fromLinkedList
-  xs |> Task.forEach \ep -> do
+  xs |> Task.forEach \(cmdName, ep) -> do
     let respond :: Bytes -> Task Text Unit
         respond bb = do
           let bt = Text.fromBytes bb
-          Console.print [fmt|RESPOND: #{bt}|]
+          Console.print [fmt|#{cmdName} RESPOND: #{bt}|]
     let fakeBody = "FAKEBODY" |> Text.toBytes
     ep fakeBody respond
