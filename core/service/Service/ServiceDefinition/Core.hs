@@ -8,7 +8,6 @@ module Service.ServiceDefinition.Core (
   useServer,
   command,
   makeRunnable,
-  merge,
   __internal_runServiceMain,
 ) where
 
@@ -83,7 +82,13 @@ useServer ::
   ( ServerApi serverApi,
     serverName ~ ServerName serverApi,
     KnownSymbol serverName,
-    IsLabel serverName (Record.Field serverName)
+    IsLabel serverName (Record.Field serverName),
+    Record.SubRow
+      (Record.Merge cmds '[])
+      (Record.Merge cmds '[]),
+    Record.SubRow
+      (Record.Merge servers '[serverName Record.:= serverApi])
+      (Record.Merge servers '[serverName Record.:= serverApi])
   ) =>
   serverApi ->
   ServiceDefinition cmds reqServers provServers servers ->
@@ -101,7 +106,10 @@ useServer server serviceDef = do
               Record.empty
                 |> Record.insert (fromLabel @serverName) (Record.I server)
           }
-  merge serviceDef serverDef
+  ServiceDefinition
+    { commands = Record.project (Record.merge serviceDef.commands serverDef.commands),
+      serverRecord = Record.project (Record.merge serviceDef.serverRecord serverDef.serverRecord)
+    }
 
 
 -- | Deploy a service definition into a runnable service runtime
@@ -130,60 +138,38 @@ makeRunnable _serviceDef = do
       }
 
 
--- | Merge two ServiceDefinitions together, combining their commands and servers
--- This is used for piping operations with |>
-merge ::
-  forall cmds1 cmds2 reqServers1 reqServers2 provServers1 provServers2 srv1 srv2.
-  ( Record.SubRow
-      (Record.Merge cmds1 cmds2)
-      (Record.Merge cmds1 cmds2),
-    Record.SubRow
-      (Record.Merge srv1 srv2)
-      (Record.Merge srv1 srv2)
-  ) =>
-  ServiceDefinition cmds1 reqServers1 provServers1 srv1 ->
-  ServiceDefinition cmds2 reqServers2 provServers2 srv2 ->
-  ServiceDefinition
-    (Record.Merge cmds1 cmds2)
-    (Union reqServers1 reqServers2)
-    (Union provServers1 provServers2)
-    (Record.Merge srv1 srv2)
-merge m1 m2 =
-  ServiceDefinition
-    { commands = Record.project (Record.merge m1.commands m2.commands),
-      serverRecord = Record.project (Record.merge m1.serverRecord m2.serverRecord)
-    }
-
-
 -- | Register a command type in the service definition
 command ::
-  forall (commandType :: Type) (commandName :: Symbol) cmds reqServers provServers servers.
+  forall
+    (commandType :: Type)
+    (commandName :: Symbol)
+    cmds
+    cmds2
+    (reqServers :: [Type])
+    (provServers :: [Type])
+    (servers :: Record.Row Type).
   ( Command commandType,
     commandName ~ NameOf commandType,
-    IsLabel commandName (Record.Field commandName)
+    IsLabel commandName (Record.Field commandName),
+    cmds2 ~ (Record.Merge cmds '[commandName Record.:= CommandDefinition commandType])
   ) =>
   ServiceDefinition cmds reqServers provServers servers ->
   ServiceDefinition
-    (Record.Merge cmds '[commandName Record.:= CommandDefinition commandType])
+    cmds2
     (Union reqServers (ApiFor commandType))
-    (Union provServers '[])
-    (Record.Merge servers '[])
+    provServers
+    servers
 command serviceDef = do
-  let field = fromLabel @commandName
+  let field = fromLabel @(NameOf commandType)
   let definition =
         CommandDefinition
           { requiredServers = Array.empty
           }
-  let commandDef ::
-        ServiceDefinition '[commandName Record.:= CommandDefinition commandType] (ApiFor commandType) '[] '[]
-      commandDef =
-        ServiceDefinition
-          { commands =
-              Record.empty
-                |> Record.insert field (Record.I definition),
-            serverRecord = Record.empty
-          }
-  merge serviceDef commandDef
+  serviceDef
+    { commands =
+        serviceDef.commands
+          |> Record.insert field (Record.I definition)
+    }
 
 
 __internal_runServiceMain ::
