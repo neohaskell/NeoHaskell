@@ -129,7 +129,6 @@ library
     Record
     Result
     Service
-    Service.Apis.WebApi
     Service.Command
     Service.Command.Core
     Service.CommandHandler
@@ -155,7 +154,6 @@ library
     Service.EventStore.Postgres.Internal.PostgresEventRecord
     Service.EventStore.Postgres.Internal.Sessions
     Service.EventStore.Postgres.Internal.SubscriptionStore
-    Service.Protocol
     Service.ServiceDefinition
     Service.ServiceDefinition.Core
     Set
@@ -243,7 +241,6 @@ test-suite nhcore-test
     Service.EventStore.InMemorySpec
     Service.EventStore.Postgres.Internal.SubscriptionStoreSpec
     Service.EventStore.PostgresSpec
-    Service.TransportProtocolSpec
     SetSpec
     StreamSpec
     Test.AppSpec.AppSpecSpec

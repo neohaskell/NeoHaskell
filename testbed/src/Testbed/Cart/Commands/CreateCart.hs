@@ -8,7 +8,6 @@ import Core
 import Decision qualified
 import Service.Apis.WebApi (WebApi)
 import Service.CommandHandler.Core (command)
-import Service.Protocol (ApiFor)
 import Testbed.Cart.Core
 
 
@@ -33,7 +32,6 @@ decide _ entity = do
 type instance EntityOf CreateCart = CartEntity
 
 
-type instance ApiFor CreateCart = '[WebApi]
-
+-- type instance ApiFor CreateCart = '[WebApi]
 
 command ''CreateCart
