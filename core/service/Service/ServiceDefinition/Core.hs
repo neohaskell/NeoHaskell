@@ -12,7 +12,8 @@ module Service.ServiceDefinition.Core (
   __internal_runServiceMain,
 ) where
 
-import Array (Array, empty)
+import Array (Array)
+import Array qualified
 import Basics
 import Console qualified
 import GHC.IO qualified as GHC
@@ -28,6 +29,7 @@ import Service.Protocol (ApiFor, ServerApi (..))
 import Task (Task)
 import Task qualified
 import Text (Text)
+import ToText (toText)
 
 
 type Service commands reqServers provServers servers = ServiceDefinition commands reqServers provServers servers
@@ -60,6 +62,7 @@ data ServiceRuntime = ServiceRuntime
 data CommandDefinition (commandType :: Type) = CommandDefinition
   { requiredServers :: Array Text
   }
+  deriving (Show)
 
 
 -- | Create a new empty service definition
@@ -94,7 +97,7 @@ useServer server serviceDef = do
       serverDef =
         ServiceDefinition
           { commands = Record.empty,
-            serverRecord = Record.empty |> Record.insert (fromLabel @serverName) server
+            serverRecord = Record.empty |> Record.insert (fromLabel @serverName) (Record.I server)
           }
   merge serviceDef serverDef
 
@@ -109,9 +112,9 @@ makeRunnable ::
 makeRunnable _serviceDef = do
   -- TODO: Complete implementation
   -- 1. Access server configs from serviceDef.serverRecord
-  -- 2. Build command routing table from serviceDef.commandNames
+  -- 2. Build command routing table from serviceDef.commands
   -- 3. Create execute function that:
-  --    a. Looks up command by name in commandNames
+  --    a. Looks up command by name in commands
   --    b. Deserializes the Bytes payload to the command type
   --    c. Gets the command's ApiFor requirements
   --    d. Finds a matching server from the registered servers
@@ -138,7 +141,7 @@ merge ::
     (Record.Merge srv1 srv2)
 merge m1 m2 =
   ServiceDefinition
-    { commands = Record.merge m1.commandNames m2.commandNames,
+    { commands = Record.merge m1.commands m2.commands,
       serverRecord = Record.merge m1.serverRecord m2.serverRecord
     }
 
@@ -168,16 +171,32 @@ command serviceDef = do
         ServiceDefinition
           { commands =
               Record.empty
-                |> Record.insert field definition,
+                |> Record.insert field (Record.I definition),
             serverRecord = Record.empty
           }
   merge serviceDef commandDef
 
 
-__internal_runServiceMain :: ServiceDefinition commands _ _ _ -> GHC.IO Unit
-__internal_runServiceMain serviceDefinition = Task.runOrPanic do
+__internal_runServiceMain :: (Record.AllFields commands Show) => ServiceDefinition commands _ _ _ -> GHC.IO Unit
+__internal_runServiceMain serviceDefinition = Task.runOrPanic @Text do
   serviceDefinition.commands
     -- this must be reduced using the  AllFields constraint in Record
-    |> Task.forEach \command -> do
-      Console.print (toText command.requiredServers)
+    |> reduceWithServer
+    |> Task.forEach \(commandText :: Text) -> do
+      Console.print commandText
   panic "__internal_runServiceMain reached end"
+
+
+reduceWithServer ::
+  (Record.AllFields commands Show) => Record commands -> Array Text
+reduceWithServer commands = do
+  commands
+    |> showAllFields
+
+
+showAllFields :: (Record.AllFields r Show) => Record.ContextRecord Record.I r -> Array Text
+showAllFields rec =
+  rec
+    |> Record.cmap (Record.Proxy @Show) (\(Record.I x) -> Record.K (toText x))
+    |> Record.collapse
+    |> Array.fromLinkedList

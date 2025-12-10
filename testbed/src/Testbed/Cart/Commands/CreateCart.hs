@@ -13,7 +13,7 @@ import Testbed.Cart.Core
 
 
 data CreateCart = CreateCart
-  deriving (Generic, Typeable)
+  deriving (Generic, Typeable, Show)
 
 
 getEntityId :: CreateCart -> Maybe Uuid
