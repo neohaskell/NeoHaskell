@@ -7,20 +7,30 @@ module Service.Command.Core (
   EntityOf,
   Decision (..),
   DecisionContext (..),
+  ApiEndpointHandler,
   runDecision,
   NameOf,
+  ApiOf,
+  ApiBuilder,
+  WebApi (..),
+  buildCommandEndpoint,
 ) where
 
 import Applicable
 import Array (Array)
 import Basics
+import Bytes (Bytes)
+import Console qualified
 import Control.Monad qualified as Monad
+import GHC.TypeLits qualified as GHC
 import Mappable
 import Maybe (Maybe)
+import Record qualified
 import Service.Event (InsertionType)
 import Task (Task)
 import Task qualified
 import Text (Text)
+import Text qualified
 import Thenable
 import Uuid (Uuid)
 
@@ -69,6 +79,49 @@ type family DecideFunction (isTenant :: Bool) command entity event where
 type family EventOf (entityType :: Type)
 
 
+type family ApiOf (commandType :: Type) :: Type
+
+
+-- WEBAPI:MOVE INTO MODULE
+
+data WebApi = WebApi
+
+
+type ApiEndpointHandler = Bytes -> (Bytes -> Task Text Unit) -> Task Text Unit
+
+
+class ApiBuilder api where
+  buildCommandEndpoint ::
+    forall command name.
+    ( Command command,
+      name ~ NameOf command,
+      Record.KnownSymbol name
+    ) =>
+    Record.Proxy api ->
+    Record.Proxy command ->
+    ApiEndpointHandler
+
+
+instance ApiBuilder WebApi where
+  buildCommandEndpoint ::
+    forall command name.
+    ( Command command,
+      name ~ NameOf command,
+      Record.KnownSymbol name
+    ) =>
+    Record.Proxy WebApi ->
+    Record.Proxy command ->
+    ApiEndpointHandler
+  buildCommandEndpoint _ _ body respond = do
+    let n =
+          GHC.symbolVal (Record.Proxy @name)
+            |> Text.fromLinkedList
+    Console.print n
+    Console.print (body |> Text.fromBytes)
+    respond (Text.toBytes n)
+
+
+-- TODO: Replace Decision by a Task with context
 data Decision a where
   Return :: a -> Decision a
   Bind :: Decision a -> (a -> Decision b) -> Decision b

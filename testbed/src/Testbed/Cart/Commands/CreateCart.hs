@@ -6,6 +6,7 @@ module Testbed.Cart.Commands.CreateCart (
 
 import Core
 import Decision qualified
+import Service.Command.Core (ApiOf, WebApi)
 import Service.CommandHandler.Core (command)
 import Testbed.Cart.Core
 
@@ -29,6 +30,9 @@ decide _ entity = do
 
 
 type instance EntityOf CreateCart = CartEntity
+
+
+type instance ApiOf CreateCart = WebApi
 
 
 command ''CreateCart
