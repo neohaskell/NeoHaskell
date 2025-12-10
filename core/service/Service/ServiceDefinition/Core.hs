@@ -9,14 +9,29 @@ module Service.ServiceDefinition.Core (
 
 import Basics
 import GHC.IO qualified as GHC
+import Record (Record)
 import Record qualified
+import Service.Command (NameOf)
+import Service.Command.Core (Command (..))
 
 
-data Service = Service
+data
+  Service
+    (commandRow :: Record.Row Type)
+  = Service
+  { commandDefinitions :: Record commandRow
+  }
 
 
-new :: Service
-new = Service
+data CommandDefinition cmd
+  = CommandDefinition
+
+
+new :: Service '[]
+new =
+  Service
+    { commandDefinitions = Record.empty
+    }
 
 
 useServer ::
@@ -27,16 +42,28 @@ useServer _ _ =
 
 -- | Register a command type in the service definition
 command ::
-  forall (cmd :: Type) sd sd2.
-  (Show cmd) =>
+  forall (cmd :: Type) originalCommands commandName.
+  ( Command cmd,
+    commandName ~ NameOf cmd,
+    Record.KnownHash commandName,
+    Record.KnownSymbol commandName
+  ) =>
   Record.Proxy cmd ->
-  sd ->
-  sd2
-command _ =
-  panic "command not implemented"
+  Service originalCommands ->
+  Service ((commandName 'Record.:= CommandDefinition cmd) ': originalCommands)
+command _ serviceDefinition = do
+  let cmdName :: Record.Field commandName = fromLabel
+  let cmdVal :: Record.I (CommandDefinition cmd) = Record.I CommandDefinition
+  let currentCmds :: Record originalCommands = serviceDefinition.commandDefinitions
+  let cmds =
+        currentCmds
+          |> Record.insert cmdName cmdVal
+  Service
+    { commandDefinitions = cmds
+    }
 
 
 __internal_runServiceMain ::
-  a -> GHC.IO Unit
-__internal_runServiceMain _ =
+  Service cmds -> GHC.IO Unit
+__internal_runServiceMain _ = do
   panic "__internal_runServiceMain - not implemented"

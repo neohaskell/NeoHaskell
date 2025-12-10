@@ -8,7 +8,7 @@ import Service qualified
 import Testbed.Cart.Commands.CreateCart (CreateCart)
 
 
-service :: Service
+service :: Service _
 service =
   Service.new
     |> Service.command (Record.Proxy @CreateCart)
