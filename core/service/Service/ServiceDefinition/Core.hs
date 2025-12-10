@@ -177,7 +177,8 @@ command serviceDef = do
   merge serviceDef commandDef
 
 
-__internal_runServiceMain :: (Record.AllFields commands Show) => ServiceDefinition commands _ _ _ -> GHC.IO Unit
+__internal_runServiceMain ::
+  (Record.KnownFields commands, Record.AllFields commands Show) => ServiceDefinition commands _ _ _ -> GHC.IO Unit
 __internal_runServiceMain serviceDefinition = Task.runOrPanic @Text do
   serviceDefinition.commands
     -- this must be reduced using the  AllFields constraint in Record
@@ -188,13 +189,13 @@ __internal_runServiceMain serviceDefinition = Task.runOrPanic @Text do
 
 
 reduceWithServer ::
-  (Record.AllFields commands Show) => Record commands -> Array Text
+  (Record.KnownFields commands, Record.AllFields commands Show) => Record commands -> Array Text
 reduceWithServer commands = do
   commands
     |> showAllFields
 
 
-showAllFields :: (Record.AllFields r Show) => Record.ContextRecord Record.I r -> Array Text
+showAllFields :: (Record.KnownFields r, Record.AllFields r Show) => Record.ContextRecord Record.I r -> Array Text
 showAllFields rec =
   rec
     |> Record.cmap (Record.Proxy @Show) (\(Record.I x) -> Record.K (toText x))
