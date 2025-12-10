@@ -6,5 +6,5 @@ import Core
 import Testbed.Cart.Service qualified as CartService
 
 
-service :: Service _ _ _ _
+service :: Service
 service = CartService.service

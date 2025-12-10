@@ -30,7 +30,6 @@ import Service.Command as Reexported (Command (..), CommandResult (..), EntityOf
 import Service.Event as Reexported (InsertionType (..), StreamId, ToStreamId (..))
 import Service.ServiceDefinition.Core as Reexported (
   Service,
-  ServiceDefinition (..),
  )
 import Task as Reexported (Task)
 import Text as Reexported (Text)
