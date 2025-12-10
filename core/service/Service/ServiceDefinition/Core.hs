@@ -44,18 +44,18 @@ getSymbolText _ =
     |> Text.fromLinkedList
 
 
-data CommandDefinition cmd
+data CommandDefinition (name :: Symbol) cmd
   = CommandDefinition
   { commandName :: Text
   }
   deriving (Show)
 
 
-instance CommandInspect (CommandDefinition cmd) where
-  commandName d = d.commandName
+instance (Record.KnownSymbol name) => CommandInspect (CommandDefinition name cmd) where
+  commandName _ = getSymbolText (Record.Proxy @name)
 
 
-type instance NameOf (CommandDefinition cmd) = NameOf cmd
+type instance NameOf (CommandDefinition name cmd) = name
 
 
 new :: Service '[]
@@ -79,14 +79,14 @@ command ::
     commandName ~ NameOf cmd,
     Record.KnownHash commandName,
     Record.KnownSymbol commandName,
-    CommandInspect (CommandDefinition cmd)
+    CommandInspect (CommandDefinition commandName cmd)
   ) =>
   Record.Proxy cmd ->
   Service originalCommands ->
-  Service ((commandName 'Record.:= CommandDefinition cmd) ': originalCommands)
+  Service ((commandName 'Record.:= CommandDefinition commandName cmd) ': originalCommands)
 command _ serviceDefinition = do
   let cmdName :: Record.Field commandName = fromLabel
-  let cmdVal :: Record.I (CommandDefinition cmd) =
+  let cmdVal :: Record.I (CommandDefinition commandName cmd) =
         Record.I
           CommandDefinition
             { commandName = getSymbolText (Record.Proxy @commandName)
@@ -95,7 +95,7 @@ command _ serviceDefinition = do
   let cmds =
         currentCmds
           |> Record.insert cmdName cmdVal
-  let inspectDict :: Record.Dict CommandInspect (CommandDefinition cmd) = Record.Dict
+  let inspectDict :: Record.Dict CommandInspect (CommandDefinition commandName cmd) = Record.Dict
   let newInspectDict =
         serviceDefinition.inspectDict
           |> Record.insert cmdName inspectDict
