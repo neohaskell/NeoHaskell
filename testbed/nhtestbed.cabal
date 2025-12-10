@@ -53,6 +53,7 @@ library
   import: common_cfg
   exposed-modules:
     Testbed.Cart.Commands.CreateCart
+    Testbed.Cart.Commands.AddItem
     Testbed.Cart.Core
     Testbed.Cart.Service
     Testbed.Service
