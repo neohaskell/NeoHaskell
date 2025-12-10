@@ -9,6 +9,7 @@ module Service.ServiceDefinition.Core (
 
 import Basics
 import GHC.IO qualified as GHC
+import Record qualified
 
 
 data Service = Service
@@ -26,9 +27,12 @@ useServer _ _ =
 
 -- | Register a command type in the service definition
 command ::
+  forall (cmd :: Type) sd sd2.
+  (Show cmd) =>
+  Record.Proxy cmd ->
   sd ->
   sd2
-command =
+command _ =
   panic "command not implemented"
 
 

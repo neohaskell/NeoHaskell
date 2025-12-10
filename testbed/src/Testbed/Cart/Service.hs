@@ -3,13 +3,12 @@ module Testbed.Cart.Service (
 ) where
 
 import Core
+import Record qualified
 import Service qualified
-import Service.Apis.WebApi qualified as WebApi
 import Testbed.Cart.Commands.CreateCart (CreateCart)
 
 
 service :: Service
 service =
   Service.new
-    |> Service.useServer WebApi.server
-    |> Service.command @CreateCart
+    |> Service.command (Record.Proxy @CreateCart)
