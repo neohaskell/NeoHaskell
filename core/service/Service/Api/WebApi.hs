@@ -40,7 +40,7 @@ instance ApiBuilder WebApi where
 
 
   assembleApi :: WebApi -> ApiEndpoints -> RunnableApi WebApi
-  assembleApi _api _endpoints = panic "lol"
+  assembleApi _api endpoints = panic "lol"
 
 
   buildCommandHandler ::
