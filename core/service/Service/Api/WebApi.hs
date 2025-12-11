@@ -6,9 +6,11 @@ module Service.Api.WebApi (
 import Basics
 import Console qualified
 import GHC.TypeLits qualified as GHC
+import Record (KnownHash (..))
 import Record qualified
 import Service.Api.ApiBuilder (ApiBuilder (..), ApiEndpointHandler)
 import Service.Command.Core (Command, NameOf)
+import Service.CommandHandler.TH (deriveKnownHash)
 import Text qualified
 
 
@@ -16,6 +18,9 @@ data WebApi = WebApi
 
 
 type instance NameOf WebApi = "WebApi"
+
+
+deriveKnownHash "WebApi"
 
 
 server :: WebApi

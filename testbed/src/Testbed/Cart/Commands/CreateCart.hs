@@ -6,7 +6,8 @@ module Testbed.Cart.Commands.CreateCart (
 
 import Core
 import Decision qualified
-import Service.Command.Core (ApiOf, WebApi)
+import Service.Api.WebApi (WebApi)
+import Service.Command.Core (ApiOf)
 import Service.CommandHandler.Core (command)
 import Testbed.Cart.Core
 

@@ -16,6 +16,8 @@ import Bytes (Bytes)
 import Console qualified
 import GHC.IO qualified as GHC
 import GHC.TypeLits qualified as GHC
+import Maybe (Maybe (..))
+import Maybe qualified
 import Record (Record)
 import Record qualified
 import Service.Api.ApiBuilder (ApiBuilder (..), ApiEndpointHandler)
@@ -32,7 +34,7 @@ data
     (apiRow :: Record.Row Type)
   = Service
   { commandDefinitions :: Record commandRow,
-    inspectDict :: Record.ContextRecord (Record.Dict CommandInspect) commandRow,
+    inspectDict :: Record.ContextRecord (Record.Dict (CommandInspect apiRow)) commandRow,
     apis :: Record apiRow
   }
 
@@ -43,49 +45,74 @@ getSymbolText _ =
     |> Text.fromLinkedList
 
 
-data CommandDefinition (name :: Symbol) (api :: Type) (cmd :: Type)
+data CommandDefinition (name :: Symbol) (api :: Type) (cmd :: Type) (apiName :: Symbol)
   = CommandDefinition
-  { commandName :: Text
+  { commandName :: Text,
+    api :: Maybe api
   }
   deriving (Show)
 
 
-class CommandInspect cmd where
-  type Cmd cmd
+class CommandInspect (apis :: Record.Row Type) definition where
+  type Cmd definition
 
 
   commandName ::
-    cmd ->
+    definition ->
     Text
 
 
   buildCmdEP ::
-    Record.Proxy cmd ->
-    ApiOf (Cmd cmd) ->
-    Record.Proxy (Cmd cmd) ->
+    definition ->
+    Record.Proxy (Cmd definition) ->
     ApiEndpointHandler
 
 
+  setApi ::
+    definition -> Record apis -> definition
+
+
 instance
-  (Command cmd, name ~ NameOf cmd, api ~ ApiOf cmd, Record.KnownSymbol name, Record.KnownSymbol name, ApiBuilder api) =>
-  CommandInspect (CommandDefinition name api cmd)
+  ( Command cmd,
+    name ~ NameOf cmd,
+    Record.KnownSymbol name,
+    Record.KnownHash name
+    -- api
+    -- api ~ ApiOf cmd,
+    -- Record.RowHasField apiName apis api,
+    -- apiName ~ NameOf api,
+    -- Record.KnownSymbol apiName,
+    -- Record.KnownHash apiName,
+    -- ApiBuilder api
+  ) =>
+  CommandInspect apis (CommandDefinition name api cmd apiName)
   where
-  type Cmd (CommandDefinition name api cmd) = cmd
+  type Cmd (CommandDefinition name api cmd apiName) = cmd
 
 
-  commandName :: (Record.KnownSymbol name) => CommandDefinition name api cmd -> Text
+  commandName :: (Record.KnownSymbol name) => CommandDefinition name api cmd apiName -> Text
   commandName _ = getSymbolText (Record.Proxy @name)
 
 
   buildCmdEP ::
-    Record.Proxy (CommandDefinition name api cmd) ->
-    api ->
+    (ApiBuilder api) =>
+    (CommandDefinition name api cmd apiName) ->
     Record.Proxy cmd ->
     ApiEndpointHandler
-  buildCmdEP _ = buildCommandHandler
+  buildCmdEP cmdDef cmd = do
+    let api = cmdDef.api |> Maybe.getOrDie
+    buildCommandHandler api cmd
 
 
-type instance NameOf (CommandDefinition name api cmd) = name
+  setApi :: (CommandDefinition name api cmd apiName) -> Record apis -> (CommandDefinition name api cmd apiName)
+  setApi cmdDef apisRecord = do
+    let (Record.I api) = apisRecord |> Record.get (fromLabel @apiName)
+    cmdDef
+      { api = Just api
+      }
+
+
+type instance NameOf (CommandDefinition name api cmd apiName) = name
 
 
 new :: Service '[] '[]
@@ -113,29 +140,28 @@ useServer _ _ =
 
 -- | Register a command type in the service definition
 command ::
-  forall (cmd :: Type) originalCommands commandName commandApi.
+  forall (cmd :: Type) originalCommands commandName commandApi apis apiName.
   ( Command cmd,
     commandName ~ NameOf cmd,
-    commandApi ~ ApiOf cmd,
-    ApiBuilder commandApi,
     Record.KnownHash commandName,
     Record.KnownSymbol commandName,
-    CommandInspect (CommandDefinition commandName commandApi cmd)
+    CommandInspect apis (CommandDefinition commandName commandApi cmd apiName)
   ) =>
-  Service originalCommands _ ->
-  Service ((commandName 'Record.:= CommandDefinition commandName commandApi cmd) ': originalCommands) _
+  Service originalCommands apis ->
+  Service ((commandName 'Record.:= CommandDefinition commandName commandApi cmd apiName) ': originalCommands) apis
 command serviceDefinition = do
   let cmdName :: Record.Field commandName = fromLabel
-  let cmdVal :: Record.I (CommandDefinition commandName commandApi cmd) =
+  let cmdVal :: Record.I (CommandDefinition commandName commandApi cmd apiName) =
         Record.I
           CommandDefinition
-            { commandName = getSymbolText (Record.Proxy @commandName)
+            { commandName = getSymbolText (Record.Proxy @commandName),
+              api = Nothing
             }
   let currentCmds :: Record originalCommands = serviceDefinition.commandDefinitions
   let cmds =
         currentCmds
           |> Record.insert cmdName cmdVal
-  let inspectDict :: Record.Dict CommandInspect (CommandDefinition commandName commandApi cmd) = Record.Dict
+  let inspectDict :: Record.Dict (CommandInspect apis) (CommandDefinition commandName commandApi cmd apiName) = Record.Dict
   let newInspectDict =
         serviceDefinition.inspectDict
           |> Record.insert cmdName inspectDict
@@ -151,27 +177,31 @@ __internal_runServiceMain ::
 __internal_runServiceMain s =
   case Record.reflectAllFields s.inspectDict of
     Record.Reflected ->
-      runService s.commandDefinitions
+      runService s.commandDefinitions s.apis
         |> Task.runOrPanic
 
 
 runService ::
-  forall (cmds :: Record.Row Type).
-  (Record.AllFields cmds CommandInspect) =>
+  forall (cmds :: Record.Row Type) (apis :: Record.Row Type).
+  (Record.AllFields cmds (CommandInspect apis)) =>
   Record.ContextRecord Record.I cmds ->
+  Record apis ->
   Task Text Unit
-runService commandDefinitions = do
+runService commandDefinitions apis = do
   let mapper ::
         forall cmdDef cmd.
-        ( CommandInspect (cmdDef),
+        ( CommandInspect apis cmdDef,
           cmd ~ Cmd cmdDef
         ) =>
-        Record.I (cmdDef) -> Record.K (Text, ApiEndpointHandler) (cmdDef)
-      mapper (Record.I x) = Record.K (commandName x, buildCmdEP (Record.Proxy @cmdDef) apiBuilder (Record.Proxy @cmd))
+        Record.I (cmdDef) ->
+        Record.K (Text, ApiEndpointHandler) (cmdDef)
+      mapper (Record.I x) = do
+        let cmdDef = setApi x apis
+        Record.K (commandName @apis cmdDef, buildCmdEP @apis cmdDef (Record.Proxy @cmd))
 
   let xs :: Array (Text, ApiEndpointHandler) =
         commandDefinitions
-          |> Record.cmap (Record.Proxy @CommandInspect) mapper
+          |> Record.cmap (Record.Proxy @(CommandInspect apis)) mapper
           |> Record.collapse
           |> Array.fromLinkedList
   xs |> Task.forEach \(cmdName, ep) -> do
