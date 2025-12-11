@@ -5,15 +5,22 @@ module Service.Api.WebApi (
 
 import Basics
 import Bytes (Bytes)
+import Bytes qualified
 import Console qualified
 import GHC.TypeLits qualified as GHC
+import Map qualified
+import Maybe (Maybe (..))
+import Maybe qualified
+import Network.HTTP.Types.Header qualified as HTTP
+import Network.HTTP.Types.Status qualified as HTTP
 import Network.Wai qualified as Wai
 import Record (KnownHash (..))
 import Record qualified
-import Service.Api.ApiBuilder (ApiBuilder (..), ApiEndpointHandler, ApiEndpoints)
+import Service.Api.ApiBuilder (ApiBuilder (..), ApiEndpointHandler, ApiEndpoints (..))
 import Service.Command.Core (Command, NameOf)
 import Service.CommandHandler.TH (deriveKnownHash)
 import Task (Task)
+import Task qualified
 import Text (Text)
 import Text qualified
 
@@ -42,12 +49,51 @@ instance ApiBuilder WebApi where
   type
     RunnableApi WebApi =
       Wai.Request ->
-      (Wai.Response -> Task Text Wai.ResponseReceived) ->
-      Task Text Wai.ResponseReceived
+      (Wai.Response -> Task Text Unit) ->
+      Task Text Unit
 
 
-  assembleApi :: WebApi -> ApiEndpoints -> RunnableApi WebApi
-  assembleApi _api endpoints = panic "lol"
+  assembleApi ::
+    WebApi ->
+    ApiEndpoints ->
+    Wai.Request ->
+    (Wai.Response -> Task Text Unit) ->
+    Task Text Unit
+  assembleApi _api endpoints request respond = do
+    -- Helper function for 404 responses
+    let notFound message = do
+          let response404 =
+                message
+                  |> Text.toBytes
+                  |> Bytes.toLazyLegacy
+                  |> Wai.responseLBS HTTP.status404 [(HTTP.hContentType, "text/plain")]
+          respond response404
+
+    -- Parse the request path to check if it matches /commands/<name>
+    case Wai.pathInfo request of
+      ["commands", commandName] -> do
+        -- Look up the command handler in the endpoints map
+        case Map.get commandName endpoints.commandEndpoints of
+          Maybe.Just handler -> do
+            -- Read the request body
+            requestBody <- Wai.strictRequestBody request |> Task.fromIO
+            let bodyBytes = requestBody |> Bytes.fromLazyLegacy
+
+            -- Call the handler with the body and a callback to create the response
+            handler
+              bodyBytes
+              ( \responseBytes -> do
+                  -- Create a WAI response from the handler's response
+                  let responseBody =
+                        responseBytes
+                          |> Bytes.toLazyLegacy
+                          |> Wai.responseLBS HTTP.status200 [(HTTP.hContentType, "text/plain")]
+                  respond responseBody
+              )
+          Maybe.Nothing ->
+            notFound [fmt|Command not found: {commandName}|]
+      _ ->
+        notFound "Not found"
 
 
   buildCommandHandler ::
