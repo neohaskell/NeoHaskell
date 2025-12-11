@@ -97,7 +97,7 @@ class ApiBuilder api where
       name ~ NameOf command,
       Record.KnownSymbol name
     ) =>
-    Record.Proxy api ->
+    api ->
     Record.Proxy command ->
     ApiEndpointHandler
 
@@ -109,7 +109,7 @@ instance ApiBuilder WebApi where
       name ~ NameOf command,
       Record.KnownSymbol name
     ) =>
-    Record.Proxy WebApi ->
+    WebApi ->
     Record.Proxy command ->
     ApiEndpointHandler
   buildCommandHandler _ _ body respond = do
