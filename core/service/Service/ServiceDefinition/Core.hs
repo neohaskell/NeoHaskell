@@ -231,6 +231,7 @@ runService commandDefinitions apis = do
           |> Record.cmap (Record.Proxy @(CommandInspect)) mapper
           |> Record.collapse
           |> Array.fromLinkedList
+
   xs |> Task.forEach \(cmdName, ep) -> do
     let respond :: Bytes -> Task Text Unit
         respond bb = do

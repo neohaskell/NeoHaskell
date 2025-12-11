@@ -1,10 +1,12 @@
 module Service.Api.ApiBuilder (
   ApiBuilder (..),
   ApiEndpointHandler,
+  ApiEndpoints (..),
 ) where
 
 import Basics
 import Bytes (Bytes)
+import Map (Map)
 import Record qualified
 import Service.Command.Core (Command, NameOf)
 import Task (Task)
@@ -14,7 +16,21 @@ import Text (Text)
 type ApiEndpointHandler = Bytes -> (Bytes -> Task Text Unit) -> Task Text Unit
 
 
+data ApiEndpoints = ApiEndpoints
+  { commandEndpoints :: Map Text ApiEndpointHandler
+  }
+
+
 class ApiBuilder api where
+  type RunnableApi api
+
+
+  assembleApi ::
+    api ->
+    ApiEndpoints ->
+    RunnableApi api
+
+
   buildCommandHandler ::
     forall command name.
     ( Command command,

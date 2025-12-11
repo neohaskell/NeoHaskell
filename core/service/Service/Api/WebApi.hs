@@ -4,13 +4,16 @@ module Service.Api.WebApi (
 ) where
 
 import Basics
+import Bytes (Bytes)
 import Console qualified
 import GHC.TypeLits qualified as GHC
 import Record (KnownHash (..))
 import Record qualified
-import Service.Api.ApiBuilder (ApiBuilder (..), ApiEndpointHandler)
+import Service.Api.ApiBuilder (ApiBuilder (..), ApiEndpointHandler, ApiEndpoints)
 import Service.Command.Core (Command, NameOf)
 import Service.CommandHandler.TH (deriveKnownHash)
+import Task (Task)
+import Text (Text)
 import Text qualified
 
 
@@ -33,6 +36,13 @@ server =
 
 
 instance ApiBuilder WebApi where
+  type RunnableApi WebApi = Bytes -> (Bytes -> Task Text Unit) -> Task Text Unit
+
+
+  assembleApi :: WebApi -> ApiEndpoints -> RunnableApi WebApi
+  assembleApi _api _endpoints = panic "lol"
+
+
   buildCommandHandler ::
     forall command name.
     ( Command command,
