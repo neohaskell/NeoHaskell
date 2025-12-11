@@ -5,6 +5,7 @@ module Service.Api.WebApi (
 
 import Basics
 import Bytes qualified
+import ConcurrentVar qualified
 import Console qualified
 import GHC.TypeLits qualified as GHC
 import Map qualified
@@ -77,6 +78,7 @@ instance ApiBuilder WebApi where
             requestBody <- Wai.strictRequestBody request |> Task.fromIO
             let bodyBytes = requestBody |> Bytes.fromLazyLegacy
 
+            respondVar <- ConcurrentVar.new
             -- We need to capture the ResponseReceived from the handler's callback
             -- Since handler returns Unit, we'll use andThen to chain the result
             handler
@@ -87,18 +89,19 @@ instance ApiBuilder WebApi where
                         responseBytes
                           |> Bytes.toLazyLegacy
                           |> Wai.responseLBS HTTP.status200 [(HTTP.hContentType, "text/plain")]
-                  _ <- respond responseBody
+                  respondValue <- respond responseBody
+                  respondVar |> ConcurrentVar.set respondValue
                   Task.yield ()
               )
               |> Task.andThen
-                ( \_ ->
+                ( \_ -> do
                     -- After the handler completes, we need to return a ResponseReceived
                     -- But the actual ResponseReceived was already sent via respond
                     -- This is a fundamental mismatch - let me rethink...
-                    panic "Need to restructure how ResponseReceived flows through"
+                    ConcurrentVar.get respondVar
                 )
           Maybe.Nothing ->
-            notFound [fmt|Command not found: {commandName}|]
+            notFound [fmt|Command not found: #{commandName}|]
       _ ->
         notFound "Not found"
 
@@ -117,7 +120,8 @@ instance ApiBuilder WebApi where
             |> Task.runOrPanic
 
     -- Start the Warp server on the specified port
-    Console.print [fmt|Starting WebApi server on port {api.port}|]
+    let port = api.port
+    Console.print [fmt|Starting WebApi server on port #{port}|]
     Warp.run api.port waiApp |> Task.fromIO
 
 
@@ -137,4 +141,8 @@ instance ApiBuilder WebApi where
             |> Text.fromLinkedList
     Console.print [fmt|Running #{n} on port #{port}|]
     Console.print (body |> Text.fromBytes)
-    respond (Text.toBytes n)
+    let response =
+          [fmt|RESPONSE FROM #{n}
+    BODY: #{body |> Text.fromBytes}
+    |]
+    respond (Text.toBytes response)

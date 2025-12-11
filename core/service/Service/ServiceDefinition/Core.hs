@@ -12,7 +12,6 @@ module Service.ServiceDefinition.Core (
 import Array (Array)
 import Array qualified
 import Basics
-import Bytes (Bytes)
 import Console qualified
 import GHC.IO qualified as GHC
 import GHC.TypeLits qualified as GHC
@@ -258,15 +257,20 @@ runService commandDefinitions apis = do
     |> Map.entries
     |> Task.forEach \(apiName, apiEndpoints) -> do
       let commandCount = Map.length apiEndpoints.commandEndpoints
-      Console.print [fmt|Running API: #{apiName} with #{commandCount} commands|]
-      -- TODO: Actually run the API using the ApiBuilder's runApi method
-      -- For now, just test the endpoints
-      apiEndpoints.commandEndpoints
-        |> Map.entries
-        |> Task.forEach \(cmdName, ep) -> do
-          let respond :: Bytes -> Task Text Unit
-              respond bb = do
-                let bt = Text.fromBytes bb
-                Console.print [fmt|API: #{apiName}, Command: #{cmdName} - RESPOND: #{bt}|]
-          let fakeBody = "FAKE BODY" |> Text.toBytes
-          ep fakeBody respond
+      Console.print [fmt|Starting API: #{apiName} with #{commandCount} commands|]
+
+      -- Assemble the API using the ApiBuilder's assembleApi function
+      -- Since we need to call assembleApi with the proper type, we need to
+      -- extract it from the ApiBuilderValue
+      case apis |> Map.get apiName of
+        Nothing -> panic [fmt|API #{apiName} not found in apis map|]
+        Just apiBV -> do
+          -- We need to use the existentially quantified API type
+          case apiBV of
+            ApiBuilderValue (api :: api) -> do
+              -- Cast apiEndpoints to match the specific api type
+              let typedEndpoints = GHC.unsafeCoerce apiEndpoints :: ApiEndpoints api
+              let runnableApi = assembleApi typedEndpoints
+
+              -- Run the assembled API
+              runApi api runnableApi
