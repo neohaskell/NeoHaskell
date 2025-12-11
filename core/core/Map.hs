@@ -2,6 +2,7 @@ module Map (
   Map,
   build,
   HaskellMap.empty,
+  fromArray,
   (-->),
   set,
   get,
@@ -61,6 +62,20 @@ merge left right = HaskellMap.union left right
 -- ```
 build :: Accumulator (Map key value) -> Map key value
 build = Accumulator.accumulate
+
+
+-- | Creates a Map from an Array of key-value tuples.
+--
+-- Example:
+--
+-- ```haskell
+-- Map.fromArray [("a", 1), ("b", 2), ("c", 3)]
+-- ```
+fromArray :: (Eq key, Ord key) => Array (key, value) -> Map key value
+fromArray array =
+  array
+    |> Array.toLinkedList
+    |> HaskellMap.fromList
 
 
 -- | Set a value in a `Map`.

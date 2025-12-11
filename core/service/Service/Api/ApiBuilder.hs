@@ -16,8 +16,9 @@ import Text (Text)
 type ApiEndpointHandler = Bytes -> (Bytes -> Task Text Unit) -> Task Text Unit
 
 
-data ApiEndpoints = ApiEndpoints
-  { commandEndpoints :: Map Text ApiEndpointHandler
+data ApiEndpoints api = ApiEndpoints
+  { api :: api,
+    commandEndpoints :: Map Text ApiEndpointHandler
   }
 
 
@@ -28,8 +29,7 @@ class ApiBuilder api where
 
 
   assembleApi ::
-    api ->
-    ApiEndpoints ->
+    ApiEndpoints api ->
     RunnableApi api
 
 

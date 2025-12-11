@@ -4,16 +4,15 @@ module Service.Api.WebApi (
 ) where
 
 import Basics
-import Bytes (Bytes)
 import Bytes qualified
 import Console qualified
 import GHC.TypeLits qualified as GHC
 import Map qualified
 import Maybe (Maybe (..))
-import Maybe qualified
 import Network.HTTP.Types.Header qualified as HTTP
 import Network.HTTP.Types.Status qualified as HTTP
 import Network.Wai qualified as Wai
+import Network.Wai.Handler.Warp qualified as Warp
 import Record (KnownHash (..))
 import Record qualified
 import Service.Api.ApiBuilder (ApiBuilder (..), ApiEndpointHandler, ApiEndpoints (..))
@@ -49,17 +48,16 @@ instance ApiBuilder WebApi where
   type
     RunnableApi WebApi =
       Wai.Request ->
-      (Wai.Response -> Task Text Unit) ->
-      Task Text Unit
+      (Wai.Response -> Task Text Wai.ResponseReceived) ->
+      Task Text Wai.ResponseReceived
 
 
   assembleApi ::
-    WebApi ->
-    ApiEndpoints ->
+    ApiEndpoints WebApi ->
     Wai.Request ->
-    (Wai.Response -> Task Text Unit) ->
-    Task Text Unit
-  assembleApi _api endpoints request respond = do
+    (Wai.Response -> Task Text Wai.ResponseReceived) ->
+    Task Text Wai.ResponseReceived
+  assembleApi endpoints request respond = do
     -- Helper function for 404 responses
     let notFound message = do
           let response404 =
@@ -79,7 +77,8 @@ instance ApiBuilder WebApi where
             requestBody <- Wai.strictRequestBody request |> Task.fromIO
             let bodyBytes = requestBody |> Bytes.fromLazyLegacy
 
-            -- Call the handler with the body and a callback to create the response
+            -- We need to capture the ResponseReceived from the handler's callback
+            -- Since handler returns Unit, we'll use andThen to chain the result
             handler
               bodyBytes
               ( \responseBytes -> do
@@ -88,8 +87,16 @@ instance ApiBuilder WebApi where
                         responseBytes
                           |> Bytes.toLazyLegacy
                           |> Wai.responseLBS HTTP.status200 [(HTTP.hContentType, "text/plain")]
-                  respond responseBody
+                  _ <- respond responseBody
+                  Task.yield ()
               )
+              |> Task.andThen
+                ( \_ ->
+                    -- After the handler completes, we need to return a ResponseReceived
+                    -- But the actual ResponseReceived was already sent via respond
+                    -- This is a fundamental mismatch - let me rethink...
+                    panic "Need to restructure how ResponseReceived flows through"
+                )
           Maybe.Nothing ->
             notFound [fmt|Command not found: {commandName}|]
       _ ->
@@ -97,7 +104,21 @@ instance ApiBuilder WebApi where
 
 
   runApi :: WebApi -> RunnableApi WebApi -> Task Text Unit
-  runApi _ runnableApi = panic "not implemented"
+  runApi api runnableApi = do
+    -- RunnableApi WebApi is: Wai.Request -> (Wai.Response -> Task Text ResponseReceived) -> Task Text ResponseReceived
+    -- We need to convert this to a WAI Application: Request -> (Response -> IO ResponseReceived) -> IO ResponseReceived
+    let waiApp :: Wai.Application
+        waiApp request respond = do
+          -- Create a Task-based response handler that wraps the IO respond function
+          let taskRespond response = Task.fromIO (respond response)
+
+          -- Run the Task-based application and return the ResponseReceived
+          runnableApi request taskRespond
+            |> Task.runOrPanic
+
+    -- Start the Warp server on the specified port
+    Console.print [fmt|Starting WebApi server on port {api.port}|]
+    Warp.run api.port waiApp |> Task.fromIO
 
 
   buildCommandHandler ::

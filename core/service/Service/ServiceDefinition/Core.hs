@@ -21,7 +21,7 @@ import Map qualified
 import Maybe (Maybe (..))
 import Record (Record)
 import Record qualified
-import Service.Api.ApiBuilder (ApiBuilder (..), ApiEndpointHandler)
+import Service.Api.ApiBuilder (ApiBuilder (..), ApiEndpointHandler, ApiEndpoints (..))
 import Service.Command.Core (ApiOf, Command (..), NameOf)
 import Task (Task)
 import Task qualified
@@ -218,19 +218,26 @@ runService commandDefinitions apis = do
           cmd ~ Cmd cmdDef
         ) =>
         Record.I (cmdDef) ->
-        Record.K (Text, ApiEndpointHandler) (cmdDef)
+        Record.K ((Text, ApiBuilderValue), (Text, ApiEndpointHandler)) (cmdDef)
       mapper (Record.I x) = do
         case apis |> Map.get (apiName x) of
           Nothing -> panic [fmt|The impossible happened, couldn't find API config for #{commandName x}|]
           Just apiBV -> do
             let api = getApiBuilderValue apiBV
-            Record.K (commandName x, buildCmdEP x (api) (Record.Proxy @cmd))
+            Record.K ((apiName x, apiBV), (commandName x, buildCmdEP x (api) (Record.Proxy @cmd)))
 
-  let xs :: Array (Text, ApiEndpointHandler) =
+  let xs :: Array ((Text, ApiBuilderValue), (Text, ApiEndpointHandler)) =
         commandDefinitions
           |> Record.cmap (Record.Proxy @(CommandInspect)) mapper
           |> Record.collapse
           |> Array.fromLinkedList
+
+  let endpointsReducer ((apiName, apiBV), (commandName, handler)) endpointsMap = do
+        let api = getApiBuilderValue apiBV
+
+        endpointsMap |> Map.set apiName (ApiEndpoints {api = api, commandEndpoints = _commandEndpoints})
+
+  let endpointsByApi = xs |> Array.reduce endpointsReducer Map.empty
 
   xs |> Task.forEach \(cmdName, ep) -> do
     let respond :: Bytes -> Task Text Unit
