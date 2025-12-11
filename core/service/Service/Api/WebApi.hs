@@ -96,6 +96,10 @@ instance ApiBuilder WebApi where
         notFound "Not found"
 
 
+  runApi :: WebApi -> RunnableApi WebApi -> Task Text Unit
+  runApi _ runnableApi = panic "not implemented"
+
+
   buildCommandHandler ::
     forall command name.
     ( Command command,

@@ -33,6 +33,9 @@ class ApiBuilder api where
     RunnableApi api
 
 
+  runApi :: api -> RunnableApi api -> Task Text Unit
+
+
   buildCommandHandler ::
     forall command name.
     ( Command command,
