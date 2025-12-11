@@ -80,7 +80,7 @@ instance
     Record.Proxy (api) ->
     Record.Proxy cmd ->
     ApiEndpointHandler
-  buildCmdEP _ = buildCommandEndpoint
+  buildCmdEP _ = buildCommandHandler
 
 
 type instance NameOf (CommandDefinition name api cmd) = name

@@ -13,7 +13,7 @@ module Service.Command.Core (
   ApiOf,
   ApiBuilder,
   WebApi (..),
-  buildCommandEndpoint,
+  buildCommandHandler,
 ) where
 
 import Applicable
@@ -91,7 +91,7 @@ type ApiEndpointHandler = Bytes -> (Bytes -> Task Text Unit) -> Task Text Unit
 
 
 class ApiBuilder api where
-  buildCommandEndpoint ::
+  buildCommandHandler ::
     forall command name.
     ( Command command,
       name ~ NameOf command,
@@ -103,7 +103,7 @@ class ApiBuilder api where
 
 
 instance ApiBuilder WebApi where
-  buildCommandEndpoint ::
+  buildCommandHandler ::
     forall command name.
     ( Command command,
       name ~ NameOf command,
@@ -112,7 +112,7 @@ instance ApiBuilder WebApi where
     Record.Proxy WebApi ->
     Record.Proxy command ->
     ApiEndpointHandler
-  buildCommandEndpoint _ _ body respond = do
+  buildCommandHandler _ _ body respond = do
     let n =
           GHC.symbolVal (Record.Proxy @name)
             |> Text.fromLinkedList
