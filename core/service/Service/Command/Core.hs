@@ -14,6 +14,7 @@ module Service.Command.Core (
   ApiBuilder,
   WebApi (..),
   buildCommandHandler,
+  webApiServer,
 ) where
 
 import Applicable
@@ -85,6 +86,10 @@ type family ApiOf (commandType :: Type) :: Type
 -- WEBAPI:MOVE INTO MODULE
 
 data WebApi = WebApi
+
+
+webApiServer :: WebApi
+webApiServer = WebApi
 
 
 type ApiEndpointHandler = Bytes -> (Bytes -> Task Text Unit) -> Task Text Unit
