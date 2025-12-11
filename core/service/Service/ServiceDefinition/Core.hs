@@ -232,17 +232,41 @@ runService commandDefinitions apis = do
           |> Record.collapse
           |> Array.fromLinkedList
 
+  -- Group endpoints by API name
   let endpointsReducer ((apiName, apiBV), (commandName, handler)) endpointsMap = do
         let api = getApiBuilderValue apiBV
+        case endpointsMap |> Map.get apiName of
+          Nothing -> do
+            -- First command for this API, create new ApiEndpoints
+            let newEndpoints = ApiEndpoints
+                  { api = api
+                  , commandEndpoints = Map.empty |> Map.set commandName handler
+                  }
+            endpointsMap |> Map.set apiName newEndpoints
+          Just existingEndpoints -> do
+            -- Add command to existing API endpoints
+            let updatedEndpoints = existingEndpoints
+                  { commandEndpoints = existingEndpoints.commandEndpoints |> Map.set commandName handler
+                  }
+            endpointsMap |> Map.set apiName updatedEndpoints
 
-        endpointsMap |> Map.set apiName (ApiEndpoints {api = api, commandEndpoints = _commandEndpoints})
+  let endpointsByApi =
+        xs |> Array.reduce endpointsReducer Map.empty
 
-  let endpointsByApi = xs |> Array.reduce endpointsReducer Map.empty
-
-  xs |> Task.forEach \(cmdName, ep) -> do
-    let respond :: Bytes -> Task Text Unit
-        respond bb = do
-          let bt = Text.fromBytes bb
-          Console.print [fmt|/commands/#{cmdName} - RESPOND: #{bt}|]
-    let fakeBody = "FAKE BODY" |> Text.toBytes
-    ep fakeBody respond
+  -- Run each API with its endpoints
+  endpointsByApi
+    |> Map.entries
+    |> Task.forEach \(apiName, apiEndpoints) -> do
+      let commandCount = Map.length apiEndpoints.commandEndpoints
+      Console.print [fmt|Running API: #{apiName} with #{commandCount} commands|]
+      -- TODO: Actually run the API using the ApiBuilder's runApi method
+      -- For now, just test the endpoints
+      apiEndpoints.commandEndpoints
+        |> Map.entries
+        |> Task.forEach \(cmdName, ep) -> do
+          let respond :: Bytes -> Task Text Unit
+              respond bb = do
+                let bt = Text.fromBytes bb
+                Console.print [fmt|API: #{apiName}, Command: #{cmdName} - RESPOND: #{bt}|]
+          let fakeBody = "FAKE BODY" |> Text.toBytes
+          ep fakeBody respond
