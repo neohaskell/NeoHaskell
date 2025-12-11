@@ -33,7 +33,6 @@ import Unsafe.Coerce qualified as GHC
 data
   Service
     (commandRow :: Record.Row Type)
-    (apiRow :: Record.Row Type)
     (commandApiNames :: [Symbol])
     (providedApiNames :: [Symbol])
   = Service
@@ -121,7 +120,7 @@ instance
 type instance NameOf (CommandDefinition name api cmd apiName) = name
 
 
-new :: Service '[] '[] '[] '[]
+new :: Service '[] '[] '[]
 new =
   Service
     { commandDefinitions = Record.empty,
@@ -131,15 +130,15 @@ new =
 
 
 useServer ::
-  forall api apiName currentApis commandApiNames providedApiNames cmds.
+  forall api apiName commandApiNames providedApiNames cmds.
   ( ApiBuilder api,
     apiName ~ NameOf api,
     Record.KnownHash apiName,
     Record.KnownSymbol apiName
   ) =>
   api ->
-  Service cmds currentApis commandApiNames providedApiNames ->
-  Service cmds ((apiName 'Record.:= api) ': currentApis) commandApiNames (apiName ': providedApiNames)
+  Service cmds commandApiNames providedApiNames ->
+  Service cmds commandApiNames (apiName ': providedApiNames)
 useServer api serviceDefinition = do
   let apiName = getSymbolText (Record.Proxy @apiName)
   let newApis = serviceDefinition.apis |> Map.set apiName (ApiBuilderValue api)
@@ -155,7 +154,6 @@ command ::
     originalCommands
     commandName
     commandApi
-    apis
     (apiName :: Symbol)
     (commandApiNames :: [Symbol])
     providedApiNames.
@@ -168,10 +166,9 @@ command ::
     Record.KnownHash commandName,
     CommandInspect (CommandDefinition commandName commandApi cmd apiName)
   ) =>
-  Service originalCommands apis commandApiNames providedApiNames ->
+  Service originalCommands commandApiNames providedApiNames ->
   Service
     ((commandName 'Record.:= CommandDefinition commandName commandApi cmd apiName) ': originalCommands)
-    apis
     (apiName ': commandApiNames)
     providedApiNames
 command serviceDefinition = do
@@ -199,8 +196,8 @@ command serviceDefinition = do
 
 
 __internal_runServiceMain ::
-  forall cmds apis commandApiNames providedApiNames.
-  Service cmds apis commandApiNames providedApiNames -> GHC.IO Unit
+  forall cmds commandApiNames providedApiNames.
+  Service cmds commandApiNames providedApiNames -> GHC.IO Unit
 __internal_runServiceMain s = do
   case Record.reflectAllFields s.inspectDict of
     Record.Reflected ->
