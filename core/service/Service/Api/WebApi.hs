@@ -15,6 +15,8 @@ import Text qualified
 
 
 data WebApi = WebApi
+  { port :: Int
+  }
 
 
 type instance NameOf WebApi = "WebApi"
@@ -24,7 +26,10 @@ deriveKnownHash "WebApi"
 
 
 server :: WebApi
-server = WebApi
+server =
+  WebApi
+    { port = 8080
+    }
 
 
 instance ApiBuilder WebApi where
@@ -37,10 +42,11 @@ instance ApiBuilder WebApi where
     WebApi ->
     Record.Proxy command ->
     ApiEndpointHandler
-  buildCommandHandler _ _ body respond = do
+  buildCommandHandler api _ body respond = do
+    let port = api.port
     let n =
           GHC.symbolVal (Record.Proxy @name)
             |> Text.fromLinkedList
-    Console.print n
+    Console.print [fmt|Running #{n} on port #{port}|]
     Console.print (body |> Text.fromBytes)
     respond (Text.toBytes n)

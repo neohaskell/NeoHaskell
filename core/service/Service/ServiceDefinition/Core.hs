@@ -62,7 +62,8 @@ getSymbolText _ =
 
 data CommandDefinition (name :: Symbol) (api :: Type) (cmd :: Type) (apiName :: Symbol)
   = CommandDefinition
-  { commandName :: Text
+  { commandName :: Text,
+    apiName :: Text
   }
   deriving (Show)
 
@@ -70,11 +71,13 @@ data CommandDefinition (name :: Symbol) (api :: Type) (cmd :: Type) (apiName :: 
 class CommandInspect definition where
   type Cmd definition
   type Api definition
+  type ApiName definition :: Symbol
 
 
-  commandName ::
-    definition ->
-    Text
+  commandName :: definition -> Text
+
+
+  apiName :: definition -> Text
 
 
   buildCmdEP ::
@@ -88,6 +91,7 @@ instance
   ( Command cmd,
     ApiBuilder api,
     name ~ NameOf cmd,
+    Record.KnownSymbol apiName,
     Record.KnownSymbol name,
     Record.KnownHash name
   ) =>
@@ -95,10 +99,14 @@ instance
   where
   type Cmd (CommandDefinition name api cmd apiName) = cmd
   type Api (CommandDefinition name api cmd apiName) = api
+  type ApiName (CommandDefinition name api cmd apiName) = apiName
 
 
   commandName :: (Record.KnownSymbol name) => CommandDefinition name api cmd apiName -> Text
   commandName _ = getSymbolText (Record.Proxy @name)
+
+
+  apiName _ = getSymbolText (Record.Proxy @apiName)
 
 
   buildCmdEP ::
@@ -132,8 +140,12 @@ useServer ::
   api ->
   Service cmds currentApis commandApiNames providedApiNames ->
   Service cmds ((apiName 'Record.:= api) ': currentApis) commandApiNames (apiName ': providedApiNames)
-useServer _ _ =
-  panic "use server not implemented"
+useServer api serviceDefinition = do
+  let apiName = getSymbolText (Record.Proxy @apiName)
+  let newApis = serviceDefinition.apis |> Map.set apiName (ApiBuilderValue api)
+  serviceDefinition
+    { apis = newApis
+    }
 
 
 -- | Register a command type in the service definition
@@ -151,11 +163,10 @@ command ::
     commandName ~ NameOf cmd,
     commandApi ~ ApiOf cmd,
     apiName ~ NameOf commandApi,
+    Record.KnownSymbol apiName,
     Record.KnownSymbol commandName,
-    Record.KnownHash
-      commandName,
-    CommandInspect
-      (CommandDefinition commandName commandApi cmd apiName)
+    Record.KnownHash commandName,
+    CommandInspect (CommandDefinition commandName commandApi cmd apiName)
   ) =>
   Service originalCommands apis commandApiNames providedApiNames ->
   Service
@@ -168,7 +179,8 @@ command serviceDefinition = do
   let cmdVal :: Record.I (CommandDefinition commandName commandApi cmd apiName) =
         Record.I
           CommandDefinition
-            { commandName = getSymbolText (Record.Proxy @commandName)
+            { commandName = getSymbolText (Record.Proxy @commandName),
+              apiName = getSymbolText (Record.Proxy @apiName)
             }
   let currentCmds :: Record originalCommands = serviceDefinition.commandDefinitions
   let cmds =
@@ -211,8 +223,8 @@ runService commandDefinitions apis = do
         Record.I (cmdDef) ->
         Record.K (Text, ApiEndpointHandler) (cmdDef)
       mapper (Record.I x) = do
-        case apis |> Map.get (commandName x) of
-          Nothing -> panic [fmt|The impossible happened, couldnt find API config for #{commandName x}|]
+        case apis |> Map.get (apiName x) of
+          Nothing -> panic [fmt|The impossible happened, couldn't find API config for #{commandName x}|]
           Just apiBV -> do
             let api = getApiBuilderValue apiBV
             Record.K (commandName x, buildCmdEP x (api) (Record.Proxy @cmd))
