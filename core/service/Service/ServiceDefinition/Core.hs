@@ -18,8 +18,8 @@ import GHC.IO qualified as GHC
 import GHC.TypeLits qualified as GHC
 import Record (Record)
 import Record qualified
-import Service.Command (ApiOf, NameOf)
-import Service.Command.Core (ApiBuilder (..), ApiEndpointHandler, Command (..))
+import Service.Api.ApiBuilder (ApiBuilder (..), ApiEndpointHandler)
+import Service.Command.Core (ApiOf, Command (..), NameOf)
 import Task (Task)
 import Task qualified
 import Text (Text)
@@ -98,11 +98,15 @@ new =
 
 
 useServer ::
-  forall api currentApis.
-  (ApiBuilder api) =>
+  forall api apiName currentApis.
+  ( ApiBuilder api,
+    apiName ~ NameOf api,
+    Record.KnownHash apiName,
+    Record.KnownSymbol apiName
+  ) =>
   api ->
   Service _ currentApis ->
-  Service _ currentApis
+  Service _ ((apiName 'Record.:= api) ': currentApis)
 useServer _ _ =
   panic "use server not implemented"
 

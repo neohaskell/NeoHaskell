@@ -129,6 +129,8 @@ library
     Record
     Result
     Service
+    Service.Api.ApiBuilder
+    Service.Api.WebApi
     Service.Command
     Service.Command.Core
     Service.CommandHandler
