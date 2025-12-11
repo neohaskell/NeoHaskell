@@ -22,6 +22,8 @@ data ApiEndpoints = ApiEndpoints
 
 
 class ApiBuilder api where
+  type Request api
+  type Response api
   type RunnableApi api
 
 

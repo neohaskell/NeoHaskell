@@ -61,6 +61,8 @@ common common_cfg
     unagi-chan,
     uuid,
     vector,
+    wai,
+    warp,
     with-utf8,
 
   default-extensions:

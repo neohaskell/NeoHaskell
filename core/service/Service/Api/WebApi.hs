@@ -7,6 +7,7 @@ import Basics
 import Bytes (Bytes)
 import Console qualified
 import GHC.TypeLits qualified as GHC
+import Network.Wai qualified as Wai
 import Record (KnownHash (..))
 import Record qualified
 import Service.Api.ApiBuilder (ApiBuilder (..), ApiEndpointHandler, ApiEndpoints)
@@ -36,7 +37,13 @@ server =
 
 
 instance ApiBuilder WebApi where
-  type RunnableApi WebApi = Bytes -> (Bytes -> Task Text Unit) -> Task Text Unit
+  type Request WebApi = Wai.Request
+  type Response WebApi = Wai.Response
+  type
+    RunnableApi WebApi =
+      Wai.Request ->
+      (Wai.Response -> Task Text Wai.ResponseReceived) ->
+      Task Text Wai.ResponseReceived
 
 
   assembleApi :: WebApi -> ApiEndpoints -> RunnableApi WebApi
