@@ -16,6 +16,8 @@ import Bytes (Bytes)
 import Console qualified
 import GHC.IO qualified as GHC
 import GHC.TypeLits qualified as GHC
+import Map (Map)
+import Map qualified
 import Maybe (Maybe (..))
 import Record (Record)
 import Record qualified
@@ -32,11 +34,24 @@ data
   Service
     (commandRow :: Record.Row Type)
     (apiRow :: Record.Row Type)
+    (commandApiNames :: [Symbol])
+    (providedApiNames :: [Symbol])
   = Service
   { commandDefinitions :: Record commandRow,
-    -- inspectDict :: Record.ContextRecord (Record.Dict (CommandInspect apiRow)) commandRow,
-    apis :: Record apiRow
+    inspectDict :: Record.ContextRecord (Record.Dict (CommandInspect)) commandRow,
+    apis :: Map Text ApiBuilderValue
   }
+
+
+data ApiBuilderValue
+  = forall api.
+    (ApiBuilder api) =>
+    ApiBuilderValue api
+
+
+getApiBuilderValue ::
+  ApiBuilderValue -> api
+getApiBuilderValue (ApiBuilderValue api) = GHC.unsafeCoerce api
 
 
 getSymbolText :: forall name. (GHC.KnownSymbol name) => Record.Proxy name -> Text
@@ -47,14 +62,14 @@ getSymbolText _ =
 
 data CommandDefinition (name :: Symbol) (api :: Type) (cmd :: Type) (apiName :: Symbol)
   = CommandDefinition
-  { commandName :: Text,
-    api :: Maybe api
+  { commandName :: Text
   }
   deriving (Show)
 
 
-class CommandInspect (apis :: Record.Row Type) definition where
+class CommandInspect definition where
   type Cmd definition
+  type Api definition
 
 
   commandName ::
@@ -64,27 +79,22 @@ class CommandInspect (apis :: Record.Row Type) definition where
 
   buildCmdEP ::
     definition ->
-    Record apis ->
+    Api definition ->
     Record.Proxy (Cmd definition) ->
     ApiEndpointHandler
 
 
 instance
   ( Command cmd,
+    ApiBuilder api,
     name ~ NameOf cmd,
     Record.KnownSymbol name,
-    Record.KnownHash name,
-    -- api
-    api ~ ApiOf cmd,
-    Record.RowHasField apiName apis api,
-    apiName ~ NameOf api,
-    Record.KnownSymbol apiName,
-    Record.KnownHash apiName,
-    ApiBuilder api
+    Record.KnownHash name
   ) =>
-  CommandInspect apis (CommandDefinition name api cmd apiName)
+  CommandInspect (CommandDefinition name api cmd apiName)
   where
   type Cmd (CommandDefinition name api cmd apiName) = cmd
+  type Api (CommandDefinition name api cmd apiName) = api
 
 
   commandName :: (Record.KnownSymbol name) => CommandDefinition name api cmd apiName -> Text
@@ -93,99 +103,123 @@ instance
 
   buildCmdEP ::
     (CommandDefinition name api cmd apiName) ->
-    Record apis ->
+    api ->
     Record.Proxy cmd ->
     ApiEndpointHandler
-  buildCmdEP _ apisRecord cmd = do
-    let (Record.I api) = apisRecord |> Record.get (fromLabel @apiName)
-    buildCommandHandler api cmd
+  buildCmdEP _ api cmd = do
+    buildCommandHandler @api (api) cmd
 
 
 type instance NameOf (CommandDefinition name api cmd apiName) = name
 
 
-new :: Service '[] '[]
+new :: Service '[] '[] '[] '[]
 new =
   Service
     { commandDefinitions = Record.empty,
-      apis = Record.empty
+      inspectDict = Record.empty,
+      apis = Map.empty
     }
 
 
 useServer ::
-  forall api apiName currentApis.
+  forall api apiName currentApis commandApiNames providedApiNames cmds.
   ( ApiBuilder api,
     apiName ~ NameOf api,
     Record.KnownHash apiName,
     Record.KnownSymbol apiName
   ) =>
   api ->
-  Service _ currentApis ->
-  Service _ ((apiName 'Record.:= api) ': currentApis)
+  Service cmds currentApis commandApiNames providedApiNames ->
+  Service cmds ((apiName 'Record.:= api) ': currentApis) commandApiNames (apiName ': providedApiNames)
 useServer _ _ =
   panic "use server not implemented"
 
 
 -- | Register a command type in the service definition
 command ::
-  forall (cmd :: Type) originalCommands commandName commandApi apis apiName.
+  forall
+    (cmd :: Type)
+    originalCommands
+    commandName
+    commandApi
+    apis
+    (apiName :: Symbol)
+    (commandApiNames :: [Symbol])
+    providedApiNames.
   ( Command cmd,
     commandName ~ NameOf cmd,
+    commandApi ~ ApiOf cmd,
+    apiName ~ NameOf commandApi,
     Record.KnownSymbol commandName,
-    Record.KnownHash commandName
-    -- CommandInspect apis (CommandDefinition commandName commandApi cmd apiName)
+    Record.KnownHash
+      commandName,
+    CommandInspect
+      (CommandDefinition commandName commandApi cmd apiName)
   ) =>
-  Service originalCommands apis ->
-  Service ((commandName 'Record.:= CommandDefinition commandName commandApi cmd apiName) ': originalCommands) apis
+  Service originalCommands apis commandApiNames providedApiNames ->
+  Service
+    ((commandName 'Record.:= CommandDefinition commandName commandApi cmd apiName) ': originalCommands)
+    apis
+    (apiName ': commandApiNames)
+    providedApiNames
 command serviceDefinition = do
   let cmdName :: Record.Field commandName = fromLabel
   let cmdVal :: Record.I (CommandDefinition commandName commandApi cmd apiName) =
         Record.I
           CommandDefinition
-            { commandName = getSymbolText (Record.Proxy @commandName),
-              api = Nothing
+            { commandName = getSymbolText (Record.Proxy @commandName)
             }
   let currentCmds :: Record originalCommands = serviceDefinition.commandDefinitions
   let cmds =
         currentCmds
           |> Record.insert cmdName cmdVal
+  let inspectDict :: Record.Dict (CommandInspect) (CommandDefinition commandName commandApi cmd apiName) = Record.Dict
+  let newInspectDict =
+        serviceDefinition.inspectDict
+          |> Record.insert cmdName inspectDict
+
   Service
     { commandDefinitions = cmds,
-      apis = serviceDefinition.apis
+      apis = serviceDefinition.apis,
+      inspectDict = newInspectDict
     }
 
 
 __internal_runServiceMain ::
-  forall cmds apis.
-  Service cmds apis -> GHC.IO Unit
+  forall cmds apis commandApiNames providedApiNames.
+  Service cmds apis commandApiNames providedApiNames -> GHC.IO Unit
 __internal_runServiceMain s = do
-  let inspectDict = Record.reifyAllFields @cmds (Record.Proxy @(CommandInspect apis))
-  case Record.reflectAllFields inspectDict of
+  case Record.reflectAllFields s.inspectDict of
     Record.Reflected ->
       runService s.commandDefinitions s.apis
         |> Task.runOrPanic
 
 
 runService ::
-  forall (cmds :: Record.Row Type) (apis :: Record.Row Type).
-  (Record.AllFields cmds (CommandInspect apis)) =>
+  forall (cmds :: Record.Row Type).
+  (Record.AllFields cmds (CommandInspect)) =>
   Record.ContextRecord Record.I cmds ->
-  Record apis ->
+  Map Text ApiBuilderValue ->
   Task Text Unit
 runService commandDefinitions apis = do
   let mapper ::
         forall cmdDef cmd.
-        ( CommandInspect apis cmdDef,
+        ( CommandInspect cmdDef,
           cmd ~ Cmd cmdDef
         ) =>
         Record.I (cmdDef) ->
         Record.K (Text, ApiEndpointHandler) (cmdDef)
       mapper (Record.I x) = do
-        Record.K (commandName @apis x, buildCmdEP x apis (Record.Proxy @cmd))
+        case apis |> Map.get (commandName x) of
+          Nothing -> panic [fmt|The impossible happened, couldnt find API config for #{commandName x}|]
+          Just apiBV -> do
+            let api = getApiBuilderValue apiBV
+            Record.K (commandName x, buildCmdEP x (api) (Record.Proxy @cmd))
 
   let xs :: Array (Text, ApiEndpointHandler) =
         commandDefinitions
-          |> Record.cmap (Record.Proxy @(CommandInspect apis)) mapper
+          |> Record.cmap (Record.Proxy @(CommandInspect)) mapper
           |> Record.collapse
           |> Array.fromLinkedList
   xs |> Task.forEach \(cmdName, ep) -> do
