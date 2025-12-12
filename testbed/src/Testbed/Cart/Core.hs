@@ -1,4 +1,4 @@
-module Integration.App.Cart.Core (
+module Testbed.Cart.Core (
   CartEntity (..),
   CartEvent (..),
 ) where

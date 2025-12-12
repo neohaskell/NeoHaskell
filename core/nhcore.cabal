@@ -42,6 +42,7 @@ common common_cfg
     hasql-th,
     hspec,
     http-conduit,
+    http-types,
     large-anon,
     monad-loops,
     optparse-applicative,
@@ -61,6 +62,8 @@ common common_cfg
     unagi-chan,
     uuid,
     vector,
+    wai,
+    warp,
     with-utf8,
 
   default-extensions:
@@ -91,16 +94,6 @@ common common_cfg
 library
   import: common_cfg
   exposed-modules:
-    -- Core
-    -- System
-    -- OptionsParser
-    -- JSON
-    -- Traits
-    -- Service
-    -- Meta
-    -- Concurrency
-    -- Http
-    -- Test
     Accumulator
     Appendable
     Applicable
@@ -123,12 +116,12 @@ library
     DurableChannel
     Environment
     File
+    Float
     Function
     Http
     Http.Client
     IO
     Int
-    Float
     Json
     LinkedList
     Lock
@@ -138,7 +131,9 @@ library
     Path
     Record
     Result
-    Service.Apis.WebApi
+    Service
+    Service.Api.ApiBuilder
+    Service.Api.WebApi
     Service.Command
     Service.Command.Core
     Service.CommandHandler
@@ -164,8 +159,6 @@ library
     Service.EventStore.Postgres.Internal.PostgresEventRecord
     Service.EventStore.Postgres.Internal.Sessions
     Service.EventStore.Postgres.Internal.SubscriptionStore
-    Service.Protocol
-    Service.Runtime
     Service.ServiceDefinition
     Service.ServiceDefinition.Core
     Set
@@ -248,12 +241,8 @@ test-suite nhcore-test
     -with-rtsopts=-N
 
   other-modules:
-    Integration.App
-    Integration.App.Cart
-    Integration.App.Cart.Commands.CreateCart
-    Integration.App.Cart.Core
-    Service.CommandSpec
     Service.CommandHandlerSpec
+    Service.CommandSpec
     Service.EventStore.InMemorySpec
     Service.EventStore.Postgres.Internal.SubscriptionStoreSpec
     Service.EventStore.PostgresSpec
@@ -261,7 +250,6 @@ test-suite nhcore-test
     StreamSpec
     Test.AppSpec.AppSpecSpec
     Test.AppSpec.VerifySpec
-    Service.TransportProtocolSpec
 
   -- other-extensions:
   type: exitcode-stdio-1.0

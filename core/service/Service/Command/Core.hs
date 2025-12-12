@@ -9,6 +9,7 @@ module Service.Command.Core (
   DecisionContext (..),
   runDecision,
   NameOf,
+  ApiOf,
 ) where
 
 import Applicable
@@ -46,10 +47,6 @@ class Command command where
   type EntityIdType command = Uuid
 
 
-  type SerializationProtocols command :: [Symbol]
-  type SerializationProtocols command = '["JSON"]
-
-
   getEntityIdImpl :: GetEntityIdFunction (IsMultiTenant command) command (EntityIdType command)
 
 
@@ -73,6 +70,10 @@ type family DecideFunction (isTenant :: Bool) command entity event where
 type family EventOf (entityType :: Type)
 
 
+type family ApiOf (commandType :: Type) :: Type
+
+
+-- TODO: Replace Decision by a Task with context
 data Decision a where
   Return :: a -> Decision a
   Bind :: Decision a -> (a -> Decision b) -> Decision b

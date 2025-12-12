@@ -1,5 +1,6 @@
 module Service.CommandHandler.TH (
-  deriveCommand,
+  command,
+  deriveKnownHash,
 ) where
 
 import Control.Monad.Fail qualified as MonadFail
@@ -202,8 +203,52 @@ If you want to use a different entity ID type, you can define:
     _ -> pure ()
 
 
-deriveCommand :: TH.Name -> THLib.DecsQ
-deriveCommand someName = do
+-- | Derives a KnownHash instance for a given string at compile time.
+-- This generates: instance KnownHash "yourString" where hashVal _ = <computed hash>
+deriveKnownHash :: String -> THLib.DecsQ
+deriveKnownHash nameStr = do
+  let orError errMsg mVal =
+        case mVal of
+          Just x -> pure x
+          Nothing -> MonadFail.fail errMsg
+
+  -- Generate KnownHash instance for the string
+  knownHashClassName <-
+    TH.lookupTypeName "KnownHash"
+      >>= orError
+        [fmt|
+ERROR: KnownHash type class not found.
+
+Please ensure you have `import Core` at the top of your module.
+|]
+
+  let nameLit = TH.LitT (TH.StrTyLit nameStr)
+
+  -- Compute hash at compile time using hashable
+  let nameHash = Hashable.hash nameStr
+
+  -- Generate: instance KnownHash "nameStr" where
+  --             hashVal _ = <computed hash>
+  let knownHashInstance =
+        TH.InstanceD
+          Nothing
+          []
+          (TH.ConT knownHashClassName `TH.AppT` nameLit)
+          [ TH.FunD
+              (TH.mkName "hashVal")
+              [ TH.Clause
+                  [TH.WildP]
+                  (TH.NormalB (TH.LitE (TH.IntegerL (fromIntegral nameHash))))
+                  []
+              ]
+          ]
+
+  pure [knownHashInstance]
+{-# INLINE deriveKnownHash #-}
+
+
+command :: TH.Name -> THLib.DecsQ
+command someName = do
   let orError errMsg mVal =
         case mVal of
           Just x -> pure x
@@ -415,16 +460,6 @@ ERROR: NameOf type family not found.
 Please ensure you have `import Core` at the top of your module.
 |]
 
-  -- Generate KnownHash instance for the command name
-  knownHashClassName <-
-    TH.lookupTypeName "KnownHash"
-      >>= orError
-        [fmt|
-ERROR: KnownHash type class not found.
-
-Please ensure you have `import Core` at the top of your module.
-|]
-
   -- Lookup Command class for instance generation
   commandClassName <-
     TH.lookupTypeName "Command"
@@ -437,29 +472,13 @@ Please ensure you have `import Core` at the top of your module.
 
   let commandNameLit = TH.LitT (TH.StrTyLit commandNameStr)
 
-  -- Compute hash at compile time using hashable
-  let commandHash = Hashable.hash commandNameStr
-
   -- Generate: type instance NameOf CommandName = "CommandName"
   let nameOfInstance =
         TH.TySynInstD
           (TH.TySynEqn Nothing (TH.ConT nameOfTypeFamilyName `TH.AppT` TH.ConT someName) commandNameLit)
 
-  -- Generate: instance KnownHash "CommandName" where
-  --             hashVal _ = <computed hash>
-  let knownHashInstance =
-        TH.InstanceD
-          Nothing
-          []
-          (TH.ConT knownHashClassName `TH.AppT` commandNameLit)
-          [ TH.FunD
-              (TH.mkName "hashVal")
-              [ TH.Clause
-                  [TH.WildP]
-                  (TH.NormalB (TH.LitE (TH.IntegerL (fromIntegral commandHash))))
-                  []
-              ]
-          ]
+  -- Generate KnownHash instance using the extracted function
+  knownHashInstance <- deriveKnownHash commandNameStr
 
   let commandInstance =
         TH.InstanceD
@@ -472,5 +491,5 @@ Please ensure you have `import Core` at the top of your module.
                  ]
           )
 
-  pure [nameOfInstance, knownHashInstance, commandInstance]
-{-# INLINE deriveCommand #-}
+  pure ([nameOfInstance, commandInstance] ++ knownHashInstance)
+{-# INLINE command #-}

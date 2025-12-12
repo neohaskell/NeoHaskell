@@ -4,7 +4,7 @@ module Service.CommandHandler.Core (
   CommandHandler (..),
   CommandHandlerResult (..),
   execute,
-  deriveCommand,
+  command,
 ) where
 
 import Array qualified
@@ -13,8 +13,8 @@ import Core
 import Float qualified
 import Int qualified
 import Service.Command.Core qualified as Command
-import Service.CommandHandler.TH (deriveCommand)
-import Service.EntityFetcher.Core (EntityFetcher, EntityFetchResult (..))
+import Service.CommandHandler.TH (command)
+import Service.EntityFetcher.Core (EntityFetchResult (..), EntityFetcher)
 import Service.EntityFetcher.Core qualified as EntityFetcher
 import Service.Event (EntityName, InsertionPayload (..))
 import Service.Event qualified as Event

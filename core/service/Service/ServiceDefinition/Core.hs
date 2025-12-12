@@ -1,155 +1,276 @@
+{- HLINT ignore "Use camelCase" -}
+{-# LANGUAGE AllowAmbiguousTypes #-}
+
 module Service.ServiceDefinition.Core (
   Service,
-  ServiceDefinition (..),
-  CommandDefinition (..),
   new,
   useServer,
   command,
-  deploy,
-  merge,
+  __internal_runServiceMain,
 ) where
 
+import Array (Array)
+import Array qualified
 import Basics
-import GHC.TypeLits (KnownSymbol)
+import Console qualified
+import GHC.IO qualified as GHC
+import GHC.TypeLits qualified as GHC
+import Map (Map)
+import Map qualified
+import Maybe (Maybe (..))
 import Record (Record)
 import Record qualified
-import Service.Command (NameOf)
-import Service.Command.Core (Command)
-import Service.Definition.TypeLevel (Union)
-import Service.Definition.Validation (ValidateServers)
-import Service.Error (ServiceError (..))
-import Service.Protocol (ApiFor, ServerApi (..))
-import Service.Runtime (ServiceRuntime (..))
+import Service.Api.ApiBuilder (ApiBuilder (..), ApiEndpointHandler, ApiEndpoints (..))
+import Service.Command.Core (ApiOf, Command (..), NameOf)
 import Task (Task)
 import Task qualified
+import Text (Text)
+import Text qualified
+import Unsafe.Coerce qualified as GHC
 
 
-type Service commands reqServers provServers servers = ServiceDefinition commands reqServers provServers servers
-
-
--- | ServiceDefinition represents a service with server API tracking
--- It accumulates commands, required servers, provided servers, and registered servers
--- The type parameters track this information at the type level
 data
-  ServiceDefinition
-    (commands :: Record.Row Type) -- Row type of all registered commands
-    (requiredServers :: [Type]) -- Type-level list of server API types needed by commands
-    (providedServers :: [Type]) -- Type-level list of server API types registered
-    (servers :: Record.Row Type) -- Row type of registered server instances
-  = ServiceDefinition
-  { commandNames :: Record commands,
-    serverRecord :: Record servers
+  Service
+    (commandRow :: Record.Row Type)
+    (commandApiNames :: [Symbol])
+    (providedApiNames :: [Symbol])
+  = Service
+  { commandDefinitions :: Record commandRow,
+    inspectDict :: Record.ContextRecord (Record.Dict (CommandInspect)) commandRow,
+    apis :: Map Text ApiBuilderValue
   }
-  deriving (Generic)
 
 
--- | Proxy to store the type of the command
-data CommandDefinition (commandType :: Type) = CommandDefinition
+data ApiBuilderValue
+  = forall api.
+    (ApiBuilder api) =>
+    ApiBuilderValue api
 
 
--- | Create a new empty service definition
-new :: ServiceDefinition '[] '[] '[] '[]
+getApiBuilderValue ::
+  ApiBuilderValue -> api
+getApiBuilderValue (ApiBuilderValue api) = GHC.unsafeCoerce api
+
+
+getSymbolText :: forall name. (GHC.KnownSymbol name) => Record.Proxy name -> Text
+getSymbolText _ =
+  GHC.symbolVal (Record.Proxy @name)
+    |> Text.fromLinkedList
+
+
+data CommandDefinition (name :: Symbol) (api :: Type) (cmd :: Type) (apiName :: Symbol)
+  = CommandDefinition
+  { commandName :: Text,
+    apiName :: Text
+  }
+  deriving (Show)
+
+
+class CommandInspect definition where
+  type Cmd definition
+  type Api definition
+  type ApiName definition :: Symbol
+
+
+  commandName :: definition -> Text
+
+
+  apiName :: definition -> Text
+
+
+  buildCmdEP ::
+    definition ->
+    Api definition ->
+    Record.Proxy (Cmd definition) ->
+    ApiEndpointHandler
+
+
+instance
+  ( Command cmd,
+    ApiBuilder api,
+    name ~ NameOf cmd,
+    Record.KnownSymbol apiName,
+    Record.KnownSymbol name,
+    Record.KnownHash name
+  ) =>
+  CommandInspect (CommandDefinition name api cmd apiName)
+  where
+  type Cmd (CommandDefinition name api cmd apiName) = cmd
+  type Api (CommandDefinition name api cmd apiName) = api
+  type ApiName (CommandDefinition name api cmd apiName) = apiName
+
+
+  commandName :: (Record.KnownSymbol name) => CommandDefinition name api cmd apiName -> Text
+  commandName _ = getSymbolText (Record.Proxy @name)
+
+
+  apiName _ = getSymbolText (Record.Proxy @apiName)
+
+
+  buildCmdEP ::
+    (CommandDefinition name api cmd apiName) ->
+    api ->
+    Record.Proxy cmd ->
+    ApiEndpointHandler
+  buildCmdEP _ api cmd = do
+    buildCommandHandler @api (api) cmd
+
+
+type instance NameOf (CommandDefinition name api cmd apiName) = name
+
+
+new :: Service '[] '[] '[]
 new =
-  ServiceDefinition
-    { commandNames = Record.empty,
-      serverRecord = Record.empty
+  Service
+    { commandDefinitions = Record.empty,
+      inspectDict = Record.empty,
+      apis = Map.empty
     }
 
 
--- | Register a server in the service definition
--- Declares "this service uses this server to expose its commands"
 useServer ::
-  forall serverApi serverName cmds reqServers provServers servers.
-  ( ServerApi serverApi,
-    serverName ~ ServerName serverApi,
-    KnownSymbol serverName,
-    IsLabel serverName (Record.Field serverName)
+  forall api apiName commandApiNames providedApiNames cmds.
+  ( ApiBuilder api,
+    apiName ~ NameOf api,
+    Record.KnownHash apiName,
+    Record.KnownSymbol apiName
   ) =>
-  serverApi ->
-  ServiceDefinition cmds reqServers provServers servers ->
-  ServiceDefinition
-    (Record.Merge cmds '[])
-    (Union reqServers '[])
-    (Union provServers '[serverApi])
-    (Record.Merge servers '[serverName Record.:= serverApi])
-useServer server serviceDef = do
-  let serverDef :: ServiceDefinition '[] '[] '[serverApi] '[serverName Record.:= serverApi]
-      serverDef =
-        ServiceDefinition
-          { commandNames = Record.empty,
-            serverRecord = Record.empty |> Record.insert (fromLabel @serverName) server
-          }
-  merge serviceDef serverDef
-
-
--- | Deploy a service definition into a runnable service runtime
--- This is the validation boundary where server API checking occurs
-deploy ::
-  forall commands reqServers provServers servers.
-  (ValidateServers reqServers provServers) =>
-  ServiceDefinition commands reqServers provServers servers ->
-  Task ServiceError ServiceRuntime
-deploy _serviceDef = do
-  -- TODO: Complete implementation
-  -- 1. Access server configs from serviceDef.serverRecord
-  -- 2. Build command routing table from serviceDef.commandNames
-  -- 3. Create execute function that:
-  --    a. Looks up command by name in commandNames
-  --    b. Deserializes the Bytes payload to the command type
-  --    c. Gets the command's ApiFor requirements
-  --    d. Finds a matching server from the registered servers
-  --    e. Instantiates CommandHandler with EventStore
-  --    f. Executes the command's decide function
-  --    g. Serializes the result back to Bytes
-
-  Task.yield
-    ServiceRuntime
-      { execute = \commandName _bytes -> do
-          -- Look up command in serviceDef.commandNames
-          -- If not found, throw CommandNotFound
-          -- Otherwise, execute through appropriate server
-          Task.throw (CommandNotFound commandName),
-        shutdown = Task.yield unit
-      }
-
-
--- | Merge two ServiceDefinitions together, combining their commands and servers
--- This is used for piping operations with |>
-merge ::
-  forall cmds1 cmds2 reqServers1 reqServers2 provServers1 provServers2 srv1 srv2.
-  ServiceDefinition cmds1 reqServers1 provServers1 srv1 ->
-  ServiceDefinition cmds2 reqServers2 provServers2 srv2 ->
-  ServiceDefinition (Record.Merge cmds1 cmds2) (Union reqServers1 reqServers2) (Union provServers1 provServers2) (Record.Merge srv1 srv2)
-merge m1 m2 =
-  ServiceDefinition
-    { commandNames = Record.merge m1.commandNames m2.commandNames,
-      serverRecord = Record.merge m1.serverRecord m2.serverRecord
+  api ->
+  Service cmds commandApiNames providedApiNames ->
+  Service cmds commandApiNames (apiName ': providedApiNames)
+useServer api serviceDefinition = do
+  let apiName = getSymbolText (Record.Proxy @apiName)
+  let newApis = serviceDefinition.apis |> Map.set apiName (ApiBuilderValue api)
+  serviceDefinition
+    { apis = newApis
     }
 
 
 -- | Register a command type in the service definition
 command ::
-  forall (commandType :: Type) (commandName :: Symbol) cmds reqServers provServers servers.
-  ( Command commandType,
-    commandName ~ NameOf commandType,
-    IsLabel commandName (Record.Field commandName)
+  forall
+    (cmd :: Type)
+    originalCommands
+    commandName
+    commandApi
+    (apiName :: Symbol)
+    (commandApiNames :: [Symbol])
+    providedApiNames.
+  ( Command cmd,
+    commandName ~ NameOf cmd,
+    commandApi ~ ApiOf cmd,
+    apiName ~ NameOf commandApi,
+    Record.KnownSymbol apiName,
+    Record.KnownSymbol commandName,
+    Record.KnownHash commandName,
+    CommandInspect (CommandDefinition commandName commandApi cmd apiName)
   ) =>
-  ServiceDefinition cmds reqServers provServers servers ->
-  ServiceDefinition
-    (Record.Merge cmds '[commandName Record.:= CommandDefinition commandType])
-    (Union reqServers (ApiFor commandType))
-    (Union provServers '[])
-    (Record.Merge servers '[])
-command serviceDef = do
-  let field = fromLabel @commandName
-  let definition = CommandDefinition
-  let commandDef ::
-        ServiceDefinition '[commandName Record.:= CommandDefinition commandType] (ApiFor commandType) '[] '[]
-      commandDef =
-        ServiceDefinition
-          { commandNames =
-              Record.empty
-                |> Record.insert field definition,
-            serverRecord = Record.empty
-          }
-  merge serviceDef commandDef
+  Service originalCommands commandApiNames providedApiNames ->
+  Service
+    ((commandName 'Record.:= CommandDefinition commandName commandApi cmd apiName) ': originalCommands)
+    (apiName ': commandApiNames)
+    providedApiNames
+command serviceDefinition = do
+  let cmdName :: Record.Field commandName = fromLabel
+  let cmdVal :: Record.I (CommandDefinition commandName commandApi cmd apiName) =
+        Record.I
+          CommandDefinition
+            { commandName = getSymbolText (Record.Proxy @commandName),
+              apiName = getSymbolText (Record.Proxy @apiName)
+            }
+  let currentCmds :: Record originalCommands = serviceDefinition.commandDefinitions
+  let cmds =
+        currentCmds
+          |> Record.insert cmdName cmdVal
+  let inspectDict :: Record.Dict (CommandInspect) (CommandDefinition commandName commandApi cmd apiName) = Record.Dict
+  let newInspectDict =
+        serviceDefinition.inspectDict
+          |> Record.insert cmdName inspectDict
+
+  Service
+    { commandDefinitions = cmds,
+      apis = serviceDefinition.apis,
+      inspectDict = newInspectDict
+    }
+
+
+__internal_runServiceMain ::
+  forall cmds commandApiNames providedApiNames.
+  Service cmds commandApiNames providedApiNames -> GHC.IO Unit
+__internal_runServiceMain s = do
+  case Record.reflectAllFields s.inspectDict of
+    Record.Reflected ->
+      runService s.commandDefinitions s.apis
+        |> Task.runOrPanic
+
+
+runService ::
+  forall (cmds :: Record.Row Type).
+  (Record.AllFields cmds (CommandInspect)) =>
+  Record.ContextRecord Record.I cmds ->
+  Map Text ApiBuilderValue ->
+  Task Text Unit
+runService commandDefinitions apis = do
+  let mapper ::
+        forall cmdDef cmd.
+        ( CommandInspect cmdDef,
+          cmd ~ Cmd cmdDef
+        ) =>
+        Record.I (cmdDef) ->
+        Record.K ((Text, ApiBuilderValue), (Text, ApiEndpointHandler)) (cmdDef)
+      mapper (Record.I x) = do
+        case apis |> Map.get (apiName x) of
+          Nothing -> panic [fmt|The impossible happened, couldn't find API config for #{commandName x}|]
+          Just apiBV -> do
+            let api = getApiBuilderValue apiBV
+            Record.K ((apiName x, apiBV), (commandName x, buildCmdEP x (api) (Record.Proxy @cmd)))
+
+  let xs :: Array ((Text, ApiBuilderValue), (Text, ApiEndpointHandler)) =
+        commandDefinitions
+          |> Record.cmap (Record.Proxy @(CommandInspect)) mapper
+          |> Record.collapse
+          |> Array.fromLinkedList
+
+  -- Group endpoints by API name
+  let endpointsReducer ((apiName, apiBV), (commandName, handler)) endpointsMap = do
+        let api = getApiBuilderValue apiBV
+        case endpointsMap |> Map.get apiName of
+          Nothing -> do
+            -- First command for this API, create new ApiEndpoints
+            let newEndpoints = ApiEndpoints
+                  { api = api
+                  , commandEndpoints = Map.empty |> Map.set commandName handler
+                  }
+            endpointsMap |> Map.set apiName newEndpoints
+          Just existingEndpoints -> do
+            -- Add command to existing API endpoints
+            let updatedEndpoints = existingEndpoints
+                  { commandEndpoints = existingEndpoints.commandEndpoints |> Map.set commandName handler
+                  }
+            endpointsMap |> Map.set apiName updatedEndpoints
+
+  let endpointsByApi =
+        xs |> Array.reduce endpointsReducer Map.empty
+
+  -- Run each API with its endpoints
+  endpointsByApi
+    |> Map.entries
+    |> Task.forEach \(apiName, apiEndpoints) -> do
+      let commandCount = Map.length apiEndpoints.commandEndpoints
+      Console.print [fmt|Starting API: #{apiName} with #{commandCount} commands|]
+
+      -- Assemble the API using the ApiBuilder's assembleApi function
+      -- Since we need to call assembleApi with the proper type, we need to
+      -- extract it from the ApiBuilderValue
+      case apis |> Map.get apiName of
+        Nothing -> panic [fmt|API #{apiName} not found in apis map|]
+        Just apiBV -> do
+          -- We need to use the existentially quantified API type
+          case apiBV of
+            ApiBuilderValue (api :: api) -> do
+              -- Cast apiEndpoints to match the specific api type
+              let typedEndpoints = GHC.unsafeCoerce apiEndpoints :: ApiEndpoints api
+              let runnableApi = assembleApi typedEndpoints
+
+              -- Run the assembled API
+              runApi api runnableApi

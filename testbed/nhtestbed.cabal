@@ -1,0 +1,71 @@
+cabal-version: 3.4
+name: nhtestbed
+version: 0.9.1
+synopsis: End-to-End Testbed for NeoHaskell
+description: A real NeoHaskell application that demonstrates features and runs blackbox acceptance tests.
+homepage: https://neohaskell.org
+license: Apache-2.0
+license-file: LICENSE
+author: Nikita Tchayka
+maintainer: nhlib@nickseagull.dev
+copyright:
+category: Development
+build-type: Simple
+
+common common_cfg
+  ghc-options:
+    -Wall
+    -Wno-orphans
+    -threaded
+    -fno-warn-partial-type-signatures
+    -fno-warn-name-shadowing
+    -Werror
+
+  default-extensions:
+    ApplicativeDo
+    BlockArguments
+    DataKinds
+    DeriveDataTypeable
+    DuplicateRecordFields
+    ImportQualifiedPost
+    ImpredicativeTypes
+    NamedFieldPuns
+    NoFieldSelectors
+    NoImplicitPrelude
+    OverloadedLabels
+    OverloadedLists
+    OverloadedRecordDot
+    OverloadedStrings
+    PackageImports
+    PartialTypeSignatures
+    QualifiedDo
+    QuasiQuotes
+    Strict
+    TemplateHaskell
+    TypeApplications
+    TypeFamilies
+    TypeOperators
+
+  build-depends:
+    nhcore
+
+library
+  import: common_cfg
+  exposed-modules:
+    Testbed.Cart.Commands.CreateCart
+    Testbed.Cart.Commands.AddItem
+    Testbed.Cart.Core
+    Testbed.Cart.Service
+    Testbed.Service
+
+  hs-source-dirs: src
+  default-language: GHC2021
+
+executable nhtestbed
+  import: common_cfg
+  main-is: Launcher.hs
+  build-depends:
+    nhtestbed
+
+  hs-source-dirs: launcher
+  default-language: GHC2021
