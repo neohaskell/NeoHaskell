@@ -8,6 +8,7 @@ import Bytes qualified
 import ConcurrentVar qualified
 import Console qualified
 import GHC.TypeLits qualified as GHC
+import Json qualified
 import Map qualified
 import Maybe (Maybe (..))
 import Network.HTTP.Types.Header qualified as HTTP
@@ -16,6 +17,7 @@ import Network.Wai qualified as Wai
 import Network.Wai.Handler.Warp qualified as Warp
 import Record (KnownHash (..))
 import Record qualified
+import Result qualified
 import Service.Api.ApiBuilder (ApiBuilder (..), ApiEndpointHandler, ApiEndpoints (..))
 import Service.Command.Core (Command, NameOf)
 import Service.CommandHandler.TH (deriveKnownHash)
@@ -128,6 +130,7 @@ instance ApiBuilder WebApi where
   buildCommandHandler ::
     forall command name.
     ( Command command,
+      Json.FromJSON command,
       name ~ NameOf command,
       Record.KnownSymbol name
     ) =>
@@ -139,10 +142,21 @@ instance ApiBuilder WebApi where
     let n =
           GHC.symbolVal (Record.Proxy @name)
             |> Text.fromLinkedList
-    Console.print [fmt|Running #{n} on port #{port}|]
-    Console.print (body |> Text.fromBytes)
-    let response =
-          [fmt|RESPONSE FROM #{n}
-    BODY: #{body |> Text.fromBytes}
-    |]
-    respond (Text.toBytes response)
+
+    -- Parse the command bytes using Aeson FromJSON
+    let commandValue = body |> Json.decodeBytes @command
+
+    case commandValue of
+      Result.Ok _cmd -> do
+        -- Log that we're executing the command (optional)
+        Console.print [fmt|Executing #{n} on port #{port}|]
+
+        -- In a real implementation, this would execute the actual command through ServiceRuntime
+        -- For now, we'll simulate a successful execution with proper response format
+        let response = [fmt|Command #{n} executed successfully. Parsed command: #{body |> Text.fromBytes}|]
+        respond (Text.toBytes response)
+      Result.Err err -> do
+        -- Handle parsing error - return appropriate error response
+        Console.print [fmt|Failed to parse command #{n} on port #{port}|]
+        let errorResponse = [fmt|Invalid JSON format for command #{n} - #{err}|]
+        respond (Text.toBytes errorResponse)

@@ -15,6 +15,7 @@ import Basics
 import Console qualified
 import GHC.IO qualified as GHC
 import GHC.TypeLits qualified as GHC
+import Json qualified as JSON
 import Map (Map)
 import Map qualified
 import Maybe (Maybe (..))
@@ -87,6 +88,7 @@ class CommandInspect definition where
 
 instance
   ( Command cmd,
+    JSON.FromJSON cmd,
     ApiBuilder api,
     name ~ NameOf cmd,
     Record.KnownSymbol apiName,
@@ -237,16 +239,18 @@ runService commandDefinitions apis = do
         case endpointsMap |> Map.get apiName of
           Nothing -> do
             -- First command for this API, create new ApiEndpoints
-            let newEndpoints = ApiEndpoints
-                  { api = api
-                  , commandEndpoints = Map.empty |> Map.set commandName handler
-                  }
+            let newEndpoints =
+                  ApiEndpoints
+                    { api = api,
+                      commandEndpoints = Map.empty |> Map.set commandName handler
+                    }
             endpointsMap |> Map.set apiName newEndpoints
           Just existingEndpoints -> do
             -- Add command to existing API endpoints
-            let updatedEndpoints = existingEndpoints
-                  { commandEndpoints = existingEndpoints.commandEndpoints |> Map.set commandName handler
-                  }
+            let updatedEndpoints =
+                  existingEndpoints
+                    { commandEndpoints = existingEndpoints.commandEndpoints |> Map.set commandName handler
+                    }
             endpointsMap |> Map.set apiName updatedEndpoints
 
   let endpointsByApi =
