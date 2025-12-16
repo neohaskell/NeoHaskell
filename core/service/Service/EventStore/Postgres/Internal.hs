@@ -8,9 +8,10 @@ module Service.EventStore.Postgres.Internal (
   withConnection,
 ) where
 
+import Array (Array)
 import Array qualified
 import AsyncTask qualified
-import Core
+import Basics
 import Default ()
 import Hasql.Connection qualified as Hasql
 import Hasql.Connection.Setting qualified as ConnectionSetting
@@ -20,8 +21,10 @@ import Hasql.Connection.Setting.Connection.Param qualified as Param
 import Hasql.Pool qualified as HasqlPool
 import Hasql.Pool.Config qualified as HasqlPoolConfig
 import Json qualified
+import LinkedList (LinkedList)
+import Maybe (Maybe (..))
 import Maybe qualified
-import Result qualified
+import Result (Result (..))
 import Service.Event
 import Service.Event.EntityName qualified as EntityName
 import Service.Event.EventMetadata (EventMetadata (..))
@@ -36,8 +39,12 @@ import Service.EventStore.Postgres.Internal.SubscriptionStore (SubscriptionStore
 import Service.EventStore.Postgres.Internal.SubscriptionStore qualified as SubscriptionStore
 import Stream (Stream)
 import Stream qualified
+import Task (Task)
 import Task qualified
+import Text (Text)
 import Text qualified
+import ToText (toText)
+import Var (Var)
 import Var qualified
 
 

@@ -7,6 +7,7 @@ module Service.ServiceDefinition.Core (
   useServer,
   command,
   __internal_runServiceMain,
+  useEventStore,
 ) where
 
 import Array (Array)
@@ -150,7 +151,7 @@ useServer api serviceDefinition = do
 
 
 useEventStore ::
-  forall eventStoreConfig.
+  forall eventStoreConfig cmds commandApiNames providedApiNames.
   (EventStoreConfig eventStoreConfig) =>
   eventStoreConfig ->
   Service cmds commandApiNames providedApiNames ->

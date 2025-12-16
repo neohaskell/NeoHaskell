@@ -12,8 +12,9 @@ module Service.EventStore.Core (
   streamMessageToAllMessage,
 ) where
 
+import Array (Array)
 import Array qualified
-import Core
+import Basics
 import Json qualified
 import Service.Event (
   EntityName,
@@ -23,7 +24,10 @@ import Service.Event (
   InsertionSuccess,
   StreamPosition,
  )
+import Service.Event.StreamId (StreamId)
 import Stream (Stream)
+import Task (Task)
+import Text (Text)
 
 
 newtype Limit = Limit Int64
