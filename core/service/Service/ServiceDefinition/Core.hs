@@ -16,6 +16,7 @@ import Basics
 import Console qualified
 import GHC.IO qualified as GHC
 import GHC.TypeLits qualified as GHC
+import Json qualified
 import Json qualified as JSON
 import Map (Map)
 import Map qualified
@@ -23,8 +24,8 @@ import Maybe (Maybe (..))
 import Record (Record)
 import Record qualified
 import Service.Api.ApiBuilder (ApiBuilder (..), ApiEndpointHandler, ApiEndpoints (..))
-import Service.Command.Core (ApiOf, Command (..), NameOf)
-import Service.EventStore.Core (EventStoreConfig)
+import Service.Command.Core (ApiOf, Command (..), EntityOf, EventOf, NameOf)
+import Service.EventStore.Core (EventStore, EventStoreConfig)
 import Service.EventStore.Core qualified as EventStore
 import Task (Task)
 import Task qualified
@@ -65,7 +66,7 @@ getSymbolText _ =
     |> Text.fromLinkedList
 
 
-data CommandDefinition (name :: Symbol) (api :: Type) (cmd :: Type) (apiName :: Symbol)
+data CommandDefinition (name :: Symbol) (api :: Type) (cmd :: Type) (apiName :: Symbol) (event :: Type) (entity :: Type)
   = CommandDefinition
   { commandName :: Text,
     apiName :: Text
@@ -75,6 +76,8 @@ data CommandDefinition (name :: Symbol) (api :: Type) (cmd :: Type) (apiName :: 
 
 class CommandInspect definition where
   type Cmd definition
+  type CmdEntity definition
+  type CmdEvent definition
   type Api definition
   type ApiName definition :: Symbol
 
@@ -87,6 +90,8 @@ class CommandInspect definition where
 
   buildCmdEP ::
     definition ->
+    eventStoreConfig ->
+    EventStore.EventStoreConstructor eventStoreConfig ->
     Api definition ->
     Record.Proxy (Cmd definition) ->
     ApiEndpointHandler
@@ -99,16 +104,20 @@ instance
     name ~ NameOf cmd,
     Record.KnownSymbol apiName,
     Record.KnownSymbol name,
+    Json.FromJSON event,
+    Json.ToJSON event,
     Record.KnownHash name
   ) =>
-  CommandInspect (CommandDefinition name api cmd apiName)
+  CommandInspect (CommandDefinition name api cmd apiName event entity)
   where
-  type Cmd (CommandDefinition name api cmd apiName) = cmd
-  type Api (CommandDefinition name api cmd apiName) = api
-  type ApiName (CommandDefinition name api cmd apiName) = apiName
+  type Cmd (CommandDefinition name api cmd apiName event entity) = cmd
+  type CmdEvent (CommandDefinition name api cmd apiName event entity) = event
+  type CmdEntity (CommandDefinition name api cmd apiName event entity) = entity
+  type Api (CommandDefinition name api cmd apiName event entity) = api
+  type ApiName (CommandDefinition name api cmd apiName event entity) = apiName
 
 
-  commandName :: (Record.KnownSymbol name) => CommandDefinition name api cmd apiName -> Text
+  commandName :: (Record.KnownSymbol name) => CommandDefinition name api cmd apiName event entity -> Text
   commandName _ = getSymbolText (Record.Proxy @name)
 
 
@@ -116,15 +125,23 @@ instance
 
 
   buildCmdEP ::
-    (CommandDefinition name api cmd apiName) ->
+    forall eventStoreConfig.
+    (CommandDefinition name api cmd apiName event entity) ->
+    eventStoreConfig ->
+    EventStore.EventStoreConstructor eventStoreConfig ->
     api ->
     Record.Proxy cmd ->
     ApiEndpointHandler
-  buildCmdEP _ api cmd = do
-    buildCommandHandler @api api cmd
+  buildCmdEP _ eventStoreConfig esCtor api cmd reqBytes respondCallback = do
+    let newEventStore =
+          EventStore.getEventStoreValue @event @eventStoreConfig esCtor eventStoreConfig
+
+    eventStore <- newEventStore
+
+    buildCommandHandler @api api cmd reqBytes respondCallback
 
 
-type instance NameOf (CommandDefinition name api cmd apiName) = name
+type instance NameOf (CommandDefinition name api cmd apiName event entity) = name
 
 
 new :: Service '[] '[] '[] Unit
@@ -179,7 +196,9 @@ command ::
     (apiName :: Symbol)
     (commandApiNames :: [Symbol])
     providedApiNames
-    eventStoreConfig.
+    eventStoreConfig
+    event
+    entity.
   ( Command cmd,
     commandName ~ NameOf cmd,
     commandApi ~ ApiOf cmd,
@@ -187,17 +206,17 @@ command ::
     Record.KnownSymbol apiName,
     Record.KnownSymbol commandName,
     Record.KnownHash commandName,
-    CommandInspect (CommandDefinition commandName commandApi cmd apiName)
+    CommandInspect (CommandDefinition commandName commandApi cmd apiName event entity)
   ) =>
   Service originalCommands commandApiNames providedApiNames eventStoreConfig ->
   Service
-    ((commandName 'Record.:= CommandDefinition commandName commandApi cmd apiName) ': originalCommands)
+    ((commandName 'Record.:= CommandDefinition commandName commandApi cmd apiName event entity) ': originalCommands)
     (apiName ': commandApiNames)
     providedApiNames
     eventStoreConfig
 command serviceDefinition = do
   let cmdName :: Record.Field commandName = fromLabel
-  let cmdVal :: Record.I (CommandDefinition commandName commandApi cmd apiName) =
+  let cmdVal :: Record.I (CommandDefinition commandName commandApi cmd apiName event entity) =
         Record.I
           CommandDefinition
             { commandName = getSymbolText (Record.Proxy @commandName),
@@ -207,7 +226,7 @@ command serviceDefinition = do
   let cmds =
         currentCmds
           |> Record.insert cmdName cmdVal
-  let inspectDict :: Record.Dict (CommandInspect) (CommandDefinition commandName commandApi cmd apiName) = Record.Dict
+  let inspectDict :: Record.Dict (CommandInspect) (CommandDefinition commandName commandApi cmd apiName event entity) = Record.Dict
   let newInspectDict =
         serviceDefinition.inspectDict
           |> Record.insert cmdName inspectDict
@@ -227,79 +246,89 @@ __internal_runServiceMain ::
 __internal_runServiceMain s = do
   case Record.reflectAllFields s.inspectDict of
     Record.Reflected ->
-      runService s.commandDefinitions s.apis
+      runService s.eventStoreConfig s.getEventStore s.commandDefinitions s.apis
         |> Task.runOrPanic
 
 
 runService ::
-  forall (cmds :: Record.Row Type).
+  forall (cmds :: Record.Row Type) eventStoreConfig.
   (Record.AllFields cmds (CommandInspect)) =>
+  eventStoreConfig ->
+  Maybe (EventStore.EventStoreConstructor eventStoreConfig) ->
   Record.ContextRecord Record.I cmds ->
   Map Text ApiBuilderValue ->
   Task Text Unit
-runService commandDefinitions apis = do
-  let mapper ::
-        forall cmdDef cmd.
-        ( CommandInspect cmdDef,
-          cmd ~ Cmd cmdDef
-        ) =>
-        Record.I (cmdDef) ->
-        Record.K ((Text, ApiBuilderValue), (Text, ApiEndpointHandler)) (cmdDef)
-      mapper (Record.I x) = do
-        case apis |> Map.get (apiName x) of
-          Nothing -> panic [fmt|The impossible happened, couldn't find API config for #{commandName x}|]
+runService
+  eventStoreConfig
+  maybeEventStoreConstructor
+  commandDefinitions
+  apis = do
+    newEventStore <-
+      case maybeEventStoreConstructor of
+        Nothing -> Task.throw "Event Store must be set!"
+        Just ctor -> Task.yield ctor
+    let mapper ::
+          forall cmdDef cmd.
+          ( CommandInspect cmdDef,
+            cmd ~ Cmd cmdDef
+          ) =>
+          Record.I (cmdDef) ->
+          Record.K ((Text, ApiBuilderValue), (Text, ApiEndpointHandler)) (cmdDef)
+        mapper (Record.I x) = do
+          case apis |> Map.get (apiName x) of
+            Nothing -> panic [fmt|The impossible happened, couldn't find API config for #{commandName x}|]
+            Just apiBV -> do
+              let api = getApiBuilderValue apiBV
+              Record.K ((apiName x, apiBV), (commandName x, buildCmdEP x eventStoreConfig newEventStore (api) (Record.Proxy @cmd)))
+
+    let xs :: Array ((Text, ApiBuilderValue), (Text, ApiEndpointHandler)) =
+          commandDefinitions
+            |> Record.cmap (Record.Proxy @(CommandInspect)) mapper
+            |> Record.collapse
+            |> Array.fromLinkedList
+
+    -- Group endpoints by API name
+    let endpointsReducer ((apiName, apiBV), (commandName, handler)) endpointsMap = do
+          let api = getApiBuilderValue apiBV
+          case endpointsMap |> Map.get apiName of
+            Nothing -> do
+              -- First command for this API, create new ApiEndpoints
+              let newEndpoints =
+                    ApiEndpoints
+                      { api = api,
+                        commandEndpoints = Map.empty |> Map.set commandName handler
+                      }
+              endpointsMap |> Map.set apiName newEndpoints
+            Just existingEndpoints -> do
+              -- Add command to existing API endpoints
+              let updatedEndpoints =
+                    existingEndpoints
+                      { commandEndpoints = existingEndpoints.commandEndpoints |> Map.set commandName handler
+                      }
+              endpointsMap |> Map.set apiName updatedEndpoints
+
+    let endpointsByApi =
+          xs |> Array.reduce endpointsReducer Map.empty
+
+    -- Run each API with its endpoints
+    endpointsByApi
+      |> Map.entries
+      |> Task.forEach \(apiName, apiEndpoints) -> do
+        let commandCount = Map.length apiEndpoints.commandEndpoints
+        Console.print [fmt|Starting API: #{apiName} with #{commandCount} commands|]
+
+        -- Assemble the API using the ApiBuilder's assembleApi function
+        -- Since we need to call assembleApi with the proper type, we need to
+        -- extract it from the ApiBuilderValue
+        case apis |> Map.get apiName of
+          Nothing -> panic [fmt|API #{apiName} not found in apis map|]
           Just apiBV -> do
-            let api = getApiBuilderValue apiBV
-            Record.K ((apiName x, apiBV), (commandName x, buildCmdEP x (api) (Record.Proxy @cmd)))
+            -- We need to use the existentially quantified API type
+            case apiBV of
+              ApiBuilderValue (api :: api) -> do
+                -- Cast apiEndpoints to match the specific api type
+                let typedEndpoints = GHC.unsafeCoerce apiEndpoints :: ApiEndpoints api
+                let runnableApi = assembleApi typedEndpoints
 
-  let xs :: Array ((Text, ApiBuilderValue), (Text, ApiEndpointHandler)) =
-        commandDefinitions
-          |> Record.cmap (Record.Proxy @(CommandInspect)) mapper
-          |> Record.collapse
-          |> Array.fromLinkedList
-
-  -- Group endpoints by API name
-  let endpointsReducer ((apiName, apiBV), (commandName, handler)) endpointsMap = do
-        let api = getApiBuilderValue apiBV
-        case endpointsMap |> Map.get apiName of
-          Nothing -> do
-            -- First command for this API, create new ApiEndpoints
-            let newEndpoints =
-                  ApiEndpoints
-                    { api = api,
-                      commandEndpoints = Map.empty |> Map.set commandName handler
-                    }
-            endpointsMap |> Map.set apiName newEndpoints
-          Just existingEndpoints -> do
-            -- Add command to existing API endpoints
-            let updatedEndpoints =
-                  existingEndpoints
-                    { commandEndpoints = existingEndpoints.commandEndpoints |> Map.set commandName handler
-                    }
-            endpointsMap |> Map.set apiName updatedEndpoints
-
-  let endpointsByApi =
-        xs |> Array.reduce endpointsReducer Map.empty
-
-  -- Run each API with its endpoints
-  endpointsByApi
-    |> Map.entries
-    |> Task.forEach \(apiName, apiEndpoints) -> do
-      let commandCount = Map.length apiEndpoints.commandEndpoints
-      Console.print [fmt|Starting API: #{apiName} with #{commandCount} commands|]
-
-      -- Assemble the API using the ApiBuilder's assembleApi function
-      -- Since we need to call assembleApi with the proper type, we need to
-      -- extract it from the ApiBuilderValue
-      case apis |> Map.get apiName of
-        Nothing -> panic [fmt|API #{apiName} not found in apis map|]
-        Just apiBV -> do
-          -- We need to use the existentially quantified API type
-          case apiBV of
-            ApiBuilderValue (api :: api) -> do
-              -- Cast apiEndpoints to match the specific api type
-              let typedEndpoints = GHC.unsafeCoerce apiEndpoints :: ApiEndpoints api
-              let runnableApi = assembleApi typedEndpoints
-
-              -- Run the assembled API
-              runApi api runnableApi
+                -- Run the assembled API
+                runApi api runnableApi
