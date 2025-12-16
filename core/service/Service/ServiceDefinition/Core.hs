@@ -24,13 +24,15 @@ import Maybe (Maybe (..))
 import Record (Record)
 import Record qualified
 import Service.Api.ApiBuilder (ApiBuilder (..), ApiEndpointHandler, ApiEndpoints (..))
-import Service.Command.Core (ApiOf, Command (..), EntityOf, EventOf, NameOf)
-import Service.EventStore.Core (EventStore, EventStoreConfig)
+import Service.Command.Core (ApiOf, Command (..), NameOf)
+import Service.EntityFetcher.Core qualified as EntityFetcher
+import Service.EventStore.Core (EventStoreConfig)
 import Service.EventStore.Core qualified as EventStore
 import Task (Task)
 import Task qualified
 import Text (Text)
 import Text qualified
+import ToText (toText)
 import Unsafe.Coerce qualified as GHC
 
 
@@ -137,6 +139,7 @@ instance
           EventStore.getEventStoreValue @event @eventStoreConfig esCtor eventStoreConfig
 
     eventStore <- newEventStore
+    fetcher <- EntityFetcher.new eventStore initialEntity entityReducer |> Task.mapError toText
 
     buildCommandHandler @api api cmd reqBytes respondCallback
 
