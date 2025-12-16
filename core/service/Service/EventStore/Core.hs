@@ -1,3 +1,5 @@
+{-# LANGUAGE AllowAmbiguousTypes #-}
+
 module Service.EventStore.Core (
   EventStore (..),
   Error (..),
@@ -7,9 +9,11 @@ module Service.EventStore.Core (
   ReadStreamMessage (..),
   ToxicContents (..),
   EventStoreConfig (..),
+  EventStoreConstructor (..),
   collectAllEvents,
   collectStreamEvents,
   streamMessageToAllMessage,
+  getEventStoreValue,
 ) where
 
 import Array (Array)
@@ -28,6 +32,7 @@ import Service.Event.StreamId (StreamId)
 import Stream (Stream)
 import Task (Task)
 import Text (Text)
+import Unsafe.Coerce qualified as GHC
 
 
 newtype Limit = Limit Int64
@@ -167,10 +172,19 @@ data EventStore eventType = EventStore
   }
 
 
+data EventStoreConstructor config
+  = forall eventType.
+    EventStoreConstructor (config -> Task Text (EventStore eventType))
+
+
+getEventStoreValue ::
+  ( Json.FromJSON eventType,
+    Json.ToJSON eventType
+  ) =>
+  EventStoreConstructor config -> config -> Task Text (EventStore eventType)
+getEventStoreValue (EventStoreConstructor constructor) = GHC.unsafeCoerce constructor
+
+
 class EventStoreConfig config where
-  newEventStore ::
-    forall e.
-    ( Json.FromJSON e,
-      Json.ToJSON e
-    ) =>
-    config -> Task Text (EventStore e)
+  newEventStoreConstructor ::
+    EventStoreConstructor config

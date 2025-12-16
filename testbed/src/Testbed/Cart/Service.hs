@@ -8,7 +8,7 @@ import Testbed.Cart.Commands.AddItem (AddItem)
 import Testbed.Cart.Commands.CreateCart (CreateCart)
 
 
-service :: Service _ _ _
+service :: Service _ _ _ _
 service =
   Service.new
     |> Service.command @AddItem

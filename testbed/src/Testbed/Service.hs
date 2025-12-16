@@ -9,7 +9,7 @@ import Service.ServiceDefinition.Core qualified as Service
 import Testbed.Cart.Service qualified as CartService
 
 
-service :: Service _ _ _
+service :: Service _ _ _ _
 service =
   CartService.service
     |> Service.useServer WebApi.server

@@ -44,6 +44,7 @@ import Task qualified
 import Text (Text)
 import Text qualified
 import ToText (toText)
+import Unsafe.Coerce qualified as GHC
 import Var (Var)
 import Var qualified
 
@@ -59,7 +60,13 @@ data PostgresEventStore = PostgresEventStore
 
 
 instance EventStoreConfig PostgresEventStore where
-  newEventStore = new defaultOps
+  newEventStoreConstructor =
+    EventStoreConstructor
+      ( new
+          @(Text) -- Horrible hack to get through FromJSON/ToJSON
+          defaultOps
+          |> GHC.unsafeCoerce
+      )
 
 
 toConnectionPoolSettings :: LinkedList Hasql.Setting -> HasqlPoolConfig.Config

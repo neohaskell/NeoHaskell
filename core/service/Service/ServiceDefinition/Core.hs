@@ -25,6 +25,7 @@ import Record qualified
 import Service.Api.ApiBuilder (ApiBuilder (..), ApiEndpointHandler, ApiEndpoints (..))
 import Service.Command.Core (ApiOf, Command (..), NameOf)
 import Service.EventStore.Core (EventStoreConfig)
+import Service.EventStore.Core qualified as EventStore
 import Task (Task)
 import Task qualified
 import Text (Text)
@@ -37,10 +38,13 @@ data
     (commandRow :: Record.Row Type)
     (commandApiNames :: [Symbol])
     (providedApiNames :: [Symbol])
+    (eventStoreConfig :: Type)
   = Service
   { commandDefinitions :: Record commandRow,
     inspectDict :: Record.ContextRecord (Record.Dict (CommandInspect)) commandRow,
-    apis :: Map Text ApiBuilderValue
+    apis :: Map Text ApiBuilderValue,
+    eventStoreConfig :: eventStoreConfig,
+    getEventStore :: Maybe (EventStore.EventStoreConstructor eventStoreConfig)
   }
 
 
@@ -123,25 +127,27 @@ instance
 type instance NameOf (CommandDefinition name api cmd apiName) = name
 
 
-new :: Service '[] '[] '[]
+new :: Service '[] '[] '[] Unit
 new =
   Service
     { commandDefinitions = Record.empty,
       inspectDict = Record.empty,
-      apis = Map.empty
+      apis = Map.empty,
+      getEventStore = Nothing,
+      eventStoreConfig = unit
     }
 
 
 useServer ::
-  forall api apiName commandApiNames providedApiNames cmds.
+  forall api apiName commandApiNames providedApiNames cmds eventStoreConfig.
   ( ApiBuilder api,
     apiName ~ NameOf api,
     Record.KnownHash apiName,
     Record.KnownSymbol apiName
   ) =>
   api ->
-  Service cmds commandApiNames providedApiNames ->
-  Service cmds commandApiNames (apiName ': providedApiNames)
+  Service cmds commandApiNames providedApiNames eventStoreConfig ->
+  Service cmds commandApiNames (apiName ': providedApiNames) eventStoreConfig
 useServer api serviceDefinition = do
   let apiName = getSymbolText (Record.Proxy @apiName)
   let newApis = serviceDefinition.apis |> Map.set apiName (ApiBuilderValue api)
@@ -154,9 +160,13 @@ useEventStore ::
   forall eventStoreConfig cmds commandApiNames providedApiNames.
   (EventStoreConfig eventStoreConfig) =>
   eventStoreConfig ->
-  Service cmds commandApiNames providedApiNames ->
-  Service cmds commandApiNames providedApiNames
-useEventStore _ _ = panic "useEventStore: not implemented"
+  Service cmds commandApiNames providedApiNames _ ->
+  Service cmds commandApiNames providedApiNames eventStoreConfig
+useEventStore config serviceDefinition = do
+  serviceDefinition
+    { getEventStore = Just EventStore.newEventStoreConstructor,
+      eventStoreConfig = config
+    }
 
 
 -- | Register a command type in the service definition
@@ -168,7 +178,8 @@ command ::
     commandApi
     (apiName :: Symbol)
     (commandApiNames :: [Symbol])
-    providedApiNames.
+    providedApiNames
+    eventStoreConfig.
   ( Command cmd,
     commandName ~ NameOf cmd,
     commandApi ~ ApiOf cmd,
@@ -178,11 +189,12 @@ command ::
     Record.KnownHash commandName,
     CommandInspect (CommandDefinition commandName commandApi cmd apiName)
   ) =>
-  Service originalCommands commandApiNames providedApiNames ->
+  Service originalCommands commandApiNames providedApiNames eventStoreConfig ->
   Service
     ((commandName 'Record.:= CommandDefinition commandName commandApi cmd apiName) ': originalCommands)
     (apiName ': commandApiNames)
     providedApiNames
+    eventStoreConfig
 command serviceDefinition = do
   let cmdName :: Record.Field commandName = fromLabel
   let cmdVal :: Record.I (CommandDefinition commandName commandApi cmd apiName) =
@@ -203,13 +215,15 @@ command serviceDefinition = do
   Service
     { commandDefinitions = cmds,
       apis = serviceDefinition.apis,
-      inspectDict = newInspectDict
+      inspectDict = newInspectDict,
+      getEventStore = serviceDefinition.getEventStore,
+      eventStoreConfig = serviceDefinition.eventStoreConfig
     }
 
 
 __internal_runServiceMain ::
-  forall cmds commandApiNames providedApiNames.
-  Service cmds commandApiNames providedApiNames -> GHC.IO Unit
+  forall cmds commandApiNames providedApiNames eventStoreConfig.
+  Service cmds commandApiNames providedApiNames eventStoreConfig -> GHC.IO Unit
 __internal_runServiceMain s = do
   case Record.reflectAllFields s.inspectDict of
     Record.Reflected ->
