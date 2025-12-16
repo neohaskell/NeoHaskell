@@ -23,6 +23,7 @@ import Record (Record)
 import Record qualified
 import Service.Api.ApiBuilder (ApiBuilder (..), ApiEndpointHandler, ApiEndpoints (..))
 import Service.Command.Core (ApiOf, Command (..), NameOf)
+import Service.EventStore.Core (EventStoreConfig)
 import Task (Task)
 import Task qualified
 import Text (Text)
@@ -115,7 +116,7 @@ instance
     Record.Proxy cmd ->
     ApiEndpointHandler
   buildCmdEP _ api cmd = do
-    buildCommandHandler @api (api) cmd
+    buildCommandHandler @api api cmd
 
 
 type instance NameOf (CommandDefinition name api cmd apiName) = name
@@ -146,6 +147,15 @@ useServer api serviceDefinition = do
   serviceDefinition
     { apis = newApis
     }
+
+
+useEventStore ::
+  forall eventStoreConfig.
+  (EventStoreConfig eventStoreConfig) =>
+  eventStoreConfig ->
+  Service cmds commandApiNames providedApiNames ->
+  Service cmds commandApiNames providedApiNames
+useEventStore _ _ = panic "useEventStore: not implemented"
 
 
 -- | Register a command type in the service definition

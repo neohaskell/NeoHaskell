@@ -6,6 +6,7 @@ module Service.EventStore.Core (
   ReadAllMessage (..),
   ReadStreamMessage (..),
   ToxicContents (..),
+  EventStoreConfig (..),
   collectAllEvents,
   collectStreamEvents,
   streamMessageToAllMessage,
@@ -160,3 +161,12 @@ data EventStore eventType = EventStore
     -- | Removes all the events up to a position
     truncateStream :: EntityName -> StreamId -> StreamPosition -> Task Error Unit
   }
+
+
+class EventStoreConfig config where
+  newEventStore ::
+    forall e.
+    ( Json.FromJSON e,
+      Json.ToJSON e
+    ) =>
+    config -> Task Text (EventStore e)
