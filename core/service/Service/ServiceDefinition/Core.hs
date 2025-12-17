@@ -139,7 +139,12 @@ instance
           EventStore.getEventStoreValue @event @eventStoreConfig esCtor eventStoreConfig
 
     eventStore <- newEventStore
-    fetcher <- EntityFetcher.new eventStore initialEntity entityReducer |> Task.mapError toText
+    fetcher <-
+      EntityFetcher.new
+        eventStore
+        initialState
+        entityReducer
+        |> Task.mapError toText
 
     buildCommandHandler @api api cmd reqBytes respondCallback
 

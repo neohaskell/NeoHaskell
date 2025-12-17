@@ -4,6 +4,7 @@ module Testbed.Cart.Core (
 ) where
 
 import Core
+import Json qualified
 
 
 data CartEntity = CartEntity
@@ -26,3 +27,9 @@ data CartItem = CartItem
 data CartEvent
   = CartCreated {entityId :: Uuid}
   deriving (Generic)
+
+
+instance Json.FromJSON CartEvent
+
+
+instance Json.ToJSON CartEvent
