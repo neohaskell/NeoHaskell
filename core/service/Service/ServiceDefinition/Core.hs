@@ -24,6 +24,7 @@ import Maybe (Maybe (..))
 import Record (Record)
 import Record qualified
 import Service.Api.ApiBuilder (ApiBuilder (..), ApiEndpointHandler, ApiEndpoints (..))
+import Service.Command (EntityOf, EventOf)
 import Service.Command.Core (ApiOf, Command (..), NameOf)
 import Service.EntityFetcher.Core qualified as EntityFetcher
 import Service.EventStore.Core (EventStoreConfig)
@@ -214,6 +215,10 @@ command ::
     Record.KnownSymbol apiName,
     Record.KnownSymbol commandName,
     Record.KnownHash commandName,
+    entity ~ EntityOf cmd,
+    event ~ EventOf entity,
+    Json.FromJSON event,
+    Json.ToJSON event,
     CommandInspect (CommandDefinition commandName commandApi cmd apiName event entity)
   ) =>
   Service originalCommands commandApiNames providedApiNames eventStoreConfig ->

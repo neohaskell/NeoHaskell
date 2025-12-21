@@ -6,6 +6,7 @@ import Core
 import Service qualified
 import Testbed.Cart.Commands.AddItem (AddItem)
 import Testbed.Cart.Commands.CreateCart (CreateCart)
+import Testbed.Cart.Core ()
 
 
 service :: Service _ _ _ _
