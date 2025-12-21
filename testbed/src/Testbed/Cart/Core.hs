@@ -8,6 +8,7 @@ import Array qualified
 import Core
 import Json qualified
 import Service.Command (Entity (..))
+import Service.Command.Core (Event (..))
 import Uuid qualified
 
 
@@ -35,6 +36,9 @@ initialState =
     }
 
 
+type instance NameOf CartEntity = "CartEntity"
+
+
 instance Entity CartEntity where
   initialStateImpl = initialState
   updateImpl = update
@@ -45,7 +49,17 @@ data CartEvent
   deriving (Generic)
 
 
+getEventEntityId :: CartEvent -> Uuid
+getEventEntityId event =
+  case event of
+    CartCreated entityId -> entityId
+
+
 type instance EventOf CartEntity = CartEvent
+
+
+instance Event CartEvent where
+  getEventEntityIdImpl = getEventEntityId
 
 
 instance Json.FromJSON CartEvent

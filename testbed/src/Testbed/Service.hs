@@ -19,5 +19,5 @@ service =
           password = "neohaskell",
           host = "localhost",
           databaseName = "neohaskell",
-          port = 5632
+          port = 5432
         }

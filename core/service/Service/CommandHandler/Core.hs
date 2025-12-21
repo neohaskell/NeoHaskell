@@ -14,6 +14,7 @@ import Int qualified
 import Json qualified
 import Maybe (Maybe (..))
 import Result (Result (..))
+import Service.Command (Event (..))
 import Service.Command.Core (Command (..), CommandResult (..), EntityOf, EventOf)
 import Service.Command.Core qualified as Command
 import Service.EntityFetcher.Core (EntityFetchResult (..), EntityFetcher)
@@ -82,7 +83,7 @@ execute ::
   ( Command command,
     commandEntity ~ EntityOf command,
     commandEvent ~ EventOf commandEntity,
-    HasField "entityId" commandEvent (EntityIdType command),
+    Event commandEvent,
     ToStreamId (EntityIdType command),
     Eq (EntityIdType command),
     Show (EntityIdType command),
@@ -165,7 +166,7 @@ execute eventStore entityFetcher entityName command = do
                 finalStreamId <- case currentStreamId of
                   Just sid -> Task.yield sid
                   Nothing -> do
-                    let eventEntityIds = events |> Array.map (\e -> e.entityId)
+                    let eventEntityIds = events |> Array.map (\e -> getEventEntityIdImpl e)
                     -- Check if all entity IDs are the same
                     case Array.first eventEntityIds of
                       Nothing -> do

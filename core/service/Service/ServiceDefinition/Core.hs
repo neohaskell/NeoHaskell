@@ -25,7 +25,7 @@ import Record (Record)
 import Record qualified
 import Service.Api.ApiBuilder (ApiBuilder (..), ApiEndpointHandler, ApiEndpoints (..))
 import Service.Command (EntityOf, EventOf)
-import Service.Command.Core (ApiOf, Command (..), Entity (..), NameOf)
+import Service.Command.Core (ApiOf, Command (..), Entity (..), Event, NameOf)
 import Service.CommandHandler qualified as CommandHandler
 import Service.EntityFetcher.Core qualified as EntityFetcher
 import Service.Event.EntityName (EntityName (..))
@@ -115,6 +115,7 @@ class CommandInspect definition where
 instance
   ( Command cmd,
     Entity entity,
+    Event event,
     event ~ EventOf entity,
     entity ~ EntityOf cmd,
     entityIdType ~ EntityIdType cmd,
@@ -122,7 +123,6 @@ instance
     Eq entityIdType,
     Ord entityIdType,
     Show entityIdType,
-    HasField "entityId" event entityIdType,
     JSON.FromJSON cmd,
     ApiBuilder api,
     name ~ NameOf cmd,

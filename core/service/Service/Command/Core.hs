@@ -11,6 +11,7 @@ module Service.Command.Core (
   NameOf,
   ApiOf,
   Entity (..),
+  Event (..),
 ) where
 
 import Applicable
@@ -52,6 +53,10 @@ class Command command where
 
 
   decideImpl :: DecideFunction (IsMultiTenant command) command (EntityOf command) (EventOf (EntityOf command))
+
+
+class Event event where
+  getEventEntityIdImpl :: event -> Uuid
 
 
 class Entity entity where

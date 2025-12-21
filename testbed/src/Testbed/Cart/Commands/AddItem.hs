@@ -9,7 +9,7 @@ import Decision qualified
 import Json qualified
 import Service.Api.WebApi (WebApi)
 import Service.Command.Core (ApiOf)
-import Service.CommandHandler.Core (command)
+import Service.CommandHandler.TH (command)
 import Testbed.Cart.Core
 
 
