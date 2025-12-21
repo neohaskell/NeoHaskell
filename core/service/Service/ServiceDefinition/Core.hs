@@ -26,7 +26,10 @@ import Record qualified
 import Service.Api.ApiBuilder (ApiBuilder (..), ApiEndpointHandler, ApiEndpoints (..))
 import Service.Command (EntityOf, EventOf)
 import Service.Command.Core (ApiOf, Command (..), Entity (..), NameOf)
+import Service.CommandHandler qualified as CommandHandler
 import Service.EntityFetcher.Core qualified as EntityFetcher
+import Service.Event.EntityName (EntityName (..))
+import Service.Event.StreamId qualified as StreamId
 import Service.EventStore.Core (EventStoreConfig)
 import Service.EventStore.Core qualified as EventStore
 import Task (Task)
@@ -69,7 +72,16 @@ getSymbolText _ =
     |> Text.fromLinkedList
 
 
-data CommandDefinition (name :: Symbol) (api :: Type) (cmd :: Type) (apiName :: Symbol) (event :: Type) (entity :: Type)
+data
+  CommandDefinition
+    (name :: Symbol)
+    (api :: Type)
+    (cmd :: Type)
+    (apiName :: Symbol)
+    (event :: Type)
+    (entity :: Type)
+    (entityName :: Symbol)
+    (entityIdType :: Type)
   = CommandDefinition
   { commandName :: Text,
     apiName :: Text
@@ -104,25 +116,35 @@ instance
   ( Command cmd,
     Entity entity,
     event ~ EventOf entity,
+    entity ~ EntityOf cmd,
+    entityIdType ~ EntityIdType cmd,
+    StreamId.ToStreamId entityIdType,
+    Eq entityIdType,
+    Ord entityIdType,
+    Show entityIdType,
+    HasField "entityId" event entityIdType,
     JSON.FromJSON cmd,
     ApiBuilder api,
     name ~ NameOf cmd,
     Record.KnownSymbol apiName,
     Record.KnownSymbol name,
+    Record.KnownSymbol entityName,
     Json.FromJSON event,
     Json.ToJSON event,
+    IsMultiTenant cmd ~ False,
     Record.KnownHash name
   ) =>
-  CommandInspect (CommandDefinition name api cmd apiName event entity)
+  CommandInspect (CommandDefinition name api cmd apiName event entity entityName entityIdType)
   where
-  type Cmd (CommandDefinition name api cmd apiName event entity) = cmd
-  type CmdEvent (CommandDefinition name api cmd apiName event entity) = event
-  type CmdEntity (CommandDefinition name api cmd apiName event entity) = entity
-  type Api (CommandDefinition name api cmd apiName event entity) = api
-  type ApiName (CommandDefinition name api cmd apiName event entity) = apiName
+  type Cmd (CommandDefinition name api cmd apiName event entity entityName entityIdType) = cmd
+  type CmdEvent (CommandDefinition name api cmd apiName event entity entityName entityIdType) = event
+  type CmdEntity (CommandDefinition name api cmd apiName event entity entityName entityIdType) = entity
+  type Api (CommandDefinition name api cmd apiName event entity entityName entityIdType) = api
+  type ApiName (CommandDefinition name api cmd apiName event entity entityName entityIdType) = apiName
 
 
-  commandName :: (Record.KnownSymbol name) => CommandDefinition name api cmd apiName event entity -> Text
+  commandName ::
+    (Record.KnownSymbol name) => CommandDefinition name api cmd apiName event entity entityName entityIdType -> Text
   commandName _ = getSymbolText (Record.Proxy @name)
 
 
@@ -131,7 +153,7 @@ instance
 
   buildCmdEP ::
     forall eventStoreConfig.
-    (CommandDefinition name api cmd apiName event entity) ->
+    (CommandDefinition name api cmd apiName event entity entityName entityIdType) ->
     eventStoreConfig ->
     EventStore.EventStoreConstructor eventStoreConfig ->
     api ->
@@ -148,11 +170,15 @@ instance
         (initialStateImpl @entity)
         (updateImpl @entity)
         |> Task.mapError toText
+    let entityName = EntityName (getSymbolText (Record.Proxy @(entityName)))
+
+    let handler (cmd :: cmd) = do
+          CommandHandler.execute eventStore fetcher entityName cmd
 
     buildCommandHandler @api api cmd reqBytes respondCallback
 
 
-type instance NameOf (CommandDefinition name api cmd apiName event entity) = name
+type instance NameOf (CommandDefinition name api cmd apiName event entity entityName entityIdType) = name
 
 
 new :: Service '[] '[] '[] Unit
@@ -209,29 +235,35 @@ command ::
     providedApiNames
     eventStoreConfig
     event
-    entity.
+    entity
+    entityName
+    entityIdType.
   ( Command cmd,
     commandName ~ NameOf cmd,
     commandApi ~ ApiOf cmd,
     apiName ~ NameOf commandApi,
+    entityName ~ NameOf entity,
     Record.KnownSymbol apiName,
     Record.KnownSymbol commandName,
+    Record.KnownSymbol entityName,
     Record.KnownHash commandName,
     entity ~ EntityOf cmd,
     event ~ EventOf entity,
     Json.FromJSON event,
     Json.ToJSON event,
-    CommandInspect (CommandDefinition commandName commandApi cmd apiName event entity)
+    CommandInspect (CommandDefinition commandName commandApi cmd apiName event entity entityName entityIdType)
   ) =>
   Service originalCommands commandApiNames providedApiNames eventStoreConfig ->
   Service
-    ((commandName 'Record.:= CommandDefinition commandName commandApi cmd apiName event entity) ': originalCommands)
+    ( (commandName 'Record.:= CommandDefinition commandName commandApi cmd apiName event entity entityName entityIdType)
+        ': originalCommands
+    )
     (apiName ': commandApiNames)
     providedApiNames
     eventStoreConfig
 command serviceDefinition = do
   let cmdName :: Record.Field commandName = fromLabel
-  let cmdVal :: Record.I (CommandDefinition commandName commandApi cmd apiName event entity) =
+  let cmdVal :: Record.I (CommandDefinition commandName commandApi cmd apiName event entity entityName entityIdType) =
         Record.I
           CommandDefinition
             { commandName = getSymbolText (Record.Proxy @commandName),
@@ -241,7 +273,8 @@ command serviceDefinition = do
   let cmds =
         currentCmds
           |> Record.insert cmdName cmdVal
-  let inspectDict :: Record.Dict (CommandInspect) (CommandDefinition commandName commandApi cmd apiName event entity) = Record.Dict
+  let inspectDict ::
+        Record.Dict (CommandInspect) (CommandDefinition commandName commandApi cmd apiName event entity entityName entityIdType) = Record.Dict
   let newInspectDict =
         serviceDefinition.inspectDict
           |> Record.insert cmdName inspectDict

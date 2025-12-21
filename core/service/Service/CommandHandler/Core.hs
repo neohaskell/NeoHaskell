@@ -4,24 +4,29 @@ module Service.CommandHandler.Core (
   CommandHandler (..),
   CommandHandlerResult (..),
   execute,
-  command,
 ) where
 
 import Array qualified
 import AsyncTask qualified
-import Core
+import Basics
 import Float qualified
 import Int qualified
+import Maybe (Maybe (..))
+import Result (Result (..))
+import Service.Command.Core (Command (..), CommandResult (..), EntityOf, EventOf)
 import Service.Command.Core qualified as Command
-import Service.CommandHandler.TH (command)
 import Service.EntityFetcher.Core (EntityFetchResult (..), EntityFetcher)
 import Service.EntityFetcher.Core qualified as EntityFetcher
-import Service.Event (EntityName, InsertionPayload (..))
+import Service.Event (EntityName, InsertionPayload (..), InsertionType (..))
 import Service.Event qualified as Event
+import Service.Event.StreamId (StreamId, ToStreamId (..))
 import Service.EventStore.Core (EventStore)
 import Service.EventStore.Core qualified as EventStore
+import Task (Task)
 import Task qualified
+import Text (Text)
 import Text qualified
+import ToText (toText)
 import Uuid qualified
 
 
