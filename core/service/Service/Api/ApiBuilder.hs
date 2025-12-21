@@ -10,6 +10,7 @@ import Json qualified
 import Map (Map)
 import Record qualified
 import Service.Command.Core (Command, NameOf)
+import Service.CommandHandler.Core (CommandHandlerResult)
 import Task (Task)
 import Text (Text)
 
@@ -46,4 +47,5 @@ class ApiBuilder api where
     ) =>
     api ->
     Record.Proxy command ->
+    (command -> Task Text CommandHandlerResult) ->
     ApiEndpointHandler

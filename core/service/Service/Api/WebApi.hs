@@ -20,6 +20,7 @@ import Record qualified
 import Result qualified
 import Service.Api.ApiBuilder (ApiBuilder (..), ApiEndpointHandler, ApiEndpoints (..))
 import Service.Command.Core (Command, NameOf)
+import Service.CommandHandler.Core
 import Service.CommandHandler.TH (deriveKnownHash)
 import Task (Task)
 import Task qualified
@@ -136,8 +137,9 @@ instance ApiBuilder WebApi where
     ) =>
     WebApi ->
     Record.Proxy command ->
+    (command -> Task Text CommandHandlerResult) ->
     ApiEndpointHandler
-  buildCommandHandler api _ body respond = do
+  buildCommandHandler api _ handler body respond = do
     let port = api.port
     let n =
           GHC.symbolVal (Record.Proxy @name)
@@ -147,14 +149,16 @@ instance ApiBuilder WebApi where
     let commandValue = body |> Json.decodeBytes @command
 
     case commandValue of
-      Result.Ok _cmd -> do
+      Result.Ok cmd -> do
         -- Log that we're executing the command (optional)
         Console.print [fmt|Executing #{n} on port #{port}|]
 
         -- In a real implementation, this would execute the actual command through ServiceRuntime
         -- For now, we'll simulate a successful execution with proper response format
-        let response = [fmt|Command #{n} executed successfully. Parsed command: #{body |> Text.fromBytes}|]
-        respond (Text.toBytes response)
+        -- let response = [fmt|Command #{n} executed successfully. Parsed command: #{body |> Text.fromBytes}|]
+        response <- handler cmd
+        let responseJson = Json.encodeText response
+        respond (Text.toBytes responseJson)
       Result.Err err -> do
         -- Handle parsing error - return appropriate error response
         Console.print [fmt|Failed to parse command #{n} on port #{port}|]

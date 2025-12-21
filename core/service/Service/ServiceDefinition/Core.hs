@@ -175,7 +175,7 @@ instance
     let handler (cmd :: cmd) = do
           CommandHandler.execute eventStore fetcher entityName cmd
 
-    buildCommandHandler @api api cmd reqBytes respondCallback
+    buildCommandHandler @api api cmd handler reqBytes respondCallback
 
 
 type instance NameOf (CommandDefinition name api cmd apiName event entity entityName entityIdType) = name

@@ -11,6 +11,7 @@ import AsyncTask qualified
 import Basics
 import Float qualified
 import Int qualified
+import Json qualified
 import Maybe (Maybe (..))
 import Result (Result (..))
 import Service.Command.Core (Command (..), CommandResult (..), EntityOf, EventOf)
@@ -45,6 +46,9 @@ data CommandHandlerResult
         retriesAttempted :: Int
       }
   deriving (Eq, Show, Ord, Generic)
+
+
+instance Json.ToJSON CommandHandlerResult
 
 
 data CommandHandler event = CommandHandler
