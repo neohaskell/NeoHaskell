@@ -25,7 +25,7 @@ import Record (Record)
 import Record qualified
 import Service.Api.ApiBuilder (ApiBuilder (..), ApiEndpointHandler, ApiEndpoints (..))
 import Service.Command (EntityOf, EventOf)
-import Service.Command.Core (ApiOf, Command (..), NameOf)
+import Service.Command.Core (ApiOf, Command (..), Entity (..), NameOf)
 import Service.EntityFetcher.Core qualified as EntityFetcher
 import Service.EventStore.Core (EventStoreConfig)
 import Service.EventStore.Core qualified as EventStore
@@ -102,6 +102,8 @@ class CommandInspect definition where
 
 instance
   ( Command cmd,
+    Entity entity,
+    event ~ EventOf entity,
     JSON.FromJSON cmd,
     ApiBuilder api,
     name ~ NameOf cmd,
@@ -143,8 +145,8 @@ instance
     fetcher <-
       EntityFetcher.new
         eventStore
-        initialState
-        entityReducer
+        (initialStateImpl @entity)
+        (updateImpl @entity)
         |> Task.mapError toText
 
     buildCommandHandler @api api cmd reqBytes respondCallback
