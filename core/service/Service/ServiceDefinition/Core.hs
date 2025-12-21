@@ -50,8 +50,7 @@ data
   { commandDefinitions :: Record commandRow,
     inspectDict :: Record.ContextRecord (Record.Dict (CommandInspect)) commandRow,
     apis :: Map Text ApiBuilderValue,
-    eventStoreConfig :: eventStoreConfig,
-    getEventStore :: Maybe (EventStore.EventStoreConstructor eventStoreConfig)
+    eventStoreConfig :: eventStoreConfig
   }
 
 
@@ -104,9 +103,9 @@ class CommandInspect definition where
 
 
   buildCmdEP ::
+    (EventStoreConfig eventStoreConfig) =>
     definition ->
     eventStoreConfig ->
-    EventStore.EventStoreConstructor eventStoreConfig ->
     Api definition ->
     Record.Proxy (Cmd definition) ->
     ApiEndpointHandler
@@ -153,17 +152,14 @@ instance
 
   buildCmdEP ::
     forall eventStoreConfig.
+    (EventStoreConfig eventStoreConfig) =>
     (CommandDefinition name api cmd apiName event entity entityName entityIdType) ->
     eventStoreConfig ->
-    EventStore.EventStoreConstructor eventStoreConfig ->
     api ->
     Record.Proxy cmd ->
     ApiEndpointHandler
-  buildCmdEP _ eventStoreConfig esCtor api cmd reqBytes respondCallback = do
-    let newEventStore =
-          EventStore.getEventStoreValue @event @eventStoreConfig esCtor eventStoreConfig
-
-    eventStore <- newEventStore
+  buildCmdEP _ eventStoreConfig api cmd reqBytes respondCallback = do
+    eventStore <- EventStore.createEventStore @eventStoreConfig @event eventStoreConfig
     fetcher <-
       EntityFetcher.new
         eventStore
@@ -187,7 +183,6 @@ new =
     { commandDefinitions = Record.empty,
       inspectDict = Record.empty,
       apis = Map.empty,
-      getEventStore = Nothing,
       eventStoreConfig = unit
     }
 
@@ -218,8 +213,7 @@ useEventStore ::
   Service cmds commandApiNames providedApiNames eventStoreConfig
 useEventStore config serviceDefinition = do
   serviceDefinition
-    { getEventStore = Just EventStore.newEventStoreConstructor,
-      eventStoreConfig = config
+    { eventStoreConfig = config
     }
 
 
@@ -283,38 +277,32 @@ command serviceDefinition = do
     { commandDefinitions = cmds,
       apis = serviceDefinition.apis,
       inspectDict = newInspectDict,
-      getEventStore = serviceDefinition.getEventStore,
       eventStoreConfig = serviceDefinition.eventStoreConfig
     }
 
 
 __internal_runServiceMain ::
   forall cmds commandApiNames providedApiNames eventStoreConfig.
+  (EventStoreConfig eventStoreConfig) =>
   Service cmds commandApiNames providedApiNames eventStoreConfig -> GHC.IO Unit
 __internal_runServiceMain s = do
   case Record.reflectAllFields s.inspectDict of
     Record.Reflected ->
-      runService s.eventStoreConfig s.getEventStore s.commandDefinitions s.apis
+      runService s.eventStoreConfig s.commandDefinitions s.apis
         |> Task.runOrPanic
 
 
 runService ::
   forall (cmds :: Record.Row Type) eventStoreConfig.
-  (Record.AllFields cmds (CommandInspect)) =>
+  (Record.AllFields cmds (CommandInspect), EventStoreConfig eventStoreConfig) =>
   eventStoreConfig ->
-  Maybe (EventStore.EventStoreConstructor eventStoreConfig) ->
   Record.ContextRecord Record.I cmds ->
   Map Text ApiBuilderValue ->
   Task Text Unit
 runService
   eventStoreConfig
-  maybeEventStoreConstructor
   commandDefinitions
   apis = do
-    newEventStore <-
-      case maybeEventStoreConstructor of
-        Nothing -> Task.throw "Event Store must be set!"
-        Just ctor -> Task.yield ctor
     let mapper ::
           forall cmdDef cmd.
           ( CommandInspect cmdDef,
@@ -327,7 +315,7 @@ runService
             Nothing -> panic [fmt|The impossible happened, couldn't find API config for #{commandName x}|]
             Just apiBV -> do
               let api = getApiBuilderValue apiBV
-              Record.K ((apiName x, apiBV), (commandName x, buildCmdEP x eventStoreConfig newEventStore (api) (Record.Proxy @cmd)))
+              Record.K ((apiName x, apiBV), (commandName x, buildCmdEP x eventStoreConfig (api) (Record.Proxy @cmd)))
 
     let xs :: Array ((Text, ApiBuilderValue), (Text, ApiEndpointHandler)) =
           commandDefinitions

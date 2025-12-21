@@ -19,7 +19,7 @@ spec :: Spec Unit
 spec = do
   describe "PostgresEventStore" do
     let config =
-          Postgres.Config
+          Postgres.PostgresEventStore
             { host = "localhost",
               databaseName = "neohaskell",
               user = "neohaskell",
@@ -77,7 +77,7 @@ data NewObserve = NewObserve
   }
 
 
-dropPostgres :: Internal.Ops eventType -> Postgres.Config -> Task Text Unit
+dropPostgres :: Internal.Ops eventType -> Postgres.PostgresEventStore -> Task Text Unit
 dropPostgres ops config =
   ops
     |> Internal.withConnection
@@ -102,7 +102,7 @@ mockNewOps = do
   initializeSubscriptionsCalls <- Var.new 0
   releaseCalls <- Var.new (0 :: Int)
 
-  let acquire :: Internal.Config -> Task Text Internal.Connection
+  let acquire :: Internal.PostgresEventStore -> Task Text Internal.Connection
       acquire _ = do
         Var.increment acquireCalls
         Task.yield Internal.MockConnection
@@ -112,7 +112,7 @@ mockNewOps = do
         Var.increment initializeTableCalls
         Task.yield unit
 
-  let initializeSubscriptions :: Internal.SubscriptionStore eventType -> Internal.Config -> Task Text Unit
+  let initializeSubscriptions :: Internal.SubscriptionStore eventType -> Internal.PostgresEventStore -> Task Text Unit
       initializeSubscriptions _ _ = do
         Var.increment initializeSubscriptionsCalls
         Task.yield unit
