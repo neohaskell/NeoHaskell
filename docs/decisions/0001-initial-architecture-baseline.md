@@ -6,7 +6,7 @@ Accepted
 
 ## Context
 
-This is the baseline Architecture Decision Record (ADR) for the NeoHaskell project, capturing the state of the codebase as of December 2024. NeoHaskell is a dialect of Haskell focused on newcomer-friendliness and productivity. This document serves as the foundation for all future architectural decisions by documenting the current patterns, module organization, and design choices.
+This is the baseline Architecture Decision Record (ADR) for the NeoHaskell project, capturing the state of the codebase as of December 2025. NeoHaskell is a dialect of Haskell focused on newcomer-friendliness and productivity. This document serves as the foundation for all future architectural decisions by documenting the current patterns, module organization, and design choices.
 
 The project is currently on the `feat/command-execution` branch, indicating active development of the command execution infrastructure.
 
@@ -18,7 +18,7 @@ We document the following as the established architecture of NeoHaskell:
 
 The project is organized as a monorepo with the following top-level packages:
 
-```
+```text
 NeoHaskell/
   cli/           -- nhcli: Command line tool, executable "neo"
   core/          -- nhcore: Core library with NeoHaskell's standard library
@@ -30,18 +30,18 @@ NeoHaskell/
 
 The core library is organized into logical subdirectories within `core/`:
 
-| Directory | Purpose | Key Modules |
-|-----------|---------|-------------|
-| `core/` | Fundamental types and primitives | Array, Text, Maybe, Result, Task, Basics, Function |
-| `concurrency/` | Concurrent programming primitives | AsyncTask, Channel, Lock, ConcurrentVar, DurableChannel, Stream |
-| `service/` | Event sourcing and CQRS infrastructure | Service.*, EventStore, Command, Decision |
-| `traits/` | Type classes (NeoHaskell calls them "traits") | Mappable, Appendable, Combinable, Applicable, Default, ToText |
-| `system/` | System interaction | File, Directory, Path, Environment, Time, Subprocess |
-| `http/` | HTTP client functionality | Http, Http.Client |
-| `json/` | JSON serialization | Json |
-| `meta/` | Metaprogramming utilities | TypeName |
-| `testlib/` | Testing infrastructure | Test, Test.Spec, Test.Service.*, Test.AppSpec.* |
-| `options-parser/` | CLI argument parsing | Command (options-parser version) |
+| Directory         | Purpose                                       | Key Modules                                                     |
+| ----------------- | --------------------------------------------- | --------------------------------------------------------------- |
+| `core/`           | Fundamental types and primitives              | Array, Text, Maybe, Result, Task, Basics, Function              |
+| `concurrency/`    | Concurrent programming primitives             | AsyncTask, Channel, Lock, ConcurrentVar, DurableChannel, Stream |
+| `service/`        | Event sourcing and CQRS infrastructure        | Service.\*, EventStore, Command, Decision                       |
+| `traits/`         | Type classes (NeoHaskell calls them "traits") | Mappable, Appendable, Combinable, Applicable, Default, ToText   |
+| `system/`         | System interaction                            | File, Directory, Path, Environment, Time, Subprocess            |
+| `http/`           | HTTP client functionality                     | Http, Http.Client                                               |
+| `json/`           | JSON serialization                            | Json                                                            |
+| `meta/`           | Metaprogramming utilities                     | TypeName                                                        |
+| `testlib/`        | Testing infrastructure                        | Test, Test.Spec, Test.Service._, Test.AppSpec._                 |
+| `options-parser/` | CLI argument parsing                          | Command (options-parser version)                                |
 
 ### 3. The Core Module
 
@@ -60,15 +60,15 @@ The project implements a comprehensive Event Sourcing / CQRS pattern:
 
 #### 4.1 Core Concepts
 
-| Concept | Module | Description |
-|---------|--------|-------------|
-| Command | `Service.Command.Core` | User intent with `getEntityIdImpl` and `decideImpl` |
-| Entity | `Service.Command.Core` | Aggregate state with `initialStateImpl` and `updateImpl` |
-| Event | `Service.Command.Core` | Immutable facts with `getEventEntityIdImpl` |
-| Decision | `Decision`, `Service.Command.Core` | Pure decision monad for command logic |
-| EventStore | `Service.EventStore.Core` | Persistence interface for events |
-| CommandHandler | `Service.CommandHandler.Core` | Orchestrates command execution with retry logic |
-| EntityFetcher | `Service.EntityFetcher.Core` | Reconstructs entities from event streams |
+| Concept        | Module                             | Description                                              |
+| -------------- | ---------------------------------- | -------------------------------------------------------- |
+| Command        | `Service.Command.Core`             | User intent with `getEntityIdImpl` and `decideImpl`      |
+| Entity         | `Service.Command.Core`             | Aggregate state with `initialStateImpl` and `updateImpl` |
+| Event          | `Service.Command.Core`             | Immutable facts with `getEventEntityIdImpl`              |
+| Decision       | `Decision`, `Service.Command.Core` | Pure decision monad for command logic                    |
+| EventStore     | `Service.EventStore.Core`          | Persistence interface for events                         |
+| CommandHandler | `Service.CommandHandler.Core`      | Orchestrates command execution with retry logic          |
+| EntityFetcher  | `Service.EntityFetcher.Core`       | Reconstructs entities from event streams                 |
 
 #### 4.2 EventStore Implementations
 
@@ -86,6 +86,7 @@ Two implementations exist:
 #### 4.3 EventStore Interface
 
 The `EventStore eventType` record provides:
+
 - `insert`: Append events with consistency checks
 - `readStreamForwardFrom` / `readStreamBackwardFrom`: Stream-level reads
 - `readAllEventsForwardFrom` / `readAllEventsBackwardFrom`: Global reads
@@ -110,6 +111,7 @@ service =
 ```
 
 Key features:
+
 - Type-level tracking of registered commands via `commandRow`
 - Type-level API name tracking via `commandApiNames` and `providedApiNames`
 - Pluggable event store configuration via `EventStoreConfig` typeclass
@@ -130,6 +132,7 @@ class ApiBuilder api where
 ```
 
 Currently implemented:
+
 - **WebApi** (`Service.Api.WebApi`): HTTP server using Warp with `/commands/<name>` routing
 
 ### 6. Command Pattern with Template Haskell
@@ -145,6 +148,7 @@ Currently implemented:
 7. Generates `KnownHash` instance for type-level string hashing
 
 Usage in command modules:
+
 ```haskell
 type instance EntityOf CreateCart = CartEntity
 type instance ApiOf CreateCart = WebApi
@@ -155,6 +159,7 @@ command ''CreateCart
 ### 7. Decision Monad
 
 The `Decision` type is a free monad providing:
+
 - `generateUuid`: Generate UUIDs within decisions
 - `acceptNew`: Accept with stream creation semantics
 - `acceptExisting`: Accept for existing streams only
@@ -183,20 +188,21 @@ The codebase follows these strict conventions:
 The project has comprehensive testing:
 
 1. **Test.Spec**: HSpec-based test framework
-2. **Test.Service.EventStore.***: Behavior-driven EventStore tests
+2. **Test.Service.EventStore.\***: Behavior-driven EventStore tests
    - BatchValidation, GlobalStreamOrdering, IndividualStreamOrdering
    - OptimisticConcurrency, StreamTruncation, Subscriptions
    - ReadAllBackwardsFromEnd, ReadAllForwardsFromStart
-3. **Test.Service.Command.***: Command testing utilities
-4. **Test.Service.CommandHandler.***: Handler testing
-5. **Test.Service.EntityFetcher.***: Entity fetching tests
-6. **Test.AppSpec.***: Application-level specification testing
+3. **Test.Service.Command.\***: Command testing utilities
+4. **Test.Service.CommandHandler.\***: Handler testing
+5. **Test.Service.EntityFetcher.\***: Entity fetching tests
+6. **Test.AppSpec.\***: Application-level specification testing
 
 ### 10. Current Development State (feat/command-execution)
 
 The command execution feature is in active development. Per `command-execution-example.md`:
 
 **Completed:**
+
 - Service definition builder (`Service.new`, `Service.command`, `Service.useServer`, `Service.useEventStore`)
 - WebApi server with HTTP routing to `/commands/<name>`
 - Command parsing and JSON deserialization
@@ -205,6 +211,7 @@ The command execution feature is in active development. Per `command-execution-e
 - CommandResponse types (Accepted, Rejected, Failed)
 
 **Architecture in place:**
+
 - Commands flow: HTTP Request -> WebApi.assembleApi -> buildCommandHandler -> CommandHandler.execute -> EventStore.insert
 - Entity state reconstruction via EntityFetcher
 - Optimistic concurrency handling with automatic retry
