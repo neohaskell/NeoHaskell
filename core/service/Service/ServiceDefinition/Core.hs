@@ -30,7 +30,7 @@ import Service.CommandHandler qualified as CommandHandler
 import Service.EntityFetcher.Core qualified as EntityFetcher
 import Service.Event.EntityName (EntityName (..))
 import Service.Event.StreamId qualified as StreamId
-import Service.EventStore.Core (EventStoreConfig)
+import Service.EventStore.Core (EventStore, EventStoreConfig)
 import Service.EventStore.Core qualified as EventStore
 import Task (Task)
 import Task qualified
@@ -38,6 +38,11 @@ import Text (Text)
 import Text qualified
 import ToText (toText)
 import Unsafe.Coerce qualified as GHC
+
+
+type family ServiceEventType (cmds :: Record.Row Type) :: Type where
+  ServiceEventType ((label 'Record.:= cmdDef) ': rest) = CmdEvent cmdDef
+  ServiceEventType '[] = Never
 
 
 data
@@ -103,9 +108,8 @@ class CommandInspect definition where
 
 
   buildCmdEP ::
-    (EventStoreConfig eventStoreConfig) =>
     definition ->
-    eventStoreConfig ->
+    EventStore (CmdEvent definition) ->
     Api definition ->
     Record.Proxy (Cmd definition) ->
     ApiEndpointHandler
@@ -151,15 +155,12 @@ instance
 
 
   buildCmdEP ::
-    forall eventStoreConfig.
-    (EventStoreConfig eventStoreConfig) =>
     (CommandDefinition name api cmd apiName event entity entityName entityIdType) ->
-    eventStoreConfig ->
+    EventStore event ->
     api ->
     Record.Proxy cmd ->
     ApiEndpointHandler
-  buildCmdEP _ eventStoreConfig api cmd reqBytes respondCallback = do
-    eventStore <- EventStore.createEventStore @eventStoreConfig @event eventStoreConfig
+  buildCmdEP _ eventStore api cmd reqBytes respondCallback = do
     fetcher <-
       EntityFetcher.new
         eventStore
@@ -282,19 +283,28 @@ command serviceDefinition = do
 
 
 __internal_runServiceMain ::
-  forall cmds commandApiNames providedApiNames eventStoreConfig.
-  (EventStoreConfig eventStoreConfig) =>
+  forall cmds commandApiNames providedApiNames eventStoreConfig event.
+  ( EventStoreConfig eventStoreConfig,
+    event ~ ServiceEventType cmds,
+    Json.FromJSON event,
+    Json.ToJSON event
+  ) =>
   Service cmds commandApiNames providedApiNames eventStoreConfig -> GHC.IO Unit
 __internal_runServiceMain s = do
   case Record.reflectAllFields s.inspectDict of
     Record.Reflected ->
-      runService s.eventStoreConfig s.commandDefinitions s.apis
+      runService @cmds @eventStoreConfig @event s.eventStoreConfig s.commandDefinitions s.apis
         |> Task.runOrPanic
 
 
 runService ::
-  forall (cmds :: Record.Row Type) eventStoreConfig.
-  (Record.AllFields cmds (CommandInspect), EventStoreConfig eventStoreConfig) =>
+  forall (cmds :: Record.Row Type) eventStoreConfig event.
+  ( Record.AllFields cmds (CommandInspect),
+    EventStoreConfig eventStoreConfig,
+    event ~ ServiceEventType cmds,
+    Json.FromJSON event,
+    Json.ToJSON event
+  ) =>
   eventStoreConfig ->
   Record.ContextRecord Record.I cmds ->
   Map Text ApiBuilderValue ->
@@ -303,6 +313,9 @@ runService
   eventStoreConfig
   commandDefinitions
   apis = do
+    -- Create the EventStore ONCE at service startup
+    eventStore <- EventStore.createEventStore @eventStoreConfig @event eventStoreConfig
+
     let mapper ::
           forall cmdDef cmd.
           ( CommandInspect cmdDef,
@@ -315,7 +328,10 @@ runService
             Nothing -> panic [fmt|The impossible happened, couldn't find API config for #{commandName x}|]
             Just apiBV -> do
               let api = getApiBuilderValue apiBV
-              Record.K ((apiName x, apiBV), (commandName x, buildCmdEP x eventStoreConfig (api) (Record.Proxy @cmd)))
+              -- Use unsafeCoerce because ServiceEventType guarantees event ~ CmdEvent cmdDef
+              -- but GHC can't prove this within the cmap context
+              let typedEventStore = GHC.unsafeCoerce eventStore :: EventStore (CmdEvent cmdDef)
+              Record.K ((apiName x, apiBV), (commandName x, buildCmdEP x typedEventStore (api) (Record.Proxy @cmd)))
 
     let xs :: Array ((Text, ApiBuilderValue), (Text, ApiEndpointHandler)) =
           commandDefinitions
