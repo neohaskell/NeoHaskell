@@ -2,7 +2,6 @@ module Test.Service.EventStore.Core (CartEvent (..), newInsertion) where
 
 import Core
 import Json qualified
-import Service.Command.Core (Event (..))
 import Service.Event qualified as Event
 import Service.Event.EventMetadata qualified as EventMetadata
 import Task qualified
@@ -10,6 +9,8 @@ import Uuid qualified
 
 
 -- | Example domain events for a shopping cart
+-- Note: The Event instance is defined in Test.Service.Command.Core
+-- where EntityOf CartEvent = CartEntity is also defined
 data CartEvent
   = CartCreated {entityId :: Uuid}
   | ItemAdded {entityId :: Uuid, itemId :: Uuid, amount :: Int}
@@ -26,15 +27,6 @@ instance Json.FromJSON CartEvent
 
 instance Default CartEvent where
   def = CartCreated {entityId = def}
-
-
-instance Event CartEvent where
-  getEventEntityIdImpl event =
-    case event of
-      CartCreated eid -> eid
-      ItemAdded eid _ _ -> eid
-      ItemRemoved eid _ -> eid
-      CartCheckedOut eid -> eid
 
 
 newInsertion :: Int -> Task _ (Event.Insertion CartEvent)

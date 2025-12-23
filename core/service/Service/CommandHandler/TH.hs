@@ -151,7 +151,7 @@ validateFunctionSignature ::
   String ->
   String ->
   TH.Q ()
-validateFunctionSignature funcInfo mode expectedEntityIdType commandName = do
+validateFunctionSignature funcInfo mode expectedEntityIdType _commandName = do
   functionInfo <- TH.reify funcInfo.thName
   case functionInfo of
     TH.VarI _ functionType _ -> do
@@ -189,11 +189,13 @@ Expected return type:
 Current return type:
   #{actualReturn}
 
-The return type must be 'Maybe #{expectedEntityIdType}' because by default:
-  type instance EntityIdType #{commandName} = #{expectedEntityIdType}
+The return type must be 'Maybe #{expectedEntityIdType}' because EntityIdType
+defaults to Uuid for your entity type.
 
-If you want to use a different entity ID type, you can define:
-  type instance EntityIdType #{commandName} = YourIdType
+If you want to use a different entity ID type, define it in your Entity instance:
+  instance Entity YourEntityType where
+    type EntityIdType YourEntityType = YourIdType
+    ...
 |]
             else do
               let funcName = funcInfo.functionName
@@ -317,8 +319,10 @@ Please ensure your type instance follows this format:
   type instance EntityOf #{commandNameStr} = YourEntityType
 |]
 
-  -- Try to resolve the EntityIdType type instance for this command
-  -- EntityIdType is an associated type family in the Command class
+  let entityTypeStr = TH.nameBase entityType
+
+  -- Try to resolve the EntityIdType type instance for this entity
+  -- EntityIdType is an associated type family in the Entity class
   -- Look up EntityIdType associated type family
   entityIdTypeFamilyName <- TH.lookupTypeName "EntityIdType"
 
@@ -327,7 +331,7 @@ Please ensure your type instance follows this format:
       Nothing ->
         -- If we can't find EntityIdType, default to Uuid
         pure []
-      Just typeFamilyName -> TH.reifyInstances typeFamilyName [TH.ConT someName]
+      Just typeFamilyName -> TH.reifyInstances typeFamilyName [TH.ConT entityType]
 
   entityIdType <-
     case entityIdTypeInstances of
@@ -349,7 +353,7 @@ Please ensure you have `import Core` at the top of your module.
           _ ->
             MonadFail.fail
               [fmt|
-ERROR: EntityIdType instance for '#{commandNameStr}' must be a concrete type.
+ERROR: EntityIdType for entity '#{entityTypeStr}' must be a concrete type.
 
 The EntityIdType should be a specific type, not a type variable or complex type expression.
 
@@ -360,7 +364,7 @@ Please ensure your EntityIdType uses a concrete type like Uuid or Text.
       _ ->
         MonadFail.fail
           [fmt|
-ERROR: Unexpected EntityIdType instance format for '#{commandNameStr}'.
+ERROR: Unexpected EntityIdType instance format for entity '#{entityTypeStr}'.
 |]
 
   let entityIdTypeStr = TH.nameBase entityIdType
@@ -420,8 +424,6 @@ For more information on what commands and entities are, take a look at the docs:
 
   maybeMultiTenancy <- TH.lookupTypeName "MultiTenancy"
   multiTenancyMode <- determineMultiTenancyMode maybeMultiTenancy
-
-  let entityTypeStr = TH.nameBase entityType
 
   let getEntityIdFuncInfo =
         FunctionInfo

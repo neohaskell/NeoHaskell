@@ -13,6 +13,7 @@ import Array qualified
 import Core
 import Decision qualified
 import Json qualified
+import Service.Command.Core (Event (..))
 import Test.Service.EventStore.Core (CartEvent (..))
 import Uuid ()
 
@@ -79,6 +80,23 @@ instance Json.FromJSON CartEntity
 
 
 type instance EventOf CartEntity = CartEvent
+
+
+type instance EntityOf CartEvent = CartEntity
+
+
+instance Entity CartEntity where
+  initialStateImpl = initialCartState
+  updateImpl = applyCartEvent
+
+
+instance Event CartEvent where
+  getEventEntityIdImpl event =
+    case event of
+      CartCreated eid -> eid
+      ItemAdded eid _ _ -> eid
+      ItemRemoved eid _ -> eid
+      CartCheckedOut eid -> eid
 
 
 initialCartState :: CartEntity

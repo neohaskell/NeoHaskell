@@ -45,21 +45,21 @@ class Command command where
   type IsMultiTenant command = False
 
 
-  type EntityIdType command :: Type
-  type EntityIdType command = Uuid
-
-
-  getEntityIdImpl :: GetEntityIdFunction (IsMultiTenant command) command (EntityIdType command)
+  getEntityIdImpl :: GetEntityIdFunction (IsMultiTenant command) command (EntityIdType (EntityOf command))
 
 
   decideImpl :: DecideFunction (IsMultiTenant command) command (EntityOf command) (EventOf (EntityOf command))
 
 
 class Event event where
-  getEventEntityIdImpl :: event -> Uuid
+  getEventEntityIdImpl :: event -> EntityIdType (EntityOf event)
 
 
 class Entity entity where
+  type EntityIdType entity :: Type
+  type EntityIdType entity = Uuid
+
+
   initialStateImpl :: entity
 
 

@@ -7,7 +7,6 @@ module Testbed.Cart.Core (
 import Array qualified
 import Core
 import Json qualified
-import Service.Command (Entity (..))
 import Service.Command.Core (Event (..))
 import Uuid qualified
 
@@ -56,6 +55,9 @@ getEventEntityId event =
 
 
 type instance EventOf CartEntity = CartEvent
+
+
+type instance EntityOf CartEvent = CartEntity
 
 
 instance Event CartEvent where
