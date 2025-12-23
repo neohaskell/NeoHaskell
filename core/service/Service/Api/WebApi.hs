@@ -95,6 +95,15 @@ readBodyWithLimit maxSize request = Task.fromIO do
   readChunks
 
 
+-- | Map a CommandResponse to its corresponding HTTP status code.
+-- This avoids needing to decode the response bytes to determine the status.
+commandResponseToHttpStatus :: CommandResponse -> HTTP.Status
+commandResponseToHttpStatus response = case response of
+  CommandResponse.Accepted {} -> HTTP.status200
+  CommandResponse.Rejected {} -> HTTP.status400
+  CommandResponse.Failed {} -> HTTP.status500
+
+
 instance ApiBuilder WebApi where
   type Request WebApi = Wai.Request
   type Response WebApi = Wai.Response
@@ -148,14 +157,9 @@ instance ApiBuilder WebApi where
                 -- Since handler returns Unit, we'll use andThen to chain the result
                 handler
                   bodyBytes
-                  ( \responseBytes -> do
-                      -- The response bytes contain the JSON with a "tag" field indicating the status
-                      -- Parse it to determine the HTTP status code
-                      let httpStatus = case Json.decodeBytes @CommandResponse responseBytes of
-                            Result.Ok (CommandResponse.Accepted {}) -> HTTP.status200
-                            Result.Ok (CommandResponse.Rejected {}) -> HTTP.status400
-                            Result.Ok (CommandResponse.Failed {}) -> HTTP.status500
-                            Result.Err _ -> HTTP.status500
+                  ( \(commandResponse, responseBytes) -> do
+                      -- Map the CommandResponse directly to HTTP status (no decoding needed)
+                      let httpStatus = commandResponseToHttpStatus commandResponse
 
                       let responseBody =
                             responseBytes
@@ -222,7 +226,7 @@ instance ApiBuilder WebApi where
         -- Execute the command and get the response
         response <- handler cmd
         let responseJson = Json.encodeText response |> Text.toBytes
-        respond responseJson
+        respond (response, responseJson)
       Result.Err _err -> do
         -- Handle parsing error - return a Failed response
         Console.print [fmt|Failed to parse command #{n} on port #{port}|]
@@ -231,4 +235,4 @@ instance ApiBuilder WebApi where
                 { error = [fmt|Invalid JSON format for command #{n}|]
                 }
         let responseJson = Json.encodeText errorResponse |> Text.toBytes
-        respond responseJson
+        respond (errorResponse, responseJson)

@@ -15,7 +15,7 @@ import Task (Task)
 import Text (Text)
 
 
-type ApiEndpointHandler = Bytes -> (Bytes -> Task Text Unit) -> Task Text Unit
+type ApiEndpointHandler = Bytes -> ((CommandResponse, Bytes) -> Task Text Unit) -> Task Text Unit
 
 
 data ApiEndpoints api = ApiEndpoints
