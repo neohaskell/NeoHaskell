@@ -4,9 +4,13 @@ module Service.Api.WebApi (
 ) where
 
 import Basics
+import Bytes (Bytes)
 import Bytes qualified
 import ConcurrentVar qualified
 import Console qualified
+import Data.ByteString qualified as GhcBS
+import Data.IORef qualified as GhcIORef
+import Data.List qualified as GhcList
 import GHC.TypeLits qualified as GHC
 import Json qualified
 import Map qualified
@@ -17,7 +21,7 @@ import Network.Wai qualified as Wai
 import Network.Wai.Handler.Warp qualified as Warp
 import Record (KnownHash (..))
 import Record qualified
-import Result qualified
+import Result (Result (..))
 import Service.Api.ApiBuilder (ApiBuilder (..), ApiEndpointHandler, ApiEndpoints (..))
 import Service.Command.Core (Command, NameOf)
 import Service.CommandHandler.TH (deriveKnownHash)
@@ -30,7 +34,8 @@ import Text qualified
 
 
 data WebApi = WebApi
-  { port :: Int
+  { port :: Int,
+    maxBodySize :: Int
   }
 
 
@@ -40,11 +45,54 @@ type instance NameOf WebApi = "WebApi"
 deriveKnownHash "WebApi"
 
 
+-- | Default WebApi configuration.
+-- Port defaults to 8080.
+-- Max body size defaults to 1MB (1048576 bytes) to prevent DoS attacks.
 server :: WebApi
 server =
   WebApi
-    { port = 8080
+    { port = 8080,
+      maxBodySize = 1048576
     }
+
+
+-- | Read request body with a size limit to prevent DoS attacks.
+-- Returns Err if the body exceeds the limit, Ok with the body bytes otherwise.
+readBodyWithLimit :: Int -> Wai.Request -> Task Text (Result Text Bytes)
+readBodyWithLimit maxSize request = Task.fromIO do
+  sizeRef <- GhcIORef.newIORef 0
+  chunksRef <- GhcIORef.newIORef []
+
+  let readChunks = do
+        chunk <- Wai.getRequestBodyChunk request
+        if GhcBS.null chunk
+          then do
+            chunks <- GhcIORef.readIORef chunksRef
+            let reversedChunks = GhcList.reverse chunks
+            let concatenated = GhcBS.concat reversedChunks
+            let body = Bytes.fromLegacy concatenated
+            pure (Result.Ok body)
+          else do
+            currentSize <- GhcIORef.readIORef sizeRef
+            let chunkSize = GhcBS.length chunk
+            let newSize = currentSize + chunkSize
+            if newSize > maxSize
+              then do
+                -- Drain remaining body to avoid connection issues
+                drainBody
+                pure (Result.Err [fmt|Request body exceeds maximum size of #{maxSize} bytes|])
+              else do
+                GhcIORef.writeIORef sizeRef newSize
+                GhcIORef.modifyIORef chunksRef (\chunks -> chunk : chunks)
+                readChunks
+
+      drainBody = do
+        chunk <- Wai.getRequestBodyChunk request
+        if GhcBS.null chunk
+          then pure ()
+          else drainBody
+
+  readChunks
 
 
 instance ApiBuilder WebApi where
@@ -63,6 +111,8 @@ instance ApiBuilder WebApi where
     (Wai.Response -> Task Text Wai.ResponseReceived) ->
     Task Text Wai.ResponseReceived
   assembleApi endpoints request respond = do
+    let maxBodySize = endpoints.api.maxBodySize
+
     -- Helper function for 404 responses
     let notFound message = do
           let response404 =
@@ -72,42 +122,53 @@ instance ApiBuilder WebApi where
                   |> Wai.responseLBS HTTP.status404 [(HTTP.hContentType, "application/json")]
           respond response404
 
+    -- Helper function for 413 Payload Too Large responses
+    let payloadTooLarge message = do
+          let response413 =
+                message
+                  |> Text.toBytes
+                  |> Bytes.toLazyLegacy
+                  |> Wai.responseLBS HTTP.status413 [(HTTP.hContentType, "application/json")]
+          respond response413
+
     -- Parse the request path to check if it matches /commands/<name>
     case Wai.pathInfo request of
       ["commands", commandName] -> do
         -- Look up the command handler in the endpoints map
         case Map.get commandName endpoints.commandEndpoints of
           Maybe.Just handler -> do
-            -- Read the request body
-            requestBody <- Wai.strictRequestBody request |> Task.fromIO
-            let bodyBytes = requestBody |> Bytes.fromLazyLegacy
+            -- Read the request body with size limit to prevent DoS attacks
+            bodyResult <- readBodyWithLimit maxBodySize request
+            case bodyResult of
+              Result.Err errorMessage ->
+                payloadTooLarge errorMessage
+              Result.Ok bodyBytes -> do
+                respondVar <- ConcurrentVar.new
+                -- We need to capture the ResponseReceived from the handler's callback
+                -- Since handler returns Unit, we'll use andThen to chain the result
+                handler
+                  bodyBytes
+                  ( \responseBytes -> do
+                      -- The response bytes contain the JSON with a "tag" field indicating the status
+                      -- Parse it to determine the HTTP status code
+                      let httpStatus = case Json.decodeBytes @CommandResponse responseBytes of
+                            Result.Ok (CommandResponse.Accepted {}) -> HTTP.status200
+                            Result.Ok (CommandResponse.Rejected {}) -> HTTP.status400
+                            Result.Ok (CommandResponse.Failed {}) -> HTTP.status500
+                            Result.Err _ -> HTTP.status500
 
-            respondVar <- ConcurrentVar.new
-            -- We need to capture the ResponseReceived from the handler's callback
-            -- Since handler returns Unit, we'll use andThen to chain the result
-            handler
-              bodyBytes
-              ( \responseBytes -> do
-                  -- The response bytes contain the JSON with a "tag" field indicating the status
-                  -- Parse it to determine the HTTP status code
-                  let httpStatus = case Json.decodeBytes @CommandResponse responseBytes of
-                        Result.Ok (CommandResponse.Accepted {}) -> HTTP.status200
-                        Result.Ok (CommandResponse.Rejected {}) -> HTTP.status400
-                        Result.Ok (CommandResponse.Failed {}) -> HTTP.status500
-                        Result.Err _ -> HTTP.status500
-
-                  let responseBody =
-                        responseBytes
-                          |> Bytes.toLazyLegacy
-                          |> Wai.responseLBS httpStatus [(HTTP.hContentType, "application/json")]
-                  respondValue <- respond responseBody
-                  respondVar |> ConcurrentVar.set respondValue
-                  Task.yield ()
-              )
-              |> Task.andThen
-                ( \_ -> do
-                    ConcurrentVar.get respondVar
-                )
+                      let responseBody =
+                            responseBytes
+                              |> Bytes.toLazyLegacy
+                              |> Wai.responseLBS httpStatus [(HTTP.hContentType, "application/json")]
+                      respondValue <- respond responseBody
+                      respondVar |> ConcurrentVar.set respondValue
+                      Task.yield ()
+                  )
+                  |> Task.andThen
+                    ( \_ -> do
+                        ConcurrentVar.get respondVar
+                    )
           Maybe.Nothing ->
             notFound [fmt|Command not found: #{commandName}|]
       _ ->
