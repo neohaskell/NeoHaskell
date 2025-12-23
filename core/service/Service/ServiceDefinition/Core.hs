@@ -27,6 +27,7 @@ import Service.Api.ApiBuilder (ApiBuilder (..), ApiEndpointHandler, ApiEndpoints
 import Service.Command (EntityOf, EventOf)
 import Service.Command.Core (ApiOf, Command (..), Entity (..), Event, NameOf)
 import Service.CommandHandler qualified as CommandHandler
+import Service.CommandResponse qualified as CommandResponse
 import Service.EntityFetcher.Core qualified as EntityFetcher
 import Service.Event.EntityName (EntityName (..))
 import Service.Event.StreamId qualified as StreamId
@@ -170,7 +171,8 @@ instance
     let entityName = EntityName (getSymbolText (Record.Proxy @(entityName)))
 
     let handler (cmd :: cmd) = do
-          CommandHandler.execute eventStore fetcher entityName cmd
+          result <- CommandHandler.execute eventStore fetcher entityName cmd
+          Task.yield (CommandResponse.fromHandlerResult result)
 
     buildCommandHandler @api api cmd handler reqBytes respondCallback
 

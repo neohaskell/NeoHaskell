@@ -20,8 +20,9 @@ import Record qualified
 import Result qualified
 import Service.Api.ApiBuilder (ApiBuilder (..), ApiEndpointHandler, ApiEndpoints (..))
 import Service.Command.Core (Command, NameOf)
-import Service.CommandHandler.Core
 import Service.CommandHandler.TH (deriveKnownHash)
+import Service.CommandResponse (CommandResponse)
+import Service.CommandResponse qualified as CommandResponse
 import Task (Task)
 import Task qualified
 import Text (Text)
@@ -68,7 +69,7 @@ instance ApiBuilder WebApi where
                 message
                   |> Text.toBytes
                   |> Bytes.toLazyLegacy
-                  |> Wai.responseLBS HTTP.status404 [(HTTP.hContentType, "text/plain")]
+                  |> Wai.responseLBS HTTP.status404 [(HTTP.hContentType, "application/json")]
           respond response404
 
     -- Parse the request path to check if it matches /commands/<name>
@@ -87,20 +88,24 @@ instance ApiBuilder WebApi where
             handler
               bodyBytes
               ( \responseBytes -> do
-                  -- Create a WAI response from the handler's response
+                  -- The response bytes contain the JSON with a "tag" field indicating the status
+                  -- Parse it to determine the HTTP status code
+                  let httpStatus = case Json.decodeBytes @CommandResponse responseBytes of
+                        Result.Ok (CommandResponse.Accepted {}) -> HTTP.status200
+                        Result.Ok (CommandResponse.Rejected {}) -> HTTP.status400
+                        Result.Ok (CommandResponse.Failed {}) -> HTTP.status500
+                        Result.Err _ -> HTTP.status500
+
                   let responseBody =
                         responseBytes
                           |> Bytes.toLazyLegacy
-                          |> Wai.responseLBS HTTP.status200 [(HTTP.hContentType, "text/plain")]
+                          |> Wai.responseLBS httpStatus [(HTTP.hContentType, "application/json")]
                   respondValue <- respond responseBody
                   respondVar |> ConcurrentVar.set respondValue
                   Task.yield ()
               )
               |> Task.andThen
                 ( \_ -> do
-                    -- After the handler completes, we need to return a ResponseReceived
-                    -- But the actual ResponseReceived was already sent via respond
-                    -- This is a fundamental mismatch - let me rethink...
                     ConcurrentVar.get respondVar
                 )
           Maybe.Nothing ->
@@ -137,7 +142,7 @@ instance ApiBuilder WebApi where
     ) =>
     WebApi ->
     Record.Proxy command ->
-    (command -> Task Text CommandHandlerResult) ->
+    (command -> Task Text CommandResponse) ->
     ApiEndpointHandler
   buildCommandHandler api _ handler body respond = do
     let port = api.port
@@ -150,17 +155,19 @@ instance ApiBuilder WebApi where
 
     case commandValue of
       Result.Ok cmd -> do
-        -- Log that we're executing the command (optional)
+        -- Log that we're executing the command
         Console.print [fmt|Executing #{n} on port #{port}|]
 
-        -- In a real implementation, this would execute the actual command through ServiceRuntime
-        -- For now, we'll simulate a successful execution with proper response format
-        -- let response = [fmt|Command #{n} executed successfully. Parsed command: #{body |> Text.fromBytes}|]
+        -- Execute the command and get the response
         response <- handler cmd
-        let responseJson = Json.encodeText response
-        respond (Text.toBytes responseJson)
-      Result.Err err -> do
-        -- Handle parsing error - return appropriate error response
+        let responseJson = Json.encodeText response |> Text.toBytes
+        respond responseJson
+      Result.Err _err -> do
+        -- Handle parsing error - return a Failed response
         Console.print [fmt|Failed to parse command #{n} on port #{port}|]
-        let errorResponse = [fmt|Invalid JSON format for command #{n} - #{err}|]
-        respond (Text.toBytes errorResponse)
+        let errorResponse =
+              CommandResponse.Failed
+                { error = [fmt|Invalid JSON format for command #{n}|]
+                }
+        let responseJson = Json.encodeText errorResponse |> Text.toBytes
+        respond responseJson
