@@ -3,8 +3,8 @@ module Service.EventStore.PostgresSpec where
 import Core
 import Service.EventStore.Postgres qualified as Postgres
 import Service.EventStore.Postgres.Internal qualified as Internal
-import Service.EventStore.Postgres.Internal.Core qualified as PostgresCore
-import Service.EventStore.Postgres.Internal.Sessions qualified as Sessions
+import Service.EventStore.Postgres.Core qualified as PostgresCore
+import Service.EventStore.Postgres.Sessions qualified as Sessions
 import Task qualified
 import Test
 import Test.Service.CommandHandler qualified as CommandHandler

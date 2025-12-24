@@ -137,8 +137,6 @@ library
     Service.CommandExecutor
     Service.CommandExecutor.Core
     Service.CommandExecutor.TH
-    Service.Definition.TypeLevel
-    Service.Definition.Validation
     Service.Entity
     Service.Entity.Core
     Service.EntityFetcher
@@ -154,11 +152,11 @@ library
     Service.EventStore.InMemory
     Service.EventStore.Postgres
     Service.EventStore.Postgres.Internal
-    Service.EventStore.Postgres.Internal.Core
-    Service.EventStore.Postgres.Internal.Notifications
-    Service.EventStore.Postgres.Internal.PostgresEventRecord
-    Service.EventStore.Postgres.Internal.Sessions
-    Service.EventStore.Postgres.Internal.SubscriptionStore
+    Service.EventStore.Postgres.Core
+    Service.EventStore.Postgres.Notifications
+    Service.EventStore.Postgres.PostgresEventRecord
+    Service.EventStore.Postgres.Sessions
+    Service.EventStore.Postgres.SubscriptionStore
     Service.Response
     Service.ServiceDefinition
     Service.ServiceDefinition.Core
@@ -247,7 +245,7 @@ test-suite nhcore-test
     Service.CommandHandlerSpec
     Service.CommandSpec
     Service.EventStore.InMemorySpec
-    Service.EventStore.Postgres.Internal.SubscriptionStoreSpec
+    Service.EventStore.Postgres.SubscriptionStoreSpec
     Service.EventStore.PostgresSpec
     SetSpec
     StreamSpec

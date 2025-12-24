@@ -1,4 +1,4 @@
-module Service.EventStore.Postgres.Internal.SubscriptionStoreSpec (spec) where
+module Service.EventStore.Postgres.SubscriptionStoreSpec (spec) where
 
 import Array qualified
 import AsyncTask qualified
@@ -9,8 +9,8 @@ import Service.Event (Event (..))
 import Service.Event qualified as Event
 import Service.Event.EventMetadata qualified as EventMetadata
 import Service.Event.StreamId qualified as StreamId
-import Service.EventStore.Postgres.Internal.SubscriptionStore (Error (..), SubscriptionStore (..))
-import Service.EventStore.Postgres.Internal.SubscriptionStore qualified as SubscriptionStore
+import Service.EventStore.Postgres.SubscriptionStore (Error (..), SubscriptionStore (..))
+import Service.EventStore.Postgres.SubscriptionStore qualified as SubscriptionStore
 import Task qualified
 import Test
 import Test.Service.EventStore.Core (CartEvent (..))

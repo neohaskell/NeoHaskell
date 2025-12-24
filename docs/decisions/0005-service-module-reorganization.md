@@ -169,30 +169,17 @@ core/service/
       InMemory.hs
       Postgres.hs
       Postgres/
-        Internal/               -- (NOT flattened - deferred)
-          Core.hs
-          Notifications.hs
-          PostgresEventRecord.hs
-          Sessions.hs
-          SubscriptionStore.hs
-
-    Definition/                 -- (NOT merged - deferred)
-      TypeLevel.hs
-      Validation.hs
+        Internal.hs             -- Re-export wrapper for Postgres implementation
+        Core.hs                 -- PostgresStoreError, RelativePosition, ReadDirection
+        Notifications.hs        -- Postgres LISTEN/NOTIFY integration
+        PostgresEventRecord.hs  -- Row decoder for event records
+        Sessions.hs             -- Hasql sessions for all Postgres operations
+        SubscriptionStore.hs    -- In-memory subscription dispatch
 
     ServiceDefinition.hs
     ServiceDefinition/
       Core.hs                   -- createHandler (was buildCmdEP)
 ```
-
-## What Was NOT Implemented
-
-The following items from the original plan were deferred:
-
-1. **Postgres module flattening** - `Service/EventStore/Postgres/Internal/*` was not moved to `Service/EventStore/Postgres/*`
-2. **Definition merge** - `Service/Definition/*` was not merged into `Service/ServiceDefinition/*`
-
-These deferrals were pragmatic choices to minimize churn while achieving the primary naming and organization goals.
 
 **Note:** A clean break was made - all deprecated modules (`CommandHandler/*`, `Api/*`, `Decision.hs`, `CommandResponse.hs`) were deleted entirely. No backward-compatibility shims were kept.
 
