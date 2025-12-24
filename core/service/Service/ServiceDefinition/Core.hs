@@ -17,7 +17,6 @@ import Console qualified
 import GHC.IO qualified as GHC
 import GHC.TypeLits qualified as GHC
 import Json qualified
-import Json qualified as JSON
 import Map (Map)
 import Map qualified
 import Maybe (Maybe (..))
@@ -128,7 +127,7 @@ instance
     Eq entityIdType,
     Ord entityIdType,
     Show entityIdType,
-    JSON.FromJSON cmd,
+    Json.FromJSON cmd,
     ApiBuilder api,
     name ~ NameOf cmd,
     Record.KnownSymbol apiName,
