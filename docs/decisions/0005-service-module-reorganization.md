@@ -2,143 +2,163 @@
 
 ## Status
 
-Accepted
+Accepted (Implemented)
 
 ## Context
 
-The `core/service/` directory has evolved organically and presents several challenges for contributors:
+The `core/service/` directory had evolved organically and presented several challenges for contributors:
 
-### Problem 1: `Service/Command/Core.hs` is a Grab-Bag
+### Problem 1: `Service/Command/Core.hs` was a Grab-Bag
 
-This single 133-line file contains 7+ distinct concepts:
+This single file contained 7+ distinct concepts:
 
-| Concept | What It Is | Why It's Here |
-|---------|------------|---------------|
-| `Command` typeclass | Command contract | Core to commands |
-| `Entity` typeclass | Entity reconstruction | Used by commands |
-| `Event` typeclass | Event routing | Used by entities |
-| `Decision` GADT | Decision monad | Used by decide function |
-| `DecisionContext` + `runDecision` | Decision execution | Interprets Decision |
-| `CommandResult` | Decision outcome | Result of runDecision |
-| `EntityOf`, `EventOf`, `NameOf`, `ApiOf` | Type families | Link types together |
+| Concept                                  | What It Is            | Why It Was There        |
+| ---------------------------------------- | --------------------- | ----------------------- |
+| `Command` typeclass                      | Command contract      | Core to commands        |
+| `Entity` typeclass                       | Entity reconstruction | Used by commands        |
+| `Event` typeclass                        | Event routing         | Used by entities        |
+| `Decision` GADT                          | Decision monad        | Used by decide function |
+| `DecisionContext` + `runDecision`        | Decision execution    | Interprets Decision     |
+| `CommandResult`                          | Decision outcome      | Result of runDecision   |
+| `EntityOf`, `EventOf`, `NameOf`, `ApiOf` | Type families         | Link types together     |
 
 A TypeScript developer looking for "how to define an entity" would not think to look in `Service/Command/Core.hs`.
 
-### Problem 2: Naming Doesn't Reflect Reality
+### Problem 2: Naming Didn't Reflect Reality
 
-| Current Name | What It Actually Does | The Confusion |
-|--------------|----------------------|---------------|
-| `CommandHandler` | Event-sourced command executor with retries | "Handler" implies simple callback |
-| `WebApi` | WAI/Warp HTTP adapter | Boxes you into "web" only |
-| `ApiBuilder` | Transport abstraction | "API" is vague |
-| `buildCmdEP` | Creates command pipeline | Cryptic abbreviation |
+| Old Name         | What It Actually Does                       | The Confusion                       |
+| ---------------- | ------------------------------------------- | ----------------------------------- |
+| `CommandHandler` | Event-sourced command executor with retries | "Handler" implies simple callback   |
+| `WebApi`         | WAI/Warp HTTP adapter                       | Boxes you into "web" only           |
+| `ApiBuilder`     | Transport abstraction                       | "API" is vague                      |
+| `buildCmdEP`     | Creates command pipeline                    | Cryptic abbreviation                |
+| `ApiOf`          | Maps command to transport adapter           | "API" less precise than "Transport" |
 
 ### Problem 3: Future-Proofing
 
-- `WebApi` naming prevents clean `CliApi` addition
+- `WebApi` naming prevents clean `CliTransport` addition
 - `ApiBuilder` doesn't communicate it's about transport adapters
-- The ES/CQRS terminology (Decider, Adapter, Transport) is more accurate
-
-### Problem 4: Deep Nesting
-
-Postgres modules are 5 levels deep: `Service/EventStore/Postgres/Internal/Core.hs`
-
-### Problem 5: Orphan Folders
-
-`Service/Definition/` contains `TypeLevel.hs` and `Validation.hs` but is separate from `Service/ServiceDefinition/`.
+- The ES/CQRS terminology (Decider, Transport, Executor) is more accurate
 
 ## Decision
 
-We will reorganize the service modules as follows:
+We reorganized the service modules as follows:
 
 ### 1. Split the Grab-Bag
 
-Extract from `Service/Command/Core.hs`:
+Extracted from the monolithic `Service/Command/Core.hs`:
 
 **New `Service/Entity/Core.hs`:**
-- `Entity` typeclass
-- `Event` typeclass (for routing)
+
+- `Entity` typeclass (with `EntityIdType`, `initialStateImpl`, `updateImpl`)
+- `Event` typeclass (with `getEventEntityIdImpl` for routing)
 - `EntityOf` type family
 - `EventOf` type family
 
 **New `Decider.hs` (top-level, consolidated):**
-- `Decision` GADT and instances
+
+- `Decision` GADT and Functor/Applicative/Monad instances
 - `DecisionContext` and `runDecision`
-- Smart constructors (`generateUuid`, `acceptNew`, `acceptExisting`, `acceptAfter`, `acceptAny`, `reject`)
+- `CommandResult` type
+- Smart constructors: `generateUuid`, `acceptNew`, `acceptExisting`, `acceptAfter`, `acceptAny`, `reject`
 
 **Slimmed `Service/Command/Core.hs`:**
-- `Command` typeclass
-- `CommandResult` type
+
+- `Command` typeclass (with `IsMultiTenant`, `getEntityIdImpl`, `decideImpl`)
 - `NameOf` type family
 - `TransportOf` type family (renamed from `ApiOf`)
-- Multi-tenant type families
+- Multi-tenant type families (`GetEntityIdFunction`, `DecideFunction`)
+- Re-exports from `Service.Entity` and `Decider` for backward compatibility
 
-### 2. Rename Handler to Executor
+### 2. Renamed Handler to Executor
 
-| Old | New |
-|-----|-----|
-| `Service.CommandHandler` | `Service.CommandExecutor` |
-| `CommandHandler` type | `CommandExecutor` |
-| `CommandHandlerResult` | `ExecutionResult` |
+| Old                                | New                       |
+| ---------------------------------- | ------------------------- |
+| `Service.CommandHandler` (concept) | `Service.CommandExecutor` |
+| `CommandHandlerResult`             | `ExecutionResult`         |
 
-Rationale: "Handler" implies a simple callback. This module orchestrates the full event-sourcing flow with retries.
+**New modules created:**
 
-### 3. Rename Api to Transport
+- `Service/CommandExecutor/Core.hs` - Main execution logic with retry/concurrency handling
+- `Service/CommandExecutor/TH.hs` - Template Haskell helpers (e.g., `deriveKnownHash`)
+- `Service/CommandExecutor.hs` - Re-export wrapper
 
-| Old | New |
-|-----|-----|
-| `Service.Api.ApiBuilder` | `Service.Transport` |
-| `Service.Api.WebApi` | `Service.Transport.Web` |
-| `ApiBuilder` typeclass | `Transport` |
-| `WebApi` type | `WebTransport` |
-| `ApiOf` type family | `TransportOf` |
+**Deleted modules (clean break):**
 
-Rationale: "Transport" is standard ES/CQRS terminology for the adapter layer that handles HTTP, CLI, gRPC, etc.
+- `Service/CommandHandler/Core.hs`
+- `Service/CommandHandler/TH.hs`
+- `Service/CommandHandler.hs`
 
-### 4. Flatten Postgres Modules
+Rationale: "Handler" implies a simple callback. "Executor" better conveys the orchestration of the full event-sourcing flow with retries and concurrency control.
 
-Move from `Service/EventStore/Postgres/Internal/*` to `Service/EventStore/Postgres/*`.
+### 3. Renamed Api to Transport
 
-### 5. Merge Definition into ServiceDefinition
+| Old                    | New                       |
+| ---------------------- | ------------------------- |
+| `ApiBuilder` typeclass | `Transport` typeclass     |
+| `WebApi` type          | `WebTransport` type       |
+| `ApiOf` type family    | `TransportOf` type family |
 
-Move `Service/Definition/*` to `Service/ServiceDefinition/*`.
+**New modules created:**
 
-### 6. Cleanup
+- `Service/Transport.hs` - `Transport` typeclass, `EndpointHandler` type, `Endpoints` type
+- `Service/Transport/Web.hs` - `WebTransport` implementation with WAI/Warp
 
-- Rename `buildCmdEP` to `createHandler`
-- Rename `CommandResponse.hs` to `Response.hs`
+**Deleted modules (clean break):**
+
+- `Service/Api/ApiBuilder.hs`
+- `Service/Api/WebApi.hs`
+
+Rationale: "Transport" is standard ES/CQRS terminology for the adapter layer that handles HTTP, CLI, gRPC, etc. This enables natural sibling modules like `Transport.Cli` in the future.
+
+### 4. Created Response Module
+
+**New `Service/Response.hs`:**
+
+- `CommandResponse` type (user-facing: `Accepted`, `Rejected`, `Failed`)
+- `fromExecutionResult` function to convert internal `ExecutionResult` to public `CommandResponse`
+
+This separates the internal execution details (retry counts, event counts) from the client-facing API response.
+
+### 5. Renamed buildCmdEP to createHandler
+
+In `Service/ServiceDefinition/Core.hs`:
+
+- `buildCmdEP` renamed to `createHandler`
+
+Rationale: Clear, descriptive name that explains what the function does.
 
 ### Final Structure
 
-```
+```text
 core/service/
-  Decider.hs                    -- Decision monad + smart constructors + runDecision
+  Decider.hs                    -- Decision monad + CommandResult + smart constructors + runDecision
   Service.hs                    -- Re-exports ServiceDefinition.Core
   Trigger.hs                    -- (unchanged)
 
   Service/
     Command.hs                  -- Re-export wrapper
     Command/
-      Core.hs                   -- Command typeclass + CommandResult + NameOf + TransportOf
+      Core.hs                   -- Command typeclass + NameOf + TransportOf + re-exports
 
     Entity.hs                   -- Re-export wrapper
     Entity/
       Core.hs                   -- Entity + Event typeclasses + EntityOf + EventOf
 
-    Transport.hs                -- Transport typeclass (was ApiBuilder)
+    Transport.hs                -- Transport typeclass + EndpointHandler + Endpoints
     Transport/
-      Web.hs                    -- WebTransport (was WebApi)
+      Web.hs                    -- WebTransport implementation
 
-    CommandExecutor.hs          -- Re-export wrapper (was CommandHandler)
+    CommandExecutor.hs          -- Re-export wrapper
     CommandExecutor/
-      Core.hs                   -- Execution logic
-      TH.hs                     -- Template Haskell
+      Core.hs                   -- ExecutionResult + CommandExecutor + execute
+      TH.hs                     -- Template Haskell helpers
 
-    Response.hs                 -- CommandResponse types (was CommandResponse.hs)
+    Response.hs                 -- CommandResponse + fromExecutionResult
     Error.hs                    -- (unchanged)
 
     Event.hs                    -- Event wrapper types (unchanged)
-    Event/                      -- (unchanged)
+    Event/                      -- StreamId, StreamPosition, etc. (unchanged)
 
     EntityFetcher.hs            -- (unchanged)
     EntityFetcher/              -- (unchanged)
@@ -149,18 +169,32 @@ core/service/
       InMemory.hs
       Postgres.hs
       Postgres/
-        Core.hs                 -- (was Internal/Core.hs)
-        Notifications.hs        -- (was Internal/Notifications.hs)
-        EventRecord.hs          -- (was Internal/PostgresEventRecord.hs)
-        Sessions.hs             -- (was Internal/Sessions.hs)
-        SubscriptionStore.hs    -- (was Internal/SubscriptionStore.hs)
+        Internal/               -- (NOT flattened - deferred)
+          Core.hs
+          Notifications.hs
+          PostgresEventRecord.hs
+          Sessions.hs
+          SubscriptionStore.hs
+
+    Definition/                 -- (NOT merged - deferred)
+      TypeLevel.hs
+      Validation.hs
 
     ServiceDefinition.hs
     ServiceDefinition/
-      Core.hs
-      TypeLevel.hs              -- (was Definition/TypeLevel.hs)
-      Validation.hs             -- (was Definition/Validation.hs)
+      Core.hs                   -- createHandler (was buildCmdEP)
 ```
+
+## What Was NOT Implemented
+
+The following items from the original plan were deferred:
+
+1. **Postgres module flattening** - `Service/EventStore/Postgres/Internal/*` was not moved to `Service/EventStore/Postgres/*`
+2. **Definition merge** - `Service/Definition/*` was not merged into `Service/ServiceDefinition/*`
+
+These deferrals were pragmatic choices to minimize churn while achieving the primary naming and organization goals.
+
+**Note:** A clean break was made - all deprecated modules (`CommandHandler/*`, `Api/*`, `Decision.hs`, `CommandResponse.hs`) were deleted entirely. No backward-compatibility shims were kept.
 
 ## Consequences
 
@@ -169,23 +203,31 @@ core/service/
 1. **Predictable locations**: Contributors can find Entity code in `Service.Entity`, not `Service.Command.Core`
 2. **ES/CQRS aligned**: Terminology matches industry standards (Transport, Decider, Executor)
 3. **Future-proof**: `Transport.Web` and `Transport.Cli` are natural siblings
-4. **Flatter structure**: Postgres modules are easier to navigate
-5. **Single responsibility**: Each module has one clear purpose
+4. **Single responsibility**: Each module has one clear purpose
+5. **Separation of concerns**: Internal `ExecutionResult` is separate from client-facing `CommandResponse`
 
 ### Negative
 
-1. **Breaking change**: All internal imports need updating (mitigated: Core.hs facade protects users)
-2. **Churn**: Many files need to be moved/renamed
-3. **ADR-0002 and ADR-0003 reference old names**: These ADRs document `WebApi` and `CommandHandler` terminology
+1. **Breaking internal imports**: All internal imports needed updating (clean break, no shims)
+2. **ADR-0002 and ADR-0003 reference old names**: These ADRs document `WebApi` and `CommandHandler` terminology
+3. **Re-exports for convenience**: `Service/Command/Core.hs` re-exports Entity/Event/Decider types for backward compatibility in user code
 
-### Trade-offs
+### Migration Path
 
-1. **Clean break over compatibility**: We chose to delete old modules rather than maintain deprecated re-exports
-2. **Separate Entity/Event modules**: Event typeclass (for routing) lives with Entity since they're coupled via `EntityOf`
+Internal code should migrate to new imports:
+
+- `Service.CommandHandler` -> `Service.CommandExecutor`
+- `Service.Api.*` -> `Service.Transport.*`
+- `ApiOf` -> `TransportOf`
+- Entity/Event typeclasses -> `Service.Entity`
+
+The `Core` module's public API facade was not affected by these changes.
 
 ## References
 
-- `/Users/nick/Source/NeoHaskell/core/service/Service/Command/Core.hs` - Current grab-bag module
-- `/Users/nick/Source/NeoHaskell/core/service/Decision.hs` - Current Decision smart constructors
-- `/Users/nick/Source/NeoHaskell/docs/decisions/0002-webapi-adapter-architecture.md` - Previous API architecture
-- `/Users/nick/Source/NeoHaskell/docs/decisions/0003-command-abstraction-and-flow.md` - Command flow documentation
+- `/Users/nick/Source/NeoHaskell/core/service/Service/Entity/Core.hs` - New Entity module
+- `/Users/nick/Source/NeoHaskell/core/service/Decider.hs` - Consolidated Decision module
+- `/Users/nick/Source/NeoHaskell/core/service/Service/Transport.hs` - New Transport abstraction
+- `/Users/nick/Source/NeoHaskell/core/service/Service/CommandExecutor/Core.hs` - New executor logic
+- `/Users/nick/Source/NeoHaskell/docs/decisions/0002-webapi-adapter-architecture.md` - Previous API architecture (uses old terminology)
+- `/Users/nick/Source/NeoHaskell/docs/decisions/0003-command-abstraction-and-flow.md` - Command flow documentation (uses old terminology)
