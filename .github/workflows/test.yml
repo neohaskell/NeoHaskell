@@ -35,7 +35,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - uses: DeterminateSystems/determinate-nix-action@v3.13.2
+      - uses: DeterminateSystems/determinate-nix-action@v3.15.0
         with:
           extra-conf: |
             extra-substituters = https://cache.iog.io
