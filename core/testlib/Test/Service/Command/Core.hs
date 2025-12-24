@@ -11,7 +11,7 @@ module Test.Service.Command.Core (
 
 import Array qualified
 import Core
-import Decision qualified
+import Decider qualified
 import Json qualified
 import Service.Command.Core (Event (..))
 import Test.Service.EventStore.Core (CartEvent (..))
@@ -160,15 +160,15 @@ instance Command AddItemToCart where
   decideImpl cmd entity =
     case entity of
       Nothing ->
-        Decision.reject "Cart does not exist"
+        Decider.reject "Cart does not exist"
       Just cart -> do
         if cart.cartCheckedOut
           then
-            Decision.reject "Cannot add items to a checked out cart"
+            Decider.reject "Cannot add items to a checked out cart"
           else
             ItemAdded {entityId = cart.cartId, itemId = cmd.itemId, amount = cmd.amount}
               |> Array.wrap
-              |> Decision.acceptExisting
+              |> Decider.acceptExisting
 
 
 type instance EntityOf RemoveItemFromCart = CartEntity
@@ -181,18 +181,18 @@ instance Command RemoveItemFromCart where
   decideImpl cmd entity =
     case entity of
       Nothing ->
-        Decision.reject "Cart does not exist"
+        Decider.reject "Cart does not exist"
       Just cart -> do
         if cart.cartCheckedOut
-          then Decision.reject "Cannot remove items from a checked out cart"
+          then Decider.reject "Cannot remove items from a checked out cart"
           else do
             let hasItem = Array.any (\(id, _) -> id == cmd.itemId) cart.cartItems
             if not hasItem
-              then Decision.reject "Item not in cart"
+              then Decider.reject "Item not in cart"
               else do
                 let event = ItemRemoved {entityId = cart.cartId, itemId = cmd.itemId}
                 [event]
-                  |> Decision.acceptExisting
+                  |> Decider.acceptExisting
 
 
 type instance EntityOf CheckoutCart = CartEntity
@@ -205,14 +205,14 @@ instance Command CheckoutCart where
   decideImpl _ entity =
     case entity of
       Nothing ->
-        Decision.reject "Cart does not exist"
+        Decider.reject "Cart does not exist"
       Just cart -> do
         if cart.cartCheckedOut
-          then Decision.reject "Cart already checked out"
+          then Decider.reject "Cart already checked out"
           else do
             if Array.isEmpty cart.cartItems
-              then Decision.reject "Cannot checkout empty cart"
+              then Decider.reject "Cannot checkout empty cart"
               else do
                 let event = CartCheckedOut {entityId = cart.cartId}
                 [event]
-                  |> Decision.acceptExisting
+                  |> Decider.acceptExisting

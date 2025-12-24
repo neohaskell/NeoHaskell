@@ -1,4 +1,4 @@
-module Service.EventStore.Postgres.Internal.SubscriptionStore (
+module Service.EventStore.Postgres.SubscriptionStore (
   SubscriptionStore (..),
   Error (..),
   new,

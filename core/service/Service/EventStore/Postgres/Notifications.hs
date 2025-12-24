@@ -1,4 +1,4 @@
-module Service.EventStore.Postgres.Internal.Notifications (
+module Service.EventStore.Postgres.Notifications (
   connectTo,
   subscribeToStream,
 ) where
@@ -13,9 +13,9 @@ import Hasql.Notifications qualified as HasqlNotifications
 import Json qualified
 import Result qualified
 import Service.Event (Event (..))
-import Service.EventStore.Postgres.Internal.Sessions qualified as Sessions
-import Service.EventStore.Postgres.Internal.SubscriptionStore (SubscriptionStore)
-import Service.EventStore.Postgres.Internal.SubscriptionStore qualified as SubscriptionStore
+import Service.EventStore.Postgres.Sessions qualified as Sessions
+import Service.EventStore.Postgres.SubscriptionStore (SubscriptionStore)
+import Service.EventStore.Postgres.SubscriptionStore qualified as SubscriptionStore
 import Task qualified
 
 

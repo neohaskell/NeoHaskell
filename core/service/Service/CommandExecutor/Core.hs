@@ -1,22 +1,22 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
 
-module Service.CommandHandler.Core (
-  CommandHandler (..),
-  CommandHandlerResult (..),
+module Service.CommandExecutor.Core (
+  CommandExecutor (..),
+  ExecutionResult (..),
   execute,
 ) where
 
 import Array qualified
 import AsyncTask qualified
 import Basics
+import Decider (CommandResult (..), DecisionContext (..), runDecision)
 import Float qualified
 import Int qualified
 import Json qualified
 import Maybe (Maybe (..))
 import Result (Result (..))
 import Service.Command (Event (..))
-import Service.Command.Core (Command (..), CommandResult (..), Entity (..), EntityOf, EventOf)
-import Service.Command.Core qualified as Command
+import Service.Command.Core (Command (..), Entity (..), EntityOf, EventOf)
 import Service.EntityFetcher.Core (EntityFetchResult (..), EntityFetcher)
 import Service.EntityFetcher.Core qualified as EntityFetcher
 import Service.Event (EntityName, InsertionPayload (..), InsertionType (..))
@@ -32,8 +32,10 @@ import ToText (toText)
 import Uuid qualified
 
 
--- | Result of executing a command through the CommandHandler
-data CommandHandlerResult
+-- | Result of executing a command through the CommandExecutor.
+--
+-- This captures the full outcome including retry information for debugging.
+data ExecutionResult
   = CommandAccepted
       { streamId :: StreamId,
         eventsAppended :: Int,
@@ -49,10 +51,11 @@ data CommandHandlerResult
   deriving (Eq, Show, Ord, Generic)
 
 
-instance Json.ToJSON CommandHandlerResult
+instance Json.ToJSON ExecutionResult
 
 
-data CommandHandler event = CommandHandler
+-- | Configuration for command execution.
+data CommandExecutor event = CommandExecutor
   { eventStore :: EventStore event,
     maxRetries :: Int,
     retryDelayMs :: Int
@@ -78,6 +81,14 @@ awaitWithJitter retryCount = do
   AsyncTask.sleep jitteredDelay
 
 
+-- | Execute a command through the event-sourcing pipeline.
+--
+-- This function:
+-- 1. Extracts the entity ID from the command
+-- 2. Fetches the current entity state from the event store
+-- 3. Runs the decision logic to produce events or rejection
+-- 4. Persists accepted events to the event store
+-- 5. Handles concurrency conflicts with exponential backoff retry
 execute ::
   forall command commandEntity commandEvent.
   ( Command command,
@@ -95,7 +106,7 @@ execute ::
   EntityFetcher commandEntity commandEvent ->
   EntityName ->
   command ->
-  Task Text CommandHandlerResult
+  Task Text ExecutionResult
 execute eventStore entityFetcher entityName command = do
   -- Extract the entity ID from the command
   let maybeEntityId = (getEntityIdImpl @command) command
@@ -131,13 +142,13 @@ execute eventStore entityFetcher entityName command = do
   let retryLoop retryCount currentEntity currentStreamId = do
         -- TODO: Extract decision context into service context
         let decisionContext =
-              Command.DecisionContext
+              DecisionContext
                 { genUuid = Uuid.generate
                 }
 
         -- Execute the decision logic
         let decision = (decideImpl @command) command currentEntity
-        commandResult <- Command.runDecision decisionContext decision
+        commandResult <- runDecision decisionContext decision
 
         case commandResult of
           RejectCommand reason -> do

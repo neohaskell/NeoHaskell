@@ -1,4 +1,4 @@
-module Service.EventStore.Postgres.Internal.Sessions where
+module Service.EventStore.Postgres.Sessions where
 
 import Array qualified
 import Bytes qualified
@@ -23,9 +23,9 @@ import Result qualified
 import Service.Event (EntityName (..), Event (..), StreamId (..), StreamPosition (..))
 import Service.Event.EventMetadata (EventMetadata (..))
 import Service.Event.EventMetadata qualified as EventMetadata
-import Service.EventStore.Postgres.Internal.Core
-import Service.EventStore.Postgres.Internal.PostgresEventRecord (PostgresEventRecord)
-import Service.EventStore.Postgres.Internal.PostgresEventRecord qualified as PostgresEventRecord
+import Service.EventStore.Postgres.Core
+import Service.EventStore.Postgres.PostgresEventRecord (PostgresEventRecord)
+import Service.EventStore.Postgres.PostgresEventRecord qualified as PostgresEventRecord
 import Task qualified
 import Text qualified
 import Uuid qualified

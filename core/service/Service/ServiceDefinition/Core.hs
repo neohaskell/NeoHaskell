@@ -24,11 +24,11 @@ import Map qualified
 import Maybe (Maybe (..))
 import Record (Record)
 import Record qualified
-import Service.Api.ApiBuilder (ApiBuilder (..), ApiEndpointHandler, ApiEndpoints (..))
+import Service.Transport (Transport (..), EndpointHandler, Endpoints (..))
 import Service.Command (EntityOf, EventOf)
-import Service.Command.Core (ApiOf, Command (..), Entity (..), Event, NameOf)
-import Service.CommandHandler qualified as CommandHandler
-import Service.CommandResponse qualified as CommandResponse
+import Service.Command.Core (TransportOf, Command (..), Entity (..), Event, NameOf)
+import Service.CommandExecutor qualified as CommandExecutor
+import Service.Response qualified as Response
 import Service.EntityFetcher.Core qualified as EntityFetcher
 import Service.Event.EntityName (EntityName (..))
 import Service.Event.StreamId qualified as StreamId
@@ -89,26 +89,26 @@ type family CheckEventMatch (expectedEvent :: Type) (actualEvent :: Type) (cmdLa
 data
   Service
     (commandRow :: Record.Row Type)
-    (commandApiNames :: [Symbol])
-    (providedApiNames :: [Symbol])
+    (commandTransportNames :: [Symbol])
+    (providedTransportNames :: [Symbol])
     (eventStoreConfig :: Type)
   = Service
   { commandDefinitions :: Record commandRow,
     inspectDict :: Record.ContextRecord (Record.Dict (CommandInspect)) commandRow,
-    apis :: Map Text ApiBuilderValue,
+    transports :: Map Text TransportValue,
     eventStoreConfig :: eventStoreConfig
   }
 
 
-data ApiBuilderValue
-  = forall api.
-    (ApiBuilder api) =>
-    ApiBuilderValue api
+data TransportValue
+  = forall transport.
+    (Transport transport) =>
+    TransportValue transport
 
 
-getApiBuilderValue ::
-  ApiBuilderValue -> api
-getApiBuilderValue (ApiBuilderValue api) = GHC.unsafeCoerce api
+getTransportValue ::
+  TransportValue -> transport
+getTransportValue (TransportValue transport) = GHC.unsafeCoerce transport
 
 
 getSymbolText :: forall name. (GHC.KnownSymbol name) => Record.Proxy name -> Text
@@ -120,16 +120,16 @@ getSymbolText _ =
 data
   CommandDefinition
     (name :: Symbol)
-    (api :: Type)
+    (transport :: Type)
     (cmd :: Type)
-    (apiName :: Symbol)
+    (transportName :: Symbol)
     (event :: Type)
     (entity :: Type)
     (entityName :: Symbol)
     (entityIdType :: Type)
   = CommandDefinition
   { commandName :: Text,
-    apiName :: Text
+    transportName :: Text
   }
   deriving (Show)
 
@@ -138,22 +138,22 @@ class CommandInspect definition where
   type Cmd definition
   type CmdEntity definition
   type CmdEvent definition
-  type Api definition
-  type ApiName definition :: Symbol
+  type CmdTransport definition
+  type TransportName definition :: Symbol
 
 
   commandName :: definition -> Text
 
 
-  apiName :: definition -> Text
+  transportName :: definition -> Text
 
 
-  buildCmdEP ::
+  createHandler ::
     definition ->
     EventStore (CmdEvent definition) ->
-    Api definition ->
+    CmdTransport definition ->
     Record.Proxy (Cmd definition) ->
-    ApiEndpointHandler
+    EndpointHandler
 
 
 instance
@@ -169,9 +169,9 @@ instance
     Ord entityIdType,
     Show entityIdType,
     Json.FromJSON cmd,
-    ApiBuilder api,
+    Transport transport,
     name ~ NameOf cmd,
-    Record.KnownSymbol apiName,
+    Record.KnownSymbol transportName,
     Record.KnownSymbol name,
     Record.KnownSymbol entityName,
     Json.FromJSON event,
@@ -179,30 +179,30 @@ instance
     IsMultiTenant cmd ~ False,
     Record.KnownHash name
   ) =>
-  CommandInspect (CommandDefinition name api cmd apiName event entity entityName entityIdType)
+  CommandInspect (CommandDefinition name transport cmd transportName event entity entityName entityIdType)
   where
-  type Cmd (CommandDefinition name api cmd apiName event entity entityName entityIdType) = cmd
-  type CmdEvent (CommandDefinition name api cmd apiName event entity entityName entityIdType) = event
-  type CmdEntity (CommandDefinition name api cmd apiName event entity entityName entityIdType) = entity
-  type Api (CommandDefinition name api cmd apiName event entity entityName entityIdType) = api
-  type ApiName (CommandDefinition name api cmd apiName event entity entityName entityIdType) = apiName
+  type Cmd (CommandDefinition name transport cmd transportName event entity entityName entityIdType) = cmd
+  type CmdEvent (CommandDefinition name transport cmd transportName event entity entityName entityIdType) = event
+  type CmdEntity (CommandDefinition name transport cmd transportName event entity entityName entityIdType) = entity
+  type CmdTransport (CommandDefinition name transport cmd transportName event entity entityName entityIdType) = transport
+  type TransportName (CommandDefinition name transport cmd transportName event entity entityName entityIdType) = transportName
 
 
   commandName ::
-    (Record.KnownSymbol name) => CommandDefinition name api cmd apiName event entity entityName entityIdType -> Text
+    (Record.KnownSymbol name) => CommandDefinition name transport cmd transportName event entity entityName entityIdType -> Text
   commandName _ = getSymbolText (Record.Proxy @name)
 
 
-  apiName _ = getSymbolText (Record.Proxy @apiName)
+  transportName _ = getSymbolText (Record.Proxy @transportName)
 
 
-  buildCmdEP ::
-    (CommandDefinition name api cmd apiName event entity entityName entityIdType) ->
+  createHandler ::
+    (CommandDefinition name transport cmd transportName event entity entityName entityIdType) ->
     EventStore event ->
-    api ->
+    transport ->
     Record.Proxy cmd ->
-    ApiEndpointHandler
-  buildCmdEP _ eventStore api cmd reqBytes respondCallback = do
+    EndpointHandler
+  createHandler _ eventStore transport cmd reqBytes respondCallback = do
     fetcher <-
       EntityFetcher.new
         eventStore
@@ -212,13 +212,13 @@ instance
     let entityName = EntityName (getSymbolText (Record.Proxy @(entityName)))
 
     let handler (cmd :: cmd) = do
-          result <- CommandHandler.execute eventStore fetcher entityName cmd
-          Task.yield (CommandResponse.fromHandlerResult result)
+          result <- CommandExecutor.execute eventStore fetcher entityName cmd
+          Task.yield (Response.fromExecutionResult result)
 
-    buildCommandHandler @api api cmd handler reqBytes respondCallback
+    buildHandler @transport transport cmd handler reqBytes respondCallback
 
 
-type instance NameOf (CommandDefinition name api cmd apiName event entity entityName entityIdType) = name
+type instance NameOf (CommandDefinition name transport cmd transportName event entity entityName entityIdType) = name
 
 
 new :: Service '[] '[] '[] Unit
@@ -226,35 +226,35 @@ new =
   Service
     { commandDefinitions = Record.empty,
       inspectDict = Record.empty,
-      apis = Map.empty,
+      transports = Map.empty,
       eventStoreConfig = unit
     }
 
 
 useServer ::
-  forall api apiName commandApiNames providedApiNames cmds eventStoreConfig.
-  ( ApiBuilder api,
-    apiName ~ NameOf api,
-    Record.KnownHash apiName,
-    Record.KnownSymbol apiName
+  forall transport transportName commandTransportNames providedTransportNames cmds eventStoreConfig.
+  ( Transport transport,
+    transportName ~ NameOf transport,
+    Record.KnownHash transportName,
+    Record.KnownSymbol transportName
   ) =>
-  api ->
-  Service cmds commandApiNames providedApiNames eventStoreConfig ->
-  Service cmds commandApiNames (apiName ': providedApiNames) eventStoreConfig
-useServer api serviceDefinition = do
-  let apiName = getSymbolText (Record.Proxy @apiName)
-  let newApis = serviceDefinition.apis |> Map.set apiName (ApiBuilderValue api)
+  transport ->
+  Service cmds commandTransportNames providedTransportNames eventStoreConfig ->
+  Service cmds commandTransportNames (transportName ': providedTransportNames) eventStoreConfig
+useServer transport serviceDefinition = do
+  let transportNameText = getSymbolText (Record.Proxy @transportName)
+  let newTransports = serviceDefinition.transports |> Map.set transportNameText (TransportValue transport)
   serviceDefinition
-    { apis = newApis
+    { transports = newTransports
     }
 
 
 useEventStore ::
-  forall eventStoreConfig cmds commandApiNames providedApiNames.
+  forall eventStoreConfig cmds commandTransportNames providedTransportNames.
   (EventStoreConfig eventStoreConfig) =>
   eventStoreConfig ->
-  Service cmds commandApiNames providedApiNames _ ->
-  Service cmds commandApiNames providedApiNames eventStoreConfig
+  Service cmds commandTransportNames providedTransportNames _ ->
+  Service cmds commandTransportNames providedTransportNames eventStoreConfig
 useEventStore config serviceDefinition = do
   serviceDefinition
     { eventStoreConfig = config
@@ -267,10 +267,10 @@ command ::
     (cmd :: Type)
     originalCommands
     commandName
-    commandApi
-    (apiName :: Symbol)
-    (commandApiNames :: [Symbol])
-    providedApiNames
+    commandTransport
+    (transportName :: Symbol)
+    (commandTransportNames :: [Symbol])
+    providedTransportNames
     eventStoreConfig
     event
     entity
@@ -278,10 +278,10 @@ command ::
     entityIdType.
   ( Command cmd,
     commandName ~ NameOf cmd,
-    commandApi ~ ApiOf cmd,
-    apiName ~ NameOf commandApi,
+    commandTransport ~ TransportOf cmd,
+    transportName ~ NameOf commandTransport,
     entityName ~ NameOf entity,
-    Record.KnownSymbol apiName,
+    Record.KnownSymbol transportName,
     Record.KnownSymbol commandName,
     Record.KnownSymbol entityName,
     Record.KnownHash commandName,
@@ -289,54 +289,54 @@ command ::
     event ~ EventOf entity,
     Json.FromJSON event,
     Json.ToJSON event,
-    CommandInspect (CommandDefinition commandName commandApi cmd apiName event entity entityName entityIdType)
+    CommandInspect (CommandDefinition commandName commandTransport cmd transportName event entity entityName entityIdType)
   ) =>
-  Service originalCommands commandApiNames providedApiNames eventStoreConfig ->
+  Service originalCommands commandTransportNames providedTransportNames eventStoreConfig ->
   Service
-    ( (commandName 'Record.:= CommandDefinition commandName commandApi cmd apiName event entity entityName entityIdType)
+    ( (commandName 'Record.:= CommandDefinition commandName commandTransport cmd transportName event entity entityName entityIdType)
         ': originalCommands
     )
-    (apiName ': commandApiNames)
-    providedApiNames
+    (transportName ': commandTransportNames)
+    providedTransportNames
     eventStoreConfig
 command serviceDefinition = do
   let cmdName :: Record.Field commandName = fromLabel
-  let cmdVal :: Record.I (CommandDefinition commandName commandApi cmd apiName event entity entityName entityIdType) =
+  let cmdVal :: Record.I (CommandDefinition commandName commandTransport cmd transportName event entity entityName entityIdType) =
         Record.I
           CommandDefinition
             { commandName = getSymbolText (Record.Proxy @commandName),
-              apiName = getSymbolText (Record.Proxy @apiName)
+              transportName = getSymbolText (Record.Proxy @transportName)
             }
   let currentCmds :: Record originalCommands = serviceDefinition.commandDefinitions
   let cmds =
         currentCmds
           |> Record.insert cmdName cmdVal
   let inspectDict ::
-        Record.Dict (CommandInspect) (CommandDefinition commandName commandApi cmd apiName event entity entityName entityIdType) = Record.Dict
+        Record.Dict (CommandInspect) (CommandDefinition commandName commandTransport cmd transportName event entity entityName entityIdType) = Record.Dict
   let newInspectDict =
         serviceDefinition.inspectDict
           |> Record.insert cmdName inspectDict
 
   Service
     { commandDefinitions = cmds,
-      apis = serviceDefinition.apis,
+      transports = serviceDefinition.transports,
       inspectDict = newInspectDict,
       eventStoreConfig = serviceDefinition.eventStoreConfig
     }
 
 
 __internal_runServiceMain ::
-  forall cmds commandApiNames providedApiNames eventStoreConfig event.
+  forall cmds commandTransportNames providedTransportNames eventStoreConfig event.
   ( EventStoreConfig eventStoreConfig,
     event ~ ServiceEventType cmds,
     Json.FromJSON event,
     Json.ToJSON event
   ) =>
-  Service cmds commandApiNames providedApiNames eventStoreConfig -> GHC.IO Unit
+  Service cmds commandTransportNames providedTransportNames eventStoreConfig -> GHC.IO Unit
 __internal_runServiceMain s = do
   case Record.reflectAllFields s.inspectDict of
     Record.Reflected ->
-      runService @cmds @eventStoreConfig @event s.eventStoreConfig s.commandDefinitions s.apis
+      runService @cmds @eventStoreConfig @event s.eventStoreConfig s.commandDefinitions s.transports
         |> Task.runOrPanic
 
 
@@ -350,12 +350,12 @@ runService ::
   ) =>
   eventStoreConfig ->
   Record.ContextRecord Record.I cmds ->
-  Map Text ApiBuilderValue ->
+  Map Text TransportValue ->
   Task Text Unit
 runService
   eventStoreConfig
   commandDefinitions
-  apis = do
+  transportsMap = do
     -- Create the EventStore ONCE at service startup
     eventStore <- EventStore.createEventStore @eventStoreConfig @event eventStoreConfig
 
@@ -365,65 +365,65 @@ runService
             cmd ~ Cmd cmdDef
           ) =>
           Record.I (cmdDef) ->
-          Record.K ((Text, ApiBuilderValue), (Text, ApiEndpointHandler)) (cmdDef)
+          Record.K ((Text, TransportValue), (Text, EndpointHandler)) (cmdDef)
         mapper (Record.I x) = do
-          case apis |> Map.get (apiName x) of
-            Nothing -> panic [fmt|The impossible happened, couldn't find API config for #{commandName x}|]
-            Just apiBV -> do
-              let api = getApiBuilderValue apiBV
+          case transportsMap |> Map.get (transportName x) of
+            Nothing -> panic [fmt|The impossible happened, couldn't find transport config for #{commandName x}|]
+            Just transportVal -> do
+              let transport = getTransportValue transportVal
               -- Use unsafeCoerce because ServiceEventType guarantees event ~ CmdEvent cmdDef
               -- but GHC can't prove this within the cmap context
               let typedEventStore = GHC.unsafeCoerce eventStore :: EventStore (CmdEvent cmdDef)
-              Record.K ((apiName x, apiBV), (commandName x, buildCmdEP x typedEventStore (api) (Record.Proxy @cmd)))
+              Record.K ((transportName x, transportVal), (commandName x, createHandler x typedEventStore (transport) (Record.Proxy @cmd)))
 
-    let xs :: Array ((Text, ApiBuilderValue), (Text, ApiEndpointHandler)) =
+    let xs :: Array ((Text, TransportValue), (Text, EndpointHandler)) =
           commandDefinitions
             |> Record.cmap (Record.Proxy @(CommandInspect)) mapper
             |> Record.collapse
             |> Array.fromLinkedList
 
-    -- Group endpoints by API name
-    let endpointsReducer ((apiName, apiBV), (commandName, handler)) endpointsMap = do
-          let api = getApiBuilderValue apiBV
-          case endpointsMap |> Map.get apiName of
+    -- Group endpoints by transport name
+    let endpointsReducer ((transportNameText, transportVal), (commandNameText, handler)) endpointsMap = do
+          let transport = getTransportValue transportVal
+          case endpointsMap |> Map.get transportNameText of
             Nothing -> do
-              -- First command for this API, create new ApiEndpoints
+              -- First command for this transport, create new Endpoints
               let newEndpoints =
-                    ApiEndpoints
-                      { api = api,
-                        commandEndpoints = Map.empty |> Map.set commandName handler
+                    Endpoints
+                      { transport = transport,
+                        commandEndpoints = Map.empty |> Map.set commandNameText handler
                       }
-              endpointsMap |> Map.set apiName newEndpoints
+              endpointsMap |> Map.set transportNameText newEndpoints
             Just existingEndpoints -> do
-              -- Add command to existing API endpoints
+              -- Add command to existing transport endpoints
               let updatedEndpoints =
                     existingEndpoints
-                      { commandEndpoints = existingEndpoints.commandEndpoints |> Map.set commandName handler
+                      { commandEndpoints = existingEndpoints.commandEndpoints |> Map.set commandNameText handler
                       }
-              endpointsMap |> Map.set apiName updatedEndpoints
+              endpointsMap |> Map.set transportNameText updatedEndpoints
 
-    let endpointsByApi =
+    let endpointsByTransport =
           xs |> Array.reduce endpointsReducer Map.empty
 
-    -- Run each API with its endpoints
-    endpointsByApi
+    -- Run each transport with its endpoints
+    endpointsByTransport
       |> Map.entries
-      |> Task.forEach \(apiName, apiEndpoints) -> do
-        let commandCount = Map.length apiEndpoints.commandEndpoints
-        Console.print [fmt|Starting API: #{apiName} with #{commandCount} commands|]
+      |> Task.forEach \(transportNameText, transportEndpoints) -> do
+        let commandCount = Map.length transportEndpoints.commandEndpoints
+        Console.print [fmt|Starting transport: #{transportNameText} with #{commandCount} commands|]
 
-        -- Assemble the API using the ApiBuilder's assembleApi function
-        -- Since we need to call assembleApi with the proper type, we need to
-        -- extract it from the ApiBuilderValue
-        case apis |> Map.get apiName of
-          Nothing -> panic [fmt|API #{apiName} not found in apis map|]
-          Just apiBV -> do
-            -- We need to use the existentially quantified API type
-            case apiBV of
-              ApiBuilderValue (api :: api) -> do
-                -- Cast apiEndpoints to match the specific api type
-                let typedEndpoints = GHC.unsafeCoerce apiEndpoints :: ApiEndpoints api
-                let runnableApi = assembleApi typedEndpoints
+        -- Assemble the transport using the Transport's assembleTransport function
+        -- Since we need to call assembleTransport with the proper type, we need to
+        -- extract it from the TransportValue
+        case transportsMap |> Map.get transportNameText of
+          Nothing -> panic [fmt|Transport #{transportNameText} not found in transports map|]
+          Just transportVal -> do
+            -- We need to use the existentially quantified transport type
+            case transportVal of
+              TransportValue (transport :: transport) -> do
+                -- Cast transportEndpoints to match the specific transport type
+                let typedEndpoints = GHC.unsafeCoerce transportEndpoints :: Endpoints transport
+                let runnableTransport = assembleTransport typedEndpoints
 
-                -- Run the assembled API
-                runApi api runnableApi
+                -- Run the assembled transport
+                runTransport transport runnableTransport

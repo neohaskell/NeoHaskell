@@ -1,4 +1,4 @@
-module Service.CommandHandler.TH (
+module Service.CommandExecutor.TH (
   command,
   deriveKnownHash,
 ) where

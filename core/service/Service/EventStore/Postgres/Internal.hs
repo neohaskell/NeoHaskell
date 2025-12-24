@@ -31,12 +31,12 @@ import Service.Event.EventMetadata (EventMetadata (..))
 import Service.Event.EventMetadata qualified as EventMetadata
 import Service.Event.StreamId qualified as StreamId
 import Service.EventStore.Core
-import Service.EventStore.Postgres.Internal.Core
-import Service.EventStore.Postgres.Internal.Notifications qualified as Notifications
-import Service.EventStore.Postgres.Internal.PostgresEventRecord (PostgresEventRecord (..))
-import Service.EventStore.Postgres.Internal.Sessions qualified as Sessions
-import Service.EventStore.Postgres.Internal.SubscriptionStore (SubscriptionStore)
-import Service.EventStore.Postgres.Internal.SubscriptionStore qualified as SubscriptionStore
+import Service.EventStore.Postgres.Core
+import Service.EventStore.Postgres.Notifications qualified as Notifications
+import Service.EventStore.Postgres.PostgresEventRecord (PostgresEventRecord (..))
+import Service.EventStore.Postgres.Sessions qualified as Sessions
+import Service.EventStore.Postgres.SubscriptionStore (SubscriptionStore)
+import Service.EventStore.Postgres.SubscriptionStore qualified as SubscriptionStore
 import Stream (Stream)
 import Stream qualified
 import Task (Task)

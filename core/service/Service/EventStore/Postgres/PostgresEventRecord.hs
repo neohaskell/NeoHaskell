@@ -1,4 +1,4 @@
-module Service.EventStore.Postgres.Internal.PostgresEventRecord where
+module Service.EventStore.Postgres.PostgresEventRecord where
 
 import Core
 import Hasql.Decoders

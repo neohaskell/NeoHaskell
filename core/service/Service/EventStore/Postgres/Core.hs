@@ -1,4 +1,4 @@
-module Service.EventStore.Postgres.Internal.Core where
+module Service.EventStore.Postgres.Core where
 
 import Array qualified
 import Core
@@ -7,7 +7,7 @@ import Maybe qualified
 import Service.Event qualified as Event
 import Service.Event.EntityName (EntityName)
 import Service.Event.EntityName qualified as EntityName
-import Service.EventStore.Postgres.Internal.SubscriptionStore qualified as SubscriptionStore
+import Service.EventStore.Postgres.SubscriptionStore qualified as SubscriptionStore
 import Text qualified
 
 

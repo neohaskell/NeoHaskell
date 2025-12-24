@@ -1,11 +1,11 @@
-module Service.CommandResponse (
+module Service.Response (
   CommandResponse (..),
-  fromHandlerResult,
+  fromExecutionResult,
 ) where
 
 import Basics
 import Json qualified
-import Service.CommandHandler.Core (CommandHandlerResult (..))
+import Service.CommandExecutor.Core (ExecutionResult (..))
 import Service.Event.StreamId qualified as StreamId
 import Text (Text)
 
@@ -32,9 +32,9 @@ instance Json.ToJSON CommandResponse
 instance Json.FromJSON CommandResponse
 
 
--- | Convert internal CommandHandlerResult to client-facing CommandResponse
-fromHandlerResult :: CommandHandlerResult -> CommandResponse
-fromHandlerResult result = case result of
+-- | Convert internal ExecutionResult to client-facing CommandResponse
+fromExecutionResult :: ExecutionResult -> CommandResponse
+fromExecutionResult result = case result of
   CommandAccepted {streamId} ->
     Accepted
       { entityId = StreamId.toText streamId
