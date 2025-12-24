@@ -34,10 +34,12 @@ class ApiBuilder api where
 ```
 
 Key types:
+
 - `ApiEndpointHandler`: A function `Bytes -> (Bytes -> Task Text Unit) -> Task Text Unit` that receives raw request bytes and a response callback
 - `ApiEndpoints api`: A record containing the API configuration and a `Map Text ApiEndpointHandler` mapping command names to their handlers
 
 This abstraction separates:
+
 - **Transport concerns** (HTTP routing, serialization format) in the `ApiBuilder` instance
 - **Business logic** (command execution, event persistence) in the `CommandHandler`
 
@@ -87,6 +89,7 @@ readBodyWithLimit :: Int -> Wai.Request -> Task Text (Result Text Bytes)
 ```
 
 Key behaviors:
+
 - Reads body chunks incrementally, tracking total size
 - Returns `Result.Err` if the body exceeds `maxBodySize`
 - Drains remaining body on rejection to avoid connection issues
@@ -98,10 +101,10 @@ This prevents attackers from exhausting server memory with large payloads.
 
 HTTP status codes are derived from the `CommandResponse` type:
 
-| CommandResponse | HTTP Status |
-|-----------------|-------------|
-| `Accepted`      | 200 OK      |
-| `Rejected`      | 400 Bad Request |
+| CommandResponse | HTTP Status               |
+| --------------- | ------------------------- |
+| `Accepted`      | 200 OK                    |
+| `Rejected`      | 400 Bad Request           |
 | `Failed`        | 500 Internal Server Error |
 
 ### 3. Command Handler Building
@@ -123,6 +126,7 @@ buildCommandHandler ::
 ```
 
 This function:
+
 1. Deserializes the request body as JSON into the typed `command` value
 2. On parse failure, returns a `Failed` response with error details
 3. On success, invokes the command handler and serializes the response
@@ -142,11 +146,13 @@ service =
 ```
 
 When `Service.command @SomeCommand` is called:
+
 1. The `ApiOf SomeCommand` type family determines which API serves this command
 2. The command is registered in a type-level row with its API name
 3. At startup, commands are grouped by API and endpoint handlers are built
 
 The `runService` function:
+
 1. Creates a single `EventStore` instance shared across all commands
 2. Groups commands by their API (via `ApiOf` type family)
 3. Builds endpoint handlers for each command using `buildCmdEP`

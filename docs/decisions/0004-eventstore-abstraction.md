@@ -9,12 +9,13 @@ Accepted
 NeoHaskell implements Event Sourcing and CQRS as its core architectural pattern. At the heart of this pattern lies the EventStore, which serves as the single source of truth for all state changes in the system. This ADR documents the abstract EventStore contract, its guarantees, and the behaviors that any conforming implementation must provide.
 
 Event Sourcing requires that:
+
 1. All state changes are captured as immutable events
 2. Events are ordered and can be replayed to reconstruct state
 3. Concurrent modifications are handled safely through optimistic concurrency control
 4. The system can support projections, subscriptions, and replays
 
-The EventStore abstraction must be implementation-agnostic, allowing for different backing technologies (in-memory for testing, PostgreSQL for production, potentially Kafka, EventStoreDB, or other systems in the future) while providing consistent guarantees across all implementations.
+The EventStore abstraction must be implementation-agnostic, allowing for different backing technologies (in-memory for testing, PostgreSQL for production, potentially DynamoDB, Cosmos, EventStoreDB, or other systems in the future) while providing consistent guarantees across all implementations.
 
 ## Decision
 
@@ -51,12 +52,14 @@ data EventStore eventType = EventStore
 **EntityName**: A text identifier for the entity type (e.g., "Cart", "User", "Order").
 
 **InsertionPayload**: Contains the events to insert, along with:
+
 - `streamId`: Target stream
 - `entityName`: Entity type
 - `insertionType`: Concurrency control mode
 - `insertions`: Array of events with metadata
 
 **InsertionType**: Controls optimistic concurrency:
+
 - `StreamCreation`: Expects the stream does not exist
 - `InsertAfter StreamPosition`: Expects specific stream position
 - `ExistingStream`: Expects the stream already exists
@@ -69,11 +72,13 @@ Any EventStore implementation MUST provide these guarantees:
 #### 1. Global Stream Ordering
 
 All events across all streams are assigned a monotonically increasing global position. When reading from the global stream:
+
 - Events appear in strict global position order
 - No gaps exist in the global position sequence
 - Each event has a unique global position
 
 **Test coverage**: `GlobalStreamOrdering.Spec`
+
 - Verifies correct total event count across streams
 - Verifies all events have assigned global positions
 - Verifies events are globally ordered (positions increase monotonically)
@@ -81,6 +86,7 @@ All events across all streams are assigned a monotonically increasing global pos
 #### 2. Individual Stream Ordering
 
 Within a single stream:
+
 - Events are assigned sequential local positions starting from 0
 - Local positions are strictly increasing
 - Reading forward returns events in ascending local position order
@@ -88,6 +94,7 @@ Within a single stream:
 - Global positions within a stream are strictly increasing (but may have gaps)
 
 **Test coverage**: `IndividualStreamOrdering.Spec`
+
 - Verifies correct event count per stream
 - Verifies local positions are sequential (0, 1, 2, ...)
 - Verifies global positions are strictly increasing within a stream
@@ -98,12 +105,14 @@ Within a single stream:
 #### 3. Optimistic Concurrency Control
 
 When multiple writers attempt to append to the same stream concurrently:
+
 - At most one writer succeeds when using `InsertAfter` with the same position
 - Failed writers receive a `ConsistencyCheckFailed` error
 - The global stream has no gaps even when concurrent writes fail
 - Failed writes do NOT appear in either the stream or global log
 
 **Test coverage**: `OptimisticConcurrency.Spec`
+
 - Verifies only one concurrent write succeeds to same position
 - Verifies consistency error when stream position is stale
 - Verifies global stream has no gaps after failed concurrent writes
@@ -111,22 +120,26 @@ When multiple writers attempt to append to the same stream concurrently:
 #### 4. Idempotency by Event ID
 
 Events are deduplicated by their unique event ID:
+
 - Inserting the same event ID twice does not create duplicates
 - The second insertion either succeeds silently or fails gracefully
 - The stream contains exactly one copy of each unique event
 
 **Test coverage**: `OptimisticConcurrency.Spec` ("insertion is idempotent by event id")
+
 - Verifies inserting same events twice results in original count only
 
 #### 5. Local Position Stamping
 
 The EventStore stamps local positions on events:
+
 - Events inserted without explicit local positions receive auto-assigned positions
 - Positions are derived from current stream length at insert time
 - Caller-provided positions are preserved when explicitly set
 - Events read from subscriptions include stamped positions
 
 **Test coverage**: `LocalPositionStamping.Spec`
+
 - Verifies positions are stamped when using `payloadFromEvents` helper
 - Verifies subscription events include positions
 - Verifies sequential positions across multiple inserts
@@ -135,12 +148,14 @@ The EventStore stamps local positions on events:
 #### 6. Batch Validation
 
 Insert operations validate batch constraints:
+
 - Empty insertion arrays are rejected with `EmptyPayload` error
 - Batches exceeding 100 events are rejected with `PayloadTooLarge` error
 - Batches of exactly 100 events are accepted
 - Meaningful error messages are provided for validation failures
 
 **Test coverage**: `BatchValidation.Spec`
+
 - Verifies empty batches are rejected
 - Verifies oversized batches (>100 events) are rejected
 - Verifies maximum size batches (100 events) succeed
@@ -149,12 +164,14 @@ Insert operations validate batch constraints:
 #### 7. Stream Truncation
 
 Truncation removes events before a given position:
+
 - `truncateStream` removes all events with local position < specified position
 - Events at or after the position are retained
 - Truncating at position 0 keeps all events
 - Truncating beyond stream length removes all events
 
 **Test coverage**: `StreamTruncation.Spec`
+
 - Verifies truncation keeps events from position onwards
 - Verifies position 0 truncation keeps all events
 - Verifies beyond-end truncation removes all events
@@ -174,6 +191,7 @@ Subscriptions provide real-time event notifications:
 **`subscribeToStreamEvents`**: Filters to events for a specific entity and stream.
 
 Additional guarantees:
+
 - Subscriber errors do not affect event store operations (fire-and-forget with error isolation)
 - Multiple concurrent subscribers receive all events without interference
 - Events stop being delivered after `unsubscribe` is called
@@ -181,6 +199,7 @@ Additional guarantees:
 - Events are delivered in order
 
 **Test coverage**: `Subscriptions.Spec`, `Subscriptions.SimpleSpec`
+
 - Verifies all subscription modes (from now, from position, from start)
 - Verifies entity and stream filtering
 - Verifies subscriber error isolation
@@ -191,12 +210,14 @@ Additional guarantees:
 ### Read Operations
 
 All read operations support:
+
 - **Forward reading**: From a position toward the end
 - **Backward reading**: From a position toward the beginning
 - **Limit**: Maximum number of events to return
 - **Entity filtering**: Optionally filter to specific entity types (global reads only)
 
 Read messages include metadata:
+
 - `ReadingStarted` / `StreamReadingStarted`: Stream opened
 - `AllEvent` / `StreamEvent`: Actual event data
 - `ToxicAllEvent` / `ToxicStreamEvent`: Undecodable event with metadata
@@ -206,6 +227,7 @@ Read messages include metadata:
 - `Terminated`: Stream closed with reason
 
 **Test coverage**: `ReadAllForwardsFromStart.Spec`, `ReadAllBackwardsFromEnd.Spec`
+
 - Verifies forward/backward reading
 - Verifies entity filtering
 - Verifies partial reads with resumption
@@ -284,6 +306,7 @@ This allows different implementations to have their own configuration types whil
 Any new EventStore implementation must:
 
 1. Pass all tests in `Test.Service.EventStore`:
+
    - `ReadAllForwardsFromStart.Spec`
    - `ReadAllBackwardsFromEnd.Spec`
    - `IndividualStreamOrdering.Spec`
@@ -303,6 +326,5 @@ Any new EventStore implementation must:
 
 ## References
 
-- Event Sourcing pattern: https://martinfowler.com/eaaDev/EventSourcing.html
-- CQRS pattern: https://martinfowler.com/bliki/CQRS.html
-- Optimistic Concurrency in Event Stores: https://eventstore.com/docs/
+- Event Sourcing pattern: <https://martinfowler.com/eaaDev/EventSourcing.html>
+- CQRS pattern: <https://martinfowler.com/bliki/CQRS.html>

@@ -12,8 +12,8 @@ ADRs document significant architectural decisions made during the development of
 
 ## ADR Index
 
-| ADR | Title | Status |
-|-----|-------|--------|
+| ADR                                           | Title                         | Status   |
+| --------------------------------------------- | ----------------------------- | -------- |
 | [0001](0001-initial-architecture-baseline.md) | Initial Architecture Baseline | Accepted |
 
 ## Creating New ADRs
@@ -45,6 +45,7 @@ When making a significant architectural decision, create a new ADR following thi
 ADRs are numbered sequentially: `NNNN-short-description.md`
 
 Examples:
+
 - `0002-flatten-postgres-modules.md`
 - `0003-rename-decision-to-service-decision.md`
 
@@ -60,6 +61,7 @@ Write an ADR when:
 6. Adding significant new infrastructure
 
 You do not need an ADR for:
+
 - Bug fixes
 - Performance improvements without API changes
 - Documentation updates
