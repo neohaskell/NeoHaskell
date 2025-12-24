@@ -14,7 +14,7 @@ import Char as Reexported (Char)
 import ConcurrentVar as Reexported (ConcurrentVar)
 import Console as Reexported (log, print, readLine)
 import DateTime as Reexported (DateTime)
-import Decision as Reexported (Decision)
+import Decider as Reexported (CommandResult (..), Decision)
 import Default as Reexported (Default (..), defaultValue)
 import DurableChannel as Reexported (DurableChannel)
 import Function as Reexported
@@ -26,7 +26,8 @@ import Maybe as Reexported (Maybe (..))
 import Path as Reexported (Path, path)
 import Record as Reexported (KnownHash (..), Record)
 import Result as Reexported (Result (..))
-import Service.Command as Reexported (Command (..), CommandResult (..), Entity (..), EntityOf, EventOf, NameOf)
+import Service.Command as Reexported (Command (..), NameOf)
+import Service.Entity as Reexported (Entity (..), EntityOf, EventOf)
 import Service.Event as Reexported (InsertionType (..), StreamId, ToStreamId (..))
 import Service.ServiceDefinition.Core as Reexported (
   Service,

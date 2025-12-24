@@ -111,6 +111,7 @@ library
     Core
     DateTime
     Decision
+    Decider
     Default
     Directory
     DurableChannel
@@ -140,8 +141,13 @@ library
     Service.CommandHandler.Core
     Service.CommandHandler.TH
     Service.CommandResponse
+    Service.CommandExecutor
+    Service.CommandExecutor.Core
+    Service.CommandExecutor.TH
     Service.Definition.TypeLevel
     Service.Definition.Validation
+    Service.Entity
+    Service.Entity.Core
     Service.EntityFetcher
     Service.EntityFetcher.Core
     Service.Error
@@ -160,8 +166,11 @@ library
     Service.EventStore.Postgres.Internal.PostgresEventRecord
     Service.EventStore.Postgres.Internal.Sessions
     Service.EventStore.Postgres.Internal.SubscriptionStore
+    Service.Response
     Service.ServiceDefinition
     Service.ServiceDefinition.Core
+    Service.Transport
+    Service.Transport.Web
     Set
     Stream
     Subprocess

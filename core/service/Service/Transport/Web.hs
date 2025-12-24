@@ -1,8 +1,5 @@
--- | DEPRECATED: Use Service.Transport.Web instead.
---
--- This module is kept for backward compatibility during the transition.
-module Service.Api.WebApi (
-  WebApi (..),
+module Service.Transport.Web (
+  WebTransport (..),
   server,
 ) where
 
@@ -25,38 +22,36 @@ import Network.Wai.Handler.Warp qualified as Warp
 import Record (KnownHash (..))
 import Record qualified
 import Result (Result (..))
-import Service.Api.ApiBuilder (ApiBuilder (..), ApiEndpointHandler, ApiEndpoints (..))
 import Service.Command.Core (Command, NameOf)
 import Service.CommandExecutor.TH (deriveKnownHash)
 import Service.Response (CommandResponse)
 import Service.Response qualified as Response
+import Service.Transport (EndpointHandler, Endpoints (..), Transport (..))
 import Task (Task)
 import Task qualified
 import Text (Text)
 import Text qualified
 
 
--- | HTTP/JSON API using WAI/Warp.
---
--- DEPRECATED: Use 'WebTransport' from Service.Transport.Web instead.
-data WebApi = WebApi
+-- | HTTP/JSON transport using WAI/Warp.
+data WebTransport = WebTransport
   { port :: Int,
     maxBodySize :: Int
   }
 
 
-type instance NameOf WebApi = "WebApi"
+type instance NameOf WebTransport = "WebTransport"
 
 
-deriveKnownHash "WebApi"
+deriveKnownHash "WebTransport"
 
 
--- | Default WebApi configuration.
+-- | Default WebTransport configuration.
 -- Port defaults to 8080.
 -- Max body size defaults to 1MB (1048576 bytes) to prevent DoS attacks.
-server :: WebApi
+server :: WebTransport
 server =
-  WebApi
+  WebTransport
     { port = 8080,
       maxBodySize = 1048576
     }
@@ -110,23 +105,23 @@ commandResponseToHttpStatus response = case response of
   Response.Failed {} -> HTTP.status500
 
 
-instance ApiBuilder WebApi where
-  type Request WebApi = Wai.Request
-  type Response WebApi = Wai.Response
+instance Transport WebTransport where
+  type Request WebTransport = Wai.Request
+  type Response WebTransport = Wai.Response
   type
-    RunnableApi WebApi =
+    RunnableTransport WebTransport =
       Wai.Request ->
       (Wai.Response -> Task Text Wai.ResponseReceived) ->
       Task Text Wai.ResponseReceived
 
 
-  assembleApi ::
-    ApiEndpoints WebApi ->
+  assembleTransport ::
+    Endpoints WebTransport ->
     Wai.Request ->
     (Wai.Response -> Task Text Wai.ResponseReceived) ->
     Task Text Wai.ResponseReceived
-  assembleApi endpoints request respond = do
-    let maxBodySize = endpoints.api.maxBodySize
+  assembleTransport endpoints request respond = do
+    let maxBodySize = endpoints.transport.maxBodySize
 
     -- Helper function for 404 responses
     let notFound message = do
@@ -185,9 +180,9 @@ instance ApiBuilder WebApi where
         notFound "Not found"
 
 
-  runApi :: WebApi -> RunnableApi WebApi -> Task Text Unit
-  runApi api runnableApi = do
-    -- RunnableApi WebApi is: Wai.Request -> (Wai.Response -> Task Text ResponseReceived) -> Task Text ResponseReceived
+  runTransport :: WebTransport -> RunnableTransport WebTransport -> Task Text Unit
+  runTransport transport runnableTransport = do
+    -- RunnableTransport WebTransport is: Wai.Request -> (Wai.Response -> Task Text ResponseReceived) -> Task Text ResponseReceived
     -- We need to convert this to a WAI Application: Request -> (Response -> IO ResponseReceived) -> IO ResponseReceived
     let waiApp :: Wai.Application
         waiApp request respond = do
@@ -195,28 +190,28 @@ instance ApiBuilder WebApi where
           let taskRespond response = Task.fromIO (respond response)
 
           -- Run the Task-based application and return the ResponseReceived
-          runnableApi request taskRespond
+          runnableTransport request taskRespond
             |> Task.runOrPanic
 
     -- Start the Warp server on the specified port
-    let port = api.port
-    Console.print [fmt|Starting WebApi server on port #{port}|]
-    Warp.run api.port waiApp |> Task.fromIO
+    let port = transport.port
+    Console.print [fmt|Starting WebTransport server on port #{port}|]
+    Warp.run transport.port waiApp |> Task.fromIO
 
 
-  buildCommandHandler ::
+  buildHandler ::
     forall command name.
     ( Command command,
       Json.FromJSON command,
       name ~ NameOf command,
       Record.KnownSymbol name
     ) =>
-    WebApi ->
+    WebTransport ->
     Record.Proxy command ->
     (command -> Task Text CommandResponse) ->
-    ApiEndpointHandler
-  buildCommandHandler api _ handler body respond = do
-    let port = api.port
+    EndpointHandler
+  buildHandler transport _ handler body respond = do
+    let port = transport.port
     let n =
           GHC.symbolVal (Record.Proxy @name)
             |> Text.fromLinkedList

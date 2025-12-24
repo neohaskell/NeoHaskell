@@ -27,8 +27,8 @@ import Record qualified
 import Service.Api.ApiBuilder (ApiBuilder (..), ApiEndpointHandler, ApiEndpoints (..))
 import Service.Command (EntityOf, EventOf)
 import Service.Command.Core (ApiOf, Command (..), Entity (..), Event, NameOf)
-import Service.CommandHandler qualified as CommandHandler
-import Service.CommandResponse qualified as CommandResponse
+import Service.CommandExecutor qualified as CommandExecutor
+import Service.Response qualified as Response
 import Service.EntityFetcher.Core qualified as EntityFetcher
 import Service.Event.EntityName (EntityName (..))
 import Service.Event.StreamId qualified as StreamId
@@ -148,7 +148,7 @@ class CommandInspect definition where
   apiName :: definition -> Text
 
 
-  buildCmdEP ::
+  createHandler ::
     definition ->
     EventStore (CmdEvent definition) ->
     Api definition ->
@@ -196,13 +196,13 @@ instance
   apiName _ = getSymbolText (Record.Proxy @apiName)
 
 
-  buildCmdEP ::
+  createHandler ::
     (CommandDefinition name api cmd apiName event entity entityName entityIdType) ->
     EventStore event ->
     api ->
     Record.Proxy cmd ->
     ApiEndpointHandler
-  buildCmdEP _ eventStore api cmd reqBytes respondCallback = do
+  createHandler _ eventStore api cmd reqBytes respondCallback = do
     fetcher <-
       EntityFetcher.new
         eventStore
@@ -212,8 +212,8 @@ instance
     let entityName = EntityName (getSymbolText (Record.Proxy @(entityName)))
 
     let handler (cmd :: cmd) = do
-          result <- CommandHandler.execute eventStore fetcher entityName cmd
-          Task.yield (CommandResponse.fromHandlerResult result)
+          result <- CommandExecutor.execute eventStore fetcher entityName cmd
+          Task.yield (Response.fromExecutionResult result)
 
     buildCommandHandler @api api cmd handler reqBytes respondCallback
 
@@ -374,7 +374,7 @@ runService
               -- Use unsafeCoerce because ServiceEventType guarantees event ~ CmdEvent cmdDef
               -- but GHC can't prove this within the cmap context
               let typedEventStore = GHC.unsafeCoerce eventStore :: EventStore (CmdEvent cmdDef)
-              Record.K ((apiName x, apiBV), (commandName x, buildCmdEP x typedEventStore (api) (Record.Proxy @cmd)))
+              Record.K ((apiName x, apiBV), (commandName x, createHandler x typedEventStore (api) (Record.Proxy @cmd)))
 
     let xs :: Array ((Text, ApiBuilderValue), (Text, ApiEndpointHandler)) =
           commandDefinitions

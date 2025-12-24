@@ -1,71 +1,86 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
 
 module Service.Command.Core (
+  -- * Command Abstraction
   Command (..),
   CommandResult (..),
-  EventOf,
+
+  -- * Type Families
+  NameOf,
+  ApiOf,
+
+  -- * Multi-Tenancy Support
+  GetEntityIdFunction,
+  DecideFunction,
+
+  -- * Re-exported from Service.Entity (backward compatibility)
+  Entity (..),
+  Event (..),
   EntityOf,
+  EventOf,
+
+  -- * Re-exported from Decider (backward compatibility)
   Decision (..),
   DecisionContext (..),
   runDecision,
-  NameOf,
-  ApiOf,
-  Entity (..),
-  Event (..),
 ) where
 
-import Applicable
-import Array (Array)
 import Basics
-import Control.Monad qualified as Monad
-import Mappable
+import Decider (CommandResult (..), Decision (..), DecisionContext (..), runDecision)
 import Maybe (Maybe)
-import Service.Event (InsertionType)
-import Task (Task)
-import Task qualified
-import Text (Text)
-import Thenable
+import Service.Entity.Core (Entity (..), EntityOf, Event (..), EventOf)
 import Uuid (Uuid)
 
 
-data CommandResult event
-  = AcceptCommand InsertionType (Array event)
-  | RejectCommand Text
-  deriving (Eq, Show, Ord, Generic)
-
-
+-- | Maps a type to its symbolic name.
+--
+-- Example:
+--
+-- @
+-- type instance NameOf CreateCart = "CreateCart"
+-- @
 type family NameOf (t :: Type) :: Symbol
 
 
-type family EntityOf (command :: Type) :: Type
+-- | Maps a command type to its API/transport adapter.
+--
+-- Example:
+--
+-- @
+-- type instance ApiOf CreateCart = WebApi
+-- @
+type family ApiOf (commandType :: Type) :: Type
 
 
+-- | The Command typeclass defines the contract for all commands.
+--
+-- Commands represent user intent to change the system. Each command must provide:
+--
+-- * 'getEntityIdImpl': Extract the entity ID from the command (Nothing for creation)
+-- * 'decideImpl': Pure decision logic that produces events or rejects
 class Command command where
+  -- | Whether this command supports multi-tenancy.
+  --
+  -- When True, 'getEntityIdImpl' and 'decideImpl' receive a tenant UUID as first argument.
   type IsMultiTenant command :: Bool
   type IsMultiTenant command = False
 
-
+  -- | Extract the entity ID from a command.
+  --
+  -- Returns Nothing for creation commands where no entity exists yet.
   getEntityIdImpl :: GetEntityIdFunction (IsMultiTenant command) command (EntityIdType (EntityOf command))
 
-
+  -- | The decision function that determines whether to accept or reject the command.
+  --
+  -- This is pure business logic that takes the command and optional current entity state,
+  -- returning a Decision that either accepts with events or rejects with a reason.
   decideImpl :: DecideFunction (IsMultiTenant command) command (EntityOf command) (EventOf (EntityOf command))
 
 
-class Event event where
-  getEventEntityIdImpl :: event -> EntityIdType (EntityOf event)
-
-
-class Entity entity where
-  type EntityIdType entity :: Type
-  type EntityIdType entity = Uuid
-
-
-  initialStateImpl :: entity
-
-
-  updateImpl :: EventOf entity -> entity -> entity
-
-
+-- | Determines the signature of 'getEntityIdImpl' based on multi-tenancy.
+--
+-- * Single-tenant: @command -> Maybe id@
+-- * Multi-tenant: @Uuid -> command -> Maybe id@
 type family GetEntityIdFunction (isTenant :: Bool) command id where
   GetEntityIdFunction False command id =
     command -> Maybe id
@@ -73,61 +88,12 @@ type family GetEntityIdFunction (isTenant :: Bool) command id where
     Uuid -> command -> Maybe id
 
 
+-- | Determines the signature of 'decideImpl' based on multi-tenancy.
+--
+-- * Single-tenant: @command -> Maybe entity -> Decision event@
+-- * Multi-tenant: @Uuid -> command -> Maybe entity -> Decision event@
 type family DecideFunction (isTenant :: Bool) command entity event where
   DecideFunction 'False command entity event =
     command -> Maybe entity -> Decision event
   DecideFunction 'True command entity event =
     Uuid -> command -> Maybe entity -> Decision event
-
-
-type family EventOf (entityType :: Type)
-
-
-type family ApiOf (commandType :: Type) :: Type
-
-
--- TODO: Replace Decision by a Task with context
-data Decision a where
-  Return :: a -> Decision a
-  Bind :: Decision a -> (a -> Decision b) -> Decision b
-  GenUuid :: Decision Uuid
-  Accept :: InsertionType -> Array a -> Decision a
-  Reject :: Text -> Decision a
-
-
-instance Functor Decision where
-  fmap f m = m |> Thenable.andThen (\r -> f r |> Return)
-
-
-instance Applicative Decision where
-  pure = Return
-  (<*>) = Monad.ap
-
-
-instance Monad Decision where
-  m >>= f = Bind m f
-
-
--- Smart constructors
-
-data DecisionContext = DecisionContext
-  { genUuid :: Task Text Uuid
-  }
-
-
-runDecision :: (HasCallStack) => DecisionContext -> Decision a -> Task Text (CommandResult a)
-runDecision ctx = go
- where
-  go :: forall a. (HasCallStack) => Decision a -> Task Text (CommandResult a)
-  go (Return _) = Task.throw "Decision didn't terminate with accept/reject"
-  go (Bind m f) = case m of
-    GenUuid -> do
-      uuid <- ctx.genUuid
-      f uuid |> go
-    Accept _ _ -> Task.throw "Accept must be the last statement"
-    Reject _ -> Task.throw "Reject must be the last statement"
-    Return a -> go (f a)
-    Bind m' f' -> go (Bind m' (\x -> Bind (f' x) f))
-  go GenUuid = Task.throw "Unbound GenUuid"
-  go (Accept s events) = AcceptCommand s events |> Task.yield
-  go (Reject reason) = RejectCommand reason |> Task.yield

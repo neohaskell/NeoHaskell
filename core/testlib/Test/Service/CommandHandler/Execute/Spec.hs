@@ -1,10 +1,12 @@
+{-# LANGUAGE PatternSynonyms #-}
+
 module Test.Service.CommandHandler.Execute.Spec where
 
 import Array qualified
 import AsyncTask qualified
 import Core
 import Maybe qualified
-import Service.CommandHandler (CommandHandlerResult (CommandAccepted, CommandFailed, CommandRejected))
+import Service.CommandHandler (pattern CommandAccepted, pattern CommandFailed, pattern CommandRejected)
 import Service.CommandHandler qualified as CommandHandler
 import Service.EntityFetcher.Core (EntityFetcher (..), EntityFetchResult (..))
 import Service.Event qualified as Event
