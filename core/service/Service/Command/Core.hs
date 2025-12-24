@@ -7,7 +7,7 @@ module Service.Command.Core (
 
   -- * Type Families
   NameOf,
-  ApiOf,
+  TransportOf,
 
   -- * Multi-Tenancy Support
   GetEntityIdFunction,
@@ -42,14 +42,14 @@ import Uuid (Uuid)
 type family NameOf (t :: Type) :: Symbol
 
 
--- | Maps a command type to its API/transport adapter.
+-- | Maps a command type to its transport adapter.
 --
 -- Example:
 --
 -- @
--- type instance ApiOf CreateCart = WebApi
+-- type instance TransportOf CreateCart = WebTransport
 -- @
-type family ApiOf (commandType :: Type) :: Type
+type family TransportOf (commandType :: Type) :: Type
 
 
 -- | The Command typeclass defines the contract for all commands.

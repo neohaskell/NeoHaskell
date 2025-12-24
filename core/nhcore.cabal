@@ -110,7 +110,6 @@ library
     Console
     Core
     DateTime
-    Decision
     Decider
     Default
     Directory
@@ -133,14 +132,8 @@ library
     Record
     Result
     Service
-    Service.Api.ApiBuilder
-    Service.Api.WebApi
     Service.Command
     Service.Command.Core
-    Service.CommandHandler
-    Service.CommandHandler.Core
-    Service.CommandHandler.TH
-    Service.CommandResponse
     Service.CommandExecutor
     Service.CommandExecutor.Core
     Service.CommandExecutor.TH

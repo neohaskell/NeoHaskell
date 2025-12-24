@@ -3,7 +3,7 @@ module Testbed.Service (
 ) where
 
 import Core
-import Service.Api.WebApi qualified as WebApi
+import Service.Transport.Web qualified as WebTransport
 import Service.EventStore.Postgres (PostgresEventStore (..))
 import Service.ServiceDefinition.Core qualified as Service
 import Testbed.Cart.Service qualified as CartService
@@ -12,7 +12,7 @@ import Testbed.Cart.Service qualified as CartService
 service :: Service _ _ _ _
 service =
   CartService.service
-    |> Service.useServer WebApi.server
+    |> Service.useServer WebTransport.server
     |> Service.useEventStore
       PostgresEventStore
         { user = "neohaskell",

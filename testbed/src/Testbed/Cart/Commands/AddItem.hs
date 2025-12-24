@@ -5,11 +5,11 @@ module Testbed.Cart.Commands.AddItem (
 ) where
 
 import Core
-import Decision qualified
+import Decider qualified
 import Json qualified
-import Service.Api.WebApi (WebApi)
-import Service.Command.Core (ApiOf)
-import Service.CommandHandler.TH (command)
+import Service.Transport.Web (WebTransport)
+import Service.Command.Core (TransportOf)
+import Service.CommandExecutor.TH (command)
 import Testbed.Cart.Core
 
 
@@ -28,16 +28,16 @@ decide :: AddItem -> Maybe CartEntity -> Decision CartEvent
 decide _ entity = do
   case entity of
     Just _ ->
-      Decision.reject "Cart already exists!"
+      Decider.reject "Cart already exists!"
     Nothing -> do
-      id <- Decision.generateUuid
-      Decision.acceptNew [CartCreated {entityId = id}]
+      id <- Decider.generateUuid
+      Decider.acceptNew [CartCreated {entityId = id}]
 
 
 type instance EntityOf AddItem = CartEntity
 
 
-type instance ApiOf AddItem = WebApi
+type instance TransportOf AddItem = WebTransport
 
 
 command ''AddItem
