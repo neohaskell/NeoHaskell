@@ -1,3 +1,5 @@
+{-# LANGUAGE AllowAmbiguousTypes #-}
+
 module Service.EventStore.Core (
   EventStore (..),
   Error (..),
@@ -6,13 +8,15 @@ module Service.EventStore.Core (
   ReadAllMessage (..),
   ReadStreamMessage (..),
   ToxicContents (..),
+  EventStoreConfig (..),
   collectAllEvents,
   collectStreamEvents,
   streamMessageToAllMessage,
 ) where
 
+import Array (Array)
 import Array qualified
-import Core
+import Basics
 import Json qualified
 import Service.Event (
   EntityName,
@@ -22,7 +26,10 @@ import Service.Event (
   InsertionSuccess,
   StreamPosition,
  )
+import Service.Event.StreamId (StreamId)
 import Stream (Stream)
+import Task (Task)
+import Text (Text)
 
 
 newtype Limit = Limit Int64
@@ -160,3 +167,9 @@ data EventStore eventType = EventStore
     -- | Removes all the events up to a position
     truncateStream :: EntityName -> StreamId -> StreamPosition -> Task Error Unit
   }
+
+
+class EventStoreConfig config where
+  createEventStore ::
+    (Json.FromJSON eventType, Json.ToJSON eventType) =>
+    config -> Task Text (EventStore eventType)

@@ -6,14 +6,16 @@ module Service.Api.ApiBuilder (
 
 import Basics
 import Bytes (Bytes)
+import Json qualified
 import Map (Map)
 import Record qualified
 import Service.Command.Core (Command, NameOf)
+import Service.CommandResponse (CommandResponse)
 import Task (Task)
 import Text (Text)
 
 
-type ApiEndpointHandler = Bytes -> (Bytes -> Task Text Unit) -> Task Text Unit
+type ApiEndpointHandler = Bytes -> ((CommandResponse, Bytes) -> Task Text Unit) -> Task Text Unit
 
 
 data ApiEndpoints api = ApiEndpoints
@@ -39,9 +41,11 @@ class ApiBuilder api where
   buildCommandHandler ::
     forall command name.
     ( Command command,
+      Json.FromJSON command,
       name ~ NameOf command,
       Record.KnownSymbol name
     ) =>
     api ->
     Record.Proxy command ->
+    (command -> Task Text CommandResponse) ->
     ApiEndpointHandler

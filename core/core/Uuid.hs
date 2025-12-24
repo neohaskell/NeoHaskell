@@ -4,6 +4,7 @@ module Uuid (
   toLegacy,
   fromLegacy,
   toText,
+  nil,
 ) where
 
 import Basics
@@ -51,3 +52,7 @@ fromLegacy uuid = Uuid uuid
 toText :: Uuid -> Text
 toText (Uuid uuid) = do
   UUID.toText uuid
+
+
+nil :: Uuid
+nil = fromLegacy UUID.nil

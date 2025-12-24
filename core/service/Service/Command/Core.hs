@@ -10,6 +10,8 @@ module Service.Command.Core (
   runDecision,
   NameOf,
   ApiOf,
+  Entity (..),
+  Event (..),
 ) where
 
 import Applicable
@@ -43,14 +45,25 @@ class Command command where
   type IsMultiTenant command = False
 
 
-  type EntityIdType command :: Type
-  type EntityIdType command = Uuid
-
-
-  getEntityIdImpl :: GetEntityIdFunction (IsMultiTenant command) command (EntityIdType command)
+  getEntityIdImpl :: GetEntityIdFunction (IsMultiTenant command) command (EntityIdType (EntityOf command))
 
 
   decideImpl :: DecideFunction (IsMultiTenant command) command (EntityOf command) (EventOf (EntityOf command))
+
+
+class Event event where
+  getEventEntityIdImpl :: event -> EntityIdType (EntityOf event)
+
+
+class Entity entity where
+  type EntityIdType entity :: Type
+  type EntityIdType entity = Uuid
+
+
+  initialStateImpl :: entity
+
+
+  updateImpl :: EventOf entity -> entity -> entity
 
 
 type family GetEntityIdFunction (isTenant :: Bool) command id where

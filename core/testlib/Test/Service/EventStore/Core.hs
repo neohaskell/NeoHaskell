@@ -9,6 +9,8 @@ import Uuid qualified
 
 
 -- | Example domain events for a shopping cart
+-- Note: The Event instance is defined in Test.Service.Command.Core
+-- where EntityOf CartEvent = CartEntity is also defined
 data CartEvent
   = CartCreated {entityId :: Uuid}
   | ItemAdded {entityId :: Uuid, itemId :: Uuid, amount :: Int}

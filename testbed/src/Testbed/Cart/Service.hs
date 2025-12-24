@@ -4,14 +4,13 @@ module Testbed.Cart.Service (
 
 import Core
 import Service qualified
-import Service.Api.WebApi qualified as WebApi
 import Testbed.Cart.Commands.AddItem (AddItem)
 import Testbed.Cart.Commands.CreateCart (CreateCart)
+import Testbed.Cart.Core ()
 
 
-service :: Service _ _ _
+service :: Service _ _ _ _
 service =
   Service.new
-    |> Service.useServer WebApi.server
     |> Service.command @AddItem
     |> Service.command @CreateCart

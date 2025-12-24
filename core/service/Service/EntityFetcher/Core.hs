@@ -5,12 +5,16 @@ module Service.EntityFetcher.Core (
   new,
 ) where
 
-import Core
+import Basics
+import Maybe (Maybe (..))
 import Service.Event (EntityName, Event (..))
+import Service.Event.StreamId (StreamId)
 import Service.EventStore.Core (EventStore)
 import Service.EventStore.Core qualified as EventStore
 import Stream qualified
+import Task (Task)
 import Task qualified
+import Text (Text)
 
 
 -- | Result of fetching an entity from the event store

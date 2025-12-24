@@ -4,24 +4,31 @@ module Service.CommandHandler.Core (
   CommandHandler (..),
   CommandHandlerResult (..),
   execute,
-  command,
 ) where
 
 import Array qualified
 import AsyncTask qualified
-import Core
+import Basics
 import Float qualified
 import Int qualified
+import Json qualified
+import Maybe (Maybe (..))
+import Result (Result (..))
+import Service.Command (Event (..))
+import Service.Command.Core (Command (..), CommandResult (..), Entity (..), EntityOf, EventOf)
 import Service.Command.Core qualified as Command
-import Service.CommandHandler.TH (command)
 import Service.EntityFetcher.Core (EntityFetchResult (..), EntityFetcher)
 import Service.EntityFetcher.Core qualified as EntityFetcher
-import Service.Event (EntityName, InsertionPayload (..))
+import Service.Event (EntityName, InsertionPayload (..), InsertionType (..))
 import Service.Event qualified as Event
+import Service.Event.StreamId (StreamId, ToStreamId (..))
 import Service.EventStore.Core (EventStore)
 import Service.EventStore.Core qualified as EventStore
+import Task (Task)
 import Task qualified
+import Text (Text)
 import Text qualified
+import ToText (toText)
 import Uuid qualified
 
 
@@ -40,6 +47,9 @@ data CommandHandlerResult
         retriesAttempted :: Int
       }
   deriving (Eq, Show, Ord, Generic)
+
+
+instance Json.ToJSON CommandHandlerResult
 
 
 data CommandHandler event = CommandHandler
@@ -73,10 +83,12 @@ execute ::
   ( Command command,
     commandEntity ~ EntityOf command,
     commandEvent ~ EventOf commandEntity,
-    HasField "entityId" commandEvent (EntityIdType command),
-    ToStreamId (EntityIdType command),
-    Eq (EntityIdType command),
-    Show (EntityIdType command),
+    commandEntity ~ EntityOf commandEvent,
+    Event commandEvent,
+    Entity commandEntity,
+    ToStreamId (EntityIdType commandEntity),
+    Eq (EntityIdType commandEntity),
+    Show (EntityIdType commandEntity),
     IsMultiTenant command ~ 'False
   ) =>
   EventStore commandEvent ->
@@ -156,7 +168,7 @@ execute eventStore entityFetcher entityName command = do
                 finalStreamId <- case currentStreamId of
                   Just sid -> Task.yield sid
                   Nothing -> do
-                    let eventEntityIds = events |> Array.map (\e -> e.entityId)
+                    let eventEntityIds = events |> Array.map (\e -> getEventEntityIdImpl e)
                     -- Check if all entity IDs are the same
                     case Array.first eventEntityIds of
                       Nothing -> do
