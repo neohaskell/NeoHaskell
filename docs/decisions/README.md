@@ -12,9 +12,12 @@ ADRs document significant architectural decisions made during the development of
 
 ## ADR Index
 
-| ADR                                           | Title                         | Status   |
-| --------------------------------------------- | ----------------------------- | -------- |
-| [0001](0001-initial-architecture-baseline.md) | Initial Architecture Baseline | Accepted |
+| ADR                                           | Title                           | Status   |
+| --------------------------------------------- | ------------------------------- | -------- |
+| [0001](0001-initial-architecture-baseline.md) | Initial Architecture Baseline   | Accepted |
+| [0002](0002-webapi-adapter-architecture.md)   | WebAPI Adapter Architecture     | Accepted |
+| [0003](0003-command-abstraction-and-flow.md)  | Command Abstraction and Flow    | Accepted |
+| [0004](0004-eventstore-abstraction.md)        | EventStore Abstraction          | Accepted |
 
 ## Creating New ADRs
 
