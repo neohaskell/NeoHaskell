@@ -1,5 +1,6 @@
 {- HLINT ignore "Use camelCase" -}
 {-# LANGUAGE AllowAmbiguousTypes #-}
+{-# LANGUAGE UndecidableInstances #-}
 
 module Service.ServiceDefinition.Core (
   Service,
@@ -15,6 +16,7 @@ import Array qualified
 import Basics
 import Console qualified
 import GHC.IO qualified as GHC
+import GHC.TypeLits (ErrorMessage (..), TypeError)
 import GHC.TypeLits qualified as GHC
 import Json qualified
 import Map (Map)
@@ -40,9 +42,48 @@ import ToText (toText)
 import Unsafe.Coerce qualified as GHC
 
 
+-- | Extracts the common event type from all commands in a service.
+-- All commands must use the same event type. If they don't, a compile-time
+-- error is generated with a helpful message.
 type family ServiceEventType (cmds :: Record.Row Type) :: Type where
-  ServiceEventType ((label 'Record.:= cmdDef) ': rest) = CmdEvent cmdDef
   ServiceEventType '[] = Never
+  ServiceEventType ((label 'Record.:= cmdDef) ': rest) =
+    ValidateAndGetEventType (CmdEvent cmdDef) rest
+
+
+-- | Helper type family that validates all remaining commands have the same event type
+-- as the first command, and returns that common event type.
+type family ValidateAndGetEventType (expectedEvent :: Type) (cmds :: Record.Row Type) :: Type where
+  -- Base case: no more commands to check, return the expected event type
+  ValidateAndGetEventType expectedEvent '[] = expectedEvent
+  -- Recursive case: check if this command's event matches, then continue
+  ValidateAndGetEventType expectedEvent ((label 'Record.:= cmdDef) ': rest) =
+    CheckEventMatch expectedEvent (CmdEvent cmdDef) label rest
+
+
+-- | Helper type family that checks if two event types match.
+-- If they match, continue validating the rest of the commands.
+-- If they don't match, generate a helpful compile-time error.
+type family CheckEventMatch (expectedEvent :: Type) (actualEvent :: Type) (cmdLabel :: GHC.Symbol) (rest :: Record.Row Type) :: Type where
+  -- Events match: continue validating the rest
+  CheckEventMatch event event label rest = ValidateAndGetEventType event rest
+  -- Events don't match: generate a compile-time error
+  CheckEventMatch expectedEvent actualEvent label rest =
+    TypeError
+      ( 'Text "Event type mismatch in service definition!"
+          ':$$: 'Text ""
+          ':$$: 'Text "All commands in a service must use the same event type."
+          ':$$: 'Text ""
+          ':$$: 'Text "Expected event type: "
+          ':<>: 'ShowType expectedEvent
+          ':$$: 'Text "But command '"
+          ':<>: 'Text label
+          ':<>: 'Text "' uses event type: "
+          ':<>: 'ShowType actualEvent
+          ':$$: 'Text ""
+          ':$$: 'Text "To fix: Ensure all commands in this service share a common event type."
+          ':$$: 'Text "This typically means all entities should use the same domain event sum type."
+      )
 
 
 data
