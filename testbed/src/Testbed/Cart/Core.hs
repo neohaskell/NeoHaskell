@@ -18,11 +18,23 @@ data CartEntity = CartEntity
   deriving (Generic)
 
 
+instance Json.FromJSON CartEntity
+
+
+instance Json.ToJSON CartEntity
+
+
 data CartItem = CartItem
   { productId :: Uuid,
     amount :: Natural Int
   }
   deriving (Generic)
+
+
+instance Json.FromJSON CartItem
+
+
+instance Json.ToJSON CartItem
 
 
 initialState :: CartEntity
