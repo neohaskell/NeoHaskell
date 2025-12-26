@@ -85,12 +85,16 @@ Located in `Service/SnapshotCache/InMemory.hs`:
 data InMemorySnapshotCacheConfig = InMemorySnapshotCacheConfig
 
 data SnapshotStore state = SnapshotStore
-  { snapshots :: ConcurrentVar (Map SnapshotKey (Snapshot state)),
-    lock :: Lock
+  { snapshotVars :: ConcurrentVar (Map SnapshotKey (ConcurrentVar (Snapshot state)))
   }
 ```
 
-Thread-safe using `ConcurrentVar` for the state and `Lock` for write synchronization. Read operations (get) are lock-free since `ConcurrentVar.peek` is atomic.
+**Per-key concurrency**: Each snapshot key has its own `ConcurrentVar`, allowing concurrent access to different entities without contention. The outer `ConcurrentVar` holds the map of keys to their individual snapshot vars.
+
+- **No global lock**: Operations on different entities proceed independently
+- **Lock-free reads**: `ConcurrentVar.peek` is atomic (uses `readMVar`)
+- **Atomic writes**: `ConcurrentVar.modify` is atomic (uses `modifyMVar_`)
+- **Race-safe insertion**: When creating a new key, the implementation uses atomic check-and-insert with fallback to update if another thread wins the race
 
 ### 4. EntityFetcher Integration
 
@@ -217,6 +221,8 @@ This follows the established pattern: flat structure with one level of nesting f
 6. **Testability**: The `EntityFetcher.newWithCache` function takes the cache as an argument, making it easy to test with mock caches.
 
 7. **Fire-and-forget cache updates**: Cache update failures do not block or fail command processing; the system degrades gracefully to full replay.
+
+8. **Per-key concurrency (InMemory)**: The in-memory implementation uses per-key `ConcurrentVar` storage, so operations on different entities never contend with each other. This enables high concurrency without global locking.
 
 ### Negative
 
