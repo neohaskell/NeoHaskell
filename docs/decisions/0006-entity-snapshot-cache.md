@@ -230,9 +230,13 @@ This follows the established pattern: flat structure with one level of nesting f
 
 2. **Eventual consistency**: The cache is updated after fetch, so a fetch immediately after an insert may not see the cached state. This is acceptable because the EventStore remains the source of truth.
 
-3. **Memory usage (InMemory)**: The in-memory implementation stores full entity states in memory. For services with many entities or large entity states, this could be significant.
+3. **Memory usage (InMemory)**: The in-memory implementation stores full entity states in memory. For services with many entities or large entity states, this could be significant. **Important**: The InMemory implementation has no eviction policy and will grow indefinitely as entities are accessed. This makes it suitable for development, testing, and services with bounded entity counts, but not for production deployments with unbounded entity populations. For production use cases with many entities, use a bounded implementation (future Postgres/Redis) or implement periodic `cache.clear` calls.
 
-4. **No automatic invalidation**: Snapshots are not automatically invalidated when events are truncated. Services using stream truncation should manually clear affected cache entries.
+4. **No automatic invalidation**: Snapshots are not automatically invalidated when events are truncated or when streams are deleted. Manual cache invalidation is required in the following scenarios:
+   - **Stream truncation**: If you truncate events from a stream, the cached snapshot may reference a position that no longer exists. Call `cache.delete entityName streamId` for affected streams.
+   - **Stream deletion**: If you delete a stream entirely, call `cache.delete entityName streamId` to remove the stale snapshot.
+   - **Schema migration**: If your entity's state representation changes in a way that invalidates old snapshots, call `cache.clear` to flush all cached data.
+   - **Testing/debugging**: Use `cache.clear` to force full event replay for debugging purposes.
 
 ### Future Work
 
