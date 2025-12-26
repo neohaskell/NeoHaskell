@@ -8,7 +8,9 @@ module Service.EntityFetcher.Core (
 ) where
 
 import Basics
+import Console qualified
 import Maybe (Maybe (..))
+import Result (Result (..))
 import Result qualified
 import Service.Event (EntityName, Event (..))
 import Service.Event.EventMetadata (EventMetadata (..))
@@ -23,6 +25,7 @@ import Stream qualified
 import Task (Task)
 import Task qualified
 import Text (Text)
+import ToText (toText)
 
 
 -- | Entity state along with position information for caching
@@ -209,9 +212,14 @@ newWithCache eventStore snapshotCache initialState reduceFunction = do
                           state = finalState,
                           position = pos
                         }
-                snapshotCache.set snapshot
-                  |> Task.asResult
-                  |> discard
+                cacheResult <-
+                  snapshotCache.set snapshot
+                    |> Task.asResult
+                case cacheResult of
+                  Err cacheError ->
+                    Console.print [fmt|[EntityFetcher] Warning: Failed to update snapshot cache for #{entityName}/#{streamId}: #{toText cacheError}|]
+                      |> Task.ignoreError
+                  Ok _ -> pass
               Nothing -> pass
 
             -- Step 6: Return result
