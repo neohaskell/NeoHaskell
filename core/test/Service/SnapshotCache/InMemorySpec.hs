@@ -5,7 +5,7 @@ import Service.SnapshotCache.InMemory qualified as InMemory
 import Task qualified
 import Test
 import Test.Service.SnapshotCache qualified as SnapshotCache
-import Test.Service.SnapshotCache.Core (CartState)
+import Test.Service.EntityFetcher.Core (CartState)
 
 
 spec :: Spec Unit

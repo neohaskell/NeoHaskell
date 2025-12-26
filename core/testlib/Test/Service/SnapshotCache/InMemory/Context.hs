@@ -7,7 +7,7 @@ import Core
 import Service.Event qualified as Event
 import Service.Event.StreamId qualified as StreamId
 import Service.SnapshotCache.Core (SnapshotCache)
-import Test.Service.SnapshotCache.Core (CartState)
+import Test.Service.EntityFetcher.Core (CartState)
 
 
 data Context = Context

@@ -3,7 +3,7 @@ module Test.Service.SnapshotCache where
 import Core
 import Service.SnapshotCache.Core (SnapshotCache)
 import Test
-import Test.Service.SnapshotCache.Core (CartState)
+import Test.Service.EntityFetcher.Core (CartState)
 import Test.Service.SnapshotCache.InMemory.Spec qualified as InMemory
 
 

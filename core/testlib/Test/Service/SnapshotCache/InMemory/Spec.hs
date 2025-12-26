@@ -10,7 +10,7 @@ import Service.SnapshotCache.Core qualified as SnapshotCache
 import Service.SnapshotCache.Snapshot (Snapshot (..), SnapshotKey (..))
 import Task qualified
 import Test
-import Test.Service.SnapshotCache.Core (CartState (..), initialState)
+import Test.Service.EntityFetcher.Core (CartState (..), initialState)
 import Test.Service.SnapshotCache.InMemory.Context qualified as Context
 
 

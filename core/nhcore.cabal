@@ -215,7 +215,6 @@ library
     Test.Service.EventStore.Subscriptions.SimpleSpec
     Test.Service.EventStore.Subscriptions.Spec
     Test.Service.SnapshotCache
-    Test.Service.SnapshotCache.Core
     Test.Service.SnapshotCache.InMemory.Context
     Test.Service.SnapshotCache.InMemory.Spec
     Test.Spec
