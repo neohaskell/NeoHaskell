@@ -137,6 +137,7 @@ import Applicable qualified
 import Control.Monad qualified
 import Control.Monad qualified as Monad
 import Data.Bits qualified (xor)
+import Data.Aeson qualified as Aeson
 import Data.Int (Int64)
 import Data.Kind (Type)
 import Data.String (IsString (..))
@@ -254,6 +255,14 @@ type Float = Prelude.Double
 newtype Natural a = Natural a
   deriving
     (Prelude.Eq, Prelude.Ord, Prelude.Show, Prelude.Read, Prelude.Num, Prelude.Real, Prelude.Enum, Prelude.Integral)
+
+
+instance (Aeson.FromJSON a) => Aeson.FromJSON (Natural a) where
+  parseJSON value = Natural Prelude.<$> Aeson.parseJSON value
+
+
+instance (Aeson.ToJSON a) => Aeson.ToJSON (Natural a) where
+  toJSON (Natural a) = Aeson.toJSON a
 
 
 -- | Create a Natural number from a regular number.

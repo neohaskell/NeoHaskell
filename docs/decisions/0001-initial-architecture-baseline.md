@@ -243,11 +243,11 @@ The command execution feature is in active development. Per `command-execution-e
 
 ## References
 
-- `/Users/nick/Source/NeoHaskell/core/nhcore.cabal` - Core library package definition
-- `/Users/nick/Source/NeoHaskell/core/core/Core.hs` - Public API exports
-- `/Users/nick/Source/NeoHaskell/core/service/Service/ServiceDefinition/Core.hs` - Service builder
-- `/Users/nick/Source/NeoHaskell/core/service/Service/CommandHandler/Core.hs` - Command execution
-- `/Users/nick/Source/NeoHaskell/core/service/Service/EventStore/Core.hs` - EventStore interface
-- `/Users/nick/Source/NeoHaskell/core/service/Service/Api/WebApi.hs` - HTTP API implementation
-- `/Users/nick/Source/NeoHaskell/testbed/` - Integration testing example
-- `/Users/nick/Source/NeoHaskell/command-execution-example.md` - Feature documentation
+- [core/nhcore.cabal](../../core/nhcore.cabal) - Core library package definition
+- [core/core/Core.hs](../../core/core/Core.hs) - Public API exports
+- [core/service/Service/ServiceDefinition/Core.hs](../../core/service/Service/ServiceDefinition/Core.hs) - Service builder
+- [core/service/Service/CommandHandler/Core.hs](../../core/service/Service/CommandHandler/Core.hs) - Command execution
+- [core/service/Service/EventStore/Core.hs](../../core/service/Service/EventStore/Core.hs) - EventStore interface
+- [core/service/Service/Api/WebApi.hs](../../core/service/Service/Api/WebApi.hs) - HTTP API implementation
+- [testbed/](../../testbed/) - Integration testing example
+- [command-execution-example.md](../../command-execution-example.md) - Feature documentation

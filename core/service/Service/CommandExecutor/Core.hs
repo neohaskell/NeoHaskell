@@ -17,8 +17,8 @@ import Maybe (Maybe (..))
 import Result (Result (..))
 import Service.Command (Event (..))
 import Service.Command.Core (Command (..), Entity (..), EntityOf, EventOf)
-import Service.EntityFetcher.Core (EntityFetchResult (..), EntityFetcher)
-import Service.EntityFetcher.Core qualified as EntityFetcher
+import Service.EntityFetcher.Core (EntityFetchResult (..), EntityFetcher, FetchedEntity (..))
+import Service.EntityFetcher.Core qualified
 import Service.Event (EntityName, InsertionPayload (..), InsertionType (..))
 import Service.Event qualified as Event
 import Service.Event.StreamId (StreamId, ToStreamId (..))
@@ -118,8 +118,9 @@ execute eventStore entityFetcher entityName command = do
             |> Task.asResult
 
         case result of
-          Ok (EntityFound entity) -> do
-            Task.yield (Just entity, Just streamId)
+          Ok (EntityFound fetchedEntity) -> do
+            -- Extract just the state from FetchedEntity
+            Task.yield (Just fetchedEntity.state, Just streamId)
           Ok EntityNotFound -> do
             -- No events for this stream yet, entity doesn't exist
             Task.yield (Nothing, Just streamId)
@@ -235,9 +236,9 @@ execute eventStore entityFetcher entityName command = do
                             |> Task.asResult
 
                         case refetchResult of
-                          Ok (EntityFound freshEntity) -> do
-                            -- Retry with fresh state
-                            retryLoop (retryCount + 1) (Just freshEntity) (Just finalStreamId)
+                          Ok (EntityFound freshFetchedEntity) -> do
+                            -- Retry with fresh state (extract state from FetchedEntity)
+                            retryLoop (retryCount + 1) (Just freshFetchedEntity.state) (Just finalStreamId)
                           Ok EntityNotFound -> do
                             -- Entity doesn't exist, retry with Nothing
                             retryLoop (retryCount + 1) Nothing (Just finalStreamId)

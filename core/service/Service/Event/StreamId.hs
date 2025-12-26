@@ -7,6 +7,7 @@ module Service.Event.StreamId (
 ) where
 
 import Basics
+import Data.Hashable (Hashable)
 import Json qualified
 import Task (Task)
 import Task qualified
@@ -17,6 +18,9 @@ import Uuid qualified
 
 newtype StreamId = StreamId Text
   deriving (Eq, Show, Ord, Generic)
+
+
+instance Hashable StreamId
 
 
 instance Json.ToJSON StreamId

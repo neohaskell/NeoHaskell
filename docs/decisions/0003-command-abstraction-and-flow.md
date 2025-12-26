@@ -425,14 +425,14 @@ runDecision(context, decision) -> CommandResult
 
 ## References
 
-- `/Users/nick/Source/NeoHaskell/core/service/Service/Command/Core.hs` - Command typeclass and Decision type
-- `/Users/nick/Source/NeoHaskell/core/service/Decision.hs` - Decision smart constructors
-- `/Users/nick/Source/NeoHaskell/core/service/Service/CommandHandler/Core.hs` - Command execution
-- `/Users/nick/Source/NeoHaskell/core/service/Service/CommandHandler/TH.hs` - Template Haskell generation
-- `/Users/nick/Source/NeoHaskell/core/service/Service/CommandResponse.hs` - Client-facing response types
-- `/Users/nick/Source/NeoHaskell/core/service/Service/EntityFetcher/Core.hs` - Entity reconstruction
-- `/Users/nick/Source/NeoHaskell/core/service/Service/ServiceDefinition/Core.hs` - Service registration
-- `/Users/nick/Source/NeoHaskell/testbed/src/Testbed/Cart/Commands/CreateCart.hs` - Example command
-- `/Users/nick/Source/NeoHaskell/testbed/src/Testbed/Cart/Core.hs` - Example entity and events
-- `/Users/nick/Source/NeoHaskell/docs/decisions/0001-initial-architecture-baseline.md` - Baseline ADR
-- `/Users/nick/Source/NeoHaskell/docs/decisions/0002-webapi-adapter-architecture.md` - WebAPI ADR
+- [core/service/Service/Command/Core.hs](../../core/service/Service/Command/Core.hs) - Command typeclass and Decision type
+- [core/service/Decision.hs](../../core/service/Decision.hs) - Decision smart constructors
+- [core/service/Service/CommandHandler/Core.hs](../../core/service/Service/CommandHandler/Core.hs) - Command execution
+- [core/service/Service/CommandHandler/TH.hs](../../core/service/Service/CommandHandler/TH.hs) - Template Haskell generation
+- [core/service/Service/CommandResponse.hs](../../core/service/Service/CommandResponse.hs) - Client-facing response types
+- [core/service/Service/EntityFetcher/Core.hs](../../core/service/Service/EntityFetcher/Core.hs) - Entity reconstruction
+- [core/service/Service/ServiceDefinition/Core.hs](../../core/service/Service/ServiceDefinition/Core.hs) - Service registration
+- [testbed/src/Testbed/Cart/Commands/CreateCart.hs](../../testbed/src/Testbed/Cart/Commands/CreateCart.hs) - Example command
+- [testbed/src/Testbed/Cart/Core.hs](../../testbed/src/Testbed/Cart/Core.hs) - Example entity and events
+- [0001-initial-architecture-baseline.md](0001-initial-architecture-baseline.md) - Baseline ADR
+- [0002-webapi-adapter-architecture.md](0002-webapi-adapter-architecture.md) - WebAPI ADR

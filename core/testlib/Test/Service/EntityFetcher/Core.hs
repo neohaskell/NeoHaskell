@@ -4,6 +4,7 @@ module Test.Service.EntityFetcher.Core (
   initialState,
   applyEvent,
   newFetcher,
+  newFetcherWithCache,
 ) where
 
 import Array qualified
@@ -12,6 +13,7 @@ import Json qualified
 import Service.EntityFetcher.Core (EntityFetcher)
 import Service.EntityFetcher.Core qualified as EntityFetcher
 import Service.EventStore.Core (EventStore)
+import Service.SnapshotCache.Core (SnapshotCache)
 import Test.Service.EventStore.Core (CartEvent (..))
 
 
@@ -89,3 +91,12 @@ addOrUpdateItem items itemId amount = do
 newFetcher :: EventStore CartEvent -> Task EntityFetcher.Error (EntityFetcher CartState CartEvent)
 newFetcher eventStore = do
   EntityFetcher.new eventStore initialState applyEvent
+
+
+-- | Create a new entity fetcher for carts with cache support
+newFetcherWithCache ::
+  EventStore CartEvent ->
+  SnapshotCache CartState ->
+  Task EntityFetcher.Error (EntityFetcher CartState CartEvent)
+newFetcherWithCache eventStore cache = do
+  EntityFetcher.newWithCache eventStore cache initialState applyEvent
