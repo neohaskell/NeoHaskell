@@ -212,9 +212,9 @@ The `Core` module's public API facade was not affected by these changes.
 
 ## References
 
-- `/Users/nick/Source/NeoHaskell/core/service/Service/Entity/Core.hs` - New Entity module
-- `/Users/nick/Source/NeoHaskell/core/service/Decider.hs` - Consolidated Decision module
-- `/Users/nick/Source/NeoHaskell/core/service/Service/Transport.hs` - New Transport abstraction
-- `/Users/nick/Source/NeoHaskell/core/service/Service/CommandExecutor/Core.hs` - New executor logic
-- `/Users/nick/Source/NeoHaskell/docs/decisions/0002-webapi-adapter-architecture.md` - Previous API architecture (uses old terminology)
-- `/Users/nick/Source/NeoHaskell/docs/decisions/0003-command-abstraction-and-flow.md` - Command flow documentation (uses old terminology)
+- [core/service/Service/Entity/Core.hs](../../core/service/Service/Entity/Core.hs) - New Entity module
+- [core/service/Decider.hs](../../core/service/Decider.hs) - Consolidated Decision module
+- [core/service/Service/Transport.hs](../../core/service/Service/Transport.hs) - New Transport abstraction
+- [core/service/Service/CommandExecutor/Core.hs](../../core/service/Service/CommandExecutor/Core.hs) - New executor logic
+- [0002-webapi-adapter-architecture.md](0002-webapi-adapter-architecture.md) - Previous API architecture (uses old terminology)
+- [0003-command-abstraction-and-flow.md](0003-command-abstraction-and-flow.md) - Command flow documentation (uses old terminology)

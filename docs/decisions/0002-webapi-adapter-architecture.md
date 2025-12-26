@@ -261,10 +261,10 @@ command ''CreateCart
 
 ## References
 
-- `/Users/nick/Source/NeoHaskell/core/service/Service/Api/WebApi.hs` - WebAPI implementation
-- `/Users/nick/Source/NeoHaskell/core/service/Service/Api/ApiBuilder.hs` - ApiBuilder typeclass
-- `/Users/nick/Source/NeoHaskell/core/service/Service/ServiceDefinition/Core.hs` - Service builder
-- `/Users/nick/Source/NeoHaskell/core/service/Service/CommandHandler/Core.hs` - Command execution
-- `/Users/nick/Source/NeoHaskell/core/service/Service/CommandResponse.hs` - Response types
-- `/Users/nick/Source/NeoHaskell/testbed/src/Testbed/Cart/Commands/CreateCart.hs` - Example command
-- `/Users/nick/Source/NeoHaskell/docs/decisions/0001-initial-architecture-baseline.md` - Baseline ADR
+- [core/service/Service/Api/WebApi.hs](../../core/service/Service/Api/WebApi.hs) - WebAPI implementation
+- [core/service/Service/Api/ApiBuilder.hs](../../core/service/Service/Api/ApiBuilder.hs) - ApiBuilder typeclass
+- [core/service/Service/ServiceDefinition/Core.hs](../../core/service/Service/ServiceDefinition/Core.hs) - Service builder
+- [core/service/Service/CommandHandler/Core.hs](../../core/service/Service/CommandHandler/Core.hs) - Command execution
+- [core/service/Service/CommandResponse.hs](../../core/service/Service/CommandResponse.hs) - Response types
+- [testbed/src/Testbed/Cart/Commands/CreateCart.hs](../../testbed/src/Testbed/Cart/Commands/CreateCart.hs) - Example command
+- [0001-initial-architecture-baseline.md](0001-initial-architecture-baseline.md) - Baseline ADR

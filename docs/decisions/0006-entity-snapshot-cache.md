@@ -246,9 +246,9 @@ This follows the established pattern: flat structure with one level of nesting f
 
 ## References
 
-- `/Users/nick/Source/NeoHaskell/core/service/Service/SnapshotCache/Core.hs` - SnapshotCache trait
-- `/Users/nick/Source/NeoHaskell/core/service/Service/SnapshotCache/Snapshot.hs` - Snapshot types
-- `/Users/nick/Source/NeoHaskell/core/service/Service/SnapshotCache/InMemory.hs` - InMemory implementation
-- `/Users/nick/Source/NeoHaskell/core/service/Service/EntityFetcher/Core.hs` - EntityFetcher with cache support
-- `/Users/nick/Source/NeoHaskell/core/service/Service/ServiceDefinition/Core.hs` - Service integration
-- `/Users/nick/Source/NeoHaskell/docs/decisions/0004-eventstore-abstraction.md` - EventStore ADR (similar trait pattern)
+- [core/service/Service/SnapshotCache/Core.hs](../../core/service/Service/SnapshotCache/Core.hs) - SnapshotCache trait
+- [core/service/Service/SnapshotCache/Snapshot.hs](../../core/service/Service/SnapshotCache/Snapshot.hs) - Snapshot types
+- [core/service/Service/SnapshotCache/InMemory.hs](../../core/service/Service/SnapshotCache/InMemory.hs) - InMemory implementation
+- [core/service/Service/EntityFetcher/Core.hs](../../core/service/Service/EntityFetcher/Core.hs) - EntityFetcher with cache support
+- [core/service/Service/ServiceDefinition/Core.hs](../../core/service/Service/ServiceDefinition/Core.hs) - Service integration
+- [0004-eventstore-abstraction.md](0004-eventstore-abstraction.md) - EventStore ADR (similar trait pattern)
