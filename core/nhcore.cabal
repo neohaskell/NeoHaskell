@@ -158,6 +158,10 @@ library
     Service.EventStore.Postgres.Sessions
     Service.EventStore.Postgres.SubscriptionStore
     Service.Response
+    Service.SnapshotCache
+    Service.SnapshotCache.Core
+    Service.SnapshotCache.InMemory
+    Service.SnapshotCache.Snapshot
     Service.ServiceDefinition
     Service.ServiceDefinition.Core
     Service.Transport
@@ -184,6 +188,8 @@ library
     Test.Service.EntityFetcher.Core
     Test.Service.EntityFetcher.Fetch.Context
     Test.Service.EntityFetcher.Fetch.Spec
+    Test.Service.EntityFetcher.FetchWithCache.Context
+    Test.Service.EntityFetcher.FetchWithCache.Spec
     Test.Service.EventStore
     Test.Service.EventStore.BatchValidation.Context
     Test.Service.EventStore.BatchValidation.Spec
@@ -204,6 +210,10 @@ library
     Test.Service.EventStore.Subscriptions.Context
     Test.Service.EventStore.Subscriptions.SimpleSpec
     Test.Service.EventStore.Subscriptions.Spec
+    Test.Service.SnapshotCache
+    Test.Service.SnapshotCache.Core
+    Test.Service.SnapshotCache.InMemory.Context
+    Test.Service.SnapshotCache.InMemory.Spec
     Test.Spec
     Text
     Thenable
@@ -247,6 +257,7 @@ test-suite nhcore-test
     Service.EventStore.InMemorySpec
     Service.EventStore.Postgres.SubscriptionStoreSpec
     Service.EventStore.PostgresSpec
+    Service.SnapshotCache.InMemorySpec
     SetSpec
     StreamSpec
     Test.AppSpec.AppSpecSpec

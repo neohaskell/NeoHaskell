@@ -4,7 +4,7 @@ import Array qualified
 import AsyncTask qualified
 import Core
 import Result qualified
-import Service.EntityFetcher.Core (EntityFetcher, EntityFetchResult (..))
+import Service.EntityFetcher.Core (EntityFetcher, EntityFetchResult (..), FetchedEntity (..))
 import Service.EntityFetcher.Core qualified as EntityFetcher
 import Service.Event qualified as Event
 import Service.Event.EventMetadata qualified as EventMetadata
@@ -22,7 +22,7 @@ import Uuid qualified
 fetchResultToMaybe :: EntityFetchResult state -> Maybe state
 fetchResultToMaybe result = do
   case result of
-    EntityFound state -> Just state
+    EntityFound fetched -> Just fetched.state
     EntityNotFound -> Nothing
 
 
@@ -79,7 +79,7 @@ spec newStoreAndFetcher = do
           context.fetcher.fetch context.entityName context.streamId
             |> Task.mapError toText
             |> Task.andThen (\result -> case result of
-                EntityFound s -> Task.yield s
+                EntityFound fetched -> Task.yield fetched.state
                 EntityNotFound -> Task.throw "Expected entity to exist but got EntityNotFound"
               )
 
@@ -145,7 +145,7 @@ spec newStoreAndFetcher = do
           context.fetcher.fetch context.entityName context.streamId
             |> Task.mapError toText
             |> Task.andThen (\result -> case result of
-                EntityFound s -> Task.yield s
+                EntityFound fetched -> Task.yield fetched.state
                 EntityNotFound -> Task.throw "Expected entity to exist but got EntityNotFound"
               )
 
@@ -217,7 +217,7 @@ spec newStoreAndFetcher = do
           context.fetcher.fetch context.entityName context.streamId
             |> Task.mapError toText
             |> Task.andThen (\result -> case result of
-                EntityFound s -> Task.yield s
+                EntityFound fetched -> Task.yield fetched.state
                 EntityNotFound -> Task.throw "Expected entity to exist but got EntityNotFound"
               )
 
@@ -225,7 +225,7 @@ spec newStoreAndFetcher = do
           context.fetcher.fetch context.entityName streamId2
             |> Task.mapError toText
             |> Task.andThen (\result -> case result of
-                EntityFound s -> Task.yield s
+                EntityFound fetched -> Task.yield fetched.state
                 EntityNotFound -> Task.throw "Expected entity to exist but got EntityNotFound"
               )
 
@@ -311,7 +311,7 @@ spec newStoreAndFetcher = do
           context.fetcher.fetch context.entityName context.streamId
             |> Task.mapError toText
             |> Task.andThen (\result -> case result of
-                EntityFound s -> Task.yield s
+                EntityFound fetched -> Task.yield fetched.state
                 EntityNotFound -> Task.throw "Expected entity to exist but got EntityNotFound"
               )
 
@@ -389,7 +389,7 @@ spec newStoreAndFetcher = do
           context.fetcher.fetch context.entityName context.streamId
             |> Task.mapError toText
             |> Task.andThen (\result -> case result of
-                EntityFound s -> Task.yield s
+                EntityFound fetched -> Task.yield fetched.state
                 EntityNotFound -> Task.throw "Expected entity to exist but got EntityNotFound"
               )
 
@@ -397,7 +397,7 @@ spec newStoreAndFetcher = do
           context.fetcher.fetch context.entityName context.streamId
             |> Task.mapError toText
             |> Task.andThen (\result -> case result of
-                EntityFound s -> Task.yield s
+                EntityFound fetched -> Task.yield fetched.state
                 EntityNotFound -> Task.throw "Expected entity to exist but got EntityNotFound"
               )
 
@@ -405,7 +405,7 @@ spec newStoreAndFetcher = do
           context.fetcher.fetch context.entityName context.streamId
             |> Task.mapError toText
             |> Task.andThen (\result -> case result of
-                EntityFound s -> Task.yield s
+                EntityFound fetched -> Task.yield fetched.state
                 EntityNotFound -> Task.throw "Expected entity to exist but got EntityNotFound"
               )
 
@@ -475,7 +475,7 @@ spec newStoreAndFetcher = do
           context.fetcher.fetch context.entityName context.streamId
             |> Task.mapError toText
             |> Task.andThen (\result -> case result of
-                EntityFound s -> Task.yield s
+                EntityFound fetched -> Task.yield fetched.state
                 EntityNotFound -> Task.throw "Expected entity to exist but got EntityNotFound"
               )
 
@@ -533,19 +533,19 @@ spec newStoreAndFetcher = do
           state1 <-
             AsyncTask.waitFor fetch1
               |> Task.andThen (\result -> case result of
-                EntityFound s -> Task.yield s
+                EntityFound fetched -> Task.yield fetched.state
                 EntityNotFound -> Task.throw "Expected entity to exist but got EntityNotFound"
               )
           state2 <-
             AsyncTask.waitFor fetch2
               |> Task.andThen (\result -> case result of
-                EntityFound s -> Task.yield s
+                EntityFound fetched -> Task.yield fetched.state
                 EntityNotFound -> Task.throw "Expected entity to exist but got EntityNotFound"
               )
           state3 <-
             AsyncTask.waitFor fetch3
               |> Task.andThen (\result -> case result of
-                EntityFound s -> Task.yield s
+                EntityFound fetched -> Task.yield fetched.state
                 EntityNotFound -> Task.throw "Expected entity to exist but got EntityNotFound"
               )
 
@@ -617,7 +617,7 @@ spec newStoreAndFetcher = do
 
           -- Wait for fetch to complete
           (state :: CartState) <- AsyncTask.waitFor fetchTask |> Task.andThen (\result -> case result of
-              EntityFound s -> Task.yield s
+              EntityFound fetched -> Task.yield fetched.state
               EntityNotFound -> Task.throw "Expected entity to exist but got EntityNotFound"
             )
 
@@ -680,7 +680,7 @@ spec newStoreAndFetcher = do
             context.fetcher.fetch context.entityName context.streamId
               |> Task.mapError toText
               |> Task.andThen (\result -> case result of
-                EntityFound s -> Task.yield s
+                EntityFound fetched -> Task.yield fetched.state
                 EntityNotFound -> Task.throw "Expected entity to exist but got EntityNotFound"
               )
 
@@ -738,7 +738,7 @@ spec newStoreAndFetcher = do
                 context.fetcher.fetch context.entityName context.streamId
                   |> Task.mapError toText
                   |> Task.andThen (\result -> case result of
-                      EntityFound s -> Task.yield s
+                      EntityFound fetched -> Task.yield fetched.state
                       EntityNotFound -> Task.throw "Expected entity to exist but got EntityNotFound"
                     )
               Array.length state.cartItems |> shouldBe 0
@@ -830,7 +830,7 @@ performanceBoundariesWithCount newStoreAndFetcher eventCount = do
           context.fetcher.fetch context.entityName context.streamId
             |> Task.mapError toText
             |> Task.andThen (\result -> case result of
-                EntityFound s -> Task.yield s
+                EntityFound fetched -> Task.yield fetched.state
                 EntityNotFound -> Task.throw "Expected entity to exist but got EntityNotFound"
               )
 

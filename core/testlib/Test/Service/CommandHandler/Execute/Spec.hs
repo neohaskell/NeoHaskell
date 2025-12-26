@@ -6,7 +6,7 @@ import Core
 import Maybe qualified
 import Service.CommandExecutor.Core (ExecutionResult (..))
 import Service.CommandExecutor qualified as CommandExecutor
-import Service.EntityFetcher.Core (EntityFetcher (..), EntityFetchResult (..))
+import Service.EntityFetcher.Core (EntityFetcher (..), EntityFetchResult (..), FetchedEntity (..))
 import Service.Event qualified as Event
 import Service.Event.EventMetadata qualified as EventMetadata
 import Service.Event.StreamId qualified as StreamId
@@ -93,7 +93,7 @@ basicExecutionSpecs newCartStoreAndFetcher = do
             context.cartFetcher.fetch context.cartEntityName sid
               |> Task.mapError toText
               |> Task.andThen (\result -> case result of
-                  EntityFound s -> Task.yield s
+                  EntityFound fetched -> Task.yield fetched.state
                   EntityNotFound -> Task.throw "Expected entity to exist but got EntityNotFound"
                 )
 
@@ -175,7 +175,7 @@ basicExecutionSpecs newCartStoreAndFetcher = do
             context.cartFetcher.fetch context.cartEntityName sid
               |> Task.mapError toText
               |> Task.andThen (\result -> case result of
-                  EntityFound s -> Task.yield s
+                  EntityFound fetched -> Task.yield fetched.state
                   EntityNotFound -> Task.throw "Expected entity to exist but got EntityNotFound"
                 )
 
@@ -264,7 +264,7 @@ retryLogicSpecs newCartStoreAndFetcher = do
             context.cartFetcher.fetch context.cartEntityName sid
               |> Task.mapError toText
               |> Task.andThen (\result -> case result of
-                  EntityFound s -> Task.yield s
+                  EntityFound fetched -> Task.yield fetched.state
                   EntityNotFound -> Task.throw "Expected entity to exist but got EntityNotFound"
                 )
 
@@ -411,7 +411,7 @@ concurrencySpecs newCartStoreAndFetcher = do
         context.cartFetcher.fetch context.cartEntityName sid
           |> Task.mapError toText
           |> Task.andThen (\result -> case result of
-              EntityFound s -> Task.yield s
+              EntityFound fetched -> Task.yield fetched.state
               EntityNotFound -> Task.throw "Expected entity to exist but got EntityNotFound"
             )
 
@@ -477,14 +477,14 @@ concurrencySpecs newCartStoreAndFetcher = do
         context.cartFetcher.fetch context.cartEntityName (cartId1 |> Uuid.toText |> StreamId.fromText)
           |> Task.mapError toText
           |> Task.andThen (\result -> case result of
-              EntityFound s -> Task.yield s
+              EntityFound fetched -> Task.yield fetched.state
               EntityNotFound -> Task.throw "Expected entity to exist but got EntityNotFound"
             )
       cart2 <-
         context.cartFetcher.fetch context.cartEntityName (cartId2 |> Uuid.toText |> StreamId.fromText)
           |> Task.mapError toText
           |> Task.andThen (\result -> case result of
-              EntityFound s -> Task.yield s
+              EntityFound fetched -> Task.yield fetched.state
               EntityNotFound -> Task.throw "Expected entity to exist but got EntityNotFound"
             )
 

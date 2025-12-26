@@ -2,6 +2,7 @@ module Service.EventStore.InMemorySpec where
 
 import Core
 import Service.EventStore.InMemory qualified as InMemory
+import Service.SnapshotCache.InMemory qualified as SnapshotCacheInMemory
 import Task qualified
 import Test
 import Test.Service.EntityFetcher qualified as EntityFetcher
@@ -21,3 +22,11 @@ spec = do
           Task.yield (store, fetcher)
 
     EntityFetcher.spec newStoreAndFetcher
+
+    let newStoreAndFetcherAndCache = do
+          store <- newStore
+          cache <- SnapshotCacheInMemory.new |> Task.mapError toText
+          fetcher <- EntityFetcherCore.newFetcherWithCache store cache |> Task.mapError toText
+          Task.yield (store, fetcher, cache)
+
+    EntityFetcher.specWithCache newStoreAndFetcherAndCache
