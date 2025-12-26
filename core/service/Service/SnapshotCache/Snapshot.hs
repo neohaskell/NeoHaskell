@@ -4,6 +4,7 @@ module Service.SnapshotCache.Snapshot (
 ) where
 
 import Basics
+import Data.Hashable (Hashable)
 import Json (FromJSON, ToJSON)
 import Service.Event.EntityName (EntityName)
 import Service.Event.StreamId (StreamId)
@@ -15,6 +16,9 @@ data SnapshotKey = SnapshotKey
     streamId :: StreamId
   }
   deriving (Eq, Show, Ord, Generic)
+
+
+instance Hashable SnapshotKey
 
 
 instance ToJSON SnapshotKey

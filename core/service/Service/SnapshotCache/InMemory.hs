@@ -4,11 +4,9 @@ module Service.SnapshotCache.InMemory (
 ) where
 
 import Basics
-import ConcurrentVar (ConcurrentVar)
-import ConcurrentVar qualified
-import Map (Map)
-import Map qualified
-import Maybe (Maybe (..))
+import ConcurrentMap (ConcurrentMap)
+import ConcurrentMap qualified
+import Maybe (Maybe)
 import Service.Event.EntityName (EntityName)
 import Service.Event.StreamId (StreamId)
 import Service.SnapshotCache.Core (Error (..), SnapshotCache (..), SnapshotCacheConfig (..))
@@ -26,11 +24,11 @@ instance SnapshotCacheConfig InMemorySnapshotCacheConfig where
   createSnapshotCache _ = new |> Task.mapError toText
 
 
--- | Each snapshot key has its own ConcurrentVar, allowing concurrent access
--- to different entities without contention. The outer ConcurrentVar holds the
--- map of keys to their individual snapshot vars.
+-- | The snapshot store uses a ConcurrentMap for high-throughput access.
+-- Each snapshot is stored directly by its key, eliminating the nested
+-- ConcurrentVar structure that caused contention at scale.
 data SnapshotStore state = SnapshotStore
-  { snapshotVars :: ConcurrentVar (Map SnapshotKey (ConcurrentVar (Snapshot state)))
+  { snapshots :: ConcurrentMap SnapshotKey (Snapshot state)
   }
 
 
@@ -38,8 +36,8 @@ new ::
   forall state.
   Task Error (SnapshotCache state)
 new = do
-  snapshotVars <- ConcurrentVar.containing Map.empty
-  let store = SnapshotStore {snapshotVars}
+  snapshots <- ConcurrentMap.new
+  let store = SnapshotStore {snapshots}
   Task.yield
     SnapshotCache
       { get = getImpl store,
@@ -57,12 +55,7 @@ getImpl ::
   Task Error (Maybe (Snapshot state))
 getImpl store entityName streamId = do
   let key = SnapshotKey entityName streamId
-  varsMap <- ConcurrentVar.peek store.snapshotVars
-  case Map.get key varsMap of
-    Nothing -> Task.yield Nothing
-    Just snapshotVar -> do
-      snapshot <- ConcurrentVar.peek snapshotVar
-      Task.yield (Just snapshot)
+  ConcurrentMap.get key store.snapshots
 
 
 setImpl ::
@@ -72,31 +65,7 @@ setImpl ::
   Task Error Unit
 setImpl store snapshot = do
   let key = snapshot.key
-  varsMap <- ConcurrentVar.peek store.snapshotVars
-  case Map.get key varsMap of
-    Just snapshotVar -> do
-      -- Key exists, update the existing ConcurrentVar atomically using modify
-      ConcurrentVar.modify (\_ -> snapshot) snapshotVar
-    Nothing -> do
-      -- Key doesn't exist, create a new ConcurrentVar for this key
-      -- Use ConcurrentVar.modify to atomically check-and-insert
-      newVar <- ConcurrentVar.containing snapshot
-      ConcurrentVar.modify
-        ( \currentMap ->
-            case Map.get key currentMap of
-              Just _ ->
-                -- Another thread created it first, we'll update that one instead
-                -- (the newVar we created will be garbage collected)
-                currentMap
-              Nothing ->
-                Map.set key newVar currentMap
-        )
-        store.snapshotVars
-      -- If another thread won the race, update the existing var using modify
-      updatedMap <- ConcurrentVar.peek store.snapshotVars
-      case Map.get key updatedMap of
-        Just existingVar -> ConcurrentVar.modify (\_ -> snapshot) existingVar
-        Nothing -> pass -- Should not happen, but safe to ignore
+  ConcurrentMap.set key snapshot store.snapshots
 
 
 deleteImpl ::
@@ -107,9 +76,7 @@ deleteImpl ::
   Task Error Unit
 deleteImpl store entityName streamId = do
   let key = SnapshotKey entityName streamId
-  ConcurrentVar.modify
-    (\varsMap -> Map.remove key varsMap)
-    store.snapshotVars
+  ConcurrentMap.remove key store.snapshots
 
 
 clearImpl ::
@@ -117,6 +84,4 @@ clearImpl ::
   SnapshotStore state ->
   Task Error Unit
 clearImpl store = do
-  ConcurrentVar.modify
-    (\_ -> Map.empty)
-    store.snapshotVars
+  ConcurrentMap.clear store.snapshots

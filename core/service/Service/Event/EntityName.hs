@@ -4,12 +4,16 @@ module Service.Event.EntityName (
 ) where
 
 import Basics
+import Data.Hashable (Hashable)
 import Json qualified
 import Text (Text)
 
 
 newtype EntityName = EntityName Text
   deriving (Eq, Show, Ord, Generic)
+
+
+instance Hashable EntityName
 
 
 instance Json.ToJSON EntityName
