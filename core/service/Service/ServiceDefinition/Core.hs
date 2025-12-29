@@ -4,6 +4,8 @@
 
 module Service.ServiceDefinition.Core (
   Service,
+  ServiceEventType,
+  ServiceEntityType,
   new,
   useServer,
   command,

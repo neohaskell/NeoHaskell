@@ -135,6 +135,7 @@ library
     Path
     Record
     Result
+    Application
     Service
     Service.Command
     Service.Command.Core
@@ -256,6 +257,7 @@ test-suite nhcore-test
 
   other-modules:
     ConcurrentMapSpec
+    Service.ApplicationSpec
     Service.CommandHandlerSpec
     Service.CommandSpec
     Service.EventStore.InMemorySpec
