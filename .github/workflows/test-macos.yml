@@ -42,7 +42,7 @@ jobs:
 
       - uses: actions/checkout@v6
 
-      - uses: DeterminateSystems/determinate-nix-action@v3.15.0
+      - uses: DeterminateSystems/determinate-nix-action@v3.15.1
         with:
           extra-conf: |
             extra-substituters = https://cache.iog.io
