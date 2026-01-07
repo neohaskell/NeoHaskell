@@ -7,6 +7,7 @@ import AsyncTask qualified
 import ConcurrentVar qualified
 import Core
 import DurableChannel qualified
+import Json qualified
 import Lock qualified
 import Map qualified
 import Maybe qualified
@@ -19,7 +20,7 @@ import Task qualified
 import Uuid qualified
 
 
-new :: (Show eventType) => Task Error (EventStore eventType)
+new :: Task Error (EventStore Json.Value)
 new = do
   store <- newEmptyStreamStore
   let eventStore =
@@ -45,7 +46,7 @@ new = do
 
 -- PRIVATE
 
-fromInsertionPayload :: StreamPosition -> Int -> InsertionPayload eventType -> Array (Event eventType)
+fromInsertionPayload :: StreamPosition -> Int -> InsertionPayload Json.Value -> Array (Event Json.Value)
 fromInsertionPayload (StreamPosition globalPosition) streamLength payload =
   payload.insertions
     |> Array.indexed
@@ -67,11 +68,11 @@ fromInsertionPayload (StreamPosition globalPosition) streamLength payload =
         }
 
 
-data StreamStore eventType = StreamStore
-  { globalStream :: (DurableChannel (Event eventType)),
-    streams :: ConcurrentVar (Map (EntityName, StreamId) (DurableChannel (Event eventType))),
+data StreamStore = StreamStore
+  { globalStream :: (DurableChannel (Event Json.Value)),
+    streams :: ConcurrentVar (Map (EntityName, StreamId) (DurableChannel (Event Json.Value))),
     globalLock :: Lock,
-    subscriptions :: ConcurrentVar (Map SubscriptionId (Subscription eventType))
+    subscriptions :: ConcurrentVar (Map SubscriptionId Subscription)
   }
 
 
@@ -82,13 +83,13 @@ data SubscriptionType
   deriving (Eq, Show)
 
 
-data Subscription eventType = Subscription
+data Subscription = Subscription
   { subscriptionType :: SubscriptionType,
-    handler :: Event eventType -> Task Text Unit
+    handler :: Event Json.Value -> Task Text Unit
   }
 
 
-newEmptyStreamStore :: Task _ (StreamStore eventType)
+newEmptyStreamStore :: Task _ StreamStore
 newEmptyStreamStore = do
   globalLock <- Lock.new
   globalStream <- DurableChannel.new
@@ -98,7 +99,7 @@ newEmptyStreamStore = do
 
 
 -- | Idempotent stream creation.
-ensureStream :: EntityName -> StreamId -> StreamStore eventType -> Task _ (DurableChannel (Event eventType))
+ensureStream :: EntityName -> StreamId -> StreamStore -> Task _ (DurableChannel (Event Json.Value))
 ensureStream entityName streamId store = do
   let modifier streamMap = do
         case streamMap |> Map.get (entityName, streamId) of
@@ -113,9 +114,8 @@ ensureStream entityName streamId store = do
 
 
 insertImpl ::
-  (Show eventType) =>
-  StreamStore eventType ->
-  InsertionPayload eventType ->
+  StreamStore ->
+  InsertionPayload Json.Value ->
   Task Error InsertionSuccess
 insertImpl store payload = do
   let insertionsCount = payload.insertions |> Array.length
@@ -137,7 +137,7 @@ insertImpl store payload = do
           |> Maybe.withDefault (StreamPosition 0)
   channel <- store |> ensureStream entityName streamId
 
-  let appendCondition :: Array (Event eventType) -> Bool
+  let appendCondition :: Array (Event Json.Value) -> Bool
       appendCondition events =
         let currentLength = Array.length events
             (StreamPosition pos) = expectedPosition
@@ -184,12 +184,12 @@ insertImpl store payload = do
 
 
 readStreamForwardFromImpl ::
-  StreamStore eventType ->
+  StreamStore ->
   EntityName ->
   StreamId ->
   StreamPosition ->
   Limit ->
-  Task Error (Stream (ReadStreamMessage eventType))
+  Task Error (Stream (ReadStreamMessage Json.Value))
 readStreamForwardFromImpl store entityName streamId position (Limit (limit)) = do
   channel <- store |> ensureStream entityName streamId
   events <-
@@ -203,12 +203,12 @@ readStreamForwardFromImpl store entityName streamId position (Limit (limit)) = d
 
 
 readStreamBackwardFromImpl ::
-  StreamStore eventType ->
+  StreamStore ->
   EntityName ->
   StreamId ->
   StreamPosition ->
   Limit ->
-  Task Error (Stream (ReadStreamMessage eventType))
+  Task Error (Stream (ReadStreamMessage Json.Value))
 readStreamBackwardFromImpl store entityName streamId position (Limit (limit)) = do
   channel <- store |> ensureStream entityName streamId
   events <-
@@ -223,10 +223,10 @@ readStreamBackwardFromImpl store entityName streamId position (Limit (limit)) = 
 
 
 readAllStreamEventsImpl ::
-  StreamStore eventType ->
+  StreamStore ->
   EntityName ->
   StreamId ->
-  Task Error (Stream (ReadStreamMessage eventType))
+  Task Error (Stream (ReadStreamMessage Json.Value))
 readAllStreamEventsImpl store entityName streamId = do
   channel <- store |> ensureStream entityName streamId
   events <-
@@ -237,10 +237,10 @@ readAllStreamEventsImpl store entityName streamId = do
 
 
 readAllEventsForwardFromImpl ::
-  StreamStore eventType ->
+  StreamStore ->
   StreamPosition ->
   Limit ->
-  Task Error (Stream (ReadAllMessage eventType))
+  Task Error (Stream (ReadAllMessage Json.Value))
 readAllEventsForwardFromImpl store (StreamPosition (position)) (Limit (limit)) = do
   allGlobalEvents <- store.globalStream |> DurableChannel.getAndTransform unchanged
   let items =
@@ -252,10 +252,10 @@ readAllEventsForwardFromImpl store (StreamPosition (position)) (Limit (limit)) =
 
 
 readAllEventsBackwardFromImpl ::
-  StreamStore eventType ->
+  StreamStore ->
   StreamPosition ->
   Limit ->
-  Task Error (Stream (ReadAllMessage eventType))
+  Task Error (Stream (ReadAllMessage Json.Value))
 readAllEventsBackwardFromImpl store (StreamPosition (position)) (Limit (limit)) = do
   allGlobalEvents <- store.globalStream |> DurableChannel.getAndTransform unchanged
   let items =
@@ -272,11 +272,11 @@ readAllEventsBackwardFromImpl store (StreamPosition (position)) (Limit (limit)) 
 
 
 readAllEventsForwardFromFilteredImpl ::
-  StreamStore eventType ->
+  StreamStore ->
   StreamPosition ->
   Limit ->
   Array EntityName ->
-  Task Error (Stream (ReadAllMessage eventType))
+  Task Error (Stream (ReadAllMessage Json.Value))
 readAllEventsForwardFromFilteredImpl store (StreamPosition (position)) (Limit (limit)) entityNames = do
   allGlobalEvents <- store.globalStream |> DurableChannel.getAndTransform unchanged
   let items =
@@ -293,11 +293,11 @@ readAllEventsForwardFromFilteredImpl store (StreamPosition (position)) (Limit (l
 
 
 readAllEventsBackwardFromFilteredImpl ::
-  StreamStore eventType ->
+  StreamStore ->
   StreamPosition ->
   Limit ->
   Array EntityName ->
-  Task Error (Stream (ReadAllMessage eventType))
+  Task Error (Stream (ReadAllMessage Json.Value))
 readAllEventsBackwardFromFilteredImpl store (StreamPosition (position)) (Limit (limit)) entityNames = do
   allGlobalEvents <- store.globalStream |> DurableChannel.getAndTransform unchanged
   let items =
@@ -317,8 +317,8 @@ readAllEventsBackwardFromFilteredImpl store (StreamPosition (position)) (Limit (
 -- SUBSCRIPTION IMPLEMENTATIONS
 
 subscribeToAllEventsImpl ::
-  StreamStore eventType ->
-  (Event eventType -> Task Text Unit) ->
+  StreamStore ->
+  (Event Json.Value -> Task Text Unit) ->
   Task Error SubscriptionId
 subscribeToAllEventsImpl store handler = do
   subscriptionId <- generateSubscriptionId
@@ -330,9 +330,9 @@ subscribeToAllEventsImpl store handler = do
 
 
 subscribeToAllEventsFromPositionImpl ::
-  StreamStore eventType ->
+  StreamStore ->
   StreamPosition ->
-  (Event eventType -> Task Text Unit) ->
+  (Event Json.Value -> Task Text Unit) ->
   Task Error SubscriptionId
 subscribeToAllEventsFromPositionImpl store fromPosition handler = do
   subscriptionId <- generateSubscriptionId
@@ -350,8 +350,8 @@ subscribeToAllEventsFromPositionImpl store fromPosition handler = do
 
 
 subscribeToAllEventsFromStartImpl ::
-  StreamStore eventType ->
-  (Event eventType -> Task Text Unit) ->
+  StreamStore ->
+  (Event Json.Value -> Task Text Unit) ->
   Task Error SubscriptionId
 subscribeToAllEventsFromStartImpl store handler = do
   subscriptionId <- generateSubscriptionId
@@ -369,9 +369,9 @@ subscribeToAllEventsFromStartImpl store handler = do
 
 
 subscribeToEntityEventsImpl ::
-  StreamStore eventType ->
+  StreamStore ->
   EntityName ->
-  (Event eventType -> Task Text Unit) ->
+  (Event Json.Value -> Task Text Unit) ->
   Task Error SubscriptionId
 subscribeToEntityEventsImpl store entityName handler = do
   subscriptionId <- generateSubscriptionId
@@ -383,10 +383,10 @@ subscribeToEntityEventsImpl store entityName handler = do
 
 
 subscribeToStreamEventsImpl ::
-  StreamStore eventType ->
+  StreamStore ->
   EntityName ->
   StreamId ->
-  (Event eventType -> Task Text Unit) ->
+  (Event Json.Value -> Task Text Unit) ->
   Task Error SubscriptionId
 subscribeToStreamEventsImpl store entityName streamId handler = do
   subscriptionId <- generateSubscriptionId
@@ -398,7 +398,7 @@ subscribeToStreamEventsImpl store entityName streamId handler = do
 
 
 unsubscribeImpl ::
-  StreamStore eventType ->
+  StreamStore ->
   SubscriptionId ->
   Task Error Unit
 unsubscribeImpl store subscriptionId = do
@@ -415,7 +415,7 @@ generateSubscriptionId = do
   uuid |> toText |> SubscriptionId |> Task.yield
 
 
-notifySubscribers :: (Show err) => StreamStore eventType -> Event eventType -> Task err Unit
+notifySubscribers :: (Show err) => StreamStore -> Event Json.Value -> Task err Unit
 notifySubscribers store event = do
   -- Get subscriptions snapshot without locks
   allSubscriptions <- ConcurrentVar.peek store.subscriptions
@@ -430,7 +430,7 @@ notifySubscribers store event = do
     |> discard
 
 
-shouldNotify :: SubscriptionType -> Event eventType -> Bool
+shouldNotify :: SubscriptionType -> Event Json.Value -> Bool
 shouldNotify subscriptionType event =
   case subscriptionType of
     AllEvents -> True
@@ -438,7 +438,7 @@ shouldNotify subscriptionType event =
     StreamEvents entityName streamId -> event.entityName == entityName && event.streamId == streamId
 
 
-notifySubscriber :: Subscription eventType -> Event eventType -> Task _ Unit
+notifySubscriber :: Subscription -> Event Json.Value -> Task _ Unit
 notifySubscriber subscription event = do
   -- Execute subscriber handler and catch any errors to prevent failures from affecting the event store
   result <- subscription.handler event |> Task.asResult
@@ -448,7 +448,7 @@ notifySubscriber subscription event = do
 
 
 deliverHistoricalEvents ::
-  StreamStore eventType -> StreamPosition -> (Event eventType -> Task Text Unit) -> Task _ Unit
+  StreamStore -> StreamPosition -> (Event Json.Value -> Task Text Unit) -> Task _ Unit
 deliverHistoricalEvents store fromPosition handler = do
   -- Read all events from the specified position onwards
   let (StreamPosition startPos) = fromPosition
@@ -469,7 +469,7 @@ deliverHistoricalEvents store fromPosition handler = do
 
 
 deliverHistoricalEventsFromStart ::
-  StreamStore eventType -> (Event eventType -> Task Text Unit) -> SubscriptionId -> Task _ Unit
+  StreamStore -> (Event Json.Value -> Task Text Unit) -> SubscriptionId -> Task _ Unit
 deliverHistoricalEventsFromStart store handler _subscriptionId = do
   -- Read ALL events from the very beginning (no position filter)
   allGlobalEvents <- store.globalStream |> DurableChannel.getAndTransform unchanged
@@ -480,7 +480,7 @@ deliverHistoricalEventsFromStart store handler _subscriptionId = do
     |> discard
 
 
-notifySubscriberSafely :: (Event eventType -> Task Text Unit) -> Event eventType -> Task _ Unit
+notifySubscriberSafely :: (Event Json.Value -> Task Text Unit) -> Event Json.Value -> Task _ Unit
 notifySubscriberSafely handler event = do
   -- Execute subscriber handler and catch any errors
   result <- handler event |> Task.asResult
@@ -489,12 +489,12 @@ notifySubscriberSafely handler event = do
     Err _ -> Task.yield unit -- Silently ignore subscriber errors
 
 
-truncateStreamImpl :: StreamStore eventType -> EntityName -> StreamId -> StreamPosition -> Task Error Unit
+truncateStreamImpl :: StreamStore -> EntityName -> StreamId -> StreamPosition -> Task Error Unit
 truncateStreamImpl store entityName streamId position = do
   let streams = store.streams
   let performTruncation ::
-        Map (EntityName, StreamId) (DurableChannel (Event eventType)) ->
-        Task Never (Map (EntityName, StreamId) (DurableChannel (Event eventType)), Maybe Error)
+        Map (EntityName, StreamId) (DurableChannel (Event Json.Value)) ->
+        Task Never (Map (EntityName, StreamId) (DurableChannel (Event Json.Value)), Maybe Error)
       performTruncation streamMap = do
         let key = (entityName, streamId)
         case streamMap |> Map.get key of
