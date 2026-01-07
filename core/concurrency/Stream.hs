@@ -10,6 +10,7 @@ module Stream (
   consumeMaybe,
   toArray,
   fromArray,
+  mapStream,
 ) where
 
 import Array (Array)
@@ -19,6 +20,7 @@ import Channel (Channel)
 import Channel qualified
 import Maybe (Maybe (..))
 import Maybe qualified as Maybe
+import Result (Result (..))
 import Task (Task)
 import Task qualified
 import Text (Text)
@@ -128,3 +130,22 @@ fromArray array = do
     |> Task.forEach (\item -> writeItem item stream)
   end stream
   Task.yield stream
+
+
+-- | Transform each item in a stream using a mapping function
+-- Creates a new stream with transformed values
+mapStream :: (valueA -> valueB) -> Stream valueA -> Task error (Stream valueB)
+mapStream mapper sourceStream = do
+  targetStream <- new
+  let loop = do
+        maybeItem <- readNext sourceStream |> Task.asResult
+        case maybeItem of
+          Err err -> do
+            pushError err targetStream
+          Ok Nothing -> do
+            end targetStream
+          Ok (Just item) -> do
+            writeItem (mapper item) targetStream
+            loop
+  loop
+  Task.yield targetStream

@@ -12,22 +12,26 @@ module Service.EventStore.Core (
   collectAllEvents,
   collectStreamEvents,
   streamMessageToAllMessage,
+  castEventStore,
 ) where
 
 import Array (Array)
 import Array qualified
 import Basics
 import Json qualified
+import Result (Result (..))
 import Service.Event (
   EntityName,
-  Event,
+  Event (..),
+  Insertion (..),
   InsertionFailure,
-  InsertionPayload,
+  InsertionPayload (..),
   InsertionSuccess,
   StreamPosition,
  )
 import Service.Event.StreamId (StreamId)
 import Stream (Stream)
+import Stream qualified
 import Task (Task)
 import Text (Text)
 
@@ -171,3 +175,120 @@ data EventStore eventType = EventStore
 
 class EventStoreConfig config where
   createEventStore :: config -> Task Text (EventStore Json.Value)
+
+
+-- | Wrap an EventStore Json.Value with typed serialization/deserialization.
+-- This allows multiple services with different event types to share a single EventStore.
+castEventStore ::
+  forall eventType.
+  (Json.FromJSON eventType, Json.ToJSON eventType) =>
+  EventStore Json.Value ->
+  EventStore eventType
+castEventStore rawStore =
+  EventStore
+    { insert = \payload -> do
+        let rawPayload = encodeInsertionPayload payload
+        rawStore.insert rawPayload,
+      readStreamForwardFrom = \entityName streamId position limit -> do
+        rawStream <- rawStore.readStreamForwardFrom entityName streamId position limit
+        rawStream |> Stream.mapStream decodeReadStreamMessage,
+      readStreamBackwardFrom = \entityName streamId position limit -> do
+        rawStream <- rawStore.readStreamBackwardFrom entityName streamId position limit
+        rawStream |> Stream.mapStream decodeReadStreamMessage,
+      readAllStreamEvents = \entityName streamId -> do
+        rawStream <- rawStore.readAllStreamEvents entityName streamId
+        rawStream |> Stream.mapStream decodeReadStreamMessage,
+      readAllEventsForwardFrom = \position limit -> do
+        rawStream <- rawStore.readAllEventsForwardFrom position limit
+        rawStream |> Stream.mapStream decodeReadAllMessage,
+      readAllEventsBackwardFrom = \position limit -> do
+        rawStream <- rawStore.readAllEventsBackwardFrom position limit
+        rawStream |> Stream.mapStream decodeReadAllMessage,
+      readAllEventsForwardFromFiltered = \position limit entityNames -> do
+        rawStream <- rawStore.readAllEventsForwardFromFiltered position limit entityNames
+        rawStream |> Stream.mapStream decodeReadAllMessage,
+      readAllEventsBackwardFromFiltered = \position limit entityNames -> do
+        rawStream <- rawStore.readAllEventsBackwardFromFiltered position limit entityNames
+        rawStream |> Stream.mapStream decodeReadAllMessage,
+      subscribeToAllEvents = \callback -> do
+        let rawCallback = \rawEvent -> do
+              let typedEvent = decodeEvent rawEvent
+              callback typedEvent
+        rawStore.subscribeToAllEvents rawCallback,
+      subscribeToAllEventsFromPosition = \position callback -> do
+        let rawCallback = \rawEvent -> do
+              let typedEvent = decodeEvent rawEvent
+              callback typedEvent
+        rawStore.subscribeToAllEventsFromPosition position rawCallback,
+      subscribeToAllEventsFromStart = \callback -> do
+        let rawCallback = \rawEvent -> do
+              let typedEvent = decodeEvent rawEvent
+              callback typedEvent
+        rawStore.subscribeToAllEventsFromStart rawCallback,
+      subscribeToEntityEvents = \entityName callback -> do
+        let rawCallback = \rawEvent -> do
+              let typedEvent = decodeEvent rawEvent
+              callback typedEvent
+        rawStore.subscribeToEntityEvents entityName rawCallback,
+      subscribeToStreamEvents = \entityName streamId callback -> do
+        let rawCallback = \rawEvent -> do
+              let typedEvent = decodeEvent rawEvent
+              callback typedEvent
+        rawStore.subscribeToStreamEvents entityName streamId rawCallback,
+      unsubscribe = rawStore.unsubscribe,
+      truncateStream = rawStore.truncateStream
+    }
+ where
+  encodeInsertionPayload :: InsertionPayload eventType -> InsertionPayload Json.Value
+  encodeInsertionPayload payload =
+    InsertionPayload
+      { streamId = payload.streamId,
+        entityName = payload.entityName,
+        insertionType = payload.insertionType,
+        insertions = payload.insertions |> Array.map encodeInsertion
+      }
+
+  encodeInsertion :: Insertion eventType -> Insertion Json.Value
+  encodeInsertion insertion =
+    Insertion
+      { id = insertion.id,
+        event = Json.encode insertion.event,
+        metadata = insertion.metadata
+      }
+
+  decodeEvent :: Event Json.Value -> Event eventType
+  decodeEvent rawEvent =
+    Event
+      { entityName = rawEvent.entityName,
+        streamId = rawEvent.streamId,
+        event = decodeEventData rawEvent.event,
+        metadata = rawEvent.metadata
+      }
+
+  decodeEventData :: Json.Value -> eventType
+  decodeEventData jsonValue =
+    case Json.decode (Json.encode jsonValue) of
+      Ok decoded -> decoded
+      Err _ -> panic "Failed to decode event data in castEventStore"
+
+  decodeReadAllMessage :: ReadAllMessage Json.Value -> ReadAllMessage eventType
+  decodeReadAllMessage message =
+    case message of
+      ReadingStarted -> ReadingStarted
+      AllEvent rawEvent -> AllEvent (decodeEvent rawEvent)
+      ToxicAllEvent contents -> ToxicAllEvent contents
+      Checkpoint position -> Checkpoint position
+      Terminated reason -> Terminated reason
+      CaughtUp -> CaughtUp
+      FellBehind -> FellBehind
+
+  decodeReadStreamMessage :: ReadStreamMessage Json.Value -> ReadStreamMessage eventType
+  decodeReadStreamMessage message =
+    case message of
+      StreamReadingStarted -> StreamReadingStarted
+      StreamEvent rawEvent -> StreamEvent (decodeEvent rawEvent)
+      ToxicStreamEvent contents -> ToxicStreamEvent contents
+      StreamCheckpoint position -> StreamCheckpoint position
+      StreamTerminated reason -> StreamTerminated reason
+      StreamCaughtUp -> StreamCaughtUp
+      StreamFellBehind -> StreamFellBehind
