@@ -272,6 +272,7 @@ atomicUpdate :: UUID -> (Maybe query -> Maybe query) -> Task Error Unit
 ```
 
 When two events for the same Query instance arrive simultaneously:
+
 - Both call `atomicUpdate` with the same UUID
 - The `ConcurrentVar` ensures operations are serialized
 - Each update sees the result of the previous update
@@ -361,15 +362,68 @@ Follows established patterns: flat structure with one level for implementation v
 
 6. **Query identity convention**: Requiring `id :: UUID` field on all Query types is a convention that cannot be enforced at compile time (only at runtime).
 
-### Open Discussion Items
+### EventStore Layering Decision
 
-**EventStore typing with multiple Services**: Currently EventStore is parameterized by a single `eventType`. With multiple Services (each with different event types) in one Application, event deserialization becomes complex. Options to explore:
+This section documents the resolution of the EventStore typing problem when multiple Services share a single EventStore.
 
-- Inject deserialization at Service level
-- Use a sum type for all event types in the Application
-- Store events as opaque JSON with entity-level deserialization
+#### Problem
 
-This will be addressed in a separate ADR.
+The EventStore is currently typed by a single `eventType`. With multiple Services (each with different event types) in one Application, we needed to decide how to handle serialization and cross-service event routing.
+
+#### Decision: Layered Architecture
+
+We will use a two-layer architecture:
+
+**Layer 1: RawEventStore (storage layer)**
+
+```haskell
+data RawEventStore = RawEventStore
+  { insert :: RawInsertionPayload -> Task Error InsertionSuccess,
+    readAllEventsForwardFrom :: StreamPosition -> Limit -> Task Error (Stream RawEvent),
+    subscribeToAllEvents :: (RawEvent -> Task Text Unit) -> Task Error SubscriptionId,
+    ...
+  }
+```
+
+- No type parameter - stores events as JSON
+- The current PostgreSQL and InMemory implementations get refactored to this layer
+- Query subscribers operate at this layer with `EntityName`-based routing
+
+**Layer 2: TypedEventStore (service layer)**
+
+```haskell
+newTypedEventStore ::
+  (Json.ToJSON eventType, Json.FromJSON eventType) =>
+  RawEventStore ->
+  Array EntityName ->
+  EventStore eventType
+```
+
+- Wraps a RawEventStore and adds JSON serialization/deserialization
+- Each Service gets a typed view scoped to its own event type
+- Full compile-time type safety within a service
+
+#### Rationale
+
+1. **Service isolation**: Services don't know about each other's event types
+2. **Type safety**: Full compile-time safety within services; runtime boundary only at cross-service concerns (Query subscribers)
+3. **Sharding-ready**: Raw store can be sharded by `EntityName`
+4. **Independent deployability**: Services can evolve event schemas without coordination
+5. **Performance**: JSON parsing happens once, no sum type overhead
+
+#### How it Works with Queries
+
+1. Application creates a `RawEventStore` (Postgres or InMemory)
+2. Each Service gets a `TypedEventStore eventType` wrapping the raw store
+3. Query subscribers subscribe to the `RawEventStore` directly
+4. Query subscribers use `EntityName` field from `RawEvent` to route to appropriate handlers
+5. Each Query handler deserializes the raw event to reconstruct the entity
+
+#### Migration from Current Implementation
+
+1. Refactor current `PostgresEventStore` and `InMemoryEventStore` to become `RawPostgresEventStore` and `RawInMemoryEventStore` (they mostly store JSON internally already)
+2. Create `TypedEventStore` wrapper that adds serialization/deserialization
+3. Services continue using `EventStore eventType` API (no change to service code)
 
 ### Related Work
 
