@@ -163,6 +163,8 @@ library
     Service.EventStore.Postgres.SubscriptionStore
     Service.Query
     Service.Query.Core
+    Service.QueryObjectStore
+    Service.QueryObjectStore.Core
     Service.Response
     Service.SnapshotCache
     Service.SnapshotCache.Core
