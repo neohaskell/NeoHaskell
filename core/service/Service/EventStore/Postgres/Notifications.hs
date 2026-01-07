@@ -20,10 +20,8 @@ import Task qualified
 
 
 connectTo ::
-  forall eventType.
-  (Json.FromJSON eventType) =>
   Hasql.Connection ->
-  SubscriptionStore eventType ->
+  SubscriptionStore ->
   Task Text Unit
 connectTo connection store = do
   let channelToListen = HasqlNotifications.toPgIdentifier "global"
@@ -49,9 +47,7 @@ subscribeToStream connection streamId = do
 
 
 handler ::
-  forall eventType.
-  (Json.FromJSON eventType) =>
-  SubscriptionStore eventType ->
+  SubscriptionStore ->
   Data.ByteString.ByteString ->
   Data.ByteString.ByteString ->
   IO ()
