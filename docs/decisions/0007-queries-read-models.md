@@ -370,60 +370,52 @@ This section documents the resolution of the EventStore typing problem when mult
 
 The EventStore is currently typed by a single `eventType`. With multiple Services (each with different event types) in one Application, we needed to decide how to handle serialization and cross-service event routing.
 
-#### Decision: Layered Architecture
+#### Decision: Cast Function Approach
 
-We will use a two-layer architecture:
+**No new types needed.** Instead:
 
-**Layer 1: RawEventStore (storage layer)**
+1. **Implementations create `EventStore Json.Value`**: Both Postgres and InMemory create an `EventStore Json.Value`. Postgres already stores JSON internally, so minimal change. InMemory stores `Event Json.Value` instead of `Event eventType`.
 
-```haskell
-data RawEventStore = RawEventStore
-  { insert :: RawInsertionPayload -> Task Error InsertionSuccess,
-    readAllEventsForwardFrom :: StreamPosition -> Limit -> Task Error (Stream RawEvent),
-    subscribeToAllEvents :: (RawEvent -> Task Text Unit) -> Task Error SubscriptionId,
-    ...
-  }
-```
-
-- No type parameter - stores events as JSON
-- The current PostgreSQL and InMemory implementations get refactored to this layer
-- Query subscribers operate at this layer with `EntityName`-based routing
-
-**Layer 2: TypedEventStore (service layer)**
+2. **Add a `castEventStore` function** that converts `EventStore Json.Value` to `EventStore eventType`:
 
 ```haskell
-newTypedEventStore ::
+castEventStore ::
   (Json.ToJSON eventType, Json.FromJSON eventType) =>
-  RawEventStore ->
-  Array EntityName ->
+  EventStore Json.Value ->
   EventStore eventType
 ```
 
-- Wraps a RawEventStore and adds JSON serialization/deserialization
-- Each Service gets a typed view scoped to its own event type
-- Full compile-time type safety within a service
+This function:
+- Wraps `insert` to encode the payload to JSON before inserting
+- Wraps read functions to decode JSON events to the typed event
+- Wraps subscription handlers to decode before calling the handler
+
+3. **Services use `castEventStore`** to get a typed `EventStore eventType`
+
+4. **Query subscribers use `EventStore Json.Value` directly** with `EntityName`-based routing and their own deserialization
 
 #### Rationale
 
-1. **Service isolation**: Services don't know about each other's event types
-2. **Type safety**: Full compile-time safety within services; runtime boundary only at cross-service concerns (Query subscribers)
-3. **Sharding-ready**: Raw store can be sharded by `EntityName`
-4. **Independent deployability**: Services can evolve event schemas without coordination
-5. **Performance**: JSON parsing happens once, no sum type overhead
+1. **No new types**: Reuses existing `Event`, `InsertionPayload`, and `EventStore` types
+2. **Service isolation**: Services don't know about each other's event types
+3. **Type safety**: Full compile-time safety within services; runtime boundary only at cross-service concerns (Query subscribers)
+4. **Minimal implementation changes**: Postgres implementation barely changes (already stores JSON); InMemory just changes what it stores internally
+5. **Sharding-ready**: JSON store can be sharded by `EntityName`
+6. **Independent deployability**: Services can evolve event schemas without coordination
 
 #### How it Works with Queries
 
-1. Application creates a `RawEventStore` (Postgres or InMemory)
-2. Each Service gets a `TypedEventStore eventType` wrapping the raw store
-3. Query subscribers subscribe to the `RawEventStore` directly
-4. Query subscribers use `EntityName` field from `RawEvent` to route to appropriate handlers
-5. Each Query handler deserializes the raw event to reconstruct the entity
+1. Application creates an `EventStore Json.Value` (Postgres or InMemory)
+2. Each Service calls `castEventStore` to get a typed `EventStore eventType`
+3. Query subscribers subscribe to the `EventStore Json.Value` directly
+4. Query subscribers use `EntityName` field from events to route to appropriate handlers
+5. Each Query handler deserializes the JSON event to reconstruct the entity
 
 #### Migration from Current Implementation
 
-1. Refactor current `PostgresEventStore` and `InMemoryEventStore` to become `RawPostgresEventStore` and `RawInMemoryEventStore` (they mostly store JSON internally already)
-2. Create `TypedEventStore` wrapper that adds serialization/deserialization
-3. Services continue using `EventStore eventType` API (no change to service code)
+1. Change `PostgresEventStore` and `InMemoryEventStore` to produce `EventStore Json.Value` (Postgres already stores JSON internally; InMemory changes from storing typed events to storing `Event Json.Value`)
+2. Add `EventStore.castEventStore` function that wraps insert/read/subscribe with JSON encoding/decoding
+3. Services continue using `EventStore eventType` API by calling `castEventStore` (minimal change to service code)
 
 ### Related Work
 
