@@ -170,6 +170,4 @@ data EventStore eventType = EventStore
 
 
 class EventStoreConfig config where
-  createEventStore ::
-    (Json.FromJSON eventType, Json.ToJSON eventType) =>
-    config -> Task Text (EventStore eventType)
+  createEventStore :: config -> Task Text (EventStore Json.Value)
