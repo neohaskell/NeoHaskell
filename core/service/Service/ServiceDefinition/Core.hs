@@ -405,7 +405,8 @@ runService
   commandDefinitions
   transportsMap = do
     -- Create the EventStore ONCE at service startup
-    eventStore <- EventStore.createEventStore @eventStoreConfig @event eventStoreConfig
+    rawEventStore <- EventStore.createEventStore eventStoreConfig
+    let eventStore = rawEventStore |> EventStore.castEventStore @event
 
     -- Create the SnapshotCache if configured, typed to the service's entity type
     maybeCache <- case maybeSnapshotCacheConfig of
