@@ -161,6 +161,8 @@ library
     Service.EventStore.Postgres.PostgresEventRecord
     Service.EventStore.Postgres.Sessions
     Service.EventStore.Postgres.SubscriptionStore
+    Service.Query
+    Service.Query.Core
     Service.Response
     Service.SnapshotCache
     Service.SnapshotCache.Core
