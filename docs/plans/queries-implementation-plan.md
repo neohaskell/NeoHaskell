@@ -249,9 +249,8 @@ Update code that creates event stores to use the new pattern:
 -- OLD: EventStore created with type parameter via config
 -- eventStore <- createEventStore @MyEvent config
 
--- NEW: Create JSON store, then cast to typed store
-rawStore <- createEventStore config
-let typedStore = castEventStore @MyEvent rawStore
+-- NEW: Create JSON store, then cast to typed store (one-liner)
+eventStore <- createEventStore config |> Task.map (castEventStore @MyEvent)
 ```
 
 This change affects:
@@ -269,8 +268,7 @@ All existing EventStore tests should continue to pass. The test setup changes fr
 eventStore <- InMemory.new @TestEvent
 
 -- NEW
-rawStore <- InMemory.new
-let eventStore = castEventStore @TestEvent rawStore
+eventStore <- InMemory.new |> Task.map (castEventStore @TestEvent)
 ```
 
 Run:
