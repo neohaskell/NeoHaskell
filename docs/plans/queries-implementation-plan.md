@@ -782,6 +782,7 @@ import GHC.Base (String)
 import Language.Haskell.TH.Lib qualified as THLib
 import Language.Haskell.TH.Syntax qualified as TH
 import Service.CommandExecutor.TH (deriveKnownHash)
+import Text qualified
 
 -- | Derive Query-related instances for a query type.
 --
@@ -798,7 +799,8 @@ deriveQuery queryTypeName entityTypeNames = do
   let queryTypeStr = TH.nameBase queryTypeName
 
   -- Convert to kebab-case for URL: UserOrders -> user-orders
-  let kebabName = camelToKebab queryTypeStr
+  -- Use Text.toKebabCase from nhcore
+  let kebabName = Text.toKebabCase (Text.fromLegacy queryTypeStr) |> Text.toLegacy
 
   -- Lookup required type families and classes
   nameOfTypeFamilyName <- lookupOrFail "NameOf"
@@ -832,18 +834,6 @@ deriveQuery queryTypeName entityTypeNames = do
   knownHashInstances <- deriveKnownHash queryTypeStr
 
   pure ([nameOfInstance, entitiesOfInstance, queryInstance] ++ knownHashInstances)
-
--- Helper to convert CamelCase to kebab-case
-camelToKebab :: String -> String
-camelToKebab [] = []
-camelToKebab (x:xs) = toLower x : go xs
-  where
-    go [] = []
-    go (c:cs)
-      | isUpper c = '-' : toLower c : go cs
-      | otherwise = c : go cs
-    toLower c = if c >= 'A' && c <= 'Z' then toEnum (fromEnum c + 32) else c
-    isUpper c = c >= 'A' && c <= 'Z'
 
 lookupOrFail :: String -> TH.Q TH.Name
 lookupOrFail name = do
