@@ -1,7 +1,5 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
-
 ## Project Overview
 
 NeoHaskell is a dialect of Haskell focused on newcomer-friendliness and productivity. This is a monorepo containing:
@@ -10,94 +8,387 @@ NeoHaskell is a dialect of Haskell focused on newcomer-friendliness and producti
 - **core/**: Core library (`nhcore`) with NeoHaskell's standard library modules
 - **website/**: Documentation website built with Astro/Starlight
 
-## Development Setup
+## Build Commands
 
-Required tools:
+```bash
+cabal build all              # Build everything
+cabal test                   # Run all tests
+cabal test nhcore-test       # Core library tests only
+cabal test nhcli-test        # CLI tests only
+hlint .                      # Linter
+./scripts/run-doctest        # Doctests
+```
 
-- Install [Nix](https://nixos.org/download/)
-- Run `nix-shell` to enter development environment
-- Run `cabal update && cabal build all` to build everything
+Formatting is automatic via fourmolu (2-space indent, 120 char limit).
 
-The project uses VS Code with Haskell Language Server for development.
+---
 
-## Build and Test Commands
+## Workflow
 
-### Core Commands
+### Before Writing ANY Code
 
-- `cabal build all` - Build all packages
-- `cabal test` - Run all tests
-- `cabal test nhcore-test` - Run core library tests only
-- `cabal test nhcli-test` - Run CLI tests only
-- `hlint .` - Run linter
+1. **Read relevant files completely** - don't skim, don't read partial files
+2. **Search for existing implementations** - reuse before creating
+3. **Check `core/core/`** for NeoHaskell equivalents of what you need
+4. **Ask if uncertain** - it's better to ask one question than make wrong assumptions
 
-### Documentation Tests
+### TDD Process (Mandatory)
 
-- `./scripts/run-doctest` - Run doctest (installs doctest if needed)
+All implementation follows test-driven development:
 
-### Formatting
+1. **Write the complete test specification first** - define all requirements and expected behaviors
+2. **Get approval on the test spec** before implementing
+3. **Implement to make tests pass**
+4. **Run `cabal build all && cabal test`** to verify
 
-- Code auto-formats on save in VS Code using fourmolu
-- Configuration in `fourmolu.yaml` (2-space indent, 120 char limit)
+### After Changes
 
-## Architecture
+1. Run `cabal build all` - must compile
+2. Run relevant tests - must pass
+3. Run `hlint .` on modified files
+4. Ensure Haddock comments and doctests exist for public functions
 
-### Core Library Structure
+---
 
-The core library (`nhcore`) provides NeoHaskell's standard library organized into:
+## NeoHaskell vs Haskell
 
-- **Core modules**: Basic types (Text, Int, Array, Maybe, Result, etc.)
-- **System modules**: File, Directory, Path, Environment, Time, Subprocess
-- **Concurrency**: AsyncTask, Channel, Lock, ConcurrentVar
-- **Service layer**: Event sourcing with EventStore (InMemory implementation)
-- **HTTP**: Basic HTTP client functionality
-- **Traits**: Type classes (Mappable, Appendable, Combinable, etc.)
-- **Testing**: Comprehensive EventStore test suites with property-based testing
+**This is NOT standard Haskell. NeoHaskell has its own idioms.**
 
-### CLI Tool
+### Use NeoHaskell Modules, Not Base
 
-The CLI (`nhcli`) provides project management commands through the `neo` executable.
+The `core/core/` directory contains NeoHaskell's standard library that wraps/replaces base:
 
-## NeoHaskell Code Style
+| Instead of (Haskell) | Use (NeoHaskell)     |
+| -------------------- | -------------------- |
+| `Data.List`          | `LinkedList`         |
+| `Data.Text`          | `Text`               |
+| `Data.Map`           | `Map`                |
+| `Either a b`         | `Result error value` |
+| `IO a`               | `Task error value`   |
+| `Maybe a`            | `Maybe value`        |
 
-NeoHaskell follows specific coding conventions (from `.cursor/rules/neohaskell-style.mdc`):
+If you need base/ecosystem functionality, check if nhcore already exposes it. When importing Haskell base modules is unavoidable, prefix with `Ghc`:
 
-### Import Style
+```haskell
+import Data.List qualified as GhcList
+```
 
-Always import types explicitly and modules qualified:
+### Naming Convention: Qualified Usage
+
+Functions are designed for qualified import. Name them for how they'll be called:
+
+```haskell
+-- ❌ Wrong: redundant when qualified
+EventStore.newEventStore
+EventStore.getEventStoreEvents
+
+-- ✅ Correct: clean when qualified
+EventStore.new
+EventStore.getEvents
+
+-- Usage:
+store <- EventStore.new
+events <- store |> EventStore.getEvents
+```
+
+### Task, Not IO
+
+All effectful code uses `Task err val` (isomorphic to `IO (Either err val)`):
+
+```haskell
+-- ❌ Wrong
+readConfig :: IO Config
+
+-- ✅ Correct
+readConfig :: Task ConfigError Config
+```
+
+Stay within Task. Use Task's built-in error handling functions, not exceptions.
+
+---
+
+## Code Style
+
+### Imports
+
+Always explicit types + qualified modules:
 
 ```haskell
 import Service.Event (Event(..))
 import Service.Event qualified as Event
 ```
 
-Use `Ghc` prefix for base library imports:
+### Pipe Operator Over Nesting
 
 ```haskell
-import Data.List qualified as GhcList
+-- ❌ Wrong
+foo $ bar $ baz x
+
+-- ✅ Correct
+x
+  |> baz
+  |> bar
+  |> foo
 ```
 
-### Code Structure
+### Explicit Application, No Point-Free
 
-- No point-free style - always explicit function application
-- Prefer pipe operator `|>` over nested `$`
-- Use `do` blocks for intermediate bindings (even non-monadic), no `let..in` or `where`
-- Pattern matching only in `case..of` expressions
-- Use `forall` for type parameters with descriptive names (not single letters)
-- Use `Result` instead of `Either`
-- Use `[fmt|Hello {name}!|]` for string concatenation
-- Use `<TypeName>.yield` instead of `pure` or `return`
+```haskell
+-- ❌ Wrong
+processItems = map transform . filter isValid
 
-### Forbidden Patterns
+-- ✅ Correct
+processItems items = do
+  let validItems = items |> Array.filter isValid
+  validItems |> Array.map transform
+```
 
-- Never import Haskell ecosystem modules unless explicitly requested
-- Use nhcore modules instead of base/ecosystem equivalents
-- No `let..in` or `where` clauses
-- No function definition pattern matching
-- No short type parameter names (use `value` not `a`)
+### Do Blocks for Bindings
 
-## Common Tasks
+Use `do` for intermediate bindings, even in pure code. No `let..in` or `where`:
 
-- Adding new core modules: Add to `core/nhcore.cabal` exposed-modules
-- Adding CLI commands: Extend modules in `cli/src/Neo/`
-- Running specific tests: Use `cabal test <package-name>-test`
-- Code formatting: Automatic in VS Code, or `fourmolu --mode inplace **/*.hs`
+```haskell
+-- ❌ Wrong
+calculate x =
+  let y = x + 1
+      z = y * 2
+  in z + 3
+
+-- ❌ Wrong
+calculate x = z + 3
+  where
+    y = x + 1
+    z = y * 2
+
+-- ✅ Correct
+calculate x = do
+  let y = x + 1
+  let z = y * 2
+  z + 3
+```
+
+### Pattern Matching Only in Case Expressions
+
+```haskell
+-- ❌ Wrong
+isEmpty [] = True
+isEmpty _ = False
+
+-- ✅ Correct
+isEmpty list = case list of
+  [] -> True
+  _ -> False
+```
+
+### Type Parameters: Descriptive Names
+
+```haskell
+-- ❌ Wrong
+map :: (a -> b) -> [a] -> [b]
+
+-- ✅ Correct
+map :: forall input output. (input -> output) -> Array input -> Array output
+```
+
+### String Interpolation
+
+```haskell
+-- ❌ Wrong
+"Hello " ++ name ++ "!"
+"Hello " <> name <> "!"
+
+-- ✅ Correct
+[fmt|Hello {name}!|]
+```
+
+### Return Values
+
+```haskell
+-- ❌ Wrong
+pure value
+return value
+
+-- ✅ Correct
+Task.yield value
+Maybe.yield value
+Result.ok value
+```
+
+---
+
+## Forbidden Patterns
+
+**Never do these:**
+
+- ❌ Import Haskell ecosystem modules without checking nhcore first
+- ❌ Use `let..in` or `where` clauses
+- ❌ Pattern match in function definitions
+- ❌ Point-free style
+- ❌ Single-letter type parameters (`a`, `b`, `m`)
+- ❌ Redundant prefixes in function names (`newEventStore` → `new`)
+- ❌ Raw `IO` - use `Task` instead
+- ❌ `Either` - use `Result` instead
+- ❌ `pure` or `return` - use `<Type>.yield`
+- ❌ String concatenation with `++` or `<>` - use `[fmt|...|]`
+- ❌ Create new modules when existing abstractions can be extended
+
+---
+
+## Testing
+
+Framework: **Hspec**
+
+### Structure
+
+```haskell
+spec :: Spec
+spec = do
+  describe "ModuleName.functionName" do
+    it "describes expected behavior" do
+      functionName input `shouldBe` expectedOutput
+
+    it "handles edge case" do
+      functionName edgeInput `shouldBe` edgeOutput
+```
+
+### Documentation
+
+All public functions need:
+
+1. Haddock comment explaining purpose
+2. Doctest example showing usage
+
+```haskell
+-- | Transforms a value using the provided function.
+--
+-- >>> transform (+1) 5
+-- 6
+transform :: forall input output. (input -> output) -> input -> output
+transform f value = f value
+```
+
+---
+
+## Architecture
+
+### Module Organization
+
+```
+core/core/
+├── Core types (Text, Int, Array, Maybe, Result, Task)
+├── Traits (Mappable, Appendable, Combinable)
+├── System (File, Directory, Path, Environment)
+├── Concurrency (AsyncTask, Channel, Lock)
+└── Service (EventStore, etc.)
+```
+
+### Decision Guide
+
+| Need                   | Location       |
+| ---------------------- | -------------- |
+| New primitive type     | `Core/`        |
+| New behavior/typeclass | `Traits/`      |
+| IO/system operations   | `System/`      |
+| Higher-level patterns  | `Service/`     |
+| CLI commands           | `cli/src/Neo/` |
+
+### Adding to nhcore
+
+1. Add module to `core/nhcore.cabal` exposed-modules
+2. Follow existing module structure as template
+3. Include Haddock + doctests
+4. Write Hspec tests first
+
+---
+
+## Error Handling
+
+When builds fail:
+
+1. Read the **complete** error message
+2. Check for missing imports or type mismatches
+3. Look at similar working code in the repo
+4. Don't guess - understand the error
+
+When tests fail:
+
+1. Run the specific failing test: `cabal test --test-option=--match="/description/"`
+2. Read the assertion output carefully
+3. **Never modify test expectations without asking** - tests define requirements
+
+When uncertain about NeoHaskell patterns:
+
+- Search existing code in `core/` for examples
+- Ask before deviating from established patterns
+
+---
+
+## Communication
+
+**Be concise.** No walls of text.
+
+**Be direct.** Don't explain what you're about to do - just do it.
+
+**No sycophancy:**
+
+- ❌ "You're absolutely right"
+- ❌ "Great question"
+- ❌ "That's a really interesting point"
+
+**When you make a mistake:**
+
+- State what went wrong: "I made an error - used LinkedList.map instead of Array.map"
+- Explain briefly why
+- Offer the fix
+- Ask: "Should I revert and try again?"
+
+**Ask questions when:**
+
+- Requirements are ambiguous
+- Multiple valid approaches exist
+- You're about to change a public API
+- You're unsure if nhcore has what you need
+
+**Don't ask when:**
+
+- The task is routine (formatting, standard imports)
+- You can verify by reading existing code
+- You can verify by running tests
+
+---
+
+## Common Mistakes to Avoid
+
+1. **Using Haskell idioms instead of NeoHaskell**
+
+   - Always check if nhcore has the function you need
+   - Names differ: `fmap` → `map`, `pure` → `yield`, etc.
+
+2. **Verbose function names**
+
+   - Think about qualified usage: `Module.function`
+   - `EventStore.new` not `EventStore.newEventStore`
+
+3. **Creating new modules unnecessarily**
+
+   - First: can this extend an existing module?
+   - Second: can this use existing abstractions?
+   - Last resort: new module
+
+4. **Writing implementation before tests**
+
+   - Always spec first, implement second
+   - Get approval on test spec before coding
+
+5. **Partial file reads leading to broken code**
+   - Read entire files when you need context
+   - Don't optimize for tokens at the cost of correctness
+
+---
+
+## Git
+
+- Conventional commits: `feat:`, `fix:`, `docs:`, `refactor:`, `test:`
+- Work on current branch
+- Run full build + tests before committing
+- One logical change per commit
