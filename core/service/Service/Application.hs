@@ -29,7 +29,6 @@ import Array qualified
 import AsyncTask qualified
 import Basics
 import Json qualified
-import Record qualified
 import Service.EventStore (EventStore)
 import Service.Query.Registry (QueryRegistry)
 import Service.Query.Registry qualified as Registry
@@ -125,7 +124,6 @@ withServiceRunner runner app =
 withService ::
   forall cmds commandTransportNames providedTransportNames eventStoreConfig snapshotCacheConfig event entity.
   ( SnapshotCacheConfig snapshotCacheConfig,
-    Record.AllFields cmds (ServiceDefinition.CommandInspect),
     event ~ ServiceDefinition.ServiceEventType cmds,
     entity ~ ServiceDefinition.ServiceEntityType cmds,
     Json.FromJSON event,
