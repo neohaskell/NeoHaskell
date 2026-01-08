@@ -1,12 +1,22 @@
 module Service.ApplicationSpec where
 
+import AsyncTask qualified
+import ConcurrentVar qualified
 import Core
+import Json qualified
+import Service.Application (ServiceRunner (..))
 import Service.Application qualified as Application
+import Service.Event (Insertion (..), InsertionPayload (..))
 import Service.Event.EntityName (EntityName (..))
+import Service.Event.EventMetadata qualified as EventMetadata
+import Service.Event.StreamId qualified as StreamId
+import Service.EventStore (EventStore (..))
+import Service.EventStore.InMemory qualified as InMemory
 import Service.Query.Registry (QueryUpdater (..))
 import Service.Query.Registry qualified as Registry
 import Task qualified
 import Test
+import Uuid qualified
 
 
 -- ============================================================================
@@ -98,3 +108,149 @@ spec = do
               Application.new
                 |> Application.withQueryRegistry registry
         Application.hasQueryRegistry app |> shouldBe True
+
+    describe "withServiceRunner" do
+      it "adds a service runner to the application" \_ -> do
+        let runner =
+              ServiceRunner
+                { runWithEventStore = \_ -> Task.yield unit
+                }
+        let app =
+              Application.new
+                |> Application.withServiceRunner runner
+        Application.hasServiceRunners app |> shouldBe True
+
+      it "accumulates multiple service runners" \_ -> do
+        let runner1 = ServiceRunner {runWithEventStore = \_ -> Task.yield unit}
+        let runner2 = ServiceRunner {runWithEventStore = \_ -> Task.yield unit}
+        let app =
+              Application.new
+                |> Application.withServiceRunner runner1
+                |> Application.withServiceRunner runner2
+        Application.serviceRunnerCount app |> shouldBe 2
+
+    describe "runWith" do
+      it "passes event store to service runners" \_ -> do
+        -- Track whether service runner was called with event store
+        calledRef <- ConcurrentVar.containing False
+
+        let runner =
+              ServiceRunner
+                { runWithEventStore = \_ -> do
+                    calledRef |> ConcurrentVar.modify (\_ -> True)
+                    Task.yield unit
+                }
+
+        eventStore <- InMemory.new |> Task.mapError toText
+
+        let app =
+              Application.new
+                |> Application.withServiceRunner runner
+
+        Application.runWith eventStore app
+
+        called <- ConcurrentVar.peek calledRef
+        called |> shouldBe True
+
+      it "rebuilds queries before starting services" \_ -> do
+        -- Create event store with existing events
+        eventStore <- InMemory.new |> Task.mapError toText
+
+        -- Insert an event BEFORE running the app
+        insertTestEvent eventStore (EntityName "TestEntity")
+
+        -- Track query rebuild
+        rebuildCalled <- ConcurrentVar.containing False
+
+        let updater =
+              QueryUpdater
+                { queryName = "TestQuery",
+                  updateQuery = \_ -> do
+                    rebuildCalled |> ConcurrentVar.modify (\_ -> True)
+                    Task.yield unit
+                }
+
+        let registry =
+              Registry.empty
+                |> Registry.register (EntityName "TestEntity") updater
+
+        let app =
+              Application.new
+                |> Application.withQueryRegistry registry
+
+        Application.runWith eventStore app
+
+        rebuilt <- ConcurrentVar.peek rebuildCalled
+        rebuilt |> shouldBe True
+
+      it "starts query subscriber after rebuild" \_ -> do
+        eventStore <- InMemory.new |> Task.mapError toText
+
+        -- Track events processed by subscriber (live events after startup)
+        liveEventCount <- ConcurrentVar.containing (0 :: Int)
+
+        let updater =
+              QueryUpdater
+                { queryName = "TestQuery",
+                  updateQuery = \_ -> do
+                    liveEventCount |> ConcurrentVar.modify (\n -> n + 1)
+                    Task.yield unit
+                }
+
+        let registry =
+              Registry.empty
+                |> Registry.register (EntityName "TestEntity") updater
+
+        let app =
+              Application.new
+                |> Application.withQueryRegistry registry
+
+        -- Run app in background
+        Application.runWithAsync eventStore app
+
+        -- Give subscriber time to start
+        AsyncTask.sleep 50 |> Task.mapError (\_ -> "sleep error" :: Text)
+
+        -- Insert event AFTER app started
+        insertTestEvent eventStore (EntityName "TestEntity")
+
+        -- Give subscriber time to process
+        AsyncTask.sleep 100 |> Task.mapError (\_ -> "sleep error" :: Text)
+
+        count <- ConcurrentVar.peek liveEventCount
+        count |> shouldBe 1
+
+    describe "isEmpty with service runners" do
+      it "returns False when service runners are added" \_ -> do
+        let runner = ServiceRunner {runWithEventStore = \_ -> Task.yield unit}
+        let app =
+              Application.new
+                |> Application.withServiceRunner runner
+        Application.isEmpty app |> shouldBe False
+
+
+-- | Helper to insert a test event into the event store.
+insertTestEvent :: EventStore Json.Value -> EntityName -> Task Text Unit
+insertTestEvent eventStore entityName = do
+  eventId <- Uuid.generate
+  streamId <- StreamId.new
+  metadata <- EventMetadata.new
+
+  let insertion =
+        Insertion
+          { id = eventId,
+            event = Json.encode (),
+            metadata = metadata
+          }
+
+  let payload =
+        InsertionPayload
+          { streamId = streamId,
+            entityName = entityName,
+            insertionType = AnyStreamState,
+            insertions = [insertion]
+          }
+
+  eventStore.insert payload
+    |> Task.mapError toText
+    |> discard
