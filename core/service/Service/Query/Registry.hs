@@ -2,6 +2,7 @@ module Service.Query.Registry (
   QueryRegistry,
   QueryUpdater (..),
   empty,
+  isEmpty,
   register,
   getUpdatersForEntity,
 ) where
@@ -35,6 +36,11 @@ newtype QueryRegistry = QueryRegistry (Map EntityName (Array QueryUpdater))
 -- | Create an empty QueryRegistry.
 empty :: QueryRegistry
 empty = QueryRegistry Map.empty
+
+
+-- | Check if the QueryRegistry has no registered updaters.
+isEmpty :: QueryRegistry -> Bool
+isEmpty (QueryRegistry registry) = Map.length registry == 0
 
 
 -- | Register a QueryUpdater for an entity type.

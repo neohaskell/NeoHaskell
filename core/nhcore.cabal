@@ -161,6 +161,7 @@ library
     Service.EventStore.Postgres.PostgresEventRecord
     Service.EventStore.Postgres.Sessions
     Service.EventStore.Postgres.SubscriptionStore
+    Service.Application
     Service.Query
     Service.Query.Core
     Service.Query.Registry
@@ -269,6 +270,7 @@ test-suite nhcore-test
 
   other-modules:
     ConcurrentMapSpec
+    Service.ApplicationSpec
     Service.CommandHandlerSpec
     Service.CommandSpec
     Service.EventStore.InMemorySpec
