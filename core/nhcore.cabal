@@ -163,6 +163,7 @@ library
     Service.EventStore.Postgres.SubscriptionStore
     Service.Query
     Service.Query.Core
+    Service.Query.Registry
     Service.QueryObjectStore
     Service.QueryObjectStore.Core
     Service.QueryObjectStore.InMemory
@@ -270,6 +271,7 @@ test-suite nhcore-test
     Service.EventStore.InMemorySpec
     Service.EventStore.Postgres.SubscriptionStoreSpec
     Service.EventStore.PostgresSpec
+    Service.Query.RegistrySpec
     Service.QueryObjectStore.InMemorySpec
     Service.SnapshotCache.InMemorySpec
     SetSpec
