@@ -11,6 +11,7 @@ module Service.Application (
   -- * Configuration
   withQueryRegistry,
   withServiceRunner,
+  withService,
 
   -- * Inspection
   isEmpty,
@@ -28,20 +29,18 @@ import Array qualified
 import AsyncTask qualified
 import Basics
 import Json qualified
+import Record qualified
 import Service.EventStore (EventStore)
 import Service.Query.Registry (QueryRegistry)
 import Service.Query.Registry qualified as Registry
 import Service.Query.Subscriber qualified as Subscriber
+import Service.ServiceDefinition.Core (ServiceRunner (..))
+import Service.ServiceDefinition.Core qualified as ServiceDefinition
+import Service.SnapshotCache.Core (SnapshotCacheConfig)
 import Task (Task)
 import Task qualified
 import Text (Text)
 import ToText (toText)
-
-
--- | A function that runs a service given a shared EventStore.
-data ServiceRunner = ServiceRunner
-  { runWithEventStore :: EventStore Json.Value -> Task Text Unit
-  }
 
 
 -- | Application combines multiple Services and Queries with shared infrastructure.
@@ -108,6 +107,38 @@ withServiceRunner ::
   Application
 withServiceRunner runner app =
   app {serviceRunners = app.serviceRunners |> Array.push runner}
+
+
+-- | Add a Service to the Application.
+--
+-- This converts the Service to a ServiceRunner and adds it to the Application.
+-- The Service will use the Application's shared EventStore instead of creating
+-- its own.
+--
+-- Example:
+--
+-- @
+-- app = Application.new
+--   |> Application.withService myCartService
+--   |> Application.withService myOrderService
+-- @
+withService ::
+  forall cmds commandTransportNames providedTransportNames eventStoreConfig snapshotCacheConfig event entity.
+  ( SnapshotCacheConfig snapshotCacheConfig,
+    Record.AllFields cmds (ServiceDefinition.CommandInspect),
+    event ~ ServiceDefinition.ServiceEventType cmds,
+    entity ~ ServiceDefinition.ServiceEntityType cmds,
+    Json.FromJSON event,
+    Json.ToJSON event,
+    Json.FromJSON entity,
+    Json.ToJSON entity
+  ) =>
+  ServiceDefinition.Service cmds commandTransportNames providedTransportNames eventStoreConfig snapshotCacheConfig ->
+  Application ->
+  Application
+withService service app = do
+  let runner = ServiceDefinition.toServiceRunner service
+  app |> withServiceRunner runner
 
 
 -- | Check if any ServiceRunners have been configured.

@@ -10,6 +10,13 @@ module Service.ServiceDefinition.Core (
   __internal_runServiceMain,
   useEventStore,
   useSnapshotCache,
+  toServiceRunner,
+  ServiceRunner (..),
+
+  -- * Re-exports for Application integration
+  ServiceEventType,
+  ServiceEntityType,
+  CommandInspect,
 ) where
 
 import Array (Array)
@@ -484,4 +491,136 @@ runService
                 let runnableTransport = assembleTransport typedEndpoints
 
                 -- Run the assembled transport
+                runTransport transport runnableTransport
+
+
+-- | A function that runs a service given a shared EventStore.
+data ServiceRunner = ServiceRunner
+  { runWithEventStore :: EventStore Json.Value -> Task Text Unit
+  }
+
+
+-- | Convert a Service to a ServiceRunner that can be used with Application.
+--
+-- The ServiceRunner will use the provided EventStore instead of creating its own.
+-- This allows multiple services to share the same EventStore within an Application.
+toServiceRunner ::
+  forall cmds commandTransportNames providedTransportNames eventStoreConfig snapshotCacheConfig event entity.
+  ( SnapshotCacheConfig snapshotCacheConfig,
+    Record.AllFields cmds (CommandInspect),
+    event ~ ServiceEventType cmds,
+    entity ~ ServiceEntityType cmds,
+    Json.FromJSON event,
+    Json.ToJSON event,
+    Json.FromJSON entity,
+    Json.ToJSON entity
+  ) =>
+  Service cmds commandTransportNames providedTransportNames eventStoreConfig snapshotCacheConfig ->
+  ServiceRunner
+toServiceRunner service =
+  case Record.reflectAllFields service.inspectDict of
+    Record.Reflected ->
+      ServiceRunner
+        { runWithEventStore = \rawEventStore ->
+            runServiceWithEventStore
+              @cmds
+              @snapshotCacheConfig
+              @event
+              @entity
+              rawEventStore
+              service.snapshotCacheConfig
+              service.commandDefinitions
+              service.transports
+        }
+
+
+-- | Run a service with a provided EventStore (instead of creating one from config).
+runServiceWithEventStore ::
+  forall (cmds :: Record.Row Type) snapshotCacheConfig event entity.
+  ( Record.AllFields cmds (CommandInspect),
+    SnapshotCacheConfig snapshotCacheConfig,
+    event ~ ServiceEventType cmds,
+    entity ~ ServiceEntityType cmds,
+    Json.FromJSON event,
+    Json.ToJSON event,
+    Json.FromJSON entity,
+    Json.ToJSON entity
+  ) =>
+  EventStore Json.Value ->
+  Maybe snapshotCacheConfig ->
+  Record.ContextRecord Record.I cmds ->
+  Map Text TransportValue ->
+  Task Text Unit
+runServiceWithEventStore
+  rawEventStore
+  maybeSnapshotCacheConfig
+  commandDefinitions
+  transportsMap = do
+    -- Use the provided EventStore, cast to the service's event type
+    let eventStore = rawEventStore |> EventStore.castEventStore @event
+
+    -- Create the SnapshotCache if configured, typed to the service's entity type
+    maybeCache <- case maybeSnapshotCacheConfig of
+      Just config -> do
+        cache <- SnapshotCache.createSnapshotCache @_ @entity config
+        Task.yield (Just cache)
+      Nothing -> Task.yield Nothing
+
+    let mapper ::
+          forall cmdDef cmd.
+          ( CommandInspect cmdDef,
+            cmd ~ Cmd cmdDef
+          ) =>
+          Record.I (cmdDef) ->
+          Record.K ((Text, TransportValue), (Text, EndpointHandler)) (cmdDef)
+        mapper (Record.I x) = do
+          case transportsMap |> Map.get (transportName x) of
+            Nothing -> panic [fmt|The impossible happened, couldn't find transport config for #{commandName x}|]
+            Just transportVal -> do
+              let transport = getTransportValue transportVal
+              let typedEventStore = GHC.unsafeCoerce eventStore :: EventStore (CmdEvent cmdDef)
+              let typedCache = GHC.unsafeCoerce maybeCache :: Maybe (SnapshotCache (CmdEntity cmdDef))
+              Record.K ((transportName x, transportVal), (commandName x, createHandler x typedEventStore typedCache (transport) (Record.Proxy @cmd)))
+
+    let xs :: Array ((Text, TransportValue), (Text, EndpointHandler)) =
+          commandDefinitions
+            |> Record.cmap (Record.Proxy @(CommandInspect)) mapper
+            |> Record.collapse
+            |> Array.fromLinkedList
+
+    -- Group endpoints by transport name
+    let endpointsReducer ((transportNameText, transportVal), (commandNameText, handler)) endpointsMap = do
+          let transport = getTransportValue transportVal
+          case endpointsMap |> Map.get transportNameText of
+            Nothing -> do
+              let newEndpoints =
+                    Endpoints
+                      { transport = transport,
+                        commandEndpoints = Map.empty |> Map.set commandNameText handler
+                      }
+              endpointsMap |> Map.set transportNameText newEndpoints
+            Just existingEndpoints -> do
+              let updatedEndpoints =
+                    existingEndpoints
+                      { commandEndpoints = existingEndpoints.commandEndpoints |> Map.set commandNameText handler
+                      }
+              endpointsMap |> Map.set transportNameText updatedEndpoints
+
+    let endpointsByTransport =
+          xs |> Array.reduce endpointsReducer Map.empty
+
+    -- Run each transport with its endpoints
+    endpointsByTransport
+      |> Map.entries
+      |> Task.forEach \(transportNameText, transportEndpoints) -> do
+        let commandCount = Map.length transportEndpoints.commandEndpoints
+        Console.print [fmt|Starting transport: #{transportNameText} with #{commandCount} commands|]
+
+        case transportsMap |> Map.get transportNameText of
+          Nothing -> panic [fmt|Transport #{transportNameText} not found in transports map|]
+          Just transportVal -> do
+            case transportVal of
+              TransportValue (transport :: transport) -> do
+                let typedEndpoints = GHC.unsafeCoerce transportEndpoints :: Endpoints transport
+                let runnableTransport = assembleTransport typedEndpoints
                 runTransport transport runnableTransport
