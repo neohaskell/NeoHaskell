@@ -12,6 +12,7 @@ module Service.Application (
 
   -- * Configuration
   withEventStore,
+  withQueryObjectStore,
   withQuery,
   withQueryRegistry,
   withQueryEndpoint,
@@ -53,6 +54,8 @@ import Service.EventStore (EventStore, EventStoreConfig (..))
 import Service.Query.Core (EntitiesOf, Query)
 import Service.Query.Definition (QueryDefinition (..), WireEntities)
 import Service.Query.Definition qualified as Definition
+import Service.QueryObjectStore.Core (QueryObjectStoreConfig (..))
+import Service.QueryObjectStore.InMemory qualified as InMemory
 import Service.Query.Registry (QueryRegistry)
 import Service.Query.Registry qualified as Registry
 import Service.Query.Subscriber qualified as Subscriber
@@ -88,8 +91,15 @@ import ToText (toText)
 --
 -- Application.run app
 -- @
+-- | A type-erased wrapper for QueryObjectStoreConfig.
+--
+-- This allows storing the config in Application without knowing the concrete type.
+data QueryObjectStoreConfigValue = forall config. (QueryObjectStoreConfig config) => QueryObjectStoreConfigValue config
+
+
 data Application = Application
   { eventStoreCreator :: Maybe (Task Text (EventStore Json.Value)),
+    queryObjectStoreConfig :: Maybe QueryObjectStoreConfigValue,
     queryDefinitions :: Array QueryDefinition,
     queryRegistry :: QueryRegistry,
     serviceRunners :: Array ServiceRunner,
@@ -99,10 +109,14 @@ data Application = Application
 
 
 -- | Create a new empty Application.
+--
+-- By default, queries use in-memory storage. Use 'withQueryObjectStore' to
+-- configure a different storage backend.
 new :: Application
 new =
   Application
     { eventStoreCreator = Nothing,
+      queryObjectStoreConfig = Nothing,
       queryDefinitions = Array.empty,
       queryRegistry = Registry.empty,
       serviceRunners = Array.empty,
@@ -140,18 +154,45 @@ hasEventStore app = case app.eventStoreCreator of
   Just _ -> True
 
 
+-- | Configure the QueryObjectStore for the Application.
+--
+-- The QueryObjectStore is used to store query read models. If not configured,
+-- queries will use in-memory storage by default.
+--
+-- Example:
+--
+-- @
+-- let postgresConfig = PostgresQueryObjectStore
+--       { connectionString = "..." }
+--
+-- app = Application.new
+--   |> Application.withQueryObjectStore postgresConfig
+--   |> Application.withQuery \@CartSummary
+-- @
+withQueryObjectStore ::
+  (QueryObjectStoreConfig config) =>
+  config ->
+  Application ->
+  Application
+withQueryObjectStore config app =
+  app {queryObjectStoreConfig = Just (QueryObjectStoreConfigValue config)}
+
+
 -- | Register a query type with automatic wiring.
 --
 -- This is the declarative way to add queries to an Application. At runtime,
 -- when 'runWith' is called, the query infrastructure is automatically created:
 --
--- * QueryObjectStore for storing query instances
+-- * QueryObjectStore for storing query instances (using the configured backend)
 -- * EntityFetcher for reconstructing entity state (for each entity in EntitiesOf query)
 -- * QueryUpdater for handling entity events (for each entity)
 -- * HTTP endpoint at @GET /queries/{query-name}@
 --
 -- The query name is derived from 'NameOf query' in kebab-case.
 -- All entities listed in 'EntitiesOf query' are automatically wired.
+--
+-- The QueryObjectStore backend is determined by 'withQueryObjectStore'. If not
+-- configured, in-memory storage is used by default.
 --
 -- Example:
 --
@@ -174,7 +215,10 @@ withQuery ::
   Application ->
   Application
 withQuery app = do
-  let definition = Definition.createDefinition @query
+  let storeFactory = case app.queryObjectStoreConfig of
+        Just (QueryObjectStoreConfigValue config) -> createQueryObjectStore config
+        Nothing -> InMemory.new |> Task.mapError toText
+  let definition = Definition.createDefinitionWithStore @query storeFactory
   app {queryDefinitions = app.queryDefinitions |> Array.push definition}
 
 

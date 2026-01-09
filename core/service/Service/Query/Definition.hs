@@ -4,6 +4,7 @@
 module Service.Query.Definition (
   QueryDefinition (..),
   createDefinition,
+  createDefinitionWithStore,
   WireEntities (..),
 ) where
 
@@ -52,10 +53,13 @@ data QueryDefinition = QueryDefinition
   }
 
 
--- | Create a QueryDefinition for a query type.
+-- | Create a QueryDefinition for a query type using in-memory storage.
 --
 -- This automatically wires all entities listed in 'EntitiesOf query'.
 -- The query name is derived from 'NameOf query' (kebab-case).
+--
+-- This is a convenience function that uses 'InMemory.new' as the store factory.
+-- For custom storage backends, use 'createDefinitionWithStore'.
 --
 -- Example:
 --
@@ -77,7 +81,40 @@ createDefinition ::
     WireEntities entities query
   ) =>
   QueryDefinition
-createDefinition = do
+createDefinition =
+  createDefinitionWithStore @query (InMemory.new |> Task.mapError toText)
+
+
+-- | Create a QueryDefinition for a query type with a custom store factory.
+--
+-- This automatically wires all entities listed in 'EntitiesOf query'.
+-- The query name is derived from 'NameOf query' (kebab-case).
+--
+-- The store factory is a Task that creates a QueryObjectStore for the query type.
+-- This allows using different storage backends (in-memory, PostgreSQL, etc.).
+--
+-- Example:
+--
+-- @
+-- -- Using in-memory store (same as createDefinition):
+-- cartSummaryDef = createDefinitionWithStore \@CartSummary (InMemory.new |> Task.mapError toText)
+--
+-- -- Using a custom store factory:
+-- cartSummaryDef = createDefinitionWithStore \@CartSummary myPostgresStoreFactory
+-- @
+createDefinitionWithStore ::
+  forall query queryName entities.
+  ( Query query,
+    Json.ToJSON query,
+    Json.FromJSON query,
+    queryName ~ NameOf query,
+    entities ~ EntitiesOf query,
+    GHC.KnownSymbol queryName,
+    WireEntities entities query
+  ) =>
+  Task Text (QueryObjectStore query) ->
+  QueryDefinition
+createDefinitionWithStore storeFactory = do
   let queryNameText =
         GHC.symbolVal (Record.Proxy @queryName)
           |> Text.fromLinkedList
@@ -85,8 +122,8 @@ createDefinition = do
   QueryDefinition
     { queryName = queryNameText,
       wireQuery = \rawEventStore -> do
-        -- 1. Create QueryObjectStore for this query type
-        queryStore <- InMemory.new @query |> Task.mapError toText
+        -- 1. Create QueryObjectStore using the provided factory
+        queryStore <- storeFactory
 
         -- 2. Wire all entities and collect their registries
         registry <- wireEntities @entities @query queryNameText rawEventStore queryStore
