@@ -111,9 +111,14 @@ start subscriber = do
 
 
 -- | Handler wrapper for subscription callback.
+-- Processes the event and updates lastProcessedPosition, mirroring rebuildAll behavior.
 processEventHandler :: QuerySubscriber -> Event Json.Value -> Task Text Unit
 processEventHandler subscriber rawEvent = do
   processEvent subscriber rawEvent
+  -- Update last processed position (same logic as rebuildAll)
+  case rawEvent.metadata.globalPosition of
+    Just pos -> subscriber.lastProcessedPosition |> ConcurrentVar.modify (\_ -> Just pos)
+    Nothing -> pass
 
 
 -- | Process a single raw event through all relevant query updaters.
