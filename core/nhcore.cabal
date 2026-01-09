@@ -164,6 +164,7 @@ library
     Service.Application
     Service.Query
     Service.Query.Core
+    Service.Query.Endpoint
     Service.Query.Registry
     Service.Query.Subscriber
     Service.Query.TH
@@ -277,6 +278,7 @@ test-suite nhcore-test
     Service.EventStore.Postgres.SubscriptionStoreSpec
     Service.EventStore.PostgresSpec
     Service.MockTransport
+    Service.Query.EndpointSpec
     Service.Query.RegistrySpec
     Service.Query.SubscriberSpec
     Service.Query.THSpec

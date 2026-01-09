@@ -457,7 +457,8 @@ runServiceWithEventStore
               let newEndpoints =
                     Endpoints
                       { transport = transport,
-                        commandEndpoints = Map.empty |> Map.set commandNameText handler
+                        commandEndpoints = Map.empty |> Map.set commandNameText handler,
+                        queryEndpoints = Map.empty
                       }
               endpointsMap |> Map.set transportNameText newEndpoints
             Just existingEndpoints -> do

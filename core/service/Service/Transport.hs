@@ -1,6 +1,7 @@
 module Service.Transport (
   Transport (..),
   EndpointHandler,
+  QueryEndpointHandler,
   Endpoints (..),
 ) where
 
@@ -21,10 +22,18 @@ import Text (Text)
 type EndpointHandler = Bytes -> ((CommandResponse, Bytes) -> Task Text Unit) -> Task Text Unit
 
 
--- | Collection of command endpoints for a transport.
+-- | Handler for a single query endpoint.
+--
+-- Returns the query data as a JSON-encoded Text string.
+-- Used for GET /queries/{query-name} endpoints.
+type QueryEndpointHandler = Task Text Text
+
+
+-- | Collection of command and query endpoints for a transport.
 data Endpoints transport = Endpoints
   { transport :: transport,
-    commandEndpoints :: Map Text EndpointHandler
+    commandEndpoints :: Map Text EndpointHandler,
+    queryEndpoints :: Map Text QueryEndpointHandler
   }
 
 

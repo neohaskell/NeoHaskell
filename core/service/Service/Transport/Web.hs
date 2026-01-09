@@ -141,7 +141,16 @@ instance Transport WebTransport where
                   |> Wai.responseLBS HTTP.status413 [(HTTP.hContentType, "application/json")]
           respond response413
 
-    -- Parse the request path to check if it matches /commands/<name>
+    -- Helper function for 200 OK JSON responses
+    let okJson responseText = do
+          let response200 =
+                responseText
+                  |> Text.toBytes
+                  |> Bytes.toLazyLegacy
+                  |> Wai.responseLBS HTTP.status200 [(HTTP.hContentType, "application/json")]
+          respond response200
+
+    -- Parse the request path to check if it matches /commands/<name> or /queries/<name>
     case Wai.pathInfo request of
       ["commands", commandName] -> do
         -- Look up the command handler in the endpoints map
@@ -176,6 +185,15 @@ instance Transport WebTransport where
                     )
           Maybe.Nothing ->
             notFound [fmt|Command not found: #{commandName}|]
+      ["queries", queryName] -> do
+        -- Look up the query handler in the endpoints map
+        case Map.get queryName endpoints.queryEndpoints of
+          Maybe.Just handler -> do
+            -- Execute the query handler to get JSON response
+            responseText <- handler
+            okJson responseText
+          Maybe.Nothing ->
+            notFound [fmt|Query not found: #{queryName}|]
       _ ->
         notFound "Not found"
 
