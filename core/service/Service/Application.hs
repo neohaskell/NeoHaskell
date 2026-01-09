@@ -404,10 +404,11 @@ runWith eventStore app = do
   -- 6. Start live subscription
   Subscriber.start subscriber
 
-  -- 7. Run all services with shared event store, transports, and query endpoints
-  app.serviceRunners
-    |> Task.forEach \runner ->
-      runner.runWithEventStore eventStore app.transports combinedEndpoints
+  -- 7. Run all services in parallel with shared event store, transports, and query endpoints
+  let serviceTasks =
+        app.serviceRunners
+          |> Array.map (\runner -> runner.runWithEventStore eventStore app.transports combinedEndpoints)
+  serviceTasks |> AsyncTask.runAllIgnoringErrors
 
 
 -- | Merge two QueryRegistries by combining their updaters.
