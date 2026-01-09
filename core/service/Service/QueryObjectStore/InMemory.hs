@@ -42,7 +42,6 @@ new = do
     QueryObjectStore
       { get = getImpl store,
         atomicUpdate = atomicUpdateImpl store,
-        delete = deleteImpl store,
         getAll = getAllImpl store
       }
 
@@ -73,15 +72,6 @@ atomicUpdateImpl store queryId updateFn = do
             Just query -> storeMap |> Map.set queryId query
             Nothing -> storeMap |> Map.remove queryId
       )
-
-
-deleteImpl ::
-  forall query.
-  ConcurrentVar (Map Uuid query) ->
-  Uuid ->
-  Task Error Unit
-deleteImpl store queryId = do
-  store |> ConcurrentVar.modify (Map.remove queryId)
 
 
 getAllImpl ::

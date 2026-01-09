@@ -53,16 +53,14 @@ data QueryObjectStore query = QueryObjectStore
     -- | Atomically update a query instance.
     --
     -- The update function receives the current value (or Nothing if not exists)
-    -- and returns the new value (or Nothing to delete).
+    -- and returns the new value (or Nothing to delete the entry).
     --
     -- This operation is atomic to handle concurrent updates safely.
     -- When multiple entity events arrive that affect the same query instance,
     -- this ensures updates are applied sequentially without data loss.
-    atomicUpdate :: Uuid -> (Maybe query -> Maybe query) -> Task Error Unit,
-    -- | Delete a query instance by its ID.
     --
-    -- Does nothing if the query instance doesn't exist.
-    delete :: Uuid -> Task Error Unit,
+    -- To delete an entry, return Nothing from the update function.
+    atomicUpdate :: Uuid -> (Maybe query -> Maybe query) -> Task Error Unit,
     -- | Get all query instances.
     --
     -- Used primarily for the HTTP endpoint: GET /queries/{query-name}

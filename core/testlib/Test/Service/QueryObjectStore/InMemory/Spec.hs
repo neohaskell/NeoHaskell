@@ -94,34 +94,6 @@ spec newStore = do
 
           result |> shouldBe Nothing
 
-        it "delete removes entry" \context -> do
-          let testQuery =
-                TestQuery
-                  { queryId = context.testId1,
-                    name = "to-delete",
-                    count = 5
-                  }
-
-          context.store.atomicUpdate context.testId1 (\_ -> Just testQuery)
-            |> Task.mapError toText
-
-          context.store.delete context.testId1
-            |> Task.mapError toText
-
-          result <-
-            context.store.get context.testId1
-              |> Task.mapError toText
-
-          result |> shouldBe Nothing
-
-        it "delete on non-existent ID does not fail" \context -> do
-          result <-
-            context.store.delete context.testId1
-              |> Task.mapError toText
-              |> Task.asResult
-
-          result |> shouldSatisfy (\r -> case r of Ok _ -> True; Err _ -> False)
-
         it "getAll returns all entries" \context -> do
           let query1 =
                 TestQuery
