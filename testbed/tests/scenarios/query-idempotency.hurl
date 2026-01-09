@@ -9,8 +9,11 @@ HTTP/1.1 200
 [Captures]
 known_cart_id: jsonpath "$.entityId"
 
-# Query 1: Get baseline
+# Query 1: Get baseline (with retry for eventual consistency)
 GET http://localhost:8080/queries/cart-summary
+[Options]
+retry: 5
+retry-interval: 100
 
 HTTP/1.1 200
 [Captures]

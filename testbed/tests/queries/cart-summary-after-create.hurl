@@ -14,7 +14,11 @@ new_cart_id: jsonpath "$.entityId"
 jsonpath "$.entityId" exists
 
 # Step 2: Query cart summaries and find our new cart
+# Use retry to handle eventual consistency (query subscriber processes async)
 GET http://localhost:8080/queries/cart-summary
+[Options]
+retry: 5
+retry-interval: 100
 
 HTTP/1.1 200
 Content-Type: application/json

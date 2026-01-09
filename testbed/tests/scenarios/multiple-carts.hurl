@@ -35,7 +35,11 @@ jsonpath "$.entityId" != {{cart_1_id}}
 jsonpath "$.entityId" != {{cart_2_id}}
 
 # Step 4: Query and verify all three carts exist independently
+# Use retry to handle eventual consistency
 GET http://localhost:8080/queries/cart-summary
+[Options]
+retry: 5
+retry-interval: 100
 
 HTTP/1.1 200
 Content-Type: application/json
