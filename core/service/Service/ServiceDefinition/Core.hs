@@ -5,9 +5,7 @@
 module Service.ServiceDefinition.Core (
   Service,
   new,
-  useServer,
   command,
-  useSnapshotCache,
   toServiceRunner,
   ServiceRunner (..),
   TransportValue (..),
@@ -39,8 +37,7 @@ import Service.Event.EntityName (EntityName (..))
 import Service.Event.StreamId qualified as StreamId
 import Service.EventStore.Core (EventStore)
 import Service.EventStore.Core qualified as EventStore
-import Service.SnapshotCache.Core (SnapshotCache, SnapshotCacheConfig)
-import Service.SnapshotCache.Core qualified as SnapshotCache
+import Service.SnapshotCache.Core (SnapshotCache)
 import Task (Task)
 import Task qualified
 import Text (Text)
@@ -104,15 +101,9 @@ data
   Service
     (commandRow :: Record.Row Type)
     (commandTransportNames :: [Symbol])
-    (providedTransportNames :: [Symbol])
-    (eventStoreConfig :: Type)
-    (snapshotCacheConfig :: Type)
   = Service
   { commandDefinitions :: Record commandRow,
-    inspectDict :: Record.ContextRecord (Record.Dict (CommandInspect)) commandRow,
-    transports :: Map Text TransportValue,
-    eventStoreConfig :: eventStoreConfig,
-    snapshotCacheConfig :: Maybe snapshotCacheConfig
+    inspectDict :: Record.ContextRecord (Record.Dict (CommandInspect)) commandRow
   }
 
 
@@ -247,45 +238,14 @@ instance
 type instance NameOf (CommandDefinition name transport cmd transportName event entity entityName entityIdType) = name
 
 
-new :: Service '[] '[] '[] Unit Unit
+new :: Service '[] '[]
 new =
   Service
     { commandDefinitions = Record.empty,
-      inspectDict = Record.empty,
-      transports = Map.empty,
-      eventStoreConfig = unit,
-      snapshotCacheConfig = Nothing
+      inspectDict = Record.empty
     }
 
 
-useServer ::
-  forall transport transportName commandTransportNames providedTransportNames cmds eventStoreConfig snapshotCacheConfig.
-  ( Transport transport,
-    transportName ~ NameOf transport,
-    Record.KnownHash transportName,
-    Record.KnownSymbol transportName
-  ) =>
-  transport ->
-  Service cmds commandTransportNames providedTransportNames eventStoreConfig snapshotCacheConfig ->
-  Service cmds commandTransportNames (transportName ': providedTransportNames) eventStoreConfig snapshotCacheConfig
-useServer transport serviceDefinition = do
-  let transportNameText = getSymbolText (Record.Proxy @transportName)
-  let newTransports = serviceDefinition.transports |> Map.set transportNameText (TransportValue transport)
-  serviceDefinition
-    { transports = newTransports
-    }
-
-
-useSnapshotCache ::
-  forall snapshotCacheConfig cmds commandTransportNames providedTransportNames eventStoreConfig.
-  (SnapshotCacheConfig snapshotCacheConfig) =>
-  snapshotCacheConfig ->
-  Service cmds commandTransportNames providedTransportNames eventStoreConfig _ ->
-  Service cmds commandTransportNames providedTransportNames eventStoreConfig snapshotCacheConfig
-useSnapshotCache config serviceDefinition = do
-  serviceDefinition
-    { snapshotCacheConfig = Just config
-    }
 
 
 -- | Register a command type in the service definition
@@ -297,9 +257,6 @@ command ::
     commandTransport
     (transportName :: Symbol)
     (commandTransportNames :: [Symbol])
-    providedTransportNames
-    eventStoreConfig
-    snapshotCacheConfig
     event
     entity
     entityName
@@ -319,15 +276,12 @@ command ::
     Json.ToJSON event,
     CommandInspect (CommandDefinition commandName commandTransport cmd transportName event entity entityName entityIdType)
   ) =>
-  Service originalCommands commandTransportNames providedTransportNames eventStoreConfig snapshotCacheConfig ->
+  Service originalCommands commandTransportNames ->
   Service
     ( (commandName 'Record.:= CommandDefinition commandName commandTransport cmd transportName event entity entityName entityIdType)
         ': originalCommands
     )
     (transportName ': commandTransportNames)
-    providedTransportNames
-    eventStoreConfig
-    snapshotCacheConfig
 command serviceDefinition = do
   let cmdName :: Record.Field commandName = fromLabel
   let cmdVal :: Record.I (CommandDefinition commandName commandTransport cmd transportName event entity entityName entityIdType) =
@@ -348,10 +302,7 @@ command serviceDefinition = do
 
   Service
     { commandDefinitions = cmds,
-      transports = serviceDefinition.transports,
-      inspectDict = newInspectDict,
-      eventStoreConfig = serviceDefinition.eventStoreConfig,
-      snapshotCacheConfig = serviceDefinition.snapshotCacheConfig
+      inspectDict = newInspectDict
     }
 
 
@@ -367,16 +318,15 @@ data ServiceRunner = ServiceRunner
 -- creating its own. This allows multiple services to share the same EventStore
 -- and transports within an Application.
 toServiceRunner ::
-  forall cmds commandTransportNames providedTransportNames eventStoreConfig snapshotCacheConfig event entity.
-  ( SnapshotCacheConfig snapshotCacheConfig,
-    event ~ ServiceEventType cmds,
+  forall cmds commandTransportNames event entity.
+  ( event ~ ServiceEventType cmds,
     entity ~ ServiceEntityType cmds,
     Json.FromJSON event,
     Json.ToJSON event,
     Json.FromJSON entity,
     Json.ToJSON entity
   ) =>
-  Service cmds commandTransportNames providedTransportNames eventStoreConfig snapshotCacheConfig ->
+  Service cmds commandTransportNames ->
   ServiceRunner
 toServiceRunner service =
   ServiceRunner
@@ -385,11 +335,9 @@ toServiceRunner service =
           Record.Reflected ->
             runServiceWithEventStore
               @cmds
-              @snapshotCacheConfig
               @event
               @entity
               rawEventStore
-              service.snapshotCacheConfig
               service.commandDefinitions
               transportsMap
     }
@@ -397,9 +345,8 @@ toServiceRunner service =
 
 -- | Run a service with a provided EventStore (instead of creating one from config).
 runServiceWithEventStore ::
-  forall (cmds :: Record.Row Type) snapshotCacheConfig event entity.
+  forall (cmds :: Record.Row Type) event entity.
   ( Record.AllFields cmds (CommandInspect),
-    SnapshotCacheConfig snapshotCacheConfig,
     event ~ ServiceEventType cmds,
     entity ~ ServiceEntityType cmds,
     Json.FromJSON event,
@@ -408,24 +355,18 @@ runServiceWithEventStore ::
     Json.ToJSON entity
   ) =>
   EventStore Json.Value ->
-  Maybe snapshotCacheConfig ->
   Record.ContextRecord Record.I cmds ->
   Map Text TransportValue ->
   Task Text Unit
 runServiceWithEventStore
   rawEventStore
-  maybeSnapshotCacheConfig
   commandDefinitions
   transportsMap = do
     -- Use the provided EventStore, cast to the service's event type
     let eventStore = rawEventStore |> EventStore.castEventStore @event
 
-    -- Create the SnapshotCache if configured, typed to the service's entity type
-    maybeCache <- case maybeSnapshotCacheConfig of
-      Just config -> do
-        cache <- SnapshotCache.createSnapshotCache @_ @entity config
-        Task.yield (Just cache)
-      Nothing -> Task.yield Nothing
+    -- No snapshot cache for now - will be provided by Application in future
+    let maybeCache = Nothing :: Maybe (SnapshotCache entity)
 
     let mapper ::
           forall cmdDef cmd.

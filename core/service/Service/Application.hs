@@ -43,7 +43,6 @@ import Service.Query.Registry qualified as Registry
 import Service.Query.Subscriber qualified as Subscriber
 import Service.ServiceDefinition.Core (ServiceRunner (..), TransportValue (..))
 import Service.ServiceDefinition.Core qualified as ServiceDefinition
-import Service.SnapshotCache.Core (SnapshotCacheConfig)
 import Service.Transport (Transport)
 import Task (Task)
 import Task qualified
@@ -176,16 +175,15 @@ withServiceRunner runner app =
 --   |> Application.withService myOrderService
 -- @
 withService ::
-  forall cmds commandTransportNames providedTransportNames eventStoreConfig snapshotCacheConfig event entity.
-  ( SnapshotCacheConfig snapshotCacheConfig,
-    event ~ ServiceDefinition.ServiceEventType cmds,
+  forall cmds commandTransportNames event entity.
+  ( event ~ ServiceDefinition.ServiceEventType cmds,
     entity ~ ServiceDefinition.ServiceEntityType cmds,
     Json.FromJSON event,
     Json.ToJSON event,
     Json.FromJSON entity,
     Json.ToJSON entity
   ) =>
-  ServiceDefinition.Service cmds commandTransportNames providedTransportNames eventStoreConfig snapshotCacheConfig ->
+  ServiceDefinition.Service cmds commandTransportNames ->
   Application ->
   Application
 withService service app = do
