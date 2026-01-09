@@ -276,6 +276,7 @@ test-suite nhcore-test
     Service.EventStore.InMemorySpec
     Service.EventStore.Postgres.SubscriptionStoreSpec
     Service.EventStore.PostgresSpec
+    Service.MockTransport
     Service.Query.RegistrySpec
     Service.Query.SubscriberSpec
     Service.Query.THSpec

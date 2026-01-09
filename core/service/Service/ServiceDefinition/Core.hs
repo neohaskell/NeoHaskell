@@ -10,6 +10,7 @@ module Service.ServiceDefinition.Core (
   useSnapshotCache,
   toServiceRunner,
   ServiceRunner (..),
+  TransportValue (..),
 
   -- * Re-exports for Application integration
   ServiceEventType,
@@ -354,16 +355,17 @@ command serviceDefinition = do
     }
 
 
--- | A function that runs a service given a shared EventStore.
+-- | A function that runs a service given a shared EventStore and transports.
 data ServiceRunner = ServiceRunner
-  { runWithEventStore :: EventStore Json.Value -> Task Text Unit
+  { runWithEventStore :: EventStore Json.Value -> Map Text TransportValue -> Task Text Unit
   }
 
 
 -- | Convert a Service to a ServiceRunner that can be used with Application.
 --
--- The ServiceRunner will use the provided EventStore instead of creating its own.
--- This allows multiple services to share the same EventStore within an Application.
+-- The ServiceRunner will use the provided EventStore and transports instead of
+-- creating its own. This allows multiple services to share the same EventStore
+-- and transports within an Application.
 toServiceRunner ::
   forall cmds commandTransportNames providedTransportNames eventStoreConfig snapshotCacheConfig event entity.
   ( SnapshotCacheConfig snapshotCacheConfig,
@@ -378,7 +380,7 @@ toServiceRunner ::
   ServiceRunner
 toServiceRunner service =
   ServiceRunner
-    { runWithEventStore = \rawEventStore ->
+    { runWithEventStore = \rawEventStore transportsMap ->
         case Record.reflectAllFields service.inspectDict of
           Record.Reflected ->
             runServiceWithEventStore
@@ -389,7 +391,7 @@ toServiceRunner service =
               rawEventStore
               service.snapshotCacheConfig
               service.commandDefinitions
-              service.transports
+              transportsMap
     }
 
 

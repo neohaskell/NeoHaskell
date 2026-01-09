@@ -4,6 +4,7 @@ import Core
 import Service.Application qualified as Application
 import Service.EventStore.Postgres (PostgresEventStore (..))
 import Service.EventStore.Postgres qualified as Postgres
+import Service.Transport.Web qualified as WebTransport
 import Task qualified
 import Testbed.Service qualified
 
@@ -25,6 +26,7 @@ main = do
         eventStore <- Postgres.new postgresConfig
         let app =
               Application.new
+                |> Application.withTransport WebTransport.server
                 |> Application.withService Testbed.Service.service
         Application.runWith eventStore app
 

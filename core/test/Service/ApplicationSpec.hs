@@ -6,6 +6,7 @@ import Core
 import Json qualified
 import Service.Application (ServiceRunner (..))
 import Service.Application qualified as Application
+import Service.MockTransport qualified as MockTransport
 import Service.Event (Insertion (..), InsertionPayload (..))
 import Service.Event.EntityName (EntityName (..))
 import Service.Event.EventMetadata qualified as EventMetadata
@@ -113,7 +114,7 @@ spec = do
       it "adds a service runner to the application" \_ -> do
         let runner =
               ServiceRunner
-                { runWithEventStore = \_ -> Task.yield unit
+                { runWithEventStore = \_ _ -> Task.yield unit
                 }
         let app =
               Application.new
@@ -121,8 +122,8 @@ spec = do
         Application.hasServiceRunners app |> shouldBe True
 
       it "accumulates multiple service runners" \_ -> do
-        let runner1 = ServiceRunner {runWithEventStore = \_ -> Task.yield unit}
-        let runner2 = ServiceRunner {runWithEventStore = \_ -> Task.yield unit}
+        let runner1 = ServiceRunner {runWithEventStore = \_ _ -> Task.yield unit}
+        let runner2 = ServiceRunner {runWithEventStore = \_ _ -> Task.yield unit}
         let app =
               Application.new
                 |> Application.withServiceRunner runner1
@@ -136,7 +137,7 @@ spec = do
 
         let runner =
               ServiceRunner
-                { runWithEventStore = \_ -> do
+                { runWithEventStore = \_ _ -> do
                     calledRef |> ConcurrentVar.modify (\_ -> True)
                     Task.yield unit
                 }
@@ -222,11 +223,49 @@ spec = do
 
     describe "isEmpty with service runners" do
       it "returns False when service runners are added" \_ -> do
-        let runner = ServiceRunner {runWithEventStore = \_ -> Task.yield unit}
+        let runner = ServiceRunner {runWithEventStore = \_ _ -> Task.yield unit}
         let app =
               Application.new
                 |> Application.withServiceRunner runner
         Application.isEmpty app |> shouldBe False
+
+    describe "withTransport" do
+      it "adds a transport to the application" \_ -> do
+        let app =
+              Application.new
+                |> Application.withTransport MockTransport.server
+        Application.hasTransports app |> shouldBe True
+
+      it "accumulates multiple transports" \_ -> do
+        let app =
+              Application.new
+                |> Application.withTransport MockTransport.server
+                |> Application.withTransport MockTransport.server2
+        Application.transportCount app |> shouldBe 2
+
+      it "makes transports available to services" \_ -> do
+        -- Track whether transport was used
+        transportUsedRef <- ConcurrentVar.containing False
+
+        eventStore <- InMemory.new |> Task.mapError toText
+
+        -- Create a service runner that checks for transport
+        let runner =
+              ServiceRunner
+                { runWithEventStore = \_ _ -> do
+                    transportUsedRef |> ConcurrentVar.modify (\_ -> True)
+                    Task.yield unit
+                }
+
+        let app =
+              Application.new
+                |> Application.withTransport MockTransport.server
+                |> Application.withServiceRunner runner
+
+        Application.runWith eventStore app
+
+        used <- ConcurrentVar.peek transportUsedRef
+        used |> shouldBe True
 
 
 -- | Helper to insert a test event into the event store.
