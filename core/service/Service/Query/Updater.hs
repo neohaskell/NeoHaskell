@@ -60,7 +60,7 @@ createUpdater queryName entityFetcher queryStore =
         -- Reconstruct the entity from its event stream
         fetchResult <-
           entityFetcher.fetch entityName streamId
-            |> Task.mapError toText
+            |> Task.mapError (\e -> [fmt|[#{queryName}] fetch failed for #{entityName}/#{streamId}: #{toText e}|])
 
         case fetchResult of
           EntityNotFound ->
@@ -78,5 +78,5 @@ createUpdater queryName entityFetcher queryStore =
                     NoOp -> maybeExistingQuery
 
             queryStore.atomicUpdate targetQueryId updateFn
-              |> Task.mapError toText
+              |> Task.mapError (\e -> [fmt|[#{queryName}] atomicUpdate failed for queryId #{targetQueryId} (from #{entityName}/#{streamId}): #{toText e}|])
     }
