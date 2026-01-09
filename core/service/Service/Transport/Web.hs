@@ -150,6 +150,15 @@ instance Transport WebTransport where
                   |> Wai.responseLBS HTTP.status200 [(HTTP.hContentType, "application/json")]
           respond response200
 
+    -- Helper function for 500 Internal Server Error responses
+    let internalError message = do
+          let response500 =
+                message
+                  |> Text.toBytes
+                  |> Bytes.toLazyLegacy
+                  |> Wai.responseLBS HTTP.status500 [(HTTP.hContentType, "application/json")]
+          respond response500
+
     -- Parse the request path to check if it matches /commands/<name> or /queries/<name>
     case Wai.pathInfo request of
       ["commands", commandName] -> do
@@ -189,9 +198,11 @@ instance Transport WebTransport where
         -- Look up the query handler in the endpoints map
         case Map.get queryName endpoints.queryEndpoints of
           Maybe.Just handler -> do
-            -- Execute the query handler to get JSON response
-            responseText <- handler
-            okJson responseText
+            -- Execute the query handler with error recovery
+            result <- handler |> Task.asResult
+            case result of
+              Result.Ok responseText -> okJson responseText
+              Result.Err errorText -> internalError [fmt|Query #{queryName} failed: #{errorText}|]
           Maybe.Nothing ->
             notFound [fmt|Query not found: #{queryName}|]
       _ ->
