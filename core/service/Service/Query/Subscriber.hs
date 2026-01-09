@@ -16,7 +16,7 @@ import Service.Event (Event (..))
 import Service.Event.EventMetadata (EventMetadata (..))
 import Service.Event.StreamPosition (StreamPosition (..))
 import Service.EventStore (EventStore (..))
-import Service.EventStore.Core (Error, Limit (..), collectAllEvents)
+import Service.EventStore.Core (Error, Limit (..), ReadAllMessage (..))
 import Service.Query.Registry (QueryRegistry, QueryUpdater (..))
 import Service.Query.Registry qualified as Registry
 import Stream qualified
@@ -55,22 +55,25 @@ rebuildAll subscriber = do
     |> Task.ignoreError
 
   -- Read all events from the beginning (use large limit)
-  messages <-
+  messageStream <-
     subscriber.eventStore.readAllEventsForwardFrom (StreamPosition 0) (Limit 9223372036854775807)
       |> Task.mapError (toText :: Error -> Text)
-      |> Task.andThen Stream.toArray
 
-  -- Extract events from messages
-  let events = collectAllEvents messages
-
-  -- Process each event and track the last position
-  events
-    |> Task.forEach \rawEvent -> do
-      processEvent subscriber rawEvent
-      -- Update last processed position
-      case rawEvent.metadata.globalPosition of
-        Just pos -> subscriber.lastProcessedPosition |> ConcurrentVar.modify (\_ -> Just pos)
-        Nothing -> pass
+  -- Process each message incrementally via Stream.consume
+  messageStream
+    |> Stream.consume
+      ( \_ message -> do
+          case message of
+            AllEvent rawEvent -> do
+              processEvent subscriber rawEvent
+              -- Update last processed position
+              case rawEvent.metadata.globalPosition of
+                Just pos -> subscriber.lastProcessedPosition |> ConcurrentVar.modify (\_ -> Just pos)
+                Nothing -> pass
+            _ -> pass
+          Task.yield unit
+      )
+      unit
 
   -- Log completion
   maybeLastPos <- ConcurrentVar.peek subscriber.lastProcessedPosition
