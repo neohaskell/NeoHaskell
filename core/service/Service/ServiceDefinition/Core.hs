@@ -368,7 +368,8 @@ runServiceWithEventStore
     -- Use the provided EventStore, cast to the service's event type
     let eventStore = rawEventStore |> EventStore.castEventStore @event
 
-    -- No snapshot cache for now - will be provided by Application in future
+    -- TODO(#243): Integrate SnapshotCache into Application layer
+    -- Currently hardcoded to Nothing; see https://github.com/neohaskell/NeoHaskell/issues/243
     let maybeCache = Nothing :: Maybe (SnapshotCache entity)
 
     let mapper ::
