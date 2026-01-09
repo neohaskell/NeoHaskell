@@ -6,7 +6,6 @@ import Service.EventStore.Postgres (PostgresEventStore (..))
 import Service.EventStore.Postgres qualified as Postgres
 import Service.Transport.Web qualified as WebTransport
 import Task qualified
-import Testbed.Cart.Core (CartEntity)
 import Testbed.Cart.Queries.CartSummary (CartSummary)
 import Testbed.Service qualified
 
@@ -30,7 +29,7 @@ main = do
               Application.new
                 |> Application.withTransport WebTransport.server
                 |> Application.withService Testbed.Service.service
-                |> Application.withQuery @CartEntity @CartSummary
+                |> Application.withQuery @CartSummary
         Application.runWith eventStore app
 
   runApp |> Task.runOrPanic

@@ -44,10 +44,10 @@ import Json qualified
 import Map (Map)
 import Map qualified
 import Record qualified
-import Service.Command.Core (Entity, EventOf, NameOf)
+import Service.Command.Core (NameOf)
 import Service.EventStore (EventStore)
-import Service.Query.Core (Query, QueryOf)
-import Service.Query.Definition (QueryDefinition (..))
+import Service.Query.Core (EntitiesOf, Query)
+import Service.Query.Definition (QueryDefinition (..), WireEntities)
 import Service.Query.Definition qualified as Definition
 import Service.Query.Registry (QueryRegistry)
 import Service.Query.Registry qualified as Registry
@@ -107,11 +107,12 @@ new =
 -- when 'runWith' is called, the query infrastructure is automatically created:
 --
 -- * QueryObjectStore for storing query instances
--- * EntityFetcher for reconstructing entity state
--- * QueryUpdater for handling entity events
+-- * EntityFetcher for reconstructing entity state (for each entity in EntitiesOf query)
+-- * QueryUpdater for handling entity events (for each entity)
 -- * HTTP endpoint at @GET /queries/{query-name}@
 --
 -- The query name is derived from 'NameOf query' in kebab-case.
+-- All entities listed in 'EntitiesOf query' are automatically wired.
 --
 -- Example:
 --
@@ -122,24 +123,19 @@ new =
 --   |> Application.withQuery \@CartSummary
 -- @
 withQuery ::
-  forall entity query entityName queryName event.
-  ( Entity entity,
-    Query query,
-    QueryOf entity query,
-    event ~ EventOf entity,
-    Json.FromJSON event,
-    Json.ToJSON event,
+  forall query queryName entities.
+  ( Query query,
     Json.ToJSON query,
     Json.FromJSON query,
-    entityName ~ NameOf entity,
     queryName ~ NameOf query,
-    GHC.KnownSymbol entityName,
-    GHC.KnownSymbol queryName
+    entities ~ EntitiesOf query,
+    GHC.KnownSymbol queryName,
+    WireEntities entities query
   ) =>
   Application ->
   Application
 withQuery app = do
-  let definition = Definition.createDefinition @entity @query
+  let definition = Definition.createDefinition @query
   app {queryDefinitions = app.queryDefinitions |> Array.push definition}
 
 
