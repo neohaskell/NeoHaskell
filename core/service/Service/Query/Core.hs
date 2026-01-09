@@ -12,6 +12,7 @@ module Service.Query.Core (
 
   -- * Type Families
   EntitiesOf,
+  FirstEntityOf,
 ) where
 
 import Basics

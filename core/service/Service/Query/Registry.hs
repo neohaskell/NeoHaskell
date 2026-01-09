@@ -5,6 +5,7 @@ module Service.Query.Registry (
   isEmpty,
   register,
   getUpdatersForEntity,
+  mergeInto,
 ) where
 
 import Array (Array)
@@ -57,3 +58,14 @@ register entityName updater (QueryRegistry registry) = do
 getUpdatersForEntity :: EntityName -> QueryRegistry -> Array QueryUpdater
 getUpdatersForEntity entityName (QueryRegistry registry) =
   registry |> Map.get entityName |> Maybe.withDefault Array.empty
+
+
+-- | Merge all updaters from source registry into target registry.
+-- Updaters for the same entity are combined (both will be called).
+mergeInto :: QueryRegistry -> QueryRegistry -> QueryRegistry
+mergeInto (QueryRegistry source) (QueryRegistry target) = do
+  let mergeEntry entityName updaters acc =
+        let currentUpdaters = acc |> Map.get entityName |> Maybe.withDefault Array.empty
+            combinedUpdaters = currentUpdaters |> Array.append updaters
+         in acc |> Map.set entityName combinedUpdaters
+  QueryRegistry (source |> Map.entries |> Array.reduce (\(k, v) acc -> mergeEntry k v acc) target)

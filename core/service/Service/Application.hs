@@ -1,3 +1,5 @@
+{-# LANGUAGE AllowAmbiguousTypes #-}
+
 module Service.Application (
   -- * Application Type
   Application,
@@ -9,6 +11,7 @@ module Service.Application (
   new,
 
   -- * Configuration
+  withQuery,
   withQueryRegistry,
   withQueryEndpoint,
   withServiceRunner,
@@ -24,6 +27,8 @@ module Service.Application (
   transportCount,
   hasQueryEndpoints,
   queryEndpointCount,
+  hasQueryDefinitions,
+  queryDefinitionCount,
 
   -- * Running
   runWith,
@@ -39,8 +44,11 @@ import Json qualified
 import Map (Map)
 import Map qualified
 import Record qualified
-import Service.Command.Core (NameOf)
+import Service.Command.Core (Entity, EventOf, NameOf)
 import Service.EventStore (EventStore)
+import Service.Query.Core (Query, QueryOf)
+import Service.Query.Definition (QueryDefinition (..))
+import Service.Query.Definition qualified as Definition
 import Service.Query.Registry (QueryRegistry)
 import Service.Query.Registry qualified as Registry
 import Service.Query.Subscriber qualified as Subscriber
@@ -58,6 +66,7 @@ import ToText (toText)
 --
 -- The Application type provides a builder pattern for configuring:
 --
+-- * QueryDefinitions (declarative query registrations, wired at runtime)
 -- * QueryRegistry (maps entity names to query updaters)
 -- * ServiceRunners (functions that run services with a shared EventStore)
 -- * Transports (servers that expose commands to external clients)
@@ -67,13 +76,13 @@ import ToText (toText)
 --
 -- @
 -- app = Application.new
---   |> Application.withQueryRegistry myRegistry
 --   |> Application.withTransport WebTransport.server
---   |> Application.withServiceRunner myServiceRunner
---   |> Application.withQueryEndpoint "cart-summary" cartSummaryEndpoint
+--   |> Application.withService myCartService
+--   |> Application.withQuery \@CartSummary
 -- @
 data Application = Application
-  { queryRegistry :: QueryRegistry,
+  { queryDefinitions :: Array QueryDefinition,
+    queryRegistry :: QueryRegistry,
     serviceRunners :: Array ServiceRunner,
     transports :: Map Text TransportValue,
     queryEndpoints :: Map Text QueryEndpointHandler
@@ -84,17 +93,73 @@ data Application = Application
 new :: Application
 new =
   Application
-    { queryRegistry = Registry.empty,
+    { queryDefinitions = Array.empty,
+      queryRegistry = Registry.empty,
       serviceRunners = Array.empty,
       transports = Map.empty,
       queryEndpoints = Map.empty
     }
 
 
+-- | Register a query type with automatic wiring.
+--
+-- This is the declarative way to add queries to an Application. At runtime,
+-- when 'runWith' is called, the query infrastructure is automatically created:
+--
+-- * QueryObjectStore for storing query instances
+-- * EntityFetcher for reconstructing entity state
+-- * QueryUpdater for handling entity events
+-- * HTTP endpoint at @GET /queries/{query-name}@
+--
+-- The query name is derived from 'NameOf query' in kebab-case.
+--
+-- Example:
+--
+-- @
+-- app = Application.new
+--   |> Application.withTransport WebTransport.server
+--   |> Application.withService cartService
+--   |> Application.withQuery \@CartSummary
+-- @
+withQuery ::
+  forall entity query entityName queryName event.
+  ( Entity entity,
+    Query query,
+    QueryOf entity query,
+    event ~ EventOf entity,
+    Json.FromJSON event,
+    Json.ToJSON event,
+    Json.ToJSON query,
+    Json.FromJSON query,
+    entityName ~ NameOf entity,
+    queryName ~ NameOf query,
+    GHC.KnownSymbol entityName,
+    GHC.KnownSymbol queryName
+  ) =>
+  Application ->
+  Application
+withQuery app = do
+  let definition = Definition.createDefinition @entity @query
+  app {queryDefinitions = app.queryDefinitions |> Array.push definition}
+
+
+-- | Check if any query definitions have been registered.
+hasQueryDefinitions :: Application -> Bool
+hasQueryDefinitions app = not (Array.isEmpty app.queryDefinitions)
+
+
+-- | Get the number of query definitions registered.
+queryDefinitionCount :: Application -> Int
+queryDefinitionCount app = Array.length app.queryDefinitions
+
+
 -- | Add a QueryRegistry to the Application.
 --
 -- The QueryRegistry maps entity names to query updaters, which are called
 -- when events are processed to update read models.
+--
+-- Note: Prefer using 'withQuery' for declarative query registration.
+-- This function is for advanced use cases where manual control is needed.
 withQueryRegistry ::
   QueryRegistry ->
   Application ->
@@ -106,7 +171,8 @@ withQueryRegistry registry app =
 -- | Check if the Application is empty (no configurations set).
 isEmpty :: Application -> Bool
 isEmpty app =
-  Registry.isEmpty app.queryRegistry
+  Array.isEmpty app.queryDefinitions
+    && Registry.isEmpty app.queryRegistry
     && Array.isEmpty app.serviceRunners
     && Map.length app.transports == 0
 
@@ -242,25 +308,51 @@ serviceRunnerCount app = Array.length app.serviceRunners
 -- | Run application with a provided EventStore.
 --
 -- This function:
--- 1. Creates a query subscriber
--- 2. Rebuilds all queries from historical events
--- 3. Starts live subscription for new events
--- 4. Runs all service runners with the shared event store and transports
+-- 1. Wires all query definitions (creates stores, updaters, endpoints)
+-- 2. Creates a query subscriber with combined registries
+-- 3. Rebuilds all queries from historical events
+-- 4. Starts live subscription for new events
+-- 5. Runs all service runners with the shared event store and transports
 runWith :: EventStore Json.Value -> Application -> Task Text Unit
 runWith eventStore app = do
-  -- 1. Create query subscriber
-  subscriber <- Subscriber.new eventStore app.queryRegistry
+  -- 1. Wire all query definitions and collect registries + endpoints
+  wiredQueries <-
+    app.queryDefinitions
+      |> Task.mapArray (\def -> def.wireQuery eventStore)
 
-  -- 2. Rebuild all queries from historical events
+  -- 2. Combine all registries from query definitions with the manual registry
+  let combinedRegistry =
+        wiredQueries
+          |> Array.reduce (\(reg, _) acc -> mergeRegistries reg acc) app.queryRegistry
+
+  -- 3. Combine all query endpoints from definitions with manual endpoints
+  let combinedEndpoints =
+        wiredQueries
+          |> Array.reduce (\(_, (name, handler)) acc -> acc |> Map.set name handler) app.queryEndpoints
+
+  -- 4. Create query subscriber with combined registry
+  subscriber <- Subscriber.new eventStore combinedRegistry
+
+  -- 5. Rebuild all queries from historical events
   Subscriber.rebuildAll subscriber
 
-  -- 3. Start live subscription
+  -- 6. Start live subscription
   Subscriber.start subscriber
 
-  -- 4. Run all services with shared event store, transports, and query endpoints
+  -- 7. Run all services with shared event store, transports, and query endpoints
   app.serviceRunners
     |> Task.forEach \runner ->
-      runner.runWithEventStore eventStore app.transports app.queryEndpoints
+      runner.runWithEventStore eventStore app.transports combinedEndpoints
+
+
+-- | Merge two QueryRegistries by combining their updaters.
+mergeRegistries :: QueryRegistry -> QueryRegistry -> QueryRegistry
+mergeRegistries source target = do
+  -- Get all entity names from source and merge their updaters into target
+  -- This is a simplified merge - in practice we'd iterate over all entries
+  -- For now, we rely on the fact that each query definition registers for different entities
+  -- A proper implementation would use Registry.merge or similar
+  source |> Registry.mergeInto target
 
 
 -- | Run application with provided EventStore, non-blocking.

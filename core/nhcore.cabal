@@ -164,6 +164,7 @@ library
     Service.Application
     Service.Query
     Service.Query.Core
+    Service.Query.Definition
     Service.Query.Endpoint
     Service.Query.Registry
     Service.Query.Subscriber
