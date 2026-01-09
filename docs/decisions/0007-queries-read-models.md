@@ -2,7 +2,20 @@
 
 ## Status
 
-Proposed
+Implemented
+
+### Implementation status
+
+- ✅ Core types (Query, QueryOf, QueryAction, EntitiesOf)
+- ✅ QueryObjectStore trait + InMemory implementation
+- ✅ QueryUpdater and QueryRegistry
+- ✅ QuerySubscriber (event subscription, rebuild on startup)
+- ✅ Template Haskell derivation (deriveQuery)
+- ✅ HTTP endpoint (GET /queries/{name})
+- ✅ Declarative Application API (withEventStore, withQuery, run)
+- ⏳ Single instance endpoint (GET /queries/{name}/{id}) - see #239
+- ⏳ Pagination support - see #240
+- ⏳ Dynamic filtering - see #241
 
 ## Context
 
