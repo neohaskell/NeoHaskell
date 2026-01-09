@@ -10,6 +10,7 @@ module Service.Application (
 
   -- * Configuration
   withQueryRegistry,
+  withQueryEndpoint,
   withServiceRunner,
   withService,
   withTransport,
@@ -21,6 +22,8 @@ module Service.Application (
   serviceRunnerCount,
   hasTransports,
   transportCount,
+  hasQueryEndpoints,
+  queryEndpointCount,
 
   -- * Running
   runWith,
@@ -43,7 +46,7 @@ import Service.Query.Registry qualified as Registry
 import Service.Query.Subscriber qualified as Subscriber
 import Service.ServiceDefinition.Core (ServiceRunner (..), TransportValue (..))
 import Service.ServiceDefinition.Core qualified as ServiceDefinition
-import Service.Transport (Transport)
+import Service.Transport (Transport, QueryEndpointHandler)
 import Task (Task)
 import Task qualified
 import Text (Text)
@@ -58,6 +61,7 @@ import ToText (toText)
 -- * QueryRegistry (maps entity names to query updaters)
 -- * ServiceRunners (functions that run services with a shared EventStore)
 -- * Transports (servers that expose commands to external clients)
+-- * QueryEndpoints (HTTP endpoints for serving query data)
 --
 -- Example usage:
 --
@@ -66,11 +70,13 @@ import ToText (toText)
 --   |> Application.withQueryRegistry myRegistry
 --   |> Application.withTransport WebTransport.server
 --   |> Application.withServiceRunner myServiceRunner
+--   |> Application.withQueryEndpoint "cart-summary" cartSummaryEndpoint
 -- @
 data Application = Application
   { queryRegistry :: QueryRegistry,
     serviceRunners :: Array ServiceRunner,
-    transports :: Map Text TransportValue
+    transports :: Map Text TransportValue,
+    queryEndpoints :: Map Text QueryEndpointHandler
   }
 
 
@@ -80,7 +86,8 @@ new =
   Application
     { queryRegistry = Registry.empty,
       serviceRunners = Array.empty,
-      transports = Map.empty
+      transports = Map.empty,
+      queryEndpoints = Map.empty
     }
 
 
@@ -146,6 +153,37 @@ hasTransports app = Map.length app.transports > 0
 -- | Get the number of transports configured.
 transportCount :: Application -> Int
 transportCount app = Map.length app.transports
+
+
+-- | Add a query endpoint to the Application.
+--
+-- Query endpoints expose read models via HTTP GET /queries/{query-name}.
+-- The handler is a Task that returns JSON text when called.
+--
+-- Example:
+--
+-- @
+-- cartSummaryStore <- InMemory.new
+-- app = Application.new
+--   |> Application.withQueryEndpoint "cart-summary" (Endpoint.createQueryEndpoint cartSummaryStore)
+-- @
+withQueryEndpoint ::
+  Text ->
+  QueryEndpointHandler ->
+  Application ->
+  Application
+withQueryEndpoint queryName handler app =
+  app {queryEndpoints = app.queryEndpoints |> Map.set queryName handler}
+
+
+-- | Check if any query endpoints have been configured.
+hasQueryEndpoints :: Application -> Bool
+hasQueryEndpoints app = Map.length app.queryEndpoints > 0
+
+
+-- | Get the number of query endpoints configured.
+queryEndpointCount :: Application -> Int
+queryEndpointCount app = Map.length app.queryEndpoints
 
 
 -- | Add a ServiceRunner to the Application.
@@ -219,10 +257,10 @@ runWith eventStore app = do
   -- 3. Start live subscription
   Subscriber.start subscriber
 
-  -- 4. Run all services with shared event store and transports
+  -- 4. Run all services with shared event store, transports, and query endpoints
   app.serviceRunners
     |> Task.forEach \runner ->
-      runner.runWithEventStore eventStore app.transports
+      runner.runWithEventStore eventStore app.transports app.queryEndpoints
 
 
 -- | Run application with provided EventStore, non-blocking.

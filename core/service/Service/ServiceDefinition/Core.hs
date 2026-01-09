@@ -27,7 +27,7 @@ import Map qualified
 import Maybe (Maybe (..))
 import Record (Record)
 import Record qualified
-import Service.Transport (Transport (..), EndpointHandler, Endpoints (..))
+import Service.Transport (Transport (..), EndpointHandler, QueryEndpointHandler, Endpoints (..))
 import Service.Command (EntityOf, EventOf)
 import Service.Command.Core (TransportOf, Command (..), Entity (..), Event, NameOf)
 import Service.CommandExecutor qualified as CommandExecutor
@@ -306,9 +306,9 @@ command serviceDefinition = do
     }
 
 
--- | A function that runs a service given a shared EventStore and transports.
+-- | A function that runs a service given a shared EventStore, transports, and query endpoints.
 data ServiceRunner = ServiceRunner
-  { runWithEventStore :: EventStore Json.Value -> Map Text TransportValue -> Task Text Unit
+  { runWithEventStore :: EventStore Json.Value -> Map Text TransportValue -> Map Text QueryEndpointHandler -> Task Text Unit
   }
 
 
@@ -330,7 +330,7 @@ toServiceRunner ::
   ServiceRunner
 toServiceRunner service =
   ServiceRunner
-    { runWithEventStore = \rawEventStore transportsMap ->
+    { runWithEventStore = \rawEventStore transportsMap queryEndpointsMap ->
         case Record.reflectAllFields service.inspectDict of
           Record.Reflected ->
             runServiceWithEventStore
@@ -340,6 +340,7 @@ toServiceRunner service =
               rawEventStore
               service.commandDefinitions
               transportsMap
+              queryEndpointsMap
     }
 
 
@@ -357,11 +358,13 @@ runServiceWithEventStore ::
   EventStore Json.Value ->
   Record.ContextRecord Record.I cmds ->
   Map Text TransportValue ->
+  Map Text QueryEndpointHandler ->
   Task Text Unit
 runServiceWithEventStore
   rawEventStore
   commandDefinitions
-  transportsMap = do
+  transportsMap
+  queryEndpointsMap = do
     -- Use the provided EventStore, cast to the service's event type
     let eventStore = rawEventStore |> EventStore.castEventStore @event
 
@@ -399,7 +402,7 @@ runServiceWithEventStore
                     Endpoints
                       { transport = transport,
                         commandEndpoints = Map.empty |> Map.set commandNameText handler,
-                        queryEndpoints = Map.empty
+                        queryEndpoints = queryEndpointsMap
                       }
               endpointsMap |> Map.set transportNameText newEndpoints
             Just existingEndpoints -> do
@@ -417,7 +420,8 @@ runServiceWithEventStore
       |> Map.entries
       |> Task.forEach \(transportNameText, transportEndpoints) -> do
         let commandCount = Map.length transportEndpoints.commandEndpoints
-        Console.print [fmt|Starting transport: #{transportNameText} with #{commandCount} commands|]
+        let queryCount = Map.length transportEndpoints.queryEndpoints
+        Console.print [fmt|Starting transport: #{transportNameText} with #{commandCount} commands and #{queryCount} queries|]
 
         case transportsMap |> Map.get transportNameText of
           Nothing -> panic [fmt|Transport #{transportNameText} not found in transports map|]

@@ -55,6 +55,7 @@ library
     Testbed.Cart.Commands.CreateCart
     Testbed.Cart.Commands.AddItem
     Testbed.Cart.Core
+    Testbed.Cart.Queries.CartSummary
     Testbed.Cart.Service
     Testbed.Service
 
