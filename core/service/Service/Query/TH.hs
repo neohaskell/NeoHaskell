@@ -17,7 +17,7 @@ import Text qualified
 -- Usage:
 --
 -- @
--- deriveQuery ''UserOrders ['UserEntity, 'OrderEntity]
+-- deriveQuery ''UserOrders [''UserEntity, ''OrderEntity]
 -- @
 --
 -- Generates:
