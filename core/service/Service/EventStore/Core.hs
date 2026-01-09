@@ -18,7 +18,10 @@ module Service.EventStore.Core (
 import Array (Array)
 import Array qualified
 import Basics
+import Console qualified
 import Json qualified
+import Maybe (Maybe (..))
+import Maybe qualified
 import Result (Result (..))
 import Service.Event (
   EntityName,
@@ -27,8 +30,9 @@ import Service.Event (
   InsertionFailure,
   InsertionPayload (..),
   InsertionSuccess,
-  StreamPosition,
+  StreamPosition (..),
  )
+import Service.Event.EventMetadata (EventMetadata (..))
 import Service.Event.StreamId (StreamId)
 import Stream (Stream)
 import Stream qualified
@@ -211,29 +215,34 @@ castEventStore rawStore =
         rawStream <- rawStore.readAllEventsBackwardFromFiltered position limit entityNames
         rawStream |> Stream.mapStream decodeReadAllMessage,
       subscribeToAllEvents = \callback -> do
-        let rawCallback = \rawEvent -> do
-              let typedEvent = decodeEvent rawEvent
-              callback typedEvent
+        let rawCallback rawEvent =
+              case decodeEvent rawEvent of
+                Just typedEvent -> callback typedEvent
+                Nothing -> Console.print [fmt|[EventStore] Warning: Failed to decode event, skipping|]
         rawStore.subscribeToAllEvents rawCallback,
       subscribeToAllEventsFromPosition = \position callback -> do
-        let rawCallback = \rawEvent -> do
-              let typedEvent = decodeEvent rawEvent
-              callback typedEvent
+        let rawCallback rawEvent =
+              case decodeEvent rawEvent of
+                Just typedEvent -> callback typedEvent
+                Nothing -> Console.print [fmt|[EventStore] Warning: Failed to decode event, skipping|]
         rawStore.subscribeToAllEventsFromPosition position rawCallback,
       subscribeToAllEventsFromStart = \callback -> do
-        let rawCallback = \rawEvent -> do
-              let typedEvent = decodeEvent rawEvent
-              callback typedEvent
+        let rawCallback rawEvent =
+              case decodeEvent rawEvent of
+                Just typedEvent -> callback typedEvent
+                Nothing -> Console.print [fmt|[EventStore] Warning: Failed to decode event, skipping|]
         rawStore.subscribeToAllEventsFromStart rawCallback,
       subscribeToEntityEvents = \entityName callback -> do
-        let rawCallback = \rawEvent -> do
-              let typedEvent = decodeEvent rawEvent
-              callback typedEvent
+        let rawCallback rawEvent =
+              case decodeEvent rawEvent of
+                Just typedEvent -> callback typedEvent
+                Nothing -> Console.print [fmt|[EventStore] Warning: Failed to decode event, skipping|]
         rawStore.subscribeToEntityEvents entityName rawCallback,
       subscribeToStreamEvents = \entityName streamId callback -> do
-        let rawCallback = \rawEvent -> do
-              let typedEvent = decodeEvent rawEvent
-              callback typedEvent
+        let rawCallback rawEvent =
+              case decodeEvent rawEvent of
+                Just typedEvent -> callback typedEvent
+                Nothing -> Console.print [fmt|[EventStore] Warning: Failed to decode event, skipping|]
         rawStore.subscribeToStreamEvents entityName streamId rawCallback,
       unsubscribe = rawStore.unsubscribe,
       truncateStream = rawStore.truncateStream
@@ -256,26 +265,33 @@ castEventStore rawStore =
         metadata = insertion.metadata
       }
 
-  decodeEvent :: Event Json.Value -> Event eventType
+  decodeEvent :: Event Json.Value -> Maybe (Event eventType)
   decodeEvent rawEvent =
-    Event
-      { entityName = rawEvent.entityName,
-        streamId = rawEvent.streamId,
-        event = decodeEventData rawEvent.event,
-        metadata = rawEvent.metadata
-      }
+    case decodeEventData rawEvent.event of
+      Just decoded ->
+        Just
+          Event
+            { entityName = rawEvent.entityName,
+              streamId = rawEvent.streamId,
+              event = decoded,
+              metadata = rawEvent.metadata
+            }
+      Nothing -> Nothing
 
-  decodeEventData :: Json.Value -> eventType
+  decodeEventData :: Json.Value -> Maybe eventType
   decodeEventData jsonValue =
     case Json.decode (Json.encode jsonValue) of
-      Ok decoded -> decoded
-      Err _ -> panic "Failed to decode event data in castEventStore"
+      Ok decoded -> Just decoded
+      Err _ -> Nothing
 
   decodeReadAllMessage :: ReadAllMessage Json.Value -> ReadAllMessage eventType
   decodeReadAllMessage message =
     case message of
       ReadingStarted -> ReadingStarted
-      AllEvent rawEvent -> AllEvent (decodeEvent rawEvent)
+      AllEvent rawEvent ->
+        case decodeEvent rawEvent of
+          Just decoded -> AllEvent decoded
+          Nothing -> ToxicAllEvent (rawEventToToxicContents rawEvent)
       ToxicAllEvent contents -> ToxicAllEvent contents
       Checkpoint position -> Checkpoint position
       Terminated reason -> Terminated reason
@@ -286,9 +302,22 @@ castEventStore rawStore =
   decodeReadStreamMessage message =
     case message of
       StreamReadingStarted -> StreamReadingStarted
-      StreamEvent rawEvent -> StreamEvent (decodeEvent rawEvent)
+      StreamEvent rawEvent ->
+        case decodeEvent rawEvent of
+          Just decoded -> StreamEvent decoded
+          Nothing -> ToxicStreamEvent (rawEventToToxicContents rawEvent)
       ToxicStreamEvent contents -> ToxicStreamEvent contents
       StreamCheckpoint position -> StreamCheckpoint position
       StreamTerminated reason -> StreamTerminated reason
       StreamCaughtUp -> StreamCaughtUp
       StreamFellBehind -> StreamFellBehind
+
+  rawEventToToxicContents :: Event Json.Value -> ToxicContents
+  rawEventToToxicContents rawEvent =
+    ToxicContents
+      { locator = [fmt|{rawEvent.entityName}/{rawEvent.streamId}|],
+        metadata = Json.encode rawEvent.metadata,
+        globalPosition = rawEvent.metadata.globalPosition |> Maybe.withDefault (StreamPosition 0),
+        localPosition = rawEvent.metadata.localPosition |> Maybe.withDefault (StreamPosition 0),
+        additionalInfo = [fmt|Failed to decode event data in castEventStore|]
+      }
