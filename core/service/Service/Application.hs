@@ -11,6 +11,7 @@ module Service.Application (
   new,
 
   -- * Configuration
+  withEventStore,
   withQuery,
   withQueryRegistry,
   withQueryEndpoint,
@@ -29,8 +30,10 @@ module Service.Application (
   queryEndpointCount,
   hasQueryDefinitions,
   queryDefinitionCount,
+  hasEventStore,
 
   -- * Running
+  run,
   runWith,
   runWithAsync,
 ) where
@@ -44,8 +47,9 @@ import Json qualified
 import Map (Map)
 import Map qualified
 import Record qualified
+import Maybe (Maybe (..))
 import Service.Command.Core (NameOf)
-import Service.EventStore (EventStore)
+import Service.EventStore (EventStore, EventStoreConfig (..))
 import Service.Query.Core (EntitiesOf, Query)
 import Service.Query.Definition (QueryDefinition (..), WireEntities)
 import Service.Query.Definition qualified as Definition
@@ -66,6 +70,7 @@ import ToText (toText)
 --
 -- The Application type provides a builder pattern for configuring:
 --
+-- * EventStore configuration (how to connect to the event store)
 -- * QueryDefinitions (declarative query registrations, wired at runtime)
 -- * QueryRegistry (maps entity names to query updaters)
 -- * ServiceRunners (functions that run services with a shared EventStore)
@@ -76,12 +81,16 @@ import ToText (toText)
 --
 -- @
 -- app = Application.new
+--   |> Application.withEventStore postgresConfig
 --   |> Application.withTransport WebTransport.server
 --   |> Application.withService myCartService
 --   |> Application.withQuery \@CartSummary
+--
+-- Application.run app
 -- @
 data Application = Application
-  { queryDefinitions :: Array QueryDefinition,
+  { eventStoreCreator :: Maybe (Task Text (EventStore Json.Value)),
+    queryDefinitions :: Array QueryDefinition,
     queryRegistry :: QueryRegistry,
     serviceRunners :: Array ServiceRunner,
     transports :: Map Text TransportValue,
@@ -93,12 +102,42 @@ data Application = Application
 new :: Application
 new =
   Application
-    { queryDefinitions = Array.empty,
+    { eventStoreCreator = Nothing,
+      queryDefinitions = Array.empty,
       queryRegistry = Registry.empty,
       serviceRunners = Array.empty,
       transports = Map.empty,
       queryEndpoints = Map.empty
     }
+
+
+-- | Configure the EventStore for the Application.
+--
+-- The EventStore is created when 'run' is called.
+--
+-- Example:
+--
+-- @
+-- let postgresConfig = PostgresEventStore
+--       { host = "localhost", port = 5432, ... }
+--
+-- app = Application.new
+--   |> Application.withEventStore postgresConfig
+-- @
+withEventStore ::
+  (EventStoreConfig config) =>
+  config ->
+  Application ->
+  Application
+withEventStore config app =
+  app {eventStoreCreator = Just (createEventStore config)}
+
+
+-- | Check if an EventStore has been configured.
+hasEventStore :: Application -> Bool
+hasEventStore app = case app.eventStoreCreator of
+  Nothing -> False
+  Just _ -> True
 
 
 -- | Register a query type with automatic wiring.
@@ -301,7 +340,37 @@ serviceRunnerCount :: Application -> Int
 serviceRunnerCount app = Array.length app.serviceRunners
 
 
+-- | Run the application using the configured EventStore.
+--
+-- This is the primary way to run an Application. It:
+-- 1. Creates the EventStore from the configured settings
+-- 2. Wires all query definitions
+-- 3. Rebuilds queries from historical events
+-- 4. Starts live subscription for new events
+-- 5. Runs all services
+--
+-- Example:
+--
+-- @
+-- Application.new
+--   |> Application.withEventStore postgresConfig
+--   |> Application.withTransport WebTransport.server
+--   |> Application.withService myService
+--   |> Application.withQuery \@CartSummary
+--   |> Application.run
+-- @
+run :: Application -> Task Text Unit
+run app = case app.eventStoreCreator of
+  Nothing -> Task.throw "No EventStore configured. Use withEventStore to configure one."
+  Just creator -> do
+    eventStore <- creator
+    runWith eventStore app
+
+
 -- | Run application with a provided EventStore.
+--
+-- Use this when you need to provide your own EventStore instance.
+-- For most cases, prefer using 'run' with 'withEventStore'.
 --
 -- This function:
 -- 1. Wires all query definitions (creates stores, updaters, endpoints)
