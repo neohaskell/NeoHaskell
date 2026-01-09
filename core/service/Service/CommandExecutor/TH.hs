@@ -11,6 +11,7 @@ import GHC.Base (String)
 import Language.Haskell.TH.Lib qualified as THLib
 import Language.Haskell.TH.Ppr qualified as THPpr
 import Language.Haskell.TH.Syntax qualified as TH
+import Text qualified
 
 
 data MultiTenancyMode
@@ -472,15 +473,17 @@ ERROR: Command type class not found.
 Please ensure you have `import Core` at the top of your module.
 |]
 
-  let commandNameLit = TH.LitT (TH.StrTyLit commandNameStr)
+  -- Convert to kebab-case for URL: CreateCart -> create-cart
+  let kebabName = Text.toKebabCase (Text.fromLinkedList commandNameStr) |> Text.toLinkedList
+  let commandNameLit = TH.LitT (TH.StrTyLit kebabName)
 
-  -- Generate: type instance NameOf CommandName = "CommandName"
+  -- Generate: type instance NameOf CommandName = "create-cart"
   let nameOfInstance =
         TH.TySynInstD
           (TH.TySynEqn Nothing (TH.ConT nameOfTypeFamilyName `TH.AppT` TH.ConT someName) commandNameLit)
 
-  -- Generate KnownHash instance using the extracted function
-  knownHashInstance <- deriveKnownHash commandNameStr
+  -- Generate KnownHash instance using kebab-case name (same as NameOf)
+  knownHashInstance <- deriveKnownHash kebabName
 
   let commandInstance =
         TH.InstanceD

@@ -2,7 +2,7 @@
 # Tests the full flow: create cart -> verify it appears in query with correct values
 
 # Step 1: Create a new cart
-POST http://localhost:8080/commands/CreateCart
+POST http://localhost:8080/commands/create-cart
 []
 
 HTTP/1.1 200

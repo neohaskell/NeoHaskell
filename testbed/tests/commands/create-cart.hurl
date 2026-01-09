@@ -1,7 +1,7 @@
 # CreateCart Command - Happy Path
 # Verifies command execution and response structure
 
-POST http://localhost:8080/commands/CreateCart
+POST http://localhost:8080/commands/create-cart
 []
 
 HTTP/1.1 200

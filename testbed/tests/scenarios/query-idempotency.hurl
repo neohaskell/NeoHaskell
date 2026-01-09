@@ -2,7 +2,7 @@
 # Multiple queries should return consistent results
 
 # Create a cart for a known data point
-POST http://localhost:8080/commands/CreateCart
+POST http://localhost:8080/commands/create-cart
 []
 
 HTTP/1.1 200

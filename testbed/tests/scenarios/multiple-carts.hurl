@@ -2,7 +2,7 @@
 # Creates multiple carts and verifies each appears independently in query
 
 # Step 1: Create first cart
-POST http://localhost:8080/commands/CreateCart
+POST http://localhost:8080/commands/create-cart
 []
 
 HTTP/1.1 200
@@ -10,7 +10,7 @@ HTTP/1.1 200
 cart_1_id: jsonpath "$.entityId"
 
 # Step 2: Create second cart
-POST http://localhost:8080/commands/CreateCart
+POST http://localhost:8080/commands/create-cart
 []
 
 HTTP/1.1 200
@@ -22,7 +22,7 @@ cart_2_id: jsonpath "$.entityId"
 jsonpath "$.entityId" != {{cart_1_id}}
 
 # Step 3: Create third cart
-POST http://localhost:8080/commands/CreateCart
+POST http://localhost:8080/commands/create-cart
 []
 
 HTTP/1.1 200
