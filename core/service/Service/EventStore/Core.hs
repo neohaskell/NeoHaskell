@@ -215,35 +215,15 @@ castEventStore rawStore =
         rawStream <- rawStore.readAllEventsBackwardFromFiltered position limit entityNames
         rawStream |> Stream.mapStream decodeReadAllMessage,
       subscribeToAllEvents = \callback -> do
-        let rawCallback rawEvent =
-              case decodeEvent rawEvent of
-                Just typedEvent -> callback typedEvent
-                Nothing -> Console.print [fmt|[EventStore] Warning: Failed to decode event, skipping|]
-        rawStore.subscribeToAllEvents rawCallback,
+        rawStore.subscribeToAllEvents (handleSubscriptionRawEvent callback),
       subscribeToAllEventsFromPosition = \position callback -> do
-        let rawCallback rawEvent =
-              case decodeEvent rawEvent of
-                Just typedEvent -> callback typedEvent
-                Nothing -> Console.print [fmt|[EventStore] Warning: Failed to decode event, skipping|]
-        rawStore.subscribeToAllEventsFromPosition position rawCallback,
+        rawStore.subscribeToAllEventsFromPosition position (handleSubscriptionRawEvent callback),
       subscribeToAllEventsFromStart = \callback -> do
-        let rawCallback rawEvent =
-              case decodeEvent rawEvent of
-                Just typedEvent -> callback typedEvent
-                Nothing -> Console.print [fmt|[EventStore] Warning: Failed to decode event, skipping|]
-        rawStore.subscribeToAllEventsFromStart rawCallback,
+        rawStore.subscribeToAllEventsFromStart (handleSubscriptionRawEvent callback),
       subscribeToEntityEvents = \entityName callback -> do
-        let rawCallback rawEvent =
-              case decodeEvent rawEvent of
-                Just typedEvent -> callback typedEvent
-                Nothing -> Console.print [fmt|[EventStore] Warning: Failed to decode event, skipping|]
-        rawStore.subscribeToEntityEvents entityName rawCallback,
+        rawStore.subscribeToEntityEvents entityName (handleSubscriptionRawEvent callback),
       subscribeToStreamEvents = \entityName streamId callback -> do
-        let rawCallback rawEvent =
-              case decodeEvent rawEvent of
-                Just typedEvent -> callback typedEvent
-                Nothing -> Console.print [fmt|[EventStore] Warning: Failed to decode event, skipping|]
-        rawStore.subscribeToStreamEvents entityName streamId rawCallback,
+        rawStore.subscribeToStreamEvents entityName streamId (handleSubscriptionRawEvent callback),
       unsubscribe = rawStore.unsubscribe,
       truncateStream = rawStore.truncateStream
     }
@@ -321,3 +301,24 @@ castEventStore rawStore =
         localPosition = rawEvent.metadata.localPosition |> Maybe.withDefault (StreamPosition 0),
         additionalInfo = [fmt|Failed to decode event data in castEventStore|]
       }
+
+  handleSubscriptionRawEvent ::
+    ((Event eventType) -> Task Text Unit) ->
+    Event Json.Value ->
+    Task Text Unit
+  handleSubscriptionRawEvent callback rawEvent =
+    case decodeEvent rawEvent of
+      Just typedEvent -> callback typedEvent
+      Nothing -> do
+        let entity = rawEvent.entityName
+        let stream = rawEvent.streamId
+        let globalPos = rawEvent.metadata.globalPosition |> Maybe.withDefault (StreamPosition 0)
+        let localPos = rawEvent.metadata.localPosition |> Maybe.withDefault (StreamPosition 0)
+        let eventPayload = Json.encodeText rawEvent.event
+        Console.print
+          [fmt|[EventStore] Warning: Failed to decode subscription event
+  entityName: #{entity}
+  streamId: #{stream}
+  globalPosition: #{globalPos}
+  localPosition: #{localPos}
+  payload: #{eventPayload}|]
