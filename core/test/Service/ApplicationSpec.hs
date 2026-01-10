@@ -4,6 +4,7 @@ import Array qualified
 import AsyncTask qualified
 import ConcurrentVar qualified
 import Core
+import Map qualified
 import Service.Application (Application (..), ServiceRunner (..))
 import Service.Application qualified as Application
 import Service.Event.EntityName (EntityName (..))
@@ -251,16 +252,18 @@ spec = do
         Application.transportCount app |> shouldBe 2
 
       it "makes transports available to services" \_ -> do
-        -- Track whether transport was used
-        transportUsedRef <- ConcurrentVar.containing False
+        -- Track whether the expected transport was found in the transports map
+        transportFoundRef <- ConcurrentVar.containing False
 
         eventStore <- InMemory.new |> Task.mapError toText
 
-        -- Create a service runner that checks for transport
+        -- Create a service runner that inspects the transports parameter
         let runner =
               ServiceRunner
-                { runWithEventStore = \_ _ _ -> do
-                    transportUsedRef |> ConcurrentVar.modify (\_ -> True)
+                { runWithEventStore = \_ transports _ -> do
+                    -- Check if MockTransport is present by looking for its name
+                    let hasMockTransport = transports |> Map.contains "MockTransport"
+                    transportFoundRef |> ConcurrentVar.modify (\_ -> hasMockTransport)
                     Task.yield unit
                 }
 
@@ -271,8 +274,8 @@ spec = do
 
         Application.runWith eventStore app
 
-        used <- ConcurrentVar.peek transportUsedRef
-        used |> shouldBe True
+        found <- ConcurrentVar.peek transportFoundRef
+        found |> shouldBe True
 
 
 -- | Test helper to set the QueryRegistry for an Application.
