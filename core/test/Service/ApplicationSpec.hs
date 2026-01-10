@@ -130,6 +130,14 @@ spec = do
                 |> Application.withServiceRunner runner2
         Application.serviceRunnerCount app |> shouldBe 2
 
+    describe "run" do
+      it "throws error when no EventStore is configured" \_ -> do
+        let app = Application.new
+        result <- Application.run app |> Task.asResult
+        case result of
+          Ok _ -> fail "Expected error but got Ok"
+          Err err -> err |> shouldBe "No EventStore configured. Use withEventStore to configure one."
+
     describe "runWith" do
       it "passes event store to service runners" \_ -> do
         -- Track whether service runner was called with event store
