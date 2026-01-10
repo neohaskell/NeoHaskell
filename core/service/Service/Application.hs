@@ -2,7 +2,7 @@
 
 module Service.Application (
   -- * Application Type
-  Application,
+  Application (..),
 
   -- * ServiceRunner Type
   ServiceRunner (..),
@@ -14,7 +14,6 @@ module Service.Application (
   withEventStore,
   withQueryObjectStore,
   withQuery,
-  withQueryRegistry,
   withQueryEndpoint,
   withServiceRunner,
   withService,
@@ -230,21 +229,6 @@ hasQueryDefinitions app = not (Array.isEmpty app.queryDefinitions)
 -- | Get the number of query definitions registered.
 queryDefinitionCount :: Application -> Int
 queryDefinitionCount app = Array.length app.queryDefinitions
-
-
--- | Add a QueryRegistry to the Application.
---
--- The QueryRegistry maps entity names to query updaters, which are called
--- when events are processed to update read models.
---
--- Note: Prefer using 'withQuery' for declarative query registration.
--- This function is for advanced use cases where manual control is needed.
-withQueryRegistry ::
-  QueryRegistry ->
-  Application ->
-  Application
-withQueryRegistry registry app =
-  app {queryRegistry = registry}
 
 
 -- | Check if the Application is empty (no configurations set).

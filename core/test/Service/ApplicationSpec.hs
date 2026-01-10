@@ -4,7 +4,7 @@ import AsyncTask qualified
 import ConcurrentVar qualified
 import Core
 import Json qualified
-import Service.Application (ServiceRunner (..))
+import Service.Application (Application (..), ServiceRunner (..))
 import Service.Application qualified as Application
 import Service.MockTransport qualified as MockTransport
 import Service.Event (Insertion (..), InsertionPayload (..))
@@ -45,7 +45,7 @@ spec = do
                 |> Registry.register (EntityName "TestEntity") updater
         let app =
               Application.new
-                |> Application.withQueryRegistry registry
+                |> withQueryRegistry registry
         Application.hasQueryRegistry app |> shouldBe True
 
       it "replaces existing registry" \_ -> do
@@ -68,8 +68,8 @@ spec = do
 
         let app =
               Application.new
-                |> Application.withQueryRegistry registry1
-                |> Application.withQueryRegistry registry2
+                |> withQueryRegistry registry1
+                |> withQueryRegistry registry2
 
         -- Should have registry2, not registry1
         Application.hasQueryRegistry app |> shouldBe True
@@ -89,7 +89,7 @@ spec = do
                 |> Registry.register (EntityName "TestEntity") updater
         let app =
               Application.new
-                |> Application.withQueryRegistry registry
+                |> withQueryRegistry registry
         Application.isEmpty app |> shouldBe False
 
     describe "hasQueryRegistry" do
@@ -107,7 +107,7 @@ spec = do
                 |> Registry.register (EntityName "TestEntity") updater
         let app =
               Application.new
-                |> Application.withQueryRegistry registry
+                |> withQueryRegistry registry
         Application.hasQueryRegistry app |> shouldBe True
 
     describe "withServiceRunner" do
@@ -177,7 +177,7 @@ spec = do
 
         let app =
               Application.new
-                |> Application.withQueryRegistry registry
+                |> withQueryRegistry registry
 
         Application.runWith eventStore app
 
@@ -204,7 +204,7 @@ spec = do
 
         let app =
               Application.new
-                |> Application.withQueryRegistry registry
+                |> withQueryRegistry registry
 
         -- Run app in background
         Application.runWithAsync eventStore app
@@ -293,3 +293,13 @@ insertTestEvent eventStore entityName = do
   eventStore.insert payload
     |> Task.mapError toText
     |> discard
+
+
+-- | Test helper to set the QueryRegistry for an Application.
+-- This is only for testing - prefer Application.withQuery in production code.
+withQueryRegistry ::
+  Registry.QueryRegistry ->
+  Application ->
+  Application
+withQueryRegistry registry (Application eventStoreCreator queryObjectStoreConfig queryDefinitions _ serviceRunners transports queryEndpoints) =
+  Application eventStoreCreator queryObjectStoreConfig queryDefinitions registry serviceRunners transports queryEndpoints
