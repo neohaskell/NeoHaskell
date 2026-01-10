@@ -33,5 +33,3 @@ jsonpath "$[?(@.cartSummaryId == '{{new_cart_id}}')]" count == 1
 jsonpath "$[?(@.cartSummaryId == '{{new_cart_id}}')].itemCount" nth 0 == 0
 jsonpath "$[?(@.cartSummaryId == '{{new_cart_id}}')].isEmpty" nth 0 == true
 
-# Verify structure of the matched cart
-jsonpath "$[?(@.cartSummaryId == '{{new_cart_id}}')].cartSummaryId" nth 0 == {{new_cart_id}}
