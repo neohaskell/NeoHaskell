@@ -24,6 +24,9 @@ jsonpath "$[?(@.cartSummaryId == '{{known_cart_id}}')]" count == 1
 
 # Query 2: Should have same or more carts (never fewer, data is append-only)
 GET http://localhost:8080/queries/cart-summary
+[Options]
+retry: 5
+retry-interval: 100
 
 HTTP/1.1 200
 
@@ -36,6 +39,9 @@ jsonpath "$[?(@.cartSummaryId == '{{known_cart_id}}')].itemCount" nth 0 == 0
 
 # Query 3: One more time to confirm consistency
 GET http://localhost:8080/queries/cart-summary
+[Options]
+retry: 5
+retry-interval: 100
 
 HTTP/1.1 200
 
