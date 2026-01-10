@@ -66,19 +66,5 @@ jobs:
           curl -LO https://github.com/Orange-OpenSource/hurl/releases/download/6.0.0/hurl_6.0.0_amd64.deb
           sudo dpkg -i hurl_6.0.0_amd64.deb
 
-      - name: Start testbed server
-        run: |
-          nix develop --command cabal run nhtestbed &
-          echo "Waiting for testbed to start..."
-          for i in {1..30}; do
-            if curl -s http://localhost:8080/queries/cart-summary > /dev/null 2>&1; then
-              echo "Testbed is ready"
-              break
-            fi
-            sleep 1
-          done
-
       - name: Run integration tests
-        run: |
-          cd testbed
-          hurl --test tests/**/*.hurl
+        run: nix develop --command ./testbed/scripts/run-tests.sh
