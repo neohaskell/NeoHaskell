@@ -42,12 +42,14 @@ import Array (Array)
 import Array qualified
 import AsyncTask qualified
 import Basics
+import Console qualified
 import GHC.TypeLits qualified as GHC
 import Json qualified
 import Map (Map)
 import Map qualified
 import Record qualified
 import Maybe (Maybe (..))
+import Result (Result (..))
 import Service.Command.Core (NameOf)
 import Service.EventStore (EventStore, EventStoreConfig (..))
 import Service.Query.Core (EntitiesOf, Query)
@@ -452,9 +454,16 @@ mergeRegistries source target = do
 -- | Run application with provided EventStore, non-blocking.
 --
 -- Launches the application in a background task and returns immediately.
+-- Errors are logged to the console rather than silently discarded.
 runWithAsync :: EventStore Json.Value -> Application -> Task Text Unit
 runWithAsync eventStore app = do
-  AsyncTask.run (runWith eventStore app)
+  let taskWithErrorLogging :: Task Text Unit
+      taskWithErrorLogging = do
+        result <- runWith eventStore app |> Task.asResult
+        case result of
+          Err err -> Console.print [fmt|[Application] Error: Application failed: #{err}|]
+          Ok _ -> Task.yield unit
+  AsyncTask.run taskWithErrorLogging
     |> Task.mapError toText
     |> discard
   Task.yield unit
