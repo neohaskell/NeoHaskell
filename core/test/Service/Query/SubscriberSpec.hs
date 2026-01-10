@@ -2,24 +2,20 @@ module Service.Query.SubscriberSpec where
 
 import Array qualified
 import AsyncTask qualified
-import Core
 import ConcurrentVar qualified
-import Json qualified
-import Service.Event (InsertionPayload (..), Insertion (..))
-import Service.Event.StreamPosition (StreamPosition (..))
+import Core
 import Service.Event.EntityName (EntityName (..))
-import Service.Event.EventMetadata qualified as EventMetadata
-import Service.Event.StreamId qualified as StreamId
+import Service.Event.StreamPosition (StreamPosition (..))
 import Service.EventStore (EventStore (..))
 import Service.EventStore.Core (Limit (..), collectAllEvents)
 import Service.EventStore.InMemory qualified as InMemory
 import Service.Query.Registry (QueryUpdater (..))
 import Service.Query.Registry qualified as Registry
 import Service.Query.Subscriber qualified as Subscriber
+import Service.TestHelpers (insertTestEvent)
 import Stream qualified
 import Task qualified
 import Test
-import Uuid qualified
 
 
 spec :: Spec Unit
@@ -278,30 +274,3 @@ spec = do
         -- Should only process the new event (not re-process old ones)
         liveCount <- ConcurrentVar.peek processedCount
         liveCount |> shouldBe 1
-
-
--- | Helper to insert a test event into the event store.
-insertTestEvent :: EventStore Json.Value -> EntityName -> Task Text Unit
-insertTestEvent eventStore entityName = do
-  eventId <- Uuid.generate
-  streamId <- StreamId.new
-  metadata <- EventMetadata.new
-
-  let insertion =
-        Insertion
-          { id = eventId,
-            event = Json.encode (),
-            metadata = metadata
-          }
-
-  let payload =
-        InsertionPayload
-          { streamId = streamId,
-            entityName = entityName,
-            insertionType = AnyStreamState,
-            insertions = [insertion]
-          }
-
-  eventStore.insert payload
-    |> Task.mapError toText
-    |> discard

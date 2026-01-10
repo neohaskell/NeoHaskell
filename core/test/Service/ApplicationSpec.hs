@@ -4,21 +4,16 @@ import Array qualified
 import AsyncTask qualified
 import ConcurrentVar qualified
 import Core
-import Json qualified
 import Service.Application (Application (..), ServiceRunner (..))
 import Service.Application qualified as Application
-import Service.MockTransport qualified as MockTransport
-import Service.Event (Insertion (..), InsertionPayload (..))
 import Service.Event.EntityName (EntityName (..))
-import Service.Event.EventMetadata qualified as EventMetadata
-import Service.Event.StreamId qualified as StreamId
-import Service.EventStore (EventStore (..))
 import Service.EventStore.InMemory qualified as InMemory
+import Service.MockTransport qualified as MockTransport
 import Service.Query.Registry (QueryUpdater (..))
 import Service.Query.Registry qualified as Registry
+import Service.TestHelpers (insertTestEvent)
 import Task qualified
 import Test
-import Uuid qualified
 
 
 -- ============================================================================
@@ -278,33 +273,6 @@ spec = do
 
         used <- ConcurrentVar.peek transportUsedRef
         used |> shouldBe True
-
-
--- | Helper to insert a test event into the event store.
-insertTestEvent :: EventStore Json.Value -> EntityName -> Task Text Unit
-insertTestEvent eventStore entityName = do
-  eventId <- Uuid.generate
-  streamId <- StreamId.new
-  metadata <- EventMetadata.new
-
-  let insertion =
-        Insertion
-          { id = eventId,
-            event = Json.encode (),
-            metadata = metadata
-          }
-
-  let payload =
-        InsertionPayload
-          { streamId = streamId,
-            entityName = entityName,
-            insertionType = AnyStreamState,
-            insertions = [insertion]
-          }
-
-  eventStore.insert payload
-    |> Task.mapError toText
-    |> discard
 
 
 -- | Test helper to set the QueryRegistry for an Application.
