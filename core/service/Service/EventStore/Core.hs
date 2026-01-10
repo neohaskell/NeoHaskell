@@ -260,7 +260,7 @@ castEventStore rawStore =
 
   decodeEventData :: Json.Value -> Maybe eventType
   decodeEventData jsonValue =
-    case Json.decode (Json.encode jsonValue) of
+    case Json.decode jsonValue of
       Ok decoded -> Just decoded
       Err _ -> Nothing
 
