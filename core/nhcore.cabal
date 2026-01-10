@@ -161,6 +161,18 @@ library
     Service.EventStore.Postgres.PostgresEventRecord
     Service.EventStore.Postgres.Sessions
     Service.EventStore.Postgres.SubscriptionStore
+    Service.Application
+    Service.Query
+    Service.Query.Core
+    Service.Query.Definition
+    Service.Query.Endpoint
+    Service.Query.Registry
+    Service.Query.Subscriber
+    Service.Query.TH
+    Service.Query.Updater
+    Service.QueryObjectStore
+    Service.QueryObjectStore.Core
+    Service.QueryObjectStore.InMemory
     Service.Response
     Service.SnapshotCache
     Service.SnapshotCache.Core
@@ -214,6 +226,10 @@ library
     Test.Service.EventStore.Subscriptions.Context
     Test.Service.EventStore.Subscriptions.SimpleSpec
     Test.Service.EventStore.Subscriptions.Spec
+    Test.Service.QueryObjectStore
+    Test.Service.QueryObjectStore.Core
+    Test.Service.QueryObjectStore.InMemory.Context
+    Test.Service.QueryObjectStore.InMemory.Spec
     Test.Service.SnapshotCache
     Test.Service.SnapshotCache.InMemory.Context
     Test.Service.SnapshotCache.InMemory.Spec
@@ -256,11 +272,20 @@ test-suite nhcore-test
 
   other-modules:
     ConcurrentMapSpec
+    Service.ApplicationSpec
     Service.CommandHandlerSpec
     Service.CommandSpec
     Service.EventStore.InMemorySpec
     Service.EventStore.Postgres.SubscriptionStoreSpec
     Service.EventStore.PostgresSpec
+    Service.MockTransport
+    Service.Query.EndpointSpec
+    Service.Query.RegistrySpec
+    Service.Query.SubscriberSpec
+    Service.Query.THSpec
+    Service.Query.UpdaterSpec
+    Service.TestHelpers
+    Service.QueryObjectStore.InMemorySpec
     Service.SnapshotCache.InMemorySpec
     SetSpec
     StreamSpec

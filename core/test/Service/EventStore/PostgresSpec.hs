@@ -1,6 +1,7 @@
 module Service.EventStore.PostgresSpec where
 
 import Core
+import Service.EventStore.Core qualified as EventStore
 import Service.EventStore.Postgres qualified as Postgres
 import Service.EventStore.Postgres.Internal qualified as Internal
 import Service.EventStore.Postgres.Core qualified as PostgresCore
@@ -10,7 +11,7 @@ import Test
 import Test.Service.CommandHandler qualified as CommandHandler
 import Test.Service.EntityFetcher qualified as EntityFetcherSpec
 import Test.Service.EntityFetcher.Core qualified as EntityFetcherCore
-import Test.Service.EventStore qualified as EventStore
+import Test.Service.EventStore qualified as EventStoreSpec
 import Test.Service.EventStore.Core (CartEvent)
 import Var qualified
 
@@ -29,7 +30,7 @@ spec = do
     describe "new method" do
       it "acquires the connection" \_ -> do
         (ops, observe) <- mockNewOps
-        Internal.new @CartEvent ops config
+        Internal.new ops config
           |> Task.mapError toText
           |> discard
         observe.acquireCalls
@@ -37,7 +38,7 @@ spec = do
 
       it "initializes the table" \_ -> do
         (ops, observe) <- mockNewOps
-        Internal.new @CartEvent ops config
+        Internal.new ops config
           |> Task.mapError toText
           |> discard
         observe.initializeTableCalls
@@ -45,17 +46,19 @@ spec = do
 
       it "initializes the subscriptions" \_ -> do
         (ops, observe) <- mockNewOps
-        Internal.new @CartEvent ops config
+        Internal.new ops config
           |> Task.mapError toText
           |> discard
         observe.initializeSubscriptionsCalls
           |> varContents shouldBe 1
 
     let newStore = do
-          let ops = Internal.defaultOps @CartEvent
+          let ops = Internal.defaultOps
           dropPostgres ops config
-          Postgres.new config |> Task.mapError toText
-    EventStore.spec newStore
+          Postgres.new config
+            |> Task.map (EventStore.castEventStore @CartEvent)
+            |> Task.mapError toText
+    EventStoreSpec.spec newStore
 
     let newStoreAndFetcher = do
           store <- newStore
@@ -64,9 +67,11 @@ spec = do
     EntityFetcherSpec.spec newStoreAndFetcher
 
     let newCartStore = do
-          let ops = Internal.defaultOps @CartEvent
+          let ops = Internal.defaultOps
           dropPostgres ops config
-          Postgres.new config |> Task.mapError toText
+          Postgres.new config
+            |> Task.map (EventStore.castEventStore @CartEvent)
+            |> Task.mapError toText
     CommandHandler.spec newCartStore
 
 
@@ -77,7 +82,7 @@ data NewObserve = NewObserve
   }
 
 
-dropPostgres :: Internal.Ops eventType -> Postgres.PostgresEventStore -> Task Text Unit
+dropPostgres :: Internal.Ops -> Postgres.PostgresEventStore -> Task Text Unit
 dropPostgres ops config =
   ops
     |> Internal.withConnection
@@ -95,7 +100,7 @@ dropPostgres ops config =
     |> Task.mapError (toText)
 
 
-mockNewOps :: Task Text (Internal.Ops eventType, NewObserve)
+mockNewOps :: Task Text (Internal.Ops, NewObserve)
 mockNewOps = do
   acquireCalls <- Var.new 0
   initializeTableCalls <- Var.new 0
@@ -112,7 +117,7 @@ mockNewOps = do
         Var.increment initializeTableCalls
         Task.yield unit
 
-  let initializeSubscriptions :: Internal.SubscriptionStore eventType -> Internal.PostgresEventStore -> Task Text Unit
+  let initializeSubscriptions :: Internal.SubscriptionStore -> Internal.PostgresEventStore -> Task Text Unit
       initializeSubscriptions _ _ = do
         Var.increment initializeSubscriptionsCalls
         Task.yield unit

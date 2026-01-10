@@ -141,7 +141,25 @@ instance Transport WebTransport where
                   |> Wai.responseLBS HTTP.status413 [(HTTP.hContentType, "application/json")]
           respond response413
 
-    -- Parse the request path to check if it matches /commands/<name>
+    -- Helper function for 200 OK JSON responses
+    let okJson responseText = do
+          let response200 =
+                responseText
+                  |> Text.toBytes
+                  |> Bytes.toLazyLegacy
+                  |> Wai.responseLBS HTTP.status200 [(HTTP.hContentType, "application/json")]
+          respond response200
+
+    -- Helper function for 500 Internal Server Error responses
+    let internalError message = do
+          let response500 =
+                message
+                  |> Text.toBytes
+                  |> Bytes.toLazyLegacy
+                  |> Wai.responseLBS HTTP.status500 [(HTTP.hContentType, "application/json")]
+          respond response500
+
+    -- Parse the request path to check if it matches /commands/<name> or /queries/<name>
     case Wai.pathInfo request of
       ["commands", commandName] -> do
         -- Look up the command handler in the endpoints map
@@ -176,6 +194,17 @@ instance Transport WebTransport where
                     )
           Maybe.Nothing ->
             notFound [fmt|Command not found: #{commandName}|]
+      ["queries", queryName] -> do
+        -- Look up the query handler in the endpoints map
+        case Map.get queryName endpoints.queryEndpoints of
+          Maybe.Just handler -> do
+            -- Execute the query handler with error recovery
+            result <- handler |> Task.asResult
+            case result of
+              Result.Ok responseText -> okJson responseText
+              Result.Err errorText -> internalError [fmt|Query #{queryName} failed: #{errorText}|]
+          Maybe.Nothing ->
+            notFound [fmt|Query not found: #{queryName}|]
       _ ->
         notFound "Not found"
 

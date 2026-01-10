@@ -4,6 +4,7 @@ import Array qualified
 import AsyncTask qualified
 import ConcurrentVar qualified
 import Core
+import Json qualified
 import Map qualified
 import Service.Event (Event (..))
 import Service.Event qualified as Event
@@ -312,7 +313,7 @@ spec = do
 
 
 -- Helper function to create a test event
-createTestEvent :: Task Error (Event CartEvent)
+createTestEvent :: Task Error (Event Json.Value)
 createTestEvent = do
   metadata <- EventMetadata.new
   streamId <- StreamId.new
@@ -322,6 +323,6 @@ createTestEvent = do
     Event
       { entityName = entityName,
         streamId = streamId,
-        event = event,
+        event = Json.encode event,
         metadata = metadata
       }

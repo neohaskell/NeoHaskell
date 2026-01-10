@@ -1,6 +1,7 @@
 module Service.EventStore.InMemorySpec where
 
 import Core
+import Service.EventStore.Core qualified as EventStoreCore
 import Service.EventStore.InMemory qualified as InMemory
 import Service.SnapshotCache.InMemory qualified as SnapshotCacheInMemory
 import Task qualified
@@ -13,7 +14,7 @@ import Test.Service.EventStore qualified as EventStore
 spec :: Spec Unit
 spec = do
   describe "InMemoryEventStore" do
-    let newStore = InMemory.new @EntityFetcherCore.CartEvent |> Task.mapError toText
+    let newStore = InMemory.new |> Task.map (EventStoreCore.castEventStore @EntityFetcherCore.CartEvent) |> Task.mapError toText
     EventStore.spec newStore
 
     let newStoreAndFetcher = do

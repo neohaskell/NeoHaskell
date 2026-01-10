@@ -8,6 +8,21 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
+# Track testbed PID for cleanup
+TESTBED_PID=""
+
+cleanup() {
+    if [ -n "$TESTBED_PID" ]; then
+        echo ""
+        echo "Stopping testbed (PID: $TESTBED_PID)..."
+        kill "$TESTBED_PID" 2>/dev/null || true
+        wait "$TESTBED_PID" 2>/dev/null || true
+        echo "Testbed stopped."
+    fi
+}
+
+trap cleanup EXIT
+
 echo "Running NeoHaskell Testbed Tests..."
 echo ""
 
@@ -18,10 +33,27 @@ if ! command -v hurl &> /dev/null; then
     exit 1
 fi
 
-# Check if the testbed is running
+# Start the testbed if not already running
 if ! curl -s http://localhost:8080 > /dev/null 2>&1; then
-    echo -e "${YELLOW}Warning: Testbed doesn't appear to be running on http://localhost:8080${NC}"
-    echo "Please start it with: cabal run testbed"
+    echo -e "${YELLOW}Starting testbed...${NC}"
+    cabal run nhtestbed &
+    TESTBED_PID=$!
+
+    echo "Waiting for testbed to start (PID: $TESTBED_PID)..."
+    for i in {1..30}; do
+        if curl -s http://localhost:8080/queries/cart-summary > /dev/null 2>&1; then
+            echo -e "${GREEN}Testbed is ready${NC}"
+            break
+        fi
+        if [ $i -eq 30 ]; then
+            echo -e "${RED}Error: Testbed failed to start within 30 seconds${NC}"
+            exit 1
+        fi
+        sleep 1
+    done
+    echo ""
+else
+    echo -e "${GREEN}Testbed already running on http://localhost:8080${NC}"
     echo ""
 fi
 

@@ -20,6 +20,7 @@ ADRs document significant architectural decisions made during the development of
 | [0004](0004-eventstore-abstraction.md)        | EventStore Abstraction          | Accepted |
 | [0005](0005-service-module-reorganization.md) | Service Module Reorganization   | Accepted |
 | [0006](0006-entity-snapshot-cache.md)         | Entity Snapshot Cache           | Accepted |
+| [0007](0007-queries-read-models.md)           | Queries (Read Models)           | Proposed |
 
 ## Creating New ADRs
 

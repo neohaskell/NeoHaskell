@@ -1,10 +1,10 @@
 module Main where
 
+import App (app)
 import Core
-import Service qualified
-import Testbed.Service qualified
+import Service.Application qualified as Application
+import Task qualified
 
 
 main :: IO ()
-main = do
-  Service.__internal_runServiceMain Testbed.Service.service
+main = Application.run app |> Task.runOrPanic
