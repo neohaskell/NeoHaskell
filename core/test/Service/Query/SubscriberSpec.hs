@@ -44,8 +44,7 @@ spec = do
         Subscriber.rebuildAll subscriber
         pass
 
-      it "can read events directly from event store (debug)" \_ -> do
-        -- Simpler debug test: just insert and read, no subscriber
+      it "readAllEventsForwardFrom returns inserted events" \_ -> do
         eventStore <- InMemory.new |> Task.mapError toText
         let entityName = EntityName "TestEntity"
 
