@@ -1,5 +1,6 @@
 module Service.ApplicationSpec where
 
+import Array qualified
 import AsyncTask qualified
 import ConcurrentVar qualified
 import Core
@@ -71,8 +72,11 @@ spec = do
                 |> withQueryRegistry registry1
                 |> withQueryRegistry registry2
 
-        -- Should have registry2, not registry1
-        Application.hasQueryRegistry app |> shouldBe True
+        -- Should have registry2's updater (Entity2), not registry1's (Entity1)
+        let entity1Updaters = app.queryRegistry |> Registry.getUpdatersForEntity (EntityName "Entity1")
+        let entity2Updaters = app.queryRegistry |> Registry.getUpdatersForEntity (EntityName "Entity2")
+        Array.isEmpty entity1Updaters |> shouldBe True
+        Array.isEmpty entity2Updaters |> shouldBe False
 
     describe "isEmpty" do
       it "returns True for new application" \_ -> do
