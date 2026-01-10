@@ -2,6 +2,7 @@ module Service.Query.Subscriber (
   QuerySubscriber (..),
   new,
   start,
+  stop,
   rebuildAll,
 ) where
 
@@ -16,7 +17,7 @@ import Service.Event (Event (..))
 import Service.Event.EventMetadata (EventMetadata (..))
 import Service.Event.StreamPosition (StreamPosition (..))
 import Service.EventStore (EventStore (..))
-import Service.EventStore.Core (Error, Limit (..), ReadAllMessage (..))
+import Service.EventStore.Core (Error, Limit (..), ReadAllMessage (..), SubscriptionId)
 import Service.Query.Registry (QueryRegistry, QueryUpdater (..))
 import Service.Query.Registry qualified as Registry
 import Stream qualified
@@ -31,7 +32,8 @@ import ToText (toText)
 data QuerySubscriber = QuerySubscriber
   { eventStore :: EventStore Json.Value,
     registry :: QueryRegistry,
-    lastProcessedPosition :: ConcurrentVar (Maybe StreamPosition)
+    lastProcessedPosition :: ConcurrentVar (Maybe StreamPosition),
+    subscriptionId :: ConcurrentVar (Maybe SubscriptionId)
   }
 
 
@@ -39,11 +41,13 @@ data QuerySubscriber = QuerySubscriber
 new :: EventStore Json.Value -> QueryRegistry -> Task Text QuerySubscriber
 new eventStore registry = do
   lastProcessedPosition <- ConcurrentVar.containing Nothing
+  subscriptionId <- ConcurrentVar.containing Nothing
   Task.yield
     QuerySubscriber
       { eventStore,
         registry,
-        lastProcessedPosition
+        lastProcessedPosition,
+        subscriptionId
       }
 
 
@@ -101,13 +105,28 @@ start subscriber = do
   Console.print [fmt|Starting query subscriber from position #{startPosition}|]
     |> Task.ignoreError
 
-  _subscriptionId <-
+  subId <-
     subscriber.eventStore.subscribeToAllEventsFromPosition
       startPosition
       (processEventHandler subscriber)
       |> Task.mapError (toText :: Error -> Text)
 
+  subscriber.subscriptionId |> ConcurrentVar.modify (\_ -> Just subId)
+
   Task.yield unit
+
+
+-- | Stop the live subscription.
+-- This unsubscribes from the event store, allowing graceful shutdown.
+stop :: QuerySubscriber -> Task Text Unit
+stop subscriber = do
+  maybeSubId <- ConcurrentVar.peek subscriber.subscriptionId
+  case maybeSubId of
+    Just subId -> do
+      subscriber.eventStore.unsubscribe subId
+        |> Task.mapError (toText :: Error -> Text)
+      subscriber.subscriptionId |> ConcurrentVar.modify (\_ -> Nothing)
+    Nothing -> Task.yield unit
 
 
 -- | Handler wrapper for subscription callback.
