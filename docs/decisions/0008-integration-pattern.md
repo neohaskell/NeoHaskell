@@ -42,266 +42,263 @@ This two-persona split is the core insight: Nick handles all effectful complexit
 
 ## Decision
 
-We will implement an `Integration` module with two directions:
+We will implement an `Integration` module with:
 
-- `Integration.outbound` - Event happened, trigger external effect, optionally emit command
-- `Integration.inbound` - External system notified us, translate to command
+- **Per-entity integration functions**: One function per entity that pattern matches events and triggers integrations
+- **Builder pattern**: Collect multiple heterogeneous actions into an opaque `Integration.Outbound` type
+- **Action builders**: Nick's packages expose action builders that accept command mappers
 
-### Jess's API (Pure Configuration Only)
+### Jess's API (Per-Entity Integration Function)
 
-Jess configures integrations using pure functions. She never imports `Task`, `Http`, or deals with errors.
-
-**Outbound Example** (Event -> External -> Command):
+Jess writes ONE integration function per entity. It pattern matches on the event ADT and returns integration actions:
 
 ```haskell
-import Integration.Sendgrid qualified as Sendgrid
+-- User/Integrations.hs
+module User.Integrations where
 
-welcomeEmail :: Sendgrid.Outbound User UserRegistered
-welcomeEmail = Sendgrid.outbound
-    { toEmail = \user event -> Sendgrid.WelcomeEmail
-        { to = user.email
-        , templateId = "welcome-v2"
-        , variables = Map.fromList
-            [ ("name", user.name)
-            , ("registeredAt", event.timestamp |> Time.format)
-            ]
-        }
-    , onSuccess = \user event response -> ConfirmEmailSent
+import User (User)
+import User.Event (UserEvent(..))
+import User.Event qualified as UserEvent
+import Notification.Commands (CreateWelcomeNotification(..))
+import Audit.Commands (LogAuditEvent(..))
+import Integration qualified
+import Integration.Sendgrid qualified as Sendgrid
+import Integration.Slack qualified as Slack
+
+userIntegrations :: User -> UserEvent -> Integration.Outbound
+userIntegrations user event = case event of
+  UserRegistered data -> Integration.Outbound.batch do
+    Sendgrid.email
+      { to = user.email
+      , templateId = "welcome-v2"
+      , variables = [("name", data.name)]
+      }
+      (\response -> CreateWelcomeNotification
         { userId = user.id
         , messageId = response.id
-        }
-    }
+        })
+
+    Slack.message
+      { channel = "#signups"
+      , text = [fmt|New user: {data.name} ({user.email})|]
+      }
+      Integration.Outbound.noCommand
+
+  EmailChanged data -> Integration.Outbound.batch do
+    Sendgrid.email
+      { to = data.oldEmail
+      , templateId = "email-changed"
+      , variables = [("newEmail", data.newEmail)]
+      }
+      (\_ -> LogAuditEvent
+        { entityType = "User"
+        , entityId = user.id
+        , action = "email_changed"
+        })
+
+  _ -> Integration.Outbound.none
 ```
 
-What Jess writes:
-- `toEmail`: Pure function `entity -> event -> EmailPayload`
-- `onSuccess`: Pure function `entity -> event -> response -> command`
+**What Jess writes:**
+- Pattern match on event ADT
+- For each relevant event, call Nick's action builders with payloads
+- Provide command mapper: `response -> command` (can be from ANY service)
+- `Integration.Outbound.noCommand` when no follow-up command needed
+- `Integration.Outbound.none` for events with no integrations
 
-What Jess does NOT write:
-- HTTP calls
-- API key management
-- Retry logic
+**What Jess does NOT write:**
+- HTTP calls, retries, authentication
+- Worker loops, connection management
 - Error handling
 
-**Inbound Example** (External -> Command):
+### Event Matchers (TH Generated)
 
-Inbound integrations are workers that run forever, listening to external sources. The source could be anything: HTTP webhooks, Kafka consumers, filesystem watchers, MQTT, polling, etc.
+Since events are ADTs, each constructor needs an associated data type and matcher function. TH generates these:
 
 ```haskell
-import Integration.Stripe qualified as Stripe
+-- User/Event.hs
+data UserEvent
+  = UserRegistered { email :: Text, name :: Text }
+  | EmailChanged { oldEmail :: Text, newEmail :: Text }
+  | ProfileUpdated { bio :: Text }
+  deriving (Eq, Show, Generic)
 
-paymentWebhook :: Stripe.Inbound Stripe.PaymentSucceeded
-paymentWebhook = Stripe.webhook @Stripe.PaymentSucceeded
-    { toCommand = \payment -> RecordPayment
-        { orderId = payment.metadata.orderId
-        , amount = payment.amount
-        , stripePaymentId = payment.id
-        }
-    }
+-- TH generates data types and matchers
+deriveEventMatchers ''UserEvent
 ```
 
-```haskell
-import Integration.FileWatcher qualified as FileWatcher
+**Generated code:**
 
-invoiceImporter :: FileWatcher.Inbound
-invoiceImporter = FileWatcher.watch
-    { folder = "/imports/invoices"
-    , pattern = "*.csv"
-    , toCommand = \file -> ImportInvoice
-        { filePath = file.path
-        , detectedAt = file.modifiedAt
-        }
-    }
+```haskell
+data UserRegisteredData = UserRegisteredData
+  { email :: Text
+  , name :: Text
+  }
+  deriving (Eq, Show, Generic)
+
+data EmailChangedData = EmailChangedData
+  { oldEmail :: Text
+  , newEmail :: Text
+  }
+  deriving (Eq, Show, Generic)
+
+matchUserRegistered :: UserEvent -> Maybe UserRegisteredData
+matchUserRegistered event = case event of
+  UserRegistered {email, name} -> Just UserRegisteredData {email, name}
+  _ -> Nothing
+
+matchEmailChanged :: UserEvent -> Maybe EmailChangedData
+matchEmailChanged event = case event of
+  EmailChanged {oldEmail, newEmail} -> Just EmailChangedData {oldEmail, newEmail}
+  _ -> Nothing
 ```
 
+**Usage with qualified imports:**
 ```haskell
-import Integration.Kafka qualified as Kafka
+import User.Event qualified as UserEvent
 
-orderConsumer :: Kafka.Inbound
-orderConsumer = Kafka.consume
-    { topic = "external-orders"
-    , groupId = "neohaskell-app"
-    , toCommand = \message -> CreateOrder
-        { externalId = message.key
-        , payload = message.value
-        }
-    }
+case UserEvent.matchUserRegistered event of
+  Just data -> -- use data.email, data.name
+  Nothing -> -- not this event type
 ```
 
-What Jess writes:
-- `toCommand`: Pure function `externalPayload -> command`
-- Configuration specific to the integration (folder, topic, etc.)
+### Nick's API (Action Builders)
 
-What Jess does NOT write:
-- Worker loop logic
-- Connection management
-- Authentication/verification
-- Error handling and retries
-
-### Nick's API (Black Box Builder)
-
-Nick builds the integration packages that Jess uses. He handles all effectful complexity.
-
-**Outbound Implementation**:
+Nick builds packages that expose **action builders**. Each builder:
+- Takes a payload (what to send externally)
+- Takes a command mapper (what command to emit on success)
+- Returns a type-erased `Integration.Action`
 
 ```haskell
-module Integration.Sendgrid where
+-- integration-sendgrid/Integration/Sendgrid.hs
+module Integration.Sendgrid
+  ( EmailPayload(..)
+  , SendgridResponse(..)
+  , email
+  ) where
 
 import Integration qualified
 
-data OutboundConfig entity event = OutboundConfig
-    { toEmail :: entity -> event -> WelcomeEmail
-    , onSuccess :: entity -> event -> SendgridResponse -> command
-    }
+data EmailPayload = EmailPayload
+  { to :: Text
+  , templateId :: Text
+  , variables :: Array (Text, Text)
+  }
 
-outbound ::
-    forall entity event command.
-    OutboundConfig entity event command ->
-    Integration.Outbound entity event command
-outbound config = Integration.outbound
-    { execute = \entity event -> do
-        apiKey <- Environment.require "SENDGRID_API_KEY"
-        let email = config.toEmail entity event
-        response <- Http.post sendgridUrl
-            |> Http.bearer apiKey
-            |> Http.jsonBody email
-            |> Http.send
-            |> Task.retry { attempts = 3, backoff = Exponential }
-        config.onSuccess entity event response
-            |> Integration.emitCommand
-    }
+data SendgridResponse = SendgridResponse
+  { id :: Text
+  , status :: Text
+  }
+
+-- Action builder: payload + command mapper -> Action
+email ::
+  forall command.
+  (ToJSON command, Typeable command) =>
+  EmailPayload ->
+  (SendgridResponse -> command) ->
+  Integration.Action
+email payload toCommand = Integration.action do
+  apiKey <- Environment.require "SENDGRID_API_KEY"
+  response <- Http.post "https://api.sendgrid.com/v3/mail/send"
+    |> Http.bearer apiKey
+    |> Http.jsonBody payload
+    |> Http.send
+    |> Task.retry { attempts = 3, backoff = Exponential }
+  Integration.emitCommand (toCommand response)
 ```
 
-What Nick owns:
-- `execute`: Full `Task` with HTTP, retries, auth
-- API-specific types (`WelcomeEmail`, `SendgridResponse`)
-- Error classification (retryable vs permanent)
-- `Integration.emitCommand` to emit resulting commands
+**Key insight**: The `command` type parameter is erased inside `Integration.Outbound.Action`. Nick's code serializes the command to JSON immediately, so the `Outbound` collection can hold heterogeneous command types.
 
-**Inbound Implementation**:
+### Inbound Integrations
 
-Inbound integrations are workers - long-running `Task` loops. Nick builds the worker; Jess provides the mapper.
+Inbound integrations are workers that run forever, listening to external sources. They remain record-based since they don't have entity/event context:
 
 ```haskell
-module Integration.Stripe where
+-- Jess configures
+paymentWebhook :: Integration.Inbound
+paymentWebhook = Stripe.webhook
+  { toCommand = \payment -> RecordPayment
+      { orderId = payment.metadata.orderId
+      , amount = payment.amount
+      }
+  }
 
-import Integration qualified
+fileWatcher :: Integration.Inbound
+fileWatcher = FileWatcher.watch
+  { folder = "/imports/invoices"
+  , pattern = "*.csv"
+  , toCommand = \file -> ImportInvoice { filePath = file.path }
+  }
+```
 
-data WebhookConfig payload command = WebhookConfig
-    { toCommand :: payload -> command
-    }
+**Nick builds the worker:**
+
+```haskell
+-- integration-stripe/Integration/Stripe.hs
+data WebhookConfig command = WebhookConfig
+  { toCommand :: StripePayment -> command
+  }
 
 webhook ::
-    forall payload command.
-    (Stripe.WebhookEvent payload) =>
-    WebhookConfig payload command ->
-    Integration.Inbound command
+  forall command.
+  (ToJSON command, Typeable command) =>
+  WebhookConfig command ->
+  Integration.Inbound
 webhook config = Integration.inbound
-    { run = \emit -> do
-        secret <- Environment.require "STRIPE_WEBHOOK_SECRET"
-        Http.serve "/webhooks/stripe" \request -> do
-            signature <- request |> Http.header "Stripe-Signature"
-            payload <- Stripe.verifyAndParse signature secret request.body
-            config.toCommand payload |> emit
-            Http.respond 200
-    }
+  { run = \emit -> do
+      secret <- Environment.require "STRIPE_WEBHOOK_SECRET"
+      Http.serve "/webhooks/stripe" \request -> do
+        signature <- request |> Http.header "Stripe-Signature"
+        payload <- Stripe.verifyAndParse signature secret request.body
+        emit (config.toCommand payload)
+        Http.respond 200
+  }
 ```
-
-```haskell
-module Integration.FileWatcher where
-
-import Integration qualified
-
-data WatchConfig command = WatchConfig
-    { folder :: Path
-    , pattern :: Text
-    , toCommand :: FileChange -> command
-    }
-
-watch ::
-    forall command.
-    WatchConfig command ->
-    Integration.Inbound command
-watch config = Integration.inbound
-    { run = \emit -> do
-        FileSystem.watchForever config.folder config.pattern \file -> do
-            config.toCommand file |> emit
-    }
-```
-
-```haskell
-module Integration.Kafka where
-
-import Integration qualified
-
-data ConsumeConfig command = ConsumeConfig
-    { topic :: Text
-    , groupId :: Text
-    , toCommand :: KafkaMessage -> command
-    }
-
-consume ::
-    forall command.
-    ConsumeConfig command ->
-    Integration.Inbound command
-consume config = Integration.inbound
-    { run = \emit -> do
-        brokers <- Environment.require "KAFKA_BROKERS"
-        Kafka.consumeForever brokers config.topic config.groupId \message -> do
-            config.toCommand message |> emit
-    }
-```
-
-What Nick owns:
-- The forever-running worker loop
-- Connection management and reconnection
-- Authentication and verification
-- Error handling and logging
-- The `emit` callback dispatches commands to the domain
 
 ### Core Types
 
 ```haskell
-module Service.Integration.Core where
+module Service.Integration.Outbound where
 
--- Outbound: Event -> External -> Maybe Command
-data Outbound entity event command = Outbound
-    { execute :: entity -> event -> Task IntegrationError (Maybe command)
-    }
+-- Opaque collection of outbound actions (heterogeneous command types)
+newtype Outbound = Outbound (Array ActionInternal)
 
--- Inbound: Worker that runs forever, emitting commands
--- The `run` function receives an `emit` callback to dispatch commands
-data Inbound command = Inbound
-    { run :: (command -> Task IntegrationError Unit) -> Task IntegrationError Void
-    }
+data ActionInternal = ActionInternal
+  { execute :: Task IntegrationError (Maybe CommandPayload)
+  }
 
--- Combined type for registration
-data Integration
-    = OutboundIntegration (exists entity event command. Outbound entity event command)
-    | InboundIntegration (exists command. Inbound command)
+data CommandPayload = CommandPayload
+  { commandType :: Text
+  , commandData :: Json.Value
+  }
 
--- Emit a command from outbound integration logic
-emitCommand :: command -> Task IntegrationError (Maybe command)
-emitCommand cmd = Task.yield (Just cmd)
+-- Single action (type-erased)
+newtype Action = Action ActionInternal
 
--- No command to emit (fire-and-forget outbound)
-noCommand :: Task IntegrationError (Maybe command)
-noCommand = Task.yield Nothing
+-- Builder for collecting outbound actions
+batch :: Builder () -> Outbound
+none :: Outbound
+
+-- Inside Builder monad, add actions
+action :: Task IntegrationError (Maybe CommandPayload) -> Action
+
+-- Command emission helpers
+emitCommand :: (ToJSON command, Typeable command) => command -> Task IntegrationError (Maybe CommandPayload)
+noCommand :: Task IntegrationError (Maybe CommandPayload)
+
+-- Inbound worker
+data Inbound = Inbound
+  { run :: (CommandPayload -> Task IntegrationError Unit) -> Task IntegrationError Void
+  }
 
 -- Errors
 data IntegrationError
-    = NetworkError Text
-    | AuthenticationError Text
-    | ValidationError Text
-    | RateLimited RetryAfter
-    | PermanentFailure Text
+  = NetworkError Text
+  | AuthenticationError Text
+  | ValidationError Text
+  | RateLimited RetryAfter
+  | PermanentFailure Text
 ```
-
-The key insight for `Inbound`:
-- `run` takes an `emit` callback that the worker uses to dispatch commands
-- `run` returns `Task IntegrationError Void` - it runs forever (never returns)
-- The Application spawns each inbound worker as a background task
-- Workers can be HTTP servers, message consumers, file watchers, or anything else
 
 ### Module Structure
 
@@ -310,145 +307,126 @@ core/service/
   Service/
     Integration.hs              -- Re-export wrapper
     Integration/
-      Core.hs                   -- Outbound, Inbound, Integration types
-      Outbound.hs               -- Outbound execution machinery
-      Inbound.hs                -- Inbound webhook routing
-      Registry.hs               -- Integration registration and lookup
+      Outbound.hs               -- Outbound type, batch, none, action builders
+      Inbound.hs                -- Inbound type and helpers
+      Subscriber.hs             -- Outbound event subscription
+      Worker.hs                 -- Inbound worker management
+      Store.hs                  -- Position tracking per entity
 ```
 
-Integration packages (future, separate repos):
+### Integration Store (Position Tracking)
 
-```text
-integration-sendgrid/
-  Integration/
-    Sendgrid.hs                 -- Sendgrid.outbound, email types
-    Sendgrid/
-      Types.hs                  -- WelcomeEmail, SendgridResponse, etc.
-
-integration-stripe/
-  Integration/
-    Stripe.hs                   -- Stripe.webhook, event types
-    Stripe/
-      Types.hs                  -- PaymentSucceeded, etc.
-      Verification.hs           -- Webhook signature verification
-```
-
-### Ordering Guarantees
-
-**Outbound integrations guarantee in-order processing per entity**:
-
-1. Events are processed in stream order (by `StreamPosition`)
-2. Events for entity A are processed sequentially
-3. Events for different entities may be processed concurrently
-
-This prevents race conditions where email 2 sends before email 1 for the same user.
-
-Implementation: The outbound processor groups events by entity and processes each entity's events sequentially while allowing cross-entity parallelism.
-
-### Error Handling
-
-**Two-level error handling**:
-
-1. **Global handlers** - Application-wide defaults for all integrations
-2. **Per-integration overrides** - Specific handling for individual integrations
+Track last processed position **per entity per integration** for at-least-once semantics:
 
 ```haskell
-app :: Application
-app =
-    Application.new
-        |> Application.withIntegration welcomeEmail
-        |> Application.withIntegration paymentWebhook
-        |> Application.onIntegrationError globalErrorHandler
-
--- Global handler
-globalErrorHandler :: IntegrationError -> Task Void Unit
-globalErrorHandler error = case error of
-    RateLimited retryAfter ->
-        -- Log and schedule retry
-        Logger.warn [fmt|Rate limited, retry after {retryAfter}|]
-    PermanentFailure reason ->
-        -- Dead letter queue
-        DeadLetterQueue.enqueue error
-    _ ->
-        -- Default: log and continue
-        Logger.error [fmt|Integration error: {error}|]
+data IntegrationStore = IntegrationStore
+  { getPosition :: IntegrationName -> StreamId -> Task Error (Maybe StreamPosition)
+  , setPosition :: IntegrationName -> StreamId -> StreamPosition -> Task Error Unit
+  }
 ```
 
-Per-integration overrides are configured in Nick's package:
-
-```haskell
-outbound config = Integration.outbound
-    { execute = ...
-    , onError = \error -> case error of
-        RateLimited _ -> Integration.retry { after = Seconds 60 }
-        AuthenticationError _ -> Integration.halt  -- Don't retry auth failures
-        _ -> Integration.useGlobalHandler
-    }
-```
+**Only store position for events where integrations actually ran** (not for skipped events).
 
 ### Application Registration
 
 ```haskell
 app :: Application
 app =
-    Application.new
-        |> Application.withService userService
-        |> Application.withService orderService
-        -- Outbound: subscribes to events, triggers external effects
-        |> Application.withIntegration welcomeEmail
-        |> Application.withIntegration orderConfirmation
-        -- Inbound: registers webhook endpoints
-        |> Application.withIntegration paymentWebhook
-        |> Application.withIntegration shipmentWebhook
-        |> Application.run
+  Application.new
+    |> Application.withService userService
+    |> Application.withService orderService
+    -- Outbound: per-entity integration functions (returns Integration.Outbound)
+    |> Application.withOutbound @User userIntegrations
+    |> Application.withOutbound @Order orderIntegrations
+    -- Inbound: webhook/worker registrations
+    |> Application.withInbound paymentWebhook
+    |> Application.withInbound fileWatcher
+    -- Error handling
+    |> Application.onIntegrationError globalErrorHandler
 ```
 
-The Application layer:
-- Subscribes outbound integrations to the EventStore
-- Registers inbound integrations as HTTP endpoints
-- Wires up error handlers
+### Ordering Guarantees
+
+**Outbound integrations guarantee in-order processing per entity**:
+
+1. Events for entity A are processed sequentially (A1 -> A2 -> A3)
+2. Events for entity B are processed sequentially (B1 -> B2 -> B3)
+3. A and B can be processed concurrently (cross-entity parallelism)
+
+Implementation: Per-entity queues with dedicated workers.
+
+### Error Handling
+
+**Two-level error handling**:
+
+1. **Global handlers** - Application-wide defaults
+2. **Per-action overrides** - Nick can configure in action builders
+
+```haskell
+app =
+  Application.new
+    |> Application.withOutbound @User userIntegrations
+    |> Application.onIntegrationError \error -> case error of
+        RateLimited retryAfter -> Logger.warn [fmt|Rate limited: {retryAfter}|]
+        PermanentFailure reason -> DeadLetterQueue.enqueue error
+        _ -> Logger.error [fmt|Integration error: {error}|]
+```
+
+### Cross-Service Commands
+
+Integrations can emit commands to **any service**, not just the entity's own service:
+
+```haskell
+-- User/Integrations.hs
+import Notification.Commands (CreateWelcomeNotification(..))  -- Different service!
+import Audit.Commands (LogAuditEvent(..))                     -- Another service!
+
+userIntegrations user event = case event of
+  UserRegistered data -> Integration.Outbound.batch do
+    Sendgrid.email { ... }
+      (\response -> CreateWelcomeNotification { ... })  -- -> Notification service
+
+    Slack.message { ... }
+      (\_ -> LogAuditEvent { ... })  -- -> Audit service
+```
+
+The command dispatcher routes based on command type name, not entity association.
 
 ## Consequences
 
 ### Positive
 
-1. **Clean separation of concerns**: Domain logic stays pure; integration complexity is isolated in packages.
+1. **Single source of truth**: All integrations for an entity are in one file. Easy to discover.
 
-2. **Two-persona design works**: Nick handles effectful complexity once; Jess reuses safely across many apps.
+2. **Natural Haskell pattern**: Pattern matching on event ADT is idiomatic.
 
-3. **Testable at both levels**:
-   - Jess's pure mappers: Unit test with simple inputs/outputs
-   - Nick's integrations: Integration test with mocked HTTP
+3. **Compiler-checked exhaustiveness**: With `-Wincomplete-patterns`, compiler warns about unhandled events.
 
-4. **Reusable packages**: Common integrations (Sendgrid, Stripe, Twilio, Kafka) can be packaged and shared.
+4. **Explicit "nothing happens"**: `_ -> Integration.Outbound.none` makes absence of integrations visible.
 
-5. **Consistent patterns**: All integrations follow the same structure, making the codebase predictable.
+5. **Cross-service flexibility**: Commands can target any service via type-based routing.
 
-6. **Ordering guarantees**: In-order processing per entity prevents subtle race conditions.
+6. **Two-persona design intact**: Nick builds action builders; Jess composes them.
 
-7. **Flexible error handling**: Global defaults with per-integration overrides covers most use cases.
+7. **Testable**: Entity integration function is pure - test with different event inputs.
 
 ### Negative
 
-1. **Two layers to understand**: Contributors must grok both Nick's and Jess's APIs.
+1. **Domain imports infrastructure**: `User/Integrations.hs` imports `Integration.Sendgrid`. Creates dependency arrow.
 
-2. **Package proliferation**: Each external service needs its own package (though this is also a feature - clear boundaries).
+2. **Modification required for new integrations**: Adding integration modifies existing file (vs adding new file).
 
-3. **Eventual consistency**: Commands emitted from integrations are async, so reads immediately after may not reflect changes.
-
-4. **Existential types in Integration**: The combined `Integration` type uses existentials, which can complicate debugging.
+3. **Type erasure complexity**: `Integration.Outbound` hides command types, which can complicate debugging.
 
 ### Trade-offs
 
-1. **Purity over flexibility**: Jess cannot do anything effectful. This is intentional - if she needs effects, she becomes Nick.
+1. **Discoverability over modularity**: Per-entity is easier to understand but harder to add to independently.
 
-2. **Per-entity ordering over throughput**: Strict ordering per entity sacrifices some parallelism. This is the right default for correctness.
-
-3. **Separate packages over monorepo**: Integration packages will eventually live outside core. This adds distribution complexity but enables independent versioning.
+2. **Simplicity over type safety**: Type-erased actions enable heterogeneous collections at cost of compile-time command type checking.
 
 ## Future Work
 
-1. **Dead Letter Queue**: Standard DLQ integration for permanently failed events.
+1. **Dead Letter Queue**: Standard DLQ for permanently failed integrations.
 
 2. **Circuit Breaker**: Automatic circuit breaking when external services are down.
 
@@ -456,12 +434,8 @@ The Application layer:
 
 4. **Batch Processing**: Support for batching multiple events into single external calls.
 
-5. **Integration Testing Framework**: Helpers for testing integrations with mocked external services.
-
 ## References
 
 - [ADR-0004: EventStore Abstraction](0004-eventstore-abstraction.md) - Event subscription infrastructure
 - [ADR-0005: Service Module Reorganization](0005-service-module-reorganization.md) - Module structure patterns
 - [ADR-0007: Queries (Read Models)](0007-queries-read-models.md) - Async subscriber pattern
-- Reactive Manifesto: https://www.reactivemanifesto.org/ - Resilience patterns
-- Enterprise Integration Patterns: https://www.enterpriseintegrationpatterns.com/
