@@ -29,11 +29,13 @@ We need a pattern that:
 Designing integrations requires balancing two distinct users:
 
 **Nick (Integration Developer)** - Advanced developer who builds integration packages:
+
 - Understands HTTP, retries, circuit breakers, authentication
 - Owns the "black box" implementation
 - Ships reusable packages (`integration-sendgrid`, `integration-stripe`)
 
 **Jess (Integration User)** - Junior developer configuring integrations for their app:
+
 - Should only write pure mapping functions
 - Never sees `Task`, `Http`, or error handling
 - Configures what Nick built
@@ -100,6 +102,7 @@ userIntegrations user event = case event of
 ```
 
 **What Jess writes:**
+
 - Pattern match on event ADT
 - For each relevant event, call Nick's action builders with payloads
 - Provide command mapper: `response -> command` (can be from ANY service)
@@ -107,64 +110,15 @@ userIntegrations user event = case event of
 - `Integration.Outbound.none` for events with no integrations
 
 **What Jess does NOT write:**
+
 - HTTP calls, retries, authentication
 - Worker loops, connection management
 - Error handling
 
-### Event Matchers (TH Generated)
-
-Since events are ADTs, each constructor needs an associated data type and matcher function. TH generates these:
-
-```haskell
--- User/Event.hs
-data UserEvent
-  = UserRegistered { email :: Text, name :: Text }
-  | EmailChanged { oldEmail :: Text, newEmail :: Text }
-  | ProfileUpdated { bio :: Text }
-  deriving (Eq, Show, Generic)
-
--- TH generates data types and matchers
-deriveEventMatchers ''UserEvent
-```
-
-**Generated code:**
-
-```haskell
-data UserRegisteredData = UserRegisteredData
-  { email :: Text
-  , name :: Text
-  }
-  deriving (Eq, Show, Generic)
-
-data EmailChangedData = EmailChangedData
-  { oldEmail :: Text
-  , newEmail :: Text
-  }
-  deriving (Eq, Show, Generic)
-
-matchUserRegistered :: UserEvent -> Maybe UserRegisteredData
-matchUserRegistered event = case event of
-  UserRegistered {email, name} -> Just UserRegisteredData {email, name}
-  _ -> Nothing
-
-matchEmailChanged :: UserEvent -> Maybe EmailChangedData
-matchEmailChanged event = case event of
-  EmailChanged {oldEmail, newEmail} -> Just EmailChangedData {oldEmail, newEmail}
-  _ -> Nothing
-```
-
-**Usage with qualified imports:**
-```haskell
-import User.Event qualified as UserEvent
-
-case UserEvent.matchUserRegistered event of
-  Just data -> -- use data.email, data.name
-  Nothing -> -- not this event type
-```
-
 ### Nick's API (Action Builders)
 
 Nick builds packages that expose **action builders**. Each builder:
+
 - Takes a payload (what to send externally)
 - Takes a command mapper (what command to emit on success)
 - Returns a type-erased `Integration.Action`

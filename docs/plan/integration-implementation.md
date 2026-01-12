@@ -346,36 +346,6 @@ buildCommandDispatcher services = \payload -> do
       execute command
 ```
 
-## Phase 5: Template Haskell Helpers (Optional)
-
-### 5.1 Event Matchers
-
-Generate matcher functions and data types for event ADT constructors:
-
-```haskell
--- Usage:
-deriveEventMatchers ''UserEvent
-
--- Generates:
-data UserRegisteredData = UserRegisteredData { email :: Text, name :: Text }
-data EmailChangedData = EmailChangedData { oldEmail :: Text, newEmail :: Text }
-
-matchUserRegistered :: UserEvent -> Maybe UserRegisteredData
-matchEmailChanged :: UserEvent -> Maybe EmailChangedData
-```
-
-This enables qualified usage in integration functions:
-
-```haskell
-import User.Event qualified as UserEvent
-
-case UserEvent.matchUserRegistered event of
-  Just data -> -- use data.email, data.name
-  Nothing -> -- not this event type
-```
-
-**Note**: This is optional. Jess can also pattern match directly on the event ADT.
-
 ## Decided
 
 ### Command Dispatching
@@ -411,16 +381,13 @@ Phase 3 (depends on Phase 1, parallel with Phase 2):
 Phase 4 (depends on Phase 2 + 3):
 +-- Service/Integration.hs
 +-- Modify Service/Application.hs
-
-Phase 5 (optional, can be done anytime):
-+-- TH helpers for event matchers
 ```
 
 ## Testing Strategy
 
 ### Testing Jess's Integration Functions
 
-Jess's code is pure. Given an entity and event, test that the correct `Actions` are returned:
+Jess's code is pure. Given an entity and event, test that the correct `Outbound` is returned:
 
 ```haskell
 spec :: Spec
