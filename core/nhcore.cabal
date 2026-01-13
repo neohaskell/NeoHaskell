@@ -276,6 +276,7 @@ test-suite nhcore-test
   other-modules:
     ConcurrentMapSpec
     Integration.CommandSpec
+    Integration.RuntimeSpec
     Integration.TimerSpec
     IntegrationSpec
     Service.ApplicationSpec
