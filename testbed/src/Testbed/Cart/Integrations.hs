@@ -14,15 +14,18 @@ import Testbed.Stock.Commands.ReserveStock (ReserveStock (..))
 -- | Outbound integration: reacts to cart events and triggers cross-domain commands.
 -- When an item is added to a cart, reserve stock in the Stock domain.
 -- This is a Process Manager pattern - coordinating across aggregate boundaries.
+--
+-- Note: The entity parameter is currently not fully reconstructed (placeholder).
+-- We use the event's entityId directly instead of cart.cartId since they're equivalent.
 cartIntegrations :: CartEntity -> CartEvent -> Integration.Outbound
-cartIntegrations cart event = case event of
+cartIntegrations _cart event = case event of
   CartCreated {} -> Integration.none
-  ItemAdded {stockId, quantity} -> Integration.batch
+  ItemAdded {entityId, stockId, quantity} -> Integration.batch
     [ Integration.outbound Command.Emit
         { command = ReserveStock
             { stockId = stockId
             , quantity = quantity
-            , cartId = cart.cartId
+            , cartId = entityId
             }
         }
     ]

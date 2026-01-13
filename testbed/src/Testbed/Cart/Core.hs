@@ -24,6 +24,10 @@ instance Json.FromJSON CartEntity
 instance Json.ToJSON CartEntity
 
 
+instance Default CartEntity where
+  def = initialState
+
+
 data CartItem = CartItem
   { productId :: Uuid,
     amount :: Natural Int

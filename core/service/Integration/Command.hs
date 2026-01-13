@@ -1,3 +1,5 @@
+{-# LANGUAGE UndecidableInstances #-}
+
 -- | # Integration.Command
 --
 -- Built-in integration action for emitting commands to other services.
@@ -28,9 +30,10 @@ module Integration.Command (
 ) where
 
 import Basics
+import GHC.TypeLits qualified as GHC
 import Integration qualified
 import Json qualified
-import TypeName qualified
+import Service.Command.Core (NameOf)
 
 
 -- | Config record for emitting a command as an integration action.
@@ -50,7 +53,7 @@ data Emit command = Emit
 
 
 instance
-  (Json.ToJSON command, TypeName.Inspectable command) =>
+  (Json.ToJSON command, GHC.KnownSymbol (NameOf command)) =>
   Integration.ToAction (Emit command)
   where
   toAction config = Integration.action do

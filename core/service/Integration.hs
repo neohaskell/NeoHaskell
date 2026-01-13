@@ -65,12 +65,15 @@ module Integration (
 
 import Array (Array)
 import Basics
+import Data.Proxy (Proxy (..))
+import GHC.TypeLits qualified as GHC
 import Json qualified
 import Maybe (Maybe (..))
+import Service.Command.Core (NameOf)
 import Task (Task)
 import Task qualified
 import Text (Text)
-import TypeName qualified
+import Text qualified
 
 
 -- | Error types for integration failures.
@@ -164,6 +167,8 @@ action task = Action (ActionInternal task)
 -- | Emit a command as the result of an integration action.
 -- The command will be dispatched to the appropriate service.
 --
+-- The command type must have a NameOf instance (derived via command TH).
+--
 -- @
 -- instance ToAction Email where
 --   toAction config = Integration.action do
@@ -171,14 +176,15 @@ action task = Action (ActionInternal task)
 --     Integration.emitCommand (config.onSuccess response)
 -- @
 emitCommand ::
-  forall command.
-  (Json.ToJSON command, TypeName.Inspectable command) =>
+  forall command name.
+  (Json.ToJSON command, name ~ NameOf command, GHC.KnownSymbol name) =>
   command ->
   Task IntegrationError (Maybe CommandPayload)
 emitCommand cmd = do
+  let cmdName = GHC.symbolVal (Proxy @name) |> Text.fromLinkedList
   let payload =
         CommandPayload
-          { commandType = TypeName.get cmd
+          { commandType = cmdName
           , commandData = Json.encode cmd
           }
   Task.yield (Just payload)
@@ -216,18 +222,19 @@ data InboundInternal = InboundInternal
 --   }
 -- @
 inbound ::
-  forall command.
-  (Json.ToJSON command, TypeName.Inspectable command) =>
+  forall command name.
+  (Json.ToJSON command, name ~ NameOf command, GHC.KnownSymbol name) =>
   InboundConfig command ->
   Inbound
 inbound config = do
+  let cmdName = GHC.symbolVal (Proxy @name) |> Text.fromLinkedList
   let worker =
         InboundInternal
           { _runWorker = \emitPayload ->
               config.run \cmd -> do
                 let payload =
                       CommandPayload
-                        { commandType = TypeName.get cmd
+                        { commandType = cmdName
                         , commandData = Json.encode cmd
                         }
                 emitPayload payload
@@ -252,7 +259,8 @@ inbound config = do
 --   Nothing -> -- no command to emit
 -- @
 runAction :: Action -> Task IntegrationError (Maybe CommandPayload)
-runAction (Action internal) = internal._execute
+runAction action = case action of
+  Action internal -> internal._execute
 
 
 -- | Extract actions from an Outbound for inspection.
@@ -266,4 +274,5 @@ runAction (Action internal) = internal._execute
 -- Array.length actions  -- 2
 -- @
 getActions :: Outbound -> Array Action
-getActions (Outbound actions) = actions
+getActions outbound = case outbound of
+  Outbound actions -> actions

@@ -322,6 +322,10 @@ insertGo ops cfg payload =
                   lastEventPositions
                     |> Maybe.withDefault (StreamPosition 0, StreamPosition 0)
 
+            -- Note: Subscribers are notified via PostgreSQL's LISTEN/NOTIFY mechanism
+            -- The trigger on the events table sends a NOTIFY to the 'global' channel,
+            -- which is handled by Notifications.handler and dispatches to SubscriptionStore
+
             Task.yield (InsertionSuccess {localPosition, globalPosition})
 
 

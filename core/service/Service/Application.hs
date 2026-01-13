@@ -45,13 +45,14 @@ import Array qualified
 import AsyncTask qualified
 import Basics
 import Console qualified
+import Default (Default (..), defaultValue)
 import GHC.TypeLits qualified as GHC
 import Integration qualified
 import Json qualified
 import Map (Map)
 import Map qualified
 import Record qualified
-import Maybe (Maybe (..))
+import Maybe (Maybe (..), withDefault)
 import Result (Result (..))
 import Service.Command.Core (NameOf)
 import Service.Event (Event (..))
@@ -67,7 +68,7 @@ import Service.Query.Registry qualified as Registry
 import Service.Query.Subscriber qualified as Subscriber
 import Service.ServiceDefinition.Core (ServiceRunner (..), TransportValue (..))
 import Service.ServiceDefinition.Core qualified as ServiceDefinition
-import Service.Transport (Transport, QueryEndpointHandler, EndpointHandler)
+import Service.Transport (Transport (..), QueryEndpointHandler, EndpointHandler, Endpoints (..))
 import Task (Task)
 import Task qualified
 import Text (Text)
@@ -321,8 +322,18 @@ withQueryEndpoint ::
   QueryEndpointHandler ->
   Application ->
   Application
-withQueryEndpoint queryName handler app =
-  app {queryEndpoints = app.queryEndpoints |> Map.set queryName handler}
+withQueryEndpoint queryName handler app = do
+  let updatedEndpoints = app.queryEndpoints |> Map.set queryName handler
+  Application
+    { eventStoreCreator = app.eventStoreCreator
+    , queryObjectStoreConfig = app.queryObjectStoreConfig
+    , queryRegistry = app.queryRegistry
+    , serviceRunners = app.serviceRunners
+    , transports = app.transports
+    , queryEndpoints = updatedEndpoints
+    , queryDefinitions = app.queryDefinitions
+    , outboundRunners = app.outboundRunners
+    }
 
 
 -- | Check if any query endpoints have been configured.
@@ -425,7 +436,8 @@ run app = case app.eventStoreCreator of
 -- 2. Creates a query subscriber with combined registries
 -- 3. Rebuilds all queries from historical events
 -- 4. Starts live subscription for new events
--- 5. Runs all service runners with the shared event store and transports
+-- 5. Collects all command endpoints from all services
+-- 6. Runs each transport once with combined endpoints
 runWith :: EventStore Json.Value -> Application -> Task Text Unit
 runWith eventStore app = do
   -- 1. Wire all query definitions and collect registries + endpoints
@@ -452,22 +464,38 @@ runWith eventStore app = do
   -- 6. Start live subscription
   Subscriber.start subscriber
 
-  -- 7. Collect command endpoints from all services for integration dispatch
-  commandEndpointMaps <-
+  -- 7. Collect command endpoints from all services, grouped by transport
+  endpointsByTransportMaps <-
     app.serviceRunners
-      |> Task.mapArray (\runner -> runner.getCommandEndpoints eventStore app.transports)
-  let combinedCommandEndpoints =
-        commandEndpointMaps
-          |> Array.reduce (\endpointMap acc -> Map.merge endpointMap acc) Map.empty
+      |> Task.mapArray (\runner -> runner.getEndpointsByTransport eventStore app.transports)
 
-  -- 8. Start integration subscriber for outbound integrations with command dispatch
+  -- 8. Merge all endpoints by transport name
+  let mergeEndpointMaps serviceEndpoints acc =
+        serviceEndpoints
+          |> Map.entries
+          |> Array.reduce
+              ( \(transportName, cmdEndpoints) innerAcc ->
+                  case innerAcc |> Map.get transportName of
+                    Nothing -> innerAcc |> Map.set transportName cmdEndpoints
+                    Just existing -> innerAcc |> Map.set transportName (Map.merge cmdEndpoints existing)
+              )
+              acc
+
+  let combinedEndpointsByTransport =
+        endpointsByTransportMaps
+          |> Array.reduce mergeEndpointMaps Map.empty
+
+  -- 9. Flatten all command endpoints for integration dispatch
+  let combinedCommandEndpoints =
+        combinedEndpointsByTransport
+          |> Map.values
+          |> Array.reduce (\cmdMap acc -> Map.merge cmdMap acc) Map.empty
+
+  -- 10. Start integration subscriber for outbound integrations with command dispatch
   startIntegrationSubscriber eventStore app.outboundRunners combinedCommandEndpoints
 
-  -- 9. Run all services in parallel with shared event store, transports, and query endpoints
-  let serviceTasks =
-        app.serviceRunners
-          |> Array.map (\runner -> runner.runWithEventStore eventStore app.transports combinedQueryEndpoints)
-  serviceTasks |> AsyncTask.runAllIgnoringErrors
+  -- 11. Run each transport once with combined endpoints from all services
+  runTransports app.transports combinedEndpointsByTransport combinedQueryEndpoints
 
 
 -- | Start subscription for outbound integrations.
@@ -519,6 +547,40 @@ dispatchCommand commandEndpoints payload = do
         |> Task.ignoreError
 
 
+-- | Run all transports with their combined endpoints.
+--
+-- Each transport is started exactly once with all command and query endpoints
+-- from all services that use that transport.
+runTransports ::
+  Map Text TransportValue ->
+  Map Text (Map Text EndpointHandler) ->
+  Map Text QueryEndpointHandler ->
+  Task Text Unit
+runTransports transportsMap endpointsByTransport queryEndpoints = do
+  transportsMap
+    |> Map.entries
+    |> Task.forEach \(transportName, transportVal) -> do
+        let commandEndpointsForTransport =
+              endpointsByTransport
+                |> Map.get transportName
+                |> Maybe.withDefault Map.empty
+
+        let commandCount = Map.length commandEndpointsForTransport
+        let queryCount = Map.length queryEndpoints
+        Console.print [fmt|Starting transport: #{transportName} with #{commandCount} commands and #{queryCount} queries|]
+
+        case transportVal of
+          TransportValue transport -> do
+            let endpoints =
+                  Endpoints
+                    { transport = transport
+                    , commandEndpoints = commandEndpointsForTransport
+                    , queryEndpoints = queryEndpoints
+                    }
+            let runnableTransport = assembleTransport endpoints
+            runTransport transport runnableTransport
+
+
 -- | Merge two QueryRegistries by combining their updaters.
 mergeRegistries :: QueryRegistry -> QueryRegistry -> QueryRegistry
 mergeRegistries source target = do
@@ -568,6 +630,7 @@ withOutbound ::
   ( Json.FromJSON entity
   , Json.FromJSON event
   , TypeName.Inspectable entity
+  , Default entity
   ) =>
   (entity -> event -> Integration.Outbound) ->
   Application ->
@@ -581,24 +644,23 @@ withOutbound integrationFn app = do
             case Json.decode @event rawEvent.event of
               Err _ -> Task.yield Array.empty  -- Skip events that don't match
               Ok decodedEvent -> do
-                -- For now, create a default entity from the event data
-                -- In the future, we could replay events to reconstruct the entity
-                case Json.decode @entity rawEvent.event of
-                  Err _ -> Task.yield Array.empty
-                  Ok entity -> do
-                    -- Call the integration function
-                    let outbound = integrationFn entity decodedEvent
-                    let actions = Integration.getActions outbound
-                    -- Execute all actions and collect command payloads
-                    actions
-                      |> Task.mapArray (\action -> do
-                          result <- Integration.runAction action
-                            |> Task.mapError toText
-                          case result of
-                            Just payload -> Task.yield [payload]
-                            Nothing -> Task.yield []
-                        )
-                      |> Task.map Array.flatten
+                -- Use default entity as placeholder - full entity reconstruction
+                -- via event replay will be implemented in a future version.
+                -- Integrations should use entityId from the event when needed.
+                let entity = defaultValue @entity
+                -- Call the integration function
+                let outbound = integrationFn entity decodedEvent
+                let actions = Integration.getActions outbound
+                -- Execute all actions and collect command payloads
+                actions
+                  |> Task.mapArray (\action -> do
+                      result <- Integration.runAction action
+                        |> Task.mapError toText
+                      case result of
+                        Just payload -> Task.yield [payload]
+                        Nothing -> Task.yield []
+                    )
+                  |> Task.map Array.flatten
         }
   app {outboundRunners = app.outboundRunners |> Array.push runner}
 

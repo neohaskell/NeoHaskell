@@ -162,8 +162,9 @@ dispatch streamId message store = do
 
   let shouldDispatchToSubscription :: SubscriptionInfo -> Bool
       shouldDispatchToSubscription subInfo = do
+        -- Note: using >= because if subscriber starts at position 0, they should receive event at position 0
         let positionCheck = case (subInfo.startingGlobalPosition, message.metadata.globalPosition) of
-              (Just startPos, Just eventPos) -> eventPos > startPos
+              (Just startPos, Just eventPos) -> eventPos >= startPos
               _ -> True
         let entityNameCheck = case subInfo.entityNameFilter of
               Just filterEntityName -> message.entityName == filterEntityName

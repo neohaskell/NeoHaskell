@@ -1,8 +1,11 @@
+{-# OPTIONS_GHC -Wno-unused-imports #-}
+
 module Integration.TimerSpec where
 
 import Core
 import Integration.Timer qualified as Timer
 import Json qualified
+import Service.Command.Core (NameOf)
 import Test
 
 
@@ -21,6 +24,9 @@ instance Json.ToJSON CreateCart
 instance Json.FromJSON CreateCart
 
 
+type instance NameOf CreateCart = "CreateCart"
+
+
 -- | A tick-aware test command.
 data TickCommand = TickCommand
   { tickNumber :: Int
@@ -32,6 +38,9 @@ instance Json.ToJSON TickCommand
 
 
 instance Json.FromJSON TickCommand
+
+
+type instance NameOf TickCommand = "TickCommand"
 
 
 -- ============================================================================

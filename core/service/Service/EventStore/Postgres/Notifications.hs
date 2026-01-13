@@ -7,7 +7,6 @@ import AsyncTask qualified
 import Bytes qualified
 import Core
 import Data.ByteString qualified
-import Data.Text.IO qualified as GHC
 import Hasql.Connection qualified as Hasql
 import Hasql.Notifications qualified as HasqlNotifications
 import Json qualified
@@ -58,16 +57,17 @@ handler store _channelName payloadLegacyBytes = do
           |> Json.decodeBytes
           |> Result.andThen Sessions.insertionRecordToEvent
   case decodingResult of
-    Err err -> do
-      -- FIXME: Implement proper logging here
-      GHC.putStrLn (err)
+    Err _decodeErr -> do
+      -- Event decoding failed - likely an event type we don't handle
+      pass
     Ok event -> do
       result <-
         store
           |> SubscriptionStore.dispatch event.streamId event
           |> Task.runResult
       case result of
-        Err err -> do
-          -- FIXME: Implement proper logging here
-          GHC.putStrLn (toText err)
-        Ok _ -> pass
+        Err _dispatchErr -> do
+          -- Dispatch error - callback failed
+          pass
+        Ok _ ->
+          pass

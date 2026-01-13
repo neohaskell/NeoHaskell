@@ -261,6 +261,44 @@ spec = do
         count <- ConcurrentVar.get successCount
         count |> shouldBe 2
 
+      it "dispatches to subscription at starting position (regression test)" \_ -> do
+        -- Regression test: subscriptions starting at position N should receive events at position N
+        -- Previously the check was `eventPos > startPos` which failed when both were 0
+        store <- SubscriptionStore.new |> Task.mapError toText
+        streamId <- StreamId.new
+
+        executionCount <- ConcurrentVar.containing (0 :: Int)
+
+        let callback _msg = do
+              executionCount |> ConcurrentVar.modify (\n -> n + 1)
+              Task.yield unit
+
+        -- Add subscription starting at position 0
+        store
+          |> SubscriptionStore.addGlobalSubscriptionFromPosition (Just (Event.StreamPosition 0)) callback
+          |> discard
+          |> Task.mapError toText
+
+        -- Create a test event with globalPosition = 0
+        metadata <- EventMetadata.new
+        let metadataWithPosition = metadata {EventMetadata.globalPosition = Just (Event.StreamPosition 0)}
+        let entityNameForEvent = Event.EntityName "TestEntity"
+        let event = ItemAdded {entityId = def, itemId = def, amount = 100}
+        let testEvent =
+              Event
+                { entityName = entityNameForEvent,
+                  streamId = streamId,
+                  event = Json.encode event,
+                  metadata = metadataWithPosition
+                }
+
+        -- Dispatch - should trigger the callback since event position (0) >= start position (0)
+        store |> SubscriptionStore.dispatch streamId testEvent |> Task.mapError toText
+
+        -- Verify callback was executed
+        count <- ConcurrentVar.get executionCount
+        count |> shouldBe 1
+
       it "executes callbacks in parallel (not serially)" \_ -> do
         store <- SubscriptionStore.new |> Task.mapError toText
         streamId <- StreamId.new

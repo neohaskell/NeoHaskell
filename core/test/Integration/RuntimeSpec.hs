@@ -1,3 +1,5 @@
+{-# OPTIONS_GHC -Wno-unused-imports #-}
+
 module Integration.RuntimeSpec where
 
 import Array qualified
@@ -7,6 +9,7 @@ import Integration qualified
 import Integration.Command qualified as Command
 import Json qualified
 import Service.Application qualified as Application
+import Service.Command.Core (NameOf)
 import Service.Event.EntityName (EntityName (..))
 import Service.EventStore.InMemory qualified as InMemory
 import Service.TestHelpers (insertTypedEvent)
@@ -34,6 +37,10 @@ instance Json.ToJSON TestEntity
 instance Json.FromJSON TestEntity
 
 
+instance Default TestEntity where
+  def = TestEntity {entityId = Uuid.nil, value = 0}
+
+
 -- | Events for the test entity.
 data TestEntityEvent
   = TestEntityCreated {initialValue :: Int}
@@ -59,6 +66,9 @@ instance Json.ToJSON NotifyExternalSystem
 
 
 instance Json.FromJSON NotifyExternalSystem
+
+
+type instance NameOf NotifyExternalSystem = "NotifyExternalSystem"
 
 
 -- ============================================================================

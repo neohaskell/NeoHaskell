@@ -1,13 +1,17 @@
+{-# LANGUAGE UndecidableInstances #-}
+{-# OPTIONS_GHC -Wno-unused-imports #-}
+
 module IntegrationSpec where
 
 import Array qualified
 import Core
+import GHC.TypeLits qualified as GHC
 import Integration qualified
 import Json qualified
+import Service.Command.Core (NameOf)
 import Task qualified
 import Test
 import Text qualified
-import TypeName qualified
 
 
 -- ============================================================================
@@ -28,6 +32,9 @@ instance Json.ToJSON TestCommand
 instance Json.FromJSON TestCommand
 
 
+type instance NameOf TestCommand = "TestCommand"
+
+
 -- | A test config record with ToAction instance.
 data TestConfig command = TestConfig
   { configValue :: Int
@@ -37,7 +44,7 @@ data TestConfig command = TestConfig
 
 
 instance
-  (Json.ToJSON command, TypeName.Inspectable command) =>
+  (Json.ToJSON command, GHC.KnownSymbol (NameOf command)) =>
   Integration.ToAction (TestConfig command)
   where
   toAction config = Integration.action do

@@ -1,3 +1,5 @@
+{-# LANGUAGE UndecidableInstances #-}
+
 -- | # Integration.Timer
 --
 -- Timer-based inbound integrations for periodic command submission.
@@ -29,9 +31,10 @@ module Integration.Timer (
 
 import AsyncTask qualified
 import Basics
+import GHC.TypeLits qualified as GHC
 import Integration qualified
 import Json qualified
-import TypeName qualified
+import Service.Command.Core (NameOf)
 
 
 -- | Time interval for periodic integrations (in milliseconds).
@@ -94,7 +97,7 @@ data Every command = Every
 -- @
 every ::
   forall command.
-  (Json.ToJSON command, TypeName.Inspectable command) =>
+  (Json.ToJSON command, GHC.KnownSymbol (NameOf command)) =>
   Every command ->
   Integration.Inbound
 every config = do

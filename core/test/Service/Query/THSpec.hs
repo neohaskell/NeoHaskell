@@ -160,13 +160,13 @@ spec = do
           pass
 
       describe "NameOf type instance" do
-        it "generates kebab-case name for UserOrders" \_ -> do
+        it "generates type name for UserOrders" \_ -> do
           let name = nameOfQuery (Proxy :: Proxy UserOrders)
-          name |> shouldBe "user-orders"
+          name |> shouldBe "UserOrders"
 
-        it "generates kebab-case name for SimpleQuery" \_ -> do
+        it "generates type name for SimpleQuery" \_ -> do
           let name = nameOfQuery (Proxy :: Proxy SimpleQuery)
-          name |> shouldBe "simple-query"
+          name |> shouldBe "SimpleQuery"
 
       describe "EntitiesOf type instance" do
         it "generates correct entity list for UserOrders (two entities)" \_ -> do

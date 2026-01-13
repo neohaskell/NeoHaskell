@@ -1,3 +1,5 @@
+{-# OPTIONS_GHC -Wno-unused-imports #-}
+
 module Integration.CommandSpec where
 
 import Array qualified
@@ -5,6 +7,7 @@ import Core
 import Integration qualified
 import Integration.Command qualified as Command
 import Json qualified
+import Service.Command.Core (NameOf)
 import Task qualified
 import Test
 import Text qualified
@@ -28,6 +31,9 @@ instance Json.ToJSON ReserveStock
 
 
 instance Json.FromJSON ReserveStock
+
+
+type instance NameOf ReserveStock = "ReserveStock"
 
 
 -- ============================================================================
