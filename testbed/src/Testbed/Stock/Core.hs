@@ -7,6 +7,7 @@ module Testbed.Stock.Core (
 import Core
 import Json qualified
 import Service.Command.Core (Event (..))
+import Uuid qualified
 
 
 data StockEntity = StockEntity

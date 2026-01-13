@@ -18,6 +18,8 @@ module Service.Application (
   withServiceRunner,
   withService,
   withTransport,
+  withOutbound,
+  withInbound,
 
   -- * Inspection
   isEmpty,
@@ -44,6 +46,7 @@ import AsyncTask qualified
 import Basics
 import Console qualified
 import GHC.TypeLits qualified as GHC
+import Integration qualified
 import Json qualified
 import Map (Map)
 import Map qualified
@@ -467,3 +470,48 @@ runWithAsync eventStore app = do
     |> Task.mapError toText
     |> discard
   Task.yield unit
+
+
+-- | Register an outbound integration for an entity type.
+--
+-- Outbound integrations react to entity events and can trigger external effects
+-- or emit commands to other services (Process Manager pattern).
+--
+-- **Note**: This is a stub implementation. Outbound integrations are registered
+-- but not yet executed. Full implementation coming soon.
+--
+-- Example:
+--
+-- @
+-- app = Application.new
+--   |> Application.withService cartService
+--   |> Application.withOutbound \@CartEntity cartIntegrations
+-- @
+withOutbound ::
+  forall entity event.
+  (entity -> event -> Integration.Outbound) ->
+  Application ->
+  Application
+withOutbound _integrationFn app = app  -- Stub: integrations not yet wired
+
+
+-- | Register an inbound integration worker.
+--
+-- Inbound integrations listen to external sources (timers, webhooks, message queues)
+-- and translate external events into domain commands.
+--
+-- **Note**: This is a stub implementation. Inbound integrations are registered
+-- but not yet executed. Full implementation coming soon.
+--
+-- Example:
+--
+-- @
+-- app = Application.new
+--   |> Application.withService cartService
+--   |> Application.withInbound periodicCartCreator
+-- @
+withInbound ::
+  Integration.Inbound ->
+  Application ->
+  Application
+withInbound _inboundIntegration app = app  -- Stub: integrations not yet wired

@@ -6,7 +6,6 @@ import Core
 import Data.Proxy (Proxy (..))
 import GHC.TypeLits (KnownSymbol, symbolVal)
 import Json qualified
-import Service.Query.Core (EntitiesOf, Query, QueryAction (..), QueryOf (..))
 import Service.Query.TH (deriveQuery)
 import Test
 import Text qualified

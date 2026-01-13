@@ -53,12 +53,18 @@ library
   import: common_cfg
   exposed-modules:
     App
-    Testbed.Cart.Commands.CreateCart
     Testbed.Cart.Commands.AddItem
+    Testbed.Cart.Commands.CreateCart
     Testbed.Cart.Core
+    Testbed.Cart.Integrations
     Testbed.Cart.Queries.CartSummary
     Testbed.Cart.Service
     Testbed.Service
+    Testbed.Stock.Commands.InitializeStock
+    Testbed.Stock.Commands.ReserveStock
+    Testbed.Stock.Core
+    Testbed.Stock.Queries.StockLevel
+    Testbed.Stock.Service
 
   hs-source-dirs: src
   default-language: GHC2021

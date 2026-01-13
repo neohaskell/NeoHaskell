@@ -20,6 +20,9 @@ data CreateCart = CreateCart
 instance Json.FromJSON CreateCart
 
 
+instance Json.ToJSON CreateCart
+
+
 getEntityId :: CreateCart -> Maybe Uuid
 getEntityId _ = Nothing
 

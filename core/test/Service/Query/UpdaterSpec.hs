@@ -12,7 +12,6 @@ import Service.Event.StreamId qualified as StreamId
 import Service.EventStore (EventStore (..))
 import Service.EventStore.Core qualified as EventStore
 import Service.EventStore.InMemory qualified as InMemory
-import Service.Query.Core (Query, QueryAction (..), QueryOf (..))
 import Service.Query.Registry (QueryUpdater (..))
 import Service.Query.Updater qualified as Updater
 import Service.QueryObjectStore.Core (QueryObjectStore (..))

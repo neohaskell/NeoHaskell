@@ -3,7 +3,6 @@ module Testbed.Cart.Integrations (
   periodicCartCreator,
 ) where
 
-import Core
 import Integration qualified
 import Integration.Command qualified as Command
 import Integration.Timer qualified as Timer
@@ -33,7 +32,7 @@ cartIntegrations cart event = case event of
 -- Every 30 seconds, submits a CreateCart command.
 periodicCartCreator :: Integration.Inbound
 periodicCartCreator =
-  Timer.every
+  Timer.every Timer.Every
     { interval = Timer.seconds 30
     , toCommand = \_ -> CreateCart
     }

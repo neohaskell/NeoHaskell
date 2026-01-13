@@ -29,6 +29,7 @@ import Result as Reexported (Result (..))
 import Service.Command as Reexported (Command (..), NameOf)
 import Service.Entity as Reexported (Entity (..), EntityOf, EventOf)
 import Service.Event as Reexported (InsertionType (..), StreamId, ToStreamId (..))
+import Service.Query as Reexported (EntitiesOf, Query, QueryAction (..), QueryOf (..))
 import Service.ServiceDefinition.Core as Reexported (
   Service,
  )

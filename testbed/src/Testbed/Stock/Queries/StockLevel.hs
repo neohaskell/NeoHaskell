@@ -1,11 +1,13 @@
+{-# LANGUAGE TemplateHaskell #-}
+
 module Testbed.Stock.Queries.StockLevel (
   StockLevel (..),
 ) where
 
 import Core
 import Json qualified
-import Service.Query (Query (..))
-import Testbed.Stock.Core (StockEntity (..), StockEvent (..))
+import Service.Query.TH (deriveQuery)
+import Testbed.Stock.Core (StockEntity (..))
 
 
 data StockLevel = StockLevel
@@ -23,35 +25,17 @@ instance Json.FromJSON StockLevel
 instance Json.ToJSON StockLevel
 
 
-type instance NameOf StockLevel = "StockLevel"
+deriveQuery ''StockLevel [''StockEntity]
 
 
-instance Query StockLevel where
-  type QueryEvent StockLevel = StockEvent
+instance QueryOf StockEntity StockLevel where
+  queryId stock = stock.stockId
 
-
-  emptyState =
-    StockLevel
-      { stockLevelId = Uuid.nil
-      , productId = Uuid.nil
-      , available = 0
-      , reserved = 0
-      }
-
-
-  update event query = case event of
-    StockInitialized {entityId, productId, available} ->
-      query
-        { stockLevelId = entityId
-        , productId = productId
-        , available = available
-        , reserved = 0
+  combine stock _maybeExisting =
+    Update
+      StockLevel
+        { stockLevelId = stock.stockId
+        , productId = stock.productId
+        , available = stock.available
+        , reserved = stock.reserved
         }
-    StockReserved {quantity} ->
-      query
-        { available = query.available - quantity
-        , reserved = query.reserved + quantity
-        }
-
-
-  getId query = query.stockLevelId
