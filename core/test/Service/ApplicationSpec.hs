@@ -8,11 +8,15 @@ import Map qualified
 import Service.Application (Application (..), ServiceRunner (..))
 import Service.Application qualified as Application
 import Service.Event.EntityName (EntityName (..))
+import Service.EventStore (EventStore)
 import Service.EventStore.InMemory qualified as InMemory
 import Service.MockTransport qualified as MockTransport
 import Service.Query.Registry (QueryUpdater (..))
 import Service.Query.Registry qualified as Registry
+import Service.ServiceDefinition.Core (TransportValue)
 import Service.TestHelpers (insertTestEvent)
+import Json qualified
+import Service.Transport (QueryEndpointHandler)
 import Task qualified
 import Test
 
@@ -112,18 +116,15 @@ spec = do
 
     describe "withServiceRunner" do
       it "adds a service runner to the application" \_ -> do
-        let runner =
-              ServiceRunner
-                { runWithEventStore = \_ _ _ -> Task.yield unit
-                }
+        let runner = mockServiceRunner (\_ _ _ -> Task.yield unit)
         let app =
               Application.new
                 |> Application.withServiceRunner runner
         Application.hasServiceRunners app |> shouldBe True
 
       it "accumulates multiple service runners" \_ -> do
-        let runner1 = ServiceRunner {runWithEventStore = \_ _ _ -> Task.yield unit}
-        let runner2 = ServiceRunner {runWithEventStore = \_ _ _ -> Task.yield unit}
+        let runner1 = mockServiceRunner (\_ _ _ -> Task.yield unit)
+        let runner2 = mockServiceRunner (\_ _ _ -> Task.yield unit)
         let app =
               Application.new
                 |> Application.withServiceRunner runner1
@@ -144,11 +145,10 @@ spec = do
         calledRef <- ConcurrentVar.containing False
 
         let runner =
-              ServiceRunner
-                { runWithEventStore = \_ _ _ -> do
-                    calledRef |> ConcurrentVar.modify (\_ -> True)
-                    Task.yield unit
-                }
+              mockServiceRunner (\_ _ _ -> do
+                calledRef |> ConcurrentVar.modify (\_ -> True)
+                Task.yield unit
+              )
 
         eventStore <- InMemory.new |> Task.mapError toText
 
@@ -231,7 +231,7 @@ spec = do
 
     describe "isEmpty with service runners" do
       it "returns False when service runners are added" \_ -> do
-        let runner = ServiceRunner {runWithEventStore = \_ _ _ -> Task.yield unit}
+        let runner = mockServiceRunner (\_ _ _ -> Task.yield unit)
         let app =
               Application.new
                 |> Application.withServiceRunner runner
@@ -264,7 +264,8 @@ spec = do
                     -- Check if MockTransport is present by looking for its name
                     let hasMockTransport = transports |> Map.contains "MockTransport"
                     transportFoundRef |> ConcurrentVar.modify (\_ -> hasMockTransport)
-                    Task.yield unit
+                    Task.yield unit,
+                  getCommandEndpoints = \_ _ -> Task.yield Map.empty
                 }
 
         let app =
@@ -286,3 +287,15 @@ withQueryRegistry ::
   Application
 withQueryRegistry registry app =
   app {queryRegistry = registry}
+
+
+-- | Create a mock ServiceRunner for testing.
+-- The getCommandEndpoints returns an empty map since tests don't need command dispatch.
+mockServiceRunner ::
+  (EventStore Json.Value -> Map Text TransportValue -> Map Text QueryEndpointHandler -> Task Text Unit) ->
+  ServiceRunner
+mockServiceRunner runFn =
+  ServiceRunner
+    { runWithEventStore = runFn,
+      getCommandEndpoints = \_ _ -> Task.yield Map.empty
+    }

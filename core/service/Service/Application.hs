@@ -67,7 +67,7 @@ import Service.Query.Registry qualified as Registry
 import Service.Query.Subscriber qualified as Subscriber
 import Service.ServiceDefinition.Core (ServiceRunner (..), TransportValue (..))
 import Service.ServiceDefinition.Core qualified as ServiceDefinition
-import Service.Transport (Transport, QueryEndpointHandler)
+import Service.Transport (Transport, QueryEndpointHandler, EndpointHandler)
 import Task (Task)
 import Task qualified
 import Text (Text)
@@ -439,7 +439,7 @@ runWith eventStore app = do
           |> Array.reduce (\(reg, _) acc -> mergeRegistries reg acc) app.queryRegistry
 
   -- 3. Combine all query endpoints from definitions with manual endpoints
-  let combinedEndpoints =
+  let combinedQueryEndpoints =
         wiredQueries
           |> Array.reduce (\(_, (name, handler)) acc -> acc |> Map.set name handler) app.queryEndpoints
 
@@ -452,25 +452,34 @@ runWith eventStore app = do
   -- 6. Start live subscription
   Subscriber.start subscriber
 
-  -- 7. Start integration subscriber for outbound integrations
-  startIntegrationSubscriber eventStore app.outboundRunners
+  -- 7. Collect command endpoints from all services for integration dispatch
+  commandEndpointMaps <-
+    app.serviceRunners
+      |> Task.mapArray (\runner -> runner.getCommandEndpoints eventStore app.transports)
+  let combinedCommandEndpoints =
+        commandEndpointMaps
+          |> Array.reduce (\endpointMap acc -> Map.merge endpointMap acc) Map.empty
 
-  -- 8. Run all services in parallel with shared event store, transports, and query endpoints
+  -- 8. Start integration subscriber for outbound integrations with command dispatch
+  startIntegrationSubscriber eventStore app.outboundRunners combinedCommandEndpoints
+
+  -- 9. Run all services in parallel with shared event store, transports, and query endpoints
   let serviceTasks =
         app.serviceRunners
-          |> Array.map (\runner -> runner.runWithEventStore eventStore app.transports combinedEndpoints)
+          |> Array.map (\runner -> runner.runWithEventStore eventStore app.transports combinedQueryEndpoints)
   serviceTasks |> AsyncTask.runAllIgnoringErrors
 
 
 -- | Start subscription for outbound integrations.
 --
 -- Subscribes to all events and processes them through registered OutboundRunners.
--- Commands emitted by integrations are logged (command dispatch will be added later).
+-- Commands emitted by integrations are dispatched to the appropriate service handlers.
 startIntegrationSubscriber ::
   EventStore Json.Value ->
   Array OutboundRunner ->
+  Map Text EndpointHandler ->
   Task Text Unit
-startIntegrationSubscriber (EventStore {subscribeToAllEvents}) runners = do
+startIntegrationSubscriber (EventStore {subscribeToAllEvents}) runners commandEndpoints = do
   let processIntegrationEvent :: Event Json.Value -> Task Text Unit
       processIntegrationEvent rawEvent = do
         runners
@@ -480,9 +489,7 @@ startIntegrationSubscriber (EventStore {subscribeToAllEvents}) runners = do
                 Ok commands -> do
                   commands
                     |> Task.forEach \payload -> do
-                        let cmdType = payload.commandType
-                        Console.print [fmt|[Integration] Command emitted: #{cmdType}|]
-                          |> Task.ignoreError
+                        dispatchCommand commandEndpoints payload
                 Err err ->
                   Console.print [fmt|[Integration] Error processing event: #{err}|]
                     |> Task.ignoreError
@@ -492,6 +499,24 @@ startIntegrationSubscriber (EventStore {subscribeToAllEvents}) runners = do
       subscribeToAllEvents processIntegrationEvent
         |> Task.mapError (toText :: Error -> Text)
         |> Task.map (\_ -> unit)
+
+
+-- | Dispatch a command payload to the appropriate service handler.
+dispatchCommand ::
+  Map Text EndpointHandler ->
+  Integration.CommandPayload ->
+  Task Text Unit
+dispatchCommand commandEndpoints payload = do
+  let cmdType = payload.commandType
+  case Map.get cmdType commandEndpoints of
+    Just handler -> do
+      let cmdBytes = Json.encodeText payload.commandData |> Text.toBytes
+      let responseCallback _ = Task.yield unit
+      handler cmdBytes responseCallback
+        |> Task.mapError (\err -> [fmt|Command dispatch failed for #{cmdType}: #{err}|])
+    Nothing -> do
+      Console.print [fmt|[Integration] No handler found for command: #{cmdType}|]
+        |> Task.ignoreError
 
 
 -- | Merge two QueryRegistries by combining their updaters.

@@ -308,7 +308,10 @@ command serviceDefinition = do
 
 -- | A function that runs a service given a shared EventStore, transports, and query endpoints.
 data ServiceRunner = ServiceRunner
-  { runWithEventStore :: EventStore Json.Value -> Map Text TransportValue -> Map Text QueryEndpointHandler -> Task Text Unit
+  { runWithEventStore :: EventStore Json.Value -> Map Text TransportValue -> Map Text QueryEndpointHandler -> Task Text Unit,
+    -- | Get command endpoints for this service without running transports.
+    -- Used by integration command dispatch to route emitted commands to the right handler.
+    getCommandEndpoints :: EventStore Json.Value -> Map Text TransportValue -> Task Text (Map Text EndpointHandler)
   }
 
 
@@ -340,8 +343,63 @@ toServiceRunner service =
               rawEventStore
               service.commandDefinitions
               transportsMap
-              queryEndpointsMap
+              queryEndpointsMap,
+      getCommandEndpoints = \rawEventStore transportsMap ->
+        case Record.reflectAllFields service.inspectDict of
+          Record.Reflected ->
+            buildCommandEndpoints
+              @cmds
+              @event
+              @entity
+              rawEventStore
+              service.commandDefinitions
+              transportsMap
     }
+
+
+-- | Build command endpoints for a service without running transports.
+-- Used by integration command dispatch to route emitted commands to handlers.
+buildCommandEndpoints ::
+  forall (cmds :: Record.Row Type) event entity.
+  ( Record.AllFields cmds (CommandInspect),
+    event ~ ServiceEventType cmds,
+    entity ~ ServiceEntityType cmds,
+    Json.FromJSON event,
+    Json.ToJSON event,
+    Json.FromJSON entity,
+    Json.ToJSON entity
+  ) =>
+  EventStore Json.Value ->
+  Record.ContextRecord Record.I cmds ->
+  Map Text TransportValue ->
+  Task Text (Map Text EndpointHandler)
+buildCommandEndpoints rawEventStore commandDefinitions transportsMap = do
+  let eventStore = rawEventStore |> EventStore.castEventStore @event
+  let maybeCache = Nothing :: Maybe (SnapshotCache entity)
+
+  let mapper ::
+        forall cmdDef cmd.
+        ( CommandInspect cmdDef,
+          cmd ~ Cmd cmdDef
+        ) =>
+        Record.I (cmdDef) ->
+        Record.K (Text, EndpointHandler) (cmdDef)
+      mapper (Record.I x) = do
+        case transportsMap |> Map.get (transportName x) of
+          Nothing -> panic [fmt|The impossible happened, couldn't find transport config for #{commandName x}|]
+          Just transportVal -> do
+            let transport = getTransportValue transportVal
+            let typedEventStore = GHC.unsafeCoerce eventStore :: EventStore (CmdEvent cmdDef)
+            let typedCache = GHC.unsafeCoerce maybeCache :: Maybe (SnapshotCache (CmdEntity cmdDef))
+            Record.K (commandName x, createHandler x typedEventStore typedCache transport (Record.Proxy @cmd))
+
+  let endpoints :: Array (Text, EndpointHandler) =
+        commandDefinitions
+          |> Record.cmap (Record.Proxy @(CommandInspect)) mapper
+          |> Record.collapse
+          |> Array.fromLinkedList
+
+  Task.yield (endpoints |> Array.reduce (\(name, handler) acc -> acc |> Map.set name handler) Map.empty)
 
 
 -- | Run a service with a provided EventStore (instead of creating one from config).
