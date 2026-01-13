@@ -47,8 +47,8 @@ This two-persona split is the core insight: Nick handles all effectful complexit
 We will implement an `Integration` module with:
 
 - **Per-entity integration functions**: One function per entity that pattern matches events and triggers integrations
-- **Builder pattern**: Collect multiple heterogeneous actions into an opaque `Integration.Outbound` type
-- **Action builders**: Nick's packages expose action builders that accept command mappers
+- **Typeclass-based action conversion**: Nick defines config record types with `ToAction` instances; Jess instantiates these records
+- **Array-based batching**: Collect multiple heterogeneous actions into an `Array` using `Integration.outbound` for type erasure
 
 ### Jess's API (Per-Entity Integration Function)
 
@@ -60,7 +60,6 @@ module User.Integrations where
 
 import User (User)
 import User.Event (UserEvent(..))
-import User.Event qualified as UserEvent
 import Notification.Commands (CreateWelcomeNotification(..))
 import Audit.Commands (LogAuditEvent(..))
 import Integration qualified
@@ -69,45 +68,45 @@ import Integration.Slack qualified as Slack
 
 userIntegrations :: User -> UserEvent -> Integration.Outbound
 userIntegrations user event = case event of
-  UserRegistered data -> Integration.Outbound.batch do
-    Sendgrid.email
-      { to = user.email
-      , templateId = "welcome-v2"
-      , variables = [("name", data.name)]
-      }
-      (\response -> CreateWelcomeNotification
-        { userId = user.id
-        , messageId = response.id
-        })
+  UserRegistered info -> Integration.batch
+    [ Integration.outbound Sendgrid.Email
+        { to = user.email
+        , templateId = "welcome-v2"
+        , variables = [("name", info.name)]
+        , onSuccess = \response -> CreateWelcomeNotification
+            { userId = user.id
+            , messageId = response.id
+            }
+        }
+    , Integration.outbound Slack.Message
+        { channel = "#signups"
+        , text = [fmt|New user: {info.name} ({user.email})|]
+        }
+    ]
 
-    Slack.message
-      { channel = "#signups"
-      , text = [fmt|New user: {data.name} ({user.email})|]
-      }
-      Integration.Outbound.noCommand
+  EmailChanged info -> Integration.batch
+    [ Integration.outbound Sendgrid.Email
+        { to = info.oldEmail
+        , templateId = "email-changed"
+        , variables = [("newEmail", info.newEmail)]
+        , onSuccess = \_ -> LogAuditEvent
+            { entityType = "User"
+            , entityId = user.id
+            , action = "email_changed"
+            }
+        }
+    ]
 
-  EmailChanged data -> Integration.Outbound.batch do
-    Sendgrid.email
-      { to = data.oldEmail
-      , templateId = "email-changed"
-      , variables = [("newEmail", data.newEmail)]
-      }
-      (\_ -> LogAuditEvent
-        { entityType = "User"
-        , entityId = user.id
-        , action = "email_changed"
-        })
-
-  _ -> Integration.Outbound.none
+  _ -> Integration.none
 ```
 
 **What Jess writes:**
 
 - Pattern match on event ADT
-- For each relevant event, call Nick's action builders with payloads
-- Provide command mapper: `response -> command` (can be from ANY service)
-- `Integration.Outbound.noCommand` when no follow-up command needed
-- `Integration.Outbound.none` for events with no integrations
+- For each relevant event, create config records defined by Nick
+- Wrap each config with `Integration.outbound` for type erasure
+- Pass array to `Integration.batch`
+- `Integration.none` for events with no integrations
 
 **What Jess does NOT write:**
 
@@ -115,53 +114,106 @@ userIntegrations user event = case event of
 - Worker loops, connection management
 - Error handling
 
-### Nick's API (Action Builders)
+### Nick's API (Config Records + ToAction)
 
-Nick builds packages that expose **action builders**. Each builder:
-
-- Takes a payload (what to send externally)
-- Takes a command mapper (what command to emit on success)
-- Returns a type-erased `Integration.Action`
+Nick builds packages that expose **config record types** with `ToAction` instances. The typeclass handles the conversion from pure config to effectful action:
 
 ```haskell
 -- integration-sendgrid/Integration/Sendgrid.hs
 module Integration.Sendgrid
-  ( EmailPayload(..)
+  ( Email(..)
   , SendgridResponse(..)
-  , email
   ) where
 
 import Integration qualified
-
-data EmailPayload = EmailPayload
-  { to :: Text
-  , templateId :: Text
-  , variables :: Array (Text, Text)
-  }
 
 data SendgridResponse = SendgridResponse
   { id :: Text
   , status :: Text
   }
 
--- Action builder: payload + command mapper -> Action
-email ::
-  forall command.
-  (ToJSON command, Typeable command) =>
-  EmailPayload ->
-  (SendgridResponse -> command) ->
-  Integration.Action
-email payload toCommand = Integration.action do
-  apiKey <- Environment.require "SENDGRID_API_KEY"
-  response <- Http.post "https://api.sendgrid.com/v3/mail/send"
-    |> Http.bearer apiKey
-    |> Http.jsonBody payload
-    |> Http.send
-    |> Task.retry { attempts = 3, backoff = Exponential }
-  Integration.emitCommand (toCommand response)
+-- Config record that Jess instantiates
+data Email command = Email
+  { to :: Text
+  , templateId :: Text
+  , variables :: Array (Text, Text)
+  , onSuccess :: SendgridResponse -> command
+  }
+
+-- Nick implements the effectful conversion
+instance (ToJSON command, Typeable command) => Integration.ToAction (Email command) where
+  toAction config = Integration.action do
+    apiKey <- Environment.require "SENDGRID_API_KEY"
+    response <- Http.post "https://api.sendgrid.com/v3/mail/send"
+      |> Http.bearer apiKey
+      |> Http.jsonBody config
+      |> Http.send
+      |> Task.retry { attempts = 3, backoff = Exponential }
+    Integration.emitCommand (config.onSuccess response)
 ```
 
-**Key insight**: The `command` type parameter is erased inside `Integration.Outbound.Action`. Nick's code serializes the command to JSON immediately, so the `Outbound` collection can hold heterogeneous command types.
+**Key insight**: Jess only sees the `Email` record type. The `ToAction` instance is invisible to her - she just instantiates the record and wraps it with `Integration.outbound`.
+
+### Core Types
+
+```haskell
+module Service.Integration.Outbound where
+
+-- Typeclass for converting config records to actions
+class ToAction config where
+  toAction :: config -> Action
+
+-- Opaque collection of outbound actions (heterogeneous command types)
+newtype Outbound = Outbound (Array Action)
+
+-- Single action (type-erased)
+newtype Action = Action ActionInternal
+
+data ActionInternal = ActionInternal
+  { execute :: Task IntegrationError (Maybe CommandPayload)
+  }
+
+data CommandPayload = CommandPayload
+  { commandType :: Text
+  , commandData :: Json.Value
+  }
+
+-- Convert config to type-erased action (used by Jess)
+outbound :: forall config. (ToAction config) => config -> Action
+outbound config = toAction config
+
+-- Collect actions into an Outbound value
+batch :: Array Action -> Outbound
+batch actions = Outbound actions
+
+-- No integrations for this event
+none :: Outbound
+none = Outbound []
+
+-- Create an action from a Task (used by Nick in ToAction instances)
+action :: Task IntegrationError (Maybe CommandPayload) -> Action
+action task = Action (ActionInternal task)
+
+-- Command emission helpers (used inside ToAction instances)
+emitCommand :: forall command. (ToJSON command, Typeable command) => command -> Task IntegrationError (Maybe CommandPayload)
+emitCommand cmd = Task.yield (Just payload)
+  where
+    payload = CommandPayload
+      { commandType = Text.pack (show (typeRep (Proxy @command)))
+      , commandData = Json.toValue cmd
+      }
+
+noCommand :: Task IntegrationError (Maybe CommandPayload)
+noCommand = Task.yield Nothing
+
+-- Errors
+data IntegrationError
+  = NetworkError Text
+  | AuthenticationError Text
+  | ValidationError Text
+  | RateLimited RetryAfter
+  | PermanentFailure Text
+```
 
 ### Inbound Integrations
 
@@ -209,51 +261,6 @@ webhook config = Integration.inbound
   }
 ```
 
-### Core Types
-
-```haskell
-module Service.Integration.Outbound where
-
--- Opaque collection of outbound actions (heterogeneous command types)
-newtype Outbound = Outbound (Array ActionInternal)
-
-data ActionInternal = ActionInternal
-  { execute :: Task IntegrationError (Maybe CommandPayload)
-  }
-
-data CommandPayload = CommandPayload
-  { commandType :: Text
-  , commandData :: Json.Value
-  }
-
--- Single action (type-erased)
-newtype Action = Action ActionInternal
-
--- Builder for collecting outbound actions
-batch :: Builder () -> Outbound
-none :: Outbound
-
--- Inside Builder monad, add actions
-action :: Task IntegrationError (Maybe CommandPayload) -> Action
-
--- Command emission helpers
-emitCommand :: (ToJSON command, Typeable command) => command -> Task IntegrationError (Maybe CommandPayload)
-noCommand :: Task IntegrationError (Maybe CommandPayload)
-
--- Inbound worker
-data Inbound = Inbound
-  { run :: (CommandPayload -> Task IntegrationError Unit) -> Task IntegrationError Void
-  }
-
--- Errors
-data IntegrationError
-  = NetworkError Text
-  | AuthenticationError Text
-  | ValidationError Text
-  | RateLimited RetryAfter
-  | PermanentFailure Text
-```
-
 ### Module Structure
 
 ```text
@@ -261,7 +268,7 @@ core/service/
   Service/
     Integration.hs              -- Re-export wrapper
     Integration/
-      Outbound.hs               -- Outbound type, batch, none, action builders
+      Outbound.hs               -- Outbound type, ToAction, batch, none, outbound
       Inbound.hs                -- Inbound type and helpers
       Subscriber.hs             -- Outbound event subscription
       Worker.hs                 -- Inbound worker management
@@ -314,7 +321,7 @@ Implementation: Per-entity queues with dedicated workers.
 **Two-level error handling**:
 
 1. **Global handlers** - Application-wide defaults
-2. **Per-action overrides** - Nick can configure in action builders
+2. **Per-action overrides** - Nick can configure in ToAction instances
 
 ```haskell
 app =
@@ -336,12 +343,16 @@ import Notification.Commands (CreateWelcomeNotification(..))  -- Different servi
 import Audit.Commands (LogAuditEvent(..))                     -- Another service!
 
 userIntegrations user event = case event of
-  UserRegistered data -> Integration.Outbound.batch do
-    Sendgrid.email { ... }
-      (\response -> CreateWelcomeNotification { ... })  -- -> Notification service
-
-    Slack.message { ... }
-      (\_ -> LogAuditEvent { ... })  -- -> Audit service
+  UserRegistered info -> Integration.batch
+    [ Integration.outbound Sendgrid.Email
+        { ...
+        , onSuccess = \response -> CreateWelcomeNotification { ... }  -- -> Notification service
+        }
+    , Integration.outbound Slack.Message
+        { ...
+        , onSuccess = \_ -> LogAuditEvent { ... }  -- -> Audit service
+        }
+    ]
 ```
 
 The command dispatcher routes based on command type name, not entity association.
@@ -356,13 +367,15 @@ The command dispatcher routes based on command type name, not entity association
 
 3. **Compiler-checked exhaustiveness**: With `-Wincomplete-patterns`, compiler warns about unhandled events.
 
-4. **Explicit "nothing happens"**: `_ -> Integration.Outbound.none` makes absence of integrations visible.
+4. **Explicit "nothing happens"**: `_ -> Integration.none` makes absence of integrations visible.
 
 5. **Cross-service flexibility**: Commands can target any service via type-based routing.
 
-6. **Two-persona design intact**: Nick builds action builders; Jess composes them.
+6. **Two-persona design intact**: Nick builds config types with ToAction; Jess instantiates records.
 
 7. **Testable**: Entity integration function is pure - test with different event inputs.
+
+8. **Declarative config**: Jess writes plain record instantiation, no monadic syntax or function calls.
 
 ### Negative
 

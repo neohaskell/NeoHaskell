@@ -5,6 +5,8 @@ import Service.Application (Application)
 import Service.Application qualified as Application
 import Service.EventStore.Postgres (PostgresEventStore (..))
 import Service.Transport.Web qualified as WebTransport
+import Testbed.Cart.Core (CartEntity)
+import Testbed.Cart.Integrations (cartIntegrations, periodicCartCreator)
 import Testbed.Cart.Queries.CartSummary (CartSummary)
 import Testbed.Service qualified
 
@@ -16,6 +18,10 @@ app =
     |> Application.withTransport WebTransport.server
     |> Application.withService Testbed.Service.service
     |> Application.withQuery @CartSummary
+    -- Outbound: log when carts are created
+    |> Application.withOutbound @CartEntity cartIntegrations
+    -- Inbound: create a cart every 30 seconds
+    |> Application.withInbound periodicCartCreator
 
 
 postgresConfig :: PostgresEventStore

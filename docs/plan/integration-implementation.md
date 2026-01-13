@@ -9,12 +9,13 @@ This document outlines how to implement the Integration pattern for NeoHaskell, 
 
 ## Design Summary
 
-The Integration pattern uses a **per-entity function approach**:
+The Integration pattern uses a **per-entity function approach** with **typeclass-based action conversion**:
 
-- **Jess** writes one integration function per entity that pattern matches events and returns `Integration.Outbound`
-- **Nick** builds action builders that accept payloads and command mappers, returning type-erased `Integration.Outbound.Action`
+- **Jess** writes one integration function per entity that pattern matches events, instantiates config records, and returns `Integration.Outbound`
+- **Nick** defines config record types with `ToAction` instances that handle the effectful conversion
+- `Integration.outbound` wraps configs for type erasure, enabling heterogeneous collections
+- `Integration.batch` takes an `Array Action` (not a monadic builder)
 - Commands can target **any service** (cross-service flexibility)
-- Type erasure enables heterogeneous command collections in a single `Outbound` batch
 
 ## Existing Patterns to Follow
 
@@ -31,7 +32,7 @@ core/service/
   Service/
     Integration.hs                    -- Re-export wrapper
     Integration/
-      Outbound.hs                     -- Outbound type, batch, none, Action, errors
+      Outbound.hs                     -- Outbound type, ToAction, batch, none, outbound, Action
       Inbound.hs                      -- Inbound type and helpers
       Subscriber.hs                   -- Outbound event subscription
       Worker.hs                       -- Inbound worker management
@@ -42,35 +43,46 @@ core/service/
 
 ### 1.1 Create `Service/Integration/Outbound.hs`
 
-#### Type Erasure Strategy
+#### Typeclass-Based Action Conversion
 
-The core challenge is allowing Jess to emit heterogeneous command types from a single integration function. We solve this with **type erasure at action creation**:
+The core design uses a typeclass to convert Nick's config records into type-erased actions:
 
-**Jess's View (Typed)**
+**Jess's View (Declarative Config)**
 
-Jess works with concrete command types in her mappers:
+Jess instantiates config records and wraps them with `Integration.outbound`:
 
 ```haskell
-Sendgrid.email { ... }
-  (\response -> CreateWelcomeNotification { userId = user.id })
+Integration.batch
+  [ Integration.outbound Sendgrid.Email
+      { to = user.email
+      , templateId = "welcome-v2"
+      , variables = [("name", info.name)]
+      , onSuccess = \response -> CreateWelcomeNotification { userId = user.id }
+      }
+  ]
 ```
 
-The command type `CreateWelcomeNotification` is known at compile time.
+**Nick's Bridge (ToAction Instance)**
 
-**Nick's Bridge (Type Erasure)**
-
-Nick's action builder serializes the command to JSON immediately:
+Nick defines the config type and implements the effectful conversion:
 
 ```haskell
-email payload toCommand = Integration.Outbound.action do
-  response <- -- execute HTTP call
-  Integration.Outbound.emitCommand (toCommand response)
-  -- emitCommand serializes to CommandPayload internally
+data Email command = Email
+  { to :: Text
+  , templateId :: Text
+  , variables :: Array (Text, Text)
+  , onSuccess :: SendgridResponse -> command
+  }
+
+instance (ToJSON command, Typeable command) => Integration.ToAction (Email command) where
+  toAction config = Integration.action do
+    response <- -- execute HTTP call
+    Integration.emitCommand (config.onSuccess response)
 ```
 
 **Runtime (Type-Erased)**
 
-The `Outbound` collection holds `ActionInternal` values with `Task IntegrationError (Maybe CommandPayload)`. The `CommandPayload` contains:
+The `Outbound` collection holds `Action` values. Each `Action` wraps an `ActionInternal` with `Task IntegrationError (Maybe CommandPayload)`. The `CommandPayload` contains:
 
 - `commandType :: Text` (derived from `Typeable`)
 - `commandData :: Json.Value` (serialized command)
@@ -78,8 +90,15 @@ The `Outbound` collection holds `ActionInternal` values with `Task IntegrationEr
 ```haskell
 module Service.Integration.Outbound where
 
+-- Typeclass for converting config records to actions
+class ToAction config where
+  toAction :: config -> Action
+
 -- Opaque collection of outbound actions (heterogeneous command types)
-newtype Outbound = Outbound (Array ActionInternal)
+newtype Outbound = Outbound (Array Action)
+
+-- Single action (type-erased)
+newtype Action = Action ActionInternal
 
 data ActionInternal = ActionInternal
   { execute :: Task IntegrationError (Maybe CommandPayload)
@@ -90,26 +109,23 @@ data CommandPayload = CommandPayload
   , commandData :: Json.Value
   }
 
--- Single action (type-erased)
-newtype Action = Action ActionInternal
-
--- Builder monad for collecting actions
-newtype Builder result = Builder (State (Array ActionInternal) result)
-  deriving (Functor, Applicative, Monad)
+-- Convert config to type-erased action (used by Jess)
+outbound :: forall config. (ToAction config) => config -> Action
+outbound config = toAction config
 
 -- Collect actions into an Outbound value
-batch :: Builder () -> Outbound
-batch (Builder m) = Outbound (execState m [])
+batch :: Array Action -> Outbound
+batch actions = Outbound actions
 
 -- No integrations for this event
 none :: Outbound
 none = Outbound []
 
--- Create a single action (used by Nick's action builders)
+-- Create an action from a Task (used by Nick in ToAction instances)
 action :: Task IntegrationError (Maybe CommandPayload) -> Action
 action task = Action (ActionInternal task)
 
--- Command emission helpers (used inside action builders)
+-- Command emission helpers (used inside ToAction instances)
 emitCommand :: forall command. (ToJSON command, Typeable command) => command -> Task IntegrationError (Maybe CommandPayload)
 emitCommand cmd = Task.yield (Just payload)
   where
@@ -217,7 +233,7 @@ For each integration function:
     |       |
     |       +-- Update IntegrationStore position
     |
-    +-- If Outbound is empty (Integration.Outbound.none):
+    +-- If Outbound is empty (Integration.none):
             |
             +-- Skip (don't update position)
 ```
@@ -352,6 +368,12 @@ buildCommandDispatcher services = \payload -> do
 
 ## Decided
 
+### Action Conversion
+
+**Decision**: Typeclass-based with `ToAction`.
+
+Nick defines config record types with `ToAction` instances. Jess instantiates records and wraps them with `Integration.outbound` for type erasure. `Integration.batch` takes an `Array Action`.
+
 ### Command Dispatching
 
 **Decision**: Typed dispatch via command type name.
@@ -405,15 +427,15 @@ spec = do
 
     it "returns none for unhandled events" do
       let outbound = userIntegrations user ProfileUpdated { bio = "..." }
-      outbound `shouldBe` Integration.Outbound.none
+      outbound `shouldBe` Integration.none
 ```
 
-### Testing Nick's Action Builders
+### Testing Nick's ToAction Instances
 
 Nick's code has side effects. Mock HTTP clients and verify:
 
 - Correct API calls are made
-- Command mappers are invoked with responses
+- `onSuccess` mappers are invoked with responses
 - Commands are serialized correctly
 
 ### Testing Framework Machinery
