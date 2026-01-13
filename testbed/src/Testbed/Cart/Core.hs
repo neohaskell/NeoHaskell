@@ -57,13 +57,18 @@ instance Entity CartEntity where
 
 data CartEvent
   = CartCreated {entityId :: Uuid}
+  | ItemAdded
+      { entityId :: Uuid
+      , stockId :: Uuid
+      , quantity :: Int
+      }
   deriving (Generic)
 
 
 getEventEntityId :: CartEvent -> Uuid
-getEventEntityId event =
-  case event of
-    CartCreated entityId -> entityId
+getEventEntityId event = case event of
+  CartCreated {entityId} -> entityId
+  ItemAdded {entityId} -> entityId
 
 
 type instance EventOf CartEntity = CartEvent
@@ -83,10 +88,19 @@ instance Json.ToJSON CartEvent
 
 
 update :: CartEvent -> CartEntity -> CartEntity
-update event _ =
-  case event of
-    CartCreated {entityId} ->
-      CartEntity
-        { cartId = entityId,
-          items = Array.empty
-        }
+update event entity = case event of
+  CartCreated {entityId} ->
+    CartEntity
+      { cartId = entityId
+      , items = Array.empty
+      }
+  ItemAdded {stockId, quantity} ->
+    entity
+      { items =
+          entity.items
+            |> Array.push
+              CartItem
+                { productId = stockId
+                , amount = makeNaturalOrPanic quantity
+                }
+      }

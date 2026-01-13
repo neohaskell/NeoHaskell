@@ -9,6 +9,7 @@ import Testbed.Cart.Core (CartEntity)
 import Testbed.Cart.Integrations (cartIntegrations, periodicCartCreator)
 import Testbed.Cart.Queries.CartSummary (CartSummary)
 import Testbed.Service qualified
+import Testbed.Stock.Queries.StockLevel (StockLevel)
 
 
 app :: Application
@@ -16,9 +17,11 @@ app =
   Application.new
     |> Application.withEventStore postgresConfig
     |> Application.withTransport WebTransport.server
-    |> Application.withService Testbed.Service.service
+    |> Application.withService Testbed.Service.cartService
+    |> Application.withService Testbed.Service.stockService
     |> Application.withQuery @CartSummary
-    -- Outbound: log when carts are created
+    |> Application.withQuery @StockLevel
+    -- Outbound: reserve stock when items are added to cart (Process Manager)
     |> Application.withOutbound @CartEntity cartIntegrations
     -- Inbound: create a cart every 30 seconds
     |> Application.withInbound periodicCartCreator

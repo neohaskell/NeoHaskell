@@ -1,10 +1,15 @@
 module Testbed.Service (
-  service,
+  cartService,
+  stockService,
 ) where
 
-import Service.ServiceDefinition.Core qualified as Service
 import Testbed.Cart.Service qualified as CartService
+import Testbed.Stock.Service qualified as StockService
 
 
-service :: Service.Service _ _
-service = CartService.service
+cartService :: _
+cartService = CartService.service
+
+
+stockService :: _
+stockService = StockService.service
