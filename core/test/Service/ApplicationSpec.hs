@@ -284,5 +284,5 @@ withQueryRegistry ::
   Registry.QueryRegistry ->
   Application ->
   Application
-withQueryRegistry registry (Application eventStoreCreator queryObjectStoreConfig queryDefinitions _ serviceRunners transports queryEndpoints) =
-  Application eventStoreCreator queryObjectStoreConfig queryDefinitions registry serviceRunners transports queryEndpoints
+withQueryRegistry registry app =
+  app {queryRegistry = registry}

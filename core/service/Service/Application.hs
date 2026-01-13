@@ -54,7 +54,9 @@ import Record qualified
 import Maybe (Maybe (..))
 import Result (Result (..))
 import Service.Command.Core (NameOf)
-import Service.EventStore (EventStore, EventStoreConfig (..))
+import Service.Event (Event (..))
+import Service.EventStore (EventStore (..), EventStoreConfig (..))
+import Service.EventStore.Core (Error)
 import Service.Query.Core (EntitiesOf, Query)
 import Service.Query.Definition (QueryDefinition (..), WireEntities)
 import Service.Query.Definition qualified as Definition
@@ -71,6 +73,7 @@ import Task qualified
 import Text (Text)
 import Text qualified
 import ToText (toText)
+import TypeName qualified
 
 
 -- | Application combines multiple Services and Queries with shared infrastructure.
@@ -101,6 +104,16 @@ import ToText (toText)
 data QueryObjectStoreConfigValue = forall config. (QueryObjectStoreConfig config) => QueryObjectStoreConfigValue config
 
 
+-- | A type-erased outbound integration runner.
+--
+-- This wraps an integration function with JSON decoding so it can process
+-- raw events from the event store.
+data OutboundRunner = OutboundRunner
+  { entityTypeName :: Text
+  , processEvent :: Event Json.Value -> Task Text (Array Integration.CommandPayload)
+  }
+
+
 data Application = Application
   { eventStoreCreator :: Maybe (Task Text (EventStore Json.Value)),
     queryObjectStoreConfig :: Maybe QueryObjectStoreConfigValue,
@@ -108,7 +121,8 @@ data Application = Application
     queryRegistry :: QueryRegistry,
     serviceRunners :: Array ServiceRunner,
     transports :: Map Text TransportValue,
-    queryEndpoints :: Map Text QueryEndpointHandler
+    queryEndpoints :: Map Text QueryEndpointHandler,
+    outboundRunners :: Array OutboundRunner
   }
 
 
@@ -125,7 +139,8 @@ new =
       queryRegistry = Registry.empty,
       serviceRunners = Array.empty,
       transports = Map.empty,
-      queryEndpoints = Map.empty
+      queryEndpoints = Map.empty,
+      outboundRunners = Array.empty
     }
 
 
@@ -437,11 +452,46 @@ runWith eventStore app = do
   -- 6. Start live subscription
   Subscriber.start subscriber
 
-  -- 7. Run all services in parallel with shared event store, transports, and query endpoints
+  -- 7. Start integration subscriber for outbound integrations
+  startIntegrationSubscriber eventStore app.outboundRunners
+
+  -- 8. Run all services in parallel with shared event store, transports, and query endpoints
   let serviceTasks =
         app.serviceRunners
           |> Array.map (\runner -> runner.runWithEventStore eventStore app.transports combinedEndpoints)
   serviceTasks |> AsyncTask.runAllIgnoringErrors
+
+
+-- | Start subscription for outbound integrations.
+--
+-- Subscribes to all events and processes them through registered OutboundRunners.
+-- Commands emitted by integrations are logged (command dispatch will be added later).
+startIntegrationSubscriber ::
+  EventStore Json.Value ->
+  Array OutboundRunner ->
+  Task Text Unit
+startIntegrationSubscriber (EventStore {subscribeToAllEvents}) runners = do
+  let processIntegrationEvent :: Event Json.Value -> Task Text Unit
+      processIntegrationEvent rawEvent = do
+        runners
+          |> Task.forEach \runner -> do
+              result <- runner.processEvent rawEvent |> Task.asResult
+              case result of
+                Ok commands -> do
+                  commands
+                    |> Task.forEach \payload -> do
+                        let cmdType = payload.commandType
+                        Console.print [fmt|[Integration] Command emitted: #{cmdType}|]
+                          |> Task.ignoreError
+                Err err ->
+                  Console.print [fmt|[Integration] Error processing event: #{err}|]
+                    |> Task.ignoreError
+  if Array.isEmpty runners
+    then Task.yield unit
+    else do
+      subscribeToAllEvents processIntegrationEvent
+        |> Task.mapError (toText :: Error -> Text)
+        |> Task.map (\_ -> unit)
 
 
 -- | Merge two QueryRegistries by combining their updaters.
@@ -477,22 +527,55 @@ runWithAsync eventStore app = do
 -- Outbound integrations react to entity events and can trigger external effects
 -- or emit commands to other services (Process Manager pattern).
 --
--- **Note**: This is a stub implementation. Outbound integrations are registered
--- but not yet executed. Full implementation coming soon.
+-- The integration function receives the current entity state and the new event,
+-- and returns actions to execute. Currently, the entity is reconstructed with
+-- default values - full event replay will be added in a future version.
 --
 -- Example:
 --
 -- @
 -- app = Application.new
 --   |> Application.withService cartService
---   |> Application.withOutbound \@CartEntity cartIntegrations
+--   |> Application.withOutbound \@CartEntity \@CartEvent cartIntegrations
 -- @
 withOutbound ::
   forall entity event.
+  ( Json.FromJSON entity
+  , Json.FromJSON event
+  , TypeName.Inspectable entity
+  ) =>
   (entity -> event -> Integration.Outbound) ->
   Application ->
   Application
-withOutbound _integrationFn app = app  -- Stub: integrations not yet wired
+withOutbound integrationFn app = do
+  let typeName = TypeName.reflect @entity
+  let runner = OutboundRunner
+        { entityTypeName = typeName
+        , processEvent = \rawEvent -> do
+            -- Decode the event from JSON
+            case Json.decode @event rawEvent.event of
+              Err _ -> Task.yield Array.empty  -- Skip events that don't match
+              Ok decodedEvent -> do
+                -- For now, create a default entity from the event data
+                -- In the future, we could replay events to reconstruct the entity
+                case Json.decode @entity rawEvent.event of
+                  Err _ -> Task.yield Array.empty
+                  Ok entity -> do
+                    -- Call the integration function
+                    let outbound = integrationFn entity decodedEvent
+                    let actions = Integration.getActions outbound
+                    -- Execute all actions and collect command payloads
+                    actions
+                      |> Task.mapArray (\action -> do
+                          result <- Integration.runAction action
+                            |> Task.mapError toText
+                          case result of
+                            Just payload -> Task.yield [payload]
+                            Nothing -> Task.yield []
+                        )
+                      |> Task.map Array.flatten
+        }
+  app {outboundRunners = app.outboundRunners |> Array.push runner}
 
 
 -- | Register an inbound integration worker.
