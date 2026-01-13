@@ -52,52 +52,77 @@ spec :: Spec Unit
 spec = do
   describe "Integration.Outbound" do
     describe "batch" do
-      it "creates an Outbound from an array of actions" \_ -> do
+      it "collects multiple actions" \_ -> do
         let config = TestConfig {configValue = 42, toCommand = \n -> TestCommand {commandId = n, commandName = "test"}}
         let action1 = Integration.outbound config
         let action2 = Integration.outbound config
-        let _outbound = Integration.batch [action1, action2]
-        -- Outbound is opaque, so we just verify it compiles
-        True |> shouldBe True
+        let outbound = Integration.batch [action1, action2]
+        let actions = Integration.getActions outbound
+        Array.length actions |> shouldBe 2
 
-      it "creates an Outbound from an empty array" \_ -> do
-        let _outbound = Integration.batch (Array.empty :: Array Integration.Action)
-        True |> shouldBe True
+      it "creates empty Outbound from empty array" \_ -> do
+        let outbound = Integration.batch (Array.empty :: Array Integration.Action)
+        let actions = Integration.getActions outbound
+        Array.length actions |> shouldBe 0
 
     describe "none" do
-      it "creates an empty Outbound" \_ -> do
-        let _outbound = Integration.none
-        True |> shouldBe True
+      it "creates an Outbound with zero actions" \_ -> do
+        let outbound = Integration.none
+        let actions = Integration.getActions outbound
+        Array.length actions |> shouldBe 0
 
     describe "outbound" do
-      it "converts a ToAction config to an Action" \_ -> do
+      it "converts a ToAction config to an executable Action" \_ -> do
         let config = TestConfig {configValue = 100, toCommand = \n -> TestCommand {commandId = n, commandName = "outbound-test"}}
-        let _action = Integration.outbound config
-        True |> shouldBe True
+        let act = Integration.outbound config
+        result <- Integration.runAction act |> Task.mapError toText
+        case result of
+          Just payload -> do
+            payload.commandType |> shouldSatisfy (Text.contains "TestCommand")
+          Nothing -> do
+            fail "Expected Just CommandPayload but got Nothing"
 
   describe "Integration.Action construction" do
     describe "action" do
-      it "creates an Action from a Task" \_ -> do
-        let task = Integration.emitCommand (TestCommand {commandId = 1, commandName = "action-test"})
-        let _act = Integration.action task
-        True |> shouldBe True
+      it "creates an Action that can be executed" \_ -> do
+        let cmd = TestCommand {commandId = 1, commandName = "action-test"}
+        let act = Integration.action (Integration.emitCommand cmd)
+        result <- Integration.runAction act |> Task.mapError toText
+        case result of
+          Just payload -> do
+            payload.commandType |> shouldSatisfy (Text.contains "TestCommand")
+          Nothing -> do
+            fail "Expected Just CommandPayload but got Nothing"
 
     describe "emitCommand" do
-      it "creates a Task that yields a CommandPayload" \_ -> do
-        let task = Integration.emitCommand (TestCommand {commandId = 42, commandName = "emit-test"})
+      it "creates a CommandPayload with correct type name" \_ -> do
+        let cmd = TestCommand {commandId = 42, commandName = "emit-test"}
+        let task = Integration.emitCommand cmd
         result <- task |> Task.mapError toText
         case result of
           Just payload -> do
-            payload.commandType |> shouldNotBe ""
+            payload.commandType |> shouldSatisfy (Text.contains "TestCommand")
+          Nothing -> do
+            fail "Expected Just but got Nothing"
+
+      it "creates a CommandPayload with JSON-encoded command data" \_ -> do
+        let cmd = TestCommand {commandId = 42, commandName = "json-test"}
+        let task = Integration.emitCommand cmd
+        result <- task |> Task.mapError toText
+        case result of
+          Just payload -> do
+            case Json.decode payload.commandData of
+              Ok decoded -> decoded |> shouldBe cmd
+              Err _ -> fail "Failed to decode command data"
           Nothing -> do
             fail "Expected Just but got Nothing"
 
     describe "noCommand" do
-      it "creates a Task that yields Nothing" \_ -> do
+      it "yields Nothing indicating no follow-up command" \_ -> do
         let task = Integration.noCommand
         result <- task |> Task.mapError toText
         case result of
-          Nothing -> True |> shouldBe True
+          Nothing -> Task.yield unit
           Just _ -> fail "Expected Nothing but got Just"
 
   describe "Integration.IntegrationError" do

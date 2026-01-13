@@ -1,10 +1,13 @@
 module Integration.CommandSpec where
 
+import Array qualified
 import Core
 import Integration qualified
 import Integration.Command qualified as Command
 import Json qualified
+import Task qualified
 import Test
+import Text qualified
 import Uuid qualified
 
 
@@ -42,32 +45,61 @@ spec = do
         let emit = Command.Emit {command = cmd}
         emit.command |> shouldBe cmd
 
-      it "implements ToAction typeclass" \_ -> do
+      it "emits a CommandPayload with correct type name" \_ -> do
         let stockId = Uuid.nil
         let cartId = Uuid.nil
         let cmd = ReserveStock {stockId = stockId, quantity = 10, cartId = cartId}
         let emit = Command.Emit {command = cmd}
-        let _action = Integration.outbound emit
-        -- Action is opaque, verify it compiles
-        True |> shouldBe True
+        let act = Integration.outbound emit
+        result <- Integration.runAction act |> Task.mapError toText
+        case result of
+          Just payload -> do
+            payload.commandType |> shouldSatisfy (Text.contains "ReserveStock")
+          Nothing -> do
+            fail "Expected Just CommandPayload but got Nothing"
 
-      it "can be used with Integration.batch" \_ -> do
+      it "emits a CommandPayload with JSON-decodable data" \_ -> do
+        let stockId = Uuid.nil
+        let cartId = Uuid.nil
+        let cmd = ReserveStock {stockId = stockId, quantity = 10, cartId = cartId}
+        let emit = Command.Emit {command = cmd}
+        let act = Integration.outbound emit
+        result <- Integration.runAction act |> Task.mapError toText
+        case result of
+          Just payload -> do
+            case Json.decode payload.commandData of
+              Ok decoded -> decoded |> shouldBe cmd
+              Err _ -> fail "Failed to decode command data"
+          Nothing -> do
+            fail "Expected Just CommandPayload but got Nothing"
+
+      it "can batch multiple Emit actions" \_ -> do
         let stockId = Uuid.nil
         let cartId = Uuid.nil
         let cmd1 = ReserveStock {stockId = stockId, quantity = 5, cartId = cartId}
         let cmd2 = ReserveStock {stockId = stockId, quantity = 3, cartId = cartId}
-        let _outbound = Integration.batch
+        let outbound = Integration.batch
               [ Integration.outbound Command.Emit {command = cmd1}
               , Integration.outbound Command.Emit {command = cmd2}
               ]
-        True |> shouldBe True
+        let actions = Integration.getActions outbound
+        Array.length actions |> shouldBe 2
 
     describe "Emit ToAction instance" do
-      it "produces a CommandPayload with correct command type" \_ -> do
+      it "produces a CommandPayload matching the wrapped command" \_ -> do
         let stockId = Uuid.nil
         let cartId = Uuid.nil
         let cmd = ReserveStock {stockId = stockId, quantity = 7, cartId = cartId}
         let emit = Command.Emit {command = cmd}
-        let _action = Integration.toAction emit
-        -- We can't inspect Action directly, but we can verify it compiles
-        True |> shouldBe True
+        let act = Integration.toAction emit
+        result <- Integration.runAction act |> Task.mapError toText
+        case result of
+          Just payload -> do
+            case Json.decode @ReserveStock payload.commandData of
+              Ok decoded -> do
+                decoded.quantity |> shouldBe 7
+                decoded.stockId |> shouldBe stockId
+                decoded.cartId |> shouldBe cartId
+              Err _ -> fail "Failed to decode command data"
+          Nothing -> do
+            fail "Expected Just CommandPayload but got Nothing"

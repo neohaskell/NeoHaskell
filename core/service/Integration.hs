@@ -55,6 +55,12 @@ module Integration (
   -- * Errors
   IntegrationError (..),
   CommandPayload (..),
+
+  -- * Testing Utilities
+  -- | These functions expose behavior for testing and debugging.
+  -- In production, the runtime handles action execution.
+  runAction,
+  getActions,
 ) where
 
 import Array (Array)
@@ -227,3 +233,37 @@ inbound config = do
                 emitPayload payload
           }
   Inbound worker
+
+
+-- ============================================================================
+-- Testing Utilities
+-- ============================================================================
+
+-- | Execute an Action and return its result.
+--
+-- This function exposes the internal Task for testing and debugging.
+-- In production, the runtime executes actions and dispatches resulting commands.
+--
+-- @
+-- action <- Integration.outbound myConfig
+-- result <- Integration.runAction action
+-- case result of
+--   Just payload -> -- command was emitted
+--   Nothing -> -- no command to emit
+-- @
+runAction :: Action -> Task IntegrationError (Maybe CommandPayload)
+runAction (Action internal) = internal._execute
+
+
+-- | Extract actions from an Outbound for inspection.
+--
+-- This function exposes the internal action list for testing and debugging.
+-- In production, the runtime iterates over actions automatically.
+--
+-- @
+-- let outbound = Integration.batch [action1, action2]
+-- let actions = Integration.getActions outbound
+-- Array.length actions  -- 2
+-- @
+getActions :: Outbound -> Array Action
+getActions (Outbound actions) = actions
