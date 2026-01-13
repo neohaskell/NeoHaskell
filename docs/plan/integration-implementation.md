@@ -18,11 +18,11 @@ The Integration pattern uses a **per-entity function approach**:
 
 ## Existing Patterns to Follow
 
-| Pattern | Location | Relevance |
-|---------|----------|-----------|
-| Query Subscriber | `Service/Query/Subscriber.hs` | Model for OutboundSubscriber |
-| Query Registry | `Service/Query/Registry.hs` | Model for entity integration lookup |
-| Application Wiring | `Service/Application.hs` | Where integrations hook in |
+| Pattern            | Location                      | Relevance                           |
+| ------------------ | ----------------------------- | ----------------------------------- |
+| Query Subscriber   | `Service/Query/Subscriber.hs` | Model for OutboundSubscriber        |
+| Query Registry     | `Service/Query/Registry.hs`   | Model for entity integration lookup |
+| Application Wiring | `Service/Application.hs`      | Where integrations hook in          |
 
 ## Module Structure
 
@@ -71,6 +71,7 @@ email payload toCommand = Integration.Outbound.action do
 **Runtime (Type-Erased)**
 
 The `Outbound` collection holds `ActionInternal` values with `Task IntegrationError (Maybe CommandPayload)`. The `CommandPayload` contains:
+
 - `commandType :: Text` (derived from `Typeable`)
 - `commandData :: Json.Value` (serialized command)
 
@@ -244,6 +245,7 @@ data OutboundSubscriber = OutboundSubscriber
 ```
 
 Per-entity queuing:
+
 1. Maintain `Map StreamId (Channel Event)` - one channel per active entity
 2. When event arrives, push to appropriate channel
 3. Spawn worker per entity that processes its channel sequentially
@@ -275,6 +277,7 @@ stopAll :: InboundWorkerManager -> Task Text Unit
 ```
 
 Each worker:
+
 - Runs as background `AsyncTask`
 - Receives an `emit` callback that dispatches commands
 - Runs forever (returns `Void`)
@@ -323,6 +326,7 @@ onIntegrationError :: (IntegrationError -> Task Void Unit) -> Application -> App
 ```
 
 In `runWith`:
+
 1. Build command dispatcher from services (maps command type names to executors)
 2. Create IntegrationStore (in-memory or persistent)
 3. Build IntegrationRegistry from registered entity integrations + inbound workers
@@ -407,6 +411,7 @@ spec = do
 ### Testing Nick's Action Builders
 
 Nick's code has side effects. Mock HTTP clients and verify:
+
 - Correct API calls are made
 - Command mappers are invoked with responses
 - Commands are serialized correctly
@@ -429,9 +434,9 @@ Per ADR, these are explicitly out of scope:
 
 ## Key Files to Reference
 
-| File | Why |
-|------|-----|
-| `Service/Query/Subscriber.hs` | Primary pattern for OutboundSubscriber |
-| `Service/Query/Registry.hs` | Pattern for entity integration lookup |
-| `Service/Application.hs` | Where integration wiring hooks in |
-| `Service/CommandExecutor/Core.hs` | How commands are executed |
+| File                              | Why                                    |
+| --------------------------------- | -------------------------------------- |
+| `Service/Query/Subscriber.hs`     | Primary pattern for OutboundSubscriber |
+| `Service/Query/Registry.hs`       | Pattern for entity integration lookup  |
+| `Service/Application.hs`          | Where integration wiring hooks in      |
+| `Service/CommandExecutor/Core.hs` | How commands are executed              |
