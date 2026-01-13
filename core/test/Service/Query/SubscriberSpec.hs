@@ -21,27 +21,25 @@ import Test
 -- | Wait until a ConcurrentVar contains the expected value, or timeout.
 -- Polls every 10ms up to the specified timeout.
 waitUntilCount ::
-  forall error.
   ConcurrentVar Int ->
   Int ->
   Int ->
-  Task error Unit
+  Task Text Unit
 waitUntilCount var expectedValue timeoutMs = do
   let pollIntervalMs = 10
   let maxAttempts = timeoutMs / pollIntervalMs
-  waitLoop 0 maxAttempts
-  where
-    waitLoop currentAttempt maxAttempts = do
-      currentValue <- ConcurrentVar.peek var
-      case currentValue == expectedValue of
-        True -> Task.yield unit
-        False -> do
-          case currentAttempt >= maxAttempts of
-            True -> Task.throw "Timeout waiting for expected count"
-            False -> do
-              AsyncTask.sleep pollIntervalMs
-                |> Task.mapError (\_ -> "sleep error" :: Text)
-              waitLoop (currentAttempt + 1) maxAttempts
+  let waitLoop currentAttempt = do
+        currentValue <- ConcurrentVar.peek var
+        if currentValue == expectedValue
+          then Task.yield unit
+          else do
+            if currentAttempt >= maxAttempts
+              then Task.throw ("Timeout waiting for expected count: expected " <> show expectedValue <> ", got " <> show currentValue)
+              else do
+                AsyncTask.sleep pollIntervalMs
+                  |> Task.mapError (\_ -> "sleep error" :: Text)
+                waitLoop (currentAttempt + 1)
+  waitLoop 0
 
 
 spec :: Spec Unit
