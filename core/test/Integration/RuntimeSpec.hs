@@ -2,14 +2,15 @@ module Integration.RuntimeSpec where
 
 import Array qualified
 import AsyncTask qualified
+import ConcurrentVar qualified
 import Core
 import Integration qualified
 import Integration.Command qualified as Command
 import Json qualified
 import Service.Application qualified as Application
 import Service.Event.EntityName (EntityName (..))
-import Service.TestHelpers (insertTypedEvent)
 import Service.EventStore.InMemory qualified as InMemory
+import Service.TestHelpers (insertTypedEvent)
 import Task qualified
 import Test
 import Text qualified
@@ -140,3 +141,58 @@ spec = do
         let outbound = testIntegration entity event
         let actions = Integration.getActions outbound
         Array.length actions |> shouldBe 0
+
+    describe "command dispatch" do
+      it "dispatches emitted commands to registered handlers" \_ -> do
+        eventStore <- InMemory.new |> Task.mapError toText
+
+        -- Track received commands
+        receivedCommandRef <- ConcurrentVar.containing (Nothing :: Maybe NotifyExternalSystem)
+
+        -- Define an integration that emits a command
+        let testIntegration :: TestEntity -> TestEntityEvent -> Integration.Outbound
+            testIntegration entity event = case event of
+              TestEntityCreated {initialValue} ->
+                Integration.batch
+                  [ Integration.outbound
+                      Command.Emit
+                        { command =
+                            NotifyExternalSystem
+                              { targetEntityId = entity.entityId
+                              , notificationValue = initialValue
+                              }
+                        }
+                  ]
+              _ -> Integration.none
+
+        -- Define a command handler that captures the command
+        let commandHandler :: NotifyExternalSystem -> Task Text Unit
+            commandHandler cmd = do
+              receivedCommandRef |> ConcurrentVar.set (Just cmd)
+              Task.yield unit
+
+        let app =
+              Application.new
+                |> Application.withOutbound @TestEntity @TestEntityEvent testIntegration
+                |> Application.withCommandHandler @NotifyExternalSystem commandHandler
+
+        -- Run app in background
+        Application.runWithAsync eventStore app
+
+        -- Give app time to start
+        AsyncTask.sleep 50 |> Task.mapError (\_ -> "sleep error" :: Text)
+
+        -- Persist an event that triggers the integration
+        let testEntityId = Uuid.nil
+        insertTypedEvent eventStore (EntityName "TestEntity") testEntityId (TestEntityCreated {initialValue = 42})
+
+        -- Give integration time to process and dispatch
+        AsyncTask.sleep 150 |> Task.mapError (\_ -> "sleep error" :: Text)
+
+        -- Verify the command was dispatched to the handler
+        receivedCommand <- ConcurrentVar.peek receivedCommandRef
+        case receivedCommand of
+          Just cmd -> do
+            cmd.targetEntityId |> shouldBe testEntityId
+            cmd.notificationValue |> shouldBe 42
+          Nothing -> fail "Expected command to be dispatched to handler"
