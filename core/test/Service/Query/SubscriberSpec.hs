@@ -34,7 +34,7 @@ waitUntilCount var expectedValue timeoutMs = do
           then Task.yield unit
           else do
             if currentAttempt >= maxAttempts
-              then Task.throw [fmt|Timeout waiting for expected count: expected #{expectedValue}, got #{currentValue}|]
+              then Task.throw [fmt|Timeout waiting for expected count: expected #{toText expectedValue}, got #{toText currentValue}|]
               else do
                 AsyncTask.sleep pollIntervalMs
                   |> Task.mapError (\_ -> "sleep error" :: Text)
