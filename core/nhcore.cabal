@@ -126,7 +126,9 @@ library
     Http.Client
     Integration
     Integration.Command
+    Integration.Lifecycle
     Integration.Timer
+    Service.Integration.Dispatcher
     IO
     Int
     Json
@@ -276,6 +278,7 @@ test-suite nhcore-test
   other-modules:
     ConcurrentMapSpec
     Integration.CommandSpec
+    Integration.DispatcherSpec
     Integration.RuntimeSpec
     Integration.TimerSpec
     IntegrationSpec

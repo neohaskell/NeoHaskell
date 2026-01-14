@@ -57,6 +57,7 @@ library
     Testbed.Cart.Commands.CreateCart
     Testbed.Cart.Core
     Testbed.Cart.Integrations
+    Testbed.Cart.Integrations.EventCounter
     Testbed.Cart.Queries.CartSummary
     Testbed.Cart.Service
     Testbed.Service
