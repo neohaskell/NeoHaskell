@@ -293,10 +293,14 @@ spec = do
 
         pass
 
-    -- NOTE: Lifecycle tests are marked pending because workers block on
-    -- Channel.read indefinitely. Without AsyncTask.cancel or a way to
-    -- interrupt blocked threads, these tests hang. The implementation
-    -- is verified through the testbed integration.
+    -- NOTE: Lifecycle tests are pending because the reaper background task
+    -- interferes with hspec's async handling. The dispatcher uses AsyncTask.run
+    -- which spawns threads that don't terminate until the reaper interval elapses.
+    -- The poison pill pattern (Stop message) works correctly - verified manually
+    -- through the testbed. These tests would pass if we could either:
+    -- 1. Use forkIO instead of async for the reaper
+    -- 2. Or have a way to kill the reaper thread explicitly
+    -- For now, the functionality is verified through end-to-end testbed tests.
     xdescribe "lifecycle management" do
       it "calls initialize when worker spawns for a new entity" \_ -> do
         -- Track initialize calls
@@ -332,6 +336,9 @@ spec = do
         -- Verify event was processed
         processed <- ConcurrentVar.peek processedEvents
         processed |> shouldBe 1
+
+        -- Cleanup: shutdown dispatcher to stop workers
+        Dispatcher.shutdown dispatcher
 
       it "calls initialize for different entities separately" \_ -> do
         -- Track initialize calls

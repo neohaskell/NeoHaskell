@@ -81,6 +81,16 @@ import Text (Text)
 import Text qualified
 
 
+-- | Message type for worker channels (poison pill pattern).
+--
+-- Workers block on Channel.read, so we can't interrupt them with external signals.
+-- Instead, we send a Stop message to gracefully terminate them.
+data WorkerMessage value
+  = ProcessEvent value
+  | Stop
+  deriving (Show)
+
+
 -- | A type-erased outbound integration runner.
 --
 -- This wraps an integration function with JSON decoding so it can process
@@ -133,14 +143,14 @@ defaultConfig = DispatcherConfig
 
 -- | Worker for a specific entity (stateless).
 data EntityWorker = EntityWorker
-  { channel :: Channel (Event Json.Value)
+  { channel :: Channel (WorkerMessage (Event Json.Value))
   , workerTask :: AsyncTask Text Unit
   }
 
 
 -- | Worker for a specific entity with lifecycle management.
 data LifecycleEntityWorker = LifecycleEntityWorker
-  { channel :: Channel (Event Json.Value)
+  { channel :: Channel (WorkerMessage (Event Json.Value))
   , workerTask :: AsyncTask Text Unit
   , lastActivityTime :: ConcurrentVar Int
   , workerStates :: Array WorkerState  -- One per lifecycle runner
@@ -240,7 +250,7 @@ dispatch dispatcher event = do
           dispatcher.entityWorkers
             |> ConcurrentVar.modify (Map.set streamId newWorker)
           Task.yield newWorker
-      worker.channel |> Channel.write event
+      worker.channel |> Channel.write (ProcessEvent event)
 
   -- Handle lifecycle workers
   if Array.isEmpty dispatcher.lifecycleRunners
@@ -257,7 +267,7 @@ dispatch dispatcher event = do
       -- Update last activity time
       currentTime <- getCurrentTimeMs
       lifecycleWorker.lastActivityTime |> ConcurrentVar.set currentTime
-      lifecycleWorker.channel |> Channel.write event
+      lifecycleWorker.channel |> Channel.write (ProcessEvent event)
 
 
 -- | Get current time in milliseconds.
@@ -278,11 +288,12 @@ spawnStatelessWorker dispatcher _streamId = do
 
   let workerLoop :: Task Text Unit
       workerLoop = do
-        shouldShutdown <- dispatcher.shutdownSignal |> ConcurrentVar.peek
-        if shouldShutdown
-          then Task.yield unit
-          else do
-            event <- workerChannel |> Channel.read
+        message <- workerChannel |> Channel.read
+        case message of
+          Stop ->
+            -- Exit gracefully
+            Task.yield unit
+          ProcessEvent event -> do
             processStatelessEvent dispatcher event
             workerLoop
 
@@ -309,13 +320,12 @@ spawnLifecycleWorker dispatcher streamId = do
 
   let workerLoop :: Task Text Unit
       workerLoop = do
-        shouldShutdown <- dispatcher.shutdownSignal |> ConcurrentVar.peek
-        if shouldShutdown
-          then do
-            -- Cleanup on shutdown
+        message <- workerChannel |> Channel.read
+        case message of
+          Stop -> do
+            -- Cleanup on stop (reap or shutdown)
             states |> Task.forEach (\state -> state.cleanup |> Task.ignoreError)
-          else do
-            event <- workerChannel |> Channel.read
+          ProcessEvent event -> do
             -- Update activity time
             newTime <- getCurrentTimeMs
             lastActivity |> ConcurrentVar.set newTime
@@ -416,12 +426,9 @@ startReaper dispatcher = do
                   let entityIdText = StreamId.toText streamId
                   Console.print [fmt|[Dispatcher] Reaping idle worker for #{entityIdText}|]
                     |> Task.ignoreError
-                  -- Cleanup all states for this worker
-                  worker.workerStates |> Task.forEach (\state -> state.cleanup |> Task.ignoreError)
-                  -- Cancel the worker task
-                  -- Note: AsyncTask.cancel is not implemented yet.
-                  -- For now, workers will exit on next shutdown check.
-                  -- Remove from map so a new worker is spawned next time.
+                  -- Send Stop message to trigger cleanup and exit
+                  worker.channel |> Channel.write Stop
+                  -- Remove from map so a new worker is spawned next time
                   dispatcher.lifecycleEntityWorkers
                     |> ConcurrentVar.modify (Map.remove streamId)
                 else pass
@@ -434,21 +441,21 @@ startReaper dispatcher = do
 
 -- | Gracefully shutdown the dispatcher.
 --
--- Signals all workers to stop and cleans up lifecycle workers.
+-- Signals all workers to stop by sending Stop messages.
+-- Workers will cleanup their resources before exiting.
 shutdown ::
   IntegrationDispatcher ->
   Task Text Unit
 shutdown dispatcher = do
-  -- Signal shutdown
+  -- Signal shutdown (stops the reaper)
   dispatcher.shutdownSignal |> ConcurrentVar.set True
 
-  -- Note: Reaper will stop on its next iteration when it checks shutdown flag
+  -- Send Stop to all stateless workers
+  statelessWorkers <- dispatcher.entityWorkers |> ConcurrentVar.peek
+  Map.entries statelessWorkers |> Task.forEach \(_streamId, worker) -> do
+    worker.channel |> Channel.write Stop
 
-  -- Cleanup all lifecycle workers
+  -- Send Stop to all lifecycle workers (triggers cleanup)
   lifecycleWorkers <- dispatcher.lifecycleEntityWorkers |> ConcurrentVar.peek
-  let entries = Map.entries lifecycleWorkers
-  entries |> Task.forEach \(streamId, worker) -> do
-    let entityIdText = StreamId.toText streamId
-    Console.print [fmt|[Dispatcher] Shutting down worker for #{entityIdText}|]
-      |> Task.ignoreError
-    worker.workerStates |> Task.forEach (\state -> state.cleanup |> Task.ignoreError)
+  Map.entries lifecycleWorkers |> Task.forEach \(_streamId, worker) -> do
+    worker.channel |> Channel.write Stop
