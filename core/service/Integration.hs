@@ -61,6 +61,10 @@ module Integration (
   -- In production, the runtime handles action execution.
   runAction,
   getActions,
+
+  -- * Runtime
+  -- | These functions are used by the Application runtime to execute integrations.
+  runInbound,
 ) where
 
 import Array (Array)
@@ -276,3 +280,20 @@ runAction action = case action of
 getActions :: Outbound -> Array Action
 getActions outbound = case outbound of
   Outbound actions -> actions
+
+
+-- | Run an inbound integration worker.
+--
+-- The worker runs indefinitely, calling the emit callback whenever it has
+-- a command to dispatch. This function exposes the internal runner for
+-- the Application runtime.
+--
+-- @
+-- Integration.runInbound periodicCartCreator dispatchCommand
+-- @
+runInbound ::
+  Inbound ->
+  (CommandPayload -> Task IntegrationError Unit) ->
+  Task IntegrationError Unit
+runInbound inboundIntegration emit = case inboundIntegration of
+  Inbound internal -> internal._runWorker emit

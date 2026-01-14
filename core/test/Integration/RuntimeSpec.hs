@@ -4,6 +4,7 @@ module Integration.RuntimeSpec where
 
 import Array qualified
 import AsyncTask qualified
+import ConcurrentVar qualified
 import Core
 import Integration qualified
 import Integration.Command qualified as Command
@@ -204,3 +205,52 @@ spec = do
                   Err _ -> fail "Command data should be decodable"
               Nothing -> fail "Integration should emit a command"
           Nothing -> fail "Integration should have at least one action"
+
+    describe "runInbound" do
+      it "runs the inbound worker and emits commands" \_ -> do
+        -- Create a simple inbound integration that emits one command immediately
+        let testInbound :: Integration.Inbound
+            testInbound = Integration.inbound @NotifyExternalSystem Integration.InboundConfig
+              { run = \emit -> do
+                  emit NotifyExternalSystem
+                    { targetEntityId = Uuid.nil
+                    , notificationValue = 99
+                    }
+              }
+
+        -- Track emitted commands
+        commandsEmitted <- ConcurrentVar.containing ([] :: [Integration.CommandPayload])
+
+        -- Run the inbound worker with a capture callback
+        let captureCommand :: Integration.CommandPayload -> Task Integration.IntegrationError Unit
+            captureCommand payload = do
+              commandsEmitted |> ConcurrentVar.modify (\cmds -> cmds ++ [payload])
+              Task.yield unit
+
+        -- Run inbound in background (it may block or run once)
+        let backgroundWorker :: Task Text Unit
+            backgroundWorker = do
+              result <- Integration.runInbound testInbound captureCommand
+                |> Task.mapError toText
+                |> Task.asResult
+              case result of
+                Err _ -> Task.yield unit
+                Ok _ -> Task.yield unit
+        AsyncTask.run backgroundWorker
+          |> Task.mapError toText
+          |> discard
+
+        -- Give worker time to execute
+        AsyncTask.sleep 50 |> Task.mapError (\_ -> "sleep error" :: Text)
+
+        -- Verify command was emitted
+        commands <- ConcurrentVar.get commandsEmitted
+        Array.fromLinkedList commands |> Array.length |> shouldBe 1
+
+        case commands of
+          (cmd : _) -> do
+            cmd.commandType |> shouldSatisfy (Text.contains "NotifyExternalSystem")
+            case Json.decode @NotifyExternalSystem cmd.commandData of
+              Ok decoded -> decoded.notificationValue |> shouldBe 99
+              Err _ -> fail "Failed to decode command payload"
+          [] -> fail "Expected at least one command"

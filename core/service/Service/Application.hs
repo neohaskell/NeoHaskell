@@ -123,7 +123,8 @@ data Application = Application
     serviceRunners :: Array ServiceRunner,
     transports :: Map Text TransportValue,
     queryEndpoints :: Map Text QueryEndpointHandler,
-    outboundRunners :: Array OutboundRunner
+    outboundRunners :: Array OutboundRunner,
+    inboundIntegrations :: Array Integration.Inbound
   }
 
 
@@ -141,7 +142,8 @@ new =
       serviceRunners = Array.empty,
       transports = Map.empty,
       queryEndpoints = Map.empty,
-      outboundRunners = Array.empty
+      outboundRunners = Array.empty,
+      inboundIntegrations = Array.empty
     }
 
 
@@ -333,6 +335,7 @@ withQueryEndpoint queryName handler app = do
     , queryEndpoints = updatedEndpoints
     , queryDefinitions = app.queryDefinitions
     , outboundRunners = app.outboundRunners
+    , inboundIntegrations = app.inboundIntegrations
     }
 
 
@@ -494,7 +497,10 @@ runWith eventStore app = do
   -- 10. Start integration subscriber for outbound integrations with command dispatch
   startIntegrationSubscriber eventStore app.outboundRunners combinedCommandEndpoints
 
-  -- 11. Run each transport once with combined endpoints from all services
+  -- 11. Start inbound integration workers (timers, webhooks, etc.)
+  startInboundWorkers app.inboundIntegrations combinedCommandEndpoints
+
+  -- 12. Run each transport once with combined endpoints from all services
   runTransports app.transports combinedEndpointsByTransport combinedQueryEndpoints
 
 
@@ -545,6 +551,40 @@ dispatchCommand commandEndpoints payload = do
     Nothing -> do
       Console.print [fmt|[Integration] No handler found for command: #{cmdType}|]
         |> Task.ignoreError
+
+
+-- | Start all inbound integration workers.
+--
+-- Each worker runs in its own background task, emitting commands that are
+-- dispatched to the appropriate service handlers. Workers run indefinitely.
+startInboundWorkers ::
+  Array Integration.Inbound ->
+  Map Text EndpointHandler ->
+  Task Text Unit
+startInboundWorkers inbounds commandEndpoints = do
+  if Array.isEmpty inbounds
+    then Task.yield unit
+    else do
+      let workerCount = Array.length inbounds
+      Console.print [fmt|[Integration] Starting #{workerCount} inbound worker(s)|]
+      inbounds
+        |> Task.forEach \inboundIntegration -> do
+            -- Start each worker in a background task
+            let workerWithErrorHandling :: Task Text Unit
+                workerWithErrorHandling = do
+                  let emitCommand payload = do
+                        dispatchCommand commandEndpoints payload
+                          |> Task.mapError (\err -> Integration.PermanentFailure err)
+                  result <- Integration.runInbound inboundIntegration emitCommand
+                    |> Task.mapError toText
+                    |> Task.asResult
+                  case result of
+                    Err err -> Console.print [fmt|[Integration] Inbound worker error: #{err}|]
+                    Ok _ -> Task.yield unit
+            -- Run worker in background
+            AsyncTask.run workerWithErrorHandling
+              |> Task.mapError toText
+              |> discard
 
 
 -- | Run all transports with their combined endpoints.
@@ -670,8 +710,8 @@ withOutbound integrationFn app = do
 -- Inbound integrations listen to external sources (timers, webhooks, message queues)
 -- and translate external events into domain commands.
 --
--- **Note**: This is a stub implementation. Inbound integrations are registered
--- but not yet executed. Full implementation coming soon.
+-- When the Application runs, each inbound worker is started in its own background task.
+-- Workers emit commands that are dispatched to the appropriate service handlers.
 --
 -- Example:
 --
@@ -684,4 +724,5 @@ withInbound ::
   Integration.Inbound ->
   Application ->
   Application
-withInbound _inboundIntegration app = app  -- Stub: integrations not yet wired
+withInbound inboundIntegration app =
+  app {inboundIntegrations = app.inboundIntegrations |> Array.push inboundIntegration}

@@ -32,10 +32,10 @@ cartIntegrations _cart event = case event of
 
 
 -- | Inbound integration: periodically creates new carts.
--- Every 30 seconds, submits a CreateCart command.
+-- Every 3 seconds, submits a CreateCart command.
 periodicCartCreator :: Integration.Inbound
 periodicCartCreator =
   Timer.every Timer.Every
-    { interval = Timer.seconds 30
+    { interval = Timer.seconds 3
     , toCommand = \_ -> CreateCart
     }
