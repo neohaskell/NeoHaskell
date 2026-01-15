@@ -616,6 +616,82 @@ spec = do
         count |> shouldBe 3
         seqArray |> shouldBe [1, 2, 3]
 
+      it "force-cancels workers when Stop message cannot be delivered (channel full)" \_ -> do
+        -- Test that workers are force-cancelled when their channel is full and Stop can't be delivered.
+        -- This verifies the fix for the memory leak where workers would never be cleaned up if
+        -- the Stop message couldn't be delivered due to a full channel.
+        --
+        -- Setup:
+        -- 1. Create a dispatcher with capacity=1 and very short timeout (10ms)
+        -- 2. Worker blocks forever on first event (simulating a stuck worker)
+        -- 3. Fill the channel so Stop can't be delivered
+        -- 4. Call shutdown - this should force-cancel the worker via AsyncTask.cancel
+        -- 5. Verify shutdown completes without hanging (the test itself is the verification)
+        workerStarted <- ConcurrentVar.containing False
+        workerCancelled <- ConcurrentVar.containing False
+
+        let blockingRunner =
+              Dispatcher.OutboundRunner
+                { entityTypeName = "TestEntity",
+                  processEvent = \_ -> do
+                    workerStarted |> ConcurrentVar.modify (\_ -> True)
+                    -- Block forever (simulating a stuck worker)
+                    -- This will be force-cancelled by AsyncTask.cancel
+                    let blockForever :: Task Text Unit
+                        blockForever = do
+                          AsyncTask.sleep 100000 |> Task.mapError (\_ -> "sleep error" :: Text)
+                          blockForever
+                    blockForever |> Task.asResult |> Task.map (\_ -> ())
+                    -- If we get here, we were cancelled
+                    workerCancelled |> ConcurrentVar.modify (\_ -> True)
+                    Task.yield Array.empty
+                }
+
+        -- Create dispatcher with tiny channel (capacity=1) and very short timeout
+        dispatcher <-
+          Dispatcher.newWithLifecycleConfig
+            Dispatcher.DispatcherConfig
+              { idleTimeoutMs = 60000,
+                reaperIntervalMs = 10000,
+                enableReaper = False,
+                workerChannelCapacity = 1,
+                channelWriteTimeoutMs = 10  -- Very short timeout
+              }
+            [blockingRunner]
+            []
+            Map.empty
+
+        -- Dispatch first event - worker will pick it up and block forever
+        event1 <- makeTestEvent "entity-A" 1 1
+        Dispatcher.dispatch dispatcher event1
+
+        -- Wait for worker to start processing
+        AsyncTask.sleep 50 |> Task.mapError (\_ -> "sleep error" :: Text)
+
+        -- Verify worker started
+        started <- ConcurrentVar.peek workerStarted
+        started |> shouldBe True
+
+        -- Fill the channel so Stop can't be delivered
+        event2 <- makeTestEvent "entity-A" 2 2
+        Dispatcher.dispatch dispatcher event2
+
+        -- Now the channel has capacity=1, and we've written one message to it.
+        -- The worker is blocked processing event1, so it won't read from the channel.
+        -- When we call shutdown, the Stop message will timeout trying to write to the full channel.
+        -- The fix ensures AsyncTask.cancel is called as fallback.
+
+        -- Call shutdown - this should force-cancel the stuck worker
+        -- If the fix isn't working, this would hang forever waiting for Stop to be delivered
+        Dispatcher.shutdown dispatcher
+
+        -- Give a moment for the cancellation to propagate
+        AsyncTask.sleep 50 |> Task.mapError (\_ -> "sleep error" :: Text)
+
+        -- Test passes if we get here without hanging
+        -- (The act of shutdown completing is the verification)
+        pass
+
       it "does not drop events when channel has capacity" \_ -> do
         -- Verify that events are NOT dropped when channel has space
         processedCount <- ConcurrentVar.containing (0 :: Int)

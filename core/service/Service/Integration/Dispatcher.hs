@@ -306,6 +306,52 @@ workerMessageLabel message = case message of
   Stop -> [fmt|stop|]
 
 
+-- | Stop a stateless worker gracefully or force-cancel if channel is full.
+--
+-- This ensures workers are always cleaned up even if their channel is full.
+-- First attempts to send Stop via the channel. If that times out (channel full),
+-- falls back to AsyncTask.cancel to forcefully terminate the worker.
+stopStatelessWorkerOrCancel ::
+  IntegrationDispatcher ->
+  StreamId ->
+  EntityWorker ->
+  Task Text Unit
+stopStatelessWorkerOrCancel dispatcher streamId worker = do
+  writeResult <-
+    Channel.tryWriteWithTimeout dispatcher.config.channelWriteTimeoutMs Stop worker.channel
+  case writeResult of
+    Ok _ -> pass
+    Err err -> do
+      Console.print
+        [fmt|[Dispatcher] Stop message timed out for stream #{streamId} (#{err}), force-cancelling worker|]
+        |> Task.ignoreError
+      -- Force-cancel the worker since we can't stop it gracefully
+      AsyncTask.cancel worker.workerTask
+
+
+-- | Stop a lifecycle worker gracefully or force-cancel if channel is full.
+--
+-- Similar to stopStatelessWorkerOrCancel but also attempts cleanup.
+-- If Stop can't be delivered, we force-cancel but cleanup may be skipped.
+stopLifecycleWorkerOrCancel ::
+  IntegrationDispatcher ->
+  StreamId ->
+  LifecycleEntityWorker ->
+  Task Text Unit
+stopLifecycleWorkerOrCancel dispatcher streamId worker = do
+  writeResult <-
+    Channel.tryWriteWithTimeout dispatcher.config.channelWriteTimeoutMs Stop worker.channel
+  case writeResult of
+    Ok _ -> pass
+    Err err -> do
+      Console.print
+        [fmt|[Dispatcher] Stop message timed out for lifecycle worker stream #{streamId} (#{err}), force-cancelling (cleanup may be skipped)|]
+        |> Task.ignoreError
+      -- Force-cancel - note that cleanup callbacks won't be called in this case
+      -- This is a trade-off: we prevent memory leaks but may leak external resources
+      AsyncTask.cancel worker.workerTask
+
+
 -- | Get an existing stateless worker or create a new one atomically.
 --
 -- This prevents the race condition where two threads could both see no worker
@@ -335,7 +381,7 @@ getOrCreateStatelessWorker dispatcher streamId = do
 
   -- Clean up discarded candidate if we lost the race
   case maybeDiscarded of
-    Just discarded -> writeWorkerMessageWithTimeout dispatcher streamId Stop discarded.channel
+    Just discarded -> stopStatelessWorkerOrCancel dispatcher streamId discarded
     Nothing -> pass
 
   Task.yield actualWorker
@@ -381,7 +427,7 @@ getOrCreateLifecycleWorker dispatcher streamId = do
               |> ConcurrentMap.getOrInsertIfM streamId candidateWorker shouldReplace
           -- Clean up discarded worker (either our candidate or the old draining one)
           case maybeDiscarded of
-            Just discarded -> writeWorkerMessageWithTimeout dispatcher streamId Stop discarded.channel
+            Just discarded -> stopLifecycleWorkerOrCancel dispatcher streamId discarded
             Nothing -> pass
           Task.yield actualWorker
     Nothing -> do
@@ -392,7 +438,7 @@ getOrCreateLifecycleWorker dispatcher streamId = do
           |> ConcurrentMap.getOrInsert streamId candidateWorker
       -- Clean up discarded candidate if we lost the race
       case maybeDiscarded of
-        Just discarded -> writeWorkerMessageWithTimeout dispatcher streamId Stop discarded.channel
+        Just discarded -> stopLifecycleWorkerOrCancel dispatcher streamId discarded
         Nothing -> pass
       Task.yield actualWorker
 
@@ -586,8 +632,8 @@ startReaper dispatcher = do
                     |> ConcurrentMap.removeIf streamId isSameWorker
                   -- Step 3: Send Stop only if we actually removed the worker
                   case removed of
-                    Just _ ->
-                      writeWorkerMessageWithTimeout dispatcher streamId Stop worker.channel
+                    Just removedWorker ->
+                      stopLifecycleWorkerOrCancel dispatcher streamId removedWorker
                     Nothing ->
                       -- Worker was replaced, don't send Stop to the new one
                       pass
@@ -614,9 +660,9 @@ shutdown dispatcher = do
   -- Send Stop to all stateless workers
   statelessWorkerEntries <- dispatcher.entityWorkers |> ConcurrentMap.entries
   statelessWorkerEntries |> Task.forEach \(streamId, worker) -> do
-    writeWorkerMessageWithTimeout dispatcher streamId Stop worker.channel
+    stopStatelessWorkerOrCancel dispatcher streamId worker
 
   -- Send Stop to all lifecycle workers (triggers cleanup)
   lifecycleWorkerEntries <- dispatcher.lifecycleEntityWorkers |> ConcurrentMap.entries
   lifecycleWorkerEntries |> Task.forEach \(streamId, worker) -> do
-    writeWorkerMessageWithTimeout dispatcher streamId Stop worker.channel
+    stopLifecycleWorkerOrCancel dispatcher streamId worker
