@@ -78,6 +78,8 @@ import Json qualified
 import Map (Map)
 import Map qualified
 import Maybe (Maybe (..))
+import Uuid (Uuid)
+import Uuid qualified
 import Result (Result (..))
 import Service.Event (Event (..))
 import Service.Event.StreamId (StreamId)
@@ -154,7 +156,11 @@ data WorkerStatus
 
 -- | Worker for a specific entity with lifecycle management.
 data LifecycleEntityWorker = LifecycleEntityWorker
-  { channel :: Channel (WorkerMessage (Event Json.Value)),
+  { -- | Unique identifier for this worker instance.
+    -- Used by the reaper to ensure it only removes the specific worker it checked,
+    -- not a newly-spawned replacement.
+    workerId :: Uuid,
+    channel :: Channel (WorkerMessage (Event Json.Value)),
     workerTask :: AsyncTask Text Unit,
     lastActivityTime :: ConcurrentVar Int,
     workerStates :: Array WorkerState, -- One per lifecycle runner
@@ -438,6 +444,8 @@ spawnLifecycleWorker ::
   StreamId ->
   Task Text LifecycleEntityWorker
 spawnLifecycleWorker dispatcher streamId = do
+  -- Generate unique ID for this worker instance
+  uniqueId <- Uuid.generate
   workerChannel <- Channel.newBounded dispatcher.config.workerChannelCapacity
   currentTime <- getCurrentTimeMs
   lastActivity <- ConcurrentVar.containing currentTime
@@ -466,7 +474,8 @@ spawnLifecycleWorker dispatcher streamId = do
   workerTask <- AsyncTask.run workerLoop
   Task.yield
     LifecycleEntityWorker
-      { channel = workerChannel,
+      { workerId = uniqueId,
+        channel = workerChannel,
         workerTask = workerTask,
         lastActivityTime = lastActivity,
         workerStates = states,
@@ -556,21 +565,32 @@ startReaper dispatcher = do
             -- Find and clean up idle workers
             -- Reaper race condition fix:
             -- 1. Mark worker as Draining (so dispatcher knows not to use it)
-            -- 2. Remove from map (so new events spawn new worker)
+            -- 2. Atomically remove from map ONLY IF it's still the same worker
+            --    (uses removeIfM to prevent removing a newly-spawned replacement)
             -- 3. Send Stop (worker drains queue then exits)
             workerEntries |> Task.forEach \(streamId, worker) -> do
               lastActivity <- worker.lastActivityTime |> ConcurrentVar.peek
               let idleTime = currentTime - lastActivity
               if idleTime > dispatcher.config.idleTimeoutMs
                 then do
+                  -- Capture the worker ID we're trying to remove
+                  let capturedWorkerId = worker.workerId
                   -- Step 1: Mark as Draining so dispatcher won't use this worker
                   worker.status |> AtomicVar.set Draining
-                  -- Step 2: Remove from map so new events spawn new worker
-                  dispatcher.lifecycleEntityWorkers
-                    |> ConcurrentMap.remove streamId
-                  -- Step 3: Send Stop to trigger cleanup and exit
-                  -- The worker will drain any remaining queued events before exiting
-                  writeWorkerMessageWithTimeout dispatcher streamId Stop worker.channel
+                  -- Step 2: Atomically remove ONLY IF the worker ID matches
+                  -- If a new worker was spawned between our check and remove,
+                  -- it will have a different ID and won't be removed
+                  let isSameWorker currentWorker =
+                        currentWorker.workerId == capturedWorkerId
+                  removed <- dispatcher.lifecycleEntityWorkers
+                    |> ConcurrentMap.removeIf streamId isSameWorker
+                  -- Step 3: Send Stop only if we actually removed the worker
+                  case removed of
+                    Just _ ->
+                      writeWorkerMessageWithTimeout dispatcher streamId Stop worker.channel
+                    Nothing ->
+                      -- Worker was replaced, don't send Stop to the new one
+                      pass
                 else pass
 
             -- Continue reaping

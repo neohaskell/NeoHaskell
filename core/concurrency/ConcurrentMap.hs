@@ -7,6 +7,8 @@ module ConcurrentMap (
   getOrInsertIf,
   getOrInsertIfM,
   remove,
+  removeIf,
+  removeIfM,
   contains,
   clear,
   length,
@@ -203,6 +205,76 @@ remove key (ConcurrentMap stmMap) =
   STMMap.delete key stmMap
     |> GhcSTM.atomically
     |> Task.fromIO
+
+
+-- | Atomically remove a key only if its value satisfies a predicate.
+--
+-- This prevents race conditions where:
+-- 1. Thread A checks a value and decides to remove it
+-- 2. Thread B replaces the value with a new one
+-- 3. Thread A removes the NEW value (wrong!)
+--
+-- With removeIf, the check and remove happen atomically.
+--
+-- Returns: Just value if removed, Nothing if key was missing or predicate returned False
+removeIf ::
+  forall key value.
+  (Hashable key, Eq key) =>
+  key ->
+  (value -> Bool) ->
+  ConcurrentMap key value ->
+  Task _ (Maybe value)
+removeIf key shouldRemove (ConcurrentMap stmMap) =
+  GhcSTM.atomically do
+    existing <- STMMap.lookup key stmMap
+    case existing of
+      Just existingValue ->
+        if shouldRemove existingValue
+          then do
+            STMMap.delete key stmMap
+            pure (Just existingValue)
+          else
+            pure Nothing
+      Nothing ->
+        pure Nothing
+  |> Task.fromIO
+
+
+-- | Like 'removeIf', but the predicate can perform STM operations.
+--
+-- This is useful when the predicate needs to read 'AtomicVar' values
+-- inside the value being checked.
+--
+-- Example with AtomicVar:
+--
+-- @
+-- let shouldRemove existing = do
+--       status <- AtomicVar.peekSTM existing.status
+--       pure (status == Draining)
+-- ConcurrentMap.removeIfM key shouldRemove map
+-- @
+removeIfM ::
+  forall key value.
+  (Hashable key, Eq key) =>
+  key ->
+  (value -> GhcSTM.STM Bool) ->
+  ConcurrentMap key value ->
+  Task _ (Maybe value)
+removeIfM key shouldRemove (ConcurrentMap stmMap) =
+  GhcSTM.atomically do
+    existing <- STMMap.lookup key stmMap
+    case existing of
+      Just existingValue -> do
+        doRemove <- shouldRemove existingValue
+        if doRemove
+          then do
+            STMMap.delete key stmMap
+            pure (Just existingValue)
+          else
+            pure Nothing
+      Nothing ->
+        pure Nothing
+  |> Task.fromIO
 
 
 -- | Check if a key exists in the map.
