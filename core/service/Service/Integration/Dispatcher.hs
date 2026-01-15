@@ -94,8 +94,8 @@ data WorkerMessage value
 -- This wraps an integration function with JSON decoding so it can process
 -- raw events from the event store.
 data OutboundRunner = OutboundRunner
-  { entityTypeName :: Text
-  , processEvent :: Event Json.Value -> Task Text (Array Integration.CommandPayload)
+  { entityTypeName :: Text,
+    processEvent :: Event Json.Value -> Task Text (Array Integration.CommandPayload)
   }
 
 
@@ -106,8 +106,8 @@ data OutboundRunner = OutboundRunner
 -- - Embedded interpreters
 -- - gRPC channels
 data OutboundLifecycleRunner = OutboundLifecycleRunner
-  { entityTypeName :: Text
-  , spawnWorkerState :: StreamId -> Task Text WorkerState
+  { entityTypeName :: Text,
+    spawnWorkerState :: StreamId -> Task Text WorkerState
   }
 
 
@@ -115,8 +115,8 @@ data OutboundLifecycleRunner = OutboundLifecycleRunner
 --
 -- Created by the lifecycle runner's 'spawnWorkerState' function.
 data WorkerState = WorkerState
-  { processEvent :: Event Json.Value -> Task Text (Array Integration.CommandPayload)
-  , cleanup :: Task Text Unit
+  { processEvent :: Event Json.Value -> Task Text (Array Integration.CommandPayload),
+    cleanup :: Task Text Unit
   }
 
 
@@ -124,47 +124,52 @@ data WorkerState = WorkerState
 data DispatcherConfig = DispatcherConfig
   { -- | How long a worker can be idle before being reaped (milliseconds).
     -- Default: 60000 (60 seconds)
-    idleTimeoutMs :: Int
+    idleTimeoutMs :: Int,
     -- | How often the reaper checks for idle workers (milliseconds).
     -- Default: 10000 (10 seconds)
-  , reaperIntervalMs :: Int
+    reaperIntervalMs :: Int,
+    -- | Whether to enable the reaper. Set to False for testing.
+    -- Default: True
+    enableReaper :: Bool
   }
 
 
 -- | Default dispatcher configuration.
 defaultConfig :: DispatcherConfig
-defaultConfig = DispatcherConfig
-  { idleTimeoutMs = 60000
-  , reaperIntervalMs = 10000
-  }
+defaultConfig =
+  DispatcherConfig
+    { idleTimeoutMs = 60000,
+      reaperIntervalMs = 10000,
+      enableReaper = True
+    }
 
 
 -- | Worker for a specific entity (stateless).
 data EntityWorker = EntityWorker
-  { channel :: Channel (WorkerMessage (Event Json.Value))
-  , workerTask :: AsyncTask Text Unit
+  { channel :: Channel (WorkerMessage (Event Json.Value)),
+    workerTask :: AsyncTask Text Unit
   }
 
 
 -- | Worker for a specific entity with lifecycle management.
 data LifecycleEntityWorker = LifecycleEntityWorker
-  { channel :: Channel (WorkerMessage (Event Json.Value))
-  , workerTask :: AsyncTask Text Unit
-  , lastActivityTime :: ConcurrentVar Int
-  , workerStates :: Array WorkerState  -- One per lifecycle runner
+  { channel :: Channel (WorkerMessage (Event Json.Value)),
+    workerTask :: AsyncTask Text Unit,
+    lastActivityTime :: ConcurrentVar Int,
+    workerStates :: Array WorkerState -- One per lifecycle runner
   }
 
 
 -- | Dispatcher that routes events to per-entity workers.
 data IntegrationDispatcher = IntegrationDispatcher
-  { entityWorkers :: ConcurrentVar (Map StreamId EntityWorker)
-  , lifecycleEntityWorkers :: ConcurrentVar (Map StreamId LifecycleEntityWorker)
-  , outboundRunners :: Array OutboundRunner
-  , lifecycleRunners :: Array OutboundLifecycleRunner
-  , commandEndpoints :: Map Text EndpointHandler
-  , shutdownSignal :: ConcurrentVar Bool
-  , config :: DispatcherConfig
-  , reaperTask :: ConcurrentVar (Maybe (AsyncTask Text Unit))
+  { entityWorkers :: ConcurrentVar (Map StreamId EntityWorker),
+    lifecycleEntityWorkers :: ConcurrentVar (Map StreamId LifecycleEntityWorker),
+    outboundRunners :: Array OutboundRunner,
+    lifecycleRunners :: Array OutboundLifecycleRunner,
+    commandEndpoints :: Map Text EndpointHandler,
+    shutdownSignal :: ConcurrentVar Bool,
+    config :: DispatcherConfig,
+    reaperTask :: ConcurrentVar (Maybe (AsyncTask Text Unit))
   }
 
 
@@ -204,19 +209,20 @@ newWithLifecycleConfig dispatcherConfig runners lifecycleRunners endpoints = do
   shutdownSignal <- ConcurrentVar.containing False
   reaperTaskVar <- ConcurrentVar.containing Nothing
 
-  let dispatcher = IntegrationDispatcher
-        { entityWorkers = workers
-        , lifecycleEntityWorkers = lifecycleWorkers
-        , outboundRunners = runners
-        , lifecycleRunners = lifecycleRunners
-        , commandEndpoints = endpoints
-        , shutdownSignal = shutdownSignal
-        , config = dispatcherConfig
-        , reaperTask = reaperTaskVar
-        }
+  let dispatcher =
+        IntegrationDispatcher
+          { entityWorkers = workers,
+            lifecycleEntityWorkers = lifecycleWorkers,
+            outboundRunners = runners,
+            lifecycleRunners = lifecycleRunners,
+            commandEndpoints = endpoints,
+            shutdownSignal = shutdownSignal,
+            config = dispatcherConfig,
+            reaperTask = reaperTaskVar
+          }
 
-  -- Start reaper if we have lifecycle runners
-  if Array.isEmpty lifecycleRunners
+  -- Start reaper if we have lifecycle runners and reaper is enabled
+  if Array.isEmpty lifecycleRunners || not dispatcherConfig.enableReaper
     then pass
     else do
       reaper <- startReaper dispatcher
@@ -296,10 +302,11 @@ spawnStatelessWorker dispatcher _streamId = do
             workerLoop
 
   workerTask <- AsyncTask.run workerLoop
-  Task.yield EntityWorker
-    { channel = workerChannel
-    , workerTask = workerTask
-    }
+  Task.yield
+    EntityWorker
+      { channel = workerChannel,
+        workerTask = workerTask
+      }
 
 
 -- | Spawn a lifecycle worker for an entity.
@@ -313,8 +320,9 @@ spawnLifecycleWorker dispatcher streamId = do
   lastActivity <- ConcurrentVar.containing currentTime
 
   -- Initialize all lifecycle runners
-  states <- dispatcher.lifecycleRunners
-    |> Task.mapArray (\runner -> runner.spawnWorkerState streamId)
+  states <-
+    dispatcher.lifecycleRunners
+      |> Task.mapArray (\runner -> runner.spawnWorkerState streamId)
 
   let workerLoop :: Task Text Unit
       workerLoop = do
@@ -332,12 +340,13 @@ spawnLifecycleWorker dispatcher streamId = do
             workerLoop
 
   workerTask <- AsyncTask.run workerLoop
-  Task.yield LifecycleEntityWorker
-    { channel = workerChannel
-    , workerTask = workerTask
-    , lastActivityTime = lastActivity
-    , workerStates = states
-    }
+  Task.yield
+    LifecycleEntityWorker
+      { channel = workerChannel,
+        workerTask = workerTask,
+        lastActivityTime = lastActivity,
+        workerStates = states
+      }
 
 
 -- | Process an event through stateless runners.
@@ -348,14 +357,14 @@ processStatelessEvent ::
 processStatelessEvent dispatcher event = do
   dispatcher.outboundRunners
     |> Task.forEach \runner -> do
-        result <- runner.processEvent event |> Task.asResult
-        case result of
-          Ok commands -> do
-            commands
-              |> Task.forEach \payload -> do
-                  dispatchCommand dispatcher.commandEndpoints payload
-          Err _err ->
-            Task.yield unit
+      result <- runner.processEvent event |> Task.asResult
+      case result of
+        Ok commands -> do
+          commands
+            |> Task.forEach \payload -> do
+              dispatchCommand dispatcher.commandEndpoints payload
+        Err _err ->
+          Task.yield unit
 
 
 -- | Process an event through lifecycle runners.
@@ -367,14 +376,14 @@ processLifecycleEvent ::
 processLifecycleEvent states endpoints event = do
   states
     |> Task.forEach \state -> do
-        result <- state.processEvent event |> Task.asResult
-        case result of
-          Ok commands -> do
-            commands
-              |> Task.forEach \payload -> do
-                  dispatchCommand endpoints payload
-          Err _err ->
-            Task.yield unit
+      result <- state.processEvent event |> Task.asResult
+      case result of
+        Ok commands -> do
+          commands
+            |> Task.forEach \payload -> do
+              dispatchCommand endpoints payload
+        Err _err ->
+          Task.yield unit
 
 
 -- | Dispatch a command to the appropriate handler.
@@ -437,12 +446,13 @@ startReaper dispatcher = do
 -- | Gracefully shutdown the dispatcher.
 --
 -- Signals all workers to stop by sending Stop messages.
--- Workers will cleanup their resources before exiting.
+-- Note: This is an async operation - workers may not have stopped when this returns.
+-- For production use, the application framework handles proper shutdown coordination.
 shutdown ::
   IntegrationDispatcher ->
   Task Text Unit
 shutdown dispatcher = do
-  -- Signal shutdown (stops the reaper)
+  -- Signal shutdown (stops the reaper on next iteration)
   dispatcher.shutdownSignal |> ConcurrentVar.set True
 
   -- Send Stop to all stateless workers

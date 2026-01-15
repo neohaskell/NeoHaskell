@@ -44,8 +44,8 @@ instance Json.FromJSON OrderingTestEvent
 
 -- | Command to record processing order.
 data RecordProcessed = RecordProcessed
-  { entityId :: Text
-  , sequenceNum :: Int
+  { entityId :: Text,
+    sequenceNum :: Int
   }
   deriving (Generic, Eq, Show, Typeable)
 
@@ -68,20 +68,22 @@ makeTestEvent :: Text -> Int -> Int -> Task Text (Event Json.Value)
 makeTestEvent entityIdText seqNum globalPos = do
   let streamId = StreamId.fromText entityIdText
   now <- DateTime.now
-  Task.yield Event
-    { entityName = EntityName "TestEntity"
-    , streamId = streamId
-    , event = Json.encode (OrderingEvent {sequenceNum = seqNum})
-    , metadata = EventMetadata
-        { eventId = Uuid.nil
-        , relatedUserSub = Nothing
-        , correlationId = Nothing
-        , causationId = Nothing
-        , createdAt = now
-        , localPosition = Just (StreamPosition (fromIntegral seqNum))
-        , globalPosition = Just (StreamPosition (fromIntegral globalPos))
-        }
-    }
+  Task.yield
+    Event
+      { entityName = EntityName "TestEntity",
+        streamId = streamId,
+        event = Json.encode (OrderingEvent {sequenceNum = seqNum}),
+        metadata =
+          EventMetadata
+            { eventId = Uuid.nil,
+              relatedUserSub = Nothing,
+              correlationId = Nothing,
+              causationId = Nothing,
+              createdAt = now,
+              localPosition = Just (StreamPosition (fromIntegral seqNum)),
+              globalPosition = Just (StreamPosition (fromIntegral globalPos))
+            }
+      }
 
 
 -- ============================================================================
@@ -96,12 +98,13 @@ spec = do
         -- Minimal test to verify basic dispatcher functionality
         processedCount <- ConcurrentVar.containing (0 :: Int)
 
-        let testRunner = Dispatcher.OutboundRunner
-              { entityTypeName = "TestEntity"
-              , processEvent = \_ -> do
-                  processedCount |> ConcurrentVar.modify (+ 1)
-                  Task.yield Array.empty
-              }
+        let testRunner =
+              Dispatcher.OutboundRunner
+                { entityTypeName = "TestEntity",
+                  processEvent = \_ -> do
+                    processedCount |> ConcurrentVar.modify (+ 1)
+                    Task.yield Array.empty
+                }
 
         dispatcher <- Dispatcher.new [testRunner] Map.empty
 
@@ -121,20 +124,21 @@ spec = do
 
         -- Create a dispatcher with a runner that records processing order
         -- and introduces a small delay to expose ordering issues
-        let testRunner = Dispatcher.OutboundRunner
-              { entityTypeName = "TestEntity"
-              , processEvent = \event -> do
-                  case Json.decode @OrderingTestEvent event.event of
-                    Err _ -> Task.yield Array.empty
-                    Ok decoded -> do
-                      let entityIdText = event.streamId |> StreamId.toText
-                      -- Add a small delay to expose race conditions
-                      AsyncTask.sleep 10 |> Task.mapError (\_ -> "sleep error" :: Text)
-                      -- Record that we processed this event
-                      processedOrder
-                        |> ConcurrentVar.modify (\order -> order ++ [(entityIdText, decoded.sequenceNum)])
-                      Task.yield Array.empty
-              }
+        let testRunner =
+              Dispatcher.OutboundRunner
+                { entityTypeName = "TestEntity",
+                  processEvent = \event -> do
+                    case Json.decode @OrderingTestEvent event.event of
+                      Err _ -> Task.yield Array.empty
+                      Ok decoded -> do
+                        let entityIdText = event.streamId |> StreamId.toText
+                        -- Add a small delay to expose race conditions
+                        AsyncTask.sleep 10 |> Task.mapError (\_ -> "sleep error" :: Text)
+                        -- Record that we processed this event
+                        processedOrder
+                          |> ConcurrentVar.modify (\order -> order ++ [(entityIdText, decoded.sequenceNum)])
+                        Task.yield Array.empty
+                }
 
         dispatcher <- Dispatcher.new [testRunner] Map.empty
 
@@ -169,23 +173,24 @@ spec = do
         -- Track when each entity's processing started and finished
         processingLog <- ConcurrentVar.containing ([] :: [(Text, Text, Int)])
 
-        let testRunner = Dispatcher.OutboundRunner
-              { entityTypeName = "TestEntity"
-              , processEvent = \event -> do
-                  case Json.decode @OrderingTestEvent event.event of
-                    Err _ -> Task.yield Array.empty
-                    Ok decoded -> do
-                      let entityIdText = event.streamId |> StreamId.toText
-                      -- Log start
-                      processingLog
-                        |> ConcurrentVar.modify (\log -> log ++ [(entityIdText, "start", decoded.sequenceNum)])
-                      -- Simulate work with delay
-                      AsyncTask.sleep 50 |> Task.mapError (\_ -> "sleep error" :: Text)
-                      -- Log end
-                      processingLog
-                        |> ConcurrentVar.modify (\log -> log ++ [(entityIdText, "end", decoded.sequenceNum)])
-                      Task.yield Array.empty
-              }
+        let testRunner =
+              Dispatcher.OutboundRunner
+                { entityTypeName = "TestEntity",
+                  processEvent = \event -> do
+                    case Json.decode @OrderingTestEvent event.event of
+                      Err _ -> Task.yield Array.empty
+                      Ok decoded -> do
+                        let entityIdText = event.streamId |> StreamId.toText
+                        -- Log start
+                        processingLog
+                          |> ConcurrentVar.modify (\log -> log ++ [(entityIdText, "start", decoded.sequenceNum)])
+                        -- Simulate work with delay
+                        AsyncTask.sleep 50 |> Task.mapError (\_ -> "sleep error" :: Text)
+                        -- Log end
+                        processingLog
+                          |> ConcurrentVar.modify (\log -> log ++ [(entityIdText, "end", decoded.sequenceNum)])
+                        Task.yield Array.empty
+                }
 
         dispatcher <- Dispatcher.new [testRunner] Map.empty
 
@@ -235,23 +240,24 @@ spec = do
       it "maintains ordering within each entity even with interleaved dispatch" \_ -> do
         processedOrder <- ConcurrentVar.containing ([] :: [(Text, Int)])
 
-        let testRunner = Dispatcher.OutboundRunner
-              { entityTypeName = "TestEntity"
-              , processEvent = \event -> do
-                  case Json.decode @OrderingTestEvent event.event of
-                    Err _ -> Task.yield Array.empty
-                    Ok decoded -> do
-                      let entityIdText = event.streamId |> StreamId.toText
-                      -- Variable delay based on sequence to expose ordering bugs
-                      let delayMs = case decoded.sequenceNum of
-                            1 -> 30
-                            2 -> 10
-                            _ -> 20
-                      AsyncTask.sleep delayMs |> Task.mapError (\_ -> "sleep error" :: Text)
-                      processedOrder
-                        |> ConcurrentVar.modify (\order -> order ++ [(entityIdText, decoded.sequenceNum)])
-                      Task.yield Array.empty
-              }
+        let testRunner =
+              Dispatcher.OutboundRunner
+                { entityTypeName = "TestEntity",
+                  processEvent = \event -> do
+                    case Json.decode @OrderingTestEvent event.event of
+                      Err _ -> Task.yield Array.empty
+                      Ok decoded -> do
+                        let entityIdText = event.streamId |> StreamId.toText
+                        -- Variable delay based on sequence to expose ordering bugs
+                        let delayMs = case decoded.sequenceNum of
+                              1 -> 30
+                              2 -> 10
+                              _ -> 20
+                        AsyncTask.sleep delayMs |> Task.mapError (\_ -> "sleep error" :: Text)
+                        processedOrder
+                          |> ConcurrentVar.modify (\order -> order ++ [(entityIdText, decoded.sequenceNum)])
+                        Task.yield Array.empty
+                }
 
         dispatcher <- Dispatcher.new [testRunner] Map.empty
 
@@ -307,18 +313,20 @@ spec = do
         initializeCalls <- ConcurrentVar.containing ([] :: [Text])
         processedEvents <- ConcurrentVar.containing (0 :: Int)
 
-        let lifecycleRunner = Dispatcher.OutboundLifecycleRunner
-              { entityTypeName = "TestEntity"
-              , spawnWorkerState = \streamId -> do
-                  let entityIdText = StreamId.toText streamId
-                  initializeCalls |> ConcurrentVar.modify (\calls -> calls ++ [entityIdText])
-                  Task.yield Dispatcher.WorkerState
-                    { processEvent = \_ -> do
-                        processedEvents |> ConcurrentVar.modify (+ 1)
-                        Task.yield []
-                    , cleanup = Task.yield unit
-                    }
-              }
+        let lifecycleRunner =
+              Dispatcher.OutboundLifecycleRunner
+                { entityTypeName = "TestEntity",
+                  spawnWorkerState = \streamId -> do
+                    let entityIdText = StreamId.toText streamId
+                    initializeCalls |> ConcurrentVar.modify (\calls -> calls ++ [entityIdText])
+                    Task.yield
+                      Dispatcher.WorkerState
+                        { processEvent = \_ -> do
+                            processedEvents |> ConcurrentVar.modify (+ 1)
+                            Task.yield [],
+                          cleanup = Task.yield unit
+                        }
+                }
 
         dispatcher <- Dispatcher.newWithLifecycle [] [lifecycleRunner] Map.empty
 
@@ -344,16 +352,18 @@ spec = do
         -- Track initialize calls
         initializeCalls <- ConcurrentVar.containing ([] :: [Text])
 
-        let lifecycleRunner = Dispatcher.OutboundLifecycleRunner
-              { entityTypeName = "TestEntity"
-              , spawnWorkerState = \streamId -> do
-                  let entityIdText = StreamId.toText streamId
-                  initializeCalls |> ConcurrentVar.modify (\calls -> calls ++ [entityIdText])
-                  Task.yield Dispatcher.WorkerState
-                    { processEvent = \_ -> Task.yield []
-                    , cleanup = Task.yield unit
-                    }
-              }
+        let lifecycleRunner =
+              Dispatcher.OutboundLifecycleRunner
+                { entityTypeName = "TestEntity",
+                  spawnWorkerState = \streamId -> do
+                    let entityIdText = StreamId.toText streamId
+                    initializeCalls |> ConcurrentVar.modify (\calls -> calls ++ [entityIdText])
+                    Task.yield
+                      Dispatcher.WorkerState
+                        { processEvent = \_ -> Task.yield [],
+                          cleanup = Task.yield unit
+                        }
+                }
 
         dispatcher <- Dispatcher.newWithLifecycle [] [lifecycleRunner] Map.empty
 
@@ -377,26 +387,30 @@ spec = do
         -- Track cleanup calls
         cleanupCalls <- ConcurrentVar.containing ([] :: [Text])
 
-        let lifecycleRunner = Dispatcher.OutboundLifecycleRunner
-              { entityTypeName = "TestEntity"
-              , spawnWorkerState = \streamId -> do
-                  let entityIdText = StreamId.toText streamId
-                  Task.yield Dispatcher.WorkerState
-                    { processEvent = \_ -> Task.yield []
-                    , cleanup = do
-                        cleanupCalls |> ConcurrentVar.modify (\calls -> calls ++ [entityIdText])
-                    }
-              }
+        let lifecycleRunner =
+              Dispatcher.OutboundLifecycleRunner
+                { entityTypeName = "TestEntity",
+                  spawnWorkerState = \streamId -> do
+                    let entityIdText = StreamId.toText streamId
+                    Task.yield
+                      Dispatcher.WorkerState
+                        { processEvent = \_ -> Task.yield [],
+                          cleanup = do
+                            cleanupCalls |> ConcurrentVar.modify (\calls -> calls ++ [entityIdText])
+                        }
+                }
 
         -- Create dispatcher with very short idle timeout (50ms)
-        dispatcher <- Dispatcher.newWithLifecycleConfig
-          Dispatcher.DispatcherConfig
-            { idleTimeoutMs = 50
-            , reaperIntervalMs = 25
-            }
-          []
-          [lifecycleRunner]
-          Map.empty
+        dispatcher <-
+          Dispatcher.newWithLifecycleConfig
+            Dispatcher.DispatcherConfig
+              { idleTimeoutMs = 50,
+                reaperIntervalMs = 25,
+                enableReaper = True
+              }
+            []
+            [lifecycleRunner]
+            Map.empty
 
         -- Send event to entity A
         eventA <- makeTestEvent "entity-A" 1 1
@@ -413,26 +427,30 @@ spec = do
         -- Track initialize calls
         initializeCalls <- ConcurrentVar.containing ([] :: [Text])
 
-        let lifecycleRunner = Dispatcher.OutboundLifecycleRunner
-              { entityTypeName = "TestEntity"
-              , spawnWorkerState = \streamId -> do
-                  let entityIdText = StreamId.toText streamId
-                  initializeCalls |> ConcurrentVar.modify (\calls -> calls ++ [entityIdText])
-                  Task.yield Dispatcher.WorkerState
-                    { processEvent = \_ -> Task.yield []
-                    , cleanup = Task.yield unit
-                    }
-              }
+        let lifecycleRunner =
+              Dispatcher.OutboundLifecycleRunner
+                { entityTypeName = "TestEntity",
+                  spawnWorkerState = \streamId -> do
+                    let entityIdText = StreamId.toText streamId
+                    initializeCalls |> ConcurrentVar.modify (\calls -> calls ++ [entityIdText])
+                    Task.yield
+                      Dispatcher.WorkerState
+                        { processEvent = \_ -> Task.yield [],
+                          cleanup = Task.yield unit
+                        }
+                }
 
         -- Create dispatcher with very short idle timeout
-        dispatcher <- Dispatcher.newWithLifecycleConfig
-          Dispatcher.DispatcherConfig
-            { idleTimeoutMs = 50
-            , reaperIntervalMs = 25
-            }
-          []
-          [lifecycleRunner]
-          Map.empty
+        dispatcher <-
+          Dispatcher.newWithLifecycleConfig
+            Dispatcher.DispatcherConfig
+              { idleTimeoutMs = 50,
+                reaperIntervalMs = 25,
+                enableReaper = True
+              }
+            []
+            [lifecycleRunner]
+            Map.empty
 
         -- Send first event
         eventA1 <- makeTestEvent "entity-A" 1 1
