@@ -39,8 +39,9 @@ runTransports transportsMap endpointsByTransport queryEndpoints = do
                 |> Maybe.withDefault Map.empty
 
         let commandCount = Map.length commandEndpointsForTransport
-        let queryCount = Map.length queryEndpoints
-        Console.print [fmt|Starting transport: #{transportName} with #{commandCount} commands and #{queryCount} queries|]
+        let sharedQueryCount = Map.length queryEndpoints
+        let transportQueryCount = sharedQueryCount
+        Console.print [fmt|Starting transport: #{transportName} with #{commandCount} commands and #{transportQueryCount} queries (shared query endpoints: #{sharedQueryCount} total)|]
 
         case transportVal of
           TransportValue transport -> do
