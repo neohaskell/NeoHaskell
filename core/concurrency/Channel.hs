@@ -79,10 +79,15 @@ new = do
 -- @capacity = processing_rate * acceptable_latency@
 --
 -- For example: 10 events/second processing, 5 second acceptable latency = 50 capacity
-newBounded :: Int -> Task _ (Channel value)
+--
+-- Throws an error if capacity is not positive.
+newBounded :: Int -> Task Text (Channel value)
 newBounded channelCapacity = do
-  queue <- TBQueue.newTBQueueIO (fromIntegral channelCapacity) |> Task.fromIO
-  Task.yield (BoundedChannel {tbQueue = queue, capacity = channelCapacity})
+  if channelCapacity <= 0
+    then Task.throw "Channel capacity must be positive"
+    else do
+      queue <- TBQueue.newTBQueueIO (fromIntegral channelCapacity) |> Task.fromIO
+      Task.yield (BoundedChannel {tbQueue = queue, capacity = channelCapacity})
 
 
 -- | Read a value from the channel.
