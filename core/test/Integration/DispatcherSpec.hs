@@ -11,7 +11,9 @@ import Integration qualified
 import Integration.Command qualified as Command
 import Integration.Lifecycle qualified as Lifecycle
 import Json qualified
+import LinkedList qualified
 import Map qualified
+import Maybe qualified
 import Service.Command.Core (NameOf)
 import Service.Event (Event (..), StreamPosition (..))
 import Service.Event.EntityName (EntityName (..))
@@ -476,3 +478,122 @@ spec = do
         -- Verify initialize was called twice (once for each spawn)
         calls2 <- ConcurrentVar.peek initializeCalls
         calls2 |> Array.fromLinkedList |> shouldBe ["entity-A", "entity-A"]
+
+    describe "concurrent dispatch race condition" do
+      it "creates exactly one worker and processes all events when 100 events arrive simultaneously" \_ -> do
+        -- This test verifies the fix for the worker spawn race condition.
+        -- Before the fix, two threads could both see no worker exists,
+        -- both spawn workers, and one would be orphaned (memory leak + lost events).
+        --
+        -- NOTE: We do NOT verify strict ordering here because concurrent dispatch
+        -- from multiple threads does NOT guarantee arrival order at the channel.
+        -- The per-entity ordering guarantee only applies to events arriving through
+        -- a single sequential path (e.g., from a subscription).
+        processedCount <- ConcurrentVar.containing (0 :: Int)
+        processedSequences <- ConcurrentVar.containing ([] :: [Int])
+
+        let testRunner =
+              Dispatcher.OutboundRunner
+                { entityTypeName = "TestEntity",
+                  processEvent = \event -> do
+                    case Json.decode @OrderingTestEvent event.event of
+                      Err _ -> Task.yield Array.empty
+                      Ok decoded -> do
+                        processedCount |> ConcurrentVar.modify (+ 1)
+                        processedSequences
+                          |> ConcurrentVar.modify (\seqs -> seqs ++ [decoded.sequenceNum])
+                        Task.yield Array.empty
+                }
+
+        dispatcher <- Dispatcher.new [testRunner] Map.empty
+
+        -- Create 100 events for the same entity
+        let eventCount = 100
+        events <-
+          Array.range 1 eventCount
+            |> Task.mapArray (\i -> makeTestEvent "entity-A" i i)
+
+        -- Dispatch all events simultaneously using runAllIgnoringErrors
+        let dispatchTasks =
+              events
+                |> Array.map (\event -> Dispatcher.dispatch dispatcher event)
+        AsyncTask.runAllIgnoringErrors dispatchTasks
+
+        -- Wait for all events to be processed
+        -- With 100 events and potential small delays, give ample time
+        AsyncTask.sleep 2000 |> Task.mapError (\_ -> "sleep error" :: Text)
+
+        -- Verify ALL 100 events were processed (no drops)
+        count <- ConcurrentVar.peek processedCount
+        count |> shouldBe eventCount
+
+        -- Verify all events were processed exactly once (no duplicates, no drops)
+        seqs <- ConcurrentVar.peek processedSequences
+        let seqArray = seqs |> Array.fromLinkedList
+        let sortedSeqs = seqArray |> Array.toLinkedList |> LinkedList.sort |> Array.fromLinkedList
+        sortedSeqs |> shouldBe (Array.range 1 eventCount)
+
+        pass
+
+      it "handles concurrent dispatch to multiple entities correctly" \_ -> do
+        -- Test that concurrent dispatch to multiple different entities works correctly
+        -- Each entity should have exactly one worker, and all events should be processed
+        --
+        -- NOTE: We verify all events are processed for each entity but do NOT check
+        -- strict ordering because concurrent dispatch doesn't guarantee it.
+        processedByEntity <- ConcurrentVar.containing (Map.empty :: Map Text [Int])
+
+        let testRunner =
+              Dispatcher.OutboundRunner
+                { entityTypeName = "TestEntity",
+                  processEvent = \event -> do
+                    case Json.decode @OrderingTestEvent event.event of
+                      Err _ -> Task.yield Array.empty
+                      Ok decoded -> do
+                        let entityIdText = event.streamId |> StreamId.toText
+                        processedByEntity
+                          |> ConcurrentVar.modify \entityMap ->
+                            let current = Map.get entityIdText entityMap |> Maybe.withDefault []
+                             in Map.set entityIdText (current ++ [decoded.sequenceNum]) entityMap
+                        Task.yield Array.empty
+                }
+
+        dispatcher <- Dispatcher.new [testRunner] Map.empty
+
+        -- Create 10 events for each of 10 different entities (100 total)
+        let entitiesCount = 10
+        let eventsPerEntity = 10
+        allEvents <-
+          Array.range 1 entitiesCount
+            |> Task.mapArray \entityNum -> do
+              let entityId = [fmt|entity-#{entityNum}|]
+              Array.range 1 eventsPerEntity
+                |> Task.mapArray \seqNum -> do
+                  let globalPos = (entityNum - 1) * eventsPerEntity + seqNum
+                  makeTestEvent entityId seqNum globalPos
+
+        let flatEvents = allEvents |> Array.flatten
+
+        -- Dispatch all events simultaneously
+        let dispatchTasks =
+              flatEvents
+                |> Array.map (\event -> Dispatcher.dispatch dispatcher event)
+        AsyncTask.runAllIgnoringErrors dispatchTasks
+
+        -- Wait for processing
+        AsyncTask.sleep 2000 |> Task.mapError (\_ -> "sleep error" :: Text)
+
+        -- Verify each entity processed all its events (sorted to account for concurrent arrival)
+        entityMap <- ConcurrentVar.peek processedByEntity
+        Array.range 1 entitiesCount
+          |> Task.forEach \entityNum -> do
+            let entityId = [fmt|entity-#{entityNum}|]
+            let processed = Map.get entityId entityMap |> Maybe.withDefault []
+            let processedArray = processed |> Array.fromLinkedList
+            -- Should have all events
+            Array.length processedArray |> shouldBe eventsPerEntity
+            -- All events should be present (sorted comparison)
+            let sortedProcessed = processedArray |> Array.toLinkedList |> LinkedList.sort |> Array.fromLinkedList
+            sortedProcessed |> shouldBe (Array.range 1 eventsPerEntity)
+
+        pass

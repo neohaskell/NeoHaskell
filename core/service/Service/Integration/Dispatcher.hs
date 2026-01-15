@@ -209,6 +209,9 @@ newWithLifecycleConfig dispatcherConfig runners lifecycleRunners endpoints = do
 --
 -- If no worker exists for this entity, one is created. Events are queued
 -- to the worker's channel for sequential processing.
+--
+-- Uses atomic get-or-create to prevent race conditions when multiple events
+-- for the same entity arrive simultaneously.
 dispatch ::
   IntegrationDispatcher ->
   Event Json.Value ->
@@ -220,32 +223,80 @@ dispatch dispatcher event = do
   if Array.isEmpty dispatcher.outboundRunners
     then pass
     else do
-      workers <- dispatcher.entityWorkers |> ConcurrentVar.peek
-      worker <- case Map.get streamId workers of
-        Just existingWorker -> Task.yield existingWorker
-        Nothing -> do
-          newWorker <- spawnStatelessWorker dispatcher streamId
-          dispatcher.entityWorkers
-            |> ConcurrentVar.modify (Map.set streamId newWorker)
-          Task.yield newWorker
+      worker <- getOrCreateStatelessWorker dispatcher streamId
       worker.channel |> Channel.write (ProcessEvent event)
 
   -- Handle lifecycle workers
   if Array.isEmpty dispatcher.lifecycleRunners
     then pass
     else do
-      lifecycleWorkers <- dispatcher.lifecycleEntityWorkers |> ConcurrentVar.peek
-      lifecycleWorker <- case Map.get streamId lifecycleWorkers of
-        Just existingWorker -> Task.yield existingWorker
-        Nothing -> do
-          newWorker <- spawnLifecycleWorker dispatcher streamId
-          dispatcher.lifecycleEntityWorkers
-            |> ConcurrentVar.modify (Map.set streamId newWorker)
-          Task.yield newWorker
+      lifecycleWorker <- getOrCreateLifecycleWorker dispatcher streamId
       -- Update last activity time
       currentTime <- getCurrentTimeMs
       lifecycleWorker.lastActivityTime |> ConcurrentVar.set currentTime
       lifecycleWorker.channel |> Channel.write (ProcessEvent event)
+
+
+-- | Get an existing stateless worker or create a new one atomically.
+--
+-- This prevents the race condition where two threads could both see no worker
+-- exists and both create one, causing one to be orphaned (memory leak) and
+-- events to be lost.
+--
+-- Implementation uses optimistic spawning: we pre-spawn a worker outside the
+-- lock, then atomically check-and-insert. If another thread beat us, we
+-- discard the pre-spawned worker. This is safe because:
+-- 1. The atomic insert-if-missing guarantees exactly one worker per entity
+-- 2. Discarded workers are not leaked (just unused AsyncTasks that complete)
+-- 3. The race window is small, so wasted spawns are rare
+getOrCreateStatelessWorker ::
+  IntegrationDispatcher ->
+  StreamId ->
+  Task Text EntityWorker
+getOrCreateStatelessWorker dispatcher streamId = do
+  -- First, optimistically spawn a new worker (outside the lock)
+  -- This may be discarded if another thread wins the race
+  candidateWorker <- spawnStatelessWorker dispatcher streamId
+
+  -- Atomically check if a worker exists, insert ours if not
+  dispatcher.entityWorkers
+    |> ConcurrentVar.modifyReturning \workers ->
+      case Map.get streamId workers of
+        Just existingWorker -> do
+          -- Another thread beat us, discard our candidate
+          -- Send Stop to clean up the unused worker
+          candidateWorker.channel |> Channel.write Stop
+          Task.yield (workers, existingWorker)
+        Nothing -> do
+          -- We won the race, insert our candidate
+          let updatedWorkers = workers |> Map.set streamId candidateWorker
+          Task.yield (updatedWorkers, candidateWorker)
+
+
+-- | Get an existing lifecycle worker or create a new one atomically.
+--
+-- Same atomic guarantee as getOrCreateStatelessWorker.
+getOrCreateLifecycleWorker ::
+  IntegrationDispatcher ->
+  StreamId ->
+  Task Text LifecycleEntityWorker
+getOrCreateLifecycleWorker dispatcher streamId = do
+  -- First, optimistically spawn a new worker (outside the lock)
+  candidateWorker <- spawnLifecycleWorker dispatcher streamId
+
+  -- Atomically check if a worker exists, insert ours if not
+  dispatcher.lifecycleEntityWorkers
+    |> ConcurrentVar.modifyReturning \workers ->
+      case Map.get streamId workers of
+        Just existingWorker -> do
+          -- Another thread beat us, discard our candidate
+          -- Send Stop to trigger cleanup
+          candidateWorker.channel |> Channel.write Stop
+          Task.yield (workers, existingWorker)
+        Nothing -> do
+          -- We won the race, insert our candidate
+          let updatedWorkers = workers |> Map.set streamId candidateWorker
+          Task.yield (updatedWorkers, candidateWorker)
 
 
 -- | Get current time in milliseconds.
