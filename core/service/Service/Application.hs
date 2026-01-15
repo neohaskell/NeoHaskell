@@ -43,6 +43,7 @@ module Service.Application (
 
 import Array (Array)
 import Array qualified
+import AsyncTask (AsyncTask)
 import AsyncTask qualified
 import Basics
 import Console qualified
@@ -524,10 +525,25 @@ runWith eventStore app = do
   startIntegrationSubscriber eventStore app.outboundRunners app.outboundLifecycleRunners combinedCommandEndpoints
 
   -- 11. Start inbound integration workers (timers, webhooks, etc.)
-  startInboundWorkers app.inboundIntegrations combinedCommandEndpoints
+  inboundWorkers <- startInboundWorkers app.inboundIntegrations combinedCommandEndpoints
 
   -- 12. Run each transport once with combined endpoints from all services
-  runTransports app.transports combinedEndpointsByTransport combinedQueryEndpoints
+  -- When transports complete (or fail), cancel inbound workers for clean shutdown
+  result <- runTransports app.transports combinedEndpointsByTransport combinedQueryEndpoints
+    |> Task.asResult
+
+  -- 13. Cancel all inbound workers on shutdown
+  Console.print "[Integration] Shutting down inbound workers..."
+    |> Task.ignoreError
+  inboundWorkers
+    |> Task.forEach \worker -> do
+        AsyncTask.cancel worker
+          |> Task.ignoreError
+
+  -- Re-raise any transport error
+  case result of
+    Err err -> Task.throw err
+    Ok _ -> Task.yield unit
 
 
 -- | Start subscription for outbound integrations.
@@ -613,22 +629,25 @@ dispatchCommand commandEndpoints payload = do
 -- | Start all inbound integration workers.
 --
 -- Each worker runs in its own background task, emitting commands that are
--- dispatched to the appropriate service handlers. Workers run indefinitely.
+-- dispatched to the appropriate service handlers. Workers run indefinitely
+-- with automatic restart on failure (with exponential backoff).
+--
+-- Returns the spawned AsyncTasks so they can be cancelled on shutdown.
 startInboundWorkers ::
   Array Integration.Inbound ->
   Map Text EndpointHandler ->
-  Task Text Unit
+  Task Text (Array (AsyncTask Text Unit))
 startInboundWorkers inbounds commandEndpoints = do
   if Array.isEmpty inbounds
-    then Task.yield unit
+    then Task.yield Array.empty
     else do
       let workerCount = Array.length inbounds
       Console.print [fmt|[Integration] Starting #{workerCount} inbound worker(s)|]
       inbounds
-        |> Task.forEach \inboundIntegration -> do
-            -- Start each worker in a background task
-            let workerWithErrorHandling :: Task Text Unit
-                workerWithErrorHandling = do
+        |> Task.mapArray \inboundIntegration -> do
+            -- Start each worker in a background task with restart logic
+            let workerWithRestartLoop :: Int -> Task Text Unit
+                workerWithRestartLoop backoffMs = do
                   let emitCommand payload = do
                         dispatchCommand commandEndpoints payload
                           |> Task.mapError (\err -> Integration.PermanentFailure err)
@@ -636,12 +655,17 @@ startInboundWorkers inbounds commandEndpoints = do
                     |> Task.mapError toText
                     |> Task.asResult
                   case result of
-                    Err err -> Console.print [fmt|[Integration] Inbound worker error: #{err}|]
+                    Err err -> do
+                      Console.print [fmt|[Integration] Inbound worker error: #{err}. Restarting in #{backoffMs}ms...|]
+                        |> Task.ignoreError
+                      AsyncTask.sleep backoffMs
+                      -- Exponential backoff: double the delay, max 60 seconds
+                      let nextBackoff = min (backoffMs * 2) 60000
+                      workerWithRestartLoop nextBackoff
                     Ok _ -> Task.yield unit
-            -- Run worker in background
-            AsyncTask.run workerWithErrorHandling
+            -- Run worker in background, starting with 1 second backoff
+            AsyncTask.run (workerWithRestartLoop 1000)
               |> Task.mapError toText
-              |> discard
 
 
 -- | Run all transports with their combined endpoints.
