@@ -31,15 +31,18 @@ decide :: InitializeStock -> Maybe StockEntity -> Decision StockEvent
 decide cmd entity = case entity of
   Just _ ->
     Decider.reject "Stock already initialized for this product!"
-  Nothing -> do
-    id <- Decider.generateUuid
-    Decider.acceptNew
-      [ StockInitialized
-          { entityId = id
-          , productId = cmd.productId
-          , available = cmd.available
-          }
-      ]
+  Nothing ->
+    if cmd.available < 0
+      then Decider.reject "Available stock cannot be negative"
+      else do
+        id <- Decider.generateUuid
+        Decider.acceptNew
+          [ StockInitialized
+              { entityId = id
+              , productId = cmd.productId
+              , available = cmd.available
+              }
+          ]
 
 
 type instance EntityOf InitializeStock = StockEntity

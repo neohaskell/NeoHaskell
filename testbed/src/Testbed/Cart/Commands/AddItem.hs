@@ -33,13 +33,16 @@ decide cmd entity = case entity of
   Nothing ->
     Decider.reject "Cart not found!"
   Just cart ->
-    Decider.acceptExisting
-      [ ItemAdded
-          { entityId = cart.cartId
-          , stockId = cmd.stockId
-          , quantity = cmd.quantity
-          }
-      ]
+    if cmd.quantity <= 0
+      then Decider.reject "Quantity must be positive"
+      else
+        Decider.acceptExisting
+          [ ItemAdded
+              { entityId = cart.cartId
+              , stockId = cmd.stockId
+              , quantity = cmd.quantity
+              }
+          ]
 
 
 type instance EntityOf AddItem = CartEntity

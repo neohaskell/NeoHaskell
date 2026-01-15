@@ -38,16 +38,19 @@ decide cmd entity = case entity of
   Nothing ->
     Decider.reject "Stock not found!"
   Just stock ->
-    if stock.available >= cmd.quantity
-      then
-        Decider.acceptExisting
-          [ StockReserved
-              { entityId = stock.stockId
-              , quantity = cmd.quantity
-              , cartId = cmd.cartId
-              }
-          ]
-      else Decider.reject "Insufficient stock available!"
+    if cmd.quantity <= 0
+      then Decider.reject "Quantity must be positive"
+      else
+        if stock.available >= cmd.quantity
+          then
+            Decider.acceptExisting
+              [ StockReserved
+                  { entityId = stock.stockId
+                  , quantity = cmd.quantity
+                  , cartId = cmd.cartId
+                  }
+              ]
+          else Decider.reject "Insufficient stock available!"
 
 
 type instance EntityOf ReserveStock = StockEntity
