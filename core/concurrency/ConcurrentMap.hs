@@ -54,10 +54,12 @@ get ::
   key ->
   ConcurrentMap key value ->
   Task _ (Maybe value)
-get key (ConcurrentMap stmMap) =
-  STMMap.lookup key stmMap
-    |> GhcSTM.atomically
-    |> Task.fromIO
+get key concurrentMap =
+  case concurrentMap of
+    ConcurrentMap stmMap ->
+      STMMap.lookup key stmMap
+        |> GhcSTM.atomically
+        |> Task.fromIO
 
 
 -- | Set a value in the map for the given key.
@@ -69,10 +71,12 @@ set ::
   value ->
   ConcurrentMap key value ->
   Task _ Unit
-set key value (ConcurrentMap stmMap) =
-  STMMap.insert value key stmMap
-    |> GhcSTM.atomically
-    |> Task.fromIO
+set key value concurrentMap =
+  case concurrentMap of
+    ConcurrentMap stmMap ->
+      STMMap.insert value key stmMap
+        |> GhcSTM.atomically
+        |> Task.fromIO
 
 
 -- | Atomically get an existing value or insert a new one.

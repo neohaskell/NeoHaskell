@@ -49,29 +49,34 @@ peek ::
   forall value.
   AtomicVar value ->
   Task _ value
-peek (AtomicVar tvar) =
-  GhcSTM.readTVarIO tvar
-    |> Task.fromIO
+peek atomicVar = do
+  case atomicVar of
+    AtomicVar tvar ->
+      GhcSTM.readTVarIO tvar
+        |> Task.fromIO
 
 
 -- | Read the current value inside an STM transaction.
 --
--- This is useful for predicates in 'ConcurrentMap.getOrInsertIf' which
+-- This is useful for predicates in 'ConcurrentMap.getOrInsertIfM' which
 -- run inside STM and cannot perform IO.
 --
--- Note: This returns an STM action, not a Task. Use it like:
+-- Example usage with ConcurrentMap:
 --
 -- @
--- let predicate worker = GhcSTM.unsafePerformIO (GhcSTM.atomically (AtomicVar.peekSTM worker.status)) == Draining
+-- let shouldReplace existing = do
+--       status <- AtomicVar.peekSTM existing.status
+--       pure (status == Draining)
+-- ConcurrentMap.getOrInsertIfM key candidate shouldReplace map
 -- @
---
--- Or more commonly, ConcurrentMap operations will handle the STM context for you.
 peekSTM ::
   forall value.
   AtomicVar value ->
   GhcSTM.STM value
-peekSTM (AtomicVar tvar) =
-  GhcSTM.readTVar tvar
+peekSTM atomicVar =
+  case atomicVar of
+    AtomicVar tvar ->
+      GhcSTM.readTVar tvar
 
 
 -- | Set a new value.
@@ -80,9 +85,11 @@ set ::
   value ->
   AtomicVar value ->
   Task _ Unit
-set value (AtomicVar tvar) =
-  GhcSTM.atomically (GhcSTM.writeTVar tvar value)
-    |> Task.fromIO
+set value atomicVar =
+  case atomicVar of
+    AtomicVar tvar ->
+      GhcSTM.atomically (GhcSTM.writeTVar tvar value)
+        |> Task.fromIO
 
 
 -- | Atomically modify the value.
@@ -91,6 +98,8 @@ modify ::
   (value -> value) ->
   AtomicVar value ->
   Task _ Unit
-modify f (AtomicVar tvar) =
-  GhcSTM.atomically (GhcSTM.modifyTVar' tvar f)
-    |> Task.fromIO
+modify f atomicVar =
+  case atomicVar of
+    AtomicVar tvar ->
+      GhcSTM.atomically (GhcSTM.modifyTVar' tvar f)
+        |> Task.fromIO
