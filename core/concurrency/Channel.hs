@@ -9,7 +9,6 @@ module Channel (
 ) where
 
 import Basics
-import Control.Concurrent qualified as GhcConc
 import Control.Concurrent.Chan.Unagi qualified as Unagi
 import Control.Concurrent.STM qualified as STM
 import Control.Concurrent.STM.TBQueue qualified as TBQueue
@@ -126,8 +125,11 @@ write value channel = case channel of
 --
 -- This is useful for the dispatcher to avoid blocking forever when a
 -- worker's channel is full due to a slow integration.
+--
+-- Implementation uses STM registerDelay for atomic timeout behavior,
+-- ensuring the result accurately reflects whether the write occurred.
 tryWriteWithTimeout ::
-  Int ->  -- ^ Timeout in milliseconds
+  Int -> -- ^ Timeout in milliseconds
   value ->
   Channel value ->
   Task Text (Result Text Unit)
@@ -136,29 +138,21 @@ tryWriteWithTimeout timeoutMs value channel = case channel of
     Unagi.writeChan inChannel value |> Task.fromIO
     Task.yield (Ok unit)
   BoundedChannel {tbQueue} -> do
-    -- Use STM tryWriteTBQueue with a timeout mechanism
-    resultVar <- GhcConc.newEmptyMVar |> Task.fromIO
-    
-    -- Spawn a thread that tries to write
-    writerThread <- Task.fromIO do
-      GhcConc.forkIO do
-        STM.atomically (TBQueue.writeTBQueue tbQueue value)
-        GhcConc.putMVar resultVar (Ok unit)
-    
-    -- Spawn a timeout thread
-    timeoutThread <- Task.fromIO do
-      GhcConc.forkIO do
-        GhcConc.threadDelay (timeoutMs * 1000)
-        GhcConc.tryPutMVar resultVar (Err "timeout")
-        pure ()
-    
-    -- Wait for either to complete
-    result <- GhcConc.takeMVar resultVar |> Task.fromIO
-    
-    -- Clean up threads
-    GhcConc.killThread writerThread |> Task.fromIO
-    GhcConc.killThread timeoutThread |> Task.fromIO
-    
+    -- Use STM registerDelay for atomic timeout behavior.
+    -- This ensures the write and timeout check happen in a single transaction,
+    -- preventing the race condition where a write succeeds but timeout is reported.
+    result <- Task.fromIO do
+      timeoutVar <- STM.registerDelay (timeoutMs * 1000)
+      STM.atomically do
+        let writeAction = do
+              TBQueue.writeTBQueue tbQueue value
+              pure (Ok unit)
+        let timeoutAction = do
+              timedOut <- STM.readTVar timeoutVar
+              if timedOut
+                then pure (Err "timeout")
+                else STM.retry
+        writeAction `STM.orElse` timeoutAction
     Task.yield result
 
 
