@@ -3,6 +3,7 @@ module ConcurrentMap (
   new,
   get,
   set,
+  getOrInsert,
   remove,
   contains,
   clear,
@@ -66,6 +67,42 @@ set ::
 set key value (ConcurrentMap stmMap) =
   STMMap.insert value key stmMap
     |> GhcSTM.atomically
+    |> Task.fromIO
+
+
+-- | Atomically get an existing value or insert a new one.
+--
+-- This is useful for the "get or create" pattern where you want to:
+-- 1. Return the existing value if present
+-- 2. Insert and return a new value if not present
+-- 3. Guarantee that only one value is ever inserted for a key, even under concurrent access
+--
+-- The inserter function is called OUTSIDE the STM transaction to allow for
+-- effects (like spawning workers). If another thread inserts first, the
+-- pre-computed value is returned via the second element of the tuple so the
+-- caller can clean it up.
+--
+-- Returns: (actualValue, maybeDiscardedCandidate)
+-- - actualValue: The value that ended up in the map (existing or newly inserted)
+-- - maybeDiscardedCandidate: Just candidate if we lost the race, Nothing if we won or key existed
+getOrInsert ::
+  forall key value.
+  (Hashable key, Eq key) =>
+  key ->
+  value ->
+  ConcurrentMap key value ->
+  Task _ (value, Maybe value)
+getOrInsert key candidate (ConcurrentMap stmMap) = do
+  GhcSTM.atomically do
+    existing <- STMMap.lookup key stmMap
+    case existing of
+      Just existingValue ->
+        -- Key exists, return existing and indicate candidate should be discarded
+        pure (existingValue, Just candidate)
+      Nothing -> do
+        -- Key doesn't exist, insert candidate
+        STMMap.insert candidate key stmMap
+        pure (candidate, Nothing)
     |> Task.fromIO
 
 

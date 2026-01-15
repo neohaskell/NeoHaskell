@@ -178,7 +178,11 @@ This ensures only one worker is ever created per entity.
 
 ---
 
-## Critical: MVar Contention Bottleneck
+## Critical: MVar Contention Bottleneck ✅ COMPLETED
+
+**Status**: Fixed in commit (2026-01-15)
+**Solution**: Replaced `ConcurrentVar (Map StreamId Worker)` with `ConcurrentMap StreamId Worker` using STM-based stm-containers. Added `ConcurrentMap.getOrInsert` for atomic get-or-create pattern. This eliminates the global MVar lock, allowing concurrent access to different entity keys.
+**Performance**: Theoretical throughput increase from ~50k ops/s to ~500k+ ops/s for worker lookups.
 
 ### Location
 
@@ -907,7 +911,7 @@ This is more robust but more complex.
 | Task | Priority | Effort | Status |
 |------|----------|--------|--------|
 | Fix worker spawn race condition | Critical | 2h | ✅ Done |
-| Replace ConcurrentVar with ConcurrentMap | Critical | 2-4h | Pending |
+| Replace ConcurrentVar with ConcurrentMap | Critical | 2-4h | ✅ Done |
 
 These two fixes are required for correctness and throughput. Without them, the system is unsafe under concurrent load.
 

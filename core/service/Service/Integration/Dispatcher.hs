@@ -63,6 +63,8 @@ import AsyncTask qualified
 import Basics
 import Channel (Channel)
 import Channel qualified
+import ConcurrentMap (ConcurrentMap)
+import ConcurrentMap qualified
 import ConcurrentVar (ConcurrentVar)
 import ConcurrentVar qualified
 import Console qualified
@@ -135,9 +137,13 @@ data LifecycleEntityWorker = LifecycleEntityWorker
 
 
 -- | Dispatcher that routes events to per-entity workers.
+--
+-- Uses ConcurrentMap for worker storage to enable fine-grained concurrent access.
+-- This eliminates the MVar contention bottleneck that would otherwise serialize
+-- all worker lookups at high throughput (50k+ events/second).
 data IntegrationDispatcher = IntegrationDispatcher
-  { entityWorkers :: ConcurrentVar (Map StreamId EntityWorker),
-    lifecycleEntityWorkers :: ConcurrentVar (Map StreamId LifecycleEntityWorker),
+  { entityWorkers :: ConcurrentMap StreamId EntityWorker,
+    lifecycleEntityWorkers :: ConcurrentMap StreamId LifecycleEntityWorker,
     outboundRunners :: Array OutboundRunner,
     lifecycleRunners :: Array OutboundLifecycleRunner,
     commandEndpoints :: Map Text EndpointHandler,
@@ -178,8 +184,8 @@ newWithLifecycleConfig ::
   Map Text EndpointHandler ->
   Task Text IntegrationDispatcher
 newWithLifecycleConfig dispatcherConfig runners lifecycleRunners endpoints = do
-  workers <- ConcurrentVar.containing Map.empty
-  lifecycleWorkers <- ConcurrentVar.containing Map.empty
+  workers <- ConcurrentMap.new
+  lifecycleWorkers <- ConcurrentMap.new
   shutdownSignal <- ConcurrentVar.containing False
   reaperTaskVar <- ConcurrentVar.containing Nothing
 
@@ -243,34 +249,33 @@ dispatch dispatcher event = do
 -- exists and both create one, causing one to be orphaned (memory leak) and
 -- events to be lost.
 --
--- Implementation uses optimistic spawning: we pre-spawn a worker outside the
--- lock, then atomically check-and-insert. If another thread beat us, we
--- discard the pre-spawned worker. This is safe because:
--- 1. The atomic insert-if-missing guarantees exactly one worker per entity
--- 2. Discarded workers are not leaked (just unused AsyncTasks that complete)
--- 3. The race window is small, so wasted spawns are rare
+-- Implementation uses optimistic spawning with ConcurrentMap.getOrInsert:
+-- 1. Pre-spawn a worker outside the STM transaction (allows effects)
+-- 2. Atomically check-and-insert using STM
+-- 3. If another thread won the race, clean up the discarded candidate
+--
+-- Using ConcurrentMap instead of ConcurrentVar (MVar) eliminates the global
+-- lock bottleneck, allowing concurrent access to different entity keys.
 getOrCreateStatelessWorker ::
   IntegrationDispatcher ->
   StreamId ->
   Task Text EntityWorker
 getOrCreateStatelessWorker dispatcher streamId = do
-  -- First, optimistically spawn a new worker (outside the lock)
+  -- First, optimistically spawn a new worker (outside STM transaction)
   -- This may be discarded if another thread wins the race
   candidateWorker <- spawnStatelessWorker dispatcher streamId
 
   -- Atomically check if a worker exists, insert ours if not
-  dispatcher.entityWorkers
-    |> ConcurrentVar.modifyReturning \workers ->
-      case Map.get streamId workers of
-        Just existingWorker -> do
-          -- Another thread beat us, discard our candidate
-          -- Send Stop to clean up the unused worker
-          candidateWorker.channel |> Channel.write Stop
-          Task.yield (workers, existingWorker)
-        Nothing -> do
-          -- We won the race, insert our candidate
-          let updatedWorkers = workers |> Map.set streamId candidateWorker
-          Task.yield (updatedWorkers, candidateWorker)
+  (actualWorker, maybeDiscarded) <-
+    dispatcher.entityWorkers
+      |> ConcurrentMap.getOrInsert streamId candidateWorker
+
+  -- Clean up discarded candidate if we lost the race
+  case maybeDiscarded of
+    Just discarded -> discarded.channel |> Channel.write Stop
+    Nothing -> pass
+
+  Task.yield actualWorker
 
 
 -- | Get an existing lifecycle worker or create a new one atomically.
@@ -281,22 +286,20 @@ getOrCreateLifecycleWorker ::
   StreamId ->
   Task Text LifecycleEntityWorker
 getOrCreateLifecycleWorker dispatcher streamId = do
-  -- First, optimistically spawn a new worker (outside the lock)
+  -- First, optimistically spawn a new worker (outside STM transaction)
   candidateWorker <- spawnLifecycleWorker dispatcher streamId
 
   -- Atomically check if a worker exists, insert ours if not
-  dispatcher.lifecycleEntityWorkers
-    |> ConcurrentVar.modifyReturning \workers ->
-      case Map.get streamId workers of
-        Just existingWorker -> do
-          -- Another thread beat us, discard our candidate
-          -- Send Stop to trigger cleanup
-          candidateWorker.channel |> Channel.write Stop
-          Task.yield (workers, existingWorker)
-        Nothing -> do
-          -- We won the race, insert our candidate
-          let updatedWorkers = workers |> Map.set streamId candidateWorker
-          Task.yield (updatedWorkers, candidateWorker)
+  (actualWorker, maybeDiscarded) <-
+    dispatcher.lifecycleEntityWorkers
+      |> ConcurrentMap.getOrInsert streamId candidateWorker
+
+  -- Clean up discarded candidate if we lost the race
+  case maybeDiscarded of
+    Just discarded -> discarded.channel |> Channel.write Stop
+    Nothing -> pass
+
+  Task.yield actualWorker
 
 
 -- | Get current time in milliseconds.
@@ -451,11 +454,10 @@ startReaper dispatcher = do
           else do
             -- Check for idle workers
             currentTime <- getCurrentTimeMs
-            workers <- dispatcher.lifecycleEntityWorkers |> ConcurrentVar.peek
+            workerEntries <- dispatcher.lifecycleEntityWorkers |> ConcurrentMap.entries
 
             -- Find and clean up idle workers
-            let entries = Map.entries workers
-            entries |> Task.forEach \(streamId, worker) -> do
+            workerEntries |> Task.forEach \(streamId, worker) -> do
               lastActivity <- worker.lastActivityTime |> ConcurrentVar.peek
               let idleTime = currentTime - lastActivity
               if idleTime > dispatcher.config.idleTimeoutMs
@@ -464,7 +466,7 @@ startReaper dispatcher = do
                   worker.channel |> Channel.write Stop
                   -- Remove from map so a new worker is spawned next time
                   dispatcher.lifecycleEntityWorkers
-                    |> ConcurrentVar.modify (Map.remove streamId)
+                    |> ConcurrentMap.remove streamId
                 else pass
 
             -- Continue reaping
@@ -486,11 +488,11 @@ shutdown dispatcher = do
   dispatcher.shutdownSignal |> ConcurrentVar.set True
 
   -- Send Stop to all stateless workers
-  statelessWorkers <- dispatcher.entityWorkers |> ConcurrentVar.peek
-  Map.entries statelessWorkers |> Task.forEach \(_streamId, worker) -> do
+  statelessWorkerEntries <- dispatcher.entityWorkers |> ConcurrentMap.entries
+  statelessWorkerEntries |> Task.forEach \(_streamId, worker) -> do
     worker.channel |> Channel.write Stop
 
   -- Send Stop to all lifecycle workers (triggers cleanup)
-  lifecycleWorkers <- dispatcher.lifecycleEntityWorkers |> ConcurrentVar.peek
-  Map.entries lifecycleWorkers |> Task.forEach \(_streamId, worker) -> do
+  lifecycleWorkerEntries <- dispatcher.lifecycleEntityWorkers |> ConcurrentMap.entries
+  lifecycleWorkerEntries |> Task.forEach \(_streamId, worker) -> do
     worker.channel |> Channel.write Stop
