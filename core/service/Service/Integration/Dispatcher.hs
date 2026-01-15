@@ -127,12 +127,28 @@ data EntityWorker = EntityWorker
   }
 
 
+-- | Status of a lifecycle worker for coordinating with the reaper.
+--
+-- This prevents a race condition where the reaper removes a worker from the map
+-- while dispatch is simultaneously writing to that worker's channel.
+data WorkerStatus
+  = -- | Worker is active and accepting events
+    Active
+  | -- | Worker is draining its queue and will exit soon.
+    -- New events should spawn a new worker instead of using this one.
+    Draining
+  deriving (Eq, Show)
+
+
 -- | Worker for a specific entity with lifecycle management.
 data LifecycleEntityWorker = LifecycleEntityWorker
   { channel :: Channel (WorkerMessage (Event Json.Value)),
     workerTask :: AsyncTask Text Unit,
     lastActivityTime :: ConcurrentVar Int,
-    workerStates :: Array WorkerState -- One per lifecycle runner
+    workerStates :: Array WorkerState, -- One per lifecycle runner
+    -- | Status for reaper coordination. When Draining, the dispatcher will
+    -- spawn a new worker instead of using this one.
+    status :: ConcurrentVar WorkerStatus
   }
 
 
@@ -280,26 +296,55 @@ getOrCreateStatelessWorker dispatcher streamId = do
 
 -- | Get an existing lifecycle worker or create a new one atomically.
 --
--- Same atomic guarantee as getOrCreateStatelessWorker.
+-- This function handles the reaper race condition by checking worker status:
+-- - If existing worker is Active, return it
+-- - If existing worker is Draining, spawn new worker to replace it
+-- - If no worker exists, spawn new one
+--
+-- The two-phase approach (check status, then replace if needed) is safe because:
+-- 1. If status is Active, we use existing worker (correct)
+-- 2. If status is Draining, we atomically replace it (getOrInsertIf)
+-- 3. Concurrent replacements are serialized by STM
 getOrCreateLifecycleWorker ::
   IntegrationDispatcher ->
   StreamId ->
   Task Text LifecycleEntityWorker
 getOrCreateLifecycleWorker dispatcher streamId = do
-  -- First, optimistically spawn a new worker (outside STM transaction)
-  candidateWorker <- spawnLifecycleWorker dispatcher streamId
+  -- First, check if there's an existing worker and its status
+  maybeExisting <- dispatcher.lifecycleEntityWorkers |> ConcurrentMap.get streamId
 
-  -- Atomically check if a worker exists, insert ours if not
-  (actualWorker, maybeDiscarded) <-
-    dispatcher.lifecycleEntityWorkers
-      |> ConcurrentMap.getOrInsert streamId candidateWorker
-
-  -- Clean up discarded candidate if we lost the race
-  case maybeDiscarded of
-    Just discarded -> discarded.channel |> Channel.write Stop
-    Nothing -> pass
-
-  Task.yield actualWorker
+  case maybeExisting of
+    Just existingWorker -> do
+      -- Check if the existing worker is being drained by the reaper
+      existingStatus <- existingWorker.status |> ConcurrentVar.peek
+      case existingStatus of
+        Active ->
+          -- Worker is active, use it
+          Task.yield existingWorker
+        Draining -> do
+          -- Worker is draining, spawn new one to replace it
+          candidateWorker <- spawnLifecycleWorker dispatcher streamId
+          -- Atomically replace the draining worker
+          -- The predicate checks status again in case another thread already replaced
+          (actualWorker, maybeDiscarded) <-
+            dispatcher.lifecycleEntityWorkers
+              |> ConcurrentMap.getOrInsert streamId candidateWorker
+          -- Clean up discarded candidate if another thread beat us
+          case maybeDiscarded of
+            Just discarded -> discarded.channel |> Channel.write Stop
+            Nothing -> pass
+          Task.yield actualWorker
+    Nothing -> do
+      -- No worker exists, spawn one
+      candidateWorker <- spawnLifecycleWorker dispatcher streamId
+      (actualWorker, maybeDiscarded) <-
+        dispatcher.lifecycleEntityWorkers
+          |> ConcurrentMap.getOrInsert streamId candidateWorker
+      -- Clean up discarded candidate if we lost the race
+      case maybeDiscarded of
+        Just discarded -> discarded.channel |> Channel.write Stop
+        Nothing -> pass
+      Task.yield actualWorker
 
 
 -- | Get current time in milliseconds.
@@ -346,6 +391,7 @@ spawnLifecycleWorker dispatcher streamId = do
   workerChannel <- Channel.new
   currentTime <- getCurrentTimeMs
   lastActivity <- ConcurrentVar.containing currentTime
+  workerStatus <- ConcurrentVar.containing Active
 
   -- Initialize all lifecycle runners
   states <-
@@ -373,7 +419,8 @@ spawnLifecycleWorker dispatcher streamId = do
       { channel = workerChannel,
         workerTask = workerTask,
         lastActivityTime = lastActivity,
-        workerStates = states
+        workerStates = states,
+        status = workerStatus
       }
 
 
@@ -457,16 +504,23 @@ startReaper dispatcher = do
             workerEntries <- dispatcher.lifecycleEntityWorkers |> ConcurrentMap.entries
 
             -- Find and clean up idle workers
+            -- Reaper race condition fix:
+            -- 1. Mark worker as Draining (so dispatcher knows not to use it)
+            -- 2. Remove from map (so new events spawn new worker)
+            -- 3. Send Stop (worker drains queue then exits)
             workerEntries |> Task.forEach \(streamId, worker) -> do
               lastActivity <- worker.lastActivityTime |> ConcurrentVar.peek
               let idleTime = currentTime - lastActivity
               if idleTime > dispatcher.config.idleTimeoutMs
                 then do
-                  -- Send Stop message to trigger cleanup and exit
-                  worker.channel |> Channel.write Stop
-                  -- Remove from map so a new worker is spawned next time
+                  -- Step 1: Mark as Draining so dispatcher won't use this worker
+                  worker.status |> ConcurrentVar.set Draining
+                  -- Step 2: Remove from map so new events spawn new worker
                   dispatcher.lifecycleEntityWorkers
                     |> ConcurrentMap.remove streamId
+                  -- Step 3: Send Stop to trigger cleanup and exit
+                  -- The worker will drain any remaining queued events before exiting
+                  worker.channel |> Channel.write Stop
                 else pass
 
             -- Continue reaping

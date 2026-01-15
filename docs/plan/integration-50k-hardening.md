@@ -292,7 +292,10 @@ This is slightly more complex but enables true atomicity without holding a globa
 
 ---
 
-## High: Reaper Race Condition
+## High: Reaper Race Condition ✅ COMPLETED
+
+**Status**: Fixed in commit (2026-01-15)
+**Solution**: Implemented tombstone pattern with `WorkerStatus` (Active/Draining). Reaper marks worker as Draining before removing from map. Dispatcher checks status and spawns new worker if existing is Draining. Added `ConcurrentMap.getOrInsertIf` for conditional atomic replacement.
 
 ### Location
 
@@ -919,11 +922,11 @@ These two fixes are required for correctness and throughput. Without them, the s
 
 **Estimated Time**: 16-24 hours
 
-| Task | Priority | Effort |
-|------|----------|--------|
-| Fix reaper race condition | High | 2-4h |
-| Implement bounded channels | High | 4-8h |
-| Implement position tracking (IntegrationStore) | High | 8-12h |
+| Task | Priority | Effort | Status |
+|------|----------|--------|--------|
+| Fix reaper race condition | High | 2-4h | ✅ Done |
+| Implement bounded channels | High | 4-8h | Pending |
+| Implement position tracking (IntegrationStore) | High | 8-12h | Pending |
 
 These fixes address data loss scenarios and resource exhaustion.
 

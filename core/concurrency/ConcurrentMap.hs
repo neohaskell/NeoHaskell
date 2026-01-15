@@ -4,6 +4,7 @@ module ConcurrentMap (
   get,
   set,
   getOrInsert,
+  getOrInsertIf,
   remove,
   contains,
   clear,
@@ -99,6 +100,48 @@ getOrInsert key candidate (ConcurrentMap stmMap) = do
       Just existingValue ->
         -- Key exists, return existing and indicate candidate should be discarded
         pure (existingValue, Just candidate)
+      Nothing -> do
+        -- Key doesn't exist, insert candidate
+        STMMap.insert candidate key stmMap
+        pure (candidate, Nothing)
+    |> Task.fromIO
+
+
+-- | Atomically get an existing value, or insert a new one if the key is missing
+-- OR if the existing value satisfies a replacement predicate.
+--
+-- This is useful for the "get or create, but replace if stale" pattern:
+-- 1. If key is missing, insert candidate and return it
+-- 2. If key exists and predicate returns False, return existing value
+-- 3. If key exists and predicate returns True, replace with candidate and return candidate
+--
+-- The predicate is evaluated INSIDE the STM transaction, so the decision
+-- to replace is atomic with respect to other operations.
+--
+-- Returns: (actualValue, maybeDiscardedValue)
+-- - actualValue: The value that ended up in the map
+-- - maybeDiscardedValue: The value that was discarded (either candidate or replaced existing)
+getOrInsertIf ::
+  forall key value.
+  (Hashable key, Eq key) =>
+  key ->
+  value ->
+  (value -> Bool) ->  -- ^ Predicate: True = replace existing, False = keep existing
+  ConcurrentMap key value ->
+  Task _ (value, Maybe value)
+getOrInsertIf key candidate shouldReplace (ConcurrentMap stmMap) = do
+  GhcSTM.atomically do
+    existing <- STMMap.lookup key stmMap
+    case existing of
+      Just existingValue ->
+        if shouldReplace existingValue
+          then do
+            -- Replace existing with candidate
+            STMMap.insert candidate key stmMap
+            pure (candidate, Just existingValue)
+          else
+            -- Keep existing, discard candidate
+            pure (existingValue, Just candidate)
       Nothing -> do
         -- Key doesn't exist, insert candidate
         STMMap.insert candidate key stmMap
