@@ -102,8 +102,8 @@ every ::
   Integration.Inbound
 every config = do
   let loop emit tick = do
-        AsyncTask.sleep config.interval
         emit (config.toCommand tick)
+        AsyncTask.sleep config.interval
         loop emit (tick + 1)
   Integration.inbound
     Integration.InboundConfig

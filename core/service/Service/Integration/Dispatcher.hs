@@ -62,6 +62,7 @@ import Channel (Channel)
 import Channel qualified
 import ConcurrentVar (ConcurrentVar)
 import ConcurrentVar qualified
+import Console qualified
 import Data.Time.Clock.POSIX qualified as GhcPosix
 import GHC.Real qualified as GhcReal
 import Integration qualified
@@ -355,6 +356,7 @@ processStatelessEvent ::
   Event Json.Value ->
   Task Text Unit
 processStatelessEvent dispatcher event = do
+  let streamId = event.streamId
   dispatcher.outboundRunners
     |> Task.forEach \runner -> do
       result <- runner.processEvent event |> Task.asResult
@@ -363,8 +365,9 @@ processStatelessEvent dispatcher event = do
           commands
             |> Task.forEach \payload -> do
               dispatchCommand dispatcher.commandEndpoints payload
-        Err _err ->
-          Task.yield unit
+        Err err -> do
+          Console.print [fmt|[Dispatcher] Error processing event (stream: #{streamId}): #{err}|]
+            |> Task.ignoreError
 
 
 -- | Process an event through lifecycle runners.
@@ -374,6 +377,7 @@ processLifecycleEvent ::
   Event Json.Value ->
   Task Text Unit
 processLifecycleEvent states endpoints event = do
+  let streamId = event.streamId
   states
     |> Task.forEach \state -> do
       result <- state.processEvent event |> Task.asResult
@@ -382,8 +386,9 @@ processLifecycleEvent states endpoints event = do
           commands
             |> Task.forEach \payload -> do
               dispatchCommand endpoints payload
-        Err _err ->
-          Task.yield unit
+        Err err -> do
+          Console.print [fmt|[Dispatcher] Error processing lifecycle event (stream: #{streamId}): #{err}|]
+            |> Task.ignoreError
 
 
 -- | Dispatch a command to the appropriate handler.
@@ -399,8 +404,9 @@ dispatchCommand endpoints payload = do
       let responseCallback _ = Task.yield unit
       handler cmdBytes responseCallback
         |> Task.mapError (\err -> [fmt|Command dispatch failed for #{cmdType}: #{err}|])
-    Nothing ->
-      Task.yield unit
+    Nothing -> do
+      Console.print [fmt|[Integration] No handler found for command: #{cmdType}|]
+        |> Task.ignoreError
 
 
 -- | Start the reaper task that cleans up idle lifecycle workers.

@@ -737,9 +737,13 @@ withOutbound integrationFn app = do
   let runner = OutboundRunner
         { entityTypeName = typeName
         , processEvent = \rawEvent -> do
+            let streamId = rawEvent.streamId
             -- Decode the event from JSON
             case Json.decode @event rawEvent.event of
-              Err _ -> Task.yield Array.empty  -- Skip events that don't match
+              Err decodeErr -> do
+                Console.print [fmt|[Integration] Failed to decode event for #{typeName} (stream: #{streamId}): #{decodeErr}|]
+                  |> Task.ignoreError
+                Task.yield Array.empty
               Ok decodedEvent -> do
                 -- Use default entity as placeholder - full entity reconstruction
                 -- via event replay will be implemented in a future version.
