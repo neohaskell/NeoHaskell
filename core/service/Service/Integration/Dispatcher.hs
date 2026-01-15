@@ -62,7 +62,6 @@ import Channel (Channel)
 import Channel qualified
 import ConcurrentVar (ConcurrentVar)
 import ConcurrentVar qualified
-import Console qualified
 import Data.Time.Clock.POSIX qualified as GhcPosix
 import GHC.Real qualified as GhcReal
 import Integration qualified
@@ -73,7 +72,6 @@ import Maybe (Maybe (..))
 import Result (Result (..))
 import Service.Event (Event (..))
 import Service.Event.StreamId (StreamId)
-import Service.Event.StreamId qualified as StreamId
 import Service.Transport (EndpointHandler)
 import Task (Task)
 import Task qualified
@@ -222,7 +220,7 @@ newWithLifecycleConfig dispatcherConfig runners lifecycleRunners endpoints = do
     then pass
     else do
       reaper <- startReaper dispatcher
-      reaperTaskVar |> ConcurrentVar.set (Just reaper)
+      reaperTaskVar |> ConcurrentVar.modify (\_ -> Just reaper)
 
   Task.yield dispatcher
 
@@ -423,9 +421,6 @@ startReaper dispatcher = do
               let idleTime = currentTime - lastActivity
               if idleTime > dispatcher.config.idleTimeoutMs
                 then do
-                  let entityIdText = StreamId.toText streamId
-                  Console.print [fmt|[Dispatcher] Reaping idle worker for #{entityIdText}|]
-                    |> Task.ignoreError
                   -- Send Stop message to trigger cleanup and exit
                   worker.channel |> Channel.write Stop
                   -- Remove from map so a new worker is spawned next time
