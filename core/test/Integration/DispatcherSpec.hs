@@ -408,7 +408,9 @@ spec = do
             Dispatcher.DispatcherConfig
               { idleTimeoutMs = 50,
                 reaperIntervalMs = 25,
-                enableReaper = True
+                enableReaper = True,
+                workerChannelCapacity = 100,
+                channelWriteTimeoutMs = 5000
               }
             []
             [lifecycleRunner]
@@ -448,7 +450,9 @@ spec = do
             Dispatcher.DispatcherConfig
               { idleTimeoutMs = 50,
                 reaperIntervalMs = 25,
-                enableReaper = True
+                enableReaper = True,
+                workerChannelCapacity = 100,
+                channelWriteTimeoutMs = 5000
               }
             []
             [lifecycleRunner]

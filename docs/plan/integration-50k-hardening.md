@@ -402,13 +402,16 @@ This ensures new events always go to a fresh worker. The old worker drains its q
 
 ---
 
-## High: Unbounded Channel Growth
+## High: Unbounded Channel Growth ✅ COMPLETED
+
+**Status**: Fixed in commit (2026-01-15)
+**Solution**: Added bounded channel support to `Channel.hs` using STM TBQueue. Updated `DispatcherConfig` with `workerChannelCapacity` and `channelWriteTimeoutMs` configuration. Both `spawnStatelessWorker` and `spawnLifecycleWorker` now use `Channel.newBounded` with configurable capacity (default: 100). Added `tryWriteWithTimeout` for future backpressure handling.
 
 ### Location
 
-`core/concurrency/Channel.hs` - uses `unagi-chan` which is unbounded
+`core/concurrency/Channel.hs` - now supports both bounded and unbounded channels
 
-### The Problem
+### The Problem (Now Solved)
 
 Under load, if event production exceeds processing rate, channels grow without limit until OOM.
 
@@ -925,7 +928,7 @@ These two fixes are required for correctness and throughput. Without them, the s
 | Task | Priority | Effort | Status |
 |------|----------|--------|--------|
 | Fix reaper race condition | High | 2-4h | ✅ Done |
-| Implement bounded channels | High | 4-8h | Pending |
+| Implement bounded channels | High | 4-8h | ✅ Done |
 | Implement position tracking (IntegrationStore) | High | 8-12h | Pending |
 
 These fixes address data loss scenarios and resource exhaustion.

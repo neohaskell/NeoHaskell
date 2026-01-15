@@ -106,7 +106,14 @@ data DispatcherConfig = DispatcherConfig
     reaperIntervalMs :: Int,
     -- | Whether to enable the reaper. Set to False for testing.
     -- Default: True
-    enableReaper :: Bool
+    enableReaper :: Bool,
+    -- | Capacity of worker channels (bounded). Events queue up to this limit
+    -- before backpressure is applied. Default: 100
+    -- Sizing rule of thumb: capacity = processing_rate * acceptable_latency
+    workerChannelCapacity :: Int,
+    -- | Timeout in milliseconds for writing to a full channel.
+    -- If exceeded, event is logged as dropped. Default: 5000 (5 seconds)
+    channelWriteTimeoutMs :: Int
   }
 
 
@@ -116,7 +123,9 @@ defaultConfig =
   DispatcherConfig
     { idleTimeoutMs = 60000,
       reaperIntervalMs = 10000,
-      enableReaper = True
+      enableReaper = True,
+      workerChannelCapacity = 100,
+      channelWriteTimeoutMs = 5000
     }
 
 
@@ -356,12 +365,15 @@ getCurrentTimeMs = do
 
 
 -- | Spawn a stateless worker for an entity.
+--
+-- Uses bounded channels to provide backpressure when the worker can't keep up
+-- with event production. Channel capacity is configured via DispatcherConfig.
 spawnStatelessWorker ::
   IntegrationDispatcher ->
   StreamId ->
   Task Text EntityWorker
 spawnStatelessWorker dispatcher _streamId = do
-  workerChannel <- Channel.new
+  workerChannel <- Channel.newBounded dispatcher.config.workerChannelCapacity
 
   let workerLoop :: Task Text Unit
       workerLoop = do
@@ -383,12 +395,15 @@ spawnStatelessWorker dispatcher _streamId = do
 
 
 -- | Spawn a lifecycle worker for an entity.
+--
+-- Uses bounded channels to provide backpressure when the worker can't keep up
+-- with event production. Channel capacity is configured via DispatcherConfig.
 spawnLifecycleWorker ::
   IntegrationDispatcher ->
   StreamId ->
   Task Text LifecycleEntityWorker
 spawnLifecycleWorker dispatcher streamId = do
-  workerChannel <- Channel.new
+  workerChannel <- Channel.newBounded dispatcher.config.workerChannelCapacity
   currentTime <- getCurrentTimeMs
   lastActivity <- ConcurrentVar.containing currentTime
   workerStatus <- ConcurrentVar.containing Active
