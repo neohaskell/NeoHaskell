@@ -1,16 +1,12 @@
 # NEOHASKELL KNOWLEDGE BASE
 
-**Generated:** 2026-01-15
-**Commit:** 6c7a1c7
-**Branch:** feat/integration
-
 ## OVERVIEW
 
 NeoHaskell dialect of Haskell for newcomer-friendliness. Monorepo: core library (nhcore), CLI tool (neo), Astro website. Event-sourcing architecture with CQRS.
 
 ## STRUCTURE
 
-```
+```text
 NeoHaskell/
 ├── core/           # nhcore library (9 source dirs in one package)
 │   ├── core/       # Primitives: Text, Int, Array, Maybe, Result, Task

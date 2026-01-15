@@ -4,7 +4,7 @@
 
 ## STRUCTURE
 
-```
+```text
 service/
 ├── Decider.hs           # Decision monad: acceptNew, acceptExisting, reject
 ├── Integration.hs       # Outbound (react to events) + Inbound (external→commands)
@@ -30,7 +30,7 @@ service/
 
 ## COMMAND FLOW
 
-```
+```text
 Command → CommandExecutor → EntityFetcher → decideImpl → EventStore
               └── retry on conflict (exponential backoff, max 10) ←─┘
 ```

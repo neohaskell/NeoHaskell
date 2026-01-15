@@ -1,11 +1,11 @@
 # nhcore Knowledge Base
 
-**Directory:** `/Users/nick/Source/NeoHaskell/core/`
+**Directory:** `core/`
 **Package:** nhcore (9 hs-source-dirs in one library)
 
 ## STRUCTURE
 
-```
+```text
 core/
 ├── core/           # 26 modules - Primitives replacing base
 ├── traits/         # 8 modules  - Typeclasses with friendly names
