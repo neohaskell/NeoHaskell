@@ -60,6 +60,8 @@ import Array (Array)
 import Array qualified
 import AsyncTask (AsyncTask)
 import AsyncTask qualified
+import AtomicVar (AtomicVar)
+import AtomicVar qualified
 import Basics
 import Channel (Channel)
 import Channel qualified
@@ -158,7 +160,9 @@ data LifecycleEntityWorker = LifecycleEntityWorker
     workerStates :: Array WorkerState, -- One per lifecycle runner
     -- | Status for reaper coordination. When Draining, the dispatcher will
     -- spawn a new worker instead of using this one.
-    status :: ConcurrentVar WorkerStatus
+    -- Uses AtomicVar (TVar-based) so status can be read inside STM transactions
+    -- for ConcurrentMap.getOrInsertIfM predicates.
+    status :: AtomicVar WorkerStatus
   }
 
 
@@ -353,7 +357,7 @@ getOrCreateLifecycleWorker dispatcher streamId = do
   case maybeExisting of
     Just existingWorker -> do
       -- Check if the existing worker is being drained by the reaper
-      existingStatus <- existingWorker.status |> ConcurrentVar.peek
+      existingStatus <- existingWorker.status |> AtomicVar.peek
       case existingStatus of
         Active ->
           -- Worker is active, use it
@@ -361,12 +365,15 @@ getOrCreateLifecycleWorker dispatcher streamId = do
         Draining -> do
           -- Worker is draining, spawn new one to replace it
           candidateWorker <- spawnLifecycleWorker dispatcher streamId
-          -- Atomically replace the draining worker
-          -- The predicate checks status again in case another thread already replaced
+          -- Atomically replace the draining worker using getOrInsertIfM
+          -- The predicate reads status inside STM, allowing replacement only if still Draining
+          let shouldReplace existing = do
+                s <- AtomicVar.peekSTM existing.status
+                pure (s == Draining)
           (actualWorker, maybeDiscarded) <-
             dispatcher.lifecycleEntityWorkers
-              |> ConcurrentMap.getOrInsert streamId candidateWorker
-          -- Clean up discarded candidate if another thread beat us
+              |> ConcurrentMap.getOrInsertIfM streamId candidateWorker shouldReplace
+          -- Clean up discarded worker (either our candidate or the old draining one)
           case maybeDiscarded of
             Just discarded -> writeWorkerMessageWithTimeout dispatcher streamId Stop discarded.channel
             Nothing -> pass
@@ -434,7 +441,7 @@ spawnLifecycleWorker dispatcher streamId = do
   workerChannel <- Channel.newBounded dispatcher.config.workerChannelCapacity
   currentTime <- getCurrentTimeMs
   lastActivity <- ConcurrentVar.containing currentTime
-  workerStatus <- ConcurrentVar.containing Active
+  workerStatus <- AtomicVar.containing Active
 
   -- Initialize all lifecycle runners
   states <-
@@ -451,7 +458,7 @@ spawnLifecycleWorker dispatcher streamId = do
           ProcessEvent event -> do
             -- Update activity time
             newTime <- getCurrentTimeMs
-            lastActivity |> ConcurrentVar.set newTime
+            lastActivity |> ConcurrentVar.modify (\_ -> newTime)
             -- Process event through all lifecycle runners
             processLifecycleEvent states dispatcher.commandEndpoints event
             workerLoop
@@ -557,7 +564,7 @@ startReaper dispatcher = do
               if idleTime > dispatcher.config.idleTimeoutMs
                 then do
                   -- Step 1: Mark as Draining so dispatcher won't use this worker
-                  worker.status |> ConcurrentVar.set Draining
+                  worker.status |> AtomicVar.set Draining
                   -- Step 2: Remove from map so new events spawn new worker
                   dispatcher.lifecycleEntityWorkers
                     |> ConcurrentMap.remove streamId

@@ -101,6 +101,7 @@ library
     Appendable
     Applicable
     Array
+    AtomicVar
     AsyncTask
     Basics
     Bytes

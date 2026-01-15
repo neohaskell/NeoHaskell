@@ -5,6 +5,7 @@ module ConcurrentMap (
   set,
   getOrInsert,
   getOrInsertIf,
+  getOrInsertIfM,
   remove,
   contains,
   clear,
@@ -134,6 +135,48 @@ getOrInsertIf key candidate shouldReplace (ConcurrentMap stmMap) =
     case existing of
       Just existingValue ->
         if shouldReplace existingValue
+          then do
+            -- Replace existing with candidate
+            STMMap.insert candidate key stmMap
+            pure (candidate, Just existingValue)
+          else
+            -- Keep existing, discard candidate
+            pure (existingValue, Just candidate)
+      Nothing -> do
+        -- Key doesn't exist, insert candidate
+        STMMap.insert candidate key stmMap
+        pure (candidate, Nothing)
+  |> Task.fromIO
+
+
+-- | Like 'getOrInsertIf', but the predicate can perform STM operations.
+--
+-- This is useful when the predicate needs to read 'AtomicVar' values
+-- inside the value being checked, allowing truly atomic decisions.
+--
+-- Example with AtomicVar:
+--
+-- @
+-- let shouldReplace existing = do
+--       status <- AtomicVar.peekSTM existing.status
+--       pure (status == Draining)
+-- ConcurrentMap.getOrInsertIfM key candidate shouldReplace map
+-- @
+getOrInsertIfM ::
+  forall key value.
+  (Hashable key, Eq key) =>
+  key ->
+  value ->
+  (value -> GhcSTM.STM Bool) ->
+  ConcurrentMap key value ->
+  Task _ (value, Maybe value)
+getOrInsertIfM key candidate shouldReplace (ConcurrentMap stmMap) =
+  GhcSTM.atomically do
+    existing <- STMMap.lookup key stmMap
+    case existing of
+      Just existingValue -> do
+        replace <- shouldReplace existingValue
+        if replace
           then do
             -- Replace existing with candidate
             STMMap.insert candidate key stmMap
