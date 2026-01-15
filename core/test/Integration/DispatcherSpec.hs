@@ -539,6 +539,124 @@ spec = do
 
         pass
 
+    describe "channel write timeout" do
+      it "drops events and continues when channel is full and timeout expires" \_ -> do
+        -- Test that when a worker's channel fills up (slow worker) and the timeout
+        -- expires, the event is dropped and dispatch continues without failing.
+        --
+        -- Setup:
+        -- 1. Create a dispatcher with capacity=2, timeout=20ms
+        -- 2. Worker processes slowly (blocks for 100ms per event)
+        -- 3. Dispatch 4 events rapidly
+        -- 4. First event enters channel, worker picks it up and starts processing
+        -- 5. Events 2 and 3 fill the channel (capacity=2)
+        -- 6. Event 4 times out waiting for channel space → dropped
+        -- 7. Verify only 3 events were processed (not 4)
+        processedCount <- ConcurrentVar.containing (0 :: Int)
+        processedSequences <- ConcurrentVar.containing ([] :: [Int])
+
+        let slowRunner =
+              Dispatcher.OutboundRunner
+                { entityTypeName = "TestEntity",
+                  processEvent = \event -> do
+                    case Json.decode @OrderingTestEvent event.event of
+                      Err _ -> Task.yield Array.empty
+                      Ok decoded -> do
+                        -- Slow processing to cause channel backup
+                        AsyncTask.sleep 100 |> Task.mapError (\_ -> "sleep error" :: Text)
+                        processedCount |> ConcurrentVar.modify (+ 1)
+                        processedSequences
+                          |> ConcurrentVar.modify (\seqs -> seqs ++ [decoded.sequenceNum])
+                        Task.yield Array.empty
+                }
+
+        -- Create dispatcher with small channel (capacity=2) and short timeout (20ms)
+        dispatcher <-
+          Dispatcher.newWithLifecycleConfig
+            Dispatcher.DispatcherConfig
+              { idleTimeoutMs = 60000,
+                reaperIntervalMs = 10000,
+                enableReaper = False,
+                workerChannelCapacity = 2,
+                channelWriteTimeoutMs = 20
+              }
+            [slowRunner]
+            []
+            Map.empty
+
+        -- Create 4 events for the same entity
+        event1 <- makeTestEvent "entity-A" 1 1
+        event2 <- makeTestEvent "entity-A" 2 2
+        event3 <- makeTestEvent "entity-A" 3 3
+        event4 <- makeTestEvent "entity-A" 4 4
+
+        -- Dispatch event1 and wait for worker to pick it up
+        Dispatcher.dispatch dispatcher event1
+        -- Give worker time to read event1 from channel and start processing
+        AsyncTask.sleep 20 |> Task.mapError (\_ -> "sleep error" :: Text)
+
+        -- Now dispatch 3 more events rapidly
+        -- Events 2 and 3 fill the channel (capacity=2)
+        -- Event 4: channel full, waits 20ms, times out → dropped
+        Dispatcher.dispatch dispatcher event2
+        Dispatcher.dispatch dispatcher event3
+        Dispatcher.dispatch dispatcher event4
+
+        -- Wait for processing to complete (3 events * 100ms + buffer)
+        AsyncTask.sleep 500 |> Task.mapError (\_ -> "sleep error" :: Text)
+
+        -- Verify only 3 events were processed (event4 was dropped due to timeout)
+        count <- ConcurrentVar.peek processedCount
+
+        -- Verify events 1, 2, and 3 were processed (event 4 dropped)
+        seqs <- ConcurrentVar.peek processedSequences
+        let seqArray = seqs |> Array.fromLinkedList
+
+        -- Assertions (shutdown skipped to avoid potential blocking)
+        count |> shouldBe 3
+        seqArray |> shouldBe [1, 2, 3]
+
+      it "does not drop events when channel has capacity" \_ -> do
+        -- Verify that events are NOT dropped when channel has space
+        processedCount <- ConcurrentVar.containing (0 :: Int)
+
+        let fastRunner =
+              Dispatcher.OutboundRunner
+                { entityTypeName = "TestEntity",
+                  processEvent = \_ -> do
+                    processedCount |> ConcurrentVar.modify (+ 1)
+                    Task.yield Array.empty
+                }
+
+        -- Create dispatcher with generous capacity
+        dispatcher <-
+          Dispatcher.newWithLifecycleConfig
+            Dispatcher.DispatcherConfig
+              { idleTimeoutMs = 60000,
+                reaperIntervalMs = 10000,
+                enableReaper = False,
+                workerChannelCapacity = 100,
+                channelWriteTimeoutMs = 50
+              }
+            [fastRunner]
+            []
+            Map.empty
+
+        -- Dispatch 10 events
+        events <-
+          Array.range 1 10
+            |> Task.mapArray (\i -> makeTestEvent "entity-A" i i)
+
+        events |> Task.forEach (\event -> Dispatcher.dispatch dispatcher event)
+
+        -- Wait for processing
+        AsyncTask.sleep 200 |> Task.mapError (\_ -> "sleep error" :: Text)
+
+        -- All 10 events should be processed (none dropped)
+        count <- ConcurrentVar.peek processedCount
+        count |> shouldBe 10
+
+    describe "concurrent dispatch race condition" do
       it "handles concurrent dispatch to multiple entities correctly" \_ -> do
         -- Test that concurrent dispatch to multiple different entities works correctly
         -- Each entity should have exactly one worker, and all events should be processed

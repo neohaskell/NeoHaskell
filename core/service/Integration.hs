@@ -88,6 +88,7 @@ data IntegrationError
   | ValidationError Text
   | RateLimited Int -- ^ Retry after N seconds
   | PermanentFailure Text
+  | UnexpectedError Text
   deriving (Eq, Show)
 
 

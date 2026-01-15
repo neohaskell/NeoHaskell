@@ -256,7 +256,7 @@ dispatch dispatcher event = do
     then pass
     else do
       worker <- getOrCreateStatelessWorker dispatcher streamId
-      worker.channel |> Channel.write (ProcessEvent event)
+      writeWorkerMessageWithTimeout dispatcher streamId (ProcessEvent event) worker.channel
 
   -- Handle lifecycle workers
   if Array.isEmpty dispatcher.lifecycleRunners
@@ -266,7 +266,34 @@ dispatch dispatcher event = do
       -- Update last activity time
       currentTime <- getCurrentTimeMs
       lifecycleWorker.lastActivityTime |> ConcurrentVar.set currentTime
-      lifecycleWorker.channel |> Channel.write (ProcessEvent event)
+      writeWorkerMessageWithTimeout dispatcher streamId (ProcessEvent event) lifecycleWorker.channel
+
+
+writeWorkerMessageWithTimeout ::
+  IntegrationDispatcher ->
+  StreamId ->
+  WorkerMessage (Event Json.Value) ->
+  Channel (WorkerMessage (Event Json.Value)) ->
+  Task Text Unit
+writeWorkerMessageWithTimeout dispatcher streamId message channel = do
+  writeResult <-
+    Channel.tryWriteWithTimeout dispatcher.config.channelWriteTimeoutMs message channel
+  case writeResult of
+    Ok _ -> pass
+    Err err -> do
+      let messageLabel = workerMessageLabel message
+      Console.print
+        [fmt|[Dispatcher] Dropped #{messageLabel} for stream #{streamId} (channel write timeout: #{err})|]
+        |> Task.ignoreError
+
+
+workerMessageLabel ::
+  forall value.
+  WorkerMessage value ->
+  Text
+workerMessageLabel message = case message of
+  ProcessEvent _ -> [fmt|event|]
+  Stop -> [fmt|stop|]
 
 
 -- | Get an existing stateless worker or create a new one atomically.
@@ -298,7 +325,7 @@ getOrCreateStatelessWorker dispatcher streamId = do
 
   -- Clean up discarded candidate if we lost the race
   case maybeDiscarded of
-    Just discarded -> discarded.channel |> Channel.write Stop
+    Just discarded -> writeWorkerMessageWithTimeout dispatcher streamId Stop discarded.channel
     Nothing -> pass
 
   Task.yield actualWorker
@@ -341,7 +368,7 @@ getOrCreateLifecycleWorker dispatcher streamId = do
               |> ConcurrentMap.getOrInsert streamId candidateWorker
           -- Clean up discarded candidate if another thread beat us
           case maybeDiscarded of
-            Just discarded -> discarded.channel |> Channel.write Stop
+            Just discarded -> writeWorkerMessageWithTimeout dispatcher streamId Stop discarded.channel
             Nothing -> pass
           Task.yield actualWorker
     Nothing -> do
@@ -352,7 +379,7 @@ getOrCreateLifecycleWorker dispatcher streamId = do
           |> ConcurrentMap.getOrInsert streamId candidateWorker
       -- Clean up discarded candidate if we lost the race
       case maybeDiscarded of
-        Just discarded -> discarded.channel |> Channel.write Stop
+        Just discarded -> writeWorkerMessageWithTimeout dispatcher streamId Stop discarded.channel
         Nothing -> pass
       Task.yield actualWorker
 
@@ -536,7 +563,7 @@ startReaper dispatcher = do
                     |> ConcurrentMap.remove streamId
                   -- Step 3: Send Stop to trigger cleanup and exit
                   -- The worker will drain any remaining queued events before exiting
-                  worker.channel |> Channel.write Stop
+                  writeWorkerMessageWithTimeout dispatcher streamId Stop worker.channel
                 else pass
 
             -- Continue reaping
@@ -559,10 +586,10 @@ shutdown dispatcher = do
 
   -- Send Stop to all stateless workers
   statelessWorkerEntries <- dispatcher.entityWorkers |> ConcurrentMap.entries
-  statelessWorkerEntries |> Task.forEach \(_streamId, worker) -> do
-    worker.channel |> Channel.write Stop
+  statelessWorkerEntries |> Task.forEach \(streamId, worker) -> do
+    writeWorkerMessageWithTimeout dispatcher streamId Stop worker.channel
 
   -- Send Stop to all lifecycle workers (triggers cleanup)
   lifecycleWorkerEntries <- dispatcher.lifecycleEntityWorkers |> ConcurrentMap.entries
-  lifecycleWorkerEntries |> Task.forEach \(_streamId, worker) -> do
-    worker.channel |> Channel.write Stop
+  lifecycleWorkerEntries |> Task.forEach \(streamId, worker) -> do
+    writeWorkerMessageWithTimeout dispatcher streamId Stop worker.channel
