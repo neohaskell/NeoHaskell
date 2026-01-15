@@ -43,6 +43,7 @@ example.cabal
 result
 
 .claude/settings.local.json
+.opencode/
 
 cli-next/default.nix
 
