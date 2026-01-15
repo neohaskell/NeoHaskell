@@ -2,7 +2,7 @@
 
 ## OVERVIEW
 
-NeoHaskell dialect of Haskell for newcomer-friendliness. Monorepo: core library (nhcore), CLI tool (neo), Astro website. Event-sourcing architecture with CQRS.
+NeoHaskell dialect of Haskell for newcomer-friendliness. Monorepo: core library (nhcore), testbed example app, Astro website. Event-sourcing architecture with CQRS.
 
 ## STRUCTURE
 
@@ -14,7 +14,6 @@ NeoHaskell/
 │   ├── concurrency/# AsyncTask, Channel, Lock, ConcurrentMap
 │   ├── traits/     # Typeclasses: Mappable, Appendable, Combinable
 │   └── system/     # File, Directory, Path, Environment
-├── cli/            # neo CLI: new, build, run, shell
 ├── testbed/        # Example app + Hurl acceptance tests
 └── website/        # Astro/Starlight docs
 ```
@@ -26,7 +25,6 @@ NeoHaskell/
 | Core types (Text, Array, Result) | `core/core/`                   | NOT base/Data.\*           |
 | Event-sourcing                   | `core/service/Service/`        | EventStore, Command, Query |
 | Integration patterns             | `core/service/Integration.hs`  | Outbound/Inbound           |
-| CLI commands                     | `cli/src/Neo/`                 | new, build, run, shell     |
 | Example app patterns             | `testbed/src/`                 | Cart, Stock domains        |
 | Test patterns                    | `core/test/`, `testbed/tests/` | Hspec + Hurl               |
 
@@ -81,7 +79,6 @@ nix develop            # Or: nix-shell
 # Test
 cabal test             # All tests
 cabal test nhcore-test # Core only
-cabal test nhcli-test  # CLI only
 ./scripts/run-doctest  # Doctests
 
 # Lint/Format

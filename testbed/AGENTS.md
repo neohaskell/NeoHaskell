@@ -4,7 +4,7 @@
 
 ## STRUCTURE
 
-```
+```text
 testbed/
 ├── launcher/Launcher.hs       # Entry point (thin: just calls App.run)
 ├── src/
