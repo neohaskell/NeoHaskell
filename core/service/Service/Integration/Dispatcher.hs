@@ -69,6 +69,7 @@ import ConcurrentVar (ConcurrentVar)
 import ConcurrentVar qualified
 import Console qualified
 import Data.Time.Clock.POSIX qualified as GhcPosix
+import GHC.Float (Double)
 import GHC.Real qualified as GhcReal
 import Integration qualified
 import Json qualified
@@ -360,7 +361,7 @@ getOrCreateLifecycleWorker dispatcher streamId = do
 getCurrentTimeMs :: Task Text Int
 getCurrentTimeMs = do
   posixTime <- GhcPosix.getPOSIXTime |> Task.fromIO
-  let millis = round (GhcReal.realToFrac posixTime * 1000 :: Float)
+  let millis = round (GhcReal.realToFrac posixTime * 1000 :: Double)
   Task.yield millis
 
 
