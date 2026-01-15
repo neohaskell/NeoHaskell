@@ -72,7 +72,7 @@ import Collection (Collection (..))
 import Control.Monad qualified
 import Data.Default (Default (..))
 import Data.Foldable qualified
-import Data.Vector ((!?), (++), (//))
+import Data.Vector ((!?), (++), (//), enumFromTo)
 import Data.Vector qualified
 import Function qualified
 import GHC.IsList qualified as GHC
@@ -226,8 +226,9 @@ initialize n f =
 -- Array []
 range :: Int -> Int -> Array Int
 range lo hi =
-  LinkedList.range lo hi
-    |> fromLinkedList
+  do
+    let values = enumFromTo lo hi
+    Array values
 
 
 -- | Creates an array with a given length, filled with a default element.

@@ -78,10 +78,9 @@ set key value (ConcurrentMap stmMap) =
 -- 2. Insert and return a new value if not present
 -- 3. Guarantee that only one value is ever inserted for a key, even under concurrent access
 --
--- The inserter function is called OUTSIDE the STM transaction to allow for
--- effects (like spawning workers). If another thread inserts first, the
--- pre-computed value is returned via the second element of the tuple so the
--- caller can clean it up.
+-- The candidate value is computed before the STM transaction. If another
+-- thread inserts first, the pre-computed value is returned via the second
+-- element of the tuple so the caller can clean it up.
 --
 -- Returns: (actualValue, maybeDiscardedCandidate)
 -- - actualValue: The value that ended up in the map (existing or newly inserted)

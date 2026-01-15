@@ -68,6 +68,7 @@ module Integration (
 ) where
 
 import Array (Array)
+import Array qualified
 import Basics
 import Data.Proxy (Proxy (..))
 import GHC.TypeLits qualified as GHC
@@ -153,7 +154,7 @@ batch actions = Outbound actions
 --   _ -> Integration.none
 -- @
 none :: Outbound
-none = Outbound []
+none = Outbound Array.empty
 
 
 -- | Create an action from a Task. Used by Nick in 'ToAction' instances.
