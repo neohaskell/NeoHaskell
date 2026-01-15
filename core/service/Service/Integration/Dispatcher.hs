@@ -459,7 +459,7 @@ spawnStatelessWorker ::
   IntegrationDispatcher ->
   StreamId ->
   Task Text EntityWorker
-spawnStatelessWorker dispatcher _streamId = do
+spawnStatelessWorker dispatcher streamId = do
   workerChannel <- Channel.newBounded dispatcher.config.workerChannelCapacity
 
   let workerLoop :: Task Text Unit
@@ -473,7 +473,20 @@ spawnStatelessWorker dispatcher _streamId = do
             processStatelessEvent dispatcher event
             workerLoop
 
-  workerTask <- AsyncTask.run workerLoop
+  -- Wrap worker loop in exception boundary
+  let safeWorkerLoop :: Task Text Unit
+      safeWorkerLoop = do
+        result <- workerLoop |> Task.asResult
+        case result of
+          Ok _ -> pass
+          Err err -> do
+            -- Worker crashed - log and remove from map
+            Console.print [fmt|[Dispatcher] Stateless worker crashed for stream #{streamId}: #{err}|]
+              |> Task.ignoreError
+            -- Remove from map so new events will spawn a new worker
+            dispatcher.entityWorkers |> ConcurrentMap.remove streamId
+
+  workerTask <- AsyncTask.run safeWorkerLoop
   Task.yield
     EntityWorker
       { channel = workerChannel,
@@ -517,7 +530,22 @@ spawnLifecycleWorker dispatcher streamId = do
             processLifecycleEvent states dispatcher.commandEndpoints event
             workerLoop
 
-  workerTask <- AsyncTask.run workerLoop
+  -- Wrap worker loop in exception boundary
+  let safeWorkerLoop :: Task Text Unit
+      safeWorkerLoop = do
+        result <- workerLoop |> Task.asResult
+        case result of
+          Ok _ -> pass
+          Err err -> do
+            -- Worker crashed - log, attempt cleanup, and remove from map
+            Console.print [fmt|[Dispatcher] Lifecycle worker crashed for stream #{streamId}: #{err}|]
+              |> Task.ignoreError
+            -- Attempt cleanup even on crash (best effort)
+            states |> Task.forEach (\state -> state.cleanup |> Task.ignoreError)
+            -- Remove from map so new events will spawn a new worker
+            dispatcher.lifecycleEntityWorkers |> ConcurrentMap.remove streamId
+
+  workerTask <- AsyncTask.run safeWorkerLoop
   Task.yield
     LifecycleEntityWorker
       { workerId = uniqueId,
