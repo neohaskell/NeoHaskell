@@ -129,6 +129,7 @@ library
     Integration.Lifecycle
     Integration.Timer
     Service.Integration.Dispatcher
+    Service.Integration.Types
     IO
     Int
     Json
@@ -167,6 +168,8 @@ library
     Service.EventStore.Postgres.Sessions
     Service.EventStore.Postgres.SubscriptionStore
     Service.Application
+    Service.Application.Integrations
+    Service.Application.Transports
     Service.Query
     Service.Query.Core
     Service.Query.Definition

@@ -43,11 +43,10 @@ module Service.Application (
 
 import Array (Array)
 import Array qualified
-import AsyncTask (AsyncTask)
 import AsyncTask qualified
 import Basics
 import Console qualified
-import Default (Default (..), defaultValue)
+import Default (Default (..))
 import GHC.TypeLits qualified as GHC
 import Integration qualified
 import Integration.Lifecycle qualified as Lifecycle
@@ -55,13 +54,11 @@ import Json qualified
 import Map (Map)
 import Map qualified
 import Record qualified
-import Maybe (Maybe (..), withDefault)
+import Maybe (Maybe (..))
 import Result (Result (..))
 import Service.Command.Core (NameOf)
-import Service.Event (Event (..))
-import Service.Event.StreamId (StreamId)
+import Service.Event ()
 import Service.EventStore (EventStore (..), EventStoreConfig (..))
-import Service.EventStore.Core (Error)
 import Service.Query.Core (EntitiesOf, Query)
 import Service.Query.Definition (QueryDefinition (..), WireEntities)
 import Service.Query.Definition qualified as Definition
@@ -72,8 +69,10 @@ import Service.Query.Registry qualified as Registry
 import Service.Query.Subscriber qualified as Subscriber
 import Service.ServiceDefinition.Core (ServiceRunner (..), TransportValue (..))
 import Service.ServiceDefinition.Core qualified as ServiceDefinition
-import Service.Integration.Dispatcher qualified as Dispatcher
-import Service.Transport (Transport (..), QueryEndpointHandler, EndpointHandler, Endpoints (..))
+import Service.Application.Integrations qualified as Integrations
+import Service.Application.Transports qualified as Transports
+import Service.Integration.Types (OutboundRunner, OutboundLifecycleRunner)
+import Service.Transport (Transport (..), QueryEndpointHandler)
 import Task (Task)
 import Task qualified
 import Text (Text)
@@ -108,35 +107,6 @@ import TypeName qualified
 --
 -- This allows storing the config in Application without knowing the concrete type.
 data QueryObjectStoreConfigValue = forall config. (QueryObjectStoreConfig config) => QueryObjectStoreConfigValue config
-
-
--- | A type-erased outbound integration runner.
---
--- This wraps an integration function with JSON decoding so it can process
--- raw events from the event store.
-data OutboundRunner = OutboundRunner
-  { entityTypeName :: Text
-  , processEvent :: Event Json.Value -> Task Text (Array Integration.CommandPayload)
-  }
-
-
--- | A type-erased outbound integration runner with lifecycle management.
---
--- This wraps a lifecycle config for stateful integrations that need
--- resource initialization and cleanup.
-data OutboundLifecycleRunner = OutboundLifecycleRunner
-  { entityTypeName :: Text
-  , spawnWorkerState :: StreamId -> Task Text WorkerState
-  }
-
-
--- | Internal state for a running lifecycle worker.
---
--- Created by 'initialize', used by 'processEvent', cleaned up by 'cleanup'.
-data WorkerState = WorkerState
-  { processEvent :: Event Json.Value -> Task Text (Array Integration.CommandPayload)
-  , cleanup :: Task Text Unit
-  }
 
 
 data Application = Application
@@ -522,14 +492,14 @@ runWith eventStore app = do
           |> Array.reduce (\cmdMap acc -> Map.merge cmdMap acc) Map.empty
 
   -- 10. Start integration subscriber for outbound integrations with command dispatch
-  startIntegrationSubscriber eventStore app.outboundRunners app.outboundLifecycleRunners combinedCommandEndpoints
+  Integrations.startIntegrationSubscriber eventStore app.outboundRunners app.outboundLifecycleRunners combinedCommandEndpoints
 
   -- 11. Start inbound integration workers (timers, webhooks, etc.)
-  inboundWorkers <- startInboundWorkers app.inboundIntegrations combinedCommandEndpoints
+  inboundWorkers <- Integrations.startInboundWorkers app.inboundIntegrations combinedCommandEndpoints
 
   -- 12. Run each transport once with combined endpoints from all services
   -- When transports complete (or fail), cancel inbound workers for clean shutdown
-  result <- runTransports app.transports combinedEndpointsByTransport combinedQueryEndpoints
+  result <- Transports.runTransports app.transports combinedEndpointsByTransport combinedQueryEndpoints
     |> Task.asResult
 
   -- 13. Cancel all inbound workers on shutdown
@@ -544,162 +514,6 @@ runWith eventStore app = do
   case result of
     Err err -> Task.throw err
     Ok _ -> Task.yield unit
-
-
--- | Start subscription for outbound integrations.
---
--- Subscribes to all events and processes them through registered OutboundRunners.
--- Commands emitted by integrations are dispatched to the appropriate service handlers.
---
--- Uses a Dispatcher to route events to per-entity workers, ensuring sequential
--- processing within each entity while allowing parallel processing across entities.
-startIntegrationSubscriber ::
-  EventStore Json.Value ->
-  Array OutboundRunner ->
-  Array OutboundLifecycleRunner ->
-  Map Text EndpointHandler ->
-  Task Text Unit
-startIntegrationSubscriber (EventStore {subscribeToAllEvents}) runners lifecycleRunners commandEndpoints = do
-  let hasRunners = not (Array.isEmpty runners)
-  let hasLifecycleRunners = not (Array.isEmpty lifecycleRunners)
-
-  if not hasRunners && not hasLifecycleRunners
-    then Task.yield unit
-    else do
-      -- Convert to Dispatcher types
-      let dispatcherRunners = runners |> Array.map toDispatcherRunner
-      let dispatcherLifecycleRunners = lifecycleRunners |> Array.map toDispatcherLifecycleRunner
-
-      -- Create dispatcher with both runner types
-      dispatcher <- Dispatcher.newWithLifecycle dispatcherRunners dispatcherLifecycleRunners commandEndpoints
-
-      let processIntegrationEvent :: Event Json.Value -> Task Text Unit
-          processIntegrationEvent rawEvent = do
-            result <- Dispatcher.dispatch dispatcher rawEvent |> Task.asResult
-            case result of
-              Ok _ -> Task.yield unit
-              Err err ->
-                Console.print [fmt|[Integration] Error dispatching event: #{err}|]
-                  |> Task.ignoreError
-
-      subscribeToAllEvents processIntegrationEvent
-        |> Task.mapError (toText :: Error -> Text)
-        |> Task.map (\_ -> unit)
-
-
--- | Convert Application OutboundRunner to Dispatcher OutboundRunner.
-toDispatcherRunner :: OutboundRunner -> Dispatcher.OutboundRunner
-toDispatcherRunner runner = Dispatcher.OutboundRunner
-  { entityTypeName = runner.entityTypeName
-  , processEvent = runner.processEvent
-  }
-
-
--- | Convert Application OutboundLifecycleRunner to Dispatcher OutboundLifecycleRunner.
-toDispatcherLifecycleRunner :: OutboundLifecycleRunner -> Dispatcher.OutboundLifecycleRunner
-toDispatcherLifecycleRunner runner = Dispatcher.OutboundLifecycleRunner
-  { entityTypeName = runner.entityTypeName
-  , spawnWorkerState = \streamId -> do
-      appWorkerState <- runner.spawnWorkerState streamId
-      Task.yield Dispatcher.WorkerState
-        { processEvent = appWorkerState.processEvent
-        , cleanup = appWorkerState.cleanup
-        }
-  }
-
-
--- | Dispatch a command payload to the appropriate service handler.
-dispatchCommand ::
-  Map Text EndpointHandler ->
-  Integration.CommandPayload ->
-  Task Text Unit
-dispatchCommand commandEndpoints payload = do
-  let cmdType = payload.commandType
-  case Map.get cmdType commandEndpoints of
-    Just handler -> do
-      let cmdBytes = Json.encodeText payload.commandData |> Text.toBytes
-      let responseCallback _ = Task.yield unit
-      handler cmdBytes responseCallback
-        |> Task.mapError (\err -> [fmt|Command dispatch failed for #{cmdType}: #{err}|])
-    Nothing -> do
-      Console.print [fmt|[Integration] No handler found for command: #{cmdType}|]
-        |> Task.ignoreError
-
-
--- | Start all inbound integration workers.
---
--- Each worker runs in its own background task, emitting commands that are
--- dispatched to the appropriate service handlers. Workers run indefinitely
--- with automatic restart on failure (with exponential backoff).
---
--- Returns the spawned AsyncTasks so they can be cancelled on shutdown.
-startInboundWorkers ::
-  Array Integration.Inbound ->
-  Map Text EndpointHandler ->
-  Task Text (Array (AsyncTask Text Unit))
-startInboundWorkers inbounds commandEndpoints = do
-  if Array.isEmpty inbounds
-    then Task.yield Array.empty
-    else do
-      let workerCount = Array.length inbounds
-      Console.print [fmt|[Integration] Starting #{workerCount} inbound worker(s)|]
-      inbounds
-        |> Task.mapArray \inboundIntegration -> do
-            -- Start each worker in a background task with restart logic
-            let workerWithRestartLoop :: Int -> Task Text Unit
-                workerWithRestartLoop backoffMs = do
-                  let emitCommand payload = do
-                        dispatchCommand commandEndpoints payload
-                          |> Task.mapError (\err -> Integration.PermanentFailure err)
-                  result <- Integration.runInbound inboundIntegration emitCommand
-                    |> Task.mapError toText
-                    |> Task.asResult
-                  case result of
-                    Err err -> do
-                      Console.print [fmt|[Integration] Inbound worker error: #{err}. Restarting in #{backoffMs}ms...|]
-                        |> Task.ignoreError
-                      AsyncTask.sleep backoffMs
-                      -- Exponential backoff: double the delay, max 60 seconds
-                      let nextBackoff = min (backoffMs * 2) 60000
-                      workerWithRestartLoop nextBackoff
-                    Ok _ -> Task.yield unit
-            -- Run worker in background, starting with 1 second backoff
-            AsyncTask.run (workerWithRestartLoop 1000)
-              |> Task.mapError toText
-
-
--- | Run all transports with their combined endpoints.
---
--- Each transport is started exactly once with all command and query endpoints
--- from all services that use that transport.
-runTransports ::
-  Map Text TransportValue ->
-  Map Text (Map Text EndpointHandler) ->
-  Map Text QueryEndpointHandler ->
-  Task Text Unit
-runTransports transportsMap endpointsByTransport queryEndpoints = do
-  transportsMap
-    |> Map.entries
-    |> Task.forEach \(transportName, transportVal) -> do
-        let commandEndpointsForTransport =
-              endpointsByTransport
-                |> Map.get transportName
-                |> Maybe.withDefault Map.empty
-
-        let commandCount = Map.length commandEndpointsForTransport
-        let queryCount = Map.length queryEndpoints
-        Console.print [fmt|Starting transport: #{transportName} with #{commandCount} commands and #{queryCount} queries|]
-
-        case transportVal of
-          TransportValue transport -> do
-            let endpoints =
-                  Endpoints
-                    { transport = transport
-                    , commandEndpoints = commandEndpointsForTransport
-                    , queryEndpoints = queryEndpoints
-                    }
-            let runnableTransport = assembleTransport endpoints
-            runTransport transport runnableTransport
 
 
 -- | Merge two QueryRegistries by combining their updaters.
@@ -757,37 +571,15 @@ withOutbound ::
   Application ->
   Application
 withOutbound integrationFn app = do
-  let typeName = TypeName.reflect @entity
-  let runner = OutboundRunner
-        { entityTypeName = typeName
-        , processEvent = \rawEvent -> do
-            let streamId = rawEvent.streamId
-            -- Decode the event from JSON
-            case Json.decode @event rawEvent.event of
-              Err decodeErr -> do
-                Console.print [fmt|[Integration] Failed to decode event for #{typeName} (stream: #{streamId}): #{decodeErr}|]
-                  |> Task.ignoreError
-                Task.yield Array.empty
-              Ok decodedEvent -> do
-                -- Use default entity as placeholder - full entity reconstruction
-                -- via event replay will be implemented in a future version.
-                -- Integrations should use entityId from the event when needed.
-                let entity = defaultValue @entity
-                -- Call the integration function
-                let outbound = integrationFn entity decodedEvent
-                let actions = Integration.getActions outbound
-                -- Execute all actions and collect command payloads
-                actions
-                  |> Task.mapArray (\action -> do
-                      result <- Integration.runAction action
-                        |> Task.mapError toText
-                      case result of
-                        Just payload -> Task.yield [payload]
-                        Nothing -> Task.yield []
-                    )
-                  |> Task.map Array.flatten
-        }
-  app {outboundRunners = app.outboundRunners |> Array.push runner}
+  let (runners, lifecycleRunners, inbounds) =
+        Integrations.withOutbound @entity @event
+          integrationFn
+          (app.outboundRunners, app.outboundLifecycleRunners, app.inboundIntegrations)
+  app
+    { outboundRunners = runners
+    , outboundLifecycleRunners = lifecycleRunners
+    , inboundIntegrations = inbounds
+    }
 
 
 -- | Register an outbound integration with lifecycle management.
@@ -825,19 +617,15 @@ withOutboundLifecycle ::
   Application ->
   Application
 withOutboundLifecycle config app = do
-  let typeName = TypeName.reflect @entity
-  let runner = OutboundLifecycleRunner
-        { entityTypeName = typeName
-        , spawnWorkerState = \streamId -> do
-            -- Initialize resources for this entity
-            state <- config.initialize streamId
-            -- Return a WorkerState that captures the initialized state
-            Task.yield WorkerState
-              { processEvent = \event -> config.processEvent state event
-              , cleanup = config.cleanup state
-              }
-        }
-  app {outboundLifecycleRunners = app.outboundLifecycleRunners |> Array.push runner}
+  let (runners, lifecycleRunners, inbounds) =
+        Integrations.withOutboundLifecycle @entity
+          config
+          (app.outboundRunners, app.outboundLifecycleRunners, app.inboundIntegrations)
+  app
+    { outboundRunners = runners
+    , outboundLifecycleRunners = lifecycleRunners
+    , inboundIntegrations = inbounds
+    }
 
 
 -- | Register an inbound integration worker.
@@ -859,5 +647,13 @@ withInbound ::
   Integration.Inbound ->
   Application ->
   Application
-withInbound inboundIntegration app =
-  app {inboundIntegrations = app.inboundIntegrations |> Array.push inboundIntegration}
+withInbound inboundIntegration app = do
+  let (runners, lifecycleRunners, inbounds) =
+        Integrations.withInbound
+          inboundIntegration
+          (app.outboundRunners, app.outboundLifecycleRunners, app.inboundIntegrations)
+  app
+    { outboundRunners = runners
+    , outboundLifecycleRunners = lifecycleRunners
+    , inboundIntegrations = inbounds
+    }

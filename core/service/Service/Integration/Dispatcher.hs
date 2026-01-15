@@ -38,10 +38,12 @@
 module Service.Integration.Dispatcher (
   -- * Types
   IntegrationDispatcher,
+  DispatcherConfig (..),
+
+  -- * Re-exports from Types
   OutboundRunner (..),
   OutboundLifecycleRunner (..),
   WorkerState (..),
-  DispatcherConfig (..),
 
   -- * Construction
   new,
@@ -51,6 +53,7 @@ module Service.Integration.Dispatcher (
   -- * Operations
   dispatch,
   shutdown,
+  dispatchCommand,
 ) where
 
 import Array (Array)
@@ -73,6 +76,7 @@ import Maybe (Maybe (..))
 import Result (Result (..))
 import Service.Event (Event (..))
 import Service.Event.StreamId (StreamId)
+import Service.Integration.Types (OutboundRunner (..), OutboundLifecycleRunner (..), WorkerState (..))
 import Service.Transport (EndpointHandler)
 import Task (Task)
 import Task qualified
@@ -88,37 +92,6 @@ data WorkerMessage value
   = ProcessEvent value
   | Stop
   deriving (Show)
-
-
--- | A type-erased outbound integration runner.
---
--- This wraps an integration function with JSON decoding so it can process
--- raw events from the event store.
-data OutboundRunner = OutboundRunner
-  { entityTypeName :: Text,
-    processEvent :: Event Json.Value -> Task Text (Array Integration.CommandPayload)
-  }
-
-
--- | A type-erased outbound integration runner with lifecycle management.
---
--- Use this for integrations that need expensive resources like:
--- - Database connection pools
--- - Embedded interpreters
--- - gRPC channels
-data OutboundLifecycleRunner = OutboundLifecycleRunner
-  { entityTypeName :: Text,
-    spawnWorkerState :: StreamId -> Task Text WorkerState
-  }
-
-
--- | Internal state for a running lifecycle worker.
---
--- Created by the lifecycle runner's 'spawnWorkerState' function.
-data WorkerState = WorkerState
-  { processEvent :: Event Json.Value -> Task Text (Array Integration.CommandPayload),
-    cleanup :: Task Text Unit
-  }
 
 
 -- | Configuration for the dispatcher.
