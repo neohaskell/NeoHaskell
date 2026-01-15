@@ -395,13 +395,18 @@ buildEndpointsByTransport rawEventStore commandDefinitions transportsMap = do
           |> Record.collapse
           |> Array.fromLinkedList
 
-  -- Group by transport name
+  -- Group by transport name, detecting duplicate command handlers
   let groupByTransport (transportNameText, cmdName, handler) acc =
         case acc |> Map.get transportNameText of
           Nothing ->
             acc |> Map.set transportNameText (Map.empty |> Map.set cmdName handler)
           Just existing ->
-            acc |> Map.set transportNameText (existing |> Map.set cmdName handler)
+            case existing |> Map.get cmdName of
+              Just _ ->
+                -- Duplicate handler detected - this is a configuration error
+                panic [fmt|Duplicate command handler registered for: #{cmdName}|]
+              Nothing ->
+                acc |> Map.set transportNameText (existing |> Map.set cmdName handler)
 
   Task.yield (endpoints |> Array.reduce groupByTransport Map.empty)
 
