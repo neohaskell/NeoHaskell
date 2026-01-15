@@ -78,6 +78,7 @@ data OutboundConfig state = OutboundConfig
     -- Should release any resources created in @initialize@ (close connections,
     -- stop interpreters, etc.).
     --
-    -- Should be fast - the reaper won't wait forever.
+    -- Should complete quickly. Long-running cleanup operations may delay
+    -- worker shutdown and system termination.
   , cleanup :: state -> Task Text Unit
   }
