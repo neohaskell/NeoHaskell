@@ -1,4 +1,3 @@
 packages:
-  cli/*.cabal
   core/*.cabal
   testbed/*.cabal
