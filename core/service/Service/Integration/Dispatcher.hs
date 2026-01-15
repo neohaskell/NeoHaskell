@@ -269,7 +269,7 @@ dispatch dispatcher event = do
       lifecycleWorker <- getOrCreateLifecycleWorker dispatcher streamId
       -- Update last activity time
       currentTime <- getCurrentTimeMs
-      lifecycleWorker.lastActivityTime |> ConcurrentVar.set currentTime
+      _ <- lifecycleWorker.lastActivityTime |> ConcurrentVar.swap currentTime
       writeWorkerMessageWithTimeout dispatcher streamId (ProcessEvent event) lifecycleWorker.channel
 
 
@@ -589,7 +589,7 @@ shutdown ::
   Task Text Unit
 shutdown dispatcher = do
   -- Signal shutdown (stops the reaper on next iteration)
-  dispatcher.shutdownSignal |> ConcurrentVar.set True
+  _ <- dispatcher.shutdownSignal |> ConcurrentVar.swap True
 
   -- Send Stop to all stateless workers
   statelessWorkerEntries <- dispatcher.entityWorkers |> ConcurrentMap.entries

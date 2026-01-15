@@ -4,6 +4,7 @@ module ConcurrentVar (
   containing,
   get,
   set,
+  swap,
   peek,
   modify,
   modifyReturning,
@@ -42,9 +43,29 @@ peek (ConcurrentVar ref) =
     |> Task.fromIO
 
 
+-- | Put a value into an empty ConcurrentVar.
+--
+-- WARNING: This will block indefinitely if the ConcurrentVar already contains
+-- a value! This is designed for the pattern: create empty with 'new', then
+-- 'set' once.
+--
+-- For replacing an existing value, use 'swap' instead.
+-- For updating based on current value, use 'modify' instead.
 set :: value -> ConcurrentVar value -> Task _ ()
 set value (ConcurrentVar ref) =
   GHC.putMVar ref value
+    |> Task.fromIO
+
+
+-- | Atomically replace the current value with a new one, returning the old value.
+--
+-- This is safe to call on a ConcurrentVar that already contains a value.
+-- Use this instead of 'set' when updating an existing value.
+--
+-- Blocks if the ConcurrentVar is empty until a value is available.
+swap :: value -> ConcurrentVar value -> Task _ value
+swap newValue (ConcurrentVar ref) =
+  GHC.swapMVar ref newValue
     |> Task.fromIO
 
 
