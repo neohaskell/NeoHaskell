@@ -92,7 +92,7 @@ getOrInsert ::
   value ->
   ConcurrentMap key value ->
   Task _ (value, Maybe value)
-getOrInsert key candidate (ConcurrentMap stmMap) = do
+getOrInsert key candidate (ConcurrentMap stmMap) =
   GhcSTM.atomically do
     existing <- STMMap.lookup key stmMap
     case existing of
@@ -103,7 +103,7 @@ getOrInsert key candidate (ConcurrentMap stmMap) = do
         -- Key doesn't exist, insert candidate
         STMMap.insert candidate key stmMap
         pure (candidate, Nothing)
-    |> Task.fromIO
+  |> Task.fromIO
 
 
 -- | Atomically get an existing value, or insert a new one if the key is missing
@@ -128,7 +128,7 @@ getOrInsertIf ::
   (value -> Bool) ->  -- ^ Predicate: True = replace existing, False = keep existing
   ConcurrentMap key value ->
   Task _ (value, Maybe value)
-getOrInsertIf key candidate shouldReplace (ConcurrentMap stmMap) = do
+getOrInsertIf key candidate shouldReplace (ConcurrentMap stmMap) =
   GhcSTM.atomically do
     existing <- STMMap.lookup key stmMap
     case existing of
@@ -145,7 +145,7 @@ getOrInsertIf key candidate shouldReplace (ConcurrentMap stmMap) = do
         -- Key doesn't exist, insert candidate
         STMMap.insert candidate key stmMap
         pure (candidate, Nothing)
-    |> Task.fromIO
+  |> Task.fromIO
 
 
 -- | Remove a key from the map.
