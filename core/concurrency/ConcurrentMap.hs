@@ -15,6 +15,7 @@ module ConcurrentMap (
   keys,
   values,
   entries,
+  forEachChunked,
 ) where
 
 import Array (Array)
@@ -340,6 +341,10 @@ values (ConcurrentMap stmMap) = do
 
 
 -- | Get all entries (key-value pairs) in the map.
+--
+-- Note: This loads all entries in a single STM transaction. For maps with
+-- many entries under high contention, consider using 'forEachChunked' instead
+-- to reduce STM transaction scope and allow interleaving with other operations.
 entries ::
   forall key value.
   ConcurrentMap key value ->
@@ -349,3 +354,48 @@ entries (ConcurrentMap stmMap) = do
   entryList
     |> Array.fromLinkedList
     |> Task.yield
+
+
+-- | Process entries in chunks to reduce STM contention.
+--
+-- Unlike 'entries' which loads all entries in one STM transaction, this function
+-- fetches keys first, then processes entries in batches of the specified size.
+-- Each batch lookup is a separate STM transaction, allowing other operations
+-- to interleave and reducing "stop-the-world" effects.
+--
+-- This is useful for background tasks like reapers that iterate over potentially
+-- large maps without blocking concurrent access for extended periods.
+--
+-- Note: Entries may be added or removed between batches. The processor will see
+-- a consistent view within each batch, but not across the entire iteration.
+-- This is acceptable for use cases like idle worker cleanup where eventual
+-- consistency is sufficient.
+forEachChunked ::
+  forall key value.
+  (Hashable key, Eq key) =>
+  Int ->  -- ^ Chunk size (number of entries per batch)
+  (key -> value -> Task _ Unit) ->  -- ^ Processor function
+  ConcurrentMap key value ->
+  Task _ Unit
+forEachChunked chunkSize processor concurrentMap = do
+  -- Get all keys first (single STM transaction, but keys are small)
+  allKeys <- keys concurrentMap
+  -- Process in chunks
+  let keysList = allKeys |> Array.toLinkedList
+  processChunks keysList
+ where
+  processChunks :: [key] -> Task _ Unit
+  processChunks remainingKeys = do
+    case GhcList.splitAt chunkSize remainingKeys of
+      ([], []) ->
+        Task.yield unit
+      (chunk, rest) -> do
+        -- Process this chunk
+        let chunkArray = chunk |> Array.fromLinkedList
+        chunkArray |> Task.forEach \key -> do
+          maybeValue <- get key concurrentMap
+          case maybeValue of
+            Just value -> processor key value
+            Nothing -> pass  -- Entry was removed between key fetch and lookup
+        -- Continue with remaining chunks
+        processChunks rest

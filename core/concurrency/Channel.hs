@@ -27,6 +27,19 @@ import TypeName qualified
 --
 -- Use unbounded channels for low-volume or when backpressure isn't needed.
 -- Use bounded channels for high-throughput scenarios to prevent OOM.
+--
+-- == Performance Notes
+--
+-- Bounded channels use STM's TBQueue for correctness guarantees. Under extreme
+-- backpressure (channel consistently full with many concurrent writers), STM
+-- transaction retries can cause throughput degradation ("STM thrash").
+--
+-- For most workloads (< 50k events/second), this is not a concern. If you observe
+-- throughput collapse under sustained backpressure, consider:
+--
+-- 1. Increasing channel capacity to reduce full-channel frequency
+-- 2. Adding more workers (horizontal scaling)
+-- 3. Investigating why consumers are slower than producers
 data Channel value
   = -- | Unbounded channel using unagi-chan (high performance, no backpressure)
     UnboundedChannel

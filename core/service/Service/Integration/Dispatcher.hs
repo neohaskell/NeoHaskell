@@ -606,38 +606,41 @@ startReaper dispatcher = do
           else do
             -- Check for idle workers
             currentTime <- getCurrentTimeMs
-            workerEntries <- dispatcher.lifecycleEntityWorkers |> ConcurrentMap.entries
-
-            -- Find and clean up idle workers
-            -- Reaper race condition fix:
-            -- 1. Mark worker as Draining (so dispatcher knows not to use it)
-            -- 2. Atomically remove from map ONLY IF it's still the same worker
-            --    (uses removeIfM to prevent removing a newly-spawned replacement)
-            -- 3. Send Stop (worker drains queue then exits)
-            workerEntries |> Task.forEach \(streamId, worker) -> do
-              lastActivity <- worker.lastActivityTime |> ConcurrentVar.peek
-              let idleTime = currentTime - lastActivity
-              if idleTime > dispatcher.config.idleTimeoutMs
-                then do
-                  -- Capture the worker ID we're trying to remove
-                  let capturedWorkerId = worker.workerId
-                  -- Step 1: Mark as Draining so dispatcher won't use this worker
-                  worker.status |> AtomicVar.set Draining
-                  -- Step 2: Atomically remove ONLY IF the worker ID matches
-                  -- If a new worker was spawned between our check and remove,
-                  -- it will have a different ID and won't be removed
-                  let isSameWorker currentWorker =
-                        currentWorker.workerId == capturedWorkerId
-                  removed <- dispatcher.lifecycleEntityWorkers
-                    |> ConcurrentMap.removeIf streamId isSameWorker
-                  -- Step 3: Send Stop only if we actually removed the worker
-                  case removed of
-                    Just removedWorker ->
-                      stopLifecycleWorkerOrCancel dispatcher streamId removedWorker
-                    Nothing ->
-                      -- Worker was replaced, don't send Stop to the new one
-                      pass
-                else pass
+            
+            -- Use chunked iteration to reduce STM contention.
+            -- Process 50 workers per batch to allow other operations to interleave.
+            let reaperChunkSize = 50
+            dispatcher.lifecycleEntityWorkers
+              |> ConcurrentMap.forEachChunked reaperChunkSize \streamId worker -> do
+                -- Find and clean up idle workers
+                -- Reaper race condition fix:
+                -- 1. Mark worker as Draining (so dispatcher knows not to use it)
+                -- 2. Atomically remove from map ONLY IF it's still the same worker
+                --    (uses removeIf to prevent removing a newly-spawned replacement)
+                -- 3. Send Stop (worker drains queue then exits)
+                lastActivity <- worker.lastActivityTime |> ConcurrentVar.peek
+                let idleTime = currentTime - lastActivity
+                if idleTime > dispatcher.config.idleTimeoutMs
+                  then do
+                    -- Capture the worker ID we're trying to remove
+                    let capturedWorkerId = worker.workerId
+                    -- Step 1: Mark as Draining so dispatcher won't use this worker
+                    worker.status |> AtomicVar.set Draining
+                    -- Step 2: Atomically remove ONLY IF the worker ID matches
+                    -- If a new worker was spawned between our check and remove,
+                    -- it will have a different ID and won't be removed
+                    let isSameWorker currentWorker =
+                          currentWorker.workerId == capturedWorkerId
+                    removed <- dispatcher.lifecycleEntityWorkers
+                      |> ConcurrentMap.removeIf streamId isSameWorker
+                    -- Step 3: Send Stop only if we actually removed the worker
+                    case removed of
+                      Just removedWorker ->
+                        stopLifecycleWorkerOrCancel dispatcher streamId removedWorker
+                      Nothing ->
+                        -- Worker was replaced, don't send Stop to the new one
+                        pass
+                  else pass
 
             -- Continue reaping
             reaperLoop
