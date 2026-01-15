@@ -46,8 +46,11 @@ import Array qualified
 import AsyncTask qualified
 import Basics
 import Console qualified
+import Control.Concurrent.Async qualified as GhcAsync
+import Data.Either qualified as GhcEither
 import Default (Default (..))
 import GHC.TypeLits qualified as GHC
+import IO qualified
 import Integration qualified
 import Integration.Lifecycle qualified as Lifecycle
 import Json qualified
@@ -505,10 +508,28 @@ runWith eventStore app = do
   -- 13. Cancel all inbound workers on shutdown
   Console.print "[Integration] Shutting down inbound workers..."
     |> Task.ignoreError
+  let shutdownTimeoutMs = 5000
+  let awaitWorkerShutdown worker = do
+        let awaitTask = AsyncTask.waitFor worker
+        let timeoutTask =
+              AsyncTask.sleep shutdownTimeoutMs
+                |> Task.andThen (\_ -> Task.throw [fmt|timeout|])
+        Task.fromIOResult do
+          raceResult <- GhcAsync.race (Task.runResult awaitTask) (Task.runResult timeoutTask)
+          case raceResult of
+            GhcEither.Left result -> IO.yield result
+            GhcEither.Right result -> IO.yield result
+        |> Task.asResult
   inboundWorkers
     |> Task.forEach \worker -> do
         AsyncTask.cancel worker
           |> Task.ignoreError
+        awaitResult <- awaitWorkerShutdown worker
+        case awaitResult of
+          Ok _ -> Task.yield unit
+          Err err ->
+            Console.print [fmt|[Integration] Inbound worker shutdown timed out or failed: #{err}|]
+              |> Task.ignoreError
 
   -- Re-raise any transport error
   case result of
