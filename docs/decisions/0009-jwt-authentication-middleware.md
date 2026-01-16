@@ -1056,7 +1056,8 @@ Revisit architecture if:
 - Must support **RS256** at sustained 50k req/s on limited cores → consider edge/proxy JWT verification offload
 - Multi-tenant / **multiple issuers** in same process → requires per-issuer caches
 - **Replay protection** required → needs `jti` tracking / stateful verification
-- Regulatory requirements demand **immutable audit trails** beyond standard logs
+
+**Note on audit trails**: Domain events already provide immutable audit trails via event sourcing. Auth decisions (who accessed what, when) are naturally captured in command events. Operational metrics (JWKS refresh, circuit breaker) use standard observability, not the event store.
 
 ## Future Work
 
