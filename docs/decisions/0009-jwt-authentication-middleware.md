@@ -665,7 +665,96 @@ decide cmd entity maybeUser = case maybeUser of
       ]
 ```
 
-### 8. Application Layer Configuration
+### 8. Query Endpoint Integration
+
+Queries (read models) also support authentication via the same `AuthOptions` pattern.
+
+#### QueryEndpointHandler Signature
+
+```haskell
+-- Updated QueryEndpointHandler signature
+type QueryEndpointHandler =
+  Maybe UserClaims ->  -- NEW: User claims (Nothing if Everyone)
+  Task Text Text       -- Returns JSON response
+```
+
+#### Query Auth Options
+
+Query auth is configured when registering the query endpoint:
+
+```haskell
+-- Application.withQueryAuth registers a query with auth requirements
+app :: Application
+app =
+  Application.new
+    |> Application.withAuth "https://auth.example.com"
+    |> Application.withQuery @UserOrders
+    |> Application.withQueryAuth @UserOrders Authenticated  -- Require auth for this query
+    |> Application.withService orderService
+```
+
+By default, queries are public (`Everyone`). Use `withQueryAuth` to require authentication.
+
+#### Query-Level Authorization
+
+For queries that need fine-grained access control (e.g., "users can only see their own orders"), implement filtering in the query handler:
+
+```haskell
+-- Example: UserOrders query filtered by authenticated user
+userOrdersEndpoint :: QueryObjectStore UserOrders -> Maybe UserClaims -> Task Text Text
+userOrdersEndpoint store maybeClaims = do
+  allOrders <- store.getAll |> Task.mapError toText
+  
+  -- Filter based on authenticated user
+  let visibleOrders = case maybeClaims of
+        Nothing -> []  -- Unauthenticated sees nothing (shouldn't happen if auth required)
+        Just claims -> 
+          allOrders |> Array.filter (\order -> order.userId == claims.sub)
+  
+  Task.yield (Json.encodeText visibleOrders)
+```
+
+#### WebTransport Query Auth Integration
+
+```haskell
+-- Service/Transport/Web.hs (query handling)
+
+case Wai.pathInfo request of
+  ["queries", queryNameKebab] -> do
+    let queryName = queryNameKebab |> Text.toPascalCase
+    
+    case Map.get queryName endpoints.queryEndpoints of
+      Maybe.Just (handler, authOptions) -> do
+        -- Check authentication (same as commands)
+        authResult <- checkAuth endpoints.authConfig authOptions request
+        
+        case authResult of
+          Result.Err authError ->
+            respondWithAuthError authError respond
+          Result.Ok maybeUserClaims ->
+            -- Pass UserClaims to query handler
+            result <- handler maybeUserClaims
+            case result of
+              Result.Ok jsonResponse -> ok jsonResponse
+              Result.Err errorText -> internalError errorText
+      
+      Maybe.Nothing ->
+        notFound [fmt|Query not found: #{queryName}|]
+```
+
+#### Query Auth Patterns
+
+| Pattern | Use Case | Implementation |
+|---------|----------|----------------|
+| **Public query** | Product catalog, public stats | `Everyone` (default) |
+| **Authenticated query** | User dashboard, account data | `Authenticated` |
+| **Permission-gated query** | Admin reports | `RequireAllPermissions ["admin:read"]` |
+| **User-scoped query** | "My orders" | `Authenticated` + filter by `claims.sub` |
+| **Tenant-scoped query** | Multi-tenant data | `Authenticated` + filter by `claims.tenantId` |
+
+**Design note**: Query-level filtering (user/tenant scoping) is the application's responsibility. The auth middleware only handles authentication and coarse-grained authorization. Fine-grained row-level filtering happens in the query handler itself.
+
+### 9. Application Layer Configuration
 
 The configuration API is designed for **progressive disclosure**: the simple case is trivial, and advanced options are available but optional.
 
@@ -1066,8 +1155,6 @@ Revisit architecture if:
 2. **Rate limiting middleware**: Companion middleware using similar pattern.
 
 3. **mTLS support**: Client certificate authentication for high-security scenarios.
-
-4. **Query endpoint auth**: Extend auth to Query endpoints (currently command-only).
 
 5. **Multi-issuer support**: Per-issuer JWKS managers for multi-tenant platforms.
 

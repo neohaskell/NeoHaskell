@@ -297,7 +297,7 @@ handleKidMiss state now =
 This avoids returning incorrect 401s during transient rotation/outage.
 
 ### 2.9 `Service.Transport.Web` integration
-**Responsibility:** call auth check before handler dispatch.
+**Responsibility:** call auth check before handler dispatch for both commands and queries.
 
 **Concurrency:** unchanged; keep auth check synchronous but non-blocking.
 
@@ -305,7 +305,7 @@ This avoids returning incorrect 401s during transient rotation/outage.
 
 ## 3. Data Flow
 
-### 3.1 Request lifecycle
+### 3.1 Command request lifecycle
 
 1. Route match in `Service/Transport/Web.hs`
 2. If endpoint `AuthOptions == Everyone` → skip auth entirely
@@ -325,7 +325,25 @@ This avoids returning incorrect 401s during transient rotation/outage.
 12. Enforce permissions (`RequireAllPermissions` / `RequireAnyPermission`)
 13. Call command handler with `Maybe UserClaims`
 
-### 3.2 Refresh lifecycle
+### 3.2 Query request lifecycle
+
+Query endpoints follow the same auth flow:
+
+1. Route match `GET /queries/{query-name}`
+2. Lookup `(handler, authOptions)` for query
+3. If `AuthOptions == Everyone` → skip auth, call handler with `Nothing`
+4. Otherwise: same JWT validation as commands (steps 3-12 above)
+5. Call query handler with `Maybe UserClaims`
+6. Query handler may apply additional filtering based on `UserClaims` (e.g., user/tenant scoping)
+
+**Query auth patterns:**
+- **Public query**: `Everyone` (default) — no auth required
+- **Authenticated query**: `Authenticated` — valid JWT required
+- **Permission-gated query**: `RequireAllPermissions ["admin:read"]`
+- **User-scoped query**: `Authenticated` + handler filters by `claims.sub`
+- **Tenant-scoped query**: `Authenticated` + handler filters by `claims.tenantId`
+
+### 3.3 Refresh lifecycle
 
 - A background `AsyncTask` runs:
   - periodic tick (every `refreshIntervalSeconds`)
