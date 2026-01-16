@@ -415,7 +415,7 @@ generateSubscriptionId = do
   uuid |> toText |> SubscriptionId |> Task.yield
 
 
-notifySubscribers :: (Show err) => StreamStore -> Event Json.Value -> Task err Unit
+notifySubscribers :: StreamStore -> Event Json.Value -> Task Never Unit
 notifySubscribers store event = do
   -- Get subscriptions snapshot without locks
   allSubscriptions <- ConcurrentVar.peek store.subscriptions
@@ -424,10 +424,13 @@ notifySubscribers store event = do
           |> Map.entries
           |> Array.takeIf (\(_, subscription) -> shouldNotify subscription.subscriptionType event)
 
-  -- Notify each subscriber in fire-and-forget manner using async tasks
-  relevantSubscriptions
-    |> Task.mapArray (\(_, subscription) -> AsyncTask.run (notifySubscriber subscription event))
-    |> discard
+  -- Notify all subscribers and wait for completion to ensure ordered delivery
+  -- This guarantees that when insert N completes, all its notifications have been
+  -- delivered, so insert N+1's notifications will always come after
+  let notificationTasks :: Array (Task Text Unit) =
+        relevantSubscriptions
+          |> Array.map (\(_, subscription) -> notifySubscriber subscription event)
+  notificationTasks |> AsyncTask.runAllIgnoringErrors
 
 
 shouldNotify :: SubscriptionType -> Event Json.Value -> Bool
@@ -438,7 +441,7 @@ shouldNotify subscriptionType event =
     StreamEvents entityName streamId -> event.entityName == entityName && event.streamId == streamId
 
 
-notifySubscriber :: Subscription -> Event Json.Value -> Task _ Unit
+notifySubscriber :: Subscription -> Event Json.Value -> Task Text Unit
 notifySubscriber subscription event = do
   -- Execute subscriber handler and catch any errors to prevent failures from affecting the event store
   result <- subscription.handler event |> Task.asResult
