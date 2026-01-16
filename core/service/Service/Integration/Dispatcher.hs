@@ -136,8 +136,13 @@ defaultConfig =
 
 -- | Worker for a specific entity (stateless).
 data EntityWorker = EntityWorker
-  { channel :: Channel (WorkerMessage (Event Json.Value)),
-    workerTask :: AsyncTask Text Unit
+  { -- | Unique identifier for this worker instance.
+    -- Used by the reaper to ensure it only removes the specific worker it checked.
+    workerId :: Uuid,
+    channel :: Channel (WorkerMessage (Event Json.Value)),
+    workerTask :: AsyncTask Text Unit,
+    -- | Last activity time in milliseconds (for idle reaping).
+    lastActivityTime :: ConcurrentVar Int
   }
 
 
@@ -460,7 +465,11 @@ spawnStatelessWorker ::
   StreamId ->
   Task Text EntityWorker
 spawnStatelessWorker dispatcher streamId = do
+  -- Generate unique ID for this worker instance
+  uniqueId <- Uuid.generate
   workerChannel <- Channel.newBounded dispatcher.config.workerChannelCapacity
+  currentTime <- getCurrentTimeMs
+  lastActivity <- ConcurrentVar.containing currentTime
 
   let workerLoop :: Task Text Unit
       workerLoop = do
@@ -470,6 +479,9 @@ spawnStatelessWorker dispatcher streamId = do
             -- Exit gracefully
             Task.yield unit
           ProcessEvent event -> do
+            -- Update activity time
+            newTime <- getCurrentTimeMs
+            _ <- lastActivity |> ConcurrentVar.swap newTime
             processStatelessEvent dispatcher event
             workerLoop
 
@@ -489,8 +501,10 @@ spawnStatelessWorker dispatcher streamId = do
   workerTask <- AsyncTask.run safeWorkerLoop
   Task.yield
     EntityWorker
-      { channel = workerChannel,
-        workerTask = workerTask
+      { workerId = uniqueId,
+        channel = workerChannel,
+        workerTask = workerTask,
+        lastActivityTime = lastActivity
       }
 
 
@@ -638,6 +652,8 @@ startReaper dispatcher = do
             -- Use chunked iteration to reduce STM contention.
             -- Process 50 workers per batch to allow other operations to interleave.
             let reaperChunkSize = 50
+            
+            -- Reap idle LIFECYCLE workers
             dispatcher.lifecycleEntityWorkers
               |> ConcurrentMap.forEachChunked reaperChunkSize \streamId worker -> do
                 -- Find and clean up idle workers
@@ -665,6 +681,29 @@ startReaper dispatcher = do
                     case removed of
                       Just removedWorker ->
                         stopLifecycleWorkerOrCancel dispatcher streamId removedWorker
+                      Nothing ->
+                        -- Worker was replaced, don't send Stop to the new one
+                        pass
+                  else pass
+
+            -- Reap idle STATELESS workers (same logic, simpler - no Draining status)
+            dispatcher.entityWorkers
+              |> ConcurrentMap.forEachChunked reaperChunkSize \streamId worker -> do
+                lastActivity <- worker.lastActivityTime |> ConcurrentVar.peek
+                let idleTime = currentTime - lastActivity
+                if idleTime > dispatcher.config.idleTimeoutMs
+                  then do
+                    -- Capture the worker ID we're trying to remove
+                    let capturedWorkerId = worker.workerId
+                    -- Atomically remove ONLY IF the worker ID matches
+                    let isSameWorker currentWorker =
+                          currentWorker.workerId == capturedWorkerId
+                    removed <- dispatcher.entityWorkers
+                      |> ConcurrentMap.removeIf streamId isSameWorker
+                    -- Send Stop only if we actually removed the worker
+                    case removed of
+                      Just removedWorker ->
+                        stopStatelessWorkerOrCancel dispatcher streamId removedWorker
                       Nothing ->
                         -- Worker was replaced, don't send Stop to the new one
                         pass
