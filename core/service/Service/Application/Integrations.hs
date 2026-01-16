@@ -193,18 +193,20 @@ withInbound inboundIntegration (runners, lifecycleRunners, inbounds) =
 --
 -- Uses a Dispatcher to route events to per-entity workers, ensuring sequential
 -- processing within each entity while allowing parallel processing across entities.
+--
+-- Returns the Dispatcher so it can be shutdown when the application stops.
 startIntegrationSubscriber ::
   EventStore Json.Value ->
   Array OutboundRunner ->
   Array OutboundLifecycleRunner ->
   Map Text EndpointHandler ->
-  Task Text Unit
+  Task Text (Maybe Dispatcher.IntegrationDispatcher)
 startIntegrationSubscriber (EventStore {subscribeToAllEvents}) runners lifecycleRunners commandEndpoints = do
   let hasRunners = not (Array.isEmpty runners)
   let hasLifecycleRunners = not (Array.isEmpty lifecycleRunners)
 
   if not hasRunners && not hasLifecycleRunners
-    then Task.yield unit
+    then Task.yield Nothing
     else do
       -- Create dispatcher with both runner types
       dispatcher <- Dispatcher.newWithLifecycle runners lifecycleRunners commandEndpoints
@@ -218,9 +220,11 @@ startIntegrationSubscriber (EventStore {subscribeToAllEvents}) runners lifecycle
                 Console.print [fmt|[Integration] Error dispatching event: #{err}|]
                   |> Task.ignoreError
 
-      subscribeToAllEvents processIntegrationEvent
+      _ <- subscribeToAllEvents processIntegrationEvent
         |> Task.mapError (toText :: Error -> Text)
-        |> Task.map (\_ -> unit)
+      
+      -- Return the dispatcher so it can be shutdown later
+      Task.yield (Just dispatcher)
 
 
 -- | Start all inbound integration workers.

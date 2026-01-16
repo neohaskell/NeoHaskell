@@ -74,6 +74,7 @@ import Service.ServiceDefinition.Core (ServiceRunner (..), TransportValue (..))
 import Service.ServiceDefinition.Core qualified as ServiceDefinition
 import Service.Application.Integrations qualified as Integrations
 import Service.Application.Transports qualified as Transports
+import Service.Integration.Dispatcher qualified as Dispatcher
 import Service.Integration.Types (OutboundRunner, OutboundLifecycleRunner)
 import Service.Transport (Transport (..), QueryEndpointHandler)
 import Task (Task)
@@ -495,7 +496,7 @@ runWith eventStore app = do
           |> Array.reduce (\cmdMap acc -> Map.merge cmdMap acc) Map.empty
 
   -- 10. Start integration subscriber for outbound integrations with command dispatch
-  Integrations.startIntegrationSubscriber eventStore app.outboundRunners app.outboundLifecycleRunners combinedCommandEndpoints
+  maybeDispatcher <- Integrations.startIntegrationSubscriber eventStore app.outboundRunners app.outboundLifecycleRunners combinedCommandEndpoints
 
   -- 11. Start inbound integration workers (timers, webhooks, etc.)
   inboundWorkers <- Integrations.startInboundWorkers app.inboundIntegrations combinedCommandEndpoints
@@ -505,7 +506,15 @@ runWith eventStore app = do
   result <- Transports.runTransports app.transports combinedEndpointsByTransport combinedQueryEndpoints
     |> Task.asResult
 
-  -- 13. Cancel all inbound workers on shutdown
+  -- 13. Shutdown outbound dispatcher (cleanup workers)
+  case maybeDispatcher of
+    Just dispatcher -> do
+      Console.print "[Integration] Shutting down outbound dispatcher..."
+        |> Task.ignoreError
+      Dispatcher.shutdown dispatcher
+    Nothing -> pass
+
+  -- 14. Cancel all inbound workers on shutdown
   Console.print "[Integration] Shutting down inbound workers..."
     |> Task.ignoreError
   let shutdownTimeoutMs = 5000
