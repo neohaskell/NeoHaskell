@@ -68,7 +68,8 @@ type instance NameOf RecordProcessed = "RecordProcessed"
 -- | Create a test event with the given entity ID and sequence number.
 makeTestEvent :: Text -> Int -> Int -> Task Text (Event Json.Value)
 makeTestEvent entityIdText seqNum globalPos = do
-  let streamId = StreamId.fromText entityIdText
+  -- Use fromTextUnsafe: test inputs are controlled and known to be valid
+  let streamId = StreamId.fromTextUnsafe entityIdText
   now <- DateTime.now
   Task.yield
     Event
@@ -410,7 +411,8 @@ spec = do
                 reaperIntervalMs = 25,
                 enableReaper = True,
                 workerChannelCapacity = 100,
-                channelWriteTimeoutMs = 5000
+                channelWriteTimeoutMs = 5000,
+                eventProcessingTimeoutMs = Nothing
               }
             []
             [lifecycleRunner]
@@ -452,7 +454,8 @@ spec = do
                 reaperIntervalMs = 25,
                 enableReaper = True,
                 workerChannelCapacity = 100,
-                channelWriteTimeoutMs = 5000
+                channelWriteTimeoutMs = 5000,
+                eventProcessingTimeoutMs = Nothing
               }
             []
             [lifecycleRunner]
@@ -578,7 +581,8 @@ spec = do
                 reaperIntervalMs = 10000,
                 enableReaper = False,
                 workerChannelCapacity = 2,
-                channelWriteTimeoutMs = 20
+                channelWriteTimeoutMs = 20,
+                eventProcessingTimeoutMs = Nothing
               }
             [slowRunner]
             []
@@ -655,7 +659,8 @@ spec = do
                 reaperIntervalMs = 10000,
                 enableReaper = False,
                 workerChannelCapacity = 1,
-                channelWriteTimeoutMs = 10  -- Very short timeout
+                channelWriteTimeoutMs = 10,  -- Very short timeout
+                eventProcessingTimeoutMs = Nothing
               }
             [blockingRunner]
             []
@@ -712,7 +717,8 @@ spec = do
                 reaperIntervalMs = 10000,
                 enableReaper = False,
                 workerChannelCapacity = 100,
-                channelWriteTimeoutMs = 50
+                channelWriteTimeoutMs = 50,
+                eventProcessingTimeoutMs = Nothing
               }
             [fastRunner]
             []

@@ -3,6 +3,7 @@ module Channel (
   new,
   newBounded,
   read,
+  tryRead,
   write,
   tryWriteWithTimeout,
   isBounded,
@@ -12,6 +13,7 @@ import Basics
 import Control.Concurrent.Chan.Unagi qualified as Unagi
 import Control.Concurrent.STM qualified as STM
 import Control.Concurrent.STM.TBQueue qualified as TBQueue
+import Maybe (Maybe (..))
 import Result (Result (..))
 import Task (Task)
 import Task qualified
@@ -172,6 +174,26 @@ tryWriteWithTimeout timeoutMs value channel = case channel of
                 else STM.retry
         writeAction `STM.orElse` timeoutAction
     Task.yield result
+
+
+-- | Try to read a value from the channel without blocking.
+--
+-- Returns @Just value@ if a value is available, @Nothing@ otherwise.
+-- This is useful for draining a channel during shutdown without blocking.
+--
+-- Note: For unbounded channels (unagi-chan), this uses tryReadChan which
+-- may return Nothing even if a value is "in flight" but not yet visible.
+-- For bounded channels (TBQueue), this is reliable.
+tryRead :: Channel value -> Task _ (Maybe value)
+tryRead channel = case channel of
+  UnboundedChannel {outChannel} -> do
+    -- tryReadChan returns (Element, IO) where Element has tryRead :: IO (Maybe a)
+    (element, _blockingRead) <- Unagi.tryReadChan outChannel |> Task.fromIO
+    -- Use element's tryRead to get Maybe value (non-blocking poll)
+    Unagi.tryRead element |> Task.fromIO
+  BoundedChannel {tbQueue} ->
+    STM.atomically (TBQueue.tryReadTBQueue tbQueue)
+      |> Task.fromIO
 
 
 -- | Check if a channel is bounded.

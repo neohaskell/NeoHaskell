@@ -53,7 +53,8 @@ insertTypedEvent ::
   Task Text Unit
 insertTypedEvent eventStore entityName streamUuid event = do
   eventId <- Uuid.generate
-  let streamId = StreamId.fromText (Uuid.toText streamUuid)
+  -- Use toStreamId directly since Uuid is always valid (36 chars)
+  let streamId = StreamId.toStreamId streamUuid
   metadata <- EventMetadata.new
 
   let insertion =

@@ -512,7 +512,8 @@ performReadAllStreamEvents
         records |> Task.forEach \record -> do
           let evt :: Result Text (ReadAllMessage Json.Value) = do
                 m <- Json.decode record.metadata
-                let streamId = record.inlinedStreamId |> StreamId.fromText
+                -- Use fromTextUnsafe: reading from trusted database where values were validated on insert
+                let streamId = record.inlinedStreamId |> StreamId.fromTextUnsafe
                 let metadata =
                       m
                         { EventMetadata.globalPosition = Just (StreamPosition record.globalPosition)

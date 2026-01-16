@@ -70,6 +70,8 @@ import ConcurrentMap qualified
 import ConcurrentVar (ConcurrentVar)
 import ConcurrentVar qualified
 import Console qualified
+import Control.Concurrent.Async qualified as GhcAsync
+import Data.Either (Either (..))
 import Data.Time.Clock.POSIX qualified as GhcPosix
 import GHC.Float (Double)
 import GHC.Real qualified as GhcReal
@@ -89,6 +91,44 @@ import Task (Task)
 import Task qualified
 import Text (Text)
 import Text qualified
+
+
+-- | Run a task with an optional timeout.
+--
+-- If a timeout is specified and expires before the task completes,
+-- returns @Err "timeout"@. Otherwise returns @Ok result@.
+runWithTimeout ::
+  forall err result.
+  (Show err) =>
+  Maybe Int -> -- ^ Timeout in milliseconds (Nothing = no timeout)
+  Task err result ->
+  Task Text (Result Text result)
+runWithTimeout maybeTimeoutMs task = case maybeTimeoutMs of
+  Nothing -> do
+    -- No timeout, just run the task and wrap result
+    result <- task |> Task.asResult
+    case result of
+      Ok value -> Task.yield (Ok value)
+      Err err -> do
+        let errText = show err |> Text.fromLinkedList
+        Task.yield (Err errText)
+  Just timeoutMs -> do
+    -- Race the task against a sleep
+    raceResult <- Task.fromIO do
+      GhcAsync.race
+        (Task.runResult task)
+        (do
+          -- Sleep returns Task _ Unit, use runResult and ignore result
+          _ <- AsyncTask.sleep timeoutMs |> Task.runResult
+          pure unit
+        )
+    case raceResult of
+      Left taskResult -> case taskResult of
+        Ok value -> Task.yield (Ok value)
+        Err err -> do
+          let errText = show err |> Text.fromLinkedList
+          Task.yield (Err errText)
+      Right _ -> Task.yield (Err "timeout")
 
 
 -- | Message type for worker channels (poison pill pattern).
@@ -118,7 +158,12 @@ data DispatcherConfig = DispatcherConfig
     workerChannelCapacity :: Int,
     -- | Timeout in milliseconds for writing to a full channel.
     -- If exceeded, event is logged as dropped. Default: 5000 (5 seconds)
-    channelWriteTimeoutMs :: Int
+    channelWriteTimeoutMs :: Int,
+    -- | Timeout in milliseconds for processing a single event.
+    -- If exceeded, the event processing is cancelled and the worker continues
+    -- with the next event. Default: Nothing (no timeout).
+    -- This prevents slow integrations from blocking a worker indefinitely.
+    eventProcessingTimeoutMs :: Maybe Int
   }
 
 
@@ -130,7 +175,8 @@ defaultConfig =
       reaperIntervalMs = 10000,
       enableReaper = True,
       workerChannelCapacity = 100,
-      channelWriteTimeoutMs = 5000
+      channelWriteTimeoutMs = 5000,
+      eventProcessingTimeoutMs = Nothing
     }
 
 
@@ -264,24 +310,32 @@ dispatch ::
   Event Json.Value ->
   Task Text Unit
 dispatch dispatcher event = do
-  let streamId = event.streamId
-
-  -- Handle stateless workers
-  if Array.isEmpty dispatcher.outboundRunners
-    then pass
+  -- Check shutdown signal first - reject new events during shutdown
+  isShuttingDown <- dispatcher.shutdownSignal |> ConcurrentVar.peek
+  if isShuttingDown
+    then do
+      let streamId = event.streamId
+      Console.print [fmt|[Dispatcher] Rejected event for stream #{streamId} - dispatcher is shutting down|]
+        |> Task.ignoreError
     else do
-      worker <- getOrCreateStatelessWorker dispatcher streamId
-      writeWorkerMessageWithTimeout dispatcher streamId (ProcessEvent event) worker.channel
+      let streamId = event.streamId
 
-  -- Handle lifecycle workers
-  if Array.isEmpty dispatcher.lifecycleRunners
-    then pass
-    else do
-      lifecycleWorker <- getOrCreateLifecycleWorker dispatcher streamId
-      -- Update last activity time
-      currentTime <- getCurrentTimeMs
-      _ <- lifecycleWorker.lastActivityTime |> ConcurrentVar.swap currentTime
-      writeWorkerMessageWithTimeout dispatcher streamId (ProcessEvent event) lifecycleWorker.channel
+      -- Handle stateless workers
+      if Array.isEmpty dispatcher.outboundRunners
+        then pass
+        else do
+          worker <- getOrCreateStatelessWorker dispatcher streamId
+          writeWorkerMessageWithTimeout dispatcher streamId (ProcessEvent event) worker.channel
+
+      -- Handle lifecycle workers
+      if Array.isEmpty dispatcher.lifecycleRunners
+        then pass
+        else do
+          lifecycleWorker <- getOrCreateLifecycleWorker dispatcher streamId
+          -- Update last activity time
+          currentTime <- getCurrentTimeMs
+          _ <- lifecycleWorker.lastActivityTime |> ConcurrentVar.swap currentTime
+          writeWorkerMessageWithTimeout dispatcher streamId (ProcessEvent event) lifecycleWorker.channel
 
 
 writeWorkerMessageWithTimeout ::
@@ -475,14 +529,22 @@ spawnStatelessWorker dispatcher streamId = do
       workerLoop = do
         message <- workerChannel |> Channel.read
         case message of
-          Stop ->
-            -- Exit gracefully
-            Task.yield unit
+          Stop -> do
+            -- Drain remaining events before exiting
+            drainStatelessWorker dispatcher workerChannel
           ProcessEvent event -> do
             -- Update activity time
             newTime <- getCurrentTimeMs
             _ <- lastActivity |> ConcurrentVar.swap newTime
-            processStatelessEvent dispatcher event
+            -- Process with optional timeout
+            processResult <- runWithTimeout
+              dispatcher.config.eventProcessingTimeoutMs
+              (processStatelessEvent dispatcher event)
+            case processResult of
+              Ok _ -> pass
+              Err err -> do
+                Console.print [fmt|[Dispatcher] Event processing failed for stream #{streamId}: #{err}|]
+                  |> Task.ignoreError
             workerLoop
 
   -- Wrap worker loop in exception boundary
@@ -534,14 +596,23 @@ spawnLifecycleWorker dispatcher streamId = do
         message <- workerChannel |> Channel.read
         case message of
           Stop -> do
+            -- Drain remaining events before cleanup
+            drainLifecycleWorker states dispatcher.commandEndpoints workerChannel
             -- Cleanup on stop (reap or shutdown)
             states |> Task.forEach (\state -> state.cleanup |> Task.ignoreError)
           ProcessEvent event -> do
             -- Update activity time
             newTime <- getCurrentTimeMs
             lastActivity |> ConcurrentVar.modify (\_ -> newTime)
-            -- Process event through all lifecycle runners
-            processLifecycleEvent states dispatcher.commandEndpoints event
+            -- Process event through all lifecycle runners with optional timeout
+            processResult <- runWithTimeout
+              dispatcher.config.eventProcessingTimeoutMs
+              (processLifecycleEvent states dispatcher.commandEndpoints event)
+            case processResult of
+              Ok _ -> pass
+              Err err -> do
+                Console.print [fmt|[Dispatcher] Lifecycle event processing failed for stream #{streamId}: #{err}|]
+                  |> Task.ignoreError
             workerLoop
 
   -- Wrap worker loop in exception boundary
@@ -610,6 +681,57 @@ processLifecycleEvent states endpoints event = do
         Err err -> do
           Console.print [fmt|[Dispatcher] Error processing lifecycle event (stream: #{streamId}): #{err}|]
             |> Task.ignoreError
+
+
+-- | Drain remaining events from a stateless worker's channel before exiting.
+--
+-- This ensures no events are lost when a worker is stopped (either by reaper
+-- or shutdown). Events queued after the Stop message was sent but before
+-- the worker received it will still be processed.
+drainStatelessWorker ::
+  IntegrationDispatcher ->
+  Channel (WorkerMessage (Event Json.Value)) ->
+  Task Text Unit
+drainStatelessWorker dispatcher workerChannel = do
+  maybeMessage <- workerChannel |> Channel.tryRead
+  case maybeMessage of
+    Nothing -> 
+      -- Channel empty, done draining
+      Task.yield unit
+    Just message -> case message of
+      Stop -> 
+        -- Another Stop, ignore and continue draining
+        drainStatelessWorker dispatcher workerChannel
+      ProcessEvent event -> do
+        -- Process the remaining event
+        processStatelessEvent dispatcher event
+        -- Continue draining
+        drainStatelessWorker dispatcher workerChannel
+
+
+-- | Drain remaining events from a lifecycle worker's channel before cleanup.
+--
+-- Similar to drainStatelessWorker but uses lifecycle event processing.
+drainLifecycleWorker ::
+  Array WorkerState ->
+  Map Text EndpointHandler ->
+  Channel (WorkerMessage (Event Json.Value)) ->
+  Task Text Unit
+drainLifecycleWorker states endpoints workerChannel = do
+  maybeMessage <- workerChannel |> Channel.tryRead
+  case maybeMessage of
+    Nothing ->
+      -- Channel empty, done draining
+      Task.yield unit
+    Just message -> case message of
+      Stop ->
+        -- Another Stop, ignore and continue draining
+        drainLifecycleWorker states endpoints workerChannel
+      ProcessEvent event -> do
+        -- Process the remaining event
+        processLifecycleEvent states endpoints event
+        -- Continue draining
+        drainLifecycleWorker states endpoints workerChannel
 
 
 -- | Dispatch a command to the appropriate handler.
