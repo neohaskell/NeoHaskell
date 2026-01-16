@@ -1256,8 +1256,7 @@ Revisit architecture if:
 
 1. **Multitenancy ADR**: Separate ADR for tenant isolation enforcement. Key design points:
    - Tenancy mode is **per-command and per-query** (not per-application)
-   - Commands: reuse existing `IsMultiTenant` type family
-   - Queries: add `TenancyOf query :: TenancyMode` type family (`TenantScoped | Global`)
+   - Both use existing `IsMultiTenant` type family pattern for consistency
    - Tenant-scoped endpoints require `tenantId` in claims (reject with 403 if missing)
    - Global endpoints ignore `tenantId` even if present (prevents accidental scoping)
    - Auth provides trusted `tenantId`; multitenancy enforces scoping
