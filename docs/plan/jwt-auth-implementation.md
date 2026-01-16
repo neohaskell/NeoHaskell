@@ -327,21 +327,42 @@ This avoids returning incorrect 401s during transient rotation/outage.
 
 ### 3.2 Query request lifecycle
 
-Query endpoints follow the same auth flow:
+Query endpoints use **default-deny** when auth is configured, and support **keyed + paginated** access only.
+
+#### Single instance: `GET /queries/{name}/{id}`
+
+1. Route match `GET /queries/{query-name}/{id}`
+2. Lookup endpoint config for query
+3. **Default-deny**: If auth configured and no explicit `withPublicQuery`, require auth
+4. If public: call `PublicQueryHandler` with query ID
+5. If protected: validate JWT (same as commands), call `AuthedQueryHandler` with `UserClaims` + query ID
+6. Return single instance or 404
+
+#### Paginated list: `GET /queries/{name}?cursor=&limit=`
 
 1. Route match `GET /queries/{query-name}`
-2. Lookup `(handler, authOptions)` for query
-3. If `AuthOptions == Everyone` → skip auth, call handler with `Nothing`
-4. Otherwise: same JWT validation as commands (steps 3-12 above)
-5. Call query handler with `Maybe UserClaims`
-6. Query handler may apply additional filtering based on `UserClaims` (e.g., user/tenant scoping)
+2. Verify list endpoint is enabled (`withQueryList`)
+3. Parse pagination params; enforce max limit (default: 100)
+4. Auth check (default-deny when auth configured)
+5. If public: call `PublicListHandler` with `QueryParams`
+6. If protected: call `AuthedListHandler` with `UserClaims` + `QueryParams`
+7. Return paginated response with `nextCursor`
 
-**Query auth patterns:**
-- **Public query**: `Everyone` (default) — no auth required
-- **Authenticated query**: `Authenticated` — valid JWT required
-- **Permission-gated query**: `RequireAllPermissions ["admin:read"]`
-- **User-scoped query**: `Authenticated` + handler filters by `claims.sub`
-- **Tenant-scoped query**: `Authenticated` + handler filters by `claims.tenantId`
+**Query handler types (split by auth requirement):**
+
+```haskell
+-- Public handlers (no auth)
+type PublicQueryHandler = Text -> Task Text QueryResponse
+type PublicListHandler = QueryParams -> Task Text QueryResponse
+
+-- Authenticated handlers (UserClaims guaranteed present)
+type AuthedQueryHandler = UserClaims -> Text -> Task Text QueryResponse
+type AuthedListHandler = UserClaims -> QueryParams -> Task Text QueryResponse
+```
+
+**CRITICAL**: Protected handlers receive `UserClaims` directly (not `Maybe`). This prevents security bugs from "forgot to check" patterns.
+
+**Query scoping**: Use `claims.sub` or `claims.tenantId` as part of the query lookup key—NOT post-fetch filtering via `getAll`.
 
 ### 3.3 Refresh lifecycle
 
@@ -521,17 +542,27 @@ Validate:
 - refresh failures do not break requests until staleness limit exceeded
 - `kid` miss returns 503 (not 401) when JWKS endpoint is down
 
-### 7.4 Security tests
+### 7.4 Query auth tests
+- Verify default-deny when `withAuth` is configured
+- Verify `withPublicQuery` allows unauthenticated access
+- Verify protected query handlers receive `UserClaims` (not `Maybe`)
+- Verify pagination enforces max limit
+- Verify list endpoints require explicit `withQueryList`
+- Verify keyed access works: `GET /queries/{name}/{id}`
+
+### 7.5 Security tests
 - Verify `alg=none` tokens rejected
 - Verify algorithm confusion attacks rejected (RS256 key with ES256 alg)
 - Verify tokens never appear in logs (even on parse failure)
 - Verify error responses don't leak internal details
+- Verify query endpoints don't expose cross-user data (scoping)
 
-### 7.5 Load/bench tests
+### 7.6 Load/bench tests
 - micro-benchmark verify-only path
 - measure throughput on ES256 vs RS256 vs EdDSA
 - compute required cores for 50k req/s
 - verify no memory growth under `kid` spray attack
+- verify paginated queries stay bounded (no `getAll` hot path)
 
 ---
 
@@ -552,16 +583,31 @@ Validate:
   - **Correct key rotation logic** (preserve overlapping keys)
   - HTTP caching (`ETag`, `If-None-Match`)
 
-### Phase 3 — Middleware integration (Medium)
+### Phase 3 — Command middleware integration (Medium)
 - Implement `Auth.Middleware.checkAuth` using `Auth.Jwks.getKey` + `Auth.Jwt`.
 - Implement `kid` miss policy (401 vs 503 based on health).
-- Wire into `Service/Transport/Web.hs` before handler dispatch.
+- Wire into `Service/Transport/Web.hs` for command endpoints.
 
-### Phase 4 — Application wiring (Short)
+### Phase 4 — Query auth integration (Medium)
+- Implement split handler types:
+  - `PublicQueryHandler` / `PublicListHandler`
+  - `AuthedQueryHandler` / `AuthedListHandler`
+- Implement **default-deny** policy when `withAuth` is configured.
+- Add query registration API:
+  - `Application.withPublicQuery` (explicit public)
+  - `Application.withQueryList` (enable paginated list)
+  - `Application.withQueryAuth` (custom auth)
+- Add `QueryParams` with cursor-based pagination.
+- Enforce max limit (default: 100).
+- Wire into `Service/Transport/Web.hs`:
+  - `GET /queries/{name}/{id}` (keyed access)
+  - `GET /queries/{name}?cursor=&limit=` (paginated, opt-in)
+
+### Phase 5 — Application wiring (Short)
 - Update `Application.withAuth` / `withAuthOverrides` to start JWKS manager at runtime.
 - Implement startup policy (default degraded start).
 
-### Phase 5 — Hardening + observability (Medium)
+### Phase 6 — Hardening + observability (Medium)
 - Add metrics counters (refresh success/failure, key-miss count, circuit open time, **time since last refresh**).
 - Add GDPR-compliant audit logging.
 - Add benchmarks for ES256/EdDSA/RS256.
@@ -583,6 +629,10 @@ Validate:
 | GDPR violations | never log tokens; pseudonymize claims; separate audit trail |
 | Information leakage | generic error responses; RFC 6750 alignment |
 | Memory pressure under attack | bounded `MissingKidCache` with LRU eviction |
+| Accidental query exposure | default-deny when auth configured; require explicit `withPublicQuery` |
+| `getAll` DoS / data leakage | no unbounded list endpoints; keyed + paginated access only |
+| "Forgot to check auth" bugs | split handler types: `AuthedQueryHandler` receives `UserClaims` directly (not `Maybe`) |
+| Unbounded query responses | framework-enforced max limit on pagination |
 
 ---
 

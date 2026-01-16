@@ -667,51 +667,107 @@ decide cmd entity maybeUser = case maybeUser of
 
 ### 8. Query Endpoint Integration
 
-Queries (read models) also support authentication via the same `AuthOptions` pattern.
+Queries (read models) support authentication with **default-deny** when auth is configured, and require **keyed or paginated access** (no unbounded `getAll` endpoints).
 
-#### QueryEndpointHandler Signature
+#### Query Handler Types (Split by Auth Requirement)
+
+**CRITICAL**: Protected handlers receive `UserClaims` directly (not `Maybe`). This prevents "forgot to check" bugs.
 
 ```haskell
--- Updated QueryEndpointHandler signature
-type QueryEndpointHandler =
-  Maybe UserClaims ->  -- NEW: User claims (Nothing if Everyone)
-  Task Text Text       -- Returns JSON response
+-- Public query handler (no auth required)
+type PublicQueryHandler =
+  QueryParams ->           -- Pagination params (cursor, limit)
+  Task Text QueryResponse
+
+-- Authenticated query handler (auth required)
+type AuthedQueryHandler =
+  UserClaims ->            -- Guaranteed present for protected queries
+  QueryParams ->           -- Pagination params
+  Task Text QueryResponse
+
+-- Query response with pagination
+data QueryResponse = QueryResponse
+  { items :: Text,         -- JSON array of results
+    nextCursor :: Maybe Text,
+    hasMore :: Bool
+  }
+
+-- Pagination parameters (enforced by framework)
+data QueryParams = QueryParams
+  { cursor :: Maybe Text,  -- Opaque cursor for pagination
+    limit :: Int           -- Capped at maxQueryLimit (default: 100)
+  }
 ```
 
-#### Query Auth Options
+#### Default-Deny Policy
 
-Query auth is configured when registering the query endpoint:
+**When `Application.withAuth` is configured**, queries default to `Authenticated` (not `Everyone`).
 
 ```haskell
--- Application.withQueryAuth registers a query with auth requirements
+-- With auth enabled: queries require auth by default
 app :: Application
 app =
   Application.new
     |> Application.withAuth "https://auth.example.com"
-    |> Application.withQuery @UserOrders
-    |> Application.withQueryAuth @UserOrders Authenticated  -- Require auth for this query
+    |> Application.withQuery @UserOrders           -- Defaults to Authenticated
+    |> Application.withQuery @ProductCatalog
+    |> Application.withPublicQuery @ProductCatalog -- Explicitly mark as public
     |> Application.withService orderService
 ```
 
-By default, queries are public (`Everyone`). Use `withQueryAuth` to require authentication.
+**Without auth**: queries default to `Everyone` (development/sandbox mode).
 
-#### Query-Level Authorization
+This prevents accidental exposure of sensitive read models.
 
-For queries that need fine-grained access control (e.g., "users can only see their own orders"), implement filtering in the query handler:
+#### Query Endpoints (Keyed + Paginated)
+
+**No unbounded `getAll` endpoints.** Queries are exposed via:
+
+```
+GET /queries/{query-name}/{id}           -- Single instance by ID
+GET /queries/{query-name}?cursor=&limit= -- Paginated list (requires explicit enablement)
+```
+
+##### Single Instance Endpoint (Primary)
 
 ```haskell
--- Example: UserOrders query filtered by authenticated user
-userOrdersEndpoint :: QueryObjectStore UserOrders -> Maybe UserClaims -> Task Text Text
-userOrdersEndpoint store maybeClaims = do
-  allOrders <- store.getAll |> Task.mapError toText
-  
-  -- Filter based on authenticated user
-  let visibleOrders = case maybeClaims of
-        Nothing -> []  -- Unauthenticated sees nothing (shouldn't happen if auth required)
-        Just claims -> 
-          allOrders |> Array.filter (\order -> order.userId == claims.sub)
-  
-  Task.yield (Json.encodeText visibleOrders)
+-- GET /queries/user-orders/{id}
+-- Returns single query instance or 404
+```
+
+##### Paginated List Endpoint (Opt-in)
+
+```haskell
+-- GET /queries/user-orders?limit=20&cursor=abc123
+-- Returns paginated results with cursor for next page
+
+-- Response format:
+{
+  "items": [...],
+  "nextCursor": "xyz789",  -- null if no more pages
+  "hasMore": true
+}
+```
+
+**Framework enforces**:
+- Maximum `limit` (default: 100, configurable)
+- Cursor-based pagination (not offset-based)
+- List endpoints disabled by default; enable with `Application.withQueryList`
+
+#### Query Registration API
+
+```haskell
+-- Register query with keyed access only (default)
+Application.withQuery @UserOrders
+
+-- Enable paginated list endpoint
+Application.withQueryList @UserOrders
+
+-- Explicitly mark as public (when auth is enabled)
+Application.withPublicQuery @ProductCatalog
+
+-- Custom auth requirements
+Application.withQueryAuth @AdminReport (RequireAllPermissions ["admin:read"])
 ```
 
 #### WebTransport Query Auth Integration
@@ -720,39 +776,87 @@ userOrdersEndpoint store maybeClaims = do
 -- Service/Transport/Web.hs (query handling)
 
 case Wai.pathInfo request of
-  ["queries", queryNameKebab] -> do
+  -- Single instance: GET /queries/{name}/{id}
+  ["queries", queryNameKebab, queryId] -> do
     let queryName = queryNameKebab |> Text.toPascalCase
     
     case Map.get queryName endpoints.queryEndpoints of
-      Maybe.Just (handler, authOptions) -> do
-        -- Check authentication (same as commands)
-        authResult <- checkAuth endpoints.authConfig authOptions request
+      Maybe.Just endpoint -> do
+        authResult <- checkQueryAuth endpoint.authOptions request
         
         case authResult of
           Result.Err authError ->
             respondWithAuthError authError respond
-          Result.Ok maybeUserClaims ->
-            -- Pass UserClaims to query handler
-            result <- handler maybeUserClaims
-            case result of
-              Result.Ok jsonResponse -> ok jsonResponse
-              Result.Err errorText -> internalError errorText
+          Result.Ok authContext ->
+            -- Call appropriate handler based on auth type
+            case endpoint.handler of
+              PublicHandler handler ->
+                result <- handler queryId
+                respondWithQuery result respond
+              AuthedHandler handler ->
+                result <- handler authContext.claims queryId
+                respondWithQuery result respond
       
       Maybe.Nothing ->
         notFound [fmt|Query not found: #{queryName}|]
+
+  -- Paginated list: GET /queries/{name}?cursor=&limit=
+  ["queries", queryNameKebab] -> do
+    let queryName = queryNameKebab |> Text.toPascalCase
+    
+    case Map.get queryName endpoints.queryListEndpoints of
+      Maybe.Just endpoint -> do
+        -- Parse and validate pagination params
+        params <- parseQueryParams request endpoint.maxLimit
+        
+        authResult <- checkQueryAuth endpoint.authOptions request
+        case authResult of
+          Result.Err authError ->
+            respondWithAuthError authError respond
+          Result.Ok authContext ->
+            case endpoint.listHandler of
+              PublicListHandler handler ->
+                result <- handler params
+                respondWithPagedQuery result respond
+              AuthedListHandler handler ->
+                result <- handler authContext.claims params
+                respondWithPagedQuery result respond
+      
+      Maybe.Nothing ->
+        notFound [fmt|Query list not enabled: #{queryName}|]
 ```
 
 #### Query Auth Patterns
 
-| Pattern | Use Case | Implementation |
-|---------|----------|----------------|
-| **Public query** | Product catalog, public stats | `Everyone` (default) |
-| **Authenticated query** | User dashboard, account data | `Authenticated` |
-| **Permission-gated query** | Admin reports | `RequireAllPermissions ["admin:read"]` |
-| **User-scoped query** | "My orders" | `Authenticated` + filter by `claims.sub` |
-| **Tenant-scoped query** | Multi-tenant data | `Authenticated` + filter by `claims.tenantId` |
+| Pattern | Use Case | Registration |
+|---------|----------|--------------|
+| **Public query** | Product catalog | `withPublicQuery @Catalog` |
+| **Authenticated query** | User dashboard | `withQuery @Dashboard` (default when auth enabled) |
+| **Permission-gated** | Admin reports | `withQueryAuth @AdminReport (RequireAllPermissions ["admin:read"])` |
+| **User-scoped** | "My orders" | `withQuery @MyOrders` + handler uses `claims.sub` for lookup key |
 
-**Design note**: Query-level filtering (user/tenant scoping) is the application's responsibility. The auth middleware only handles authentication and coarse-grained authorization. Fine-grained row-level filtering happens in the query handler itself.
+#### User/Tenant Scoping
+
+For user-scoped queries, use `claims.sub` as part of the query lookup key (not post-fetch filtering):
+
+```haskell
+-- CORRECT: Use claims.sub as the query ID (scoped by construction)
+myOrdersHandler :: UserClaims -> Text -> Task Text QueryResponse
+myOrdersHandler claims orderId = do
+  -- Query ID is scoped to user
+  let scopedId = [fmt|{claims.sub}:{orderId}|]
+  result <- store.get scopedId |> Task.mapError toText
+  -- ...
+
+-- WRONG: Fetch all then filter (security + performance anti-pattern)
+-- myOrdersHandler claims _ = do
+--   allOrders <- store.getAll  -- DON'T DO THIS
+--   let filtered = allOrders |> Array.filter (...)
+```
+
+**Design note**: Row-level filtering via `getAll` is an anti-pattern. Instead:
+- Use scoped query IDs (user/tenant prefix)
+- Or extend `QueryObjectStore` with indexed lookups for your storage backend
 
 ### 9. Application Layer Configuration
 
