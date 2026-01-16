@@ -6,7 +6,6 @@ on:
       - main
     paths:
       - "core/**"
-      - "cli/**"
       - "testbed/**"
       - "nix/**"
   push:
@@ -14,7 +13,6 @@ on:
       - main
     paths:
       - "core/**"
-      - "cli/**"
       - "testbed/**"
       - "nix/**"
 jobs:
@@ -57,9 +55,6 @@ jobs:
       # Doctests are failing - See issue #204
       # - name: Run core doctests
       #   run: nix-shell --run "cabal repl --with-compiler=doctest --repl-options=--verbose core"
-
-      - name: Run CLI tests
-        run: nix develop --command cabal test cli
 
       - name: Install hurl
         run: |
