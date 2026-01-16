@@ -25,6 +25,9 @@ retry-interval: 500
 HTTP/1.1 200
 Content-Type: application/json
 
+[Captures]
+first_count: jsonpath "$" count
+
 [Asserts]
 # Cart count should have increased by at least 1
 jsonpath "$" count > {{initial_count}}
@@ -43,5 +46,5 @@ Content-Type: application/json
 second_count: jsonpath "$" count
 
 [Asserts]
-# Should have at least 2 more carts than initial
-jsonpath "$" count > {{initial_count}}
+# Should have increased again (2nd timer tick)
+jsonpath "$" count > {{first_count}}

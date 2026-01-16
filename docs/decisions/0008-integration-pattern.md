@@ -265,15 +265,26 @@ webhook config = Integration.inbound
 
 ```text
 core/service/
+  Integration.hs                    -- Re-export wrapper (top-level entry point)
+  Integration/
+    Command.hs                      -- Command integration (dispatching commands from integrations)
+    Lifecycle.hs                    -- Lifecycle management (start/stop/health)
+    Timer.hs                        -- Timer-based integrations (scheduled tasks)
   Service/
-    Integration.hs              -- Re-export wrapper
     Integration/
-      Outbound.hs               -- Outbound type, ToAction, batch, none, outbound
-      Inbound.hs                -- Inbound type and helpers
-      Subscriber.hs             -- Outbound event subscription
-      Worker.hs                 -- Inbound worker management
-      Store.hs                  -- Position tracking per entity
+      Dispatcher.hs                 -- Core dispatching logic (routes commands/events)
+      Types.hs                      -- Shared integration types
 ```
+
+**Conceptual mapping from ADR to implementation:**
+
+| ADR Concept | Implemented In |
+|-------------|----------------|
+| Outbound type, ToAction, batch | `Integration` (re-exports), `Service.Integration.Types` |
+| Inbound type and helpers | `Integration.Command` |
+| Event subscription / dispatching | `Service.Integration.Dispatcher` |
+| Worker management / lifecycle | `Integration.Lifecycle` |
+| Scheduled / timed integrations | `Integration.Timer` |
 
 ### Integration Store (Position Tracking)
 

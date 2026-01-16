@@ -50,9 +50,10 @@ eventCounterIntegration = Lifecycle.OutboundConfig
         }
 
   , processEvent = \state _event -> do
-      -- Increment counter
-      state.eventCount |> ConcurrentVar.modify (\n -> n + 1)
-      currentCount <- state.eventCount |> ConcurrentVar.peek
+      -- Atomically increment counter and get new value
+      currentCount <- state.eventCount |> ConcurrentVar.modifyReturning (\n -> do
+        let n' = n + 1
+        Task.yield (n', n'))
       let entityIdText = state.entityId
       Console.print [fmt|[EventCounter] Entity #{entityIdText} processed event #{currentCount}|]
       -- This integration doesn't emit commands, just counts

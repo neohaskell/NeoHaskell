@@ -738,7 +738,7 @@ spec = do
         count <- ConcurrentVar.peek processedCount
         count |> shouldBe 10
 
-    describe "concurrent dispatch race condition" do
+    describe "concurrent dispatch to multiple entities" do
       it "handles concurrent dispatch to multiple entities correctly" \_ -> do
         -- Test that concurrent dispatch to multiple different entities works correctly
         -- Each entity should have exactly one worker, and all events should be processed

@@ -92,7 +92,8 @@ set key value concurrentMap =
 --
 -- Returns: (actualValue, maybeDiscardedCandidate)
 -- - actualValue: The value that ended up in the map (existing or newly inserted)
--- - maybeDiscardedCandidate: Just candidate if we lost the race, Nothing if we won or key existed
+-- - maybeDiscardedCandidate: Just candidate when the key already existed (the candidate was
+--   discarded), Nothing when the candidate was inserted (we won the race)
 getOrInsert ::
   forall key value.
   (Hashable key, Eq key) =>
@@ -382,15 +383,17 @@ forEachChunked ::
   ConcurrentMap key value ->
   Task _ Unit
 forEachChunked chunkSize processor concurrentMap = do
+  -- Ensure chunk size is at least 1 to guarantee progress
+  let safeChunkSize = max 1 chunkSize
   -- Get all keys first (single STM transaction, but keys are small)
   allKeys <- keys concurrentMap
   -- Process in chunks
   let keysList = allKeys |> Array.toLinkedList
-  processChunks keysList
+  processChunks safeChunkSize keysList
  where
-  processChunks :: [key] -> Task _ Unit
-  processChunks remainingKeys = do
-    case GhcList.splitAt chunkSize remainingKeys of
+  processChunks :: Int -> [key] -> Task _ Unit
+  processChunks safeSize remainingKeys = do
+    case GhcList.splitAt safeSize remainingKeys of
       ([], []) ->
         Task.yield unit
       (chunk, rest) -> do
@@ -402,4 +405,4 @@ forEachChunked chunkSize processor concurrentMap = do
             Just value -> processor key value
             Nothing -> pass  -- Entry was removed between key fetch and lookup
         -- Continue with remaining chunks
-        processChunks rest
+        processChunks safeSize rest
