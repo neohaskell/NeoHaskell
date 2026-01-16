@@ -5,9 +5,9 @@ module Service.EventStore.Postgres.Notifications (
 
 import AsyncTask qualified
 import Bytes qualified
+import Console qualified
 import Core
 import Data.ByteString qualified
-import Data.Text.IO qualified as GHC
 import Hasql.Connection qualified as Hasql
 import Hasql.Notifications qualified as HasqlNotifications
 import Json qualified
@@ -58,16 +58,24 @@ handler store _channelName payloadLegacyBytes = do
           |> Json.decodeBytes
           |> Result.andThen Sessions.insertionRecordToEvent
   case decodingResult of
-    Err err -> do
-      -- FIXME: Implement proper logging here
-      GHC.putStrLn (err)
+    Err decodeErr -> do
+      -- Event decoding failed - log and continue
+      let msg = [fmt|[Notifications] Event decode failed: #{decodeErr}|]
+      Console.print msg
+        |> Task.mapError (\_ -> "log error" :: Text)
+        |> Task.runOrPanic
     Ok event -> do
+      let eventStreamId = event.streamId
       result <-
         store
-          |> SubscriptionStore.dispatch event.streamId event
+          |> SubscriptionStore.dispatch eventStreamId event
           |> Task.runResult
       case result of
-        Err err -> do
-          -- FIXME: Implement proper logging here
-          GHC.putStrLn (toText err)
-        Ok _ -> pass
+        Err dispatchErr -> do
+          -- Dispatch error - log and continue
+          let msg = [fmt|[Notifications] Dispatch failed for stream #{eventStreamId}: #{dispatchErr}|]
+          Console.print msg
+            |> Task.mapError (\_ -> "log error" :: Text)
+            |> Task.runOrPanic
+        Ok _ ->
+          pass

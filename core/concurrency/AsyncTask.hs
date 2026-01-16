@@ -2,6 +2,7 @@ module AsyncTask (
   AsyncTask,
   run,
   waitFor,
+  cancel,
   sleep,
   process,
   runConcurrently,
@@ -18,6 +19,7 @@ import Result (Result)
 import Result qualified
 import Task (Task)
 import Task qualified
+import Text (Text)
 
 
 newtype AsyncTask err result = AsyncTask (GhcAsync.Async (Result err result))
@@ -35,6 +37,16 @@ waitFor :: (Show err) => AsyncTask err result -> Task err result
 waitFor (AsyncTask self) =
   GhcAsync.wait self
     |> Task.fromIOResult
+
+
+-- | Cancel a running async task.
+--
+-- This forcefully terminates the task. Use with caution as it may leave
+-- resources in an inconsistent state if the task doesn't handle cancellation.
+cancel :: AsyncTask err result -> Task Text Unit
+cancel (AsyncTask self) =
+  GhcAsync.cancel self
+    |> Task.fromIO
 
 
 process :: forall err a b. (Show err) => Task err a -> (AsyncTask err a -> Task err b) -> Task err b

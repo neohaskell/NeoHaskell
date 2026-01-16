@@ -322,6 +322,10 @@ insertGo ops cfg payload =
                   lastEventPositions
                     |> Maybe.withDefault (StreamPosition 0, StreamPosition 0)
 
+            -- Note: Subscribers are notified via PostgreSQL's LISTEN/NOTIFY mechanism
+            -- The trigger on the events table sends a NOTIFY to the 'global' channel,
+            -- which is handled by Notifications.handler and dispatches to SubscriptionStore
+
             Task.yield (InsertionSuccess {localPosition, globalPosition})
 
 
@@ -508,7 +512,8 @@ performReadAllStreamEvents
         records |> Task.forEach \record -> do
           let evt :: Result Text (ReadAllMessage Json.Value) = do
                 m <- Json.decode record.metadata
-                let streamId = record.inlinedStreamId |> StreamId.fromText
+                -- Use fromTextUnsafe: reading from trusted database where values were validated on insert
+                let streamId = record.inlinedStreamId |> StreamId.fromTextUnsafe
                 let metadata =
                       m
                         { EventMetadata.globalPosition = Just (StreamPosition record.globalPosition)

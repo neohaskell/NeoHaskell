@@ -101,6 +101,7 @@ library
     Appendable
     Applicable
     Array
+    AtomicVar
     AsyncTask
     Basics
     Bytes
@@ -124,6 +125,12 @@ library
     Function
     Http
     Http.Client
+    Integration
+    Integration.Command
+    Integration.Lifecycle
+    Integration.Timer
+    Service.Integration.Dispatcher
+    Service.Integration.Types
     IO
     Int
     Json
@@ -162,6 +169,8 @@ library
     Service.EventStore.Postgres.Sessions
     Service.EventStore.Postgres.SubscriptionStore
     Service.Application
+    Service.Application.Integrations
+    Service.Application.Transports
     Service.Query
     Service.Query.Core
     Service.Query.Definition
@@ -272,6 +281,11 @@ test-suite nhcore-test
 
   other-modules:
     ConcurrentMapSpec
+    Integration.CommandSpec
+    Integration.DispatcherSpec
+    Integration.RuntimeSpec
+    Integration.TimerSpec
+    IntegrationSpec
     Service.ApplicationSpec
     Service.CommandHandlerSpec
     Service.CommandSpec

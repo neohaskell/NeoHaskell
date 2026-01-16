@@ -7,7 +7,6 @@ module Testbed.Cart.Queries.CartSummary (
 import Array qualified
 import Core
 import Json qualified
-import Service.Query.Core (EntitiesOf, Query, QueryAction (..), QueryOf (..))
 import Service.Query.TH (deriveQuery)
 import Testbed.Cart.Core (CartEntity (..))
 

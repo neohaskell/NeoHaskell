@@ -6,6 +6,7 @@ module Array (
   -- * Creation
   empty,
   initialize,
+  range,
   repeat,
   wrap,
   fromLinkedList,
@@ -71,7 +72,7 @@ import Collection (Collection (..))
 import Control.Monad qualified
 import Data.Default (Default (..))
 import Data.Foldable qualified
-import Data.Vector ((!?), (++), (//))
+import Data.Vector ((!?), (++), (//), enumFromTo)
 import Data.Vector qualified
 import Function qualified
 import GHC.IsList qualified as GHC
@@ -211,6 +212,23 @@ initialize n f =
     <| Data.Vector.generate
       (Prelude.fromIntegral n)
       (Prelude.fromIntegral .> f)
+
+
+-- | Create an array of integers from a starting value to an ending value (inclusive).
+--
+-- You give the lowest and highest number that should be in the array.
+--
+-- >>> range 3 6
+-- Array [3,4,5,6]
+-- >>> range 3 3
+-- Array [3]
+-- >>> range 6 3
+-- Array []
+range :: Int -> Int -> Array Int
+range lo hi =
+  do
+    let values = enumFromTo lo hi
+    Array values
 
 
 -- | Creates an array with a given length, filled with a default element.

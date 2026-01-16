@@ -5,6 +5,8 @@ import Bytes qualified
 import Contravariant.Extras qualified as Contravariant
 import Core
 import Data.Functor.Contravariant ((>$<))
+import Data.Semigroup ((<>))
+import Data.Tuple (fst, snd)
 import Data.UUID qualified as UUID
 import Data.Vector (Vector)
 import Data.Vector qualified as Vector
@@ -341,6 +343,8 @@ selectStreamEventBatch positionRef (EntityName entityName) (StreamId streamIdTex
   let direction = toPostgresDirection relative readDirection
   position <- Var.get positionRef
   let positionComparison = toPostgresLocalPositionComparison readDirection
+  -- Build query with parameterized values ($1, $2) for user-controlled inputs
+  -- Direction and position filter use safe internal enum values (not user input)
   let positionFilter :: Text
       positionFilter =
         case relative of
@@ -351,16 +355,19 @@ selectStreamEventBatch positionRef (EntityName entityName) (StreamId streamIdTex
         [fmt|
             SELECT EventId, GlobalPosition, LocalPosition, InlinedStreamId, Entity, EventData, Metadata
             FROM Events
-            WHERE Entity = '#{entityName}' AND InlinedStreamId = '#{streamIdText}'#{positionFilter}
+            WHERE Entity = $1 AND InlinedStreamId = $2#{positionFilter}
             ORDER BY LocalPosition #{direction}
             LIMIT #{batchSize}
           |]
-  let encoder = Encoders.noParams
+  let encoder =
+        (fst >$< Encoders.param (Encoders.nonNullable Encoders.text))
+          <> (snd >$< Encoders.param (Encoders.nonNullable Encoders.text))
   let decoder = Decoders.rowVector PostgresEventRecord.rowDecoder
-  let statement :: Statement () (Array PostgresEventRecord) =
+  let params = (entityName, streamIdText)
+  let statement :: Statement (Text, Text) (Array PostgresEventRecord) =
         Statement (query |> Text.toBytes |> Bytes.unwrap) encoder decoder True
           |> Mappable.map Array.fromLegacy
-  Session.statement unit statement |> Task.yield
+  Session.statement params statement |> Task.yield
 
 
 truncateStreamSession ::

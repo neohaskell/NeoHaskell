@@ -161,7 +161,10 @@ instance Transport WebTransport where
 
     -- Parse the request path to check if it matches /commands/<name> or /queries/<name>
     case Wai.pathInfo request of
-      ["commands", commandName] -> do
+      ["commands", commandNameKebab] -> do
+        -- Convert kebab-case URL path to PascalCase for lookup
+        -- URL: /commands/reserve-stock -> lookup key: "ReserveStock"
+        let commandName = commandNameKebab |> Text.toPascalCase
         -- Look up the command handler in the endpoints map
         case Map.get commandName endpoints.commandEndpoints of
           Maybe.Just handler -> do
@@ -194,7 +197,10 @@ instance Transport WebTransport where
                     )
           Maybe.Nothing ->
             notFound [fmt|Command not found: #{commandName}|]
-      ["queries", queryName] -> do
+      ["queries", queryNameKebab] -> do
+        -- Convert kebab-case URL path to PascalCase for lookup
+        -- URL: /queries/stock-level -> lookup key: "StockLevel"
+        let queryName = queryNameKebab |> Text.toPascalCase
         -- Look up the query handler in the endpoints map
         case Map.get queryName endpoints.queryEndpoints of
           Maybe.Just handler -> do

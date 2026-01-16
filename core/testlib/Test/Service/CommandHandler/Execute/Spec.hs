@@ -67,7 +67,7 @@ basicExecutionSpecs newCartStoreAndFetcher = do
 
       let payload =
             Event.InsertionPayload
-              { streamId = context.cartId |> Uuid.toText |> StreamId.fromText,
+              { streamId = context.cartId |> Uuid.toText |> StreamId.fromTextUnsafe,
                 entityName = context.cartEntityName,
                 insertionType = Event.StreamCreation,
                 insertions = [insertion]
@@ -88,7 +88,7 @@ basicExecutionSpecs newCartStoreAndFetcher = do
       case result of
         CommandAccepted {} -> do
           -- Verify event was inserted by fetching updated cart
-          let sid = getEntityIdImpl @AddItemToCart cmd |> (Maybe.getOrDie .> Uuid.toText .> StreamId.fromText)
+          let sid = getEntityIdImpl @AddItemToCart cmd |> (Maybe.getOrDie .> Uuid.toText .> StreamId.fromTextUnsafe)
           cart <-
             context.cartFetcher.fetch context.cartEntityName sid
               |> Task.mapError toText
@@ -151,7 +151,7 @@ basicExecutionSpecs newCartStoreAndFetcher = do
 
       let payload =
             Event.InsertionPayload
-              { streamId = context.cartId |> Uuid.toText |> StreamId.fromText,
+              { streamId = context.cartId |> Uuid.toText |> StreamId.fromTextUnsafe,
                 entityName = context.cartEntityName,
                 insertionType = Event.StreamCreation,
                 insertions = insertions
@@ -170,7 +170,7 @@ basicExecutionSpecs newCartStoreAndFetcher = do
       case result of
         CommandAccepted {} -> do
           -- Verify both items are in cart
-          let sid = getEntityIdImpl @AddItemToCart cmd |> (Maybe.getOrDie .> Uuid.toText .> StreamId.fromText)
+          let sid = getEntityIdImpl @AddItemToCart cmd |> (Maybe.getOrDie .> Uuid.toText .> StreamId.fromTextUnsafe)
           cart <-
             context.cartFetcher.fetch context.cartEntityName sid
               |> Task.mapError toText
@@ -211,7 +211,7 @@ retryLogicSpecs newCartStoreAndFetcher = do
 
       let payload =
             Event.InsertionPayload
-              { streamId = context.cartId |> Uuid.toText |> StreamId.fromText,
+              { streamId = context.cartId |> Uuid.toText |> StreamId.fromTextUnsafe,
                 entityName = context.cartEntityName,
                 insertionType = Event.StreamCreation,
                 insertions = [insertion]
@@ -239,7 +239,7 @@ retryLogicSpecs newCartStoreAndFetcher = do
 
       let payload2 =
             Event.InsertionPayload
-              { streamId = context.cartId |> Uuid.toText |> StreamId.fromText,
+              { streamId = context.cartId |> Uuid.toText |> StreamId.fromTextUnsafe,
                 entityName = context.cartEntityName,
                 insertionType = Event.ExistingStream,
                 insertions = [insertion2]
@@ -259,7 +259,7 @@ retryLogicSpecs newCartStoreAndFetcher = do
       case result of
         CommandAccepted {} -> do
           -- Verify command succeeded after retry
-          let sid = getEntityIdImpl @AddItemToCart cmd |> (Maybe.getOrDie .> Uuid.toText .> StreamId.fromText)
+          let sid = getEntityIdImpl @AddItemToCart cmd |> (Maybe.getOrDie .> Uuid.toText .> StreamId.fromTextUnsafe)
           cart <-
             context.cartFetcher.fetch context.cartEntityName sid
               |> Task.mapError toText
@@ -294,7 +294,7 @@ retryLogicSpecs newCartStoreAndFetcher = do
 
       let payload =
             Event.InsertionPayload
-              { streamId = context.cartId |> Uuid.toText |> StreamId.fromText,
+              { streamId = context.cartId |> Uuid.toText |> StreamId.fromTextUnsafe,
                 entityName = context.cartEntityName,
                 insertionType = Event.StreamCreation,
                 insertions = [insertion]
@@ -323,7 +323,7 @@ retryLogicSpecs newCartStoreAndFetcher = do
 
       let payload2 =
             Event.InsertionPayload
-              { streamId = context.cartId |> Uuid.toText |> StreamId.fromText,
+              { streamId = context.cartId |> Uuid.toText |> StreamId.fromTextUnsafe,
                 entityName = context.cartEntityName,
                 insertionType = Event.StreamCreation,
                 insertions = [insertion2]
@@ -372,7 +372,7 @@ concurrencySpecs newCartStoreAndFetcher = do
 
       let payload =
             Event.InsertionPayload
-              { streamId = context.cartId |> Uuid.toText |> StreamId.fromText,
+              { streamId = context.cartId |> Uuid.toText |> StreamId.fromTextUnsafe,
                 entityName = context.cartEntityName,
                 insertionType = Event.StreamCreation,
                 insertions = [insertion]
@@ -406,7 +406,7 @@ concurrencySpecs newCartStoreAndFetcher = do
         CommandFailed _err _ -> fail "Command 2 failed"
 
       -- Verify final state has both items
-      let sid = getEntityIdImpl @AddItemToCart cmd1 |> (Maybe.getOrDie .> Uuid.toText .> StreamId.fromText)
+      let sid = getEntityIdImpl @AddItemToCart cmd1 |> (Maybe.getOrDie .> Uuid.toText .> StreamId.fromTextUnsafe)
       cart <-
         context.cartFetcher.fetch context.cartEntityName sid
           |> Task.mapError toText
@@ -441,7 +441,7 @@ concurrencySpecs newCartStoreAndFetcher = do
 
             let payload =
                   Event.InsertionPayload
-                    { streamId = cid |> Uuid.toText |> StreamId.fromText,
+                    { streamId = cid |> Uuid.toText |> StreamId.fromTextUnsafe,
                       entityName = context.cartEntityName,
                       insertionType = Event.StreamCreation,
                       insertions = [insertion]
@@ -474,14 +474,14 @@ concurrencySpecs newCartStoreAndFetcher = do
 
       -- Verify both carts have their items
       cart1 <-
-        context.cartFetcher.fetch context.cartEntityName (cartId1 |> Uuid.toText |> StreamId.fromText)
+        context.cartFetcher.fetch context.cartEntityName (cartId1 |> Uuid.toText |> StreamId.fromTextUnsafe)
           |> Task.mapError toText
           |> Task.andThen (\result -> case result of
               EntityFound fetched -> Task.yield fetched.state
               EntityNotFound -> Task.throw "Expected entity to exist but got EntityNotFound"
             )
       cart2 <-
-        context.cartFetcher.fetch context.cartEntityName (cartId2 |> Uuid.toText |> StreamId.fromText)
+        context.cartFetcher.fetch context.cartEntityName (cartId2 |> Uuid.toText |> StreamId.fromTextUnsafe)
           |> Task.mapError toText
           |> Task.andThen (\result -> case result of
               EntityFound fetched -> Task.yield fetched.state
@@ -545,7 +545,7 @@ errorScenarioSpecs newCartStoreAndFetcher = do
 
       let payload =
             Event.InsertionPayload
-              { streamId = context.cartId |> Uuid.toText |> StreamId.fromText,
+              { streamId = context.cartId |> Uuid.toText |> StreamId.fromTextUnsafe,
                 entityName = context.cartEntityName,
                 insertionType = Event.StreamCreation,
                 insertions = insertions

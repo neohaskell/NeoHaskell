@@ -9,7 +9,6 @@ import Data.List qualified as GhcList
 import GHC.Base (String)
 import Language.Haskell.TH.Lib qualified as THLib
 import Language.Haskell.TH.Syntax qualified as TH
-import Text qualified
 
 
 -- | Derive Query-related instances for a query type.
@@ -22,7 +21,7 @@ import Text qualified
 --
 -- Generates:
 --
--- * @type instance NameOf UserOrders = "user-orders"@
+-- * @type instance NameOf UserOrders = "UserOrders"@
 -- * @type instance EntitiesOf UserOrders = '[UserEntity, OrderEntity]@
 -- * @instance Query UserOrders@
 -- * @instance KnownHash "UserOrders"@
@@ -33,21 +32,19 @@ deriveQuery :: TH.Name -> [TH.Name] -> THLib.DecsQ
 deriveQuery queryTypeName entityTypeNames = do
   let queryTypeStr = TH.nameBase queryTypeName
 
-  -- Convert to kebab-case for URL: UserOrders -> user-orders
-  let kebabName = Text.toKebabCase (Text.fromLinkedList queryTypeStr) |> Text.toLinkedList
-
   -- Lookup required type families and classes
   nameOfTypeFamilyName <- lookupOrFail "NameOf"
   entitiesOfTypeFamilyName <- lookupOrFail "EntitiesOf"
   queryClassName <- lookupOrFail "Query"
 
-  -- Generate: type instance NameOf QueryType = "query-type"
+  -- Generate: type instance NameOf QueryType = "QueryType"
+  -- Uses the actual type name for dispatch matching (kebab-case is only for HTTP URLs)
   let nameOfInstance =
         TH.TySynInstD
           ( TH.TySynEqn
               Nothing
               (TH.ConT nameOfTypeFamilyName `TH.AppT` TH.ConT queryTypeName)
-              (TH.LitT (TH.StrTyLit kebabName))
+              (TH.LitT (TH.StrTyLit queryTypeStr))
           )
 
   -- Generate: type instance EntitiesOf QueryType = '[Entity1, Entity2]

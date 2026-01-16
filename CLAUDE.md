@@ -32,14 +32,29 @@ Formatting is automatic via fourmolu (2-space indent, 120 char limit).
 3. **Check `core/core/`** for NeoHaskell equivalents of what you need
 4. **Ask if uncertain** - it's better to ask one question than make wrong assumptions
 
-### TDD Process (Mandatory)
+### Outside-In Development (Mandatory)
 
-All implementation follows test-driven development:
+Development follows an outside-in, compiler-driven approach:
 
-1. **Write the complete test specification first** - define all requirements and expected behaviors
-2. **Get approval on the test spec** before implementing
-3. **Implement to make tests pass**
-4. **Run `cabal build all && cabal test`** to verify
+1. **Write usage code first** - start from where the feature will be used (e.g., testbed, application code)
+2. **Write tests for that usage** - define expected behaviors before implementation exists
+3. **Implement leaf modules** - write the modules closest to usage as if core types exist
+4. **Let the compiler guide you** - compile errors reveal what's missing from core
+5. **Repeat** - for each missing piece, write its usage/tests first, then implement
+
+This ensures APIs are designed from the user's perspective, not from abstract internals.
+
+Example flow for a new Integration feature:
+
+```text
+1. Write testbed code using Integration.Command, Integration.Timer
+2. Write hurl tests for the expected behavior
+3. Implement Integration.Command (assuming Integration.Action exists)
+4. Compiler error: "Integration.Action not found"
+5. Write tests for Integration.Action
+6. Implement Integration.Action
+7. Repeat until it compiles and tests pass
+```
 
 ### After Changes
 

@@ -1,5 +1,6 @@
 module Service.TestHelpers
   ( insertTestEvent,
+    insertTypedEvent,
   )
 where
 
@@ -25,6 +26,41 @@ insertTestEvent eventStore entityName = do
         Insertion
           { id = eventId,
             event = Json.encode (),
+            metadata = metadata
+          }
+
+  let payload =
+        InsertionPayload
+          { streamId = streamId,
+            entityName = entityName,
+            insertionType = AnyStreamState,
+            insertions = [insertion]
+          }
+
+  eventStore.insert payload
+    |> Task.mapError toText
+    |> discard
+
+
+-- | Helper to insert a typed event into the event store.
+insertTypedEvent ::
+  forall event.
+  (Json.ToJSON event) =>
+  EventStore Json.Value ->
+  EntityName ->
+  Uuid ->
+  event ->
+  Task Text Unit
+insertTypedEvent eventStore entityName streamUuid event = do
+  eventId <- Uuid.generate
+  -- Use toStreamId directly since Uuid is always valid (36 chars)
+  let streamId = StreamId.toStreamId streamUuid
+  metadata <- EventMetadata.new
+
+  let insertion =
+        Insertion
+          { id = eventId,
+            event = Json.encode event,
             metadata = metadata
           }
 

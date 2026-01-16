@@ -18,7 +18,6 @@ module Service.ServiceDefinition.Core (
 import Array (Array)
 import Array qualified
 import Basics
-import Console qualified
 import GHC.TypeLits (ErrorMessage (..), TypeError)
 import GHC.TypeLits qualified as GHC
 import Json qualified
@@ -27,7 +26,7 @@ import Map qualified
 import Maybe (Maybe (..))
 import Record (Record)
 import Record qualified
-import Service.Transport (Transport (..), EndpointHandler, QueryEndpointHandler, Endpoints (..))
+import Service.Transport (Transport (..), EndpointHandler)
 import Service.Command (EntityOf, EventOf)
 import Service.Command.Core (TransportOf, Command (..), Entity (..), Event, NameOf)
 import Service.CommandExecutor qualified as CommandExecutor
@@ -306,9 +305,18 @@ command serviceDefinition = do
     }
 
 
--- | A function that runs a service given a shared EventStore, transports, and query endpoints.
+-- | A service runner that provides command endpoints grouped by transport.
+--
+-- Services no longer run transports directly - instead, Application collects
+-- all endpoints from all services and runs each transport once with combined endpoints.
 data ServiceRunner = ServiceRunner
-  { runWithEventStore :: EventStore Json.Value -> Map Text TransportValue -> Map Text QueryEndpointHandler -> Task Text Unit
+  { -- | Get command endpoints for this service, grouped by transport name.
+    -- Returns a map from transport name to (command name -> handler).
+    -- Application will merge these across all services and run transports.
+    getEndpointsByTransport ::
+      EventStore Json.Value ->
+      Map Text TransportValue ->
+      Task Text (Map Text (Map Text EndpointHandler))
   }
 
 
@@ -330,22 +338,24 @@ toServiceRunner ::
   ServiceRunner
 toServiceRunner service =
   ServiceRunner
-    { runWithEventStore = \rawEventStore transportsMap queryEndpointsMap ->
+    { getEndpointsByTransport = \rawEventStore transportsMap ->
         case Record.reflectAllFields service.inspectDict of
           Record.Reflected ->
-            runServiceWithEventStore
+            buildEndpointsByTransport
               @cmds
               @event
               @entity
               rawEventStore
               service.commandDefinitions
               transportsMap
-              queryEndpointsMap
     }
 
 
--- | Run a service with a provided EventStore (instead of creating one from config).
-runServiceWithEventStore ::
+-- | Build command endpoints for a service, grouped by transport name.
+--
+-- Returns a map from transport name to (command name -> handler).
+-- Application will merge these across all services and run each transport once.
+buildEndpointsByTransport ::
   forall (cmds :: Record.Row Type) event entity.
   ( Record.AllFields cmds (CommandInspect),
     event ~ ServiceEventType cmds,
@@ -358,77 +368,46 @@ runServiceWithEventStore ::
   EventStore Json.Value ->
   Record.ContextRecord Record.I cmds ->
   Map Text TransportValue ->
-  Map Text QueryEndpointHandler ->
-  Task Text Unit
-runServiceWithEventStore
-  rawEventStore
-  commandDefinitions
-  transportsMap
-  queryEndpointsMap = do
-    -- Use the provided EventStore, cast to the service's event type
-    let eventStore = rawEventStore |> EventStore.castEventStore @event
+  Task Text (Map Text (Map Text EndpointHandler))
+buildEndpointsByTransport rawEventStore commandDefinitions transportsMap = do
+  let eventStore = rawEventStore |> EventStore.castEventStore @event
+  let maybeCache = Nothing :: Maybe (SnapshotCache entity)
 
-    -- TODO(#243): Integrate SnapshotCache into Application layer
-    -- Currently hardcoded to Nothing; see https://github.com/neohaskell/NeoHaskell/issues/243
-    let maybeCache = Nothing :: Maybe (SnapshotCache entity)
-
-    let mapper ::
-          forall cmdDef cmd.
-          ( CommandInspect cmdDef,
-            cmd ~ Cmd cmdDef
-          ) =>
-          Record.I (cmdDef) ->
-          Record.K ((Text, TransportValue), (Text, EndpointHandler)) (cmdDef)
-        mapper (Record.I x) = do
-          case transportsMap |> Map.get (transportName x) of
-            Nothing -> panic [fmt|The impossible happened, couldn't find transport config for #{commandName x}|]
-            Just transportVal -> do
-              let transport = getTransportValue transportVal
-              let typedEventStore = GHC.unsafeCoerce eventStore :: EventStore (CmdEvent cmdDef)
-              let typedCache = GHC.unsafeCoerce maybeCache :: Maybe (SnapshotCache (CmdEntity cmdDef))
-              Record.K ((transportName x, transportVal), (commandName x, createHandler x typedEventStore typedCache (transport) (Record.Proxy @cmd)))
-
-    let xs :: Array ((Text, TransportValue), (Text, EndpointHandler)) =
-          commandDefinitions
-            |> Record.cmap (Record.Proxy @(CommandInspect)) mapper
-            |> Record.collapse
-            |> Array.fromLinkedList
-
-    -- Group endpoints by transport name
-    let endpointsReducer ((transportNameText, transportVal), (commandNameText, handler)) endpointsMap = do
-          let transport = getTransportValue transportVal
-          case endpointsMap |> Map.get transportNameText of
-            Nothing -> do
-              let newEndpoints =
-                    Endpoints
-                      { transport = transport,
-                        commandEndpoints = Map.empty |> Map.set commandNameText handler,
-                        queryEndpoints = queryEndpointsMap
-                      }
-              endpointsMap |> Map.set transportNameText newEndpoints
-            Just existingEndpoints -> do
-              let updatedEndpoints =
-                    existingEndpoints
-                      { commandEndpoints = existingEndpoints.commandEndpoints |> Map.set commandNameText handler
-                      }
-              endpointsMap |> Map.set transportNameText updatedEndpoints
-
-    let endpointsByTransport =
-          xs |> Array.reduce endpointsReducer Map.empty
-
-    -- Run each transport with its endpoints
-    endpointsByTransport
-      |> Map.entries
-      |> Task.forEach \(transportNameText, transportEndpoints) -> do
-        let commandCount = Map.length transportEndpoints.commandEndpoints
-        let queryCount = Map.length transportEndpoints.queryEndpoints
-        Console.print [fmt|Starting transport: #{transportNameText} with #{commandCount} commands and #{queryCount} queries|]
-
-        case transportsMap |> Map.get transportNameText of
-          Nothing -> panic [fmt|Transport #{transportNameText} not found in transports map|]
+  let mapper ::
+        forall cmdDef cmd.
+        ( CommandInspect cmdDef,
+          cmd ~ Cmd cmdDef
+        ) =>
+        Record.I (cmdDef) ->
+        Record.K (Text, Text, EndpointHandler) (cmdDef)
+      mapper (Record.I x) = do
+        case transportsMap |> Map.get (transportName x) of
+          Nothing -> panic [fmt|The impossible happened, couldn't find transport config for #{commandName x}|]
           Just transportVal -> do
-            case transportVal of
-              TransportValue (transport :: transport) -> do
-                let typedEndpoints = GHC.unsafeCoerce transportEndpoints :: Endpoints transport
-                let runnableTransport = assembleTransport typedEndpoints
-                runTransport transport runnableTransport
+            let transport = getTransportValue transportVal
+            let typedEventStore = GHC.unsafeCoerce eventStore :: EventStore (CmdEvent cmdDef)
+            let typedCache = GHC.unsafeCoerce maybeCache :: Maybe (SnapshotCache (CmdEntity cmdDef))
+            Record.K (transportName x, commandName x, createHandler x typedEventStore typedCache transport (Record.Proxy @cmd))
+
+  let endpoints :: Array (Text, Text, EndpointHandler) =
+        commandDefinitions
+          |> Record.cmap (Record.Proxy @(CommandInspect)) mapper
+          |> Record.collapse
+          |> Array.fromLinkedList
+
+  -- Group by transport name, detecting duplicate command handlers
+  let groupByTransport (transportNameText, cmdName, handler) acc =
+        case acc |> Map.get transportNameText of
+          Nothing ->
+            acc |> Map.set transportNameText (Map.empty |> Map.set cmdName handler)
+          Just existing ->
+            case existing |> Map.get cmdName of
+              Just _ ->
+                -- Duplicate handler detected - this is a configuration error
+                panic [fmt|Duplicate command handler registered for: #{cmdName}|]
+              Nothing ->
+                acc |> Map.set transportNameText (existing |> Map.set cmdName handler)
+
+  Task.yield (endpoints |> Array.reduce groupByTransport Map.empty)
+
+
