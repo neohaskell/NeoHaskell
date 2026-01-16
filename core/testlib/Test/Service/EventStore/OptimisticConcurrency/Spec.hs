@@ -320,7 +320,7 @@ spec newStore = do
           |> Array.length
           |> shouldBe 10
 
-      it "global stream has no gaps when concurrent writes fail consistency check" \context -> do
+      it "global positions are strictly increasing when concurrent writes fail consistency check" \context -> do
         entityNameText <- Uuid.generate |> Task.map toText
         let entityName = Event.EntityName entityNameText
 
