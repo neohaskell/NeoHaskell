@@ -1254,15 +1254,33 @@ Revisit architecture if:
 
 ## Future Work
 
-1. **API key authentication**: Alternative auth method for service-to-service calls.
+1. **Multitenancy ADR**: Separate ADR for tenant isolation enforcement. Key design points:
+   - Tenancy mode is **per-command and per-query** (not per-application)
+   - Commands: reuse existing `IsMultiTenant` type family
+   - Queries: add `TenancyOf query :: TenancyMode` type family (`TenantScoped | Global`)
+   - Tenant-scoped endpoints require `tenantId` in claims (reject with 403 if missing)
+   - Global endpoints ignore `tenantId` even if present (prevents accidental scoping)
+   - Auth provides trusted `tenantId`; multitenancy enforces scoping
 
-2. **Rate limiting middleware**: Companion middleware using similar pattern.
+2. **API key authentication**: Alternative auth method for service-to-service calls.
 
-3. **mTLS support**: Client certificate authentication for high-security scenarios.
+3. **Rate limiting middleware**: Companion middleware using similar pattern.
+
+4. **mTLS support**: Client certificate authentication for high-security scenarios.
 
 5. **Multi-issuer support**: Per-issuer JWKS managers for multi-tenant platforms.
 
 6. **Token replay protection**: Optional `jti` claim tracking for high-security scenarios.
+
+### Note on Multitenancy and Auth Ordering
+
+This ADR (JWT auth) should be implemented **before** multitenancy because:
+
+1. Multitenancy enforcement depends on **trusted tenant identity** from JWT claims
+2. Auth without multitenancy is useful for single-tenant apps and internal tools
+3. Multitenancy without auth is not enforceable (tenant would be attacker-controlled)
+
+The `tenantId` field in `UserClaims` is extracted but **not enforced** until the multitenancy ADR is implemented. This ADR is explicitly **single-tenant-safe**.
 
 ## References
 
