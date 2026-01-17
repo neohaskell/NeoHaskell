@@ -2,6 +2,7 @@
 -- This module handles fetching configuration from OAuth providers.
 --
 -- SECURITY: All URLs are validated to require HTTPS and block SSRF vectors.
+-- Optional domain allowlist restricts IdPs to specific trusted domains.
 module Auth.Discovery (
   -- * Discovery
   discoverConfig,
@@ -20,11 +21,14 @@ import Basics
 import Crypto.JOSE qualified as Jose
 import Http.Client qualified as Http
 import Json qualified
+import Maybe (Maybe (..))
 import Maybe qualified
+import Network.URI qualified as URI
 import Result (Result (..))
 import Task (Task)
 import Task qualified
 import Text (Text)
+import Text qualified
 
 
 -- | OpenID Connect Discovery document structure.
@@ -61,35 +65,43 @@ discoverConfig authServerUrl overrides = do
   case UrlValidation.validateSecureUrl discoveryUrl of
     Err validationErr -> Task.throw (mapValidationError validationErr)
     Ok validatedUrl -> do
-      -- 1. Fetch discovery document
-      discoveryResult <- fetchDiscoveryDocument validatedUrl
-      case discoveryResult of
+      -- SECURITY: Check domain allowlist if configured
+      case validateDomainAllowlist validatedUrl overrides.allowedIdpDomains of
         Err err -> Task.throw err
-        Ok discovery -> do
-          -- SECURITY: Validate the JWKS URI from discovery document
-          case UrlValidation.validateSecureUrl discovery.jwks_uri of
-            Err validationErr -> Task.throw (mapValidationError validationErr)
-            Ok validatedJwksUri -> do
-              -- 2. Build config with discovered values + overrides
-              -- Note: JWKS keys are managed by JwksManager, not stored in AuthConfig
-              let config =
-                    AuthConfig
-                      { issuer = discovery.issuer,
-                        jwksUri = validatedJwksUri,
-                        audience = overrides.audience,
-                        permissionsClaim = overrides.permissionsClaim |> Maybe.withDefault "permissions",
-                        tenantIdClaim = overrides.tenantIdClaim,
-                        clockSkewSeconds = overrides.clockSkewSeconds |> Maybe.withDefault 60,
-                        refreshIntervalSeconds = 900,
-                        missingKidCooldownSeconds = 60,
-                        maxStaleSeconds = 86400,
-                        allowedAlgorithms =
-                          overrides.allowedAlgorithms
-                            |> Maybe.withDefault defaultAllowedAlgorithms,
-                        supportedCritHeaders = Array.empty
-                      }
+        Ok () -> do
+          -- 1. Fetch discovery document
+          discoveryResult <- fetchDiscoveryDocument validatedUrl
+          case discoveryResult of
+            Err err -> Task.throw err
+            Ok discovery -> do
+              -- SECURITY: Validate the JWKS URI from discovery document
+              case UrlValidation.validateSecureUrl discovery.jwks_uri of
+                Err validationErr -> Task.throw (mapValidationError validationErr)
+                Ok validatedJwksUri -> do
+                  -- SECURITY: Also check JWKS URI against domain allowlist
+                  case validateDomainAllowlist validatedJwksUri overrides.allowedIdpDomains of
+                    Err err -> Task.throw err
+                    Ok () -> do
+                      -- 2. Build config with discovered values + overrides
+                      -- Note: JWKS keys are managed by JwksManager, not stored in AuthConfig
+                      let config =
+                            AuthConfig
+                              { issuer = discovery.issuer,
+                                jwksUri = validatedJwksUri,
+                                audience = overrides.audience,
+                                permissionsClaim = overrides.permissionsClaim |> Maybe.withDefault "permissions",
+                                tenantIdClaim = overrides.tenantIdClaim,
+                                clockSkewSeconds = overrides.clockSkewSeconds |> Maybe.withDefault 60,
+                                refreshIntervalSeconds = 900,
+                                missingKidCooldownSeconds = 60,
+                                maxStaleSeconds = 86400,
+                                allowedAlgorithms =
+                                  overrides.allowedAlgorithms
+                                    |> Maybe.withDefault defaultAllowedAlgorithms,
+                                supportedCritHeaders = Array.empty
+                              }
 
-              Task.yield config
+                      Task.yield config
 
 
 -- | Map URL validation errors to discovery errors.
@@ -148,3 +160,32 @@ fetchJwks jwksUri = do
 -- JWKSet is a newtype, we need to pattern match to get the list.
 extractJwkSetKeys :: Jose.JWKSet -> [Jose.JWK]
 extractJwkSetKeys (Jose.JWKSet keys) = keys
+
+
+-- | Validate URL against domain allowlist.
+-- If allowlist is Nothing, all domains are allowed (default behavior).
+-- If allowlist is Just [], no domains are allowed (fail-closed).
+-- Otherwise, the URL's domain must match one of the allowlisted domains.
+validateDomainAllowlist :: Text -> Maybe (Array Text) -> Result DiscoveryError ()
+validateDomainAllowlist url maybeAllowlist =
+  case maybeAllowlist of
+    Nothing -> Ok () -- No allowlist = all domains allowed
+    Just allowlist ->
+      case extractDomain url of
+        Nothing -> Err (UrlValidationFailed [fmt|Cannot extract domain from URL: #{url}|])
+        Just domain ->
+          case Array.any (\allowed -> allowed == domain) allowlist of
+            True -> Ok ()
+            False -> Err (UrlValidationFailed [fmt|Domain not in allowlist: #{domain}|])
+
+
+-- | Extract domain (hostname) from URL.
+extractDomain :: Text -> Maybe Text
+extractDomain url = do
+  let urlString = Text.toLinkedList url
+  case URI.parseURI urlString of
+    Nothing -> Nothing
+    Just uri ->
+      case URI.uriAuthority uri of
+        Nothing -> Nothing
+        Just auth -> Just (URI.uriRegName auth |> Text.fromLinkedList)

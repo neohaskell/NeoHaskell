@@ -166,29 +166,35 @@ validateAndBuildContext maybeManager config request = do
             Nothing ->
               Task.yield (Err TokenMissing)
             Just token -> do
-              -- OPTIMIZED: Parse header ONCE for kid extraction AND validation
-              case Jwt.parseHeader token of
-                Err err -> Task.yield (Err err)
-                Ok header -> do
-                  -- Get JWKSet (optimized: single key if kid found, all keys otherwise)
-                  -- If kid provided but not found, triggers background refresh
-                  jwkSet <- case header.kid of
-                    Just kid -> do
-                      (set, _kidFound) <- Jwks.getJwkSetForKidWithRefresh kid manager
-                      Task.yield set
-                    Nothing -> Jwks.getJwkSet manager
-                  -- Validate token with pre-parsed header (avoids re-parsing)
-                  validationResult <- Jwt.validateTokenWithParsedHeader config jwkSet header token
-                  case validationResult of
+              -- DoS protection: reject oversized tokens before parsing
+              -- 8KB is generous (typical JWT is 1-2KB, max reasonable is ~4KB)
+              let maxTokenSize = 8192
+              case Text.length token > maxTokenSize of
+                True -> Task.yield (Err (TokenMalformed "Token exceeds maximum size"))
+                False -> do
+                  -- OPTIMIZED: Parse header ONCE for kid extraction AND validation
+                  case Jwt.parseHeader token of
                     Err err -> Task.yield (Err err)
-                    Ok claims ->
-                      Task.yield
-                        ( Ok
-                            AuthContext
-                              { claims = Just claims,
-                                isAuthenticated = True
-                              }
-                        )
+                    Ok header -> do
+                      -- Get JWKSet (optimized: single key if kid found, all keys otherwise)
+                      -- If kid provided but not found, triggers background refresh
+                      jwkSet <- case header.kid of
+                        Just kid -> do
+                          (set, _kidFound) <- Jwks.getJwkSetForKidWithRefresh kid manager
+                          Task.yield set
+                        Nothing -> Jwks.getJwkSet manager
+                      -- Validate token with pre-parsed header (avoids re-parsing)
+                      validationResult <- Jwt.validateTokenWithParsedHeader config jwkSet header token
+                      case validationResult of
+                        Err err -> Task.yield (Err err)
+                        Ok claims ->
+                          Task.yield
+                            ( Ok
+                                AuthContext
+                                  { claims = Just claims,
+                                    isAuthenticated = True
+                                  }
+                            )
 
 
 -- | Check if context has a specific permission.

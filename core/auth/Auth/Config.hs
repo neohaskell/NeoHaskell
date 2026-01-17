@@ -68,8 +68,12 @@ data AuthOverrides = AuthOverrides
     -- ^ Claim name for tenant ID (default: None)
     clockSkewSeconds :: Maybe GhcInt.Int64,
     -- ^ Override clock skew tolerance (default: 60)
-    allowedAlgorithms :: Maybe (Array Text)
+    allowedAlgorithms :: Maybe (Array Text),
     -- ^ Override allowed algorithms
+    allowedIdpDomains :: Maybe (Array Text)
+    -- ^ Restrict IdP to specific domains (e.g., ["auth.example.com", "login.company.eu"])
+    -- When set, discovery will reject URLs from non-allowlisted domains.
+    -- Default: None (allow any HTTPS URL that passes SSRF checks)
   }
   deriving (Generic, Show)
 
@@ -88,7 +92,8 @@ defaultOverrides =
       permissionsClaim = Nothing,
       tenantIdClaim = Nothing,
       clockSkewSeconds = Nothing,
-      allowedAlgorithms = Nothing
+      allowedAlgorithms = Nothing,
+      allowedIdpDomains = Nothing
     }
 
 
