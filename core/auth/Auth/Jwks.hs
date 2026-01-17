@@ -23,6 +23,7 @@ module Auth.Jwks (
   requestRefresh,
   -- * Types
   KeySnapshot (..),
+  RefreshState (..),
 ) where
 
 import Array (Array)
@@ -54,8 +55,10 @@ import ToText (toText)
 data KeySnapshot = KeySnapshot
   { keysByKid :: Map Text Jose.JWK,
     -- ^ Current keys indexed by kid
+    jwkSetsByKid :: Map Text Jose.JWKSet,
+    -- ^ Pre-built singleton JWKSets per kid (avoid per-request allocation)
     cachedJwkSet :: Jose.JWKSet,
-    -- ^ Pre-built JWKSet for signature verification (avoid per-request allocation)
+    -- ^ Pre-built JWKSet with all keys (for tokens without kid)
     allKeysArray :: Array Jose.JWK,
     -- ^ Pre-built array of all keys (for tokens without kid)
     fetchedAt :: GhcInt.Int64,
@@ -71,10 +74,30 @@ emptySnapshot :: KeySnapshot
 emptySnapshot =
   KeySnapshot
     { keysByKid = Map.empty,
+      jwkSetsByKid = Map.empty,
       cachedJwkSet = Jose.JWKSet [],
       allKeysArray = Array.empty,
       fetchedAt = 0,
       isStale = True
+    }
+
+
+-- | Refresh state for atomic cooldown and mutual exclusion.
+data RefreshState = RefreshState
+  { lastAttemptAt :: GhcInt.Int64,
+    -- ^ Unix timestamp of last refresh attempt
+    refreshInProgress :: Bool
+    -- ^ True if a refresh is currently running
+  }
+  deriving (Show)
+
+
+-- | Initial refresh state.
+emptyRefreshState :: RefreshState
+emptyRefreshState =
+  RefreshState
+    { lastAttemptAt = 0,
+      refreshInProgress = False
     }
 
 
@@ -84,6 +107,8 @@ data JwksManager = JwksManager
     -- ^ Auth configuration (issuer, jwksUri, etc.)
     keySnapshot :: AtomicVar KeySnapshot,
     -- ^ Hot path: lock-free reads
+    refreshState :: AtomicVar RefreshState,
+    -- ^ Atomic refresh state (cooldown + mutual exclusion)
     refreshTask :: AtomicVar (Maybe (AsyncTask Text Unit)),
     -- ^ Background refresh task (if running)
     isRunning :: AtomicVar Bool
@@ -97,6 +122,7 @@ startManager :: AuthConfig -> Task Text JwksManager
 startManager config = do
   -- Create state
   snapshotVar <- AtomicVar.containing emptySnapshot
+  refreshStateVar <- AtomicVar.containing emptyRefreshState
   refreshTaskVar <- AtomicVar.containing Nothing
   runningVar <- AtomicVar.containing True
 
@@ -104,6 +130,7 @@ startManager config = do
         JwksManager
           { config = config,
             keySnapshot = snapshotVar,
+            refreshState = refreshStateVar,
             refreshTask = refreshTaskVar,
             isRunning = runningVar
           }
@@ -162,12 +189,14 @@ getJwkSet manager = do
 
 -- | Get a JWKSet containing only the key with the given kid.
 -- This is the optimal path when the token contains a kid claim.
+-- Uses pre-cached singleton JWKSet to avoid per-request allocation.
 -- Returns the full JWKSet if kid is not found (fallback to try all keys).
 getJwkSetForKid :: Text -> JwksManager -> Task err Jose.JWKSet
 getJwkSetForKid kid manager = do
   snapshot <- AtomicVar.peek manager.keySnapshot
-  case Map.get kid snapshot.keysByKid of
-    Just key -> Task.yield (Jose.JWKSet [key])
+  -- Use cached singleton JWKSet if available (avoids allocation)
+  case Map.get kid snapshot.jwkSetsByKid of
+    Just jwkSet -> Task.yield jwkSet
     Nothing -> Task.yield snapshot.cachedJwkSet
 
 
@@ -175,11 +204,13 @@ getJwkSetForKid kid manager = do
 -- Returns (JWKSet, kidWasFound). If kid not found:
 -- 1. Triggers background refresh (rate-limited)
 -- 2. Returns full JWKSet as fallback
+-- Uses pre-cached singleton JWKSet to avoid per-request allocation.
 getJwkSetForKidWithRefresh :: Text -> JwksManager -> Task err (Jose.JWKSet, Bool)
 getJwkSetForKidWithRefresh kid manager = do
   snapshot <- AtomicVar.peek manager.keySnapshot
-  case Map.get kid snapshot.keysByKid of
-    Just key -> Task.yield (Jose.JWKSet [key], True)
+  -- Use cached singleton JWKSet if available (avoids allocation)
+  case Map.get kid snapshot.jwkSetsByKid of
+    Just jwkSet -> Task.yield (jwkSet, True)
     Nothing -> do
       -- Kid not found - trigger refresh (rate-limited) and fallback to all keys
       _ <- requestRefresh manager |> Task.asResult
@@ -199,21 +230,33 @@ checkStaleness manager = do
 
 
 -- | Request an immediate refresh (e.g., when a kid is not found).
--- This is rate-limited to prevent thundering herd.
+-- This is rate-limited and uses atomic state to prevent thundering herd.
+-- Only one refresh can run at a time across all callers.
 requestRefresh :: JwksManager -> Task err Unit
 requestRefresh manager = do
-  -- Check if we should refresh (simple rate limiting)
   now <- getCurrentSeconds
-  snapshot <- AtomicVar.peek manager.keySnapshot
-  let timeSinceRefresh = now - snapshot.fetchedAt
   let cooldownSeconds = manager.config.missingKidCooldownSeconds
 
-  -- Only refresh if cooldown has passed
-  case timeSinceRefresh >= cooldownSeconds of
-    False -> Task.yield () -- Still in cooldown
+  -- Atomically check and acquire refresh lock
+  shouldRefresh <- AtomicVar.modifyWithResult manager.refreshState \state -> do
+    let timeSinceLastAttempt = now - state.lastAttemptAt
+    -- Only refresh if: not in progress AND cooldown has passed
+    case state.refreshInProgress || timeSinceLastAttempt < cooldownSeconds of
+      True -> (state, False) -- Skip: in progress or in cooldown
+      False ->
+        -- Acquire lock: mark in progress and update attempt time
+        let newState = RefreshState {lastAttemptAt = now, refreshInProgress = True}
+         in (newState, True)
+
+  case shouldRefresh of
+    False -> Task.yield () -- Another refresh in progress or cooldown active
     True -> do
-      -- Trigger refresh (ignore errors - background loop will retry)
+      -- Perform refresh with lock held
       _ <- refreshKeys manager |> Task.asResult
+      -- Release lock (keep lastAttemptAt for cooldown)
+      AtomicVar.modify
+        (\state -> state {refreshInProgress = False})
+        manager.refreshState
       Task.yield ()
 
 
@@ -273,10 +316,14 @@ buildSnapshot keys now = do
   -- Build kid -> key map using safe filtering (no partial functions)
   let keyPairs = keys |> Array.map extractKidAndKey |> collectJusts
   let keysByKid = Map.fromArray keyPairs
-  -- Pre-build JWKSet for signature verification (avoid per-request allocation)
+  -- Pre-build singleton JWKSets per kid (avoid per-request allocation)
+  let jwkSetPairs = keyPairs |> Array.map (\(kid, key) -> (kid, Jose.JWKSet [key]))
+  let jwkSetsByKid = Map.fromArray jwkSetPairs
+  -- Pre-build JWKSet with all keys for signature verification
   let cachedJwkSet = Jose.JWKSet (Array.toLinkedList keys)
   KeySnapshot
     { keysByKid = keysByKid,
+      jwkSetsByKid = jwkSetsByKid,
       cachedJwkSet = cachedJwkSet,
       allKeysArray = keys,
       fetchedAt = now,

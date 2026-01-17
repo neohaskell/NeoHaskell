@@ -38,7 +38,7 @@ import Auth.Claims (UserClaims)
 import Auth.Config (AuthConfig (..), defaultAllowedAlgorithms)
 import Auth.Error (AuthError)
 import Auth.Jwt qualified
-import Auth.Jwks (JwksManager (..), KeySnapshot (..))
+import Auth.Jwks (JwksManager (..), KeySnapshot (..), RefreshState (..))
 import Basics
 import Control.Lens ((&), (?~))
 import Control.Lens qualified as Lens
@@ -367,9 +367,13 @@ createTestManager keys = do
   let keysArray = keyMap |> Map.values
   let jwkSet = Jose.JWKSet (keysArray |> Array.toLinkedList)
 
+  -- Build per-kid JWKSets (avoids per-request allocation)
+  let jwkSetsByKid = keyMap |> Map.mapValues (\key -> Jose.JWKSet [key])
+
   let snapshot =
         KeySnapshot
           { keysByKid = keyMap,
+            jwkSetsByKid = jwkSetsByKid,
             cachedJwkSet = jwkSet,
             allKeysArray = keysArray,
             fetchedAt = now,
@@ -378,6 +382,9 @@ createTestManager keys = do
 
   -- Create AtomicVars for the manager
   snapshotVar <- AtomicVar.containing snapshot
+  -- Initialize refresh state (not refreshing, last attempt = now)
+  let initialRefreshState = RefreshState {lastAttemptAt = now, refreshInProgress = False}
+  refreshStateVar <- AtomicVar.containing initialRefreshState
   refreshTaskVar <- AtomicVar.containing Nothing
   runningVar <- AtomicVar.containing False -- Not running background refresh
 
@@ -385,6 +392,7 @@ createTestManager keys = do
     JwksManager
       { config = testConfig,
         keySnapshot = snapshotVar,
+        refreshState = refreshStateVar,
         refreshTask = refreshTaskVar,
         isRunning = runningVar
       }

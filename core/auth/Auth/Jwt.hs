@@ -63,43 +63,48 @@ data ParsedHeader = ParsedHeader
 
 -- | Parse JWT header once for all validation checks.
 -- This is the optimized hot path - avoids re-parsing header 3-4 times.
+-- Uses strict base64url decoding per RFC 8725 security recommendations.
 parseHeader :: Text -> Result AuthError ParsedHeader
 parseHeader token = do
   let parts = GhcText.splitOn "." token
   case parts of
     [headerB64, _, _] -> do
-      let headerBytes = headerB64 |> GhcTextEncoding.encodeUtf8 |> GhcBase64.decodeLenient
-      case Aeson.decodeStrict headerBytes of
-        Nothing -> Err (TokenMalformed "Invalid header encoding")
-        Just (obj :: GhcMap.Map GhcText.Text Aeson.Value) -> do
-          -- Extract alg (required)
-          case GhcMap.lookup ("alg" :: GhcText.Text) obj of
-            Just (Aeson.String algText) -> do
-              -- Extract kid (optional)
-              let kidVal = case GhcMap.lookup ("kid" :: GhcText.Text) obj of
-                    Just (Aeson.String k) -> Just k
-                    _ -> Nothing
-              -- Extract typ (optional)
-              let typVal = case GhcMap.lookup ("typ" :: GhcText.Text) obj of
-                    Just (Aeson.String t) -> Just t
-                    _ -> Nothing
-              -- Extract crit (optional)
-              let critArr = case GhcMap.lookup ("crit" :: GhcText.Text) obj of
-                    Just (Aeson.Array arr) ->
-                      arr
-                        |> GhcFoldable.toList
-                        |> Array.fromLinkedList
-                        |> Array.map extractTextValue
-                        |> Array.dropIf Text.isEmpty
-                    _ -> Array.empty
-              Ok
-                ParsedHeader
-                  { alg = algText,
-                    kid = kidVal,
-                    typ = typVal,
-                    crit = critArr
-                  }
-            _ -> Err (TokenMalformed "Missing or invalid alg in header")
+      -- Use strict decoding (not lenient) per RFC 8725 - reject malformed base64
+      let headerB64Bytes = headerB64 |> GhcTextEncoding.encodeUtf8
+      case GhcBase64.decode headerB64Bytes of
+        Prelude.Left _decodeErr -> Err (TokenMalformed "Invalid base64url encoding in header")
+        Prelude.Right headerBytes ->
+          case Aeson.decodeStrict headerBytes of
+            Nothing -> Err (TokenMalformed "Invalid header encoding")
+            Just (obj :: GhcMap.Map GhcText.Text Aeson.Value) -> do
+              -- Extract alg (required)
+              case GhcMap.lookup ("alg" :: GhcText.Text) obj of
+                Just (Aeson.String algText) -> do
+                  -- Extract kid (optional)
+                  let kidVal = case GhcMap.lookup ("kid" :: GhcText.Text) obj of
+                        Just (Aeson.String k) -> Just k
+                        _ -> Nothing
+                  -- Extract typ (optional)
+                  let typVal = case GhcMap.lookup ("typ" :: GhcText.Text) obj of
+                        Just (Aeson.String t) -> Just t
+                        _ -> Nothing
+                  -- Extract crit (optional)
+                  let critArr = case GhcMap.lookup ("crit" :: GhcText.Text) obj of
+                        Just (Aeson.Array arr) ->
+                          arr
+                            |> GhcFoldable.toList
+                            |> Array.fromLinkedList
+                            |> Array.map extractTextValue
+                            |> Array.dropIf Text.isEmpty
+                        _ -> Array.empty
+                  Ok
+                    ParsedHeader
+                      { alg = algText,
+                        kid = kidVal,
+                        typ = typVal,
+                        crit = critArr
+                      }
+                _ -> Err (TokenMalformed "Missing or invalid alg in header")
     _ -> Err (TokenMalformed "Invalid JWT structure")
 
 
