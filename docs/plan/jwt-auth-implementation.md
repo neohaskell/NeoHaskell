@@ -351,13 +351,26 @@ Query endpoints use **default-deny** when auth is configured, and support **keye
 **Query handler types (split by auth requirement):**
 
 ```haskell
+-- Query response with pagination
+data QueryResponse = QueryResponse
+  { items :: Text,         -- JSON array of results
+    nextCursor :: Maybe Text,
+    hasMore :: Bool
+  }
+
+-- Pagination parameters (enforced by framework)
+data QueryParams = QueryParams
+  { cursor :: Maybe Text,  -- Opaque cursor for pagination
+    limit :: Int           -- Capped at maxQueryLimit (default: 100)
+  }
+
 -- Public handlers (no auth)
-type PublicQueryHandler = Text -> Task Text QueryResponse
-type PublicListHandler = QueryParams -> Task Text QueryResponse
+type PublicQueryHandler = Text -> Task Text QueryResponse        -- Keyed access by ID
+type PublicListHandler = QueryParams -> Task Text QueryResponse  -- Paginated list
 
 -- Authenticated handlers (UserClaims guaranteed present)
-type AuthedQueryHandler = UserClaims -> Text -> Task Text QueryResponse
-type AuthedListHandler = UserClaims -> QueryParams -> Task Text QueryResponse
+type AuthedQueryHandler = UserClaims -> Text -> Task Text QueryResponse        -- Keyed access
+type AuthedListHandler = UserClaims -> QueryParams -> Task Text QueryResponse  -- Paginated list
 ```
 
 **CRITICAL**: Protected handlers receive `UserClaims` directly (not `Maybe`). This prevents security bugs from "forgot to check" patterns.
@@ -645,3 +658,24 @@ Revisit architecture if:
 - **Replay protection** required → needs `jti` tracking / stateful verification
 
 **Note on audit trails**: Domain events already provide immutable audit trails via event sourcing. Auth decisions (who accessed what, when) are naturally captured in command events. Operational metrics (JWKS refresh, circuit breaker) use standard observability, not the event store.
+
+---
+
+## 11. Multitenancy Design Notes (Future ADR)
+
+This implementation is **single-tenant-safe**. For multitenancy:
+
+| Aspect | Design Decision |
+|--------|-----------------|
+| Tenancy scope | Per-command and per-query (not per-application) |
+| Type family | Both commands and queries use `IsMultiTenant` pattern |
+| Tenant enforcement | Tenant-scoped endpoints require `tenantId` in claims; reject with 403 if missing |
+| Global endpoints | Ignore `tenantId` even if present (prevents accidental scoping) |
+| Auth ordering | Auth must come BEFORE multitenancy (provides trusted `tenantId`) |
+
+**Why auth before multitenancy:**
+1. Multitenancy enforcement depends on **trusted tenant identity** from JWT claims
+2. Auth without multitenancy is useful for single-tenant apps and internal tools
+3. Multitenancy without auth is not enforceable (tenant would be attacker-controlled)
+
+The `tenantId` field in `UserClaims` is extracted but **not enforced** until the multitenancy ADR is implemented.
