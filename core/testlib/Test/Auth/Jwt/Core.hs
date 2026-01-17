@@ -377,6 +377,7 @@ createTestManager keys = do
             cachedJwkSet = jwkSet,
             allKeysArray = keysArray,
             fetchedAt = now,
+            snapshotVersion = 1,
             isStale = False
           }
 

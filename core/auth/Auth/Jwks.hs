@@ -63,6 +63,8 @@ data KeySnapshot = KeySnapshot
     -- ^ Pre-built array of all keys (for tokens without kid)
     fetchedAt :: GhcInt.Int64,
     -- ^ Unix timestamp when keys were fetched
+    snapshotVersion :: GhcInt.Int64,
+    -- ^ Monotonic version for stale-race prevention
     isStale :: Bool
     -- ^ True if refresh failed and keys are beyond max stale time
   }
@@ -78,6 +80,7 @@ emptySnapshot =
       cachedJwkSet = Jose.JWKSet [],
       allKeysArray = Array.empty,
       fetchedAt = 0,
+      snapshotVersion = 0,
       isStale = True
     }
 
@@ -143,7 +146,7 @@ startManager config = do
   case refreshResult of
     Err err ->
       Task.throw err
-    Ok () -> do
+    Ok _version -> do
       -- Start background refresh loop
       backgroundTask <- AsyncTask.run (refreshLoop manager)
       AtomicVar.set (Just backgroundTask) refreshTaskVar
@@ -231,13 +234,14 @@ checkStaleness manager = do
 
 -- | Request an immediate refresh (e.g., when a kid is not found).
 -- This is rate-limited and uses atomic state to prevent thundering herd.
--- Only one refresh can run at a time across all callers.
+-- Only one refresh can run at a time across all callers (including background refresh).
+-- Uses Task.finally to ensure lock is released even if refresh throws an exception.
 requestRefresh :: JwksManager -> Task err Unit
 requestRefresh manager = do
   now <- getCurrentSeconds
   let cooldownSeconds = manager.config.missingKidCooldownSeconds
 
-  -- Atomically check and acquire refresh lock
+  -- Atomically check and acquire refresh lock (with cooldown for on-demand)
   shouldRefresh <- AtomicVar.modifyWithResult manager.refreshState \state -> do
     let timeSinceLastAttempt = now - state.lastAttemptAt
     -- Only refresh if: not in progress AND cooldown has passed
@@ -250,17 +254,54 @@ requestRefresh manager = do
 
   case shouldRefresh of
     False -> Task.yield () -- Another refresh in progress or cooldown active
-    True -> do
-      -- Perform refresh with lock held
-      _ <- refreshKeys manager |> Task.asResult
-      -- Release lock (keep lastAttemptAt for cooldown)
-      AtomicVar.modify
-        (\state -> state {refreshInProgress = False})
-        manager.refreshState
-      Task.yield ()
+    True -> performRefreshWithLock manager
+
+
+-- | Shared refresh gate used by both background and on-demand refresh.
+-- Prevents concurrent refreshes. Background refresh ignores cooldown.
+refreshWithGate :: JwksManager -> Task err Unit
+refreshWithGate manager = do
+  -- Atomically check and acquire refresh lock (no cooldown for background)
+  acquired <- AtomicVar.modifyWithResult manager.refreshState \state ->
+    case state.refreshInProgress of
+      True -> (state, False) -- Already in progress
+      False ->
+        let newState = state {refreshInProgress = True}
+         in (newState, True)
+
+  case acquired of
+    False -> Task.yield () -- Another refresh already in progress
+    True -> performRefreshWithLock manager
+
+
+-- | Internal: Perform refresh with lock held. Must be called after acquiring lock.
+-- Uses Task.finally to guarantee lock release.
+-- Uses version-based stale marking to prevent race conditions.
+performRefreshWithLock :: JwksManager -> Task err Unit
+performRefreshWithLock manager = do
+  -- Get current version before refresh (for stale marking on failure)
+  currentSnapshot <- AtomicVar.peek manager.keySnapshot
+  let versionBeforeRefresh = currentSnapshot.snapshotVersion
+  
+  -- Cleanup action: always release lock (even on exception/cancellation)
+  let releaseLock =
+        AtomicVar.modify
+          (\state -> state {refreshInProgress = False})
+          manager.refreshState
+  -- Perform refresh with guaranteed lock release via Task.finally
+  Task.finally releaseLock do
+    refreshResult <- refreshKeys manager |> Task.asResult
+    case refreshResult of
+      Ok _ -> Task.yield ()
+      Err _ -> do
+        -- Mark keys as stale only if version hasn't changed
+        -- This prevents stale marking if another refresh succeeded
+        markKeysStaleIfVersion versionBeforeRefresh manager
+        Task.yield ()
 
 
 -- | Background refresh loop.
+-- Uses the shared refresh gate to prevent concurrent refreshes with on-demand requests.
 refreshLoop :: JwksManager -> Task Text Unit
 refreshLoop manager = do
   Task.forever do
@@ -273,46 +314,56 @@ refreshLoop manager = do
     case running of
       False -> Task.throw "Manager stopped"
       True -> do
-        -- Perform refresh - mark stale on failure
-        refreshResult <- refreshKeys manager |> Task.asResult
-        case refreshResult of
-          Ok _ -> Task.yield ()
-          Err _ -> do
-            -- Mark keys as stale on refresh failure
-            markKeysStale manager
-            Task.yield ()
+        -- Use shared refresh gate (same as on-demand refresh)
+        -- This prevents background and on-demand from running concurrently
+        refreshWithGate manager
 
 
 -- | Refresh keys from the JWKS endpoint.
-refreshKeys :: JwksManager -> Task DiscoveryError Unit
+-- Returns the snapshot version before refresh (used for stale marking).
+refreshKeys :: JwksManager -> Task DiscoveryError GhcInt.Int64
 refreshKeys manager = do
+  -- Get current version before fetch (for stale marking on failure)
+  currentSnapshot <- AtomicVar.peek manager.keySnapshot
+  let currentVersion = currentSnapshot.snapshotVersion
+  
   -- Fetch keys from JWKS URI
   keysResult <- Discovery.fetchJwks manager.config.jwksUri
   case keysResult of
     Err err -> Task.throw err
     Ok keys -> do
-      -- Build new snapshot (with isStale = False)
+      -- Build new snapshot with incremented version
       now <- getCurrentSeconds
-      let newSnapshot = buildSnapshot keys now
+      let newVersion = currentVersion + 1
+      let newSnapshot = buildSnapshot keys now newVersion
       -- Atomically update
       AtomicVar.set newSnapshot manager.keySnapshot
-      Task.yield ()
+      Task.yield currentVersion
 
 
--- | Mark current keys as stale.
+-- | Mark current keys as stale, but only if version matches.
+-- This prevents stale writes from overwriting fresh data in race conditions.
 -- Called when refresh fails - keeps old keys but marks them stale.
-markKeysStale :: JwksManager -> Task err Unit
-markKeysStale manager = do
-  snapshot <- AtomicVar.peek manager.keySnapshot
-  let staleSnapshot = snapshot {isStale = True}
-  AtomicVar.set staleSnapshot manager.keySnapshot
+markKeysStaleIfVersion :: GhcInt.Int64 -> JwksManager -> Task err Unit
+markKeysStaleIfVersion expectedVersion manager = do
+  -- Atomically mark stale only if version hasn't changed
+  AtomicVar.modify
+    ( \snapshot ->
+        case snapshot.snapshotVersion == expectedVersion of
+          True -> snapshot {isStale = True}
+          False -> snapshot -- Version changed, skip stale marking
+    )
+    manager.keySnapshot
   Task.yield ()
+
+
+
 
 
 -- | Build a key snapshot from an array of JWKs.
 -- Pre-builds all derived structures for lock-free hot path access.
-buildSnapshot :: Array Jose.JWK -> GhcInt.Int64 -> KeySnapshot
-buildSnapshot keys now = do
+buildSnapshot :: Array Jose.JWK -> GhcInt.Int64 -> GhcInt.Int64 -> KeySnapshot
+buildSnapshot keys now version = do
   -- Build kid -> key map using safe filtering (no partial functions)
   let keyPairs = keys |> Array.map extractKidAndKey |> collectJusts
   let keysByKid = Map.fromArray keyPairs
@@ -327,6 +378,7 @@ buildSnapshot keys now = do
       cachedJwkSet = cachedJwkSet,
       allKeysArray = keys,
       fetchedAt = now,
+      snapshotVersion = version,
       isStale = False
     }
 

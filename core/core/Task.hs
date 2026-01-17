@@ -25,6 +25,7 @@ module Task (
   fromIOEither,
   while,
   ignoreError,
+  finally,
 ) where
 
 import Applicable (Applicative (pure))
@@ -286,3 +287,24 @@ ignoreError task = do
     Result.Err _ -> yield unit
     Result.Ok res -> yield res
 {-# INLINE ignoreError #-}
+
+
+-- | Run a cleanup action after a task completes, regardless of success or failure.
+-- The cleanup action runs even if the main task throws an IO exception.
+-- This is essential for releasing locks, closing resources, etc.
+--
+-- Example:
+-- @
+-- Task.finally cleanup mainTask
+-- -- cleanup runs whether mainTask succeeds, fails with typed error, or throws IO exception
+-- @
+finally :: Task err2 Unit -> Task err value -> Task err value
+finally cleanup task = Task do
+  let mainIO = Except.runExceptT (task.runTask)
+  let cleanupIO = Except.runExceptT (cleanup.runTask)
+  -- Use bracket pattern: run main, then cleanup regardless of outcome
+  result <- Monad.liftIO (Exception.finally mainIO (IO.map (Prelude.const ()) cleanupIO))
+  case result of
+    Either.Left err -> Except.throwE err
+    Either.Right val -> Prelude.pure val
+{-# INLINE finally #-}

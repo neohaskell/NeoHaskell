@@ -61,6 +61,7 @@ validateSecureUrl urlText = do
 
 -- | Check if a hostname is a private or loopback IP address.
 -- This prevents SSRF attacks targeting internal services.
+-- Handles both bare IPs and bracketed IPv6 (e.g., "[::1]" from URI parsing).
 isPrivateOrLoopback :: [Char] -> Bool
 isPrivateOrLoopback host = do
   -- Check for localhost first
@@ -71,10 +72,24 @@ isPrivateOrLoopback host = do
       case GhcRead.readMaybe @IP.IPv4 host of
         Just ipv4 -> isPrivateIPv4 ipv4
         Nothing ->
-          -- Try to parse as IPv6
-          case GhcRead.readMaybe @IP.IPv6 host of
-            Just ipv6 -> isPrivateIPv6 ipv6
-            Nothing -> False
+          -- Try to parse as IPv6 (handle bracketed form from URI)
+          let normalizedHost = stripIPv6Brackets host
+           in case GhcRead.readMaybe @IP.IPv6 normalizedHost of
+                Just ipv6 -> isPrivateIPv6 ipv6
+                Nothing -> False
+
+
+-- | Strip brackets from IPv6 addresses.
+-- URI parsing returns "[::1]" but IP.IPv6 parser expects "::1".
+stripIPv6Brackets :: [Char] -> [Char]
+stripIPv6Brackets hostChars =
+  case hostChars of
+    '[' : rest ->
+      -- Strip leading bracket and trailing bracket if present
+      case LinkedList.reverse rest of
+        ']' : inner -> LinkedList.reverse inner
+        _ -> rest -- Malformed, return as-is
+    _ -> hostChars
 
 
 -- | Check if IPv4 is in a private range.
