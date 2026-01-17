@@ -222,14 +222,12 @@ getJwkSetForKidWithRefresh kid manager = do
 
 -- | Check if keys are stale beyond acceptable threshold.
 -- Returns True if keys should not be used (triggers 503 response).
+-- OPTIMIZED: No per-request clock IO - just reads the precomputed isStale flag.
+-- The isStale flag is set by the refresh loop when refresh fails.
 checkStaleness :: JwksManager -> Task err Bool
 checkStaleness manager = do
-  now <- getCurrentSeconds
   snapshot <- AtomicVar.peek manager.keySnapshot
-  let age = now - snapshot.fetchedAt
-  let maxStale = manager.config.maxStaleSeconds
-  -- Keys are stale if: explicitly marked stale AND beyond max stale time
-  Task.yield (snapshot.isStale && age > maxStale)
+  Task.yield snapshot.isStale
 
 
 -- | Request an immediate refresh (e.g., when a kid is not found).

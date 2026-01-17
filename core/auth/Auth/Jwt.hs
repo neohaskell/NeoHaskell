@@ -31,15 +31,19 @@ import Data.Aeson qualified as Aeson
 import Data.ByteString.Base64.URL qualified as GhcBase64
 import Data.ByteString.Lazy qualified as GhcLBS
 import Data.Foldable qualified as GhcFoldable
+import Data.Aeson.Key qualified as GhcAesonKey
+import Data.Aeson.KeyMap qualified as GhcKeyMap
 import Data.Map.Strict qualified as GhcMap
 import Data.Text qualified as GhcText
 import Data.Text.Encoding qualified as GhcTextEncoding
+import Network.URI qualified as GhcURI
 import Map (Map)
 import Map qualified
 import Maybe (Maybe (..))
 import Maybe qualified
 import Prelude qualified
 import Result (Result (..))
+import Set qualified
 import Task (Task)
 import Task qualified
 import Text (Text)
@@ -74,22 +78,24 @@ parseHeader token = do
       case GhcBase64.decode headerB64Bytes of
         Prelude.Left _decodeErr -> Err (TokenMalformed "Invalid base64url encoding in header")
         Prelude.Right headerBytes ->
+          -- OPTIMIZED: Parse directly to Aeson.Object (KeyMap) - avoids intermediate Map
+          -- KeyMap uses HashMap internally for O(1) average-case lookup
           case Aeson.decodeStrict headerBytes of
             Nothing -> Err (TokenMalformed "Invalid header encoding")
-            Just (obj :: GhcMap.Map GhcText.Text Aeson.Value) -> do
-              -- Extract alg (required)
-              case GhcMap.lookup ("alg" :: GhcText.Text) obj of
+            Just (Aeson.Object obj) -> do
+              -- Extract alg (required) - O(1) KeyMap lookup
+              case GhcKeyMap.lookup (GhcAesonKey.fromString "alg") obj of
                 Just (Aeson.String algText) -> do
                   -- Extract kid (optional)
-                  let kidVal = case GhcMap.lookup ("kid" :: GhcText.Text) obj of
+                  let kidVal = case GhcKeyMap.lookup (GhcAesonKey.fromString "kid") obj of
                         Just (Aeson.String k) -> Just k
                         _ -> Nothing
                   -- Extract typ (optional)
-                  let typVal = case GhcMap.lookup ("typ" :: GhcText.Text) obj of
+                  let typVal = case GhcKeyMap.lookup (GhcAesonKey.fromString "typ") obj of
                         Just (Aeson.String t) -> Just t
                         _ -> Nothing
                   -- Extract crit (optional)
-                  let critArr = case GhcMap.lookup ("crit" :: GhcText.Text) obj of
+                  let critArr = case GhcKeyMap.lookup (GhcAesonKey.fromString "crit") obj of
                         Just (Aeson.Array arr) ->
                           arr
                             |> GhcFoldable.toList
@@ -105,6 +111,7 @@ parseHeader token = do
                         crit = critArr
                       }
                 _ -> Err (TokenMalformed "Missing or invalid alg in header")
+            Just _ -> Err (TokenMalformed "JWT header must be a JSON object")
     _ -> Err (TokenMalformed "Invalid JWT structure")
 
 
@@ -232,11 +239,15 @@ validateTokenWithParsedHeader config jwkSet header token = do
 
 
 -- | Check crit headers against supported list (using pre-parsed header).
+-- OPTIMIZED: Convert supported list to Set for O(1) membership check per crit header.
+-- The conversion is O(n) but crit headers are typically 0-3 items, so negligible.
 checkCritHeaders :: Array Text -> Array Text -> Result AuthError ()
 checkCritHeaders critHeaders supported = do
+  -- Convert to Set once, then O(1) lookups for each crit header
+  let supportedSet = Set.fromArray supported
   let unsupported =
         critHeaders
-          |> Array.dropIf (\c -> supported |> Array.any (\s -> s == c))
+          |> Array.dropIf (\c -> supportedSet |> Set.contains c)
   case Array.isEmpty unsupported of
     True -> Ok ()
     False -> Err (UnsupportedCritHeader unsupported)
@@ -410,12 +421,17 @@ extractUserClaims config claims = do
 
 
 -- | Convert StringOrURI to Text
+-- For URIs, uses uriToString to get proper canonical form (not Show's debug output)
 stringOrUriToText :: JWT.StringOrURI -> Text
 stringOrUriToText sou =
-  -- Use the string prism to extract Text, fallback to show
+  -- Use the string prism to extract Text if it's a plain string
   case sou Lens.^? JWT.string of
     Just txt -> txt
-    Nothing -> Prelude.show sou |> Text.fromLinkedList
+    Nothing ->
+      -- It's a URI - use uriToString for proper serialization
+      case sou Lens.^? JWT.uri of
+        Just souUri -> GhcURI.uriToString Prelude.id souUri "" |> Text.fromLinkedList
+        Nothing -> Prelude.show sou |> Text.fromLinkedList -- Fallback (shouldn't happen)
 
 
 -- | Check if a StringOrURI matches expected text.
