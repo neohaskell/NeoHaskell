@@ -103,6 +103,7 @@ mapValidationError err =
 
 
 -- | Fetch the OpenID Connect discovery document
+-- SECURITY: 30 second timeout to prevent indefinite hangs
 fetchDiscoveryDocument ::
   Text ->
   Task err (Result DiscoveryError DiscoveryDocument)
@@ -110,6 +111,7 @@ fetchDiscoveryDocument url = do
   result <-
     Http.request
       |> Http.withUrl url
+      |> Http.withTimeout 30 -- 30 second timeout
       |> Http.get @DiscoveryDocument
       |> Task.map Ok
       |> Task.recover (\(Http.Error msg) -> Task.yield (Err (DiscoveryFetchFailed msg)))
@@ -121,6 +123,8 @@ fetchDiscoveryDocument url = do
 -- Returns an array of JWKs that can be used for token validation.
 --
 -- SECURITY: Validates that jwksUri uses HTTPS and is not a private IP.
+-- | Fetch JWKS from the given URI and extract keys.
+-- SECURITY: 30 second timeout to prevent indefinite hangs
 fetchJwks ::
   Text ->
   Task err (Result DiscoveryError (Array Jose.JWK))
@@ -132,6 +136,7 @@ fetchJwks jwksUri = do
       result <-
         Http.request
           |> Http.withUrl validatedUri
+          |> Http.withTimeout 30 -- 30 second timeout
           |> Http.get @Jose.JWKSet
           |> Task.map (\jwkSet -> extractJwkSetKeys jwkSet |> Array.fromLinkedList |> Ok)
           |> Task.recover (\(Http.Error msg) -> Task.yield (Err (JwksFetchFailed msg)))

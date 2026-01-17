@@ -48,6 +48,7 @@ common common_cfg
     hasql-pool,
     hasql-th,
     hspec,
+    http-client,
     http-conduit,
     http-types,
     large-anon,
