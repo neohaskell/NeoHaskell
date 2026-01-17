@@ -37,6 +37,7 @@ common common_cfg
     file-embed,
     ghc-prim,
     hashable,
+    iproute,
     jose,
     lens,
     stm,
@@ -51,6 +52,7 @@ common common_cfg
     http-types,
     large-anon,
     monad-loops,
+    network-uri,
     optparse-applicative,
     path,
     pretty-simple,
@@ -115,6 +117,7 @@ library
     Auth.Jwks
     Auth.Middleware
     Auth.Options
+    Auth.UrlValidation
     Basics
     Bytes
     Channel

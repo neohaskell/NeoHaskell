@@ -66,11 +66,13 @@ extractToken request = do
     Nothing -> Nothing
     Just headerValue -> do
       let headerText = headerValue |> Bytes.fromLegacy |> Text.fromBytes
-      -- Check for "Bearer " prefix and extract token
-      let bearerPrefix = "Bearer "
-      case Text.startsWith bearerPrefix headerText of
+      -- RFC 7235: Authorization scheme is case-insensitive
+      -- Check for "Bearer " prefix (case-insensitive match on scheme)
+      let headerLower = Text.toLower headerText
+      let bearerPrefixLower = "bearer "
+      case Text.startsWith bearerPrefixLower headerLower of
         False -> Nothing
-        True -> Just (Text.dropLeft (Text.length bearerPrefix) headerText)
+        True -> Just (Text.dropLeft (Text.length bearerPrefixLower) headerText)
 
 
 -- | Find a header by name (case-insensitive).
@@ -164,24 +166,29 @@ validateAndBuildContext maybeManager config request = do
             Nothing ->
               Task.yield (Err TokenMissing)
             Just token -> do
-              -- Extract kid from token for optimized key lookup
-              let maybeKid = Jwt.extractKidFromToken token
-              -- Get JWKSet (optimized: single key if kid found, all keys otherwise)
-              jwkSet <- case maybeKid of
-                Just kid -> Jwks.getJwkSetForKid kid manager
-                Nothing -> Jwks.getJwkSet manager
-              -- Validate token with JWKSet
-              validationResult <- Jwt.validateTokenWithJwkSet config jwkSet token
-              case validationResult of
+              -- OPTIMIZED: Parse header ONCE for kid extraction AND validation
+              case Jwt.parseHeader token of
                 Err err -> Task.yield (Err err)
-                Ok claims ->
-                  Task.yield
-                    ( Ok
-                        AuthContext
-                          { claims = Just claims,
-                            isAuthenticated = True
-                          }
-                    )
+                Ok header -> do
+                  -- Get JWKSet (optimized: single key if kid found, all keys otherwise)
+                  -- If kid provided but not found, triggers background refresh
+                  jwkSet <- case header.kid of
+                    Just kid -> do
+                      (set, _kidFound) <- Jwks.getJwkSetForKidWithRefresh kid manager
+                      Task.yield set
+                    Nothing -> Jwks.getJwkSet manager
+                  -- Validate token with pre-parsed header (avoids re-parsing)
+                  validationResult <- Jwt.validateTokenWithParsedHeader config jwkSet header token
+                  case validationResult of
+                    Err err -> Task.yield (Err err)
+                    Ok claims ->
+                      Task.yield
+                        ( Ok
+                            AuthContext
+                              { claims = Just claims,
+                                isAuthenticated = True
+                              }
+                        )
 
 
 -- | Check if context has a specific permission.

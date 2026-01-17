@@ -16,6 +16,7 @@ module Auth.Jwks (
   getAllKeys,
   getJwkSet,
   getJwkSetForKid,
+  getJwkSetForKidWithRefresh,
   -- * Staleness check
   checkStaleness,
   -- * Refresh control
@@ -170,6 +171,21 @@ getJwkSetForKid kid manager = do
     Nothing -> Task.yield snapshot.cachedJwkSet
 
 
+-- | Get JWKSet for kid, triggering refresh if kid not found.
+-- Returns (JWKSet, kidWasFound). If kid not found:
+-- 1. Triggers background refresh (rate-limited)
+-- 2. Returns full JWKSet as fallback
+getJwkSetForKidWithRefresh :: Text -> JwksManager -> Task err (Jose.JWKSet, Bool)
+getJwkSetForKidWithRefresh kid manager = do
+  snapshot <- AtomicVar.peek manager.keySnapshot
+  case Map.get kid snapshot.keysByKid of
+    Just key -> Task.yield (Jose.JWKSet [key], True)
+    Nothing -> do
+      -- Kid not found - trigger refresh (rate-limited) and fallback to all keys
+      _ <- requestRefresh manager |> Task.asResult
+      Task.yield (snapshot.cachedJwkSet, False)
+
+
 -- | Check if keys are stale beyond acceptable threshold.
 -- Returns True if keys should not be used (triggers 503 response).
 checkStaleness :: JwksManager -> Task err Bool
@@ -214,9 +230,14 @@ refreshLoop manager = do
     case running of
       False -> Task.throw "Manager stopped"
       True -> do
-        -- Perform refresh (ignore errors, will retry next interval)
-        _ <- refreshKeys manager |> Task.asResult
-        Task.yield ()
+        -- Perform refresh - mark stale on failure
+        refreshResult <- refreshKeys manager |> Task.asResult
+        case refreshResult of
+          Ok _ -> Task.yield ()
+          Err _ -> do
+            -- Mark keys as stale on refresh failure
+            markKeysStale manager
+            Task.yield ()
 
 
 -- | Refresh keys from the JWKS endpoint.
@@ -227,12 +248,22 @@ refreshKeys manager = do
   case keysResult of
     Err err -> Task.throw err
     Ok keys -> do
-      -- Build new snapshot
+      -- Build new snapshot (with isStale = False)
       now <- getCurrentSeconds
       let newSnapshot = buildSnapshot keys now
       -- Atomically update
       AtomicVar.set newSnapshot manager.keySnapshot
       Task.yield ()
+
+
+-- | Mark current keys as stale.
+-- Called when refresh fails - keeps old keys but marks them stale.
+markKeysStale :: JwksManager -> Task err Unit
+markKeysStale manager = do
+  snapshot <- AtomicVar.peek manager.keySnapshot
+  let staleSnapshot = snapshot {isStale = True}
+  AtomicVar.set staleSnapshot manager.keySnapshot
+  Task.yield ()
 
 
 -- | Build a key snapshot from an array of JWKs.

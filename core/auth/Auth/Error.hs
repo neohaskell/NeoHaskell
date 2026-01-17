@@ -65,6 +65,8 @@ data DiscoveryError
     JwksParseFailed Text
   | -- | Discovery endpoint returned invalid data
     InvalidDiscoveryDocument Text
+  | -- | URL validation failed (HTTPS required, SSRF blocked)
+    UrlValidationFailed Text
   deriving (Generic, Show, Eq)
 
 

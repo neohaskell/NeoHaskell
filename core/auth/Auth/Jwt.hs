@@ -7,8 +7,12 @@ module Auth.Jwt (
   -- * Token validation
   validateToken,
   validateTokenWithJwkSet,
+  validateTokenWithParsedHeader,
   -- * Token parsing
   extractKidFromToken,
+  -- * Optimized header parsing (parse once, use for all checks)
+  ParsedHeader (..),
+  parseHeader,
   -- * Internal (for testing)
   parseTokenHeader,
   extractAlgorithmFromToken,
@@ -42,15 +46,72 @@ import Text (Text)
 import Text qualified
 
 
+-- | Parsed JWT header for hot-path optimization.
+-- Parse once, use for all validation checks.
+data ParsedHeader = ParsedHeader
+  { alg :: Text,
+    -- ^ Algorithm (required)
+    kid :: Maybe Text,
+    -- ^ Key ID (optional)
+    typ :: Maybe Text,
+    -- ^ Type header (optional, RFC 8725 recommends checking)
+    crit :: Array Text
+    -- ^ Critical headers (empty if not present)
+  }
+  deriving (Show, Eq)
+
+
+-- | Parse JWT header once for all validation checks.
+-- This is the optimized hot path - avoids re-parsing header 3-4 times.
+parseHeader :: Text -> Result AuthError ParsedHeader
+parseHeader token = do
+  let parts = GhcText.splitOn "." token
+  case parts of
+    [headerB64, _, _] -> do
+      let headerBytes = headerB64 |> GhcTextEncoding.encodeUtf8 |> GhcBase64.decodeLenient
+      case Aeson.decodeStrict headerBytes of
+        Nothing -> Err (TokenMalformed "Invalid header encoding")
+        Just (obj :: GhcMap.Map GhcText.Text Aeson.Value) -> do
+          -- Extract alg (required)
+          case GhcMap.lookup ("alg" :: GhcText.Text) obj of
+            Just (Aeson.String algText) -> do
+              -- Extract kid (optional)
+              let kidVal = case GhcMap.lookup ("kid" :: GhcText.Text) obj of
+                    Just (Aeson.String k) -> Just k
+                    _ -> Nothing
+              -- Extract typ (optional)
+              let typVal = case GhcMap.lookup ("typ" :: GhcText.Text) obj of
+                    Just (Aeson.String t) -> Just t
+                    _ -> Nothing
+              -- Extract crit (optional)
+              let critArr = case GhcMap.lookup ("crit" :: GhcText.Text) obj of
+                    Just (Aeson.Array arr) ->
+                      arr
+                        |> GhcFoldable.toList
+                        |> Array.fromLinkedList
+                        |> Array.map extractTextValue
+                        |> Array.dropIf Text.isEmpty
+                    _ -> Array.empty
+              Ok
+                ParsedHeader
+                  { alg = algText,
+                    kid = kidVal,
+                    typ = typVal,
+                    crit = critArr
+                  }
+            _ -> Err (TokenMalformed "Missing or invalid alg in header")
+    _ -> Err (TokenMalformed "Invalid JWT structure")
+
+
 -- | Validate a JWT token against the auth configuration.
 -- Returns UserClaims on success, AuthError on failure.
 --
 -- Validation order (per RFC 8725 and performance optimization):
--- 1. Parse JWT format
+-- 1. Parse JWT header ONCE (optimized - single parse for alg/kid/typ/crit)
 -- 2. Reject alg not in allowlist (fail fast, no crypto)
 -- 3. Reject unknown crit headers
--- 4. Extract kid (if missing, may still work with single key)
--- 5. Key lookup and signature verification (CPU-heavy)
+-- 4. Validate typ if present (RFC 8725)
+-- 5. Decode and verify with jose library (CPU-heavy)
 -- 6. Issuer validation (exact match)
 -- 7. Audience validation
 -- 8. Time claims (exp/nbf) with clock skew
@@ -66,27 +127,30 @@ validateToken config keys token = do
   case Text.isEmpty token of
     True -> Task.yield (Err (TokenMalformed "Empty token"))
     False -> do
-      -- Step 2: Pre-parse to check algorithm (RFC 8725 fail-fast)
-      let algResult = extractAlgorithmFromToken token
-      case algResult of
+      -- Step 2: Parse header ONCE (optimized hot path)
+      case parseHeader token of
         Err err -> Task.yield (Err err)
-        Ok alg -> do
-          case isAlgorithmAllowed config.allowedAlgorithms alg of
-            False -> Task.yield (Err (AlgorithmNotAllowed alg))
+        Ok header -> do
+          -- Step 3: Check algorithm allowlist (RFC 8725 fail-fast)
+          case isAlgorithmAllowed config.allowedAlgorithms header.alg of
+            False -> Task.yield (Err (AlgorithmNotAllowed header.alg))
             True -> do
-              -- Step 3: Check crit headers from raw token
-              let critResult = checkCritFromToken token config.supportedCritHeaders
-              case critResult of
+              -- Step 4: Check crit headers
+              case checkCritHeaders header.crit config.supportedCritHeaders of
                 Err err -> Task.yield (Err err)
                 Ok () -> do
-                  -- Step 4: Decode and verify with jose library
-                  let tokenBytes = token |> GhcTextEncoding.encodeUtf8 |> GhcLBS.fromStrict
-                  decodeResult <- Task.fromIO (Jose.runJOSE @Jose.Error (Jose.decodeCompact tokenBytes))
-                  case decodeResult of
-                    Prelude.Left _err ->
-                      Task.yield (Err (TokenMalformed "Invalid JWT format"))
-                    Prelude.Right jwt ->
-                      verifyAndExtract config keys jwt
+                  -- Step 5: Validate typ if present (RFC 8725)
+                  case validateTypHeader header.typ of
+                    Err err -> Task.yield (Err err)
+                    Ok () -> do
+                      -- Step 6: Decode and verify with jose library
+                      let tokenBytes = token |> GhcTextEncoding.encodeUtf8 |> GhcLBS.fromStrict
+                      decodeResult <- Task.fromIO (Jose.runJOSE @Jose.Error (Jose.decodeCompact tokenBytes))
+                      case decodeResult of
+                        Prelude.Left _err ->
+                          Task.yield (Err (TokenMalformed "Invalid JWT format"))
+                        Prelude.Right jwt ->
+                          verifyAndExtract config keys jwt
 
 
 -- | Validate a JWT token using a pre-built JWKSet.
@@ -102,89 +166,107 @@ validateTokenWithJwkSet config jwkSet token = do
   case Text.isEmpty token of
     True -> Task.yield (Err (TokenMalformed "Empty token"))
     False -> do
-      -- Step 2: Pre-parse to check algorithm (RFC 8725 fail-fast)
-      let algResult = extractAlgorithmFromToken token
-      case algResult of
+      -- Step 2: Parse header ONCE (optimized hot path)
+      case parseHeader token of
         Err err -> Task.yield (Err err)
-        Ok alg -> do
-          case isAlgorithmAllowed config.allowedAlgorithms alg of
-            False -> Task.yield (Err (AlgorithmNotAllowed alg))
+        Ok header -> do
+          -- Step 3: Check algorithm allowlist (RFC 8725 fail-fast)
+          case isAlgorithmAllowed config.allowedAlgorithms header.alg of
+            False -> Task.yield (Err (AlgorithmNotAllowed header.alg))
             True -> do
-              -- Step 3: Check crit headers from raw token
-              let critResult = checkCritFromToken token config.supportedCritHeaders
-              case critResult of
+              -- Step 4: Check crit headers
+              case checkCritHeaders header.crit config.supportedCritHeaders of
                 Err err -> Task.yield (Err err)
                 Ok () -> do
-                  -- Step 4: Decode and verify with jose library
-                  let tokenBytes = token |> GhcTextEncoding.encodeUtf8 |> GhcLBS.fromStrict
-                  decodeResult <- Task.fromIO (Jose.runJOSE @Jose.Error (Jose.decodeCompact tokenBytes))
-                  case decodeResult of
-                    Prelude.Left _err ->
-                      Task.yield (Err (TokenMalformed "Invalid JWT format"))
-                    Prelude.Right jwt ->
-                      verifyAndExtractWithJwkSet config jwkSet jwt
+                  -- Step 5: Validate typ if present (RFC 8725)
+                  case validateTypHeader header.typ of
+                    Err err -> Task.yield (Err err)
+                    Ok () -> do
+                      -- Step 6: Decode and verify with jose library
+                      let tokenBytes = token |> GhcTextEncoding.encodeUtf8 |> GhcLBS.fromStrict
+                      decodeResult <- Task.fromIO (Jose.runJOSE @Jose.Error (Jose.decodeCompact tokenBytes))
+                      case decodeResult of
+                        Prelude.Left _err ->
+                          Task.yield (Err (TokenMalformed "Invalid JWT format"))
+                        Prelude.Right jwt ->
+                          verifyAndExtractWithJwkSet config jwkSet jwt
+
+
+-- | Validate a JWT token with a pre-parsed header.
+-- This is the most optimized hot path for the middleware:
+-- 1. Parse header once in middleware (for kid extraction)
+-- 2. Pass ParsedHeader here to avoid re-parsing
+validateTokenWithParsedHeader ::
+  forall err.
+  AuthConfig ->
+  Jose.JWKSet ->
+  ParsedHeader ->
+  Text ->
+  Task err (Result AuthError UserClaims)
+validateTokenWithParsedHeader config jwkSet header token = do
+  -- Step 1: Check algorithm allowlist (RFC 8725 fail-fast)
+  case isAlgorithmAllowed config.allowedAlgorithms header.alg of
+    False -> Task.yield (Err (AlgorithmNotAllowed header.alg))
+    True -> do
+      -- Step 2: Check crit headers
+      case checkCritHeaders header.crit config.supportedCritHeaders of
+        Err err -> Task.yield (Err err)
+        Ok () -> do
+          -- Step 3: Validate typ if present (RFC 8725)
+          case validateTypHeader header.typ of
+            Err err -> Task.yield (Err err)
+            Ok () -> do
+              -- Step 4: Decode and verify with jose library
+              let tokenBytes = token |> GhcTextEncoding.encodeUtf8 |> GhcLBS.fromStrict
+              decodeResult <- Task.fromIO (Jose.runJOSE @Jose.Error (Jose.decodeCompact tokenBytes))
+              case decodeResult of
+                Prelude.Left _err ->
+                  Task.yield (Err (TokenMalformed "Invalid JWT format"))
+                Prelude.Right jwt ->
+                  verifyAndExtractWithJwkSet config jwkSet jwt
+
+
+-- | Check crit headers against supported list (using pre-parsed header).
+checkCritHeaders :: Array Text -> Array Text -> Result AuthError ()
+checkCritHeaders critHeaders supported = do
+  let unsupported =
+        critHeaders
+          |> Array.dropIf (\c -> supported |> Array.any (\s -> s == c))
+  case Array.isEmpty unsupported of
+    True -> Ok ()
+    False -> Err (UnsupportedCritHeader unsupported)
+
+
+-- | Validate typ header if present (RFC 8725 hardening).
+-- If typ is present, it must be "JWT" or "at+jwt" (access token).
+validateTypHeader :: Maybe Text -> Result AuthError ()
+validateTypHeader maybeTyp =
+  case maybeTyp of
+    Nothing -> Ok () -- typ is optional
+    Just typ ->
+      -- Accept "JWT" or "at+jwt" (RFC 9068 access token)
+      case typ == "JWT" || typ == "at+jwt" of
+        True -> Ok ()
+        False -> Err (TokenMalformed [fmt|Invalid typ header: #{typ}|])
 
 
 -- | Extract kid (key ID) from JWT token header.
 -- Returns Nothing if kid is not present in the header.
+-- Note: For hot path, prefer parseHeader once and access .kid
 extractKidFromToken :: Text -> Maybe Text
-extractKidFromToken token = do
-  let parts = GhcText.splitOn "." token
-  case parts of
-    [headerB64, _, _] -> do
-      let headerBytes = headerB64 |> GhcTextEncoding.encodeUtf8 |> GhcBase64.decodeLenient
-      case Aeson.decodeStrict headerBytes of
-        Nothing -> Nothing
-        Just (obj :: GhcMap.Map GhcText.Text Aeson.Value) ->
-          case GhcMap.lookup ("kid" :: GhcText.Text) obj of
-            Just (Aeson.String kid) -> Just kid
-            _ -> Nothing
-    _ -> Nothing
+extractKidFromToken token =
+  case parseHeader token of
+    Err _ -> Nothing
+    Ok header -> header.kid
 
 
--- | Extract algorithm from JWT token without full parsing
--- This allows fail-fast rejection of disallowed algorithms
+-- | Extract algorithm from JWT token without full parsing.
+-- Note: For hot path, prefer parseHeader once and access .alg
 extractAlgorithmFromToken :: Text -> Result AuthError Text
-extractAlgorithmFromToken token = do
-  -- JWT format: header.payload.signature
-  let parts = GhcText.splitOn "." token
-  case parts of
-    [headerB64, _, _] -> do
-      -- Decode header (base64url)
-      let headerBytes = headerB64 |> GhcTextEncoding.encodeUtf8 |> GhcBase64.decodeLenient
-      case Aeson.decodeStrict headerBytes of
-        Nothing -> Err (TokenMalformed "Invalid header encoding")
-        Just obj -> do
-          case GhcMap.lookup ("alg" :: GhcText.Text) obj of
-            Just (Aeson.String alg) -> Ok alg
-            _ -> Err (TokenMalformed "Missing or invalid alg in header")
-    _ -> Err (TokenMalformed "Invalid JWT structure")
-
-
--- | Check crit headers from raw token
-checkCritFromToken :: Text -> Array Text -> Result AuthError ()
-checkCritFromToken token supported = do
-  let parts = GhcText.splitOn "." token
-  case parts of
-    [headerB64, _, _] -> do
-      let headerBytes = headerB64 |> GhcTextEncoding.encodeUtf8 |> GhcBase64.decodeLenient
-      case Aeson.decodeStrict headerBytes of
-        Nothing -> Ok () -- Already handled in alg check
-        Just (obj :: GhcMap.Map GhcText.Text Aeson.Value) -> do
-          case GhcMap.lookup ("crit" :: GhcText.Text) obj of
-            Nothing -> Ok ()
-            Just (Aeson.Array critArr) -> do
-              let critList = critArr |> GhcFoldable.toList |> Array.fromLinkedList
-              let unsupported =
-                    critList
-                      |> Array.map extractTextValue
-                      |> Array.dropIf Text.isEmpty
-                      |> Array.dropIf (\c -> supported |> Array.any (\s -> s == c))
-              case Array.isEmpty unsupported of
-                True -> Ok ()
-                False -> Err (UnsupportedCritHeader unsupported)
-            _ -> Err (TokenMalformed "Invalid crit header format")
-    _ -> Ok () -- Already handled
+extractAlgorithmFromToken token =
+  case parseHeader token of
+    Err err -> Err err
+    Ok header -> Ok header.alg
 
 
 -- | Extract text from JSON value
@@ -213,13 +295,18 @@ verifyAndExtract config keys jwt = Task.fromIO do
   let jwkSet = Jose.JWKSet (Array.toLinkedList keys)
 
   -- Build validation settings
+  -- FIXED: Check both string and URI form for audience (RFC 7519)
   let audCheck = case config.audience of
         Nothing -> Prelude.const True
         Just expectedAud -> \aud -> do
-          -- Compare using the string prism
-          case aud Lens.^? JWT.string of
-            Just audText -> audText == expectedAud
-            Nothing -> False
+          -- StringOrURI can be either a plain string or a URI
+          let stringMatch = case aud Lens.^? JWT.string of
+                Just audText -> audText == expectedAud
+                Nothing -> False
+          let uriMatch = case aud Lens.^? JWT.uri of
+                Just audUri -> show audUri == GhcText.unpack expectedAud
+                Nothing -> False
+          stringMatch || uriMatch
 
   let validationSettings =
         JWT.defaultJWTValidationSettings audCheck
@@ -256,12 +343,18 @@ verifyAndExtractWithJwkSet ::
   Task err (Result AuthError UserClaims)
 verifyAndExtractWithJwkSet config jwkSet jwt = Task.fromIO do
   -- Build validation settings
+  -- FIXED: Check both string and URI form for audience (RFC 7519)
   let audCheck = case config.audience of
         Nothing -> Prelude.const True
         Just expectedAud -> \aud -> do
-          case aud Lens.^? JWT.string of
-            Just audText -> audText == expectedAud
-            Nothing -> False
+          -- StringOrURI can be either a plain string or a URI
+          let stringMatch = case aud Lens.^? JWT.string of
+                Just audText -> audText == expectedAud
+                Nothing -> False
+          let uriMatch = case aud Lens.^? JWT.uri of
+                Just audUri -> show audUri == GhcText.unpack expectedAud
+                Nothing -> False
+          stringMatch || uriMatch
 
   let validationSettings =
         JWT.defaultJWTValidationSettings audCheck
