@@ -109,8 +109,11 @@ library
     Auth
     Auth.Claims
     Auth.Config
+    Auth.Discovery
     Auth.Error
     Auth.Jwt
+    Auth.Jwks
+    Auth.Middleware
     Auth.Options
     Basics
     Bytes

@@ -2,6 +2,7 @@
 -- This is the DSL Jess uses to specify auth requirements.
 module Auth.Options (
   AuthOptions (..),
+  AuthOptionsError (..),
 ) where
 
 import Array (Array)
