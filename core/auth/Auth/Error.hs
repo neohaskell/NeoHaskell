@@ -43,6 +43,8 @@ data AuthError
     AuthInfraUnavailable Text
   | -- | Key ID not found in JWKS
     KeyNotFound Text
+  | -- | Custom validation logic failed
+    CustomValidationFailed Text
   deriving (Generic, Show, Eq)
 
 

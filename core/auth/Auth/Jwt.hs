@@ -94,22 +94,30 @@ parseHeader token = do
                   let typVal = case GhcKeyMap.lookup (GhcAesonKey.fromString "typ") obj of
                         Just (Aeson.String t) -> Just t
                         _ -> Nothing
-                  -- Extract crit (optional)
-                  let critArr = case GhcKeyMap.lookup (GhcAesonKey.fromString "crit") obj of
-                        Just (Aeson.Array arr) ->
-                          arr
-                            |> GhcFoldable.toList
-                            |> Array.fromLinkedList
-                            |> Array.map extractTextValue
-                            |> Array.dropIf Text.isEmpty
-                        _ -> Array.empty
-                  Ok
-                    ParsedHeader
-                      { alg = algText,
-                        kid = kidVal,
-                        typ = typVal,
-                        crit = critArr
-                      }
+                  -- Extract crit (optional) - RFC 8725: fail closed on malformed
+                  case GhcKeyMap.lookup (GhcAesonKey.fromString "crit") obj of
+                    Just (Aeson.Array arr) -> do
+                      let critValues = arr |> GhcFoldable.toList |> Array.fromLinkedList
+                      -- Validate ALL entries are non-empty strings (fail closed per RFC 8725)
+                      case extractCritHeaders critValues of
+                        Err errMsg -> Err (TokenMalformed errMsg)
+                        Ok critArr ->
+                          Ok
+                            ParsedHeader
+                              { alg = algText,
+                                kid = kidVal,
+                                typ = typVal,
+                                crit = critArr
+                              }
+                    Just _ -> Err (TokenMalformed "crit header must be an array")
+                    Nothing ->
+                      Ok
+                        ParsedHeader
+                          { alg = algText,
+                            kid = kidVal,
+                            typ = typVal,
+                            crit = Array.empty
+                          }
                 _ -> Err (TokenMalformed "Missing or invalid alg in header")
             Just _ -> Err (TokenMalformed "JWT header must be a JSON object")
     _ -> Err (TokenMalformed "Invalid JWT structure")
@@ -291,6 +299,38 @@ extractTextValue val =
   case val of
     Aeson.String txt -> txt
     _ -> ""
+
+
+-- | Extract crit headers with strict validation (RFC 8725 fail-closed).
+-- All entries must be non-empty strings; any malformed entry fails the entire parse.
+extractCritHeaders :: Array Aeson.Value -> Result Text (Array Text)
+extractCritHeaders values = do
+  let results = values |> Array.map validateCritEntry
+  -- If any entry is invalid, fail closed
+  case results |> Array.any isInvalidCritEntry of
+    True -> Err "crit header contains non-string or empty values"
+    False -> Ok (results |> Array.map unwrapCritEntry |> Array.dropIf Text.isEmpty)
+ where
+  validateCritEntry :: Aeson.Value -> Maybe Text
+  validateCritEntry val =
+    case val of
+      Aeson.String txt ->
+        case Text.isEmpty txt of
+          True -> Nothing -- Empty string is invalid
+          False -> Just txt
+      _ -> Nothing -- Non-string is invalid
+
+  isInvalidCritEntry :: Maybe Text -> Bool
+  isInvalidCritEntry entry =
+    case entry of
+      Nothing -> True
+      Just _ -> False
+
+  unwrapCritEntry :: Maybe Text -> Text
+  unwrapCritEntry entry =
+    case entry of
+      Just txt -> txt
+      Nothing -> "" -- Won't happen after validation, but needed for types
 
 
 -- | Check if algorithm is in the allowlist

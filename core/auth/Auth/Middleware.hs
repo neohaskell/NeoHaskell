@@ -72,7 +72,7 @@ extractToken request = do
       let bearerPrefixLower = "bearer "
       case Text.startsWith bearerPrefixLower headerLower of
         False -> Nothing
-        True -> Just (Text.dropLeft (Text.length bearerPrefixLower) headerText)
+        True -> Just (Text.dropLeft (Text.length bearerPrefixLower) headerText |> Text.trim)
 
 
 -- | Find a header by name (case-insensitive).
@@ -138,7 +138,7 @@ checkAuth maybeManager config authOptions request = do
             Just claims ->
               case validator claims of
                 Err (AuthOptions.AuthOptionsError msg) ->
-                  Task.yield (Err (TokenMalformed msg)) -- Map custom error to auth error
+                  Task.yield (Err (CustomValidationFailed msg))
                 Ok () -> Task.yield (Ok ctx)
 
 
@@ -246,6 +246,8 @@ authErrorToResponse err =
       (HTTP.status401, "Authentication failed")
     KeyNotFound _ ->
       (HTTP.status401, "Authentication failed")
+    CustomValidationFailed _ ->
+      (HTTP.status403, "Forbidden")
     InsufficientPermissions _ ->
       (HTTP.status403, "Forbidden")
     AuthInfraUnavailable _ ->

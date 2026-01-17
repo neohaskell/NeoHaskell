@@ -176,20 +176,8 @@ However, the review identified **critical issues** that must be addressed before
 
 ### HIGH Issues
 
-#### 4.4 GDPR Data Minimization Not Enforced
-**File:** `core/auth/Auth/Jwt.hs:406-434`  
-**Issue:** `extractUserClaims` populates `email` and `name`. In event-sourced systems, easy to accidentally persist to domain events (GDPR retention + erasure problem).
-
-**Fix:** Provide pseudonymization helpers (`hashSubForLogs`), document "never persist raw claims".
-
-#### 4.5 Data Residency Cannot Be Assured
+#### 4.4 Data Residency Cannot Be Assured
 **Issue:** `discoverConfig` accepts any HTTPS URL. Need explicit allowlist for "EU-hosted IdP domains only".
-
-#### 4.6 Audit Trail Underspecified
-**Issue:** No clear server-side audit log format for auth decisions. EU security audits expect this.
-
-#### 4.7 NIS2 Readiness Hooks Missing
-**Issue:** No incident-response hooks (alerts on JWKS refresh failures, auth failure spikes).
 
 ### MEDIUM Issues
 
@@ -271,8 +259,6 @@ However, the review identified **critical issues** that must be addressed before
 
 | Priority | Task | File(s) | Effort |
 |----------|------|---------|--------|
-| HIGH | Add GDPR pseudonymization helpers + docs | `Claims.hs`, docs | 2h |
-| HIGH | Add structured auth decision logging | `Middleware.hs` | 3h |
 | MEDIUM | Add DoS limits (max JWT size, rate limiting) | `Middleware.hs`, `Jwt.hs` | 4h |
 | MEDIUM | Add IdP domain allowlist option | `Config.hs`, `Discovery.hs` | 2h |
 
