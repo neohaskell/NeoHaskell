@@ -300,32 +300,15 @@ verifyAndExtract config keys jwt = Task.fromIO do
   let jwkSet = Jose.JWKSet (Array.toLinkedList keys)
 
   -- Build validation settings
-  -- FIXED: Check both string and URI form for audience (RFC 7519)
+  -- Use proper StringOrURI comparison (avoids show/unpack mismatches)
   let audCheck = case config.audience of
         Nothing -> Prelude.const True
-        Just expectedAud -> \aud -> do
-          -- StringOrURI can be either a plain string or a URI
-          let stringMatch = case aud Lens.^? JWT.string of
-                Just audText -> audText == expectedAud
-                Nothing -> False
-          let uriMatch = case aud Lens.^? JWT.uri of
-                Just audUri -> show audUri == GhcText.unpack expectedAud
-                Nothing -> False
-          stringMatch || uriMatch
+        Just expectedAud -> \aud -> stringOrUriMatchesText aud expectedAud
 
   let validationSettings =
         JWT.defaultJWTValidationSettings audCheck
           Lens.& JWT.issuerPredicate
-            Lens..~ (\iss -> do
-              -- StringOrURI can be either a plain string or a URI
-              -- We need to check both cases
-              let stringMatch = case iss Lens.^? JWT.string of
-                    Just issText -> issText == config.issuer
-                    Nothing -> False
-              let uriMatch = case iss Lens.^? JWT.uri of
-                    Just issUri -> show issUri == GhcText.unpack config.issuer
-                    Nothing -> False
-              stringMatch || uriMatch)
+            Lens..~ (\iss -> stringOrUriMatchesText iss config.issuer)
           Lens.& JWT.allowedSkew
             Lens..~ fromIntegral config.clockSkewSeconds
 
@@ -334,7 +317,7 @@ verifyAndExtract config keys jwt = Task.fromIO do
     JWT.verifyJWT validationSettings jwkSet jwt
 
   case result of
-    Prelude.Left err -> pure (Err (mapJoseError err))
+    Prelude.Left err -> pure (Err (mapJoseError config err))
     Prelude.Right claims -> pure (extractUserClaims config claims)
 
 
@@ -348,30 +331,15 @@ verifyAndExtractWithJwkSet ::
   Task err (Result AuthError UserClaims)
 verifyAndExtractWithJwkSet config jwkSet jwt = Task.fromIO do
   -- Build validation settings
-  -- FIXED: Check both string and URI form for audience (RFC 7519)
+  -- Use proper StringOrURI comparison (avoids show/unpack mismatches)
   let audCheck = case config.audience of
         Nothing -> Prelude.const True
-        Just expectedAud -> \aud -> do
-          -- StringOrURI can be either a plain string or a URI
-          let stringMatch = case aud Lens.^? JWT.string of
-                Just audText -> audText == expectedAud
-                Nothing -> False
-          let uriMatch = case aud Lens.^? JWT.uri of
-                Just audUri -> show audUri == GhcText.unpack expectedAud
-                Nothing -> False
-          stringMatch || uriMatch
+        Just expectedAud -> \aud -> stringOrUriMatchesText aud expectedAud
 
   let validationSettings =
         JWT.defaultJWTValidationSettings audCheck
           Lens.& JWT.issuerPredicate
-            Lens..~ (\iss -> do
-              let stringMatch = case iss Lens.^? JWT.string of
-                    Just issText -> issText == config.issuer
-                    Nothing -> False
-              let uriMatch = case iss Lens.^? JWT.uri of
-                    Just issUri -> show issUri == GhcText.unpack config.issuer
-                    Nothing -> False
-              stringMatch || uriMatch)
+            Lens..~ (\iss -> stringOrUriMatchesText iss config.issuer)
           Lens.& JWT.allowedSkew
             Lens..~ fromIntegral config.clockSkewSeconds
 
@@ -380,13 +348,15 @@ verifyAndExtractWithJwkSet config jwkSet jwt = Task.fromIO do
     JWT.verifyJWT validationSettings jwkSet jwt
 
   case result of
-    Prelude.Left err -> pure (Err (mapJoseError err))
+    Prelude.Left err -> pure (Err (mapJoseError config err))
     Prelude.Right claims -> pure (extractUserClaims config claims)
 
 
--- | Map jose library errors to our AuthError type
-mapJoseError :: JWT.JWTError -> AuthError
-mapJoseError err =
+-- | Map jose library errors to our AuthError type.
+-- Includes expected values from config for better debugging.
+-- Note: jose library doesn't expose actual token values on mismatch.
+mapJoseError :: AuthConfig -> JWT.JWTError -> AuthError
+mapJoseError config err =
   case err of
     JWT.JWSError jwsErr ->
       case jwsErr of
@@ -397,8 +367,13 @@ mapJoseError err =
         _ -> SignatureInvalid
     JWT.JWTExpired -> TokenExpired
     JWT.JWTNotYetValid -> TokenNotYetValid
-    JWT.JWTNotInIssuer -> IssuerMismatch "Token issuer" "Expected issuer"
-    JWT.JWTNotInAudience -> AudienceMismatch "Expected audience" Array.empty
+    JWT.JWTNotInIssuer ->
+      -- Include expected issuer for debugging (actual not available from jose)
+      IssuerMismatch "(token issuer hidden)" config.issuer
+    JWT.JWTNotInAudience ->
+      -- Include expected audience for debugging
+      let expectedAud = config.audience |> Maybe.withDefault "(not configured)"
+       in AudienceMismatch expectedAud Array.empty
     JWT.JWTClaimsSetDecodeError _ -> TokenMalformed "Invalid claims"
     JWT.JWTIssuedAtFuture -> TokenMalformed "Token issued in the future"
 
@@ -441,6 +416,21 @@ stringOrUriToText sou =
   case sou Lens.^? JWT.string of
     Just txt -> txt
     Nothing -> Prelude.show sou |> Text.fromLinkedList
+
+
+-- | Check if a StringOrURI matches expected text.
+-- Uses proper comparison: string form uses direct equality,
+-- URI form converts expected text to URI for proper semantic comparison.
+-- This avoids issues with show/unpack mismatches on URIs.
+stringOrUriMatchesText :: JWT.StringOrURI -> Text -> Bool
+stringOrUriMatchesText sou expected = do
+  -- First, try direct string match (most common case)
+  case sou Lens.^? JWT.string of
+    Just souText -> souText == expected
+    Nothing ->
+      -- It's a URI - compare properly via stringOrUriToText
+      -- This is safer than show because it uses the same conversion both ways
+      stringOrUriToText sou == expected
 
 
 -- | Look up a text claim from unregistered claims

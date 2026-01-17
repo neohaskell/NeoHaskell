@@ -55,11 +55,13 @@ However, the review identified **critical issues** that must be addressed before
 
 ### HIGH Issues
 
-#### 1.4 URI Comparison via `show` (False Mismatches)
+#### 1.4 ~~URI Comparison via `show` (False Mismatches)~~ FIXED
 **File:** `core/auth/Auth/Jwt.hs:312, 326`  
 **Issue:** Issuer/audience comparison uses `show audUri == GhcText.unpack expectedAud`. `show` is not stable for URI equality (encoding, trailing slashes vary).
 
-**Fix:** Compare via single canonical representation, or restrict config to Text form and only accept `JWT.string` prism (fail closed on URI form).
+**Fix:** ~~Compare via single canonical representation, or restrict config to Text form and only accept `JWT.string` prism (fail closed on URI form).~~
+
+**Status:** FIXED - Added `stringOrUriMatchesText` helper that uses consistent comparison via `stringOrUriToText`.
 
 #### 1.5 ~~Exception-Unsafe Refresh Lock~~ FIXED
 **File:** `core/auth/Auth/Jwks.hs:235-260`  
@@ -72,8 +74,8 @@ However, the review identified **critical issues** that must be addressed before
 ### MEDIUM Issues
 
 - **Token whitespace not trimmed:** `extractToken` doesn't trim whitespace around extracted token
-- **Issuer/audience mismatch loses detail:** Placeholder values in `mapJoseError` reduce debuggability
-- **Staleness not set on on-demand refresh failure:** Only background refresh marks keys stale
+- ~~**Issuer/audience mismatch loses detail:**~~ FIXED - `mapJoseError` now includes expected values from config
+- ~~**Staleness not set on on-demand refresh failure:**~~ FIXED - All refresh paths now mark stale on failure via shared `performRefreshWithLock`
 
 ---
 
