@@ -7,7 +7,7 @@ module Service.Transport.Web (
 import Auth.Config qualified
 import Auth.Jwks (JwksManager)
 import Auth.Middleware qualified as Middleware
-import Auth.Options (AuthOptions (..))
+import Auth.Options (AuthOptions (Authenticated))
 import Basics
 import Bytes (Bytes)
 import Bytes qualified
@@ -18,10 +18,8 @@ import Data.IORef qualified as GhcIORef
 import Data.List qualified as GhcList
 import GHC.TypeLits qualified as GHC
 import Json qualified
-import Map (Map)
 import Map qualified
 import Maybe (Maybe (..))
-import Maybe qualified
 import Network.HTTP.Types.Header qualified as HTTP
 import Network.HTTP.Types.Status qualified as HTTP
 import Network.Wai qualified as Wai
@@ -41,13 +39,11 @@ import Text qualified
 
 
 -- | Auth configuration for WebTransport endpoints.
+-- When enabled, all endpoints require a valid JWT.
+-- Permission checks should be done in the command's decide method.
 data AuthEnabled = AuthEnabled
   { jwksManager :: JwksManager,
-    authConfig :: Auth.Config.AuthConfig,
-    -- | Auth requirements per command (by PascalCase name)
-    commandAuthOptions :: Map Text AuthOptions,
-    -- | Auth requirements per query (by PascalCase name)
-    queryAuthOptions :: Map Text AuthOptions
+    authConfig :: Auth.Config.AuthConfig
   }
 
 
@@ -221,20 +217,14 @@ instance Transport WebTransport where
                               ConcurrentVar.get respondVar
                           )
 
-            -- Check authentication/authorization before processing
+            -- Check authentication before processing
             case webTransport.authEnabled of
               Nothing ->
                 -- No auth configured, allow everyone
                 processCommand
               Just auth -> do
-                -- SECURITY: Default to Authenticated when auth is enabled
-                -- Endpoints must explicitly opt-out with Everyone if they should be public
-                let authOptions =
-                      Map.get commandName auth.commandAuthOptions
-                        |> Maybe.withDefault Authenticated
-
-                -- Check auth
-                authResult <- Middleware.checkAuth (Just auth.jwksManager) auth.authConfig authOptions request
+                -- Validate JWT token (permission checks done in command's decide method)
+                authResult <- Middleware.checkAuth (Just auth.jwksManager) auth.authConfig Authenticated request
 
                 case authResult of
                   Result.Err authErr ->
@@ -260,20 +250,14 @@ instance Transport WebTransport where
                     Result.Ok responseText -> okJson responseText
                     Result.Err errorText -> internalError [fmt|Query #{queryName} failed: #{errorText}|]
 
-            -- Check authentication/authorization before processing
+            -- Check authentication before processing
             case webTransport.authEnabled of
               Nothing ->
                 -- No auth configured, allow everyone
                 processQuery
               Just auth -> do
-                -- SECURITY: Default to Authenticated when auth is enabled
-                -- Endpoints must explicitly opt-out with Everyone if they should be public
-                let authOptions =
-                      Map.get queryName auth.queryAuthOptions
-                        |> Maybe.withDefault Authenticated
-
-                -- Check auth
-                authResult <- Middleware.checkAuth (Just auth.jwksManager) auth.authConfig authOptions request
+                -- Validate JWT token (permission checks done in query handler if needed)
+                authResult <- Middleware.checkAuth (Just auth.jwksManager) auth.authConfig Authenticated request
 
                 case authResult of
                   Result.Err authErr ->

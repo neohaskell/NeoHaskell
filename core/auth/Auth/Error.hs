@@ -37,14 +37,10 @@ data AuthError
     IssuerMismatch Text Text
   | -- | Expected vs actual audience
     AudienceMismatch Text (Array Text)
-  | -- | Required vs available permissions
-    InsufficientPermissions (Array Text)
   | -- | JWKS/keys unavailable (503, not 401)
     AuthInfraUnavailable Text
   | -- | Key ID not found in JWKS
     KeyNotFound Text
-  | -- | Custom validation logic failed
-    CustomValidationFailed Text
   deriving (Generic, Show, Eq)
 
 

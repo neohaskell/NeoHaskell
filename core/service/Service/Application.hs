@@ -53,7 +53,7 @@ import Auth.Config (AuthOverrides)
 import Auth.Config qualified
 import Auth.Discovery qualified as Discovery
 import Auth.Jwks qualified as Jwks
-import Auth.Options (AuthOptions)
+
 import Basics
 import Console qualified
 import Control.Concurrent.Async qualified as GhcAsync
@@ -99,22 +99,21 @@ import TypeName qualified
 -- | Configuration for WebTransport authentication.
 -- This is stored in the Application and converted to WebTransport.AuthEnabled at runtime.
 --
+-- When auth is enabled, all endpoints require a valid JWT by default.
+-- Permission checks should be done in the command's decide method, not at the transport layer.
+--
 -- Example:
 --
 -- @
 -- app = Application.new
 --   |> Application.withTransport WebTransport.server
---   |> Application.withAuth "https://auth.example.com" commandAuthOptions
+--   |> Application.withAuth "https://auth.example.com"
 -- @
 data WebAuthSetup = WebAuthSetup
   { authServerUrl :: Text,
     -- ^ OAuth provider URL (e.g., "https://auth.example.com")
-    authOverrides :: AuthOverrides,
+    authOverrides :: AuthOverrides
     -- ^ Optional overrides for auth configuration
-    commandAuthOptions :: Map Text AuthOptions,
-    -- ^ Auth requirements per command (by PascalCase name)
-    queryAuthOptions :: Map Text AuthOptions
-    -- ^ Auth requirements per query (by PascalCase name)
   }
 
 
@@ -540,7 +539,7 @@ runWith eventStore app = do
   -- 12. Initialize auth if configured
   maybeAuthEnabled <- case app.webAuthSetup of
     Nothing -> Task.yield Nothing
-    Just (WebAuthSetup serverUrl overrides cmdAuthOpts queryAuthOpts) -> do
+    Just (WebAuthSetup serverUrl overrides) -> do
       Console.print [fmt|[Auth] Discovering auth config from #{serverUrl}...|]
       authConfig <-
         Discovery.discoverConfig serverUrl overrides
@@ -552,9 +551,7 @@ runWith eventStore app = do
         ( Just
             Web.AuthEnabled
               { Web.jwksManager = jwksManager,
-                Web.authConfig = authConfig,
-                Web.commandAuthOptions = cmdAuthOpts,
-                Web.queryAuthOptions = queryAuthOpts
+                Web.authConfig = authConfig
               }
         )
 
@@ -565,7 +562,7 @@ runWith eventStore app = do
 
   -- 14. Shutdown JWKS manager if started
   case maybeAuthEnabled of
-    Just (Web.AuthEnabled manager _ _ _) -> do
+    Just (Web.AuthEnabled manager _) -> do
       Console.print "[Auth] Stopping JWKS manager..."
         |> Task.ignoreError
       Jwks.stopManager manager
@@ -771,30 +768,27 @@ withInbound inboundIntegration app = do
 -- app = Application.new
 --   |> Application.withTransport WebTransport.server
 --   |> Application.withService cartService
---   |> Application.withAuth "https://auth.example.com" commandAuth
+--   |> Application.withAuth "https://auth.example.com"
 -- @
 withAuth ::
   Text ->
-  Map Text AuthOptions ->
   Application ->
   Application
-withAuth authServerUrl commandAuthOptions app =
+withAuth authServerUrl app =
   app
     { webAuthSetup =
         Just
           WebAuthSetup
             { authServerUrl = authServerUrl,
-              authOverrides = Auth.Config.defaultOverrides,
-              commandAuthOptions = commandAuthOptions,
-              queryAuthOptions = Map.empty
+              authOverrides = Auth.Config.defaultOverrides
             }
     }
 
 
--- | Enable JWT authentication with full configuration.
+-- | Enable JWT authentication with custom configuration.
 --
--- This is the advanced version that allows overriding auth configuration
--- and specifying auth for both commands and queries.
+-- This version allows overriding auth settings like audience, clock skew, etc.
+-- Permission checks should be done in the command's decide method.
 --
 -- Example:
 --
@@ -803,28 +797,22 @@ withAuth authServerUrl commandAuthOptions app =
 --       { audience = Just "my-api"
 --       , permissionsClaim = Just "scope"
 --       }
--- let commandAuth = Map.fromArray [("Checkout", RequireAllPermissions ["checkout"])]
--- let queryAuth = Map.fromArray [("CartSummary", Authenticated)]
 --
 -- app = Application.new
 --   |> Application.withTransport WebTransport.server
---   |> Application.withAuthOverrides "https://auth.example.com" overrides commandAuth queryAuth
+--   |> Application.withAuthOverrides "https://auth.example.com" overrides
 -- @
 withAuthOverrides ::
   Text ->
   AuthOverrides ->
-  Map Text AuthOptions ->
-  Map Text AuthOptions ->
   Application ->
   Application
-withAuthOverrides authServerUrl overrides commandAuthOptions queryAuthOptions app =
+withAuthOverrides authServerUrl overrides app =
   app
     { webAuthSetup =
         Just
           WebAuthSetup
             { authServerUrl = authServerUrl,
-              authOverrides = overrides,
-              commandAuthOptions = commandAuthOptions,
-              queryAuthOptions = queryAuthOptions
+              authOverrides = overrides
             }
     }

@@ -1,32 +1,17 @@
--- | Declarative authentication requirements for endpoints.
--- This is the DSL Jess uses to specify auth requirements.
+-- | Authentication options for endpoints.
+-- Permission checks should be done in the command's decide method, not here.
 module Auth.Options (
   AuthOptions (..),
-  AuthOptionsError (..),
 ) where
 
-import Array (Array)
-import Auth.Claims (UserClaims)
 import Basics
-import Result (Result)
-import Text (Text)
 
 
--- | Declarative authentication requirements for an endpoint.
+-- | Authentication requirements for an endpoint.
+-- Note: Permission checks belong in the command's decide method.
 data AuthOptions
-  = -- | No authentication required
+  = -- | No authentication required (public endpoint)
     Everyone
-  | -- | Valid JWT required, any permissions
+  | -- | Valid JWT required
     Authenticated
-  | -- | JWT + must have ALL listed permissions
-    RequireAllPermissions (Array Text)
-  | -- | JWT + must have at least ONE permission
-    RequireAnyPermission (Array Text)
-  | -- | Custom validation logic
-    Custom (UserClaims -> Result AuthOptionsError ())
-  deriving (Generic)
-
-
--- | Error type for Custom validation
-data AuthOptionsError = AuthOptionsError Text
   deriving (Generic, Show, Eq)

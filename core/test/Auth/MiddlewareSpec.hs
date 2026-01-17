@@ -1,7 +1,5 @@
 module Auth.MiddlewareSpec where
 
-import Array qualified
-import Auth.Claims (UserClaims (..))
 import Auth.Error (AuthError (..))
 import Auth.Middleware (AuthContext (..), checkAuth, extractToken)
 import Auth.Options (AuthOptions (..))
@@ -76,52 +74,6 @@ spec = do
           result <- checkAuth (Just manager) config Authenticated request
           isTokenExpired `shouldSatisfy` result
 
-      describe "RequireAllPermissions" do
-        it "accepts when user has all required permissions" \_ -> do
-          keys <- JwtCore.testKeys
-          manager <- JwtCore.createTestManager keys
-          let perms = Array.fromLinkedList ["read:users", "write:users"]
-          token <- JwtCore.signTokenWithPermissions keys perms
-          let config = JwtCore.testConfig
-          let request = mockRequestWithAuth [fmt|Bearer #{token}|]
-          let required = Array.fromLinkedList ["read:users", "write:users"]
-          result <- checkAuth (Just manager) config (RequireAllPermissions required) request
-          isOkContext `shouldSatisfy` result
-
-        it "rejects when user is missing a permission" \_ -> do
-          keys <- JwtCore.testKeys
-          manager <- JwtCore.createTestManager keys
-          let perms = Array.fromLinkedList ["read:users"]
-          token <- JwtCore.signTokenWithPermissions keys perms
-          let config = JwtCore.testConfig
-          let request = mockRequestWithAuth [fmt|Bearer #{token}|]
-          let required = Array.fromLinkedList ["read:users", "write:users"]
-          result <- checkAuth (Just manager) config (RequireAllPermissions required) request
-          isInsufficientPermissions `shouldSatisfy` result
-
-      describe "RequireAnyPermission" do
-        it "accepts when user has at least one required permission" \_ -> do
-          keys <- JwtCore.testKeys
-          manager <- JwtCore.createTestManager keys
-          let perms = Array.fromLinkedList ["read:users"]
-          token <- JwtCore.signTokenWithPermissions keys perms
-          let config = JwtCore.testConfig
-          let request = mockRequestWithAuth [fmt|Bearer #{token}|]
-          let required = Array.fromLinkedList ["read:users", "admin"]
-          result <- checkAuth (Just manager) config (RequireAnyPermission required) request
-          isOkContext `shouldSatisfy` result
-
-        it "rejects when user has none of the required permissions" \_ -> do
-          keys <- JwtCore.testKeys
-          manager <- JwtCore.createTestManager keys
-          let perms = Array.fromLinkedList ["other:permission"]
-          token <- JwtCore.signTokenWithPermissions keys perms
-          let config = JwtCore.testConfig
-          let request = mockRequestWithAuth [fmt|Bearer #{token}|]
-          let required = Array.fromLinkedList ["read:users", "admin"]
-          result <- checkAuth (Just manager) config (RequireAnyPermission required) request
-          isInsufficientPermissions `shouldSatisfy` result
-
 
 -- | Create a mock WAI request with an Authorization header
 mockRequestWithAuth :: Text -> Wai.Request
@@ -149,18 +101,4 @@ isTokenExpired :: Result AuthError AuthContext -> Bool
 isTokenExpired result =
   case result of
     Err TokenExpired -> True
-    _ -> False
-
-
-isInsufficientPermissions :: Result AuthError AuthContext -> Bool
-isInsufficientPermissions result =
-  case result of
-    Err (InsufficientPermissions _) -> True
-    _ -> False
-
-
-isOkContext :: Result AuthError AuthContext -> Bool
-isOkContext result =
-  case result of
-    Ok _ -> True
     _ -> False

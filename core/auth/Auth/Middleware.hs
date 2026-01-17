@@ -11,7 +11,6 @@ module Auth.Middleware (
   AuthContext (..),
 ) where
 
-import Array qualified
 import Auth.Claims (UserClaims (..))
 import Auth.Config (AuthConfig (..))
 import Auth.Error (AuthError (..))
@@ -19,7 +18,6 @@ import Auth.Jwt qualified as Jwt
 import Auth.Jwks (JwksManager)
 import Auth.Jwks qualified as Jwks
 import Auth.Options (AuthOptions (..))
-import Auth.Options qualified as AuthOptions
 import Basics
 import Bytes qualified
 import Data.ByteString qualified as GhcBS
@@ -101,45 +99,11 @@ checkAuth ::
 checkAuth maybeManager config authOptions request = do
   case authOptions of
     Everyone ->
-      -- No authentication required
+      -- No authentication required (public endpoint)
       Task.yield (Ok emptyAuthContext)
-    Authenticated -> do
-      -- Require valid JWT, any permissions
+    Authenticated ->
+      -- Require valid JWT (permission checks done in command's decide method)
       validateAndBuildContext maybeManager config request
-    RequireAllPermissions required -> do
-      -- Require valid JWT + all listed permissions
-      result <- validateAndBuildContext maybeManager config request
-      case result of
-        Err err -> Task.yield (Err err)
-        Ok ctx -> do
-          -- all = not (any not)
-          let missingPermission = required |> Array.any (\p -> not (checkHasPermission p ctx))
-          case missingPermission of
-            True -> Task.yield (Err (InsufficientPermissions required))
-            False -> Task.yield (Ok ctx)
-    RequireAnyPermission required -> do
-      -- Require valid JWT + at least one listed permission
-      result <- validateAndBuildContext maybeManager config request
-      case result of
-        Err err -> Task.yield (Err err)
-        Ok ctx -> do
-          let hasAnyPermission = required |> Array.any (\p -> checkHasPermission p ctx)
-          case hasAnyPermission of
-            False -> Task.yield (Err (InsufficientPermissions required))
-            True -> Task.yield (Ok ctx)
-    Custom validator -> do
-      -- Custom validation logic
-      result <- validateAndBuildContext maybeManager config request
-      case result of
-        Err err -> Task.yield (Err err)
-        Ok ctx ->
-          case ctx.claims of
-            Nothing -> Task.yield (Err TokenMissing)
-            Just claims ->
-              case validator claims of
-                Err (AuthOptions.AuthOptionsError msg) ->
-                  Task.yield (Err (CustomValidationFailed msg))
-                Ok () -> Task.yield (Ok ctx)
 
 
 -- | Validate token and build auth context.
@@ -197,14 +161,6 @@ validateAndBuildContext maybeManager config request = do
                             )
 
 
--- | Check if context has a specific permission.
-checkHasPermission :: Text -> AuthContext -> Bool
-checkHasPermission permission ctx =
-  case ctx.claims of
-    Nothing -> False
-    Just claims -> claims.permissions |> Array.any (\p -> p == permission)
-
-
 -- | Convert AuthError to appropriate HTTP response.
 -- SECURITY: Uses generic messages to prevent information leakage.
 respondWithAuthError ::
@@ -252,9 +208,5 @@ authErrorToResponse err =
       (HTTP.status401, "Authentication failed")
     KeyNotFound _ ->
       (HTTP.status401, "Authentication failed")
-    CustomValidationFailed _ ->
-      (HTTP.status403, "Forbidden")
-    InsufficientPermissions _ ->
-      (HTTP.status403, "Forbidden")
     AuthInfraUnavailable _ ->
       (HTTP.status503, "Service temporarily unavailable")
