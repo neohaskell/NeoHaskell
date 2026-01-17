@@ -1,6 +1,8 @@
 module Auth.JwtSpec where
 
-import Auth.Claims (UserClaims)
+import Array qualified
+import Auth.Claims (UserClaims (..))
+import Auth.Config (AuthConfig (..))
 import Auth.Error (AuthError (..))
 import Core
 import Test
@@ -28,10 +30,15 @@ spec = do
           isAlgorithmNotAllowed `shouldSatisfy` result
 
         it "accepts ES256 tokens when in allowlist" \_ -> do
-          pending "Requires proper token generation"
+          -- Generate keys and sign a valid token
+          keys <- JwtCore.testKeys
+          token <- JwtCore.signValidToken keys
+          let config = JwtCore.testConfig
+          result <- JwtCore.validateTokenWithKeys config (Array.fromLinkedList [keys.es256Key]) token
+          isOk `shouldSatisfy` result
 
         it "accepts RS256 tokens when in allowlist" \_ -> do
-          pending "Requires proper token generation"
+          pending "RS256 signing not yet implemented"
 
       -- Token format validation
       describe "token format" do
@@ -50,49 +57,103 @@ spec = do
       -- Time validation
       describe "time validation" do
         it "rejects expired tokens" \_ -> do
-          pending "Requires proper token generation with exp claim"
+          keys <- JwtCore.testKeys
+          token <- JwtCore.signExpiredToken keys
+          let config = JwtCore.testConfig
+          result <- JwtCore.validateTokenWithKeys config (Array.fromLinkedList [keys.es256Key]) token
+          isTokenExpired `shouldSatisfy` result
 
         it "rejects not-yet-valid tokens (nbf in future)" \_ -> do
-          pending "Requires proper token generation with nbf claim"
+          keys <- JwtCore.testKeys
+          token <- JwtCore.signNotYetValidToken keys
+          let config = JwtCore.testConfig
+          result <- JwtCore.validateTokenWithKeys config (Array.fromLinkedList [keys.es256Key]) token
+          isTokenNotYetValid `shouldSatisfy` result
 
         it "accepts tokens within clock skew tolerance" \_ -> do
-          pending "Requires proper token generation with exp claim"
+          keys <- JwtCore.testKeys
+          token <- JwtCore.signRecentlyExpiredToken keys
+          let config = JwtCore.testConfig
+          result <- JwtCore.validateTokenWithKeys config (Array.fromLinkedList [keys.es256Key]) token
+          isOk `shouldSatisfy` result
 
       -- Issuer validation
       describe "issuer validation" do
         it "rejects tokens with wrong issuer" \_ -> do
-          pending "Requires proper token generation with iss claim"
+          keys <- JwtCore.testKeys
+          token <- JwtCore.signTokenWithIssuer keys "https://wrong.issuer.com"
+          let config = JwtCore.testConfig
+          result <- JwtCore.validateTokenWithKeys config (Array.fromLinkedList [keys.es256Key]) token
+          isIssuerMismatch `shouldSatisfy` result
 
         it "accepts tokens with correct issuer" \_ -> do
-          pending "Requires proper token generation with iss claim"
+          keys <- JwtCore.testKeys
+          token <- JwtCore.signTokenWithIssuer keys "https://auth.example.com"
+          let config = JwtCore.testConfig
+          result <- JwtCore.validateTokenWithKeys config (Array.fromLinkedList [keys.es256Key]) token
+          isOk `shouldSatisfy` result
 
       -- Audience validation
       describe "audience validation" do
         it "rejects tokens with wrong audience when configured" \_ -> do
-          pending "Requires proper token generation with aud claim"
+          keys <- JwtCore.testKeys
+          token <- JwtCore.signTokenWithAudience keys "wrong-audience"
+          let config = JwtCore.testConfigWithAudience "my-api"
+          result <- JwtCore.validateTokenWithKeys config (Array.fromLinkedList [keys.es256Key]) token
+          isAudienceMismatch `shouldSatisfy` result
 
         it "accepts tokens with correct audience" \_ -> do
-          pending "Requires proper token generation with aud claim"
+          keys <- JwtCore.testKeys
+          token <- JwtCore.signTokenWithAudience keys "my-api"
+          let config = JwtCore.testConfigWithAudience "my-api"
+          result <- JwtCore.validateTokenWithKeys config (Array.fromLinkedList [keys.es256Key]) token
+          isOk `shouldSatisfy` result
 
         it "accepts tokens when no audience configured" \_ -> do
-          pending "Requires proper token generation with aud claim"
+          keys <- JwtCore.testKeys
+          token <- JwtCore.signValidToken keys
+          let config = JwtCore.testConfig -- No audience configured
+          result <- JwtCore.validateTokenWithKeys config (Array.fromLinkedList [keys.es256Key]) token
+          isOk `shouldSatisfy` result
 
       -- Claims extraction
       describe "claims extraction" do
         it "extracts sub claim as user ID" \_ -> do
-          pending "Requires proper token generation"
+          keys <- JwtCore.testKeys
+          token <- JwtCore.signTokenWithSub keys "user-abc-123"
+          let config = JwtCore.testConfig
+          result <- JwtCore.validateTokenWithKeys config (Array.fromLinkedList [keys.es256Key]) token
+          case result of
+            Ok claims -> claims.sub `shouldBe` "user-abc-123"
+            Err _err -> fail "Expected Ok but got Err"
 
         it "extracts email claim when present" \_ -> do
-          pending "Requires proper token generation"
+          keys <- JwtCore.testKeys
+          token <- JwtCore.signTokenWithEmail keys "user@example.com"
+          let config = JwtCore.testConfig
+          result <- JwtCore.validateTokenWithKeys config (Array.fromLinkedList [keys.es256Key]) token
+          case result of
+            Ok claims -> claims.email `shouldBe` Just "user@example.com"
+            Err _err -> fail "Expected Ok but got Err"
 
         it "extracts permissions from configured claim" \_ -> do
-          pending "Requires proper token generation"
-
-        it "extracts permissions from 'roles' claim when configured" \_ -> do
-          pending "Requires proper token generation"
+          keys <- JwtCore.testKeys
+          let perms = Array.fromLinkedList ["read:users", "write:users"]
+          token <- JwtCore.signTokenWithPermissions keys perms
+          let config = JwtCore.testConfig
+          result <- JwtCore.validateTokenWithKeys config (Array.fromLinkedList [keys.es256Key]) token
+          case result of
+            Ok claims -> claims.permissions `shouldBe` perms
+            Err _err -> fail "Expected Ok but got Err"
 
         it "extracts tenantId when configured" \_ -> do
-          pending "Requires proper token generation"
+          keys <- JwtCore.testKeys
+          token <- JwtCore.signTokenWithTenantId keys "tenant-xyz"
+          let config = JwtCore.testConfig {tenantIdClaim = Just "tenant_id"}
+          result <- JwtCore.validateTokenWithKeys config (Array.fromLinkedList [keys.es256Key]) token
+          case result of
+            Ok claims -> claims.tenantId `shouldBe` Just "tenant-xyz"
+            Err _err -> fail "Expected Ok but got Err"
 
 
 -- Helper predicates for test assertions
@@ -135,4 +196,11 @@ isAudienceMismatch :: Result AuthError UserClaims -> Bool
 isAudienceMismatch result =
   case result of
     Err (AudienceMismatch _ _) -> True
+    _ -> False
+
+
+isOk :: Result AuthError UserClaims -> Bool
+isOk result =
+  case result of
+    Ok _ -> True
     _ -> False
