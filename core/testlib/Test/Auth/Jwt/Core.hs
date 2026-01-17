@@ -363,9 +363,15 @@ createTestManager keys = do
   -- We use a placeholder kid since test tokens don't have kid in header
   let keyMap = Map.fromArray [("test-key-es256", keys.es256Key)]
 
+  -- Build the keys array from the map
+  let keysArray = keyMap |> Map.values
+  let jwkSet = Jose.JWKSet (keysArray |> Array.toLinkedList)
+
   let snapshot =
         KeySnapshot
           { keysByKid = keyMap,
+            cachedJwkSet = jwkSet,
+            allKeysArray = keysArray,
             fetchedAt = now,
             isStale = False
           }

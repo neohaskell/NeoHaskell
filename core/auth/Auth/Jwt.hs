@@ -6,6 +6,9 @@
 module Auth.Jwt (
   -- * Token validation
   validateToken,
+  validateTokenWithJwkSet,
+  -- * Token parsing
+  extractKidFromToken,
   -- * Internal (for testing)
   parseTokenHeader,
   extractAlgorithmFromToken,
@@ -84,6 +87,59 @@ validateToken config keys token = do
                       Task.yield (Err (TokenMalformed "Invalid JWT format"))
                     Prelude.Right jwt ->
                       verifyAndExtract config keys jwt
+
+
+-- | Validate a JWT token using a pre-built JWKSet.
+-- This is the optimized hot path - avoids JWKSet construction per request.
+validateTokenWithJwkSet ::
+  forall err.
+  AuthConfig ->
+  Jose.JWKSet ->
+  Text ->
+  Task err (Result AuthError UserClaims)
+validateTokenWithJwkSet config jwkSet token = do
+  -- Step 1: Check for empty token
+  case Text.isEmpty token of
+    True -> Task.yield (Err (TokenMalformed "Empty token"))
+    False -> do
+      -- Step 2: Pre-parse to check algorithm (RFC 8725 fail-fast)
+      let algResult = extractAlgorithmFromToken token
+      case algResult of
+        Err err -> Task.yield (Err err)
+        Ok alg -> do
+          case isAlgorithmAllowed config.allowedAlgorithms alg of
+            False -> Task.yield (Err (AlgorithmNotAllowed alg))
+            True -> do
+              -- Step 3: Check crit headers from raw token
+              let critResult = checkCritFromToken token config.supportedCritHeaders
+              case critResult of
+                Err err -> Task.yield (Err err)
+                Ok () -> do
+                  -- Step 4: Decode and verify with jose library
+                  let tokenBytes = token |> GhcTextEncoding.encodeUtf8 |> GhcLBS.fromStrict
+                  decodeResult <- Task.fromIO (Jose.runJOSE @Jose.Error (Jose.decodeCompact tokenBytes))
+                  case decodeResult of
+                    Prelude.Left _err ->
+                      Task.yield (Err (TokenMalformed "Invalid JWT format"))
+                    Prelude.Right jwt ->
+                      verifyAndExtractWithJwkSet config jwkSet jwt
+
+
+-- | Extract kid (key ID) from JWT token header.
+-- Returns Nothing if kid is not present in the header.
+extractKidFromToken :: Text -> Maybe Text
+extractKidFromToken token = do
+  let parts = GhcText.splitOn "." token
+  case parts of
+    [headerB64, _, _] -> do
+      let headerBytes = headerB64 |> GhcTextEncoding.encodeUtf8 |> GhcBase64.decodeLenient
+      case Aeson.decodeStrict headerBytes of
+        Nothing -> Nothing
+        Just (obj :: GhcMap.Map GhcText.Text Aeson.Value) ->
+          case GhcMap.lookup ("kid" :: GhcText.Text) obj of
+            Just (Aeson.String kid) -> Just kid
+            _ -> Nothing
+    _ -> Nothing
 
 
 -- | Extract algorithm from JWT token without full parsing
@@ -171,6 +227,46 @@ verifyAndExtract config keys jwt = Task.fromIO do
             Lens..~ (\iss -> do
               -- StringOrURI can be either a plain string or a URI
               -- We need to check both cases
+              let stringMatch = case iss Lens.^? JWT.string of
+                    Just issText -> issText == config.issuer
+                    Nothing -> False
+              let uriMatch = case iss Lens.^? JWT.uri of
+                    Just issUri -> show issUri == GhcText.unpack config.issuer
+                    Nothing -> False
+              stringMatch || uriMatch)
+          Lens.& JWT.allowedSkew
+            Lens..~ fromIntegral config.clockSkewSeconds
+
+  -- Verify and validate
+  result <- JWT.runJOSE @JWT.JWTError do
+    JWT.verifyJWT validationSettings jwkSet jwt
+
+  case result of
+    Prelude.Left err -> pure (Err (mapJoseError err))
+    Prelude.Right claims -> pure (extractUserClaims config claims)
+
+
+-- | Verify the JWT signature and extract claims using a pre-built JWKSet.
+-- This is the optimized version that avoids JWKSet construction.
+verifyAndExtractWithJwkSet ::
+  forall err.
+  AuthConfig ->
+  Jose.JWKSet ->
+  JWT.SignedJWT ->
+  Task err (Result AuthError UserClaims)
+verifyAndExtractWithJwkSet config jwkSet jwt = Task.fromIO do
+  -- Build validation settings
+  let audCheck = case config.audience of
+        Nothing -> Prelude.const True
+        Just expectedAud -> \aud -> do
+          case aud Lens.^? JWT.string of
+            Just audText -> audText == expectedAud
+            Nothing -> False
+
+  let validationSettings =
+        JWT.defaultJWTValidationSettings audCheck
+          Lens.& JWT.issuerPredicate
+            Lens..~ (\iss -> do
               let stringMatch = case iss Lens.^? JWT.string of
                     Just issText -> issText == config.issuer
                     Nothing -> False

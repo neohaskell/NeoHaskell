@@ -153,25 +153,35 @@ validateAndBuildContext maybeManager config request = do
       -- Auth not configured - treat as infrastructure error
       Task.yield (Err (AuthInfraUnavailable "Authentication not configured"))
     Just manager -> do
-      -- Extract token from request
-      case extractToken request of
-        Nothing ->
-          Task.yield (Err TokenMissing)
-        Just token -> do
-          -- Get keys from manager
-          keys <- Jwks.getAllKeys manager
-          -- Validate token
-          validationResult <- Jwt.validateToken config keys token
-          case validationResult of
-            Err err -> Task.yield (Err err)
-            Ok claims ->
-              Task.yield
-                ( Ok
-                    AuthContext
-                      { claims = Just claims,
-                        isAuthenticated = True
-                      }
-                )
+      -- Check key staleness (503 if keys too old)
+      isStale <- Jwks.checkStaleness manager
+      case isStale of
+        True ->
+          Task.yield (Err (AuthInfraUnavailable "Authentication keys are stale"))
+        False -> do
+          -- Extract token from request
+          case extractToken request of
+            Nothing ->
+              Task.yield (Err TokenMissing)
+            Just token -> do
+              -- Extract kid from token for optimized key lookup
+              let maybeKid = Jwt.extractKidFromToken token
+              -- Get JWKSet (optimized: single key if kid found, all keys otherwise)
+              jwkSet <- case maybeKid of
+                Just kid -> Jwks.getJwkSetForKid kid manager
+                Nothing -> Jwks.getJwkSet manager
+              -- Validate token with JWKSet
+              validationResult <- Jwt.validateTokenWithJwkSet config jwkSet token
+              case validationResult of
+                Err err -> Task.yield (Err err)
+                Ok claims ->
+                  Task.yield
+                    ( Ok
+                        AuthContext
+                          { claims = Just claims,
+                            isAuthenticated = True
+                          }
+                    )
 
 
 -- | Check if context has a specific permission.

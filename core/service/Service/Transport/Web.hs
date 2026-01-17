@@ -227,9 +227,11 @@ instance Transport WebTransport where
                 -- No auth configured, allow everyone
                 processCommand
               Just auth -> do
+                -- SECURITY: Default to Authenticated when auth is enabled
+                -- Endpoints must explicitly opt-out with Everyone if they should be public
                 let authOptions =
                       Map.get commandName auth.commandAuthOptions
-                        |> Maybe.withDefault Everyone
+                        |> Maybe.withDefault Authenticated
 
                 -- Check auth
                 authResult <- Middleware.checkAuth (Just auth.jwksManager) auth.authConfig authOptions request
@@ -264,9 +266,11 @@ instance Transport WebTransport where
                 -- No auth configured, allow everyone
                 processQuery
               Just auth -> do
+                -- SECURITY: Default to Authenticated when auth is enabled
+                -- Endpoints must explicitly opt-out with Everyone if they should be public
                 let authOptions =
                       Map.get queryName auth.queryAuthOptions
-                        |> Maybe.withDefault Everyone
+                        |> Maybe.withDefault Authenticated
 
                 -- Check auth
                 authResult <- Middleware.checkAuth (Just auth.jwksManager) auth.authConfig authOptions request

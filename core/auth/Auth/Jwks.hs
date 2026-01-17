@@ -14,6 +14,10 @@ module Auth.Jwks (
   -- * Key lookup (hot path)
   lookupKey,
   getAllKeys,
+  getJwkSet,
+  getJwkSetForKid,
+  -- * Staleness check
+  checkStaleness,
   -- * Refresh control
   requestRefresh,
   -- * Types
@@ -49,6 +53,10 @@ import ToText (toText)
 data KeySnapshot = KeySnapshot
   { keysByKid :: Map Text Jose.JWK,
     -- ^ Current keys indexed by kid
+    cachedJwkSet :: Jose.JWKSet,
+    -- ^ Pre-built JWKSet for signature verification (avoid per-request allocation)
+    allKeysArray :: Array Jose.JWK,
+    -- ^ Pre-built array of all keys (for tokens without kid)
     fetchedAt :: GhcInt.Int64,
     -- ^ Unix timestamp when keys were fetched
     isStale :: Bool
@@ -62,6 +70,8 @@ emptySnapshot :: KeySnapshot
 emptySnapshot =
   KeySnapshot
     { keysByKid = Map.empty,
+      cachedJwkSet = Jose.JWKSet [],
+      allKeysArray = Array.empty,
       fetchedAt = 0,
       isStale = True
     }
@@ -138,7 +148,38 @@ lookupKey kid manager = do
 getAllKeys :: JwksManager -> Task err (Array Jose.JWK)
 getAllKeys manager = do
   snapshot <- AtomicVar.peek manager.keySnapshot
-  Task.yield (Map.values snapshot.keysByKid)
+  Task.yield snapshot.allKeysArray
+
+
+-- | Get the cached JWKSet for signature verification.
+-- This is the preferred hot path - avoids per-request JWKSet construction.
+getJwkSet :: JwksManager -> Task err Jose.JWKSet
+getJwkSet manager = do
+  snapshot <- AtomicVar.peek manager.keySnapshot
+  Task.yield snapshot.cachedJwkSet
+
+
+-- | Get a JWKSet containing only the key with the given kid.
+-- This is the optimal path when the token contains a kid claim.
+-- Returns the full JWKSet if kid is not found (fallback to try all keys).
+getJwkSetForKid :: Text -> JwksManager -> Task err Jose.JWKSet
+getJwkSetForKid kid manager = do
+  snapshot <- AtomicVar.peek manager.keySnapshot
+  case Map.get kid snapshot.keysByKid of
+    Just key -> Task.yield (Jose.JWKSet [key])
+    Nothing -> Task.yield snapshot.cachedJwkSet
+
+
+-- | Check if keys are stale beyond acceptable threshold.
+-- Returns True if keys should not be used (triggers 503 response).
+checkStaleness :: JwksManager -> Task err Bool
+checkStaleness manager = do
+  now <- getCurrentSeconds
+  snapshot <- AtomicVar.peek manager.keySnapshot
+  let age = now - snapshot.fetchedAt
+  let maxStale = manager.config.maxStaleSeconds
+  -- Keys are stale if: explicitly marked stale AND beyond max stale time
+  Task.yield (snapshot.isStale && age > maxStale)
 
 
 -- | Request an immediate refresh (e.g., when a kid is not found).
@@ -195,38 +236,42 @@ refreshKeys manager = do
 
 
 -- | Build a key snapshot from an array of JWKs.
+-- Pre-builds all derived structures for lock-free hot path access.
 buildSnapshot :: Array Jose.JWK -> GhcInt.Int64 -> KeySnapshot
 buildSnapshot keys now = do
-  let keysByKid = keys |> Array.map extractKidAndKey |> Array.dropIf isNothing |> Array.map unwrapJust |> Map.fromArray
+  -- Build kid -> key map using safe filtering (no partial functions)
+  let keyPairs = keys |> Array.map extractKidAndKey |> collectJusts
+  let keysByKid = Map.fromArray keyPairs
+  -- Pre-build JWKSet for signature verification (avoid per-request allocation)
+  let cachedJwkSet = Jose.JWKSet (Array.toLinkedList keys)
   KeySnapshot
     { keysByKid = keysByKid,
+      cachedJwkSet = cachedJwkSet,
+      allKeysArray = keys,
       fetchedAt = now,
       isStale = False
     }
 
 
+-- | Collect Just values from an array of Maybes (safe, no partial functions).
+collectJusts :: forall value. Array (Maybe value) -> Array value
+collectJusts maybes =
+  Array.reduce
+    ( \maybeVal acc ->
+        case maybeVal of
+          Maybe.Nothing -> acc
+          Maybe.Just val -> Array.pushBack val acc
+    )
+    Array.empty
+    maybes
+
+
 -- | Extract (kid, JWK) tuple from a JWK.
 extractKidAndKey :: Jose.JWK -> Maybe (Text, Jose.JWK)
-extractKidAndKey jwk = do
+extractKidAndKey jwk =
   case jwk Lens.^. Jose.jwkKid of
     Nothing -> Nothing
     Just kid -> Just (kid, jwk)
-
-
--- | Check if Maybe is Nothing (for filtering).
-isNothing :: Maybe value -> Bool
-isNothing val =
-  case val of
-    Nothing -> True
-    Just _ -> False
-
-
--- | Unwrap Just (for mapping after filtering).
-unwrapJust :: Maybe value -> value
-unwrapJust val =
-  case val of
-    Just v -> v
-    Nothing -> panic "unwrapJust called on Nothing"
 
 
 -- | Get current Unix timestamp in seconds.
