@@ -8,7 +8,7 @@
 -- Performance target: 50k req/s with lock-free key lookups.
 module Auth.Jwks (
   -- * Manager
-  JwksManager,
+  JwksManager (..),
   startManager,
   stopManager,
   -- * Key lookup (hot path)

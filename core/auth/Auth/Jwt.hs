@@ -169,9 +169,15 @@ verifyAndExtract config keys jwt = Task.fromIO do
         JWT.defaultJWTValidationSettings audCheck
           Lens.& JWT.issuerPredicate
             Lens..~ (\iss -> do
-              case iss Lens.^? JWT.string of
-                Just issText -> issText == config.issuer
-                Nothing -> False)
+              -- StringOrURI can be either a plain string or a URI
+              -- We need to check both cases
+              let stringMatch = case iss Lens.^? JWT.string of
+                    Just issText -> issText == config.issuer
+                    Nothing -> False
+              let uriMatch = case iss Lens.^? JWT.uri of
+                    Just issUri -> show issUri == GhcText.unpack config.issuer
+                    Nothing -> False
+              stringMatch || uriMatch)
           Lens.& JWT.allowedSkew
             Lens..~ fromIntegral config.clockSkewSeconds
 

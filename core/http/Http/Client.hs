@@ -8,13 +8,19 @@ module Http.Client (
   addHeader,
 ) where
 
-import Core
+import Basics
+import Console (log)
+import Default (Default (..))
 import Json qualified
+import Map (Map)
 import Map qualified
+import Maybe (Maybe (..))
 import Maybe qualified
 import Network.HTTP.Simple qualified as Http
 import Network.HTTP.Simple qualified as HttpSimple
+import Task (Task)
 import Task qualified
+import Text (Text)
 import Text qualified
 
 

@@ -27,14 +27,18 @@ module Test.Auth.Jwt.Core (
   -- * Validation (re-export for tests)
   validateToken,
   validateTokenWithKeys,
+  -- * Test manager (for middleware tests)
+  createTestManager,
 ) where
 
 import Array (Array)
 import Array qualified
+import AtomicVar qualified
 import Auth.Claims (UserClaims)
 import Auth.Config (AuthConfig (..), defaultAllowedAlgorithms)
 import Auth.Error (AuthError)
 import Auth.Jwt qualified
+import Auth.Jwks (JwksManager (..), KeySnapshot (..))
 import Basics
 import Control.Lens ((&), (?~))
 import Control.Lens qualified as Lens
@@ -43,8 +47,11 @@ import Crypto.JOSE.Header qualified as JoseHeader
 import Crypto.JWT qualified as JWT
 import Data.Aeson qualified as Aeson
 import Data.ByteString.Lazy qualified as GhcLBS
+import Data.Int qualified as GhcInt
 import Data.Text.Encoding qualified as GhcTextEncoding
 import Data.Time.Clock qualified as GhcTime
+import Data.Time.Clock.POSIX qualified as GhcPosix
+import Map qualified
 import Maybe (Maybe (..))
 import Prelude qualified
 import Result (Result)
@@ -62,13 +69,14 @@ data TestKeys = TestKeys
 
 
 -- | Generate test keys
+-- NOTE: RSA key gen is slow. Use 1024-bit for tests (NOT for production).
 testKeys :: Task Text TestKeys
 testKeys = Task.fromIO do
-  -- Generate EC key for ES256
+  -- Generate EC key for ES256 (fast)
   es256 <- Jose.genJWK (Jose.ECGenParam Jose.P_256)
-  -- Generate RSA key for RS256
-  rs256 <- Jose.genJWK (Jose.RSAGenParam 2048)
-  -- Generate symmetric key for HS256
+  -- Generate RSA key for RS256 (1024-bit for speed - tests only!)
+  rs256 <- Jose.genJWK (Jose.RSAGenParam 1024)
+  -- Generate symmetric key for HS256 (fast)
   hs256 <- Jose.genJWK (Jose.OctGenParam 256)
   Prelude.pure
     TestKeys
@@ -341,3 +349,44 @@ validateTokenWithKeys ::
   Task err (Result AuthError UserClaims)
 validateTokenWithKeys config keys token = do
   Auth.Jwt.validateToken config keys token
+
+
+-- | Create a test JwksManager with pre-populated keys.
+-- This manager has no background refresh - it's purely for testing.
+-- Keys are extracted from TestKeys and stored directly in the snapshot.
+createTestManager :: TestKeys -> Task Text JwksManager
+createTestManager keys = do
+  -- Get current time for snapshot timestamp
+  now <- getCurrentSeconds
+
+  -- Build key map with ES256 key (used for signing test tokens)
+  -- We use a placeholder kid since test tokens don't have kid in header
+  let keyMap = Map.fromArray [("test-key-es256", keys.es256Key)]
+
+  let snapshot =
+        KeySnapshot
+          { keysByKid = keyMap,
+            fetchedAt = now,
+            isStale = False
+          }
+
+  -- Create AtomicVars for the manager
+  snapshotVar <- AtomicVar.containing snapshot
+  refreshTaskVar <- AtomicVar.containing Nothing
+  runningVar <- AtomicVar.containing False -- Not running background refresh
+
+  Task.yield
+    JwksManager
+      { config = testConfig,
+        keySnapshot = snapshotVar,
+        refreshTask = refreshTaskVar,
+        isRunning = runningVar
+      }
+
+
+-- | Get current Unix timestamp in seconds.
+getCurrentSeconds :: Task err GhcInt.Int64
+getCurrentSeconds = do
+  posixTime <- GhcPosix.getPOSIXTime |> Task.fromIO
+  let seconds :: GhcInt.Int64 = Prelude.floor (Prelude.realToFrac posixTime :: Prelude.Double)
+  Task.yield seconds
