@@ -38,7 +38,11 @@ spec = do
           result |> shouldSatisfy isOk
 
         it "accepts RS256 tokens when in allowlist" \_ -> do
-          pending "RS256 signing not yet implemented"
+          keys <- JwtCore.testKeys
+          token <- JwtCore.signValidTokenRS256 keys
+          let config = JwtCore.testConfig
+          result <- JwtCore.validateTokenWithKeys config (Array.fromLinkedList [keys.rs256Key]) token
+          result |> shouldSatisfy isOk
 
       -- Token format validation
       describe "token format" do

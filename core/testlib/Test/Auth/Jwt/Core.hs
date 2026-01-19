@@ -10,6 +10,7 @@ module Test.Auth.Jwt.Core (
   TestKeys (..),
   -- * Token generation (IO-based for proper signing)
   signValidToken,
+  signValidTokenRS256,
   signExpiredToken,
   signNotYetValidToken,
   signRecentlyExpiredToken,
@@ -145,6 +146,20 @@ signValidToken keys = do
           & JWT.claimIat ?~ JWT.NumericDate now
           & JWT.claimExp ?~ JWT.NumericDate expTime
   signWithES256 keys.es256Key claims
+
+
+-- | Sign a valid token with RS256
+signValidTokenRS256 :: TestKeys -> Task Text Text
+signValidTokenRS256 keys = do
+  now <- Task.fromIO GhcTime.getCurrentTime
+  let expTime = GhcTime.addUTCTime 3600 now -- 1 hour from now
+  let claims =
+        JWT.emptyClaimsSet
+          & JWT.claimSub ?~ "test-user-123"
+          & JWT.claimIss ?~ "https://auth.example.com"
+          & JWT.claimIat ?~ JWT.NumericDate now
+          & JWT.claimExp ?~ JWT.NumericDate expTime
+  signWithRS256 keys.rs256Key claims
 
 
 -- | Sign an expired token
@@ -322,6 +337,19 @@ textToStringOrUri txt = JWT.string Lens.# txt
 signWithES256 :: Jose.JWK -> JWT.ClaimsSet -> Task Text Text
 signWithES256 key claims = do
   let header = Jose.newJWSHeader (JoseHeader.RequiredProtection, Jose.ES256)
+  result <- Task.fromIO (JWT.runJOSE @JWT.JWTError (JWT.signClaims key header claims))
+  case result of
+    Prelude.Left err -> Task.throw [fmt|Failed to sign token: #{show err}|]
+    Prelude.Right jwt -> do
+      let compactBytes = Jose.encodeCompact jwt
+      Task.yield (compactBytes |> GhcLBS.toStrict |> GhcTextEncoding.decodeUtf8)
+
+
+-- | Internal: Sign claims with RS256
+-- Returns a Task error instead of crashing if signing fails.
+signWithRS256 :: Jose.JWK -> JWT.ClaimsSet -> Task Text Text
+signWithRS256 key claims = do
+  let header = Jose.newJWSHeader (JoseHeader.RequiredProtection, Jose.RS256)
   result <- Task.fromIO (JWT.runJOSE @JWT.JWTError (JWT.signClaims key header claims))
   case result of
     Prelude.Left err -> Task.throw [fmt|Failed to sign token: #{show err}|]
