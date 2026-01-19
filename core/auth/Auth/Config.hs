@@ -16,7 +16,10 @@ module Auth.Config (
 import Array (Array)
 import Array qualified
 import Basics
+import Data.Aeson qualified as GhcAeson
+import Data.Aeson.Types (Parser)
 import Data.Int qualified as GhcInt
+import Json (Value)
 import Json qualified
 import Maybe (Maybe (..))
 import Set (Set)
@@ -58,10 +61,55 @@ data AuthConfig = AuthConfig
   deriving (Generic, Show)
 
 
-instance Json.FromJSON AuthConfig
+-- | Custom FromJSON that parses raw fields and reconstructs via mkAuthConfig.
+-- This ensures allowedAlgorithmsSet is always recomputed, never trusted from external input.
+instance Json.FromJSON AuthConfig where
+  parseJSON :: Value -> Parser AuthConfig
+  parseJSON = GhcAeson.withObject "AuthConfig" (\obj -> do
+    issuer <- obj GhcAeson..: "issuer"
+    jwksUri <- obj GhcAeson..: "jwksUri"
+    audience <- obj GhcAeson..:? "audience"
+    permissionsClaim <- obj GhcAeson..: "permissionsClaim"
+    tenantIdClaim <- obj GhcAeson..:? "tenantIdClaim"
+    clockSkewSeconds <- obj GhcAeson..: "clockSkewSeconds"
+    refreshIntervalSeconds <- obj GhcAeson..: "refreshIntervalSeconds"
+    missingKidCooldownSeconds <- obj GhcAeson..: "missingKidCooldownSeconds"
+    maxStaleSeconds <- obj GhcAeson..: "maxStaleSeconds"
+    allowedAlgorithms <- obj GhcAeson..: "allowedAlgorithms"
+    supportedCritHeaders <- obj GhcAeson..: "supportedCritHeaders"
+    -- Reconstruct via smart constructor to recompute allowedAlgorithmsSet
+    pure (mkAuthConfig
+      issuer
+      jwksUri
+      audience
+      permissionsClaim
+      tenantIdClaim
+      clockSkewSeconds
+      refreshIntervalSeconds
+      missingKidCooldownSeconds
+      maxStaleSeconds
+      allowedAlgorithms
+      supportedCritHeaders))
 
 
-instance Json.ToJSON AuthConfig
+-- | Custom ToJSON that serializes only the raw fields, omitting allowedAlgorithmsSet.
+-- The precomputed Set is an internal optimization and should never be serialized.
+instance Json.ToJSON AuthConfig where
+  toJSON :: AuthConfig -> Value
+  toJSON config =
+    GhcAeson.object
+      [ "issuer" GhcAeson..= config.issuer,
+        "jwksUri" GhcAeson..= config.jwksUri,
+        "audience" GhcAeson..= config.audience,
+        "permissionsClaim" GhcAeson..= config.permissionsClaim,
+        "tenantIdClaim" GhcAeson..= config.tenantIdClaim,
+        "clockSkewSeconds" GhcAeson..= config.clockSkewSeconds,
+        "refreshIntervalSeconds" GhcAeson..= config.refreshIntervalSeconds,
+        "missingKidCooldownSeconds" GhcAeson..= config.missingKidCooldownSeconds,
+        "maxStaleSeconds" GhcAeson..= config.maxStaleSeconds,
+        "allowedAlgorithms" GhcAeson..= config.allowedAlgorithms,
+        "supportedCritHeaders" GhcAeson..= config.supportedCritHeaders
+      ]
 
 
 -- | Smart constructor that precomputes allowedAlgorithmsSet from allowedAlgorithms.
