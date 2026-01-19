@@ -555,27 +555,33 @@ runWith eventStore app = do
               }
         )
 
+  -- Define cleanup actions that must always run
+  let cleanupJwksManager = case maybeAuthEnabled of
+        Just (Web.AuthEnabled manager _) -> do
+          Console.print "[Auth] Stopping JWKS manager..."
+            |> Task.ignoreError
+          Jwks.stopManager manager
+            |> Task.ignoreError
+        Nothing -> pass
+
+  let cleanupDispatcher = case maybeDispatcher of
+        Just dispatcher -> do
+          Console.print "[Integration] Shutting down outbound dispatcher..."
+            |> Task.ignoreError
+          Dispatcher.shutdown dispatcher
+        Nothing -> pass
+
+  let cleanupAll = do
+        cleanupJwksManager
+        cleanupDispatcher
+
   -- 13. Run each transport once with combined endpoints from all services
   -- When transports complete (or fail), cancel inbound workers for clean shutdown
-  result <- Transports.runTransports app.transports combinedEndpointsByTransport combinedQueryEndpoints maybeAuthEnabled
-    |> Task.asResult
-
-  -- 14. Shutdown JWKS manager if started
-  case maybeAuthEnabled of
-    Just (Web.AuthEnabled manager _) -> do
-      Console.print "[Auth] Stopping JWKS manager..."
-        |> Task.ignoreError
-      Jwks.stopManager manager
-        |> Task.ignoreError
-    Nothing -> pass
-
-  -- 15. Shutdown outbound dispatcher (cleanup workers)
-  case maybeDispatcher of
-    Just dispatcher -> do
-      Console.print "[Integration] Shutting down outbound dispatcher..."
-        |> Task.ignoreError
-      Dispatcher.shutdown dispatcher
-    Nothing -> pass
+  -- Use Task.finally to ensure cleanup always runs even if runTransports fails
+  result <-
+    Transports.runTransports app.transports combinedEndpointsByTransport combinedQueryEndpoints maybeAuthEnabled
+      |> Task.finally cleanupAll
+      |> Task.asResult
 
   -- 16. Cancel all inbound workers on shutdown
   Console.print "[Integration] Shutting down inbound workers..."

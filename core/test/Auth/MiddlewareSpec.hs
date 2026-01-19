@@ -49,7 +49,7 @@ spec = do
           manager <- JwtCore.createTestManager keys
           let config = JwtCore.testConfig
           result <- checkAuth (Just manager) config Authenticated mockRequestWithoutAuth
-          isTokenMissing `shouldSatisfy` result
+          result |> shouldSatisfy isTokenMissing
 
         it "accepts requests with valid token" \_ -> do
           keys <- JwtCore.testKeys
@@ -73,7 +73,7 @@ spec = do
           let config = JwtCore.testConfig
           let request = mockRequestWithAuth [fmt|Bearer #{token}|]
           result <- checkAuth (Just manager) config Authenticated request
-          isTokenExpired `shouldSatisfy` result
+          result |> shouldSatisfy isTokenExpired
 
 
 -- | Create a mock WAI request with an Authorization header

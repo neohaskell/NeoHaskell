@@ -117,10 +117,11 @@ modifyWithResult ::
   Task _ result
 modifyWithResult atomicVar f =
   case atomicVar of
-    AtomicVar tvar ->
-      GhcSTM.atomically do
-        oldValue <- GhcSTM.readTVar tvar
-        let (newValue, result) = f oldValue
-        GhcSTM.writeTVar tvar newValue
-        Prelude.pure result
+    AtomicVar tvar -> do
+      let stmAction = do
+            oldValue <- GhcSTM.readTVar tvar
+            let (newValue, result) = f oldValue
+            GhcSTM.writeTVar tvar newValue
+            Prelude.pure result
+      GhcSTM.atomically stmAction
         |> Task.fromIO

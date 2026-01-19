@@ -293,6 +293,11 @@ ignoreError task = do
 -- The cleanup action runs even if the main task throws an IO exception.
 -- This is essential for releasing locks, closing resources, etc.
 --
+-- NOTE: If the cleanup action fails, its error is silently discarded and the
+-- original task's result (success or failure) is preserved. This matches
+-- standard finally semantics in most languages. If you need to handle cleanup
+-- failures, use 'Task.asResult' on the cleanup action.
+--
 -- Example:
 -- @
 -- Task.finally cleanup mainTask

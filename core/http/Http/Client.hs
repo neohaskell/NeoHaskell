@@ -93,13 +93,16 @@ get options = Task.fromIO do
             HttpSimple.addRequestHeader (Text.convert key) (Text.convert value) acc
 
   -- Apply timeout if specified (convert seconds to microseconds)
+  -- Only apply positive timeouts to prevent invalid values
   let req = case options.timeoutSeconds of
         Nothing -> withHeaders
-        Just seconds -> do
-          let microseconds = seconds * 1000000
-          HttpSimple.setRequestResponseTimeout
-            (HttpClient.responseTimeoutMicro microseconds)
-            withHeaders
+        Just seconds
+          | seconds > 0 -> do
+              let microseconds = seconds * 1000000
+              HttpSimple.setRequestResponseTimeout
+                (HttpClient.responseTimeoutMicro microseconds)
+                withHeaders
+          | otherwise -> withHeaders -- Ignore non-positive timeouts
 
   log "Performing request"
   response <- HttpSimple.httpJSON req
@@ -130,13 +133,16 @@ post options body = Task.fromIO do
               |> HttpSimple.setRequestBodyJSON body
 
   -- Apply timeout if specified (convert seconds to microseconds)
+  -- Only apply positive timeouts to prevent invalid values
   let req = case options.timeoutSeconds of
         Nothing -> withHeaders
-        Just seconds -> do
-          let microseconds = seconds * 1000000
-          HttpSimple.setRequestResponseTimeout
-            (HttpClient.responseTimeoutMicro microseconds)
-            withHeaders
+        Just seconds
+          | seconds > 0 -> do
+              let microseconds = seconds * 1000000
+              HttpSimple.setRequestResponseTimeout
+                (HttpClient.responseTimeoutMicro microseconds)
+                withHeaders
+          | otherwise -> withHeaders -- Ignore non-positive timeouts
 
   log "Performing request"
   response <- HttpSimple.httpJSON req

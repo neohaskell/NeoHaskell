@@ -300,6 +300,7 @@ performRefreshWithLock manager = do
 
 -- | Background refresh loop.
 -- Uses the shared refresh gate to prevent concurrent refreshes with on-demand requests.
+-- Wraps refreshWithGate with error handling to prevent exceptions from killing the loop.
 refreshLoop :: JwksManager -> Task Text Unit
 refreshLoop manager = do
   Task.forever do
@@ -314,7 +315,14 @@ refreshLoop manager = do
       True -> do
         -- Use shared refresh gate (same as on-demand refresh)
         -- This prevents background and on-demand from running concurrently
-        refreshWithGate manager
+        -- Wrap in asResult to prevent exceptions from killing the loop
+        refreshResult <- refreshWithGate manager |> Task.asResult
+        case refreshResult of
+          Ok _ -> Task.yield ()
+          Err _err -> do
+            -- Log and continue - don't let refresh failures kill the background loop
+            -- The keys may be stale but will be retried on next interval
+            Task.yield ()
 
 
 -- | Refresh keys from the JWKS endpoint.

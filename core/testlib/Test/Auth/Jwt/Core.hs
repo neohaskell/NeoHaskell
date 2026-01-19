@@ -25,7 +25,7 @@ module Test.Auth.Jwt.Core (
   makeHS256Token,
   makeMalformedToken,
   -- * Validation (re-export for tests)
-  validateToken,
+  validateTokenFormat,
   validateTokenWithKeys,
   -- * Test manager (for middleware tests)
   createTestManager,
@@ -318,25 +318,27 @@ textToStringOrUri txt = JWT.string Lens.# txt
 
 
 -- | Internal: Sign claims with ES256
+-- Returns a Task error instead of crashing if signing fails.
 signWithES256 :: Jose.JWK -> JWT.ClaimsSet -> Task Text Text
-signWithES256 key claims = Task.fromIO do
+signWithES256 key claims = do
   let header = Jose.newJWSHeader (JoseHeader.RequiredProtection, Jose.ES256)
-  result <- JWT.runJOSE @JWT.JWTError (JWT.signClaims key header claims)
+  result <- Task.fromIO (JWT.runJOSE @JWT.JWTError (JWT.signClaims key header claims))
   case result of
-    Prelude.Left _err -> Prelude.error "Failed to sign token"
+    Prelude.Left err -> Task.throw [fmt|Failed to sign token: #{show err}|]
     Prelude.Right jwt -> do
       let compactBytes = Jose.encodeCompact jwt
-      Prelude.pure (compactBytes |> GhcLBS.toStrict |> GhcTextEncoding.decodeUtf8)
+      Task.yield (compactBytes |> GhcLBS.toStrict |> GhcTextEncoding.decodeUtf8)
 
 
--- | Validate a JWT token against the auth configuration.
--- Wrapper that uses empty key set for basic format validation tests.
-validateToken ::
+-- | Validate a JWT token format against the auth configuration.
+-- Wrapper that uses empty key set - only validates token format, NOT signatures.
+-- For signature validation, use validateTokenWithKeys instead.
+validateTokenFormat ::
   forall err.
   AuthConfig ->
   Text ->
   Task err (Result AuthError UserClaims)
-validateToken config token = do
+validateTokenFormat config token = do
   Auth.Jwt.validateToken config Array.empty token
 
 

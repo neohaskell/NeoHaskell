@@ -19,15 +19,15 @@ spec = do
           -- alg=none is a security vulnerability (CVE-2015-9235)
           let token = JwtCore.makeAlgNoneToken
           let config = JwtCore.testConfig
-          result <- JwtCore.validateToken config token
-          isAlgorithmNotAllowed `shouldSatisfy` result
+          result <- JwtCore.validateTokenFormat config token
+          result |> shouldSatisfy isAlgorithmNotAllowed
 
         it "rejects algorithms not in allowlist" \_ -> do
           -- Token signed with HS256 should be rejected when only RSA/EC allowed
           let token = JwtCore.makeHS256Token
           let config = JwtCore.testConfig
-          result <- JwtCore.validateToken config token
-          isAlgorithmNotAllowed `shouldSatisfy` result
+          result <- JwtCore.validateTokenFormat config token
+          result |> shouldSatisfy isAlgorithmNotAllowed
 
         it "accepts ES256 tokens when in allowlist" \_ -> do
           -- Generate keys and sign a valid token
@@ -35,7 +35,7 @@ spec = do
           token <- JwtCore.signValidToken keys
           let config = JwtCore.testConfig
           result <- JwtCore.validateTokenWithKeys config (Array.fromLinkedList [keys.es256Key]) token
-          isOk `shouldSatisfy` result
+          result |> shouldSatisfy isOk
 
         it "accepts RS256 tokens when in allowlist" \_ -> do
           pending "RS256 signing not yet implemented"
@@ -45,14 +45,14 @@ spec = do
         it "rejects malformed tokens" \_ -> do
           let token = "not.a.valid.jwt"
           let config = JwtCore.testConfig
-          result <- JwtCore.validateToken config token
-          isTokenMalformed `shouldSatisfy` result
+          result <- JwtCore.validateTokenFormat config token
+          result |> shouldSatisfy isTokenMalformed
 
         it "rejects empty tokens" \_ -> do
           let token = ""
           let config = JwtCore.testConfig
-          result <- JwtCore.validateToken config token
-          isTokenMalformed `shouldSatisfy` result
+          result <- JwtCore.validateTokenFormat config token
+          result |> shouldSatisfy isTokenMalformed
 
       -- Time validation
       describe "time validation" do
@@ -61,21 +61,21 @@ spec = do
           token <- JwtCore.signExpiredToken keys
           let config = JwtCore.testConfig
           result <- JwtCore.validateTokenWithKeys config (Array.fromLinkedList [keys.es256Key]) token
-          isTokenExpired `shouldSatisfy` result
+          result |> shouldSatisfy isTokenExpired
 
         it "rejects not-yet-valid tokens (nbf in future)" \_ -> do
           keys <- JwtCore.testKeys
           token <- JwtCore.signNotYetValidToken keys
           let config = JwtCore.testConfig
           result <- JwtCore.validateTokenWithKeys config (Array.fromLinkedList [keys.es256Key]) token
-          isTokenNotYetValid `shouldSatisfy` result
+          result |> shouldSatisfy isTokenNotYetValid
 
         it "accepts tokens within clock skew tolerance" \_ -> do
           keys <- JwtCore.testKeys
           token <- JwtCore.signRecentlyExpiredToken keys
           let config = JwtCore.testConfig
           result <- JwtCore.validateTokenWithKeys config (Array.fromLinkedList [keys.es256Key]) token
-          isOk `shouldSatisfy` result
+          result |> shouldSatisfy isOk
 
       -- Issuer validation
       describe "issuer validation" do
@@ -84,14 +84,14 @@ spec = do
           token <- JwtCore.signTokenWithIssuer keys "https://wrong.issuer.com"
           let config = JwtCore.testConfig
           result <- JwtCore.validateTokenWithKeys config (Array.fromLinkedList [keys.es256Key]) token
-          isIssuerMismatch `shouldSatisfy` result
+          result |> shouldSatisfy isIssuerMismatch
 
         it "accepts tokens with correct issuer" \_ -> do
           keys <- JwtCore.testKeys
           token <- JwtCore.signTokenWithIssuer keys "https://auth.example.com"
           let config = JwtCore.testConfig
           result <- JwtCore.validateTokenWithKeys config (Array.fromLinkedList [keys.es256Key]) token
-          isOk `shouldSatisfy` result
+          result |> shouldSatisfy isOk
 
       -- Audience validation
       describe "audience validation" do
@@ -100,21 +100,21 @@ spec = do
           token <- JwtCore.signTokenWithAudience keys "wrong-audience"
           let config = JwtCore.testConfigWithAudience "my-api"
           result <- JwtCore.validateTokenWithKeys config (Array.fromLinkedList [keys.es256Key]) token
-          isAudienceMismatch `shouldSatisfy` result
+          result |> shouldSatisfy isAudienceMismatch
 
         it "accepts tokens with correct audience" \_ -> do
           keys <- JwtCore.testKeys
           token <- JwtCore.signTokenWithAudience keys "my-api"
           let config = JwtCore.testConfigWithAudience "my-api"
           result <- JwtCore.validateTokenWithKeys config (Array.fromLinkedList [keys.es256Key]) token
-          isOk `shouldSatisfy` result
+          result |> shouldSatisfy isOk
 
         it "accepts tokens when no audience configured" \_ -> do
           keys <- JwtCore.testKeys
           token <- JwtCore.signValidToken keys
           let config = JwtCore.testConfig -- No audience configured
           result <- JwtCore.validateTokenWithKeys config (Array.fromLinkedList [keys.es256Key]) token
-          isOk `shouldSatisfy` result
+          result |> shouldSatisfy isOk
 
       -- Claims extraction
       describe "claims extraction" do

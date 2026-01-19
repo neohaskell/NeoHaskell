@@ -62,46 +62,63 @@ discoverConfig ::
 discoverConfig authServerUrl overrides = do
   -- SECURITY: Validate the auth server URL
   let discoveryUrl = [fmt|#{authServerUrl}/.well-known/openid-configuration|]
-  case UrlValidation.validateSecureUrl discoveryUrl of
-    Err validationErr -> Task.throw (mapValidationError validationErr)
-    Ok validatedUrl -> do
-      -- SECURITY: Check domain allowlist if configured
-      case validateDomainAllowlist validatedUrl overrides.allowedIdpDomains of
-        Err err -> Task.throw err
-        Ok () -> do
-          -- 1. Fetch discovery document
-          discoveryResult <- fetchDiscoveryDocument validatedUrl
-          case discoveryResult of
-            Err err -> Task.throw err
-            Ok discovery -> do
-              -- SECURITY: Validate the JWKS URI from discovery document
-              case UrlValidation.validateSecureUrl discovery.jwks_uri of
-                Err validationErr -> Task.throw (mapValidationError validationErr)
-                Ok validatedJwksUri -> do
-                  -- SECURITY: Also check JWKS URI against domain allowlist
-                  case validateDomainAllowlist validatedJwksUri overrides.allowedIdpDomains of
-                    Err err -> Task.throw err
-                    Ok () -> do
-                      -- 2. Build config with discovered values + overrides
-                      -- Note: JWKS keys are managed by JwksManager, not stored in AuthConfig
-                      let config =
-                            AuthConfig
-                              { issuer = discovery.issuer,
-                                jwksUri = validatedJwksUri,
-                                audience = overrides.audience,
-                                permissionsClaim = overrides.permissionsClaim |> Maybe.withDefault "permissions",
-                                tenantIdClaim = overrides.tenantIdClaim,
-                                clockSkewSeconds = overrides.clockSkewSeconds |> Maybe.withDefault 60,
-                                refreshIntervalSeconds = 900,
-                                missingKidCooldownSeconds = 60,
-                                maxStaleSeconds = 86400,
-                                allowedAlgorithms =
-                                  overrides.allowedAlgorithms
-                                    |> Maybe.withDefault defaultAllowedAlgorithms,
-                                supportedCritHeaders = Array.empty
-                              }
+  validatedDiscoveryUrl <- validateUrlOrThrow discoveryUrl
+  validateAllowlistOrThrow validatedDiscoveryUrl overrides.allowedIdpDomains
 
-                      Task.yield config
+  -- Fetch discovery document
+  discovery <- fetchDiscoveryDocumentOrThrow validatedDiscoveryUrl
+
+  -- SECURITY: Validate the JWKS URI from discovery document
+  validatedJwksUri <- validateUrlOrThrow discovery.jwks_uri
+  validateAllowlistOrThrow validatedJwksUri overrides.allowedIdpDomains
+
+  -- Build config with discovered values + overrides
+  Task.yield (buildAuthConfig discovery validatedJwksUri overrides)
+
+
+-- | Validate URL or throw a DiscoveryError.
+validateUrlOrThrow :: Text -> Task DiscoveryError Text
+validateUrlOrThrow url =
+  case UrlValidation.validateSecureUrl url of
+    Err validationErr -> Task.throw (mapValidationError validationErr)
+    Ok validated -> Task.yield validated
+
+
+-- | Validate against domain allowlist or throw a DiscoveryError.
+validateAllowlistOrThrow :: Text -> Maybe (Array Text) -> Task DiscoveryError Unit
+validateAllowlistOrThrow url allowlist =
+  case validateDomainAllowlist url allowlist of
+    Err err -> Task.throw err
+    Ok () -> Task.yield ()
+
+
+-- | Fetch discovery document or throw a DiscoveryError.
+fetchDiscoveryDocumentOrThrow :: Text -> Task DiscoveryError DiscoveryDocument
+fetchDiscoveryDocumentOrThrow url = do
+  result <- fetchDiscoveryDocument url
+  case result of
+    Err err -> Task.throw err
+    Ok doc -> Task.yield doc
+
+
+-- | Build AuthConfig from discovery document and overrides.
+buildAuthConfig :: DiscoveryDocument -> Text -> AuthOverrides -> AuthConfig
+buildAuthConfig discovery validatedJwksUri overrides =
+  AuthConfig
+    { issuer = discovery.issuer,
+      jwksUri = validatedJwksUri,
+      audience = overrides.audience,
+      permissionsClaim = overrides.permissionsClaim |> Maybe.withDefault "permissions",
+      tenantIdClaim = overrides.tenantIdClaim,
+      clockSkewSeconds = overrides.clockSkewSeconds |> Maybe.withDefault 60,
+      refreshIntervalSeconds = 900,
+      missingKidCooldownSeconds = 60,
+      maxStaleSeconds = 86400,
+      allowedAlgorithms =
+        overrides.allowedAlgorithms
+          |> Maybe.withDefault defaultAllowedAlgorithms,
+      supportedCritHeaders = Array.empty
+    }
 
 
 -- | Map URL validation errors to discovery errors.

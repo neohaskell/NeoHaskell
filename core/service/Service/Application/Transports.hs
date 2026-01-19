@@ -59,8 +59,12 @@ runTransports transportsMap endpointsByTransport queryEndpoints maybeWebAuth = d
 
 -- | Run WebTransport with JWT authentication.
 --
--- We use unsafeCoerce to cast the existentially-typed transport to WebTransport.
--- This is safe because we verified the transport name before calling this function.
+-- SAFETY: We use unsafeCoerce to cast the existentially-typed transport to WebTransport.
+-- This is safe because:
+-- 1. We guard on transportName == "WebTransport" before calling this function
+-- 2. Transport names are derived from type names via TypeName, ensuring consistency
+-- 3. WebTransport is the only transport that registers with name "WebTransport"
+-- If the type system allowed Typeable on the existential, we'd use cast instead.
 runWebTransport ::
   TransportValue ->
   Map Text EndpointHandler ->

@@ -1,3 +1,6 @@
+-- NOTE: -Wno-deprecations suppresses warnings from the jose library which
+-- deprecates some lens-based APIs we use. These are stable and well-tested;
+-- we'll migrate when jose provides non-deprecated alternatives.
 {-# OPTIONS_GHC -Wno-deprecations #-}
 
 -- | JWT token validation.
@@ -263,13 +266,16 @@ checkCritHeaders critHeaders supported = do
 
 -- | Validate typ header if present (RFC 8725 hardening).
 -- If typ is present, it must be "JWT" or "at+jwt" (access token).
+-- Comparison is case-insensitive per RFC 7515.
 validateTypHeader :: Maybe Text -> Result AuthError ()
 validateTypHeader maybeTyp =
   case maybeTyp of
     Nothing -> Ok () -- typ is optional
-    Just typ ->
+    Just typ -> do
       -- Accept "JWT" or "at+jwt" (RFC 9068 access token)
-      case typ == "JWT" || typ == "at+jwt" of
+      -- Case-insensitive comparison per RFC 7515 Section 4.1.9
+      let typLower = typ |> Text.toLower
+      case typLower == "jwt" || typLower == "at+jwt" of
         True -> Ok ()
         False -> Err (TokenMalformed [fmt|Invalid typ header: #{typ}|])
 
@@ -307,9 +313,10 @@ extractCritHeaders :: Array Aeson.Value -> Result Text (Array Text)
 extractCritHeaders values = do
   let results = values |> Array.map validateCritEntry
   -- If any entry is invalid, fail closed
-  case results |> Array.any isInvalidCritEntry of
+  let hasInvalid = results |> Array.any isNothing
+  case hasInvalid of
     True -> Err "crit header contains non-string or empty values"
-    False -> Ok (results |> Array.map unwrapCritEntry |> Array.dropIf Text.isEmpty)
+    False -> Ok (results |> Array.map (Maybe.withDefault ""))
  where
   validateCritEntry :: Aeson.Value -> Maybe Text
   validateCritEntry val =
@@ -320,23 +327,19 @@ extractCritHeaders values = do
           False -> Just txt
       _ -> Nothing -- Non-string is invalid
 
-  isInvalidCritEntry :: Maybe Text -> Bool
-  isInvalidCritEntry entry =
-    case entry of
+  isNothing :: forall value. Maybe value -> Bool
+  isNothing maybeVal =
+    case maybeVal of
       Nothing -> True
       Just _ -> False
 
-  unwrapCritEntry :: Maybe Text -> Text
-  unwrapCritEntry entry =
-    case entry of
-      Just txt -> txt
-      Nothing -> "" -- Won't happen after validation, but needed for types
 
-
--- | Check if algorithm is in the allowlist
+-- | Check if algorithm is in the allowlist.
+-- Uses O(1) Set lookup for efficiency in hot validation path.
 isAlgorithmAllowed :: Array Text -> Text -> Bool
-isAlgorithmAllowed allowlist alg =
-  allowlist |> Array.any (\allowed -> allowed == alg)
+isAlgorithmAllowed allowlist alg = do
+  let allowedSet = allowlist |> Set.fromArray
+  allowedSet |> Set.contains alg
 
 
 -- | Verify the JWT signature and extract claims

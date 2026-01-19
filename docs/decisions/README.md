@@ -22,7 +22,7 @@ ADRs document significant architectural decisions made during the development of
 | [0006](0006-entity-snapshot-cache.md)         | Entity Snapshot Cache           | Accepted |
 | [0007](0007-queries-read-models.md)           | Queries (Read Models)           | Proposed |
 | [0008](0008-integration-pattern.md)           | Integration Pattern             | Proposed |
-| [0009](0009-jwt-authentication-middleware.md) | JWT Authentication Middleware   | Proposed |
+| [0009](0009-jwt-authentication-middleware.md) | JWT Authentication Middleware   | Accepted |
 
 ## Creating New ADRs
 

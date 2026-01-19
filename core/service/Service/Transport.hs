@@ -32,7 +32,7 @@ type QueryEndpointHandler = Task Text Text
 
 
 -- | Collection of command and query endpoints for a transport.
--- The auth parameter is existentially hidden - each transport defines its own auth type.
+-- Groups command handlers and query handlers that share the same transport configuration.
 data Endpoints transport = Endpoints
   { transport :: transport,
     commandEndpoints :: Map Text EndpointHandler,

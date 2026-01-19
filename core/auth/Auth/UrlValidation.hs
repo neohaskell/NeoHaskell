@@ -8,6 +8,7 @@ module Auth.UrlValidation (
 
 import Basics
 import Char (Char)
+import Data.Char qualified as GhcChar
 import Data.IP qualified as IP
 import LinkedList qualified
 import Maybe (Maybe (..))
@@ -35,7 +36,7 @@ data ValidationError
 -- Requirements:
 -- 1. Must use HTTPS scheme
 -- 2. Must not resolve to private/loopback IPs (SSRF prevention)
--- 3. Must have a valid hostname
+-- 3. Must have a valid, non-empty hostname
 validateSecureUrl :: Text -> Result ValidationError Text
 validateSecureUrl urlText = do
   let urlString = Text.toLinkedList urlText
@@ -53,30 +54,46 @@ validateSecureUrl urlText = do
             Nothing -> Err (MissingHostname urlText)
             Just auth -> do
               let host = URI.uriRegName auth
-              case isPrivateOrLoopback host of
-                True -> Err (PrivateIpBlocked urlText)
-                False -> Ok urlText
+              -- Reject empty hostname
+              case host of
+                [] -> Err (MissingHostname urlText)
+                _ -> do
+                  -- Normalize to lowercase for consistent comparison
+                  let normalizedHost = LinkedList.map toLowerChar host
+                  case isPrivateOrLoopback normalizedHost of
+                    True -> Err (PrivateIpBlocked urlText)
+                    False -> Ok urlText
         _ -> Err (NotHttps urlText)
+
+
+-- | Convert a character to lowercase.
+toLowerChar :: Char -> Char
+toLowerChar = GhcChar.toLower
 
 
 -- | Check if a hostname is a private or loopback IP address.
 -- This prevents SSRF attacks targeting internal services.
 -- Handles both bare IPs and bracketed IPv6 (e.g., "[::1]" from URI parsing).
+-- Assumes input is already normalized to lowercase.
 isPrivateOrLoopback :: [Char] -> Bool
 isPrivateOrLoopback host = do
-  -- Check for localhost first
-  case host == "localhost" of
-    True -> True
-    False ->
-      -- Try to parse as IPv4
-      case GhcRead.readMaybe @IP.IPv4 host of
-        Just ipv4 -> isPrivateIPv4 ipv4
-        Nothing ->
-          -- Try to parse as IPv6 (handle bracketed form from URI)
-          let normalizedHost = stripIPv6Brackets host
-           in case GhcRead.readMaybe @IP.IPv6 normalizedHost of
-                Just ipv6 -> isPrivateIPv6 ipv6
-                Nothing -> False
+  -- Reject empty hostname
+  case host of
+    [] -> True -- Treat empty as blocked for safety
+    _ ->
+      -- Check for localhost first (already lowercase from caller)
+      case host == "localhost" of
+        True -> True
+        False ->
+          -- Try to parse as IPv4
+          case GhcRead.readMaybe @IP.IPv4 host of
+            Just ipv4 -> isPrivateIPv4 ipv4
+            Nothing ->
+              -- Try to parse as IPv6 (handle bracketed form from URI)
+              let strippedHost = stripIPv6Brackets host
+               in case GhcRead.readMaybe @IP.IPv6 strippedHost of
+                    Just ipv6 -> isPrivateIPv6 ipv6
+                    Nothing -> False
 
 
 -- | Strip brackets from IPv6 addresses.
