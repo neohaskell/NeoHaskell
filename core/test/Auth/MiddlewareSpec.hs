@@ -33,6 +33,14 @@ spec = do
         let request = mockRequestWithAuth "Bearer "
         extractToken request `shouldBe` Just ""
 
+      it "trims whitespace around Bearer token" \_ -> do
+        let request = mockRequestWithAuth "  Bearer  my-token  "
+        extractToken request `shouldBe` Just "my-token"
+
+      it "handles case-insensitive Bearer with whitespace" \_ -> do
+        let request = mockRequestWithAuth "  bearer   token123  "
+        extractToken request `shouldBe` Just "token123"
+
     describe "checkAuth" do
       describe "Everyone (public endpoints)" do
         it "allows requests without auth" \_ -> do

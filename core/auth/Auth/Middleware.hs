@@ -55,6 +55,7 @@ emptyAuthContext =
 
 -- | Extract Bearer token from Authorization header.
 -- Returns Nothing if no Authorization header or not Bearer scheme.
+-- Handles whitespace variations: "  Bearer  token  " is accepted.
 extractToken :: Wai.Request -> Maybe Text
 extractToken request = do
   let headers = Wai.requestHeaders request
@@ -63,14 +64,17 @@ extractToken request = do
   case findHeader HTTP.hAuthorization headers of
     Nothing -> Nothing
     Just headerValue -> do
-      let headerText = headerValue |> Bytes.fromLegacy |> Text.fromBytes
+      -- Trim leading/trailing whitespace from header value
+      let headerText = headerValue |> Bytes.fromLegacy |> Text.fromBytes |> Text.trim
       -- RFC 7235: Authorization scheme is case-insensitive
-      -- Check for "Bearer " prefix (case-insensitive match on scheme)
+      -- Check for "Bearer" prefix (case-insensitive), then handle optional space
       let headerLower = Text.toLower headerText
-      let bearerPrefixLower = "bearer "
-      case Text.startsWith bearerPrefixLower headerLower of
+      case Text.startsWith "bearer" headerLower of
         False -> Nothing
-        True -> Just (Text.dropLeft (Text.length bearerPrefixLower) headerText |> Text.trim)
+        True -> do
+          -- Drop "Bearer" prefix, trim any whitespace between scheme and token
+          let afterBearer = Text.dropLeft 6 headerText |> Text.trim
+          Just afterBearer
 
 
 -- | Find a header by name (case-insensitive).
