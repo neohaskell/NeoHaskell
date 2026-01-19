@@ -7,6 +7,7 @@ module Testbed.Cart.Commands.AddItem (
 import Core
 import Decider qualified
 import Json qualified
+import Service.Auth (RequestContext)
 import Service.Command.Core (TransportOf)
 import Service.CommandExecutor.TH (command)
 import Service.Transport.Web (WebTransport)
@@ -28,8 +29,9 @@ getEntityId :: AddItem -> Maybe Uuid
 getEntityId cmd = Just cmd.cartId
 
 
-decide :: AddItem -> Maybe CartEntity -> Decision CartEvent
-decide cmd entity = case entity of
+-- | Add item to cart. Anonymous-friendly for now - ignores auth context.
+decide :: AddItem -> Maybe CartEntity -> RequestContext -> Decision CartEvent
+decide cmd entity _ctx = case entity of
   Nothing ->
     Decider.reject "Cart not found!"
   Just cart ->

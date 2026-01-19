@@ -15,6 +15,7 @@ import Int qualified
 import Json qualified
 import Maybe (Maybe (..))
 import Result (Result (..))
+import Service.Auth (RequestContext)
 import Service.Command (Event (..))
 import Service.Command.Core (Command (..), Entity (..), EntityOf, EventOf)
 import Service.EntityFetcher.Core (EntityFetchResult (..), EntityFetcher, FetchedEntity (..))
@@ -86,7 +87,7 @@ awaitWithJitter retryCount = do
 -- This function:
 -- 1. Extracts the entity ID from the command
 -- 2. Fetches the current entity state from the event store
--- 3. Runs the decision logic to produce events or rejection
+-- 3. Runs the decision logic to produce events or rejection (with RequestContext)
 -- 4. Persists accepted events to the event store
 -- 5. Handles concurrency conflicts with exponential backoff retry
 execute ::
@@ -105,9 +106,10 @@ execute ::
   EventStore commandEvent ->
   EntityFetcher commandEntity commandEvent ->
   EntityName ->
+  RequestContext ->
   command ->
   Task Text ExecutionResult
-execute eventStore entityFetcher entityName command = do
+execute eventStore entityFetcher entityName requestContext command = do
   -- Extract the entity ID from the command
   let maybeEntityId = (getEntityIdImpl @command) command
 
@@ -147,8 +149,8 @@ execute eventStore entityFetcher entityName command = do
                 { genUuid = Uuid.generate
                 }
 
-        -- Execute the decision logic
-        let decision = (decideImpl @command) command currentEntity
+        -- Execute the decision logic with RequestContext
+        let decision = (decideImpl @command) command currentEntity requestContext
         commandResult <- runDecision decisionContext decision
 
         case commandResult of

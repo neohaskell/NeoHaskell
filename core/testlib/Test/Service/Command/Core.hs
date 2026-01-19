@@ -13,6 +13,7 @@ import Array qualified
 import Core
 import Decider qualified
 import Json qualified
+import Service.Auth (RequestContext)
 import Service.Command.Core (Event (..))
 import Test.Service.EventStore.Core (CartEvent (..))
 import Uuid ()
@@ -156,8 +157,8 @@ instance Command AddItemToCart where
   getEntityIdImpl cmd = cmd.cartId |> Just
 
 
-  decideImpl :: AddItemToCart -> Maybe CartEntity -> Decision CartEvent
-  decideImpl cmd entity =
+  decideImpl :: AddItemToCart -> Maybe CartEntity -> RequestContext -> Decision CartEvent
+  decideImpl cmd entity _ctx =
     case entity of
       Nothing ->
         Decider.reject "Cart does not exist"
@@ -178,7 +179,8 @@ instance Command RemoveItemFromCart where
   getEntityIdImpl cmd = cmd.cartId |> Just
 
 
-  decideImpl cmd entity =
+  decideImpl :: RemoveItemFromCart -> Maybe CartEntity -> RequestContext -> Decision CartEvent
+  decideImpl cmd entity _ctx =
     case entity of
       Nothing ->
         Decider.reject "Cart does not exist"
@@ -202,7 +204,8 @@ instance Command CheckoutCart where
   getEntityIdImpl cmd = cmd.cartId |> Just
 
 
-  decideImpl _ entity =
+  decideImpl :: CheckoutCart -> Maybe CartEntity -> RequestContext -> Decision CartEvent
+  decideImpl _cmd entity _ctx =
     case entity of
       Nothing ->
         Decider.reject "Cart does not exist"

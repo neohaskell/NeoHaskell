@@ -83,6 +83,7 @@ import Maybe (Maybe (..))
 import Uuid (Uuid)
 import Uuid qualified
 import Result (Result (..))
+import Service.Auth qualified as Auth
 import Service.Event (Event (..))
 import Service.Event.StreamId (StreamId)
 import Service.Integration.Types (OutboundRunner (..), OutboundLifecycleRunner (..), WorkerState (..))
@@ -735,6 +736,7 @@ drainLifecycleWorker states endpoints workerChannel = do
 
 
 -- | Dispatch a command to the appropriate handler.
+-- Uses an anonymous RequestContext since integrations are system-triggered.
 dispatchCommand ::
   Map Text EndpointHandler ->
   Integration.CommandPayload ->
@@ -743,9 +745,11 @@ dispatchCommand endpoints payload = do
   let cmdType = payload.commandType
   case Map.get cmdType endpoints of
     Just handler -> do
+      -- Create anonymous context for system-triggered commands
+      requestContext <- Auth.anonymousContext
       let cmdBytes = Json.encodeText payload.commandData |> Text.toBytes
       let responseCallback _ = Task.yield unit
-      handler cmdBytes responseCallback
+      handler requestContext cmdBytes responseCallback
         |> Task.mapError (\err -> [fmt|Command dispatch failed for #{cmdType}: #{err}|])
     Nothing -> do
       Console.print [fmt|[Integration] No handler found for command: #{cmdType}|]

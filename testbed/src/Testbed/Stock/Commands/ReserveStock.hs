@@ -7,6 +7,7 @@ module Testbed.Stock.Commands.ReserveStock (
 import Core
 import Decider qualified
 import Json qualified
+import Service.Auth (RequestContext)
 import Service.Command.Core (TransportOf)
 import Service.CommandExecutor.TH (command)
 import Service.Transport.Web (WebTransport)
@@ -33,8 +34,9 @@ getEntityId :: ReserveStock -> Maybe Uuid
 getEntityId cmd = Just cmd.stockId
 
 
-decide :: ReserveStock -> Maybe StockEntity -> Decision StockEvent
-decide cmd entity = case entity of
+-- | Reserve stock for a cart. System command - ignores auth context.
+decide :: ReserveStock -> Maybe StockEntity -> RequestContext -> Decision StockEvent
+decide cmd entity _ctx = case entity of
   Nothing ->
     Decider.reject "Stock not found!"
   Just stock ->

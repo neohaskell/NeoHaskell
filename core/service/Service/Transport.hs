@@ -10,6 +10,7 @@ import Bytes (Bytes)
 import Json qualified
 import Map (Map)
 import Record qualified
+import Service.Auth (RequestContext)
 import Service.Command.Core (Command, NameOf)
 import Service.Response (CommandResponse)
 import Task (Task)
@@ -18,8 +19,9 @@ import Text (Text)
 
 -- | Handler for a single command endpoint.
 --
--- Takes request bytes and a callback to send the response.
-type EndpointHandler = Bytes -> ((CommandResponse, Bytes) -> Task Text Unit) -> Task Text Unit
+-- Takes RequestContext, request bytes, and a callback to send the response.
+-- The RequestContext provides authentication context for authorization decisions.
+type EndpointHandler = RequestContext -> Bytes -> ((CommandResponse, Bytes) -> Task Text Unit) -> Task Text Unit
 
 
 -- | Handler for a single query endpoint.
@@ -66,6 +68,7 @@ class Transport transport where
   --
   -- This handles:
   -- * Deserializing the request into the command type
+  -- * Passing RequestContext to the domain handler
   -- * Calling the domain handler
   -- * Serializing the response
   buildHandler ::
@@ -77,5 +80,5 @@ class Transport transport where
     ) =>
     transport ->
     Record.Proxy command ->
-    (command -> Task Text CommandResponse) ->
+    (RequestContext -> command -> Task Text CommandResponse) ->
     EndpointHandler

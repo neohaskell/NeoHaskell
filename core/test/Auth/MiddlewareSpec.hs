@@ -1,5 +1,6 @@
 module Auth.MiddlewareSpec where
 
+import Auth.Claims (UserClaims (..))
 import Auth.Error (AuthError (..))
 import Auth.Middleware (AuthContext (..), checkAuth, extractToken)
 import Auth.Options (AuthOptions (..))

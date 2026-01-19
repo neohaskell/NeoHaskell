@@ -159,6 +159,7 @@ library
     Record
     Result
     Service
+    Service.Auth
     Service.Command
     Service.Command.Core
     Service.CommandExecutor

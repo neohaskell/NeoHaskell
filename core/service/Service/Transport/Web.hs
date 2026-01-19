@@ -27,6 +27,8 @@ import Network.Wai.Handler.Warp qualified as Warp
 import Record (KnownHash (..))
 import Record qualified
 import Result (Result (..))
+import Service.Auth (RequestContext)
+import Service.Auth qualified as Auth
 import Service.Command.Core (Command, NameOf)
 import Service.CommandExecutor.TH (deriveKnownHash)
 import Service.Response (CommandResponse)
@@ -187,8 +189,9 @@ instance Transport WebTransport where
         -- Look up the command handler in the endpoints map
         case Map.get commandName endpoints.commandEndpoints of
           Maybe.Just handler -> do
-            -- Helper to process command after auth passes
-            let processCommand = do
+            -- Helper to process command with a RequestContext
+            let processCommandWithContext :: RequestContext -> Task Text Wai.ResponseReceived
+                processCommandWithContext requestContext = do
                   -- Read the request body with size limit to prevent DoS attacks
                   bodyResult <- readBodyWithLimit maxBodySize request
                   case bodyResult of
@@ -199,6 +202,7 @@ instance Transport WebTransport where
                       -- We need to capture the ResponseReceived from the handler's callback
                       -- Since handler returns Unit, we'll use andThen to chain the result
                       handler
+                        requestContext
                         bodyBytes
                         ( \(commandResponse, responseBytes) -> do
                             -- Map the CommandResponse directly to HTTP status (no decoding needed)
@@ -217,11 +221,12 @@ instance Transport WebTransport where
                               ConcurrentVar.get respondVar
                           )
 
-            -- Check authentication before processing
+            -- Check authentication and build RequestContext
             case webTransport.authEnabled of
-              Nothing ->
-                -- No auth configured, allow everyone
-                processCommand
+              Nothing -> do
+                -- No auth configured, use anonymous context
+                requestContext <- Auth.anonymousContext
+                processCommandWithContext requestContext
               Just auth -> do
                 -- Validate JWT token (permission checks done in command's decide method)
                 authResult <- Middleware.checkAuth (Just auth.jwksManager) auth.authConfig Authenticated request
@@ -230,9 +235,12 @@ instance Transport WebTransport where
                   Result.Err authErr ->
                     -- Return 401/403 response
                     Middleware.respondWithAuthError authErr respond
-                  Result.Ok _authContext ->
-                    -- Auth passed, process the request
-                    processCommand
+                  Result.Ok authContext -> do
+                    -- Build RequestContext from AuthContext claims
+                    requestContext <- case authContext.claims of
+                      Maybe.Just claims -> Auth.authenticatedContext claims
+                      Maybe.Nothing -> Auth.anonymousContext
+                    processCommandWithContext requestContext
           Maybe.Nothing ->
             notFound [fmt|Command not found: #{commandName}|]
       ["queries", queryNameKebab] -> do
@@ -300,9 +308,9 @@ instance Transport WebTransport where
     ) =>
     WebTransport ->
     Record.Proxy command ->
-    (command -> Task Text CommandResponse) ->
+    (RequestContext -> command -> Task Text CommandResponse) ->
     EndpointHandler
-  buildHandler transport _ handler body respond = do
+  buildHandler transport _ handler requestContext body respond = do
     let port = transport.port
     let n =
           GHC.symbolVal (Record.Proxy @name)
@@ -316,8 +324,8 @@ instance Transport WebTransport where
         -- Log that we're executing the command
         Console.print [fmt|Executing #{n} on port #{port}|]
 
-        -- Execute the command and get the response
-        response <- handler cmd
+        -- Execute the command with RequestContext
+        response <- handler requestContext cmd
         let responseJson = Json.encodeText response |> Text.toBytes
         respond (response, responseJson)
       Result.Err _err -> do

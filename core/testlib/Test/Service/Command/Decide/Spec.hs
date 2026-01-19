@@ -2,6 +2,7 @@ module Test.Service.Command.Decide.Spec where
 
 import Array qualified
 import Core
+import Service.Auth qualified as Auth
 import Service.Command.Core (DecisionContext (..), runDecision)
 import Test
 import Test.Service.Command.Core (
@@ -40,7 +41,7 @@ cartCommandSpecs = do
     before Context.initialize do
       it "rejects when cart doesn't exist" \context -> do
         let cmd = AddItemToCart {cartId = context.cartId, itemId = context.itemId1, amount = 5}
-        result <- runTestDecision (decideImpl @AddItemToCart cmd Nothing)
+        result <- runTestDecision (decideImpl @AddItemToCart cmd Nothing Auth.emptyContext)
 
         case result of
           RejectCommand msg -> do
@@ -56,7 +57,7 @@ cartCommandSpecs = do
                   cartCheckedOut = False
                 }
         let cmd = AddItemToCart {cartId = context.cartId, itemId = context.itemId1, amount = 5}
-        result <- runTestDecision (decideImpl @AddItemToCart cmd (Just cart))
+        result <- runTestDecision (decideImpl @AddItemToCart cmd (Just cart) Auth.emptyContext)
 
         case result of
           RejectCommand _ ->
@@ -79,7 +80,7 @@ cartCommandSpecs = do
                   cartCheckedOut = True
                 }
         let cmd = AddItemToCart {cartId = context.cartId, itemId = context.itemId2, amount = 2}
-        result <- runTestDecision (decideImpl @AddItemToCart cmd (Just cart))
+        result <- runTestDecision (decideImpl @AddItemToCart cmd (Just cart) Auth.emptyContext)
 
         case result of
           RejectCommand msg -> do
@@ -101,7 +102,7 @@ cartCommandSpecs = do
     before Context.initialize do
       it "rejects when cart doesn't exist" \context -> do
         let cmd = RemoveItemFromCart {cartId = context.cartId, itemId = context.itemId1}
-        result <- runTestDecision (decideImpl @RemoveItemFromCart cmd Nothing)
+        result <- runTestDecision (decideImpl @RemoveItemFromCart cmd Nothing Auth.emptyContext)
 
         case result of
           RejectCommand msg -> do
@@ -117,7 +118,7 @@ cartCommandSpecs = do
                   cartCheckedOut = False
                 }
         let cmd = RemoveItemFromCart {cartId = context.cartId, itemId = context.itemId2}
-        result <- runTestDecision (decideImpl @RemoveItemFromCart cmd (Just cart))
+        result <- runTestDecision (decideImpl @RemoveItemFromCart cmd (Just cart) Auth.emptyContext)
 
         case result of
           RejectCommand msg -> do
@@ -133,7 +134,7 @@ cartCommandSpecs = do
                   cartCheckedOut = False
                 }
         let cmd = RemoveItemFromCart {cartId = context.cartId, itemId = context.itemId1}
-        result <- runTestDecision (decideImpl @RemoveItemFromCart cmd (Just cart))
+        result <- runTestDecision (decideImpl @RemoveItemFromCart cmd (Just cart) Auth.emptyContext)
 
         case result of
           RejectCommand _ ->
@@ -155,7 +156,7 @@ cartCommandSpecs = do
                   cartCheckedOut = True
                 }
         let cmd = RemoveItemFromCart {cartId = context.cartId, itemId = context.itemId1}
-        result <- runTestDecision (decideImpl @RemoveItemFromCart cmd (Just cart))
+        result <- runTestDecision (decideImpl @RemoveItemFromCart cmd (Just cart) Auth.emptyContext)
 
         case result of
           RejectCommand msg -> do
@@ -167,7 +168,7 @@ cartCommandSpecs = do
     before Context.initialize do
       it "rejects when cart doesn't exist" \context -> do
         let cmd = CheckoutCart {cartId = context.cartId}
-        result <- runTestDecision (decideImpl @CheckoutCart cmd Nothing)
+        result <- runTestDecision (decideImpl @CheckoutCart cmd Nothing Auth.emptyContext)
 
         case result of
           RejectCommand msg -> do
@@ -183,7 +184,7 @@ cartCommandSpecs = do
                   cartCheckedOut = False
                 }
         let cmd = CheckoutCart {cartId = context.cartId}
-        result <- runTestDecision (decideImpl @CheckoutCart cmd (Just cart))
+        result <- runTestDecision (decideImpl @CheckoutCart cmd (Just cart) Auth.emptyContext)
 
         case result of
           RejectCommand msg -> do
@@ -199,7 +200,7 @@ cartCommandSpecs = do
                   cartCheckedOut = False
                 }
         let cmd = CheckoutCart {cartId = context.cartId}
-        result <- runTestDecision (decideImpl @CheckoutCart cmd (Just cart))
+        result <- runTestDecision (decideImpl @CheckoutCart cmd (Just cart) Auth.emptyContext)
 
         case result of
           RejectCommand _ ->
@@ -221,7 +222,7 @@ cartCommandSpecs = do
                   cartCheckedOut = True
                 }
         let cmd = CheckoutCart {cartId = context.cartId}
-        result <- runTestDecision (decideImpl @CheckoutCart cmd (Just cart))
+        result <- runTestDecision (decideImpl @CheckoutCart cmd (Just cart) Auth.emptyContext)
 
         case result of
           RejectCommand msg -> do
@@ -274,7 +275,7 @@ edgeCaseSpecs = do
 
         -- Add first item
         let cmd1 = AddItemToCart {cartId = context.cartId, itemId = context.itemId1, amount = 3}
-        result1 <- runTestDecision (decideImpl @AddItemToCart cmd1 (Just cart))
+        result1 <- runTestDecision (decideImpl @AddItemToCart cmd1 (Just cart) Auth.emptyContext)
 
         case result1 of
           AcceptCommand _ events1 -> do
@@ -284,7 +285,7 @@ edgeCaseSpecs = do
 
                 -- Add second item
                 let cmd2 = AddItemToCart {cartId = context.cartId, itemId = context.itemId2, amount = 5}
-                result2 <- runTestDecision (decideImpl @AddItemToCart cmd2 (Just state2))
+                result2 <- runTestDecision (decideImpl @AddItemToCart cmd2 (Just state2) Auth.emptyContext)
 
                 case result2 of
                   AcceptCommand _ events2 -> do
@@ -309,7 +310,7 @@ edgeCaseSpecs = do
 
         -- Try to checkout (should succeed)
         let checkoutCmd = CheckoutCart {cartId = context.cartId}
-        checkoutResult <- runTestDecision (decideImpl @CheckoutCart checkoutCmd (Just cart))
+        checkoutResult <- runTestDecision (decideImpl @CheckoutCart checkoutCmd (Just cart) Auth.emptyContext)
 
         case checkoutResult of
           AcceptCommand _ events -> do
@@ -319,7 +320,7 @@ edgeCaseSpecs = do
 
                 -- Now try to add item to checked out cart (should fail)
                 let addCmd = AddItemToCart {cartId = context.cartId, itemId = context.itemId2, amount = 5}
-                addResult <- runTestDecision (decideImpl @AddItemToCart addCmd (Just checkedOutCart))
+                addResult <- runTestDecision (decideImpl @AddItemToCart addCmd (Just checkedOutCart) Auth.emptyContext)
 
                 case addResult of
                   RejectCommand _ -> do
