@@ -4,6 +4,8 @@
 module Auth.Config (
   -- * Internal configuration (from discovery)
   AuthConfig (..),
+  -- * Smart constructor
+  mkAuthConfig,
   -- * User-facing overrides
   AuthOverrides (..),
   defaultOverrides,
@@ -17,11 +19,14 @@ import Basics
 import Data.Int qualified as GhcInt
 import Json qualified
 import Maybe (Maybe (..))
+import Set (Set)
+import Set qualified
 import Text (Text)
 
 
 -- | Internal configuration populated from OpenID Connect Discovery.
 -- This is NOT exposed to Jess - it's created automatically from the auth server URL.
+-- Use 'mkAuthConfig' to construct - it precomputes allowedAlgorithmsSet for O(1) lookups.
 data AuthConfig = AuthConfig
   { issuer :: Text,
     -- ^ From discovery: iss claim validation
@@ -45,6 +50,8 @@ data AuthConfig = AuthConfig
     -- RFC 8725 hardening
     allowedAlgorithms :: Array Text,
     -- ^ Explicit allowlist (default: ES256, RS256, etc.)
+    allowedAlgorithmsSet :: Set Text,
+    -- ^ Precomputed Set for O(1) algorithm lookup (derived from allowedAlgorithms)
     supportedCritHeaders :: Array Text
     -- ^ Understood crit headers (default: empty)
   }
@@ -55,6 +62,60 @@ instance Json.FromJSON AuthConfig
 
 
 instance Json.ToJSON AuthConfig
+
+
+-- | Smart constructor that precomputes allowedAlgorithmsSet from allowedAlgorithms.
+-- Always use this instead of constructing AuthConfig directly.
+mkAuthConfig ::
+  Text ->
+  -- ^ issuer
+  Text ->
+  -- ^ jwksUri
+  Maybe Text ->
+  -- ^ audience
+  Text ->
+  -- ^ permissionsClaim
+  Maybe Text ->
+  -- ^ tenantIdClaim
+  GhcInt.Int64 ->
+  -- ^ clockSkewSeconds
+  GhcInt.Int64 ->
+  -- ^ refreshIntervalSeconds
+  GhcInt.Int64 ->
+  -- ^ missingKidCooldownSeconds
+  GhcInt.Int64 ->
+  -- ^ maxStaleSeconds
+  Array Text ->
+  -- ^ allowedAlgorithms
+  Array Text ->
+  -- ^ supportedCritHeaders
+  AuthConfig
+mkAuthConfig
+  issuer
+  jwksUri
+  audience
+  permissionsClaim
+  tenantIdClaim
+  clockSkewSeconds
+  refreshIntervalSeconds
+  missingKidCooldownSeconds
+  maxStaleSeconds
+  allowedAlgorithms
+  supportedCritHeaders =
+    AuthConfig
+      { issuer = issuer,
+        jwksUri = jwksUri,
+        audience = audience,
+        permissionsClaim = permissionsClaim,
+        tenantIdClaim = tenantIdClaim,
+        clockSkewSeconds = clockSkewSeconds,
+        refreshIntervalSeconds = refreshIntervalSeconds,
+        missingKidCooldownSeconds = missingKidCooldownSeconds,
+        maxStaleSeconds = maxStaleSeconds,
+        allowedAlgorithms = allowedAlgorithms,
+        allowedAlgorithmsSet = Set.fromArray allowedAlgorithms,
+        supportedCritHeaders = supportedCritHeaders
+      }
 
 
 -- | Optional overrides for advanced users.

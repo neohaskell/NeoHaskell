@@ -58,11 +58,16 @@ withUrl url options =
 
 -- | Set request timeout in seconds.
 -- SECURITY: Always set timeouts for external requests to prevent hangs.
+-- FAILS FAST: Raises error if seconds <= 0 to catch misuse at call site.
 withTimeout :: GhcInt.Int -> Request -> Request
 withTimeout seconds options =
-  options
-    { timeoutSeconds = Just seconds
-    }
+  case seconds > 0 of
+    True ->
+      options
+        { timeoutSeconds = Just seconds
+        }
+    False ->
+      panic [fmt|withTimeout requires positive seconds, got: #{seconds}|]
 
 
 addHeader :: Text -> Text -> Request -> Request
@@ -93,16 +98,14 @@ get options = Task.fromIO do
             HttpSimple.addRequestHeader (Text.convert key) (Text.convert value) acc
 
   -- Apply timeout if specified (convert seconds to microseconds)
-  -- Only apply positive timeouts to prevent invalid values
+  -- withTimeout validates positive values, so we can safely apply here
   let req = case options.timeoutSeconds of
         Nothing -> withHeaders
-        Just seconds
-          | seconds > 0 -> do
-              let microseconds = seconds * 1000000
-              HttpSimple.setRequestResponseTimeout
-                (HttpClient.responseTimeoutMicro microseconds)
-                withHeaders
-          | otherwise -> withHeaders -- Ignore non-positive timeouts
+        Just seconds -> do
+          let microseconds = seconds * 1000000
+          HttpSimple.setRequestResponseTimeout
+            (HttpClient.responseTimeoutMicro microseconds)
+            withHeaders
 
   log "Performing request"
   response <- HttpSimple.httpJSON req
@@ -133,16 +136,14 @@ post options body = Task.fromIO do
               |> HttpSimple.setRequestBodyJSON body
 
   -- Apply timeout if specified (convert seconds to microseconds)
-  -- Only apply positive timeouts to prevent invalid values
+  -- withTimeout validates positive values, so we can safely apply here
   let req = case options.timeoutSeconds of
         Nothing -> withHeaders
-        Just seconds
-          | seconds > 0 -> do
-              let microseconds = seconds * 1000000
-              HttpSimple.setRequestResponseTimeout
-                (HttpClient.responseTimeoutMicro microseconds)
-                withHeaders
-          | otherwise -> withHeaders -- Ignore non-positive timeouts
+        Just seconds -> do
+          let microseconds = seconds * 1000000
+          HttpSimple.setRequestResponseTimeout
+            (HttpClient.responseTimeoutMicro microseconds)
+            withHeaders
 
   log "Performing request"
   response <- HttpSimple.httpJSON req

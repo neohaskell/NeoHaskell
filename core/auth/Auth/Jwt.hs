@@ -46,6 +46,7 @@ import Maybe (Maybe (..))
 import Maybe qualified
 import Prelude qualified
 import Result (Result (..))
+import Set (Set)
 import Set qualified
 import Task (Task)
 import Task qualified
@@ -155,7 +156,7 @@ validateToken config keys token = do
         Err err -> Task.yield (Err err)
         Ok header -> do
           -- Step 3: Check algorithm allowlist (RFC 8725 fail-fast)
-          case isAlgorithmAllowed config.allowedAlgorithms header.alg of
+          case isAlgorithmAllowed config.allowedAlgorithmsSet header.alg of
             False -> Task.yield (Err (AlgorithmNotAllowed header.alg))
             True -> do
               -- Step 4: Check crit headers
@@ -194,7 +195,7 @@ validateTokenWithJwkSet config jwkSet token = do
         Err err -> Task.yield (Err err)
         Ok header -> do
           -- Step 3: Check algorithm allowlist (RFC 8725 fail-fast)
-          case isAlgorithmAllowed config.allowedAlgorithms header.alg of
+          case isAlgorithmAllowed config.allowedAlgorithmsSet header.alg of
             False -> Task.yield (Err (AlgorithmNotAllowed header.alg))
             True -> do
               -- Step 4: Check crit headers
@@ -228,7 +229,7 @@ validateTokenWithParsedHeader ::
   Task err (Result AuthError UserClaims)
 validateTokenWithParsedHeader config jwkSet header token = do
   -- Step 1: Check algorithm allowlist (RFC 8725 fail-fast)
-  case isAlgorithmAllowed config.allowedAlgorithms header.alg of
+  case isAlgorithmAllowed config.allowedAlgorithmsSet header.alg of
     False -> Task.yield (Err (AlgorithmNotAllowed header.alg))
     True -> do
       -- Step 2: Check crit headers
@@ -335,11 +336,10 @@ extractCritHeaders values = do
 
 
 -- | Check if algorithm is in the allowlist.
--- Uses O(1) Set lookup for efficiency in hot validation path.
-isAlgorithmAllowed :: Array Text -> Text -> Bool
-isAlgorithmAllowed allowlist alg = do
-  let allowedSet = allowlist |> Set.fromArray
-  allowedSet |> Set.contains alg
+-- Uses O(1) Set lookup from precomputed allowedAlgorithmsSet for efficiency.
+isAlgorithmAllowed :: Set Text -> Text -> Bool
+isAlgorithmAllowed allowedSet alg = allowedSet |> Set.contains alg
+{-# INLINE isAlgorithmAllowed #-}
 
 
 -- | Verify the JWT signature and extract claims

@@ -36,7 +36,7 @@ import Array (Array)
 import Array qualified
 import AtomicVar qualified
 import Auth.Claims (UserClaims)
-import Auth.Config (AuthConfig (..), defaultAllowedAlgorithms)
+import Auth.Config (AuthConfig (..), defaultAllowedAlgorithms, mkAuthConfig)
 import Auth.Error (AuthError)
 import Auth.Jwt qualified
 import Auth.Jwks (JwksManager (..), KeySnapshot (..), RefreshState (..))
@@ -90,25 +90,35 @@ testKeys = Task.fromIO do
 -- | Default test configuration
 testConfig :: AuthConfig
 testConfig =
-  AuthConfig
-    { issuer = "https://auth.example.com",
-      jwksUri = "https://auth.example.com/.well-known/jwks.json",
-      audience = Nothing,
-      permissionsClaim = "permissions",
-      tenantIdClaim = Nothing,
-      clockSkewSeconds = 60,
-      refreshIntervalSeconds = 900,
-      missingKidCooldownSeconds = 60,
-      maxStaleSeconds = 86400,
-      allowedAlgorithms = defaultAllowedAlgorithms,
-      supportedCritHeaders = Array.empty
-    }
+  mkAuthConfig
+    "https://auth.example.com"
+    "https://auth.example.com/.well-known/jwks.json"
+    Nothing
+    "permissions"
+    Nothing
+    60
+    900
+    60
+    86400
+    defaultAllowedAlgorithms
+    Array.empty
 
 
 -- | Test configuration with audience validation
 testConfigWithAudience :: Text -> AuthConfig
 testConfigWithAudience aud =
-  testConfig {audience = Just aud}
+  mkAuthConfig
+    "https://auth.example.com"
+    "https://auth.example.com/.well-known/jwks.json"
+    (Just aud)
+    "permissions"
+    Nothing
+    60
+    900
+    60
+    86400
+    defaultAllowedAlgorithms
+    Array.empty
 
 
 -- | Create a token with alg=none (MUST be rejected)
@@ -139,12 +149,7 @@ signValidToken :: TestKeys -> Task Text Text
 signValidToken keys = do
   now <- Task.fromIO GhcTime.getCurrentTime
   let expTime = GhcTime.addUTCTime 3600 now -- 1 hour from now
-  let claims =
-        JWT.emptyClaimsSet
-          & JWT.claimSub ?~ "test-user-123"
-          & JWT.claimIss ?~ "https://auth.example.com"
-          & JWT.claimIat ?~ JWT.NumericDate now
-          & JWT.claimExp ?~ JWT.NumericDate expTime
+  let claims = buildBaseClaims "test-user-123" "https://auth.example.com" now expTime
   signWithES256 keys.es256Key claims
 
 
@@ -153,12 +158,7 @@ signValidTokenRS256 :: TestKeys -> Task Text Text
 signValidTokenRS256 keys = do
   now <- Task.fromIO GhcTime.getCurrentTime
   let expTime = GhcTime.addUTCTime 3600 now -- 1 hour from now
-  let claims =
-        JWT.emptyClaimsSet
-          & JWT.claimSub ?~ "test-user-123"
-          & JWT.claimIss ?~ "https://auth.example.com"
-          & JWT.claimIat ?~ JWT.NumericDate now
-          & JWT.claimExp ?~ JWT.NumericDate expTime
+  let claims = buildBaseClaims "test-user-123" "https://auth.example.com" now expTime
   signWithRS256 keys.rs256Key claims
 
 
@@ -168,12 +168,7 @@ signExpiredToken keys = do
   now <- Task.fromIO GhcTime.getCurrentTime
   let expTime = GhcTime.addUTCTime (-3600) now -- 1 hour ago
   let iatTime = GhcTime.addUTCTime (-7200) now -- 2 hours ago
-  let claims =
-        JWT.emptyClaimsSet
-          & JWT.claimSub ?~ "test-user-123"
-          & JWT.claimIss ?~ "https://auth.example.com"
-          & JWT.claimIat ?~ JWT.NumericDate iatTime
-          & JWT.claimExp ?~ JWT.NumericDate expTime
+  let claims = buildBaseClaims "test-user-123" "https://auth.example.com" iatTime expTime
   signWithES256 keys.es256Key claims
 
 
@@ -184,12 +179,8 @@ signNotYetValidToken keys = do
   let nbfTime = GhcTime.addUTCTime 3600 now -- 1 hour from now
   let expTime = GhcTime.addUTCTime 7200 now -- 2 hours from now
   let claims =
-        JWT.emptyClaimsSet
-          & JWT.claimSub ?~ "test-user-123"
-          & JWT.claimIss ?~ "https://auth.example.com"
-          & JWT.claimIat ?~ JWT.NumericDate now
+        buildBaseClaims "test-user-123" "https://auth.example.com" now expTime
           & JWT.claimNbf ?~ JWT.NumericDate nbfTime
-          & JWT.claimExp ?~ JWT.NumericDate expTime
   signWithES256 keys.es256Key claims
 
 
@@ -199,12 +190,7 @@ signRecentlyExpiredToken keys = do
   now <- Task.fromIO GhcTime.getCurrentTime
   let expTime = GhcTime.addUTCTime (-30) now -- 30 seconds ago (within 60s skew)
   let iatTime = GhcTime.addUTCTime (-3630) now -- 1 hour + 30 seconds ago
-  let claims =
-        JWT.emptyClaimsSet
-          & JWT.claimSub ?~ "test-user-123"
-          & JWT.claimIss ?~ "https://auth.example.com"
-          & JWT.claimIat ?~ JWT.NumericDate iatTime
-          & JWT.claimExp ?~ JWT.NumericDate expTime
+  let claims = buildBaseClaims "test-user-123" "https://auth.example.com" iatTime expTime
   signWithES256 keys.es256Key claims
 
 
@@ -213,12 +199,7 @@ signTokenWithIssuer :: TestKeys -> Text -> Task Text Text
 signTokenWithIssuer keys iss = do
   now <- Task.fromIO GhcTime.getCurrentTime
   let expTime = GhcTime.addUTCTime 3600 now
-  let claims =
-        JWT.emptyClaimsSet
-          & JWT.claimSub ?~ "test-user-123"
-          & JWT.claimIss ?~ textToStringOrUri iss
-          & JWT.claimIat ?~ JWT.NumericDate now
-          & JWT.claimExp ?~ JWT.NumericDate expTime
+  let claims = buildBaseClaims "test-user-123" iss now expTime
   signWithES256 keys.es256Key claims
 
 
@@ -228,12 +209,8 @@ signTokenWithAudience keys aud = do
   now <- Task.fromIO GhcTime.getCurrentTime
   let expTime = GhcTime.addUTCTime 3600 now
   let claims =
-        JWT.emptyClaimsSet
-          & JWT.claimSub ?~ "test-user-123"
-          & JWT.claimIss ?~ "https://auth.example.com"
+        buildBaseClaims "test-user-123" "https://auth.example.com" now expTime
           & JWT.claimAud ?~ JWT.Audience [textToStringOrUri aud]
-          & JWT.claimIat ?~ JWT.NumericDate now
-          & JWT.claimExp ?~ JWT.NumericDate expTime
   signWithES256 keys.es256Key claims
 
 
@@ -242,12 +219,7 @@ signTokenWithSub :: TestKeys -> Text -> Task Text Text
 signTokenWithSub keys sub = do
   now <- Task.fromIO GhcTime.getCurrentTime
   let expTime = GhcTime.addUTCTime 3600 now
-  let claims =
-        JWT.emptyClaimsSet
-          & JWT.claimSub ?~ textToStringOrUri sub
-          & JWT.claimIss ?~ "https://auth.example.com"
-          & JWT.claimIat ?~ JWT.NumericDate now
-          & JWT.claimExp ?~ JWT.NumericDate expTime
+  let claims = buildBaseClaims sub "https://auth.example.com" now expTime
   signWithES256 keys.es256Key claims
 
 
@@ -257,11 +229,7 @@ signTokenWithEmail keys email = do
   now <- Task.fromIO GhcTime.getCurrentTime
   let expTime = GhcTime.addUTCTime 3600 now
   let claims =
-        JWT.emptyClaimsSet
-          & JWT.claimSub ?~ "test-user-123"
-          & JWT.claimIss ?~ "https://auth.example.com"
-          & JWT.claimIat ?~ JWT.NumericDate now
-          & JWT.claimExp ?~ JWT.NumericDate expTime
+        buildBaseClaims "test-user-123" "https://auth.example.com" now expTime
           & JWT.addClaim "email" (Aeson.String email)
   signWithES256 keys.es256Key claims
 
@@ -273,11 +241,7 @@ signTokenWithPermissions keys perms = do
   let expTime = GhcTime.addUTCTime 3600 now
   let permsList = perms |> Array.toLinkedList |> Prelude.map Aeson.String
   let claims =
-        JWT.emptyClaimsSet
-          & JWT.claimSub ?~ "test-user-123"
-          & JWT.claimIss ?~ "https://auth.example.com"
-          & JWT.claimIat ?~ JWT.NumericDate now
-          & JWT.claimExp ?~ JWT.NumericDate expTime
+        buildBaseClaims "test-user-123" "https://auth.example.com" now expTime
           & JWT.addClaim "permissions" (Aeson.toJSON permsList)
   signWithES256 keys.es256Key claims
 
@@ -288,11 +252,7 @@ signTokenWithTenantId keys tenantId = do
   now <- Task.fromIO GhcTime.getCurrentTime
   let expTime = GhcTime.addUTCTime 3600 now
   let claims =
-        JWT.emptyClaimsSet
-          & JWT.claimSub ?~ "test-user-123"
-          & JWT.claimIss ?~ "https://auth.example.com"
-          & JWT.claimIat ?~ JWT.NumericDate now
-          & JWT.claimExp ?~ JWT.NumericDate expTime
+        buildBaseClaims "test-user-123" "https://auth.example.com" now expTime
           & JWT.addClaim "tenant_id" (Aeson.String tenantId)
   signWithES256 keys.es256Key claims
 
@@ -311,11 +271,7 @@ signTokenWithClaims keys sub iss emailMaybe perms tenantMaybe = do
   let expTime = GhcTime.addUTCTime 3600 now
   let permsList = perms |> Array.toLinkedList |> Prelude.map Aeson.String
   let baseClaims =
-        JWT.emptyClaimsSet
-          & JWT.claimSub ?~ textToStringOrUri sub
-          & JWT.claimIss ?~ textToStringOrUri iss
-          & JWT.claimIat ?~ JWT.NumericDate now
-          & JWT.claimExp ?~ JWT.NumericDate expTime
+        buildBaseClaims sub iss now expTime
           & JWT.addClaim "permissions" (Aeson.toJSON permsList)
   let withEmail = case emailMaybe of
         Just email -> baseClaims & JWT.addClaim "email" (Aeson.String email)
@@ -330,6 +286,27 @@ signTokenWithClaims keys sub iss emailMaybe perms tenantMaybe = do
 -- Note: This will fail for text containing ":" that isn't a valid URI
 textToStringOrUri :: Text -> JWT.StringOrURI
 textToStringOrUri txt = JWT.string Lens.# txt
+
+
+-- | Build base claims for a valid token.
+-- This is the shared foundation used by all token signing helpers.
+-- Individual helpers extend this with additional claims as needed.
+buildBaseClaims ::
+  -- | Subject claim (sub)
+  Text ->
+  -- | Issuer claim (iss)
+  Text ->
+  -- | Issued at time (iat)
+  GhcTime.UTCTime ->
+  -- | Expiration time (exp)
+  GhcTime.UTCTime ->
+  JWT.ClaimsSet
+buildBaseClaims sub iss iatTime expTime =
+  JWT.emptyClaimsSet
+    & JWT.claimSub ?~ textToStringOrUri sub
+    & JWT.claimIss ?~ textToStringOrUri iss
+    & JWT.claimIat ?~ JWT.NumericDate iatTime
+    & JWT.claimExp ?~ JWT.NumericDate expTime
 
 
 -- | Internal: Sign claims with ES256

@@ -206,7 +206,8 @@ getJwkSetForKid kid manager = do
 -- | Get JWKSet for kid, triggering refresh if kid not found.
 -- Returns (JWKSet, kidWasFound). If kid not found:
 -- 1. Triggers background refresh (rate-limited)
--- 2. Returns full JWKSet as fallback
+-- 2. Re-reads snapshot to pick up newly rotated keys
+-- 3. Returns full JWKSet as fallback if still not found
 -- Uses pre-cached singleton JWKSet to avoid per-request allocation.
 getJwkSetForKidWithRefresh :: Text -> JwksManager -> Task err (Jose.JWKSet, Bool)
 getJwkSetForKidWithRefresh kid manager = do
@@ -215,9 +216,13 @@ getJwkSetForKidWithRefresh kid manager = do
   case Map.get kid snapshot.jwkSetsByKid of
     Just jwkSet -> Task.yield (jwkSet, True)
     Nothing -> do
-      -- Kid not found - trigger refresh (rate-limited) and fallback to all keys
+      -- Kid not found - trigger refresh (rate-limited)
       _ <- requestRefresh manager |> Task.asResult
-      Task.yield (snapshot.cachedJwkSet, False)
+      -- Re-read snapshot to pick up any newly rotated keys
+      refreshedSnapshot <- AtomicVar.peek manager.keySnapshot
+      case Map.get kid refreshedSnapshot.jwkSetsByKid of
+        Just jwkSet -> Task.yield (jwkSet, True)
+        Nothing -> Task.yield (refreshedSnapshot.cachedJwkSet, False)
 
 
 -- | Check if keys are stale beyond acceptable threshold.
@@ -347,17 +352,25 @@ refreshKeys manager = do
       Task.yield currentVersion
 
 
--- | Mark current keys as stale, but only if version matches.
+-- | Mark current keys as stale, but only if version matches AND staleness window exceeded.
 -- This prevents stale writes from overwriting fresh data in race conditions.
--- Called when refresh fails - keeps old keys but marks them stale.
+-- Only marks stale after maxStaleSeconds have elapsed since last successful fetch,
+-- so a single transient failure won't immediately mark keys stale.
+-- Called when refresh fails - keeps old keys but marks them stale if window exceeded.
 markKeysStaleIfVersion :: GhcInt.Int64 -> JwksManager -> Task err Unit
 markKeysStaleIfVersion expectedVersion manager = do
-  -- Atomically mark stale only if version hasn't changed
+  -- Get current time for elapsed calculation
+  now <- getCurrentSeconds
+  let maxStale = manager.config.maxStaleSeconds
+  -- Atomically mark stale only if version matches AND staleness window exceeded
   AtomicVar.modify
-    ( \snapshot ->
-        case snapshot.snapshotVersion == expectedVersion of
+    ( \snapshot -> do
+        let elapsed = now - snapshot.fetchedAt
+        let versionMatches = snapshot.snapshotVersion == expectedVersion
+        let windowExceeded = elapsed >= maxStale
+        case versionMatches && windowExceeded of
           True -> snapshot {isStale = True}
-          False -> snapshot -- Version changed, skip stale marking
+          False -> snapshot -- Version changed or within staleness window
     )
     manager.keySnapshot
   Task.yield ()

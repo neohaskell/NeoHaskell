@@ -47,7 +47,7 @@ Similar to the Integration pattern (ADR-0008), authentication involves two user 
 
 ### Industry Standard Pattern
 
-The industry standard pattern for authentication in event-sourced applications is:
+The industry-standard pattern for authentication in event-sourced applications is:
 
 1. **External OAuth provider** (Keycloak/Auth0/Okta) handles all OAuth complexity
 2. **Application validates JWT tokens** from `Authorization: Bearer` headers
@@ -726,7 +726,7 @@ This prevents accidental exposure of sensitive read models.
 ```
 GET /queries/{query-name}/{id}           -- Single instance by ID
 GET /queries/{query-name}?cursor=&limit= -- Paginated list (requires explicit enablement)
-```
+```text
 
 ##### Single Instance Endpoint (Primary)
 
@@ -1056,7 +1056,7 @@ The discovery mechanism, JWKS manager, internal config, and validation logic are
 
 10. **Standard compliance**: Uses JOSE/JWT standards; RFC 8725 hardened; works with any OAuth2/OIDC provider.
 
-11. **Production-proven pattern**: Follows the industry standard pattern used by production event-sourced systems.
+11. **Production-proven pattern**: Follows the industry-standard pattern used by production event-sourced systems.
 
 12. **High-performance design**: Lock-free key lookups, background refresh, circuit breaker - designed for 50k req/s.
 
@@ -1117,6 +1117,7 @@ Let applications implement their own authentication.
 ## Implementation Plan
 
 ### Phase 1 — Public API + basic validation (Short, ~2 days)
+
 - [ ] Add `jose` dependency to nhcore.cabal
 - [ ] Create `Auth.Claims` with `UserClaims` type
 - [ ] Create `Auth.Error` with `AuthError` and `DiscoveryError` types
@@ -1130,6 +1131,7 @@ Let applications implement their own authentication.
 - [ ] Write unit tests for discovery parsing and token validation
 
 ### Phase 2 — JWKS manager (Medium, ~3 days)
+
 - [ ] Create `Auth.Jwks` with `JwksManager`:
   - Split state: `AtomicVar KeySnapshot` + `AtomicVar RefreshState`
   - Bounded `Channel RefreshSignal`
@@ -1145,6 +1147,7 @@ Let applications implement their own authentication.
   - Stale-if-error behavior
 
 ### Phase 3 — Middleware integration (Medium, ~2 days)
+
 - [ ] Create `Auth.Middleware` with `checkAuth`
 - [ ] Implement `kid` miss policy (401 vs 503 based on health)
 - [ ] Update `EndpointHandler` type signature
@@ -1153,6 +1156,7 @@ Let applications implement their own authentication.
 - [ ] Write integration tests
 
 ### Phase 4 — Application layer (Short, ~1 day)
+
 - [ ] Add `Application.withAuth` (simple API)
 - [ ] Add `Application.withAuthOverrides` (advanced API)
 - [ ] Add `authSetup` field to `Application` record
@@ -1161,6 +1165,7 @@ Let applications implement their own authentication.
 - [ ] Write end-to-end tests
 
 ### Phase 5 — Hardening + observability (Medium, ~2 days)
+
 - [ ] Add metrics counters:
   - Refresh success/failure count
   - Key-miss count

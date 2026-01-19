@@ -13,7 +13,7 @@ module Auth.Discovery (
 
 import Array (Array)
 import Array qualified
-import Auth.Config (AuthConfig (..), AuthOverrides (..), defaultAllowedAlgorithms)
+import Auth.Config (AuthConfig (..), AuthOverrides (..), defaultAllowedAlgorithms, mkAuthConfig)
 import Auth.Error (DiscoveryError (..))
 import Auth.UrlValidation (ValidationError (..))
 import Auth.UrlValidation qualified as UrlValidation
@@ -102,23 +102,22 @@ fetchDiscoveryDocumentOrThrow url = do
 
 
 -- | Build AuthConfig from discovery document and overrides.
+-- Uses mkAuthConfig to precompute allowedAlgorithmsSet for O(1) lookups.
 buildAuthConfig :: DiscoveryDocument -> Text -> AuthOverrides -> AuthConfig
-buildAuthConfig discovery validatedJwksUri overrides =
-  AuthConfig
-    { issuer = discovery.issuer,
-      jwksUri = validatedJwksUri,
-      audience = overrides.audience,
-      permissionsClaim = overrides.permissionsClaim |> Maybe.withDefault "permissions",
-      tenantIdClaim = overrides.tenantIdClaim,
-      clockSkewSeconds = overrides.clockSkewSeconds |> Maybe.withDefault 60,
-      refreshIntervalSeconds = 900,
-      missingKidCooldownSeconds = 60,
-      maxStaleSeconds = 86400,
-      allowedAlgorithms =
-        overrides.allowedAlgorithms
-          |> Maybe.withDefault defaultAllowedAlgorithms,
-      supportedCritHeaders = Array.empty
-    }
+buildAuthConfig discovery validatedJwksUri overrides = do
+  let algs = overrides.allowedAlgorithms |> Maybe.withDefault defaultAllowedAlgorithms
+  mkAuthConfig
+    discovery.issuer
+    validatedJwksUri
+    overrides.audience
+    (overrides.permissionsClaim |> Maybe.withDefault "permissions")
+    overrides.tenantIdClaim
+    (overrides.clockSkewSeconds |> Maybe.withDefault 60)
+    900
+    60
+    86400
+    algs
+    Array.empty
 
 
 -- | Map URL validation errors to discovery errors.
@@ -183,6 +182,7 @@ extractJwkSetKeys (Jose.JWKSet keys) = keys
 -- If allowlist is Nothing, all domains are allowed (default behavior).
 -- If allowlist is Just [], no domains are allowed (fail-closed).
 -- Otherwise, the URL's domain must match one of the allowlisted domains.
+-- Comparison is case-insensitive (domains are normalized to lowercase).
 validateDomainAllowlist :: Text -> Maybe (Array Text) -> Result DiscoveryError ()
 validateDomainAllowlist url maybeAllowlist =
   case maybeAllowlist of
@@ -190,13 +190,17 @@ validateDomainAllowlist url maybeAllowlist =
     Just allowlist ->
       case extractDomain url of
         Nothing -> Err (UrlValidationFailed [fmt|Cannot extract domain from URL: #{url}|])
-        Just domain ->
-          case Array.any (\allowed -> allowed == domain) allowlist of
+        Just domain -> do
+          -- Case-insensitive comparison: normalize both to lowercase
+          let domainLower = Text.toLower domain
+          let isAllowed = Array.any (\allowed -> Text.toLower allowed == domainLower) allowlist
+          case isAllowed of
             True -> Ok ()
             False -> Err (UrlValidationFailed [fmt|Domain not in allowlist: #{domain}|])
 
 
 -- | Extract domain (hostname) from URL.
+-- Returns the hostname normalized to lowercase for consistent comparison.
 extractDomain :: Text -> Maybe Text
 extractDomain url = do
   let urlString = Text.toLinkedList url
@@ -205,4 +209,4 @@ extractDomain url = do
     Just uri ->
       case URI.uriAuthority uri of
         Nothing -> Nothing
-        Just auth -> Just (URI.uriRegName auth |> Text.fromLinkedList)
+        Just auth -> Just (URI.uriRegName auth |> Text.fromLinkedList |> Text.toLower)
