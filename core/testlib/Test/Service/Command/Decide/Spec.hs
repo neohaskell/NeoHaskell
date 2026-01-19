@@ -1,14 +1,23 @@
 module Test.Service.Command.Decide.Spec where
 
 import Array qualified
+import Auth.Claims (UserClaims (..))
 import Core
+import Data.Time.Calendar qualified as GhcCalendar
+import Data.Time.Clock qualified as GhcClock
+import Map qualified
+import Service.Auth (RequestContext (..))
 import Service.Auth qualified as Auth
 import Service.Command.Core (DecisionContext (..), runDecision)
 import Test
 import Test.Service.Command.Core (
   AddItemToCart (..),
+  AuthenticatedAddItem (..),
   CartEntity (..),
   CheckoutCart (..),
+  OwnedCartCheckout (..),
+  OwnedCartEntity (..),
+  OwnedCartEvent (..),
   RemoveItemFromCart (..),
   applyCartEvent,
   initialCartState,
@@ -30,6 +39,9 @@ spec = do
   describe "Command decideImpl Specification Tests" do
     describe "Regular Commands (Cart)" do
       cartCommandSpecs
+
+    describe "Authorization Commands" do
+      authorizationSpecs
 
     describe "Edge Cases" do
       edgeCaseSpecs
@@ -329,3 +341,180 @@ edgeCaseSpecs = do
                     fail "Should not be able to add items to checked out cart"
               Nothing -> fail "Expected checkout event"
           RejectCommand _ -> fail "Checkout failed"
+
+
+-- ============================================================================
+-- Authorization Tests
+-- ============================================================================
+
+
+-- | Helper to create a test user with given sub (user ID)
+testUser :: Text -> UserClaims
+testUser userId =
+  UserClaims
+    { sub = userId,
+      email = Nothing,
+      name = Nothing,
+      permissions = Array.empty,
+      tenantId = Nothing,
+      rawClaims = Map.empty
+    }
+
+
+-- | Helper to create an authenticated RequestContext
+authenticatedContext :: Text -> RequestContext
+authenticatedContext userId =
+  RequestContext
+    { user = Just (testUser userId),
+      requestId = Uuid.nil,
+      timestamp = GhcClock.UTCTime (GhcCalendar.fromGregorian 1970 1 1) 0
+    }
+
+
+authorizationSpecs :: Spec Unit
+authorizationSpecs = do
+  describe "AuthenticatedAddItem (requires authentication)" do
+    before Context.initialize do
+      it "rejects when user is not authenticated" \context -> do
+        let cart =
+              CartEntity
+                { cartId = context.cartId,
+                  cartItems = Array.empty,
+                  cartCheckedOut = False
+                }
+        let cmd = AuthenticatedAddItem {cartId = context.cartId, itemId = context.itemId1, amount = 5}
+
+        -- Use emptyContext (no user)
+        result <- runTestDecision (decideImpl @AuthenticatedAddItem cmd (Just cart) Auth.emptyContext)
+
+        case result of
+          RejectCommand msg -> do
+            msg |> shouldBe "Authentication required"
+          AcceptCommand _ _ ->
+            fail "Expected rejection for unauthenticated user"
+
+      it "accepts when user is authenticated" \context -> do
+        let cart =
+              CartEntity
+                { cartId = context.cartId,
+                  cartItems = Array.empty,
+                  cartCheckedOut = False
+                }
+        let cmd = AuthenticatedAddItem {cartId = context.cartId, itemId = context.itemId1, amount = 5}
+
+        -- Use authenticated context
+        let ctx = authenticatedContext "user-123"
+        result <- runTestDecision (decideImpl @AuthenticatedAddItem cmd (Just cart) ctx)
+
+        case result of
+          RejectCommand msg ->
+            fail [fmt|Expected acceptance but got rejection: #{msg}|]
+          AcceptCommand insertionType events -> do
+            insertionType |> shouldBe ExistingStream
+            Array.length events |> shouldBe 1
+
+      it "still enforces business rules when authenticated" \context -> do
+        let cart =
+              CartEntity
+                { cartId = context.cartId,
+                  cartItems = Array.empty,
+                  cartCheckedOut = True -- Cart is checked out
+                }
+        let cmd = AuthenticatedAddItem {cartId = context.cartId, itemId = context.itemId1, amount = 5}
+
+        -- Authenticated but cart is checked out
+        let ctx = authenticatedContext "user-123"
+        result <- runTestDecision (decideImpl @AuthenticatedAddItem cmd (Just cart) ctx)
+
+        case result of
+          RejectCommand msg -> do
+            msg |> shouldBe "Cannot add items to a checked out cart"
+          AcceptCommand _ _ ->
+            fail "Expected rejection for checked out cart"
+
+  describe "OwnedCartCheckout (requires ownership)" do
+    before Context.initialize do
+      it "rejects when user is not authenticated" \context -> do
+        let cart =
+              OwnedCartEntity
+                { cartId = context.cartId,
+                  ownerId = "owner-user",
+                  cartItems = Array.wrap (context.itemId1, 5),
+                  cartCheckedOut = False
+                }
+        let cmd = OwnedCartCheckout {cartId = context.cartId}
+
+        -- Use emptyContext (no user)
+        result <- runTestDecision (decideImpl @OwnedCartCheckout cmd (Just cart) Auth.emptyContext)
+
+        case result of
+          RejectCommand msg -> do
+            msg |> shouldBe "Authentication required"
+          AcceptCommand _ _ ->
+            fail "Expected rejection for unauthenticated user"
+
+      it "rejects when user does not own the cart" \context -> do
+        let cart =
+              OwnedCartEntity
+                { cartId = context.cartId,
+                  ownerId = "owner-user",
+                  cartItems = Array.wrap (context.itemId1, 5),
+                  cartCheckedOut = False
+                }
+        let cmd = OwnedCartCheckout {cartId = context.cartId}
+
+        -- User is authenticated but not the owner
+        let ctx = authenticatedContext "different-user"
+        result <- runTestDecision (decideImpl @OwnedCartCheckout cmd (Just cart) ctx)
+
+        case result of
+          RejectCommand msg -> do
+            msg |> shouldBe "You do not own this cart"
+          AcceptCommand _ _ ->
+            fail "Expected rejection for non-owner"
+
+      it "accepts when user owns the cart" \context -> do
+        let cart =
+              OwnedCartEntity
+                { cartId = context.cartId,
+                  ownerId = "owner-user",
+                  cartItems = Array.wrap (context.itemId1, 5),
+                  cartCheckedOut = False
+                }
+        let cmd = OwnedCartCheckout {cartId = context.cartId}
+
+        -- User is the owner
+        let ctx = authenticatedContext "owner-user"
+        result <- runTestDecision (decideImpl @OwnedCartCheckout cmd (Just cart) ctx)
+
+        case result of
+          RejectCommand msg ->
+            fail [fmt|Expected acceptance but got rejection: #{msg}|]
+          AcceptCommand insertionType events -> do
+            insertionType |> shouldBe ExistingStream
+            Array.length events |> shouldBe 1
+
+            case Array.get 0 events of
+              Just (OwnedCartCheckedOut {}) -> do
+                pure unit
+              _ -> fail "Expected OwnedCartCheckedOut event"
+
+      it "still enforces business rules when owner" \context -> do
+        let cart =
+              OwnedCartEntity
+                { cartId = context.cartId,
+                  ownerId = "owner-user",
+                  cartItems = Array.empty, -- Empty cart
+                  cartCheckedOut = False
+                }
+        let cmd = OwnedCartCheckout {cartId = context.cartId}
+
+        -- User is the owner but cart is empty
+        let ctx = authenticatedContext "owner-user"
+        result <- runTestDecision (decideImpl @OwnedCartCheckout cmd (Just cart) ctx)
+
+        case result of
+          RejectCommand msg -> do
+            msg |> shouldBe "Cannot checkout empty cart"
+          AcceptCommand _ _ ->
+            fail "Expected rejection for empty cart"

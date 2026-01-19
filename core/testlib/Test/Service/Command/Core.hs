@@ -3,17 +3,26 @@ module Test.Service.Command.Core (
   AddItemToCart (..),
   RemoveItemFromCart (..),
   CheckoutCart (..),
-  -- Cart Entity
+  -- Authorization-aware Commands
+  AuthenticatedAddItem (..),
+  OwnedCartCheckout (..),
+  -- Cart Entity (with owner support)
   CartEntity (..),
+  OwnedCartEntity (..),
   initialCartState,
+  initialOwnedCartState,
   applyCartEvent,
+  applyOwnedCartEvent,
+  -- Events
+  OwnedCartEvent (..),
 ) where
 
 import Array qualified
+import Auth.Claims (UserClaims (..))
 import Core
 import Decider qualified
 import Json qualified
-import Service.Auth (RequestContext)
+import Service.Auth (RequestContext (..))
 import Service.Command.Core (Event (..))
 import Test.Service.EventStore.Core (CartEvent (..))
 import Uuid ()
@@ -121,17 +130,23 @@ applyCartEvent event state = do
     ItemAdded {itemId, amount} -> do
       let existingItems = state.cartItems
       let updatedItems = addOrUpdateItem existingItems itemId amount
-      state
-        { cartItems = updatedItems
+      CartEntity
+        { cartId = state.cartId,
+          cartItems = updatedItems,
+          cartCheckedOut = state.cartCheckedOut
         }
     ItemRemoved {itemId} -> do
       let updatedItems = Array.dropIf (\(id, _) -> id == itemId) state.cartItems
-      state
-        { cartItems = updatedItems
+      CartEntity
+        { cartId = state.cartId,
+          cartItems = updatedItems,
+          cartCheckedOut = state.cartCheckedOut
         }
     CartCheckedOut {} ->
-      state
-        { cartCheckedOut = True
+      CartEntity
+        { cartId = state.cartId,
+          cartItems = state.cartItems,
+          cartCheckedOut = True
         }
 
 
@@ -219,3 +234,186 @@ instance Command CheckoutCart where
                 let event = CartCheckedOut {entityId = cart.cartId}
                 [event]
                   |> Decider.acceptExisting
+
+
+-- ============================================================================
+-- Authorization-Aware Commands (for testing RequestContext)
+-- ============================================================================
+
+-- | Command that requires authentication.
+-- Rejects if ctx.user is Nothing.
+data AuthenticatedAddItem = AuthenticatedAddItem
+  { cartId :: Uuid,
+    itemId :: Uuid,
+    amount :: Int
+  }
+  deriving (Eq, Show, Ord, Generic)
+
+
+instance Json.ToJSON AuthenticatedAddItem
+
+
+instance Json.FromJSON AuthenticatedAddItem
+
+
+type instance EntityOf AuthenticatedAddItem = CartEntity
+
+
+instance Command AuthenticatedAddItem where
+  getEntityIdImpl cmd = cmd.cartId |> Just
+
+
+  decideImpl :: AuthenticatedAddItem -> Maybe CartEntity -> RequestContext -> Decision CartEvent
+  decideImpl cmd entity ctx =
+    case ctx.user of
+      Nothing ->
+        Decider.reject "Authentication required"
+      Just _user ->
+        -- User is authenticated, proceed with normal logic
+        case entity of
+          Nothing ->
+            Decider.reject "Cart does not exist"
+          Just cart -> do
+            if cart.cartCheckedOut
+              then Decider.reject "Cannot add items to a checked out cart"
+              else
+                ItemAdded {entityId = cart.cartId, itemId = cmd.itemId, amount = cmd.amount}
+                  |> Array.wrap
+                  |> Decider.acceptExisting
+
+
+-- ============================================================================
+-- Owned Cart Entity (for ownership testing)
+-- ============================================================================
+
+-- | Cart entity with owner tracking for authorization tests.
+data OwnedCartEntity = OwnedCartEntity
+  { cartId :: Uuid,
+    ownerId :: Text, -- User ID (sub claim from JWT)
+    cartItems :: Array (Uuid, Int),
+    cartCheckedOut :: Bool
+  }
+  deriving (Eq, Show, Ord, Generic)
+
+
+instance Json.ToJSON OwnedCartEntity
+
+
+instance Json.FromJSON OwnedCartEntity
+
+
+-- | Events for owned cart.
+data OwnedCartEvent
+  = OwnedCartCreated {entityId :: Uuid, ownerId :: Text}
+  | OwnedItemAdded {entityId :: Uuid, itemId :: Uuid, amount :: Int}
+  | OwnedCartCheckedOut {entityId :: Uuid}
+  deriving (Eq, Show, Generic)
+
+
+instance Json.ToJSON OwnedCartEvent
+
+
+instance Json.FromJSON OwnedCartEvent
+
+
+type instance EventOf OwnedCartEntity = OwnedCartEvent
+
+
+type instance EntityOf OwnedCartEvent = OwnedCartEntity
+
+
+instance Entity OwnedCartEntity where
+  initialStateImpl = initialOwnedCartState
+  updateImpl = applyOwnedCartEvent
+
+
+instance Event OwnedCartEvent where
+  getEventEntityIdImpl event =
+    case event of
+      OwnedCartCreated eid _ -> eid
+      OwnedItemAdded eid _ _ -> eid
+      OwnedCartCheckedOut eid -> eid
+
+
+initialOwnedCartState :: OwnedCartEntity
+initialOwnedCartState =
+  OwnedCartEntity
+    { cartId = def,
+      ownerId = "",
+      cartItems = Array.empty,
+      cartCheckedOut = False
+    }
+
+
+applyOwnedCartEvent :: OwnedCartEvent -> OwnedCartEntity -> OwnedCartEntity
+applyOwnedCartEvent event state = do
+  case event of
+    OwnedCartCreated {entityId, ownerId} ->
+      OwnedCartEntity
+        { cartId = entityId,
+          ownerId = ownerId,
+          cartItems = Array.empty,
+          cartCheckedOut = False
+        }
+    OwnedItemAdded {itemId, amount} -> do
+      let existingItems = state.cartItems
+      let updatedItems = addOrUpdateItem existingItems itemId amount
+      OwnedCartEntity
+        { cartId = state.cartId,
+          ownerId = state.ownerId,
+          cartItems = updatedItems,
+          cartCheckedOut = state.cartCheckedOut
+        }
+    OwnedCartCheckedOut {} ->
+      OwnedCartEntity
+        { cartId = state.cartId,
+          ownerId = state.ownerId,
+          cartItems = state.cartItems,
+          cartCheckedOut = True
+        }
+
+
+-- | Command that checks ownership.
+-- Rejects if ctx.user.sub doesn't match entity.ownerId.
+data OwnedCartCheckout = OwnedCartCheckout
+  { cartId :: Uuid
+  }
+  deriving (Eq, Show, Ord, Generic)
+
+
+instance Json.ToJSON OwnedCartCheckout
+
+
+instance Json.FromJSON OwnedCartCheckout
+
+
+type instance EntityOf OwnedCartCheckout = OwnedCartEntity
+
+
+instance Command OwnedCartCheckout where
+  getEntityIdImpl cmd = cmd.cartId |> Just
+
+
+  decideImpl :: OwnedCartCheckout -> Maybe OwnedCartEntity -> RequestContext -> Decision OwnedCartEvent
+  decideImpl _cmd entity ctx =
+    case ctx.user of
+      Nothing ->
+        Decider.reject "Authentication required"
+      Just user ->
+        case entity of
+          Nothing ->
+            Decider.reject "Cart does not exist"
+          Just cart -> do
+            -- Check ownership
+            if cart.ownerId != user.sub
+              then Decider.reject "You do not own this cart"
+              else do
+                if cart.cartCheckedOut
+                  then Decider.reject "Cart already checked out"
+                  else do
+                    if Array.isEmpty cart.cartItems
+                      then Decider.reject "Cannot checkout empty cart"
+                      else do
+                        let event = OwnedCartCheckedOut {entityId = cart.cartId}
+                        [event]
+                          |> Decider.acceptExisting
