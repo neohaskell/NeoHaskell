@@ -102,23 +102,31 @@ isSingleLabelHostname host =
   case host of
     [] -> False -- Empty is handled elsewhere
     _ ->
-      -- Allow literal IPs (both IPv4 and bracketed IPv6)
-      case host of
-        '[' : _ -> False -- Bracketed IPv6, not a single-label hostname
-        _ ->
-          -- Check if it's a literal IPv4 (contains only digits and dots)
-          case isLiteralIPv4 host of
-            True -> False -- Literal IPv4, allow it
-            False ->
-              -- For hostnames, require at least one dot (FQDN)
-              not (LinkedList.any (\c -> c == '.') host)
+      -- Allow literal IPs (both IPv4 and bracketed IPv6) using strict parsing
+      case isLiteralIpHostStr host of
+        True -> False -- Literal IP, allow it
+        False ->
+          -- For hostnames, require at least one dot (FQDN)
+          not (LinkedList.any (\c -> c == '.') host)
 
 
--- | Check if string looks like a literal IPv4 address.
-isLiteralIPv4 :: [Char] -> Bool
-isLiteralIPv4 host =
-  LinkedList.all (\c -> GhcChar.isDigit c || c == '.') host
-    && LinkedList.any (\c -> c == '.') host
+-- | Check if string is a valid literal IP address (IPv4 or bracketed IPv6).
+-- Uses strict parsing via readMaybe - rejects malformed IPs like "999.999.999.999".
+isLiteralIpHostStr :: [Char] -> Bool
+isLiteralIpHostStr host =
+  case host of
+    [] -> False
+    -- Bracketed IPv6 address (e.g., "[2001:db8::1]")
+    '[' : _ -> do
+      let strippedHost = stripIPv6Brackets host
+      case GhcRead.readMaybe @IP.IPv6 strippedHost of
+        Just _ -> True
+        Nothing -> False
+    -- Try to parse as IPv4
+    _ ->
+      case GhcRead.readMaybe @IP.IPv4 host of
+        Just _ -> True
+        Nothing -> False
 
 
 -- | Check if a hostname is a private or loopback IP address.
@@ -330,20 +338,19 @@ validateSecureUrlWithDns urlText = do
 
 -- | Check if a hostname is a literal IP address (IPv4 or bracketed IPv6).
 -- Literal IPs don't need DNS resolution - they are validated directly.
+-- Uses strict parsing via readMaybe - rejects malformed IPs like "999.999.999.999".
 -- Examples:
 --   "192.168.1.1" -> True (IPv4)
 --   "[2001:db8::1]" -> True (bracketed IPv6)
 --   "[::1]" -> True (bracketed IPv6 loopback)
 --   "example.com" -> False (hostname)
 --   "localhost" -> False (hostname, even though it resolves to loopback)
+--   "999.999.999.999" -> False (invalid IPv4)
+--   "1.2.3.4.5" -> False (invalid IPv4)
 isLiteralIpHost :: Text -> Bool
 isLiteralIpHost hostname = do
   let hostStr = Text.toLinkedList hostname
-  case hostStr of
-    -- Bracketed IPv6 address (e.g., "[2001:db8::1]")
-    '[' : _ -> True
-    -- Check if it's a literal IPv4 address
-    _ -> isLiteralIPv4 hostStr
+  isLiteralIpHostStr hostStr
 
 
 -- | Extract hostname from a URL.
