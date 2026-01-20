@@ -3,11 +3,15 @@ module Service.Query.EndpointSpec where
 import Array qualified
 import Core
 import Json qualified
+import Service.Query.Auth (QueryEndpointError)
+import Service.Query.Auth qualified as Auth
+import Service.Query.Core qualified
 import Service.Query.Endpoint qualified as Endpoint
 import Service.QueryObjectStore.Core (Error (..), QueryObjectStore (..))
 import Service.QueryObjectStore.InMemory qualified as InMemoryStore
 import Task qualified
 import Test
+import ToText qualified
 import Uuid qualified
 
 
@@ -26,6 +30,12 @@ instance Json.ToJSON TestQuery
 instance Json.FromJSON TestQuery
 
 
+-- | Query instance for testing - public access
+instance Service.Query.Core.Query TestQuery where
+  canAccessImpl _ = Nothing
+  canViewImpl _ _ = Nothing
+
+
 spec :: Spec Unit
 spec = do
   describe "Service.Query.Endpoint" do
@@ -33,7 +43,7 @@ spec = do
       it "returns empty JSON array when no queries exist" \_ -> do
         store <- InMemoryStore.new |> Task.mapError toText
 
-        result <- Endpoint.createQueryEndpoint @TestQuery store
+        result <- Endpoint.createQueryEndpoint @TestQuery store Nothing |> Task.mapError endpointErrorToText
 
         result |> shouldBe "[]"
 
@@ -45,7 +55,7 @@ spec = do
         store.atomicUpdate queryId (\_ -> Just query)
           |> Task.mapError errorToText
 
-        result <- Endpoint.createQueryEndpoint @TestQuery store
+        result <- Endpoint.createQueryEndpoint @TestQuery store Nothing |> Task.mapError endpointErrorToText
 
         -- Result should be a JSON array containing the query
         let decoded = Json.decodeText @(Array TestQuery) result
@@ -72,7 +82,7 @@ spec = do
         store.atomicUpdate id2 (\_ -> Just query2) |> Task.mapError errorToText
         store.atomicUpdate id3 (\_ -> Just query3) |> Task.mapError errorToText
 
-        result <- Endpoint.createQueryEndpoint @TestQuery store
+        result <- Endpoint.createQueryEndpoint @TestQuery store Nothing |> Task.mapError endpointErrorToText
 
         let decoded = Json.decodeText @(Array TestQuery) result
         case decoded of
@@ -87,7 +97,7 @@ spec = do
         store.atomicUpdate queryId (\_ -> Just query)
           |> Task.mapError errorToText
 
-        result <- Endpoint.createQueryEndpoint @TestQuery store
+        result <- Endpoint.createQueryEndpoint @TestQuery store Nothing |> Task.mapError endpointErrorToText
 
         -- Verify the result is valid JSON by parsing it
         let parsed = Json.decodeText @Json.Value result
@@ -99,5 +109,12 @@ spec = do
 -- | Convert QueryObjectStore Error to Text.
 errorToText :: Service.QueryObjectStore.Core.Error -> Text
 errorToText err = case err of
-  StorageError msg -> msg
+  Service.QueryObjectStore.Core.StorageError msg -> msg
   SerializationError msg -> msg
+
+
+-- | Convert QueryEndpointError to Text for tests.
+endpointErrorToText :: QueryEndpointError -> Text
+endpointErrorToText err = case err of
+  Auth.AuthorizationError authErr -> ToText.toText authErr
+  Auth.StorageError msg -> msg

@@ -9,9 +9,11 @@ import Basics
 import Bytes (Bytes)
 import Json qualified
 import Map (Map)
+import Maybe (Maybe)
 import Record qualified
-import Service.Auth (RequestContext)
+import Service.Auth (RequestContext, UserClaims)
 import Service.Command.Core (Command, NameOf)
+import Service.Query.Auth (QueryEndpointError)
 import Service.Response (CommandResponse)
 import Task (Task)
 import Text (Text)
@@ -26,9 +28,20 @@ type EndpointHandler = RequestContext -> Bytes -> ((CommandResponse, Bytes) -> T
 
 -- | Handler for a single query endpoint.
 --
--- Returns the query data as a JSON-encoded Text string.
+-- Takes Maybe UserClaims for authorization and returns query data as JSON Text.
+-- The handler is responsible for:
+-- 1. Calling canAccessImpl (pre-fetch auth check)
+-- 2. Fetching the data
+-- 3. Calling canViewImpl on each result (post-fetch auth filter)
+--
+-- Returns typed QueryEndpointError for proper HTTP status mapping:
+-- - AuthorizationError Unauthenticated -> 401
+-- - AuthorizationError Forbidden -> 403
+-- - AuthorizationError InsufficientPermissions -> 403
+-- - StorageError -> 500
+--
 -- Used for GET /queries/{query-name} endpoints.
-type QueryEndpointHandler = Task Text Text
+type QueryEndpointHandler = Maybe UserClaims -> Task QueryEndpointError Text
 
 
 -- | Collection of command and query endpoints for a transport.

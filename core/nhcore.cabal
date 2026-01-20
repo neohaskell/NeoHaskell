@@ -190,6 +190,7 @@ library
     Service.Application.Integrations
     Service.Application.Transports
     Service.Query
+    Service.Query.Auth
     Service.Query.Core
     Service.Query.Definition
     Service.Query.Endpoint

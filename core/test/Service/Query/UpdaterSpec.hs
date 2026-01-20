@@ -64,7 +64,9 @@ instance Json.ToJSON CounterSummary
 instance Json.FromJSON CounterSummary
 
 
-instance Query CounterSummary
+instance Query CounterSummary where
+  canAccessImpl _ = Nothing
+  canViewImpl _ _ = Nothing
 
 
 instance QueryOf CounterEntity CounterSummary where

@@ -2,10 +2,12 @@
 
 module Service.Query.THSpec where
 
+import Auth.Claims (UserClaims)
 import Core
 import Data.Proxy (Proxy (..))
 import GHC.TypeLits (KnownSymbol, symbolVal)
 import Json qualified
+import Service.Query.Auth (QueryAuthError)
 import Service.Query.TH (deriveQuery)
 import Test
 import Text qualified
@@ -97,6 +99,16 @@ instance Json.ToJSON UserOrders
 instance Json.FromJSON UserOrders
 
 
+-- Authorization functions for all test queries (public access)
+-- Using polymorphic types so one definition works for all queries
+canAccess :: Maybe UserClaims -> Maybe QueryAuthError
+canAccess _ = Nothing
+
+
+canView :: forall query. Maybe UserClaims -> query -> Maybe QueryAuthError
+canView _ _ = Nothing
+
+
 -- Use TH to derive Query instances
 deriveQuery ''UserOrders [''UserEntity, ''OrderEntity]
 
@@ -131,6 +143,9 @@ instance Json.ToJSON SimpleQuery
 instance Json.FromJSON SimpleQuery
 
 
+-- Note: deriveQuery requires canAccess/canView in scope.
+-- Since we already defined them above with public access (Nothing),
+-- the same functions work for SimpleQuery too.
 deriveQuery ''SimpleQuery [''UserEntity]
 
 

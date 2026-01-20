@@ -16,17 +16,25 @@ import Language.Haskell.TH.Syntax qualified as TH
 -- Usage:
 --
 -- @
--- deriveQuery ''UserOrders [''UserEntity, ''OrderEntity]
+-- -- Define auth functions in your query module
+-- canAccess :: Maybe UserClaims -> Maybe QueryAuthError
+-- canAccess = authenticatedAccess
+--
+-- canView :: Maybe UserClaims -> CartSummary -> Maybe QueryAuthError
+-- canView = ownerOnly (.ownerId)
+--
+-- deriveQuery ''CartSummary [''CartEntity]
 -- @
 --
 -- Generates:
 --
--- * @type instance NameOf UserOrders = "UserOrders"@
--- * @type instance EntitiesOf UserOrders = '[UserEntity, OrderEntity]@
--- * @instance Query UserOrders@
--- * @instance KnownHash "UserOrders"@
+-- * @type instance NameOf CartSummary = "CartSummary"@
+-- * @type instance EntitiesOf CartSummary = '[CartEntity]@
+-- * @instance Query CartSummary where canAccessImpl = canAccess; canViewImpl = canView@
+-- * @instance KnownHash "CartSummary"@
 --
--- Note: You must still manually implement 'QueryOf' instances for each
+-- Note: You must define 'canAccess' and 'canView' functions in your module.
+-- You must also manually implement 'QueryOf' instances for each
 -- entity-query relationship, as these contain business logic.
 deriveQuery :: TH.Name -> [TH.Name] -> THLib.DecsQ
 deriveQuery queryTypeName entityTypeNames = do
@@ -61,13 +69,62 @@ deriveQuery queryTypeName entityTypeNames = do
               entityTypeList
           )
 
-  -- Generate: instance Query QueryType
+  -- Generate: instance Query QueryType where
+  --             canAccessImpl = canAccess
+  --             canViewImpl = canView
+  -- Use lookupValueName to ensure canAccess/canView are defined locally
+  -- (not accidentally imported from elsewhere)
+  canAccessName <-
+    TH.lookupValueName "canAccess"
+      >>= orError
+        [fmt|
+ERROR: Missing 'canAccess' function for query '#{queryTypeStr}'.
+
+The 'canAccess' function defines who can access this query type.
+It is checked BEFORE fetching any data from storage.
+
+Please add the following function to your module:
+
+  canAccess :: Maybe UserClaims -> Maybe QueryAuthError
+  canAccess = publicAccess  -- or authenticatedAccess, requirePermission "...", etc.
+
+Available helpers from Service.Query.Auth:
+  - publicAccess           -- Anyone can access
+  - authenticatedAccess    -- Requires valid JWT token
+  - requirePermission "x"  -- Requires specific permission
+|]
+
+  canViewName <-
+    TH.lookupValueName "canView"
+      >>= orError
+        [fmt|
+ERROR: Missing 'canView' function for query '#{queryTypeStr}'.
+
+The 'canView' function defines who can view each instance of this query.
+It is checked AFTER fetching data, allowing instance-level authorization.
+
+Please add the following function to your module:
+
+  canView :: Maybe UserClaims -> #{queryTypeStr} -> Maybe QueryAuthError
+  canView = publicView  -- or ownerOnly (.ownerId), etc.
+
+Available helpers from Service.Query.Auth:
+  - publicView             -- Anyone can view any instance
+  - ownerOnly (.ownerId)   -- Only the owner (matching UserClaims.sub) can view
+|]
+
   let queryInstance =
         TH.InstanceD
           Nothing
           []
           (TH.ConT queryClassName `TH.AppT` TH.ConT queryTypeName)
-          []
+          [ TH.FunD
+              (TH.mkName "canAccessImpl")
+              [TH.Clause [] (TH.NormalB (TH.VarE canAccessName)) []],
+            TH.FunD
+              (TH.mkName "canViewImpl")
+              [TH.Clause [] (TH.NormalB (TH.VarE canViewName)) []]
+          ]
 
   -- Generate KnownHash instance
   knownHashInstances <- deriveKnownHash queryTypeStr
