@@ -128,6 +128,8 @@ mapValidationError err =
     PrivateIpBlocked url -> UrlValidationFailed [fmt|URL points to private/loopback IP (SSRF blocked): #{url}|]
     MalformedUrl url -> UrlValidationFailed [fmt|Malformed URL: #{url}|]
     MissingHostname url -> UrlValidationFailed [fmt|URL missing hostname: #{url}|]
+    DnsResolutionBlocked url privateIp -> UrlValidationFailed [fmt|DNS resolution blocked - #{url} resolves to private IP: #{privateIp}|]
+    DnsResolutionFailed url errMsg -> UrlValidationFailed [fmt|DNS resolution failed for #{url}: #{errMsg}|]
 
 
 -- | Fetch the OpenID Connect discovery document
