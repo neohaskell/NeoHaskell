@@ -7,6 +7,9 @@ module Service.Application (
   -- * ServiceRunner Type
   ServiceRunner (..),
 
+  -- * Auth Setup Type
+  WebAuthSetup (..),
+
   -- * Construction
   new,
 
@@ -21,6 +24,8 @@ module Service.Application (
   withOutbound,
   withOutboundLifecycle,
   withInbound,
+  withAuth,
+  withAuthOverrides,
 
   -- * Inspection
   isEmpty,
@@ -44,6 +49,11 @@ module Service.Application (
 import Array (Array)
 import Array qualified
 import AsyncTask qualified
+import Auth.Config (AuthOverrides)
+import Auth.Config qualified
+import Auth.Discovery qualified as Discovery
+import Auth.Jwks qualified as Jwks
+
 import Basics
 import Console qualified
 import Control.Concurrent.Async qualified as GhcAsync
@@ -77,12 +87,34 @@ import Service.Application.Transports qualified as Transports
 import Service.Integration.Dispatcher qualified as Dispatcher
 import Service.Integration.Types (OutboundRunner, OutboundLifecycleRunner)
 import Service.Transport (Transport (..), QueryEndpointHandler)
+import Service.Transport.Web qualified as Web
 import Task (Task)
 import Task qualified
 import Text (Text)
 import Text qualified
 import ToText (toText)
 import TypeName qualified
+
+
+-- | Configuration for WebTransport authentication.
+-- This is stored in the Application and converted to WebTransport.AuthEnabled at runtime.
+--
+-- When auth is enabled, all endpoints require a valid JWT by default.
+-- Permission checks should be done in the command's decide method, not at the transport layer.
+--
+-- Example:
+--
+-- @
+-- app = Application.new
+--   |> Application.withTransport WebTransport.server
+--   |> Application.withAuth "https://auth.example.com"
+-- @
+data WebAuthSetup = WebAuthSetup
+  { authServerUrl :: Text,
+    -- ^ OAuth provider URL (e.g., "https://auth.example.com")
+    authOverrides :: AuthOverrides
+    -- ^ Optional overrides for auth configuration
+  }
 
 
 -- | Application combines multiple Services and Queries with shared infrastructure.
@@ -123,7 +155,8 @@ data Application = Application
     queryEndpoints :: Map Text QueryEndpointHandler,
     outboundRunners :: Array OutboundRunner,
     outboundLifecycleRunners :: Array OutboundLifecycleRunner,
-    inboundIntegrations :: Array Integration.Inbound
+    inboundIntegrations :: Array Integration.Inbound,
+    webAuthSetup :: Maybe WebAuthSetup
   }
 
 
@@ -143,7 +176,8 @@ new =
       queryEndpoints = Map.empty,
       outboundRunners = Array.empty,
       outboundLifecycleRunners = Array.empty,
-      inboundIntegrations = Array.empty
+      inboundIntegrations = Array.empty,
+      webAuthSetup = Nothing
     }
 
 
@@ -337,6 +371,7 @@ withQueryEndpoint queryName handler app = do
     , outboundRunners = app.outboundRunners
     , outboundLifecycleRunners = app.outboundLifecycleRunners
     , inboundIntegrations = app.inboundIntegrations
+    , webAuthSetup = app.webAuthSetup
     }
 
 
@@ -501,20 +536,54 @@ runWith eventStore app = do
   -- 11. Start inbound integration workers (timers, webhooks, etc.)
   inboundWorkers <- Integrations.startInboundWorkers app.inboundIntegrations combinedCommandEndpoints
 
-  -- 12. Run each transport once with combined endpoints from all services
+  -- 12. Initialize auth if configured
+  maybeAuthEnabled <- case app.webAuthSetup of
+    Nothing -> Task.yield Nothing
+    Just (WebAuthSetup serverUrl overrides) -> do
+      Console.print [fmt|[Auth] Discovering auth config from #{serverUrl}...|]
+      authConfig <-
+        Discovery.discoverConfig serverUrl overrides
+          |> Task.mapError (\err -> [fmt|Auth discovery failed: #{toText err}|])
+      Console.print [fmt|[Auth] Starting JWKS manager...|]
+      jwksManager <- Jwks.startManager authConfig
+      Console.print [fmt|[Auth] Auth initialized successfully|]
+      Task.yield
+        ( Just
+            Web.AuthEnabled
+              { Web.jwksManager = jwksManager,
+                Web.authConfig = authConfig
+              }
+        )
+
+  -- Define cleanup actions that must always run
+  let cleanupJwksManager = case maybeAuthEnabled of
+        Just (Web.AuthEnabled manager _) -> do
+          Console.print "[Auth] Stopping JWKS manager..."
+            |> Task.ignoreError
+          Jwks.stopManager manager
+            |> Task.ignoreError
+        Nothing -> pass
+
+  let cleanupDispatcher = case maybeDispatcher of
+        Just dispatcher -> do
+          Console.print "[Integration] Shutting down outbound dispatcher..."
+            |> Task.ignoreError
+          Dispatcher.shutdown dispatcher
+        Nothing -> pass
+
+  let cleanupAll = do
+        cleanupJwksManager
+        cleanupDispatcher
+
+  -- 13. Run each transport once with combined endpoints from all services
   -- When transports complete (or fail), cancel inbound workers for clean shutdown
-  result <- Transports.runTransports app.transports combinedEndpointsByTransport combinedQueryEndpoints
-    |> Task.asResult
+  -- Use Task.finally to ensure cleanup always runs even if runTransports fails
+  result <-
+    Transports.runTransports app.transports combinedEndpointsByTransport combinedQueryEndpoints maybeAuthEnabled
+      |> Task.finally cleanupAll
+      |> Task.asResult
 
-  -- 13. Shutdown outbound dispatcher (cleanup workers)
-  case maybeDispatcher of
-    Just dispatcher -> do
-      Console.print "[Integration] Shutting down outbound dispatcher..."
-        |> Task.ignoreError
-      Dispatcher.shutdown dispatcher
-    Nothing -> pass
-
-  -- 14. Cancel all inbound workers on shutdown
+  -- 16. Cancel all inbound workers on shutdown
   Console.print "[Integration] Shutting down inbound workers..."
     |> Task.ignoreError
   let shutdownTimeoutMs = 5000
@@ -686,4 +755,70 @@ withInbound inboundIntegration app = do
     { outboundRunners = runners
     , outboundLifecycleRunners = lifecycleRunners
     , inboundIntegrations = inbounds
+    }
+
+
+-- | Enable JWT authentication for WebTransport.
+--
+-- This is the simple version that uses default settings.
+-- For advanced configuration, use 'withAuthOverrides'.
+--
+-- Example:
+--
+-- @
+-- let commandAuth = Map.fromArray
+--       [ ("AddItem", Authenticated)
+--       , ("Checkout", RequireAllPermissions (Array.fromLinkedList ["checkout"]))
+--       ]
+--
+-- app = Application.new
+--   |> Application.withTransport WebTransport.server
+--   |> Application.withService cartService
+--   |> Application.withAuth "https://auth.example.com"
+-- @
+withAuth ::
+  Text ->
+  Application ->
+  Application
+withAuth authServerUrl app =
+  app
+    { webAuthSetup =
+        Just
+          WebAuthSetup
+            { authServerUrl = authServerUrl,
+              authOverrides = Auth.Config.defaultOverrides
+            }
+    }
+
+
+-- | Enable JWT authentication with custom configuration.
+--
+-- This version allows overriding auth settings like audience, clock skew, etc.
+-- Permission checks should be done in the command's decide method.
+--
+-- Example:
+--
+-- @
+-- let overrides = Auth.Config.defaultOverrides
+--       { audience = Just "my-api"
+--       , permissionsClaim = Just "scope"
+--       }
+--
+-- app = Application.new
+--   |> Application.withTransport WebTransport.server
+--   |> Application.withAuthOverrides "https://auth.example.com" overrides
+-- @
+withAuthOverrides ::
+  Text ->
+  AuthOverrides ->
+  Application ->
+  Application
+withAuthOverrides authServerUrl overrides app =
+  app
+    { webAuthSetup =
+        Just
+          WebAuthSetup
+            { authServerUrl = authServerUrl,
+              authOverrides = overrides
+            }
     }

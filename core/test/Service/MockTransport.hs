@@ -8,6 +8,7 @@ module Service.MockTransport (
 import Core
 import Json qualified
 import Record qualified
+import Service.Auth (RequestContext)
 import Service.CommandExecutor.TH (deriveKnownHash)
 import Service.Response (CommandResponse)
 import Service.Response qualified as Response
@@ -73,9 +74,9 @@ instance Transport MockTransport where
     ) =>
     MockTransport ->
     Record.Proxy command ->
-    (command -> Task Text CommandResponse) ->
+    (RequestContext -> command -> Task Text CommandResponse) ->
     EndpointHandler
-  buildHandler _ _ _ _ respond = do
+  buildHandler _ _ _ _ctx _req respond = do
     let mockResponse = Response.Accepted {entityId = "mock-id"}
     respond (mockResponse, "")
 
@@ -103,8 +104,8 @@ instance Transport MockTransport2 where
     ) =>
     MockTransport2 ->
     Record.Proxy command ->
-    (command -> Task Text CommandResponse) ->
+    (RequestContext -> command -> Task Text CommandResponse) ->
     EndpointHandler
-  buildHandler _ _ _ _ respond = do
+  buildHandler _ _ _ _ctx _req respond = do
     let mockResponse = Response.Accepted {entityId = "mock-id"}
     respond (mockResponse, "")

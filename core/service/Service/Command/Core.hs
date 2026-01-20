@@ -13,6 +13,10 @@ module Service.Command.Core (
   GetEntityIdFunction,
   DecideFunction,
 
+  -- * Request Context
+  RequestContext (..),
+  UserClaims (..),
+
   -- * Re-exported from Service.Entity (backward compatibility)
   Entity (..),
   Event (..),
@@ -28,6 +32,7 @@ module Service.Command.Core (
 import Basics
 import Decider (CommandResult (..), Decision (..), DecisionContext (..), runDecision)
 import Maybe (Maybe)
+import Service.Auth (RequestContext (..), UserClaims (..))
 import Service.Entity.Core (Entity (..), EntityOf, Event (..), EventOf)
 import Uuid (Uuid)
 
@@ -90,10 +95,12 @@ type family GetEntityIdFunction (isTenant :: Bool) command id where
 
 -- | Determines the signature of 'decideImpl' based on multi-tenancy.
 --
--- * Single-tenant: @command -> Maybe entity -> Decision event@
--- * Multi-tenant: @Uuid -> command -> Maybe entity -> Decision event@
+-- ALL commands receive RequestContext for uniform authorization support.
+--
+-- * Single-tenant: @command -> Maybe entity -> RequestContext -> Decision event@
+-- * Multi-tenant: @Uuid -> command -> Maybe entity -> RequestContext -> Decision event@
 type family DecideFunction (isTenant :: Bool) command entity event where
   DecideFunction 'False command entity event =
-    command -> Maybe entity -> Decision event
+    command -> Maybe entity -> RequestContext -> Decision event
   DecideFunction 'True command entity event =
-    Uuid -> command -> Maybe entity -> Decision event
+    Uuid -> command -> Maybe entity -> RequestContext -> Decision event

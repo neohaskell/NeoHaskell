@@ -26,6 +26,7 @@ import Map qualified
 import Maybe (Maybe (..))
 import Record (Record)
 import Record qualified
+import Service.Auth (RequestContext)
 import Service.Transport (Transport (..), EndpointHandler)
 import Service.Command (EntityOf, EventOf)
 import Service.Command.Core (TransportOf, Command (..), Entity (..), Event, NameOf)
@@ -210,28 +211,29 @@ instance
     transport ->
     Record.Proxy cmd ->
     EndpointHandler
-  createHandler _ eventStore maybeCache transport cmd reqBytes respondCallback = do
-    fetcher <- case maybeCache of
-      Just cache ->
-        EntityFetcher.newWithCache
-          eventStore
-          cache
-          (initialStateImpl @entity)
-          (updateImpl @entity)
-          |> Task.mapError toText
-      Nothing ->
-        EntityFetcher.new
-          eventStore
-          (initialStateImpl @entity)
-          (updateImpl @entity)
-          |> Task.mapError toText
-    let entityName = EntityName (getSymbolText (Record.Proxy @(entityName)))
-
-    let handler (cmd :: cmd) = do
-          result <- CommandExecutor.execute eventStore fetcher entityName cmd
+  createHandler _ eventStore maybeCache transport cmd = do
+    -- Build the handler that will receive RequestContext at call time
+    let handler :: RequestContext -> cmd -> Task Text Response.CommandResponse
+        handler requestContext cmdInstance = do
+          fetcher <- case maybeCache of
+            Just cache ->
+              EntityFetcher.newWithCache
+                eventStore
+                cache
+                (initialStateImpl @entity)
+                (updateImpl @entity)
+                |> Task.mapError toText
+            Nothing ->
+              EntityFetcher.new
+                eventStore
+                (initialStateImpl @entity)
+                (updateImpl @entity)
+                |> Task.mapError toText
+          let entityName = EntityName (getSymbolText (Record.Proxy @(entityName)))
+          result <- CommandExecutor.execute eventStore fetcher entityName requestContext cmdInstance
           Task.yield (Response.fromExecutionResult result)
 
-    buildHandler @transport transport cmd handler reqBytes respondCallback
+    buildHandler @transport transport cmd handler
 
 
 type instance NameOf (CommandDefinition name transport cmd transportName event entity entityName entityIdType) = name

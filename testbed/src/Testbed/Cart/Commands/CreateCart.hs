@@ -7,6 +7,7 @@ module Testbed.Cart.Commands.CreateCart (
 import Core
 import Decider qualified
 import Json qualified
+import Service.Auth (RequestContext)
 import Service.Transport.Web (WebTransport)
 import Service.Command.Core (TransportOf)
 import Service.CommandExecutor.TH (command)
@@ -27,8 +28,9 @@ getEntityId :: CreateCart -> Maybe Uuid
 getEntityId _ = Nothing
 
 
-decide :: CreateCart -> Maybe CartEntity -> Decision CartEvent
-decide _ entity = do
+-- | Create a new cart. Anonymous-friendly - ignores auth context.
+decide :: CreateCart -> Maybe CartEntity -> RequestContext -> Decision CartEvent
+decide _ entity _ctx = do
   case entity of
     Just _ ->
       Decider.reject "Cart already exists!"

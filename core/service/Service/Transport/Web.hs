@@ -1,8 +1,13 @@
 module Service.Transport.Web (
   WebTransport (..),
+  AuthEnabled (..),
   server,
 ) where
 
+import Auth.Config qualified
+import Auth.Jwks (JwksManager)
+import Auth.Middleware qualified as Middleware
+import Auth.Options (AuthOptions (Authenticated))
 import Basics
 import Bytes (Bytes)
 import Bytes qualified
@@ -22,6 +27,8 @@ import Network.Wai.Handler.Warp qualified as Warp
 import Record (KnownHash (..))
 import Record qualified
 import Result (Result (..))
+import Service.Auth (RequestContext)
+import Service.Auth qualified as Auth
 import Service.Command.Core (Command, NameOf)
 import Service.CommandExecutor.TH (deriveKnownHash)
 import Service.Response (CommandResponse)
@@ -33,10 +40,21 @@ import Text (Text)
 import Text qualified
 
 
+-- | Auth configuration for WebTransport endpoints.
+-- When enabled, all endpoints require a valid JWT.
+-- Permission checks should be done in the command's decide method.
+data AuthEnabled = AuthEnabled
+  { jwksManager :: JwksManager,
+    authConfig :: Auth.Config.AuthConfig
+  }
+
+
 -- | HTTP/JSON transport using WAI/Warp.
 data WebTransport = WebTransport
   { port :: Int,
-    maxBodySize :: Int
+    maxBodySize :: Int,
+    -- | Optional JWT authentication. Set via Application.withAuth.
+    authEnabled :: Maybe AuthEnabled
   }
 
 
@@ -49,11 +67,13 @@ deriveKnownHash "WebTransport"
 -- | Default WebTransport configuration.
 -- Port defaults to 8080.
 -- Max body size defaults to 1MB (1048576 bytes) to prevent DoS attacks.
+-- Auth is disabled by default - use Application.withAuth to enable.
 server :: WebTransport
 server =
   WebTransport
     { port = 8080,
-      maxBodySize = 1048576
+      maxBodySize = 1048576,
+      authEnabled = Nothing
     }
 
 
@@ -121,7 +141,8 @@ instance Transport WebTransport where
     (Wai.Response -> Task Text Wai.ResponseReceived) ->
     Task Text Wai.ResponseReceived
   assembleTransport endpoints request respond = do
-    let maxBodySize = endpoints.transport.maxBodySize
+    let webTransport = endpoints.transport
+    let maxBodySize = webTransport.maxBodySize
 
     -- Helper function for 404 responses
     let notFound message = do
@@ -168,33 +189,58 @@ instance Transport WebTransport where
         -- Look up the command handler in the endpoints map
         case Map.get commandName endpoints.commandEndpoints of
           Maybe.Just handler -> do
-            -- Read the request body with size limit to prevent DoS attacks
-            bodyResult <- readBodyWithLimit maxBodySize request
-            case bodyResult of
-              Result.Err errorMessage ->
-                payloadTooLarge errorMessage
-              Result.Ok bodyBytes -> do
-                respondVar <- ConcurrentVar.new
-                -- We need to capture the ResponseReceived from the handler's callback
-                -- Since handler returns Unit, we'll use andThen to chain the result
-                handler
-                  bodyBytes
-                  ( \(commandResponse, responseBytes) -> do
-                      -- Map the CommandResponse directly to HTTP status (no decoding needed)
-                      let httpStatus = commandResponseToHttpStatus commandResponse
+            -- Helper to process command with a RequestContext
+            let processCommandWithContext :: RequestContext -> Task Text Wai.ResponseReceived
+                processCommandWithContext requestContext = do
+                  -- Read the request body with size limit to prevent DoS attacks
+                  bodyResult <- readBodyWithLimit maxBodySize request
+                  case bodyResult of
+                    Result.Err errorMessage ->
+                      payloadTooLarge errorMessage
+                    Result.Ok bodyBytes -> do
+                      respondVar <- ConcurrentVar.new
+                      -- We need to capture the ResponseReceived from the handler's callback
+                      -- Since handler returns Unit, we'll use andThen to chain the result
+                      handler
+                        requestContext
+                        bodyBytes
+                        ( \(commandResponse, responseBytes) -> do
+                            -- Map the CommandResponse directly to HTTP status (no decoding needed)
+                            let httpStatus = commandResponseToHttpStatus commandResponse
 
-                      let responseBody =
-                            responseBytes
-                              |> Bytes.toLazyLegacy
-                              |> Wai.responseLBS httpStatus [(HTTP.hContentType, "application/json")]
-                      respondValue <- respond responseBody
-                      respondVar |> ConcurrentVar.set respondValue
-                      Task.yield ()
-                  )
-                  |> Task.andThen
-                    ( \_ -> do
-                        ConcurrentVar.get respondVar
-                    )
+                            let responseBody =
+                                  responseBytes
+                                    |> Bytes.toLazyLegacy
+                                    |> Wai.responseLBS httpStatus [(HTTP.hContentType, "application/json")]
+                            respondValue <- respond responseBody
+                            respondVar |> ConcurrentVar.set respondValue
+                            Task.yield ()
+                        )
+                        |> Task.andThen
+                          ( \_ -> do
+                              ConcurrentVar.get respondVar
+                          )
+
+            -- Check authentication and build RequestContext
+            case webTransport.authEnabled of
+              Nothing -> do
+                -- No auth configured, use anonymous context
+                requestContext <- Auth.anonymousContext
+                processCommandWithContext requestContext
+              Just auth -> do
+                -- Validate JWT token (permission checks done in command's decide method)
+                authResult <- Middleware.checkAuth (Just auth.jwksManager) auth.authConfig Authenticated request
+
+                case authResult of
+                  Result.Err authErr ->
+                    -- Return 401/403 response
+                    Middleware.respondWithAuthError authErr respond
+                  Result.Ok authContext -> do
+                    -- Build RequestContext from AuthContext claims
+                    requestContext <- case authContext.claims of
+                      Maybe.Just claims -> Auth.authenticatedContext claims
+                      Maybe.Nothing -> Auth.anonymousContext
+                    processCommandWithContext requestContext
           Maybe.Nothing ->
             notFound [fmt|Command not found: #{commandName}|]
       ["queries", queryNameKebab] -> do
@@ -204,11 +250,30 @@ instance Transport WebTransport where
         -- Look up the query handler in the endpoints map
         case Map.get queryName endpoints.queryEndpoints of
           Maybe.Just handler -> do
-            -- Execute the query handler with error recovery
-            result <- handler |> Task.asResult
-            case result of
-              Result.Ok responseText -> okJson responseText
-              Result.Err errorText -> internalError [fmt|Query #{queryName} failed: #{errorText}|]
+            -- Helper to process query after auth passes
+            let processQuery = do
+                  -- Execute the query handler with error recovery
+                  result <- handler |> Task.asResult
+                  case result of
+                    Result.Ok responseText -> okJson responseText
+                    Result.Err errorText -> internalError [fmt|Query #{queryName} failed: #{errorText}|]
+
+            -- Check authentication before processing
+            case webTransport.authEnabled of
+              Nothing ->
+                -- No auth configured, allow everyone
+                processQuery
+              Just auth -> do
+                -- Validate JWT token (permission checks done in query handler if needed)
+                authResult <- Middleware.checkAuth (Just auth.jwksManager) auth.authConfig Authenticated request
+
+                case authResult of
+                  Result.Err authErr ->
+                    -- Return 401/403 response
+                    Middleware.respondWithAuthError authErr respond
+                  Result.Ok _authContext ->
+                    -- Auth passed, execute the query
+                    processQuery
           Maybe.Nothing ->
             notFound [fmt|Query not found: #{queryName}|]
       _ ->
@@ -243,9 +308,9 @@ instance Transport WebTransport where
     ) =>
     WebTransport ->
     Record.Proxy command ->
-    (command -> Task Text CommandResponse) ->
+    (RequestContext -> command -> Task Text CommandResponse) ->
     EndpointHandler
-  buildHandler transport _ handler body respond = do
+  buildHandler transport _ handler requestContext body respond = do
     let port = transport.port
     let n =
           GHC.symbolVal (Record.Proxy @name)
@@ -259,8 +324,8 @@ instance Transport WebTransport where
         -- Log that we're executing the command
         Console.print [fmt|Executing #{n} on port #{port}|]
 
-        -- Execute the command and get the response
-        response <- handler cmd
+        -- Execute the command with RequestContext
+        response <- handler requestContext cmd
         let responseJson = Json.encodeText response |> Text.toBytes
         respond (response, responseJson)
       Result.Err _err -> do

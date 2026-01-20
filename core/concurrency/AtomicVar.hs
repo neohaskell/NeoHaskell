@@ -22,10 +22,12 @@ module AtomicVar (
   peekSTM,
   set,
   modify,
+  modifyWithResult,
 ) where
 
 import Basics
 import Control.Concurrent.STM qualified as GhcSTM
+import Prelude qualified
 import Task (Task)
 import Task qualified
 
@@ -102,4 +104,24 @@ modify f atomicVar =
   case atomicVar of
     AtomicVar tvar ->
       GhcSTM.atomically (GhcSTM.modifyTVar' tvar f)
+        |> Task.fromIO
+
+
+-- | Atomically modify the value and return a result.
+-- The function receives the current value and returns (newValue, result).
+-- This is useful for implementing atomic check-and-set patterns.
+modifyWithResult ::
+  forall value result.
+  AtomicVar value ->
+  (value -> (value, result)) ->
+  Task _ result
+modifyWithResult atomicVar f =
+  case atomicVar of
+    AtomicVar tvar -> do
+      let stmAction = do
+            oldValue <- GhcSTM.readTVar tvar
+            let (newValue, result) = f oldValue
+            GhcSTM.writeTVar tvar newValue
+            Prelude.pure result
+      GhcSTM.atomically stmAction
         |> Task.fromIO

@@ -26,6 +26,7 @@ common common_cfg
     aeson,
     async,
     base,
+    base64-bytestring,
     bytestring,
     containers,
     contravariant-extras,
@@ -36,6 +37,9 @@ common common_cfg
     file-embed,
     ghc-prim,
     hashable,
+    iproute,
+    jose,
+    lens,
     stm,
     stm-containers,
     list-t,
@@ -44,10 +48,12 @@ common common_cfg
     hasql-pool,
     hasql-th,
     hspec,
+    http-client,
     http-conduit,
     http-types,
     large-anon,
     monad-loops,
+    network-uri,
     optparse-applicative,
     path,
     pretty-simple,
@@ -103,6 +109,16 @@ library
     Array
     AtomicVar
     AsyncTask
+    Auth
+    Auth.Claims
+    Auth.Config
+    Auth.Discovery
+    Auth.Error
+    Auth.Jwt
+    Auth.Jwks
+    Auth.Middleware
+    Auth.Options
+    Auth.UrlValidation
     Basics
     Bytes
     Channel
@@ -143,6 +159,7 @@ library
     Record
     Result
     Service
+    Service.Auth
     Service.Command
     Service.Command.Core
     Service.CommandExecutor
@@ -200,6 +217,7 @@ library
     Test.AppSpec.AppSpec
     Test.AppSpec.Scenario
     Test.AppSpec.Verify
+    Test.Auth.Jwt.Core
     Test.CompileTime
     Test.Service.Command
     Test.Service.Command.Core
@@ -259,6 +277,7 @@ library
   -- other-modules:
   -- other-extensions:
   hs-source-dirs:
+    auth
     core
     concurrency
     service
@@ -280,6 +299,8 @@ test-suite nhcore-test
     -with-rtsopts=-N
 
   other-modules:
+    Auth.JwtSpec
+    Auth.MiddlewareSpec
     ConcurrentMapSpec
     Integration.CommandSpec
     Integration.DispatcherSpec

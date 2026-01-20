@@ -7,6 +7,7 @@ module Testbed.Stock.Commands.InitializeStock (
 import Core
 import Decider qualified
 import Json qualified
+import Service.Auth (RequestContext)
 import Service.Command.Core (TransportOf)
 import Service.CommandExecutor.TH (command)
 import Service.Transport.Web (WebTransport)
@@ -27,8 +28,9 @@ getEntityId :: InitializeStock -> Maybe Uuid
 getEntityId _ = Nothing
 
 
-decide :: InitializeStock -> Maybe StockEntity -> Decision StockEvent
-decide cmd entity = case entity of
+-- | Initialize stock for a product. Anonymous-friendly - ignores auth context.
+decide :: InitializeStock -> Maybe StockEntity -> RequestContext -> Decision StockEvent
+decide cmd entity _ctx = case entity of
   Just _ ->
     Decider.reject "Stock already initialized for this product!"
   Nothing ->

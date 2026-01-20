@@ -44,6 +44,7 @@ module Set (
 import Array (Array)
 import Array qualified
 import Basics
+import Data.Aeson qualified as Aeson
 import Data.Default (Default (..))
 import Data.Set qualified
 import LinkedList (LinkedList)
@@ -59,6 +60,20 @@ newtype Set a = Set (Data.Set.Set a)
 
 instance (Prelude.Ord a) => Default (Set a) where
   def = Set.empty
+
+
+-- | JSON encoding: serialize Set as JSON array.
+instance (Aeson.ToJSON a) => Aeson.ToJSON (Set a) where
+  toJSON set = Aeson.toJSON (toLinkedList set)
+  {-# INLINE toJSON #-}
+
+
+-- | JSON decoding: deserialize JSON array to Set.
+instance (Aeson.FromJSON a, Prelude.Ord a) => Aeson.FromJSON (Set a) where
+  parseJSON v = do
+    list <- Aeson.parseJSON v
+    Prelude.pure (fromLinkedList list)
+  {-# INLINE parseJSON #-}
 
 
 -- | Helper function to unwrap a set
