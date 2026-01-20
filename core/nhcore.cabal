@@ -53,6 +53,7 @@ common common_cfg
     http-types,
     large-anon,
     monad-loops,
+    network,
     network-uri,
     optparse-applicative,
     path,
@@ -301,6 +302,7 @@ test-suite nhcore-test
   other-modules:
     Auth.JwtSpec
     Auth.MiddlewareSpec
+    Auth.UrlValidationSpec
     ConcurrentMapSpec
     Integration.CommandSpec
     Integration.DispatcherSpec
