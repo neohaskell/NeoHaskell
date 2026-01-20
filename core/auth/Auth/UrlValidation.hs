@@ -43,6 +43,9 @@ data ValidationError
   | -- | DNS resolution failed
     DnsResolutionFailed Text Text
     -- ^ First Text is URL, second is the error message
+  | -- | Single-label hostname (no dots) - requires FQDN
+    SingleLabelHostname Text
+    -- ^ Single-label hostnames may resolve via search domains to internal hosts
   deriving (Eq, Show)
 
 
@@ -74,15 +77,48 @@ validateSecureUrl urlText = do
                 _ -> do
                   -- Normalize to lowercase for consistent comparison
                   let normalizedHost = LinkedList.map toLowerChar host
-                  case isPrivateOrLoopback normalizedHost of
-                    True -> Err (PrivateIpBlocked urlText)
-                    False -> Ok urlText
+                  -- SECURITY: Reject single-label hostnames (no dots)
+                  -- Single-label names may resolve via DNS search domains to internal hosts
+                  case isSingleLabelHostname normalizedHost of
+                    True -> Err (SingleLabelHostname urlText)
+                    False ->
+                      case isPrivateOrLoopback normalizedHost of
+                        True -> Err (PrivateIpBlocked urlText)
+                        False -> Ok urlText
         _ -> Err (NotHttps urlText)
 
 
 -- | Convert a character to lowercase.
 toLowerChar :: Char -> Char
 toLowerChar = GhcChar.toLower
+
+
+-- | Check if hostname is a single-label name (no dots).
+-- SECURITY: Single-label hostnames can resolve via DNS search domains,
+-- potentially allowing SSRF via internal DNS names like "db" -> "db.corp.internal".
+-- Literal IP addresses are allowed (they don't have dots in the hostname sense).
+isSingleLabelHostname :: [Char] -> Bool
+isSingleLabelHostname host =
+  case host of
+    [] -> False -- Empty is handled elsewhere
+    _ ->
+      -- Allow literal IPs (both IPv4 and bracketed IPv6)
+      case host of
+        '[' : _ -> False -- Bracketed IPv6, not a single-label hostname
+        _ ->
+          -- Check if it's a literal IPv4 (contains only digits and dots)
+          case isLiteralIPv4 host of
+            True -> False -- Literal IPv4, allow it
+            False ->
+              -- For hostnames, require at least one dot (FQDN)
+              not (LinkedList.any (\c -> c == '.') host)
+
+
+-- | Check if string looks like a literal IPv4 address.
+isLiteralIPv4 :: [Char] -> Bool
+isLiteralIPv4 host =
+  LinkedList.all (\c -> GhcChar.isDigit c || c == '.') host
+    && LinkedList.any (\c -> c == '.') host
 
 
 -- | Check if a hostname is a private or loopback IP address.
@@ -123,26 +159,57 @@ stripIPv6Brackets hostChars =
     _ -> hostChars
 
 
--- | Check if IPv4 is in a private range.
--- Blocks: 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 127.0.0.0/8, 169.254.0.0/16
-isPrivateIPv4 :: IP.IPv4 -> Bool
-isPrivateIPv4 ip = do
+-- | Check if IPv4 is in a non-globally-routable range.
+-- Comprehensive list of special-use IPv4 addresses per IANA registries.
+-- SECURITY: Block all non-public ranges for SSRF protection.
+isNonRoutableIPv4 :: IP.IPv4 -> Bool
+isNonRoutableIPv4 ip = do
   let ranges =
-        [ IP.makeAddrRange (IP.toIPv4 [10, 0, 0, 0]) 8, -- 10.0.0.0/8 (private)
-          IP.makeAddrRange (IP.toIPv4 [172, 16, 0, 0]) 12, -- 172.16.0.0/12 (private)
-          IP.makeAddrRange (IP.toIPv4 [192, 168, 0, 0]) 16, -- 192.168.0.0/16 (private)
-          IP.makeAddrRange (IP.toIPv4 [127, 0, 0, 0]) 8, -- 127.0.0.0/8 (loopback)
-          IP.makeAddrRange (IP.toIPv4 [169, 254, 0, 0]) 16, -- 169.254.0.0/16 (link-local)
-          IP.makeAddrRange (IP.toIPv4 [0, 0, 0, 0]) 8 -- 0.0.0.0/8 (this network)
+        [ -- RFC1918 Private Networks
+          IP.makeAddrRange (IP.toIPv4 [10, 0, 0, 0]) 8, -- 10.0.0.0/8
+          IP.makeAddrRange (IP.toIPv4 [172, 16, 0, 0]) 12, -- 172.16.0.0/12
+          IP.makeAddrRange (IP.toIPv4 [192, 168, 0, 0]) 16, -- 192.168.0.0/16
+          -- Loopback
+          IP.makeAddrRange (IP.toIPv4 [127, 0, 0, 0]) 8, -- 127.0.0.0/8
+          -- Link-local
+          IP.makeAddrRange (IP.toIPv4 [169, 254, 0, 0]) 16, -- 169.254.0.0/16
+          -- This network
+          IP.makeAddrRange (IP.toIPv4 [0, 0, 0, 0]) 8, -- 0.0.0.0/8
+          -- CGNAT (Carrier-Grade NAT)
+          IP.makeAddrRange (IP.toIPv4 [100, 64, 0, 0]) 10, -- 100.64.0.0/10
+          -- IETF Protocol Assignments
+          IP.makeAddrRange (IP.toIPv4 [192, 0, 0, 0]) 24, -- 192.0.0.0/24
+          -- Documentation/TEST-NET ranges
+          IP.makeAddrRange (IP.toIPv4 [192, 0, 2, 0]) 24, -- 192.0.2.0/24 (TEST-NET-1)
+          IP.makeAddrRange (IP.toIPv4 [198, 51, 100, 0]) 24, -- 198.51.100.0/24 (TEST-NET-2)
+          IP.makeAddrRange (IP.toIPv4 [203, 0, 113, 0]) 24, -- 203.0.113.0/24 (TEST-NET-3)
+          -- Benchmarking
+          IP.makeAddrRange (IP.toIPv4 [198, 18, 0, 0]) 15, -- 198.18.0.0/15
+          -- Multicast
+          IP.makeAddrRange (IP.toIPv4 [224, 0, 0, 0]) 4, -- 224.0.0.0/4
+          -- Reserved for future use
+          IP.makeAddrRange (IP.toIPv4 [240, 0, 0, 0]) 4, -- 240.0.0.0/4
+          -- Broadcast
+          IP.makeAddrRange (IP.toIPv4 [255, 255, 255, 255]) 32 -- 255.255.255.255/32
         ]
   LinkedList.any (\range -> IP.isMatchedTo ip range) ranges
 
 
--- | Check if IPv6 is in a private range.
--- Blocks: ::1/128 (loopback), fc00::/7 (unique local), fe80::/10 (link-local)
-isPrivateIPv6 :: IP.IPv6 -> Bool
-isPrivateIPv6 ip = do
-  -- ::1 loopback
+-- | Legacy alias for backward compatibility.
+isPrivateIPv4 :: IP.IPv4 -> Bool
+isPrivateIPv4 = isNonRoutableIPv4
+
+
+-- | Check if IPv6 is in a non-globally-routable range.
+-- Comprehensive list of special-use IPv6 addresses per IANA registries.
+-- SECURITY: Block all non-public ranges for SSRF protection.
+isNonRoutableIPv6 :: IP.IPv6 -> Bool
+isNonRoutableIPv6 ip = do
+  -- Unspecified address
+  let unspecified = IP.toIPv6 [0, 0, 0, 0, 0, 0, 0, 0]
+  let unspecifiedRange = IP.makeAddrRange unspecified 128
+
+  -- Loopback (::1/128)
   let loopback = IP.toIPv6 [0, 0, 0, 0, 0, 0, 0, 1]
   let loopbackRange = IP.makeAddrRange loopback 128
 
@@ -154,34 +221,72 @@ isPrivateIPv6 ip = do
   let linkLocal = IP.toIPv6 [0xfe80, 0, 0, 0, 0, 0, 0, 0]
   let linkLocalRange = IP.makeAddrRange linkLocal 10
 
-  -- Also check for IPv4-mapped IPv6 addresses (::ffff:x.x.x.x)
+  -- Multicast (ff00::/8)
+  let multicast = IP.toIPv6 [0xff00, 0, 0, 0, 0, 0, 0, 0]
+  let multicastRange = IP.makeAddrRange multicast 8
+
+  -- IPv4-mapped IPv6 addresses (::ffff:0:0/96)
   let ipv4MappedPrefix = IP.toIPv6 [0, 0, 0, 0, 0, 0xffff, 0, 0]
   let ipv4MappedRange = IP.makeAddrRange ipv4MappedPrefix 96
   let isIPv4Mapped = IP.isMatchedTo ip ipv4MappedRange
 
-  -- If it's an IPv4-mapped address, extract and check the IPv4 portion
+  -- NAT64 well-known prefix (64:ff9b::/96)
+  let nat64Prefix = IP.toIPv6 [0x64, 0xff9b, 0, 0, 0, 0, 0, 0]
+  let nat64Range = IP.makeAddrRange nat64Prefix 96
+  let isNat64 = IP.isMatchedTo ip nat64Range
+
+  -- Discard-only (100::/64)
+  let discardPrefix = IP.toIPv6 [0x100, 0, 0, 0, 0, 0, 0, 0]
+  let discardRange = IP.makeAddrRange discardPrefix 64
+
+  -- Documentation (2001:db8::/32)
+  let docPrefix = IP.toIPv6 [0x2001, 0xdb8, 0, 0, 0, 0, 0, 0]
+  let docRange = IP.makeAddrRange docPrefix 32
+
+  -- 6to4 relay anycast (192.88.99.0/24 mapped)
+  let relay6to4 = IP.toIPv6 [0x2002, 0xc058, 0x6300, 0, 0, 0, 0, 0]
+  let relay6to4Range = IP.makeAddrRange relay6to4 24
+
+  -- Extract embedded IPv4 from IPv4-mapped and check if private
   let ipv4MappedPrivate = case isIPv4Mapped of
-        True -> do
-          -- Extract the last 32 bits as IPv4
-          -- fromIPv6 returns [Int] with 8 elements (each a 16-bit word)
-          -- IPv4-mapped address is ::ffff:w.x.y.z
-          -- The last two 16-bit words contain the IPv4 address
-          let ipv6Words = IP.fromIPv6 ip
-          case ipv6Words of
-            [_, _, _, _, _, _, hi, lo] -> do
-              let a = hi // 256
-              let b = modBy 256 hi
-              let c = lo // 256
-              let d = modBy 256 lo
-              let ipv4 = IP.toIPv4 [a, b, c, d]
-              isPrivateIPv4 ipv4
-            _ -> False -- Should never happen for valid IPv6
+        True -> extractAndCheckIPv4 ip
         False -> False
 
-  IP.isMatchedTo ip loopbackRange
+  -- Extract embedded IPv4 from NAT64 and check if private
+  let nat64Private = case isNat64 of
+        True -> extractAndCheckIPv4 ip
+        False -> False
+
+  IP.isMatchedTo ip unspecifiedRange
+    || IP.isMatchedTo ip loopbackRange
     || IP.isMatchedTo ip uniqueLocalRange
     || IP.isMatchedTo ip linkLocalRange
+    || IP.isMatchedTo ip multicastRange
+    || IP.isMatchedTo ip discardRange
+    || IP.isMatchedTo ip docRange
+    || IP.isMatchedTo ip relay6to4Range
     || ipv4MappedPrivate
+    || nat64Private
+
+
+-- | Extract embedded IPv4 from IPv6 (last 32 bits) and check if non-routable.
+extractAndCheckIPv4 :: IP.IPv6 -> Bool
+extractAndCheckIPv4 ip = do
+  let ipv6Words = IP.fromIPv6 ip
+  case ipv6Words of
+    [_, _, _, _, _, _, hi, lo] -> do
+      let a = hi // 256
+      let b = modBy 256 hi
+      let c = lo // 256
+      let d = modBy 256 lo
+      let ipv4 = IP.toIPv4 [a, b, c, d]
+      isNonRoutableIPv4 ipv4
+    _ -> True -- SECURITY: Fail-closed on unexpected format
+
+
+-- | Legacy alias for backward compatibility.
+isPrivateIPv6 :: IP.IPv6 -> Bool
+isPrivateIPv6 = isNonRoutableIPv6
 
 
 -- | Validate a URL with DNS resolution for SSRF protection.
@@ -331,14 +436,16 @@ findPrivateIp ips =
 
 
 -- | Check if an IP address string is private/loopback.
+-- SECURITY: Fail-closed - unknown formats are treated as blocked.
 isPrivateIpText :: Text -> Bool
 isPrivateIpText ipText = do
   let ipStr = Text.toLinkedList ipText
   -- Try IPv4 first
   case GhcRead.readMaybe @IP.IPv4 ipStr of
-    Just ipv4 -> isPrivateIPv4 ipv4
+    Just ipv4 -> isNonRoutableIPv4 ipv4
     Nothing ->
-      -- Try IPv6 (remove leading zeros for iproute compatibility)
+      -- Try IPv6
       case GhcRead.readMaybe @IP.IPv6 ipStr of
-        Just ipv6 -> isPrivateIPv6 ipv6
-        Nothing -> False -- Unknown format, allow (fail-open for now)
+        Just ipv6 -> isNonRoutableIPv6 ipv6
+        -- SECURITY: Fail-closed - unknown format is blocked
+        Nothing -> True

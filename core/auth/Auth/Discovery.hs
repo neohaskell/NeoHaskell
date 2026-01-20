@@ -77,9 +77,12 @@ discoverConfig authServerUrl overrides = do
 
 
 -- | Validate URL or throw a DiscoveryError.
+-- SECURITY: Uses DNS resolution to check that hostnames don't resolve to private IPs.
+-- This prevents SSRF attacks via DNS rebinding where attacker's domain points to internal IPs.
 validateUrlOrThrow :: Text -> Task DiscoveryError Text
-validateUrlOrThrow url =
-  case UrlValidation.validateSecureUrl url of
+validateUrlOrThrow url = do
+  result <- UrlValidation.validateSecureUrlWithDns url
+  case result of
     Err validationErr -> Task.throw (mapValidationError validationErr)
     Ok validated -> Task.yield validated
 
@@ -130,6 +133,7 @@ mapValidationError err =
     MissingHostname url -> UrlValidationFailed [fmt|URL missing hostname: #{url}|]
     DnsResolutionBlocked url privateIp -> UrlValidationFailed [fmt|DNS resolution blocked - #{url} resolves to private IP: #{privateIp}|]
     DnsResolutionFailed url errMsg -> UrlValidationFailed [fmt|DNS resolution failed for #{url}: #{errMsg}|]
+    SingleLabelHostname url -> UrlValidationFailed [fmt|Single-label hostname not allowed (FQDN required): #{url}|]
 
 
 -- | Fetch the OpenID Connect discovery document
@@ -153,14 +157,16 @@ fetchDiscoveryDocument url = do
 -- Returns an array of JWKs that can be used for token validation.
 --
 -- SECURITY: Validates that jwksUri uses HTTPS and is not a private IP.
--- | Fetch JWKS from the given URI and extract keys.
+-- Uses DNS resolution to prevent SSRF via DNS rebinding attacks.
 -- SECURITY: 30 second timeout to prevent indefinite hangs
 fetchJwks ::
   Text ->
   Task err (Result DiscoveryError (Array Jose.JWK))
 fetchJwks jwksUri = do
-  -- SECURITY: Defense-in-depth validation (also validated in discoverConfig)
-  case UrlValidation.validateSecureUrl jwksUri of
+  -- SECURITY: Defense-in-depth validation with DNS resolution
+  -- Re-validates on every fetch to prevent DNS rebinding TOCTOU attacks
+  validationResult <- UrlValidation.validateSecureUrlWithDns jwksUri
+  case validationResult of
     Err validationErr -> Task.yield (Err (mapValidationError validationErr))
     Ok validatedUri -> do
       result <-

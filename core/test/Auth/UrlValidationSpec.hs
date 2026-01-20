@@ -19,9 +19,10 @@ spec = do
         let result = UrlValidation.validateSecureUrl "http://example.com/path"
         result |> shouldSatisfy isNotHttps
 
-      it "rejects localhost" \_ -> do
+      it "rejects localhost (single-label hostname)" \_ -> do
+        -- localhost is now caught by single-label hostname check first
         let result = UrlValidation.validateSecureUrl "https://localhost/path"
-        result |> shouldSatisfy isPrivateIpBlocked
+        result |> shouldSatisfy isSingleLabelHostname
 
       it "blocks literal private IPv4 (10.x.x.x)" \_ -> do
         let result = UrlValidation.validateSecureUrl "https://10.0.0.1/path"
@@ -59,6 +60,68 @@ spec = do
         let result = UrlValidation.validateSecureUrl "https:///path"
         result |> shouldSatisfy isMissingHostname
 
+    -- Single-label hostname tests (FQDN requirement)
+    describe "validateSecureUrl (FQDN requirement)" do
+      it "rejects single-label hostnames (no dots)" \_ -> do
+        let result = UrlValidation.validateSecureUrl "https://intranet/path"
+        result |> shouldSatisfy isSingleLabelHostname
+
+      it "rejects single-label hostnames like 'db'" \_ -> do
+        let result = UrlValidation.validateSecureUrl "https://db/admin"
+        result |> shouldSatisfy isSingleLabelHostname
+
+      it "accepts FQDNs (hostnames with dots)" \_ -> do
+        let result = UrlValidation.validateSecureUrl "https://auth.example.com/path"
+        result |> shouldSatisfy isOkResult
+
+      it "allows literal IPv4 addresses (they have dots)" \_ -> do
+        -- Public IP should be allowed
+        let result = UrlValidation.validateSecureUrl "https://8.8.8.8/path"
+        result |> shouldSatisfy isOkResult
+
+      it "allows bracketed IPv6 addresses" \_ -> do
+        -- Public IPv6 should be allowed (2001:4860:4860::8888 is Google DNS)
+        let result = UrlValidation.validateSecureUrl "https://[2001:4860:4860::8888]/path"
+        result |> shouldSatisfy isOkResult
+
+    -- Extended IP range tests
+    describe "validateSecureUrl (extended IP ranges)" do
+      it "blocks CGNAT range (100.64.0.0/10)" \_ -> do
+        let result = UrlValidation.validateSecureUrl "https://100.64.0.1/path"
+        result |> shouldSatisfy isPrivateIpBlocked
+
+      it "blocks TEST-NET-1 (192.0.2.0/24)" \_ -> do
+        let result = UrlValidation.validateSecureUrl "https://192.0.2.1/path"
+        result |> shouldSatisfy isPrivateIpBlocked
+
+      it "blocks TEST-NET-2 (198.51.100.0/24)" \_ -> do
+        let result = UrlValidation.validateSecureUrl "https://198.51.100.1/path"
+        result |> shouldSatisfy isPrivateIpBlocked
+
+      it "blocks TEST-NET-3 (203.0.113.0/24)" \_ -> do
+        let result = UrlValidation.validateSecureUrl "https://203.0.113.1/path"
+        result |> shouldSatisfy isPrivateIpBlocked
+
+      it "blocks benchmarking range (198.18.0.0/15)" \_ -> do
+        let result = UrlValidation.validateSecureUrl "https://198.18.0.1/path"
+        result |> shouldSatisfy isPrivateIpBlocked
+
+      it "blocks multicast IPv4 (224.0.0.0/4)" \_ -> do
+        let result = UrlValidation.validateSecureUrl "https://224.0.0.1/path"
+        result |> shouldSatisfy isPrivateIpBlocked
+
+      it "blocks reserved IPv4 (240.0.0.0/4)" \_ -> do
+        let result = UrlValidation.validateSecureUrl "https://240.0.0.1/path"
+        result |> shouldSatisfy isPrivateIpBlocked
+
+      it "blocks IPv6 multicast (ff00::/8)" \_ -> do
+        let result = UrlValidation.validateSecureUrl "https://[ff02::1]/path"
+        result |> shouldSatisfy isPrivateIpBlocked
+
+      it "blocks IPv6 documentation prefix (2001:db8::/32)" \_ -> do
+        let result = UrlValidation.validateSecureUrl "https://[2001:db8::1]/path"
+        result |> shouldSatisfy isPrivateIpBlocked
+
     -- DNS resolution tests (IO-based)
     describe "validateSecureUrlWithDns (DNS resolution)" do
       it "accepts URLs resolving to public IPs" \_ -> do
@@ -66,10 +129,10 @@ spec = do
         result <- UrlValidation.validateSecureUrlWithDns "https://google.com/.well-known/openid-configuration"
         result |> shouldSatisfy isOkResult
 
-      it "blocks localhost via literal check (before DNS)" \_ -> do
-        -- localhost is caught by literal "localhost" check, not DNS resolution
+      it "blocks localhost via single-label check (before DNS)" \_ -> do
+        -- localhost is caught by single-label hostname check, not DNS resolution
         result <- UrlValidation.validateSecureUrlWithDns "https://localhost/path"
-        result |> shouldSatisfy isPrivateIpBlocked
+        result |> shouldSatisfy isSingleLabelHostname
 
       it "blocks DNS names resolving to private IPs when configured" \_ -> do
         -- NOTE: This test may be environment-dependent.
@@ -144,6 +207,13 @@ isDnsResolutionFailed :: Result ValidationError Text -> Bool
 isDnsResolutionFailed result =
   case result of
     Err (DnsResolutionFailed _ _) -> True
+    _ -> False
+
+
+isSingleLabelHostname :: Result ValidationError Text -> Bool
+isSingleLabelHostname result =
+  case result of
+    Err (SingleLabelHostname _) -> True
     _ -> False
 
 
