@@ -155,6 +155,17 @@ spec = do
         result <- UrlValidation.validateSecureUrlWithDns "https://127.0.0.1/path"
         result |> shouldSatisfy isPrivateIpBlocked
 
+      it "skips DNS resolution for public literal IPv4 addresses" \_ -> do
+        -- Literal IPv4 should not trigger DNS resolution, just pass through
+        result <- UrlValidation.validateSecureUrlWithDns "https://8.8.8.8/path"
+        result |> shouldSatisfy isOkResult
+
+      it "skips DNS resolution for public bracketed IPv6 addresses" \_ -> do
+        -- Bracketed IPv6 should not trigger DNS resolution
+        -- Using Google's public DNS IPv6 address
+        result <- UrlValidation.validateSecureUrlWithDns "https://[2001:4860:4860::8888]/path"
+        result |> shouldSatisfy isOkResult
+
       -- IPv4-mapped IPv6 addresses (potential bypass)
       it "blocks IPv4-mapped IPv6 addresses to private IPs" \_ -> do
         -- ::ffff:127.0.0.1 is IPv4-mapped loopback

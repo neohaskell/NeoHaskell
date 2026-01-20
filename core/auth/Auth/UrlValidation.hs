@@ -294,6 +294,8 @@ isPrivateIPv6 = isNonRoutableIPv6
 -- ALL resolved IPs against private/loopback ranges.
 --
 -- Use this for user-provided URLs (e.g., IdP discovery endpoints).
+-- For literal IP addresses (IPv4 or bracketed IPv6), DNS resolution is skipped
+-- since they are already validated by validateSecureUrl.
 validateSecureUrlWithDns ::
   forall error.
   Text ->
@@ -307,18 +309,41 @@ validateSecureUrlWithDns urlText = do
       case extractHostname urlText of
         Nothing -> Task.yield (Err (MalformedUrl urlText))
         Just hostname -> do
-          -- Resolve DNS and check all IPs
-          resolveResult <- resolveDns hostname
-          case resolveResult of
-            Err errMsg ->
-              Task.yield (Err (DnsResolutionFailed urlText errMsg))
-            Ok resolvedIps -> do
-              -- Check ALL resolved IPs
-              case findPrivateIp resolvedIps of
-                Just privateIp ->
-                  Task.yield (Err (DnsResolutionBlocked urlText privateIp))
-                Nothing ->
-                  Task.yield (Ok urlText)
+          -- Skip DNS resolution for literal IP addresses
+          -- (already validated by validateSecureUrl above)
+          case isLiteralIpHost hostname of
+            True -> Task.yield (Ok urlText)
+            False -> do
+              -- Resolve DNS and check all IPs
+              resolveResult <- resolveDns hostname
+              case resolveResult of
+                Err errMsg ->
+                  Task.yield (Err (DnsResolutionFailed urlText errMsg))
+                Ok resolvedIps -> do
+                  -- Check ALL resolved IPs
+                  case findPrivateIp resolvedIps of
+                    Just privateIp ->
+                      Task.yield (Err (DnsResolutionBlocked urlText privateIp))
+                    Nothing ->
+                      Task.yield (Ok urlText)
+
+
+-- | Check if a hostname is a literal IP address (IPv4 or bracketed IPv6).
+-- Literal IPs don't need DNS resolution - they are validated directly.
+-- Examples:
+--   "192.168.1.1" -> True (IPv4)
+--   "[2001:db8::1]" -> True (bracketed IPv6)
+--   "[::1]" -> True (bracketed IPv6 loopback)
+--   "example.com" -> False (hostname)
+--   "localhost" -> False (hostname, even though it resolves to loopback)
+isLiteralIpHost :: Text -> Bool
+isLiteralIpHost hostname = do
+  let hostStr = Text.toLinkedList hostname
+  case hostStr of
+    -- Bracketed IPv6 address (e.g., "[2001:db8::1]")
+    '[' : _ -> True
+    -- Check if it's a literal IPv4 address
+    _ -> isLiteralIPv4 hostStr
 
 
 -- | Extract hostname from a URL.
