@@ -23,6 +23,7 @@ ADRs document significant architectural decisions made during the development of
 | [0007](0007-queries-read-models.md)           | Queries (Read Models)           | Proposed |
 | [0008](0008-integration-pattern.md)           | Integration Pattern             | Proposed |
 | [0009](0009-jwt-authentication-middleware.md) | JWT Authentication Middleware   | Accepted |
+| [0010](0010-oauth2-provider-architecture.md)  | OAuth2 Provider Integration     | Accepted |
 
 ## Creating New ADRs
 
