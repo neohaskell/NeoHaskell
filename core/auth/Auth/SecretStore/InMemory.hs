@@ -49,7 +49,6 @@ new = do
       { get = getImpl storage
       , put = putImpl storage
       , delete = deleteImpl storage
-      , modify = modifyImpl storage
       }
 
 
@@ -71,15 +70,3 @@ putImpl storage key tokens = do
 deleteImpl :: Storage -> TokenKey -> Task Text Unit
 deleteImpl storage key = do
   storage |> ConcurrentVar.modify (\store -> store |> Map.remove key)
-
-
-modifyImpl :: Storage -> TokenKey -> (Maybe TokenSet -> Task Text (Maybe TokenSet)) -> Task Text Unit
-modifyImpl storage key updateFn = do
-  -- Note: This is not truly atomic across the Task boundary, but it's
-  -- sufficient for the single-process dev use case. A production
-  -- implementation would use proper database transactions.
-  currentValue <- getImpl storage key
-  newValue <- updateFn currentValue
-  case newValue of
-    Nothing -> deleteImpl storage key
-    Just tokens -> putImpl storage key tokens

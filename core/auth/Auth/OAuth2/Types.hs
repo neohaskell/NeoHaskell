@@ -14,22 +14,37 @@ module Auth.OAuth2.Types (
 
   -- * Credentials
   ClientId (..),
-  ClientSecret (..),
-  RedirectUri (..),
+  ClientSecret,
+  mkClientSecret,
+  unwrapClientSecret,
+  RedirectUri,
+  mkRedirectUri,
+  unwrapRedirectUri,
 
   -- * Authorization Flow
-  AuthorizationCode (..),
-  State (..),
+  AuthorizationCode,
+  mkAuthorizationCode,
+  unwrapAuthorizationCode,
+  State,
+  mkState,
+  unwrapState,
   Scope (..),
 
   -- * PKCE (Proof Key for Code Exchange)
-  CodeVerifier (..),
+  CodeVerifier,
+  mkCodeVerifier,
+  mkCodeVerifierUnsafe,
+  unwrapCodeVerifier,
   CodeChallenge (..),
   CodeChallengeMethod (..),
 
   -- * Tokens
-  AccessToken (..),
-  RefreshToken (..),
+  AccessToken,
+  mkAccessToken,
+  unwrapAccessToken,
+  RefreshToken,
+  mkRefreshToken,
+  unwrapRefreshToken,
   TokenSet (..),
 
   -- * Errors
@@ -94,6 +109,7 @@ instance Json.ToJSON ClientId
 -- WARNING: Never log or serialize this to events.
 -- Show instance is redacted for security.
 -- No JSON instances - use explicit conversion if needed.
+-- Constructor is hidden - use 'mkClientSecret' and 'unwrapClientSecret'.
 newtype ClientSecret = ClientSecret Text
   deriving (Generic, Eq)
 
@@ -103,9 +119,65 @@ instance Show ClientSecret where
   show _ = "ClientSecret <REDACTED>"
 
 
+-- | Create a ClientSecret from raw text.
+-- Use with caution - the secret should come from secure configuration.
+mkClientSecret :: Text -> ClientSecret
+mkClientSecret = ClientSecret
+
+
+-- | Extract the raw secret text. Use with caution.
+-- Only use this when you need to send the secret to the OAuth2 provider.
+unwrapClientSecret :: ClientSecret -> Text
+unwrapClientSecret secret =
+  case secret of
+    ClientSecret s -> s
+
+
 -- | OAuth2 redirect URI (callback URL).
+--
+-- SECURITY: Must use HTTPS in production (except localhost for development).
+-- Constructor is hidden - use 'mkRedirectUri' and 'unwrapRedirectUri'.
 newtype RedirectUri = RedirectUri Text
   deriving (Generic, Show, Eq)
+
+
+-- | Create a RedirectUri with HTTPS validation.
+--
+-- SECURITY: Redirect URIs MUST use HTTPS to prevent authorization code theft.
+-- The only exception is localhost (http://localhost, http://127.0.0.1, http://[::1])
+-- which is allowed for development/testing.
+--
+-- Returns 'InvalidRedirectUri' error if validation fails.
+mkRedirectUri :: Text -> Result OAuth2Error RedirectUri
+mkRedirectUri text = do
+  let urlString = Text.toLinkedList text
+  case URI.parseURI urlString of
+    Nothing -> Err (InvalidRedirectUri "Malformed redirect URI")
+    Just uri -> do
+      -- No fragment allowed (RFC 6749)
+      case URI.uriFragment uri of
+        "" -> do
+          -- Must use HTTPS (except localhost)
+          case URI.uriScheme uri of
+            "https:" -> Ok (RedirectUri text)
+            "http:" -> do
+              -- Allow http only for localhost (development)
+              case URI.uriAuthority uri of
+                Nothing -> Err (InvalidRedirectUri "Redirect URI must use HTTPS")
+                Just auth -> do
+                  let host = URI.uriRegName auth
+                  case isLocalhost host of
+                    True -> Ok (RedirectUri text)
+                    False -> Err (InvalidRedirectUri "Redirect URI must use HTTPS (http allowed only for localhost)")
+            _ -> Err (InvalidRedirectUri "Redirect URI must use HTTPS scheme")
+        _ -> Err (InvalidRedirectUri "Redirect URI must not contain a fragment")
+
+
+-- | Extract the raw redirect URI text.
+unwrapRedirectUri :: RedirectUri -> Text
+unwrapRedirectUri redirectUri =
+  case redirectUri of
+    RedirectUri uri -> uri
 
 
 instance Json.FromJSON RedirectUri
@@ -119,6 +191,7 @@ instance Json.ToJSON RedirectUri
 -- This is exchanged for tokens via 'Auth.OAuth2.Client.exchangeCode'.
 -- Show instance is redacted for security (codes are secrets).
 -- No ToJSON instance - prevent accidental serialization.
+-- Constructor is hidden - use 'mkAuthorizationCode' and 'unwrapAuthorizationCode'.
 newtype AuthorizationCode = AuthorizationCode Text
   deriving (Generic, Eq)
 
@@ -126,6 +199,20 @@ newtype AuthorizationCode = AuthorizationCode Text
 -- | Redacted Show instance - NEVER reveals the actual code
 instance Show AuthorizationCode where
   show _ = "AuthorizationCode <REDACTED>"
+
+
+-- | Create an AuthorizationCode from raw text.
+-- Typically from the OAuth2 callback query parameter.
+mkAuthorizationCode :: Text -> AuthorizationCode
+mkAuthorizationCode = AuthorizationCode
+
+
+-- | Extract the raw authorization code text.
+-- Only use this when exchanging for tokens.
+unwrapAuthorizationCode :: AuthorizationCode -> Text
+unwrapAuthorizationCode authCode =
+  case authCode of
+    AuthorizationCode code -> code
 
 
 instance Json.FromJSON AuthorizationCode
@@ -141,6 +228,7 @@ instance Json.FromJSON AuthorizationCode
 --
 -- Show instance is redacted for security (state tokens are secrets).
 -- No ToJSON instance - prevent accidental serialization.
+-- Constructor is hidden - use 'mkState' and 'unwrapState'.
 newtype State = State Text
   deriving (Generic, Eq)
 
@@ -148,6 +236,20 @@ newtype State = State Text
 -- | Redacted Show instance - NEVER reveals the actual state
 instance Show State where
   show _ = "State <REDACTED>"
+
+
+-- | Create a State from raw text.
+-- The text should be cryptographically random.
+mkState :: Text -> State
+mkState = State
+
+
+-- | Extract the raw state text.
+-- Only use this for URL building or validation.
+unwrapState :: State -> Text
+unwrapState stateParam =
+  case stateParam of
+    State s -> s
 
 
 instance Json.FromJSON State
@@ -163,7 +265,9 @@ instance Json.FromJSON State
 --   Err err -> Task.throw err
 -- @
 validateState :: State -> State -> Result OAuth2Error ()
-validateState (State expected) (State returned) =
+validateState expectedState returnedState = do
+  let expected = unwrapState expectedState
+  let returned = unwrapState returnedState
   case expected == returned of
     True -> Ok ()
     False -> Err (InvalidState "State parameter mismatch - possible CSRF attack")
@@ -183,7 +287,9 @@ validateState (State expected) (State returned) =
 --   Err err -> -- reject the request
 -- @
 validateRedirectUri :: RedirectUri -> RedirectUri -> Result OAuth2Error ()
-validateRedirectUri (RedirectUri registered) (RedirectUri received) = do
+validateRedirectUri registeredUri receivedUri = do
+  let registered = unwrapRedirectUri registeredUri
+  let received = unwrapRedirectUri receivedUri
   -- Step 1: Exact match required (no normalization)
   case registered == received of
     False -> Err (InvalidRedirectUri "Redirect URI does not match registered URI")
@@ -236,6 +342,7 @@ instance Json.ToJSON Scope
 -- Used in Authorization header: @Authorization: Bearer \<token\>@
 -- Show instance is redacted for security.
 -- No JSON instances - use explicit conversion if needed.
+-- Constructor is hidden - use 'mkAccessToken' and 'unwrapAccessToken'.
 newtype AccessToken = AccessToken Text
   deriving (Generic, Eq)
 
@@ -245,12 +352,27 @@ instance Show AccessToken where
   show _ = "AccessToken <REDACTED>"
 
 
+-- | Create an AccessToken from raw text.
+-- Typically from an OAuth2 token response.
+mkAccessToken :: Text -> AccessToken
+mkAccessToken = AccessToken
+
+
+-- | Extract the raw access token text.
+-- Only use this when making authenticated API requests.
+unwrapAccessToken :: AccessToken -> Text
+unwrapAccessToken accessToken =
+  case accessToken of
+    AccessToken t -> t
+
+
 -- | OAuth2 refresh token.
 --
 -- Used to obtain new access tokens without user interaction.
 -- Some providers rotate refresh tokens on each use.
 -- Show instance is redacted for security.
 -- No JSON instances - use explicit conversion if needed.
+-- Constructor is hidden - use 'mkRefreshToken' and 'unwrapRefreshToken'.
 newtype RefreshToken = RefreshToken Text
   deriving (Generic, Eq)
 
@@ -258,6 +380,20 @@ newtype RefreshToken = RefreshToken Text
 -- | Redacted Show instance - NEVER reveals the actual token
 instance Show RefreshToken where
   show _ = "RefreshToken <REDACTED>"
+
+
+-- | Create a RefreshToken from raw text.
+-- Typically from an OAuth2 token response.
+mkRefreshToken :: Text -> RefreshToken
+mkRefreshToken = RefreshToken
+
+
+-- | Extract the raw refresh token text.
+-- Only use this when refreshing tokens with the OAuth2 provider.
+unwrapRefreshToken :: RefreshToken -> Text
+unwrapRefreshToken refreshToken =
+  case refreshToken of
+    RefreshToken t -> t
 
 
 -- | Complete set of tokens from an OAuth2 token response.
@@ -300,6 +436,7 @@ instance Show TokenSet where
 -- Must be 43-128 characters from [A-Z], [a-z], [0-9], "-", ".", "_", "~".
 -- Show instance is redacted for security.
 -- No ToJSON instance - prevent accidental serialization.
+-- Constructor is hidden - use 'mkCodeVerifier' and 'unwrapCodeVerifier'.
 newtype CodeVerifier = CodeVerifier Text
   deriving (Generic, Eq)
 
@@ -307,6 +444,54 @@ newtype CodeVerifier = CodeVerifier Text
 -- | Redacted Show instance - NEVER reveals the actual verifier
 instance Show CodeVerifier where
   show _ = "CodeVerifier <REDACTED>"
+
+
+-- | Create a CodeVerifier from raw text with validation (RFC 7636).
+--
+-- Validates:
+-- * Length is 43-128 characters
+-- * All characters are from the unreserved set: [A-Z], [a-z], [0-9], "-", ".", "_", "~"
+--
+-- Returns 'InvalidPkceVerifier' error if validation fails.
+mkCodeVerifier :: Text -> Result OAuth2Error CodeVerifier
+mkCodeVerifier text = do
+  let chars = Text.toLinkedList text
+  let len = LinkedList.length chars
+  case len >= 43 && len <= 128 of
+    False -> Err (InvalidPkceVerifier [fmt|Code verifier must be 43-128 characters, got #{len}|])
+    True -> do
+      case LinkedList.all isUnreservedChar chars of
+        False -> Err (InvalidPkceVerifier "Code verifier contains invalid characters (must be [A-Z][a-z][0-9]-._~)")
+        True -> Ok (CodeVerifier text)
+
+
+-- | Create a CodeVerifier without validation (UNSAFE).
+--
+-- Only use this when you trust the source (e.g., from 'generateCodeVerifier').
+-- For user input, use 'mkCodeVerifier' which validates.
+mkCodeVerifierUnsafe :: Text -> CodeVerifier
+mkCodeVerifierUnsafe = CodeVerifier
+
+
+-- | Check if a character is in the unreserved character set (RFC 7636).
+-- Allowed: [A-Z], [a-z], [0-9], "-", ".", "_", "~"
+isUnreservedChar :: Char -> Bool
+isUnreservedChar c =
+  (c >= 'A' && c <= 'Z')
+    || (c >= 'a' && c <= 'z')
+    || (c >= '0' && c <= '9')
+    || c == '-'
+    || c == '.'
+    || c == '_'
+    || c == '~'
+
+
+-- | Extract the raw code verifier text.
+-- Only use this when sending to the token endpoint.
+unwrapCodeVerifier :: CodeVerifier -> Text
+unwrapCodeVerifier codeVerifier =
+  case codeVerifier of
+    CodeVerifier v -> v
 
 
 instance Json.FromJSON CodeVerifier

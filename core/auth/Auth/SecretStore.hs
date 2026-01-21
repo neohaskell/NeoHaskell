@@ -27,14 +27,6 @@
 -- -- Retrieve tokens
 -- maybeTokens <- store.get key
 --
--- -- Atomic refresh (prevents race conditions)
--- store.modify key \\maybeOld -> do
---   case maybeOld of
---     Nothing -> Task.yield Nothing
---     Just old -> do
---       newTokens <- OAuth2.refreshToken provider clientId clientSecret old.refreshToken
---       Task.yield (Just newTokens)
---
 -- -- Delete on disconnect
 -- store.delete key
 -- @
@@ -73,14 +65,12 @@ newtype TokenKey = TokenKey Text
 --
 -- * Tokens are not logged
 -- * Tokens can be deleted (not append-only)
--- * 'modify' is atomic (prevents refresh races)
 --
 -- @
 -- data SecretStore = SecretStore
 --   { get :: TokenKey -> Task Text (Maybe TokenSet)
 --   , put :: TokenKey -> TokenSet -> Task Text Unit
 --   , delete :: TokenKey -> Task Text Unit
---   , modify :: ...
 --   }
 -- @
 data SecretStore = SecretStore
@@ -93,22 +83,4 @@ data SecretStore = SecretStore
   , -- | Delete tokens for a key.
     -- No-op if key doesn't exist.
     delete :: TokenKey -> Task Text Unit
-  , -- | Atomically read and update tokens.
-    --
-    -- This prevents race conditions during token refresh where two
-    -- workers might try to refresh simultaneously, potentially causing
-    -- issues with refresh token rotation.
-    --
-    -- The function receives the current value (or Nothing) and returns
-    -- the new value to store (or Nothing to delete).
-    --
-    -- @
-    -- store.modify key \\maybeOld -> do
-    --   case maybeOld of
-    --     Nothing -> Task.yield Nothing  -- No change
-    --     Just old -> do
-    --       new <- refreshTokens old
-    --       Task.yield (Just new)
-    -- @
-    modify :: TokenKey -> (Maybe TokenSet -> Task Text (Maybe TokenSet)) -> Task Text Unit
   }

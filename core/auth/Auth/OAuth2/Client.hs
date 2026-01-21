@@ -69,32 +69,43 @@ module Auth.OAuth2.Client (
 import Array (Array)
 import Array qualified
 import Auth.OAuth2.Types (
-  AccessToken (..),
-  AuthorizationCode (..),
+  AuthorizationCode,
   ClientId (..),
-  ClientSecret (..),
+  ClientSecret,
   CodeChallenge (..),
   CodeChallengeMethod (..),
-  CodeVerifier (..),
+  CodeVerifier,
   OAuth2Error (..),
   Provider (..),
-  RedirectUri (..),
-  RefreshToken (..),
+  RedirectUri,
+  unwrapRedirectUri,
+  RefreshToken,
   Scope (..),
-  State (..),
+  State,
   TokenSet (..),
+  mkAccessToken,
+  mkCodeVerifierUnsafe,
+  mkRefreshToken,
+  unwrapAuthorizationCode,
+  unwrapClientSecret,
+  unwrapCodeVerifier,
+  unwrapRefreshToken,
+  unwrapState,
  )
 import Auth.UrlValidation (ValidationError (..))
 import Auth.UrlValidation qualified as UrlValidation
 import Basics
 import Bytes qualified
+import Char (Char)
 import Crypto.Hash qualified as Hash
+import LinkedList qualified
 import Crypto.Random qualified as Random
 import Data.ByteArray.Encoding qualified as Encoding
 import Data.ByteString qualified as BS
 import Http.Client qualified as Http
 import Json qualified
 import Maybe (Maybe (..))
+import Maybe qualified
 import Result (Result (..))
 import Network.URI qualified as URI
 import System.IO qualified as GhcIO
@@ -128,29 +139,9 @@ authorizeUrl ::
   Array Scope ->
   State ->
   Text
-authorizeUrl provider (ClientId clientId) (RedirectUri redirectUri) scopes (State state) = do
-  let authEndpoint = provider.authorizeEndpoint
-  let scopeText =
-        scopes
-          |> Array.map (\(Scope s) -> s)
-          |> Text.joinWith " "
-  let params :: Array (Text, Text) =
-        Array.fromLinkedList
-          [ ("response_type", "code")
-          , ("client_id", clientId)
-          , ("redirect_uri", redirectUri)
-          , ("state", state)
-          , ("scope", scopeText)
-          ]
-  let encodeParam :: (Text, Text) -> Text
-      encodeParam (key, val) = do
-        let encodedVal = urlEncode val
-        [fmt|#{key}=#{encodedVal}|]
-  let queryString =
-        params
-          |> Array.map encodeParam
-          |> Text.joinWith "&"
-  [fmt|#{authEndpoint}?#{queryString}|]
+authorizeUrl provider clientIdVal redirectUriVal scopes stateVal = do
+  let extraParams = Array.fromLinkedList []
+  buildAuthorizeUrl provider clientIdVal redirectUriVal scopes stateVal extraParams
 
 
 -- | Exchange an authorization code for tokens.
@@ -171,8 +162,12 @@ exchangeCode ::
   RedirectUri ->
   AuthorizationCode ->
   Task OAuth2Error TokenSet
-exchangeCode provider (ClientId clientId) (ClientSecret clientSecret) (RedirectUri redirectUri) (AuthorizationCode code) = do
+exchangeCode provider clientIdVal clientSecretVal redirectUriVal codeVal = do
   let tokenEndpoint = provider.tokenEndpoint
+  let (ClientId clientId) = clientIdVal
+  let clientSecret = unwrapClientSecret clientSecretVal
+  let redirectUri = unwrapRedirectUri redirectUriVal
+  let code = unwrapAuthorizationCode codeVal
   let formParams =
         [ ("grant_type", "authorization_code")
         , ("code", code)
@@ -203,8 +198,11 @@ refreshToken ::
   ClientSecret ->
   RefreshToken ->
   Task OAuth2Error TokenSet
-refreshToken provider (ClientId clientId) (ClientSecret clientSecret) (RefreshToken refresh) = do
+refreshToken provider clientIdVal clientSecretVal refreshTokenVal = do
   let tokenEndpoint = provider.tokenEndpoint
+  let (ClientId clientId) = clientIdVal
+  let clientSecret = unwrapClientSecret clientSecretVal
+  let refresh = unwrapRefreshToken refreshTokenVal
   let formParams =
         [ ("grant_type", "refresh_token")
         , ("refresh_token", refresh)
@@ -212,6 +210,54 @@ refreshToken provider (ClientId clientId) (ClientSecret clientSecret) (RefreshTo
         , ("client_secret", clientSecret)
         ]
   requestTokens tokenEndpoint formParams
+
+
+-- ============================================================================
+-- Internal helpers
+-- ============================================================================
+
+-- | Build an authorization URL with the given parameters.
+-- Used by both authorizeUrl and authorizeUrlWithPkce.
+buildAuthorizeUrl ::
+  Provider ->
+  ClientId ->
+  RedirectUri ->
+  Array Scope ->
+  State ->
+  Array (Text, Text) ->
+  Text
+buildAuthorizeUrl provider clientIdVal redirectUriVal scopes stateVal extraParams = do
+  let authEndpoint = provider.authorizeEndpoint
+  let (ClientId clientId) = clientIdVal
+  let redirectUri = unwrapRedirectUri redirectUriVal
+  let state = unwrapState stateVal
+  let scopeText =
+        scopes
+          |> Array.map (\(Scope s) -> s)
+          |> Text.joinWith " "
+  let baseParams :: Array (Text, Text) =
+        Array.fromLinkedList
+          [ ("response_type", "code")
+          , ("client_id", clientId)
+          , ("redirect_uri", redirectUri)
+          , ("state", state)
+          , ("scope", scopeText)
+          ]
+  let params = baseParams |> Array.append extraParams
+  let queryString = encodeQueryParams params
+  [fmt|#{authEndpoint}?#{queryString}|]
+
+
+-- | Encode query parameters as a URL-encoded query string.
+encodeQueryParams :: Array (Text, Text) -> Text
+encodeQueryParams params = do
+  let encodeParam :: (Text, Text) -> Text
+      encodeParam (key, val) = do
+        let encodedVal = urlEncode val
+        [fmt|#{key}=#{encodedVal}|]
+  params
+    |> Array.map encodeParam
+    |> Text.joinWith "&"
 
 
 -- ============================================================================
@@ -236,7 +282,7 @@ generateCodeVerifier = do
   randomBytes <- Task.fromIO (Random.getRandomBytes 32 :: GhcIO.IO BS.ByteString)
   let encoded = Encoding.convertToBase Encoding.Base64URLUnpadded randomBytes
   let verifierText = Bytes.fromLegacy encoded |> Text.fromBytes
-  Task.yield (CodeVerifier verifierText)
+  Task.yield (mkCodeVerifierUnsafe verifierText)
 
 
 -- | Derive a code challenge from a code verifier using S256 method.
@@ -245,7 +291,8 @@ generateCodeVerifier = do
 --
 -- This is the recommended method per RFC 7636.
 deriveCodeChallenge :: CodeVerifier -> CodeChallenge
-deriveCodeChallenge (CodeVerifier verifier) = do
+deriveCodeChallenge verifierVal = do
+  let verifier = unwrapCodeVerifier verifierVal
   let verifierBytes = Text.toBytes verifier |> Bytes.unwrap
   let hashDigest = Hash.hashWith Hash.SHA256 verifierBytes
   let challengeBytes = Encoding.convertToBase Encoding.Base64URLUnpadded hashDigest
@@ -273,34 +320,17 @@ authorizeUrlWithPkce ::
   CodeChallenge ->
   CodeChallengeMethod ->
   Text
-authorizeUrlWithPkce provider (ClientId clientId) (RedirectUri redirectUri) scopes (State state) (CodeChallenge challenge) method = do
-  let authEndpoint = provider.authorizeEndpoint
-  let scopeText =
-        scopes
-          |> Array.map (\(Scope s) -> s)
-          |> Text.joinWith " "
+authorizeUrlWithPkce provider clientIdVal redirectUriVal scopes stateVal challengeVal method = do
+  let (CodeChallenge challenge) = challengeVal
   let methodText = case method of
         S256 -> "S256"
         Plain -> "plain"
-  let params :: Array (Text, Text) =
+  let pkceParams =
         Array.fromLinkedList
-          [ ("response_type", "code")
-          , ("client_id", clientId)
-          , ("redirect_uri", redirectUri)
-          , ("state", state)
-          , ("scope", scopeText)
-          , ("code_challenge", challenge)
+          [ ("code_challenge", challenge)
           , ("code_challenge_method", methodText)
           ]
-  let encodeParam :: (Text, Text) -> Text
-      encodeParam (key, val) = do
-        let encodedVal = urlEncode val
-        [fmt|#{key}=#{encodedVal}|]
-  let queryString =
-        params
-          |> Array.map encodeParam
-          |> Text.joinWith "&"
-  [fmt|#{authEndpoint}?#{queryString}|]
+  buildAuthorizeUrl provider clientIdVal redirectUriVal scopes stateVal pkceParams
 
 
 -- | Exchange an authorization code for tokens with PKCE verification.
@@ -320,8 +350,13 @@ exchangeCodeWithPkce ::
   AuthorizationCode ->
   CodeVerifier ->
   Task OAuth2Error TokenSet
-exchangeCodeWithPkce provider (ClientId clientId) (ClientSecret clientSecret) (RedirectUri redirectUri) (AuthorizationCode code) (CodeVerifier verifier) = do
+exchangeCodeWithPkce provider clientIdVal clientSecretVal redirectUriVal codeVal verifierVal = do
   let tokenEndpoint = provider.tokenEndpoint
+  let (ClientId clientId) = clientIdVal
+  let clientSecret = unwrapClientSecret clientSecretVal
+  let redirectUri = unwrapRedirectUri redirectUriVal
+  let code = unwrapAuthorizationCode codeVal
+  let verifier = unwrapCodeVerifier verifierVal
   let formParams =
         [ ("grant_type", "authorization_code")
         , ("code", code)
@@ -352,8 +387,38 @@ data TokenResponse = TokenResponse
 instance Json.FromJSON TokenResponse
 
 
+-- | OAuth2 error response from provider (RFC 6749 Section 5.2).
+-- Used to parse 4xx error responses from token endpoints.
+-- Uses snake_case to match OAuth2 spec field names.
+data TokenErrorResponse = TokenErrorResponse
+  { error :: Text
+  , error_description :: Maybe Text
+  , error_uri :: Maybe Text
+  }
+  deriving (Generic)
+
+
+instance Json.FromJSON TokenErrorResponse
+
+
+-- | Map OAuth2 error code to our error type.
+-- RFC 6749 defines standard error codes for token endpoint errors.
+mapOAuthErrorCode :: Text -> Maybe Text -> OAuth2Error
+mapOAuthErrorCode errorCode maybeDescription = do
+  let description = maybeDescription |> Maybe.withDefault errorCode
+  case errorCode of
+    "invalid_grant" -> InvalidGrant description
+    "invalid_client" -> InvalidClient description
+    "invalid_scope" -> ScopeDenied description
+    "unauthorized_client" -> InvalidClient description
+    "invalid_request" -> TokenRequestFailed description
+    "unsupported_grant_type" -> TokenRequestFailed description
+    _ -> TokenRequestFailed description
+
+
 -- | Make a token request to the provider.
 -- SECURITY: Validates endpoint URL for HTTPS and SSRF protection with DNS resolution.
+-- Parses OAuth2 error responses (RFC 6749) into specific error types.
 requestTokens ::
   Text ->
   [(Text, Text)] ->
@@ -377,17 +442,74 @@ requestTokens tokenEndpoint formParams = do
       let formArray = formParams |> Array.fromLinkedList
       result <-
         Http.postForm @TokenResponse request formArray
-          |> Task.mapError (\(Http.Error msg) -> NetworkError msg)
+          |> Task.mapError parseHttpError
           |> Task.asResult
       case result of
         Err err -> Task.throw err
         Ok response -> do
           Task.yield
             TokenSet
-              { accessToken = AccessToken response.access_token
-              , refreshToken = response.refresh_token |> fmap RefreshToken
+              { accessToken = mkAccessToken response.access_token
+              , refreshToken = response.refresh_token |> fmap mkRefreshToken
               , expiresInSeconds = response.expires_in
               }
+
+
+-- | Parse HTTP error to OAuth2Error, attempting to extract OAuth2 error response.
+-- If the error message contains OAuth2 error JSON, parse it to specific error type.
+-- Otherwise, return a generic NetworkError.
+parseHttpError :: Http.Error -> OAuth2Error
+parseHttpError httpError =
+  case httpError of
+    Http.Error msg ->
+      -- Try to find and parse OAuth2 error JSON in the error message
+      -- HTTP client errors for status codes include the response body
+      -- Note: This is a best-effort parse - if it fails, we fall back to NetworkError
+      case parseOAuthErrorFromMessage msg of
+        Just oauthError -> oauthError
+        Nothing -> NetworkError msg
+
+
+-- | Attempt to extract OAuth2 error from error message.
+-- The HTTP library includes response body in some error messages.
+parseOAuthErrorFromMessage :: Text -> Maybe OAuth2Error
+parseOAuthErrorFromMessage msg = do
+  -- Look for JSON object pattern in the message
+  -- OAuth2 errors have format: {"error":"...", "error_description":"..."}
+  let msgStr = Text.toLinkedList msg
+  case findJsonInMessage msgStr of
+    Nothing -> Nothing
+    Just jsonStr -> do
+      case Json.decodeText (Text.fromLinkedList jsonStr) of
+        Err _ -> Nothing
+        Ok (errorResponse :: TokenErrorResponse) ->
+          Just (mapOAuthErrorCode errorResponse.error errorResponse.error_description)
+
+
+-- | Find a JSON object in a message string (simple heuristic).
+findJsonInMessage :: [Char] -> Maybe [Char]
+findJsonInMessage [] = Nothing
+findJsonInMessage ('{' : rest) = do
+  -- Found opening brace, try to find matching close
+  case findClosingBrace rest 1 [] of
+    Just jsonChars -> Just ('{' : jsonChars)
+    Nothing -> findJsonInMessage rest
+findJsonInMessage (_ : rest) = findJsonInMessage rest
+
+
+-- | Find closing brace, tracking nesting depth.
+-- Accumulates characters in reverse order, then reverses at the end.
+findClosingBrace :: [Char] -> Int -> [Char] -> Maybe [Char]
+findClosingBrace [] _ _ = Nothing
+findClosingBrace (c : rest) depth acc = do
+  let newAcc = c : acc -- Build in reverse for efficiency
+  case c of
+    '{' -> findClosingBrace rest (depth + 1) newAcc
+    '}' -> do
+      case depth == 1 of
+        True -> Just (LinkedList.reverse newAcc)
+        False -> findClosingBrace rest (depth - 1) newAcc
+    _ -> findClosingBrace rest depth newAcc
 
 
 -- | URL encoding (percent-encoding) using Network.URI.

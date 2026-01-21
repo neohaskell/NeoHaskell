@@ -43,17 +43,29 @@ module Auth.OAuth2 (
 
   -- * Credentials
   ClientId (..),
-  ClientSecret (..),
-  RedirectUri (..),
+  ClientSecret,
+  mkClientSecret,
+  unwrapClientSecret,
+  RedirectUri,
+  mkRedirectUri,
+  unwrapRedirectUri,
 
   -- * Authorization Flow
-  AuthorizationCode (..),
-  State (..),
+  AuthorizationCode,
+  mkAuthorizationCode,
+  unwrapAuthorizationCode,
+  State,
+  mkState,
+  unwrapState,
   Scope (..),
 
   -- * Tokens
-  AccessToken (..),
-  RefreshToken (..),
+  AccessToken,
+  mkAccessToken,
+  unwrapAccessToken,
+  RefreshToken,
+  mkRefreshToken,
+  unwrapRefreshToken,
   TokenSet (..),
 
   -- * Errors
@@ -67,15 +79,27 @@ module Auth.OAuth2 (
 
 import Auth.OAuth2.Client (authorizeUrl, exchangeCode, refreshToken)
 import Auth.OAuth2.Types (
-  AccessToken (..),
-  AuthorizationCode (..),
+  AccessToken,
+  AuthorizationCode,
   ClientId (..),
-  ClientSecret (..),
+  ClientSecret,
   OAuth2Error (..),
   Provider (..),
-  RedirectUri (..),
-  RefreshToken (..),
+  RedirectUri,
+  RefreshToken,
   Scope (..),
-  State (..),
+  State,
   TokenSet (..),
+  mkAccessToken,
+  mkAuthorizationCode,
+  mkClientSecret,
+  mkRedirectUri,
+  mkRefreshToken,
+  mkState,
+  unwrapAccessToken,
+  unwrapAuthorizationCode,
+  unwrapClientSecret,
+  unwrapRedirectUri,
+  unwrapRefreshToken,
+  unwrapState,
  )

@@ -1,12 +1,12 @@
 module Auth.OAuth2.TypesSpec where
 
 import Auth.OAuth2.Types (
-  AccessToken (..),
-  AuthorizationCode (..),
-  ClientSecret (..),
-  RefreshToken (..),
-  State (..),
   TokenSet (..),
+  mkAccessToken,
+  mkAuthorizationCode,
+  mkClientSecret,
+  mkRefreshToken,
+  mkState,
  )
 import Core
 import Task qualified
@@ -23,7 +23,7 @@ spec = do
 
       describe "ClientSecret" do
         it "Show instance does not reveal the secret value" \_ -> do
-          let secret = ClientSecret "super-secret-value-12345"
+          let secret = mkClientSecret "super-secret-value-12345"
           let shown = toText secret
           -- The actual secret value should NOT appear in the output
           shown |> shouldSatisfy (\t -> not (Text.contains "super-secret-value-12345" t))
@@ -31,28 +31,28 @@ spec = do
           shown |> shouldSatisfy (\t -> Text.contains "REDACTED" t)
 
         it "multiple secrets show the same redacted output" \_ -> do
-          let secret1 = ClientSecret "first-secret"
-          let secret2 = ClientSecret "second-secret"
+          let secret1 = mkClientSecret "first-secret"
+          let secret2 = mkClientSecret "second-secret"
           -- Both should show identically (no information leak via length etc)
           toText secret1 |> shouldBe (toText secret2)
 
       describe "AccessToken" do
         it "Show instance does not reveal the token value" \_ -> do
-          let token = AccessToken "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.xxxxx"
+          let token = mkAccessToken "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.xxxxx"
           let shown = toText token
           shown |> shouldSatisfy (\t -> not (Text.contains "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9" t))
           shown |> shouldSatisfy (\t -> Text.contains "REDACTED" t)
 
       describe "RefreshToken" do
         it "Show instance does not reveal the token value" \_ -> do
-          let token = RefreshToken "refresh-token-value-xyz"
+          let token = mkRefreshToken "refresh-token-value-xyz"
           let shown = toText token
           shown |> shouldSatisfy (\t -> not (Text.contains "refresh-token-value-xyz" t))
           shown |> shouldSatisfy (\t -> Text.contains "REDACTED" t)
 
       describe "AuthorizationCode" do
         it "Show instance does not reveal the code value" \_ -> do
-          let code = AuthorizationCode "secret-auth-code-xyz-12345"
+          let code = mkAuthorizationCode "secret-auth-code-xyz-12345"
           let shown = toText code
           -- The actual code value should NOT appear in the output
           shown |> shouldSatisfy (\t -> not (Text.contains "secret-auth-code-xyz-12345" t))
@@ -61,7 +61,7 @@ spec = do
 
       describe "State" do
         it "Show instance does not reveal the state value" \_ -> do
-          let state = State "csrf-token-abc-98765"
+          let state = mkState "csrf-token-abc-98765"
           let shown = toText state
           -- The actual state value should NOT appear in the output
           shown |> shouldSatisfy (\t -> not (Text.contains "csrf-token-abc-98765" t))
@@ -72,8 +72,8 @@ spec = do
         it "Show instance does not reveal any token values" \_ -> do
           let tokens =
                 TokenSet
-                  { accessToken = AccessToken "access-secret-123"
-                  , refreshToken = Just (RefreshToken "refresh-secret-456")
+                  { accessToken = mkAccessToken "access-secret-123"
+                  , refreshToken = Just (mkRefreshToken "refresh-secret-456")
                   , expiresInSeconds = Just 3600
                   }
           let shown = toText tokens
@@ -115,7 +115,7 @@ spec = do
         -- to update this test and think about the semantics.
         let tokens =
               TokenSet
-                { accessToken = AccessToken "test"
+                { accessToken = mkAccessToken "test"
                 , refreshToken = Nothing
                 , expiresInSeconds = Just 3600 -- 1 hour duration
                 }

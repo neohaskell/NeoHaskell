@@ -61,17 +61,7 @@ instance Show Request where
 -- | Sanitize URL Text to scheme://host:port only, removing path/query/credentials.
 -- SECURITY: Query params may contain state, tokens, or other secrets.
 sanitizeUrlText :: Text -> Text
-sanitizeUrlText urlText = do
-  let urlString = Text.toLinkedList urlText
-  case HttpSimple.parseRequest urlString of
-    GhcEither.Left _ -> "<malformed URL>"
-    GhcEither.Right req -> do
-      let schemeText = case HttpClient.secure req of
-            True -> "https://" :: Text
-            False -> "http://" :: Text
-      let hostText = toText (show (HttpClient.host req))
-      let portText = toText (show (HttpClient.port req))
-      Text.append schemeText (Text.append hostText (Text.append ":" portText))
+sanitizeUrlText urlText = sanitizeUrl (Text.toLinkedList urlText)
 
 
 instance Default Request where
@@ -220,21 +210,8 @@ getIO ::
   Request ->
   GhcIO.IO response
 getIO options = do
-  let url = options.url |> Maybe.withDefault (panic "url is required")
-  r <- Text.toLinkedList url |> HttpSimple.parseRequest
-  let withHeaders =
-        options.headers
-          |> Map.reduce r \key value acc ->
-            HttpSimple.addRequestHeader (Text.convert key) (Text.convert value) acc
-  let withTimeout = case options.timeoutSeconds of
-        Nothing -> withHeaders
-        Just seconds -> do
-          let microseconds = seconds * 1000000
-          HttpSimple.setRequestResponseTimeout
-            (HttpClient.responseTimeoutMicro microseconds)
-            withHeaders
-  -- SECURITY: Apply redirect limit (default 0 for SSRF protection)
-  let req = withTimeout {HttpClient.redirectCount = options.maxRedirects}
+  baseReq <- parseRequestUrl options
+  let req = applyRequestOptions options baseReq
   response <- HttpSimple.httpJSON req
   Http.getResponseBody response
     |> pure
@@ -259,23 +236,12 @@ postIO ::
   requestBody ->
   GhcIO.IO response
 postIO options body = do
-  let url = options.url |> Maybe.withDefault (panic "url is required")
-  r <- Text.toLinkedList url |> HttpSimple.parseRequest
-  let withHeaders =
-        options.headers
-          |> Map.reduce r \key value acc ->
-            HttpSimple.addRequestHeader (Text.convert key) (Text.convert value) acc
-              |> HttpSimple.setRequestMethod "POST"
-              |> HttpSimple.setRequestBodyJSON body
-  let withTimeout = case options.timeoutSeconds of
-        Nothing -> withHeaders
-        Just seconds -> do
-          let microseconds = seconds * 1000000
-          HttpSimple.setRequestResponseTimeout
-            (HttpClient.responseTimeoutMicro microseconds)
-            withHeaders
-  -- SECURITY: Apply redirect limit (default 0 for SSRF protection)
-  let req = withTimeout {HttpClient.redirectCount = options.maxRedirects}
+  baseReq <- parseRequestUrl options
+  let withBody =
+        baseReq
+          |> HttpSimple.setRequestMethod "POST"
+          |> HttpSimple.setRequestBodyJSON body
+  let req = applyRequestOptions options withBody
   response <- HttpSimple.httpJSON req
   Http.getResponseBody response
     |> pure
@@ -314,30 +280,47 @@ postFormIO ::
   Array (Text, Text) ->
   GhcIO.IO response
 postFormIO options formParams = do
-  let url = options.url |> Maybe.withDefault (panic "url is required")
-  r <- Text.toLinkedList url |> HttpSimple.parseRequest
+  baseReq <- parseRequestUrl options
   let formData =
         formParams
           |> Array.toLinkedList
           |> fmap (\(key, value) -> (Text.toBytes key |> Bytes.unwrap, Text.toBytes value |> Bytes.unwrap))
-  let withHeaders =
-        options.headers
-          |> Map.reduce r \key value acc ->
-            HttpSimple.addRequestHeader (Text.convert key) (Text.convert value) acc
   let withForm =
-        withHeaders
+        baseReq
           |> HttpSimple.setRequestMethod "POST"
           |> HttpSimple.setRequestHeader "Content-Type" ["application/x-www-form-urlencoded"]
           |> HttpSimple.setRequestBodyURLEncoded formData
+  let req = applyRequestOptions options withForm
+  response <- HttpSimple.httpJSON req
+  Http.getResponseBody response
+    |> pure
+
+
+-- ============================================================================
+-- Internal helpers
+-- ============================================================================
+
+-- | Parse the URL from request options into an http-client Request.
+parseRequestUrl :: Request -> GhcIO.IO HttpClient.Request
+parseRequestUrl options = do
+  let url = options.url |> Maybe.withDefault (panic "url is required")
+  Text.toLinkedList url |> HttpSimple.parseRequest
+
+
+-- | Apply common request options: headers, timeout, and redirect limit.
+-- SECURITY: Redirect limit defaults to 0 for SSRF protection.
+applyRequestOptions :: Request -> HttpClient.Request -> HttpClient.Request
+applyRequestOptions options baseReq = do
+  let withHeaders =
+        options.headers
+          |> Map.reduce baseReq (\key value acc ->
+            HttpSimple.addRequestHeader (Text.convert key) (Text.convert value) acc)
   let withTimeout = case options.timeoutSeconds of
-        Nothing -> withForm
+        Nothing -> withHeaders
         Just seconds -> do
           let microseconds = seconds * 1000000
           HttpSimple.setRequestResponseTimeout
             (HttpClient.responseTimeoutMicro microseconds)
-            withForm
+            withHeaders
   -- SECURITY: Apply redirect limit (default 0 for SSRF protection)
-  let req = withTimeout {HttpClient.redirectCount = options.maxRedirects}
-  response <- HttpSimple.httpJSON req
-  Http.getResponseBody response
-    |> pure
+  withTimeout {HttpClient.redirectCount = options.maxRedirects}
