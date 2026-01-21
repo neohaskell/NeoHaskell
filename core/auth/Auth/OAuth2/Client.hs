@@ -51,6 +51,7 @@ import Auth.OAuth2.Types (
   State (..),
   TokenSet (..),
  )
+import Auth.UrlValidation qualified as UrlValidation
 import Basics
 import Http.Client qualified as Http
 import Json qualified
@@ -60,6 +61,7 @@ import Task (Task)
 import Task qualified
 import Text (Text)
 import Text qualified
+import ToText (toText)
 
 
 -- | Build an OAuth2 authorization URL.
@@ -190,29 +192,38 @@ instance Json.FromJSON TokenResponse
 
 
 -- | Make a token request to the provider.
+-- SECURITY: Validates endpoint URL for HTTPS and SSRF protection.
 requestTokens ::
   Text ->
   [(Text, Text)] ->
   Task OAuth2Error TokenSet
 requestTokens tokenEndpoint formParams = do
-  let request =
-        Http.request
-          |> Http.withUrl tokenEndpoint
-          |> Http.withTimeout 30
-  let formArray = formParams |> Array.fromLinkedList
-  result <-
-    Http.postForm @TokenResponse request formArray
-      |> Task.mapError (\(Http.Error msg) -> NetworkError msg)
-      |> Task.asResult
-  case result of
-    Err err -> Task.throw err
-    Ok response -> do
-      Task.yield
-        TokenSet
-          { accessToken = AccessToken response.access_token
-          , refreshToken = response.refresh_token |> fmap RefreshToken
-          , expiresAt = response.expires_in
-          }
+  -- CRITICAL: Validate endpoint URL before making request
+  -- 1. Must use HTTPS (tokens contain secrets)
+  -- 2. Must not be private/loopback IP (SSRF protection)
+  case UrlValidation.validateSecureUrl tokenEndpoint of
+    Err validationError -> do
+      let errMsg = toText (show validationError)
+      Task.throw (EndpointValidationFailed errMsg)
+    Ok _ -> do
+      let request =
+            Http.request
+              |> Http.withUrl tokenEndpoint
+              |> Http.withTimeout 30
+      let formArray = formParams |> Array.fromLinkedList
+      result <-
+        Http.postForm @TokenResponse request formArray
+          |> Task.mapError (\(Http.Error msg) -> NetworkError msg)
+          |> Task.asResult
+      case result of
+        Err err -> Task.throw err
+        Ok response -> do
+          Task.yield
+            TokenSet
+              { accessToken = AccessToken response.access_token
+              , refreshToken = response.refresh_token |> fmap RefreshToken
+              , expiresInSeconds = response.expires_in
+              }
 
 
 -- | Simple URL encoding (percent-encoding).

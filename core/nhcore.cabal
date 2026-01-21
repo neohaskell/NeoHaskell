@@ -308,7 +308,10 @@ test-suite nhcore-test
   other-modules:
     Auth.JwtSpec
     Auth.MiddlewareSpec
+    Auth.OAuth2.ClientSpec
+    Auth.OAuth2.TypesSpec
     Auth.UrlValidationSpec
+    Http.ClientSpec
     ConcurrentMapSpec
     Integration.CommandSpec
     Integration.DispatcherSpec

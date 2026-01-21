@@ -77,14 +77,15 @@ instance Json.ToJSON ClientId
 -- | OAuth2 client secret.
 --
 -- WARNING: Never log or serialize this to events.
+-- Show instance is redacted for security.
+-- No JSON instances - use explicit conversion if needed.
 newtype ClientSecret = ClientSecret Text
-  deriving (Generic, Show, Eq)
+  deriving (Generic, Eq)
 
 
-instance Json.FromJSON ClientSecret
-
-
-instance Json.ToJSON ClientSecret
+-- | Redacted Show instance - NEVER reveals the actual secret
+instance Show ClientSecret where
+  show _ = "ClientSecret <REDACTED>"
 
 
 -- | OAuth2 redirect URI (callback URL).
@@ -142,28 +143,30 @@ instance Json.ToJSON Scope
 -- | OAuth2 access token.
 --
 -- Used in Authorization header: @Authorization: Bearer \<token\>@
+-- Show instance is redacted for security.
+-- No JSON instances - use explicit conversion if needed.
 newtype AccessToken = AccessToken Text
-  deriving (Generic, Show, Eq)
+  deriving (Generic, Eq)
 
 
-instance Json.FromJSON AccessToken
-
-
-instance Json.ToJSON AccessToken
+-- | Redacted Show instance - NEVER reveals the actual token
+instance Show AccessToken where
+  show _ = "AccessToken <REDACTED>"
 
 
 -- | OAuth2 refresh token.
 --
 -- Used to obtain new access tokens without user interaction.
 -- Some providers rotate refresh tokens on each use.
+-- Show instance is redacted for security.
+-- No JSON instances - use explicit conversion if needed.
 newtype RefreshToken = RefreshToken Text
-  deriving (Generic, Show, Eq)
+  deriving (Generic, Eq)
 
 
-instance Json.FromJSON RefreshToken
-
-
-instance Json.ToJSON RefreshToken
+-- | Redacted Show instance - NEVER reveals the actual token
+instance Show RefreshToken where
+  show _ = "RefreshToken <REDACTED>"
 
 
 -- | Complete set of tokens from an OAuth2 token response.
@@ -177,19 +180,27 @@ instance Json.ToJSON RefreshToken
 --       |> Http.get
 --   Nothing -> Task.throw "Not connected"
 -- @
+--
+-- Show instance is redacted (contains secrets).
+-- No JSON instances - tokens should be stored via SecretStore, not serialized.
 data TokenSet = TokenSet
   { accessToken :: AccessToken
   , refreshToken :: Maybe RefreshToken
-  , expiresAt :: Maybe Int
-    -- ^ Unix timestamp when access token expires (if provided)
+  , expiresInSeconds :: Maybe Int
+    -- ^ Duration in seconds until access token expires (from OAuth2 expires_in).
+    -- This is NOT a unix timestamp - it's a duration from the time of issuance.
+    -- To get expiry time: currentTime + expiresInSeconds
   }
-  deriving (Generic, Show, Eq)
+  deriving (Generic, Eq)
 
 
-instance Json.FromJSON TokenSet
-
-
-instance Json.ToJSON TokenSet
+-- | Redacted Show instance - uses redacted inner types
+instance Show TokenSet where
+  show ts = do
+    let access = show ts.accessToken
+    let refresh = show ts.refreshToken
+    let expires = show ts.expiresInSeconds
+    [fmt|TokenSet {accessToken = #{access}, refreshToken = #{refresh}, expiresInSeconds = #{expires}}|]
 
 
 -- | Errors that can occur during OAuth2 operations.
@@ -206,6 +217,8 @@ data OAuth2Error
     MalformedResponse Text
   | -- | Network error during token exchange
     NetworkError Text
+  | -- | Endpoint URL failed security validation (HTTPS/SSRF)
+    EndpointValidationFailed Text
   deriving (Generic, Show, Eq)
 
 

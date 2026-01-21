@@ -25,10 +25,12 @@ import Maybe qualified
 import Network.HTTP.Client qualified as HttpClient
 import Network.HTTP.Simple qualified as Http
 import Network.HTTP.Simple qualified as HttpSimple
+import System.IO qualified as GhcIO
 import Task (Task)
 import Task qualified
 import Text (Text)
 import Text qualified
+import ToText (toText)
 
 
 data Request = Request
@@ -45,7 +47,9 @@ instance Default Request where
     Request
       { url = Nothing,
         headers = Map.empty,
-        timeoutSeconds = Nothing
+        timeoutSeconds = Just 10
+        -- ^ Default 10 second timeout for production safety.
+        -- Prevents indefinite hangs under load. Override with withTimeout if needed.
       }
 
 
@@ -89,7 +93,18 @@ get ::
   (Json.FromJSON response) =>
   Request ->
   Task Error response
-get options = Task.fromIO do
+get options =
+  getIO options
+    |> Task.fromFailableIO @HttpClient.HttpException
+    |> Task.mapError (\e -> Error (toText (show e)))
+
+
+-- | Internal IO action for GET request (can throw HttpException)
+getIO ::
+  (Json.FromJSON response) =>
+  Request ->
+  GhcIO.IO response
+getIO options = do
   let url = options.url |> Maybe.withDefault (panic "url is required")
 
   log "Parsing request"
@@ -125,7 +140,19 @@ post ::
   Request ->
   requestBody ->
   Task Error response
-post options body = Task.fromIO do
+post options body =
+  postIO options body
+    |> Task.fromFailableIO @HttpClient.HttpException
+    |> Task.mapError (\e -> Error (toText (show e)))
+
+
+-- | Internal IO action for POST request (can throw HttpException)
+postIO ::
+  (Json.FromJSON response, Json.ToJSON requestBody) =>
+  Request ->
+  requestBody ->
+  GhcIO.IO response
+postIO options body = do
   let url = options.url |> Maybe.withDefault (panic "url is required")
 
   log "Parsing request"
@@ -176,7 +203,20 @@ postForm ::
   Request ->
   Array (Text, Text) ->
   Task Error response
-postForm options formParams = Task.fromIO do
+postForm options formParams =
+  postFormIO options formParams
+    |> Task.fromFailableIO @HttpClient.HttpException
+    |> Task.mapError (\e -> Error (toText (show e)))
+
+
+-- | Internal IO action for POST form request (can throw HttpException)
+postFormIO ::
+  forall response.
+  (Json.FromJSON response) =>
+  Request ->
+  Array (Text, Text) ->
+  GhcIO.IO response
+postFormIO options formParams = do
   let url = options.url |> Maybe.withDefault (panic "url is required")
 
   log "Parsing request"
