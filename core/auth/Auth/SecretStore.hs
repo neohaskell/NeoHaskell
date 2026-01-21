@@ -92,4 +92,9 @@ data SecretStore = SecretStore
   , -- | Delete tokens for a key.
     -- No-op if key doesn't exist.
     delete :: TokenKey -> Task Text Unit
+  , -- | Atomically modify tokens for a key.
+    -- The transformation function receives the current value (or 'Nothing')
+    -- and returns the new value (or 'Nothing' to delete).
+    -- Enables read-modify-write and compare-and-swap patterns.
+    atomicModify :: TokenKey -> (Maybe TokenSet -> Maybe TokenSet) -> Task Text Unit
   }

@@ -49,6 +49,7 @@ new = do
       { get = getImpl storage
       , put = putImpl storage
       , delete = deleteImpl storage
+      , atomicModify = atomicModifyImpl storage
       }
 
 
@@ -70,3 +71,18 @@ putImpl storage key tokens = do
 deleteImpl :: Storage -> TokenKey -> Task Text Unit
 deleteImpl storage key = do
   storage |> ConcurrentVar.modify (\store -> store |> Map.remove key)
+
+
+atomicModifyImpl :: Storage -> TokenKey -> (Maybe TokenSet -> Maybe TokenSet) -> Task Text Unit
+atomicModifyImpl storage key transform = do
+  storage
+    |> ConcurrentVar.modify
+      ( \store -> do
+          let currentValue = store |> Map.get key
+          let newValue = transform currentValue
+          case newValue of
+            Just tokens ->
+              store |> Map.set key tokens
+            Nothing ->
+              store |> Map.remove key
+      )
