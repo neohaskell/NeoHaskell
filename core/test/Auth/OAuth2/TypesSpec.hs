@@ -2,8 +2,10 @@ module Auth.OAuth2.TypesSpec where
 
 import Auth.OAuth2.Types (
   AccessToken (..),
+  AuthorizationCode (..),
   ClientSecret (..),
   RefreshToken (..),
+  State (..),
   TokenSet (..),
  )
 import Core
@@ -46,6 +48,24 @@ spec = do
           let token = RefreshToken "refresh-token-value-xyz"
           let shown = toText token
           shown |> shouldSatisfy (\t -> not (Text.contains "refresh-token-value-xyz" t))
+          shown |> shouldSatisfy (\t -> Text.contains "REDACTED" t)
+
+      describe "AuthorizationCode" do
+        it "Show instance does not reveal the code value" \_ -> do
+          let code = AuthorizationCode "secret-auth-code-xyz-12345"
+          let shown = toText code
+          -- The actual code value should NOT appear in the output
+          shown |> shouldSatisfy (\t -> not (Text.contains "secret-auth-code-xyz-12345" t))
+          -- Should show a redacted placeholder
+          shown |> shouldSatisfy (\t -> Text.contains "REDACTED" t)
+
+      describe "State" do
+        it "Show instance does not reveal the state value" \_ -> do
+          let state = State "csrf-token-abc-98765"
+          let shown = toText state
+          -- The actual state value should NOT appear in the output
+          shown |> shouldSatisfy (\t -> not (Text.contains "csrf-token-abc-98765" t))
+          -- Should show a redacted placeholder
           shown |> shouldSatisfy (\t -> Text.contains "REDACTED" t)
 
       describe "TokenSet" do

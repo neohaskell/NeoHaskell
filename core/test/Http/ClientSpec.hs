@@ -5,6 +5,7 @@ import Http.Client (Error (..))
 import Http.Client qualified as Http
 import Task qualified
 import Test
+import Text qualified
 
 
 spec :: Spec Unit
@@ -70,3 +71,28 @@ spec = do
         let req = Http.request
         -- Default timeout should be set (10 seconds)
         req.timeoutSeconds |> shouldBe (Just 10)
+
+    -- NOTE: Performance requirement - no Console.log in hot path
+    -- At 50k req/s, logging every request is a throughput killer.
+    -- This is verified by code review, not runtime test.
+    -- The Http.Client module should have NO Console.log calls.
+
+    describe "Error Sanitization (security)" do
+      -- CRITICAL: Error messages must not leak sensitive data
+      -- HTTP exceptions can include request body (which may contain secrets)
+
+      it "error messages do not contain request details" \_ -> do
+        -- When a request fails, the error message should be sanitized
+        -- to prevent leaking sensitive request body/headers
+        let req =
+              Http.request
+                |> Http.withUrl "http://localhost:59997/test"
+                |> Http.withTimeout 1
+        result <- Http.postForm @() req [("client_secret", "super-secret-value")] |> Task.asResult
+        case result of
+          Err (Error msg) -> do
+            -- The error message should NOT contain the secret
+            msg |> shouldSatisfy (\t -> not (Text.contains "super-secret-value" t))
+            -- Should contain useful info (host/category)
+            msg |> shouldSatisfy (\t -> Text.contains "localhost" t)
+          Ok _ -> fail "Expected error"

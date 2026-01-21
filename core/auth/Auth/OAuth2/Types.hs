@@ -102,14 +102,18 @@ instance Json.ToJSON RedirectUri
 -- | Authorization code received from the OAuth2 provider.
 --
 -- This is exchanged for tokens via 'Auth.OAuth2.Client.exchangeCode'.
+-- Show instance is redacted for security (codes are secrets).
+-- No ToJSON instance - prevent accidental serialization.
 newtype AuthorizationCode = AuthorizationCode Text
-  deriving (Generic, Show, Eq)
+  deriving (Generic, Eq)
+
+
+-- | Redacted Show instance - NEVER reveals the actual code
+instance Show AuthorizationCode where
+  show _ = "AuthorizationCode <REDACTED>"
 
 
 instance Json.FromJSON AuthorizationCode
-
-
-instance Json.ToJSON AuthorizationCode
 
 
 -- | State parameter for CSRF protection.
@@ -119,14 +123,19 @@ instance Json.ToJSON AuthorizationCode
 -- * Stored in session before redirect
 -- * Validated on callback before token exchange
 -- * Single-use (rejected if reused)
+--
+-- Show instance is redacted for security (state tokens are secrets).
+-- No ToJSON instance - prevent accidental serialization.
 newtype State = State Text
-  deriving (Generic, Show, Eq)
+  deriving (Generic, Eq)
+
+
+-- | Redacted Show instance - NEVER reveals the actual state
+instance Show State where
+  show _ = "State <REDACTED>"
 
 
 instance Json.FromJSON State
-
-
-instance Json.ToJSON State
 
 
 -- | OAuth2 scope(s) being requested.

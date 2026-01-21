@@ -192,7 +192,7 @@ instance Json.FromJSON TokenResponse
 
 
 -- | Make a token request to the provider.
--- SECURITY: Validates endpoint URL for HTTPS and SSRF protection.
+-- SECURITY: Validates endpoint URL for HTTPS and SSRF protection with DNS resolution.
 requestTokens ::
   Text ->
   [(Text, Text)] ->
@@ -201,7 +201,9 @@ requestTokens tokenEndpoint formParams = do
   -- CRITICAL: Validate endpoint URL before making request
   -- 1. Must use HTTPS (tokens contain secrets)
   -- 2. Must not be private/loopback IP (SSRF protection)
-  case UrlValidation.validateSecureUrl tokenEndpoint of
+  -- 3. DNS resolution checked for rebinding attacks
+  validationResult <- UrlValidation.validateSecureUrlWithDns tokenEndpoint
+  case validationResult of
     Err validationError -> do
       let errMsg = toText (show validationError)
       Task.throw (EndpointValidationFailed errMsg)
@@ -209,7 +211,7 @@ requestTokens tokenEndpoint formParams = do
       let request =
             Http.request
               |> Http.withUrl tokenEndpoint
-              |> Http.withTimeout 30
+              |> Http.withTimeout 10 -- 10s timeout for OAuth2 token requests
       let formArray = formParams |> Array.fromLinkedList
       result <-
         Http.postForm @TokenResponse request formArray

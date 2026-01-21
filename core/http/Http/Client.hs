@@ -14,7 +14,6 @@ import Array (Array)
 import Array qualified
 import Basics
 import Bytes qualified
-import Console (log)
 import Default (Default (..))
 import GHC.Int qualified as GhcInt
 import Json qualified
@@ -89,6 +88,51 @@ data Error = Error Text
   deriving (Show)
 
 
+-- | Convert HttpException to a sanitized error message.
+-- SECURITY: Never include request body or headers in error messages,
+-- as they may contain secrets (client_secret, tokens, etc.)
+sanitizeHttpError :: HttpClient.HttpException -> Error
+sanitizeHttpError exception = do
+  let msg = case exception of
+        HttpClient.HttpExceptionRequest req content -> do
+          let host = toText (show (HttpClient.host req))
+          let port = toText (show (HttpClient.port req))
+          let category = categorizeException content
+          [fmt|HTTP request failed: #{host}:#{port} - #{category}|]
+        HttpClient.InvalidUrlException url reason -> do
+          -- URL itself might be safe to show (no body/headers)
+          [fmt|Invalid URL: #{toText url} - #{toText reason}|]
+  Error msg
+
+
+-- | Categorize HTTP exception content without revealing sensitive details
+categorizeException :: HttpClient.HttpExceptionContent -> Text
+categorizeException content = case content of
+  HttpClient.StatusCodeException _ _ -> "unexpected status code"
+  HttpClient.TooManyRedirects _ -> "too many redirects"
+  HttpClient.OverlongHeaders -> "overlong headers"
+  HttpClient.ResponseTimeout -> "response timeout"
+  HttpClient.ConnectionTimeout -> "connection timeout"
+  HttpClient.ConnectionFailure _ -> "connection failed"
+  HttpClient.InvalidStatusLine _ -> "invalid status line"
+  HttpClient.InvalidHeader _ -> "invalid header"
+  HttpClient.InvalidRequestHeader _ -> "invalid request header"
+  HttpClient.InternalException _ -> "internal error"
+  HttpClient.ProxyConnectException _ _ _ -> "proxy connection error"
+  HttpClient.NoResponseDataReceived -> "no response data"
+  HttpClient.TlsNotSupported -> "TLS not supported"
+  HttpClient.WrongRequestBodyStreamSize _ _ -> "wrong request body size"
+  HttpClient.ResponseBodyTooShort _ _ -> "response body too short"
+  HttpClient.InvalidChunkHeaders -> "invalid chunk headers"
+  HttpClient.IncompleteHeaders -> "incomplete headers"
+  HttpClient.InvalidDestinationHost _ -> "invalid destination host"
+  HttpClient.HttpZlibException _ -> "decompression error"
+  HttpClient.InvalidProxyEnvironmentVariable _ _ -> "invalid proxy config"
+  HttpClient.ConnectionClosed -> "connection closed"
+  HttpClient.InvalidProxySettings _ -> "invalid proxy settings"
+  HttpClient.TooManyHeaderFields -> "too many header fields"
+
+
 get ::
   (Json.FromJSON response) =>
   Request ->
@@ -96,7 +140,7 @@ get ::
 get options =
   getIO options
     |> Task.fromFailableIO @HttpClient.HttpException
-    |> Task.mapError (\e -> Error (toText (show e)))
+    |> Task.mapError sanitizeHttpError
 
 
 -- | Internal IO action for GET request (can throw HttpException)
@@ -106,18 +150,11 @@ getIO ::
   GhcIO.IO response
 getIO options = do
   let url = options.url |> Maybe.withDefault (panic "url is required")
-
-  log "Parsing request"
   r <- Text.toLinkedList url |> HttpSimple.parseRequest
-
-  log "Setting headers"
   let withHeaders =
         options.headers
           |> Map.reduce r \key value acc ->
             HttpSimple.addRequestHeader (Text.convert key) (Text.convert value) acc
-
-  -- Apply timeout if specified (convert seconds to microseconds)
-  -- withTimeout validates positive values, so we can safely apply here
   let req = case options.timeoutSeconds of
         Nothing -> withHeaders
         Just seconds -> do
@@ -125,11 +162,7 @@ getIO options = do
           HttpSimple.setRequestResponseTimeout
             (HttpClient.responseTimeoutMicro microseconds)
             withHeaders
-
-  log "Performing request"
   response <- HttpSimple.httpJSON req
-
-  log "Returning"
   Http.getResponseBody response
     |> pure
 
@@ -143,7 +176,7 @@ post ::
 post options body =
   postIO options body
     |> Task.fromFailableIO @HttpClient.HttpException
-    |> Task.mapError (\e -> Error (toText (show e)))
+    |> Task.mapError sanitizeHttpError
 
 
 -- | Internal IO action for POST request (can throw HttpException)
@@ -154,20 +187,13 @@ postIO ::
   GhcIO.IO response
 postIO options body = do
   let url = options.url |> Maybe.withDefault (panic "url is required")
-
-  log "Parsing request"
   r <- Text.toLinkedList url |> HttpSimple.parseRequest
-
-  log "Setting headers"
   let withHeaders =
         options.headers
           |> Map.reduce r \key value acc ->
             HttpSimple.addRequestHeader (Text.convert key) (Text.convert value) acc
               |> HttpSimple.setRequestMethod "POST"
               |> HttpSimple.setRequestBodyJSON body
-
-  -- Apply timeout if specified (convert seconds to microseconds)
-  -- withTimeout validates positive values, so we can safely apply here
   let req = case options.timeoutSeconds of
         Nothing -> withHeaders
         Just seconds -> do
@@ -175,11 +201,7 @@ postIO options body = do
           HttpSimple.setRequestResponseTimeout
             (HttpClient.responseTimeoutMicro microseconds)
             withHeaders
-
-  log "Performing request"
   response <- HttpSimple.httpJSON req
-
-  log "Returning"
   Http.getResponseBody response
     |> pure
 
@@ -206,7 +228,7 @@ postForm ::
 postForm options formParams =
   postFormIO options formParams
     |> Task.fromFailableIO @HttpClient.HttpException
-    |> Task.mapError (\e -> Error (toText (show e)))
+    |> Task.mapError sanitizeHttpError
 
 
 -- | Internal IO action for POST form request (can throw HttpException)
@@ -218,28 +240,20 @@ postFormIO ::
   GhcIO.IO response
 postFormIO options formParams = do
   let url = options.url |> Maybe.withDefault (panic "url is required")
-
-  log "Parsing request"
   r <- Text.toLinkedList url |> HttpSimple.parseRequest
-
-  log "Setting headers and form body"
   let formData =
         formParams
           |> Array.toLinkedList
           |> fmap (\(key, value) -> (Text.toBytes key |> Bytes.unwrap, Text.toBytes value |> Bytes.unwrap))
-
   let withHeaders =
         options.headers
           |> Map.reduce r \key value acc ->
             HttpSimple.addRequestHeader (Text.convert key) (Text.convert value) acc
-
   let withForm =
         withHeaders
           |> HttpSimple.setRequestMethod "POST"
           |> HttpSimple.setRequestHeader "Content-Type" ["application/x-www-form-urlencoded"]
           |> HttpSimple.setRequestBodyURLEncoded formData
-
-  -- Apply timeout if specified (convert seconds to microseconds)
   let req = case options.timeoutSeconds of
         Nothing -> withForm
         Just seconds -> do
@@ -247,10 +261,6 @@ postFormIO options formParams = do
           HttpSimple.setRequestResponseTimeout
             (HttpClient.responseTimeoutMicro microseconds)
             withForm
-
-  log "Performing request"
   response <- HttpSimple.httpJSON req
-
-  log "Returning"
   Http.getResponseBody response
     |> pure
