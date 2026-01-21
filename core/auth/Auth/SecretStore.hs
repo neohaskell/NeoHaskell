@@ -55,8 +55,17 @@ import Text (Text)
 -- @
 -- let key = TokenKey [fmt|oauth2:#{provider}:#{userId}|]
 -- @
+--
+-- SECURITY: Show instance is redacted to prevent PII leakage in logs.
+-- Keys often contain user IDs or other identifying information.
 newtype TokenKey = TokenKey Text
-  deriving (Generic, Show, Eq, Ord)
+  deriving (Generic, Eq, Ord)
+
+
+-- | Redacted Show instance - NEVER reveals the actual key content.
+-- Keys may contain user IDs or other PII that shouldn't appear in logs.
+instance Show TokenKey where
+  show _ = "TokenKey <REDACTED>"
 
 
 -- | Interface for secure token storage.

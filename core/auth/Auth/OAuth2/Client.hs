@@ -532,7 +532,8 @@ sanitizeValidationError err = case err of
   MalformedUrl _ -> "Malformed URL"
   MissingHostname _ -> "URL missing hostname"
   DnsResolutionBlocked url _ -> Text.append "DNS resolved to private IP: " (sanitizeUrlForError url)
-  DnsResolutionFailed url reason -> Text.append "DNS resolution failed for " (Text.append (sanitizeUrlForError url) (Text.append ": " reason))
+  -- SECURITY: Don't expose DNS resolution failure reasons - may leak infrastructure info
+  DnsResolutionFailed url _ -> Text.append "DNS resolution failed for " (sanitizeUrlForError url)
   SingleLabelHostname _ -> "Single-label hostname not allowed (use FQDN)"
 
 

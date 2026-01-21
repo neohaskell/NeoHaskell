@@ -9,7 +9,6 @@ import Auth.OAuth2.Types (
   mkState,
  )
 import Core
-import Task qualified
 import Test
 import Text qualified
 
@@ -79,31 +78,6 @@ spec = do
           let shown = toText tokens
           shown |> shouldSatisfy (\t -> not (Text.contains "access-secret-123" t))
           shown |> shouldSatisfy (\t -> not (Text.contains "refresh-secret-456" t))
-
-    describe "JSON Serialization (security)" do
-      -- Secret types should NOT have JSON instances to prevent
-      -- accidental serialization to logs, events, or API responses
-
-      -- NOTE: These tests verify at the type level that JSON instances
-      -- don't exist. If they did exist, the code wouldn't compile
-      -- because we'd be trying to use non-existent instances.
-      -- The actual enforcement is done by NOT deriving ToJSON/FromJSON
-      -- for secret types.
-
-      it "ClientSecret cannot be accidentally serialized" \_ -> do
-        -- This test documents the design decision.
-        -- If someone adds ToJSON to ClientSecret, they need to
-        -- consciously update this test, forcing them to think about security.
-        --
-        -- The actual protection is that ClientSecret has no ToJSON instance,
-        -- so any code trying to serialize it will fail to compile.
-        Task.yield ()
-
-      it "AccessToken cannot be accidentally serialized" \_ -> do
-        Task.yield ()
-
-      it "RefreshToken cannot be accidentally serialized" \_ -> do
-        Task.yield ()
 
     describe "Token Expiry Semantics" do
       -- CRITICAL: expires_in from OAuth2 is a DURATION in seconds,
