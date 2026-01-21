@@ -323,6 +323,7 @@ test-suite nhcore-test
     Service.Query.THSpec
     Service.Query.UpdaterSpec
     Service.TestHelpers
+    Service.Transport.WebSpec
     Service.QueryObjectStore.InMemorySpec
     Service.SnapshotCache.InMemorySpec
     SetSpec
