@@ -307,8 +307,10 @@ parseRequestUrl options = do
   Text.toLinkedList url |> HttpSimple.parseRequest
 
 
--- | Apply common request options: headers, timeout, and redirect limit.
--- SECURITY: Redirect limit defaults to 0 for SSRF protection.
+-- | Apply common request options: headers, timeout, redirect limit, and proxy settings.
+-- SECURITY:
+-- - Redirect limit defaults to 0 for SSRF protection
+-- - Proxies explicitly disabled to prevent SSRF via HTTP_PROXY/HTTPS_PROXY env vars
 applyRequestOptions :: Request -> HttpClient.Request -> HttpClient.Request
 applyRequestOptions options baseReq = do
   let withHeaders =
@@ -323,4 +325,10 @@ applyRequestOptions options baseReq = do
             (HttpClient.responseTimeoutMicro microseconds)
             withHeaders
   -- SECURITY: Apply redirect limit (default 0 for SSRF protection)
-  withTimeout {HttpClient.redirectCount = options.maxRedirects}
+  -- SECURITY: Explicitly disable proxy to prevent SSRF via HTTP_PROXY/HTTPS_PROXY env vars
+  -- This prevents InvalidProxyEnvironmentVariable and InvalidProxySettings errors
+  -- and ensures requests go directly to the validated endpoint.
+  withTimeout
+    { HttpClient.redirectCount = options.maxRedirects,
+      HttpClient.proxy = Nothing
+    }

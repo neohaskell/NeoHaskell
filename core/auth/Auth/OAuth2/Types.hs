@@ -57,6 +57,9 @@ module Auth.OAuth2.Types (
 
 import Basics
 import Char (Char)
+import Control.Applicative qualified as GhcApplicative
+import Data.Aeson qualified as Aeson
+import Data.Aeson.Types qualified as AesonTypes
 import Data.List qualified as GhcList
 import Json qualified
 import LinkedList qualified
@@ -65,6 +68,7 @@ import Network.URI qualified as URI
 import Result (Result (..))
 import Text (Text)
 import Text qualified
+import ToText (toText)
 
 
 -- | OAuth2 provider configuration.
@@ -180,7 +184,14 @@ unwrapRedirectUri redirectUri =
     RedirectUri uri -> uri
 
 
-instance Json.FromJSON RedirectUri
+-- | Validating FromJSON instance for RedirectUri.
+-- Parses JSON text and validates via mkRedirectUri (HTTPS requirement, etc.)
+instance Json.FromJSON RedirectUri where
+  parseJSON = Aeson.withText "RedirectUri" (\text ->
+    case mkRedirectUri text of
+      Ok uri -> GhcApplicative.pure uri
+      Err (InvalidRedirectUri msg) -> AesonTypes.parseFail (Text.toLinkedList msg)
+      Err err -> AesonTypes.parseFail (Text.toLinkedList (toText (show err))))
 
 
 instance Json.ToJSON RedirectUri
@@ -494,7 +505,14 @@ unwrapCodeVerifier codeVerifier =
     CodeVerifier v -> v
 
 
-instance Json.FromJSON CodeVerifier
+-- | Validating FromJSON instance for CodeVerifier.
+-- Parses JSON text and validates via mkCodeVerifier (RFC 7636: 43-128 chars, unreserved charset).
+instance Json.FromJSON CodeVerifier where
+  parseJSON = Aeson.withText "CodeVerifier" (\text ->
+    case mkCodeVerifier text of
+      Ok verifier -> GhcApplicative.pure verifier
+      Err (InvalidPkceVerifier msg) -> AesonTypes.parseFail (Text.toLinkedList msg)
+      Err err -> AesonTypes.parseFail (Text.toLinkedList (toText (show err))))
 
 
 -- | PKCE code challenge (RFC 7636).

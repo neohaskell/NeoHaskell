@@ -68,6 +68,17 @@ module Auth.OAuth2 (
   unwrapRefreshToken,
   TokenSet (..),
 
+  -- * PKCE (Proof Key for Code Exchange - RFC 7636)
+  CodeVerifier,
+  mkCodeVerifier,
+  mkCodeVerifierUnsafe,
+  unwrapCodeVerifier,
+  CodeChallenge (..),
+  CodeChallengeMethod (..),
+  generateCodeVerifier,
+  deriveCodeChallenge,
+  authorizeUrlWithPkce,
+
   -- * Errors
   OAuth2Error (..),
 
@@ -77,12 +88,15 @@ module Auth.OAuth2 (
   refreshToken,
 ) where
 
-import Auth.OAuth2.Client (authorizeUrl, exchangeCode, refreshToken)
+import Auth.OAuth2.Client (authorizeUrl, authorizeUrlWithPkce, deriveCodeChallenge, exchangeCode, generateCodeVerifier, refreshToken)
 import Auth.OAuth2.Types (
   AccessToken,
   AuthorizationCode,
   ClientId (..),
   ClientSecret,
+  CodeChallenge (..),
+  CodeChallengeMethod (..),
+  CodeVerifier,
   OAuth2Error (..),
   Provider (..),
   RedirectUri,
@@ -93,12 +107,15 @@ import Auth.OAuth2.Types (
   mkAccessToken,
   mkAuthorizationCode,
   mkClientSecret,
+  mkCodeVerifier,
+  mkCodeVerifierUnsafe,
   mkRedirectUri,
   mkRefreshToken,
   mkState,
   unwrapAccessToken,
   unwrapAuthorizationCode,
   unwrapClientSecret,
+  unwrapCodeVerifier,
   unwrapRedirectUri,
   unwrapRefreshToken,
   unwrapState,
