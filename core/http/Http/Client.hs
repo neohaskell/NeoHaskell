@@ -8,12 +8,15 @@ module Http.Client (
   withUrl,
   addHeader,
   withTimeout,
+  withRedirects,
 ) where
 
 import Array (Array)
 import Array qualified
 import Basics
 import Bytes qualified
+import Char (Char)
+import Data.Either qualified as GhcEither
 import Default (Default (..))
 import GHC.Int qualified as GhcInt
 import Json qualified
@@ -35,10 +38,23 @@ import ToText (toText)
 data Request = Request
   { url :: Maybe Text,
     headers :: Map Text Text,
-    timeoutSeconds :: Maybe GhcInt.Int
-    -- ^ Request timeout in seconds (default: no timeout)
+    timeoutSeconds :: Maybe GhcInt.Int,
+    -- ^ Request timeout in seconds (default: 10 seconds)
+    maxRedirects :: GhcInt.Int
+    -- ^ Maximum redirects to follow (default: 0 for SSRF protection)
   }
-  deriving (Show)
+
+
+-- | Redacted Show instance to prevent header/secret leakage in logs.
+-- SECURITY: Headers may contain Authorization, cookies, API keys.
+instance Show Request where
+  show req = do
+    let urlText = case req.url of
+          Nothing -> "<no url>"
+          Just u -> Text.toLinkedList u
+    let timeout = show req.timeoutSeconds
+    let redirects = show req.maxRedirects
+    [fmt|Request {url = #{urlText}, headers = <REDACTED>, timeoutSeconds = #{timeout}, maxRedirects = #{redirects}}|]
 
 
 instance Default Request where
@@ -46,9 +62,13 @@ instance Default Request where
     Request
       { url = Nothing,
         headers = Map.empty,
-        timeoutSeconds = Just 10
+        timeoutSeconds = Just 10,
         -- ^ Default 10 second timeout for production safety.
         -- Prevents indefinite hangs under load. Override with withTimeout if needed.
+        maxRedirects = 0
+        -- ^ SECURITY: Default 0 redirects to prevent SSRF bypass.
+        -- Attackers can redirect validated URLs to internal IPs (169.254.169.254).
+        -- Use withRedirects to explicitly opt-in when needed.
       }
 
 
@@ -84,6 +104,21 @@ addHeader key value options =
     }
 
 
+-- | Set maximum number of redirects to follow.
+-- SECURITY: Default is 0 (no redirects) to prevent SSRF bypass attacks.
+-- Only enable redirects for trusted endpoints where redirect targets are known-safe.
+-- FAILS FAST: Raises error if count < 0 to catch misuse at call site.
+withRedirects :: GhcInt.Int -> Request -> Request
+withRedirects count options =
+  case count >= 0 of
+    True ->
+      options
+        { maxRedirects = count
+        }
+    False ->
+      panic [fmt|withRedirects requires non-negative count, got: #{count}|]
+
+
 data Error = Error Text
   deriving (Show)
 
@@ -91,6 +126,8 @@ data Error = Error Text
 -- | Convert HttpException to a sanitized error message.
 -- SECURITY: Never include request body or headers in error messages,
 -- as they may contain secrets (client_secret, tokens, etc.)
+-- InvalidUrlException URLs are sanitized to scheme://host only to prevent
+-- leaking credentials in query params or path.
 sanitizeHttpError :: HttpClient.HttpException -> Error
 sanitizeHttpError exception = do
   let msg = case exception of
@@ -100,9 +137,26 @@ sanitizeHttpError exception = do
           let category = categorizeException content
           [fmt|HTTP request failed: #{host}:#{port} - #{category}|]
         HttpClient.InvalidUrlException url reason -> do
-          -- URL itself might be safe to show (no body/headers)
-          [fmt|Invalid URL: #{toText url} - #{toText reason}|]
+          -- SECURITY: Sanitize URL to scheme://host only
+          -- Full URL might contain credentials in query params
+          let sanitizedUrl = sanitizeUrl url
+          [fmt|Invalid URL: #{sanitizedUrl} - #{toText reason}|]
   Error msg
+
+
+-- | Sanitize URL to scheme://host only, removing path/query/credentials.
+-- SECURITY: Prevents leaking credentials that might be in query params.
+sanitizeUrl :: [Char] -> Text
+sanitizeUrl url = do
+  case HttpSimple.parseRequest url of
+    GhcEither.Left _ -> "<malformed URL>"
+    GhcEither.Right req -> do
+      let schemeText = case HttpClient.secure req of
+            True -> "https://" :: Text
+            False -> "http://" :: Text
+      let hostText = toText (show (HttpClient.host req))
+      let portText = toText (show (HttpClient.port req))
+      Text.append schemeText (Text.append hostText (Text.append ":" portText))
 
 
 -- | Categorize HTTP exception content without revealing sensitive details
@@ -155,13 +209,15 @@ getIO options = do
         options.headers
           |> Map.reduce r \key value acc ->
             HttpSimple.addRequestHeader (Text.convert key) (Text.convert value) acc
-  let req = case options.timeoutSeconds of
+  let withTimeout = case options.timeoutSeconds of
         Nothing -> withHeaders
         Just seconds -> do
           let microseconds = seconds * 1000000
           HttpSimple.setRequestResponseTimeout
             (HttpClient.responseTimeoutMicro microseconds)
             withHeaders
+  -- SECURITY: Apply redirect limit (default 0 for SSRF protection)
+  let req = withTimeout {HttpClient.redirectCount = options.maxRedirects}
   response <- HttpSimple.httpJSON req
   Http.getResponseBody response
     |> pure
@@ -194,13 +250,15 @@ postIO options body = do
             HttpSimple.addRequestHeader (Text.convert key) (Text.convert value) acc
               |> HttpSimple.setRequestMethod "POST"
               |> HttpSimple.setRequestBodyJSON body
-  let req = case options.timeoutSeconds of
+  let withTimeout = case options.timeoutSeconds of
         Nothing -> withHeaders
         Just seconds -> do
           let microseconds = seconds * 1000000
           HttpSimple.setRequestResponseTimeout
             (HttpClient.responseTimeoutMicro microseconds)
             withHeaders
+  -- SECURITY: Apply redirect limit (default 0 for SSRF protection)
+  let req = withTimeout {HttpClient.redirectCount = options.maxRedirects}
   response <- HttpSimple.httpJSON req
   Http.getResponseBody response
     |> pure
@@ -254,13 +312,15 @@ postFormIO options formParams = do
           |> HttpSimple.setRequestMethod "POST"
           |> HttpSimple.setRequestHeader "Content-Type" ["application/x-www-form-urlencoded"]
           |> HttpSimple.setRequestBodyURLEncoded formData
-  let req = case options.timeoutSeconds of
+  let withTimeout = case options.timeoutSeconds of
         Nothing -> withForm
         Just seconds -> do
           let microseconds = seconds * 1000000
           HttpSimple.setRequestResponseTimeout
             (HttpClient.responseTimeoutMicro microseconds)
             withForm
+  -- SECURITY: Apply redirect limit (default 0 for SSRF protection)
+  let req = withTimeout {HttpClient.redirectCount = options.maxRedirects}
   response <- HttpSimple.httpJSON req
   Http.getResponseBody response
     |> pure

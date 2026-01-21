@@ -28,12 +28,18 @@
 module Auth.OAuth2.Client (
   -- * Authorization
   authorizeUrl,
+  authorizeUrlWithPkce,
 
   -- * Token Exchange
   exchangeCode,
+  exchangeCodeWithPkce,
 
   -- * Token Refresh
   refreshToken,
+
+  -- * PKCE Helpers
+  generateCodeVerifier,
+  deriveCodeChallenge,
 ) where
 
 import Array (Array)
@@ -43,6 +49,9 @@ import Auth.OAuth2.Types (
   AuthorizationCode (..),
   ClientId (..),
   ClientSecret (..),
+  CodeChallenge (..),
+  CodeChallengeMethod (..),
+  CodeVerifier (..),
   OAuth2Error (..),
   Provider (..),
   RedirectUri (..),
@@ -53,10 +62,17 @@ import Auth.OAuth2.Types (
  )
 import Auth.UrlValidation qualified as UrlValidation
 import Basics
+import Bytes qualified
+import Crypto.Hash qualified as Hash
+import Crypto.Random qualified as Random
+import Data.ByteArray.Encoding qualified as Encoding
+import Data.ByteString qualified as BS
 import Http.Client qualified as Http
 import Json qualified
 import Maybe (Maybe (..))
 import Result (Result (..))
+import Network.URI qualified as URI
+import System.IO qualified as GhcIO
 import Task (Task)
 import Task qualified
 import Text (Text)
@@ -174,18 +190,138 @@ refreshToken provider (ClientId clientId) (ClientSecret clientSecret) (RefreshTo
 
 
 -- ============================================================================
+-- PKCE (Proof Key for Code Exchange) - RFC 7636
+-- ============================================================================
+
+-- | Generate a cryptographically secure code verifier for PKCE.
+--
+-- Returns a 43-character base64url-encoded random string, suitable for
+-- the code_verifier parameter in PKCE flows.
+--
+-- @
+-- verifier <- OAuth2.generateCodeVerifier
+-- let challenge = OAuth2.deriveCodeChallenge verifier
+-- let authUrl = OAuth2.authorizeUrlWithPkce provider clientId redirectUri scopes state challenge S256
+-- @
+generateCodeVerifier ::
+  forall error.
+  Task error CodeVerifier
+generateCodeVerifier = do
+  -- Generate 32 random bytes -> 43 characters when base64url encoded
+  randomBytes <- Task.fromIO (Random.getRandomBytes 32 :: GhcIO.IO BS.ByteString)
+  let encoded = Encoding.convertToBase Encoding.Base64URLUnpadded randomBytes
+  let verifierText = Bytes.fromLegacy encoded |> Text.fromBytes
+  Task.yield (CodeVerifier verifierText)
+
+
+-- | Derive a code challenge from a code verifier using S256 method.
+--
+-- Computes: base64url(sha256(code_verifier))
+--
+-- This is the recommended method per RFC 7636.
+deriveCodeChallenge :: CodeVerifier -> CodeChallenge
+deriveCodeChallenge (CodeVerifier verifier) = do
+  let verifierBytes = Text.toBytes verifier |> Bytes.unwrap
+  let hashDigest = Hash.hashWith Hash.SHA256 verifierBytes
+  let challengeBytes = Encoding.convertToBase Encoding.Base64URLUnpadded hashDigest
+  let challengeText = Bytes.fromLegacy challengeBytes |> Text.fromBytes
+  CodeChallenge challengeText
+
+
+-- | Build an OAuth2 authorization URL with PKCE support.
+--
+-- Use this instead of 'authorizeUrl' when the provider supports PKCE
+-- (recommended for all public clients, optional for confidential clients).
+--
+-- @
+-- verifier <- OAuth2.generateCodeVerifier
+-- let challenge = OAuth2.deriveCodeChallenge verifier
+-- let authUrl = OAuth2.authorizeUrlWithPkce provider clientId redirectUri scopes state challenge S256
+-- -- Store verifier securely for use in exchangeCodeWithPkce
+-- @
+authorizeUrlWithPkce ::
+  Provider ->
+  ClientId ->
+  RedirectUri ->
+  Array Scope ->
+  State ->
+  CodeChallenge ->
+  CodeChallengeMethod ->
+  Text
+authorizeUrlWithPkce provider (ClientId clientId) (RedirectUri redirectUri) scopes (State state) (CodeChallenge challenge) method = do
+  let authEndpoint = provider.authorizeEndpoint
+  let scopeText =
+        scopes
+          |> Array.map (\(Scope s) -> s)
+          |> Text.joinWith " "
+  let methodText = case method of
+        S256 -> "S256"
+        Plain -> "plain"
+  let params :: Array (Text, Text) =
+        Array.fromLinkedList
+          [ ("response_type", "code")
+          , ("client_id", clientId)
+          , ("redirect_uri", redirectUri)
+          , ("state", state)
+          , ("scope", scopeText)
+          , ("code_challenge", challenge)
+          , ("code_challenge_method", methodText)
+          ]
+  let encodeParam :: (Text, Text) -> Text
+      encodeParam (key, val) = do
+        let encodedVal = urlEncode val
+        [fmt|#{key}=#{encodedVal}|]
+  let queryString =
+        params
+          |> Array.map encodeParam
+          |> Text.joinWith "&"
+  [fmt|#{authEndpoint}?#{queryString}|]
+
+
+-- | Exchange an authorization code for tokens with PKCE verification.
+--
+-- Use this when the authorization was initiated with 'authorizeUrlWithPkce'.
+-- The code verifier must be the same one used to generate the code challenge.
+--
+-- @
+-- -- Retrieve the verifier stored during authorization
+-- tokens <- OAuth2.exchangeCodeWithPkce provider clientId clientSecret redirectUri code verifier
+-- @
+exchangeCodeWithPkce ::
+  Provider ->
+  ClientId ->
+  ClientSecret ->
+  RedirectUri ->
+  AuthorizationCode ->
+  CodeVerifier ->
+  Task OAuth2Error TokenSet
+exchangeCodeWithPkce provider (ClientId clientId) (ClientSecret clientSecret) (RedirectUri redirectUri) (AuthorizationCode code) (CodeVerifier verifier) = do
+  let tokenEndpoint = provider.tokenEndpoint
+  let formParams =
+        [ ("grant_type", "authorization_code")
+        , ("code", code)
+        , ("redirect_uri", redirectUri)
+        , ("client_id", clientId)
+        , ("client_secret", clientSecret)
+        , ("code_verifier", verifier)
+        ]
+  requestTokens tokenEndpoint formParams
+
+
+-- ============================================================================
 -- Internal
 -- ============================================================================
 
 -- | Internal token response from OAuth2 provider.
 -- Uses snake_case to match OAuth2 spec field names.
+-- SECURITY: No Show instance - contains access_token/refresh_token secrets.
 data TokenResponse = TokenResponse
   { access_token :: Text
   , refresh_token :: Maybe Text
   , expires_in :: Maybe Int
   , token_type :: Maybe Text
   }
-  deriving (Generic, Show)
+  deriving (Generic)
 
 
 instance Json.FromJSON TokenResponse
@@ -228,34 +364,11 @@ requestTokens tokenEndpoint formParams = do
               }
 
 
--- | Simple URL encoding (percent-encoding).
--- Handles the common characters that need encoding in OAuth2 parameters.
+-- | URL encoding (percent-encoding) using Network.URI.
+-- Uses the standard library for correctness with all characters including
+-- UTF-8, percent signs, and other edge cases.
 urlEncode :: Text -> Text
 urlEncode text = do
-  text
-    |> Text.toLinkedList
-    |> fmap encodeChar
-    |> Array.fromLinkedList
-    |> Text.concat
- where
-  encodeChar c = case c of
-    ' ' -> "%20"
-    '!' -> "%21"
-    '#' -> "%23"
-    '$' -> "%24"
-    '&' -> "%26"
-    '\'' -> "%27"
-    '(' -> "%28"
-    ')' -> "%29"
-    '*' -> "%2A"
-    '+' -> "%2B"
-    ',' -> "%2C"
-    '/' -> "%2F"
-    ':' -> "%3A"
-    ';' -> "%3B"
-    '=' -> "%3D"
-    '?' -> "%3F"
-    '@' -> "%40"
-    '[' -> "%5B"
-    ']' -> "%5D"
-    _ -> Text.fromChar c
+  let charString = Text.toLinkedList text
+  let encoded = URI.escapeURIString URI.isUnreserved charString
+  Text.fromLinkedList encoded
