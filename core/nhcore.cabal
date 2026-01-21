@@ -190,6 +190,7 @@ library
     Service.Application.Integrations
     Service.Application.Transports
     Service.Query
+    Service.Query.Auth
     Service.Query.Core
     Service.Query.Definition
     Service.Query.Endpoint
@@ -322,6 +323,7 @@ test-suite nhcore-test
     Service.Query.THSpec
     Service.Query.UpdaterSpec
     Service.TestHelpers
+    Service.Transport.WebSpec
     Service.QueryObjectStore.InMemorySpec
     Service.SnapshotCache.InMemorySpec
     SetSpec

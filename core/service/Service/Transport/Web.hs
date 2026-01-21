@@ -5,6 +5,7 @@ module Service.Transport.Web (
 ) where
 
 import Auth.Config qualified
+import Auth.Error (AuthError (..))
 import Auth.Jwks (JwksManager)
 import Auth.Middleware qualified as Middleware
 import Auth.Options (AuthOptions (Authenticated))
@@ -31,6 +32,7 @@ import Service.Auth (RequestContext)
 import Service.Auth qualified as Auth
 import Service.Command.Core (Command, NameOf)
 import Service.CommandExecutor.TH (deriveKnownHash)
+import Service.Query.Auth (QueryAuthError (..), QueryEndpointError (..))
 import Service.Response (CommandResponse)
 import Service.Response qualified as Response
 import Service.Transport (EndpointHandler, Endpoints (..), Transport (..))
@@ -171,6 +173,24 @@ instance Transport WebTransport where
                   |> Wai.responseLBS HTTP.status200 [(HTTP.hContentType, "application/json")]
           respond response200
 
+    -- Helper function for 401 Unauthorized responses
+    let unauthorized message = do
+          let response401 =
+                message
+                  |> Text.toBytes
+                  |> Bytes.toLazyLegacy
+                  |> Wai.responseLBS HTTP.status401 [(HTTP.hContentType, "application/json")]
+          respond response401
+
+    -- Helper function for 403 Forbidden responses
+    let forbidden message = do
+          let response403 =
+                message
+                  |> Text.toBytes
+                  |> Bytes.toLazyLegacy
+                  |> Wai.responseLBS HTTP.status403 [(HTTP.hContentType, "application/json")]
+          respond response403
+
     -- Helper function for 500 Internal Server Error responses
     let internalError message = do
           let response500 =
@@ -250,30 +270,49 @@ instance Transport WebTransport where
         -- Look up the query handler in the endpoints map
         case Map.get queryName endpoints.queryEndpoints of
           Maybe.Just handler -> do
-            -- Helper to process query after auth passes
-            let processQuery = do
+            -- Helper to process query with given user claims
+            let processQueryWithClaims userClaims = do
                   -- Execute the query handler with error recovery
-                  result <- handler |> Task.asResult
+                  -- Handler performs internal canAccess/canView checks
+                  result <- handler userClaims |> Task.asResult
                   case result of
                     Result.Ok responseText -> okJson responseText
-                    Result.Err errorText -> internalError [fmt|Query #{queryName} failed: #{errorText}|]
+                    Result.Err endpointError ->
+                      -- Pattern match on typed error for proper HTTP status
+                      case endpointError of
+                        AuthorizationError authErr ->
+                          case authErr of
+                            Unauthenticated -> unauthorized "Authentication required"
+                            Forbidden -> forbidden "Access denied"
+                            InsufficientPermissions _ -> forbidden "Insufficient permissions"
+                        StorageError _msg ->
+                          -- Don't expose internal error details to client
+                          -- The msg is logged server-side by the transport layer
+                          internalError "Internal server error"
 
-            -- Check authentication before processing
+            -- Extract user claims (if auth configured)
             case webTransport.authEnabled of
-              Nothing ->
-                -- No auth configured, allow everyone
-                processQuery
-              Just auth -> do
-                -- Validate JWT token (permission checks done in query handler if needed)
-                authResult <- Middleware.checkAuth (Just auth.jwksManager) auth.authConfig Authenticated request
+              Maybe.Nothing ->
+                -- No auth configured, pass Nothing (query decides if that's OK)
+                processQueryWithClaims Maybe.Nothing
+              Maybe.Just auth -> do
+                -- Try to validate JWT token
+                -- The query's canAccessImpl decides if authentication is required
+                authResult <- Middleware.checkAuth (Maybe.Just auth.jwksManager) auth.authConfig Authenticated request
 
                 case authResult of
                   Result.Err authErr ->
-                    -- Return 401/403 response
-                    Middleware.respondWithAuthError authErr respond
-                  Result.Ok _authContext ->
-                    -- Auth passed, execute the query
-                    processQuery
+                    -- Check if token was missing vs invalid
+                    case authErr of
+                      TokenMissing ->
+                        -- No token provided - let query handler decide if that's OK
+                        processQueryWithClaims Maybe.Nothing
+                      _ ->
+                        -- Invalid token provided - reject with appropriate error
+                        Middleware.respondWithAuthError authErr respond
+                  Result.Ok authContext ->
+                    -- Token valid - pass claims to handler
+                    processQueryWithClaims authContext.claims
           Maybe.Nothing ->
             notFound [fmt|Query not found: #{queryName}|]
       _ ->

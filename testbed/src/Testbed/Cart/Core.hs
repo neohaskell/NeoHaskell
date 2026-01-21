@@ -13,6 +13,7 @@ import Uuid qualified
 
 data CartEntity = CartEntity
   { cartId :: Uuid,
+    ownerId :: Text,
     items :: Array CartItem
   }
   deriving (Generic)
@@ -44,10 +45,9 @@ instance Json.ToJSON CartItem
 initialState :: CartEntity
 initialState =
   CartEntity
-    { cartId =
-        Uuid.nil,
-      items =
-        Array.empty
+    { cartId = Uuid.nil,
+      ownerId = "",
+      items = Array.empty
     }
 
 
@@ -60,11 +60,14 @@ instance Entity CartEntity where
 
 
 data CartEvent
-  = CartCreated {entityId :: Uuid}
+  = CartCreated
+      { entityId :: Uuid,
+        ownerId :: Text
+      }
   | ItemAdded
-      { entityId :: Uuid
-      , stockId :: Uuid
-      , quantity :: Int
+      { entityId :: Uuid,
+        stockId :: Uuid,
+        quantity :: Int
       }
   deriving (Generic)
 
@@ -93,10 +96,11 @@ instance Json.ToJSON CartEvent
 
 update :: CartEvent -> CartEntity -> CartEntity
 update event entity = case event of
-  CartCreated {entityId} ->
+  CartCreated {entityId, ownerId} ->
     CartEntity
-      { cartId = entityId
-      , items = Array.empty
+      { cartId = entityId,
+        ownerId = ownerId,
+        items = Array.empty
       }
   ItemAdded {stockId, quantity} ->
     entity
@@ -104,7 +108,7 @@ update event entity = case event of
           entity.items
             |> Array.push
               CartItem
-                { productId = stockId
-                , amount = makeNaturalOrPanic quantity
+                { productId = stockId,
+                  amount = makeNaturalOrPanic quantity
                 }
       }

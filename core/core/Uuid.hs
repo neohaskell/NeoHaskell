@@ -4,6 +4,7 @@ module Uuid (
   toLegacy,
   fromLegacy,
   toText,
+  fromText,
   nil,
 ) where
 
@@ -13,6 +14,7 @@ import Data.Text (Text)
 import Data.UUID qualified as UUID
 import Data.UUID.V4 qualified as V4
 import Json (FromJSON, ToJSON)
+import Maybe (Maybe (..))
 import Task (Task)
 import Task qualified
 
@@ -56,3 +58,12 @@ toText (Uuid uuid) = do
 
 nil :: Uuid
 nil = fromLegacy UUID.nil
+
+
+-- | Parse a UUID from its text representation.
+-- Returns Nothing if the text is not a valid UUID.
+fromText :: Text -> Maybe Uuid
+fromText text =
+  case UUID.fromText text of
+    Nothing -> Nothing
+    Just uuid -> Just (Uuid uuid)
