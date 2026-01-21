@@ -30,6 +30,7 @@ common common_cfg
     bytestring,
     containers,
     contravariant-extras,
+    crypton,
     data-default,
     deepseq,
     dir-traverse,
@@ -40,6 +41,7 @@ common common_cfg
     iproute,
     jose,
     lens,
+    memory,
     stm,
     stm-containers,
     list-t,
@@ -118,7 +120,12 @@ library
     Auth.Jwt
     Auth.Jwks
     Auth.Middleware
+    Auth.OAuth2
+    Auth.OAuth2.Client
+    Auth.OAuth2.Types
     Auth.Options
+    Auth.SecretStore
+    Auth.SecretStore.InMemory
     Auth.UrlValidation
     Basics
     Bytes
@@ -303,7 +310,10 @@ test-suite nhcore-test
   other-modules:
     Auth.JwtSpec
     Auth.MiddlewareSpec
+    Auth.OAuth2.ClientSpec
+    Auth.OAuth2.TypesSpec
     Auth.UrlValidationSpec
+    Http.ClientSpec
     ConcurrentMapSpec
     Integration.CommandSpec
     Integration.DispatcherSpec

@@ -3,14 +3,20 @@ module Http.Client (
   Error (..),
   get,
   post,
+  postForm,
   request,
   withUrl,
   addHeader,
   withTimeout,
+  withRedirects,
 ) where
 
+import Array (Array)
+import Array qualified
 import Basics
-import Console (log)
+import Bytes qualified
+import Char (Char)
+import Data.Either qualified as GhcEither
 import Default (Default (..))
 import GHC.Int qualified as GhcInt
 import Json qualified
@@ -21,19 +27,41 @@ import Maybe qualified
 import Network.HTTP.Client qualified as HttpClient
 import Network.HTTP.Simple qualified as Http
 import Network.HTTP.Simple qualified as HttpSimple
+import System.IO qualified as GhcIO
 import Task (Task)
 import Task qualified
 import Text (Text)
 import Text qualified
+import ToText (toText)
 
 
 data Request = Request
   { url :: Maybe Text,
     headers :: Map Text Text,
-    timeoutSeconds :: Maybe GhcInt.Int
-    -- ^ Request timeout in seconds (default: no timeout)
+    timeoutSeconds :: Maybe GhcInt.Int,
+    -- ^ Request timeout in seconds (default: 10 seconds)
+    maxRedirects :: GhcInt.Int
+    -- ^ Maximum redirects to follow (default: 0 for SSRF protection)
   }
-  deriving (Show)
+
+
+-- | Redacted Show instance to prevent header/secret leakage in logs.
+-- SECURITY: Headers may contain Authorization, cookies, API keys.
+-- URL is sanitized to scheme://host:port only (query params may contain secrets).
+instance Show Request where
+  show req = do
+    let urlText = case req.url of
+          Nothing -> "<no url>"
+          Just u -> Text.toLinkedList (sanitizeUrlText u)
+    let timeout = show req.timeoutSeconds
+    let redirects = show req.maxRedirects
+    [fmt|Request {url = #{urlText}, headers = <REDACTED>, timeoutSeconds = #{timeout}, maxRedirects = #{redirects}}|]
+
+
+-- | Sanitize URL Text to scheme://host:port only, removing path/query/credentials.
+-- SECURITY: Query params may contain state, tokens, or other secrets.
+sanitizeUrlText :: Text -> Text
+sanitizeUrlText urlText = sanitizeUrl (Text.toLinkedList urlText)
 
 
 instance Default Request where
@@ -41,7 +69,13 @@ instance Default Request where
     Request
       { url = Nothing,
         headers = Map.empty,
-        timeoutSeconds = Nothing
+        timeoutSeconds = Just 10,
+        -- ^ Default 10 second timeout for production safety.
+        -- Prevents indefinite hangs under load. Override with withTimeout if needed.
+        maxRedirects = 0
+        -- ^ SECURITY: Default 0 redirects to prevent SSRF bypass.
+        -- Attackers can redirect validated URLs to internal IPs (169.254.169.254).
+        -- Use withRedirects to explicitly opt-in when needed.
       }
 
 
@@ -77,77 +111,224 @@ addHeader key value options =
     }
 
 
+-- | Set maximum number of redirects to follow.
+-- SECURITY: Default is 0 (no redirects) to prevent SSRF bypass attacks.
+-- Only enable redirects for trusted endpoints where redirect targets are known-safe.
+-- FAILS FAST: Raises error if count < 0 to catch misuse at call site.
+withRedirects :: GhcInt.Int -> Request -> Request
+withRedirects count options =
+  case count >= 0 of
+    True ->
+      options
+        { maxRedirects = count
+        }
+    False ->
+      panic [fmt|withRedirects requires non-negative count, got: #{count}|]
+
+
 data Error = Error Text
   deriving (Show)
+
+
+-- | Convert HttpException to a sanitized error message.
+-- SECURITY: Never include request body or headers in error messages,
+-- as they may contain secrets (client_secret, tokens, etc.)
+-- InvalidUrlException URLs are sanitized to scheme://host only to prevent
+-- leaking credentials in query params or path.
+sanitizeHttpError :: HttpClient.HttpException -> Error
+sanitizeHttpError exception = do
+  let msg = case exception of
+        HttpClient.HttpExceptionRequest req content -> do
+          let host = toText (show (HttpClient.host req))
+          let port = toText (show (HttpClient.port req))
+          let category = categorizeException content
+          [fmt|HTTP request failed: #{host}:#{port} - #{category}|]
+        HttpClient.InvalidUrlException url reason -> do
+          -- SECURITY: Sanitize URL to scheme://host only
+          -- Full URL might contain credentials in query params
+          let sanitizedUrl = sanitizeUrl url
+          [fmt|Invalid URL: #{sanitizedUrl} - #{toText reason}|]
+  Error msg
+
+
+-- | Sanitize URL to scheme://host only, removing path/query/credentials.
+-- SECURITY: Prevents leaking credentials that might be in query params.
+sanitizeUrl :: [Char] -> Text
+sanitizeUrl url = do
+  case HttpSimple.parseRequest url of
+    GhcEither.Left _ -> "<malformed URL>"
+    GhcEither.Right req -> do
+      let schemeText = case HttpClient.secure req of
+            True -> "https://" :: Text
+            False -> "http://" :: Text
+      let hostText = toText (show (HttpClient.host req))
+      let portText = toText (show (HttpClient.port req))
+      Text.append schemeText (Text.append hostText (Text.append ":" portText))
+
+
+-- | Categorize HTTP exception content without revealing sensitive details
+categorizeException :: HttpClient.HttpExceptionContent -> Text
+categorizeException content = case content of
+  HttpClient.StatusCodeException _ _ -> "unexpected status code"
+  HttpClient.TooManyRedirects _ -> "too many redirects"
+  HttpClient.OverlongHeaders -> "overlong headers"
+  HttpClient.ResponseTimeout -> "response timeout"
+  HttpClient.ConnectionTimeout -> "connection timeout"
+  HttpClient.ConnectionFailure _ -> "connection failed"
+  HttpClient.InvalidStatusLine _ -> "invalid status line"
+  HttpClient.InvalidHeader _ -> "invalid header"
+  HttpClient.InvalidRequestHeader _ -> "invalid request header"
+  HttpClient.InternalException _ -> "internal error"
+  HttpClient.ProxyConnectException _ _ _ -> "proxy connection error"
+  HttpClient.NoResponseDataReceived -> "no response data"
+  HttpClient.TlsNotSupported -> "TLS not supported"
+  HttpClient.WrongRequestBodyStreamSize _ _ -> "wrong request body size"
+  HttpClient.ResponseBodyTooShort _ _ -> "response body too short"
+  HttpClient.InvalidChunkHeaders -> "invalid chunk headers"
+  HttpClient.IncompleteHeaders -> "incomplete headers"
+  HttpClient.InvalidDestinationHost _ -> "invalid destination host"
+  HttpClient.HttpZlibException _ -> "decompression error"
+  HttpClient.InvalidProxyEnvironmentVariable _ _ -> "invalid proxy config"
+  HttpClient.ConnectionClosed -> "connection closed"
+  HttpClient.InvalidProxySettings _ -> "invalid proxy settings"
+  HttpClient.TooManyHeaderFields -> "too many header fields"
 
 
 get ::
   (Json.FromJSON response) =>
   Request ->
   Task Error response
-get options = Task.fromIO do
-  let url = options.url |> Maybe.withDefault (panic "url is required")
+get options =
+  getIO options
+    |> Task.fromFailableIO @HttpClient.HttpException
+    |> Task.mapError sanitizeHttpError
 
-  log "Parsing request"
-  r <- Text.toLinkedList url |> HttpSimple.parseRequest
 
-  log "Setting headers"
-  let withHeaders =
-        options.headers
-          |> Map.reduce r \key value acc ->
-            HttpSimple.addRequestHeader (Text.convert key) (Text.convert value) acc
-
-  -- Apply timeout if specified (convert seconds to microseconds)
-  -- withTimeout validates positive values, so we can safely apply here
-  let req = case options.timeoutSeconds of
-        Nothing -> withHeaders
-        Just seconds -> do
-          let microseconds = seconds * 1000000
-          HttpSimple.setRequestResponseTimeout
-            (HttpClient.responseTimeoutMicro microseconds)
-            withHeaders
-
-  log "Performing request"
+-- | Internal IO action for GET request (can throw HttpException)
+getIO ::
+  (Json.FromJSON response) =>
+  Request ->
+  GhcIO.IO response
+getIO options = do
+  baseReq <- parseRequestUrl options
+  let req = applyRequestOptions options baseReq
   response <- HttpSimple.httpJSON req
-
-  log "Returning"
   Http.getResponseBody response
     |> pure
 
 
--- | Performs a POST request
+-- | Performs a POST request with JSON body.
 post ::
   (Json.FromJSON response, Json.ToJSON requestBody) =>
   Request ->
   requestBody ->
   Task Error response
-post options body = Task.fromIO do
+post options body =
+  postIO options body
+    |> Task.fromFailableIO @HttpClient.HttpException
+    |> Task.mapError sanitizeHttpError
+
+
+-- | Internal IO action for POST request (can throw HttpException)
+postIO ::
+  (Json.FromJSON response, Json.ToJSON requestBody) =>
+  Request ->
+  requestBody ->
+  GhcIO.IO response
+postIO options body = do
+  baseReq <- parseRequestUrl options
+  let withBody =
+        baseReq
+          |> HttpSimple.setRequestMethod "POST"
+          |> HttpSimple.setRequestBodyJSON body
+  let req = applyRequestOptions options withBody
+  response <- HttpSimple.httpJSON req
+  Http.getResponseBody response
+    |> pure
+
+
+-- | Performs a POST request with form-urlencoded body.
+--
+-- Used for OAuth2 token endpoints which require @application/x-www-form-urlencoded@.
+--
+-- @
+-- Http.request
+--   |> Http.withUrl "https://api.example.com/oauth/token"
+--   |> Http.postForm
+--       [ ("grant_type", "authorization_code")
+--       , ("code", authCode)
+--       , ("redirect_uri", redirectUri)
+--       ]
+-- @
+postForm ::
+  forall response.
+  (Json.FromJSON response) =>
+  Request ->
+  Array (Text, Text) ->
+  Task Error response
+postForm options formParams =
+  postFormIO options formParams
+    |> Task.fromFailableIO @HttpClient.HttpException
+    |> Task.mapError sanitizeHttpError
+
+
+-- | Internal IO action for POST form request (can throw HttpException)
+postFormIO ::
+  forall response.
+  (Json.FromJSON response) =>
+  Request ->
+  Array (Text, Text) ->
+  GhcIO.IO response
+postFormIO options formParams = do
+  baseReq <- parseRequestUrl options
+  let formData =
+        formParams
+          |> Array.toLinkedList
+          |> fmap (\(key, value) -> (Text.toBytes key |> Bytes.unwrap, Text.toBytes value |> Bytes.unwrap))
+  let withForm =
+        baseReq
+          |> HttpSimple.setRequestMethod "POST"
+          |> HttpSimple.setRequestHeader "Content-Type" ["application/x-www-form-urlencoded"]
+          |> HttpSimple.setRequestBodyURLEncoded formData
+  let req = applyRequestOptions options withForm
+  response <- HttpSimple.httpJSON req
+  Http.getResponseBody response
+    |> pure
+
+
+-- ============================================================================
+-- Internal helpers
+-- ============================================================================
+
+-- | Parse the URL from request options into an http-client Request.
+parseRequestUrl :: Request -> GhcIO.IO HttpClient.Request
+parseRequestUrl options = do
   let url = options.url |> Maybe.withDefault (panic "url is required")
+  Text.toLinkedList url |> HttpSimple.parseRequest
 
-  log "Parsing request"
-  r <- Text.toLinkedList url |> HttpSimple.parseRequest
 
-  log "Setting headers"
+-- | Apply common request options: headers, timeout, redirect limit, and proxy settings.
+-- SECURITY:
+-- - Redirect limit defaults to 0 for SSRF protection
+-- - Proxies explicitly disabled to prevent SSRF via HTTP_PROXY/HTTPS_PROXY env vars
+applyRequestOptions :: Request -> HttpClient.Request -> HttpClient.Request
+applyRequestOptions options baseReq = do
   let withHeaders =
         options.headers
-          |> Map.reduce r \key value acc ->
-            HttpSimple.addRequestHeader (Text.convert key) (Text.convert value) acc
-              |> HttpSimple.setRequestMethod "POST"
-              |> HttpSimple.setRequestBodyJSON body
-
-  -- Apply timeout if specified (convert seconds to microseconds)
-  -- withTimeout validates positive values, so we can safely apply here
-  let req = case options.timeoutSeconds of
+          |> Map.reduce baseReq (\key value acc ->
+            HttpSimple.addRequestHeader (Text.convert key) (Text.convert value) acc)
+  let withTimeout = case options.timeoutSeconds of
         Nothing -> withHeaders
         Just seconds -> do
           let microseconds = seconds * 1000000
           HttpSimple.setRequestResponseTimeout
             (HttpClient.responseTimeoutMicro microseconds)
             withHeaders
-
-  log "Performing request"
-  response <- HttpSimple.httpJSON req
-
-  log "Returning"
-  Http.getResponseBody response
-    |> pure
+  -- SECURITY: Apply redirect limit (default 0 for SSRF protection)
+  -- SECURITY: Explicitly disable proxy to prevent SSRF via HTTP_PROXY/HTTPS_PROXY env vars
+  -- This prevents InvalidProxyEnvironmentVariable and InvalidProxySettings errors
+  -- and ensures requests go directly to the validated endpoint.
+  withTimeout
+    { HttpClient.redirectCount = options.maxRedirects,
+      HttpClient.proxy = Nothing
+    }
