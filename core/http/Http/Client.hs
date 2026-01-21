@@ -47,14 +47,31 @@ data Request = Request
 
 -- | Redacted Show instance to prevent header/secret leakage in logs.
 -- SECURITY: Headers may contain Authorization, cookies, API keys.
+-- URL is sanitized to scheme://host:port only (query params may contain secrets).
 instance Show Request where
   show req = do
     let urlText = case req.url of
           Nothing -> "<no url>"
-          Just u -> Text.toLinkedList u
+          Just u -> Text.toLinkedList (sanitizeUrlText u)
     let timeout = show req.timeoutSeconds
     let redirects = show req.maxRedirects
     [fmt|Request {url = #{urlText}, headers = <REDACTED>, timeoutSeconds = #{timeout}, maxRedirects = #{redirects}}|]
+
+
+-- | Sanitize URL Text to scheme://host:port only, removing path/query/credentials.
+-- SECURITY: Query params may contain state, tokens, or other secrets.
+sanitizeUrlText :: Text -> Text
+sanitizeUrlText urlText = do
+  let urlString = Text.toLinkedList urlText
+  case HttpSimple.parseRequest urlString of
+    GhcEither.Left _ -> "<malformed URL>"
+    GhcEither.Right req -> do
+      let schemeText = case HttpClient.secure req of
+            True -> "https://" :: Text
+            False -> "http://" :: Text
+      let hostText = toText (show (HttpClient.host req))
+      let portText = toText (show (HttpClient.port req))
+      Text.append schemeText (Text.append hostText (Text.append ":" portText))
 
 
 instance Default Request where

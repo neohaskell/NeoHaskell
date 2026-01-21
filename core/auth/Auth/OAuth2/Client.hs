@@ -9,12 +9,18 @@
 -- = Usage
 --
 -- @
--- -- 1. Redirect user to authorize
--- let authUrl = OAuth2.authorizeUrl provider clientId redirectUri scopes state
--- -- redirect user to authUrl...
+-- -- 1. Generate PKCE verifier and redirect user to authorize
+-- verifier <- OAuth2.generateCodeVerifier
+-- let challenge = OAuth2.deriveCodeChallenge verifier
+-- let authUrl = OAuth2.authorizeUrlWithPkce provider clientId redirectUri scopes state challenge S256
+-- -- Store verifier in session, redirect user to authUrl...
 --
--- -- 2. On callback, exchange code for tokens
--- tokens <- OAuth2.exchangeCode provider clientId clientSecret redirectUri code
+-- -- 2. On callback, validate state and exchange code for tokens
+-- case OAuth2.validateState expectedState returnedState of
+--   Err err -> -- handle CSRF attack
+--   Ok () -> do
+--     tokens <- OAuth2.exchangeCodeWithPkce provider clientId clientSecret redirectUri code verifier
+--     -- Store tokens in SecretStore...
 --
 -- -- 3. Later, refresh the token
 -- newTokens <- OAuth2.refreshToken provider clientId clientSecret tokens.refreshToken
@@ -22,9 +28,27 @@
 --
 -- = Security
 --
--- * Always validate the 'State' parameter on callback (CSRF protection)
+-- * Always use PKCE ('authorizeUrlWithPkce', 'exchangeCodeWithPkce') when possible
+-- * Always validate the 'State' parameter on callback using 'validateState' (CSRF protection)
+-- * Always validate redirect URIs using 'validateRedirectUri' before token exchange
 -- * Store tokens in 'Auth.SecretStore', NOT in event store
--- * Set appropriate timeouts on token requests
+-- * Never log full authorization URLs (they contain state parameter)
+-- * Encrypt tokens at rest
+--
+-- = Deployment Requirements
+--
+-- __CRITICAL__: Disable HTTP proxy environment variables in production:
+--
+-- @
+-- unset HTTP_PROXY HTTPS_PROXY http_proxy https_proxy
+-- @
+--
+-- Proxies can bypass SSRF protections by routing validated URLs through
+-- attacker-controlled infrastructure. Even with URL validation, a malicious
+-- proxy can redirect requests to internal IPs.
+--
+-- Alternatively, configure your deployment to block outbound proxy usage
+-- at the network level for OAuth2 token endpoints.
 module Auth.OAuth2.Client (
   -- * Authorization
   authorizeUrl,
@@ -60,6 +84,7 @@ import Auth.OAuth2.Types (
   State (..),
   TokenSet (..),
  )
+import Auth.UrlValidation (ValidationError (..))
 import Auth.UrlValidation qualified as UrlValidation
 import Basics
 import Bytes qualified
@@ -77,7 +102,7 @@ import Task (Task)
 import Task qualified
 import Text (Text)
 import Text qualified
-import ToText (toText)
+import ToText ()
 
 
 -- | Build an OAuth2 authorization URL.
@@ -341,7 +366,8 @@ requestTokens tokenEndpoint formParams = do
   validationResult <- UrlValidation.validateSecureUrlWithDns tokenEndpoint
   case validationResult of
     Err validationError -> do
-      let errMsg = toText (show validationError)
+      -- SECURITY: Sanitize error message - don't expose full URL (may have secrets in query)
+      let errMsg = sanitizeValidationError validationError
       Task.throw (EndpointValidationFailed errMsg)
     Ok _ -> do
       let request =
@@ -372,3 +398,33 @@ urlEncode text = do
   let charString = Text.toLinkedList text
   let encoded = URI.escapeURIString URI.isUnreserved charString
   Text.fromLinkedList encoded
+
+
+-- | Sanitize ValidationError to avoid exposing full URLs in error messages.
+-- SECURITY: URLs may contain sensitive query params (state, tokens, etc.)
+-- We only expose the error category and sanitized host, not full URL.
+sanitizeValidationError :: ValidationError -> Text
+sanitizeValidationError err = case err of
+  NotHttps url -> Text.append "URL must use HTTPS: " (sanitizeUrlForError url)
+  PrivateIpBlocked url -> Text.append "URL points to private IP: " (sanitizeUrlForError url)
+  MalformedUrl _ -> "Malformed URL"
+  MissingHostname _ -> "URL missing hostname"
+  DnsResolutionBlocked url _ -> Text.append "DNS resolved to private IP: " (sanitizeUrlForError url)
+  DnsResolutionFailed url reason -> Text.append "DNS resolution failed for " (Text.append (sanitizeUrlForError url) (Text.append ": " reason))
+  SingleLabelHostname _ -> "Single-label hostname not allowed (use FQDN)"
+
+
+-- | Extract just scheme://host:port from a URL for safe error messages.
+sanitizeUrlForError :: Text -> Text
+sanitizeUrlForError urlText = do
+  let urlString = Text.toLinkedList urlText
+  case URI.parseURI urlString of
+    Nothing -> "<invalid>"
+    Just uri -> do
+      let scheme = Text.fromLinkedList (URI.uriScheme uri)
+      case URI.uriAuthority uri of
+        Nothing -> scheme
+        Just auth -> do
+          let host = Text.fromLinkedList (URI.uriRegName auth)
+          let port = Text.fromLinkedList (URI.uriPort auth)
+          Text.append scheme (Text.append "//" (Text.append host port))
