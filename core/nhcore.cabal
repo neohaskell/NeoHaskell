@@ -122,6 +122,9 @@ library
     Auth.Middleware
     Auth.OAuth2
     Auth.OAuth2.Client
+    Auth.OAuth2.StateToken
+    Auth.OAuth2.TransactionStore
+    Auth.OAuth2.TransactionStore.InMemory
     Auth.OAuth2.Types
     Auth.Options
     Auth.SecretStore
@@ -311,6 +314,8 @@ test-suite nhcore-test
     Auth.JwtSpec
     Auth.MiddlewareSpec
     Auth.OAuth2.ClientSpec
+    Auth.OAuth2.StateTokenSpec
+    Auth.OAuth2.TransactionStoreSpec
     Auth.OAuth2.TypesSpec
     Auth.UrlValidationSpec
     Http.ClientSpec
