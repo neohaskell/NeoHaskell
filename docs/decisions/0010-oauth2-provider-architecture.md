@@ -232,7 +232,7 @@ Commands go through normal command execution pipeline, enabling:
 
 - `Auth.OAuth2.TransactionStore.Redis` implementation
 - HTTP manager pooling for token exchange
-- Rate limiting hooks
+- Rate-limiting hooks
 
 ## Security Checklist
 

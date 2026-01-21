@@ -23,11 +23,13 @@
 --
 -- @
 -- -- At /connect (store verifier)
+-- let key = TransactionKey.fromText stateToken
 -- let tx = Transaction { verifier = pkceVerifier, expiresAt = now + 300 }
--- store.put stateHash tx
+-- store.put key tx
 --
 -- -- At /callback (consume verifier - one-time use)
--- maybeTx <- store.consume stateHash
+-- let key = TransactionKey.fromText stateToken
+-- maybeTx <- store.consume key
 -- case maybeTx of
 --   Nothing -> -- Replay attack or expired
 --   Just tx -> -- Use tx.verifier for token exchange
@@ -35,15 +37,22 @@
 --
 -- = Security Notes
 --
--- * Keys should be hashed state tokens, not raw state values
+-- * Keys are hashed via TransactionKey to prevent raw state token storage
 -- * The store does NOT validate expiry - caller must check `expiresAt`
 -- * In-memory store breaks one-time use across multiple instances
 module Auth.OAuth2.TransactionStore (
   -- * Types
   Transaction (..),
   TransactionStore (..),
+  TransactionKey,
+
+  -- * Key Construction
+  TransactionKey.fromText,
+  TransactionKey.toText,
 ) where
 
+import Auth.OAuth2.TransactionStore.TransactionKey (TransactionKey)
+import Auth.OAuth2.TransactionStore.TransactionKey qualified as TransactionKey
 import Auth.OAuth2.Types (CodeVerifier)
 import Basics
 import Maybe (Maybe)
@@ -72,12 +81,12 @@ data TransactionStore = TransactionStore
   { -- | Store a transaction.
     --
     -- If a transaction with the same key exists, it is overwritten.
-    put :: Text -> Transaction -> Task Text Unit
+    put :: TransactionKey -> Transaction -> Task Text Unit
   , -- | Retrieve a transaction without consuming it.
     --
     -- Returns `Nothing` if key doesn't exist.
     -- Does NOT check expiry - caller must validate `expiresAt`.
-    get :: Text -> Task Text (Maybe Transaction)
+    get :: TransactionKey -> Task Text (Maybe Transaction)
   , -- | Atomically retrieve and delete a transaction.
     --
     -- This is the critical operation for one-time use:
@@ -86,9 +95,9 @@ data TransactionStore = TransactionStore
     -- - Concurrent calls: exactly one returns `Just`
     --
     -- Returns `Nothing` if key doesn't exist (already consumed or never stored).
-    consume :: Text -> Task Text (Maybe Transaction)
+    consume :: TransactionKey -> Task Text (Maybe Transaction)
   , -- | Delete a transaction.
     --
     -- No-op if key doesn't exist.
-    delete :: Text -> Task Text Unit
+    delete :: TransactionKey -> Task Text Unit
   }

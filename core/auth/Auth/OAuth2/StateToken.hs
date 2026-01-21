@@ -136,6 +136,8 @@ data StateTokenError
     TokenNotYetValid
   | -- | Token format is invalid (not base64, too short, bad JSON)
     MalformedToken
+  | -- | Token timestamps are invalid (expiresAt < issuedAt)
+    TokenInvalidTimestamps
   deriving (Generic, Show, Eq)
 
 
@@ -224,12 +226,16 @@ decodeStateToken (HmacKey keyBytes) currentTime tokenText = do
           case Json.decodeText payloadText of
             Err _ -> Task.throw MalformedToken
             Ok payload -> do
-              -- Validate TTL
-              case currentTime <= payload.expiresAt of
-                False -> Task.throw TokenExpired
+              -- Validate timestamp consistency (expiresAt must be >= issuedAt)
+              case payload.expiresAt >= payload.issuedAt of
+                False -> Task.throw TokenInvalidTimestamps
                 True -> do
-                  -- Validate clock skew (issuedAt not too far in future)
-                  case currentTime >= payload.issuedAt - clockSkewTolerance of
-                    False -> Task.throw TokenNotYetValid
-                    True -> Task.yield payload
+                  -- Validate TTL
+                  case currentTime <= payload.expiresAt of
+                    False -> Task.throw TokenExpired
+                    True -> do
+                      -- Validate clock skew (issuedAt not too far in future)
+                      case currentTime >= payload.issuedAt - clockSkewTolerance of
+                        False -> Task.throw TokenNotYetValid
+                        True -> Task.yield payload
 

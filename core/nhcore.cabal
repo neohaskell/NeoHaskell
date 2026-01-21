@@ -125,6 +125,7 @@ library
     Auth.OAuth2.StateToken
     Auth.OAuth2.TransactionStore
     Auth.OAuth2.TransactionStore.InMemory
+    Auth.OAuth2.TransactionStore.TransactionKey
     Auth.OAuth2.Types
     Auth.Options
     Auth.SecretStore

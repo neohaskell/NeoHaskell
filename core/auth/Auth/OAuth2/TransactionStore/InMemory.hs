@@ -13,17 +13,20 @@
 -- @
 -- store <- TransactionStore.InMemory.new
 --
+-- let key = TransactionKey.fromText stateToken
 -- let tx = Transaction { verifier = verifier, expiresAt = now + 300 }
--- store.put stateHash tx
+-- store.put key tx
 --
 -- -- Later, in callback:
--- maybeTx <- store.consume stateHash  -- Atomically get + delete
+-- let key = TransactionKey.fromText stateToken
+-- maybeTx <- store.consume key  -- Atomically get + delete
 -- @
 module Auth.OAuth2.TransactionStore.InMemory (
   new,
 ) where
 
-import Auth.OAuth2.TransactionStore (Transaction, TransactionStore (..))
+import Auth.OAuth2.TransactionStore (Transaction, TransactionKey, TransactionStore (..))
+import Auth.OAuth2.TransactionStore.TransactionKey qualified as TransactionKey
 import Basics
 import ConcurrentVar (ConcurrentVar)
 import ConcurrentVar qualified
@@ -59,18 +62,21 @@ new = do
 
 
 -- | Internal storage type.
+-- Uses Text representation of TransactionKey for Map storage.
 type Storage = ConcurrentVar (Map Text Transaction)
 
 
-getImpl :: Storage -> Text -> Task Text (Maybe Transaction)
+getImpl :: Storage -> TransactionKey -> Task Text (Maybe Transaction)
 getImpl storage key = do
+  let keyText = TransactionKey.toText key
   store <- storage |> ConcurrentVar.peek
-  store |> Map.get key |> Task.yield
+  store |> Map.get keyText |> Task.yield
 
 
-putImpl :: Storage -> Text -> Transaction -> Task Text Unit
+putImpl :: Storage -> TransactionKey -> Transaction -> Task Text Unit
 putImpl storage key tx = do
-  storage |> ConcurrentVar.modify (\store -> store |> Map.set key tx)
+  let keyText = TransactionKey.toText key
+  storage |> ConcurrentVar.modify (\store -> store |> Map.set keyText tx)
 
 
 -- | Atomically consume a transaction (get + delete in one operation).
@@ -83,17 +89,19 @@ putImpl storage key tx = do
 --
 -- Concurrent calls with the same key: exactly one gets the value,
 -- all others get Nothing.
-consumeImpl :: Storage -> Text -> Task Text (Maybe Transaction)
+consumeImpl :: Storage -> TransactionKey -> Task Text (Maybe Transaction)
 consumeImpl storage key = do
+  let keyText = TransactionKey.toText key
   storage
     |> ConcurrentVar.modifyReturning
       ( \store -> do
-          let maybeValue = store |> Map.get key
-          let newStore = store |> Map.remove key
+          let maybeValue = store |> Map.get keyText
+          let newStore = store |> Map.remove keyText
           Task.yield (newStore, maybeValue)
       )
 
 
-deleteImpl :: Storage -> Text -> Task Text Unit
+deleteImpl :: Storage -> TransactionKey -> Task Text Unit
 deleteImpl storage key = do
-  storage |> ConcurrentVar.modify (\store -> store |> Map.remove key)
+  let keyText = TransactionKey.toText key
+  storage |> ConcurrentVar.modify (\store -> store |> Map.remove keyText)

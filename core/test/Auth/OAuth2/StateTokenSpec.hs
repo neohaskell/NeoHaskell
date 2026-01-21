@@ -156,6 +156,37 @@ spec = do
           _ -> fail "Failed to create keys"
 
     -- ==========================================================================
+    -- Timestamp Validation
+    -- ==========================================================================
+    describe "Timestamp Validation" do
+      it "rejects token with inverted timestamps (issuedAt > expiresAt)" \_ -> do
+        -- Test that tokens with expiresAt < issuedAt are rejected
+        -- This prevents malformed tokens from passing other validations
+        let secret = "this-is-a-32-byte-secret-key!!!!"
+        case mkHmacKey secret of
+          Err _ -> fail "Failed to create key"
+          Ok key -> do
+            -- Create payload with inverted timestamps: issuedAt > expiresAt
+            let payload =
+                  StatePayload
+                    { provider = "oura"
+                    , userId = "user-123"
+                    , nonce = "nonce"
+                    , issuedAt = 1700000500 -- Issued at 500
+                    , expiresAt = 1700000400 -- Expires at 400 (before issuedAt!)
+                    }
+            encodedResult <- encodeStateToken key payload |> Task.asResult
+            case encodedResult of
+              Err _ -> fail "Encode failed"
+              Ok stateToken -> do
+                -- Try to decode with a time between the inverted values
+                let currentTime = 1700000450 -- Between 400 and 500
+                decodedResult <- decodeStateToken key currentTime stateToken |> Task.asResult
+                case decodedResult of
+                  Ok _ -> fail "Should have rejected token with inverted timestamps"
+                  Err err -> err |> shouldBe TokenInvalidTimestamps
+
+    -- ==========================================================================
     -- TTL Enforcement
     -- ==========================================================================
     describe "TTL Enforcement" do

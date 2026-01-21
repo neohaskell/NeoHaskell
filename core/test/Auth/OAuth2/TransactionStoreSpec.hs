@@ -6,6 +6,7 @@ import Auth.OAuth2.TransactionStore (
   Transaction (..),
   TransactionStore (..),
  )
+import Auth.OAuth2.TransactionStore qualified as TransactionKey
 import Auth.OAuth2.TransactionStore.InMemory qualified as InMemory
 import Auth.OAuth2.Types (mkCodeVerifierUnsafe)
 import Core
@@ -32,7 +33,7 @@ spec = do
       describe "Basic Operations" do
         it "stores and retrieves a transaction" \_ -> do
           store <- InMemory.new
-          let stateKey = "state-key-123"
+          let stateKey = TransactionKey.fromText "state-key-123"
           let verifier = mkCodeVerifierUnsafe "verifier-43-chars-long-abcdefghijklmnop"
           let expiresAt = 1700000300
           let tx = Transaction {verifier = verifier, expiresAt = expiresAt}
@@ -54,14 +55,15 @@ spec = do
 
         it "returns Nothing for non-existent key" \_ -> do
           store <- InMemory.new
-          getResult <- store.get "non-existent-key" |> Task.asResult
+          let nonExistentKey = TransactionKey.fromText "non-existent-key"
+          getResult <- store.get nonExistentKey |> Task.asResult
           case getResult of
             Err err -> fail [fmt|Get failed: #{toText err}|]
             Ok maybeTx -> maybeTx |> shouldBe Nothing
 
         it "overwrites existing transaction with same key" \_ -> do
           store <- InMemory.new
-          let stateKey = "state-key-123"
+          let stateKey = TransactionKey.fromText "state-key-123"
           let verifier1 = mkCodeVerifierUnsafe "verifier1-43-chars-long-abcdefghijklmno"
           let verifier2 = mkCodeVerifierUnsafe "verifier2-43-chars-long-abcdefghijklmno"
           let tx1 = Transaction {verifier = verifier1, expiresAt = 1700000300}
@@ -87,7 +89,7 @@ spec = do
       describe "Atomic Consume" do
         it "consume returns value and deletes atomically" \_ -> do
           store <- InMemory.new
-          let stateKey = "state-key-123"
+          let stateKey = TransactionKey.fromText "state-key-123"
           let verifier = mkCodeVerifierUnsafe "verifier-43-chars-long-abcdefghijklmnop"
           let tx = Transaction {verifier = verifier, expiresAt = 1700000300}
 
@@ -109,7 +111,8 @@ spec = do
 
         it "consume returns Nothing for non-existent key" \_ -> do
           store <- InMemory.new
-          consumeResult <- store.consume "non-existent" |> Task.asResult
+          let nonExistentKey = TransactionKey.fromText "non-existent"
+          consumeResult <- store.consume nonExistentKey |> Task.asResult
           case consumeResult of
             Err err -> fail [fmt|Consume failed: #{toText err}|]
             Ok maybeTx -> maybeTx |> shouldBe Nothing
@@ -119,7 +122,7 @@ spec = do
           -- Multiple concurrent attempts to consume the same state
           -- should result in exactly one success
           store <- InMemory.new
-          let stateKey = "state-key-123"
+          let stateKey = TransactionKey.fromText "state-key-123"
           let verifier = mkCodeVerifierUnsafe "verifier-43-chars-long-abcdefghijklmnop"
           let tx = Transaction {verifier = verifier, expiresAt = 1700000300}
 
@@ -136,7 +139,7 @@ spec = do
           -- Count successes (Just values)
           let successCount =
                 results
-                   |> Array.takeIf isJust
+                  |> Array.takeIf isJust
                   |> Array.length
 
           -- Exactly one should have succeeded
@@ -148,7 +151,7 @@ spec = do
       describe "Delete Operation" do
         it "delete removes a transaction" \_ -> do
           store <- InMemory.new
-          let stateKey = "state-key-123"
+          let stateKey = TransactionKey.fromText "state-key-123"
           let verifier = mkCodeVerifierUnsafe "verifier-43-chars-long-abcdefghijklmnop"
           let tx = Transaction {verifier = verifier, expiresAt = 1700000300}
 
@@ -167,7 +170,8 @@ spec = do
 
         it "delete on non-existent key is a no-op" \_ -> do
           store <- InMemory.new
-          deleteResult <- store.delete "non-existent" |> Task.asResult
+          let nonExistentKey = TransactionKey.fromText "non-existent"
+          deleteResult <- store.delete nonExistentKey |> Task.asResult
           -- Should not fail
           deleteResult |> shouldSatisfy Result.isOk
 
@@ -179,7 +183,7 @@ spec = do
           -- The store just stores data; expiry checking is done by the caller
           -- This keeps the store simple and testable
           store <- InMemory.new
-          let stateKey = "state-key-123"
+          let stateKey = TransactionKey.fromText "state-key-123"
           let verifier = mkCodeVerifierUnsafe "verifier-43-chars-long-abcdefghijklmnop"
           -- Already expired
           let tx = Transaction {verifier = verifier, expiresAt = 1}
@@ -199,7 +203,7 @@ spec = do
         it "different stores are independent" \_ -> do
           store1 <- InMemory.new
           store2 <- InMemory.new
-          let stateKey = "state-key-123"
+          let stateKey = TransactionKey.fromText "state-key-123"
           let verifier = mkCodeVerifierUnsafe "verifier-43-chars-long-abcdefghijklmnop"
           let tx = Transaction {verifier = verifier, expiresAt = 1700000300}
 
