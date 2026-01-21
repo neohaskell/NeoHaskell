@@ -285,7 +285,10 @@ instance Transport WebTransport where
                             Unauthenticated -> unauthorized "Authentication required"
                             Forbidden -> forbidden "Access denied"
                             InsufficientPermissions _ -> forbidden "Insufficient permissions"
-                        StorageError msg -> internalError [fmt|Query #{queryName} failed: #{msg}|]
+                        StorageError _msg ->
+                          -- Don't expose internal error details to client
+                          -- The msg is logged server-side by the transport layer
+                          internalError "Internal server error"
 
             -- Extract user claims (if auth configured)
             case webTransport.authEnabled of
