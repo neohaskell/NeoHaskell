@@ -6,19 +6,27 @@
 -- * 'canAccess': Checked before fetching data. "Can this user access this query type at all?"
 -- * 'canView': Checked after fetching data. "Can this user view this specific instance?"
 --
--- Example usage:
+-- == Secure by Default (Whitelist Approach)
+--
+-- NeoHaskell uses a whitelist approach to authorization:
+--
+-- * **Default to authenticated**: Use 'authenticatedAccess' unless you have a specific reason not to
+-- * **Public access is opt-in**: Only use 'publicAccess' for truly public data (product catalogs, etc.)
+-- * **Explicit is better**: Every query must define its auth policy - there are no implicit defaults
+--
+-- == Example Usage
 --
 -- @
--- -- Public query (e.g., product catalog)
--- canAccess = publicAccess
--- canView = publicView
---
--- -- Owner-only query (e.g., user's cart)
+-- -- User's private data (RECOMMENDED PATTERN)
 -- canAccess = authenticatedAccess
 -- canView = ownerOnly (.ownerId)
 --
 -- -- Admin-only query
 -- canAccess = requirePermission "admin:read"
+-- canView = publicView  -- OK: canAccess already restricts to admins
+--
+-- -- Truly public data (use sparingly)
+-- canAccess = publicAccess  -- EXPLICIT opt-in to public access
 -- canView = publicView
 -- @
 module Service.Query.Auth (
@@ -30,15 +38,15 @@ module Service.Query.Auth (
   QueryEndpointError (..),
 
   -- * Pre-fetch Helpers (canAccess)
-  publicAccess,
   authenticatedAccess,
   requirePermission,
   requireAnyPermission,
   requireAllPermissions,
+  publicAccess,
 
   -- * Post-fetch Helpers (canView)
-  publicView,
   ownerOnly,
+  publicView,
 ) where
 
 import Array (Array)
@@ -74,28 +82,31 @@ data QueryEndpointError
 -- Pre-fetch Helpers (canAccess)
 -- ============================================================================
 
--- | Allow any user (authenticated or not) to access this query type.
---
--- Use for public data like product catalogs.
---
--- @
--- canAccess = publicAccess
--- @
-publicAccess :: Maybe UserClaims -> Maybe QueryAuthError
-publicAccess _ = Nothing
-
-
 -- | Require authentication to access this query type.
 --
--- Use when only logged-in users should see the data.
+-- **This is the recommended default.** Use this unless you have a specific
+-- reason to allow unauthenticated access.
 --
 -- @
--- canAccess = authenticatedAccess
+-- canAccess = authenticatedAccess  -- RECOMMENDED
 -- @
 authenticatedAccess :: Maybe UserClaims -> Maybe QueryAuthError
 authenticatedAccess user = case user of
   Nothing -> Just Unauthenticated
   Just _ -> Nothing
+
+
+-- | Allow any user (authenticated or not) to access this query type.
+--
+-- **Use sparingly.** This explicitly opts into public access.
+-- Only appropriate for truly public data like product catalogs.
+--
+-- @
+-- -- Only use for genuinely public data
+-- canAccess = publicAccess
+-- @
+publicAccess :: Maybe UserClaims -> Maybe QueryAuthError
+publicAccess _ = Nothing
 
 
 -- | Require a specific permission to access this query type.

@@ -86,12 +86,12 @@ It is checked BEFORE fetching any data from storage.
 Please add the following function to your module:
 
   canAccess :: Maybe UserClaims -> Maybe QueryAuthError
-  canAccess = publicAccess  -- or authenticatedAccess, requirePermission "...", etc.
+  canAccess = authenticatedAccess  -- Secure default: requires login
 
 Available helpers from Service.Query.Auth:
-  - publicAccess           -- Anyone can access
-  - authenticatedAccess    -- Requires valid JWT token
+  - authenticatedAccess    -- Requires valid JWT token (RECOMMENDED DEFAULT)
   - requirePermission "x"  -- Requires specific permission
+  - publicAccess           -- Anyone can access (use only for truly public data)
 |]
 
   canViewName <-
@@ -106,11 +106,11 @@ It is checked AFTER fetching data, allowing instance-level authorization.
 Please add the following function to your module:
 
   canView :: Maybe UserClaims -> #{queryTypeStr} -> Maybe QueryAuthError
-  canView = publicView  -- or ownerOnly (.ownerId), etc.
+  canView = ownerOnly (.ownerId)  -- Secure default: only owner can view
 
 Available helpers from Service.Query.Auth:
-  - publicView             -- Anyone can view any instance
-  - ownerOnly (.ownerId)   -- Only the owner (matching UserClaims.sub) can view
+  - ownerOnly (.ownerId)   -- Only the owner can view (RECOMMENDED for user data)
+  - publicView             -- Anyone can view (use only after canAccess check)
 |]
 
   let queryInstance =
