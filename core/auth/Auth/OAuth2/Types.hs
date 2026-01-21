@@ -1,0 +1,215 @@
+-- | Core OAuth2 types for client-side OAuth2 flows.
+--
+-- These types support the Authorization Code flow for connecting
+-- to external APIs (Oura, GitHub, Google, etc.).
+--
+-- = Security Notes
+--
+-- * Tokens should be stored in 'SecretStore', NOT in the event store
+-- * 'State' parameter is mandatory for CSRF protection
+-- * 'ClientSecret' should never be logged or serialized to events
+module Auth.OAuth2.Types (
+  -- * Provider Configuration
+  Provider (..),
+
+  -- * Credentials
+  ClientId (..),
+  ClientSecret (..),
+  RedirectUri (..),
+
+  -- * Authorization Flow
+  AuthorizationCode (..),
+  State (..),
+  Scope (..),
+
+  -- * Tokens
+  AccessToken (..),
+  RefreshToken (..),
+  TokenSet (..),
+
+  -- * Errors
+  OAuth2Error (..),
+) where
+
+import Basics
+import Json qualified
+import Maybe (Maybe)
+import Text (Text)
+
+
+-- | OAuth2 provider configuration.
+--
+-- Contains the endpoints needed for the Authorization Code flow.
+--
+-- @
+-- ouraProvider :: Provider
+-- ouraProvider = Provider
+--   { name = "oura"
+--   , authorizeEndpoint = "https://cloud.ouraring.com/oauth/authorize"
+--   , tokenEndpoint = "https://api.ouraring.com/oauth/token"
+--   }
+-- @
+data Provider = Provider
+  { name :: Text
+  , authorizeEndpoint :: Text
+  , tokenEndpoint :: Text
+  }
+  deriving (Generic, Show, Eq)
+
+
+instance Json.FromJSON Provider
+
+
+instance Json.ToJSON Provider
+
+
+-- | OAuth2 client identifier.
+newtype ClientId = ClientId Text
+  deriving (Generic, Show, Eq)
+
+
+instance Json.FromJSON ClientId
+
+
+instance Json.ToJSON ClientId
+
+
+-- | OAuth2 client secret.
+--
+-- WARNING: Never log or serialize this to events.
+newtype ClientSecret = ClientSecret Text
+  deriving (Generic, Show, Eq)
+
+
+instance Json.FromJSON ClientSecret
+
+
+instance Json.ToJSON ClientSecret
+
+
+-- | OAuth2 redirect URI (callback URL).
+newtype RedirectUri = RedirectUri Text
+  deriving (Generic, Show, Eq)
+
+
+instance Json.FromJSON RedirectUri
+
+
+instance Json.ToJSON RedirectUri
+
+
+-- | Authorization code received from the OAuth2 provider.
+--
+-- This is exchanged for tokens via 'Auth.OAuth2.Client.exchangeCode'.
+newtype AuthorizationCode = AuthorizationCode Text
+  deriving (Generic, Show, Eq)
+
+
+instance Json.FromJSON AuthorizationCode
+
+
+instance Json.ToJSON AuthorizationCode
+
+
+-- | State parameter for CSRF protection.
+--
+-- SECURITY: Must be:
+-- * Cryptographically random
+-- * Stored in session before redirect
+-- * Validated on callback before token exchange
+-- * Single-use (rejected if reused)
+newtype State = State Text
+  deriving (Generic, Show, Eq)
+
+
+instance Json.FromJSON State
+
+
+instance Json.ToJSON State
+
+
+-- | OAuth2 scope(s) being requested.
+newtype Scope = Scope Text
+  deriving (Generic, Show, Eq)
+
+
+instance Json.FromJSON Scope
+
+
+instance Json.ToJSON Scope
+
+
+-- | OAuth2 access token.
+--
+-- Used in Authorization header: @Authorization: Bearer \<token\>@
+newtype AccessToken = AccessToken Text
+  deriving (Generic, Show, Eq)
+
+
+instance Json.FromJSON AccessToken
+
+
+instance Json.ToJSON AccessToken
+
+
+-- | OAuth2 refresh token.
+--
+-- Used to obtain new access tokens without user interaction.
+-- Some providers rotate refresh tokens on each use.
+newtype RefreshToken = RefreshToken Text
+  deriving (Generic, Show, Eq)
+
+
+instance Json.FromJSON RefreshToken
+
+
+instance Json.ToJSON RefreshToken
+
+
+-- | Complete set of tokens from an OAuth2 token response.
+--
+-- @
+-- case maybeTokenSet of
+--   Just tokens -> do
+--     let (AccessToken bearer) = tokens.accessToken
+--     Http.request
+--       |> Http.addHeader "Authorization" [fmt|Bearer #{bearer}|]
+--       |> Http.get
+--   Nothing -> Task.throw "Not connected"
+-- @
+data TokenSet = TokenSet
+  { accessToken :: AccessToken
+  , refreshToken :: Maybe RefreshToken
+  , expiresAt :: Maybe Int
+    -- ^ Unix timestamp when access token expires (if provided)
+  }
+  deriving (Generic, Show, Eq)
+
+
+instance Json.FromJSON TokenSet
+
+
+instance Json.ToJSON TokenSet
+
+
+-- | Errors that can occur during OAuth2 operations.
+data OAuth2Error
+  = -- | Token request failed (network or HTTP error)
+    TokenRequestFailed Text
+  | -- | Invalid grant (code expired, already used, etc.)
+    InvalidGrant Text
+  | -- | Invalid client credentials
+    InvalidClient Text
+  | -- | Requested scope was denied
+    ScopeDenied Text
+  | -- | Token response was malformed
+    MalformedResponse Text
+  | -- | Network error during token exchange
+    NetworkError Text
+  deriving (Generic, Show, Eq)
+
+
+instance Json.FromJSON OAuth2Error
+
+
+instance Json.ToJSON OAuth2Error

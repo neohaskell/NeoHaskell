@@ -118,7 +118,12 @@ library
     Auth.Jwt
     Auth.Jwks
     Auth.Middleware
+    Auth.OAuth2
+    Auth.OAuth2.Client
+    Auth.OAuth2.Types
     Auth.Options
+    Auth.SecretStore
+    Auth.SecretStore.InMemory
     Auth.UrlValidation
     Basics
     Bytes
