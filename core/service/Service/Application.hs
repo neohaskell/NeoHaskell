@@ -29,7 +29,7 @@ module Service.Application (
   withInbound,
   withAuth,
   withAuthOverrides,
-  withOAuth2,
+  withOAuth2StateKey,
   withOAuth2Provider,
 
   -- * Inspection
@@ -67,6 +67,7 @@ import Auth.OAuth2.TransactionStore.InMemory qualified as InMemoryTransactionSto
 
 import Basics
 import Console qualified
+import Environment qualified
 import Control.Concurrent.Async qualified as GhcAsync
 import Data.Either qualified as GhcEither
 import Default (Default (..))
@@ -133,18 +134,12 @@ data WebAuthSetup = WebAuthSetup
 -- This is stored in the Application and converted to WebTransport.OAuth2Config at runtime.
 -- OAuth2 routes require JWT authentication to be enabled (via withAuth).
 --
--- SECURITY: The HMAC key MUST be loaded from environment/config (not generated at runtime)
--- to ensure state tokens remain valid across application restarts.
+-- SECURITY: The HMAC key is loaded from an environment variable at runtime.
+-- This ensures the key is persistent across application restarts.
 --
 -- Example:
 --
 -- @
--- -- Load HMAC key from environment (must be at least 32 bytes)
--- hmacKeyText <- Environment.require "OAUTH2_STATE_KEY"
--- hmacKey <- case StateToken.mkHmacKey hmacKeyText of
---   Err err -> panic err
---   Ok key -> pure key
---
 -- let ouraProvider = OAuth2ProviderConfig
 --       { provider = Provider { name = "oura", ... }
 --       , clientId = ClientId "your-client-id"
@@ -154,12 +149,12 @@ data WebAuthSetup = WebAuthSetup
 -- app = Application.new
 --   |> Application.withTransport WebTransport.server
 --   |> Application.withAuth "https://auth.example.com"
---   |> Application.withOAuth2 hmacKey
+--   |> Application.withOAuth2StateKey "OAUTH2_STATE_KEY"
 --   |> Application.withOAuth2Provider ouraProvider
 -- @
 data OAuth2Setup = OAuth2Setup
-  { -- | HMAC key for signing state tokens (must be persistent!)
-    hmacKey :: StateToken.HmacKey
+  { -- | Environment variable name containing the HMAC secret (min 32 bytes)
+    hmacKeyEnvVar :: Text
   , -- | Configured OAuth2 providers
     providers :: Array OAuth2ProviderConfig
   }
@@ -596,9 +591,11 @@ runWith eventStore app = do
   -- 13. Initialize OAuth2 if configured
   maybeOAuth2Config <- case app.oauth2Setup of
     Nothing -> Task.yield Nothing
-    Just (OAuth2Setup configuredHmacKey providerConfigs) -> do
+    Just (OAuth2Setup envVarName providerConfigs) -> do
+      Console.print [fmt|[OAuth2] Loading HMAC key from environment variable #{envVarName}...|]
+      -- Load HMAC key from environment (declarative config, runtime loading)
+      hmacKey <- loadHmacKeyFromEnv envVarName
       Console.print [fmt|[OAuth2] Initializing OAuth2 provider routes...|]
-      -- HMAC key comes from config (persistent across restarts)
       -- Create in-memory transaction store for PKCE verifiers + userId
       transactionStore <- InMemoryTransactionStore.new
       -- Create rate limiters for abuse prevention
@@ -610,10 +607,10 @@ runWith eventStore app = do
             let providerName = cfg.provider.name
             acc |> Map.set providerName cfg
       let providerMap = providerConfigs |> Array.reduce buildProviderMap Map.empty
-      -- Create route handlers with configured HMAC key and rate limiters
+      -- Create route handlers with loaded HMAC key and rate limiters
       let routeDeps =
             OAuth2Routes.OAuth2RouteDeps
-              { OAuth2Routes.hmacKey = configuredHmacKey,
+              { OAuth2Routes.hmacKey = hmacKey,
                 OAuth2Routes.transactionStore = transactionStore,
                 OAuth2Routes.providers = providerMap,
                 OAuth2Routes.connectRateLimiter = connectRateLimiter,
@@ -893,29 +890,24 @@ withAuthOverrides authServerUrl overrides app =
     }
 
 
--- | Initialize OAuth2 with an HMAC key.
+-- | Initialize OAuth2 with an HMAC key loaded from environment.
 --
 -- The HMAC key is used to sign state tokens for CSRF protection.
--- It MUST be loaded from environment/config (not generated at runtime)
--- to ensure state tokens remain valid across application restarts.
+-- It is loaded from the specified environment variable at runtime.
+-- The key MUST be at least 32 bytes (256 bits) for security.
 --
 -- @
--- -- Load from environment (must be at least 32 bytes / 256 bits)
--- hmacKeyText <- Environment.require "OAUTH2_STATE_KEY"
--- hmacKey <- case StateToken.mkHmacKey hmacKeyText of
---   Err err -> panic err
---   Ok key -> pure key
---
 -- app = Application.new
---   |> Application.withOAuth2 hmacKey
+--   |> Application.withOAuth2StateKey "OAUTH2_STATE_KEY"
 --   |> Application.withOAuth2Provider ouraConfig
 -- @
-withOAuth2 ::
-  StateToken.HmacKey ->
+withOAuth2StateKey ::
+  -- | Environment variable name containing the HMAC secret
+  Text ->
   Application ->
   Application
-withOAuth2 hmacKey app =
-  app {oauth2Setup = Just OAuth2Setup {hmacKey = hmacKey, providers = Array.empty}}
+withOAuth2StateKey envVarName app =
+  app {oauth2Setup = Just OAuth2Setup {hmacKeyEnvVar = envVarName, providers = Array.empty}}
 
 
 -- | Add an OAuth2 provider to the Application.
@@ -926,7 +918,7 @@ withOAuth2 hmacKey app =
 -- * @GET /callback/{provider}@ - OAuth2 callback
 -- * @POST /disconnect/{provider}@ - Disconnect provider
 --
--- Requires 'withOAuth2' to be called first with an HMAC key.
+-- Requires 'withOAuth2StateKey' to be called first.
 -- Requires JWT authentication to be enabled (via withAuth).
 --
 -- Multiple providers can be added by calling this function multiple times:
@@ -935,7 +927,7 @@ withOAuth2 hmacKey app =
 -- app = Application.new
 --   |> Application.withTransport WebTransport.server
 --   |> Application.withAuth "https://auth.example.com"
---   |> Application.withOAuth2 hmacKey
+--   |> Application.withOAuth2StateKey "OAUTH2_STATE_KEY"
 --   |> Application.withOAuth2Provider ouraConfig
 --   |> Application.withOAuth2Provider githubConfig
 -- @
@@ -946,10 +938,20 @@ withOAuth2Provider ::
 withOAuth2Provider providerConfig app = do
   case app.oauth2Setup of
     Nothing ->
-      -- withOAuth2 not called - this is a configuration error
-      -- We could panic here, but instead we'll just ignore the provider
-      -- (it will fail at runtime when no providers are found)
-      app
+      -- withOAuth2StateKey not called - this is a configuration error
+      panic "withOAuth2Provider requires withOAuth2StateKey to be called first"
     Just existingSetup -> do
       let updatedProviders = existingSetup.providers |> Array.push providerConfig
       app {oauth2Setup = Just existingSetup {providers = updatedProviders}}
+
+
+-- | Load HMAC key from environment variable.
+--
+-- This is called at runtime when the application starts.
+loadHmacKeyFromEnv :: Text -> Task Text StateToken.HmacKey
+loadHmacKeyFromEnv envVarName = do
+  keyText <- Environment.getVariable envVarName
+    |> Task.mapError (\_ -> [fmt|Environment variable #{envVarName} not found. OAuth2 requires a 32+ byte HMAC secret.|])
+  case StateToken.mkHmacKey keyText of
+    Err err -> Task.throw [fmt|Invalid HMAC key in #{envVarName}: #{err}|]
+    Ok key -> Task.yield key
