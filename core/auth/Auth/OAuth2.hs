@@ -30,8 +30,20 @@
 -- = Security Notes
 --
 -- * Store tokens in 'Auth.SecretStore', NOT in the event store
--- * Always validate the State parameter on callback (CSRF protection)
+-- * Always validate the State parameter on callback using 'validateState' (CSRF protection)
+-- * Always validate redirect URIs using 'validateRedirectUri' before token exchange
 -- * Never log or serialize 'ClientSecret' or tokens to events
+--
+-- = Secure Callback Handling
+--
+-- @
+-- -- In your callback handler:
+-- case OAuth2.validateState expectedState returnedState of
+--   Err err -> -- Handle CSRF attack / expired state
+--   Ok () -> do
+--     -- State is valid, proceed with token exchange
+--     tokens <- OAuth2.exchangeCode provider clientId clientSecret redirectUri code
+-- @
 --
 -- = See Also
 --
@@ -82,6 +94,10 @@ module Auth.OAuth2 (
   -- * Errors
   OAuth2Error (..),
 
+  -- * Validation Helpers
+  validateState,
+  validateRedirectUri,
+
   -- * Operations
   authorizeUrl,
   exchangeCode,
@@ -119,4 +135,6 @@ import Auth.OAuth2.Types (
   unwrapRedirectUri,
   unwrapRefreshToken,
   unwrapState,
+  validateRedirectUri,
+  validateState,
  )
