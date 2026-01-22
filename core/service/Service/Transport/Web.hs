@@ -420,18 +420,29 @@ instance Transport WebTransport where
                   Result.Ok (redirectUrl, maybeAction) -> do
                     -- Dispatch action to command handler if present
                     case maybeAction of
-                      Maybe.Nothing -> pass
+                      Maybe.Nothing -> redirect302 redirectUrl respond
                       Maybe.Just action -> do
-                        let actionJson = case action of
-                              SuccessAction json -> json
-                              FailureAction json -> json
-                              DisconnectAction json -> json
-                        -- Dispatch action, log errors but don't fail redirect
-                        dispatchResult <- oauth2.dispatchAction actionJson |> Task.asResult
-                        case dispatchResult of
-                          Result.Err err -> Console.print [fmt|[OAuth2] Action dispatch failed: #{err}|] |> Task.ignoreError
-                          Result.Ok _ -> pass
-                    redirect302 redirectUrl respond
+                        case action of
+                          SuccessAction actionJson -> do
+                            -- Success actions MUST succeed - failing means tokens are lost
+                            dispatchResult <- oauth2.dispatchAction actionJson |> Task.asResult
+                            case dispatchResult of
+                              Result.Err _ -> do
+                                -- Log for ops (sanitized - no user data in message)
+                                Console.print [fmt|[OAuth2] Success action dispatch failed|] |> Task.ignoreError
+                                -- Return 500 - DO NOT redirect to success URL
+                                internalError "Connection failed. Please try again."
+                              Result.Ok _ -> redirect302 redirectUrl respond
+                          FailureAction actionJson -> do
+                            -- Failure actions can fail silently - user already knows flow failed
+                            dispatchResult <- oauth2.dispatchAction actionJson |> Task.asResult
+                            case dispatchResult of
+                              Result.Err err -> Console.print [fmt|[OAuth2] Failure action dispatch failed: #{err}|] |> Task.ignoreError
+                              Result.Ok _ -> pass
+                            redirect302 redirectUrl respond
+                          DisconnectAction _ -> do
+                            -- DisconnectAction shouldn't appear in callback - defensive redirect
+                            redirect302 redirectUrl respond
               _ -> badRequest "Missing code or state parameter" respond
       ["disconnect", providerName] -> do
         case webTransport.oauth2Config of

@@ -21,6 +21,15 @@ import Test
 import Text qualified
 
 
+-- | Extract state parameter from OAuth2 authorization URL (test helper)
+extractStateFromUrl :: Text -> Text
+extractStateFromUrl url = do
+  let parts = Text.split "state=" url
+  case parts |> Array.get 1 of
+    Maybe.Nothing -> ""
+    Maybe.Just rest -> Text.split "&" rest |> Array.get 0 |> Maybe.withDefault ""
+
+
 -- | Test configuration for a mock OAuth2 provider
 mockProvider :: OAuth2ProviderConfig
 mockProvider = do
@@ -120,13 +129,8 @@ spec = do
         case (result1, result2) of
           (Ok url1, Ok url2) -> do
             -- Extract state parameters (they should be different)
-            let extractState url = do
-                  let parts = Text.split "state=" url
-                  case parts |> Array.get 1 of
-                    Nothing -> ""
-                    Just rest -> Text.split "&" rest |> Array.get 0 |> Maybe.withDefault ""
-            let state1 = extractState url1
-            let state2 = extractState url2
+            let state1 = extractStateFromUrl url1
+            let state2 = extractStateFromUrl url2
             -- States should be non-empty
             state1 |> shouldSatisfy (\s -> Text.length s > 0)
             state2 |> shouldSatisfy (\s -> Text.length s > 0)
@@ -194,12 +198,7 @@ spec = do
           Err err -> fail [fmt|Connect failed: #{toText (show err)}|]
           Ok authUrl -> do
             -- Extract state from URL
-            let extractState url = do
-                  let parts = Text.split "state=" url
-                  case parts |> Array.get 1 of
-                    Nothing -> ""
-                    Just rest -> Text.split "&" rest |> Array.get 0 |> Maybe.withDefault ""
-            let stateToken = extractState authUrl
+            let stateToken = extractStateFromUrl authUrl
 
             -- First callback consumes the state
             -- Note: This will fail at token exchange (no real OAuth2 server),
