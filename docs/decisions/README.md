@@ -24,6 +24,7 @@ ADRs document significant architectural decisions made during the development of
 | [0008](0008-integration-pattern.md)           | Integration Pattern             | Proposed |
 | [0009](0009-jwt-authentication-middleware.md) | JWT Authentication Middleware   | Accepted |
 | [0010](0010-oauth2-provider-architecture.md)  | OAuth2 Provider Integration     | Accepted |
+| [0011](0011-file-upload-architecture.md)      | File Upload Architecture        | Proposed |
 
 ## Creating New ADRs
 

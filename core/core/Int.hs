@@ -1,5 +1,7 @@
 module Int (
   toFloat,
+  fromInt64,
+  toInt64,
   getRandom,
   getRandomBetween,
 ) where
@@ -23,6 +25,17 @@ import Task qualified
 toFloat :: Int -> Float
 toFloat =
   Prelude.fromIntegral
+
+
+-- | Convert an Int64 to an Int
+-- Note: May lose precision on 32-bit systems
+fromInt64 :: Int64 -> Int
+fromInt64 = Prelude.fromIntegral
+
+
+-- | Convert an Int to an Int64
+toInt64 :: Int -> Int64
+toInt64 = Prelude.fromIntegral
 
 
 -- * Random Number Generation

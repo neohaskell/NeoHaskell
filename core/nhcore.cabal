@@ -220,6 +220,13 @@ library
     Service.SnapshotCache.Core
     Service.SnapshotCache.InMemory
     Service.SnapshotCache.Snapshot
+    Service.FileUpload.Core
+    Service.FileUpload.Lifecycle
+    Service.FileUpload.BlobStore
+    Service.FileUpload.BlobStore.Local
+    Service.FileUpload.Routes
+    Service.FileUpload.Resolver
+    Service.FileUpload.Download
     Service.ServiceDefinition
     Service.ServiceDefinition.Core
     Service.Transport
@@ -350,6 +357,12 @@ test-suite nhcore-test
     StreamSpec
     Test.AppSpec.AppSpecSpec
     Test.AppSpec.VerifySpec
+    Service.FileUpload.CoreSpec
+    Service.FileUpload.LifecycleSpec
+    Service.FileUpload.BlobStore.LocalSpec
+    Service.FileUpload.RoutesSpec
+    Service.FileUpload.ResolverSpec
+    Service.FileUpload.DownloadSpec
 
   -- other-extensions:
   type: exitcode-stdio-1.0
