@@ -12,14 +12,20 @@ import Array (Array)
 import Array qualified
 import Basics
 import Char (Char)
+import Control.Concurrent.Async qualified as GhcAsync
+import Control.Exception qualified as GhcException
+import Data.Either qualified as GhcEither
 import Data.Char qualified as GhcChar
 import Data.IP qualified as IP
+import Environment qualified
 import LinkedList qualified
 import Maybe (Maybe (..))
 import Network.URI qualified as URI
 import Result (Result (..))
 import System.Exit qualified as GhcExit
+import System.IO qualified as GhcIO
 import System.Process qualified as GhcProcess
+import System.Timeout qualified as GhcTimeout
 import Task (Task)
 import Task qualified
 import Text (Text)
@@ -27,12 +33,28 @@ import Text qualified
 import Text.Read qualified as GhcRead
 
 
--- | Default DNS resolution timeout in seconds (5 seconds).
+-- | Default DNS resolution timeout in seconds.
 -- SECURITY: Prevents indefinite hangs from slow/unresponsive DNS servers.
--- Implementation uses subprocess isolation because getAddrInfo is a safe FFI
--- call that cannot be interrupted by async exceptions (timeout would be ineffective).
-dnsTimeoutSeconds :: Int
-dnsTimeoutSeconds = 5
+defaultDnsTimeoutSeconds :: Int
+defaultDnsTimeoutSeconds = 5
+
+
+-- | Get DNS timeout from environment variable or use default.
+-- Reads DNS_TIMEOUT_SECONDS env var, falls back to 5 seconds if unset or invalid.
+-- SECURITY: Allows deployment-specific tuning of DNS timeout.
+getDnsTimeoutSeconds :: Task error Int
+getDnsTimeoutSeconds = do
+  envResult <- Environment.getVariable "DNS_TIMEOUT_SECONDS" |> Task.asResult
+  case envResult of
+    Err _ -> Task.yield defaultDnsTimeoutSeconds
+    Ok envValue -> do
+      case GhcRead.readMaybe @Int (Text.toLinkedList envValue) of
+        Nothing -> Task.yield defaultDnsTimeoutSeconds
+        Just seconds ->
+          -- Enforce reasonable bounds: 1-60 seconds
+          case seconds >= 1 && seconds <= 60 of
+            True -> Task.yield seconds
+            False -> Task.yield defaultDnsTimeoutSeconds
 
 
 -- | URL validation errors.
@@ -400,40 +422,58 @@ data DnsResult
 --
 -- By spawning a subprocess (using system utilities like `getent` or `host`),
 -- we can reliably kill the process on timeout, guaranteeing bounded execution.
+--
+-- Both IPv4 (A) and IPv6 (AAAA) lookups run concurrently with a shared timeout
+-- budget to prevent doubling the total wait time.
 resolveDns ::
   forall error.
   Text ->
   Task error DnsResult
 resolveDns hostname = do
-  -- Resolve both IPv4 (A records) and IPv6 (AAAA records)
+  -- Get configurable timeout
+  timeoutSeconds <- getDnsTimeoutSeconds
+  let timeoutMicros = timeoutSeconds * 1000000
+  -- Resolve both IPv4 (A records) and IPv6 (AAAA records) CONCURRENTLY
   -- SECURITY: Must check both - attackers could use IPv6 for SSRF
-  ipv4Result <- resolveDnsRecordType "A" hostname
-  ipv6Result <- resolveDnsRecordType "AAAA" hostname
-  -- Combine results - success if either family resolves
-  case (ipv4Result, ipv6Result) of
-    (DnsTimeout, _) -> Task.yield DnsTimeout
-    (_, DnsTimeout) -> Task.yield DnsTimeout
-    (DnsOk ipv4Ips, DnsOk ipv6Ips) ->
-      Task.yield (DnsOk (ipv4Ips ++ ipv6Ips))
-    (DnsOk ips, DnsError _) ->
-      Task.yield (DnsOk ips)
-    (DnsError _, DnsOk ips) ->
-      Task.yield (DnsOk ips)
-    (DnsError err1, DnsError _) ->
-      Task.yield (DnsError err1)
+  -- The overall timeout covers both lookups to prevent doubling wait time
+  Task.fromIO do
+    maybeResults <- GhcTimeout.timeout timeoutMicros do
+      GhcAsync.concurrently
+        (Task.runResult (resolveDnsRecordType timeoutSeconds "A" hostname))
+        (Task.runResult (resolveDnsRecordType timeoutSeconds "AAAA" hostname))
+    case maybeResults of
+      Nothing -> pure DnsTimeout
+      Just (ipv4ResultWrapped, ipv6ResultWrapped) -> do
+        -- Unwrap Result wrappers (resolveDnsRecordType returns Task error DnsResult)
+        let ipv4Result = case ipv4ResultWrapped of
+              Result.Ok r -> r
+              Result.Err _ -> DnsError "Internal error"
+        let ipv6Result = case ipv6ResultWrapped of
+              Result.Ok r -> r
+              Result.Err _ -> DnsError "Internal error"
+        -- Combine results - success if either family resolves
+        let combined = case (ipv4Result, ipv6Result) of
+              (DnsTimeout, _) -> DnsTimeout
+              (_, DnsTimeout) -> DnsTimeout
+              (DnsOk ipv4Ips, DnsOk ipv6Ips) -> DnsOk (ipv4Ips ++ ipv6Ips)
+              (DnsOk ips, DnsError _) -> DnsOk ips
+              (DnsError _, DnsOk ips) -> DnsOk ips
+              (DnsError err1, DnsError _) -> DnsError err1
+        pure combined
 
 
 -- | Resolve DNS for a specific record type (A or AAAA).
 resolveDnsRecordType ::
   forall error.
+  Int ->
   Text ->
   Text ->
   Task error DnsResult
-resolveDnsRecordType recordType hostname = do
+resolveDnsRecordType timeoutSeconds recordType hostname = do
   -- Use `host` command which is available on both Linux and macOS
   -- -W sets the timeout in seconds (kills the query on timeout)
   -- -t specifies the record type (A for IPv4, AAAA for IPv6)
-  let timeoutArg = Text.fromLinkedList [fmt|-W#{dnsTimeoutSeconds}|]
+  let timeoutArg = Text.fromLinkedList [fmt|-W#{timeoutSeconds}|]
   let hostArgs =
         Array.fromLinkedList
           [ timeoutArg,
@@ -441,7 +481,7 @@ resolveDnsRecordType recordType hostname = do
             recordType,
             hostname
           ]
-  completion <- runDnsSubprocess "host" hostArgs
+  completion <- runDnsSubprocess timeoutSeconds "host" hostArgs
   case completion of
     DnsSubprocessTimeout -> Task.yield DnsTimeout
     DnsSubprocessError errMsg -> Task.yield (DnsError errMsg)
@@ -460,33 +500,70 @@ data DnsSubprocessResult
   deriving (Eq, Show)
 
 
--- | Run DNS resolution in a subprocess.
--- The `host` command's -W flag provides built-in timeout support.
+-- | Run DNS resolution in a subprocess with timeout and exception handling.
+-- Uses createProcess for proper control over the subprocess lifecycle.
+-- SECURITY: Handles missing binary gracefully, enforces timeout.
 runDnsSubprocess ::
   forall error.
+  Int ->
   Text ->
   Array Text ->
   Task error DnsSubprocessResult
-runDnsSubprocess cmd args = do
+runDnsSubprocess timeoutSeconds cmd args = do
   let cmdStr = Text.toLinkedList cmd
   let argsStr = Array.map Text.toLinkedList args |> Array.toLinkedList
-  -- Use readProcessWithExitCode which captures stdout/stderr
-  (exitCode, stdoutStr, stderrStr) <-
-    GhcProcess.readProcessWithExitCode cmdStr argsStr ""
-      |> Task.fromIO
-  let out = Text.fromLinkedList stdoutStr
-  let err = Text.fromLinkedList stderrStr
-  case exitCode of
-    GhcExit.ExitSuccess -> Task.yield (DnsSubprocessSuccess out)
-    GhcExit.ExitFailure 1 -> do
-      -- host returns 1 for "not found" - this is normal DNS failure
-      -- Check output for NXDOMAIN or other messages
-      Task.yield (DnsSubprocessError [fmt|Host not found: #{out}|])
-    GhcExit.ExitFailure code -> do
-      let errMsg = case Text.isEmpty err of
-            True -> [fmt|DNS resolution failed (exit code #{code})|]
-            False -> err
-      Task.yield (DnsSubprocessError errMsg)
+  let timeoutMicros = timeoutSeconds * 1000000
+  Task.fromIO do
+    -- Wrap entire subprocess operation in exception handler
+    resultOrExc <- GhcException.try @GhcException.SomeException do
+      -- Create process with pipes for stdout/stderr
+      let procSpec =
+            (GhcProcess.proc cmdStr argsStr)
+              { GhcProcess.std_out = GhcProcess.CreatePipe,
+                GhcProcess.std_err = GhcProcess.CreatePipe
+              }
+      -- Start the process
+      (_, maybeStdout, maybeStderr, procHandle) <- GhcProcess.createProcess procSpec
+      -- Wrap wait + read in timeout
+      maybeResult <- GhcTimeout.timeout timeoutMicros do
+        -- Read stdout and stderr
+        stdoutStr <- case maybeStdout of
+          Just h -> GhcIO.hGetContents h
+          Nothing -> pure ""
+        stderrStr <- case maybeStderr of
+          Just h -> GhcIO.hGetContents h
+          Nothing -> pure ""
+        -- Force evaluation of output before waiting (prevents deadlock)
+        _ <- GhcException.evaluate (LinkedList.length stdoutStr)
+        _ <- GhcException.evaluate (LinkedList.length stderrStr)
+        -- Wait for process to complete
+        exitCode <- GhcProcess.waitForProcess procHandle
+        pure (exitCode, stdoutStr, stderrStr)
+      case maybeResult of
+        Nothing -> do
+          -- Timeout - kill the process
+          GhcProcess.terminateProcess procHandle
+          _ <- GhcProcess.waitForProcess procHandle
+          pure DnsSubprocessTimeout
+        Just (exitCode, stdoutStr, stderrStr) -> do
+          let out = Text.fromLinkedList stdoutStr
+          let err = Text.fromLinkedList stderrStr
+          case exitCode of
+            GhcExit.ExitSuccess -> pure (DnsSubprocessSuccess out)
+            GhcExit.ExitFailure 1 -> do
+              -- host returns 1 for "not found" - this is normal DNS failure
+              pure (DnsSubprocessError (Text.fromLinkedList [fmt|Host not found: #{out}|]))
+            GhcExit.ExitFailure code -> do
+              let errMsg = case Text.isEmpty err of
+                    True -> Text.fromLinkedList [fmt|DNS resolution failed (exit code #{code})|]
+                    False -> err
+              pure (DnsSubprocessError errMsg)
+    -- Handle exceptions (e.g., binary not found)
+    case resultOrExc of
+      GhcEither.Left exc -> do
+        let errMsg = Text.fromLinkedList (GhcException.displayException exc)
+        pure (DnsSubprocessError errMsg)
+      GhcEither.Right result -> pure result
 
 
 -- | Parse output from `host -t A` or `host -t AAAA` command.
