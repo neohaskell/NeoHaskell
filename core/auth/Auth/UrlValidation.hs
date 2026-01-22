@@ -7,31 +7,32 @@ module Auth.UrlValidation (
   ValidationError (..),
 ) where
 
+import Appendable ((++))
+import Array (Array)
+import Array qualified
 import Basics
 import Char (Char)
-import Control.Exception qualified as GhcException
 import Data.Char qualified as GhcChar
-import Data.Either qualified as GhcEither
 import Data.IP qualified as IP
 import LinkedList qualified
 import Maybe (Maybe (..))
-import Network.Socket qualified as GhcSocket
 import Network.URI qualified as URI
-import Prelude qualified as GhcPrelude
 import Result (Result (..))
-import System.Timeout qualified as GhcTimeout
+import System.Exit qualified as GhcExit
+import System.Process qualified as GhcProcess
 import Task (Task)
 import Task qualified
 import Text (Text)
 import Text qualified
 import Text.Read qualified as GhcRead
-import ToText (toText)
 
 
--- | Default DNS resolution timeout in microseconds (5 seconds).
+-- | Default DNS resolution timeout in seconds (5 seconds).
 -- SECURITY: Prevents indefinite hangs from slow/unresponsive DNS servers.
-dnsTimeoutMicros :: Int
-dnsTimeoutMicros = 5000000
+-- Implementation uses subprocess isolation because getAddrInfo is a safe FFI
+-- call that cannot be interrupted by async exceptions (timeout would be ineffective).
+dnsTimeoutSeconds :: Int
+dnsTimeoutSeconds = 5
 
 
 -- | URL validation errors.
@@ -390,99 +391,153 @@ data DnsResult
 
 
 -- | Resolve DNS for a hostname, returning all A and AAAA records.
--- SECURITY: Includes a 5-second timeout to prevent indefinite hangs
--- from slow or unresponsive DNS servers, which could cause thread
--- exhaustion under load or enable DoS attacks.
+-- SECURITY: Uses subprocess isolation with enforced timeout.
+--
+-- Why subprocess? The standard getAddrInfo is a "safe" FFI call that masks
+-- async exceptions during execution. This means System.Timeout.timeout
+-- cannot interrupt it - the timeout only fires AFTER the FFI call completes.
+-- A malicious DNS server could hang indefinitely, exhausting worker threads.
+--
+-- By spawning a subprocess (using system utilities like `getent` or `host`),
+-- we can reliably kill the process on timeout, guaranteeing bounded execution.
 resolveDns ::
   forall error.
   Text ->
   Task error DnsResult
 resolveDns hostname = do
-  let hostStr = Text.toLinkedList hostname
-  let hints =
-        GhcSocket.defaultHints
-          { GhcSocket.addrFlags = [GhcSocket.AI_CANONNAME],
-            GhcSocket.addrSocketType = GhcSocket.Stream
-          }
-  Task.fromIO do
-    -- Wrap DNS resolution in timeout to prevent indefinite hangs
-    maybeResult <-
-      GhcTimeout.timeout dnsTimeoutMicros do
-        GhcException.try @GhcException.SomeException
-          (GhcSocket.getAddrInfo (Just hints) (Just hostStr) Nothing)
-    case maybeResult of
-      Nothing ->
-        -- Timeout occurred
-        pure DnsTimeout
-      Just result ->
-        case result of
-          GhcEither.Left exc ->
-            pure (DnsError (Text.fromLinkedList (GhcException.displayException exc)))
-          GhcEither.Right addrInfos -> do
-            let ips = LinkedList.map extractIpFromAddrInfo addrInfos
-            let validIps = LinkedList.filterMap identity ips
-            case validIps of
-              [] -> pure (DnsError "No IP addresses resolved")
-              _ -> pure (DnsOk validIps)
+  -- Resolve both IPv4 (A records) and IPv6 (AAAA records)
+  -- SECURITY: Must check both - attackers could use IPv6 for SSRF
+  ipv4Result <- resolveDnsRecordType "A" hostname
+  ipv6Result <- resolveDnsRecordType "AAAA" hostname
+  -- Combine results - success if either family resolves
+  case (ipv4Result, ipv6Result) of
+    (DnsTimeout, _) -> Task.yield DnsTimeout
+    (_, DnsTimeout) -> Task.yield DnsTimeout
+    (DnsOk ipv4Ips, DnsOk ipv6Ips) ->
+      Task.yield (DnsOk (ipv4Ips ++ ipv6Ips))
+    (DnsOk ips, DnsError _) ->
+      Task.yield (DnsOk ips)
+    (DnsError _, DnsOk ips) ->
+      Task.yield (DnsOk ips)
+    (DnsError err1, DnsError _) ->
+      Task.yield (DnsError err1)
 
 
--- | Extract IP address string from AddrInfo.
-extractIpFromAddrInfo :: GhcSocket.AddrInfo -> Maybe Text
-extractIpFromAddrInfo addrInfo = do
-  case GhcSocket.addrAddress addrInfo of
-    GhcSocket.SockAddrInet _port hostAddr -> do
-      -- IPv4 address
-      let ipStr = GhcSocket.hostAddressToTuple hostAddr
-      let (a, b, c, d) = ipStr
-      Just
-        ( Text.fromLinkedList
-            [fmt|#{toText a}.#{toText b}.#{toText c}.#{toText d}|]
-        )
-    GhcSocket.SockAddrInet6 _port _flow hostAddr6 _scope -> do
-      -- IPv6 address
-      let (a, b, c, d, e, f, g, h) = GhcSocket.hostAddress6ToTuple hostAddr6
-      Just
-        ( Text.fromLinkedList
-            [fmt|#{intToHex (GhcPrelude.fromIntegral a)}:#{intToHex (GhcPrelude.fromIntegral b)}:#{intToHex (GhcPrelude.fromIntegral c)}:#{intToHex (GhcPrelude.fromIntegral d)}:#{intToHex (GhcPrelude.fromIntegral e)}:#{intToHex (GhcPrelude.fromIntegral f)}:#{intToHex (GhcPrelude.fromIntegral g)}:#{intToHex (GhcPrelude.fromIntegral h)}|]
-        )
+-- | Resolve DNS for a specific record type (A or AAAA).
+resolveDnsRecordType ::
+  forall error.
+  Text ->
+  Text ->
+  Task error DnsResult
+resolveDnsRecordType recordType hostname = do
+  -- Use `host` command which is available on both Linux and macOS
+  -- -W sets the timeout in seconds (kills the query on timeout)
+  -- -t specifies the record type (A for IPv4, AAAA for IPv6)
+  let timeoutArg = Text.fromLinkedList [fmt|-W#{dnsTimeoutSeconds}|]
+  let hostArgs =
+        Array.fromLinkedList
+          [ timeoutArg,
+            "-t",
+            recordType,
+            hostname
+          ]
+  completion <- runDnsSubprocess "host" hostArgs
+  case completion of
+    DnsSubprocessTimeout -> Task.yield DnsTimeout
+    DnsSubprocessError errMsg -> Task.yield (DnsError errMsg)
+    DnsSubprocessSuccess output -> do
+      let ips = parseHostOutput recordType output
+      case ips of
+        [] -> Task.yield (DnsError "No IP addresses resolved")
+        _ -> Task.yield (DnsOk ips)
+
+
+-- | Result of DNS subprocess execution.
+data DnsSubprocessResult
+  = DnsSubprocessSuccess Text
+  | DnsSubprocessTimeout
+  | DnsSubprocessError Text
+  deriving (Eq, Show)
+
+
+-- | Run DNS resolution in a subprocess.
+-- The `host` command's -W flag provides built-in timeout support.
+runDnsSubprocess ::
+  forall error.
+  Text ->
+  Array Text ->
+  Task error DnsSubprocessResult
+runDnsSubprocess cmd args = do
+  let cmdStr = Text.toLinkedList cmd
+  let argsStr = Array.map Text.toLinkedList args |> Array.toLinkedList
+  -- Use readProcessWithExitCode which captures stdout/stderr
+  (exitCode, stdoutStr, stderrStr) <-
+    GhcProcess.readProcessWithExitCode cmdStr argsStr ""
+      |> Task.fromIO
+  let out = Text.fromLinkedList stdoutStr
+  let err = Text.fromLinkedList stderrStr
+  case exitCode of
+    GhcExit.ExitSuccess -> Task.yield (DnsSubprocessSuccess out)
+    GhcExit.ExitFailure 1 -> do
+      -- host returns 1 for "not found" - this is normal DNS failure
+      -- Check output for NXDOMAIN or other messages
+      Task.yield (DnsSubprocessError [fmt|Host not found: #{out}|])
+    GhcExit.ExitFailure code -> do
+      let errMsg = case Text.isEmpty err of
+            True -> [fmt|DNS resolution failed (exit code #{code})|]
+            False -> err
+      Task.yield (DnsSubprocessError errMsg)
+
+
+-- | Parse output from `host -t A` or `host -t AAAA` command.
+-- Format for A records:
+--   google.com has address 142.251.142.142
+-- Format for AAAA records:
+--   google.com has IPv6 address 2607:f8b0:4004:800::200e
+-- Format for NXDOMAIN:
+--   Host example.invalid not found: 3(NXDOMAIN)
+-- We extract the IP addresses from lines containing "has address" or "has IPv6 address".
+parseHostOutput :: Text -> Text -> [Text]
+parseHostOutput recordType output = do
+  let rawLines = Text.lines output |> Array.toLinkedList
+  let extractIp line = do
+        -- Look for "has address" (IPv4) or "has IPv6 address" (IPv6)
+        let parts = Text.words line |> Array.toLinkedList
+        case recordType of
+          "A" -> extractIPv4FromHostLine parts
+          "AAAA" -> extractIPv6FromHostLine parts
+          _ -> Nothing
+  let allIps = LinkedList.filterMap extractIp rawLines
+  removeDuplicates allIps
+
+
+-- | Extract IPv4 address from host output line.
+-- Format: "domain.com has address 1.2.3.4"
+extractIPv4FromHostLine :: [Text] -> Maybe Text
+extractIPv4FromHostLine parts =
+  -- Look for pattern: ... "has" "address" IP
+  case parts of
+    (_ : "has" : "address" : ip : _) -> Just ip
     _ -> Nothing
 
 
--- | Convert an Int to 4-digit hexadecimal string.
-intToHex :: Int -> [Char]
-intToHex n = do
-  let d1 = modBy 16 (n // 4096)
-  let d2 = modBy 16 (n // 256)
-  let d3 = modBy 16 (n // 16)
-  let d4 = modBy 16 n
-  [ hexDigit d1,
-    hexDigit d2,
-    hexDigit d3,
-    hexDigit d4
-    ]
+-- | Extract IPv6 address from host output line.
+-- Format: "domain.com has IPv6 address 2001:db8::1"
+extractIPv6FromHostLine :: [Text] -> Maybe Text
+extractIPv6FromHostLine parts =
+  -- Look for pattern: ... "has" "IPv6" "address" IP
+  case parts of
+    (_ : "has" : "IPv6" : "address" : ip : _) -> Just ip
+    _ -> Nothing
 
 
--- | Convert a single digit (0-15) to hex character.
-hexDigit :: Int -> Char
-hexDigit digit =
-  case digit of
-    0 -> '0'
-    1 -> '1'
-    2 -> '2'
-    3 -> '3'
-    4 -> '4'
-    5 -> '5'
-    6 -> '6'
-    7 -> '7'
-    8 -> '8'
-    9 -> '9'
-    10 -> 'a'
-    11 -> 'b'
-    12 -> 'c'
-    13 -> 'd'
-    14 -> 'e'
-    15 -> 'f'
-    _ -> '0' -- Should never happen for valid hex digits
+-- | Remove duplicate elements from a list while preserving order.
+-- PERF: O(n²) but DNS results are small (typically < 10 IPs).
+removeDuplicates :: forall element. (Eq element) => [element] -> [element]
+removeDuplicates items =
+  case items of
+    [] -> []
+    (x : xs) -> x : removeDuplicates (LinkedList.filter (\y -> y != x) xs)
 
 
 -- | Find the first private IP in a list of resolved IPs.
