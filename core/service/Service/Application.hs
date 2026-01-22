@@ -10,6 +10,9 @@ module Service.Application (
   -- * Auth Setup Type
   WebAuthSetup (..),
 
+  -- * OAuth2 Setup Type
+  OAuth2Setup (..),
+
   -- * Construction
   new,
 
@@ -26,6 +29,7 @@ module Service.Application (
   withInbound,
   withAuth,
   withAuthOverrides,
+  withOAuth2Provider,
 
   -- * Inspection
   isEmpty,
@@ -53,6 +57,11 @@ import Auth.Config (AuthOverrides)
 import Auth.Config qualified
 import Auth.Discovery qualified as Discovery
 import Auth.Jwks qualified as Jwks
+import Auth.OAuth2.Provider (OAuth2ProviderConfig (..))
+import Auth.OAuth2.Types (Provider (..))
+import Auth.OAuth2.Routes qualified as OAuth2Routes
+import Auth.OAuth2.StateToken qualified as StateToken
+import Auth.OAuth2.TransactionStore.InMemory qualified as InMemoryTransactionStore
 
 import Basics
 import Console qualified
@@ -68,6 +77,7 @@ import Map (Map)
 import Map qualified
 import Record qualified
 import Maybe (Maybe (..))
+import Maybe qualified
 import Result (Result (..))
 import Service.Command.Core (NameOf)
 import Service.Event ()
@@ -117,6 +127,31 @@ data WebAuthSetup = WebAuthSetup
   }
 
 
+-- | Configuration for OAuth2 provider integration.
+--
+-- This is stored in the Application and converted to WebTransport.OAuth2Config at runtime.
+-- OAuth2 routes require JWT authentication to be enabled (via withAuth).
+--
+-- Example:
+--
+-- @
+-- let ouraProvider = OAuth2ProviderConfig
+--       { provider = Provider { name = "oura", ... }
+--       , clientId = ClientId "your-client-id"
+--       , ...
+--       }
+--
+-- app = Application.new
+--   |> Application.withTransport WebTransport.server
+--   |> Application.withAuth "https://auth.example.com"
+--   |> Application.withOAuth2Provider ouraProvider
+-- @
+data OAuth2Setup = OAuth2Setup
+  { -- | Configured OAuth2 providers
+    providers :: Array OAuth2ProviderConfig
+  }
+
+
 -- | Application combines multiple Services and Queries with shared infrastructure.
 --
 -- The Application type provides a builder pattern for configuring:
@@ -156,7 +191,8 @@ data Application = Application
     outboundRunners :: Array OutboundRunner,
     outboundLifecycleRunners :: Array OutboundLifecycleRunner,
     inboundIntegrations :: Array Integration.Inbound,
-    webAuthSetup :: Maybe WebAuthSetup
+    webAuthSetup :: Maybe WebAuthSetup,
+    oauth2Setup :: Maybe OAuth2Setup
   }
 
 
@@ -177,7 +213,8 @@ new =
       outboundRunners = Array.empty,
       outboundLifecycleRunners = Array.empty,
       inboundIntegrations = Array.empty,
-      webAuthSetup = Nothing
+      webAuthSetup = Nothing,
+      oauth2Setup = Nothing
     }
 
 
@@ -360,19 +397,7 @@ withQueryEndpoint ::
   Application
 withQueryEndpoint queryName handler app = do
   let updatedEndpoints = app.queryEndpoints |> Map.set queryName handler
-  Application
-    { eventStoreCreator = app.eventStoreCreator
-    , queryObjectStoreConfig = app.queryObjectStoreConfig
-    , queryRegistry = app.queryRegistry
-    , serviceRunners = app.serviceRunners
-    , transports = app.transports
-    , queryEndpoints = updatedEndpoints
-    , queryDefinitions = app.queryDefinitions
-    , outboundRunners = app.outboundRunners
-    , outboundLifecycleRunners = app.outboundLifecycleRunners
-    , inboundIntegrations = app.inboundIntegrations
-    , webAuthSetup = app.webAuthSetup
-    }
+  app {queryEndpoints = updatedEndpoints}
 
 
 -- | Check if any query endpoints have been configured.
@@ -555,6 +580,33 @@ runWith eventStore app = do
               }
         )
 
+  -- 13. Initialize OAuth2 if configured
+  maybeOAuth2Config <- case app.oauth2Setup of
+    Nothing -> Task.yield Nothing
+    Just (OAuth2Setup providerConfigs) -> do
+      Console.print [fmt|[OAuth2] Initializing OAuth2 provider routes...|]
+      -- Create HMAC key for state token signing
+      hmacKey <- StateToken.generateKey
+      -- Create in-memory transaction store for PKCE verifiers
+      transactionStore <- InMemoryTransactionStore.new
+      -- Build provider map from array
+      let buildProviderMap :: OAuth2ProviderConfig -> Map Text OAuth2ProviderConfig -> Map Text OAuth2ProviderConfig
+          buildProviderMap cfg acc = do
+            let providerName = cfg.provider.name
+            acc |> Map.set providerName cfg
+      let providerMap = providerConfigs |> Array.reduce buildProviderMap Map.empty
+      -- Create route handlers
+      let routeDeps =
+            OAuth2Routes.OAuth2RouteDeps
+              { OAuth2Routes.hmacKey = hmacKey,
+                OAuth2Routes.transactionStore = transactionStore,
+                OAuth2Routes.providers = providerMap
+              }
+      let routes = OAuth2Routes.createRoutes routeDeps
+      let providerCount = Array.length providerConfigs
+      Console.print [fmt|[OAuth2] Initialized #{providerCount} provider(s)|]
+      Task.yield (Just Web.OAuth2Config {Web.routes = routes})
+
   -- Define cleanup actions that must always run
   let cleanupJwksManager = case maybeAuthEnabled of
         Just (Web.AuthEnabled manager _) -> do
@@ -575,11 +627,11 @@ runWith eventStore app = do
         cleanupJwksManager
         cleanupDispatcher
 
-  -- 13. Run each transport once with combined endpoints from all services
+  -- 14. Run each transport once with combined endpoints from all services
   -- When transports complete (or fail), cancel inbound workers for clean shutdown
   -- Use Task.finally to ensure cleanup always runs even if runTransports fails
   result <-
-    Transports.runTransports app.transports combinedEndpointsByTransport combinedQueryEndpoints maybeAuthEnabled
+    Transports.runTransports app.transports combinedEndpointsByTransport combinedQueryEndpoints maybeAuthEnabled maybeOAuth2Config
       |> Task.finally cleanupAll
       |> Task.asResult
 
@@ -822,3 +874,32 @@ withAuthOverrides authServerUrl overrides app =
               authOverrides = overrides
             }
     }
+
+
+-- | Add an OAuth2 provider to the Application.
+--
+-- This enables OAuth2 provider integration routes:
+--
+-- * @GET /connect/{provider}@ - Initiate OAuth2 flow
+-- * @GET /callback/{provider}@ - OAuth2 callback
+-- * @POST /disconnect/{provider}@ - Disconnect provider
+--
+-- Requires JWT authentication to be enabled (via withAuth).
+--
+-- Multiple providers can be added by calling this function multiple times:
+--
+-- @
+-- app = Application.new
+--   |> Application.withTransport WebTransport.server
+--   |> Application.withAuth "https://auth.example.com"
+--   |> Application.withOAuth2Provider ouraConfig
+--   |> Application.withOAuth2Provider githubConfig
+-- @
+withOAuth2Provider ::
+  OAuth2ProviderConfig ->
+  Application ->
+  Application
+withOAuth2Provider providerConfig app = do
+  let existingSetup = app.oauth2Setup |> Maybe.withDefault (OAuth2Setup {providers = Array.empty})
+  let updatedProviders = existingSetup.providers |> Array.push providerConfig
+  app {oauth2Setup = Just OAuth2Setup {providers = updatedProviders}}

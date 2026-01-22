@@ -43,6 +43,7 @@ module Auth.OAuth2.StateToken (
 
   -- * Key Management
   mkHmacKey,
+  generateKey,
 
   -- * Encoding/Decoding
   encodeStateToken,
@@ -51,9 +52,11 @@ module Auth.OAuth2.StateToken (
 
 import Basics
 import Bytes qualified
+import IO qualified
 
 import Crypto.Hash qualified as Hash
 import Crypto.MAC.HMAC qualified as HMAC
+import Crypto.Random qualified as Random
 import Data.ByteArray qualified as BA
 import Data.ByteArray.Encoding qualified as Encoding
 import Data.ByteString qualified as BS
@@ -97,6 +100,20 @@ mkHmacKey secret = do
   case len >= 32 of
     False -> Err [fmt|HMAC key must be at least 32 bytes, got #{len}|]
     True -> Ok (HmacKey secretBytes)
+
+
+-- | Generate a cryptographically secure random HMAC key.
+--
+-- Creates a 32-byte (256-bit) key suitable for HMAC-SHA256.
+-- Use this when you need to generate a new key at runtime.
+--
+-- @
+-- key <- StateToken.generateKey
+-- @
+generateKey :: Task err HmacKey
+generateKey = Task.fromIO do
+  randomBytes <- Random.getRandomBytes 32
+  IO.yield (HmacKey randomBytes)
 
 
 -- | Payload carried in the state token.
