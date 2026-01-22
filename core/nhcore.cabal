@@ -123,6 +123,7 @@ library
     Auth.OAuth2
     Auth.OAuth2.Client
     Auth.OAuth2.Provider
+    Auth.OAuth2.RateLimiter
     Auth.OAuth2.Routes
     Auth.OAuth2.StateToken
     Auth.OAuth2.TransactionStore

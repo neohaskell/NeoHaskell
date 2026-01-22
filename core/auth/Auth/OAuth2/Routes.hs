@@ -13,26 +13,33 @@
 -- The connect and disconnect routes require JWT authentication because they
 -- need the userId to:
 --
--- 1. Encode userId in state token (connect) - so callback knows who to store tokens for
+-- 1. Store userId server-side in TransactionStore (connect) - GDPR compliant
 -- 2. Delete tokens for the correct user (disconnect)
 --
 -- The callback route does NOT require JWT because:
 --
 -- 1. User is redirected back from external OAuth2 provider
--- 2. The state token (HMAC-signed) carries the userId securely
--- 3. State is validated and consumed atomically (one-time use)
+-- 2. The state token (HMAC-signed) identifies the transaction
+-- 3. userId is retrieved from server-side TransactionStore (NOT from token)
+-- 4. State is validated and consumed atomically (one-time use)
+--
+-- = GDPR Compliance
+--
+-- NO PII (userId, email, etc.) is stored in the state token. The state token
+-- only contains: provider name, cryptographic nonce, and timestamps.
+-- userId is stored server-side in TransactionStore and retrieved at callback.
 --
 -- = Flow
 --
 -- @
 -- 1. User clicks "Connect Oura" button
 -- 2. Frontend calls GET /connect/oura (with JWT)
--- 3. Server generates state token (contains userId), stores verifier
+-- 3. Server generates state token (provider + nonce), stores verifier + userId
 -- 4. Server redirects to Oura authorization URL
 -- 5. User authorizes on Oura
 -- 6. Oura redirects to GET /callback/oura?code=...&state=...
--- 7. Server validates state, exchanges code for tokens
--- 8. Server calls onSuccess callback, stores tokens
+-- 7. Server validates state, retrieves userId from TransactionStore
+-- 8. Server exchanges code for tokens, calls onSuccess callback
 -- 9. Server redirects user to successRedirectUrl
 -- @
 module Auth.OAuth2.Routes (
@@ -49,6 +56,7 @@ module Auth.OAuth2.Routes (
 
 import Auth.OAuth2.Client qualified as OAuth2
 import Auth.OAuth2.Provider (OAuth2Action (..), OAuth2ProviderConfig (..))
+import Auth.OAuth2.RateLimiter (RateLimiter (..), RateLimitResult (..))
 import Auth.OAuth2.StateToken (HmacKey, StatePayload (..), StateTokenError)
 import Auth.OAuth2.StateToken qualified as StateToken
 import Auth.OAuth2.TransactionStore (Transaction (..), TransactionStore)
@@ -82,6 +90,10 @@ data OAuth2RouteDeps = OAuth2RouteDeps
     transactionStore :: TransactionStore
   , -- | Configured OAuth2 providers by name
     providers :: Map Text OAuth2ProviderConfig
+  , -- | Rate limiter for /connect endpoint (per userId)
+    connectRateLimiter :: RateLimiter
+  , -- | Rate limiter for /callback endpoint (per IP, but we use state token as proxy)
+    callbackRateLimiter :: RateLimiter
   }
 
 
@@ -115,6 +127,8 @@ data OAuth2RouteError
     ProviderMismatch Text Text
   | -- | Missing required query parameter
     MissingParameter Text
+  | -- | Rate limit exceeded (retry after N seconds)
+    RateLimited Int
   deriving (Generic, Show, Eq)
 
 
@@ -130,11 +144,12 @@ createRoutes deps =
 
 -- | Implementation of GET /connect/{provider}
 --
--- 1. Validate provider exists
--- 2. Generate PKCE verifier and challenge
--- 3. Generate state token (HMAC-signed, contains userId)
--- 4. Store verifier in transaction store
--- 5. Build and return authorization URL
+-- 1. Check rate limit (per userId)
+-- 2. Validate provider exists
+-- 3. Generate PKCE verifier and challenge
+-- 4. Generate state token (HMAC-signed, NO PII - just provider + nonce)
+-- 5. Store verifier + userId in transaction store (server-side)
+-- 6. Build and return authorization URL
 handleConnectImpl ::
   OAuth2RouteDeps ->
   -- | Provider name from URL
@@ -143,23 +158,31 @@ handleConnectImpl ::
   Text ->
   Task OAuth2RouteError Text
 handleConnectImpl deps providerName userId = do
-  -- 1. Look up provider config
+  -- 1. Check rate limit (per userId)
+  rateLimitResult <- deps.connectRateLimiter.checkLimit userId
+    |> Task.mapError (\_ -> ProviderNotFound "Rate limit check failed")
+  case rateLimitResult of
+    Limited retryAfter -> Task.throw (RateLimited retryAfter)
+    Allowed -> pass
+
+  -- 2. Look up provider config
   config <- case deps.providers |> Map.get providerName of
     Nothing -> Task.throw (ProviderNotFound providerName)
     Just c -> Task.yield c
 
-  -- 2. Generate PKCE verifier and challenge
+  -- 3. Generate PKCE verifier and challenge
   verifier <- OAuth2.generateCodeVerifier |> Task.mapError (\_ -> ProviderNotFound "PKCE generation failed")
   let challenge = OAuth2.deriveCodeChallenge verifier
 
-  -- 3. Generate state token
+  -- 4. Generate state token (NO userId - GDPR compliance)
   nowSeconds <- getCurrentTimeSeconds
   let expiresAt = nowSeconds + 300 -- 5 minutes TTL
-  let nonce = generateNonce nowSeconds userId -- Simple nonce from timestamp + userId hash
+  -- Use cryptographically secure random nonce
+  nonce <- StateToken.generateNonce
+    |> Task.mapError (\_ -> ProviderNotFound "Nonce generation failed")
   let payload =
         StatePayload
           { provider = providerName
-          , userId = userId
           , nonce = nonce
           , issuedAt = nowSeconds
           , expiresAt = expiresAt
@@ -167,8 +190,8 @@ handleConnectImpl deps providerName userId = do
   stateToken <- StateToken.encodeStateToken deps.hmacKey payload
     |> Task.mapError (\_ -> ProviderNotFound "State token encoding failed")
 
-  -- 4. Store verifier in transaction store (keyed by state token)
-  let transaction = Transaction {verifier = verifier, expiresAt = expiresAt}
+  -- 5. Store verifier + userId in transaction store (userId stays server-side)
+  let transaction = Transaction {verifier = verifier, userId = userId, expiresAt = expiresAt}
   let txKey = TransactionStore.fromText stateToken
   deps.transactionStore.put txKey transaction
     |> Task.mapError (\_ -> ProviderNotFound "Transaction store error")
@@ -189,11 +212,12 @@ handleConnectImpl deps providerName userId = do
 
 -- | Implementation of GET /callback/{provider}?code=...&state=...
 --
--- 1. Validate state token (HMAC signature, TTL, provider match)
--- 2. Consume verifier from transaction store (one-time use)
--- 3. Exchange authorization code for tokens
--- 4. Call onSuccess callback
--- 5. Return redirect URL
+-- 1. Check rate limit (per state token - proxy for IP)
+-- 2. Validate state token (HMAC signature, TTL, provider match)
+-- 3. Consume transaction from store (one-time use, retrieves userId)
+-- 4. Exchange authorization code for tokens
+-- 5. Call onSuccess/onFailure callback with userId from transaction
+-- 6. Return redirect URL
 handleCallbackImpl ::
   OAuth2RouteDeps ->
   -- | Provider name from URL
@@ -204,28 +228,42 @@ handleCallbackImpl ::
   Text ->
   Task OAuth2RouteError (Text, Maybe OAuth2Action)
 handleCallbackImpl deps providerName code stateToken = do
-  -- 1. Look up provider config
+  -- 1. Check rate limit (per state token prefix - proxy for request origin)
+  -- We use the first 16 chars of state token as a rate limit key
+  -- This prevents brute-force attacks while allowing legitimate retries
+  let rateLimitKey = stateToken |> Text.left 16
+  rateLimitResult <- deps.callbackRateLimiter.checkLimit rateLimitKey
+    |> Task.mapError (\_ -> ProviderNotFound "Rate limit check failed")
+  case rateLimitResult of
+    Limited retryAfter -> Task.throw (RateLimited retryAfter)
+    Allowed -> pass
+
+  -- 2. Look up provider config
   config <- case deps.providers |> Map.get providerName of
     Nothing -> Task.throw (ProviderNotFound providerName)
     Just c -> Task.yield c
 
-  -- 2. Validate state token
+  -- 3. Validate state token
   nowSeconds <- getCurrentTimeSeconds
   payload <- StateToken.decodeStateToken deps.hmacKey nowSeconds stateToken
     |> Task.mapError StateValidationFailed
 
-  -- 3. Verify provider matches (mix-up attack prevention)
+  -- 4. Verify provider matches (mix-up attack prevention)
   case payload.provider == providerName of
     False -> Task.throw (ProviderMismatch payload.provider providerName)
     True -> pass
 
-  -- 4. Consume verifier from transaction store (one-time use, atomic)
+  -- 5. Consume transaction from store (one-time use, atomic)
+  -- This retrieves userId which was stored server-side (GDPR compliant)
   let txKey = TransactionStore.fromText stateToken
   maybeTransaction <- deps.transactionStore.consume txKey
     |> Task.mapError (\_ -> StateNotFound)
   transaction :: Transaction <- case maybeTransaction of
     Nothing -> Task.throw StateNotFound
     Just tx -> Task.yield tx
+
+  -- userId comes from server-side storage, NOT from state token
+  let retrievedUserId = transaction.userId
 
   -- 5. Exchange code for tokens
   tokensResult <-
@@ -240,13 +278,13 @@ handleCallbackImpl deps providerName code stateToken = do
 
   case tokensResult of
     Err oauthError -> do
-      -- Call failure callback
-      let actionJson = config.onFailure payload.userId oauthError
+      -- Call failure callback with server-side userId
+      let actionJson = config.onFailure retrievedUserId oauthError
       let action = FailureAction actionJson
       Task.yield (config.failureRedirectUrl, Just action)
     Ok tokens -> do
-      -- Call success callback
-      let actionJson = config.onSuccess payload.userId tokens
+      -- Call success callback with server-side userId
+      let actionJson = config.onSuccess retrievedUserId tokens
       let action = SuccessAction actionJson
       Task.yield (config.successRedirectUrl, Just action)
 
@@ -272,20 +310,6 @@ handleDisconnectImpl deps providerName userId = do
   -- 2. Call disconnect callback
   let actionJson = config.onDisconnect userId
   Task.yield (DisconnectAction actionJson)
-
-
--- | Generate a simple nonce from timestamp and userId.
---
--- This doesn't need to be cryptographically random because:
--- 1. The state token is already HMAC-signed (tamper-proof)
--- 2. The nonce just needs to be unique per request
--- 3. Combined with userId + timestamp, collisions are extremely unlikely
-generateNonce :: Int -> Text -> Text
-generateNonce timestamp userId = do
-  -- Simple hash-like combination
-  let combined = [fmt|#{timestamp}-#{userId}|]
-  -- Take first 32 chars for uniqueness
-  combined |> Text.left 32
 
 
 -- | Get current time as Unix seconds.

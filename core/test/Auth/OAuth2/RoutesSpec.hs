@@ -2,6 +2,7 @@ module Auth.OAuth2.RoutesSpec where
 
 import Array qualified
 import Auth.OAuth2.Provider (OAuth2Action (..), OAuth2ProviderConfig (..))
+import Auth.OAuth2.RateLimiter qualified as RateLimiter
 import Auth.OAuth2.Routes (OAuth2RouteDeps (..), OAuth2RouteError (..), OAuth2Routes (..), createRoutes)
 import Auth.OAuth2.StateToken (mkHmacKey)
 import Auth.OAuth2.TransactionStore.InMemory qualified as InMemory
@@ -55,11 +56,16 @@ createTestDeps = do
     Ok key -> Task.yield key
   transactionStore <- InMemory.new
   let providers = Map.empty |> Map.set "mock" mockProvider
+  -- Create rate limiters with generous limits for testing
+  connectRateLimiter <- RateLimiter.new RateLimiter.defaultConnectConfig
+  callbackRateLimiter <- RateLimiter.new RateLimiter.defaultCallbackConfig
   Task.yield
     OAuth2RouteDeps
       { hmacKey = hmacKey
       , transactionStore = transactionStore
       , providers = providers
+      , connectRateLimiter = connectRateLimiter
+      , callbackRateLimiter = callbackRateLimiter
       }
 
 

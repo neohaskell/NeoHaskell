@@ -44,6 +44,7 @@ import Task (Task)
 import Task qualified
 import Text (Text)
 import Text qualified
+import ToText (toText)
 
 
 -- | Auth configuration for WebTransport endpoints.
@@ -226,20 +227,37 @@ instance Transport WebTransport where
           respondFn response400
 
     -- Helper function for 302 redirect responses
+    -- SECURITY: Sanitize URL to prevent header injection (CRLF attacks)
     let redirect302 url respondFn = do
-          let locationHeader = (HTTP.hLocation, url |> Text.toBytes |> Bytes.unwrap)
+          -- Remove any CR/LF characters that could allow header injection
+          let sanitizedUrl = url |> Text.filter (\c -> c != '\r' && c != '\n')
+          let locationHeader = (HTTP.hLocation, sanitizedUrl |> Text.toBytes |> Bytes.unwrap)
           let response302 = Wai.responseLBS HTTP.status302 [locationHeader] ""
           respondFn response302
 
+    -- Helper function for 429 Too Many Requests responses
+    let tooManyRequests retryAfter respondFn = do
+          let retryHeader = ("Retry-After", retryAfter |> toText |> Text.toBytes |> Bytes.unwrap)
+          let response429 =
+                "{\"error\":\"Too many requests\"}"
+                  |> Text.toBytes
+                  |> Bytes.toLazyLegacy
+                  |> Wai.responseLBS HTTP.status429 [(HTTP.hContentType, "application/json"), retryHeader]
+          respondFn response429
+
     -- Helper function for OAuth2 route errors
+    -- SECURITY: Error messages are generic to avoid information leakage
     let handleOAuth2Error err respondFn = do
           case err of
-            ProviderNotFound name -> notFound [fmt|OAuth2 provider not found: #{name}|]
+            -- Generic "not found" for all provider-related errors (prevents enumeration)
+            ProviderNotFound _ -> notFound "OAuth2 route not available"
             StateValidationFailed _ -> unauthorized "Invalid or expired state token"
             StateNotFound -> unauthorized "State token not found or already used"
             TokenExchangeFailed _ -> internalError "Token exchange failed"
-            ProviderMismatch expected actual -> badRequest [fmt|Provider mismatch: expected #{expected}, got #{actual}|] respondFn
-            MissingParameter param -> badRequest [fmt|Missing parameter: #{param}|] respondFn
+            -- Generic mismatch error (doesn't reveal expected/actual)
+            ProviderMismatch _ _ -> badRequest "Invalid request" respondFn
+            MissingParameter _ -> badRequest "Invalid request" respondFn
+            RateLimited retryAfter -> tooManyRequests retryAfter respondFn
 
     -- Parse the request path to check if it matches /commands/<name> or /queries/<name>
     case Wai.pathInfo request of

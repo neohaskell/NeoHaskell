@@ -29,6 +29,7 @@ module Service.Application (
   withInbound,
   withAuth,
   withAuthOverrides,
+  withOAuth2,
   withOAuth2Provider,
 
   -- * Inspection
@@ -59,6 +60,7 @@ import Auth.Discovery qualified as Discovery
 import Auth.Jwks qualified as Jwks
 import Auth.OAuth2.Provider (OAuth2ProviderConfig (..))
 import Auth.OAuth2.Types (Provider (..))
+import Auth.OAuth2.RateLimiter qualified as RateLimiter
 import Auth.OAuth2.Routes qualified as OAuth2Routes
 import Auth.OAuth2.StateToken qualified as StateToken
 import Auth.OAuth2.TransactionStore.InMemory qualified as InMemoryTransactionStore
@@ -77,7 +79,6 @@ import Map (Map)
 import Map qualified
 import Record qualified
 import Maybe (Maybe (..))
-import Maybe qualified
 import Result (Result (..))
 import Service.Command.Core (NameOf)
 import Service.Event ()
@@ -132,9 +133,18 @@ data WebAuthSetup = WebAuthSetup
 -- This is stored in the Application and converted to WebTransport.OAuth2Config at runtime.
 -- OAuth2 routes require JWT authentication to be enabled (via withAuth).
 --
+-- SECURITY: The HMAC key MUST be loaded from environment/config (not generated at runtime)
+-- to ensure state tokens remain valid across application restarts.
+--
 -- Example:
 --
 -- @
+-- -- Load HMAC key from environment (must be at least 32 bytes)
+-- hmacKeyText <- Environment.require "OAUTH2_STATE_KEY"
+-- hmacKey <- case StateToken.mkHmacKey hmacKeyText of
+--   Err err -> panic err
+--   Ok key -> pure key
+--
 -- let ouraProvider = OAuth2ProviderConfig
 --       { provider = Provider { name = "oura", ... }
 --       , clientId = ClientId "your-client-id"
@@ -144,10 +154,13 @@ data WebAuthSetup = WebAuthSetup
 -- app = Application.new
 --   |> Application.withTransport WebTransport.server
 --   |> Application.withAuth "https://auth.example.com"
+--   |> Application.withOAuth2 hmacKey
 --   |> Application.withOAuth2Provider ouraProvider
 -- @
 data OAuth2Setup = OAuth2Setup
-  { -- | Configured OAuth2 providers
+  { -- | HMAC key for signing state tokens (must be persistent!)
+    hmacKey :: StateToken.HmacKey
+  , -- | Configured OAuth2 providers
     providers :: Array OAuth2ProviderConfig
   }
 
@@ -583,24 +596,28 @@ runWith eventStore app = do
   -- 13. Initialize OAuth2 if configured
   maybeOAuth2Config <- case app.oauth2Setup of
     Nothing -> Task.yield Nothing
-    Just (OAuth2Setup providerConfigs) -> do
+    Just (OAuth2Setup configuredHmacKey providerConfigs) -> do
       Console.print [fmt|[OAuth2] Initializing OAuth2 provider routes...|]
-      -- Create HMAC key for state token signing
-      hmacKey <- StateToken.generateKey
-      -- Create in-memory transaction store for PKCE verifiers
+      -- HMAC key comes from config (persistent across restarts)
+      -- Create in-memory transaction store for PKCE verifiers + userId
       transactionStore <- InMemoryTransactionStore.new
+      -- Create rate limiters for abuse prevention
+      connectRateLimiter <- RateLimiter.new RateLimiter.defaultConnectConfig
+      callbackRateLimiter <- RateLimiter.new RateLimiter.defaultCallbackConfig
       -- Build provider map from array
       let buildProviderMap :: OAuth2ProviderConfig -> Map Text OAuth2ProviderConfig -> Map Text OAuth2ProviderConfig
           buildProviderMap cfg acc = do
             let providerName = cfg.provider.name
             acc |> Map.set providerName cfg
       let providerMap = providerConfigs |> Array.reduce buildProviderMap Map.empty
-      -- Create route handlers
+      -- Create route handlers with configured HMAC key and rate limiters
       let routeDeps =
             OAuth2Routes.OAuth2RouteDeps
-              { OAuth2Routes.hmacKey = hmacKey,
+              { OAuth2Routes.hmacKey = configuredHmacKey,
                 OAuth2Routes.transactionStore = transactionStore,
-                OAuth2Routes.providers = providerMap
+                OAuth2Routes.providers = providerMap,
+                OAuth2Routes.connectRateLimiter = connectRateLimiter,
+                OAuth2Routes.callbackRateLimiter = callbackRateLimiter
               }
       let routes = OAuth2Routes.createRoutes routeDeps
       let providerCount = Array.length providerConfigs
@@ -876,6 +893,31 @@ withAuthOverrides authServerUrl overrides app =
     }
 
 
+-- | Initialize OAuth2 with an HMAC key.
+--
+-- The HMAC key is used to sign state tokens for CSRF protection.
+-- It MUST be loaded from environment/config (not generated at runtime)
+-- to ensure state tokens remain valid across application restarts.
+--
+-- @
+-- -- Load from environment (must be at least 32 bytes / 256 bits)
+-- hmacKeyText <- Environment.require "OAUTH2_STATE_KEY"
+-- hmacKey <- case StateToken.mkHmacKey hmacKeyText of
+--   Err err -> panic err
+--   Ok key -> pure key
+--
+-- app = Application.new
+--   |> Application.withOAuth2 hmacKey
+--   |> Application.withOAuth2Provider ouraConfig
+-- @
+withOAuth2 ::
+  StateToken.HmacKey ->
+  Application ->
+  Application
+withOAuth2 hmacKey app =
+  app {oauth2Setup = Just OAuth2Setup {hmacKey = hmacKey, providers = Array.empty}}
+
+
 -- | Add an OAuth2 provider to the Application.
 --
 -- This enables OAuth2 provider integration routes:
@@ -884,6 +926,7 @@ withAuthOverrides authServerUrl overrides app =
 -- * @GET /callback/{provider}@ - OAuth2 callback
 -- * @POST /disconnect/{provider}@ - Disconnect provider
 --
+-- Requires 'withOAuth2' to be called first with an HMAC key.
 -- Requires JWT authentication to be enabled (via withAuth).
 --
 -- Multiple providers can be added by calling this function multiple times:
@@ -892,6 +935,7 @@ withAuthOverrides authServerUrl overrides app =
 -- app = Application.new
 --   |> Application.withTransport WebTransport.server
 --   |> Application.withAuth "https://auth.example.com"
+--   |> Application.withOAuth2 hmacKey
 --   |> Application.withOAuth2Provider ouraConfig
 --   |> Application.withOAuth2Provider githubConfig
 -- @
@@ -900,6 +944,12 @@ withOAuth2Provider ::
   Application ->
   Application
 withOAuth2Provider providerConfig app = do
-  let existingSetup = app.oauth2Setup |> Maybe.withDefault (OAuth2Setup {providers = Array.empty})
-  let updatedProviders = existingSetup.providers |> Array.push providerConfig
-  app {oauth2Setup = Just OAuth2Setup {providers = updatedProviders}}
+  case app.oauth2Setup of
+    Nothing ->
+      -- withOAuth2 not called - this is a configuration error
+      -- We could panic here, but instead we'll just ignore the provider
+      -- (it will fail at runtime when no providers are found)
+      app
+    Just existingSetup -> do
+      let updatedProviders = existingSetup.providers |> Array.push providerConfig
+      app {oauth2Setup = Just existingSetup {providers = updatedProviders}}
