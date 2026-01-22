@@ -130,6 +130,31 @@ spec = do
                   Ok _ -> fail "Should have rejected tampered token"
                   Err err -> err |> shouldBe SignatureInvalid
 
+      it "rejects token with modified signature" \_ -> do
+        let secret = "this-is-a-32-byte-secret-key!!!!"
+        case mkHmacKey secret of
+          Err _ -> fail "Failed to create key"
+          Ok key -> do
+            let payload =
+                  StatePayload
+                    { provider = "oura"
+                    , userId = "user-123"
+                    , nonce = "nonce"
+                    , issuedAt = 1700000000
+                    , expiresAt = 1700000300
+                    }
+            encodedResult <- encodeStateToken key payload |> Task.asResult
+            case encodedResult of
+              Err _ -> fail "Encode failed"
+              Ok stateToken -> do
+                -- Tamper with the signature region by flipping a character at the end
+                let tamperedToken = tamperWithSignature stateToken
+                let currentTime = 1700000100
+                decodedResult <- decodeStateToken key currentTime tamperedToken |> Task.asResult
+                case decodedResult of
+                  Ok _ -> fail "Should have rejected token with tampered signature"
+                  Err err -> err |> shouldBe SignatureInvalid
+
       it "rejects token signed with different key" \_ -> do
         let secret1 = "this-is-a-32-byte-secret-key!!!!"
         let secret2 = "this-is-another-32-byte-secret!!"
@@ -359,7 +384,7 @@ spec = do
               Err err -> err |> shouldBe MalformedToken
 
 
--- | Helper to tamper with a token by modifying one character
+-- | Helper to tamper with a token by modifying one character at the start (payload region)
 tamperWithToken :: Text -> Text
 tamperWithToken token = do
   let chars = Text.toLinkedList token
@@ -371,3 +396,30 @@ tamperWithToken token = do
             'a' -> 'b'
             _ -> 'a'
       Text.fromLinkedList (flipped : rest)
+
+
+-- | Helper to tamper with a token by modifying one character at the end (signature region)
+-- The signature is the last ~32 bytes when base64-decoded, so flipping near the end
+-- exercises signature tampering specifically.
+tamperWithSignature :: Text -> Text
+tamperWithSignature token = do
+  let chars = Text.toLinkedList token
+  let reversed = reverseLinkedList chars
+  case reversed of
+    [] -> token
+    (c : rest) -> do
+      -- Flip the last character
+      let flipped = case c of
+            'a' -> 'b'
+            _ -> 'a'
+      Text.fromLinkedList (reverseLinkedList (flipped : rest))
+
+
+-- | Reverse a linked list
+reverseLinkedList :: forall element. LinkedList element -> LinkedList element
+reverseLinkedList list = do
+  let go acc remaining =
+        case remaining of
+          [] -> acc
+          (x : xs) -> go (x : acc) xs
+  go [] list
