@@ -19,12 +19,19 @@ import Network.Socket qualified as GhcSocket
 import Network.URI qualified as URI
 import Prelude qualified as GhcPrelude
 import Result (Result (..))
+import System.Timeout qualified as GhcTimeout
 import Task (Task)
 import Task qualified
 import Text (Text)
 import Text qualified
 import Text.Read qualified as GhcRead
 import ToText (toText)
+
+
+-- | Default DNS resolution timeout in microseconds (5 seconds).
+-- SECURITY: Prevents indefinite hangs from slow/unresponsive DNS servers.
+dnsTimeoutMicros :: Int
+dnsTimeoutMicros = 5000000
 
 
 -- | URL validation errors.
@@ -43,6 +50,9 @@ data ValidationError
   | -- | DNS resolution failed
     DnsResolutionFailed Text Text
     -- ^ First Text is URL, second is the error message
+  | -- | DNS resolution timed out
+    DnsResolutionTimeout Text
+    -- ^ Text is the URL that timed out
   | -- | Single-label hostname (no dots) - requires FQDN
     SingleLabelHostname Text
     -- ^ Single-label hostnames may resolve via search domains to internal hosts
@@ -325,9 +335,11 @@ validateSecureUrlWithDns urlText = do
               -- Resolve DNS and check all IPs
               resolveResult <- resolveDns hostname
               case resolveResult of
-                Err errMsg ->
+                DnsTimeout ->
+                  Task.yield (Err (DnsResolutionTimeout urlText))
+                DnsError errMsg ->
                   Task.yield (Err (DnsResolutionFailed urlText errMsg))
-                Ok resolvedIps -> do
+                DnsOk resolvedIps -> do
                   -- Check ALL resolved IPs
                   case findPrivateIp resolvedIps of
                     Just privateIp ->
@@ -369,11 +381,22 @@ extractHostname urlText = do
             _ -> Just (Text.fromLinkedList host)
 
 
+-- | Result of DNS resolution with explicit timeout case.
+data DnsResult
+  = DnsOk [Text]
+  | DnsError Text
+  | DnsTimeout
+  deriving (Eq, Show)
+
+
 -- | Resolve DNS for a hostname, returning all A and AAAA records.
+-- SECURITY: Includes a 5-second timeout to prevent indefinite hangs
+-- from slow or unresponsive DNS servers, which could cause thread
+-- exhaustion under load or enable DoS attacks.
 resolveDns ::
   forall error.
   Text ->
-  Task error (Result Text [Text])
+  Task error DnsResult
 resolveDns hostname = do
   let hostStr = Text.toLinkedList hostname
   let hints =
@@ -382,18 +405,25 @@ resolveDns hostname = do
             GhcSocket.addrSocketType = GhcSocket.Stream
           }
   Task.fromIO do
-    result <-
-      GhcException.try @GhcException.SomeException
-        (GhcSocket.getAddrInfo (Just hints) (Just hostStr) Nothing)
-    case result of
-      GhcEither.Left exc ->
-        pure (Err (Text.fromLinkedList (GhcException.displayException exc)))
-      GhcEither.Right addrInfos -> do
-        let ips = LinkedList.map extractIpFromAddrInfo addrInfos
-        let validIps = LinkedList.filterMap identity ips
-        case validIps of
-          [] -> pure (Err "No IP addresses resolved")
-          _ -> pure (Ok validIps)
+    -- Wrap DNS resolution in timeout to prevent indefinite hangs
+    maybeResult <-
+      GhcTimeout.timeout dnsTimeoutMicros do
+        GhcException.try @GhcException.SomeException
+          (GhcSocket.getAddrInfo (Just hints) (Just hostStr) Nothing)
+    case maybeResult of
+      Nothing ->
+        -- Timeout occurred
+        pure DnsTimeout
+      Just result ->
+        case result of
+          GhcEither.Left exc ->
+            pure (DnsError (Text.fromLinkedList (GhcException.displayException exc)))
+          GhcEither.Right addrInfos -> do
+            let ips = LinkedList.map extractIpFromAddrInfo addrInfos
+            let validIps = LinkedList.filterMap identity ips
+            case validIps of
+              [] -> pure (DnsError "No IP addresses resolved")
+              _ -> pure (DnsOk validIps)
 
 
 -- | Extract IP address string from AddrInfo.

@@ -534,6 +534,7 @@ sanitizeValidationError err = case err of
   DnsResolutionBlocked url _ -> Text.append "DNS resolved to private IP: " (sanitizeUrlForError url)
   -- SECURITY: Don't expose DNS resolution failure reasons - may leak infrastructure info
   DnsResolutionFailed url _ -> Text.append "DNS resolution failed for " (sanitizeUrlForError url)
+  DnsResolutionTimeout url -> Text.append "DNS resolution timed out for " (sanitizeUrlForError url)
   SingleLabelHostname _ -> "Single-label hostname not allowed (use FQDN)"
 
 

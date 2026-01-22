@@ -133,6 +133,7 @@ mapValidationError err =
     MissingHostname url -> UrlValidationFailed [fmt|URL missing hostname: #{url}|]
     DnsResolutionBlocked url privateIp -> UrlValidationFailed [fmt|DNS resolution blocked - #{url} resolves to private IP: #{privateIp}|]
     DnsResolutionFailed url errMsg -> UrlValidationFailed [fmt|DNS resolution failed for #{url}: #{errMsg}|]
+    DnsResolutionTimeout url -> UrlValidationFailed [fmt|DNS resolution timed out for #{url}|]
     SingleLabelHostname url -> UrlValidationFailed [fmt|Single-label hostname not allowed (FQDN required): #{url}|]
 
 

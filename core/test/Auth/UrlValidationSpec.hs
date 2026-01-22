@@ -236,6 +236,19 @@ isDnsResolutionFailed result =
     _ -> False
 
 
+isDnsResolutionTimeout :: Result ValidationError Text -> Bool
+isDnsResolutionTimeout result =
+  case result of
+    Err (DnsResolutionTimeout _) -> True
+    _ -> False
+
+
+-- | Either failed or timed out - for environment-dependent tests
+isDnsResolutionFailedOrTimeout :: Result ValidationError Text -> Bool
+isDnsResolutionFailedOrTimeout result =
+  isDnsResolutionFailed result || isDnsResolutionTimeout result
+
+
 isSingleLabelHostname :: Result ValidationError Text -> Bool
 isSingleLabelHostname result =
   case result of
@@ -243,10 +256,10 @@ isSingleLabelHostname result =
     _ -> False
 
 
--- | Either blocked or failed - for environment-dependent tests
+-- | Either blocked, failed, or timed out - for environment-dependent tests
 isDnsResolutionBlockedOrFailed :: Result ValidationError Text -> Bool
 isDnsResolutionBlockedOrFailed result =
-  isDnsResolutionBlocked result || isDnsResolutionFailed result
+  isDnsResolutionBlocked result || isDnsResolutionFailed result || isDnsResolutionTimeout result
 
 
 isOkResult :: Result ValidationError Text -> Bool
