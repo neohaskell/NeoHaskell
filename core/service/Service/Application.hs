@@ -79,6 +79,7 @@ import Json qualified
 import Map (Map)
 import Map qualified
 import Record qualified
+import LinkedList (LinkedList)
 import Maybe (Maybe (..))
 import Result (Result (..))
 import Service.Command.Core (NameOf)
@@ -592,6 +593,10 @@ runWith eventStore app = do
   maybeOAuth2Config <- case app.oauth2Setup of
     Nothing -> Task.yield Nothing
     Just (OAuth2Setup envVarName providerConfigs) -> do
+      -- OAuth2 routes require JWT authentication to be enabled
+      case app.webAuthSetup of
+        Nothing -> Task.throw "OAuth2 requires authentication to be enabled. Call withAuth before configuring OAuth2 providers."
+        Just _ -> pass
       Console.print [fmt|[OAuth2] Loading HMAC key from environment variable #{envVarName}...|]
       -- Load HMAC key from environment (declarative config, runtime loading)
       hmacKey <- loadHmacKeyFromEnv envVarName
@@ -601,12 +606,8 @@ runWith eventStore app = do
       -- Create rate limiters for abuse prevention
       connectRateLimiter <- RateLimiter.new RateLimiter.defaultConnectConfig
       callbackRateLimiter <- RateLimiter.new RateLimiter.defaultCallbackConfig
-      -- Build provider map from array
-      let buildProviderMap :: OAuth2ProviderConfig -> Map Text OAuth2ProviderConfig -> Map Text OAuth2ProviderConfig
-          buildProviderMap cfg acc = do
-            let providerName = cfg.provider.name
-            acc |> Map.set providerName cfg
-      let providerMap = providerConfigs |> Array.reduce buildProviderMap Map.empty
+      -- Build provider map from array, detecting duplicates
+      providerMap <- buildProviderMap providerConfigs
       -- Create route handlers with loaded HMAC key and rate limiters
       let routeDeps =
             OAuth2Routes.OAuth2RouteDeps
@@ -914,8 +915,11 @@ withOAuth2StateKey ::
   Text ->
   Application ->
   Application
-withOAuth2StateKey envVarName app =
-  app {oauth2Setup = Just OAuth2Setup {hmacKeyEnvVar = envVarName, providers = Array.empty}}
+withOAuth2StateKey envVarName app = do
+  let existingProviders = case app.oauth2Setup of
+        Just existing -> existing.providers
+        Nothing -> Array.empty
+  app {oauth2Setup = Just OAuth2Setup {hmacKeyEnvVar = envVarName, providers = existingProviders}}
 
 
 -- | Add an OAuth2 provider to the Application.
@@ -963,3 +967,21 @@ loadHmacKeyFromEnv envVarName = do
   case StateToken.mkHmacKey keyText of
     Err err -> Task.throw [fmt|Invalid HMAC key in #{envVarName}: #{err}|]
     Ok key -> Task.yield key
+
+
+-- | Build provider map from array, failing on duplicate provider names.
+buildProviderMap :: Array OAuth2ProviderConfig -> Task Text (Map Text OAuth2ProviderConfig)
+buildProviderMap configs = do
+  let go ::
+        Map Text OAuth2ProviderConfig ->
+        LinkedList OAuth2ProviderConfig ->
+        Task Text (Map Text OAuth2ProviderConfig)
+      go acc remaining =
+        case remaining of
+          [] -> Task.yield acc
+          (cfg : rest) -> do
+            let providerName = cfg.provider.name
+            case Map.get providerName acc of
+              Just _ -> Task.throw [fmt|Duplicate OAuth2 provider configuration: '#{providerName}' is registered multiple times. Each provider name must be unique.|]
+              Nothing -> go (acc |> Map.set providerName cfg) rest
+  go Map.empty (configs |> Array.toLinkedList)
