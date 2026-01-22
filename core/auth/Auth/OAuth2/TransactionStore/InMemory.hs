@@ -37,10 +37,12 @@ import AsyncTask qualified
 import Basics
 import ConcurrentVar (ConcurrentVar)
 import ConcurrentVar qualified
+import Console qualified
 import Data.Time.Clock.POSIX qualified as GhcPosix
 import Map (Map)
 import Map qualified
 import Maybe (Maybe (..))
+import Result (Result (..))
 import Prelude qualified as GhcPrelude
 import Task (Task)
 import Task qualified
@@ -146,7 +148,9 @@ startReaper storage = do
                   |> Map.entries
                   |> Array.reduce
                       ( \(key, tx) acc ->
-                          case tx.expiresAt > nowSeconds of
+                          -- Use >= to keep tokens at exactly their expiry time
+                          -- This matches StateToken validation (currentTime <= expiresAt)
+                          case tx.expiresAt >= nowSeconds of
                             True -> acc |> Map.set key tx
                             False -> acc
                       )
@@ -154,8 +158,18 @@ startReaper storage = do
             )
         -- Loop forever
         reaperLoop
-  -- Run reaper in background (ignore errors, fire-and-forget)
-  _ <- AsyncTask.run reaperLoop
+  -- Run reaper in background with error logging
+  let reaperWithErrorLogging :: Task Text Unit
+      reaperWithErrorLogging = do
+        result <- reaperLoop |> Task.asResult
+        case result of
+          Err err -> do
+            -- Log error and restart reaper
+            Console.print [fmt|[OAuth2 TransactionStore] Reaper error: #{err}, restarting...|]
+              |> Task.ignoreError
+            reaperWithErrorLogging
+          Ok _ -> Task.yield unit
+  _ <- AsyncTask.run reaperWithErrorLogging
     |> Task.mapError (\_ -> "reaper start error" :: Text)
   Task.yield unit
 

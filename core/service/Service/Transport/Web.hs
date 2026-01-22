@@ -9,7 +9,7 @@ import Auth.Config qualified
 import Auth.Error (AuthError (..))
 import Auth.Jwks (JwksManager)
 import Auth.Middleware qualified as Middleware
-import Auth.OAuth2.Provider ()
+import Auth.OAuth2.Provider (OAuth2Action (..))
 import Auth.OAuth2.Routes (OAuth2Routes (..), OAuth2RouteError (..))
 import Auth.Options (AuthOptions (Authenticated))
 import Basics
@@ -61,6 +61,10 @@ data AuthEnabled = AuthEnabled
 data OAuth2Config = OAuth2Config
   { -- | OAuth2 route handlers
     routes :: OAuth2Routes
+  , -- | Action dispatcher for OAuth2 callbacks.
+    -- Called with the JSON-encoded action from onSuccess/onFailure/onDisconnect.
+    -- The application layer provides this to dispatch actions to command handlers.
+    dispatchAction :: Text -> Task Text Unit
   }
 
 
@@ -400,7 +404,7 @@ instance Transport WebTransport where
         case webTransport.oauth2Config of
           Maybe.Nothing -> notFound "OAuth2 not configured"
           Maybe.Just oauth2 -> do
-            -- Callback does NOT require auth - state token carries userId
+            -- Callback does NOT require auth - userId is retrieved from server-side TransactionStore
             -- Extract code and state from query params
             let queryParams = Wai.queryString request
             let getParam name = do
@@ -413,8 +417,20 @@ instance Transport WebTransport where
                 result <- oauth2.routes.handleCallback providerName code state |> Task.asResult
                 case result of
                   Result.Err routeErr -> handleOAuth2Error routeErr respond
-                  Result.Ok (redirectUrl, _maybeAction) -> do
-                    -- TODO: Dispatch action to command handler if present
+                  Result.Ok (redirectUrl, maybeAction) -> do
+                    -- Dispatch action to command handler if present
+                    case maybeAction of
+                      Maybe.Nothing -> pass
+                      Maybe.Just action -> do
+                        let actionJson = case action of
+                              SuccessAction json -> json
+                              FailureAction json -> json
+                              DisconnectAction json -> json
+                        -- Dispatch action, log errors but don't fail redirect
+                        dispatchResult <- oauth2.dispatchAction actionJson |> Task.asResult
+                        case dispatchResult of
+                          Result.Err err -> Console.print [fmt|[OAuth2] Action dispatch failed: #{err}|] |> Task.ignoreError
+                          Result.Ok _ -> pass
                     redirect302 redirectUrl respond
               _ -> badRequest "Missing code or state parameter" respond
       ["disconnect", providerName] -> do
@@ -436,9 +452,18 @@ instance Transport WebTransport where
                         result <- oauth2.routes.handleDisconnect providerName userId |> Task.asResult
                         case result of
                           Result.Err routeErr -> handleOAuth2Error routeErr respond
-                          Result.Ok _action -> do
-                            -- TODO: Dispatch action to command handler
-                            okJson [fmt|{"status":"disconnected","provider":"#{providerName}"}|]
+                          Result.Ok action -> do
+                            -- Dispatch disconnect action to command handler
+                            let actionJson = case action of
+                                  SuccessAction json -> json
+                                  FailureAction json -> json
+                                  DisconnectAction json -> json
+                            dispatchResult <- oauth2.dispatchAction actionJson |> Task.asResult
+                            case dispatchResult of
+                              Result.Err err -> do
+                                Console.print [fmt|[OAuth2] Disconnect action dispatch failed: #{err}|] |> Task.ignoreError
+                                internalError "Disconnect failed"
+                              Result.Ok _ -> okJson [fmt|{"status":"disconnected","provider":"#{providerName}"}|]
       _ ->
         notFound "Not found"
 

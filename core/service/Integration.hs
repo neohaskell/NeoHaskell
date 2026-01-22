@@ -97,7 +97,10 @@ data CommandPayload = CommandPayload
   { commandType :: Text
   , commandData :: Json.Value
   }
-  deriving (Eq, Show)
+  deriving (Eq, Show, Generic)
+
+
+instance Json.FromJSON CommandPayload
 
 
 -- | Internal representation of an action.

@@ -127,11 +127,11 @@ spec = do
                     Just rest -> Text.split "&" rest |> Array.get 0 |> Maybe.withDefault ""
             let state1 = extractState url1
             let state2 = extractState url2
-            -- States should be non-empty and different
+            -- States should be non-empty
             state1 |> shouldSatisfy (\s -> Text.length s > 0)
             state2 |> shouldSatisfy (\s -> Text.length s > 0)
-            -- Note: In practice they might be different due to timing, but we
-            -- can't guarantee this in a unit test without mocking time
+            -- States should be unique (crypto-random nonces ensure uniqueness)
+            state1 |> shouldNotBe state2
           _ -> fail "Expected both requests to succeed"
 
     -- ========================================================================

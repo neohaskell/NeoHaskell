@@ -617,9 +617,17 @@ runWith eventStore app = do
                 OAuth2Routes.callbackRateLimiter = callbackRateLimiter
               }
       let routes = OAuth2Routes.createRoutes routeDeps
+      -- Create action dispatcher that decodes JSON and dispatches to command handlers
+      -- The JSON is expected to contain { "commandType": "CommandName", "commandData": {...} }
+      let dispatchAction :: Text -> Task Text Unit
+          dispatchAction actionJson = do
+            case Json.decodeText actionJson of
+              Err err -> Task.throw [fmt|Failed to decode OAuth2 action JSON: #{err}|]
+              Ok (payload :: Integration.CommandPayload) -> do
+                Dispatcher.dispatchCommand combinedCommandEndpoints payload
       let providerCount = Array.length providerConfigs
       Console.print [fmt|[OAuth2] Initialized #{providerCount} provider(s)|]
-      Task.yield (Just Web.OAuth2Config {Web.routes = routes})
+      Task.yield (Just Web.OAuth2Config {Web.routes = routes, Web.dispatchAction = dispatchAction})
 
   -- Define cleanup actions that must always run
   let cleanupJwksManager = case maybeAuthEnabled of
