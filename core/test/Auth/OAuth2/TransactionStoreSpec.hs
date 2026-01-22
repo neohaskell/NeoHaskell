@@ -36,7 +36,7 @@ spec = do
           let stateKey = TransactionKey.fromText "state-key-123"
           let verifier = mkCodeVerifierUnsafe "verifier-43-chars-long-abcdefghijklmnop"
           let expiresAt = 1700000300
-          let tx = Transaction {verifier = verifier, expiresAt = expiresAt}
+          let tx = Transaction {verifier = verifier, userId = "user-123", expiresAt = expiresAt}
 
           -- Store
           putResult <- store.put stateKey tx |> Task.asResult
@@ -66,8 +66,8 @@ spec = do
           let stateKey = TransactionKey.fromText "state-key-123"
           let verifier1 = mkCodeVerifierUnsafe "verifier1-43-chars-long-abcdefghijklmno"
           let verifier2 = mkCodeVerifierUnsafe "verifier2-43-chars-long-abcdefghijklmno"
-          let tx1 = Transaction {verifier = verifier1, expiresAt = 1700000300}
-          let tx2 = Transaction {verifier = verifier2, expiresAt = 1700000600}
+          let tx1 = Transaction {verifier = verifier1, userId = "user-123", expiresAt = 1700000300}
+          let tx2 = Transaction {verifier = verifier2, userId = "user-123", expiresAt = 1700000600}
 
           -- Store first
           _ <- store.put stateKey tx1
@@ -91,7 +91,7 @@ spec = do
           store <- InMemory.new
           let stateKey = TransactionKey.fromText "state-key-123"
           let verifier = mkCodeVerifierUnsafe "verifier-43-chars-long-abcdefghijklmnop"
-          let tx = Transaction {verifier = verifier, expiresAt = 1700000300}
+          let tx = Transaction {verifier = verifier, userId = "user-123", expiresAt = 1700000300}
 
           -- Store
           _ <- store.put stateKey tx
@@ -124,7 +124,7 @@ spec = do
           store <- InMemory.new
           let stateKey = TransactionKey.fromText "state-key-123"
           let verifier = mkCodeVerifierUnsafe "verifier-43-chars-long-abcdefghijklmnop"
-          let tx = Transaction {verifier = verifier, expiresAt = 1700000300}
+          let tx = Transaction {verifier = verifier, userId = "user-123", expiresAt = 1700000300}
 
           -- Store
           _ <- store.put stateKey tx
@@ -153,7 +153,7 @@ spec = do
           store <- InMemory.new
           let stateKey = TransactionKey.fromText "state-key-123"
           let verifier = mkCodeVerifierUnsafe "verifier-43-chars-long-abcdefghijklmnop"
-          let tx = Transaction {verifier = verifier, expiresAt = 1700000300}
+          let tx = Transaction {verifier = verifier, userId = "user-123", expiresAt = 1700000300}
 
           -- Store
           _ <- store.put stateKey tx
@@ -186,7 +186,7 @@ spec = do
           let stateKey = TransactionKey.fromText "state-key-123"
           let verifier = mkCodeVerifierUnsafe "verifier-43-chars-long-abcdefghijklmnop"
           -- Already expired
-          let tx = Transaction {verifier = verifier, expiresAt = 1}
+          let tx = Transaction {verifier = verifier, userId = "user-123", expiresAt = 1}
 
           _ <- store.put stateKey tx
 
@@ -205,7 +205,7 @@ spec = do
           store2 <- InMemory.new
           let stateKey = TransactionKey.fromText "state-key-123"
           let verifier = mkCodeVerifierUnsafe "verifier-43-chars-long-abcdefghijklmnop"
-          let tx = Transaction {verifier = verifier, expiresAt = 1700000300}
+          let tx = Transaction {verifier = verifier, userId = "user-123", expiresAt = 1700000300}
 
           -- Store in store1
           _ <- store1.put stateKey tx

@@ -8,13 +8,18 @@
 --
 -- For production with multiple instances, use Redis (GETDEL for atomic consume).
 --
+-- = TTL Cleanup
+--
+-- This store includes a background reaper that runs every 60 seconds
+-- to clean up expired transactions. This prevents unbounded memory growth.
+--
 -- = Usage
 --
 -- @
 -- store <- TransactionStore.InMemory.new
 --
 -- let key = TransactionKey.fromText stateToken
--- let tx = Transaction { verifier = verifier, expiresAt = now + 300 }
+-- let tx = Transaction { verifier = verifier, userId = userId, expiresAt = now + 300 }
 -- store.put key tx
 --
 -- -- Later, in callback:
@@ -25,14 +30,20 @@ module Auth.OAuth2.TransactionStore.InMemory (
   new,
 ) where
 
-import Auth.OAuth2.TransactionStore (Transaction, TransactionKey, TransactionStore (..))
+import Array qualified
+import Auth.OAuth2.TransactionStore (Transaction (..), TransactionKey, TransactionStore (..))
 import Auth.OAuth2.TransactionStore.TransactionKey qualified as TransactionKey
+import AsyncTask qualified
 import Basics
 import ConcurrentVar (ConcurrentVar)
 import ConcurrentVar qualified
+import Console qualified
+import Data.Time.Clock.POSIX qualified as GhcPosix
 import Map (Map)
 import Map qualified
 import Maybe (Maybe (..))
+import Result (Result (..))
+import Prelude qualified as GhcPrelude
 import Task (Task)
 import Task qualified
 import Text (Text)
@@ -46,12 +57,16 @@ import Text (Text)
 -- a single process. Multiple instances will break the one-time use
 -- guarantee - use Redis for production multi-instance deployments.
 --
+-- Includes a background reaper that cleans up expired transactions every 60 seconds.
+--
 -- @
 -- store <- TransactionStore.InMemory.new
 -- @
 new :: Task Text TransactionStore
 new = do
   storage <- ConcurrentVar.containing Map.empty
+  -- Start background reaper for TTL cleanup (runs every 60 seconds)
+  _ <- startReaper storage
   Task.yield
     TransactionStore
       { get = getImpl storage
@@ -105,3 +120,63 @@ deleteImpl :: Storage -> TransactionKey -> Task Text Unit
 deleteImpl storage key = do
   let keyText = TransactionKey.toText key
   storage |> ConcurrentVar.modify (\store -> store |> Map.remove keyText)
+
+
+-- | Reaper interval in milliseconds (60 seconds)
+reaperIntervalMs :: Int
+reaperIntervalMs = 60000
+
+
+-- | Start background reaper that cleans up expired transactions.
+--
+-- Runs every 60 seconds, removing any transactions where expiresAt < now.
+-- This prevents unbounded memory growth from abandoned OAuth flows.
+startReaper :: Storage -> Task Text Unit
+startReaper storage = do
+  let reaperLoop :: Task Text Unit
+      reaperLoop = do
+        -- Sleep first, then clean (transactions start with 5 min TTL)
+        AsyncTask.sleep reaperIntervalMs
+          |> Task.mapError (\_ -> "reaper sleep error" :: Text)
+        -- Get current time
+        nowSeconds <- getCurrentTimeSeconds
+        -- Remove all expired transactions atomically
+        storage
+          |> ConcurrentVar.modify
+            ( \store ->
+                store
+                  |> Map.entries
+                  |> Array.reduce
+                      ( \(key, tx) acc ->
+                          -- Use >= to keep tokens at exactly their expiry time
+                          -- This matches StateToken validation (currentTime <= expiresAt)
+                          case tx.expiresAt >= nowSeconds of
+                            True -> acc |> Map.set key tx
+                            False -> acc
+                      )
+                      Map.empty
+            )
+        -- Loop forever
+        reaperLoop
+  -- Run reaper in background with error logging
+  let reaperWithErrorLogging :: Task Text Unit
+      reaperWithErrorLogging = do
+        result <- reaperLoop |> Task.asResult
+        case result of
+          Err err -> do
+            -- Log error and restart reaper
+            Console.print [fmt|[OAuth2 TransactionStore] Reaper error: #{err}, restarting...|]
+              |> Task.ignoreError
+            reaperWithErrorLogging
+          Ok _ -> Task.yield unit
+  _ <- AsyncTask.run reaperWithErrorLogging
+    |> Task.mapError (\_ -> "reaper start error" :: Text)
+  Task.yield unit
+
+
+-- | Get current time as Unix seconds.
+getCurrentTimeSeconds :: forall error. Task error Int
+getCurrentTimeSeconds = do
+  posixTime <- GhcPosix.getPOSIXTime |> Task.fromIO
+  let seconds :: Int = GhcPrelude.floor (GhcPrelude.realToFrac posixTime :: GhcPrelude.Double)
+  Task.yield seconds

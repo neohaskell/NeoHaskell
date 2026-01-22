@@ -53,7 +53,6 @@ spec = do
             let payload =
                   StatePayload
                     { provider = "oura"
-                    , userId = "user-123"
                     , nonce = "random-nonce-abc"
                     , issuedAt = 1700000000
                     , expiresAt = 1700000300 -- 5 minutes later
@@ -70,7 +69,6 @@ spec = do
                   Err err -> fail [fmt|Decode failed: #{toText err}|]
                   Ok decoded -> do
                     decoded.provider |> shouldBe "oura"
-                    decoded.userId |> shouldBe "user-123"
                     decoded.nonce |> shouldBe "random-nonce-abc"
 
       it "preserves all payload fields exactly" \_ -> do
@@ -81,7 +79,6 @@ spec = do
             let payload =
                   StatePayload
                     { provider = "github"
-                    , userId = "user-with-long-id-0123456789"
                     , nonce = "nonce-12345-xyz"
                     , issuedAt = 1700000000
                     , expiresAt = 1700000600
@@ -96,7 +93,6 @@ spec = do
                   Err _ -> fail "Decode failed"
                   Ok decoded -> do
                     decoded.provider |> shouldBe payload.provider
-                    decoded.userId |> shouldBe payload.userId
                     decoded.nonce |> shouldBe payload.nonce
                     decoded.issuedAt |> shouldBe payload.issuedAt
                     decoded.expiresAt |> shouldBe payload.expiresAt
@@ -113,7 +109,6 @@ spec = do
             let payload =
                   StatePayload
                     { provider = "oura"
-                    , userId = "user-123"
                     , nonce = "nonce"
                     , issuedAt = 1700000000
                     , expiresAt = 1700000300
@@ -138,7 +133,6 @@ spec = do
             let payload =
                   StatePayload
                     { provider = "oura"
-                    , userId = "user-123"
                     , nonce = "nonce"
                     , issuedAt = 1700000000
                     , expiresAt = 1700000300
@@ -163,7 +157,6 @@ spec = do
             let payload =
                   StatePayload
                     { provider = "oura"
-                    , userId = "user-123"
                     , nonce = "nonce"
                     , issuedAt = 1700000000
                     , expiresAt = 1700000300
@@ -195,7 +188,6 @@ spec = do
             let payload =
                   StatePayload
                     { provider = "oura"
-                    , userId = "user-123"
                     , nonce = "nonce"
                     , issuedAt = 1700000500 -- Issued at 500
                     , expiresAt = 1700000400 -- Expires at 400 (before issuedAt!)
@@ -223,7 +215,6 @@ spec = do
             let payload =
                   StatePayload
                     { provider = "oura"
-                    , userId = "user-123"
                     , nonce = "nonce"
                     , issuedAt = 1700000000
                     , expiresAt = 1700000300 -- Expires at 300 seconds
@@ -247,7 +238,6 @@ spec = do
             let payload =
                   StatePayload
                     { provider = "oura"
-                    , userId = "user-123"
                     , nonce = "nonce"
                     , issuedAt = 1700000000
                     , expiresAt = 1700000300
@@ -261,7 +251,7 @@ spec = do
                 decodedResult <- decodeStateToken key currentTime stateToken |> Task.asResult
                 case decodedResult of
                   Err err -> fail [fmt|Should have accepted token at expiry boundary: #{toText err}|]
-                  Ok decoded -> decoded.userId |> shouldBe "user-123"
+                  Ok decoded -> decoded.provider |> shouldBe "oura"
 
       it "allows small clock skew for issuedAt" \_ -> do
         let secret = "this-is-a-32-byte-secret-key!!!!"
@@ -271,7 +261,6 @@ spec = do
             let payload =
                   StatePayload
                     { provider = "oura"
-                    , userId = "user-123"
                     , nonce = "nonce"
                     , issuedAt = 1700000100 -- Issued "in the future"
                     , expiresAt = 1700000400
@@ -285,7 +274,7 @@ spec = do
                 decodedResult <- decodeStateToken key currentTime stateToken |> Task.asResult
                 case decodedResult of
                   Err err -> fail [fmt|Should allow 60s clock skew: #{toText err}|]
-                  Ok decoded -> decoded.userId |> shouldBe "user-123"
+                  Ok decoded -> decoded.provider |> shouldBe "oura"
 
       it "rejects token with excessive clock skew" \_ -> do
         let secret = "this-is-a-32-byte-secret-key!!!!"
@@ -295,7 +284,6 @@ spec = do
             let payload =
                   StatePayload
                     { provider = "oura"
-                    , userId = "user-123"
                     , nonce = "nonce"
                     , issuedAt = 1700000200 -- Issued "200 seconds in the future"
                     , expiresAt = 1700000500
@@ -325,7 +313,6 @@ spec = do
             let payload =
                   StatePayload
                     { provider = "oura"
-                    , userId = "user-123"
                     , nonce = "nonce"
                     , issuedAt = 1700000000
                     , expiresAt = 1700000300

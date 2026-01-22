@@ -4,10 +4,9 @@
 --
 -- State tokens are used in the OAuth2 Authorization Code flow to:
 --
--- 1. Prevent CSRF attacks (random nonce)
--- 2. Carry userId through the OAuth2 callback (no session required)
--- 3. Prevent replay attacks (one-time use enforced by TransactionStore)
--- 4. Prevent mix-up attacks (provider name in payload)
+-- 1. Prevent CSRF attacks (cryptographically random nonce)
+-- 2. Prevent replay attacks (one-time use enforced by TransactionStore)
+-- 3. Prevent mix-up attacks (provider name in payload)
 --
 -- = Security Properties
 --
@@ -15,25 +14,27 @@
 -- * Constant-time comparison prevents timing attacks
 -- * TTL enforcement prevents stale tokens
 -- * Clock skew tolerance (60s) handles minor time drift
+-- * NO PII in token (userId stored server-side in TransactionStore)
 --
 -- = Usage
 --
 -- @
 -- -- At /connect/{provider}
--- key <- getHmacKey  -- From environment/config
+-- key <- getHmacKey  -- From environment/config (MUST be persistent!)
+-- nonce <- StateToken.generateNonce
 -- let payload = StatePayload
 --       { provider = "oura"
---       , userId = "user-123"
---       , nonce = generatedNonce
+--       , nonce = nonce
 --       , issuedAt = now
 --       , expiresAt = now + 300  -- 5 minutes
 --       }
 -- stateToken <- StateToken.encodeStateToken key payload
+-- -- Store userId in TransactionStore alongside PKCE verifier
 --
 -- -- At /callback/{provider}
 -- payload <- StateToken.decodeStateToken key currentTime stateToken
 -- -- Verify payload.provider matches route
--- -- Use payload.userId to store tokens
+-- -- Retrieve userId from TransactionStore
 -- @
 module Auth.OAuth2.StateToken (
   -- * Types
@@ -43,6 +44,10 @@ module Auth.OAuth2.StateToken (
 
   -- * Key Management
   mkHmacKey,
+  generateKey,
+
+  -- * Nonce Generation
+  generateNonce,
 
   -- * Encoding/Decoding
   encodeStateToken,
@@ -51,9 +56,11 @@ module Auth.OAuth2.StateToken (
 
 import Basics
 import Bytes qualified
+import IO qualified
 
 import Crypto.Hash qualified as Hash
 import Crypto.MAC.HMAC qualified as HMAC
+import Crypto.Random qualified as Random
 import Data.ByteArray qualified as BA
 import Data.ByteArray.Encoding qualified as Encoding
 import Data.ByteString qualified as BS
@@ -99,18 +106,52 @@ mkHmacKey secret = do
     True -> Ok (HmacKey secretBytes)
 
 
+-- | Generate a cryptographically secure random HMAC key.
+--
+-- Creates a 32-byte (256-bit) key suitable for HMAC-SHA256.
+--
+-- WARNING: In production, load a persistent key from environment/config
+-- using 'mkHmacKey' instead. Generating a new key at runtime means all
+-- in-flight OAuth flows will break on restart.
+--
+-- @
+-- key <- StateToken.generateKey
+-- @
+generateKey :: Task err HmacKey
+generateKey = Task.fromIO do
+  randomBytes <- Random.getRandomBytes 32
+  IO.yield (HmacKey randomBytes)
+
+
+-- | Generate a cryptographically secure random nonce.
+--
+-- Creates a 16-byte (128-bit) random value encoded as base64url.
+-- This provides sufficient entropy for CSRF protection.
+--
+-- @
+-- nonce <- StateToken.generateNonce
+-- @
+generateNonce :: Task err Text
+generateNonce = Task.fromIO do
+  randomBytes <- Random.getRandomBytes 16
+  let encoded = Encoding.convertToBase Encoding.Base64URLUnpadded (randomBytes :: BS.ByteString)
+  IO.yield (Bytes.fromLegacy encoded |> Text.fromBytes)
+
+
 -- | Payload carried in the state token.
 --
 -- All fields are validated on decode to ensure token integrity.
+--
+-- SECURITY: This payload is signed but NOT encrypted - it can be read
+-- by anyone who intercepts it (including the OAuth provider). Therefore,
+-- NO PII (like userId) should be stored here. Store userId server-side
+-- in the TransactionStore instead.
 data StatePayload = StatePayload
   { -- | OAuth2 provider name (e.g., "oura", "github")
     -- Used to prevent mix-up attacks
     provider :: Text
-  , -- | User ID from JWT (sub claim)
-    -- Allows callback to store tokens without requiring session
-    userId :: Text
-  , -- | Random nonce for CSRF protection
-    -- Should be cryptographically random, at least 16 bytes
+  , -- | Cryptographically random nonce for CSRF protection
+    -- Generated via 'generateNonce', at least 16 bytes of entropy
     nonce :: Text
   , -- | Unix timestamp when token was issued
     issuedAt :: Int

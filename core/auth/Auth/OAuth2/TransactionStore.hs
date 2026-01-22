@@ -63,9 +63,13 @@ import Text (Text)
 -- | A short-lived OAuth2 transaction.
 --
 -- Stored between `/connect` and `/callback` requests.
+-- Contains all data needed for the callback that should NOT be in the state token.
 data Transaction = Transaction
   { -- | PKCE code verifier for token exchange
     verifier :: CodeVerifier
+  , -- | User ID from JWT (stored server-side for GDPR compliance)
+    -- This is NOT in the state token to avoid PII exposure
+    userId :: Text
   , -- | Unix timestamp when this transaction expires
     -- Caller is responsible for checking this
     expiresAt :: Int

@@ -1,6 +1,7 @@
 module Service.Transport.Web (
   WebTransport (..),
   AuthEnabled (..),
+  OAuth2Config (..),
   server,
 ) where
 
@@ -8,6 +9,8 @@ import Auth.Config qualified
 import Auth.Error (AuthError (..))
 import Auth.Jwks (JwksManager)
 import Auth.Middleware qualified as Middleware
+import Auth.OAuth2.Provider (OAuth2Action (..))
+import Auth.OAuth2.Routes (OAuth2Routes (..), OAuth2RouteError (..))
 import Auth.Options (AuthOptions (Authenticated))
 import Basics
 import Bytes (Bytes)
@@ -19,6 +22,7 @@ import Data.IORef qualified as GhcIORef
 import Data.List qualified as GhcList
 import GHC.TypeLits qualified as GHC
 import Json qualified
+import LinkedList qualified
 import Map qualified
 import Maybe (Maybe (..))
 import Network.HTTP.Types.Header qualified as HTTP
@@ -40,6 +44,7 @@ import Task (Task)
 import Task qualified
 import Text (Text)
 import Text qualified
+import ToText (toText)
 
 
 -- | Auth configuration for WebTransport endpoints.
@@ -51,12 +56,26 @@ data AuthEnabled = AuthEnabled
   }
 
 
+-- | OAuth2 provider configuration for WebTransport.
+-- When set, enables /connect/{provider}, /callback/{provider}, /disconnect/{provider} routes.
+data OAuth2Config = OAuth2Config
+  { -- | OAuth2 route handlers
+    routes :: OAuth2Routes
+  , -- | Action dispatcher for OAuth2 callbacks.
+    -- Called with the JSON-encoded action from onSuccess/onFailure/onDisconnect.
+    -- The application layer provides this to dispatch actions to command handlers.
+    dispatchAction :: Text -> Task Text Unit
+  }
+
+
 -- | HTTP/JSON transport using WAI/Warp.
 data WebTransport = WebTransport
   { port :: Int,
     maxBodySize :: Int,
     -- | Optional JWT authentication. Set via Application.withAuth.
-    authEnabled :: Maybe AuthEnabled
+    authEnabled :: Maybe AuthEnabled,
+    -- | Optional OAuth2 provider routes. Set via Application.withOAuth2Provider.
+    oauth2Config :: Maybe OAuth2Config
   }
 
 
@@ -70,12 +89,14 @@ deriveKnownHash "WebTransport"
 -- Port defaults to 8080.
 -- Max body size defaults to 1MB (1048576 bytes) to prevent DoS attacks.
 -- Auth is disabled by default - use Application.withAuth to enable.
+-- OAuth2 is disabled by default - use Application.withOAuth2Provider to enable.
 server :: WebTransport
 server =
   WebTransport
     { port = 8080,
       maxBodySize = 1048576,
-      authEnabled = Nothing
+      authEnabled = Nothing,
+      oauth2Config = Nothing
     }
 
 
@@ -200,6 +221,48 @@ instance Transport WebTransport where
                   |> Wai.responseLBS HTTP.status500 [(HTTP.hContentType, "application/json")]
           respond response500
 
+    -- Helper function for 400 Bad Request responses
+    let badRequest message respondFn = do
+          let response400 =
+                message
+                  |> Text.toBytes
+                  |> Bytes.toLazyLegacy
+                  |> Wai.responseLBS HTTP.status400 [(HTTP.hContentType, "application/json")]
+          respondFn response400
+
+    -- Helper function for 302 redirect responses
+    -- SECURITY: Sanitize URL to prevent header injection (CRLF attacks)
+    let redirect302 url respondFn = do
+          -- Remove any CR/LF characters that could allow header injection
+          let sanitizedUrl = url |> Text.filter (\c -> c != '\r' && c != '\n')
+          let locationHeader = (HTTP.hLocation, sanitizedUrl |> Text.toBytes |> Bytes.unwrap)
+          let response302 = Wai.responseLBS HTTP.status302 [locationHeader] ""
+          respondFn response302
+
+    -- Helper function for 429 Too Many Requests responses
+    let tooManyRequests retryAfter respondFn = do
+          let retryHeader = ("Retry-After", retryAfter |> toText |> Text.toBytes |> Bytes.unwrap)
+          let response429 =
+                "{\"error\":\"Too many requests\"}"
+                  |> Text.toBytes
+                  |> Bytes.toLazyLegacy
+                  |> Wai.responseLBS HTTP.status429 [(HTTP.hContentType, "application/json"), retryHeader]
+          respondFn response429
+
+    -- Helper function for OAuth2 route errors
+    -- SECURITY: Error messages are generic to avoid information leakage
+    let handleOAuth2Error err respondFn = do
+          case err of
+            -- Generic "not found" for all provider-related errors (prevents enumeration)
+            ProviderNotFound _ -> notFound "OAuth2 route not available"
+            StateValidationFailed _ -> unauthorized "Invalid or expired state token"
+            StateNotFound -> unauthorized "State token not found or already used"
+            TokenExchangeFailed _ -> internalError "Token exchange failed"
+            -- Generic mismatch error (doesn't reveal expected/actual)
+            ProviderMismatch _ _ -> badRequest "Invalid request" respondFn
+            MissingParameter _ -> badRequest "Invalid request" respondFn
+            RateLimited retryAfter -> tooManyRequests retryAfter respondFn
+
     -- Parse the request path to check if it matches /commands/<name> or /queries/<name>
     case Wai.pathInfo request of
       ["commands", commandNameKebab] -> do
@@ -315,6 +378,103 @@ instance Transport WebTransport where
                     processQueryWithClaims authContext.claims
           Maybe.Nothing ->
             notFound [fmt|Query not found: #{queryName}|]
+      -- OAuth2 routes: /connect/{provider}, /callback/{provider}, /disconnect/{provider}
+      ["connect", providerName] -> do
+        case webTransport.oauth2Config of
+          Maybe.Nothing -> notFound "OAuth2 not configured"
+          Maybe.Just oauth2 -> do
+            -- Connect requires authentication (need userId)
+            case webTransport.authEnabled of
+              Maybe.Nothing -> unauthorized "Authentication required for OAuth2 connect"
+              Maybe.Just auth -> do
+                authResult <- Middleware.checkAuth (Maybe.Just auth.jwksManager) auth.authConfig Authenticated request
+                case authResult of
+                  Result.Err authErr -> Middleware.respondWithAuthError authErr respond
+                  Result.Ok authContext -> do
+                    case authContext.claims of
+                      Maybe.Nothing -> unauthorized "Authentication required"
+                      Maybe.Just claims -> do
+                        -- Extract userId from claims (sub field)
+                        let userId = claims.sub
+                        result <- oauth2.routes.handleConnect providerName userId |> Task.asResult
+                        case result of
+                          Result.Err routeErr -> handleOAuth2Error routeErr respond
+                          Result.Ok authUrl -> redirect302 authUrl respond
+      ["callback", providerName] -> do
+        case webTransport.oauth2Config of
+          Maybe.Nothing -> notFound "OAuth2 not configured"
+          Maybe.Just oauth2 -> do
+            -- Callback does NOT require auth - userId is retrieved from server-side TransactionStore
+            -- Extract code and state from query params
+            let queryParams = Wai.queryString request
+            let getParam name = do
+                  let matches = queryParams |> LinkedList.filter (\(k, _) -> k == name)
+                  case matches of
+                    [] -> Maybe.Nothing
+                    ((_, v) : _) -> v |> fmap (\bs -> Bytes.fromLegacy bs |> Text.fromBytes)
+            case (getParam "code", getParam "state") of
+              (Maybe.Just code, Maybe.Just state) -> do
+                result <- oauth2.routes.handleCallback providerName code state |> Task.asResult
+                case result of
+                  Result.Err routeErr -> handleOAuth2Error routeErr respond
+                  Result.Ok (redirectUrl, maybeAction) -> do
+                    -- Dispatch action to command handler if present
+                    case maybeAction of
+                      Maybe.Nothing -> redirect302 redirectUrl respond
+                      Maybe.Just action -> do
+                        case action of
+                          SuccessAction actionJson -> do
+                            -- Success actions MUST succeed - failing means tokens are lost
+                            dispatchResult <- oauth2.dispatchAction actionJson |> Task.asResult
+                            case dispatchResult of
+                              Result.Err _ -> do
+                                -- Log for ops (sanitized - no user data in message)
+                                Console.print [fmt|[OAuth2] Success action dispatch failed|] |> Task.ignoreError
+                                -- Return 500 - DO NOT redirect to success URL
+                                internalError "Connection failed. Please try again."
+                              Result.Ok _ -> redirect302 redirectUrl respond
+                          FailureAction actionJson -> do
+                            -- Failure actions can fail silently - user already knows flow failed
+                            dispatchResult <- oauth2.dispatchAction actionJson |> Task.asResult
+                            case dispatchResult of
+                              Result.Err err -> Console.print [fmt|[OAuth2] Failure action dispatch failed: #{err}|] |> Task.ignoreError
+                              Result.Ok _ -> pass
+                            redirect302 redirectUrl respond
+                          DisconnectAction _ -> do
+                            -- DisconnectAction shouldn't appear in callback - defensive redirect
+                            redirect302 redirectUrl respond
+              _ -> badRequest "Missing code or state parameter" respond
+      ["disconnect", providerName] -> do
+        case webTransport.oauth2Config of
+          Maybe.Nothing -> notFound "OAuth2 not configured"
+          Maybe.Just oauth2 -> do
+            -- Disconnect requires authentication (need userId)
+            case webTransport.authEnabled of
+              Maybe.Nothing -> unauthorized "Authentication required for OAuth2 disconnect"
+              Maybe.Just auth -> do
+                authResult <- Middleware.checkAuth (Maybe.Just auth.jwksManager) auth.authConfig Authenticated request
+                case authResult of
+                  Result.Err authErr -> Middleware.respondWithAuthError authErr respond
+                  Result.Ok authContext -> do
+                    case authContext.claims of
+                      Maybe.Nothing -> unauthorized "Authentication required"
+                      Maybe.Just claims -> do
+                        let userId = claims.sub
+                        result <- oauth2.routes.handleDisconnect providerName userId |> Task.asResult
+                        case result of
+                          Result.Err routeErr -> handleOAuth2Error routeErr respond
+                          Result.Ok action -> do
+                            -- Dispatch disconnect action to command handler
+                            let actionJson = case action of
+                                  SuccessAction json -> json
+                                  FailureAction json -> json
+                                  DisconnectAction json -> json
+                            dispatchResult <- oauth2.dispatchAction actionJson |> Task.asResult
+                            case dispatchResult of
+                              Result.Err err -> do
+                                Console.print [fmt|[OAuth2] Disconnect action dispatch failed: #{err}|] |> Task.ignoreError
+                                internalError "Disconnect failed"
+                              Result.Ok _ -> okJson [fmt|{"status":"disconnected","provider":"#{providerName}"}|]
       _ ->
         notFound "Not found"
 

@@ -10,6 +10,9 @@ module Service.Application (
   -- * Auth Setup Type
   WebAuthSetup (..),
 
+  -- * OAuth2 Setup Type
+  OAuth2Setup (..),
+
   -- * Construction
   new,
 
@@ -26,6 +29,8 @@ module Service.Application (
   withInbound,
   withAuth,
   withAuthOverrides,
+  withOAuth2StateKey,
+  withOAuth2Provider,
 
   -- * Inspection
   isEmpty,
@@ -53,9 +58,16 @@ import Auth.Config (AuthOverrides)
 import Auth.Config qualified
 import Auth.Discovery qualified as Discovery
 import Auth.Jwks qualified as Jwks
+import Auth.OAuth2.Provider (OAuth2ProviderConfig (..))
+import Auth.OAuth2.Types (Provider (..))
+import Auth.OAuth2.RateLimiter qualified as RateLimiter
+import Auth.OAuth2.Routes qualified as OAuth2Routes
+import Auth.OAuth2.StateToken qualified as StateToken
+import Auth.OAuth2.TransactionStore.InMemory qualified as InMemoryTransactionStore
 
 import Basics
 import Console qualified
+import Environment qualified
 import Control.Concurrent.Async qualified as GhcAsync
 import Data.Either qualified as GhcEither
 import Default (Default (..))
@@ -67,6 +79,7 @@ import Json qualified
 import Map (Map)
 import Map qualified
 import Record qualified
+import LinkedList (LinkedList)
 import Maybe (Maybe (..))
 import Result (Result (..))
 import Service.Command.Core (NameOf)
@@ -117,6 +130,37 @@ data WebAuthSetup = WebAuthSetup
   }
 
 
+-- | Configuration for OAuth2 provider integration.
+--
+-- This is stored in the Application and converted to WebTransport.OAuth2Config at runtime.
+-- OAuth2 routes require JWT authentication to be enabled (via withAuth).
+--
+-- SECURITY: The HMAC key is loaded from an environment variable at runtime.
+-- This ensures the key is persistent across application restarts.
+--
+-- Example:
+--
+-- @
+-- let ouraProvider = OAuth2ProviderConfig
+--       { provider = Provider { name = "oura", ... }
+--       , clientId = ClientId "your-client-id"
+--       , ...
+--       }
+--
+-- app = Application.new
+--   |> Application.withTransport WebTransport.server
+--   |> Application.withAuth "https://auth.example.com"
+--   |> Application.withOAuth2StateKey "OAUTH2_STATE_KEY"
+--   |> Application.withOAuth2Provider ouraProvider
+-- @
+data OAuth2Setup = OAuth2Setup
+  { -- | Environment variable name containing the HMAC secret (min 32 bytes)
+    hmacKeyEnvVar :: Text
+  , -- | Configured OAuth2 providers
+    providers :: Array OAuth2ProviderConfig
+  }
+
+
 -- | Application combines multiple Services and Queries with shared infrastructure.
 --
 -- The Application type provides a builder pattern for configuring:
@@ -156,7 +200,8 @@ data Application = Application
     outboundRunners :: Array OutboundRunner,
     outboundLifecycleRunners :: Array OutboundLifecycleRunner,
     inboundIntegrations :: Array Integration.Inbound,
-    webAuthSetup :: Maybe WebAuthSetup
+    webAuthSetup :: Maybe WebAuthSetup,
+    oauth2Setup :: Maybe OAuth2Setup
   }
 
 
@@ -177,7 +222,8 @@ new =
       outboundRunners = Array.empty,
       outboundLifecycleRunners = Array.empty,
       inboundIntegrations = Array.empty,
-      webAuthSetup = Nothing
+      webAuthSetup = Nothing,
+      oauth2Setup = Nothing
     }
 
 
@@ -360,19 +406,7 @@ withQueryEndpoint ::
   Application
 withQueryEndpoint queryName handler app = do
   let updatedEndpoints = app.queryEndpoints |> Map.set queryName handler
-  Application
-    { eventStoreCreator = app.eventStoreCreator
-    , queryObjectStoreConfig = app.queryObjectStoreConfig
-    , queryRegistry = app.queryRegistry
-    , serviceRunners = app.serviceRunners
-    , transports = app.transports
-    , queryEndpoints = updatedEndpoints
-    , queryDefinitions = app.queryDefinitions
-    , outboundRunners = app.outboundRunners
-    , outboundLifecycleRunners = app.outboundLifecycleRunners
-    , inboundIntegrations = app.inboundIntegrations
-    , webAuthSetup = app.webAuthSetup
-    }
+  app {queryEndpoints = updatedEndpoints}
 
 
 -- | Check if any query endpoints have been configured.
@@ -555,6 +589,47 @@ runWith eventStore app = do
               }
         )
 
+  -- 13. Initialize OAuth2 if configured
+  maybeOAuth2Config <- case app.oauth2Setup of
+    Nothing -> Task.yield Nothing
+    Just (OAuth2Setup envVarName providerConfigs) -> do
+      -- OAuth2 routes require JWT authentication to be enabled
+      case app.webAuthSetup of
+        Nothing -> Task.throw "OAuth2 requires authentication to be enabled. Call withAuth before configuring OAuth2 providers."
+        Just _ -> pass
+      Console.print [fmt|[OAuth2] Loading HMAC key from environment variable #{envVarName}...|]
+      -- Load HMAC key from environment (declarative config, runtime loading)
+      hmacKey <- loadHmacKeyFromEnv envVarName
+      Console.print [fmt|[OAuth2] Initializing OAuth2 provider routes...|]
+      -- Create in-memory transaction store for PKCE verifiers + userId
+      transactionStore <- InMemoryTransactionStore.new
+      -- Create rate limiters for abuse prevention
+      connectRateLimiter <- RateLimiter.new RateLimiter.defaultConnectConfig
+      callbackRateLimiter <- RateLimiter.new RateLimiter.defaultCallbackConfig
+      -- Build provider map from array, detecting duplicates
+      providerMap <- buildProviderMap providerConfigs
+      -- Create route handlers with loaded HMAC key and rate limiters
+      let routeDeps =
+            OAuth2Routes.OAuth2RouteDeps
+              { OAuth2Routes.hmacKey = hmacKey,
+                OAuth2Routes.transactionStore = transactionStore,
+                OAuth2Routes.providers = providerMap,
+                OAuth2Routes.connectRateLimiter = connectRateLimiter,
+                OAuth2Routes.callbackRateLimiter = callbackRateLimiter
+              }
+      let routes = OAuth2Routes.createRoutes routeDeps
+      -- Create action dispatcher that decodes JSON and dispatches to command handlers
+      -- The JSON is expected to contain { "commandType": "CommandName", "commandData": {...} }
+      let dispatchAction :: Text -> Task Text Unit
+          dispatchAction actionJson = do
+            case Json.decodeText actionJson of
+              Err err -> Task.throw [fmt|Failed to decode OAuth2 action JSON: #{err}|]
+              Ok (payload :: Integration.CommandPayload) -> do
+                Dispatcher.dispatchCommand combinedCommandEndpoints payload
+      let providerCount = Array.length providerConfigs
+      Console.print [fmt|[OAuth2] Initialized #{providerCount} provider(s)|]
+      Task.yield (Just Web.OAuth2Config {Web.routes = routes, Web.dispatchAction = dispatchAction})
+
   -- Define cleanup actions that must always run
   let cleanupJwksManager = case maybeAuthEnabled of
         Just (Web.AuthEnabled manager _) -> do
@@ -575,11 +650,11 @@ runWith eventStore app = do
         cleanupJwksManager
         cleanupDispatcher
 
-  -- 13. Run each transport once with combined endpoints from all services
+  -- 14. Run each transport once with combined endpoints from all services
   -- When transports complete (or fail), cancel inbound workers for clean shutdown
   -- Use Task.finally to ensure cleanup always runs even if runTransports fails
   result <-
-    Transports.runTransports app.transports combinedEndpointsByTransport combinedQueryEndpoints maybeAuthEnabled
+    Transports.runTransports app.transports combinedEndpointsByTransport combinedQueryEndpoints maybeAuthEnabled maybeOAuth2Config
       |> Task.finally cleanupAll
       |> Task.asResult
 
@@ -822,3 +897,91 @@ withAuthOverrides authServerUrl overrides app =
               authOverrides = overrides
             }
     }
+
+
+-- | Initialize OAuth2 with an HMAC key loaded from environment.
+--
+-- The HMAC key is used to sign state tokens for CSRF protection.
+-- It is loaded from the specified environment variable at runtime.
+-- The key MUST be at least 32 bytes (256 bits) for security.
+--
+-- @
+-- app = Application.new
+--   |> Application.withOAuth2StateKey "OAUTH2_STATE_KEY"
+--   |> Application.withOAuth2Provider ouraConfig
+-- @
+withOAuth2StateKey ::
+  -- | Environment variable name containing the HMAC secret
+  Text ->
+  Application ->
+  Application
+withOAuth2StateKey envVarName app = do
+  let existingProviders = case app.oauth2Setup of
+        Just existing -> existing.providers
+        Nothing -> Array.empty
+  app {oauth2Setup = Just OAuth2Setup {hmacKeyEnvVar = envVarName, providers = existingProviders}}
+
+
+-- | Add an OAuth2 provider to the Application.
+--
+-- This enables OAuth2 provider integration routes:
+--
+-- * @GET /connect/{provider}@ - Initiate OAuth2 flow
+-- * @GET /callback/{provider}@ - OAuth2 callback
+-- * @POST /disconnect/{provider}@ - Disconnect provider
+--
+-- Requires 'withOAuth2StateKey' to be called first.
+-- Requires JWT authentication to be enabled (via withAuth).
+--
+-- Multiple providers can be added by calling this function multiple times:
+--
+-- @
+-- app = Application.new
+--   |> Application.withTransport WebTransport.server
+--   |> Application.withAuth "https://auth.example.com"
+--   |> Application.withOAuth2StateKey "OAUTH2_STATE_KEY"
+--   |> Application.withOAuth2Provider ouraConfig
+--   |> Application.withOAuth2Provider githubConfig
+-- @
+withOAuth2Provider ::
+  OAuth2ProviderConfig ->
+  Application ->
+  Application
+withOAuth2Provider providerConfig app = do
+  case app.oauth2Setup of
+    Nothing ->
+      -- withOAuth2StateKey not called - this is a configuration error
+      panic "withOAuth2Provider requires withOAuth2StateKey to be called first"
+    Just existingSetup -> do
+      let updatedProviders = existingSetup.providers |> Array.push providerConfig
+      app {oauth2Setup = Just existingSetup {providers = updatedProviders}}
+
+
+-- | Load HMAC key from environment variable.
+--
+-- This is called at runtime when the application starts.
+loadHmacKeyFromEnv :: Text -> Task Text StateToken.HmacKey
+loadHmacKeyFromEnv envVarName = do
+  keyText <- Environment.getVariable envVarName
+    |> Task.mapError (\_ -> [fmt|Environment variable #{envVarName} not found. OAuth2 requires a 32+ byte HMAC secret.|])
+  case StateToken.mkHmacKey keyText of
+    Err err -> Task.throw [fmt|Invalid HMAC key in #{envVarName}: #{err}|]
+    Ok key -> Task.yield key
+
+
+-- | Build provider map from array, failing on duplicate provider names.
+buildProviderMap :: Array OAuth2ProviderConfig -> Task Text (Map Text OAuth2ProviderConfig)
+buildProviderMap configs = do
+  let go ::
+        Map Text OAuth2ProviderConfig ->
+        LinkedList OAuth2ProviderConfig ->
+        Task Text (Map Text OAuth2ProviderConfig)
+      go acc remaining =
+        case remaining of
+          [] -> Task.yield acc
+          (cfg : rest) -> do
+            let providerName = cfg.provider.name
+            case Map.get providerName acc of
+              Just _ -> Task.throw [fmt|Duplicate OAuth2 provider configuration: '#{providerName}' is registered multiple times. Each provider name must be unique.|]
+              Nothing -> go (acc |> Map.set providerName cfg) rest
+  go Map.empty (configs |> Array.toLinkedList)
