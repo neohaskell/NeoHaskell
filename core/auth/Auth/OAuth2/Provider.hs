@@ -16,7 +16,7 @@
 -- -- TokenSet has no ToJSON instance by design - tokens go to SecretStore.
 --
 -- data OuraConnected = OuraConnected
---   { odataUserId :: Text
+--   { ouraUserId :: Text
 --   , ouraTokenKey :: Text  -- Key for SecretStore lookup
 --   }
 --   deriving (Generic)

@@ -230,9 +230,17 @@ noCommand = Task.yield Nothing
 --
 -- The command type must have a 'NameOf' instance and 'ToJSON' instance.
 --
+-- __Note__: Token types ('TokenSet', 'AccessToken', 'RefreshToken') have no
+-- 'ToJSON' instance by design. Store tokens in SecretStore and pass a
+-- reference key in your command instead.
+--
 -- @
 -- -- In OAuth2 callback configuration:
--- onSuccess = \\userId tokens -> Integration.encodeCommand (StoreOuraTokens userId tokens)
+-- onSuccess = \\userId tokens -> do
+--   -- First, store tokens securely and get a reference key
+--   let tokenKey = SecretStore.storeTokens userId tokens
+--   -- Then encode a command with the key (not the tokens)
+--   Integration.encodeCommand (OuraTokensStored userId tokenKey)
 -- @
 encodeCommand ::
   forall command name.
