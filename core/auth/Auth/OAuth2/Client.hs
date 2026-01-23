@@ -93,11 +93,12 @@ import Auth.OAuth2.Types (
   Scope (..),
   State,
   TokenSet (..),
-  ValidatedProvider (ValidatedProvider),
+  ValidatedProvider,
   getValidatedProvider,
   mkAccessToken,
   mkCodeVerifierUnsafe,
   mkRefreshToken,
+  unsafeValidatedProvider,
   unwrapAuthorizationCode,
   unwrapClientSecret,
   unwrapCodeVerifier,
@@ -266,7 +267,7 @@ validateProvider provider = do
         Err validationError -> do
           let errMsg = sanitizeValidationError validationError
           Task.throw (EndpointValidationFailed errMsg)
-        Ok _ -> Task.yield (ValidatedProvider provider)
+        Ok _ -> Task.yield (unsafeValidatedProvider provider)
 
 
 -- | Exchange an authorization code for tokens using a pre-validated provider.

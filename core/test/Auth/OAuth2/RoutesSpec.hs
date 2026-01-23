@@ -10,9 +10,9 @@ import Auth.OAuth2.Types (
   ClientId (..),
   Provider (..),
   Scope (..),
-  ValidatedProvider (ValidatedProvider),
   mkClientSecret,
   mkRedirectUri,
+  unsafeValidatedProvider,
  )
 import Core
 import Map qualified
@@ -57,8 +57,9 @@ mockValidatedProviderConfig = do
   -- Integration tests should use real providers.
   let provider = mockProvider
   -- NOTE: In production, use OAuth2.validateProvider. For unit tests with mock
-  -- providers, we construct ValidatedProvider directly using the exported constructor.
-  let validatedProvider = Auth.OAuth2.Types.ValidatedProvider provider
+  -- providers, we use unsafeValidatedProvider which is explicitly marked as
+  -- internal/test-only. This is safe because mock.example.com is not a real target.
+  let validatedProvider = unsafeValidatedProvider provider
   Task.yield
     ValidatedOAuth2ProviderConfig
       { provider = provider

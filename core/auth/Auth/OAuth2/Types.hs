@@ -11,8 +11,12 @@
 module Auth.OAuth2.Types (
   -- * Provider Configuration
   Provider (..),
-  ValidatedProvider (ValidatedProvider),
+  ValidatedProvider,
   getValidatedProvider,
+  -- | INTERNAL: Constructor for ValidatedProvider. 
+  -- Only use in Auth.OAuth2.Client.validateProvider and tests.
+  -- Do NOT use in application code - use validateProvider instead.
+  unsafeValidatedProvider,
 
   -- * Credentials
   ClientId (..),
@@ -119,6 +123,21 @@ getValidatedProvider :: ValidatedProvider -> Provider
 getValidatedProvider validatedProvider =
   case validatedProvider of
     ValidatedProvider p -> p
+
+
+-- | INTERNAL: Construct a ValidatedProvider without validation.
+--
+-- WARNING: This function bypasses SSRF protection. Only use in:
+--
+-- * 'Auth.OAuth2.Client.validateProvider' (after performing validation)
+-- * Test code (for creating test fixtures with mock providers)
+--
+-- NEVER use this in application code. Always use 'validateProvider' instead.
+--
+-- Using this function incorrectly can expose your application to SSRF attacks
+-- against internal infrastructure (AWS metadata service, Kubernetes API, etc.)
+unsafeValidatedProvider :: Provider -> ValidatedProvider
+unsafeValidatedProvider = ValidatedProvider
 
 
 instance Show ValidatedProvider where
