@@ -109,6 +109,7 @@ import Auth.UrlValidation (ValidationError (..))
 import Auth.UrlValidation qualified as UrlValidation
 import Basics
 import Bytes qualified
+import Console qualified
 import Char (Char)
 import Crypto.Hash qualified as Hash
 import LinkedList qualified
@@ -620,11 +621,20 @@ requestTokens tokenEndpoint formParams = do
 -- SECURITY: Endpoint URL validation is SKIPPED because ValidatedProvider
 -- guarantees the URL was validated at construction time.
 -- This is the high-performance path for 50k+ req/s scenarios.
+--
+-- AUDIT: Logs security events for EU/GDPR compliance:
+-- * Token request attempts (with sanitized endpoint)
+-- * Token request failures (with error category, no secrets)
+-- * Token request successes (no token values logged)
 requestTokensValidated ::
   Text ->
   [(Text, Text)] ->
   Task OAuth2Error TokenSet
 requestTokensValidated tokenEndpoint formParams = do
+  -- AUDIT: Log token request attempt (sanitized - no secrets)
+  let sanitizedEndpoint = sanitizeUrlForAudit tokenEndpoint
+  Console.print [fmt|[OAuth2 Audit] Token request to #{sanitizedEndpoint} (pre-validated)|]
+    |> Task.ignoreError
   let request =
         Http.request
           |> Http.withUrl tokenEndpoint
@@ -635,14 +645,53 @@ requestTokensValidated tokenEndpoint formParams = do
       |> Task.mapError parseHttpError
       |> Task.asResult
   case result of
-    Err err -> Task.throw err
+    Err err -> do
+      -- AUDIT: Log failure (error category only, no secrets)
+      Console.print [fmt|[OAuth2 Audit] Token request failed: #{sanitizedEndpoint} - #{errorCategory err}|]
+        |> Task.ignoreError
+      Task.throw err
     Ok response -> do
+      -- AUDIT: Log success (no token values)
+      Console.print [fmt|[OAuth2 Audit] Token request succeeded: #{sanitizedEndpoint}|]
+        |> Task.ignoreError
       Task.yield
         TokenSet
           { accessToken = mkAccessToken response.access_token
           , refreshToken = response.refresh_token |> fmap mkRefreshToken
           , expiresInSeconds = response.expires_in
           }
+
+
+-- | Sanitize URL for audit logs - extract only scheme://host:port
+-- SECURITY: Never log full URLs which may contain query parameters with secrets
+sanitizeUrlForAudit :: Text -> Text
+sanitizeUrlForAudit urlText = do
+  let urlString = Text.toLinkedList urlText
+  case URI.parseURI urlString of
+    Nothing -> "<invalid-url>"
+    Just uri -> do
+      let scheme = Text.fromLinkedList (URI.uriScheme uri)
+      case URI.uriAuthority uri of
+        Nothing -> scheme
+        Just auth -> do
+          let host = Text.fromLinkedList (URI.uriRegName auth)
+          let port = Text.fromLinkedList (URI.uriPort auth)
+          Text.concat [scheme, "//", host, port]
+
+
+-- | Extract error category for audit logging (no secrets)
+errorCategory :: OAuth2Error -> Text
+errorCategory err = case err of
+  TokenRequestFailed _ -> "token_request_failed"
+  InvalidGrant _ -> "invalid_grant"
+  InvalidClient _ -> "invalid_client"
+  ScopeDenied _ -> "scope_denied"
+  MalformedResponse _ -> "malformed_response"
+  NetworkError _ -> "network_error"
+  EndpointValidationFailed _ -> "endpoint_validation_failed"
+  InvalidState _ -> "invalid_state"
+  InvalidPkceVerifier _ -> "invalid_pkce_verifier"
+  InvalidRedirectUri _ -> "invalid_redirect_uri"
 
 
 -- | Parse HTTP error to OAuth2Error, attempting to extract OAuth2 error response.
