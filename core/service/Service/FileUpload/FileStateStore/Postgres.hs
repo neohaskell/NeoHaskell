@@ -87,8 +87,6 @@ import Text qualified
 data PostgresFileStoreError
   = PoolError HasqlPool.UsageError
   | DeserializationError Text
-  | TableInitializationError Text
-  | ConnectionError Text
   deriving (Eq, Show)
 
 
@@ -209,11 +207,15 @@ setStateImpl pool (FileRef fileRefText) state = do
 
 -- | Update state by applying an event atomically.
 -- Uses SELECT FOR UPDATE to prevent race conditions between concurrent updates.
+-- Returns an error if the existing row has corrupted state (rather than masking it).
 updateStateImpl :: HasqlPool.Pool -> FileRef -> FileUploadEvent -> Task Text ()
 updateStateImpl pool (FileRef fileRefText) event = do
   let session = updateStateAtomicSession fileRefText event
-  runPool pool session
+  result <- runPool pool session
     |> Task.mapError (\err -> [fmt|Database error: #{show err}|])
+  case result of
+    Err updateErr -> Task.throw updateErr
+    Ok _ -> Task.yield ()
 
 
 -- ==========================================================================
@@ -514,29 +516,68 @@ upsertStateSession row = do
 
 
 -- | Atomically update state by applying an event.
--- Uses a transaction to SELECT current state and UPSERT the new state.
-updateStateAtomicSession :: Text -> FileUploadEvent -> Session.Session ()
+-- Uses a transaction with SELECT FOR UPDATE to prevent race conditions.
+-- Returns an error if the existing row has corrupted/invalid state.
+updateStateAtomicSession :: Text -> FileUploadEvent -> Session.Session (Result Text ())
 updateStateAtomicSession fileRefText event = do
   -- Start transaction
   Session.sql "BEGIN"
+  
+  -- Ensure row exists (INSERT ... ON CONFLICT DO NOTHING) so SELECT FOR UPDATE has something to lock.
+  -- This prevents race conditions for new file_refs where no row exists yet.
+  ensureRowExistsSession fileRefText
   
   -- Get current state with SELECT FOR UPDATE (locks the row)
   maybeRow <- selectForUpdateSession fileRefText
   
   -- Apply event to get new state
-  let currentState = case maybeRow of
-        Nothing -> Lifecycle.initialState
-        Just row -> case deserializeState row of
-          Err _ -> Lifecycle.initialState  -- On deserialize error, treat as initial
-          Ok state -> state
-  let newState = Lifecycle.update event currentState
-  let newRow = serializeState fileRefText newState
-  
-  -- Upsert new state
-  upsertStateSession newRow
-  
-  -- Commit transaction
-  Session.sql "COMMIT"
+  case maybeRow of
+    Nothing -> do
+      -- This shouldn't happen after ensureRowExistsSession, but handle gracefully
+      Session.sql "ROLLBACK"
+      pure (Err [fmt|Row not found after insert for file_ref: #{fileRefText}|])
+    Just row -> do
+      case deserializeState row of
+        Err deserializeErr -> do
+          -- Corrupted state - rollback and report error, don't overwrite with initialState
+          Session.sql "ROLLBACK"
+          pure (Err [fmt|Corrupted state for file_ref #{fileRefText}: #{deserializeErr}|])
+        Ok currentState -> do
+          let newState = Lifecycle.update event currentState
+          let newRow = serializeState fileRefText newState
+          -- Upsert new state
+          upsertStateSession newRow
+          -- Commit transaction
+          Session.sql "COMMIT"
+          pure (Ok ())
+
+
+-- | Ensure a row exists for the given file_ref.
+-- Uses INSERT ... ON CONFLICT DO NOTHING to create an initial state row if missing.
+-- This allows SELECT FOR UPDATE to acquire a lock even for new file_refs.
+ensureRowExistsSession :: Text -> Session.Session ()
+ensureRowExistsSession fileRefText = do
+  let initialRow = serializeState fileRefText Lifecycle.initialState
+  let sql =
+        "INSERT INTO file_upload_state \
+        \(file_ref, status, blob_key, owner_hash, filename, content_type, \
+        \size_bytes, uploaded_at, expires_at, confirmed_by_request_id, updated_at) \
+        \VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW()) \
+        \ON CONFLICT (file_ref) DO NOTHING"
+  let encoder =
+        ((\r -> r.fileRef) >$< Encoders.param (Encoders.nonNullable Encoders.text))
+        <> ((\r -> r.status) >$< Encoders.param (Encoders.nonNullable Encoders.text))
+        <> ((\r -> r.blobKey) >$< Encoders.param (Encoders.nullable Encoders.text))
+        <> ((\r -> r.ownerHash) >$< Encoders.param (Encoders.nullable Encoders.text))
+        <> ((\r -> r.filename) >$< Encoders.param (Encoders.nullable Encoders.text))
+        <> ((\r -> r.contentType) >$< Encoders.param (Encoders.nullable Encoders.text))
+        <> ((\r -> r.sizeBytes) >$< Encoders.param (Encoders.nullable Encoders.int8))
+        <> ((\r -> r.uploadedAt) >$< Encoders.param (Encoders.nullable Encoders.int8))
+        <> ((\r -> r.expiresAt) >$< Encoders.param (Encoders.nullable Encoders.int8))
+        <> ((\r -> r.confirmedByRequestId) >$< Encoders.param (Encoders.nullable Encoders.text))
+  let decoder = Decoders.noResult
+  let statement = Statement (Text.toBytes sql |> Bytes.unwrap) encoder decoder True
+  Session.statement initialRow statement
 
 
 -- | Select state with FOR UPDATE lock (for atomic updates)
