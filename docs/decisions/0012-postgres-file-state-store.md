@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed
+Accepted
 
 ## Context
 
@@ -89,108 +89,103 @@ This follows the established pattern from `EventStore/` and `SnapshotCache/`: a 
 
 ### 2. Database Schema
 
-A single table stores file state:
+A single table stores file state, with nullable columns for state-dependent data:
 
 ```sql
 CREATE TABLE IF NOT EXISTS file_upload_state (
     -- Primary identifier
-    file_ref        TEXT PRIMARY KEY,
+    file_ref            VARCHAR(255) PRIMARY KEY,
     
-    -- Storage reference (where the blob lives)
-    blob_key        TEXT NOT NULL,
+    -- Lifecycle state: 'initial', 'pending', 'confirmed', 'deleted'
+    status              VARCHAR(20) NOT NULL,
     
-    -- File metadata
-    filename        TEXT NOT NULL,
-    content_type    TEXT NOT NULL,
-    size_bytes      BIGINT NOT NULL,
+    -- Storage reference (NULL for initial/deleted states)
+    blob_key            VARCHAR(500),
     
-    -- Ownership (hashed user identifier for lookups)
-    owner_hash      TEXT NOT NULL,
+    -- Ownership (NULL for initial/deleted states)
+    owner_hash          VARCHAR(255),
     
-    -- Lifecycle state: 'pending', 'confirmed', 'deleted'
-    status          TEXT NOT NULL DEFAULT 'pending',
+    -- File metadata (NULL for initial/deleted states)
+    filename            VARCHAR(1000),
+    content_type        VARCHAR(255),
+    size_bytes          BIGINT,
     
     -- Timestamps (Unix epoch seconds for consistency with nhcore DateTime)
-    uploaded_at     BIGINT NOT NULL,
-    confirmed_at    BIGINT,           -- NULL until confirmed
-    expires_at      BIGINT NOT NULL,  -- For pending files, when they expire
-    deleted_at      BIGINT,           -- NULL until deleted
+    uploaded_at         BIGINT,       -- When the file was uploaded
+    expires_at          BIGINT,       -- For pending files, when they expire
     
     -- For confirmed files: which request confirmed it
-    confirmed_by_request_id TEXT,
+    confirmed_by_request_id VARCHAR(255),
     
-    -- For deleted files: why it was deleted
-    deletion_reason TEXT,             -- 'orphaned', 'user_requested', 'admin_purge'
-    
-    -- Indexes for common queries
-    CONSTRAINT valid_status CHECK (status IN ('pending', 'confirmed', 'deleted'))
+    -- Audit timestamps
+    created_at          TIMESTAMPTZ DEFAULT NOW(),
+    updated_at          TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- Index for status-based queries
+CREATE INDEX IF NOT EXISTS idx_file_upload_state_status 
+    ON file_upload_state (status);
+
 -- Index for cleanup: find expired pending files
-CREATE INDEX IF NOT EXISTS idx_file_upload_state_cleanup 
-    ON file_upload_state (status, expires_at) 
+CREATE INDEX IF NOT EXISTS idx_file_upload_state_expires 
+    ON file_upload_state (expires_at) 
     WHERE status = 'pending';
 
 -- Index for ownership queries: find files by owner
 CREATE INDEX IF NOT EXISTS idx_file_upload_state_owner 
-    ON file_upload_state (owner_hash, status);
-
--- Index for blob cleanup: find deleted files with blobs to remove
-CREATE INDEX IF NOT EXISTS idx_file_upload_state_deleted_blobs
-    ON file_upload_state (status, deleted_at)
-    WHERE status = 'deleted';
+    ON file_upload_state (owner_hash);
 ```
 
 **Design rationale:**
 
 - **`file_ref` as primary key**: Direct lookup by file reference (the common case)
-- **`status` as TEXT**: More readable in queries than enum/int, small performance cost is acceptable
+- **`status` as VARCHAR**: More readable in queries than enum/int; supports 'initial', 'pending', 'confirmed', 'deleted'
+- **Nullable metadata columns**: State-dependent data (only populated for pending/confirmed states)
 - **Unix epoch timestamps**: Consistent with NeoHaskell's `DateTime.toEpochSeconds` pattern
-- **Nullable `confirmed_at`/`deleted_at`**: State-dependent columns avoid artificial default values
-- **Partial indexes**: Cleanup query only scans pending files; owner queries benefit from filtering
+- **Partial indexes**: Cleanup query only scans pending files via partial index on `expires_at`
+- **VARCHAR lengths**: Reasonable limits that match validation at the application layer
 
 ### 3. PostgreSQL FileStateStore Implementation
 
 ```haskell
 -- Service/FileUpload/FileStateStore/Postgres.hs
 module Service.FileUpload.FileStateStore.Postgres (
-  PostgresFileStateStoreConfig (..),
   new,
+  newWithCleanup,
+  Pool,
+  PostgresFileStoreError (..),
+  findExpiredPendingFiles,
+  deleteFileState,
 ) where
 
 import Core
-import Service.FileUpload.Core (FileRef, FileUploadEvent (..), OwnerHash (..))
-import Service.FileUpload.Lifecycle (FileUploadState (..))
-import Service.FileUpload.Web (FileStateStore (..))
 import Service.EventStore.Postgres (PostgresEventStore (..))
-import Service.EventStore.Postgres.Internal qualified as Postgres
-
--- | Configuration reuses the existing PostgresEventStore connection settings.
--- This ensures file state uses the same database as events.
-data PostgresFileStateStoreConfig = PostgresFileStateStoreConfig
-  { postgresConfig :: PostgresEventStore
-  }
+import Service.FileUpload.Web (FileStateStore (..))
+import Hasql.Pool (Pool)
 
 -- | Create a PostgreSQL-backed FileStateStore.
 -- Initializes the table schema on first use.
-new :: PostgresFileStateStoreConfig -> Task Text FileStateStore
-new config = do
-  -- Initialize table (idempotent - uses IF NOT EXISTS)
-  initializeTable config.postgresConfig
-  
-  Task.yield FileStateStore
-    { getState = getStateImpl config.postgresConfig
-    , setState = setStateImpl config.postgresConfig
-    , updateState = updateStateImpl config.postgresConfig
-    }
+new :: PostgresEventStore -> Task Text FileStateStore
+
+-- | Create with access to the connection pool for cleanup operations.
+-- Use this when you need the pool for findExpiredPendingFiles/deleteFileState.
+newWithCleanup :: PostgresEventStore -> Task Text (FileStateStore, Pool)
+
+-- | Find expired pending files for cleanup (requires pool from newWithCleanup).
+findExpiredPendingFiles :: Pool -> Int64 -> Task Text [(FileRef, BlobKey)]
+
+-- | Delete a file state record (requires pool from newWithCleanup).
+deleteFileState :: Pool -> FileRef -> Task Text ()
 ```
 
 **Key implementation details:**
 
-1. **Connection reuse**: Uses `Postgres.withConnection` from `EventStore.Postgres.Internal` to share the connection pool
-2. **Idempotent schema**: Table and indexes use `IF NOT EXISTS` for safe repeated initialization
-3. **Atomic updates**: Uses PostgreSQL's `INSERT ... ON CONFLICT DO UPDATE` for upsert semantics
-4. **State mapping**: Converts between `FileUploadState` ADT and database row representation
+1. **Reuses EventStore config**: Accepts `PostgresEventStore` config for consistent database settings
+2. **Connection pool management**: Creates a pool internally; exposes it via `newWithCleanup` for cleanup workers
+3. **Idempotent schema**: Table and indexes use `IF NOT EXISTS` for safe repeated initialization
+4. **Atomic updates**: Uses `BEGIN/COMMIT` transactions with `SELECT FOR UPDATE` for race-free state updates
+5. **Upsert semantics**: Uses PostgreSQL's `INSERT ... ON CONFLICT DO UPDATE` for set operations
+6. **State mapping**: Serializes `FileUploadState` ADT to/from database row representation
 
 ### 4. Interface Compatibility
 
@@ -208,14 +203,17 @@ data FileStateStore = FileStateStore
 
 **`setState`**: UPSERT (INSERT or UPDATE) the full state
 
-**`updateState`**: Event-specific UPDATE statements:
-- `FileUploaded` → INSERT new row with status='pending'
-- `FileConfirmed` → UPDATE status='confirmed', confirmed_at, confirmed_by_request_id
-- `FileDeleted` → UPDATE status='deleted', deleted_at, deletion_reason
+**`updateState`**: Atomic read-modify-write using transactions:
+- Runs in a `BEGIN/COMMIT` block with `SELECT FOR UPDATE` to lock the row
+- Reads current state (or uses `initialState` if not found)
+- Applies the event via `Lifecycle.update` to compute new state
+- Upserts the new state
+
+This ensures concurrent updates to the same file reference are serialized, matching the atomicity guarantee of the in-memory `ConcurrentMap.update` implementation.
 
 ### 5. Cleanup Query Enhancement
 
-The current cleanup implementation iterates through all entries in `ConcurrentMap`. With PostgreSQL, we can use an efficient query:
+The PostgreSQL implementation provides efficient cleanup through direct SQL queries:
 
 ```sql
 -- Find expired pending files for cleanup
@@ -223,19 +221,23 @@ SELECT file_ref, blob_key
 FROM file_upload_state 
 WHERE status = 'pending' 
   AND expires_at < $1  -- current epoch time
-LIMIT 100;            -- Process in batches
+  AND blob_key IS NOT NULL;
 ```
 
-This requires extending the `FileStateStore` interface with a cleanup-specific method:
+The cleanup functions are exported separately (not part of `FileStateStore` interface):
 
 ```haskell
--- Extended interface (optional, for Postgres only)
-data FileStateStoreExtended = FileStateStoreExtended
-  { base :: FileStateStore
-  , findExpiredPending :: Int -> Task Text (Array (FileRef, Text))
-    -- ^ Find up to N expired pending files with their blob keys
-  }
+-- Get the store and pool together
+(stateStore, pool) <- PostgresFileStore.newWithCleanup dbConfig
+
+-- In cleanup worker (runs periodically)
+expired <- PostgresFileStore.findExpiredPendingFiles pool currentTime
+for_ expired \(fileRef, blobKey) -> do
+  blobStore.delete blobKey
+  PostgresFileStore.deleteFileState pool fileRef
 ```
+
+**Important**: Always use `newWithCleanup` and reuse the returned pool. Do NOT create pools per-call, as that causes connection leaks.
 
 ### 6. Application Wiring
 
@@ -245,14 +247,19 @@ stateStoreMap <- FileUpload.newInMemoryFileStateStore
 let stateStore = FileUpload.inMemoryFileStateStore stateStoreMap
 let setup = FileUpload.defaultFileUploadSetup blobStore stateStore
 
--- New (PostgreSQL)
-stateStore <- FileUpload.FileStateStore.Postgres.new PostgresFileStateStoreConfig
-  { postgresConfig = postgresEventStoreConfig  -- Reuse existing config
-  }
+-- New (PostgreSQL) - basic usage
+import Service.FileUpload.FileStateStore.Postgres qualified as PostgresFileStore
+
+stateStore <- PostgresFileStore.new postgresConfig  -- Same config as EventStore
 let setup = FileUpload.defaultFileUploadSetup blobStore stateStore
+
+-- New (PostgreSQL) - with cleanup support
+(stateStore, pool) <- PostgresFileStore.newWithCleanup postgresConfig
+let setup = FileUpload.defaultFileUploadSetup blobStore stateStore
+-- Pass `pool` to your cleanup worker
 ```
 
-The change is a single-line swap: replace `inMemoryFileStateStore stateStoreMap` with `FileStateStore.Postgres.new config`.
+The change is a single-line swap: replace `inMemoryFileStateStore stateStoreMap` with `PostgresFileStore.new config`.
 
 ### 7. Migration Strategy
 

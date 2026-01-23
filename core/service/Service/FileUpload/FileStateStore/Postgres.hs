@@ -35,11 +35,17 @@
 module Service.FileUpload.FileStateStore.Postgres (
   -- * Initialization
   new,
+  newWithCleanup,
+
+  -- * Types
+  Pool,
+  PostgresFileStoreError (..),
 
   -- * Low-level access (for cleanup workers)
+  -- | These functions require a pool obtained from 'newWithCleanup'.
+  -- Do NOT create pools per-call - that causes connection leaks.
   findExpiredPendingFiles,
   deleteFileState,
-  PostgresFileStoreError (..),
 ) where
 
 import Basics
@@ -52,11 +58,12 @@ import Hasql.Connection.Setting.Connection qualified as ConnectionSettingConnect
 import Hasql.Connection.Setting.Connection.Param qualified as Param
 import Hasql.Decoders qualified as Decoders
 import Hasql.Encoders qualified as Encoders
+import Hasql.Pool (Pool)
 import Hasql.Pool qualified as HasqlPool
 import Hasql.Pool.Config qualified as HasqlPoolConfig
 import Hasql.Session qualified as Session
 import Hasql.Statement (Statement (..))
-import Maybe qualified
+
 import Result qualified
 import Service.EventStore.Postgres (PostgresEventStore (..))
 import Service.FileUpload.Core (
@@ -105,6 +112,30 @@ data PostgresFileStoreError
 -- @
 new :: PostgresEventStore -> Task Text FileStateStore
 new config = do
+  (store, _) <- newWithCleanup config
+  Task.yield store
+
+
+-- | Create a PostgreSQL-backed FileStateStore with access to the connection pool.
+--
+-- Use this when you need the pool for cleanup operations. The returned pool
+-- should be reused for all cleanup calls - never create pools per-call.
+--
+-- @
+-- (stateStore, pool) <- PostgresFileStore.newWithCleanup dbConfig
+--
+-- -- Use stateStore for normal operations
+-- let setup = FileUploadSetup { stateStore = stateStore, ... }
+--
+-- -- Use pool for cleanup worker (runs periodically)
+-- cleanupWorker = do
+--   expired <- PostgresFileStore.findExpiredPendingFiles pool currentTime
+--   for_ expired $ \\(fileRef, blobKey) -> do
+--     blobStore.delete blobKey
+--     PostgresFileStore.deleteFileState pool fileRef
+-- @
+newWithCleanup :: PostgresEventStore -> Task Text (FileStateStore, HasqlPool.Pool)
+newWithCleanup config = do
   -- Create connection pool
   pool <- createPool config
     |> Task.mapError (\err -> [fmt|Failed to create database pool: #{show err}|])
@@ -116,12 +147,13 @@ new config = do
     Err err -> Task.throw [fmt|Failed to initialize file state table: #{show err}|]
     Ok _ -> pass
 
-  -- Return the FileStateStore implementation
-  Task.yield FileStateStore
-    { getState = getStateImpl pool
-    , setState = setStateImpl pool
-    , updateState = updateStateImpl pool
-    }
+  -- Return the FileStateStore implementation and the pool
+  let store = FileStateStore
+        { getState = getStateImpl pool
+        , setState = setStateImpl pool
+        , updateState = updateStateImpl pool
+        }
+  Task.yield (store, pool)
 
 
 -- | Create a connection pool from PostgresEventStore config
@@ -175,16 +207,13 @@ setStateImpl pool (FileRef fileRefText) state = do
     |> Task.mapError (\err -> [fmt|Database error: #{show err}|])
 
 
--- | Update state by applying an event
+-- | Update state by applying an event atomically.
+-- Uses SELECT FOR UPDATE to prevent race conditions between concurrent updates.
 updateStateImpl :: HasqlPool.Pool -> FileRef -> FileUploadEvent -> Task Text ()
-updateStateImpl pool fileRef event = do
-  -- Get current state
-  maybeState <- getStateImpl pool fileRef
-  let currentState = maybeState |> Maybe.withDefault Lifecycle.initialState
-  -- Apply event
-  let newState = Lifecycle.update event currentState
-  -- Save new state
-  setStateImpl pool fileRef newState
+updateStateImpl pool (FileRef fileRefText) event = do
+  let session = updateStateAtomicSession fileRefText event
+  runPool pool session
+    |> Task.mapError (\err -> [fmt|Database error: #{show err}|])
 
 
 -- ==========================================================================
@@ -194,31 +223,31 @@ updateStateImpl pool fileRef event = do
 -- | Find all pending files that have expired.
 -- Returns list of (FileRef, BlobKey) for cleanup.
 --
--- Use this with a cleanup worker to delete expired files:
+-- IMPORTANT: Use the pool from 'newWithCleanup'. Do NOT create pools per-call.
 --
 -- @
+-- (stateStore, pool) <- PostgresFileStore.newWithCleanup dbConfig
+-- -- ... later in cleanup worker ...
 -- expired <- PostgresFileStore.findExpiredPendingFiles pool currentTime
--- for_ expired $ \(fileRef, blobKey) -> do
+-- for_ expired $ \\(fileRef, blobKey) -> do
 --   blobStore.delete blobKey
 --   PostgresFileStore.deleteFileState pool fileRef
 -- @
 findExpiredPendingFiles ::
-  PostgresEventStore ->
+  HasqlPool.Pool ->
   Int64 ->  -- Current epoch time
   Task Text [(FileRef, BlobKey)]
-findExpiredPendingFiles config currentTime = do
-  pool <- createPool config
-    |> Task.mapError (\err -> [fmt|Database error: #{show err}|])
+findExpiredPendingFiles pool currentTime = do
   let session = selectExpiredPendingSession currentTime
   runPool pool session
     |> Task.mapError (\err -> [fmt|Database error: #{show err}|])
 
 
 -- | Delete a file state record.
-deleteFileState :: PostgresEventStore -> FileRef -> Task Text ()
-deleteFileState config (FileRef fileRefText) = do
-  pool <- createPool config
-    |> Task.mapError (\err -> [fmt|Database error: #{show err}|])
+--
+-- IMPORTANT: Use the pool from 'newWithCleanup'. Do NOT create pools per-call.
+deleteFileState :: HasqlPool.Pool -> FileRef -> Task Text ()
+deleteFileState pool (FileRef fileRefText) = do
   let session = deleteStateSession fileRefText
   runPool pool session
     |> Task.mapError (\err -> [fmt|Database error: #{show err}|])
@@ -482,6 +511,45 @@ upsertStateSession row = do
   let decoder = Decoders.noResult
   let statement = Statement (Text.toBytes sql |> Bytes.unwrap) encoder decoder True
   Session.statement row statement
+
+
+-- | Atomically update state by applying an event.
+-- Uses a transaction to SELECT current state and UPSERT the new state.
+updateStateAtomicSession :: Text -> FileUploadEvent -> Session.Session ()
+updateStateAtomicSession fileRefText event = do
+  -- Start transaction
+  Session.sql "BEGIN"
+  
+  -- Get current state with SELECT FOR UPDATE (locks the row)
+  maybeRow <- selectForUpdateSession fileRefText
+  
+  -- Apply event to get new state
+  let currentState = case maybeRow of
+        Nothing -> Lifecycle.initialState
+        Just row -> case deserializeState row of
+          Err _ -> Lifecycle.initialState  -- On deserialize error, treat as initial
+          Ok state -> state
+  let newState = Lifecycle.update event currentState
+  let newRow = serializeState fileRefText newState
+  
+  -- Upsert new state
+  upsertStateSession newRow
+  
+  -- Commit transaction
+  Session.sql "COMMIT"
+
+
+-- | Select state with FOR UPDATE lock (for atomic updates)
+selectForUpdateSession :: Text -> Session.Session (Maybe FileStateRow)
+selectForUpdateSession fileRefText = do
+  let sql =
+        "SELECT file_ref, status, blob_key, owner_hash, filename, content_type, \
+        \size_bytes, uploaded_at, expires_at, confirmed_by_request_id \
+        \FROM file_upload_state WHERE file_ref = $1 FOR UPDATE"
+  let encoder = Encoders.param (Encoders.nonNullable Encoders.text)
+  let decoder = Decoders.rowMaybe rowDecoder
+  let statement = Statement (Text.toBytes sql |> Bytes.unwrap) encoder decoder True
+  Session.statement fileRefText statement
 
 
 -- | Select expired pending files for cleanup
