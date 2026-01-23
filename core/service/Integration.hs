@@ -47,7 +47,8 @@ module Integration (
   emitCommand,
   noCommand,
 
-  -- * Command Encoding (for callbacks)
+  -- * Command Payload Construction
+  makeCommandPayload,
   encodeCommand,
 
   -- * Inbound Types
@@ -179,6 +180,25 @@ action :: Task IntegrationError (Maybe CommandPayload) -> Action
 action task = Action (ActionInternal task)
 
 
+-- | Build a CommandPayload from a command.
+--
+-- This is the shared implementation used by 'emitCommand', 'encodeCommand',
+-- and 'inbound' to ensure consistent payload construction.
+--
+-- The command type must have a 'NameOf' instance and 'ToJSON' instance.
+makeCommandPayload ::
+  forall command name.
+  (Json.ToJSON command, name ~ NameOf command, GHC.KnownSymbol name) =>
+  command ->
+  CommandPayload
+makeCommandPayload cmd = do
+  let cmdName = GHC.symbolVal (Proxy @name) |> Text.fromLinkedList
+  CommandPayload
+    { commandType = cmdName
+    , commandData = Json.encode cmd
+    }
+
+
 -- | Emit a command as the result of an integration action.
 -- The command will be dispatched to the appropriate service.
 --
@@ -195,14 +215,7 @@ emitCommand ::
   (Json.ToJSON command, name ~ NameOf command, GHC.KnownSymbol name) =>
   command ->
   Task IntegrationError (Maybe CommandPayload)
-emitCommand cmd = do
-  let cmdName = GHC.symbolVal (Proxy @name) |> Text.fromLinkedList
-  let payload =
-        CommandPayload
-          { commandType = cmdName
-          , commandData = Json.encode cmd
-          }
-  Task.yield (Just payload)
+emitCommand cmd = Task.yield (Just (makeCommandPayload cmd))
 
 
 -- | No command to emit. Used when integration doesn't produce a follow-up command.
@@ -226,14 +239,7 @@ encodeCommand ::
   (Json.ToJSON command, name ~ NameOf command, GHC.KnownSymbol name) =>
   command ->
   Text
-encodeCommand cmd = do
-  let cmdName = GHC.symbolVal (Proxy @name) |> Text.fromLinkedList
-  let payload =
-        CommandPayload
-          { commandType = cmdName
-          , commandData = Json.encode cmd
-          }
-  Json.encodeText payload
+encodeCommand cmd = Json.encodeText (makeCommandPayload cmd)
 
 
 -- | Configuration for an inbound integration worker.
@@ -268,17 +274,10 @@ inbound ::
   InboundConfig command ->
   Inbound
 inbound config = do
-  let cmdName = GHC.symbolVal (Proxy @name) |> Text.fromLinkedList
   let worker =
         InboundInternal
           { _runWorker = \emitPayload ->
-              config.run \cmd -> do
-                let payload =
-                      CommandPayload
-                        { commandType = cmdName
-                        , commandData = Json.encode cmd
-                        }
-                emitPayload payload
+              config.run \cmd -> emitPayload (makeCommandPayload cmd)
           }
   Inbound worker
 
