@@ -365,9 +365,10 @@ testUser userId =
 authenticatedContext :: Text -> RequestContext
 authenticatedContext userId =
   RequestContext
-    { user = Just (testUser userId),
-      requestId = Uuid.nil,
-      timestamp = GhcClock.UTCTime (GhcCalendar.fromGregorian 1970 1 1) 0
+    { user = Just (testUser userId)
+    , files = Map.empty
+    , requestId = Uuid.nil
+    , timestamp = GhcClock.UTCTime (GhcCalendar.fromGregorian 1970 1 1) 0
     }
 
 

@@ -6,6 +6,7 @@ module Path (
   toText,
   path,
   joinPaths,
+  append,
   endsWith,
 ) where
 
@@ -89,6 +90,13 @@ joinPaths paths =
     |> Text.joinWith "/"
     |> fromText
     |> Maybe.getOrDie
+
+
+-- | Append a path component to a base path
+-- Designed for pipe style: basePath |> append childPath
+append :: Path -> Path -> Path
+append childPath basePath =
+  joinPaths [basePath, childPath]
 
 
 endsWith :: Text -> Path -> Bool

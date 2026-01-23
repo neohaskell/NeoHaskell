@@ -2,6 +2,7 @@ module Service.Transport.Web (
   WebTransport (..),
   AuthEnabled (..),
   OAuth2Config (..),
+  FileUploadEnabled (..),
   server,
 ) where
 
@@ -11,7 +12,9 @@ import Auth.Jwks (JwksManager)
 import Auth.Middleware qualified as Middleware
 import Auth.OAuth2.Provider (OAuth2Action (..))
 import Auth.OAuth2.Routes (OAuth2Routes (..), OAuth2RouteError (..))
-import Auth.Options (AuthOptions (Authenticated))
+import Auth.Options (AuthOptions (Authenticated, Everyone))
+import Array (Array)
+import Array qualified
 import Basics
 import Bytes (Bytes)
 import Bytes qualified
@@ -20,11 +23,12 @@ import Console qualified
 import Data.ByteString qualified as GhcBS
 import Data.IORef qualified as GhcIORef
 import Data.List qualified as GhcList
+
 import GHC.TypeLits qualified as GHC
 import Json qualified
 import LinkedList qualified
 import Map qualified
-import Maybe (Maybe (..))
+import Maybe (Maybe (..), withDefault)
 import Network.HTTP.Types.Header qualified as HTTP
 import Network.HTTP.Types.Status qualified as HTTP
 import Network.Wai qualified as Wai
@@ -35,6 +39,9 @@ import Result (Result (..))
 import Service.Auth (RequestContext)
 import Service.Auth qualified as Auth
 import Service.Command.Core (Command, NameOf)
+import Service.FileUpload.Core (FileRef (..))
+import Service.FileUpload.Core qualified as FileUpload
+import Service.FileUpload.Web (FileUploadRoutes (..))
 import Service.CommandExecutor.TH (deriveKnownHash)
 import Service.Query.Auth (QueryAuthError (..), QueryEndpointError (..))
 import Service.Response (CommandResponse)
@@ -68,6 +75,14 @@ data OAuth2Config = OAuth2Config
   }
 
 
+-- | File upload configuration for WebTransport.
+-- When set, enables POST /files/upload and GET /files/:fileRef routes.
+data FileUploadEnabled = FileUploadEnabled
+  { -- | File upload route handlers from Service.FileUpload.Web
+    fileUploadRoutes :: FileUploadRoutes
+  }
+
+
 -- | HTTP/JSON transport using WAI/Warp.
 data WebTransport = WebTransport
   { port :: Int,
@@ -75,7 +90,9 @@ data WebTransport = WebTransport
     -- | Optional JWT authentication. Set via Application.withAuth.
     authEnabled :: Maybe AuthEnabled,
     -- | Optional OAuth2 provider routes. Set via Application.withOAuth2Provider.
-    oauth2Config :: Maybe OAuth2Config
+    oauth2Config :: Maybe OAuth2Config,
+    -- | Optional file upload routes. Set via Application.withFileUpload.
+    fileUploadEnabled :: Maybe FileUploadEnabled
   }
 
 
@@ -90,13 +107,15 @@ deriveKnownHash "WebTransport"
 -- Max body size defaults to 1MB (1048576 bytes) to prevent DoS attacks.
 -- Auth is disabled by default - use Application.withAuth to enable.
 -- OAuth2 is disabled by default - use Application.withOAuth2Provider to enable.
+-- File uploads are disabled by default - use Application.withFileUpload to enable.
 server :: WebTransport
 server =
   WebTransport
     { port = 8080,
       maxBodySize = 1048576,
       authEnabled = Nothing,
-      oauth2Config = Nothing
+      oauth2Config = Nothing,
+      fileUploadEnabled = Nothing
     }
 
 
@@ -139,13 +158,141 @@ readBodyWithLimit maxSize request = Task.fromIO do
   readChunks
 
 
+-- | Parse multipart form data to extract file upload.
+-- Returns (filename, contentType, content) on success.
+-- This is a simplified parser for the common case of a single file upload.
+parseMultipartUpload :: Text -> Bytes -> Task Text (Result Text (Text, Text, Bytes))
+parseMultipartUpload contentTypeHeader bodyBytes = Task.fromIO do
+  -- Extract boundary from Content-Type header
+  let boundaryResult = extractBoundary contentTypeHeader
+  case boundaryResult of
+    Result.Err err -> pure (Result.Err err)
+    Result.Ok boundary -> do
+      -- Parse the multipart body
+      let bodyText = bodyBytes |> Text.fromBytes
+      let boundaryText = boundary |> Bytes.fromLegacy |> Text.fromBytes
+      pure (parseMultipartBody boundaryText bodyText)
+
+
+-- | Extract boundary string from Content-Type header
+-- Format: multipart/form-data; boundary=----WebKitFormBoundary...
+extractBoundary :: Text -> Result Text GhcBS.ByteString
+extractBoundary contentType = do
+  let parts = contentType |> Text.split ";"
+  let partsWithBoundary = parts |> Array.takeIf (\p -> Text.contains "boundary=" (Text.trim p))
+  case Array.first partsWithBoundary of
+    Maybe.Nothing -> Result.Err "Missing boundary in Content-Type"
+    Maybe.Just p -> do
+      let trimmed = Text.trim p
+      let eqParts = Text.split "=" trimmed
+      case Array.get 1 eqParts of
+        Maybe.Nothing -> Result.Err "Invalid boundary format"
+        Maybe.Just boundaryValue -> do
+          let cleaned = boundaryValue 
+                |> Text.filter (\c -> c != '"')
+                |> Text.trim
+          let boundaryWithPrefix = Text.append "--" cleaned
+          Result.Ok (boundaryWithPrefix |> Text.toBytes |> Bytes.unwrap)
+
+
+-- | Parse multipart body and extract first file part
+parseMultipartBody :: Text -> Text -> Result Text (Text, Text, Bytes)
+parseMultipartBody boundaryText bodyText = do
+  -- Split by boundary
+  let sections = bodyText |> Text.split boundaryText
+  -- Find section with filename (skip first empty section)
+  let sectionsAfterFirst = sections |> Array.drop 1
+  let fileSections = sectionsAfterFirst |> Array.takeIf (\s -> Text.contains "filename=" s)
+  case Array.first fileSections of
+    Maybe.Nothing -> Result.Err "No file found in upload"
+    Maybe.Just section -> parseFileSection section
+
+
+-- | Parse a single file section from multipart data
+parseFileSection :: Text -> Result Text (Text, Text, Bytes)
+parseFileSection section = do
+  -- Split into headers and content (separated by double newline)
+  let parts = section |> Text.split "\r\n\r\n"
+  let partsLen = Array.length parts
+  if partsLen == 0
+    then Result.Err "Invalid multipart section"
+    else if partsLen == 1
+      then Result.Err "No content in file section"
+      else do
+        let headerPart = parts |> Array.get 0 |> Maybe.withDefault ""
+        let contentParts = parts |> Array.drop 1
+        -- Parse headers
+        let headers = headerPart |> Text.split "\r\n"
+        let filename = extractFilenameFromHeaders headers
+        let contentType = extractContentTypeFromHeaders headers
+        
+        -- Join content parts and clean up boundary markers
+        let contentText = contentParts |> Text.joinWith "\r\n\r\n"
+        let cleanedContent = contentText
+              |> Text.trim
+              |> cleanTrailingBoundary
+        
+        case filename of
+          Result.Err e -> Result.Err e
+          Result.Ok fname -> 
+            Result.Ok (fname, contentType, cleanedContent |> Text.toBytes)
+
+
+-- | Clean trailing boundary markers from content
+cleanTrailingBoundary :: Text -> Text
+cleanTrailingBoundary t = do
+  let t1 = if Text.endsWith "--" t then Text.dropRight 2 t else t
+  let t2 = if Text.endsWith "\r\n" t1 then Text.dropRight 2 t1 else t1
+  t2
+
+
+-- | Extract filename from Content-Disposition header
+extractFilenameFromHeaders :: Array Text -> Result Text Text
+extractFilenameFromHeaders headers = do
+  let dispositionHeaders = headers |> Array.takeIf (\h -> Text.contains "Content-Disposition" h)
+  case Array.first dispositionHeaders of
+    Maybe.Nothing -> Result.Err "Missing Content-Disposition header"
+    Maybe.Just h -> extractFilenameFromDisposition h
+
+
+-- | Extract filename from a Content-Disposition header line
+extractFilenameFromDisposition :: Text -> Result Text Text
+extractFilenameFromDisposition header = do
+  let parts = header |> Text.split ";"
+  let filenameParts = parts |> Array.takeIf (\p -> Text.contains "filename=" (Text.trim p))
+  case Array.first filenameParts of
+    Maybe.Nothing -> Result.Ok ""  -- Empty filename is allowed
+    Maybe.Just p -> do
+      let trimmed = Text.trim p
+      let eqParts = Text.split "=" trimmed
+      case Array.get 1 eqParts of
+        Maybe.Nothing -> Result.Ok ""
+        Maybe.Just value -> Result.Ok (value |> Text.filter (\c -> c != '"') |> Text.trim)
+
+
+-- | Extract content type from Content-Type header
+extractContentTypeFromHeaders :: Array Text -> Text
+extractContentTypeFromHeaders headers = do
+  let ctHeaders = headers 
+        |> Array.takeIf (\h -> Text.contains "Content-Type" h && not (Text.contains "Content-Disposition" h))
+  case Array.first ctHeaders of
+    Maybe.Nothing -> "application/octet-stream"  -- Default
+    Maybe.Just h -> do
+      let colonParts = Text.split ":" h
+      case Array.get 1 colonParts of
+        Maybe.Nothing -> "application/octet-stream"
+        Maybe.Just value -> value |> Text.trim
+
+
 -- | Map a CommandResponse to its corresponding HTTP status code.
 -- This avoids needing to decode the response bytes to determine the status.
+-- Note: Failed returns 400 (Bad Request) because it typically indicates
+-- client errors like parse failures or invalid input, not server errors.
 commandResponseToHttpStatus :: CommandResponse -> HTTP.Status
 commandResponseToHttpStatus response = case response of
   Response.Accepted {} -> HTTP.status200
   Response.Rejected {} -> HTTP.status400
-  Response.Failed {} -> HTTP.status500
+  Response.Failed {} -> HTTP.status400
 
 
 instance Transport WebTransport where
@@ -475,6 +622,112 @@ instance Transport WebTransport where
                                 Console.print [fmt|[OAuth2] Disconnect action dispatch failed: #{err}|] |> Task.ignoreError
                                 internalError "Disconnect failed"
                               Result.Ok _ -> okJson [fmt|{"status":"disconnected","provider":"#{providerName}"}|]
+      -- File upload routes: POST /files/upload, GET /files/:fileRef
+      ["files", "upload"] -> do
+        case webTransport.fileUploadEnabled of
+          Maybe.Nothing -> notFound "File uploads not configured"
+          Maybe.Just fileUpload -> do
+            -- Extract owner identity from auth context
+            -- When auth is enabled, require valid JWT for file uploads (security)
+            -- When auth is disabled (dev mode), use shared anonymous identity
+            ownerHashResult <- case webTransport.authEnabled of
+              Maybe.Nothing -> do
+                -- No auth configured (dev mode) - use shared anonymous identity
+                -- WARNING: All anonymous uploads are accessible by anyone in this mode
+                Task.yield (Result.Ok "anonymous")
+              Maybe.Just auth -> do
+                -- Auth enabled - require valid JWT for uploads
+                authResult <- Middleware.checkAuth (Maybe.Just auth.jwksManager) auth.authConfig Authenticated request
+                case authResult of
+                  Result.Err authErr -> Task.yield (Result.Err authErr)
+                  Result.Ok authContext -> case authContext.claims of
+                    Maybe.Nothing -> Task.yield (Result.Err (Auth.Error.TokenMalformed "No claims in token"))
+                    Maybe.Just claims -> Task.yield (Result.Ok claims.sub)
+            
+            case ownerHashResult of
+              Result.Err authErr -> Middleware.respondWithAuthError authErr respond
+              Result.Ok ownerHash -> do
+                -- Read request body (multipart form data)
+                bodyResult <- readBodyWithLimit maxBodySize request
+                case bodyResult of
+                  Result.Err errorMessage -> payloadTooLarge errorMessage
+                  Result.Ok bodyBytes -> do
+                    -- Parse multipart form data
+                    let contentTypeHeader = request 
+                          |> Wai.requestHeaders 
+                          |> LinkedList.filter (\(name, _) -> name == HTTP.hContentType)
+                          |> LinkedList.head
+                    case contentTypeHeader of
+                      Maybe.Nothing -> badRequest "{\"error\":\"Missing Content-Type header\"}" respond
+                      Maybe.Just (_, ctValue) -> do
+                        let contentType = ctValue |> Bytes.fromLegacy |> Text.fromBytes
+                        if not (Text.contains "multipart/form-data" contentType)
+                          then badRequest "{\"error\":\"Expected multipart/form-data\"}" respond
+                          else do
+                            -- Parse multipart - extract file from form data
+                            parseResult <- parseMultipartUpload contentType bodyBytes
+                            case parseResult of
+                              Result.Err errMsg -> badRequest [fmt|{"error":"#{errMsg}"}|] respond
+                              Result.Ok (filename, fileContentType, fileContent) -> do
+                                -- Call upload handler with parsed metadata
+                                uploadResult <- fileUpload.fileUploadRoutes.handleUpload ownerHash filename fileContentType fileContent
+                                  |> Task.mapError (\err -> [fmt|{"error":"#{err}"}|])
+                                  |> Task.asResult
+                                case uploadResult of
+                                  Result.Err errJson -> internalError errJson
+                                  Result.Ok response -> do
+                                    -- Return success response
+                                    let responseJson = Json.encodeText response
+                                    okJson responseJson
+      ["files", fileRefText] -> do
+        case webTransport.fileUploadEnabled of
+          Maybe.Nothing -> notFound "File uploads not configured"
+          Maybe.Just fileUpload -> do
+            let fileRef = FileRef fileRefText
+            -- Extract owner identity from auth context
+            -- Use Everyone auth option to allow both anonymous and authenticated downloads
+            ownerHashResult <- case webTransport.authEnabled of
+              Maybe.Nothing -> Task.yield "anonymous"
+              Maybe.Just auth -> do
+                -- Check for JWT but don't require it (Everyone allows anonymous)
+                authResult <- Middleware.checkAuth (Maybe.Just auth.jwksManager) auth.authConfig Everyone request
+                case authResult of
+                  Result.Err _ -> Task.yield "anonymous"  -- No valid token, treat as anonymous
+                  Result.Ok authContext -> case authContext.claims of
+                    Maybe.Nothing -> Task.yield "anonymous"
+                    Maybe.Just claims -> Task.yield claims.sub  -- Use JWT subject as owner
+            
+            let ownerHash = ownerHashResult
+            
+            downloadResult <- fileUpload.fileUploadRoutes.handleDownload ownerHash fileRef
+              |> Task.asResult
+            case downloadResult of
+              Result.Err fileErr -> do
+                case fileErr of
+                  FileUpload.FileNotFound _ -> notFound "{\"error\":\"File not found\"}"
+                  FileUpload.NotOwner _ -> forbidden "{\"error\":\"Access denied\"}"
+                  FileUpload.FileExpired _ -> notFound "{\"error\":\"File expired\"}"
+                  FileUpload.FileIsDeleted _ -> notFound "{\"error\":\"File not found\"}"
+                  FileUpload.BlobMissing _ -> internalError "{\"error\":\"File content missing\"}"
+                  -- Don't leak internal error details to clients
+                  FileUpload.StorageError _ -> internalError "{\"error\":\"Internal server error\"}"
+                  FileUpload.StateLookupFailed _ _ -> internalError "{\"error\":\"Internal server error\"}"
+              Result.Ok (content, contentType, filename) -> do
+                -- Return file content with appropriate headers
+                -- Sanitize filename to prevent CRLF injection in Content-Disposition header
+                let sanitizedFilename = filename 
+                      |> Text.filter (\c -> c != '\r' && c != '\n' && c != '"' && c != '\\')
+                      |> Text.replace ";" "_"
+                let contentDispositionText = [fmt|attachment; filename="#{sanitizedFilename}"|]
+                let contentDisposition = contentDispositionText |> Text.toBytes |> Bytes.unwrap
+                let ctBytes = contentType |> Text.toBytes |> Bytes.unwrap
+                let headers = 
+                      [ (HTTP.hContentType, ctBytes)
+                      , ("Content-Disposition", contentDisposition)
+                      ]
+                let responseBody = content |> Bytes.toLazyLegacy
+                let response200 = Wai.responseLBS HTTP.status200 headers responseBody
+                respond response200
       _ ->
         notFound "Not found"
 

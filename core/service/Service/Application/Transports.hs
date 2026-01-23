@@ -16,7 +16,7 @@ import Maybe (Maybe (..))
 import Maybe qualified
 import Service.ServiceDefinition.Core (TransportValue (..))
 import Service.Transport (Transport (..), QueryEndpointHandler, EndpointHandler, Endpoints (..))
-import Service.Transport.Web (WebTransport (..), AuthEnabled, OAuth2Config)
+import Service.Transport.Web (WebTransport (..), AuthEnabled, OAuth2Config, FileUploadEnabled)
 import Task (Task)
 import Task qualified
 import Text (Text)
@@ -30,7 +30,8 @@ import Unsafe.Coerce qualified as GhcUnsafe
 --
 -- If 'maybeWebAuth' is provided, WebTransport will enforce JWT authentication.
 -- If 'maybeOAuth2' is provided, WebTransport will enable OAuth2 provider routes.
--- Other transports ignore the auth and OAuth2 parameters.
+-- If 'maybeFileUpload' is provided, WebTransport will enable file upload/download routes.
+-- Other transports ignore these parameters.
 runTransports ::
   Map Text TransportValue ->
   Map Text (Map Text EndpointHandler) ->
@@ -39,8 +40,10 @@ runTransports ::
   -- ^ Optional authentication configuration for WebTransport
   Maybe OAuth2Config ->
   -- ^ Optional OAuth2 provider configuration for WebTransport
+  Maybe FileUploadEnabled ->
+  -- ^ Optional file upload configuration for WebTransport
   Task Text Unit
-runTransports transportsMap endpointsByTransport queryEndpoints maybeWebAuth maybeOAuth2 = do
+runTransports transportsMap endpointsByTransport queryEndpoints maybeWebAuth maybeOAuth2 maybeFileUpload = do
   transportsMap
     |> Map.entries
     |> Task.forEach \(transportName, transportVal) -> do
@@ -54,13 +57,13 @@ runTransports transportsMap endpointsByTransport queryEndpoints maybeWebAuth may
         let transportQueryCount = sharedQueryCount
         Console.print [fmt|Starting transport: #{transportName} with #{commandCount} commands and #{transportQueryCount} queries (shared query endpoints: #{sharedQueryCount} total)|]
 
-        -- Handle WebTransport specially to configure auth and OAuth2 on the transport itself
+        -- Handle WebTransport specially to configure auth, OAuth2, and file uploads
         case transportName of
-          "WebTransport" -> runWebTransport transportVal commandEndpointsForTransport queryEndpoints maybeWebAuth maybeOAuth2
+          "WebTransport" -> runWebTransport transportVal commandEndpointsForTransport queryEndpoints maybeWebAuth maybeOAuth2 maybeFileUpload
           _ -> runGenericTransport transportVal commandEndpointsForTransport queryEndpoints
 
 
--- | Run WebTransport with JWT authentication and OAuth2 provider routes.
+-- | Run WebTransport with JWT authentication, OAuth2 provider routes, and file uploads.
 --
 -- SAFETY: We use unsafeCoerce to cast the existentially-typed transport to WebTransport.
 -- This is safe because:
@@ -74,14 +77,19 @@ runWebTransport ::
   Map Text QueryEndpointHandler ->
   Maybe AuthEnabled ->
   Maybe OAuth2Config ->
+  Maybe FileUploadEnabled ->
   Task Text Unit
-runWebTransport transportVal commandEndpoints queryEndpoints maybeAuth maybeOAuth2 = do
+runWebTransport transportVal commandEndpoints queryEndpoints maybeAuth maybeOAuth2 maybeFileUpload = do
   case transportVal of
     TransportValue transport -> do
       -- Cast the existentially-typed transport to WebTransport
       let baseWebTransport :: WebTransport = GhcUnsafe.unsafeCoerce transport
-      -- Configure auth and OAuth2 on the WebTransport itself
-      let webTransportWithConfig = baseWebTransport {authEnabled = maybeAuth, oauth2Config = maybeOAuth2}
+      -- Configure auth, OAuth2, and file uploads on the WebTransport itself
+      let webTransportWithConfig = baseWebTransport
+            { authEnabled = maybeAuth
+            , oauth2Config = maybeOAuth2
+            , fileUploadEnabled = maybeFileUpload
+            }
       -- Build endpoints with the configured transport
       let endpoints :: Endpoints WebTransport =
             Endpoints

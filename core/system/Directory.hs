@@ -2,9 +2,11 @@ module Directory (
   Error (..),
   CreateOptions (..),
   create,
+  createIfMissing,
   walk,
   copy,
   getCurrent,
+  removeRecursive,
 ) where
 
 import Array (Array)
@@ -134,3 +136,25 @@ getCurrent = do
       case result of
         Maybe.Just path -> Task.yield path
         Maybe.Nothing -> Task.throw NotReadable
+
+
+createIfMissing :: Path -> Task Error Unit
+createIfMissing dirPath = do
+  let createDirAction =
+        dirPath
+          |> Path.toLinkedList
+          |> System.Directory.createDirectoryIfMissing True
+  createDirAction
+    |> Task.fromFailableIO @Exception.IOError
+    |> Task.mapError (\_ -> NotWritable)
+
+
+removeRecursive :: Path -> Task Error Unit
+removeRecursive dirPath = do
+  let removeDirAction =
+        dirPath
+          |> Path.toLinkedList
+          |> System.Directory.removeDirectoryRecursive
+  removeDirAction
+    |> Task.fromFailableIO @Exception.IOError
+    |> Task.mapError (\_ -> NotWritable)

@@ -31,6 +31,10 @@ module Service.Application (
   withAuthOverrides,
   withOAuth2StateKey,
   withOAuth2Provider,
+  withFileUpload,
+
+  -- * File Upload Setup Type
+  FileUploadSetup (..),
 
   -- * Inspection
   isEmpty,
@@ -102,6 +106,8 @@ import Service.Integration.Dispatcher qualified as Dispatcher
 import Service.Integration.Types (OutboundRunner, OutboundLifecycleRunner)
 import Service.Transport (Transport (..), QueryEndpointHandler)
 import Service.Transport.Web qualified as Web
+import Service.FileUpload.Web (FileUploadSetup (..))
+import Service.FileUpload.Web qualified as FileUpload
 import Task (Task)
 import Task qualified
 import Text (Text)
@@ -202,7 +208,8 @@ data Application = Application
     outboundLifecycleRunners :: Array OutboundLifecycleRunner,
     inboundIntegrations :: Array Integration.Inbound,
     webAuthSetup :: Maybe WebAuthSetup,
-    oauth2Setup :: Maybe OAuth2Setup
+    oauth2Setup :: Maybe OAuth2Setup,
+    fileUploadSetup :: Maybe FileUploadSetup
   }
 
 
@@ -224,7 +231,8 @@ new =
       outboundLifecycleRunners = Array.empty,
       inboundIntegrations = Array.empty,
       webAuthSetup = Nothing,
-      oauth2Setup = Nothing
+      oauth2Setup = Nothing,
+      fileUploadSetup = Nothing
     }
 
 
@@ -631,6 +639,15 @@ runWith eventStore app = do
       Console.print [fmt|[OAuth2] Initialized #{providerCount} provider(s)|]
       Task.yield (Just Web.OAuth2Config {Web.routes = routes, Web.dispatchAction = dispatchAction})
 
+  -- 14. Initialize file uploads if configured
+  maybeFileUploadEnabled <- case app.fileUploadSetup of
+    Nothing -> Task.yield Nothing
+    Just setup -> do
+      Console.print "[FileUpload] Initializing file upload routes..."
+      let routes = FileUpload.createRoutes setup
+      Console.print "[FileUpload] File uploads enabled"
+      Task.yield (Just Web.FileUploadEnabled {Web.fileUploadRoutes = routes})
+
   -- Define cleanup actions that must always run
   let cleanupJwksManager = case maybeAuthEnabled of
         Just (Web.AuthEnabled manager _) -> do
@@ -651,11 +668,11 @@ runWith eventStore app = do
         cleanupJwksManager
         cleanupDispatcher
 
-  -- 14. Run each transport once with combined endpoints from all services
+  -- 15. Run each transport once with combined endpoints from all services
   -- When transports complete (or fail), cancel inbound workers for clean shutdown
   -- Use Task.finally to ensure cleanup always runs even if runTransports fails
   result <-
-    Transports.runTransports app.transports combinedEndpointsByTransport combinedQueryEndpoints maybeAuthEnabled maybeOAuth2Config
+    Transports.runTransports app.transports combinedEndpointsByTransport combinedQueryEndpoints maybeAuthEnabled maybeOAuth2Config maybeFileUploadEnabled
       |> Task.finally cleanupAll
       |> Task.asResult
 
@@ -956,6 +973,35 @@ withOAuth2Provider providerConfig app = do
     Just existingSetup -> do
       let updatedProviders = existingSetup.providers |> Array.push providerConfig
       app {oauth2Setup = Just existingSetup {providers = updatedProviders}}
+
+
+-- | Enable file uploads for WebTransport.
+--
+-- This adds file upload and download routes:
+--
+-- * @POST /files/upload@ - Upload a file (multipart form)
+-- * @GET /files/{fileRef}@ - Download a file
+--
+-- The uploaded files are stored in the configured BlobStore and tracked
+-- through the FileStateStore.
+--
+-- Example:
+--
+-- @
+-- blobStore <- BlobStore.Local.new "./uploads"
+-- stateStore <- FileUpload.newInMemoryFileStateStore
+-- let setup = FileUpload.defaultFileUploadSetup blobStore (FileUpload.inMemoryFileStateStore stateStore)
+--
+-- app = Application.new
+--   |> Application.withTransport WebTransport.server
+--   |> Application.withFileUpload setup
+-- @
+withFileUpload ::
+  FileUploadSetup ->
+  Application ->
+  Application
+withFileUpload setup app =
+  app {fileUploadSetup = Just setup}
 
 
 -- | Load HMAC key from environment variable.

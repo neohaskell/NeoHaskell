@@ -52,3 +52,4 @@ cli-next/cabal.project
 cli-next/.launcher/
 
 cli-next/neo-sandbox.cabal
+uploads/

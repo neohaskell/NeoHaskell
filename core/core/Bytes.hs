@@ -1,8 +1,20 @@
-module Bytes (Bytes (..), unwrap, fromLegacy, toLazyLegacy, fromLazyLegacy) where
+module Bytes (
+  Bytes (..),
+  unwrap,
+  fromLegacy,
+  toLazyLegacy,
+  fromLazyLegacy,
+  length,
+  empty,
+  replicate,
+  pack,
+) where
 
 import Basics
 import Data.ByteString qualified as ByteString
 import Data.ByteString.Lazy (LazyByteString)
+import Data.Word (Word8)
+import Prelude qualified as GhcPrelude
 
 
 newtype Bytes = INTERNAL_CORE_BYTES_CONSTRUCTOR ByteString.ByteString
@@ -29,3 +41,24 @@ toLazyLegacy bytes =
   bytes
     |> unwrap
     |> ByteString.fromStrict
+
+
+length :: Bytes -> GhcPrelude.Int
+length (INTERNAL_CORE_BYTES_CONSTRUCTOR bs) =
+  ByteString.length bs
+
+
+empty :: Bytes
+empty = INTERNAL_CORE_BYTES_CONSTRUCTOR ByteString.empty
+
+
+replicate :: GhcPrelude.Int -> Word8 -> Bytes
+replicate n byte =
+  ByteString.replicate n byte
+    |> INTERNAL_CORE_BYTES_CONSTRUCTOR
+
+
+pack :: [Word8] -> Bytes
+pack ws =
+  ByteString.pack ws
+    |> INTERNAL_CORE_BYTES_CONSTRUCTOR

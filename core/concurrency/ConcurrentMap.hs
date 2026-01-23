@@ -3,6 +3,7 @@ module ConcurrentMap (
   new,
   get,
   set,
+  update,
   getOrInsert,
   getOrInsertIf,
   getOrInsertIfM,
@@ -77,6 +78,27 @@ set key value concurrentMap =
       STMMap.insert value key stmMap
         |> GhcSTM.atomically
         |> Task.fromIO
+
+
+-- | Atomically update a value in the map.
+--
+-- The update function receives the current value (or Nothing if key doesn't exist)
+-- and returns the new value to store. The entire operation is atomic.
+--
+-- This is safer than get-then-set patterns which can have race conditions.
+update ::
+  forall key value.
+  (Hashable key, Eq key) =>
+  key ->
+  (Maybe value -> value) ->
+  ConcurrentMap key value ->
+  Task _ Unit
+update key updateFn (ConcurrentMap stmMap) =
+  GhcSTM.atomically do
+    existing <- STMMap.lookup key stmMap
+    let newValue = updateFn existing
+    STMMap.insert newValue key stmMap
+  |> Task.fromIO
 
 
 -- | Atomically get an existing value or insert a new one.

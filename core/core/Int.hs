@@ -1,5 +1,7 @@
 module Int (
   toFloat,
+  fromInt64,
+  toInt64,
   getRandom,
   getRandomBetween,
 ) where
@@ -23,6 +25,23 @@ import Task qualified
 toFloat :: Int -> Float
 toFloat =
   Prelude.fromIntegral
+
+
+-- | Convert an Int64 to an Int safely.
+-- Clamps to minBound/maxBound if value exceeds Int range (prevents silent truncation).
+fromInt64 :: Int64 -> Int
+fromInt64 value =
+  if value > Prelude.fromIntegral (Prelude.maxBound :: Int)
+    then Prelude.maxBound
+    else
+      if value < Prelude.fromIntegral (Prelude.minBound :: Int)
+        then Prelude.minBound
+        else Prelude.fromIntegral value
+
+
+-- | Convert an Int to an Int64
+toInt64 :: Int -> Int64
+toInt64 = Prelude.fromIntegral
 
 
 -- * Random Number Generation

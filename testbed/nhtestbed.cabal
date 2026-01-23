@@ -60,6 +60,9 @@ library
     Testbed.Cart.Integrations.EventCounter
     Testbed.Cart.Queries.CartSummary
     Testbed.Cart.Service
+    Testbed.Document.Commands.CreateDocument
+    Testbed.Document.Core
+    Testbed.Document.Service
     Testbed.Service
     Testbed.Stock.Commands.InitializeStock
     Testbed.Stock.Commands.ReserveStock
