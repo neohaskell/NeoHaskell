@@ -3,9 +3,12 @@ module Service.FileUpload.LifecycleSpec where
 import Core
 import Service.FileUpload.Core (
   BlobKey (..),
+  FileConfirmedData (..),
+  FileDeletedData (..),
   FileDeletionReason (..),
   FileRef (..),
   FileUploadEvent (..),
+  FileUploadedData (..),
   OwnerHash (..),
  )
 import Service.FileUpload.Lifecycle (
@@ -41,7 +44,7 @@ spec = do
             _ -> fail "Expected Pending state"
 
         it "sets all metadata fields correctly" \_ -> do
-          let event = FileUploaded
+          let eventData = FileUploadedData
                 { fileRef = FileRef "ref-1"
                 , ownerHash = OwnerHash "owner-abc"
                 , filename = "test.pdf"
@@ -51,6 +54,7 @@ spec = do
                 , expiresAt = 1700003600
                 , uploadedAt = 1700000000
                 }
+          let event = FileUploaded eventData
           let state = update event Initial
           case state of
             Pending pending -> do
@@ -64,7 +68,7 @@ spec = do
         it "transitions Pending to Confirmed" \_ -> do
           let uploadEvent = mkFileUploadedEvent "ref-1" 1700000000 1700003600
           let pendingState = update uploadEvent Initial
-          let confirmEvent = FileConfirmed
+          let confirmEvent = FileConfirmed FileConfirmedData
                 { fileRef = FileRef "ref-1"
                 , confirmedByRequestId = "request-123"
                 , confirmedAt = 1700000100
@@ -78,7 +82,7 @@ spec = do
         it "preserves metadata from Pending state" \_ -> do
           let uploadEvent = mkFileUploadedEvent "ref-1" 1700000000 1700003600
           let pendingState = update uploadEvent Initial
-          let confirmEvent = FileConfirmed
+          let confirmEvent = FileConfirmed FileConfirmedData
                 { fileRef = FileRef "ref-1"
                 , confirmedByRequestId = "request-123"
                 , confirmedAt = 1700000100
@@ -92,13 +96,13 @@ spec = do
         it "is idempotent - confirming already Confirmed is no-op" \_ -> do
           let uploadEvent = mkFileUploadedEvent "ref-1" 1700000000 1700003600
           let pendingState = update uploadEvent Initial
-          let confirmEvent1 = FileConfirmed
+          let confirmEvent1 = FileConfirmed FileConfirmedData
                 { fileRef = FileRef "ref-1"
                 , confirmedByRequestId = "request-123"
                 , confirmedAt = 1700000100
                 }
           let confirmedState = update confirmEvent1 pendingState
-          let confirmEvent2 = FileConfirmed
+          let confirmEvent2 = FileConfirmed FileConfirmedData
                 { fileRef = FileRef "ref-1"
                 , confirmedByRequestId = "request-456"
                 , confirmedAt = 1700000200
@@ -111,7 +115,7 @@ spec = do
             _ -> fail "Expected Confirmed state"
 
         it "does not transition from Initial state" \_ -> do
-          let confirmEvent = FileConfirmed
+          let confirmEvent = FileConfirmed FileConfirmedData
                 { fileRef = FileRef "ref-1"
                 , confirmedByRequestId = "request-123"
                 , confirmedAt = 1700000100
@@ -127,7 +131,7 @@ spec = do
         it "transitions Pending to Deleted" \_ -> do
           let uploadEvent = mkFileUploadedEvent "ref-1" 1700000000 1700003600
           let pendingState = update uploadEvent Initial
-          let deleteEvent = FileDeleted
+          let deleteEvent = FileDeleted FileDeletedData
                 { fileRef = FileRef "ref-1"
                 , reason = Orphaned
                 , deletedAt = 1700003700
@@ -140,7 +144,7 @@ spec = do
           let pendingState = update uploadEvent Initial
           let confirmEvent = mkConfirmEvent "ref-1"
           let confirmedState = update confirmEvent pendingState
-          let deleteEvent = FileDeleted
+          let deleteEvent = FileDeleted FileDeletedData
                 { fileRef = FileRef "ref-1"
                 , reason = UserRequested
                 , deletedAt = 1700004000
@@ -149,7 +153,7 @@ spec = do
           state |> shouldBe Deleted
 
         it "is idempotent - deleting Deleted is no-op" \_ -> do
-          let deleteEvent = FileDeleted
+          let deleteEvent = FileDeleted FileDeletedData
                 { fileRef = FileRef "ref-1"
                 , reason = AdminPurge
                 , deletedAt = 1700005000
@@ -229,7 +233,7 @@ spec = do
 
       describe "getOwnerHash" do
         it "returns ownerHash for Pending state" \_ -> do
-          let uploadEvent = FileUploaded
+          let uploadEvent = FileUploaded FileUploadedData
                 { fileRef = FileRef "ref-1"
                 , ownerHash = OwnerHash "owner-xyz"
                 , filename = "test.txt"
@@ -243,7 +247,7 @@ spec = do
           getOwnerHash pendingState |> shouldBe (Just (OwnerHash "owner-xyz"))
 
         it "returns ownerHash for Confirmed state" \_ -> do
-          let uploadEvent = FileUploaded
+          let uploadEvent = FileUploaded FileUploadedData
                 { fileRef = FileRef "ref-1"
                 , ownerHash = OwnerHash "owner-xyz"
                 , filename = "test.txt"
@@ -283,21 +287,21 @@ spec = do
 -- ==========================================================================
 
 mkFileUploadedEvent :: Text -> Int64 -> Int64 -> FileUploadEvent
-mkFileUploadedEvent refId uploadedAt expiresAt =
-  FileUploaded
+mkFileUploadedEvent refId uploadedAtTime expiresAtTime =
+  FileUploaded FileUploadedData
     { fileRef = FileRef refId
     , ownerHash = OwnerHash [fmt|owner-#{refId}|]
     , filename = [fmt|file-#{refId}.txt|]
     , contentType = "text/plain"
     , sizeBytes = 100
     , blobKey = BlobKey [fmt|blob-#{refId}|]
-    , expiresAt = expiresAt
-    , uploadedAt = uploadedAt
+    , expiresAt = expiresAtTime
+    , uploadedAt = uploadedAtTime
     }
 
 mkConfirmEvent :: Text -> FileUploadEvent
 mkConfirmEvent refId =
-  FileConfirmed
+  FileConfirmed FileConfirmedData
     { fileRef = FileRef refId
     , confirmedByRequestId = "request-default"
     , confirmedAt = 1700000100

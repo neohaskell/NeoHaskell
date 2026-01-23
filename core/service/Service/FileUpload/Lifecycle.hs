@@ -22,8 +22,10 @@ import Basics
 import Maybe (Maybe (..))
 import Service.FileUpload.Core (
   BlobKey (..),
+  FileConfirmedData (..),
   FileRef (..),
   FileUploadEvent (..),
+  FileUploadedData (..),
   OwnerHash (..),
  )
 import Text (Text)
@@ -88,33 +90,33 @@ initialState = Initial
 -- | Apply an event to transition state
 update :: FileUploadEvent -> FileUploadState -> FileUploadState
 update event state = case event of
-  FileUploaded {fileRef, ownerHash, filename, contentType, sizeBytes, blobKey, expiresAt, uploadedAt} ->
+  FileUploaded uploaded ->
     Pending
       PendingFile
         { metadata =
             FileMetadata
-              { ref = fileRef
-              , filename = filename
-              , contentType = contentType
-              , sizeBytes = sizeBytes
-              , blobKey = blobKey
-              , uploadedAt = uploadedAt
+              { ref = uploaded.fileRef
+              , filename = uploaded.filename
+              , contentType = uploaded.contentType
+              , sizeBytes = uploaded.sizeBytes
+              , blobKey = uploaded.blobKey
+              , uploadedAt = uploaded.uploadedAt
               }
-        , ownerHash = ownerHash
-        , expiresAt = expiresAt
+        , ownerHash = uploaded.ownerHash
+        , expiresAt = uploaded.expiresAt
         }
-  FileConfirmed {confirmedByRequestId} ->
+  FileConfirmed confirmed ->
     case state of
       Pending pending ->
         Confirmed
           ConfirmedFile
             { metadata = pending.metadata
             , ownerHash = pending.ownerHash
-            , confirmedByRequestId = confirmedByRequestId
+            , confirmedByRequestId = confirmed.confirmedByRequestId
             }
       Confirmed _ -> state -- Idempotent: already confirmed
       _ -> state -- Invalid transition: ignore
-  FileDeleted {} ->
+  FileDeleted _ ->
     case state of
       Pending _ -> Deleted
       Confirmed _ -> Deleted

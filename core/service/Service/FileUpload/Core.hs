@@ -10,6 +10,9 @@ module Service.FileUpload.Core (
 
   -- * Events
   FileUploadEvent (..),
+  FileUploadedData (..),
+  FileConfirmedData (..),
+  FileDeletedData (..),
   FileDeletionReason (..),
 
   -- * Configuration
@@ -96,28 +99,53 @@ instance Json.ToJSON ResolvedFile
 -- File Lifecycle Events
 -- ==========================================================================
 
+-- | Data for FileUploaded event
+data FileUploadedData = FileUploadedData
+  { fileRef :: FileRef
+  , ownerHash :: OwnerHash
+  , filename :: Text
+  , contentType :: Text
+  , sizeBytes :: Int64
+  , blobKey :: BlobKey
+  , expiresAt :: Int64
+  , uploadedAt :: Int64
+  }
+  deriving (Generic, Eq, Show)
+
+instance Json.FromJSON FileUploadedData
+instance Json.ToJSON FileUploadedData
+
+
+-- | Data for FileConfirmed event
+data FileConfirmedData = FileConfirmedData
+  { fileRef :: FileRef
+  , confirmedByRequestId :: Text
+  , confirmedAt :: Int64
+  }
+  deriving (Generic, Eq, Show)
+
+instance Json.FromJSON FileConfirmedData
+instance Json.ToJSON FileConfirmedData
+
+
+-- | Data for FileDeleted event
+data FileDeletedData = FileDeletedData
+  { fileRef :: FileRef
+  , reason :: FileDeletionReason
+  , deletedAt :: Int64
+  }
+  deriving (Generic, Eq, Show)
+
+instance Json.FromJSON FileDeletedData
+instance Json.ToJSON FileDeletedData
+
+
 -- | File lifecycle events (event-sourced state)
+-- Each constructor carries a dedicated record type to avoid partial field selectors
 data FileUploadEvent
-  = FileUploaded
-      { fileRef :: FileRef
-      , ownerHash :: OwnerHash
-      , filename :: Text
-      , contentType :: Text
-      , sizeBytes :: Int64
-      , blobKey :: BlobKey
-      , expiresAt :: Int64
-      , uploadedAt :: Int64
-      }
-  | FileConfirmed
-      { fileRef :: FileRef
-      , confirmedByRequestId :: Text
-      , confirmedAt :: Int64
-      }
-  | FileDeleted
-      { fileRef :: FileRef
-      , reason :: FileDeletionReason
-      , deletedAt :: Int64
-      }
+  = FileUploaded FileUploadedData
+  | FileConfirmed FileConfirmedData
+  | FileDeleted FileDeletedData
   deriving (Generic, Eq, Show)
 
 instance Json.FromJSON FileUploadEvent

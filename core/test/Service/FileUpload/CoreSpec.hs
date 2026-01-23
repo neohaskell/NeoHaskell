@@ -4,11 +4,14 @@ import Core
 import Json qualified
 import Service.FileUpload.Core (
   BlobKey (..),
+  FileConfirmedData (..),
+  FileDeletedData (..),
   FileDeletionReason (..),
   FileMetadata (..),
   FileRef (..),
   FileUploadConfig (..),
   FileUploadEvent (..),
+  FileUploadedData (..),
   OwnerHash (..),
   ResolvedFile (..),
  )
@@ -111,7 +114,7 @@ spec = do
     -- ==========================================================================
     describe "FileUploadEvent" do
       it "FileUploaded event contains required fields" \_ -> do
-        let event = FileUploaded
+        let eventData = FileUploadedData
               { fileRef = FileRef "ref-1"
               , ownerHash = OwnerHash "owner-hash"
               , filename = "file.txt"
@@ -121,34 +124,37 @@ spec = do
               , expiresAt = 1700003600  -- 6 hours later
               , uploadedAt = 1700000000
               }
+        let event = FileUploaded eventData
         case event of
-          FileUploaded {fileRef, sizeBytes} -> do
-            fileRef |> shouldBe (FileRef "ref-1")
-            sizeBytes |> shouldBe 500
+          FileUploaded uploaded -> do
+            uploaded.fileRef |> shouldBe (FileRef "ref-1")
+            uploaded.sizeBytes |> shouldBe 500
           _ -> fail "Expected FileUploaded event"
 
       it "FileConfirmed event contains required fields" \_ -> do
-        let event = FileConfirmed
+        let eventData = FileConfirmedData
               { fileRef = FileRef "ref-1"
               , confirmedByRequestId = "request-uuid-123"
               , confirmedAt = 1700000100
               }
+        let event = FileConfirmed eventData
         case event of
-          FileConfirmed {fileRef, confirmedByRequestId} -> do
-            fileRef |> shouldBe (FileRef "ref-1")
-            confirmedByRequestId |> shouldBe "request-uuid-123"
+          FileConfirmed confirmed -> do
+            confirmed.fileRef |> shouldBe (FileRef "ref-1")
+            confirmed.confirmedByRequestId |> shouldBe "request-uuid-123"
           _ -> fail "Expected FileConfirmed event"
 
       it "FileDeleted event contains required fields" \_ -> do
-        let event = FileDeleted
+        let eventData = FileDeletedData
               { fileRef = FileRef "ref-1"
               , reason = Orphaned
               , deletedAt = 1700010000
               }
+        let event = FileDeleted eventData
         case event of
-          FileDeleted {fileRef, reason} -> do
-            fileRef |> shouldBe (FileRef "ref-1")
-            reason |> shouldBe Orphaned
+          FileDeleted deleted -> do
+            deleted.fileRef |> shouldBe (FileRef "ref-1")
+            deleted.reason |> shouldBe Orphaned
           _ -> fail "Expected FileDeleted event"
 
     -- ==========================================================================
