@@ -384,24 +384,36 @@ cleanupExpiredFiles stateStore blobStore stateMap = do
     |> Task.mapError (\_ -> "Failed to create counter")
   
   -- Process entries in chunks (100 at a time) to avoid memory issues with large maps
+  -- Each entry is processed independently - failures are logged but don't abort the run
   let processEntry fileRef state = do
         case state of
           Pending pendingFile -> do
             if nowEpoch > pendingFile.expiresAt
               then do
-                -- Delete the blob
-                _ <- blobStore.delete pendingFile.metadata.blobKey
-                  |> Task.mapError (\_ -> "Failed to delete blob")
-                -- Update state to Deleted
-                let event = FileDeleted FileDeletedData
-                      { fileRef = fileRef
-                      , deletedAt = nowEpoch
-                      , reason = Orphaned  -- TTL expired without confirmation
-                      }
-                stateStore.updateState fileRef event
-                -- Increment counter
-                ConcurrentVar.modify (\n -> n + 1) counter
-                  |> Task.mapError (\_ -> "Failed to update counter")
+                -- Try to delete the blob (best effort, log failures)
+                deleteResult <- blobStore.delete pendingFile.metadata.blobKey
+                  |> Task.asResult
+                case deleteResult of
+                  Err _ -> do
+                    -- Log blob deletion failure but continue
+                    Console.print "[FileUpload Cleanup] Failed to delete blob, skipping state update\n"
+                  Ok _ -> do
+                    -- Blob deleted successfully, update state to Deleted
+                    let event = FileDeleted FileDeletedData
+                          { fileRef = fileRef
+                          , deletedAt = nowEpoch
+                          , reason = Orphaned  -- TTL expired without confirmation
+                          }
+                    stateUpdateResult <- stateStore.updateState fileRef event
+                      |> Task.asResult
+                    case stateUpdateResult of
+                      Err _ -> 
+                        Console.print "[FileUpload Cleanup] Failed to update state after blob deletion\n"
+                      Ok _ -> do
+                        -- Successfully cleaned up, increment counter (ignore counter errors)
+                        _ <- ConcurrentVar.modify (\n -> n + 1) counter
+                          |> Task.asResult
+                        pass
               else pass  -- Not expired yet
           _ -> pass  -- Skip non-pending files
   

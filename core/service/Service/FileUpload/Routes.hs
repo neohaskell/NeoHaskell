@@ -13,6 +13,7 @@ import Array qualified
 import Basics
 import Bytes (Bytes)
 import Bytes qualified
+import Data.Aeson qualified as GhcAeson
 import DateTime (DateTime)
 import DateTime qualified
 import Json qualified
@@ -45,11 +46,12 @@ data UploadRequest = UploadRequest
 
 
 -- | Successful upload response
+-- Note: blobKey is internal and intentionally omitted from JSON serialization
 data UploadResponse = UploadResponse
   { fileRef :: FileRef
   -- ^ Opaque reference for use in commands
   , blobKey :: BlobKey
-  -- ^ Internal key where blob is stored (not exposed to client)
+  -- ^ Internal key where blob is stored (NOT exposed to clients via JSON)
   , filename :: Text
   -- ^ Original filename
   , contentType :: Text
@@ -62,10 +64,15 @@ data UploadResponse = UploadResponse
   deriving (Generic, Eq, Show)
 
 
-instance Json.ToJSON UploadResponse
-
-
-instance Json.FromJSON UploadResponse
+-- | Custom ToJSON instance that omits internal blobKey field
+instance Json.ToJSON UploadResponse where
+  toJSON response = GhcAeson.object
+    [ ("fileRef", GhcAeson.toJSON response.fileRef)
+    , ("filename", GhcAeson.toJSON response.filename)
+    , ("contentType", GhcAeson.toJSON response.contentType)
+    , ("sizeBytes", GhcAeson.toJSON response.sizeBytes)
+    , ("expiresAt", GhcAeson.toJSON response.expiresAt)
+    ]
 
 
 -- | Upload errors
