@@ -226,6 +226,7 @@ library
     Service.FileUpload.Lifecycle
     Service.FileUpload.BlobStore
     Service.FileUpload.BlobStore.Local
+    Service.FileUpload.FileStateStore.Postgres
     Service.FileUpload.Routes
     Service.FileUpload.Resolver
     Service.FileUpload.Download

@@ -8,6 +8,7 @@ import Service.Application qualified as Application
 import Service.EventStore.Postgres (PostgresEventStore (..))
 import Service.FileUpload.BlobStore.Local (LocalBlobStoreConfig (..))
 import Service.FileUpload.BlobStore.Local qualified as LocalBlobStore
+import Service.FileUpload.FileStateStore.Postgres qualified as PostgresFileStore
 import Service.FileUpload.Web qualified as FileUpload
 import Service.Transport.Web qualified as WebTransport
 import Testbed.Cart.Core (CartEntity)
@@ -46,6 +47,7 @@ app = baseApp
 
 -- | Task-based application builder with file upload support
 -- Use this when you need file upload functionality.
+-- Uses PostgreSQL for persistent file state (survives restarts).
 appTask :: Task Text Application
 appTask = do
   -- Create local blob store for file uploads
@@ -53,14 +55,14 @@ appTask = do
   blobStore <- LocalBlobStore.createBlobStore LocalBlobStoreConfig
     { rootDir = uploadDir
     }
-  
-  -- Create in-memory state store for file lifecycle tracking
-  stateStoreMap <- FileUpload.newInMemoryFileStateStore
-  let stateStore = FileUpload.inMemoryFileStateStore stateStoreMap
-  
+
+  -- Create PostgreSQL-backed state store (persistent across restarts)
+  -- Uses the same database config as the event store
+  stateStore <- PostgresFileStore.new postgresConfig
+
   -- Build file upload setup with defaults
   let fileUploadSetup = FileUpload.defaultFileUploadSetup blobStore stateStore
-  
+
   -- Return application with file uploads enabled
   Task.yield (baseApp |> Application.withFileUpload fileUploadSetup)
 
