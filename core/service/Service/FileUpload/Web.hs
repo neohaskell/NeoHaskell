@@ -36,9 +36,10 @@ import Basics
 import Bytes (Bytes)
 import ConcurrentMap (ConcurrentMap)
 import ConcurrentMap qualified
+import ConcurrentVar qualified
 import Console qualified
 import DateTime qualified
-import Array qualified
+
 import Map (Map)
 import Maybe (Maybe (..))
 import Service.FileUpload.BlobStore (BlobStore (..))
@@ -363,38 +364,36 @@ cleanupExpiredFiles stateStore blobStore stateMap = do
   now <- DateTime.now |> Task.mapError (\_ -> "Failed to get time")
   let nowEpoch = DateTime.toEpochSeconds now
   
-  -- Get all entries from the state map
-  entries <- ConcurrentMap.entries stateMap
-    |> Task.mapError (\_ -> "Failed to read state map")
+  -- Use a counter to track deleted files
+  counter <- ConcurrentVar.containing 0
+    |> Task.mapError (\_ -> "Failed to create counter")
   
-  -- Find expired pending files
-  let expiredFiles = entries
-        |> Array.takeIf (\(_, state) -> isExpiredPending nowEpoch state)
-  
-  -- Delete each expired file
-  let deleteOne (fileRef, state) = do
+  -- Process entries in chunks (100 at a time) to avoid memory issues with large maps
+  let processEntry fileRef state = do
         case state of
           Pending pendingFile -> do
-            -- Delete the blob
-            _ <- blobStore.delete pendingFile.metadata.blobKey
-              |> Task.mapError (\_ -> "Failed to delete blob")
-            -- Update state to Deleted
-            let event = FileDeleted FileDeletedData
-                  { fileRef = fileRef
-                  , deletedAt = nowEpoch
-                  , reason = Orphaned  -- TTL expired without confirmation
-                  }
-            stateStore.updateState fileRef event
+            if nowEpoch > pendingFile.expiresAt
+              then do
+                -- Delete the blob
+                _ <- blobStore.delete pendingFile.metadata.blobKey
+                  |> Task.mapError (\_ -> "Failed to delete blob")
+                -- Update state to Deleted
+                let event = FileDeleted FileDeletedData
+                      { fileRef = fileRef
+                      , deletedAt = nowEpoch
+                      , reason = Orphaned  -- TTL expired without confirmation
+                      }
+                stateStore.updateState fileRef event
+                -- Increment counter
+                ConcurrentVar.modify (\n -> n + 1) counter
+                  |> Task.mapError (\_ -> "Failed to update counter")
+              else pass  -- Not expired yet
           _ -> pass  -- Skip non-pending files
   
-  -- Process all expired files
-  _ <- expiredFiles |> Task.forEach deleteOne
+  -- Process in chunks of 100 entries
+  ConcurrentMap.forEachChunked 100 processEntry stateMap
+    |> Task.mapError (\_ -> "Failed to iterate state map")
   
-  Task.yield (Array.length expiredFiles)
-
-
--- | Check if a file state is an expired pending file.
-isExpiredPending :: Int64 -> FileUploadState -> Bool
-isExpiredPending nowEpoch state = case state of
-  Pending pendingFile -> nowEpoch > pendingFile.expiresAt
-  _ -> False
+  -- Return count of deleted files
+  ConcurrentVar.get counter
+    |> Task.mapError (\_ -> "Failed to read counter")

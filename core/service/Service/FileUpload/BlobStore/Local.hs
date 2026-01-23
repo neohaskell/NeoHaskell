@@ -107,9 +107,18 @@ storeImpl rootDir blobKey bytes = do
           _ <- File.writeBytes tempPath bytes
             |> Task.mapError (\e -> StorageError [fmt|Write failed for #{keyText}: #{show e}|])
 
-          -- Atomic rename to final path
-          File.rename tempPath path
+          -- Atomic rename to final path, cleanup temp file on failure
+          renameResult <- File.rename tempPath path
             |> Task.mapError (\e -> StorageError [fmt|Rename failed for #{keyText}: #{show e}|])
+            |> Task.asResult
+          
+          case renameResult of
+            Ok _ -> pass
+            Err renameErr -> do
+              -- Attempt to clean up temp file on rename failure (best effort)
+              _ <- File.deleteIfExists tempPath
+                |> Task.asResult  -- Ignore cleanup failure
+              Task.throw renameErr
   where
     (BlobKey keyText) = blobKey
 

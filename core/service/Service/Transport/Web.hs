@@ -626,52 +626,57 @@ instance Transport WebTransport where
           Maybe.Nothing -> notFound "File uploads not configured"
           Maybe.Just fileUpload -> do
             -- Extract owner identity from auth context
-            -- Use Everyone auth option to allow both anonymous and authenticated uploads
+            -- When auth is enabled, require valid JWT for file uploads (security)
+            -- When auth is disabled (dev mode), use shared anonymous identity
             ownerHashResult <- case webTransport.authEnabled of
-              Maybe.Nothing -> Task.yield "anonymous"
+              Maybe.Nothing -> do
+                -- No auth configured (dev mode) - use shared anonymous identity
+                -- WARNING: All anonymous uploads are accessible by anyone in this mode
+                Task.yield (Result.Ok "anonymous")
               Maybe.Just auth -> do
-                -- Check for JWT but don't require it (Everyone allows anonymous)
-                authResult <- Middleware.checkAuth (Maybe.Just auth.jwksManager) auth.authConfig Everyone request
+                -- Auth enabled - require valid JWT for uploads
+                authResult <- Middleware.checkAuth (Maybe.Just auth.jwksManager) auth.authConfig Authenticated request
                 case authResult of
-                  Result.Err _ -> Task.yield "anonymous"  -- No valid token, treat as anonymous
+                  Result.Err authErr -> Task.yield (Result.Err authErr)
                   Result.Ok authContext -> case authContext.claims of
-                    Maybe.Nothing -> Task.yield "anonymous"
-                    Maybe.Just claims -> Task.yield claims.sub  -- Use JWT subject as owner
+                    Maybe.Nothing -> Task.yield (Result.Err (Auth.Error.TokenMalformed "No claims in token"))
+                    Maybe.Just claims -> Task.yield (Result.Ok claims.sub)
             
-            let ownerHash = ownerHashResult
-            
-            -- Read request body (multipart form data)
-            bodyResult <- readBodyWithLimit maxBodySize request
-            case bodyResult of
-              Result.Err errorMessage -> payloadTooLarge errorMessage
-              Result.Ok bodyBytes -> do
-                -- Parse multipart form data
-                let contentTypeHeader = request 
-                      |> Wai.requestHeaders 
-                      |> LinkedList.filter (\(name, _) -> name == HTTP.hContentType)
-                      |> LinkedList.head
-                case contentTypeHeader of
-                  Maybe.Nothing -> badRequest "{\"error\":\"Missing Content-Type header\"}" respond
-                  Maybe.Just (_, ctValue) -> do
-                    let contentType = ctValue |> Bytes.fromLegacy |> Text.fromBytes
-                    if not (Text.contains "multipart/form-data" contentType)
-                      then badRequest "{\"error\":\"Expected multipart/form-data\"}" respond
-                      else do
-                        -- Parse multipart - extract file from form data
-                        parseResult <- parseMultipartUpload contentType bodyBytes
-                        case parseResult of
-                          Result.Err errMsg -> badRequest [fmt|{"error":"#{errMsg}"}|] respond
-                          Result.Ok (filename, fileContentType, fileContent) -> do
-                            -- Call upload handler with parsed metadata
-                            uploadResult <- fileUpload.fileUploadRoutes.handleUpload ownerHash filename fileContentType fileContent
-                              |> Task.mapError (\err -> [fmt|{"error":"#{err}"}|])
-                              |> Task.asResult
-                            case uploadResult of
-                              Result.Err errJson -> internalError errJson
-                              Result.Ok response -> do
-                                -- Return success response
-                                let responseJson = Json.encodeText response
-                                okJson responseJson
+            case ownerHashResult of
+              Result.Err authErr -> Middleware.respondWithAuthError authErr respond
+              Result.Ok ownerHash -> do
+                -- Read request body (multipart form data)
+                bodyResult <- readBodyWithLimit maxBodySize request
+                case bodyResult of
+                  Result.Err errorMessage -> payloadTooLarge errorMessage
+                  Result.Ok bodyBytes -> do
+                    -- Parse multipart form data
+                    let contentTypeHeader = request 
+                          |> Wai.requestHeaders 
+                          |> LinkedList.filter (\(name, _) -> name == HTTP.hContentType)
+                          |> LinkedList.head
+                    case contentTypeHeader of
+                      Maybe.Nothing -> badRequest "{\"error\":\"Missing Content-Type header\"}" respond
+                      Maybe.Just (_, ctValue) -> do
+                        let contentType = ctValue |> Bytes.fromLegacy |> Text.fromBytes
+                        if not (Text.contains "multipart/form-data" contentType)
+                          then badRequest "{\"error\":\"Expected multipart/form-data\"}" respond
+                          else do
+                            -- Parse multipart - extract file from form data
+                            parseResult <- parseMultipartUpload contentType bodyBytes
+                            case parseResult of
+                              Result.Err errMsg -> badRequest [fmt|{"error":"#{errMsg}"}|] respond
+                              Result.Ok (filename, fileContentType, fileContent) -> do
+                                -- Call upload handler with parsed metadata
+                                uploadResult <- fileUpload.fileUploadRoutes.handleUpload ownerHash filename fileContentType fileContent
+                                  |> Task.mapError (\err -> [fmt|{"error":"#{err}"}|])
+                                  |> Task.asResult
+                                case uploadResult of
+                                  Result.Err errJson -> internalError errJson
+                                  Result.Ok response -> do
+                                    -- Return success response
+                                    let responseJson = Json.encodeText response
+                                    okJson responseJson
       ["files", fileRefText] -> do
         case webTransport.fileUploadEnabled of
           Maybe.Nothing -> notFound "File uploads not configured"

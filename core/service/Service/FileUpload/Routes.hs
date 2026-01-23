@@ -22,6 +22,7 @@ import Service.FileUpload.Core (BlobKey (..), FileRef (..), FileUploadConfig (..
 import Task (Task)
 import Task qualified
 import Text (Text)
+import Text qualified
 import Uuid qualified
 
 
@@ -126,26 +127,31 @@ handleUpload config blobStore request = do
           }
     Nothing -> pass  -- All types allowed
 
-  -- 3. Generate FileRef and BlobKey (both random UUIDs)
+  -- 3. Sanitize and truncate filename (max 255 chars for filesystem compatibility)
+  let maxFilenameLength = 255
+  let sanitizedFilename = request.filename
+        |> Text.left maxFilenameLength
+
+  -- 4. Generate FileRef and BlobKey (both random UUIDs)
   fileRefUuid <- Uuid.generate
   blobKeyUuid <- Uuid.generate
 
   let fileRef = FileRef [fmt|file_#{Uuid.toText fileRefUuid}|]
   let blobKey = BlobKey (Uuid.toText blobKeyUuid)
 
-  -- 4. Store blob in BlobStore
+  -- 5. Store blob in BlobStore
   _ <- blobStore.store blobKey request.content
     |> Task.mapError (\e -> StorageFailure (blobStoreErrorToText e))
 
-  -- 5. Calculate expiration time
+  -- 6. Calculate expiration time
   now <- DateTime.now |> Task.mapError (\_ -> StorageFailure "Failed to get current time")
   let expiresAt = DateTime.addSeconds config.pendingTtlSeconds now
 
-  -- 6. Return response
+  -- 7. Return response
   Task.yield UploadResponse
     { fileRef = fileRef
     , blobKey = blobKey
-    , filename = request.filename
+    , filename = sanitizedFilename
     , contentType = request.contentType
     , sizeBytes = actualSize
     , expiresAt = expiresAt
