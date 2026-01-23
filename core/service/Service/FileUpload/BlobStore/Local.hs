@@ -20,6 +20,7 @@ import Task (Task)
 import Task qualified
 import Text (Text)
 import Text qualified
+import Uuid qualified
 
 
 -- ==========================================================================
@@ -91,19 +92,24 @@ storeImpl rootDir blobKey bytes = do
   case getBlobPath rootDir blobKey of
     Err e -> Task.throw e
     Ok path -> do
-      -- Get temp path for atomic write
-      case Path.fromText [fmt|#{keyText}.tmp|] of
-        Nothing -> Task.throw (InvalidBlobKey "Failed to create temp path")
+      -- Generate unique temp filename to prevent concurrent write collisions
+      nonce <- Uuid.generate
+        |> Task.mapError (\_ -> StorageError "Failed to generate unique nonce for temp file")
+      let nonceText = Uuid.toText nonce
+
+      -- Get temp path with unique nonce
+      case Path.fromText [fmt|#{keyText}.#{nonceText}.tmp|] of
+        Nothing -> Task.throw (InvalidBlobKey [fmt|Failed to create temp path for key: #{keyText}|])
         Just tempKeyPath -> do
           let tempPath = rootDir |> Path.append tempKeyPath
 
           -- Write to temp file first
           _ <- File.writeBytes tempPath bytes
-            |> Task.mapError (\e -> StorageError [fmt|Write failed: #{show e}|])
+            |> Task.mapError (\e -> StorageError [fmt|Write failed for #{keyText}: #{show e}|])
 
           -- Atomic rename to final path
           File.rename tempPath path
-            |> Task.mapError (\e -> StorageError [fmt|Rename failed: #{show e}|])
+            |> Task.mapError (\e -> StorageError [fmt|Rename failed for #{keyText}: #{show e}|])
   where
     (BlobKey keyText) = blobKey
 
