@@ -65,6 +65,7 @@ common common_cfg
     random,
     should-not-typecheck,
     strict,
+    stringsearch,
     string-interpolate,
     template-haskell,
     text,
