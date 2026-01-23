@@ -28,7 +28,7 @@ import GHC.TypeLits qualified as GHC
 import Json qualified
 import LinkedList qualified
 import Map qualified
-import Maybe (Maybe (..), withDefault)
+import Maybe (Maybe (..))
 import Network.HTTP.Types.Header qualified as HTTP
 import Network.HTTP.Types.Status qualified as HTTP
 import Network.Wai qualified as Wai
@@ -161,6 +161,10 @@ readBodyWithLimit maxSize request = Task.fromIO do
 -- | Parse multipart form data to extract file upload.
 -- Returns (filename, contentType, content) on success.
 -- This is a simplified parser for the common case of a single file upload.
+--
+-- IMPORTANT: This parser operates on raw Bytes to correctly handle binary files.
+-- Binary files (PNG, JPEG, PDF, etc.) contain arbitrary byte sequences including CRLF.
+-- Converting to Text would corrupt the data.
 parseMultipartUpload :: Text -> Bytes -> Task Text (Result Text (Text, Text, Bytes))
 parseMultipartUpload contentTypeHeader bodyBytes = Task.fromIO do
   -- Extract boundary from Content-Type header
@@ -168,15 +172,13 @@ parseMultipartUpload contentTypeHeader bodyBytes = Task.fromIO do
   case boundaryResult of
     Result.Err err -> pure (Result.Err err)
     Result.Ok boundary -> do
-      -- Parse the multipart body
-      let bodyText = bodyBytes |> Text.fromBytes
-      let boundaryText = boundary |> Bytes.fromLegacy |> Text.fromBytes
-      pure (parseMultipartBody boundaryText bodyText)
+      -- Parse the multipart body using byte-level operations
+      pure (parseMultipartBodyBytes boundary bodyBytes)
 
 
 -- | Extract boundary string from Content-Type header
 -- Format: multipart/form-data; boundary=----WebKitFormBoundary...
-extractBoundary :: Text -> Result Text GhcBS.ByteString
+extractBoundary :: Text -> Result Text Bytes
 extractBoundary contentType = do
   let parts = contentType |> Text.split ";"
   let partsWithBoundary = parts |> Array.takeIf (\p -> Text.contains "boundary=" (Text.trim p))
@@ -191,59 +193,88 @@ extractBoundary contentType = do
           let cleaned = boundaryValue 
                 |> Text.filter (\c -> c != '"')
                 |> Text.trim
-          let boundaryWithPrefix = Text.append "--" cleaned
-          Result.Ok (boundaryWithPrefix |> Text.toBytes |> Bytes.unwrap)
+          -- SECURITY: Reject empty boundaries to prevent DoS via infinite splitOn
+          -- Also enforce RFC 2046 boundary length limit (1-70 characters)
+          if Text.isEmpty cleaned
+            then Result.Err "Boundary cannot be empty"
+            else if Text.length cleaned > 70
+              then Result.Err "Boundary exceeds maximum length"
+              else do
+                let boundaryWithPrefix = Text.append "--" cleaned
+                Result.Ok (boundaryWithPrefix |> Text.toBytes)
 
 
--- | Parse multipart body and extract first file part
-parseMultipartBody :: Text -> Text -> Result Text (Text, Text, Bytes)
-parseMultipartBody boundaryText bodyText = do
-  -- Split by boundary
-  let sections = bodyText |> Text.split boundaryText
-  -- Find section with filename (skip first empty section)
+-- | Parse multipart body operating entirely on Bytes to preserve binary content.
+parseMultipartBodyBytes :: Bytes -> Bytes -> Result Text (Text, Text, Bytes)
+parseMultipartBodyBytes boundary bodyBytes = do
+  -- Split by boundary (as bytes)
+  let sections = Bytes.splitOn boundary bodyBytes |> Array.fromLinkedList
+  -- Skip first empty section and find one with "filename=" in its headers
   let sectionsAfterFirst = sections |> Array.drop 1
-  let fileSections = sectionsAfterFirst |> Array.takeIf (\s -> Text.contains "filename=" s)
+  -- For each section, check if the header part contains "filename="
+  -- Headers are ASCII, so we can safely decode just the header portion
+  let hasFilename section = 
+        case Bytes.splitOnce crlfCrlf section of
+          Maybe.Nothing -> False
+          Maybe.Just (headerBytes, _) -> do
+            let headerText = headerBytes |> Text.fromBytes
+            Text.contains "filename=" headerText
+  let fileSections = sectionsAfterFirst |> Array.takeIf hasFilename
   case Array.first fileSections of
     Maybe.Nothing -> Result.Err "No file found in upload"
-    Maybe.Just section -> parseFileSection section
+    Maybe.Just section -> parseFileSectionBytes section
 
 
--- | Parse a single file section from multipart data
-parseFileSection :: Text -> Result Text (Text, Text, Bytes)
-parseFileSection section = do
-  -- Split into headers and content (separated by double newline)
-  let parts = section |> Text.split "\r\n\r\n"
-  let partsLen = Array.length parts
-  if partsLen == 0
-    then Result.Err "Invalid multipart section"
-    else if partsLen == 1
-      then Result.Err "No content in file section"
-      else do
-        let headerPart = parts |> Array.get 0 |> Maybe.withDefault ""
-        let contentParts = parts |> Array.drop 1
-        -- Parse headers
-        let headers = headerPart |> Text.split "\r\n"
-        let filename = extractFilenameFromHeaders headers
-        let contentType = extractContentTypeFromHeaders headers
-        
-        -- Join content parts and clean up boundary markers
-        let contentText = contentParts |> Text.joinWith "\r\n\r\n"
-        let cleanedContent = contentText
-              |> Text.trim
-              |> cleanTrailingBoundary
-        
-        case filename of
-          Result.Err e -> Result.Err e
-          Result.Ok fname -> 
-            Result.Ok (fname, contentType, cleanedContent |> Text.toBytes)
+-- | CRLF CRLF byte sequence (separates headers from content)
+crlfCrlf :: Bytes
+crlfCrlf = Bytes.pack [0x0D, 0x0A, 0x0D, 0x0A]  -- "\r\n\r\n"
 
 
--- | Clean trailing boundary markers from content
-cleanTrailingBoundary :: Text -> Text
-cleanTrailingBoundary t = do
-  let t1 = if Text.endsWith "--" t then Text.dropRight 2 t else t
-  let t2 = if Text.endsWith "\r\n" t1 then Text.dropRight 2 t1 else t1
-  t2
+-- | CRLF byte sequence
+crlf :: Bytes
+crlf = Bytes.pack [0x0D, 0x0A]  -- "\r\n"
+
+
+-- | Double dash byte sequence (end of multipart marker)
+doubleDash :: Bytes
+doubleDash = Bytes.pack [0x2D, 0x2D]  -- "--"
+
+
+-- | Parse a single file section from multipart data.
+-- Headers are decoded as text (they're ASCII), content stays as raw bytes.
+parseFileSectionBytes :: Bytes -> Result Text (Text, Text, Bytes)
+parseFileSectionBytes section = do
+  -- Split into headers and content (separated by CRLF CRLF)
+  case Bytes.splitOnce crlfCrlf section of
+    Maybe.Nothing -> Result.Err "Invalid multipart section: no header/content separator"
+    Maybe.Just (headerBytes, contentBytes) -> do
+      -- Headers are ASCII, safe to decode as text
+      let headerText = headerBytes |> Text.fromBytes
+      let headers = headerText |> Text.split "\r\n"
+      let filename = extractFilenameFromHeaders headers
+      let contentType = extractContentTypeFromHeaders headers
+      
+      -- Clean up trailing boundary markers from content (as bytes)
+      let cleanedContent = cleanTrailingBoundaryBytes contentBytes
+      
+      case filename of
+        Result.Err e -> Result.Err e
+        Result.Ok fname -> 
+          Result.Ok (fname, contentType, cleanedContent)
+
+
+-- | Clean trailing boundary markers from content (operates on bytes)
+cleanTrailingBoundaryBytes :: Bytes -> Bytes
+cleanTrailingBoundaryBytes content = do
+  -- Remove trailing "--" if present
+  let c1 = if Bytes.isSuffixOf doubleDash content 
+           then Bytes.dropEnd 2 content 
+           else content
+  -- Remove trailing CRLF (separator before boundary) if present
+  let c2 = if Bytes.isSuffixOf crlf c1 
+           then Bytes.dropEnd 2 c1 
+           else c1
+  c2
 
 
 -- | Extract filename from Content-Disposition header
