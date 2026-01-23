@@ -125,7 +125,7 @@ instance Show ValidatedProvider where
   show validatedProvider = do
     let provider = getValidatedProvider validatedProvider
     let providerName = provider.name
-    Text.toLinkedList (Text.concat ["ValidatedProvider {name = \"", providerName, "\", authorizeEndpoint = <validated>, tokenEndpoint = <validated>}"])
+    Text.toLinkedList [fmt|ValidatedProvider (name = "#{providerName}", authorizeEndpoint = <validated>, tokenEndpoint = <validated>)|]
 
 
 -- | OAuth2 client identifier.

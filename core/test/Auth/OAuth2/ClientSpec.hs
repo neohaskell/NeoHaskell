@@ -199,6 +199,95 @@ spec = do
         -- Same verifier should produce same challenge
         challenge1 |> shouldBe challenge2
 
+    describe "validateProvider" do
+      describe "success cases" do
+        -- NOTE: Can't test success without actual DNS resolution to public IPs.
+        -- Real providers (github.com, google.com) would work but make tests flaky.
+        -- Success path is tested via integration tests.
+        pass
+
+      describe "failure cases (security)" do
+        it "rejects provider with HTTP authorize endpoint" \_ -> do
+          let provider =
+                Provider
+                  { name = "http-auth"
+                  , authorizeEndpoint = "http://example.com/authorize" -- HTTP, not HTTPS
+                  , tokenEndpoint = "https://example.com/token"
+                  }
+          result <- OAuth2.validateProvider provider |> Task.asResult
+          case result of
+            Err (EndpointValidationFailed msg) -> do
+              -- Should mention HTTPS requirement
+              msg |> shouldSatisfy (\m -> Text.contains "HTTPS" m || Text.contains "https" m)
+            Err other -> fail [fmt|Expected EndpointValidationFailed, got: #{toText other}|]
+            Ok _ -> fail "Expected error for HTTP authorize endpoint"
+
+        it "rejects provider with HTTP token endpoint" \_ -> do
+          let provider =
+                Provider
+                  { name = "http-token"
+                  , authorizeEndpoint = "https://example.com/authorize"
+                  , tokenEndpoint = "http://example.com/token" -- HTTP, not HTTPS
+                  }
+          result <- OAuth2.validateProvider provider |> Task.asResult
+          case result of
+            Err (EndpointValidationFailed msg) -> do
+              msg |> shouldSatisfy (\m -> Text.contains "HTTPS" m || Text.contains "https" m)
+            Err other -> fail [fmt|Expected EndpointValidationFailed, got: #{toText other}|]
+            Ok _ -> fail "Expected error for HTTP token endpoint"
+
+        it "rejects provider with private IP in authorize endpoint (SSRF)" \_ -> do
+          let provider =
+                Provider
+                  { name = "ssrf-auth"
+                  , authorizeEndpoint = "https://192.168.1.1/authorize" -- Private IP
+                  , tokenEndpoint = "https://example.com/token"
+                  }
+          result <- OAuth2.validateProvider provider |> Task.asResult
+          case result of
+            Err (EndpointValidationFailed _) -> Task.yield ()
+            Err other -> fail [fmt|Expected EndpointValidationFailed, got: #{toText other}|]
+            Ok _ -> fail "Expected error for private IP in authorize endpoint"
+
+        it "rejects provider with loopback IP in token endpoint (SSRF)" \_ -> do
+          let provider =
+                Provider
+                  { name = "ssrf-token"
+                  , authorizeEndpoint = "https://example.com/authorize"
+                  , tokenEndpoint = "https://127.0.0.1/token" -- Loopback
+                  }
+          result <- OAuth2.validateProvider provider |> Task.asResult
+          case result of
+            Err (EndpointValidationFailed _) -> Task.yield ()
+            Err other -> fail [fmt|Expected EndpointValidationFailed, got: #{toText other}|]
+            Ok _ -> fail "Expected error for loopback IP in token endpoint"
+
+        it "rejects provider with localhost in endpoint (SSRF)" \_ -> do
+          let provider =
+                Provider
+                  { name = "ssrf-localhost"
+                  , authorizeEndpoint = "https://localhost/authorize"
+                  , tokenEndpoint = "https://example.com/token"
+                  }
+          result <- OAuth2.validateProvider provider |> Task.asResult
+          case result of
+            Err (EndpointValidationFailed _) -> Task.yield ()
+            Err other -> fail [fmt|Expected EndpointValidationFailed, got: #{toText other}|]
+            Ok _ -> fail "Expected error for localhost in endpoint"
+
+        it "rejects provider with malformed URL in authorize endpoint" \_ -> do
+          let provider =
+                Provider
+                  { name = "malformed"
+                  , authorizeEndpoint = "not-a-valid-url"
+                  , tokenEndpoint = "https://example.com/token"
+                  }
+          result <- OAuth2.validateProvider provider |> Task.asResult
+          case result of
+            Err (EndpointValidationFailed _) -> Task.yield ()
+            Err other -> fail [fmt|Expected EndpointValidationFailed, got: #{toText other}|]
+            Ok _ -> fail "Expected error for malformed URL"
+
     -- NOTE: Testing actual OAuth2 token exchange success paths requires
     -- a mock HTTP server, which is out of scope for unit tests.
     -- These flows are tested via integration tests with real OAuth2 providers.
