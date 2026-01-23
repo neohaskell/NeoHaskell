@@ -58,8 +58,9 @@ import Auth.Config (AuthOverrides)
 import Auth.Config qualified
 import Auth.Discovery qualified as Discovery
 import Auth.Jwks qualified as Jwks
-import Auth.OAuth2.Provider (OAuth2ProviderConfig (..))
-import Auth.OAuth2.Types (Provider (..))
+import Auth.OAuth2.Client qualified as OAuth2Client
+import Auth.OAuth2.Provider (OAuth2ProviderConfig (..), ValidatedOAuth2ProviderConfig (..))
+import Auth.OAuth2.Types (OAuth2Error (..), Provider (..))
 import Auth.OAuth2.RateLimiter qualified as RateLimiter
 import Auth.OAuth2.Routes qualified as OAuth2Routes
 import Auth.OAuth2.StateToken qualified as StateToken
@@ -969,13 +970,20 @@ loadHmacKeyFromEnv envVarName = do
     Ok key -> Task.yield key
 
 
--- | Build provider map from array, failing on duplicate provider names.
-buildProviderMap :: Array OAuth2ProviderConfig -> Task Text (Map Text OAuth2ProviderConfig)
+-- | Build provider map from array, validating endpoints and failing on duplicates.
+--
+-- SECURITY: Each provider's endpoints are validated once at startup for:
+-- * HTTPS requirement (tokens contain secrets)
+-- * No private/loopback IPs (SSRF protection)
+-- * DNS resolution check (rebinding attack prevention)
+--
+-- This validation is done ONCE here, not on every token request (performance at scale).
+buildProviderMap :: Array OAuth2ProviderConfig -> Task Text (Map Text ValidatedOAuth2ProviderConfig)
 buildProviderMap configs = do
   let go ::
-        Map Text OAuth2ProviderConfig ->
+        Map Text ValidatedOAuth2ProviderConfig ->
         LinkedList OAuth2ProviderConfig ->
-        Task Text (Map Text OAuth2ProviderConfig)
+        Task Text (Map Text ValidatedOAuth2ProviderConfig)
       go acc remaining =
         case remaining of
           [] -> Task.yield acc
@@ -983,5 +991,28 @@ buildProviderMap configs = do
             let providerName = cfg.provider.name
             case Map.get providerName acc of
               Just _ -> Task.throw [fmt|Duplicate OAuth2 provider configuration: '#{providerName}' is registered multiple times. Each provider name must be unique.|]
-              Nothing -> go (acc |> Map.set providerName cfg) rest
+              Nothing -> do
+                -- Validate provider endpoints (HTTPS, SSRF protection, DNS check)
+                validationResult <- OAuth2Client.validateProvider cfg.provider |> Task.asResult
+                case validationResult of
+                  Err (EndpointValidationFailed errMsg) ->
+                    Task.throw [fmt|OAuth2 provider '#{providerName}' endpoint validation failed: #{errMsg}|]
+                  Err otherError ->
+                    Task.throw [fmt|OAuth2 provider '#{providerName}' validation error: #{otherError}|]
+                  Ok validatedProvider -> do
+                    let validatedConfig =
+                          ValidatedOAuth2ProviderConfig
+                            { provider = cfg.provider
+                            , validatedProvider = validatedProvider
+                            , clientId = cfg.clientId
+                            , clientSecret = cfg.clientSecret
+                            , redirectUri = cfg.redirectUri
+                            , scopes = cfg.scopes
+                            , onSuccess = cfg.onSuccess
+                            , onFailure = cfg.onFailure
+                            , onDisconnect = cfg.onDisconnect
+                            , successRedirectUrl = cfg.successRedirectUrl
+                            , failureRedirectUrl = cfg.failureRedirectUrl
+                            }
+                    go (acc |> Map.set providerName validatedConfig) rest
   go Map.empty (configs |> Array.toLinkedList)

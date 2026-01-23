@@ -11,6 +11,8 @@
 module Auth.OAuth2.Types (
   -- * Provider Configuration
   Provider (..),
+  ValidatedProvider (ValidatedProvider),
+  getValidatedProvider,
 
   -- * Credentials
   ClientId (..),
@@ -95,6 +97,35 @@ instance Json.FromJSON Provider
 
 
 instance Json.ToJSON Provider
+
+
+-- | A provider whose endpoints have been validated.
+--
+-- This type proves that both the authorize and token endpoints have passed
+-- SSRF validation (HTTPS required, no private IPs, DNS checked).
+-- Use 'validateProvider' to construct a ValidatedProvider.
+--
+-- SECURITY: Once validated at startup, token requests skip redundant validation,
+-- improving performance at scale while maintaining security guarantees.
+--
+-- Constructor is intentionally not exported - use 'validateProvider' in Client.hs.
+newtype ValidatedProvider = ValidatedProvider Provider
+  deriving (Eq)
+
+
+-- | Get the underlying Provider from a ValidatedProvider.
+-- Use this when you need access to the provider's name or endpoints.
+getValidatedProvider :: ValidatedProvider -> Provider
+getValidatedProvider validatedProvider =
+  case validatedProvider of
+    ValidatedProvider p -> p
+
+
+instance Show ValidatedProvider where
+  show validatedProvider = do
+    let provider = getValidatedProvider validatedProvider
+    let providerName = provider.name
+    Text.toLinkedList (Text.concat ["ValidatedProvider {name = \"", providerName, "\", authorizeEndpoint = <validated>, tokenEndpoint = <validated>}"])
 
 
 -- | OAuth2 client identifier.

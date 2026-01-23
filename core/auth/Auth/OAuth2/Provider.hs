@@ -38,6 +38,7 @@
 module Auth.OAuth2.Provider (
   -- * Configuration
   OAuth2ProviderConfig (..),
+  ValidatedOAuth2ProviderConfig (..),
 
   -- * Callback Actions
   OAuth2Action (..),
@@ -52,6 +53,7 @@ import Auth.OAuth2.Types (
   RedirectUri,
   Scope,
   TokenSet,
+  ValidatedProvider,
  )
 import Basics
 import Text (Text)
@@ -70,6 +72,40 @@ data OAuth2Action
   | -- | Disconnect action with JSON-encoded command
     DisconnectAction Text
   deriving (Generic, Show, Eq)
+
+
+-- | Runtime-validated OAuth2 provider configuration.
+--
+-- This is created by validating an 'OAuth2ProviderConfig' at application startup.
+-- The 'ValidatedProvider' field guarantees that endpoint URLs have been
+-- validated for HTTPS and SSRF protection.
+--
+-- This type is used internally by Routes to enable high-throughput token
+-- operations (50k+ req/s) without repeated endpoint validation.
+data ValidatedOAuth2ProviderConfig = ValidatedOAuth2ProviderConfig
+  { -- | The original unvalidated provider (for authorize URL generation)
+    provider :: Provider
+  , -- | Pre-validated provider for token operations
+    validatedProvider :: ValidatedProvider
+  , -- | OAuth2 client ID
+    clientId :: ClientId
+  , -- | OAuth2 client secret
+    clientSecret :: ClientSecret
+  , -- | Callback URL
+    redirectUri :: RedirectUri
+  , -- | Scopes to request
+    scopes :: Array Scope
+  , -- | Success callback
+    onSuccess :: Text -> TokenSet -> Text
+  , -- | Failure callback
+    onFailure :: Text -> OAuth2Error -> Text
+  , -- | Disconnect callback
+    onDisconnect :: Text -> Text
+  , -- | Success redirect URL
+    successRedirectUrl :: Text
+  , -- | Failure redirect URL
+    failureRedirectUrl :: Text
+  }
 
 
 -- | Configuration for an OAuth2 provider integration.

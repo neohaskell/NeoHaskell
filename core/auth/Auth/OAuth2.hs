@@ -52,6 +52,8 @@
 module Auth.OAuth2 (
   -- * Provider Configuration
   Provider (..),
+  ValidatedProvider,
+  getValidatedProvider,
 
   -- * Credentials
   ClientId (..),
@@ -97,14 +99,33 @@ module Auth.OAuth2 (
   -- * Validation Helpers
   validateState,
   validateRedirectUri,
+  validateProvider,
 
   -- * Operations
   authorizeUrl,
   exchangeCode,
+  exchangeCodeWithPkce,
   refreshToken,
+
+  -- * Operations (Pre-validated - High Performance)
+  exchangeCodeValidated,
+  exchangeCodeWithPkceValidated,
+  refreshTokenValidated,
 ) where
 
-import Auth.OAuth2.Client (authorizeUrl, authorizeUrlWithPkce, deriveCodeChallenge, exchangeCode, generateCodeVerifier, refreshToken)
+import Auth.OAuth2.Client (
+  authorizeUrl,
+  authorizeUrlWithPkce,
+  deriveCodeChallenge,
+  exchangeCode,
+  exchangeCodeValidated,
+  exchangeCodeWithPkce,
+  exchangeCodeWithPkceValidated,
+  generateCodeVerifier,
+  refreshToken,
+  refreshTokenValidated,
+  validateProvider,
+ )
 import Auth.OAuth2.Types (
   AccessToken,
   AuthorizationCode,
@@ -120,6 +141,8 @@ import Auth.OAuth2.Types (
   Scope (..),
   State,
   TokenSet (..),
+  ValidatedProvider,
+  getValidatedProvider,
   mkAccessToken,
   mkAuthorizationCode,
   mkClientSecret,

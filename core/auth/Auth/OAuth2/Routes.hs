@@ -55,7 +55,7 @@ module Auth.OAuth2.Routes (
 ) where
 
 import Auth.OAuth2.Client qualified as OAuth2
-import Auth.OAuth2.Provider (OAuth2Action (..), OAuth2ProviderConfig (..))
+import Auth.OAuth2.Provider (OAuth2Action (..), ValidatedOAuth2ProviderConfig (..))
 import Auth.OAuth2.RateLimiter (RateLimiter (..), RateLimitResult (..))
 import Auth.OAuth2.StateToken (HmacKey, StatePayload (..), StateTokenError)
 import Auth.OAuth2.StateToken qualified as StateToken
@@ -88,8 +88,8 @@ data OAuth2RouteDeps = OAuth2RouteDeps
     hmacKey :: HmacKey
   , -- | Store for PKCE verifiers (one-time use)
     transactionStore :: TransactionStore
-  , -- | Configured OAuth2 providers by name
-    providers :: Map Text OAuth2ProviderConfig
+  , -- | Configured OAuth2 providers by name (pre-validated at startup)
+    providers :: Map Text ValidatedOAuth2ProviderConfig
   , -- | Rate limiter for /connect endpoint (per userId)
     connectRateLimiter :: RateLimiter
   , -- | Rate limiter for /callback endpoint (per IP, but we use state token as proxy)
@@ -265,10 +265,10 @@ handleCallbackImpl deps providerName code stateToken = do
   -- userId comes from server-side storage, NOT from state token
   let retrievedUserId = transaction.userId
 
-  -- 5. Exchange code for tokens
+  -- 5. Exchange code for tokens (using pre-validated provider for performance)
   tokensResult <-
-    OAuth2.exchangeCodeWithPkce
-      config.provider
+    OAuth2.exchangeCodeWithPkceValidated
+      config.validatedProvider
       config.clientId
       config.clientSecret
       config.redirectUri
