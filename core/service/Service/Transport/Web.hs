@@ -270,15 +270,11 @@ cleanTrailingBoundaryBytes content = do
   let c1 = if Bytes.isSuffixOf doubleDash content 
            then Bytes.dropEnd 2 content 
            else content
-  -- Remove trailing CRLF if present
+  -- Remove trailing CRLF (separator before boundary) if present
   let c2 = if Bytes.isSuffixOf crlf c1 
            then Bytes.dropEnd 2 c1 
            else c1
-  -- Remove one more trailing CRLF (common in multipart)
-  let c3 = if Bytes.isSuffixOf crlf c2 
-           then Bytes.dropEnd 2 c2 
-           else c2
-  c3
+  c2
 
 
 -- | Extract filename from Content-Disposition header
