@@ -11,7 +11,6 @@ module Service.FileUpload.Resolver (
 import Basics
 import DateTime (DateTime)
 import DateTime qualified
-import Int qualified
 import Json qualified
 import Map (Map)
 import Map qualified
@@ -38,8 +37,8 @@ data ResolvedFile = ResolvedFile
   -- ^ Original filename
   , contentType :: Text
   -- ^ MIME content type
-  , sizeBytes :: Int
-  -- ^ File size in bytes
+  , sizeBytes :: Int64
+  -- ^ File size in bytes (Int64 to match FileUploadConfig.maxFileSizeBytes)
   , uploadedAt :: DateTime
   -- ^ When the file was uploaded
   , blobKey :: BlobKey
@@ -177,7 +176,7 @@ resolveFromState blobStore requestOwner fileRef state = case state of
           { ref = fileRef
           , filename = metadata.filename
           , contentType = metadata.contentType
-          , sizeBytes = Int.fromInt64 metadata.sizeBytes
+          , sizeBytes = metadata.sizeBytes
           , uploadedAt = DateTime.fromEpochSeconds metadata.uploadedAt
           , blobKey = blobKey
           }
@@ -207,7 +206,7 @@ resolveFromState blobStore requestOwner fileRef state = case state of
           { ref = fileRef
           , filename = metadata.filename
           , contentType = metadata.contentType
-          , sizeBytes = Int.fromInt64 metadata.sizeBytes
+          , sizeBytes = metadata.sizeBytes
           , uploadedAt = DateTime.fromEpochSeconds metadata.uploadedAt
           , blobKey = blobKey
           }
