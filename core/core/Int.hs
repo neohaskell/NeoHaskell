@@ -27,8 +27,8 @@ toFloat =
   Prelude.fromIntegral
 
 
--- | Convert an Int64 to an Int safely
--- Clamps to maxBound if value exceeds Int range (prevents silent truncation)
+-- | Convert an Int64 to an Int safely.
+-- Clamps to minBound/maxBound if value exceeds Int range (prevents silent truncation).
 fromInt64 :: Int64 -> Int
 fromInt64 value =
   if value > Prelude.fromIntegral (Prelude.maxBound :: Int)
