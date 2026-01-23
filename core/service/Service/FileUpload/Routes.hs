@@ -47,6 +47,8 @@ data UploadRequest = UploadRequest
 data UploadResponse = UploadResponse
   { fileRef :: FileRef
   -- ^ Opaque reference for use in commands
+  , blobKey :: BlobKey
+  -- ^ Internal key where blob is stored (not exposed to client)
   , filename :: Text
   -- ^ Original filename
   , contentType :: Text
@@ -142,6 +144,7 @@ handleUpload config blobStore request = do
   -- 6. Return response
   Task.yield UploadResponse
     { fileRef = fileRef
+    , blobKey = blobKey
     , filename = request.filename
     , contentType = request.contentType
     , sizeBytes = actualSize

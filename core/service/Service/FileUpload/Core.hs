@@ -24,6 +24,7 @@ module Service.FileUpload.Core (
 
 import Array (Array)
 import Basics
+import Data.Hashable qualified as GhcHashable
 import Json qualified
 import Maybe (Maybe)
 import Text (Text)
@@ -40,6 +41,9 @@ newtype FileRef = FileRef Text
 
 instance Show FileRef where
   show _ = "FileRef <REDACTED>"
+
+instance GhcHashable.Hashable FileRef where
+  hashWithSalt salt (FileRef t) = GhcHashable.hashWithSalt salt t
 
 instance Json.FromJSON FileRef
 instance Json.ToJSON FileRef

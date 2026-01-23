@@ -75,6 +75,7 @@ common common_cfg
     uuid,
     vector,
     wai,
+    wai-extra,
     warp,
     with-utf8,
 
@@ -227,6 +228,7 @@ library
     Service.FileUpload.Routes
     Service.FileUpload.Resolver
     Service.FileUpload.Download
+    Service.FileUpload.Web
     Service.ServiceDefinition
     Service.ServiceDefinition.Core
     Service.Transport
