@@ -11,23 +11,39 @@
 -- = Usage
 --
 -- @
--- let ouraProvider = OAuth2Provider
---       { provider = Provider
---           { name = "oura"
---           , authorizeEndpoint = "https://cloud.ouraring.com/oauth/authorize"
---           , tokenEndpoint = "https://api.ouraring.com/oauth/token"
---           }
---       , clientId = ClientId "your-client-id"
---       , clientSecret = mkClientSecret "your-client-secret"
---       , redirectUri = mkRedirectUri "https://yourapp.com/callback/oura"
---       , scopes = Array.fromLinkedList [Scope "personal"]
---       , onSuccess = \\userId tokens -> emitCommand (StoreOuraTokens userId tokens)
---       , onFailure = \\userId err -> emitCommand (LogOAuthError userId err)
---       , onDisconnect = \\userId -> emitCommand (RevokeOuraAccess userId)
---       , successRedirectUrl = "https://yourapp.com/settings?connected=oura"
---       , failureRedirectUrl = "https://yourapp.com/settings?error=oauth"
+-- -- Define your callback command types (must have NameOf and ToJSON instances)
+-- data StoreOuraTokens = StoreOuraTokens { userId :: Text, tokens :: TokenSet }
+--   deriving (Generic)
+-- instance Json.ToJSON StoreOuraTokens
+-- type instance NameOf StoreOuraTokens = "StoreOuraTokens"
+--
+-- -- Configure the OAuth2 provider
+-- ouraConfig :: OAuth2ProviderConfig
+-- ouraConfig = OAuth2ProviderConfig
+--   { provider = Provider
+--       { name = "oura"
+--       , authorizeEndpoint = "https://cloud.ouraring.com/oauth/authorize"
+--       , tokenEndpoint = "https://api.ouraring.com/oauth/token"
 --       }
+--   , clientId = ClientId "your-client-id"
+--   , clientSecret = mkClientSecret "your-client-secret"
+--   , redirectUri = myRedirectUri  -- use Result.unwrap or handle Result from mkRedirectUri
+--   , scopes = Array.fromLinkedList [Scope "personal"]
+--   , onSuccess = \\userId tokens -> Integration.encodeCommand (StoreOuraTokens userId tokens)
+--   , onFailure = \\userId err -> Integration.encodeCommand (LogOAuthError userId err)
+--   , onDisconnect = \\userId -> Integration.encodeCommand (RevokeOuraAccess userId)
+--   , successRedirectUrl = "https://yourapp.com/settings?connected=oura"
+--   , failureRedirectUrl = "https://yourapp.com/settings?error=oauth"
+--   }
 -- @
+--
+-- = Callback Format
+--
+-- The callback functions ('onSuccess', 'onFailure', 'onDisconnect') must return
+-- JSON text in 'Integration.CommandPayload' format. Use 'Integration.encodeCommand'
+-- to create this automatically from your command types.
+--
+-- The JSON format is: @{ "commandType": "YourCommand", "commandData": {...} }@
 --
 -- = Security
 --
@@ -113,6 +129,9 @@ data ValidatedOAuth2ProviderConfig = ValidatedOAuth2ProviderConfig
 -- This configures both the OAuth2 flow parameters and the application-level
 -- callbacks for success/failure handling.
 --
+-- The callbacks must return JSON in 'Integration.CommandPayload' format.
+-- Use 'Integration.encodeCommand' to encode your command types correctly.
+--
 -- @
 -- ouraConfig :: OAuth2ProviderConfig
 -- ouraConfig = OAuth2ProviderConfig
@@ -125,9 +144,9 @@ data ValidatedOAuth2ProviderConfig = ValidatedOAuth2ProviderConfig
 --   , clientSecret = mkClientSecret "your-client-secret"
 --   , redirectUri = myRedirectUri  -- Created with mkRedirectUri
 --   , scopes = Array.fromLinkedList [Scope "personal", Scope "daily"]
---   , onSuccess = \\userId tokens -> Json.encodeText (StoreTokens userId tokens)
---   , onFailure = \\userId err -> Json.encodeText (LogError userId err)
---   , onDisconnect = \\userId -> Json.encodeText (RevokeAccess userId)
+--   , onSuccess = \\userId tokens -> Integration.encodeCommand (StoreTokens userId tokens)
+--   , onFailure = \\userId err -> Integration.encodeCommand (LogError userId err)
+--   , onDisconnect = \\userId -> Integration.encodeCommand (RevokeAccess userId)
 --   , successRedirectUrl = "https://app.example.com/settings?connected=oura"
 --   , failureRedirectUrl = "https://app.example.com/settings?error=oauth"
 --   }
@@ -145,15 +164,15 @@ data OAuth2ProviderConfig = OAuth2ProviderConfig
     scopes :: Array Scope
   , -- | Called on successful token exchange.
     -- First arg is userId (from JWT), second is the token set.
-    -- Returns JSON-encoded command to dispatch.
+    -- Returns JSON via 'Integration.encodeCommand'.
     onSuccess :: Text -> TokenSet -> Text
   , -- | Called when OAuth2 flow fails.
     -- First arg is userId (from JWT), second is the error.
-    -- Returns JSON-encoded command to dispatch.
+    -- Returns JSON via 'Integration.encodeCommand'.
     onFailure :: Text -> OAuth2Error -> Text
   , -- | Called when user disconnects the provider.
     -- Arg is userId (from JWT).
-    -- Returns JSON-encoded command to dispatch.
+    -- Returns JSON via 'Integration.encodeCommand'.
     onDisconnect :: Text -> Text
   , -- | URL to redirect user after successful connection
     successRedirectUrl :: Text

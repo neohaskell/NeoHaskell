@@ -47,6 +47,9 @@ module Integration (
   emitCommand,
   noCommand,
 
+  -- * Command Encoding (for callbacks)
+  encodeCommand,
+
   -- * Inbound Types
   Inbound (..),
   InboundConfig (..),
@@ -101,6 +104,9 @@ data CommandPayload = CommandPayload
 
 
 instance Json.FromJSON CommandPayload
+
+
+instance Json.ToJSON CommandPayload
 
 
 -- | Internal representation of an action.
@@ -202,6 +208,32 @@ emitCommand cmd = do
 -- | No command to emit. Used when integration doesn't produce a follow-up command.
 noCommand :: Task IntegrationError (Maybe CommandPayload)
 noCommand = Task.yield Nothing
+
+
+-- | Encode a command as JSON text in CommandPayload format.
+--
+-- This is the sync version of 'emitCommand' for use in contexts that need
+-- JSON text directly (e.g., OAuth2 callbacks).
+--
+-- The command type must have a 'NameOf' instance and 'ToJSON' instance.
+--
+-- @
+-- -- In OAuth2 callback configuration:
+-- onSuccess = \\userId tokens -> Integration.encodeCommand (StoreOuraTokens userId tokens)
+-- @
+encodeCommand ::
+  forall command name.
+  (Json.ToJSON command, name ~ NameOf command, GHC.KnownSymbol name) =>
+  command ->
+  Text
+encodeCommand cmd = do
+  let cmdName = GHC.symbolVal (Proxy @name) |> Text.fromLinkedList
+  let payload =
+        CommandPayload
+          { commandType = cmdName
+          , commandData = Json.encode cmd
+          }
+  Json.encodeText payload
 
 
 -- | Configuration for an inbound integration worker.

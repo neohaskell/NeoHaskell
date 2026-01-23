@@ -176,3 +176,41 @@ spec = do
             , commandData = Json.encode (42 :: Int)
             }
       payload1 |> shouldBe payload2
+
+  describe "Integration.encodeCommand" do
+    it "produces JSON text with commandType and commandData" \_ -> do
+      let cmd = TestCommand {commandId = 42, commandName = "encode-test"}
+      let jsonText = Integration.encodeCommand cmd
+      -- Should contain the command type name
+      jsonText |> shouldSatisfy (Text.contains "TestCommand")
+      -- Should contain the command data
+      jsonText |> shouldSatisfy (Text.contains "encode-test")
+
+    it "round-trips through decodeText -> CommandPayload" \_ -> do
+      let cmd = TestCommand {commandId = 99, commandName = "roundtrip-test"}
+      let jsonText = Integration.encodeCommand cmd
+      case Json.decodeText jsonText of
+        Err err -> fail [fmt|Failed to decode JSON: #{err}|]
+        Ok (payload :: Integration.CommandPayload) -> do
+          payload.commandType |> shouldSatisfy (Text.contains "TestCommand")
+          case Json.decode @TestCommand payload.commandData of
+            Err err -> fail [fmt|Failed to decode command data: #{err}|]
+            Ok decoded -> do
+              decoded.commandId |> shouldBe 99
+              decoded.commandName |> shouldBe "roundtrip-test"
+
+    it "matches the format expected by dispatchAction" \_ -> do
+      -- This verifies encodeCommand produces the exact JSON format
+      -- that Application.dispatchAction expects to decode
+      let cmd = TestCommand {commandId = 1, commandName = "dispatch-format"}
+      let jsonText = Integration.encodeCommand cmd
+      -- Verify it decodes as CommandPayload (the format dispatchAction uses)
+      case Json.decodeText @Integration.CommandPayload jsonText of
+        Err _ -> fail "encodeCommand output should decode as CommandPayload"
+        Ok payload -> do
+          -- The commandType should be the type name
+          payload.commandType |> shouldSatisfy (Text.contains "TestCommand")
+          -- The commandData should be valid JSON
+          case Json.decode @TestCommand payload.commandData of
+            Err _ -> fail "commandData should decode to original command"
+            Ok _ -> Task.yield unit
