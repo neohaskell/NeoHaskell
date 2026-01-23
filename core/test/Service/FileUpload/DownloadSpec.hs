@@ -16,6 +16,11 @@ import Test
 import Uuid qualified
 
 
+-- | Type alias for state getter function used in tests
+-- Using Text as error type since it's Show-able and simple for tests
+type StateGetter = FileRef -> Task Text (Maybe FileUploadState)
+
+
 spec :: Spec Unit
 spec = do
   describe "Service.FileUpload.Download" do
@@ -47,7 +52,8 @@ spec = do
                 , expiresAt = DateTime.toEpochSeconds expiresAt
                 }
 
-          let getState ref' =
+          let getState :: StateGetter
+              getState ref' =
                 if ref' == fileRef
                   then Task.yield (Just state)
                   else Task.yield Nothing
@@ -88,7 +94,8 @@ spec = do
                 , confirmedByRequestId = "req_123"
                 }
 
-          let getState ref' =
+          let getState :: StateGetter
+              getState ref' =
                 if ref' == fileRef
                   then Task.yield (Just state)
                   else Task.yield Nothing
@@ -130,7 +137,8 @@ spec = do
                 , expiresAt = DateTime.toEpochSeconds expiresAt
                 }
 
-          let getState ref' =
+          let getState :: StateGetter
+              getState ref' =
                 if ref' == fileRef
                   then Task.yield (Just state)
                   else Task.yield Nothing
@@ -170,7 +178,8 @@ spec = do
                 , expiresAt = DateTime.toEpochSeconds expiredAt
                 }
 
-          let getState ref' =
+          let getState :: StateGetter
+              getState ref' =
                 if ref' == fileRef
                   then Task.yield (Just state)
                   else Task.yield Nothing
@@ -190,7 +199,8 @@ spec = do
 
           let state = Deleted
 
-          let getState ref' =
+          let getState :: StateGetter
+              getState ref' =
                 if ref' == fileRef
                   then Task.yield (Just state)
                   else Task.yield Nothing
@@ -208,7 +218,8 @@ spec = do
           let fileRef = FileRef "file_nonexistent_dl"
           let ownerHash = OwnerHash "owner_xyz"
 
-          let getState _ = Task.yield Nothing
+          let getState :: StateGetter
+              getState _ = Task.yield Nothing
 
           result <- handleDownload env.blobStore getState ownerHash fileRef
             |> Task.asResult
@@ -242,7 +253,8 @@ spec = do
                 , expiresAt = DateTime.toEpochSeconds expiresAt
                 }
 
-          let getState ref' =
+          let getState :: StateGetter
+              getState ref' =
                 if ref' == fileRef
                   then Task.yield (Just state)
                   else Task.yield Nothing

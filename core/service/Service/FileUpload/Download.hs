@@ -25,6 +25,7 @@ import Service.FileUpload.Lifecycle (
 import Task (Task)
 import Task qualified
 import Text (Text)
+import Text qualified
 
 
 -- ==========================================================================
@@ -46,7 +47,8 @@ data DownloadResponse = DownloadResponse
 
 -- | Errors that can occur when downloading a file
 data DownloadError
-  = FileNotFound FileRef -- File does not exist
+  = FileNotFound FileRef -- File does not exist in state store
+  | StateLookupFailed FileRef Text -- Failed to query state store (preserves original error)
   | NotOwner FileRef -- Requester is not the file owner
   | FileExpired FileRef -- File upload has expired
   | FileDeleted FileRef -- File has been deleted
@@ -58,6 +60,7 @@ data DownloadError
 instance Show DownloadError where
   show err = case err of
     FileNotFound ref -> [fmt|FileNotFound: #{show ref}|]
+    StateLookupFailed ref msg -> [fmt|StateLookupFailed: #{show ref} - #{msg}|]
     NotOwner ref -> [fmt|NotOwner: #{show ref}|]
     FileExpired ref -> [fmt|FileExpired: #{show ref}|]
     FileDeleted ref -> [fmt|FileDeleted: #{show ref}|]
@@ -73,16 +76,17 @@ instance Show DownloadError where
 -- Validates ownership and file state before retrieving content
 handleDownload ::
   forall stateError.
+  (Show stateError) =>
   BlobStore ->
   (FileRef -> Task stateError (Maybe FileUploadState)) ->
   OwnerHash ->
   FileRef ->
   Task DownloadError DownloadResponse
 handleDownload blobStore getState requestOwner fileRef = do
-  -- Get file state
+  -- Get file state (preserve original error for diagnostics)
   maybeState <-
     getState fileRef
-      |> Task.mapError (\_ -> FileNotFound fileRef)
+      |> Task.mapError (\stateErr -> StateLookupFailed fileRef (show stateErr |> Text.fromLinkedList))
 
   case maybeState of
     Nothing -> Task.throw (FileNotFound fileRef)
