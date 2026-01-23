@@ -50,16 +50,26 @@
 -- Alternatively, configure your deployment to block outbound proxy usage
 -- at the network level for OAuth2 token endpoints.
 module Auth.OAuth2.Client (
+  -- * Provider Validation
+  validateProvider,
+
   -- * Authorization
   authorizeUrl,
   authorizeUrlWithPkce,
 
-  -- * Token Exchange
+  -- * Token Exchange (with per-request validation)
   exchangeCode,
   exchangeCodeWithPkce,
 
-  -- * Token Refresh
+  -- * Token Exchange (pre-validated provider - faster)
+  exchangeCodeValidated,
+  exchangeCodeWithPkceValidated,
+
+  -- * Token Refresh (with per-request validation)
   refreshToken,
+
+  -- * Token Refresh (pre-validated provider - faster)
+  refreshTokenValidated,
 
   -- * PKCE Helpers
   generateCodeVerifier,
@@ -83,9 +93,12 @@ import Auth.OAuth2.Types (
   Scope (..),
   State,
   TokenSet (..),
+  ValidatedProvider,
+  getValidatedProvider,
   mkAccessToken,
   mkCodeVerifierUnsafe,
   mkRefreshToken,
+  unsafeValidatedProvider,
   unwrapAuthorizationCode,
   unwrapClientSecret,
   unwrapCodeVerifier,
@@ -96,6 +109,7 @@ import Auth.UrlValidation (ValidationError (..))
 import Auth.UrlValidation qualified as UrlValidation
 import Basics
 import Bytes qualified
+import Console qualified
 import Char (Char)
 import Crypto.Hash qualified as Hash
 import LinkedList qualified
@@ -210,6 +224,154 @@ refreshToken provider clientIdVal clientSecretVal refreshTokenVal = do
         , ("client_secret", clientSecret)
         ]
   requestTokens tokenEndpoint formParams
+
+
+-- ============================================================================
+-- Provider Validation (for high-throughput scenarios)
+-- ============================================================================
+
+-- | Validate a provider's endpoints once, returning a 'ValidatedProvider'.
+--
+-- Use this at application startup to pre-validate OAuth2 providers.
+-- Then use the 'exchangeCodeValidated', 'exchangeCodeWithPkceValidated',
+-- and 'refreshTokenValidated' functions for high-throughput token operations
+-- without repeated endpoint validation.
+--
+-- SECURITY: Validates both authorize and token endpoints for:
+--
+-- * HTTPS requirement (tokens contain secrets)
+-- * No private/loopback IPs (SSRF protection)
+-- * DNS resolution check (rebinding attack prevention)
+--
+-- @
+-- -- At application startup
+-- validatedProvider <- OAuth2.validateProvider ouraProvider
+--
+-- -- Later, in request handlers (50k req/s without validation overhead)
+-- tokens <- OAuth2.exchangeCodeValidated validatedProvider clientId clientSecret redirectUri code
+-- @
+--
+-- NOTE: Provider endpoint validation happens ONCE here, not on every token request.
+-- If provider endpoints change (rare), restart the application to re-validate.
+validateProvider :: Provider -> Task OAuth2Error ValidatedProvider
+validateProvider provider = do
+  -- Validate authorize endpoint
+  authResult <- UrlValidation.validateSecureUrlWithDns provider.authorizeEndpoint
+  case authResult of
+    Err validationError -> do
+      let errMsg = sanitizeValidationError validationError
+      Task.throw (EndpointValidationFailed errMsg)
+    Ok _ -> do
+      -- Validate token endpoint
+      tokenResult <- UrlValidation.validateSecureUrlWithDns provider.tokenEndpoint
+      case tokenResult of
+        Err validationError -> do
+          let errMsg = sanitizeValidationError validationError
+          Task.throw (EndpointValidationFailed errMsg)
+        Ok _ -> Task.yield (unsafeValidatedProvider provider)
+
+
+-- | Exchange an authorization code for tokens using a pre-validated provider.
+--
+-- This is the high-performance variant of 'exchangeCode' - it skips
+-- endpoint URL validation since the provider was already validated
+-- via 'validateProvider'.
+--
+-- Use this for high-throughput scenarios (50k+ req/s) where repeated
+-- DNS validation would be a bottleneck.
+--
+-- @
+-- -- Provider validated at startup
+-- tokens <- OAuth2.exchangeCodeValidated validatedProvider clientId clientSecret redirectUri code
+-- @
+--
+-- SECURITY: The 'ValidatedProvider' type ensures endpoints were validated.
+exchangeCodeValidated ::
+  ValidatedProvider ->
+  ClientId ->
+  ClientSecret ->
+  RedirectUri ->
+  AuthorizationCode ->
+  Task OAuth2Error TokenSet
+exchangeCodeValidated validatedProvider clientIdVal clientSecretVal redirectUriVal codeVal = do
+  let provider = getValidatedProvider validatedProvider
+  let tokenEndpoint = provider.tokenEndpoint
+  let (ClientId clientId) = clientIdVal
+  let clientSecret = unwrapClientSecret clientSecretVal
+  let redirectUri = unwrapRedirectUri redirectUriVal
+  let code = unwrapAuthorizationCode codeVal
+  let formParams =
+        [ ("grant_type", "authorization_code")
+        , ("code", code)
+        , ("redirect_uri", redirectUri)
+        , ("client_id", clientId)
+        , ("client_secret", clientSecret)
+        ]
+  requestTokensValidated tokenEndpoint formParams
+
+
+-- | Exchange an authorization code with PKCE using a pre-validated provider.
+--
+-- High-performance variant of 'exchangeCodeWithPkce' - skips endpoint
+-- URL validation since the provider was already validated.
+--
+-- @
+-- tokens <- OAuth2.exchangeCodeWithPkceValidated validatedProvider clientId clientSecret redirectUri code verifier
+-- @
+exchangeCodeWithPkceValidated ::
+  ValidatedProvider ->
+  ClientId ->
+  ClientSecret ->
+  RedirectUri ->
+  AuthorizationCode ->
+  CodeVerifier ->
+  Task OAuth2Error TokenSet
+exchangeCodeWithPkceValidated validatedProvider clientIdVal clientSecretVal redirectUriVal codeVal verifierVal = do
+  let provider = getValidatedProvider validatedProvider
+  let tokenEndpoint = provider.tokenEndpoint
+  let (ClientId clientId) = clientIdVal
+  let clientSecret = unwrapClientSecret clientSecretVal
+  let redirectUri = unwrapRedirectUri redirectUriVal
+  let code = unwrapAuthorizationCode codeVal
+  let verifier = unwrapCodeVerifier verifierVal
+  let formParams =
+        [ ("grant_type", "authorization_code")
+        , ("code", code)
+        , ("redirect_uri", redirectUri)
+        , ("client_id", clientId)
+        , ("client_secret", clientSecret)
+        , ("code_verifier", verifier)
+        ]
+  requestTokensValidated tokenEndpoint formParams
+
+
+-- | Refresh an access token using a pre-validated provider.
+--
+-- High-performance variant of 'refreshToken' - skips endpoint
+-- URL validation since the provider was already validated.
+--
+-- @
+-- newTokens <- OAuth2.refreshTokenValidated validatedProvider clientId clientSecret refreshToken
+-- @
+refreshTokenValidated ::
+  ValidatedProvider ->
+  ClientId ->
+  ClientSecret ->
+  RefreshToken ->
+  Task OAuth2Error TokenSet
+refreshTokenValidated validatedProvider clientIdVal clientSecretVal refreshTokenVal = do
+  let provider = getValidatedProvider validatedProvider
+  let tokenEndpoint = provider.tokenEndpoint
+  let (ClientId clientId) = clientIdVal
+  let clientSecret = unwrapClientSecret clientSecretVal
+  let refresh = unwrapRefreshToken refreshTokenVal
+  let formParams =
+        [ ("grant_type", "refresh_token")
+        , ("refresh_token", refresh)
+        , ("client_id", clientId)
+        , ("client_secret", clientSecret)
+        ]
+  requestTokensValidated tokenEndpoint formParams
 
 
 -- ============================================================================
@@ -453,6 +615,83 @@ requestTokens tokenEndpoint formParams = do
               , refreshToken = response.refresh_token |> fmap mkRefreshToken
               , expiresInSeconds = response.expires_in
               }
+
+
+-- | Make a token request to a pre-validated provider endpoint.
+-- SECURITY: Endpoint URL validation is SKIPPED because ValidatedProvider
+-- guarantees the URL was validated at construction time.
+-- This is the high-performance path for 50k+ req/s scenarios.
+--
+-- AUDIT: Logs security events for EU/GDPR compliance:
+-- * Token request attempts (with sanitized endpoint)
+-- * Token request failures (with error category, no secrets)
+-- * Token request successes (no token values logged)
+requestTokensValidated ::
+  Text ->
+  [(Text, Text)] ->
+  Task OAuth2Error TokenSet
+requestTokensValidated tokenEndpoint formParams = do
+  -- AUDIT: Log token request attempt (sanitized - no secrets)
+  let sanitizedEndpoint = sanitizeUrlForAudit tokenEndpoint
+  Console.print [fmt|[OAuth2 Audit] Token request to #{sanitizedEndpoint} (pre-validated)|]
+    |> Task.ignoreError
+  let request =
+        Http.request
+          |> Http.withUrl tokenEndpoint
+          |> Http.withTimeout 10 -- 10s timeout for OAuth2 token requests
+  let formArray = formParams |> Array.fromLinkedList
+  result <-
+    Http.postForm @TokenResponse request formArray
+      |> Task.mapError parseHttpError
+      |> Task.asResult
+  case result of
+    Err err -> do
+      -- AUDIT: Log failure (error category only, no secrets)
+      Console.print [fmt|[OAuth2 Audit] Token request failed: #{sanitizedEndpoint} - #{errorCategory err}|]
+        |> Task.ignoreError
+      Task.throw err
+    Ok response -> do
+      -- AUDIT: Log success (no token values)
+      Console.print [fmt|[OAuth2 Audit] Token request succeeded: #{sanitizedEndpoint}|]
+        |> Task.ignoreError
+      Task.yield
+        TokenSet
+          { accessToken = mkAccessToken response.access_token
+          , refreshToken = response.refresh_token |> fmap mkRefreshToken
+          , expiresInSeconds = response.expires_in
+          }
+
+
+-- | Sanitize URL for audit logs - extract only scheme://host:port
+-- SECURITY: Never log full URLs which may contain query parameters with secrets
+sanitizeUrlForAudit :: Text -> Text
+sanitizeUrlForAudit urlText = do
+  let urlString = Text.toLinkedList urlText
+  case URI.parseURI urlString of
+    Nothing -> "<invalid-url>"
+    Just uri -> do
+      let scheme = Text.fromLinkedList (URI.uriScheme uri)
+      case URI.uriAuthority uri of
+        Nothing -> scheme
+        Just auth -> do
+          let host = Text.fromLinkedList (URI.uriRegName auth)
+          let port = Text.fromLinkedList (URI.uriPort auth)
+          Text.concat [scheme, "//", host, port]
+
+
+-- | Extract error category for audit logging (no secrets)
+errorCategory :: OAuth2Error -> Text
+errorCategory err = case err of
+  TokenRequestFailed _ -> "token_request_failed"
+  InvalidGrant _ -> "invalid_grant"
+  InvalidClient _ -> "invalid_client"
+  ScopeDenied _ -> "scope_denied"
+  MalformedResponse _ -> "malformed_response"
+  NetworkError _ -> "network_error"
+  EndpointValidationFailed _ -> "endpoint_validation_failed"
+  InvalidState _ -> "invalid_state"
+  InvalidPkceVerifier _ -> "invalid_pkce_verifier"
+  InvalidRedirectUri _ -> "invalid_redirect_uri"
 
 
 -- | Parse HTTP error to OAuth2Error, attempting to extract OAuth2 error response.

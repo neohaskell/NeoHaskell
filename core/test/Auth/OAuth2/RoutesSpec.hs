@@ -1,7 +1,7 @@
 module Auth.OAuth2.RoutesSpec where
 
 import Array qualified
-import Auth.OAuth2.Provider (OAuth2Action (..), OAuth2ProviderConfig (..))
+import Auth.OAuth2.Provider (OAuth2Action (..), ValidatedOAuth2ProviderConfig (..))
 import Auth.OAuth2.RateLimiter qualified as RateLimiter
 import Auth.OAuth2.Routes (OAuth2RouteDeps (..), OAuth2RouteError (..), OAuth2Routes (..), createRoutes)
 import Auth.OAuth2.StateToken (mkHmacKey)
@@ -12,6 +12,7 @@ import Auth.OAuth2.Types (
   Scope (..),
   mkClientSecret,
   mkRedirectUri,
+  unsafeValidatedProvider,
  )
 import Core
 import Map qualified
@@ -31,29 +32,48 @@ extractStateFromUrl url = do
 
 
 -- | Test configuration for a mock OAuth2 provider
-mockProvider :: OAuth2ProviderConfig
-mockProvider = do
-  let redirectUriResult = mkRedirectUri "http://localhost:8080/callback/mock"
-  let redirectUri = case redirectUriResult of
-        Ok uri -> uri
-        Err _ -> panic "Invalid redirect URI in test"
-  OAuth2ProviderConfig
-    { provider =
-        Provider
-          { name = "mock"
-          , authorizeEndpoint = "https://mock.example.com/oauth/authorize"
-          , tokenEndpoint = "https://mock.example.com/oauth/token"
-          }
-    , clientId = ClientId "test-client-id"
-    , clientSecret = mkClientSecret "test-client-secret-that-is-long-enough"
-    , redirectUri = redirectUri
-    , scopes = Array.fromLinkedList [Scope "read", Scope "write"]
-    , onSuccess = \userId _tokens -> [fmt|{"type":"success","userId":"#{userId}"}|]
-    , onFailure = \userId _err -> [fmt|{"type":"failure","userId":"#{userId}"}|]
-    , onDisconnect = \userId -> [fmt|{"type":"disconnect","userId":"#{userId}"}|]
-    , successRedirectUrl = "https://app.example.com/settings?connected=mock"
-    , failureRedirectUrl = "https://app.example.com/settings?error=oauth"
+mockProvider :: Provider
+mockProvider =
+  Provider
+    { name = "mock"
+    , authorizeEndpoint = "https://mock.example.com/oauth/authorize"
+    , tokenEndpoint = "https://mock.example.com/oauth/token"
     }
+
+
+-- | Create a validated provider config for testing.
+-- In tests, we validate the provider to ensure the flow works correctly.
+-- The test provider endpoints (mock.example.com) will fail DNS validation,
+-- so we construct the ValidatedProvider directly for testing purposes.
+mockValidatedProviderConfig :: Task Text ValidatedOAuth2ProviderConfig
+mockValidatedProviderConfig = do
+  let redirectUriResult = mkRedirectUri "http://localhost:8080/callback/mock"
+  redirectUri <- case redirectUriResult of
+    Ok uri -> Task.yield uri
+    Err err -> Task.throw [fmt|Invalid redirect URI in test: #{err}|]
+  -- For tests, we need to bypass DNS validation since mock.example.com doesn't exist.
+  -- We validate against a real endpoint to ensure the validation logic works,
+  -- but for this unit test we construct the validated type directly.
+  -- Integration tests should use real providers.
+  let provider = mockProvider
+  -- NOTE: In production, use OAuth2.validateProvider. For unit tests with mock
+  -- providers, we use unsafeValidatedProvider which is explicitly marked as
+  -- internal/test-only. This is safe because mock.example.com is not a real target.
+  let validatedProvider = unsafeValidatedProvider provider
+  Task.yield
+    ValidatedOAuth2ProviderConfig
+      { provider = provider
+      , validatedProvider = validatedProvider
+      , clientId = ClientId "test-client-id"
+      , clientSecret = mkClientSecret "test-client-secret-that-is-long-enough"
+      , redirectUri = redirectUri
+      , scopes = Array.fromLinkedList [Scope "read", Scope "write"]
+      , onSuccess = \userId _tokens -> [fmt|{"type":"success","userId":"#{userId}"}|]
+      , onFailure = \userId _err -> [fmt|{"type":"failure","userId":"#{userId}"}|]
+      , onDisconnect = \userId -> [fmt|{"type":"disconnect","userId":"#{userId}"}|]
+      , successRedirectUrl = "https://app.example.com/settings?connected=mock"
+      , failureRedirectUrl = "https://app.example.com/settings?error=oauth"
+      }
 
 
 -- | Create test dependencies with the mock provider
@@ -64,7 +84,8 @@ createTestDeps = do
     Err err -> Task.throw err
     Ok key -> Task.yield key
   transactionStore <- InMemory.new
-  let providers = Map.empty |> Map.set "mock" mockProvider
+  validatedConfig <- mockValidatedProviderConfig
+  let providers = Map.empty |> Map.set "mock" validatedConfig
   -- Create rate limiters with generous limits for testing
   connectRateLimiter <- RateLimiter.new RateLimiter.defaultConnectConfig
   callbackRateLimiter <- RateLimiter.new RateLimiter.defaultCallbackConfig

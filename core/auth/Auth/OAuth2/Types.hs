@@ -11,6 +11,12 @@
 module Auth.OAuth2.Types (
   -- * Provider Configuration
   Provider (..),
+  ValidatedProvider,
+  getValidatedProvider,
+  -- | INTERNAL: Constructor for ValidatedProvider. 
+  -- Only use in Auth.OAuth2.Client.validateProvider and tests.
+  -- Do NOT use in application code - use validateProvider instead.
+  unsafeValidatedProvider,
 
   -- * Credentials
   ClientId (..),
@@ -95,6 +101,50 @@ instance Json.FromJSON Provider
 
 
 instance Json.ToJSON Provider
+
+
+-- | A provider whose endpoints have been validated.
+--
+-- This type proves that both the authorize and token endpoints have passed
+-- SSRF validation (HTTPS required, no private IPs, DNS checked).
+-- Use 'validateProvider' to construct a ValidatedProvider.
+--
+-- SECURITY: Once validated at startup, token requests skip redundant validation,
+-- improving performance at scale while maintaining security guarantees.
+--
+-- Constructor is intentionally not exported - use 'validateProvider' in Client.hs.
+newtype ValidatedProvider = ValidatedProvider Provider
+  deriving (Eq)
+
+
+-- | Get the underlying Provider from a ValidatedProvider.
+-- Use this when you need access to the provider's name or endpoints.
+getValidatedProvider :: ValidatedProvider -> Provider
+getValidatedProvider validatedProvider =
+  case validatedProvider of
+    ValidatedProvider p -> p
+
+
+-- | INTERNAL: Construct a ValidatedProvider without validation.
+--
+-- WARNING: This function bypasses SSRF protection. Only use in:
+--
+-- * 'Auth.OAuth2.Client.validateProvider' (after performing validation)
+-- * Test code (for creating test fixtures with mock providers)
+--
+-- NEVER use this in application code. Always use 'validateProvider' instead.
+--
+-- Using this function incorrectly can expose your application to SSRF attacks
+-- against internal infrastructure (AWS metadata service, Kubernetes API, etc.)
+unsafeValidatedProvider :: Provider -> ValidatedProvider
+unsafeValidatedProvider = ValidatedProvider
+
+
+instance Show ValidatedProvider where
+  show validatedProvider = do
+    let provider = getValidatedProvider validatedProvider
+    let providerName = provider.name
+    Text.toLinkedList [fmt|ValidatedProvider (name = "#{providerName}", authorizeEndpoint = <validated>, tokenEndpoint = <validated>)|]
 
 
 -- | OAuth2 client identifier.
