@@ -135,9 +135,11 @@ handleUpload config blobStore request = do
     Nothing -> pass  -- All types allowed
 
   -- 3. Sanitize and truncate filename (max 255 chars for filesystem compatibility)
+  -- Honor storeOriginalFilename config - use empty string if disabled
   let maxFilenameLength = 255
-  let sanitizedFilename = request.filename
-        |> Text.left maxFilenameLength
+  let sanitizedFilename = case config.storeOriginalFilename of
+        True -> request.filename |> Text.left maxFilenameLength
+        False -> ""  -- Don't store/return original filename
 
   -- 4. Generate FileRef and BlobKey (both random UUIDs)
   fileRefUuid <- Uuid.generate
@@ -146,13 +148,13 @@ handleUpload config blobStore request = do
   let fileRef = FileRef [fmt|file_#{Uuid.toText fileRefUuid}|]
   let blobKey = BlobKey (Uuid.toText blobKeyUuid)
 
-  -- 5. Store blob in BlobStore
-  _ <- blobStore.store blobKey request.content
-    |> Task.mapError (\e -> StorageFailure (blobStoreErrorToText e))
-
-  -- 6. Calculate expiration time
+  -- 5. Calculate expiration time BEFORE storing blob to avoid orphans
   now <- DateTime.now |> Task.mapError (\_ -> StorageFailure "Failed to get current time")
   let expiresAt = DateTime.addSeconds config.pendingTtlSeconds now
+
+  -- 6. Store blob in BlobStore (after time calculation to avoid orphan on time failure)
+  _ <- blobStore.store blobKey request.content
+    |> Task.mapError (\e -> StorageFailure (blobStoreErrorToText e))
 
   -- 7. Return response
   Task.yield UploadResponse
