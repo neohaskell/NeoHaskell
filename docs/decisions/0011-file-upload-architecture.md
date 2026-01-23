@@ -119,7 +119,7 @@ decide cmd entity ctx = do
 
 Files follow a state machine tracked via events:
 
-```
+```text
 ┌─────────┐     ┌───────────┐     ┌─────────┐
 │ Pending │────▶│ Confirmed │────▶│ Deleted │
 └─────────┘     └───────────┘     └─────────┘
@@ -163,10 +163,10 @@ data FileUploadEvent
 
 ### 5. Two-Phase Upload Flow
 
-**Phase 1: Upload (before command)**
+#### Phase 1: Upload (before command)
 
-```
-POST /upload
+```http
+POST /files/upload
 Content-Type: multipart/form-data
 
 file=@document.pdf
@@ -184,9 +184,9 @@ Response:
 }
 ```
 
-**Phase 2: Reference in command**
+#### Phase 2: Reference in command
 
-```
+```http
 POST /commands/upload-document
 Content-Type: application/json
 

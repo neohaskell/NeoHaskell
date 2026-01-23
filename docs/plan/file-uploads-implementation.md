@@ -18,7 +18,7 @@ Implement file uploads as a two-phase flow: `POST /files/upload` produces a shor
 ### Action plan (high level)
 
 1. Add new `Service.FileUpload.*` modules (types, lifecycle, blob store interface, local backend, routes, cleaner).
-2. Extend `Service.Auth.RequestContext` with `files :: Array ResolvedFile`.
+2. Extend `Service.Auth.RequestContext` with `files :: Map FileRef ResolvedFile`.
 3. Extend `Service.Transport.Web` routing to include `POST /files/upload` and `GET /files/:id`.
 4. Extend command execution pipeline to (a) extract file refs, (b) resolve them into `ctx.files`, (c) confirm them idempotently after successful command append.
 5. Add projection/index + cleaner job for orphan cleanup.
@@ -225,7 +225,7 @@ Blob store unavailable:
 
 ### 5.1 New module layout
 
-```
+```text
 core/service/Service/FileUpload/
   Core.hs           -- FileRef, ResolvedFile, FileUploadConfig, events
   Lifecycle.hs      -- Pure reducer, state machine
@@ -238,7 +238,7 @@ core/service/Service/FileUpload/
 
 Future (v2):
 
-```
+```text
   BlobStore/
     S3.hs           -- AWS S3 backend
     GCS.hs          -- Google Cloud Storage backend
@@ -822,4 +822,4 @@ Out of scope for first iteration:
 | Phase 4: Download & Cleanup | 3-4 hours | Phase 3 |
 | Phase 5: Testbed Example | 1-2 hours | Phase 4 |
 
-**Total: ~15-20 hours (2-3 days)**
+#### Total: ~15-20 hours (2-3 days)
