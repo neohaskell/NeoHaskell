@@ -8,8 +8,8 @@ import Directory qualified
 import "nhcore" Path qualified
 import Service.FileUpload.BlobStore (BlobStore (..))
 import Service.FileUpload.BlobStore.Local (LocalBlobStoreConfig (..), createBlobStore)
-import Service.FileUpload.Core (BlobKey (..), FileRef (..), OwnerHash (..))
-import Service.FileUpload.Download (DownloadError (..), DownloadResponse (..), handleDownload)
+import Service.FileUpload.Core (BlobKey (..), FileAccessError (..), FileRef (..), OwnerHash (..))
+import Service.FileUpload.Download (DownloadResponse (..), handleDownload)
 import Service.FileUpload.Lifecycle (ConfirmedFile (..), FileMetadata (..), FileUploadState (..), PendingFile (..))
 import Task qualified
 import Test
@@ -209,9 +209,9 @@ spec = do
             |> Task.asResult
 
           case result of
-            Err (FileDeleted _) -> pass
-            Err err -> fail [fmt|Expected FileDeleted, got: #{show err}|]
-            Ok _ -> fail "Expected FileDeleted error"
+            Err (FileIsDeleted _) -> pass
+            Err err -> fail [fmt|Expected FileIsDeleted, got: #{show err}|]
+            Ok _ -> fail "Expected FileIsDeleted error"
 
       it "rejects download for non-existent file" \_ -> do
         withTestDownloadEnv \env -> do

@@ -1,7 +1,9 @@
 module Service.FileUpload.Resolver (
   -- * Types
   ResolvedFile (..),
-  ResolveError (..),
+
+  -- * Error Type (re-exported from Core)
+  ResolveError,
 
   -- * Resolution Functions
   resolveFileRef,
@@ -16,7 +18,7 @@ import Map (Map)
 import Map qualified
 import Maybe (Maybe (..))
 import Service.FileUpload.BlobStore (BlobStore (..))
-import Service.FileUpload.Core (BlobKey (..), FileRef (..), OwnerHash (..))
+import Service.FileUpload.Core (BlobKey (..), FileAccessError (..), FileRef (..), OwnerHash (..))
 import Service.FileUpload.Lifecycle (FileUploadState (..))
 import Service.FileUpload.Lifecycle qualified as Lifecycle
 import Task (Task)
@@ -53,27 +55,8 @@ instance Json.ToJSON ResolvedFile
 instance Json.FromJSON ResolvedFile
 
 
--- | Errors that can occur during file resolution
-data ResolveError
-  = FileNotFound FileRef
-  -- ^ No file upload exists for this reference
-  | NotOwner FileRef
-  -- ^ File exists but belongs to a different user
-  | FileExpired FileRef
-  -- ^ File upload has expired (pending TTL exceeded)
-  | FileDeleted FileRef
-  -- ^ File has been deleted
-  | BlobMissing FileRef
-  -- ^ File metadata exists but blob is missing from storage
-  | StorageError Text
-  -- ^ Error accessing blob store
-  deriving (Generic, Eq, Show)
-
-
-instance Json.ToJSON ResolveError
-
-
-instance Json.FromJSON ResolveError
+-- | Type alias for file resolution errors (uses shared FileAccessError)
+type ResolveError = FileAccessError
 
 
 -- ==========================================================================
@@ -141,7 +124,7 @@ resolveFromState ::
 resolveFromState blobStore requestOwner fileRef state = case state of
   Initial -> Task.throw (FileNotFound fileRef)
 
-  Deleted -> Task.throw (FileDeleted fileRef)
+  Deleted -> Task.throw (FileIsDeleted fileRef)
 
   Pending pendingFile -> do
     let meta = Lifecycle.getMetadata (Pending pendingFile)

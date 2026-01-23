@@ -2,8 +2,8 @@ module Service.FileUpload.Download (
   -- * Response Type
   DownloadResponse (..),
 
-  -- * Error Type
-  DownloadError (..),
+  -- * Error Type (re-exported from Core)
+  DownloadError,
 
   -- * Handler
   handleDownload,
@@ -15,7 +15,7 @@ import DateTime qualified
 import Maybe (Maybe (..))
 import Service.FileUpload.BlobStore (BlobStore (..), BlobStoreError)
 import Service.FileUpload.BlobStore qualified as BlobStore
-import Service.FileUpload.Core (FileRef (..), OwnerHash (..))
+import Service.FileUpload.Core (FileAccessError (..), FileRef (..), OwnerHash (..))
 import Service.FileUpload.Lifecycle (
   ConfirmedFile (..),
   FileMetadata (..),
@@ -45,27 +45,8 @@ data DownloadResponse = DownloadResponse
 -- Error Types
 -- ==========================================================================
 
--- | Errors that can occur when downloading a file
-data DownloadError
-  = FileNotFound FileRef -- File does not exist in state store
-  | StateLookupFailed FileRef Text -- Failed to query state store (preserves original error)
-  | NotOwner FileRef -- Requester is not the file owner
-  | FileExpired FileRef -- File upload has expired
-  | FileDeleted FileRef -- File has been deleted
-  | BlobMissing FileRef -- File metadata exists but blob is missing
-  | StorageError Text -- Backend storage error
-  deriving (Generic, Eq)
-
-
-instance Show DownloadError where
-  show err = case err of
-    FileNotFound ref -> [fmt|FileNotFound: #{show ref}|]
-    StateLookupFailed ref msg -> [fmt|StateLookupFailed: #{show ref} - #{msg}|]
-    NotOwner ref -> [fmt|NotOwner: #{show ref}|]
-    FileExpired ref -> [fmt|FileExpired: #{show ref}|]
-    FileDeleted ref -> [fmt|FileDeleted: #{show ref}|]
-    BlobMissing ref -> [fmt|BlobMissing: #{show ref}|]
-    StorageError msg -> [fmt|StorageError: #{msg}|]
+-- | Type alias for download errors (uses shared FileAccessError)
+type DownloadError = FileAccessError
 
 
 -- ==========================================================================
@@ -105,7 +86,7 @@ downloadFromState blobStore requestOwner fileRef state = do
     Initial ->
       Task.throw (FileNotFound fileRef)
     Deleted ->
-      Task.throw (FileDeleted fileRef)
+      Task.throw (FileIsDeleted fileRef)
     Pending pendingFile ->
       downloadPending blobStore requestOwner fileRef pendingFile
     Confirmed confirmedFile ->

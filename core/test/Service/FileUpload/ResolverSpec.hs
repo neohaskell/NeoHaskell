@@ -8,9 +8,9 @@ import Map qualified
 import "nhcore" Path qualified
 import Service.FileUpload.BlobStore (BlobStore (..))
 import Service.FileUpload.BlobStore.Local (LocalBlobStoreConfig (..), createBlobStore)
-import Service.FileUpload.Core (BlobKey (..), FileRef (..), OwnerHash (..))
+import Service.FileUpload.Core (BlobKey (..), FileAccessError (..), FileRef (..), OwnerHash (..))
 import Service.FileUpload.Lifecycle (ConfirmedFile (..), FileMetadata (..), FileUploadState (..), PendingFile (..))
-import Service.FileUpload.Resolver (ResolveError (..), ResolvedFile (..), resolveFileRef, resolveFileRefs)
+import Service.FileUpload.Resolver (ResolvedFile (..), resolveFileRef, resolveFileRefs)
 import Task qualified
 import Test
 import Uuid qualified
@@ -205,9 +205,9 @@ spec = do
             |> Task.asResult
 
           case result of
-            Err (FileDeleted _) -> pass
-            Err err -> fail [fmt|Expected FileDeleted, got: #{show err}|]
-            Ok _ -> fail "Expected FileDeleted error"
+            Err (FileIsDeleted _) -> pass
+            Err err -> fail [fmt|Expected FileIsDeleted, got: #{show err}|]
+            Ok _ -> fail "Expected FileIsDeleted error"
 
       it "rejects non-existent file reference" \_ -> do
         withTestResolverEnv \env -> do

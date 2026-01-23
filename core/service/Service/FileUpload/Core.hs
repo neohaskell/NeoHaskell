@@ -8,6 +8,9 @@ module Service.FileUpload.Core (
   FileMetadata (..),
   ResolvedFile (..),
 
+  -- * Errors
+  FileAccessError (..),
+
   -- * Events
   FileUploadEvent (..),
   FileUploadedData (..),
@@ -161,6 +164,44 @@ data FileDeletionReason
 
 instance Json.FromJSON FileDeletionReason
 instance Json.ToJSON FileDeletionReason
+
+
+-- ==========================================================================
+-- File Access Errors
+-- ==========================================================================
+
+-- | Shared error type for file access operations (resolution, download, etc.)
+data FileAccessError
+  = FileNotFound FileRef
+  -- ^ No file upload exists for this reference
+  | StateLookupFailed FileRef Text
+  -- ^ Failed to query state store (preserves original error)
+  | NotOwner FileRef
+  -- ^ File exists but belongs to a different user
+  | FileExpired FileRef
+  -- ^ File upload has expired (pending TTL exceeded)
+  | FileIsDeleted FileRef
+  -- ^ File has been deleted (named to avoid collision with FileDeleted event)
+  | BlobMissing FileRef
+  -- ^ File metadata exists but blob is missing from storage
+  | StorageError Text
+  -- ^ Error accessing blob store
+  deriving (Generic, Eq)
+
+
+instance Show FileAccessError where
+  show err = case err of
+    FileNotFound ref -> [fmt|FileNotFound: #{show ref}|]
+    StateLookupFailed ref msg -> [fmt|StateLookupFailed: #{show ref} - #{msg}|]
+    NotOwner ref -> [fmt|NotOwner: #{show ref}|]
+    FileExpired ref -> [fmt|FileExpired: #{show ref}|]
+    FileIsDeleted ref -> [fmt|FileIsDeleted: #{show ref}|]
+    BlobMissing ref -> [fmt|BlobMissing: #{show ref}|]
+    StorageError msg -> [fmt|StorageError: #{msg}|]
+
+
+instance Json.FromJSON FileAccessError
+instance Json.ToJSON FileAccessError
 
 
 -- ==========================================================================
