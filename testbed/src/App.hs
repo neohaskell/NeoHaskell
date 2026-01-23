@@ -9,6 +9,7 @@ import Testbed.Cart.Core (CartEntity)
 import Testbed.Cart.Integrations (cartIntegrations, periodicCartCreator)
 import Testbed.Cart.Integrations.EventCounter qualified as EventCounter
 import Testbed.Cart.Queries.CartSummary (CartSummary)
+import Testbed.Document.Core ()
 import Testbed.Service qualified
 import Testbed.Stock.Queries.StockLevel (StockLevel)
 
@@ -20,6 +21,7 @@ app =
     |> Application.withTransport WebTransport.server
     |> Application.withService Testbed.Service.cartService
     |> Application.withService Testbed.Service.stockService
+    |> Application.withService Testbed.Service.documentService
     |> Application.withQuery @CartSummary
     |> Application.withQuery @StockLevel
     -- Outbound: reserve stock when items are added to cart (Process Manager)
