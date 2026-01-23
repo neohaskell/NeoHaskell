@@ -12,7 +12,7 @@ import Auth.Jwks (JwksManager)
 import Auth.Middleware qualified as Middleware
 import Auth.OAuth2.Provider (OAuth2Action (..))
 import Auth.OAuth2.Routes (OAuth2Routes (..), OAuth2RouteError (..))
-import Auth.Options (AuthOptions (Authenticated))
+import Auth.Options (AuthOptions (Authenticated, Everyone))
 import Array (Array)
 import Array qualified
 import Basics
@@ -625,11 +625,20 @@ instance Transport WebTransport where
         case webTransport.fileUploadEnabled of
           Maybe.Nothing -> notFound "File uploads not configured"
           Maybe.Just fileUpload -> do
-            -- For anonymous uploads, generate owner hash from request metadata
-            -- In production with auth enabled, this would come from JWT claims
-            let ownerHash = case webTransport.authEnabled of
-                  Maybe.Nothing -> "anonymous"
-                  Maybe.Just _auth -> "anonymous" -- TODO: extract from JWT sub claim
+            -- Extract owner identity from auth context
+            -- Use Everyone auth option to allow both anonymous and authenticated uploads
+            ownerHashResult <- case webTransport.authEnabled of
+              Maybe.Nothing -> Task.yield "anonymous"
+              Maybe.Just auth -> do
+                -- Check for JWT but don't require it (Everyone allows anonymous)
+                authResult <- Middleware.checkAuth (Maybe.Just auth.jwksManager) auth.authConfig Everyone request
+                case authResult of
+                  Result.Err _ -> Task.yield "anonymous"  -- No valid token, treat as anonymous
+                  Result.Ok authContext -> case authContext.claims of
+                    Maybe.Nothing -> Task.yield "anonymous"
+                    Maybe.Just claims -> Task.yield claims.sub  -- Use JWT subject as owner
+            
+            let ownerHash = ownerHashResult
             
             -- Read request body (multipart form data)
             bodyResult <- readBodyWithLimit maxBodySize request
@@ -668,9 +677,20 @@ instance Transport WebTransport where
           Maybe.Nothing -> notFound "File uploads not configured"
           Maybe.Just fileUpload -> do
             let fileRef = FileRef fileRefText
-            let ownerHash = case webTransport.authEnabled of
-                  Maybe.Nothing -> "anonymous"
-                  Maybe.Just _auth -> "anonymous" -- TODO: extract from JWT sub claim
+            -- Extract owner identity from auth context
+            -- Use Everyone auth option to allow both anonymous and authenticated downloads
+            ownerHashResult <- case webTransport.authEnabled of
+              Maybe.Nothing -> Task.yield "anonymous"
+              Maybe.Just auth -> do
+                -- Check for JWT but don't require it (Everyone allows anonymous)
+                authResult <- Middleware.checkAuth (Maybe.Just auth.jwksManager) auth.authConfig Everyone request
+                case authResult of
+                  Result.Err _ -> Task.yield "anonymous"  -- No valid token, treat as anonymous
+                  Result.Ok authContext -> case authContext.claims of
+                    Maybe.Nothing -> Task.yield "anonymous"
+                    Maybe.Just claims -> Task.yield claims.sub  -- Use JWT subject as owner
+            
+            let ownerHash = ownerHashResult
             
             downloadResult <- fileUpload.fileUploadRoutes.handleDownload ownerHash fileRef
               |> Task.asResult
@@ -682,11 +702,16 @@ instance Transport WebTransport where
                   FileUpload.FileExpired _ -> notFound "{\"error\":\"File expired\"}"
                   FileUpload.FileIsDeleted _ -> notFound "{\"error\":\"File not found\"}"
                   FileUpload.BlobMissing _ -> internalError "{\"error\":\"File content missing\"}"
-                  FileUpload.StorageError msg -> internalError [fmt|{"error":"Storage error: #{msg}"}|]
-                  FileUpload.StateLookupFailed _ msg -> internalError [fmt|{"error":"State lookup failed: #{msg}"}|]
+                  -- Don't leak internal error details to clients
+                  FileUpload.StorageError _ -> internalError "{\"error\":\"Internal server error\"}"
+                  FileUpload.StateLookupFailed _ _ -> internalError "{\"error\":\"Internal server error\"}"
               Result.Ok (content, contentType, filename) -> do
                 -- Return file content with appropriate headers
-                let contentDispositionText = [fmt|attachment; filename="#{filename}"|]
+                -- Sanitize filename to prevent CRLF injection in Content-Disposition header
+                let sanitizedFilename = filename 
+                      |> Text.filter (\c -> c != '\r' && c != '\n' && c != '"' && c != '\\')
+                      |> Text.replace ";" "_"
+                let contentDispositionText = [fmt|attachment; filename="#{sanitizedFilename}"|]
                 let contentDisposition = contentDispositionText |> Text.toBytes |> Bytes.unwrap
                 let ctBytes = contentType |> Text.toBytes |> Bytes.unwrap
                 let headers = 

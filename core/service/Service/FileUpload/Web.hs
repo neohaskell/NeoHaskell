@@ -24,18 +24,29 @@ module Service.FileUpload.Web (
   InMemoryFileStateStore,
   newInMemoryFileStateStore,
   inMemoryFileStateStore,
+
+  -- * Cleanup
+  startCleanupWorker,
+  cleanupExpiredFiles,
 ) where
 
+import AsyncTask (AsyncTask)
+import AsyncTask qualified
 import Basics
 import Bytes (Bytes)
 import ConcurrentMap (ConcurrentMap)
 import ConcurrentMap qualified
+import Console qualified
 import DateTime qualified
+import Array qualified
 import Map (Map)
 import Maybe (Maybe (..))
 import Service.FileUpload.BlobStore (BlobStore (..))
+import Result (Result (..))
 import Service.FileUpload.Core (
   FileAccessError (..),
+  FileDeletedData (..),
+  FileDeletionReason (..),
   FileRef (..),
   FileUploadConfig (..),
   FileUploadEvent (..),
@@ -127,14 +138,14 @@ inMemoryFileStateStore store =
         ConcurrentMap.set fileRef state store
           |> Task.mapError (\_ -> "Failed to write state")
     , updateState = \fileRef event -> do
-        maybeState <- ConcurrentMap.get fileRef store
-          |> Task.mapError (\_ -> "Failed to read state")
-        let currentState = case maybeState of
-              Nothing -> Lifecycle.initialState
-              Just s -> s
-        let newState = Lifecycle.update event currentState
-        ConcurrentMap.set fileRef newState store
-          |> Task.mapError (\_ -> "Failed to write state")
+        -- Use atomic update to prevent race conditions
+        let updateFn maybeState = 
+              let currentState = case maybeState of
+                    Nothing -> Lifecycle.initialState
+                    Just s -> s
+              in Lifecycle.update event currentState
+        ConcurrentMap.update fileRef updateFn store
+          |> Task.mapError (\_ -> "Failed to update state")
     }
 
 
@@ -296,3 +307,94 @@ confirmFileImpl stateStore fileRef requestId = do
         , confirmedAt = nowEpoch
         }
   stateStore.updateState fileRef event
+
+
+-- ==========================================================================
+-- Cleanup
+-- ==========================================================================
+
+-- | Start a background worker that periodically cleans up expired pending files.
+-- Returns the AsyncTask handle for the worker (can be cancelled on shutdown).
+startCleanupWorker ::
+  FileUploadConfig ->
+  FileStateStore ->
+  BlobStore ->
+  InMemoryFileStateStore ->
+  Task Text (AsyncTask Text ())
+startCleanupWorker config stateStore blobStore stateMap = do
+  let intervalMs = fromIntegral config.cleanupIntervalSeconds * 1000
+  AsyncTask.run do
+    cleanupLoop intervalMs stateStore blobStore stateMap
+
+
+-- | Internal cleanup loop - runs forever until cancelled.
+cleanupLoop ::
+  Int ->
+  FileStateStore ->
+  BlobStore ->
+  InMemoryFileStateStore ->
+  Task Text ()
+cleanupLoop intervalMs stateStore blobStore stateMap = do
+  -- Wait for the configured interval
+  AsyncTask.sleep intervalMs
+  
+  -- Run cleanup
+  cleanupResult <- cleanupExpiredFiles stateStore blobStore stateMap
+    |> Task.asResult
+  case cleanupResult of
+    Result.Err err -> Console.print [fmt|[FileUpload] Cleanup error: #{err}|] |> Task.ignoreError
+    Result.Ok count -> 
+      if count > 0
+        then Console.print [fmt|[FileUpload] Cleaned up #{count} expired files|] |> Task.ignoreError
+        else pass
+  
+  -- Loop forever
+  cleanupLoop intervalMs stateStore blobStore stateMap
+
+
+-- | Clean up expired pending files.
+-- Returns the number of files cleaned up.
+cleanupExpiredFiles ::
+  FileStateStore ->
+  BlobStore ->
+  InMemoryFileStateStore ->
+  Task Text Int
+cleanupExpiredFiles stateStore blobStore stateMap = do
+  now <- DateTime.now |> Task.mapError (\_ -> "Failed to get time")
+  let nowEpoch = DateTime.toEpochSeconds now
+  
+  -- Get all entries from the state map
+  entries <- ConcurrentMap.entries stateMap
+    |> Task.mapError (\_ -> "Failed to read state map")
+  
+  -- Find expired pending files
+  let expiredFiles = entries
+        |> Array.takeIf (\(_, state) -> isExpiredPending nowEpoch state)
+  
+  -- Delete each expired file
+  let deleteOne (fileRef, state) = do
+        case state of
+          Pending pendingFile -> do
+            -- Delete the blob
+            _ <- blobStore.delete pendingFile.metadata.blobKey
+              |> Task.mapError (\_ -> "Failed to delete blob")
+            -- Update state to Deleted
+            let event = FileDeleted FileDeletedData
+                  { fileRef = fileRef
+                  , deletedAt = nowEpoch
+                  , reason = Orphaned  -- TTL expired without confirmation
+                  }
+            stateStore.updateState fileRef event
+          _ -> pass  -- Skip non-pending files
+  
+  -- Process all expired files
+  _ <- expiredFiles |> Task.forEach deleteOne
+  
+  Task.yield (Array.length expiredFiles)
+
+
+-- | Check if a file state is an expired pending file.
+isExpiredPending :: Int64 -> FileUploadState -> Bool
+isExpiredPending nowEpoch state = case state of
+  Pending pendingFile -> nowEpoch > pendingFile.expiresAt
+  _ -> False
