@@ -220,7 +220,7 @@ handleUploadImpl config blobStore stateStore ownerHash filename contentType cont
         , ownerHash = ownerHash
         }
   
-  -- Call the core upload handler
+  -- Call the core upload handler (stores blob)
   response <- Routes.handleUpload config blobStore request
     |> Task.mapError uploadErrorToText
   
@@ -236,9 +236,24 @@ handleUploadImpl config blobStore stateStore ownerHash filename contentType cont
         , uploadedAt = DateTime.toEpochSeconds now
         , expiresAt = DateTime.toEpochSeconds response.expiresAt
         }
-  stateStore.updateState response.fileRef event
   
-  Task.yield response
+  -- Update state, cleanup blob on failure to avoid orphaned blobs
+  stateUpdateResult <- stateStore.updateState response.fileRef event
+    |> Task.asResult
+  
+  case stateUpdateResult of
+    Ok _ -> Task.yield response
+    Err stateErr -> do
+      -- State update failed - cleanup the blob (best effort)
+      Console.print "[FileUpload] State update failed, cleaning up blob\n"
+      deleteResult <- blobStore.delete response.blobKey
+        |> Task.asResult
+      case deleteResult of
+        Ok _ -> pass
+        Err _ -> 
+          Console.print "[FileUpload] Failed to cleanup blob after state update failure\n"
+      -- Propagate the original state update error
+      Task.throw [fmt|Failed to record upload state: #{stateErr}|]
 
 
 -- | Convert upload error to text.

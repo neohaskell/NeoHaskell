@@ -92,13 +92,14 @@ update ::
   key ->
   (Maybe value -> value) ->
   ConcurrentMap key value ->
-  Task _ ()
-update key updateFn (ConcurrentMap stmMap) =
-  GhcSTM.atomically do
+  Task _ Unit
+update key updateFn (ConcurrentMap stmMap) = do
+  _ <- GhcSTM.atomically do
     existing <- STMMap.lookup key stmMap
     let newValue = updateFn existing
     STMMap.insert newValue key stmMap
-  |> Task.fromIO
+    |> Task.fromIO
+  Task.yield unit
 
 
 -- | Atomically get an existing value or insert a new one.
