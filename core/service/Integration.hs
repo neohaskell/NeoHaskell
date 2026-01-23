@@ -47,6 +47,10 @@ module Integration (
   emitCommand,
   noCommand,
 
+  -- * Command Payload Construction
+  makeCommandPayload,
+  encodeCommand,
+
   -- * Inbound Types
   Inbound (..),
   InboundConfig (..),
@@ -101,6 +105,9 @@ data CommandPayload = CommandPayload
 
 
 instance Json.FromJSON CommandPayload
+
+
+instance Json.ToJSON CommandPayload
 
 
 -- | Internal representation of an action.
@@ -173,6 +180,25 @@ action :: Task IntegrationError (Maybe CommandPayload) -> Action
 action task = Action (ActionInternal task)
 
 
+-- | Build a CommandPayload from a command.
+--
+-- This is the shared implementation used by 'emitCommand', 'encodeCommand',
+-- and 'inbound' to ensure consistent payload construction.
+--
+-- The command type must have a 'NameOf' instance and 'ToJSON' instance.
+makeCommandPayload ::
+  forall command name.
+  (Json.ToJSON command, name ~ NameOf command, GHC.KnownSymbol name) =>
+  command ->
+  CommandPayload
+makeCommandPayload cmd = do
+  let cmdName = GHC.symbolVal (Proxy @name) |> Text.fromLinkedList
+  CommandPayload
+    { commandType = cmdName
+    , commandData = Json.encode cmd
+    }
+
+
 -- | Emit a command as the result of an integration action.
 -- The command will be dispatched to the appropriate service.
 --
@@ -189,19 +215,39 @@ emitCommand ::
   (Json.ToJSON command, name ~ NameOf command, GHC.KnownSymbol name) =>
   command ->
   Task IntegrationError (Maybe CommandPayload)
-emitCommand cmd = do
-  let cmdName = GHC.symbolVal (Proxy @name) |> Text.fromLinkedList
-  let payload =
-        CommandPayload
-          { commandType = cmdName
-          , commandData = Json.encode cmd
-          }
-  Task.yield (Just payload)
+emitCommand cmd = Task.yield (Just (makeCommandPayload cmd))
 
 
 -- | No command to emit. Used when integration doesn't produce a follow-up command.
 noCommand :: Task IntegrationError (Maybe CommandPayload)
 noCommand = Task.yield Nothing
+
+
+-- | Encode a command as JSON text in CommandPayload format.
+--
+-- This is the sync version of 'emitCommand' for use in contexts that need
+-- JSON text directly (e.g., OAuth2 callbacks).
+--
+-- The command type must have a 'NameOf' instance and 'ToJSON' instance.
+--
+-- __Note__: Token types ('TokenSet', 'AccessToken', 'RefreshToken') have no
+-- 'ToJSON' instance by design. Store tokens in SecretStore and pass a
+-- reference key in your command instead.
+--
+-- @
+-- -- In OAuth2 callback configuration:
+-- onSuccess = \\userId tokens -> do
+--   -- First, store tokens securely and get a reference key
+--   let tokenKey = SecretStore.storeTokens userId tokens
+--   -- Then encode a command with the key (not the tokens)
+--   Integration.encodeCommand (OuraTokensStored userId tokenKey)
+-- @
+encodeCommand ::
+  forall command name.
+  (Json.ToJSON command, name ~ NameOf command, GHC.KnownSymbol name) =>
+  command ->
+  Text
+encodeCommand cmd = Json.encodeText (makeCommandPayload cmd)
 
 
 -- | Configuration for an inbound integration worker.
@@ -236,17 +282,10 @@ inbound ::
   InboundConfig command ->
   Inbound
 inbound config = do
-  let cmdName = GHC.symbolVal (Proxy @name) |> Text.fromLinkedList
   let worker =
         InboundInternal
           { _runWorker = \emitPayload ->
-              config.run \cmd -> do
-                let payload =
-                      CommandPayload
-                        { commandType = cmdName
-                        , commandData = Json.encode cmd
-                        }
-                emitPayload payload
+              config.run \cmd -> emitPayload (makeCommandPayload cmd)
           }
   Inbound worker
 
