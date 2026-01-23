@@ -18,6 +18,7 @@ import GHC.IO.Exception qualified as Exception
 import Path (Path)
 import Path qualified
 import System.Directory qualified as GhcDir
+import System.IO.Error qualified as GhcIOError
 import Task (Task)
 import Task qualified
 import Text (Text)
@@ -79,11 +80,21 @@ rename source dest =
 
 
 deleteIfExists :: Path -> Task Error ()
-deleteIfExists filePath = do
-  fileExists <- exists filePath
-  if fileExists
-    then do
-      GhcDir.removeFile (Path.toLinkedList filePath)
-        |> Task.fromFailableIO @Exception.IOError
-        |> Task.mapError (\_ -> NotWritable)
-    else Task.yield ()
+deleteIfExists filePath =
+  GhcDir.removeFile (Path.toLinkedList filePath)
+    |> Task.fromFailableIO @Exception.IOError
+    |> Task.mapError mapDeleteError
+    |> Task.recover handleDeleteError
+  where
+    -- Map IOError to our Error type, preserving NotFound for recovery
+    mapDeleteError :: Exception.IOError -> Error
+    mapDeleteError ioErr =
+      if GhcIOError.isDoesNotExistError ioErr
+        then NotFound
+        else NotWritable
+
+    -- Recover from NotFound (file already gone = success), rethrow others
+    handleDeleteError :: Error -> Task Error ()
+    handleDeleteError err = case err of
+      NotFound -> Task.yield ()
+      other -> Task.throw other
