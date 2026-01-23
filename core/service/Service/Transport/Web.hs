@@ -286,11 +286,13 @@ extractContentTypeFromHeaders headers = do
 
 -- | Map a CommandResponse to its corresponding HTTP status code.
 -- This avoids needing to decode the response bytes to determine the status.
+-- Note: Failed returns 400 (Bad Request) because it typically indicates
+-- client errors like parse failures or invalid input, not server errors.
 commandResponseToHttpStatus :: CommandResponse -> HTTP.Status
 commandResponseToHttpStatus response = case response of
   Response.Accepted {} -> HTTP.status200
   Response.Rejected {} -> HTTP.status400
-  Response.Failed {} -> HTTP.status500
+  Response.Failed {} -> HTTP.status400
 
 
 instance Transport WebTransport where
