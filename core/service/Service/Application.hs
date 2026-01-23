@@ -623,7 +623,15 @@ runWith eventStore app = do
           Console.print [fmt|[OAuth2] Using custom SecretStore|]
           Task.yield store
         Nothing -> do
-          Console.print [fmt|[OAuth2] Using default in-memory SecretStore (development only)|]
+          Console.print [fmt|[OAuth2] ============================================================|]
+          Console.print [fmt|[OAuth2] WARNING: Using in-memory SecretStore (development only)|]
+          Console.print [fmt|[OAuth2] |]
+          Console.print [fmt|[OAuth2] OAuth2 tokens will be LOST on restart and cannot be|]
+          Console.print [fmt|[OAuth2] shared across multiple instances.|]
+          Console.print [fmt|[OAuth2] |]
+          Console.print [fmt|[OAuth2] For production, configure a persistent SecretStore:|]
+          Console.print [fmt|[OAuth2]   Application.withSecretStore mySecretStore|]
+          Console.print [fmt|[OAuth2] ============================================================|]
           InMemorySecretStore.new
       -- Create rate limiters for abuse prevention
       connectRateLimiter <- RateLimiter.new RateLimiter.defaultConnectConfig
