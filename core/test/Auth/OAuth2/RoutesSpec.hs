@@ -6,6 +6,7 @@ import Auth.OAuth2.RateLimiter qualified as RateLimiter
 import Auth.OAuth2.Routes (OAuth2RouteDeps (..), OAuth2RouteError (..), OAuth2Routes (..), createRoutes)
 import Auth.OAuth2.StateToken (mkHmacKey)
 import Auth.OAuth2.TransactionStore.InMemory qualified as InMemory
+import Auth.SecretStore.InMemory qualified as SecretStoreInMemory
 import Auth.OAuth2.Types (
   ClientId (..),
   Provider (..),
@@ -84,6 +85,7 @@ createTestDeps = do
     Err err -> Task.throw err
     Ok key -> Task.yield key
   transactionStore <- InMemory.new
+  secretStore <- SecretStoreInMemory.new
   validatedConfig <- mockValidatedProviderConfig
   let providers = Map.empty |> Map.set "mock" validatedConfig
   -- Create rate limiters with generous limits for testing
@@ -93,6 +95,7 @@ createTestDeps = do
     OAuth2RouteDeps
       { hmacKey = hmacKey
       , transactionStore = transactionStore
+      , secretStore = secretStore
       , providers = providers
       , connectRateLimiter = connectRateLimiter
       , callbackRateLimiter = callbackRateLimiter

@@ -67,6 +67,7 @@ import Auth.OAuth2.Types (
   mkAuthorizationCode,
   mkState,
  )
+import Auth.SecretStore (SecretStore (..), TokenKey (..))
 import Basics
 import Data.Time.Clock.POSIX qualified as GhcPosix
 import Prelude qualified as GhcPrelude
@@ -88,6 +89,8 @@ data OAuth2RouteDeps = OAuth2RouteDeps
     hmacKey :: HmacKey
   , -- | Store for PKCE verifiers (one-time use)
     transactionStore :: TransactionStore
+  , -- | Secure storage for OAuth2 tokens
+    secretStore :: SecretStore
   , -- | Configured OAuth2 providers by name (pre-validated at startup)
     providers :: Map Text ValidatedOAuth2ProviderConfig
   , -- | Rate limiter for /connect endpoint (per userId)
@@ -283,8 +286,14 @@ handleCallbackImpl deps providerName code stateToken = do
       let action = FailureAction actionJson
       Task.yield (config.failureRedirectUrl, Just action)
     Ok tokens -> do
-      -- Call success callback with server-side userId
-      let actionJson = config.onSuccess retrievedUserId tokens
+      -- Auto-store tokens in SecretStore with deterministic key
+      let tokenKey = TokenKey [fmt|oauth:#{providerName}:#{retrievedUserId}|]
+      let store = deps.secretStore
+      _ <-
+        store.put tokenKey tokens
+          |> Task.mapError (\storeErr -> TokenExchangeFailed (NetworkError [fmt|Failed to store tokens: #{storeErr}|]))
+      -- Call success callback with TokenKey (not raw tokens)
+      let actionJson = config.onSuccess retrievedUserId tokenKey
       let action = SuccessAction actionJson
       Task.yield (config.successRedirectUrl, Just action)
 
@@ -292,8 +301,9 @@ handleCallbackImpl deps providerName code stateToken = do
 -- | Implementation of POST /disconnect/{provider}
 --
 -- 1. Validate provider exists
--- 2. Call onDisconnect callback
--- 3. Return action to dispatch
+-- 2. Delete tokens from SecretStore
+-- 3. Call onDisconnect callback
+-- 4. Return action to dispatch
 handleDisconnectImpl ::
   OAuth2RouteDeps ->
   -- | Provider name from URL
@@ -307,7 +317,14 @@ handleDisconnectImpl deps providerName userId = do
     Nothing -> Task.throw (ProviderNotFound providerName)
     Just c -> Task.yield c
 
-  -- 2. Call disconnect callback
+  -- 2. Delete tokens from SecretStore
+  let tokenKey = TokenKey [fmt|oauth:#{providerName}:#{userId}|]
+  let store = deps.secretStore
+  _ <-
+    store.delete tokenKey
+      |> Task.ignoreError  -- Deletion failure is not critical
+
+  -- 3. Call disconnect callback
   let actionJson = config.onDisconnect userId
   Task.yield (DisconnectAction actionJson)
 

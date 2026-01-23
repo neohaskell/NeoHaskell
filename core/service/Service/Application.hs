@@ -29,6 +29,7 @@ module Service.Application (
   withInbound,
   withAuth,
   withAuthOverrides,
+  withSecretStore,
   withOAuth2StateKey,
   withOAuth2Provider,
   withFileUpload,
@@ -69,6 +70,8 @@ import Auth.OAuth2.RateLimiter qualified as RateLimiter
 import Auth.OAuth2.Routes qualified as OAuth2Routes
 import Auth.OAuth2.StateToken qualified as StateToken
 import Auth.OAuth2.TransactionStore.InMemory qualified as InMemoryTransactionStore
+import Auth.SecretStore (SecretStore)
+import Auth.SecretStore.InMemory qualified as InMemorySecretStore
 
 import Basics
 import Console qualified
@@ -209,7 +212,8 @@ data Application = Application
     inboundIntegrations :: Array Integration.Inbound,
     webAuthSetup :: Maybe WebAuthSetup,
     oauth2Setup :: Maybe OAuth2Setup,
-    fileUploadSetup :: Maybe FileUploadSetup
+    fileUploadSetup :: Maybe FileUploadSetup,
+    secretStore :: Maybe SecretStore
   }
 
 
@@ -232,7 +236,8 @@ new =
       inboundIntegrations = Array.empty,
       webAuthSetup = Nothing,
       oauth2Setup = Nothing,
-      fileUploadSetup = Nothing
+      fileUploadSetup = Nothing,
+      secretStore = Nothing
     }
 
 
@@ -612,6 +617,14 @@ runWith eventStore app = do
       Console.print [fmt|[OAuth2] Initializing OAuth2 provider routes...|]
       -- Create in-memory transaction store for PKCE verifiers + userId
       transactionStore <- InMemoryTransactionStore.new
+      -- Get or create SecretStore for token storage
+      tokenStore <- case app.secretStore of
+        Just store -> do
+          Console.print [fmt|[OAuth2] Using custom SecretStore|]
+          Task.yield store
+        Nothing -> do
+          Console.print [fmt|[OAuth2] Using default in-memory SecretStore (development only)|]
+          InMemorySecretStore.new
       -- Create rate limiters for abuse prevention
       connectRateLimiter <- RateLimiter.new RateLimiter.defaultConnectConfig
       callbackRateLimiter <- RateLimiter.new RateLimiter.defaultCallbackConfig
@@ -622,6 +635,7 @@ runWith eventStore app = do
             OAuth2Routes.OAuth2RouteDeps
               { OAuth2Routes.hmacKey = hmacKey,
                 OAuth2Routes.transactionStore = transactionStore,
+                OAuth2Routes.secretStore = tokenStore,
                 OAuth2Routes.providers = providerMap,
                 OAuth2Routes.connectRateLimiter = connectRateLimiter,
                 OAuth2Routes.callbackRateLimiter = callbackRateLimiter
@@ -915,6 +929,32 @@ withAuthOverrides authServerUrl overrides app =
               authOverrides = overrides
             }
     }
+
+
+-- | Configure a custom SecretStore for token storage.
+--
+-- By default, OAuth2 uses an in-memory SecretStore which is suitable for
+-- development. For production, provide a persistent implementation
+-- (e.g., Vault, AWS Secrets Manager, encrypted database).
+--
+-- @
+-- -- Development (default - in-memory):
+-- app = Application.new
+--   |> Application.withOAuth2StateKey "OAUTH2_STATE_KEY"
+--   |> Application.withOAuth2Provider ouraConfig
+--
+-- -- Production (custom implementation):
+-- vaultStore <- MyVault.newSecretStore vaultConfig
+-- app = Application.new
+--   |> Application.withSecretStore vaultStore
+--   |> Application.withOAuth2StateKey "OAUTH2_STATE_KEY"
+--   |> Application.withOAuth2Provider ouraConfig
+-- @
+withSecretStore ::
+  SecretStore ->
+  Application ->
+  Application
+withSecretStore store app = app {secretStore = Just store}
 
 
 -- | Initialize OAuth2 with an HMAC key loaded from environment.
