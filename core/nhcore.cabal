@@ -226,6 +226,7 @@ library
     Service.FileUpload.Lifecycle
     Service.FileUpload.BlobStore
     Service.FileUpload.BlobStore.Local
+    Service.FileUpload.FileStateStore.Postgres
     Service.FileUpload.Routes
     Service.FileUpload.Resolver
     Service.FileUpload.Download
@@ -286,6 +287,7 @@ library
     Test.Service.SnapshotCache
     Test.Service.SnapshotCache.InMemory.Context
     Test.Service.SnapshotCache.InMemory.Spec
+    Test.Service.FileUpload.FileStateStore
     Test.Spec
     Text
     Thenable
@@ -366,6 +368,8 @@ test-suite nhcore-test
     Service.FileUpload.RoutesSpec
     Service.FileUpload.ResolverSpec
     Service.FileUpload.DownloadSpec
+    Service.FileUpload.FileStateStore.InMemorySpec
+    Service.FileUpload.FileStateStore.PostgresSpec
 
   -- other-extensions:
   type: exitcode-stdio-1.0
