@@ -327,8 +327,11 @@ test-suite nhcore-test
     -with-rtsopts=-N
 
   other-modules:
+    Auth.InMemorySecretStoreSpec
     Auth.JwtSpec
     Auth.MiddlewareSpec
+    Test.Auth.SecretStore
+    Test.Auth.TestUtils
     Auth.OAuth2.ClientSpec
     Auth.OAuth2.RoutesSpec
     Auth.OAuth2.StateTokenSpec
