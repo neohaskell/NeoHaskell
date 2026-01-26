@@ -10,7 +10,7 @@ User wants a repeatable workflow plan for implementing NeoHaskell features with:
 
 The workflow should integrate specialized agents (security-architect, community-lead) and follow the existing outside-in TDD methodology documented in CLAUDE.md.
 
-**User Clarification**: Security reviews should focus on industry standards (NIST, OWASP, MAGERIT) rather than developer UX ("Jess Test") approach.
+**User Clarification**: Security reviews should focus on industry standards (NIST, OWASP, MAGERIT).
 
 ### Metis Review Summary
 
@@ -91,7 +91,7 @@ This is a workflow definition (process document), not executable code. Verificat
 
 **For Security Checklist:**
 - [ ] Read security checklist
-- [ ] Verify items reference "Jess Test" concept
+- [ ] Verify items map to NIST CSF 2.0, OWASP Top 10, or MAGERIT v3 standards
 - [ ] Verify no ambiguous terms like "EU-grade" without definition
 - [ ] Verify each item is verifiable (not subjective judgment)
 
@@ -673,13 +673,13 @@ All tasks are sequential (workflow definition is built step-by-step).
     - Deliverables: CreateCart command, AddItem command, CartSummary query
     - Must NOT Have: Checkout, payment, inventory management (separate domains)
   - [ ] Step 2 (Security Pre-Review):
-    - Security checklist:
-      - Jess Test: YES (cart IDs auto-generated UUIDs, not user-provided)
-      - No info disclosure: YES (error messages sanitized)
-      - Parse, don't validate: YES (CartEvent types enforce valid states)
-      - No injection: N/A (no external commands or file paths)
-      - Secrets never logged: N/A (no secrets in cart domain)
-      - Auth required: YES (Cart uses Auth.Context from framework)
+    - Security checklist (OWASP/NIST/MAGERIT):
+      - A01 Access Control: YES (Cart uses Auth.Context from framework)
+      - A03 Injection: N/A (no external commands or file paths)
+      - A05 Misconfiguration: YES (secure defaults, error messages sanitized)
+      - A09 Logging: YES (no secrets in cart domain to leak)
+      - PR (Protect): YES (CartEvent types enforce valid states)
+      - IA.1-2 (Identity/Auth): YES (framework-level JWT validation)
     - Performance applicability: NO (not hot path, skip 50k req/s requirement)
   - [ ] Step 3 (Testbed Usage):
     - File: `testbed/src/Testbed/Cart/Core.hs` (CartEntity, CartEvent, update function)
@@ -749,6 +749,7 @@ All tasks are sequential (workflow definition is built step-by-step).
 ## Success Criteria
 
 ### Verification Commands
+
 ```bash
 # Verify workflow document exists
 ls -lh .sisyphus/plans/secure-feature-workflow.md
