@@ -44,11 +44,11 @@ Establish a repeatable, tiered workflow process for implementing NeoHaskell feat
 - Per-step exit criteria and failure recovery procedures
 
 ### Definition of Done
-- [ ] Workflow document exists and is referenced by agents
-- [ ] At least one example feature has been implemented using this workflow (validation)
-- [ ] All three workflow paths have entry criteria and exit criteria
-- [ ] Security and performance checklists are concrete and measurable
-- [ ] Fast-path exists for bug fixes without over-engineering
+- [x] Workflow document exists and is referenced by agents
+- [x] At least one example feature has been implemented using this workflow (validation)
+- [x] All three workflow paths have entry criteria and exit criteria
+- [x] Security and performance checklists are concrete and measurable
+- [x] Fast-path exists for bug fixes without over-engineering
 
 ### Must Have
 - Tiered workflow paths (full/standard/fast) with explicit entry criteria
@@ -84,27 +84,27 @@ This is a workflow definition (process document), not executable code. Verificat
 **Manual Verification Procedures**:
 
 **For Workflow Structure:**
-- [ ] Read through workflow document
-- [ ] Verify each workflow path has entry criteria
-- [ ] Verify each step has exit criteria and recovery procedures
-- [ ] Verify checklists are measurable (yes/no questions, not "evaluate")
+- [x] Read through workflow document
+- [x] Verify each workflow path has entry criteria
+- [x] Verify each step has exit criteria and recovery procedures
+- [x] Verify checklists are measurable (yes/no questions, not "evaluate")
 
 **For Security Checklist:**
-- [ ] Read security checklist
-- [ ] Verify items map to NIST CSF 2.0, OWASP Top 10, or MAGERIT v3 standards
-- [ ] Verify no ambiguous terms like "EU-grade" without definition
-- [ ] Verify each item is verifiable (not subjective judgment)
+- [x] Read security checklist
+- [x] Verify items map to NIST CSF 2.0, OWASP Top 10, or MAGERIT v3 standards
+- [x] Verify no ambiguous terms like "EU-grade" without definition
+- [x] Verify each item is verifiable (not subjective judgment)
 
 **For Performance Checklist:**
-- [ ] Read performance applicability section
-- [ ] Verify it references actual 50k req/s targets from codebase (JWT, JWKS, dispatcher)
-- [ ] Verify it includes skip criteria for non-hot-path features
+- [x] Read performance applicability section
+- [x] Verify it references actual 50k req/s targets from codebase (JWT, JWKS, dispatcher)
+- [x] Verify it includes skip criteria for non-hot-path features
 
 **For Example Feature Validation:**
-- [ ] Pick one existing feature (e.g., Cart domain)
-- [ ] Walk through workflow steps
-- [ ] Verify workflow maps to actual implementation history
-- [ ] Identify any gaps where workflow doesn't match reality
+- [x] Pick one existing feature (e.g., Cart domain)
+- [x] Walk through workflow steps
+- [x] Verify workflow maps to actual implementation history
+- [x] Identify any gaps where workflow doesn't match reality
 
 ---
 
@@ -762,20 +762,20 @@ cat .sisyphus/plans/secure-feature-workflow.md
 ```
 
 ### Final Checklist
-- [ ] All "Must Have" present:
-  - [ ] Three workflow paths (Full/Standard/Fast) with entry criteria
-  - [ ] Security checklist replacing "EU-grade" with measurable criteria
-  - [ ] Performance applicability check (50k req/s only where needed)
-  - [ ] Build verification steps (6a-6e)
-  - [ ] Recovery procedures for all steps
-  - [ ] "Must NOT Have" sections in each step
-- [ ] All "Must NOT Have" absent:
-  - [ ] No universal 50k req/s requirement
-  - [ ] No ambiguous "EU-grade security" without checklist
-  - [ ] No workflow progression without written specification
-  - [ ] No test expectation modifications during implementation
-- [ ] Examples validate workflow (Cart domain walkthrough)
-- [ ] Gaps identified and documented (honest assessment)
+- [x] All "Must Have" present:
+  - [x] Three workflow paths (Full/Standard/Fast) with entry criteria
+  - [x] Security checklist replacing "EU-grade" with measurable criteria
+  - [x] Performance applicability check (50k req/s only where needed)
+  - [x] Build verification steps (6a-6e)
+  - [x] Recovery procedures for all steps
+  - [x] "Must NOT Have" sections in each step
+- [x] All "Must NOT Have" absent:
+  - [x] No universal 50k req/s requirement
+  - [x] No ambiguous "EU-grade security" without checklist
+  - [x] No workflow progression without written specification
+  - [x] No test expectation modifications during implementation
+- [x] Examples validate workflow (Cart domain walkthrough)
+- [x] Gaps identified and documented (honest assessment)
 
 ---
 
