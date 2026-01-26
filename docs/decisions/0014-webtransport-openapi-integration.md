@@ -35,49 +35,35 @@ OpenAPI generation is the documentation generation of the transport. It should n
 
 ## Decision
 
-### 1. WebTransport Configuration Additions
+### 1. Application Configuration Additions
 
-Add optional API metadata fields to `WebTransport` with sensible defaults:
+Add optional API metadata fields to `Application` with sensible defaults. API info describes the application, not the transport:
 
 ```haskell
--- core/service/Service/Transport/Web.hs
-data WebTransport = WebTransport
-  { port :: Int,
-    maxBodySize :: Int,
-    authEnabled :: Maybe AuthEnabled,
-    oauth2Config :: Maybe OAuth2Config,
-    fileUploadEnabled :: Maybe FileUploadEnabled,
-    -- NEW: API documentation metadata (all defaulted)
-    apiTitle :: Text,
+-- core/service/Service/Application.hs
+data ApiInfo = ApiInfo
+  { apiTitle :: Text,
     apiVersion :: Text,
     apiDescription :: Text
   }
 
-server :: WebTransport
-server = WebTransport
-  { port = 8080,
-    maxBodySize = 1048576,
-    authEnabled = Nothing,
-    oauth2Config = Nothing,
-    fileUploadEnabled = Nothing,
-    -- NEW: sensible defaults
-    apiTitle = "API",
+defaultApiInfo :: ApiInfo
+defaultApiInfo = ApiInfo
+  { apiTitle = "API",
     apiVersion = "1.0.0",
     apiDescription = ""
   }
 ```
 
-Add a builder function for setting API info:
+Add a builder function for setting API info on the application:
 
 ```haskell
-withApiInfo :: Text -> Text -> Text -> WebTransport -> WebTransport
-withApiInfo title version description transport =
-  transport
-    { apiTitle = title,
-      apiVersion = version,
-      apiDescription = description
-    }
+withApiInfo :: Text -> Text -> Text -> Application -> Application
+withApiInfo title version description app =
+  app { apiInfo = ApiInfo { apiTitle = title, apiVersion = version, apiDescription = description } }
 ```
+
+The `ApiInfo` is passed to transports when they are assembled, allowing any transport that supports documentation (like WebTransport) to use it.
 
 ### 2. Automatic Documentation Routes
 
@@ -252,13 +238,13 @@ Swagger UI is served at `/docs` using one of two strategies:
 Serve a minimal HTML page that loads Swagger UI from a CDN:
 
 ```haskell
-serveSwaggerUi :: Endpoints WebTransport -> Task Text Wai.ResponseReceived
-serveSwaggerUi endpoints = do
+serveSwaggerUi :: ApiInfo -> Task Text Wai.ResponseReceived
+serveSwaggerUi apiInfo = do
   let html = [fmt|
     <!DOCTYPE html>
     <html>
     <head>
-      <title>{endpoints.transport.apiTitle} - API Documentation</title>
+      <title>{apiInfo.apiTitle} - API Documentation</title>
       <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui.css">
     </head>
     <body>
@@ -298,11 +284,11 @@ For build-time spec generation and golden testing, provide a function to generat
 generateOpenApiSpec :: Application -> OpenApi.OpenApi
 generateOpenApiSpec app = do
   let endpoints = Application.collectEndpoints app
-  let webTransport = Application.getWebTransport app
+  let info = Application.getApiInfo app
   toOpenApiSpec
-    webTransport.apiTitle
-    webTransport.apiVersion
-    webTransport.apiDescription
+    info.apiTitle
+    info.apiVersion
+    info.apiDescription
     endpoints.commandSchemas
     endpoints.querySchemas
 ```
@@ -333,13 +319,14 @@ diff openapi.json openapi.committed.json
 ```text
 core/
   schema/
-    Schema.hs                    -- (ADR-0012) Schema ADT, ToSchema
+    Schema.hs                    -- (ADR-0013) Schema ADT, ToSchema
     Schema/
       OpenApi.hs                 -- NEW: Schema → OpenAPI conversion
   service/
     Service/
+      Application.hs             -- Modified: ApiInfo, withApiInfo
       Transport/
-        Web.hs                   -- Modified: apiTitle/apiVersion/apiDescription, /openapi.json, /docs routes
+        Web.hs                   -- Modified: /openapi.json, /docs routes
         Web/
           OpenApi.hs             -- NEW: OpenAPI spec assembly from endpoints
           SwaggerUI.hs           -- NEW: Swagger UI HTML generation
@@ -350,14 +337,13 @@ core/
 No extra wiring required - documentation "just works":
 
 ```haskell
--- Application setup (unchanged from before)
+-- Application setup
 Application.new
+  |> Application.withApiInfo "Cart API" "1.0.0" "Shopping cart service"
   |> Application.withEventStore postgresConfig
   |> Application.withService cartService
   |> Application.withQuery @CartSummary
-  |> Application.withTransport 
-      (WebTransport.server 
-        |> WebTransport.withApiInfo "Cart API" "1.0.0" "Shopping cart service")
+  |> Application.withTransport WebTransport.server
   |> Application.run
 
 -- Automatically serves:
