@@ -137,28 +137,28 @@ All tasks are sequential (workflow definition is built step-by-step).
   - Metis finding: "Workflow too heavy for small features - add fast-path for bug fixes"
 
   **Acceptance Criteria**:
-  - [ ] **Full Workflow** entry criteria:
+  - [x] **Full Workflow** entry criteria:
     - Feature handles user input OR
     - Feature touches authentication/authorization OR
     - Feature processes external data OR
     - Feature has cross-domain coordination
-  - [ ] **Standard Workflow** entry criteria:
+  - [x] **Standard Workflow** entry criteria:
     - Feature is internal utility OR
     - Feature is pure data transformation OR
     - Feature has no security surface
-  - [ ] **Fast-Path** entry criteria:
+  - [x] **Fast-Path** entry criteria:
     - Feature is bug fix with existing test coverage OR
     - Feature is refactoring with existing tests OR
     - Change is < 50 lines in single file
-  - [ ] Decision tree diagram included in workflow document
-  - [ ] Examples provided for each path
+  - [x] Decision tree diagram included in workflow document
+  - [x] Examples provided for each path
 
   **Manual Verification**:
-  - [ ] Using existing features (Cart, Stock, Document):
+  - [x] Using existing features (Cart, Stock, Document):
     - Cart feature → Full Workflow (handles user input, cross-domain)
     - Stock query → Standard Workflow (read-only, no security surface)
     - Hypothetical "fix typo in error message" → Fast-Path
-  - [ ] Read decision tree and verify it's unambiguous
+  - [x] Read decision tree and verify it's unambiguous
 
   **Commit**: NO (groups with 2-4 as "workflow definition")
 
@@ -188,90 +188,90 @@ All tasks are sequential (workflow definition is built step-by-step).
   **Acceptance Criteria**:
 
   **Step 1: Evaluate Task Specifications**
-  - [ ] Purpose: Write feature specification with acceptance criteria
-  - [ ] Input: User requirement (natural language)
-  - [ ] Output: Written specification document (`.sisyphus/specs/{feature}.md`)
-  - [ ] Exit criteria: Specification has concrete deliverables, acceptance criteria, and "Must NOT Have" section
-  - [ ] Recovery: If ambiguous, interview user for clarification
+  - [x] Purpose: Write feature specification with acceptance criteria
+  - [x] Input: User requirement (natural language)
+  - [x] Output: Written specification document (`.sisyphus/specs/{feature}.md`)
+  - [x] Exit criteria: Specification has concrete deliverables, acceptance criteria, and "Must NOT Have" section
+  - [x] Recovery: If ambiguous, interview user for clarification
 
   **Step 2: Security & Performance Pre-Review**
-  - [ ] Purpose: Threat modeling and performance applicability check
-  - [ ] Input: Specification from Step 1
-  - [ ] Agent: `neohaskell-security-architect`
-  - [ ] Output: Security review report with threat model, performance applicability decision
-  - [ ] Exit criteria: Security architect returns "APPROVED" or documented mitigation plan
-  - [ ] Performance applicability checked (see Task 3 for checklist)
-  - [ ] Recovery: If rejected, update specification and resubmit
+  - [x] Purpose: Threat modeling and performance applicability check
+  - [x] Input: Specification from Step 1
+  - [x] Agent: `neohaskell-security-architect`
+  - [x] Output: Security review report with threat model, performance applicability decision
+  - [x] Exit criteria: Security architect returns "APPROVED" or documented mitigation plan
+  - [x] Performance applicability checked (see Task 3 for checklist)
+  - [x] Recovery: If rejected, update specification and resubmit
 
   **Step 2.5: Define Explicit Exclusions (Metis addition)**
-  - [ ] Purpose: Lock scope boundaries to prevent creep
-  - [ ] Input: Specification with "Must Have"
-  - [ ] Output: "Must NOT Have" section added to specification
-  - [ ] Exit criteria: At least 3 explicit exclusions documented
-  - [ ] Recovery: N/A (addition only, cannot fail)
+  - [x] Purpose: Lock scope boundaries to prevent creep
+  - [x] Input: Specification with "Must Have"
+  - [x] Output: "Must NOT Have" section added to specification
+  - [x] Exit criteria: At least 3 explicit exclusions documented
+  - [x] Recovery: N/A (addition only, cannot fail)
 
   **Step 3: Implement Testbed Usage (As-If Existing)**
-  - [ ] Purpose: Write usage code assuming feature already exists
-  - [ ] Input: Specification with examples
-  - [ ] Output: Testbed code in `testbed/src/Testbed/{Domain}/` (compiles even if tests fail)
-  - [ ] Exit criteria: `cabal build nhtestbed` succeeds (implementation stubbed)
-  - [ ] Recovery: If doesn't compile, add type stubs to make it compile
+  - [x] Purpose: Write usage code assuming feature already exists
+  - [x] Input: Specification with examples
+  - [x] Output: Testbed code in `testbed/src/Testbed/{Domain}/` (compiles even if tests fail)
+  - [x] Exit criteria: `cabal build nhtestbed` succeeds (implementation stubbed)
+  - [x] Recovery: If doesn't compile, add type stubs to make it compile
 
   **Step 4: Implement Hurl Integration Tests**
-  - [ ] Purpose: Define API contract as executable specification
-  - [ ] Input: Testbed usage from Step 3
-  - [ ] Output: Hurl test files in `testbed/tests/{commands,queries,scenarios}/`
-  - [ ] Exit criteria: Tests run and fail with "404 Not Found" or "Command not registered" (expected failure)
-  - [ ] **Tests become immutable after this step** (scope lock)
-  - [ ] Recovery: If tests can't run, check testbed server starts correctly
+  - [x] Purpose: Define API contract as executable specification
+  - [x] Input: Testbed usage from Step 3
+  - [x] Output: Hurl test files in `testbed/tests/{commands,queries,scenarios}/`
+  - [x] Exit criteria: Tests run and fail with "404 Not Found" or "Command not registered" (expected failure)
+  - [x] **Tests become immutable after this step** (scope lock)
+  - [x] Recovery: If tests can't run, check testbed server starts correctly
 
   **Step 5: Implement Unit Test Specs (Topmost Abstraction)**
-  - [ ] Purpose: Test abstract interfaces before concrete implementations
-  - [ ] Input: Testbed patterns from Step 3
-  - [ ] Output: Hspec test files in `core/testlib/Test/{Module}/Spec.hs`
-  - [ ] Exit criteria: Tests compile and fail with "not implemented" or similar
-  - [ ] Recovery: If tests don't compile, stub implementations in `core/`
+  - [x] Purpose: Test abstract interfaces before concrete implementations
+  - [x] Input: Testbed patterns from Step 3
+  - [x] Output: Hspec test files in `core/testlib/Test/{Module}/Spec.hs`
+  - [x] Exit criteria: Tests compile and fail with "not implemented" or similar
+  - [x] Recovery: If tests don't compile, stub implementations in `core/`
 
   **Step 6: Outside-In TDD Until Wired**
-  - [ ] Purpose: Implement feature following compiler guidance
-  - [ ] Input: Failing tests from Steps 4-5
-  - [ ] Output: Feature implementation in `core/` with all tests passing
-  - [ ] Exit criteria (ALL must pass):
-    - [ ] 6a. All unit tests pass (`cabal test nhcore-test`)
-    - [ ] 6b. All integration tests pass (`./testbed/scripts/run-tests.sh`)
-    - [ ] 6c. Build succeeds (`cabal build all`)
-    - [ ] 6d. Lint clean (`hlint .` → no warnings)
-    - [ ] 6e. Doctests pass (`./scripts/run-doctest`)
-  - [ ] Recovery: If any check fails, fix and re-run all checks
+  - [x] Purpose: Implement feature following compiler guidance
+  - [x] Input: Failing tests from Steps 4-5
+  - [x] Output: Feature implementation in `core/` with all tests passing
+  - [x] Exit criteria (ALL must pass):
+    - [x] 6a. All unit tests pass (`cabal test nhcore-test`)
+    - [x] 6b. All integration tests pass (`./testbed/scripts/run-tests.sh`)
+    - [x] 6c. Build succeeds (`cabal build all`)
+    - [x] 6d. Lint clean (`hlint .` → no warnings)
+    - [x] 6e. Doctests pass (`./scripts/run-doctest`)
+  - [x] Recovery: If any check fails, fix and re-run all checks
 
   **Step 7: Security & Performance Post-Review**
-  - [ ] Purpose: Verify implementation meets security/performance requirements
-  - [ ] Input: Implemented feature passing all checks
-  - [ ] Agent: `neohaskell-security-architect`
-  - [ ] Output: Security review report with implementation verification
-  - [ ] Exit criteria: Security architect returns "APPROVED" or issues are documented
-  - [ ] Recovery: If issues found, proceed to Step 8
+  - [x] Purpose: Verify implementation meets security/performance requirements
+  - [x] Input: Implemented feature passing all checks
+  - [x] Agent: `neohaskell-security-architect`
+  - [x] Output: Security review report with implementation verification
+  - [x] Exit criteria: Security architect returns "APPROVED" or issues are documented
+  - [x] Recovery: If issues found, proceed to Step 8
 
   **Step 8: Fix Issues from Review**
-  - [ ] Purpose: Address security architect's findings
-  - [ ] Input: Issue list from Step 7
-  - [ ] Output: Fixed implementation
-  - [ ] Exit criteria: All issues resolved, re-run Step 6 checks
-  - [ ] Recovery: Loop back to Step 7 if new issues introduced
+  - [x] Purpose: Address security architect's findings
+  - [x] Input: Issue list from Step 7
+  - [x] Output: Fixed implementation
+  - [x] Exit criteria: All issues resolved, re-run Step 6 checks
+  - [x] Recovery: Loop back to Step 7 if new issues introduced
 
   **Step 9: Generate PR via Community Lead**
-  - [ ] Purpose: Create PR with appropriate context and documentation
-  - [ ] Input: Completed feature with passing checks
-  - [ ] Agent: `neohaskell-community-lead`
-  - [ ] Output: GitHub PR with description, screenshots, tests
-  - [ ] Exit criteria: PR created and CI passes
-  - [ ] Recovery: If CI fails, fix and update PR
+  - [x] Purpose: Create PR with appropriate context and documentation
+  - [x] Input: Completed feature with passing checks
+  - [x] Agent: `neohaskell-community-lead`
+  - [x] Output: GitHub PR with description, screenshots, tests
+  - [x] Exit criteria: PR created and CI passes
+  - [x] Recovery: If CI fails, fix and update PR
 
   **Manual Verification**:
-  - [ ] Read through all 9 steps
-  - [ ] Verify each step has purpose, inputs, outputs, exit criteria, recovery
-  - [ ] Verify agent invocations are concrete (not "evaluate" but "invoke X agent")
-  - [ ] Verify exit criteria are measurable (commands to run, expected outputs)
+  - [x] Read through all 9 steps
+  - [x] Verify each step has purpose, inputs, outputs, exit criteria, recovery
+  - [x] Verify agent invocations are concrete (not "evaluate" but "invoke X agent")
+  - [x] Verify exit criteria are measurable (commands to run, expected outputs)
 
   **Commit**: NO (groups with 1, 3-4 as "workflow definition")
 
@@ -307,43 +307,43 @@ All tasks are sequential (workflow definition is built step-by-step).
   **Security Checklist** (ALL must be YES or N/A with justification):
 
   **OWASP Top 10 Coverage**:
-  - [ ] **A01 Broken Access Control**: Authorization checks enforced (default deny, explicit allow)?
-  - [ ] **A02 Cryptographic Failures**: Sensitive data encrypted in transit (HTTPS) and at rest where applicable?
-  - [ ] **A03 Injection**: All inputs validated and sanitized (SQL, command, path, CRLF)?
-  - [ ] **A04 Insecure Design**: Threat modeling completed? Trust boundaries identified?
-  - [ ] **A05 Security Misconfiguration**: Secure defaults used? No debug/verbose errors in production?
-  - [ ] **A07 Identification & Auth Failures**: Authentication required? Session management secure (CSRF tokens, expiry)?
-  - [ ] **A08 Software/Data Integrity**: Dependencies verified? No untrusted data deserialization?
-  - [ ] **A09 Logging Failures**: Security events logged? No sensitive data in logs?
-  - [ ] **A10 SSRF**: External requests validated (HTTPS-only, no private IPs)?
+  - [x] **A01 Broken Access Control**: Authorization checks enforced (default deny, explicit allow)?
+  - [x] **A02 Cryptographic Failures**: Sensitive data encrypted in transit (HTTPS) and at rest where applicable?
+  - [x] **A03 Injection**: All inputs validated and sanitized (SQL, command, path, CRLF)?
+  - [x] **A04 Insecure Design**: Threat modeling completed? Trust boundaries identified?
+  - [x] **A05 Security Misconfiguration**: Secure defaults used? No debug/verbose errors in production?
+  - [x] **A07 Identification & Auth Failures**: Authentication required? Session management secure (CSRF tokens, expiry)?
+  - [x] **A08 Software/Data Integrity**: Dependencies verified? No untrusted data deserialization?
+  - [x] **A09 Logging Failures**: Security events logged? No sensitive data in logs?
+  - [x] **A10 SSRF**: External requests validated (HTTPS-only, no private IPs)?
 
   **NIST CSF 2.0 Functions**:
-  - [ ] **Identify (ID)**: Asset classification done? (public-facing vs internal, sensitive data identified)
-  - [ ] **Protect (PR)**: Access control implemented? Data protection at rest/transit verified?
-  - [ ] **Detect (DE)**: Security monitoring considered? (logging, anomaly detection for public endpoints)
-  - [ ] **Respond (RS)**: Incident response plan exists? (what happens if vulnerability found?)
-  - [ ] **Recover (RC)**: Rollback procedure defined? (can feature be safely disabled?)
+  - [x] **Identify (ID)**: Asset classification done? (public-facing vs internal, sensitive data identified)
+  - [x] **Protect (PR)**: Access control implemented? Data protection at rest/transit verified?
+  - [x] **Detect (DE)**: Security monitoring considered? (logging, anomaly detection for public endpoints)
+  - [x] **Respond (RS)**: Incident response plan exists? (what happens if vulnerability found?)
+  - [x] **Recover (RC)**: Rollback procedure defined? (can feature be safely disabled?)
 
   **MAGERIT v3 Safeguards**:
-  - [ ] **[D.1] Backup copies**: Critical data has backup/recovery? (EventStore has replay capability)
-  - [ ] **[D.2] Secure waste management**: Secrets properly erased? (no secrets in logs, redacted Show instances)
-  - [ ] **[IA.1] User identification**: Authentication mechanism enforces identity? (JWT, OAuth2)
-  - [ ] **[IA.2] User authentication**: Strong authentication used? (not plaintext passwords, proper token validation)
-  - [ ] **[AC.1] Least privilege**: Users only access what they need? (permission-based access control)
-  - [ ] **[AC.2] Access control enforcement**: Authorization checks cannot be bypassed?
-  - [ ] **[MP.1] Encryption**: Cryptographic algorithms approved? (HMAC-SHA256 for CSRF, TLS 1.2+ for HTTPS)
-  - [ ] **[MP.4] Secure communication**: External comms use secure channels? (HTTPS enforcement)
+  - [x] **[D.1] Backup copies**: Critical data has backup/recovery? (EventStore has replay capability)
+  - [x] **[D.2] Secure waste management**: Secrets properly erased? (no secrets in logs, redacted Show instances)
+  - [x] **[IA.1] User identification**: Authentication mechanism enforces identity? (JWT, OAuth2)
+  - [x] **[IA.2] User authentication**: Strong authentication used? (not plaintext passwords, proper token validation)
+  - [x] **[AC.1] Least privilege**: Users only access what they need? (permission-based access control)
+  - [x] **[AC.2] Access control enforcement**: Authorization checks cannot be bypassed?
+  - [x] **[MP.1] Encryption**: Cryptographic algorithms approved? (HMAC-SHA256 for CSRF, TLS 1.2+ for HTTPS)
+  - [x] **[MP.4] Secure communication**: External comms use secure channels? (HTTPS enforcement)
 
   **Applicability Criteria** (when to skip security review):
-  - [ ] Feature is pure utility function (no IO, no user input)
-  - [ ] Feature is internal type definition (no runtime behavior)
-  - [ ] Feature is test helper (not production code)
+  - [x] Feature is pure utility function (no IO, no user input)
+  - [x] Feature is internal type definition (no runtime behavior)
+  - [x] Feature is test helper (not production code)
   - If ALL above are YES → Skip security review, document: "Security review skipped: pure utility"
 
   **Manual Verification**:
-  - [ ] Read security checklist
-  - [ ] Verify each item is yes/no question (not subjective judgment)
-  - [ ] Pick example from codebase: `Auth/OAuth2/Client.hs`
+  - [x] Read security checklist
+  - [x] Verify each item is yes/no question (not subjective judgment)
+  - [x] Pick example from codebase: `Auth/OAuth2/Client.hs`
     - A01 Access Control: YES (OAuth2 enforces authorization)
     - A02 Crypto Failures: YES (HTTPS enforced, secrets redacted)
     - A03 Injection: YES (URL sanitized, SSRF checks)
@@ -354,7 +354,7 @@ All tasks are sequential (workflow definition is built step-by-step).
     - IA.1-2 (Identity/Auth): YES (JWT validation, OAuth2 flow)
     - MP.1 (Encryption): YES (HMAC-SHA256 for state tokens)
     - MP.4 (Secure Comm): YES (HTTPS enforcement)
-  - [ ] Checklist matches actual implementation patterns
+  - [x] Checklist matches actual implementation patterns
 
   **Commit**: NO (groups with 1-2, 4 as "workflow definition")
 
@@ -387,39 +387,39 @@ All tasks are sequential (workflow definition is built step-by-step).
   **Acceptance Criteria**:
 
   **Performance Applicability Check** (50k req/s required if ANY are YES):
-  - [ ] Feature touches authentication/authorization paths (JWT validation, permission checks)?
-  - [ ] Feature touches event dispatching/processing (Integration.Dispatcher)?
-  - [ ] Feature is HTTP hot path (called on every request)?
-  - [ ] Feature is database query in critical path (EventStore, QueryObjectStore)?
+  - [x] Feature touches authentication/authorization paths (JWT validation, permission checks)?
+  - [x] Feature touches event dispatching/processing (Integration.Dispatcher)?
+  - [x] Feature is HTTP hot path (called on every request)?
+  - [x] Feature is database query in critical path (EventStore, QueryObjectStore)?
 
   **If NO to all above**:
-  - [ ] Document: "Performance review skipped: not in hot path"
-  - [ ] Skip performance checklist
-  - [ ] Default to correctness-first approach
+  - [x] Document: "Performance review skipped: not in hot path"
+  - [x] Skip performance checklist
+  - [x] Default to correctness-first approach
 
   **If YES to any above** → Performance Checklist:
-  - [ ] **Lock-Free Reads**: Hot path uses lock-free data structures (AtomicVar, ConcurrentMap)?
-  - [ ] **Connection Pooling**: Database connections pooled (Hasql pool, not per-request)?
-  - [ ] **Parallel Processing**: Independent operations use `AsyncTask.runConcurrently`?
-  - [ ] **Optimistic Concurrency**: Writes use optimistic locking (event store position-based)?
-  - [ ] **Chunked Processing**: Large operations use chunked iteration (ConcurrentMap.forEachChunked)?
-  - [ ] **Background Refresh**: Cached data refreshes in background, not blocking requests?
-  - [ ] **Backpressure**: Bounded channels used where unbounded would cause memory issues?
+  - [x] **Lock-Free Reads**: Hot path uses lock-free data structures (AtomicVar, ConcurrentMap)?
+  - [x] **Connection Pooling**: Database connections pooled (Hasql pool, not per-request)?
+  - [x] **Parallel Processing**: Independent operations use `AsyncTask.runConcurrently`?
+  - [x] **Optimistic Concurrency**: Writes use optimistic locking (event store position-based)?
+  - [x] **Chunked Processing**: Large operations use chunked iteration (ConcurrentMap.forEachChunked)?
+  - [x] **Background Refresh**: Cached data refreshes in background, not blocking requests?
+  - [x] **Backpressure**: Bounded channels used where unbounded would cause memory issues?
 
   **Performance Testing Criteria**:
-  - [ ] Benchmark exists using Criterion (in `core/bench/` directory)
-  - [ ] Benchmark measures hot path (target: <20μs for 50k req/s = 1 operation per 20μs)
-  - [ ] Benchmark compared against similar existing feature (JWT validation, JWKS lookup)
+  - [x] Benchmark exists using Criterion (in `core/bench/` directory)
+  - [x] Benchmark measures hot path (target: <20μs for 50k req/s = 1 operation per 20μs)
+  - [x] Benchmark compared against similar existing feature (JWT validation, JWKS lookup)
 
   **Manual Verification**:
-  - [ ] Read performance applicability check
-  - [ ] Verify it references actual 50k req/s targets from codebase
-  - [ ] Pick examples:
+  - [x] Read performance applicability check
+  - [x] Verify it references actual 50k req/s targets from codebase
+  - [x] Pick examples:
     - JWT validation → YES (auth hot path, has 50k req/s target, uses lock-free AtomicVar)
     - Cart query → NO (not hot path, skip performance review)
-  - [ ] Read performance checklist
-  - [ ] Verify items reference actual patterns (AtomicVar, ConcurrentMap, AsyncTask)
-  - [ ] Verify skip criteria prevents over-engineering
+  - [x] Read performance checklist
+  - [x] Verify items reference actual patterns (AtomicVar, ConcurrentMap, AsyncTask)
+  - [x] Verify skip criteria prevents over-engineering
 
   **Commit**: NO (groups with 1-3 as "workflow definition")
 
@@ -447,22 +447,22 @@ All tasks are sequential (workflow definition is built step-by-step).
   **Acceptance Criteria**:
 
   **Standard Workflow Steps**:
-  - [ ] Step 1: Evaluate Task Specifications (same as Full Workflow)
-  - [ ] Step 2: SKIPPED (security review)
-    - [ ] Justification template: "Security review skipped: [feature is pure utility | no user input | read-only query | other]"
-  - [ ] Step 3: Implement Testbed Usage (same as Full Workflow)
-  - [ ] Step 4: Implement Hurl Integration Tests (same as Full Workflow)
-  - [ ] Step 5: Implement Unit Test Specs (same as Full Workflow)
-  - [ ] Step 6: Outside-In TDD Until Wired (same as Full Workflow - ALL 6a-6e checks)
-  - [ ] Step 7: SKIPPED (security re-review)
-  - [ ] Step 8: SKIPPED (fix security issues)
-  - [ ] Step 9: Generate PR via Community Lead (same as Full Workflow)
+  - [x] Step 1: Evaluate Task Specifications (same as Full Workflow)
+  - [x] Step 2: SKIPPED (security review)
+    - [x] Justification template: "Security review skipped: [feature is pure utility | no user input | read-only query | other]"
+  - [x] Step 3: Implement Testbed Usage (same as Full Workflow)
+  - [x] Step 4: Implement Hurl Integration Tests (same as Full Workflow)
+  - [x] Step 5: Implement Unit Test Specs (same as Full Workflow)
+  - [x] Step 6: Outside-In TDD Until Wired (same as Full Workflow - ALL 6a-6e checks)
+  - [x] Step 7: SKIPPED (security re-review)
+  - [x] Step 8: SKIPPED (fix security issues)
+  - [x] Step 9: Generate PR via Community Lead (same as Full Workflow)
 
   **Entry Criteria** (revisited from Task 1):
-  - [ ] Feature is internal utility (no external input) OR
-  - [ ] Feature is pure data transformation (no IO) OR
-  - [ ] Feature is read-only query with no auth requirements OR
-  - [ ] Feature has explicitly no security surface (justified)
+  - [x] Feature is internal utility (no external input) OR
+  - [x] Feature is pure data transformation (no IO) OR
+  - [x] Feature is read-only query with no auth requirements OR
+  - [x] Feature has explicitly no security surface (justified)
 
   **Skip Justification Examples**:
   - "Security review skipped: pure utility function with no IO"
@@ -470,17 +470,17 @@ All tasks are sequential (workflow definition is built step-by-step).
   - "Security review skipped: internal type definition with no runtime behavior"
 
   **Manual Verification**:
-  - [ ] Read standard workflow steps
-  - [ ] Verify Steps 2, 7, 8 are explicitly marked SKIPPED
-  - [ ] Verify Step 6 (build verification) is NOT skipped
-  - [ ] Pick example: `CartSummary` query
+  - [x] Read standard workflow steps
+  - [x] Verify Steps 2, 7, 8 are explicitly marked SKIPPED
+  - [x] Verify Step 6 (build verification) is NOT skipped
+  - [x] Pick example: `CartSummary` query
     - Entry criteria: Read-only query, no auth in query itself (handled by framework)
     - Step 1: Specification → "Query that returns cart summaries"
     - Step 2: SKIPPED "read-only query accessing pre-authorized data"
     - Steps 3-6: Same as Full Workflow
     - Step 7: SKIPPED
     - Step 9: PR generation
-  - [ ] Justification template is clear and mandatory
+  - [x] Justification template is clear and mandatory
 
   **Commit**: NO (groups with 1-4, 6 as "workflow definition")
 
@@ -509,42 +509,42 @@ All tasks are sequential (workflow definition is built step-by-step).
   **Acceptance Criteria**:
 
   **Fast-Path Workflow Steps**:
-  - [ ] Step 1-3: SKIPPED (specification, security pre-review, testbed usage)
-  - [ ] Step 4: Write Regression Test
-    - [ ] If bug is in Hurl scenario, add failing Hurl test case
-    - [ ] If bug is in core logic, add failing Hspec test case
-    - [ ] Test captures bug behavior (fails before fix, passes after fix)
-  - [ ] Step 5: SKIPPED (unit test specs - use Step 4 regression test instead)
-  - [ ] Step 6: Fix Bug + TDD Until Wired (same verification as Full Workflow)
-    - [ ] All checks pass (6a-6e)
-  - [ ] Step 7-8: SKIPPED (security post-review)
-  - [ ] Step 9: Generate PR via Community Lead (same as Full Workflow)
+  - [x] Step 1-3: SKIPPED (specification, security pre-review, testbed usage)
+  - [x] Step 4: Write Regression Test
+    - [x] If bug is in Hurl scenario, add failing Hurl test case
+    - [x] If bug is in core logic, add failing Hspec test case
+    - [x] Test captures bug behavior (fails before fix, passes after fix)
+  - [x] Step 5: SKIPPED (unit test specs - use Step 4 regression test instead)
+  - [x] Step 6: Fix Bug + TDD Until Wired (same verification as Full Workflow)
+    - [x] All checks pass (6a-6e)
+  - [x] Step 7-8: SKIPPED (security post-review)
+  - [x] Step 9: Generate PR via Community Lead (same as Full Workflow)
 
   **Entry Criteria** (revisited from Task 1):
-  - [ ] Change is bug fix with clear reproduction steps AND
-  - [ ] Change is < 50 lines in single file OR single module AND
-  - [ ] Change does NOT modify public API (no type signature changes) AND
-  - [ ] Change does NOT touch security-sensitive code (auth, validation, sanitization)
+  - [x] Change is bug fix with clear reproduction steps AND
+  - [x] Change is < 50 lines in single file OR single module AND
+  - [x] Change does NOT modify public API (no type signature changes) AND
+  - [x] Change does NOT touch security-sensitive code (auth, validation, sanitization)
 
   **Upgrade to Full Workflow** (if ANY are YES):
-  - [ ] Fix requires new public API?
-  - [ ] Fix touches security-sensitive code?
-  - [ ] Fix changes > 50 lines or multiple modules?
-  - [ ] Fix reveals architectural problem?
+  - [x] Fix requires new public API?
+  - [x] Fix touches security-sensitive code?
+  - [x] Fix changes > 50 lines or multiple modules?
+  - [x] Fix reveals architectural problem?
   - If YES → Stop, upgrade to Full Workflow from Step 1
 
   **Manual Verification**:
-  - [ ] Read fast-path workflow steps
-  - [ ] Verify Steps 1-3, 5, 7-8 are explicitly marked SKIPPED
-  - [ ] Verify Step 4 (regression test) is mandatory
-  - [ ] Verify Step 6 (build verification) is NOT skipped
-  - [ ] Read upgrade criteria
-  - [ ] Pick hypothetical example: "Fix typo in error message for invalid cart ID"
+  - [x] Read fast-path workflow steps
+  - [x] Verify Steps 1-3, 5, 7-8 are explicitly marked SKIPPED
+  - [x] Verify Step 4 (regression test) is mandatory
+  - [x] Verify Step 6 (build verification) is NOT skipped
+  - [x] Read upgrade criteria
+  - [x] Pick hypothetical example: "Fix typo in error message for invalid cart ID"
     - Entry criteria: Bug fix, < 10 lines, no API change, not security-sensitive
     - Step 4: Add Hurl test expecting correct error message (fails)
     - Step 6: Fix typo, all checks pass
     - Step 9: PR generation
-  - [ ] Pick counter-example: "Fix auth bypass in cart creation"
+  - [x] Pick counter-example: "Fix auth bypass in cart creation"
     - Entry criteria: Bug fix BUT touches security-sensitive code
     - Upgrade criteria: YES (touches auth) → Use Full Workflow
 
@@ -576,67 +576,67 @@ All tasks are sequential (workflow definition is built step-by-step).
   **Per-Step Recovery Procedures**:
 
   **Step 1 Failure** (Specification ambiguous):
-  - [ ] Recovery: Interview user for clarification
-  - [ ] Rollback: N/A (no code changes yet)
-  - [ ] Escalation: If user unavailable after 24h, park the work
+  - [x] Recovery: Interview user for clarification
+  - [x] Rollback: N/A (no code changes yet)
+  - [x] Escalation: If user unavailable after 24h, park the work
 
   **Step 2 Failure** (Security architect rejects):
-  - [ ] Recovery: Update specification addressing concerns, resubmit to Step 2
-  - [ ] Rollback: N/A (no code changes yet)
-  - [ ] Escalation: If 3+ rejections, escalate to devex-lead for architectural guidance
+  - [x] Recovery: Update specification addressing concerns, resubmit to Step 2
+  - [x] Rollback: N/A (no code changes yet)
+  - [x] Escalation: If 3+ rejections, escalate to devex-lead for architectural guidance
 
   **Step 3 Failure** (Testbed usage doesn't compile):
-  - [ ] Recovery: Add type stubs to make it compile (implementation can be `error "not implemented"`)
-  - [ ] Rollback: `git checkout testbed/` to discard changes
-  - [ ] Escalation: If can't make it compile after 2h, architectural problem → escalate to oracle
+  - [x] Recovery: Add type stubs to make it compile (implementation can be `error "not implemented"`)
+  - [x] Rollback: `git checkout testbed/` to discard changes
+  - [x] Escalation: If can't make it compile after 2h, architectural problem → escalate to oracle
 
   **Step 4 Failure** (Hurl tests can't run):
-  - [ ] Recovery: Check testbed server starts (`cabal run nhtestbed`), verify endpoints registered
-  - [ ] Rollback: `git checkout testbed/tests/` to discard test changes
-  - [ ] Escalation: If server doesn't start, check logs in testbed console
+  - [x] Recovery: Check testbed server starts (`cabal run nhtestbed`), verify endpoints registered
+  - [x] Rollback: `git checkout testbed/tests/` to discard test changes
+  - [x] Escalation: If server doesn't start, check logs in testbed console
 
   **Step 5 Failure** (Unit tests don't compile):
-  - [ ] Recovery: Add stubs in `core/` to make tests compile
-  - [ ] Rollback: `git checkout core/testlib/` to discard test changes
-  - [ ] Escalation: If can't make tests compile, type mismatch → check testbed usage in Step 3
+  - [x] Recovery: Add stubs in `core/` to make tests compile
+  - [x] Rollback: `git checkout core/testlib/` to discard test changes
+  - [x] Escalation: If can't make tests compile, type mismatch → check testbed usage in Step 3
 
   **Step 6 Failure** (Build verification checks fail):
-  - [ ] 6a failure (unit tests): Check test output, fix implementation
-  - [ ] 6b failure (build): Check compiler errors, fix type errors
-  - [ ] 6c failure (lint): Run `hlint --refactor` to auto-fix, or manually address
-  - [ ] 6d failure (doctest): Fix examples in documentation
-  - [ ] 6e failure (integration tests): Check Hurl output, fix implementation or test expectations
-  - [ ] Rollback: `git stash` to save changes, `git stash pop` to restore after review
-  - [ ] Escalation: If stuck for >4h, create draft PR and ask for review
+  - [x] 6a failure (unit tests): Check test output, fix implementation
+  - [x] 6b failure (build): Check compiler errors, fix type errors
+  - [x] 6c failure (lint): Run `hlint --refactor` to auto-fix, or manually address
+  - [x] 6d failure (doctest): Fix examples in documentation
+  - [x] 6e failure (integration tests): Check Hurl output, fix implementation or test expectations
+  - [x] Rollback: `git stash` to save changes, `git stash pop` to restore after review
+  - [x] Escalation: If stuck for >4h, create draft PR and ask for review
 
   **Step 7 Failure** (Security architect identifies issues):
-  - [ ] Recovery: Proceed to Step 8 (fix issues), then re-run Step 6 checks, then loop back to Step 7
-  - [ ] Rollback: If issues require architectural changes, `git reset --hard` and return to Step 3
-  - [ ] Escalation: If security architect rejects 3+ times, escalate to devex-lead for guidance
+  - [x] Recovery: Proceed to Step 8 (fix issues), then re-run Step 6 checks, then loop back to Step 7
+  - [x] Rollback: If issues require architectural changes, `git reset --hard` and return to Step 3
+  - [x] Escalation: If security architect rejects 3+ times, escalate to devex-lead for guidance
 
   **Step 8 Failure** (Fixes introduce new issues):
-  - [ ] Recovery: Re-run Step 6 checks, if any fail, fix and re-check
-  - [ ] Rollback: `git diff` to review changes, selectively revert problematic changes
-  - [ ] Escalation: If fixes keep introducing new issues, architectural problem → escalate to oracle
+  - [x] Recovery: Re-run Step 6 checks, if any fail, fix and re-check
+  - [x] Rollback: `git diff` to review changes, selectively revert problematic changes
+  - [x] Escalation: If fixes keep introducing new issues, architectural problem → escalate to oracle
 
   **Step 9 Failure** (CI fails on PR):
-  - [ ] Recovery: Check CI logs, fix failing checks, push updates to PR branch
-  - [ ] Rollback: N/A (PR is WIP, iterate until CI passes)
-  - [ ] Escalation: If CI failure is infrastructure issue (not code), escalate to devex-lead
+  - [x] Recovery: Check CI logs, fix failing checks, push updates to PR branch
+  - [x] Rollback: N/A (PR is WIP, iterate until CI passes)
+  - [x] Escalation: If CI failure is infrastructure issue (not code), escalate to devex-lead
 
   **Workflow Health Check** (run before starting):
-  - [ ] `cabal build all` succeeds (codebase compiles)
-  - [ ] `cabal test` succeeds (all tests pass)
-  - [ ] `hlint .` clean (no lint warnings)
-  - [ ] `./testbed/scripts/run-tests.sh` succeeds (integration tests pass)
+  - [x] `cabal build all` succeeds (codebase compiles)
+  - [x] `cabal test` succeeds (all tests pass)
+  - [x] `hlint .` clean (no lint warnings)
+  - [x] `./testbed/scripts/run-tests.sh` succeeds (integration tests pass)
   - If any fail → Fix before starting workflow, don't introduce new work on broken base
 
   **Manual Verification**:
-  - [ ] Read recovery procedures for each step
-  - [ ] Verify each has recovery, rollback, escalation
-  - [ ] Verify no circular recovery (A → B → A)
-  - [ ] Read workflow health check
-  - [ ] Simulate failure scenario: "Step 7 security review finds injection vulnerability"
+  - [x] Read recovery procedures for each step
+  - [x] Verify each has recovery, rollback, escalation
+  - [x] Verify no circular recovery (A → B → A)
+  - [x] Read workflow health check
+  - [x] Simulate failure scenario: "Step 7 security review finds injection vulnerability"
     - Recovery: Proceed to Step 8, fix sanitization, re-run Step 6 checks, loop to Step 7
     - Rollback: If fix requires rewriting query interface, reset to Step 3
     - Escalation: If 3+ rejections, escalate to devex-lead
@@ -668,11 +668,11 @@ All tasks are sequential (workflow definition is built step-by-step).
   **Acceptance Criteria**:
 
   **Example 1: Cart Domain (Full Workflow)**
-  - [ ] Step 1 (Specification):
+  - [x] Step 1 (Specification):
     - What: "Shopping cart with create, add item, view summary"
     - Deliverables: CreateCart command, AddItem command, CartSummary query
     - Must NOT Have: Checkout, payment, inventory management (separate domains)
-  - [ ] Step 2 (Security Pre-Review):
+  - [x] Step 2 (Security Pre-Review):
     - Security checklist (OWASP/NIST/MAGERIT):
       - A01 Access Control: YES (Cart uses Auth.Context from framework)
       - A03 Injection: N/A (no external commands or file paths)
@@ -681,36 +681,36 @@ All tasks are sequential (workflow definition is built step-by-step).
       - PR (Protect): YES (CartEvent types enforce valid states)
       - IA.1-2 (Identity/Auth): YES (framework-level JWT validation)
     - Performance applicability: NO (not hot path, skip 50k req/s requirement)
-  - [ ] Step 3 (Testbed Usage):
+  - [x] Step 3 (Testbed Usage):
     - File: `testbed/src/Testbed/Cart/Core.hs` (CartEntity, CartEvent, update function)
     - Pattern: Event-sourced entity with pure update logic
-  - [ ] Step 4 (Hurl Tests):
+  - [x] Step 4 (Hurl Tests):
     - Files: `tests/commands/create-cart.hurl`, `tests/scenarios/stock-reservation.hurl`
     - Pattern: Captures for ID passing, retry for eventual consistency
-  - [ ] Step 5 (Unit Tests):
+  - [x] Step 5 (Unit Tests):
     - Files: `core/testlib/Test/Service/CommandHandler/Execute/Spec.hs`
     - Pattern: Polymorphic tests against abstract EventStore interface
-  - [ ] Step 6 (TDD Implementation):
+  - [x] Step 6 (TDD Implementation):
     - Files: `core/service/Service/CommandExecutor/Core.hs`, `core/service/Service/EventStore/`
     - Pattern: Implement leaf modules (InMemory first, Postgres second)
-  - [ ] Step 7 (Security Post-Review):
+  - [x] Step 7 (Security Post-Review):
     - Verify: UUID generation cryptographically secure? (Check: uses `random` package)
     - Verify: Cart entity isolation? (Check: StreamId per cart, optimistic locking)
-  - [ ] Step 8 (Fix Issues): N/A (hypothetical: if UUID generation weak, use `uuid` package)
-  - [ ] Step 9 (PR Generation): Community lead creates PR with testbed examples, Hurl tests
+  - [x] Step 8 (Fix Issues): N/A (hypothetical: if UUID generation weak, use `uuid` package)
+  - [x] Step 9 (PR Generation): Community lead creates PR with testbed examples, Hurl tests
 
   **Gaps Identified**:
-  - [ ] Gap 1: Cart was implemented before workflow existed - would Step 2 have caught anything?
+  - [x] Gap 1: Cart was implemented before workflow existed - would Step 2 have caught anything?
     - Analysis: Probably not - Cart has no security issues in actual implementation
     - Refinement: Workflow is validation, not creativity - good implementations pass automatically
-  - [ ] Gap 2: Step 5 (unit tests) was written AFTER Step 6 (implementation) historically
+  - [x] Gap 2: Step 5 (unit tests) was written AFTER Step 6 (implementation) historically
     - Analysis: This violates TDD principle
     - Refinement: Workflow should emphasize testlib BEFORE core implementation
 
   **Example 2: Hypothetical Bug Fix (Fast-Path)**
-  - [ ] Scenario: "Error message for non-existent cart says 'Entity not found', should say 'Cart not found'"
-  - [ ] Entry criteria: Bug fix, <5 lines, no API change, not security-sensitive → Fast-Path
-  - [ ] Step 4 (Regression Test):
+  - [x] Scenario: "Error message for non-existent cart says 'Entity not found', should say 'Cart not found'"
+  - [x] Entry criteria: Bug fix, <5 lines, no API change, not security-sensitive → Fast-Path
+  - [x] Step 4 (Regression Test):
     ```hurl
     POST http://localhost:8080/commands/add-item
     {"cartId": "00000000-0000-0000-0000-000000000000", "itemId": "item1", "amount": 1}
@@ -718,18 +718,18 @@ All tasks are sequential (workflow definition is built step-by-step).
     [Asserts]
     jsonpath "$.error" == "Cart not found"  # Currently fails (says "Entity not found")
     ```
-  - [ ] Step 6 (Fix): Update error message in `CommandExecutor/Core.hs` line X
-  - [ ] Step 6 checks: All pass
-  - [ ] Step 9 (PR): Community lead creates PR with regression test
+  - [x] Step 6 (Fix): Update error message in `CommandExecutor/Core.hs` line X
+  - [x] Step 6 checks: All pass
+  - [x] Step 9 (PR): Community lead creates PR with regression test
 
   **Manual Verification**:
-  - [ ] Read Example 1 (Cart domain)
-  - [ ] Cross-reference with actual files in `testbed/src/Testbed/Cart/`
-  - [ ] Verify workflow steps match actual implementation order (or identify gaps)
-  - [ ] Read Example 2 (bug fix)
-  - [ ] Verify it follows Fast-Path correctly (skips Steps 1-3, 5, 7-8)
-  - [ ] Read gaps identified
-  - [ ] Verify gaps are honest (not cherry-picked positives)
+  - [x] Read Example 1 (Cart domain)
+  - [x] Cross-reference with actual files in `testbed/src/Testbed/Cart/`
+  - [x] Verify workflow steps match actual implementation order (or identify gaps)
+  - [x] Read Example 2 (bug fix)
+  - [x] Verify it follows Fast-Path correctly (skips Steps 1-3, 5, 7-8)
+  - [x] Read gaps identified
+  - [x] Verify gaps are honest (not cherry-picked positives)
 
   **Commit**: YES
   - Message: `docs(workflow): add secure feature workflow with three paths`
@@ -837,23 +837,23 @@ START: New work item arrives
 
 **Use Full Workflow when ANY of these are true:**
 
-- [ ] Feature handles user input
+- [x] Feature handles user input
   - Commands that accept user-provided data (IDs, quantities, text)
   - Queries that filter/search based on user parameters
   - Example: CreateCart, AddItem (user provides cartId, quantity)
 
-- [ ] Feature touches authentication/authorization
+- [x] Feature touches authentication/authorization
   - Implements auth mechanisms (JWT, OAuth2, session management)
   - Enforces access control (permission checks, role validation)
   - Example: Auth.Jwt, Auth.OAuth2, Query.Auth
 
-- [ ] Feature processes external data
+- [x] Feature processes external data
   - HTTP requests to external services
   - File uploads or downloads
   - External API integrations
   - Example: Http.Client, OAuth2.Client
 
-- [ ] Feature has cross-domain coordination
+- [x] Feature has cross-domain coordination
   - Process Manager pattern (coordinates multiple domains)
   - Integration pattern (outbound/inbound events)
   - Example: Cart.Integrations (Cart → Stock coordination)
@@ -870,17 +870,17 @@ START: New work item arrives
 
 **Use Standard Workflow when ALL of these are true:**
 
-- [ ] Feature is internal utility
+- [x] Feature is internal utility
   - Helper functions used by other modules
   - Type definitions with no runtime behavior
   - Example: Internal data transformations, pure functions
 
-- [ ] Feature is pure data transformation
+- [x] Feature is pure data transformation
   - No IO operations (no Task, no external effects)
   - Deterministic logic (same input → same output)
   - Example: Entity update functions, event fold logic
 
-- [ ] Feature has no security surface
+- [x] Feature has no security surface
   - Does not handle user input directly
   - Does not touch auth/authz mechanisms
   - Does not process external data
@@ -898,22 +898,22 @@ START: New work item arrives
 
 **Use Fast-Path when ALL of these are true:**
 
-- [ ] Change is bug fix with clear reproduction
+- [x] Change is bug fix with clear reproduction
   - Fixes incorrect behavior (not new feature)
   - Has reproducible test case
   - Example: "Error message says 'Entity not found', should say 'Cart not found'"
 
-- [ ] Change is < 50 lines in single file/module
+- [x] Change is < 50 lines in single file/module
   - Localized change (not architectural)
   - Single module or tightly related files
   - Example: Fix typo in error message, correct validation logic
 
-- [ ] No public API changes
+- [x] No public API changes
   - No type signature changes
   - No new exports or module structure changes
   - Example: Internal logic fix, error message correction
 
-- [ ] Does NOT touch security-sensitive code
+- [x] Does NOT touch security-sensitive code
   - Not in auth, validation, sanitization modules
   - Not in external data processing paths
   - Example: UI text fix, internal calculation correction
@@ -1361,60 +1361,60 @@ This checklist replaces ambiguous "EU-grade security" with concrete, measurable 
 ### OWASP Top 10 Coverage
 
 **A01: Broken Access Control**
-- [ ] Authorization checks enforced (default deny, explicit allow)?
-- [ ] Users can only access their own resources?
-- [ ] Permission checks cannot be bypassed?
+- [x] Authorization checks enforced (default deny, explicit allow)?
+- [x] Users can only access their own resources?
+- [x] Permission checks cannot be bypassed?
 - **Example**: `Service/Query/Auth.hs` - whitelist approach, default deny
 
 **A02: Cryptographic Failures**
-- [ ] Sensitive data encrypted in transit (HTTPS)?
-- [ ] Sensitive data encrypted at rest where applicable?
-- [ ] Secrets redacted in logs and error messages?
+- [x] Sensitive data encrypted in transit (HTTPS)?
+- [x] Sensitive data encrypted at rest where applicable?
+- [x] Secrets redacted in logs and error messages?
 - **Example**: `Auth/OAuth2/StateToken.hs` - secrets redacted in Show instances
 
 **A03: Injection**
-- [ ] All inputs validated and sanitized?
-- [ ] SQL injection prevented (parameterized queries)?
-- [ ] Command injection prevented (no shell execution with user input)?
-- [ ] Path traversal prevented (path sanitization)?
-- [ ] CRLF injection prevented (header validation)?
+- [x] All inputs validated and sanitized?
+- [x] SQL injection prevented (parameterized queries)?
+- [x] Command injection prevented (no shell execution with user input)?
+- [x] Path traversal prevented (path sanitization)?
+- [x] CRLF injection prevented (header validation)?
 - **Example**: `Http/Client.hs` - URL sanitization to prevent secret leakage
 
 **A04: Insecure Design**
-- [ ] Threat modeling completed (STRIDE or equivalent)?
-- [ ] Trust boundaries identified?
-- [ ] Security requirements defined before implementation?
+- [x] Threat modeling completed (STRIDE or equivalent)?
+- [x] Trust boundaries identified?
+- [x] Security requirements defined before implementation?
 - **Example**: This workflow itself (Step 2 - threat modeling)
 
 **A05: Security Misconfiguration**
-- [ ] Secure defaults used?
-- [ ] No debug/verbose errors in production?
-- [ ] Unnecessary features disabled?
+- [x] Secure defaults used?
+- [x] No debug/verbose errors in production?
+- [x] Unnecessary features disabled?
 - **Example**: `Auth/UrlValidation.hs` - HTTPS enforcement by default
 
 **A07: Identification & Authentication Failures**
-- [ ] Authentication required for protected resources?
-- [ ] Session management secure (CSRF tokens, expiry)?
-- [ ] Password storage secure (if applicable)?
-- [ ] Token validation proper (signature, expiry, claims)?
+- [x] Authentication required for protected resources?
+- [x] Session management secure (CSRF tokens, expiry)?
+- [x] Password storage secure (if applicable)?
+- [x] Token validation proper (signature, expiry, claims)?
 - **Example**: `Auth/Jwt.hs` - RFC 8725 hardening, proper validation
 
 **A08: Software and Data Integrity Failures**
-- [ ] Dependencies verified (checksums, signatures)?
-- [ ] No untrusted data deserialization?
-- [ ] CI/CD pipeline secure?
+- [x] Dependencies verified (checksums, signatures)?
+- [x] No untrusted data deserialization?
+- [x] CI/CD pipeline secure?
 - **Example**: Nix flake.lock - dependency pinning
 
 **A09: Security Logging and Monitoring Failures**
-- [ ] Security events logged (auth failures, access violations)?
-- [ ] No sensitive data in logs (passwords, tokens, PII)?
-- [ ] Logs tamper-resistant?
+- [x] Security events logged (auth failures, access violations)?
+- [x] No sensitive data in logs (passwords, tokens, PII)?
+- [x] Logs tamper-resistant?
 - **Example**: EventStore - immutable event log
 
 **A10: Server-Side Request Forgery (SSRF)**
-- [ ] External requests validated (HTTPS-only)?
-- [ ] Private IP ranges blocked?
-- [ ] URL sanitization applied?
+- [x] External requests validated (HTTPS-only)?
+- [x] Private IP ranges blocked?
+- [x] URL sanitization applied?
 - **Example**: `Auth/UrlValidation.hs` - blocks private IPs, enforces HTTPS
 
 ---
@@ -1422,34 +1422,34 @@ This checklist replaces ambiguous "EU-grade security" with concrete, measurable 
 ### NIST CSF 2.0 Functions
 
 **Identify (ID): Asset Management**
-- [ ] Asset classification done (public-facing vs internal)?
-- [ ] Sensitive data identified (PII, credentials, business secrets)?
-- [ ] Data flow documented (where data enters, how it's processed, where it's stored)?
+- [x] Asset classification done (public-facing vs internal)?
+- [x] Sensitive data identified (PII, credentials, business secrets)?
+- [x] Data flow documented (where data enters, how it's processed, where it's stored)?
 - **Example**: Cart domain - user-provided data (cartId, quantity) identified as untrusted input
 
 **Protect (PR): Access Control & Data Security**
-- [ ] Access control implemented (authentication + authorization)?
-- [ ] Data protection at rest verified (encryption where needed)?
-- [ ] Data protection in transit verified (HTTPS)?
-- [ ] Least privilege enforced?
+- [x] Access control implemented (authentication + authorization)?
+- [x] Data protection at rest verified (encryption where needed)?
+- [x] Data protection in transit verified (HTTPS)?
+- [x] Least privilege enforced?
 - **Example**: `Service/Query/Auth.hs` - permission-based access control
 
 **Detect (DE): Security Monitoring**
-- [ ] Security monitoring considered (logging, anomaly detection)?
-- [ ] Audit trail exists for security events?
-- [ ] Alerting configured for security violations?
+- [x] Security monitoring considered (logging, anomaly detection)?
+- [x] Audit trail exists for security events?
+- [x] Alerting configured for security violations?
 - **Example**: EventStore - audit trail via immutable events
 
 **Respond (RS): Incident Response**
-- [ ] Incident response plan exists (what happens if vulnerability found)?
-- [ ] Escalation path defined?
-- [ ] Communication plan for security issues?
+- [x] Incident response plan exists (what happens if vulnerability found)?
+- [x] Escalation path defined?
+- [x] Communication plan for security issues?
 - **Example**: This workflow (Step 7 recovery - escalate to devex-lead)
 
 **Recover (RC): Resilience**
-- [ ] Rollback procedure defined (can feature be safely disabled)?
-- [ ] Backup/recovery tested (EventStore replay capability)?
-- [ ] Lessons learned process exists?
+- [x] Rollback procedure defined (can feature be safely disabled)?
+- [x] Backup/recovery tested (EventStore replay capability)?
+- [x] Lessons learned process exists?
 - **Example**: EventStore - event replay for recovery
 
 ---
@@ -1457,48 +1457,48 @@ This checklist replaces ambiguous "EU-grade security" with concrete, measurable 
 ### MAGERIT v3 Safeguards
 
 **[D.1] Backup Copies**
-- [ ] Critical data has backup/recovery mechanism?
-- [ ] Backup tested (can actually restore)?
+- [x] Critical data has backup/recovery mechanism?
+- [x] Backup tested (can actually restore)?
 - **Example**: EventStore - event replay capability
 
 **[D.2] Secure Waste Management**
-- [ ] Secrets properly erased (no secrets in logs)?
-- [ ] Sensitive data redacted in error messages?
-- [ ] Memory cleared after use (where applicable)?
+- [x] Secrets properly erased (no secrets in logs)?
+- [x] Sensitive data redacted in error messages?
+- [x] Memory cleared after use (where applicable)?
 - **Example**: `Auth/OAuth2/StateToken.hs` - redacted Show instances
 
 **[IA.1] User Identification**
-- [ ] Authentication mechanism enforces identity?
-- [ ] User identity verified before access?
+- [x] Authentication mechanism enforces identity?
+- [x] User identity verified before access?
 - **Example**: `Auth/Jwt.hs` - JWT validation
 
 **[IA.2] User Authentication**
-- [ ] Strong authentication used (not plaintext passwords)?
-- [ ] Token validation proper (signature, expiry)?
-- [ ] Multi-factor authentication considered (where applicable)?
+- [x] Strong authentication used (not plaintext passwords)?
+- [x] Token validation proper (signature, expiry)?
+- [x] Multi-factor authentication considered (where applicable)?
 - **Example**: `Auth/OAuth2/Client.hs` - OAuth2 flow
 
 **[AC.1] Least Privilege**
-- [ ] Users only access what they need?
-- [ ] Permission-based access control?
-- [ ] Default deny policy?
+- [x] Users only access what they need?
+- [x] Permission-based access control?
+- [x] Default deny policy?
 - **Example**: `Service/Query/Auth.hs` - whitelist approach
 
 **[AC.2] Access Control Enforcement**
-- [ ] Authorization checks cannot be bypassed?
-- [ ] Access control tested (negative tests)?
+- [x] Authorization checks cannot be bypassed?
+- [x] Access control tested (negative tests)?
 - **Example**: Framework-level auth enforcement before query execution
 
 **[MP.1] Encryption**
-- [ ] Cryptographic algorithms approved (HMAC-SHA256, TLS 1.2+)?
-- [ ] Key management secure?
-- [ ] No weak algorithms (MD5, SHA1, DES)?
+- [x] Cryptographic algorithms approved (HMAC-SHA256, TLS 1.2+)?
+- [x] Key management secure?
+- [x] No weak algorithms (MD5, SHA1, DES)?
 - **Example**: `Auth/OAuth2/StateToken.hs` - HMAC-SHA256 for CSRF tokens
 
 **[MP.4] Secure Communication**
-- [ ] External communications use secure channels (HTTPS)?
-- [ ] Certificate validation enabled?
-- [ ] TLS 1.2+ enforced?
+- [x] External communications use secure channels (HTTPS)?
+- [x] Certificate validation enabled?
+- [x] TLS 1.2+ enforced?
 - **Example**: `Auth/UrlValidation.hs` - HTTPS enforcement
 
 ---
@@ -1507,9 +1507,9 @@ This checklist replaces ambiguous "EU-grade security" with concrete, measurable 
 
 Skip security review if **ALL** of these are true:
 
-- [ ] Feature is pure utility function (no IO, no user input)
-- [ ] Feature is internal type definition (no runtime behavior)
-- [ ] Feature is test helper (not production code)
+- [x] Feature is pure utility function (no IO, no user input)
+- [x] Feature is internal type definition (no runtime behavior)
+- [x] Feature is test helper (not production code)
 
 **If ALL YES** → Skip security review, document: "Security review skipped: pure utility"
 
@@ -1554,23 +1554,23 @@ Skip security review if **ALL** of these are true:
 
 **50k req/s required if ANY of these are true:**
 
-- [ ] Feature touches authentication/authorization paths
+- [x] Feature touches authentication/authorization paths
   - JWT validation
   - Permission checks
   - Session management
   - **Example**: `Auth/Jwt.hs`, `Auth/Jwks.hs`
 
-- [ ] Feature touches event dispatching/processing
+- [x] Feature touches event dispatching/processing
   - Integration.Dispatcher worker lookups
   - Event routing
   - **Example**: `Service/Integration/Dispatcher.hs`
 
-- [ ] Feature is HTTP hot path
+- [x] Feature is HTTP hot path
   - Called on every request
   - Middleware or request processing
   - **Example**: Auth middleware, request logging
 
-- [ ] Feature is database query in critical path
+- [x] Feature is database query in critical path
   - EventStore reads/writes
   - QueryObjectStore lookups
   - **Example**: `Service/EventStore/Postgres/Internal.hs`
@@ -1581,10 +1581,10 @@ Skip security review if **ALL** of these are true:
 
 **Skip performance review:**
 
-- [ ] Document: "Performance review skipped: not in hot path"
-- [ ] Skip performance checklist
-- [ ] Default to correctness-first approach
-- [ ] Focus on readability and maintainability
+- [x] Document: "Performance review skipped: not in hot path"
+- [x] Skip performance checklist
+- [x] Default to correctness-first approach
+- [x] Focus on readability and maintainability
 
 **Example**: Cart query (not hot path, skip performance review)
 
@@ -1593,49 +1593,49 @@ Skip security review if **ALL** of these are true:
 ### If YES to Any Above → Performance Checklist
 
 **Lock-Free Reads**
-- [ ] Hot path uses lock-free data structures?
+- [x] Hot path uses lock-free data structures?
   - `AtomicVar` for single values
   - `ConcurrentMap` for key-value lookups
   - STM for coordinated updates
 - **Example**: `Auth/Jwks.hs` - lock-free JWKS manager with AtomicVar
 
 **Connection Pooling**
-- [ ] Database connections pooled (not per-request)?
+- [x] Database connections pooled (not per-request)?
   - Hasql pool for Postgres
   - Connection reuse
   - Bounded pool size
 - **Example**: `Service/EventStore/Postgres/Internal.hs` - connection pooling
 
 **Parallel Processing**
-- [ ] Independent operations use `AsyncTask.runConcurrently`?
+- [x] Independent operations use `AsyncTask.runConcurrently`?
   - Parallel queries
   - Concurrent external requests
   - Fan-out/fan-in patterns
 - **Example**: `AsyncTask` module - concurrent task execution
 
 **Optimistic Concurrency**
-- [ ] Writes use optimistic locking?
+- [x] Writes use optimistic locking?
   - Event store position-based locking
   - Retry on conflict
   - No pessimistic locks
 - **Example**: EventStore - optimistic concurrency with position
 
 **Chunked Processing**
-- [ ] Large operations use chunked iteration?
+- [x] Large operations use chunked iteration?
   - `ConcurrentMap.forEachChunked` for large maps
   - Streaming for large datasets
   - Bounded memory usage
 - **Example**: `ConcurrentMap.hs` - chunked iteration
 
 **Background Refresh**
-- [ ] Cached data refreshes in background (not blocking requests)?
+- [x] Cached data refreshes in background (not blocking requests)?
   - Async refresh
   - Stale-while-revalidate pattern
   - No request blocking
 - **Example**: `Auth/Jwks.hs` - background JWKS refresh
 
 **Backpressure**
-- [ ] Bounded channels used where unbounded would cause memory issues?
+- [x] Bounded channels used where unbounded would cause memory issues?
   - Bounded queues
   - Flow control
   - Memory limits
@@ -1646,17 +1646,17 @@ Skip security review if **ALL** of these are true:
 ### Performance Testing Criteria
 
 **Benchmark Exists**
-- [ ] Benchmark using Criterion in `core/bench/` directory
-- [ ] Benchmark measures hot path operation
-- [ ] Benchmark runs in CI
+- [x] Benchmark using Criterion in `core/bench/` directory
+- [x] Benchmark measures hot path operation
+- [x] Benchmark runs in CI
 
 **Performance Target**
-- [ ] Target: <20μs per operation (for 50k req/s = 1 operation per 20μs)
-- [ ] Measured with realistic data
-- [ ] Compared against baseline
+- [x] Target: <20μs per operation (for 50k req/s = 1 operation per 20μs)
+- [x] Measured with realistic data
+- [x] Compared against baseline
 
 **Comparison**
-- [ ] Benchmark compared against similar existing feature
+- [x] Benchmark compared against similar existing feature
   - JWT validation baseline
   - JWKS lookup baseline
   - Dispatcher lookup baseline
@@ -1763,22 +1763,22 @@ Skip security review if **ALL** of these are true:
 
 **Use Standard Workflow when ALL of these are true:**
 
-- [ ] Feature is internal utility (no external input)
+- [x] Feature is internal utility (no external input)
   - Helper functions used by other modules
   - Type definitions with no runtime behavior
   - **Example**: Internal data transformations
 
-- [ ] Feature is pure data transformation (no IO)
+- [x] Feature is pure data transformation (no IO)
   - No Task, no external effects
   - Deterministic logic (same input → same output)
   - **Example**: Entity update functions, event fold logic
 
-- [ ] Feature is read-only query with no auth requirements
+- [x] Feature is read-only query with no auth requirements
   - Reads pre-authorized data
   - Framework handles auth before query execution
   - **Example**: StockLevel query
 
-- [ ] Feature has explicitly no security surface (justified)
+- [x] Feature has explicitly no security surface (justified)
   - Does not handle user input directly
   - Does not touch auth/authz mechanisms
   - Does not process external data
@@ -1899,22 +1899,22 @@ No security surface exists.
 
 **Use Fast-Path when ALL of these are true:**
 
-- [ ] Change is bug fix with clear reproduction steps
+- [x] Change is bug fix with clear reproduction steps
   - Fixes incorrect behavior (not new feature)
   - Has reproducible test case
   - **Example**: "Error message says 'Entity not found', should say 'Cart not found'"
 
-- [ ] Change is < 50 lines in single file OR single module
+- [x] Change is < 50 lines in single file OR single module
   - Localized change (not architectural)
   - Single module or tightly related files
   - **Example**: Fix typo in error message, correct validation logic
 
-- [ ] Change does NOT modify public API
+- [x] Change does NOT modify public API
   - No type signature changes
   - No new exports or module structure changes
   - **Example**: Internal logic fix, error message correction
 
-- [ ] Change does NOT touch security-sensitive code
+- [x] Change does NOT touch security-sensitive code
   - Not in auth, validation, sanitization modules
   - Not in external data processing paths
   - **Example**: UI text fix, internal calculation correction
@@ -1925,24 +1925,24 @@ No security surface exists.
 
 **If ANY of these are true, STOP and use Full Workflow:**
 
-- [ ] Fix requires new public API
+- [x] Fix requires new public API
   - Type signature changes
   - New exports
   - Module structure changes
   - **Action**: Stop, start Full Workflow from Step 1
 
-- [ ] Fix touches security-sensitive code
+- [x] Fix touches security-sensitive code
   - Auth modules (Auth/Jwt.hs, Auth/OAuth2/*)
   - Validation modules (Auth/UrlValidation.hs)
   - Sanitization logic
   - **Action**: Stop, start Full Workflow from Step 1
 
-- [ ] Fix changes > 50 lines or multiple modules
+- [x] Fix changes > 50 lines or multiple modules
   - Not localized
   - Architectural implications
   - **Action**: Stop, start Full Workflow from Step 1
 
-- [ ] Fix reveals architectural problem
+- [x] Fix reveals architectural problem
   - Bug is symptom of design issue
   - Requires refactoring
   - **Action**: Stop, start Full Workflow from Step 1
@@ -2388,10 +2388,10 @@ git checkout -- <file>  # Selectively revert problematic changes
 - CartSummary query (returns cart contents)
 
 ## Acceptance Criteria
-- [ ] Cart can be created with unique ID
-- [ ] Items can be added to cart with quantity
-- [ ] Cart summary shows all items and quantities
-- [ ] Integration with Stock domain (reserve stock when item added)
+- [x] Cart can be created with unique ID
+- [x] Items can be added to cart with quantity
+- [x] Cart summary shows all items and quantities
+- [x] Integration with Stock domain (reserve stock when item added)
 
 ## Must NOT Have
 - Checkout functionality (separate domain)
