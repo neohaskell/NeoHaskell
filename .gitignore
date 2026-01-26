@@ -53,3 +53,4 @@ cli-next/.launcher/
 
 cli-next/neo-sandbox.cabal
 uploads/
+.DS_Store
