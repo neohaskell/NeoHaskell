@@ -91,6 +91,7 @@ import LinkedList (LinkedList)
 import Maybe (Maybe (..))
 import Result (Result (..))
 import Service.Command.Core (NameOf)
+import Service.Entity.Core (Entity (..), EventOf)
 import Service.Event ()
 import Service.EventStore (EventStore (..), EventStoreConfig (..))
 import Service.Query.Core (EntitiesOf, Query)
@@ -763,9 +764,9 @@ runWithAsync eventStore app = do
 -- Outbound integrations react to entity events and can trigger external effects
 -- or emit commands to other services (Process Manager pattern).
 --
--- The integration function receives the current entity state and the new event,
--- and returns actions to execute. Currently, the entity is reconstructed with
--- default values - full event replay will be added in a future version.
+-- The integration function receives the current entity state (reconstructed via
+-- event replay from the event store) and the new event, and returns actions to
+-- execute.
 --
 -- Example:
 --
@@ -778,8 +779,11 @@ withOutbound ::
   forall entity event.
   ( Json.FromJSON entity
   , Json.FromJSON event
+  , Json.FromJSON (EventOf entity)
   , TypeName.Inspectable entity
   , Default entity
+  , Entity entity
+  , EventOf entity ~ event
   ) =>
   (entity -> event -> Integration.Outbound) ->
   Application ->
