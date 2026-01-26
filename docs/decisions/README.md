@@ -26,6 +26,8 @@ ADRs document significant architectural decisions made during the development of
 | [0010](0010-oauth2-provider-architecture.md)  | OAuth2 Provider Integration     | Accepted |
 | [0011](0011-file-upload-architecture.md)      | File Upload Architecture        | Proposed |
 | [0012](0012-postgres-file-state-store.md)     | PostgreSQL FileStateStore       | Proposed |
+| [0013](0013-automatic-schema-generation.md)   | Automatic Schema Generation     | Proposed |
+| [0014](0014-webtransport-openapi-integration.md) | WebTransport OpenAPI Integration | Proposed |
 
 ## Creating New ADRs
 
