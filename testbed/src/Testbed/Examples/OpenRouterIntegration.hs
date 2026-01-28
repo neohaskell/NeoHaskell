@@ -3,20 +3,39 @@
 -- This demonstrates how Jess (the integration user) would use the
 -- OpenRouter API in a real application.
 --
--- == Usage Pattern
+-- == Simple Usage (Recommended)
 --
 -- @
--- -- In your service's integrations:
+-- import Integration qualified
+-- import Integration.OpenRouter qualified as OpenRouter
+-- import Integration.OpenRouter.Message qualified as Message
+--
+-- -- In your integrations, use the smart constructor directly:
 -- myIntegration entity event =
 --   case event of
---     NeedAiHelp question -> askAi question
+--     NeedAiHelp question ->
+--       OpenRouter.chatCompletion
+--         [Message.user question]
+--         "anthropic/claude-3.5-sonnet"
+--         (\\response -> GotAiResponse {response})
+--         (\\err -> AiError {err})
+--         |> Integration.outbound
+--         |> Integration.batch . Array.singleton
 --     _ -> Integration.none
 -- @
+--
+-- == Advanced: Helper Functions
+--
+-- For more complex scenarios, you can create helper functions that return
+-- the intermediate 'Http.Request' type. This is useful for testing or
+-- when you need to compose multiple transformations.
 module Testbed.Examples.OpenRouterIntegration
   ( -- * Example Events
     AiEvent (..)
 
-    -- * Integration Helpers
+    -- * Helper Functions (Advanced)
+    -- | These helpers return 'Http.Request' for composition.
+    -- For simple use cases, use 'OpenRouter.chatCompletion' directly.
   , askAi
   , askAiWithConfig
   ) where
@@ -48,13 +67,21 @@ instance Json.ToJSON AiEvent
 instance Json.FromJSON AiEvent
 
 
--- | Simple helper to ask a question using Claude 3.5 Sonnet.
+-- | Helper that returns an 'Http.Request' for composition.
 --
--- This is the simplest way Jess can use the OpenRouter integration.
+-- For simple use cases, use the smart constructor directly:
 --
 -- @
--- askAi "What is the capital of France?" |> Integration.outbound
+-- OpenRouter.chatCompletion
+--   [Message.user "What is the capital of France?"]
+--   "anthropic/claude-3.5-sonnet"
+--   handleSuccess
+--   handleError
+--   |> Integration.outbound
 -- @
+--
+-- This helper is useful when you need the intermediate 'Http.Request',
+-- for example in tests or when composing with other HTTP transformations.
 askAi :: Text -> Http.Request AiEvent
 askAi question =
   OpenRouter.chatCompletion
@@ -67,13 +94,19 @@ askAi question =
 
 -- | Ask a question with a custom system prompt and model.
 --
+-- For simple use cases, use the Request record directly:
+--
 -- @
--- askAiWithConfig
---   "You are a pirate."
---   "openai/gpt-4o"
---   "How are you?"
---   |> Integration.outbound
+-- Integration.outbound OpenRouter.Request
+--   { messages = [Message.system "You are a pirate.", Message.user "How are you?"]
+--   , model = "openai/gpt-4o"
+--   , config = OpenRouter.defaultConfig
+--   , onSuccess = handleSuccess
+--   , onError = handleError
+--   }
 -- @
+--
+-- This helper returns 'Http.Request' for advanced composition scenarios.
 askAiWithConfig :: Text -> Text -> Text -> Http.Request AiEvent
 askAiWithConfig systemPrompt model question =
   OpenRouter.toHttpRequest

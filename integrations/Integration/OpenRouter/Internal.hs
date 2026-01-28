@@ -1,3 +1,5 @@
+{-# LANGUAGE UndecidableInstances #-}
+
 -- | Internal implementation for OpenRouter integration.
 --
 -- This module contains Nick's code - the transformation from
@@ -16,13 +18,40 @@ module Integration.OpenRouter.Internal
 import Array (Array)
 import Array qualified
 import Basics
+import Integration qualified
 import Integration.Http qualified as Http
 import Integration.OpenRouter.Message (Message)
 import Integration.OpenRouter.Request (Config (..), Request (..))
 import Json qualified
 import Maybe (Maybe (..))
 import Result qualified
+import Service.Command.Core (NameOf)
 import Text (Text)
+
+
+-- | ToAction instance that enables @Integration.outbound@ to work directly
+-- with 'OpenRouter.Request'.
+--
+-- This allows Jess to write:
+--
+-- @
+-- OpenRouter.chatCompletion
+--   [Message.user question]
+--   "anthropic/claude-3.5-sonnet"
+--   handleSuccess
+--   handleError
+--   |> Integration.outbound
+-- @
+--
+-- Instead of manually converting to Http.Request first.
+instance
+  (Json.ToJSON command, KnownSymbol (NameOf command)) =>
+  Integration.ToAction (Request command)
+  where
+  toAction config =
+    config
+      |> toHttpRequest
+      |> Integration.toAction
 
 
 -- | Base URL for OpenRouter API.

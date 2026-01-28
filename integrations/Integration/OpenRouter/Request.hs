@@ -6,25 +6,26 @@
 -- == Quick Start
 --
 -- @
+-- import Integration qualified
 -- import Integration.OpenRouter qualified as OpenRouter
 -- import Integration.OpenRouter.Message qualified as Message
 --
--- let request = OpenRouter.chatCompletion
---       { messages = [Message.user "Hello!"]
---       , model = "anthropic/claude-3.5-sonnet"
---       , onSuccess = \\response -> GotResponse {response}
---       , onError = \\err -> GotError {err}
---       }
---
--- Integration.outbound (OpenRouter.toHttpRequest request)
+-- -- Simple usage with smart constructor:
+-- OpenRouter.chatCompletion
+--   [Message.user "Hello!"]
+--   "anthropic/claude-3.5-sonnet"
+--   (\\response -> GotResponse {response})
+--   (\\err -> GotError {err})
+--   |> Integration.outbound
 -- @
 --
 -- == Configuration
 --
--- For advanced options like temperature and max tokens:
+-- For advanced options like temperature and max tokens, use the
+-- 'Request' record directly:
 --
 -- @
--- OpenRouter.Request
+-- Integration.outbound OpenRouter.Request
 --   { messages = myMessages
 --   , model = "openai/gpt-4o"
 --   , config = OpenRouter.defaultConfig
@@ -123,7 +124,7 @@ defaultConfig =
 -- == Example
 --
 -- @
--- OpenRouter.Request
+-- Integration.outbound OpenRouter.Request
 --   { messages = [Message.system "Be concise.", Message.user question]
 --   , model = "anthropic/claude-3.5-sonnet"
 --   , config = OpenRouter.defaultConfig

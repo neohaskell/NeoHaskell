@@ -22,17 +22,13 @@
 --
 -- -- In your integrations:
 -- askAi :: Text -> Integration.Action
--- askAi question = do
---   let request = OpenRouter.chatCompletion
---         { messages =
---             [ Message.system "You are a helpful assistant."
---             , Message.user question
---             ]
---         , model = "anthropic/claude-3.5-sonnet"
---         , onSuccess = \\response -> GotAiResponse {response}
---         , onError = \\err -> AiError {err}
---         }
---   Integration.outbound (OpenRouter.toHttpRequest request)
+-- askAi question =
+--   OpenRouter.chatCompletion
+--     [Message.user question]
+--     "anthropic/claude-3.5-sonnet"
+--     (\\response -> GotAiResponse {response})
+--     (\\err -> AiError {err})
+--     |> Integration.outbound
 -- @
 --
 -- == Configuration
@@ -52,8 +48,10 @@
 --
 -- == Advanced Configuration
 --
+-- For custom configuration options, use the 'Request' record directly:
+--
 -- @
--- OpenRouter.Request
+-- Integration.outbound OpenRouter.Request
 --   { messages = conversationHistory
 --   , model = "openai/gpt-4o"
 --   , config = OpenRouter.defaultConfig
@@ -94,7 +92,10 @@ module Integration.OpenRouter
   , assistant
   , system
 
-    -- * Transformation
+    -- * Transformation (Advanced)
+    -- | For most use cases, use @Integration.outbound@ directly.
+    -- 'toHttpRequest' is provided for advanced scenarios where you need
+    -- to modify the 'Http.Request' before sending.
   , toHttpRequest
   ) where
 
