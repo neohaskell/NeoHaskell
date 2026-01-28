@@ -151,6 +151,7 @@ library
     Decider
     Default
     Directory
+    Documented
     DurableChannel
     Environment
     File
@@ -235,6 +236,7 @@ library
     Service.ServiceDefinition.Core
     Service.Transport
     Service.Transport.Web
+    Schema
     Set
     Stream
     Subprocess
@@ -314,6 +316,7 @@ library
     system
     http
     meta
+    schema
     testlib
     options-parser
 
@@ -361,6 +364,7 @@ test-suite nhcore-test
     Service.Transport.WebSpec
     Service.QueryObjectStore.InMemorySpec
     Service.SnapshotCache.InMemorySpec
+    SchemaSpec
     SetSpec
     StreamSpec
     Test.AppSpec.AppSpecSpec
