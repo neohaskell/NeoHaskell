@@ -128,16 +128,17 @@ fetchEntityState eventStore typeName streamId = do
   let initialState = initialStateImpl @entity
   let updateFn = updateImpl @entity
   -- We need to decode the JSON event to the entity's event type
-  let decodingReducer :: Json.Value -> entity -> entity
-      decodingReducer jsonValue state = do
+  -- Track decode errors alongside state to fail if any events couldn't be decoded
+  let decodingReducer :: Json.Value -> (entity, Array Text) -> (entity, Array Text)
+      decodingReducer jsonValue (state, errors) = do
         case Json.decode @(EventOf entity) jsonValue of
-          Err _decodeErr -> do
-            -- Log and skip events that fail to decode (shouldn't happen in practice)
-            -- In pure context, we can't log, so just return unchanged state
-            state
-          Ok event -> updateFn event state
+          Err decodeErr -> do
+            -- Track the error - we'll fail after fetching if any errors occurred
+            let errorMsg = [fmt|Failed to decode event: #{decodeErr}|]
+            (state, errors |> Array.push errorMsg)
+          Ok event -> (updateFn event state, errors)
   fetcherResult <-
-    EntityFetcher.new eventStore initialState decodingReducer
+    EntityFetcher.new eventStore (initialState, Array.empty) decodingReducer
       |> Task.mapError (\err -> [fmt|[Integration] Failed to create EntityFetcher for #{typeName}: #{toText err}|])
   result <-
     fetcherResult.fetch (EntityName typeName) streamId
@@ -148,7 +149,14 @@ fetchEntityState eventStore typeName streamId = do
       -- This can happen if the integration receives the first event for a new entity
       Task.yield initialState
     EntityFetcher.EntityFound fetched -> do
-      Task.yield fetched.state
+      let (entityState, decodeErrors) = fetched.state
+      -- Fail if any events could not be decoded - this indicates schema drift or data corruption
+      case Array.first decodeErrors of
+        Just firstError -> do
+          let errorCount = Array.length decodeErrors
+          Task.throw [fmt|[Integration] #{errorCount} event(s) failed to decode for #{typeName} (stream: #{streamId}). First error: #{firstError}|]
+        Nothing -> do
+          Task.yield entityState
 
 
 -- | Register an outbound integration for an entity type.
