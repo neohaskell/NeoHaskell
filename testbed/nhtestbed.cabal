@@ -47,7 +47,8 @@ common common_cfg
     TypeOperators
 
   build-depends:
-    nhcore
+    nhcore,
+    nhintegration-http
 
 library
   import: common_cfg
@@ -69,6 +70,7 @@ library
     Testbed.Stock.Core
     Testbed.Stock.Queries.StockLevel
     Testbed.Stock.Service
+    Testbed.Examples.HttpIntegration
 
   hs-source-dirs: src
   default-language: GHC2021

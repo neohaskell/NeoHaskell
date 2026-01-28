@@ -1,0 +1,66 @@
+cabal-version: 3.4
+name: nhintegration-http
+version: 0.1.0.0
+synopsis: HTTP Outbound Integration for NeoHaskell
+description:
+  Provides HTTP outbound integration following the two-persona model.
+  Jess configures HTTP requests with pure records.
+  Nick implements ToAction with retries, auth, error handling.
+  See ADR-0015 for design details.
+homepage: https://neohaskell.org
+license: Apache-2.0
+license-file: LICENSE
+author: NeoHaskell Contributors
+maintainer: nhlib@nickseagull.dev
+category: Web
+build-type: Simple
+
+common common_cfg
+  ghc-options:
+    -Wall
+    -Wno-orphans
+    -threaded
+    -fno-warn-partial-type-signatures
+    -fno-warn-name-shadowing
+    -Werror
+
+  default-extensions:
+    ApplicativeDo
+    BlockArguments
+    DataKinds
+    DeriveDataTypeable
+    DuplicateRecordFields
+    ImportQualifiedPost
+    ImpredicativeTypes
+    NamedFieldPuns
+    NoFieldSelectors
+    NoImplicitPrelude
+    OverloadedLabels
+    OverloadedLists
+    OverloadedRecordDot
+    OverloadedStrings
+    PackageImports
+    PartialTypeSignatures
+    QualifiedDo
+    QuasiQuotes
+    Strict
+    TemplateHaskell
+    TypeApplications
+    TypeFamilies
+    TypeOperators
+
+  build-depends:
+    nhcore
+
+library
+  import: common_cfg
+  exposed-modules:
+    Integration.Http
+    Integration.Http.Auth
+    Integration.Http.Request
+    Integration.Http.Response
+    Integration.Http.Retry
+  other-modules:
+    Integration.Http.Internal
+  hs-source-dirs: .
+  default-language: GHC2021
