@@ -2,8 +2,8 @@
 
 ## Context
 
-**Issue**: https://github.com/neohaskell/NeoHaskell/issues/305
-**ADR**: ADR-0013: Automatic Schema Generation
+**Issue**: [#305](https://github.com/neohaskell/NeoHaskell/issues/305)
+**ADR**: [ADR-0013](docs/decisions/0013-automatic-schema-generation.md)
 **Workflow Path**: Standard (no security surface)
 
 ### Summary
