@@ -185,8 +185,12 @@ See `IMPLEMENTATION_PLAN.md` for detailed layer breakdown.
 
 **COMPLETE** - All phases finished, all tests passing. PR #318 submitted for review.
 
-Remaining items for future enhancement:
-- Run HURL integration tests with mock HTTP server (requires infrastructure setup)
+### Test Coverage
+- **79 unit tests** covering all Layer 1 and Layer 2 code
+- HURL integration tests defined but require additional infrastructure:
+  - Mock HTTP server on localhost:9090
+  - Testbed Order domain implementation
+  - CI pipeline setup for end-to-end testing
 
 ---
 
