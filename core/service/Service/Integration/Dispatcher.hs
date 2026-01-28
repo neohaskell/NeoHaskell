@@ -86,6 +86,7 @@ import Result (Result (..))
 import Service.Auth qualified as Auth
 import Service.Event (Event (..))
 import Service.Event.StreamId (StreamId)
+import Service.EventStore.Core (EventStore)
 import Service.Integration.Types (OutboundRunner (..), OutboundLifecycleRunner (..), WorkerState (..))
 import Service.Transport (EndpointHandler)
 import Task (Task)
@@ -232,6 +233,7 @@ data LifecycleEntityWorker = LifecycleEntityWorker
 data IntegrationDispatcher = IntegrationDispatcher
   { entityWorkers :: ConcurrentMap StreamId EntityWorker,
     lifecycleEntityWorkers :: ConcurrentMap StreamId LifecycleEntityWorker,
+    eventStore :: EventStore Json.Value,
     outboundRunners :: Array OutboundRunner,
     lifecycleRunners :: Array OutboundLifecycleRunner,
     commandEndpoints :: Map Text EndpointHandler,
@@ -246,32 +248,35 @@ data IntegrationDispatcher = IntegrationDispatcher
 -- The dispatcher starts with no workers. Workers are created on-demand
 -- when events arrive for new entities.
 new ::
+  EventStore Json.Value ->
   Array OutboundRunner ->
   Map Text EndpointHandler ->
   Task Text IntegrationDispatcher
-new runners endpoints = newWithLifecycleConfig defaultConfig runners [] endpoints
+new store runners endpoints = newWithLifecycleConfig defaultConfig store runners [] endpoints
 
 
 -- | Create a new integration dispatcher with lifecycle runners.
 --
 -- Supports both stateless and lifecycle-managed runners.
 newWithLifecycle ::
+  EventStore Json.Value ->
   Array OutboundRunner ->
   Array OutboundLifecycleRunner ->
   Map Text EndpointHandler ->
   Task Text IntegrationDispatcher
-newWithLifecycle runners lifecycleRunners endpoints =
-  newWithLifecycleConfig defaultConfig runners lifecycleRunners endpoints
+newWithLifecycle store runners lifecycleRunners endpoints =
+  newWithLifecycleConfig defaultConfig store runners lifecycleRunners endpoints
 
 
 -- | Create a new integration dispatcher with custom configuration.
 newWithLifecycleConfig ::
   DispatcherConfig ->
+  EventStore Json.Value ->
   Array OutboundRunner ->
   Array OutboundLifecycleRunner ->
   Map Text EndpointHandler ->
   Task Text IntegrationDispatcher
-newWithLifecycleConfig dispatcherConfig runners lifecycleRunners endpoints = do
+newWithLifecycleConfig dispatcherConfig store runners lifecycleRunners endpoints = do
   workers <- ConcurrentMap.new
   lifecycleWorkers <- ConcurrentMap.new
   shutdownSignal <- ConcurrentVar.containing False
@@ -281,6 +286,7 @@ newWithLifecycleConfig dispatcherConfig runners lifecycleRunners endpoints = do
         IntegrationDispatcher
           { entityWorkers = workers,
             lifecycleEntityWorkers = lifecycleWorkers,
+            eventStore = store,
             outboundRunners = runners,
             lifecycleRunners = lifecycleRunners,
             commandEndpoints = endpoints,
@@ -652,7 +658,7 @@ processStatelessEvent dispatcher event = do
   let streamId = event.streamId
   dispatcher.outboundRunners
     |> Task.forEach \runner -> do
-      result <- runner.processEvent event |> Task.asResult
+      result <- runner.processEvent dispatcher.eventStore event |> Task.asResult
       case result of
         Ok commands -> do
           commands

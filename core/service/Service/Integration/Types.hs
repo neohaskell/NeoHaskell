@@ -31,6 +31,7 @@ import Integration qualified
 import Json qualified
 import Service.Event (Event)
 import Service.Event.StreamId (StreamId)
+import Service.EventStore.Core (EventStore)
 import Task (Task)
 import Text (Text)
 
@@ -39,9 +40,12 @@ import Text (Text)
 --
 -- This wraps an integration function with JSON decoding so it can process
 -- raw events from the event store. Created by 'Application.withOutbound'.
+--
+-- The 'processEvent' function receives the EventStore so it can reconstruct
+-- the entity state via event replay before calling the integration function.
 data OutboundRunner = OutboundRunner
   { entityTypeName :: Text
-  , processEvent :: Event Json.Value -> Task Text (Array Integration.CommandPayload)
+  , processEvent :: EventStore Json.Value -> Event Json.Value -> Task Text (Array Integration.CommandPayload)
   }
 
 
