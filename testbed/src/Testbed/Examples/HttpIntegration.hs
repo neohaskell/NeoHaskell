@@ -29,12 +29,26 @@ module Testbed.Examples.HttpIntegration
     orderShippingIntegration
   , paymentRefundIntegration
   , slackNotificationIntegration
+    -- ** PUT/PATCH/DELETE Examples
+  , updateUserProfileIntegration
+  , partialUpdateOrderIntegration
+  , cancelSubscriptionIntegration
+    -- ** Status Code & Headers Examples
+  , conditionalUpdateIntegration
+    -- ** Raw Body Example
+  , xmlOrderIntegration
     -- * Example Command Types (for demonstration)
   , ShippingResult (..)
   , RefundResult (..)
   , SlackResult (..)
+  , ProfileUpdateResult (..)
+  , OrderPatchResult (..)
+  , SubscriptionResult (..)
+  , ConditionalResult (..)
+  , XmlOrderResult (..)
   ) where
 
+import Array qualified
 import Core
 import Integration qualified
 import Integration.Http qualified as Http
@@ -254,3 +268,334 @@ data SlackPayload = SlackPayload
   deriving (Generic, Show)
 
 instance Json.ToJSON SlackPayload
+
+
+-- ============================================================================
+-- PUT/PATCH/DELETE Examples (Loop 7 - Fixing Workarounds)
+-- ============================================================================
+
+-- | Result of profile update (PUT).
+data ProfileUpdateResult
+  = ProfileUpdated
+      { userId :: Text
+      }
+  | ProfileUpdateFailed
+      { userId :: Text
+      , errorMessage :: Text
+      }
+  deriving (Generic, Show, Typeable)
+
+instance Json.ToJSON ProfileUpdateResult
+instance Json.FromJSON ProfileUpdateResult
+
+type instance NameOf ProfileUpdateResult = "ProfileUpdateResult"
+
+
+-- | Result of order patch (PATCH).
+data OrderPatchResult
+  = OrderPatched
+      { orderId :: Text
+      , updatedFields :: Array Text
+      }
+  | OrderPatchFailed
+      { orderId :: Text
+      , errorMessage :: Text
+      }
+  deriving (Generic, Show, Typeable)
+
+instance Json.ToJSON OrderPatchResult
+instance Json.FromJSON OrderPatchResult
+
+type instance NameOf OrderPatchResult = "OrderPatchResult"
+
+
+-- | Result of subscription cancellation (DELETE).
+data SubscriptionResult
+  = SubscriptionCancelled
+      { subscriptionId :: Text
+      }
+  | SubscriptionCancelFailed
+      { subscriptionId :: Text
+      , errorMessage :: Text
+      }
+  deriving (Generic, Show, Typeable)
+
+instance Json.ToJSON SubscriptionResult
+instance Json.FromJSON SubscriptionResult
+
+type instance NameOf SubscriptionResult = "SubscriptionResult"
+
+
+-- | Result of conditional update (uses status code and headers).
+data ConditionalResult
+  = ResourceUpdated
+      { resourceId :: Text
+      , newEtag :: Text
+      }
+  | ResourceNotModified
+      { resourceId :: Text
+      }
+  | ConditionalUpdateFailed
+      { resourceId :: Text
+      , statusCode :: Int
+      , errorMessage :: Text
+      }
+  deriving (Generic, Show, Typeable)
+
+instance Json.ToJSON ConditionalResult
+instance Json.FromJSON ConditionalResult
+
+type instance NameOf ConditionalResult = "ConditionalResult"
+
+
+-- | Result of XML order submission.
+data XmlOrderResult
+  = XmlOrderAccepted
+      { orderId :: Text
+      }
+  | XmlOrderRejected
+      { errorMessage :: Text
+      }
+  deriving (Generic, Show, Typeable)
+
+instance Json.ToJSON XmlOrderResult
+instance Json.FromJSON XmlOrderResult
+
+type instance NameOf XmlOrderResult = "XmlOrderResult"
+
+
+-- | Example: Full update of user profile (PUT).
+--
+-- PUT replaces the entire resource. This shows:
+--
+-- * PUT method for full resource replacement
+-- * Bearer token authentication
+-- * Error handling for conflicts
+updateUserProfileIntegration ::
+  -- | User ID
+  Text ->
+  -- | New display name
+  Text ->
+  -- | New email
+  Text ->
+  Integration.Action
+updateUserProfileIntegration userId displayName email =
+  Integration.outbound Http.Request
+    { method = Http.PUT
+    , url = [fmt|https://api.example.com/users/#{userId}|]
+    , headers = []
+    , body = Http.json UserProfile
+        { display_name = displayName
+        , email = email
+        }
+    , onSuccess = \_response ->
+        ProfileUpdated { userId = userId }
+    , onError = Just (\err ->
+        ProfileUpdateFailed
+          { userId = userId
+          , errorMessage = err
+          })
+    , auth = Http.Bearer "${API_TOKEN}"
+    , retry = Http.defaultRetry
+    , timeoutSeconds = 30
+    }
+
+
+-- | Payload for user profile
+data UserProfile = UserProfile
+  { display_name :: Text
+  , email :: Text
+  }
+  deriving (Generic, Show)
+
+instance Json.ToJSON UserProfile
+
+
+-- | Example: Partial update of order (PATCH).
+--
+-- PATCH updates only specified fields. This shows:
+--
+-- * PATCH method for partial updates
+-- * API key authentication
+-- * Extracting updated field list from response
+partialUpdateOrderIntegration ::
+  -- | Order ID
+  Text ->
+  -- | New status
+  Text ->
+  Integration.Action
+partialUpdateOrderIntegration orderId newStatus =
+  Integration.outbound Http.Request
+    { method = Http.PATCH
+    , url = [fmt|https://api.example.com/orders/#{orderId}|]
+    , headers = []
+    , body = Http.json OrderPatch
+        { status = newStatus
+        }
+    , onSuccess = \response ->
+        OrderPatched
+          { orderId = orderId
+          , updatedFields = response.body
+              |> Json.decode @PatchResponse
+              |> Result.map (.updated_fields)
+              |> Result.withDefault []
+          }
+    , onError = Just (\err ->
+        OrderPatchFailed
+          { orderId = orderId
+          , errorMessage = err
+          })
+    , auth = Http.ApiKey { headerName = "X-Api-Key", headerValue = "${ORDER_API_KEY}" }
+    , retry = Http.defaultRetry
+    , timeoutSeconds = 30
+    }
+
+
+-- | Payload for order patch
+data OrderPatch = OrderPatch
+  { status :: Text
+  }
+  deriving (Generic, Show)
+
+instance Json.ToJSON OrderPatch
+
+
+-- | Response from patch API
+data PatchResponse = PatchResponse
+  { updated_fields :: Array Text
+  }
+  deriving (Generic, Show)
+
+instance Json.FromJSON PatchResponse
+
+
+-- | Example: Cancel subscription (DELETE).
+--
+-- DELETE removes a resource. This shows:
+--
+-- * DELETE method
+-- * No request body
+-- * Basic authentication
+cancelSubscriptionIntegration ::
+  -- | Subscription ID
+  Text ->
+  Integration.Action
+cancelSubscriptionIntegration subscriptionId =
+  Integration.outbound Http.Request
+    { method = Http.DELETE
+    , url = [fmt|https://api.stripe.com/v1/subscriptions/#{subscriptionId}|]
+    , headers = []
+    , body = Http.noBody
+    , onSuccess = \_response ->
+        SubscriptionCancelled { subscriptionId = subscriptionId }
+    , onError = Just (\err ->
+        SubscriptionCancelFailed
+          { subscriptionId = subscriptionId
+          , errorMessage = err
+          })
+    , auth = Http.Basic { username = "${STRIPE_KEY}", password = "" }
+    , retry = Http.withRetries 3
+    , timeoutSeconds = 30
+    }
+
+
+-- | Example: Conditional update with ETag (uses status code and headers).
+--
+-- This demonstrates:
+--
+-- * Checking real status code (304 Not Modified vs 200 OK)
+-- * Extracting ETag from response headers
+-- * Using If-Match header for optimistic locking
+conditionalUpdateIntegration ::
+  -- | Resource ID
+  Text ->
+  -- | Current ETag
+  Text ->
+  -- | New data
+  Text ->
+  Integration.Action
+conditionalUpdateIntegration resourceId currentEtag newData =
+  Integration.outbound Http.Request
+    { method = Http.PUT
+    , url = [fmt|https://api.example.com/resources/#{resourceId}|]
+    , headers = [("If-Match", currentEtag)]
+    , body = Http.json ResourceData { data_field = newData }
+    , onSuccess = \response ->
+        -- Check status code to determine outcome
+        if response.statusCode == 304
+          then ResourceNotModified { resourceId = resourceId }
+          else ResourceUpdated
+            { resourceId = resourceId
+            , newEtag = response.headers
+                |> findHeader "ETag"
+                |> Result.withDefault ""
+            }
+    , onError = Just (\err ->
+        ConditionalUpdateFailed
+          { resourceId = resourceId
+          , statusCode = 0  -- Unknown on error
+          , errorMessage = err
+          })
+    , auth = Http.Bearer "${API_TOKEN}"
+    , retry = Http.noRetry  -- Don't retry conditional updates
+    , timeoutSeconds = 30
+    }
+
+
+-- | Payload for resource update
+data ResourceData = ResourceData
+  { data_field :: Text
+  }
+  deriving (Generic, Show)
+
+instance Json.ToJSON ResourceData
+
+
+-- | Find a header by name (case-insensitive).
+findHeader :: Text -> Array (Text, Text) -> Result Text Text
+findHeader name headers =
+  headers
+    |> Array.find (\(k, _) -> Text.toLower k == Text.toLower name)
+    |> Result.fromMaybe "Header not found"
+    |> Result.map (\(_, v) -> v)
+
+
+-- | Example: Submit order as XML (raw body).
+--
+-- Some legacy APIs require XML. This shows:
+--
+-- * Raw body with custom content type
+-- * XML payload
+xmlOrderIntegration ::
+  -- | Order ID
+  Text ->
+  -- | Product code
+  Text ->
+  -- | Quantity
+  Int ->
+  Integration.Action
+xmlOrderIntegration orderId productCode quantity =
+  Integration.outbound Http.Request
+    { method = Http.POST
+    , url = "https://legacy-api.example.com/orders"
+    , headers = []
+    , body = Http.raw "application/xml" (buildXmlOrder orderId productCode quantity)
+    , onSuccess = \_response ->
+        XmlOrderAccepted { orderId = orderId }
+    , onError = Just (\err ->
+        XmlOrderRejected { errorMessage = err })
+    , auth = Http.Basic { username = "${LEGACY_USER}", password = "${LEGACY_PASS}" }
+    , retry = Http.defaultRetry
+    , timeoutSeconds = 60
+    }
+
+
+-- | Build XML order payload.
+buildXmlOrder :: Text -> Text -> Int -> Text
+buildXmlOrder orderId productCode quantity =
+  [fmt|<?xml version="1.0" encoding="UTF-8"?>
+<order>
+  <id>#{orderId}</id>
+  <product>#{productCode}</product>
+  <quantity>#{Text.fromInt quantity}</quantity>
+</order>|]

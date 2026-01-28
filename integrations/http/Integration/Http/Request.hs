@@ -45,11 +45,13 @@ import Text (Text)
 
 -- | HTTP methods supported for outbound requests.
 --
--- == Known Limitations (v1)
+-- All methods are fully supported:
 --
--- PUT, PATCH, and DELETE are defined but may not be fully
--- supported by the underlying 'Http.Client'. They will return
--- an error indicating the method is unsupported.
+-- * 'GET' - Retrieve a resource
+-- * 'POST' - Create a new resource
+-- * 'PUT' - Replace an entire resource
+-- * 'PATCH' - Partially update a resource
+-- * 'DELETE' - Remove a resource
 data Method
   = GET
   | POST

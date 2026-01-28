@@ -25,13 +25,14 @@ import Text (Text)
 --     }
 -- @
 --
--- == Known Limitations (v1)
+-- You can also check the status code for conditional logic:
 --
--- * 'statusCode' is currently a placeholder (always 200)
--- * 'headers' is currently empty
---
--- These will be populated when 'Http.Client' is extended
--- to expose response metadata.
+-- @
+-- onSuccess = \\response ->
+--   if response.statusCode == 304
+--     then ResourceNotModified
+--     else ResourceUpdated { etag = findHeader "ETag" response.headers }
+-- @
 data Response = Response
   { -- | HTTP status code (e.g., 200, 201, 404)
     statusCode :: Int

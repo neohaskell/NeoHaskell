@@ -2,7 +2,7 @@
 
 **Branch**: `feature/317-http-outbound-integration`
 **Started**: 2026-01-28
-**Status**: Complete - PR #318 Open
+**Status**: Complete - Ready for Merge
 
 ---
 
@@ -15,45 +15,61 @@
 
 - [x] **Phase 2: Testbed Implementation**
   - [x] Dummy feature in testbed/src/Testbed/Examples/HttpIntegration.hs
-  - [x] Compiles successfully
+  - [x] Add examples using PUT/PATCH/DELETE methods
+  - [x] Add example checking real statusCode
+  - [x] Add example using real headers
+  - [x] Add example with raw body
 
 - [x] **Phase 3: Test Spec**
   - [x] Unit tests cover all public API and internal functions
-  - [x] 72 tests in nhintegration-http-test, 11 tests in nhcore IntSpec
+  - [x] 72 tests in nhintegration-http-test, 11 tests in nhcore IntSpec (792 total)
+  - [x] All existing tests pass with new Response type
 
 - [x] **Phase 4: Architecture Plan**
   - [x] Three-layer architecture (Public API, Core Logic, Infrastructure)
   - [x] Configurability ensured (env vars, retry config, auth options)
+  - [x] Plan for Http.Client extensions (Loop 7) - see IMPLEMENTATION_PLAN.md
 
 - [x] **Phase 5-8: Implementation Loop**
   - [x] Layer 1: Public API (Types & Helpers)
   - [x] Layer 2: Core Logic (ToAction & Retry)
-  - [x] Layer 3: Infrastructure (no changes needed for v1)
+  - [x] Layer 3: Infrastructure (Http.Client extensions)
+    - [x] Add `Response` type with statusCode/headers/body
+    - [x] Update `get`, `post`, `postForm` to return `Response`
+    - [x] Add `put`, `patch`, `delete` methods
+    - [x] Add `postRaw` for raw body support
   - [x] nhcore extensions: `Bytes.toBase64`, `Json.null`, `KnownSymbol`, `Int.powerOf`
 
 - [x] **Phase 9: Validation**
   - [x] Package builds successfully
-  - [x] All packages build together
+  - [x] All packages build together (nhcore, nhintegration-http, testbed)
   - [x] Testbed example compiles
+  - [x] All 792 nhcore tests pass
+  - [x] All 72 nhintegration-http tests pass
 
 - [x] **Phase 10: PR Review**
-  - [x] pr-bot-review executed
-  - [x] Critical issues fixed
-  - [x] PR submitted: https://github.com/neohaskell/NeoHaskell/pull/318
+  - [x] pr-bot-review executed (Loop 6)
+  - [x] Final review after workaround fixes (Loop 7)
+    - Security & Correctness: APPROVE (0 blocking, 3 warnings)
+    - Code Quality: APPROVE (0 blocking, 5 warnings)
+    - All warnings are non-blocking stylistic improvements
 
 ---
 
-## Known Limitations (v1)
+## Workarounds Fixed (Loop 7)
 
-Documented in ADR-0015 and module headers. Acceptable for initial release:
+| Issue | Previous Behavior | Fix |
+|-------|------------------|-----|
+| PUT/PATCH/DELETE unsupported | Returned `IntegrationError` | Added `put`, `patch`, `delete` to Http.Client |
+| Response.statusCode placeholder | Always 200 | Now extracts real status from HTTP response |
+| Response.headers placeholder | Always empty | Now extracts real headers from HTTP response |
+| Raw body not supported | Returned error | Added `postRaw` to Http.Client |
 
-| Limitation | Behavior | Workaround |
-|------------|----------|------------|
-| PUT/PATCH/DELETE unsupported | Returns `IntegrationError` | Use POST with `_method` override if API supports it |
-| Response.statusCode placeholder | Always 200 | Check response body for errors |
-| Response.headers placeholder | Always empty | N/A - headers not needed for most integrations |
-| No streaming support | Full response in memory | Use for small payloads only (<10MB) |
-| No OAuth2 token refresh | Token must be valid | Refresh tokens externally, use `${TOKEN}` env var |
+### Acceptable Limitations (Not Changed)
+| Limitation | Reason |
+|------------|--------|
+| No streaming support | Requires significant Http.Client redesign |
+| No OAuth2 token refresh | Complex state management, out of scope |
 
 ---
 
@@ -99,9 +115,17 @@ Integration.outbound Http.Request
 
 **File**: `testbed/src/Testbed/Examples/HttpIntegration.hs`
 
+### Original Examples (Loop 1-6)
 1. `orderShippingIntegration` - JSON body, API key auth, retries, error handling
 2. `paymentRefundIntegration` - Form-encoded body, Bearer auth, custom retry count
 3. `slackNotificationIntegration` - Fire-and-forget webhook, no retries
+
+### New Examples (Loop 7)
+4. `updateUserProfileIntegration` - PUT method for full resource replacement
+5. `partialUpdateOrderIntegration` - PATCH method for partial updates
+6. `cancelSubscriptionIntegration` - DELETE method for resource removal
+7. `conditionalUpdateIntegration` - Uses real statusCode and headers (ETag)
+8. `xmlOrderIntegration` - Raw body with custom content type (XML)
 
 ---
 
@@ -110,7 +134,7 @@ Integration.outbound Http.Request
 ### Layer 1: Public API
 - `Integration.Http` - Re-exports (Jess's entry point)
 - `Integration.Http.Request` - Request, Method, Body types
-- `Integration.Http.Response` - Response type
+- `Integration.Http.Response` - Response type with statusCode/headers/body
 - `Integration.Http.Auth` - Auth type + helpers
 - `Integration.Http.Retry` - Retry type + helpers
 
@@ -120,9 +144,14 @@ Integration.outbound Http.Request
   - Authentication header building
   - Exponential backoff with jitter
   - HTTP error to IntegrationError mapping
+  - All HTTP methods (GET, POST, PUT, PATCH, DELETE)
 
-### Layer 3: Infrastructure
-- `Http.Client` - Existing, no changes needed for v1
+### Layer 3: Infrastructure (Extended in Loop 7)
+- `Http.Client` - Extended with:
+  - `Response` type with statusCode/headers/body
+  - `put`, `patch`, `delete` methods
+  - `postRaw` for raw body support
+  - All methods now return `Response` instead of just body
 
 ---
 
@@ -136,6 +165,7 @@ Integration.outbound Http.Request
 | 4 | Security fix | Redacted Show instance for Auth, removed ToJSON/FromJSON, fixed retry count |
 | 5 | Unit tests | Added test-suite with 79 unit tests |
 | 6 | Refactor | Moved powerOfTwo to nhcore as `Int.powerOf`, added 11 tests |
+| 7 | Fix workarounds | Added Response type with real statusCode/headers, added PUT/PATCH/DELETE/postRaw |
 
 ---
 

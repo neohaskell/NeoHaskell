@@ -180,11 +180,11 @@ executeHttpRequest method url headers body timeoutSeconds = do
 
   -- Helper to convert HTTP result to our result type
   let handleHttpResult result = case result of
-        Ok jsonValue ->
+        Ok httpResponse ->
           Ok Response
-            { statusCode = 200  -- TODO: Extract from actual response when Http.Client supports it
-            , body = jsonValue
-            , headers = []      -- TODO: Extract from actual response when Http.Client supports it
+            { statusCode = httpResponse.statusCode
+            , body = httpResponse.body
+            , headers = httpResponse.headers
             }
         Err httpErr ->
           Err (httpErrorToText httpErr)
@@ -203,22 +203,39 @@ executeHttpRequest method url headers body timeoutSeconds = do
       result <- Http.postForm @Json.Value withHeaders formParams |> Task.asResult
       Task.yield (handleHttpResult result)
 
-    (POST, RawBody {}) ->
-      -- TODO: Add raw body support to Http.Client
-      Task.yield (Err "Raw body not yet supported")
+    (POST, RawBody {contentType, content}) -> do
+      result <- Http.postRaw @Json.Value withHeaders contentType content |> Task.asResult
+      Task.yield (handleHttpResult result)
 
     (POST, NoBody) -> do
       result <- Http.post @Json.Value withHeaders Json.null |> Task.asResult
       Task.yield (handleHttpResult result)
 
+    (PUT, JsonBody jsonBody) -> do
+      result <- Http.put @Json.Value withHeaders jsonBody |> Task.asResult
+      Task.yield (handleHttpResult result)
+
+    (PUT, NoBody) -> do
+      result <- Http.put @Json.Value withHeaders Json.null |> Task.asResult
+      Task.yield (handleHttpResult result)
+
     (PUT, _) ->
-      Task.yield (Err "PUT method not yet supported by Http.Client")
+      Task.yield (Err "PUT with form/raw body not yet supported")
+
+    (PATCH, JsonBody jsonBody) -> do
+      result <- Http.patch @Json.Value withHeaders jsonBody |> Task.asResult
+      Task.yield (handleHttpResult result)
+
+    (PATCH, NoBody) -> do
+      result <- Http.patch @Json.Value withHeaders Json.null |> Task.asResult
+      Task.yield (handleHttpResult result)
 
     (PATCH, _) ->
-      Task.yield (Err "PATCH method not yet supported by Http.Client")
+      Task.yield (Err "PATCH with form/raw body not yet supported")
 
-    (DELETE, _) ->
-      Task.yield (Err "DELETE method not yet supported by Http.Client")
+    (DELETE, _) -> do
+      result <- Http.delete @Json.Value withHeaders |> Task.asResult
+      Task.yield (handleHttpResult result)
 
 
 -- | Convert HTTP error to Text.

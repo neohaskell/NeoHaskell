@@ -611,9 +611,9 @@ requestTokens tokenEndpoint formParams = do
         Ok response -> do
           Task.yield
             TokenSet
-              { accessToken = mkAccessToken response.access_token
-              , refreshToken = response.refresh_token |> fmap mkRefreshToken
-              , expiresInSeconds = response.expires_in
+              { accessToken = mkAccessToken response.body.access_token
+              , refreshToken = response.body.refresh_token |> fmap mkRefreshToken
+              , expiresInSeconds = response.body.expires_in
               }
 
 
@@ -656,9 +656,9 @@ requestTokensValidated tokenEndpoint formParams = do
         |> Task.ignoreError
       Task.yield
         TokenSet
-          { accessToken = mkAccessToken response.access_token
-          , refreshToken = response.refresh_token |> fmap mkRefreshToken
-          , expiresInSeconds = response.expires_in
+          { accessToken = mkAccessToken response.body.access_token
+          , refreshToken = response.body.refresh_token |> fmap mkRefreshToken
+          , expiresInSeconds = response.body.expires_in
           }
 
 
