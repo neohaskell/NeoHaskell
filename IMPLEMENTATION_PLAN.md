@@ -186,17 +186,10 @@ Layer 3: Infrastructure (Http.Client - existing, may need extensions)
 
 Located in: `integrations/http/test/`
 
-- **Request.hs tests**: Type construction, helper functions
-- **Internal.hs tests**: Env expansion, auth building, backoff calculation
-
-### Integration Tests
-
-Located in: `testbed/tests/integrations/http-outbound.hurl`
-
-Requires:
-- Mock HTTP server on localhost:9090
-- Testbed Order domain (may need to add)
-- Environment variables set for auth testing
+- **RetrySpec.hs**: defaultRetry, noRetry, withRetries
+- **RequestSpec.hs**: Method types, Body helpers
+- **AuthSpec.hs**: Auth types, redacted Show
+- **InternalSpec.hs**: Env expansion, auth building, backoff calculation
 
 ---
 
@@ -270,11 +263,10 @@ test-suite nhintegration-http-test
 - [x] HTTP error to `IntegrationError` mapping
 
 ### Testing
-- [ ] Unit tests for helpers (deferred to follow-up)
-- [ ] Unit tests for env expansion (deferred to follow-up)
-- [ ] Unit tests for auth building (deferred to follow-up)
-- [ ] Unit tests for backoff calculation (deferred to follow-up)
-- [x] Integration tests (HURL) - test spec created in testbed/tests/integrations/http-outbound.hurl
+- [x] Unit tests for helpers (72 tests in nhintegration-http-test)
+- [x] Unit tests for env expansion
+- [x] Unit tests for auth building
+- [x] Unit tests for backoff calculation
 
 ---
 

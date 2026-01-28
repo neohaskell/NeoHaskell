@@ -19,9 +19,9 @@
   - [x] Dummy feature in testbed/src/Testbed/Examples/HttpIntegration.hs
   - [x] Compiles successfully
 
-- [x] **Phase 3: Integration Test Spec**
-  - [x] HURL tests in testbed/tests/integrations/http-outbound.hurl
-  - [x] Tests define expected behavior (4 test scenarios)
+- [x] **Phase 3: Test Spec**
+  - [x] Unit tests cover all public API and internal functions
+  - [x] 72 tests in nhintegration-http-test, 11 tests in nhcore IntSpec
 
 - [x] **Phase 4: Architecture Plan**
   - [x] Abstraction layers identified (3 layers)
@@ -189,7 +189,6 @@ See `IMPLEMENTATION_PLAN.md` for detailed layer breakdown.
 ### Test Coverage
 - **72 unit tests** in nhintegration-http covering Layer 1 and Layer 2 code
 - **11 unit tests** in nhcore for `Int.powerOf`
-- HURL integration tests defined for testbed on port 8080 (require Order domain implementation)
 
 ---
 
