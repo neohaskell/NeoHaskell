@@ -48,7 +48,7 @@ common common_cfg
 
   build-depends:
     nhcore,
-    nhintegration-http
+    nhintegrations
 
 library
   import: common_cfg
@@ -71,6 +71,7 @@ library
     Testbed.Stock.Queries.StockLevel
     Testbed.Stock.Service
     Testbed.Examples.HttpIntegration
+    Testbed.Examples.OpenRouterIntegration
 
   hs-source-dirs: src
   default-language: GHC2021
