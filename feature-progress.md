@@ -45,15 +45,15 @@
 
 ## Known Limitations (v1)
 
-These are documented and acceptable for the initial release:
+Documented in ADR-0015 and module headers. Acceptable for initial release:
 
-| Limitation | Status | Future Issue |
-|------------|--------|--------------|
-| PUT/PATCH/DELETE unsupported | Returns "Unsupported method" error | TBD |
-| Response.statusCode placeholder | Always returns 200 | TBD |
-| Response.headers placeholder | Always returns empty | TBD |
-| No streaming support | Large responses loaded in memory | TBD |
-| No OAuth2 token refresh | Manual token management required | TBD |
+| Limitation | Behavior | Workaround |
+|------------|----------|------------|
+| PUT/PATCH/DELETE unsupported | Returns `IntegrationError` | Use POST with `_method` override if API supports it |
+| Response.statusCode placeholder | Always 200 | Check response body for errors |
+| Response.headers placeholder | Always empty | N/A - headers not needed for most integrations |
+| No streaming support | Full response in memory | Use for small payloads only (<10MB) |
+| No OAuth2 token refresh | Token must be valid | Refresh tokens externally, use `${TOKEN}` env var |
 
 ---
 
