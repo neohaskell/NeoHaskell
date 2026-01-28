@@ -407,3 +407,5 @@ When uncertain about NeoHaskell patterns:
 - Work on current branch
 - Run full build + tests before committing
 - One logical change per commit
+- **NEVER add Co-Authored-By, Signed-off-by, or any attribution lines to commits**
+- The only commit author is the git user - no AI assistant attribution
