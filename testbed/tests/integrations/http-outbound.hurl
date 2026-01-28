@@ -2,8 +2,8 @@
 # Tests the Http.Request integration pattern
 #
 # Prerequisites:
-# - Mock HTTP server running on localhost:9090
-# - Testbed configured with MOCK_API_URL=http://localhost:9090
+# - Mock HTTP server running on localhost:8080
+# - Testbed configured with MOCK_API_URL=http://localhost:8080
 #
 # Flow:
 # 1. Reset mock server state
@@ -16,7 +16,7 @@
 # =============================================================================
 
 # Step 1: Reset mock server expectations
-DELETE http://localhost:9090/_mock/requests
+DELETE http://localhost:8080/_mock/requests
 HTTP/1.1 200
 
 # Step 2: Create an order (prerequisite)
@@ -42,7 +42,7 @@ HTTP/1.1 200
 
 # Step 4: Verify mock received the HTTP request
 # The integration should have POSTed to the shipping API
-GET http://localhost:9090/_mock/requests
+GET http://localhost:8080/_mock/requests
 [Options]
 retry: 10
 retry-interval: 200
@@ -74,7 +74,7 @@ jsonpath "$[?(@.orderId == '{{order_id}}')].type" nth 0 == "NotifyCustomer"
 # =============================================================================
 
 # Step 1: Configure mock to return 503 twice, then 200
-POST http://localhost:9090/_mock/configure
+POST http://localhost:8080/_mock/configure
 {
   "path": "/v1/shipments",
   "responses": [
@@ -106,7 +106,7 @@ POST http://localhost:8080/commands/ship-order
 HTTP/1.1 200
 
 # Step 3: Verify mock received 3 requests (2 retries + 1 success)
-GET http://localhost:9090/_mock/requests?path=/v1/shipments
+GET http://localhost:8080/_mock/requests?path=/v1/shipments
 [Options]
 retry: 15
 retry-interval: 500
@@ -131,7 +131,7 @@ jsonpath "$[?(@.orderId == '{{order_id_2}}')]" count == 1
 # =============================================================================
 
 # Step 1: Configure mock to always return 400
-POST http://localhost:9090/_mock/configure
+POST http://localhost:8080/_mock/configure
 {
   "path": "/v1/refunds",
   "responses": [
@@ -169,7 +169,7 @@ jsonpath "$[?(@.orderId == '{{order_id}}')].type" nth 0 == "LogRefundError"
 # The mock server should receive the actual API key value, not the placeholder.
 
 # Step 1: Clear mock requests
-DELETE http://localhost:9090/_mock/requests
+DELETE http://localhost:8080/_mock/requests
 HTTP/1.1 200
 
 # Step 2: Trigger an authenticated request
@@ -182,7 +182,7 @@ POST http://localhost:8080/commands/ship-order
 HTTP/1.1 200
 
 # Step 3: Verify the actual API key was sent (not "${SHIPPO_API_KEY}")
-GET http://localhost:9090/_mock/requests
+GET http://localhost:8080/_mock/requests
 [Options]
 retry: 10
 retry-interval: 200

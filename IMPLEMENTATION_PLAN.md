@@ -123,9 +123,9 @@ integrations/
   - [x] Exponential increase
   - [x] Capped at maxDelayMs
   - [x] Jitter is within bounds
-- [x] Unit tests for `powerOfTwo`
 
 > Functions exported from Internal.hs for testing.
+> `Int.powerOf` added to nhcore with 11 tests in IntSpec.hs.
 
 ---
 

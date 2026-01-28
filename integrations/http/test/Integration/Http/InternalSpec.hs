@@ -15,29 +15,6 @@ import Text qualified
 spec :: Spec Unit
 spec = do
   describe "Integration.Http.Internal" do
-    describe "powerOfTwo" do
-      it "2^0 = 1" \_ -> do
-        Internal.powerOfTwo 0 |> shouldBe 1
-
-      it "2^1 = 2" \_ -> do
-        Internal.powerOfTwo 1 |> shouldBe 2
-
-      it "2^2 = 4" \_ -> do
-        Internal.powerOfTwo 2 |> shouldBe 4
-
-      it "2^3 = 8" \_ -> do
-        Internal.powerOfTwo 3 |> shouldBe 8
-
-      it "2^4 = 16" \_ -> do
-        Internal.powerOfTwo 4 |> shouldBe 16
-
-      it "2^10 = 1024" \_ -> do
-        Internal.powerOfTwo 10 |> shouldBe 1024
-
-      it "handles negative input as 0" \_ -> do
-        Internal.powerOfTwo (-1) |> shouldBe 1
-        Internal.powerOfTwo (-5) |> shouldBe 1
-
     describe "expandEnvVars" do
       it "returns text unchanged when no variables" \_ -> do
         result <- Internal.expandEnvVars "https://api.example.com/v1/orders"

@@ -348,6 +348,7 @@ test-suite nhcore-test
     Integration.RuntimeSpec
     Integration.TimerSpec
     IntegrationSpec
+    IntSpec
     Service.ApplicationSpec
     Service.CommandHandlerSpec
     Service.CommandSpec

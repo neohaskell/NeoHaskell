@@ -5,7 +5,7 @@ module Service.Query.THSpec where
 import Auth.Claims (UserClaims)
 import Core
 import Data.Proxy (Proxy (..))
-import GHC.TypeLits (KnownSymbol, symbolVal)
+import GHC.TypeLits (symbolVal)
 import Json qualified
 import Service.Query.Auth (QueryAuthError)
 import Service.Query.TH (deriveQuery)

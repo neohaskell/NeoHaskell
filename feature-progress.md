@@ -172,6 +172,7 @@ See `IMPLEMENTATION_PLAN.md` for detailed layer breakdown.
 | 3 | Example fix | Updated testbed example to use sum types for command results, added Internal module import to Http.hs for ToAction instance, verified full build |
 | 4 | Security fix | Implemented redacted Show instance for Auth, removed ToJSON/FromJSON to prevent credential serialization, fixed retry count off-by-one, improved powerOfTwo to tail-recursive |
 | 5 | Unit tests | Added test-suite to cabal, implemented 79 unit tests covering RetrySpec, RequestSpec, AuthSpec, InternalSpec; fixed fmt interpolation bug in error message |
+| 6 | Refactor | Moved powerOfTwo to nhcore as `Int.powerOf`, added 11 tests in IntSpec.hs; fixed HURL tests to use port 8080; fixed redundant KnownSymbol import in THSpec |
 
 ---
 
@@ -186,11 +187,9 @@ See `IMPLEMENTATION_PLAN.md` for detailed layer breakdown.
 **COMPLETE** - All phases finished, all tests passing. PR #318 submitted for review.
 
 ### Test Coverage
-- **79 unit tests** covering all Layer 1 and Layer 2 code
-- HURL integration tests defined but require additional infrastructure:
-  - Mock HTTP server on localhost:9090
-  - Testbed Order domain implementation
-  - CI pipeline setup for end-to-end testing
+- **72 unit tests** in nhintegration-http covering Layer 1 and Layer 2 code
+- **11 unit tests** in nhcore for `Int.powerOf`
+- HURL integration tests defined for testbed on port 8080 (require Order domain implementation)
 
 ---
 

@@ -12,7 +12,6 @@ module Integration.Http.Internal
     expandEnvVars
   , buildAuthHeader
   , calculateBackoff
-  , powerOfTwo
   ) where
 
 import Array (Array)
@@ -150,7 +149,7 @@ isRetryableStatus config statusCode =
 -- Jitter: random value in [0, delay/4]
 calculateBackoff :: Retry -> Int -> Task Integration.IntegrationError Int
 calculateBackoff config attempt = do
-  let multiplier = powerOfTwo (attempt - 1)
+  let multiplier = (attempt - 1) |> Int.powerOf 2
   let baseDelay = config.initialDelayMs * multiplier
   let cappedDelay = min baseDelay config.maxDelayMs
   -- Add jitter (0-25% of delay) to prevent thundering herd
@@ -158,15 +157,6 @@ calculateBackoff config attempt = do
   jitter <- Int.getRandomBetween 0 jitterMax
     |> Task.mapError (\_ -> Integration.UnexpectedError "Random generation failed")
   Task.yield (cappedDelay + jitter)
-
-
--- | Compute 2^n for non-negative n using Int arithmetic.
--- Uses tail-recursive accumulator to avoid stack growth.
-powerOfTwo :: Int -> Int
-powerOfTwo n = go (max 0 n) 1
-  where
-    go 0 acc = acc
-    go k acc = go (k - 1) (acc * 2)
 
 
 -- | Execute a single HTTP request.
