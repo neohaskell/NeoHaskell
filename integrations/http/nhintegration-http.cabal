@@ -1,15 +1,18 @@
 cabal-version: 3.4
-name: nhtestbed
-version: 0.9.1
-synopsis: End-to-End Testbed for NeoHaskell
-description: A real NeoHaskell application that demonstrates features and runs blackbox acceptance tests.
+name: nhintegration-http
+version: 0.1.0.0
+synopsis: HTTP Outbound Integration for NeoHaskell
+description:
+  Provides HTTP outbound integration following the two-persona model.
+  Jess configures HTTP requests with pure records.
+  Nick implements ToAction with retries, auth, error handling.
+  See ADR-0015 for design details.
 homepage: https://neohaskell.org
 license: Apache-2.0
 license-file: LICENSE
-author: Nikita Tchayka
+author: NeoHaskell Contributors
 maintainer: nhlib@nickseagull.dev
-copyright:
-category: Development
+category: Web
 build-type: Simple
 
 common common_cfg
@@ -47,39 +50,36 @@ common common_cfg
     TypeOperators
 
   build-depends:
-    nhcore,
-    nhintegration-http
+    nhcore
 
 library
   import: common_cfg
   exposed-modules:
-    App
-    Testbed.Cart.Commands.AddItem
-    Testbed.Cart.Commands.CreateCart
-    Testbed.Cart.Core
-    Testbed.Cart.Integrations
-    Testbed.Cart.Integrations.EventCounter
-    Testbed.Cart.Queries.CartSummary
-    Testbed.Cart.Service
-    Testbed.Document.Commands.CreateDocument
-    Testbed.Document.Core
-    Testbed.Document.Service
-    Testbed.Service
-    Testbed.Stock.Commands.InitializeStock
-    Testbed.Stock.Commands.ReserveStock
-    Testbed.Stock.Core
-    Testbed.Stock.Queries.StockLevel
-    Testbed.Stock.Service
-    Testbed.Examples.HttpIntegration
-
-  hs-source-dirs: src
+    Integration.Http
+    Integration.Http.Auth
+    Integration.Http.Internal
+    Integration.Http.Request
+    Integration.Http.Response
+    Integration.Http.Retry
+  hs-source-dirs: .
   default-language: GHC2021
 
-executable nhtestbed
+test-suite nhintegration-http-test
   import: common_cfg
-  main-is: Launcher.hs
+  type: exitcode-stdio-1.0
+  main-is: Main.hs
+  hs-source-dirs: test
+  other-modules:
+    Integration.Http.AuthSpec
+    Integration.Http.InternalSpec
+    Integration.Http.RequestSpec
+    Integration.Http.RetrySpec
   build-depends:
-    nhtestbed
-
-  hs-source-dirs: launcher
+    base,
+    hspec,
+    nhcore,
+    nhintegration-http
   default-language: GHC2021
+  ghc-options:
+    -rtsopts
+    -with-rtsopts=-N

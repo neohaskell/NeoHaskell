@@ -130,6 +130,7 @@ module Basics (
   GHC.Stack.HasCallStack,
   Show (..),
   GHCBase.Symbol,
+  KnownSymbol,
 ) where
 
 import Applicable (Applicable)
@@ -151,6 +152,7 @@ import GHC.IsList (IsList (..))
 import GHC.OverloadedLabels (IsLabel (..))
 import GHC.Records (HasField (..))
 import GHC.Stack (HasCallStack)
+import GHC.TypeLits (KnownSymbol)
 import Language.Haskell.TH.Quote (QuasiQuoter)
 import Mappable (Mappable)
 import Unit (Unit, unit)

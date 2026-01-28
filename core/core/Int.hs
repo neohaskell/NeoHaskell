@@ -4,6 +4,7 @@ module Int (
   toInt64,
   getRandom,
   getRandomBetween,
+  powerOf,
 ) where
 
 import Basics
@@ -71,3 +72,33 @@ getRandomBetween minValue maxValue = do
   let upperBound = max minValue maxValue
   value <- Task.fromIO (Random.randomRIO (lowerBound, upperBound))
   Task.yield value
+
+
+-- * Exponentiation
+
+
+-- | Raise a base to the power of an exponent.
+--
+-- Computes @base^exponent@ using integer arithmetic.
+-- Negative exponents are treated as 0 (returns 1).
+--
+-- >>> 3 |> Int.powerOf 2
+-- 8
+-- -- 2^3 = 8
+--
+-- >>> 10 |> Int.powerOf 2
+-- 1024
+-- -- 2^10 = 1024
+--
+-- >>> 0 |> Int.powerOf 5
+-- 1
+-- -- 5^0 = 1
+--
+-- >>> (-1) |> Int.powerOf 2
+-- 1
+-- -- Negative exponent treated as 0
+powerOf :: Int -> Int -> Int
+powerOf base exponent = go (max 0 exponent) 1
+  where
+    go 0 acc = acc
+    go n acc = go (n - 1) (acc * base)

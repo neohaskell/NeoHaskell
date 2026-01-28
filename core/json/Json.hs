@@ -8,6 +8,7 @@ module Json (
   decode,
   encodeText,
   decodeBytes,
+  null,
 ) where
 
 import Array (Array)
@@ -65,3 +66,12 @@ instance (Aeson.ToJSON a) => Aeson.ToJSON (Array a)
 
 instance Default Aeson.Value where
   def = Aeson.Null
+
+
+-- | The JSON null value.
+--
+-- @
+-- Json.null  -- represents null in JSON
+-- @
+null :: Aeson.Value
+null = Aeson.Null

@@ -23,10 +23,13 @@ module Bytes (
   -- * Combining
   append,
   concat,
+  -- * Encoding
+  toBase64,
 ) where
 
 import Basics
 import Data.ByteString qualified as ByteString
+import Data.ByteString.Base64 qualified as Base64
 import Data.ByteString.Lazy (LazyByteString)
 import Data.ByteString.Search qualified as ByteStringSearch
 import Data.Word (Word8)
@@ -166,4 +169,16 @@ concat bss =
   bss
     |> GhcPrelude.map unwrap
     |> ByteString.concat
+    |> INTERNAL_CORE_BYTES_CONSTRUCTOR
+
+
+-- | Encode bytes as Base64.
+--
+-- @
+-- "hello" |> Text.toBytes |> Bytes.toBase64 |> Text.fromBytes
+-- -- "aGVsbG8="
+-- @
+toBase64 :: Bytes -> Bytes
+toBase64 (INTERNAL_CORE_BYTES_CONSTRUCTOR bs) =
+  Base64.encode bs
     |> INTERNAL_CORE_BYTES_CONSTRUCTOR
