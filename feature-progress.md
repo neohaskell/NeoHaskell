@@ -171,6 +171,7 @@ See `IMPLEMENTATION_PLAN.md` for detailed layer breakdown.
 | 2 | Build fix | Added nhcore extensions (Bytes.toBase64, Json.null, KnownSymbol), fixed fmt syntax (#{var} not {var}), replaced Task.attempt with Task.asResult, implemented powerOfTwo helper for Int exponentiation |
 | 3 | Example fix | Updated testbed example to use sum types for command results, added Internal module import to Http.hs for ToAction instance, verified full build |
 | 4 | Security fix | Implemented redacted Show instance for Auth, removed ToJSON/FromJSON to prevent credential serialization, fixed retry count off-by-one, improved powerOfTwo to tail-recursive |
+| 5 | Unit tests | Added test-suite to cabal, implemented 79 unit tests covering RetrySpec, RequestSpec, AuthSpec, InternalSpec; fixed fmt interpolation bug in error message |
 
 ---
 
@@ -182,10 +183,9 @@ See `IMPLEMENTATION_PLAN.md` for detailed layer breakdown.
 
 ## Next Action
 
-**COMPLETE** - All phases finished. PR #318 submitted for review.
+**COMPLETE** - All phases finished, all tests passing. PR #318 submitted for review.
 
-Remaining items deferred to follow-up PR:
-- Unit tests for Layer 1 and Layer 2 functions
+Remaining items for future enhancement:
 - Run HURL integration tests with mock HTTP server (requires infrastructure setup)
 
 ---

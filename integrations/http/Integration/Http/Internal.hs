@@ -12,6 +12,7 @@ module Integration.Http.Internal
     expandEnvVars
   , buildAuthHeader
   , calculateBackoff
+  , powerOfTwo
   ) where
 
 import Array (Array)
@@ -262,7 +263,7 @@ expandEnvVarsLoop text = do
       -- Look up the environment variable
       value <- Environment.getVariable varName
         |> Task.mapError (\_ -> Integration.AuthenticationError
-             [fmt|Missing environment variable: {varName}|])
+             [fmt|Missing environment variable: #{varName}|])
 
       -- Reconstruct and continue
       let expanded = Text.concat [before, value, after]

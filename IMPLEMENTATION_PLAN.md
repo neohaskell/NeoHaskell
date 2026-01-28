@@ -63,12 +63,14 @@ integrations/
 - [x] Create `Integration/Http.hs` with re-exports
 - [x] Add package to `cabal.project`
 
-**Tests** (deferred to follow-up PR):
-- [ ] Unit tests for `defaultRetry` values
-- [ ] Unit tests for `withRetries` function
-- [ ] Unit tests for body helpers
+**Tests**:
+- [x] Unit tests for `defaultRetry` values
+- [x] Unit tests for `withRetries` function
+- [x] Unit tests for body helpers
+- [x] Unit tests for Auth types and security (redacted Show, no JSON)
+- [x] Unit tests for Method types
 
-> Note: Tests deferred as the package builds and compiles correctly. Unit test infrastructure requires test-suite setup in cabal file.
+> Test suite: `cabal test nhintegration-http-test` (79 tests passing)
 
 ---
 
@@ -105,24 +107,25 @@ integrations/
   - [x] Call `onSuccess` or `onError` callback
   - [x] Emit command via `Integration.emitCommand`
 
-**Tests** (deferred to follow-up PR):
-- [ ] Unit tests for `expandEnvVars`
-  - Expands single variable
-  - Expands multiple variables
-  - Throws on missing variable
-  - No-op on text without variables
-- [ ] Unit tests for `buildAuthHeader`
-  - NoAuth returns Nothing
-  - Bearer with env var expansion
-  - Basic with base64 encoding
-  - ApiKey with custom header name
-- [ ] Unit tests for `calculateBackoff`
-  - First attempt uses initialDelayMs
-  - Exponential increase
-  - Capped at maxDelayMs
-  - Jitter is within bounds
+**Tests**:
+- [x] Unit tests for `expandEnvVars`
+  - [x] Expands single variable
+  - [x] Expands multiple variables
+  - [x] Throws on missing variable
+  - [x] No-op on text without variables
+- [x] Unit tests for `buildAuthHeader`
+  - [x] NoAuth returns Nothing
+  - [x] Bearer with literal token
+  - [x] Basic with base64 encoding
+  - [x] ApiKey with custom header name
+- [x] Unit tests for `calculateBackoff`
+  - [x] First attempt uses initialDelayMs
+  - [x] Exponential increase
+  - [x] Capped at maxDelayMs
+  - [x] Jitter is within bounds
+- [x] Unit tests for `powerOfTwo`
 
-> Note: Tests deferred. Functions are exported for testing via module exports.
+> Functions exported from Internal.hs for testing.
 
 ---
 

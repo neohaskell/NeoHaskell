@@ -57,10 +57,29 @@ library
   exposed-modules:
     Integration.Http
     Integration.Http.Auth
+    Integration.Http.Internal
     Integration.Http.Request
     Integration.Http.Response
     Integration.Http.Retry
-  other-modules:
-    Integration.Http.Internal
   hs-source-dirs: .
   default-language: GHC2021
+
+test-suite nhintegration-http-test
+  import: common_cfg
+  type: exitcode-stdio-1.0
+  main-is: Main.hs
+  hs-source-dirs: test
+  other-modules:
+    Integration.Http.AuthSpec
+    Integration.Http.InternalSpec
+    Integration.Http.RequestSpec
+    Integration.Http.RetrySpec
+  build-depends:
+    base,
+    hspec,
+    nhcore,
+    nhintegration-http
+  default-language: GHC2021
+  ghc-options:
+    -rtsopts
+    -with-rtsopts=-N
