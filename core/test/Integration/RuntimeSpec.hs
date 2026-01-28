@@ -11,6 +11,7 @@ import Integration.Command qualified as Command
 import Json qualified
 import Service.Application qualified as Application
 import Service.Command.Core (NameOf)
+import Service.Entity.Core (Entity (..), EventOf)
 import Service.Event.EntityName (EntityName (..))
 import Service.EventStore.InMemory qualified as InMemory
 import Service.TestHelpers (insertTypedEvent)
@@ -47,6 +48,18 @@ data TestEntityEvent
   = TestEntityCreated {initialValue :: Int}
   | TestEntityUpdated {newValue :: Int}
   deriving (Generic, Eq, Show, Typeable)
+
+
+-- | Type family instances for Entity/Event relationship.
+type instance EventOf TestEntity = TestEntityEvent
+
+
+-- | Entity instance for TestEntity.
+instance Entity TestEntity where
+  initialStateImpl = TestEntity {entityId = Uuid.nil, value = 0}
+  updateImpl event entity = case event of
+    TestEntityCreated {initialValue} -> entity {value = initialValue}
+    TestEntityUpdated {newValue} -> entity {value = newValue}
 
 
 instance Json.ToJSON TestEntityEvent
