@@ -345,6 +345,7 @@ test-suite nhcore-test
     Auth.OAuth2.TokenRefreshSpec
     Auth.UrlValidationSpec
     Http.ClientSpec
+    Http.ClientRawSpec
     ConcurrentMapSpec
     Integration.CommandSpec
     Integration.ContextSpec
