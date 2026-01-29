@@ -29,6 +29,7 @@ import Array (Array)
 import Basics
 import Integration qualified
 import Json qualified
+import Maybe (Maybe)
 import Service.Event (Event)
 import Service.Event.StreamId (StreamId)
 import Service.EventStore.Core (EventStore)
@@ -45,7 +46,7 @@ import Text (Text)
 -- the entity state via event replay before calling the integration function.
 data OutboundRunner = OutboundRunner
   { entityTypeName :: Text
-  , processEvent :: EventStore Json.Value -> Event Json.Value -> Task Text (Array Integration.CommandPayload)
+  , processEvent :: Maybe Integration.ActionContext -> EventStore Json.Value -> Event Json.Value -> Task Text (Array Integration.CommandPayload)
   }
 
 

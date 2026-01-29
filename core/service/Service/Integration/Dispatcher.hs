@@ -39,6 +39,7 @@ module Service.Integration.Dispatcher (
   -- * Types
   IntegrationDispatcher,
   DispatcherConfig (..),
+  defaultConfig,
 
   -- * Re-exports from Types
   OutboundRunner (..),
@@ -239,7 +240,8 @@ data IntegrationDispatcher = IntegrationDispatcher
     commandEndpoints :: Map Text EndpointHandler,
     shutdownSignal :: ConcurrentVar Bool,
     config :: DispatcherConfig,
-    reaperTask :: ConcurrentVar (Maybe (AsyncTask Text Unit))
+    reaperTask :: ConcurrentVar (Maybe (AsyncTask Text Unit)),
+    maybeContext :: Maybe Integration.ActionContext
   }
 
 
@@ -252,7 +254,7 @@ new ::
   Array OutboundRunner ->
   Map Text EndpointHandler ->
   Task Text IntegrationDispatcher
-new store runners endpoints = newWithLifecycleConfig defaultConfig store runners [] endpoints
+new store runners endpoints = newWithLifecycleConfig defaultConfig store runners [] endpoints Nothing
 
 
 -- | Create a new integration dispatcher with lifecycle runners.
@@ -265,7 +267,7 @@ newWithLifecycle ::
   Map Text EndpointHandler ->
   Task Text IntegrationDispatcher
 newWithLifecycle store runners lifecycleRunners endpoints =
-  newWithLifecycleConfig defaultConfig store runners lifecycleRunners endpoints
+  newWithLifecycleConfig defaultConfig store runners lifecycleRunners endpoints Nothing
 
 
 -- | Create a new integration dispatcher with custom configuration.
@@ -275,8 +277,9 @@ newWithLifecycleConfig ::
   Array OutboundRunner ->
   Array OutboundLifecycleRunner ->
   Map Text EndpointHandler ->
+  Maybe Integration.ActionContext ->
   Task Text IntegrationDispatcher
-newWithLifecycleConfig dispatcherConfig store runners lifecycleRunners endpoints = do
+newWithLifecycleConfig dispatcherConfig store runners lifecycleRunners endpoints maybeContext = do
   workers <- ConcurrentMap.new
   lifecycleWorkers <- ConcurrentMap.new
   shutdownSignal <- ConcurrentVar.containing False
@@ -292,7 +295,8 @@ newWithLifecycleConfig dispatcherConfig store runners lifecycleRunners endpoints
             commandEndpoints = endpoints,
             shutdownSignal = shutdownSignal,
             config = dispatcherConfig,
-            reaperTask = reaperTaskVar
+            reaperTask = reaperTaskVar,
+            maybeContext = maybeContext
           }
 
   -- Start reaper if we have lifecycle runners and reaper is enabled
@@ -658,7 +662,7 @@ processStatelessEvent dispatcher event = do
   let streamId = event.streamId
   dispatcher.outboundRunners
     |> Task.forEach \runner -> do
-      result <- runner.processEvent dispatcher.eventStore event |> Task.asResult
+      result <- runner.processEvent dispatcher.maybeContext dispatcher.eventStore event |> Task.asResult
       case result of
         Ok commands -> do
           commands

@@ -33,6 +33,7 @@ module Integration (
   -- * Outbound Types
   Outbound,
   Action,
+  ActionContext (..),
 
   -- * Outbound Construction (Jess's API)
   batch,
@@ -44,6 +45,7 @@ module Integration (
 
   -- * Action Construction (Nick's API)
   action,
+  actionWithContext,
   emitCommand,
   noCommand,
 
@@ -64,6 +66,7 @@ module Integration (
   -- | These functions expose behavior for testing and debugging.
   -- In production, the runtime handles action execution.
   runAction,
+  runActionWithContext,
   getActions,
 
   -- * Runtime
@@ -73,10 +76,13 @@ module Integration (
 
 import Array (Array)
 import Array qualified
+import Auth.OAuth2.Provider (ValidatedOAuth2ProviderConfig)
+import Auth.SecretStore (SecretStore)
 import Basics
 import Data.Proxy (Proxy (..))
 import GHC.TypeLits qualified as GHC
 import Json qualified
+import Map (Map)
 import Maybe (Maybe (..))
 import Service.Command.Core (NameOf)
 import Task (Task)
@@ -96,6 +102,16 @@ data IntegrationError
   deriving (Eq, Show)
 
 
+-- | Execution context for actions that need runtime dependencies.
+--
+-- This is created by Application.run and passed to actions at execution time.
+-- Only OAuth2-aware integrations need this context.
+data ActionContext = ActionContext
+  { secretStore :: SecretStore
+  , providerRegistry :: Map Text ValidatedOAuth2ProviderConfig
+  }
+
+
 -- | Payload for emitting a command from an integration.
 data CommandPayload = CommandPayload
   { commandType :: Text
@@ -111,9 +127,9 @@ instance Json.ToJSON CommandPayload
 
 
 -- | Internal representation of an action.
-data ActionInternal = ActionInternal
-  { _execute :: Task IntegrationError (Maybe CommandPayload)
-  }
+data ActionInternal
+  = ActionInternalSimple { _execute :: Task IntegrationError (Maybe CommandPayload) }
+  | ActionInternalWithContext { _executeWithContext :: ActionContext -> Task IntegrationError (Maybe CommandPayload) }
 
 
 -- | A single outbound action (type-erased).
@@ -177,7 +193,17 @@ none = Outbound Array.empty
 --     Integration.emitCommand (config.onSuccess response)
 -- @
 action :: Task IntegrationError (Maybe CommandPayload) -> Action
-action task = Action (ActionInternal task)
+action task = Action (ActionInternalSimple task)
+
+
+-- | Create an action that requires execution context.
+--
+-- Used by OAuth2-aware integrations that need SecretStore access.
+-- The context is provided at execution time by the integration dispatcher.
+actionWithContext ::
+  (ActionContext -> Task IntegrationError (Maybe CommandPayload)) ->
+  Action
+actionWithContext contextAction = Action (ActionInternalWithContext contextAction)
 
 
 -- | Build a CommandPayload from a command.
@@ -308,7 +334,21 @@ inbound config = do
 -- @
 runAction :: Action -> Task IntegrationError (Maybe CommandPayload)
 runAction action = case action of
-  Action internal -> internal._execute
+  Action internal ->
+    case internal of
+      ActionInternalSimple {_execute} -> _execute
+      ActionInternalWithContext _ -> Task.throw (UnexpectedError "Action requires context. Use runActionWithContext.")
+
+
+-- | Execute an Action with a provided ActionContext.
+--
+-- Context is optional for simple actions and only required for context-aware actions.
+runActionWithContext :: ActionContext -> Action -> Task IntegrationError (Maybe CommandPayload)
+runActionWithContext ctx action = case action of
+  Action internal ->
+    case internal of
+      ActionInternalSimple {_execute} -> _execute
+      ActionInternalWithContext {_executeWithContext} -> _executeWithContext ctx
 
 
 -- | Extract actions from an Outbound for inspection.

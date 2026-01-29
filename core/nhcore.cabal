@@ -347,6 +347,7 @@ test-suite nhcore-test
     Http.ClientSpec
     ConcurrentMapSpec
     Integration.CommandSpec
+    Integration.ContextSpec
     Integration.DispatcherSpec
     Integration.RuntimeSpec
     Integration.TimerSpec
