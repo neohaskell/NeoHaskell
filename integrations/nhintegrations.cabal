@@ -68,6 +68,7 @@ library
      Integration.OpenRouter.Response
      Integration.Oura.Activity
      Integration.Oura.HeartRate
+     Integration.Oura.Internal
      Integration.Oura.Provider
      Integration.Oura.Readiness
      Integration.Oura.Sleep
