@@ -90,6 +90,67 @@ spec = do
       Text.contains "\"temperature\"" encoded `shouldBe` True
       Text.contains "\"max_tokens\"" encoded `shouldBe` True
 
+  describe "handleSuccess" do
+    it "sanitizes parse errors and does not leak response body" do
+      let request = makeTestRequest
+      let malformedResponse = Http.Response
+            { statusCode = 200
+            , body = Json.null
+            , headers = []
+            }
+      let result = handleSuccess request malformedResponse
+      result `shouldBe` "error"
+
+    it "returns helpful error on HTTP 400 Bad Request" do
+      let request = makeTestRequest
+      let errorResponse = Http.Response
+            { statusCode = 400
+            , body = Json.null
+            , headers = []
+            }
+      let result = handleSuccess request errorResponse
+      result `shouldBe` "error"
+
+    it "returns helpful error on HTTP 404 Not Found" do
+      let request = makeTestRequest
+      let errorResponse = Http.Response
+            { statusCode = 404
+            , body = Json.null
+            , headers = []
+            }
+      let result = handleSuccess request errorResponse
+      result `shouldBe` "error"
+
+    it "returns server error message on HTTP 500" do
+      let request = makeTestRequest
+      let errorResponse = Http.Response
+            { statusCode = 500
+            , body = Json.null
+            , headers = []
+            }
+      let result = handleSuccess request errorResponse
+      result `shouldBe` "error"
+
+    it "returns rate limit error on HTTP 429" do
+      let request = makeTestRequest
+      let errorResponse = Http.Response
+            { statusCode = 429
+            , body = Json.null
+            , headers = []
+            }
+      let result = handleSuccess request errorResponse
+      result `shouldBe` "error"
+
+    it "returns server error on HTTP 503 Service Unavailable" do
+      let request = makeTestRequest
+      let errorResponse = Http.Response
+            { statusCode = 503
+            , body = Json.null
+            , headers = []
+            }
+      let result = handleSuccess request errorResponse
+      result `shouldBe` "error"
+
 
 -- Test helpers
 

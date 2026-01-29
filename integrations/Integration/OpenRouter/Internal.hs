@@ -13,6 +13,8 @@ module Integration.OpenRouter.Internal
     -- * Internal Types (for testing)
   , RequestBody (..)
   , buildHeaders
+  , handleSuccess
+  , handleError
   ) where
 
 import Array (Array)
@@ -150,12 +152,22 @@ buildHeaders config = do
 -- | Parse the HTTP response and invoke the user's onSuccess callback.
 handleSuccess :: forall command. Request command -> Http.Response -> command
 handleSuccess request httpResponse = do
-  case httpResponse.body |> Json.decode of
-    Result.Err parseError ->
-      -- JSON parsing failed - invoke onError
-      request.onError [fmt|Failed to parse response: #{parseError}|]
-    Result.Ok openRouterResponse ->
-      request.onSuccess openRouterResponse
+  case httpResponse.statusCode of
+    code | code >= 200 && code < 300 ->
+      -- Success response - parse as Response
+      case httpResponse.body |> Json.decode of
+        Result.Err _parseError ->
+          -- JSON parsing failed - invoke onError
+          -- SECURITY: Don't expose parse error details which may contain API response fragments
+          request.onError "Failed to parse OpenRouter response"
+        Result.Ok openRouterResponse ->
+          request.onSuccess openRouterResponse
+    429 ->
+      request.onError "OpenRouter rate limit exceeded"
+    code | code >= 400 && code < 500 ->
+      request.onError [fmt|OpenRouter request error (HTTP #{code})|]
+    _code ->
+      request.onError [fmt|OpenRouter server error (HTTP #{_code})|]
 
 
 -- | Handle HTTP errors by invoking the user's onError callback.
