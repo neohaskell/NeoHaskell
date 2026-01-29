@@ -53,3 +53,8 @@ cli-next/.launcher/
 
 cli-next/neo-sandbox.cabal
 uploads/
+
+# Planning files
+IMPLEMENTATION_PLAN.md
+feature-progress.md
+.sisyphus/
