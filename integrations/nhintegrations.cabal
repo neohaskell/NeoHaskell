@@ -98,6 +98,7 @@ test-suite nhintegrations-test
     Integration.Oura.ReadinessSpec
     Integration.Oura.SleepSpec
     Integration.Oura.TypesSpec
+    Integration.Oura.InternalSpec
   build-depends:
     base,
     hspec,
