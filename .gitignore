@@ -57,3 +57,4 @@ uploads/
 # Planning files
 IMPLEMENTATION_PLAN.md
 feature-progress.md
+.sisyphus/

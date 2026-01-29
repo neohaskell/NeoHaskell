@@ -28,6 +28,8 @@ ADRs document significant architectural decisions made during the development of
 | [0012](0012-postgres-file-state-store.md)     | PostgreSQL FileStateStore       | Proposed |
 | [0013](0013-automatic-schema-generation.md)   | Automatic Schema Generation     | Proposed |
 | [0014](0014-webtransport-openapi-integration.md) | WebTransport OpenAPI Integration | Proposed |
+| [0015](0015-http-outbound-integration.md) | HTTP Outbound Integration | Proposed |
+| [0016](0016-redacted-type-for-sensitive-data.md) | Redacted Type for Sensitive Data | Proposed |
 
 ## Creating New ADRs
 
