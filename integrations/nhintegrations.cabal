@@ -50,6 +50,7 @@ common common_cfg
     TypeOperators
 
   build-depends:
+    base,
     nhcore
 
 library
