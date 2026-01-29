@@ -66,6 +66,8 @@ library
     Integration.OpenRouter.Message
     Integration.OpenRouter.Request
     Integration.OpenRouter.Response
+    Integration.Oura.Provider
+    Integration.Oura.Types
   hs-source-dirs: .
   default-language: GHC2021
 
@@ -82,6 +84,8 @@ test-suite nhintegrations-test
     Integration.OpenRouter.InternalSpec
     Integration.OpenRouter.MessageSpec
     Integration.OpenRouter.ResponseSpec
+    Integration.Oura.ProviderSpec
+    Integration.Oura.TypesSpec
   build-depends:
     base,
     hspec,
