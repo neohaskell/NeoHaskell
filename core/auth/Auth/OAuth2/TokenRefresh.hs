@@ -3,9 +3,10 @@ module Auth.OAuth2.TokenRefresh (
   withValidToken,
 ) where
 
-import Auth.OAuth2.Types (OAuth2Error, RefreshToken, TokenSet)
-import Auth.SecretStore (SecretStore)
+import Auth.OAuth2.Types (OAuth2Error, RefreshToken, TokenSet (..), unwrapAccessToken)
+import Auth.SecretStore (SecretStore (..), TokenKey (..))
 import Core
+import Result qualified
 import Task qualified
 
 
@@ -63,5 +64,44 @@ withValidToken ::
   -- | Action using access token
   (Text -> Task err value) ->
   Task (TokenRefreshError err) value
-withValidToken _store _provider _userId _refreshAction _isUnauthorized _action =
-  Task.throw (TokenNotFound "TODO: implement")
+withValidToken store providerName userId refreshAction isUnauthorized action = do
+  -- 1. Build TokenKey using production format
+  let tokenKey = TokenKey [fmt|oauth:#{providerName}:#{userId}|]
+
+  -- 2. Get tokens from store
+  (maybeTokens :: Maybe TokenSet) <-
+    store.get tokenKey
+      |> Task.mapError StorageError
+
+  case maybeTokens of
+    Nothing -> Task.throw (TokenNotFound userId)
+    Just tokenSet -> do
+      -- 3. Extract access token and run action
+      let accessToken = unwrapAccessToken tokenSet.accessToken
+
+      firstResult <-
+        action accessToken
+          |> Task.mapError ActionFailed
+          |> Task.asResult
+
+      case firstResult of
+        Result.Ok result -> Task.yield result
+        Result.Err (ActionFailed err) | isUnauthorized err -> do
+          -- 4. Need to refresh - check for refresh token
+          case tokenSet.refreshToken of
+            Nothing -> Task.throw RefreshTokenMissing
+            Just rt -> do
+              -- 5. Call injectable refresh action
+              newTokens <-
+                refreshAction rt
+                  |> Task.mapError RefreshFailed
+
+              -- 6. Store new tokens
+              store.atomicModify tokenKey (\_ -> Just newTokens)
+                |> Task.mapError StorageError
+
+              -- 7. Retry ONCE with new access token
+              let newAccessToken = unwrapAccessToken newTokens.accessToken
+              action newAccessToken
+                |> Task.mapError ActionFailed
+        Result.Err err -> Task.throw err
