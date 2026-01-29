@@ -55,19 +55,23 @@ common common_cfg
 library
   import: common_cfg
   exposed-modules:
-    Integration.Http
-    Integration.Http.Auth
-    Integration.Http.Internal
-    Integration.Http.Request
-    Integration.Http.Response
-    Integration.Http.Retry
-    Integration.OpenRouter
-    Integration.OpenRouter.Internal
-    Integration.OpenRouter.Message
-    Integration.OpenRouter.Request
-    Integration.OpenRouter.Response
-    Integration.Oura.Provider
-    Integration.Oura.Types
+     Integration.Http
+     Integration.Http.Auth
+     Integration.Http.Internal
+     Integration.Http.Request
+     Integration.Http.Response
+     Integration.Http.Retry
+     Integration.OpenRouter
+     Integration.OpenRouter.Internal
+     Integration.OpenRouter.Message
+     Integration.OpenRouter.Request
+     Integration.OpenRouter.Response
+     Integration.Oura.Activity
+     Integration.Oura.HeartRate
+     Integration.Oura.Provider
+     Integration.Oura.Readiness
+     Integration.Oura.Sleep
+     Integration.Oura.Types
   hs-source-dirs: .
   default-language: GHC2021
 
@@ -84,7 +88,11 @@ test-suite nhintegrations-test
     Integration.OpenRouter.InternalSpec
     Integration.OpenRouter.MessageSpec
     Integration.OpenRouter.ResponseSpec
+    Integration.Oura.ActivitySpec
+    Integration.Oura.HeartRateSpec
     Integration.Oura.ProviderSpec
+    Integration.Oura.ReadinessSpec
+    Integration.Oura.SleepSpec
     Integration.Oura.TypesSpec
   build-depends:
     base,
