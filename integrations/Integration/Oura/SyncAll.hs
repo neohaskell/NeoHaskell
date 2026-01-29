@@ -4,6 +4,8 @@
 module Integration.Oura.SyncAll (
   SyncAll (..),
   SyncResult (..),
+  -- | Internal: for testing only
+  executeSyncAll,
 ) where
 
 import AsyncTask qualified

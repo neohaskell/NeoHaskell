@@ -94,11 +94,12 @@ test-suite nhintegrations-test
     Integration.OpenRouter.ResponseSpec
     Integration.Oura.ActivitySpec
     Integration.Oura.HeartRateSpec
+    Integration.Oura.InternalSpec
     Integration.Oura.ProviderSpec
     Integration.Oura.ReadinessSpec
     Integration.Oura.SleepSpec
+    Integration.Oura.SyncAllSpec
     Integration.Oura.TypesSpec
-    Integration.Oura.InternalSpec
   build-depends:
     base,
     hspec,
