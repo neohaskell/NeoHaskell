@@ -1,18 +1,28 @@
 module Auth.OAuth2.TokenRefreshSpec (spec) where
 
 import Auth.OAuth2.TokenRefresh (TokenRefreshError (..), withValidToken)
+import Auth.OAuth2.Client qualified as OAuth2
 import Auth.OAuth2.Types (
+  ClientId (..),
   OAuth2Error (..),
+  Provider (..),
   RefreshToken,
   TokenSet (..),
   mkAccessToken,
+  mkClientSecret,
   mkRefreshToken,
+  unsafeValidatedProvider,
   unwrapAccessToken,
  )
 import Auth.SecretStore (SecretStore (..), TokenKey (..))
 import Auth.SecretStore.InMemory qualified as InMemory
 import ConcurrentVar qualified
+import Control.Concurrent qualified as GhcConcurrent
 import Core
+import Data.ByteString.Lazy qualified as GhcLBS
+import Network.HTTP.Types qualified as GhcHTTP
+import Network.Wai qualified as GhcWai
+import Network.Wai.Handler.Warp qualified as GhcWarp
 import Task qualified
 import Test
 import Text qualified
@@ -210,6 +220,9 @@ spec = do
 
       result |> shouldBe (Err (StorageError "connection refused"))
 
+  -- Integration tests
+  integrationSpec
+
 
 -- | Mock refresh that always succeeds with a new token
 mockRefreshSuccess :: RefreshToken -> Task OAuth2Error TokenSet
@@ -246,3 +259,85 @@ makeTokenSetWithRefresh access refresh =
     , refreshToken = Just (mkRefreshToken refresh)
     , expiresInSeconds = Just 3600
     }
+
+
+-- | Mock OAuth2 token endpoint that returns fixed tokens
+mockTokenApp :: GhcWai.Application
+mockTokenApp request respond = do
+  case (GhcWai.requestMethod request, GhcWai.pathInfo request) of
+    ("POST", ["oauth", "token"]) -> do
+      let responseBody = GhcLBS.fromStrict "{\"access_token\":\"fresh-token\",\"refresh_token\":\"fresh-refresh\",\"expires_in\":3600,\"token_type\":\"Bearer\"}"
+      respond (GhcWai.responseLBS GhcHTTP.status200 [(GhcHTTP.hContentType, "application/json")] responseBody)
+    _ ->
+      respond (GhcWai.responseLBS GhcHTTP.status404 [] "Not Found")
+
+
+-- Integration test using real HTTP
+integrationSpec :: Spec Unit
+integrationSpec = do
+  describe "Integration: withValidToken with HTTP" do
+    it "refreshes via HTTP and retries action" \_ -> do
+      -- Port 19876 is unlikely to conflict; CI runs tests in isolation
+      let testPort = 19876
+
+      -- Start server in background thread (IO-level, not Task)
+      serverThread <- GhcConcurrent.forkIO (GhcWarp.run testPort mockTokenApp) |> Task.fromIO
+
+      -- Give server time to bind (simple approach)
+      GhcConcurrent.threadDelay 50000 |> Task.fromIO -- 50ms
+
+      -- Run test logic
+      let runTest = do
+            -- Create provider pointing to mock server
+            -- MUST use unsafeValidatedProvider (localhost fails SSRF validation)
+            let mockProvider =
+                  Provider
+                    { name = "mock"
+                    , authorizeEndpoint = [fmt|http://localhost:#{testPort}/oauth/authorize|]
+                    , tokenEndpoint = [fmt|http://localhost:#{testPort}/oauth/token|]
+                    }
+            let validatedProvider = unsafeValidatedProvider mockProvider
+
+            -- Store initial tokens
+            store <- InMemory.new
+            let tokenSet = makeTokenSetWithRefresh "expired" "old-refresh"
+            let key = TokenKey "oauth:mock:user1"
+            store.put key tokenSet
+
+            -- Create real refresh action using refreshTokenValidated
+            let clientId = ClientId "test-client"
+            let clientSecret = mkClientSecret "test-secret"
+            let refreshAction rt = OAuth2.refreshTokenValidated validatedProvider clientId clientSecret rt
+
+            -- Create action that fails first with 401, succeeds on retry
+            attemptCounter <- ConcurrentVar.containing (0 :: Int)
+            let action token = do
+                  count <- attemptCounter |> ConcurrentVar.peek
+                  attemptCounter |> ConcurrentVar.modify (\c -> c + 1)
+                  case count of
+                    0 -> Task.throw "401 Unauthorized"
+                    _ -> Task.yield ([fmt|success with #{token}|] :: Text)
+
+            -- Call withValidToken
+            (result :: Result (TokenRefreshError Text) Text) <-
+              withValidToken
+                store
+                "mock"
+                "user1"
+                refreshAction
+                isUnauthorized
+                action
+                |> Task.asResult
+
+            -- Verify result
+            result |> shouldBe (Ok "success with fresh-token")
+
+            -- Verify new tokens stored
+            stored <- store.get key
+            case stored of
+              Just ts -> unwrapAccessToken ts.accessToken |> shouldBe "fresh-token"
+              Nothing -> fail "Expected token to exist"
+
+      -- Cleanup: always kill server thread
+      runTest
+      GhcConcurrent.killThread serverThread |> Task.fromIO
