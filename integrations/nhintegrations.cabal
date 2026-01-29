@@ -73,6 +73,7 @@ library
      Integration.Oura.Provider
      Integration.Oura.Readiness
      Integration.Oura.Sleep
+     Integration.Oura.SyncAll
      Integration.Oura.Types
   hs-source-dirs: .
   default-language: GHC2021

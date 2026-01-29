@@ -13,6 +13,7 @@ import Basics
 import Json qualified
 import Maybe (Maybe)
 import Text (Text)
+import GHC.Generics ()
 
 
 -- | Wrapper for paginated API responses
@@ -40,7 +41,9 @@ data SleepContributors = SleepContributors
   , timing :: Maybe Int
   , totalSleep :: Maybe Int
   }
-  deriving (Show, Eq)
+  deriving (Show, Eq, Generic)
+
+instance Json.ToJSON SleepContributors
 
 
 instance Json.FromJSON SleepContributors where
@@ -63,7 +66,9 @@ data SleepData = SleepData
   , timestamp :: Text
   , contributors :: Maybe SleepContributors
   }
-  deriving (Show, Eq)
+  deriving (Show, Eq, Generic)
+
+instance Json.ToJSON SleepData
 
 
 instance Json.FromJSON SleepData where
@@ -89,7 +94,9 @@ data ActivityData = ActivityData
   , lowActivityTime :: Maybe Int
   , timestamp :: Text
   }
-  deriving (Show, Eq)
+  deriving (Show, Eq, Generic)
+
+instance Json.ToJSON ActivityData
 
 
 instance Json.FromJSON ActivityData where
@@ -118,7 +125,9 @@ data ReadinessContributors = ReadinessContributors
   , restingHeartRate :: Maybe Int
   , sleepBalance :: Maybe Int
   }
-  deriving (Show, Eq)
+  deriving (Show, Eq, Generic)
+
+instance Json.ToJSON ReadinessContributors
 
 
 instance Json.FromJSON ReadinessContributors where
@@ -144,7 +153,9 @@ data ReadinessData = ReadinessData
   , timestamp :: Text
   , contributors :: Maybe ReadinessContributors
   }
-  deriving (Show, Eq)
+  deriving (Show, Eq, Generic)
+
+instance Json.ToJSON ReadinessData
 
 
 instance Json.FromJSON ReadinessData where
@@ -165,7 +176,9 @@ data HeartRateData = HeartRateData
   , source :: Text
   , timestamp :: Text
   }
-  deriving (Show, Eq)
+  deriving (Show, Eq, Generic)
+
+instance Json.ToJSON HeartRateData
 
 
 instance Json.FromJSON HeartRateData where
