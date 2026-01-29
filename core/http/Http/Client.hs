@@ -12,6 +12,7 @@ module Http.Client (
 
   -- * HTTP Methods
   get,
+  getRaw,
   post,
   postForm,
   postRaw,
@@ -26,8 +27,10 @@ module Http.Client (
 import Array (Array)
 import Array qualified
 import Basics
+import Bytes (Bytes)
 import Bytes qualified
 import Char (Char)
+import Data.ByteString (ByteString)
 import Data.CaseInsensitive qualified as CI
 import Data.Either qualified as GhcEither
 import Default (Default (..))
@@ -39,6 +42,7 @@ import Maybe (Maybe (..))
 import Maybe qualified
 import Network.HTTP.Client qualified as HttpClient
 import Network.HTTP.Simple qualified as HttpSimple
+import Network.HTTP.Simple (setRequestIgnoreStatus)
 import System.IO qualified as GhcIO
 import Task (Task)
 import Task qualified
@@ -251,6 +255,42 @@ getIO options = do
   let req = applyRequestOptions options baseReq
   httpResponse <- HttpSimple.httpJSON req
   pure (extractResponse httpResponse)
+
+
+-- | Performs a GET request without JSON decoding, returning raw Bytes.
+-- Unlike 'get', this does NOT throw on non-2xx status codes because it uses
+-- setRequestIgnoreStatus to disable http-conduit's default status-code exception behavior.
+-- Use this when you need to inspect status codes before decoding (e.g., for 401/429 handling).
+getRaw ::
+  Request ->
+  Task Error (Response Bytes)
+getRaw options =
+  getRawIO options
+    |> Task.fromFailableIO @HttpClient.HttpException
+    |> Task.mapError sanitizeHttpError
+
+
+-- | Internal IO action for raw GET request
+getRawIO ::
+  Request ->
+  GhcIO.IO (Response Bytes)
+getRawIO options = do
+  baseReq <- parseRequestUrl options
+  let req = baseReq
+        |> applyRequestOptions options
+        |> setRequestIgnoreStatus
+  -- httpBS returns Response ByteString; setRequestIgnoreStatus ensures no throw on 401/429
+  httpResponse <- HttpSimple.httpBS req
+  pure (extractResponseBytes httpResponse)
+
+
+-- | Extract Response with Bytes body from http-client Response
+extractResponseBytes :: HttpSimple.Response ByteString -> Response Bytes
+extractResponseBytes httpResponse = Response
+  { statusCode = HttpSimple.getResponseStatusCode httpResponse
+  , headers = extractHeaders httpResponse
+  , body = Bytes.fromLegacy (HttpSimple.getResponseBody httpResponse)
+  }
 
 
 -- | Performs a POST request with JSON body.
