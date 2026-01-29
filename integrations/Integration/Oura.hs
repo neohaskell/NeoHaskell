@@ -49,6 +49,32 @@
 --              "/settings?error=oura"
 --          ]
 -- @
+--
+-- == Periodic Sync Example
+--
+-- Timer.every is an INBOUND integration - it emits commands on a schedule.
+-- The command handler then triggers the outbound Oura fetch.
+--
+-- @
+-- import Integration.Timer qualified as Timer
+-- 
+-- ouraSyncTimer :: Integration.Inbound
+-- ouraSyncTimer = Timer.every Timer.Every
+--   { interval = Timer.hours 1
+--   , toCommand = \\tickCount -> SyncOuraData
+--       { userId = "user-123"
+--       , requestedAt = tickCount
+--       }
+--   }
+-- 
+-- -- In command handler:
+-- handleCommand (SyncOuraData {userId}) = Integration.batch
+--   [ Integration.outbound Oura.DailySleep
+--       { userId = userId, startDate = "2024-01-01", endDate = "2024-01-07"
+--       , onSuccess = OuraSleepReceived, onError = Just OuraError
+--       }
+--   ]
+-- @
 module Integration.Oura (
   -- * Provider Config
   makeOuraConfig,
