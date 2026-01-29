@@ -61,6 +61,16 @@ instance Json.FromJSON FinishReason where
     Json.yield reason
 
 
+instance Json.ToJSON FinishReason where
+  toJSON reason = do
+    let text = case reason of
+          Stop -> "stop" :: Text
+          Length -> "length"
+          ContentFilter -> "content_filter"
+          Unknown other -> other
+    Json.toJSON text
+
+
 -- | Token usage statistics for the request.
 --
 -- Useful for monitoring costs and optimizing prompts.
@@ -89,6 +99,15 @@ instance Json.FromJSON Usage where
     Json.yield Usage {promptTokens, completionTokens, totalTokens}
 
 
+instance Json.ToJSON Usage where
+  toJSON usage =
+    Json.object
+      [ ("prompt_tokens", Json.toJSON usage.promptTokens)
+      , ("completion_tokens", Json.toJSON usage.completionTokens)
+      , ("total_tokens", Json.toJSON usage.totalTokens)
+      ]
+
+
 -- | A single completion choice from the model.
 --
 -- Most requests return a single choice, but the API supports
@@ -110,6 +129,15 @@ instance Json.FromJSON Choice where
     finishReason <- obj Json..: "finish_reason"
     index <- obj Json..:? "index" Json..!= 0
     Json.yield Choice {message, finishReason, index}
+
+
+instance Json.ToJSON Choice where
+  toJSON choice =
+    Json.object
+      [ ("message", Json.toJSON choice.message)
+      , ("finish_reason", Json.toJSON choice.finishReason)
+      , ("index", Json.toJSON choice.index)
+      ]
 
 
 -- | Full response from OpenRouter chat completion API.
@@ -142,3 +170,13 @@ instance Json.FromJSON Response where
     choices <- obj Json..: "choices"
     usage <- obj Json..:? "usage"
     Json.yield Response {id, model, choices, usage}
+
+
+instance Json.ToJSON Response where
+  toJSON response =
+    Json.object
+      [ ("id", Json.toJSON response.id)
+      , ("model", Json.toJSON response.model)
+      , ("choices", Json.toJSON response.choices)
+      , ("usage", Json.toJSON response.usage)
+      ]
