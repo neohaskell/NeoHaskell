@@ -15,9 +15,61 @@ on:
       - "core/**"
       - "testbed/**"
       - "nix/**"
+
 jobs:
   tests-linux:
     runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - test-suite: nhcore-test-auth
+            needs-postgres: false
+          - test-suite: nhcore-test-core
+            needs-postgres: false
+          - test-suite: nhcore-test-integration
+            needs-postgres: false
+          - test-suite: nhcore-test-service
+            needs-postgres: true
+
+    services:
+      postgres:
+        image: ${{ matrix.needs-postgres && 'postgres:16-alpine' || '' }}
+        env:
+          POSTGRES_USER: neohaskell
+          POSTGRES_PASSWORD: neohaskell
+          POSTGRES_DB: neohaskell
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U neohaskell" --health-interval 10s
+          --health-timeout 5s --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: DeterminateSystems/determinate-nix-action@v3.15.2
+        with:
+          extra-conf: |
+            accept-flake-config = true
+            extra-substituters = https://cache.iog.io https://neohaskell.cachix.org
+            extra-trusted-public-keys = hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ= neohaskell.cachix.org-1:mo2cLaGbwqbrxs9xhqKK8jeNsn3osi7t6XoAmxSZssc=
+
+      - uses: cachix/cachix-action@v15
+        with:
+          name: neohaskell
+          authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
+
+      - name: Build the project with cabal
+        run: nix develop --command cabal build all --disable-documentation
+
+      - name: Run ${{ matrix.test-suite }}
+        run: nix develop --command cabal test ${{ matrix.test-suite }}
+
+  integration-tests:
+    runs-on: ubuntu-latest
+    needs: tests-linux
 
     services:
       postgres:
@@ -38,23 +90,17 @@ jobs:
       - uses: DeterminateSystems/determinate-nix-action@v3.15.2
         with:
           extra-conf: |
-            extra-substituters = https://cache.iog.io
-            extra-trusted-public-keys = hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ=
+            accept-flake-config = true
+            extra-substituters = https://cache.iog.io https://neohaskell.cachix.org
+            extra-trusted-public-keys = hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ= neohaskell.cachix.org-1:mo2cLaGbwqbrxs9xhqKK8jeNsn3osi7t6XoAmxSZssc=
 
-      - uses: DeterminateSystems/magic-nix-cache-action@v13
-
-      # - name: Build the project with Nix
-      #   run: nix build
+      - uses: cachix/cachix-action@v15
+        with:
+          name: neohaskell
+          authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
 
       - name: Build the project with cabal
-        run: nix develop --command cabal build all
-
-      - name: Run core tests
-        run: nix develop --command cabal test core
-
-      # Doctests are failing - See issue #204
-      # - name: Run core doctests
-      #   run: nix-shell --run "cabal repl --with-compiler=doctest --repl-options=--verbose core"
+        run: nix develop --command cabal build all --disable-documentation
 
       - name: Install hurl
         run: |

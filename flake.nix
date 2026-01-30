@@ -28,12 +28,17 @@
 
   # --- Flake Local Nix Configuration ----------------------------
   nixConfig = {
-    # This sets the flake to use the IOG nix cache.
-    # Nix should ask for permission before using it,
-    # but remove it here if you do not want it to.
-    extra-substituters = [ "https://cache.iog.io" ];
-    extra-trusted-public-keys =
-      [ "hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ=" ];
+    # Binary caches for faster builds:
+    # - cache.iog.io: IOHK's cache (GHC, haskell.nix infrastructure)
+    # - neohaskell.cachix.org: NeoHaskell's cache (project deps, shell tools)
+    extra-substituters = [
+      "https://cache.iog.io"
+      "https://neohaskell.cachix.org"
+    ];
+    extra-trusted-public-keys = [
+      "hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ="
+      "neohaskell.cachix.org-1:mo2cLaGbwqbrxs9xhqKK8jeNsn3osi7t6XoAmxSZssc="
+    ];
     allow-import-from-derivation = "true";
   };
 }
