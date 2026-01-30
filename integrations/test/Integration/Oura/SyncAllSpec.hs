@@ -1,6 +1,7 @@
 module Integration.Oura.SyncAllSpec (spec) where
 
 import Basics
+import Data.Maybe qualified as GhcMaybe
 import Test.Hspec
 import Integration.Oura.SyncAll (SyncAll (..), SyncResult (..), executeSyncAll)
 import Integration.Oura.Types (PaginatedResponse (..))
@@ -221,10 +222,7 @@ testSyncAllConfig = SyncAll
   }
 
 
--- | Helper predicate for checking Maybe values
+-- | Re-export from Data.Maybe for test assertions
 isJust :: forall value. Maybe value -> Bool
-isJust maybeValue =
-  case maybeValue of
-    Just _ -> True
-    Nothing -> False
+isJust = GhcMaybe.isJust
 

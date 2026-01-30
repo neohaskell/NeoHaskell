@@ -101,9 +101,7 @@ test-suite nhintegrations-test
     Integration.Oura.SyncAllSpec
     Integration.Oura.TypesSpec
   build-depends:
-    base,
     hspec,
-    nhcore,
     nhintegrations
   default-language: GHC2021
   ghc-options:

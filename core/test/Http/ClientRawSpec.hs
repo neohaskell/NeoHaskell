@@ -14,6 +14,7 @@ import Text qualified
 import qualified Control.Concurrent as GhcConcurrent
 import qualified Data.ByteString.Lazy as GhcLBS
 import qualified Network.HTTP.Types as GhcHTTP
+import qualified Network.Socket as GhcSocket
 import qualified Network.Wai as GhcWai
 import qualified Network.Wai.Handler.Warp as GhcWarp
 
@@ -22,7 +23,7 @@ spec :: Spec Unit
 spec = do
   describe "Http.getRaw" do
     it "returns Ok with statusCode 401 on 401 response" \_ -> do
-      let testPort = 19877
+      testPort <- getFreePort
       serverThread <- GhcConcurrent.forkIO (GhcWarp.run testPort mock401App) |> Task.fromIO
       GhcConcurrent.threadDelay 50000 |> Task.fromIO
       let runTest = do
@@ -40,7 +41,7 @@ spec = do
       runTest |> Task.finally cleanup
 
     it "returns Ok with statusCode 429 on 429 response" \_ -> do
-      let testPort = 19878
+      testPort <- getFreePort
       serverThread <- GhcConcurrent.forkIO (GhcWarp.run testPort mock429App) |> Task.fromIO
       GhcConcurrent.threadDelay 50000 |> Task.fromIO
       let runTest = do
@@ -61,7 +62,7 @@ spec = do
       runTest |> Task.finally cleanup
 
     it "returns Ok with statusCode 200 on 200 response" \_ -> do
-      let testPort = 19879
+      testPort <- getFreePort
       serverThread <- GhcConcurrent.forkIO (GhcWarp.run testPort mock200App) |> Task.fromIO
       GhcConcurrent.threadDelay 50000 |> Task.fromIO
       let runTest = do
@@ -79,7 +80,7 @@ spec = do
       runTest |> Task.finally cleanup
 
     it "response body is accessible and decodable" \_ -> do
-      let testPort = 19880
+      testPort <- getFreePort
       serverThread <- GhcConcurrent.forkIO (GhcWarp.run testPort mockJsonApp) |> Task.fromIO
       GhcConcurrent.threadDelay 50000 |> Task.fromIO
       let runTest = do
@@ -99,15 +100,37 @@ spec = do
       runTest |> Task.finally cleanup
 
     it "returns Err on network error" \_ -> do
+      -- Use a high port unlikely to be in use for network error test
       response <-
         Http.request
-          |> Http.withUrl "http://localhost:19881/test"
+          |> Http.withUrl "http://localhost:59999/test"
           |> Http.withTimeout 1
           |> Http.getRaw
           |> Task.asResult
       case response of
         Err (Http.Error _msg) -> Task.yield ()
         Ok _ -> fail "Expected error for unreachable host"
+
+
+-- ============================================================================
+-- Test Helpers
+-- ============================================================================
+
+-- | Allocate a free port dynamically to avoid collisions in parallel test runs.
+-- Binds to port 0 (OS assigns free port), reads the assigned port, then closes the socket.
+getFreePort :: Task _ Int
+getFreePort = do
+  Task.fromIO do
+    let hints = GhcSocket.defaultHints { GhcSocket.addrSocketType = GhcSocket.Stream }
+    addrInfos <- GhcSocket.getAddrInfo (Just hints) (Just "127.0.0.1") (Just "0")
+    case addrInfos of
+      [] -> pure 19900 -- Fallback port if getAddrInfo fails
+      (addr : _) -> do
+        sock <- GhcSocket.openSocket addr
+        GhcSocket.bind sock (GhcSocket.addrAddress addr)
+        port <- GhcSocket.socketPort sock
+        GhcSocket.close sock
+        pure (fromIntegral port)
 
 
 -- ============================================================================

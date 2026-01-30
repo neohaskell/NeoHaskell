@@ -246,8 +246,9 @@ mockRefreshFailure _ = Task.throw (InvalidGrant "refresh token invalid")
 
 
 -- | Predicate: is this error a 401?
+-- Uses precise matching to avoid false positives (e.g., "14010" should not match)
 isUnauthorized :: Text -> Bool
-isUnauthorized err = err |> Text.contains "401"
+isUnauthorized err = Text.startsWith "401 " err || err == "401"
 
 
 -- | Helper to create TokenSet with refresh token

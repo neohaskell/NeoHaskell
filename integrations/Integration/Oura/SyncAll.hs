@@ -77,9 +77,9 @@ executeSyncAll httpFetch ctx config = do
   let sleepUrl = [fmt|#{ouraApiBase}/daily_sleep?start_date=#{startDate}&end_date=#{endDate}|]
   let activityUrl = [fmt|#{ouraApiBase}/daily_activity?start_date=#{startDate}&end_date=#{endDate}|]
   let readinessUrl = [fmt|#{ouraApiBase}/daily_readiness?start_date=#{startDate}&end_date=#{endDate}|]
-  -- HeartRate uses datetime with negative timezone offset (avoids encoding issues)
-  let startDatetime :: Text = [fmt|#{startDate}T00:00:00-00:00|]
-  let endDatetime :: Text = [fmt|#{endDate}T23:59:59-00:00|]
+  -- HeartRate uses UTC datetime with Z suffix (canonical ISO 8601 format)
+  let startDatetime :: Text = [fmt|#{startDate}T00:00:00Z|]
+  let endDatetime :: Text = [fmt|#{endDate}T23:59:59Z|]
   let heartRateUrl = [fmt|#{ouraApiBase}/heartrate?start_datetime=#{startDatetime}&end_datetime=#{endDatetime}|]
   
   -- Execute with token refresh - all 4 requests share the same token
