@@ -13,6 +13,10 @@ module Service.Application (
   -- * OAuth2 Setup Type
   OAuth2Setup (..),
 
+  -- * API Info Type
+  ApiInfo (..),
+  defaultApiInfo,
+
   -- * Construction
   new,
 
@@ -29,6 +33,7 @@ module Service.Application (
   withInbound,
   withAuth,
   withAuthOverrides,
+  withApiInfo,
   withSecretStore,
   withOAuth2StateKey,
   withOAuth2Provider,
@@ -171,6 +176,38 @@ data WebAuthSetup = WebAuthSetup
 --   |> Application.withOAuth2StateKey "OAUTH2_STATE_KEY"
 --   |> Application.withOAuth2Provider ouraProvider
 -- @
+-- | API metadata for OpenAPI spec generation.
+--
+-- This configures the info section of the OpenAPI specification.
+-- If not provided, sensible defaults are used.
+--
+-- Example:
+--
+-- @
+-- app = Application.new
+--   |> Application.withApiInfo "My API" "1.0.0" "A comprehensive API for managing resources"
+--   |> Application.withTransport WebTransport.server
+-- @
+data ApiInfo = ApiInfo
+  { apiTitle :: Text
+    -- ^ API title (e.g., "My API")
+  , apiVersion :: Text
+    -- ^ API version (e.g., "1.0.0")
+  , apiDescription :: Text
+    -- ^ API description (can be empty)
+  }
+  deriving (Show, Eq)
+
+
+-- | Default API info when none is provided.
+defaultApiInfo :: ApiInfo
+defaultApiInfo = ApiInfo
+  { apiTitle = "API"
+  , apiVersion = "1.0.0"
+  , apiDescription = ""
+  }
+
+
 data OAuth2Setup = OAuth2Setup
   { -- | Environment variable name containing the HMAC secret (min 32 bytes)
     hmacKeyEnvVar :: Text
@@ -221,7 +258,8 @@ data Application = Application
     webAuthSetup :: Maybe WebAuthSetup,
     oauth2Setup :: Maybe OAuth2Setup,
     fileUploadConfig :: Maybe FileUploadConfig,
-    secretStore :: Maybe SecretStore
+    secretStore :: Maybe SecretStore,
+    apiInfo :: Maybe ApiInfo
   }
 
 
@@ -245,7 +283,8 @@ new =
       webAuthSetup = Nothing,
       oauth2Setup = Nothing,
       fileUploadConfig = Nothing,
-      secretStore = Nothing
+      secretStore = Nothing,
+      apiInfo = Nothing
     }
 
 
@@ -972,6 +1011,36 @@ withAuthOverrides authServerUrl overrides app =
           WebAuthSetup
             { authServerUrl = authServerUrl,
               authOverrides = overrides
+            }
+    }
+
+
+-- | Configure API metadata for OpenAPI spec generation.
+--
+-- This sets the title, version, and description that appear in the OpenAPI
+-- specification. If not called, sensible defaults are used.
+--
+-- Example:
+--
+-- @
+-- app = Application.new
+--   |> Application.withTransport WebTransport.server
+--   |> Application.withApiInfo "My API" "1.0.0" "A comprehensive API"
+-- @
+withApiInfo ::
+  Text ->
+  Text ->
+  Text ->
+  Application ->
+  Application
+withApiInfo title version description app =
+  app
+    { apiInfo =
+        Just
+          ApiInfo
+            { apiTitle = title,
+              apiVersion = version,
+              apiDescription = description
             }
     }
 

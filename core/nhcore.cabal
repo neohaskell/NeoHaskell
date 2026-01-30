@@ -242,6 +242,7 @@ library
     Service.Transport.Web
     Service.Transport.Web.SwaggerUI
     Schema
+    Schema.OpenApi
     Set
     Stream
     Subprocess
