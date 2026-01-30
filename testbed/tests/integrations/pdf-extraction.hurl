@@ -17,14 +17,14 @@
 # =============================================================================
 POST http://localhost:8080/files/upload
 [MultipartFormData]
-file: file,fixtures/test-document.pdf; application/pdf
+file: file,../files/fixtures/test-document.pdf; application/pdf
 
 HTTP 200
 [Captures]
 pdf_file_ref: jsonpath "$.fileRef"
 [Asserts]
 jsonpath "$.fileRef" matches /^file_[a-f0-9-]+$/
-jsonpath "$.filename" == "fixtures/test-document.pdf"
+jsonpath "$.filename" == "test-document.pdf"
 jsonpath "$.contentType" == "application/pdf"
 jsonpath "$.sizeBytes" > 0
 jsonpath "$.expiresAt" exists
@@ -46,7 +46,7 @@ header "Content-Disposition" contains "test-document.pdf"
 # =============================================================================
 POST http://localhost:8080/files/upload
 [MultipartFormData]
-file: file,fixtures/project-proposal.pdf; application/pdf
+file: file,../files/fixtures/project-proposal.pdf; application/pdf
 
 HTTP 200
 [Captures]
@@ -61,7 +61,7 @@ jsonpath "$.contentType" == "application/pdf"
 # =============================================================================
 POST http://localhost:8080/files/upload
 [MultipartFormData]
-file: file,fixtures/test-document.pdf; application/pdf
+file: file,../files/fixtures/test-document.pdf; application/pdf
 
 HTTP 200
 [Captures]
@@ -69,7 +69,7 @@ pdf_ref_1: jsonpath "$.fileRef"
 
 POST http://localhost:8080/files/upload
 [MultipartFormData]
-file: file,fixtures/test-document.pdf; application/pdf
+file: file,../files/fixtures/test-document.pdf; application/pdf
 
 HTTP 200
 [Captures]
