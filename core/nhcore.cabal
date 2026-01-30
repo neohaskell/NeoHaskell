@@ -416,7 +416,7 @@ test-suite nhcore-test-auth
     Test.Auth.TestUtils
 
   type: exitcode-stdio-1.0
-  hs-source-dirs: test, test-auth
+  hs-source-dirs: test-auth, test
   main-is: Main.hs
   build-depends:
     base,
@@ -458,7 +458,7 @@ test-suite nhcore-test-service
     Service.Transport.WebSpec
 
   type: exitcode-stdio-1.0
-  hs-source-dirs: test, test-service
+  hs-source-dirs: test-service, test
   main-is: Main.hs
   build-depends:
     base,
@@ -484,7 +484,7 @@ test-suite nhcore-test-integration
     Service.TestHelpers
 
   type: exitcode-stdio-1.0
-  hs-source-dirs: test, test-integration
+  hs-source-dirs: test-integration, test
   main-is: Main.hs
   build-depends:
     base,
@@ -511,7 +511,7 @@ test-suite nhcore-test-core
     Test.AppSpec.VerifySpec
 
   type: exitcode-stdio-1.0
-  hs-source-dirs: test, test-core
+  hs-source-dirs: test-core, test
   main-is: Main.hs
   build-depends:
     base,
