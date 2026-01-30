@@ -42,6 +42,7 @@ app =
   Application.new
     |> Application.withEventStore postgresConfig
     |> Application.withTransport WebTransport.server
+    |> Application.withApiInfo "Testbed API" "1.0.0" "Example NeoHaskell application demonstrating event sourcing, CQRS, and integrations"
     |> Application.withService Testbed.Service.cartService
     |> Application.withService Testbed.Service.stockService
     |> Application.withService Testbed.Service.documentService
