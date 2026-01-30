@@ -9,9 +9,11 @@ import Service.FileUpload.Core (
   FileDeletionReason (..),
   FileMetadata (..),
   FileRef (..),
+  FileStateStoreBackend (..),
   FileUploadConfig (..),
   FileUploadEvent (..),
   FileUploadedData (..),
+  InternalFileUploadConfig (..),
   OwnerHash (..),
   ResolvedFile (..),
  )
@@ -174,11 +176,46 @@ spec = do
         reason |> shouldBe AdminPurge
 
     -- ==========================================================================
-    -- FileUploadConfig Type
+    -- FileUploadConfig Type (User-facing declarative config)
     -- ==========================================================================
     describe "FileUploadConfig" do
-      it "can be constructed with all configuration options" \_ -> do
+      it "can be constructed with in-memory state store" \_ -> do
         let config = FileUploadConfig
+              { blobStoreDir = "./uploads"
+              , stateStoreBackend = InMemoryStateStore
+              , maxFileSizeBytes = 10485760  -- 10 MB
+              , pendingTtlSeconds = 21600  -- 6 hours
+              , cleanupIntervalSeconds = 900  -- 15 minutes
+              , allowedContentTypes = Just ["application/pdf", "image/png"]
+              , storeOriginalFilename = True
+              }
+        config.blobStoreDir |> shouldBe "./uploads"
+        config.maxFileSizeBytes |> shouldBe 10485760
+
+      it "can be constructed with postgres state store" \_ -> do
+        let config = FileUploadConfig
+              { blobStoreDir = "./uploads"
+              , stateStoreBackend = PostgresStateStore
+                  { pgHost = "localhost"
+                  , pgPort = 5432
+                  , pgDatabase = "testdb"
+                  , pgUser = "testuser"
+                  , pgPassword = "testpass"
+                  }
+              , maxFileSizeBytes = 10485760
+              , pendingTtlSeconds = 21600
+              , cleanupIntervalSeconds = 900
+              , allowedContentTypes = Nothing
+              , storeOriginalFilename = True
+              }
+        config.blobStoreDir |> shouldBe "./uploads"
+
+    -- ==========================================================================
+    -- InternalFileUploadConfig Type (Runtime config after initialization)
+    -- ==========================================================================
+    describe "InternalFileUploadConfig" do
+      it "can be constructed with all configuration options" \_ -> do
+        let config = InternalFileUploadConfig
               { pendingTtlSeconds = 21600  -- 6 hours
               , cleanupIntervalSeconds = 900  -- 15 minutes
               , maxFileSizeBytes = 10485760  -- 10 MB
@@ -189,7 +226,7 @@ spec = do
         config.maxFileSizeBytes |> shouldBe 10485760
 
       it "allowedContentTypes can be Nothing to allow all" \_ -> do
-        let config = FileUploadConfig
+        let config = InternalFileUploadConfig
               { pendingTtlSeconds = 21600
               , cleanupIntervalSeconds = 900
               , maxFileSizeBytes = 10485760

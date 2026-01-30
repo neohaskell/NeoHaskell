@@ -1,6 +1,6 @@
 module Main where
 
-import App (appTask)
+import App (app)
 import Core
 import Service.Application qualified as Application
 import Task qualified
@@ -8,7 +8,5 @@ import Task qualified
 
 main :: IO ()
 main = do
-  let runApp = do
-        application <- appTask
-        Application.run application
-  runApp |> Task.runOrPanic
+  Application.run app
+    |> Task.runOrPanic
