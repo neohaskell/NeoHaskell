@@ -64,6 +64,32 @@ To run manually:
 hlint .
 ```
 
+## Running Tests
+
+The core library tests are split into domain-specific suites that run in parallel on CI:
+
+```sh
+# Run all tests
+cabal test all
+
+# Run specific test suites
+cabal test nhcore-test-core         # Core primitives (fast)
+cabal test nhcore-test-auth         # Auth & JWT tests
+cabal test nhcore-test-service      # Service layer (requires PostgreSQL)
+cabal test nhcore-test-integration  # Integration tests
+```
+
+Note: `nhcore-test-service` requires a PostgreSQL instance. You can start one with:
+
+```sh
+docker run -d --name neohaskell-postgres \
+  -e POSTGRES_USER=neohaskell \
+  -e POSTGRES_PASSWORD=neohaskell \
+  -e POSTGRES_DB=neohaskell \
+  -p 5432:5432 \
+  postgres:16-alpine
+```
+
 ## Collaborate on Discord
 
 It's always better to hack with people, so why not join the [Discord server](https://discord.gg/invite/wDj3UYzec8)?
