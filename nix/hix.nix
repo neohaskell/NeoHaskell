@@ -2,6 +2,11 @@
   name = "neohaskell";
   compiler-nix-name = "ghc98"; # Version of GHC to use
 
+  # Disable haddock builds for faster CI
+  modules = [{
+    doHaddock = false;
+  }];
+
   # Cross compilation support:
   # crossPlatforms = p: pkgs.lib.optionals pkgs.stdenv.hostPlatform.isx86_64 ([
   #   p.mingwW64

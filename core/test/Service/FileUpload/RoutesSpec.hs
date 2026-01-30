@@ -8,7 +8,7 @@ import Directory qualified
 import "nhcore" Path qualified
 import Service.FileUpload.BlobStore (BlobStore)
 import Service.FileUpload.BlobStore.Local (LocalBlobStoreConfig (..), createBlobStore)
-import Service.FileUpload.Core (FileRef (..), FileUploadConfig (..))
+import Service.FileUpload.Core (FileRef (..), InternalFileUploadConfig (..))
 import Service.FileUpload.Routes (UploadError (..), UploadRequest (..), UploadResponse (..), handleUpload)
 import Task qualified
 import Test
@@ -198,7 +198,7 @@ spec = do
 -- | Test environment with blob store and config
 data TestUploadEnv = TestUploadEnv
   { blobStore :: BlobStore
-  , config :: FileUploadConfig
+  , config :: InternalFileUploadConfig
   , tempDir :: Path
   }
 
@@ -224,7 +224,7 @@ withTestUploadEnv action = do
   blobStore <- createBlobStore blobStoreConfig
 
   -- Test configuration with small limits for testing
-  let config = FileUploadConfig
+  let config = InternalFileUploadConfig
         { pendingTtlSeconds = 3600  -- 1 hour
         , cleanupIntervalSeconds = 900  -- 15 minutes
         , maxFileSizeBytes = 100    -- Small limit for testing

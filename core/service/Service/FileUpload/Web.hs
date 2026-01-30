@@ -42,8 +42,8 @@ import DateTime qualified
 
 import Map (Map)
 import Maybe (Maybe (..))
-import Service.FileUpload.BlobStore (BlobStore (..))
 import Result (Result (..))
+import Service.FileUpload.BlobStore (BlobStore (..))
 import Service.FileUpload.Core (
   FileAccessError (..),
   FileDeletedData (..),

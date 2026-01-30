@@ -1,15 +1,10 @@
-module App (app, appTask) where
+module App (app) where
 
 import Core
-import Path qualified
 import Service.Application (Application)
-import Task qualified
 import Service.Application qualified as Application
 import Service.EventStore.Postgres (PostgresEventStore (..))
-import Service.FileUpload.BlobStore.Local (LocalBlobStoreConfig (..))
-import Service.FileUpload.BlobStore.Local qualified as LocalBlobStore
-import Service.FileUpload.FileStateStore.Postgres qualified as PostgresFileStore
-import Service.FileUpload.Web qualified as FileUpload
+import Service.FileUpload.Core (FileUploadConfig (..), FileStateStoreBackend (..))
 import Service.Transport.Web qualified as WebTransport
 import Testbed.Cart.Core (CartEntity)
 import Testbed.Cart.Integrations (cartIntegrations, periodicCartCreator)
@@ -20,9 +15,30 @@ import Testbed.Service qualified
 import Testbed.Stock.Queries.StockLevel (StockLevel)
 
 
--- | Base application builder (without file upload, which needs IO setup)
-baseApp :: Application
-baseApp =
+-- | File upload configuration (declarative, no IO)
+-- Uses PostgreSQL for persistent file state (survives restarts).
+fileUploadConfig :: FileUploadConfig
+fileUploadConfig = FileUploadConfig
+  { blobStoreDir = "./uploads"
+  , stateStoreBackend = PostgresStateStore
+      { pgHost = postgresConfig.host
+      , pgPort = postgresConfig.port
+      , pgDatabase = postgresConfig.databaseName
+      , pgUser = postgresConfig.user
+      , pgPassword = postgresConfig.password
+      }
+  , maxFileSizeBytes = 10485760  -- 10 MB
+  , pendingTtlSeconds = 21600    -- 6 hours
+  , cleanupIntervalSeconds = 900 -- 15 minutes
+  , allowedContentTypes = Nothing  -- All types allowed
+  , storeOriginalFilename = True
+  }
+
+
+-- | Complete application with file upload support (pure, declarative)
+-- IO initialization is deferred to Application.run.
+app :: Application
+app =
   Application.new
     |> Application.withEventStore postgresConfig
     |> Application.withTransport WebTransport.server
@@ -37,43 +53,8 @@ baseApp =
     |> Application.withOutboundLifecycle @CartEntity EventCounter.eventCounterIntegration
     -- Inbound: create a cart every 30 seconds
     |> Application.withInbound periodicCartCreator
-
-
--- | Pure application builder (no file uploads)
--- This is kept for backwards compatibility.
-app :: Application
-app = baseApp
-
-
--- | Task-based application builder with file upload support
--- Use this when you need file upload functionality.
--- Uses PostgreSQL for persistent file state (survives restarts).
-appTask :: Task Text Application
-appTask = do
-  -- Create local blob store for file uploads
-  let uploadDir = getUploadDir
-  blobStore <- LocalBlobStore.createBlobStore LocalBlobStoreConfig
-    { rootDir = uploadDir
-    }
-
-  -- Create PostgreSQL-backed state store (persistent across restarts)
-  -- Uses the same database config as the event store
-  stateStore <- PostgresFileStore.new postgresConfig
-
-  -- Build file upload setup with defaults
-  let fileUploadSetup = FileUpload.defaultFileUploadSetup blobStore stateStore
-
-  -- Return application with file uploads enabled
-  Task.yield (baseApp |> Application.withFileUpload fileUploadSetup)
-
-
--- | Get upload directory path with fallback
-getUploadDir :: Path
-getUploadDir = case Path.fromText "./uploads" of
-  Just p -> p
-  Nothing -> case Path.fromText "uploads" of
-    Just p -> p
-    Nothing -> panic "Failed to create upload directory path"
+    -- File uploads with declarative config (initialized at runtime)
+    |> Application.withFileUpload fileUploadConfig
 
 
 postgresConfig :: PostgresEventStore

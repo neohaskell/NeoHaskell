@@ -32,9 +32,25 @@ different parts of NeoHaskell.
 
 (This assumes that you're using MacOS, WSL2 or Linux)
 
-- Install [Nix](https://nixos.org/download/)
-- Run `nix-shell`
-- Run `cabal update && cabal build all`
+1. Install [Nix](https://nixos.org/download/) with flakes enabled
+2. Run `nix develop` to enter the development shell
+3. Run `cabal update && cabal build all`
+
+### Binary Cache (Faster Builds)
+
+The project uses [Cachix](https://cachix.org) to cache build artifacts. The `flake.nix` is pre-configured to use our cache, so `nix develop` should automatically prompt you to trust it on first run.
+
+If you want to explicitly enable it (or if you have a restrictive Nix config):
+
+```sh
+# Install cachix (if not already installed)
+nix-env -iA cachix -f https://cachix.org/api/v1/install
+
+# Add the NeoHaskell cache
+cachix use neohaskell
+```
+
+This dramatically speeds up the first `nix develop` (from ~30 min to ~2 min).
 
 The recommended IDE for any NeoHaskell project is [Visual Studio Code](https://code.visualstudio.com/).
 
@@ -62,6 +78,32 @@ To run manually:
 
 ```sh
 hlint .
+```
+
+## Running Tests
+
+The core library tests are split into domain-specific suites that run in parallel on CI:
+
+```sh
+# Run all tests
+cabal test all
+
+# Run specific test suites
+cabal test nhcore-test-core         # Core primitives (fast)
+cabal test nhcore-test-auth         # Auth & JWT tests
+cabal test nhcore-test-service      # Service layer (requires PostgreSQL)
+cabal test nhcore-test-integration  # Integration tests
+```
+
+Note: `nhcore-test-service` requires a PostgreSQL instance. You can start one with:
+
+```sh
+docker run -d --name neohaskell-postgres \
+  -e POSTGRES_USER=neohaskell \
+  -e POSTGRES_PASSWORD=neohaskell \
+  -e POSTGRES_DB=neohaskell \
+  -p 5432:5432 \
+  postgres:16-alpine
 ```
 
 ## Collaborate on Discord

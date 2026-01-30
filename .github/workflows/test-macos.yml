@@ -12,11 +12,25 @@ jobs:
   tests-macos:
     runs-on: macos-latest
 
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - test-suite: nhcore-test-auth
+            needs-postgres: false
+          - test-suite: nhcore-test-core
+            needs-postgres: false
+          - test-suite: nhcore-test-integration
+            needs-postgres: false
+          - test-suite: nhcore-test-service
+            needs-postgres: true
+
     steps:
       - name: Install current Bash and poppler on macOS
         run: brew install bash poppler
 
       - name: Start PostgreSQL on macOS
+        if: matrix.needs-postgres
         run: |
           brew install postgresql@16
 
@@ -44,20 +58,17 @@ jobs:
       - uses: DeterminateSystems/determinate-nix-action@v3.15.2
         with:
           extra-conf: |
-            extra-substituters = https://cache.iog.io
-            extra-trusted-public-keys = hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ=
+            accept-flake-config = true
+            extra-substituters = https://cache.iog.io https://neohaskell.cachix.org
+            extra-trusted-public-keys = hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ= neohaskell.cachix.org-1:mo2cLaGbwqbrxs9xhqKK8jeNsn3osi7t6XoAmxSZssc=
 
-      - uses: DeterminateSystems/magic-nix-cache-action@v13
-
-      # - name: Build the project with Nix
-      #   run: nix build
+      - uses: cachix/cachix-action@v15
+        with:
+          name: neohaskell
+          authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
 
       - name: Build the project with cabal
-        run: nix develop --command cabal build all
+        run: nix develop --command cabal build all --disable-documentation
 
-      - name: Run core tests
-        run: nix develop --command cabal test core
-
-      # Doctests are failing - See issue #204
-      # - name: Run core doctests
-      #   run: nix-shell --run "cabal repl --with-compiler=doctest --repl-options=--verbose core"
+      - name: Run ${{ matrix.test-suite }}
+        run: nix develop --command cabal test ${{ matrix.test-suite }}

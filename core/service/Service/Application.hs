@@ -110,6 +110,13 @@ import Service.Integration.Dispatcher qualified as Dispatcher
 import Service.Integration.Types (OutboundRunner, OutboundLifecycleRunner)
 import Service.Transport (Transport (..), QueryEndpointHandler)
 import Service.Transport.Web qualified as Web
+import Path qualified
+import Service.EventStore.Postgres.Internal (PostgresEventStore (..))
+import Service.FileUpload.BlobStore.Local qualified as LocalBlobStore
+import Service.FileUpload.BlobStore.Local (LocalBlobStoreConfig (..))
+import Service.FileUpload.Core (FileUploadConfig (..), FileStateStoreBackend (..), InternalFileUploadConfig (..))
+import Hasql.Pool qualified as HasqlPool
+import Service.FileUpload.FileStateStore.Postgres qualified as PostgresFileStore
 import Service.FileUpload.Web (FileUploadSetup (..))
 import Service.FileUpload.Web qualified as FileUpload
 import Service.FileUpload.BlobStore (BlobStore (..))
@@ -216,7 +223,7 @@ data Application = Application
     inboundIntegrations :: Array Integration.Inbound,
     webAuthSetup :: Maybe WebAuthSetup,
     oauth2Setup :: Maybe OAuth2Setup,
-    fileUploadSetup :: Maybe FileUploadSetup,
+    fileUploadConfig :: Maybe FileUploadConfig,
     secretStore :: Maybe SecretStore
   }
 
@@ -240,7 +247,7 @@ new =
       inboundIntegrations = Array.empty,
       webAuthSetup = Nothing,
       oauth2Setup = Nothing,
-      fileUploadSetup = Nothing,
+      fileUploadConfig = Nothing,
       secretStore = Nothing
     }
 
@@ -601,12 +608,21 @@ runWith eventStore app = do
               }
         )
 
-  -- 11. Create file access context if file uploads are enabled
-  let maybeFileAccessContext = case app.fileUploadSetup of
+  -- 11. Initialize file uploads if configured (early to get FileAccessContext for integrations)
+  (maybeFileUploadSetup, fileUploadCleanup) <- case app.fileUploadConfig of
+    Nothing -> Task.yield (Nothing, Task.yield ())
+    Just config -> do
+      Console.print "[FileUpload] Initializing file upload..."
+      (setup, cleanup) <- initializeFileUpload config
+      Console.print "[FileUpload] File uploads enabled"
+      Task.yield (Just setup, cleanup)
+
+  -- 12. Create file access context from initialized setup
+  let maybeFileAccessContext = case maybeFileUploadSetup of
         Nothing -> Nothing
         Just setup -> Just (createFileAccessContext setup)
 
-  -- 12. Initialize OAuth2 if configured
+  -- 13. Initialize OAuth2 if configured
   (maybeOAuth2Config, actionContext) <- case app.oauth2Setup of
     Nothing -> do
       -- Apps without OAuth2 get context with empty provider registry
@@ -682,7 +698,7 @@ runWith eventStore app = do
       Console.print [fmt|[OAuth2] Initialized #{providerCount} provider(s)|]
       Task.yield (Just Web.OAuth2Config {Web.routes = routes, Web.dispatchAction = dispatchAction}, actionContext)
 
-  -- 13. Start integration subscriber for outbound integrations with command dispatch
+  -- 14. Start integration subscriber for outbound integrations with command dispatch
   maybeDispatcher <-
     Integrations.startIntegrationSubscriber
       eventStore
@@ -691,17 +707,13 @@ runWith eventStore app = do
       combinedCommandEndpoints
       actionContext
 
-  -- 14. Start inbound integration workers (timers, webhooks, etc.)
+  -- 15. Start inbound integration workers (timers, webhooks, etc.)
   inboundWorkers <- Integrations.startInboundWorkers app.inboundIntegrations combinedCommandEndpoints
 
-  -- 15. Initialize file uploads if configured
-  maybeFileUploadEnabled <- case app.fileUploadSetup of
-    Nothing -> Task.yield Nothing
-    Just setup -> do
-      Console.print "[FileUpload] Initializing file upload routes..."
-      let routes = FileUpload.createRoutes setup
-      Console.print "[FileUpload] File uploads enabled"
-      Task.yield (Just Web.FileUploadEnabled {Web.fileUploadRoutes = routes})
+  -- 16. Create file upload routes (setup already initialized in step 11)
+  let maybeFileUploadEnabled = case maybeFileUploadSetup of
+        Nothing -> Nothing
+        Just setup -> Just Web.FileUploadEnabled {Web.fileUploadRoutes = FileUpload.createRoutes setup}
 
   -- Define cleanup actions that must always run
   let cleanupJwksManager = case maybeAuthEnabled of
@@ -719,11 +731,14 @@ runWith eventStore app = do
           Dispatcher.shutdown dispatcher
         Nothing -> pass
 
+  let cleanupFileUpload = fileUploadCleanup |> Task.ignoreError
+
   let cleanupAll = do
         cleanupJwksManager
         cleanupDispatcher
+        cleanupFileUpload
 
-  -- 16. Run each transport once with combined endpoints from all services
+  -- 17. Run each transport once with combined endpoints from all services
   -- When transports complete (or fail), cancel inbound workers for clean shutdown
   -- Use Task.finally to ensure cleanup always runs even if runTransports fails
   result <-
@@ -731,7 +746,7 @@ runWith eventStore app = do
       |> Task.finally cleanupAll
       |> Task.asResult
 
-  -- 17. Cancel all inbound workers on shutdown
+  -- 18. Cancel all inbound workers on shutdown
   Console.print "[Integration] Shutting down inbound workers..."
     |> Task.ignoreError
   let shutdownTimeoutMs = 5000
@@ -1059,33 +1074,157 @@ withOAuth2Provider providerConfig app = do
       app {oauth2Setup = Just existingSetup {providers = updatedProviders}}
 
 
--- | Enable file uploads for WebTransport.
+-- | Enable file uploads for WebTransport with declarative configuration.
 --
 -- This adds file upload and download routes:
 --
 -- * @POST /files/upload@ - Upload a file (multipart form)
 -- * @GET /files/{fileRef}@ - Download a file
 --
--- The uploaded files are stored in the configured BlobStore and tracked
--- through the FileStateStore.
+-- The configuration is declarative - actual IO (creating directories,
+-- connecting to databases) is deferred to 'Application.run'.
 --
 -- Example:
 --
 -- @
--- blobStore <- BlobStore.Local.new "./uploads"
--- stateStore <- FileUpload.newInMemoryFileStateStore
--- let setup = FileUpload.defaultFileUploadSetup blobStore (FileUpload.inMemoryFileStateStore stateStore)
+-- let fileUploadConfig = FileUploadConfig
+--       { blobStoreDir = "./uploads"
+--       , stateStoreBackend = InMemoryStateStore  -- or PostgresStateStore {...}
+--       , maxFileSizeBytes = 10485760  -- 10 MB
+--       , pendingTtlSeconds = 21600    -- 6 hours
+--       , cleanupIntervalSeconds = 900 -- 15 minutes
+--       , allowedContentTypes = Nothing  -- All types allowed
+--       , storeOriginalFilename = True
+--       }
 --
 -- app = Application.new
 --   |> Application.withTransport WebTransport.server
---   |> Application.withFileUpload setup
+--   |> Application.withFileUpload fileUploadConfig
 -- @
 withFileUpload ::
-  FileUploadSetup ->
+  FileUploadConfig ->
   Application ->
   Application
-withFileUpload setup app =
-  app {fileUploadSetup = Just setup}
+withFileUpload config app =
+  app {fileUploadConfig = Just config}
+
+
+-- | Initialize file upload from declarative configuration.
+--
+-- This performs the IO required to set up file uploads:
+--
+-- * Validates configuration parameters
+-- * Creates the blob store directory if it doesn't exist
+-- * Initializes the state store connection (PostgreSQL or in-memory)
+--
+-- If state store initialization fails after blob store creation, the blob store
+-- directory is left in place (it may contain data from previous runs).
+--
+-- Returns a tuple of (setup, cleanup action). The cleanup action releases
+-- any database connection pools and should be called during shutdown.
+--
+-- This is called internally by 'Application.run' - users should not call this directly.
+initializeFileUpload :: FileUploadConfig -> Task Text (FileUploadSetup, Task Text ())
+initializeFileUpload fileConfig = do
+  -- Extract config fields (needed for fmt quasiquoter compatibility)
+  let blobDir = fileConfig.blobStoreDir
+  let maxSize = fileConfig.maxFileSizeBytes
+  let pendingTtl = fileConfig.pendingTtlSeconds
+  let cleanupInterval = fileConfig.cleanupIntervalSeconds
+
+  -- 1. Validate configuration
+  validateFileUploadConfig blobDir maxSize pendingTtl cleanupInterval
+
+  -- 2. Create blob store from directory path
+  blobStorePath <- case Path.fromText blobDir of
+    Just path -> Task.yield path
+    Nothing -> Task.throw [fmt|Invalid blob store directory path: #{blobDir}|]
+
+  blobStore <- LocalBlobStore.createBlobStore LocalBlobStoreConfig
+    { rootDir = blobStorePath
+    }
+
+  -- 3. Create state store based on backend configuration
+  -- If this fails, the blob store directory remains (may have existing data)
+  -- Returns the store and an optional cleanup action for releasing the connection pool
+  (stateStore, cleanupAction) <- case fileConfig.stateStoreBackend of
+    InMemoryStateStore -> do
+      inMemoryStore <- FileUpload.newInMemoryFileStateStore
+      -- No cleanup needed for in-memory store
+      Task.yield (FileUpload.inMemoryFileStateStore inMemoryStore, Task.yield ())
+
+    PostgresStateStore {pgHost, pgPort, pgDatabase, pgUser, pgPassword} -> do
+      let postgresConfig = PostgresEventStore
+            { host = pgHost
+            , port = pgPort
+            , databaseName = pgDatabase
+            , user = pgUser
+            , password = pgPassword
+            }
+      (store, pool) <- PostgresFileStore.newWithCleanup postgresConfig
+        |> Task.mapError (\err -> [fmt|Failed to initialize PostgreSQL file state store: #{err}|])
+      -- Cleanup action releases the connection pool
+      let cleanup = do
+            Console.print "[FileUpload] Releasing PostgreSQL connection pool..."
+              |> Task.ignoreError
+            HasqlPool.release pool
+              |> Task.fromIO
+      Task.yield (store, cleanup)
+
+  -- 4. Build internal config
+  let internalConfig = InternalFileUploadConfig
+        { pendingTtlSeconds = pendingTtl
+        , cleanupIntervalSeconds = cleanupInterval
+        , maxFileSizeBytes = maxSize
+        , allowedContentTypes = fileConfig.allowedContentTypes
+        , storeOriginalFilename = fileConfig.storeOriginalFilename
+        }
+
+  -- 5. Return the setup and cleanup action
+  let setup = FileUploadSetup
+        { config = internalConfig
+        , blobStore = blobStore
+        , stateStore = stateStore
+        }
+  Task.yield (setup, cleanupAction)
+
+
+-- | Validate file upload configuration parameters.
+--
+-- Checks:
+-- * blobStoreDir is not empty
+-- * maxFileSizeBytes is positive
+-- * pendingTtlSeconds is positive
+-- * cleanupIntervalSeconds is positive
+-- * cleanupIntervalSeconds < pendingTtlSeconds (cleanup must run before TTL expires)
+validateFileUploadConfig :: Text -> Int64 -> Int64 -> Int64 -> Task Text ()
+validateFileUploadConfig blobDir maxSize pendingTtl cleanupInterval = do
+  -- Validate blob store directory path
+  if Text.isEmpty blobDir
+    then Task.throw "blobStoreDir cannot be empty"
+    else pass
+
+  -- Validate size limit
+  if maxSize <= 0
+    then Task.throw [fmt|maxFileSizeBytes must be positive, got: #{maxSize}|]
+    else pass
+
+  -- Validate TTL
+  if pendingTtl <= 0
+    then Task.throw [fmt|pendingTtlSeconds must be positive, got: #{pendingTtl}|]
+    else pass
+
+  -- Validate cleanup interval
+  if cleanupInterval <= 0
+    then Task.throw [fmt|cleanupIntervalSeconds must be positive, got: #{cleanupInterval}|]
+    else pass
+
+  -- Validate cleanup runs before TTL expires (otherwise files could expire without cleanup)
+  if cleanupInterval >= pendingTtl
+    then Task.throw [fmt|cleanupIntervalSeconds (#{cleanupInterval}) must be less than pendingTtlSeconds (#{pendingTtl})|]
+    else pass
+
+  Task.yield ()
 
 
 -- | Create a FileAccessContext from FileUploadSetup.
