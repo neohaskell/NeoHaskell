@@ -132,7 +132,7 @@ executeDailySleep ::
   Task IntegrationError (Maybe CommandPayload)
 executeDailySleep httpFetch ctx config = do
   let DailySleep userId startDate endDate onSuccess onError = config
-  let ActionContext secretStore _ = ctx
+  let ActionContext secretStore _ _ = ctx
   providerConfig <- getOuraProvider ctx
   let ValidatedOAuth2ProviderConfig {validatedProvider, clientId, clientSecret} = providerConfig
   let baseUrl = [fmt|https://api.ouraring.com/v2/usercollection/daily_sleep?start_date=#{startDate}&end_date=#{endDate}|]
@@ -173,7 +173,7 @@ executeDailyActivity ::
   Task IntegrationError (Maybe CommandPayload)
 executeDailyActivity httpFetch ctx config = do
   let DailyActivity userId startDate endDate onSuccess onError = config
-  let ActionContext secretStore _ = ctx
+  let ActionContext secretStore _ _ = ctx
   providerConfig <- getOuraProvider ctx
   let ValidatedOAuth2ProviderConfig {validatedProvider, clientId, clientSecret} = providerConfig
   let baseUrl = [fmt|https://api.ouraring.com/v2/usercollection/daily_activity?start_date=#{startDate}&end_date=#{endDate}|]
@@ -203,7 +203,7 @@ executeDailyReadiness ::
   Task IntegrationError (Maybe CommandPayload)
 executeDailyReadiness httpFetch ctx config = do
   let DailyReadiness userId startDate endDate onSuccess onError = config
-  let ActionContext secretStore _ = ctx
+  let ActionContext secretStore _ _ = ctx
   providerConfig <- getOuraProvider ctx
   let ValidatedOAuth2ProviderConfig {validatedProvider, clientId, clientSecret} = providerConfig
   let baseUrl = [fmt|https://api.ouraring.com/v2/usercollection/daily_readiness?start_date=#{startDate}&end_date=#{endDate}|]
@@ -233,7 +233,7 @@ executeHeartRate ::
   Task IntegrationError (Maybe CommandPayload)
 executeHeartRate httpFetch ctx config = do
   let HeartRate userId startDatetime endDatetime onSuccess onError = config
-  let ActionContext secretStore _ = ctx
+  let ActionContext secretStore _ _ = ctx
   providerConfig <- getOuraProvider ctx
   let ValidatedOAuth2ProviderConfig {validatedProvider, clientId, clientSecret} = providerConfig
   -- NOTE: HeartRate uses start_datetime/end_datetime, and + must be URL-encoded
@@ -288,7 +288,7 @@ urlEncodeParam param =
 -- NOTE: ValidatedOAuth2ProviderConfig is from core/auth/Auth/OAuth2/Provider.hs:149-172
 getOuraProvider :: ActionContext -> Task Integration.IntegrationError ValidatedOAuth2ProviderConfig
 getOuraProvider ctx = do
-  let ActionContext _ providerRegistry = ctx
+  let ActionContext _ providerRegistry _ = ctx
   case Map.get "oura" providerRegistry of
     Nothing -> Task.throw (UnexpectedError "Oura provider not configured. Add Oura.makeOuraConfig to Application.withOAuth2.")
     Just provider -> Task.yield provider

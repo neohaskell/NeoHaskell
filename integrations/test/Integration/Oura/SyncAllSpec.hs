@@ -208,6 +208,7 @@ setupMockContext = do
   Task.yield ActionContext
     { secretStore = secretStore
     , providerRegistry = providerRegistry
+    , fileAccess = Nothing
     }
 
 

@@ -122,6 +122,7 @@ spec = do
         let emptyCtx = ActionContext
               { secretStore = stubStore
               , providerRegistry = Map.empty
+              , fileAccess = Nothing
               }
 
         let task :: Task Text (Result IntegrationError ValidatedOAuth2ProviderConfig)
