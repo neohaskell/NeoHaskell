@@ -20,6 +20,10 @@ module Service.FileUpload.Core (
 
   -- * Configuration
   FileUploadConfig (..),
+  FileStateStoreBackend (..),
+
+  -- * Internal Configuration (used by Web.hs after initialization)
+  InternalFileUploadConfig (..),
 ) where
 
 import Array (Array)
@@ -212,15 +216,110 @@ instance Json.ToJSON FileAccessError
 -- Configuration
 -- ==========================================================================
 
--- | Configuration for file uploads
+-- | Backend for storing file upload state (lifecycle tracking).
+--
+-- Choose based on your deployment:
+--
+-- * 'InMemoryStateStore' - For development/testing. State is lost on restart.
+-- * 'PostgresStateStore' - For production. Uses same connection parameters as your event store.
+--
+-- Example:
+--
+-- @
+-- -- Development
+-- stateStoreBackend = InMemoryStateStore
+--
+-- -- Production (same connection as event store)
+-- stateStoreBackend = PostgresStateStore
+--     { pgHost = "localhost"
+--     , pgPort = 5432
+--     , pgDatabase = "neohaskell"
+--     , pgUser = "neohaskell"
+--     , pgPassword = "neohaskell"
+--     }
+-- @
+data FileStateStoreBackend
+  = InMemoryStateStore
+  -- ^ In-memory storage (lost on restart, for development/testing)
+  | PostgresStateStore
+      { pgHost :: Text
+      -- ^ PostgreSQL host
+      , pgPort :: Int
+      -- ^ PostgreSQL port
+      , pgDatabase :: Text
+      -- ^ Database name
+      , pgUser :: Text
+      -- ^ Database user
+      , pgPassword :: Text
+      -- ^ Database password
+      }
+  -- ^ PostgreSQL storage (persistent, recommended for production)
+  deriving (Generic, Eq, Show)
+
+instance Json.FromJSON FileStateStoreBackend
+instance Json.ToJSON FileStateStoreBackend
+
+
+-- | Declarative configuration for file uploads.
+--
+-- This is the user-facing configuration type. IO initialization is deferred
+-- to 'Application.run', making application setup purely declarative.
+--
+-- Example:
+--
+-- @
+-- app = Application.new
+--   |> Application.withEventStore postgresConfig
+--   |> Application.withFileUpload FileUploadConfig
+--       { blobStoreDir = "./uploads"
+--       , stateStoreBackend = PostgresStateStore
+--           { pgHost = "localhost"
+--           , pgPort = 5432
+--           , pgDatabase = "neohaskell"
+--           , pgUser = "neohaskell"
+--           , pgPassword = "neohaskell"
+--           }
+--       , maxFileSizeBytes = 10485760  -- 10 MB
+--       , pendingTtlSeconds = 21600    -- 6 hours
+--       , cleanupIntervalSeconds = 900 -- 15 minutes
+--       , allowedContentTypes = Nothing
+--       , storeOriginalFilename = True
+--       }
+-- @
 data FileUploadConfig = FileUploadConfig
-  { pendingTtlSeconds :: Int64 -- How long before unconfirmed files are cleaned up (default: 21600 = 6 hours)
-  , cleanupIntervalSeconds :: Int64 -- How often the cleaner runs (default: 900 = 15 minutes)
-  , maxFileSizeBytes :: Int64 -- Maximum upload size (default: 10485760 = 10 MB)
-  , allowedContentTypes :: Maybe (Array Text) -- MIME type allowlist (Nothing = all allowed)
-  , storeOriginalFilename :: Bool -- Whether to store filename in events (default: True)
+  { blobStoreDir :: Text
+  -- ^ Directory for storing uploaded files (created if missing)
+  , stateStoreBackend :: FileStateStoreBackend
+  -- ^ Where to track file lifecycle state
+  , maxFileSizeBytes :: Int64
+  -- ^ Maximum upload size (default: 10485760 = 10 MB)
+  , pendingTtlSeconds :: Int64
+  -- ^ TTL for unconfirmed uploads before cleanup (default: 21600 = 6 hours)
+  , cleanupIntervalSeconds :: Int64
+  -- ^ How often the cleanup worker runs (default: 900 = 15 minutes)
+  , allowedContentTypes :: Maybe (Array Text)
+  -- ^ MIME type allowlist (Nothing = all types allowed)
+  , storeOriginalFilename :: Bool
+  -- ^ Whether to store the original filename in events (default: True)
   }
   deriving (Generic, Eq, Show)
 
 instance Json.FromJSON FileUploadConfig
 instance Json.ToJSON FileUploadConfig
+
+
+-- | Internal configuration for file uploads (used after initialization).
+--
+-- This type holds the runtime configuration after IO initialization has
+-- occurred. It is NOT part of the public API - users should use 'FileUploadConfig'.
+data InternalFileUploadConfig = InternalFileUploadConfig
+  { pendingTtlSeconds :: Int64
+  , cleanupIntervalSeconds :: Int64
+  , maxFileSizeBytes :: Int64
+  , allowedContentTypes :: Maybe (Array Text)
+  , storeOriginalFilename :: Bool
+  }
+  deriving (Generic, Eq, Show)
+
+instance Json.FromJSON InternalFileUploadConfig
+instance Json.ToJSON InternalFileUploadConfig

@@ -19,7 +19,7 @@ import DateTime qualified
 import Json qualified
 import Maybe (Maybe (..))
 import Service.FileUpload.BlobStore (BlobStore (..), BlobStoreError (..))
-import Service.FileUpload.Core (BlobKey (..), FileRef (..), FileUploadConfig (..))
+import Service.FileUpload.Core (BlobKey (..), FileRef (..), InternalFileUploadConfig (..))
 import Task (Task)
 import Task qualified
 import Text (Text)
@@ -109,7 +109,7 @@ instance Json.FromJSON UploadError
 -- Note: Event emission (FileUploaded) is handled by the caller (Transport layer)
 -- to allow for transaction coordination with EventStore
 handleUpload ::
-  FileUploadConfig ->
+  InternalFileUploadConfig ->
   BlobStore ->
   UploadRequest ->
   Task UploadError UploadResponse
