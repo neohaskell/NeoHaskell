@@ -90,20 +90,20 @@ POST http://localhost:8080/commands/create-document
 }
 
 HTTP 200
-[Options]
-retry: 10
-retry-interval: 500
 [Asserts]
 jsonpath "$.tag" == "Accepted"
 
 
 # =============================================================================
 # Test 6: Verify extracted text in query results
+# (Uses retry to wait for async PDF extraction to complete)
 # =============================================================================
 GET http://localhost:8080/queries/document-content/550e8400-e29b-41d4-a716-446655440099
 [Options]
 retry: 10
 retry-interval: 500
+
+HTTP 200
 [Asserts]
 jsonpath "$.extractedText" contains "Hello NeoHaskell PDF Test"
 jsonpath "$.pageCount" == 1
