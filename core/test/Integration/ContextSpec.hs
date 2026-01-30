@@ -52,6 +52,7 @@ makeContext = do
     Integration.ActionContext
       { Integration.secretStore = store
       , Integration.providerRegistry = providerRegistry
+      , Integration.fileAccess = Nothing
       }
 
 
@@ -115,6 +116,7 @@ spec = do
       let emptyContext = Integration.ActionContext
             { Integration.secretStore = emptyStore
             , Integration.providerRegistry = Map.empty
+            , Integration.fileAccess = Nothing
             }
       dispatcher <-
         Dispatcher.newWithLifecycleConfig

@@ -260,6 +260,7 @@ new store runners endpoints = do
   let emptyContext = Integration.ActionContext
         { Integration.secretStore = emptyStore
         , Integration.providerRegistry = Map.empty
+        , Integration.fileAccess = Nothing
         }
   newWithLifecycleConfig defaultConfig store runners [] endpoints emptyContext
 
@@ -278,6 +279,7 @@ newWithLifecycle store runners lifecycleRunners endpoints = do
   let emptyContext = Integration.ActionContext
         { Integration.secretStore = emptyStore
         , Integration.providerRegistry = Map.empty
+        , Integration.fileAccess = Nothing
         }
   newWithLifecycleConfig defaultConfig store runners lifecycleRunners endpoints emptyContext
 

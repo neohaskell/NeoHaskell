@@ -98,6 +98,7 @@ makeContext = do
     Integration.ActionContext
       { Integration.secretStore = store
       , Integration.providerRegistry = Map.empty
+      , Integration.fileAccess = Nothing
       }
 
 

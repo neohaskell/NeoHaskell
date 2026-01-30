@@ -119,6 +119,9 @@ import Hasql.Pool qualified as HasqlPool
 import Service.FileUpload.FileStateStore.Postgres qualified as PostgresFileStore
 import Service.FileUpload.Web (FileUploadSetup (..))
 import Service.FileUpload.Web qualified as FileUpload
+import Service.FileUpload.BlobStore (BlobStore (..))
+import Service.FileUpload.Core qualified as FileUploadCore
+import Service.FileUpload.Lifecycle qualified as FileLifecycle
 import Task (Task)
 import Task qualified
 import Text (Text)
@@ -605,7 +608,21 @@ runWith eventStore app = do
               }
         )
 
-  -- 11. Initialize OAuth2 if configured
+  -- 11. Initialize file uploads if configured (early to get FileAccessContext for integrations)
+  (maybeFileUploadSetup, fileUploadCleanup) <- case app.fileUploadConfig of
+    Nothing -> Task.yield (Nothing, Task.yield ())
+    Just config -> do
+      Console.print "[FileUpload] Initializing file upload..."
+      (setup, cleanup) <- initializeFileUpload config
+      Console.print "[FileUpload] File uploads enabled"
+      Task.yield (Just setup, cleanup)
+
+  -- 12. Create file access context from initialized setup
+  let maybeFileAccessContext = case maybeFileUploadSetup of
+        Nothing -> Nothing
+        Just setup -> Just (createFileAccessContext setup)
+
+  -- 13. Initialize OAuth2 if configured
   (maybeOAuth2Config, actionContext) <- case app.oauth2Setup of
     Nothing -> do
       -- Apps without OAuth2 get context with empty provider registry
@@ -617,6 +634,7 @@ runWith eventStore app = do
         , Integration.ActionContext
             { Integration.secretStore = emptyStore
             , Integration.providerRegistry = Map.empty
+            , Integration.fileAccess = maybeFileAccessContext
             }
         )
     Just (OAuth2Setup envVarName providerConfigs) -> do
@@ -655,6 +673,7 @@ runWith eventStore app = do
             Integration.ActionContext
               { Integration.secretStore = tokenStore
               , Integration.providerRegistry = providerMap
+              , Integration.fileAccess = maybeFileAccessContext
               }
       -- Create route handlers with loaded HMAC key and rate limiters
       let routeDeps =
@@ -679,7 +698,7 @@ runWith eventStore app = do
       Console.print [fmt|[OAuth2] Initialized #{providerCount} provider(s)|]
       Task.yield (Just Web.OAuth2Config {Web.routes = routes, Web.dispatchAction = dispatchAction}, actionContext)
 
-  -- 12. Start integration subscriber for outbound integrations with command dispatch
+  -- 14. Start integration subscriber for outbound integrations with command dispatch
   maybeDispatcher <-
     Integrations.startIntegrationSubscriber
       eventStore
@@ -688,18 +707,13 @@ runWith eventStore app = do
       combinedCommandEndpoints
       actionContext
 
-  -- 13. Start inbound integration workers (timers, webhooks, etc.)
+  -- 15. Start inbound integration workers (timers, webhooks, etc.)
   inboundWorkers <- Integrations.startInboundWorkers app.inboundIntegrations combinedCommandEndpoints
 
-  -- 14. Initialize file uploads if configured
-  (maybeFileUploadEnabled, fileUploadCleanup) <- case app.fileUploadConfig of
-    Nothing -> Task.yield (Nothing, Task.yield ())
-    Just config -> do
-      Console.print "[FileUpload] Initializing file upload..."
-      (setup, cleanup) <- initializeFileUpload config
-      let routes = FileUpload.createRoutes setup
-      Console.print "[FileUpload] File uploads enabled"
-      Task.yield (Just Web.FileUploadEnabled {Web.fileUploadRoutes = routes}, cleanup)
+  -- 16. Create file upload routes (setup already initialized in step 11)
+  let maybeFileUploadEnabled = case maybeFileUploadSetup of
+        Nothing -> Nothing
+        Just setup -> Just Web.FileUploadEnabled {Web.fileUploadRoutes = FileUpload.createRoutes setup}
 
   -- Define cleanup actions that must always run
   let cleanupJwksManager = case maybeAuthEnabled of
@@ -724,7 +738,7 @@ runWith eventStore app = do
         cleanupDispatcher
         cleanupFileUpload
 
-  -- 15. Run each transport once with combined endpoints from all services
+  -- 17. Run each transport once with combined endpoints from all services
   -- When transports complete (or fail), cancel inbound workers for clean shutdown
   -- Use Task.finally to ensure cleanup always runs even if runTransports fails
   result <-
@@ -732,7 +746,7 @@ runWith eventStore app = do
       |> Task.finally cleanupAll
       |> Task.asResult
 
-  -- 16. Cancel all inbound workers on shutdown
+  -- 18. Cancel all inbound workers on shutdown
   Console.print "[Integration] Shutting down inbound workers..."
     |> Task.ignoreError
   let shutdownTimeoutMs = 5000
@@ -1211,6 +1225,58 @@ validateFileUploadConfig blobDir maxSize pendingTtl cleanupInterval = do
     else pass
 
   Task.yield ()
+
+
+-- | Create a FileAccessContext from FileUploadSetup.
+--
+-- This wires the file upload infrastructure into the integration context,
+-- allowing integrations to retrieve uploaded files by FileRef.
+--
+-- __Important semantics__:
+--
+-- * @retrieveFile@ and @getFileMetadata@ treat incomplete uploads as
+--   'FileNotFound'. If a file record exists but is missing its blob key
+--   or metadata (e.g., upload not yet finalized), callers receive
+--   'FileNotFound' rather than a partial state error.
+--
+-- * This is intentional: integrations should only access committed,
+--   complete uploads. Uncommitted files are inaccessible by design.
+--
+-- * For debugging, check the file's lifecycle state directly via the
+--   state store if you need to distinguish "file never existed" from
+--   "file exists but is incomplete".
+createFileAccessContext :: FileUploadSetup -> Integration.FileAccessContext
+createFileAccessContext setup = do
+  let blobStore = setup.blobStore
+  let stateStore = setup.stateStore
+  Integration.FileAccessContext
+    { Integration.retrieveFile = \fileRef -> do
+        -- Get file state to find the blob key
+        maybeState <- stateStore.getState fileRef
+          |> Task.mapError (\err -> FileUploadCore.StateLookupFailed fileRef err)
+        case maybeState of
+          Nothing -> Task.throw (FileUploadCore.FileNotFound fileRef)
+          Just state -> case FileLifecycle.getBlobKey state of
+            Nothing -> Task.throw (FileUploadCore.FileNotFound fileRef)
+            Just blobKey -> do
+              blobStore.retrieve blobKey
+                |> Task.mapError (\_ -> FileUploadCore.BlobMissing fileRef)
+    , Integration.getFileMetadata = \fileRef -> do
+        -- Get file state to extract metadata
+        maybeState <- stateStore.getState fileRef
+          |> Task.mapError (\err -> FileUploadCore.StateLookupFailed fileRef err)
+        case maybeState of
+          Nothing -> Task.throw (FileUploadCore.FileNotFound fileRef)
+          Just state -> case FileLifecycle.getMetadata state of
+            Nothing -> Task.throw (FileUploadCore.FileNotFound fileRef)
+            Just lifecycleMeta ->
+              -- Convert Lifecycle.FileMetadata to Core.FileMetadata
+              Task.yield FileUploadCore.FileMetadata
+                { FileUploadCore.filename = lifecycleMeta.filename
+                , FileUploadCore.contentType = lifecycleMeta.contentType
+                , FileUploadCore.sizeBytes = lifecycleMeta.sizeBytes
+                }
+    }
 
 
 -- | Load HMAC key from environment variable.

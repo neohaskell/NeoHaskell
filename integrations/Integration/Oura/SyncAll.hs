@@ -68,7 +68,7 @@ executeSyncAll ::
   Task Integration.IntegrationError (Maybe Integration.CommandPayload)
 executeSyncAll httpFetch ctx config = do
   let SyncAll userId startDate endDate onComplete onError = config
-  let ActionContext secretStore _ = ctx
+  let ActionContext secretStore _ _ = ctx
   providerConfig <- getOuraProvider ctx
   let ValidatedOAuth2ProviderConfig {validatedProvider, clientId, clientSecret} = providerConfig
   let refreshAction = OAuth2.refreshTokenValidated validatedProvider clientId clientSecret

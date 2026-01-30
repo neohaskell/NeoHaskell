@@ -51,6 +51,7 @@ common common_cfg
 
   build-depends:
     base,
+    directory,
     nhcore
 
 library
@@ -76,6 +77,9 @@ library
     Integration.Oura.Sleep
     Integration.Oura.SyncAll
     Integration.Oura.Types
+    Integration.Pdf
+    Integration.Pdf.ExtractText
+    Integration.Pdf.ExtractText.Internal
   hs-source-dirs: .
   default-language: GHC2021
 
