@@ -1231,6 +1231,20 @@ validateFileUploadConfig blobDir maxSize pendingTtl cleanupInterval = do
 --
 -- This wires the file upload infrastructure into the integration context,
 -- allowing integrations to retrieve uploaded files by FileRef.
+--
+-- __Important semantics__:
+--
+-- * @retrieveFile@ and @getFileMetadata@ treat incomplete uploads as
+--   'FileNotFound'. If a file record exists but is missing its blob key
+--   or metadata (e.g., upload not yet finalized), callers receive
+--   'FileNotFound' rather than a partial state error.
+--
+-- * This is intentional: integrations should only access committed,
+--   complete uploads. Uncommitted files are inaccessible by design.
+--
+-- * For debugging, check the file's lifecycle state directly via the
+--   state store if you need to distinguish "file never existed" from
+--   "file exists but is incomplete".
 createFileAccessContext :: FileUploadSetup -> Integration.FileAccessContext
 createFileAccessContext setup = do
   let blobStore = setup.blobStore

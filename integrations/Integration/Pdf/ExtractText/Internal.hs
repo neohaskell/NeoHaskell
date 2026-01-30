@@ -94,12 +94,12 @@ executeExtraction ctx config = do
   File.writeBytes tempPath pdfBytes
     |> Task.mapError (\_ -> Integration.UnexpectedError "Failed to write temp file")
 
-  -- Step 5: Execute pdftotext
-  extractionResult <- executePdftotext tempPath config.config
+  -- Step 5: Get metadata first (includes page count)
+  pdfinfoResult <- executePdfinfo tempPath
     |> Task.asResult
 
-  -- Step 6: Get metadata (optional, don't fail if it fails)
-  metadataResult <- executePdfinfo tempPath
+  -- Step 6: Execute pdftotext
+  extractionResult <- executePdftotext tempPath config.config
     |> Task.asResult
 
   -- Step 7: Clean up temp file
@@ -109,10 +109,11 @@ executeExtraction ctx config = do
 
   -- Step 8: Emit result
   case extractionResult of
-    Ok (extractedText, pageCount) -> do
-      let metadata = case metadataResult of
-            Ok m -> Just m
-            Err _ -> Nothing
+    Ok extractedText -> do
+      -- Extract page count and metadata from pdfinfo result
+      let (pageCount, metadata) = case pdfinfoResult of
+            Ok (count, meta) -> (count, Just meta)
+            Err _ -> (0, Nothing)
       let result = ExtractionResult
             { text = extractedText
             , pageCount = pageCount
@@ -124,11 +125,11 @@ executeExtraction ctx config = do
       Integration.emitCommand (config.onError errorText)
 
 
--- | Execute pdftotext and return extracted text and page count.
+-- | Execute pdftotext and return extracted text.
 executePdftotext ::
   Path ->
   Config ->
-  Task Integration.IntegrationError (Text, Int)
+  Task Integration.IntegrationError Text
 executePdftotext inputPath config = do
   let args = buildPdftotextArgs config inputPath
   result <- Subprocess.runWithTimeout config.timeoutSeconds "pdftotext" args [path|.|]
@@ -137,10 +138,7 @@ executePdftotext inputPath config = do
   case result.exitCode of
     0 -> do
       -- pdftotext outputs to stdout when using "-" as output
-      let extractedText = result.stdout
-      -- Extract page count from the PDF (we'll get it from pdfinfo)
-      -- For now, return 0 and let pdfinfo fill it in
-      Task.yield (extractedText, 0)
+      Task.yield result.stdout
     _ -> do
       let stderrText = result.stderr
       Task.throw (Integration.PermanentFailure [fmt|pdftotext failed: #{stderrText}|])
@@ -151,8 +149,8 @@ buildPdftotextArgs :: Config -> Path -> Array Text
 buildPdftotextArgs config inputPath = do
   let layoutArgs = case config.layout of
         PreserveLayout -> Array.fromLinkedList ["-layout"]
-        RawText -> Array.empty
-        Table -> Array.fromLinkedList ["-table"]
+        RawText -> Array.fromLinkedList ["-raw"]
+        Table -> Array.fromLinkedList ["-fixed", "10"]  -- Fixed-pitch for tabular data
 
   let encodingArgs = case config.encoding of
         UTF8 -> Array.fromLinkedList ["-enc", "UTF-8"]
@@ -175,21 +173,23 @@ buildPdftotextArgs config inputPath = do
     |> Array.append finalArgs
 
 
--- | Execute pdfinfo to get metadata.
+-- | Execute pdfinfo to get page count and metadata.
 executePdfinfo ::
   Path ->
-  Task Integration.IntegrationError PdfMetadata
+  Task Integration.IntegrationError (Int, PdfMetadata)
 executePdfinfo inputPath = do
   let args = [Path.toText inputPath]
   result <- Subprocess.runWithTimeout 10 "pdfinfo" args [path|.|]
     |> Task.mapError subprocessToIntegrationError
 
   case result.exitCode of
-    0 ->
-      Task.yield (parsePdfInfo result.stdout)
+    0 -> do
+      let pageCount = extractPageCount result.stdout
+      let metadata = parsePdfInfo result.stdout
+      Task.yield (pageCount, metadata)
     _ -> do
       let stderrText = result.stderr
-      Task.throw (Integration.NetworkError [fmt|pdfinfo failed: #{stderrText}|])
+      Task.throw (Integration.PermanentFailure [fmt|pdfinfo failed: #{stderrText}|])
 
 
 -- | Parse pdfinfo output into PdfMetadata.
@@ -251,8 +251,8 @@ subprocessToIntegrationError :: Subprocess.Error -> Integration.IntegrationError
 subprocessToIntegrationError err = case err of
   Subprocess.ProcessError msg ->
     Integration.UnexpectedError [fmt|Process error: #{msg}|]
-  Subprocess.TimeoutError _ ->
-    Integration.RateLimited 0  -- Timeout, could retry
+  Subprocess.TimeoutError seconds ->
+    Integration.PermanentFailure [fmt|PDF processing timed out after #{seconds} seconds. The file may be too large or complex.|]
   Subprocess.ToolNotFound msg ->
     Integration.ValidationError [fmt|Tool not found: #{msg}|]
 

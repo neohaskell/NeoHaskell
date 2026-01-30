@@ -30,6 +30,9 @@
 --
 -- # macOS
 -- brew install poppler
+--
+-- # Nix
+-- nix-shell -p poppler_utils
 -- @
 module Integration.Pdf
   ( -- * Text Extraction
