@@ -78,4 +78,11 @@ if [ -d "testbed/tests/scenarios" ] && [ "$(ls -A testbed/tests/scenarios/*.hurl
     echo ""
 fi
 
+# Run integration tests (PDF extraction, etc.)
+if [ -d "testbed/tests/integrations" ] && [ "$(ls -A testbed/tests/integrations/*.hurl 2>/dev/null)" ]; then
+    echo -e "${GREEN}Running integration tests...${NC}"
+    hurl --test testbed/tests/integrations/*.hurl
+    echo ""
+fi
+
 echo -e "${GREEN}All tests completed!${NC}"

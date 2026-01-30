@@ -72,6 +72,7 @@ library
     Testbed.Stock.Service
     Testbed.Examples.HttpIntegration
     Testbed.Examples.OpenRouterIntegration
+    Testbed.Examples.PdfExtraction
 
   hs-source-dirs: src
   default-language: GHC2021
