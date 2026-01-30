@@ -80,33 +80,30 @@ jsonpath "$.fileRef" != "{{pdf_ref_1}}"
 
 
 # =============================================================================
-# NOTE: Full extraction tests (below) require FileAccessContext wiring
+# Test 5: Create document triggers PDF extraction integration
 # =============================================================================
-#
-# When FileAccessContext is wired in Service.Application, add these tests:
-#
-# # Test: Create document triggers PDF extraction integration
-# POST http://localhost:8080/commands/create-document
-# {
-#   "documentId": "extract-test-001",
-#   "title": "PDF Extraction Test Document",
-#   "attachment": "{{pdf_file_ref}}"
-# }
-# 
-# HTTP 200
-# [Options]
-# retry: 10
-# retry-interval: 500
-# [Asserts]
-# jsonpath "$.tag" == "Accepted"
-# 
-# # Test: Verify extracted text in query results
-# GET http://localhost:8080/queries/document-content/extract-test-001
-# [Options]
-# retry: 10
-# retry-interval: 500
-# [Asserts]
-# jsonpath "$.extractedText" contains "Hello NeoHaskell PDF Test"
-# jsonpath "$.pageCount" == 1
-#
+POST http://localhost:8080/commands/create-document
+{
+  "documentId": "550e8400-e29b-41d4-a716-446655440099",
+  "title": "PDF Extraction Test Document",
+  "attachment": "{{pdf_file_ref}}"
+}
+
+HTTP 200
+[Options]
+retry: 10
+retry-interval: 500
+[Asserts]
+jsonpath "$.tag" == "Accepted"
+
+
 # =============================================================================
+# Test 6: Verify extracted text in query results
+# =============================================================================
+GET http://localhost:8080/queries/document-content/550e8400-e29b-41d4-a716-446655440099
+[Options]
+retry: 10
+retry-interval: 500
+[Asserts]
+jsonpath "$.extractedText" contains "Hello NeoHaskell PDF Test"
+jsonpath "$.pageCount" == 1
