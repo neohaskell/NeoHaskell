@@ -1,5 +1,7 @@
 module Main (main) where
 
+import Prelude (IO)
+
 import Integration.CommandSpec qualified
 import Integration.ContextSpec qualified
 import Integration.DispatcherSpec qualified
@@ -9,7 +11,7 @@ import IntegrationSpec qualified
 import Test.Hspec qualified as Hspec
 
 
-main :: Prelude.IO ()
+main :: IO ()
 main = Hspec.hspec do
   Hspec.describe "Integration.Command" Integration.CommandSpec.spec
   Hspec.describe "Integration.Context" Integration.ContextSpec.spec

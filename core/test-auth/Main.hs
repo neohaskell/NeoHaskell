@@ -1,5 +1,7 @@
 module Main (main) where
 
+import Prelude (IO)
+
 import Auth.InMemorySecretStoreSpec qualified
 import Auth.JwtSpec qualified
 import Auth.MiddlewareSpec qualified
@@ -13,7 +15,7 @@ import Auth.UrlValidationSpec qualified
 import Test.Hspec qualified as Hspec
 
 
-main :: Prelude.IO ()
+main :: IO ()
 main = Hspec.hspec do
   Hspec.describe "Auth.InMemorySecretStore" Auth.InMemorySecretStoreSpec.spec
   Hspec.describe "Auth.Jwt" Auth.JwtSpec.spec

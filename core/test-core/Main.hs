@@ -1,5 +1,7 @@
 module Main (main) where
 
+import Prelude (IO)
+
 import ConcurrentMapSpec qualified
 import Http.ClientRawSpec qualified
 import Http.ClientSpec qualified
@@ -12,7 +14,7 @@ import Test.AppSpec.VerifySpec qualified
 import Test.Hspec qualified as Hspec
 
 
-main :: Prelude.IO ()
+main :: IO ()
 main = Hspec.hspec do
   Hspec.describe "ConcurrentMap" ConcurrentMapSpec.spec
   Hspec.describe "Http.Client" Http.ClientSpec.spec

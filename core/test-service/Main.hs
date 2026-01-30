@@ -1,5 +1,7 @@
 module Main (main) where
 
+import Prelude (IO)
+
 import Service.ApplicationSpec qualified
 import Service.CommandHandlerSpec qualified
 import Service.CommandSpec qualified
@@ -25,7 +27,7 @@ import Service.Transport.WebSpec qualified
 import Test.Hspec qualified as Hspec
 
 
-main :: Prelude.IO ()
+main :: IO ()
 main = Hspec.hspec do
   Hspec.describe "Service.Application" Service.ApplicationSpec.spec
   Hspec.describe "Service.CommandHandler" Service.CommandHandlerSpec.spec
