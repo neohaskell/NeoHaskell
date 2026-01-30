@@ -246,8 +246,9 @@ mockRefreshFailure _ = Task.throw (InvalidGrant "refresh token invalid")
 
 
 -- | Predicate: is this error a 401?
+-- Uses precise matching to avoid false positives (e.g., "14010" should not match)
 isUnauthorized :: Text -> Bool
-isUnauthorized err = err |> Text.contains "401"
+isUnauthorized err = Text.startsWith "401 " err || err == "401"
 
 
 -- | Helper to create TokenSet with refresh token
@@ -277,6 +278,7 @@ integrationSpec :: Spec Unit
 integrationSpec = do
   describe "Integration: withValidToken with HTTP" do
     it "refreshes via HTTP and retries action" \_ -> do
+      -- Use a fixed port but ensure cleanup via Task.finally
       -- Port 19876 is unlikely to conflict; CI runs tests in isolation
       let testPort = 19876
 
@@ -286,7 +288,7 @@ integrationSpec = do
       -- Give server time to bind (simple approach)
       GhcConcurrent.threadDelay 50000 |> Task.fromIO -- 50ms
 
-      -- Run test logic
+      -- Run test with guaranteed cleanup via Task.finally
       let runTest = do
             -- Create provider pointing to mock server
             -- MUST use unsafeValidatedProvider (localhost fails SSRF validation)
@@ -338,6 +340,6 @@ integrationSpec = do
               Just ts -> unwrapAccessToken ts.accessToken |> shouldBe "fresh-token"
               Nothing -> fail "Expected token to exist"
 
-      -- Cleanup: always kill server thread
-      runTest
-      GhcConcurrent.killThread serverThread |> Task.fromIO
+      -- Cleanup: always kill server thread (even on test failure)
+      let cleanup = GhcConcurrent.killThread serverThread |> Task.fromIO
+      runTest |> Task.finally cleanup

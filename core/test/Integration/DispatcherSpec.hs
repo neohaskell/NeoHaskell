@@ -4,6 +4,7 @@ module Integration.DispatcherSpec where
 
 import Array qualified
 import AsyncTask qualified
+import Auth.SecretStore.InMemory qualified as InMemorySecretStore
 import ConcurrentVar qualified
 import Core
 import DateTime qualified
@@ -90,6 +91,16 @@ makeTestEvent entityIdText seqNum globalPos = do
       }
 
 
+makeContext :: Task Text Integration.ActionContext
+makeContext = do
+  store <- InMemorySecretStore.new
+  Task.yield
+    Integration.ActionContext
+      { Integration.secretStore = store
+      , Integration.providerRegistry = Map.empty
+      }
+
+
 -- ============================================================================
 -- Tests
 -- ============================================================================
@@ -105,7 +116,7 @@ spec = do
         let testRunner =
               Dispatcher.OutboundRunner
                 { entityTypeName = "TestEntity",
-                  processEvent = \_eventStore _event -> do
+                  processEvent = \_maybeContext _eventStore _event -> do
                     processedCount |> ConcurrentVar.modify (+ 1)
                     Task.yield Array.empty
                 }
@@ -132,7 +143,7 @@ spec = do
         let testRunner =
               Dispatcher.OutboundRunner
                 { entityTypeName = "TestEntity",
-                  processEvent = \_eventStore event -> do
+                  processEvent = \_maybeContext _eventStore event -> do
                     case Json.decode @OrderingTestEvent event.event of
                       Err _ -> Task.yield Array.empty
                       Ok decoded -> do
@@ -182,7 +193,7 @@ spec = do
         let testRunner =
               Dispatcher.OutboundRunner
                 { entityTypeName = "TestEntity",
-                  processEvent = \_eventStore event -> do
+                  processEvent = \_maybeContext _eventStore event -> do
                     case Json.decode @OrderingTestEvent event.event of
                       Err _ -> Task.yield Array.empty
                       Ok decoded -> do
@@ -250,7 +261,7 @@ spec = do
         let testRunner =
               Dispatcher.OutboundRunner
                 { entityTypeName = "TestEntity",
-                  processEvent = \_eventStore event -> do
+                  processEvent = \_maybeContext _eventStore event -> do
                     case Json.decode @OrderingTestEvent event.event of
                       Err _ -> Task.yield Array.empty
                       Ok decoded -> do
@@ -412,6 +423,7 @@ spec = do
 
         -- Create dispatcher with very short idle timeout (50ms)
         eventStore <- InMemory.new |> Task.mapError toText
+        context <- makeContext
         dispatcher <-
           Dispatcher.newWithLifecycleConfig
             Dispatcher.DispatcherConfig
@@ -426,6 +438,7 @@ spec = do
             []
             [lifecycleRunner]
             Map.empty
+            context
 
         -- Send event to entity A
         eventA <- makeTestEvent "entity-A" 1 1
@@ -457,6 +470,7 @@ spec = do
 
         -- Create dispatcher with very short idle timeout
         eventStore <- InMemory.new |> Task.mapError toText
+        context <- makeContext
         dispatcher <-
           Dispatcher.newWithLifecycleConfig
             Dispatcher.DispatcherConfig
@@ -471,6 +485,7 @@ spec = do
             []
             [lifecycleRunner]
             Map.empty
+            context
 
         -- Send first event
         eventA1 <- makeTestEvent "entity-A" 1 1
@@ -513,7 +528,7 @@ spec = do
         let testRunner =
               Dispatcher.OutboundRunner
                 { entityTypeName = "TestEntity",
-                  processEvent = \_eventStore event -> do
+                  processEvent = \_maybeContext _eventStore event -> do
                     case Json.decode @OrderingTestEvent event.event of
                       Err _ -> Task.yield Array.empty
                       Ok decoded -> do
@@ -573,7 +588,7 @@ spec = do
         let slowRunner =
               Dispatcher.OutboundRunner
                 { entityTypeName = "TestEntity",
-                  processEvent = \_eventStore event -> do
+                  processEvent = \_maybeContext _eventStore event -> do
                     case Json.decode @OrderingTestEvent event.event of
                       Err _ -> Task.yield Array.empty
                       Ok decoded -> do
@@ -587,6 +602,7 @@ spec = do
 
         -- Create dispatcher with small channel (capacity=2) and short timeout (20ms)
         eventStore <- InMemory.new |> Task.mapError toText
+        context <- makeContext
         dispatcher <-
           Dispatcher.newWithLifecycleConfig
             Dispatcher.DispatcherConfig
@@ -601,6 +617,7 @@ spec = do
             [slowRunner]
             []
             Map.empty
+            context
 
         -- Create 4 events for the same entity
         event1 <- makeTestEvent "entity-A" 1 1
@@ -651,7 +668,7 @@ spec = do
         let blockingRunner =
               Dispatcher.OutboundRunner
                 { entityTypeName = "TestEntity",
-                  processEvent = \_eventStore _event -> do
+                  processEvent = \_maybeContext _eventStore _event -> do
                     workerStarted |> ConcurrentVar.modify (\_ -> True)
                     -- Block forever (simulating a stuck worker)
                     -- This will be force-cancelled by AsyncTask.cancel
@@ -667,6 +684,7 @@ spec = do
 
         -- Create dispatcher with tiny channel (capacity=1) and very short timeout
         eventStore <- InMemory.new |> Task.mapError toText
+        context <- makeContext
         dispatcher <-
           Dispatcher.newWithLifecycleConfig
             Dispatcher.DispatcherConfig
@@ -681,6 +699,7 @@ spec = do
             [blockingRunner]
             []
             Map.empty
+            context
 
         -- Dispatch first event - worker will pick it up and block forever
         event1 <- makeTestEvent "entity-A" 1 1
@@ -720,13 +739,14 @@ spec = do
         let fastRunner =
               Dispatcher.OutboundRunner
                 { entityTypeName = "TestEntity",
-                  processEvent = \_eventStore _event -> do
+                  processEvent = \_maybeContext _eventStore _event -> do
                     processedCount |> ConcurrentVar.modify (+ 1)
                     Task.yield Array.empty
                 }
 
         -- Create dispatcher with generous capacity
         eventStore <- InMemory.new |> Task.mapError toText
+        context <- makeContext
         dispatcher <-
           Dispatcher.newWithLifecycleConfig
             Dispatcher.DispatcherConfig
@@ -741,6 +761,7 @@ spec = do
             [fastRunner]
             []
             Map.empty
+            context
 
         -- Dispatch 10 events
         events <-
@@ -768,7 +789,7 @@ spec = do
         let testRunner =
               Dispatcher.OutboundRunner
                 { entityTypeName = "TestEntity",
-                  processEvent = \_eventStore event -> do
+                  processEvent = \_maybeContext _eventStore event -> do
                     case Json.decode @OrderingTestEvent event.event of
                       Err _ -> Task.yield Array.empty
                       Ok decoded -> do

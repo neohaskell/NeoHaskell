@@ -4,11 +4,13 @@ module Integration.RuntimeSpec where
 
 import Array qualified
 import AsyncTask qualified
+import Auth.SecretStore.InMemory qualified as InMemorySecretStore
 import ConcurrentVar qualified
 import Core
 import Integration qualified
 import Integration.Command qualified as Command
 import Json qualified
+import Map qualified
 import Service.Application qualified as Application
 import Service.Command.Core (NameOf)
 import Service.Entity.Core (Entity (..), EventOf)
@@ -85,6 +87,16 @@ instance Json.FromJSON NotifyExternalSystem
 type instance NameOf NotifyExternalSystem = "NotifyExternalSystem"
 
 
+makeContext :: Task Text Integration.ActionContext
+makeContext = do
+  store <- InMemorySecretStore.new
+  Task.yield
+    Integration.ActionContext
+      { Integration.secretStore = store
+      , Integration.providerRegistry = Map.empty
+      }
+
+
 -- ============================================================================
 -- Tests
 -- ============================================================================
@@ -138,10 +150,11 @@ spec = do
         Array.length actions |> shouldBe 1
 
         -- Verify the action produces the expected command
+        context <- makeContext
         let firstAction = actions |> Array.first
         case firstAction of
           Just act -> do
-            result <- Integration.runAction act |> Task.mapError toText
+            result <- Integration.runAction context act |> Task.mapError toText
             case result of
               Just payload -> do
                 payload.commandType |> shouldSatisfy (Text.contains "NotifyExternalSystem")
@@ -204,9 +217,10 @@ spec = do
         let outbound = testIntegration entity event
         let actions = Integration.getActions outbound
 
+        context <- makeContext
         case Array.first actions of
           Just act -> do
-            result <- Integration.runAction act |> Task.mapError toText
+            result <- Integration.runAction context act |> Task.mapError toText
             case result of
               Just payload -> do
                 -- Verify the command type name matches what dispatch will look for

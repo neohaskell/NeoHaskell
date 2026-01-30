@@ -81,7 +81,7 @@ createOutboundRunner integrationFn = do
   let typeName = TypeName.reflect @entity
   OutboundRunner
     { entityTypeName = typeName
-    , processEvent = \eventStore rawEvent -> do
+    , processEvent = \ctx eventStore rawEvent -> do
         let streamId = rawEvent.streamId
         -- Decode the event from JSON
         case Json.decode @event rawEvent.event of
@@ -98,8 +98,7 @@ createOutboundRunner integrationFn = do
             -- Execute all actions and collect command payloads
             actions
               |> Task.mapArray (\action -> do
-                  result <- Integration.runAction action
-                    |> Task.mapError toText
+                  result <- Integration.runAction ctx action |> Task.mapError toText
                   case result of
                     Just payload -> Task.yield [payload]
                     Nothing -> Task.yield []
@@ -257,8 +256,9 @@ startIntegrationSubscriber ::
   Array OutboundRunner ->
   Array OutboundLifecycleRunner ->
   Map Text EndpointHandler ->
+  Integration.ActionContext ->
   Task Text (Maybe Dispatcher.IntegrationDispatcher)
-startIntegrationSubscriber eventStore runners lifecycleRunners commandEndpoints = do
+startIntegrationSubscriber eventStore runners lifecycleRunners commandEndpoints ctx = do
   let hasRunners = not (Array.isEmpty runners)
   let hasLifecycleRunners = not (Array.isEmpty lifecycleRunners)
 
@@ -266,7 +266,7 @@ startIntegrationSubscriber eventStore runners lifecycleRunners commandEndpoints 
     then Task.yield Nothing
     else do
       -- Create dispatcher with both runner types and EventStore for entity reconstruction
-      dispatcher <- Dispatcher.newWithLifecycle eventStore runners lifecycleRunners commandEndpoints
+      dispatcher <- Dispatcher.newWithLifecycleConfig Dispatcher.defaultConfig eventStore runners lifecycleRunners commandEndpoints ctx
 
       let processIntegrationEvent :: Event Json.Value -> Task Text Unit
           processIntegrationEvent rawEvent = do

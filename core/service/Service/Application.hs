@@ -579,13 +579,7 @@ runWith eventStore app = do
           |> Map.values
           |> Array.reduce (\cmdMap acc -> Map.merge cmdMap acc) Map.empty
 
-  -- 10. Start integration subscriber for outbound integrations with command dispatch
-  maybeDispatcher <- Integrations.startIntegrationSubscriber eventStore app.outboundRunners app.outboundLifecycleRunners combinedCommandEndpoints
-
-  -- 11. Start inbound integration workers (timers, webhooks, etc.)
-  inboundWorkers <- Integrations.startInboundWorkers app.inboundIntegrations combinedCommandEndpoints
-
-  -- 12. Initialize auth if configured
+  -- 10. Initialize auth if configured
   maybeAuthEnabled <- case app.webAuthSetup of
     Nothing -> Task.yield Nothing
     Just (WebAuthSetup serverUrl overrides) -> do
@@ -604,9 +598,20 @@ runWith eventStore app = do
               }
         )
 
-  -- 13. Initialize OAuth2 if configured
-  maybeOAuth2Config <- case app.oauth2Setup of
-    Nothing -> Task.yield Nothing
+  -- 11. Initialize OAuth2 if configured
+  (maybeOAuth2Config, actionContext) <- case app.oauth2Setup of
+    Nothing -> do
+      -- Apps without OAuth2 get context with empty provider registry
+      emptyStore <- case app.secretStore of
+        Just store -> Task.yield store
+        Nothing -> InMemorySecretStore.new
+      Task.yield
+        ( Nothing
+        , Integration.ActionContext
+            { Integration.secretStore = emptyStore
+            , Integration.providerRegistry = Map.empty
+            }
+        )
     Just (OAuth2Setup envVarName providerConfigs) -> do
       -- OAuth2 routes require JWT authentication to be enabled
       case app.webAuthSetup of
@@ -639,6 +644,11 @@ runWith eventStore app = do
       callbackRateLimiter <- RateLimiter.new RateLimiter.defaultCallbackConfig
       -- Build provider map from array, detecting duplicates
       providerMap <- buildProviderMap providerConfigs
+      let actionContext =
+            Integration.ActionContext
+              { Integration.secretStore = tokenStore
+              , Integration.providerRegistry = providerMap
+              }
       -- Create route handlers with loaded HMAC key and rate limiters
       let routeDeps =
             OAuth2Routes.OAuth2RouteDeps
@@ -660,7 +670,19 @@ runWith eventStore app = do
                 Dispatcher.dispatchCommand combinedCommandEndpoints payload
       let providerCount = Array.length providerConfigs
       Console.print [fmt|[OAuth2] Initialized #{providerCount} provider(s)|]
-      Task.yield (Just Web.OAuth2Config {Web.routes = routes, Web.dispatchAction = dispatchAction})
+      Task.yield (Just Web.OAuth2Config {Web.routes = routes, Web.dispatchAction = dispatchAction}, actionContext)
+
+  -- 12. Start integration subscriber for outbound integrations with command dispatch
+  maybeDispatcher <-
+    Integrations.startIntegrationSubscriber
+      eventStore
+      app.outboundRunners
+      app.outboundLifecycleRunners
+      combinedCommandEndpoints
+      actionContext
+
+  -- 13. Start inbound integration workers (timers, webhooks, etc.)
+  inboundWorkers <- Integrations.startInboundWorkers app.inboundIntegrations combinedCommandEndpoints
 
   -- 14. Initialize file uploads if configured
   maybeFileUploadEnabled <- case app.fileUploadSetup of

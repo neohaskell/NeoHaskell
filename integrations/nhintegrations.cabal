@@ -50,6 +50,7 @@ common common_cfg
     TypeOperators
 
   build-depends:
+    base,
     nhcore
 
 library
@@ -66,6 +67,15 @@ library
     Integration.OpenRouter.Message
     Integration.OpenRouter.Request
     Integration.OpenRouter.Response
+    Integration.Oura
+    Integration.Oura.Activity
+    Integration.Oura.HeartRate
+    Integration.Oura.Internal
+    Integration.Oura.Provider
+    Integration.Oura.Readiness
+    Integration.Oura.Sleep
+    Integration.Oura.SyncAll
+    Integration.Oura.Types
   hs-source-dirs: .
   default-language: GHC2021
 
@@ -82,10 +92,16 @@ test-suite nhintegrations-test
     Integration.OpenRouter.InternalSpec
     Integration.OpenRouter.MessageSpec
     Integration.OpenRouter.ResponseSpec
+    Integration.Oura.ActivitySpec
+    Integration.Oura.HeartRateSpec
+    Integration.Oura.InternalSpec
+    Integration.Oura.ProviderSpec
+    Integration.Oura.ReadinessSpec
+    Integration.Oura.SleepSpec
+    Integration.Oura.SyncAllSpec
+    Integration.Oura.TypesSpec
   build-depends:
-    base,
     hspec,
-    nhcore,
     nhintegrations
   default-language: GHC2021
   ghc-options:

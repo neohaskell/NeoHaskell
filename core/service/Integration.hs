@@ -33,6 +33,7 @@ module Integration (
   -- * Outbound Types
   Outbound,
   Action,
+  ActionContext (..),
 
   -- * Outbound Construction (Jess's API)
   batch,
@@ -73,10 +74,13 @@ module Integration (
 
 import Array (Array)
 import Array qualified
+import Auth.OAuth2.Provider (ValidatedOAuth2ProviderConfig)
+import Auth.SecretStore (SecretStore)
 import Basics
 import Data.Proxy (Proxy (..))
 import GHC.TypeLits qualified as GHC
 import Json qualified
+import Map (Map)
 import Maybe (Maybe (..))
 import Service.Command.Core (NameOf)
 import Task (Task)
@@ -96,6 +100,16 @@ data IntegrationError
   deriving (Eq, Show)
 
 
+-- | Execution context for actions that need runtime dependencies.
+--
+-- This is created by Application.run and passed to actions at execution time.
+-- Only OAuth2-aware integrations need this context.
+data ActionContext = ActionContext
+  { secretStore :: SecretStore
+  , providerRegistry :: Map Text ValidatedOAuth2ProviderConfig
+  }
+
+
 -- | Payload for emitting a command from an integration.
 data CommandPayload = CommandPayload
   { commandType :: Text
@@ -111,8 +125,8 @@ instance Json.ToJSON CommandPayload
 
 
 -- | Internal representation of an action.
-data ActionInternal = ActionInternal
-  { _execute :: Task IntegrationError (Maybe CommandPayload)
+newtype ActionInternal = ActionInternal
+  { _execute :: ActionContext -> Task IntegrationError (Maybe CommandPayload)
   }
 
 
@@ -172,12 +186,12 @@ none = Outbound Array.empty
 --
 -- @
 -- instance ToAction Email where
---   toAction config = Integration.action do
+--   toAction config = Integration.action \_ctx -> do
 --     response <- Http.post "..." |> Http.send
 --     Integration.emitCommand (config.onSuccess response)
 -- @
-action :: Task IntegrationError (Maybe CommandPayload) -> Action
-action task = Action (ActionInternal task)
+action :: (ActionContext -> Task IntegrationError (Maybe CommandPayload)) -> Action
+action actionFn = Action (ActionInternal actionFn)
 
 
 -- | Build a CommandPayload from a command.
@@ -206,7 +220,7 @@ makeCommandPayload cmd = do
 --
 -- @
 -- instance ToAction Email where
---   toAction config = Integration.action do
+--   toAction config = Integration.action \_ctx -> do
 --     response <- sendEmail config
 --     Integration.emitCommand (config.onSuccess response)
 -- @
@@ -301,14 +315,13 @@ inbound config = do
 --
 -- @
 -- action <- Integration.outbound myConfig
--- result <- Integration.runAction action
+-- result <- Integration.runAction ctx action
 -- case result of
 --   Just payload -> -- command was emitted
 --   Nothing -> -- no command to emit
 -- @
-runAction :: Action -> Task IntegrationError (Maybe CommandPayload)
-runAction action = case action of
-  Action internal -> internal._execute
+runAction :: ActionContext -> Action -> Task IntegrationError (Maybe CommandPayload)
+runAction ctx (Action (ActionInternal execute)) = execute ctx
 
 
 -- | Extract actions from an Outbound for inspection.

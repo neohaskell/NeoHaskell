@@ -39,6 +39,7 @@ module Service.Integration.Dispatcher (
   -- * Types
   IntegrationDispatcher,
   DispatcherConfig (..),
+  defaultConfig,
 
   -- * Re-exports from Types
   OutboundRunner (..),
@@ -60,6 +61,7 @@ import Array (Array)
 import Array qualified
 import AsyncTask (AsyncTask)
 import AsyncTask qualified
+import Auth.SecretStore.InMemory qualified as InMemorySecretStore
 import AtomicVar (AtomicVar)
 import AtomicVar qualified
 import Basics
@@ -239,7 +241,8 @@ data IntegrationDispatcher = IntegrationDispatcher
     commandEndpoints :: Map Text EndpointHandler,
     shutdownSignal :: ConcurrentVar Bool,
     config :: DispatcherConfig,
-    reaperTask :: ConcurrentVar (Maybe (AsyncTask Text Unit))
+    reaperTask :: ConcurrentVar (Maybe (AsyncTask Text Unit)),
+    context :: Integration.ActionContext
   }
 
 
@@ -252,7 +255,13 @@ new ::
   Array OutboundRunner ->
   Map Text EndpointHandler ->
   Task Text IntegrationDispatcher
-new store runners endpoints = newWithLifecycleConfig defaultConfig store runners [] endpoints
+new store runners endpoints = do
+  emptyStore <- InMemorySecretStore.new
+  let emptyContext = Integration.ActionContext
+        { Integration.secretStore = emptyStore
+        , Integration.providerRegistry = Map.empty
+        }
+  newWithLifecycleConfig defaultConfig store runners [] endpoints emptyContext
 
 
 -- | Create a new integration dispatcher with lifecycle runners.
@@ -264,8 +273,13 @@ newWithLifecycle ::
   Array OutboundLifecycleRunner ->
   Map Text EndpointHandler ->
   Task Text IntegrationDispatcher
-newWithLifecycle store runners lifecycleRunners endpoints =
-  newWithLifecycleConfig defaultConfig store runners lifecycleRunners endpoints
+newWithLifecycle store runners lifecycleRunners endpoints = do
+  emptyStore <- InMemorySecretStore.new
+  let emptyContext = Integration.ActionContext
+        { Integration.secretStore = emptyStore
+        , Integration.providerRegistry = Map.empty
+        }
+  newWithLifecycleConfig defaultConfig store runners lifecycleRunners endpoints emptyContext
 
 
 -- | Create a new integration dispatcher with custom configuration.
@@ -275,8 +289,9 @@ newWithLifecycleConfig ::
   Array OutboundRunner ->
   Array OutboundLifecycleRunner ->
   Map Text EndpointHandler ->
+  Integration.ActionContext ->
   Task Text IntegrationDispatcher
-newWithLifecycleConfig dispatcherConfig store runners lifecycleRunners endpoints = do
+newWithLifecycleConfig dispatcherConfig store runners lifecycleRunners endpoints actionContext = do
   workers <- ConcurrentMap.new
   lifecycleWorkers <- ConcurrentMap.new
   shutdownSignal <- ConcurrentVar.containing False
@@ -292,7 +307,8 @@ newWithLifecycleConfig dispatcherConfig store runners lifecycleRunners endpoints
             commandEndpoints = endpoints,
             shutdownSignal = shutdownSignal,
             config = dispatcherConfig,
-            reaperTask = reaperTaskVar
+            reaperTask = reaperTaskVar,
+            context = actionContext
           }
 
   -- Start reaper if we have lifecycle runners and reaper is enabled
@@ -658,7 +674,7 @@ processStatelessEvent dispatcher event = do
   let streamId = event.streamId
   dispatcher.outboundRunners
     |> Task.forEach \runner -> do
-      result <- runner.processEvent dispatcher.eventStore event |> Task.asResult
+      result <- runner.processEvent dispatcher.context dispatcher.eventStore event |> Task.asResult
       case result of
         Ok commands -> do
           commands

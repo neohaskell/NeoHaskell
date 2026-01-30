@@ -45,7 +45,7 @@ import Text (Text)
 -- the entity state via event replay before calling the integration function.
 data OutboundRunner = OutboundRunner
   { entityTypeName :: Text
-  , processEvent :: EventStore Json.Value -> Event Json.Value -> Task Text (Array Integration.CommandPayload)
+  , processEvent :: Integration.ActionContext -> EventStore Json.Value -> Event Json.Value -> Task Text (Array Integration.CommandPayload)
   }
 
 
