@@ -115,6 +115,7 @@ import Service.EventStore.Postgres.Internal (PostgresEventStore (..))
 import Service.FileUpload.BlobStore.Local qualified as LocalBlobStore
 import Service.FileUpload.BlobStore.Local (LocalBlobStoreConfig (..))
 import Service.FileUpload.Core (FileUploadConfig (..), FileStateStoreBackend (..), InternalFileUploadConfig (..))
+import Hasql.Pool qualified as HasqlPool
 import Service.FileUpload.FileStateStore.Postgres qualified as PostgresFileStore
 import Service.FileUpload.Web (FileUploadSetup (..))
 import Service.FileUpload.Web qualified as FileUpload
@@ -691,14 +692,14 @@ runWith eventStore app = do
   inboundWorkers <- Integrations.startInboundWorkers app.inboundIntegrations combinedCommandEndpoints
 
   -- 14. Initialize file uploads if configured
-  maybeFileUploadEnabled <- case app.fileUploadConfig of
-    Nothing -> Task.yield Nothing
+  (maybeFileUploadEnabled, fileUploadCleanup) <- case app.fileUploadConfig of
+    Nothing -> Task.yield (Nothing, Task.yield ())
     Just config -> do
       Console.print "[FileUpload] Initializing file upload..."
-      setup <- initializeFileUpload config
+      (setup, cleanup) <- initializeFileUpload config
       let routes = FileUpload.createRoutes setup
       Console.print "[FileUpload] File uploads enabled"
-      Task.yield (Just Web.FileUploadEnabled {Web.fileUploadRoutes = routes})
+      Task.yield (Just Web.FileUploadEnabled {Web.fileUploadRoutes = routes}, cleanup)
 
   -- Define cleanup actions that must always run
   let cleanupJwksManager = case maybeAuthEnabled of
@@ -716,9 +717,12 @@ runWith eventStore app = do
           Dispatcher.shutdown dispatcher
         Nothing -> pass
 
+  let cleanupFileUpload = fileUploadCleanup |> Task.ignoreError
+
   let cleanupAll = do
         cleanupJwksManager
         cleanupDispatcher
+        cleanupFileUpload
 
   -- 15. Run each transport once with combined endpoints from all services
   -- When transports complete (or fail), cancel inbound workers for clean shutdown
@@ -1102,8 +1106,11 @@ withFileUpload config app =
 -- If state store initialization fails after blob store creation, the blob store
 -- directory is left in place (it may contain data from previous runs).
 --
+-- Returns a tuple of (setup, cleanup action). The cleanup action releases
+-- any database connection pools and should be called during shutdown.
+--
 -- This is called internally by 'Application.run' - users should not call this directly.
-initializeFileUpload :: FileUploadConfig -> Task Text FileUploadSetup
+initializeFileUpload :: FileUploadConfig -> Task Text (FileUploadSetup, Task Text ())
 initializeFileUpload fileConfig = do
   -- Extract config fields (needed for fmt quasiquoter compatibility)
   let blobDir = fileConfig.blobStoreDir
@@ -1125,10 +1132,12 @@ initializeFileUpload fileConfig = do
 
   -- 3. Create state store based on backend configuration
   -- If this fails, the blob store directory remains (may have existing data)
-  stateStore <- case fileConfig.stateStoreBackend of
+  -- Returns the store and an optional cleanup action for releasing the connection pool
+  (stateStore, cleanupAction) <- case fileConfig.stateStoreBackend of
     InMemoryStateStore -> do
       inMemoryStore <- FileUpload.newInMemoryFileStateStore
-      Task.yield (FileUpload.inMemoryFileStateStore inMemoryStore)
+      -- No cleanup needed for in-memory store
+      Task.yield (FileUpload.inMemoryFileStateStore inMemoryStore, Task.yield ())
 
     PostgresStateStore {pgHost, pgPort, pgDatabase, pgUser, pgPassword} -> do
       let postgresConfig = PostgresEventStore
@@ -1138,8 +1147,15 @@ initializeFileUpload fileConfig = do
             , user = pgUser
             , password = pgPassword
             }
-      PostgresFileStore.new postgresConfig
+      (store, pool) <- PostgresFileStore.newWithCleanup postgresConfig
         |> Task.mapError (\err -> [fmt|Failed to initialize PostgreSQL file state store: #{err}|])
+      -- Cleanup action releases the connection pool
+      let cleanup = do
+            Console.print "[FileUpload] Releasing PostgreSQL connection pool..."
+              |> Task.ignoreError
+            HasqlPool.release pool
+              |> Task.fromIO
+      Task.yield (store, cleanup)
 
   -- 4. Build internal config
   let internalConfig = InternalFileUploadConfig
@@ -1150,12 +1166,13 @@ initializeFileUpload fileConfig = do
         , storeOriginalFilename = fileConfig.storeOriginalFilename
         }
 
-  -- 5. Return the setup
-  Task.yield FileUploadSetup
-    { config = internalConfig
-    , blobStore = blobStore
-    , stateStore = stateStore
-    }
+  -- 5. Return the setup and cleanup action
+  let setup = FileUploadSetup
+        { config = internalConfig
+        , blobStore = blobStore
+        , stateStore = stateStore
+        }
+  Task.yield (setup, cleanupAction)
 
 
 -- | Validate file upload configuration parameters.
@@ -1165,6 +1182,7 @@ initializeFileUpload fileConfig = do
 -- * maxFileSizeBytes is positive
 -- * pendingTtlSeconds is positive
 -- * cleanupIntervalSeconds is positive
+-- * cleanupIntervalSeconds < pendingTtlSeconds (cleanup must run before TTL expires)
 validateFileUploadConfig :: Text -> Int64 -> Int64 -> Int64 -> Task Text ()
 validateFileUploadConfig blobDir maxSize pendingTtl cleanupInterval = do
   -- Validate blob store directory path
@@ -1185,6 +1203,11 @@ validateFileUploadConfig blobDir maxSize pendingTtl cleanupInterval = do
   -- Validate cleanup interval
   if cleanupInterval <= 0
     then Task.throw [fmt|cleanupIntervalSeconds must be positive, got: #{cleanupInterval}|]
+    else pass
+
+  -- Validate cleanup runs before TTL expires (otherwise files could expire without cleanup)
+  if cleanupInterval >= pendingTtl
+    then Task.throw [fmt|cleanupIntervalSeconds (#{cleanupInterval}) must be less than pendingTtlSeconds (#{pendingTtl})|]
     else pass
 
   Task.yield ()

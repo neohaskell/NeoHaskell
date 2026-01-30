@@ -28,6 +28,7 @@ module Service.FileUpload.Core (
 
 import Array (Array)
 import Basics
+import Data.Aeson qualified as GhcAeson
 import Data.Hashable qualified as GhcHashable
 import Json qualified
 import Maybe (Maybe)
@@ -266,7 +267,22 @@ instance Show FileStateStoreBackend where
 
 
 instance Json.FromJSON FileStateStoreBackend
-instance Json.ToJSON FileStateStoreBackend
+
+
+-- | ToJSON instance that redacts the password to prevent leaking secrets in JSON
+instance Json.ToJSON FileStateStoreBackend where
+  toJSON backend = case backend of
+    InMemoryStateStore -> GhcAeson.object
+      [ ("tag", GhcAeson.toJSON @Text "InMemoryStateStore")
+      ]
+    PostgresStateStore {pgHost, pgPort, pgDatabase, pgUser} -> GhcAeson.object
+      [ ("tag", GhcAeson.toJSON @Text "PostgresStateStore")
+      , ("pgHost", GhcAeson.toJSON pgHost)
+      , ("pgPort", GhcAeson.toJSON pgPort)
+      , ("pgDatabase", GhcAeson.toJSON pgDatabase)
+      , ("pgUser", GhcAeson.toJSON pgUser)
+      , ("pgPassword", GhcAeson.toJSON @Text "<REDACTED>")
+      ]
 
 
 -- | Declarative configuration for file uploads.
