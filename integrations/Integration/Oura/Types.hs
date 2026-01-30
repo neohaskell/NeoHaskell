@@ -43,7 +43,17 @@ data SleepContributors = SleepContributors
   }
   deriving (Show, Eq, Generic)
 
-instance Json.ToJSON SleepContributors
+instance Json.ToJSON SleepContributors where
+  toJSON contributors =
+    Json.object
+      [ "deep_sleep" Json..= contributors.deepSleep
+      , "efficiency" Json..= contributors.efficiency
+      , "latency" Json..= contributors.latency
+      , "rem_sleep" Json..= contributors.remSleep
+      , "restfulness" Json..= contributors.restfulness
+      , "timing" Json..= contributors.timing
+      , "total_sleep" Json..= contributors.totalSleep
+      ]
 
 
 instance Json.FromJSON SleepContributors where
@@ -68,7 +78,15 @@ data SleepData = SleepData
   }
   deriving (Show, Eq, Generic)
 
-instance Json.ToJSON SleepData
+instance Json.ToJSON SleepData where
+  toJSON sleepData =
+    Json.object
+      [ "id" Json..= sleepData.id
+      , "day" Json..= sleepData.day
+      , "score" Json..= sleepData.score
+      , "timestamp" Json..= sleepData.timestamp
+      , "contributors" Json..= sleepData.contributors
+      ]
 
 
 instance Json.FromJSON SleepData where
@@ -96,7 +114,20 @@ data ActivityData = ActivityData
   }
   deriving (Show, Eq, Generic)
 
-instance Json.ToJSON ActivityData
+instance Json.ToJSON ActivityData where
+  toJSON activityData =
+    Json.object
+      [ "id" Json..= activityData.id
+      , "day" Json..= activityData.day
+      , "score" Json..= activityData.score
+      , "active_calories" Json..= activityData.activeCalories
+      , "steps" Json..= activityData.steps
+      , "total_calories" Json..= activityData.totalCalories
+      , "high_activity_time" Json..= activityData.highActivityTime
+      , "medium_activity_time" Json..= activityData.mediumActivityTime
+      , "low_activity_time" Json..= activityData.lowActivityTime
+      , "timestamp" Json..= activityData.timestamp
+      ]
 
 
 instance Json.FromJSON ActivityData where
@@ -127,7 +158,18 @@ data ReadinessContributors = ReadinessContributors
   }
   deriving (Show, Eq, Generic)
 
-instance Json.ToJSON ReadinessContributors
+instance Json.ToJSON ReadinessContributors where
+  toJSON contributors =
+    Json.object
+      [ "activity_balance" Json..= contributors.activityBalance
+      , "body_temperature" Json..= contributors.bodyTemperature
+      , "hrv_balance" Json..= contributors.hrvBalance
+      , "previous_day_activity" Json..= contributors.previousDayActivity
+      , "previous_night" Json..= contributors.previousNight
+      , "recovery_index" Json..= contributors.recoveryIndex
+      , "resting_heart_rate" Json..= contributors.restingHeartRate
+      , "sleep_balance" Json..= contributors.sleepBalance
+      ]
 
 
 instance Json.FromJSON ReadinessContributors where
@@ -148,14 +190,24 @@ data ReadinessData = ReadinessData
   { id :: Text
   , day :: Text
   , score :: Maybe Int
-  , temperatureDeviation :: Maybe Int
-  , temperatureTrendDeviation :: Maybe Int
+  , temperatureDeviation :: Maybe Float
+  , temperatureTrendDeviation :: Maybe Float
   , timestamp :: Text
   , contributors :: Maybe ReadinessContributors
   }
   deriving (Show, Eq, Generic)
 
-instance Json.ToJSON ReadinessData
+instance Json.ToJSON ReadinessData where
+  toJSON readinessData =
+    Json.object
+      [ "id" Json..= readinessData.id
+      , "day" Json..= readinessData.day
+      , "score" Json..= readinessData.score
+      , "temperature_deviation" Json..= readinessData.temperatureDeviation
+      , "temperature_trend_deviation" Json..= readinessData.temperatureTrendDeviation
+      , "timestamp" Json..= readinessData.timestamp
+      , "contributors" Json..= readinessData.contributors
+      ]
 
 
 instance Json.FromJSON ReadinessData where
@@ -178,7 +230,13 @@ data HeartRateData = HeartRateData
   }
   deriving (Show, Eq, Generic)
 
-instance Json.ToJSON HeartRateData
+instance Json.ToJSON HeartRateData where
+  toJSON heartRateData =
+    Json.object
+      [ "bpm" Json..= heartRateData.bpm
+      , "source" Json..= heartRateData.source
+      , "timestamp" Json..= heartRateData.timestamp
+      ]
 
 
 instance Json.FromJSON HeartRateData where

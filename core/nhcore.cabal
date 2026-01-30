@@ -132,9 +132,9 @@ library
     Auth.OAuth2.TransactionStore
     Auth.OAuth2.TransactionStore.InMemory
     Auth.OAuth2.TransactionStore.TransactionKey
-     Auth.OAuth2.Types
-     Auth.OAuth2.TokenRefresh
-     Auth.Options
+    Auth.OAuth2.Types
+    Auth.OAuth2.TokenRefresh
+    Auth.Options
     Auth.SecretStore
     Auth.SecretStore.InMemory
     Auth.UrlValidation

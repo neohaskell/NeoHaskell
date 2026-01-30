@@ -3,13 +3,21 @@ module Integration.Oura.ProviderSpec (spec) where
 
 import Array qualified
 import Auth.OAuth2.Provider (OAuth2ProviderConfig (..))
-import Auth.OAuth2.Types (ClientId (..), Provider (..), Scope (..), mkClientSecret, mkRedirectUri)
+import Auth.OAuth2.Types (ClientId (..), Provider (..), RedirectUri, Scope (..), mkClientSecret, mkRedirectUri)
 import Basics (panic, (|>))
 import Integration.Oura.Provider (makeOuraConfig, ouraProvider)
 import LinkedList qualified
 import Result (Result (..))
 import Test.Hspec (Spec, describe, it, shouldBe)
 import Text (Text)
+
+
+-- | Helper to create redirect URI for tests (panics on invalid URL)
+testRedirectUri :: Text -> RedirectUri
+testRedirectUri url =
+  case mkRedirectUri url of
+    Ok uri -> uri
+    Err _ -> panic "Invalid redirect URI in test"
 
 
 spec :: Spec
@@ -32,9 +40,7 @@ spec = do
       it "creates config with all fields populated" do
         let clientId = ClientId "test-client-id"
         let clientSecret = mkClientSecret "test-secret"
-        let redirectUri = case mkRedirectUri "https://localhost:3000/callback" of
-              Ok uri -> uri
-              Err _ -> panic "Invalid redirect URI"
+        let redirectUri = testRedirectUri "https://localhost:3000/callback"
         let onSuccess = \_ _ -> ("success" :: Text)
         let onFailure = \_ _ -> ("failure" :: Text)
         let onDisconnect = \_ -> ("disconnect" :: Text)
@@ -52,9 +58,7 @@ spec = do
       it "includes both required scopes" do
         let clientId = ClientId "test-client-id"
         let clientSecret = mkClientSecret "test-secret"
-        let redirectUri = case mkRedirectUri "https://localhost:3000/callback" of
-              Ok uri -> uri
-              Err _ -> panic "Invalid redirect URI"
+        let redirectUri = testRedirectUri "https://localhost:3000/callback"
         let onSuccess = \_ _ -> ("" :: Text)
         let onFailure = \_ _ -> ("" :: Text)
         let onDisconnect = \_ -> ("" :: Text)
@@ -68,9 +72,7 @@ spec = do
       it "has correct provider endpoints in config" do
         let clientId = ClientId "test-client-id"
         let clientSecret = mkClientSecret "test-secret"
-        let redirectUri = case mkRedirectUri "https://localhost:3000/callback" of
-              Ok uri -> uri
-              Err _ -> panic "Invalid redirect URI"
+        let redirectUri = testRedirectUri "https://localhost:3000/callback"
 
         let config = makeOuraConfig clientId clientSecret redirectUri (\_ _ -> ("" :: Text)) (\_ _ -> ("" :: Text)) (\_ -> ("" :: Text)) ("" :: Text) ("" :: Text)
 

@@ -48,6 +48,11 @@ data SyncResult = SyncResult
 instance Json.ToJSON SyncResult
 
 -- ToAction runs all 4 in parallel via AsyncTask.runConcurrently
+-- | Base URL for Oura Ring API v2 usercollection endpoints
+ouraApiBase :: Text
+ouraApiBase = "https://api.ouraring.com/v2/usercollection"
+
+
 instance (Json.ToJSON command, GhcTypeLits.KnownSymbol (NameOf command)) =>
   Integration.ToAction (SyncAll command) where
   toAction config = Integration.action \ctx ->
@@ -68,14 +73,14 @@ executeSyncAll httpFetch ctx config = do
   let ValidatedOAuth2ProviderConfig {validatedProvider, clientId, clientSecret} = providerConfig
   let refreshAction = OAuth2.refreshTokenValidated validatedProvider clientId clientSecret
   
-  -- Build base URLs
-  let sleepUrl = [fmt|https://api.ouraring.com/v2/usercollection/daily_sleep?start_date=#{startDate}&end_date=#{endDate}|]
-  let activityUrl = [fmt|https://api.ouraring.com/v2/usercollection/daily_activity?start_date=#{startDate}&end_date=#{endDate}|]
-  let readinessUrl = [fmt|https://api.ouraring.com/v2/usercollection/daily_readiness?start_date=#{startDate}&end_date=#{endDate}|]
+  -- Build URLs using shared base
+  let sleepUrl = [fmt|#{ouraApiBase}/daily_sleep?start_date=#{startDate}&end_date=#{endDate}|]
+  let activityUrl = [fmt|#{ouraApiBase}/daily_activity?start_date=#{startDate}&end_date=#{endDate}|]
+  let readinessUrl = [fmt|#{ouraApiBase}/daily_readiness?start_date=#{startDate}&end_date=#{endDate}|]
   -- HeartRate uses datetime with negative timezone offset (avoids encoding issues)
   let startDatetime :: Text = [fmt|#{startDate}T00:00:00-00:00|]
   let endDatetime :: Text = [fmt|#{endDate}T23:59:59-00:00|]
-  let heartRateUrl = [fmt|https://api.ouraring.com/v2/usercollection/heartrate?start_datetime=#{startDatetime}&end_datetime=#{endDatetime}|]
+  let heartRateUrl = [fmt|#{ouraApiBase}/heartrate?start_datetime=#{startDatetime}&end_datetime=#{endDatetime}|]
   
   -- Execute with token refresh - all 4 requests share the same token
   fetchResult <- withValidToken secretStore "oura" userId refreshAction isUnauthorized

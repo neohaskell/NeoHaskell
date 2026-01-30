@@ -36,8 +36,8 @@ spec = do
                 resp.statusCode |> shouldBe 401
                 resp.body |> Bytes.length |> shouldSatisfy (\len -> len > 0)
               Err _ -> fail "Expected Ok, got Err"
-      runTest
-      GhcConcurrent.killThread serverThread |> Task.fromIO
+      let cleanup = GhcConcurrent.killThread serverThread |> Task.fromIO
+      runTest |> Task.finally cleanup
 
     it "returns Ok with statusCode 429 on 429 response" \_ -> do
       let testPort = 19878
@@ -57,8 +57,8 @@ spec = do
                   Just _ -> Task.yield ()
                   Nothing -> fail "Expected Retry-After header"
               Err _ -> fail "Expected Ok, got Err"
-      runTest
-      GhcConcurrent.killThread serverThread |> Task.fromIO
+      let cleanup = GhcConcurrent.killThread serverThread |> Task.fromIO
+      runTest |> Task.finally cleanup
 
     it "returns Ok with statusCode 200 on 200 response" \_ -> do
       let testPort = 19879
@@ -75,8 +75,8 @@ spec = do
                 resp.statusCode |> shouldBe 200
                 resp.body |> Bytes.length |> shouldSatisfy (\len -> len > 0)
               Err _ -> fail "Expected Ok, got Err"
-      runTest
-      GhcConcurrent.killThread serverThread |> Task.fromIO
+      let cleanup = GhcConcurrent.killThread serverThread |> Task.fromIO
+      runTest |> Task.finally cleanup
 
     it "response body is accessible and decodable" \_ -> do
       let testPort = 19880
@@ -95,8 +95,8 @@ spec = do
                   Ok json -> json.message |> shouldBe "success"
                   Err _ -> fail "Expected valid JSON in response body"
               Err _ -> fail "Expected Ok, got Err"
-      runTest
-      GhcConcurrent.killThread serverThread |> Task.fromIO
+      let cleanup = GhcConcurrent.killThread serverThread |> Task.fromIO
+      runTest |> Task.finally cleanup
 
     it "returns Err on network error" \_ -> do
       response <-

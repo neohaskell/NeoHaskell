@@ -114,7 +114,7 @@ spec = do
         result <- Task.runOrPanic task
 
         case result of
-          Err Unauthorized -> True `shouldBe` True
+          Err Unauthorized -> pure ()
           _ -> expectationFailure "Expected Unauthorized error"
 
       it "missing provider throws UnexpectedError" do

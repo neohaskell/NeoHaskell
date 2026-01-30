@@ -54,9 +54,7 @@ spec = do
           executeSyncAll mockFetch ctx config
 
         -- Should return Just with command payload (meaning onComplete was called)
-        case result of
-          Just _ -> True `shouldBe` True
-          Nothing -> expectationFailure "Expected Just CommandPayload"
+        result `shouldSatisfy` isJust
 
       it "runs requests in parallel (max concurrent >= 2)" do
         let mkVar :: Int -> Task Text (ConcurrentVar Int)
@@ -106,9 +104,7 @@ spec = do
 
         -- The test passes if executeSyncAll completes without error
         -- and returns a payload (meaning onComplete was called with SyncResult)
-        case result of
-          Just _ -> True `shouldBe` True
-          Nothing -> expectationFailure "Expected onComplete to be called"
+        result `shouldSatisfy` isJust
 
       it "invokes onError callback when fetch fails and onError is Just" do
         ctx <- Task.runOrPanic setupMockContext
@@ -130,9 +126,7 @@ spec = do
           executeSyncAll mockFetch ctx config
 
         -- Should return Just (the error command payload)
-        case result of
-          Just _ -> True `shouldBe` True
-          Nothing -> expectationFailure "Expected Just CommandPayload from onError handler"
+        result `shouldSatisfy` isJust
 
       it "throws error when fetch fails and onError is Nothing" do
         ctx <- Task.runOrPanic setupMockContext
@@ -155,7 +149,7 @@ spec = do
         result <- Task.runOrPanic task
 
         case result of
-          Err (AuthenticationError _) -> True `shouldBe` True
+          Err (AuthenticationError _) -> pure ()
           Err other -> expectationFailure [fmt|Expected AuthenticationError, got: #{toText other}|]
           Ok _ -> expectationFailure "Expected error to be thrown"
 
@@ -227,4 +221,10 @@ testSyncAllConfig = SyncAll
   }
 
 
+-- | Helper predicate for checking Maybe values
+isJust :: forall value. Maybe value -> Bool
+isJust maybeValue =
+  case maybeValue of
+    Just _ -> True
+    Nothing -> False
 
