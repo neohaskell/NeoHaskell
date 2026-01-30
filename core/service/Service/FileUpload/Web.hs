@@ -42,14 +42,14 @@ import DateTime qualified
 
 import Map (Map)
 import Maybe (Maybe (..))
-import Service.FileUpload.BlobStore (BlobStore (..))
 import Result (Result (..))
+import Service.FileUpload.BlobStore (BlobStore (..))
 import Service.FileUpload.Core (
   FileAccessError (..),
   FileDeletedData (..),
   FileDeletionReason (..),
   FileRef (..),
-  FileUploadConfig (..),
+  InternalFileUploadConfig (..),
   FileUploadEvent (..),
   FileUploadedData (..),
   FileConfirmedData (..),
@@ -71,9 +71,12 @@ import Text (Text)
 -- Configuration
 -- ==========================================================================
 
--- | Configuration for file upload routes.
+-- | Internal configuration for file upload routes (after initialization).
+--
+-- This is created by 'initializeFileUpload' from a 'FileUploadConfig'.
+-- Users should not create this directly - use 'FileUploadConfig' instead.
 data FileUploadSetup = FileUploadSetup
-  { config :: FileUploadConfig
+  { config :: InternalFileUploadConfig
   -- ^ Upload limits and allowed content types
   , blobStore :: BlobStore
   -- ^ Where to store file content
@@ -87,7 +90,7 @@ data FileUploadSetup = FileUploadSetup
 defaultFileUploadSetup :: BlobStore -> FileStateStore -> FileUploadSetup
 defaultFileUploadSetup blobStore stateStore =
   FileUploadSetup
-    { config = FileUploadConfig
+    { config = InternalFileUploadConfig
         { pendingTtlSeconds = 21600 -- 6 hours
         , cleanupIntervalSeconds = 900 -- 15 minutes
         , maxFileSizeBytes = 10485760 -- 10 MB
@@ -204,7 +207,7 @@ createRoutes setup =
 -- | Handle file upload.
 -- The caller (WebTransport) handles multipart parsing and provides all parameters.
 handleUploadImpl ::
-  FileUploadConfig ->
+  InternalFileUploadConfig ->
   BlobStore ->
   FileStateStore ->
   Text ->  -- ownerHash
@@ -332,7 +335,7 @@ confirmFileImpl stateStore fileRef requestId = do
 -- | Start a background worker that periodically cleans up expired pending files.
 -- Returns the AsyncTask handle for the worker (can be cancelled on shutdown).
 startCleanupWorker ::
-  FileUploadConfig ->
+  InternalFileUploadConfig ->
   FileStateStore ->
   BlobStore ->
   InMemoryFileStateStore ->

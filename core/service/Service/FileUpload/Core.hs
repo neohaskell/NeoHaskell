@@ -20,10 +20,15 @@ module Service.FileUpload.Core (
 
   -- * Configuration
   FileUploadConfig (..),
+  FileStateStoreBackend (..),
+
+  -- * Internal Types (exported for use by other nhcore modules)
+  InternalFileUploadConfig (..),
 ) where
 
 import Array (Array)
 import Basics
+import Data.Aeson qualified as GhcAeson
 import Data.Hashable qualified as GhcHashable
 import Json qualified
 import Maybe (Maybe)
@@ -212,15 +217,181 @@ instance Json.ToJSON FileAccessError
 -- Configuration
 -- ==========================================================================
 
--- | Configuration for file uploads
+-- | Backend for storing file upload state (lifecycle tracking).
+--
+-- Choose based on your deployment:
+--
+-- * 'InMemoryStateStore' - For development/testing. State is lost on restart.
+-- * 'PostgresStateStore' - For production. Uses same connection parameters as your event store.
+--
+-- Example:
+--
+-- @
+-- -- Development
+-- stateStoreBackend = InMemoryStateStore
+--
+-- -- Production (same connection as event store)
+-- stateStoreBackend = PostgresStateStore
+--     { pgHost = "localhost"
+--     , pgPort = 5432
+--     , pgDatabase = "neohaskell"
+--     , pgUser = "neohaskell"
+--     , pgPassword = "neohaskell"
+--     }
+-- @
+data FileStateStoreBackend
+  = InMemoryStateStore
+  -- ^ In-memory storage (lost on restart, for development/testing)
+  | PostgresStateStore
+      { pgHost :: Text
+      -- ^ PostgreSQL host
+      , pgPort :: Int
+      -- ^ PostgreSQL port
+      , pgDatabase :: Text
+      -- ^ Database name
+      , pgUser :: Text
+      -- ^ Database user
+      , pgPassword :: Text
+      -- ^ Database password
+      }
+  -- ^ PostgreSQL storage (persistent, recommended for production)
+  deriving (Generic, Eq)
+
+
+-- | Show instance that redacts the password to prevent leaking secrets in logs
+instance Show FileStateStoreBackend where
+  show backend = case backend of
+    InMemoryStateStore -> "InMemoryStateStore"
+    PostgresStateStore {pgHost, pgPort, pgDatabase, pgUser} ->
+      [fmt|PostgresStateStore {pgHost = "#{pgHost}", pgPort = #{pgPort}, pgDatabase = "#{pgDatabase}", pgUser = "#{pgUser}", pgPassword = <REDACTED>}|]
+
+
+instance Json.FromJSON FileStateStoreBackend
+
+
+-- | ToJSON instance that redacts the password to prevent leaking secrets in JSON
+instance Json.ToJSON FileStateStoreBackend where
+  toJSON backend = case backend of
+    InMemoryStateStore -> GhcAeson.object
+      [ ("tag", GhcAeson.toJSON @Text "InMemoryStateStore")
+      ]
+    PostgresStateStore {pgHost, pgPort, pgDatabase, pgUser} -> GhcAeson.object
+      [ ("tag", GhcAeson.toJSON @Text "PostgresStateStore")
+      , ("pgHost", GhcAeson.toJSON pgHost)
+      , ("pgPort", GhcAeson.toJSON pgPort)
+      , ("pgDatabase", GhcAeson.toJSON pgDatabase)
+      , ("pgUser", GhcAeson.toJSON pgUser)
+      , ("pgPassword", GhcAeson.toJSON @Text "<REDACTED>")
+      ]
+
+
+-- | Declarative configuration for file uploads.
+--
+-- This is the user-facing configuration type. IO initialization is deferred
+-- to 'Application.run', making application setup purely declarative.
+--
+-- == Basic Example
+--
+-- @
+-- app = Application.new
+--   |> Application.withEventStore postgresConfig
+--   |> Application.withFileUpload FileUploadConfig
+--       { blobStoreDir = "./uploads"
+--       , stateStoreBackend = InMemoryStateStore  -- For development
+--       , maxFileSizeBytes = 10485760  -- 10 MB
+--       , pendingTtlSeconds = 21600    -- 6 hours
+--       , cleanupIntervalSeconds = 900 -- 15 minutes
+--       , allowedContentTypes = Nothing
+--       , storeOriginalFilename = True
+--       }
+-- @
+--
+-- == Reusing PostgreSQL Connection Parameters
+--
+-- For production, you can reuse the same connection parameters as your event store:
+--
+-- @
+-- -- Define once
+-- postgresConfig = PostgresEventStore
+--   { host = "localhost", port = 5432, databaseName = "myapp"
+--   , user = "myuser", password = "mypassword"
+--   }
+--
+-- -- Reuse for file state store
+-- fileUploadConfig = FileUploadConfig
+--   { blobStoreDir = "./uploads"
+--   , stateStoreBackend = PostgresStateStore
+--       { pgHost = postgresConfig.host
+--       , pgPort = postgresConfig.port
+--       , pgDatabase = postgresConfig.databaseName
+--       , pgUser = postgresConfig.user
+--       , pgPassword = postgresConfig.password
+--       }
+--   , ...
+--   }
+--
+-- app = Application.new
+--   |> Application.withEventStore postgresConfig
+--   |> Application.withFileUpload fileUploadConfig
+-- @
+--
+-- == Migration from Imperative Setup
+--
+-- If you previously used the Task-based setup:
+--
+-- @
+-- -- OLD (imperative)
+-- appTask :: Task Text Application
+-- appTask = do
+--   blobStore <- LocalBlobStore.createBlobStore config
+--   stateStore <- PostgresFileStore.new postgresConfig
+--   let setup = FileUpload.defaultFileUploadSetup blobStore stateStore
+--   Task.yield (baseApp |> Application.withFileUpload setup)
+--
+-- -- NEW (declarative)
+-- app :: Application
+-- app = baseApp
+--   |> Application.withFileUpload FileUploadConfig
+--       { blobStoreDir = "./uploads"
+--       , stateStoreBackend = PostgresStateStore {...}
+--       , ...
+--       }
+-- @
 data FileUploadConfig = FileUploadConfig
-  { pendingTtlSeconds :: Int64 -- How long before unconfirmed files are cleaned up (default: 21600 = 6 hours)
-  , cleanupIntervalSeconds :: Int64 -- How often the cleaner runs (default: 900 = 15 minutes)
-  , maxFileSizeBytes :: Int64 -- Maximum upload size (default: 10485760 = 10 MB)
-  , allowedContentTypes :: Maybe (Array Text) -- MIME type allowlist (Nothing = all allowed)
-  , storeOriginalFilename :: Bool -- Whether to store filename in events (default: True)
+  { blobStoreDir :: Text
+  -- ^ Directory for storing uploaded files (created if missing)
+  , stateStoreBackend :: FileStateStoreBackend
+  -- ^ Where to track file lifecycle state
+  , maxFileSizeBytes :: Int64
+  -- ^ Maximum upload size (default: 10485760 = 10 MB)
+  , pendingTtlSeconds :: Int64
+  -- ^ TTL for unconfirmed uploads before cleanup (default: 21600 = 6 hours)
+  , cleanupIntervalSeconds :: Int64
+  -- ^ How often the cleanup worker runs (default: 900 = 15 minutes)
+  , allowedContentTypes :: Maybe (Array Text)
+  -- ^ MIME type allowlist (Nothing = all types allowed)
+  , storeOriginalFilename :: Bool
+  -- ^ Whether to store the original filename in events (default: True)
   }
   deriving (Generic, Eq, Show)
 
 instance Json.FromJSON FileUploadConfig
 instance Json.ToJSON FileUploadConfig
+
+
+-- | Internal configuration for file uploads (used after initialization).
+--
+-- This type holds the runtime configuration after IO initialization has
+-- occurred. Exported for use by other nhcore modules (Web.hs, Application.hs).
+-- End users should use 'FileUploadConfig' for application configuration.
+data InternalFileUploadConfig = InternalFileUploadConfig
+  { pendingTtlSeconds :: Int64
+  , cleanupIntervalSeconds :: Int64
+  , maxFileSizeBytes :: Int64
+  , allowedContentTypes :: Maybe (Array Text)
+  , storeOriginalFilename :: Bool
+  }
+  deriving (Generic, Eq, Show)
+
+instance Json.FromJSON InternalFileUploadConfig
+instance Json.ToJSON InternalFileUploadConfig
