@@ -574,7 +574,7 @@ run app = case app.eventStoreCreator of
 -- 6. Runs each transport once with combined endpoints
 runWith :: EventStore Json.Value -> Application -> Task Text Unit
 runWith eventStore app = do
-  -- 1. Wire all query definitions and collect registries + endpoints
+  -- 1. Wire all query definitions and collect registries + endpoints + schemas
   wiredQueries <-
     app.queryDefinitions
       |> Task.mapArray (\def -> def.wireQuery eventStore)
@@ -582,12 +582,17 @@ runWith eventStore app = do
   -- 2. Combine all registries from query definitions with the manual registry
   let combinedRegistry =
         wiredQueries
-          |> Array.reduce (\(reg, _) acc -> mergeRegistries reg acc) app.queryRegistry
+          |> Array.reduce (\(reg, _, _) acc -> mergeRegistries reg acc) app.queryRegistry
 
   -- 3. Combine all query endpoints from definitions with manual endpoints
   let combinedQueryEndpoints =
         wiredQueries
-          |> Array.reduce (\(_, (name, handler)) acc -> acc |> Map.set name handler) app.queryEndpoints
+          |> Array.reduce (\(_, (name, handler, _)) acc -> acc |> Map.set name handler) app.queryEndpoints
+
+  -- 3b. Collect all query schemas
+  let combinedQuerySchemas =
+        wiredQueries
+          |> Array.reduce (\(_, (name, _, schema)) acc -> acc |> Map.set name schema) Map.empty
 
   -- 4. Create query subscriber with combined registry
   subscriber <- Subscriber.new eventStore combinedRegistry
@@ -777,7 +782,7 @@ runWith eventStore app = do
   -- When transports complete (or fail), cancel inbound workers for clean shutdown
   -- Use Task.finally to ensure cleanup always runs even if runTransports fails
   result <-
-    Transports.runTransports app.transports combinedEndpointsByTransport combinedSchemasByTransport combinedQueryEndpoints maybeAuthEnabled maybeOAuth2Config maybeFileUploadEnabled app.apiInfo
+    Transports.runTransports app.transports combinedEndpointsByTransport combinedSchemasByTransport combinedQueryEndpoints combinedQuerySchemas maybeAuthEnabled maybeOAuth2Config maybeFileUploadEnabled app.apiInfo
       |> Task.finally cleanupAll
       |> Task.asResult
 
