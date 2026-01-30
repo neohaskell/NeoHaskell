@@ -58,6 +58,7 @@ jobs:
       - uses: DeterminateSystems/determinate-nix-action@v3.15.2
         with:
           extra-conf: |
+            accept-flake-config = true
             extra-substituters = https://cache.iog.io https://neohaskell.cachix.org
             extra-trusted-public-keys = hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ= neohaskell.cachix.org-1:mo2cLaGbwqbrxs9xhqKK8jeNsn3osi7t6XoAmxSZssc=
 
