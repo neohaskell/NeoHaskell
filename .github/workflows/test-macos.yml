@@ -68,7 +68,7 @@ jobs:
           authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
 
       - name: Build the project with cabal
-        run: nix develop --command cabal build all
+        run: nix develop --command cabal build all --disable-documentation
 
       - name: Run ${{ matrix.test-suite }}
         run: nix develop --command cabal test ${{ matrix.test-suite }}
