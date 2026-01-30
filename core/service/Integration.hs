@@ -34,6 +34,7 @@ module Integration (
   Outbound,
   Action,
   ActionContext (..),
+  FileAccessContext (..),
 
   -- * Outbound Construction (Jess's API)
   batch,
@@ -77,12 +78,14 @@ import Array qualified
 import Auth.OAuth2.Provider (ValidatedOAuth2ProviderConfig)
 import Auth.SecretStore (SecretStore)
 import Basics
+import Bytes (Bytes)
 import Data.Proxy (Proxy (..))
 import GHC.TypeLits qualified as GHC
 import Json qualified
 import Map (Map)
 import Maybe (Maybe (..))
 import Service.Command.Core (NameOf)
+import Service.FileUpload.Core (FileAccessError, FileMetadata, FileRef)
 import Task (Task)
 import Task qualified
 import Text (Text)
@@ -103,10 +106,40 @@ data IntegrationError
 -- | Execution context for actions that need runtime dependencies.
 --
 -- This is created by Application.run and passed to actions at execution time.
--- Only OAuth2-aware integrations need this context.
+-- OAuth2-aware integrations use 'secretStore' and 'providerRegistry'.
+-- File-processing integrations use 'fileAccess'.
 data ActionContext = ActionContext
   { secretStore :: SecretStore
   , providerRegistry :: Map Text ValidatedOAuth2ProviderConfig
+  , fileAccess :: Maybe FileAccessContext
+  -- ^ File access context for retrieving uploaded files.
+  -- 'Nothing' when file uploads are not enabled in the application.
+  }
+
+
+-- | Context for accessing uploaded files from integrations.
+--
+-- This allows integrations to retrieve file content and metadata
+-- for processing (e.g., PDF text extraction, image analysis).
+--
+-- The context is populated by 'Application.run' when file uploads
+-- are enabled via 'Application.withFileUpload'.
+--
+-- @
+-- instance ToAction PdfExtract.Request where
+--   toAction config = Integration.action \\ctx -> do
+--     fileAccess <- case ctx.fileAccess of
+--       Nothing -> Task.throw (Integration.ValidationError "File uploads not enabled")
+--       Just fa -> Task.yield fa
+--     pdfBytes <- fileAccess.retrieveFile config.fileRef
+--     -- ... process PDF ...
+-- @
+data FileAccessContext = FileAccessContext
+  { retrieveFile :: FileRef -> Task FileAccessError Bytes
+  -- ^ Retrieve file content by FileRef.
+  -- Validates ownership internally based on request context.
+  , getFileMetadata :: FileRef -> Task FileAccessError FileMetadata
+  -- ^ Get file metadata (filename, content type, size) without retrieving bytes.
   }
 
 
