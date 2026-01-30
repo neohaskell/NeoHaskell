@@ -23,7 +23,7 @@ import Console qualified
 import Data.ByteString qualified as GhcBS
 import Data.IORef qualified as GhcIORef
 import Data.List qualified as GhcList
-
+import Data.Yaml qualified as Yaml
 import GHC.TypeLits qualified as GHC
 import Json qualified
 import LinkedList qualified
@@ -36,6 +36,9 @@ import Network.Wai.Handler.Warp qualified as Warp
 import Record (KnownHash (..))
 import Record qualified
 import Result (Result (..))
+import Schema.OpenApi qualified as OpenApi
+import Service.Application (ApiInfo (..))
+import Service.Application qualified
 import Service.Auth (RequestContext)
 import Service.Auth qualified as Auth
 import Service.Command.Core (Command, NameOf)
@@ -47,6 +50,7 @@ import Service.Query.Auth (QueryAuthError (..), QueryEndpointError (..))
 import Service.Response (CommandResponse)
 import Service.Response qualified as Response
 import Service.Transport (EndpointHandler, Endpoints (..), Transport (..))
+import Service.Transport.Web.SwaggerUI qualified as SwaggerUI
 import Task (Task)
 import Task qualified
 import Text (Text)
@@ -762,6 +766,39 @@ instance Transport WebTransport where
                 let responseBody = content |> Bytes.toLazyLegacy
                 let response200 = Wai.responseLBS HTTP.status200 headers responseBody
                 respond response200
+      -- OpenAPI routes: /openapi.json, /openapi.yaml, /docs
+      ["openapi.json"] -> do
+        -- Extract API info (use default if not configured)
+        let apiInfo = case webTransport.apiInfo of
+              Maybe.Nothing -> Service.Application.defaultApiInfo
+              Maybe.Just info -> info
+        -- Generate OpenAPI spec from endpoint schemas
+        let spec = OpenApi.toOpenApiSpec apiInfo endpoints.commandSchemas endpoints.querySchemas
+        -- Encode to JSON and return
+        let jsonText = Json.encodeText spec
+        okJson jsonText
+      ["openapi.yaml"] -> do
+        -- Extract API info (use default if not configured)
+        let apiInfo = case webTransport.apiInfo of
+              Maybe.Nothing -> Service.Application.defaultApiInfo
+              Maybe.Just info -> info
+        -- Generate OpenAPI spec from endpoint schemas
+        let spec = OpenApi.toOpenApiSpec apiInfo endpoints.commandSchemas endpoints.querySchemas
+        -- Encode to YAML
+        let yamlBytes = Yaml.encode spec
+        let responseBody = yamlBytes |> Bytes.fromLegacy |> Bytes.toLazyLegacy
+        let response200 = Wai.responseLBS HTTP.status200 [(HTTP.hContentType, "application/x-yaml")] responseBody
+        respond response200
+      ["docs"] -> do
+        -- Extract API title for documentation page
+        let apiTitle = case webTransport.apiInfo of
+              Maybe.Nothing -> Service.Application.defaultApiInfo.apiTitle
+              Maybe.Just info -> info.apiTitle
+        -- Generate Scalar HTML documentation
+        let htmlText = SwaggerUI.scalarHtml apiTitle
+        let htmlBytes = htmlText |> Text.toBytes |> Bytes.toLazyLegacy
+        let response200 = Wai.responseLBS HTTP.status200 [(HTTP.hContentType, "text/html; charset=utf-8")] htmlBytes
+        respond response200
       _ ->
         notFound "Not found"
 
