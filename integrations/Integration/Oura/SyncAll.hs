@@ -50,7 +50,7 @@ instance Json.ToJSON SyncResult
 -- ToAction runs all 4 in parallel via AsyncTask.runConcurrently
 instance (Json.ToJSON command, GhcTypeLits.KnownSymbol (NameOf command)) =>
   Integration.ToAction (SyncAll command) where
-  toAction config = Integration.actionWithContext \ctx ->
+  toAction config = Integration.action \ctx ->
     executeSyncAll realHttpFetch ctx config
 
 -- | Execute SyncAll with injectable fetch (for testing)

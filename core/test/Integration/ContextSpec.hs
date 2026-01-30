@@ -62,12 +62,12 @@ spec = do
       context <- makeContext
 
       let contextAction _ctx = Integration.noCommand
-      let action = Integration.actionWithContext contextAction
+      let testAction = Integration.action contextAction
 
-      result <- Integration.runActionWithContext context action |> Task.mapError toText
+      result <- Integration.runAction context testAction |> Task.mapError toText
       result |> shouldBe Nothing
 
-    it "executes runActionWithContext with provided context" \_ -> do
+    it "executes action with context" \_ -> do
       context <- makeContext
       let tokenKey = TestUtils.makeTestTokenKey "user-1"
       case context.secretStore of
@@ -83,8 +83,8 @@ spec = do
                       Nothing -> False
                 Integration.emitCommand ContextCommand {hadTokens = hasTokens}
 
-      let action = Integration.actionWithContext contextAction
-      result <- Integration.runActionWithContext context action |> Task.mapError toText
+      let testAction = Integration.action contextAction
+      result <- Integration.runAction context testAction |> Task.mapError toText
       case result of
         Just payload -> do
           case Json.decode @ContextCommand payload.commandData of
@@ -93,34 +93,29 @@ spec = do
         Nothing -> fail "Expected command payload"
 
     it "runs existing actions without context" \_ -> do
-      let action = Integration.action Integration.noCommand
-      result <- Integration.runAction action |> Task.mapError toText
+      context <- makeContext
+      let testAction = Integration.action \_ctx -> Integration.noCommand
+      result <- Integration.runAction context testAction |> Task.mapError toText
       result |> shouldBe Nothing
 
-    it "throws UnexpectedError when running context action without context" \_ -> do
-      let action = Integration.actionWithContext (\_ -> Integration.noCommand)
-      result <- Integration.runAction action |> Task.asResult
-      case result of
-        Ok _ -> fail "Expected action to require context"
-        Err err ->
-          err
-            |> shouldBe (Integration.UnexpectedError "Action requires context. Use runActionWithContext.")
-
-    it "runs dispatcher without OAuth2 context" \_ -> do
+    it "runs dispatcher with empty context" \_ -> do
       contextSeen <- ConcurrentVar.containing (Nothing :: Maybe Bool)
 
       let runner =
             Dispatcher.OutboundRunner
               { entityTypeName = "TestEntity",
-                processEvent = \maybeCtx _eventStore _event -> do
-                  let isMissing = case maybeCtx of
-                        Nothing -> True
-                        Just _ -> False
-                  contextSeen |> ConcurrentVar.modify (\_ -> Just isMissing)
+                processEvent = \ctx _eventStore _event -> do
+                  let isEmpty = Map.length ctx.providerRegistry == 0
+                  contextSeen |> ConcurrentVar.modify (\_ -> Just isEmpty)
                   Task.yield Array.empty
               }
 
       eventStore <- InMemory.new |> Task.mapError toText
+      emptyStore <- InMemorySecretStore.new
+      let emptyContext = Integration.ActionContext
+            { Integration.secretStore = emptyStore
+            , Integration.providerRegistry = Map.empty
+            }
       dispatcher <-
         Dispatcher.newWithLifecycleConfig
           Dispatcher.defaultConfig
@@ -128,7 +123,7 @@ spec = do
           [runner]
           []
           Map.empty
-          Nothing
+          emptyContext
 
       metadata <- EventMetadata.new
       let streamId = StreamId.fromTextUnsafe "entity-A"

@@ -45,7 +45,6 @@ module Integration (
 
   -- * Action Construction (Nick's API)
   action,
-  actionWithContext,
   emitCommand,
   noCommand,
 
@@ -66,7 +65,6 @@ module Integration (
   -- | These functions expose behavior for testing and debugging.
   -- In production, the runtime handles action execution.
   runAction,
-  runActionWithContext,
   getActions,
 
   -- * Runtime
@@ -127,9 +125,9 @@ instance Json.ToJSON CommandPayload
 
 
 -- | Internal representation of an action.
-data ActionInternal
-  = ActionInternalSimple { _execute :: Task IntegrationError (Maybe CommandPayload) }
-  | ActionInternalWithContext { _executeWithContext :: ActionContext -> Task IntegrationError (Maybe CommandPayload) }
+newtype ActionInternal = ActionInternal
+  { _execute :: ActionContext -> Task IntegrationError (Maybe CommandPayload)
+  }
 
 
 -- | A single outbound action (type-erased).
@@ -188,22 +186,12 @@ none = Outbound Array.empty
 --
 -- @
 -- instance ToAction Email where
---   toAction config = Integration.action do
+--   toAction config = Integration.action \_ctx -> do
 --     response <- Http.post "..." |> Http.send
 --     Integration.emitCommand (config.onSuccess response)
 -- @
-action :: Task IntegrationError (Maybe CommandPayload) -> Action
-action task = Action (ActionInternalSimple task)
-
-
--- | Create an action that requires execution context.
---
--- Used by OAuth2-aware integrations that need SecretStore access.
--- The context is provided at execution time by the integration dispatcher.
-actionWithContext ::
-  (ActionContext -> Task IntegrationError (Maybe CommandPayload)) ->
-  Action
-actionWithContext contextAction = Action (ActionInternalWithContext contextAction)
+action :: (ActionContext -> Task IntegrationError (Maybe CommandPayload)) -> Action
+action actionFn = Action (ActionInternal actionFn)
 
 
 -- | Build a CommandPayload from a command.
@@ -232,7 +220,7 @@ makeCommandPayload cmd = do
 --
 -- @
 -- instance ToAction Email where
---   toAction config = Integration.action do
+--   toAction config = Integration.action \_ctx -> do
 --     response <- sendEmail config
 --     Integration.emitCommand (config.onSuccess response)
 -- @
@@ -327,28 +315,13 @@ inbound config = do
 --
 -- @
 -- action <- Integration.outbound myConfig
--- result <- Integration.runAction action
+-- result <- Integration.runAction ctx action
 -- case result of
 --   Just payload -> -- command was emitted
 --   Nothing -> -- no command to emit
 -- @
-runAction :: Action -> Task IntegrationError (Maybe CommandPayload)
-runAction action = case action of
-  Action internal ->
-    case internal of
-      ActionInternalSimple {_execute} -> _execute
-      ActionInternalWithContext _ -> Task.throw (UnexpectedError "Action requires context. Use runActionWithContext.")
-
-
--- | Execute an Action with a provided ActionContext.
---
--- Context is optional for simple actions and only required for context-aware actions.
-runActionWithContext :: ActionContext -> Action -> Task IntegrationError (Maybe CommandPayload)
-runActionWithContext ctx action = case action of
-  Action internal ->
-    case internal of
-      ActionInternalSimple {_execute} -> _execute
-      ActionInternalWithContext {_executeWithContext} -> _executeWithContext ctx
+runAction :: ActionContext -> Action -> Task IntegrationError (Maybe CommandPayload)
+runAction ctx (Action (ActionInternal execute)) = execute ctx
 
 
 -- | Extract actions from an Outbound for inspection.

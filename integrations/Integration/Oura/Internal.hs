@@ -95,28 +95,28 @@ realHttpFetch accessToken url = do
     other ->
       Task.throw (OtherHttpError [fmt|Unexpected status code: #{other}|])
 
--- | ToAction for DailySleep - uses actionWithContext
+-- | ToAction for DailySleep - uses action
 instance (Json.ToJSON command, GhcTypeLits.KnownSymbol (NameOf command)) =>
   Integration.ToAction (DailySleep command) where
-  toAction config = Integration.actionWithContext \ctx ->
+  toAction config = Integration.action \ctx ->
     executeDailySleep realHttpFetch ctx config
 
 -- | ToAction for DailyActivity
 instance (Json.ToJSON command, GhcTypeLits.KnownSymbol (NameOf command)) =>
   Integration.ToAction (DailyActivity command) where
-  toAction config = Integration.actionWithContext \ctx ->
+  toAction config = Integration.action \ctx ->
     executeDailyActivity realHttpFetch ctx config
 
 -- | ToAction for DailyReadiness
 instance (Json.ToJSON command, GhcTypeLits.KnownSymbol (NameOf command)) =>
   Integration.ToAction (DailyReadiness command) where
-  toAction config = Integration.actionWithContext \ctx ->
+  toAction config = Integration.action \ctx ->
     executeDailyReadiness realHttpFetch ctx config
 
 -- | ToAction for HeartRate
 instance (Json.ToJSON command, GhcTypeLits.KnownSymbol (NameOf command)) =>
   Integration.ToAction (HeartRate command) where
-  toAction config = Integration.actionWithContext \ctx ->
+  toAction config = Integration.action \ctx ->
     executeHeartRate realHttpFetch ctx config
 
 -- | Execute DailySleep - wraps withValidToken around internal

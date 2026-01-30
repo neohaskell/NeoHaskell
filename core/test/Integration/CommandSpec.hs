@@ -3,10 +3,12 @@
 module Integration.CommandSpec where
 
 import Array qualified
+import Auth.SecretStore.InMemory qualified as InMemorySecretStore
 import Core
 import Integration qualified
 import Integration.Command qualified as Command
 import Json qualified
+import Map qualified
 import Service.Command.Core (NameOf)
 import Task qualified
 import Test
@@ -36,6 +38,16 @@ instance Json.FromJSON ReserveStock
 type instance NameOf ReserveStock = "ReserveStock"
 
 
+makeContext :: Task Text Integration.ActionContext
+makeContext = do
+  store <- InMemorySecretStore.new
+  Task.yield
+    Integration.ActionContext
+      { Integration.secretStore = store
+      , Integration.providerRegistry = Map.empty
+      }
+
+
 -- ============================================================================
 -- Tests
 -- ============================================================================
@@ -52,12 +64,13 @@ spec = do
         emit.command |> shouldBe cmd
 
       it "emits a CommandPayload with correct type name" \_ -> do
+        context <- makeContext
         let stockId = Uuid.nil
         let cartId = Uuid.nil
         let cmd = ReserveStock {stockId = stockId, quantity = 10, cartId = cartId}
         let emit = Command.Emit {command = cmd}
         let act = Integration.outbound emit
-        result <- Integration.runAction act |> Task.mapError toText
+        result <- Integration.runAction context act |> Task.mapError toText
         case result of
           Just payload -> do
             payload.commandType |> shouldSatisfy (Text.contains "ReserveStock")
@@ -65,12 +78,13 @@ spec = do
             fail "Expected Just CommandPayload but got Nothing"
 
       it "emits a CommandPayload with JSON-decodable data" \_ -> do
+        context <- makeContext
         let stockId = Uuid.nil
         let cartId = Uuid.nil
         let cmd = ReserveStock {stockId = stockId, quantity = 10, cartId = cartId}
         let emit = Command.Emit {command = cmd}
         let act = Integration.outbound emit
-        result <- Integration.runAction act |> Task.mapError toText
+        result <- Integration.runAction context act |> Task.mapError toText
         case result of
           Just payload -> do
             case Json.decode payload.commandData of
@@ -93,12 +107,13 @@ spec = do
 
     describe "Emit ToAction instance" do
       it "produces a CommandPayload matching the wrapped command" \_ -> do
+        context <- makeContext
         let stockId = Uuid.nil
         let cartId = Uuid.nil
         let cmd = ReserveStock {stockId = stockId, quantity = 7, cartId = cartId}
         let emit = Command.Emit {command = cmd}
         let act = Integration.toAction emit
-        result <- Integration.runAction act |> Task.mapError toText
+        result <- Integration.runAction context act |> Task.mapError toText
         case result of
           Just payload -> do
             case Json.decode @ReserveStock payload.commandData of

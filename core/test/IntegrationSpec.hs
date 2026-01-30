@@ -4,10 +4,12 @@
 module IntegrationSpec where
 
 import Array qualified
+import Auth.SecretStore.InMemory qualified as InMemorySecretStore
 import Core
 import GHC.TypeLits qualified as GHC
 import Integration qualified
 import Json qualified
+import Map qualified
 import Service.Command.Core (NameOf)
 import Task qualified
 import Test
@@ -35,6 +37,16 @@ instance Json.FromJSON TestCommand
 type instance NameOf TestCommand = "TestCommand"
 
 
+makeContext :: Task Text Integration.ActionContext
+makeContext = do
+  store <- InMemorySecretStore.new
+  Task.yield
+    Integration.ActionContext
+      { Integration.secretStore = store
+      , Integration.providerRegistry = Map.empty
+      }
+
+
 -- | A test config record with ToAction instance.
 data TestConfig command = TestConfig
   { configValue :: Int
@@ -47,7 +59,7 @@ instance
   (Json.ToJSON command, GHC.KnownSymbol (NameOf command)) =>
   Integration.ToAction (TestConfig command)
   where
-  toAction config = Integration.action do
+  toAction config = Integration.action \_ctx -> do
     Integration.emitCommand (config.toCommand config.configValue)
 
 
@@ -80,9 +92,10 @@ spec = do
 
     describe "outbound" do
       it "converts a ToAction config to an executable Action" \_ -> do
+        context <- makeContext
         let config = TestConfig {configValue = 100, toCommand = \n -> TestCommand {commandId = n, commandName = "outbound-test"}}
         let act = Integration.outbound config
-        result <- Integration.runAction act |> Task.mapError toText
+        result <- Integration.runAction context act |> Task.mapError toText
         case result of
           Just payload -> do
             payload.commandType |> shouldSatisfy (Text.contains "TestCommand")
@@ -92,9 +105,10 @@ spec = do
   describe "Integration.Action construction" do
     describe "action" do
       it "creates an Action that can be executed" \_ -> do
+        context <- makeContext
         let cmd = TestCommand {commandId = 1, commandName = "action-test"}
-        let act = Integration.action (Integration.emitCommand cmd)
-        result <- Integration.runAction act |> Task.mapError toText
+        let act = Integration.action \_ctx -> Integration.emitCommand cmd
+        result <- Integration.runAction context act |> Task.mapError toText
         case result of
           Just payload -> do
             payload.commandType |> shouldSatisfy (Text.contains "TestCommand")

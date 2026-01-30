@@ -52,7 +52,7 @@ instance
   (Json.ToJSON command, KnownSymbol (NameOf command)) =>
   Integration.ToAction (Request command)
   where
-  toAction config = Integration.action do
+  toAction config = Integration.action \_ctx -> do
     executeRequest config
 
 

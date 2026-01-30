@@ -4,6 +4,7 @@ module Integration.DispatcherSpec where
 
 import Array qualified
 import AsyncTask qualified
+import Auth.SecretStore.InMemory qualified as InMemorySecretStore
 import ConcurrentVar qualified
 import Core
 import DateTime qualified
@@ -87,6 +88,16 @@ makeTestEvent entityIdText seqNum globalPos = do
               localPosition = Just (StreamPosition (fromIntegral seqNum)),
               globalPosition = Just (StreamPosition (fromIntegral globalPos))
             }
+      }
+
+
+makeContext :: Task Text Integration.ActionContext
+makeContext = do
+  store <- InMemorySecretStore.new
+  Task.yield
+    Integration.ActionContext
+      { Integration.secretStore = store
+      , Integration.providerRegistry = Map.empty
       }
 
 
@@ -412,6 +423,7 @@ spec = do
 
         -- Create dispatcher with very short idle timeout (50ms)
         eventStore <- InMemory.new |> Task.mapError toText
+        context <- makeContext
         dispatcher <-
           Dispatcher.newWithLifecycleConfig
             Dispatcher.DispatcherConfig
@@ -426,7 +438,7 @@ spec = do
             []
             [lifecycleRunner]
             Map.empty
-            Nothing
+            context
 
         -- Send event to entity A
         eventA <- makeTestEvent "entity-A" 1 1
@@ -458,6 +470,7 @@ spec = do
 
         -- Create dispatcher with very short idle timeout
         eventStore <- InMemory.new |> Task.mapError toText
+        context <- makeContext
         dispatcher <-
           Dispatcher.newWithLifecycleConfig
             Dispatcher.DispatcherConfig
@@ -472,7 +485,7 @@ spec = do
             []
             [lifecycleRunner]
             Map.empty
-            Nothing
+            context
 
         -- Send first event
         eventA1 <- makeTestEvent "entity-A" 1 1
@@ -589,6 +602,7 @@ spec = do
 
         -- Create dispatcher with small channel (capacity=2) and short timeout (20ms)
         eventStore <- InMemory.new |> Task.mapError toText
+        context <- makeContext
         dispatcher <-
           Dispatcher.newWithLifecycleConfig
             Dispatcher.DispatcherConfig
@@ -603,7 +617,7 @@ spec = do
             [slowRunner]
             []
             Map.empty
-            Nothing
+            context
 
         -- Create 4 events for the same entity
         event1 <- makeTestEvent "entity-A" 1 1
@@ -670,6 +684,7 @@ spec = do
 
         -- Create dispatcher with tiny channel (capacity=1) and very short timeout
         eventStore <- InMemory.new |> Task.mapError toText
+        context <- makeContext
         dispatcher <-
           Dispatcher.newWithLifecycleConfig
             Dispatcher.DispatcherConfig
@@ -684,7 +699,7 @@ spec = do
             [blockingRunner]
             []
             Map.empty
-            Nothing
+            context
 
         -- Dispatch first event - worker will pick it up and block forever
         event1 <- makeTestEvent "entity-A" 1 1
@@ -731,6 +746,7 @@ spec = do
 
         -- Create dispatcher with generous capacity
         eventStore <- InMemory.new |> Task.mapError toText
+        context <- makeContext
         dispatcher <-
           Dispatcher.newWithLifecycleConfig
             Dispatcher.DispatcherConfig
@@ -745,7 +761,7 @@ spec = do
             [fastRunner]
             []
             Map.empty
-            Nothing
+            context
 
         -- Dispatch 10 events
         events <-

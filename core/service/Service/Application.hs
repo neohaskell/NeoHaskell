@@ -599,8 +599,19 @@ runWith eventStore app = do
         )
 
   -- 11. Initialize OAuth2 if configured
-  (maybeOAuth2Config, maybeActionContext) <- case app.oauth2Setup of
-    Nothing -> Task.yield (Nothing, Nothing)
+  (maybeOAuth2Config, actionContext) <- case app.oauth2Setup of
+    Nothing -> do
+      -- Apps without OAuth2 get context with empty provider registry
+      emptyStore <- case app.secretStore of
+        Just store -> Task.yield store
+        Nothing -> InMemorySecretStore.new
+      Task.yield
+        ( Nothing
+        , Integration.ActionContext
+            { Integration.secretStore = emptyStore
+            , Integration.providerRegistry = Map.empty
+            }
+        )
     Just (OAuth2Setup envVarName providerConfigs) -> do
       -- OAuth2 routes require JWT authentication to be enabled
       case app.webAuthSetup of
@@ -659,7 +670,7 @@ runWith eventStore app = do
                 Dispatcher.dispatchCommand combinedCommandEndpoints payload
       let providerCount = Array.length providerConfigs
       Console.print [fmt|[OAuth2] Initialized #{providerCount} provider(s)|]
-      Task.yield (Just Web.OAuth2Config {Web.routes = routes, Web.dispatchAction = dispatchAction}, Just actionContext)
+      Task.yield (Just Web.OAuth2Config {Web.routes = routes, Web.dispatchAction = dispatchAction}, actionContext)
 
   -- 12. Start integration subscriber for outbound integrations with command dispatch
   maybeDispatcher <-
@@ -668,7 +679,7 @@ runWith eventStore app = do
       app.outboundRunners
       app.outboundLifecycleRunners
       combinedCommandEndpoints
-      maybeActionContext
+      actionContext
 
   -- 13. Start inbound integration workers (timers, webhooks, etc.)
   inboundWorkers <- Integrations.startInboundWorkers app.inboundIntegrations combinedCommandEndpoints

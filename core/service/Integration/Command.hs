@@ -56,5 +56,5 @@ instance
   (Json.ToJSON command, GHC.KnownSymbol (NameOf command)) =>
   Integration.ToAction (Emit command)
   where
-  toAction config = Integration.action do
+  toAction config = Integration.action \_ctx -> do
     Integration.emitCommand config.command
