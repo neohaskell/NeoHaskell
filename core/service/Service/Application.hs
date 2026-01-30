@@ -1095,16 +1095,26 @@ withFileUpload config app =
 --
 -- This performs the IO required to set up file uploads:
 --
+-- * Validates configuration parameters
 -- * Creates the blob store directory if it doesn't exist
 -- * Initializes the state store connection (PostgreSQL or in-memory)
+--
+-- If state store initialization fails after blob store creation, the blob store
+-- directory is left in place (it may contain data from previous runs).
 --
 -- This is called internally by 'Application.run' - users should not call this directly.
 initializeFileUpload :: FileUploadConfig -> Task Text FileUploadSetup
 initializeFileUpload fileConfig = do
   -- Extract config fields (needed for fmt quasiquoter compatibility)
   let blobDir = fileConfig.blobStoreDir
+  let maxSize = fileConfig.maxFileSizeBytes
+  let pendingTtl = fileConfig.pendingTtlSeconds
+  let cleanupInterval = fileConfig.cleanupIntervalSeconds
 
-  -- 1. Create blob store from directory path
+  -- 1. Validate configuration
+  validateFileUploadConfig blobDir maxSize pendingTtl cleanupInterval
+
+  -- 2. Create blob store from directory path
   blobStorePath <- case Path.fromText blobDir of
     Just path -> Task.yield path
     Nothing -> Task.throw [fmt|Invalid blob store directory path: #{blobDir}|]
@@ -1113,7 +1123,8 @@ initializeFileUpload fileConfig = do
     { rootDir = blobStorePath
     }
 
-  -- 2. Create state store based on backend configuration
+  -- 3. Create state store based on backend configuration
+  -- If this fails, the blob store directory remains (may have existing data)
   stateStore <- case fileConfig.stateStoreBackend of
     InMemoryStateStore -> do
       inMemoryStore <- FileUpload.newInMemoryFileStateStore
@@ -1128,22 +1139,55 @@ initializeFileUpload fileConfig = do
             , password = pgPassword
             }
       PostgresFileStore.new postgresConfig
+        |> Task.mapError (\err -> [fmt|Failed to initialize PostgreSQL file state store: #{err}|])
 
-  -- 3. Build internal config
+  -- 4. Build internal config
   let internalConfig = InternalFileUploadConfig
-        { pendingTtlSeconds = fileConfig.pendingTtlSeconds
-        , cleanupIntervalSeconds = fileConfig.cleanupIntervalSeconds
-        , maxFileSizeBytes = fileConfig.maxFileSizeBytes
+        { pendingTtlSeconds = pendingTtl
+        , cleanupIntervalSeconds = cleanupInterval
+        , maxFileSizeBytes = maxSize
         , allowedContentTypes = fileConfig.allowedContentTypes
         , storeOriginalFilename = fileConfig.storeOriginalFilename
         }
 
-  -- 4. Return the setup
+  -- 5. Return the setup
   Task.yield FileUploadSetup
     { config = internalConfig
     , blobStore = blobStore
     , stateStore = stateStore
     }
+
+
+-- | Validate file upload configuration parameters.
+--
+-- Checks:
+-- * blobStoreDir is not empty
+-- * maxFileSizeBytes is positive
+-- * pendingTtlSeconds is positive
+-- * cleanupIntervalSeconds is positive
+validateFileUploadConfig :: Text -> Int64 -> Int64 -> Int64 -> Task Text ()
+validateFileUploadConfig blobDir maxSize pendingTtl cleanupInterval = do
+  -- Validate blob store directory path
+  if Text.isEmpty blobDir
+    then Task.throw "blobStoreDir cannot be empty"
+    else pass
+
+  -- Validate size limit
+  if maxSize <= 0
+    then Task.throw [fmt|maxFileSizeBytes must be positive, got: #{maxSize}|]
+    else pass
+
+  -- Validate TTL
+  if pendingTtl <= 0
+    then Task.throw [fmt|pendingTtlSeconds must be positive, got: #{pendingTtl}|]
+    else pass
+
+  -- Validate cleanup interval
+  if cleanupInterval <= 0
+    then Task.throw [fmt|cleanupIntervalSeconds must be positive, got: #{cleanupInterval}|]
+    else pass
+
+  Task.yield ()
 
 
 -- | Load HMAC key from environment variable.

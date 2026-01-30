@@ -22,7 +22,7 @@ module Service.FileUpload.Core (
   FileUploadConfig (..),
   FileStateStoreBackend (..),
 
-  -- * Internal Configuration (used by Web.hs after initialization)
+  -- * Internal Types (exported for use by other nhcore modules)
   InternalFileUploadConfig (..),
 ) where
 
@@ -254,7 +254,16 @@ data FileStateStoreBackend
       -- ^ Database password
       }
   -- ^ PostgreSQL storage (persistent, recommended for production)
-  deriving (Generic, Eq, Show)
+  deriving (Generic, Eq)
+
+
+-- | Show instance that redacts the password to prevent leaking secrets in logs
+instance Show FileStateStoreBackend where
+  show backend = case backend of
+    InMemoryStateStore -> "InMemoryStateStore"
+    PostgresStateStore {pgHost, pgPort, pgDatabase, pgUser} ->
+      [fmt|PostgresStateStore {pgHost = "#{pgHost}", pgPort = #{pgPort}, pgDatabase = "#{pgDatabase}", pgUser = "#{pgUser}", pgPassword = <REDACTED>}|]
+
 
 instance Json.FromJSON FileStateStoreBackend
 instance Json.ToJSON FileStateStoreBackend
@@ -265,25 +274,71 @@ instance Json.ToJSON FileStateStoreBackend
 -- This is the user-facing configuration type. IO initialization is deferred
 -- to 'Application.run', making application setup purely declarative.
 --
--- Example:
+-- == Basic Example
 --
 -- @
 -- app = Application.new
 --   |> Application.withEventStore postgresConfig
 --   |> Application.withFileUpload FileUploadConfig
 --       { blobStoreDir = "./uploads"
---       , stateStoreBackend = PostgresStateStore
---           { pgHost = "localhost"
---           , pgPort = 5432
---           , pgDatabase = "neohaskell"
---           , pgUser = "neohaskell"
---           , pgPassword = "neohaskell"
---           }
+--       , stateStoreBackend = InMemoryStateStore  -- For development
 --       , maxFileSizeBytes = 10485760  -- 10 MB
 --       , pendingTtlSeconds = 21600    -- 6 hours
 --       , cleanupIntervalSeconds = 900 -- 15 minutes
 --       , allowedContentTypes = Nothing
 --       , storeOriginalFilename = True
+--       }
+-- @
+--
+-- == Reusing PostgreSQL Connection Parameters
+--
+-- For production, you can reuse the same connection parameters as your event store:
+--
+-- @
+-- -- Define once
+-- postgresConfig = PostgresEventStore
+--   { host = "localhost", port = 5432, databaseName = "myapp"
+--   , user = "myuser", password = "mypassword"
+--   }
+--
+-- -- Reuse for file state store
+-- fileUploadConfig = FileUploadConfig
+--   { blobStoreDir = "./uploads"
+--   , stateStoreBackend = PostgresStateStore
+--       { pgHost = postgresConfig.host
+--       , pgPort = postgresConfig.port
+--       , pgDatabase = postgresConfig.databaseName
+--       , pgUser = postgresConfig.user
+--       , pgPassword = postgresConfig.password
+--       }
+--   , ...
+--   }
+--
+-- app = Application.new
+--   |> Application.withEventStore postgresConfig
+--   |> Application.withFileUpload fileUploadConfig
+-- @
+--
+-- == Migration from Imperative Setup
+--
+-- If you previously used the Task-based setup:
+--
+-- @
+-- -- OLD (imperative)
+-- appTask :: Task Text Application
+-- appTask = do
+--   blobStore <- LocalBlobStore.createBlobStore config
+--   stateStore <- PostgresFileStore.new postgresConfig
+--   let setup = FileUpload.defaultFileUploadSetup blobStore stateStore
+--   Task.yield (baseApp |> Application.withFileUpload setup)
+--
+-- -- NEW (declarative)
+-- app :: Application
+-- app = baseApp
+--   |> Application.withFileUpload FileUploadConfig
+--       { blobStoreDir = "./uploads"
+--       , stateStoreBackend = PostgresStateStore {...}
+--       , ...
 --       }
 -- @
 data FileUploadConfig = FileUploadConfig
@@ -311,7 +366,8 @@ instance Json.ToJSON FileUploadConfig
 -- | Internal configuration for file uploads (used after initialization).
 --
 -- This type holds the runtime configuration after IO initialization has
--- occurred. It is NOT part of the public API - users should use 'FileUploadConfig'.
+-- occurred. Exported for use by other nhcore modules (Web.hs, Application.hs).
+-- End users should use 'FileUploadConfig' for application configuration.
 data InternalFileUploadConfig = InternalFileUploadConfig
   { pendingTtlSeconds :: Int64
   , cleanupIntervalSeconds :: Int64
