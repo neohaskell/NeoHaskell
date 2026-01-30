@@ -58,6 +58,7 @@ common common_cfg
     monad-loops,
     network,
     network-uri,
+    openapi3,
     optparse-applicative,
     path,
     pretty-simple,
@@ -80,6 +81,7 @@ common common_cfg
     wai-extra,
     warp,
     with-utf8,
+    yaml,
 
   default-extensions:
     ApplicativeDo
@@ -238,6 +240,7 @@ library
     Service.ServiceDefinition.Core
     Service.Transport
     Service.Transport.Web
+    Service.Transport.Web.SwaggerUI
     Schema
     Set
     Stream

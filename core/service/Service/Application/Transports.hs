@@ -95,7 +95,9 @@ runWebTransport transportVal commandEndpoints queryEndpoints maybeAuth maybeOAut
             Endpoints
               { transport = webTransportWithConfig,
                 commandEndpoints = commandEndpoints,
-                queryEndpoints = queryEndpoints
+                queryEndpoints = queryEndpoints,
+                commandSchemas = Map.empty,
+                querySchemas = Map.empty
               }
       let runnableTransport = assembleTransport endpoints
       runTransport webTransportWithConfig runnableTransport
@@ -114,7 +116,9 @@ runGenericTransport transportVal commandEndpoints queryEndpoints = do
             Endpoints
               { transport = transport,
                 commandEndpoints = commandEndpoints,
-                queryEndpoints = queryEndpoints
+                queryEndpoints = queryEndpoints,
+                commandSchemas = Map.empty,
+                querySchemas = Map.empty
               }
       let runnableTransport = assembleTransport endpoints
       runTransport transport runnableTransport
