@@ -13,8 +13,8 @@ jobs:
     runs-on: macos-latest
 
     steps:
-      - name: Install current Bash on macOS
-        run: brew install bash
+      - name: Install current Bash and poppler on macOS
+        run: brew install bash poppler
 
       - name: Start PostgreSQL on macOS
         run: |

@@ -7,6 +7,7 @@ on:
     paths:
       - "core/**"
       - "testbed/**"
+      - "integrations/**"
       - "nix/**"
   push:
     branches:
@@ -14,6 +15,7 @@ on:
     paths:
       - "core/**"
       - "testbed/**"
+      - "integrations/**"
       - "nix/**"
 jobs:
   tests-linux:
@@ -60,6 +62,9 @@ jobs:
         run: |
           curl -LO https://github.com/Orange-OpenSource/hurl/releases/download/6.0.0/hurl_6.0.0_amd64.deb
           sudo dpkg -i hurl_6.0.0_amd64.deb
+
+      - name: Install poppler-utils (for PDF extraction tests)
+        run: sudo apt-get update && sudo apt-get install -y poppler-utils
 
       - name: Run integration tests
         run: nix develop --command ./testbed/scripts/run-tests.sh
