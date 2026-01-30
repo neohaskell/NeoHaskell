@@ -8,6 +8,7 @@ import Integration.Oura.Internal
   , isUnauthorized
   , mapTokenError
   , urlEncodeDatetime
+  , urlEncodeParam
   , getOuraProvider
   , executeDailySleepInternal
   )
@@ -189,6 +190,48 @@ spec = do
       it "handles Z timezone (no encoding needed)" do
         let input = "2024-01-01T00:00:00Z"
         urlEncodeDatetime input `shouldBe` input
+
+    describe "urlEncodeParam" do
+      it "encodes + as %2B" do
+        urlEncodeParam "foo+bar" `shouldBe` "foo%2Bbar"
+
+      it "encodes & as %26" do
+        urlEncodeParam "foo&bar" `shouldBe` "foo%26bar"
+
+      it "encodes = as %3D" do
+        urlEncodeParam "foo=bar" `shouldBe` "foo%3Dbar"
+
+      it "encodes % as %25" do
+        urlEncodeParam "100%" `shouldBe` "100%25"
+
+      it "encodes # as %23" do
+        urlEncodeParam "foo#bar" `shouldBe` "foo%23bar"
+
+      it "encodes ? as %3F" do
+        urlEncodeParam "foo?bar" `shouldBe` "foo%3Fbar"
+
+      it "encodes / as %2F" do
+        urlEncodeParam "foo/bar" `shouldBe` "foo%2Fbar"
+
+      it "encodes space as %20" do
+        urlEncodeParam "foo bar" `shouldBe` "foo%20bar"
+
+      it "handles already-encoded percent correctly (encodes first)" do
+        -- If input contains %2B, the % gets encoded to %25, resulting in %252B
+        -- This is correct behavior - we're encoding the raw token value
+        urlEncodeParam "%2B" `shouldBe` "%252B"
+
+      it "handles complex pagination token with multiple special chars" do
+        -- Simulates a token like: abc+def&page=2
+        let input = "abc+def&page=2"
+        let expected = "abc%2Bdef%26page%3D2"
+        urlEncodeParam input `shouldBe` expected
+
+      it "leaves alphanumeric characters unchanged" do
+        urlEncodeParam "abc123XYZ" `shouldBe` "abc123XYZ"
+
+      it "leaves hyphen and underscore unchanged" do
+        urlEncodeParam "foo-bar_baz" `shouldBe` "foo-bar_baz"
 
     describe "isUnauthorized" do
       it "returns True for Unauthorized" do

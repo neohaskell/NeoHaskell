@@ -16,6 +16,7 @@ module Integration.Oura.Internal (
   isUnauthorized,
   getOuraProvider,
   urlEncodeDatetime,
+  urlEncodeParam,
 ) where
 
 import Auth.OAuth2.TokenRefresh (TokenRefreshError (..), withValidToken)
@@ -81,7 +82,8 @@ realHttpFetch accessToken url = do
     401 -> Task.throw Unauthorized
     429 -> do
       -- Extract Retry-After header if present, default to 60 seconds
-      let retryAfter = case Array.find (\(k, _) -> k == "Retry-After") response.headers of
+      -- NOTE: HTTP headers are case-insensitive per RFC 7230, so we normalize to lowercase
+      let retryAfter = case Array.find (\(k, _) -> Text.toLower k == "retry-after") response.headers of
             Nothing -> 60
             Just (_, v) -> case Text.toInt v of
               Nothing -> 60
@@ -260,6 +262,28 @@ executeHeartRateInternal = fetchAllPages
 urlEncodeDatetime :: Text -> Text
 urlEncodeDatetime dt = dt |> Text.replace "+" "%2B"
 
+-- | URL-encode a query parameter value for safe URL interpolation
+-- Handles common reserved characters that could corrupt requests:
+-- + (often used in encoded spaces or timezone offsets)
+-- & (query parameter separator)
+-- = (key-value separator)
+-- % (percent encoding itself)
+-- # (fragment identifier)
+-- ? (query string start)
+-- / (path separator)
+-- This is critical for pagination tokens which may contain any of these characters.
+urlEncodeParam :: Text -> Text
+urlEncodeParam param =
+  param
+    |> Text.replace "%" "%25"  -- MUST be first to avoid double-encoding
+    |> Text.replace "+" "%2B"
+    |> Text.replace "&" "%26"
+    |> Text.replace "=" "%3D"
+    |> Text.replace "#" "%23"
+    |> Text.replace "?" "%3F"
+    |> Text.replace "/" "%2F"
+    |> Text.replace " " "%20"
+
 -- | Get Oura provider from context or throw error
 -- NOTE: ValidatedOAuth2ProviderConfig is from core/auth/Auth/OAuth2/Provider.hs:149-172
 getOuraProvider :: ActionContext -> Task Integration.IntegrationError ValidatedOAuth2ProviderConfig
@@ -316,9 +340,12 @@ fetchPagesLoop ::
   Task OuraHttpError (Array a)
 fetchPagesLoop httpFetch accessToken baseUrl maybeNextToken accumulated = do
   -- Build URL: baseUrl for first request, baseUrl&next_token=X for subsequent
+  -- NOTE: Token must be URL-encoded to handle reserved characters like +, &, =
   let url = case maybeNextToken of
         Nothing -> baseUrl
-        Just token -> [fmt|#{baseUrl}&next_token=#{token}|]
+        Just token -> do
+          let encodedToken = urlEncodeParam token
+          [fmt|#{baseUrl}&next_token=#{encodedToken}|]
   paginated <- httpFetch accessToken url  -- Returns PaginatedResponse a directly
   let PaginatedResponse responseData nextToken = paginated
   let newAccumulated = accumulated |> Array.append (Array.fromLinkedList responseData)
