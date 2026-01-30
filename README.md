@@ -32,9 +32,25 @@ different parts of NeoHaskell.
 
 (This assumes that you're using MacOS, WSL2 or Linux)
 
-- Install [Nix](https://nixos.org/download/)
-- Run `nix-shell`
-- Run `cabal update && cabal build all`
+1. Install [Nix](https://nixos.org/download/) with flakes enabled
+2. Run `nix develop` to enter the development shell
+3. Run `cabal update && cabal build all`
+
+### Binary Cache (Faster Builds)
+
+The project uses [Cachix](https://cachix.org) to cache build artifacts. The `flake.nix` is pre-configured to use our cache, so `nix develop` should automatically prompt you to trust it on first run.
+
+If you want to explicitly enable it (or if you have a restrictive Nix config):
+
+```sh
+# Install cachix (if not already installed)
+nix-env -iA cachix -f https://cachix.org/api/v1/install
+
+# Add the NeoHaskell cache
+cachix use neohaskell
+```
+
+This dramatically speeds up the first `nix develop` (from ~30 min to ~2 min).
 
 The recommended IDE for any NeoHaskell project is [Visual Studio Code](https://code.visualstudio.com/).
 
