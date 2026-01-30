@@ -12,11 +12,25 @@ jobs:
   tests-macos:
     runs-on: macos-latest
 
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - test-suite: nhcore-test-auth
+            needs-postgres: false
+          - test-suite: nhcore-test-core
+            needs-postgres: false
+          - test-suite: nhcore-test-integration
+            needs-postgres: false
+          - test-suite: nhcore-test-service
+            needs-postgres: true
+
     steps:
       - name: Install current Bash on macOS
         run: brew install bash
 
       - name: Start PostgreSQL on macOS
+        if: matrix.needs-postgres
         run: |
           brew install postgresql@16
 
@@ -49,15 +63,8 @@ jobs:
 
       - uses: DeterminateSystems/magic-nix-cache-action@v13
 
-      # - name: Build the project with Nix
-      #   run: nix build
-
       - name: Build the project with cabal
         run: nix develop --command cabal build all
 
-      - name: Run core tests
-        run: nix develop --command cabal test core
-
-      # Doctests are failing - See issue #204
-      # - name: Run core doctests
-      #   run: nix-shell --run "cabal repl --with-compiler=doctest --repl-options=--verbose core"
+      - name: Run ${{ matrix.test-suite }}
+        run: nix develop --command cabal test ${{ matrix.test-suite }}
