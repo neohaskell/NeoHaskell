@@ -1,31 +1,30 @@
 module Service.Transport.Web.SwaggerUI (
-  swaggerUiHtml,
+  scalarHtml,
 ) where
 
 import Basics
 import Text (Text)
 
 
--- | Generate HTML for Swagger UI documentation page.
+-- | Generate HTML for Scalar API documentation page.
 --
--- Loads Swagger UI assets from CDN and configures it to fetch the OpenAPI spec
--- from /openapi.json.
+-- Loads Scalar from CDN and configures it to fetch the OpenAPI spec
+-- from /openapi.json. Scalar provides a modern, beautiful API reference.
 --
 -- Example:
 --
 -- @
--- html <- swaggerUiHtml "My API"
--- -- Returns complete HTML page with Swagger UI
+-- html <- scalarHtml "My API"
+-- -- Returns complete HTML page with Scalar documentation
 -- @
-swaggerUiHtml :: Text -> Text
-swaggerUiHtml apiTitle = do
+scalarHtml :: Text -> Text
+scalarHtml apiTitle = do
   [fmt|<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>{apiTitle} - API Documentation</title>
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui.css">
   <style>
     body {{
       margin: 0;
@@ -34,21 +33,10 @@ swaggerUiHtml apiTitle = do
   </style>
 </head>
 <body>
-  <div id="swagger-ui"></div>
-  <script src="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui-bundle.js"></script>
-  <script>
-    window.onload = function() {{
-      SwaggerUIBundle({{
-        url: "/openapi.json",
-        dom_id: '#swagger-ui',
-        deepLinking: true,
-        presets: [
-          SwaggerUIBundle.presets.apis,
-          SwaggerUIBundle.SwaggerUIStandalonePreset
-        ],
-        layout: "BaseLayout"
-      }});
-    }};
+  <script
+    id="api-reference"
+    data-url="/openapi.json">
   </script>
+  <script src="https://cdn.jsdelivr.net/npm/@scalar/api-reference"></script>
 </body>
 </html>|]

@@ -92,7 +92,9 @@ data WebTransport = WebTransport
     -- | Optional OAuth2 provider routes. Set via Application.withOAuth2Provider.
     oauth2Config :: Maybe OAuth2Config,
     -- | Optional file upload routes. Set via Application.withFileUpload.
-    fileUploadEnabled :: Maybe FileUploadEnabled
+    fileUploadEnabled :: Maybe FileUploadEnabled,
+    -- | Optional API metadata for OpenAPI spec generation. Set via Application.withApiInfo.
+    apiInfo :: Maybe Service.Application.ApiInfo
   }
 
 
@@ -115,7 +117,8 @@ server =
       maxBodySize = 1048576,
       authEnabled = Nothing,
       oauth2Config = Nothing,
-      fileUploadEnabled = Nothing
+      fileUploadEnabled = Nothing,
+      apiInfo = Nothing
     }
 
 

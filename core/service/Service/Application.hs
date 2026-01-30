@@ -598,26 +598,36 @@ runWith eventStore app = do
   -- 6. Start live subscription
   Subscriber.start subscriber
 
-  -- 7. Collect command endpoints from all services, grouped by transport
-  endpointsByTransportMaps <-
+  -- 7. Collect command endpoints and schemas from all services, grouped by transport
+  endpointsAndSchemasByTransport <-
     app.serviceRunners
       |> Task.mapArray (\runner -> runner.getEndpointsByTransport eventStore app.transports)
 
-  -- 8. Merge all endpoints by transport name
-  let mergeEndpointMaps serviceEndpoints acc =
-        serviceEndpoints
-          |> Map.entries
-          |> Array.reduce
-              ( \(transportName, cmdEndpoints) innerAcc ->
-                  case innerAcc |> Map.get transportName of
-                    Nothing -> innerAcc |> Map.set transportName cmdEndpoints
-                    Just existing -> innerAcc |> Map.set transportName (Map.merge cmdEndpoints existing)
-              )
-              acc
+  -- 8. Merge all endpoints and schemas by transport name
+  let mergeEndpointsAndSchemas (serviceEndpoints, serviceSchemas) (handlersAcc, schemasAcc) = do
+        let mergedHandlers = serviceEndpoints
+              |> Map.entries
+              |> Array.reduce
+                  ( \(transportName, cmdEndpoints) innerAcc ->
+                      case innerAcc |> Map.get transportName of
+                        Nothing -> innerAcc |> Map.set transportName cmdEndpoints
+                        Just existing -> innerAcc |> Map.set transportName (Map.merge cmdEndpoints existing)
+                  )
+                  handlersAcc
+        let mergedSchemas = serviceSchemas
+              |> Map.entries
+              |> Array.reduce
+                  ( \(transportName, cmdSchemas) innerAcc ->
+                      case innerAcc |> Map.get transportName of
+                        Nothing -> innerAcc |> Map.set transportName cmdSchemas
+                        Just existing -> innerAcc |> Map.set transportName (Map.merge cmdSchemas existing)
+                  )
+                  schemasAcc
+        (mergedHandlers, mergedSchemas)
 
-  let combinedEndpointsByTransport =
-        endpointsByTransportMaps
-          |> Array.reduce mergeEndpointMaps Map.empty
+  let (combinedEndpointsByTransport, combinedSchemasByTransport) =
+        endpointsAndSchemasByTransport
+          |> Array.reduce mergeEndpointsAndSchemas (Map.empty, Map.empty)
 
   -- 9. Flatten all command endpoints for integration dispatch
   let combinedCommandEndpoints =
@@ -767,7 +777,7 @@ runWith eventStore app = do
   -- When transports complete (or fail), cancel inbound workers for clean shutdown
   -- Use Task.finally to ensure cleanup always runs even if runTransports fails
   result <-
-    Transports.runTransports app.transports combinedEndpointsByTransport combinedQueryEndpoints maybeAuthEnabled maybeOAuth2Config maybeFileUploadEnabled
+    Transports.runTransports app.transports combinedEndpointsByTransport combinedSchemasByTransport combinedQueryEndpoints maybeAuthEnabled maybeOAuth2Config maybeFileUploadEnabled app.apiInfo
       |> Task.finally cleanupAll
       |> Task.asResult
 

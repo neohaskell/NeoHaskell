@@ -35,6 +35,7 @@ import Unsafe.Coerce qualified as GhcUnsafe
 runTransports ::
   Map Text TransportValue ->
   Map Text (Map Text EndpointHandler) ->
+  Map Text (Map Text Service.Transport.EndpointSchema) ->
   Map Text QueryEndpointHandler ->
   Maybe AuthEnabled ->
   -- ^ Optional authentication configuration for WebTransport
@@ -42,13 +43,20 @@ runTransports ::
   -- ^ Optional OAuth2 provider configuration for WebTransport
   Maybe FileUploadEnabled ->
   -- ^ Optional file upload configuration for WebTransport
+  Maybe Service.Application.ApiInfo ->
+  -- ^ Optional API metadata for OpenAPI spec generation
   Task Text Unit
-runTransports transportsMap endpointsByTransport queryEndpoints maybeWebAuth maybeOAuth2 maybeFileUpload = do
+runTransports transportsMap endpointsByTransport schemasByTransport queryEndpoints maybeWebAuth maybeOAuth2 maybeFileUpload maybeApiInfo = do
   transportsMap
     |> Map.entries
     |> Task.forEach \(transportName, transportVal) -> do
         let commandEndpointsForTransport =
               endpointsByTransport
+                |> Map.get transportName
+                |> Maybe.withDefault Map.empty
+
+        let commandSchemasForTransport =
+              schemasByTransport
                 |> Map.get transportName
                 |> Maybe.withDefault Map.empty
 
@@ -59,8 +67,8 @@ runTransports transportsMap endpointsByTransport queryEndpoints maybeWebAuth may
 
         -- Handle WebTransport specially to configure auth, OAuth2, and file uploads
         case transportName of
-          "WebTransport" -> runWebTransport transportVal commandEndpointsForTransport queryEndpoints maybeWebAuth maybeOAuth2 maybeFileUpload
-          _ -> runGenericTransport transportVal commandEndpointsForTransport queryEndpoints
+          "WebTransport" -> runWebTransport transportVal commandEndpointsForTransport commandSchemasForTransport queryEndpoints maybeWebAuth maybeOAuth2 maybeFileUpload maybeApiInfo
+          _ -> runGenericTransport transportVal commandEndpointsForTransport commandSchemasForTransport queryEndpoints
 
 
 -- | Run WebTransport with JWT authentication, OAuth2 provider routes, and file uploads.
@@ -74,21 +82,24 @@ runTransports transportsMap endpointsByTransport queryEndpoints maybeWebAuth may
 runWebTransport ::
   TransportValue ->
   Map Text EndpointHandler ->
+  Map Text Service.Transport.EndpointSchema ->
   Map Text QueryEndpointHandler ->
   Maybe AuthEnabled ->
   Maybe OAuth2Config ->
   Maybe FileUploadEnabled ->
+  Maybe Service.Application.ApiInfo ->
   Task Text Unit
-runWebTransport transportVal commandEndpoints queryEndpoints maybeAuth maybeOAuth2 maybeFileUpload = do
+runWebTransport transportVal commandEndpoints commandSchemas queryEndpoints maybeAuth maybeOAuth2 maybeFileUpload maybeApiInfo = do
   case transportVal of
     TransportValue transport -> do
       -- Cast the existentially-typed transport to WebTransport
       let baseWebTransport :: WebTransport = GhcUnsafe.unsafeCoerce transport
-      -- Configure auth, OAuth2, and file uploads on the WebTransport itself
+      -- Configure auth, OAuth2, file uploads, and API info on the WebTransport itself
       let webTransportWithConfig = baseWebTransport
             { authEnabled = maybeAuth
             , oauth2Config = maybeOAuth2
             , fileUploadEnabled = maybeFileUpload
+            , apiInfo = maybeApiInfo
             }
       -- Build endpoints with the configured transport
       let endpoints :: Endpoints WebTransport =
@@ -96,8 +107,8 @@ runWebTransport transportVal commandEndpoints queryEndpoints maybeAuth maybeOAut
               { transport = webTransportWithConfig,
                 commandEndpoints = commandEndpoints,
                 queryEndpoints = queryEndpoints,
-                commandSchemas = Map.empty,
-                querySchemas = Map.empty
+                commandSchemas = commandSchemas,
+                querySchemas = Map.empty  -- TODO: Task 5 will populate this
               }
       let runnableTransport = assembleTransport endpoints
       runTransport webTransportWithConfig runnableTransport
@@ -107,9 +118,10 @@ runWebTransport transportVal commandEndpoints queryEndpoints maybeAuth maybeOAut
 runGenericTransport ::
   TransportValue ->
   Map Text EndpointHandler ->
+  Map Text Service.Transport.EndpointSchema ->
   Map Text QueryEndpointHandler ->
   Task Text Unit
-runGenericTransport transportVal commandEndpoints queryEndpoints = do
+runGenericTransport transportVal commandEndpoints commandSchemas queryEndpoints = do
   case transportVal of
     TransportValue transport -> do
       let endpoints =
@@ -117,8 +129,8 @@ runGenericTransport transportVal commandEndpoints queryEndpoints = do
               { transport = transport,
                 commandEndpoints = commandEndpoints,
                 queryEndpoints = queryEndpoints,
-                commandSchemas = Map.empty,
-                querySchemas = Map.empty
+                commandSchemas = commandSchemas,
+                querySchemas = Map.empty  -- TODO: Task 5 will populate this
               }
       let runnableTransport = assembleTransport endpoints
       runTransport transport runnableTransport
