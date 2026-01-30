@@ -17,7 +17,7 @@
 # =============================================================================
 POST http://localhost:8080/files/upload
 [MultipartFormData]
-file: file,../files/fixtures/test-document.pdf; application/pdf
+file: file,test-document.pdf; application/pdf
 
 HTTP 200
 [Captures]
@@ -46,7 +46,7 @@ header "Content-Disposition" contains "test-document.pdf"
 # =============================================================================
 POST http://localhost:8080/files/upload
 [MultipartFormData]
-file: file,../files/fixtures/project-proposal.pdf; application/pdf
+file: file,project-proposal.pdf; application/pdf
 
 HTTP 200
 [Captures]
@@ -61,7 +61,7 @@ jsonpath "$.contentType" == "application/pdf"
 # =============================================================================
 POST http://localhost:8080/files/upload
 [MultipartFormData]
-file: file,../files/fixtures/test-document.pdf; application/pdf
+file: file,test-document.pdf; application/pdf
 
 HTTP 200
 [Captures]
@@ -69,7 +69,7 @@ pdf_ref_1: jsonpath "$.fileRef"
 
 POST http://localhost:8080/files/upload
 [MultipartFormData]
-file: file,../files/fixtures/test-document.pdf; application/pdf
+file: file,test-document.pdf; application/pdf
 
 HTTP 200
 [Captures]
