@@ -508,6 +508,7 @@ test-suite nhcore-test-core
     Http.ClientRawSpec
     Http.ClientSpec
     IntSpec
+    Schema.OpenApiSpec
     SchemaSpec
     SetSpec
     StreamSpec
