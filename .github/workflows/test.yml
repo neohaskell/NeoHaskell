@@ -52,10 +52,13 @@ jobs:
       - uses: DeterminateSystems/determinate-nix-action@v3.15.2
         with:
           extra-conf: |
-            extra-substituters = https://cache.iog.io
-            extra-trusted-public-keys = hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ=
+            extra-substituters = https://cache.iog.io https://neohaskell.cachix.org
+            extra-trusted-public-keys = hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ= neohaskell.cachix.org-1:mo2cLaGbwqbrxs9xhqKK8jeNsn3osi7t6XoAmxSZssc=
 
-      - uses: DeterminateSystems/magic-nix-cache-action@v13
+      - uses: cachix/cachix-action@v15
+        with:
+          name: neohaskell
+          authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
 
       - name: Build the project with cabal
         run: nix develop --command cabal build all
@@ -86,10 +89,13 @@ jobs:
       - uses: DeterminateSystems/determinate-nix-action@v3.15.2
         with:
           extra-conf: |
-            extra-substituters = https://cache.iog.io
-            extra-trusted-public-keys = hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ=
+            extra-substituters = https://cache.iog.io https://neohaskell.cachix.org
+            extra-trusted-public-keys = hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ= neohaskell.cachix.org-1:mo2cLaGbwqbrxs9xhqKK8jeNsn3osi7t6XoAmxSZssc=
 
-      - uses: DeterminateSystems/magic-nix-cache-action@v13
+      - uses: cachix/cachix-action@v15
+        with:
+          name: neohaskell
+          authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
 
       - name: Build the project with cabal
         run: nix develop --command cabal build all
