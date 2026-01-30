@@ -392,3 +392,128 @@ test-suite nhcore-test
     base,
     hspec,
     nhcore,
+
+test-suite nhcore-test-auth
+  import: common_cfg
+  default-language: GHC2021
+  ghc-options:
+    -rtsopts
+    -with-rtsopts=-N
+    -Wno-missing-home-modules
+
+  other-modules:
+    Auth.InMemorySecretStoreSpec
+    Auth.JwtSpec
+    Auth.MiddlewareSpec
+    Auth.OAuth2.ClientSpec
+    Auth.OAuth2.RoutesSpec
+    Auth.OAuth2.StateTokenSpec
+    Auth.OAuth2.TokenRefreshSpec
+    Auth.OAuth2.TransactionStoreSpec
+    Auth.OAuth2.TypesSpec
+    Auth.UrlValidationSpec
+    Test.Auth.SecretStore
+    Test.Auth.TestUtils
+
+  type: exitcode-stdio-1.0
+  hs-source-dirs: test, test-auth
+  main-is: Main.hs
+  build-depends:
+    base,
+    hspec,
+    nhcore,
+
+test-suite nhcore-test-service
+  import: common_cfg
+  default-language: GHC2021
+  ghc-options:
+    -rtsopts
+    -with-rtsopts=-N
+    -Wno-missing-home-modules
+
+  other-modules:
+    Service.ApplicationSpec
+    Service.CommandHandlerSpec
+    Service.CommandSpec
+    Service.EventStore.InMemorySpec
+    Service.EventStore.Postgres.SubscriptionStoreSpec
+    Service.EventStore.PostgresSpec
+    Service.FileUpload.BlobStore.LocalSpec
+    Service.FileUpload.CoreSpec
+    Service.FileUpload.DownloadSpec
+    Service.FileUpload.FileStateStore.InMemorySpec
+    Service.FileUpload.FileStateStore.PostgresSpec
+    Service.FileUpload.LifecycleSpec
+    Service.FileUpload.ResolverSpec
+    Service.FileUpload.RoutesSpec
+    Service.MockTransport
+    Service.Query.EndpointSpec
+    Service.Query.RegistrySpec
+    Service.Query.SubscriberSpec
+    Service.Query.THSpec
+    Service.Query.UpdaterSpec
+    Service.QueryObjectStore.InMemorySpec
+    Service.SnapshotCache.InMemorySpec
+    Service.TestHelpers
+    Service.Transport.WebSpec
+
+  type: exitcode-stdio-1.0
+  hs-source-dirs: test, test-service
+  main-is: Main.hs
+  build-depends:
+    base,
+    hspec,
+    nhcore,
+
+test-suite nhcore-test-integration
+  import: common_cfg
+  default-language: GHC2021
+  ghc-options:
+    -rtsopts
+    -with-rtsopts=-N
+    -Wno-missing-home-modules
+
+  other-modules:
+    Integration.CommandSpec
+    Integration.ContextSpec
+    Integration.DispatcherSpec
+    Integration.RuntimeSpec
+    Integration.TimerSpec
+    IntegrationSpec
+    Service.MockTransport
+    Service.TestHelpers
+
+  type: exitcode-stdio-1.0
+  hs-source-dirs: test, test-integration
+  main-is: Main.hs
+  build-depends:
+    base,
+    hspec,
+    nhcore,
+
+test-suite nhcore-test-core
+  import: common_cfg
+  default-language: GHC2021
+  ghc-options:
+    -rtsopts
+    -with-rtsopts=-N
+    -Wno-missing-home-modules
+
+  other-modules:
+    ConcurrentMapSpec
+    Http.ClientRawSpec
+    Http.ClientSpec
+    IntSpec
+    SchemaSpec
+    SetSpec
+    StreamSpec
+    Test.AppSpec.AppSpecSpec
+    Test.AppSpec.VerifySpec
+
+  type: exitcode-stdio-1.0
+  hs-source-dirs: test, test-core
+  main-is: Main.hs
+  build-depends:
+    base,
+    hspec,
+    nhcore,
