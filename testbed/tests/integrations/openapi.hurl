@@ -16,15 +16,15 @@ jsonpath "$.info.version" == "1.0.0"
 jsonpath "$.info.description" exists
 # Verify paths are generated
 jsonpath "$.paths" exists
-# Verify at least one command path exists (e.g., /commands/CreateCart)
-jsonpath "$.paths" count > 0
+# Verify command paths exist
+jsonpath "$.paths./commands/create-cart" exists
 
 
 # Test 2: /openapi.yaml returns valid YAML spec
 GET http://localhost:8080/openapi.yaml
 
 HTTP/1.1 200
-Content-Type: application/x-yaml
+Content-Type: application/yaml
 
 [Asserts]
 # Verify YAML starts with openapi version
