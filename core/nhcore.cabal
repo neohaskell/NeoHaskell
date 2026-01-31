@@ -374,6 +374,7 @@ test-suite nhcore-test
     Service.Query.UpdaterSpec
     Service.TestHelpers
     Service.Transport.WebSpec
+    Service.Transport.Web.SwaggerUISpec
     Service.QueryObjectStore.InMemorySpec
     Service.SnapshotCache.InMemorySpec
     Schema.OpenApiSpec
@@ -513,6 +514,7 @@ test-suite nhcore-test-core
     IntSpec
     Schema.OpenApiSpec
     SchemaSpec
+    Service.Transport.Web.SwaggerUISpec
     SetSpec
     StreamSpec
     Test.AppSpec.AppSpecSpec

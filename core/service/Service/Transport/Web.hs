@@ -774,9 +774,17 @@ instance Transport WebTransport where
               Maybe.Just info -> info
         -- Generate OpenAPI spec from endpoint schemas
         let spec = OpenApi.toOpenApiSpec apiInfo endpoints.commandSchemas endpoints.querySchemas
-        -- Encode to JSON and return
+        -- Encode to JSON and return with cache headers
         let jsonText = Json.encodeText spec
-        okJson jsonText
+        let jsonBytes = jsonText |> Text.toBytes |> Bytes.toLazyLegacy
+        -- Cache headers - spec changes only on deployment
+        let cacheHeaders =
+              [ (HTTP.hContentType, "application/json")
+              , ("Cache-Control", "public, max-age=3600")
+              , ("X-Content-Type-Options", "nosniff")
+              ]
+        let response200 = Wai.responseLBS HTTP.status200 cacheHeaders jsonBytes
+        respond response200
       ["openapi.yaml"] -> do
         -- Extract API info (use default if not configured)
         let apiInfo = case webTransport.apiInfo of
@@ -784,10 +792,16 @@ instance Transport WebTransport where
               Maybe.Just info -> info
         -- Generate OpenAPI spec from endpoint schemas
         let spec = OpenApi.toOpenApiSpec apiInfo endpoints.commandSchemas endpoints.querySchemas
-        -- Encode to YAML
+        -- Encode to YAML with cache headers
         let yamlBytes = Yaml.encode spec
+        -- Cache headers - spec changes only on deployment
+        let cacheHeaders =
+              [ (HTTP.hContentType, "application/x-yaml")
+              , ("Cache-Control", "public, max-age=3600")
+              , ("X-Content-Type-Options", "nosniff")
+              ]
         let responseBody = yamlBytes |> Bytes.fromLegacy |> Bytes.toLazyLegacy
-        let response200 = Wai.responseLBS HTTP.status200 [(HTTP.hContentType, "application/x-yaml")] responseBody
+        let response200 = Wai.responseLBS HTTP.status200 cacheHeaders responseBody
         respond response200
       ["docs"] -> do
         -- Extract API title for documentation page
@@ -797,7 +811,15 @@ instance Transport WebTransport where
         -- Generate Scalar HTML documentation
         let htmlText = SwaggerUI.scalarHtml apiTitle
         let htmlBytes = htmlText |> Text.toBytes |> Bytes.toLazyLegacy
-        let response200 = Wai.responseLBS HTTP.status200 [(HTTP.hContentType, "text/html; charset=utf-8")] htmlBytes
+        -- Security headers for HTML content
+        let securityHeaders =
+              [ (HTTP.hContentType, "text/html; charset=utf-8")
+              , ("Content-Security-Policy", "default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' https://fonts.gstatic.com")
+              , ("X-Frame-Options", "DENY")
+              , ("X-Content-Type-Options", "nosniff")
+              , ("Referrer-Policy", "strict-origin-when-cross-origin")
+              ]
+        let response200 = Wai.responseLBS HTTP.status200 securityHeaders htmlBytes
         respond response200
       _ ->
         notFound "Not found"
