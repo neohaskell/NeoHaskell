@@ -796,7 +796,7 @@ instance Transport WebTransport where
         let yamlBytes = Yaml.encode spec
         -- Cache headers - spec changes only on deployment
         let cacheHeaders =
-              [ (HTTP.hContentType, "application/x-yaml")
+              [ (HTTP.hContentType, "application/yaml")
               , ("Cache-Control", "public, max-age=3600")
               , ("X-Content-Type-Options", "nosniff")
               ]

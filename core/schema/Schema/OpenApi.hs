@@ -103,7 +103,10 @@ toOpenApiSchema schema = case schema of
   
   SUnion variants -> do
     let variantSchemas = variants
-          |> Array.map (\(_name, variantSchema) -> toOpenApiSchema variantSchema)
+          |> Array.map (\(name, variantSchema) -> 
+               toOpenApiSchema variantSchema
+                 |> Lens.set OpenApiLens.title (Just name)
+             )
           |> Array.toLinkedList
     GhcMonoid.mempty
       |> Lens.set OpenApiLens.oneOf (Just (variantSchemas |> LinkedList.map OpenApi.Inline))
@@ -191,6 +194,9 @@ makeCommandPath name schema = do
               ))
             , (401, OpenApi.Inline (GhcMonoid.mempty
                 |> Lens.set OpenApiLens.description "Unauthorized"
+              ))
+            , (403, OpenApi.Inline (GhcMonoid.mempty
+                |> Lens.set OpenApiLens.description "Forbidden"
               ))
             , (500, OpenApi.Inline (GhcMonoid.mempty
                 |> Lens.set OpenApiLens.description "Internal Server Error"
