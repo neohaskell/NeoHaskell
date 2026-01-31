@@ -163,7 +163,8 @@ toOpenApiSpec apiInfo commandSchemas querySchemas = do
 -- Commands use POST /commands/{name} with a request body.
 makeCommandPath :: Text -> EndpointSchema -> (Text, OpenApi.PathItem)
 makeCommandPath name schema = do
-  let path = [fmt|/commands/{name}|]
+  let kebabName = name |> Text.toKebabCase
+  let path = [fmt|/commands/#{kebabName}|]
   let requestBody = case schema.requestSchema of
         Nothing -> Nothing
         Just reqSchema ->
@@ -222,7 +223,8 @@ makeCommandPath name schema = do
 -- Queries use GET /queries/{name} with no request body.
 makeQueryPath :: Text -> EndpointSchema -> (Text, OpenApi.PathItem)
 makeQueryPath name schema = do
-  let path = [fmt|/queries/{name}|]
+  let kebabName = name |> Text.toKebabCase
+  let path = [fmt|/queries/#{kebabName}|]
   
   let responseContent = InsOrdHashMap.fromList
         [ ("application/json", GhcMonoid.mempty
