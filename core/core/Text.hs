@@ -425,8 +425,9 @@ trimRight = Data.Text.stripEnd
 --
 -- Use this when embedding user-provided text in HTML to prevent injection attacks.
 --
--- TODO: Consider using a proper HTML sanitization library (e.g., xss-sanitize)
+-- TODO(#352): Consider using a proper HTML sanitization library (e.g., xss-sanitize)
 -- for more comprehensive protection in complex scenarios.
+-- See: https://github.com/neohaskell/NeoHaskell/issues/352
 escapeHtml :: Text -> Text
 escapeHtml text = text
   |> replace "&" "&amp;"
