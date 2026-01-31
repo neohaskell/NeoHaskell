@@ -39,6 +39,7 @@ common common_cfg
     file-embed,
     ghc-prim,
     hashable,
+    insert-ordered-containers,
     iproute,
     jose,
     lens,
@@ -58,6 +59,7 @@ common common_cfg
     monad-loops,
     network,
     network-uri,
+    openapi3,
     optparse-applicative,
     path,
     pretty-simple,
@@ -80,6 +82,7 @@ common common_cfg
     wai-extra,
     warp,
     with-utf8,
+    yaml,
 
   default-extensions:
     ApplicativeDo
@@ -208,6 +211,7 @@ library
     Service.Application
     Service.Application.Integrations
     Service.Application.Transports
+    Service.Application.Types
     Service.Query
     Service.Query.Auth
     Service.Query.Core
@@ -238,7 +242,9 @@ library
     Service.ServiceDefinition.Core
     Service.Transport
     Service.Transport.Web
+    Service.Transport.Web.SwaggerUI
     Schema
+    Schema.OpenApi
     Set
     Stream
     Subprocess
@@ -368,8 +374,10 @@ test-suite nhcore-test
     Service.Query.UpdaterSpec
     Service.TestHelpers
     Service.Transport.WebSpec
+    Service.Transport.Web.SwaggerUISpec
     Service.QueryObjectStore.InMemorySpec
     Service.SnapshotCache.InMemorySpec
+    Schema.OpenApiSpec
     SchemaSpec
     SetSpec
     StreamSpec
@@ -504,7 +512,9 @@ test-suite nhcore-test-core
     Http.ClientRawSpec
     Http.ClientSpec
     IntSpec
+    Schema.OpenApiSpec
     SchemaSpec
+    Service.Transport.Web.SwaggerUISpec
     SetSpec
     StreamSpec
     Test.AppSpec.AppSpecSpec

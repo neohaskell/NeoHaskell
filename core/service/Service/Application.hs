@@ -13,6 +13,10 @@ module Service.Application (
   -- * OAuth2 Setup Type
   OAuth2Setup (..),
 
+  -- * API Info Type
+  ApiInfo (..),
+  defaultApiInfo,
+
   -- * Construction
   new,
 
@@ -29,6 +33,7 @@ module Service.Application (
   withInbound,
   withAuth,
   withAuthOverrides,
+  withApiInfo,
   withSecretStore,
   withOAuth2StateKey,
   withOAuth2Provider,
@@ -87,6 +92,7 @@ import Json qualified
 import Map (Map)
 import Map qualified
 import Record qualified
+import Schema qualified
 import LinkedList (LinkedList)
 import Maybe (Maybe (..))
 import Result (Result (..))
@@ -128,6 +134,7 @@ import Text (Text)
 import Text qualified
 import ToText (toText)
 import TypeName qualified
+import Service.Application.Types (ApiInfo (..), defaultApiInfo)
 
 
 -- | Configuration for WebTransport authentication.
@@ -224,7 +231,8 @@ data Application = Application
     webAuthSetup :: Maybe WebAuthSetup,
     oauth2Setup :: Maybe OAuth2Setup,
     fileUploadConfig :: Maybe FileUploadConfig,
-    secretStore :: Maybe SecretStore
+    secretStore :: Maybe SecretStore,
+    apiInfo :: Maybe ApiInfo
   }
 
 
@@ -248,7 +256,8 @@ new =
       webAuthSetup = Nothing,
       oauth2Setup = Nothing,
       fileUploadConfig = Nothing,
-      secretStore = Nothing
+      secretStore = Nothing,
+      apiInfo = Nothing
     }
 
 
@@ -332,6 +341,7 @@ withQueryObjectStore config app =
 withQuery ::
   forall query queryName entities.
   ( Query query,
+    Schema.ToSchema query,
     Json.ToJSON query,
     Json.FromJSON query,
     queryName ~ NameOf query,
@@ -538,7 +548,7 @@ run app = case app.eventStoreCreator of
 -- 6. Runs each transport once with combined endpoints
 runWith :: EventStore Json.Value -> Application -> Task Text Unit
 runWith eventStore app = do
-  -- 1. Wire all query definitions and collect registries + endpoints
+  -- 1. Wire all query definitions and collect registries + endpoints + schemas
   wiredQueries <-
     app.queryDefinitions
       |> Task.mapArray (\def -> def.wireQuery eventStore)
@@ -546,12 +556,17 @@ runWith eventStore app = do
   -- 2. Combine all registries from query definitions with the manual registry
   let combinedRegistry =
         wiredQueries
-          |> Array.reduce (\(reg, _) acc -> mergeRegistries reg acc) app.queryRegistry
+          |> Array.reduce (\(reg, _endpoint) acc -> mergeRegistries reg acc) app.queryRegistry
 
   -- 3. Combine all query endpoints from definitions with manual endpoints
   let combinedQueryEndpoints =
         wiredQueries
-          |> Array.reduce (\(_, (name, handler)) acc -> acc |> Map.set name handler) app.queryEndpoints
+          |> Array.reduce (\(_reg, (name, handler, _schema)) acc -> acc |> Map.set name handler) app.queryEndpoints
+
+  -- 3b. Collect all query schemas
+  let combinedQuerySchemas =
+        wiredQueries
+          |> Array.reduce (\(_reg, (name, _handler, schema)) acc -> acc |> Map.set name schema) Map.empty
 
   -- 4. Create query subscriber with combined registry
   subscriber <- Subscriber.new eventStore combinedRegistry
@@ -562,26 +577,36 @@ runWith eventStore app = do
   -- 6. Start live subscription
   Subscriber.start subscriber
 
-  -- 7. Collect command endpoints from all services, grouped by transport
-  endpointsByTransportMaps <-
+  -- 7. Collect command endpoints and schemas from all services, grouped by transport
+  endpointsAndSchemasByTransport <-
     app.serviceRunners
       |> Task.mapArray (\runner -> runner.getEndpointsByTransport eventStore app.transports)
 
-  -- 8. Merge all endpoints by transport name
-  let mergeEndpointMaps serviceEndpoints acc =
-        serviceEndpoints
-          |> Map.entries
-          |> Array.reduce
-              ( \(transportName, cmdEndpoints) innerAcc ->
-                  case innerAcc |> Map.get transportName of
-                    Nothing -> innerAcc |> Map.set transportName cmdEndpoints
-                    Just existing -> innerAcc |> Map.set transportName (Map.merge cmdEndpoints existing)
-              )
-              acc
+  -- 8. Merge all endpoints and schemas by transport name
+  let mergeEndpointsAndSchemas (serviceEndpoints, serviceSchemas) (handlersAcc, schemasAcc) = do
+        let mergedHandlers = serviceEndpoints
+              |> Map.entries
+              |> Array.reduce
+                  ( \(transportName, cmdEndpoints) innerAcc ->
+                      case innerAcc |> Map.get transportName of
+                        Nothing -> innerAcc |> Map.set transportName cmdEndpoints
+                        Just existing -> innerAcc |> Map.set transportName (Map.merge cmdEndpoints existing)
+                  )
+                  handlersAcc
+        let mergedSchemas = serviceSchemas
+              |> Map.entries
+              |> Array.reduce
+                  ( \(transportName, cmdSchemas) innerAcc ->
+                      case innerAcc |> Map.get transportName of
+                        Nothing -> innerAcc |> Map.set transportName cmdSchemas
+                        Just existing -> innerAcc |> Map.set transportName (Map.merge cmdSchemas existing)
+                  )
+                  schemasAcc
+        (mergedHandlers, mergedSchemas)
 
-  let combinedEndpointsByTransport =
-        endpointsByTransportMaps
-          |> Array.reduce mergeEndpointMaps Map.empty
+  let (combinedEndpointsByTransport, combinedSchemasByTransport) =
+        endpointsAndSchemasByTransport
+          |> Array.reduce mergeEndpointsAndSchemas (Map.empty, Map.empty)
 
   -- 9. Flatten all command endpoints for integration dispatch
   let combinedCommandEndpoints =
@@ -742,7 +767,7 @@ runWith eventStore app = do
   -- When transports complete (or fail), cancel inbound workers for clean shutdown
   -- Use Task.finally to ensure cleanup always runs even if runTransports fails
   result <-
-    Transports.runTransports app.transports combinedEndpointsByTransport combinedQueryEndpoints maybeAuthEnabled maybeOAuth2Config maybeFileUploadEnabled
+    Transports.runTransports app.transports combinedEndpointsByTransport combinedSchemasByTransport combinedQueryEndpoints combinedQuerySchemas maybeAuthEnabled maybeOAuth2Config maybeFileUploadEnabled app.apiInfo
       |> Task.finally cleanupAll
       |> Task.asResult
 
@@ -986,6 +1011,36 @@ withAuthOverrides authServerUrl overrides app =
           WebAuthSetup
             { authServerUrl = authServerUrl,
               authOverrides = overrides
+            }
+    }
+
+
+-- | Configure API metadata for OpenAPI spec generation.
+--
+-- This sets the title, version, and description that appear in the OpenAPI
+-- specification. If not called, sensible defaults are used.
+--
+-- Example:
+--
+-- @
+-- app = Application.new
+--   |> Application.withTransport WebTransport.server
+--   |> Application.withApiInfo "My API" "1.0.0" "A comprehensive API"
+-- @
+withApiInfo ::
+  Text ->
+  Text ->
+  Text ->
+  Application ->
+  Application
+withApiInfo title version description app =
+  app
+    { apiInfo =
+        Just
+          ApiInfo
+            { apiTitle = title,
+              apiVersion = version,
+              apiDescription = description
             }
     }
 

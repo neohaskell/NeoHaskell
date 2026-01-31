@@ -3,6 +3,7 @@ module Service.Transport (
   EndpointHandler,
   QueryEndpointHandler,
   Endpoints (..),
+  EndpointSchema (..),
 ) where
 
 import Basics
@@ -11,6 +12,7 @@ import Json qualified
 import Map (Map)
 import Maybe (Maybe)
 import Record qualified
+import Schema (Schema)
 import Service.Auth (RequestContext, UserClaims)
 import Service.Command.Core (Command, NameOf)
 import Service.Query.Auth (QueryEndpointError)
@@ -44,12 +46,31 @@ type EndpointHandler = RequestContext -> Bytes -> ((CommandResponse, Bytes) -> T
 type QueryEndpointHandler = Maybe UserClaims -> Task QueryEndpointError Text
 
 
+-- | Schema information for an endpoint (command or query).
+--
+-- Used for OpenAPI spec generation. Captured at registration time
+-- before type erasure.
+data EndpointSchema = EndpointSchema
+  { requestSchema :: Maybe Schema
+    -- ^ Request body schema. Commands have request bodies, queries don't.
+  , responseSchema :: Schema
+    -- ^ Response schema. All endpoints return responses.
+  , description :: Text
+    -- ^ Human-readable description from Documented instance or empty.
+  , deprecated :: Bool
+    -- ^ Whether this endpoint is deprecated.
+  }
+  deriving (Show, Eq)
+
+
 -- | Collection of command and query endpoints for a transport.
 -- Groups command handlers and query handlers that share the same transport configuration.
 data Endpoints transport = Endpoints
   { transport :: transport,
     commandEndpoints :: Map Text EndpointHandler,
-    queryEndpoints :: Map Text QueryEndpointHandler
+    queryEndpoints :: Map Text QueryEndpointHandler,
+    commandSchemas :: Map Text EndpointSchema,
+    querySchemas :: Map Text EndpointSchema
   }
 
 

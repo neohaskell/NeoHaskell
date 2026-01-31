@@ -28,6 +28,9 @@ instance Json.FromJSON StockLevel
 instance Json.ToJSON StockLevel
 
 
+instance ToSchema StockLevel
+
+
 -- | Authorization: Anyone can access stock levels (public catalog data)
 canAccess :: Maybe UserClaims -> Maybe QueryAuthError
 canAccess = publicAccess

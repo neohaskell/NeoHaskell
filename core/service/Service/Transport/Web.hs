@@ -23,7 +23,7 @@ import Console qualified
 import Data.ByteString qualified as GhcBS
 import Data.IORef qualified as GhcIORef
 import Data.List qualified as GhcList
-
+import Data.Yaml qualified as Yaml
 import GHC.TypeLits qualified as GHC
 import Json qualified
 import LinkedList qualified
@@ -36,6 +36,9 @@ import Network.Wai.Handler.Warp qualified as Warp
 import Record (KnownHash (..))
 import Record qualified
 import Result (Result (..))
+import Schema.OpenApi qualified as OpenApi
+import Service.Application.Types (ApiInfo (..))
+import Service.Application.Types qualified
 import Service.Auth (RequestContext)
 import Service.Auth qualified as Auth
 import Service.Command.Core (Command, NameOf)
@@ -47,6 +50,7 @@ import Service.Query.Auth (QueryAuthError (..), QueryEndpointError (..))
 import Service.Response (CommandResponse)
 import Service.Response qualified as Response
 import Service.Transport (EndpointHandler, Endpoints (..), Transport (..))
+import Service.Transport.Web.SwaggerUI qualified as SwaggerUI
 import Task (Task)
 import Task qualified
 import Text (Text)
@@ -92,7 +96,9 @@ data WebTransport = WebTransport
     -- | Optional OAuth2 provider routes. Set via Application.withOAuth2Provider.
     oauth2Config :: Maybe OAuth2Config,
     -- | Optional file upload routes. Set via Application.withFileUpload.
-    fileUploadEnabled :: Maybe FileUploadEnabled
+    fileUploadEnabled :: Maybe FileUploadEnabled,
+    -- | Optional API metadata for OpenAPI spec generation. Set via Application.withApiInfo.
+    apiInfo :: Maybe ApiInfo
   }
 
 
@@ -115,7 +121,8 @@ server =
       maxBodySize = 1048576,
       authEnabled = Nothing,
       oauth2Config = Nothing,
-      fileUploadEnabled = Nothing
+      fileUploadEnabled = Nothing,
+      apiInfo = Nothing
     }
 
 
@@ -759,6 +766,61 @@ instance Transport WebTransport where
                 let responseBody = content |> Bytes.toLazyLegacy
                 let response200 = Wai.responseLBS HTTP.status200 headers responseBody
                 respond response200
+      -- OpenAPI routes: /openapi.json, /openapi.yaml, /docs
+      ["openapi.json"] -> do
+        -- Extract API info (use default if not configured)
+        let apiInfo = case webTransport.apiInfo of
+              Maybe.Nothing -> Service.Application.Types.defaultApiInfo
+              Maybe.Just info -> info
+        -- Generate OpenAPI spec from endpoint schemas
+        let spec = OpenApi.toOpenApiSpec apiInfo endpoints.commandSchemas endpoints.querySchemas
+        -- Encode to JSON and return with cache headers
+        let jsonText = Json.encodeText spec
+        let jsonBytes = jsonText |> Text.toBytes |> Bytes.toLazyLegacy
+        -- Cache headers - spec changes only on deployment
+        let cacheHeaders =
+              [ (HTTP.hContentType, "application/json")
+              , ("Cache-Control", "public, max-age=3600")
+              , ("X-Content-Type-Options", "nosniff")
+              ]
+        let response200 = Wai.responseLBS HTTP.status200 cacheHeaders jsonBytes
+        respond response200
+      ["openapi.yaml"] -> do
+        -- Extract API info (use default if not configured)
+        let apiInfo = case webTransport.apiInfo of
+              Maybe.Nothing -> Service.Application.Types.defaultApiInfo
+              Maybe.Just info -> info
+        -- Generate OpenAPI spec from endpoint schemas
+        let spec = OpenApi.toOpenApiSpec apiInfo endpoints.commandSchemas endpoints.querySchemas
+        -- Encode to YAML with cache headers
+        let yamlBytes = Yaml.encode spec
+        -- Cache headers - spec changes only on deployment
+        let cacheHeaders =
+              [ (HTTP.hContentType, "application/yaml")
+              , ("Cache-Control", "public, max-age=3600")
+              , ("X-Content-Type-Options", "nosniff")
+              ]
+        let responseBody = yamlBytes |> Bytes.fromLegacy |> Bytes.toLazyLegacy
+        let response200 = Wai.responseLBS HTTP.status200 cacheHeaders responseBody
+        respond response200
+      ["docs"] -> do
+        -- Extract API title for documentation page
+        let apiTitle = case webTransport.apiInfo of
+              Maybe.Nothing -> Service.Application.Types.defaultApiInfo.apiTitle
+              Maybe.Just info -> info.apiTitle
+        -- Generate Scalar HTML documentation
+        let htmlText = SwaggerUI.scalarHtml apiTitle
+        let htmlBytes = htmlText |> Text.toBytes |> Bytes.toLazyLegacy
+        -- Security headers for HTML content
+        let securityHeaders =
+              [ (HTTP.hContentType, "text/html; charset=utf-8")
+              , ("Content-Security-Policy", "default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' https://fonts.gstatic.com")
+              , ("X-Frame-Options", "DENY")
+              , ("X-Content-Type-Options", "nosniff")
+              , ("Referrer-Policy", "strict-origin-when-cross-origin")
+              ]
+        let response200 = Wai.responseLBS HTTP.status200 securityHeaders htmlBytes
+        respond response200
       _ ->
         notFound "Not found"
 

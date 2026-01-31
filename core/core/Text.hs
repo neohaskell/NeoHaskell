@@ -64,6 +64,9 @@ module Text (
   trimLeft,
   trimRight,
 
+  -- * HTML Escaping
+  escapeHtml,
+
   -- * Higher-Order Functions
   map,
   filter,
@@ -401,6 +404,37 @@ trimLeft = Data.Text.stripStart
 -- > trimRight "  hats  \n" == "  hats"
 trimRight :: Text -> Text
 trimRight = Data.Text.stripEnd
+
+
+-- HTML ESCAPING
+
+-- | Escape HTML special characters to prevent XSS attacks.
+--
+-- Converts the following characters to their HTML entity equivalents:
+--
+-- * @&@ → @&amp;@
+-- * @<@ → @&lt;@
+-- * @>@ → @&gt;@
+-- * @"@ → @&quot;@
+-- * @'@ → @&#x27;@
+--
+-- Example:
+--
+-- > escapeHtml "<script>alert('XSS')</script>"
+-- > -- Returns: "&lt;script&gt;alert(&#x27;XSS&#x27;)&lt;/script&gt;"
+--
+-- Use this when embedding user-provided text in HTML to prevent injection attacks.
+--
+-- TODO(#352): Consider using a proper HTML sanitization library (e.g., xss-sanitize)
+-- for more comprehensive protection in complex scenarios.
+-- See: https://github.com/neohaskell/NeoHaskell/issues/352
+escapeHtml :: Text -> Text
+escapeHtml text = text
+  |> replace "&" "&amp;"
+  |> replace "<" "&lt;"
+  |> replace ">" "&gt;"
+  |> replace "\"" "&quot;"
+  |> replace "'" "&#x27;"
 
 
 -- INT CONVERSIONS

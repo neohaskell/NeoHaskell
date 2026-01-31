@@ -12,6 +12,8 @@ import Basics
 import GHC.TypeLits qualified as GHC
 import Json qualified
 import Record qualified
+import Schema (Schema)
+import Schema qualified
 import Service.Command.Core (Entity (..), EventOf, NameOf)
 import Service.EntityFetcher.Core qualified as EntityFetcher
 import Service.Event.EntityName (EntityName (..))
@@ -24,7 +26,8 @@ import Service.Query.Registry qualified as Registry
 import Service.Query.Updater qualified as Updater
 import Service.QueryObjectStore.Core (QueryObjectStore)
 import Service.QueryObjectStore.InMemory qualified as InMemory
-import Service.Transport (QueryEndpointHandler)
+import Service.Transport (QueryEndpointHandler, EndpointSchema (..))
+import Maybe (Maybe (..))
 import Task (Task)
 import Task qualified
 import Text (Text)
@@ -39,17 +42,19 @@ import ToText (toText)
 -- 2. Create EntityFetchers and QueryUpdaters for each contributing entity
 -- 3. Register updaters in the QueryRegistry
 -- 4. Create an HTTP endpoint handler
+-- 5. Capture the query schema for OpenAPI generation
 --
 -- QueryDefinitions are created declaratively via 'createDefinition' and
 -- evaluated at runtime by 'Application.runWith'.
 data QueryDefinition = QueryDefinition
   { queryName :: Text,
+    querySchema :: Schema,
     -- | Given an EventStore, creates the query infrastructure and returns:
     -- - QueryRegistry entries for this query's entities
-    -- - The query endpoint name and handler
+    -- - The query endpoint name, handler, and schema
     wireQuery ::
       EventStore Json.Value ->
-      Task Text (QueryRegistry, (Text, QueryEndpointHandler))
+      Task Text (QueryRegistry, (Text, QueryEndpointHandler, EndpointSchema))
   }
 
 
@@ -73,6 +78,7 @@ data QueryDefinition = QueryDefinition
 createDefinition ::
   forall query queryName entities.
   ( Query query,
+    Schema.ToSchema query,
     Json.ToJSON query,
     Json.FromJSON query,
     queryName ~ NameOf query,
@@ -105,6 +111,7 @@ createDefinition =
 createDefinitionWithStore ::
   forall query queryName entities.
   ( Query query,
+    Schema.ToSchema query,
     Json.ToJSON query,
     Json.FromJSON query,
     queryName ~ NameOf query,
@@ -119,8 +126,18 @@ createDefinitionWithStore storeFactory = do
         GHC.symbolVal (Record.Proxy @queryName)
           |> Text.fromLinkedList
 
+  let schema = Schema.toSchema @query
+
+  let endpointSchema = EndpointSchema
+        { requestSchema = Nothing  -- Queries have no request body (GET)
+        , responseSchema = schema
+        , description = ""
+        , deprecated = False
+        }
+
   QueryDefinition
     { queryName = queryNameText,
+      querySchema = schema,
       wireQuery = \rawEventStore -> do
         -- 1. Create QueryObjectStore using the provided factory
         queryStore <- storeFactory
@@ -131,7 +148,7 @@ createDefinitionWithStore storeFactory = do
         -- 3. Create endpoint handler (lambda accepts Maybe UserClaims)
         let endpoint = \userClaims -> Endpoint.createQueryEndpoint queryStore userClaims
 
-        Task.yield (registry, (queryNameText, endpoint))
+        Task.yield (registry, (queryNameText, endpoint, endpointSchema))
     }
 
 
