@@ -7,18 +7,6 @@ import Text (Text)
 import Text qualified
 
 
--- | Escape HTML special characters to prevent XSS attacks.
---
--- Converts: & < > " ' to their HTML entity equivalents.
-escapeHtml :: Text -> Text
-escapeHtml text = text
-  |> Text.replace "&" "&amp;"
-  |> Text.replace "<" "&lt;"
-  |> Text.replace ">" "&gt;"
-  |> Text.replace "\"" "&quot;"
-  |> Text.replace "'" "&#x27;"
-
-
 -- | Generate HTML for Scalar API documentation page.
 --
 -- Loads Scalar from CDN with Subresource Integrity (SRI) verification
@@ -37,7 +25,7 @@ escapeHtml text = text
 -- @
 scalarHtml :: Text -> Text
 scalarHtml title = do
-  let safeTitle = escapeHtml title
+  let safeTitle = Text.escapeHtml title
   [fmt|<!DOCTYPE html>
 <html lang="en">
 <head>
