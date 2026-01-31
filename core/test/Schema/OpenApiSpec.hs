@@ -8,7 +8,7 @@ import Data.HashMap.Strict.InsOrd qualified as InsOrdHashMap
 import Data.OpenApi qualified as OpenApi
 import LinkedList qualified
 import Map qualified
-import Schema.OpenApi qualified as OpenApi
+import Schema.OpenApi qualified as OpenApiGen
 import Service.Application (ApiInfo (..))
 import Service.Transport (EndpointSchema (..))
 import Test
@@ -37,33 +37,33 @@ spec :: Spec Unit
 spec = do
   describe "toOpenApiSchema - Primitive Types" do
     it "converts SNull to OpenApiNull" \_ -> do
-      let schema = OpenApi.toOpenApiSchema SNull
+      let schema = OpenApiGen.toOpenApiSchema SNull
       let typeValue = schema |> Lens.view OpenApi.type_
       typeValue |> shouldBe (Just OpenApi.OpenApiNull)
 
     it "converts SBool to OpenApiBoolean" \_ -> do
-      let schema = OpenApi.toOpenApiSchema SBool
+      let schema = OpenApiGen.toOpenApiSchema SBool
       let typeValue = schema |> Lens.view OpenApi.type_
       typeValue |> shouldBe (Just OpenApi.OpenApiBoolean)
 
     it "converts SInt to OpenApiInteger" \_ -> do
-      let schema = OpenApi.toOpenApiSchema SInt
+      let schema = OpenApiGen.toOpenApiSchema SInt
       let typeValue = schema |> Lens.view OpenApi.type_
       typeValue |> shouldBe (Just OpenApi.OpenApiInteger)
 
     it "converts SNumber to OpenApiNumber" \_ -> do
-      let schema = OpenApi.toOpenApiSchema SNumber
+      let schema = OpenApiGen.toOpenApiSchema SNumber
       let typeValue = schema |> Lens.view OpenApi.type_
       typeValue |> shouldBe (Just OpenApi.OpenApiNumber)
 
     it "converts SText to OpenApiString" \_ -> do
-      let schema = OpenApi.toOpenApiSchema SText
+      let schema = OpenApiGen.toOpenApiSchema SText
       let typeValue = schema |> Lens.view OpenApi.type_
       typeValue |> shouldBe (Just OpenApi.OpenApiString)
 
   describe "toOpenApiSchema - Container Types" do
     it "converts SArray to OpenApiArray with items" \_ -> do
-      let schema = OpenApi.toOpenApiSchema (SArray SText)
+      let schema = OpenApiGen.toOpenApiSchema (SArray SText)
       let typeValue = schema |> Lens.view OpenApi.type_
       typeValue |> shouldBe (Just OpenApi.OpenApiArray)
       -- Verify items are set
@@ -71,7 +71,7 @@ spec = do
       items |> shouldSatisfy (\x -> case x of { Just _ -> True; Nothing -> False })
 
     it "converts SOptional by unwrapping inner schema" \_ -> do
-      let schema = OpenApi.toOpenApiSchema (SOptional SInt)
+      let schema = OpenApiGen.toOpenApiSchema (SOptional SInt)
       let typeValue = schema |> Lens.view OpenApi.type_
       -- SOptional unwraps to the inner type
       typeValue |> shouldBe (Just OpenApi.OpenApiInteger)
@@ -82,7 +82,7 @@ spec = do
             [ FieldSchema "name" SText True "User name"
             , FieldSchema "age" SInt True "User age"
             ]
-      let schema = OpenApi.toOpenApiSchema (SObject fields)
+      let schema = OpenApiGen.toOpenApiSchema (SObject fields)
       let typeValue = schema |> Lens.view OpenApi.type_
       typeValue |> shouldBe (Just OpenApi.OpenApiObject)
       -- Verify properties are set
@@ -97,7 +97,7 @@ spec = do
             [ FieldSchema "name" SText True "User name"
             , FieldSchema "email" (SOptional SText) False "Optional email"
             ]
-      let schema = OpenApi.toOpenApiSchema (SObject fields)
+      let schema = OpenApiGen.toOpenApiSchema (SObject fields)
       -- Verify only required field is in required list
       let required = schema |> Lens.view OpenApi.required
       LinkedList.length required |> shouldBe 1
@@ -106,7 +106,7 @@ spec = do
   describe "toOpenApiSchema - Enum Types" do
     it "converts SEnum to string with enum values" \_ -> do
       let variants = Array.fromLinkedList ["Active", "Inactive", "Pending"]
-      let schema = OpenApi.toOpenApiSchema (SEnum variants)
+      let schema = OpenApiGen.toOpenApiSchema (SEnum variants)
       let typeValue = schema |> Lens.view OpenApi.type_
       typeValue |> shouldBe (Just OpenApi.OpenApiString)
       -- Verify enum values are set
@@ -119,14 +119,14 @@ spec = do
             [ ("Circle", SObject (Array.fromLinkedList [FieldSchema "radius" SInt True "Circle radius"]))
             , ("Rectangle", SObject (Array.fromLinkedList [FieldSchema "width" SInt True "Width", FieldSchema "height" SInt True "Height"]))
             ]
-      let schema = OpenApi.toOpenApiSchema (SUnion variants)
+      let schema = OpenApiGen.toOpenApiSchema (SUnion variants)
       -- Verify oneOf is set
       let oneOf = schema |> Lens.view OpenApi.oneOf
       oneOf |> shouldSatisfy (\x -> case x of { Just _ -> True; Nothing -> False })
 
   describe "toOpenApiSchema - Reference Types" do
     it "converts SRef to schema with title as reference" \_ -> do
-      let schema = OpenApi.toOpenApiSchema (SRef "UserSchema")
+      let schema = OpenApiGen.toOpenApiSchema (SRef "UserSchema")
       -- SRef sets the title to the reference name
       let title = schema |> Lens.view OpenApi.title
       title |> shouldBe (Just "UserSchema")
@@ -136,7 +136,7 @@ spec = do
       let apiInfo = ApiInfo "Test API" "1.0.0" "A test API"
       let commandSchemas = Map.empty
       let querySchemas = Map.empty
-      let openApiSpec = OpenApi.toOpenApiSpec apiInfo commandSchemas querySchemas
+      let openApiSpec = OpenApiGen.toOpenApiSpec apiInfo commandSchemas querySchemas
       -- Verify info section
       let info = openApiSpec |> Lens.view OpenApi.info
       let title = info |> Lens.view OpenApi.title
@@ -150,7 +150,7 @@ spec = do
             [ ("CreateUser", makeEndpointSchema (Just (SObject (Array.fromLinkedList [FieldSchema "name" SText True ""]))) SText)
             ])
       let querySchemas = Map.empty
-      let openApiSpec = OpenApi.toOpenApiSpec apiInfo commandSchemas querySchemas
+      let openApiSpec = OpenApiGen.toOpenApiSpec apiInfo commandSchemas querySchemas
       -- Verify paths are generated
       let paths = openApiSpec |> Lens.view OpenApi.paths
       InsOrdHashMap.size paths |> shouldSatisfy (\n -> n > 0)
@@ -161,7 +161,7 @@ spec = do
       let querySchemas = Map.fromArray (Array.fromLinkedList
             [ ("GetUser", makeEndpointSchema Nothing SText)
             ])
-      let openApiSpec = OpenApi.toOpenApiSpec apiInfo commandSchemas querySchemas
+      let openApiSpec = OpenApiGen.toOpenApiSpec apiInfo commandSchemas querySchemas
       -- Verify paths are generated
       let paths = openApiSpec |> Lens.view OpenApi.paths
       InsOrdHashMap.size paths |> shouldSatisfy (\n -> n > 0)
@@ -174,7 +174,7 @@ spec = do
       let querySchemas = Map.fromArray (Array.fromLinkedList
             [ ("GetUser", makeEndpointSchema Nothing SText)
             ])
-      let openApiSpec = OpenApi.toOpenApiSpec apiInfo commandSchemas querySchemas
+      let openApiSpec = OpenApiGen.toOpenApiSpec apiInfo commandSchemas querySchemas
       -- Verify both paths are present
       let paths = openApiSpec |> Lens.view OpenApi.paths
       InsOrdHashMap.size paths |> shouldBe 2

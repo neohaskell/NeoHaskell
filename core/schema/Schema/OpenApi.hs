@@ -77,6 +77,7 @@ toOpenApiSchema schema = case schema of
   
   SOptional innerSchema -> do
     toOpenApiSchema innerSchema
+      |> Lens.set OpenApiLens.nullable (Just True)
   
   SObject fields -> do
     let properties = fields
