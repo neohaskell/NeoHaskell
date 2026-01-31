@@ -17,7 +17,7 @@ jsonpath "$.info.description" exists
 # Verify paths are generated
 jsonpath "$.paths" exists
 # Verify command paths exist
-jsonpath "$.paths./commands/create-cart" exists
+jsonpath "$.paths['/commands/create-cart']" exists
 
 
 # Test 2: /openapi.yaml returns valid YAML spec
