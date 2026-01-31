@@ -36,6 +36,9 @@ instance Json.ToJSON CartSummary
 instance Json.FromJSON CartSummary
 
 
+instance ToSchema CartSummary
+
+
 -- | Authorization: Public access for demo/testing purposes
 -- In a real app, you might use authenticatedAccess here
 canAccess :: Maybe UserClaims -> Maybe QueryAuthError

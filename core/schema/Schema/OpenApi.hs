@@ -24,16 +24,20 @@ module Schema.OpenApi (
   toOpenApiSpec,
 ) where
 
-import Array (Array)
 import Array qualified
 import Basics
+import Data.Monoid qualified as GhcMonoid
 import Data.OpenApi qualified as OpenApi
 import Data.OpenApi.Lens qualified as OpenApiLens
-import Lens.Micro qualified as Lens
+import Control.Lens qualified as Lens
+import Data.Aeson qualified as Json
+import Data.HashMap.Strict.InsOrd qualified as InsOrdHashMap
+import LinkedList qualified
 import Map (Map)
 import Map qualified
 import Maybe (Maybe (..))
 import Schema (FieldSchema (..), Schema (..))
+import Service.Application.Types (ApiInfo (..))
 import Service.Transport (EndpointSchema (..))
 import Text (Text)
 import Text qualified
@@ -46,28 +50,28 @@ import Text qualified
 toOpenApiSchema :: Schema -> OpenApi.Schema
 toOpenApiSchema schema = case schema of
   SNull -> do
-    OpenApi.mempty
+    GhcMonoid.mempty
       |> Lens.set OpenApiLens.type_ (Just OpenApi.OpenApiNull)
   
   SBool -> do
-    OpenApi.mempty
+    GhcMonoid.mempty
       |> Lens.set OpenApiLens.type_ (Just OpenApi.OpenApiBoolean)
   
   SInt -> do
-    OpenApi.mempty
+    GhcMonoid.mempty
       |> Lens.set OpenApiLens.type_ (Just OpenApi.OpenApiInteger)
   
   SNumber -> do
-    OpenApi.mempty
+    GhcMonoid.mempty
       |> Lens.set OpenApiLens.type_ (Just OpenApi.OpenApiNumber)
   
   SText -> do
-    OpenApi.mempty
+    GhcMonoid.mempty
       |> Lens.set OpenApiLens.type_ (Just OpenApi.OpenApiString)
   
   SArray itemSchema -> do
     let itemsSchema = toOpenApiSchema itemSchema
-    OpenApi.mempty
+    GhcMonoid.mempty
       |> Lens.set OpenApiLens.type_ (Just OpenApi.OpenApiArray)
       |> Lens.set OpenApiLens.items (Just (OpenApi.OpenApiItemsObject (OpenApi.Inline itemsSchema)))
   
@@ -78,12 +82,12 @@ toOpenApiSchema schema = case schema of
     let properties = fields
           |> Array.map (\field -> (field.fieldName, OpenApi.Inline (toOpenApiSchema field.fieldSchema)))
           |> Array.toLinkedList
-          |> Map.fromList
+          |> InsOrdHashMap.fromList
     let required = fields
-          |> Array.filter (\field -> field.fieldRequired)
+          |> Array.takeIf (\field -> field.fieldRequired)
           |> Array.map (\field -> field.fieldName)
           |> Array.toLinkedList
-    OpenApi.mempty
+    GhcMonoid.mempty
       |> Lens.set OpenApiLens.type_ (Just OpenApi.OpenApiObject)
       |> Lens.set OpenApiLens.properties properties
       |> Lens.set OpenApiLens.required required
@@ -92,20 +96,23 @@ toOpenApiSchema schema = case schema of
     let enumValues = variants
           |> Array.map (\name -> Text.toLower name)
           |> Array.toLinkedList
-    OpenApi.mempty
+    GhcMonoid.mempty
       |> Lens.set OpenApiLens.type_ (Just OpenApi.OpenApiString)
-      |> Lens.set OpenApiLens.enum_ (Just (enumValues |> map (\t -> OpenApi.toJSON t)))
+      |> Lens.set OpenApiLens.enum_ (Just (enumValues |> LinkedList.map (\t -> Json.toJSON t)))
   
   SUnion variants -> do
     let variantSchemas = variants
-          |> Array.map (\(name, variantSchema) -> toOpenApiSchema variantSchema)
+          |> Array.map (\(_name, variantSchema) -> toOpenApiSchema variantSchema)
           |> Array.toLinkedList
-    OpenApi.mempty
-      |> Lens.set OpenApiLens.oneOf (Just (variantSchemas |> map OpenApi.Inline))
+    GhcMonoid.mempty
+      |> Lens.set OpenApiLens.oneOf (Just (variantSchemas |> LinkedList.map OpenApi.Inline))
   
   SRef refName -> do
-    OpenApi.mempty
-      |> Lens.set OpenApiLens.ref (Just (OpenApi.Reference refName))
+    -- Note: Schema references in OpenAPI are handled at the usage site via Referenced type,
+    -- not as a field on Schema itself. We encode the reference as the schema title.
+    GhcMonoid.mempty
+      |> Lens.set OpenApiLens.title (Just refName)
+      |> Lens.set OpenApiLens.description (Just [fmt|Reference to: {refName}|])
 
 
 -- | Generate OpenAPI 3.0 specification from endpoint schemas.
@@ -121,7 +128,7 @@ toOpenApiSpec ::
   Map Text EndpointSchema ->
   OpenApi.OpenApi
 toOpenApiSpec apiInfo commandSchemas querySchemas = do
-  let info = OpenApi.mempty
+  let info = GhcMonoid.mempty
         |> Lens.set OpenApiLens.title apiInfo.apiTitle
         |> Lens.set OpenApiLens.version apiInfo.apiVersion
         |> Lens.set OpenApiLens.description (Just apiInfo.apiDescription)
@@ -129,21 +136,22 @@ toOpenApiSpec apiInfo commandSchemas querySchemas = do
   let commandPaths = commandSchemas
         |> Map.entries
         |> Array.map (\(name, schema) -> makeCommandPath name schema)
+        |> Array.map (\(path, item) -> (Text.toLinkedList path, item))
         |> Array.toLinkedList
-        |> Map.fromList
+        |> InsOrdHashMap.fromList
   
   let queryPaths = querySchemas
         |> Map.entries
         |> Array.map (\(name, schema) -> makeQueryPath name schema)
+        |> Array.map (\(path, item) -> (Text.toLinkedList path, item))
         |> Array.toLinkedList
-        |> Map.fromList
+        |> InsOrdHashMap.fromList
   
-  let allPaths = Map.merge commandPaths queryPaths
+  let allPaths = InsOrdHashMap.union commandPaths queryPaths
   
-  OpenApi.mempty
+  GhcMonoid.mempty
     |> Lens.set OpenApiLens.info info
-    |> Lens.set OpenApiLens.openapi "3.0.0"
-    |> Lens.set OpenApiLens.paths (OpenApi.Paths allPaths)
+    |> Lens.set OpenApiLens.paths allPaths
 
 
 -- | Create OpenAPI path item for a command endpoint.
@@ -154,50 +162,49 @@ makeCommandPath name schema = do
   let path = [fmt|/commands/{name}|]
   let requestBody = case schema.requestSchema of
         Nothing -> Nothing
-        Just reqSchema -> do
-          let content = Map.fromList
-                [ ("application/json", OpenApi.mempty
-                    |> Lens.set OpenApiLens.schema (Just (OpenApi.Inline (toOpenApiSchema reqSchema)))
-                  )
-                ]
-          Just (OpenApi.Inline (OpenApi.mempty
+        Just reqSchema ->
+          Just (OpenApi.Inline (GhcMonoid.mempty
             |> Lens.set OpenApiLens.required (Just True)
-            |> Lens.set OpenApiLens.content content
+            |> Lens.set OpenApiLens.content (InsOrdHashMap.fromList
+                  [ ("application/json", GhcMonoid.mempty
+                      |> Lens.set OpenApiLens.schema (Just (OpenApi.Inline (toOpenApiSchema reqSchema)))
+                    )
+                  ])
           ))
   
-  let responseContent = Map.fromList
-        [ ("application/json", OpenApi.mempty
+  let responseContent = InsOrdHashMap.fromList
+        [ ("application/json", GhcMonoid.mempty
             |> Lens.set OpenApiLens.schema (Just (OpenApi.Inline (toOpenApiSchema schema.responseSchema)))
           )
         ]
   
   let responses = OpenApi.Responses
         { OpenApi._responsesDefault = Nothing
-        , OpenApi._responsesResponses = Map.fromList
-            [ ("200", OpenApi.Inline (OpenApi.mempty
+        , OpenApi._responsesResponses = InsOrdHashMap.fromList
+            [ (200, OpenApi.Inline (GhcMonoid.mempty
                 |> Lens.set OpenApiLens.description "Success"
                 |> Lens.set OpenApiLens.content responseContent
               ))
-            , ("400", OpenApi.Inline (OpenApi.mempty
+            , (400, OpenApi.Inline (GhcMonoid.mempty
                 |> Lens.set OpenApiLens.description "Bad Request"
               ))
-            , ("401", OpenApi.Inline (OpenApi.mempty
+            , (401, OpenApi.Inline (GhcMonoid.mempty
                 |> Lens.set OpenApiLens.description "Unauthorized"
               ))
-            , ("500", OpenApi.Inline (OpenApi.mempty
+            , (500, OpenApi.Inline (GhcMonoid.mempty
                 |> Lens.set OpenApiLens.description "Internal Server Error"
               ))
             ]
         }
   
-  let operation = OpenApi.mempty
+  let operation = GhcMonoid.mempty
         |> Lens.set OpenApiLens.summary (Just name)
         |> Lens.set OpenApiLens.description (Just schema.description)
         |> Lens.set OpenApiLens.deprecated (Just schema.deprecated)
         |> Lens.set OpenApiLens.requestBody requestBody
         |> Lens.set OpenApiLens.responses responses
   
-  let pathItem = OpenApi.mempty
+  let pathItem = GhcMonoid.mempty
         |> Lens.set OpenApiLens.post (Just operation)
   
   (path, pathItem)
@@ -210,49 +217,38 @@ makeQueryPath :: Text -> EndpointSchema -> (Text, OpenApi.PathItem)
 makeQueryPath name schema = do
   let path = [fmt|/queries/{name}|]
   
-  let responseContent = Map.fromList
-        [ ("application/json", OpenApi.mempty
+  let responseContent = InsOrdHashMap.fromList
+        [ ("application/json", GhcMonoid.mempty
             |> Lens.set OpenApiLens.schema (Just (OpenApi.Inline (toOpenApiSchema schema.responseSchema)))
           )
         ]
   
   let responses = OpenApi.Responses
         { OpenApi._responsesDefault = Nothing
-        , OpenApi._responsesResponses = Map.fromList
-            [ ("200", OpenApi.Inline (OpenApi.mempty
+        , OpenApi._responsesResponses = InsOrdHashMap.fromList
+            [ (200, OpenApi.Inline (GhcMonoid.mempty
                 |> Lens.set OpenApiLens.description "Success"
                 |> Lens.set OpenApiLens.content responseContent
               ))
-            , ("401", OpenApi.Inline (OpenApi.mempty
+            , (401, OpenApi.Inline (GhcMonoid.mempty
                 |> Lens.set OpenApiLens.description "Unauthorized"
               ))
-            , ("403", OpenApi.Inline (OpenApi.mempty
+            , (403, OpenApi.Inline (GhcMonoid.mempty
                 |> Lens.set OpenApiLens.description "Forbidden"
               ))
-            , ("500", OpenApi.Inline (OpenApi.mempty
+            , (500, OpenApi.Inline (GhcMonoid.mempty
                 |> Lens.set OpenApiLens.description "Internal Server Error"
               ))
             ]
         }
   
-  let operation = OpenApi.mempty
+  let operation = GhcMonoid.mempty
         |> Lens.set OpenApiLens.summary (Just name)
         |> Lens.set OpenApiLens.description (Just schema.description)
         |> Lens.set OpenApiLens.deprecated (Just schema.deprecated)
         |> Lens.set OpenApiLens.responses responses
   
-  let pathItem = OpenApi.mempty
+  let pathItem = GhcMonoid.mempty
         |> Lens.set OpenApiLens.get (Just operation)
   
   (path, pathItem)
-
-
--- | ApiInfo type for spec generation.
---
--- This is re-exported from Service.Application but defined here
--- to avoid circular dependencies.
-data ApiInfo = ApiInfo
-  { apiTitle :: Text
-  , apiVersion :: Text
-  , apiDescription :: Text
-  }

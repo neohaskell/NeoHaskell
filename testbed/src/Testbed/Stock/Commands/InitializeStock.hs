@@ -24,6 +24,9 @@ data InitializeStock = InitializeStock
 instance Json.FromJSON InitializeStock
 
 
+instance ToSchema InitializeStock
+
+
 getEntityId :: InitializeStock -> Maybe Uuid
 getEntityId _ = Nothing
 

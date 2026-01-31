@@ -92,6 +92,7 @@ import Json qualified
 import Map (Map)
 import Map qualified
 import Record qualified
+import Schema qualified
 import LinkedList (LinkedList)
 import Maybe (Maybe (..))
 import Result (Result (..))
@@ -130,6 +131,7 @@ import Text (Text)
 import Text qualified
 import ToText (toText)
 import TypeName qualified
+import Service.Application.Types (ApiInfo (..), defaultApiInfo)
 
 
 -- | Configuration for WebTransport authentication.
@@ -176,38 +178,6 @@ data WebAuthSetup = WebAuthSetup
 --   |> Application.withOAuth2StateKey "OAUTH2_STATE_KEY"
 --   |> Application.withOAuth2Provider ouraProvider
 -- @
--- | API metadata for OpenAPI spec generation.
---
--- This configures the info section of the OpenAPI specification.
--- If not provided, sensible defaults are used.
---
--- Example:
---
--- @
--- app = Application.new
---   |> Application.withApiInfo "My API" "1.0.0" "A comprehensive API for managing resources"
---   |> Application.withTransport WebTransport.server
--- @
-data ApiInfo = ApiInfo
-  { apiTitle :: Text
-    -- ^ API title (e.g., "My API")
-  , apiVersion :: Text
-    -- ^ API version (e.g., "1.0.0")
-  , apiDescription :: Text
-    -- ^ API description (can be empty)
-  }
-  deriving (Show, Eq)
-
-
--- | Default API info when none is provided.
-defaultApiInfo :: ApiInfo
-defaultApiInfo = ApiInfo
-  { apiTitle = "API"
-  , apiVersion = "1.0.0"
-  , apiDescription = ""
-  }
-
-
 data OAuth2Setup = OAuth2Setup
   { -- | Environment variable name containing the HMAC secret (min 32 bytes)
     hmacKeyEnvVar :: Text
@@ -368,6 +338,7 @@ withQueryObjectStore config app =
 withQuery ::
   forall query queryName entities.
   ( Query query,
+    Schema.ToSchema query,
     Json.ToJSON query,
     Json.FromJSON query,
     queryName ~ NameOf query,
@@ -582,17 +553,17 @@ runWith eventStore app = do
   -- 2. Combine all registries from query definitions with the manual registry
   let combinedRegistry =
         wiredQueries
-          |> Array.reduce (\(reg, _, _) acc -> mergeRegistries reg acc) app.queryRegistry
+          |> Array.reduce (\(reg, _endpoint) acc -> mergeRegistries reg acc) app.queryRegistry
 
   -- 3. Combine all query endpoints from definitions with manual endpoints
   let combinedQueryEndpoints =
         wiredQueries
-          |> Array.reduce (\(_, (name, handler, _)) acc -> acc |> Map.set name handler) app.queryEndpoints
+          |> Array.reduce (\(_reg, (name, handler, _schema)) acc -> acc |> Map.set name handler) app.queryEndpoints
 
   -- 3b. Collect all query schemas
   let combinedQuerySchemas =
         wiredQueries
-          |> Array.reduce (\(_, (name, _, schema)) acc -> acc |> Map.set name schema) Map.empty
+          |> Array.reduce (\(_reg, (name, _handler, schema)) acc -> acc |> Map.set name schema) Map.empty
 
   -- 4. Create query subscriber with combined registry
   subscriber <- Subscriber.new eventStore combinedRegistry

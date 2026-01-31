@@ -23,13 +23,13 @@ import GHC.TypeLits qualified as GHC
 import Json qualified
 import Map (Map)
 import Map qualified
-import Maybe (Maybe (..))
+import Maybe (Maybe (..), withDefault)
 import Record (Record)
 import Record qualified
 import Schema (Schema)
 import Schema qualified
 import Service.Auth (RequestContext)
-import Service.Transport (Transport (..), EndpointHandler)
+import Service.Transport (Transport (..), EndpointHandler, EndpointSchema (..))
 import Service.Command (EntityOf, EventOf)
 import Service.Command.Core (TransportOf, Command (..), Entity (..), Event, NameOf)
 import Service.CommandExecutor qualified as CommandExecutor
@@ -158,6 +158,9 @@ class CommandInspect definition where
   transportName :: definition -> Text
 
 
+  commandSchema :: definition -> Schema
+
+
   createHandler ::
     definition ->
     EventStore (CmdEvent definition) ->
@@ -180,6 +183,7 @@ instance
     Ord entityIdType,
     Show entityIdType,
     Json.FromJSON cmd,
+    Schema.ToSchema cmd,
     Transport transport,
     name ~ NameOf cmd,
     Record.KnownSymbol transportName,
@@ -205,6 +209,9 @@ instance
 
 
   transportName _ = getSymbolText (Record.Proxy @transportName)
+
+
+  commandSchema _ = Schema.toSchema @cmd
 
 
   createHandler ::
@@ -394,7 +401,7 @@ buildEndpointsByTransport rawEventStore commandDefinitions transportsMap = do
             let transport = getTransportValue transportVal
             let typedEventStore = GHC.unsafeCoerce eventStore :: EventStore (CmdEvent cmdDef)
             let typedCache = GHC.unsafeCoerce maybeCache :: Maybe (SnapshotCache (CmdEntity cmdDef))
-            Record.K (transportName x, commandName x, createHandler x typedEventStore typedCache transport (Record.Proxy @cmd), x.commandSchema)
+            Record.K (transportName x, commandName x, createHandler x typedEventStore typedCache transport (Record.Proxy @cmd), commandSchema x)
 
   let endpoints :: Array (Text, Text, EndpointHandler, Schema) =
         commandDefinitions

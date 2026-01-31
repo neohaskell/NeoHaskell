@@ -27,6 +27,7 @@ import Service.Query.Updater qualified as Updater
 import Service.QueryObjectStore.Core (QueryObjectStore)
 import Service.QueryObjectStore.InMemory qualified as InMemory
 import Service.Transport (QueryEndpointHandler, EndpointSchema (..))
+import Maybe (Maybe (..))
 import Task (Task)
 import Task qualified
 import Text (Text)
@@ -77,6 +78,7 @@ data QueryDefinition = QueryDefinition
 createDefinition ::
   forall query queryName entities.
   ( Query query,
+    Schema.ToSchema query,
     Json.ToJSON query,
     Json.FromJSON query,
     queryName ~ NameOf query,

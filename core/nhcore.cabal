@@ -39,6 +39,7 @@ common common_cfg
     file-embed,
     ghc-prim,
     hashable,
+    insert-ordered-containers,
     iproute,
     jose,
     lens,
@@ -210,6 +211,7 @@ library
     Service.Application
     Service.Application.Integrations
     Service.Application.Transports
+    Service.Application.Types
     Service.Query
     Service.Query.Auth
     Service.Query.Core
@@ -374,6 +376,7 @@ test-suite nhcore-test
     Service.Transport.WebSpec
     Service.QueryObjectStore.InMemorySpec
     Service.SnapshotCache.InMemorySpec
+    Schema.OpenApiSpec
     SchemaSpec
     SetSpec
     StreamSpec

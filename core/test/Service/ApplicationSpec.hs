@@ -247,7 +247,7 @@ spec = do
                     -- Check if MockTransport is present by looking for its name
                     let hasMockTransport = transports |> Map.contains "MockTransport"
                     transportFoundRef |> ConcurrentVar.modify (\_ -> hasMockTransport)
-                    Task.yield Map.empty
+                    Task.yield (Map.empty, Map.empty)
                 }
 
         let app =
@@ -276,5 +276,5 @@ withQueryRegistry registry app =
 mockServiceRunner :: ServiceRunner
 mockServiceRunner =
   ServiceRunner
-    { getEndpointsByTransport = \_ _ -> Task.yield Map.empty
+    { getEndpointsByTransport = \_ _ -> Task.yield (Map.empty, Map.empty)
     }

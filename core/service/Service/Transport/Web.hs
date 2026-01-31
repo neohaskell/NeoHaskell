@@ -37,8 +37,8 @@ import Record (KnownHash (..))
 import Record qualified
 import Result (Result (..))
 import Schema.OpenApi qualified as OpenApi
-import Service.Application (ApiInfo (..))
-import Service.Application qualified
+import Service.Application.Types (ApiInfo (..))
+import Service.Application.Types qualified
 import Service.Auth (RequestContext)
 import Service.Auth qualified as Auth
 import Service.Command.Core (Command, NameOf)
@@ -98,7 +98,7 @@ data WebTransport = WebTransport
     -- | Optional file upload routes. Set via Application.withFileUpload.
     fileUploadEnabled :: Maybe FileUploadEnabled,
     -- | Optional API metadata for OpenAPI spec generation. Set via Application.withApiInfo.
-    apiInfo :: Maybe Service.Application.ApiInfo
+    apiInfo :: Maybe ApiInfo
   }
 
 
@@ -770,7 +770,7 @@ instance Transport WebTransport where
       ["openapi.json"] -> do
         -- Extract API info (use default if not configured)
         let apiInfo = case webTransport.apiInfo of
-              Maybe.Nothing -> Service.Application.defaultApiInfo
+              Maybe.Nothing -> Service.Application.Types.defaultApiInfo
               Maybe.Just info -> info
         -- Generate OpenAPI spec from endpoint schemas
         let spec = OpenApi.toOpenApiSpec apiInfo endpoints.commandSchemas endpoints.querySchemas
@@ -780,7 +780,7 @@ instance Transport WebTransport where
       ["openapi.yaml"] -> do
         -- Extract API info (use default if not configured)
         let apiInfo = case webTransport.apiInfo of
-              Maybe.Nothing -> Service.Application.defaultApiInfo
+              Maybe.Nothing -> Service.Application.Types.defaultApiInfo
               Maybe.Just info -> info
         -- Generate OpenAPI spec from endpoint schemas
         let spec = OpenApi.toOpenApiSpec apiInfo endpoints.commandSchemas endpoints.querySchemas
@@ -792,7 +792,7 @@ instance Transport WebTransport where
       ["docs"] -> do
         -- Extract API title for documentation page
         let apiTitle = case webTransport.apiInfo of
-              Maybe.Nothing -> Service.Application.defaultApiInfo.apiTitle
+              Maybe.Nothing -> Service.Application.Types.defaultApiInfo.apiTitle
               Maybe.Just info -> info.apiTitle
         -- Generate Scalar HTML documentation
         let htmlText = SwaggerUI.scalarHtml apiTitle

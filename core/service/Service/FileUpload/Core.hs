@@ -32,6 +32,8 @@ import Data.Aeson qualified as GhcAeson
 import Data.Hashable qualified as GhcHashable
 import Json qualified
 import Maybe (Maybe)
+import Schema (ToSchema (..))
+import Schema qualified
 import Text (Text)
 
 
@@ -52,6 +54,11 @@ instance GhcHashable.Hashable FileRef where
 
 instance Json.FromJSON FileRef
 instance Json.ToJSON FileRef
+
+
+-- | ToSchema instance for OpenAPI - FileRef is represented as a string
+instance ToSchema FileRef where
+  toSchema = Schema.SText
 
 
 -- | Internal storage key for blob store

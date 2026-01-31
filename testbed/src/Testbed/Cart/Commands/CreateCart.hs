@@ -25,6 +25,9 @@ instance Json.FromJSON CreateCart
 instance Json.ToJSON CreateCart
 
 
+instance ToSchema CreateCart
+
+
 getEntityId :: CreateCart -> Maybe Uuid
 getEntityId _ = Nothing
 

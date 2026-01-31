@@ -15,8 +15,9 @@ import Map qualified
 import Maybe (Maybe (..))
 import Maybe qualified
 import Service.ServiceDefinition.Core (TransportValue (..))
-import Service.Transport (Transport (..), QueryEndpointHandler, EndpointHandler, Endpoints (..))
+import Service.Transport (Transport (..), QueryEndpointHandler, EndpointHandler, Endpoints (..), EndpointSchema (..))
 import Service.Transport.Web (WebTransport (..), AuthEnabled, OAuth2Config, FileUploadEnabled)
+import Service.Application.Types (ApiInfo)
 import Task (Task)
 import Task qualified
 import Text (Text)
@@ -44,7 +45,7 @@ runTransports ::
   -- ^ Optional OAuth2 provider configuration for WebTransport
   Maybe FileUploadEnabled ->
   -- ^ Optional file upload configuration for WebTransport
-  Maybe Service.Application.ApiInfo ->
+  Maybe ApiInfo ->
   -- ^ Optional API metadata for OpenAPI spec generation
   Task Text Unit
 runTransports transportsMap endpointsByTransport schemasByTransport queryEndpoints querySchemas maybeWebAuth maybeOAuth2 maybeFileUpload maybeApiInfo = do
@@ -89,7 +90,7 @@ runWebTransport ::
   Maybe AuthEnabled ->
   Maybe OAuth2Config ->
   Maybe FileUploadEnabled ->
-  Maybe Service.Application.ApiInfo ->
+  Maybe ApiInfo ->
   Task Text Unit
 runWebTransport transportVal commandEndpoints commandSchemas queryEndpoints querySchemas maybeAuth maybeOAuth2 maybeFileUpload maybeApiInfo = do
   case transportVal of
