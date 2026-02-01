@@ -18,6 +18,30 @@ import Task qualified
 import Test
 
 
+-- | Wait until a ConcurrentVar contains the expected value, or timeout.
+-- Polls every 10ms up to the specified timeout.
+waitUntilCount ::
+  ConcurrentVar Int ->
+  Int ->
+  Int ->
+  Task Text Unit
+waitUntilCount var expectedValue timeoutMs = do
+  let pollIntervalMs = 10
+  let maxAttempts = timeoutMs / pollIntervalMs
+  let waitLoop currentAttempt = do
+        currentValue <- ConcurrentVar.peek var
+        if currentValue == expectedValue
+          then Task.yield unit
+          else do
+            if currentAttempt >= maxAttempts
+              then Task.throw [fmt|Timeout waiting for expected count: expected #{toText expectedValue}, got #{toText currentValue}|]
+              else do
+                AsyncTask.sleep pollIntervalMs
+                  |> Task.mapError (\_ -> "sleep error" :: Text)
+                waitLoop (currentAttempt + 1)
+  waitLoop 0
+
+
 spec :: Spec Unit
 spec = do
   describe "QuerySubscriber" do
@@ -216,14 +240,11 @@ spec = do
         -- Start subscription (no rebuild needed since store is empty)
         Subscriber.start subscriber
 
-        -- Give subscription time to activate
-        AsyncTask.sleep 50 |> Task.mapError (\_ -> "sleep error" :: Text)
-
         -- Insert event after subscription started
         insertTestEvent eventStore entityName
 
-        -- Give time for event to be processed
-        AsyncTask.sleep 100 |> Task.mapError (\_ -> "sleep error" :: Text)
+        -- Wait for event to be processed (with timeout)
+        waitUntilCount processedCount 1 5000
 
         count <- ConcurrentVar.peek processedCount
         count |> shouldBe 1
@@ -264,12 +285,11 @@ spec = do
         -- Start live subscription
         Subscriber.start subscriber
 
-        AsyncTask.sleep 50 |> Task.mapError (\_ -> "sleep error" :: Text)
-
         -- Insert new event
         insertTestEvent eventStore entityName
 
-        AsyncTask.sleep 100 |> Task.mapError (\_ -> "sleep error" :: Text)
+        -- Wait for new event to be processed (with timeout)
+        waitUntilCount processedCount 1 5000
 
         -- Should only process the new event (not re-process old ones)
         liveCount <- ConcurrentVar.peek processedCount
