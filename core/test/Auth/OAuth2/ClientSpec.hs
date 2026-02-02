@@ -251,31 +251,35 @@ spec = do
             Err other -> fail [fmt|Expected EndpointValidationFailed, got: #{toText other}|]
             Ok _ -> fail "Expected error for private IP in authorize endpoint"
 
-        it "rejects provider with loopback IP in token endpoint (SSRF)" \_ -> do
+        -- NOTE: 127.0.0.1 and localhost are now ALLOWED for development (ADR-0018).
+        -- Use 10.0.0.1 to test that non-localhost private IPs are still blocked.
+        it "rejects provider with private IP in token endpoint (SSRF)" \_ -> do
           let provider =
                 Provider
                   { name = "ssrf-token"
                   , authorizeEndpoint = "https://example.com/authorize"
-                  , tokenEndpoint = "https://127.0.0.1/token" -- Loopback
+                  , tokenEndpoint = "https://10.0.0.1/token" -- Private network (non-localhost)
                   }
           result <- OAuth2.validateProvider provider |> Task.asResult
           case result of
             Err (EndpointValidationFailed _) -> Task.yield ()
             Err other -> fail [fmt|Expected EndpointValidationFailed, got: #{toText other}|]
-            Ok _ -> fail "Expected error for loopback IP in token endpoint"
+            Ok _ -> fail "Expected error for private IP in token endpoint"
 
-        it "rejects provider with localhost in endpoint (SSRF)" \_ -> do
+        -- NOTE: localhost is now ALLOWED for development (ADR-0018).
+        -- Use 172.16.x.x to test that non-localhost private networks are still blocked.
+        it "rejects provider with private network IP in endpoint (SSRF)" \_ -> do
           let provider =
                 Provider
-                  { name = "ssrf-localhost"
-                  , authorizeEndpoint = "https://localhost/authorize"
+                  { name = "ssrf-private"
+                  , authorizeEndpoint = "https://172.16.0.1/authorize" -- Private network (non-localhost)
                   , tokenEndpoint = "https://example.com/token"
                   }
           result <- OAuth2.validateProvider provider |> Task.asResult
           case result of
             Err (EndpointValidationFailed _) -> Task.yield ()
             Err other -> fail [fmt|Expected EndpointValidationFailed, got: #{toText other}|]
-            Ok _ -> fail "Expected error for localhost in endpoint"
+            Ok _ -> fail "Expected error for private network IP in endpoint"
 
         it "rejects provider with malformed URL in authorize endpoint" \_ -> do
           let provider =
