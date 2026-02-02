@@ -736,9 +736,13 @@ runWith eventStore app = do
   inboundWorkers <- Integrations.startInboundWorkers app.inboundIntegrations combinedCommandEndpoints
 
   -- 16. Create file upload routes (setup already initialized in step 11)
+  -- ADR-0019: Pass maxFileSizeBytes to coordinate with WebTransport.maxBodySize
   let maybeFileUploadEnabled = case maybeFileUploadSetup of
         Nothing -> Nothing
-        Just setup -> Just Web.FileUploadEnabled {Web.fileUploadRoutes = FileUpload.createRoutes setup}
+        Just setup -> Just Web.FileUploadEnabled
+          { Web.fileUploadRoutes = FileUpload.createRoutes setup
+          , Web.maxRequestBodyBytes = setup.config.maxFileSizeBytes
+          }
 
   -- Define cleanup actions that must always run
   let cleanupJwksManager = case maybeAuthEnabled of

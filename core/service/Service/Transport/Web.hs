@@ -84,6 +84,10 @@ data OAuth2Config = OAuth2Config
 data FileUploadEnabled = FileUploadEnabled
   { -- | File upload route handlers from Service.FileUpload.Web
     fileUploadRoutes :: FileUploadRoutes
+  , -- | Maximum request body size for file uploads.
+    -- This is used to coordinate WebTransport.maxBodySize with FileUploadConfig.maxFileSizeBytes.
+    -- See ADR-0019 for details.
+    maxRequestBodyBytes :: Int64
   }
 
 
