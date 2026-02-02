@@ -77,18 +77,18 @@ let toSchemaInstance =
 pure ([nameOfInstance, commandInstance, toSchemaInstance] ++ knownHashInstance)
 ```
 
-### 2. Prerequisites Validation
+### 2. Prerequisites
 
-The TH splice should verify that the command type:
+The command type must have:
 
-1. Has a `Generic` instance (already required for `FromJSON`)
-2. All field types have `ToSchema` instances (checked at use-site, not TH time)
+1. A `Generic` instance (already required for `FromJSON`, so this is always present)
+2. `ToSchema` instances for all field types (checked by GHC at compile time)
 
-If `Generic` is missing, the existing error messages will guide users.
+Note: The TH splice does not explicitly validate these prerequisites. Instead, GHC will produce clear error messages if `Generic` is missing or field types lack `ToSchema` instances.
 
 ### 3. Migration Path
 
-**Backwards compatible**: Existing code with explicit `instance ToSchema CommandName` will cause a "duplicate instance" compile error. Users should remove the manual instances.
+**Breaking change**: Existing code with explicit `instance ToSchema CommandName` will cause a "duplicate instance" compile error. Users must remove the manual instances to migrate.
 
 A one-time migration script can be provided:
 
