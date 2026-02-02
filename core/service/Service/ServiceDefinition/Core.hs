@@ -346,7 +346,8 @@ toServiceRunner ::
     Json.FromJSON event,
     Json.ToJSON event,
     Json.FromJSON entity,
-    Json.ToJSON entity
+    Json.ToJSON entity,
+    GHC.KnownSymbol (NameOf entity)
   ) =>
   Service cmds commandTransportNames ->
   ServiceRunner
@@ -377,7 +378,8 @@ buildEndpointsByTransport ::
     Json.FromJSON event,
     Json.ToJSON event,
     Json.FromJSON entity,
-    Json.ToJSON entity
+    Json.ToJSON entity,
+    GHC.KnownSymbol (NameOf entity)
   ) =>
   EventStore Json.Value ->
   Record.ContextRecord Record.I cmds ->
@@ -386,6 +388,8 @@ buildEndpointsByTransport ::
 buildEndpointsByTransport rawEventStore commandDefinitions transportsMap = do
   let eventStore = rawEventStore |> EventStore.castEventStore @event
   let maybeCache = Nothing :: Maybe (SnapshotCache entity)
+  -- Entity name for OpenAPI tag grouping (shared by all commands in this service)
+  let entityNameText = getSymbolText (Record.Proxy @(NameOf entity))
 
   let mapper ::
         forall cmdDef cmd.
@@ -416,7 +420,7 @@ buildEndpointsByTransport rawEventStore commandDefinitions transportsMap = do
               , responseSchema = commandResponseSchema
               , description = ""
               , deprecated = False
-              , entityName = Just (getSymbolText (Record.Proxy @entityName))
+              , entityName = Just entityNameText
               }
         in case handlersAcc |> Map.get transportNameText of
           Nothing -> do

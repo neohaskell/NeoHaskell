@@ -21,9 +21,11 @@ import Bytes qualified
 import ConcurrentVar qualified
 import Console qualified
 import Data.ByteString qualified as GhcBS
+import Data.ByteString.Lazy qualified as LBS
 import Data.IORef qualified as GhcIORef
 import Data.List qualified as GhcList
 import Data.Yaml qualified as Yaml
+import Prelude qualified (seq)
 import GHC.TypeLits qualified as GHC
 import Json qualified
 import LinkedList qualified
@@ -369,11 +371,18 @@ instance Transport WebTransport where
     let openApiSpec = OpenApi.toOpenApiSpec apiInfo endpoints.commandSchemas endpoints.querySchemas oauth2Schemas fileSchemas
 
     -- Pre-encode as JSON and YAML bytes (cached)
+    -- Force evaluation at assembly time using LBS.length (strict in entire content)
     let cachedJsonBytes = Json.encodeText openApiSpec |> Text.toBytes |> Bytes.toLazyLegacy
     let cachedYamlBytes = Yaml.encode openApiSpec |> Bytes.fromLegacy |> Bytes.toLazyLegacy
 
     -- Pre-generate Swagger UI HTML
     let cachedDocsHtml = SwaggerUI.scalarHtml apiInfo.apiTitle |> Text.toBytes |> Bytes.toLazyLegacy
+
+    -- Force evaluation of all cached values at assembly time (not on first request)
+    -- LBS.length traverses the entire lazy ByteString, forcing full evaluation
+    let !_ = LBS.length cachedJsonBytes
+    let !_ = LBS.length cachedYamlBytes
+    let !_ = LBS.length cachedDocsHtml
 
     -- Return the request handler that uses cached values
     \request respond -> do

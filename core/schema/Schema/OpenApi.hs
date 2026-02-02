@@ -367,6 +367,7 @@ makeOAuth2Path name schema = do
   let operation = GhcMonoid.mempty
         |> Lens.set OpenApiLens.summary (Just [fmt|OAuth2 #{name}|])
         |> Lens.set OpenApiLens.description (Just schema.description)
+        |> Lens.set OpenApiLens.deprecated (Just schema.deprecated)
         |> Lens.set OpenApiLens.tags ["Authentication"]
         |> Lens.set OpenApiLens.parameters [OpenApi.Inline providerParam]
         |> Lens.set OpenApiLens.responses responses
@@ -446,6 +447,7 @@ makeFileUploadPath schema = do
   let operation = GhcMonoid.mempty
         |> Lens.set OpenApiLens.summary (Just "Upload file")
         |> Lens.set OpenApiLens.description (Just schema.description)
+        |> Lens.set OpenApiLens.deprecated (Just schema.deprecated)
         |> Lens.set OpenApiLens.tags ["Files"]
         |> Lens.set OpenApiLens.requestBody requestBody
         |> Lens.set OpenApiLens.responses responses
@@ -502,6 +504,7 @@ makeFileDownloadPath schema = do
   let operation = GhcMonoid.mempty
         |> Lens.set OpenApiLens.summary (Just "Download file")
         |> Lens.set OpenApiLens.description (Just schema.description)
+        |> Lens.set OpenApiLens.deprecated (Just schema.deprecated)
         |> Lens.set OpenApiLens.tags ["Files"]
         |> Lens.set OpenApiLens.parameters [OpenApi.Inline fileRefParam]
         |> Lens.set OpenApiLens.responses responses
