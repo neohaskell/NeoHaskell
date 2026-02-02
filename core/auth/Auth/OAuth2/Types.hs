@@ -61,12 +61,12 @@ module Auth.OAuth2.Types (
   validateRedirectUri,
 ) where
 
+import Auth.Hostname qualified as Hostname
 import Basics
 import Char (Char)
 import Control.Applicative qualified as GhcApplicative
 import Data.Aeson qualified as Aeson
 import Data.Aeson.Types qualified as AesonTypes
-import Data.List qualified as GhcList
 import Json qualified
 import LinkedList qualified
 import Maybe (Maybe (..))
@@ -379,12 +379,9 @@ validateRedirectUri registeredUri receivedUri = do
 
 
 -- | Check if a hostname is localhost (for development redirect URIs).
+-- Uses shared implementation from Auth.Hostname.
 isLocalhost :: [Char] -> Bool
-isLocalhost host =
-  host == "localhost"
-    || host == "127.0.0.1"
-    || host == "[::1]"
-    || LinkedList.any (\prefix -> GhcList.isPrefixOf prefix host) ["localhost:", "127.0.0.1:", "[::1]:"]
+isLocalhost = Hostname.isLocalhost
 
 
 -- | OAuth2 scope(s) being requested.

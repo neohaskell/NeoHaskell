@@ -123,6 +123,7 @@ library
     Auth.Config
     Auth.Discovery
     Auth.Error
+    Auth.Hostname
     Auth.Jwt
     Auth.Jwks
     Auth.Middleware
@@ -338,6 +339,7 @@ test-suite nhcore-test
     -with-rtsopts=-N
 
   other-modules:
+    Auth.HostnameSpec
     Auth.InMemorySecretStoreSpec
     Auth.JwtSpec
     Auth.MiddlewareSpec
@@ -410,6 +412,7 @@ test-suite nhcore-test-auth
     -Wno-missing-home-modules
 
   other-modules:
+    Auth.HostnameSpec
     Auth.InMemorySecretStoreSpec
     Auth.JwtSpec
     Auth.MiddlewareSpec

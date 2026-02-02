@@ -59,12 +59,14 @@ spec = do
             Err other -> fail [fmt|Expected EndpointValidationFailed, got: #{toText other}|]
             Ok _ -> fail "Expected error for HTTP endpoint"
 
+        -- NOTE: 127.0.0.1 (localhost) is now ALLOWED for development (ADR-0018).
+        -- This test uses 10.0.0.1 instead to verify SSRF protection for non-localhost private IPs.
         it "rejects private IP in token endpoint (SSRF protection)" \_ -> do
           let provider =
                 Provider
                   { name = "ssrf-attempt"
                   , authorizeEndpoint = "https://example.com/authorize"
-                  , tokenEndpoint = "https://127.0.0.1/token" -- Loopback
+                  , tokenEndpoint = "https://10.0.0.1/token" -- Private network (non-localhost)
                   }
           result <-
             OAuth2.exchangeCode

@@ -10,6 +10,7 @@ module Auth.UrlValidation (
 import Appendable ((++))
 import Array (Array)
 import Array qualified
+import Auth.Hostname qualified as Hostname
 import Basics
 import Char (Char)
 import Control.Concurrent.Async qualified as GhcAsync
@@ -84,9 +85,14 @@ data ValidationError
 
 -- | Validate that a URL is safe for security-sensitive requests.
 -- Requirements:
--- 1. Must use HTTPS scheme
+-- 1. Must use HTTPS scheme (except localhost for development)
 -- 2. Must not resolve to private/loopback IPs (SSRF prevention)
 -- 3. Must have a valid, non-empty hostname
+--
+-- DEVELOPMENT EXCEPTION: HTTP is allowed for localhost addresses
+-- (localhost, 127.0.0.1, [::1]) to support local OAuth2 providers
+-- like Keycloak during development. This matches RFC 8252 Section 7.3
+-- which permits HTTP for loopback addresses.
 validateSecureUrl :: Text -> Result ValidationError Text
 validateSecureUrl urlText = do
   let urlString = Text.toLinkedList urlText
@@ -95,30 +101,47 @@ validateSecureUrl urlText = do
   case URI.parseURI urlString of
     Nothing -> Err (MalformedUrl urlText)
     Just uri -> do
-      -- Check scheme is HTTPS
-      let scheme = URI.uriScheme uri
-      case scheme of
-        "https:" -> do
-          -- Check hostname exists and is not a private IP
-          case URI.uriAuthority uri of
-            Nothing -> Err (MissingHostname urlText)
-            Just auth -> do
-              let host = URI.uriRegName auth
-              -- Reject empty hostname
-              case host of
-                [] -> Err (MissingHostname urlText)
-                _ -> do
-                  -- Normalize to lowercase for consistent comparison
-                  let normalizedHost = LinkedList.map toLowerChar host
-                  -- SECURITY: Reject single-label hostnames (no dots)
-                  -- Single-label names may resolve via DNS search domains to internal hosts
-                  case isSingleLabelHostname normalizedHost of
-                    True -> Err (SingleLabelHostname urlText)
-                    False ->
-                      case isPrivateOrLoopback normalizedHost of
-                        True -> Err (PrivateIpBlocked urlText)
-                        False -> Ok urlText
-        _ -> Err (NotHttps urlText)
+      -- Extract hostname first (needed for localhost check)
+      case URI.uriAuthority uri of
+        Nothing -> Err (MissingHostname urlText)
+        Just auth -> do
+          let host = URI.uriRegName auth
+          -- Reject empty hostname
+          case host of
+            [] -> Err (MissingHostname urlText)
+            _ -> do
+              -- Normalize to lowercase for consistent comparison
+              let normalizedHost = LinkedList.map toLowerChar host
+              -- Check scheme with localhost exception
+              let scheme = URI.uriScheme uri
+              case scheme of
+                "https:" -> validateNonLocalhostHostname urlText normalizedHost
+                "http:" ->
+                  -- DEVELOPMENT EXCEPTION: Allow HTTP only for localhost
+                  -- This enables local OAuth2 providers (Keycloak, mock servers)
+                  case Hostname.isLocalhost normalizedHost of
+                    True -> Ok urlText  -- Localhost HTTP allowed, skip all other checks
+                    False -> Err (NotHttps urlText)
+                _ -> Err (NotHttps urlText)
+
+
+-- | Validate hostname for non-localhost URLs.
+-- Checks for single-label hostnames and private IPs.
+-- SECURITY: Localhost is handled separately (early return) to allow HTTP.
+validateNonLocalhostHostname :: Text -> [Char] -> Result ValidationError Text
+validateNonLocalhostHostname urlText normalizedHost =
+  -- Check if this is localhost first (for HTTPS localhost, still valid)
+  case Hostname.isLocalhost normalizedHost of
+    True -> Ok urlText  -- Localhost HTTPS is always valid
+    False -> do
+      -- SECURITY: Reject single-label hostnames (no dots)
+      -- Single-label names may resolve via DNS search domains to internal hosts
+      case isSingleLabelHostname normalizedHost of
+        True -> Err (SingleLabelHostname urlText)
+        False ->
+          case isPrivateOrLoopback normalizedHost of
+            True -> Err (PrivateIpBlocked urlText)
+            False -> Ok urlText
 
 
 -- | Convert a character to lowercase.
@@ -166,25 +189,25 @@ isLiteralIpHostStr host =
 -- This prevents SSRF attacks targeting internal services.
 -- Handles both bare IPs and bracketed IPv6 (e.g., "[::1]" from URI parsing).
 -- Assumes input is already normalized to lowercase.
+--
+-- NOTE: The "localhost" string is NOT checked here. It is handled separately
+-- by Hostname.isLocalhost in validateSecureUrl to allow HTTP for development.
+-- This function specifically checks IP addresses against non-routable ranges.
 isPrivateOrLoopback :: [Char] -> Bool
 isPrivateOrLoopback host = do
   -- Reject empty hostname
   case host of
     [] -> True -- Treat empty as blocked for safety
     _ ->
-      -- Check for localhost first (already lowercase from caller)
-      case host == "localhost" of
-        True -> True
-        False ->
-          -- Try to parse as IPv4
-          case GhcRead.readMaybe @IP.IPv4 host of
-            Just ipv4 -> isPrivateIPv4 ipv4
-            Nothing ->
-              -- Try to parse as IPv6 (handle bracketed form from URI)
-              let strippedHost = stripIPv6Brackets host
-               in case GhcRead.readMaybe @IP.IPv6 strippedHost of
-                    Just ipv6 -> isPrivateIPv6 ipv6
-                    Nothing -> False
+      -- Try to parse as IPv4
+      case GhcRead.readMaybe @IP.IPv4 host of
+        Just ipv4 -> isPrivateIPv4 ipv4
+        Nothing ->
+          -- Try to parse as IPv6 (handle bracketed form from URI)
+          let strippedHost = stripIPv6Brackets host
+           in case GhcRead.readMaybe @IP.IPv6 strippedHost of
+                Just ipv6 -> isPrivateIPv6 ipv6
+                Nothing -> False  -- Not an IP, allow (FQDN check happens elsewhere)
 
 
 -- | Strip brackets from IPv6 addresses.
@@ -337,6 +360,8 @@ isPrivateIPv6 = isNonRoutableIPv6
 -- Use this for user-provided URLs (e.g., IdP discovery endpoints).
 -- For literal IP addresses (IPv4 or bracketed IPv6), DNS resolution is skipped
 -- since they are already validated by validateSecureUrl.
+-- For localhost addresses (localhost, 127.0.0.1, [::1]), DNS resolution is
+-- also skipped to support local development.
 validateSecureUrlWithDns ::
   forall error.
   Text ->
@@ -350,25 +375,31 @@ validateSecureUrlWithDns urlText = do
       case extractHostname urlText of
         Nothing -> Task.yield (Err (MalformedUrl urlText))
         Just hostname -> do
-          -- Skip DNS resolution for literal IP addresses
-          -- (already validated by validateSecureUrl above)
-          case isLiteralIpHost hostname of
+          let hostStr = Text.toLinkedList hostname
+          -- Skip DNS resolution for localhost addresses (development)
+          -- Localhost is validated by validateSecureUrl, no DNS needed
+          case Hostname.isLocalhost hostStr of
             True -> Task.yield (Ok urlText)
-            False -> do
-              -- Resolve DNS and check all IPs
-              resolveResult <- resolveDns hostname
-              case resolveResult of
-                DnsTimeout ->
-                  Task.yield (Err (DnsResolutionTimeout urlText))
-                DnsError errMsg ->
-                  Task.yield (Err (DnsResolutionFailed urlText errMsg))
-                DnsOk resolvedIps -> do
-                  -- Check ALL resolved IPs
-                  case findPrivateIp resolvedIps of
-                    Just privateIp ->
-                      Task.yield (Err (DnsResolutionBlocked urlText privateIp))
-                    Nothing ->
-                      Task.yield (Ok urlText)
+            False ->
+              -- Skip DNS resolution for literal IP addresses
+              -- (already validated by validateSecureUrl above)
+              case isLiteralIpHost hostname of
+                True -> Task.yield (Ok urlText)
+                False -> do
+                  -- Resolve DNS and check all IPs
+                  resolveResult <- resolveDns hostname
+                  case resolveResult of
+                    DnsTimeout ->
+                      Task.yield (Err (DnsResolutionTimeout urlText))
+                    DnsError errMsg ->
+                      Task.yield (Err (DnsResolutionFailed urlText errMsg))
+                    DnsOk resolvedIps -> do
+                      -- Check ALL resolved IPs
+                      case findPrivateIp resolvedIps of
+                        Just privateIp ->
+                          Task.yield (Err (DnsResolutionBlocked urlText privateIp))
+                        Nothing ->
+                          Task.yield (Ok urlText)
 
 
 -- | Check if a hostname is a literal IP address (IPv4 or bracketed IPv6).
