@@ -376,9 +376,11 @@ validateSecureUrlWithDns urlText = do
         Nothing -> Task.yield (Err (MalformedUrl urlText))
         Just hostname -> do
           let hostStr = Text.toLinkedList hostname
+          -- Normalize to lowercase for consistent comparison
+          let normalizedHostStr = LinkedList.map toLowerChar hostStr
           -- Skip DNS resolution for localhost addresses (development)
           -- Localhost is validated by validateSecureUrl, no DNS needed
-          case Hostname.isLocalhost hostStr of
+          case Hostname.isLocalhost normalizedHostStr of
             True -> Task.yield (Ok urlText)
             False ->
               -- Skip DNS resolution for literal IP addresses

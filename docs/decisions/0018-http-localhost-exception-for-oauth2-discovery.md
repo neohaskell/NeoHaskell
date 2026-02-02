@@ -12,7 +12,7 @@ The OAuth2 discovery flow (`Auth.Discovery.discoverConfig`) strictly requires HT
 
 When attempting to use OAuth2 with a local Keycloak instance:
 
-```
+```text
 Auth discovery failed: UrlValidationFailed "URL must use HTTPS: http://localhost:8180/realms/my-realm/.well-known/openid-configuration"
 ```
 
@@ -112,35 +112,41 @@ validateSecureUrl urlText = do
             Nothing -> Err (NotHttps urlText)
             Just auth -> do
               let host = URI.uriRegName auth
-              case isLocalhostHost host of
+              case Hostname.isLocalhost host of
                 True -> Ok urlText
                 False -> Err (NotHttps urlText)
         _ -> Err (NotHttps urlText)
 ```
 
-### Extract `isLocalhost` to Shared Location
+### Create Shared `Auth.Hostname` Module
 
-Move the `isLocalhost` helper from `Auth.OAuth2.Types` to `Auth.UrlValidation` as `isLocalhostHost` (using `[Char]` type for consistency with existing functions in UrlValidation):
+Create a new `Auth.Hostname` module with the `isLocalhost` helper, providing a single source of truth for localhost detection:
 
 ```haskell
+-- | Auth.Hostname - Shared hostname utilities
+module Auth.Hostname (isLocalhost) where
+
 -- | Check if a hostname is localhost (for development URLs).
 -- Matches: localhost, 127.0.0.1, [::1], and variants with ports.
-isLocalhostHost :: [Char] -> Bool
-isLocalhostHost host =
+isLocalhost :: [Char] -> Bool
+isLocalhost host =
   host == "localhost"
     || host == "127.0.0.1"
     || host == "[::1]"
     || LinkedList.any (\prefix -> GhcList.isPrefixOf prefix host) ["localhost:", "127.0.0.1:", "[::1]:"]
 ```
 
-Then update `Auth.OAuth2.Types` to import and use this shared helper:
+Both `Auth.UrlValidation` and `Auth.OAuth2.Types` import from this shared module:
 
 ```haskell
-import Auth.UrlValidation (isLocalhostHost)
+-- In Auth.UrlValidation
+import Auth.Hostname qualified as Hostname
+-- Use: Hostname.isLocalhost normalizedHost
 
--- Update mkRedirectUri to use shared helper
+-- In Auth.OAuth2.Types
+import Auth.Hostname qualified as Hostname
 isLocalhost :: [Char] -> Bool
-isLocalhost = isLocalhostHost
+isLocalhost = Hostname.isLocalhost
 ```
 
 ### Affected Functions
