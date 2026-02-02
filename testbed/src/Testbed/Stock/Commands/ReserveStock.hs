@@ -30,9 +30,6 @@ instance Json.FromJSON ReserveStock
 instance Json.ToJSON ReserveStock
 
 
-instance ToSchema ReserveStock
-
-
 getEntityId :: ReserveStock -> Maybe Uuid
 getEntityId cmd = Just cmd.stockId
 

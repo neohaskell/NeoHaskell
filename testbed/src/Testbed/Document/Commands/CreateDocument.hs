@@ -31,9 +31,6 @@ data CreateDocument = CreateDocument
 instance Json.FromJSON CreateDocument
 
 
-instance ToSchema CreateDocument
-
-
 getEntityId :: CreateDocument -> Maybe Uuid
 getEntityId cmd = Just cmd.documentId
 

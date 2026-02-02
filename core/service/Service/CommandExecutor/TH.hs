@@ -472,6 +472,16 @@ ERROR: Command type class not found.
 Please ensure you have `import Core` at the top of your module.
 |]
 
+  -- Lookup ToSchema class for automatic schema derivation
+  toSchemaClassName <-
+    TH.lookupTypeName "ToSchema"
+      >>= orError
+        [fmt|
+ERROR: ToSchema type class not found.
+
+Please ensure you have `import Core` at the top of your module.
+|]
+
   -- NameOf uses the actual type name (e.g., "CreateCart") for command dispatch matching
   -- Kebab-case conversion for HTTP URLs is handled by the transport layer
   let commandNameLit = TH.LitT (TH.StrTyLit commandNameStr)
@@ -495,5 +505,13 @@ Please ensure you have `import Core` at the top of your module.
                  ]
           )
 
-  pure ([nameOfInstance, commandInstance] ++ knownHashInstance)
+  -- Generate ToSchema instance (uses Generic default implementation)
+  let toSchemaInstance =
+        TH.InstanceD
+          Nothing
+          []
+          (TH.ConT toSchemaClassName `TH.AppT` TH.ConT someName)
+          [] -- Empty body, uses default implementation from Generic
+
+  pure ([nameOfInstance, commandInstance, toSchemaInstance] ++ knownHashInstance)
 {-# INLINE command #-}

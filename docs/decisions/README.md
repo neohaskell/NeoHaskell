@@ -30,6 +30,7 @@ ADRs document significant architectural decisions made during the development of
 | [0014](0014-webtransport-openapi-integration.md) | WebTransport OpenAPI Integration | Proposed |
 | [0015](0015-http-outbound-integration.md) | HTTP Outbound Integration | Proposed |
 | [0016](0016-redacted-type-for-sensitive-data.md) | Redacted Type for Sensitive Data | Proposed |
+| [0017](0017-toschema-auto-derivation-in-command-th.md) | ToSchema Auto-Derivation in Command TH | Proposed |
 
 ## Creating New ADRs
 
