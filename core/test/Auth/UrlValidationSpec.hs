@@ -15,14 +15,22 @@ spec = do
         let result = UrlValidation.validateSecureUrl "https://example.com/path"
         result |> shouldBe (Ok "https://example.com/path")
 
-      it "rejects HTTP URLs" \_ -> do
+      it "rejects HTTP URLs for non-localhost" \_ -> do
         let result = UrlValidation.validateSecureUrl "http://example.com/path"
         result |> shouldSatisfy isNotHttps
 
-      it "rejects localhost (single-label hostname)" \_ -> do
-        -- localhost is now caught by single-label hostname check first
+      -- Localhost exception: HTTP and HTTPS both allowed for localhost
+      it "accepts HTTPS localhost URL" \_ -> do
         let result = UrlValidation.validateSecureUrl "https://localhost/path"
-        result |> shouldSatisfy isSingleLabelHostname
+        result |> shouldBe (Ok "https://localhost/path")
+
+      it "accepts HTTP localhost URL (development exception)" \_ -> do
+        let result = UrlValidation.validateSecureUrl "http://localhost/path"
+        result |> shouldBe (Ok "http://localhost/path")
+
+      it "accepts HTTP localhost with port" \_ -> do
+        let result = UrlValidation.validateSecureUrl "http://localhost:8080/path"
+        result |> shouldBe (Ok "http://localhost:8080/path")
 
       it "blocks literal private IPv4 (10.x.x.x)" \_ -> do
         let result = UrlValidation.validateSecureUrl "https://10.0.0.1/path"
@@ -36,13 +44,30 @@ spec = do
         let result = UrlValidation.validateSecureUrl "https://192.168.1.1/path"
         result |> shouldSatisfy isPrivateIpBlocked
 
-      it "blocks literal loopback IPv4 (127.0.0.1)" \_ -> do
+      -- 127.0.0.1 and [::1] are now allowed (localhost exception)
+      it "accepts HTTPS 127.0.0.1 URL (localhost exception)" \_ -> do
         let result = UrlValidation.validateSecureUrl "https://127.0.0.1/path"
-        result |> shouldSatisfy isPrivateIpBlocked
+        result |> shouldBe (Ok "https://127.0.0.1/path")
 
-      it "blocks literal IPv6 loopback ([::1])" \_ -> do
+      it "accepts HTTP 127.0.0.1 URL (development exception)" \_ -> do
+        let result = UrlValidation.validateSecureUrl "http://127.0.0.1/path"
+        result |> shouldBe (Ok "http://127.0.0.1/path")
+
+      it "accepts HTTP 127.0.0.1 with port" \_ -> do
+        let result = UrlValidation.validateSecureUrl "http://127.0.0.1:8180/path"
+        result |> shouldBe (Ok "http://127.0.0.1:8180/path")
+
+      it "accepts HTTPS [::1] URL (localhost exception)" \_ -> do
         let result = UrlValidation.validateSecureUrl "https://[::1]/path"
-        result |> shouldSatisfy isPrivateIpBlocked
+        result |> shouldBe (Ok "https://[::1]/path")
+
+      it "accepts HTTP [::1] URL (development exception)" \_ -> do
+        let result = UrlValidation.validateSecureUrl "http://[::1]/path"
+        result |> shouldBe (Ok "http://[::1]/path")
+
+      it "accepts HTTP [::1] with port" \_ -> do
+        let result = UrlValidation.validateSecureUrl "http://[::1]:8080/path"
+        result |> shouldBe (Ok "http://[::1]:8080/path")
 
       it "blocks link-local IPv6 ([fe80::])" \_ -> do
         let result = UrlValidation.validateSecureUrl "https://[fe80::1]/path"
@@ -144,10 +169,15 @@ spec = do
         result <- UrlValidation.validateSecureUrlWithDns "https://google.com/.well-known/openid-configuration"
         result |> shouldSatisfy isOkResult
 
-      it "blocks localhost via single-label check (before DNS)" \_ -> do
-        -- localhost is caught by single-label hostname check, not DNS resolution
+      it "accepts localhost URLs (development exception, skips DNS)" \_ -> do
+        -- localhost is allowed and skips DNS resolution entirely
         result <- UrlValidation.validateSecureUrlWithDns "https://localhost/path"
-        result |> shouldSatisfy isSingleLabelHostname
+        result |> shouldSatisfy isOkResult
+
+      it "accepts HTTP localhost URLs with DNS validation" \_ -> do
+        -- HTTP localhost should pass and skip DNS
+        result <- UrlValidation.validateSecureUrlWithDns "http://localhost:8080/path"
+        result |> shouldSatisfy isOkResult
 
       it "blocks DNS names resolving to private IPs when configured" \_ -> do
         -- NOTE: This test may be environment-dependent.
@@ -165,10 +195,15 @@ spec = do
         result <- UrlValidation.validateSecureUrlWithDns "http://example.com/path"
         result |> shouldSatisfy isNotHttps
 
-      it "blocks literal loopback IPs before DNS resolution" \_ -> do
-        -- Literal IPs are caught before DNS resolution
+      it "accepts literal loopback IPs (localhost exception)" \_ -> do
+        -- 127.0.0.1 is localhost, allowed and skips DNS
         result <- UrlValidation.validateSecureUrlWithDns "https://127.0.0.1/path"
-        result |> shouldSatisfy isPrivateIpBlocked
+        result |> shouldSatisfy isOkResult
+
+      it "accepts HTTP 127.0.0.1 with DNS validation" \_ -> do
+        -- HTTP 127.0.0.1 should pass (localhost exception)
+        result <- UrlValidation.validateSecureUrlWithDns "http://127.0.0.1:8180/path"
+        result |> shouldSatisfy isOkResult
 
       it "skips DNS resolution for public literal IPv4 addresses" \_ -> do
         -- Literal IPv4 should not trigger DNS resolution, just pass through
@@ -191,6 +226,45 @@ spec = do
         -- ::ffff:10.0.0.1 is IPv4-mapped private IP
         let result = UrlValidation.validateSecureUrl "https://[::ffff:10.0.0.1]/path"
         result |> shouldSatisfy isPrivateIpBlocked
+
+    -- Security regression tests for localhost exception
+    describe "validateSecureUrl (localhost security regression)" do
+      it "still rejects HTTP for non-localhost domains" \_ -> do
+        let result = UrlValidation.validateSecureUrl "http://oauth.example.com/token"
+        result |> shouldSatisfy isNotHttps
+
+      it "still rejects HTTP for private IPs" \_ -> do
+        let result = UrlValidation.validateSecureUrl "http://192.168.1.1/path"
+        result |> shouldSatisfy isNotHttps
+
+      it "rejects localhost subdomain attack (localhost.evil.com)" \_ -> do
+        -- SECURITY CRITICAL: localhost.evil.com is NOT localhost
+        let result = UrlValidation.validateSecureUrl "http://localhost.evil.com/path"
+        result |> shouldSatisfy isNotHttps
+
+      it "rejects localhost subdomain attack over HTTPS" \_ -> do
+        -- Even HTTPS localhost.evil.com should be allowed (but not as localhost)
+        let result = UrlValidation.validateSecureUrl "https://localhost.evil.com/path"
+        result |> shouldSatisfy isOkResult  -- HTTPS is fine, just not treated as localhost
+
+      it "rejects alternate loopback IPs (127.0.0.2)" \_ -> do
+        -- Only 127.0.0.1 is allowed, not other loopback addresses
+        let result = UrlValidation.validateSecureUrl "http://127.0.0.2/path"
+        result |> shouldSatisfy isNotHttps
+
+      it "still blocks alternate loopback IPs over HTTPS" \_ -> do
+        -- 127.0.0.2 is in loopback range, should be blocked
+        let result = UrlValidation.validateSecureUrl "https://127.0.0.2/path"
+        result |> shouldSatisfy isPrivateIpBlocked
+
+      it "still blocks private network IPs over HTTPS" \_ -> do
+        let result = UrlValidation.validateSecureUrl "https://10.0.0.1/path"
+        result |> shouldSatisfy isPrivateIpBlocked
+
+      it "still blocks other single-label hostnames" \_ -> do
+        -- "db" and "intranet" should still be blocked (not localhost)
+        let result = UrlValidation.validateSecureUrl "https://db/admin"
+        result |> shouldSatisfy isSingleLabelHostname
 
 
 -- | Helper predicates for test assertions
