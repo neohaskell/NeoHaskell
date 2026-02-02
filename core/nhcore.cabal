@@ -243,6 +243,7 @@ library
     Service.ServiceDefinition.Core
     Service.Transport
     Service.Transport.Web
+    Service.Transport.Web.BuiltinSchemas
     Service.Transport.Web.SwaggerUI
     Schema
     Schema.OpenApi

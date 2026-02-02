@@ -50,6 +50,7 @@ import Service.Query.Auth (QueryAuthError (..), QueryEndpointError (..))
 import Service.Response (CommandResponse)
 import Service.Response qualified as Response
 import Service.Transport (EndpointHandler, Endpoints (..), Transport (..))
+import Service.Transport.Web.BuiltinSchemas qualified as BuiltinSchemas
 import Service.Transport.Web.SwaggerUI qualified as SwaggerUI
 import Task (Task)
 import Task qualified
@@ -776,8 +777,18 @@ instance Transport WebTransport where
         let apiInfo = case webTransport.apiInfo of
               Maybe.Nothing -> Service.Application.Types.defaultApiInfo
               Maybe.Just info -> info
+        -- Check which builtin features are enabled
+        let isOAuth2Enabled = case webTransport.oauth2Config of
+              Maybe.Just _ -> True
+              Maybe.Nothing -> False
+        let isFileUploadEnabled = case webTransport.fileUploadEnabled of
+              Maybe.Just _ -> True
+              Maybe.Nothing -> False
+        -- Generate builtin endpoint schemas
+        let oauth2Schemas = BuiltinSchemas.oauth2EndpointSchemas isOAuth2Enabled
+        let fileSchemas = BuiltinSchemas.fileUploadEndpointSchemas isFileUploadEnabled
         -- Generate OpenAPI spec from endpoint schemas
-        let spec = OpenApi.toOpenApiSpec apiInfo endpoints.commandSchemas endpoints.querySchemas
+        let spec = OpenApi.toOpenApiSpec apiInfo endpoints.commandSchemas endpoints.querySchemas oauth2Schemas fileSchemas
         -- Encode to JSON and return with cache headers
         let jsonText = Json.encodeText spec
         let jsonBytes = jsonText |> Text.toBytes |> Bytes.toLazyLegacy
@@ -794,8 +805,18 @@ instance Transport WebTransport where
         let apiInfo = case webTransport.apiInfo of
               Maybe.Nothing -> Service.Application.Types.defaultApiInfo
               Maybe.Just info -> info
+        -- Check which builtin features are enabled
+        let isOAuth2Enabled = case webTransport.oauth2Config of
+              Maybe.Just _ -> True
+              Maybe.Nothing -> False
+        let isFileUploadEnabled = case webTransport.fileUploadEnabled of
+              Maybe.Just _ -> True
+              Maybe.Nothing -> False
+        -- Generate builtin endpoint schemas
+        let oauth2Schemas = BuiltinSchemas.oauth2EndpointSchemas isOAuth2Enabled
+        let fileSchemas = BuiltinSchemas.fileUploadEndpointSchemas isFileUploadEnabled
         -- Generate OpenAPI spec from endpoint schemas
-        let spec = OpenApi.toOpenApiSpec apiInfo endpoints.commandSchemas endpoints.querySchemas
+        let spec = OpenApi.toOpenApiSpec apiInfo endpoints.commandSchemas endpoints.querySchemas oauth2Schemas fileSchemas
         -- Encode to YAML with cache headers
         let yamlBytes = Yaml.encode spec
         -- Cache headers - spec changes only on deployment

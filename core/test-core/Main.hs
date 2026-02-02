@@ -6,6 +6,7 @@ import ConcurrentMapSpec qualified
 import Http.ClientRawSpec qualified
 import Http.ClientSpec qualified
 import IntSpec qualified
+import Schema.OpenApiSpec qualified
 import SchemaSpec qualified
 import Service.Transport.Web.SwaggerUISpec qualified
 import SetSpec qualified
@@ -22,6 +23,7 @@ main = Hspec.hspec do
   Hspec.describe "Http.ClientRaw" Http.ClientRawSpec.spec
   Hspec.describe "Int" IntSpec.spec
   Hspec.describe "Schema" SchemaSpec.spec
+  Hspec.describe "Schema.OpenApi" Schema.OpenApiSpec.spec
   Hspec.describe "Service.Transport.Web.SwaggerUI" Service.Transport.Web.SwaggerUISpec.spec
   Hspec.describe "Set" SetSpec.spec
   Hspec.describe "Stream" StreamSpec.spec
