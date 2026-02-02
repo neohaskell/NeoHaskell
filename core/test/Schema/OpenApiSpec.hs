@@ -5,6 +5,7 @@ import Basics
 import Control.Lens qualified as Lens
 import Core
 import Data.HashMap.Strict.InsOrd qualified as InsOrdHashMap
+import Data.HashSet.InsOrd qualified as InsOrdHashSet
 import Data.OpenApi qualified as OpenApi
 import LinkedList qualified
 import Map qualified
@@ -179,3 +180,129 @@ spec = do
       -- Verify both paths are present
       let paths = openApiSpec |> Lens.view OpenApi.paths
       InsOrdHashMap.size paths |> shouldBe 2
+
+  describe "toOpenApiSpec - Tag Generation" do
+    it "generates tags for unique entity names from commands" \_ -> do
+      let apiInfo = ApiInfo "Test API" "1.0.0" ""
+      let commandSchemas = Map.fromArray (Array.fromLinkedList
+            [ ("CreateUser", EndpointSchema
+                { requestSchema = Just SText
+                , responseSchema = SText
+                , description = "Create user"
+                , deprecated = False
+                , entityName = Just "User"
+                })
+            , ("UpdateUser", EndpointSchema
+                { requestSchema = Just SText
+                , responseSchema = SText
+                , description = "Update user"
+                , deprecated = False
+                , entityName = Just "User"  -- Same entity, should not duplicate tag
+                })
+            ])
+      let openApiSpec = OpenApiGen.toOpenApiSpec apiInfo commandSchemas Map.empty Map.empty Map.empty
+      let tags = openApiSpec |> Lens.view OpenApi.tags
+      -- Should have exactly 1 tag for User (deduplicated)
+      InsOrdHashSet.size tags |> shouldBe 1
+
+    it "generates tags for multiple different entities" \_ -> do
+      let apiInfo = ApiInfo "Test API" "1.0.0" ""
+      let commandSchemas = Map.fromArray (Array.fromLinkedList
+            [ ("CreateUser", EndpointSchema
+                { requestSchema = Just SText
+                , responseSchema = SText
+                , description = "Create user"
+                , deprecated = False
+                , entityName = Just "User"
+                })
+            , ("CreateOrder", EndpointSchema
+                { requestSchema = Just SText
+                , responseSchema = SText
+                , description = "Create order"
+                , deprecated = False
+                , entityName = Just "Order"
+                })
+            ])
+      let openApiSpec = OpenApiGen.toOpenApiSpec apiInfo commandSchemas Map.empty Map.empty Map.empty
+      let tags = openApiSpec |> Lens.view OpenApi.tags
+      -- Should have 2 tags: User and Order
+      InsOrdHashSet.size tags |> shouldBe 2
+
+    it "generates Queries tag when query schemas present" \_ -> do
+      let apiInfo = ApiInfo "Test API" "1.0.0" ""
+      let querySchemas = Map.fromArray (Array.fromLinkedList
+            [ ("GetUser", makeEndpointSchema Nothing SText)
+            ])
+      let openApiSpec = OpenApiGen.toOpenApiSpec apiInfo Map.empty querySchemas Map.empty Map.empty
+      let tags = openApiSpec |> Lens.view OpenApi.tags
+      -- Should have exactly 1 tag: Queries
+      InsOrdHashSet.size tags |> shouldBe 1
+
+    it "generates Authentication tag when oauth2 schemas present" \_ -> do
+      let apiInfo = ApiInfo "Test API" "1.0.0" ""
+      let oauth2Schemas = Map.fromArray (Array.fromLinkedList
+            [ ("connect", EndpointSchema
+                { requestSchema = Nothing
+                , responseSchema = SText
+                , description = "Connect OAuth2"
+                , deprecated = False
+                , entityName = Just "Authentication"
+                })
+            ])
+      let openApiSpec = OpenApiGen.toOpenApiSpec apiInfo Map.empty Map.empty oauth2Schemas Map.empty
+      let tags = openApiSpec |> Lens.view OpenApi.tags
+      -- Should have exactly 1 tag: Authentication
+      InsOrdHashSet.size tags |> shouldBe 1
+
+    it "generates Files tag when file schemas present" \_ -> do
+      let apiInfo = ApiInfo "Test API" "1.0.0" ""
+      let fileSchemas = Map.fromArray (Array.fromLinkedList
+            [ ("upload", EndpointSchema
+                { requestSchema = Just SText
+                , responseSchema = SText
+                , description = "Upload file"
+                , deprecated = False
+                , entityName = Just "Files"
+                })
+            ])
+      let openApiSpec = OpenApiGen.toOpenApiSpec apiInfo Map.empty Map.empty Map.empty fileSchemas
+      let tags = openApiSpec |> Lens.view OpenApi.tags
+      -- Should have exactly 1 tag: Files
+      InsOrdHashSet.size tags |> shouldBe 1
+
+    it "generates all tags when all schema types present" \_ -> do
+      let apiInfo = ApiInfo "Test API" "1.0.0" ""
+      let commandSchemas = Map.fromArray (Array.fromLinkedList
+            [ ("CreateUser", EndpointSchema
+                { requestSchema = Just SText
+                , responseSchema = SText
+                , description = "Create user"
+                , deprecated = False
+                , entityName = Just "User"
+                })
+            ])
+      let querySchemas = Map.fromArray (Array.fromLinkedList
+            [ ("GetUser", makeEndpointSchema Nothing SText)
+            ])
+      let oauth2Schemas = Map.fromArray (Array.fromLinkedList
+            [ ("connect", EndpointSchema
+                { requestSchema = Nothing
+                , responseSchema = SText
+                , description = "Connect OAuth2"
+                , deprecated = False
+                , entityName = Just "Authentication"
+                })
+            ])
+      let fileSchemas = Map.fromArray (Array.fromLinkedList
+            [ ("upload", EndpointSchema
+                { requestSchema = Just SText
+                , responseSchema = SText
+                , description = "Upload file"
+                , deprecated = False
+                , entityName = Just "Files"
+                })
+            ])
+      let openApiSpec = OpenApiGen.toOpenApiSpec apiInfo commandSchemas querySchemas oauth2Schemas fileSchemas
+      let tags = openApiSpec |> Lens.view OpenApi.tags
+      -- Should have 4 tags: User, Queries, Authentication, Files
+      InsOrdHashSet.size tags |> shouldBe 4

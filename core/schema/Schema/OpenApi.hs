@@ -32,6 +32,7 @@ import Data.OpenApi.Lens qualified as OpenApiLens
 import Control.Lens qualified as Lens
 import Data.Aeson qualified as Json
 import Data.HashMap.Strict.InsOrd qualified as InsOrdHashMap
+import Data.HashSet.InsOrd qualified as InsOrdHashSet
 import LinkedList qualified
 import Map (Map)
 import Map qualified
@@ -40,7 +41,6 @@ import Maybe qualified
 import Schema (FieldSchema (..), Schema (..))
 import Service.Application.Types (ApiInfo (..))
 import Service.Transport (EndpointSchema (..))
-import Set (Set)
 import Set qualified
 import Text (Text)
 import Text qualified
@@ -147,30 +147,32 @@ toOpenApiSpec apiInfo commandSchemas querySchemas oauth2Schemas fileSchemas = do
   -- Collect unique entity names from commands for tags
   let commandEntityNames = commandSchemas
         |> Map.values
-        |> Array.foldl (\acc schema ->
+        |> Array.foldl (\schema acc ->
              case schema.entityName of
                Just name -> Set.insert name acc
                Nothing -> acc
            ) Set.empty
 
   -- Build list of all tag names
-  let hasQueries = not (Map.isEmpty querySchemas)
-  let hasOAuth2 = not (Map.isEmpty oauth2Schemas)
-  let hasFiles = not (Map.isEmpty fileSchemas)
+  let hasQueries = Map.length querySchemas > 0
+  let hasOAuth2 = Map.length oauth2Schemas > 0
+  let hasFiles = Map.length fileSchemas > 0
 
   let allTagNames = commandEntityNames
         |> Set.toArray
-        |> (\names -> if hasQueries then Array.prepend "Queries" names else names)
-        |> (\names -> if hasOAuth2 then Array.prepend "Authentication" names else names)
-        |> (\names -> if hasFiles then Array.prepend "Files" names else names)
+        |> (\names -> if hasQueries then Array.pushBack (Text.fromLinkedList "Queries") names else names)
+        |> (\names -> if hasOAuth2 then Array.pushBack (Text.fromLinkedList "Authentication") names else names)
+        |> (\names -> if hasFiles then Array.pushBack (Text.fromLinkedList "Files") names else names)
 
   -- Generate OpenAPI tag definitions
   let tags = allTagNames
-        |> Array.map (\tagName -> GhcMonoid.mempty
-             |> Lens.set OpenApiLens.name tagName
-             |> Lens.set OpenApiLens.description (Just [fmt|#{tagName} endpoints|])
-           )
+        |> Array.map (\tagName -> OpenApi.Tag
+             { OpenApi._tagName = tagName
+             , OpenApi._tagDescription = Just [fmt|#{tagName} endpoints|]
+             , OpenApi._tagExternalDocs = Nothing
+             })
         |> Array.toLinkedList
+        |> InsOrdHashSet.fromList
 
   -- Generate paths for each endpoint type
   let commandPaths = commandSchemas

@@ -21,17 +21,14 @@ import Bytes qualified
 import ConcurrentVar qualified
 import Console qualified
 import Data.ByteString qualified as GhcBS
-import Data.ByteString.Lazy qualified as LBS
 import Data.IORef qualified as GhcIORef
 import Data.List qualified as GhcList
 import Data.Yaml qualified as Yaml
-import Prelude qualified (seq)
 import GHC.TypeLits qualified as GHC
 import Json qualified
 import LinkedList qualified
 import Map qualified
 import Maybe (Maybe (..))
-import Maybe qualified
 import Network.HTTP.Types.Header qualified as HTTP
 import Network.HTTP.Types.Status qualified as HTTP
 import Network.Wai qualified as Wai
@@ -356,36 +353,9 @@ instance Transport WebTransport where
     Wai.Request ->
     (Wai.Response -> Task Text Wai.ResponseReceived) ->
     Task Text Wai.ResponseReceived
-  assembleTransport endpoints = do
-    -- Pre-compute cached OpenAPI spec at assembly time (not per-request)
-    -- This is evaluated once when assembleTransport is partially applied to endpoints
+  assembleTransport endpoints request respond = do
     let webTransport = endpoints.transport
     let maxBodySize = webTransport.maxBodySize
-
-    -- Pre-generate OpenAPI spec and cache as bytes
-    let apiInfo = case webTransport.apiInfo of
-          Maybe.Nothing -> Service.Application.Types.defaultApiInfo
-          Maybe.Just info -> info
-    let oauth2Schemas = BuiltinSchemas.oauth2EndpointSchemas (Maybe.isJust webTransport.oauth2Config)
-    let fileSchemas = BuiltinSchemas.fileUploadEndpointSchemas (Maybe.isJust webTransport.fileUploadEnabled)
-    let openApiSpec = OpenApi.toOpenApiSpec apiInfo endpoints.commandSchemas endpoints.querySchemas oauth2Schemas fileSchemas
-
-    -- Pre-encode as JSON and YAML bytes (cached)
-    -- Force evaluation at assembly time using LBS.length (strict in entire content)
-    let cachedJsonBytes = Json.encodeText openApiSpec |> Text.toBytes |> Bytes.toLazyLegacy
-    let cachedYamlBytes = Yaml.encode openApiSpec |> Bytes.fromLegacy |> Bytes.toLazyLegacy
-
-    -- Pre-generate Swagger UI HTML
-    let cachedDocsHtml = SwaggerUI.scalarHtml apiInfo.apiTitle |> Text.toBytes |> Bytes.toLazyLegacy
-
-    -- Force evaluation of all cached values at assembly time (not on first request)
-    -- LBS.length traverses the entire lazy ByteString, forcing full evaluation
-    let !_ = LBS.length cachedJsonBytes
-    let !_ = LBS.length cachedYamlBytes
-    let !_ = LBS.length cachedDocsHtml
-
-    -- Return the request handler that uses cached values
-    \request respond -> do
 
     -- Helper function for 404 responses
     let notFound message = do
@@ -802,24 +772,71 @@ instance Transport WebTransport where
                 let response200 = Wai.responseLBS HTTP.status200 headers responseBody
                 respond response200
       -- OpenAPI routes: /openapi.json, /openapi.yaml, /docs
-      -- These use pre-cached bytes computed at assembly time for <1ms response
       ["openapi.json"] -> do
+        -- Extract API info (use default if not configured)
+        let apiInfo = case webTransport.apiInfo of
+              Maybe.Nothing -> Service.Application.Types.defaultApiInfo
+              Maybe.Just info -> info
+        -- Check which builtin features are enabled
+        let isOAuth2Enabled = case webTransport.oauth2Config of
+              Maybe.Just _ -> True
+              Maybe.Nothing -> False
+        let isFileUploadEnabled = case webTransport.fileUploadEnabled of
+              Maybe.Just _ -> True
+              Maybe.Nothing -> False
+        -- Generate builtin endpoint schemas
+        let oauth2Schemas = BuiltinSchemas.oauth2EndpointSchemas isOAuth2Enabled
+        let fileSchemas = BuiltinSchemas.fileUploadEndpointSchemas isFileUploadEnabled
+        -- Generate OpenAPI spec from endpoint schemas
+        let spec = OpenApi.toOpenApiSpec apiInfo endpoints.commandSchemas endpoints.querySchemas oauth2Schemas fileSchemas
+        -- Encode to JSON and return with cache headers
+        let jsonText = Json.encodeText spec
+        let jsonBytes = jsonText |> Text.toBytes |> Bytes.toLazyLegacy
+        -- Cache headers - spec changes only on deployment
         let cacheHeaders =
               [ (HTTP.hContentType, "application/json")
               , ("Cache-Control", "public, max-age=3600")
               , ("X-Content-Type-Options", "nosniff")
               ]
-        let response200 = Wai.responseLBS HTTP.status200 cacheHeaders cachedJsonBytes
+        let response200 = Wai.responseLBS HTTP.status200 cacheHeaders jsonBytes
         respond response200
       ["openapi.yaml"] -> do
+        -- Extract API info (use default if not configured)
+        let apiInfo = case webTransport.apiInfo of
+              Maybe.Nothing -> Service.Application.Types.defaultApiInfo
+              Maybe.Just info -> info
+        -- Check which builtin features are enabled
+        let isOAuth2Enabled = case webTransport.oauth2Config of
+              Maybe.Just _ -> True
+              Maybe.Nothing -> False
+        let isFileUploadEnabled = case webTransport.fileUploadEnabled of
+              Maybe.Just _ -> True
+              Maybe.Nothing -> False
+        -- Generate builtin endpoint schemas
+        let oauth2Schemas = BuiltinSchemas.oauth2EndpointSchemas isOAuth2Enabled
+        let fileSchemas = BuiltinSchemas.fileUploadEndpointSchemas isFileUploadEnabled
+        -- Generate OpenAPI spec from endpoint schemas
+        let spec = OpenApi.toOpenApiSpec apiInfo endpoints.commandSchemas endpoints.querySchemas oauth2Schemas fileSchemas
+        -- Encode to YAML with cache headers
+        let yamlBytes = Yaml.encode spec
+        -- Cache headers - spec changes only on deployment
         let cacheHeaders =
               [ (HTTP.hContentType, "application/yaml")
               , ("Cache-Control", "public, max-age=3600")
               , ("X-Content-Type-Options", "nosniff")
               ]
-        let response200 = Wai.responseLBS HTTP.status200 cacheHeaders cachedYamlBytes
+        let responseBody = yamlBytes |> Bytes.fromLegacy |> Bytes.toLazyLegacy
+        let response200 = Wai.responseLBS HTTP.status200 cacheHeaders responseBody
         respond response200
       ["docs"] -> do
+        -- Extract API title for documentation page
+        let apiTitle = case webTransport.apiInfo of
+              Maybe.Nothing -> Service.Application.Types.defaultApiInfo.apiTitle
+              Maybe.Just info -> info.apiTitle
+        -- Generate Scalar HTML documentation
+        let htmlText = SwaggerUI.scalarHtml apiTitle
+        let htmlBytes = htmlText |> Text.toBytes |> Bytes.toLazyLegacy
+        -- Security headers for HTML content
         let securityHeaders =
               [ (HTTP.hContentType, "text/html; charset=utf-8")
               , ("Content-Security-Policy", "default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' https://fonts.gstatic.com")
@@ -827,7 +844,7 @@ instance Transport WebTransport where
               , ("X-Content-Type-Options", "nosniff")
               , ("Referrer-Policy", "strict-origin-when-cross-origin")
               ]
-        let response200 = Wai.responseLBS HTTP.status200 securityHeaders cachedDocsHtml
+        let response200 = Wai.responseLBS HTTP.status200 securityHeaders htmlBytes
         respond response200
       _ ->
         notFound "Not found"

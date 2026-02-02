@@ -487,7 +487,8 @@ withService ::
     Json.FromJSON event,
     Json.ToJSON event,
     Json.FromJSON entity,
-    Json.ToJSON entity
+    Json.ToJSON entity,
+    GHC.KnownSymbol (NameOf entity)
   ) =>
   ServiceDefinition.Service cmds commandTransportNames ->
   Application ->
