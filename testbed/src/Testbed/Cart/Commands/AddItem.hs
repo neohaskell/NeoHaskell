@@ -22,10 +22,6 @@ data AddItem = AddItem
   deriving (Generic, Typeable, Show)
 
 
--- | Schema derivation example: automatic schema generation from Generic
-instance ToSchema AddItem
-
-
 instance Json.FromJSON AddItem
 
 
