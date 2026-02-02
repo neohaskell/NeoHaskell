@@ -26,6 +26,7 @@ makeEndpointSchema reqSchema respSchema = do
     , responseSchema = respSchema
     , description = "Test endpoint"
     , deprecated = False
+    , entityName = Nothing
     }
 
 
@@ -136,7 +137,7 @@ spec = do
       let apiInfo = ApiInfo "Test API" "1.0.0" "A test API"
       let commandSchemas = Map.empty
       let querySchemas = Map.empty
-      let openApiSpec = OpenApiGen.toOpenApiSpec apiInfo commandSchemas querySchemas
+      let openApiSpec = OpenApiGen.toOpenApiSpec apiInfo commandSchemas querySchemas Map.empty Map.empty
       -- Verify info section
       let info = openApiSpec |> Lens.view OpenApi.info
       let title = info |> Lens.view OpenApi.title
@@ -150,7 +151,7 @@ spec = do
             [ ("CreateUser", makeEndpointSchema (Just (SObject (Array.fromLinkedList [FieldSchema "name" SText True ""]))) SText)
             ])
       let querySchemas = Map.empty
-      let openApiSpec = OpenApiGen.toOpenApiSpec apiInfo commandSchemas querySchemas
+      let openApiSpec = OpenApiGen.toOpenApiSpec apiInfo commandSchemas querySchemas Map.empty Map.empty
       -- Verify paths are generated
       let paths = openApiSpec |> Lens.view OpenApi.paths
       InsOrdHashMap.size paths |> shouldSatisfy (\n -> n > 0)
@@ -161,7 +162,7 @@ spec = do
       let querySchemas = Map.fromArray (Array.fromLinkedList
             [ ("GetUser", makeEndpointSchema Nothing SText)
             ])
-      let openApiSpec = OpenApiGen.toOpenApiSpec apiInfo commandSchemas querySchemas
+      let openApiSpec = OpenApiGen.toOpenApiSpec apiInfo commandSchemas querySchemas Map.empty Map.empty
       -- Verify paths are generated
       let paths = openApiSpec |> Lens.view OpenApi.paths
       InsOrdHashMap.size paths |> shouldSatisfy (\n -> n > 0)
@@ -174,7 +175,7 @@ spec = do
       let querySchemas = Map.fromArray (Array.fromLinkedList
             [ ("GetUser", makeEndpointSchema Nothing SText)
             ])
-      let openApiSpec = OpenApiGen.toOpenApiSpec apiInfo commandSchemas querySchemas
+      let openApiSpec = OpenApiGen.toOpenApiSpec apiInfo commandSchemas querySchemas Map.empty Map.empty
       -- Verify both paths are present
       let paths = openApiSpec |> Lens.view OpenApi.paths
       InsOrdHashMap.size paths |> shouldBe 2

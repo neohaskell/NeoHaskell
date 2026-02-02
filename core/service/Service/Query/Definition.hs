@@ -133,6 +133,7 @@ createDefinitionWithStore storeFactory = do
         , responseSchema = schema
         , description = ""
         , deprecated = False
+        , entityName = Nothing  -- Queries grouped under fixed "Queries" tag
         }
 
   QueryDefinition

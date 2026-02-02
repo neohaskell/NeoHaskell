@@ -59,6 +59,9 @@ data EndpointSchema = EndpointSchema
     -- ^ Human-readable description from Documented instance or empty.
   , deprecated :: Bool
     -- ^ Whether this endpoint is deprecated.
+  , entityName :: Maybe Text
+    -- ^ Entity name for OpenAPI tag grouping. Commands use NameOf entity,
+    -- queries use Nothing (grouped under fixed "Queries" tag).
   }
   deriving (Show, Eq)
 

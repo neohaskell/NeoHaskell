@@ -416,6 +416,7 @@ buildEndpointsByTransport rawEventStore commandDefinitions transportsMap = do
               , responseSchema = commandResponseSchema
               , description = ""
               , deprecated = False
+              , entityName = Just (getSymbolText (Record.Proxy @entityName))
               }
         in case handlersAcc |> Map.get transportNameText of
           Nothing -> do
