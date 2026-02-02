@@ -16,7 +16,7 @@ import Maybe (Maybe (..))
 import Maybe qualified
 import Service.ServiceDefinition.Core (TransportValue (..))
 import Service.Transport (Transport (..), QueryEndpointHandler, EndpointHandler, Endpoints (..), EndpointSchema (..))
-import Service.Transport.Web (WebTransport (..), AuthEnabled, OAuth2Config, FileUploadEnabled)
+import Service.Transport.Web (WebTransport (..), AuthEnabled, OAuth2Config, FileUploadEnabled (..))
 import Service.Application.Types (ApiInfo)
 import Task (Task)
 import Task qualified
@@ -98,11 +98,19 @@ runWebTransport transportVal commandEndpoints commandSchemas queryEndpoints quer
       -- Cast the existentially-typed transport to WebTransport
       let baseWebTransport :: WebTransport = GhcUnsafe.unsafeCoerce transport
       -- Configure auth, OAuth2, file uploads, and API info on the WebTransport itself
+      -- ADR-0019: Coordinate maxBodySize with file upload limit when file uploads are enabled
+      let coordinatedMaxBodySize :: Int
+          coordinatedMaxBodySize = case maybeFileUpload of
+            Nothing -> baseWebTransport.maxBodySize
+            Just (FileUploadEnabled {maxRequestBodyBytes}) ->
+              -- Use max to respect explicit user configuration while ensuring file uploads work
+              max baseWebTransport.maxBodySize (fromIntegral maxRequestBodyBytes)
       let webTransportWithConfig = baseWebTransport
             { authEnabled = maybeAuth
             , oauth2Config = maybeOAuth2
             , fileUploadEnabled = maybeFileUpload
             , apiInfo = maybeApiInfo
+            , maxBodySize = coordinatedMaxBodySize
             }
       -- Build endpoints with the configured transport
       let endpoints :: Endpoints WebTransport =
