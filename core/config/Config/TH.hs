@@ -9,6 +9,8 @@
 -- 3. A 'HasXxxConfig' type alias for implicit parameter access
 module Config.TH (
   defineConfig,
+  -- * Testing utilities (exported for test coverage)
+  toEnvVarName,
 ) where
 
 import Config.Core (ConfigError (..), FieldDef (..), FieldModifier (..), validateFieldDef)
@@ -30,6 +32,7 @@ import OptEnvConf qualified
 -- This macro generates:
 --
 -- * A data type: @data AppConfig = AppConfig { field1 :: Type1, ... }@
+-- * A custom Show instance that redacts secret fields
 -- * A HasParser instance using opt-env-conf
 -- * A type alias: @type HasAppConfig = (?config :: AppConfig)@
 --
@@ -42,8 +45,11 @@ defineConfig configNameText fields = do
   let configName = TH.mkName (Text.unpack configNameText)
   let hasConfigName = TH.mkName ("Has" ++ Text.unpack configNameText)
 
-  -- Generate data type
+  -- Generate data type (without deriving Show - we generate it manually)
   dataDecl <- generateDataType configName fields
+
+  -- Generate custom Show instance that redacts secret fields
+  showDecl <- generateShowInstance configName fields
 
   -- Generate HasParser instance
   parserDecl <- generateHasParser configName fields
@@ -51,7 +57,7 @@ defineConfig configNameText fields = do
   -- Generate type alias: type HasAppConfig = (?config :: AppConfig)
   let typeAlias = TH.TySynD hasConfigName [] (implicitParamType configName)
 
-  return [dataDecl, parserDecl, typeAlias]
+  return [dataDecl, showDecl, parserDecl, typeAlias]
 
 
 -- | Validate all fields and fail compilation if any errors found.
@@ -75,12 +81,13 @@ formatError err =
 
 
 -- | Generate: data AppConfig = AppConfig { field1 :: Type1, ... }
+-- Note: Show is NOT derived - we generate a custom instance that redacts secrets
 generateDataType :: TH.Name -> [FieldDef] -> TH.Q TH.Dec
 generateDataType configName fields = do
   let recordFields = GhcList.map fieldToVarBangType fields
   let constructor = TH.RecC configName recordFields
   let deriveClauses =
-        [ TH.DerivClause Nothing [TH.ConT ''Show, TH.ConT ''GhcGenerics.Generic]
+        [ TH.DerivClause Nothing [TH.ConT ''GhcGenerics.Generic]
         ]
   return (TH.DataD [] configName [] Nothing [constructor] deriveClauses)
 
@@ -90,6 +97,120 @@ fieldToVarBangType fd = do
   let name = TH.mkName (Text.unpack fd.fieldName)
   let bang = TH.Bang TH.NoSourceUnpackedness TH.SourceStrict
   (name, bang, fd.fieldType)
+
+
+-- | Generate a custom Show instance that redacts secret fields.
+--
+-- For a config like:
+-- @
+-- defineConfig "AppConfig"
+--   [ field @Int "port" |> doc "Port" |> defaultsTo 8080
+--   , field @Text "apiKey" |> doc "API Key" |> secret |> required
+--   ]
+-- @
+--
+-- Generates:
+-- @
+-- instance Show AppConfig where
+--   show config = "AppConfig {port = " ++ show config.port
+--                 ++ ", apiKey = \"<REDACTED>\"}"
+-- @
+generateShowInstance :: TH.Name -> [FieldDef] -> TH.Q TH.Dec
+generateShowInstance configName fields = do
+  -- Create a variable for the config parameter
+  configVar <- TH.newName "config"
+
+  -- Build the show body
+  showBody <- buildShowBody configName configVar fields
+
+  -- Create the function clause: show config = ...
+  let showClause = TH.Clause [TH.VarP configVar] (TH.NormalB showBody) []
+
+  -- Create the instance declaration
+  return
+    ( TH.InstanceD
+        Nothing
+        []
+        (TH.ConT ''Show `TH.AppT` TH.ConT configName)
+        [TH.FunD 'show [showClause]]
+    )
+
+
+-- | Build the body of the show function.
+-- Generates: "ConfigName {field1 = " ++ showField1 ++ ", field2 = " ++ showField2 ++ "}"
+buildShowBody :: TH.Name -> TH.Name -> [FieldDef] -> TH.Q TH.Exp
+buildShowBody configName configVar fields = do
+  let configNameStr = TH.nameBase configName
+  case fields of
+    [] ->
+      -- No fields: just return the config name
+      return (TH.LitE (TH.StringL configNameStr))
+    _ -> do
+      -- Build field show expressions
+      fieldExprs <- GhcMonad.mapM (buildFieldShowExpr configVar) fields
+
+      -- Start with "ConfigName {"
+      let prefix = TH.LitE (TH.StringL (configNameStr ++ " {"))
+
+      -- Join field expressions with ", "
+      let joinedFields = intersperseLit ", " fieldExprs
+
+      -- End with "}"
+      let suffix = TH.LitE (TH.StringL "}")
+
+      -- Concatenate: prefix ++ field1 ++ ", " ++ field2 ++ ... ++ suffix
+      let allParts = [prefix] ++ joinedFields ++ [suffix]
+      return (concatStrings allParts)
+
+
+-- | Build the show expression for a single field.
+-- For secret fields: "fieldName = \"<REDACTED>\""
+-- For normal fields: "fieldName = " ++ show config.fieldName
+buildFieldShowExpr :: TH.Name -> FieldDef -> TH.Q TH.Exp
+buildFieldShowExpr configVar fd = do
+  let fieldNameStr = Text.unpack fd.fieldName
+  let isSecretField = hasSecretModifier fd.fieldModifiers
+
+  case isSecretField of
+    True -> do
+      -- Secret field: return literal "<REDACTED>"
+      return (TH.LitE (TH.StringL (fieldNameStr ++ " = \"<REDACTED>\"")))
+    False -> do
+      -- Normal field: "fieldName = " ++ show (config.fieldName)
+      let prefixLit = TH.LitE (TH.StringL (fieldNameStr ++ " = "))
+      -- Access the field: config.fieldName (using GetFieldE for record dot syntax)
+      let fieldAccess = TH.GetFieldE (TH.VarE configVar) fieldNameStr
+      -- Apply show: show (config.fieldName)
+      let showExpr = TH.AppE (TH.VarE 'show) fieldAccess
+      -- Concatenate: "fieldName = " ++ show (config.fieldName)
+      return (concatStrings [prefixLit, showExpr])
+
+
+-- | Check if a field has the ModSecret modifier.
+hasSecretModifier :: [FieldModifier] -> Bool
+hasSecretModifier mods =
+  GhcList.any isSecret mods
+ where
+  isSecret m = case m of
+    ModSecret -> True
+    _ -> False
+
+
+-- | Intersperse a separator literal between expressions.
+-- [a, b, c] with sep -> [a, sep, b, sep, c]
+intersperseLit :: [Char] -> [TH.Exp] -> [TH.Exp]
+intersperseLit _ [] = []
+intersperseLit _ [x] = [x]
+intersperseLit sep (x : xs) =
+  x : TH.LitE (TH.StringL sep) : intersperseLit sep xs
+
+
+-- | Concatenate a list of string expressions using (++).
+concatStrings :: [TH.Exp] -> TH.Exp
+concatStrings [] = TH.LitE (TH.StringL "")
+concatStrings [x] = x
+concatStrings (x : xs) =
+  TH.InfixE (Just x) (TH.VarE '(++)) (Just (concatStrings xs))
 
 
 -- | Generate: instance HasParser AppConfig where settingsParser = ...
@@ -226,6 +347,8 @@ modToCliShort modifier =
 -- * @port@ -> @PORT@
 -- * @databaseUrl@ -> @DATABASE_URL@
 -- * @openRouterKey@ -> @OPEN_ROUTER_KEY@
+-- * @oauth2ClientId@ -> @OAUTH2_CLIENT_ID@
+-- * @http2Enabled@ -> @HTTP2_ENABLED@
 toEnvVarName :: Text -> Text
 toEnvVarName name = do
   let chars = Text.unpack name
@@ -235,11 +358,17 @@ toEnvVarName name = do
   insertUnderscores :: [Char] -> [Char]
   insertUnderscores [] = []
   insertUnderscores [c] = [c]
-  insertUnderscores (c1 : c2 : rest) =
-    case (GhcChar.isLower c1, GhcChar.isUpper c2) of
-      (True, True) ->
+  insertUnderscores (c1 : c2 : rest) = do
+    -- Insert underscore when:
+    -- 1. lowercase -> UPPERCASE (e.g., "myName" -> "my_Name")
+    -- 2. digit -> UPPERCASE (e.g., "oauth2Client" -> "oauth2_Client")
+    let needsUnderscore =
+          (GhcChar.isLower c1 && GhcChar.isUpper c2) ||
+          (GhcChar.isDigit c1 && GhcChar.isUpper c2)
+    case needsUnderscore of
+      True ->
         c1 : '_' : insertUnderscores (c2 : rest)
-      _ ->
+      False ->
         c1 : insertUnderscores (c2 : rest)
 
 
