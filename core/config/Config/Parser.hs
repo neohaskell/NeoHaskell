@@ -40,6 +40,7 @@ module Config.Parser (
 
 import Array qualified
 import Config.Core (FieldSource (..), FieldSpec (..), Optionality (..))
+import Config.Naming qualified as Naming
 import Core
 import Data.Text.IO qualified as TextIO
 import System.Environment qualified
@@ -190,9 +191,8 @@ extractEnvVarName source =
 
 -- | Look up the first environment variable that has a value.
 findFirstEnvVar :: Array Text -> IO (Maybe Text)
-findFirstEnvVar names = do
-  results <- Array.foldM tryLookup Nothing names
-  pure results
+findFirstEnvVar names =
+  Array.foldM tryLookup Nothing names
  where
   tryLookup :: Maybe Text -> Text -> IO (Maybe Text)
   tryLookup (Just found) _ = pure (Just found)
@@ -273,7 +273,7 @@ runParser parser = do
       TextIO.hPutStrLn System.IO.stderr (formatErrors errors)
       System.Exit.exitFailure
  where
-  -- Note: We use System.Exit.stderr from base, which is actually System.IO.stderr
+  -- Note: We use System.IO.stderr from base for error output
 
 
 -- | Format a single configuration error for display.
@@ -337,10 +337,6 @@ formatErrors errors =
 
 -- | Convert a field name to an environment variable hint.
 --
--- Uses the same naming convention as Config.Naming.toEnvVarName
--- to show users what environment variable to set.
+-- Delegates to the canonical naming function.
 toEnvVarHint :: Text -> Text
-toEnvVarHint fieldName =
-  fieldName
-    |> Text.toSnakeCase
-    |> Text.toUpper
+toEnvVarHint = Naming.toEnvVarName

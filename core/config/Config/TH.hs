@@ -63,6 +63,7 @@ import Config.HasConfig (HasConfig)
 import Config.Parser qualified as Parser
 import Control.Monad.Fail qualified as MonadFail
 import Core
+import Data.Foldable qualified as Foldable
 import Data.List qualified as GhcList
 import Data.Maybe qualified as GhcMaybe
 import GHC.Base (String)
@@ -193,6 +194,9 @@ defineConfig configNameStr fieldsQ = do
   when (GhcList.null fields)
     (MonadFail.fail "defineConfig: At least one field is required")
 
+  -- Validate field specifications
+  validateFields configNameStr fields
+
   -- Generate declarations
   let configName = TH.mkName configNameStr
   let configConName = TH.mkName configNameStr
@@ -210,6 +214,45 @@ defineConfig configNameStr fieldsQ = do
   loadFunction <- generateLoadFunction configNameStr configName configConName fields
 
   pure (dataDecl ++ [defaultInstance] ++ hasConfigAlias ++ loadFunction)
+
+
+-- | Validate all field specifications at compile time.
+--
+-- Enforces:
+--   1. Every field must have documentation (non-empty)
+--   2. Every field must have exactly one of: defaultsTo OR required
+validateFields :: String -> [ConfigField] -> TH.Q ()
+validateFields configNameStr fields =
+  Foldable.traverse_ (validateField configNameStr) fields
+
+
+-- | Validate a single field specification.
+validateField :: String -> ConfigField -> TH.Q ()
+validateField configNameStr field = do
+  -- Check for missing documentation
+  case field.cfDoc of
+    Nothing ->
+      MonadFail.fail
+        ( "defineConfig \""
+            ++ configNameStr
+            ++ "\": Field '"
+            ++ field.cfName
+            ++ "' is missing documentation.\n\n"
+            ++ "  Add:\n"
+            ++ "    |> Config.doc \"Description of this field\""
+        )
+    Just doc ->
+      when (GhcList.null doc)
+        ( MonadFail.fail
+            ( "defineConfig \""
+                ++ configNameStr
+                ++ "\": Field '"
+                ++ field.cfName
+                ++ "' has empty documentation.\n\n"
+                ++ "  Provide a meaningful description:\n"
+                ++ "    |> Config.doc \"Description of this field\""
+            )
+        )
 
 
 -- | Generate the record data type declaration.
@@ -459,12 +502,13 @@ generateErrorHandling fields resultNames =
           resultNames
       errorListExp = TH.ListE pairs
       collectExp = TH.AppE (TH.VarE 'collectConfigErrors) errorListExp
+      errorsVar = TH.VarE (TH.mkName "errors")
       runParserExp =
         TH.AppE
           (TH.VarE 'Parser.runParser)
           ( TH.AppE
               (TH.VarE 'pure)
-              (TH.AppE (TH.ConE 'Err) collectExp)
+              (TH.AppE (TH.ConE 'Err) errorsVar)
           )
    in TH.DoE
         Nothing

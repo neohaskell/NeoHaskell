@@ -29,6 +29,12 @@
 --   let port = ?config.port  -- Direct field access!
 --   ...
 -- @
+--
+-- = Implementation Status
+--
+-- __Note:__ CLI argument parsing ('cliLong', 'cliShort') is not yet implemented.
+-- These functions currently serve as placeholders that record the intended
+-- source. Only environment variables are parsed at this time.
 module Config (
   -- * Template Haskell Macro
   defineConfig,

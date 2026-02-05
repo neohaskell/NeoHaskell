@@ -12,7 +12,7 @@ NeoHaskell applications require configuration from multiple sources: environment
 
 When a required environment variable like `OPENROUTER_API_KEY` is missing, the error surfaces deep in the integration layer during request handling:
 
-```
+```text
 Executing StartMetricEvaluation on port 8080
 [Dispatcher] Error processing event: AuthenticationError "Missing environment variable: OPENROUTER_API_KEY"
 ```
@@ -200,7 +200,8 @@ main = do
 5. If validation passes, the config is stored and available via `?config`
 
 **Startup failure example:**
-```
+
+```text
 Configuration errors:
 
   DATABASE_URL: Required but not set
@@ -318,6 +319,7 @@ Explicit `envVar` overrides this convention when needed.
 The `defineConfig` macro performs validation at compile time:
 
 **Missing documentation:**
+
 ```haskell
 defineConfig "Config"
   [ Config.field @Int "port"
@@ -328,6 +330,7 @@ defineConfig "Config"
 ```
 
 **Missing default or required:**
+
 ```haskell
 defineConfig "Config"
   [ Config.field @Int "port"
@@ -338,6 +341,7 @@ defineConfig "Config"
 ```
 
 **Both default and required:**
+
 ```haskell
 defineConfig "Config"
   [ Config.field @Int "port"
@@ -417,6 +421,7 @@ spec = describe "OpenRouter integration" do
 **Example migration:**
 
 Before:
+
 ```haskell
 -- In Integration.OpenRouter
 sendRequest request = do
@@ -430,6 +435,7 @@ sendRequest request = do
 ```
 
 After:
+
 ```haskell
 -- In MyApp.Config
 defineConfig "OpenRouterConfig"

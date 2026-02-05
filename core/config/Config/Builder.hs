@@ -133,43 +133,52 @@ secret spec =
   spec {fieldIsSecret = True}
 
 
--- | Add an environment variable source.
+-- | Add an environment variable source with higher precedence.
 --
 -- Note: By default, 'field' already adds an auto-generated environment
--- variable source based on the field name. Use this to add additional
--- environment variable names or to override the default.
+-- variable source based on the field name. Using this function adds an
+-- explicit env var at higher precedence (checked first), which also
+-- effectively overrides the auto-generated one.
 --
 -- ==== __Example__
 --
 -- >>> field @Int "port" |> envVar "HTTP_PORT"
--- -- Now reads from both PORT and HTTP_PORT
+-- -- HTTP_PORT is checked first, then PORT (auto-generated)
 envVar :: Text -> FieldSpec value -> FieldSpec value
 envVar name spec =
-  spec {fieldSources = Array.push (EnvVarSource name) spec.fieldSources}
+  spec {fieldSources = Array.prepend (Array.wrap (EnvVarSource name)) spec.fieldSources}
 
 
--- | Add a long CLI flag source.
+-- | Add a long CLI flag source with higher precedence.
 --
 -- Long flags are specified with two dashes (e.g., @--port@).
+--
+-- __Note:__ CLI argument parsing is not yet implemented. This modifier
+-- is a placeholder that records the source for future implementation.
+-- Currently only environment variables are parsed.
 --
 -- ==== __Example__
 --
 -- >>> field @Int "port" |> cliLong "port"
--- -- Can now be set via: --port 8080
+-- -- Will be settable via: --port 8080 (when CLI parsing is implemented)
 cliLong :: Text -> FieldSpec value -> FieldSpec value
 cliLong name spec =
-  spec {fieldSources = Array.push (CliLongSource name) spec.fieldSources}
+  spec {fieldSources = Array.prepend (Array.wrap (CliLongSource name)) spec.fieldSources}
 
 
--- | Add a short CLI flag source.
+-- | Add a short CLI flag source with higher precedence.
 --
 -- Short flags are specified with a single dash and a single character
 -- (e.g., @-p@).
 --
+-- __Note:__ CLI argument parsing is not yet implemented. This modifier
+-- is a placeholder that records the source for future implementation.
+-- Currently only environment variables are parsed.
+--
 -- ==== __Example__
 --
 -- >>> field @Int "port" |> cliShort 'p'
--- -- Can now be set via: -p 8080
+-- -- Will be settable via: -p 8080 (when CLI parsing is implemented)
 cliShort :: Char -> FieldSpec value -> FieldSpec value
 cliShort char spec =
-  spec {fieldSources = Array.push (CliShortSource char) spec.fieldSources}
+  spec {fieldSources = Array.prepend (Array.wrap (CliShortSource char)) spec.fieldSources}
