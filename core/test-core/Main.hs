@@ -3,6 +3,7 @@ module Main (main) where
 import Prelude (IO)
 
 import ConcurrentMapSpec qualified
+import Config.CoreSpec qualified
 import Http.ClientRawSpec qualified
 import Http.ClientSpec qualified
 import IntSpec qualified
@@ -19,6 +20,7 @@ import Test.Hspec qualified as Hspec
 main :: IO ()
 main = Hspec.hspec do
   Hspec.describe "ConcurrentMap" ConcurrentMapSpec.spec
+  Hspec.describe "Config.Core" Config.CoreSpec.spec
   Hspec.describe "Http.Client" Http.ClientSpec.spec
   Hspec.describe "Http.ClientRaw" Http.ClientRawSpec.spec
   Hspec.describe "Int" IntSpec.spec
