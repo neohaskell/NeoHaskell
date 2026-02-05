@@ -149,6 +149,13 @@ library
     Collection
     Combinable
     Command
+    Config
+    Config.Builder
+    Config.Core
+    Config.HasConfig
+    Config.Naming
+    Config.Parser
+    Config.TH
     ConcurrentMap
     ConcurrentVar
     Console
@@ -318,6 +325,7 @@ library
   -- other-extensions:
   hs-source-dirs:
     auth
+    config
     core
     concurrency
     service

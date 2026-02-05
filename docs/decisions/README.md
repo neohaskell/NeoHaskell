@@ -34,6 +34,7 @@ ADRs document significant architectural decisions made during the development of
 | [0018](0018-http-localhost-exception-for-oauth2-discovery.md) | HTTP Localhost Exception for OAuth2 Discovery | Proposed |
 | [0019](0019-webtransport-request-body-size-coordination.md) | WebTransport Request Body Size Coordination | Proposed |
 | [0020](0020-openapi-grouping-and-complete-endpoints.md) | OpenAPI Grouping and Complete Endpoint Coverage | Proposed |
+| [0021](0021-declarative-config-dsl.md) | Declarative Config DSL | Proposed |
 
 ## Creating New ADRs
 
