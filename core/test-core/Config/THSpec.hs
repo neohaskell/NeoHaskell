@@ -3,8 +3,11 @@
 
 module Config.THSpec where
 
-import Config (defineConfig, doc, defaultsTo, envVar, field, required)
+import Config (defineConfig, doc, defaultsTo, envVar, field, required, secret, testWithConfig)
 import Core
+import Data.Aeson qualified as Aeson
+import Data.Either (Either (..))
+import Default qualified
 import Test
 import Text qualified
 
@@ -22,6 +25,32 @@ $(defineConfig "TestConfig"
   , field @Text "databaseUrl"
       |> doc "Database connection URL"
       |> required
+  ])
+
+
+-- | Test config with secret field to verify redaction
+$(defineConfig "SecretTestConfig"
+  [ field @Int "port"
+      |> doc "Port number"
+      |> defaultsTo (8080 :: Int)
+  , field @Text "apiKey"
+      |> doc "API key (sensitive)"
+      |> secret
+      |> required
+  ])
+
+
+-- | Test config with ALL fields having defaults (for Default instance testing)
+$(defineConfig "AllDefaultsConfig"
+  [ field @Int "port"
+      |> doc "Port number"
+      |> defaultsTo (8080 :: Int)
+  , field @Text "host"
+      |> doc "Host name"
+      |> defaultsTo ("localhost" :: Text)
+  , field @Bool "debug"
+      |> doc "Debug mode"
+      |> defaultsTo False
   ])
 
 
@@ -95,3 +124,82 @@ spec = do
         -- TestConfig.databaseUrl should auto-generate DATABASE_URL
         let config = TestConfig 8080 "localhost" "db"
         config.host |> shouldBe "localhost"
+
+    describe "Default instance" do
+      it "generates Default instance with defaultsTo values" \_ -> do
+        -- AllDefaultsConfig has all fields with defaults, so we can access def safely
+        let defaultConfig = Default.def :: AllDefaultsConfig
+        defaultConfig.port |> shouldBe 8080
+        defaultConfig.host |> shouldBe "localhost"
+        defaultConfig.debug |> shouldBe False
+
+      it "allows creating modified config from default" \_ -> do
+        -- Test that we can create a new config using Default values
+        let defConfig = Default.def :: AllDefaultsConfig
+        let customConfig = AllDefaultsConfig 3000 defConfig.host defConfig.debug
+        customConfig.port |> shouldBe 3000
+        customConfig.host |> shouldBe "localhost"
+
+    describe "FromJSON instance" do
+      it "parses valid JSON" \_ -> do
+        let jsonStr = "{\"port\": 3000, \"host\": \"example.com\", \"databaseUrl\": \"postgres://test\"}"
+        case Aeson.eitherDecodeStrict @TestConfig jsonStr of
+          Right config -> do
+            config.port |> shouldBe 3000
+            config.host |> shouldBe "example.com"
+            config.databaseUrl |> shouldBe "postgres://test"
+          Left _ -> do
+            -- Force test failure
+            True |> shouldBe False
+
+      it "fails on missing required fields" \_ -> do
+        let jsonStr = "{\"port\": 3000}"
+        let isError = case Aeson.eitherDecodeStrict @TestConfig jsonStr of
+              Right _ -> False
+              Left _ -> True
+        isError |> shouldBe True
+
+    describe "ToJSON instance" do
+      it "encodes config to JSON" \_ -> do
+        let config = TestConfig 8080 "localhost" "postgres://test"
+        let jsonText = Aeson.encode config
+        -- Should contain the field values
+        let jsonStr = toText jsonText
+        jsonStr |> shouldSatisfy (\s -> Text.contains "8080" s)
+        jsonStr |> shouldSatisfy (\s -> Text.contains "localhost" s)
+
+    describe "testWithConfig" do
+      it "allows testing with custom config" \_ -> do
+        let testCfg = TestConfig 9000 "test-host" "test-db"
+        let result = testWithConfig testCfg useConfigImplicit
+        result |> shouldBe 9000
+
+      it "isolates config changes" \_ -> do
+        let config1 = TestConfig 1000 "host1" "db1"
+        let config2 = TestConfig 2000 "host2" "db2"
+        let result1 = testWithConfig config1 useConfigImplicit
+        let result2 = testWithConfig config2 useConfigImplicit
+        result1 |> shouldBe 1000
+        result2 |> shouldBe 2000
+
+    describe "secret field redaction" do
+      it "redacts secret fields in Show output" \_ -> do
+        let config = SecretTestConfig 8080 "super-secret-key"
+        let shown = toText config
+        -- Should contain non-secret field
+        shown |> shouldSatisfy (\s -> Text.contains "8080" s)
+        -- Should NOT contain the secret value
+        shown |> shouldSatisfy (\s -> not (Text.contains "super-secret-key" s))
+        -- Should contain REDACTED marker
+        shown |> shouldSatisfy (\s -> Text.contains "REDACTED" s)
+
+      it "redacts secret fields in ToJSON output" \_ -> do
+        let config = SecretTestConfig 8080 "super-secret-key"
+        let jsonText = Aeson.encode config
+        let jsonStr = toText jsonText
+        -- Should contain non-secret field
+        jsonStr |> shouldSatisfy (\s -> Text.contains "8080" s)
+        -- Should NOT contain the secret value
+        jsonStr |> shouldSatisfy (\s -> not (Text.contains "super-secret-key" s))
+        -- Should contain REDACTED marker
+        jsonStr |> shouldSatisfy (\s -> Text.contains "REDACTED" s)

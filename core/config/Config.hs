@@ -1,3 +1,5 @@
+{-# LANGUAGE ImplicitParams #-}
+
 -- | Declarative configuration DSL for NeoHaskell applications.
 --
 -- This module provides a type-safe, fail-fast configuration system that
@@ -76,6 +78,8 @@ module Config (
 
   -- * Field Definition
   field,
+  enum,
+  nested,
 
   -- * Field Modifiers
   doc,
@@ -91,11 +95,14 @@ module Config (
   load,
   loadWithVersion,
 
+  -- * Testing Support
+  testWithConfig,
+
   -- * Re-exports from opt-env-conf
   HasParser,
 ) where
 
-import Config.Builder (cliLong, cliShort, defaultsTo, doc, envPrefix, envVar, field, required, secret)
+import Config.Builder (cliLong, cliShort, defaultsTo, doc, enum, envPrefix, envVar, field, nested, required, secret)
 import Config.TH (defineConfig)
 import Core
 import OptEnvConf (HasParser)
@@ -148,3 +155,27 @@ loadWithVersion ver description = do
 -- | Default version for applications that don't specify one.
 defaultVersion :: Version
 defaultVersion = [version|0.1.0|]
+
+
+-- | Run an action with a specific configuration for testing.
+--
+-- This allows testing code that uses the @HasXxxConfig@ constraint without
+-- setting up environment variables or CLI arguments.
+--
+-- @
+-- spec :: Spec
+-- spec = describe "OpenRouter integration" do
+--   it "sends requests with API key" do
+--     let testConfig = def { openRouterKey = Redacted.wrap "test-key" }
+--     result <- testWithConfig testConfig do
+--       sendToOpenRouter testRequest
+--     result.headers \`shouldContain\` ("Authorization", "Bearer test-key")
+-- @
+testWithConfig ::
+  forall config result.
+  config ->
+  ((?config :: config) => result) ->
+  result
+testWithConfig config action = do
+  let ?config = config
+  action

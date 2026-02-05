@@ -40,6 +40,8 @@ data FieldModifier
     ModCliShort Char
   | -- | Environment variable prefix for nested configs
     ModEnvPrefix Text
+  | -- | Mark field as a nested config (uses subSettings instead of setting)
+    ModNested
 
 
 -- | A single field definition within a config type.
@@ -80,9 +82,12 @@ validateFieldDef fd = do
   let hasDoc' = hasModifier isDoc mods
   let hasDefault' = hasModifier isDefault mods
   let hasRequired' = hasModifier isRequired mods
+  let hasNested' = hasModifier isNested mods
+  -- Nested fields don't need defaultsTo/required - the nested config handles that
+  let needsDefaultOrRequired = not hasNested' && not hasDefault' && not hasRequired'
   let errors = []
         |> addIf (not hasDoc') (MissingDoc name)
-        |> addIf (not hasDefault' && not hasRequired') (MissingDefaultOrRequired name)
+        |> addIf needsDefaultOrRequired (MissingDefaultOrRequired name)
         |> addIf (hasDefault' && hasRequired') (BothDefaultAndRequired name)
   errors
 
@@ -112,6 +117,13 @@ isRequired :: FieldModifier -> Bool
 isRequired modifier =
   case modifier of
     ModRequired -> True
+    _ -> False
+
+
+isNested :: FieldModifier -> Bool
+isNested modifier =
+  case modifier of
+    ModNested -> True
     _ -> False
 
 

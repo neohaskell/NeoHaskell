@@ -186,6 +186,7 @@ library
     Maybe
     Path
     Record
+    Redacted
     Result
     Service
     Service.Auth
@@ -522,6 +523,7 @@ test-suite nhcore-test-core
     Http.ClientRawSpec
     Http.ClientSpec
     IntSpec
+    RedactedSpec
     Schema.OpenApiSpec
     SchemaSpec
     Service.Transport.Web.SwaggerUISpec

@@ -13,6 +13,7 @@ import Config.THSpec qualified
 import Http.ClientRawSpec qualified
 import Http.ClientSpec qualified
 import IntSpec qualified
+import RedactedSpec qualified
 import Schema.OpenApiSpec qualified
 import SchemaSpec qualified
 import Service.Transport.Web.SwaggerUISpec qualified
@@ -36,6 +37,7 @@ main = Hspec.hspec do
   Hspec.describe "Http.Client" Http.ClientSpec.spec
   Hspec.describe "Http.ClientRaw" Http.ClientRawSpec.spec
   Hspec.describe "Int" IntSpec.spec
+  Hspec.describe "Redacted" RedactedSpec.spec
   Hspec.describe "Schema" SchemaSpec.spec
   Hspec.describe "Schema.OpenApi" Schema.OpenApiSpec.spec
   Hspec.describe "Service.Transport.Web.SwaggerUI" Service.Transport.Web.SwaggerUISpec.spec

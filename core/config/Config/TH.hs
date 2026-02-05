@@ -17,10 +17,15 @@ import Config.Core (ConfigError (..), FieldDef (..), FieldModifier (..), validat
 import Control.Monad qualified as GhcMonad
 import Control.Monad.Fail qualified as GhcFail
 import Core
+import Data.Aeson qualified as Aeson
+import Data.Aeson.Key qualified as AesonKey
+
 import Data.Char qualified as GhcChar
+import Data.Default qualified as GhcDefault
 import Data.List qualified as GhcList
 import Data.Maybe qualified as GhcMaybe
 import Data.Text qualified as Text
+import GHC.Err qualified as GhcErr
 import GHC.Generics qualified as GhcGenerics
 import Language.Haskell.TH qualified as TH
 
@@ -51,13 +56,22 @@ defineConfig configNameText fields = do
   -- Generate custom Show instance that redacts secret fields
   showDecl <- generateShowInstance configName fields
 
+  -- Generate Default instance
+  defaultDecl <- generateDefaultInstance configName fields
+
+  -- Generate FromJSON instance
+  fromJsonDecl <- generateFromJsonInstance configName fields
+
+  -- Generate ToJSON instance (with secret redaction)
+  toJsonDecl <- generateToJsonInstance configName fields
+
   -- Generate HasParser instance
   parserDecl <- generateHasParser configName fields
 
   -- Generate type alias: type HasAppConfig = (?config :: AppConfig)
   let typeAlias = TH.TySynD hasConfigName [] (implicitParamType configName)
 
-  return [dataDecl, showDecl, parserDecl, typeAlias]
+  return [dataDecl, showDecl, defaultDecl, fromJsonDecl, toJsonDecl, parserDecl, typeAlias]
 
 
 -- | Validate all fields and fail compilation if any errors found.
@@ -196,6 +210,31 @@ hasSecretModifier mods =
     _ -> False
 
 
+-- | Check if a field has the ModNested modifier.
+hasNestedModifier :: [FieldModifier] -> Bool
+hasNestedModifier mods =
+  GhcList.any isNested mods
+ where
+  isNested m = case m of
+    ModNested -> True
+    _ -> False
+
+
+-- | Find the ModEnvPrefix value if present.
+findEnvPrefix :: [FieldModifier] -> Maybe Text
+findEnvPrefix mods =
+  mods
+    |> GhcList.find isEnvPrefix
+    |> fmap extractEnvPrefix
+ where
+  isEnvPrefix m = case m of
+    ModEnvPrefix _ -> True
+    _ -> False
+  extractEnvPrefix m = case m of
+    ModEnvPrefix p -> p
+    _ -> ""
+
+
 -- | Intersperse a separator literal between expressions.
 -- [a, b, c] with sep -> [a, sep, b, sep, c]
 intersperseLit :: [Char] -> [TH.Exp] -> [TH.Exp]
@@ -211,6 +250,199 @@ concatStrings [] = TH.LitE (TH.StringL "")
 concatStrings [x] = x
 concatStrings (x : xs) =
   TH.InfixE (Just x) (TH.VarE '(++)) (Just (concatStrings xs))
+
+
+-- | Generate: instance Default AppConfig where def = AppConfig { ... }
+--
+-- For fields with 'defaultsTo': uses the provided default value
+-- For 'required' fields: uses @error "Required field: fieldName"@
+--
+-- This allows testing with partial configs using record update syntax:
+-- @
+-- let testConfig = def { port = 3000 }
+-- @
+generateDefaultInstance :: TH.Name -> [FieldDef] -> TH.Q TH.Dec
+generateDefaultInstance configName fields = do
+  -- Build field assignments for the record
+  fieldAssigns <- GhcMonad.mapM fieldToDefaultAssign fields
+
+  -- Build: AppConfig { field1 = value1, field2 = value2, ... }
+  let recordExp = TH.RecConE configName fieldAssigns
+
+  -- Create: def = AppConfig { ... }
+  let defClause = TH.Clause [] (TH.NormalB recordExp) []
+
+  return
+    ( TH.InstanceD
+        Nothing
+        []
+        (TH.ConT ''GhcDefault.Default `TH.AppT` TH.ConT configName)
+        [TH.FunD 'GhcDefault.def [defClause]]
+    )
+
+
+-- | Generate the default value for a single field.
+--
+-- - Fields with 'defaultsTo': use the provided value
+-- - Nested fields: use @def@ from the nested type's Default instance
+-- - Required fields: use @error "Required field: fieldName"@
+fieldToDefaultAssign :: FieldDef -> TH.Q TH.FieldExp
+fieldToDefaultAssign fd = do
+  let fieldName = TH.mkName (Text.unpack fd.fieldName)
+  let mods = fd.fieldModifiers
+  let isNestedField = hasNestedModifier mods
+
+  -- Find the default value if present
+  defaultValue <- case findDefault mods of
+    Just qExpr -> qExpr
+    Nothing -> case isNestedField of
+      True -> do
+        -- Nested field - use def from the nested type
+        return (TH.VarE 'GhcDefault.def)
+      False -> do
+        -- Required field - use error
+        let errMsg = "Required field: " ++ Text.unpack fd.fieldName
+        return (TH.AppE (TH.VarE 'GhcErr.error) (TH.LitE (TH.StringL errMsg)))
+
+  return (fieldName, defaultValue)
+
+
+-- | Find the ModDefault in the modifiers and extract its Q Exp.
+findDefault :: [FieldModifier] -> Maybe (TH.Q TH.Exp)
+findDefault mods =
+  mods
+    |> GhcMaybe.mapMaybe extractDefault
+    |> GhcMaybe.listToMaybe
+ where
+  extractDefault m = case m of
+    ModDefault qExpr -> Just qExpr
+    _ -> Nothing
+
+
+-- | Generate: instance FromJSON AppConfig where parseJSON = ...
+--
+-- Generates a standard FromJSON instance that parses all fields.
+-- Safe for secrets because parsed values become protected immediately
+-- if wrapped in Redacted.
+generateFromJsonInstance :: TH.Name -> [FieldDef] -> TH.Q TH.Dec
+generateFromJsonInstance configName fields = do
+  -- Create parameter for the JSON value
+  jsonVar <- TH.newName "v"
+
+  -- Build the parsing body
+  parseBody <- buildFromJsonBody configName fields jsonVar
+
+  -- Create: parseJSON v = withObject "ConfigName" $ \obj -> ...
+  let parseClause = TH.Clause [TH.VarP jsonVar] (TH.NormalB parseBody) []
+
+  return
+    ( TH.InstanceD
+        Nothing
+        []
+        (TH.ConT ''Aeson.FromJSON `TH.AppT` TH.ConT configName)
+        [TH.FunD 'Aeson.parseJSON [parseClause]]
+    )
+
+
+-- | Build the body of the parseJSON function.
+-- Generates: withObject "ConfigName" $ \obj -> ConfigName <$> obj .: "field1" <*> ...
+buildFromJsonBody :: TH.Name -> [FieldDef] -> TH.Name -> TH.Q TH.Exp
+buildFromJsonBody configName fields jsonVar = do
+  let configNameStr = TH.nameBase configName
+  objVar <- TH.newName "obj"
+
+  -- Build the parser inside the lambda
+  parserExp <- case fields of
+    [] ->
+      -- No fields: pure ConfigName
+      return (TH.AppE (TH.VarE 'pure) (TH.ConE configName))
+    (firstField : restFields) -> do
+      -- Start with: ConfigName <$> obj .: "field1"
+      firstParse <- fieldToParseExp objVar firstField
+      let initial = TH.InfixE (Just (TH.ConE configName)) (TH.VarE 'fmap) (Just firstParse)
+      -- Fold remaining: <*> obj .: "field2" <*> ...
+      GhcMonad.foldM (addFieldParse objVar) initial restFields
+
+  -- Build: withObject "ConfigName" $ \obj -> ...
+  let lambda = TH.LamE [TH.VarP objVar] parserExp
+  return
+    ( TH.AppE
+        (TH.AppE (TH.VarE 'Aeson.withObject) (TH.LitE (TH.StringL configNameStr)))
+        lambda
+      `TH.AppE` TH.VarE jsonVar
+    )
+
+
+-- | Generate parse expression for a field: obj .: "fieldName"
+fieldToParseExp :: TH.Name -> FieldDef -> TH.Q TH.Exp
+fieldToParseExp objVar fd = do
+  let fieldNameStr = Text.unpack fd.fieldName
+  let keyExp = TH.AppE (TH.VarE 'AesonKey.fromString) (TH.LitE (TH.StringL fieldNameStr))
+  -- obj .: key
+  return (TH.InfixE (Just (TH.VarE objVar)) (TH.VarE '(Aeson..:)) (Just keyExp))
+
+
+-- | Add a field parse to the applicative chain
+addFieldParse :: TH.Name -> TH.Exp -> FieldDef -> TH.Q TH.Exp
+addFieldParse objVar acc fd = do
+  parseExp <- fieldToParseExp objVar fd
+  return (TH.InfixE (Just acc) (TH.VarE '(<*>)) (Just parseExp))
+
+
+-- | Generate: instance ToJSON AppConfig where toJSON = ...
+--
+-- Generates a ToJSON instance that redacts secret fields.
+-- Secret fields output "<REDACTED>" instead of the actual value.
+generateToJsonInstance :: TH.Name -> [FieldDef] -> TH.Q TH.Dec
+generateToJsonInstance configName fields = do
+  -- Create parameter for the config value
+  configVar <- TH.newName "config"
+
+  -- Build the encoding body
+  encodeBody <- buildToJsonBody configVar fields
+
+  -- Create: toJSON config = object [...]
+  let toJsonClause = TH.Clause [TH.VarP configVar] (TH.NormalB encodeBody) []
+
+  return
+    ( TH.InstanceD
+        Nothing
+        []
+        (TH.ConT ''Aeson.ToJSON `TH.AppT` TH.ConT configName)
+        [TH.FunD 'Aeson.toJSON [toJsonClause]]
+    )
+
+
+-- | Build the body of the toJSON function.
+-- Generates: object ["field1" .= value1, "field2" .= "<REDACTED>", ...]
+buildToJsonBody :: TH.Name -> [FieldDef] -> TH.Q TH.Exp
+buildToJsonBody configVar fields = do
+  -- Build the list of key-value pairs
+  pairs <- GhcMonad.mapM (fieldToJsonPair configVar) fields
+  let pairListExp = TH.ListE pairs
+  -- object [...]
+  return (TH.AppE (TH.VarE 'Aeson.object) pairListExp)
+
+
+-- | Generate a JSON key-value pair for a field.
+-- For secret fields: "fieldName" .= ("<REDACTED>" :: Text)
+-- For normal fields: "fieldName" .= config.fieldName
+fieldToJsonPair :: TH.Name -> FieldDef -> TH.Q TH.Exp
+fieldToJsonPair configVar fd = do
+  let fieldNameStr = Text.unpack fd.fieldName
+  let isSecretField = hasSecretModifier fd.fieldModifiers
+  let keyExp = TH.AppE (TH.VarE 'AesonKey.fromString) (TH.LitE (TH.StringL fieldNameStr))
+
+  valueExp <- case isSecretField of
+    True -> do
+      -- Secret field: use "<REDACTED>" string
+      return (TH.SigE (TH.LitE (TH.StringL "<REDACTED>")) (TH.ConT ''Text))
+    False -> do
+      -- Normal field: config.fieldName
+      return (TH.GetFieldE (TH.VarE configVar) fieldNameStr)
+
+  -- key .= value
+  return (TH.InfixE (Just keyExp) (TH.VarE '(Aeson..=)) (Just valueExp))
 
 
 -- | Generate: instance HasParser AppConfig where settingsParser = ...
@@ -258,14 +490,30 @@ addSettingToParser acc fd = do
 
 
 -- | Convert a FieldDef to an opt-env-conf setting expression.
+--
+-- For regular fields: @setting [env "VAR", help "...", ...]@
+-- For nested fields: @subSettings "prefix"@ (uses the nested type's HasParser)
 fieldToSettingExp :: FieldDef -> TH.Q TH.Exp
 fieldToSettingExp fd = do
-  builders <- fieldModifiersToBuilders fd
-  -- Generate: setting [builder1, builder2, ..., reader auto]
-  readerExp <- [|OptEnvConf.reader OptEnvConf.auto|]
-  let allBuilders = builders ++ [readerExp]
-  let builderListExp = TH.ListE allBuilders
-  return (TH.AppE (TH.VarE 'OptEnvConf.setting) builderListExp)
+  let mods = fd.fieldModifiers
+  let isNestedField = hasNestedModifier mods
+
+  case isNestedField of
+    True -> do
+      -- Nested field: use subSettings with the prefix
+      -- The prefix comes from envPrefix modifier, or defaults to the field name
+      let prefix = case findEnvPrefix mods of
+            Just p -> Text.unpack p
+            Nothing -> Text.unpack fd.fieldName
+      [|OptEnvConf.subSettings $(TH.litE (TH.stringL prefix))|]
+
+    False -> do
+      -- Regular field: setting [builder1, builder2, ..., reader auto]
+      builders <- fieldModifiersToBuilders fd
+      readerExp <- [|OptEnvConf.reader OptEnvConf.auto|]
+      let allBuilders = builders ++ [readerExp]
+      let builderListExp = TH.ListE allBuilders
+      return (TH.AppE (TH.VarE 'OptEnvConf.setting) builderListExp)
 
 
 -- | Convert field modifiers to opt-env-conf builder expressions.

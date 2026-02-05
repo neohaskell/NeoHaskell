@@ -15,6 +15,8 @@
 module Config.Builder (
   -- * Field Definition
   field,
+  enum,
+  nested,
 
   -- * Modifiers
   doc,
@@ -28,6 +30,7 @@ module Config.Builder (
 ) where
 
 import Config.Core (FieldDef (..), FieldModifier (..))
+-- ModNested is used in the nested function
 import Core
 import Data.Typeable qualified as Typeable
 import Language.Haskell.TH.Syntax qualified as TH
@@ -50,6 +53,64 @@ field name = do
     { fieldName = name
     , fieldType = TH.ConT (TH.mkName typeName)
     , fieldModifiers = []
+    }
+
+
+-- | Define an enum configuration field.
+--
+-- This is semantically equivalent to 'field' but makes the intent clear
+-- when defining enum-typed configuration. The enum type must have 'Read'
+-- and 'Show' instances for parsing from strings.
+--
+-- @
+-- data LogLevel = Debug | Info | Warn | Error
+--   deriving (Show, Read, Generic)
+--
+-- Config.enum \@LogLevel "logLevel"
+--   |> Config.doc "Minimum log level"
+--   |> Config.defaultsTo Info
+-- @
+enum :: forall enumType. (Typeable.Typeable enumType) => Text -> FieldDef
+enum = field @enumType
+
+
+-- | Define a nested configuration field.
+--
+-- Nested configs allow composing multiple config types together. The nested
+-- type must also have a 'HasParser' instance (typically from its own
+-- 'defineConfig' declaration).
+--
+-- Use 'envPrefix' to namespace the nested config's environment variables.
+--
+-- @
+-- defineConfig "DatabaseConfig"
+--   [ Config.field \@Text "host"
+--       |> Config.doc "Database host"
+--       |> Config.defaultsTo "localhost"
+--   , Config.field \@Int "port"
+--       |> Config.doc "Database port"
+--       |> Config.defaultsTo 5432
+--   ]
+--
+-- defineConfig "AppConfig"
+--   [ Config.nested \@DatabaseConfig "database"
+--       |> Config.doc "Database connection settings"
+--       |> Config.envPrefix "DB_"
+--   ]
+-- @
+--
+-- With @envPrefix "DB_"@, the nested fields become:
+--
+-- * @DB_HOST@ (defaults to "localhost")
+-- * @DB_PORT@ (defaults to 5432)
+nested :: forall nestedType. (Typeable.Typeable nestedType) => Text -> FieldDef
+nested name = do
+  let typeRep = Typeable.typeRep (Typeable.Proxy @nestedType)
+  let typeName = Typeable.showsTypeRep typeRep ""
+  FieldDef
+    { fieldName = name
+    , fieldType = TH.ConT (TH.mkName typeName)
+    , fieldModifiers = [ModNested]
     }
 
 
