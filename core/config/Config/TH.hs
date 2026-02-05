@@ -118,7 +118,7 @@ buildParserBody configName fields =
   case fields of
     [] ->
       -- No fields: pure ConfigName
-      [|return $(TH.conE configName)|]
+      [|pure $(TH.conE configName)|]
     (firstField : restFields) -> do
       -- Start with: ConfigName <$> firstSetting
       firstSetting <- fieldToSettingExp firstField

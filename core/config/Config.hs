@@ -142,7 +142,7 @@ loadWithVersion ::
   Task Text config
 loadWithVersion ver description = do
   Task.fromIO (OptEnvConf.runSettingsParser ver (Text.toLinkedList description))
-    |> Task.mapError (always "Configuration error")
+    |> Task.mapError (\err -> "Configuration error:\n" ++ err)
 
 
 -- | Default version for applications that don't specify one.
