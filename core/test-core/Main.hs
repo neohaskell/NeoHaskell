@@ -5,6 +5,10 @@ import Prelude (IO)
 import ConcurrentMapSpec qualified
 import Config.BuilderSpec qualified
 import Config.CoreSpec qualified
+import Config.ErrorSafetySpec qualified
+import Config.InputValidationSpec qualified
+import Config.RuntimeSafetySpec qualified
+import Config.SecretSpec qualified
 import Config.THSpec qualified
 import Http.ClientRawSpec qualified
 import Http.ClientSpec qualified
@@ -24,6 +28,10 @@ main = Hspec.hspec do
   Hspec.describe "ConcurrentMap" ConcurrentMapSpec.spec
   Hspec.describe "Config.Builder" Config.BuilderSpec.spec
   Hspec.describe "Config.Core" Config.CoreSpec.spec
+  Hspec.describe "Config.ErrorSafety" Config.ErrorSafetySpec.spec
+  Hspec.describe "Config.InputValidation" Config.InputValidationSpec.spec
+  Hspec.describe "Config.RuntimeSafety" Config.RuntimeSafetySpec.spec
+  Hspec.describe "Config.Secret" Config.SecretSpec.spec
   Hspec.describe "Config.TH" Config.THSpec.spec
   Hspec.describe "Http.Client" Http.ClientSpec.spec
   Hspec.describe "Http.ClientRaw" Http.ClientRawSpec.spec
