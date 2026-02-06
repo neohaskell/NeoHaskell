@@ -126,23 +126,16 @@ spec = do
         result |> shouldBe "test-key"
 
     describe "secret modifier code generation (CRITICAL)" do
-      -- This test documents the EXPECTED behavior.
-      -- Currently it will FAIL because ModSecret is not implemented in TH.
-      -- When ModSecret is properly implemented, this test should pass.
+      -- ModSecret is implemented in Config.TH.fieldModifiersToBuilders.
+      -- The generated Show instance replaces secret field values with "REDACTED".
 
       it "ModSecret should affect generated Show instance" \_ -> do
         -- This test verifies that adding |> secret to a field
         -- results in different behavior than a field without secret.
-        --
-        -- Current bug: ModSecret is ignored in Config.TH.fieldModifiersToBuilders
-        -- so secret and non-secret fields behave identically.
-        --
-        -- TODO: When this test fails, it proves ModSecret is not implemented.
-        -- The fix is to handle ModSecret in Config.TH.
+        -- The implementation lives in Config.TH.fieldModifiersToBuilders.
         let secretConfig = SecretTestConfig "visible-secret" 8080 "another-visible" "localhost"
         let shown = toText secretConfig
-        -- If ModSecret is properly implemented, "visible-secret" should NOT appear
-        -- If this test FAILS, it confirms the security vulnerability
+        -- Secret values must not appear in Show output
         shown |> shouldSatisfy (\s -> not (Text.contains "visible-secret" s))
 
     describe "default value security" do
