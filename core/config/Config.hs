@@ -35,14 +35,41 @@
 -- * @instance HasParser AppConfig@ (for opt-env-conf)
 -- * @type HasAppConfig = (?config :: AppConfig)@ (for implicit parameter access)
 --
--- = Loading Configuration
+-- = Usage Patterns
 --
--- Use 'load' to parse config from CLI args, environment variables, and config files:
+-- == Via Application Framework (Recommended)
+--
+-- Register config with 'Application.withConfig' for automatic loading and injection:
+--
+-- @
+-- app :: Application
+-- app = Application.new
+--   |> Application.withConfig \@AppConfig
+--   |> Application.withService myService
+--
+-- main :: IO ()
+-- main = Application.run app |> Task.runOrPanic
+-- @
+--
+-- == Explicit Access
+--
+-- After 'Application.run', access config anywhere via 'get':
+--
+-- @
+-- myFunction :: Task err ()
+-- myFunction = do
+--   let port = (Config.get \@AppConfig).port
+--   ...
+-- @
+--
+-- == Direct Loading (Advanced)
+--
+-- For standalone scripts or testing, use 'load' directly:
 --
 -- @
 -- main :: IO ()
 -- main = do
---   config <- Config.load \@AppConfig
+--   config <- Config.load \@AppConfig |> Task.runOrPanic
 --   let ?config = config
 --   runApp
 -- @
@@ -93,6 +120,9 @@ module Config (
   load,
   loadWithVersion,
 
+  -- * Config Access
+  get,
+
   -- * Testing Support
   testWithConfig,
 
@@ -101,6 +131,7 @@ module Config (
 ) where
 
 import Config.Builder (cliLong, cliShort, defaultsTo, doc, enum, envPrefix, envVar, field, nested, required, secret)
+import Config.Global (get)
 import Config.TH (defineConfig)
 import Core
 import Data.Either qualified as GhcEither
