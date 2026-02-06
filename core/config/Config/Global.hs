@@ -62,7 +62,7 @@ get = unsafePerformIO do
   maybeDyn <- readIORef globalConfigRef
   case maybeDyn of
     Nothing ->
-      panic "Config.get: Config not initialized. Ensure Application.run has been called with withConfig."
+      panic "Config.get: Config not initialized. Ensure Application.run has been called with withConfig.\n\nIf you need config values to build your Application, use:\n  |> Application.withEventStoreFrom @YourConfig makeEventStoreConfig\n  |> Application.withFileUploadFrom @YourConfig makeFileUploadConfig"
     Just dyn ->
       case fromDynamic dyn of
         Just config -> pure config

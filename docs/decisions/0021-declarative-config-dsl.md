@@ -196,6 +196,41 @@ main = do
   Application.run app
 ```
 
+#### Config-Dependent Component Wiring
+
+When Application components (like EventStore or FileUpload) need config values, use the
+`*From` variants that take factory functions instead of direct values:
+
+```haskell
+-- Factory functions that take config and produce component configs
+makePostgresConfig :: AppConfig -> PostgresEventStore
+makePostgresConfig config = PostgresEventStore
+  { host = config.dbHost
+  , port = config.dbPort
+  , user = config.dbUser
+  , password = config.dbPassword
+  , databaseName = config.dbName
+  }
+
+makeFileUploadConfig :: AppConfig -> FileUploadConfig
+makeFileUploadConfig config = FileUploadConfig
+  { blobStoreDir = config.uploadDir
+  , stateStoreBackend = PostgresStateStore {...}
+  , ...
+  }
+
+-- Wire using *From variants - factories are called AFTER config is loaded
+app = Application.new
+  |> Application.withConfig @AppConfig
+  |> Application.withEventStoreFrom @AppConfig makePostgresConfig
+  |> Application.withFileUploadFrom @AppConfig makeFileUploadConfig
+  |> Application.withService myService
+```
+
+This pattern eliminates the chicken-and-egg problem where `Config.get` panics before
+`Application.run` loads the config. The factory functions are stored and called during
+`Application.run` after config validation succeeds.
+
 **Startup behavior:**
 
 1. `withConfig` parses CLI args, env vars, and config files

@@ -50,16 +50,15 @@ import Var qualified
 
 -- | PostgreSQL event store configuration.
 --
--- All fields are marked lazy (~) to allow this config to reference 'Config.get'
--- values, which are only available after 'Application.run' loads the config.
--- Without lazy fields, the Strict extension would force evaluation during
--- Application construction, before the config is loaded.
+-- For config-dependent values, use 'Application.withEventStoreFrom' instead
+-- of 'Application.withEventStore' to avoid the chicken-and-egg problem where
+-- Config.get panics before Application.run loads the config.
 data PostgresEventStore = PostgresEventStore
-  { host :: ~Text,
-    databaseName :: ~Text,
-    user :: ~Text,
-    password :: ~Text,
-    port :: ~Int
+  { host :: Text,
+    databaseName :: Text,
+    user :: Text,
+    password :: Text,
+    port :: Int
   }
   deriving (Eq, Ord, Show)
 

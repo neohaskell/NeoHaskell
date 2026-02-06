@@ -246,21 +246,21 @@ instance Json.ToJSON FileAccessError
 --     , pgPassword = "neohaskell"
 --     }
 -- @
--- | All fields are marked lazy (~) to allow this config to reference 'Config.get'
--- values, which are only available after 'Application.run' loads the config.
+-- | For config-dependent values, use 'Application.withFileUploadFrom' instead
+-- of 'Application.withFileUpload' to avoid the chicken-and-egg problem.
 data FileStateStoreBackend
   = InMemoryStateStore
   -- ^ In-memory storage (lost on restart, for development/testing)
   | PostgresStateStore
-      { pgHost :: ~Text
+      { pgHost :: Text
       -- ^ PostgreSQL host
-      , pgPort :: ~Int
+      , pgPort :: Int
       -- ^ PostgreSQL port
-      , pgDatabase :: ~Text
+      , pgDatabase :: Text
       -- ^ Database name
-      , pgUser :: ~Text
+      , pgUser :: Text
       -- ^ Database user
-      , pgPassword :: ~Text
+      , pgPassword :: Text
       -- ^ Database password
       }
   -- ^ PostgreSQL storage (persistent, recommended for production)
@@ -366,22 +366,22 @@ instance Json.ToJSON FileStateStoreBackend where
 --       , ...
 --       }
 -- @
--- | All fields are marked lazy (~) to allow this config to reference 'Config.get'
--- values, which are only available after 'Application.run' loads the config.
+-- | For config-dependent values, use 'Application.withFileUploadFrom' instead
+-- of 'Application.withFileUpload' to avoid the chicken-and-egg problem.
 data FileUploadConfig = FileUploadConfig
-  { blobStoreDir :: ~Text
+  { blobStoreDir :: Text
   -- ^ Directory for storing uploaded files (created if missing)
-  , stateStoreBackend :: ~FileStateStoreBackend
+  , stateStoreBackend :: FileStateStoreBackend
   -- ^ Where to track file lifecycle state
-  , maxFileSizeBytes :: ~Int64
+  , maxFileSizeBytes :: Int64
   -- ^ Maximum upload size (default: 10485760 = 10 MB)
-  , pendingTtlSeconds :: ~Int64
+  , pendingTtlSeconds :: Int64
   -- ^ TTL for unconfirmed uploads before cleanup (default: 21600 = 6 hours)
-  , cleanupIntervalSeconds :: ~Int64
+  , cleanupIntervalSeconds :: Int64
   -- ^ How often the cleanup worker runs (default: 900 = 15 minutes)
-  , allowedContentTypes :: ~(Maybe (Array Text))
+  , allowedContentTypes :: Maybe (Array Text)
   -- ^ MIME type allowlist (Nothing = all types allowed)
-  , storeOriginalFilename :: ~Bool
+  , storeOriginalFilename :: Bool
   -- ^ Whether to store the original filename in events (default: True)
   }
   deriving (Generic, Eq, Show)
