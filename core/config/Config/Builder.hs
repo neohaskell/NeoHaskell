@@ -32,6 +32,7 @@ module Config.Builder (
 import Config.Core (FieldDef (..), FieldModifier (..))
 -- ModNested is used in the nested function
 import Core
+import Data.List qualified as GhcList
 import Data.Typeable qualified as Typeable
 import Language.Haskell.TH.Syntax qualified as TH
 
@@ -44,16 +45,45 @@ import Language.Haskell.TH.Syntax qualified as TH
 -- Config.field \@Int "port"
 -- Config.field \@Text "databaseUrl"
 -- Config.field \@(Secret Text) "apiKey"
+-- Config.field \@(Maybe Int) "optionalPort"
 -- @
 field :: forall fieldType. (Typeable.Typeable fieldType) => Text -> FieldDef
 field name = do
   let typeRep = Typeable.typeRep (Typeable.Proxy @fieldType)
-  let typeName = Typeable.showsTypeRep typeRep ""
+  let thType = typeRepToTHType typeRep
   FieldDef
     { fieldName = name
-    , fieldType = TH.ConT (TH.mkName typeName)
+    , fieldType = thType
     , fieldModifiers = []
     }
+
+
+-- | Convert a Typeable TypeRep to a Template Haskell Type.
+--
+-- This properly handles:
+-- - Simple types: Int, Text, Bool
+-- - Applied types: Maybe Int, Array Text, Either String Int
+-- - Nested applications: Maybe (Array Text)
+-- - External package types with proper qualification
+typeRepToTHType :: Typeable.TypeRep -> TH.Type
+typeRepToTHType typeRep = do
+  let tyCon = Typeable.typeRepTyCon typeRep
+  let args = Typeable.typeRepArgs typeRep
+  let baseName = tyConToTHName tyCon
+  let baseType = TH.ConT baseName
+  -- Fold arguments with AppT: Maybe Int -> AppT (ConT Maybe) (ConT Int)
+  GhcList.foldl' TH.AppT baseType (GhcList.map typeRepToTHType args)
+
+
+-- | Convert a TyCon to a fully-qualified TH Name using mkNameG_tc.
+--
+-- This ensures proper name resolution across package boundaries.
+tyConToTHName :: Typeable.TyCon -> TH.Name
+tyConToTHName tyCon = do
+  let pkg = Typeable.tyConPackage tyCon
+  let modName = Typeable.tyConModule tyCon
+  let tyName = Typeable.tyConName tyCon
+  TH.mkNameG_tc pkg modName tyName
 
 
 -- | Define an enum configuration field.
@@ -106,10 +136,10 @@ enum = field @enumType
 nested :: forall nestedType. (Typeable.Typeable nestedType) => Text -> FieldDef
 nested name = do
   let typeRep = Typeable.typeRep (Typeable.Proxy @nestedType)
-  let typeName = Typeable.showsTypeRep typeRep ""
+  let thType = typeRepToTHType typeRep
   FieldDef
     { fieldName = name
-    , fieldType = TH.ConT (TH.mkName typeName)
+    , fieldType = thType
     , fieldModifiers = [ModNested]
     }
 
