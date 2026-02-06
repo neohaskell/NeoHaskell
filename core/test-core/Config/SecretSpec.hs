@@ -96,13 +96,11 @@ spec = do
       it "shows placeholder for secret fields instead of actual value" \_ -> do
         let config = SecretTestConfig "secret-value" 8080 "another-secret" "localhost"
         let shown = toText config
-        -- Should show something like "<REDACTED>", "***", or similar placeholder
-        -- At minimum, the actual values should not appear
-        shown |> shouldSatisfy (\s ->
-          Text.contains "REDACTED" s ||
-          Text.contains "***" s ||
-          Text.contains "<secret>" s ||
-          (not (Text.contains "secret-value" s) && not (Text.contains "another-secret" s)))
+        -- Must contain REDACTED marker for each secret field
+        shown |> shouldSatisfy (\s -> Text.contains "REDACTED" s)
+        -- Actual secret values must not appear
+        shown |> shouldSatisfy (\s -> not (Text.contains "secret-value" s))
+        shown |> shouldSatisfy (\s -> not (Text.contains "another-secret" s))
 
       it "shows non-secret fields normally" \_ -> do
         let config = SecretTestConfig "secret" 3000 "db-secret" "myhost.example.com"
