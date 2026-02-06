@@ -425,7 +425,8 @@ queryDefinitionCount app = Array.length app.queryDefinitions
 -- | Check if the Application is empty (no configurations set).
 isEmpty :: Application -> Bool
 isEmpty app =
-  Array.isEmpty app.queryDefinitions
+  not (hasConfig app)
+    && Array.isEmpty app.queryDefinitions
     && Registry.isEmpty app.queryRegistry
     && Array.isEmpty app.serviceRunners
     && Map.length app.transports == 0

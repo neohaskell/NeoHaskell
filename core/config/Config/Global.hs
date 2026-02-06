@@ -56,6 +56,7 @@ globalConfigRef = unsafePerformIO (newIORef Nothing)
 --   let port = (Config.get \@AppConfig).port
 --   Console.print [fmt|Using port: {port}|]
 -- @
+{-# NOINLINE get #-}
 get :: forall config. (Typeable config, HasCallStack) => config
 get = unsafePerformIO do
   maybeDyn <- readIORef globalConfigRef
