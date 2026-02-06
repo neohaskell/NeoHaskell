@@ -54,6 +54,7 @@ library
   import: common_cfg
   exposed-modules:
     App
+    Testbed.Config
     Testbed.Cart.Commands.AddItem
     Testbed.Cart.Commands.CreateCart
     Testbed.Cart.Core

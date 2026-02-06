@@ -21,6 +21,7 @@ module Service.Application (
   new,
 
   -- * Configuration
+  withConfig,
   withEventStore,
   withQueryObjectStore,
   withQuery,
@@ -44,6 +45,7 @@ module Service.Application (
 
   -- * Inspection
   isEmpty,
+  hasConfig,
   hasQueryRegistry,
   hasServiceRunners,
   serviceRunnerCount,
@@ -128,6 +130,10 @@ import Service.FileUpload.Web qualified as FileUpload
 import Service.FileUpload.BlobStore (BlobStore (..))
 import Service.FileUpload.Core qualified as FileUploadCore
 import Service.FileUpload.Lifecycle qualified as FileLifecycle
+import Config qualified
+import Config.Global qualified as ConfigGlobal
+import Data.Typeable (Typeable)
+import OptEnvConf (HasParser)
 import Task (Task)
 import Task qualified
 import Text (Text)
@@ -217,8 +223,16 @@ data OAuth2Setup = OAuth2Setup
 data QueryObjectStoreConfigValue = forall config. (QueryObjectStoreConfig config) => QueryObjectStoreConfigValue config
 
 
+-- | A type-erased wrapper for application config.
+--
+-- This allows storing the config loader in Application without knowing the concrete type.
+-- The config type is captured at 'withConfig' and loaded during 'run'.
+data ConfigSpec = forall config. (HasParser config, Typeable config) => ConfigSpec (Task Text config)
+
+
 data Application = Application
-  { eventStoreCreator :: Maybe (Task Text (EventStore Json.Value)),
+  { configSpec :: Maybe ConfigSpec,
+    eventStoreCreator :: Maybe (Task Text (EventStore Json.Value)),
     queryObjectStoreConfig :: Maybe QueryObjectStoreConfigValue,
     queryDefinitions :: Array QueryDefinition,
     queryRegistry :: QueryRegistry,
@@ -243,7 +257,8 @@ data Application = Application
 new :: Application
 new =
   Application
-    { eventStoreCreator = Nothing,
+    { configSpec = Nothing,
+      eventStoreCreator = Nothing,
       queryObjectStoreConfig = Nothing,
       queryDefinitions = Array.empty,
       queryRegistry = Registry.empty,
@@ -259,6 +274,44 @@ new =
       secretStore = Nothing,
       apiInfo = Nothing
     }
+
+
+-- | Register application config for automatic loading.
+--
+-- The config is loaded during 'Application.run' before any services start.
+-- Config is parsed from CLI args, environment variables, and config files.
+--
+-- Example:
+--
+-- @
+-- app = Application.new
+--   |> Application.withConfig \@AppConfig
+--   |> Application.withEventStore postgresConfig
+--   |> Application.withService myService
+--
+-- main = Application.run app
+-- @
+--
+-- After 'run', the config is accessible via:
+--
+-- * Implicit parameter: @?config@ (with @HasAppConfig@ constraint)
+-- * Explicit accessor: @Config.get \@AppConfig@
+withConfig ::
+  forall config.
+  (HasParser config, Typeable config) =>
+  Application ->
+  Application
+withConfig app =
+  case app.configSpec of
+    Just _ -> panic "Application.withConfig called twice. Only one config per Application is supported."
+    Nothing -> app {configSpec = Just (ConfigSpec (Config.load @config))}
+
+
+-- | Check if a config has been registered.
+hasConfig :: Application -> Bool
+hasConfig app = case app.configSpec of
+  Nothing -> False
+  Just _ -> True
 
 
 -- | Configure the EventStore for the Application.
@@ -528,11 +581,25 @@ serviceRunnerCount app = Array.length app.serviceRunners
 --   |> Application.run
 -- @
 run :: Application -> Task Text Unit
-run app = case app.eventStoreCreator of
-  Nothing -> Task.throw "No EventStore configured. Use withEventStore to configure one."
-  Just creator -> do
-    eventStore <- creator
-    runWith eventStore app
+run app = do
+  -- 0. Load config FIRST (before anything else starts)
+  case app.configSpec of
+    Nothing -> pass
+    Just (ConfigSpec loadConfig) -> do
+      Console.print "[Config] Loading configuration..."
+        |> Task.ignoreError
+      config <- loadConfig
+        |> Task.mapError (\err -> [fmt|Configuration failed:\n#{err}|])
+      Task.fromIO (ConfigGlobal.setGlobalConfig config)
+      Console.print "[Config] Configuration loaded successfully"
+        |> Task.ignoreError
+
+  -- 1. Validate EventStore is configured
+  case app.eventStoreCreator of
+    Nothing -> Task.throw "No EventStore configured. Use withEventStore to configure one."
+    Just creator -> do
+      eventStore <- creator
+      runWith eventStore app
 
 
 -- | Run application with a provided EventStore.
