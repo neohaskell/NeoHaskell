@@ -11,9 +11,12 @@ module Config.ConfigDependentSpec where
 
 import Core
 import Service.Application qualified as Application
+import Service.EventStore.InMemory qualified as InMemory
 import Service.EventStore.Postgres (PostgresEventStore (..))
 import Service.FileUpload.Core (FileUploadConfig (..), FileStateStoreBackend (..))
+import Task qualified
 import Test
+import Text qualified
 
 
 -- | Mock config type for testing.
@@ -172,28 +175,38 @@ spec = do
     -- Similarly, withFileUploadFrom @ConfigA requires (ConfigA -> FileUploadConfig),
     -- not (ConfigB -> FileUploadConfig).
     it "documents that config type mismatch is a compile error" \_ -> do
-      -- This test documents the behavior. The compile-time check
-      -- is inherent in the type signature:
-      --   withEventStoreFrom :: forall config. (Typeable config, ...) =>
-      --     (config -> eventStoreConfig) -> Application -> Application
-      --
-      -- The @config type application must match the function's input type.
-      pass
+      -- This is a compile-time guarantee, not runtime testable.
+      -- See ADR-0021 for the type-safe API design.
+      pending "compile-time guarantee - see ADR-0021"
 
   describe "withConfig requirement" do
-    -- NOTE: The actual error behavior (throwing when withConfig is missing)
-    -- is tested via integration tests in the testbed. These tests document
-    -- the expected error messages.
-    it "documents that ConfigDependentEventStore requires withConfig" \_ -> do
+    it "ConfigDependentEventStore requires withConfig" \_ -> do
       -- When Application.run encounters ConfigDependentEventStore but
-      -- no configSpec was set (via withConfig), it throws:
-      -- "withEventStoreFrom requires withConfig to be called first."
-      --
-      -- This is enforced at runtime when run/runWith is called, not
-      -- at Application construction time.
-      pass
+      -- no configSpec was set (via withConfig), it throws an error.
+      let app = Application.new
+            |> Application.withEventStoreFrom @MockConfig makeEventStoreFactory
+      result <- Application.run app |> Task.asResult
+      case result of
+        Ok _ -> fail "Expected error but got Ok"
+        Err err -> err |> shouldSatisfy (Text.contains "withEventStoreFrom requires withConfig to be called first")
 
-    it "documents that ConfigDependentFileUpload requires withConfig" \_ -> do
-      -- Same for file uploads:
+    it "ConfigDependentFileUpload requires withConfig" \_ -> do
+      -- NOTE: Testing this error path requires a working EventStore to get past
+      -- the EventStore creation step. Since this unit test doesn't have Postgres,
+      -- we test via nhcore-test-service (which has Postgres) or testbed integration tests.
+      --
+      -- The error we're documenting: When Application.run encounters
+      -- ConfigDependentFileUpload but no configSpec was set, it throws:
       -- "withFileUploadFrom requires withConfig to be called first."
-      pass
+      pending "requires Postgres - tested in nhcore-test-service and testbed"
+
+    it "runWith rejects ConfigDependentFileUpload" \_ -> do
+      -- runWith doesn't support config-dependent factories at all, so it
+      -- rejects ConfigDependentFileUpload with a clear error message.
+      eventStore <- InMemory.new |> Task.mapError toText
+      let app = Application.new
+            |> Application.withFileUploadFrom @MockConfig makeFileUploadFactory
+      result <- Application.runWith eventStore app |> Task.asResult
+      case result of
+        Ok _ -> fail "Expected error but got Ok"
+        Err err -> err |> shouldSatisfy (Text.contains "runWith does not support withFileUploadFrom")

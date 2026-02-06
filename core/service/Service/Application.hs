@@ -624,6 +624,20 @@ serviceRunnerCount :: Application -> Int
 serviceRunnerCount app = Array.length app.serviceRunners
 
 
+-- | Internal helper to initialize file upload with logging.
+--
+-- This extracts the common initialization pattern used in both 'run' and 'runWith'
+-- to avoid code duplication.
+initAndWrapFileUpload :: FileUploadConfig -> Task Text (Maybe FileUploadSetup, Task Text ())
+initAndWrapFileUpload fileConfig = do
+  Console.print "[FileUpload] Initializing file upload..."
+    |> Task.ignoreError
+  (setup, cleanup) <- initializeFileUpload fileConfig
+  Console.print "[FileUpload] File uploads enabled"
+    |> Task.ignoreError
+  Task.yield (Just setup, cleanup)
+
+
 -- | Run the application using the configured EventStore.
 --
 -- This is the primary way to run an Application. It:
@@ -671,25 +685,15 @@ run app = do
   -- 2. Resolve FileUploadFactory (must happen after config is loaded)
   (maybeFileUploadSetup, fileUploadCleanup) <- case app.fileUploadFactory of
     Nothing -> Task.yield (Nothing, Task.yield ())
-    Just (DirectFileUpload fileConfig) -> do
-      Console.print "[FileUpload] Initializing file upload..."
-        |> Task.ignoreError
-      (setup, cleanup) <- initializeFileUpload fileConfig
-      Console.print "[FileUpload] File uploads enabled"
-        |> Task.ignoreError
-      Task.yield (Just setup, cleanup)
+    Just (DirectFileUpload fileConfig) ->
+      initAndWrapFileUpload fileConfig
     Just (ConfigDependentFileUpload mkConfig) -> do
       case app.configSpec of
         Nothing -> Task.throw "withFileUploadFrom requires withConfig to be called first."
         Just _ -> do
           let appConfig = Config.get
           let fileConfig = mkConfig appConfig
-          Console.print "[FileUpload] Initializing file upload..."
-            |> Task.ignoreError
-          (setup, cleanup) <- initializeFileUpload fileConfig
-          Console.print "[FileUpload] File uploads enabled"
-            |> Task.ignoreError
-          Task.yield (Just setup, cleanup)
+          initAndWrapFileUpload fileConfig
 
   -- 3. Run with resolved event store and file upload
   runWithResolved eventStore maybeFileUploadSetup fileUploadCleanup app
@@ -716,13 +720,8 @@ runWith eventStore app = do
   -- Resolve file upload (only DirectFileUpload supported - ConfigDependentFileUpload requires run)
   (maybeFileUploadSetup, fileUploadCleanup) <- case app.fileUploadFactory of
     Nothing -> Task.yield (Nothing, Task.yield ())
-    Just (DirectFileUpload fileConfig) -> do
-      Console.print "[FileUpload] Initializing file upload..."
-        |> Task.ignoreError
-      (setup, cleanup) <- initializeFileUpload fileConfig
-      Console.print "[FileUpload] File uploads enabled"
-        |> Task.ignoreError
-      Task.yield (Just setup, cleanup)
+    Just (DirectFileUpload fileConfig) ->
+      initAndWrapFileUpload fileConfig
     Just (ConfigDependentFileUpload _) ->
       Task.throw "runWith does not support withFileUploadFrom. Use Application.run instead, which loads config before resolving config-dependent factories."
   runWithResolved eventStore maybeFileUploadSetup fileUploadCleanup app
