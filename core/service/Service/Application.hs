@@ -700,8 +700,9 @@ run app = do
 -- Use this when you need to provide your own EventStore instance.
 -- For most cases, prefer using 'run' with 'withEventStore'.
 --
--- NOTE: If your Application uses 'withFileUploadFrom', you must ensure
--- the config has been loaded before calling this function, or use 'run' instead.
+-- NOTE: This function only supports 'withFileUpload' (direct config).
+-- If your Application uses 'withFileUploadFrom' (config-dependent factory),
+-- use 'Application.run' instead, which loads config before resolving factories.
 --
 -- This function:
 -- 1. Wires all query definitions (creates stores, updaters, endpoints)
@@ -712,7 +713,7 @@ run app = do
 -- 6. Runs each transport once with combined endpoints
 runWith :: EventStore Json.Value -> Application -> Task Text Unit
 runWith eventStore app = do
-  -- Resolve file upload (must check configSpec for ConfigDependentFileUpload)
+  -- Resolve file upload (only DirectFileUpload supported - ConfigDependentFileUpload requires run)
   (maybeFileUploadSetup, fileUploadCleanup) <- case app.fileUploadFactory of
     Nothing -> Task.yield (Nothing, Task.yield ())
     Just (DirectFileUpload fileConfig) -> do
@@ -722,18 +723,8 @@ runWith eventStore app = do
       Console.print "[FileUpload] File uploads enabled"
         |> Task.ignoreError
       Task.yield (Just setup, cleanup)
-    Just (ConfigDependentFileUpload mkConfig) -> do
-      case app.configSpec of
-        Nothing -> Task.throw "withFileUploadFrom requires withConfig to be called first. Use Application.run instead of runWith, or call withConfig before runWith."
-        Just _ -> do
-          let appConfig = Config.get
-          let fileConfig = mkConfig appConfig
-          Console.print "[FileUpload] Initializing file upload..."
-            |> Task.ignoreError
-          (setup, cleanup) <- initializeFileUpload fileConfig
-          Console.print "[FileUpload] File uploads enabled"
-            |> Task.ignoreError
-          Task.yield (Just setup, cleanup)
+    Just (ConfigDependentFileUpload _) ->
+      Task.throw "runWith does not support withFileUploadFrom. Use Application.run instead, which loads config before resolving config-dependent factories."
   runWithResolved eventStore maybeFileUploadSetup fileUploadCleanup app
 
 
