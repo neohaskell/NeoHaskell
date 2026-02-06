@@ -249,7 +249,7 @@ cliShort char fd =
 -- environment variable names.
 --
 -- @
--- Config.field \@DatabaseConfig "database"
+-- Config.nested \@DatabaseConfig "database"
 --   |> Config.envPrefix "DB_"
 -- -- Nested fields: DB_HOST, DB_PORT, DB_NAME, etc.
 -- @
