@@ -92,6 +92,7 @@ common common_cfg
     DeriveDataTypeable
     DuplicateRecordFields
     ImportQualifiedPost
+    ImplicitParams
     ImpredicativeTypes
     NamedFieldPuns
     NoFieldSelectors

@@ -1,6 +1,3 @@
-{-# LANGUAGE ImplicitParams #-}
-{-# LANGUAGE TemplateHaskell #-}
-
 module Config.THSpec where
 
 import Config (defineConfig, doc, defaultsTo, envVar, field, required, secret, testWithConfig)

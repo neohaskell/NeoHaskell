@@ -1,5 +1,3 @@
-{-# LANGUAGE ImplicitParams #-}
-
 -- | Declarative configuration DSL for NeoHaskell applications.
 --
 -- This module provides a type-safe, fail-fast configuration system that

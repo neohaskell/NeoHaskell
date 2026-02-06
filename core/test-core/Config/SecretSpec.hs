@@ -1,6 +1,4 @@
-{-# LANGUAGE ImplicitParams #-}
 {-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE TemplateHaskell #-}
 
 -- | Security tests for Config DSL secret handling.
 --

@@ -1,6 +1,3 @@
-{-# LANGUAGE ImplicitParams #-}
-{-# LANGUAGE TemplateHaskell #-}
-
 -- | Security tests for Config DSL runtime safety.
 --
 -- These tests verify runtime behavior of configuration loading
