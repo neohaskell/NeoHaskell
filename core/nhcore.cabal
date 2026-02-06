@@ -524,6 +524,13 @@ test-suite nhcore-test-core
   other-modules:
     ConcurrentMapSpec
     Config.ApplicationSpec
+    Config.BuilderSpec
+    Config.CoreSpec
+    Config.ErrorSafetySpec
+    Config.InputValidationSpec
+    Config.RuntimeSafetySpec
+    Config.SecretSpec
+    Config.THSpec
     Http.ClientRawSpec
     Http.ClientSpec
     IntSpec
