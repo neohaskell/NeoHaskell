@@ -230,9 +230,37 @@ data QueryObjectStoreConfigValue = forall config. (QueryObjectStoreConfig config
 data ConfigSpec = forall config. (HasParser config, Typeable config) => ConfigSpec (Task Text config)
 
 
+-- | Wrapper to force lazy evaluation of a value.
+--
+-- In a module with the 'Strict' extension, record fields are evaluated strictly.
+-- Wrapping a field in 'Lazy' defers its evaluation until explicitly unwrapped.
+--
+-- This is essential for 'Application' fields that may reference 'Config.get',
+-- which panics if called before 'Application.run' loads the config.
+--
+-- IMPORTANT: The constructor uses a lazy pattern (~) to prevent forcing the
+-- wrapped value when the Lazy wrapper is evaluated. This is critical for
+-- Strict modules.
+newtype Lazy value = Lazy value
+
+
+-- | Create a Lazy wrapper without forcing the value.
+--
+-- Uses a lazy pattern to defer evaluation of the wrapped value.
+lazy :: value -> Lazy value
+lazy ~v = Lazy v
+
+
+-- | Force evaluation of a Lazy value.
+forceLazy :: Lazy value -> value
+forceLazy (Lazy v) = v
+
+
 data Application = Application
   { configSpec :: Maybe ConfigSpec,
-    eventStoreCreator :: Maybe (Task Text (EventStore Json.Value)),
+    -- | EventStore creator. Lazy to allow Config.get references in the config
+    -- without forcing evaluation before Application.run loads the config.
+    eventStoreCreator :: Lazy (Maybe (Task Text (EventStore Json.Value))),
     queryObjectStoreConfig :: Maybe QueryObjectStoreConfigValue,
     queryDefinitions :: Array QueryDefinition,
     queryRegistry :: QueryRegistry,
@@ -244,7 +272,9 @@ data Application = Application
     inboundIntegrations :: Array Integration.Inbound,
     webAuthSetup :: Maybe WebAuthSetup,
     oauth2Setup :: Maybe OAuth2Setup,
-    fileUploadConfig :: Maybe FileUploadConfig,
+    -- | FileUpload config. Lazy to allow Config.get references in the config
+    -- without forcing evaluation before Application.run loads the config.
+    fileUploadConfig :: Lazy (Maybe FileUploadConfig),
     secretStore :: Maybe SecretStore,
     apiInfo :: Maybe ApiInfo
   }
@@ -258,7 +288,7 @@ new :: Application
 new =
   Application
     { configSpec = Nothing,
-      eventStoreCreator = Nothing,
+      eventStoreCreator = lazy Nothing,
       queryObjectStoreConfig = Nothing,
       queryDefinitions = Array.empty,
       queryRegistry = Registry.empty,
@@ -270,7 +300,7 @@ new =
       inboundIntegrations = Array.empty,
       webAuthSetup = Nothing,
       oauth2Setup = Nothing,
-      fileUploadConfig = Nothing,
+      fileUploadConfig = lazy Nothing,
       secretStore = Nothing,
       apiInfo = Nothing
     }
@@ -333,12 +363,12 @@ withEventStore ::
   Application ->
   Application
 withEventStore config app =
-  app {eventStoreCreator = Just (createEventStore config)}
+  app {eventStoreCreator = lazy (Just (createEventStore config))}
 
 
 -- | Check if an EventStore has been configured.
 hasEventStore :: Application -> Bool
-hasEventStore app = case app.eventStoreCreator of
+hasEventStore app = case forceLazy app.eventStoreCreator of
   Nothing -> False
   Just _ -> True
 
@@ -596,7 +626,7 @@ run app = do
         |> Task.ignoreError
 
   -- 1. Validate EventStore is configured
-  case app.eventStoreCreator of
+  case forceLazy app.eventStoreCreator of
     Nothing -> Task.throw "No EventStore configured. Use withEventStore to configure one."
     Just creator -> do
       eventStore <- creator
@@ -703,7 +733,7 @@ runWith eventStore app = do
         )
 
   -- 11. Initialize file uploads if configured (early to get FileAccessContext for integrations)
-  (maybeFileUploadSetup, fileUploadCleanup) <- case app.fileUploadConfig of
+  (maybeFileUploadSetup, fileUploadCleanup) <- case forceLazy app.fileUploadConfig of
     Nothing -> Task.yield (Nothing, Task.yield ())
     Just config -> do
       Console.print "[FileUpload] Initializing file upload..."
@@ -1234,7 +1264,7 @@ withFileUpload ::
   Application ->
   Application
 withFileUpload config app =
-  app {fileUploadConfig = Just config}
+  app {fileUploadConfig = lazy (Just config)}
 
 
 -- | Initialize file upload from declarative configuration.

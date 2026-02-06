@@ -1,3 +1,4 @@
+{-# LANGUAGE NoStrict #-}
 module App (app) where
 
 import Config qualified
@@ -46,6 +47,12 @@ fileUploadConfig = FileUploadConfig
 -- | Complete application with file upload support (pure, declarative)
 -- IO initialization is deferred to Application.run.
 -- Config is loaded first, then used to configure PostgreSQL and file uploads.
+--
+-- NOTE: This module uses {-# LANGUAGE NoStrict #-} to disable strict evaluation.
+-- This is necessary because the config-dependent values (postgresConfig, fileUploadConfig)
+-- must be evaluated lazily - only after Application.run has loaded the config via withConfig.
+-- With Strict enabled, these values would be forced during module load, before the config
+-- is available, causing a panic.
 app :: Application
 app =
   Application.new
