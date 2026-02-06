@@ -21,6 +21,7 @@ module Service.Application (
   new,
 
   -- * Configuration
+  withConfig,
   withEventStore,
   withQueryObjectStore,
   withQuery,
@@ -44,6 +45,7 @@ module Service.Application (
 
   -- * Inspection
   isEmpty,
+  hasConfig,
   hasQueryRegistry,
   hasServiceRunners,
   serviceRunnerCount,
@@ -128,6 +130,10 @@ import Service.FileUpload.Web qualified as FileUpload
 import Service.FileUpload.BlobStore (BlobStore (..))
 import Service.FileUpload.Core qualified as FileUploadCore
 import Service.FileUpload.Lifecycle qualified as FileLifecycle
+import Config qualified
+import Config.Global qualified as ConfigGlobal
+import Data.Typeable (Typeable)
+import OptEnvConf (HasParser)
 import Task (Task)
 import Task qualified
 import Text (Text)
@@ -217,8 +223,44 @@ data OAuth2Setup = OAuth2Setup
 data QueryObjectStoreConfigValue = forall config. (QueryObjectStoreConfig config) => QueryObjectStoreConfigValue config
 
 
+-- | A type-erased wrapper for application config.
+--
+-- This allows storing the config loader in Application without knowing the concrete type.
+-- The config type is captured at 'withConfig' and loaded during 'run'.
+data ConfigSpec = forall config. (HasParser config, Typeable config) => ConfigSpec (Task Text config)
+
+
+-- | Wrapper to force lazy evaluation of a value.
+--
+-- In a module with the 'Strict' extension, record fields are evaluated strictly.
+-- Wrapping a field in 'Lazy' defers its evaluation until explicitly unwrapped.
+--
+-- This is essential for 'Application' fields that may reference 'Config.get',
+-- which panics if called before 'Application.run' loads the config.
+--
+-- IMPORTANT: The constructor uses a lazy pattern (~) to prevent forcing the
+-- wrapped value when the Lazy wrapper is evaluated. This is critical for
+-- Strict modules.
+newtype Lazy value = Lazy value
+
+
+-- | Create a Lazy wrapper without forcing the value.
+--
+-- Uses a lazy pattern to defer evaluation of the wrapped value.
+lazy :: value -> Lazy value
+lazy ~v = Lazy v
+
+
+-- | Force evaluation of a Lazy value.
+forceLazy :: Lazy value -> value
+forceLazy (Lazy v) = v
+
+
 data Application = Application
-  { eventStoreCreator :: Maybe (Task Text (EventStore Json.Value)),
+  { configSpec :: Maybe ConfigSpec,
+    -- | EventStore creator. Lazy to allow Config.get references in the config
+    -- without forcing evaluation before Application.run loads the config.
+    eventStoreCreator :: Lazy (Maybe (Task Text (EventStore Json.Value))),
     queryObjectStoreConfig :: Maybe QueryObjectStoreConfigValue,
     queryDefinitions :: Array QueryDefinition,
     queryRegistry :: QueryRegistry,
@@ -230,7 +272,9 @@ data Application = Application
     inboundIntegrations :: Array Integration.Inbound,
     webAuthSetup :: Maybe WebAuthSetup,
     oauth2Setup :: Maybe OAuth2Setup,
-    fileUploadConfig :: Maybe FileUploadConfig,
+    -- | FileUpload config. Lazy to allow Config.get references in the config
+    -- without forcing evaluation before Application.run loads the config.
+    fileUploadConfig :: Lazy (Maybe FileUploadConfig),
     secretStore :: Maybe SecretStore,
     apiInfo :: Maybe ApiInfo
   }
@@ -243,7 +287,8 @@ data Application = Application
 new :: Application
 new =
   Application
-    { eventStoreCreator = Nothing,
+    { configSpec = Nothing,
+      eventStoreCreator = lazy Nothing,
       queryObjectStoreConfig = Nothing,
       queryDefinitions = Array.empty,
       queryRegistry = Registry.empty,
@@ -255,10 +300,48 @@ new =
       inboundIntegrations = Array.empty,
       webAuthSetup = Nothing,
       oauth2Setup = Nothing,
-      fileUploadConfig = Nothing,
+      fileUploadConfig = lazy Nothing,
       secretStore = Nothing,
       apiInfo = Nothing
     }
+
+
+-- | Register application config for automatic loading.
+--
+-- The config is loaded during 'Application.run' before any services start.
+-- Config is parsed from CLI args, environment variables, and config files.
+--
+-- Example:
+--
+-- @
+-- app = Application.new
+--   |> Application.withConfig \@AppConfig
+--   |> Application.withEventStore postgresConfig
+--   |> Application.withService myService
+--
+-- main = Application.run app
+-- @
+--
+-- After 'run', the config is accessible via:
+--
+-- * Implicit parameter: @?config@ (with @HasAppConfig@ constraint)
+-- * Explicit accessor: @Config.get \@AppConfig@
+withConfig ::
+  forall config.
+  (HasParser config, Typeable config) =>
+  Application ->
+  Application
+withConfig app =
+  case app.configSpec of
+    Just _ -> panic "Application.withConfig called twice. Only one config per Application is supported."
+    Nothing -> app {configSpec = Just (ConfigSpec (Config.load @config))}
+
+
+-- | Check if a config has been registered.
+hasConfig :: Application -> Bool
+hasConfig app = case app.configSpec of
+  Nothing -> False
+  Just _ -> True
 
 
 -- | Configure the EventStore for the Application.
@@ -280,12 +363,12 @@ withEventStore ::
   Application ->
   Application
 withEventStore config app =
-  app {eventStoreCreator = Just (createEventStore config)}
+  app {eventStoreCreator = lazy (Just (createEventStore config))}
 
 
 -- | Check if an EventStore has been configured.
 hasEventStore :: Application -> Bool
-hasEventStore app = case app.eventStoreCreator of
+hasEventStore app = case forceLazy app.eventStoreCreator of
   Nothing -> False
   Just _ -> True
 
@@ -372,7 +455,8 @@ queryDefinitionCount app = Array.length app.queryDefinitions
 -- | Check if the Application is empty (no configurations set).
 isEmpty :: Application -> Bool
 isEmpty app =
-  Array.isEmpty app.queryDefinitions
+  not (hasConfig app)
+    && Array.isEmpty app.queryDefinitions
     && Registry.isEmpty app.queryRegistry
     && Array.isEmpty app.serviceRunners
     && Map.length app.transports == 0
@@ -528,11 +612,25 @@ serviceRunnerCount app = Array.length app.serviceRunners
 --   |> Application.run
 -- @
 run :: Application -> Task Text Unit
-run app = case app.eventStoreCreator of
-  Nothing -> Task.throw "No EventStore configured. Use withEventStore to configure one."
-  Just creator -> do
-    eventStore <- creator
-    runWith eventStore app
+run app = do
+  -- 0. Load config FIRST (before anything else starts)
+  case app.configSpec of
+    Nothing -> pass
+    Just (ConfigSpec loadConfig) -> do
+      Console.print "[Config] Loading configuration..."
+        |> Task.ignoreError
+      config <- loadConfig
+        |> Task.mapError (\err -> [fmt|Configuration failed:\n#{err}|])
+      Task.fromIO (ConfigGlobal.setGlobalConfig config)
+      Console.print "[Config] Configuration loaded successfully"
+        |> Task.ignoreError
+
+  -- 1. Validate EventStore is configured
+  case forceLazy app.eventStoreCreator of
+    Nothing -> Task.throw "No EventStore configured. Use withEventStore to configure one."
+    Just creator -> do
+      eventStore <- creator
+      runWith eventStore app
 
 
 -- | Run application with a provided EventStore.
@@ -635,7 +733,7 @@ runWith eventStore app = do
         )
 
   -- 11. Initialize file uploads if configured (early to get FileAccessContext for integrations)
-  (maybeFileUploadSetup, fileUploadCleanup) <- case app.fileUploadConfig of
+  (maybeFileUploadSetup, fileUploadCleanup) <- case forceLazy app.fileUploadConfig of
     Nothing -> Task.yield (Nothing, Task.yield ())
     Just config -> do
       Console.print "[FileUpload] Initializing file upload..."
@@ -1166,7 +1264,7 @@ withFileUpload ::
   Application ->
   Application
 withFileUpload config app =
-  app {fileUploadConfig = Just config}
+  app {fileUploadConfig = lazy (Just config)}
 
 
 -- | Initialize file upload from declarative configuration.

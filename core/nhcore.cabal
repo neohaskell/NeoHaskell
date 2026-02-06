@@ -60,12 +60,14 @@ common common_cfg
     network,
     network-uri,
     openapi3,
+    opt-env-conf >= 0.9.0.0 && < 0.14,
     optparse-applicative,
     path,
     pretty-simple,
     process,
     quickcheck-instances,
     random,
+    safe-coloured-text,
     should-not-typecheck,
     strict,
     stringsearch,
@@ -91,6 +93,7 @@ common common_cfg
     DeriveDataTypeable
     DuplicateRecordFields
     ImportQualifiedPost
+    ImplicitParams
     ImpredicativeTypes
     NamedFieldPuns
     NoFieldSelectors
@@ -149,6 +152,11 @@ library
     Collection
     Combinable
     Command
+    Config
+    Config.Builder
+    Config.Core
+    Config.Global
+    Config.TH
     ConcurrentMap
     ConcurrentVar
     Console
@@ -181,6 +189,7 @@ library
     Maybe
     Path
     Record
+    Redacted
     Result
     Service
     Service.Auth
@@ -318,6 +327,7 @@ library
   -- other-extensions:
   hs-source-dirs:
     auth
+    config
     core
     concurrency
     service
@@ -513,9 +523,18 @@ test-suite nhcore-test-core
 
   other-modules:
     ConcurrentMapSpec
+    Config.ApplicationSpec
+    Config.BuilderSpec
+    Config.CoreSpec
+    Config.ErrorSafetySpec
+    Config.InputValidationSpec
+    Config.RuntimeSafetySpec
+    Config.SecretSpec
+    Config.THSpec
     Http.ClientRawSpec
     Http.ClientSpec
     IntSpec
+    RedactedSpec
     Schema.OpenApiSpec
     SchemaSpec
     Service.Transport.Web.SwaggerUISpec

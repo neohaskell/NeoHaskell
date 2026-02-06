@@ -48,12 +48,18 @@ import Var (Var)
 import Var qualified
 
 
+-- | PostgreSQL event store configuration.
+--
+-- All fields are marked lazy (~) to allow this config to reference 'Config.get'
+-- values, which are only available after 'Application.run' loads the config.
+-- Without lazy fields, the Strict extension would force evaluation during
+-- Application construction, before the config is loaded.
 data PostgresEventStore = PostgresEventStore
-  { host :: Text,
-    databaseName :: Text,
-    user :: Text,
-    password :: Text,
-    port :: Int
+  { host :: ~Text,
+    databaseName :: ~Text,
+    user :: ~Text,
+    password :: ~Text,
+    port :: ~Int
   }
   deriving (Eq, Ord, Show)
 

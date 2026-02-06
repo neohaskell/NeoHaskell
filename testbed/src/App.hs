@@ -1,5 +1,7 @@
+{-# LANGUAGE NoStrict #-}
 module App (app) where
 
+import Config qualified
 import Core
 import Service.Application (Application)
 import Service.Application qualified as Application
@@ -10,22 +12,29 @@ import Testbed.Cart.Core (CartEntity)
 import Testbed.Cart.Integrations (cartIntegrations, periodicCartCreator)
 import Testbed.Cart.Integrations.EventCounter qualified as EventCounter
 import Testbed.Cart.Queries.CartSummary (CartSummary)
+import Testbed.Config (TestbedConfig (..))
 import Testbed.Document.Core ()
 import Testbed.Service qualified
 import Testbed.Stock.Queries.StockLevel (StockLevel)
 
 
+-- | Get config from global storage (lazily evaluated after Application.run loads config)
+config :: TestbedConfig
+config = Config.get @TestbedConfig
+
+
 -- | File upload configuration (declarative, no IO)
 -- Uses PostgreSQL for persistent file state (survives restarts).
+-- Values come from TestbedConfig (loaded by Application.run).
 fileUploadConfig :: FileUploadConfig
 fileUploadConfig = FileUploadConfig
-  { blobStoreDir = "./uploads"
+  { blobStoreDir = config.uploadDir
   , stateStoreBackend = PostgresStateStore
-      { pgHost = postgresConfig.host
-      , pgPort = postgresConfig.port
-      , pgDatabase = postgresConfig.databaseName
-      , pgUser = postgresConfig.user
-      , pgPassword = postgresConfig.password
+      { pgHost = config.dbHost
+      , pgPort = config.dbPort
+      , pgDatabase = config.dbName
+      , pgUser = config.dbUser
+      , pgPassword = config.dbPassword
       }
   , maxFileSizeBytes = 10485760  -- 10 MB
   , pendingTtlSeconds = 21600    -- 6 hours
@@ -37,9 +46,17 @@ fileUploadConfig = FileUploadConfig
 
 -- | Complete application with file upload support (pure, declarative)
 -- IO initialization is deferred to Application.run.
+-- Config is loaded first, then used to configure PostgreSQL and file uploads.
+--
+-- NOTE: This module uses {-# LANGUAGE NoStrict #-} to disable strict evaluation.
+-- This is necessary because the config-dependent values (postgresConfig, fileUploadConfig)
+-- must be evaluated lazily - only after Application.run has loaded the config via withConfig.
+-- With Strict enabled, these values would be forced during module load, before the config
+-- is available, causing a panic.
 app :: Application
 app =
   Application.new
+    |> Application.withConfig @TestbedConfig
     |> Application.withEventStore postgresConfig
     |> Application.withTransport WebTransport.server
     |> Application.withApiInfo "Testbed API" "1.0.0" "Example NeoHaskell application demonstrating event sourcing, CQRS, and integrations"
@@ -58,12 +75,14 @@ app =
     |> Application.withFileUpload fileUploadConfig
 
 
+-- | PostgreSQL event store configuration (declarative, no IO)
+-- Values come from TestbedConfig (loaded by Application.run).
 postgresConfig :: PostgresEventStore
 postgresConfig =
   PostgresEventStore
-    { user = "neohaskell",
-      password = "neohaskell",
-      host = "localhost",
-      databaseName = "neohaskell",
-      port = 5432
+    { user = config.dbUser,
+      password = config.dbPassword,
+      host = config.dbHost,
+      databaseName = config.dbName,
+      port = config.dbPort
     }
