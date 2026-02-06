@@ -19,8 +19,8 @@ module Config.ErrorSafetySpec where
 
 import Config.Core (ConfigError (..), validateFieldDef, FieldDef(..), FieldModifier(..))
 import Core
-import Data.List qualified as GhcList
 import Language.Haskell.TH.Syntax qualified as TH
+import LinkedList qualified
 import Test
 import Text qualified
 
@@ -57,31 +57,31 @@ spec = do
       it "MissingDoc error contains only field name, no values" \_ -> do
         let fd = makeFieldDef "secretApiKey" [ModRequired]
         let errors = validateFieldDef fd
-        let errorTexts = errors |> GhcList.map formatConfigError
+        let errorTexts = errors |> LinkedList.map formatConfigError
         -- Error should mention the field name
         errorTexts |> shouldSatisfy (\errs ->
-          GhcList.any (Text.contains "secretApiKey") errs)
+          LinkedList.any (Text.contains "secretApiKey") errs)
         -- Error should NOT contain any potential value patterns
         -- (in this case there's no value, but the pattern should be safe)
 
       it "MissingDefaultOrRequired error contains only field name" \_ -> do
         let fd = makeFieldDef "databasePassword" [ModDoc "password", ModSecret]
         let errors = validateFieldDef fd
-        let errorTexts = errors |> GhcList.map formatConfigError
+        let errorTexts = errors |> LinkedList.map formatConfigError
         -- Error should mention the field name
         errorTexts |> shouldSatisfy (\errs ->
-          GhcList.any (Text.contains "databasePassword") errs)
+          LinkedList.any (Text.contains "databasePassword") errs)
 
       it "BothDefaultAndRequired error contains only field name" \_ -> do
         let fd = makeFieldDef "apiToken" [ModDoc "token", ModSecret, ModRequired, ModDefault (TH.lift ("secret-token-value" :: Text))]
         let errors = validateFieldDef fd
-        let errorTexts = errors |> GhcList.map formatConfigError
+        let errorTexts = errors |> LinkedList.map formatConfigError
         -- Error should mention field name
         errorTexts |> shouldSatisfy (\errs ->
-          GhcList.any (Text.contains "apiToken") errs)
+          LinkedList.any (Text.contains "apiToken") errs)
         -- CRITICAL: Error should NOT contain the default value
         errorTexts |> shouldSatisfy (\errs ->
-          not (GhcList.any (Text.contains "secret-token-value") errs))
+          not (LinkedList.any (Text.contains "secret-token-value") errs))
 
     describe "validation error aggregation" do
       it "reports all errors at once for fail-fast debugging" \_ -> do
@@ -94,7 +94,7 @@ spec = do
         let errors3 = validateFieldDef fd3
         let allErrors = errors1 ++ errors2 ++ errors3
         -- Should have multiple errors (not just the first one)
-        GhcList.length allErrors |> shouldBeGreaterThan 2
+        LinkedList.length allErrors |> shouldBeGreaterThan 2
 
       it "error messages identify which field has the problem" \_ -> do
         let fd1 = makeFieldDef "configA" [ModDoc "doc a"]  -- Missing default/required
@@ -104,15 +104,15 @@ spec = do
         let errors2 = validateFieldDef fd2
         let errors3 = validateFieldDef fd3
         let errors = errors1 ++ errors2 ++ errors3
-        let errorTexts = errors |> GhcList.map formatConfigError
+        let errorTexts = errors |> LinkedList.map formatConfigError
         -- Errors should identify the problematic fields
         errorTexts |> shouldSatisfy (\errs ->
-          GhcList.any (Text.contains "configA") errs)
+          LinkedList.any (Text.contains "configA") errs)
         errorTexts |> shouldSatisfy (\errs ->
-          GhcList.any (Text.contains "configC") errs)
+          LinkedList.any (Text.contains "configC") errs)
         -- Valid field should not appear in errors
         errorTexts |> shouldSatisfy (\errs ->
-          not (GhcList.any (Text.contains "configB") errs))
+          not (LinkedList.any (Text.contains "configB") errs))
 
     describe "error message format consistency" do
       it "all error types follow consistent format" \_ -> do
@@ -141,14 +141,14 @@ spec = do
         -- identify high-value targets)
         let fd = makeFieldDef "apiCredential" [ModSecret, ModRequired]  -- Missing doc
         let errors = validateFieldDef fd
-        let errorTexts = errors |> GhcList.map formatConfigError
+        let errorTexts = errors |> LinkedList.map formatConfigError
         -- Error should mention field name but not that it's secret
         errorTexts |> shouldSatisfy (\errs ->
-          GhcList.any (Text.contains "apiCredential") errs)
+          LinkedList.any (Text.contains "apiCredential") errs)
         -- Should not reveal the field is marked as secret
         errorTexts |> shouldSatisfy (\errs ->
-          not (GhcList.any (Text.contains "secret") errs) &&
-          not (GhcList.any (Text.contains "Secret") errs))
+          not (LinkedList.any (Text.contains "secret") errs) &&
+          not (LinkedList.any (Text.contains "Secret") errs))
 
     describe "field name safety" do
       it "field names with special characters are handled safely" \_ -> do
@@ -157,7 +157,7 @@ spec = do
         let fd = makeFieldDef "field_with-special.chars" [ModRequired]
         let errors = validateFieldDef fd
         -- Should not crash or behave unexpectedly
-        GhcList.length errors |> shouldBeGreaterThan 0
+        LinkedList.length errors |> shouldBeGreaterThan 0
 
       it "very long field names are handled" \_ -> do
         let longName = "thisIsAVeryLongFieldNameThatMightCauseIssuesWithBufferOverflowsOrTruncation"

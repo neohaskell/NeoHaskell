@@ -43,6 +43,7 @@ module LinkedList (
 
   -- * Deconstruct
   isEmpty,
+  null,
   head,
   tail,
   take,
@@ -50,6 +51,10 @@ module LinkedList (
   partition,
   unzip,
   get,
+  find,
+
+  -- * String utilities
+  unlines,
 ) where
 
 import Basics
@@ -479,3 +484,31 @@ get index list =
       Just x
     _ ->
       Nothing
+
+
+-- | Alias for 'isEmpty'. Determine if a list is empty.
+--
+-- > null [] == True
+-- > null [1,2,3] == False
+null :: LinkedList a -> Bool
+null =
+  isEmpty
+
+
+-- | Find the first element that satisfies a predicate.
+--
+-- > find (\x -> x > 3) [1,2,3,4,5] == Just 4
+-- > find (\x -> x > 10) [1,2,3,4,5] == Nothing
+find :: (a -> Bool) -> LinkedList a -> Maybe a
+find =
+  Data.List.find
+
+
+-- STRING UTILITIES
+
+-- | Join a list of strings with newlines.
+--
+-- > unlines ["hello", "world"] == "hello\nworld\n"
+unlines :: LinkedList Prelude.String -> Prelude.String
+unlines =
+  Data.List.unlines

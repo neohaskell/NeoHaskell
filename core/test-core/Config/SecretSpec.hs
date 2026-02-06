@@ -18,7 +18,7 @@ import Config (defineConfig)
 import Config.Builder (defaultsTo, doc, field, required, secret)
 import Config.Core (FieldDef (..), FieldModifier (..))
 import Core
-import Data.List qualified as GhcList
+import LinkedList qualified
 import Test
 import Text qualified
 
@@ -51,7 +51,7 @@ useSecretConfigImplicit = ?config.apiKey
 
 -- | Helper to check if a modifier is present in a FieldDef
 hasModifier :: (FieldModifier -> Bool) -> FieldDef -> Bool
-hasModifier predicate fd = GhcList.any predicate fd.fieldModifiers
+hasModifier predicate fd = LinkedList.any predicate fd.fieldModifiers
 
 
 spec :: Spec Unit

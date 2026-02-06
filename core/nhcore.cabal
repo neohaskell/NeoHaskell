@@ -67,6 +67,7 @@ common common_cfg
     process,
     quickcheck-instances,
     random,
+    safe-coloured-text,
     should-not-typecheck,
     strict,
     stringsearch,

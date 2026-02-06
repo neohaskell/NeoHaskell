@@ -20,9 +20,9 @@ import Config (defineConfig)
 import Config.Builder (defaultsTo, doc, envVar, field, required)
 import Config.Core (ConfigError (..), FieldDef (..), FieldModifier (..), validateFieldDef)
 import Core
-import Data.List qualified as GhcList
 import GHC.Enum qualified as GhcEnum
 import Language.Haskell.TH.Syntax qualified as TH
+import LinkedList qualified
 import Test
 import Text qualified
 
@@ -94,7 +94,7 @@ spec = do
         -- fd1: MissingDoc, MissingDefaultOrRequired
         -- fd2: MissingDefaultOrRequired
         -- fd3: MissingDoc
-        GhcList.length allErrors |> shouldBeGreaterThanOrEqual 4
+        LinkedList.length allErrors |> shouldBeGreaterThanOrEqual 4
 
       it "does not stop at first error" \_ -> do
         -- Create multiple fields with different errors
@@ -105,10 +105,10 @@ spec = do
         let errors = validateFieldDef fdA ++ validateFieldDef fdB ++ validateFieldDef fdC ++ validateFieldDef fdD
         -- All errors should be collected, not just from first field
         errors |> shouldSatisfy (\errs ->
-          GhcList.any (\e -> case e of MissingDoc "a" -> True; _ -> False) errs &&
-          GhcList.any (\e -> case e of MissingDefaultOrRequired "b" -> True; _ -> False) errs &&
-          GhcList.any (\e -> case e of MissingDoc "c" -> True; _ -> False) errs &&
-          GhcList.any (\e -> case e of BothDefaultAndRequired "d" -> True; _ -> False) errs)
+          LinkedList.any (\e -> case e of MissingDoc "a" -> True; _ -> False) errs &&
+          LinkedList.any (\e -> case e of MissingDefaultOrRequired "b" -> True; _ -> False) errs &&
+          LinkedList.any (\e -> case e of MissingDoc "c" -> True; _ -> False) errs &&
+          LinkedList.any (\e -> case e of BothDefaultAndRequired "d" -> True; _ -> False) errs)
 
     describe "config immutability" do
       -- These tests verify that config values cannot be accidentally

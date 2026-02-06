@@ -5,15 +5,15 @@ module Config.BuilderSpec where
 import Config.Builder (cliLong, cliShort, defaultsTo, doc, envPrefix, envVar, field, required, secret)
 import Config.Core (FieldDef (..), FieldModifier (..))
 import Core
-import Data.List qualified as GhcList
 import Data.Maybe qualified as GhcMaybe
 import Language.Haskell.TH.Syntax qualified as TH
+import LinkedList qualified
 import Test
 
 
 -- | Helper to check if a modifier is present in a FieldDef
 hasModifier :: (FieldModifier -> Bool) -> FieldDef -> Bool
-hasModifier predicate fd = GhcList.any predicate fd.fieldModifiers
+hasModifier predicate fd = LinkedList.any predicate fd.fieldModifiers
 
 
 -- | Helper to find a specific modifier
@@ -35,7 +35,7 @@ spec = do
 
       it "creates a FieldDef with empty modifiers" \_ -> do
         let fd = field @Int "port"
-        GhcList.length fd.fieldModifiers |> shouldBe 0
+        LinkedList.length fd.fieldModifiers |> shouldBe 0
 
       it "captures the type as TH.Type" \_ -> do
         let fd = field @Int "port"
@@ -153,7 +153,7 @@ spec = do
                 |> cliLong "port"
                 |> cliShort 'p'
         -- Should have 5 modifiers
-        GhcList.length fd.fieldModifiers |> shouldBe 5
+        LinkedList.length fd.fieldModifiers |> shouldBe 5
 
       it "preserves all modifiers in chain" \_ -> do
         let fd =

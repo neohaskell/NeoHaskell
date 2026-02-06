@@ -15,8 +15,8 @@ module Config.Core (
 ) where
 
 import Core
-import Data.List qualified as GhcList
 import Language.Haskell.TH.Syntax qualified as TH
+import LinkedList qualified
 
 
 -- | Modifiers that can be applied to a config field.
@@ -96,7 +96,7 @@ validateFieldDef fd = do
 
 hasModifier :: (FieldModifier -> Bool) -> [FieldModifier] -> Bool
 hasModifier predicate mods =
-  GhcList.any predicate mods
+  LinkedList.any predicate mods
 
 
 isDoc :: FieldModifier -> Bool

@@ -32,9 +32,9 @@ module Config.Builder (
 import Config.Core (FieldDef (..), FieldModifier (..))
 -- ModNested is used in the nested function
 import Core
-import Data.List qualified as GhcList
 import Data.Typeable qualified as Typeable
 import Language.Haskell.TH.Syntax qualified as TH
+import LinkedList qualified
 
 
 -- | Start defining a configuration field with the given type and name.
@@ -72,7 +72,8 @@ typeRepToTHType typeRep = do
   let baseName = tyConToTHName tyCon
   let baseType = TH.ConT baseName
   -- Fold arguments with AppT: Maybe Int -> AppT (ConT Maybe) (ConT Int)
-  GhcList.foldl' TH.AppT baseType (GhcList.map typeRepToTHType args)
+  let argTypes = LinkedList.map typeRepToTHType args
+  LinkedList.foldl (\arg acc -> TH.AppT acc arg) baseType argTypes
 
 
 -- | Convert a TyCon to a fully-qualified TH Name using mkNameG_tc.

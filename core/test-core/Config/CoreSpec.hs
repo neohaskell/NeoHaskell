@@ -2,8 +2,8 @@ module Config.CoreSpec where
 
 import Config.Core (ConfigError (..), FieldDef (..), FieldModifier (..), validateFieldDef)
 import Core
-import Data.List qualified as GhcList
 import Language.Haskell.TH.Syntax qualified as TH
+import LinkedList qualified
 import Test
 
 
@@ -25,7 +25,7 @@ makeDefaultMod val = ModDefault (TH.lift val)
 
 -- | Helper to check if a list contains an element
 listContains :: forall element. (Eq element) => element -> [element] -> Bool
-listContains item list = item `GhcList.elem` list
+listContains item list = LinkedList.member item list
 
 
 spec :: Spec Unit
@@ -61,7 +61,7 @@ spec = do
         let fd = makeFieldDef "port" []
         let errors = validateFieldDef fd
         -- Should have MissingDoc and MissingDefaultOrRequired
-        GhcList.length errors |> shouldBe 2
+        LinkedList.length errors |> shouldBe 2
 
     describe "ConfigError" do
       it "MissingDoc contains field name" \_ -> do

@@ -103,10 +103,15 @@ module Config (
 import Config.Builder (cliLong, cliShort, defaultsTo, doc, enum, envPrefix, envVar, field, nested, required, secret)
 import Config.TH (defineConfig)
 import Core
+import Data.Either qualified as GhcEither
 import OptEnvConf (HasParser)
 import OptEnvConf qualified
+import OptEnvConf.Args qualified as Args
+import OptEnvConf.EnvMap qualified as EnvMap
+import OptEnvConf.Error qualified as Error
+import System.Environment qualified as GhcEnv
 import Task qualified
-import Text qualified
+import Text.Colour qualified as Colour
 
 
 -- | Load configuration from CLI args, environment variables, and config files.
@@ -145,9 +150,20 @@ loadWithVersion ::
   Version ->
   Text ->
   Task Text config
-loadWithVersion ver description = do
-  Task.fromIO (OptEnvConf.runSettingsParser ver (Text.toLinkedList description))
-    |> Task.mapError (\err -> "Configuration error:\n" ++ err)
+loadWithVersion _ver _description = do
+  rawArgs <- Task.fromIO GhcEnv.getArgs
+  rawEnv <- Task.fromIO GhcEnv.getEnvironment
+  let args = Args.parseArgs rawArgs
+  let envMap = EnvMap.parse rawEnv
+  let parser = OptEnvConf.settingsParser
+  parseResult <- Task.fromIO (OptEnvConf.runParserOn Nothing parser args envMap Nothing)
+  case parseResult of
+    GhcEither.Right config ->
+      Task.yield config
+    GhcEither.Left errs -> do
+      let errorChunks = Error.renderErrors errs
+      let errorText = Colour.renderChunksText Colour.WithoutColours errorChunks
+      Task.throw [fmt|Configuration error:\n#{errorText}|]
 
 
 -- | Default version for applications that don't specify one.

@@ -22,9 +22,9 @@ import Data.Aeson.Key qualified as AesonKey
 
 import Data.Char qualified as GhcChar
 import Data.Default qualified as GhcDefault
-import Data.List qualified as GhcList
 import Data.Maybe qualified as GhcMaybe
 import Data.Text qualified as Text
+import LinkedList qualified
 import GHC.Err qualified as GhcErr
 import GHC.Generics qualified as GhcGenerics
 import Language.Haskell.TH qualified as TH
@@ -77,9 +77,9 @@ defineConfig configNameText fields = do
 -- | Validate all fields and fail compilation if any errors found.
 validateAllFields :: [FieldDef] -> TH.Q ()
 validateAllFields fields = do
-  let allErrors = GhcList.concatMap validateFieldDef fields
-  GhcMonad.unless (GhcList.null allErrors) do
-    let errorMsg = allErrors |> GhcList.map (\err -> Text.unpack (formatError err)) |> GhcList.unlines
+  let allErrors = LinkedList.concatMap validateFieldDef fields
+  GhcMonad.unless (LinkedList.null allErrors) do
+    let errorMsg = allErrors |> LinkedList.map (\err -> Text.unpack (formatError err)) |> LinkedList.unlines
     GhcFail.fail errorMsg
 
 
@@ -98,7 +98,7 @@ formatError err =
 -- Note: Show is NOT derived - we generate a custom instance that redacts secrets
 generateDataType :: TH.Name -> [FieldDef] -> TH.Q TH.Dec
 generateDataType configName fields = do
-  let recordFields = GhcList.map fieldToVarBangType fields
+  let recordFields = LinkedList.map fieldToVarBangType fields
   let constructor = TH.RecC configName recordFields
   let deriveClauses =
         [ TH.DerivClause Nothing [TH.ConT ''GhcGenerics.Generic]
@@ -203,7 +203,7 @@ buildFieldShowExpr configVar fd = do
 -- | Check if a field has the ModSecret modifier.
 hasSecretModifier :: [FieldModifier] -> Bool
 hasSecretModifier mods =
-  GhcList.any isSecret mods
+  LinkedList.any isSecret mods
  where
   isSecret m = case m of
     ModSecret -> True
@@ -213,7 +213,7 @@ hasSecretModifier mods =
 -- | Check if a field has the ModNested modifier.
 hasNestedModifier :: [FieldModifier] -> Bool
 hasNestedModifier mods =
-  GhcList.any isNested mods
+  LinkedList.any isNested mods
  where
   isNested m = case m of
     ModNested -> True
@@ -224,7 +224,7 @@ hasNestedModifier mods =
 findEnvPrefix :: [FieldModifier] -> Maybe Text
 findEnvPrefix mods =
   mods
-    |> GhcList.find isEnvPrefix
+    |> LinkedList.find isEnvPrefix
     |> fmap extractEnvPrefix
  where
   isEnvPrefix m = case m of
@@ -539,7 +539,7 @@ fieldModifiersToBuilders fd = do
 findEnvVar :: [FieldModifier] -> Maybe Text
 findEnvVar mods =
   mods
-    |> GhcList.find isEnvVar
+    |> LinkedList.find isEnvVar
     |> fmap extractEnvVar
  where
   isEnvVar m = case m of

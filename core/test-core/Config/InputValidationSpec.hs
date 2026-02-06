@@ -21,15 +21,15 @@ import Config.Builder (cliLong, cliShort, doc, defaultsTo, envVar, field)
 import Config.Core (FieldDef (..), FieldModifier (..))
 import Config.TH (toEnvVarName)
 import Core
-import Data.List qualified as GhcList
 import Data.Maybe qualified as GhcMaybe
+import LinkedList qualified
 import Test
 import Text qualified
 
 
 -- | Helper to check if a modifier is present in a FieldDef
 hasModifier :: (FieldModifier -> Bool) -> FieldDef -> Bool
-hasModifier predicate fd = GhcList.any predicate fd.fieldModifiers
+hasModifier predicate fd = LinkedList.any predicate fd.fieldModifiers
 
 
 -- | Helper to find a specific modifier value
@@ -49,7 +49,7 @@ shellMetacharacters = ["$", "`", ";", "|", "&", "(", ")", "<", ">", "\"", "'", "
 -- | Check if text contains any shell metacharacters
 containsShellMetachar :: Text -> Bool
 containsShellMetachar text =
-  GhcList.any (\meta -> Text.contains meta text) shellMetacharacters
+  LinkedList.any (\meta -> Text.contains meta text) shellMetacharacters
 
 
 spec :: Spec Unit
