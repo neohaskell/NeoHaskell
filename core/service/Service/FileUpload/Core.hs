@@ -246,7 +246,8 @@ instance Json.ToJSON FileAccessError
 --     , pgPassword = "neohaskell"
 --     }
 -- @
--- | For config-dependent values, use 'Application.withFileUploadFrom' instead
+--
+-- For config-dependent values, use 'Application.withFileUploadFrom' instead
 -- of 'Application.withFileUpload' to avoid the chicken-and-egg problem.
 data FileStateStoreBackend
   = InMemoryStateStore
@@ -366,7 +367,8 @@ instance Json.ToJSON FileStateStoreBackend where
 --       , ...
 --       }
 -- @
--- | For config-dependent values, use 'Application.withFileUploadFrom' instead
+--
+-- For config-dependent values, use 'Application.withFileUploadFrom' instead
 -- of 'Application.withFileUpload' to avoid the chicken-and-egg problem.
 data FileUploadConfig = FileUploadConfig
   { blobStoreDir :: Text

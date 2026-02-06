@@ -658,21 +658,50 @@ run app = do
         |> Task.ignoreError
 
   -- 1. Validate EventStore is configured and create it
-  case app.eventStoreFactory of
+  eventStore <- case app.eventStoreFactory of
     Nothing -> Task.throw "No EventStore configured. Use withEventStore or withEventStoreFrom."
-    Just (DirectEventStore config) -> do
-      eventStore <- createEventStore config
-      runWith eventStore app
+    Just (DirectEventStore config) -> createEventStore config
     Just (ConfigDependentEventStore mkConfig) -> do
-      let config = Config.get
-      eventStore <- createEventStore (mkConfig config)
-      runWith eventStore app
+      case app.configSpec of
+        Nothing -> Task.throw "withEventStoreFrom requires withConfig to be called first."
+        Just _ -> do
+          let config = Config.get
+          createEventStore (mkConfig config)
+
+  -- 2. Resolve FileUploadFactory (must happen after config is loaded)
+  (maybeFileUploadSetup, fileUploadCleanup) <- case app.fileUploadFactory of
+    Nothing -> Task.yield (Nothing, Task.yield ())
+    Just (DirectFileUpload fileConfig) -> do
+      Console.print "[FileUpload] Initializing file upload..."
+        |> Task.ignoreError
+      (setup, cleanup) <- initializeFileUpload fileConfig
+      Console.print "[FileUpload] File uploads enabled"
+        |> Task.ignoreError
+      Task.yield (Just setup, cleanup)
+    Just (ConfigDependentFileUpload mkConfig) -> do
+      case app.configSpec of
+        Nothing -> Task.throw "withFileUploadFrom requires withConfig to be called first."
+        Just _ -> do
+          let appConfig = Config.get
+          let fileConfig = mkConfig appConfig
+          Console.print "[FileUpload] Initializing file upload..."
+            |> Task.ignoreError
+          (setup, cleanup) <- initializeFileUpload fileConfig
+          Console.print "[FileUpload] File uploads enabled"
+            |> Task.ignoreError
+          Task.yield (Just setup, cleanup)
+
+  -- 3. Run with resolved event store and file upload
+  runWithResolved eventStore maybeFileUploadSetup fileUploadCleanup app
 
 
 -- | Run application with a provided EventStore.
 --
 -- Use this when you need to provide your own EventStore instance.
 -- For most cases, prefer using 'run' with 'withEventStore'.
+--
+-- NOTE: If your Application uses 'withFileUploadFrom', you must ensure
+-- the config has been loaded before calling this function, or use 'run' instead.
 --
 -- This function:
 -- 1. Wires all query definitions (creates stores, updaters, endpoints)
@@ -683,6 +712,42 @@ run app = do
 -- 6. Runs each transport once with combined endpoints
 runWith :: EventStore Json.Value -> Application -> Task Text Unit
 runWith eventStore app = do
+  -- Resolve file upload (must check configSpec for ConfigDependentFileUpload)
+  (maybeFileUploadSetup, fileUploadCleanup) <- case app.fileUploadFactory of
+    Nothing -> Task.yield (Nothing, Task.yield ())
+    Just (DirectFileUpload fileConfig) -> do
+      Console.print "[FileUpload] Initializing file upload..."
+        |> Task.ignoreError
+      (setup, cleanup) <- initializeFileUpload fileConfig
+      Console.print "[FileUpload] File uploads enabled"
+        |> Task.ignoreError
+      Task.yield (Just setup, cleanup)
+    Just (ConfigDependentFileUpload mkConfig) -> do
+      case app.configSpec of
+        Nothing -> Task.throw "withFileUploadFrom requires withConfig to be called first. Use Application.run instead of runWith, or call withConfig before runWith."
+        Just _ -> do
+          let appConfig = Config.get
+          let fileConfig = mkConfig appConfig
+          Console.print "[FileUpload] Initializing file upload..."
+            |> Task.ignoreError
+          (setup, cleanup) <- initializeFileUpload fileConfig
+          Console.print "[FileUpload] File uploads enabled"
+            |> Task.ignoreError
+          Task.yield (Just setup, cleanup)
+  runWithResolved eventStore maybeFileUploadSetup fileUploadCleanup app
+
+
+-- | Internal: Run application with pre-resolved EventStore and FileUpload.
+--
+-- This is the core implementation that both 'run' and 'runWith' delegate to.
+-- File upload must be resolved before calling this function.
+runWithResolved ::
+  EventStore Json.Value ->
+  Maybe FileUploadSetup ->
+  Task Text () ->
+  Application ->
+  Task Text Unit
+runWithResolved eventStore maybeFileUploadSetup fileUploadCleanup app = do
   -- 1. Wire all query definitions and collect registries + endpoints + schemas
   wiredQueries <-
     app.queryDefinitions
@@ -768,23 +833,7 @@ runWith eventStore app = do
               }
         )
 
-  -- 11. Initialize file uploads if configured (early to get FileAccessContext for integrations)
-  (maybeFileUploadSetup, fileUploadCleanup) <- case app.fileUploadFactory of
-    Nothing -> Task.yield (Nothing, Task.yield ())
-    Just (DirectFileUpload fileConfig) -> do
-      Console.print "[FileUpload] Initializing file upload..."
-      (setup, cleanup) <- initializeFileUpload fileConfig
-      Console.print "[FileUpload] File uploads enabled"
-      Task.yield (Just setup, cleanup)
-    Just (ConfigDependentFileUpload mkConfig) -> do
-      let appConfig = Config.get
-      let fileConfig = mkConfig appConfig
-      Console.print "[FileUpload] Initializing file upload..."
-      (setup, cleanup) <- initializeFileUpload fileConfig
-      Console.print "[FileUpload] File uploads enabled"
-      Task.yield (Just setup, cleanup)
-
-  -- 12. Create file access context from initialized setup
+  -- 11. Create file access context from pre-resolved setup
   let maybeFileAccessContext = case maybeFileUploadSetup of
         Nothing -> Nothing
         Just setup -> Just (createFileAccessContext setup)

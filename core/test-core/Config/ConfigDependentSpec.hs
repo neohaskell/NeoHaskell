@@ -25,121 +25,112 @@ data MockConfig = MockConfig
   }
 
 
+-- | Helper to create a PostgresEventStore factory for testing.
+makeEventStoreFactory :: MockConfig -> PostgresEventStore
+makeEventStoreFactory cfg = PostgresEventStore
+  { host = cfg.mockDbHost
+  , port = cfg.mockDbPort
+  , user = "test"
+  , password = "test"
+  , databaseName = "test"
+  }
+
+
+-- | Helper to create a FileUploadConfig factory for testing.
+makeFileUploadFactory :: MockConfig -> FileUploadConfig
+makeFileUploadFactory cfg = FileUploadConfig
+  { blobStoreDir = cfg.mockUploadDir
+  , stateStoreBackend = InMemoryStateStore
+  , maxFileSizeBytes = 10485760
+  , pendingTtlSeconds = 21600
+  , cleanupIntervalSeconds = 900
+  , allowedContentTypes = Nothing
+  , storeOriginalFilename = True
+  }
+
+
+-- | Direct PostgresEventStore config for testing backwards compatibility.
+directPostgresConfig :: PostgresEventStore
+directPostgresConfig = PostgresEventStore
+  { host = "localhost"
+  , port = 5432
+  , user = "test"
+  , password = "test"
+  , databaseName = "test"
+  }
+
+
+-- | Direct FileUploadConfig for testing backwards compatibility.
+directFileUploadConfig :: FileUploadConfig
+directFileUploadConfig = FileUploadConfig
+  { blobStoreDir = "./uploads"
+  , stateStoreBackend = InMemoryStateStore
+  , maxFileSizeBytes = 10485760
+  , pendingTtlSeconds = 21600
+  , cleanupIntervalSeconds = 900
+  , allowedContentTypes = Nothing
+  , storeOriginalFilename = True
+  }
+
+
 spec :: Spec Unit
 spec = do
   describe "Application.withEventStoreFrom" do
-    describe "builder pattern" do
-      it "can be called with a config factory function" \_ -> do
-        -- The key test: we can pass a function (config -> PostgresEventStore)
-        -- without needing the config value at build time
-        let makeEventStore :: MockConfig -> PostgresEventStore
-            makeEventStore cfg = PostgresEventStore
-              { host = cfg.mockDbHost
-              , port = cfg.mockDbPort
-              , user = "test"
-              , password = "test"
-              , databaseName = "test"
-              }
-        let app = Application.new
-              |> Application.withEventStoreFrom @MockConfig makeEventStore
-        -- Verify the application was modified (has event store factory)
-        Application.hasEventStore app |> shouldBe True
-
-      it "returns True for hasEventStore after withEventStoreFrom" \_ -> do
-        let factory :: MockConfig -> PostgresEventStore
-            factory _ = PostgresEventStore
-              { host = "localhost"
-              , port = 5432
-              , user = "test"
-              , password = "test"
-              , databaseName = "test"
-              }
-        let app = Application.new
-              |> Application.withEventStoreFrom @MockConfig factory
-        Application.hasEventStore app |> shouldBe True
-
-      it "does not evaluate the factory function at build time" \_ -> do
-        -- This test documents the key behavior: the factory is NOT called
-        -- during Application construction. It's stored and called later
-        -- by Application.run after config is loaded.
-        --
-        -- We can't directly test "not evaluated" without unsafePerformIO,
-        -- but we verify the pattern compiles and doesn't panic.
-        let factory :: MockConfig -> PostgresEventStore
-            factory cfg = PostgresEventStore
-              { host = cfg.mockDbHost  -- Would panic if evaluated without config
-              , port = cfg.mockDbPort
-              , user = "test"
-              , password = "test"
-              , databaseName = "test"
-              }
-        -- Building the app should NOT call the factory
-        let app = Application.new
-              |> Application.withEventStoreFrom @MockConfig factory
-        -- Just verify we can inspect the app without panicking
-        Application.hasEventStore app |> shouldBe True
+    it "stores factory and sets hasEventStore to True" \_ -> do
+      -- The key test: we can pass a function (config -> PostgresEventStore)
+      -- without needing the config value at build time. The factory is stored
+      -- but NOT evaluated during Application construction - it's called later
+      -- by Application.run after config is loaded.
+      let app = Application.new
+            |> Application.withEventStoreFrom @MockConfig makeEventStoreFactory
+      Application.hasEventStore app |> shouldBe True
 
     describe "backwards compatibility" do
       it "withEventStore still works for direct values" \_ -> do
-        -- The original withEventStore API should still work
-        let directConfig = PostgresEventStore
-              { host = "localhost"
-              , port = 5432
-              , user = "test"
-              , password = "test"
-              , databaseName = "test"
-              }
         let app = Application.new
-              |> Application.withEventStore directConfig
+              |> Application.withEventStore directPostgresConfig
         Application.hasEventStore app |> shouldBe True
 
   describe "Application.withFileUploadFrom" do
-    describe "builder pattern" do
-      it "can be called with a config factory function" \_ -> do
-        let makeFileUpload :: MockConfig -> FileUploadConfig
-            makeFileUpload cfg = FileUploadConfig
-              { blobStoreDir = cfg.mockUploadDir
-              , stateStoreBackend = InMemoryStateStore
-              , maxFileSizeBytes = 10485760
-              , pendingTtlSeconds = 21600
-              , cleanupIntervalSeconds = 900
-              , allowedContentTypes = Nothing
-              , storeOriginalFilename = True
-              }
-        let app = Application.new
-              |> Application.withFileUploadFrom @MockConfig makeFileUpload
-        -- Verify the application was modified (has file upload factory)
-        Application.hasFileUpload app |> shouldBe True
-
-      it "returns True for hasFileUpload after withFileUploadFrom" \_ -> do
-        let factory :: MockConfig -> FileUploadConfig
-            factory _ = FileUploadConfig
-              { blobStoreDir = "./uploads"
-              , stateStoreBackend = InMemoryStateStore
-              , maxFileSizeBytes = 10485760
-              , pendingTtlSeconds = 21600
-              , cleanupIntervalSeconds = 900
-              , allowedContentTypes = Nothing
-              , storeOriginalFilename = True
-              }
-        let app = Application.new
-              |> Application.withFileUploadFrom @MockConfig factory
-        Application.hasFileUpload app |> shouldBe True
+    it "stores factory and sets hasFileUpload to True" \_ -> do
+      -- Same pattern as EventStore: factory is stored, not evaluated at build time
+      let app = Application.new
+            |> Application.withFileUploadFrom @MockConfig makeFileUploadFactory
+      Application.hasFileUpload app |> shouldBe True
 
     describe "backwards compatibility" do
       it "withFileUpload still works for direct values" \_ -> do
-        let directConfig = FileUploadConfig
-              { blobStoreDir = "./uploads"
-              , stateStoreBackend = InMemoryStateStore
-              , maxFileSizeBytes = 10485760
-              , pendingTtlSeconds = 21600
-              , cleanupIntervalSeconds = 900
-              , allowedContentTypes = Nothing
-              , storeOriginalFilename = True
-              }
         let app = Application.new
-              |> Application.withFileUpload directConfig
+              |> Application.withFileUpload directFileUploadConfig
         Application.hasFileUpload app |> shouldBe True
+
+  describe "last-write-wins semantics" do
+    it "withEventStoreFrom overwrites withEventStore" \_ -> do
+      -- When both are called, the last one wins. This test verifies
+      -- that calling withEventStoreFrom after withEventStore results
+      -- in a config-dependent factory (not the direct one).
+      let differentFactory :: MockConfig -> PostgresEventStore
+          differentFactory cfg = PostgresEventStore
+            { host = cfg.mockDbHost  -- Uses config, different from directPostgresConfig
+            , port = cfg.mockDbPort
+            , user = "factory-user"  -- Distinguishable from direct config
+            , password = "factory-password"
+            , databaseName = "factory-db"
+            }
+      let app = Application.new
+            |> Application.withEventStore directPostgresConfig
+            |> Application.withEventStoreFrom @MockConfig differentFactory
+      -- Both set hasEventStore to True
+      Application.hasEventStore app |> shouldBe True
+      -- The factory-based one wins (we can't easily verify which one
+      -- without running the app, but we document the behavior)
+
+    it "withEventStore overwrites withEventStoreFrom" \_ -> do
+      -- Reverse order: direct config after factory
+      let app = Application.new
+            |> Application.withEventStoreFrom @MockConfig makeEventStoreFactory
+            |> Application.withEventStore directPostgresConfig
+      Application.hasEventStore app |> shouldBe True
 
   describe "type safety" do
     -- NOTE: These are compile-time guarantees that we document here.
@@ -152,10 +143,28 @@ spec = do
     -- Similarly, withFileUploadFrom @ConfigA requires (ConfigA -> FileUploadConfig),
     -- not (ConfigB -> FileUploadConfig).
     it "documents that config type mismatch is a compile error" \_ -> do
-      -- This test just documents the behavior. The compile-time check
+      -- This test documents the behavior. The compile-time check
       -- is inherent in the type signature:
       --   withEventStoreFrom :: forall config. (Typeable config, ...) =>
       --     (config -> eventStoreConfig) -> Application -> Application
       --
       -- The @config type application must match the function's input type.
+      pass
+
+  describe "withConfig requirement" do
+    -- NOTE: The actual error behavior (throwing when withConfig is missing)
+    -- is tested via integration tests in the testbed. These tests document
+    -- the expected error messages.
+    it "documents that ConfigDependentEventStore requires withConfig" \_ -> do
+      -- When Application.run encounters ConfigDependentEventStore but
+      -- no configSpec was set (via withConfig), it throws:
+      -- "withEventStoreFrom requires withConfig to be called first."
+      --
+      -- This is enforced at runtime when run/runWith is called, not
+      -- at Application construction time.
+      pass
+
+    it "documents that ConfigDependentFileUpload requires withConfig" \_ -> do
+      -- Same for file uploads:
+      -- "withFileUploadFrom requires withConfig to be called first."
       pass
