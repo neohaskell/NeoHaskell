@@ -25,8 +25,9 @@ $(defineConfig "TestConfig"
   ])
 
 
--- | Test config with secret field to verify redaction
-$(defineConfig "SecretTestConfig"
+-- | Test config with secret field to verify redaction.
+-- Named THSecretTestConfig to avoid confusion with SecretSpec.SecretTestConfig.
+$(defineConfig "THSecretTestConfig"
   [ field @Int "port"
       |> doc "Port number"
       |> defaultsTo (8080 :: Int)
@@ -181,7 +182,7 @@ spec = do
 
     describe "secret field redaction" do
       it "redacts secret fields in Show output" \_ -> do
-        let config = SecretTestConfig 8080 "super-secret-key"
+        let config = THSecretTestConfig 8080 "super-secret-key"
         let shown = toText config
         -- Should contain non-secret field
         shown |> shouldSatisfy (\s -> Text.contains "8080" s)
@@ -191,7 +192,7 @@ spec = do
         shown |> shouldSatisfy (\s -> Text.contains "REDACTED" s)
 
       it "redacts secret fields in ToJSON output" \_ -> do
-        let config = SecretTestConfig 8080 "super-secret-key"
+        let config = THSecretTestConfig 8080 "super-secret-key"
         let jsonText = Aeson.encode config
         let jsonStr = toText jsonText
         -- Should contain non-secret field
