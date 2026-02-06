@@ -524,6 +524,7 @@ test-suite nhcore-test-core
   other-modules:
     ConcurrentMapSpec
     Config.ApplicationSpec
+    Config.ConfigDependentSpec
     Config.BuilderSpec
     Config.CoreSpec
     Config.ErrorSafetySpec
