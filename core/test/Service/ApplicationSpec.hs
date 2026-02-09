@@ -130,7 +130,7 @@ spec = do
         result <- Application.run app |> Task.asResult
         case result of
           Ok _ -> fail "Expected error but got Ok"
-          Err err -> err |> shouldBe "No EventStore configured. Use withEventStore or withEventStoreFrom."
+          Err err -> err |> shouldBe "No EventStore configured. Use withEventStore."
 
     describe "runWith" do
       it "collects endpoints from service runners" \_ -> do

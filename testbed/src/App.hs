@@ -21,14 +21,14 @@ import Testbed.Stock.Queries.StockLevel (StockLevel)
 -- Config is loaded first, then used to configure PostgreSQL and file uploads.
 --
 -- This demonstrates the recommended pattern for config-dependent wiring:
--- Use 'withEventStoreFrom' and 'withFileUploadFrom' with functions that take
--- the config type as a parameter. These functions are called AFTER Application.run
+-- Use 'withEventStore' and 'withFileUpload' with factory functions that take
+-- the config type as a parameter. The factory is called AFTER Application.run
 -- loads the config, eliminating the chicken-and-egg problem.
 app :: Application
 app =
   Application.new
     |> Application.withConfig @TestbedConfig
-    |> Application.withEventStoreFrom @TestbedConfig makePostgresConfig
+    |> Application.withEventStore makePostgresConfig
     |> Application.withTransport WebTransport.server
     |> Application.withApiInfo "Testbed API" "1.0.0" "Example NeoHaskell application demonstrating event sourcing, CQRS, and integrations"
     |> Application.withService Testbed.Service.cartService
@@ -43,7 +43,7 @@ app =
     -- Inbound: create a cart every 30 seconds
     |> Application.withInbound periodicCartCreator
     -- File uploads with declarative config (initialized at runtime)
-    |> Application.withFileUploadFrom @TestbedConfig makeFileUploadConfig
+    |> Application.withFileUpload makeFileUploadConfig
 
 
 -- | PostgreSQL event store configuration factory.

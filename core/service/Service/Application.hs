@@ -23,7 +23,6 @@ module Service.Application (
   -- * Configuration
   withConfig,
   withEventStore,
-  withEventStoreFrom,
   withQueryObjectStore,
   withQuery,
   withQueryEndpoint,
@@ -40,7 +39,6 @@ module Service.Application (
   withOAuth2StateKey,
   withOAuth2Provider,
   withFileUpload,
-  withFileUploadFrom,
 
   -- * File Upload Setup Type
   FileUploadSetup (..),
@@ -135,7 +133,8 @@ import Service.FileUpload.Core qualified as FileUploadCore
 import Service.FileUpload.Lifecycle qualified as FileLifecycle
 import Config qualified
 import Config.Global qualified as ConfigGlobal
-import Data.Typeable (Typeable)
+import Data.Typeable (Typeable, eqT)
+import Data.Type.Equality ((:~:)(..))
 import OptEnvConf (HasParser)
 import Task (Task)
 import Task qualified
@@ -235,26 +234,24 @@ data ConfigSpec = forall config. (HasParser config, Typeable config) => ConfigSp
 
 -- | Factory for creating EventStore instances.
 --
--- This allows config-dependent event store configuration without requiring
--- Config.get at Application build time. The factory is evaluated during
--- Application.run after config is loaded.
+-- The factory is stored at 'withEventStore' time and evaluated during
+-- 'Application.run' after config is loaded (if needed).
 data EventStoreFactory where
-  -- | Direct EventStore configuration (for static config or testing)
-  DirectEventStore :: (EventStoreConfig c) => c -> EventStoreFactory
-  -- | Config-dependent EventStore configuration (resolved during run)
-  ConfigDependentEventStore :: (Typeable cfg, EventStoreConfig c) => (cfg -> c) -> EventStoreFactory
+  -- | EventStore config evaluated at build time (when config type is ())
+  EvaluatedEventStore :: (EventStoreConfig c) => c -> EventStoreFactory
+  -- | EventStore config deferred to run time (requires withConfig)
+  DeferredEventStore :: (Typeable cfg, EventStoreConfig c) => (cfg -> c) -> EventStoreFactory
 
 
 -- | Factory for creating FileUpload configuration.
 --
--- This allows config-dependent file upload configuration without requiring
--- Config.get at Application build time. The factory is evaluated during
--- Application.run after config is loaded.
+-- The factory is stored at 'withFileUpload' time and evaluated during
+-- 'Application.run' after config is loaded (if needed).
 data FileUploadFactory where
-  -- | Direct FileUpload configuration (for static config or testing)
-  DirectFileUpload :: FileUploadConfig -> FileUploadFactory
-  -- | Config-dependent FileUpload configuration (resolved during run)
-  ConfigDependentFileUpload :: (Typeable cfg) => (cfg -> FileUploadConfig) -> FileUploadFactory
+  -- | FileUpload config evaluated at build time (when config type is ())
+  EvaluatedFileUpload :: FileUploadConfig -> FileUploadFactory
+  -- | FileUpload config deferred to run time (requires withConfig)
+  DeferredFileUpload :: (Typeable cfg) => (cfg -> FileUploadConfig) -> FileUploadFactory
 
 
 data Application = Application
@@ -343,59 +340,37 @@ hasConfig app = case app.configSpec of
   Just _ -> True
 
 
--- | Configure the EventStore for the Application with a direct config value.
+-- | Configure the EventStore for the Application.
 --
--- The EventStore is created when 'run' is called.
---
--- For config-dependent values (values that need 'Config.get'), use
--- 'withEventStoreFrom' instead to avoid the chicken-and-egg problem.
---
--- Example:
+-- The EventStore factory takes a function from your config type to the
+-- EventStore configuration. If you don't need app config, use @()@ as the
+-- config type and ignore the parameter:
 --
 -- @
--- let postgresConfig = PostgresEventStore
---       { host = "localhost", port = 5432, ... }
---
+-- -- Static config (no app config needed):
 -- app = Application.new
---   |> Application.withEventStore postgresConfig
--- @
-withEventStore ::
-  (EventStoreConfig config) =>
-  config ->
-  Application ->
-  Application
-withEventStore config app =
-  app {eventStoreFactory = Just (DirectEventStore config)}
-
-
--- | Configure the EventStore for the Application with a config-dependent factory.
+--   |> Application.withEventStore \@() (\\_ -> postgresConfig)
 --
--- Use this when your EventStore configuration needs values from your application
--- config (via 'Config.get'). The factory function is called AFTER 'Application.run'
--- loads the config, eliminating the chicken-and-egg problem.
---
--- Example:
---
--- @
--- makePostgresConfig :: AppConfig -> PostgresEventStore
--- makePostgresConfig config = PostgresEventStore
---   { host = config.dbHost
---   , port = config.dbPort
---   , ...
---   }
---
+-- -- Config-dependent (uses app config):
 -- app = Application.new
 --   |> Application.withConfig \@AppConfig
---   |> Application.withEventStoreFrom \@AppConfig makePostgresConfig
+--   |> Application.withEventStore (\\cfg -> makePostgresConfig cfg)
 -- @
-withEventStoreFrom ::
+--
+-- When the config type is @()@, the factory is evaluated immediately and
+-- no 'withConfig' is required. Otherwise, 'withConfig' must be called first
+-- and the factory is evaluated during 'Application.run'.
+withEventStore ::
   forall config eventStoreConfig.
   (Typeable config, EventStoreConfig eventStoreConfig) =>
   (config -> eventStoreConfig) ->
   Application ->
   Application
-withEventStoreFrom mkConfig app =
-  app {eventStoreFactory = Just (ConfigDependentEventStore mkConfig)}
+withEventStore mkConfig app = do
+  let factory = case eqT @config @() of
+        Just Refl -> EvaluatedEventStore (mkConfig ())
+        Nothing -> DeferredEventStore mkConfig
+  app {eventStoreFactory = Just factory}
 
 
 -- | Check if an EventStore has been configured.
@@ -673,11 +648,11 @@ run app = do
 
   -- 1. Validate EventStore is configured and create it
   eventStore <- case app.eventStoreFactory of
-    Nothing -> Task.throw "No EventStore configured. Use withEventStore or withEventStoreFrom."
-    Just (DirectEventStore config) -> createEventStore config
-    Just (ConfigDependentEventStore mkConfig) -> do
+    Nothing -> Task.throw "No EventStore configured. Use withEventStore."
+    Just (EvaluatedEventStore config) -> createEventStore config
+    Just (DeferredEventStore mkConfig) -> do
       case app.configSpec of
-        Nothing -> Task.throw "withEventStoreFrom requires withConfig to be called first."
+        Nothing -> Task.throw "withEventStore requires withConfig when the factory uses the config parameter. If you don't need config, use: withEventStore @() (\\_ -> yourConfig)"
         Just _ -> do
           let config = Config.get
           createEventStore (mkConfig config)
@@ -685,11 +660,11 @@ run app = do
   -- 2. Resolve FileUploadFactory (must happen after config is loaded)
   (maybeFileUploadSetup, fileUploadCleanup) <- case app.fileUploadFactory of
     Nothing -> Task.yield (Nothing, Task.yield ())
-    Just (DirectFileUpload fileConfig) ->
+    Just (EvaluatedFileUpload fileConfig) ->
       initAndWrapFileUpload fileConfig
-    Just (ConfigDependentFileUpload mkConfig) -> do
+    Just (DeferredFileUpload mkConfig) -> do
       case app.configSpec of
-        Nothing -> Task.throw "withFileUploadFrom requires withConfig to be called first."
+        Nothing -> Task.throw "withFileUpload requires withConfig when the factory uses the config parameter. If you don't need config, use: withFileUpload @() (\\_ -> yourConfig)"
         Just _ -> do
           let appConfig = Config.get
           let fileConfig = mkConfig appConfig
@@ -704,8 +679,8 @@ run app = do
 -- Use this when you need to provide your own EventStore instance.
 -- For most cases, prefer using 'run' with 'withEventStore'.
 --
--- NOTE: This function only supports 'withFileUpload' (direct config).
--- If your Application uses 'withFileUploadFrom' (config-dependent factory),
+-- NOTE: This function only supports file uploads configured with @withFileUpload \@()@
+-- (i.e., config type is @()@). If your FileUpload factory uses app config,
 -- use 'Application.run' instead, which loads config before resolving factories.
 --
 -- This function:
@@ -717,13 +692,13 @@ run app = do
 -- 6. Runs each transport once with combined endpoints
 runWith :: EventStore Json.Value -> Application -> Task Text Unit
 runWith eventStore app = do
-  -- Resolve file upload (only DirectFileUpload supported - ConfigDependentFileUpload requires run)
+  -- Resolve file upload (only EvaluatedFileUpload supported - DeferredFileUpload requires run)
   (maybeFileUploadSetup, fileUploadCleanup) <- case app.fileUploadFactory of
     Nothing -> Task.yield (Nothing, Task.yield ())
-    Just (DirectFileUpload fileConfig) ->
+    Just (EvaluatedFileUpload fileConfig) ->
       initAndWrapFileUpload fileConfig
-    Just (ConfigDependentFileUpload _) ->
-      Task.throw "runWith does not support withFileUploadFrom. Use Application.run instead, which loads config before resolving config-dependent factories."
+    Just (DeferredFileUpload _) ->
+      Task.throw "runWith does not support config-dependent FileUpload. Use Application.run instead, or use: withFileUpload @() (\\_ -> yourConfig)"
   runWithResolved eventStore maybeFileUploadSetup fileUploadCleanup app
 
 
@@ -1314,68 +1289,41 @@ withOAuth2Provider providerConfig app = do
       app {oauth2Setup = Just existingSetup {providers = updatedProviders}}
 
 
--- | Enable file uploads for WebTransport with declarative configuration.
+-- | Configure file uploads for the Application.
 --
 -- This adds file upload and download routes:
 --
 -- * @POST /files/upload@ - Upload a file (multipart form)
 -- * @GET /files/{fileRef}@ - Download a file
 --
--- The configuration is declarative - actual IO (creating directories,
--- connecting to databases) is deferred to 'Application.run'.
---
--- Example:
+-- The factory takes a function from your config type to FileUploadConfig.
+-- If you don't need app config, use @()@ as the config type:
 --
 -- @
--- let fileUploadConfig = FileUploadConfig
---       { blobStoreDir = "./uploads"
---       , stateStoreBackend = InMemoryStateStore  -- or PostgresStateStore {...}
---       , maxFileSizeBytes = 10485760  -- 10 MB
---       , pendingTtlSeconds = 21600    -- 6 hours
---       , cleanupIntervalSeconds = 900 -- 15 minutes
---       , allowedContentTypes = Nothing  -- All types allowed
---       , storeOriginalFilename = True
---       }
---
+-- -- Static config (no app config needed):
 -- app = Application.new
---   |> Application.withTransport WebTransport.server
---   |> Application.withFileUpload fileUploadConfig
--- @
-withFileUpload ::
-  FileUploadConfig ->
-  Application ->
-  Application
-withFileUpload config app =
-  app {fileUploadFactory = Just (DirectFileUpload config)}
-
-
--- | Configure file uploads with a config-dependent factory.
+--   |> Application.withFileUpload \@() (\\_ -> fileUploadConfig)
 --
--- Use this when your FileUploadConfig needs values from your application
--- config (via 'Config.get'). The factory function is called AFTER 'Application.run'
--- loads the config, eliminating the chicken-and-egg problem.
---
--- Example:
---
--- @
--- makeFileUploadConfig :: AppConfig -> FileUploadConfig
--- makeFileUploadConfig config = FileUploadConfig
---   { blobStoreDir = config.uploadDir
---   , ...
---   }
---
+-- -- Config-dependent (uses app config):
 -- app = Application.new
 --   |> Application.withConfig \@AppConfig
---   |> Application.withFileUploadFrom \@AppConfig makeFileUploadConfig
+--   |> Application.withFileUpload (\\cfg -> makeFileUploadConfig cfg)
 -- @
-withFileUploadFrom ::
+--
+-- When the config type is @()@, the factory is evaluated immediately and
+-- no 'withConfig' is required. Otherwise, 'withConfig' must be called first
+-- and the factory is evaluated during 'Application.run'.
+withFileUpload ::
   forall config.
   (Typeable config) =>
   (config -> FileUploadConfig) ->
   Application ->
   Application
-withFileUploadFrom mkConfig app =
-  app {fileUploadFactory = Just (ConfigDependentFileUpload mkConfig)}
+withFileUpload mkConfig app = do
+  let factory = case eqT @config @() of
+        Just Refl -> EvaluatedFileUpload (mkConfig ())
+        Nothing -> DeferredFileUpload mkConfig
+  app {fileUploadFactory = Just factory}
 
 
 -- | Check if file upload has been configured.
