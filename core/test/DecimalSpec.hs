@@ -7,6 +7,7 @@ import Data.Aeson qualified as Aeson
 import Decimal (Decimal (..))
 import Decimal qualified
 import Json qualified
+import Prelude qualified
 import Result qualified
 import Test
 import Text qualified
@@ -122,3 +123,27 @@ spec = do
         let rounded = Decimal.roundTo2 d
         -- Should round to 12.5700 (125700)
         rounded.unDecimal |> shouldBe 125700
+
+    describe "edge cases (overflow and limits)" do
+      it "large value addition works" \_ -> do
+        let big = Decimal.decimal 999999999.00
+        let small = Decimal.decimal 1.00
+        (big + small) |> shouldBe (Decimal.decimal 1000000000.00)
+
+      it "signum of positive is 1" \_ -> do
+        Prelude.signum (Decimal.decimal 42.00) |> shouldBe (Decimal.decimal 1.00)
+
+      it "signum of negative is -1" \_ -> do
+        Prelude.signum (Decimal.decimal (-42.00)) |> shouldBe (Decimal.decimal (-1.00))
+
+      it "signum of zero is 0" \_ -> do
+        Prelude.signum (Decimal.decimal 0.00) |> shouldBe (Decimal.decimal 0.00)
+
+      it "default is zero" \_ -> do
+        (def :: Decimal) |> shouldBe Decimal.zero
+
+      it "toFloat round-trips approximately" \_ -> do
+        let d = Decimal.decimal 12.50
+        let f = Decimal.toFloat d
+        let d2 = Decimal.decimal f
+        d2 |> shouldBe d

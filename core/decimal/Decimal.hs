@@ -144,6 +144,13 @@ toFloat (Decimal n) = Prelude.fromIntegral n / Prelude.fromIntegral scale
 -- NeoHaskell redefines @/@ as @Float -> Float -> Float@, so we provide
 -- this explicit division function instead of a @Fractional@ instance.
 --
+-- Division truncates towards zero (integer division behavior).
+-- Division by zero will throw an arithmetic exception.
+--
+-- __Note:__ For very large dividend values (above ~922 billion), the
+-- intermediate multiplication may overflow Int64. Use values within
+-- normal financial ranges to avoid this.
+--
 -- @
 -- Decimal.divide (Decimal.decimal 100.00) (Decimal.decimal 4.00) -- Decimal.decimal 25.00
 -- @
