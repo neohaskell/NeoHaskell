@@ -220,6 +220,20 @@ hasNestedModifier mods =
     _ -> False
 
 
+-- | Check if a TH type is Text or String.
+--
+-- These types need the 'str' reader (IsString-based) instead of 'auto' (Read-based)
+-- because Read for strings expects quoted values like @"hello"@, but environment
+-- variables contain raw unquoted strings.
+isTextLikeType :: TH.Type -> Bool
+isTextLikeType thType =
+  case thType of
+    TH.ConT name -> do
+      let nameStr = TH.nameBase name
+      nameStr == "Text" || nameStr == "String"
+    _ -> False
+
+
 -- | Find the ModEnvPrefix value if present.
 findEnvPrefix :: [FieldModifier] -> Maybe Text
 findEnvPrefix mods =
@@ -508,9 +522,13 @@ fieldToSettingExp fd = do
       [|OptEnvConf.subSettings $(TH.litE (TH.stringL prefix))|]
 
     False -> do
-      -- Regular field: setting [builder1, builder2, ..., reader auto]
+      -- Regular field: setting [builder1, builder2, ..., reader auto/str]
       builders <- fieldModifiersToBuilders fd
-      readerExp <- [|OptEnvConf.reader OptEnvConf.auto|]
+      -- Use 'str' reader for Text/String types (IsString-based, accepts raw values)
+      -- Use 'auto' reader for everything else (Read-based, expects Haskell syntax)
+      readerExp <- case isTextLikeType fd.fieldType of
+        True -> [|OptEnvConf.reader OptEnvConf.str|]
+        False -> [|OptEnvConf.reader OptEnvConf.auto|]
       let allBuilders = builders ++ [readerExp]
       let builderListExp = TH.ListE allBuilders
       return (TH.AppE (TH.VarE 'OptEnvConf.setting) builderListExp)
