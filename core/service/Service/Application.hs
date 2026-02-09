@@ -803,7 +803,7 @@ runWithResolved eventStore maybeFileUploadSetup fileUploadCleanup app = do
         Nothing -> Nothing
         Just setup -> Just (createFileAccessContext setup)
 
-  -- 13. Initialize OAuth2 if configured
+  -- 12. Initialize OAuth2 if configured
   (maybeOAuth2Config, actionContext) <- case app.oauth2Setup of
     Nothing -> do
       -- Apps without OAuth2 get context with empty provider registry
@@ -879,7 +879,7 @@ runWithResolved eventStore maybeFileUploadSetup fileUploadCleanup app = do
       Console.print [fmt|[OAuth2] Initialized #{providerCount} provider(s)|]
       Task.yield (Just Web.OAuth2Config {Web.routes = routes, Web.dispatchAction = dispatchAction}, actionContext)
 
-  -- 14. Start integration subscriber for outbound integrations with command dispatch
+  -- 13. Start integration subscriber for outbound integrations with command dispatch
   maybeDispatcher <-
     Integrations.startIntegrationSubscriber
       eventStore
@@ -888,10 +888,10 @@ runWithResolved eventStore maybeFileUploadSetup fileUploadCleanup app = do
       combinedCommandEndpoints
       actionContext
 
-  -- 15. Start inbound integration workers (timers, webhooks, etc.)
+  -- 14. Start inbound integration workers (timers, webhooks, etc.)
   inboundWorkers <- Integrations.startInboundWorkers app.inboundIntegrations combinedCommandEndpoints
 
-  -- 16. Create file upload routes (setup already initialized in step 11)
+  -- 15. Create file upload routes (setup already initialized in step 11)
   -- ADR-0019: Pass maxFileSizeBytes to coordinate with WebTransport.maxBodySize
   let maybeFileUploadEnabled = case maybeFileUploadSetup of
         Nothing -> Nothing
@@ -923,7 +923,7 @@ runWithResolved eventStore maybeFileUploadSetup fileUploadCleanup app = do
         cleanupDispatcher
         cleanupFileUpload
 
-  -- 17. Run each transport once with combined endpoints from all services
+  -- 16. Run each transport once with combined endpoints from all services
   -- When transports complete (or fail), cancel inbound workers for clean shutdown
   -- Use Task.finally to ensure cleanup always runs even if runTransports fails
   result <-
@@ -931,7 +931,7 @@ runWithResolved eventStore maybeFileUploadSetup fileUploadCleanup app = do
       |> Task.finally cleanupAll
       |> Task.asResult
 
-  -- 18. Cancel all inbound workers on shutdown
+  -- 17. Cancel all inbound workers on shutdown
   Console.print "[Integration] Shutting down inbound workers..."
     |> Task.ignoreError
   let shutdownTimeoutMs = 5000
