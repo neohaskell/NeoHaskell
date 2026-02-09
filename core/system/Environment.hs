@@ -37,7 +37,9 @@ module Environment (
 
 import Basics
 import Configuration.Dotenv qualified as Dotenv
+import Control.Exception qualified as GhcException
 import Data.Bool qualified as GhcBool
+import Data.Either qualified as GhcEither
 import Result qualified
 import System.Directory qualified as GhcDir
 import System.Environment qualified
@@ -66,8 +68,8 @@ getVariable key = Task.fromIOResult do
 
 -- | Load environment variables from a .env file.
 --
--- Fails if the file does not exist. Existing environment variables
--- are NOT overwritten.
+-- Fails if the file does not exist or contains invalid syntax.
+-- Existing environment variables are NOT overwritten.
 --
 -- @
 -- Environment.loadEnvFile ".env"
@@ -81,8 +83,12 @@ loadEnvFile filePath = do
           { Dotenv.configPath = [path]
           , Dotenv.configOverride = False -- Don't overwrite existing vars
           }
-  Task.fromIO (Dotenv.loadFile config)
-  Task.yield ()
+  -- Catch any exceptions from dotenv (parse errors, IO errors, etc.)
+  result <- Task.fromIO do
+    GhcException.try @GhcException.SomeException (Dotenv.loadFile config)
+  case result of
+    GhcEither.Right _ -> Task.yield ()
+    GhcEither.Left err -> Task.throw [fmt|Failed to load .env file '#{filePath}': #{GhcException.displayException err}|]
 
 
 -- | Load environment variables from a .env file if it exists.
