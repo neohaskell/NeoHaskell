@@ -3,6 +3,7 @@ module Main (main) where
 import Prelude (IO)
 
 import ConcurrentMapSpec qualified
+import DecimalSpec qualified
 import Config.ApplicationSpec qualified
 import Config.ConfigDependentSpec qualified
 import Config.BuilderSpec qualified
@@ -29,6 +30,7 @@ import Test.Hspec qualified as Hspec
 main :: IO ()
 main = Hspec.hspec do
   Hspec.describe "ConcurrentMap" ConcurrentMapSpec.spec
+  Hspec.describe "Decimal" DecimalSpec.spec
   Hspec.describe "Config.Application" Config.ApplicationSpec.spec
   Hspec.describe "Config.ConfigDependent" Config.ConfigDependentSpec.spec
   Hspec.describe "Config.Builder" Config.BuilderSpec.spec
