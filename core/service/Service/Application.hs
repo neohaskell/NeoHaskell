@@ -56,6 +56,7 @@ module Service.Application (
   hasQueryDefinitions,
   queryDefinitionCount,
   hasEventStore,
+  hasFileUpload,
 
   -- * Running
   run,
@@ -132,7 +133,8 @@ import Service.FileUpload.Core qualified as FileUploadCore
 import Service.FileUpload.Lifecycle qualified as FileLifecycle
 import Config qualified
 import Config.Global qualified as ConfigGlobal
-import Data.Typeable (Typeable)
+import Data.Typeable (Typeable, eqT)
+import Data.Type.Equality ((:~:)(..))
 import OptEnvConf (HasParser)
 import Task (Task)
 import Task qualified
@@ -230,37 +232,32 @@ data QueryObjectStoreConfigValue = forall config. (QueryObjectStoreConfig config
 data ConfigSpec = forall config. (HasParser config, Typeable config) => ConfigSpec (Task Text config)
 
 
--- | Wrapper to force lazy evaluation of a value.
+-- | Factory for creating EventStore instances.
 --
--- In a module with the 'Strict' extension, record fields are evaluated strictly.
--- Wrapping a field in 'Lazy' defers its evaluation until explicitly unwrapped.
---
--- This is essential for 'Application' fields that may reference 'Config.get',
--- which panics if called before 'Application.run' loads the config.
---
--- IMPORTANT: The constructor uses a lazy pattern (~) to prevent forcing the
--- wrapped value when the Lazy wrapper is evaluated. This is critical for
--- Strict modules.
-newtype Lazy value = Lazy value
+-- The factory is stored at 'withEventStore' time and evaluated during
+-- 'Application.run' after config is loaded (if needed).
+data EventStoreFactory where
+  -- | EventStore config evaluated at build time (when config type is ())
+  EvaluatedEventStore :: (EventStoreConfig c) => c -> EventStoreFactory
+  -- | EventStore config deferred to run time (requires withConfig)
+  DeferredEventStore :: (Typeable cfg, EventStoreConfig c) => (cfg -> c) -> EventStoreFactory
 
 
--- | Create a Lazy wrapper without forcing the value.
+-- | Factory for creating FileUpload configuration.
 --
--- Uses a lazy pattern to defer evaluation of the wrapped value.
-lazy :: value -> Lazy value
-lazy ~v = Lazy v
-
-
--- | Force evaluation of a Lazy value.
-forceLazy :: Lazy value -> value
-forceLazy (Lazy v) = v
+-- The factory is stored at 'withFileUpload' time and evaluated during
+-- 'Application.run' after config is loaded (if needed).
+data FileUploadFactory where
+  -- | FileUpload config evaluated at build time (when config type is ())
+  EvaluatedFileUpload :: FileUploadConfig -> FileUploadFactory
+  -- | FileUpload config deferred to run time (requires withConfig)
+  DeferredFileUpload :: (Typeable cfg) => (cfg -> FileUploadConfig) -> FileUploadFactory
 
 
 data Application = Application
   { configSpec :: Maybe ConfigSpec,
-    -- | EventStore creator. Lazy to allow Config.get references in the config
-    -- without forcing evaluation before Application.run loads the config.
-    eventStoreCreator :: Lazy (Maybe (Task Text (EventStore Json.Value))),
+    -- | EventStore factory. Resolved during Application.run after config is loaded.
+    eventStoreFactory :: Maybe EventStoreFactory,
     queryObjectStoreConfig :: Maybe QueryObjectStoreConfigValue,
     queryDefinitions :: Array QueryDefinition,
     queryRegistry :: QueryRegistry,
@@ -272,9 +269,8 @@ data Application = Application
     inboundIntegrations :: Array Integration.Inbound,
     webAuthSetup :: Maybe WebAuthSetup,
     oauth2Setup :: Maybe OAuth2Setup,
-    -- | FileUpload config. Lazy to allow Config.get references in the config
-    -- without forcing evaluation before Application.run loads the config.
-    fileUploadConfig :: Lazy (Maybe FileUploadConfig),
+    -- | FileUpload factory. Resolved during Application.run after config is loaded.
+    fileUploadFactory :: Maybe FileUploadFactory,
     secretStore :: Maybe SecretStore,
     apiInfo :: Maybe ApiInfo
   }
@@ -288,7 +284,7 @@ new :: Application
 new =
   Application
     { configSpec = Nothing,
-      eventStoreCreator = lazy Nothing,
+      eventStoreFactory = Nothing,
       queryObjectStoreConfig = Nothing,
       queryDefinitions = Array.empty,
       queryRegistry = Registry.empty,
@@ -300,7 +296,7 @@ new =
       inboundIntegrations = Array.empty,
       webAuthSetup = Nothing,
       oauth2Setup = Nothing,
-      fileUploadConfig = lazy Nothing,
+      fileUploadFactory = Nothing,
       secretStore = Nothing,
       apiInfo = Nothing
     }
@@ -346,29 +342,40 @@ hasConfig app = case app.configSpec of
 
 -- | Configure the EventStore for the Application.
 --
--- The EventStore is created when 'run' is called.
---
--- Example:
+-- The EventStore factory takes a function from your config type to the
+-- EventStore configuration. If you don't need app config, use @()@ as the
+-- config type and ignore the parameter:
 --
 -- @
--- let postgresConfig = PostgresEventStore
---       { host = "localhost", port = 5432, ... }
---
+-- -- Static config (no app config needed):
 -- app = Application.new
---   |> Application.withEventStore postgresConfig
+--   |> Application.withEventStore \@() (\\_ -> postgresConfig)
+--
+-- -- Config-dependent (uses app config):
+-- app = Application.new
+--   |> Application.withConfig \@AppConfig
+--   |> Application.withEventStore (\\cfg -> makePostgresConfig cfg)
 -- @
+--
+-- When the config type is @()@, the factory is evaluated immediately and
+-- no 'withConfig' is required. Otherwise, 'withConfig' must be called first
+-- and the factory is evaluated during 'Application.run'.
 withEventStore ::
-  (EventStoreConfig config) =>
-  config ->
+  forall config eventStoreConfig.
+  (Typeable config, EventStoreConfig eventStoreConfig) =>
+  (config -> eventStoreConfig) ->
   Application ->
   Application
-withEventStore config app =
-  app {eventStoreCreator = lazy (Just (createEventStore config))}
+withEventStore mkConfig app = do
+  let factory = case eqT @config @() of
+        Just Refl -> EvaluatedEventStore (mkConfig ())
+        Nothing -> DeferredEventStore mkConfig
+  app {eventStoreFactory = Just factory}
 
 
 -- | Check if an EventStore has been configured.
 hasEventStore :: Application -> Bool
-hasEventStore app = case forceLazy app.eventStoreCreator of
+hasEventStore app = case app.eventStoreFactory of
   Nothing -> False
   Just _ -> True
 
@@ -592,6 +599,20 @@ serviceRunnerCount :: Application -> Int
 serviceRunnerCount app = Array.length app.serviceRunners
 
 
+-- | Internal helper to initialize file upload with logging.
+--
+-- This extracts the common initialization pattern used in both 'run' and 'runWith'
+-- to avoid code duplication.
+initAndWrapFileUpload :: FileUploadConfig -> Task Text (Maybe FileUploadSetup, Task Text ())
+initAndWrapFileUpload fileConfig = do
+  Console.print "[FileUpload] Initializing file upload..."
+    |> Task.ignoreError
+  (setup, cleanup) <- initializeFileUpload fileConfig
+  Console.print "[FileUpload] File uploads enabled"
+    |> Task.ignoreError
+  Task.yield (Just setup, cleanup)
+
+
 -- | Run the application using the configured EventStore.
 --
 -- This is the primary way to run an Application. It:
@@ -625,18 +646,42 @@ run app = do
       Console.print "[Config] Configuration loaded successfully"
         |> Task.ignoreError
 
-  -- 1. Validate EventStore is configured
-  case forceLazy app.eventStoreCreator of
-    Nothing -> Task.throw "No EventStore configured. Use withEventStore to configure one."
-    Just creator -> do
-      eventStore <- creator
-      runWith eventStore app
+  -- 1. Validate EventStore is configured and create it
+  eventStore <- case app.eventStoreFactory of
+    Nothing -> Task.throw "No EventStore configured. Use withEventStore."
+    Just (EvaluatedEventStore config) -> createEventStore config
+    Just (DeferredEventStore mkConfig) -> do
+      case app.configSpec of
+        Nothing -> Task.throw "withEventStore requires withConfig when the factory uses the config parameter. If you don't need config, use: withEventStore @() (\\_ -> yourConfig)"
+        Just _ -> do
+          let config = Config.get
+          createEventStore (mkConfig config)
+
+  -- 2. Resolve FileUploadFactory (must happen after config is loaded)
+  (maybeFileUploadSetup, fileUploadCleanup) <- case app.fileUploadFactory of
+    Nothing -> Task.yield (Nothing, Task.yield ())
+    Just (EvaluatedFileUpload fileConfig) ->
+      initAndWrapFileUpload fileConfig
+    Just (DeferredFileUpload mkConfig) -> do
+      case app.configSpec of
+        Nothing -> Task.throw "withFileUpload requires withConfig when the factory uses the config parameter. If you don't need config, use: withFileUpload @() (\\_ -> yourConfig)"
+        Just _ -> do
+          let appConfig = Config.get
+          let fileConfig = mkConfig appConfig
+          initAndWrapFileUpload fileConfig
+
+  -- 3. Run with resolved event store and file upload
+  runWithResolved eventStore maybeFileUploadSetup fileUploadCleanup app
 
 
 -- | Run application with a provided EventStore.
 --
 -- Use this when you need to provide your own EventStore instance.
 -- For most cases, prefer using 'run' with 'withEventStore'.
+--
+-- NOTE: This function only supports file uploads configured with @withFileUpload \@()@
+-- (i.e., config type is @()@). If your FileUpload factory uses app config,
+-- use 'Application.run' instead, which loads config before resolving factories.
 --
 -- This function:
 -- 1. Wires all query definitions (creates stores, updaters, endpoints)
@@ -647,6 +692,27 @@ run app = do
 -- 6. Runs each transport once with combined endpoints
 runWith :: EventStore Json.Value -> Application -> Task Text Unit
 runWith eventStore app = do
+  -- Resolve file upload (only EvaluatedFileUpload supported - DeferredFileUpload requires run)
+  (maybeFileUploadSetup, fileUploadCleanup) <- case app.fileUploadFactory of
+    Nothing -> Task.yield (Nothing, Task.yield ())
+    Just (EvaluatedFileUpload fileConfig) ->
+      initAndWrapFileUpload fileConfig
+    Just (DeferredFileUpload _) ->
+      Task.throw "runWith does not support config-dependent FileUpload. Use Application.run instead, or use: withFileUpload @() (\\_ -> yourConfig)"
+  runWithResolved eventStore maybeFileUploadSetup fileUploadCleanup app
+
+
+-- | Internal: Run application with pre-resolved EventStore and FileUpload.
+--
+-- This is the core implementation that both 'run' and 'runWith' delegate to.
+-- File upload must be resolved before calling this function.
+runWithResolved ::
+  EventStore Json.Value ->
+  Maybe FileUploadSetup ->
+  Task Text () ->
+  Application ->
+  Task Text Unit
+runWithResolved eventStore maybeFileUploadSetup fileUploadCleanup app = do
   -- 1. Wire all query definitions and collect registries + endpoints + schemas
   wiredQueries <-
     app.queryDefinitions
@@ -732,21 +798,12 @@ runWith eventStore app = do
               }
         )
 
-  -- 11. Initialize file uploads if configured (early to get FileAccessContext for integrations)
-  (maybeFileUploadSetup, fileUploadCleanup) <- case forceLazy app.fileUploadConfig of
-    Nothing -> Task.yield (Nothing, Task.yield ())
-    Just config -> do
-      Console.print "[FileUpload] Initializing file upload..."
-      (setup, cleanup) <- initializeFileUpload config
-      Console.print "[FileUpload] File uploads enabled"
-      Task.yield (Just setup, cleanup)
-
-  -- 12. Create file access context from initialized setup
+  -- 11. Create file access context from pre-resolved setup
   let maybeFileAccessContext = case maybeFileUploadSetup of
         Nothing -> Nothing
         Just setup -> Just (createFileAccessContext setup)
 
-  -- 13. Initialize OAuth2 if configured
+  -- 12. Initialize OAuth2 if configured
   (maybeOAuth2Config, actionContext) <- case app.oauth2Setup of
     Nothing -> do
       -- Apps without OAuth2 get context with empty provider registry
@@ -822,7 +879,7 @@ runWith eventStore app = do
       Console.print [fmt|[OAuth2] Initialized #{providerCount} provider(s)|]
       Task.yield (Just Web.OAuth2Config {Web.routes = routes, Web.dispatchAction = dispatchAction}, actionContext)
 
-  -- 14. Start integration subscriber for outbound integrations with command dispatch
+  -- 13. Start integration subscriber for outbound integrations with command dispatch
   maybeDispatcher <-
     Integrations.startIntegrationSubscriber
       eventStore
@@ -831,10 +888,10 @@ runWith eventStore app = do
       combinedCommandEndpoints
       actionContext
 
-  -- 15. Start inbound integration workers (timers, webhooks, etc.)
+  -- 14. Start inbound integration workers (timers, webhooks, etc.)
   inboundWorkers <- Integrations.startInboundWorkers app.inboundIntegrations combinedCommandEndpoints
 
-  -- 16. Create file upload routes (setup already initialized in step 11)
+  -- 15. Create file upload routes (setup already initialized in step 11)
   -- ADR-0019: Pass maxFileSizeBytes to coordinate with WebTransport.maxBodySize
   let maybeFileUploadEnabled = case maybeFileUploadSetup of
         Nothing -> Nothing
@@ -866,7 +923,7 @@ runWith eventStore app = do
         cleanupDispatcher
         cleanupFileUpload
 
-  -- 17. Run each transport once with combined endpoints from all services
+  -- 16. Run each transport once with combined endpoints from all services
   -- When transports complete (or fail), cancel inbound workers for clean shutdown
   -- Use Task.finally to ensure cleanup always runs even if runTransports fails
   result <-
@@ -874,7 +931,7 @@ runWith eventStore app = do
       |> Task.finally cleanupAll
       |> Task.asResult
 
-  -- 18. Cancel all inbound workers on shutdown
+  -- 17. Cancel all inbound workers on shutdown
   Console.print "[Integration] Shutting down inbound workers..."
     |> Task.ignoreError
   let shutdownTimeoutMs = 5000
@@ -1232,39 +1289,48 @@ withOAuth2Provider providerConfig app = do
       app {oauth2Setup = Just existingSetup {providers = updatedProviders}}
 
 
--- | Enable file uploads for WebTransport with declarative configuration.
+-- | Configure file uploads for the Application.
 --
 -- This adds file upload and download routes:
 --
 -- * @POST /files/upload@ - Upload a file (multipart form)
 -- * @GET /files/{fileRef}@ - Download a file
 --
--- The configuration is declarative - actual IO (creating directories,
--- connecting to databases) is deferred to 'Application.run'.
---
--- Example:
+-- The factory takes a function from your config type to FileUploadConfig.
+-- If you don't need app config, use @()@ as the config type:
 --
 -- @
--- let fileUploadConfig = FileUploadConfig
---       { blobStoreDir = "./uploads"
---       , stateStoreBackend = InMemoryStateStore  -- or PostgresStateStore {...}
---       , maxFileSizeBytes = 10485760  -- 10 MB
---       , pendingTtlSeconds = 21600    -- 6 hours
---       , cleanupIntervalSeconds = 900 -- 15 minutes
---       , allowedContentTypes = Nothing  -- All types allowed
---       , storeOriginalFilename = True
---       }
---
+-- -- Static config (no app config needed):
 -- app = Application.new
---   |> Application.withTransport WebTransport.server
---   |> Application.withFileUpload fileUploadConfig
+--   |> Application.withFileUpload \@() (\\_ -> fileUploadConfig)
+--
+-- -- Config-dependent (uses app config):
+-- app = Application.new
+--   |> Application.withConfig \@AppConfig
+--   |> Application.withFileUpload (\\cfg -> makeFileUploadConfig cfg)
 -- @
+--
+-- When the config type is @()@, the factory is evaluated immediately and
+-- no 'withConfig' is required. Otherwise, 'withConfig' must be called first
+-- and the factory is evaluated during 'Application.run'.
 withFileUpload ::
-  FileUploadConfig ->
+  forall config.
+  (Typeable config) =>
+  (config -> FileUploadConfig) ->
   Application ->
   Application
-withFileUpload config app =
-  app {fileUploadConfig = lazy (Just config)}
+withFileUpload mkConfig app = do
+  let factory = case eqT @config @() of
+        Just Refl -> EvaluatedFileUpload (mkConfig ())
+        Nothing -> DeferredFileUpload mkConfig
+  app {fileUploadFactory = Just factory}
+
+
+-- | Check if file upload has been configured.
+hasFileUpload :: Application -> Bool
+hasFileUpload app = case app.fileUploadFactory of
+  Nothing -> False
+  Just _ -> True
 
 
 -- | Initialize file upload from declarative configuration.

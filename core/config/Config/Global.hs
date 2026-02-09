@@ -19,6 +19,7 @@ module Config.Global (
   setGlobalConfig,
 ) where
 
+import Appendable ((++))
 import Basics
 import Data.Dynamic (Dynamic, dynTypeRep, fromDynamic, toDyn)
 import Data.IORef (IORef, newIORef, readIORef, writeIORef)
@@ -27,6 +28,7 @@ import Data.Typeable qualified as Typeable
 import IO qualified
 import Maybe (Maybe (..))
 import System.IO.Unsafe (unsafePerformIO)
+import Text (Text)
 
 
 -- | Global storage for application config.
@@ -62,7 +64,7 @@ get = unsafePerformIO do
   maybeDyn <- readIORef globalConfigRef
   case maybeDyn of
     Nothing ->
-      panic "Config.get: Config not initialized. Ensure Application.run has been called with withConfig."
+      panic ("Config.get: Config not initialized. Ensure Application.run has been called with withConfig." ++ configDependentGuidance)
     Just dyn ->
       case fromDynamic dyn of
         Just config -> pure config
@@ -71,6 +73,20 @@ get = unsafePerformIO do
           let actualType = dynTypeRep dyn
           panic
             [fmt|Config.get: Type mismatch. Expected #{expectedType} but config has type #{actualType}.|]
+
+
+-- | Guidance text for Config.get errors.
+--
+-- This constant is used in error messages to provide consistent guidance
+-- about the config-dependent API pattern. Update this single location
+-- when adding new config-dependent helper functions.
+configDependentGuidance :: Text
+configDependentGuidance =
+  "\n\nIf you need config values to build your Application, use:\n\
+  \  |> Application.withEventStore makeEventStoreConfig\n\
+  \  |> Application.withFileUpload makeFileUploadConfig\n\
+  \\n\
+  \The config type is inferred from your factory function signature."
 
 
 -- | Internal: Set the global config.

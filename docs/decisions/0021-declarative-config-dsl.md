@@ -196,6 +196,50 @@ main = do
   Application.run app
 ```
 
+#### Config-Dependent Component Wiring
+
+`Application.withEventStore` and `Application.withFileUpload` accept factory functions
+that transform your app config into component configs. The config type is inferred from
+the factory function signature:
+
+```haskell
+-- Factory functions: (AppConfig -> ComponentConfig)
+makePostgresConfig :: AppConfig -> PostgresEventStore
+makePostgresConfig config = PostgresEventStore
+  { host = config.dbHost
+  , port = config.dbPort
+  , user = config.dbUser
+  , password = config.dbPassword
+  , databaseName = config.dbName
+  }
+
+makeFileUploadConfig :: AppConfig -> FileUploadConfig
+makeFileUploadConfig config = FileUploadConfig
+  { blobStoreDir = config.uploadDir
+  , stateStoreBackend = PostgresStateStore {...}
+  , ...
+  }
+
+-- Factories are stored and invoked during Application.run after config loads
+app = Application.new
+  |> Application.withConfig @AppConfig
+  |> Application.withEventStore makePostgresConfig      -- config type inferred
+  |> Application.withFileUpload makeFileUploadConfig    -- config type inferred
+  |> Application.withService myService
+
+-- For static configs that don't need app config, use the @() pattern:
+staticApp = Application.new
+  |> Application.withEventStore @() (\_ -> myStaticPostgresConfig)
+  |> Application.withFileUpload @() (\_ -> myStaticFileUploadConfig)
+```
+
+This unified API eliminates the chicken-and-egg problem where `Config.get` panics before
+`Application.run` loads the config. Internally, the API uses type-level dispatch:
+
+- When config type is `()`: the factory is evaluated immediately (no `withConfig` needed)
+- When config type is anything else: the factory is stored and called during
+  `Application.run` after config validation succeeds
+
 **Startup behavior:**
 
 1. `withConfig` parses CLI args, env vars, and config files
