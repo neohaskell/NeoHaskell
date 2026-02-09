@@ -50,9 +50,14 @@ import Var qualified
 
 -- | PostgreSQL event store configuration.
 --
--- For config-dependent values, use 'Application.withEventStoreFrom' instead
--- of 'Application.withEventStore' to avoid the chicken-and-egg problem where
--- Config.get panics before Application.run loads the config.
+-- For config-dependent values, pass a factory function to 'Application.withEventStore':
+--
+-- @
+-- Application.withEventStore makePostgresConfig
+-- @
+--
+-- The config type is inferred from the factory signature. This avoids the
+-- chicken-and-egg problem where Config.get panics before Application.run.
 data PostgresEventStore = PostgresEventStore
   { host :: Text,
     databaseName :: Text,

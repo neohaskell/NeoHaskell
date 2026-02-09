@@ -247,8 +247,13 @@ instance Json.ToJSON FileAccessError
 --     }
 -- @
 --
--- For config-dependent values, use 'Application.withFileUploadFrom' instead
--- of 'Application.withFileUpload' to avoid the chicken-and-egg problem.
+-- For config-dependent values, pass a factory function to 'Application.withFileUpload':
+--
+-- @
+-- Application.withFileUpload makeFileUploadConfig
+-- @
+--
+-- The config type is inferred from the factory signature.
 data FileStateStoreBackend
   = InMemoryStateStore
   -- ^ In-memory storage (lost on restart, for development/testing)
@@ -368,8 +373,13 @@ instance Json.ToJSON FileStateStoreBackend where
 --       }
 -- @
 --
--- For config-dependent values, use 'Application.withFileUploadFrom' instead
--- of 'Application.withFileUpload' to avoid the chicken-and-egg problem.
+-- For config-dependent values, pass a factory function to 'Application.withFileUpload':
+--
+-- @
+-- Application.withFileUpload makeFileUploadConfig
+-- @
+--
+-- The config type is inferred from the factory signature.
 data FileUploadConfig = FileUploadConfig
   { blobStoreDir :: Text
   -- ^ Directory for storing uploaded files (created if missing)

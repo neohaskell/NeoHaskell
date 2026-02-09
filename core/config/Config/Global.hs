@@ -79,12 +79,14 @@ get = unsafePerformIO do
 --
 -- This constant is used in error messages to provide consistent guidance
 -- about the config-dependent API pattern. Update this single location
--- when adding new @*From@ helper functions.
+-- when adding new config-dependent helper functions.
 configDependentGuidance :: Text
 configDependentGuidance =
   "\n\nIf you need config values to build your Application, use:\n\
-  \  |> Application.withEventStoreFrom @YourConfig makeEventStoreConfig\n\
-  \  |> Application.withFileUploadFrom @YourConfig makeFileUploadConfig"
+  \  |> Application.withEventStore makeEventStoreConfig\n\
+  \  |> Application.withFileUpload makeFileUploadConfig\n\
+  \\n\
+  \The config type is inferred from your factory function signature."
 
 
 -- | Internal: Set the global config.

@@ -219,11 +219,11 @@ makeFileUploadConfig config = FileUploadConfig
   , ...
   }
 
--- Wire using *From variants - factories are called AFTER config is loaded
+-- Wire using factory functions - factories are called AFTER config is loaded
 app = Application.new
   |> Application.withConfig @AppConfig
-  |> Application.withEventStoreFrom @AppConfig makePostgresConfig
-  |> Application.withFileUploadFrom @AppConfig makeFileUploadConfig
+  |> Application.withEventStore makePostgresConfig
+  |> Application.withFileUpload makeFileUploadConfig
   |> Application.withService myService
 ```
 
