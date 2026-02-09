@@ -653,7 +653,12 @@ initAndWrapFileUpload fileConfig = do
 -- @
 run :: Application -> Task Text Unit
 run app = do
-  -- 0. Load config FIRST (before anything else starts)
+  -- 0. Load .env file if present (before config loading)
+  -- This allows environment variables to be set from .env files
+  -- without requiring external tools like direnv.
+  Environment.loadEnvFileIfPresent ".env"
+
+  -- 1. Load config (now that .env vars are available)
   case app.configSpec of
     Nothing -> pass
     Just (ConfigSpec loadConfig) -> do
@@ -665,7 +670,7 @@ run app = do
       Console.print "[Config] Configuration loaded successfully"
         |> Task.ignoreError
 
-  -- 1. Validate EventStore is configured and create it
+  -- 2. Validate EventStore is configured and create it
   eventStore <- case app.eventStoreFactory of
     Nothing -> Task.throw "No EventStore configured. Use withEventStore."
     Just (EvaluatedEventStore config) -> createEventStore config
@@ -676,7 +681,7 @@ run app = do
           let config = Config.get
           createEventStore (mkConfig config)
 
-  -- 2. Resolve FileUploadFactory (must happen after config is loaded)
+  -- 3. Resolve FileUploadFactory (must happen after config is loaded)
   (maybeFileUploadSetup, fileUploadCleanup) <- case app.fileUploadFactory of
     Nothing -> Task.yield (Nothing, Task.yield ())
     Just (EvaluatedFileUpload fileConfig) ->
@@ -689,7 +694,7 @@ run app = do
           let fileConfig = mkConfig appConfig
           initAndWrapFileUpload fileConfig
 
-  -- 3. Resolve WebAuthFactory (must happen after config is loaded)
+  -- 4. Resolve WebAuthFactory (must happen after config is loaded)
   maybeWebAuthSetup <- case app.webAuthFactory of
     Nothing -> Task.yield Nothing
     Just (EvaluatedWebAuth setup) -> Task.yield (Just setup)
@@ -704,7 +709,7 @@ run app = do
                 }
           Task.yield (Just setup)
 
-  -- 4. Run with resolved event store, file upload, and auth
+  -- 5. Run with resolved event store, file upload, and auth
   runWithResolved eventStore maybeFileUploadSetup fileUploadCleanup maybeWebAuthSetup app
 
 
