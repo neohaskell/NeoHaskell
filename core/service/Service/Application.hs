@@ -57,6 +57,7 @@ module Service.Application (
   queryDefinitionCount,
   hasEventStore,
   hasFileUpload,
+  hasAuth,
 
   -- * Running
   run,
@@ -146,7 +147,7 @@ import Service.Application.Types (ApiInfo (..), defaultApiInfo)
 
 
 -- | Configuration for WebTransport authentication.
--- This is stored in the Application and converted to WebTransport.AuthEnabled at runtime.
+-- This is stored in the Application (via factory) and converted to WebTransport.AuthEnabled at runtime.
 --
 -- When auth is enabled, all endpoints require a valid JWT by default.
 -- Permission checks should be done in the command's decide method, not at the transport layer.
@@ -154,9 +155,15 @@ import Service.Application.Types (ApiInfo (..), defaultApiInfo)
 -- Example:
 --
 -- @
+-- -- Static URL:
 -- app = Application.new
 --   |> Application.withTransport WebTransport.server
---   |> Application.withAuth "https://auth.example.com"
+--   |> Application.withAuth \@() (\\_ -> "https://auth.example.com")
+--
+-- -- Config-dependent URL:
+-- app = Application.new
+--   |> Application.withConfig \@AppConfig
+--   |> Application.withAuth (\\cfg -> cfg.authServerUrl)
 -- @
 data WebAuthSetup = WebAuthSetup
   { authServerUrl :: Text,
@@ -185,7 +192,7 @@ data WebAuthSetup = WebAuthSetup
 --
 -- app = Application.new
 --   |> Application.withTransport WebTransport.server
---   |> Application.withAuth "https://auth.example.com"
+--   |> Application.withAuth \@() (\\_ -> "https://auth.example.com")
 --   |> Application.withOAuth2StateKey "OAUTH2_STATE_KEY"
 --   |> Application.withOAuth2Provider ouraProvider
 -- @
@@ -254,6 +261,17 @@ data FileUploadFactory where
   DeferredFileUpload :: (Typeable cfg) => (cfg -> FileUploadConfig) -> FileUploadFactory
 
 
+-- | Factory for creating WebAuth configuration.
+--
+-- The factory is stored at 'withAuth' time and evaluated during
+-- 'Application.run' after config is loaded (if needed).
+data WebAuthFactory where
+  -- | WebAuth config evaluated at build time (when config type is ())
+  EvaluatedWebAuth :: WebAuthSetup -> WebAuthFactory
+  -- | WebAuth config deferred to run time (requires withConfig)
+  DeferredWebAuth :: (Typeable cfg) => (cfg -> Text) -> AuthOverrides -> WebAuthFactory
+
+
 data Application = Application
   { configSpec :: Maybe ConfigSpec,
     -- | EventStore factory. Resolved during Application.run after config is loaded.
@@ -267,7 +285,8 @@ data Application = Application
     outboundRunners :: Array OutboundRunner,
     outboundLifecycleRunners :: Array OutboundLifecycleRunner,
     inboundIntegrations :: Array Integration.Inbound,
-    webAuthSetup :: Maybe WebAuthSetup,
+    -- | WebAuth factory. Resolved during Application.run after config is loaded.
+    webAuthFactory :: Maybe WebAuthFactory,
     oauth2Setup :: Maybe OAuth2Setup,
     -- | FileUpload factory. Resolved during Application.run after config is loaded.
     fileUploadFactory :: Maybe FileUploadFactory,
@@ -294,7 +313,7 @@ new =
       outboundRunners = Array.empty,
       outboundLifecycleRunners = Array.empty,
       inboundIntegrations = Array.empty,
-      webAuthSetup = Nothing,
+      webAuthFactory = Nothing,
       oauth2Setup = Nothing,
       fileUploadFactory = Nothing,
       secretStore = Nothing,
@@ -670,8 +689,23 @@ run app = do
           let fileConfig = mkConfig appConfig
           initAndWrapFileUpload fileConfig
 
-  -- 3. Run with resolved event store and file upload
-  runWithResolved eventStore maybeFileUploadSetup fileUploadCleanup app
+  -- 3. Resolve WebAuthFactory (must happen after config is loaded)
+  maybeWebAuthSetup <- case app.webAuthFactory of
+    Nothing -> Task.yield Nothing
+    Just (EvaluatedWebAuth setup) -> Task.yield (Just setup)
+    Just (DeferredWebAuth mkAuthUrl overrides) -> do
+      case app.configSpec of
+        Nothing -> Task.throw "withAuth requires withConfig when the factory uses the config parameter. If you don't need config, use: withAuth @() (\\_ -> yourAuthUrl)"
+        Just _ -> do
+          let appConfig = Config.get
+          let setup = WebAuthSetup
+                { authServerUrl = mkAuthUrl appConfig
+                , authOverrides = overrides
+                }
+          Task.yield (Just setup)
+
+  -- 4. Run with resolved event store, file upload, and auth
+  runWithResolved eventStore maybeFileUploadSetup fileUploadCleanup maybeWebAuthSetup app
 
 
 -- | Run application with a provided EventStore.
@@ -699,20 +733,27 @@ runWith eventStore app = do
       initAndWrapFileUpload fileConfig
     Just (DeferredFileUpload _) ->
       Task.throw "runWith does not support config-dependent FileUpload. Use Application.run instead, or use: withFileUpload @() (\\_ -> yourConfig)"
-  runWithResolved eventStore maybeFileUploadSetup fileUploadCleanup app
+  -- Resolve auth (only EvaluatedWebAuth supported - DeferredWebAuth requires run)
+  maybeWebAuthSetup <- case app.webAuthFactory of
+    Nothing -> Task.yield Nothing
+    Just (EvaluatedWebAuth setup) -> Task.yield (Just setup)
+    Just (DeferredWebAuth _ _) ->
+      Task.throw "runWith does not support config-dependent Auth. Use Application.run instead, or use: withAuth @() (\\_ -> yourAuthUrl)"
+  runWithResolved eventStore maybeFileUploadSetup fileUploadCleanup maybeWebAuthSetup app
 
 
--- | Internal: Run application with pre-resolved EventStore and FileUpload.
+-- | Internal: Run application with pre-resolved EventStore, FileUpload, and Auth.
 --
 -- This is the core implementation that both 'run' and 'runWith' delegate to.
--- File upload must be resolved before calling this function.
+-- EventStore, FileUpload, and Auth must be resolved before calling this function.
 runWithResolved ::
   EventStore Json.Value ->
   Maybe FileUploadSetup ->
   Task Text () ->
+  Maybe WebAuthSetup ->
   Application ->
   Task Text Unit
-runWithResolved eventStore maybeFileUploadSetup fileUploadCleanup app = do
+runWithResolved eventStore maybeFileUploadSetup fileUploadCleanup maybeWebAuthSetup app = do
   -- 1. Wire all query definitions and collect registries + endpoints + schemas
   wiredQueries <-
     app.queryDefinitions
@@ -779,8 +820,8 @@ runWithResolved eventStore maybeFileUploadSetup fileUploadCleanup app = do
           |> Map.values
           |> Array.reduce (\cmdMap acc -> Map.merge cmdMap acc) Map.empty
 
-  -- 10. Initialize auth if configured
-  maybeAuthEnabled <- case app.webAuthSetup of
+  -- 10. Initialize auth if configured (using pre-resolved WebAuthSetup)
+  maybeAuthEnabled <- case maybeWebAuthSetup of
     Nothing -> Task.yield Nothing
     Just (WebAuthSetup serverUrl overrides) -> do
       Console.print [fmt|[Auth] Discovering auth config from #{serverUrl}...|]
@@ -820,7 +861,7 @@ runWithResolved eventStore maybeFileUploadSetup fileUploadCleanup app = do
         )
     Just (OAuth2Setup envVarName providerConfigs) -> do
       -- OAuth2 routes require JWT authentication to be enabled
-      case app.webAuthSetup of
+      case maybeWebAuthSetup of
         Nothing -> Task.throw "OAuth2 requires authentication to be enabled. Call withAuth before configuring OAuth2 providers."
         Just _ -> pass
       Console.print [fmt|[OAuth2] Loading HMAC key from environment variable #{envVarName}...|]
@@ -1111,43 +1152,47 @@ withInbound inboundIntegration app = do
 
 -- | Enable JWT authentication for WebTransport.
 --
--- This is the simple version that uses default settings.
--- For advanced configuration, use 'withAuthOverrides'.
---
--- Example:
+-- The factory takes a function from your config type to the auth server URL.
+-- If you don't need app config, use @()@ as the config type:
 --
 -- @
--- let commandAuth = Map.fromArray
---       [ ("AddItem", Authenticated)
---       , ("Checkout", RequireAllPermissions (Array.fromLinkedList ["checkout"]))
---       ]
---
+-- -- Static URL (no app config needed):
 -- app = Application.new
---   |> Application.withTransport WebTransport.server
---   |> Application.withService cartService
---   |> Application.withAuth "https://auth.example.com"
+--   |> Application.withAuth \@() (\\_ -> "https://auth.example.com")
+--
+-- -- Config-dependent (uses app config):
+-- app = Application.new
+--   |> Application.withConfig \@AppConfig
+--   |> Application.withAuth (\\cfg -> cfg.authServerUrl)
 -- @
+--
+-- When the config type is @()@, the factory is evaluated immediately and
+-- no 'withConfig' is required. Otherwise, 'withConfig' must be called first
+-- and the factory is evaluated during 'Application.run'.
+--
+-- For advanced configuration with overrides, use 'withAuthOverrides'.
 withAuth ::
-  Text ->
+  forall config.
+  (Typeable config) =>
+  (config -> Text) ->
   Application ->
   Application
-withAuth authServerUrl app =
-  app
-    { webAuthSetup =
-        Just
-          WebAuthSetup
-            { authServerUrl = authServerUrl,
-              authOverrides = Auth.Config.defaultOverrides
-            }
-    }
+withAuth mkAuthUrl app = do
+  let factory = case eqT @config @() of
+        Just Refl -> do
+          let setup = WebAuthSetup
+                { authServerUrl = mkAuthUrl ()
+                , authOverrides = Auth.Config.defaultOverrides
+                }
+          EvaluatedWebAuth setup
+        Nothing -> DeferredWebAuth mkAuthUrl Auth.Config.defaultOverrides
+  app {webAuthFactory = Just factory}
 
 
 -- | Enable JWT authentication with custom configuration.
 --
 -- This version allows overriding auth settings like audience, clock skew, etc.
--- Permission checks should be done in the command's decide method.
---
--- Example:
+-- The factory takes a function from your config type to the auth server URL.
 --
 -- @
 -- let overrides = Auth.Config.defaultOverrides
@@ -1155,24 +1200,39 @@ withAuth authServerUrl app =
 --       , permissionsClaim = Just "scope"
 --       }
 --
+-- -- Static URL with overrides:
 -- app = Application.new
---   |> Application.withTransport WebTransport.server
---   |> Application.withAuthOverrides "https://auth.example.com" overrides
+--   |> Application.withAuthOverrides \@() (\\_ -> "https://auth.example.com") overrides
+--
+-- -- Config-dependent URL with overrides:
+-- app = Application.new
+--   |> Application.withConfig \@AppConfig
+--   |> Application.withAuthOverrides (\\cfg -> cfg.authServerUrl) overrides
 -- @
 withAuthOverrides ::
-  Text ->
+  forall config.
+  (Typeable config) =>
+  (config -> Text) ->
   AuthOverrides ->
   Application ->
   Application
-withAuthOverrides authServerUrl overrides app =
-  app
-    { webAuthSetup =
-        Just
-          WebAuthSetup
-            { authServerUrl = authServerUrl,
-              authOverrides = overrides
-            }
-    }
+withAuthOverrides mkAuthUrl overrides app = do
+  let factory = case eqT @config @() of
+        Just Refl -> do
+          let setup = WebAuthSetup
+                { authServerUrl = mkAuthUrl ()
+                , authOverrides = overrides
+                }
+          EvaluatedWebAuth setup
+        Nothing -> DeferredWebAuth mkAuthUrl overrides
+  app {webAuthFactory = Just factory}
+
+
+-- | Check if authentication has been configured.
+hasAuth :: Application -> Bool
+hasAuth app = case app.webAuthFactory of
+  Nothing -> False
+  Just _ -> True
 
 
 -- | Configure API metadata for OpenAPI spec generation.
@@ -1270,7 +1330,7 @@ withOAuth2StateKey envVarName app = do
 -- @
 -- app = Application.new
 --   |> Application.withTransport WebTransport.server
---   |> Application.withAuth "https://auth.example.com"
+--   |> Application.withAuth @() (\_ -> "https://auth.example.com")
 --   |> Application.withOAuth2StateKey "OAUTH2_STATE_KEY"
 --   |> Application.withOAuth2Provider ouraConfig
 --   |> Application.withOAuth2Provider githubConfig

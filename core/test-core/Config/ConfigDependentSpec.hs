@@ -1,4 +1,4 @@
--- | Tests for Application.withEventStore and withFileUpload unified API.
+-- | Tests for Application.withEventStore, withFileUpload, and withAuth unified API.
 --
 -- These tests verify that the unified factory-based API works correctly,
 -- allowing users to wire config-dependent components without hitting the
@@ -29,6 +29,7 @@ data MockConfig = MockConfig
   { mockDbHost :: Text
   , mockDbPort :: Int
   , mockUploadDir :: Text
+  , mockAuthServerUrl :: Text
   }
 
 
@@ -80,6 +81,16 @@ directFileUploadConfig = FileUploadConfig
   }
 
 
+-- | Helper to create an auth server URL factory for testing.
+makeAuthUrlFactory :: MockConfig -> Text
+makeAuthUrlFactory cfg = cfg.mockAuthServerUrl
+
+
+-- | Direct auth server URL for testing.
+directAuthServerUrl :: Text
+directAuthServerUrl = "https://auth.example.com"
+
+
 spec :: Spec Unit
 spec = do
   describe "Application.withEventStore (unified API)" do
@@ -110,6 +121,19 @@ spec = do
       let app = Application.new
             |> Application.withFileUpload @() (\_ -> directFileUploadConfig)
       Application.hasFileUpload app |> shouldBe True
+
+  describe "Application.withAuth (unified API)" do
+    it "stores factory and sets hasAuth to True" \_ -> do
+      -- Same pattern as EventStore/FileUpload: factory is stored, not evaluated at build time
+      let app = Application.new
+            |> Application.withAuth makeAuthUrlFactory
+      Application.hasAuth app |> shouldBe True
+
+    it "works with static config using @() pattern" \_ -> do
+      -- For static configs that don't depend on app config, use @() pattern
+      let app = Application.new
+            |> Application.withAuth @() (\_ -> directAuthServerUrl)
+      Application.hasAuth app |> shouldBe True
 
   describe "last-write-wins semantics" do
     it "second withEventStore call overwrites first" \_ -> do
@@ -164,6 +188,25 @@ spec = do
             |> Application.withFileUpload @() (\_ -> directFileUploadConfig)
       Application.hasFileUpload app |> shouldBe True
 
+    it "second withAuth call overwrites first" \_ -> do
+      -- When withAuth is called multiple times, the last one wins.
+      let differentFactory :: MockConfig -> Text
+          differentFactory cfg = cfg.mockAuthServerUrl
+      let app = Application.new
+            |> Application.withAuth @() (\_ -> directAuthServerUrl)
+            |> Application.withAuth differentFactory
+      -- Both set hasAuth to True
+      Application.hasAuth app |> shouldBe True
+      -- The second call wins (we can't easily verify which one
+      -- without running the app, but we document the behavior)
+
+    it "static config overwrites dynamic factory for Auth" \_ -> do
+      -- Reverse order: static config after dynamic factory
+      let app = Application.new
+            |> Application.withAuth makeAuthUrlFactory
+            |> Application.withAuth @() (\_ -> directAuthServerUrl)
+      Application.hasAuth app |> shouldBe True
+
   describe "type safety" do
     -- NOTE: These are compile-time guarantees that we document here.
     -- The actual type checking happens at compile time, not runtime.
@@ -209,3 +252,24 @@ spec = do
       case result of
         Ok _ -> fail "Expected error but got Ok"
         Err err -> err |> shouldSatisfy (Text.contains "runWith does not support config-dependent FileUpload")
+
+    it "DeferredWebAuth requires withConfig" \_ -> do
+      -- NOTE: Testing this error path requires a working EventStore to get past
+      -- the EventStore creation step. Since this unit test doesn't have Postgres,
+      -- we test via nhcore-test-service (which has Postgres) or testbed integration tests.
+      --
+      -- The error we're documenting: When Application.run encounters
+      -- DeferredWebAuth but no configSpec was set, it throws:
+      -- "withAuth requires withConfig when the factory uses the config parameter."
+      pending "requires Postgres - tested in nhcore-test-service and testbed"
+
+    it "runWith rejects DeferredWebAuth" \_ -> do
+      -- runWith doesn't support config-dependent factories at all, so it
+      -- rejects DeferredWebAuth with a clear error message.
+      eventStore <- InMemory.new |> Task.mapError toText
+      let app = Application.new
+            |> Application.withAuth makeAuthUrlFactory
+      result <- Application.runWith eventStore app |> Task.asResult
+      case result of
+        Ok _ -> fail "Expected error but got Ok"
+        Err err -> err |> shouldSatisfy (Text.contains "runWith does not support config-dependent Auth")
