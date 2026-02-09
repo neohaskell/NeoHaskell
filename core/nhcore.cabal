@@ -163,6 +163,7 @@ library
     Console
     Core
     DateTime
+    Decimal
     Decider
     Default
     Directory
@@ -331,6 +332,7 @@ library
     config
     core
     concurrency
+    decimal
     service
     json
     traits
@@ -374,6 +376,7 @@ test-suite nhcore-test
     Integration.TimerSpec
     IntegrationSpec
     IntSpec
+    DecimalSpec
     Service.ApplicationSpec
     Service.CommandHandlerSpec
     Service.CommandSpec
@@ -533,6 +536,7 @@ test-suite nhcore-test-core
     Config.RuntimeSafetySpec
     Config.SecretSpec
     Config.THSpec
+    DecimalSpec
     Http.ClientRawSpec
     Http.ClientSpec
     IntSpec
