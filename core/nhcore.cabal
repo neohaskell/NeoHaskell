@@ -36,6 +36,7 @@ common common_cfg
     deepseq,
     dir-traverse,
     directory,
+    dotenv >= 0.11 && < 0.13,
     file-embed,
     ghc-prim,
     hashable,
