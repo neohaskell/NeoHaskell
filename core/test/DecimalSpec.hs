@@ -45,7 +45,10 @@ spec = do
         Decimal.decimal 10.00 * Decimal.decimal 1.21 |> shouldBe (Decimal.decimal 12.10)
 
       it "division: 100.00 / 4.00 = 25.00" \_ -> do
-        Decimal.divide (Decimal.decimal 100.00) (Decimal.decimal 4.00) |> shouldBe (Decimal.decimal 25.00)
+        Decimal.divide (Decimal.decimal 100.00) (Decimal.decimal 4.00) |> shouldBe (Just (Decimal.decimal 25.00))
+
+      it "division by zero returns Nothing" \_ -> do
+        Decimal.divide (Decimal.decimal 100.00) (Decimal.decimal 0.00) |> shouldBe Nothing
 
       it "negate works" \_ -> do
         negate (Decimal.decimal 5.25) |> shouldBe (Decimal.decimal (-5.25))
@@ -62,6 +65,13 @@ spec = do
 
       it "small multiplication preserves precision" \_ -> do
         Decimal.decimal 0.01 * Decimal.decimal 0.01 |> shouldBe (Decimal.decimal 0.0001)
+
+      it "large multiplication uses safe intermediate arithmetic" \_ -> do
+        let big = Decimal.decimal 960000.00
+        let result = big * big
+        -- With Integer intermediate, this should not overflow
+        -- 960000 * 960000 = 921600000000
+        result |> shouldBe (Decimal.decimal 921600000000.00)
 
       it "fromCents and toCents round-trip" \_ -> do
         let cents = 9999 :: Int64
@@ -84,9 +94,10 @@ spec = do
 
       it "rejects invalid JSON" \_ -> do
         let decoded = Json.decodeText @Decimal "\"abc\""
-        case decoded of
-          Result.Err _ -> True |> shouldBe True
-          Result.Ok _ -> True |> shouldBe False
+        let isErr = case decoded of
+              Result.Err _ -> True
+              Result.Ok _ -> False
+        isErr |> shouldBe True
 
     describe "formatting" do
       it "formats with 4 decimal places" \_ -> do

@@ -23,6 +23,9 @@
 --
 -- == Internal Representation
 --
+-- Intermediate arithmetic (multiplication, division) uses arbitrary-precision
+-- @Integer@ to avoid @Int64@ overflow, while stored values remain @Int64@.
+--
 -- Values are stored multiplied by 10,000:
 --
 -- @
@@ -80,6 +83,12 @@ scale = 10000
 
 -- | Create a @Decimal@ from a @Float@ value.
 --
+-- __Note:__ Uses 'Prelude.round' which performs round-half-to-even
+-- (banker's rounding). For most use cases (constructing from human-readable
+-- literals) this is fine. For precision-sensitive callers, be aware that
+-- values at the exact midpoint of the smallest representable unit may
+-- round unexpectedly: e.g. @decimal 0.00005@ yields @Decimal 0@, not @Decimal 1@.
+--
 -- @
 -- Decimal.decimal 12.50   -- Decimal 125000
 -- Decimal.decimal 0.01    -- Decimal 100
@@ -121,7 +130,7 @@ zero = Decimal 0
 -- Decimal.decimal 12.999 |> Decimal.toCents -- 1299
 -- @
 toCents :: Decimal -> Int64
-toCents (Decimal n) = Prelude.div n 100
+toCents (Decimal n) = Prelude.quot n 100
 {-# INLINE toCents #-}
 
 
@@ -139,24 +148,26 @@ toFloat (Decimal n) = Prelude.fromIntegral n / Prelude.fromIntegral scale
 -- * Arithmetic
 
 
--- | Divide two @Decimal@ values.
+-- | Divide two @Decimal@ values. Returns @Nothing@ if the divisor is zero.
 --
 -- NeoHaskell redefines @/@ as @Float -> Float -> Float@, so we provide
 -- this explicit division function instead of a @Fractional@ instance.
 --
 -- Division truncates towards zero (integer division behavior).
--- Division by zero will throw an arithmetic exception.
---
--- __Note:__ For very large dividend values (above ~922 billion), the
--- intermediate multiplication may overflow Int64. Use values within
--- normal financial ranges to avoid this.
+-- Intermediate arithmetic uses @Integer@ to avoid overflow.
 --
 -- @
--- Decimal.divide (Decimal.decimal 100.00) (Decimal.decimal 4.00) -- Decimal.decimal 25.00
+-- Decimal.divide (Decimal.decimal 100.00) (Decimal.decimal 4.00) -- Just (Decimal.decimal 25.00)
+-- Decimal.divide (Decimal.decimal 100.00) (Decimal.decimal 0.00) -- Nothing
 -- @
-divide :: Decimal -> Decimal -> Decimal
-divide (Decimal a) (Decimal b) = Decimal (Prelude.div (a * scale) b)
-{-# INLINE divide #-}
+divide :: Decimal -> Decimal -> Maybe Decimal
+divide (Decimal a) (Decimal b) =
+  case b == 0 of
+    True -> Nothing
+    False -> do
+      let numerator = Prelude.toInteger a * Prelude.toInteger scale
+      let quotient = Prelude.div numerator (Prelude.toInteger b)
+      Just (Decimal (Prelude.fromInteger quotient))
 
 
 -- * Instances
@@ -169,7 +180,7 @@ instance Prelude.Num Decimal where
   (Decimal a) - (Decimal b) = Decimal (a - b)
   {-# INLINE (-) #-}
 
-  (Decimal a) * (Decimal b) = Decimal (Prelude.div (a * b) scale)
+  (Decimal a) * (Decimal b) = Decimal (Prelude.fromInteger (Prelude.div (Prelude.toInteger a * Prelude.toInteger b) (Prelude.toInteger scale)))
   {-# INLINE (*) #-}
 
   abs (Decimal a) = Decimal (Prelude.abs a)
@@ -310,6 +321,6 @@ isValidUnsignedDecimal str =
 -- @
 roundTo2 :: Decimal -> Decimal
 roundTo2 (Decimal n) = do
-  let rounded = Prelude.div (n + 50 * Prelude.signum n) 100 * 100
+  let rounded = Prelude.quot (n + 50 * Prelude.signum n) 100 * 100
   Decimal rounded
 {-# INLINE roundTo2 #-}

@@ -89,7 +89,7 @@ The internal value represents the amount multiplied by 10,000 (4 decimal places)
 instance Prelude.Num Decimal where
   (Decimal a) + (Decimal b) = Decimal (a + b)
   (Decimal a) - (Decimal b) = Decimal (a - b)
-  (Decimal a) * (Decimal b) = Decimal ((a * b) `Prelude.div` scale)
+  (Decimal a) * (Decimal b) = Decimal (fromInteger ((toInteger a * toInteger b) `Prelude.div` toInteger scale))
   abs (Decimal a) = Decimal (Prelude.abs a)
   signum (Decimal a) = Decimal (Prelude.signum a * scale)
   fromInteger n = Decimal (Prelude.fromInteger n * scale)
@@ -98,8 +98,8 @@ instance Prelude.Num Decimal where
 **No `Fractional` instance**: NeoHaskell redefines `/` as `Float -> Float -> Float` in `Basics.hs`. Making `Decimal` an instance of `Fractional` would create confusion. Instead, we provide:
 
 ```haskell
-divide :: Decimal -> Decimal -> Decimal
-divide (Decimal a) (Decimal b) = Decimal ((a * scale) `Prelude.div` b)
+divide :: Decimal -> Decimal -> Maybe Decimal
+-- Returns Nothing for zero divisor; uses Integer intermediate to avoid overflow
 ```
 
 ### 5. API Design
@@ -115,10 +115,10 @@ toCents :: Decimal -> Int64        -- To cents (truncates to 2 decimals)
 toFloat :: Decimal -> Float        -- Lossy conversion for display
 
 -- Arithmetic
-divide :: Decimal -> Decimal -> Decimal
+divide :: Decimal -> Decimal -> Maybe Decimal
 
 -- Formatting
-formatDecimal :: Decimal -> Text   -- "12.50"
+formatDecimal :: Decimal -> Text   -- "12.5000"
 parseDecimal :: Text -> Maybe Decimal
 
 -- Rounding
@@ -199,6 +199,8 @@ import Decimal as Reexported (Decimal)
 2. **Division rounding**: Integer division truncates towards zero. This must be clearly documented, and `roundTo2` provided for explicit rounding.
 
 3. **Float conversion precision**: `decimal 12.50` converts through Double, which could introduce tiny errors. Mitigated by using `Prelude.round` during conversion.
+
+4. **Division by zero**: `Decimal.divide` returns `Maybe Decimal`, returning `Nothing` for zero divisors. Callers must handle the `Nothing` case.
 
 ## References
 
