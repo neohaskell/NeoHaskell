@@ -1330,7 +1330,7 @@ withOAuth2StateKey envVarName app = do
 -- @
 -- app = Application.new
 --   |> Application.withTransport WebTransport.server
---   |> Application.withAuth "https://auth.example.com"
+--   |> Application.withAuth @() (\_ -> "https://auth.example.com")
 --   |> Application.withOAuth2StateKey "OAUTH2_STATE_KEY"
 --   |> Application.withOAuth2Provider ouraConfig
 --   |> Application.withOAuth2Provider githubConfig
