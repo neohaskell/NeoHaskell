@@ -954,12 +954,12 @@ corsMiddleware cors innerApp request respond = do
         then do
           let corsHeaders = buildCorsHeaders cors origin
           -- Handle OPTIONS preflight
-          case Wai.requestMethod request == GhcMethod.methodOptions of
-            True -> do
+          if Wai.requestMethod request == GhcMethod.methodOptions
+            then do
               -- Respond with 204 No Content and CORS headers
               let preflightResponse = Wai.responseLBS HTTP.status204 corsHeaders ""
               respond preflightResponse
-            False -> do
+            else do
               -- For normal requests, add CORS headers to the response
               innerApp request (\response -> do
                 let existingHeaders = Wai.responseHeaders response
@@ -972,35 +972,63 @@ corsMiddleware cors innerApp request respond = do
           innerApp request respond
 
 
+-- | Sanitize a header value by removing CR and LF characters.
+-- SECURITY: Prevents CRLF header injection from user-configured values.
+{-# INLINE sanitizeHeaderValue #-}
+sanitizeHeaderValue :: Text -> Text
+sanitizeHeaderValue value =
+  value |> Text.filter (\c -> c != '\r' && c != '\n')
+
+
 -- | Check if a request origin is allowed by the CORS configuration.
+-- Uses case-insensitive comparison for origin matching.
 {-# INLINE isOriginAllowed #-}
 isOriginAllowed :: CorsConfig -> Text -> Bool
 isOriginAllowed cors origin = do
   let origins = cors.allowedOrigins
+  let lowerOrigin = origin |> Text.toLower
   -- Check for wildcard
-  case Array.contains "*" origins of
-    True -> True
-    False -> Array.contains origin origins
+  if Array.contains "*" origins
+    then True
+    else origins |> Array.toLinkedList |> LinkedList.any (\o -> Text.toLower o == lowerOrigin)
 
 
 -- | Build CORS response headers for an allowed origin.
 {-# INLINE buildCorsHeaders #-}
 buildCorsHeaders :: CorsConfig -> Text -> [(HTTP.HeaderName, GhcBS.ByteString)]
 buildCorsHeaders cors origin = do
+  let isWildcard = Array.contains "*" cors.allowedOrigins
   -- Determine the Access-Control-Allow-Origin value
   -- If wildcard is configured, use "*"; otherwise reflect the specific origin
-  let allowOriginValue = case Array.contains "*" cors.allowedOrigins of
-        True -> "*"
-        False -> origin |> Text.toBytes |> Bytes.unwrap
-  let methods = cors.allowedMethods |> Text.joinWith ", " |> Text.toBytes |> Bytes.unwrap
-  let headers = cors.allowedHeaders |> Text.joinWith ", " |> Text.toBytes |> Bytes.unwrap
-  let baseHeaders =
+  -- SECURITY: Sanitize origin to prevent CRLF injection
+  let allowOriginValue = if isWildcard
+        then "*"
+        else origin |> sanitizeHeaderValue |> Text.toBytes |> Bytes.unwrap
+  -- SECURITY: Sanitize user-configured method and header values
+  let methods = cors.allowedMethods
+        |> Array.map sanitizeHeaderValue
+        |> Text.joinWith ", "
+        |> Text.toBytes |> Bytes.unwrap
+  let headers = cors.allowedHeaders
+        |> Array.map sanitizeHeaderValue
+        |> Text.joinWith ", "
+        |> Text.toBytes |> Bytes.unwrap
+  let baseHeaders :: [(HTTP.HeaderName, GhcBS.ByteString)]
+      baseHeaders =
         [ ("Access-Control-Allow-Origin", allowOriginValue)
         , ("Access-Control-Allow-Methods", methods)
         , ("Access-Control-Allow-Headers", headers)
         ]
-  case cors.maxAge of
-    Maybe.Nothing -> baseHeaders
-    Maybe.Just age -> do
-      let ageText = age |> toText |> Text.toBytes |> Bytes.unwrap
-      (GhcList.++) baseHeaders [("Access-Control-Max-Age", ageText)]
+  -- When reflecting a specific origin (not wildcard), add Vary: Origin
+  -- to prevent caches from serving a response with one origin to another
+  let varyHeaders :: [(HTTP.HeaderName, GhcBS.ByteString)]
+      varyHeaders = if isWildcard
+        then []
+        else [("Vary", "Origin")]
+  let maxAgeHeaders :: [(HTTP.HeaderName, GhcBS.ByteString)]
+      maxAgeHeaders = case cors.maxAge of
+        Maybe.Nothing -> []
+        Maybe.Just age -> do
+          let ageText = age |> toText |> Text.toBytes |> Bytes.unwrap
+          [("Access-Control-Max-Age", ageText)]
+  (GhcList.++) baseHeaders ((GhcList.++) varyHeaders maxAgeHeaders)

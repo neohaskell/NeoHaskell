@@ -10,7 +10,7 @@ NeoHaskell's `WebTransport` server (WAI/Warp) does not include CORS headers in H
 
 For example, a frontend running on `localhost:5173` (via Vite) cannot call a NeoHaskell backend on `localhost:8080` without getting:
 
-```
+```text
 Cross-Origin Request Blocked: The Same Origin Policy disallows reading the remote resource.
 (Reason: CORS header 'Access-Control-Allow-Origin' missing).
 ```
