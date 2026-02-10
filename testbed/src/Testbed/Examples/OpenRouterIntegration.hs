@@ -126,9 +126,12 @@ askAiWithConfig systemPrompt model question =
 handleSuccess :: OpenRouter.Response -> AiEvent
 handleSuccess response =
   case response.choices |> Array.first of
-    Just choice ->
+    Just choice -> do
+      let answerText = case choice.message.content of
+            Message.TextContent text -> text
+            Message.MultiContent _ -> ""
       AiAnswered
-        { answer = choice.message.content
+        { answer = answerText
         , model = response.model
         , tokensUsed = case response.usage of
             Just usage -> usage.totalTokens
