@@ -28,7 +28,7 @@ import Integration.OpenRouter.Response qualified as OpenRouter
 import Json qualified
 import Maybe (Maybe (..))
 import Service.Command.Core (NameOf)
-import Service.FileUpload.Core (FileAccessError (..))
+import Service.FileUpload.Core (FileAccessError (..), FileRef (..))
 import Task (Task)
 import Task qualified
 import Text (Text)
@@ -90,15 +90,18 @@ executeTranscription ctx config = do
         , config = OpenRouter.defaultConfig
             { OpenRouter.timeoutSeconds = config.config.timeoutSeconds
             }
-        , onSuccess = \response -> do
-            let resultText = extractResponseText response
-            let result = TranscriptionResult
-                  { text = resultText
-                  , pageCount = Nothing
-                  , confidence = Nothing
-                  }
-            config.onSuccess result
-        , onError = \err -> config.onError err
+        , onSuccess = \response ->
+            case extractResponseText response of
+              Just resultText -> do
+                let result = TranscriptionResult
+                      { text = resultText
+                      , pageCount = Nothing
+                      , confidence = Nothing
+                      }
+                config.onSuccess result
+              Nothing ->
+                config.onError "AI model returned empty or unparseable response"
+        , onError = config.onError
         }
 
   -- Step 7: Delegate to OpenRouter integration
@@ -107,14 +110,14 @@ executeTranscription ctx config = do
 
 
 -- | Extract the text content from an OpenRouter response.
-extractResponseText :: OpenRouter.Response -> Text
+extractResponseText :: OpenRouter.Response -> Maybe Text
 extractResponseText response = do
   let choices = response.choices
   case choices |> Array.first of
-    Nothing -> ""
+    Nothing -> Nothing
     Just choice -> case choice.message.content of
-      Message.TextContent text -> text
-      Message.MultiContent _ -> ""
+      Message.TextContent text -> Just text
+      Message.MultiContent _ -> Nothing
 
 
 -- | Build the system prompt based on extraction mode and config.
@@ -157,18 +160,18 @@ buildExtractionPrompt config = case config.extractionMode of
 -- | Convert FileAccessError to IntegrationError.
 fileAccessToIntegrationError :: FileAccessError -> Integration.IntegrationError
 fileAccessToIntegrationError err = case err of
-  FileNotFound _ ->
-    Integration.ValidationError "File not found"
+  FileNotFound (FileRef ref) ->
+    Integration.ValidationError [fmt|File not found: #{ref}|]
   StateLookupFailed _ msg ->
     Integration.UnexpectedError [fmt|Failed to lookup file state: #{msg}|]
-  NotOwner _ ->
-    Integration.AuthenticationError "Not authorized to access this file"
-  FileExpired _ ->
-    Integration.ValidationError "File has expired"
-  FileIsDeleted _ ->
-    Integration.ValidationError "File has been deleted"
-  BlobMissing _ ->
-    Integration.UnexpectedError "File blob is missing from storage"
+  NotOwner (FileRef ref) ->
+    Integration.AuthenticationError [fmt|Not authorized to access file: #{ref}|]
+  FileExpired (FileRef ref) ->
+    Integration.ValidationError [fmt|File has expired: #{ref}|]
+  FileIsDeleted (FileRef ref) ->
+    Integration.ValidationError [fmt|File has been deleted: #{ref}|]
+  BlobMissing (FileRef ref) ->
+    Integration.UnexpectedError [fmt|File blob is missing from storage: #{ref}|]
   StorageError msg ->
     Integration.UnexpectedError [fmt|Storage error: #{msg}|]
 

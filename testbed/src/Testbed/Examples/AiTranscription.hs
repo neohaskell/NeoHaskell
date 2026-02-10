@@ -2,7 +2,7 @@
 --
 -- This module demonstrates how Jess (Integration User) would use the
 -- AI transcription integration to extract text from uploaded PDF files
--- using multimodal AI models (Gemini, Claude Vision, GPT-4V) via OpenRouter.
+-- using multimodal AI models (Gemini, Claude Vision, GPT-4o) via OpenRouter.
 --
 -- == Usage Pattern
 --
@@ -88,6 +88,28 @@ type instance NameOf TranscriptionOutcome = "TranscriptionOutcome"
 -- Example Integrations (Jess's code)
 -- ============================================================================
 
+-- | Internal helper: build standard transcription callbacks.
+--
+-- All three example functions share the same success\/error handling pattern.
+-- This helper extracts the common callback logic.
+mkCallbacks ::
+  Text ->
+  (AiTranscribe.TranscriptionResult -> TranscriptionOutcome, Text -> TranscriptionOutcome)
+mkCallbacks documentId =
+  ( \result ->
+      TranscriptionCompleted
+        { documentId = documentId
+        , transcribedText = result.text
+        , pageCount = result.pageCount
+        }
+  , \err ->
+      TranscriptionFailed
+        { documentId = documentId
+        , errorMessage = err
+        }
+  )
+
+
 -- | Example: Full text extraction from a scanned PDF.
 --
 -- This shows the standard usage pattern:
@@ -108,22 +130,14 @@ fullTextTranscription ::
   -- | File reference from upload
   FileRef ->
   Integration.Action
-fullTextTranscription documentId fileRef =
+fullTextTranscription documentId fileRef = do
+  let (onSuccess, onError) = mkCallbacks documentId
   Integration.outbound AiTranscribe.Request
     { fileRef = fileRef
     , model = "google/gemini-pro-1.5"
     , config = AiTranscribe.defaultConfig
-    , onSuccess = \result ->
-        TranscriptionCompleted
-          { documentId = documentId
-          , transcribedText = result.text
-          , pageCount = result.pageCount
-          }
-    , onError = \err ->
-        TranscriptionFailed
-          { documentId = documentId
-          , errorMessage = err
-          }
+    , onSuccess = onSuccess
+    , onError = onError
     }
 
 
@@ -149,7 +163,8 @@ documentSummary ::
   -- | File reference from upload
   FileRef ->
   Integration.Action
-documentSummary documentId language fileRef =
+documentSummary documentId language fileRef = do
+  let (onSuccess, onError) = mkCallbacks documentId
   Integration.outbound AiTranscribe.Request
     { fileRef = fileRef
     , model = "anthropic/claude-3.5-sonnet"
@@ -158,17 +173,8 @@ documentSummary documentId language fileRef =
         , AiTranscribe.language = Just language
         , AiTranscribe.maxPages = Just 50  -- Limit for very long documents
         }
-    , onSuccess = \result ->
-        TranscriptionCompleted
-          { documentId = documentId
-          , transcribedText = result.text
-          , pageCount = result.pageCount
-          }
-    , onError = \err ->
-        TranscriptionFailed
-          { documentId = documentId
-          , errorMessage = err
-          }
+    , onSuccess = onSuccess
+    , onError = onError
     }
 
 
@@ -192,7 +198,8 @@ structuredExtraction ::
   -- | File reference from upload
   FileRef ->
   Integration.Action
-structuredExtraction documentId fileRef =
+structuredExtraction documentId fileRef = do
+  let (onSuccess, onError) = mkCallbacks documentId
   Integration.outbound AiTranscribe.Request
     { fileRef = fileRef
     , model = "openai/gpt-4o"
@@ -202,15 +209,6 @@ structuredExtraction documentId fileRef =
             "Extract invoice data as JSON with fields: invoice_number, date, vendor, line_items (array of {description, quantity, unit_price, total}), subtotal, tax, total."
         , AiTranscribe.timeoutSeconds = 180  -- Longer for complex extraction
         }
-    , onSuccess = \result ->
-        TranscriptionCompleted
-          { documentId = documentId
-          , transcribedText = result.text
-          , pageCount = result.pageCount
-          }
-    , onError = \err ->
-        TranscriptionFailed
-          { documentId = documentId
-          , errorMessage = err
-          }
+    , onSuccess = onSuccess
+    , onError = onError
     }

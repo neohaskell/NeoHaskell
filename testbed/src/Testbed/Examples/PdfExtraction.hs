@@ -143,13 +143,13 @@ documentUploadIntegration documentId fileRef =
     }
 
 
--- | Example: Extract specific pages for preview.
+-- | Example: Batch document extraction with page limits.
 --
 -- This shows:
 --
 -- * Page range selection (first 5 pages only)
 -- * Raw text mode (no layout preservation)
--- * Shorter timeout for quick previews
+-- * Shorter timeout for batch processing
 batchDocumentExtraction ::
   -- | Batch ID
   Text ->

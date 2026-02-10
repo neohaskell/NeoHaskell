@@ -165,7 +165,7 @@ data TranscriptionResult = TranscriptionResult
   , pageCount :: Maybe Int
   -- ^ Number of pages processed (if available from model response)
   , confidence :: Maybe Float
-  -- ^ Confidence score (always Nothing for v1)
+  -- ^ Confidence score (always Nothing for v1, Float is Double-precision in NeoHaskell)
   }
   deriving (Show, Eq, Generic)
 

@@ -108,7 +108,7 @@ data TranscriptionResult = TranscriptionResult
   , pageCount :: Maybe Int
   -- ^ Number of pages processed (if available)
   , confidence :: Maybe Float
-  -- ^ Confidence score (always Nothing for v1)
+  -- ^ Confidence score (always Nothing for v1, Float is Double-precision in NeoHaskell)
   }
   deriving (Show, Eq, Generic)
 ```
@@ -146,7 +146,7 @@ data ImageUrl = ImageUrl
 
 The integration follows the piggyback pattern used by `Pdf.ExtractText.Internal`:
 
-```
+```text
 AiTranscribe.Request
   → ToAction.toAction
     → Integration.action \ctx ->

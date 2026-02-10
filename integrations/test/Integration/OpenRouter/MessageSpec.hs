@@ -121,3 +121,33 @@ spec = do
             secondPart `shouldBe` Just (ImageUrlPart ImageUrl {url = "data:application/pdf;base64,AQID"})
           TextContent _ ->
             expectationFailure "Expected MultiContent"
+
+      it "handles empty prompt" do
+        let msg = userWithAttachment "" "AQID" "application/pdf"
+        msg.role `shouldBe` User
+        case msg.content of
+          MultiContent parts -> do
+            Array.length parts `shouldBe` 2
+            Array.first parts `shouldBe` Just (TextPart "")
+          TextContent _ ->
+            expectationFailure "Expected MultiContent"
+
+      it "handles empty base64 data" do
+        let msg = userWithAttachment "prompt" "" "application/pdf"
+        msg.role `shouldBe` User
+        case msg.content of
+          MultiContent parts -> do
+            let secondPart = parts |> Array.drop 1 |> Array.first
+            secondPart `shouldBe` Just (ImageUrlPart ImageUrl {url = "data:application/pdf;base64,"})
+          TextContent _ ->
+            expectationFailure "Expected MultiContent"
+
+      it "handles empty MIME type" do
+        let msg = userWithAttachment "prompt" "AQID" ""
+        msg.role `shouldBe` User
+        case msg.content of
+          MultiContent parts -> do
+            let secondPart = parts |> Array.drop 1 |> Array.first
+            secondPart `shouldBe` Just (ImageUrlPart ImageUrl {url = "data:;base64,AQID"})
+          TextContent _ ->
+            expectationFailure "Expected MultiContent"
