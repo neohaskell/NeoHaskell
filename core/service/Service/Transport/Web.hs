@@ -990,7 +990,7 @@ isOriginAllowed cors origin = do
   -- Check for wildcard
   if Array.contains "*" origins
     then True
-    else origins |> Array.toLinkedList |> LinkedList.any (\o -> Text.toLower o == lowerOrigin)
+    else origins |> Array.any (\o -> Text.toLower o == lowerOrigin)
 
 
 -- | Build CORS response headers for an allowed origin.
@@ -1028,7 +1028,10 @@ buildCorsHeaders cors origin = do
   let maxAgeHeaders :: [(HTTP.HeaderName, GhcBS.ByteString)]
       maxAgeHeaders = case cors.maxAge of
         Maybe.Nothing -> []
-        Maybe.Just age -> do
-          let ageText = age |> toText |> Text.toBytes |> Bytes.unwrap
-          [("Access-Control-Max-Age", ageText)]
+        Maybe.Just age ->
+          if age > 0
+            then do
+              let ageText = age |> toText |> Text.toBytes |> Bytes.unwrap
+              [("Access-Control-Max-Age", ageText)]
+            else []
   (GhcList.++) baseHeaders ((GhcList.++) varyHeaders maxAgeHeaders)

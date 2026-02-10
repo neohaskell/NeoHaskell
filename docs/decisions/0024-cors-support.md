@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed
+Accepted
 
 ## Context
 
@@ -63,6 +63,7 @@ CORS is applied in `runTransport` as a WAI middleware wrapper around the applica
 - **Preflight handling**: Intercept `OPTIONS` requests and return `204 No Content` with CORS headers
 - **Origin reflection**: When a specific origin matches, reflect that exact origin (not `"*"`) to support credentials
 - **Wildcard support**: `"*"` in `allowedOrigins` matches any origin
+- **Cache safety**: When reflecting a specific origin (not `"*"`), a `Vary: Origin` header is included to prevent intermediate caches from serving incorrect responses
 
 ### 5. Example Usage
 
@@ -118,5 +119,5 @@ app =
 
 ### Risks
 
-1. **Wildcard in production**: Users may copy development configs with `"*"` into production. Mitigate with documentation and logging warnings.
+1. **Wildcard in production**: Users may copy development configs with `"*"` into production. Mitigate with documentation.
 2. **Header size increase**: Negligible (a few hundred bytes per response).
