@@ -125,7 +125,7 @@ extractResponseText response = do
               |> Array.map (\part -> case part of
                   Message.TextPart text -> text
                   Message.ImageUrlPart _ -> "")
-              |> Text.concat
+              |> Text.joinWith " "
         case textParts of
           "" -> Nothing
           result -> Just result
