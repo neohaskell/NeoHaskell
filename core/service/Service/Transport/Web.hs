@@ -3,6 +3,7 @@ module Service.Transport.Web (
   AuthEnabled (..),
   OAuth2Config (..),
   FileUploadEnabled (..),
+  CorsConfig (..),
   server,
 ) where
 
@@ -30,6 +31,7 @@ import LinkedList qualified
 import Map qualified
 import Maybe (Maybe (..))
 import Network.HTTP.Types.Header qualified as HTTP
+import Network.HTTP.Types.Method qualified as GhcMethod
 import Network.HTTP.Types.Status qualified as HTTP
 import Network.Wai qualified as Wai
 import Network.Wai.Handler.Warp qualified as Warp
@@ -92,6 +94,21 @@ data FileUploadEnabled = FileUploadEnabled
   }
 
 
+-- | CORS configuration for WebTransport.
+-- When set, CORS headers are added to all responses and OPTIONS preflight
+-- requests are handled automatically.
+data CorsConfig = CorsConfig
+  { allowedOrigins :: Array Text
+  -- ^ Allowed origins. Use ["*"] for any origin, or specific origins.
+  , allowedMethods :: Array Text
+  -- ^ Allowed HTTP methods (e.g., ["GET", "POST", "OPTIONS"]).
+  , allowedHeaders :: Array Text
+  -- ^ Allowed request headers (e.g., ["Content-Type", "Authorization"]).
+  , maxAge :: Maybe Int
+  -- ^ Preflight cache duration in seconds. Nothing means no max-age header.
+  }
+
+
 -- | HTTP/JSON transport using WAI/Warp.
 data WebTransport = WebTransport
   { port :: Int,
@@ -103,7 +120,9 @@ data WebTransport = WebTransport
     -- | Optional file upload routes. Set via Application.withFileUpload.
     fileUploadEnabled :: Maybe FileUploadEnabled,
     -- | Optional API metadata for OpenAPI spec generation. Set via Application.withApiInfo.
-    apiInfo :: Maybe ApiInfo
+    apiInfo :: Maybe ApiInfo,
+    -- | Optional CORS configuration. Set via Application.withCors.
+    corsConfig :: Maybe CorsConfig
   }
 
 
@@ -127,7 +146,8 @@ server =
       authEnabled = Nothing,
       oauth2Config = Nothing,
       fileUploadEnabled = Nothing,
-      apiInfo = Nothing
+      apiInfo = Nothing,
+      corsConfig = Nothing
     }
 
 
@@ -854,14 +874,19 @@ instance Transport WebTransport where
   runTransport transport runnableTransport = do
     -- RunnableTransport WebTransport is: Wai.Request -> (Wai.Response -> Task Text ResponseReceived) -> Task Text ResponseReceived
     -- We need to convert this to a WAI Application: Request -> (Response -> IO ResponseReceived) -> IO ResponseReceived
-    let waiApp :: Wai.Application
-        waiApp request respond = do
+    let baseApp :: Wai.Application
+        baseApp request respond = do
           -- Create a Task-based response handler that wraps the IO respond function
           let taskRespond response = Task.fromIO (respond response)
 
           -- Run the Task-based application and return the ResponseReceived
           runnableTransport request taskRespond
             |> Task.runOrPanic
+
+    -- Apply CORS middleware if configured
+    let waiApp = case transport.corsConfig of
+          Maybe.Nothing -> baseApp
+          Maybe.Just cors -> corsMiddleware cors baseApp
 
     -- Start the Warp server on the specified port
     let port = transport.port
@@ -907,3 +932,75 @@ instance Transport WebTransport where
                 }
         let responseJson = Json.encodeText errorResponse |> Text.toBytes
         respond (errorResponse, responseJson)
+
+
+-- | CORS middleware that wraps a WAI Application.
+-- Adds CORS headers to all responses and handles OPTIONS preflight requests.
+corsMiddleware :: CorsConfig -> Wai.Application -> Wai.Application
+corsMiddleware cors innerApp request respond = do
+  -- Extract the Origin header from the request
+  let maybeOrigin = request
+        |> Wai.requestHeaders
+        |> LinkedList.filter (\(name, _) -> name == "Origin")
+        |> LinkedList.head
+  case maybeOrigin of
+    Maybe.Nothing ->
+      -- No Origin header: not a CORS request, pass through
+      innerApp request respond
+    Maybe.Just (_, originBytes) -> do
+      let origin = originBytes |> Bytes.fromLegacy |> Text.fromBytes
+      -- Check if the origin is allowed
+      if isOriginAllowed cors origin
+        then do
+          let corsHeaders = buildCorsHeaders cors origin
+          -- Handle OPTIONS preflight
+          case Wai.requestMethod request == GhcMethod.methodOptions of
+            True -> do
+              -- Respond with 204 No Content and CORS headers
+              let preflightResponse = Wai.responseLBS HTTP.status204 corsHeaders ""
+              respond preflightResponse
+            False -> do
+              -- For normal requests, add CORS headers to the response
+              innerApp request (\response -> do
+                let existingHeaders = Wai.responseHeaders response
+                let allHeaders = (GhcList.++) existingHeaders corsHeaders
+                let modifiedResponse = Wai.mapResponseHeaders (\_ -> allHeaders) response
+                respond modifiedResponse
+                )
+        else do
+          -- Origin not allowed: pass through without CORS headers
+          innerApp request respond
+
+
+-- | Check if a request origin is allowed by the CORS configuration.
+{-# INLINE isOriginAllowed #-}
+isOriginAllowed :: CorsConfig -> Text -> Bool
+isOriginAllowed cors origin = do
+  let origins = cors.allowedOrigins
+  -- Check for wildcard
+  case Array.contains "*" origins of
+    True -> True
+    False -> Array.contains origin origins
+
+
+-- | Build CORS response headers for an allowed origin.
+{-# INLINE buildCorsHeaders #-}
+buildCorsHeaders :: CorsConfig -> Text -> [(HTTP.HeaderName, GhcBS.ByteString)]
+buildCorsHeaders cors origin = do
+  -- Determine the Access-Control-Allow-Origin value
+  -- If wildcard is configured, use "*"; otherwise reflect the specific origin
+  let allowOriginValue = case Array.contains "*" cors.allowedOrigins of
+        True -> "*"
+        False -> origin |> Text.toBytes |> Bytes.unwrap
+  let methods = cors.allowedMethods |> Text.joinWith ", " |> Text.toBytes |> Bytes.unwrap
+  let headers = cors.allowedHeaders |> Text.joinWith ", " |> Text.toBytes |> Bytes.unwrap
+  let baseHeaders =
+        [ ("Access-Control-Allow-Origin", allowOriginValue)
+        , ("Access-Control-Allow-Methods", methods)
+        , ("Access-Control-Allow-Headers", headers)
+        ]
+  case cors.maxAge of
+    Maybe.Nothing -> baseHeaders
+    Maybe.Just age -> do
+      let ageText = age |> toText |> Text.toBytes |> Bytes.unwrap
+      (GhcList.++) baseHeaders [("Access-Control-Max-Age", ageText)]
