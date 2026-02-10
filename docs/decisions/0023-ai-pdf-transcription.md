@@ -202,7 +202,15 @@ userWithAttachment :: Text -> Text -> Text -> Message
 | `ToJSON`/`FromJSON` | **Derived** for ExtractionMode, Config, TranscriptionResult | Standard serialization |
 | `ToAction` | **Custom** in Internal | Orchestration logic |
 
-### 7. Error Handling
+### 7. Performance Considerations
+
+- **Strict fields**: All new types (`Config`, `TranscriptionResult`, `Content`, `ContentPart`, `ImageUrl`) should use strict fields to prevent space leaks from large base64 strings.
+- **`toEncoding` over `toJSON`**: Custom `ToJSON` instances for `Content`, `ContentPart`, and `ImageUrl` should implement `toEncoding` to write directly to a Builder, avoiding intermediate `Value` construction.
+- **INLINE pragmas**: `defaultConfig` and `userWithAttachment` should be marked `{-# INLINE #-}` as small, frequently-called functions.
+- **Memory per request**: A 10MB PDF produces ~13.3MB of base64, with peak memory ~50MB per request (original bytes + base64 + Text + JSON buffer). This is acceptable for an async integration but should be documented.
+- **Worker pool impact**: Each in-flight transcription holds a dispatcher worker thread for up to 120 seconds. High-volume usage should be rate-limited at the application level.
+
+### 8. Error Handling
 
 `FileAccessError` variants map to `IntegrationError`:
 
