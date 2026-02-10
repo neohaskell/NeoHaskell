@@ -69,8 +69,6 @@
 --
 -- * No streaming support
 -- * No tool/function calling
--- * No multimodal (images) support
---
 -- These will be added in future versions.
 module Integration.OpenRouter
   ( -- * Request Building
@@ -88,9 +86,13 @@ module Integration.OpenRouter
     -- * Message Types
   , Message (..)
   , Role (..)
+  , Content (..)
+  , ContentPart (..)
+  , ImageUrl (..)
   , user
   , assistant
   , system
+  , userWithAttachment
 
     -- * Transformation (Advanced)
     -- | For most use cases, use @Integration.outbound@ directly.
@@ -100,6 +102,6 @@ module Integration.OpenRouter
   ) where
 
 import Integration.OpenRouter.Internal (toHttpRequest)
-import Integration.OpenRouter.Message (Message (..), Role (..), assistant, system, user)
+import Integration.OpenRouter.Message (Content (..), ContentPart (..), ImageUrl (..), Message (..), Role (..), assistant, system, user, userWithAttachment)
 import Integration.OpenRouter.Request (Config (..), Request (..), chatCompletion, defaultConfig)
 import Integration.OpenRouter.Response (Choice (..), FinishReason (..), Response (..), Usage (..))

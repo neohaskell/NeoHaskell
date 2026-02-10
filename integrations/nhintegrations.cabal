@@ -57,6 +57,8 @@ common common_cfg
 library
   import: common_cfg
   exposed-modules:
+    Integration.Ai.TranscribePdf
+    Integration.Ai.TranscribePdf.Internal
     Integration.Http
     Integration.Http.Auth
     Integration.Http.Internal
@@ -104,6 +106,7 @@ test-suite nhintegrations-test
     Integration.Oura.SleepSpec
     Integration.Oura.SyncAllSpec
     Integration.Oura.TypesSpec
+    Integration.Ai.TranscribePdf.InternalSpec
   build-depends:
     hspec,
     nhintegrations

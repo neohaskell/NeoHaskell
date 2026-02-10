@@ -5,6 +5,10 @@
 -- == Available Integrations
 --
 -- * "Integration.Pdf.ExtractText" - Local CLI-based text extraction
+--   (fast, free, requires poppler-utils). Re-exported from this module.
+-- * "Integration.Ai.TranscribePdf" - AI-powered multimodal transcription
+--   (handles scanned docs, OCR, summarization — requires OpenRouter API key).
+--   Must be imported separately: @import Integration.Ai.TranscribePdf qualified as AiTranscribe@
 --
 -- == Quick Start
 --
@@ -22,7 +26,9 @@
 --
 -- == Requirements
 --
--- The text extraction integration requires poppler-utils:
+-- === Local Text Extraction
+--
+-- The @Integration.Pdf.ExtractText@ integration requires poppler-utils:
 --
 -- @
 -- # Ubuntu/Debian
@@ -34,6 +40,11 @@
 -- # Nix
 -- nix-shell -p poppler_utils
 -- @
+--
+-- === AI Transcription
+--
+-- The @Integration.Ai.TranscribePdf@ integration requires an OpenRouter API key.
+-- See <https://openrouter.ai/keys> for API key setup.
 module Integration.Pdf
   ( -- * Text Extraction
     module Integration.Pdf.ExtractText

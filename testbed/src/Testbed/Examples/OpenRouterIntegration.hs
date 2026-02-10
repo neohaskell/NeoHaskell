@@ -44,9 +44,11 @@ import Array qualified
 import Basics
 import Integration.Http qualified as Http
 import Integration.OpenRouter qualified as OpenRouter
+import Integration.OpenRouter.Message (Content (..), ContentPart (..))
 import Integration.OpenRouter.Message qualified as Message
 import Json qualified
 import Maybe (Maybe (..))
+import Text qualified
 import Text (Text)
 
 
@@ -126,9 +128,17 @@ askAiWithConfig systemPrompt model question =
 handleSuccess :: OpenRouter.Response -> AiEvent
 handleSuccess response =
   case response.choices |> Array.first of
-    Just choice ->
+    Just choice -> do
+      let answerText = case choice.message.content of
+            TextContent text -> text
+            MultiContent parts ->
+              parts
+                |> Array.map (\part -> case part of
+                    TextPart text -> text
+                    ImageUrlPart _ -> "")
+                |> Text.concat
       AiAnswered
-        { answer = choice.message.content
+        { answer = answerText
         , model = response.model
         , tokensUsed = case response.usage of
             Just usage -> usage.totalTokens

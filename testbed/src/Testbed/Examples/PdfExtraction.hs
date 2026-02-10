@@ -24,8 +24,8 @@
 --
 -- This module demonstrates the API design. The actual PDF extraction
 -- uses CLI tools (pdftotext, pdfinfo) from poppler-utils under the hood.
--- For scanned documents or complex layouts requiring AI, see the
--- AI-powered transcription integration (future #343).
+-- For scanned documents or complex layouts requiring AI, see
+-- "Testbed.Examples.AiTranscription" and "Integration.Ai.TranscribePdf".
 module Testbed.Examples.PdfExtraction
   ( -- * Example Integration Builders
     documentUploadIntegration
@@ -143,13 +143,13 @@ documentUploadIntegration documentId fileRef =
     }
 
 
--- | Example: Extract specific pages for preview.
+-- | Example: Batch document extraction with page limits.
 --
 -- This shows:
 --
 -- * Page range selection (first 5 pages only)
 -- * Raw text mode (no layout preservation)
--- * Shorter timeout for quick previews
+-- * Shorter timeout for batch processing
 batchDocumentExtraction ::
   -- | Batch ID
   Text ->
