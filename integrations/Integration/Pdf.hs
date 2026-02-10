@@ -5,6 +5,9 @@
 -- == Available Integrations
 --
 -- * "Integration.Pdf.ExtractText" - Local CLI-based text extraction
+--   (fast, free, requires poppler-utils)
+-- * "Integration.Ai.TranscribePdf" - AI-powered multimodal transcription
+--   (handles scanned docs, OCR, summarization — requires OpenRouter API key)
 --
 -- == Quick Start
 --

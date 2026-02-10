@@ -71,6 +71,7 @@ library
     Testbed.Stock.Core
     Testbed.Stock.Queries.StockLevel
     Testbed.Stock.Service
+    Testbed.Examples.AiTranscription
     Testbed.Examples.HttpIntegration
     Testbed.Examples.OpenRouterIntegration
     Testbed.Examples.PdfExtraction
