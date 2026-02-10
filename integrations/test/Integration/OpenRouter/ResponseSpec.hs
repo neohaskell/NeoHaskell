@@ -105,7 +105,7 @@ spec = do
         case decoded of
           Result.Ok (choice :: Choice) -> do
             choice.message.role `shouldBe` Message.Assistant
-            choice.message.content `shouldBe` "Hello!"
+            choice.message.content `shouldBe` Message.TextContent "Hello!"
             choice.finishReason `shouldBe` Stop
             choice.index `shouldBe` 0
           Result.Err err ->
