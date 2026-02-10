@@ -39,6 +39,7 @@ module Service.Application (
   withOAuth2StateKey,
   withOAuth2Provider,
   withFileUpload,
+  withCors,
 
   -- * File Upload Setup Type
   FileUploadSetup (..),
@@ -291,7 +292,8 @@ data Application = Application
     -- | FileUpload factory. Resolved during Application.run after config is loaded.
     fileUploadFactory :: Maybe FileUploadFactory,
     secretStore :: Maybe SecretStore,
-    apiInfo :: Maybe ApiInfo
+    apiInfo :: Maybe ApiInfo,
+    corsConfig :: Maybe Web.CorsConfig
   }
 
 
@@ -317,7 +319,8 @@ new =
       oauth2Setup = Nothing,
       fileUploadFactory = Nothing,
       secretStore = Nothing,
-      apiInfo = Nothing
+      apiInfo = Nothing,
+      corsConfig = Nothing
     }
 
 
@@ -973,7 +976,7 @@ runWithResolved eventStore maybeFileUploadSetup fileUploadCleanup maybeWebAuthSe
   -- When transports complete (or fail), cancel inbound workers for clean shutdown
   -- Use Task.finally to ensure cleanup always runs even if runTransports fails
   result <-
-    Transports.runTransports app.transports combinedEndpointsByTransport combinedSchemasByTransport combinedQueryEndpoints combinedQuerySchemas maybeAuthEnabled maybeOAuth2Config maybeFileUploadEnabled app.apiInfo
+    Transports.runTransports app.transports combinedEndpointsByTransport combinedSchemasByTransport combinedQueryEndpoints combinedQuerySchemas maybeAuthEnabled maybeOAuth2Config maybeFileUploadEnabled app.apiInfo app.corsConfig
       |> Task.finally cleanupAll
       |> Task.asResult
 
@@ -1268,6 +1271,31 @@ withApiInfo title version description app =
               apiDescription = description
             }
     }
+
+
+-- | Configure CORS (Cross-Origin Resource Sharing) for WebTransport.
+--
+-- When configured, all HTTP responses include CORS headers and OPTIONS
+-- preflight requests are handled automatically.
+--
+-- Example:
+--
+-- @
+-- app = Application.new
+--   |> Application.withTransport WebTransport.server
+--   |> Application.withCors Web.CorsConfig
+--       { allowedOrigins = ["http://localhost:5173"]
+--       , allowedMethods = ["GET", "POST", "OPTIONS"]
+--       , allowedHeaders = ["Content-Type", "Authorization"]
+--       , maxAge = Just 3600
+--       }
+-- @
+withCors ::
+  Web.CorsConfig ->
+  Application ->
+  Application
+withCors config app =
+  app {corsConfig = Just config}
 
 
 -- | Configure a custom SecretStore for token storage.
