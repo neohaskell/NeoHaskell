@@ -1,7 +1,7 @@
 -- | # AI-Powered PDF Transcription Integration
 --
 -- This module provides AI-powered PDF text extraction using multimodal
--- models (Gemini, Claude Vision, GPT-4V) via the OpenRouter API.
+-- models (Gemini, Claude Vision, GPT-4o) via the OpenRouter API.
 --
 -- == Two-Persona Model
 --

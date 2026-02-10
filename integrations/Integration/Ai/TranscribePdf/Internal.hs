@@ -110,6 +110,9 @@ executeTranscription ctx config = do
 
 
 -- | Extract the text content from an OpenRouter response.
+--
+-- Handles both 'TextContent' (plain text) and 'MultiContent' (multimodal)
+-- responses by extracting text parts from the content array.
 extractResponseText :: OpenRouter.Response -> Maybe Text
 extractResponseText response = do
   let choices = response.choices
@@ -117,7 +120,15 @@ extractResponseText response = do
     Nothing -> Nothing
     Just choice -> case choice.message.content of
       Message.TextContent text -> Just text
-      Message.MultiContent _ -> Nothing
+      Message.MultiContent parts -> do
+        let textParts = parts
+              |> Array.map (\part -> case part of
+                  Message.TextPart text -> text
+                  Message.ImageUrlPart _ -> "")
+              |> Text.concat
+        case textParts of
+          "" -> Nothing
+          result -> Just result
 
 
 -- | Build the system prompt based on extraction mode and config.
@@ -189,4 +200,4 @@ integrationErrorToText err = case err of
 
 -- | Convert Bytes to Text (UTF-8 decoding of base64 output).
 bytesToText :: Bytes -> Text
-bytesToText bytes = bytes |> Text.fromBytes |> Text.trim
+bytesToText bytes = bytes |> Text.fromBytes
