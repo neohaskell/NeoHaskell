@@ -83,7 +83,7 @@ withoutHealthCheck :: Application -> Application
 In `assembleTransport`, add a case BEFORE the catch-all `_ -> notFound`:
 
 ```haskell
-[healthPath] | isHealthPath healthPath webTransport -> 
+[healthPath] | isHealthCheckPath healthPath webTransport -> 
   respond (Wai.responseLBS HTTP.status200 
     [(HTTP.hContentType, "application/json")] 
     "{\"status\":\"ok\"}")
@@ -94,7 +94,7 @@ The health check:
 - Returns HTTP 200 with `{"status":"ok"}` JSON body
 - Content-Type: `application/json`
 - Does NOT require authentication (bypasses auth middleware)
-- Does NOT go through CORS middleware (platform health checks are server-to-server)
+- Typically not subject to CORS (platform health probes are server-to-server and do not send Origin headers, though CORS middleware wraps the entire WAI application)
 - Is handled at the route level, not as middleware
 
 ### 6. Files Modified

@@ -17,7 +17,7 @@ spec = do
       it "server has health check enabled by default" \_ -> do
         case server.healthCheck of
           Nothing -> fail "Expected health check to be enabled by default"
-          Just config -> config.healthPath |> shouldBe "health"
+          Just _ -> pass
 
       it "default health path is 'health'" \_ -> do
         case server.healthCheck of

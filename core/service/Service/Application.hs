@@ -1325,7 +1325,9 @@ withHealthCheck ::
   Application ->
   Application
 withHealthCheck path app =
-  app {healthCheckConfig = Just Web.HealthCheckConfig {Web.healthPath = path}}
+  case Text.isEmpty path of
+    True -> app
+    False -> app {healthCheckConfig = Just Web.HealthCheckConfig {Web.healthPath = path}}
 
 
 -- | Disable the automatic health check endpoint.
