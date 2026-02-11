@@ -35,13 +35,14 @@
 -- == Note
 --
 -- This module demonstrates the API design. The actual transcription
--- sends PDF content to third-party AI providers via OpenRouter.
+-- sends file content (documents and images) to third-party AI providers via OpenRouter.
 -- See ADR-0023 for security and privacy considerations.
 module Testbed.Examples.AiTranscription
   ( -- * Example Integration Builders
     fullTextTranscription
   , documentSummary
   , structuredExtraction
+  , imageTranscription
     -- * Example Command Types (for demonstration)
   , TranscriptionOutcome (..)
   ) where
@@ -213,6 +214,38 @@ structuredExtraction documentId fileRef = do
             "Extract invoice data as JSON with fields: invoice_number, date, vendor, line_items (array of {description, quantity, unit_price, total}), subtotal, tax, total."
         , OcrAi.timeoutSeconds = 180  -- Longer for complex extraction
         }
+    , onSuccess = onSuccess
+    , onError = onError
+    }
+
+
+-- | Example: Extract text from an image using OCR.
+--
+-- This demonstrates image OCR capabilities:
+--
+-- * Full text extraction from JPEG images
+-- * Gemini Pro 1.5 for visual understanding
+-- * Standard FullText mode (the default)
+--
+-- @
+-- photoIntegrations photo event = case event of
+--   PhotoUploaded e -> Integration.batch
+--     [ imageTranscription photo.id e.fileRef ]
+--   _ -> Integration.none
+-- @
+imageTranscription ::
+  -- | Document ID
+  Text ->
+  -- | File reference from upload
+  FileRef ->
+  Integration.Action
+imageTranscription documentId fileRef = do
+  let (onSuccess, onError) = mkCallbacks documentId
+  Integration.outbound OcrAi.Request
+    { fileRef = fileRef
+    , mimeType = "image/jpeg"
+    , model = "google/gemini-pro-1.5"
+    , config = OcrAi.defaultConfig
     , onSuccess = onSuccess
     , onError = onError
     }

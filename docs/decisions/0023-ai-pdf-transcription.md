@@ -89,10 +89,10 @@ data Config = Config
 data Request command = Request
   { fileRef :: FileRef
   -- ^ Reference to the uploaded document/image file
-  , model :: Text
-  -- ^ AI model to use (e.g., "google/gemini-pro-1.5")
   , mimeType :: Text
   -- ^ MIME type of the file (e.g., "image/jpeg", "application/pdf")
+  , model :: Text
+  -- ^ AI model to use (e.g., "google/gemini-pro-1.5")
   , config :: Config
   -- ^ Extraction configuration
   , onSuccess :: TranscriptionResult -> command
