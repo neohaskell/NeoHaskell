@@ -16,7 +16,7 @@ import Maybe (Maybe (..))
 import Maybe qualified
 import Service.ServiceDefinition.Core (TransportValue (..))
 import Service.Transport (Transport (..), QueryEndpointHandler, EndpointHandler, Endpoints (..), EndpointSchema (..))
-import Service.Transport.Web (WebTransport (..), AuthEnabled, OAuth2Config, FileUploadEnabled (..), CorsConfig)
+import Service.Transport.Web (WebTransport (..), AuthEnabled, OAuth2Config, FileUploadEnabled (..), CorsConfig, HealthCheckConfig)
 import Service.Application.Types (ApiInfo)
 import Task (Task)
 import Task qualified
@@ -49,8 +49,10 @@ runTransports ::
   -- ^ Optional API metadata for OpenAPI spec generation
   Maybe CorsConfig ->
   -- ^ Optional CORS configuration for WebTransport
+  Maybe HealthCheckConfig ->
+  -- ^ Optional health check configuration for WebTransport
   Task Text Unit
-runTransports transportsMap endpointsByTransport schemasByTransport queryEndpoints querySchemas maybeWebAuth maybeOAuth2 maybeFileUpload maybeApiInfo maybeCors = do
+runTransports transportsMap endpointsByTransport schemasByTransport queryEndpoints querySchemas maybeWebAuth maybeOAuth2 maybeFileUpload maybeApiInfo maybeCors maybeHealthCheck = do
   transportsMap
     |> Map.entries
     |> Task.forEach \(transportName, transportVal) -> do
@@ -71,7 +73,7 @@ runTransports transportsMap endpointsByTransport schemasByTransport queryEndpoin
 
         -- Handle WebTransport specially to configure auth, OAuth2, and file uploads
         case transportName of
-          "WebTransport" -> runWebTransport transportVal commandEndpointsForTransport commandSchemasForTransport queryEndpoints querySchemas maybeWebAuth maybeOAuth2 maybeFileUpload maybeApiInfo maybeCors
+          "WebTransport" -> runWebTransport transportVal commandEndpointsForTransport commandSchemasForTransport queryEndpoints querySchemas maybeWebAuth maybeOAuth2 maybeFileUpload maybeApiInfo maybeCors maybeHealthCheck
           _ -> runGenericTransport transportVal commandEndpointsForTransport commandSchemasForTransport queryEndpoints querySchemas
 
 
@@ -94,8 +96,9 @@ runWebTransport ::
   Maybe FileUploadEnabled ->
   Maybe ApiInfo ->
   Maybe CorsConfig ->
+  Maybe HealthCheckConfig ->
   Task Text Unit
-runWebTransport transportVal commandEndpoints commandSchemas queryEndpoints querySchemas maybeAuth maybeOAuth2 maybeFileUpload maybeApiInfo maybeCors = do
+runWebTransport transportVal commandEndpoints commandSchemas queryEndpoints querySchemas maybeAuth maybeOAuth2 maybeFileUpload maybeApiInfo maybeCors maybeHealthCheck = do
   case transportVal of
     TransportValue transport -> do
       -- Cast the existentially-typed transport to WebTransport
@@ -115,6 +118,7 @@ runWebTransport transportVal commandEndpoints commandSchemas queryEndpoints quer
             , apiInfo = maybeApiInfo
             , maxBodySize = coordinatedMaxBodySize
             , corsConfig = maybeCors
+            , healthCheck = maybeHealthCheck
             }
       -- Build endpoints with the configured transport
       let endpoints :: Endpoints WebTransport =

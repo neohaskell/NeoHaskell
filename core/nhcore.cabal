@@ -392,6 +392,7 @@ test-suite nhcore-test
     Service.TestHelpers
     Service.Transport.WebSpec
     Service.Transport.Web.SwaggerUISpec
+    Service.Transport.Web.HealthCheckSpec
     Service.QueryObjectStore.InMemorySpec
     Service.SnapshotCache.InMemorySpec
     Schema.OpenApiSpec

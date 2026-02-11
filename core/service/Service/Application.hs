@@ -40,6 +40,11 @@ module Service.Application (
   withOAuth2Provider,
   withFileUpload,
   withCors,
+  withHealthCheck,
+  withoutHealthCheck,
+
+  -- * Health Check Re-export
+  Web.HealthCheckConfig (..),
 
   -- * File Upload Setup Type
   FileUploadSetup (..),
@@ -293,7 +298,10 @@ data Application = Application
     fileUploadFactory :: Maybe FileUploadFactory,
     secretStore :: Maybe SecretStore,
     apiInfo :: Maybe ApiInfo,
-    corsConfig :: Maybe Web.CorsConfig
+    corsConfig :: Maybe Web.CorsConfig,
+    -- | Health check configuration. Enabled by default at /health.
+    -- Use withHealthCheck to customize the path, or withoutHealthCheck to disable.
+    healthCheckConfig :: Maybe Web.HealthCheckConfig
   }
 
 
@@ -320,7 +328,8 @@ new =
       fileUploadFactory = Nothing,
       secretStore = Nothing,
       apiInfo = Nothing,
-      corsConfig = Nothing
+      corsConfig = Nothing,
+      healthCheckConfig = Just Web.HealthCheckConfig {Web.healthPath = "health"}
     }
 
 
@@ -976,7 +985,7 @@ runWithResolved eventStore maybeFileUploadSetup fileUploadCleanup maybeWebAuthSe
   -- When transports complete (or fail), cancel inbound workers for clean shutdown
   -- Use Task.finally to ensure cleanup always runs even if runTransports fails
   result <-
-    Transports.runTransports app.transports combinedEndpointsByTransport combinedSchemasByTransport combinedQueryEndpoints combinedQuerySchemas maybeAuthEnabled maybeOAuth2Config maybeFileUploadEnabled app.apiInfo app.corsConfig
+    Transports.runTransports app.transports combinedEndpointsByTransport combinedSchemasByTransport combinedQueryEndpoints combinedQuerySchemas maybeAuthEnabled maybeOAuth2Config maybeFileUploadEnabled app.apiInfo app.corsConfig app.healthCheckConfig
       |> Task.finally cleanupAll
       |> Task.asResult
 
@@ -1296,6 +1305,47 @@ withCors ::
   Application
 withCors config app =
   app {corsConfig = Just config}
+
+
+-- | Customize the health check endpoint path.
+--
+-- By default, WebTransport serves a health endpoint at @GET /health@
+-- that returns @200 OK@ with @{"status":"ok"}@. Use this to change the path.
+--
+-- Example:
+--
+-- @
+-- app = Application.new
+--   |> Application.withTransport WebTransport.server
+--   |> Application.withHealthCheck "_health"
+--   |> Application.withService myService
+-- @
+withHealthCheck ::
+  Text ->
+  Application ->
+  Application
+withHealthCheck path app =
+  app {healthCheckConfig = Just Web.HealthCheckConfig {Web.healthPath = path}}
+
+
+-- | Disable the automatic health check endpoint.
+--
+-- By default, WebTransport serves a health endpoint at @GET /health@.
+-- Use this to disable it entirely (e.g., if you need custom health logic).
+--
+-- Example:
+--
+-- @
+-- app = Application.new
+--   |> Application.withTransport WebTransport.server
+--   |> Application.withoutHealthCheck
+--   |> Application.withService myService
+-- @
+withoutHealthCheck ::
+  Application ->
+  Application
+withoutHealthCheck app =
+  app {healthCheckConfig = Nothing}
 
 
 -- | Configure a custom SecretStore for token storage.

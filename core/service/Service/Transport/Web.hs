@@ -4,7 +4,10 @@ module Service.Transport.Web (
   OAuth2Config (..),
   FileUploadEnabled (..),
   CorsConfig (..),
+  HealthCheckConfig (..),
   server,
+  isHealthCheckPath,
+  healthResponseBody,
 ) where
 
 import Auth.Config qualified
@@ -22,6 +25,7 @@ import Bytes qualified
 import ConcurrentVar qualified
 import Console qualified
 import Data.ByteString qualified as GhcBS
+import Data.ByteString.Lazy qualified as GhcLBS
 import Data.IORef qualified as GhcIORef
 import Data.List qualified as GhcList
 import Data.Yaml qualified as Yaml
@@ -109,6 +113,16 @@ data CorsConfig = CorsConfig
   }
 
 
+-- | Health check configuration for WebTransport.
+-- When enabled, GET requests to the health path return 200 OK with a JSON body.
+-- Enabled by default with path "health". Can be disabled or customized.
+data HealthCheckConfig = HealthCheckConfig
+  { healthPath :: Text
+  -- ^ URL path segment for the health endpoint (default: "health").
+  -- The endpoint will be available at /{healthPath}.
+  }
+
+
 -- | HTTP/JSON transport using WAI/Warp.
 data WebTransport = WebTransport
   { port :: Int,
@@ -122,7 +136,10 @@ data WebTransport = WebTransport
     -- | Optional API metadata for OpenAPI spec generation. Set via Application.withApiInfo.
     apiInfo :: Maybe ApiInfo,
     -- | Optional CORS configuration. Set via Application.withCors.
-    corsConfig :: Maybe CorsConfig
+    corsConfig :: Maybe CorsConfig,
+    -- | Optional health check endpoint. Enabled by default at /health.
+    -- Set via Application.withHealthCheck or disabled via Application.withoutHealthCheck.
+    healthCheck :: Maybe HealthCheckConfig
   }
 
 
@@ -138,6 +155,7 @@ deriveKnownHash "WebTransport"
 -- Auth is disabled by default - use Application.withAuth to enable.
 -- OAuth2 is disabled by default - use Application.withOAuth2Provider to enable.
 -- File uploads are disabled by default - use Application.withFileUpload to enable.
+-- Health check is enabled by default at /health - use Application.withoutHealthCheck to disable.
 server :: WebTransport
 server =
   WebTransport
@@ -147,7 +165,8 @@ server =
       oauth2Config = Nothing,
       fileUploadEnabled = Nothing,
       apiInfo = Nothing,
-      corsConfig = Nothing
+      corsConfig = Nothing,
+      healthCheck = Just HealthCheckConfig {healthPath = "health"}
     }
 
 
@@ -866,6 +885,15 @@ instance Transport WebTransport where
               ]
         let response200 = Wai.responseLBS HTTP.status200 securityHeaders htmlBytes
         respond response200
+      [pathSegment]
+        | Wai.requestMethod request == "GET"
+        , isHealthCheckPath pathSegment endpoints.transport ->
+            do
+              let headers =
+                    [ (HTTP.hContentType, "application/json")
+                    , ("X-Content-Type-Options", "nosniff")
+                    ]
+              respond (Wai.responseLBS HTTP.status200 headers healthResponseBody)
       _ ->
         notFound "Not found"
 
@@ -1035,3 +1063,18 @@ buildCorsHeaders cors origin = do
               [("Access-Control-Max-Age", ageText)]
             else []
   (GhcList.++) baseHeaders ((GhcList.++) varyHeaders maxAgeHeaders)
+
+
+-- | Check if a path segment matches the configured health check path.
+-- Returns False if health check is disabled (healthCheck = Nothing).
+isHealthCheckPath :: Text -> WebTransport -> Bool
+isHealthCheckPath pathSegment transport =
+  case transport.healthCheck of
+    Nothing -> False
+    Just config -> pathSegment == config.healthPath
+
+
+-- | Static JSON response body for the health endpoint.
+-- Minimal response to avoid information disclosure.
+healthResponseBody :: GhcLBS.ByteString
+healthResponseBody = "{\"status\":\"ok\"}"
