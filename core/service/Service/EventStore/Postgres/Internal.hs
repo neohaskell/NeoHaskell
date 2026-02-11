@@ -20,7 +20,10 @@ import Hasql.Connection.Setting.Connection qualified as ConnectionSettingConnect
 import Hasql.Connection.Setting.Connection.Param qualified as Param
 import Hasql.Pool qualified as HasqlPool
 import Hasql.Pool.Config qualified as HasqlPoolConfig
+import Hasql.Pool.Observation (ConnectionStatus (..), ConnectionTerminationReason (..), Observation (..))
+import Data.Text.IO qualified
 import Json qualified
+import Prelude qualified
 import LinkedList (LinkedList)
 import Maybe (Maybe (..))
 import Maybe qualified
@@ -73,8 +76,33 @@ instance EventStoreConfig PostgresEventStore where
 
 
 toConnectionPoolSettings :: LinkedList Hasql.Setting -> HasqlPoolConfig.Config
-toConnectionPoolSettings settings = do
-  [HasqlPoolConfig.staticConnectionSettings settings] |> HasqlPoolConfig.settings
+toConnectionPoolSettings settings =
+  [ HasqlPoolConfig.staticConnectionSettings settings
+  , HasqlPoolConfig.agingTimeout 300
+  , HasqlPoolConfig.idlenessTimeout 60
+  , HasqlPoolConfig.observationHandler logPoolObservation
+  ]
+    |> HasqlPoolConfig.settings
+
+
+-- | Log connection pool lifecycle events for observability.
+-- Only logs termination events to avoid overhead under high load.
+-- See ADR-0027 for rationale.
+logPoolObservation :: Observation -> Prelude.IO ()
+logPoolObservation observation = case observation of
+  ConnectionObservation _uuid status -> case status of
+    TerminatedConnectionStatus reason -> case reason of
+      AgingConnectionTerminationReason ->
+        Data.Text.IO.putStrLn "[Pool] Connection terminated (aging timeout)"
+      IdlenessConnectionTerminationReason ->
+        Data.Text.IO.putStrLn "[Pool] Connection terminated (idleness timeout)"
+      NetworkErrorConnectionTerminationReason err ->
+        Data.Text.IO.putStrLn [fmt|[Pool] Connection terminated (network error: #{show err})|]
+      ReleaseConnectionTerminationReason ->
+        Prelude.pure ()
+      InitializationErrorTerminationReason err ->
+        Data.Text.IO.putStrLn [fmt|[Pool] Connection terminated (init error: #{show err})|]
+    _ -> Prelude.pure ()
 
 
 toConnectionSettings :: PostgresEventStore -> LinkedList Hasql.Setting

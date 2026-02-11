@@ -61,7 +61,10 @@ import Hasql.Encoders qualified as Encoders
 import Hasql.Pool (Pool)
 import Hasql.Pool qualified as HasqlPool
 import Hasql.Pool.Config qualified as HasqlPoolConfig
+import Hasql.Pool.Observation (ConnectionStatus (..), ConnectionTerminationReason (..), Observation (..))
+import Data.Text.IO qualified
 import Hasql.Session qualified as Session
+import Prelude qualified
 import Hasql.Statement (Statement (..))
 
 import Result qualified
@@ -166,9 +169,35 @@ createPool cfg = do
           , Param.password cfg.password
           ]
   let settings = [params |> ConnectionSetting.connection]
-  let poolConfig = [HasqlPoolConfig.staticConnectionSettings settings] |> HasqlPoolConfig.settings
+  let poolConfig =
+        [ HasqlPoolConfig.staticConnectionSettings settings
+        , HasqlPoolConfig.agingTimeout 300
+        , HasqlPoolConfig.idlenessTimeout 60
+        , HasqlPoolConfig.observationHandler logPoolObservation
+        ]
+          |> HasqlPoolConfig.settings
   HasqlPool.acquire poolConfig
     |> Task.fromIO
+
+
+-- | Log connection pool lifecycle events for observability.
+-- Only logs termination events to avoid overhead under high load.
+-- See ADR-0027 for rationale.
+logPoolObservation :: Observation -> Prelude.IO ()
+logPoolObservation observation = case observation of
+  ConnectionObservation _uuid status -> case status of
+    TerminatedConnectionStatus reason -> case reason of
+      AgingConnectionTerminationReason ->
+        Data.Text.IO.putStrLn "[Pool] Connection terminated (aging timeout)"
+      IdlenessConnectionTerminationReason ->
+        Data.Text.IO.putStrLn "[Pool] Connection terminated (idleness timeout)"
+      NetworkErrorConnectionTerminationReason err ->
+        Data.Text.IO.putStrLn [fmt|[Pool] Connection terminated (network error: #{show err})|]
+      ReleaseConnectionTerminationReason ->
+        Prelude.pure ()
+      InitializationErrorTerminationReason err ->
+        Data.Text.IO.putStrLn [fmt|[Pool] Connection terminated (init error: #{show err})|]
+    _ -> Prelude.pure ()
 
 
 -- | Create the file_upload_state table if it doesn't exist.
