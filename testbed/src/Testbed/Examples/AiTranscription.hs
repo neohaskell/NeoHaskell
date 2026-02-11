@@ -1,7 +1,7 @@
--- | Example AI-powered PDF transcription integration for testbed.
+-- | Example AI-powered document/image transcription integration for testbed.
 --
 -- This module demonstrates how Jess (Integration User) would use the
--- AI transcription integration to extract text from uploaded PDF files
+-- AI transcription integration to extract text from uploaded files
 -- using multimodal AI models (Gemini, Claude Vision, GPT-4o) via OpenRouter.
 --
 -- == Usage Pattern
@@ -9,10 +9,11 @@
 -- Jess configures AI transcription using pure records:
 --
 -- @
--- Integration.outbound AiTranscribe.Request
+-- Integration.outbound OcrAi.Request
 --   { fileRef = e.file
+--   , mimeType = "application\/pdf"
 --   , model = "google\/gemini-pro-1.5"
---   , config = AiTranscribe.defaultConfig
+--   , config = OcrAi.defaultConfig
 --   , onSuccess = \\result -> RecordTranscription { text = result.text }
 --   , onError = \\err -> TranscriptionFailed { error = err }
 --   }
@@ -47,8 +48,8 @@ module Testbed.Examples.AiTranscription
 
 import Core
 import Integration qualified
-import Integration.Ai.TranscribePdf qualified as AiTranscribe
-import Integration.Ai.TranscribePdf.Internal ()  -- ToAction instance
+import Integration.Ocr.Ai qualified as OcrAi
+import Integration.Ocr.Ai.Internal ()  -- ToAction instance
 import Json qualified
 import Service.FileUpload.Core (FileRef)
 
@@ -94,7 +95,7 @@ type instance NameOf TranscriptionOutcome = "TranscriptionOutcome"
 -- This helper extracts the common callback logic.
 mkCallbacks ::
   Text ->
-  (AiTranscribe.TranscriptionResult -> TranscriptionOutcome, Text -> TranscriptionOutcome)
+  (OcrAi.TranscriptionResult -> TranscriptionOutcome, Text -> TranscriptionOutcome)
 mkCallbacks documentId =
   ( \result ->
       TranscriptionCompleted
@@ -132,10 +133,11 @@ fullTextTranscription ::
   Integration.Action
 fullTextTranscription documentId fileRef = do
   let (onSuccess, onError) = mkCallbacks documentId
-  Integration.outbound AiTranscribe.Request
+  Integration.outbound OcrAi.Request
     { fileRef = fileRef
+    , mimeType = "application/pdf"
     , model = "google/gemini-pro-1.5"
-    , config = AiTranscribe.defaultConfig
+    , config = OcrAi.defaultConfig
     , onSuccess = onSuccess
     , onError = onError
     }
@@ -165,13 +167,14 @@ documentSummary ::
   Integration.Action
 documentSummary documentId language fileRef = do
   let (onSuccess, onError) = mkCallbacks documentId
-  Integration.outbound AiTranscribe.Request
+  Integration.outbound OcrAi.Request
     { fileRef = fileRef
+    , mimeType = "application/pdf"
     , model = "anthropic/claude-3.5-sonnet"
-    , config = AiTranscribe.defaultConfig
-        { AiTranscribe.extractionMode = AiTranscribe.Summary
-        , AiTranscribe.language = Just language
-        , AiTranscribe.maxPages = Just 50  -- Limit for very long documents
+    , config = OcrAi.defaultConfig
+        { OcrAi.extractionMode = OcrAi.Summary
+        , OcrAi.language = Just language
+        , OcrAi.maxPages = Just 50  -- Limit for very long documents
         }
     , onSuccess = onSuccess
     , onError = onError
@@ -200,14 +203,15 @@ structuredExtraction ::
   Integration.Action
 structuredExtraction documentId fileRef = do
   let (onSuccess, onError) = mkCallbacks documentId
-  Integration.outbound AiTranscribe.Request
+  Integration.outbound OcrAi.Request
     { fileRef = fileRef
+    , mimeType = "application/pdf"
     , model = "openai/gpt-4o"
-    , config = AiTranscribe.defaultConfig
-        { AiTranscribe.extractionMode = AiTranscribe.Structured
-        , AiTranscribe.systemPrompt = Just
+    , config = OcrAi.defaultConfig
+        { OcrAi.extractionMode = OcrAi.Structured
+        , OcrAi.systemPrompt = Just
             "Extract invoice data as JSON with fields: invoice_number, date, vendor, line_items (array of {description, quantity, unit_price, total}), subtotal, tax, total."
-        , AiTranscribe.timeoutSeconds = 180  -- Longer for complex extraction
+        , OcrAi.timeoutSeconds = 180  -- Longer for complex extraction
         }
     , onSuccess = onSuccess
     , onError = onError
