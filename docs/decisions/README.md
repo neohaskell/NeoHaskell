@@ -38,6 +38,7 @@ ADRs document significant architectural decisions made during the development of
 | [0022](0022-decimal-type.md) | Decimal Type for Financial Calculations | Proposed |
 | [0023](0023-ai-pdf-transcription.md) | AI-Powered PDF Transcription via Multimodal Models | Proposed |
 | [0024](0024-cors-support.md) | CORS Support for WebTransport | Proposed |
+| [0025](0025-auto-health-endpoint.md) | Auto Health Endpoint for WebTransport Apps | Proposed |
 
 ## Creating New ADRs
 
