@@ -1,6 +1,6 @@
--- | # AI-Powered PDF Transcription Integration
+-- | # AI-Powered Document/Image Transcription Integration
 --
--- This module provides AI-powered PDF text extraction using multimodal
+-- This module provides AI-powered document/image text extraction using multimodal
 -- models (Gemini, Claude Vision, GPT-4o) via the OpenRouter API.
 --
 -- == Two-Persona Model
@@ -12,21 +12,22 @@
 --
 -- * __Nick (Integration Developer)__: Implements 'ToAction' with file retrieval,
 --   base64 encoding, and OpenRouter orchestration in
---   "Integration.Ai.TranscribePdf.Internal".
+--   "Integration.Ocr.Ai.Internal".
 --
 -- == Quick Start
 --
 -- @
 -- import Integration qualified
--- import Integration.Ai.TranscribePdf qualified as AiTranscribe
+-- import Integration.Ocr.Ai qualified as OcrAi
 --
 -- documentIntegrations :: Document -> DocumentEvent -> Integration.Outbound
 -- documentIntegrations doc event = case event of
 --   PdfUploaded info -> Integration.batch
---     [ Integration.outbound AiTranscribe.Request
+--     [ Integration.outbound OcrAi.Request
 --         { fileRef = info.fileRef
+--         , mimeType = "application\/pdf"
 --         , model = "google\/gemini-pro-1.5"
---         , config = AiTranscribe.defaultConfig
+--         , config = OcrAi.defaultConfig
 --         , onSuccess = \\result -> RecordTranscription
 --             { documentId = doc.id
 --             , text = result.text
@@ -62,7 +63,7 @@
 -- * No streaming support
 -- * No confidence scoring (always Nothing)
 -- * No page-level extraction (whole document only)
-module Integration.Ai.TranscribePdf
+module Integration.Ocr.Ai
   ( -- * Request Configuration (Jess's API)
     Request (..)
   , Config (..)
@@ -110,8 +111,8 @@ instance Json.FromJSON ExtractionMode
 -- Use 'defaultConfig' for sensible defaults, then override specific fields:
 --
 -- @
--- AiTranscribe.defaultConfig
---   { extractionMode = AiTranscribe.Summary
+-- OcrAi.defaultConfig
+--   { extractionMode = OcrAi.Summary
 --   , language = Just "es"
 --   }
 -- @
@@ -180,7 +181,8 @@ instance Json.FromJSON TranscriptionResult
 --
 -- == Fields
 --
--- * 'fileRef': Reference to the uploaded PDF file
+-- * 'fileRef': Reference to the uploaded document/image file
+-- * 'mimeType': MIME type of the file (e.g., @\"application\/pdf\"@, @\"image\/png\"@)
 -- * 'model': AI model to use (e.g., @\"google\/gemini-pro-1.5\"@)
 -- * 'config': Extraction configuration (use 'defaultConfig')
 -- * 'onSuccess': Callback that receives result and returns a domain command
@@ -189,11 +191,12 @@ instance Json.FromJSON TranscriptionResult
 -- == Example
 --
 -- @
--- Integration.outbound AiTranscribe.Request
+-- Integration.outbound OcrAi.Request
 --   { fileRef = e.uploadedFile
+--   , mimeType = "application\/pdf"
 --   , model = "google\/gemini-pro-1.5"
---   , config = AiTranscribe.defaultConfig
---       { extractionMode = AiTranscribe.Summary
+--   , config = OcrAi.defaultConfig
+--       { extractionMode = OcrAi.Summary
 --       }
 --   , onSuccess = \\result -> RecordText
 --       { documentId = doc.id
@@ -207,7 +210,9 @@ instance Json.FromJSON TranscriptionResult
 -- @
 data Request command = Request
   { fileRef :: FileRef
-  -- ^ Reference to the uploaded PDF file
+  -- ^ Reference to the uploaded document/image file
+  , mimeType :: Text
+  -- ^ MIME type of the file (e.g., "application\/pdf", "image\/png")
   , model :: Text
   -- ^ AI model to use (e.g., "google\/gemini-pro-1.5")
   , config :: Config

@@ -1,4 +1,4 @@
-# ADR-0023: AI-Powered PDF Transcription via Multimodal Models
+# ADR-0023: AI-Powered OCR via Multimodal Models
 
 ## Status
 
@@ -8,12 +8,12 @@ Proposed
 
 NeoHaskell has `Integration.Pdf.ExtractText` for CLI-based PDF text extraction using poppler-utils (`pdftotext`, `pdfinfo`). While effective for well-structured digital PDFs, this approach fails for:
 
-1. **Scanned documents**: CLI extraction returns empty text since there is no embedded text layer.
+1. **Scanned documents and images**: CLI extraction returns empty text since there is no embedded text layer.
 2. **Complex layouts**: Multi-column documents, forms, and mixed content produce garbled output.
 3. **Handwritten notes**: No text to extract — requires visual understanding.
 4. **Summarization and structured extraction**: CLI tools extract raw text but cannot interpret, summarize, or restructure content.
 
-Multimodal AI models (Google Gemini, Anthropic Claude Vision, OpenAI GPT-4V) can process PDF pages as images and extract text with understanding of layout, context, and even handwriting. NeoHaskell already has an `Integration.OpenRouter` module that provides access to 300+ models including multimodal ones.
+Multimodal AI models (Google Gemini, Anthropic Claude Vision, OpenAI GPT-4V) can process documents and images visually, extracting text with understanding of layout, context, and even handwriting. NeoHaskell already has an `Integration.OpenRouter` module that provides access to 300+ models including multimodal ones.
 
 ### Current State
 
@@ -24,9 +24,10 @@ Multimodal AI models (Google Gemini, Anthropic Claude Vision, OpenAI GPT-4V) can
 - `FileAccessContext.retrieveFile :: FileRef -> Task FileAccessError Bytes` — Already exists
 - `Bytes.toBase64` in `core/core/Bytes.hs` — Base64 encoding utility
 
-### GitHub Issue
+### GitHub Issues
 
-- [#343: Add AI-powered PDF transcription integration (multimodal)](https://github.com/neohaskell/NeoHaskell/issues/343)
+- [#343: Add AI-powered PDF transcription integration (multimodal)](https://github.com/neohaskell/NeoHaskell/issues/343) — Original feature request
+- [#388: Rename Ai.TranscribePdf to Ocr.Ai and generalize for images](https://github.com/neohaskell/NeoHaskell/issues/388) — Module rename and generalization
 
 ## Decision
 
@@ -36,10 +37,12 @@ Two new modules in `nhintegrations`, following the Jess/Nick two-persona pattern
 
 | Module | Persona | Purpose |
 |--------|---------|---------|
-| `Integration.Ai.TranscribePdf` | Jess (User) | Config records, types, `defaultConfig` |
-| `Integration.Ai.TranscribePdf.Internal` | Nick (Developer) | `ToAction` instance, orchestration logic |
+| `Integration.Ocr.Ai` | Jess (User) | Config records, types, `defaultConfig` |
+| `Integration.Ocr.Ai.Internal` | Nick (Developer) | `ToAction` instance, orchestration logic |
 
-Placed under `Integration.Ai.` namespace to distinguish from the CLI-based `Integration.Pdf.` namespace.
+Placed under `Integration.Ocr.` namespace to distinguish from the CLI-based `Integration.Pdf.` namespace.
+
+**Note**: Originally named `Integration.Ai.TranscribePdf` in [#343](https://github.com/neohaskell/NeoHaskell/issues/343), renamed to `Integration.Ocr.Ai` in [#388](https://github.com/neohaskell/NeoHaskell/issues/388) to reflect generalization beyond PDFs to include images.
 
 ### 2. Type Definitions
 
@@ -48,12 +51,12 @@ All types use NeoHaskell style: descriptive type parameters, `Result` not `Eithe
 #### Extraction Modes
 
 ```haskell
--- | Modes for AI-powered text extraction.
+-- | Modes for AI-powered text extraction from documents and images.
 data ExtractionMode
   = FullText
   -- ^ Extract all text faithfully, preserving structure
   | Summary
-  -- ^ Summarize document content
+  -- ^ Summarize document/image content
   | Structured
   -- ^ Extract as structured JSON matching a provided schema
   deriving (Show, Eq, Generic)
@@ -85,7 +88,9 @@ data Config = Config
 -- Follows the same pattern as Pdf.ExtractText.Request.
 data Request command = Request
   { fileRef :: FileRef
-  -- ^ Reference to the uploaded PDF file
+  -- ^ Reference to the uploaded document/image file
+  , mimeType :: Text
+  -- ^ MIME type of the file (e.g., "image/jpeg", "application/pdf")
   , model :: Text
   -- ^ AI model to use (e.g., "google/gemini-pro-1.5")
   , config :: Config
@@ -147,12 +152,12 @@ data ImageUrl = ImageUrl
 The integration follows the piggyback pattern used by `Pdf.ExtractText.Internal`:
 
 ```text
-AiTranscribe.Request
+OcrAi.Request
   → ToAction.toAction
     → Integration.action \ctx ->
-      → ctx.fileAccess.retrieveFile fileRef    -- Get PDF bytes
-      → Bytes.toBase64 pdfBytes                -- Encode to base64
-      → Message.userWithAttachment prompt base64 mimeType  -- Build multimodal message
+      → ctx.fileAccess.retrieveFile fileRef    -- Get document/image bytes
+      → Bytes.toBase64 fileBytes               -- Encode to base64
+      → Message.userWithAttachment prompt base64 config.mimeType  -- Build multimodal message
       → OpenRouter.chatCompletion messages model onSuccess onError
         → OpenRouter.toHttpRequest             -- Transform to HTTP
         → Integration.outbound httpRequest     -- Execute via HTTP integration
@@ -207,7 +212,7 @@ userWithAttachment :: Text -> Text -> Text -> Message
 - **Strict fields**: All new types (`Config`, `TranscriptionResult`, `Content`, `ContentPart`, `ImageUrl`) should use strict fields to prevent space leaks from large base64 strings.
 - **`toEncoding` over `toJSON`**: Custom `ToJSON` instances for `Content`, `ContentPart`, and `ImageUrl` should implement `toEncoding` to write directly to a Builder, avoiding intermediate `Value` construction.
 - **INLINE pragmas**: `defaultConfig` and `userWithAttachment` should be marked `{-# INLINE #-}` as small, frequently-called functions.
-- **Memory per request**: A 10MB PDF produces ~13.3MB of base64, with peak memory ~50MB per request (original bytes + base64 + Text + JSON buffer). This is acceptable for an async integration but should be documented.
+- **Memory per request**: A 10MB document/image produces ~13.3MB of base64, with peak memory ~50MB per request (original bytes + base64 + Text + JSON buffer). This is acceptable for an async integration but should be documented.
 - **Worker pool impact**: Each in-flight transcription holds a dispatcher worker thread for up to 120 seconds. High-volume usage should be rate-limited at the application level.
 
 ### 8. Error Handling
@@ -229,7 +234,7 @@ No sensitive information (file paths, internal IDs) is exposed in error messages
 
 ### Positive
 
-1. **Handles impossible-for-CLI cases**: Scanned documents, handwritten notes, and complex layouts that poppler-utils cannot process.
+1. **Handles impossible-for-CLI cases**: Scanned documents, images, handwritten notes, and complex layouts that poppler-utils cannot process.
 
 2. **Reuses existing infrastructure**: No changes to `ActionContext`, `FileAccessContext`, `Application.hs`, or the OpenRouter pipeline.
 
@@ -239,21 +244,23 @@ No sensitive information (file paths, internal IDs) is exposed in error messages
 
 5. **Multiple extraction modes**: FullText, Summary, and Structured cover diverse use cases from simple OCR to data extraction.
 
+6. **Generalized beyond PDFs**: Supports images (JPEG, PNG, etc.) in addition to PDFs, enabling broader OCR use cases.
+
 ### Negative
 
 1. **API costs per request**: Unlike free CLI extraction, each AI transcription incurs API costs (varies by model and document size).
 
 2. **Network latency**: 120-second default timeout vs <5 seconds for CLI extraction. Long-running requests may impact the integration dispatcher worker pool.
 
-3. **AI hallucination risk**: Models may fabricate text that doesn't exist in the document. This is inherent to AI-based extraction and must be documented for users.
+3. **AI hallucination risk**: Models may fabricate text that doesn't exist in the document/image. This is inherent to AI-based extraction and must be documented for users.
 
-4. **External data exposure**: File content (as base64) is sent to third-party AI providers via OpenRouter. PDFs may contain PII or sensitive data.
+4. **External data exposure**: File content (as base64) is sent to third-party AI providers via OpenRouter. Documents and images may contain PII or sensitive data.
 
 ### Risks
 
-1. **Memory pressure from base64 encoding**: Base64 encoding increases data size by ~33%. A 10MB PDF becomes ~13.3MB of base64 text. Mitigate with strict fields and document size limits.
+1. **Memory pressure from base64 encoding**: Base64 encoding increases data size by ~33%. A 10MB document/image becomes ~13.3MB of base64 text. Mitigate with strict fields and document size limits.
 
-2. **Prompt injection via PDF content**: PDF text content is NOT interpolated into the system prompt (only sent as an image attachment), reducing but not eliminating injection risk.
+2. **Prompt injection via file content**: Document/image content is NOT interpolated into the system prompt (only sent as an attachment), reducing but not eliminating injection risk.
 
 3. **Rate limiting**: OpenRouter may rate-limit large or frequent requests. Users should be aware of provider-specific limits.
 
@@ -262,10 +269,13 @@ No sensitive information (file paths, internal IDs) is exposed in error messages
 ## References
 
 - [GitHub Issue #343](https://github.com/neohaskell/NeoHaskell/issues/343) — Original feature request
+- [GitHub Issue #388](https://github.com/neohaskell/NeoHaskell/issues/388) — Module rename and generalization
 - [ADR-0008: Integration Pattern](0008-integration-pattern.md) — Two-persona model (Jess/Nick)
 - [ADR-0015: HTTP Outbound Integration](0015-http-outbound-integration.md) — HTTP integration that OpenRouter piggybacks on
 - [Integration.Pdf.ExtractText](../../integrations/Integration/Pdf/ExtractText.hs) — Companion CLI-based extraction module
+- [Integration.Ocr.Ai](../../integrations/Integration/Ocr/Ai.hs) — AI-powered OCR module (user-facing)
+- [Integration.Ocr.Ai.Internal](../../integrations/Integration/Ocr/Ai/Internal.hs) — AI-powered OCR implementation
 - [Integration.OpenRouter](../../integrations/Integration/OpenRouter.hs) — AI model access via OpenRouter
-- [Integration.OpenRouter.Message](../../integrations/Integration/OpenRouter/Message.hs) — Current text-only Message type
+- [Integration.OpenRouter.Message](../../integrations/Integration/OpenRouter/Message.hs) — Multimodal Message type
 - [Integration.hs](../../core/service/Integration.hs) — ActionContext and FileAccessContext definitions
 - [Bytes.hs](../../core/core/Bytes.hs) — Base64 encoding utility

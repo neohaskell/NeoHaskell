@@ -25,7 +25,7 @@
 -- This module demonstrates the API design. The actual PDF extraction
 -- uses CLI tools (pdftotext, pdfinfo) from poppler-utils under the hood.
 -- For scanned documents or complex layouts requiring AI, see
--- "Testbed.Examples.AiTranscription" and "Integration.Ai.TranscribePdf".
+-- "Testbed.Examples.AiTranscription" and "Integration.Ocr.Ai".
 module Testbed.Examples.PdfExtraction
   ( -- * Example Integration Builders
     documentUploadIntegration
