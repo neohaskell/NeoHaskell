@@ -224,6 +224,11 @@ library
     Service.Application.Integrations
     Service.Application.Transports
     Service.Application.Types
+    Service.Internal.Log
+    Service.Internal.Log.API
+    Service.Internal.Log.Events
+    Service.Internal.Log.Worker
+    Service.Internal.Routes
     Service.Query
     Service.Query.Auth
     Service.Query.Core

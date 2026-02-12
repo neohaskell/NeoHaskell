@@ -122,6 +122,10 @@ import Service.Query.Subscriber qualified as Subscriber
 import Service.ServiceDefinition.Core (ServiceRunner (..), TransportValue (..))
 import Service.ServiceDefinition.Core qualified as ServiceDefinition
 import Service.Application.Integrations qualified as Integrations
+import Channel qualified
+import Service.Internal.Log.API qualified as Log
+import Service.Internal.Log.Worker qualified as LogWorker
+import Service.Internal.Routes qualified as InternalRoutes
 import Service.Application.Transports qualified as Transports
 import Service.Integration.Dispatcher qualified as Dispatcher
 import Service.Integration.Types (OutboundRunner, OutboundLifecycleRunner)
@@ -778,6 +782,12 @@ runWithResolved ::
   Application ->
   Task Text Unit
 runWithResolved eventStore maybeFileUploadSetup fileUploadCleanup maybeWebAuthSetup app = do
+  -- 0. Start internal logging
+  logChannel <- Channel.new
+  LogWorker.startWorker eventStore logChannel
+  Log.logInfo logChannel "Internal logging started"
+  let internalLogsHandler = Just (\req respond -> InternalRoutes.handleInternalLogs eventStore req respond)
+
   -- 1. Wire all query definitions and collect registries + endpoints + schemas
   wiredQueries <-
     app.queryDefinitions
@@ -806,6 +816,7 @@ runWithResolved eventStore maybeFileUploadSetup fileUploadCleanup maybeWebAuthSe
 
   -- 6. Start live subscription
   Subscriber.start subscriber
+  Log.logInfo logChannel "Query subscriber started"
 
   -- 7. Collect command endpoints and schemas from all services, grouped by transport
   endpointsAndSchemasByTransport <-
@@ -991,8 +1002,9 @@ runWithResolved eventStore maybeFileUploadSetup fileUploadCleanup maybeWebAuthSe
   -- 16. Run each transport once with combined endpoints from all services
   -- When transports complete (or fail), cancel inbound workers for clean shutdown
   -- Use Task.finally to ensure cleanup always runs even if runTransports fails
+  Log.logInfo logChannel "Starting transports"
   result <-
-    Transports.runTransports app.transports combinedEndpointsByTransport combinedSchemasByTransport combinedQueryEndpoints combinedQuerySchemas maybeAuthEnabled maybeOAuth2Config maybeFileUploadEnabled app.apiInfo app.corsConfig app.healthCheckConfig
+    Transports.runTransports app.transports combinedEndpointsByTransport combinedSchemasByTransport combinedQueryEndpoints combinedQuerySchemas maybeAuthEnabled maybeOAuth2Config maybeFileUploadEnabled app.apiInfo app.corsConfig app.healthCheckConfig internalLogsHandler
       |> Task.finally cleanupAll
       |> Task.asResult
 

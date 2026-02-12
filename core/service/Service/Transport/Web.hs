@@ -139,7 +139,9 @@ data WebTransport = WebTransport
     corsConfig :: Maybe CorsConfig,
     -- | Optional health check endpoint. Enabled by default at /health.
     -- Set via Application.withHealthCheck or disabled via Application.withoutHealthCheck.
-    healthCheck :: Maybe HealthCheckConfig
+    healthCheck :: Maybe HealthCheckConfig,
+    -- | Optional internal logs handler. Set via Application wiring.
+    internalLogs :: Maybe (Wai.Request -> (Wai.Response -> Task Text Wai.ResponseReceived) -> Task Text Wai.ResponseReceived)
   }
 
 
@@ -166,7 +168,8 @@ server =
       fileUploadEnabled = Nothing,
       apiInfo = Nothing,
       corsConfig = Nothing,
-      healthCheck = Just HealthCheckConfig {healthPath = "health"}
+      healthCheck = Just HealthCheckConfig {healthPath = "health"},
+      internalLogs = Nothing
     }
 
 
@@ -885,6 +888,11 @@ instance Transport WebTransport where
               ]
         let response200 = Wai.responseLBS HTTP.status200 securityHeaders htmlBytes
         respond response200
+      ["internal", "logs"]
+        | Wai.requestMethod request == "GET" -> do
+            case webTransport.internalLogs of
+              Nothing -> notFound "Internal logs not available"
+              Just handler -> handler request respond
       [pathSegment]
         | Wai.requestMethod request == "GET"
         , isHealthCheckPath pathSegment endpoints.transport ->
