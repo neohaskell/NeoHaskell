@@ -549,6 +549,7 @@ test-suite nhcore-test-core
     RedactedSpec
     Schema.OpenApiSpec
     SchemaSpec
+    Service.Internal.LogSpec
     Service.Transport.Web.SwaggerUISpec
     SetSpec
     StreamSpec

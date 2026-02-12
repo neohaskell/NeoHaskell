@@ -18,6 +18,7 @@ import Http.ClientSpec qualified
 import IntSpec qualified
 import RedactedSpec qualified
 import Schema.OpenApiSpec qualified
+import Service.Internal.LogSpec qualified
 import SchemaSpec qualified
 import Service.Transport.Web.SwaggerUISpec qualified
 import SetSpec qualified
@@ -46,6 +47,7 @@ main = Hspec.hspec do
   Hspec.describe "Redacted" RedactedSpec.spec
   Hspec.describe "Schema" SchemaSpec.spec
   Hspec.describe "Schema.OpenApi" Schema.OpenApiSpec.spec
+  Hspec.describe "Service.Internal.Log" Service.Internal.LogSpec.spec
   Hspec.describe "Service.Transport.Web.SwaggerUI" Service.Transport.Web.SwaggerUISpec.spec
   Hspec.describe "Set" SetSpec.spec
   Hspec.describe "Stream" StreamSpec.spec
