@@ -156,6 +156,9 @@ fetchEntityState eventStore typeName streamId = do
           let errorCount = Array.length decodeErrors
           Task.throw [fmt|[Integration] #{errorCount} event(s) failed to decode for #{typeName} (stream: #{streamId}). First error: #{firstError}|]
         Nothing -> do
+          Log.withScope [("component", "Integration")] do
+            Log.debug [fmt|Entity state fetched: #{typeName}/#{toText streamId}|]
+              |> Task.ignoreError
           Task.yield entityState
 
 

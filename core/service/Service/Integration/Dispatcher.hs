@@ -96,6 +96,7 @@ import Task (Task)
 import Task qualified
 import Text (Text)
 import Text qualified
+import ToText (toText)
 
 
 -- | Run a task with an optional timeout.
@@ -346,6 +347,8 @@ dispatch dispatcher event =
         |> Task.ignoreError
        else do
       let streamId = event.streamId
+      Log.debug [fmt|Routing event to workers for stream #{toText streamId}|]
+        |> Task.ignoreError
 
       -- Handle stateless workers
       if Array.isEmpty dispatcher.outboundRunners
@@ -588,6 +591,9 @@ spawnStatelessWorker dispatcher streamId = do
             dispatcher.entityWorkers |> ConcurrentMap.remove streamId
 
   workerTask <- AsyncTask.run safeWorkerLoop
+  Log.withScope [("component", "Dispatcher")] do
+    Log.debug [fmt|Spawned stateless worker for stream #{toText streamId}|]
+      |> Task.ignoreError
   Task.yield
     EntityWorker
       { workerId = uniqueId,
@@ -658,6 +664,9 @@ spawnLifecycleWorker dispatcher streamId = do
             dispatcher.lifecycleEntityWorkers |> ConcurrentMap.remove streamId
 
   workerTask <- AsyncTask.run safeWorkerLoop
+  Log.withScope [("component", "Dispatcher")] do
+    Log.debug [fmt|Spawned lifecycle worker for stream #{toText streamId}|]
+      |> Task.ignoreError
   Task.yield
     LifecycleEntityWorker
       { workerId = uniqueId,
@@ -780,7 +789,8 @@ dispatchCommand endpoints payload = do
                 Log.warn [fmt|Command dispatch failed: #{err}|] |> Task.ignoreError
               Rejected {reason = reason} ->
                 Log.warn [fmt|Command dispatch rejected: #{reason}|] |> Task.ignoreError
-              _ -> pass
+              _ ->
+                Log.debug [fmt|Command dispatched successfully: #{cmdType}|] |> Task.ignoreError
             Task.yield unit
       handler requestContext cmdBytes responseCallback
         |> Task.mapError (\err -> [fmt|Command dispatch failed for #{cmdType}: #{err}|])
@@ -838,7 +848,9 @@ startReaper dispatcher = do
                       |> ConcurrentMap.removeIf streamId isSameWorker
                     -- Step 3: Send Stop only if we actually removed the worker
                     case removed of
-                      Just removedWorker ->
+                      Just removedWorker -> do
+                        Log.debug [fmt|Reaped idle lifecycle worker for stream #{toText streamId}|]
+                          |> Task.ignoreError
                         stopLifecycleWorkerOrCancel dispatcher streamId removedWorker
                       Nothing ->
                         -- Worker was replaced, don't send Stop to the new one
@@ -861,7 +873,9 @@ startReaper dispatcher = do
                       |> ConcurrentMap.removeIf streamId isSameWorker
                     -- Send Stop only if we actually removed the worker
                     case removed of
-                      Just removedWorker ->
+                      Just removedWorker -> do
+                        Log.debug [fmt|Reaped idle worker for stream #{toText streamId}|]
+                          |> Task.ignoreError
                         stopStatelessWorkerOrCancel dispatcher streamId removedWorker
                       Nothing ->
                         -- Worker was replaced, don't send Stop to the new one
