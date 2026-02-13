@@ -52,6 +52,8 @@ import Task (Task)
 import Task qualified
 import Text (Text)
 import Text qualified
+import ToText (toText)
+import Log qualified
 
 
 -- | Parsed JWT header for hot-path optimization.
@@ -149,29 +151,41 @@ validateToken ::
 validateToken config keys token = do
   -- Step 1: Check for empty token
   case Text.isEmpty token of
-    True -> Task.yield (Err (TokenMalformed "Empty token"))
+    True -> do
+      Log.debug "Token validation failed: empty token" |> Task.ignoreError
+      Task.yield (Err (TokenMalformed "Empty token"))
     False -> do
       -- Step 2: Parse header ONCE (optimized hot path)
       case parseHeader token of
-        Err err -> Task.yield (Err err)
+        Err err -> do
+          Log.debug [fmt|Token validation failed: #{toText err}|] |> Task.ignoreError
+          Task.yield (Err err)
         Ok header -> do
           -- Step 3: Check algorithm allowlist (RFC 8725 fail-fast)
           case isAlgorithmAllowed config.allowedAlgorithmsSet header.alg of
-            False -> Task.yield (Err (AlgorithmNotAllowed header.alg))
+            False -> do
+              let algErr = AlgorithmNotAllowed header.alg
+              Log.debug [fmt|Token validation failed: #{toText algErr}|] |> Task.ignoreError
+              Task.yield (Err algErr)
             True -> do
               -- Step 4: Check crit headers
               case checkCritHeaders header.crit config.supportedCritHeaders of
-                Err err -> Task.yield (Err err)
+                Err err -> do
+                  Log.debug [fmt|Token validation failed: #{toText err}|] |> Task.ignoreError
+                  Task.yield (Err err)
                 Ok () -> do
                   -- Step 5: Validate typ if present (RFC 8725)
                   case validateTypHeader header.typ of
-                    Err err -> Task.yield (Err err)
+                    Err err -> do
+                      Log.debug [fmt|Token validation failed: #{toText err}|] |> Task.ignoreError
+                      Task.yield (Err err)
                     Ok () -> do
                       -- Step 6: Decode and verify with jose library
                       let tokenBytes = token |> GhcTextEncoding.encodeUtf8 |> GhcLBS.fromStrict
                       decodeResult <- Task.fromIO (Jose.runJOSE @Jose.Error (Jose.decodeCompact tokenBytes))
                       case decodeResult of
-                        Prelude.Left _err ->
+                        Prelude.Left _err -> do
+                          Log.debug "Token validation failed: invalid JWT format" |> Task.ignoreError
                           Task.yield (Err (TokenMalformed "Invalid JWT format"))
                         Prelude.Right jwt ->
                           verifyAndExtract config keys jwt
@@ -188,29 +202,41 @@ validateTokenWithJwkSet ::
 validateTokenWithJwkSet config jwkSet token = do
   -- Step 1: Check for empty token
   case Text.isEmpty token of
-    True -> Task.yield (Err (TokenMalformed "Empty token"))
+    True -> do
+      Log.debug "Token validation failed: empty token" |> Task.ignoreError
+      Task.yield (Err (TokenMalformed "Empty token"))
     False -> do
       -- Step 2: Parse header ONCE (optimized hot path)
       case parseHeader token of
-        Err err -> Task.yield (Err err)
+        Err err -> do
+          Log.debug [fmt|Token validation failed: #{toText err}|] |> Task.ignoreError
+          Task.yield (Err err)
         Ok header -> do
           -- Step 3: Check algorithm allowlist (RFC 8725 fail-fast)
           case isAlgorithmAllowed config.allowedAlgorithmsSet header.alg of
-            False -> Task.yield (Err (AlgorithmNotAllowed header.alg))
+            False -> do
+              let algErr = AlgorithmNotAllowed header.alg
+              Log.debug [fmt|Token validation failed: #{toText algErr}|] |> Task.ignoreError
+              Task.yield (Err algErr)
             True -> do
               -- Step 4: Check crit headers
               case checkCritHeaders header.crit config.supportedCritHeaders of
-                Err err -> Task.yield (Err err)
+                Err err -> do
+                  Log.debug [fmt|Token validation failed: #{toText err}|] |> Task.ignoreError
+                  Task.yield (Err err)
                 Ok () -> do
                   -- Step 5: Validate typ if present (RFC 8725)
                   case validateTypHeader header.typ of
-                    Err err -> Task.yield (Err err)
+                    Err err -> do
+                      Log.debug [fmt|Token validation failed: #{toText err}|] |> Task.ignoreError
+                      Task.yield (Err err)
                     Ok () -> do
                       -- Step 6: Decode and verify with jose library
                       let tokenBytes = token |> GhcTextEncoding.encodeUtf8 |> GhcLBS.fromStrict
                       decodeResult <- Task.fromIO (Jose.runJOSE @Jose.Error (Jose.decodeCompact tokenBytes))
                       case decodeResult of
-                        Prelude.Left _err ->
+                        Prelude.Left _err -> do
+                          Log.debug "Token validation failed: invalid JWT format" |> Task.ignoreError
                           Task.yield (Err (TokenMalformed "Invalid JWT format"))
                         Prelude.Right jwt ->
                           verifyAndExtractWithJwkSet config jwkSet jwt
@@ -230,21 +256,29 @@ validateTokenWithParsedHeader ::
 validateTokenWithParsedHeader config jwkSet header token = do
   -- Step 1: Check algorithm allowlist (RFC 8725 fail-fast)
   case isAlgorithmAllowed config.allowedAlgorithmsSet header.alg of
-    False -> Task.yield (Err (AlgorithmNotAllowed header.alg))
+    False -> do
+      let algErr = AlgorithmNotAllowed header.alg
+      Log.debug [fmt|Token validation failed: #{toText algErr}|] |> Task.ignoreError
+      Task.yield (Err algErr)
     True -> do
       -- Step 2: Check crit headers
       case checkCritHeaders header.crit config.supportedCritHeaders of
-        Err err -> Task.yield (Err err)
+        Err err -> do
+          Log.debug [fmt|Token validation failed: #{toText err}|] |> Task.ignoreError
+          Task.yield (Err err)
         Ok () -> do
           -- Step 3: Validate typ if present (RFC 8725)
           case validateTypHeader header.typ of
-            Err err -> Task.yield (Err err)
+            Err err -> do
+              Log.debug [fmt|Token validation failed: #{toText err}|] |> Task.ignoreError
+              Task.yield (Err err)
             Ok () -> do
               -- Step 4: Decode and verify with jose library
               let tokenBytes = token |> GhcTextEncoding.encodeUtf8 |> GhcLBS.fromStrict
               decodeResult <- Task.fromIO (Jose.runJOSE @Jose.Error (Jose.decodeCompact tokenBytes))
               case decodeResult of
-                Prelude.Left _err ->
+                Prelude.Left _err -> do
+                  Log.debug "Token validation failed: invalid JWT format" |> Task.ignoreError
                   Task.yield (Err (TokenMalformed "Invalid JWT format"))
                 Prelude.Right jwt ->
                   verifyAndExtractWithJwkSet config jwkSet jwt
@@ -349,30 +383,40 @@ verifyAndExtract ::
   Array Jose.JWK ->
   JWT.SignedJWT ->
   Task err (Result AuthError UserClaims)
-verifyAndExtract config keys jwt = Task.fromIO do
-  -- Create JWK set from keys
-  let jwkSet = Jose.JWKSet (Array.toLinkedList keys)
+verifyAndExtract config keys jwt = do
+  result <- Task.fromIO do
+    -- Create JWK set from keys
+    let jwkSet = Jose.JWKSet (Array.toLinkedList keys)
 
-  -- Build validation settings
-  -- Use proper StringOrURI comparison (avoids show/unpack mismatches)
-  let audCheck = case config.audience of
-        Nothing -> Prelude.const True
-        Just expectedAud -> \aud -> stringOrUriMatchesText aud expectedAud
+    -- Build validation settings
+    -- Use proper StringOrURI comparison (avoids show/unpack mismatches)
+    let audCheck = case config.audience of
+          Nothing -> Prelude.const True
+          Just expectedAud -> \aud -> stringOrUriMatchesText aud expectedAud
 
-  let validationSettings =
-        JWT.defaultJWTValidationSettings audCheck
-          Lens.& JWT.issuerPredicate
-            Lens..~ (\iss -> stringOrUriMatchesText iss config.issuer)
-          Lens.& JWT.allowedSkew
-            Lens..~ fromIntegral config.clockSkewSeconds
+    let validationSettings =
+          JWT.defaultJWTValidationSettings audCheck
+            Lens.& JWT.issuerPredicate
+              Lens..~ (\iss -> stringOrUriMatchesText iss config.issuer)
+            Lens.& JWT.allowedSkew
+              Lens..~ fromIntegral config.clockSkewSeconds
 
-  -- Verify and validate
-  result <- JWT.runJOSE @JWT.JWTError do
-    JWT.verifyJWT validationSettings jwkSet jwt
+    -- Verify and validate
+    JWT.runJOSE @JWT.JWTError do
+      JWT.verifyJWT validationSettings jwkSet jwt
 
   case result of
-    Prelude.Left err -> pure (Err (mapJoseError config err))
-    Prelude.Right claims -> pure (extractUserClaims config claims)
+    Prelude.Left err -> do
+      Log.debug [fmt|Token validation failed: #{toText (mapJoseError config err)}|] |> Task.ignoreError
+      Task.yield (Err (mapJoseError config err))
+    Prelude.Right claims -> do
+      case extractUserClaims config claims of
+        Err err -> do
+          Log.debug [fmt|Token validation failed: #{toText err}|] |> Task.ignoreError
+          Task.yield (Err err)
+        Ok userClaims -> do
+          Log.debug "Token validated successfully" |> Task.ignoreError
+          Task.yield (Ok userClaims)
 
 
 -- | Verify the JWT signature and extract claims using a pre-built JWKSet.
@@ -383,27 +427,37 @@ verifyAndExtractWithJwkSet ::
   Jose.JWKSet ->
   JWT.SignedJWT ->
   Task err (Result AuthError UserClaims)
-verifyAndExtractWithJwkSet config jwkSet jwt = Task.fromIO do
-  -- Build validation settings
-  -- Use proper StringOrURI comparison (avoids show/unpack mismatches)
-  let audCheck = case config.audience of
-        Nothing -> Prelude.const True
-        Just expectedAud -> \aud -> stringOrUriMatchesText aud expectedAud
+verifyAndExtractWithJwkSet config jwkSet jwt = do
+  result <- Task.fromIO do
+    -- Build validation settings
+    -- Use proper StringOrURI comparison (avoids show/unpack mismatches)
+    let audCheck = case config.audience of
+          Nothing -> Prelude.const True
+          Just expectedAud -> \aud -> stringOrUriMatchesText aud expectedAud
 
-  let validationSettings =
-        JWT.defaultJWTValidationSettings audCheck
-          Lens.& JWT.issuerPredicate
-            Lens..~ (\iss -> stringOrUriMatchesText iss config.issuer)
-          Lens.& JWT.allowedSkew
-            Lens..~ fromIntegral config.clockSkewSeconds
+    let validationSettings =
+          JWT.defaultJWTValidationSettings audCheck
+            Lens.& JWT.issuerPredicate
+              Lens..~ (\iss -> stringOrUriMatchesText iss config.issuer)
+            Lens.& JWT.allowedSkew
+              Lens..~ fromIntegral config.clockSkewSeconds
 
-  -- Verify and validate
-  result <- JWT.runJOSE @JWT.JWTError do
-    JWT.verifyJWT validationSettings jwkSet jwt
+    -- Verify and validate
+    JWT.runJOSE @JWT.JWTError do
+      JWT.verifyJWT validationSettings jwkSet jwt
 
   case result of
-    Prelude.Left err -> pure (Err (mapJoseError config err))
-    Prelude.Right claims -> pure (extractUserClaims config claims)
+    Prelude.Left err -> do
+      Log.debug [fmt|Token validation failed: #{toText (mapJoseError config err)}|] |> Task.ignoreError
+      Task.yield (Err (mapJoseError config err))
+    Prelude.Right claims -> do
+      case extractUserClaims config claims of
+        Err err -> do
+          Log.debug [fmt|Token validation failed: #{toText err}|] |> Task.ignoreError
+          Task.yield (Err err)
+        Ok userClaims -> do
+          Log.debug "Token validated successfully" |> Task.ignoreError
+          Task.yield (Ok userClaims)
 
 
 -- | Map jose library errors to our AuthError type.
