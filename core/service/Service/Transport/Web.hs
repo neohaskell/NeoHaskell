@@ -492,6 +492,13 @@ instance Transport WebTransport where
             MissingParameter _ -> badRequest "Invalid request" respondFn
             RateLimited retryAfter -> tooManyRequests retryAfter respondFn
 
+    -- Log request entry
+    let method = request |> Wai.requestMethod |> Bytes.fromLegacy |> Text.fromBytes
+    let path = request |> Wai.rawPathInfo |> Bytes.fromLegacy |> Text.fromBytes
+    Log.withScope [("component", "WebTransport")] do
+      Log.debug [fmt|#{method} #{path}|]
+        |> Task.ignoreError
+
     -- Parse the request path to check if it matches /commands/<name> or /queries/<name>
     case Wai.pathInfo request of
       ["commands", commandNameKebab] -> do
@@ -501,6 +508,9 @@ instance Transport WebTransport where
         -- Look up the command handler in the endpoints map
         case Map.get commandName endpoints.commandEndpoints of
           Maybe.Just handler -> do
+            Log.withScope [("component", "WebTransport"), ("command", commandName)] do
+              Log.debug "Command received"
+                |> Task.ignoreError
             -- Helper to process command with a RequestContext
             let processCommandWithContext :: RequestContext -> Task Text Wai.ResponseReceived
                 processCommandWithContext requestContext = do
@@ -562,6 +572,9 @@ instance Transport WebTransport where
         -- Look up the query handler in the endpoints map
         case Map.get queryName endpoints.queryEndpoints of
           Maybe.Just handler -> do
+            Log.withScope [("component", "WebTransport"), ("query", queryName)] do
+              Log.debug "Executing query"
+                |> Task.ignoreError
             -- Helper to process query with given user claims
             let processQueryWithClaims userClaims = do
                   -- Execute the query handler with error recovery

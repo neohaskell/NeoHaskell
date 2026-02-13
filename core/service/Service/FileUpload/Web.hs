@@ -216,6 +216,9 @@ handleUploadImpl ::
   Bytes -> -- content
   Task Text UploadResponse
 handleUploadImpl config blobStore stateStore ownerHash filename contentType content = do
+  Log.withScope [("component", "FileUpload")] do
+    Log.info "Processing file upload"
+      |> Task.ignoreError
   let request = UploadRequest
         { filename = filename
         , contentType = contentType
@@ -245,7 +248,11 @@ handleUploadImpl config blobStore stateStore ownerHash filename contentType cont
     |> Task.asResult
   
   case stateUpdateResult of
-    Ok _ -> Task.yield response
+    Ok _ -> do
+      Log.withScope [("component", "FileUpload")] do
+        Log.info "File uploaded successfully"
+          |> Task.ignoreError
+      Task.yield response
     Err stateErr -> do
       -- State update failed - cleanup the blob (best effort)
       Log.withScope [("component", "FileUpload")] do
@@ -280,6 +287,9 @@ handleDownloadImpl ::
   FileRef ->
   Task FileAccessError (Bytes, Text, Text)
 handleDownloadImpl blobStore stateStore ownerHash fileRef = do
+  Log.withScope [("component", "FileUpload")] do
+    Log.debug "Processing file download"
+      |> Task.ignoreError
   -- Get file state
   maybeState <- stateStore.getState fileRef
     |> Task.mapError (\err -> StorageError err)
@@ -322,6 +332,9 @@ confirmFileImpl ::
   Text ->
   Task Text ()
 confirmFileImpl stateStore fileRef requestId = do
+  Log.withScope [("component", "FileUpload")] do
+    Log.debug "Confirming file"
+      |> Task.ignoreError
   now <- DateTime.now |> Task.mapError (\_ -> "Failed to get time")
   let nowEpoch = DateTime.toEpochSeconds now
   let event = FileConfirmed FileConfirmedData

@@ -17,6 +17,7 @@ import Data.Aeson qualified as GhcAeson
 import DateTime (DateTime)
 import DateTime qualified
 import Json qualified
+import Log qualified
 import Maybe (Maybe (..))
 import Service.FileUpload.BlobStore (BlobStore (..), BlobStoreError (..))
 import Service.FileUpload.Core (BlobKey (..), FileRef (..), InternalFileUploadConfig (..))
@@ -114,13 +115,21 @@ handleUpload ::
   UploadRequest ->
   Task UploadError UploadResponse
 handleUpload config blobStore request = do
+  Log.withScope [("component", "FileUpload")] do
+    Log.info "Upload request received"
+      |> Task.ignoreError
+
   -- 1. Validate file size
   let actualSize = fromIntegral (Bytes.length request.content) :: Int64
   if actualSize > config.maxFileSizeBytes
-    then Task.throw FileTooLarge
-      { maxBytes = config.maxFileSizeBytes
-      , actualBytes = actualSize
-      }
+    then do
+      Log.withScope [("component", "FileUpload")] do
+        Log.warn "Upload validation failed: file too large"
+          |> Task.ignoreError
+      Task.throw FileTooLarge
+        { maxBytes = config.maxFileSizeBytes
+        , actualBytes = actualSize
+        }
     else pass
 
   -- 2. Validate content type (if restrictions are configured)
@@ -128,10 +137,14 @@ handleUpload config blobStore request = do
     Just allowedTypes -> do
       if Array.contains request.contentType allowedTypes
         then pass
-        else Task.throw InvalidContentType
-          { contentType = request.contentType
-          , allowedTypes = allowedTypes
-          }
+        else do
+          Log.withScope [("component", "FileUpload")] do
+            Log.warn "Upload validation failed: invalid content type"
+              |> Task.ignoreError
+          Task.throw InvalidContentType
+            { contentType = request.contentType
+            , allowedTypes = allowedTypes
+            }
     Nothing -> pass  -- All types allowed
 
   -- 3. Sanitize and truncate filename (max 255 chars for filesystem compatibility)
