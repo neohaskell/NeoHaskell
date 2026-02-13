@@ -41,6 +41,7 @@ ADRs document significant architectural decisions made during the development of
 | [0025](0025-auto-health-endpoint.md) | Auto Health Endpoint for WebTransport Apps | Proposed |
 | [0026](0026-line-buffering-for-containerized-deployments.md) | Line Buffering for Containerized Deployments | Proposed |
 | [0027](0027-postgres-pool-health.md) | PostgreSQL Pool Health for Serverless Databases | Proposed |
+| [0028](0028-structured-logging.md) | Structured Logging with fast-logger | Proposed |
 
 ## Creating New ADRs
 
