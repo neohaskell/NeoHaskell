@@ -187,7 +187,7 @@ respondWithAuthError ::
   Task Text Wai.ResponseReceived
 respondWithAuthError authError respond = do
   Log.withScope [("component", "Auth.Middleware")] do
-    Log.warn [fmt|Returning auth error response|]
+    Log.debug [fmt|Returning auth error response|]
       |> Task.ignoreError
   let (status, message) = authErrorToResponse authError
   let responseBody =

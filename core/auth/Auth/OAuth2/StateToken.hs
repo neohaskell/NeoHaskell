@@ -264,7 +264,7 @@ decodeStateToken (HmacKey keyBytes) currentTime tokenText = do
       let expectedSigBytes = BA.convert expectedHmac :: BS.ByteString
       case BA.constEq signatureBytes expectedSigBytes of
         False -> do
-          Log.debug "State token signature verification failed"
+          Log.warn "State token signature verification failed"
             |> Task.ignoreError
           Task.throw SignatureInvalid
         True -> do

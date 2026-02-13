@@ -850,12 +850,15 @@ runWithResolved eventStore maybeFileUploadSetup fileUploadCleanup maybeWebAuthSe
     Nothing -> Task.yield Nothing
     Just (WebAuthSetup serverUrl overrides) -> do
       Log.debug [fmt|Discovering auth config from #{serverUrl}...|]
+        |> Task.ignoreError
       authConfig <-
         Discovery.discoverConfig serverUrl overrides
           |> Task.mapError (\err -> [fmt|Auth discovery failed: #{toText err}|])
       Log.debug [fmt|Starting JWKS manager...|]
+        |> Task.ignoreError
       jwksManager <- Jwks.startManager authConfig
       Log.info [fmt|Auth initialized successfully|]
+        |> Task.ignoreError
       Task.yield
         ( Just
             Web.AuthEnabled
@@ -1695,7 +1698,7 @@ buildProviderMap configs = do
                   Err oauthError -> do
                     -- Log detailed error before failing
                     let errorDetail = formatOAuth2ValidationError providerName cfg.provider oauthError
-                    Log.critical [fmt| #{errorDetail}|]
+                    Log.critical [fmt|#{errorDetail}|]
                       |> Task.ignoreError
                     Task.throw errorDetail
                   Ok validatedProvider -> do

@@ -188,8 +188,9 @@ fetchJwks jwksUri = do
           |> Task.map (\response -> extractJwkSetKeys response.body |> Array.fromLinkedList |> Ok)
           |> Task.recover (\(Http.Error msg) -> Task.yield (Err (JwksFetchFailed msg)))
 
-      Log.debug "JWKS fetched successfully"
-        |> Task.ignoreError
+      case result of
+        Ok _ -> Log.debug "JWKS fetched successfully" |> Task.ignoreError
+        Err _ -> Log.debug "JWKS fetch failed" |> Task.ignoreError
       Task.yield result
 
 

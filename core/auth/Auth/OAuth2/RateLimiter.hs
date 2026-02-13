@@ -168,8 +168,8 @@ checkLimitImpl storage config key = do
               Task.yield (newStore, Allowed)
       )
   case result of
-    Limited _ -> do
-      Log.warn "Rate limit exceeded"
+    Limited retryAfter -> do
+      Log.warn [fmt|Rate limit exceeded (retryAfter: #{retryAfter}s)|]
         |> Task.ignoreError
       Task.yield result
     Allowed -> Task.yield result

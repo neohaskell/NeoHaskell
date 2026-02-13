@@ -407,8 +407,9 @@ verifyAndExtract config keys jwt = do
 
   case result of
     Prelude.Left err -> do
-      Log.debug [fmt|Token validation failed: #{toText (mapJoseError config err)}|] |> Task.ignoreError
-      Task.yield (Err (mapJoseError config err))
+      let authErr = mapJoseError config err
+      Log.debug [fmt|Token validation failed: #{toText authErr}|] |> Task.ignoreError
+      Task.yield (Err authErr)
     Prelude.Right claims -> do
       case extractUserClaims config claims of
         Err err -> do
@@ -448,8 +449,9 @@ verifyAndExtractWithJwkSet config jwkSet jwt = do
 
   case result of
     Prelude.Left err -> do
-      Log.debug [fmt|Token validation failed: #{toText (mapJoseError config err)}|] |> Task.ignoreError
-      Task.yield (Err (mapJoseError config err))
+      let authErr = mapJoseError config err
+      Log.debug [fmt|Token validation failed: #{toText authErr}|] |> Task.ignoreError
+      Task.yield (Err authErr)
     Prelude.Right claims -> do
       case extractUserClaims config claims of
         Err err -> do

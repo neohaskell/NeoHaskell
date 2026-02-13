@@ -311,16 +311,14 @@ castEventStore rawStore =
      case decodeEvent rawEvent of
        Just typedEvent -> callback typedEvent
        Nothing -> do
-         let entity = rawEvent.entityName
-         let stream = rawEvent.streamId
-         let globalPos = rawEvent.metadata.globalPosition |> Maybe.withDefault (StreamPosition 0)
-         let localPos = rawEvent.metadata.localPosition |> Maybe.withDefault (StreamPosition 0)
-         let eventPayload = Json.encodeText rawEvent.event
-         Log.warn
-           [fmt|[EventStore] Warning: Failed to decode subscription event
-   entityName: #{entity}
-   streamId: #{stream}
-   globalPosition: #{globalPos}
-   localPosition: #{localPos}
-   payload: #{eventPayload}|]
-           |> Task.ignoreError
+          let entity = rawEvent.entityName
+          let stream = rawEvent.streamId
+          let globalPos = rawEvent.metadata.globalPosition |> Maybe.withDefault (StreamPosition 0)
+          let localPos = rawEvent.metadata.localPosition |> Maybe.withDefault (StreamPosition 0)
+          Log.warn
+            [fmt|[EventStore] Warning: Failed to decode subscription event
+    entityName: #{entity}
+    streamId: #{stream}
+    globalPosition: #{globalPos}
+    localPosition: #{localPos}|]
+            |> Task.ignoreError

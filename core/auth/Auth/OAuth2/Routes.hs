@@ -161,10 +161,9 @@ handleConnectImpl ::
   -- | User ID from JWT
   Text ->
   Task OAuth2RouteError Text
-handleConnectImpl deps providerName userId = do
-  Log.withScope [("component", "OAuth2")] do
-    Log.info "OAuth2 connect initiated"
-      |> Task.ignoreError
+handleConnectImpl deps providerName userId = Log.withScope [("component", "OAuth2")] do
+  Log.info "OAuth2 connect initiated"
+    |> Task.ignoreError
   -- 1. Check rate limit (per userId)
   rateLimitResult <- deps.connectRateLimiter.checkLimit userId
     |> Task.mapError (\_ -> ProviderNotFound "Rate limit check failed")
@@ -334,7 +333,7 @@ handleDisconnectImpl ::
   -- | User ID from JWT
   Text ->
   Task OAuth2RouteError OAuth2Action
-handleDisconnectImpl deps providerName userId = do
+handleDisconnectImpl deps providerName userId = Log.withScope [("component", "OAuth2")] do
   Log.info "OAuth2 disconnect requested"
     |> Task.ignoreError
   -- 1. Look up provider config
