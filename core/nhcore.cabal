@@ -37,6 +37,7 @@ common common_cfg
     dir-traverse,
     directory,
     dotenv >= 0.11 && < 0.13,
+    fast-logger >= 3.0 && < 4,
     file-embed,
     ghc-prim,
     hashable,
@@ -186,6 +187,7 @@ library
     Json
     LinkedList
     Lock
+    Log
     Map
     Mappable
     Maybe
@@ -376,6 +378,7 @@ test-suite nhcore-test
     Integration.TimerSpec
     IntegrationSpec
     IntSpec
+    LogSpec
     DecimalSpec
     Service.ApplicationSpec
     Service.CommandHandlerSpec
@@ -541,6 +544,7 @@ test-suite nhcore-test-core
     Http.ClientRawSpec
     Http.ClientSpec
     IntSpec
+    LogSpec
     RedactedSpec
     Schema.OpenApiSpec
     SchemaSpec
