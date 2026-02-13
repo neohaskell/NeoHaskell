@@ -70,6 +70,7 @@ import Auth.OAuth2.Types (
 import Auth.SecretStore (SecretStore (..), TokenKey (..))
 import Basics
 import Data.Time.Clock.POSIX qualified as GhcPosix
+import Log qualified
 import Prelude qualified as GhcPrelude
 import Map (Map)
 import Map qualified
@@ -161,11 +162,17 @@ handleConnectImpl ::
   Text ->
   Task OAuth2RouteError Text
 handleConnectImpl deps providerName userId = do
+  Log.withScope [("component", "OAuth2")] do
+    Log.info "OAuth2 connect initiated"
+      |> Task.ignoreError
   -- 1. Check rate limit (per userId)
   rateLimitResult <- deps.connectRateLimiter.checkLimit userId
     |> Task.mapError (\_ -> ProviderNotFound "Rate limit check failed")
   case rateLimitResult of
-    Limited retryAfter -> Task.throw (RateLimited retryAfter)
+    Limited retryAfter -> do
+      Log.warn "OAuth2 connect rate limited"
+        |> Task.ignoreError
+      Task.throw (RateLimited retryAfter)
     Allowed -> pass
 
   -- 2. Look up provider config
@@ -199,6 +206,8 @@ handleConnectImpl deps providerName userId = do
   deps.transactionStore.put txKey transaction
     |> Task.mapError (\_ -> ProviderNotFound "Transaction store error")
 
+  Log.debug "Redirecting to authorization URL"
+    |> Task.ignoreError
   -- 5. Build authorization URL
   let authUrl =
         OAuth2.authorizeUrlWithPkce
@@ -231,6 +240,9 @@ handleCallbackImpl ::
   Text ->
   Task OAuth2RouteError (Text, Maybe OAuth2Action)
 handleCallbackImpl deps providerName code stateToken = do
+  Log.withScope [("component", "OAuth2")] do
+    Log.info "OAuth2 callback received"
+      |> Task.ignoreError
   -- 1. Check rate limit (per state token prefix - proxy for request origin)
   -- We use the first 16 chars of state token as a rate limit key
   -- This prevents brute-force attacks while allowing legitimate retries
@@ -248,8 +260,15 @@ handleCallbackImpl deps providerName code stateToken = do
 
   -- 3. Validate state token
   nowSeconds <- getCurrentTimeSeconds
-  payload <- StateToken.decodeStateToken deps.hmacKey nowSeconds stateToken
+  stateResult <- StateToken.decodeStateToken deps.hmacKey nowSeconds stateToken
     |> Task.mapError StateValidationFailed
+    |> Task.asResult
+  payload <- case stateResult of
+    Err err -> do
+      Log.warn "OAuth2 callback: invalid state token"
+        |> Task.ignoreError
+      Task.throw err
+    Ok p -> Task.yield p
 
   -- 4. Verify provider matches (mix-up attack prevention)
   case payload.provider == providerName of
@@ -281,11 +300,15 @@ handleCallbackImpl deps providerName code stateToken = do
 
   case tokensResult of
     Err oauthError -> do
+      Log.warn [fmt|OAuth2 token exchange failed|]
+        |> Task.ignoreError
       -- Call failure callback with server-side userId
       let actionJson = config.onFailure retrievedUserId oauthError
       let action = FailureAction actionJson
       Task.yield (config.failureRedirectUrl, Just action)
     Ok tokens -> do
+      Log.info "OAuth2 token exchange successful"
+        |> Task.ignoreError
       -- Auto-store tokens in SecretStore with deterministic key
       let tokenKey = TokenKey [fmt|oauth:#{providerName}:#{retrievedUserId}|]
       let store = deps.secretStore
@@ -312,6 +335,8 @@ handleDisconnectImpl ::
   Text ->
   Task OAuth2RouteError OAuth2Action
 handleDisconnectImpl deps providerName userId = do
+  Log.info "OAuth2 disconnect requested"
+    |> Task.ignoreError
   -- 1. Look up provider config
   config <- case deps.providers |> Map.get providerName of
     Nothing -> Task.throw (ProviderNotFound providerName)
@@ -326,6 +351,8 @@ handleDisconnectImpl deps providerName userId = do
 
   -- 3. Call disconnect callback
   let actionJson = config.onDisconnect userId
+  Log.info "OAuth2 disconnected successfully"
+    |> Task.ignoreError
   Task.yield (DisconnectAction actionJson)
 
 

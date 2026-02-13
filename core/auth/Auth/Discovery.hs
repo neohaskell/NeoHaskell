@@ -19,6 +19,7 @@ import Auth.UrlValidation (ValidationError (..))
 import Auth.UrlValidation qualified as UrlValidation
 import Basics
 import Crypto.JOSE qualified as Jose
+import Log qualified
 import Http.Client qualified as Http
 import Json qualified
 import Maybe (Maybe (..))
@@ -60,6 +61,8 @@ discoverConfig ::
   AuthOverrides ->
   Task DiscoveryError AuthConfig
 discoverConfig authServerUrl overrides = do
+  Log.debug [fmt|Discovering auth config|]
+    |> Task.ignoreError
   -- SECURITY: Validate the auth server URL
   let discoveryUrl = [fmt|#{authServerUrl}/.well-known/openid-configuration|]
   validatedDiscoveryUrl <- validateUrlOrThrow discoveryUrl
@@ -73,6 +76,8 @@ discoverConfig authServerUrl overrides = do
   validateAllowlistOrThrow validatedJwksUri overrides.allowedIdpDomains
 
   -- Build config with discovered values + overrides
+  Log.info "Auth config discovered successfully"
+    |> Task.ignoreError
   Task.yield (buildAuthConfig discovery validatedJwksUri overrides)
 
 
@@ -149,7 +154,10 @@ fetchDiscoveryDocument url = do
       |> Http.withTimeout 30 -- 30 second timeout
       |> Http.get @DiscoveryDocument
       |> Task.map (\response -> Ok response.body)
-      |> Task.recover (\(Http.Error msg) -> Task.yield (Err (DiscoveryFetchFailed msg)))
+      |> Task.recover (\(Http.Error msg) -> do
+        Log.warn [fmt|Discovery document fetch failed|]
+          |> Task.ignoreError
+        Task.yield (Err (DiscoveryFetchFailed msg)))
 
   Task.yield result
 
@@ -164,6 +172,8 @@ fetchJwks ::
   Text ->
   Task err (Result DiscoveryError (Array Jose.JWK))
 fetchJwks jwksUri = do
+  Log.debug "Fetching JWKS"
+    |> Task.ignoreError
   -- SECURITY: Defense-in-depth validation with DNS resolution
   -- Re-validates on every fetch to prevent DNS rebinding TOCTOU attacks
   validationResult <- UrlValidation.validateSecureUrlWithDns jwksUri
@@ -178,6 +188,8 @@ fetchJwks jwksUri = do
           |> Task.map (\response -> extractJwkSetKeys response.body |> Array.fromLinkedList |> Ok)
           |> Task.recover (\(Http.Error msg) -> Task.yield (Err (JwksFetchFailed msg)))
 
+      Log.debug "JWKS fetched successfully"
+        |> Task.ignoreError
       Task.yield result
 
 
