@@ -18,14 +18,17 @@ module Decider (
 
 import Applicable
 import Array (Array)
+import Array qualified
 import Basics
 import Control.Monad qualified as Monad
+import Log qualified
 import Mappable
 import Service.Event (InsertionType (..), StreamPosition)
 import Task (Task)
 import Task qualified
 import Text (Text)
 import Thenable
+import ToText (toText)
 import Uuid (Uuid)
 
 
@@ -94,8 +97,13 @@ runDecision ctx = go
     Return a -> go (f a)
     Bind m' f' -> go (Bind m' (\x -> Bind (f' x) f))
   go GenUuid = Task.throw "Unbound GenUuid"
-  go (Accept s events) = AcceptCommand s events |> Task.yield
-  go (Reject reason) = RejectCommand reason |> Task.yield
+  go (Accept s events) = do
+    let eventCount = Array.length events
+    Log.debug [fmt|Decision: accepted with #{toText eventCount} event(s)|] |> Task.ignoreError
+    AcceptCommand s events |> Task.yield
+  go (Reject reason) = do
+    Log.debug [fmt|Decision: rejected - #{reason}|] |> Task.ignoreError
+    RejectCommand reason |> Task.yield
 
 
 -- | Generate a UUID within a Decision context.

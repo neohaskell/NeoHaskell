@@ -84,6 +84,8 @@ new ::
   Task Error (EntityFetcher state event)
 new eventStore initialState reduceFunction = do
   let fetchImpl entityName streamId = do
+        Log.withScope [("component", "EntityFetcher")] do
+          Log.debug [fmt|Fetching entity #{toText entityName}/#{toText streamId}|] |> Task.ignoreError
         -- Read all events for this entity stream
         streamMessages <-
           eventStore.readAllStreamEvents entityName streamId
@@ -115,7 +117,10 @@ new eventStore initialState reduceFunction = do
                 Just (hasEvents, finalState, lastPos) -> do
                   -- Return appropriate result based on whether we saw any events
                   if hasEvents
-                    then Task.yield (EntityFound (FetchedEntity finalState lastPos))
+                    then do
+                      Log.withScope [("component", "EntityFetcher")] do
+                        Log.debug "Entity reconstruction complete" |> Task.ignoreError
+                      Task.yield (EntityFound (FetchedEntity finalState lastPos))
                     else Task.yield EntityNotFound
                 Nothing -> do
                   -- Stream ended without processing, no events found
@@ -152,12 +157,19 @@ newWithCache ::
   Task Error (EntityFetcher state event)
 newWithCache eventStore snapshotCache initialState reduceFunction = do
   let fetchImpl entityName streamId = do
+        Log.withScope [("component", "EntityFetcher")] do
+          Log.debug [fmt|Fetching entity #{toText entityName}/#{toText streamId}|] |> Task.ignoreError
         -- Step 1: Check cache for existing snapshot
         maybeSnapshot <-
           snapshotCache.get entityName streamId
             |> Task.asResult
             |> Task.map Result.toMaybe
             |> Task.map (\maybeResult -> case maybeResult of Just x -> x; Nothing -> Nothing)
+
+        Log.withScope [("component", "EntityFetcher")] do
+          case maybeSnapshot of
+            Just _ -> Log.debug "Snapshot cache hit" |> Task.ignoreError
+            Nothing -> Log.debug "Snapshot cache miss" |> Task.ignoreError
 
         -- Step 2: Determine starting state and position
         let (startState, startPosition, hadCachedSnapshot) = case maybeSnapshot of
@@ -227,7 +239,10 @@ newWithCache eventStore snapshotCache initialState reduceFunction = do
             -- If we had a cached snapshot, entity exists even if no new events
             -- If no cache and no events, entity doesn't exist
             if seenNewEvents || hadCachedSnapshot
-              then Task.yield (EntityFound (FetchedEntity finalState finalPosition))
+              then do
+                Log.withScope [("component", "EntityFetcher")] do
+                  Log.debug "Entity reconstruction complete" |> Task.ignoreError
+                Task.yield (EntityFound (FetchedEntity finalState finalPosition))
               else Task.yield EntityNotFound
           Nothing -> do
             -- Stream ended without processing

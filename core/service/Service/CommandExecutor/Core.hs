@@ -148,6 +148,7 @@ execute eventStore entityFetcher entityName requestContext command = do
               Just sid -> toText sid
               Nothing -> "new-stream"
         Log.withScope [("component", "CommandExecutor"), ("streamId", streamIdText), ("entityName", toText entityName)] do
+          Log.info "Executing command" |> Task.ignoreError
           -- TODO: Extract decision context into service context
           let decisionContext =
                 DecisionContext
@@ -224,6 +225,7 @@ execute eventStore entityFetcher entityName requestContext command = do
                   case insertResult of
                     Ok _success -> do
                       let eventsCount = Array.length events
+                      Log.info [fmt|Command executed successfully, #{toText eventsCount} event(s) inserted|] |> Task.ignoreError
                       Task.yield
                         CommandAccepted
                           { streamId = finalStreamId,

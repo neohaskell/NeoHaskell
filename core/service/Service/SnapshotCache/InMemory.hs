@@ -6,6 +6,7 @@ module Service.SnapshotCache.InMemory (
 import Basics
 import ConcurrentMap (ConcurrentMap)
 import ConcurrentMap qualified
+import Log qualified
 import Maybe (Maybe)
 import Service.Event.EntityName (EntityName)
 import Service.Event.StreamId (StreamId)
@@ -54,6 +55,7 @@ getImpl ::
   StreamId ->
   Task Error (Maybe (Snapshot state))
 getImpl store entityName streamId = do
+  Log.debug [fmt|Snapshot cache lookup: #{toText entityName}/#{toText streamId}|] |> Task.ignoreError
   let key = SnapshotKey entityName streamId
   ConcurrentMap.get key store.snapshots
 
@@ -65,6 +67,9 @@ setImpl ::
   Task Error Unit
 setImpl store snapshot = do
   let key = snapshot.key
+  let keyEntityName = key.entityName
+  let keyStreamId = key.streamId
+  Log.debug [fmt|Snapshot cache write: #{toText keyEntityName}/#{toText keyStreamId}|] |> Task.ignoreError
   ConcurrentMap.set key snapshot store.snapshots
 
 
