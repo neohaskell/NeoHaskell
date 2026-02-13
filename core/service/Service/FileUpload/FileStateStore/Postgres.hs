@@ -62,8 +62,8 @@ import Hasql.Pool (Pool)
 import Hasql.Pool qualified as HasqlPool
 import Hasql.Pool.Config qualified as HasqlPoolConfig
 import Hasql.Pool.Observation (ConnectionStatus (..), ConnectionTerminationReason (..), Observation (..))
-import Data.Text.IO qualified
 import Hasql.Session qualified as Session
+import Log qualified
 import Prelude qualified
 import Hasql.Statement (Statement (..))
 
@@ -188,15 +188,15 @@ logPoolObservation observation = case observation of
   ConnectionObservation _uuid status -> case status of
     TerminatedConnectionStatus reason -> case reason of
       AgingConnectionTerminationReason ->
-        Data.Text.IO.putStrLn "[Pool] Connection terminated (aging timeout)"
+        ((Log.debug "[Pool] Connection terminated (aging timeout)" |> Task.ignoreError :: Task Text Unit) |> Task.runOrPanic)
       IdlenessConnectionTerminationReason ->
-        Data.Text.IO.putStrLn "[Pool] Connection terminated (idleness timeout)"
+        ((Log.debug "[Pool] Connection terminated (idleness timeout)" |> Task.ignoreError :: Task Text Unit) |> Task.runOrPanic)
       NetworkErrorConnectionTerminationReason err ->
-        Data.Text.IO.putStrLn [fmt|[Pool] Connection terminated (network error: #{show err})|]
+        ((Log.critical [fmt|[Pool] Connection terminated (network error: #{show err})|] |> Task.ignoreError :: Task Text Unit) |> Task.runOrPanic)
       ReleaseConnectionTerminationReason ->
         Prelude.pure ()
       InitializationErrorTerminationReason err ->
-        Data.Text.IO.putStrLn [fmt|[Pool] Connection terminated (init error: #{show err})|]
+        ((Log.critical [fmt|[Pool] Connection terminated (init error: #{show err})|] |> Task.ignoreError :: Task Text Unit) |> Task.runOrPanic)
     _ -> Prelude.pure ()
 
 

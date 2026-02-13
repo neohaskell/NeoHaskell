@@ -8,7 +8,7 @@ module Service.EntityFetcher.Core (
 ) where
 
 import Basics
-import Console qualified
+import Log qualified
 import Maybe (Maybe (..))
 import Result (Result (..))
 import Result qualified
@@ -217,8 +217,9 @@ newWithCache eventStore snapshotCache initialState reduceFunction = do
                     |> Task.asResult
                 case cacheResult of
                   Err cacheError ->
-                    Console.print [fmt|[EntityFetcher] Warning: Failed to update snapshot cache for #{entityName}/#{streamId}: #{toText cacheError}|]
-                      |> Task.ignoreError
+                    Log.withScope [("component", "EntityFetcher"), ("entityName", entityName |> toText), ("streamId", streamId |> toText)] do
+                      Log.warn [fmt|Failed to update snapshot cache: #{toText cacheError}|]
+                        |> Task.ignoreError
                   Ok _ -> pass
               Nothing -> pass
 

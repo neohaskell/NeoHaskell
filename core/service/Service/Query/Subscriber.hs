@@ -9,7 +9,7 @@ module Service.Query.Subscriber (
 import Basics
 import ConcurrentVar (ConcurrentVar)
 import ConcurrentVar qualified
-import Console qualified
+import Log qualified
 import Json qualified
 import Maybe (Maybe (..))
 import Result (Result (..))
@@ -55,8 +55,9 @@ new eventStore registry = do
 -- Called on application startup before starting live subscription.
 rebuildAll :: QuerySubscriber -> Task Text Unit
 rebuildAll subscriber = do
-  Console.print "Starting query rebuild from event store..."
-    |> Task.ignoreError
+  Log.withScope [("component", "QuerySubscriber")] do
+    Log.info "Starting query rebuild from event store..."
+      |> Task.ignoreError
 
   -- Read all events from the beginning (use large limit)
   messageStream <-
@@ -81,13 +82,14 @@ rebuildAll subscriber = do
 
   -- Log completion
   maybeLastPos <- ConcurrentVar.peek subscriber.lastProcessedPosition
-  case maybeLastPos of
-    Just pos ->
-      Console.print [fmt|Query rebuild complete. Last position: #{pos}|]
-        |> Task.ignoreError
-    Nothing ->
-      Console.print "Query rebuild complete. No events found."
-        |> Task.ignoreError
+  Log.withScope [("component", "QuerySubscriber")] do
+    case maybeLastPos of
+      Just pos ->
+        Log.info [fmt|Query rebuild complete. Last position: #{pos}|]
+          |> Task.ignoreError
+      Nothing ->
+        Log.info "Query rebuild complete. No events found."
+          |> Task.ignoreError
 
   Task.yield unit
 
@@ -102,8 +104,9 @@ start subscriber = do
         Just (StreamPosition pos) -> StreamPosition (pos + 1)
         Nothing -> StreamPosition 0
 
-  Console.print [fmt|Starting query subscriber from position #{startPosition}|]
-    |> Task.ignoreError
+  Log.withScope [("component", "QuerySubscriber")] do
+    Log.info [fmt|Starting query subscriber from position #{startPosition}|]
+      |> Task.ignoreError
 
   subId <-
     subscriber.eventStore.subscribeToAllEventsFromPosition
@@ -154,5 +157,6 @@ processEvent subscriber rawEvent = do
       case result of
         Ok _ -> pass
         Err errText ->
-          Console.print [fmt|Warning: Query updater #{updaterName} failed: #{errText}|]
-            |> Task.ignoreError
+          Log.withScope [("component", "QuerySubscriber"), ("queryName", updaterName)] do
+            Log.warn [fmt|Query updater failed: #{errText}|]
+              |> Task.ignoreError
