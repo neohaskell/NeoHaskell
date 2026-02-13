@@ -9,6 +9,7 @@ import Core
 import DurableChannel qualified
 import Json qualified
 import Lock qualified
+import Log qualified
 import Map qualified
 import Maybe qualified
 import Service.Event
@@ -168,6 +169,9 @@ insertImpl store payload = do
 
           finalEvents |> Task.forEach (notifySubscribers store)
           let finalEvent = finalEvents |> Array.last |> Maybe.getOrDie
+          Log.withScope [("component", "EventStore.InMemory")] do
+            Log.info [fmt|Inserted #{toText (Array.length finalEvents)} event(s) for #{toText entityName}/#{toText streamId}|]
+              |> Task.ignoreError
           Task.yield
             ( Ok
                 InsertionSuccess
@@ -176,6 +180,9 @@ insertImpl store payload = do
                   }
             )
         else do
+          Log.withScope [("component", "EventStore.InMemory")] do
+            Log.warn [fmt|Consistency check failed for #{toText entityName}/#{toText streamId}|]
+              |> Task.ignoreError
           Task.yield (Err ConsistencyCheckFailed)
 
   case result of
@@ -191,6 +198,7 @@ readStreamForwardFromImpl ::
   Limit ->
   Task Error (Stream (ReadStreamMessage Json.Value))
 readStreamForwardFromImpl store entityName streamId position (Limit (limit)) = do
+  Log.debug [fmt|Reading stream forward: #{toText entityName}/#{toText streamId}|] |> Task.ignoreError
   channel <- store |> ensureStream entityName streamId
   events <-
     channel
@@ -210,6 +218,7 @@ readStreamBackwardFromImpl ::
   Limit ->
   Task Error (Stream (ReadStreamMessage Json.Value))
 readStreamBackwardFromImpl store entityName streamId position (Limit (limit)) = do
+  Log.debug [fmt|Reading stream backward: #{toText entityName}/#{toText streamId}|] |> Task.ignoreError
   channel <- store |> ensureStream entityName streamId
   events <-
     channel
@@ -228,6 +237,7 @@ readAllStreamEventsImpl ::
   StreamId ->
   Task Error (Stream (ReadStreamMessage Json.Value))
 readAllStreamEventsImpl store entityName streamId = do
+  Log.debug [fmt|Reading all stream events: #{toText entityName}/#{toText streamId}|] |> Task.ignoreError
   channel <- store |> ensureStream entityName streamId
   events <-
     channel
@@ -242,6 +252,7 @@ readAllEventsForwardFromImpl ::
   Limit ->
   Task Error (Stream (ReadAllMessage Json.Value))
 readAllEventsForwardFromImpl store (StreamPosition (position)) (Limit (limit)) = do
+  Log.debug "Reading global event stream forward" |> Task.ignoreError
   allGlobalEvents <- store.globalStream |> DurableChannel.getAndTransform unchanged
   let items =
         allGlobalEvents
@@ -257,6 +268,7 @@ readAllEventsBackwardFromImpl ::
   Limit ->
   Task Error (Stream (ReadAllMessage Json.Value))
 readAllEventsBackwardFromImpl store (StreamPosition (position)) (Limit (limit)) = do
+  Log.debug "Reading global event stream backward" |> Task.ignoreError
   allGlobalEvents <- store.globalStream |> DurableChannel.getAndTransform unchanged
   let items =
         allGlobalEvents
@@ -278,6 +290,7 @@ readAllEventsForwardFromFilteredImpl ::
   Array EntityName ->
   Task Error (Stream (ReadAllMessage Json.Value))
 readAllEventsForwardFromFilteredImpl store (StreamPosition (position)) (Limit (limit)) entityNames = do
+  Log.debug "Reading global event stream forward (filtered)" |> Task.ignoreError
   allGlobalEvents <- store.globalStream |> DurableChannel.getAndTransform unchanged
   let items =
         allGlobalEvents
@@ -299,6 +312,7 @@ readAllEventsBackwardFromFilteredImpl ::
   Array EntityName ->
   Task Error (Stream (ReadAllMessage Json.Value))
 readAllEventsBackwardFromFilteredImpl store (StreamPosition (position)) (Limit (limit)) entityNames = do
+  Log.debug "Reading global event stream backward (filtered)" |> Task.ignoreError
   allGlobalEvents <- store.globalStream |> DurableChannel.getAndTransform unchanged
   let items =
         allGlobalEvents
@@ -326,6 +340,7 @@ subscribeToAllEventsImpl store handler = do
   store.subscriptions
     |> ConcurrentVar.modify (Map.set subscriptionId subscription)
     |> Lock.with store.globalLock
+  Log.info [fmt|Subscription created: #{toText subscriptionId}|] |> Task.ignoreError
   Task.yield subscriptionId
 
 
@@ -342,6 +357,7 @@ subscribeToAllEventsFromPositionImpl store fromPosition handler = do
   store.subscriptions
     |> ConcurrentVar.modify (Map.set subscriptionId subscription)
     |> Lock.with store.globalLock
+  Log.info [fmt|Subscription created: #{toText subscriptionId}|] |> Task.ignoreError
 
   -- Then, deliver historical events from the specified position
   deliverHistoricalEvents store fromPosition handler
@@ -361,6 +377,7 @@ subscribeToAllEventsFromStartImpl store handler = do
   store.subscriptions
     |> ConcurrentVar.modify (Map.set subscriptionId subscription)
     |> Lock.with store.globalLock
+  Log.info [fmt|Subscription created: #{toText subscriptionId}|] |> Task.ignoreError
 
   -- Then, deliver ALL historical events from the very beginning (position -1)
   deliverHistoricalEventsFromStart store handler subscriptionId
@@ -379,6 +396,7 @@ subscribeToEntityEventsImpl store entityName handler = do
   store.subscriptions
     |> ConcurrentVar.modify (Map.set subscriptionId subscription)
     |> Lock.with store.globalLock
+  Log.info [fmt|Subscription created: #{toText subscriptionId}|] |> Task.ignoreError
   Task.yield subscriptionId
 
 
@@ -394,6 +412,7 @@ subscribeToStreamEventsImpl store entityName streamId handler = do
   store.subscriptions
     |> ConcurrentVar.modify (Map.set subscriptionId subscription)
     |> Lock.with store.globalLock
+  Log.info [fmt|Subscription created: #{toText subscriptionId}|] |> Task.ignoreError
   Task.yield subscriptionId
 
 
@@ -447,7 +466,10 @@ notifySubscriber subscription event = do
   result <- subscription.handler event |> Task.asResult
   case result of
     Ok _ -> Task.yield unit
-    Err _ -> Task.yield unit -- Silently ignore subscriber errors to maintain store reliability
+    Err err -> do
+      Log.warn [fmt|Subscriber notification failed: #{toText err}|]
+        |> Task.ignoreError
+      Task.yield unit
 
 
 deliverHistoricalEvents ::
@@ -489,7 +511,10 @@ notifySubscriberSafely handler event = do
   result <- handler event |> Task.asResult
   case result of
     Ok _ -> Task.yield unit
-    Err _ -> Task.yield unit -- Silently ignore subscriber errors
+    Err err -> do
+      Log.warn [fmt|Subscriber notification failed: #{toText err}|]
+        |> Task.ignoreError
+      Task.yield unit
 
 
 truncateStreamImpl :: StreamStore -> EntityName -> StreamId -> StreamPosition -> Task Error Unit

@@ -79,5 +79,5 @@ handler store _channelName payloadLegacyBytes = do
           -- Dispatch error - log and continue
           let msg = [fmt|[Notifications] Dispatch failed for stream #{eventStreamId}: #{dispatchErr}|]
           ((Log.warn msg |> Task.ignoreError) :: Task Text Unit) |> Task.runOrPanic
-        Ok _ ->
-          pass
+        Ok _ -> do
+          ((Log.debug [fmt|Event dispatched from notification|] |> Task.ignoreError) :: Task Text Unit) |> Task.runOrPanic

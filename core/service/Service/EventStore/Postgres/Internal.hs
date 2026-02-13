@@ -364,6 +364,11 @@ insertGo ops cfg payload =
             -- The trigger on the events table sends a NOTIFY to the 'global' channel,
             -- which is handled by Notifications.handler and dispatches to SubscriptionStore
 
+            let insertEntityName = payload.entityName
+            let insertStreamId = payload.streamId
+            Log.withScope [("component", "EventStore.Postgres")] do
+              Log.info [fmt|Inserted event(s) for #{toText insertEntityName}/#{toText insertStreamId}|]
+                |> Task.ignoreError
             Task.yield (InsertionSuccess {localPosition, globalPosition})
 
 
@@ -376,6 +381,7 @@ readStreamForwardFromImpl ::
   Limit ->
   Task Error (Stream (ReadStreamMessage Json.Value))
 readStreamForwardFromImpl ops cfg entityName streamId streamPosition limit = do
+  Log.debug [fmt|Reading stream forward: #{toText entityName}/#{toText streamId}|] |> Task.ignoreError
   readingRefs <- newReadingRefs
   stream <- Stream.new
   let relative = FromAndAfter streamPosition |> Just
@@ -394,6 +400,7 @@ readStreamBackwardFromImpl ::
   Limit ->
   Task Error (Stream (ReadStreamMessage Json.Value))
 readStreamBackwardFromImpl ops cfg entityName streamId streamPosition limit = do
+  Log.debug [fmt|Reading stream backward: #{toText entityName}/#{toText streamId}|] |> Task.ignoreError
   readingRefs <- newReadingRefs
   stream <- Stream.new
   let relative = Before streamPosition |> Just
@@ -410,6 +417,7 @@ readAllStreamEventsImpl ::
   StreamId ->
   Task Error (Stream (ReadStreamMessage Json.Value))
 readAllStreamEventsImpl ops cfg entityName streamId = do
+  Log.debug [fmt|Reading all stream events: #{toText entityName}/#{toText streamId}|] |> Task.ignoreError
   readingRefs <- newReadingRefs
   stream <- Stream.new
   let limit = Limit maxValue -- Read all events
@@ -427,6 +435,7 @@ readAllEventsForwardFromImpl ::
   Limit ->
   Task Error (Stream (ReadAllMessage Json.Value))
 readAllEventsForwardFromImpl ops config streamPosition limit = do
+  Log.debug "Reading global event stream forward" |> Task.ignoreError
   readingRefs <- newReadingRefs
   stream <- Stream.new
   -- FIXME: pass relative properly
@@ -443,6 +452,7 @@ readAllEventsBackwardFromImpl ::
   Limit ->
   Task Error (Stream (ReadAllMessage Json.Value))
 readAllEventsBackwardFromImpl ops config streamPosition limit = do
+  Log.debug "Reading global event stream backward" |> Task.ignoreError
   readingRefs <- newReadingRefs
   stream <- Stream.new
   -- FIXME: pass relative properly
@@ -460,6 +470,7 @@ readAllEventsForwardFromFilteredImpl ::
   Array EntityName ->
   Task Error (Stream (ReadAllMessage Json.Value))
 readAllEventsForwardFromFilteredImpl ops config streamPosition limit entityNames = do
+  Log.debug "Reading global event stream forward (filtered)" |> Task.ignoreError
   readingRefs <- newReadingRefs
   stream <- Stream.new
   -- FIXME: pass relative properly
@@ -477,6 +488,7 @@ readAllEventsBackwardFromFilteredImpl ::
   Array EntityName ->
   Task Error (Stream (ReadAllMessage Json.Value))
 readAllEventsBackwardFromFilteredImpl ops config streamPosition limit entityNames = do
+  Log.debug "Reading global event stream backward (filtered)" |> Task.ignoreError
   readingRefs <- newReadingRefs
   stream <- Stream.new
   -- FIXME: pass relative properly
@@ -619,14 +631,17 @@ subscribeToAllEventsImpl ops cfg store callback = do
       Sessions.selectMaxGlobalPosition
         |> Sessions.run conn
         |> Task.mapError (SessionError .> toText .> StorageFailure)
-    store
-      |> SubscriptionStore.addGlobalSubscriptionFromPosition currentMaxPosition callback
-      |> Task.mapError
-        ( \err ->
-            SubscriptionStoreError "global" err
-              |> toText
-              |> SubscriptionError (SubscriptionId "global")
-        )
+    subscriptionId <-
+      store
+        |> SubscriptionStore.addGlobalSubscriptionFromPosition currentMaxPosition callback
+        |> Task.mapError
+          ( \err ->
+              SubscriptionStoreError "global" err
+                |> toText
+                |> SubscriptionError (SubscriptionId "global")
+          )
+    Log.info [fmt|Subscription created: #{toText subscriptionId}|] |> Task.ignoreError
+    Task.yield subscriptionId
 
 
 subscribeToAllEventsFromPositionImpl ::
@@ -668,7 +683,15 @@ subscribeToAllEventsFromPositionImpl ops cfg store startPosition callback = do
                   -- Process each event serially through the callback
                   events
                     |> collectAllEvents
-                    |> Task.forEach (\event -> callback event |> Task.asResult |> discard)
+                    |> Task.forEach (\event -> do
+                      callbackResult <- callback event |> Task.asResult
+                      case callbackResult of
+                        Ok _ -> Task.yield unit
+                        Err err -> do
+                          Log.warn [fmt|Subscription callback failed during catch-up: #{toText err}|]
+                            |> Task.ignoreError
+                          Task.yield unit
+                    )
 
                   -- Check if more events were added while processing
                   catchUp maxPos
@@ -677,9 +700,12 @@ subscribeToAllEventsFromPositionImpl ops cfg store startPosition callback = do
   finalPosition <- catchUp startPosition
 
   -- Now subscribe from the final position onwards
-  store
-    |> SubscriptionStore.addGlobalSubscriptionFromPosition (Just finalPosition) callback
-    |> Task.mapError (\err -> SubscriptionError (SubscriptionId "fromPosition") (err |> toText))
+  subscriptionId <-
+    store
+      |> SubscriptionStore.addGlobalSubscriptionFromPosition (Just finalPosition) callback
+      |> Task.mapError (\err -> SubscriptionError (SubscriptionId "fromPosition") (err |> toText))
+  Log.info [fmt|Subscription created: #{toText subscriptionId}|] |> Task.ignoreError
+  Task.yield subscriptionId
 
 
 subscribeToAllEventsFromStartImpl ::
@@ -706,9 +732,12 @@ subscribeToEntityEventsImpl ops cfg store entityName callback =
       Sessions.selectMaxGlobalPosition
         |> Sessions.run conn
         |> Task.mapError (toText .> StorageFailure)
-    store
-      |> SubscriptionStore.addEntitySubscriptionFromPosition entityName currentMaxPosition callback
-      |> Task.mapError (\err -> SubscriptionError (SubscriptionId "entity") (err |> toText))
+    subscriptionId <-
+      store
+        |> SubscriptionStore.addEntitySubscriptionFromPosition entityName currentMaxPosition callback
+        |> Task.mapError (\err -> SubscriptionError (SubscriptionId "entity") (err |> toText))
+    Log.info [fmt|Subscription created: #{toText subscriptionId}|] |> Task.ignoreError
+    Task.yield subscriptionId
 
 
 subscribeToStreamEventsImpl ::
@@ -733,9 +762,12 @@ subscribeToStreamEventsImpl ops cfg store entityName streamId callback =
       Sessions.selectMaxGlobalPosition
         |> Sessions.run conn
         |> Task.mapError (toText .> StorageFailure)
-    store
-      |> SubscriptionStore.addStreamSubscriptionFromPosition entityName streamId currentMaxPosition callback
-      |> Task.mapError (\err -> SubscriptionError (SubscriptionId "stream") (err |> toText))
+    subscriptionId <-
+      store
+        |> SubscriptionStore.addStreamSubscriptionFromPosition entityName streamId currentMaxPosition callback
+        |> Task.mapError (\err -> SubscriptionError (SubscriptionId "stream") (err |> toText))
+    Log.info [fmt|Subscription created: #{toText subscriptionId}|] |> Task.ignoreError
+    Task.yield subscriptionId
 
 
 unsubscribeImpl :: SubscriptionStore -> SubscriptionId -> Task Error Unit
