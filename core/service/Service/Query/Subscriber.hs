@@ -149,6 +149,13 @@ processEvent subscriber rawEvent = do
   let entityName = rawEvent.entityName
   let updaters = Registry.getUpdatersForEntity entityName subscriber.registry
 
+  Log.withScope [("component", "QuerySubscriber")] do
+    case rawEvent.metadata.globalPosition of
+      Just pos ->
+        Log.debug [fmt|Processing event at position #{toText pos}|] |> Task.ignoreError
+      Nothing ->
+        Log.debug "Processing event (no position)" |> Task.ignoreError
+
   -- Run all updaters for this entity type
   updaters
     |> Task.forEach \updater -> do
