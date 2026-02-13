@@ -71,6 +71,9 @@ globalMinLevel = GhcUnsafe.unsafePerformIO do
         Just "Error" -> Error
         Just "error" -> Error
         Just "ERROR" -> Error
+        Just "Critical" -> Error
+        Just "critical" -> Error
+        Just "CRITICAL" -> Error
         _ -> Info
   GhcIORef.newIORef level
 {-# NOINLINE globalMinLevel #-}

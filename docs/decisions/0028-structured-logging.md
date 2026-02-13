@@ -133,9 +133,10 @@ withScope [("requestId", "a1b2c3d4"), ("correlationId", "req-xyz-789")] do
 
 ```haskell
 {-# NOINLINE globalLogger #-}
-globalLogger :: GhcLogger.LoggerSet
+globalLogger :: (GhcLogger.TimedFastLogger, IO ())
 globalLogger = GhcUnsafe.unsafePerformIO do
-  GhcLogger.newStdoutLoggerSet GhcLogger.defaultBufSize
+  timeCache <- GhcLogger.newTimeCache ("%Y-%m-%dT%H:%M:%S%z" :: GhcLogger.TimeFormat)
+  GhcLogger.newTimedFastLogger timeCache (GhcLogger.LogStdout GhcLogger.defaultBufSize)
 ```
 
 **Why global logger?**
@@ -154,17 +155,24 @@ globalLogger = GhcUnsafe.unsafePerformIO do
 ### 6. Thread-Local Context
 
 ```haskell
-{-# NOINLINE contextMap #-}
-contextMap :: ConcurrentMap ThreadId (Map Text Text)
-contextMap = GhcUnsafe.unsafePerformIO ConcurrentMap.new
+{-# NOINLINE globalContext #-}
+globalContext :: ConcurrentMap GhcThread.ThreadId (Map Text Text)
+globalContext = GhcUnsafe.unsafePerformIO do
+  ConcurrentMap.new |> Task.runOrPanic
 
 withScope :: Array (Text, Text) -> Task err value -> Task err value
-withScope pairs action = do
-  threadId <- Task.liftIO GhcThread.myThreadId
-  let context = Map.fromList pairs
-  ConcurrentMap.insert threadId context contextMap
-  result <- action `Task.finally` (ConcurrentMap.delete threadId contextMap)
-  Task.yield result
+withScope fields task = do
+  threadId <- GhcThread.myThreadId |> Task.fromIO
+  existingContext <- ConcurrentMap.get threadId globalContext
+  let baseContext = existingContext |> Maybe.withDefault Map.empty
+  let newContext = fields |> Array.foldl (\(key, value) acc -> acc |> Map.set key value) baseContext
+  ConcurrentMap.set threadId newContext globalContext
+  Task.finally
+    ( case existingContext of
+        Just ctx -> ConcurrentMap.set threadId ctx globalContext
+        Nothing -> ConcurrentMap.remove threadId globalContext
+    )
+    task
 ```
 
 **Why thread-local context?**
@@ -396,7 +404,7 @@ import Log qualified
 
 4. **Breaking change for Console.log users**: Console.log will be deprecated in favor of Log.debug. Migration guide required.
 
-5. **No runtime log level filtering**: All logs are emitted. Future work: `LOG_LEVEL` env var for filtering.
+5. **Runtime log level filtering via `LOG_LEVEL` env var**: Defaults to `Info`. Accepts `Debug`, `Info`, `Warn`, `Error`, `Critical` (case-insensitive). Read once at startup.
 
 ### Risks
 
