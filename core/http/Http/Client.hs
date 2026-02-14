@@ -36,6 +36,7 @@ import Data.Either qualified as GhcEither
 import Default (Default (..))
 import GHC.Int qualified as GhcInt
 import Json qualified
+import Log qualified
 import Map (Map)
 import Map qualified
 import Maybe (Maybe (..))
@@ -235,11 +236,18 @@ categorizeException content = case content of
   HttpClient.TooManyHeaderFields -> "too many header fields"
 
 
+-- | Extract sanitized host for logging from request options.
+requestHost :: Request -> Text
+requestHost options = options.url |> Maybe.map sanitizeUrlText |> Maybe.withDefault "<no url>"
+
+
 get ::
   (Json.FromJSON response) =>
   Request ->
   Task Error (Response response)
-get options =
+get options = do
+  let host = requestHost options
+  Log.debug [fmt|HTTP GET #{host}|] |> Task.ignoreError
   getIO options
     |> Task.fromFailableIO @HttpClient.HttpException
     |> Task.mapError sanitizeHttpError
@@ -264,7 +272,9 @@ getIO options = do
 getRaw ::
   Request ->
   Task Error (Response Bytes)
-getRaw options =
+getRaw options = do
+  let host = requestHost options
+  Log.debug [fmt|HTTP GET (raw) #{host}|] |> Task.ignoreError
   getRawIO options
     |> Task.fromFailableIO @HttpClient.HttpException
     |> Task.mapError sanitizeHttpError
@@ -299,7 +309,9 @@ post ::
   Request ->
   requestBody ->
   Task Error (Response response)
-post options body =
+post options body = do
+  let host = requestHost options
+  Log.debug [fmt|HTTP POST #{host}|] |> Task.ignoreError
   postIO options body
     |> Task.fromFailableIO @HttpClient.HttpException
     |> Task.mapError sanitizeHttpError
@@ -341,7 +353,9 @@ postForm ::
   Request ->
   Array (Text, Text) ->
   Task Error (Response response)
-postForm options formParams =
+postForm options formParams = do
+  let host = requestHost options
+  Log.debug [fmt|HTTP POST (form) #{host}|] |> Task.ignoreError
   postFormIO options formParams
     |> Task.fromFailableIO @HttpClient.HttpException
     |> Task.mapError sanitizeHttpError
@@ -386,7 +400,9 @@ postRaw ::
   Text ->  -- ^ Content-Type
   Text ->  -- ^ Body content
   Task Error (Response response)
-postRaw options contentType bodyContent =
+postRaw options contentType bodyContent = do
+  let host = requestHost options
+  Log.debug [fmt|HTTP POST (raw) #{host}|] |> Task.ignoreError
   postRawIO options contentType bodyContent
     |> Task.fromFailableIO @HttpClient.HttpException
     |> Task.mapError sanitizeHttpError
@@ -426,7 +442,9 @@ put ::
   Request ->
   requestBody ->
   Task Error (Response response)
-put options body =
+put options body = do
+  let host = requestHost options
+  Log.debug [fmt|HTTP PUT #{host}|] |> Task.ignoreError
   putIO options body
     |> Task.fromFailableIO @HttpClient.HttpException
     |> Task.mapError sanitizeHttpError
@@ -463,7 +481,9 @@ patch ::
   Request ->
   requestBody ->
   Task Error (Response response)
-patch options body =
+patch options body = do
+  let host = requestHost options
+  Log.debug [fmt|HTTP PATCH #{host}|] |> Task.ignoreError
   patchIO options body
     |> Task.fromFailableIO @HttpClient.HttpException
     |> Task.mapError sanitizeHttpError
@@ -499,7 +519,9 @@ delete ::
   (Json.FromJSON response) =>
   Request ->
   Task Error (Response response)
-delete options =
+delete options = do
+  let host = requestHost options
+  Log.debug [fmt|HTTP DELETE #{host}|] |> Task.ignoreError
   deleteIO options
     |> Task.fromFailableIO @HttpClient.HttpException
     |> Task.mapError sanitizeHttpError

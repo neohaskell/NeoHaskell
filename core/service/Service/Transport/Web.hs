@@ -23,7 +23,7 @@ import Basics
 import Bytes (Bytes)
 import Bytes qualified
 import ConcurrentVar qualified
-import Console qualified
+import Log qualified
 import Data.ByteString qualified as GhcBS
 import Data.ByteString.Lazy qualified as GhcLBS
 import Data.IORef qualified as GhcIORef
@@ -492,6 +492,13 @@ instance Transport WebTransport where
             MissingParameter _ -> badRequest "Invalid request" respondFn
             RateLimited retryAfter -> tooManyRequests retryAfter respondFn
 
+    -- Log request entry
+    let method = request |> Wai.requestMethod |> Bytes.fromLegacy |> Text.fromBytes
+    let path = request |> Wai.rawPathInfo |> Bytes.fromLegacy |> Text.fromBytes
+    Log.withScope [("component", "WebTransport")] do
+      Log.debug [fmt|#{method} #{path}|]
+        |> Task.ignoreError
+
     -- Parse the request path to check if it matches /commands/<name> or /queries/<name>
     case Wai.pathInfo request of
       ["commands", commandNameKebab] -> do
@@ -501,6 +508,9 @@ instance Transport WebTransport where
         -- Look up the command handler in the endpoints map
         case Map.get commandName endpoints.commandEndpoints of
           Maybe.Just handler -> do
+            Log.withScope [("component", "WebTransport"), ("command", commandName)] do
+              Log.debug "Command received"
+                |> Task.ignoreError
             -- Helper to process command with a RequestContext
             let processCommandWithContext :: RequestContext -> Task Text Wai.ResponseReceived
                 processCommandWithContext requestContext = do
@@ -562,6 +572,9 @@ instance Transport WebTransport where
         -- Look up the query handler in the endpoints map
         case Map.get queryName endpoints.queryEndpoints of
           Maybe.Just handler -> do
+            Log.withScope [("component", "WebTransport"), ("query", queryName)] do
+              Log.debug "Executing query"
+                |> Task.ignoreError
             -- Helper to process query with given user claims
             let processQueryWithClaims userClaims = do
                   -- Execute the query handler with error recovery
@@ -656,9 +669,11 @@ instance Transport WebTransport where
                             -- Success actions MUST succeed - failing means tokens are lost
                             dispatchResult <- oauth2.dispatchAction actionJson |> Task.asResult
                             case dispatchResult of
-                              Result.Err _ -> do
+                              Result.Err dispatchErr -> do
                                 -- Log for ops (sanitized - no user data in message)
-                                Console.print [fmt|[OAuth2] Success action dispatch failed|] |> Task.ignoreError
+                                Log.withScope [("component", "OAuth2")] do
+                                  Log.warn [fmt|Success action dispatch failed: #{dispatchErr}|]
+                                    |> Task.ignoreError
                                 -- Return 500 - DO NOT redirect to success URL
                                 internalError "Connection failed. Please try again."
                               Result.Ok _ -> redirect302 redirectUrl respond
@@ -666,7 +681,10 @@ instance Transport WebTransport where
                             -- Failure actions can fail silently - user already knows flow failed
                             dispatchResult <- oauth2.dispatchAction actionJson |> Task.asResult
                             case dispatchResult of
-                              Result.Err err -> Console.print [fmt|[OAuth2] Failure action dispatch failed: #{err}|] |> Task.ignoreError
+                              Result.Err err -> 
+                                Log.withScope [("component", "OAuth2")] do
+                                  Log.warn [fmt|Failure action dispatch failed: #{err}|]
+                                    |> Task.ignoreError
                               Result.Ok _ -> pass
                             redirect302 redirectUrl respond
                           DisconnectAction _ -> do
@@ -701,7 +719,9 @@ instance Transport WebTransport where
                             dispatchResult <- oauth2.dispatchAction actionJson |> Task.asResult
                             case dispatchResult of
                               Result.Err err -> do
-                                Console.print [fmt|[OAuth2] Disconnect action dispatch failed: #{err}|] |> Task.ignoreError
+                                Log.withScope [("component", "OAuth2")] do
+                                  Log.warn [fmt|Disconnect action dispatch failed: #{err}|]
+                                    |> Task.ignoreError
                                 internalError "Disconnect failed"
                               Result.Ok _ -> okJson [fmt|{"status":"disconnected","provider":"#{providerName}"}|]
       -- File upload routes: POST /files/upload, GET /files/:fileRef
@@ -918,7 +938,9 @@ instance Transport WebTransport where
 
     -- Start the Warp server on the specified port
     let port = transport.port
-    Console.print [fmt|Starting WebTransport server on port #{port}|]
+    Log.withScope [("component", "WebTransport")] do
+      Log.info [fmt|Starting WebTransport server on port #{port}|]
+        |> Task.ignoreError
     Warp.run transport.port waiApp |> Task.fromIO
 
 
@@ -945,7 +967,9 @@ instance Transport WebTransport where
     case commandValue of
       Result.Ok cmd -> do
         -- Log that we're executing the command
-        Console.print [fmt|Executing #{n} on port #{port}|]
+        Log.withScope [("component", "WebTransport"), ("command", n), ("port", port |> toText)] do
+          Log.debug [fmt|Executing #{n}|]
+            |> Task.ignoreError
 
         -- Execute the command with RequestContext
         response <- handler requestContext cmd
@@ -953,7 +977,9 @@ instance Transport WebTransport where
         respond (response, responseJson)
       Result.Err _err -> do
         -- Handle parsing error - return a Failed response
-        Console.print [fmt|Failed to parse command #{n} on port #{port}|]
+        Log.withScope [("component", "WebTransport"), ("command", n), ("port", port |> toText)] do
+          Log.warn [fmt|Failed to parse command #{n}|]
+            |> Task.ignoreError
         let errorResponse =
               Response.Failed
                 { error = [fmt|Invalid JSON format for command #{n}|]

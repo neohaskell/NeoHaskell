@@ -26,7 +26,7 @@ import Array qualified
 import AsyncTask (AsyncTask)
 import AsyncTask qualified
 import Basics
-import Console qualified
+import Log qualified
 import Default (Default (..))
 import Integration qualified
 import Integration.Lifecycle qualified as Lifecycle
@@ -86,8 +86,9 @@ createOutboundRunner integrationFn = do
         -- Decode the event from JSON
         case Json.decode @event rawEvent.event of
           Err decodeErr -> do
-            Console.print [fmt|[Integration] Failed to decode event for #{typeName} (stream: #{streamId}): #{decodeErr}|]
-              |> Task.ignoreError
+            Log.withScope [("component", "Integration"), ("entityName", typeName), ("streamId", streamId |> toText)] do
+              Log.warn [fmt|Failed to decode event: #{decodeErr}|]
+                |> Task.ignoreError
             Task.yield Array.empty
           Ok decodedEvent -> do
             -- Reconstruct entity state via event replay
@@ -155,6 +156,9 @@ fetchEntityState eventStore typeName streamId = do
           let errorCount = Array.length decodeErrors
           Task.throw [fmt|[Integration] #{errorCount} event(s) failed to decode for #{typeName} (stream: #{streamId}). First error: #{firstError}|]
         Nothing -> do
+          Log.withScope [("component", "Integration"), ("entityName", typeName), ("streamId", toText streamId)] do
+            Log.debug [fmt|Entity state fetched|]
+              |> Task.ignoreError
           Task.yield entityState
 
 
@@ -274,8 +278,9 @@ startIntegrationSubscriber eventStore runners lifecycleRunners commandEndpoints 
             case result of
               Ok _ -> Task.yield unit
               Err err ->
-                Console.print [fmt|[Integration] Error dispatching event: #{err}|]
-                  |> Task.ignoreError
+                Log.withScope [("component", "Integration"), ("entityName", toText rawEvent.entityName), ("streamId", toText rawEvent.streamId)] do
+                  Log.warn [fmt|Error dispatching event: #{err}|]
+                    |> Task.ignoreError
 
       _ <- eventStore.subscribeToAllEvents processIntegrationEvent
         |> Task.mapError (toText :: Error -> Text)
@@ -300,7 +305,9 @@ startInboundWorkers inbounds commandEndpoints = do
     then Task.yield Array.empty
     else do
       let workerCount = Array.length inbounds
-      Console.print [fmt|[Integration] Starting #{workerCount} inbound worker(s)|]
+      Log.withScope [("component", "Integration")] do
+        Log.info [fmt|Starting #{workerCount} inbound worker(s)|]
+          |> Task.ignoreError
       inbounds
         |> Task.mapArray \inboundIntegration -> do
             -- Start each worker in a background task with restart logic
@@ -314,8 +321,9 @@ startInboundWorkers inbounds commandEndpoints = do
                     |> Task.asResult
                   case result of
                     Err err -> do
-                      Console.print [fmt|[Integration] Inbound worker error: #{err}. Restarting in #{backoffMs}ms...|]
-                        |> Task.ignoreError
+                      Log.withScope [("component", "Integration")] do
+                        Log.warn [fmt|Inbound worker error: #{err}. Restarting in #{backoffMs}ms...|]
+                          |> Task.ignoreError
                       AsyncTask.sleep backoffMs
                       -- Exponential backoff: double the delay, max 60 seconds
                       let nextBackoff = min (backoffMs * 2) 60000

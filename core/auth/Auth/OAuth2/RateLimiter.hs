@@ -45,6 +45,7 @@ import Map (Map)
 import Map qualified
 import Maybe (Maybe (..))
 import Prelude qualified as GhcPrelude
+import Log qualified
 import Task (Task)
 import Task qualified
 import Text (Text)
@@ -136,7 +137,7 @@ checkLimitImpl storage config key = do
   let windowStart = nowSeconds - config.windowSeconds
 
   -- Atomically check and update the bucket
-  storage
+  result <- storage
     |> ConcurrentVar.modifyReturning
       ( \store -> do
           let maybeBucket = store |> Map.get key
@@ -166,6 +167,12 @@ checkLimitImpl storage config key = do
               let newStore = store |> Map.set key newBucket
               Task.yield (newStore, Allowed)
       )
+  case result of
+    Limited retryAfter -> do
+      Log.warn [fmt|Rate limit exceeded (retryAfter: #{retryAfter}s)|]
+        |> Task.ignoreError
+      Task.yield result
+    Allowed -> Task.yield result
 
 
 -- | Reaper interval in milliseconds (5 minutes)

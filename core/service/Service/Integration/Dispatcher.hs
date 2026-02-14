@@ -71,7 +71,8 @@ import ConcurrentMap (ConcurrentMap)
 import ConcurrentMap qualified
 import ConcurrentVar (ConcurrentVar)
 import ConcurrentVar qualified
-import Console qualified
+import Log qualified
+import Service.Response (CommandResponse (..))
 import Control.Concurrent.Async qualified as GhcAsync
 import Data.Either (Either (..))
 import Data.Time.Clock.POSIX qualified as GhcPosix
@@ -95,6 +96,7 @@ import Task (Task)
 import Task qualified
 import Text (Text)
 import Text qualified
+import ToText (toText)
 
 
 -- | Run a task with an optional timeout.
@@ -334,33 +336,36 @@ dispatch ::
   IntegrationDispatcher ->
   Event Json.Value ->
   Task Text Unit
-dispatch dispatcher event = do
-  -- Check shutdown signal first - reject new events during shutdown
-  isShuttingDown <- dispatcher.shutdownSignal |> ConcurrentVar.peek
-  if isShuttingDown
-    then do
-      let streamId = event.streamId
-      Console.print [fmt|[Dispatcher] Rejected event for stream #{streamId} - dispatcher is shutting down|]
-        |> Task.ignoreError
-    else do
-      let streamId = event.streamId
-
-      -- Handle stateless workers
-      if Array.isEmpty dispatcher.outboundRunners
-        then pass
+dispatch dispatcher event =
+   Log.withScope [("component", "Dispatcher")] do
+      -- Check shutdown signal first - reject new events during shutdown
+      isShuttingDown <- dispatcher.shutdownSignal |> ConcurrentVar.peek
+      if isShuttingDown
+        then do
+          let streamId = event.streamId
+          Log.info [fmt|Rejected event for stream #{toText streamId} - dispatcher is shutting down|]
+            |> Task.ignoreError
         else do
-          worker <- getOrCreateStatelessWorker dispatcher streamId
-          writeWorkerMessageWithTimeout dispatcher streamId (ProcessEvent event) worker.channel
+          let streamId = event.streamId
+          Log.debug [fmt|Routing event to workers for stream #{toText streamId}|]
+            |> Task.ignoreError
 
-      -- Handle lifecycle workers
-      if Array.isEmpty dispatcher.lifecycleRunners
-        then pass
-        else do
-          lifecycleWorker <- getOrCreateLifecycleWorker dispatcher streamId
-          -- Update last activity time
-          currentTime <- getCurrentTimeMs
-          _ <- lifecycleWorker.lastActivityTime |> ConcurrentVar.swap currentTime
-          writeWorkerMessageWithTimeout dispatcher streamId (ProcessEvent event) lifecycleWorker.channel
+          -- Handle stateless workers
+          if Array.isEmpty dispatcher.outboundRunners
+            then pass
+            else do
+              worker <- getOrCreateStatelessWorker dispatcher streamId
+              writeWorkerMessageWithTimeout dispatcher streamId (ProcessEvent event) worker.channel
+
+          -- Handle lifecycle workers
+          if Array.isEmpty dispatcher.lifecycleRunners
+            then pass
+            else do
+              lifecycleWorker <- getOrCreateLifecycleWorker dispatcher streamId
+              -- Update last activity time
+              currentTime <- getCurrentTimeMs
+              _ <- lifecycleWorker.lastActivityTime |> ConcurrentVar.swap currentTime
+              writeWorkerMessageWithTimeout dispatcher streamId (ProcessEvent event) lifecycleWorker.channel
 
 
 writeWorkerMessageWithTimeout ::
@@ -376,8 +381,8 @@ writeWorkerMessageWithTimeout dispatcher streamId message channel = do
     Ok _ -> pass
     Err err -> do
       let messageLabel = workerMessageLabel message
-      Console.print
-        [fmt|[Dispatcher] Dropped #{messageLabel} for stream #{streamId} (channel write timeout: #{err})|]
+      Log.warn
+        [fmt|Dropped #{messageLabel} for stream #{toText streamId} (channel write timeout: #{err})|]
         |> Task.ignoreError
 
 
@@ -406,8 +411,8 @@ stopStatelessWorkerOrCancel dispatcher streamId worker = do
   case writeResult of
     Ok _ -> pass
     Err err -> do
-      Console.print
-        [fmt|[Dispatcher] Stop message timed out for stream #{streamId} (#{err}), force-cancelling worker|]
+      Log.warn
+        [fmt|Stop message timed out for stream #{toText streamId} (#{err}), force-cancelling worker|]
         |> Task.ignoreError
       -- Force-cancel the worker since we can't stop it gracefully
       AsyncTask.cancel worker.workerTask
@@ -428,8 +433,8 @@ stopLifecycleWorkerOrCancel dispatcher streamId worker = do
   case writeResult of
     Ok _ -> pass
     Err err -> do
-      Console.print
-        [fmt|[Dispatcher] Stop message timed out for lifecycle worker stream #{streamId} (#{err}), force-cancelling (cleanup may be skipped)|]
+      Log.warn
+        [fmt|Stop message timed out for lifecycle worker stream #{toText streamId} (#{err}), force-cancelling (cleanup may be skipped)|]
         |> Task.ignoreError
       -- Force-cancel - note that cleanup callbacks won't be called in this case
       -- This is a trade-off: we prevent memory leaks but may leak external resources
@@ -568,7 +573,7 @@ spawnStatelessWorker dispatcher streamId = do
             case processResult of
               Ok _ -> pass
               Err err -> do
-                Console.print [fmt|[Dispatcher] Event processing failed for stream #{streamId}: #{err}|]
+                Log.warn [fmt|Event processing failed for stream #{toText streamId}: #{err}|]
                   |> Task.ignoreError
             workerLoop
 
@@ -580,12 +585,15 @@ spawnStatelessWorker dispatcher streamId = do
           Ok _ -> pass
           Err err -> do
             -- Worker crashed - log and remove from map
-            Console.print [fmt|[Dispatcher] Stateless worker crashed for stream #{streamId}: #{err}|]
+            Log.warn [fmt|Stateless worker crashed for stream #{toText streamId}: #{err}|]
               |> Task.ignoreError
             -- Remove from map so new events will spawn a new worker
             dispatcher.entityWorkers |> ConcurrentMap.remove streamId
 
   workerTask <- AsyncTask.run safeWorkerLoop
+  Log.withScope [("component", "Dispatcher")] do
+    Log.debug [fmt|Spawned stateless worker for stream #{toText streamId}|]
+      |> Task.ignoreError
   Task.yield
     EntityWorker
       { workerId = uniqueId,
@@ -636,7 +644,7 @@ spawnLifecycleWorker dispatcher streamId = do
             case processResult of
               Ok _ -> pass
               Err err -> do
-                Console.print [fmt|[Dispatcher] Lifecycle event processing failed for stream #{streamId}: #{err}|]
+                Log.warn [fmt|Lifecycle event processing failed for stream #{toText streamId}: #{err}|]
                   |> Task.ignoreError
             workerLoop
 
@@ -648,7 +656,7 @@ spawnLifecycleWorker dispatcher streamId = do
           Ok _ -> pass
           Err err -> do
             -- Worker crashed - log, attempt cleanup, and remove from map
-            Console.print [fmt|[Dispatcher] Lifecycle worker crashed for stream #{streamId}: #{err}|]
+            Log.warn [fmt|Lifecycle worker crashed for stream #{toText streamId}: #{err}|]
               |> Task.ignoreError
             -- Attempt cleanup even on crash (best effort)
             states |> Task.forEach (\state -> state.cleanup |> Task.ignoreError)
@@ -656,6 +664,9 @@ spawnLifecycleWorker dispatcher streamId = do
             dispatcher.lifecycleEntityWorkers |> ConcurrentMap.remove streamId
 
   workerTask <- AsyncTask.run safeWorkerLoop
+  Log.withScope [("component", "Dispatcher")] do
+    Log.debug [fmt|Spawned lifecycle worker for stream #{toText streamId}|]
+      |> Task.ignoreError
   Task.yield
     LifecycleEntityWorker
       { workerId = uniqueId,
@@ -683,7 +694,7 @@ processStatelessEvent dispatcher event = do
             |> Task.forEach \payload -> do
               dispatchCommand dispatcher.commandEndpoints payload
         Err err -> do
-          Console.print [fmt|[Dispatcher] Error processing event (stream: #{streamId}): #{err}|]
+          Log.warn [fmt|Error processing event (stream: #{toText streamId}): #{err}|]
             |> Task.ignoreError
 
 
@@ -704,7 +715,7 @@ processLifecycleEvent states endpoints event = do
             |> Task.forEach \payload -> do
               dispatchCommand endpoints payload
         Err err -> do
-          Console.print [fmt|[Dispatcher] Error processing lifecycle event (stream: #{streamId}): #{err}|]
+          Log.warn [fmt|Error processing lifecycle event (stream: #{toText streamId}): #{err}|]
             |> Task.ignoreError
 
 
@@ -772,11 +783,19 @@ dispatchCommand endpoints payload = do
       -- Create anonymous context for system-triggered commands
       requestContext <- Auth.anonymousContext
       let cmdBytes = Json.encodeText payload.commandData |> Text.toBytes
-      let responseCallback _ = Task.yield unit
+      let responseCallback (response, _) = do
+            case response of
+              Failed {error = err} ->
+                Log.warn [fmt|Command dispatch failed: #{err}|] |> Task.ignoreError
+              Rejected {reason = reason} ->
+                Log.warn [fmt|Command dispatch rejected: #{reason}|] |> Task.ignoreError
+              _ ->
+                Log.debug [fmt|Command dispatched successfully: #{cmdType}|] |> Task.ignoreError
+            Task.yield unit
       handler requestContext cmdBytes responseCallback
         |> Task.mapError (\err -> [fmt|Command dispatch failed for #{cmdType}: #{err}|])
     Nothing -> do
-      Console.print [fmt|[Integration] No handler found for command: #{cmdType}|]
+      Log.warn [fmt|No handler found for command: #{cmdType}|]
         |> Task.ignoreError
 
 
@@ -829,7 +848,9 @@ startReaper dispatcher = do
                       |> ConcurrentMap.removeIf streamId isSameWorker
                     -- Step 3: Send Stop only if we actually removed the worker
                     case removed of
-                      Just removedWorker ->
+                      Just removedWorker -> do
+                        Log.debug [fmt|Reaped idle lifecycle worker for stream #{toText streamId}|]
+                          |> Task.ignoreError
                         stopLifecycleWorkerOrCancel dispatcher streamId removedWorker
                       Nothing ->
                         -- Worker was replaced, don't send Stop to the new one
@@ -852,7 +873,9 @@ startReaper dispatcher = do
                       |> ConcurrentMap.removeIf streamId isSameWorker
                     -- Send Stop only if we actually removed the worker
                     case removed of
-                      Just removedWorker ->
+                      Just removedWorker -> do
+                        Log.debug [fmt|Reaped idle worker for stream #{toText streamId}|]
+                          |> Task.ignoreError
                         stopStatelessWorkerOrCancel dispatcher streamId removedWorker
                       Nothing ->
                         -- Worker was replaced, don't send Stop to the new one

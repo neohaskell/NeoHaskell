@@ -37,7 +37,7 @@ import Bytes (Bytes)
 import ConcurrentMap (ConcurrentMap)
 import ConcurrentMap qualified
 import ConcurrentVar qualified
-import Console qualified
+import Log qualified
 import DateTime qualified
 
 import Map (Map)
@@ -215,7 +215,9 @@ handleUploadImpl ::
   Text ->  -- contentType
   Bytes -> -- content
   Task Text UploadResponse
-handleUploadImpl config blobStore stateStore ownerHash filename contentType content = do
+handleUploadImpl config blobStore stateStore ownerHash filename contentType content = Log.withScope [("component", "FileUpload")] do
+  Log.info "Processing file upload"
+    |> Task.ignoreError
   let request = UploadRequest
         { filename = filename
         , contentType = contentType
@@ -245,16 +247,21 @@ handleUploadImpl config blobStore stateStore ownerHash filename contentType cont
     |> Task.asResult
   
   case stateUpdateResult of
-    Ok _ -> Task.yield response
+    Ok _ -> do
+      Log.info "File uploaded successfully"
+        |> Task.ignoreError
+      Task.yield response
     Err stateErr -> do
       -- State update failed - cleanup the blob (best effort)
-      Console.print "[FileUpload] State update failed, cleaning up blob\n"
+      Log.warn "State update failed, cleaning up blob"
+        |> Task.ignoreError
       deleteResult <- blobStore.delete response.blobKey
         |> Task.asResult
       case deleteResult of
         Ok _ -> pass
         Err _ -> 
-          Console.print "[FileUpload] Failed to cleanup blob after state update failure\n"
+          Log.critical "Failed to cleanup blob after state update failure"
+            |> Task.ignoreError
       -- Propagate the original state update error
       Task.throw [fmt|Failed to record upload state: #{stateErr}|]
 
@@ -275,7 +282,9 @@ handleDownloadImpl ::
   OwnerHash ->
   FileRef ->
   Task FileAccessError (Bytes, Text, Text)
-handleDownloadImpl blobStore stateStore ownerHash fileRef = do
+handleDownloadImpl blobStore stateStore ownerHash fileRef = Log.withScope [("component", "FileUpload")] do
+  Log.debug "Processing file download"
+    |> Task.ignoreError
   -- Get file state
   maybeState <- stateStore.getState fileRef
     |> Task.mapError (\err -> StorageError err)
@@ -317,7 +326,9 @@ confirmFileImpl ::
   FileRef ->
   Text ->
   Task Text ()
-confirmFileImpl stateStore fileRef requestId = do
+confirmFileImpl stateStore fileRef requestId = Log.withScope [("component", "FileUpload")] do
+  Log.debug "Confirming file"
+    |> Task.ignoreError
   now <- DateTime.now |> Task.mapError (\_ -> "Failed to get time")
   let nowEpoch = DateTime.toEpochSeconds now
   let event = FileConfirmed FileConfirmedData
@@ -360,12 +371,16 @@ cleanupLoop intervalMs stateStore blobStore stateMap = do
   -- Run cleanup
   cleanupResult <- cleanupExpiredFiles stateStore blobStore stateMap
     |> Task.asResult
-  case cleanupResult of
-    Result.Err err -> Console.print [fmt|[FileUpload] Cleanup error: #{err}|] |> Task.ignoreError
-    Result.Ok count -> 
-      if count > 0
-        then Console.print [fmt|[FileUpload] Cleaned up #{count} expired files|] |> Task.ignoreError
-        else pass
+  Log.withScope [("component", "FileUpload")] do
+    case cleanupResult of
+      Result.Err err -> 
+        Log.warn [fmt|Cleanup error: #{err}|] 
+          |> Task.ignoreError
+      Result.Ok count -> 
+        if count > 0
+          then Log.info [fmt|Cleaned up #{count} expired files|] 
+            |> Task.ignoreError
+          else pass
   
   -- Loop forever
   cleanupLoop intervalMs stateStore blobStore stateMap
@@ -399,7 +414,9 @@ cleanupExpiredFiles stateStore blobStore stateMap = do
                 case deleteResult of
                   Err _ -> do
                     -- Log blob deletion failure but continue
-                    Console.print "[FileUpload Cleanup] Failed to delete blob, skipping state update\n"
+                    Log.withScope [("component", "FileUpload")] do
+                      Log.warn "Failed to delete blob, skipping state update"
+                        |> Task.ignoreError
                   Ok _ -> do
                     -- Blob deleted successfully, update state to Deleted
                     let event = FileDeleted FileDeletedData
@@ -411,7 +428,9 @@ cleanupExpiredFiles stateStore blobStore stateMap = do
                       |> Task.asResult
                     case stateUpdateResult of
                       Err _ -> 
-                        Console.print "[FileUpload Cleanup] Failed to update state after blob deletion\n"
+                        Log.withScope [("component", "FileUpload")] do
+                          Log.warn "Failed to update state after blob deletion"
+                            |> Task.ignoreError
                       Ok _ -> do
                         -- Successfully cleaned up, increment counter (ignore counter errors)
                         _ <- ConcurrentVar.modify (\n -> n + 1) counter

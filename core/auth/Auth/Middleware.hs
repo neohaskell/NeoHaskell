@@ -20,6 +20,7 @@ import Auth.Jwks qualified as Jwks
 import Auth.Options (AuthOptions (..))
 import Basics
 import Bytes qualified
+import Log qualified
 import Data.ByteString qualified as GhcBS
 import Json qualified
 import Map qualified
@@ -32,6 +33,7 @@ import Task (Task)
 import Task qualified
 import Text (Text)
 import Text qualified
+import ToText (toText)
 
 
 -- | Authentication context passed to handlers.
@@ -102,8 +104,9 @@ checkAuth ::
   Task err (Result AuthError AuthContext)
 checkAuth maybeManager config authOptions request = do
   case authOptions of
-    Everyone ->
+    Everyone -> do
       -- No authentication required (public endpoint)
+      Log.debug "Public endpoint, skipping auth" |> Task.ignoreError
       Task.yield (Ok emptyAuthContext)
     Authenticated ->
       -- Require valid JWT (permission checks done in command's decide method)
@@ -117,52 +120,63 @@ validateAndBuildContext ::
   Wai.Request ->
   Task err (Result AuthError AuthContext)
 validateAndBuildContext maybeManager config request = do
-  -- Check if auth is enabled
-  case maybeManager of
-    Nothing ->
-      -- Auth not configured - treat as infrastructure error
-      Task.yield (Err (AuthInfraUnavailable "Authentication not configured"))
-    Just manager -> do
-      -- Check key staleness (503 if keys too old)
-      isStale <- Jwks.checkStaleness manager
-      case isStale of
-        True ->
-          Task.yield (Err (AuthInfraUnavailable "Authentication keys are stale"))
-        False -> do
-          -- Extract token from request
-          case extractToken request of
-            Nothing ->
-              Task.yield (Err TokenMissing)
-            Just token -> do
-              -- DoS protection: reject oversized tokens before parsing
-              -- 8KB is generous (typical JWT is 1-2KB, max reasonable is ~4KB)
-              let maxTokenSize = 8192
-              case Text.length token > maxTokenSize of
-                True -> Task.yield (Err (TokenMalformed "Token exceeds maximum size"))
-                False -> do
-                  -- OPTIMIZED: Parse header ONCE for kid extraction AND validation
-                  case Jwt.parseHeader token of
-                    Err err -> Task.yield (Err err)
-                    Ok header -> do
-                      -- Get JWKSet (optimized: single key if kid found, all keys otherwise)
-                      -- If kid provided but not found, triggers background refresh
-                      jwkSet <- case header.kid of
-                        Just kid -> do
-                          (set, _kidFound) <- Jwks.getJwkSetForKidWithRefresh kid manager
-                          Task.yield set
-                        Nothing -> Jwks.getJwkSet manager
-                      -- Validate token with pre-parsed header (avoids re-parsing)
-                      validationResult <- Jwt.validateTokenWithParsedHeader config jwkSet header token
-                      case validationResult of
-                        Err err -> Task.yield (Err err)
-                        Ok claims ->
-                          Task.yield
-                            ( Ok
-                                AuthContext
-                                  { claims = Just claims,
-                                    isAuthenticated = True
-                                  }
-                            )
+  Log.withScope [("component", "Auth.Middleware")] do
+    -- Check if auth is enabled
+    case maybeManager of
+      Nothing -> do
+        -- Auth not configured - treat as infrastructure error
+        Log.warn "Auth not configured but authentication required" |> Task.ignoreError
+        Task.yield (Err (AuthInfraUnavailable "Authentication not configured"))
+      Just manager -> do
+        -- Check key staleness (503 if keys too old)
+        isStale <- Jwks.checkStaleness manager
+        case isStale of
+          True -> do
+            Log.warn "JWKS keys are stale, returning 503" |> Task.ignoreError
+            Task.yield (Err (AuthInfraUnavailable "Authentication keys are stale"))
+          False -> do
+            -- Extract token from request
+            case extractToken request of
+              Nothing -> do
+                Log.debug "No Bearer token in request" |> Task.ignoreError
+                Task.yield (Err TokenMissing)
+              Just token -> do
+                -- DoS protection: reject oversized tokens before parsing
+                -- 8KB is generous (typical JWT is 1-2KB, max reasonable is ~4KB)
+                let maxTokenSize = 8192
+                case Text.length token > maxTokenSize of
+                  True -> do
+                    Log.warn "Token exceeds maximum size (DoS protection)" |> Task.ignoreError
+                    Task.yield (Err (TokenMalformed "Token exceeds maximum size"))
+                  False -> do
+                    -- OPTIMIZED: Parse header ONCE for kid extraction AND validation
+                    case Jwt.parseHeader token of
+                      Err err -> do
+                        Log.debug [fmt|Token header parse failed: #{toText err}|] |> Task.ignoreError
+                        Task.yield (Err err)
+                      Ok header -> do
+                        -- Get JWKSet (optimized: single key if kid found, all keys otherwise)
+                        -- If kid provided but not found, triggers background refresh
+                        jwkSet <- case header.kid of
+                          Just kid -> do
+                            (set, _kidFound) <- Jwks.getJwkSetForKidWithRefresh kid manager
+                            Task.yield set
+                          Nothing -> Jwks.getJwkSet manager
+                        -- Validate token with pre-parsed header (avoids re-parsing)
+                        validationResult <- Jwt.validateTokenWithParsedHeader config jwkSet header token
+                        case validationResult of
+                          Err err -> do
+                            Log.warn [fmt|Token validation failed: #{toText err}|] |> Task.ignoreError
+                            Task.yield (Err err)
+                          Ok claims -> do
+                            Log.debug "Token validated successfully" |> Task.ignoreError
+                            Task.yield
+                              ( Ok
+                                  AuthContext
+                                    { claims = Just claims,
+                                      isAuthenticated = True
+                                    }
+                              )
 
 
 -- | Convert AuthError to appropriate HTTP response.
@@ -172,6 +186,9 @@ respondWithAuthError ::
   (Wai.Response -> Task Text Wai.ResponseReceived) ->
   Task Text Wai.ResponseReceived
 respondWithAuthError authError respond = do
+  Log.withScope [("component", "Auth.Middleware")] do
+    Log.debug [fmt|Returning auth error response|]
+      |> Task.ignoreError
   let (status, message) = authErrorToResponse authError
   let responseBody =
         Map.fromArray [("error" :: Text, message)]
