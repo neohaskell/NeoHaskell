@@ -190,7 +190,8 @@ fetchJwks jwksUri = do
 
       case result of
         Ok _ -> Log.debug "JWKS fetched successfully" |> Task.ignoreError
-        Err _ -> Log.debug "JWKS fetch failed" |> Task.ignoreError
+        Err (JwksFetchFailed msg) -> Log.warn [fmt|JWKS fetch failed: #{msg}|] |> Task.ignoreError
+        Err _ -> Log.warn "JWKS fetch failed" |> Task.ignoreError
       Task.yield result
 
 

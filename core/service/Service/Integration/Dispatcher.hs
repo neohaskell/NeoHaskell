@@ -343,7 +343,7 @@ dispatch dispatcher event =
       if isShuttingDown
         then do
           let streamId = event.streamId
-          Log.info [fmt|Rejected event for stream #{streamId} - dispatcher is shutting down|]
+          Log.info [fmt|Rejected event for stream #{toText streamId} - dispatcher is shutting down|]
             |> Task.ignoreError
         else do
           let streamId = event.streamId
@@ -382,7 +382,7 @@ writeWorkerMessageWithTimeout dispatcher streamId message channel = do
     Err err -> do
       let messageLabel = workerMessageLabel message
       Log.warn
-        [fmt|Dropped #{messageLabel} for stream #{streamId} (channel write timeout: #{err})|]
+        [fmt|Dropped #{messageLabel} for stream #{toText streamId} (channel write timeout: #{err})|]
         |> Task.ignoreError
 
 
@@ -412,7 +412,7 @@ stopStatelessWorkerOrCancel dispatcher streamId worker = do
     Ok _ -> pass
     Err err -> do
       Log.warn
-        [fmt|Stop message timed out for stream #{streamId} (#{err}), force-cancelling worker|]
+        [fmt|Stop message timed out for stream #{toText streamId} (#{err}), force-cancelling worker|]
         |> Task.ignoreError
       -- Force-cancel the worker since we can't stop it gracefully
       AsyncTask.cancel worker.workerTask
@@ -434,7 +434,7 @@ stopLifecycleWorkerOrCancel dispatcher streamId worker = do
     Ok _ -> pass
     Err err -> do
       Log.warn
-        [fmt|Stop message timed out for lifecycle worker stream #{streamId} (#{err}), force-cancelling (cleanup may be skipped)|]
+        [fmt|Stop message timed out for lifecycle worker stream #{toText streamId} (#{err}), force-cancelling (cleanup may be skipped)|]
         |> Task.ignoreError
       -- Force-cancel - note that cleanup callbacks won't be called in this case
       -- This is a trade-off: we prevent memory leaks but may leak external resources
@@ -573,7 +573,7 @@ spawnStatelessWorker dispatcher streamId = do
             case processResult of
               Ok _ -> pass
               Err err -> do
-                Log.warn [fmt|Event processing failed for stream #{streamId}: #{err}|]
+                Log.warn [fmt|Event processing failed for stream #{toText streamId}: #{err}|]
                   |> Task.ignoreError
             workerLoop
 
@@ -585,7 +585,7 @@ spawnStatelessWorker dispatcher streamId = do
           Ok _ -> pass
           Err err -> do
             -- Worker crashed - log and remove from map
-            Log.warn [fmt|Stateless worker crashed for stream #{streamId}: #{err}|]
+            Log.warn [fmt|Stateless worker crashed for stream #{toText streamId}: #{err}|]
               |> Task.ignoreError
             -- Remove from map so new events will spawn a new worker
             dispatcher.entityWorkers |> ConcurrentMap.remove streamId
@@ -644,7 +644,7 @@ spawnLifecycleWorker dispatcher streamId = do
             case processResult of
               Ok _ -> pass
               Err err -> do
-                Log.warn [fmt|Lifecycle event processing failed for stream #{streamId}: #{err}|]
+                Log.warn [fmt|Lifecycle event processing failed for stream #{toText streamId}: #{err}|]
                   |> Task.ignoreError
             workerLoop
 
@@ -656,7 +656,7 @@ spawnLifecycleWorker dispatcher streamId = do
           Ok _ -> pass
           Err err -> do
             -- Worker crashed - log, attempt cleanup, and remove from map
-            Log.warn [fmt|Lifecycle worker crashed for stream #{streamId}: #{err}|]
+            Log.warn [fmt|Lifecycle worker crashed for stream #{toText streamId}: #{err}|]
               |> Task.ignoreError
             -- Attempt cleanup even on crash (best effort)
             states |> Task.forEach (\state -> state.cleanup |> Task.ignoreError)
@@ -694,7 +694,7 @@ processStatelessEvent dispatcher event = do
             |> Task.forEach \payload -> do
               dispatchCommand dispatcher.commandEndpoints payload
         Err err -> do
-          Log.warn [fmt|Error processing event (stream: #{streamId}): #{err}|]
+          Log.warn [fmt|Error processing event (stream: #{toText streamId}): #{err}|]
             |> Task.ignoreError
 
 
@@ -715,7 +715,7 @@ processLifecycleEvent states endpoints event = do
             |> Task.forEach \payload -> do
               dispatchCommand endpoints payload
         Err err -> do
-          Log.warn [fmt|Error processing lifecycle event (stream: #{streamId}): #{err}|]
+          Log.warn [fmt|Error processing lifecycle event (stream: #{toText streamId}): #{err}|]
             |> Task.ignoreError
 
 

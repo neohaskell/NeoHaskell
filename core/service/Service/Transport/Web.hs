@@ -968,7 +968,7 @@ instance Transport WebTransport where
       Result.Ok cmd -> do
         -- Log that we're executing the command
         Log.withScope [("component", "WebTransport"), ("command", n), ("port", port |> toText)] do
-          Log.debug [fmt|Executing #{n} on port #{port}|]
+          Log.debug [fmt|Executing #{n}|]
             |> Task.ignoreError
 
         -- Execute the command with RequestContext
@@ -978,7 +978,7 @@ instance Transport WebTransport where
       Result.Err _err -> do
         -- Handle parsing error - return a Failed response
         Log.withScope [("component", "WebTransport"), ("command", n), ("port", port |> toText)] do
-          Log.warn [fmt|Failed to parse command #{n} on port #{port}|]
+          Log.warn [fmt|Failed to parse command #{n}|]
             |> Task.ignoreError
         let errorResponse =
               Response.Failed

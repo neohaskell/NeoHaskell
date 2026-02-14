@@ -120,9 +120,10 @@ handleUpload config blobStore request = Log.withScope [("component", "FileUpload
 
   -- 1. Validate file size
   let actualSize = fromIntegral (Bytes.length request.content) :: Int64
-  if actualSize > config.maxFileSizeBytes
+  let maxSize = config.maxFileSizeBytes
+  if actualSize > maxSize
     then do
-      Log.warn "Upload validation failed: file too large"
+      Log.warn [fmt|Upload validation failed: file too large (#{actualSize} > #{maxSize})|]
         |> Task.ignoreError
       Task.throw FileTooLarge
         { maxBytes = config.maxFileSizeBytes
@@ -136,7 +137,8 @@ handleUpload config blobStore request = Log.withScope [("component", "FileUpload
       if Array.contains request.contentType allowedTypes
         then pass
         else do
-          Log.warn "Upload validation failed: invalid content type"
+          let ct = request.contentType
+          Log.warn [fmt|Upload validation failed: invalid content type '#{ct}'|]
             |> Task.ignoreError
           Task.throw InvalidContentType
             { contentType = request.contentType
