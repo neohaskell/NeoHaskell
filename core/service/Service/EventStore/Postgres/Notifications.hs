@@ -33,11 +33,11 @@ connectTo connection store = do
   connection
     |> HasqlNotifications.waitForNotifications (handler store)
     |> Task.fromIO
+    |> AsyncTask.run
     |> Task.andThen \_ -> do
       Log.critical "LISTEN/NOTIFY listener exited unexpectedly"
         |> Task.ignoreError
       Task.yield ()
-    |> AsyncTask.run
     |> discard
 
 
