@@ -165,7 +165,7 @@ startReaper storage = do
         case result of
           Err err -> do
             -- Log error and restart reaper
-            Log.withScope [("component", "OAuth2")] do
+            Log.withScope [("component", "OAuth2"), ("subcomponent", "TransactionReaper")] do
               Log.warn [fmt|Reaper error: #{err}, restarting...|]
                 |> Task.ignoreError
             reaperWithErrorLogging

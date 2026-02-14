@@ -155,7 +155,7 @@ fetchDiscoveryDocument url = do
       |> Http.get @DiscoveryDocument
       |> Task.map (\response -> Ok response.body)
       |> Task.recover (\(Http.Error msg) -> do
-        Log.warn [fmt|Discovery document fetch failed|]
+        Log.warn [fmt|Discovery document fetch failed: #{msg}|]
           |> Task.ignoreError
         Task.yield (Err (DiscoveryFetchFailed msg)))
 

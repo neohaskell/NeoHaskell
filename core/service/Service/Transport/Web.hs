@@ -669,10 +669,10 @@ instance Transport WebTransport where
                             -- Success actions MUST succeed - failing means tokens are lost
                             dispatchResult <- oauth2.dispatchAction actionJson |> Task.asResult
                             case dispatchResult of
-                              Result.Err _ -> do
+                              Result.Err dispatchErr -> do
                                 -- Log for ops (sanitized - no user data in message)
                                 Log.withScope [("component", "OAuth2")] do
-                                  Log.warn "Success action dispatch failed"
+                                  Log.warn [fmt|Success action dispatch failed: #{dispatchErr}|]
                                     |> Task.ignoreError
                                 -- Return 500 - DO NOT redirect to success URL
                                 internalError "Connection failed. Please try again."

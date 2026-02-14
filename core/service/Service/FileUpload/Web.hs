@@ -215,10 +215,9 @@ handleUploadImpl ::
   Text ->  -- contentType
   Bytes -> -- content
   Task Text UploadResponse
-handleUploadImpl config blobStore stateStore ownerHash filename contentType content = do
-  Log.withScope [("component", "FileUpload")] do
-    Log.info "Processing file upload"
-      |> Task.ignoreError
+handleUploadImpl config blobStore stateStore ownerHash filename contentType content = Log.withScope [("component", "FileUpload")] do
+  Log.info "Processing file upload"
+    |> Task.ignoreError
   let request = UploadRequest
         { filename = filename
         , contentType = contentType
@@ -249,23 +248,20 @@ handleUploadImpl config blobStore stateStore ownerHash filename contentType cont
   
   case stateUpdateResult of
     Ok _ -> do
-      Log.withScope [("component", "FileUpload")] do
-        Log.info "File uploaded successfully"
-          |> Task.ignoreError
+      Log.info "File uploaded successfully"
+        |> Task.ignoreError
       Task.yield response
     Err stateErr -> do
       -- State update failed - cleanup the blob (best effort)
-      Log.withScope [("component", "FileUpload")] do
-        Log.warn "State update failed, cleaning up blob"
-          |> Task.ignoreError
+      Log.warn "State update failed, cleaning up blob"
+        |> Task.ignoreError
       deleteResult <- blobStore.delete response.blobKey
         |> Task.asResult
       case deleteResult of
         Ok _ -> pass
         Err _ -> 
-          Log.withScope [("component", "FileUpload")] do
-            Log.critical "Failed to cleanup blob after state update failure"
-              |> Task.ignoreError
+          Log.critical "Failed to cleanup blob after state update failure"
+            |> Task.ignoreError
       -- Propagate the original state update error
       Task.throw [fmt|Failed to record upload state: #{stateErr}|]
 
@@ -286,10 +282,9 @@ handleDownloadImpl ::
   OwnerHash ->
   FileRef ->
   Task FileAccessError (Bytes, Text, Text)
-handleDownloadImpl blobStore stateStore ownerHash fileRef = do
-  Log.withScope [("component", "FileUpload")] do
-    Log.debug "Processing file download"
-      |> Task.ignoreError
+handleDownloadImpl blobStore stateStore ownerHash fileRef = Log.withScope [("component", "FileUpload")] do
+  Log.debug "Processing file download"
+    |> Task.ignoreError
   -- Get file state
   maybeState <- stateStore.getState fileRef
     |> Task.mapError (\err -> StorageError err)
@@ -331,10 +326,9 @@ confirmFileImpl ::
   FileRef ->
   Text ->
   Task Text ()
-confirmFileImpl stateStore fileRef requestId = do
-  Log.withScope [("component", "FileUpload")] do
-    Log.debug "Confirming file"
-      |> Task.ignoreError
+confirmFileImpl stateStore fileRef requestId = Log.withScope [("component", "FileUpload")] do
+  Log.debug "Confirming file"
+    |> Task.ignoreError
   now <- DateTime.now |> Task.mapError (\_ -> "Failed to get time")
   let nowEpoch = DateTime.toEpochSeconds now
   let event = FileConfirmed FileConfirmedData

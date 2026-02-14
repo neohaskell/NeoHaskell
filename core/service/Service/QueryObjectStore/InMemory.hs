@@ -64,7 +64,7 @@ atomicUpdateImpl ::
   (Maybe query -> Maybe query) ->
   Task Error Unit
 atomicUpdateImpl store queryId updateFn = do
-  Log.debug "Query object store update"
+  Log.debug [fmt|Query object store update for #{toText queryId}|]
     |> Task.ignoreError
   store
     |> ConcurrentVar.modify

@@ -338,34 +338,34 @@ dispatch ::
   Task Text Unit
 dispatch dispatcher event =
    Log.withScope [("component", "Dispatcher")] do
-     -- Check shutdown signal first - reject new events during shutdown
-     isShuttingDown <- dispatcher.shutdownSignal |> ConcurrentVar.peek
-     if isShuttingDown
-       then do
-      let streamId = event.streamId
-      Log.info [fmt|Rejected event for stream #{streamId} - dispatcher is shutting down|]
-        |> Task.ignoreError
-       else do
-      let streamId = event.streamId
-      Log.debug [fmt|Routing event to workers for stream #{toText streamId}|]
-        |> Task.ignoreError
-
-      -- Handle stateless workers
-      if Array.isEmpty dispatcher.outboundRunners
-        then pass
+      -- Check shutdown signal first - reject new events during shutdown
+      isShuttingDown <- dispatcher.shutdownSignal |> ConcurrentVar.peek
+      if isShuttingDown
+        then do
+          let streamId = event.streamId
+          Log.info [fmt|Rejected event for stream #{streamId} - dispatcher is shutting down|]
+            |> Task.ignoreError
         else do
-          worker <- getOrCreateStatelessWorker dispatcher streamId
-          writeWorkerMessageWithTimeout dispatcher streamId (ProcessEvent event) worker.channel
+          let streamId = event.streamId
+          Log.debug [fmt|Routing event to workers for stream #{toText streamId}|]
+            |> Task.ignoreError
 
-      -- Handle lifecycle workers
-      if Array.isEmpty dispatcher.lifecycleRunners
-        then pass
-        else do
-          lifecycleWorker <- getOrCreateLifecycleWorker dispatcher streamId
-          -- Update last activity time
-          currentTime <- getCurrentTimeMs
-          _ <- lifecycleWorker.lastActivityTime |> ConcurrentVar.swap currentTime
-          writeWorkerMessageWithTimeout dispatcher streamId (ProcessEvent event) lifecycleWorker.channel
+          -- Handle stateless workers
+          if Array.isEmpty dispatcher.outboundRunners
+            then pass
+            else do
+              worker <- getOrCreateStatelessWorker dispatcher streamId
+              writeWorkerMessageWithTimeout dispatcher streamId (ProcessEvent event) worker.channel
+
+          -- Handle lifecycle workers
+          if Array.isEmpty dispatcher.lifecycleRunners
+            then pass
+            else do
+              lifecycleWorker <- getOrCreateLifecycleWorker dispatcher streamId
+              -- Update last activity time
+              currentTime <- getCurrentTimeMs
+              _ <- lifecycleWorker.lastActivityTime |> ConcurrentVar.swap currentTime
+              writeWorkerMessageWithTimeout dispatcher streamId (ProcessEvent event) lifecycleWorker.channel
 
 
 writeWorkerMessageWithTimeout ::
