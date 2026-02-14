@@ -67,7 +67,7 @@ jobs:
         run: nix develop --command cabal build all --disable-documentation
 
       - name: Run ${{ matrix.test-suite }}
-        run: nix develop --command cabal test ${{ matrix.test-suite }}
+        run: LOG_LEVEL=Warn nix develop --command cabal test ${{ matrix.test-suite }}
         env:
           LOG_LEVEL: Warn
 
