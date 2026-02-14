@@ -367,7 +367,7 @@ insertGo ops cfg payload =
             let insertEntityName = payload.entityName
             let insertStreamId = payload.streamId
             Log.withScope [("component", "EventStore.Postgres")] do
-              Log.info [fmt|Inserted event(s) for #{toText insertEntityName}/#{toText insertStreamId}|]
+              Log.debug [fmt|Inserted event(s) for #{toText insertEntityName}/#{toText insertStreamId}|]
                 |> Task.ignoreError
             Task.yield (InsertionSuccess {localPosition, globalPosition})
 
@@ -640,7 +640,7 @@ subscribeToAllEventsImpl ops cfg store callback = do
                 |> toText
                 |> SubscriptionError (SubscriptionId "global")
           )
-    Log.info [fmt|Subscription created: #{toText subscriptionId}|] |> Task.ignoreError
+    Log.debug [fmt|Subscription created: #{toText subscriptionId}|] |> Task.ignoreError
     Task.yield subscriptionId
 
 
@@ -704,7 +704,7 @@ subscribeToAllEventsFromPositionImpl ops cfg store startPosition callback = do
     store
       |> SubscriptionStore.addGlobalSubscriptionFromPosition (Just finalPosition) callback
       |> Task.mapError (\err -> SubscriptionError (SubscriptionId "fromPosition") (err |> toText))
-  Log.info [fmt|Subscription created: #{toText subscriptionId}|] |> Task.ignoreError
+  Log.debug [fmt|Subscription created: #{toText subscriptionId}|] |> Task.ignoreError
   Task.yield subscriptionId
 
 
@@ -736,7 +736,7 @@ subscribeToEntityEventsImpl ops cfg store entityName callback =
       store
         |> SubscriptionStore.addEntitySubscriptionFromPosition entityName currentMaxPosition callback
         |> Task.mapError (\err -> SubscriptionError (SubscriptionId "entity") (err |> toText))
-    Log.info [fmt|Subscription created: #{toText subscriptionId}|] |> Task.ignoreError
+    Log.debug [fmt|Subscription created: #{toText subscriptionId}|] |> Task.ignoreError
     Task.yield subscriptionId
 
 
@@ -766,7 +766,7 @@ subscribeToStreamEventsImpl ops cfg store entityName streamId callback =
       store
         |> SubscriptionStore.addStreamSubscriptionFromPosition entityName streamId currentMaxPosition callback
         |> Task.mapError (\err -> SubscriptionError (SubscriptionId "stream") (err |> toText))
-    Log.info [fmt|Subscription created: #{toText subscriptionId}|] |> Task.ignoreError
+    Log.debug [fmt|Subscription created: #{toText subscriptionId}|] |> Task.ignoreError
     Task.yield subscriptionId
 
 

@@ -170,7 +170,7 @@ insertImpl store payload = do
           finalEvents |> Task.forEach (notifySubscribers store)
           let finalEvent = finalEvents |> Array.last |> Maybe.getOrDie
           Log.withScope [("component", "EventStore.InMemory")] do
-            Log.info [fmt|Inserted #{toText (Array.length finalEvents)} event(s) for #{toText entityName}/#{toText streamId}|]
+            Log.debug [fmt|Inserted #{toText (Array.length finalEvents)} event(s) for #{toText entityName}/#{toText streamId}|]
               |> Task.ignoreError
           Task.yield
             ( Ok
@@ -340,7 +340,7 @@ subscribeToAllEventsImpl store handler = do
   store.subscriptions
     |> ConcurrentVar.modify (Map.set subscriptionId subscription)
     |> Lock.with store.globalLock
-  Log.info [fmt|Subscription created: #{toText subscriptionId}|] |> Task.ignoreError
+  Log.debug [fmt|Subscription created: #{toText subscriptionId}|] |> Task.ignoreError
   Task.yield subscriptionId
 
 
@@ -357,7 +357,7 @@ subscribeToAllEventsFromPositionImpl store fromPosition handler = do
   store.subscriptions
     |> ConcurrentVar.modify (Map.set subscriptionId subscription)
     |> Lock.with store.globalLock
-  Log.info [fmt|Subscription created: #{toText subscriptionId}|] |> Task.ignoreError
+  Log.debug [fmt|Subscription created: #{toText subscriptionId}|] |> Task.ignoreError
 
   -- Then, deliver historical events from the specified position
   deliverHistoricalEvents store fromPosition handler
@@ -377,7 +377,7 @@ subscribeToAllEventsFromStartImpl store handler = do
   store.subscriptions
     |> ConcurrentVar.modify (Map.set subscriptionId subscription)
     |> Lock.with store.globalLock
-  Log.info [fmt|Subscription created: #{toText subscriptionId}|] |> Task.ignoreError
+  Log.debug [fmt|Subscription created: #{toText subscriptionId}|] |> Task.ignoreError
 
   -- Then, deliver ALL historical events from the very beginning (position -1)
   deliverHistoricalEventsFromStart store handler subscriptionId
@@ -396,7 +396,7 @@ subscribeToEntityEventsImpl store entityName handler = do
   store.subscriptions
     |> ConcurrentVar.modify (Map.set subscriptionId subscription)
     |> Lock.with store.globalLock
-  Log.info [fmt|Subscription created: #{toText subscriptionId}|] |> Task.ignoreError
+  Log.debug [fmt|Subscription created: #{toText subscriptionId}|] |> Task.ignoreError
   Task.yield subscriptionId
 
 
@@ -412,7 +412,7 @@ subscribeToStreamEventsImpl store entityName streamId handler = do
   store.subscriptions
     |> ConcurrentVar.modify (Map.set subscriptionId subscription)
     |> Lock.with store.globalLock
-  Log.info [fmt|Subscription created: #{toText subscriptionId}|] |> Task.ignoreError
+  Log.debug [fmt|Subscription created: #{toText subscriptionId}|] |> Task.ignoreError
   Task.yield subscriptionId
 
 
