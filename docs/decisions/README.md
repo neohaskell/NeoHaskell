@@ -39,6 +39,7 @@ ADRs document significant architectural decisions made during the development of
 | [0023](0023-ai-pdf-transcription.md) | AI-Powered PDF Transcription via Multimodal Models | Proposed |
 | [0024](0024-cors-support.md) | CORS Support for WebTransport | Proposed |
 | [0025](0025-auto-health-endpoint.md) | Auto Health Endpoint for WebTransport Apps | Proposed |
+| [0026](0026-neo-cli-and-project-config.md) | Neo CLI and Project Configuration (`neo.json`) | Proposed |
 
 ## Creating New ADRs
 
