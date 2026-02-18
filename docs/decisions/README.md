@@ -42,6 +42,7 @@ ADRs document significant architectural decisions made during the development of
 | [0026](0026-line-buffering-for-containerized-deployments.md) | Line Buffering for Containerized Deployments | Proposed |
 | [0027](0027-postgres-pool-health.md) | PostgreSQL Pool Health for Serverless Databases | Proposed |
 | [0028](0028-structured-logging.md) | Structured Logging with fast-logger | Proposed |
+| [0029](0029-worker-crash-recovery.md) | Worker Crash Recovery for Outbound Integrations | Proposed |
 
 ## Creating New ADRs
 

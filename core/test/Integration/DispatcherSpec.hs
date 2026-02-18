@@ -6,6 +6,7 @@ import Array qualified
 import AsyncTask qualified
 import Auth.SecretStore.InMemory qualified as InMemorySecretStore
 import ConcurrentVar qualified
+import Control.Exception qualified as GhcException
 import Core
 import DateTime qualified
 import Integration qualified
@@ -133,6 +134,71 @@ spec = do
 
         count <- ConcurrentVar.peek processedCount
         count |> shouldBe 1
+
+      it "recovers from IO exceptions and processes subsequent events" \_ -> do
+        -- Verifies the fix for issue #400: when a worker throws a raw IO exception
+        -- (not a Task.throw error), safeWorkerLoop catches it, removes the dead
+        -- worker from the map, and a new worker is spawned for the next event.
+        processedEvents <- ConcurrentVar.containing ([] :: [Int])
+        callCount <- ConcurrentVar.containing (0 :: Int)
+
+        let crashOnFirstRunner =
+              Dispatcher.OutboundRunner
+                { entityTypeName = "TestEntity",
+                  processEvent = \_maybeContext _eventStore event -> do
+                    case Json.decode @OrderingTestEvent event.event of
+                      Err _ -> Task.yield Array.empty
+                      Ok decoded -> do
+                        currentCount <- ConcurrentVar.peek callCount
+                        callCount |> ConcurrentVar.modify (+ 1)
+                        if currentCount == 0
+                          then do
+                            -- First call: throw a raw IO exception (bypasses ExceptT)
+                            Task.fromIO (GhcException.throwIO (GhcException.ErrorCall "simulated IO crash"))
+                          else do
+                            -- Subsequent calls: process normally
+                            processedEvents
+                              |> ConcurrentVar.modify (\evts -> evts ++ [decoded.sequenceNum])
+                            Task.yield Array.empty
+                }
+
+        eventStore <- InMemory.new |> Task.mapError toText
+        context <- makeContext
+        dispatcher <-
+          Dispatcher.newWithLifecycleConfig
+            Dispatcher.DispatcherConfig
+              { idleTimeoutMs = 60000,
+                reaperIntervalMs = 10000,
+                enableReaper = False,
+                workerChannelCapacity = 100,
+                channelWriteTimeoutMs = 5000,
+                eventProcessingTimeoutMs = Nothing
+              }
+            eventStore
+            [crashOnFirstRunner]
+            []
+            Map.empty
+            context
+
+        -- Dispatch first event - worker will crash from IO exception
+        event1 <- makeTestEvent "entity-A" 1 1
+        Dispatcher.dispatch dispatcher event1
+
+        -- Wait for crash + cleanup (worker removed from map)
+        AsyncTask.sleep 200 |> Task.mapError (\_ -> "sleep error" :: Text)
+
+        -- Dispatch second event to the SAME entity
+        -- If the fix works, a new worker is spawned and processes this event
+        event2 <- makeTestEvent "entity-A" 2 2
+        Dispatcher.dispatch dispatcher event2
+
+        -- Wait for processing
+        AsyncTask.sleep 200 |> Task.mapError (\_ -> "sleep error" :: Text)
+
+        -- Verify the second event was processed (proving worker recovery)
+        processed <- ConcurrentVar.peek processedEvents
+        let processedArray = processed |> Array.fromLinkedList
+        processedArray |> shouldBe [2]
 
     describe "per-entity ordering" do
       it "processes events for the same entity in order" \_ -> do

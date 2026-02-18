@@ -182,7 +182,7 @@ defaultConfig =
       enableReaper = True,
       workerChannelCapacity = 100,
       channelWriteTimeoutMs = 5000,
-      eventProcessingTimeoutMs = Nothing
+      eventProcessingTimeoutMs = Just 30000
     }
 
 
@@ -316,7 +316,7 @@ newWithLifecycleConfig dispatcherConfig store runners lifecycleRunners endpoints
           }
 
   -- Start reaper if we have lifecycle runners and reaper is enabled
-  if Array.isEmpty lifecycleRunners || not dispatcherConfig.enableReaper
+  if not dispatcherConfig.enableReaper
     then pass
     else do
       reaper <- startReaper dispatcher
@@ -580,15 +580,15 @@ spawnStatelessWorker dispatcher streamId = do
   -- Wrap worker loop in exception boundary
   let safeWorkerLoop :: Task Text Unit
       safeWorkerLoop = do
-        result <- workerLoop |> Task.asResult
+        result <- workerLoop |> Task.asResultSafe
         case result of
           Ok _ -> pass
           Err err -> do
-            -- Worker crashed - log and remove from map
+            -- Remove from map FIRST so new events can spawn a fresh worker
+            dispatcher.entityWorkers |> ConcurrentMap.remove streamId
+            -- Log after removal to ensure map is cleaned up even if logging fails
             Log.warn [fmt|Stateless worker crashed for stream #{toText streamId}: #{err}|]
               |> Task.ignoreError
-            -- Remove from map so new events will spawn a new worker
-            dispatcher.entityWorkers |> ConcurrentMap.remove streamId
 
   workerTask <- AsyncTask.run safeWorkerLoop
   Log.withScope [("component", "Dispatcher")] do
@@ -651,17 +651,17 @@ spawnLifecycleWorker dispatcher streamId = do
   -- Wrap worker loop in exception boundary
   let safeWorkerLoop :: Task Text Unit
       safeWorkerLoop = do
-        result <- workerLoop |> Task.asResult
+        result <- workerLoop |> Task.asResultSafe
         case result of
           Ok _ -> pass
           Err err -> do
-            -- Worker crashed - log, attempt cleanup, and remove from map
+            -- Remove from map FIRST so new events can spawn a fresh worker
+            dispatcher.lifecycleEntityWorkers |> ConcurrentMap.remove streamId
+            -- Log after removal to ensure map is cleaned up even if logging fails
             Log.warn [fmt|Lifecycle worker crashed for stream #{toText streamId}: #{err}|]
               |> Task.ignoreError
-            -- Attempt cleanup even on crash (best effort)
+            -- Attempt cleanup even on crash (best effort, after removal)
             states |> Task.forEach (\state -> state.cleanup |> Task.ignoreError)
-            -- Remove from map so new events will spawn a new worker
-            dispatcher.lifecycleEntityWorkers |> ConcurrentMap.remove streamId
 
   workerTask <- AsyncTask.run safeWorkerLoop
   Log.withScope [("component", "Dispatcher")] do
