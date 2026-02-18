@@ -908,3 +908,56 @@ spec = do
             sortedProcessed |> shouldBe (Array.range 1 eventsPerEntity)
 
         pass
+
+    describe "config threading" do
+      it "uses custom config when provided (simulating Application.withDispatcherConfig)" \_ -> do
+        -- Verify that a custom DispatcherConfig with short channelWriteTimeoutMs
+        -- causes event drops when channel is full (proving the config was used)
+        processedCount <- ConcurrentVar.containing (0 :: Int)
+
+        let slowRunner =
+              Dispatcher.OutboundRunner
+                { entityTypeName = "TestEntity",
+                  processEvent = \_maybeContext _eventStore _event -> do
+                    -- Block for 200ms to cause channel backup
+                    AsyncTask.sleep 200 |> Task.mapError (\_ -> "sleep error" :: Text)
+                    processedCount |> ConcurrentVar.modify (+ 1)
+                    Task.yield Array.empty
+                }
+
+        let customConfig = Dispatcher.DispatcherConfig
+              { idleTimeoutMs = 60000,
+                reaperIntervalMs = 10000,
+                enableReaper = False,
+                workerChannelCapacity = 1,
+                channelWriteTimeoutMs = 10,
+                eventProcessingTimeoutMs = Nothing
+              }
+
+        eventStore <- InMemory.new |> Task.mapError toText
+        context <- makeContext
+
+        -- This mirrors what Application does: resolve Maybe config, pass to newWithLifecycleConfig
+        let maybeConfig = Just customConfig :: Maybe Dispatcher.DispatcherConfig
+        let resolvedConfig = case maybeConfig of
+              Just c -> c
+              Nothing -> Dispatcher.defaultConfig
+        dispatcher <- Dispatcher.newWithLifecycleConfig resolvedConfig eventStore [slowRunner] [] Map.empty context
+
+        -- Dispatch first event - worker picks it up and blocks
+        event1 <- makeTestEvent "entity-A" 1 1
+        Dispatcher.dispatch dispatcher event1
+        AsyncTask.sleep 20 |> Task.mapError (\_ -> "sleep error" :: Text)
+
+        -- Fill channel (capacity=1) and try one more that should timeout
+        event2 <- makeTestEvent "entity-A" 2 2
+        event3 <- makeTestEvent "entity-A" 3 3
+        Dispatcher.dispatch dispatcher event2
+        Dispatcher.dispatch dispatcher event3
+
+        -- Wait for processing
+        AsyncTask.sleep 600 |> Task.mapError (\_ -> "sleep error" :: Text)
+
+        -- With capacity=1 and timeout=10ms, event3 should be dropped
+        count <- ConcurrentVar.peek processedCount
+        count |> shouldBe 2
