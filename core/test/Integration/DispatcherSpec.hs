@@ -23,6 +23,7 @@ import Service.Event.EventMetadata (EventMetadata (..))
 import Service.Event.StreamId (StreamId)
 import Service.Event.StreamId qualified as StreamId
 import Service.EventStore.InMemory qualified as InMemory
+import Service.Application.Integrations qualified as Integrations
 import Service.Integration.Dispatcher qualified as Dispatcher
 import Task qualified
 import Test
@@ -937,17 +938,22 @@ spec = do
         eventStore <- InMemory.new |> Task.mapError toText
         context <- makeContext
 
-        -- This mirrors what Application does: resolve Maybe config, pass to newWithLifecycleConfig
-        let maybeConfig = Just customConfig :: Maybe Dispatcher.DispatcherConfig
-        let resolvedConfig = case maybeConfig of
-              Just c -> c
-              Nothing -> Dispatcher.defaultConfig
-        dispatcher <- Dispatcher.newWithLifecycleConfig resolvedConfig eventStore [slowRunner] [] Map.empty context
+        -- Call through startIntegrationSubscriber so the Application-level config threading is exercised
+        maybeDispatcher <- Integrations.startIntegrationSubscriber
+              (Just customConfig)
+              eventStore
+              [slowRunner]
+              []
+              Map.empty
+              context
+        let dispatcher = case maybeDispatcher of
+              Just d -> d
+              Nothing -> panic "expected a dispatcher"
 
         -- Dispatch first event - worker picks it up and blocks
         event1 <- makeTestEvent "entity-A" 1 1
         Dispatcher.dispatch dispatcher event1
-        AsyncTask.sleep 20 |> Task.mapError (\_ -> "sleep error" :: Text)
+        AsyncTask.sleep 50 |> Task.mapError (\_ -> "sleep error" :: Text)
 
         -- Fill channel (capacity=1) and try one more that should timeout
         event2 <- makeTestEvent "entity-A" 2 2

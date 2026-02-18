@@ -196,9 +196,19 @@ Application.new
 
 1. **Matches existing patterns**: `withCors`, `withHealthCheck` use the same `Maybe X` + default pattern
 2. **No factory needed**: DispatcherConfig is a simple record with no dependencies
-3. **Minimal changes**: ~10 lines across 2 files
+3. **Focused changes**: New record field, builder function, module re-exports, call-site and signature updates, and tests
 4. **Type-safe**: Compiler enforces correct config structure
 5. **Discoverable**: Re-exports make `DispatcherConfig` and `defaultConfig` available from Application module
+
+### Why Not an Environment Variable?
+
+Issue #407 proposed two alternatives: (a) reading `EVENT_PROCESSING_TIMEOUT_MS` from the environment, and (b) exposing `DispatcherConfig` via the builder. We chose (b) because:
+
+1. **Single field vs. full config**: An env var only solves `eventProcessingTimeoutMs`. Customizing `workerChannelCapacity`, `channelWriteTimeoutMs`, or `enableReaper` would require proliferating additional env vars.
+2. **Implicit vs. explicit**: Env vars introduce implicit global configuration invisible at the call site. The builder makes configuration explicit and visible in the application wiring.
+3. **Testability**: Builder configuration is trivially testable — pass a config value and verify behavior. Env vars require test harness setup and cleanup, and risk cross-test contamination.
+4. **Type safety**: `DispatcherConfig` fields are typed and validated at the call site. Env vars require string parsing with runtime failure modes.
+5. **Extensibility**: If `DispatcherConfig` gains new fields, the builder approach extends naturally. Env vars require new variable names, parsing, and documentation for each field.
 
 ## Consequences
 
@@ -208,7 +218,7 @@ Application.new
 2. **Backwards compatible**: Existing apps continue working (Nothing → defaultConfig)
 3. **Follows framework conventions**: Same pattern as `withCors`, `withHealthCheck`
 4. **Type-safe**: Compiler catches config errors
-5. **Minimal code changes**: ~10 lines across 2 files
+5. **Focused code changes**: Record field, builder function, module re-exports, call-site update, and tests
 6. **No new dependencies**: Uses existing Dispatcher module
 7. **Discoverable API**: Re-exports make config types easy to find
 

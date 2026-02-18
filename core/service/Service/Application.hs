@@ -1384,7 +1384,15 @@ withDispatcherConfig ::
   Application ->
   Application
 withDispatcherConfig config app =
-  app {dispatcherConfig = Just config}
+  case config.workerChannelCapacity <= 0 of
+    True -> panic "Application.withDispatcherConfig: workerChannelCapacity must be positive"
+    False -> case config.channelWriteTimeoutMs <= 0 of
+      True -> panic "Application.withDispatcherConfig: channelWriteTimeoutMs must be positive"
+      False -> case config.idleTimeoutMs <= 0 of
+        True -> panic "Application.withDispatcherConfig: idleTimeoutMs must be positive"
+        False -> case config.reaperIntervalMs <= 0 of
+          True -> panic "Application.withDispatcherConfig: reaperIntervalMs must be positive"
+          False -> app {dispatcherConfig = Just config}
 
 
 -- | Configure a custom SecretStore for token storage.

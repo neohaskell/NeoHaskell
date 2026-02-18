@@ -33,6 +33,7 @@ import Integration.Lifecycle qualified as Lifecycle
 import Json qualified
 import Map (Map)
 import Maybe (Maybe (..))
+import Maybe qualified
 import Result (Result (..))
 import Service.Entity.Core (Entity (..), EventOf)
 import Service.Event (Event (..), EntityName (..))
@@ -271,9 +272,7 @@ startIntegrationSubscriber maybeDispatcherConfig eventStore runners lifecycleRun
     then Task.yield Nothing
     else do
       -- Create dispatcher with both runner types and EventStore for entity reconstruction
-      let config = case maybeDispatcherConfig of
-            Just c -> c
-            Nothing -> Dispatcher.defaultConfig
+      let config = Maybe.withDefault Dispatcher.defaultConfig maybeDispatcherConfig
       dispatcher <- Dispatcher.newWithLifecycleConfig config eventStore runners lifecycleRunners commandEndpoints ctx
 
       let processIntegrationEvent :: Event Json.Value -> Task Text Unit
