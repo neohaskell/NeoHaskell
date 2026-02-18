@@ -1392,7 +1392,11 @@ withDispatcherConfig config app =
         True -> panic "Application.withDispatcherConfig: idleTimeoutMs must be positive"
         False -> case config.reaperIntervalMs <= 0 of
           True -> panic "Application.withDispatcherConfig: reaperIntervalMs must be positive"
-          False -> app {dispatcherConfig = Just config}
+          False -> case config.eventProcessingTimeoutMs of
+            Just ms -> case ms <= 0 of
+              True -> panic "Application.withDispatcherConfig: eventProcessingTimeoutMs must be positive when set"
+              False -> app {dispatcherConfig = Just config}
+            Nothing -> app {dispatcherConfig = Just config}
 
 
 -- | Configure a custom SecretStore for token storage.

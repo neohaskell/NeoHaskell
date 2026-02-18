@@ -946,9 +946,9 @@ spec = do
               []
               Map.empty
               context
-        let dispatcher = case maybeDispatcher of
-              Just d -> d
-              Nothing -> panic "expected a dispatcher"
+        dispatcher <- case maybeDispatcher of
+              Just d -> Task.yield d
+              Nothing -> Task.throw ("expected a dispatcher" :: Text)
 
         -- Dispatch first event - worker picks it up and blocks
         event1 <- makeTestEvent "entity-A" 1 1
