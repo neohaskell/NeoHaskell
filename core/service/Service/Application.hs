@@ -42,9 +42,14 @@ module Service.Application (
   withCors,
   withHealthCheck,
   withoutHealthCheck,
+  withDispatcherConfig,
 
   -- * Health Check Re-export
   Web.HealthCheckConfig (..),
+
+  -- * Dispatcher Config Re-exports
+  Dispatcher.DispatcherConfig (..),
+  Dispatcher.defaultConfig,
 
   -- * File Upload Setup Type
   FileUploadSetup (..),
@@ -302,7 +307,8 @@ data Application = Application
     corsConfig :: Maybe Web.CorsConfig,
     -- | Health check configuration. Enabled by default at /health.
     -- Use withHealthCheck to customize the path, or withoutHealthCheck to disable.
-    healthCheckConfig :: Maybe Web.HealthCheckConfig
+    healthCheckConfig :: Maybe Web.HealthCheckConfig,
+    dispatcherConfig :: Maybe Dispatcher.DispatcherConfig
   }
 
 
@@ -330,7 +336,8 @@ new =
       secretStore = Nothing,
       apiInfo = Nothing,
       corsConfig = Nothing,
-      healthCheckConfig = Just Web.HealthCheckConfig {Web.healthPath = "health"}
+      healthCheckConfig = Just Web.HealthCheckConfig {Web.healthPath = "health"},
+      dispatcherConfig = Nothing
     }
 
 
@@ -944,6 +951,7 @@ runWithResolved eventStore maybeFileUploadSetup fileUploadCleanup maybeWebAuthSe
   -- 13. Start integration subscriber for outbound integrations with command dispatch
   maybeDispatcher <-
     Integrations.startIntegrationSubscriber
+      app.dispatcherConfig
       eventStore
       app.outboundRunners
       app.outboundLifecycleRunners
@@ -1352,6 +1360,43 @@ withoutHealthCheck ::
   Application
 withoutHealthCheck app =
   app {healthCheckConfig = Nothing}
+
+
+-- | Configure the integration dispatcher.
+--
+-- The dispatcher routes events to per-entity workers for outbound integrations.
+-- By default, 'Dispatcher.defaultConfig' is used which sets a 30-second
+-- event processing timeout.
+--
+-- Use this to customize timeouts, channel capacity, and worker lifecycle
+-- for your application's needs.
+--
+-- Example:
+--
+-- @
+-- app = Application.new
+--   |> Application.withDispatcherConfig
+--        Dispatcher.defaultConfig { eventProcessingTimeoutMs = Just 120000 }
+--   |> Application.withService myService
+-- @
+withDispatcherConfig ::
+  Dispatcher.DispatcherConfig ->
+  Application ->
+  Application
+withDispatcherConfig config app =
+  case config.workerChannelCapacity <= 0 of
+    True -> panic "Application.withDispatcherConfig: workerChannelCapacity must be positive"
+    False -> case config.channelWriteTimeoutMs <= 0 of
+      True -> panic "Application.withDispatcherConfig: channelWriteTimeoutMs must be positive"
+      False -> case config.idleTimeoutMs <= 0 of
+        True -> panic "Application.withDispatcherConfig: idleTimeoutMs must be positive"
+        False -> case config.reaperIntervalMs <= 0 of
+          True -> panic "Application.withDispatcherConfig: reaperIntervalMs must be positive"
+          False -> case config.eventProcessingTimeoutMs of
+            Just ms -> case ms <= 0 of
+              True -> panic "Application.withDispatcherConfig: eventProcessingTimeoutMs must be positive when set"
+              False -> app {dispatcherConfig = Just config}
+            Nothing -> app {dispatcherConfig = Just config}
 
 
 -- | Configure a custom SecretStore for token storage.

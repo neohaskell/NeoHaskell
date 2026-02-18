@@ -43,6 +43,7 @@ ADRs document significant architectural decisions made during the development of
 | [0027](0027-postgres-pool-health.md) | PostgreSQL Pool Health for Serverless Databases | Proposed |
 | [0028](0028-structured-logging.md) | Structured Logging with fast-logger | Proposed |
 | [0029](0029-worker-crash-recovery.md) | Worker Crash Recovery for Outbound Integrations | Proposed |
+| [0030](0030-configurable-dispatcher-config.md) | Configurable Dispatcher Config | Proposed |
 
 ## Creating New ADRs
 

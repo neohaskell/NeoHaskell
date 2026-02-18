@@ -33,6 +33,7 @@ import Integration.Lifecycle qualified as Lifecycle
 import Json qualified
 import Map (Map)
 import Maybe (Maybe (..))
+import Maybe qualified
 import Result (Result (..))
 import Service.Entity.Core (Entity (..), EventOf)
 import Service.Event (Event (..), EntityName (..))
@@ -256,13 +257,14 @@ withInbound inboundIntegration (runners, lifecycleRunners, inbounds) =
 --
 -- Returns the Dispatcher so it can be shutdown when the application stops.
 startIntegrationSubscriber ::
+  Maybe Dispatcher.DispatcherConfig ->
   EventStore Json.Value ->
   Array OutboundRunner ->
   Array OutboundLifecycleRunner ->
   Map Text EndpointHandler ->
   Integration.ActionContext ->
   Task Text (Maybe Dispatcher.IntegrationDispatcher)
-startIntegrationSubscriber eventStore runners lifecycleRunners commandEndpoints ctx = do
+startIntegrationSubscriber maybeDispatcherConfig eventStore runners lifecycleRunners commandEndpoints ctx = do
   let hasRunners = not (Array.isEmpty runners)
   let hasLifecycleRunners = not (Array.isEmpty lifecycleRunners)
 
@@ -270,7 +272,8 @@ startIntegrationSubscriber eventStore runners lifecycleRunners commandEndpoints 
     then Task.yield Nothing
     else do
       -- Create dispatcher with both runner types and EventStore for entity reconstruction
-      dispatcher <- Dispatcher.newWithLifecycleConfig Dispatcher.defaultConfig eventStore runners lifecycleRunners commandEndpoints ctx
+      let config = Maybe.withDefault Dispatcher.defaultConfig maybeDispatcherConfig
+      dispatcher <- Dispatcher.newWithLifecycleConfig config eventStore runners lifecycleRunners commandEndpoints ctx
 
       let processIntegrationEvent :: Event Json.Value -> Task Text Unit
           processIntegrationEvent rawEvent = do
