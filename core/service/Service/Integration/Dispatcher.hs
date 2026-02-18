@@ -182,7 +182,7 @@ defaultConfig =
       enableReaper = True,
       workerChannelCapacity = 100,
       channelWriteTimeoutMs = 5000,
-      eventProcessingTimeoutMs = Nothing
+      eventProcessingTimeoutMs = Just 30000
     }
 
 
@@ -316,7 +316,7 @@ newWithLifecycleConfig dispatcherConfig store runners lifecycleRunners endpoints
           }
 
   -- Start reaper if we have lifecycle runners and reaper is enabled
-  if Array.isEmpty lifecycleRunners || not dispatcherConfig.enableReaper
+  if not dispatcherConfig.enableReaper
     then pass
     else do
       reaper <- startReaper dispatcher
@@ -580,7 +580,7 @@ spawnStatelessWorker dispatcher streamId = do
   -- Wrap worker loop in exception boundary
   let safeWorkerLoop :: Task Text Unit
       safeWorkerLoop = do
-        result <- workerLoop |> Task.asResult
+        result <- workerLoop |> Task.asResultSafe
         case result of
           Ok _ -> pass
           Err err -> do
@@ -651,7 +651,7 @@ spawnLifecycleWorker dispatcher streamId = do
   -- Wrap worker loop in exception boundary
   let safeWorkerLoop :: Task Text Unit
       safeWorkerLoop = do
-        result <- workerLoop |> Task.asResult
+        result <- workerLoop |> Task.asResultSafe
         case result of
           Ok _ -> pass
           Err err -> do
