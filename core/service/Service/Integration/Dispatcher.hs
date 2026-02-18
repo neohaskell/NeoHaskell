@@ -584,11 +584,11 @@ spawnStatelessWorker dispatcher streamId = do
         case result of
           Ok _ -> pass
           Err err -> do
-            -- Worker crashed - log and remove from map
+            -- Remove from map FIRST so new events can spawn a fresh worker
+            dispatcher.entityWorkers |> ConcurrentMap.remove streamId
+            -- Log after removal to ensure map is cleaned up even if logging fails
             Log.warn [fmt|Stateless worker crashed for stream #{toText streamId}: #{err}|]
               |> Task.ignoreError
-            -- Remove from map so new events will spawn a new worker
-            dispatcher.entityWorkers |> ConcurrentMap.remove streamId
 
   workerTask <- AsyncTask.run safeWorkerLoop
   Log.withScope [("component", "Dispatcher")] do
@@ -655,13 +655,13 @@ spawnLifecycleWorker dispatcher streamId = do
         case result of
           Ok _ -> pass
           Err err -> do
-            -- Worker crashed - log, attempt cleanup, and remove from map
+            -- Remove from map FIRST so new events can spawn a fresh worker
+            dispatcher.lifecycleEntityWorkers |> ConcurrentMap.remove streamId
+            -- Log after removal to ensure map is cleaned up even if logging fails
             Log.warn [fmt|Lifecycle worker crashed for stream #{toText streamId}: #{err}|]
               |> Task.ignoreError
-            -- Attempt cleanup even on crash (best effort)
+            -- Attempt cleanup even on crash (best effort, after removal)
             states |> Task.forEach (\state -> state.cleanup |> Task.ignoreError)
-            -- Remove from map so new events will spawn a new worker
-            dispatcher.lifecycleEntityWorkers |> ConcurrentMap.remove streamId
 
   workerTask <- AsyncTask.run safeWorkerLoop
   Log.withScope [("component", "Dispatcher")] do

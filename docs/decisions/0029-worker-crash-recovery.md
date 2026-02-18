@@ -45,13 +45,24 @@ We implement four changes to fix the bug and prevent future occurrences:
 Create a new function that catches both ExceptT errors AND IO exceptions:
 
 ```haskell
-asResultSafe :: Task err value -> Task err2 (Result Text value)
+asResultSafe ::
+  forall err value err2.
+  (Show err) =>
+  Task err value ->
+  Task err2 (Result Text value)
 asResultSafe task = do
-  result <- Exception.try @SomeException (Task.runExceptT task) |> Task.fromIO
+  result <-
+    task.runTask
+      |> Except.runExceptT
+      |> Exception.try @SomeException
+      |> fromIO
   case result of
-    Left exception -> Result.err (Text.pack (Exception.displayException exception)) |> Task.yield
-    Right (Left _) -> Result.err "Task failed with error" |> Task.yield
-    Right (Right value) -> Result.ok value |> Task.yield
+    Either.Left someException ->
+      yield (Result.Err (show someException |> Text.fromLinkedList))
+    Either.Right (Either.Left err) ->
+      yield (Result.Err (show err |> Text.fromLinkedList))
+    Either.Right (Either.Right value) ->
+      yield (Result.Ok value)
 ```
 
 This ensures the `Err` branch fires on ANY exception, not just ExceptT errors.
@@ -96,7 +107,7 @@ This ensures dead stateless workers are eventually reaped even without lifecycle
 
 ### Negative
 
-1. **Broad exception catching**: `SomeException` catches `AsyncCancelled`, which could interfere with shutdown. Mitigated by verifying shutdown still works via the Stop message path.
+1. **Broad exception catching**: `SomeException` catches all exceptions including `AsyncCancelled`. This is intentional for worker loops — when a worker is force-cancelled (e.g., channel write timeout), catching `AsyncCancelled` ensures the worker is properly deregistered from the map. Normal shutdown uses the `Stop` message channel path, not async cancellation.
 2. **Default timeout change**: 30-second timeout may need tuning per deployment. Mitigated by making it configurable via `DispatcherConfig`.
 3. **Test updates required**: Existing tests may rely on `eventProcessingTimeoutMs = Nothing`. Migration guide needed.
 
@@ -104,7 +115,7 @@ This ensures dead stateless workers are eventually reaped even without lifecycle
 
 1. **SomeException is broad**: Could mask programming errors. Mitigated by logging the exception before continuing, making failures visible in logs.
 2. **Timeout affects existing deployments**: Changing the default could affect existing systems. Mitigated by making it configurable and documenting the change in release notes.
-3. **AsyncCancelled handling**: Need to verify shutdown still works correctly when `asResultSafe` catches `AsyncCancelled`. Test with explicit shutdown scenarios.
+3. **AsyncCancelled handling**: `asResultSafe` intentionally catches `AsyncCancelled` — in worker loops, this ensures dead workers are deregistered even when force-cancelled. Normal shutdown is handled via the `Stop` message path (not async cancellation), so shutdown behavior is unaffected. The force-cancel test in `DispatcherSpec.hs` validates this.
 
 ### Migration Path
 
