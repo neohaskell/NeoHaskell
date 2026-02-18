@@ -19,6 +19,7 @@ module Task (
   when,
   recover,
   asResult,
+  asResultSafe,
   fromIOResult,
   forever,
   errorAsResult,
@@ -33,7 +34,7 @@ import Applicable qualified
 import Array (Array)
 import Array qualified
 import Basics
-import Control.Exception (Exception)
+import Control.Exception (Exception, SomeException)
 import Control.Exception qualified as Exception
 import Control.Monad qualified
 import Control.Monad.IO.Class qualified as Monad
@@ -52,6 +53,7 @@ import Maybe (Maybe (..))
 import Result (Result)
 import Result qualified
 import Text (Text)
+import Text qualified
 import Thenable (Monad)
 import ToText (toPrettyText)
 import Prelude qualified
@@ -100,6 +102,38 @@ asResult task =
   runResult task
     |> fromIO
 {-# INLINE asResult #-}
+
+
+-- | Like 'asResult', but also catches IO exceptions (not just ExceptT errors).
+--
+-- 'asResult' only catches errors thrown via 'Task.throw' (ExceptT layer).
+-- IO exceptions from the underlying IO action propagate uncaught, which can
+-- silently kill worker threads.
+--
+-- 'asResultSafe' catches BOTH:
+-- 1. ExceptT errors (from Task.throw) — converted via 'show'
+-- 2. IO exceptions (from underlying IO) — converted via 'show'
+--
+-- Essential for worker loops where uncaught IO exceptions would kill the thread.
+asResultSafe ::
+  forall err value err2.
+  (Show err) =>
+  Task err value ->
+  Task err2 (Result Text value)
+asResultSafe task = do
+  result <-
+    task.runTask
+      |> Except.runExceptT
+      |> Exception.try @SomeException
+      |> fromIO
+  case result of
+    Either.Left someException ->
+      yield (Result.Err (show someException |> Text.fromLinkedList))
+    Either.Right (Either.Left err) ->
+      yield (Result.Err (show err |> Text.fromLinkedList))
+    Either.Right (Either.Right value) ->
+      yield (Result.Ok value)
+{-# INLINE asResultSafe #-}
 
 
 andThen :: (input -> Task err output) -> Task err input -> Task err output
