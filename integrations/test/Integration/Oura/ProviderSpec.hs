@@ -55,7 +55,7 @@ spec = do
         config.successRedirectUrl `shouldBe` successUrl
         config.failureRedirectUrl `shouldBe` failureUrl
 
-      it "includes both required scopes" do
+      it "includes all required scopes" do
         let clientId = ClientId "test-client-id"
         let clientSecret = mkClientSecret "test-secret"
         let redirectUri = testRedirectUri "https://localhost:3000/callback"
@@ -67,7 +67,7 @@ spec = do
 
         let scopeNames = config.scopes |> Array.map (\(Scope name) -> name) |> Array.toLinkedList
 
-        scopeNames `shouldBe` (["daily", "heartrate"] :: LinkedList.LinkedList Text)
+        scopeNames `shouldBe` (["email", "personal", "daily", "heartrate", "workout", "tag", "session", "spo2"] :: LinkedList.LinkedList Text)
 
       it "has correct provider endpoints in config" do
         let clientId = ClientId "test-client-id"
