@@ -56,15 +56,23 @@ extractTokenFromQuery :: Wai.Request -> Maybe Text
 
 ### Integration in Web.hs `/connect` Handler
 
-The `/connect` handler tries the Authorization header first, then falls back to the query parameter:
+The `/connect` handler tries the Authorization header first, then falls back to the query parameter. Empty tokens from either source are treated as absent:
 
 ```haskell
 ["connect", providerName] -> do
-  -- Try Authorization header first, fall back to ?token= query param
-  let maybeToken = case Middleware.extractToken request of
+  -- Try Authorization header first, fall back to ?token= query param.
+  -- Empty tokens from either source are treated as absent.
+  let headerToken = Middleware.extractToken request
+  let queryToken = Middleware.extractTokenFromQuery request
+  let nonEmpty maybeVal = case maybeVal of
+        Just val -> case Text.isEmpty val of
+          True -> Nothing
+          False -> Just val
+        Nothing -> Nothing
+  let maybeToken = case nonEmpty headerToken of
         Just token -> Just token
-        Nothing -> Middleware.extractTokenFromQuery request
-  -- Use token to validate auth...
+        Nothing -> nonEmpty queryToken
+  -- Use token to validate auth via checkAuthWithToken...
 ```
 
 ### Referrer and Cache Protection
@@ -103,6 +111,14 @@ window.location.href = `/connect/oura?token=${encodeURIComponent(jwtToken)}`;
 - **Referrer leakage**: Mitigated by `Referrer-Policy: no-referrer` header on the 302 redirect response.
 - **Cache poisoning**: Mitigated by `Cache-Control: no-store, no-cache` and `Pragma: no-cache` on the redirect response.
 - **Browser history**: The URL with token is saved in browser history. Mitigated by short-lived tokens — by the time someone accesses history, the token is expired.
+
+### Deployment Requirements
+
+- **Short-lived tokens**: Deployments using the query-param fallback **must** use short-lived JWTs. Recommended maximum lifetime: **15 minutes** (`exp - iat ≤ 900s`). This is an operational requirement — the framework currently does not enforce this limit.
+
+### Future Hardening
+
+- **Server-side lifetime enforcement**: The `/connect` handler (or the token validation path for query-sourced tokens) could reject tokens whose `exp - iat` exceeds a configurable maximum (e.g., 15 minutes). This would allow operators to enable strict enforcement for query-sourced tokens, preventing long-lived tokens from being used via the query parameter fallback. This is not implemented in the initial version but is a recommended future enhancement.
 
 ### Security Model
 

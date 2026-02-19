@@ -75,6 +75,10 @@ spec = do
         let request = mockRequestWithAuthAndQueryParam "Bearer header-token" "token" "query-token"
         extractTokenFromQuery request `shouldBe` Just "query-token"
 
+      it "returns Just empty string when token param has empty value" \_ -> do
+        let request = mockRequestWithQueryParam "token" ""
+        extractTokenFromQuery request `shouldBe` Just ""
+
     describe "checkAuthWithToken" do
       it "validates a pre-extracted valid token" \_ -> do
         keys <- JwtCore.testKeys

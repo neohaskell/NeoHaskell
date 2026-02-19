@@ -459,26 +459,28 @@ instance Transport WebTransport where
                   |> Wai.responseLBS HTTP.status400 [(HTTP.hContentType, "application/json")]
           respondFn response400
 
-    -- Helper function for 302 redirect responses
+    -- Helper function for 302 redirect with configurable extra headers.
     -- SECURITY: Sanitize URL to prevent header injection (CRLF attacks)
-    let redirect302 url respondFn = do
+    let redirectWithHeaders extraHeaders url respondFn = do
           -- Remove any CR/LF characters that could allow header injection
           let sanitizedUrl = url |> Text.filter (\c -> c != '\r' && c != '\n')
           let locationHeader = (HTTP.hLocation, sanitizedUrl |> Text.toBytes |> Bytes.unwrap)
-          let response302 = Wai.responseLBS HTTP.status302 [locationHeader] ""
+          let response302 = Wai.responseLBS HTTP.status302 (locationHeader : extraHeaders) ""
           respondFn response302
 
-    -- Helper function for 302 redirect with Referrer-Policy: no-referrer
-    -- SECURITY: Prevents token leakage via Referer header for OAuth2 connect flow (ADR-0031)
-    -- Cache-Control: no-store prevents CDN/proxy caching of token-bearing URLs
-    let redirect302WithNoReferrer url respondFn = do
-          let sanitizedUrl = url |> Text.filter (\c -> c != '\r' && c != '\n')
-          let locationHeader = (HTTP.hLocation, sanitizedUrl |> Text.toBytes |> Bytes.unwrap)
-          let referrerPolicy = ("Referrer-Policy", "no-referrer")
-          let cacheControl = (HTTP.hCacheControl, "no-store, no-cache")
-          let pragma = ("Pragma", "no-cache")
-          let response302 = Wai.responseLBS HTTP.status302 [locationHeader, referrerPolicy, cacheControl, pragma] ""
-          respondFn response302
+    -- Standard 302 redirect (no extra headers)
+    let redirect302 = redirectWithHeaders []
+
+    -- 302 redirect with Referrer-Policy: no-referrer + cache prevention.
+    -- SECURITY: Prevents token leakage via Referer header for OAuth2 connect flow (ADR-0031).
+    -- Cache-Control: no-store prevents CDN/proxy caching of token-bearing URLs.
+    let redirect302WithNoReferrer = do
+          let securityHeaders =
+                [ ("Referrer-Policy", "no-referrer")
+                , (HTTP.hCacheControl, "no-store, no-cache")
+                , ("Pragma", "no-cache")
+                ]
+          redirectWithHeaders securityHeaders
 
     -- Helper function for 429 Too Many Requests responses
     let tooManyRequests retryAfter respondFn = do
@@ -643,15 +645,20 @@ instance Transport WebTransport where
               Maybe.Just auth -> do
                 -- Try Authorization header first, fall back to ?token= query param.
                 -- Query param fallback is needed for browser redirects (SPAs can't send headers).
-                -- Empty Bearer tokens (e.g. from proxy injection) are treated as absent.
+                -- Empty tokens from either source are treated as absent.
                 -- See ADR-0031.
                 let headerToken = Middleware.extractToken request
-                let maybeToken = case headerToken of
-                      Maybe.Just token ->
-                        case Text.isEmpty token of
-                          True -> Middleware.extractTokenFromQuery request
-                          False -> Maybe.Just token
-                      Maybe.Nothing -> Middleware.extractTokenFromQuery request
+                let queryToken = Middleware.extractTokenFromQuery request
+                let nonEmpty maybeVal =
+                      case maybeVal of
+                        Maybe.Just val ->
+                          case Text.isEmpty val of
+                            True -> Maybe.Nothing
+                            False -> Maybe.Just val
+                        Maybe.Nothing -> Maybe.Nothing
+                let maybeToken = case nonEmpty headerToken of
+                      Maybe.Just token -> Maybe.Just token
+                      Maybe.Nothing -> nonEmpty queryToken
                 case maybeToken of
                   Maybe.Nothing -> Middleware.respondWithAuthError TokenMissing respond
                   Maybe.Just token -> do
