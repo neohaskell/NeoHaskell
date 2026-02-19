@@ -7,7 +7,7 @@
 --
 -- * @email@: User email address
 -- * @personal@: Personal info (age, weight, height, biological sex)
--- * @daily@: Daily summaries (sleep, activity, readiness, cardiovascular age, resilience, spo2, stress, sleep_time)
+-- * @daily@: Daily summaries (sleep, activity, readiness, cardiovascular age, resilience, stress, sleep_time)
 -- * @heartrate@: Heart rate data
 -- * @workout@: Workout data
 -- * @tag@: Enhanced tag data

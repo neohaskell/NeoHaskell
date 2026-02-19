@@ -65,7 +65,7 @@ ouraApiBase :: Text
 ouraApiBase = "https://api.ouraring.com/v2/usercollection"
 
 
--- ToAction runs all 17 in parallel via AsyncTask.runConcurrently pairs
+-- ToAction runs 17 fetches via 8 sequential AsyncTask.runConcurrently pairs + 1 standalone
 instance (Json.ToJSON command, GhcTypeLits.KnownSymbol (NameOf command)) =>
   Integration.ToAction (SyncAll command) where
   toAction config = Integration.action \ctx ->

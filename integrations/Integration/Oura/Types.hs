@@ -10,7 +10,6 @@ module Integration.Oura.Types
   , ActivityContributors (..)
   , ResilienceContributors (..)
   , SpO2AggregatedValues (..)
-  , DailyStressSummary (..)
   , RestModeEpisode (..)
   , SleepPeriodReadiness (..)
   , SleepPeriodData (..)
@@ -415,33 +414,6 @@ instance Json.FromJSON SpO2AggregatedValues where
   parseJSON = Json.withObject "SpO2AggregatedValues" \obj -> do
     average <- obj Json..: "average"
     Json.yield (SpO2AggregatedValues average)
-
-
--- | Daily stress summary
-data DailyStressSummary = DailyStressSummary
-  { averageStress :: Maybe Float
-  , maxStress :: Maybe Float
-  , stressHigh :: Maybe Float
-  , recoveryHigh :: Maybe Float
-  }
-  deriving (Show, Eq, Generic)
-
-instance Json.ToJSON DailyStressSummary where
-  toJSON summary =
-    Json.object
-      [ "average_stress" Json..= summary.averageStress
-      , "max_stress" Json..= summary.maxStress
-      , "stress_high" Json..= summary.stressHigh
-      , "recovery_high" Json..= summary.recoveryHigh
-      ]
-
-instance Json.FromJSON DailyStressSummary where
-  parseJSON = Json.withObject "DailyStressSummary" \obj -> do
-    averageStress <- obj Json..:? "average_stress"
-    maxStress <- obj Json..:? "max_stress"
-    stressHigh <- obj Json..:? "stress_high"
-    recoveryHigh <- obj Json..:? "recovery_high"
-    Json.yield (DailyStressSummary averageStress maxStress stressHigh recoveryHigh)
 
 
 -- | Rest mode episode

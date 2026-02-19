@@ -129,10 +129,9 @@ module Integration.Oura (
   SampleModel (..),
   ActivityContributors (..),
   ReadinessContributors (..),
-  ResilienceContributors (..),
-  SpO2AggregatedValues (..),
-  DailyStressSummary (..),
-  RestModeEpisode (..),
+   ResilienceContributors (..),
+   SpO2AggregatedValues (..),
+   RestModeEpisode (..),
   SleepPeriodReadiness (..),
   PaginatedResponse (..),
 ) where
@@ -156,6 +155,6 @@ import Integration.Oura.RestModePeriod (RestModePeriod (..))
 import Integration.Oura.RingConfiguration (RingConfiguration (..))
 import Integration.Oura.SleepPeriod (SleepPeriod (..))
 import Integration.Oura.SyncAll (SyncAll (..), SyncResult (..))
-import Integration.Oura.Types (SleepData (..), ActivityData (..), ReadinessData (..), HeartRateData (..), WorkoutData (..), SessionData (..), PersonalInfoData (..), DailyStressData (..), DailySpO2Data (..), DailyResilienceData (..), DailyCardiovascularAgeData (..), VO2MaxData (..), EnhancedTagData (..), SleepTimeData (..), RestModePeriodData (..), RingConfigurationData (..), SleepPeriodData (..), SleepContributors (..), SampleModel (..), ActivityContributors (..), ReadinessContributors (..), ResilienceContributors (..), SpO2AggregatedValues (..), DailyStressSummary (..), RestModeEpisode (..), SleepPeriodReadiness (..), PaginatedResponse (..))
+import Integration.Oura.Types (SleepData (..), ActivityData (..), ReadinessData (..), HeartRateData (..), WorkoutData (..), SessionData (..), PersonalInfoData (..), DailyStressData (..), DailySpO2Data (..), DailyResilienceData (..), DailyCardiovascularAgeData (..), VO2MaxData (..), EnhancedTagData (..), SleepTimeData (..), RestModePeriodData (..), RingConfigurationData (..), SleepPeriodData (..), SleepContributors (..), SampleModel (..), ActivityContributors (..), ReadinessContributors (..), ResilienceContributors (..), SpO2AggregatedValues (..), RestModeEpisode (..), SleepPeriodReadiness (..), PaginatedResponse (..))
 -- Note: ToAction instances are exported from Internal.hs via orphan instances
 import Integration.Oura.Internal ()  -- Import for instances
