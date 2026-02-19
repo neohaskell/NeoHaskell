@@ -459,14 +459,28 @@ instance Transport WebTransport where
                   |> Wai.responseLBS HTTP.status400 [(HTTP.hContentType, "application/json")]
           respondFn response400
 
-    -- Helper function for 302 redirect responses
+    -- Helper function for 302 redirect with configurable extra headers.
     -- SECURITY: Sanitize URL to prevent header injection (CRLF attacks)
-    let redirect302 url respondFn = do
+    let redirectWithHeaders extraHeaders url respondFn = do
           -- Remove any CR/LF characters that could allow header injection
           let sanitizedUrl = url |> Text.filter (\c -> c != '\r' && c != '\n')
           let locationHeader = (HTTP.hLocation, sanitizedUrl |> Text.toBytes |> Bytes.unwrap)
-          let response302 = Wai.responseLBS HTTP.status302 [locationHeader] ""
+          let response302 = Wai.responseLBS HTTP.status302 (locationHeader : extraHeaders) ""
           respondFn response302
+
+    -- Standard 302 redirect (no extra headers)
+    let redirect302 = redirectWithHeaders []
+
+    -- 302 redirect with Referrer-Policy: no-referrer + cache prevention.
+    -- SECURITY: Prevents token leakage via Referer header for OAuth2 connect flow (ADR-0031).
+    -- Cache-Control: no-store prevents CDN/proxy caching of token-bearing URLs.
+    let redirect302WithNoReferrer = do
+          let securityHeaders =
+                [ ("Referrer-Policy", "no-referrer")
+                , (HTTP.hCacheControl, "no-store, no-cache")
+                , ("Pragma", "no-cache")
+                ]
+          redirectWithHeaders securityHeaders
 
     -- Helper function for 429 Too Many Requests responses
     let tooManyRequests retryAfter respondFn = do
@@ -629,19 +643,41 @@ instance Transport WebTransport where
             case webTransport.authEnabled of
               Maybe.Nothing -> unauthorized "Authentication required for OAuth2 connect"
               Maybe.Just auth -> do
-                authResult <- Middleware.checkAuth (Maybe.Just auth.jwksManager) auth.authConfig Authenticated request
-                case authResult of
-                  Result.Err authErr -> Middleware.respondWithAuthError authErr respond
-                  Result.Ok authContext -> do
-                    case authContext.claims of
-                      Maybe.Nothing -> unauthorized "Authentication required"
-                      Maybe.Just claims -> do
-                        -- Extract userId from claims (sub field)
-                        let userId = claims.sub
-                        result <- oauth2.routes.handleConnect providerName userId |> Task.asResult
-                        case result of
-                          Result.Err routeErr -> handleOAuth2Error routeErr respond
-                          Result.Ok authUrl -> redirect302 authUrl respond
+                -- Try Authorization header first, fall back to ?token= query param.
+                -- Query param fallback is needed for browser redirects (SPAs can't send headers).
+                -- Empty tokens from either source are treated as absent.
+                -- See ADR-0031.
+                let headerToken = Middleware.extractToken request
+                let queryToken = Middleware.extractTokenFromQuery request
+                let nonEmpty maybeVal =
+                      case maybeVal of
+                        Maybe.Just val ->
+                          case Text.isEmpty val of
+                            True -> Maybe.Nothing
+                            False -> Maybe.Just val
+                        Maybe.Nothing -> Maybe.Nothing
+                let maybeToken = case nonEmpty headerToken of
+                      Maybe.Just token -> Maybe.Just token
+                      Maybe.Nothing -> nonEmpty queryToken
+                case maybeToken of
+                  Maybe.Nothing -> Middleware.respondWithAuthError TokenMissing respond
+                  Maybe.Just token -> do
+                    authResult <- Middleware.checkAuthWithToken (Maybe.Just auth.jwksManager) auth.authConfig token
+                    case authResult of
+                      Result.Err authErr -> Middleware.respondWithAuthError authErr respond
+                      Result.Ok authContext -> do
+                        case authContext.claims of
+                          Maybe.Nothing -> unauthorized "Authentication required"
+                          Maybe.Just claims -> do
+                            -- Extract userId from claims (sub field)
+                            let userId = claims.sub
+                            result <- oauth2.routes.handleConnect providerName userId |> Task.asResult
+                            case result of
+                              Result.Err routeErr -> handleOAuth2Error routeErr respond
+                              -- SECURITY: Referrer-Policy prevents JWT leaking to OAuth2 provider
+                              -- via Referer header when token was passed as query parameter.
+                              -- See ADR-0031.
+                              Result.Ok authUrl -> redirect302WithNoReferrer authUrl respond
       ["callback", providerName] -> do
         case webTransport.oauth2Config of
           Maybe.Nothing -> notFound "OAuth2 not configured"
