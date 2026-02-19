@@ -215,6 +215,7 @@ library
     Service.EventStore
     Service.EventStore.Core
     Service.EventStore.InMemory
+    Service.EventStore.Simple
     Service.EventStore.Postgres
     Service.EventStore.Postgres.Internal
     Service.EventStore.Postgres.Core
@@ -384,6 +385,7 @@ test-suite nhcore-test
     Service.CommandHandlerSpec
     Service.CommandSpec
     Service.EventStore.InMemorySpec
+    Service.EventStore.SimpleSpec
     Service.EventStore.Postgres.SubscriptionStoreSpec
     Service.EventStore.PostgresSpec
     Service.MockTransport
@@ -466,6 +468,7 @@ test-suite nhcore-test-service
     Service.CommandHandlerSpec
     Service.CommandSpec
     Service.EventStore.InMemorySpec
+    Service.EventStore.SimpleSpec
     Service.EventStore.Postgres.SubscriptionStoreSpec
     Service.EventStore.PostgresSpec
     Service.FileUpload.BlobStore.LocalSpec

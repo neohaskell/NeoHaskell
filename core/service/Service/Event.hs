@@ -39,6 +39,9 @@ data Event eventType = Event
 instance (Json.FromJSON eventType) => Json.FromJSON (Event eventType)
 
 
+instance (Json.ToJSON eventType) => Json.ToJSON (Event eventType)
+
+
 data InsertionType
   = StreamCreation
   | InsertAfter StreamPosition

@@ -6,6 +6,7 @@ import Service.ApplicationSpec qualified
 import Service.CommandHandlerSpec qualified
 import Service.CommandSpec qualified
 import Service.EventStore.InMemorySpec qualified
+import Service.EventStore.SimpleSpec qualified
 import Service.EventStore.Postgres.SubscriptionStoreSpec qualified
 import Service.EventStore.PostgresSpec qualified
 import Service.FileUpload.BlobStore.LocalSpec qualified
@@ -33,6 +34,7 @@ main = Hspec.hspec do
   Hspec.describe "Service.CommandHandler" Service.CommandHandlerSpec.spec
   Hspec.describe "Service.Command" Service.CommandSpec.spec
   Hspec.describe "Service.EventStore.InMemory" Service.EventStore.InMemorySpec.spec
+  Hspec.describe "Service.EventStore.Simple" Service.EventStore.SimpleSpec.spec
   Hspec.describe "Service.EventStore.Postgres.SubscriptionStore" Service.EventStore.Postgres.SubscriptionStoreSpec.spec
   Hspec.describe "Service.EventStore.Postgres" Service.EventStore.PostgresSpec.spec
   Hspec.describe "Service.FileUpload.BlobStore.Local" Service.FileUpload.BlobStore.LocalSpec.spec
