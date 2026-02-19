@@ -42,9 +42,14 @@ module Service.Application (
   withCors,
   withHealthCheck,
   withoutHealthCheck,
+  withDispatcherConfig,
 
   -- * Health Check Re-export
   Web.HealthCheckConfig (..),
+
+  -- * Dispatcher Config Re-exports
+  Dispatcher.DispatcherConfig (..),
+  Dispatcher.defaultConfig,
 
   -- * File Upload Setup Type
   FileUploadSetup (..),
@@ -89,10 +94,11 @@ import Auth.SecretStore (SecretStore)
 import Auth.SecretStore.InMemory qualified as InMemorySecretStore
 
 import Basics
-import Console qualified
+import Log qualified
 import Environment qualified
 import Control.Concurrent.Async qualified as GhcAsync
 import Data.Either qualified as GhcEither
+import System.IO qualified as GhcIO
 import Default (Default (..))
 import GHC.TypeLits qualified as GHC
 import IO qualified
@@ -301,7 +307,8 @@ data Application = Application
     corsConfig :: Maybe Web.CorsConfig,
     -- | Health check configuration. Enabled by default at /health.
     -- Use withHealthCheck to customize the path, or withoutHealthCheck to disable.
-    healthCheckConfig :: Maybe Web.HealthCheckConfig
+    healthCheckConfig :: Maybe Web.HealthCheckConfig,
+    dispatcherConfig :: Maybe Dispatcher.DispatcherConfig
   }
 
 
@@ -329,7 +336,8 @@ new =
       secretStore = Nothing,
       apiInfo = Nothing,
       corsConfig = Nothing,
-      healthCheckConfig = Just Web.HealthCheckConfig {Web.healthPath = "health"}
+      healthCheckConfig = Just Web.HealthCheckConfig {Web.healthPath = "health"},
+      dispatcherConfig = Nothing
     }
 
 
@@ -636,10 +644,10 @@ serviceRunnerCount app = Array.length app.serviceRunners
 -- to avoid code duplication.
 initAndWrapFileUpload :: FileUploadConfig -> Task Text (Maybe FileUploadSetup, Task Text ())
 initAndWrapFileUpload fileConfig = do
-  Console.print "[FileUpload] Initializing file upload..."
+  Log.info "Initializing file upload..."
     |> Task.ignoreError
   (setup, cleanup) <- initializeFileUpload fileConfig
-  Console.print "[FileUpload] File uploads enabled"
+  Log.info "File uploads enabled"
     |> Task.ignoreError
   Task.yield (Just setup, cleanup)
 
@@ -664,65 +672,72 @@ initAndWrapFileUpload fileConfig = do
 --   |> Application.run
 -- @
 run :: Application -> Task Text Unit
-run app = do
-  -- 0. Load .env file if present (before config loading)
-  -- This allows environment variables to be set from .env files
-  -- without requiring external tools like direnv.
-  Environment.loadEnvFileIfPresent ".env"
+run app =
+   Log.withScope [("component", "Application")] do
+     -- 0. Set line buffering for stdout/stderr (container visibility)
+     -- GHC defaults to block buffering when isatty() returns false (always in containers),
+     -- which makes Console.print output invisible. LineBuffering ensures immediate visibility.
+     Task.fromIO (GhcIO.hSetBuffering GhcIO.stdout GhcIO.LineBuffering)
+     Task.fromIO (GhcIO.hSetBuffering GhcIO.stderr GhcIO.LineBuffering)
 
-  -- 1. Load config (now that .env vars are available)
-  case app.configSpec of
-    Nothing -> pass
-    Just (ConfigSpec loadConfig) -> do
-      Console.print "[Config] Loading configuration..."
-        |> Task.ignoreError
-      config <- loadConfig
-        |> Task.mapError (\err -> [fmt|Configuration failed:\n#{err}|])
-      Task.fromIO (ConfigGlobal.setGlobalConfig config)
-      Console.print "[Config] Configuration loaded successfully"
-        |> Task.ignoreError
+     -- 1. Load .env file if present (before config loading)
+     -- This allows environment variables to be set from .env files
+     -- without requiring external tools like direnv.
+     Environment.loadEnvFileIfPresent ".env"
 
-  -- 2. Validate EventStore is configured and create it
-  eventStore <- case app.eventStoreFactory of
-    Nothing -> Task.throw "No EventStore configured. Use withEventStore."
-    Just (EvaluatedEventStore config) -> createEventStore config
-    Just (DeferredEventStore mkConfig) -> do
-      case app.configSpec of
-        Nothing -> Task.throw "withEventStore requires withConfig when the factory uses the config parameter. If you don't need config, use: withEventStore @() (\\_ -> yourConfig)"
-        Just _ -> do
-          let config = Config.get
-          createEventStore (mkConfig config)
+     -- 2. Load config (now that .env vars are available)
+     case app.configSpec of
+       Nothing -> pass
+       Just (ConfigSpec loadConfig) -> do
+         Log.info "Loading configuration..."
+           |> Task.ignoreError
+         config <- loadConfig
+           |> Task.mapError (\err -> [fmt|Configuration failed:\n#{err}|])
+         Task.fromIO (ConfigGlobal.setGlobalConfig config)
+         Log.info "Configuration loaded successfully"
+           |> Task.ignoreError
 
-  -- 3. Resolve FileUploadFactory (must happen after config is loaded)
-  (maybeFileUploadSetup, fileUploadCleanup) <- case app.fileUploadFactory of
-    Nothing -> Task.yield (Nothing, Task.yield ())
-    Just (EvaluatedFileUpload fileConfig) ->
-      initAndWrapFileUpload fileConfig
-    Just (DeferredFileUpload mkConfig) -> do
-      case app.configSpec of
-        Nothing -> Task.throw "withFileUpload requires withConfig when the factory uses the config parameter. If you don't need config, use: withFileUpload @() (\\_ -> yourConfig)"
-        Just _ -> do
-          let appConfig = Config.get
-          let fileConfig = mkConfig appConfig
-          initAndWrapFileUpload fileConfig
+     -- 3. Validate EventStore is configured and create it
+     eventStore <- case app.eventStoreFactory of
+       Nothing -> Task.throw "No EventStore configured. Use withEventStore."
+       Just (EvaluatedEventStore config) -> createEventStore config
+       Just (DeferredEventStore mkConfig) -> do
+         case app.configSpec of
+           Nothing -> Task.throw "withEventStore requires withConfig when the factory uses the config parameter. If you don't need config, use: withEventStore @() (\\_ -> yourConfig)"
+           Just _ -> do
+             let config = Config.get
+             createEventStore (mkConfig config)
 
-  -- 4. Resolve WebAuthFactory (must happen after config is loaded)
-  maybeWebAuthSetup <- case app.webAuthFactory of
-    Nothing -> Task.yield Nothing
-    Just (EvaluatedWebAuth setup) -> Task.yield (Just setup)
-    Just (DeferredWebAuth mkAuthUrl overrides) -> do
-      case app.configSpec of
-        Nothing -> Task.throw "withAuth requires withConfig when the factory uses the config parameter. If you don't need config, use: withAuth @() (\\_ -> yourAuthUrl)"
-        Just _ -> do
-          let appConfig = Config.get
-          let setup = WebAuthSetup
-                { authServerUrl = mkAuthUrl appConfig
-                , authOverrides = overrides
-                }
-          Task.yield (Just setup)
+     -- 4. Resolve FileUploadFactory (must happen after config is loaded)
+     (maybeFileUploadSetup, fileUploadCleanup) <- case app.fileUploadFactory of
+       Nothing -> Task.yield (Nothing, Task.yield ())
+       Just (EvaluatedFileUpload fileConfig) ->
+         initAndWrapFileUpload fileConfig
+       Just (DeferredFileUpload mkConfig) -> do
+         case app.configSpec of
+           Nothing -> Task.throw "withFileUpload requires withConfig when the factory uses the config parameter. If you don't need config, use: withFileUpload @() (\\_ -> yourConfig)"
+           Just _ -> do
+             let appConfig = Config.get
+             let fileConfig = mkConfig appConfig
+             initAndWrapFileUpload fileConfig
 
-  -- 5. Run with resolved event store, file upload, and auth
-  runWithResolved eventStore maybeFileUploadSetup fileUploadCleanup maybeWebAuthSetup app
+     -- 5. Resolve WebAuthFactory (must happen after config is loaded)
+     maybeWebAuthSetup <- case app.webAuthFactory of
+       Nothing -> Task.yield Nothing
+       Just (EvaluatedWebAuth setup) -> Task.yield (Just setup)
+       Just (DeferredWebAuth mkAuthUrl overrides) -> do
+         case app.configSpec of
+           Nothing -> Task.throw "withAuth requires withConfig when the factory uses the config parameter. If you don't need config, use: withAuth @() (\\_ -> yourAuthUrl)"
+           Just _ -> do
+             let appConfig = Config.get
+             let setup = WebAuthSetup
+                   { authServerUrl = mkAuthUrl appConfig
+                   , authOverrides = overrides
+                   }
+             Task.yield (Just setup)
+
+     -- 6. Run with resolved event store, file upload, and auth
+     runWithResolved eventStore maybeFileUploadSetup fileUploadCleanup maybeWebAuthSetup app
 
 
 -- | Run application with a provided EventStore.
@@ -841,13 +856,16 @@ runWithResolved eventStore maybeFileUploadSetup fileUploadCleanup maybeWebAuthSe
   maybeAuthEnabled <- case maybeWebAuthSetup of
     Nothing -> Task.yield Nothing
     Just (WebAuthSetup serverUrl overrides) -> do
-      Console.print [fmt|[Auth] Discovering auth config from #{serverUrl}...|]
+      Log.debug [fmt|Discovering auth config from #{serverUrl}...|]
+        |> Task.ignoreError
       authConfig <-
         Discovery.discoverConfig serverUrl overrides
           |> Task.mapError (\err -> [fmt|Auth discovery failed: #{toText err}|])
-      Console.print [fmt|[Auth] Starting JWKS manager...|]
+      Log.debug [fmt|Starting JWKS manager...|]
+        |> Task.ignoreError
       jwksManager <- Jwks.startManager authConfig
-      Console.print [fmt|[Auth] Auth initialized successfully|]
+      Log.info [fmt|Auth initialized successfully|]
+        |> Task.ignoreError
       Task.yield
         ( Just
             Web.AuthEnabled
@@ -881,27 +899,20 @@ runWithResolved eventStore maybeFileUploadSetup fileUploadCleanup maybeWebAuthSe
       case maybeWebAuthSetup of
         Nothing -> Task.throw "OAuth2 requires authentication to be enabled. Call withAuth before configuring OAuth2 providers."
         Just _ -> pass
-      Console.print [fmt|[OAuth2] Loading HMAC key from environment variable #{envVarName}...|]
+      Log.debug [fmt|Loading HMAC key from environment variable #{envVarName}...|]
       -- Load HMAC key from environment (declarative config, runtime loading)
       hmacKey <- loadHmacKeyFromEnv envVarName
-      Console.print [fmt|[OAuth2] Initializing OAuth2 provider routes...|]
+      Log.debug [fmt|Initializing OAuth2 provider routes...|]
       -- Create in-memory transaction store for PKCE verifiers + userId
       transactionStore <- InMemoryTransactionStore.new
       -- Get or create SecretStore for token storage
       tokenStore <- case app.secretStore of
         Just store -> do
-          Console.print [fmt|[OAuth2] Using custom SecretStore|]
+          Log.debug [fmt|Using custom SecretStore|]
           Task.yield store
         Nothing -> do
-          Console.print [fmt|[OAuth2] ============================================================|]
-          Console.print [fmt|[OAuth2] WARNING: Using in-memory SecretStore (development only)|]
-          Console.print [fmt|[OAuth2] |]
-          Console.print [fmt|[OAuth2] OAuth2 tokens will be LOST on restart and cannot be|]
-          Console.print [fmt|[OAuth2] shared across multiple instances.|]
-          Console.print [fmt|[OAuth2] |]
-          Console.print [fmt|[OAuth2] For production, configure a persistent SecretStore:|]
-          Console.print [fmt|[OAuth2]   Application.withSecretStore mySecretStore|]
-          Console.print [fmt|[OAuth2] ============================================================|]
+          Log.warn "OAuth2 is using in-memory SecretStore. This is NOT suitable for production. Configure a persistent SecretStore for production use."
+            |> Task.ignoreError
           InMemorySecretStore.new
       -- Create rate limiters for abuse prevention
       connectRateLimiter <- RateLimiter.new RateLimiter.defaultConnectConfig
@@ -934,12 +945,13 @@ runWithResolved eventStore maybeFileUploadSetup fileUploadCleanup maybeWebAuthSe
               Ok (payload :: Integration.CommandPayload) -> do
                 Dispatcher.dispatchCommand combinedCommandEndpoints payload
       let providerCount = Array.length providerConfigs
-      Console.print [fmt|[OAuth2] Initialized #{providerCount} provider(s)|]
+      Log.info [fmt|Initialized #{providerCount} provider(s)|]
       Task.yield (Just Web.OAuth2Config {Web.routes = routes, Web.dispatchAction = dispatchAction}, actionContext)
 
   -- 13. Start integration subscriber for outbound integrations with command dispatch
   maybeDispatcher <-
     Integrations.startIntegrationSubscriber
+      app.dispatcherConfig
       eventStore
       app.outboundRunners
       app.outboundLifecycleRunners
@@ -961,7 +973,7 @@ runWithResolved eventStore maybeFileUploadSetup fileUploadCleanup maybeWebAuthSe
   -- Define cleanup actions that must always run
   let cleanupJwksManager = case maybeAuthEnabled of
         Just (Web.AuthEnabled manager _) -> do
-          Console.print "[Auth] Stopping JWKS manager..."
+          Log.debug "Stopping JWKS manager..."
             |> Task.ignoreError
           Jwks.stopManager manager
             |> Task.ignoreError
@@ -969,7 +981,7 @@ runWithResolved eventStore maybeFileUploadSetup fileUploadCleanup maybeWebAuthSe
 
   let cleanupDispatcher = case maybeDispatcher of
         Just dispatcher -> do
-          Console.print "[Integration] Shutting down outbound dispatcher..."
+          Log.debug "Shutting down outbound dispatcher..."
             |> Task.ignoreError
           Dispatcher.shutdown dispatcher
         Nothing -> pass
@@ -990,7 +1002,7 @@ runWithResolved eventStore maybeFileUploadSetup fileUploadCleanup maybeWebAuthSe
       |> Task.asResult
 
   -- 17. Cancel all inbound workers on shutdown
-  Console.print "[Integration] Shutting down inbound workers..."
+  Log.debug "Shutting down inbound workers..."
     |> Task.ignoreError
   let shutdownTimeoutMs = 5000
   let awaitWorkerShutdown worker = do
@@ -1012,7 +1024,7 @@ runWithResolved eventStore maybeFileUploadSetup fileUploadCleanup maybeWebAuthSe
         case awaitResult of
           Ok _ -> Task.yield unit
           Err err ->
-            Console.print [fmt|[Integration] Inbound worker shutdown timed out or failed: #{err}|]
+            Log.warn [fmt|Inbound worker shutdown timed out or failed: #{err}|]
               |> Task.ignoreError
 
   -- Re-raise any transport error
@@ -1041,7 +1053,7 @@ runWithAsync eventStore app = do
       taskWithErrorLogging = do
         result <- runWith eventStore app |> Task.asResult
         case result of
-          Err err -> Console.print [fmt|[Application] Error: Application failed: #{err}|]
+          Err err -> Log.critical [fmt|Application failed: #{err}|]
           Ok _ -> Task.yield unit
   AsyncTask.run taskWithErrorLogging
     |> Task.mapError toText
@@ -1350,6 +1362,43 @@ withoutHealthCheck app =
   app {healthCheckConfig = Nothing}
 
 
+-- | Configure the integration dispatcher.
+--
+-- The dispatcher routes events to per-entity workers for outbound integrations.
+-- By default, 'Dispatcher.defaultConfig' is used which sets a 30-second
+-- event processing timeout.
+--
+-- Use this to customize timeouts, channel capacity, and worker lifecycle
+-- for your application's needs.
+--
+-- Example:
+--
+-- @
+-- app = Application.new
+--   |> Application.withDispatcherConfig
+--        Dispatcher.defaultConfig { eventProcessingTimeoutMs = Just 120000 }
+--   |> Application.withService myService
+-- @
+withDispatcherConfig ::
+  Dispatcher.DispatcherConfig ->
+  Application ->
+  Application
+withDispatcherConfig config app =
+  case config.workerChannelCapacity <= 0 of
+    True -> panic "Application.withDispatcherConfig: workerChannelCapacity must be positive"
+    False -> case config.channelWriteTimeoutMs <= 0 of
+      True -> panic "Application.withDispatcherConfig: channelWriteTimeoutMs must be positive"
+      False -> case config.idleTimeoutMs <= 0 of
+        True -> panic "Application.withDispatcherConfig: idleTimeoutMs must be positive"
+        False -> case config.reaperIntervalMs <= 0 of
+          True -> panic "Application.withDispatcherConfig: reaperIntervalMs must be positive"
+          False -> case config.eventProcessingTimeoutMs of
+            Just ms -> case ms <= 0 of
+              True -> panic "Application.withDispatcherConfig: eventProcessingTimeoutMs must be positive when set"
+              False -> app {dispatcherConfig = Just config}
+            Nothing -> app {dispatcherConfig = Just config}
+
+
 -- | Configure a custom SecretStore for token storage.
 --
 -- By default, OAuth2 uses an in-memory SecretStore which is suitable for
@@ -1534,7 +1583,7 @@ initializeFileUpload fileConfig = do
         |> Task.mapError (\err -> [fmt|Failed to initialize PostgreSQL file state store: #{err}|])
       -- Cleanup action releases the connection pool
       let cleanup = do
-            Console.print "[FileUpload] Releasing PostgreSQL connection pool..."
+            Log.debug "Releasing PostgreSQL connection pool..."
               |> Task.ignoreError
             HasqlPool.release pool
               |> Task.fromIO
@@ -1686,7 +1735,7 @@ buildProviderMap configs = do
               Just _ -> Task.throw [fmt|Duplicate OAuth2 provider configuration: '#{providerName}' is registered multiple times. Each provider name must be unique.|]
               Nothing -> do
                 -- Log validation attempt for debugging
-                Console.print [fmt|[OAuth2] Validating provider '#{providerName}' endpoints...|]
+                Log.debug [fmt|Validating provider '#{providerName}' endpoints...|]
                   |> Task.ignoreError
                 -- Validate provider endpoints (HTTPS, SSRF protection, DNS check)
                 validationResult <- OAuth2Client.validateProvider cfg.provider |> Task.asResult
@@ -1694,11 +1743,11 @@ buildProviderMap configs = do
                   Err oauthError -> do
                     -- Log detailed error before failing
                     let errorDetail = formatOAuth2ValidationError providerName cfg.provider oauthError
-                    Console.print [fmt|[OAuth2] ERROR: #{errorDetail}|]
+                    Log.critical [fmt|#{errorDetail}|]
                       |> Task.ignoreError
                     Task.throw errorDetail
                   Ok validatedProvider -> do
-                    Console.print [fmt|[OAuth2] Provider '#{providerName}' validated successfully|]
+                    Log.debug [fmt|Provider '#{providerName}' validated successfully|]
                       |> Task.ignoreError
                     let validatedConfig =
                           ValidatedOAuth2ProviderConfig

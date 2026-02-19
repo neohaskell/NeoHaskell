@@ -67,6 +67,7 @@ import Data.ByteString qualified as BS
 import Data.Either qualified as GhcEither
 
 import Json qualified
+import Log qualified
 import Result (Result (..))
 import Task (Task)
 import Task qualified
@@ -219,6 +220,8 @@ encodeStateToken (HmacKey keyBytes) payload = do
   let encoded = Encoding.convertToBase Encoding.Base64URLUnpadded tokenBytes
   let tokenText = Bytes.fromLegacy encoded |> Text.fromBytes
 
+  Log.debug "State token generated"
+    |> Task.ignoreError
   Task.yield tokenText
 
 
@@ -260,7 +263,10 @@ decodeStateToken (HmacKey keyBytes) currentTime tokenText = do
       let expectedHmac = HMAC.hmac keyBytes payloadBytes :: HMAC.HMAC Hash.SHA256
       let expectedSigBytes = BA.convert expectedHmac :: BS.ByteString
       case BA.constEq signatureBytes expectedSigBytes of
-        False -> Task.throw SignatureInvalid
+        False -> do
+          Log.warn "State token signature verification failed"
+            |> Task.ignoreError
+          Task.throw SignatureInvalid
         True -> do
           -- Parse JSON payload
           let payloadText = Bytes.fromLegacy payloadBytes |> Text.fromBytes
@@ -273,7 +279,10 @@ decodeStateToken (HmacKey keyBytes) currentTime tokenText = do
                 True -> do
                   -- Validate TTL
                   case currentTime <= payload.expiresAt of
-                    False -> Task.throw TokenExpired
+                    False -> do
+                      Log.debug "State token expired"
+                        |> Task.ignoreError
+                      Task.throw TokenExpired
                     True -> do
                       -- Validate clock skew (issuedAt not too far in future)
                       case currentTime >= payload.issuedAt - clockSkewTolerance of

@@ -1,10 +1,10 @@
-module Integration.Ai.TranscribePdf.InternalSpec (spec) where
+module Integration.Ocr.Ai.InternalSpec (spec) where
 
 import Basics
 import Integration qualified
-import Integration.Ai.TranscribePdf (Config (..), ExtractionMode (..))
-import Integration.Ai.TranscribePdf qualified as AiTranscribe
-import Integration.Ai.TranscribePdf.Internal
+import Integration.Ocr.Ai (Config (..), ExtractionMode (..))
+import Integration.Ocr.Ai qualified as OcrAi
+import Integration.Ocr.Ai.Internal
 import Json qualified
 import Maybe (Maybe (..))
 import Result (Result)
@@ -19,46 +19,46 @@ spec :: Spec
 spec = do
   describe "buildSystemPrompt" do
     it "produces FullText prompt by default" do
-      let prompt = buildSystemPrompt AiTranscribe.defaultConfig
+      let prompt = buildSystemPrompt OcrAi.defaultConfig
       Text.contains "Extract ALL text" prompt `shouldBe` True
 
     it "produces Summary prompt for Summary mode" do
-      let config = AiTranscribe.defaultConfig {extractionMode = Summary}
+      let config = OcrAi.defaultConfig {extractionMode = Summary}
       let prompt = buildSystemPrompt config
       Text.contains "summary" prompt `shouldBe` True
 
     it "produces Structured prompt for Structured mode" do
-      let config = AiTranscribe.defaultConfig {extractionMode = Structured}
+      let config = OcrAi.defaultConfig {extractionMode = Structured}
       let prompt = buildSystemPrompt config
       Text.contains "JSON" prompt `shouldBe` True
 
     it "appends language hint when provided" do
-      let config = AiTranscribe.defaultConfig {language = Just "es"}
+      let config = OcrAi.defaultConfig {language = Just "es"}
       let prompt = buildSystemPrompt config
       Text.contains "es" prompt `shouldBe` True
 
     it "appends maxPages hint when provided" do
-      let config = AiTranscribe.defaultConfig {maxPages = Just 5}
+      let config = OcrAi.defaultConfig {maxPages = Just 5}
       let prompt = buildSystemPrompt config
       Text.contains "5" prompt `shouldBe` True
 
     it "uses custom systemPrompt when provided" do
-      let config = AiTranscribe.defaultConfig {systemPrompt = Just "Custom prompt"}
+      let config = OcrAi.defaultConfig {systemPrompt = Just "Custom prompt"}
       let prompt = buildSystemPrompt config
       prompt `shouldBe` "Custom prompt"
 
   describe "buildExtractionPrompt" do
     it "produces FullText extraction prompt" do
-      let prompt = buildExtractionPrompt AiTranscribe.defaultConfig
+      let prompt = buildExtractionPrompt OcrAi.defaultConfig
       Text.contains "extract all text" prompt `shouldBe` True
 
     it "produces Summary extraction prompt" do
-      let config = AiTranscribe.defaultConfig {extractionMode = Summary}
+      let config = OcrAi.defaultConfig {extractionMode = Summary}
       let prompt = buildExtractionPrompt config
       Text.contains "summarize" prompt `shouldBe` True
 
     it "produces Structured extraction prompt" do
-      let config = AiTranscribe.defaultConfig {extractionMode = Structured}
+      let config = OcrAi.defaultConfig {extractionMode = Structured}
       let prompt = buildExtractionPrompt config
       Text.contains "JSON" prompt `shouldBe` True
 
@@ -94,19 +94,19 @@ spec = do
 
   describe "defaultConfig" do
     it "has FullText extraction mode" do
-      AiTranscribe.defaultConfig.extractionMode `shouldBe` FullText
+      OcrAi.defaultConfig.extractionMode `shouldBe` FullText
 
     it "has 120 second timeout" do
-      AiTranscribe.defaultConfig.timeoutSeconds `shouldBe` 120
+      OcrAi.defaultConfig.timeoutSeconds `shouldBe` 120
 
     it "has no language hint" do
-      AiTranscribe.defaultConfig.language `shouldBe` Nothing
+      OcrAi.defaultConfig.language `shouldBe` Nothing
 
     it "has no maxPages limit" do
-      AiTranscribe.defaultConfig.maxPages `shouldBe` Nothing
+      OcrAi.defaultConfig.maxPages `shouldBe` Nothing
 
     it "has no custom system prompt" do
-      AiTranscribe.defaultConfig.systemPrompt `shouldBe` Nothing
+      OcrAi.defaultConfig.systemPrompt `shouldBe` Nothing
 
   describe "integrationErrorToText" do
     it "converts ValidationError to text" do
@@ -135,33 +135,33 @@ spec = do
 
   describe "TranscriptionResult JSON" do
     it "roundtrips through JSON" do
-      let result = AiTranscribe.TranscriptionResult
+      let result = OcrAi.TranscriptionResult
             { text = "Hello world"
             , pageCount = Just 3
             , confidence = Nothing
             }
       let encoded = Json.encodeText result
-      let decoded = Json.decodeText encoded :: Result Text AiTranscribe.TranscriptionResult
+      let decoded = Json.decodeText encoded :: Result Text OcrAi.TranscriptionResult
       decoded `shouldBe` Result.Ok result
 
     it "roundtrips with confidence and no pageCount" do
-      let result = AiTranscribe.TranscriptionResult
+      let result = OcrAi.TranscriptionResult
             { text = "Some text"
             , pageCount = Nothing
             , confidence = Just 0.95
             }
       let encoded = Json.encodeText result
-      let decoded = Json.decodeText encoded :: Result Text AiTranscribe.TranscriptionResult
+      let decoded = Json.decodeText encoded :: Result Text OcrAi.TranscriptionResult
       decoded `shouldBe` Result.Ok result
 
     it "roundtrips with all fields Nothing" do
-      let result = AiTranscribe.TranscriptionResult
+      let result = OcrAi.TranscriptionResult
             { text = "Minimal"
             , pageCount = Nothing
             , confidence = Nothing
             }
       let encoded = Json.encodeText result
-      let decoded = Json.decodeText encoded :: Result Text AiTranscribe.TranscriptionResult
+      let decoded = Json.decodeText encoded :: Result Text OcrAi.TranscriptionResult
       decoded `shouldBe` Result.Ok result
 
   describe "ExtractionMode JSON" do

@@ -6,9 +6,9 @@
 --
 -- * "Integration.Pdf.ExtractText" - Local CLI-based text extraction
 --   (fast, free, requires poppler-utils). Re-exported from this module.
--- * "Integration.Ai.TranscribePdf" - AI-powered multimodal transcription
+-- * "Integration.Ocr.Ai" - AI-powered multimodal transcription
 --   (handles scanned docs, OCR, summarization — requires OpenRouter API key).
---   Must be imported separately: @import Integration.Ai.TranscribePdf qualified as AiTranscribe@
+--   Must be imported separately: @import Integration.Ocr.Ai qualified as OcrAi@
 --
 -- == Quick Start
 --
@@ -43,7 +43,7 @@
 --
 -- === AI Transcription
 --
--- The @Integration.Ai.TranscribePdf@ integration requires an OpenRouter API key.
+-- The @Integration.Ocr.Ai@ integration requires an OpenRouter API key.
 -- See <https://openrouter.ai/keys> for API key setup.
 module Integration.Pdf
   ( -- * Text Extraction

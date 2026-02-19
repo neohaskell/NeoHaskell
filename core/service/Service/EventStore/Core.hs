@@ -18,8 +18,8 @@ module Service.EventStore.Core (
 import Array (Array)
 import Array qualified
 import Basics
-import Console qualified
 import Json qualified
+import Log qualified
 import Maybe (Maybe (..))
 import Maybe qualified
 import Result (Result (..))
@@ -37,6 +37,7 @@ import Service.Event.StreamId (StreamId)
 import Stream (Stream)
 import Stream qualified
 import Task (Task)
+import Task qualified
 import Text (Text)
 
 
@@ -307,18 +308,17 @@ castEventStore rawStore =
     Event Json.Value ->
     Task Text Unit
   handleSubscriptionRawEvent callback rawEvent =
-    case decodeEvent rawEvent of
-      Just typedEvent -> callback typedEvent
-      Nothing -> do
-        let entity = rawEvent.entityName
-        let stream = rawEvent.streamId
-        let globalPos = rawEvent.metadata.globalPosition |> Maybe.withDefault (StreamPosition 0)
-        let localPos = rawEvent.metadata.localPosition |> Maybe.withDefault (StreamPosition 0)
-        let eventPayload = Json.encodeText rawEvent.event
-        Console.print
-          [fmt|[EventStore] Warning: Failed to decode subscription event
-  entityName: #{entity}
-  streamId: #{stream}
-  globalPosition: #{globalPos}
-  localPosition: #{localPos}
-  payload: #{eventPayload}|]
+     case decodeEvent rawEvent of
+       Just typedEvent -> callback typedEvent
+       Nothing -> do
+          let entity = rawEvent.entityName
+          let stream = rawEvent.streamId
+          let globalPos = rawEvent.metadata.globalPosition |> Maybe.withDefault (StreamPosition 0)
+          let localPos = rawEvent.metadata.localPosition |> Maybe.withDefault (StreamPosition 0)
+          Log.warn
+            [fmt|[EventStore] Warning: Failed to decode subscription event
+    entityName: #{entity}
+    streamId: #{stream}
+    globalPosition: #{globalPos}
+    localPosition: #{localPos}|]
+            |> Task.ignoreError

@@ -36,10 +36,15 @@ ADRs document significant architectural decisions made during the development of
 | [0020](0020-openapi-grouping-and-complete-endpoints.md) | OpenAPI Grouping and Complete Endpoint Coverage | Proposed |
 | [0021](0021-declarative-config-dsl.md) | Declarative Config DSL | Proposed |
 | [0022](0022-decimal-type.md) | Decimal Type for Financial Calculations | Proposed |
-| [0023](0023-ai-pdf-transcription.md) | AI-Powered PDF Transcription via Multimodal Models | Proposed |
+| [0023](0023-ai-pdf-transcription.md) | AI-Powered OCR via Multimodal Models | Proposed |
 | [0024](0024-cors-support.md) | CORS Support for WebTransport | Proposed |
 | [0025](0025-auto-health-endpoint.md) | Auto Health Endpoint for WebTransport Apps | Proposed |
-| [0026](0026-neo-cli-and-project-config.md) | Neo CLI and Project Configuration (`neo.json`) | Proposed |
+| [0026](0026-line-buffering-for-containerized-deployments.md) | Line Buffering for Containerized Deployments | Proposed |
+| [0027](0027-postgres-pool-health.md) | PostgreSQL Pool Health for Serverless Databases | Proposed |
+| [0028](0028-structured-logging.md) | Structured Logging with fast-logger | Proposed |
+| [0029](0029-worker-crash-recovery.md) | Worker Crash Recovery for Outbound Integrations | Proposed |
+| [0030](0030-configurable-dispatcher-config.md) | Configurable Dispatcher Config | Proposed |
+| [0031](0031-neo-cli-and-project-config.md) | Neo CLI and Project Configuration (`neo.json`) | Proposed |
 
 ## Creating New ADRs
 

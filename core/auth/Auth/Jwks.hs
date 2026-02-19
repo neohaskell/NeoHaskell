@@ -39,6 +39,7 @@ import Basics
 import Control.Lens qualified as Lens
 import Crypto.JOSE qualified as Jose
 import Data.Int qualified as GhcInt
+import Log qualified
 import Map (Map)
 import Map qualified
 import Maybe (Maybe (..))
@@ -148,6 +149,7 @@ startManager config = do
       Task.throw err
     Ok _version -> do
       -- Start background refresh loop
+      Log.info "JWKS manager started" |> Task.ignoreError
       backgroundTask <- AsyncTask.run (refreshLoop manager)
       AtomicVar.set (Just backgroundTask) refreshTaskVar
       Task.yield manager
@@ -256,8 +258,12 @@ requestRefresh manager = do
          in (newState, True)
 
   case shouldRefresh of
-    False -> Task.yield () -- Another refresh in progress or cooldown active
-    True -> performRefreshWithLock manager
+    False -> do
+      Log.debug "JWKS refresh skipped (cooldown)" |> Task.ignoreError
+      Task.yield ()
+    True -> do
+      Log.debug "On-demand JWKS refresh requested" |> Task.ignoreError
+      performRefreshWithLock manager
 
 
 -- | Shared refresh gate used by both background and on-demand refresh.
@@ -321,12 +327,14 @@ refreshLoop manager = do
         -- Use shared refresh gate (same as on-demand refresh)
         -- This prevents background and on-demand from running concurrently
         -- Wrap in asResult to prevent exceptions from killing the loop
-        refreshResult <- refreshWithGate manager |> Task.asResult
+        refreshResult <- (refreshWithGate manager :: Task Text Unit) |> Task.asResult
         case refreshResult of
           Ok _ -> Task.yield ()
-          Err _err -> do
+          Err err -> do
             -- Log and continue - don't let refresh failures kill the background loop
             -- The keys may be stale but will be retried on next interval
+            Log.warn [fmt|JWKS refresh error (non-fatal): #{err}|]
+              |> Task.ignoreError
             Task.yield ()
 
 
@@ -334,6 +342,7 @@ refreshLoop manager = do
 -- Returns the snapshot version before refresh (used for stale marking).
 refreshKeys :: JwksManager -> Task DiscoveryError GhcInt.Int64
 refreshKeys manager = do
+  Log.debug "Refreshing JWKS keys" |> Task.ignoreError
   -- Get current version before fetch (for stale marking on failure)
   currentSnapshot <- AtomicVar.peek manager.keySnapshot
   let currentVersion = currentSnapshot.snapshotVersion
@@ -341,7 +350,9 @@ refreshKeys manager = do
   -- Fetch keys from JWKS URI
   keysResult <- Discovery.fetchJwks manager.config.jwksUri
   case keysResult of
-    Err err -> Task.throw err
+    Err err -> do
+      Log.warn [fmt|JWKS refresh failed: #{toText err}|] |> Task.ignoreError
+      Task.throw err
     Ok keys -> do
       -- Build new snapshot with incremented version
       now <- getCurrentSeconds
@@ -349,6 +360,7 @@ refreshKeys manager = do
       let newSnapshot = buildSnapshot keys now newVersion
       -- Atomically update
       AtomicVar.set newSnapshot manager.keySnapshot
+      Log.info "JWKS keys refreshed successfully" |> Task.ignoreError
       Task.yield currentVersion
 
 
@@ -373,6 +385,7 @@ markKeysStaleIfVersion expectedVersion manager = do
           False -> snapshot -- Version changed or within staleness window
     )
     manager.keySnapshot
+  Log.warn "JWKS keys marked stale" |> Task.ignoreError
   Task.yield ()
 
 

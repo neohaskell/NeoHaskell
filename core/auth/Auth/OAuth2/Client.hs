@@ -109,7 +109,7 @@ import Auth.UrlValidation (ValidationError (..))
 import Auth.UrlValidation qualified as UrlValidation
 import Basics
 import Bytes qualified
-import Console qualified
+import Log qualified
 import Char (Char)
 import Crypto.Hash qualified as Hash
 import LinkedList qualified
@@ -633,8 +633,9 @@ requestTokensValidated ::
 requestTokensValidated tokenEndpoint formParams = do
   -- AUDIT: Log token request attempt (sanitized - no secrets)
   let sanitizedEndpoint = sanitizeUrlForAudit tokenEndpoint
-  Console.print [fmt|[OAuth2 Audit] Token request to #{sanitizedEndpoint} (pre-validated)|]
-    |> Task.ignoreError
+  Log.withScope [("component", "OAuth2"), ("endpoint", sanitizedEndpoint)] do
+    Log.info "Token request (pre-validated)"
+      |> Task.ignoreError
   let request =
         Http.request
           |> Http.withUrl tokenEndpoint
@@ -647,13 +648,15 @@ requestTokensValidated tokenEndpoint formParams = do
   case result of
     Err err -> do
       -- AUDIT: Log failure (error category only, no secrets)
-      Console.print [fmt|[OAuth2 Audit] Token request failed: #{sanitizedEndpoint} - #{errorCategory err}|]
-        |> Task.ignoreError
+      Log.withScope [("component", "OAuth2"), ("endpoint", sanitizedEndpoint), ("errorCategory", errorCategory err)] do
+        Log.warn "Token request failed"
+          |> Task.ignoreError
       Task.throw err
     Ok response -> do
       -- AUDIT: Log success (no token values)
-      Console.print [fmt|[OAuth2 Audit] Token request succeeded: #{sanitizedEndpoint}|]
-        |> Task.ignoreError
+      Log.withScope [("component", "OAuth2"), ("endpoint", sanitizedEndpoint)] do
+        Log.info "Token request succeeded"
+          |> Task.ignoreError
       Task.yield
         TokenSet
           { accessToken = mkAccessToken response.body.access_token

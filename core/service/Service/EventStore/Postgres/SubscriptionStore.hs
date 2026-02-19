@@ -19,6 +19,7 @@ import AsyncTask qualified
 import ConcurrentVar qualified
 import Core
 import Json qualified
+import Log qualified
 import Map qualified
 import Service.Event (EntityName, Event (..), StreamPosition)
 import Service.Event.EventMetadata (EventMetadata (..))
@@ -173,7 +174,13 @@ dispatch streamId message store = do
 
   let wrapCallback :: msg -> (msg -> Task Text Unit) -> Task Text Unit
       wrapCallback msg callback = do
-        callback msg |> Task.asResult |> discard
+        callbackResult <- callback msg |> Task.asResult
+        case callbackResult of
+          Ok _ -> Task.yield unit
+          Err err -> do
+            Log.warn [fmt|Subscription callback failed: #{toText err}|]
+              |> Task.ignoreError
+            Task.yield unit
 
   -- Global subscriptions receive ALL events
   let globalCallbacks =

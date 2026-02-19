@@ -13,6 +13,7 @@ import Service.MockTransport qualified as MockTransport
 import Service.Query.Registry (QueryUpdater (..))
 import Service.Query.Registry qualified as Registry
 import Service.TestHelpers (insertTestEvent)
+import System.IO qualified as GhcIO
 import Task qualified
 import Test
 
@@ -131,6 +132,20 @@ spec = do
         case result of
           Ok _ -> fail "Expected error but got Ok"
           Err err -> err |> shouldBe "No EventStore configured. Use withEventStore."
+
+      it "sets stdout and stderr to LineBuffering" \_ -> do
+        -- Set to block buffering first to ensure run changes it
+        Task.fromIO (GhcIO.hSetBuffering GhcIO.stdout (GhcIO.BlockBuffering Nothing))
+        Task.fromIO (GhcIO.hSetBuffering GhcIO.stderr (GhcIO.BlockBuffering Nothing))
+
+        -- Run the app (will fail because no EventStore, but buffering should be set first)
+        _ <- Application.run Application.new |> Task.asResult
+
+        -- Verify buffering was set before the error
+        stdoutBuffering <- Task.fromIO (GhcIO.hGetBuffering GhcIO.stdout)
+        stderrBuffering <- Task.fromIO (GhcIO.hGetBuffering GhcIO.stderr)
+        stdoutBuffering |> shouldBe GhcIO.LineBuffering
+        stderrBuffering |> shouldBe GhcIO.LineBuffering
 
     describe "runWith" do
       it "collects endpoints from service runners" \_ -> do

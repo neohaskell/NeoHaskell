@@ -1,4 +1,4 @@
-# ADR-0026: Neo CLI and Project Configuration (`neo.json`)
+# ADR-0031: Neo CLI and Project Configuration (`neo.json`)
 
 ## Status
 

@@ -17,6 +17,7 @@ import Data.Aeson qualified as GhcAeson
 import DateTime (DateTime)
 import DateTime qualified
 import Json qualified
+import Log qualified
 import Maybe (Maybe (..))
 import Service.FileUpload.BlobStore (BlobStore (..), BlobStoreError (..))
 import Service.FileUpload.Core (BlobKey (..), FileRef (..), InternalFileUploadConfig (..))
@@ -113,14 +114,21 @@ handleUpload ::
   BlobStore ->
   UploadRequest ->
   Task UploadError UploadResponse
-handleUpload config blobStore request = do
+handleUpload config blobStore request = Log.withScope [("component", "FileUpload")] do
+  Log.info "Upload request received"
+    |> Task.ignoreError
+
   -- 1. Validate file size
   let actualSize = fromIntegral (Bytes.length request.content) :: Int64
-  if actualSize > config.maxFileSizeBytes
-    then Task.throw FileTooLarge
-      { maxBytes = config.maxFileSizeBytes
-      , actualBytes = actualSize
-      }
+  let maxSize = config.maxFileSizeBytes
+  if actualSize > maxSize
+    then do
+      Log.warn [fmt|Upload validation failed: file too large (#{actualSize} > #{maxSize})|]
+        |> Task.ignoreError
+      Task.throw FileTooLarge
+        { maxBytes = config.maxFileSizeBytes
+        , actualBytes = actualSize
+        }
     else pass
 
   -- 2. Validate content type (if restrictions are configured)
@@ -128,10 +136,14 @@ handleUpload config blobStore request = do
     Just allowedTypes -> do
       if Array.contains request.contentType allowedTypes
         then pass
-        else Task.throw InvalidContentType
-          { contentType = request.contentType
-          , allowedTypes = allowedTypes
-          }
+        else do
+          let ct = request.contentType
+          Log.warn [fmt|Upload validation failed: invalid content type '#{ct}'|]
+            |> Task.ignoreError
+          Task.throw InvalidContentType
+            { contentType = request.contentType
+            , allowedTypes = allowedTypes
+            }
     Nothing -> pass  -- All types allowed
 
   -- 3. Sanitize and truncate filename (max 255 chars for filesystem compatibility)

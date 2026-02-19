@@ -1,13 +1,13 @@
 {-# LANGUAGE UndecidableInstances #-}
 
--- | Internal implementation for AI PDF transcription integration.
+-- | Internal implementation for AI document/image transcription integration.
 --
 -- This module contains Nick's code - the 'ToAction' instance,
 -- file retrieval, base64 encoding, prompt building, and OpenRouter
 -- orchestration.
 --
 -- __This module is not exported to Jess.__
-module Integration.Ai.TranscribePdf.Internal
+module Integration.Ocr.Ai.Internal
   ( -- * For Testing Only
     buildSystemPrompt
   , buildExtractionPrompt
@@ -20,7 +20,7 @@ import Basics
 import Bytes (Bytes)
 import Bytes qualified
 import Integration qualified
-import Integration.Ai.TranscribePdf (Config (..), ExtractionMode (..), Request (..), TranscriptionResult (..))
+import Integration.Ocr.Ai (Config (..), ExtractionMode (..), Request (..), TranscriptionResult (..))
 import Integration.OpenRouter.Internal ()
 import Integration.OpenRouter.Message qualified as Message
 import Integration.OpenRouter.Request qualified as OpenRouter
@@ -40,7 +40,7 @@ import Text qualified
 -- This is the main entry point - when Jess writes:
 --
 -- @
--- Integration.outbound AiTranscribe.Request { ... }
+-- Integration.outbound OcrAi.Request { ... }
 -- @
 --
 -- This instance converts the config into an executable action.
@@ -63,25 +63,25 @@ executeTranscription ctx config = do
   -- Step 1: Get file access context
   fileAccess <- case ctx.fileAccess of
     Nothing ->
-      Task.throw (Integration.ValidationError "File uploads not enabled. Cannot access PDF file.")
+      Task.throw (Integration.ValidationError "File uploads not enabled. Cannot access file.")
     Just fa ->
       Task.yield fa
 
-  -- Step 2: Retrieve PDF bytes
-  pdfBytes <- fileAccess.retrieveFile config.fileRef
+  -- Step 2: Retrieve file bytes
+  fileBytes <- fileAccess.retrieveFile config.fileRef
     |> Task.mapError fileAccessToIntegrationError
 
   -- Step 3: Encode to base64
-  let base64Text = pdfBytes |> Bytes.toBase64 |> bytesToText
+  let base64Text = fileBytes |> Bytes.toBase64 |> bytesToText
 
   -- Step 4: Build the system prompt
   let sysPrompt = buildSystemPrompt config.config
 
-  -- Step 5: Build the user message with PDF attachment
+  -- Step 5: Build the user message with file attachment
   let userMsg = Message.userWithAttachment
         (buildExtractionPrompt config.config)
         base64Text
-        "application/pdf"
+        config.mimeType
 
   -- Step 6: Create OpenRouter request
   let openRouterRequest = OpenRouter.Request
@@ -139,11 +139,11 @@ buildSystemPrompt config = case config.systemPrompt of
     let basePrompt :: Text
         basePrompt = case config.extractionMode of
           FullText ->
-            "You are a document transcription assistant. Extract ALL text from the provided PDF document faithfully and completely. Preserve the original structure, headings, paragraphs, and formatting as much as possible. Do not summarize or omit any content."
+            "You are a document transcription assistant. Extract ALL text from the provided document faithfully and completely. Preserve the original structure, headings, paragraphs, and formatting as much as possible. Do not summarize or omit any content."
           Summary ->
-            "You are a document summarization assistant. Read the provided PDF document and produce a clear, concise summary of its contents. Capture the key points, main arguments, and important details."
+            "You are a document summarization assistant. Read the provided document and produce a clear, concise summary of its contents. Capture the key points, main arguments, and important details."
           Structured ->
-            "You are a structured data extraction assistant. Extract information from the provided PDF document and return it as a well-structured JSON object. Identify key fields, tables, and data points."
+            "You are a structured data extraction assistant. Extract information from the provided document and return it as a well-structured JSON object. Identify key fields, tables, and data points."
     let languageHint :: Text
         languageHint = case config.language of
           Nothing -> ""
@@ -161,11 +161,11 @@ buildSystemPrompt config = case config.systemPrompt of
 buildExtractionPrompt :: Config -> Text
 buildExtractionPrompt config = case config.extractionMode of
   FullText ->
-    "Please extract all text from this PDF document."
+    "Please extract all text from this document."
   Summary ->
-    "Please summarize the contents of this PDF document."
+    "Please summarize the contents of this document."
   Structured ->
-    "Please extract structured data from this PDF document and return it as JSON."
+    "Please extract structured data from this document and return it as JSON."
 
 
 -- | Convert FileAccessError to IntegrationError.

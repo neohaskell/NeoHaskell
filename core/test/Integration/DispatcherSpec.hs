@@ -6,6 +6,7 @@ import Array qualified
 import AsyncTask qualified
 import Auth.SecretStore.InMemory qualified as InMemorySecretStore
 import ConcurrentVar qualified
+import Control.Exception qualified as GhcException
 import Core
 import DateTime qualified
 import Integration qualified
@@ -22,6 +23,7 @@ import Service.Event.EventMetadata (EventMetadata (..))
 import Service.Event.StreamId (StreamId)
 import Service.Event.StreamId qualified as StreamId
 import Service.EventStore.InMemory qualified as InMemory
+import Service.Application.Integrations qualified as Integrations
 import Service.Integration.Dispatcher qualified as Dispatcher
 import Task qualified
 import Test
@@ -133,6 +135,71 @@ spec = do
 
         count <- ConcurrentVar.peek processedCount
         count |> shouldBe 1
+
+      it "recovers from IO exceptions and processes subsequent events" \_ -> do
+        -- Verifies the fix for issue #400: when a worker throws a raw IO exception
+        -- (not a Task.throw error), safeWorkerLoop catches it, removes the dead
+        -- worker from the map, and a new worker is spawned for the next event.
+        processedEvents <- ConcurrentVar.containing ([] :: [Int])
+        callCount <- ConcurrentVar.containing (0 :: Int)
+
+        let crashOnFirstRunner =
+              Dispatcher.OutboundRunner
+                { entityTypeName = "TestEntity",
+                  processEvent = \_maybeContext _eventStore event -> do
+                    case Json.decode @OrderingTestEvent event.event of
+                      Err _ -> Task.yield Array.empty
+                      Ok decoded -> do
+                        currentCount <- ConcurrentVar.peek callCount
+                        callCount |> ConcurrentVar.modify (+ 1)
+                        if currentCount == 0
+                          then do
+                            -- First call: throw a raw IO exception (bypasses ExceptT)
+                            Task.fromIO (GhcException.throwIO (GhcException.ErrorCall "simulated IO crash"))
+                          else do
+                            -- Subsequent calls: process normally
+                            processedEvents
+                              |> ConcurrentVar.modify (\evts -> evts ++ [decoded.sequenceNum])
+                            Task.yield Array.empty
+                }
+
+        eventStore <- InMemory.new |> Task.mapError toText
+        context <- makeContext
+        dispatcher <-
+          Dispatcher.newWithLifecycleConfig
+            Dispatcher.DispatcherConfig
+              { idleTimeoutMs = 60000,
+                reaperIntervalMs = 10000,
+                enableReaper = False,
+                workerChannelCapacity = 100,
+                channelWriteTimeoutMs = 5000,
+                eventProcessingTimeoutMs = Nothing
+              }
+            eventStore
+            [crashOnFirstRunner]
+            []
+            Map.empty
+            context
+
+        -- Dispatch first event - worker will crash from IO exception
+        event1 <- makeTestEvent "entity-A" 1 1
+        Dispatcher.dispatch dispatcher event1
+
+        -- Wait for crash + cleanup (worker removed from map)
+        AsyncTask.sleep 200 |> Task.mapError (\_ -> "sleep error" :: Text)
+
+        -- Dispatch second event to the SAME entity
+        -- If the fix works, a new worker is spawned and processes this event
+        event2 <- makeTestEvent "entity-A" 2 2
+        Dispatcher.dispatch dispatcher event2
+
+        -- Wait for processing
+        AsyncTask.sleep 200 |> Task.mapError (\_ -> "sleep error" :: Text)
+
+        -- Verify the second event was processed (proving worker recovery)
+        processed <- ConcurrentVar.peek processedEvents
+        let processedArray = processed |> Array.fromLinkedList
+        processedArray |> shouldBe [2]
 
     describe "per-entity ordering" do
       it "processes events for the same entity in order" \_ -> do
@@ -842,3 +909,61 @@ spec = do
             sortedProcessed |> shouldBe (Array.range 1 eventsPerEntity)
 
         pass
+
+    describe "config threading" do
+      it "uses custom config when provided (simulating Application.withDispatcherConfig)" \_ -> do
+        -- Verify that a custom DispatcherConfig with short channelWriteTimeoutMs
+        -- causes event drops when channel is full (proving the config was used)
+        processedCount <- ConcurrentVar.containing (0 :: Int)
+
+        let slowRunner =
+              Dispatcher.OutboundRunner
+                { entityTypeName = "TestEntity",
+                  processEvent = \_maybeContext _eventStore _event -> do
+                    -- Block for 200ms to cause channel backup
+                    AsyncTask.sleep 200 |> Task.mapError (\_ -> "sleep error" :: Text)
+                    processedCount |> ConcurrentVar.modify (+ 1)
+                    Task.yield Array.empty
+                }
+
+        let customConfig = Dispatcher.DispatcherConfig
+              { idleTimeoutMs = 60000,
+                reaperIntervalMs = 10000,
+                enableReaper = False,
+                workerChannelCapacity = 1,
+                channelWriteTimeoutMs = 10,
+                eventProcessingTimeoutMs = Nothing
+              }
+
+        eventStore <- InMemory.new |> Task.mapError toText
+        context <- makeContext
+
+        -- Call through startIntegrationSubscriber so the Application-level config threading is exercised
+        maybeDispatcher <- Integrations.startIntegrationSubscriber
+              (Just customConfig)
+              eventStore
+              [slowRunner]
+              []
+              Map.empty
+              context
+        dispatcher <- case maybeDispatcher of
+              Just d -> Task.yield d
+              Nothing -> Task.throw ("expected a dispatcher" :: Text)
+
+        -- Dispatch first event - worker picks it up and blocks
+        event1 <- makeTestEvent "entity-A" 1 1
+        Dispatcher.dispatch dispatcher event1
+        AsyncTask.sleep 50 |> Task.mapError (\_ -> "sleep error" :: Text)
+
+        -- Fill channel (capacity=1) and try one more that should timeout
+        event2 <- makeTestEvent "entity-A" 2 2
+        event3 <- makeTestEvent "entity-A" 3 3
+        Dispatcher.dispatch dispatcher event2
+        Dispatcher.dispatch dispatcher event3
+
+        -- Wait for processing
+        AsyncTask.sleep 600 |> Task.mapError (\_ -> "sleep error" :: Text)
+
+        -- With capacity=1 and timeout=10ms, event3 should be dropped
+        count <- ConcurrentVar.peek processedCount
+        count |> shouldBe 2

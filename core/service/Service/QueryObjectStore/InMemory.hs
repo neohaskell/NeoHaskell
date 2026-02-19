@@ -6,6 +6,7 @@ module Service.QueryObjectStore.InMemory (
 import Array (Array)
 import Basics
 import ConcurrentVar (ConcurrentVar)
+import Log qualified
 import ConcurrentVar qualified
 import Map (Map)
 import Map qualified
@@ -63,6 +64,8 @@ atomicUpdateImpl ::
   (Maybe query -> Maybe query) ->
   Task Error Unit
 atomicUpdateImpl store queryId updateFn = do
+  Log.debug [fmt|Query object store update for #{toText queryId}|]
+    |> Task.ignoreError
   store
     |> ConcurrentVar.modify
       ( \storeMap -> do

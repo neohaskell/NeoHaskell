@@ -9,7 +9,7 @@ module Service.Application.Transports (
 ) where
 
 import Basics
-import Console qualified
+import Log qualified
 import Map (Map)
 import Map qualified
 import Maybe (Maybe (..))
@@ -69,7 +69,9 @@ runTransports transportsMap endpointsByTransport schemasByTransport queryEndpoin
         let commandCount = Map.length commandEndpointsForTransport
         let sharedQueryCount = Map.length queryEndpoints
         let transportQueryCount = sharedQueryCount
-        Console.print [fmt|Starting transport: #{transportName} with #{commandCount} commands and #{transportQueryCount} queries (shared query endpoints: #{sharedQueryCount} total)|]
+        Log.withScope [("component", "Transport"), ("transportName", transportName)] do
+          Log.info [fmt|Starting transport: #{transportName} with #{commandCount} commands and #{transportQueryCount} queries (shared query endpoints: #{sharedQueryCount} total)|]
+            |> Task.ignoreError
 
         -- Handle WebTransport specially to configure auth, OAuth2, and file uploads
         case transportName of

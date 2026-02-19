@@ -37,7 +37,7 @@ import AsyncTask qualified
 import Basics
 import ConcurrentVar (ConcurrentVar)
 import ConcurrentVar qualified
-import Console qualified
+import Log qualified
 import Data.Time.Clock.POSIX qualified as GhcPosix
 import Map (Map)
 import Map qualified
@@ -165,8 +165,9 @@ startReaper storage = do
         case result of
           Err err -> do
             -- Log error and restart reaper
-            Console.print [fmt|[OAuth2 TransactionStore] Reaper error: #{err}, restarting...|]
-              |> Task.ignoreError
+            Log.withScope [("component", "OAuth2"), ("subcomponent", "TransactionReaper")] do
+              Log.warn [fmt|Reaper error: #{err}, restarting...|]
+                |> Task.ignoreError
             reaperWithErrorLogging
           Ok _ -> Task.yield unit
   _ <- AsyncTask.run reaperWithErrorLogging
