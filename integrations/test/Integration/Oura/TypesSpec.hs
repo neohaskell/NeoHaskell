@@ -79,30 +79,30 @@ spec = do
           expectationFailure "Failed to parse SleepContributors with nulls"
 
   describe "ActivityData" do
-    it "parses from JSON with snake_case fields" do
-      let jsonText = "{\"id\": \"activity_123\", \"day\": \"2024-01-01\", \"score\": 88, \"active_calories\": 450, \"steps\": 8500, \"total_calories\": 2100, \"high_activity_time\": 45, \"medium_activity_time\": 120, \"low_activity_time\": 300, \"timestamp\": \"2024-01-01T23:59:59Z\"}" :: Text
+    it "parses from JSON with all fields" do
+      let jsonText = "{\"id\": \"activity_123\", \"day\": \"2024-01-01\", \"score\": 88, \"active_calories\": 450, \"steps\": 8500, \"total_calories\": 2100, \"high_activity_time\": 45, \"medium_activity_time\": 120, \"low_activity_time\": 300, \"timestamp\": \"2024-01-01T23:59:59Z\", \"average_met_minutes\": 1.5, \"class_5_min\": \"0112340\", \"contributors\": {\"meet_daily_targets\": 80, \"move_every_hour\": 90, \"recovery_time\": 75, \"stay_active\": 85, \"training_frequency\": 70, \"training_volume\": 65}, \"equivalent_walking_distance\": 7200, \"high_activity_met_minutes\": 30, \"inactivity_alerts\": 2, \"low_activity_met_minutes\": 60, \"medium_activity_met_minutes\": 45, \"met\": {\"interval\": 60.0, \"items\": [1.0, 2.5], \"timestamp\": \"2024-01-01T00:00:00Z\"}, \"meters_to_target\": 3000, \"non_wear_time\": 1800, \"resting_time\": 28800, \"sedentary_met_minutes\": 20, \"sedentary_time\": 36000, \"target_calories\": 350, \"target_meters\": 10000}" :: Text
       let decoded = Json.decodeText jsonText :: Result Text ActivityData
       case decoded of
-        Result.Ok (ActivityData "activity_123" "2024-01-01" (Just 88) (Just 450) (Just 8500) (Just 2100) (Just 45) (Just 120) (Just 300) "2024-01-01T23:59:59Z") ->
+        Result.Ok (ActivityData "activity_123" "2024-01-01" (Just 88) (Just 450) (Just 8500) (Just 2100) (Just 45) (Just 120) (Just 300) "2024-01-01T23:59:59Z" (Just 1.5) (Just "0112340") (Just (ActivityContributors (Just 80) (Just 90) (Just 75) (Just 85) (Just 70) (Just 65))) (Just 7200) (Just 30) (Just 2) (Just 60) (Just 45) (Just (SampleModel (Just 60.0) (Just [Just 1.0, Just 2.5]) (Just "2024-01-01T00:00:00Z"))) (Just 3000) (Just 1800) (Just 28800) (Just 20) (Just 36000) (Just 350) (Just 10000)) ->
           True `shouldBe` True
         _ ->
           expectationFailure "Failed to parse ActivityData"
 
-    it "handles null score and calories" do
+    it "handles null and missing optional fields" do
       let jsonText = "{\"id\": \"activity_456\", \"day\": \"2024-01-02\", \"score\": null, \"active_calories\": null, \"steps\": 5000, \"total_calories\": null, \"high_activity_time\": 0, \"medium_activity_time\": 60, \"low_activity_time\": 500, \"timestamp\": \"2024-01-02T23:59:59Z\"}" :: Text
       let decoded = Json.decodeText jsonText :: Result Text ActivityData
       case decoded of
-        Result.Ok (ActivityData "activity_456" "2024-01-02" Nothing Nothing (Just 5000) Nothing (Just 0) (Just 60) (Just 500) "2024-01-02T23:59:59Z") ->
+        Result.Ok (ActivityData "activity_456" "2024-01-02" Nothing Nothing (Just 5000) Nothing (Just 0) (Just 60) (Just 500) "2024-01-02T23:59:59Z" Nothing Nothing Nothing Nothing Nothing Nothing Nothing Nothing Nothing Nothing Nothing Nothing Nothing Nothing Nothing Nothing) ->
           True `shouldBe` True
         _ ->
           expectationFailure "Failed to parse ActivityData with nulls"
 
   describe "ReadinessData" do
     it "parses from JSON with snake_case fields" do
-      let jsonText = "{\"id\": \"readiness_123\", \"day\": \"2024-01-01\", \"score\": 82, \"temperature_deviation\": 0, \"temperature_trend_deviation\": 0, \"timestamp\": \"2024-01-01T08:00:00Z\", \"contributors\": {\"activity_balance\": 80, \"body_temperature\": 85, \"hrv_balance\": 75, \"previous_day_activity\": 88, \"previous_night\": 90, \"recovery_index\": 78, \"resting_heart_rate\": 82, \"sleep_balance\": 85}}" :: Text
+      let jsonText = "{\"id\": \"readiness_123\", \"day\": \"2024-01-01\", \"score\": 82, \"temperature_deviation\": 0, \"temperature_trend_deviation\": 0, \"timestamp\": \"2024-01-01T08:00:00Z\", \"contributors\": {\"activity_balance\": 80, \"body_temperature\": 85, \"hrv_balance\": 75, \"previous_day_activity\": 88, \"previous_night\": 90, \"recovery_index\": 78, \"resting_heart_rate\": 82, \"sleep_balance\": 85, \"sleep_regularity\": 70}}" :: Text
       let decoded = Json.decodeText jsonText :: Result Text ReadinessData
       case decoded of
-        Result.Ok (ReadinessData "readiness_123" "2024-01-01" (Just 82) (Just 0) (Just 0) "2024-01-01T08:00:00Z" (Just (ReadinessContributors (Just 80) (Just 85) (Just 75) (Just 88) (Just 90) (Just 78) (Just 82) (Just 85)))) ->
+        Result.Ok (ReadinessData "readiness_123" "2024-01-01" (Just 82) (Just 0) (Just 0) "2024-01-01T08:00:00Z" (Just (ReadinessContributors (Just 80) (Just 85) (Just 75) (Just 88) (Just 90) (Just 78) (Just 82) (Just 85) (Just 70)))) ->
           True `shouldBe` True
         _ ->
           expectationFailure "Failed to parse ReadinessData with contributors"
@@ -118,10 +118,10 @@ spec = do
 
   describe "ReadinessContributors" do
     it "parses all contributor fields" do
-      let jsonText = "{\"activity_balance\": 80, \"body_temperature\": 85, \"hrv_balance\": 75, \"previous_day_activity\": 88, \"previous_night\": 90, \"recovery_index\": 78, \"resting_heart_rate\": 82, \"sleep_balance\": 85}" :: Text
+      let jsonText = "{\"activity_balance\": 80, \"body_temperature\": 85, \"hrv_balance\": 75, \"previous_day_activity\": 88, \"previous_night\": 90, \"recovery_index\": 78, \"resting_heart_rate\": 82, \"sleep_balance\": 85, \"sleep_regularity\": 70}" :: Text
       let decoded = Json.decodeText jsonText :: Result Text ReadinessContributors
       case decoded of
-        Result.Ok (ReadinessContributors (Just 80) (Just 85) (Just 75) (Just 88) (Just 90) (Just 78) (Just 82) (Just 85)) ->
+        Result.Ok (ReadinessContributors (Just 80) (Just 85) (Just 75) (Just 88) (Just 90) (Just 78) (Just 82) (Just 85) (Just 70)) ->
           True `shouldBe` True
         _ ->
           expectationFailure "Failed to parse ReadinessContributors"
