@@ -89,17 +89,24 @@ makeRateLimitedError seconds = OuraRateLimited seconds
 -- NOTE: This is the ONLY definition of HttpFetch - all snippets/tests should use this exact type
 type HttpFetch a = Text -> Text -> Task OuraHttpError (PaginatedResponse a)
 
--- | Real HTTP fetch implementation using Http.getRaw (NOT Http.get!)
--- 
--- CRITICAL: We use Http.getRaw because Http.get throws StatusCodeException on non-2xx.
--- Http.getRaw uses setRequestIgnoreStatus so we can inspect statusCode before decoding JSON.
--- 
--- Flow:
+-- | Injectable HTTP fetch type for non-paginated endpoints (like PersonalInfo)
+-- Takes: access token -> URL -> returns decoded JSON object directly
+type HttpFetchSingle a = Text -> Text -> Task OuraHttpError a
+
+-- | Shared HTTP request with Bearer auth and status code handling
+--
+-- Handles the common HTTP dispatch logic used by both realHttpFetch and realHttpFetchSingle:
 -- 1. Make request with Http.getRaw (returns Bytes body, no throw on 401/429)
--- 2. Check statusCode for 401/429
--- 3. If 2xx, decode JSON with Json.decodeBytes (returns Result Text value)
-realHttpFetch :: forall value. (Json.FromJSON value) => HttpFetch value
-realHttpFetch accessToken url = do
+-- 2. Check statusCode: 401 -> Unauthorized, 429 -> parse Retry-After + RateLimited
+-- 3. If 2xx, decode JSON with Json.decodeBytes (type-directed: PaginatedResponse or flat)
+-- 4. Other status codes become OtherHttpError
+httpRequestWithAuth ::
+  forall decoded.
+  (Json.FromJSON decoded) =>
+  Text ->  -- access token
+  Text ->  -- URL
+  Task OuraHttpError decoded
+httpRequestWithAuth accessToken url = do
   response <- Http.request
     |> Http.withUrl url
     |> Http.addHeader "Authorization" [fmt|Bearer #{accessToken}|]
@@ -120,38 +127,18 @@ realHttpFetch accessToken url = do
     statusCode | statusCode >= 200 && statusCode < 300 -> do
       -- Success - decode JSON with Json.decodeBytes (returns Result Text value)
       case Json.decodeBytes response.body of
-        Ok paginated -> Task.yield paginated
-        Err decodeErr -> Task.throw (OtherHttpError [fmt|JSON decode failed: #{decodeErr}|])
-    other ->
-      Task.throw (OtherHttpError [fmt|Unexpected status code: #{other}|])
-
--- | Injectable HTTP fetch type for non-paginated endpoints (like PersonalInfo)
--- Takes: access token -> URL -> returns decoded JSON object directly
-type HttpFetchSingle a = Text -> Text -> Task OuraHttpError a
-
--- | Real HTTP fetch for non-paginated endpoints - decodes flat JSON (no PaginatedResponse wrapper)
-realHttpFetchSingle :: forall value. (Json.FromJSON value) => HttpFetchSingle value
-realHttpFetchSingle accessToken url = do
-  response <- Http.request
-    |> Http.withUrl url
-    |> Http.addHeader "Authorization" [fmt|Bearer #{accessToken}|]
-    |> Http.getRaw
-    |> Task.mapError (\(Http.Error msg) -> OtherHttpError msg)
-  case response.statusCode of
-    401 -> Task.throw Unauthorized
-    429 -> do
-      let retryAfter = case Array.find (\(k, _) -> Text.toLower k == "retry-after") response.headers of
-            Nothing -> 60
-            Just (_, v) -> case Text.toInt v of
-              Nothing -> 60
-              Just n -> n
-      Task.throw (makeRateLimitedError retryAfter)
-    statusCode | statusCode >= 200 && statusCode < 300 -> do
-      case Json.decodeBytes response.body of
         Ok value -> Task.yield value
         Err decodeErr -> Task.throw (OtherHttpError [fmt|JSON decode failed: #{decodeErr}|])
     other ->
       Task.throw (OtherHttpError [fmt|Unexpected status code: #{other}|])
+
+-- | Real HTTP fetch implementation - decodes as PaginatedResponse via httpRequestWithAuth
+realHttpFetch :: forall value. (Json.FromJSON value) => HttpFetch value
+realHttpFetch accessToken url = httpRequestWithAuth accessToken url
+
+-- | Real HTTP fetch for non-paginated endpoints - decodes flat JSON via httpRequestWithAuth
+realHttpFetchSingle :: forall value. (Json.FromJSON value) => HttpFetchSingle value
+realHttpFetchSingle accessToken url = httpRequestWithAuth accessToken url
 
 -- | ToAction for DailySleep - uses action
 instance (Json.ToJSON command, GhcTypeLits.KnownSymbol (NameOf command)) =>
