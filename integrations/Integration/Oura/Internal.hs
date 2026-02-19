@@ -242,8 +242,36 @@ instance (Json.ToJSON command, GhcTypeLits.KnownSymbol (NameOf command)) =>
   toAction config = Integration.action \ctx ->
     executeSleepPeriod realHttpFetch ctx config
 
--- | Execute DailySleep - wraps withValidToken around internal
--- Handles onError callback: if present, emit error command; if absent, throw
+-- | Generic endpoint executor — handles OAuth2 token refresh, fetching, and error handling
+-- Used by ALL execute* functions to eliminate duplicated token-refresh + error-handling logic
+executeWithFetch ::
+  forall command responseData.
+  (Json.ToJSON command, GhcTypeLits.KnownSymbol (NameOf command)) =>
+  ActionContext ->
+  Text ->                                                    -- userId
+  Text ->                                                    -- base URL (full URL with params)
+  (Text -> Text -> Task OuraHttpError responseData) ->       -- fetch function (accessToken -> url -> result)
+  (responseData -> command) ->                               -- onSuccess callback
+  Maybe (Text -> command) ->                                 -- onError callback
+  Task IntegrationError (Maybe CommandPayload)
+executeWithFetch ctx userId baseUrl fetchFn onSuccess onError = do
+  let ActionContext secretStore _ _ = ctx
+  providerConfig <- getOuraProvider ctx
+  let ValidatedOAuth2ProviderConfig {validatedProvider, clientId, clientSecret} = providerConfig
+  fetchResult <- withValidToken secretStore "oura" userId
+    (OAuth2.refreshTokenValidated validatedProvider clientId clientSecret)
+    isUnauthorized
+    (\accessToken -> fetchFn accessToken baseUrl)
+    |> Task.asResult
+  case fetchResult of
+    Ok result -> Integration.emitCommand (onSuccess result)
+    Err tokenErr -> do
+      let errorMsg = toText (mapTokenError tokenErr)
+      case onError of
+        Just handler -> Integration.emitCommand (handler errorMsg)
+        Nothing -> Task.throw (mapTokenError tokenErr)
+
+-- | Execute DailySleep
 executeDailySleep ::
   forall command.
   (Json.ToJSON command, GhcTypeLits.KnownSymbol (NameOf command)) =>
@@ -253,27 +281,8 @@ executeDailySleep ::
   Task IntegrationError (Maybe CommandPayload)
 executeDailySleep httpFetch ctx config = do
   let DailySleep userId startDate endDate onSuccess onError = config
-  let ActionContext secretStore _ _ = ctx
-  providerConfig <- getOuraProvider ctx
-  let ValidatedOAuth2ProviderConfig {validatedProvider, clientId, clientSecret} = providerConfig
   let baseUrl = [fmt|https://api.ouraring.com/v2/usercollection/daily_sleep?start_date=#{startDate}&end_date=#{endDate}|]
-  -- Execute with token refresh and error handling
-  fetchResult <- withValidToken
-    secretStore
-    "oura"
-    userId
-    (OAuth2.refreshTokenValidated validatedProvider clientId clientSecret)
-    isUnauthorized
-    (\accessToken -> executeDailySleepInternal httpFetch accessToken baseUrl)
-    |> Task.asResult
-  -- Handle result with onError callback
-  case fetchResult of
-    Ok result -> Integration.emitCommand (onSuccess result)
-    Err tokenErr -> do
-      let errorMsg = toText (mapTokenError tokenErr)
-      case onError of
-        Just handler -> Integration.emitCommand (handler errorMsg)
-        Nothing -> Task.throw (mapTokenError tokenErr)
+  executeWithFetch ctx userId baseUrl (\accessToken url -> fetchAllPages httpFetch accessToken url) onSuccess onError
 
 -- | Internal function for testing - takes accessToken directly, fetches all pages
 executeDailySleepInternal ::
@@ -284,7 +293,7 @@ executeDailySleepInternal ::
 executeDailySleepInternal httpFetch accessToken baseUrl =
   fetchAllPages httpFetch accessToken baseUrl
 
--- Similar pattern for Activity, Readiness, HeartRate - all follow same onError handling rule
+-- | Execute DailyActivity
 executeDailyActivity ::
   forall command.
   (Json.ToJSON command, GhcTypeLits.KnownSymbol (NameOf command)) =>
@@ -294,28 +303,14 @@ executeDailyActivity ::
   Task IntegrationError (Maybe CommandPayload)
 executeDailyActivity httpFetch ctx config = do
   let DailyActivity userId startDate endDate onSuccess onError = config
-  let ActionContext secretStore _ _ = ctx
-  providerConfig <- getOuraProvider ctx
-  let ValidatedOAuth2ProviderConfig {validatedProvider, clientId, clientSecret} = providerConfig
   let baseUrl = [fmt|https://api.ouraring.com/v2/usercollection/daily_activity?start_date=#{startDate}&end_date=#{endDate}|]
-  fetchResult <- withValidToken secretStore "oura" userId
-    (OAuth2.refreshTokenValidated validatedProvider clientId clientSecret)
-    isUnauthorized
-    (\accessToken -> fetchAllPages httpFetch accessToken baseUrl)
-    |> Task.asResult
-  -- Handle result with onError callback (same pattern as executeDailySleep)
-  case fetchResult of
-    Ok result -> Integration.emitCommand (onSuccess result)
-    Err tokenErr -> do
-      let errorMsg = toText (mapTokenError tokenErr)
-      case onError of
-        Just handler -> Integration.emitCommand (handler errorMsg)
-        Nothing -> Task.throw (mapTokenError tokenErr)
+  executeWithFetch ctx userId baseUrl (\accessToken url -> fetchAllPages httpFetch accessToken url) onSuccess onError
 
 executeDailyActivityInternal :: HttpFetch ActivityData -> Text -> Text -> Task OuraHttpError (Array ActivityData)
 executeDailyActivityInternal httpFetch accessToken baseUrl =
   fetchAllPages httpFetch accessToken baseUrl
 
+-- | Execute DailyReadiness
 executeDailyReadiness ::
   forall command.
   (Json.ToJSON command, GhcTypeLits.KnownSymbol (NameOf command)) =>
@@ -325,28 +320,14 @@ executeDailyReadiness ::
   Task IntegrationError (Maybe CommandPayload)
 executeDailyReadiness httpFetch ctx config = do
   let DailyReadiness userId startDate endDate onSuccess onError = config
-  let ActionContext secretStore _ _ = ctx
-  providerConfig <- getOuraProvider ctx
-  let ValidatedOAuth2ProviderConfig {validatedProvider, clientId, clientSecret} = providerConfig
   let baseUrl = [fmt|https://api.ouraring.com/v2/usercollection/daily_readiness?start_date=#{startDate}&end_date=#{endDate}|]
-  fetchResult <- withValidToken secretStore "oura" userId
-    (OAuth2.refreshTokenValidated validatedProvider clientId clientSecret)
-    isUnauthorized
-    (\accessToken -> fetchAllPages httpFetch accessToken baseUrl)
-    |> Task.asResult
-  -- Handle result with onError callback (same pattern as executeDailySleep)
-  case fetchResult of
-    Ok result -> Integration.emitCommand (onSuccess result)
-    Err tokenErr -> do
-      let errorMsg = toText (mapTokenError tokenErr)
-      case onError of
-        Just handler -> Integration.emitCommand (handler errorMsg)
-        Nothing -> Task.throw (mapTokenError tokenErr)
+  executeWithFetch ctx userId baseUrl (\accessToken url -> fetchAllPages httpFetch accessToken url) onSuccess onError
 
 executeDailyReadinessInternal :: HttpFetch ReadinessData -> Text -> Text -> Task OuraHttpError (Array ReadinessData)
 executeDailyReadinessInternal httpFetch accessToken baseUrl =
   fetchAllPages httpFetch accessToken baseUrl
 
+-- | Execute HeartRate (uses datetime params with URL encoding)
 executeHeartRate ::
   forall command.
   (Json.ToJSON command, GhcTypeLits.KnownSymbol (NameOf command)) =>
@@ -356,27 +337,10 @@ executeHeartRate ::
   Task IntegrationError (Maybe CommandPayload)
 executeHeartRate httpFetch ctx config = do
   let HeartRate userId startDatetime endDatetime onSuccess onError = config
-  let ActionContext secretStore _ _ = ctx
-  providerConfig <- getOuraProvider ctx
-  let ValidatedOAuth2ProviderConfig {validatedProvider, clientId, clientSecret} = providerConfig
-  -- NOTE: HeartRate uses start_datetime/end_datetime, and + must be URL-encoded
-  -- We URL-encode the datetime values to handle + in timezone offsets
   let startEncoded = urlEncodeDatetime startDatetime
   let endEncoded = urlEncodeDatetime endDatetime
   let baseUrl = [fmt|https://api.ouraring.com/v2/usercollection/heartrate?start_datetime=#{startEncoded}&end_datetime=#{endEncoded}|]
-  fetchResult <- withValidToken secretStore "oura" userId
-    (OAuth2.refreshTokenValidated validatedProvider clientId clientSecret)
-    isUnauthorized
-    (\accessToken -> fetchAllPages httpFetch accessToken baseUrl)
-    |> Task.asResult
-  -- Handle result with onError callback (same pattern as other endpoints)
-  case fetchResult of
-    Ok result -> Integration.emitCommand (onSuccess result)
-    Err tokenErr -> do
-      let errorMsg = toText (mapTokenError tokenErr)
-      case onError of
-        Just handler -> Integration.emitCommand (handler errorMsg)
-        Nothing -> Task.throw (mapTokenError tokenErr)
+  executeWithFetch ctx userId baseUrl (\accessToken url -> fetchAllPages httpFetch accessToken url) onSuccess onError
 
 executeHeartRateInternal :: HttpFetch HeartRateData -> Text -> Text -> Task OuraHttpError (Array HeartRateData)
 executeHeartRateInternal httpFetch accessToken baseUrl =
@@ -392,22 +356,8 @@ executeWorkout ::
   Task IntegrationError (Maybe CommandPayload)
 executeWorkout httpFetch ctx config = do
   let Workout userId startDate endDate onSuccess onError = config
-  let ActionContext secretStore _ _ = ctx
-  providerConfig <- getOuraProvider ctx
-  let ValidatedOAuth2ProviderConfig {validatedProvider, clientId, clientSecret} = providerConfig
   let baseUrl = [fmt|https://api.ouraring.com/v2/usercollection/workout?start_date=#{startDate}&end_date=#{endDate}|]
-  fetchResult <- withValidToken secretStore "oura" userId
-    (OAuth2.refreshTokenValidated validatedProvider clientId clientSecret)
-    isUnauthorized
-    (\accessToken -> fetchAllPages httpFetch accessToken baseUrl)
-    |> Task.asResult
-  case fetchResult of
-    Ok result -> Integration.emitCommand (onSuccess result)
-    Err tokenErr -> do
-      let errorMsg = toText (mapTokenError tokenErr)
-      case onError of
-        Just handler -> Integration.emitCommand (handler errorMsg)
-        Nothing -> Task.throw (mapTokenError tokenErr)
+  executeWithFetch ctx userId baseUrl (\accessToken url -> fetchAllPages httpFetch accessToken url) onSuccess onError
 
 executeWorkoutInternal :: HttpFetch WorkoutData -> Text -> Text -> Task OuraHttpError (Array WorkoutData)
 executeWorkoutInternal httpFetch accessToken baseUrl =
@@ -423,24 +373,10 @@ executeSession ::
   Task IntegrationError (Maybe CommandPayload)
 executeSession httpFetch ctx config = do
   let Session userId startDatetime endDatetime onSuccess onError = config
-  let ActionContext secretStore _ _ = ctx
-  providerConfig <- getOuraProvider ctx
-  let ValidatedOAuth2ProviderConfig {validatedProvider, clientId, clientSecret} = providerConfig
   let startEncoded = urlEncodeDatetime startDatetime
   let endEncoded = urlEncodeDatetime endDatetime
   let baseUrl = [fmt|https://api.ouraring.com/v2/usercollection/session?start_datetime=#{startEncoded}&end_datetime=#{endEncoded}|]
-  fetchResult <- withValidToken secretStore "oura" userId
-    (OAuth2.refreshTokenValidated validatedProvider clientId clientSecret)
-    isUnauthorized
-    (\accessToken -> fetchAllPages httpFetch accessToken baseUrl)
-    |> Task.asResult
-  case fetchResult of
-    Ok result -> Integration.emitCommand (onSuccess result)
-    Err tokenErr -> do
-      let errorMsg = toText (mapTokenError tokenErr)
-      case onError of
-        Just handler -> Integration.emitCommand (handler errorMsg)
-        Nothing -> Task.throw (mapTokenError tokenErr)
+  executeWithFetch ctx userId baseUrl (\accessToken url -> fetchAllPages httpFetch accessToken url) onSuccess onError
 
 executeSessionInternal :: HttpFetch SessionData -> Text -> Text -> Task OuraHttpError (Array SessionData)
 executeSessionInternal httpFetch accessToken baseUrl =
@@ -456,22 +392,8 @@ executePersonalInfo ::
   Task IntegrationError (Maybe CommandPayload)
 executePersonalInfo httpFetchSingle ctx config = do
   let PersonalInfo userId onSuccess onError = config
-  let ActionContext secretStore _ _ = ctx
-  providerConfig <- getOuraProvider ctx
-  let ValidatedOAuth2ProviderConfig {validatedProvider, clientId, clientSecret} = providerConfig
-  let url = "https://api.ouraring.com/v2/usercollection/personal_info"
-  fetchResult <- withValidToken secretStore "oura" userId
-    (OAuth2.refreshTokenValidated validatedProvider clientId clientSecret)
-    isUnauthorized
-    (\accessToken -> httpFetchSingle accessToken url)
-    |> Task.asResult
-  case fetchResult of
-    Ok result -> Integration.emitCommand (onSuccess result)
-    Err tokenErr -> do
-      let errorMsg = toText (mapTokenError tokenErr)
-      case onError of
-        Just handler -> Integration.emitCommand (handler errorMsg)
-        Nothing -> Task.throw (mapTokenError tokenErr)
+  let baseUrl = "https://api.ouraring.com/v2/usercollection/personal_info"
+  executeWithFetch ctx userId baseUrl (\accessToken url -> httpFetchSingle accessToken url) onSuccess onError
 
 executePersonalInfoInternal :: HttpFetchSingle PersonalInfoData -> Text -> Text -> Task OuraHttpError PersonalInfoData
 executePersonalInfoInternal httpFetchSingle accessToken url = httpFetchSingle accessToken url
@@ -486,22 +408,8 @@ executeDailyStress ::
   Task IntegrationError (Maybe CommandPayload)
 executeDailyStress httpFetch ctx config = do
   let DailyStress userId startDate endDate onSuccess onError = config
-  let ActionContext secretStore _ _ = ctx
-  providerConfig <- getOuraProvider ctx
-  let ValidatedOAuth2ProviderConfig {validatedProvider, clientId, clientSecret} = providerConfig
   let baseUrl = [fmt|https://api.ouraring.com/v2/usercollection/daily_stress?start_date=#{startDate}&end_date=#{endDate}|]
-  fetchResult <- withValidToken secretStore "oura" userId
-    (OAuth2.refreshTokenValidated validatedProvider clientId clientSecret)
-    isUnauthorized
-    (\accessToken -> fetchAllPages httpFetch accessToken baseUrl)
-    |> Task.asResult
-  case fetchResult of
-    Ok result -> Integration.emitCommand (onSuccess result)
-    Err tokenErr -> do
-      let errorMsg = toText (mapTokenError tokenErr)
-      case onError of
-        Just handler -> Integration.emitCommand (handler errorMsg)
-        Nothing -> Task.throw (mapTokenError tokenErr)
+  executeWithFetch ctx userId baseUrl (\accessToken url -> fetchAllPages httpFetch accessToken url) onSuccess onError
 
 executeDailyStressInternal :: HttpFetch DailyStressData -> Text -> Text -> Task OuraHttpError (Array DailyStressData)
 executeDailyStressInternal httpFetch accessToken baseUrl =
@@ -517,22 +425,8 @@ executeDailySpO2 ::
   Task IntegrationError (Maybe CommandPayload)
 executeDailySpO2 httpFetch ctx config = do
   let DailySpO2 userId startDate endDate onSuccess onError = config
-  let ActionContext secretStore _ _ = ctx
-  providerConfig <- getOuraProvider ctx
-  let ValidatedOAuth2ProviderConfig {validatedProvider, clientId, clientSecret} = providerConfig
   let baseUrl = [fmt|https://api.ouraring.com/v2/usercollection/daily_spo2?start_date=#{startDate}&end_date=#{endDate}|]
-  fetchResult <- withValidToken secretStore "oura" userId
-    (OAuth2.refreshTokenValidated validatedProvider clientId clientSecret)
-    isUnauthorized
-    (\accessToken -> fetchAllPages httpFetch accessToken baseUrl)
-    |> Task.asResult
-  case fetchResult of
-    Ok result -> Integration.emitCommand (onSuccess result)
-    Err tokenErr -> do
-      let errorMsg = toText (mapTokenError tokenErr)
-      case onError of
-        Just handler -> Integration.emitCommand (handler errorMsg)
-        Nothing -> Task.throw (mapTokenError tokenErr)
+  executeWithFetch ctx userId baseUrl (\accessToken url -> fetchAllPages httpFetch accessToken url) onSuccess onError
 
 executeDailySpO2Internal :: HttpFetch DailySpO2Data -> Text -> Text -> Task OuraHttpError (Array DailySpO2Data)
 executeDailySpO2Internal httpFetch accessToken baseUrl =
@@ -548,22 +442,8 @@ executeDailyResilience ::
   Task IntegrationError (Maybe CommandPayload)
 executeDailyResilience httpFetch ctx config = do
   let DailyResilience userId startDate endDate onSuccess onError = config
-  let ActionContext secretStore _ _ = ctx
-  providerConfig <- getOuraProvider ctx
-  let ValidatedOAuth2ProviderConfig {validatedProvider, clientId, clientSecret} = providerConfig
   let baseUrl = [fmt|https://api.ouraring.com/v2/usercollection/daily_resilience?start_date=#{startDate}&end_date=#{endDate}|]
-  fetchResult <- withValidToken secretStore "oura" userId
-    (OAuth2.refreshTokenValidated validatedProvider clientId clientSecret)
-    isUnauthorized
-    (\accessToken -> fetchAllPages httpFetch accessToken baseUrl)
-    |> Task.asResult
-  case fetchResult of
-    Ok result -> Integration.emitCommand (onSuccess result)
-    Err tokenErr -> do
-      let errorMsg = toText (mapTokenError tokenErr)
-      case onError of
-        Just handler -> Integration.emitCommand (handler errorMsg)
-        Nothing -> Task.throw (mapTokenError tokenErr)
+  executeWithFetch ctx userId baseUrl (\accessToken url -> fetchAllPages httpFetch accessToken url) onSuccess onError
 
 executeDailyResilienceInternal :: HttpFetch DailyResilienceData -> Text -> Text -> Task OuraHttpError (Array DailyResilienceData)
 executeDailyResilienceInternal httpFetch accessToken baseUrl =
@@ -579,22 +459,8 @@ executeDailyCardiovascularAge ::
   Task IntegrationError (Maybe CommandPayload)
 executeDailyCardiovascularAge httpFetch ctx config = do
   let DailyCardiovascularAge userId startDate endDate onSuccess onError = config
-  let ActionContext secretStore _ _ = ctx
-  providerConfig <- getOuraProvider ctx
-  let ValidatedOAuth2ProviderConfig {validatedProvider, clientId, clientSecret} = providerConfig
   let baseUrl = [fmt|https://api.ouraring.com/v2/usercollection/daily_cardiovascular_age?start_date=#{startDate}&end_date=#{endDate}|]
-  fetchResult <- withValidToken secretStore "oura" userId
-    (OAuth2.refreshTokenValidated validatedProvider clientId clientSecret)
-    isUnauthorized
-    (\accessToken -> fetchAllPages httpFetch accessToken baseUrl)
-    |> Task.asResult
-  case fetchResult of
-    Ok result -> Integration.emitCommand (onSuccess result)
-    Err tokenErr -> do
-      let errorMsg = toText (mapTokenError tokenErr)
-      case onError of
-        Just handler -> Integration.emitCommand (handler errorMsg)
-        Nothing -> Task.throw (mapTokenError tokenErr)
+  executeWithFetch ctx userId baseUrl (\accessToken url -> fetchAllPages httpFetch accessToken url) onSuccess onError
 
 executeDailyCardiovascularAgeInternal :: HttpFetch DailyCardiovascularAgeData -> Text -> Text -> Task OuraHttpError (Array DailyCardiovascularAgeData)
 executeDailyCardiovascularAgeInternal httpFetch accessToken baseUrl =
@@ -610,22 +476,8 @@ executeVO2Max ::
   Task IntegrationError (Maybe CommandPayload)
 executeVO2Max httpFetch ctx config = do
   let VO2Max userId startDate endDate onSuccess onError = config
-  let ActionContext secretStore _ _ = ctx
-  providerConfig <- getOuraProvider ctx
-  let ValidatedOAuth2ProviderConfig {validatedProvider, clientId, clientSecret} = providerConfig
   let baseUrl = [fmt|https://api.ouraring.com/v2/usercollection/vo2_max?start_date=#{startDate}&end_date=#{endDate}|]
-  fetchResult <- withValidToken secretStore "oura" userId
-    (OAuth2.refreshTokenValidated validatedProvider clientId clientSecret)
-    isUnauthorized
-    (\accessToken -> fetchAllPages httpFetch accessToken baseUrl)
-    |> Task.asResult
-  case fetchResult of
-    Ok result -> Integration.emitCommand (onSuccess result)
-    Err tokenErr -> do
-      let errorMsg = toText (mapTokenError tokenErr)
-      case onError of
-        Just handler -> Integration.emitCommand (handler errorMsg)
-        Nothing -> Task.throw (mapTokenError tokenErr)
+  executeWithFetch ctx userId baseUrl (\accessToken url -> fetchAllPages httpFetch accessToken url) onSuccess onError
 
 executeVO2MaxInternal :: HttpFetch VO2MaxData -> Text -> Text -> Task OuraHttpError (Array VO2MaxData)
 executeVO2MaxInternal httpFetch accessToken baseUrl =
@@ -641,22 +493,8 @@ executeEnhancedTag ::
   Task IntegrationError (Maybe CommandPayload)
 executeEnhancedTag httpFetch ctx config = do
   let EnhancedTag userId startDate endDate onSuccess onError = config
-  let ActionContext secretStore _ _ = ctx
-  providerConfig <- getOuraProvider ctx
-  let ValidatedOAuth2ProviderConfig {validatedProvider, clientId, clientSecret} = providerConfig
   let baseUrl = [fmt|https://api.ouraring.com/v2/usercollection/enhanced_tag?start_date=#{startDate}&end_date=#{endDate}|]
-  fetchResult <- withValidToken secretStore "oura" userId
-    (OAuth2.refreshTokenValidated validatedProvider clientId clientSecret)
-    isUnauthorized
-    (\accessToken -> fetchAllPages httpFetch accessToken baseUrl)
-    |> Task.asResult
-  case fetchResult of
-    Ok result -> Integration.emitCommand (onSuccess result)
-    Err tokenErr -> do
-      let errorMsg = toText (mapTokenError tokenErr)
-      case onError of
-        Just handler -> Integration.emitCommand (handler errorMsg)
-        Nothing -> Task.throw (mapTokenError tokenErr)
+  executeWithFetch ctx userId baseUrl (\accessToken url -> fetchAllPages httpFetch accessToken url) onSuccess onError
 
 executeEnhancedTagInternal :: HttpFetch EnhancedTagData -> Text -> Text -> Task OuraHttpError (Array EnhancedTagData)
 executeEnhancedTagInternal httpFetch accessToken baseUrl =
@@ -672,22 +510,8 @@ executeSleepTime ::
   Task IntegrationError (Maybe CommandPayload)
 executeSleepTime httpFetch ctx config = do
   let SleepTime userId startDate endDate onSuccess onError = config
-  let ActionContext secretStore _ _ = ctx
-  providerConfig <- getOuraProvider ctx
-  let ValidatedOAuth2ProviderConfig {validatedProvider, clientId, clientSecret} = providerConfig
   let baseUrl = [fmt|https://api.ouraring.com/v2/usercollection/sleep_time?start_date=#{startDate}&end_date=#{endDate}|]
-  fetchResult <- withValidToken secretStore "oura" userId
-    (OAuth2.refreshTokenValidated validatedProvider clientId clientSecret)
-    isUnauthorized
-    (\accessToken -> fetchAllPages httpFetch accessToken baseUrl)
-    |> Task.asResult
-  case fetchResult of
-    Ok result -> Integration.emitCommand (onSuccess result)
-    Err tokenErr -> do
-      let errorMsg = toText (mapTokenError tokenErr)
-      case onError of
-        Just handler -> Integration.emitCommand (handler errorMsg)
-        Nothing -> Task.throw (mapTokenError tokenErr)
+  executeWithFetch ctx userId baseUrl (\accessToken url -> fetchAllPages httpFetch accessToken url) onSuccess onError
 
 executeSleepTimeInternal :: HttpFetch SleepTimeData -> Text -> Text -> Task OuraHttpError (Array SleepTimeData)
 executeSleepTimeInternal httpFetch accessToken baseUrl =
@@ -703,22 +527,8 @@ executeRestModePeriod ::
   Task IntegrationError (Maybe CommandPayload)
 executeRestModePeriod httpFetch ctx config = do
   let RestModePeriod userId startDate endDate onSuccess onError = config
-  let ActionContext secretStore _ _ = ctx
-  providerConfig <- getOuraProvider ctx
-  let ValidatedOAuth2ProviderConfig {validatedProvider, clientId, clientSecret} = providerConfig
   let baseUrl = [fmt|https://api.ouraring.com/v2/usercollection/rest_mode_period?start_date=#{startDate}&end_date=#{endDate}|]
-  fetchResult <- withValidToken secretStore "oura" userId
-    (OAuth2.refreshTokenValidated validatedProvider clientId clientSecret)
-    isUnauthorized
-    (\accessToken -> fetchAllPages httpFetch accessToken baseUrl)
-    |> Task.asResult
-  case fetchResult of
-    Ok result -> Integration.emitCommand (onSuccess result)
-    Err tokenErr -> do
-      let errorMsg = toText (mapTokenError tokenErr)
-      case onError of
-        Just handler -> Integration.emitCommand (handler errorMsg)
-        Nothing -> Task.throw (mapTokenError tokenErr)
+  executeWithFetch ctx userId baseUrl (\accessToken url -> fetchAllPages httpFetch accessToken url) onSuccess onError
 
 executeRestModePeriodInternal :: HttpFetch RestModePeriodData -> Text -> Text -> Task OuraHttpError (Array RestModePeriodData)
 executeRestModePeriodInternal httpFetch accessToken baseUrl =
@@ -734,22 +544,8 @@ executeRingConfiguration ::
   Task IntegrationError (Maybe CommandPayload)
 executeRingConfiguration httpFetch ctx config = do
   let RingConfiguration userId startDate endDate onSuccess onError = config
-  let ActionContext secretStore _ _ = ctx
-  providerConfig <- getOuraProvider ctx
-  let ValidatedOAuth2ProviderConfig {validatedProvider, clientId, clientSecret} = providerConfig
   let baseUrl = [fmt|https://api.ouraring.com/v2/usercollection/ring_configuration?start_date=#{startDate}&end_date=#{endDate}|]
-  fetchResult <- withValidToken secretStore "oura" userId
-    (OAuth2.refreshTokenValidated validatedProvider clientId clientSecret)
-    isUnauthorized
-    (\accessToken -> fetchAllPages httpFetch accessToken baseUrl)
-    |> Task.asResult
-  case fetchResult of
-    Ok result -> Integration.emitCommand (onSuccess result)
-    Err tokenErr -> do
-      let errorMsg = toText (mapTokenError tokenErr)
-      case onError of
-        Just handler -> Integration.emitCommand (handler errorMsg)
-        Nothing -> Task.throw (mapTokenError tokenErr)
+  executeWithFetch ctx userId baseUrl (\accessToken url -> fetchAllPages httpFetch accessToken url) onSuccess onError
 
 executeRingConfigurationInternal :: HttpFetch RingConfigurationData -> Text -> Text -> Task OuraHttpError (Array RingConfigurationData)
 executeRingConfigurationInternal httpFetch accessToken baseUrl =
@@ -765,22 +561,8 @@ executeSleepPeriod ::
   Task IntegrationError (Maybe CommandPayload)
 executeSleepPeriod httpFetch ctx config = do
   let SleepPeriod userId startDate endDate onSuccess onError = config
-  let ActionContext secretStore _ _ = ctx
-  providerConfig <- getOuraProvider ctx
-  let ValidatedOAuth2ProviderConfig {validatedProvider, clientId, clientSecret} = providerConfig
   let baseUrl = [fmt|https://api.ouraring.com/v2/usercollection/sleep?start_date=#{startDate}&end_date=#{endDate}|]
-  fetchResult <- withValidToken secretStore "oura" userId
-    (OAuth2.refreshTokenValidated validatedProvider clientId clientSecret)
-    isUnauthorized
-    (\accessToken -> fetchAllPages httpFetch accessToken baseUrl)
-    |> Task.asResult
-  case fetchResult of
-    Ok result -> Integration.emitCommand (onSuccess result)
-    Err tokenErr -> do
-      let errorMsg = toText (mapTokenError tokenErr)
-      case onError of
-        Just handler -> Integration.emitCommand (handler errorMsg)
-        Nothing -> Task.throw (mapTokenError tokenErr)
+  executeWithFetch ctx userId baseUrl (\accessToken url -> fetchAllPages httpFetch accessToken url) onSuccess onError
 
 executeSleepPeriodInternal :: HttpFetch SleepPeriodData -> Text -> Text -> Task OuraHttpError (Array SleepPeriodData)
 executeSleepPeriodInternal httpFetch accessToken baseUrl =
