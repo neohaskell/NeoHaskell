@@ -74,6 +74,8 @@ new config = do
 
 -- | Sanitize a text value for safe use in file paths.
 -- Strips path traversal characters: /, .., \, and null bytes.
+-- Note: POSIX-focused. Does not handle Windows-reserved characters
+-- (:, *, ?, ", <, >, |) since NeoHaskell targets CLI tools on POSIX systems.
 sanitizePath :: Text -> Text
 sanitizePath input =
   input
@@ -93,10 +95,16 @@ buildEventFilePath basePath entityName streamId = do
   Path.joinPaths [basePath, entityPath, streamFile]
 
 
--- | Persist events to a JSONL file on disk.
--- Failures are logged but do not throw (in-memory state is already updated).
-persistEvents :: SimpleEventStore -> EntityName -> StreamId -> Array (Event Json.Value) -> Task Never Unit
-persistEvents config entityName streamId events = do
+-- | Write events to a JSONL file with error handling.
+-- Uses the provided write function (appendText for persist, writeText for rewrite).
+writeEventsToFile ::
+  (Path -> Text -> Task Text Unit) ->
+  SimpleEventStore ->
+  EntityName ->
+  StreamId ->
+  Array (Event Json.Value) ->
+  Task _ Unit
+writeEventsToFile writeFn config entityName streamId events = do
   let filePath = buildEventFilePath config.basePath entityName streamId
   let entityDir = do
         let sanitizedEntity = entityName |> EntityName.toText |> sanitizePath
@@ -109,16 +117,23 @@ persistEvents config entityName streamId events = do
   result <-
     ( do
         Directory.createIfMissing entityDir |> Task.mapError toText
-        File.appendText filePath jsonLines |> Task.mapError toText
+        writeFn filePath jsonLines
     )
       |> Task.asResult
   case result of
     Ok _ -> Task.yield unit
     Err _err -> do
       Log.withScope [("component", "EventStore.Simple")] do
-        Log.warn [fmt|Failed to persist events for #{EntityName.toText entityName}/#{StreamId.toText streamId}|]
+        Log.warn [fmt|Failed to write events for #{EntityName.toText entityName}/#{StreamId.toText streamId}|]
           |> Task.ignoreError
       Task.yield unit
+
+
+-- | Persist events to a JSONL file on disk.
+-- Failures are logged but do not throw (in-memory state is already updated).
+persistEvents :: SimpleEventStore -> EntityName -> StreamId -> Array (Event Json.Value) -> Task Never Unit
+persistEvents config entityName streamId events =
+  writeEventsToFile (\path text -> File.appendText path text |> Task.mapError toText) config entityName streamId events
 
 
 -- | Load all events from JSONL files on disk into the stream store.
@@ -487,6 +502,10 @@ subscribeToAllEventsFromPositionImpl store fromPosition handler = do
   subscriptionId <- generateSubscriptionId
   let subscription = Subscription {subscriptionType = AllEvents, handler}
 
+  -- NOTE: There is a potential race between subscription registration and historical
+  -- replay — events arriving between the two steps could be delivered twice.
+  -- Handlers MUST be idempotent to handle possible duplicate delivery.
+
   -- First, add the subscription for future events
   store.subscriptions
     |> ConcurrentVar.modify (Map.set subscriptionId subscription)
@@ -507,6 +526,10 @@ subscribeToAllEventsFromStartImpl store handler = do
   subscriptionId <- generateSubscriptionId
   let subscription = Subscription {subscriptionType = AllEvents, handler}
 
+  -- NOTE: There is a potential race between subscription registration and historical
+  -- replay — events arriving between the two steps could be delivered twice.
+  -- Handlers MUST be idempotent to handle possible duplicate delivery.
+
   -- First, add the subscription for future events
   store.subscriptions
     |> ConcurrentVar.modify (Map.set subscriptionId subscription)
@@ -514,7 +537,7 @@ subscribeToAllEventsFromStartImpl store handler = do
   Log.debug [fmt|Subscription created: #{toText subscriptionId}|] |> Task.ignoreError
 
   -- Then, deliver ALL historical events from the very beginning (position -1)
-  deliverHistoricalEventsFromStart store handler subscriptionId
+  deliverHistoricalEventsFromStart store handler
 
   Task.yield subscriptionId
 
@@ -628,8 +651,8 @@ deliverHistoricalEvents store fromPosition handler = do
 
 
 deliverHistoricalEventsFromStart ::
-  StreamStore -> (Event Json.Value -> Task Text Unit) -> SubscriptionId -> Task _ Unit
-deliverHistoricalEventsFromStart store handler _subscriptionId = do
+  StreamStore -> (Event Json.Value -> Task Text Unit) -> Task _ Unit
+deliverHistoricalEventsFromStart store handler = do
   -- Read ALL events from the very beginning (no position filter)
   allGlobalEvents <- store.globalStream |> DurableChannel.getAndTransform unchanged
 
@@ -680,25 +703,4 @@ rewriteStreamFile :: SimpleEventStore -> StreamStore -> EntityName -> StreamId -
 rewriteStreamFile config store entityName streamId = do
   channel <- store |> ensureStream entityName streamId
   remainingEvents <- channel |> DurableChannel.getAndTransform unchanged
-  let filePath = buildEventFilePath config.basePath entityName streamId
-  let jsonLines =
-        remainingEvents
-          |> Array.map (\event -> Json.encodeText event ++ "\n")
-          |> Text.concat
-  let entityDir = do
-        let sanitizedEntity = entityName |> EntityName.toText |> sanitizePath
-        let entityDirPath = Path.fromText sanitizedEntity |> Maybe.getOrDie
-        Path.joinPaths [config.basePath, entityDirPath]
-  writeResult <-
-    ( do
-        Directory.createIfMissing entityDir |> Task.mapError toText
-        File.writeText filePath jsonLines |> Task.mapError toText
-    )
-      |> Task.asResult
-  case writeResult of
-    Ok _ -> Task.yield unit
-    Err _err -> do
-      Log.withScope [("component", "EventStore.Simple")] do
-        Log.warn [fmt|Failed to rewrite stream file for #{EntityName.toText entityName}/#{StreamId.toText streamId}|]
-          |> Task.ignoreError
-      Task.yield unit
+  writeEventsToFile (\path text -> File.writeText path text |> Task.mapError toText) config entityName streamId remainingEvents

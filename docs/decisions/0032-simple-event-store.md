@@ -137,7 +137,7 @@ insertImpl config store payload = do
 
 **Atomicity Guarantee:** The in-memory insertion succeeds first (with optimistic concurrency checks), then the file write occurs. If the file write fails, the in-memory state is already updated, and the next startup will detect the missing events as a gap (logged as a warning but not fatal).
 
-**Concurrency:** The existing `Lock` in `StreamStore` serializes all inserts, so file writes are naturally serialized per stream. Different streams write to different files, avoiding lock contention.
+**Concurrency:** The `globalLock` in `StreamStore` serializes all inserts across all streams. While different streams write to different files, the current implementation uses a single lock for simplicity. Per-stream locking is a potential future optimization for higher-concurrency scenarios.
 
 ### Backward Compatibility
 
