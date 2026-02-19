@@ -2,6 +2,7 @@ module File (
   Error (..),
   readText,
   writeText,
+  appendText,
   readBytes,
   writeBytes,
   exists,
@@ -43,6 +44,13 @@ readText filepath =
 writeText :: Path -> Text -> Task Error ()
 writeText path textToWrite =
   TIO.writeFile (Path.toLinkedList path) textToWrite
+    |> Task.fromFailableIO @Exception.IOError
+    |> Task.mapError (\_ -> NotWritable)
+
+
+appendText :: Path -> Text -> Task Error ()
+appendText path textToAppend =
+  TIO.appendFile (Path.toLinkedList path) textToAppend
     |> Task.fromFailableIO @Exception.IOError
     |> Task.mapError (\_ -> NotWritable)
 
