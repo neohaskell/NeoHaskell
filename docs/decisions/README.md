@@ -46,6 +46,7 @@ ADRs document significant architectural decisions made during the development of
 | [0030](0030-configurable-dispatcher-config.md) | Configurable Dispatcher Config | Proposed |
 | [0031](0031-token-query-param-oauth2.md) | Token Query Parameter for OAuth2 Browser Redirects | Proposed |
 | [0032](0032-simple-event-store.md) | SimpleEventStore with Optional JSONL Persistence | Proposed |
+| [0033](0033-config-dependent-oauth2-provider.md) | Config-Dependent OAuth2 Provider Factory | Proposed |
 
 ## Creating New ADRs
 

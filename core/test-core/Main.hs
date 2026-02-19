@@ -6,6 +6,7 @@ import ConcurrentMapSpec qualified
 import DecimalSpec qualified
 import Config.ApplicationSpec qualified
 import Config.ConfigDependentSpec qualified
+import Config.OAuth2ConfigDependentSpec qualified
 import Config.BuilderSpec qualified
 import Config.CoreSpec qualified
 import Config.ErrorSafetySpec qualified
@@ -33,6 +34,7 @@ main = Hspec.hspec do
   Hspec.describe "Decimal" DecimalSpec.spec
   Hspec.describe "Config.Application" Config.ApplicationSpec.spec
   Hspec.describe "Config.ConfigDependent" Config.ConfigDependentSpec.spec
+  Hspec.describe "Config.OAuth2ConfigDependent" Config.OAuth2ConfigDependentSpec.spec
   Hspec.describe "Config.Builder" Config.BuilderSpec.spec
   Hspec.describe "Config.Core" Config.CoreSpec.spec
   Hspec.describe "Config.ErrorSafety" Config.ErrorSafetySpec.spec
