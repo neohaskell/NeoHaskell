@@ -5,14 +5,17 @@ import Test.Hspec
 import Integration.Oura.Internal
   ( OuraHttpError (..)
   , HttpFetch
+  , HttpFetchSingle
   , isUnauthorized
   , mapTokenError
   , urlEncodeDatetime
   , urlEncodeParam
   , getOuraProvider
   , executeDailySleepInternal
+  , executeWorkoutInternal
+  , executePersonalInfoInternal
   )
-import Integration.Oura.Types (PaginatedResponse (..), SleepData (..))
+import Integration.Oura.Types (PaginatedResponse (..), SleepData (..), WorkoutData (..), PersonalInfoData (..))
 import Integration (ActionContext (..), IntegrationError (..))
 import Auth.OAuth2.TokenRefresh (TokenRefreshError (..))
 import Auth.OAuth2.Types (OAuth2Error (TokenRequestFailed))
@@ -244,6 +247,70 @@ spec = do
       it "returns False for OtherHttpError" do
         isUnauthorized (OtherHttpError "some error") `shouldBe` False
 
+    describe "executeWorkoutInternal (paginated endpoint)" do
+      it "accumulates workout data across multiple pages" do
+        let mockPaginatedFetch :: HttpFetch WorkoutData
+            mockPaginatedFetch _token url =
+              case Text.contains "next_token" url of
+                True -> Task.yield PaginatedResponse
+                  { data_ = [mockWorkoutData2]
+                  , nextToken = Nothing
+                  }
+                False -> Task.yield PaginatedResponse
+                  { data_ = [mockWorkoutData1]
+                  , nextToken = Just "page2token"
+                  }
+
+        result <- Task.runOrPanic do
+          executeWorkoutInternal mockPaginatedFetch "test-token" "https://api.example.com/workout"
+
+        Array.length result `shouldBe` 2
+        case Array.get 0 result of
+          Just d -> d.id `shouldBe` "workout1"
+          Nothing -> expectationFailure "Expected first element"
+        case Array.get 1 result of
+          Just d -> d.id `shouldBe` "workout2"
+          Nothing -> expectationFailure "Expected second element"
+
+      it "handles single page workout response" do
+        let mockSinglePage :: HttpFetch WorkoutData
+            mockSinglePage _token _url = Task.yield PaginatedResponse
+              { data_ = [mockWorkoutData1]
+              , nextToken = Nothing
+              }
+
+        result <- Task.runOrPanic do
+          executeWorkoutInternal mockSinglePage "test-token" "https://api.example.com/workout"
+
+        Array.length result `shouldBe` 1
+        case Array.get 0 result of
+          Just d -> d.id `shouldBe` "workout1"
+          Nothing -> expectationFailure "Expected one element"
+
+    describe "executePersonalInfoInternal (non-paginated endpoint)" do
+      it "fetches single PersonalInfo object directly" do
+        let mockFetchSingle :: HttpFetchSingle PersonalInfoData
+            mockFetchSingle _token _url = Task.yield mockPersonalInfo1
+
+        result <- Task.runOrPanic do
+          executePersonalInfoInternal mockFetchSingle "test-token" "https://api.example.com/personal_info"
+
+        result.id `shouldBe` "pi1"
+        result.email `shouldBe` Just "test@example.com"
+
+      it "propagates Unauthorized error from non-paginated fetch" do
+        let mockUnauthorized :: HttpFetchSingle PersonalInfoData
+            mockUnauthorized _token _url = Task.throw Unauthorized
+
+        let task :: Task Text (Result OuraHttpError PersonalInfoData)
+            task = executePersonalInfoInternal mockUnauthorized "test-token" "https://api.example.com/personal_info"
+              |> Task.asResult
+        result <- Task.runOrPanic task
+
+        case result of
+          Err Unauthorized -> pure ()
+          _ -> expectationFailure "Expected Unauthorized error"
+
     -- Note: realHttpFetch is tested in Http.ClientRawSpec for actual HTTP behavior
     -- Here we only document the expected behavior:
     -- - 401 response -> throws Unauthorized
@@ -292,4 +359,47 @@ mockSleepData3 = SleepData
   , score = Just 88
   , timestamp = "2024-01-03T08:00:00Z"
   , contributors = Nothing
+  }
+
+
+-- Mock WorkoutData for tests
+mockWorkoutData1 :: WorkoutData
+mockWorkoutData1 = WorkoutData
+  { id = "workout1"
+  , day = "2024-01-01"
+  , activity = Just "running"
+  , calories = Just 350.0
+  , distance = Just 5000.0
+  , endDatetime = Just "2024-01-01T07:30:00Z"
+  , intensity = Just "moderate"
+  , label = Nothing
+  , source = Just "manual"
+  , startDatetime = Just "2024-01-01T07:00:00Z"
+  }
+
+
+mockWorkoutData2 :: WorkoutData
+mockWorkoutData2 = WorkoutData
+  { id = "workout2"
+  , day = "2024-01-02"
+  , activity = Just "cycling"
+  , calories = Just 500.0
+  , distance = Just 15000.0
+  , endDatetime = Just "2024-01-02T08:00:00Z"
+  , intensity = Just "high"
+  , label = Nothing
+  , source = Just "manual"
+  , startDatetime = Just "2024-01-02T07:00:00Z"
+  }
+
+
+-- Mock PersonalInfoData for tests
+mockPersonalInfo1 :: PersonalInfoData
+mockPersonalInfo1 = PersonalInfoData
+  { id = "pi1"
+  , age = Just 30
+  , weight = Just 75.0
+  , height = Just 180.0
+  , biologicalSex = Just "male"
+  , email = Just "test@example.com"
   }

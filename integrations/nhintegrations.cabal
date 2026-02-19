@@ -72,13 +72,26 @@ library
     Integration.OpenRouter.Response
     Integration.Oura
     Integration.Oura.Activity
+    Integration.Oura.DailyCardiovascularAge
+    Integration.Oura.DailyResilience
+    Integration.Oura.DailySpO2
+    Integration.Oura.DailyStress
+    Integration.Oura.EnhancedTag
     Integration.Oura.HeartRate
     Integration.Oura.Internal
+    Integration.Oura.PersonalInfo
     Integration.Oura.Provider
     Integration.Oura.Readiness
+    Integration.Oura.RestModePeriod
+    Integration.Oura.RingConfiguration
+    Integration.Oura.Session
     Integration.Oura.Sleep
+    Integration.Oura.SleepPeriod
+    Integration.Oura.SleepTime
     Integration.Oura.SyncAll
     Integration.Oura.Types
+    Integration.Oura.VO2Max
+    Integration.Oura.Workout
     Integration.Pdf
     Integration.Pdf.ExtractText
     Integration.Pdf.ExtractText.Internal
