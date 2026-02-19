@@ -91,7 +91,7 @@ extractTokenFromQuery request = do
   let queryParams = Wai.queryString request
   case findQueryParam "token" queryParams of
     Nothing -> Nothing
-    Just tokenBytes -> Just (tokenBytes |> Bytes.fromLegacy |> Text.fromBytes)
+    Just tokenBytes -> Just (tokenBytes |> Bytes.fromLegacy |> Text.fromBytes |> Text.trim)
 
 
 -- | Find a header by name (case-insensitive).

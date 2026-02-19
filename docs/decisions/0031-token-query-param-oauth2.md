@@ -67,9 +67,11 @@ The `/connect` handler tries the Authorization header first, then falls back to 
   -- Use token to validate auth...
 ```
 
-### Referrer Protection
+### Referrer and Cache Protection
 
-The 302 redirect response from `/connect` to the OAuth2 provider **must** include `Referrer-Policy: no-referrer` to prevent the JWT from leaking via the `Referer` header.
+The 302 redirect response from `/connect` to the OAuth2 provider **must** include:
+- `Referrer-Policy: no-referrer` — prevents the JWT from leaking via the `Referer` header
+- `Cache-Control: no-store, no-cache` + `Pragma: no-cache` — prevents CDN/proxy caching of token-bearing URLs
 
 ### Frontend Usage
 
@@ -97,8 +99,9 @@ window.location.href = `/connect/oura?token=${encodeURIComponent(jwtToken)}`;
 
 ### Risks
 
-- **Token leakage via logs**: Mitigated by short-lived JWTs (typical 5-15 min expiry). The connect endpoint immediately redirects, so the token URL is transient.
+- **Token leakage via logs**: Mitigated by short-lived JWTs (typical 5-15 min expiry). The connect endpoint immediately redirects, so the token URL is transient. **Infrastructure note**: Application-level logs use `rawPathInfo` (excludes query params), but upstream infrastructure (nginx `$request_uri`, AWS ALB access logs, Cloudflare) may log full URLs. Operators should configure log scrubbing for `/connect` paths or use `$uri` instead of `$request_uri` in nginx access logs.
 - **Referrer leakage**: Mitigated by `Referrer-Policy: no-referrer` header on the 302 redirect response.
+- **Cache poisoning**: Mitigated by `Cache-Control: no-store, no-cache` and `Pragma: no-cache` on the redirect response.
 - **Browser history**: The URL with token is saved in browser history. Mitigated by short-lived tokens — by the time someone accesses history, the token is expired.
 
 ### Security Model

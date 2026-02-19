@@ -470,11 +470,14 @@ instance Transport WebTransport where
 
     -- Helper function for 302 redirect with Referrer-Policy: no-referrer
     -- SECURITY: Prevents token leakage via Referer header for OAuth2 connect flow (ADR-0031)
+    -- Cache-Control: no-store prevents CDN/proxy caching of token-bearing URLs
     let redirect302WithNoReferrer url respondFn = do
           let sanitizedUrl = url |> Text.filter (\c -> c != '\r' && c != '\n')
           let locationHeader = (HTTP.hLocation, sanitizedUrl |> Text.toBytes |> Bytes.unwrap)
           let referrerPolicy = ("Referrer-Policy", "no-referrer")
-          let response302 = Wai.responseLBS HTTP.status302 [locationHeader, referrerPolicy] ""
+          let cacheControl = (HTTP.hCacheControl, "no-store, no-cache")
+          let pragma = ("Pragma", "no-cache")
+          let response302 = Wai.responseLBS HTTP.status302 [locationHeader, referrerPolicy, cacheControl, pragma] ""
           respondFn response302
 
     -- Helper function for 429 Too Many Requests responses
@@ -640,9 +643,14 @@ instance Transport WebTransport where
               Maybe.Just auth -> do
                 -- Try Authorization header first, fall back to ?token= query param.
                 -- Query param fallback is needed for browser redirects (SPAs can't send headers).
+                -- Empty Bearer tokens (e.g. from proxy injection) are treated as absent.
                 -- See ADR-0031.
-                let maybeToken = case Middleware.extractToken request of
-                      Maybe.Just token -> Maybe.Just token
+                let headerToken = Middleware.extractToken request
+                let maybeToken = case headerToken of
+                      Maybe.Just token ->
+                        case Text.isEmpty token of
+                          True -> Middleware.extractTokenFromQuery request
+                          False -> Maybe.Just token
                       Maybe.Nothing -> Middleware.extractTokenFromQuery request
                 case maybeToken of
                   Maybe.Nothing -> Middleware.respondWithAuthError TokenMissing respond
