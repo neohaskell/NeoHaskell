@@ -80,19 +80,60 @@ module Integration.Oura (
   makeOuraConfig,
   ouraProvider,
   
-  -- * Request Types
+  -- * Request Types (Original 4)
   DailySleep (..),
   DailyActivity (..),
   DailyReadiness (..),
   HeartRate (..),
   SyncAll (..),
   
-  -- * Response Types
+  -- * Request Types (New 13)
+  Workout (..),
+  Session (..),
+  PersonalInfo (..),
+  DailyStress (..),
+  DailySpO2 (..),
+  DailyResilience (..),
+  DailyCardiovascularAge (..),
+  VO2Max (..),
+  EnhancedTag (..),
+  SleepTime (..),
+  RestModePeriod (..),
+  RingConfiguration (..),
+  SleepPeriod (..),
+  
+  -- * Response Types (Original 4)
   SleepData (..),
   ActivityData (..),
   ReadinessData (..),
   HeartRateData (..),
   SyncResult (..),
+  
+  -- * Response Types (New 13)
+  WorkoutData (..),
+  SessionData (..),
+  PersonalInfoData (..),
+  DailyStressData (..),
+  DailySpO2Data (..),
+  DailyResilienceData (..),
+  DailyCardiovascularAgeData (..),
+  VO2MaxData (..),
+  EnhancedTagData (..),
+  SleepTimeData (..),
+  RestModePeriodData (..),
+  RingConfigurationData (..),
+  SleepPeriodData (..),
+  
+  -- * Shared Types
+  SleepContributors (..),
+  SampleModel (..),
+  ActivityContributors (..),
+  ReadinessContributors (..),
+   ResilienceContributors (..),
+   SpO2AggregatedValues (..),
+   RestModeEpisode (..),
+  SleepPeriodReadiness (..),
+  PaginatedResponse (..),
 ) where
 
 import Integration.Oura.Provider (makeOuraConfig, ouraProvider)
@@ -100,7 +141,20 @@ import Integration.Oura.Sleep (DailySleep (..))
 import Integration.Oura.Activity (DailyActivity (..))
 import Integration.Oura.Readiness (DailyReadiness (..))
 import Integration.Oura.HeartRate (HeartRate (..))
+import Integration.Oura.Workout (Workout (..))
+import Integration.Oura.Session (Session (..))
+import Integration.Oura.PersonalInfo (PersonalInfo (..))
+import Integration.Oura.DailyStress (DailyStress (..))
+import Integration.Oura.DailySpO2 (DailySpO2 (..))
+import Integration.Oura.DailyResilience (DailyResilience (..))
+import Integration.Oura.DailyCardiovascularAge (DailyCardiovascularAge (..))
+import Integration.Oura.VO2Max (VO2Max (..))
+import Integration.Oura.EnhancedTag (EnhancedTag (..))
+import Integration.Oura.SleepTime (SleepTime (..))
+import Integration.Oura.RestModePeriod (RestModePeriod (..))
+import Integration.Oura.RingConfiguration (RingConfiguration (..))
+import Integration.Oura.SleepPeriod (SleepPeriod (..))
 import Integration.Oura.SyncAll (SyncAll (..), SyncResult (..))
-import Integration.Oura.Types (SleepData (..), ActivityData (..), ReadinessData (..), HeartRateData (..))
+import Integration.Oura.Types (SleepData (..), ActivityData (..), ReadinessData (..), HeartRateData (..), WorkoutData (..), SessionData (..), PersonalInfoData (..), DailyStressData (..), DailySpO2Data (..), DailyResilienceData (..), DailyCardiovascularAgeData (..), VO2MaxData (..), EnhancedTagData (..), SleepTimeData (..), RestModePeriodData (..), RingConfigurationData (..), SleepPeriodData (..), SleepContributors (..), SampleModel (..), ActivityContributors (..), ReadinessContributors (..), ResilienceContributors (..), SpO2AggregatedValues (..), RestModeEpisode (..), SleepPeriodReadiness (..), PaginatedResponse (..))
 -- Note: ToAction instances are exported from Internal.hs via orphan instances
 import Integration.Oura.Internal ()  -- Import for instances

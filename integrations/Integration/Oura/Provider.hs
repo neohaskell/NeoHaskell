@@ -3,10 +3,16 @@
 -- This module provides the OAuth2 configuration needed to enable users
 -- to connect their Oura accounts via the `/connect/oura` endpoint.
 --
--- = Oura OAuth2 Scopes
+-- = Oura OAuth2 Scopes (v2 API)
 --
--- * @daily@: Sleep, activity, readiness data
+-- * @email@: User email address
+-- * @personal@: Personal info (age, weight, height, biological sex)
+-- * @daily@: Daily summaries (sleep, activity, readiness, cardiovascular age, resilience, stress, sleep_time)
 -- * @heartrate@: Heart rate data
+-- * @workout@: Workout data
+-- * @tag@: Enhanced tag data
+-- * @session@: Session data
+-- * @spo2@: SpO2 readings
 --
 -- See: https://cloud.ouraring.com/docs/authentication#oauth2-scopes
 module Integration.Oura.Provider (
@@ -64,7 +70,7 @@ makeOuraConfig clientId clientSecret redirectUri onSuccess onFailure onDisconnec
     , clientId = clientId
     , clientSecret = clientSecret
     , redirectUri = redirectUri
-    , scopes = Array.fromLinkedList [Scope "daily", Scope "heartrate"]
+    , scopes = Array.fromLinkedList [Scope "email", Scope "personal", Scope "daily", Scope "heartrate", Scope "workout", Scope "tag", Scope "session", Scope "spo2"]
     , onSuccess = onSuccess
     , onFailure = onFailure
     , onDisconnect = onDisconnect

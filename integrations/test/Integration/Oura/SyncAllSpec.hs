@@ -4,8 +4,8 @@ import Basics
 import Data.Maybe qualified as GhcMaybe
 import Test.Hspec
 import Integration.Oura.SyncAll (SyncAll (..), SyncResult (..), executeSyncAll)
-import Integration.Oura.Types (PaginatedResponse (..))
-import Integration.Oura.Internal (HttpFetch, OuraHttpError (..))
+import Integration.Oura.Types (PaginatedResponse (..), PersonalInfoData (..))
+import Integration.Oura.Internal (HttpFetch, HttpFetchSingle, OuraHttpError (..))
 import Integration (ActionContext (..), IntegrationError (..), CommandPayload)
 import Auth.SecretStore.InMemory qualified as InMemorySecretStore
 import Auth.SecretStore (SecretStore (..), TokenKey (..))
@@ -40,19 +40,22 @@ spec :: Spec
 spec = do
   describe "Integration.Oura.SyncAll" do
     describe "executeSyncAll" do
-      it "fetches all four data types and returns command payload" do
+      it "fetches all seventeen data types and returns command payload" do
         ctx <- Task.runOrPanic setupMockContext
 
-        -- Mock fetch that returns empty data for all endpoints
-        -- We can't return typed mock data due to polymorphism, but empty lists work
+        -- Mock fetch that returns empty data for all paginated endpoints
         let mockFetch :: forall a. Json.FromJSON a => HttpFetch a
             mockFetch _token _url = do
               Task.yield PaginatedResponse { data_ = [], nextToken = Nothing }
 
+        -- Mock fetch for non-paginated PersonalInfo endpoint
+        let mockFetchSingle :: HttpFetchSingle PersonalInfoData
+            mockFetchSingle _token _url = Task.yield mockPersonalInfo
+
         let config = testSyncAllConfig
 
         result <- Task.runOrPanic do
-          executeSyncAll mockFetch ctx config
+          executeSyncAll mockFetch mockFetchSingle ctx config
 
         -- Should return Just with command payload (meaning onComplete was called)
         result `shouldSatisfy` isJust
@@ -79,10 +82,20 @@ spec = do
               -- Return mock PaginatedResponse
               Task.yield PaginatedResponse { data_ = [], nextToken = Nothing }
 
+        -- Mock single fetch also tracks concurrency
+        let mockFetchSingle :: HttpFetchSingle PersonalInfoData
+            mockFetchSingle _token _url = do
+              ConcurrentVar.modify (+ 1) currentCount
+              current <- ConcurrentVar.peek currentCount
+              ConcurrentVar.modify (\m -> max m current) maxConcurrent
+              AsyncTask.sleep 50
+              ConcurrentVar.modify (\n -> n - 1) currentCount
+              Task.yield mockPersonalInfo
+
         let config = testSyncAllConfig
 
         _ <- Task.runOrPanic do
-          executeSyncAll mockFetch ctx config
+          executeSyncAll mockFetch mockFetchSingle ctx config
 
         -- If parallel, max should be >= 2
         let peekVar :: ConcurrentVar Int -> Task Text Int
@@ -98,10 +111,13 @@ spec = do
             mockFetch _token _url =
               Task.yield PaginatedResponse { data_ = [], nextToken = Nothing }
 
+        let mockFetchSingle :: HttpFetchSingle PersonalInfoData
+            mockFetchSingle _token _url = Task.yield mockPersonalInfo
+
         let config = testSyncAllConfig
 
         result <- Task.runOrPanic do
-          executeSyncAll mockFetch ctx config
+          executeSyncAll mockFetch mockFetchSingle ctx config
 
         -- The test passes if executeSyncAll completes without error
         -- and returns a payload (meaning onComplete was called with SyncResult)
@@ -114,6 +130,10 @@ spec = do
         let mockFetch :: forall a. Json.FromJSON a => HttpFetch a
             mockFetch _token _url = Task.throw Unauthorized
 
+        -- Mock single fetch that also throws (both fail on Unauthorized)
+        let mockFetchSingle :: HttpFetchSingle PersonalInfoData
+            mockFetchSingle _token _url = Task.throw Unauthorized
+
         let config = SyncAll
               { userId = "test-user"
               , startDate = "2024-01-01"
@@ -124,7 +144,7 @@ spec = do
 
         -- Should NOT throw - onError handler catches the error
         result <- Task.runOrPanic do
-          executeSyncAll mockFetch ctx config
+          executeSyncAll mockFetch mockFetchSingle ctx config
 
         -- Should return Just (the error command payload)
         result `shouldSatisfy` isJust
@@ -136,6 +156,10 @@ spec = do
         let mockFetch :: forall a. Json.FromJSON a => HttpFetch a
             mockFetch _token _url = Task.throw Unauthorized
 
+        -- Mock single fetch that also throws
+        let mockFetchSingle :: HttpFetchSingle PersonalInfoData
+            mockFetchSingle _token _url = Task.throw Unauthorized
+
         let config = SyncAll
               { userId = "test-user"
               , startDate = "2024-01-01"
@@ -146,7 +170,7 @@ spec = do
 
         -- Should throw - no error handler
         let task :: Task Text (Result IntegrationError (Maybe CommandPayload))
-            task = executeSyncAll mockFetch ctx config |> Task.asResult
+            task = executeSyncAll mockFetch mockFetchSingle ctx config |> Task.asResult
         result <- Task.runOrPanic task
 
         case result of
@@ -222,6 +246,17 @@ testSyncAllConfig = SyncAll
   , onError = Nothing
   }
 
+
+-- | Mock PersonalInfoData for testing
+mockPersonalInfo :: PersonalInfoData
+mockPersonalInfo = PersonalInfoData
+  { id = "mock-personal-info"
+  , age = Nothing
+  , weight = Nothing
+  , height = Nothing
+  , biologicalSex = Nothing
+  , email = Nothing
+  }
 
 -- | Re-export from Data.Maybe for test assertions
 isJust :: forall value. Maybe value -> Bool
