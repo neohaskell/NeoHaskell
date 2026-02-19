@@ -98,7 +98,7 @@ type HttpFetch a = Text -> Text -> Task OuraHttpError (PaginatedResponse a)
 -- 1. Make request with Http.getRaw (returns Bytes body, no throw on 401/429)
 -- 2. Check statusCode for 401/429
 -- 3. If 2xx, decode JSON with Json.decodeBytes (returns Result Text value)
-realHttpFetch :: forall a. (Json.FromJSON a) => HttpFetch a
+realHttpFetch :: forall value. (Json.FromJSON value) => HttpFetch value
 realHttpFetch accessToken url = do
   response <- Http.request
     |> Http.withUrl url
@@ -130,7 +130,7 @@ realHttpFetch accessToken url = do
 type HttpFetchSingle a = Text -> Text -> Task OuraHttpError a
 
 -- | Real HTTP fetch for non-paginated endpoints - decodes flat JSON (no PaginatedResponse wrapper)
-realHttpFetchSingle :: forall a. (Json.FromJSON a) => HttpFetchSingle a
+realHttpFetchSingle :: forall value. (Json.FromJSON value) => HttpFetchSingle value
 realHttpFetchSingle accessToken url = do
   response <- Http.request
     |> Http.withUrl url
@@ -326,7 +326,8 @@ executeDailyActivity httpFetch ctx config = do
         Nothing -> Task.throw (mapTokenError tokenErr)
 
 executeDailyActivityInternal :: HttpFetch ActivityData -> Text -> Text -> Task OuraHttpError (Array ActivityData)
-executeDailyActivityInternal = fetchAllPages
+executeDailyActivityInternal httpFetch accessToken baseUrl =
+  fetchAllPages httpFetch accessToken baseUrl
 
 executeDailyReadiness ::
   forall command.
@@ -356,7 +357,8 @@ executeDailyReadiness httpFetch ctx config = do
         Nothing -> Task.throw (mapTokenError tokenErr)
 
 executeDailyReadinessInternal :: HttpFetch ReadinessData -> Text -> Text -> Task OuraHttpError (Array ReadinessData)
-executeDailyReadinessInternal = fetchAllPages
+executeDailyReadinessInternal httpFetch accessToken baseUrl =
+  fetchAllPages httpFetch accessToken baseUrl
 
 executeHeartRate ::
   forall command.
@@ -390,7 +392,8 @@ executeHeartRate httpFetch ctx config = do
         Nothing -> Task.throw (mapTokenError tokenErr)
 
 executeHeartRateInternal :: HttpFetch HeartRateData -> Text -> Text -> Task OuraHttpError (Array HeartRateData)
-executeHeartRateInternal = fetchAllPages
+executeHeartRateInternal httpFetch accessToken baseUrl =
+  fetchAllPages httpFetch accessToken baseUrl
 
 -- | Execute Workout
 executeWorkout ::
@@ -420,7 +423,8 @@ executeWorkout httpFetch ctx config = do
         Nothing -> Task.throw (mapTokenError tokenErr)
 
 executeWorkoutInternal :: HttpFetch WorkoutData -> Text -> Text -> Task OuraHttpError (Array WorkoutData)
-executeWorkoutInternal = fetchAllPages
+executeWorkoutInternal httpFetch accessToken baseUrl =
+  fetchAllPages httpFetch accessToken baseUrl
 
 -- | Execute Session (uses datetime params like HeartRate)
 executeSession ::
@@ -452,7 +456,8 @@ executeSession httpFetch ctx config = do
         Nothing -> Task.throw (mapTokenError tokenErr)
 
 executeSessionInternal :: HttpFetch SessionData -> Text -> Text -> Task OuraHttpError (Array SessionData)
-executeSessionInternal = fetchAllPages
+executeSessionInternal httpFetch accessToken baseUrl =
+  fetchAllPages httpFetch accessToken baseUrl
 
 -- | Execute PersonalInfo (non-paginated, no date params)
 executePersonalInfo ::
@@ -512,7 +517,8 @@ executeDailyStress httpFetch ctx config = do
         Nothing -> Task.throw (mapTokenError tokenErr)
 
 executeDailyStressInternal :: HttpFetch DailyStressData -> Text -> Text -> Task OuraHttpError (Array DailyStressData)
-executeDailyStressInternal = fetchAllPages
+executeDailyStressInternal httpFetch accessToken baseUrl =
+  fetchAllPages httpFetch accessToken baseUrl
 
 -- | Execute DailySpO2
 executeDailySpO2 ::
@@ -542,7 +548,8 @@ executeDailySpO2 httpFetch ctx config = do
         Nothing -> Task.throw (mapTokenError tokenErr)
 
 executeDailySpO2Internal :: HttpFetch DailySpO2Data -> Text -> Text -> Task OuraHttpError (Array DailySpO2Data)
-executeDailySpO2Internal = fetchAllPages
+executeDailySpO2Internal httpFetch accessToken baseUrl =
+  fetchAllPages httpFetch accessToken baseUrl
 
 -- | Execute DailyResilience
 executeDailyResilience ::
@@ -572,7 +579,8 @@ executeDailyResilience httpFetch ctx config = do
         Nothing -> Task.throw (mapTokenError tokenErr)
 
 executeDailyResilienceInternal :: HttpFetch DailyResilienceData -> Text -> Text -> Task OuraHttpError (Array DailyResilienceData)
-executeDailyResilienceInternal = fetchAllPages
+executeDailyResilienceInternal httpFetch accessToken baseUrl =
+  fetchAllPages httpFetch accessToken baseUrl
 
 -- | Execute DailyCardiovascularAge
 executeDailyCardiovascularAge ::
@@ -602,7 +610,8 @@ executeDailyCardiovascularAge httpFetch ctx config = do
         Nothing -> Task.throw (mapTokenError tokenErr)
 
 executeDailyCardiovascularAgeInternal :: HttpFetch DailyCardiovascularAgeData -> Text -> Text -> Task OuraHttpError (Array DailyCardiovascularAgeData)
-executeDailyCardiovascularAgeInternal = fetchAllPages
+executeDailyCardiovascularAgeInternal httpFetch accessToken baseUrl =
+  fetchAllPages httpFetch accessToken baseUrl
 
 -- | Execute VO2Max
 executeVO2Max ::
@@ -632,7 +641,8 @@ executeVO2Max httpFetch ctx config = do
         Nothing -> Task.throw (mapTokenError tokenErr)
 
 executeVO2MaxInternal :: HttpFetch VO2MaxData -> Text -> Text -> Task OuraHttpError (Array VO2MaxData)
-executeVO2MaxInternal = fetchAllPages
+executeVO2MaxInternal httpFetch accessToken baseUrl =
+  fetchAllPages httpFetch accessToken baseUrl
 
 -- | Execute EnhancedTag
 executeEnhancedTag ::
@@ -662,7 +672,8 @@ executeEnhancedTag httpFetch ctx config = do
         Nothing -> Task.throw (mapTokenError tokenErr)
 
 executeEnhancedTagInternal :: HttpFetch EnhancedTagData -> Text -> Text -> Task OuraHttpError (Array EnhancedTagData)
-executeEnhancedTagInternal = fetchAllPages
+executeEnhancedTagInternal httpFetch accessToken baseUrl =
+  fetchAllPages httpFetch accessToken baseUrl
 
 -- | Execute SleepTime
 executeSleepTime ::
@@ -692,7 +703,8 @@ executeSleepTime httpFetch ctx config = do
         Nothing -> Task.throw (mapTokenError tokenErr)
 
 executeSleepTimeInternal :: HttpFetch SleepTimeData -> Text -> Text -> Task OuraHttpError (Array SleepTimeData)
-executeSleepTimeInternal = fetchAllPages
+executeSleepTimeInternal httpFetch accessToken baseUrl =
+  fetchAllPages httpFetch accessToken baseUrl
 
 -- | Execute RestModePeriod
 executeRestModePeriod ::
@@ -722,7 +734,8 @@ executeRestModePeriod httpFetch ctx config = do
         Nothing -> Task.throw (mapTokenError tokenErr)
 
 executeRestModePeriodInternal :: HttpFetch RestModePeriodData -> Text -> Text -> Task OuraHttpError (Array RestModePeriodData)
-executeRestModePeriodInternal = fetchAllPages
+executeRestModePeriodInternal httpFetch accessToken baseUrl =
+  fetchAllPages httpFetch accessToken baseUrl
 
 -- | Execute RingConfiguration
 executeRingConfiguration ::
@@ -752,7 +765,8 @@ executeRingConfiguration httpFetch ctx config = do
         Nothing -> Task.throw (mapTokenError tokenErr)
 
 executeRingConfigurationInternal :: HttpFetch RingConfigurationData -> Text -> Text -> Task OuraHttpError (Array RingConfigurationData)
-executeRingConfigurationInternal = fetchAllPages
+executeRingConfigurationInternal httpFetch accessToken baseUrl =
+  fetchAllPages httpFetch accessToken baseUrl
 
 -- | Execute SleepPeriod
 executeSleepPeriod ::
@@ -782,7 +796,8 @@ executeSleepPeriod httpFetch ctx config = do
         Nothing -> Task.throw (mapTokenError tokenErr)
 
 executeSleepPeriodInternal :: HttpFetch SleepPeriodData -> Text -> Text -> Task OuraHttpError (Array SleepPeriodData)
-executeSleepPeriodInternal = fetchAllPages
+executeSleepPeriodInternal httpFetch accessToken baseUrl =
+  fetchAllPages httpFetch accessToken baseUrl
 
 -- | URL-encode datetime for Oura API (handles + in timezone)
 urlEncodeDatetime :: Text -> Text
@@ -846,24 +861,24 @@ mapTokenError err = case err of
 -- | Fetch all pages using pagination
 -- Uses baseUrl for first request, then appends &next_token=X for subsequent requests
 fetchAllPages ::
-  forall a.
-  HttpFetch a ->
+  forall value.
+  HttpFetch value ->
   Text ->  -- access token
   Text ->  -- base URL (without next_token)
-  Task OuraHttpError (Array a)
+  Task OuraHttpError (Array value)
 fetchAllPages httpFetch accessToken baseUrl =
   fetchPagesLoop httpFetch accessToken baseUrl Nothing Array.empty
 
 -- | Pagination loop - accumulates results until next_token is Nothing
 -- Keeps track of baseUrl separately from pagination to avoid accumulating tokens
 fetchPagesLoop ::
-  forall a.
-  HttpFetch a ->
+  forall value.
+  HttpFetch value ->
   Text ->          -- access token
   Text ->          -- base URL (never changes)
   Maybe Text ->    -- current next_token (Nothing for first request)
-  Array a ->       -- accumulated results
-  Task OuraHttpError (Array a)
+  Array value ->       -- accumulated results
+  Task OuraHttpError (Array value)
 fetchPagesLoop httpFetch accessToken baseUrl maybeNextToken accumulated = do
   -- Build URL: baseUrl for first request, baseUrl&next_token=X for subsequent
   -- NOTE: Token must be URL-encoded to handle reserved characters like +, &, =

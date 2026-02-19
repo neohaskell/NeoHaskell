@@ -75,7 +75,7 @@ instance (Json.ToJSON command, GhcTypeLits.KnownSymbol (NameOf command)) =>
 executeSyncAll ::
   forall command.
   (Json.ToJSON command, GhcTypeLits.KnownSymbol (NameOf command)) =>
-  (forall a. Json.FromJSON a => HttpFetch a) ->  -- Polymorphic fetch (paginated)
+  (forall value. Json.FromJSON value => HttpFetch value) ->  -- Polymorphic fetch (paginated)
   HttpFetchSingle PersonalInfoData ->             -- Single fetch (non-paginated)
   ActionContext ->
   SyncAll command ->
