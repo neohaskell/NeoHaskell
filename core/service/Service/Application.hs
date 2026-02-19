@@ -12,6 +12,7 @@ module Service.Application (
 
   -- * OAuth2 Setup Type
   OAuth2Setup (..),
+  OAuth2ProviderFactory (..),
 
   -- * API Info Type
   ApiInfo (..),
@@ -206,13 +207,13 @@ data WebAuthSetup = WebAuthSetup
 --   |> Application.withTransport WebTransport.server
 --   |> Application.withAuth \@() (\\_ -> "https://auth.example.com")
 --   |> Application.withOAuth2StateKey "OAUTH2_STATE_KEY"
---   |> Application.withOAuth2Provider ouraProvider
+--   |> Application.withOAuth2Provider \@() (\\_ -> ouraProvider)
 -- @
 data OAuth2Setup = OAuth2Setup
   { -- | Environment variable name containing the HMAC secret (min 32 bytes)
     hmacKeyEnvVar :: Text
-  , -- | Configured OAuth2 providers
-    providers :: Array OAuth2ProviderConfig
+  , -- | Configured OAuth2 provider factories
+    providers :: Array OAuth2ProviderFactory
   }
 
 
@@ -282,6 +283,17 @@ data WebAuthFactory where
   EvaluatedWebAuth :: WebAuthSetup -> WebAuthFactory
   -- | WebAuth config deferred to run time (requires withConfig)
   DeferredWebAuth :: (Typeable cfg) => (cfg -> Text) -> AuthOverrides -> WebAuthFactory
+
+
+-- | Factory for creating OAuth2 provider configuration.
+--
+-- The factory is stored at 'withOAuth2Provider' time and evaluated during
+-- 'Application.run' after config is loaded (if needed).
+data OAuth2ProviderFactory where
+  -- | OAuth2 provider config evaluated at build time (when config type is ())
+  EvaluatedOAuth2Provider :: OAuth2ProviderConfig -> OAuth2ProviderFactory
+  -- | OAuth2 provider config deferred to run time (requires withConfig)
+  DeferredOAuth2Provider :: (Typeable cfg) => (cfg -> OAuth2ProviderConfig) -> OAuth2ProviderFactory
 
 
 data Application = Application
@@ -771,6 +783,16 @@ runWith eventStore app = do
     Just (EvaluatedWebAuth setup) -> Task.yield (Just setup)
     Just (DeferredWebAuth _ _) ->
       Task.throw "runWith does not support config-dependent Auth. Use Application.run instead, or use: withAuth @() (\\_ -> yourAuthUrl)"
+  -- Reject deferred OAuth2 providers (runWith doesn't support config loading)
+  case app.oauth2Setup of
+    Nothing -> pass
+    Just (OAuth2Setup _ providerFactories) -> do
+      let hasDeferred = providerFactories
+            |> Array.toLinkedList
+            |> anyDeferred
+      case hasDeferred of
+        True -> Task.throw "runWith does not support config-dependent OAuth2 providers. Use Application.run instead, or use: withOAuth2Provider @() (\\_ -> yourProviderConfig)"
+        False -> pass
   runWithResolved eventStore maybeFileUploadSetup fileUploadCleanup maybeWebAuthSetup app
 
 
@@ -894,11 +916,13 @@ runWithResolved eventStore maybeFileUploadSetup fileUploadCleanup maybeWebAuthSe
             , Integration.fileAccess = maybeFileAccessContext
             }
         )
-    Just (OAuth2Setup envVarName providerConfigs) -> do
+    Just (OAuth2Setup envVarName providerFactories) -> do
       -- OAuth2 routes require JWT authentication to be enabled
       case maybeWebAuthSetup of
         Nothing -> Task.throw "OAuth2 requires authentication to be enabled. Call withAuth before configuring OAuth2 providers."
         Just _ -> pass
+      -- Resolve OAuth2 provider factories (deferred factories need config)
+      resolvedProviderConfigs <- resolveOAuth2Factories providerFactories app.configSpec
       Log.debug [fmt|Loading HMAC key from environment variable #{envVarName}...|]
       -- Load HMAC key from environment (declarative config, runtime loading)
       hmacKey <- loadHmacKeyFromEnv envVarName
@@ -918,7 +942,7 @@ runWithResolved eventStore maybeFileUploadSetup fileUploadCleanup maybeWebAuthSe
       connectRateLimiter <- RateLimiter.new RateLimiter.defaultConnectConfig
       callbackRateLimiter <- RateLimiter.new RateLimiter.defaultCallbackConfig
       -- Build provider map from array, detecting duplicates
-      providerMap <- buildProviderMap providerConfigs
+      providerMap <- buildProviderMap resolvedProviderConfigs
       let actionContext =
             Integration.ActionContext
               { Integration.secretStore = tokenStore
@@ -944,7 +968,7 @@ runWithResolved eventStore maybeFileUploadSetup fileUploadCleanup maybeWebAuthSe
               Err err -> Task.throw [fmt|Failed to decode OAuth2 action JSON: #{err}|]
               Ok (payload :: Integration.CommandPayload) -> do
                 Dispatcher.dispatchCommand combinedCommandEndpoints payload
-      let providerCount = Array.length providerConfigs
+      let providerCount = Array.length resolvedProviderConfigs
       Log.info [fmt|Initialized #{providerCount} provider(s)|]
       Task.yield (Just Web.OAuth2Config {Web.routes = routes, Web.dispatchAction = dispatchAction}, actionContext)
 
@@ -1409,14 +1433,14 @@ withDispatcherConfig config app =
 -- -- Development (default - in-memory):
 -- app = Application.new
 --   |> Application.withOAuth2StateKey "OAUTH2_STATE_KEY"
---   |> Application.withOAuth2Provider ouraConfig
+--   |> Application.withOAuth2Provider \@() (\\_ -> ouraConfig)
 --
 -- -- Production (custom implementation):
 -- vaultStore <- MyVault.newSecretStore vaultConfig
 -- app = Application.new
 --   |> Application.withSecretStore vaultStore
 --   |> Application.withOAuth2StateKey "OAUTH2_STATE_KEY"
---   |> Application.withOAuth2Provider ouraConfig
+--   |> Application.withOAuth2Provider \@() (\\_ -> ouraConfig)
 -- @
 withSecretStore ::
   SecretStore ->
@@ -1434,7 +1458,7 @@ withSecretStore store app = app {secretStore = Just store}
 -- @
 -- app = Application.new
 --   |> Application.withOAuth2StateKey "OAUTH2_STATE_KEY"
---   |> Application.withOAuth2Provider ouraConfig
+--   |> Application.withOAuth2Provider \@() (\\_ -> ouraConfig)
 -- @
 withOAuth2StateKey ::
   -- | Environment variable name containing the HMAC secret
@@ -1459,27 +1483,48 @@ withOAuth2StateKey envVarName app = do
 -- Requires 'withOAuth2StateKey' to be called first.
 -- Requires JWT authentication to be enabled (via withAuth).
 --
+-- The factory takes a function from your config type to OAuth2ProviderConfig.
+-- If you don't need app config, use @()@ as the config type:
+--
+-- @
+-- -- Static config (no app config needed):
+-- app = Application.new
+--   |> Application.withOAuth2StateKey "OAUTH2_STATE_KEY"
+--   |> Application.withOAuth2Provider \@() (\\_ -> ouraConfig)
+--
+-- -- Config-dependent (uses app config):
+-- app = Application.new
+--   |> Application.withConfig \@AppConfig
+--   |> Application.withOAuth2StateKey "OAUTH2_STATE_KEY"
+--   |> Application.withOAuth2Provider (\\cfg -> makeOuraConfig cfg.ouraClientId cfg.ouraClientSecret)
+-- @
+--
 -- Multiple providers can be added by calling this function multiple times:
 --
 -- @
 -- app = Application.new
 --   |> Application.withTransport WebTransport.server
---   |> Application.withAuth @() (\_ -> "https://auth.example.com")
+--   |> Application.withAuth \@() (\\_ -> "https://auth.example.com")
 --   |> Application.withOAuth2StateKey "OAUTH2_STATE_KEY"
---   |> Application.withOAuth2Provider ouraConfig
---   |> Application.withOAuth2Provider githubConfig
+--   |> Application.withOAuth2Provider \@() (\\_ -> ouraConfig)
+--   |> Application.withOAuth2Provider \@() (\\_ -> githubConfig)
 -- @
 withOAuth2Provider ::
-  OAuth2ProviderConfig ->
+  forall config.
+  (Typeable config) =>
+  (config -> OAuth2ProviderConfig) ->
   Application ->
   Application
-withOAuth2Provider providerConfig app = do
+withOAuth2Provider mkConfig app = do
+  let factory = case eqT @config @() of
+        Just Refl -> EvaluatedOAuth2Provider (mkConfig ())
+        Nothing -> DeferredOAuth2Provider mkConfig
   case app.oauth2Setup of
     Nothing ->
       -- withOAuth2StateKey not called - this is a configuration error
       panic "withOAuth2Provider requires withOAuth2StateKey to be called first"
     Just existingSetup -> do
-      let updatedProviders = existingSetup.providers |> Array.push providerConfig
+      let updatedProviders = existingSetup.providers |> Array.push factory
       app {oauth2Setup = Just existingSetup {providers = updatedProviders}}
 
 
@@ -1707,6 +1752,34 @@ loadHmacKeyFromEnv envVarName = do
   case StateToken.mkHmacKey keyText of
     Err err -> Task.throw [fmt|Invalid HMAC key in #{envVarName}: #{err}|]
     Ok key -> Task.yield key
+
+
+-- | Resolve OAuth2 provider factories to concrete configs.
+--
+-- Evaluates each factory, using the loaded config for deferred factories.
+-- Called by 'Application.run' after config is loaded.
+resolveOAuth2Factories :: Array OAuth2ProviderFactory -> Maybe ConfigSpec -> Task Text (Array OAuth2ProviderConfig)
+resolveOAuth2Factories factories maybeConfigSpec = do
+  let resolveOne :: OAuth2ProviderFactory -> Task Text OAuth2ProviderConfig
+      resolveOne factory =
+        case factory of
+          EvaluatedOAuth2Provider config -> Task.yield config
+          DeferredOAuth2Provider mkConfig ->
+            case maybeConfigSpec of
+              Nothing -> Task.throw "withOAuth2Provider requires withConfig when the factory uses the config parameter. If you don't need config, use: withOAuth2Provider @() (\\_ -> yourProviderConfig)"
+              Just _ -> do
+                let appConfig = Config.get
+                Task.yield (mkConfig appConfig)
+  Task.mapArray resolveOne factories
+
+
+-- | Check if any OAuth2 provider factory is deferred.
+anyDeferred :: LinkedList OAuth2ProviderFactory -> Bool
+anyDeferred factories =
+  case factories of
+    [] -> False
+    (EvaluatedOAuth2Provider _ : rest) -> anyDeferred rest
+    (DeferredOAuth2Provider _ : _) -> True
 
 
 -- | Build provider map from array, validating endpoints and failing on duplicates.
