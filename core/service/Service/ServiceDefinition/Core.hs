@@ -31,7 +31,7 @@ import Schema qualified
 import Service.Auth (RequestContext)
 import Service.Transport (Transport (..), EndpointHandler, EndpointSchema (..))
 import Service.Command (EntityOf, EventOf)
-import Service.Command.Core (TransportOf, Command (..), Entity (..), Event, NameOf)
+import Service.Command.Core (TransportsOf, NamesOf, AppendSymbols, AllKnownSymbols (..), Command (..), Entity (..), Event, NameOf)
 import Service.CommandExecutor qualified as CommandExecutor
 import Service.Response qualified as Response
 import Service.EntityFetcher.Core qualified as EntityFetcher
@@ -129,16 +129,16 @@ getSymbolText _ =
 data
   CommandDefinition
     (name :: Symbol)
-    (transport :: Type)
+    (transports :: [Type])
     (cmd :: Type)
-    (transportName :: Symbol)
+    (transportNames :: [Symbol])
     (event :: Type)
     (entity :: Type)
     (entityName :: Symbol)
     (entityIdType :: Type)
   = CommandDefinition
   { commandName :: Text,
-    transportName :: Text,
+    transportNames :: Array Text,
     commandSchema :: Schema
   }
   deriving (Show)
@@ -148,26 +148,21 @@ class CommandInspect definition where
   type Cmd definition
   type CmdEntity definition
   type CmdEvent definition
-  type CmdTransport definition
-  type TransportName definition :: Symbol
 
 
   commandName :: definition -> Text
 
 
-  transportName :: definition -> Text
-
-
   commandSchema :: definition -> Schema
 
 
-  createHandler ::
+  createHandlers ::
     definition ->
     EventStore (CmdEvent definition) ->
     Maybe (SnapshotCache (CmdEntity definition)) ->
-    CmdTransport definition ->
+    Map Text TransportValue ->
     Record.Proxy (Cmd definition) ->
-    EndpointHandler
+    Array (Text, EndpointHandler)
 
 
 instance
@@ -184,9 +179,9 @@ instance
     Show entityIdType,
     Json.FromJSON cmd,
     Schema.ToSchema cmd,
-    Transport transport,
+    BuildHandlersForTransports transports,
+    AllKnownSymbols transportNames,
     name ~ NameOf cmd,
-    Record.KnownSymbol transportName,
     Record.KnownSymbol name,
     Record.KnownSymbol entityName,
     Json.FromJSON event,
@@ -194,34 +189,29 @@ instance
     IsMultiTenant cmd ~ False,
     Record.KnownHash name
   ) =>
-  CommandInspect (CommandDefinition name transport cmd transportName event entity entityName entityIdType)
+  CommandInspect (CommandDefinition name transports cmd transportNames event entity entityName entityIdType)
   where
-  type Cmd (CommandDefinition name transport cmd transportName event entity entityName entityIdType) = cmd
-  type CmdEvent (CommandDefinition name transport cmd transportName event entity entityName entityIdType) = event
-  type CmdEntity (CommandDefinition name transport cmd transportName event entity entityName entityIdType) = entity
-  type CmdTransport (CommandDefinition name transport cmd transportName event entity entityName entityIdType) = transport
-  type TransportName (CommandDefinition name transport cmd transportName event entity entityName entityIdType) = transportName
+  type Cmd (CommandDefinition name transports cmd transportNames event entity entityName entityIdType) = cmd
+  type CmdEvent (CommandDefinition name transports cmd transportNames event entity entityName entityIdType) = event
+  type CmdEntity (CommandDefinition name transports cmd transportNames event entity entityName entityIdType) = entity
 
 
   commandName ::
-    (Record.KnownSymbol name) => CommandDefinition name transport cmd transportName event entity entityName entityIdType -> Text
+    (Record.KnownSymbol name) => CommandDefinition name transports cmd transportNames event entity entityName entityIdType -> Text
   commandName _ = getSymbolText (Record.Proxy @name)
-
-
-  transportName _ = getSymbolText (Record.Proxy @transportName)
 
 
   commandSchema _ = Schema.toSchema @cmd
 
 
-  createHandler ::
-    (CommandDefinition name transport cmd transportName event entity entityName entityIdType) ->
+  createHandlers ::
+    (CommandDefinition name transports cmd transportNames event entity entityName entityIdType) ->
     EventStore event ->
     Maybe (SnapshotCache entity) ->
-    transport ->
+    Map Text TransportValue ->
     Record.Proxy cmd ->
-    EndpointHandler
-  createHandler _ eventStore maybeCache transport cmd = do
+    Array (Text, EndpointHandler)
+  createHandlers _ eventStore maybeCache transportsMap cmd = do
     -- Build the handler that will receive RequestContext at call time
     let handler :: RequestContext -> cmd -> Task Text Response.CommandResponse
         handler requestContext cmdInstance = do
@@ -243,10 +233,55 @@ instance
           result <- CommandExecutor.execute eventStore fetcher entityName requestContext cmdInstance
           Task.yield (Response.fromExecutionResult result)
 
-    buildHandler @transport transport cmd handler
+    buildHandlersForAll @transports transportsMap cmd handler
 
 
-type instance NameOf (CommandDefinition name transport cmd transportName event entity entityName entityIdType) = name
+-- | Iterates over a type-level list of transports and builds handlers for each.
+class BuildHandlersForTransports (transports :: [Type]) where
+  buildHandlersForAll ::
+    forall command name.
+    ( Command command,
+      Json.FromJSON command,
+      name ~ NameOf command,
+      Record.KnownSymbol name
+    ) =>
+    Map Text TransportValue ->
+    Record.Proxy command ->
+    (RequestContext -> command -> Task Text Response.CommandResponse) ->
+    Array (Text, EndpointHandler)
+
+
+instance BuildHandlersForTransports '[] where
+  buildHandlersForAll _ _ _ = Array.empty
+
+
+instance
+  ( Transport transport,
+    Record.KnownSymbol (NameOf transport),
+    BuildHandlersForTransports rest
+  ) =>
+  BuildHandlersForTransports (transport ': rest)
+  where
+  buildHandlersForAll transportsMap cmdProxy handler = do
+    let transportNameText =
+          GHC.symbolVal (Record.Proxy @(NameOf transport))
+            |> Text.fromLinkedList
+    let thisHandler =
+          case transportsMap |> Map.get transportNameText of
+            Nothing ->
+              panic [fmt|Transport not registered: #{transportNameText}|]
+            Just transportVal -> do
+              let typedTransport :: transport = getTransportValue transportVal
+              Array.fromLinkedList
+                [ ( transportNameText,
+                    buildHandler @transport typedTransport cmdProxy handler
+                  )
+                ]
+    let restHandlers = buildHandlersForAll @rest transportsMap cmdProxy handler
+    Array.prepend thisHandler restHandlers
+
+
+type instance NameOf (CommandDefinition name transports cmd transportNames event entity entityName entityIdType) = name
 
 
 new :: Service '[] '[]
@@ -265,8 +300,8 @@ command ::
     (cmd :: Type)
     originalCommands
     commandName
-    commandTransport
-    (transportName :: Symbol)
+    commandTransports
+    (transportNames :: [Symbol])
     (commandTransportNames :: [Symbol])
     event
     entity
@@ -275,10 +310,11 @@ command ::
   ( Command cmd,
     Schema.ToSchema cmd,
     commandName ~ NameOf cmd,
-    commandTransport ~ TransportOf cmd,
-    transportName ~ NameOf commandTransport,
+    commandTransports ~ TransportsOf cmd,
+    transportNames ~ NamesOf commandTransports,
+    AllKnownSymbols transportNames,
+    BuildHandlersForTransports commandTransports,
     entityName ~ NameOf entity,
-    Record.KnownSymbol transportName,
     Record.KnownSymbol commandName,
     Record.KnownSymbol entityName,
     Record.KnownHash commandName,
@@ -286,21 +322,21 @@ command ::
     event ~ EventOf entity,
     Json.FromJSON event,
     Json.ToJSON event,
-    CommandInspect (CommandDefinition commandName commandTransport cmd transportName event entity entityName entityIdType)
+    CommandInspect (CommandDefinition commandName commandTransports cmd transportNames event entity entityName entityIdType)
   ) =>
   Service originalCommands commandTransportNames ->
   Service
-    ( (commandName 'Record.:= CommandDefinition commandName commandTransport cmd transportName event entity entityName entityIdType)
+    ( (commandName 'Record.:= CommandDefinition commandName commandTransports cmd transportNames event entity entityName entityIdType)
         ': originalCommands
     )
-    (transportName ': commandTransportNames)
+    (AppendSymbols transportNames commandTransportNames)
 command serviceDefinition = do
   let cmdName :: Record.Field commandName = fromLabel
-  let cmdVal :: Record.I (CommandDefinition commandName commandTransport cmd transportName event entity entityName entityIdType) =
+  let cmdVal :: Record.I (CommandDefinition commandName commandTransports cmd transportNames event entity entityName entityIdType) =
         Record.I
           CommandDefinition
             { commandName = getSymbolText (Record.Proxy @commandName),
-              transportName = getSymbolText (Record.Proxy @transportName),
+              transportNames = allSymbolTexts @transportNames,
               commandSchema = Schema.toSchema @cmd
             }
   let currentCmds :: Record originalCommands = serviceDefinition.commandDefinitions
@@ -308,7 +344,7 @@ command serviceDefinition = do
         currentCmds
           |> Record.insert cmdName cmdVal
   let inspectDict ::
-        Record.Dict (CommandInspect) (CommandDefinition commandName commandTransport cmd transportName event entity entityName entityIdType) = Record.Dict
+        Record.Dict (CommandInspect) (CommandDefinition commandName commandTransports cmd transportNames event entity entityName entityIdType) = Record.Dict
   let newInspectDict =
         serviceDefinition.inspectDict
           |> Record.insert cmdName inspectDict
@@ -397,21 +433,22 @@ buildEndpointsByTransport rawEventStore commandDefinitions transportsMap = do
           cmd ~ Cmd cmdDef
         ) =>
         Record.I (cmdDef) ->
-        Record.K (Text, Text, EndpointHandler, Schema) (cmdDef)
+        Record.K (Array (Text, Text, EndpointHandler, Schema)) (cmdDef)
       mapper (Record.I x) = do
-        case transportsMap |> Map.get (transportName x) of
-          Nothing -> panic [fmt|The impossible happened, couldn't find transport config for #{commandName x}|]
-          Just transportVal -> do
-            let transport = getTransportValue transportVal
-            let typedEventStore = GHC.unsafeCoerce eventStore :: EventStore (CmdEvent cmdDef)
-            let typedCache = GHC.unsafeCoerce maybeCache :: Maybe (SnapshotCache (CmdEntity cmdDef))
-            Record.K (transportName x, commandName x, createHandler x typedEventStore typedCache transport (Record.Proxy @cmd), commandSchema x)
+        let typedEventStore = GHC.unsafeCoerce eventStore :: EventStore (CmdEvent cmdDef)
+        let typedCache = GHC.unsafeCoerce maybeCache :: Maybe (SnapshotCache (CmdEntity cmdDef))
+        let handlerPairs = createHandlers x typedEventStore typedCache transportsMap (Record.Proxy @cmd)
+        Record.K
+          ( handlerPairs
+              |> Array.map (\(tName, handler) -> (tName, commandName x, handler, commandSchema x))
+          )
 
   let endpoints :: Array (Text, Text, EndpointHandler, Schema) =
         commandDefinitions
           |> Record.cmap (Record.Proxy @(CommandInspect)) mapper
           |> Record.collapse
           |> Array.fromLinkedList
+          |> Array.flatten
 
   -- Group by transport name, detecting duplicate command handlers
   let groupByTransport (transportNameText, cmdName, handler, schema) (handlersAcc, schemasAcc) =

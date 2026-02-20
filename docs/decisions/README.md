@@ -47,6 +47,7 @@ ADRs document significant architectural decisions made during the development of
 | [0031](0031-token-query-param-oauth2.md) | Token Query Parameter for OAuth2 Browser Redirects | Proposed |
 | [0032](0032-simple-event-store.md) | SimpleEventStore with Optional JSONL Persistence | Proposed |
 | [0033](0033-config-dependent-oauth2-provider.md) | Config-Dependent OAuth2 Provider Factory | Proposed |
+| [0034](0034-cli-transport.md) | CliTransport — Command-Line Interface Transport | Proposed |
 
 ## Creating New ADRs
 

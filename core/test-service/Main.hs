@@ -24,6 +24,8 @@ import Service.Query.THSpec qualified
 import Service.Query.UpdaterSpec qualified
 import Service.QueryObjectStore.InMemorySpec qualified
 import Service.SnapshotCache.InMemorySpec qualified
+import Service.Transport.CliSpec qualified
+import Service.Transport.Cli.OutputSpec qualified
 import Service.Transport.WebSpec qualified
 import Test.Hspec qualified as Hspec
 
@@ -52,4 +54,6 @@ main = Hspec.hspec do
   Hspec.describe "Service.Query.Updater" Service.Query.UpdaterSpec.spec
   Hspec.describe "Service.QueryObjectStore.InMemory" Service.QueryObjectStore.InMemorySpec.spec
   Hspec.describe "Service.SnapshotCache.InMemory" Service.SnapshotCache.InMemorySpec.spec
+  Hspec.describe "Service.Transport.Cli" Service.Transport.CliSpec.spec
+  Hspec.describe "Service.Transport.Cli.Output" Service.Transport.Cli.OutputSpec.spec
   Hspec.describe "Service.Transport.Web" Service.Transport.WebSpec.spec
