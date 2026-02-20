@@ -122,7 +122,7 @@ data Ops = Ops
   { acquire :: PostgresEventStore -> Task Text Sessions.Connection,
     release :: Sessions.Connection -> Task Text Unit,
     initializeTable :: Sessions.Connection -> Task Text Unit,
-    initializeSubscriptions :: SubscriptionStore -> PostgresEventStore -> Task Text Unit
+    initializeSubscriptions :: Sessions.Connection -> SubscriptionStore -> PostgresEventStore -> Task Text Unit
   }
 
 
@@ -140,7 +140,7 @@ defaultOps = do
           |> Sessions.run connection
           |> Task.mapError toText
 
-  let initializeSubscriptions subscriptionStore cfg = do
+  let initializeSubscriptions pool subscriptionStore cfg = do
         connection <- Hasql.acquire (toConnectionSettings cfg) |> Task.fromIOEither |> Task.mapError toText
         Sessions.createEventNotificationTriggerFunctionSession
           |> Sessions.runConnection connection
@@ -150,7 +150,7 @@ defaultOps = do
           |> Sessions.runConnection connection
           |> Task.mapError toText
 
-        subscriptionStore |> Notifications.connectTo connection
+        subscriptionStore |> Notifications.connectTo connection pool
 
   let release connection = do
         case connection of
@@ -202,7 +202,7 @@ new ops cfg =
       ( \connection -> do
           ops.initializeTable connection |> Task.mapError (TableInitializationError)
           subscriptionStore <- SubscriptionStore.new |> Task.mapError (toText .> SubscriptionInitializationError)
-          ops.initializeSubscriptions subscriptionStore cfg |> Task.mapError (SubscriptionInitializationError)
+          ops.initializeSubscriptions connection subscriptionStore cfg |> Task.mapError (SubscriptionInitializationError)
           let eventStore =
                 EventStore
                   { insert = insertImpl ops cfg 0,

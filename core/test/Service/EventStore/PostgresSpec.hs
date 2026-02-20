@@ -117,8 +117,8 @@ mockNewOps = do
         Var.increment initializeTableCalls
         Task.yield unit
 
-  let initializeSubscriptions :: Internal.SubscriptionStore -> Internal.PostgresEventStore -> Task Text Unit
-      initializeSubscriptions _ _ = do
+  let initializeSubscriptions :: Internal.Connection -> Internal.SubscriptionStore -> Internal.PostgresEventStore -> Task Text Unit
+      initializeSubscriptions _ _ _ = do
         Var.increment initializeSubscriptionsCalls
         Task.yield unit
 

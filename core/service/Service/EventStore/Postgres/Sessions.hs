@@ -54,6 +54,34 @@ data EventInsertionRecord = EventInsertionRecord
 instance Json.FromJSON EventInsertionRecord
 
 
+data EventNotificationPayload = EventNotificationPayload
+  { eventId :: Uuid,
+    globalPosition :: Int64,
+    localPosition :: Int64,
+    inlinedStreamId :: Text,
+    entity :: Text
+  }
+  deriving (Eq, Ord, Show, Generic)
+
+
+instance Json.FromJSON EventNotificationPayload
+
+
+postgresRecordToEvent ::
+  PostgresEventRecord ->
+  Result Text (Event Json.Value)
+postgresRecordToEvent record = do
+  rawMetadata <- Json.decode record.metadata
+  let metadata =
+        rawMetadata
+          { EventMetadata.globalPosition = Just (StreamPosition record.globalPosition),
+            EventMetadata.localPosition = Just (StreamPosition record.localPosition)
+          }
+  let entityName = EntityName record.entityName
+  let streamId = StreamId record.inlinedStreamId
+  Event {event = record.eventData, metadata, entityName, streamId} |> Ok
+
+
 insertionRecordToEvent ::
   (Json.FromJSON eventType) =>
   EventInsertionRecord ->
@@ -103,6 +131,18 @@ runConnection connection session = do
       Task.yield res
 
 
+selectEventByGlobalPositionSession ::
+  Int64 ->
+  Session.Session (Maybe PostgresEventRecord)
+selectEventByGlobalPositionSession globalPos = do
+  let query :: Text = "SELECT EventId, GlobalPosition, LocalPosition, InlinedStreamId, Entity, EventData, Metadata FROM Events WHERE GlobalPosition = $1"
+  let encoder = Encoders.param (Encoders.nonNullable Encoders.int8)
+  let decoder = Decoders.rowMaybe PostgresEventRecord.rowDecoder
+  let statement :: Statement Int64 (Maybe PostgresEventRecord) =
+        Statement (query |> Text.toBytes |> Bytes.unwrap) encoder decoder True
+  Session.statement globalPos statement
+
+
 createEventsTableSession :: Session.Session Unit
 createEventsTableSession =
   Session.sql
@@ -148,9 +188,7 @@ createEventNotificationTriggerFunctionSession =
                   'eventId', NEW.eventId,
                   'globalPosition', NEW.globalPosition,
                   'localPosition', NEW.localPosition,
-                  'inlinedStreamId', NEW.inlinedStreamId,
-                  'eventData', NEW.eventData,
-                  'metadata', NEW.metadata
+                  'inlinedStreamId', NEW.inlinedStreamId
                 )::text
               );
               PERFORM pg_notify(
@@ -160,9 +198,7 @@ createEventNotificationTriggerFunctionSession =
                   'globalPosition', NEW.globalPosition,
                   'localPosition', NEW.localPosition,
                   'inlinedStreamId', NEW.inlinedStreamId,
-                  'entity', NEW.entity,
-                  'eventData', NEW.eventData,
-                  'metadata', NEW.metadata
+                  'entity', NEW.entity
                 )::text
               );
               RETURN NEW;
