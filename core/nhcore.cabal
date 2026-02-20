@@ -375,9 +375,11 @@ test-suite nhcore-test
     Http.ClientSpec
     Http.ClientRawSpec
     ConcurrentMapSpec
+    Command.FromSchemaSpec
     Integration.CommandSpec
     Integration.ContextSpec
     Integration.DispatcherSpec
+    Integration.ExitSpec
     Integration.RuntimeSpec
     Integration.TimerSpec
     IntegrationSpec
@@ -398,6 +400,8 @@ test-suite nhcore-test
     Service.Query.THSpec
     Service.Query.UpdaterSpec
     Service.TestHelpers
+    Service.Transport.CliSpec
+    Service.Transport.Cli.OutputSpec
     Service.Transport.WebSpec
     Service.Transport.Web.SwaggerUISpec
     Service.Transport.Web.HealthCheckSpec
@@ -491,6 +495,8 @@ test-suite nhcore-test-service
     Service.QueryObjectStore.InMemorySpec
     Service.SnapshotCache.InMemorySpec
     Service.TestHelpers
+    Service.Transport.CliSpec
+    Service.Transport.Cli.OutputSpec
     Service.Transport.WebSpec
 
   type: exitcode-stdio-1.0
@@ -513,6 +519,7 @@ test-suite nhcore-test-integration
     Integration.CommandSpec
     Integration.ContextSpec
     Integration.DispatcherSpec
+    Integration.ExitSpec
     Integration.RuntimeSpec
     Integration.TimerSpec
     IntegrationSpec
@@ -536,6 +543,7 @@ test-suite nhcore-test-core
     -Wno-missing-home-modules
 
   other-modules:
+    Command.FromSchemaSpec
     ConcurrentMapSpec
     Config.ApplicationSpec
     Config.ConfigDependentSpec
