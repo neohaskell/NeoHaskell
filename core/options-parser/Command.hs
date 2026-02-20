@@ -34,6 +34,8 @@ import Maybe (Maybe (..))
 import OptEnvConf qualified
 import OptEnvConf.Args qualified as Args
 import OptEnvConf.EnvMap qualified as EnvMap
+import OptEnvConf.Error qualified as GhcOptError
+import Text.Colour qualified as GhcColour
 import Path (Path)
 import Result (Result (..))
 import Schema (FieldSchema (..), Schema (..))
@@ -83,7 +85,10 @@ parseHandler options = do
   parseResult <- Task.fromIO (OptEnvConf.runParserOn Nothing parser args envMap Nothing)
   case parseResult of
     GHC.Right result -> Task.yield result
-    GHC.Left _errs -> Task.throw (Error "Failed to parse CLI arguments")
+    GHC.Left errs -> do
+        let errorChunks = GhcOptError.renderErrors errs
+        let errorText = GhcColour.renderChunksText GhcColour.WithoutColours errorChunks
+        Task.throw (Error [fmt|Failed to parse CLI arguments:\n#{errorText}|])
 
 
 data TextConfig = TextConfig
@@ -301,6 +306,8 @@ fromSchema schema =
     SObject fields -> do
       let parsers = fields |> Array.map fromFieldSchema
       let initial = OptionsParser (Applicative.pure [])
+      -- NOTE: Array.foldl has non-standard argument order: (element -> accumulator -> accumulator)
+      -- instead of the standard (accumulator -> element -> accumulator)
       let combine parser acc = do
             let (OptionsParser accP) = acc
             let (OptionsParser fieldP) = parser

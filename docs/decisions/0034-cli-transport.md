@@ -75,8 +75,8 @@ data CliTransport = CliTransport
   }
 
 instance Transport CliTransport where
-  type Request CliTransport = [Text]        -- CLI args (from getArgs)
-  type Response CliTransport = Text          -- stdout output
+  type Request CliTransport = Bytes         -- JSON-encoded command payload
+  type Response CliTransport = Bytes         -- JSON-encoded response
   type RunnableTransport CliTransport = Task Text Unit
 ```
 
@@ -365,7 +365,7 @@ myapp query user-summary --pretty
 
 3. **Same validation path**: CLI inputs go through the same `FromJSON` deserialization as HTTP inputs. Business logic is transport-agnostic.
 
-4. **Secure by default**: Redacted fields refused as CLI args, event store files with restrictive permissions, hash-chain integrity for event tampering detection.
+4. **Secure by default**: Redacted fields refused as CLI args, event store files with restrictive permissions.
 
 5. **Consistent DX**: `Application.withTransport CliTransport.cli` follows the same pattern as `Application.withTransport WebTransport.server`.
 

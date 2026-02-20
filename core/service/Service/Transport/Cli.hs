@@ -6,6 +6,7 @@ module Service.Transport.Cli (
 import Array qualified
 import Core
 import Command qualified
+import Version qualified
 import Console qualified
 import GHC.TypeLits qualified as GHC
 import Json qualified
@@ -131,10 +132,11 @@ instance Transport CliTransport where
             }
           )
     let topParser = Command.commands entitySubcommands
+    let parsedVersion = Version.parse cliTransport.version
     let options = Command.CommandOptions
           { name = cliTransport.programName
           , description = cliTransport.description
-          , version = Nothing
+          , version = parsedVersion
           , decoder = topParser
           }
     -- Parse CLI args
