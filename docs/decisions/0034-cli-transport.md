@@ -267,7 +267,7 @@ When using `SimpleEventStore` with `persistent = True` (ADR-0032):
 | **Symlink attacks** | Open files with `O_NOFOLLOW` to prevent symlink traversal |
 | **TOCTOU races** | Use `O_EXCL \| O_CREAT` for atomic create-or-fail |
 | **Path traversal** | Entity IDs are validated as UUIDs before use as path components (already enforced by `getEntityId :: cmd -> Maybe Uuid`) |
-| **Event tampering** | Append-only file mode. Each event includes a SHA-256 hash of the previous event, forming a hash chain. Tampering with any event invalidates all subsequent hashes. |
+| **Event tampering** | Append-only file mode (`O_APPEND`). Integrity verification is out of scope for now — `SimpleEventStore` is intended for development and single-user CLI tools, not adversarial environments. |
 
 **Note**: `SimpleEventStore` with file persistence is intended for **development and single-user CLI tools**. Production deployments should use `PostgresEventStore` with proper database access controls.
 
@@ -383,9 +383,7 @@ myapp query user-summary --pretty
 
 1. **Safety over ergonomics for complex types**: Rather than attempting to flatten arbitrary nested structures into CLI flags (error-prone, ambiguous), complex types use JSON string values. This is predictable and correct, at the cost of verbosity.
 
-2. **Hash chain over simplicity**: SHA-256 hash chain for event integrity adds complexity to SimpleEventStore but provides tamper detection for local file storage.
-
-3. **Explicit exit over implicit shutdown**: The process does not auto-exit after command execution. The user wires a regular outbound integration (`Exit.onEvent @SomeEvent`) to control shutdown. This is slightly more setup, but keeps the framework free of CLI-specific lifecycle logic and enables long-running CLI daemons by default.
+2. **Explicit exit over implicit shutdown**: The process does not auto-exit after command execution. The user wires a regular outbound integration (`Exit.onEvent @SomeEvent`) to control shutdown. This is slightly more setup, but keeps the framework free of CLI-specific lifecycle logic and enables long-running CLI daemons by default.
 
 ## References
 
