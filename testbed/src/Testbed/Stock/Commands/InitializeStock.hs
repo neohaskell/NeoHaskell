@@ -8,7 +8,7 @@ import Core
 import Decider qualified
 import Json qualified
 import Service.Auth (RequestContext)
-import Service.Command.Core (TransportOf)
+import Service.Command.Core (TransportsOf)
 import Service.CommandExecutor.TH (command)
 import Service.Transport.Web (WebTransport)
 import Testbed.Stock.Core
@@ -50,7 +50,7 @@ decide cmd entity _ctx = case entity of
 type instance EntityOf InitializeStock = StockEntity
 
 
-type instance TransportOf InitializeStock = WebTransport
+type instance TransportsOf InitializeStock = '[WebTransport]
 
 
 command ''InitializeStock

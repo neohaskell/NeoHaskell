@@ -9,7 +9,7 @@ import Decider qualified
 import Json qualified
 import Map qualified
 import Service.Auth (RequestContext (..))
-import Service.Command.Core (TransportOf)
+import Service.Command.Core (TransportsOf)
 import Service.CommandExecutor.TH (command)
 import Service.FileUpload.Core (FileRef)
 import Service.Transport.Web (WebTransport)
@@ -67,7 +67,7 @@ decide cmd entity ctx = case entity of
 type instance EntityOf CreateDocument = DocumentEntity
 
 
-type instance TransportOf CreateDocument = WebTransport
+type instance TransportsOf CreateDocument = '[WebTransport]
 
 
 command ''CreateDocument

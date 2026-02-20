@@ -178,6 +178,7 @@ library
     Http.Client
     Integration
     Integration.Command
+    Integration.Exit
     Integration.Lifecycle
     Integration.Timer
     Service.Integration.Dispatcher
@@ -259,6 +260,8 @@ library
     Service.Transport.Web
     Service.Transport.Web.BuiltinSchemas
     Service.Transport.Web.SwaggerUI
+    Service.Transport.Cli
+    Service.Transport.Cli.Output
     Schema
     Schema.OpenApi
     Set

@@ -8,7 +8,7 @@ import Core
 import Decider qualified
 import Json qualified
 import Service.Auth (RequestContext)
-import Service.Command.Core (TransportOf)
+import Service.Command.Core (TransportsOf)
 import Service.CommandExecutor.TH (command)
 import Service.Transport.Web (WebTransport)
 import Testbed.Stock.Core
@@ -60,7 +60,7 @@ type instance EntityOf ReserveStock = StockEntity
 
 -- NOTE: Using WebTransport for testability. In production, this would use InternalTransport
 -- to indicate it's only triggered by integrations, not exposed via web.
-type instance TransportOf ReserveStock = WebTransport
+type instance TransportsOf ReserveStock = '[WebTransport]
 
 
 command ''ReserveStock

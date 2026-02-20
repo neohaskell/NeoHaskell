@@ -7,7 +7,10 @@ module Service.Command.Core (
 
   -- * Type Families
   NameOf,
-  TransportOf,
+  TransportsOf,
+  NamesOf,
+  AppendSymbols,
+  AllKnownSymbols (..),
 
   -- * Multi-Tenancy Support
   GetEntityIdFunction,
@@ -29,11 +32,17 @@ module Service.Command.Core (
   runDecision,
 ) where
 
+import Array (Array)
+import Array qualified
 import Basics
 import Decider (CommandResult (..), Decision (..), DecisionContext (..), runDecision)
+import GHC.TypeLits qualified as GHC
 import Maybe (Maybe)
+import Record qualified
 import Service.Auth (RequestContext (..), UserClaims (..))
 import Service.Entity.Core (Entity (..), EntityOf, Event (..), EventOf)
+import Text (Text)
+import Text qualified
 import Uuid (Uuid)
 
 
@@ -47,14 +56,47 @@ import Uuid (Uuid)
 type family NameOf (t :: Type) :: Symbol
 
 
--- | Maps a command type to its transport adapter.
+-- | Maps a command type to its transport adapters (type-level list).
 --
 -- Example:
 --
 -- @
--- type instance TransportOf CreateCart = WebTransport
+-- type instance TransportsOf CreateCart = '[WebTransport]
 -- @
-type family TransportOf (commandType :: Type) :: Type
+type family TransportsOf (commandType :: Type) :: [Type]
+
+
+-- | Extracts the symbolic names from a type-level list of types.
+--
+-- Example:
+--
+-- @
+-- NamesOf '[WebTransport, CliTransport] ~ '["WebTransport", "CliTransport"]
+-- @
+type family NamesOf (types :: [Type]) :: [Symbol] where
+  NamesOf '[] = '[]
+  NamesOf (t ': ts) = NameOf t ': NamesOf ts
+
+
+-- | Appends two type-level symbol lists.
+type family AppendSymbols (xs :: [Symbol]) (ys :: [Symbol]) :: [Symbol] where
+  AppendSymbols '[] ys = ys
+  AppendSymbols (x ': xs) ys = x ': AppendSymbols xs ys
+
+
+-- | Reifies a type-level list of symbols into an Array of Text values.
+class AllKnownSymbols (names :: [Symbol]) where
+  allSymbolTexts :: Array Text
+
+
+instance AllKnownSymbols '[] where
+  allSymbolTexts = Array.empty
+
+
+instance (Record.KnownSymbol name, AllKnownSymbols rest) => AllKnownSymbols (name ': rest) where
+  allSymbolTexts = do
+    let this = GHC.symbolVal (Record.Proxy @name) |> Text.fromLinkedList
+    Array.prepend (Array.fromLinkedList [this]) (allSymbolTexts @rest)
 
 
 -- | The Command typeclass defines the contract for all commands.

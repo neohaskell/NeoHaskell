@@ -11,6 +11,8 @@ module Command (
   parseHandler,
   commands,
   map,
+  fromSchema,
+  fromFieldSchema,
 ) where
 
 import Appendable ((++))
@@ -18,31 +20,33 @@ import Array (Array)
 import Array qualified
 import Basics
 import Char (Char)
-import Combinable (Combinable)
-import Combinable qualified
 import Control.Applicative qualified as Applicative
 import Data.Aeson qualified as Json
+import Data.Aeson.Key qualified as GhcAesonKey
 import Data.Either qualified as GHC
 import Data.Functor qualified as Functor
 import Data.Version (Version)
 import Default (Default (..), defaultValue)
 import LinkedList (LinkedList)
+import LinkedList qualified
 import Mappable qualified
 import Maybe (Maybe (..))
-import Maybe qualified
-import Options.Applicative qualified as OptParse
+import OptEnvConf qualified
+import OptEnvConf.Args qualified as Args
+import OptEnvConf.EnvMap qualified as EnvMap
 import Path (Path)
 import Result (Result (..))
+import Schema (FieldSchema (..), Schema (..))
+import System.Environment qualified as GhcEnv
 import Task (Task)
 import Task qualified
 import Text (Text, fromLinkedList, toLinkedList)
 import Text qualified
 import ToText (ToText)
 import Unknown qualified
-import Version qualified
 
 
-newtype OptionsParser value = OptionsParser (OptParse.Parser value)
+newtype OptionsParser value = OptionsParser (OptEnvConf.Parser value)
   deriving (Functor.Functor, Applicative.Applicative)
 
 
@@ -72,17 +76,14 @@ newtype Error = Error Text
 parseHandler :: CommandOptions event -> Task _ event
 parseHandler options = do
   let (OptionsParser parser) = options.decoder
-  let ver =
-        options.version
-          |> Maybe.withDefault [Version.version|0.0.0|]
-          |> Version.toText
-  let description = options.description
-  let programDescription =
-        [fmt|#{description} - Version #{ver}|]
-          |> Text.toLinkedList
-  let foo = OptParse.info (parser OptParse.<**> OptParse.helper) (OptParse.progDesc programDescription)
-  OptParse.execParser foo
-    |> Task.fromIO
+  rawArgs <- Task.fromIO GhcEnv.getArgs
+  rawEnv <- Task.fromIO GhcEnv.getEnvironment
+  let args = Args.parseArgs rawArgs
+  let envMap = EnvMap.parse rawEnv
+  parseResult <- Task.fromIO (OptEnvConf.runParserOn Nothing parser args envMap Nothing)
+  case parseResult of
+    GHC.Right result -> Task.yield result
+    GHC.Left _errs -> Task.throw (Error "Failed to parse CLI arguments")
 
 
 data TextConfig = TextConfig
@@ -110,22 +111,20 @@ instance Default TextConfig where
 
 
 text :: TextConfig -> OptionsParser Text
-text config =
-  do
-    let textValue = case config.value of
-          Just val -> [OptParse.value val]
-          Nothing -> []
-    let options =
-          [ OptParse.help (config.help |> Text.toLinkedList),
-            OptParse.long (config.long |> Text.toLinkedList),
-            OptParse.short config.short,
-            OptParse.metavar (config.metavar |> Text.toLinkedList)
-          ]
-            ++ textValue
-              |> setting
-
-    OptParse.option OptParse.str options
-    |> OptionsParser
+text config = do
+  let defaultValueMods = case config.value of
+        Just val -> [OptEnvConf.value val]
+        Nothing -> []
+  let mods =
+        [ OptEnvConf.help (config.help |> Text.toLinkedList),
+          OptEnvConf.long (config.long |> Text.toLinkedList),
+          OptEnvConf.short config.short,
+          OptEnvConf.metavar (config.metavar |> Text.toLinkedList),
+          OptEnvConf.option,
+          OptEnvConf.reader OptEnvConf.str
+        ]
+          ++ defaultValueMods
+  OptionsParser (OptEnvConf.setting mods)
 
 
 data PathConfig = PathConfig
@@ -154,18 +153,19 @@ instance Default PathConfig where
 
 path :: PathConfig -> OptionsParser Path
 path config = do
-  let pathValue = case config.value of
-        Just val -> [OptParse.value val]
+  let defaultValueMods = case config.value of
+        Just val -> [OptEnvConf.value val]
         Nothing -> []
-  let options =
-        [ OptParse.help (config.help |> Text.toLinkedList),
-          OptParse.long (config.long |> Text.toLinkedList),
-          OptParse.short config.short,
-          OptParse.metavar (config.metavar |> Text.toLinkedList)
+  let mods =
+        [ OptEnvConf.help (config.help |> Text.toLinkedList),
+          OptEnvConf.long (config.long |> Text.toLinkedList),
+          OptEnvConf.short config.short,
+          OptEnvConf.metavar (config.metavar |> Text.toLinkedList),
+          OptEnvConf.option,
+          OptEnvConf.reader OptEnvConf.str
         ]
-  setting (pathValue ++ options)
-    |> OptParse.option OptParse.str
-    |> OptionsParser
+          ++ defaultValueMods
+  OptionsParser (OptEnvConf.setting mods)
 
 
 data JsonConfig value = JsonConfig
@@ -233,13 +233,14 @@ instance Default FlagConfig where
 
 flag :: FlagConfig -> OptionsParser Bool
 flag config = do
-  setting
-    [ OptParse.help (config.help |> Text.toLinkedList),
-      OptParse.long (config.long |> Text.toLinkedList),
-      OptParse.short config.short
-    ]
-    |> OptParse.switch
-    |> OptionsParser
+  let mods =
+        [ OptEnvConf.help (config.help |> Text.toLinkedList),
+          OptEnvConf.long (config.long |> Text.toLinkedList),
+          OptEnvConf.short config.short,
+          OptEnvConf.switch True,
+          OptEnvConf.value False
+        ]
+  OptionsParser (OptEnvConf.setting mods)
 
 
 parseWith ::
@@ -248,27 +249,27 @@ parseWith ::
   JsonConfig value ->
   OptionsParser value
 parseWith parseFunc config = do
-  let wrappedParseFunction charList = do
-        let textToParse = Text.fromLinkedList charList
-        let result = parseFunc textToParse
-        resultToEither result
-
-  let reader = OptParse.eitherReader wrappedParseFunction
-
-  let defaultValueConfig = case config.value of
-        Just val -> [OptParse.value val]
-        Nothing -> []
-
-  let options =
-        [ OptParse.help (config.help |> Text.toLinkedList),
-          OptParse.long (config.long |> Text.toLinkedList),
-          OptParse.short config.short,
-          OptParse.metavar (config.metavar |> Text.toLinkedList)
+  let mods =
+        [ OptEnvConf.help (config.help |> Text.toLinkedList),
+          OptEnvConf.long (config.long |> Text.toLinkedList),
+          OptEnvConf.short config.short,
+          OptEnvConf.metavar (config.metavar |> Text.toLinkedList),
+          OptEnvConf.option,
+          OptEnvConf.reader OptEnvConf.str
         ]
-
-  setting (defaultValueConfig ++ options)
-    |> OptParse.option reader
-    |> OptionsParser
+  let stringParser = OptEnvConf.setting mods :: OptEnvConf.Parser (LinkedList Char)
+  let checkedParser =
+        OptEnvConf.checkMapEither
+          ( \charList -> do
+              let textToParse = Text.fromLinkedList charList
+              let result = parseFunc textToParse
+              resultToEither result
+          )
+          stringParser
+  let finalParser = case config.value of
+        Just val -> checkedParser Applicative.<|> Applicative.pure val
+        Nothing -> checkedParser
+  OptionsParser finalParser
 
 
 resultToEither :: Result Text value -> GHC.Either (LinkedList Char) value
@@ -283,18 +284,99 @@ commands commandConfigs = do
           |> Array.map
             ( \config -> do
                 let (OptionsParser handler) = config.decoder
-                let name = (config.name |> Text.toLinkedList)
-                let description = OptParse.info handler (config.description |> Text.toLinkedList |> OptParse.progDesc)
-                OptParse.command name description
+                let name = config.name |> Text.toLinkedList
+                let description = config.description |> Text.toLinkedList
+                OptEnvConf.command name description handler
             )
           |> Array.toLinkedList
-          |> Combinable.mconcat
-
-  OptionsParser (OptParse.subparser cmds)
+  OptionsParser (OptEnvConf.commands cmds)
 
 
--- Private
+-- | Generate a parser from a Schema that produces a JSON Value.
+-- This allows schema-driven CLI argument parsing where each field
+-- in the schema becomes a CLI option.
+fromSchema :: Schema -> OptionsParser Json.Value
+fromSchema schema =
+  case schema of
+    SObject fields -> do
+      let parsers = fields |> Array.map fromFieldSchema
+      let initial = OptionsParser (Applicative.pure [])
+      let combine parser acc = do
+            let (OptionsParser accP) = acc
+            let (OptionsParser fieldP) = parser
+            OptionsParser (Applicative.liftA2 (\pairs pair -> pairs ++ [pair]) accP fieldP)
+      let combined = Array.foldl combine initial parsers
+      map
+        ( \pairs -> do
+            let jsonPairs = Functor.fmap (\(k, v) -> (GhcAesonKey.fromText k, v)) pairs
+            Json.object jsonPairs
+        )
+        combined
+    SText ->
+      map Json.String (OptionsParser (OptEnvConf.setting [OptEnvConf.reader OptEnvConf.str, OptEnvConf.argument]))
+    SInt ->
+      map (\n -> Json.toJSON (n :: Int)) (OptionsParser (OptEnvConf.setting [OptEnvConf.reader OptEnvConf.auto, OptEnvConf.argument]))
+    SNumber ->
+      map (\n -> Json.toJSON (n :: Float)) (OptionsParser (OptEnvConf.setting [OptEnvConf.reader OptEnvConf.auto, OptEnvConf.argument]))
+    SBool ->
+      map Json.Bool (OptionsParser (OptEnvConf.setting [OptEnvConf.reader OptEnvConf.auto, OptEnvConf.argument]) :: OptionsParser Bool)
+    _ ->
+      map Json.String (OptionsParser (OptEnvConf.setting [OptEnvConf.reader OptEnvConf.str, OptEnvConf.argument]))
 
--- Helper function to make porting to opt-env-conf in the future easily
-setting :: (Combinable m) => [m] -> m
-setting = Combinable.mconcat
+
+-- | Generate a parser for a single field producing a (fieldName, value) pair.
+-- The field name is converted to kebab-case for the CLI long option.
+fromFieldSchema :: FieldSchema -> OptionsParser (Text, Json.Value)
+fromFieldSchema field = do
+  let kebabName = field.fieldName |> Text.toKebabCase |> Text.toLinkedList
+  let helpText = field.fieldDescription |> Text.toLinkedList
+  case field.fieldSchema of
+    SText -> do
+      let parser = OptEnvConf.setting [OptEnvConf.long kebabName, OptEnvConf.help helpText, OptEnvConf.option, OptEnvConf.reader OptEnvConf.str]
+      map (\val -> (field.fieldName, Json.String val)) (OptionsParser parser)
+    SInt -> do
+      let parser = OptEnvConf.setting [OptEnvConf.long kebabName, OptEnvConf.help helpText, OptEnvConf.option, OptEnvConf.reader OptEnvConf.auto] :: OptEnvConf.Parser Int
+      map (\n -> (field.fieldName, Json.toJSON n)) (OptionsParser parser)
+    SNumber -> do
+      let parser = OptEnvConf.setting [OptEnvConf.long kebabName, OptEnvConf.help helpText, OptEnvConf.option, OptEnvConf.reader OptEnvConf.auto] :: OptEnvConf.Parser Float
+      map (\n -> (field.fieldName, Json.toJSON n)) (OptionsParser parser)
+    SBool -> do
+      let parser = OptEnvConf.setting [OptEnvConf.long kebabName, OptEnvConf.help helpText, OptEnvConf.switch True, OptEnvConf.value False]
+      map (\b -> (field.fieldName, Json.Bool b)) (OptionsParser parser)
+    SOptional innerSchema -> do
+      let innerField = FieldSchema {fieldName = field.fieldName, fieldSchema = innerSchema, fieldRequired = False, fieldDescription = field.fieldDescription}
+      let (OptionsParser innerParser) = fromFieldSchema innerField
+      let optionalParser = Applicative.optional innerParser
+      map
+        ( \result ->
+            case result of
+              Just (_, val) -> (field.fieldName, val)
+              Nothing -> (field.fieldName, Json.Null)
+        )
+        (OptionsParser optionalParser)
+    SEnum variants -> do
+      let variantList = variants |> Array.toLinkedList |> LinkedList.map Text.toLinkedList |> LinkedList.intersperse ", " |> LinkedList.concat
+      let enumHelp = helpText ++ " (one of: " ++ variantList ++ ")"
+      let parser = OptEnvConf.setting [OptEnvConf.long kebabName, OptEnvConf.help enumHelp, OptEnvConf.option, OptEnvConf.reader OptEnvConf.str] :: OptEnvConf.Parser Text
+      let checkedParser =
+            OptEnvConf.checkMapEither
+              ( \val ->
+                  case Array.find (\v -> v == val) variants of
+                    Just _ -> GHC.Right val
+                    Nothing -> GHC.Left (Text.toLinkedList [fmt|Invalid value: expected one of #{variantList}|])
+              )
+              parser
+      map (\val -> (field.fieldName, Json.String val)) (OptionsParser checkedParser)
+    SArray innerSchema -> do
+      let innerField = FieldSchema {fieldName = field.fieldName, fieldSchema = innerSchema, fieldRequired = field.fieldRequired, fieldDescription = field.fieldDescription}
+      let (OptionsParser innerParser) = fromFieldSchema innerField
+      let manyParser = map (\pairs -> pairs |> Mappable.fmap (\(_, v) -> v)) (OptionsParser (Applicative.many innerParser))
+      map
+        ( \vals ->
+            (field.fieldName, Json.toJSON vals)
+        )
+        manyParser
+    _ -> do
+      -- Fallback: parse as JSON string for complex types
+      let parser = OptEnvConf.setting [OptEnvConf.long kebabName, OptEnvConf.help helpText, OptEnvConf.option, OptEnvConf.reader OptEnvConf.str] :: OptEnvConf.Parser Text
+      map (\val -> (field.fieldName, Json.String val)) (OptionsParser parser)

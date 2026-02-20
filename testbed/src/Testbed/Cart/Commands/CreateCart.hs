@@ -8,7 +8,7 @@ import Core
 import Decider qualified
 import Json qualified
 import Service.Auth (RequestContext (..), UserClaims (..))
-import Service.Command.Core (TransportOf)
+import Service.Command.Core (TransportsOf)
 import Service.CommandExecutor.TH (command)
 import Service.Transport.Web (WebTransport)
 import Testbed.Cart.Core
@@ -48,7 +48,7 @@ decide _ entity ctx = do
 type instance EntityOf CreateCart = CartEntity
 
 
-type instance TransportOf CreateCart = WebTransport
+type instance TransportsOf CreateCart = '[WebTransport]
 
 
 command ''CreateCart
