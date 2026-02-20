@@ -210,9 +210,7 @@ This is appropriate because:
 
 ### 9. Process Lifecycle
 
-CLI apps are **run-once-and-exit**, unlike WebTransport's long-running server.
-
-`Application.run` startup sequence for CLI mode:
+A CLI app **is a long-running process**, identical to a WebTransport app. The full `Application.run` startup sequence executes normally:
 
 1. Set stdout/stderr to LineBuffering
 2. Load .env file
@@ -220,20 +218,25 @@ CLI apps are **run-once-and-exit**, unlike WebTransport's long-running server.
 4. Create EventStore (SimpleEventStore with `persistent = True` by default)
 5. Wire query definitions
 6. Rebuild queries from historical events
-7. **Skip**: Live event subscriptions (not needed for single invocation)
-8. Parse CLI args → dispatch to command/query → print result
-9. Shut down via an **Exit integration** that terminates the process
+7. Start live event subscriptions
+8. Run all transports (CliTransport parses args → dispatches to command/query → prints result)
 
-The Exit integration is a new outbound integration pattern:
+The process does **not** exit automatically after command execution. To shut down the process, the user wires a regular outbound integration (ADR-0008) that reacts to the relevant domain event and calls process exit. This is an explicit, user-controlled decision — not framework magic.
 
 ```haskell
--- After command execution completes, shut down cleanly
+-- The user defines an Exit integration as a regular outbound integration
+-- that reacts to a specific event and terminates the process.
 Application.new
   |> Application.withTransport CliTransport.cli
-  |> Application.withIntegration Exit.afterCommand
+  |> Application.withService User.service
+  |> Application.withIntegration Exit.onEvent @UserCreated
 ```
 
-This reuses the existing integration pattern (ADR-0008) rather than adding lifecycle special-casing to the transport layer.
+This means:
+- The framework has **no special CLI lifecycle logic** — CliTransport is just another transport
+- The user decides **which events** trigger shutdown (full control)
+- Long-running CLI daemons are possible by simply not wiring an Exit integration
+- The Exit integration is a thin wrapper: it subscribes to the specified event and calls `System.exitSuccess`
 
 ### 10. Query Handling
 
@@ -270,7 +273,7 @@ When using `SimpleEventStore` with `persistent = True` (ADR-0032):
 
 #### 11.3 Default Storage Location
 
-Event store files default to `XDG_DATA_HOME` (`~/.local/share/<programName>/events/`) for per-user isolation. Shared storage paths require explicit configuration.
+Event store files default to the **project directory** under `.neo/` (e.g., `.neo/events/`). This keeps all application state co-located with the project, similar to `.git/`. The `.neo/` directory should be added to `.gitignore`.
 
 ### 12. Module Structure
 
@@ -283,10 +286,9 @@ core/
       Transport/
         Cli.hs               -- NEW: CliTransport type + Transport instance
         Cli/
-          ArgParser.hs        -- NEW: Schema → opt-env-conf parser generation
           Output.hs           -- NEW: CommandResponse → CLI output formatting
   options-parser/
-    Command.hs               -- Modified: migrate to opt-env-conf
+    Command.hs               -- Extended: schema-driven parser generation via OptionsParser
 ```
 
 ### 13. Usage Example
@@ -305,7 +307,7 @@ app =
         }
     |> Application.withService User.service
     |> Application.withQuery @UserSummary
-    |> Application.withIntegration Exit.afterCommand
+    |> Application.withIntegration Exit.onEvent @UserCreated
     |> Application.run
 ```
 
@@ -343,11 +345,7 @@ myapp query user-summary --pretty
 
 ### 14. Dependencies
 
-| Package | Purpose | Notes |
-|---|---|---|
-| `opt-env-conf` | CLI args + env vars + config files | Replaces raw optparse-applicative usage |
-
-No additional dependencies beyond opt-env-conf. The existing `optparse-applicative` dependency (used by `Command.hs`) is a transitive dependency of opt-env-conf.
+**No new dependencies.** The project already depends on `opt-env-conf` — the existing `OptionsParser` module (`core/options-parser/Command.hs`) wraps it with NeoHaskell conventions. CliTransport extends this existing wrapper with schema-driven parser generation rather than using `opt-env-conf` directly. All CLI parsing goes through the `Command` module's `OptionsParser` API.
 
 ### 15. Out of Scope
 
@@ -377,11 +375,9 @@ No additional dependencies beyond opt-env-conf. The existing `optparse-applicati
 
 1. **Breaking change**: `TransportOf` → `TransportsOf` requires updating every command definition. Migration can be eased with TH macro updates.
 
-2. **New dependency**: `opt-env-conf` adds to the dependency footprint. It is well-maintained and actively developed.
+2. **Complex types require JSON flags**: Nested objects, unions, and recursive types fall back to `--field '{"json":"..."}'`, which is less ergonomic than native flags.
 
-3. **Complex types require JSON flags**: Nested objects, unions, and recursive types fall back to `--field '{"json":"..."}'`, which is less ergonomic than native flags.
-
-4. **JSON roundtrip overhead**: CLI args are parsed, serialized to JSON, then deserialized via FromJSON. This is negligible for CLI use but architecturally inelegant.
+3. **JSON roundtrip overhead**: CLI args are parsed, serialized to JSON, then deserialized via FromJSON. This is negligible for CLI use but architecturally inelegant.
 
 ### Trade-offs
 
@@ -389,7 +385,7 @@ No additional dependencies beyond opt-env-conf. The existing `optparse-applicati
 
 2. **Hash chain over simplicity**: SHA-256 hash chain for event integrity adds complexity to SimpleEventStore but provides tamper detection for local file storage.
 
-3. **Exit integration over lifecycle special-casing**: Using an integration to shut down after command execution is slightly indirect, but avoids adding CLI-specific lifecycle logic to the transport abstraction.
+3. **Explicit exit over implicit shutdown**: The process does not auto-exit after command execution. The user wires a regular outbound integration (`Exit.onEvent @SomeEvent`) to control shutdown. This is slightly more setup, but keeps the framework free of CLI-specific lifecycle logic and enables long-running CLI daemons by default.
 
 ## References
 
