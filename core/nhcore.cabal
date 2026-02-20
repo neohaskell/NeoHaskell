@@ -539,6 +539,7 @@ test-suite nhcore-test-core
     ConcurrentMapSpec
     Config.ApplicationSpec
     Config.ConfigDependentSpec
+    Config.OAuth2ConfigDependentSpec
     Config.BuilderSpec
     Config.CoreSpec
     Config.ErrorSafetySpec
