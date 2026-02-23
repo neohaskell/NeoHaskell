@@ -45,12 +45,20 @@ jobs:
         ports:
           - 5432:5432
         options: >-
+          --name neohaskell_postgres
           --health-cmd "pg_isready -U neohaskell" --health-interval 10s
           --health-timeout 5s --health-retries 5
 
     steps:
       - uses: actions/checkout@v6
-
+      - name: Increase PostgreSQL max_connections
+        if: matrix.needs-postgres
+        run: |
+          psql -h 127.0.0.1 -U neohaskell -d neohaskell -c "ALTER SYSTEM SET max_connections = 200;"
+          docker restart neohaskell_postgres
+          for i in $(seq 1 30); do pg_isready -h 127.0.0.1 -U neohaskell && break || sleep 1; done
+        env:
+          PGPASSWORD: neohaskell
       - uses: DeterminateSystems/determinate-nix-action@v3.16.1
         with:
           extra-conf: |
@@ -85,12 +93,19 @@ jobs:
         ports:
           - 5432:5432
         options: >-
+          --name neohaskell_postgres_integration
           --health-cmd "pg_isready -U neohaskell" --health-interval 10s
           --health-timeout 5s --health-retries 5
 
     steps:
       - uses: actions/checkout@v6
-
+      - name: Increase PostgreSQL max_connections
+        run: |
+          psql -h 127.0.0.1 -U neohaskell -d neohaskell -c "ALTER SYSTEM SET max_connections = 200;"
+          docker restart neohaskell_postgres_integration
+          for i in $(seq 1 30); do pg_isready -h 127.0.0.1 -U neohaskell && break || sleep 1; done
+        env:
+          PGPASSWORD: neohaskell
       - uses: DeterminateSystems/determinate-nix-action@v3.16.1
         with:
           extra-conf: |

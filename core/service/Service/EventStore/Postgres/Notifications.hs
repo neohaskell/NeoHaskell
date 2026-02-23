@@ -11,7 +11,6 @@ import Hasql.Connection qualified as Hasql
 import Hasql.Notifications qualified as HasqlNotifications
 import Json qualified
 import Log qualified
-import Result qualified
 import Service.Event (Event (..))
 import Service.EventStore.Postgres.Sessions qualified as Sessions
 import Service.EventStore.Postgres.SubscriptionStore (SubscriptionStore)
@@ -21,17 +20,18 @@ import Task qualified
 
 connectTo ::
   Hasql.Connection ->
+  Hasql.Connection ->
   SubscriptionStore ->
   Task Text Unit
-connectTo connection store = do
+connectTo listenConnection queryConnection store = do
   let channelToListen = HasqlNotifications.toPgIdentifier "global"
-  HasqlNotifications.listen connection channelToListen
+  HasqlNotifications.listen listenConnection channelToListen
     |> Task.fromIO
     |> discard
   Log.info "LISTEN/NOTIFY listener started"
     |> Task.ignoreError
-  connection
-    |> HasqlNotifications.waitForNotifications (handler store)
+  listenConnection
+    |> HasqlNotifications.waitForNotifications (handler queryConnection store)
     |> Task.fromIO
     |> AsyncTask.run
     |> Task.andThen \_ -> do
@@ -53,31 +53,59 @@ subscribeToStream connection streamId = do
 
 
 handler ::
+  Hasql.Connection ->
   SubscriptionStore ->
   Data.ByteString.ByteString ->
   Data.ByteString.ByteString ->
   IO ()
-handler store _channelName payloadLegacyBytes = do
-  let decodingResult =
+handler queryConnection store _channelName payloadLegacyBytes = do
+  result <- processNotification queryConnection store payloadLegacyBytes |> Task.runResult
+  case result of
+    Err err ->
+      ((Log.warn [fmt|#{err}|] |> Task.ignoreError) :: Task Text Unit) |> Task.runOrPanic
+    Ok _ ->
+      pass
+
+
+processNotification ::
+  Hasql.Connection ->
+  SubscriptionStore ->
+  Data.ByteString.ByteString ->
+  Task Text Unit
+processNotification queryConnection store payloadLegacyBytes = do
+  Log.withScope [("component", "Notifications")] do
+    notification <- decodeNotification payloadLegacyBytes
+    event <- fetchFullEvent queryConnection notification.globalPosition
+    Log.withScope [("component", "Notifications"), ("streamId", toText event.streamId)] do
+      store |> SubscriptionStore.dispatch event.streamId event |> Task.mapError toText
+      Log.debug "Event dispatched from notification" |> Task.ignoreError
+
+
+decodeNotification ::
+  Data.ByteString.ByteString ->
+  Task Text Sessions.EventNotificationPayload
+decodeNotification payloadLegacyBytes = do
+  let result =
         payloadLegacyBytes
           |> Bytes.fromLegacy
-          |> Json.decodeBytes
-          |> Result.andThen Sessions.insertionRecordToEvent
-  case decodingResult of
-    Err decodeErr -> do
-      -- Event decoding failed - log and continue
-      let msg = [fmt|[Notifications] Event decode failed: #{decodeErr}|]
-      ((Log.warn msg |> Task.ignoreError) :: Task Text Unit) |> Task.runOrPanic
-    Ok event -> do
-      let eventStreamId = event.streamId
-      result <-
-        store
-          |> SubscriptionStore.dispatch eventStreamId event
-          |> Task.runResult
-      case result of
-        Err dispatchErr -> do
-          -- Dispatch error - log and continue
-          let msg = [fmt|[Notifications] Dispatch failed for stream #{eventStreamId}: #{dispatchErr}|]
-          ((Log.warn msg |> Task.ignoreError) :: Task Text Unit) |> Task.runOrPanic
-        Ok _ -> do
-          ((Log.debug [fmt|Event dispatched from notification for stream #{eventStreamId}|] |> Task.ignoreError) :: Task Text Unit) |> Task.runOrPanic
+          |> Json.decodeBytes :: Result Text Sessions.EventNotificationPayload
+  case result of
+    Err err -> Task.throw [fmt|Notification decode failed: #{err}|]
+    Ok notification -> Task.yield notification
+
+
+fetchFullEvent ::
+  Hasql.Connection ->
+  Int64 ->
+  Task Text (Event Json.Value)
+fetchFullEvent queryConnection globalPosition = do
+  maybeRecord <-
+    Sessions.selectEventByGlobalPositionSession globalPosition
+      |> Sessions.runConnection queryConnection
+      |> Task.mapError toText
+  record <- case maybeRecord of
+    Nothing -> Task.throw [fmt|Event not found for globalPosition #{globalPosition}|]
+    Just r -> Task.yield r
+  case Sessions.postgresRecordToEvent record of
+    Err err -> Task.throw [fmt|Event record decode failed: #{err}|]
+    Ok event -> Task.yield event
