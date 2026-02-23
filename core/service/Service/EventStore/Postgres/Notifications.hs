@@ -62,9 +62,9 @@ handler pool store _channelName payloadLegacyBytes = do
   result <- processNotification pool store payloadLegacyBytes |> Task.runResult
   case result of
     Err err ->
-      ((Log.warn [fmt|[Notifications] #{err}|] |> Task.ignoreError) :: Task Text Unit) |> Task.runOrPanic
+      ((Log.warn [fmt|#{err}|] |> Task.ignoreError) :: Task Text Unit) |> Task.runOrPanic
     Ok _ ->
-      ((Log.debug "[Notifications] Event dispatched from notification" |> Task.ignoreError) :: Task Text Unit) |> Task.runOrPanic
+      pass
 
 
 processNotification ::
@@ -73,9 +73,12 @@ processNotification ::
   Data.ByteString.ByteString ->
   Task Text Unit
 processNotification pool store payloadLegacyBytes = do
-  notification <- decodeNotification payloadLegacyBytes
-  event <- fetchFullEvent pool notification.globalPosition
-  store |> SubscriptionStore.dispatch event.streamId event |> Task.mapError toText
+  Log.withScope [("component", "Notifications")] do
+    notification <- decodeNotification payloadLegacyBytes
+    event <- fetchFullEvent pool notification.globalPosition
+    Log.withScope [("component", "Notifications"), ("streamId", toText event.streamId)] do
+      store |> SubscriptionStore.dispatch event.streamId event |> Task.mapError toText
+      Log.debug "Event dispatched from notification" |> Task.ignoreError
 
 
 decodeNotification ::
