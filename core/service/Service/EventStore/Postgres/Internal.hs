@@ -199,10 +199,10 @@ new ops cfg =
   ops
     |> withConnection
       cfg
-      ( \connection -> do
-          ops.initializeTable connection |> Task.mapError (TableInitializationError)
+      ( \pool -> do
+          ops.initializeTable pool |> Task.mapError (TableInitializationError)
           subscriptionStore <- SubscriptionStore.new |> Task.mapError (toText .> SubscriptionInitializationError)
-          ops.initializeSubscriptions connection subscriptionStore cfg |> Task.mapError (SubscriptionInitializationError)
+          ops.initializeSubscriptions pool subscriptionStore cfg |> Task.mapError (SubscriptionInitializationError)
           let eventStore =
                 EventStore
                   { insert = insertImpl ops cfg 0,

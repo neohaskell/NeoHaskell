@@ -59,45 +59,50 @@ handler ::
   Data.ByteString.ByteString ->
   IO ()
 handler pool store _channelName payloadLegacyBytes = do
-  let notificationResult =
+  result <- processNotification pool store payloadLegacyBytes |> Task.runResult
+  case result of
+    Err err ->
+      ((Log.warn [fmt|[Notifications] #{err}|] |> Task.ignoreError) :: Task Text Unit) |> Task.runOrPanic
+    Ok _ ->
+      ((Log.debug "[Notifications] Event dispatched from notification" |> Task.ignoreError) :: Task Text Unit) |> Task.runOrPanic
+
+
+processNotification ::
+  Sessions.Connection ->
+  SubscriptionStore ->
+  Data.ByteString.ByteString ->
+  Task Text Unit
+processNotification pool store payloadLegacyBytes = do
+  notification <- decodeNotification payloadLegacyBytes
+  event <- fetchFullEvent pool notification.globalPosition
+  store |> SubscriptionStore.dispatch event.streamId event |> Task.mapError toText
+
+
+decodeNotification ::
+  Data.ByteString.ByteString ->
+  Task Text Sessions.EventNotificationPayload
+decodeNotification payloadLegacyBytes = do
+  let result =
         payloadLegacyBytes
           |> Bytes.fromLegacy
           |> Json.decodeBytes :: Result Text Sessions.EventNotificationPayload
-  case notificationResult of
-    Err decodeErr -> do
-      let msg = [fmt|[Notifications] Notification decode failed: #{decodeErr}|]
-      ((Log.warn msg |> Task.ignoreError) :: Task Text Unit) |> Task.runOrPanic
-    Ok notification -> do
-      let notificationGlobalPosition = notification.globalPosition
-      -- Fetch full event from database using the connection pool
-      fetchResult <-
-        Sessions.selectEventByGlobalPositionSession notificationGlobalPosition
-          |> Sessions.run pool
-          |> Task.mapError toText
-          |> Task.runResult
-      case fetchResult of
-        Err fetchErr -> do
-          let msg = [fmt|[Notifications] DB fetch failed for globalPosition #{notificationGlobalPosition}: #{fetchErr}|]
-          ((Log.warn msg |> Task.ignoreError) :: Task Text Unit) |> Task.runOrPanic
-        Ok maybeRecord -> do
-          case maybeRecord of
-            Nothing -> do
-              let msg = [fmt|[Notifications] Event not found for globalPosition #{notificationGlobalPosition}|]
-              ((Log.warn msg |> Task.ignoreError) :: Task Text Unit) |> Task.runOrPanic
-            Just record -> do
-              case Sessions.postgresRecordToEvent record of
-                Err decodeErr -> do
-                  let msg = [fmt|[Notifications] Event decode failed: #{decodeErr}|]
-                  ((Log.warn msg |> Task.ignoreError) :: Task Text Unit) |> Task.runOrPanic
-                Ok event -> do
-                  let eventStreamId = event.streamId
-                  result <-
-                    store
-                      |> SubscriptionStore.dispatch eventStreamId event
-                      |> Task.runResult
-                  case result of
-                    Err dispatchErr -> do
-                      let msg = [fmt|[Notifications] Dispatch failed for stream #{eventStreamId}: #{dispatchErr}|]
-                      ((Log.warn msg |> Task.ignoreError) :: Task Text Unit) |> Task.runOrPanic
-                    Ok _ -> do
-                      ((Log.debug [fmt|Event dispatched from notification for stream #{eventStreamId}|] |> Task.ignoreError) :: Task Text Unit) |> Task.runOrPanic
+  case result of
+    Err err -> Task.throw [fmt|Notification decode failed: #{err}|]
+    Ok notification -> Task.yield notification
+
+
+fetchFullEvent ::
+  Sessions.Connection ->
+  Int64 ->
+  Task Text (Event Json.Value)
+fetchFullEvent pool globalPosition = do
+  maybeRecord <-
+    Sessions.selectEventByGlobalPositionSession globalPosition
+      |> Sessions.run pool
+      |> Task.mapError toText
+  record <- case maybeRecord of
+    Nothing -> Task.throw [fmt|Event not found for globalPosition #{globalPosition}|]
+    Just r -> Task.yield r
+  case Sessions.postgresRecordToEvent record of
+    Err err -> Task.throw [fmt|Event record decode failed: #{err}|]
+    Ok event -> Task.yield event

@@ -188,7 +188,8 @@ createEventNotificationTriggerFunctionSession =
                   'eventId', NEW.eventId,
                   'globalPosition', NEW.globalPosition,
                   'localPosition', NEW.localPosition,
-                  'inlinedStreamId', NEW.inlinedStreamId
+                  'inlinedStreamId', NEW.inlinedStreamId,
+                  'entity', NEW.entity
                 )::text
               );
               PERFORM pg_notify(
