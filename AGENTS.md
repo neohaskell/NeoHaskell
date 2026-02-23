@@ -113,11 +113,11 @@ Every change MUST include tests. Tests are NOT optional.
 
 ### Rules
 
- **All new functionality must have behavioral tests** covering happy path, error cases, and boundary conditions
- **Bug fixes must include regression tests** that would have caught the bug
- **Never modify existing test expectations** without explicit approval from the maintainer
- **Tests must compile and pass** before any PR is submitted
- **Run `hlint` on all changed files** and fix any warnings (treated as errors in CI)
+- **All new functionality must have behavioral tests** covering happy path, error cases, and boundary conditions
+- **Bug fixes must include regression tests** that would have caught the bug
+- **Never modify existing test expectations** without explicit approval from the maintainer
+- **Tests must compile and pass** before any PR is submitted
+- **Run `hlint` on all changed files** and fix any warnings (treated as errors in CI)
 
 ### Test Suites
 
@@ -131,14 +131,14 @@ Every change MUST include tests. Tests are NOT optional.
 
 ### Test Registration
 
- `nhcore-test` uses `hspec-discover` (automatic — just add `*Spec.hs` files under `core/test/`)
- `nhcore-test-service` uses **manual registration** in `core/test-service/Main.hs` — new spec modules must be imported and added to the `Hspec.describe` list
- All test modules must be listed in `other-modules` in `core/nhcore.cabal` for their respective test suites
+- `nhcore-test` uses `hspec-discover` (automatic — just add `*Spec.hs` files under `core/test/`)
+- `nhcore-test-service` uses **manual registration** in `core/test-service/Main.hs` — new spec modules must be imported and added to the `Hspec.describe` list
+- All test modules must be listed in `other-modules` in `core/nhcore.cabal` for their respective test suites
 
 ### Test Patterns
 
- Use `Hspec` via the `Test` module (re-exported by nhcore)
- Follow NeoHaskell style in tests: `|>` pipes, `case..of`, `do` blocks, qualified imports
- Use `Result.isOk` / `Result.isErr` with `shouldSatisfy` for Result assertions
- Use `Test.fail [fmt|message|]` for custom failure messages
- Use `def` from `Default` for placeholder values in test records
+- Use `Hspec` via the `Test` module (re-exported by nhcore)
+- Follow NeoHaskell style in tests: `|>` pipes, `case..of`, `do` blocks, qualified imports
+- Use `Result.isOk` / `Result.isErr` with `shouldSatisfy` for Result assertions
+- Use `Test.fail [fmt|message|]` for custom failure messages
+- Use `def` from `Default` for placeholder values in test records
