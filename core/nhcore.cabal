@@ -392,6 +392,7 @@ test-suite nhcore-test
     Service.EventStore.InMemorySpec
     Service.EventStore.SimpleSpec
     Service.EventStore.Postgres.SubscriptionStoreSpec
+    Service.EventStore.Postgres.NotificationsSpec
     Service.EventStore.PostgresSpec
     Service.MockTransport
     Service.Query.EndpointSpec
@@ -477,6 +478,7 @@ test-suite nhcore-test-service
     Service.EventStore.InMemorySpec
     Service.EventStore.SimpleSpec
     Service.EventStore.Postgres.SubscriptionStoreSpec
+    Service.EventStore.Postgres.NotificationsSpec
     Service.EventStore.PostgresSpec
     Service.FileUpload.BlobStore.LocalSpec
     Service.FileUpload.CoreSpec
