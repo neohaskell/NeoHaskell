@@ -1,7 +1,7 @@
 module App (app) where
 
 import Core
-import Service.Application (Application)
+import Service.Application (Application, ApiInfo (..))
 import Service.Application qualified as Application
 import Service.EventStore.Postgres (PostgresEventStore (..))
 import Service.FileUpload.Core (FileUploadConfig (..), FileStateStoreBackend (..))
@@ -30,18 +30,18 @@ app =
     |> Application.withConfig @TestbedConfig
     |> Application.withEventStore makePostgresConfig
     |> Application.withTransport WebTransport.server
-    |> Application.withApiInfo "Testbed API" "1.0.0" "Example NeoHaskell application demonstrating event sourcing, CQRS, and integrations"
+    |> Application.withApiInfo @() (\_ -> ApiInfo { apiTitle = "Testbed API", apiVersion = "1.0.0", apiDescription = "Example NeoHaskell application demonstrating event sourcing, CQRS, and integrations" })
     |> Application.withService Testbed.Service.cartService
     |> Application.withService Testbed.Service.stockService
     |> Application.withService Testbed.Service.documentService
     |> Application.withQuery @CartSummary
     |> Application.withQuery @StockLevel
     -- Outbound: reserve stock when items are added to cart (Process Manager)
-    |> Application.withOutbound @CartEntity cartIntegrations
+    |> Application.withOutbound cartIntegrations
     -- Outbound with lifecycle: count events per entity (demonstrates stateful integration)
-    |> Application.withOutboundLifecycle @CartEntity EventCounter.eventCounterIntegration
+    |> Application.withOutboundLifecycle @() @CartEntity (\_ -> EventCounter.eventCounterIntegration)
     -- Inbound: create a cart every 30 seconds
-    |> Application.withInbound periodicCartCreator
+    |> Application.withInbound @() (\_ -> periodicCartCreator)
     -- File uploads with declarative config (initialized at runtime)
     |> Application.withFileUpload makeFileUploadConfig
 

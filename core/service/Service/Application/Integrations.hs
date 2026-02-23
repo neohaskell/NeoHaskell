@@ -15,7 +15,9 @@ module Service.Application.Integrations (
   withOutbound,
   withOutboundLifecycle,
   withInbound,
-
+  -- * Runner Construction
+  createOutboundRunner,
+  createOutboundLifecycleRunner,
   -- * Runtime (internal)
   startIntegrationSubscriber,
   startInboundWorkers,

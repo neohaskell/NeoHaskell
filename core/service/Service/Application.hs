@@ -296,6 +296,75 @@ data OAuth2ProviderFactory where
   DeferredOAuth2Provider :: (Typeable cfg) => (cfg -> OAuth2ProviderConfig) -> OAuth2ProviderFactory
 
 
+-- | Factory for CORS configuration.
+data CorsFactory where
+  EvaluatedCors :: Web.CorsConfig -> CorsFactory
+  DeferredCors :: (Typeable cfg) => (cfg -> Web.CorsConfig) -> CorsFactory
+
+
+-- | Factory for API info configuration.
+data ApiInfoFactory where
+  EvaluatedApiInfo :: ApiInfo -> ApiInfoFactory
+  DeferredApiInfo :: (Typeable cfg) => (cfg -> ApiInfo) -> ApiInfoFactory
+
+
+-- | Factory for health check configuration.
+data HealthCheckFactory where
+  EvaluatedHealthCheck :: Web.HealthCheckConfig -> HealthCheckFactory
+  DeferredHealthCheck :: (Typeable cfg) => (cfg -> Web.HealthCheckConfig) -> HealthCheckFactory
+
+
+-- | Factory for dispatcher configuration.
+data DispatcherConfigFactory where
+  EvaluatedDispatcherConfig :: Dispatcher.DispatcherConfig -> DispatcherConfigFactory
+  DeferredDispatcherConfig :: (Typeable cfg) => (cfg -> Dispatcher.DispatcherConfig) -> DispatcherConfigFactory
+
+
+-- | Factory for secret store configuration.
+data SecretStoreFactory where
+  EvaluatedSecretStore :: SecretStore -> SecretStoreFactory
+  DeferredSecretStore :: (Typeable cfg) => (cfg -> SecretStore) -> SecretStoreFactory
+
+
+-- | Deferred outbound integration registration.
+-- Stores the factory function and all type constraints needed to create an OutboundRunner at resolution time.
+data DeferredOutboundReg where
+  MkDeferredOutboundReg ::
+    forall config entity event.
+    ( Typeable config
+    , Json.FromJSON entity
+    , Json.FromJSON event
+    , Json.FromJSON (EventOf entity)
+    , TypeName.Inspectable entity
+    , Default entity
+    , Entity entity
+    , EventOf entity ~ event
+    ) =>
+    (config -> entity -> event -> Integration.Outbound) ->
+    DeferredOutboundReg
+
+
+-- | Deferred outbound lifecycle registration.
+-- Stores a closure that captures the entity type at registration time,
+-- since entity is a phantom type parameter of createOutboundLifecycleRunner.
+data DeferredOutboundLifecycleReg where
+  MkDeferredOutboundLifecycleReg ::
+    forall config.
+    ( Typeable config
+    ) =>
+    (config -> OutboundLifecycleRunner) ->
+    DeferredOutboundLifecycleReg
+
+
+-- | Deferred inbound integration registration.
+data DeferredInboundReg where
+  MkDeferredInboundReg ::
+    forall config.
+    ( Typeable config
+    ) =>
+    (config -> Integration.Inbound) ->
+    DeferredInboundReg
+
 data Application = Application
   { configSpec :: Maybe ConfigSpec,
     -- | EventStore factory. Resolved during Application.run after config is loaded.
@@ -320,7 +389,16 @@ data Application = Application
     -- | Health check configuration. Enabled by default at /health.
     -- Use withHealthCheck to customize the path, or withoutHealthCheck to disable.
     healthCheckConfig :: Maybe Web.HealthCheckConfig,
-    dispatcherConfig :: Maybe Dispatcher.DispatcherConfig
+    dispatcherConfig :: Maybe Dispatcher.DispatcherConfig,
+    corsFactory :: Maybe CorsFactory,
+    apiInfoFactory :: Maybe ApiInfoFactory,
+    healthCheckFactory :: Maybe HealthCheckFactory,
+    dispatcherConfigFactory :: Maybe DispatcherConfigFactory,
+    secretStoreFactory :: Maybe SecretStoreFactory,
+    -- | Deferred integration registrations. Resolved during Application.run after config is loaded.
+    deferredOutboundRegs :: Array DeferredOutboundReg,
+    deferredOutboundLifecycleRegs :: Array DeferredOutboundLifecycleReg,
+    deferredInboundRegs :: Array DeferredInboundReg
   }
 
 
@@ -349,7 +427,15 @@ new =
       apiInfo = Nothing,
       corsConfig = Nothing,
       healthCheckConfig = Just Web.HealthCheckConfig {Web.healthPath = "health"},
-      dispatcherConfig = Nothing
+      dispatcherConfig = Nothing,
+      corsFactory = Nothing,
+      apiInfoFactory = Nothing,
+      healthCheckFactory = Nothing,
+      dispatcherConfigFactory = Nothing,
+      secretStoreFactory = Nothing,
+      deferredOutboundRegs = Array.empty,
+      deferredOutboundLifecycleRegs = Array.empty,
+      deferredInboundRegs = Array.empty
     }
 
 
@@ -748,8 +834,118 @@ run app =
                    }
              Task.yield (Just setup)
 
-     -- 6. Run with resolved event store, file upload, and auth
-     runWithResolved eventStore maybeFileUploadSetup fileUploadCleanup maybeWebAuthSetup app
+     -- 5b. Resolve CorsFactory
+     resolvedCorsConfig <- case app.corsFactory of
+       Nothing -> Task.yield app.corsConfig
+       Just (EvaluatedCors config) -> Task.yield (Just config)
+       Just (DeferredCors mkConfig) -> do
+         case app.configSpec of
+           Nothing -> Task.throw "withCors requires withConfig when the factory uses the config parameter. If you don't need config, use: withCors @() (\\_ -> yourCorsConfig)"
+           Just _ -> do
+             let appConfig = Config.get
+             Task.yield (Just (mkConfig appConfig))
+
+     -- 5c. Resolve ApiInfoFactory
+     resolvedApiInfo <- case app.apiInfoFactory of
+       Nothing -> Task.yield app.apiInfo
+       Just (EvaluatedApiInfo config) -> Task.yield (Just config)
+       Just (DeferredApiInfo mkConfig) -> do
+         case app.configSpec of
+           Nothing -> Task.throw "withApiInfo requires withConfig when the factory uses the config parameter. If you don't need config, use: withApiInfo @() (\\_ -> yourApiInfo)"
+           Just _ -> do
+             let appConfig = Config.get
+             Task.yield (Just (mkConfig appConfig))
+
+     -- 5d. Resolve HealthCheckFactory
+     resolvedHealthCheckConfig <- case app.healthCheckFactory of
+       Nothing -> Task.yield app.healthCheckConfig
+       Just (EvaluatedHealthCheck config) -> Task.yield (Just config)
+       Just (DeferredHealthCheck mkConfig) -> do
+         case app.configSpec of
+           Nothing -> Task.throw "withHealthCheck requires withConfig when the factory uses the config parameter. If you don't need config, use: withHealthCheck @() (\\_ -> yourPath)"
+           Just _ -> do
+             let appConfig = Config.get
+             Task.yield (Just (mkConfig appConfig))
+
+     -- 5e. Resolve DispatcherConfigFactory
+     resolvedDispatcherConfig <- case app.dispatcherConfigFactory of
+       Nothing -> Task.yield app.dispatcherConfig
+       Just (EvaluatedDispatcherConfig config) -> Task.yield (Just config)
+       Just (DeferredDispatcherConfig mkConfig) -> do
+         case app.configSpec of
+           Nothing -> Task.throw "withDispatcherConfig requires withConfig when the factory uses the config parameter. If you don't need config, use: withDispatcherConfig @() (\\_ -> yourConfig)"
+           Just _ -> do
+              let appConfig = Config.get
+              let config = mkConfig appConfig
+              case config.workerChannelCapacity <= 0 of
+                True -> Task.throw "Application.withDispatcherConfig: workerChannelCapacity must be positive"
+                False -> case config.channelWriteTimeoutMs <= 0 of
+                  True -> Task.throw "Application.withDispatcherConfig: channelWriteTimeoutMs must be positive"
+                  False -> case config.idleTimeoutMs <= 0 of
+                    True -> Task.throw "Application.withDispatcherConfig: idleTimeoutMs must be positive"
+                    False -> case config.reaperIntervalMs <= 0 of
+                      True -> Task.throw "Application.withDispatcherConfig: reaperIntervalMs must be positive"
+                      False -> case config.eventProcessingTimeoutMs of
+                        Just ms -> case ms <= 0 of
+                          True -> Task.throw "Application.withDispatcherConfig: eventProcessingTimeoutMs must be positive when set"
+                          False -> Task.yield (Just config)
+                        Nothing -> Task.yield (Just config)
+
+     -- 5f. Resolve SecretStoreFactory
+     resolvedSecretStore <- case app.secretStoreFactory of
+       Nothing -> Task.yield app.secretStore
+       Just (EvaluatedSecretStore store) -> Task.yield (Just store)
+       Just (DeferredSecretStore mkStore) -> do
+         case app.configSpec of
+           Nothing -> Task.throw "withSecretStore requires withConfig when the factory uses the config parameter. If you don't need config, use: withSecretStore @() (\\_ -> yourStore)"
+           Just _ -> do
+             let appConfig = Config.get
+             Task.yield (Just (mkStore appConfig))
+
+     -- 5g. Resolve deferred outbound integration registrations
+     let resolvedOutboundRunners =
+           app.deferredOutboundRegs
+             |> Array.reduce
+               ( \reg acc -> case reg of
+                   MkDeferredOutboundReg mkFn -> do
+                     let integrationFn = mkFn Config.get
+                     acc |> Array.push (Integrations.createOutboundRunner integrationFn)
+               )
+               app.outboundRunners
+
+     -- 5h. Resolve deferred outbound lifecycle registrations
+     let resolvedOutboundLifecycleRunners =
+           app.deferredOutboundLifecycleRegs
+             |> Array.reduce
+               ( \reg acc -> case reg of
+                   MkDeferredOutboundLifecycleReg mkRunner -> do
+                     let runner = mkRunner Config.get
+                     acc |> Array.push runner
+               )
+               app.outboundLifecycleRunners
+
+     -- 5i. Resolve deferred inbound integration registrations
+     let resolvedInboundIntegrations =
+           app.deferredInboundRegs
+             |> Array.reduce
+               ( \reg acc -> case reg of
+                   MkDeferredInboundReg mkFn -> do
+                     let inboundIntegration = mkFn Config.get
+                     acc |> Array.push inboundIntegration
+               )
+               app.inboundIntegrations
+     -- 6. Run with resolved event store, file upload, auth, and config-dependent settings
+     let resolvedApp = app
+           { corsConfig = resolvedCorsConfig
+           , apiInfo = resolvedApiInfo
+           , healthCheckConfig = resolvedHealthCheckConfig
+           , dispatcherConfig = resolvedDispatcherConfig
+           , secretStore = resolvedSecretStore
+           , outboundRunners = resolvedOutboundRunners
+           , outboundLifecycleRunners = resolvedOutboundLifecycleRunners
+           , inboundIntegrations = resolvedInboundIntegrations
+           }
+     runWithResolved eventStore maybeFileUploadSetup fileUploadCleanup maybeWebAuthSetup resolvedApp
 
 
 -- | Run application with a provided EventStore.
@@ -793,7 +989,50 @@ runWith eventStore app = do
       case hasDeferred of
         True -> Task.throw "runWith does not support config-dependent OAuth2 providers. Use Application.run instead, or use: withOAuth2Provider @() (\\_ -> yourProviderConfig)"
         False -> pass
-  runWithResolved eventStore maybeFileUploadSetup fileUploadCleanup maybeWebAuthSetup app
+  -- Reject deferred simple factories (runWith doesn't support config loading)
+  resolvedCorsConfig <- case app.corsFactory of
+    Nothing -> Task.yield app.corsConfig
+    Just (EvaluatedCors config) -> Task.yield (Just config)
+    Just (DeferredCors _) ->
+      Task.throw "runWith does not support config-dependent CORS. Use Application.run instead, or use: withCors @() (\\_ -> yourCorsConfig)"
+  resolvedApiInfo <- case app.apiInfoFactory of
+    Nothing -> Task.yield app.apiInfo
+    Just (EvaluatedApiInfo config) -> Task.yield (Just config)
+    Just (DeferredApiInfo _) ->
+      Task.throw "runWith does not support config-dependent ApiInfo. Use Application.run instead, or use: withApiInfo @() (\\_ -> yourApiInfo)"
+  resolvedHealthCheckConfig <- case app.healthCheckFactory of
+    Nothing -> Task.yield app.healthCheckConfig
+    Just (EvaluatedHealthCheck config) -> Task.yield (Just config)
+    Just (DeferredHealthCheck _) ->
+      Task.throw "runWith does not support config-dependent HealthCheck. Use Application.run instead, or use: withHealthCheck @() (\\_ -> yourPath)"
+  resolvedDispatcherConfig <- case app.dispatcherConfigFactory of
+    Nothing -> Task.yield app.dispatcherConfig
+    Just (EvaluatedDispatcherConfig config) -> Task.yield (Just config)
+    Just (DeferredDispatcherConfig _) ->
+      Task.throw "runWith does not support config-dependent DispatcherConfig. Use Application.run instead, or use: withDispatcherConfig @() (\\_ -> yourConfig)"
+  resolvedSecretStore <- case app.secretStoreFactory of
+    Nothing -> Task.yield app.secretStore
+    Just (EvaluatedSecretStore store) -> Task.yield (Just store)
+    Just (DeferredSecretStore _) ->
+      Task.throw "runWith does not support config-dependent SecretStore. Use Application.run instead, or use: withSecretStore @() (\\_ -> yourStore)"
+  -- Reject deferred integration registrations (runWith doesn't support config loading)
+  case Array.isEmpty app.deferredOutboundRegs of
+    False -> Task.throw "runWith does not support config-dependent outbound integrations. Use Application.run instead, or use: withOutbound @() (\\_ -> yourIntegrationFn)"
+    True -> pass
+  case Array.isEmpty app.deferredOutboundLifecycleRegs of
+    False -> Task.throw "runWith does not support config-dependent outbound lifecycle integrations. Use Application.run instead, or use: withOutboundLifecycle @() (\\_ -> yourConfig)"
+    True -> pass
+  case Array.isEmpty app.deferredInboundRegs of
+    False -> Task.throw "runWith does not support config-dependent inbound integrations. Use Application.run instead, or use: withInbound @() (\\_ -> yourInbound)"
+    True -> pass
+  let resolvedApp = app
+        { corsConfig = resolvedCorsConfig
+        , apiInfo = resolvedApiInfo
+        , healthCheckConfig = resolvedHealthCheckConfig
+        , dispatcherConfig = resolvedDispatcherConfig
+        , secretStore = resolvedSecretStore
+        }
+  runWithResolved eventStore maybeFileUploadSetup fileUploadCleanup maybeWebAuthSetup resolvedApp
 
 
 -- | Internal: Run application with pre-resolved EventStore, FileUpload, and Auth.
@@ -1097,13 +1336,20 @@ runWithAsync eventStore app = do
 -- Example:
 --
 -- @
+-- -- Static (no config needed):
 -- app = Application.new
 --   |> Application.withService cartService
---   |> Application.withOutbound \@CartEntity \@CartEvent cartIntegrations
+--   |> Application.withOutbound \@() \@CartEntity \@CartEvent (\_ -> cartIntegrations)
+--
+-- -- Config-dependent:
+-- app = Application.new
+--   |> Application.withConfig \@MyConfig
+--   |> Application.withOutbound \@MyConfig \@CartEntity \@CartEvent (\cfg -> makeIntegrations cfg)
 -- @
 withOutbound ::
-  forall entity event.
-  ( Json.FromJSON entity
+  forall config entity event.
+  ( Typeable config
+  , Json.FromJSON entity
   , Json.FromJSON event
   , Json.FromJSON (EventOf entity)
   , TypeName.Inspectable entity
@@ -1111,19 +1357,25 @@ withOutbound ::
   , Entity entity
   , EventOf entity ~ event
   ) =>
-  (entity -> event -> Integration.Outbound) ->
+  (config -> entity -> event -> Integration.Outbound) ->
   Application ->
   Application
-withOutbound integrationFn app = do
-  let (runners, lifecycleRunners, inbounds) =
-        Integrations.withOutbound @entity @event
-          integrationFn
-          (app.outboundRunners, app.outboundLifecycleRunners, app.inboundIntegrations)
-  app
-    { outboundRunners = runners
-    , outboundLifecycleRunners = lifecycleRunners
-    , inboundIntegrations = inbounds
-    }
+withOutbound mkIntegrationFn app = do
+  case eqT @config @() of
+    Just Refl -> do
+      let integrationFn = mkIntegrationFn ()
+      let (runners, lifecycleRunners, inbounds) =
+            Integrations.withOutbound @entity @event
+              integrationFn
+              (app.outboundRunners, app.outboundLifecycleRunners, app.inboundIntegrations)
+      app
+        { outboundRunners = runners
+        , outboundLifecycleRunners = lifecycleRunners
+        , inboundIntegrations = inbounds
+        }
+    Nothing -> do
+      let reg = MkDeferredOutboundReg @config @entity @event mkIntegrationFn
+      app {deferredOutboundRegs = app.deferredOutboundRegs |> Array.push reg}
 
 
 -- | Register an outbound integration with lifecycle management.
@@ -1142,34 +1394,41 @@ withOutbound integrationFn app = do
 -- Example:
 --
 -- @
+-- -- Static (no config needed):
 -- app = Application.new
 --   |> Application.withService cartService
---   |> Application.withOutboundLifecycle \@CartEntity postgresNotifier
+--   |> Application.withOutboundLifecycle \@() \@CartEntity (\_ -> postgresNotifier)
 --
--- postgresNotifier :: Lifecycle.OutboundConfig PostgresPool
--- postgresNotifier = Lifecycle.OutboundConfig
---   { initialize = \\streamId -> Postgres.createPool connectionString
---   , processEvent = \\pool event -> Postgres.notify pool event >> Task.yield []
---   , cleanup = \\pool -> Postgres.closePool pool
---   }
+-- -- Config-dependent:
+-- app = Application.new
+--   |> Application.withConfig \@MyConfig
+--   |> Application.withOutboundLifecycle \@MyConfig \@CartEntity (\cfg -> makeNotifier cfg)
 -- @
 withOutboundLifecycle ::
-  forall (entity :: Type) state.
-  ( TypeName.Inspectable entity
+  forall config (entity :: Type) state.
+  ( Typeable config
+  , TypeName.Inspectable entity
   ) =>
-  Lifecycle.OutboundConfig state ->
+  (config -> Lifecycle.OutboundConfig state) ->
   Application ->
   Application
-withOutboundLifecycle config app = do
-  let (runners, lifecycleRunners, inbounds) =
-        Integrations.withOutboundLifecycle @entity
-          config
-          (app.outboundRunners, app.outboundLifecycleRunners, app.inboundIntegrations)
-  app
-    { outboundRunners = runners
-    , outboundLifecycleRunners = lifecycleRunners
-    , inboundIntegrations = inbounds
-    }
+withOutboundLifecycle mkConfig app = do
+  case eqT @config @() of
+    Just Refl -> do
+      let lifecycleConfig = mkConfig ()
+      let (runners, lifecycleRunners, inbounds) =
+            Integrations.withOutboundLifecycle @entity
+              lifecycleConfig
+              (app.outboundRunners, app.outboundLifecycleRunners, app.inboundIntegrations)
+      app
+        { outboundRunners = runners
+        , outboundLifecycleRunners = lifecycleRunners
+        , inboundIntegrations = inbounds
+        }
+    Nothing -> do
+      let mkRunner = \cfg -> Integrations.createOutboundLifecycleRunner @entity (mkConfig cfg)
+      let reg = MkDeferredOutboundLifecycleReg @config mkRunner
+      app {deferredOutboundLifecycleRegs = app.deferredOutboundLifecycleRegs |> Array.push reg}
 
 
 -- | Register an inbound integration worker.
@@ -1183,24 +1442,39 @@ withOutboundLifecycle config app = do
 -- Example:
 --
 -- @
+-- -- Static (no config needed):
 -- app = Application.new
 --   |> Application.withService cartService
---   |> Application.withInbound periodicCartCreator
+--   |> Application.withInbound \@() (\_ -> periodicCartCreator)
+--
+-- -- Config-dependent:
+-- app = Application.new
+--   |> Application.withConfig \@MyConfig
+--   |> Application.withInbound (\cfg -> makeInbound cfg)
 -- @
 withInbound ::
-  Integration.Inbound ->
+  forall config.
+  ( Typeable config
+  ) =>
+  (config -> Integration.Inbound) ->
   Application ->
   Application
-withInbound inboundIntegration app = do
-  let (runners, lifecycleRunners, inbounds) =
-        Integrations.withInbound
-          inboundIntegration
-          (app.outboundRunners, app.outboundLifecycleRunners, app.inboundIntegrations)
-  app
-    { outboundRunners = runners
-    , outboundLifecycleRunners = lifecycleRunners
-    , inboundIntegrations = inbounds
-    }
+withInbound mkInbound app = do
+  case eqT @config @() of
+    Just Refl -> do
+      let inboundIntegration = mkInbound ()
+      let (runners, lifecycleRunners, inbounds) =
+            Integrations.withInbound
+              inboundIntegration
+              (app.outboundRunners, app.outboundLifecycleRunners, app.inboundIntegrations)
+      app
+        { outboundRunners = runners
+        , outboundLifecycleRunners = lifecycleRunners
+        , inboundIntegrations = inbounds
+        }
+    Nothing -> do
+      let reg = MkDeferredInboundReg @config mkInbound
+      app {deferredInboundRegs = app.deferredInboundRegs |> Array.push reg}
 
 
 -- | Enable JWT authentication for WebTransport.
@@ -1301,21 +1575,16 @@ hasAuth app = case app.webAuthFactory of
 --   |> Application.withApiInfo "My API" "1.0.0" "A comprehensive API"
 -- @
 withApiInfo ::
-  Text ->
-  Text ->
-  Text ->
+  forall config.
+  (Typeable config) =>
+  (config -> ApiInfo) ->
   Application ->
   Application
-withApiInfo title version description app =
-  app
-    { apiInfo =
-        Just
-          ApiInfo
-            { apiTitle = title,
-              apiVersion = version,
-              apiDescription = description
-            }
-    }
+withApiInfo mkConfig app = do
+  let factory = case eqT @config @() of
+        Just Refl -> EvaluatedApiInfo (mkConfig ())
+        Nothing -> DeferredApiInfo mkConfig
+  app {apiInfoFactory = Just factory}
 
 
 -- | Configure CORS (Cross-Origin Resource Sharing) for WebTransport.
@@ -1336,11 +1605,16 @@ withApiInfo title version description app =
 --       }
 -- @
 withCors ::
-  Web.CorsConfig ->
+  forall config.
+  (Typeable config) =>
+  (config -> Web.CorsConfig) ->
   Application ->
   Application
-withCors config app =
-  app {corsConfig = Just config}
+withCors mkConfig app = do
+  let factory = case eqT @config @() of
+        Just Refl -> EvaluatedCors (mkConfig ())
+        Nothing -> DeferredCors mkConfig
+  app {corsFactory = Just factory}
 
 
 -- | Customize the health check endpoint path.
@@ -1357,13 +1631,20 @@ withCors config app =
 --   |> Application.withService myService
 -- @
 withHealthCheck ::
-  Text ->
+  forall config.
+  (Typeable config) =>
+  (config -> Text) ->
   Application ->
   Application
-withHealthCheck path app =
-  case Text.isEmpty path of
-    True -> app
-    False -> app {healthCheckConfig = Just Web.HealthCheckConfig {Web.healthPath = path}}
+withHealthCheck mkPath app = do
+  let factory = case eqT @config @() of
+        Just Refl -> do
+          let path = mkPath ()
+          case Text.isEmpty path of
+            True -> EvaluatedHealthCheck Web.HealthCheckConfig {Web.healthPath = "health"}
+            False -> EvaluatedHealthCheck Web.HealthCheckConfig {Web.healthPath = path}
+        Nothing -> DeferredHealthCheck (\cfg -> Web.HealthCheckConfig {Web.healthPath = mkPath cfg})
+  app {healthCheckFactory = Just factory}
 
 
 -- | Disable the automatic health check endpoint.
@@ -1404,23 +1685,31 @@ withoutHealthCheck app =
 --   |> Application.withService myService
 -- @
 withDispatcherConfig ::
-  Dispatcher.DispatcherConfig ->
+  forall config.
+  (Typeable config) =>
+  (config -> Dispatcher.DispatcherConfig) ->
   Application ->
   Application
-withDispatcherConfig config app =
-  case config.workerChannelCapacity <= 0 of
-    True -> panic "Application.withDispatcherConfig: workerChannelCapacity must be positive"
-    False -> case config.channelWriteTimeoutMs <= 0 of
-      True -> panic "Application.withDispatcherConfig: channelWriteTimeoutMs must be positive"
-      False -> case config.idleTimeoutMs <= 0 of
-        True -> panic "Application.withDispatcherConfig: idleTimeoutMs must be positive"
-        False -> case config.reaperIntervalMs <= 0 of
-          True -> panic "Application.withDispatcherConfig: reaperIntervalMs must be positive"
-          False -> case config.eventProcessingTimeoutMs of
-            Just ms -> case ms <= 0 of
-              True -> panic "Application.withDispatcherConfig: eventProcessingTimeoutMs must be positive when set"
-              False -> app {dispatcherConfig = Just config}
-            Nothing -> app {dispatcherConfig = Just config}
+withDispatcherConfig mkConfig app = do
+  let factory = case eqT @config @() of
+        Just Refl -> do
+          let config = mkConfig ()
+          -- Validate immediately for evaluated config
+          case config.workerChannelCapacity <= 0 of
+            True -> panic "Application.withDispatcherConfig: workerChannelCapacity must be positive"
+            False -> case config.channelWriteTimeoutMs <= 0 of
+              True -> panic "Application.withDispatcherConfig: channelWriteTimeoutMs must be positive"
+              False -> case config.idleTimeoutMs <= 0 of
+                True -> panic "Application.withDispatcherConfig: idleTimeoutMs must be positive"
+                False -> case config.reaperIntervalMs <= 0 of
+                  True -> panic "Application.withDispatcherConfig: reaperIntervalMs must be positive"
+                  False -> case config.eventProcessingTimeoutMs of
+                    Just ms -> case ms <= 0 of
+                      True -> panic "Application.withDispatcherConfig: eventProcessingTimeoutMs must be positive when set"
+                      False -> EvaluatedDispatcherConfig config
+                    Nothing -> EvaluatedDispatcherConfig config
+        Nothing -> DeferredDispatcherConfig mkConfig
+  app {dispatcherConfigFactory = Just factory}
 
 
 -- | Configure a custom SecretStore for token storage.
@@ -1443,10 +1732,16 @@ withDispatcherConfig config app =
 --   |> Application.withOAuth2Provider \@() (\\_ -> ouraConfig)
 -- @
 withSecretStore ::
-  SecretStore ->
+  forall config.
+  (Typeable config) =>
+  (config -> SecretStore) ->
   Application ->
   Application
-withSecretStore store app = app {secretStore = Just store}
+withSecretStore mkStore app = do
+  let factory = case eqT @config @() of
+        Just Refl -> EvaluatedSecretStore (mkStore ())
+        Nothing -> DeferredSecretStore mkStore
+  app {secretStoreFactory = Just factory}
 
 
 -- | Initialize OAuth2 with an HMAC key loaded from environment.
