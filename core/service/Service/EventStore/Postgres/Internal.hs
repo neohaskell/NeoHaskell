@@ -140,17 +140,17 @@ defaultOps = do
           |> Sessions.run connection
           |> Task.mapError toText
 
-  let initializeSubscriptions pool subscriptionStore cfg = do
-        connection <- Hasql.acquire (toConnectionSettings cfg) |> Task.fromIOEither |> Task.mapError toText
+  let initializeSubscriptions _pool subscriptionStore cfg = do
+        listenConnection <- Hasql.acquire (toConnectionSettings cfg) |> Task.fromIOEither |> Task.mapError toText
         Sessions.createEventNotificationTriggerFunctionSession
-          |> Sessions.runConnection connection
+          |> Sessions.runConnection listenConnection
           |> Task.mapError toText
-
         Sessions.createEventNotificationTriggerSession
-          |> Sessions.runConnection connection
+          |> Sessions.runConnection listenConnection
           |> Task.mapError toText
 
-        subscriptionStore |> Notifications.connectTo connection pool
+        queryConnection <- Hasql.acquire (toConnectionSettings cfg) |> Task.fromIOEither |> Task.mapError toText
+        subscriptionStore |> Notifications.connectTo listenConnection queryConnection
 
   let release connection = do
         case connection of
