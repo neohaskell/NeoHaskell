@@ -20,10 +20,9 @@ import Task qualified
 
 connectTo ::
   Hasql.Connection ->
-  Sessions.Connection ->
   SubscriptionStore ->
   Task Text Unit
-connectTo connection pool store = do
+connectTo connection store = do
   let channelToListen = HasqlNotifications.toPgIdentifier "global"
   HasqlNotifications.listen connection channelToListen
     |> Task.fromIO
@@ -31,7 +30,7 @@ connectTo connection pool store = do
   Log.info "LISTEN/NOTIFY listener started"
     |> Task.ignoreError
   connection
-    |> HasqlNotifications.waitForNotifications (handler pool store)
+    |> HasqlNotifications.waitForNotifications (handler connection store)
     |> Task.fromIO
     |> AsyncTask.run
     |> Task.andThen \_ -> do
@@ -53,13 +52,13 @@ subscribeToStream connection streamId = do
 
 
 handler ::
-  Sessions.Connection ->
+  Hasql.Connection ->
   SubscriptionStore ->
   Data.ByteString.ByteString ->
   Data.ByteString.ByteString ->
   IO ()
-handler pool store _channelName payloadLegacyBytes = do
-  result <- processNotification pool store payloadLegacyBytes |> Task.runResult
+handler connection store _channelName payloadLegacyBytes = do
+  result <- processNotification connection store payloadLegacyBytes |> Task.runResult
   case result of
     Err err ->
       ((Log.warn [fmt|#{err}|] |> Task.ignoreError) :: Task Text Unit) |> Task.runOrPanic
@@ -68,14 +67,14 @@ handler pool store _channelName payloadLegacyBytes = do
 
 
 processNotification ::
-  Sessions.Connection ->
+  Hasql.Connection ->
   SubscriptionStore ->
   Data.ByteString.ByteString ->
   Task Text Unit
-processNotification pool store payloadLegacyBytes = do
+processNotification connection store payloadLegacyBytes = do
   Log.withScope [("component", "Notifications")] do
     notification <- decodeNotification payloadLegacyBytes
-    event <- fetchFullEvent pool notification.globalPosition
+    event <- fetchFullEvent connection notification.globalPosition
     Log.withScope [("component", "Notifications"), ("streamId", toText event.streamId)] do
       store |> SubscriptionStore.dispatch event.streamId event |> Task.mapError toText
       Log.debug "Event dispatched from notification" |> Task.ignoreError
@@ -95,13 +94,13 @@ decodeNotification payloadLegacyBytes = do
 
 
 fetchFullEvent ::
-  Sessions.Connection ->
+  Hasql.Connection ->
   Int64 ->
   Task Text (Event Json.Value)
-fetchFullEvent pool globalPosition = do
+fetchFullEvent connection globalPosition = do
   maybeRecord <-
     Sessions.selectEventByGlobalPositionSession globalPosition
-      |> Sessions.run pool
+      |> Sessions.runConnection connection
       |> Task.mapError toText
   record <- case maybeRecord of
     Nothing -> Task.throw [fmt|Event not found for globalPosition #{globalPosition}|]
