@@ -9,6 +9,7 @@ import Integration.Timer qualified as Timer
 import Testbed.Cart.Commands.CreateCart (CreateCart (..))
 import Testbed.Cart.Core (CartEntity (..), CartEvent (..))
 import Testbed.Stock.Commands.ReserveStock (ReserveStock (..))
+import Testbed.Config (TestbedConfig (..))
 
 
 -- | Outbound integration: reacts to cart events and triggers cross-domain commands.
@@ -17,8 +18,8 @@ import Testbed.Stock.Commands.ReserveStock (ReserveStock (..))
 --
 -- The entity parameter is reconstructed from the event stream via event replay,
 -- providing access to the full cart state including previously added items.
-cartIntegrations :: CartEntity -> CartEvent -> Integration.Outbound
-cartIntegrations cart event = case event of
+cartIntegrations :: TestbedConfig -> CartEntity -> CartEvent -> Integration.Outbound
+cartIntegrations _config cart event = case event of
   CartCreated {} -> Integration.none
   ItemAdded {stockId, quantity} -> Integration.batch
     [ Integration.outbound Command.Emit

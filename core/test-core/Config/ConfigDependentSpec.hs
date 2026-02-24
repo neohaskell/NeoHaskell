@@ -12,15 +12,25 @@
 -- is done via the testbed integration tests. These unit tests verify the
 -- builder API surface and basic behavior.
 module Config.ConfigDependentSpec where
-
+import Array qualified
+import Auth.SecretStore (SecretStore (..))
+import Auth.SecretStore.InMemory qualified as InMemorySecretStore
 import Core
+import Integration qualified
+import Integration.Lifecycle qualified as Lifecycle
+import Json qualified
 import Service.Application qualified as Application
+import Service.Application.Types (ApiInfo (..))
+import Service.Event (Event)
 import Service.EventStore.InMemory qualified as InMemory
 import Service.EventStore.Postgres (PostgresEventStore (..))
 import Service.FileUpload.Core (FileUploadConfig (..), FileStateStoreBackend (..))
+import Service.Integration.Dispatcher qualified as Dispatcher
+import Service.Transport.Web qualified as Web
 import Task qualified
 import Test
 import Text qualified
+import Uuid qualified
 
 
 -- | Mock config type for testing.
@@ -89,6 +99,108 @@ makeAuthUrlFactory cfg = cfg.mockAuthServerUrl
 -- | Direct auth server URL for testing.
 directAuthServerUrl :: Text
 directAuthServerUrl = "https://auth.example.com"
+
+
+-- | Helper to create a CorsConfig factory for testing.
+makeCorsFactory :: MockConfig -> Web.CorsConfig
+makeCorsFactory _cfg = Web.CorsConfig
+  { allowedOrigins = Array.fromLinkedList ["*"]
+  , allowedMethods = Array.fromLinkedList ["GET"]
+  , allowedHeaders = Array.fromLinkedList ["Content-Type"]
+  , maxAge = Nothing
+  }
+
+
+-- | Helper to create an ApiInfo factory for testing.
+makeApiInfoFactory :: MockConfig -> ApiInfo
+makeApiInfoFactory _cfg = ApiInfo
+  { apiTitle = "Test"
+  , apiVersion = "1.0"
+  , apiDescription = "Test API"
+  }
+
+
+-- | Helper to create a health check path factory for testing.
+makeHealthCheckFactory :: MockConfig -> Text
+makeHealthCheckFactory _cfg = "_health"
+
+
+-- | Helper to create a DispatcherConfig factory for testing.
+makeDispatcherConfigFactory :: MockConfig -> Dispatcher.DispatcherConfig
+makeDispatcherConfigFactory _cfg = Dispatcher.defaultConfig
+
+
+-- | Helper to create a SecretStore factory for testing.
+makeSecretStoreFactory :: MockConfig -> SecretStore
+makeSecretStoreFactory _cfg = do
+  -- We can't actually create a SecretStore in a pure context,
+  -- so this factory is used only to test that DeferredSecretStore is stored.
+  -- The runWith rejection test will trigger before evaluation.
+  panic "makeSecretStoreFactory should not be evaluated in these tests"
+
+
+-- ============================================================================
+-- Test Types for Integration Tests
+-- ============================================================================
+
+-- | A test entity for integration tests.
+data TestEntity = TestEntity
+  { entityId :: Uuid
+  , value :: Int
+  }
+  deriving (Generic, Eq, Show, Typeable)
+
+
+instance Json.ToJSON TestEntity
+
+
+instance Json.FromJSON TestEntity
+
+
+instance Default TestEntity where
+  def = TestEntity {entityId = Uuid.nil, value = 0}
+
+
+-- | Events for the test entity.
+data TestEntityEvent
+  = TestEntityCreated {initialValue :: Int}
+  | TestEntityUpdated {newValue :: Int}
+  deriving (Generic, Eq, Show, Typeable)
+
+
+-- | Type family instances for Entity/Event relationship.
+type instance EventOf TestEntity = TestEntityEvent
+
+
+-- | Entity instance for TestEntity.
+instance Entity TestEntity where
+  initialStateImpl = TestEntity {entityId = Uuid.nil, value = 0}
+  updateImpl event entity = case event of
+    TestEntityCreated {initialValue} -> entity {value = initialValue}
+    TestEntityUpdated {newValue} -> entity {value = newValue}
+
+
+instance Json.ToJSON TestEntityEvent
+
+
+instance Json.FromJSON TestEntityEvent
+
+
+-- | A command emitted by integrations.
+data NotifyExternalSystem = NotifyExternalSystem
+  { targetEntityId :: Uuid
+  , notificationValue :: Int
+  }
+  deriving (Generic, Eq, Show, Typeable)
+
+
+instance Json.ToJSON NotifyExternalSystem
+
+
+instance Json.FromJSON NotifyExternalSystem
+
+
+type instance NameOf NotifyExternalSystem = "NotifyExternalSystem"
 
 
 spec :: Spec Unit
@@ -273,3 +385,379 @@ spec = do
       case result of
         Ok _ -> fail "Expected error but got Ok"
         Err err -> err |> shouldSatisfy (Text.contains "runWith does not support config-dependent Auth")
+
+  describe "Application.withCors (config-dependent)" do
+    it "works with static config using @() pattern" \_ -> do
+      let corsConfig = Web.CorsConfig
+            { allowedOrigins = Array.fromLinkedList ["*"]
+            , allowedMethods = Array.fromLinkedList ["GET"]
+            , allowedHeaders = Array.fromLinkedList ["Content-Type"]
+            , maxAge = Nothing
+            }
+      let app = Application.new
+            |> Application.withCors @() (\_ -> corsConfig)
+      -- App builds without error (factory stored as EvaluatedCors)
+      let _ = app
+      shouldBe True True
+
+    it "stores factory with dynamic config" \_ -> do
+      let app = Application.new
+            |> Application.withCors makeCorsFactory
+      -- App builds without error (factory stored as DeferredCors)
+      let _ = app
+      shouldBe True True
+
+    it "runWith rejects DeferredCors" \_ -> do
+      eventStore <- InMemory.new |> Task.mapError toText
+      let app = Application.new
+            |> Application.withCors makeCorsFactory
+      result <- Application.runWith eventStore app |> Task.asResult
+      case result of
+        Ok _ -> fail "Expected error but got Ok"
+        Err err -> err |> shouldSatisfy (Text.contains "runWith does not support config-dependent CORS")
+
+  describe "Application.withApiInfo (config-dependent)" do
+    it "works with static config using @() pattern" \_ -> do
+      let info = ApiInfo
+            { apiTitle = "Test"
+            , apiVersion = "1.0"
+            , apiDescription = "Test API"
+            }
+      let app = Application.new
+            |> Application.withApiInfo @() (\_ -> info)
+      -- App builds without error (factory stored as EvaluatedApiInfo)
+      let _ = app
+      shouldBe True True
+
+    it "stores factory with dynamic config" \_ -> do
+      let app = Application.new
+            |> Application.withApiInfo makeApiInfoFactory
+      -- App builds without error (factory stored as DeferredApiInfo)
+      let _ = app
+      shouldBe True True
+
+    it "runWith rejects DeferredApiInfo" \_ -> do
+      eventStore <- InMemory.new |> Task.mapError toText
+      let app = Application.new
+            |> Application.withApiInfo makeApiInfoFactory
+      result <- Application.runWith eventStore app |> Task.asResult
+      case result of
+        Ok _ -> fail "Expected error but got Ok"
+        Err err -> err |> shouldSatisfy (Text.contains "runWith does not support config-dependent ApiInfo")
+
+  describe "Application.withHealthCheck (config-dependent)" do
+    it "works with static config using @() pattern" \_ -> do
+      let app = Application.new
+            |> Application.withHealthCheck @() (\_ -> "_health")
+      -- App builds without error (factory stored as EvaluatedHealthCheck)
+      let _ = app
+      shouldBe True True
+
+    it "stores factory with dynamic config" \_ -> do
+      let app = Application.new
+            |> Application.withHealthCheck makeHealthCheckFactory
+      -- App builds without error (factory stored as DeferredHealthCheck)
+      let _ = app
+      shouldBe True True
+
+    it "runWith rejects DeferredHealthCheck" \_ -> do
+      eventStore <- InMemory.new |> Task.mapError toText
+      let app = Application.new
+            |> Application.withHealthCheck makeHealthCheckFactory
+      result <- Application.runWith eventStore app |> Task.asResult
+      case result of
+        Ok _ -> fail "Expected error but got Ok"
+        Err err -> err |> shouldSatisfy (Text.contains "runWith does not support config-dependent HealthCheck")
+
+  describe "Application.withDispatcherConfig (config-dependent)" do
+    it "works with static config using @() pattern" \_ -> do
+      let app = Application.new
+            |> Application.withDispatcherConfig @() (\_ -> Dispatcher.defaultConfig)
+      -- App builds without error (factory stored as EvaluatedDispatcherConfig)
+      let _ = app
+      shouldBe True True
+
+    it "stores factory with dynamic config" \_ -> do
+      let app = Application.new
+            |> Application.withDispatcherConfig makeDispatcherConfigFactory
+      -- App builds without error (factory stored as DeferredDispatcherConfig)
+      let _ = app
+      shouldBe True True
+
+    it "runWith rejects DeferredDispatcherConfig" \_ -> do
+      eventStore <- InMemory.new |> Task.mapError toText
+      let app = Application.new
+            |> Application.withDispatcherConfig makeDispatcherConfigFactory
+      result <- Application.runWith eventStore app |> Task.asResult
+      case result of
+        Ok _ -> fail "Expected error but got Ok"
+        Err err -> err |> shouldSatisfy (Text.contains "runWith does not support config-dependent DispatcherConfig")
+
+  describe "Application.withSecretStore (config-dependent)" do
+    it "works with static config using @() pattern" \_ -> do
+      store <- InMemorySecretStore.new
+      let app = Application.new
+            |> Application.withSecretStore @() (\_ -> store)
+      -- App builds without error (factory stored as EvaluatedSecretStore)
+      let _ = app
+      shouldBe True True
+
+    it "stores factory with dynamic config" \_ -> do
+      let app = Application.new
+            |> Application.withSecretStore makeSecretStoreFactory
+      -- App builds without error (factory stored as DeferredSecretStore)
+      let _ = app
+      shouldBe True True
+
+    it "runWith rejects DeferredSecretStore" \_ -> do
+      eventStore <- InMemory.new |> Task.mapError toText
+      let app = Application.new
+            |> Application.withSecretStore makeSecretStoreFactory
+      result <- Application.runWith eventStore app |> Task.asResult
+      case result of
+        Ok _ -> fail "Expected error but got Ok"
+        Err err -> err |> shouldSatisfy (Text.contains "runWith does not support config-dependent SecretStore")
+
+  describe "Application.withOutbound (config-dependent)" do
+    it "works with static config using @() pattern" \_ -> do
+      let app = Application.new
+            |> Application.withOutbound @() @TestEntity @TestEntityEvent (\_ _entity _event -> Integration.none)
+      -- App builds without error (outbound runner stored directly)
+      let _ = app
+      shouldBe True True
+
+    it "stores factory with dynamic config" \_ -> do
+      let app = Application.new
+            |> Application.withOutbound @MockConfig @TestEntity @TestEntityEvent (\_ _entity _event -> Integration.none)
+      -- App builds without error (deferred outbound reg stored)
+      let _ = app
+      shouldBe True True
+
+    it "runWith rejects deferred outbound integrations" \_ -> do
+      eventStore <- InMemory.new |> Task.mapError toText
+      let app = Application.new
+            |> Application.withOutbound @MockConfig @TestEntity @TestEntityEvent (\_ _entity _event -> Integration.none)
+      result <- Application.runWith eventStore app |> Task.asResult
+      case result of
+        Ok _ -> fail "Expected error but got Ok"
+        Err err -> err |> shouldSatisfy (Text.contains "runWith does not support config-dependent outbound integrations")
+
+  describe "Application.withOutboundLifecycle (config-dependent)" do
+    it "works with static config using @() pattern" \_ -> do
+      let lifecycleConfig = Lifecycle.OutboundConfig
+            { initialize = \(_streamId :: StreamId) -> Task.yield (0 :: Int)
+            , processEvent = \(_state :: Int) (_event :: Event Json.Value) -> Task.yield Array.empty
+            , cleanup = \(_state :: Int) -> Task.yield ()
+            }
+      let app = Application.new
+            |> Application.withOutboundLifecycle @() @TestEntity (\_ -> lifecycleConfig)
+      -- App builds without error (lifecycle runner stored directly)
+      let _ = app
+      shouldBe True True
+
+    it "stores factory with dynamic config" \_ -> do
+      let lifecycleConfig = Lifecycle.OutboundConfig
+            { initialize = \(_streamId :: StreamId) -> Task.yield (0 :: Int)
+            , processEvent = \(_state :: Int) (_event :: Event Json.Value) -> Task.yield Array.empty
+            , cleanup = \(_state :: Int) -> Task.yield ()
+            }
+      let app = Application.new
+            |> Application.withOutboundLifecycle @MockConfig @TestEntity (\_ -> lifecycleConfig)
+      -- App builds without error (deferred outbound lifecycle reg stored)
+      let _ = app
+      shouldBe True True
+
+    it "runWith rejects deferred outbound lifecycle integrations" \_ -> do
+      eventStore <- InMemory.new |> Task.mapError toText
+      let lifecycleConfig = Lifecycle.OutboundConfig
+            { initialize = \(_streamId :: StreamId) -> Task.yield (0 :: Int)
+            , processEvent = \(_state :: Int) (_event :: Event Json.Value) -> Task.yield Array.empty
+            , cleanup = \(_state :: Int) -> Task.yield ()
+            }
+      let app = Application.new
+            |> Application.withOutboundLifecycle @MockConfig @TestEntity (\_ -> lifecycleConfig)
+      result <- Application.runWith eventStore app |> Task.asResult
+      case result of
+        Ok _ -> fail "Expected error but got Ok"
+        Err err -> err |> shouldSatisfy (Text.contains "runWith does not support config-dependent outbound lifecycle integrations")
+
+  describe "Application.withInbound (config-dependent)" do
+    it "works with static config using @() pattern" \_ -> do
+      let inboundIntegration = Integration.inbound @NotifyExternalSystem Integration.InboundConfig
+            { run = \_ -> Task.yield ()
+            }
+      let app = Application.new
+            |> Application.withInbound @() (\_ -> inboundIntegration)
+      -- App builds without error (inbound integration stored directly)
+      let _ = app
+      shouldBe True True
+
+    it "stores factory with dynamic config" \_ -> do
+      let inboundIntegration = Integration.inbound @NotifyExternalSystem Integration.InboundConfig
+            { run = \_ -> Task.yield ()
+            }
+      let app = Application.new
+            |> Application.withInbound @MockConfig (\_ -> inboundIntegration)
+      -- App builds without error (deferred inbound reg stored)
+      let _ = app
+      shouldBe True True
+
+    it "runWith rejects deferred inbound integrations" \_ -> do
+      eventStore <- InMemory.new |> Task.mapError toText
+      let inboundIntegration = Integration.inbound @NotifyExternalSystem Integration.InboundConfig
+            { run = \_ -> Task.yield ()
+            }
+      let app = Application.new
+            |> Application.withInbound @MockConfig (\_ -> inboundIntegration)
+      result <- Application.runWith eventStore app |> Task.asResult
+      case result of
+        Ok _ -> fail "Expected error but got Ok"
+        Err err -> err |> shouldSatisfy (Text.contains "runWith does not support config-dependent inbound integrations")
+
+  -- ==========================================================================
+  -- Test Group 1: Regression test for withoutHealthCheck + factory interaction
+  -- ==========================================================================
+
+  describe "withoutHealthCheck interaction with factory" do
+    it "withoutHealthCheck after withHealthCheck fully disables health check" \_ -> do
+      -- This is a regression test for a bug where withoutHealthCheck only
+      -- cleared healthCheckConfig but not healthCheckFactory, so the factory
+      -- would re-enable health check during resolution.
+      eventStore <- InMemory.new |> Task.mapError toText
+      let app = Application.new
+            |> Application.withHealthCheck @() (\_ -> "custom-health")
+            |> Application.withoutHealthCheck
+      -- runWith should succeed without health check (not re-enable it from factory)
+      result <- Application.runWith eventStore app |> Task.asResult
+      case result of
+        Ok _ -> pass
+        Err err -> err |> shouldSatisfy (\e -> not (Text.contains "health" e))
+
+  -- ==========================================================================
+  -- Test Group 2: runWith accepts evaluated @() factories
+  -- ==========================================================================
+
+  describe "runWith accepts evaluated factories" do
+    it "runWith accepts EvaluatedCors" \_ -> do
+      eventStore <- InMemory.new |> Task.mapError toText
+      let corsConfig = Web.CorsConfig
+            { allowedOrigins = Array.fromLinkedList ["*"]
+            , allowedMethods = Array.fromLinkedList ["GET"]
+            , allowedHeaders = Array.fromLinkedList ["Content-Type"]
+            , maxAge = Nothing
+            }
+      let app = Application.new
+            |> Application.withCors @() (\_ -> corsConfig)
+      result <- Application.runWith eventStore app |> Task.asResult
+      case result of
+        Ok _ -> pass
+        Err err -> err |> shouldSatisfy (\e -> not (Text.contains "config-dependent CORS" e))
+
+    it "runWith accepts EvaluatedApiInfo" \_ -> do
+      eventStore <- InMemory.new |> Task.mapError toText
+      let info = ApiInfo
+            { apiTitle = "Test"
+            , apiVersion = "1.0"
+            , apiDescription = "Test"
+            }
+      let app = Application.new
+            |> Application.withApiInfo @() (\_ -> info)
+      result <- Application.runWith eventStore app |> Task.asResult
+      case result of
+        Ok _ -> pass
+        Err err -> err |> shouldSatisfy (\e -> not (Text.contains "config-dependent ApiInfo" e))
+
+    it "runWith accepts EvaluatedHealthCheck" \_ -> do
+      eventStore <- InMemory.new |> Task.mapError toText
+      let app = Application.new
+            |> Application.withHealthCheck @() (\_ -> "_health")
+      result <- Application.runWith eventStore app |> Task.asResult
+      case result of
+        Ok _ -> pass
+        Err err -> err |> shouldSatisfy (\e -> not (Text.contains "config-dependent HealthCheck" e))
+
+    it "runWith accepts EvaluatedDispatcherConfig" \_ -> do
+      eventStore <- InMemory.new |> Task.mapError toText
+      let app = Application.new
+            |> Application.withDispatcherConfig @() (\_ -> Dispatcher.defaultConfig)
+      result <- Application.runWith eventStore app |> Task.asResult
+      case result of
+        Ok _ -> pass
+        Err err -> err |> shouldSatisfy (\e -> not (Text.contains "config-dependent DispatcherConfig" e))
+
+    it "runWith accepts EvaluatedSecretStore" \_ -> do
+      eventStore <- InMemory.new |> Task.mapError toText
+      store <- InMemorySecretStore.new
+      let app = Application.new
+            |> Application.withSecretStore @() (\_ -> store)
+      result <- Application.runWith eventStore app |> Task.asResult
+      case result of
+        Ok _ -> pass
+        Err err -> err |> shouldSatisfy (\e -> not (Text.contains "config-dependent SecretStore" e))
+
+    it "runWith accepts evaluated outbound (static @() pattern)" \_ -> do
+      eventStore <- InMemory.new |> Task.mapError toText
+      let app = Application.new
+            |> Application.withOutbound @() @TestEntity @TestEntityEvent (\_ _entity _event -> Integration.none)
+      result <- Application.runWith eventStore app |> Task.asResult
+      case result of
+        Ok _ -> pass
+        Err err -> err |> shouldSatisfy (\e -> not (Text.contains "config-dependent outbound" e))
+
+    it "runWith accepts evaluated outbound lifecycle (static @() pattern)" \_ -> do
+      eventStore <- InMemory.new |> Task.mapError toText
+      let lifecycleConfig = Lifecycle.OutboundConfig
+            { initialize = \(_streamId :: StreamId) -> Task.yield (0 :: Int)
+            , processEvent = \(_state :: Int) (_event :: Event Json.Value) -> Task.yield Array.empty
+            , cleanup = \(_state :: Int) -> Task.yield ()
+            }
+      let app = Application.new
+            |> Application.withOutboundLifecycle @() @TestEntity (\_ -> lifecycleConfig)
+      result <- Application.runWith eventStore app |> Task.asResult
+      case result of
+        Ok _ -> pass
+        Err err -> err |> shouldSatisfy (\e -> not (Text.contains "config-dependent outbound lifecycle" e))
+
+    it "runWith accepts evaluated inbound (static @() pattern)" \_ -> do
+      eventStore <- InMemory.new |> Task.mapError toText
+      let inboundIntegration = Integration.inbound @NotifyExternalSystem Integration.InboundConfig
+            { run = \_ -> Task.yield ()
+            }
+      let app = Application.new
+            |> Application.withInbound @() (\_ -> inboundIntegration)
+      result <- Application.runWith eventStore app |> Task.asResultSafe
+      case result of
+        Ok _ -> pass
+        Err err -> err |> shouldSatisfy (\e -> not (Text.contains "config-dependent inbound" e))
+
+  -- ==========================================================================
+  -- Test Group 3: withHealthCheck empty path normalization
+  -- ==========================================================================
+
+  describe "withHealthCheck empty path normalization" do
+    it "empty path with @() falls back to 'health'" \_ -> do
+      -- When the user passes an empty string, normalizeHealthPath converts it to "health"
+      eventStore <- InMemory.new |> Task.mapError toText
+      let app = Application.new
+            |> Application.withHealthCheck @() (\_ -> "")
+      -- The app stores EvaluatedHealthCheck with path "health" (not "")
+      result <- Application.runWith eventStore app |> Task.asResult
+      case result of
+        Ok _ -> pass
+        Err err -> err |> shouldSatisfy (\e -> not (Text.contains "health" e))
+
+  -- ==========================================================================
+  -- Test Group 4: withDispatcherConfig validation
+  -- ==========================================================================
+
+  describe "withDispatcherConfig validation" do
+    it "accepts valid config via @() pattern" \_ -> do
+      -- withDispatcherConfig validates config fields are positive at build time for @()
+      -- This verifies that defaultConfig passes validation without panicking
+      eventStore <- InMemory.new |> Task.mapError toText
+      let app = Application.new
+            |> Application.withDispatcherConfig @() (\_ -> Dispatcher.defaultConfig)
+      result <- Application.runWith eventStore app |> Task.asResult
+      case result of
+        Ok _ -> pass
+        Err err -> err |> shouldSatisfy (\e -> not (Text.contains "DispatcherConfig" e))

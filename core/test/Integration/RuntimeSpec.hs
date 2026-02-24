@@ -127,7 +127,7 @@ spec = do
 
         let app =
               Application.new
-                |> Application.withOutbound @TestEntity @TestEntityEvent testIntegration
+                |> Application.withOutbound @() @TestEntity @TestEntityEvent (\_ -> testIntegration)
 
         -- Run app in background
         Application.runWithAsync eventStore app
