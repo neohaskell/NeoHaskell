@@ -16,6 +16,15 @@ import Testbed.Service qualified
 import Testbed.Stock.Queries.StockLevel (StockLevel)
 
 
+-- | API metadata for the testbed application.
+testbedApiInfo :: ApiInfo
+testbedApiInfo = ApiInfo
+  { apiTitle = "Testbed API"
+  , apiVersion = "1.0.0"
+  , apiDescription = "Example NeoHaskell application demonstrating event sourcing, CQRS, and integrations"
+  }
+
+
 -- | Complete application with file upload support (pure, declarative)
 -- IO initialization is deferred to Application.run.
 -- Config is loaded first, then used to configure PostgreSQL and file uploads.
@@ -30,7 +39,7 @@ app =
     |> Application.withConfig @TestbedConfig
     |> Application.withEventStore makePostgresConfig
     |> Application.withTransport WebTransport.server
-    |> Application.withApiInfo @() (\_ -> ApiInfo { apiTitle = "Testbed API", apiVersion = "1.0.0", apiDescription = "Example NeoHaskell application demonstrating event sourcing, CQRS, and integrations" })
+    |> Application.withApiInfo @() (\_ -> testbedApiInfo)
     |> Application.withService Testbed.Service.cartService
     |> Application.withService Testbed.Service.stockService
     |> Application.withService Testbed.Service.documentService
