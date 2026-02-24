@@ -258,7 +258,7 @@ data ConfigSpec = forall config. (HasParser config, Typeable config) => ConfigSp
 -- 'Application.run' after config is loaded (if needed).
 data EventStoreFactory where
   -- | EventStore config evaluated at build time (when config type is ())
-  EvaluatedEventStore :: (EventStoreConfig c) => c -> EventStoreFactory
+  EvaluatedEventStore :: (EventStoreConfig c) => !c -> EventStoreFactory
   -- | EventStore config deferred to run time (requires withConfig)
   DeferredEventStore :: (Typeable cfg, EventStoreConfig c) => (cfg -> c) -> EventStoreFactory
 
@@ -269,7 +269,7 @@ data EventStoreFactory where
 -- 'Application.run' after config is loaded (if needed).
 data FileUploadFactory where
   -- | FileUpload config evaluated at build time (when config type is ())
-  EvaluatedFileUpload :: FileUploadConfig -> FileUploadFactory
+  EvaluatedFileUpload :: !FileUploadConfig -> FileUploadFactory
   -- | FileUpload config deferred to run time (requires withConfig)
   DeferredFileUpload :: (Typeable cfg) => (cfg -> FileUploadConfig) -> FileUploadFactory
 
@@ -280,9 +280,9 @@ data FileUploadFactory where
 -- 'Application.run' after config is loaded (if needed).
 data WebAuthFactory where
   -- | WebAuth config evaluated at build time (when config type is ())
-  EvaluatedWebAuth :: WebAuthSetup -> WebAuthFactory
+  EvaluatedWebAuth :: !WebAuthSetup -> WebAuthFactory
   -- | WebAuth config deferred to run time (requires withConfig)
-  DeferredWebAuth :: (Typeable cfg) => (cfg -> Text) -> AuthOverrides -> WebAuthFactory
+  DeferredWebAuth :: (Typeable cfg) => (cfg -> Text) -> !AuthOverrides -> WebAuthFactory
 
 
 -- | Factory for creating OAuth2 provider configuration.
@@ -291,38 +291,38 @@ data WebAuthFactory where
 -- 'Application.run' after config is loaded (if needed).
 data OAuth2ProviderFactory where
   -- | OAuth2 provider config evaluated at build time (when config type is ())
-  EvaluatedOAuth2Provider :: OAuth2ProviderConfig -> OAuth2ProviderFactory
+  EvaluatedOAuth2Provider :: !OAuth2ProviderConfig -> OAuth2ProviderFactory
   -- | OAuth2 provider config deferred to run time (requires withConfig)
   DeferredOAuth2Provider :: (Typeable cfg) => (cfg -> OAuth2ProviderConfig) -> OAuth2ProviderFactory
 
 
 -- | Factory for CORS configuration.
 data CorsFactory where
-  EvaluatedCors :: Web.CorsConfig -> CorsFactory
+  EvaluatedCors :: !Web.CorsConfig -> CorsFactory
   DeferredCors :: (Typeable cfg) => (cfg -> Web.CorsConfig) -> CorsFactory
 
 
 -- | Factory for API info configuration.
 data ApiInfoFactory where
-  EvaluatedApiInfo :: ApiInfo -> ApiInfoFactory
+  EvaluatedApiInfo :: !ApiInfo -> ApiInfoFactory
   DeferredApiInfo :: (Typeable cfg) => (cfg -> ApiInfo) -> ApiInfoFactory
 
 
 -- | Factory for health check configuration.
 data HealthCheckFactory where
-  EvaluatedHealthCheck :: Web.HealthCheckConfig -> HealthCheckFactory
+  EvaluatedHealthCheck :: !Web.HealthCheckConfig -> HealthCheckFactory
   DeferredHealthCheck :: (Typeable cfg) => (cfg -> Web.HealthCheckConfig) -> HealthCheckFactory
 
 
 -- | Factory for dispatcher configuration.
 data DispatcherConfigFactory where
-  EvaluatedDispatcherConfig :: Dispatcher.DispatcherConfig -> DispatcherConfigFactory
+  EvaluatedDispatcherConfig :: !Dispatcher.DispatcherConfig -> DispatcherConfigFactory
   DeferredDispatcherConfig :: (Typeable cfg) => (cfg -> Dispatcher.DispatcherConfig) -> DispatcherConfigFactory
 
 
 -- | Factory for secret store configuration.
 data SecretStoreFactory where
-  EvaluatedSecretStore :: SecretStore -> SecretStoreFactory
+  EvaluatedSecretStore :: !SecretStore -> SecretStoreFactory
   DeferredSecretStore :: (Typeable cfg) => (cfg -> SecretStore) -> SecretStoreFactory
 
 
@@ -865,7 +865,8 @@ run app =
            Nothing -> Task.throw "withHealthCheck requires withConfig when the factory uses the config parameter. If you don't need config, use: withHealthCheck @() (\\_ -> yourPath)"
            Just _ -> do
              let appConfig = Config.get
-             Task.yield (Just (mkConfig appConfig))
+             let rawConfig = mkConfig appConfig
+             Task.yield (Just (normalizeHealthPath rawConfig.healthPath))
 
      -- 5e. Resolve DispatcherConfigFactory
      resolvedDispatcherConfig <- case app.dispatcherConfigFactory of
@@ -875,21 +876,11 @@ run app =
          case app.configSpec of
            Nothing -> Task.throw "withDispatcherConfig requires withConfig when the factory uses the config parameter. If you don't need config, use: withDispatcherConfig @() (\\_ -> yourConfig)"
            Just _ -> do
-              let appConfig = Config.get
-              let config = mkConfig appConfig
-              case config.workerChannelCapacity <= 0 of
-                True -> Task.throw "Application.withDispatcherConfig: workerChannelCapacity must be positive"
-                False -> case config.channelWriteTimeoutMs <= 0 of
-                  True -> Task.throw "Application.withDispatcherConfig: channelWriteTimeoutMs must be positive"
-                  False -> case config.idleTimeoutMs <= 0 of
-                    True -> Task.throw "Application.withDispatcherConfig: idleTimeoutMs must be positive"
-                    False -> case config.reaperIntervalMs <= 0 of
-                      True -> Task.throw "Application.withDispatcherConfig: reaperIntervalMs must be positive"
-                      False -> case config.eventProcessingTimeoutMs of
-                        Just ms -> case ms <= 0 of
-                          True -> Task.throw "Application.withDispatcherConfig: eventProcessingTimeoutMs must be positive when set"
-                          False -> Task.yield (Just config)
-                        Nothing -> Task.yield (Just config)
+             let appConfig = Config.get
+             let config = mkConfig appConfig
+             case validateDispatcherConfig config of
+               Just err -> Task.throw [fmt|Application.withDispatcherConfig: #{err}|]
+               Nothing -> Task.yield (Just config)
 
      -- 5f. Resolve SecretStoreFactory
      resolvedSecretStore <- case app.secretStoreFactory of
@@ -901,6 +892,11 @@ run app =
            Just _ -> do
              let appConfig = Config.get
              Task.yield (Just (mkStore appConfig))
+
+     -- NOTE: Config.get calls in the let bindings below are safe despite being
+     -- in pure context. Config.get reads from a global IORef that was initialized
+     -- in step 2 (config loading). These values are only forced when runners
+     -- execute, at which point the config is guaranteed to be set.
 
      -- 5g. Resolve deferred outbound integration registrations
      let resolvedOutboundRunners =
@@ -1426,7 +1422,7 @@ withOutboundLifecycle mkConfig app = do
         , inboundIntegrations = inbounds
         }
     Nothing -> do
-      let mkRunner = \cfg -> Integrations.createOutboundLifecycleRunner @entity (mkConfig cfg)
+      let mkRunner cfg = Integrations.createOutboundLifecycleRunner @entity (mkConfig cfg)
       let reg = MkDeferredOutboundLifecycleReg @config mkRunner
       app {deferredOutboundLifecycleRegs = app.deferredOutboundLifecycleRegs |> Array.push reg}
 
@@ -1617,6 +1613,14 @@ withCors mkConfig app = do
   app {corsFactory = Just factory}
 
 
+-- | Normalize a health check path, defaulting to "health" when empty.
+normalizeHealthPath :: Text -> Web.HealthCheckConfig
+normalizeHealthPath path = do
+  case Text.isEmpty path of
+    True -> Web.HealthCheckConfig {Web.healthPath = "health"}
+    False -> Web.HealthCheckConfig {Web.healthPath = path}
+
+
 -- | Customize the health check endpoint path.
 --
 -- By default, WebTransport serves a health endpoint at @GET /health@
@@ -1638,12 +1642,8 @@ withHealthCheck ::
   Application
 withHealthCheck mkPath app = do
   let factory = case eqT @config @() of
-        Just Refl -> do
-          let path = mkPath ()
-          case Text.isEmpty path of
-            True -> EvaluatedHealthCheck Web.HealthCheckConfig {Web.healthPath = "health"}
-            False -> EvaluatedHealthCheck Web.HealthCheckConfig {Web.healthPath = path}
-        Nothing -> DeferredHealthCheck (\cfg -> Web.HealthCheckConfig {Web.healthPath = mkPath cfg})
+        Just Refl -> EvaluatedHealthCheck (normalizeHealthPath (mkPath ()))
+        Nothing -> DeferredHealthCheck (\cfg -> normalizeHealthPath (mkPath cfg))
   app {healthCheckFactory = Just factory}
 
 
@@ -1664,7 +1664,26 @@ withoutHealthCheck ::
   Application ->
   Application
 withoutHealthCheck app =
-  app {healthCheckConfig = Nothing}
+  app {healthCheckConfig = Nothing, healthCheckFactory = Nothing}
+
+
+-- | Validate dispatcher configuration fields are positive.
+-- Returns 'Just errorMessage' if validation fails, 'Nothing' if valid.
+validateDispatcherConfig :: Dispatcher.DispatcherConfig -> Maybe Text
+validateDispatcherConfig config = do
+  case config.workerChannelCapacity <= 0 of
+    True -> Just "workerChannelCapacity must be positive"
+    False -> case config.channelWriteTimeoutMs <= 0 of
+      True -> Just "channelWriteTimeoutMs must be positive"
+      False -> case config.idleTimeoutMs <= 0 of
+        True -> Just "idleTimeoutMs must be positive"
+        False -> case config.reaperIntervalMs <= 0 of
+          True -> Just "reaperIntervalMs must be positive"
+          False -> case config.eventProcessingTimeoutMs of
+            Just ms -> case ms <= 0 of
+              True -> Just "eventProcessingTimeoutMs must be positive when set"
+              False -> Nothing
+            Nothing -> Nothing
 
 
 -- | Configure the integration dispatcher.
@@ -1694,20 +1713,9 @@ withDispatcherConfig mkConfig app = do
   let factory = case eqT @config @() of
         Just Refl -> do
           let config = mkConfig ()
-          -- Validate immediately for evaluated config
-          case config.workerChannelCapacity <= 0 of
-            True -> panic "Application.withDispatcherConfig: workerChannelCapacity must be positive"
-            False -> case config.channelWriteTimeoutMs <= 0 of
-              True -> panic "Application.withDispatcherConfig: channelWriteTimeoutMs must be positive"
-              False -> case config.idleTimeoutMs <= 0 of
-                True -> panic "Application.withDispatcherConfig: idleTimeoutMs must be positive"
-                False -> case config.reaperIntervalMs <= 0 of
-                  True -> panic "Application.withDispatcherConfig: reaperIntervalMs must be positive"
-                  False -> case config.eventProcessingTimeoutMs of
-                    Just ms -> case ms <= 0 of
-                      True -> panic "Application.withDispatcherConfig: eventProcessingTimeoutMs must be positive when set"
-                      False -> EvaluatedDispatcherConfig config
-                    Nothing -> EvaluatedDispatcherConfig config
+          case validateDispatcherConfig config of
+            Just err -> panic [fmt|Application.withDispatcherConfig: #{err}|]
+            Nothing -> EvaluatedDispatcherConfig config
         Nothing -> DeferredDispatcherConfig mkConfig
   app {dispatcherConfigFactory = Just factory}
 
