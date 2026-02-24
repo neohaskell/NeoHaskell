@@ -47,6 +47,7 @@ Because these functions are evaluated at app-definition time, before `Applicatio
 - All `withXXX` builder functions must be able to receive values derived from app config
 - The API must be consistent with the existing factory pattern used by `withEventStore`, `withAuth`, `withFileUpload`, and `withOAuth2Provider`
 - Static config must still work via the `@()` pattern, with no breaking change for that path
+  - The `@()` path is stable once adopted; the migration from `withFoo staticValue` to `withFoo @() (\_ -> staticValue)` is a one-time change, not a recurring breaking change
 - `runWith` must reject deferred factories with a clear error message, matching the existing pattern
 - The config type mismatch must be a compile error, not a runtime failure
 
@@ -135,6 +136,17 @@ data SecretStoreFactory where
   DeferredSecretStore :: (Typeable cfg) => (cfg -> SecretStoreConfig) -> SecretStoreFactory
 ```
 
+### Phased Delivery
+
+The following factory types are deferred to a future PR due to architectural constraints:
+
+- `ServiceFactory` — Requires type-level rework for service composition
+- `TransportFactory` — Requires major refactoring of the Transport typeclass (ADR-0034 in progress)
+- `QueryObjectStoreFactory` — Depends on Transport redesign
+- `QueryEndpointFactory` — Depends on Transport redesign
+
+These will be addressed in a follow-up PR once the Transport layer is stabilized.
+
 ### The `@()` Pattern for Static Config
 
 Functions that don't need app config use the `@()` type application. The `eqT @config @()` trick from `Data.Typeable` causes immediate evaluation:
@@ -195,7 +207,7 @@ main = Application.run app
 
 ### Negative
 
-- More factory ADT types to maintain (12 new types)
+- More factory ADT types to maintain (8 new types to maintain, 4 deferred to future work)
 - More resolution logic in `Application.run`
 - Breaking change: existing `withFoo staticValue` calls must become `withFoo @() (\_ -> staticValue)`
 
