@@ -53,7 +53,7 @@ import ToText (toText)
 import TypeName qualified
 
 
--- | Register an outbound integration for an entity type.
+-- | Create an outbound integration runner for an entity type.
 --
 -- Outbound integrations react to entity events and can trigger external effects
 -- or emit commands to other services (Process Manager pattern).
@@ -66,7 +66,7 @@ import TypeName qualified
 -- @
 -- app = Application.new
 --   |> Application.withService cartService
---   |> Application.withOutbound \@CartEntity \@CartEvent cartIntegrations
+--   |> Application.withOutbound cartIntegrations
 -- @
 createOutboundRunner ::
   forall entity event.
