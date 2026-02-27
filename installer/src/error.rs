@@ -2,13 +2,13 @@ use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum InstallerError {
-    #[error("Failed to install toolchain: {details}\nReport issues: https://github.com/neohaskell/neo-installer/issues")]
+    #[error("Failed to install toolchain: {details}\nReport issues: https://github.com/neohaskell/NeoHaskell/issues")]
     NixInstallFailed { details: String },
 
-    #[error("Failed to install Neo CLI: {details}\nReport issues: https://github.com/neohaskell/neo-installer/issues")]
+    #[error("Failed to install Neo CLI: {details}\nReport issues: https://github.com/neohaskell/NeoHaskell/issues")]
     NeoInstallFailed { details: String },
 
-    #[error("Installation verification failed: {details}\nReport issues: https://github.com/neohaskell/neo-installer/issues")]
+    #[error("Installation verification failed: {details}\nReport issues: https://github.com/neohaskell/NeoHaskell/issues")]
     VerificationFailed { details: String },
 
     #[error("Unsupported platform: {os} {arch}")]
@@ -17,15 +17,15 @@ pub enum InstallerError {
     #[error("Command execution failed: {0}")]
     CommandFailed(#[from] std::io::Error),
 
-    #[error("Existing non-Determinate Nix installation detected. Please uninstall it first.\nSee: https://github.com/neohaskell/neo-installer/issues")]
+    #[error("Existing non-Determinate Nix installation detected. Please uninstall it first.\nSee: https://github.com/neohaskell/NeoHaskell/issues")]
     NixAlreadyExists,
 
     #[error(
-        "nix-darwin detected. Please uninstall nix-darwin before proceeding.\nSee: https://github.com/neohaskell/neo-installer/issues"
+        "nix-darwin detected. Please uninstall nix-darwin before proceeding.\nSee: https://github.com/neohaskell/NeoHaskell/issues"
     )]
     NixDarwinDetected,
 
-    #[error("Broken Nix installation detected at /nix. Please remove it and try again.\nSee: https://github.com/neohaskell/neo-installer/issues")]
+    #[error("Broken Nix installation detected at /nix. Please remove it and try again.\nSee: https://github.com/neohaskell/NeoHaskell/issues")]
     BrokenNixInstall,
 }
 
@@ -49,7 +49,7 @@ mod tests {
         };
         let msg = err.to_string();
         assert!(msg.contains("timeout"));
-        assert!(msg.contains("https://github.com/neohaskell/neo-installer/issues"));
+        assert!(msg.contains("https://github.com/neohaskell/NeoHaskell/issues"));
     }
 
     #[test]
@@ -59,7 +59,7 @@ mod tests {
         };
         let msg = err.to_string();
         assert!(msg.contains("network error"));
-        assert!(msg.contains("https://github.com/neohaskell/neo-installer/issues"));
+        assert!(msg.contains("https://github.com/neohaskell/NeoHaskell/issues"));
     }
 
     #[test]
@@ -69,7 +69,7 @@ mod tests {
         };
         let msg = err.to_string();
         assert!(msg.contains("neo not found"));
-        assert!(msg.contains("https://github.com/neohaskell/neo-installer/issues"));
+        assert!(msg.contains("https://github.com/neohaskell/NeoHaskell/issues"));
     }
 
     #[test]
@@ -93,7 +93,7 @@ mod tests {
         let err = InstallerError::NixAlreadyExists;
         let msg = err.to_string();
         assert!(msg.contains("non-Determinate Nix"));
-        assert!(msg.contains("https://github.com/neohaskell/neo-installer/issues"));
+        assert!(msg.contains("https://github.com/neohaskell/NeoHaskell/issues"));
     }
 
     #[test]
@@ -101,7 +101,7 @@ mod tests {
         let err = InstallerError::NixDarwinDetected;
         let msg = err.to_string();
         assert!(msg.contains("nix-darwin"));
-        assert!(msg.contains("https://github.com/neohaskell/neo-installer/issues"));
+        assert!(msg.contains("https://github.com/neohaskell/NeoHaskell/issues"));
     }
 
     #[test]
@@ -109,7 +109,7 @@ mod tests {
         let err = InstallerError::BrokenNixInstall;
         let msg = err.to_string();
         assert!(msg.contains("Broken Nix"));
-        assert!(msg.contains("https://github.com/neohaskell/neo-installer/issues"));
+        assert!(msg.contains("https://github.com/neohaskell/NeoHaskell/issues"));
     }
 
     #[test]

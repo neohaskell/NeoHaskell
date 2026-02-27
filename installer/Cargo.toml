@@ -1,7 +1,7 @@
 [package]
 description = "NeoHaskell installer"
 license = "MIT"
-repository = "https://github.com/neohaskell/neo-installer"
+repository = "https://github.com/neohaskell/NeoHaskell"
 
 name = "neo-install"
 version = "0.1.0"

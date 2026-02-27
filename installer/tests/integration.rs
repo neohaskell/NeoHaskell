@@ -12,7 +12,7 @@ fn test_help_output() {
         .stdout(predicate::str::contains("--dry-run"))
         .stdout(predicate::str::contains("--verbose"))
         .stdout(predicate::str::contains("--force"))
-        .stdout(predicate::str::contains("neo-installer"));
+        .stdout(predicate::str::contains("NeoHaskell"));
 }
 
 #[test]
@@ -78,7 +78,7 @@ fn test_source_header_printed() {
         .assert()
         .success()
         .stdout(predicate::str::contains(
-            "Source: https://github.com/neohaskell/neo-installer",
+            "Source: https://github.com/neohaskell/NeoHaskell",
         ));
 }
 

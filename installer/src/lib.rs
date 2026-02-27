@@ -11,7 +11,7 @@ use clap::Parser;
     name = "neo-install",
     version,
     about = "Install NeoHaskell on your system",
-    after_help = "Source: https://github.com/neohaskell/neo-installer"
+    after_help = "Source: https://github.com/neohaskell/NeoHaskell"
 )]
 pub struct Cli {
     #[arg(long, help = "Show what would be done without doing it")]

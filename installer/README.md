@@ -5,12 +5,12 @@ The official installer for [NeoHaskell](https://neohaskell.org). Sets up everyth
 ## Quick Install
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/neohaskell/neo-installer/main/scripts/bootstrap.sh | sh
+curl -fsSL https://raw.githubusercontent.com/neohaskell/NeoHaskell/main/installer/scripts/bootstrap.sh | sh
 ```
 
 ## Manual Install
 
-Download the latest binary for your platform from [Releases](https://github.com/neohaskell/neo-installer/releases):
+Download the latest binary for your platform from [Releases](https://github.com/neohaskell/NeoHaskell/releases):
 
 | Platform | Download |
 |----------|----------|

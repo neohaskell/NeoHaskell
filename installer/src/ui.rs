@@ -2,8 +2,8 @@ use console::style;
 use indicatif::{ProgressBar, ProgressDrawTarget, ProgressStyle};
 use std::time::Duration;
 
-pub const SOURCE_HEADER: &str = "🔍 Source: https://github.com/neohaskell/neo-installer";
-pub const ISSUES_URL: &str = "https://github.com/neohaskell/neo-installer/issues";
+pub const SOURCE_HEADER: &str = "🔍 Source: https://github.com/neohaskell/NeoHaskell";
+pub const ISSUES_URL: &str = "https://github.com/neohaskell/NeoHaskell/issues";
 pub const MSG_INSTALLING: &str = "🚀 Installing NeoHaskell...";
 pub const MSG_TOOLCHAIN: &str = "⚙️  Setting up toolchain...";
 pub const MSG_NEO_CLI: &str = "📦 Installing Neo CLI...";
@@ -54,14 +54,14 @@ mod tests {
 
     #[test]
     fn source_header_contains_repo_url() {
-        assert!(SOURCE_HEADER.contains("https://github.com/neohaskell/neo-installer"));
+        assert!(SOURCE_HEADER.contains("https://github.com/neohaskell/NeoHaskell"));
     }
 
     #[test]
     fn issues_url_is_correct() {
         assert_eq!(
             ISSUES_URL,
-            "https://github.com/neohaskell/neo-installer/issues"
+            "https://github.com/neohaskell/NeoHaskell/issues"
         );
     }
 
