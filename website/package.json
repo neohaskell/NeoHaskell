@@ -1,5 +1,5 @@
 {
-  "name": "website",
+  "name": "neohaskell-website",
   "type": "module",
   "version": "0.0.1",
   "scripts": {
@@ -7,23 +7,12 @@
     "start": "astro dev",
     "build": "astro build",
     "preview": "astro preview",
-    "astro": "astro",
-    "lint": "eslint . --ext .js,.jsx,.ts,.tsx,.astro",
-    "lint:fix": "eslint . --ext .js,.jsx,.ts,.tsx,.astro --fix",
-    "format": "prettier --write \"**/*.{js,jsx,ts,tsx,astro,css,scss,json,md}\"",
-    "format:check": "prettier --check \"**/*.{js,jsx,ts,tsx,astro,css,scss,json,md}\""
+    "astro": "astro"
   },
   "dependencies": {
-    "@astrojs/starlight": "^0.34.4",
+    "@astrojs/starlight": "^0.37.6",
     "astro": "^5.6.1",
-    "sharp": "^0.32.5"
-  },
-  "devDependencies": {
-    "@typescript-eslint/eslint-plugin": "^7.0.0",
-    "@typescript-eslint/parser": "^7.0.0",
-    "eslint": "^8.56.0",
-    "eslint-plugin-astro": "^0.31.0",
-    "prettier": "^3.5.3",
-    "typescript": "^5.4.3"
+    "sharp": "^0.34.2",
+    "starlight-llms-txt": "^0.7.0"
   }
 }

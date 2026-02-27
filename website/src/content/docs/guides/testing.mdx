@@ -1,0 +1,168 @@
+---
+title: "Testing"
+description: "How to test event-sourced systems with Given-When-Then patterns. Unit tests, query tests, cross-entity tests, and property-based testing."
+keywords: [testing, given-when-then, event sourcing, unit tests, property-based testing, neo test]
+sidebar:
+  order: 1
+---
+
+{/*
+  CONTENT OUTLINE — Testing Guide
+  ================================
+  Position: Guides section, first guide
+  Goal: Reader arrives knowing they need to test their NeoHaskell app. They leave with a complete testing strategy.
+  Misconception addressed: #19 (testing event-sourced systems is hard)
+  Prerequisites: Tutorial Part 2+ (reader has seen Given-When-Then in context)
+  Related concept: concepts/testing-event-sourced-systems.mdx (theory)
+  Tone: practical, no fluff — this is a reference guide, not a tutorial
+
+  Sections:
+  1. Prerequisites
+  2. What You'll Have at the End
+  3. Unit Testing Command Handlers (Given-When-Then)
+  4. Testing Queries (pure function tests)
+  5. Cross-Entity Testing
+  6. Property-Based Testing
+  7. Test Organization and Naming
+  8. Running Tests
+  9. Next Steps
+*/}
+
+{/* POLYGLOT NOTE: All code examples on this page should include equivalent snippets in JS/TS, Python, and Go. See DOCS-PLAN.md Guiding Principle #9. */}
+
+import { Aside } from '@astrojs/starlight/components';
+
+## Prerequisites
+
+- Completed [Tutorial Part 2](/tutorial/part-2/) or higher — you've seen the Given-When-Then pattern in action
+- Optional: [Testing Event-Sourced Systems](/concepts/testing-event-sourced-systems/) — the theory behind why this works
+
+## What You'll Have at the End
+
+- A working test suite for command handlers, queries, and cross-entity workflows
+- Property-based tests that verify invariants across arbitrary command sequences
+- A naming convention that makes test intent obvious at a glance
+- Tests that run fast with no database setup, no mocking, no fixtures
+
+## Unit Testing Command Handlers
+
+{/*
+  The core of NeoHaskell testing. Given-When-Then maps directly to the event sourcing model.
+  Show the pattern, then show what each part means.
+*/}
+
+
+- The Given-When-Then pattern is not a convention — it's the natural shape of event sourcing
+  - **Given**: a list of past events that establish the entity's current state
+  - **When**: a command issued against that state
+  - **Then**: the events that should be produced (or the error that should be returned)
+- No database setup — the event store is just a list in memory during tests
+- No mocking — command handlers are pure functions; there's nothing to mock
+- Show the test helper functions: `given`, `when`, `then`, `thenError`
+- Show a complete test for a happy path (command succeeds, events produced)
+- Show a complete test for a rejection path (command fails, error returned)
+- Show a test for a state-dependent decision (command succeeds only if entity is in a specific state)
+- Explain: the `Given` list is the entire history — you can test any state by constructing the right event sequence
+- Note: tests are deterministic — same inputs always produce same outputs
+
+{/* TODO: actual code examples once test helper API is finalized — include JS/TS, Python, Go equivalents */}
+
+## Testing Queries
+
+{/*
+  Queries are pure functions from event streams. Testing them is trivial.
+  This section should be short — the point is that it's easy.
+*/}
+
+
+- Queries are pure functions: `[Event] -> QueryResult`
+- Testing a query = calling a function with a list of events and checking the output
+- No framework needed — standard unit test assertions work
+- Show a complete query test: build an event list, call the query function, assert the result
+- Show a test for an empty event list (initial state)
+- Show a test for a sequence of events that changes the result
+- Note: because queries are pure, they're the easiest thing to test in the entire system
+
+{/* TODO: code example showing query test pattern — include JS/TS, Python, Go equivalents */}
+
+## Cross-Entity Testing
+
+{/*
+  Testing workflows that span multiple entities. This is where most frameworks get complicated.
+  NeoHaskell keeps it simple because everything is still events.
+*/}
+
+
+- Cross-entity workflows are tested the same way as single-entity tests — just with events from multiple streams
+- The test helper accepts events from any entity, not just one
+- Show a test for a workflow that reads state from Entity A and writes to Entity B
+- Show how to test a Service that coordinates multiple entities
+- Explain: the key insight is that cross-entity state is still just a list of events — the test doesn't care which entity produced them
+- Common mistake: trying to test cross-entity logic by testing each entity in isolation — this misses the coordination logic
+
+{/* TODO: code example from NeoBank tutorial (Part 5 patterns) — include JS/TS, Python, Go equivalents */}
+
+## Property-Based Testing
+
+{/*
+  The most powerful testing technique for event-sourced systems.
+  The invariant "no sequence of valid commands produces invalid state" is testable.
+*/}
+
+
+- Property-based testing generates random inputs and checks that invariants hold
+- The key invariant for event-sourced systems: "no sequence of valid commands should produce invalid state"
+- Examples of invariants to test:
+  - Account balance never goes negative (if overdraft is not allowed)
+  - An entity can't be in two mutually exclusive states simultaneously
+  - Event count only increases, never decreases
+  - Replaying all events always produces the same final state
+- NeoHaskell integrates with QuickCheck-style property testing
+- Show how to define a generator for valid commands
+- Show how to write an invariant as a property
+- Note: property tests are slower than unit tests — run them in CI, not on every save
+
+{/* TODO: code example showing property test for NeoBank account invariants — include JS/TS, Python, Go equivalents */}
+
+## Test Organization and Naming
+
+{/*
+  Conventions that make test suites readable and maintainable.
+*/}
+
+
+- File structure: one test file per command handler, one per query
+  - `test/Bank/Account/DepositCommandTest.hs`
+  - `test/Bank/Account/BalanceQueryTest.hs`
+- Naming convention for test cases: `[context]_[action]_[expected outcome]`
+  - Example: `activeAccount_deposit_producesDepositedEvent`
+  - Example: `closedAccount_deposit_rejectsWithAccountClosedError`
+- Group tests by entity state (Given), not by command type
+- Use descriptive event lists in Given — name the helper functions after the state they create
+  - `accountWithBalance 100` instead of `[AccountOpened, MoneyDeposited 100]`
+- Keep test files short — if a test file is over 100 lines, split it
+
+## Running Tests
+
+{/*
+  The practical mechanics of running tests.
+*/}
+
+
+- Run all tests: `neo test`
+- Run tests for a specific module: `neo test Bank.Account`
+- Run tests matching a pattern: `neo test --match "deposit"`
+- Watch mode (re-run on file change): `neo test --watch`
+- Test output format: shows Given/When/Then for each failing test — easy to read
+- CI integration: `neo test` exits with code 1 on failure — works with any CI system
+- Test speed: unit tests run in milliseconds; property tests take a few seconds
+
+## Next Steps
+
+- **Theory**: [Testing Event-Sourced Systems](/concepts/testing-event-sourced-systems/) — why Given-When-Then works and what it can't catch
+- **Related guide**: [Error Handling](/guides/error-handling/) — how to test error paths specifically
+- **Tutorial**: [Part 5](/tutorial/part-5/) — cross-entity testing in the NeoBank context
+
+:::caution[Coming Soon]
+This page is a content outline. The full guide with code examples is in progress.
+:::

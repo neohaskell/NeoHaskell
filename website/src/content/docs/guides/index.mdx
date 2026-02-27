@@ -1,0 +1,40 @@
+---
+title: Guides
+description: Solve a specific problem with NeoHaskell.
+sidebar:
+  order: 0
+---
+
+import { CardGrid, Card } from '@astrojs/starlight/components';
+
+Guides are goal-oriented — each one solves a specific problem. Unlike the tutorial, you don't need to read them in order. Pick what you need.
+
+<CardGrid>
+  <Card title="Testing" icon="approve-check">
+    Given-When-Then patterns, update testing, and property-based testing.
+
+    [Testing guide →](/guides/testing/)
+  </Card>
+  <Card title="Error Handling" icon="warning">
+    Typed errors, Result patterns, and error propagation across services.
+
+    [Error handling guide →](/guides/error-handling/)
+  </Card>
+  <Card title="Deployment" icon="rocket">
+    From NeoHaskell code to a running service in production.
+
+    [Deployment guide →](/guides/deployment/)
+  </Card>
+  <Card title="PostgreSQL Event Store" icon="setting">
+    Using PostgreSQL as your production event store.
+
+    [PostgreSQL guide →](/guides/postgresql-event-store/)
+  </Card>
+</CardGrid>
+
+### More guides
+
+- [Reading Error Messages](/guides/reading-error-messages/) — How to parse NeoHaskell compiler output
+- [Common Errors](/guides/common-errors/) — Error lookup organized by what you were trying to do
+- [Integrating Existing Systems](/guides/integrating-existing-systems/) — Introduce NeoHaskell one service at a time
+- [Adopting NeoHaskell at Work](/guides/adopting-at-work/) — The playbook for bringing NeoHaskell to your team

@@ -1,0 +1,119 @@
+name: Translate Documentation
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/content/docs/**'
+      - '!src/content/docs/es/**'
+      - '!src/content/docs/ru/**'
+      - '!src/content/docs/hy/**'
+      - '!src/content/docs/fr/**'
+      - '!src/content/docs/ja/**'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  translate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/cache@v4
+        with:
+          path: .genaiscript/cache/**
+          key: continuous-translation-${{ github.run_id }}
+          restore-keys: |
+            continuous-translation-
+
+      - uses: pelikhan/action-continuous-translation@v0
+        continue-on-error: true
+        with:
+          openai_api_key: ${{ secrets.GROQ_API_KEY }}
+          openai_api_base: https://api.groq.com/openai/v1
+          model_alias: "translation: openai:llama-3.3-70b-versatile"
+          lang: es,ru,fr,ja
+          source: en
+          files: |
+            src/content/docs/**/*
+
+      - name: Translate to Armenian (unsupported by GenAIScript)
+        env:
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+        run: |
+          docs_root="src/content/docs"
+          for file in $(find "$docs_root" -maxdepth 2 -name "*.mdx" -not -path "*/*.*.*" | sort); do
+            # Skip files already in locale directories
+            rel="${file#${docs_root}/}"
+            first_dir="${rel%%/*}"
+            case "$first_dir" in es|ru|hy|fr|ja) continue ;; esac
+
+            target_dir="${docs_root}/hy/$(dirname "$rel")"
+            target_file="${target_dir}/$(basename "$file")"
+            [ "$target_dir" = "${docs_root}/hy/." ] && target_dir="${docs_root}/hy" && target_file="${target_dir}/$(basename "$file")"
+            mkdir -p "$target_dir"
+
+            # Skip if translation already exists and source hasn't changed
+            if [ -f "$target_file" ]; then
+              echo "Skipping $file (Armenian translation exists)"
+              continue
+            fi
+
+            echo "Translating $file to Armenian..."
+            content=$(cat "$file")
+            response=$(curl -s https://api.groq.com/openai/v1/chat/completions \
+              -H "Authorization: Bearer $GROQ_API_KEY" \
+              -H "Content-Type: application/json" \
+              -d "$(jq -n --arg content "$content" '{
+                model: "llama-3.3-70b-versatile",
+                messages: [
+                  {role: "system", content: "You are an expert translator. Translate the following MDX documentation file to Armenian (Հայերեն). Preserve ALL MDX/JSX syntax, frontmatter YAML structure, import statements, component tags, code blocks, and URLs exactly as-is. Only translate human-readable text content, titles, and descriptions. Output ONLY the translated file, no explanations."},
+                  {role: "user", content: $content}
+                ],
+                temperature: 0.3,
+                max_tokens: 4096
+              }')")
+            translated=$(echo "$response" | jq -r '.choices[0].message.content // empty')
+            if [ -n "$translated" ]; then
+              echo "$translated" > "$target_file"
+              echo "Created: $target_file"
+            else
+              echo "Failed to translate $file"
+              echo "$response" | jq '.error' 2>/dev/null
+            fi
+          done
+
+      - name: Reorganize translations to Starlight locale directories
+        run: |
+          for lang in es ru hy fr ja; do
+            find src/content/docs -maxdepth 3 -name "*.${lang}.mdx" -o -name "*.${lang}.md" | while read file; do
+              ext="${file##*.}"
+              # Strip the .lang.ext suffix to get the base name
+              base=$(basename "$file" ".${lang}.${ext}")
+              dir=$(dirname "$file")
+              docs_root="src/content/docs"
+              rel_dir="${dir#${docs_root}}"
+              if [ -z "$rel_dir" ]; then
+                target_dir="${docs_root}/${lang}"
+              else
+                target_dir="${docs_root}/${lang}${rel_dir}"
+              fi
+              mkdir -p "$target_dir"
+              mv "$file" "${target_dir}/${base}.${ext}"
+              echo "Moved: $file -> ${target_dir}/${base}.${ext}"
+            done
+          done
+
+      - uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          file_pattern: 'src/content/docs/** translations/**'
+          commit_message: '[translation] auto-translate docs'
+          commit_user_name: genaiscript

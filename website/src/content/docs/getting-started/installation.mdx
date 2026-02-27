@@ -1,0 +1,143 @@
+---
+title: "Installation"
+description: "Set up NeoHaskell on your machine with a single command. Run neo --version within 5 minutes."
+keywords: [installation, setup, nix, getting started, macos, linux, windows, wsl]
+---
+
+{/* 
+  CONTENT OUTLINE — REVISION 2 (10-expert consensus applied)
+  ==============================================================
+  Position: Getting Started step 1 (first page after the section index)
+  Time estimate: ~5 minutes (active), 2-5 minutes (waiting for Nix download)
+  Misconceptions addressed: #16 (need Docker/K8s), #12 (need to understand monads first)
+  Starlight components: Tabs (OS-specific), Steps (numbered instructions)
+  
+  Design principles from DOCS-PLAN:
+  - Installation Friction Mitigation section: "Design the Nix experience as if it's the product"
+  - "run this one command" not "install Nix, then install NeoHaskell"
+  - Time estimates for every step
+  - Platform-specific tabs for macOS / Linux / Windows (WSL)
+  - Troubleshooting section: top 5 installation failures
+  - Misconception-busting elevated to note aside (change #11)
+  - Zero-install escape hatch surfaced before Step 1 (change #6)
+  - Forward tension added to Next Steps (change #5)
+  - Version placeholder added (change #1)
+*/}
+
+**Time**: ~5 minutes active work + 2-5 minutes download time · NeoHaskell vX.Y.Z
+
+## What You'll Have at the End
+
+- NeoHaskell installed and working
+- `neo --version` prints a version number
+- You're ready for [Your First Events](/getting-started/first-events/)
+
+## Before You Start
+
+{/*
+  Prerequisites: minimal. Just a terminal and internet.
+  Explicitly state "you don't need" to address common assumptions.
+*/}
+
+- What you need: a terminal and an internet connection
+
+:::note[You don't need any of this]
+- Docker or Kubernetes (Misconception #16)
+- Haskell installed separately
+- GHC, Cabal, or Stack
+- Any prior Nix experience
+- NeoHaskell uses **Nix** to manage its toolchain — but you don't need to know Nix. The installer handles everything.
+:::
+
+## Install NeoHaskell
+
+:::tip[Can't install right now?]
+[Skip to the zero-install option](#zero-install-alternative) — try NeoHaskell in your browser with GitHub Codespaces.
+:::
+
+{/*
+  The main event. One command per platform.
+  Use Starlight Tabs for macOS / Linux / Windows WSL.
+  Use Starlight Steps for numbered sequence.
+  Time estimate on every step per DOCS-PLAN.
+*/}
+
+### Step 1: Run the Install Command (~30 seconds)
+
+- Platform-specific tabs (Starlight `<Tabs>`):
+  - **macOS**: The install command (single curl/sh one-liner)
+  - **Linux**: The install command (same or similar one-liner)
+  - **Windows**: "NeoHaskell requires WSL (Windows Subsystem for Linux)" — link to WSL setup, then the Linux command
+
+:::note[What's happening]
+This installs Nix (if you don't have it) and then NeoHaskell. Nix is a package manager that ensures everyone gets the exact same toolchain — no "works on my machine" issues.
+:::
+
+### Step 2: Wait for the Download (~2-5 minutes)
+
+- "This downloads approximately ~500MB. Go make coffee."
+- Show what the terminal output looks like so the reader knows it's working
+- What to do if it seems stuck (it's probably still downloading — Nix is verbose)
+
+### Step 3: Verify the Installation (~10 seconds)
+
+- Run `neo --version`
+- Expected output: `NeoHaskell vX.Y.Z`
+- If this works, you're done. Skip to [Next Steps](#next-steps).
+
+## Zero-Install Alternative
+
+{/*
+  DOCS-PLAN says: "Offer a playground or GitHub Codespaces option so readers can 
+  start the tutorial without any local setup"
+  This is the escape hatch for people who can't or don't want to install locally.
+*/}
+
+- **GitHub Codespaces**: Open the NeoHaskell playground in a browser — no installation needed
+  - Link to Codespaces template / playground repo
+  - "Click the button, wait ~60 seconds, and you have a full NeoHaskell environment"
+- **When to use this**: if you're on a machine where you can't install software, or just want to try NeoHaskell without committing to a local setup
+- Limitation: "The tutorial works best with a local install. Codespaces is great for exploring, but some guides assume local tooling."
+
+## Troubleshooting
+
+{/*
+  DOCS-PLAN says: "The 5 most common installation failures and their fixes, based on Discord reports"
+  These should be real failure modes, not hypothetical ones.
+*/}
+
+### Top 5 Installation Issues
+
+1. **"command not found: nix"** — The Nix installer needs a new shell session. Close your terminal and open a new one.
+2. **"error: experimental features 'nix-command flakes' are disabled"** — NeoHaskell uses Nix Flakes. The installer should enable this automatically. If not: show the manual config line.
+3. **macOS Gatekeeper blocks the download** — System Preferences → Security → Allow. Show the exact click path.
+4. **"disk space"** — Nix needs ~2GB free. If you're low on space, the error message tells you.
+5. **WSL-specific: "unable to access the network"** — Windows firewall/proxy settings. Link to the WSL networking troubleshooting guide.
+
+:::tip[Still stuck?]
+Join the [NeoHaskell Discord](https://discord.gg/neohaskell) — the `#help` channel has people who've seen every installation issue.
+:::
+
+## Updating NeoHaskell
+
+- How to update to the latest version (single command)
+- How to pin a specific version (for tutorial stability)
+- How to check if you're up to date
+
+## Uninstalling
+
+- How to remove NeoHaskell
+- How to remove Nix entirely (if desired)
+- "This won't affect any other tools on your system"
+
+## Next Steps
+
+You have NeoHaskell. Now let's see what makes it different — in under 20 lines of code.
+
+- ✅ NeoHaskell is installed
+- **Next**: [Your First Events](/getting-started/first-events/) — deposit money and watch your balance get calculated from events (~10 minutes)
+- **Optional**: [Reading NeoHaskell](/getting-started/reading-neohaskell/) — if you want to get comfortable reading the syntax first (~5 minutes)
+
+:::caution[Coming Soon]
+The installation commands on this page are placeholders. Actual commands will be added once the NeoHaskell installer is finalized.
+:::

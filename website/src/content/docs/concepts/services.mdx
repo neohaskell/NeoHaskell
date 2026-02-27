@@ -1,0 +1,133 @@
+---
+title: "Services"
+description: "Decomposing systems into independent models with their own events."
+sidebar:
+  order: 40
+keywords: [services, DDD, domain-driven design, microservices, system decomposition, independent models]
+# entry_stage: 3 (NeoHaskell-aware)
+# exit_stage: 4 (NeoHaskell-fluent)
+# misconception: #6 (event sourcing means eventual consistency everywhere)
+# tutorial_anchor: Tutorial Part 5 — Transfers
+---
+
+{/*
+  CONTENT OUTLINE — Services
+  Entry: Stage 3 (NeoHaskell-aware), Exit: Stage 4 (NeoHaskell-fluent)
+  Misconception addressed: #6 (eventual consistency everywhere)
+  Anchored from: Tutorial Part 5 — Transfers
+
+  Core message: system decomposition into independent models.
+  Each service has own events, commands, updates.
+  Banking example: retail vs lending.
+  NeoHaskell gives you choices about consistency — not everything is eventually consistent.
+  Start as a monolith, split when you need to — no rearchitecture required.
+*/}
+
+{/* POLYGLOT NOTE: All code examples on this page should include equivalent snippets in JS/TS, Python, and Go. See DOCS-PLAN.md Guiding Principle #9. */}
+
+import { Aside } from '@astrojs/starlight/components';
+
+## What You Might Expect
+
+- "Event sourcing" sounds like it means everything is asynchronous and eventually consistent
+- Microservices mean every service has its own database and communicates via message queues
+- Services sound like DDD jargon — complex, theoretical, hard to apply
+- You're worried that adopting event sourcing means accepting eventual consistency everywhere
+
+## Why That Breaks
+
+- Not every part of your system needs eventual consistency — some things need to be strongly consistent
+- A bank transfer must be atomic: debit and credit happen together or not at all
+- If you make everything eventually consistent, you lose the ability to enforce invariants across operations
+- The core problem: "event sourcing" doesn't mean "eventual consistency everywhere" — it means choosing the right consistency model for each part of your system
+
+## Services: The Mental Model Shift
+
+- A **service** is an independent model with its own events, commands, and updates
+- Within a service, consistency is strong — the entity enforces invariants
+- Across services, consistency is eventual — services communicate via events
+- The boundary is where you choose: "inside here, we're strongly consistent; outside, we're eventually consistent"
+- NeoHaskell's services define these boundaries — the language enforces them
+
+### The Rosetta Stone
+
+| What you'd say | Banking term | NeoHaskell term | What it actually is |
+|---------------|-------------|-----------------|-------------------|
+| "Retail vs. Lending" | Business division | Service | An independent model with its own events |
+| "My account" | Account | Entity | A consistency boundary within a service |
+| "Transfer between services" | Inter-division settlement | Cross-service event | An event that crosses a service boundary |
+
+<Aside type="note" title="Start as a monolith">
+NeoHaskell services are deployment boundaries, not code boundaries. You can start with all services in a single deployment (monolith) and split them into separate deployments when you actually need to — no rearchitecture required. The code doesn't change; only the deployment configuration does.
+</Aside>
+
+## What Happens When Retail Talks to Lending
+
+- A customer applies for a loan — this crosses from the Retail service to the Lending service
+- The Retail service publishes a `LoanApplicationSubmitted` event
+- The Lending service subscribes to this event and creates a `LoanApplication` entity in its own model
+- The Lending service has its own events: `LoanApproved`, `LoanDisbursed`, `LoanRepaid`
+- These events are meaningless in the Retail service — they use different language, different rules
+- The boundary is explicit: Retail doesn't know about loan approval logic; Lending doesn't know about account balances
+
+### Consistency Within vs. Across Services
+
+- **Within Retail**: a deposit and a balance check are strongly consistent — the entity enforces this
+- **Across Retail and Lending**: a loan disbursement and an account credit are eventually consistent — they happen via events
+- The choice is explicit: you decide where the boundary is, and NeoHaskell enforces it
+
+## In NeoBank Terms
+
+- NeoBank has two services: **Retail** (checking/savings accounts) and **Lending** (loans)
+- Retail has its own events: `AccountOpened`, `MoneyDeposited`, `MoneyWithdrawn`
+- Lending has its own events: `LoanApplicationSubmitted`, `LoanApproved`, `LoanDisbursed`
+- A transfer within Retail is strongly consistent — the entity enforces the debit and credit atomically
+- A loan disbursement that credits a Retail account is eventually consistent — it crosses the boundary via an event
+- The two services can be deployed as one unit (monolith) or two units (microservices) — the code is identical
+
+### When to Split Services
+
+- Split when the services have genuinely different consistency requirements
+- Split when the services have different scaling requirements
+- Split when the services have different teams or deployment cycles
+- Don't split prematurely — a monolith with clear service boundaries is easier to operate than microservices
+
+## The Full Picture
+
+{/* TODO: Diagram showing Retail and Lending as separate services with event flow between them */}
+{/* TODO: Code example showing a cross-service event — include JS/TS, Python, Go equivalents */}
+{/* TODO: Code example showing how NeoHaskell services define service boundaries — include JS/TS, Python, Go equivalents */}
+
+- **Service definition**: a NeoHaskell service defines a boundary — its own events, commands, entities, and updates
+- **Cross-service communication**: services communicate via events — one service publishes, another subscribes
+- **Consistency model**: within a service, strong consistency; across services, eventual consistency
+- **Deployment flexibility**: start as a monolith, split into microservices when needed — one configuration change
+- **Language boundaries**: each service uses its own ubiquitous language — "account" means different things in Retail and Lending
+
+## How NeoHaskell Enforces This
+
+- Services define boundaries — the compiler enforces that cross-service access is explicit
+- Cross-service events are typed — you can't accidentally use a Retail event in a Lending handler
+- The `withOutbound` integration pattern makes cross-service communication explicit in the type
+- Starting as a monolith and splitting into microservices requires only a configuration change — no code changes
+
+## Testing This Concept
+
+{/* TODO: Code example showing a cross-service integration test — include JS/TS, Python, Go equivalents */}
+
+- Test within a service: standard Given-When-Then tests — no cross-service concerns
+- Test cross-service flows: publish an event from one service, assert the other service handles it correctly
+- Integration tests verify the event flow between services — these are the "some" layer in the Testing Trophy
+- Property-based test: "a loan disbursement always results in a credit to the customer's account"
+
+## Going Deeper
+
+- [Effects →](/concepts/effects) — how effects cross service boundaries
+- [Events, Not State →](/concepts/events-not-state) — why events are the right cross-service communication mechanism
+- [Architecture Evaluation →](/concepts/architecture-evaluation) — consistency models and scaling patterns
+- [Trade-offs →](/concepts/trade-offs) — when service decomposition adds unnecessary complexity
+- External: Eric Evans' [Domain-Driven Design](https://www.domainlanguage.com/ddd/) — the original service concept
+
+:::caution[Coming Soon]
+Code examples on this page are placeholders. Full working code will be added when the NeoBank tutorial is complete.
+:::

@@ -1,0 +1,209 @@
+---
+title: "Cheat Sheet"
+description: "Quick reference for NeoHaskell syntax and patterns. Two-column 'I want to... / Write this...' format."
+keywords: [cheat sheet, quick reference, syntax reference, NeoHaskell patterns, printable, bookmark]
+---
+
+{/* 
+  CONTENT OUTLINE — REVISION 2 (10-expert consensus applied)
+  ==============================================================
+  Position: Getting Started — reference page, linked from Tutorial Part 1
+  Time estimate: N/A (reference page, not linear reading)
+  Misconceptions addressed: #4 (just Haskell with different names), #5 (need category theory)
+  
+  Design principles from DOCS-PLAN:
+  - "I want to... / Write this..." quick reference
+  - Two-column format
+  - Printable
+  - Linked from Part 1 as "your NeoHaskell phrasebook"
+  - Layer 2 mechanism: "Standalone syntax quick reference page: getting-started/cheat-sheet.mdx serves as the go-to reference for NeoHaskell syntax"
+  
+  Audience: Tutorial reader who needs to look something up mid-flow.
+  This is NOT a comprehensive language reference — it's the 80/20 of syntax
+  that covers everything in the tutorial.
+  
+  Changes applied:
+  - Prerequisites added (change #2)
+  - Version placeholder added (change #1)
+  - "What's On This Page" section added (change #2)
+  - Recap closing section added (change #3)
+  - Haskell table replaced with cross-reference (change #7)
+  - Common Error Messages section added (change #10)
+*/}
+
+**Prerequisites**: None
+
+*Bookmark this page — you'll come back to it during the tutorial. · NeoHaskell vX.Y.Z*
+
+## What's On This Page
+
+- Find what you want to do in the left column
+- See how to write it in the right column
+- Every example is self-contained — you can copy-paste into the REPL
+- This covers everything you need for the [NeoBank Tutorial](/tutorial/). For comprehensive reference, see the [API Reference](/reference/).
+
+## Values and Types
+
+{/*
+  The absolute basics: defining values, type annotations, basic types.
+*/}
+
+| I want to... | Write this |
+|---|---|
+| Define a value | `name = "NeoBank"` |
+| Add a type annotation | `name :: Text` / `name = "NeoBank"` |
+| Define a number | `amount = 50.00` |
+| Define a boolean | `isOpen = True` |
+| Define a list | `deposits = [50.00, 25.00, 100.00]` |
+
+## Functions
+
+{/*
+  Function definition, application, pipes.
+*/}
+
+| I want to... | Write this |
+|---|---|
+| Define a function | `double x = x * 2` |
+| Call a function | `double 5` (no parentheses around args) |
+| Chain operations | `value \|> function1 \|> function2` |
+| Use a qualified function | `Array.map`, `Text.length`, `Result.ok` |
+| Define a multi-step function | Use a `do` block (see below) |
+
+## Do Blocks
+
+{/*
+  The primary sequencing mechanism in NeoHaskell.
+*/}
+
+| I want to... | Write this |
+|---|---|
+| Run steps in order | `do` block with each step on a new line |
+| Bind a result to a name | `result <- someAction` |
+| Use a value without binding | Just write the expression on its own line |
+| Return a value from a do block | Last expression in the block is the return value |
+
+- Show a complete do block example (3-4 lines)
+
+## Pattern Matching
+
+{/*
+  case..of is the only pattern matching form in NeoHaskell (no function-level patterns).
+*/}
+
+| I want to... | Write this |
+|---|---|
+| Match on a value | `case value of ...` with branches |
+| Handle multiple cases | One branch per pattern, separated by newlines |
+| Match on a specific constructor | `Deposited amount -> ...` |
+| Catch everything else | `_ -> ...` (underscore matches anything) |
+
+- Show a complete case..of example (3-4 lines)
+- Note: "NeoHaskell uses `case..of` for ALL pattern matching — there are no patterns in function definitions"
+
+## Defining Types
+
+{/*
+  Type definitions — the reader will encounter these in the tutorial
+  when defining events and commands.
+*/}
+
+| I want to... | Write this |
+|---|---|
+| Define a new type | `type MyType = ...` |
+| Define a type with fields (record) | `type Account = { id :: Text, balance :: Decimal }` |
+| Define a type with variants (sum type) | `type Event = Deposited Amount \| Withdrawn Amount` |
+| Create a value of a record type | `Account { id = "123", balance = 50.00 }` |
+| Create a value of a variant type | `Deposited 50.00` |
+
+## Working with Results
+
+{/*
+  Result is how NeoHaskell handles operations that can fail.
+  Corresponds to Haskell's Either but with clearer names.
+*/}
+
+| I want to... | Write this |
+|---|---|
+| Return success | `Result.ok value` |
+| Return an error | `Result.err "insufficient funds"` |
+| Handle success/failure | `case result of` / `Ok value -> ...` / `Err msg -> ...` |
+
+## Working with Tasks
+
+{/*
+  Task is how NeoHaskell handles side effects (IO).
+  Corresponds to Haskell's IO but with typed errors.
+*/}
+
+| I want to... | Write this |
+|---|---|
+| Perform an effectful action | Put it in a `do` block |
+| Print to the console | `Console.log "Hello"` |
+| Sequence two actions | Two lines in a `do` block |
+
+## String Formatting
+
+{/*
+  NeoHaskell uses quasiquoter-based string interpolation.
+*/}
+
+| I want to... | Write this |
+|---|---|
+| Interpolate a variable | `[fmt\|Hello {name}!\|]` |
+| Concatenate text | `text1 \|> Text.append text2` |
+
+## Common Operators
+
+| Symbol | Meaning | Example |
+|--------|---------|---------|
+| `\|>` | Pipe (pass left to right) | `x \|> f \|> g` |
+| `::` | Type annotation | `x :: Int` |
+| `<-` | Bind in do block | `result <- action` |
+| `->` | Function arrow / case branch | `Int -> Text` / `True -> "yes"` |
+| `_` | Wildcard (ignore this value) | `_ -> defaultValue` |
+
+## Common Error Messages
+
+{/*
+  The 3-5 most common compiler errors that tutorial readers will encounter.
+  These should be real error messages with explanations.
+*/}
+
+| Error | What it means | How to fix it |
+|-------|---------------|--------------|
+| `Type mismatch: expected Text, got Int` | You're using the wrong type somewhere | Check the type annotation and make sure the value matches |
+| `Unknown function: map` | You forgot the module prefix | Use `Array.map` instead of bare `map` |
+| `Pattern not exhaustive` | Your `case..of` doesn't handle all possibilities | Add a `_ -> ...` branch to catch the rest |
+| `Unexpected token: $` | You used `$` instead of `\|>` | Replace `$` with `\|>` for the pipe operator |
+| `Undefined variable: x` | You used a variable that doesn't exist | Check the spelling and make sure it's in scope |
+
+## NeoHaskell vs. Other Languages
+
+{/*
+  Quick Rosetta Stone for common operations.
+  Addresses the "I know X, how do I say it in NeoHaskell?" question.
+*/}
+
+| In JavaScript / Python | In NeoHaskell |
+|---|---|
+| `if (x) { ... } else { ... }` | `case x of True -> ... ; False -> ...` |
+| `array.map(f)` | `array \|> Array.map f` |
+| `array.filter(f)` | `array \|> Array.filter f` |
+| `try { ... } catch (e) { ... }` | `case result of Ok v -> ... ; Err e -> ...` |
+| `console.log(msg)` | `Console.log msg` |
+| `const x = value` | `x = value` (everything is immutable by default) |
+
+## Coming from Haskell?
+
+**Coming from Haskell?** See the [full Haskell → NeoHaskell mapping table](/coming-from/haskell/).
+
+## Where to Go from Here
+
+- You have the syntax. Now let's build something real.
+- **Next**: [Your First Events](/getting-started/first-events/) — write your first event type and see event sourcing in action (~10 minutes)
+- **Bookmark**: [API Reference](/reference/) — the comprehensive reference for all NeoHaskell modules and functions
+
+:::caution[Coming Soon]
+The code examples on this page are placeholders. Actual NeoHaskell syntax will be verified against the compiler once available.
+:::

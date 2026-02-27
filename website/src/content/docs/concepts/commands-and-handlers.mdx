@@ -1,0 +1,131 @@
+---
+title: "Commands and Handlers"
+description: "How requests become events through command processing."
+sidebar:
+  order: 11
+keywords: [commands, handlers, command handler, event sourcing, validation, reject, accept]
+# entry_stage: 1 (Event-curious)
+# exit_stage: 3 (NeoHaskell-aware)
+# misconception: #7 (events are my API)
+# tutorial_anchor: Tutorial Part 1 — Your First Transaction
+---
+
+{/*
+  CONTENT OUTLINE — Commands and Handlers
+  Entry: Stage 1 (Event-curious), Exit: Stage 3 (NeoHaskell-aware)
+  Misconception addressed: #7 (events are my API)
+  Anchored from: Tutorial Part 1
+
+  Core distinction: commands are requests (can be rejected), events are facts (already happened).
+  Banking analogy: deposit slip vs. transaction record.
+  Rosetta Stone row: "Do something" → Deposit slip → Command.
+  Handler pattern: validate → decide → produce events OR reject.
+  NeoHaskell enforcement: typed commands, exhaustive handler matching.
+*/}
+
+{/* POLYGLOT NOTE: All code examples on this page should include equivalent snippets in JS/TS, Python, and Go. See DOCS-PLAN.md Guiding Principle #9. */}
+
+import { Aside } from '@astrojs/starlight/components';
+
+## What You Might Expect
+
+- In a REST API, you'd expose endpoints: `POST /accounts/42/deposit`
+- The endpoint receives data, validates it, updates the database, returns a response
+- The "API" is the set of endpoints — what you expose is what clients call
+- Events, if you've heard of them, sound like the thing you'd publish to a message queue for other services
+
+## Why That Breaks
+
+- If events are your API, clients can send any event — including ones that shouldn't exist yet
+- A client could send `MoneyWithdrawn` before `AccountOpened` — the event log would be corrupted
+- Events represent facts that *already happened*. You can't send a fact about the future.
+- Exposing events as your API removes the ability to validate, reject, or enforce business rules
+- The system has no way to say "no" — every event that arrives gets recorded as truth
+
+## Commands and Handlers: The Mental Model Shift
+
+- **Commands** are requests. They describe *intent*, not fact. They can be rejected.
+- **Events** are facts. They describe *what happened*. They cannot be undone.
+- A command is a deposit slip. An event is the transaction record.
+- The deposit slip might be rejected (insufficient funds, account closed, invalid amount).
+- The transaction record is permanent — it happened, it's recorded, it's immutable.
+- **The handler** is the decision-maker: it receives a command, validates it, and either produces events or returns an error.
+
+### The Deposit Slip Analogy
+
+- You walk into a bank and fill out a deposit slip (the command)
+- The teller checks: is your account open? Is the amount valid? Is the currency correct?
+- If yes: the teller records a transaction (the event) — a permanent fact in the ledger
+- If no: the teller hands back the slip with a rejection reason — no event is recorded
+- The deposit slip is not the transaction. The command is not the event.
+
+### The Rosetta Stone
+
+| What you'd say | Banking term | NeoHaskell term | What it actually is |
+|---------------|-------------|-----------------|-------------------|
+| "Do something" | Deposit slip | Command | A request that may be accepted or rejected |
+| "Something happened" | Transaction | Event | An immutable record of a fact |
+| "The decision-maker" | Bank teller | Handler | Validates commands, produces events or errors |
+
+## What Happens When a Command Arrives
+
+- Step 1: Client sends a `Deposit { accountId: 42, amount: 50 }` command
+- Step 2: The handler loads the current entity state (by folding over past events)
+- Step 3: The handler validates: is the account open? Is the amount positive?
+- Step 4a: If valid — the handler produces `MoneyDeposited { amount: 50 }` and returns it
+- Step 4b: If invalid — the handler returns an error (e.g., `AccountNotOpen`) and produces no events
+- Step 5: The event store appends the event (only if step 4a happened)
+- Step 6: The client receives either a success response or the rejection reason
+
+<Aside type="note" title="Commands can fail. Events cannot.">
+This is the most important distinction. A command is a *request* — it might not be granted. An event is a *fact* — it already happened. Once an event is in the store, it's permanent. The handler is the gatekeeper that decides which commands become events.
+</Aside>
+
+## In NeoBank Terms
+
+- NeoBank exposes commands, not events: `Deposit`, `Withdraw`, `OpenAccount`, `Transfer`
+- Clients never directly write events — they send commands and receive results
+- The `Deposit` command handler checks: is the account open? Is the amount positive? Is it within daily limits?
+- If all checks pass, it produces `MoneyDeposited` — a permanent fact in the ledger
+- If any check fails, it returns a `DepositDeclined` error — no event is recorded, no state changes
+- The event log stays clean: every event in it represents something that genuinely happened
+
+### Handler Pattern
+
+{/* TODO: Code example showing the handler pattern: validate → decide → produce events OR reject — include JS/TS, Python, Go equivalents */}
+{/* TODO: Show the Decider.reject and Decider.acceptExisting pattern from testbed AddItem.hs */}
+
+- **Validate**: check preconditions against current entity state
+- **Decide**: use `case..of` to branch on the command type and entity state
+- **Accept**: return events that represent what happened (`Decider.acceptExisting`)
+- **Reject**: return an error with a reason (`Decider.reject`) — no events produced
+
+## How NeoHaskell Enforces This
+
+- Commands and events are separate types — you can't accidentally use one as the other
+- The handler function signature enforces the pattern: `Command -> Entity -> Result Error [Event]`
+- Exhaustive pattern matching: if you add a new command type, the compiler demands you handle it
+- The event store API only accepts events — there's no way to write a command to the store
+- `Decider.reject` and `Decider.acceptExisting` are the only two outcomes — no silent failures
+
+## Testing This Concept
+
+{/* TODO: Code example showing a Given-When-Then test for command rejection — include JS/TS, Python, Go equivalents */}
+{/* TODO: Show: given AccountClosed event, when Deposit command, then DepositDeclined error */}
+
+- Testing command handlers is straightforward: give entity state, send command, assert result
+- Test the happy path: valid command → expected events produced
+- Test the rejection path: invalid command → expected error, no events produced
+- No database, no HTTP, no mocking — just entity state, command, and assertion
+- The Given-When-Then pattern maps directly: Given (entity state) → When (command) → Then (events or error)
+
+## Going Deeper
+
+- [Events, Not State →](/concepts/events-not-state) — what events are and why they're immutable
+- [Type Safety →](/concepts/type-safety) — how the compiler enforces command/event separation
+- [Testing Event-Sourced Systems →](/concepts/testing-event-sourced-systems) — the full testing strategy
+- [Services →](/concepts/services) — how commands route across context boundaries
+
+:::caution[Coming Soon]
+Code examples on this page are placeholders. Full working code will be added when the NeoBank tutorial is complete.
+:::

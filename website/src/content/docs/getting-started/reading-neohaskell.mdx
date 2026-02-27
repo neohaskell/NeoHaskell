@@ -1,0 +1,144 @@
+---
+title: "Reading NeoHaskell"
+description: "A 5-minute visual guide to reading NeoHaskell code. No prerequisites — just follow the arrows."
+keywords: [reading code, syntax, visual guide, annotated code, beginner, NeoHaskell basics]
+---
+
+{/* 
+  CONTENT OUTLINE — REVISION 2 (10-expert consensus applied)
+  ==============================================================
+  Position: Getting Started — optional step between Installation and First Events
+  Time estimate: ~5 minutes
+  Misconceptions addressed: #5 (need category theory), #12 (need to understand monads first)
+  Style: Julia Evans-style annotated code blocks — visual, friendly, zero prerequisites
+  
+  Design principles from DOCS-PLAN:
+  - "Julia Evans style — visual, friendly, zero prerequisites"
+  - "5-minute annotated code walkthrough"
+  - This is a READING guide, not a WRITING guide (that's syntax-warmup.mdx)
+  - No prerequisites — reader may not have even installed NeoHaskell yet
+  - Goal: reader can LOOK at NeoHaskell code and not feel lost
+  - Bold-on-first-use for syntax constructs (Layer 2), max 3-5 per page
+  - Prerequisites added (change #2)
+  - Version placeholder added (change #1)
+  - Recap closing section added (change #3)
+  - Code example domain note added (change #4)
+  - Forward tension added (change #5)
+*/}
+
+**Prerequisites**: None
+
+*~5 minutes · NeoHaskell vX.Y.Z*
+
+## Why This Page Exists
+
+{/*
+  Set expectations: this is optional, purely visual, no typing required.
+  Address the "compound unfamiliarity" problem (Martin Fowler's concern from DOCS-PLAN).
+*/}
+
+- NeoHaskell code looks different from JavaScript, Python, or Java — and that's intentional
+- This page shows you how to read it. Not write it — just read it.
+- By the end, you'll look at any NeoHaskell code block in the tutorial and know what's going on
+- No installation needed. No typing. Just look at the annotated examples and follow the arrows.
+
+{/*
+  Code example domain note (change #4):
+  Examples should use NeoBank-domain code (deposits, balances) to prime the tutorial.
+*/}
+
+## Reading a Function
+
+{/*
+  First annotated code block. Show a complete, small function.
+  Julia Evans-style: arrows pointing to each part of the syntax.
+  The function should do something obviously useful (not contrived).
+  
+  Bold-on-first-use constructs for this page:
+  1. type annotations (the :: line above a function)
+  2. |> pipe operator
+  3. do blocks
+  4. case..of pattern matching
+  
+  That's 4 — within the 3-5 max limit.
+*/}
+
+- Show a small, complete NeoHaskell function (5-8 lines) with annotated arrows
+- The function should do something readable: e.g., "calculate a total from a list of deposits"
+- Annotations point to:
+  - The **type annotation** (`::`) — "this line tells you what goes in and what comes out"
+    - Read it like: `functionName :: Input -> Output` means "takes an Input, gives you an Output"
+    - "You can ignore type annotations when reading. They're for the compiler. Your eyes should go to the code below."
+  - The function body — "this is the actual code, the type annotation above is the contract"
+- Key message: "NeoHaskell reads top-to-bottom, left-to-right. No surprises."
+
+## Reading the Pipe Operator
+
+{/*
+  The |> pipe is the single most common NeoHaskell idiom.
+  Show it as "data flows left to right, like reading English."
+  Compare briefly to method chaining in JS/Python for familiarity.
+*/}
+
+- Show the **pipe operator (`|>`)** in a 3-4 line chain
+- Annotate: "data flows left to right — read it like a recipe"
+  - Step 1: start with this value
+  - Step 2: |> pass it to this function
+  - Step 3: |> then pass the result to this function
+- Comparison callout: "If you've seen `array.filter(...).map(...).reduce(...)` in JavaScript — the pipe operator is the same idea, just with a different shape"
+- "Every time you see `|>`, just think 'then'"
+
+## Reading a Do Block
+
+{/*
+  do blocks are how NeoHaskell sequences steps.
+  Show a simple do block that does 2-3 things in order.
+*/}
+
+- Show a **`do` block** that performs 2-3 steps
+- Annotate: "`do` means 'do these things in order'"
+  - `name <- getInput` means "get the input and call it `name`"
+  - The `<-` arrow means "get the result and give it this name"
+  - Lines without `<-` are "just do this, I don't need the result"
+- Key message: "A do block is a recipe. Each line is a step. They run top to bottom."
+
+## Reading Pattern Matching
+
+{/*
+  case..of is how NeoHaskell makes decisions.
+  Show a case expression that handles 2-3 cases.
+*/}
+
+- Show a **`case..of`** expression that handles 2-3 patterns
+- Annotate: "`case..of` means 'look at this value and decide what to do'"
+  - Each branch is a possibility
+  - The `->` arrow means "if it matches this pattern, do that"
+  - The compiler ensures you handle every case — nothing falls through
+- Comparison callout: "Like a `switch` statement, but the compiler checks you covered every case"
+
+## Putting It Together
+
+{/*
+  Show a slightly longer function (~10-12 lines) that uses ALL of the above:
+  type annotation, pipe, do block, case..of.
+  This is the "now you can read anything" moment.
+  Don't explain every line — let the reader apply what they just learned.
+*/}
+
+- Show a complete example (~10-12 lines) that combines type annotation, pipes, do block, and case..of
+- Minimal annotation — the reader should be able to read this using what they learned above
+- Call out: "If you can read this, you can read any code in the tutorial"
+- Brief note on what's NOT covered here: record syntax, type definitions, modules — "you'll meet these in the tutorial, and they'll make sense in context"
+
+## You're Ready
+
+You can now read NeoHaskell code. That's all you need.
+
+- You don't need to memorize anything — bookmark the [Cheat Sheet](/getting-started/cheat-sheet/) for quick lookups
+- You can read the syntax. Now let's use it to build something — deposit money and watch your balance get calculated from events.
+- **Next**: [Your First Events](/getting-started/first-events/) — write your first event type and see event sourcing in action (~10 minutes)
+- **Optional**: [Syntax Warm-up](/getting-started/syntax-warmup/) — type a few expressions yourself to build muscle memory (~5 minutes)
+
+:::caution[Coming Soon]
+The annotated code examples on this page are placeholders. Actual NeoHaskell code with visual annotations will be added once the annotated code block component is built.
+:::

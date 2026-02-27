@@ -1,0 +1,138 @@
+---
+title: "Syntax Warm-up"
+description: "Type a few NeoHaskell expressions and see what happens. 5 minutes of hands-on practice before the tutorial."
+keywords: [syntax, warm-up, practice, REPL, hands-on, pipe operator, do block, pattern matching, type annotation]
+---
+
+{/* 
+  CONTENT OUTLINE — REVISION 2 (10-expert consensus applied)
+  ==============================================================
+  Position: Getting Started — optional step between Reading NeoHaskell and First Events
+  Time estimate: ~5 minutes
+  Prerequisites: NeoHaskell installed (for REPL)
+  Misconceptions addressed: #5 (need category theory), #12 (need to understand monads)
+  
+  Design principles from DOCS-PLAN:
+  - "5-minute hands-on warm-up where the reader types 3-5 small NeoHaskell expressions and sees output"
+  - "NOT a language tutorial — just enough muscle memory that the tutorial's syntax doesn't feel alien"
+  - "Covers: do blocks, |> pipe, type annotations, case..of"
+  - "Each example is 1-3 lines with immediate REPL output"
+  - Source: Tania Rascia — "Let the reader's fingers learn the syntax before their brain has to learn the concepts."
+  
+  Key distinction from reading-neohaskell.mdx:
+  - Reading NeoHaskell = LOOK at code (passive, no install needed)
+  - Syntax Warm-up = TYPE code (active, requires installation)
+  
+  Changes applied:
+  - Version placeholder added (change #1)
+  - Recap closing section expanded (change #3)
+  - Code example domain note added (change #4)
+  - Forward tension added (change #5)
+  - REPL multi-line guidance added before Expression 3 (change #9)
+*/}
+
+**Prerequisites**: [Install NeoHaskell](/getting-started/installation/) first.
+
+*~5 minutes · Hands-on · NeoHaskell vX.Y.Z*
+
+## What This Is (and Isn't)
+
+- This is a warm-up, not a tutorial. You'll type 5 small expressions, see the output, and move on.
+- Goal: your fingers know the basic shapes so the tutorial's syntax doesn't slow you down
+- NOT covered: what these features mean, when to use them, or how they fit together — the tutorial teaches all of that in context
+
+{/*
+  Code example domain note (change #4):
+  Examples should use throwaway expressions (strings, numbers, basic math) — NOT domain-specific.
+*/}
+
+## Start the REPL
+
+{/*
+  Get the reader into the REPL immediately.
+  Show the exact command and what the prompt looks like.
+*/}
+
+- Run `neo repl` in your terminal
+- You should see: the NeoHaskell REPL prompt (show exact output)
+- "Type expressions after the prompt and press Enter to see the result"
+
+## Expression 1: A Simple Value
+
+{/*
+  Absolute baseline — type a value, see it back.
+  Proves the REPL works and builds confidence.
+*/}
+
+- Type a string literal and see it echoed back
+- Type a number and see it echoed back
+- Type a simple arithmetic expression and see the result
+- "NeoHaskell evaluates the expression and shows you the result. That's it."
+
+## Expression 2: The Pipe Operator
+
+{/*
+  |> is the most common NeoHaskell idiom.
+  Show 1-3 lines that chain operations with pipes.
+*/}
+
+- Type a pipe chain: value `|>` function `|>` function
+  - Example shape: start with a string, pipe it through `Text.toUpperCase`, pipe through `Text.length`
+  - Show the output
+- "Read `|>` as 'then'. Start with a value, then transform it, then transform again."
+- Try one more: a number piped through 2 functions
+
+## Expression 3: A Do Block
+
+{/*
+  do blocks sequence steps. Show the REPL can handle multi-line.
+  Keep it to 2-3 lines.
+  Multi-line guidance added (change #9).
+*/}
+
+:::tip[Multi-line input in the REPL]
+To type a multi-line expression (like a `do` block), just keep typing. The REPL will wait for you to finish. When you're done, press Enter twice to execute.
+:::
+
+- Type a small `do` block (2-3 lines):
+  - Bind a value with `<-`
+  - Use the bound value
+  - Show the output
+- "A do block runs steps in order. `<-` means 'get the result and call it this name.'"
+
+## Expression 4: Pattern Matching
+
+{/*
+  case..of with 2 patterns. Keep it tiny.
+*/}
+
+- Type a `case..of` expression with 2 branches
+  - Example shape: match on a boolean, return different strings
+  - Show the output
+- Change the input value, run again, see the other branch fire
+- "case..of looks at a value and picks the matching branch. The compiler makes sure you handle every case."
+
+## Expression 5: Putting Them Together
+
+{/*
+  Combine pipe + do + pattern matching in one small expression.
+  This mirrors what the tutorial code looks like.
+*/}
+
+- Type a 3-4 line expression that uses `|>` and `case..of` together
+  - Example shape: pipe a value into a case expression that returns different results
+  - Show the output
+- "This is what tutorial code looks like. You just typed it."
+
+## Review and Next Steps
+
+Your fingers know the shapes. Now let's put them to work — you're about to write your first event.
+
+- You've typed NeoHaskell. That's the warm-up.
+- Exit the REPL: `:quit`
+- **Next**: [Your First Events](/getting-started/first-events/) — write your first event type and see event sourcing in action (~10 minutes)
+- **Bookmark**: [Cheat Sheet](/getting-started/cheat-sheet/) — the quick reference for everything you just typed, plus more
+
+:::caution[Coming Soon]
+The REPL examples on this page are placeholders. Actual NeoHaskell expressions will be added once the REPL is available.
+:::

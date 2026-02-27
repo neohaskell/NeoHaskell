@@ -1,0 +1,72 @@
+---
+title: "Coming From..."
+description: "Translation layers for your existing programming background."
+sidebar:
+  order: 0
+---
+
+{/*
+  CONTENT OUTLINE — Coming From section landing page
+  Purpose: Orient readers to the section, surface the right page for their background,
+  and set expectations: these are mental model guides, not just syntax cheat sheets.
+*/}
+
+import { CardGrid, Card } from '@astrojs/starlight/components';
+
+## What this section is
+
+- These pages are translation layers, not syntax dictionaries
+- Knowing the equivalent syntax is the easy part — the mental model shift is what takes time
+- Each page covers three things: what you'd write in your language, the NeoHaskell equivalent, and what's actually different at the conceptual level
+- The goal isn't to make NeoHaskell feel like your old language — it's to make the differences legible
+
+## Pick your background
+
+{/* TODO: CardGrid with icons once Starlight icon set is confirmed */}
+
+<CardGrid>
+  <Card title="JavaScript / TypeScript" icon="seti:javascript">
+    Immutability, type inference, algebraic data types, async/await equivalents, and why Redux reducers are closer to NeoHaskell than you'd think.
+
+    [Read →](/coming-from/javascript/)
+  </Card>
+  <Card title="Python" icon="seti:python">
+    Django models become event types. Flask routes become command handlers. ORM queries become updates. The mental model shift from ORM-think to event-think.
+
+    [Read →](/coming-from/python/)
+  </Card>
+  <Card title="CRUD / REST" icon="seti:db">
+    The most important translation for most developers. `UPDATE balance SET 150` becomes `MoneyDeposited $50`. Short version here — full treatment in the concept page.
+
+    [Read →](/coming-from/crud/)
+  </Card>
+  <Card title="Haskell" icon="seti:haskell">
+    The full Rosetta Stone. Every enforced divergence from GHC Haskell, with rationale. `IO a` → `Task err val`. `$` → `|>`. Point-free style → forbidden.
+
+    [Read →](/coming-from/haskell/)
+  </Card>
+  <Card title="Go" icon="seti:go">
+    Structs become algebraic data types. Interfaces become Traits. `if err != nil` becomes typed `Result` errors. Goroutines become `Task`-based concurrency.
+
+    [Read →](/coming-from/go/)
+  </Card>
+  <Card title="Event Sourcing" icon="seti:pipeline">
+    You already know ES. This page covers what NeoHaskell does differently — and what it doesn't have yet. Honest assessment, no overselling.
+
+    [Read →](/coming-from/event-sourcing/)
+  </Card>
+</CardGrid>
+
+## The shift that matters most
+
+- Every page in this section eventually arrives at the same insight: NeoHaskell is event-first, not state-first
+- In most languages, state is the primary thing and events (if they exist) are secondary
+- In NeoHaskell, events are the primary thing and state is derived from them
+- This isn't a style preference — it's enforced by the compiler
+- Your existing knowledge isn't wasted. It's redirected.
+
+{/* TODO: short diagram showing state-first vs event-first mental model */}
+
+:::caution[Coming Soon]
+These pages are content outlines. Full prose, code examples, and diagrams are in progress.
+:::

@@ -1,0 +1,127 @@
+---
+title: "Concurrency"
+description: "Channels, locks, and async patterns in NeoHaskell."
+sidebar:
+  order: 42
+keywords: [concurrency, channels, async, ConcurrentVar, event replay, parallel, native code]
+# entry_stage: 3 (NeoHaskell-aware)
+# exit_stage: 4 (NeoHaskell-fluent)
+# misconception: #11 (Haskell is slow)
+# tutorial_anchor: Tutorial Part 6 — Audit Everything
+---
+
+{/*
+  CONTENT OUTLINE — Concurrency
+  Entry: Stage 3 (NeoHaskell-aware), Exit: Stage 4 (NeoHaskell-fluent)
+  Misconception addressed: #11 (Haskell is slow)
+  Anchored from: Tutorial Part 6 — Audit Everything
+
+  Core message: NeoHaskell compiles to native code with built-in concurrency primitives.
+  Channels, locks, async patterns.
+  Event replay at scale benefits from concurrency.
+  Evidence from testbed: ConcurrentVar used in EventCounter.hs.
+  Immutable events make concurrent reads safe by default.
+*/}
+
+{/* POLYGLOT NOTE: All code examples on this page should include equivalent snippets in JS/TS, Python, and Go. See DOCS-PLAN.md Guiding Principle #9. */}
+
+import { Aside } from '@astrojs/starlight/components';
+
+## What You Might Expect
+
+- "Haskell is slow" — you've heard this, or assumed it from the academic reputation
+- Concurrency in functional languages sounds complicated: no shared mutable state, so how do you coordinate?
+- Event replay sounds inherently sequential — you have to process events in order
+- You're worried that NeoHaskell's purity constraints make concurrent programming harder, not easier
+
+## Why That Breaks
+
+- GHC (NeoHaskell's compiler) produces native code that's competitive with Go and Java
+- Immutable data is *safer* for concurrency, not harder — no data races by default
+- Event replay can be parallelized: different event streams can be replayed concurrently
+- The constraint isn't "no shared state" — it's "shared state must be explicit and safe"
+
+## Concurrency: The Mental Model Shift
+
+- NeoHaskell compiles to native code — no interpreter, no VM overhead
+- Concurrency primitives are built-in: channels, locks, async workflows
+- Immutable events make concurrent reads safe by default — no locks needed for reading
+- Mutable state is explicit: `ConcurrentVar` is the safe, typed wrapper for shared mutable state
+- The compiler enforces safe concurrency — data races are a type error, not a runtime crash
+
+### Why Immutability Helps Concurrency
+
+- In CRUD systems, concurrent writes to the same row require locks — and locks cause contention
+- In event-sourced systems, events are immutable — concurrent reads need no locks
+- Writes are appends — the event store serializes appends, but reads are fully concurrent
+- Updates can be rebuilt concurrently: each event stream is independent
+
+<Aside type="note" title="ConcurrentVar in the testbed">
+The testbed's `EventCounter.hs` uses `ConcurrentVar` for mutable state — a typed, safe wrapper around a mutable reference. This is how NeoHaskell handles shared mutable state: explicitly, with a type that makes the concurrency visible. You can't accidentally share mutable state — you have to opt in with `ConcurrentVar`.
+</Aside>
+
+## What Happens When You Replay Events at Scale
+
+- Tutorial Part 6 replays all events to build a complete audit trail
+- With 1 million events across 10,000 accounts, sequential replay would be slow
+- Concurrent replay: each account's event stream is independent — replay them in parallel
+- The result: 10,000 concurrent folds, each producing a balance — then aggregate
+- NeoHaskell's concurrency primitives make this straightforward: spawn a task per account, collect results
+
+### Concurrency Patterns
+
+| Pattern | When to use | NeoHaskell primitive |
+|---------|------------|---------------------|
+| **Parallel update rebuild** | Rebuilding queries from events | `Task.parallel` or async tasks |
+| **Concurrent event processing** | Processing events from multiple streams | Channels |
+| **Shared state** | Counters, caches, rate limiters | `ConcurrentVar` |
+| **Async workflows** | Integrations, long-running processes | `Task` with async composition |
+
+## In NeoBank Terms
+
+- NeoBank's audit trail (Tutorial Part 6) replays all events across all accounts
+- Sequential replay: process each account one at a time — slow for large datasets
+- Concurrent replay: process all accounts in parallel — fast, and safe because events are immutable
+- The balance counter uses `ConcurrentVar` — multiple requests can read/update it safely
+- The transfer integration uses async tasks — debit and credit can be initiated concurrently, with coordination
+
+## The Full Picture
+
+{/* TODO: Code example showing concurrent event replay with Task.parallel — include JS/TS, Python, Go equivalents */}
+{/* TODO: Code example showing ConcurrentVar for a shared counter — include JS/TS, Python, Go equivalents */}
+{/* TODO: Code example showing channel-based event processing — include JS/TS, Python, Go equivalents */}
+
+- **Native compilation**: NeoHaskell compiles to native code via GHC — no JVM, no interpreter
+- **Green threads**: GHC's runtime provides lightweight threads — millions of concurrent tasks
+- **Channels**: typed, safe communication between concurrent tasks
+- **ConcurrentVar**: typed mutable reference — safe for concurrent reads and writes
+- **Task.parallel**: run multiple tasks concurrently, collect results when all complete
+- **Async composition**: chain tasks with async/await semantics — readable, safe, composable
+
+## How NeoHaskell Enforces This
+
+- `ConcurrentVar` is the only way to share mutable state — you can't accidentally share a plain reference
+- Channels are typed — you can't send the wrong type of message
+- The `Task` type makes concurrency explicit — you know which computations are concurrent
+- Pure functions (no `Task`, no `ConcurrentVar`) are safe to call from any number of concurrent tasks
+- The compiler enforces that concurrent state access goes through safe primitives
+
+## Testing This Concept
+
+{/* TODO: Code example showing a concurrent test — include JS/TS, Python, Go equivalents */}
+
+- Test concurrent update rebuild: spawn N tasks, assert all produce correct results
+- Test `ConcurrentVar` under concurrent access: multiple tasks read/write, assert final state is correct
+- Property-based test: "concurrent replay of the same events always produces the same result"
+- Stress test: replay 10,000 events concurrently, assert no data races (the type system already guarantees this)
+
+## Going Deeper
+
+- [Effects →](/concepts/effects) — how `Task` models concurrent effects
+- [Updates →](/concepts/updates) — how updates benefit from concurrent replay
+- [Architecture Evaluation →](/concepts/architecture-evaluation) — performance characteristics and scaling patterns
+- External: GHC's [Parallel and Concurrent Haskell](https://simonmar.github.io/pages/pcph.html) — the definitive reference
+
+:::caution[Coming Soon]
+Code examples on this page are placeholders. Full working code will be added when the NeoBank tutorial is complete.
+:::

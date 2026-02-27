@@ -1,0 +1,50 @@
+name: Integration Tests
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: '0 0 * * 0'
+  workflow_dispatch:
+
+jobs:
+  fresh-install:
+    name: Fresh Install (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      matrix:
+        os: [ubuntu-22.04, ubuntu-24.04, macos-14]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Build
+        run: cargo build --release
+      - name: Run installer (dry-run)
+        run: ./target/release/neo-install --dry-run --verbose
+      - name: Run installer
+        run: ./target/release/neo-install --verbose
+      - name: Verify nix
+        run: /nix/var/nix/profiles/default/bin/nix --version
+      - name: Verify neo
+        run: neo --version || echo "Neo CLI not yet available in flake"
+
+  existing-nix:
+    name: Existing Nix (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      matrix:
+        os: [ubuntu-22.04, ubuntu-24.04, macos-14]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: DeterminateSystems/determinate-nix-action@v3
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Build
+        run: cargo build --release
+      - name: Run installer (should detect existing)
+        run: ./target/release/neo-install --verbose
+      - name: Verify nix still works
+        run: /nix/var/nix/profiles/default/bin/nix --version

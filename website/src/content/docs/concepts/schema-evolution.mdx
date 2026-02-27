@@ -1,0 +1,133 @@
+---
+title: "Schema Evolution"
+description: "How event types change over time without breaking history."
+sidebar:
+  order: 30
+keywords: [schema evolution, event versioning, upcasting, algebraic data types, migration, backward compatibility]
+# entry_stage: 3 (NeoHaskell-aware)
+# exit_stage: 4 (NeoHaskell-fluent)
+# misconception: #9 (schema evolution will be a nightmare)
+# tutorial_anchor: Tutorial Part 4 — Multiple Accounts
+---
+
+{/*
+  CONTENT OUTLINE — Schema Evolution
+  Entry: Stage 3 (NeoHaskell-aware), Exit: Stage 4 (NeoHaskell-fluent)
+  Misconception addressed: #9 (schema evolution will be a nightmare)
+  Anchored from: Tutorial Part 4 — Multiple Accounts
+
+  Core message: events are immutable but event TYPES evolve.
+  Algebraic data types for event versioning.
+  Upcasting strategies.
+  Too important to defer to "advanced" — moved to Core Concepts.
+  Concrete trigger: Tutorial Part 4 adds a savings account type, making schema evolution concrete.
+*/}
+
+{/* POLYGLOT NOTE: All code examples on this page should include equivalent snippets in JS/TS, Python, and Go. See DOCS-PLAN.md Guiding Principle #9. */}
+
+import { Aside } from '@astrojs/starlight/components';
+
+## What You Might Expect
+
+- Database migrations are painful: `ALTER TABLE`, data backfills, downtime windows
+- Schema changes break existing data — you have to migrate everything at once
+- In event sourcing, events are immutable — so changing the schema sounds impossible
+- "What happens to old events when I change the event type?" is a common fear
+
+## Why That Breaks
+
+- If you can't evolve your event types, your domain model is frozen at v1
+- Business requirements change. New fields are needed. Old fields become irrelevant.
+- The fear: "I have 10 million events in the store. If I change the event type, they all break."
+- The reality: this is a solved problem — but it requires understanding the right approach
+
+## Schema Evolution: The Mental Model Shift
+
+- **Events are immutable** — the events already in the store never change
+- **Event types evolve** — the code that defines and handles events can change
+- The key: old events and new events can coexist in the same store
+- **Upcasting** converts old event formats to new ones at read time — the store stays unchanged
+- Algebraic data types make versioning explicit: `MoneyDeposited_V1`, `MoneyDeposited_V2` are different types
+
+### The Two Strategies
+
+| Strategy | When to use | How it works |
+|----------|------------|-------------|
+| **Additive changes** | Adding optional fields | Old events have `Nothing` for the new field; new events have `Just value` |
+| **Upcasting** | Changing field types, renaming, restructuring | Old events are converted to new format at read time |
+
+### What "Upcasting" Means
+
+- An upcaster is a function: `OldEvent -> NewEvent`
+- When the system reads an old event from the store, it runs the upcaster before processing
+- The store still contains the original event — the upcaster is applied in memory
+- Multiple upcasters can chain: V1 → V2 → V3 — each step is a pure function
+
+<Aside type="note" title="The store is the source of truth">
+Upcasting never modifies the event store. Old events stay exactly as they were written. The upcaster is applied at read time, in memory. This means you can always replay from the original events — even if you've upcasted 10 times.
+</Aside>
+
+## What Happens When You Add a Savings Account
+
+- Tutorial Part 4 adds a savings account type to NeoBank
+- The existing `AccountOpened` event has no `accountType` field — it was always checking
+- Option 1 (additive): add `accountType: Maybe AccountType` — old events default to `Checking`
+- Option 2 (new event): create `SavingsAccountOpened` as a separate event type
+- Option 3 (upcasting): add `accountType: AccountType` and write an upcaster that sets old events to `Checking`
+- Each option has tradeoffs — the right choice depends on how different savings accounts are from checking
+
+## In NeoBank Terms
+
+- NeoBank's `AccountOpened` event starts simple: `{ accountId, ownerId, timestamp }`
+- In Part 4, savings accounts need an interest rate: `{ accountId, ownerId, timestamp, interestRate }`
+- Old events don't have `interestRate` — they're checking accounts with no interest
+- The upcaster: `AccountOpened_V1 -> AccountOpened_V2` sets `interestRate = Nothing` for old events
+- New events include `interestRate = Just 0.02` for savings accounts
+- The event store contains both V1 and V2 events — the system handles both transparently
+
+### When to Use Each Strategy
+
+- **Additive (optional field)**: the new field is optional and has a sensible default for old events
+- **New event type**: the new event is semantically different enough to deserve its own type
+- **Upcasting**: the field is required and old events need a migration value
+- **Avoid**: changing the meaning of an existing field — this is the most dangerous change
+
+## The Full Picture
+
+{/* TODO: Code example showing an additive change to AccountOpened — include JS/TS, Python, Go equivalents */}
+{/* TODO: Code example showing an upcaster function — include JS/TS, Python, Go equivalents */}
+{/* TODO: Code example showing how the system applies upcasters at read time — include JS/TS, Python, Go equivalents */}
+
+- **Version tagging**: events can include a version field to identify which schema they use
+- **Upcaster registry**: the system maintains a registry of upcasters, applied in order
+- **Update rebuilding**: when event types change, updates can be rebuilt from the original events
+- **Backward compatibility**: old code can still read old events; new code handles both
+- **Forward compatibility**: new events with optional fields are readable by old code (with defaults)
+
+## How NeoHaskell Enforces This
+
+- Algebraic data types make versioning explicit — `V1` and `V2` are different types, not different strings
+- The compiler enforces that upcasters handle all cases — no silent failures for unrecognized event versions
+- Adding a new event type requires updating all handlers — the compiler flags missing cases
+- The upcaster function signature is type-checked — you can't accidentally return the wrong type
+
+## Testing This Concept
+
+{/* TODO: Code example showing a test for an upcaster — include JS/TS, Python, Go equivalents */}
+{/* TODO: Show: given a V1 event, the upcaster produces the correct V2 event */}
+
+- Test each upcaster as a pure function: given a V1 event, assert the correct V2 event
+- Test that updates produce the same result with V1 and V2 events (after upcasting)
+- Test the full replay: given a mix of V1 and V2 events, assert the correct final state
+- Property-based test: "upcasting is idempotent — applying it twice produces the same result"
+
+## Going Deeper
+
+- [Events, Not State →](/concepts/events-not-state) — why events are immutable
+- [Updates →](/concepts/updates) — how updates handle evolving event types
+- [Type Safety →](/concepts/type-safety) — how algebraic data types make versioning explicit
+- External: Greg Young's [Versioning in an Event Sourced System](https://leanpub.com/esversioning) — the definitive reference
+
+:::caution[Coming Soon]
+Code examples on this page are placeholders. Full working code will be added when the NeoBank tutorial is complete.
+:::

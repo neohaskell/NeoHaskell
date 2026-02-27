@@ -1,0 +1,216 @@
+---
+title: "Deployment"
+description: "From NeoHaskell code to a running service. Building for production, container images, configuration management, health checks, and monitoring."
+keywords: [deployment, production, docker, container, configuration, health checks, monitoring, neo build, nix]
+sidebar:
+  order: 10
+---
+
+{/*
+  CONTENT OUTLINE — Deployment Guide
+  ====================================
+  Position: Guides section, production operations
+  Goal: Reader has a working NeoHaskell app and wants to deploy it. They leave with a running service.
+  Prerequisites: Completed tutorial (or at least Parts 1-4) — reader has a working app
+  Tone: practical, step-by-step — this is a how-to guide, not a tutorial
+
+  Sections:
+  1. Prerequisites
+  2. What You'll Have at the End
+  3. Building for Production
+  4. Container Images (Docker/OCI)
+  5. Configuration Management
+  6. Transport Configuration (CLI → Web)
+  7. Health Checks and Readiness Probes
+  8. Basic Monitoring Setup
+  9. Event Store Persistence
+  10. Scaling Considerations
+  11. Next Steps
+*/}
+
+{/* POLYGLOT NOTE: All code examples on this page should include equivalent snippets in JS/TS, Python, and Go. See DOCS-PLAN.md Guiding Principle #9. */}
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+
+## Prerequisites
+
+- Completed [Tutorial Parts 1-4](/tutorial/) or have a working NeoHaskell application
+- Basic familiarity with your deployment target (Docker, a cloud provider, or a VPS)
+- Optional: [PostgreSQL Event Store](/guides/postgresql-event-store/) — if you need persistent storage
+
+## What You'll Have at the End
+
+- A production build of your NeoHaskell application
+- A container image ready to deploy
+- Configuration management that works across environments
+- Health check endpoints for your orchestrator
+- Basic monitoring setup
+
+## Building for Production
+
+{/*
+  The build step. neo build vs nix build. What the output looks like.
+*/}
+
+
+- `neo build` compiles your application for production — optimized, no debug symbols
+- The output is a single statically-linked binary — no runtime dependencies, no JVM, no interpreter
+- Show: the `neo build` command and its output
+- Show: where the binary is placed (`dist/` or similar)
+- Build with Nix for reproducible builds: `nix build` produces the same binary on any machine
+  - The Nix build is hermetic — it doesn't depend on anything installed on the build machine
+  - Useful for CI: the build is deterministic, so you can cache it
+- Build flags:
+  - `--optimize` — enables additional optimizations (slower build, faster runtime)
+  - `--target` — cross-compile for a different architecture (e.g., build on macOS, deploy to Linux)
+- Note: the binary includes everything — no separate config files required at build time
+
+{/* TODO: code example showing neo build output — include JS/TS, Python, Go equivalents */}
+
+## Container Images (Docker/OCI)
+
+{/*
+  How to package the binary in a container image.
+  NeoHaskell's static binary makes this very simple.
+*/}
+
+
+- Because the binary is statically linked, the container image can be minimal
+- Show: a minimal Dockerfile using a scratch or distroless base image
+  - `FROM scratch` — the smallest possible image (just the binary)
+  - `FROM gcr.io/distroless/static` — slightly larger, but includes CA certificates for HTTPS
+- Show: building the container image with `docker build`
+- Show: running the container locally with `docker run`
+- Multi-stage build: use Nix to build the binary, then copy it into a minimal image
+  - Show: a multi-stage Dockerfile with a Nix build stage
+- Image size: a NeoHaskell service image is typically 10-50MB — much smaller than JVM or Node.js services
+- Note: the binary needs to be compiled for the target architecture — use `--target linux/amd64` if building on macOS
+
+{/* TODO: Dockerfile example */}
+
+## Configuration Management
+
+{/*
+  How NeoHaskell's defineConfig system works in production.
+  Environment variables, config files, secrets.
+*/}
+
+
+- NeoHaskell's `defineConfig` system auto-generates environment variable parsing
+- Every config field becomes an environment variable: `DATABASE_URL`, `PORT`, `LOG_LEVEL`
+- Show: a `defineConfig` definition and the environment variables it generates
+- Show: setting environment variables in Docker (`-e` flag, `--env-file`)
+- Show: setting environment variables in Kubernetes (ConfigMap, Secret)
+- Secrets management:
+  - Don't put secrets in the container image
+  - Use environment variables for secrets (DATABASE_URL, API keys)
+  - Or use a secrets manager (AWS Secrets Manager, Vault) and inject at runtime
+- Config validation: NeoHaskell validates all config at startup — if a required field is missing, the app fails fast with a clear error message
+- Show: what the startup error looks like when a required config field is missing
+
+{/* TODO: code example showing defineConfig and environment variable mapping — include JS/TS, Python, Go equivalents */}
+
+## Transport Configuration (CLI to Web)
+
+{/*
+  The transport swap story — one of NeoHaskell's key features.
+  Show how to change from CLI to web transport in production.
+*/}
+
+
+- NeoHaskell services are transport-agnostic — the same application code runs as CLI or web
+- In development, you likely used the CLI transport for fast feedback
+- In production, you'll use the web transport to expose HTTP endpoints
+- Show: the configuration change to switch from CLI to web transport (one line)
+- Show: the web transport configuration options:
+  - Port
+  - Host binding
+  - TLS/HTTPS (terminate at the load balancer, or configure in the app)
+  - CORS settings
+- Show: the OpenAPI spec that's auto-generated from your service definition
+- Note: the CLI transport is still useful in production for admin commands and scripts
+
+{/* TODO: code example showing transport configuration — include JS/TS, Python, Go equivalents */}
+
+## Health Checks and Readiness Probes
+
+{/*
+  How to configure health checks for container orchestrators.
+*/}
+
+
+- NeoHaskell services expose health check endpoints automatically
+- `/health` — liveness probe: is the process running?
+- `/ready` — readiness probe: is the service ready to accept traffic? (event store connected, etc.)
+- Show: the health check endpoint responses (JSON format)
+- Show: configuring health checks in Docker Compose
+- Show: configuring liveness and readiness probes in Kubernetes
+- Custom health checks: how to add domain-specific health checks (e.g., "can I reach the payment provider?")
+- Note: the readiness probe checks the event store connection — if PostgreSQL is down, the service reports not ready
+
+{/* TODO: code example showing health check configuration — include JS/TS, Python, Go equivalents */}
+
+## Basic Monitoring Setup
+
+{/*
+  What to monitor in an event-sourced service.
+  Metrics, logs, traces.
+*/}
+
+
+- What to monitor in an event-sourced service:
+  - **Command throughput**: commands per second, by command type
+  - **Command latency**: p50, p95, p99 latency for command processing
+  - **Error rate**: domain rejections vs. infrastructure errors (different alerts)
+  - **Event store lag**: how far behind is the query processor?
+  - **Event store size**: total events, events per entity type
+- NeoHaskell emits structured logs by default — compatible with any log aggregation system
+- Show: the log format (JSON, with correlation IDs)
+- Metrics: NeoHaskell exposes a `/metrics` endpoint in Prometheus format
+- Show: a basic Prometheus scrape config
+- Tracing: NeoHaskell supports OpenTelemetry — show how to configure the OTLP exporter
+- Alerting recommendations:
+  - Alert on infrastructure errors (event store connection failures)
+  - Don't alert on domain rejections (those are expected business behavior)
+  - Alert on command latency p99 > threshold
+
+{/* TODO: code example showing metrics and logging configuration — include JS/TS, Python, Go equivalents */}
+
+## Event Store Persistence
+
+- The in-memory event store is for development only — it loses all data on restart
+- For production, use PostgreSQL as the event store
+- Switching is a single configuration change — no code changes required
+- See the full guide: [PostgreSQL Event Store](/guides/postgresql-event-store/)
+
+## Scaling Considerations
+
+{/*
+  How to think about scaling a NeoHaskell service.
+  Start simple, scale when you need to.
+*/}
+
+
+- Start with a single instance — NeoHaskell services are stateless (state is in the event store)
+- Horizontal scaling: run multiple instances behind a load balancer
+  - All instances read from the same event store
+  - Commands are idempotent — duplicate delivery is safe
+- Vertical scaling: NeoHaskell services are efficient — a single instance handles significant load
+- When to scale:
+  - Scale when command latency increases under load
+  - Scale when the event store becomes the bottleneck (see PostgreSQL guide)
+- What NOT to do: don't run multiple instances with the in-memory event store — they won't share state
+
+<Aside type="note" title="Start simple">
+Most NeoHaskell services don't need horizontal scaling at launch. A single well-configured instance handles thousands of commands per second. Scale when you have evidence you need to, not preemptively.
+</Aside>
+
+## Next Steps
+
+- **Required for production**: [PostgreSQL Event Store](/guides/postgresql-event-store/) — persistent event storage
+- **If integrating with existing systems**: [Integrating Existing Systems](/guides/integrating-existing-systems/)
+- **If adopting at work**: [Adopting NeoHaskell at Work](/guides/adopting-at-work/)
+
+:::caution[Coming Soon]
+This page is a content outline. The full guide with configuration examples and Dockerfiles is in progress.
+:::
