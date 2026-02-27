@@ -1,7 +1,7 @@
 # NeoHaskell Syntax Specification
 
 **Status:** In Progress  
-**Last updated:** 2026-02-25
+**Last updated:** 2026-02-27
 
 ---
 
@@ -29,14 +29,14 @@ Kotlin-style brace syntax, chosen for the target audience (Java/C#/JS developers
 
 Every unfamiliar concept costs adoption. Spend the budget on semantics, not syntax.
 
-| Feature | Cost | Why It's Worth It |
-|---------|------|-------------------|
-| `let!` for effects | Medium | Makes effectful code explicit — the whole point |
-| `\|>` pipe | Low | Growing mainstream (Elixir, F#, shell) |
-| `trait/impl` | Low | Rust-familiar, fast-growing |
-| `@attr` | Very Low | Java/C#/Python all have decorators |
-| Domain keywords | Medium | Self-documenting, core differentiator |
-| Braces + familiar structure | **Zero** | Home for target audience |
+| Feature                     | Cost     | Why It's Worth It                               |
+| --------------------------- | -------- | ----------------------------------------------- |
+| `let!` for effects          | Medium   | Makes effectful code explicit — the whole point |
+| `\|>` pipe                  | Low      | Growing mainstream (Elixir, F#, shell)          |
+| `trait/impl`                | Low      | Rust-familiar, fast-growing                     |
+| `@attr`                     | Very Low | Java/C#/Python all have decorators              |
+| Domain keywords             | Medium   | Self-documenting, core differentiator           |
+| Braces + familiar structure | **Zero** | Home for target audience                        |
 
 ### Guiding Quotes
 
@@ -66,50 +66,50 @@ Features marked ✅ are decided. Features marked ❌ are pending design.
 
 ### Foundations (already decided)
 
-| Feature | Status | Summary |
-|---------|--------|---------|
-| Records & Domain Keywords | ✅ | `record`, `entity`, `command`, `query`, `agent` |
-| Attributes | ✅ | `@attr` syntax |
-| Generics | ✅ | `<t>` definition, `:<t>` application, lowercase type vars |
-| Arrays | ✅ | `Array a` type, `[1, 2, 3]` literals |
-| Tuples | ✅ | `#(a, b)` syntax |
-| Pipes | ✅ | `\|>` left-to-right flow |
-| Blocks | ✅ | `{ }` instead of `do` |
-| Monadic Bind | ✅ | `let!` for effectful binding |
+| Feature                   | Status | Summary                                                   |
+| ------------------------- | ------ | --------------------------------------------------------- |
+| Records & Domain Keywords | ✅     | `record`, `entity`, `command`, `query`, `agent`           |
+| Attributes                | ✅     | `@attr` syntax                                            |
+| Generics                  | ✅     | `<t>` definition, `:<t>` application, lowercase type vars |
+| Arrays                    | ✅     | `Array a` type, `[1, 2, 3]` literals                      |
+| Tuples                    | ✅     | `#(a, b)` syntax                                          |
+| Pipes                     | ✅     | `\|>` left-to-right flow                                  |
+| Blocks                    | ✅     | `{ }` instead of `do`                                     |
+| Monadic Bind              | ✅     | `let!` for effectful binding                              |
 
 ### Design Queue (in priority order)
 
-| # | Feature | Status | Council Priority |
-|---|---------|--------|-----------------|
-| 1 | Functions | ✅ | Council-reviewed (R1: 12 experts, R2: 10 experts) |
-| 2 | Union Types / ADTs | ✅ | Council-reviewed (12 experts) |
-| 3 | Pattern Matching | ❌ | 10/10 Tier 1 — unanimous |
-| 4 | Lambdas | ❌ | 7/10 Tier 1 |
-| 5 | Error Handling | ❌ | 8/10 Tier 1-2 |
-| 6 | Imports | ✅ | Council-reviewed (8 experts) |
-| 7 | Comments | ❌ | 5/10 Tier 1-2 |
-| 8 | String Interpolation | ❌ | 10/10 Tier 1-2 |
-| 9 | Type Aliases | ✅ | Council-reviewed (5 experts) |
-| 10 | Newtypes | ✅ | Council-reviewed (8 experts) |
-| 11 | Destructuring | ❌ | 7/10 Tier 2 |
-| 12 | Traits & Impl | ❌ | 6/10 Tier 2 |
-| 13 | Visibility | ❌ | 6/10 Tier 2 |
-| 14 | Guards | ❌ | 4/10 Tier 2-3 |
-| 15 | Doc Comments | ❌ | 5/10 Tier 2-3 |
+| #   | Feature              | Status | Council Priority                                  |
+| --- | -------------------- | ------ | ------------------------------------------------- |
+| 1   | Functions            | ✅     | Council-reviewed (R1: 12 experts, R2: 10 experts) |
+| 2   | Enums                | ✅     | Council-reviewed (12 experts R1, 6 experts R2) |
+| 3   | Pattern Matching     | ❌     | 10/10 Tier 1 — unanimous                          |
+| 4   | Lambdas              | ❌     | 7/10 Tier 1                                       |
+| 5   | Error Handling       | ❌     | 8/10 Tier 1-2                                     |
+| 6   | Imports              | ✅     | Council-reviewed (8 experts)                      |
+| 7   | Comments             | ❌     | 5/10 Tier 1-2                                     |
+| 8   | String Interpolation | ❌     | 10/10 Tier 1-2                                    |
+| 9   | Type Aliases         | ✅     | Council-reviewed (5 experts)                      |
+| 10  | Newtypes             | ✅     | Council-reviewed (8 experts)                      |
+| 11  | Destructuring        | ❌     | 7/10 Tier 2                                       |
+| 12  | Traits & Impl        | ❌     | 6/10 Tier 2                                       |
+| 13  | Visibility           | ❌     | 6/10 Tier 2                                       |
+| 14  | Guards               | ❌     | 4/10 Tier 2-3                                     |
+| 15  | Doc Comments         | ❌     | 5/10 Tier 2-3                                     |
 
 ### Explicitly Deferred (post-1.0 or never)
 
-| Feature | Council Verdict |
-|---------|----------------|
-| Operator definition | 7/10 skip — `\|>` is enough |
-| Anonymous records | 6/10 skip — named records are better for domain modeling |
-| Where clauses | 4/10 skip — `let` covers 90% of cases |
-| Handler syntax | Design later — needs real usage to inform |
-| Macros / metaprogramming | 10/10 unanimous skip |
-| HKT / dependent types | 10/10 unanimous skip |
-| Separate `enum` keyword | 8/10 skip — ADTs cover this |
-| Implicit conversions | 9/10 skip |
-| Block comments `/* */` | Skip — destroys line-by-line lexing |
+| Feature                  | Council Verdict                                          |
+| ------------------------ | -------------------------------------------------------- |
+| Operator definition      | 7/10 skip — `\|>` is enough                              |
+| Anonymous records        | 6/10 skip — named records are better for domain modeling |
+| Where clauses            | 4/10 skip — `let` covers 90% of cases                    |
+| Handler syntax           | Design later — needs real usage to inform                |
+| Macros / metaprogramming | 10/10 unanimous skip                                     |
+| HKT / dependent types    | 10/10 unanimous skip                                     |
+| Separate `enum` keyword  | Now adopted — see Feature #2 (Enums)                     |
+| Implicit conversions     | 9/10 skip                                                |
+| Block comments `/* */`   | Skip — destroys line-by-line lexing                      |
 
 ---
 
@@ -146,6 +146,59 @@ let r = Result {
   error: "none",
 }
 ```
+
+### Record Updates
+
+Create a modified copy of a record by specifying only the changed fields:
+
+```neohaskell
+let older = person { age: person.age + 1 }
+
+let moved = point { x: 10.0, y: 20.0 }
+```
+
+The original record is unchanged (immutable). The expression `record { field: newValue }`
+produces a new record of the same type with the specified fields updated.
+
+### Structural Field Constraints (`has`)
+
+Functions can require that a type parameter has specific fields, regardless of the
+concrete record type. This enables record-polymorphic functions:
+
+```neohaskell
+fun performBirthday<a>(subject: a): SubjectCelebrated where
+  a has name: Text,
+  a has age: Positive<Int>,
+{
+  let newSubject = subject {
+    age: increment(subject.age),
+  }
+  SubjectCelebrated {
+    message: "Happy birthday ${newSubject.name}, you're now ${newSubject.age}!",
+    subject: newSubject,
+  }
+}
+```
+
+The `a has field: Type` constraint means "type `a` must have a field named `field` of
+type `Type`." This works on any record type that satisfies the constraint:
+
+```neohaskell
+-- Both work with performBirthday:
+record Person { name: Text, age: Positive<Int>, email: Text }
+record Pet { name: Text, age: Positive<Int>, species: Text }
+
+let result1 = performBirthday(somePerson)  -- ✅
+let result2 = performBirthday(somePet)     -- ✅
+```
+
+**Transpilation:** The transpiler generates `HasField` and `SetField` typeclass instances
+for every record type. The `a has field: Type` constraint compiles to `HasField "field" a Type`
+(and `SetField` where record update syntax is used). Error messages are controlled by the
+transpiler — users never see raw `HasField` constraint errors.
+
+**Usage guidance:** Use `has` constraints for infrastructure code (serialization, logging,
+generic utilities). For domain logic, prefer named types or traits.
 
 ### Domain Keywords
 
@@ -194,7 +247,7 @@ record Product {
 ### Generics
 
 Definition: `<t>` (lowercase — type variables MUST be lowercase, uppercase = concrete types).
-Application: `:<t>`.
+Application: `<t>`.
 
 ```neohaskell
 record Result<ok, err> {
@@ -202,8 +255,8 @@ record Result<ok, err> {
   error: err,
 }
 
-result = parse:<Money> input
-items = empty:<Array<Product>>
+result = parse<Money> input
+items = empty<Array<Product>>
 ```
 
 **Why lowercase?** Haskell's type system uses case to distinguish type variables (`a`, `ok`) from
@@ -219,7 +272,7 @@ Single letters (`a`, `b`, `f`) are valid but discouraged outside generic utility
 **Tuples:** `#(a, b)` — visually distinct from function calls.  
 **Pipes:** `|>` left-to-right data flow.  
 **Blocks:** `{ }` for sequencing/effects (replaces `do`).  
-**Monadic bind:** `let!` marks effectful binding. `return` wraps the result.
+**Monadic bind:** `let!` marks effectful binding. `return` is an optional visual marker (compiles to nothing).
 
 ### Call Syntax
 
@@ -232,15 +285,15 @@ foo arg1 arg2        -- whitespace (valid, normalized by formatter)
 
 ### Equivalence Table (for Java/C# devs)
 
-| NeoHaskell | Mental Equivalent |
-|-----------|-------------------|
-| `foo(a, b) { ... }` | Method with body |
-| `let! x = op` | `var x = await op` |
-| `x \|> f \|> g` | `x.f().g()` |
-| `#(a, b)` | `new Tuple<>(a, b)` |
-| `Person { name: "X" }` | `new Person(name: "X")` |
-| `record Foo { x: Int }` | `class Foo { int x; }` |
-| `{ }` | `{ }` |
+| NeoHaskell              | Mental Equivalent       |
+| ----------------------- | ----------------------- |
+| `foo(a, b) { ... }`     | Method with body        |
+| `let! x = op`           | `var x = await op`      |
+| `x \|> f \|> g`         | `x.f().g()`             |
+| `#(a, b)`               | `new Tuple<>(a, b)`     |
+| `Person { name: "X" }`  | `new Person(name: "X")` |
+| `record Foo { x: Int }` | `class Foo { int x; }`  |
+| `{ }`                   | `{ }`                   |
 
 ---
 
@@ -250,18 +303,18 @@ Designed via DX Council review (12 experts Round 1, 10 experts Round 2, Feb 2025
 
 ### Summary
 
-| Decision | Choice | Council Support |
-|-|-|-|
-| Definition keyword | `fun` | 11/12 |
-| Constant keyword | `let` | 9/10 |
-| Type signatures | Inline (same line) | User decision |
-| Body forms | `= expr` and `{ block }` | Accepted |
-| Effectful binding | `let!` | Unanimous |
-| Effectful return | `return` (monadic pure) | 5/10 (contested — see notes) |
-| Pure block return | Implicit (last expression) | Unanimous |
-| Type constraints | `where` clause, no parens | 10/12 |
-| Generic variables | Lowercase required (`<t>`, not `<T>`) | User decision (non-negotiable) |
-| Zero-arg effectful | Require `()` | Majority |
+| Decision           | Choice                                | Council Support                |
+| ------------------ | ------------------------------------- | ------------------------------ |
+| Definition keyword | `fun`                                 | 11/12                          |
+| Constant keyword   | `let`                                 | 9/10                           |
+| Type signatures    | Inline (same line)                    | User decision                  |
+| Body forms         | `= expr` and `{ block }`              | Accepted                       |
+| Effectful binding  | `let!`                                | Unanimous                      |
+|| Effectful return | `return` (visual marker, no-op) | 5/10 (contested — see notes) |
+| Pure block return  | Implicit (last expression)            | Unanimous                      |
+| Type constraints   | `where` clause, no parens             | 10/12                          |
+| Generic variables  | Lowercase required (`<t>`, not `<T>`) | User decision (non-negotiable) |
+| Zero-arg effectful | Require `()`                          | Majority                       |
 
 ### Constants
 
@@ -303,49 +356,58 @@ fun clamp(value: Int, lo: Int, hi: Int) : Int {
 ```
 
 **Rules:**
-- `= expr` → pure, single expression. No `let` bindings, no `let!`, no `return`.
+
+- `= expr` → pure, single expression. No `let` bindings, no `let!`.
 - `{ block }` with only `let` → pure multi-line. Last expression is the return value.
-- No explicit `return` in pure functions — it is a compile error.
+- `return` is an optional visual marker — it compiles to nothing and can appear before the last expression in any block.
 
 ### Effectful Functions
 
-Block form with `let!` for effectful binding and `return` for the result:
+Block form with `let!` for effectful binding. The user must explicitly wrap the final value (e.g., `Task.yield`):
 
 ```neohaskell
 fun readAndPrint(path: Text) : Task<Text> {
     let! content = readFile(path)
     let! _ = print(content)
-    return content
+    return Task.yield(content)
 }
 
 fun getTime() : Task<Time> {
     let! now = Clock.now()
-    return now
+    return Task.yield(now)
 }
 
 fun fetchUser(id: UserId) : Task<User> {
     let! response = http.get("/users/" ++ show(id))
     let! user = parseJson(response.body)
-    return user
+    return Task.yield(user)
 }
 ```
 
 **Rules:**
-- `{ block }` with any `let!` → effectful. Must end with `return`.
-- `return` lifts a pure value into the effect context (Haskell's `pure`/`return`).
-- `return` is ONLY valid inside effectful blocks — compile error elsewhere.
+
+- `{ block }` with any `let!` → effectful. The last expression must have the correct effect type.
+- `return` is an optional visual marker — it compiles to nothing. Use it to signal "this is the result."
+- The user must explicitly wrap pure values into the effect type (e.g., `Task.yield(x)`, `Result.ok(x)`).
 - Zero-argument effectful functions require `()`: `fun getTime()`, not `fun getTime`.
 
-**Error: `return` in pure context:**
+**`return` is a visual marker (compiles to nothing):**
 
-```
-error: `return` is only valid in effectful blocks
-  --> src/Main.nh:3:5
-  |
-3 |     return x + y
-  |     ^^^^^^ unnecessary in pure blocks
-  |
-  = hint: remove `return` — in pure blocks, the last expression is returned
+`return` exists for readability — it is stripped during transpilation. Both forms
+below are equivalent. Use whichever is clearer:
+
+```neohaskell
+-- With return (recommended for effectful blocks):
+fun getTime() : Task<Time> {
+    let! now = Clock.now()
+    return Task.yield(now)
+}
+
+-- Without return (equivalent):
+fun getTime() : Task<Time> {
+    let! now = Clock.now()
+    Task.yield(now)
+}
 ```
 
 **Error: `let!` in expression form:**
@@ -416,13 +478,28 @@ fun convert<a, b>(x: a) : b where Convertible<a, b> {
 }
 ```
 
-**Grammar:** The `where` clause accepts a comma-separated list of constraints.
-Each constraint is either:
-- `lowercase: UpperType` — single-parameter sugar (most common)
-- `UpperType<args>` — multi-parameter type application (power-user)
+**Field constraints** use `has` to require specific record fields (see Records):
 
-The parser disambiguates by the first token: `LOWER_IDENT :` → sugar form;
-`UPPER_IDENT <` → type-application form.
+```neohaskell
+fun greet<a>(subject: a) : Text where a has name: Text {
+    "Hello, ${subject.name}!"
+}
+
+-- Multiple field constraints:
+fun summarize<a>(item: a) : Text where a has name: Text, a has age: Int {
+    "${item.name} (age ${item.age})"
+}
+```
+
+**Grammar:** The `where` clause accepts a comma-separated list of constraints.
+Each constraint is one of:
+
+- `variable: Trait` — single-parameter constraint sugar (most common)
+- `TypeClass<args>` — multi-parameter type application (power-user)
+- `variable has field: Type` — structural field constraint (see Records)
+
+The parser disambiguates by the token sequence: `LOWER_IDENT :` → trait constraint;
+`UPPER_IDENT <` → type-application form; `LOWER_IDENT has` → field constraint.
 
 **Council note:** Multi-parameter typeclass constraints are a power-user feature.
 Most application code uses only single-parameter constraints. If your `where` clause
@@ -430,18 +507,18 @@ has more than 2-3 constraints, consider whether explicit function passing would 
 
 ### Transpilation Rules
 
-| NeoHaskell | Haskell Output |
-|-|-|
-| `fun f(x: Int) : Int = x + 1` | `f :: Int -> Int` | 
-| | `f x = x + 1` |
-| `fun f(x: Int) : Int { let y = x + 1; y * 2 }` | `f :: Int -> Int` |
-| | `f x = let y = x + 1 in y * 2` |
-| `fun f(x: Int) : Task<Int> { let! y = get(); return y }` | `f :: Int -> Task Int` |
-| | `f x = do { y <- get; pure y }` |
-| `let pi : Float = 3.14` | `pi :: Float` |
-| | `pi = 3.14` |
+| NeoHaskell                                               | Haskell Output                  |
+| -------------------------------------------------------- | ------------------------------- |
+| `fun f(x: Int) : Int = x + 1`                            | `f :: Int -> Int`               |
+|                                                          | `f x = x + 1`                   |
+| `fun f(x: Int) : Int { let y = x + 1; y * 2 }`           | `f :: Int -> Int`               |
+|                                                          | `f x = let y = x + 1 in y * 2`  |
+| `fun f(x: Int) : Task<Int> { let! y = get(); return Task.yield(y) }` | `f :: Int -> Task Int`          |
+|                                                                      | `f x = do { y <- get; pure y }` |
+| `let pi : Float = 3.14`                                  | `pi :: Float`                   |
+|                                                          | `pi = 3.14`                     |
 | `fun show<t>(x: t) : Text where t: Show { toString(x) }` | `show :: (Show t) => t -> Text` |
-| | `show x = toString x` |
+|                                                          | `show x = toString x`           |
 
 ### What Functions Do NOT Include
 
@@ -465,10 +542,13 @@ Resilient parsing (commit at token 1). Matches Kotlin. (matklad, Klabnik — 11/
 **Why `let` for constants?** Consistency with `let` inside blocks. Same keyword, same semantics
 (immutable binding), regardless of scope. F# does this successfully. (9/10 support)
 
-**Why `return` and not `yield`?** `yield` was unanimously rejected by the council (12/12) — it
-collides with generator semantics in JS, C#, Python, and Kotlin. `return` matches F# computation
-expressions. Council was split 5/10 on `return` vs alternatives (`pure`, implicit). The `return`
-choice was made by the design lead for familiarity with the target audience.
+**Why `return` as a visual marker?** `return` is a keyword that compiles to nothing — it exists
+purely for readability, signaling "this is the result" to the human reviewer. The user must
+explicitly wrap values using the appropriate function (`Task.yield`, `Result.ok`, etc.).
+`yield` was unanimously rejected by the council (12/12) — it collides with generator semantics
+in JS, C#, Python, and Kotlin. Council was split 5/10 on `return` vs alternatives (`pure`,
+implicit). The visual-marker semantics were chosen to avoid teaching beginners that `return`
+has magical lifting behavior — what you see is what you get.
 
 **Why lowercase generics?** Scanner-level disambiguation: `LOWER_IDENT` = type variable,
 `UPPER_IDENT` = concrete type. Zero-lookahead parser benefit. Matches Haskell/Elm convention.
@@ -483,58 +563,68 @@ tuple/grouping that isn't semantically meaningful. The comma is unambiguous in c
 
 ---
 
-## 2. Union Types / ADTs ✅
+## 2. Enums ✅
 
-Designed via DX Council review (12 experts, Feb 2025).
+Designed via DX Council review (12 experts Feb 2025, revised 6 experts Feb 2026).
 
 ### Summary
 
-| Decision | Choice | Council Support |
-|-|-|-|
-| Definition keyword | `type` | 5/12 (Elm-aligned, tie-break: Elm proximity) |
-| Variant separator | `\|` (pipe) | 12/12 — unanimous |
-| Positional data | `Variant(args)` — paren syntax | 7/12 |
-| Record variants | `Variant { field: Type }` | 7/12 |
-| Generic parameters | Lowercase `<a>`, `<ok, err>` | Non-negotiable (locked) |
-| Recursive types | No special syntax | 12/12 — unanimous |
-| Auto-derived traits | `Show`, `Eq` auto-derived for all types | 4/12 explicit, tie-break: Elm proximity |
-| Additional deriving | `deriving Ord, Bounded` explicit | Accepted |
-| Field accessors | No auto-generated accessors for variant records | Consensus (safety) |
-| Simple enums | `type Name = A \| B \| C` | 12/12 — unanimous |
+| Decision            | Choice                                          | Council Support                              |
+| ------------------- | ----------------------------------------------- | -------------------------------------------- |
+| Definition keyword  | `enum`                                          | 6/6 — unanimous (R2)                         |
+| Variant layout      | Brace-enclosed, newline-separated               | 6/6 — unanimous (R2)                         |
+| Positional data     | `Variant(args)` — paren syntax                  | 7/12 (R1)                                    |
+| Record variants     | `Variant { field: Type }`                       | 7/12 (R1)                                    |
+| Generic parameters  | Lowercase `<a>`, `<ok, err>`                    | Non-negotiable (locked)                      |
+| Recursive types     | No special syntax                               | 12/12 — unanimous (R1)                       |
+| Auto-derived traits | `Show`, `Eq` auto-derived for all types         | 4/12 explicit, tie-break: Elm proximity (R1) |
+| Additional deriving | `deriving Ord, Bounded` explicit                | Accepted                                     |
+| Field accessors     | No auto-generated accessors for variant records | Consensus (safety)                           |
 
 ### Simple Enums (Nullary Constructors)
 
 ```neohaskell
-type Direction = North | South | East | West
+enum Direction {
+  North
+  South
+  East
+  West
+}
 
-type Color = Red | Green | Blue
-
--- Multi-line form (leading pipe on all variants)
-type HttpMethod =
-  | Get
-  | Post
-  | Put
-  | Delete
-  | Patch
+enum Color {
+  Red
+  Green
+  Blue
+}
 ```
 
 No data carried. Each variant is a distinct value of the type.
-The formatter enforces leading `|` on all variants in multi-line form for visual consistency.
+Variants are newline-separated within braces. The formatter enforces one variant per line.
 
 ### Data-Carrying Variants (Positional)
 
 ```neohaskell
-type Maybe<a> = Nothing | Just(a)
+enum Maybe<a> {
+  Nothing
+  Just(a)
+}
 
-type Result<ok, err> = Ok(ok) | Err(err)
+enum Result<ok, err> {
+  Ok(ok)
+  Err(err)
+}
 
-type Shape = Circle(Float) | Rectangle(Float, Float)
+enum Shape {
+  Circle(Float)
+  Rectangle(Float, Float)
+}
 
 -- Multi-field positional
-type Expr =
-  | Literal(Int)
-  | Add(Expr, Expr)
-  | Multiply(Expr, Expr)
+enum Expr {
+  Literal(Int)
+  Add(Expr, Expr)
+  Multiply(Expr, Expr)
+}
 ```
 
 Parenthesized fields after the variant name. Reads as a constructor call —
@@ -543,14 +633,16 @@ familiar to Java/C#/JS developers. Use positional form for 1–2 fields with obv
 ### Record Variants (Named Fields)
 
 ```neohaskell
-type Shape =
-  | Circle { radius: Float }
-  | Rectangle { width: Float, height: Float }
+enum Shape {
+  Circle { radius: Float }
+  Rectangle { width: Float, height: Float }
+}
 
-type PaymentMethod =
-  | CreditCard { number: Text, expiry: Date }
-  | BankTransfer { iban: Text }
-  | Cash
+enum PaymentMethod {
+  CreditCard { number: Text, expiry: Date }
+  BankTransfer { iban: Text }
+  Cash
+}
 ```
 
 Braces with named fields, consistent with `record` syntax. Use record variants when
@@ -563,26 +655,39 @@ pattern matching (Feature #3). This prevents Haskell's partial accessor problem 
 ### Mixed Variants
 
 ```neohaskell
-type Token =
-  | Identifier(Text)
-  | Number(Int)
-  | StringLit(Text)
-  | Operator { symbol: Text, precedence: Int }
-  | EOF
+enum Token {
+  Identifier(Text)
+  Number(Int)
+  StringLit(Text)
+  Operator { symbol: Text, precedence: Int }
+  EOF
+}
 ```
 
-Nullary, positional, and record variants can be mixed freely in the same type.
+Nullary, positional, and record variants can be mixed freely in the same enum.
 
-### Generic Union Types
+### Generic Enums
 
 ```neohaskell
-type Maybe<a> = Nothing | Just(a)
+enum Maybe<a> {
+  Nothing
+  Just(a)
+}
 
-type Result<ok, err> = Ok(ok) | Err(err)
+enum Result<ok, err> {
+  Ok(ok)
+  Err(err)
+}
 
-type Either<a, b> = Left(a) | Right(b)
+enum Either<a, b> {
+  Left(a)
+  Right(b)
+}
 
-type Tree<a> = Leaf(a) | Node(Tree<a>, Tree<a>)
+enum Tree<a> {
+  Leaf(a)
+  Node(Tree<a>, Tree<a>)
+}
 ```
 
 Type parameters are **lowercase** (non-negotiable — matches Haskell's type variable convention).
@@ -590,25 +695,30 @@ Use semantic names: `ok`, `err`, `item`, `key`, `value` over single letters wher
 Single letters (`a`, `b`) are valid for generic utility types.
 
 **Note:** The `record Result<ok, err>` example in Foundations demonstrates generic record syntax.
-The standard `Result` type is defined as a union type: `type Result<ok, err> = Ok(ok) | Err(err)`.
+The standard `Result` type is defined as an enum: `enum Result<ok, err> { Ok(ok) Err(err) }`.
 
 ### Recursive Types
 
 ```neohaskell
-type List<a> = Nil | Cons(a, List<a>)
+enum List<a> {
+  Nil
+  Cons(a, List<a>)
+}
 
-type Expr =
-  | Literal(Int)
-  | Add(Expr, Expr)
-  | If { condition: Expr, thenBranch: Expr, elseBranch: Expr }
+enum Expr {
+  Literal(Int)
+  Add(Expr, Expr)
+  If { condition: Expr, thenBranch: Expr, elseBranch: Expr }
+}
 
-type Json =
-  | JsonNull
-  | JsonBool(Bool)
-  | JsonNumber(Float)
-  | JsonString(Text)
-  | JsonArray(Array<Json>)
-  | JsonObject(Array<#(Text, Json)>)
+enum Json {
+  JsonNull
+  JsonBool(Bool)
+  JsonNumber(Float)
+  JsonString(Text)
+  JsonArray(Array<Json>)
+  JsonObject(Array<#(Text, Json)>)
+}
 ```
 
 No special syntax needed. Self-reference is natural — the type name is in scope
@@ -617,24 +727,41 @@ needed — Haskell handles recursion natively via lazy evaluation.
 
 ### Deriving
 
-`Show` and `Eq` are **auto-derived** for all union types. Additional derivations use
+`Show` and `Eq` are **auto-derived** for all enum types. Additional derivations use
 explicit `deriving`:
 
 ```neohaskell
 -- Show and Eq are automatic — no annotation needed
-type Direction = North | South | East | West
+enum Direction {
+  North
+  South
+  East
+  West
+}
 
 -- Add Ord for ordering
-type Priority = Low | Medium | High
+enum Priority {
+  Low
+  Medium
+  High
+}
   deriving Ord
 
 -- Multiple additional derivations
-type Color = Red | Green | Blue
+enum Color {
+  Red
+  Green
+  Blue
+}
   deriving Ord, Bounded
 ```
 
 The transpiler always emits `deriving (Show, Eq)` plus any user-specified additions.
 If the user writes `deriving Ord`, the Haskell output is `deriving (Show, Eq, Ord)`.
+
+**Note:** Ord and serialization (JSON, etc.) deriving strategies are under active design.
+The current `deriving` syntax works for basic typeclasses; a more comprehensive approach
+for serialization and ordering will be specified in a future revision.
 
 ### Construction
 
@@ -657,42 +784,43 @@ let result = if valid then Ok(value) else Err("invalid")
 ```
 
 Construction syntax mirrors the definition syntax:
+
 - Nullary: bare name
 - Positional: `Name(args)`
 - Record: `Name { field: value }`
 
 ### Transpilation Rules
 
-| NeoHaskell | Haskell Output |
-|-|-|
-| `type Direction = North \| South \| East \| West` | `data Direction = North \| South \| East \| West` |
-| | `  deriving (Show, Eq)` |
-| `type Maybe<a> = Nothing \| Just(a)` | `data Maybe a = Nothing \| Just a` |
-| | `  deriving (Show, Eq)` |
-| `type Result<ok, err> = Ok(ok) \| Err(err)` | `data Result ok err = Ok ok \| Err err` |
-| | `  deriving (Show, Eq)` |
-| `type Shape = Circle { radius: Float } \| Rect { w: Float, h: Float }` | `data Shape = Circle { radius :: Float } \| Rect { w :: Float, h :: Float }` |
-| | `  deriving (Show, Eq)` |
-| `type Priority = Low \| Medium \| High deriving Ord` | `data Priority = Low \| Medium \| High` |
-| | `  deriving (Show, Eq, Ord)` |
-| `Just(42)` | `Just 42` |
-| `Circle { radius: 5.0 }` | `Circle { radius = 5.0 }` |
-| `Ok("success")` | `Ok "success"` |
+| NeoHaskell                                                                    | Haskell Output                                                               |
+| ----------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| `enum Direction { North South East West }`                                    | `data Direction = North \| South \| East \| West`                            |
+|                                                                               | `  deriving (Show, Eq)`                                                      |
+| `enum Maybe<a> { Nothing Just(a) }`                                           | `data Maybe a = Nothing \| Just a`                                           |
+|                                                                               | `  deriving (Show, Eq)`                                                      |
+| `enum Result<ok, err> { Ok(ok) Err(err) }`                                    | `data Result ok err = Ok ok \| Err err`                                      |
+|                                                                               | `  deriving (Show, Eq)`                                                      |
+| `enum Shape { Circle { radius: Float } Rect { w: Float, h: Float } }`        | `data Shape = Circle { radius :: Float } \| Rect { w :: Float, h :: Float }` |
+|                                                                               | `  deriving (Show, Eq)`                                                      |
+| `enum Priority { Low Medium High } deriving Ord`                              | `data Priority = Low \| Medium \| High`                                      |
+|                                                                               | `  deriving (Show, Eq, Ord)`                                                 |
+| `Just(42)`                                                                    | `Just 42`                                                                    |
+| `Circle { radius: 5.0 }`                                                     | `Circle { radius = 5.0 }`                                                    |
+| `Ok("success")`                                                               | `Ok "success"`                                                               |
 
-### `record` vs `type` Relationship
+### `record` vs `enum` Relationship
 
-| Construct | Use Case | Haskell Output |
-|-|-|-|
+| Construct                                | Use Case                         | Haskell Output                                      |
+| ---------------------------------------- | -------------------------------- | --------------------------------------------------- |
 | `record Person { name: Text, age: Int }` | Single-constructor, named fields | `data Person = Person { name :: Text, age :: Int }` |
-| `type Maybe<a> = Nothing \| Just(a)` | Multi-constructor (sum type) | `data Maybe a = Nothing \| Just a` |
-| `type CustomerId = CustomerId(Int)` | Single-constructor wrapper (ADT) | `data CustomerId = CustomerId Int` |
+| `enum Maybe<a> { Nothing Just(a) }`      | Multi-constructor (sum type)     | `data Maybe a = Nothing \| Just a`                  |
+| `enum CustomerId { CustomerId(Int) }`    | Single-constructor wrapper (enum)| `data CustomerId = CustomerId Int`                  |
 
 `record` is for single-constructor types with named fields (domain modeling).
-`type` is for multi-constructor types (sum types / unions).
-Single-constructor `type` declarations are valid for wrapper types, but `record` is
+`enum` is for multi-constructor types (sum types / unions).
+Single-constructor `enum` declarations are valid for wrapper types, but `record` is
 preferred when fields have names.
 
-### What Union Types Do NOT Include
+### What Enums Do NOT Include
 
 These are designed in later features:
 
@@ -708,11 +836,19 @@ These are designed in later features:
 
 ### Design Rationale
 
-**Why `type`?** Elm uses `type` for custom types and it's the most neutral keyword for
-the target audience. `enum` (2/12) conflicts with the deferred "no separate enum keyword"
-decision (8/10 skip). `union` (2/12) sounds like C's untagged union to some developers.
-`data` is Haskell-specific. `type` names the *thing being created*, not the mechanism.
-(Czaplicki, Wlaschin, Syme, Feldman, Nystrom — 5/12 support, Elm proximity tie-break)
+**Why `enum`?** The target audience (Java/C#/TypeScript developers) already knows `enum` as
+"a type with distinct named values." NeoHaskell's `enum` extends that intuition to include
+data-carrying variants — the same way Rust's `enum` does. The DX Council unanimously (6/6)
+endorsed `enum` over the previous `type` keyword. The previous `|` pipe separator (12/12 in R1)
+was revisited because the initial council was composed of developers who already love Haskell —
+"the wrong constituency" for a language targeting newcomers (Klabnik).
+Czaplicki: "The `|` pipe separator was a mistake I'd revisit even in Elm."
+(R2: Czaplicki, Klabnik, Breslav, Feldman, Syme, Wlaschin — 6/6)
+
+**Why braces, not pipes?** Braces are the universal container in NeoHaskell — records use
+braces, blocks use braces, match arms use braces. Enum variants inside braces are consistent.
+Newline separation (no `|`) is cleaner for scanning — each variant is visually independent,
+making diffs cleaner (adding a variant is a single-line diff, not a multi-line change).
 
 **Why `Just(a)` not `Just a`?** Parenthesized constructor syntax reads as a function call —
 immediately familiar to Java/C#/JS developers. `Just a` (Haskell/Elm style) requires
@@ -720,7 +856,7 @@ understanding curried application. The paren form is a deliberate strangeness bu
 (Wlaschin, Syme, Feldman, Klabnik, Breslav, King, Nystrom — 7/12 support)
 
 **Why record variants?** `Circle { radius: Float }` enables domain modeling with named
-fields directly in union types. This is the "making illegal states unrepresentable" pattern
+fields directly in enums. This is the "making illegal states unrepresentable" pattern
 (King, Wlaschin). Record variants use the same brace syntax as `record` declarations for
 consistency. (7/12 support)
 
@@ -735,21 +871,15 @@ type is Haskell ceremony that confuses beginners who expect `==` to "just work."
 saves strangeness budget. Additional traits (`Ord`, `Bounded`) require explicit `deriving`.
 (Czaplicki, Syme, Feldman, Breslav — tie-break: Elm proximity, Kotlin precedent)
 
-**Why `record` and `type` are separate?** `record` is for single-constructor types with
-named fields (transpiles to single-constructor `data` with record syntax). `type` is for
+**Why `record` and `enum` are separate?** `record` is for single-constructor types with
+named fields (transpiles to single-constructor `data` with record syntax). `enum` is for
 multi-constructor types (sum types). They serve different purposes and the distinction is
 clean. (Hickey's orthogonality concern addressed)
 
 **Why no special recursive syntax?** Self-reference is natural in type definitions.
-`type List<a> = Nil | Cons(a, List<a>)` is self-evidently recursive. No `indirect` keyword
+`enum List<a> { Nil Cons(a, List<a>) }` is self-evidently recursive. No `indirect` keyword
 (Swift) or `Box` wrapper (Rust) needed — Haskell handles recursion natively via lazy
 evaluation. (12/12 unanimous)
-
-**Why leading `|` in multi-line form?** Every variant gets the same visual prefix, making
-it easy to add, remove, or reorder variants. The formatter enforces this for multi-line
-declarations. Single-line declarations omit the leading pipe.
-(Hermans — visual chunking reduces cognitive load)
-
 ---
 
 ## 3. Pattern Matching ✅
@@ -758,20 +888,20 @@ Designed via DX Council review (11 experts, Feb 2025).
 
 ### Summary
 
-| Decision | Choice | Council Support |
-|-|-|-|
-| Match keyword | `match` | 10/11 |
-| Branch arrow | `=>` | 9/11 |
-| Braces | `match x { ... }` | 11/11 — unanimous |
-| Exhaustiveness | Compile error (not warning) | 11/11 — unanimous |
-| Wildcard | `_` | 11/11 — unanimous |
-| Nested patterns | No depth limit | 11/11 — unanimous |
-| As-patterns | `as` keyword (not `@`) | 9/11 |
-| Literal patterns | Numbers, strings, booleans | 11/11 — unanimous |
-| Guards in arms | `if` keyword | 9/11 |
-| OR patterns | `\|` separator | Accepted |
-| Arm separators | Commas (trailing allowed) | Consistent with records |
-| `let` patterns | Defer refutable to Feature #11 | 8/11 |
+| Decision         | Choice                         | Council Support         |
+| ---------------- | ------------------------------ | ----------------------- |
+| Match keyword    | `match`                        | 10/11                   |
+| Branch arrow     | `=>`                           | 9/11                    |
+| Braces           | `match x { ... }`              | 11/11 — unanimous       |
+| Exhaustiveness   | Compile error (not warning)    | 11/11 — unanimous       |
+| Wildcard         | `_`                            | 11/11 — unanimous       |
+| Nested patterns  | No depth limit                 | 11/11 — unanimous       |
+| As-patterns      | `as` keyword (not `@`)         | 9/11                    |
+| Literal patterns | Numbers, strings, booleans     | 11/11 — unanimous       |
+| Guards in arms   | `if` keyword                   | 9/11                    |
+| OR patterns      | `\|` separator                 | Accepted                |
+| Arm separators   | Commas (trailing allowed)      | Consistent with records |
+| `let` patterns   | Defer refutable to Feature #11 | 8/11                    |
 
 ### Basic Syntax
 
@@ -803,7 +933,7 @@ let area = match shape {
 
 ### Constructor Patterns
 
-Match on union type constructors. Syntax mirrors construction — parenthesized args for
+Match on enum variants. Syntax mirrors construction — parenthesized args for
 positional variants, braces for record variants.
 
 ```neohaskell
@@ -863,7 +993,7 @@ match command {
 
 **Note:** Literal patterns on infinite domains (Int, Text) always require a wildcard or
 catch-all arm for exhaustiveness. Boolean patterns (`True`/`False`) are exhaustive without
-a wildcard because `Bool` is a two-variant union type.
+a wildcard because `Bool` is a two-variant enum.
 
 ### Wildcard and Variable Patterns
 
@@ -887,10 +1017,10 @@ match triple {
 }
 ```
 
-**Convention:** Prefer explicit variant names over `_` on union types. Using `_` as a
-catch-all on a union type silences the exhaustiveness checker when new variants are added.
-The linter warns: *"Consider matching all variants explicitly so the compiler can help
-you when new variants are added."*
+**Convention:** Prefer explicit variant names over `_` on enum types. Using `_` as a
+catch-all on an enum silences the exhaustiveness checker when new variants are added.
+The linter warns: _"Consider matching all variants explicitly so the compiler can help
+you when new variants are added."_
 
 ### Nested Patterns
 
@@ -1074,17 +1204,18 @@ literal patterns correctly.
 
 ### Transpilation Rules
 
-| NeoHaskell | Haskell Output |
-|-|-|
-| `match x { Just(v) => v, Nothing => 0 }` | `case x of { Just v -> v; Nothing -> 0 }` |
+| NeoHaskell                                      | Haskell Output                                     |
+| ----------------------------------------------- | -------------------------------------------------- |
+| `match x { Just(v) => v, Nothing => 0 }`        | `case x of { Just v -> v; Nothing -> 0 }`          |
 | `match s { Circle { radius: r } => r, _ => 0 }` | `case s of { Circle { radius = r } -> r; _ -> 0 }` |
-| `match x { Just(v) if v > 0 => v, _ => 0 }` | `case x of { Just v \| v > 0 -> v; _ -> 0 }` |
-| `match c { Red \| Blue => 1, _ => 2 }` | `case c of { Red -> 1; Blue -> 1; _ -> 2 }` |
-| `match x { Just(v) as whole => whole, _ => x }` | `case x of { whole@(Just v) -> whole; _ -> x }` |
-| `match p { #(a, b) => a + b }` | `case p of { (a, b) -> a + b }` |
-| `match n { 0 => "zero", _ => "other" }` | `case n of { 0 -> "zero"; _ -> "other" }` |
+| `match x { Just(v) if v > 0 => v, _ => 0 }`     | `case x of { Just v \| v > 0 -> v; _ -> 0 }`       |
+| `match c { Red \| Blue => 1, _ => 2 }`          | `case c of { Red -> 1; Blue -> 1; _ -> 2 }`        |
+| `match x { Just(v) as whole => whole, _ => x }` | `case x of { whole@(Just v) -> whole; _ -> x }`    |
+| `match p { #(a, b) => a + b }`                  | `case p of { (a, b) -> a + b }`                    |
+| `match n { 0 => "zero", _ => "other" }`         | `case n of { 0 -> "zero"; _ -> "other" }`          |
 
 **Key transformations:**
+
 - `match` → `case...of`
 - `=>` → `->`
 - `Just(v)` → `Just v` (remove parens, space-separated)
@@ -1123,15 +1254,15 @@ distinction: `->` means type, `=>` means branch. (Klabnik, Nystrom, matklad — 
 
 **Why `as` not `@`?** `@` is already used for attributes (`@embedded`, `@optional`).
 Reusing `@` for as-patterns creates a "wat" moment (Bernhardt). `as` reads as English
-("match this *as* name"), is used in F#, Python, C#, and TypeScript for similar binding
+("match this _as_ name"), is used in F#, Python, C#, and TypeScript for similar binding
 purposes, and has no competing meaning in NeoHaskell. (Klabnik, Nystrom, Czaplicki — 9/11)
 
 **Why `if` for guards?** `if` is the universal conditional keyword. Rust, Swift, and Scala
 all use `if` for pattern guards. `when` (F#) conflicts with potential future use. `where`
-is already used for type constraints. `if` reads naturally: "match Just(v) *if* v > 0."
+is already used for type constraints. `if` reads naturally: "match Just(v) _if_ v > 0."
 (Klabnik, Nystrom, matklad, Wlaschin — 9/11 support)
 
-**Why exhaustiveness as error?** This is the entire value proposition of union types +
+**Why exhaustiveness as error?** This is the entire value proposition of enums +
 pattern matching. A warning that developers ignore defeats the purpose. Elm, Rust, and
 Swift all make non-exhaustive matches a compile error. The error message quality is
 critical — list missing patterns in NeoHaskell syntax, not Haskell syntax.
@@ -1142,8 +1273,8 @@ arrays use commas, function parameters use commas. Match arms are items in a bra
 container. Rust also uses commas between match arms. Trailing comma allowed.
 
 **Why OR patterns?** Low complexity, high utility. `Red | Blue => "cool"` avoids
-duplicating arm bodies. The `|` is already the variant separator in union type definitions,
-so the semantic connection is natural (disjunction). Rust and F# both support OR patterns.
+duplicating arm bodies. `|` is the standard disjunction operator across languages.
+Rust and F# both support OR patterns with the same separator.
 
 **Why defer `let` patterns?** `let Just(x) = expr` is a refutable pattern — it can fail
 at runtime if the value is `Nothing`. This violates NeoHaskell's safety guarantee.
@@ -1175,15 +1306,15 @@ Designed via DX Council review (8 experts, Feb 2025).
 
 ### Summary
 
-| Decision | Choice | Council Support |
-|-|-|-|
-| Keyword | `import` | 8/8 — unanimous |
-| Selective imports | Braces `{ }` | 8/8 — unanimous |
-| Qualified/aliased | `import Foo as F` (no `qualified`) | 8/8 — unanimous |
-| Hiding | Omitted (Elm approach) | 6/8 — Elm tie-break |
-| Module = file | One module per file | 8/8 — unanimous |
-| Re-exports | `export import` modifier | 8/8 — unanimous |
-| Path style | Dot-path (`Data.Map`) | 8/8 — unanimous |
+| Decision          | Choice                             | Council Support     |
+| ----------------- | ---------------------------------- | ------------------- |
+| Keyword           | `import`                           | 8/8 — unanimous     |
+| Selective imports | Braces `{ }`                       | 8/8 — unanimous     |
+| Qualified/aliased | `import Foo as F` (no `qualified`) | 8/8 — unanimous     |
+| Hiding            | Omitted (Elm approach)             | 6/8 — Elm tie-break |
+| Module = file     | One module per file                | 8/8 — unanimous     |
+| Re-exports        | `export import` modifier           | 8/8 — unanimous     |
+| Path style        | Dot-path (`Data.Map`)              | 8/8 — unanimous     |
 
 ### Module Declaration
 
@@ -1245,6 +1376,7 @@ import Collections.Internal.Helpers as Helpers
 ```
 
 The `as` keyword creates a qualified alias. When using `as`:
+
 - All names are accessed via the alias: `Map.lookup`, `Map.fromList`
 - No unqualified access — `lookup` alone is a compile error
 - No `qualified` keyword needed — `as` implies qualified-only access
@@ -1334,24 +1466,24 @@ import MyApp.Users.Types { User, UserId }
 fun findUser(id: UserId) : Task<Maybe<User>> {
     let! conn = DB.connect()
     let! result = DB.query(conn, "SELECT * FROM users WHERE id = ?", id)
-    return result
+    return Task.yield(result)
 }
 ```
 
 ### Transpilation Rules
 
-| NeoHaskell | Haskell Output |
-|-|-|
-| `import Data.Map` | `import Data.Map` |
-| `import Data.Map { Map, fromList }` | `import Data.Map (Map, fromList)` |
-| `import Data.Map as Map` | `import qualified Data.Map as Map` |
-| `import Data.Map { Map } as Map` | `import Data.Map (Map)` |
-| | `import qualified Data.Map as Map` |
-| `import Data.Maybe { Maybe(..) }` | `import Data.Maybe (Maybe(..))` |
-| `import Data.Maybe { Maybe(Just) }` | `import Data.Maybe (Maybe(Just))` |
-| `export import Foo` | Adds `module Foo` to module export list |
-| `export import Foo { bar }` | Adds `bar` to module export list + `import Foo (bar)` |
-| `module Data.Map` | `module Data.Map where` (or with export list from #13) |
+| NeoHaskell                          | Haskell Output                                         |
+| ----------------------------------- | ------------------------------------------------------ |
+| `import Data.Map`                   | `import Data.Map`                                      |
+| `import Data.Map { Map, fromList }` | `import Data.Map (Map, fromList)`                      |
+| `import Data.Map as Map`            | `import qualified Data.Map as Map`                     |
+| `import Data.Map { Map } as Map`    | `import Data.Map (Map)`                                |
+|                                     | `import qualified Data.Map as Map`                     |
+| `import Data.Maybe { Maybe(..) }`   | `import Data.Maybe (Maybe(..))`                        |
+| `import Data.Maybe { Maybe(Just) }` | `import Data.Maybe (Maybe(Just))`                      |
+| `export import Foo`                 | Adds `module Foo` to module export list                |
+| `export import Foo { bar }`         | Adds `bar` to module export list + `import Foo (bar)`  |
+| `module Data.Map`                   | `module Data.Map where` (or with export list from #13) |
 
 **Combined import transpilation:** `import Data.Map { Map } as Map` generates
 two Haskell import lines — one for the unqualified selective import and one for
@@ -1475,12 +1607,12 @@ Designed via DX Council review (5 experts, Feb 2025).
 
 ### Summary
 
-| Decision | Choice | Council Support |
-|----------|--------|-----------------|
-| Definition keyword | `alias` | 5/5 — unanimous |
-| Transparency | Fully transparent (interchangeable with original) | 5/5 — unanimous |
-| Generic parameters | Lowercase `<a>`, `<ok, err>` | Locked (consistent with generics) |
-| Distinction from newtypes | Aliases are transparent; newtypes are opaque wrappers | 5/5 — unanimous |
+| Decision                  | Choice                                                | Council Support                   |
+| ------------------------- | ----------------------------------------------------- | --------------------------------- |
+| Definition keyword        | `alias`                                               | 5/5 — unanimous                   |
+| Transparency              | Fully transparent (interchangeable with original)     | 5/5 — unanimous                   |
+| Generic parameters        | Lowercase `<a>`, `<ok, err>`                          | Locked (consistent with generics) |
+| Distinction from newtypes | Aliases are transparent; newtypes are opaque wrappers | 5/5 — unanimous                   |
 
 ### Simple Type Aliases
 
@@ -1533,10 +1665,10 @@ Aliases are for documentation and domain clarity. Newtypes are for type safety.
 
 ### Transpilation Rules
 
-| NeoHaskell | Haskell Output |
-|-----------|----------------|
-| `alias UserId = Int` | `type UserId = Int` |
-| `alias Pair<a, b> = #(a, b)` | `type Pair a b = (a, b)` |
+| NeoHaskell                            | Haskell Output                   |
+| ------------------------------------- | -------------------------------- |
+| `alias UserId = Int`                  | `type UserId = Int`              |
+| `alias Pair<a, b> = #(a, b)`          | `type Pair a b = (a, b)`         |
 | `alias Callback<a> = a -> Task<Unit>` | `type Callback a = a -> Task ()` |
 
 ### What Type Aliases Do NOT Include
@@ -1550,8 +1682,8 @@ These are designed in later features:
 
 ### Design Rationale
 
-**Why `alias` and not `typealias`?** The keyword `type` is already used for Union Types (Feature #2).
-Using `alias` creates clear visual separation: `type` for ADTs, `alias` for synonyms.
+**Why `alias` and not `typealias`?** The keyword `enum` is used for sum types (Feature #2).
+Using `alias` creates clear visual separation: `enum` for sum types, `alias` for synonyms.
 `alias` also minimizes strangeness budget (Klabnik) — it's shorter and simpler than `typealias`.
 Target audience (Java/C#/JS developers) is familiar with type aliases from TypeScript and Kotlin,
 so the keyword choice is less critical than clarity.
@@ -1577,15 +1709,15 @@ Designed via DX Council review (8 experts, Feb 2026).
 
 ### Summary
 
-| Decision | Choice | Council Support |
-|-|-|-|
-| Definition keyword | `newtype` | 8/8 — unanimous |
-| Syntax | `newtype Name(Type)` — tuple-style, no repeated name | 8/8 — unanimous |
-| Unwrapping | Pattern matching only | 8/8 — unanimous |
-| Auto-derived traits | `Show`, `Eq` auto-derived (same as union types) | 8/8 — unanimous (locked) |
-| Additional deriving | `deriving Trait` delegates to wrapped type | 7/8 |
-| Zero-cost guarantee | Yes — transpiles to Haskell `newtype` | 8/8 — unanimous |
-| Field accessors | None — unwrap via pattern matching | 8/8 — unanimous |
+| Decision            | Choice                                               | Council Support          |
+| ------------------- | ---------------------------------------------------- | ------------------------ |
+| Definition keyword  | `newtype`                                            | 8/8 — unanimous          |
+| Syntax              | `newtype Name(Type)` — tuple-style, no repeated name | 8/8 — unanimous          |
+| Unwrapping          | Pattern matching only                                | 8/8 — unanimous          |
+| Auto-derived traits | `Show`, `Eq` auto-derived (same as enums)             | 8/8 — unanimous (locked) |
+| Additional deriving | `deriving Trait` delegates to wrapped type           | 7/8                      |
+| Zero-cost guarantee | Yes — transpiles to Haskell `newtype`                | 8/8 — unanimous          |
+| Field accessors     | None — unwrap via pattern matching                   | 8/8 — unanimous          |
 
 ### Basic Newtypes
 
@@ -1632,7 +1764,7 @@ let items = NonEmpty([1, 2, 3])   -- NonEmpty<Array<Int>>
 let emptyId = Id:<Text>("")
 ```
 
-Construction syntax mirrors ADT positional syntax: `Name(value)`. The type
+Construction syntax mirrors enum positional syntax: `Name(value)`. The type
 name IS the constructor — no separate constructor name like Haskell.
 
 ### Unwrapping (Pattern Matching)
@@ -1664,7 +1796,7 @@ fun unwrapId<a>(id: Id<a>) : a {
 
 Pattern matching is the **only** mechanism for unwrapping newtypes.
 No `.value` accessor — tuple-style newtypes have no named field.
-This is consistent with ADT positional variant destructuring (Feature #3/11).
+This is consistent with enum positional variant destructuring (Feature #3/11).
 
 ### Deriving
 
@@ -1691,25 +1823,26 @@ newtype Score(Int)
   deriving Num, Ord, Bounded
 ```
 
-The `deriving` clause on newtypes differs from union types: it **delegates** to the
+The `deriving` clause on newtypes differs from enums: it **delegates** to the
 wrapped type's trait implementation rather than structurally deriving. This maps directly
 to Haskell's `GeneralizedNewtypeDeriving` extension.
 
 ### Transpilation Rules
 
-| NeoHaskell | Haskell Output |
-|-|-|
-| `newtype Dollars(Float)` | `newtype Dollars = Dollars Float` |
-| | `  deriving (Show, Eq)` |
-| `newtype Id<a>(a)` | `newtype Id a = Id a` |
-| | `  deriving (Show, Eq)` |
+| NeoHaskell                                 | Haskell Output                                |
+| ------------------------------------------ | --------------------------------------------- |
+| `newtype Dollars(Float)`                   | `newtype Dollars = Dollars Float`             |
+|                                            | `  deriving (Show, Eq)`                       |
+| `newtype Id<a>(a)`                         | `newtype Id a = Id a`                         |
+|                                            | `  deriving (Show, Eq)`                       |
 | `newtype Dollars(Float) deriving Num, Ord` | `{-# LANGUAGE GeneralizedNewtypeDeriving #-}` |
-| | `newtype Dollars = Dollars Float` |
-| | `  deriving (Show, Eq, Num, Ord)` |
-| `Dollars(9.99)` | `Dollars 9.99` |
-| `let Dollars(x) = price` | `let (Dollars x) = price` |
+|                                            | `newtype Dollars = Dollars Float`             |
+|                                            | `  deriving (Show, Eq, Num, Ord)`             |
+| `Dollars(9.99)`                            | `Dollars 9.99`                                |
+| `let Dollars(x) = price`                   | `let (Dollars x) = price`                     |
 
 The transpiler automatically:
+
 - Adds `= TypeName` as the constructor name (type name reused)
 - Converts paren syntax to Haskell's space-separated form
 - Always includes `Show, Eq` in the `deriving` clause
@@ -1717,26 +1850,29 @@ The transpiler automatically:
 
 ### `newtype` vs `record` vs `type`
 
-| Construct | Use Case | Zero-Cost | Field Accessors | Haskell Output |
-|-|-|-|-|-|
-| `newtype Dollars(Float)` | Type safety wrapper | Yes | No | `newtype Dollars = Dollars Float` |
-| `record Amount { value: Float }` | Structured data (one field) | No | Yes (`.value`) | `data Amount = Amount { value :: Float }` |
-| `type Currency = Dollar \| Euro` | Sum type / enum | N/A | No | `data Currency = Dollar \| Euro` |
-| `alias Price = Float` | Transparent synonym | N/A | N/A | `type Price = Float` |
+| Construct                        | Use Case                    | Zero-Cost | Field Accessors | Haskell Output                            |
+| -------------------------------- | --------------------------- | --------- | --------------- | ----------------------------------------- |
+| `newtype Dollars(Float)`         | Type safety wrapper         | Yes       | No              | `newtype Dollars = Dollars Float`         |
+| `record Amount { value: Float }` | Structured data (one field) | No        | Yes (`.value`)  | `data Amount = Amount { value :: Float }` |
+| `enum Currency { Dollar Euro }`   | Sum type / enum             | N/A       | No              | `data Currency = Dollar \| Euro`          |
+| `alias Price = Float`            | Transparent synonym         | N/A       | N/A             | `type Price = Float`                      |
 
 **When to use `newtype`:**
+
 - Wrapping a primitive for type safety (`CustomerId`, `Email`, `Dollars`)
 - Zero-cost is important (no boxing overhead at runtime)
 - Single wrapped value, no named field needed
 - Want to derive traits from the wrapped type
 
 **When to use `record`:**
+
 - Single-constructor type with named fields
 - Field accessors needed (`.fieldName`)
 - Domain model entity, even with one field
 - Documentation value of named fields outweighs brevity
 
 **When to use `alias`:**
+
 - No type safety needed — just a shorter name
 - Fully transparent — interchangeable with original type
 
@@ -1763,7 +1899,7 @@ error: `newtype` must wrap exactly one type
   |              ^^^^^^^^^^^^^ expected single type, found 2
   |
   = hint: use `record Point { x: Float, y: Float }` for multiple fields
-  = hint: or use `type Point = Point(Float, Float)` for an ADT wrapper
+  = hint: or use `enum Point { Point(Float, Float) }` for an enum wrapper
 ```
 
 ```
@@ -1773,7 +1909,7 @@ error: `newtype` cannot have variants
 3 | newtype Result = Ok(Int) | Err(Text)
   |                         ^ variants not allowed in newtype
   |
-  = hint: use `type Result = Ok(Int) | Err(Text)` for a union type
+  = hint: use `enum Result { Ok(Int) Err(Text) }` for an enum
 ```
 
 ```
@@ -1803,7 +1939,7 @@ error: `newtype` cannot use brace syntax
 Klabnik: low strangeness budget — Haskell/Rust developers recognize it, and others can infer
 "new type wrapper." matklad: greppable (`newtype Name` finds definitions), parser-friendly
 (commit at token 1, same as `fun`, `type`, `record`). Bernhardt: consistent naming pattern —
-`type` (sum), `record` (product), `newtype` (wrapper), `alias` (synonym). (8/8 unanimous)
+`enum` (sum), `record` (product), `newtype` (wrapper), `alias` (synonym). (8/8 unanimous)
 
 **Why `newtype Dollars(Float)` not `newtype Dollars = Dollars(Float)`?** The repeated name is
 Haskell ceremony. "Why do I name it twice?" — every beginner asks this. In NeoHaskell, the type
@@ -1813,7 +1949,7 @@ Borretti: less ceremony → more newtypes → more type safety. Breslav: similar
 
 **Why pattern matching only, no `.value`?** Tuple-style `newtype Dollars(Float)` has no named
 field, so `.value` would be an ad-hoc invention inconsistent with the syntax. Pattern matching
-is consistent with ADT destructuring (Feature #3). One mechanism for all unwrapping.
+is consistent with enum destructuring (Feature #3). One mechanism for all unwrapping.
 Czaplicki: one way to do it, fewer concepts. (8/8 unanimous)
 
 **Why auto-derive Show/Eq?** Locked convention — all NeoHaskell types auto-derive Show and Eq.
