@@ -138,13 +138,21 @@ mod tests {
     use super::*;
 
     #[test]
-    fn detect_os_returns_macos_on_this_system() {
-        assert_eq!(detect_os(), Os::MacOS);
+    fn detect_os_returns_valid_os() {
+        let os = detect_os();
+        #[cfg(target_os = "macos")]
+        assert_eq!(os, Os::MacOS);
+        #[cfg(target_os = "linux")]
+        assert_eq!(os, Os::Linux);
     }
 
     #[test]
-    fn detect_arch_returns_aarch64_on_this_system() {
-        assert_eq!(detect_arch(), Arch::Aarch64);
+    fn detect_arch_returns_valid_arch() {
+        let arch = detect_arch();
+        #[cfg(target_arch = "aarch64")]
+        assert_eq!(arch, Arch::Aarch64);
+        #[cfg(target_arch = "x86_64")]
+        assert_eq!(arch, Arch::X86_64);
     }
 
     #[test]
