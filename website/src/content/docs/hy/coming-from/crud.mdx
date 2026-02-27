@@ -1,0 +1,72 @@
+---
+title: "CRUD-ից Եկող"
+description: "Ինչպես են REST վերջնակետերն ու SQL թարմացումները քարտեզագրվում իրադարձությունների ու հրամանների վրա: Կարճ տարբերակ — ամբողջական բուժումը գաղափարի էջում է։"
+sidebar:
+  order: 3
+---
+
+{/*
+  Բովանդակության Հատակում — CRUD-ից Եկող
+  Per DOCS-PLAN: Սա ԿԱՐՉ տարբերակ է, որը հղում է կոնցեպտներից/crud-ից-իրադարձություններին.mdx
+  Ամբողջական բուժումը գտնվում է կոնցեպտի էջում: Այս էջը արագ թարգմանություն է:
+  Մասնակցի պրոֆիլ: REST API մշակող, SQL տվյալների բազայի օգտագործող, գիտի PUT/POST/DELETE
+  Բանալի մտավոր պատկերացում: UPDATE balance SET 150 → record MoneyDeposited $50
+*/}
+
+{/* POLYGLOT NOTE: Բոլոր կոդի օրինակները այս էջում պետք է ներառեն JS/TS, Python և Go համարժեք հատվածներ: Տես DOCS-PLAN.md Guiding Principle #9. */}
+
+import { Aside } from '@astrojs/starlight/components';
+
+## Կորի Թարգմանություն
+
+- Կրուդում դուք թարմացնում եք վիճակը: `UPDATE accounts SET balance = 150 WHERE id = 42`
+- ՆեոՀասկելում դուք գրում եք այն, թե ինչ է պատահել: `MoneyDeposited { accountId = 42, amount = 50 }`
+- Բալանսը չի պահվում — այն հաշվարկվում է բոլոր վճարումների ու հանումների իրադարձությունները վերախաղացնելով
+- Սա չէ ներկայացման հնարք — սա տարբեր մոդել է, թե ինչ է "տվյալ" նշանակում
+
+## Արագ Թարգմանության Աղյուսակ
+
+| CRUD / REST | ՆեոՀասկել | Ինչ է փոխվել |
+|-------------|-----------|-------------|
+| `UPDATE balance SET 150` | Record `MoneyDeposited { amount = 50 }` | Պահեք պատճառը, ոչ ազդեցությունը |
+| `SELECT balance FROM accounts WHERE id = 42` | Fold over all transactions for account 42 | Վիճակը հաշվարկվում է, ոչ պահվում |
+| `POST /deposit` (REST endpoint) | `Deposit` command + `decide` handler | Handler returns events, not a response |
+| `PUT /account/42` (update resource) | Command that produces events | No direct mutation |
+| `DELETE /account/42` | `CloseAccount` command → `AccountClosed` event | Deletion is an event, not erasure |
+| Database table | Event stream | Append-only log, not mutable rows |
+| Foreign key | Service reference | Cross-entity access is explicit |
+| Database migration | Event versioning | Schema evolution through new event types |
+| ORM model | Entity (computed from events) | State is derived, not stored |
+| SQL transaction | Command handler (atomic event append) | Consistency at the command level |
+
+## Մտավոր Պատկերացման Փոփոխություն
+
+- CRUD հարցնում է: "Ի՞նչ է ներկա վիճակը?"
+- Event sourcing հարցնում է: "Ի՞նչ է պատահել այս վիճակը արտադրելու համար?"
+- Երկու հարցերը ունեն նույն պատասխանը — բայց event sourcing պահպանում է պատմությունը
+- Քրուդում, `balance = 150` ասում է ձեզ բալանսի մասին: Այն ձեզ չի ասում, թե ինչու:
+- Իրադարձություններով դուք գիտեք ամեն վճարում, ամեն հանում, ամեն ուղղում — և երբ է ամեն ինչ պատահել
+- Դա նշանակում է: ժամանակ-ճամփորդության աղետ, աուդիտի գրառումներ, և "ի՞նչ էր բալանսը երեքշաբթի օրը?" — անվճար
+
+<Aside type="note" title="Երբ Քրուդը Լավ Է">
+Ոչ բոլոր համակարգերը պետք է իրադարձություններ օգտագործեն: Պարզ Քրուդ ընտրություն է, երբ դուք պատմության, աուդիտի հետքերի կամ վերախաղացման կարիք չունեք: ՆեոՀասկելը ազնիվ է այդ մասին — տես [Երբ ընդունել — և երբ սպասել](/concepts/why-neohaskell/#when-to-adopt--and-when-to-wait).
+</Aside>
+
+## Ամբողջական Բուժում
+
+Այս էջը ծածկում է արագ թարգմանությունը: Լրիվ ուղեցույցը — կողք կողքի կոդ, "Why That Breaks" բաժին, և ամբողջ մտավոր պատկերացում — գտնվում է կոնցեպտի էջում:
+
+**[CRUD-ից Իրադարձությունների →](/concepts/from-crud-to-events/)**
+
+Այդ էջը ծածկում է:
+- Ինչ է դուք կառուցել (և ինչու է դա ձևավորվում)
+- Ինչու է Քրուդ մոտեցումը փլուզվում իրադարձությունների աղբյուրով համակարգերում
+- Մտավոր պատկերացման փոփոխություն մանրամասն
+- Կողք կողքի կոդի համեմատություն
+- Երբ Քրուդը ճիշտ ընտրություն է
+
+{/* TODO: կարճ կոդի օրինակ — SQL UPDATE vs ՆեոՀասկել իրադարձության գրառում — ներառեք JS/TS, Python և Go համարժեքներ */}
+
+:::caution[Շուտով]
+Այս էջը բովանդակության հատակում է: Լրիվ արձակ և կոդի օրինակներ ընթացքի մեջ են:
+:::
