@@ -71,7 +71,7 @@ When defining syntax features:
 | Functions | ✅ Defined |
 | Pattern matching | ❌ Pending |
 | Traits/impl | ❌ Pending |
-| Type definitions | ❌ Pending |
+| Enums | ✅ Defined |
 
 ## References
 
