@@ -14,9 +14,15 @@ NeoHaskell/
 │   ├── concurrency/# AsyncTask, Channel, Lock, ConcurrentMap
 │   ├── traits/     # Typeclasses: Mappable, Appendable, Combinable
 │   └── system/     # File, Directory, Path, Environment
+├── cli/            # Neo CLI (design/ now, implementation later)
+│   └── design/     # CLI design docs, user flows, persona
+├── transpiler/     # NeoHaskell transpiler (design/ now, implementation later)
+│   └── design/     # Syntax spec, compiler strategy, effects
+├── installer/      # Rust installer (Cargo project)
+│   ├── src/        # Rust source (detect, install, verify, ui, error)
+│   └── scripts/    # bootstrap.sh for curl-pipe install
 ├── testbed/        # Example app + Hurl acceptance tests
-└── website/        # Astro/Starlight docs
-```
+└── website/        # Astro/Starlight docs (pnpm, i18n, auto-translation)
 
 ## WHERE TO LOOK
 
@@ -27,6 +33,10 @@ NeoHaskell/
 | Integration patterns             | `core/service/Integration.hs`  | Outbound/Inbound           |
 | Example app patterns             | `testbed/src/`                 | Cart, Stock domains        |
 | Test patterns                    | `core/test/`, `testbed/tests/` | Hspec + Hurl               |
+| CLI design docs                  | `cli/design/`                  | User flows, persona (Jess), event modeling |
+| Transpiler design                | `transpiler/design/`           | Syntax spec, compiler strategy, effects |
+| Installer                        | `installer/src/`               | Rust installer source (detect, install, verify, ui) |
+| Website                          | `website/`                     | Astro/Starlight docs, pnpm, i18n |
 
 ## CONVENTIONS (NeoHaskell-Specific)
 
@@ -87,6 +97,16 @@ hlint .                # Linter (fourmolu auto-formats on save)
 # Integration tests (requires testbed running)
 cabal run nhtestbed &  # Start testbed
 ./testbed/scripts/run-tests.sh
+
+# Website
+cd website && pnpm install  # Install dependencies
+cd website && pnpm run dev  # Dev server at localhost:4321
+cd website && pnpm run build # Production build
+
+# Installer (Rust)
+cd installer && cargo build  # Build installer
+cd installer && cargo test   # Run installer tests
+cd installer && cargo clippy -- -D warnings  # Lint
 ```
 
 ## BUILD SYSTEM
