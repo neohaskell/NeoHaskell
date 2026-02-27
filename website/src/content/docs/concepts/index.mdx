@@ -1,0 +1,37 @@
+---
+title: Core Concepts
+description: The mental models behind NeoHaskell — why it works this way.
+sidebar:
+  order: 0
+---
+
+import { Card, CardGrid } from '@astrojs/starlight/components';
+
+Core Concepts explain the *why* behind NeoHaskell. Each page takes a concept you'll encounter in the tutorial and gives it the full treatment — mental model shift, concrete examples, and how the compiler enforces it.
+
+## Start here
+
+<CardGrid>
+  <Card title="Why NeoHaskell?" icon="star">
+    What NeoHaskell offers, how it compares, and when it's NOT the right choice.
+
+    [Read more →](/concepts/why-neohaskell/)
+  </Card>
+  <Card title="From CRUD to Events" icon="right-arrow">
+    The most important mental model shift — from UPDATE statements to event streams.
+
+    [Read more →](/concepts/from-crud-to-events/)
+  </Card>
+</CardGrid>
+
+## How to read this section
+
+Every concept page follows a pattern:
+
+1. **What You Might Expect** — starting from your CRUD assumptions
+2. **Why That Breaks** — the specific failure that motivates the shift
+3. **The Mental Model Shift** — what changes in how you think
+4. **In NeoBank Terms** — explained using the banking domain from the tutorial
+5. **The Full Picture** — complete explanation with code
+
+You don't need to read these in order. Each page stands alone. But if you're following the tutorial, the concept pages are linked at the moments they become relevant.

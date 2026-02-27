@@ -1,0 +1,72 @@
+---
+title: "Coming from CRUD"
+description: "How REST endpoints and SQL updates map to events and commands. Short version — full treatment in the concept page."
+sidebar:
+  order: 3
+---
+
+{/*
+  CONTENT OUTLINE — Coming from CRUD
+  Per DOCS-PLAN: This is a SHORT version that links to concepts/from-crud-to-events.mdx
+  The full treatment lives in the concept page. This page is the quick translation.
+  Reader profile: REST API developer, SQL database user, knows PUT/POST/DELETE
+  Key insight: UPDATE balance SET 150 → record MoneyDeposited $50
+*/}
+
+{/* POLYGLOT NOTE: All code examples on this page should include equivalent snippets in JS/TS, Python, and Go. See DOCS-PLAN.md Guiding Principle #9. */}
+
+import { Aside } from '@astrojs/starlight/components';
+
+## The core translation
+
+- In CRUD, you update state: `UPDATE accounts SET balance = 150 WHERE id = 42`
+- In NeoHaskell, you record what happened: `MoneyDeposited { accountId = 42, amount = 50 }`
+- The balance isn't stored — it's computed by replaying all deposit and withdrawal events
+- This isn't a performance trick — it's a different model of what "data" means
+
+## Quick translation table
+
+| CRUD / REST | NeoHaskell | What changed |
+|-------------|-----------|-------------|
+| `UPDATE balance SET 150` | Record `MoneyDeposited { amount = 50 }` | Store the cause, not the effect |
+| `SELECT balance FROM accounts WHERE id = 42` | Fold over all transactions for account 42 | State is computed, not stored |
+| `POST /deposit` (REST endpoint) | `Deposit` command + `decide` handler | Handler returns events, not a response |
+| `PUT /account/42` (update resource) | Command that produces events | No direct mutation |
+| `DELETE /account/42` | `CloseAccount` command → `AccountClosed` event | Deletion is an event, not erasure |
+| Database table | Event stream | Append-only log, not mutable rows |
+| Foreign key | Service reference | Cross-entity access is explicit |
+| Database migration | Event versioning | Schema evolution through new event types |
+| ORM model | Entity (computed from events) | State is derived, not stored |
+| SQL transaction | Command handler (atomic event append) | Consistency at the command level |
+
+## The mental model shift
+
+- CRUD asks: "What is the current state?"
+- Event sourcing asks: "What happened to produce this state?"
+- Both questions have the same answer — but event sourcing keeps the history
+- With CRUD, `balance = 150` tells you the balance. It doesn't tell you why.
+- With events, you know every deposit, every withdrawal, every correction — and when each happened
+- This means: time-travel debugging, audit logs, and "what was the balance on Tuesday?" — for free
+
+<Aside type="note" title="When CRUD is fine">
+Not every system needs event sourcing. Simple CRUD is the right choice when you don't need history, audit trails, or replay. NeoHaskell is honest about this — see [When to adopt — and when to wait](/concepts/why-neohaskell/#when-to-adopt--and-when-to-wait).
+</Aside>
+
+## For the full treatment
+
+This page covers the quick translation. The complete guide — with side-by-side code, the "Why That Breaks" section, and the full mental model shift — is in the concept page:
+
+**[From CRUD to Events →](/concepts/from-crud-to-events/)**
+
+That page covers:
+- What you'd expect to build (and why it seems reasonable)
+- Why the CRUD approach breaks down for event-sourced systems
+- The mental model shift in detail
+- Side-by-side code comparisons
+- When CRUD is actually the right choice
+
+{/* TODO: short code example — SQL UPDATE vs NeoHaskell event recording — include JS/TS, Python, Go equivalents */}
+
+:::caution[Coming Soon]
+This page is a content outline. Full prose and code examples are in progress.
+:::

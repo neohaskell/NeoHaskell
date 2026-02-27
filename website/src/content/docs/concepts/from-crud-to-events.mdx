@@ -1,0 +1,174 @@
+---
+title: "From CRUD to Events"
+description: "The complete guide to shifting from UPDATE statements to event streams."
+sidebar:
+  order: 12
+keywords: [CRUD, event sourcing, migration, REST, SQL, UPDATE, event stream, mental model]
+# entry_stage: 0 (CRUD-thinker)
+# exit_stage: 2 (Event-thinker)
+# misconception: #1 (need tables/columns), #3 (can just update a field), #14 (can't do CRUD-style operations)
+# tutorial_anchor: Tutorial Part 1 — Your First Transaction (also: Getting Started, Coming From CRUD)
+---
+
+{/*
+  CONTENT OUTLINE — From CRUD to Events
+  Entry: Stage 0 (CRUD-thinker), Exit: Stage 2 (Event-thinker)
+  Misconceptions addressed: #1, #3, #14
+  Anchored from: Tutorial Part 1, Getting Started, Coming From CRUD
+
+  This is the MOST IMPORTANT page for the primary audience.
+  Structure: What You Might Expect → Why That Breaks → Mental Model Shift → Side-by-Side Code → When CRUD Is Fine
+  Detailed CRUD→ES mapping:
+    - UPDATE balance → record MoneyDeposited
+    - SELECT balance → fold over transactions
+    - REST endpoint → command handler
+    - Database table → event stream
+  Honestly address when CRUD is still the right choice.
+  Cross-referenced from: Tutorial Part 1, Getting Started, Coming From CRUD.
+*/}
+
+{/* POLYGLOT NOTE: All code examples on this page should include equivalent snippets in JS/TS, Python, and Go. See DOCS-PLAN.md Guiding Principle #9. */}
+
+import { Aside } from '@astrojs/starlight/components';
+
+## What You Might Expect
+
+- You've built REST APIs: `GET /users/42`, `POST /users`, `PUT /users/42`, `DELETE /users/42`
+- Your database has tables: `users`, `accounts`, `transactions`
+- State changes are `UPDATE` statements: `UPDATE accounts SET balance = 150 WHERE id = 42`
+- Reads are `SELECT` statements: `SELECT balance FROM accounts WHERE id = 42`
+- This model is simple, well-understood, and works for most web apps
+- You're wondering: why would I give this up?
+
+## Why That Breaks
+
+- **The dispute problem**: a customer disputes a charge from 3 months ago. What was their balance before it? With `UPDATE`, that information is gone.
+- **The audit problem**: regulations require a complete transaction history. You're retrofitting an audit log — a second source of truth that can drift from the first.
+- **The bug problem**: a bug corrupts the balance column. You have no way to reconstruct the correct value from scratch.
+- **The concurrency problem**: two deposits arrive simultaneously. Both read balance = $100, both write balance = $150. One deposit is silently lost.
+- **The "what happened" problem**: your CEO asks "how many accounts went negative last quarter?" You can't answer — you only stored the current state.
+- The pattern: CRUD stores *answers*. When the question changes, you have no way to re-derive the answer.
+
+## From CRUD to Events: The Mental Model Shift
+
+- Instead of storing *what is*, store *what happened*
+- Every state change becomes an event: an immutable record of a fact
+- Current state is derived by replaying events — it's never stored directly
+- This isn't a new idea. It's how accounting has worked for centuries.
+
+### The Complete Mapping
+
+| CRUD concept | Event sourcing equivalent | What changed |
+|-------------|--------------------------|-------------|
+| `UPDATE accounts SET balance = 150` | Record `MoneyDeposited { amount: 50 }` | Store the cause, not the effect |
+| `SELECT balance FROM accounts` | Fold over `MoneyDeposited` and `MoneyWithdrawn` events | Derive state, don't query it |
+| `POST /accounts/42/deposit` (REST endpoint) | `Deposit` command handler | Validate intent, produce facts |
+| `accounts` database table | Event stream per account | Append-only log, not mutable rows |
+| `DELETE FROM accounts WHERE id = 42` | `AccountClosed` event | Record that it happened, don't erase history |
+| Audit log table (separate) | The event store itself | History is the source of truth, not a side effect |
+| Database migration | Event upcasting | Evolve the schema without losing history |
+
+### What You Gain
+
+- **Complete history**: every state at every point in time, forever
+- **Audit trail for free**: the event store is the audit log — no separate system
+- **Time-travel debugging**: replay to any point in time to inspect state
+- **Multiple views**: build different updates from the same events (bank statement + monthly summary)
+- **Concurrency safety**: events are appended, not updated — no lost writes
+- **Testability**: tests are just "given these events, when this command, then these events" — no database needed
+
+### What You Give Up
+
+- **Simple reads**: `SELECT balance` becomes "fold over events" — more complex, but cacheable
+- **Familiar tooling**: SQL GUIs, ORMs, and query builders don't apply directly
+- **Small footprint**: event stores grow forever — you're storing history, not just current state
+- **Simplicity for simple problems**: if you don't need history, audit trails, or replay, CRUD is simpler
+
+## Side-by-Side: Depositing $50
+
+{/* TODO: Side-by-side code block: SQL UPDATE approach vs NeoHaskell event approach */}
+{/* TODO: Show the full flow: command → handler → event → event store → update */}
+
+### The CRUD Way
+
+- Receive `POST /accounts/42/deposit` with `{ amount: 50 }`
+- Run `SELECT balance FROM accounts WHERE id = 42` — get $100
+- Run `UPDATE accounts SET balance = 150 WHERE id = 42`
+- Return `{ balance: 150 }`
+- History: gone. Concurrency: unsafe. Audit: manual.
+
+### The Event Way
+
+- Receive `Deposit { accountId: 42, amount: 50 }` command
+- Load entity state by folding over past events — current balance is $100
+- Validate: account open? Amount positive? Within limits?
+- Append `MoneyDeposited { amount: 50, timestamp: now }` to the event store
+- Return success
+- History: permanent. Concurrency: safe (append-only). Audit: free.
+
+## In NeoBank Terms
+
+- NeoBank has no `accounts` table with a `balance` column
+- It has an event stream per account: `AccountOpened`, `MoneyDeposited`, `MoneyWithdrawn`
+- The balance is derived by folding over the stream — calculated, not stored
+- When a customer asks "what's my balance?", NeoBank replays their event stream
+- When a customer disputes a charge, NeoBank replays to any point in time
+- The audit trail is the event store — no separate system, no drift, no retrofitting
+
+<Aside type="note" title="You can still query like CRUD">
+Event sourcing doesn't mean you lose familiar query patterns. Updates give you queries that look exactly like database tables — you can query them with familiar patterns. The difference: the update is derived from events, not the source of truth. [→ Deep dive: Updates](/concepts/updates)
+</Aside>
+
+## The Full Picture
+
+{/* TODO: Diagram showing: Commands → Handler → Events → Event Store → Updates → Queries */}
+{/* TODO: Code example: complete deposit flow from command to update — include JS/TS, Python, Go equivalents */}
+
+- **Commands** arrive (deposit slip)
+- **Handlers** validate and decide (bank teller)
+- **Events** are appended to the event store (transaction record)
+- **Updates** fold over events to produce queries (account statement)
+- **Queries** answer queries with familiar patterns (current balance, transaction history)
+
+The read side looks like CRUD. The write side is event sourcing. This is CQRS — Command Query Responsibility Segregation — and it's the natural shape of event-sourced systems.
+
+## When CRUD Is Still the Right Choice
+
+Event sourcing adds complexity. It pays off when you need:
+
+- **Audit trails**: regulatory compliance, dispute resolution, debugging
+- **History**: "what was the state at time T?" questions
+- **Replay**: rebuilding state from scratch, fixing bugs by replaying corrected events
+- **Multiple views**: different updates from the same data
+- **Concurrency safety**: high-throughput writes without lost updates
+
+CRUD is still the right choice when:
+
+- **You don't need history**: a settings page, a user profile, a feature flag — these don't need audit trails
+- **The domain is simple**: if your app is a form that saves data, event sourcing is overkill
+- **You're prototyping**: CRUD is faster to build. Migrate to events when you know you need them.
+- **Your team isn't ready**: event sourcing has a learning curve. Don't adopt it before the team understands it.
+
+<Aside type="caution" title="Honest assessment">
+NeoHaskell makes event sourcing the default — but that doesn't mean every problem needs event sourcing. The [Trade-offs](/concepts/trade-offs) page is honest about when NeoHaskell adds unnecessary complexity.
+</Aside>
+
+## How NeoHaskell Enforces This
+
+- The compiler enforces the event sourcing contract: state changes go through events, not direct mutation
+- There's no `UPDATE` equivalent — you can't set a field directly on an entity
+- The `update` function signature enforces the pattern: `Event -> Entity -> Entity`
+- The event store API is append-only — no delete, no update
+- Updates are pure functions — they can't have side effects or write to the event store
+
+## Going Deeper
+
+- [Events, Not State →](/concepts/events-not-state) — the core mental model
+- [Commands and Handlers →](/concepts/commands-and-handlers) — how requests become events
+- [Updates →](/concepts/updates) — building queries from events
+- [Trade-offs →](/concepts/trade-offs) — honest about when event sourcing adds unnecessary complexity
+- External: Martin Fowler's [CQRS](https://martinfowler.com/bliki/CQRS.html) — the pattern that separates reads from writes
+
+:::caution[Coming Soon]
+Code examples on this page are placeholders. Full working code will be added when the NeoBank tutorial is complete.
+:::

@@ -1,0 +1,132 @@
+---
+title: "Type Safety"
+description: "How NeoHaskell's compiler prevents bugs before they run."
+sidebar:
+  order: 21
+keywords: [type safety, compiler, exhaustive pattern matching, invalid states, algebraic data types, type system]
+# entry_stage: 2 (Event-thinker)
+# exit_stage: 3 (NeoHaskell-aware)
+# misconception: #15 (compiler errors will be cryptic)
+# tutorial_anchor: Tutorial Part 2 — Account Rules
+---
+
+{/*
+  CONTENT OUTLINE — Type Safety
+  Entry: Stage 2 (Event-thinker), Exit: Stage 3 (NeoHaskell-aware)
+  Misconception addressed: #15 (compiler errors will be cryptic)
+  Anchored from: Tutorial Part 2 — Account Rules
+
+  Core message: the compiler is a collaborator, not an adversary.
+  Key insight: invalid states become unrepresentable — the compiler prevents the overdraft before the test does.
+  Evidence from testbed: AddItem.hs decide function uses case..of, if/then/else, Decider.reject.
+  Zero type class constraints visible to the user. A JavaScript developer can read every line.
+  Show what happens when you try to skip validation.
+*/}
+
+{/* POLYGLOT NOTE: All code examples on this page should include equivalent snippets in JS/TS, Python, and Go. See DOCS-PLAN.md Guiding Principle #9. */}
+
+import { Aside } from '@astrojs/starlight/components';
+
+## What You Might Expect
+
+- Type systems in other languages feel like bureaucracy: write the code, then annotate it
+- Compiler errors are cryptic: "expected `Foo<Bar<Baz>>`, got `Foo<Bar<Qux>>`"
+- The type system catches trivial mistakes (wrong argument order) but misses real bugs (wrong business logic)
+- You've learned to work around the type system, not with it
+- "Just add a cast" is a common escape hatch
+
+## Why That Breaks
+
+- A cast silences the compiler — but the bug is still there
+- Loosely-typed code lets AI-generated code compile and fail silently in production
+- Missing a case in a switch statement is a runtime error, not a compile error
+- The overdraft bug compiles. The wrong state transition compiles. The missing handler compiles.
+- The type system that doesn't catch business logic errors isn't doing its job.
+
+## Type Safety: The Mental Model Shift
+
+- The compiler isn't checking your work — it's **preventing entire categories of bugs from existing**
+- Invalid states become *unrepresentable*: if the type system can't express it, the code can't produce it
+- Exhaustive pattern matching means no forgotten branches — every case is handled or the code doesn't compile
+- The compiler catches the overdraft before the test does, and the test catches it before the customer does
+- **The compiler is a collaborator, not an adversary**
+
+### What "Invalid States Unrepresentable" Means
+
+- In CRUD: an account can be `status = "open"` or `status = "closed"` — a string, anything goes
+- In NeoHaskell: account status is a type with exactly two constructors: `Open` and `Closed`
+- You can't accidentally set `status = "opne"` — that string doesn't exist in the type
+- You can't withdraw from a closed account — the type system makes that branch impossible to write
+- The type IS the documentation: if the type is right, the domain is right
+
+### Exhaustive Pattern Matching
+
+- When you handle an event or command, you use `case..of` to branch on the type
+- If you add a new event type (`DailyLimitSet`), the compiler immediately flags every `case..of` that doesn't handle it
+- No forgotten branches. No "I forgot to handle the new case." No silent failures.
+- This is the most valuable property for teams: adding a feature forces you to handle it everywhere
+
+<Aside type="note" title="Readable by any developer">
+NeoHaskell's type system is powerful, but the code it produces is readable. The testbed's `AddItem.hs` decide function uses `case..of` (switch), `if/then/else`, and `Decider.reject` / `Decider.acceptExisting`. Zero type class constraints visible to the user. A JavaScript developer can read every line. The compiler does the heavy lifting invisibly.
+</Aside>
+
+## What Happens When You Try to Skip Validation
+
+{/* TODO: Code example showing what happens when you try to withdraw from a closed account — include JS/TS, Python, Go equivalents */}
+{/* TODO: Show the compiler error — friendly, specific, actionable */}
+
+- You write a `Withdraw` handler that doesn't check if the account is open
+- The compiler doesn't catch this — it's valid code, just wrong business logic
+- But: if you model account state as a type (`Open | Closed`), the compiler can enforce the check
+- The pattern: **make illegal states unrepresentable** — encode business rules in types, not runtime checks
+- When you try to call `withdraw` on a `Closed` account, the type system rejects it at compile time
+
+## In NeoBank Terms
+
+- NeoBank's account state is a type: `Open`, `Closed`, `Frozen` — not a string column
+- A `Withdraw` command on a `Closed` account is a type error, not a runtime error
+- The overdraft check is enforced by the type system: `withdraw` requires `balance >= amount`
+- Adding a new account type (savings, checking) requires handling it in every command handler — the compiler tells you where
+- The compiler caught the overdraft bug before the test ran. The test confirmed it. The customer never saw it.
+
+## The Full Picture
+
+{/* TODO: Code example showing account state as an algebraic data type — include JS/TS, Python, Go equivalents */}
+{/* TODO: Code example showing exhaustive pattern matching on account state — include JS/TS, Python, Go equivalents */}
+{/* TODO: Show a friendly compiler error for a missing case */}
+
+- **Algebraic data types**: define account state as a sum type — `Open | Closed | Frozen`
+- **Pattern matching**: handle each case explicitly — the compiler enforces completeness
+- **Type-checked state transitions**: `withdraw` only accepts `Open` accounts — `Closed` is a type error
+- **Friendly error messages**: NeoHaskell explicitly focuses on readable, actionable compiler errors
+- **No escape hatches**: there's no `unsafeCoerce` in application code — the type system is the contract
+
+## How NeoHaskell Enforces This
+
+- **Missing event handlers**: add a new event type, the compiler flags every unhandled `case..of`
+- **Incorrect state transitions**: entity state machines are type-checked — invalid transitions don't compile
+- **Type mismatches**: wrong data shapes are compile errors, not runtime surprises
+- **Unhandled cases**: exhaustive pattern matching — no forgotten branches
+- **Event sourcing contract**: every state change must go through the event log — no silent mutations
+
+## Testing This Concept
+
+{/* TODO: Code example showing a test that the compiler already caught — include JS/TS, Python, Go equivalents */}
+{/* TODO: Show: the test you don't need to write because the compiler already caught it */}
+
+- Some tests become unnecessary — the compiler already caught the bug
+- The tests you do write are for business logic the compiler can't verify (wrong amount, wrong account)
+- Given-When-Then maps naturally: Given (entity state) → When (command) → Then (events or error)
+- Property-based testing: "no sequence of valid commands should produce a negative balance"
+- The compiler handles the structural correctness; tests handle the business correctness
+
+## Going Deeper
+
+- [Commands and Handlers →](/concepts/commands-and-handlers) — how the type system enforces the command/event boundary
+- [Testing Event-Sourced Systems →](/concepts/testing-event-sourced-systems) — what tests remain after the compiler does its job
+- [Schema Evolution →](/concepts/schema-evolution) — how types evolve without breaking history
+- External: "Making Illegal States Unrepresentable" — Yaron Minsky's classic talk on type-driven design
+
+:::caution[Coming Soon]
+Code examples on this page are placeholders. Full working code will be added when the NeoBank tutorial is complete.
+:::

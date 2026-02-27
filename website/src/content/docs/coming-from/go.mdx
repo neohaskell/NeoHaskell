@@ -1,0 +1,103 @@
+---
+title: "Coming from Go"
+description: "How your Go knowledge maps to NeoHaskell — algebraic types, Traits, Task-based concurrency, and typed errors."
+sidebar:
+  order: 5
+---
+
+{/*
+  CONTENT OUTLINE — Coming from Go
+  Reader profile: Go developer, knows structs, interfaces, goroutines, channels, `if err != nil`
+  Key insight to land: Go's explicit error handling is the right instinct — NeoHaskell takes it further
+  by making the error type part of the function signature, not just a convention.
+  Goroutines → Task is the concurrency translation.
+*/}
+
+import { Tabs, TabItem, Aside } from '@astrojs/starlight/components';
+
+## In Go, you'd write...
+
+- Structs for data: `type Account struct { Balance int; Owner string }`
+- Interfaces for behavior: `type Repository interface { Save(Account) error }`
+- Goroutines for concurrency: `go func() { ... }()`
+- Channels for communication: `ch := make(chan Event)`
+- Explicit error returns: `func GetAccount(id string) (Account, error)`
+- `if err != nil { return nil, err }` — the Go error handling pattern
+- Packages with explicit imports: `import "fmt"`, `import "github.com/user/pkg"`
+- Pointer receivers for mutation: `func (a *Account) Deposit(amount int)`
+- `nil` as the zero value for pointers, interfaces, slices, maps
+
+## In NeoHaskell, the equivalent is...
+
+- **Algebraic data types instead of structs**: Go structs become NeoHaskell records
+  - `type Account struct { Balance int }` → `data Account = Account { balance :: Int }`
+  - But NeoHaskell also has sum types — `data Shape = Circle Float | Rectangle Float Float`
+  - Go has no direct equivalent of sum types (tagged unions require interface + type switch)
+- **Traits instead of interfaces**: Go interfaces become NeoHaskell Traits (type classes)
+  - `type Repository interface { Save(Account) error }` → a Trait with a `save` method
+  - Key difference: Traits are resolved at compile time, not runtime — no interface dispatch overhead
+  - Traits can also express mathematical properties (Mappable, Appendable) that Go interfaces can't
+- **`Task` instead of goroutines**: concurrent effects use the `Task` type
+  - `go func() { result <- compute() }()` → `Task.spawn compute`
+  - Tasks are composable and type-safe — the compiler knows what each task can fail with
+  - No data races — immutability means there's nothing to race over
+- **Typed errors instead of `error` interface**: `Task err val` makes the error type explicit
+  - Go's `error` is an interface — any type can be an error, and callers don't know what to expect
+  - NeoHaskell's `Task NetworkError Account` says exactly what can go wrong
+  - No `if err != nil` — you handle errors with `case` expressions that the compiler enforces
+- **`Maybe` instead of `nil`**: absence of a value is explicit in the type
+  - Go's `nil` can appear anywhere a pointer, interface, or slice is used — silently
+  - NeoHaskell's `Maybe val` forces you to handle the absent case at compile time
+- **Qualified imports**: `Array.map`, `Text.length` — always know where a function comes from
+  - Similar to Go's `fmt.Println` convention, but enforced for all imports
+
+{/* TODO: side-by-side code — Go struct + methods vs NeoHaskell record + functions */}
+{/* TODO: side-by-side code — Go goroutine + channel vs NeoHaskell Task */}
+
+## But here's what's actually different...
+
+- **No mutation**: Go structs can be mutated through pointer receivers. NeoHaskell has no mutation.
+  - `func (a *Account) Deposit(amount int) { a.Balance += amount }` doesn't exist
+  - Instead: `deposit :: Amount -> Account -> Account` returns a new `Account`
+  - This is what makes event sourcing work — every state change is explicit and traceable
+- **The error handling instinct is right, but incomplete**: Go's explicit error returns are the right idea
+  - Go: `func GetAccount(id string) (Account, error)` — error is explicit, but untyped
+  - NeoHaskell: `getAccount :: AccountId -> Task NotFound Account` — error is typed
+  - The difference: in Go, you know a function can fail. In NeoHaskell, you know exactly how.
+- **Interfaces vs Traits**: Go interfaces are structural (any type with the right methods satisfies them)
+  - NeoHaskell Traits are also structural, but resolved at compile time
+  - More importantly: Traits can express constraints that Go interfaces can't — "this type must be sortable AND serializable"
+- **Goroutines vs Tasks**: goroutines are cheap threads — you spawn them and hope for the best
+  - NeoHaskell Tasks are typed effects — the compiler tracks what each task can do and what it can fail with
+  - No `sync.WaitGroup`, no `select` statements — composition is handled by the type system
+- **No `nil` panics**: Go's `nil` is a runtime error waiting to happen. NeoHaskell has no `nil`.
+  - Every value is always valid — absence is expressed through `Maybe`, not through a special zero value
+
+{/* TODO: concrete example — Go nil pointer panic vs NeoHaskell compile error */}
+
+## Quick translation table
+
+| Go | NeoHaskell | Notes |
+|----|-----------|-------|
+| `type Account struct { ... }` | `data Account = Account { ... }` | Record type |
+| `type Shape interface { Area() float64 }` | Trait with `area` method | Compile-time dispatch |
+| `go func() { ... }()` | `Task.spawn` | Typed, composable |
+| `ch := make(chan Event)` | NeoHaskell channels | Type-safe communication |
+| `func f() (Account, error)` | `f :: Task Err Account` | Error type is explicit |
+| `if err != nil { return err }` | `case result of { Err e -> ...; Ok v -> ... }` | Exhaustive, compiler-enforced |
+| `nil` | `Maybe val` | Absence is explicit in the type |
+| `import "fmt"` | Qualified imports | `Text.format`, `Array.map` |
+| `*Account` (pointer receiver) | Not needed — no mutation | Records are immutable |
+| `interface{}` / `any` | Type parameters | Typed generics |
+
+<Aside type="tip" title="The error handling connection">
+Go developers often take to NeoHaskell's error handling quickly — the instinct to make errors explicit is already there. The shift is from `(value, error)` tuples to `Task err val` types. Same idea, but the compiler enforces it instead of convention.
+</Aside>
+
+{/* TODO: section on Go modules vs Nix + Hix */}
+{/* TODO: section on Go testing vs NeoHaskell Given-When-Then */}
+{/* TODO: section on Go's context.Context vs NeoHaskell's effect system */}
+
+:::caution[Coming Soon]
+This page is a content outline. Full prose, code examples, and runnable comparisons are in progress.
+:::

@@ -1,0 +1,154 @@
+---
+title: "Testing Event-Sourced Systems"
+description: "Given events, when command, then expect — testing that reads like a specification."
+sidebar:
+  order: 22
+keywords: [testing, Given-When-Then, event sourcing, property-based testing, test pyramid, unit tests]
+# entry_stage: 2 (Event-thinker)
+# exit_stage: 3 (NeoHaskell-aware)
+# misconception: #19 (testing ES is hard)
+# tutorial_anchor: Tutorial Part 2 — Account Rules
+---
+
+{/*
+  CONTENT OUTLINE — Testing Event-Sourced Systems
+  Entry: Stage 2 (Event-thinker), Exit: Stage 3 (NeoHaskell-aware)
+  Misconception addressed: #19 (testing ES is hard)
+  Anchored from: Tutorial Part 2 — Account Rules
+
+  Core message: event-sourced systems are EASIER to test, not harder.
+  Given-When-Then maps directly to events-command-events.
+  Testing Trophy adapted for ES: type safety → unit tests → integration → E2E.
+  No mocking needed — just events in, events out.
+  Property-based testing intro.
+  Source: Kent C. Dodds Testing Trophy.
+*/}
+
+{/* POLYGLOT NOTE: All code examples on this page should include equivalent snippets in JS/TS, Python, and Go. See DOCS-PLAN.md Guiding Principle #9. */}
+
+import { Aside } from '@astrojs/starlight/components';
+
+## What You Might Expect
+
+- Testing a REST API requires: a running database, HTTP client setup, test fixtures, teardown logic
+- Testing business logic requires mocking: mock the database, mock the email service, mock the payment gateway
+- Integration tests are slow and flaky — they depend on external services
+- "Testing is hard" is a common complaint, especially for complex business logic
+- Event sourcing sounds like it would make testing *more* complex, not less
+
+## Why That Breaks
+
+- Mocking is a symptom of tight coupling — your business logic is tangled with infrastructure
+- Test fixtures drift from production data — the test passes but the real scenario fails
+- Slow tests mean developers skip them — the feedback loop breaks down
+- The more you mock, the less you're testing the real behavior
+- The core problem: CRUD systems mix business logic with infrastructure, making both hard to test in isolation
+
+## Testing Event-Sourced Systems: The Mental Model Shift
+
+- Event-sourced systems have a natural testing grammar: **Given-When-Then**
+- **Given**: a sequence of past events (the starting state)
+- **When**: a command is issued (the action)
+- **Then**: specific events are produced — or a specific error is returned
+- No database. No HTTP. No mocking. Just events in, events out.
+- The test IS the specification. If you can write the test, you've specified the behavior.
+
+### Why It's Easier
+
+- Business logic is a pure function: `Command -> Entity -> Result Error [Event]`
+- Pure functions are trivially testable: give inputs, assert outputs
+- No side effects means no mocking — the function doesn't touch the database or network
+- Tests run in milliseconds — no I/O, no setup, no teardown
+- The event stream IS the test fixture — no separate fixture management
+
+## The Testing Trophy for Event Sourcing
+
+{/* TODO: Diagram showing the Testing Trophy adapted for event sourcing */}
+
+Adapted from Kent C. Dodds' Testing Trophy — the layers from bottom to top:
+
+| Layer | What it tests | How many | Speed |
+|-------|--------------|----------|-------|
+| **Type safety** | Invalid states, missing handlers, wrong types | Infinite (compiler) | Instant |
+| **Unit tests** | Command handlers, update logic, business rules | Many | Milliseconds |
+| **Integration tests** | Event store, updates, cross-entity flows | Some | Seconds |
+| **End-to-end tests** | Full user flows, transport layer | Few | Minutes |
+
+The key insight: **type safety replaces a huge category of unit tests**. Tests you'd write in a dynamically-typed language to catch type errors don't exist in NeoHaskell — the compiler already caught them.
+
+<Aside type="note" title="The tests you don't write">
+In a dynamically-typed language, you write tests like "it should reject a non-numeric amount." In NeoHaskell, that test doesn't exist — the type system makes a non-numeric amount impossible to pass. The compiler handles structural correctness; your tests handle business correctness.
+</Aside>
+
+## What Happens When You Test a Deposit
+
+{/* TODO: Code example showing a complete Given-When-Then test for a deposit — include JS/TS, Python, Go equivalents */}
+
+- **Given**: `[AccountOpened { balance: 0 }]` — the account exists with zero balance
+- **When**: `Deposit { amount: 50 }` command is issued
+- **Then**: `[MoneyDeposited { amount: 50 }]` events are produced
+- The test is 5 lines. It runs in under a millisecond. It has no dependencies.
+
+### Testing Rejection
+
+- **Given**: `[AccountOpened { balance: 0 }]`
+- **When**: `Withdraw { amount: 100 }` command (more than the balance)
+- **Then**: `InsufficientFunds` error is returned, no events produced
+- Same structure. Same speed. Same simplicity.
+
+## In NeoBank Terms
+
+- Every NeoBank feature has a Given-When-Then test
+- The deposit test: given an open account, when a deposit command, then `MoneyDeposited` event
+- The overdraft test: given an open account with $0, when a withdrawal command, then `InsufficientFunds` error
+- The transfer test: given two open accounts, when a transfer command, then `TransferRequested` event on both
+- The audit test: given 10 events, when a replay query, then the correct balance at each point in time
+- None of these tests touch a database, a network, or a mock
+
+## The Full Picture
+
+{/* TODO: Code example showing a complete test suite for NeoBank account operations — include JS/TS, Python, Go equivalents */}
+{/* TODO: Show: unit test → integration test → property-based test progression */}
+
+### Unit Tests (command handlers)
+
+- Test each command handler in isolation
+- Given: entity state (derived from events), When: command, Then: events or error
+- No infrastructure, no mocking, millisecond execution
+
+### Unit Tests (updates)
+
+- Test each update as a pure function
+- Given: list of events, Then: expected query
+- Update tests are even simpler than handler tests — no command, just fold
+
+### Integration Tests
+
+- Test the full flow: command → event store → update → query
+- These tests use a real (in-memory) event store
+- Slower than unit tests, but still fast — no network, no external services
+
+### Property-Based Tests
+
+- "No sequence of valid commands should produce a negative balance"
+- Generate random sequences of valid commands, assert the invariant holds
+- Finds edge cases that hand-written tests miss
+- NeoHaskell's pure functions make property-based testing straightforward
+
+## How NeoHaskell Enforces This
+
+- The `update` function signature enforces testability: `Event -> Entity -> Entity` (pure)
+- The `decide` function signature enforces testability: `Command -> Entity -> Result Error [Event]` (pure)
+- No IO in business logic — side effects are pushed to the edges
+- The testing framework provides Given-When-Then helpers that match the event sourcing model
+
+## Going Deeper
+
+- [Type Safety →](/concepts/type-safety) — what the compiler catches before tests run
+- [Updates →](/concepts/updates) — testing queries as pure functions
+- [Events, Not State →](/concepts/events-not-state) — why pure functions make testing easy
+- External: Kent C. Dodds' [Testing Trophy](https://kentcdodds.com/blog/the-testing-trophy-and-testing-classifications) — the original framework this adapts
+
+:::caution[Coming Soon]
+Code examples on this page are placeholders. Full working code will be added when the NeoBank tutorial is complete.
+:::

@@ -1,0 +1,135 @@
+---
+title: "Events, Not State"
+description: "The core mental model shift — storing what happened instead of what is."
+sidebar:
+  order: 10
+keywords: [event sourcing, immutable events, state derivation, append-only log, event store]
+# entry_stage: 0 (CRUD-thinker)
+# exit_stage: 2 (Event-thinker)
+# misconception: #1 (need tables/columns), #3 (can just update a field), #10 (FP means no state)
+# tutorial_anchor: Tutorial Part 1 — Your First Transaction
+---
+
+{/*
+  CONTENT OUTLINE — Events, Not State
+  Entry: Stage 0 (CRUD-thinker), Exit: Stage 2 (Event-thinker)
+  Misconceptions addressed: #1, #3, #10
+  Anchored from: Tutorial Part 1
+
+  Narrative arc: familiar CRUD pain → banking analogy as bridge → mental model shift → NeoHaskell mechanics
+  Key insight: state is derived, not stored. The ledger is the original event store.
+  Evidence from testbed: EventCounter.hs uses ConcurrentVar — state is managed, not forbidden.
+  The update function in Cart/Core.hs is a pure function (event + entity → new entity), exactly like a Redux reducer.
+*/}
+
+{/* POLYGLOT NOTE: All code examples on this page should include equivalent snippets in JS/TS, Python, and Go. See DOCS-PLAN.md Guiding Principle #9. */}
+
+import { Aside } from '@astrojs/starlight/components';
+
+## What You Might Expect
+
+- If you've built web apps, you expect a `users` table with a `balance` column
+- When a deposit happens, you run `UPDATE accounts SET balance = 150 WHERE id = 42`
+- The database holds the current truth — one row, one value, always up to date
+- Querying state is trivial: `SELECT balance FROM accounts WHERE id = 42`
+- This feels natural because it mirrors how you think about "what is" right now
+
+## Why That Breaks
+
+- A customer disputes a charge. You need to know: what was the balance *before* the dispute?
+- With `UPDATE`, that information is gone. The row was overwritten.
+- You add an audit log table. Now you're maintaining two sources of truth — and they can drift.
+- A bug corrupts the balance column. You have no way to reconstruct the correct value.
+- Regulatory compliance requires a complete transaction history. You're retrofitting it.
+- The core problem: **you stored the answer, not the question**. You can't re-derive the answer from scratch.
+
+## Events, Not State: The Mental Model Shift
+
+- Instead of storing *what is*, store *what happened*
+- A deposit isn't "set balance to $150" — it's "recorded: $50 deposited on Tuesday"
+- The balance is derived by replaying all events: open($0) + deposit($50) + deposit($100) = $150
+- Events are immutable facts. They never change. They never get deleted.
+- State is an *update* — a view derived from events, not the source of truth itself
+- This isn't a new idea: **banks have worked this way for centuries**
+
+### The Ledger Analogy
+
+- A bank ledger doesn't have a "current balance" row that gets updated
+- It has a list of entries: deposits, withdrawals, transfers — each with a date and amount
+- The balance is calculated by summing the entries
+- If you want the balance from last Tuesday, you sum entries up to that date
+- NeoHaskell's event store is a ledger. Your application state is the running total.
+
+### What Changes
+
+| CRUD thinking | Event thinking |
+|--------------|---------------|
+| Store the current state | Store every event that led to it |
+| `UPDATE balance SET 150` | Record `MoneyDeposited { amount: 50 }` |
+| Query the row | Fold over the event stream |
+| Audit log is extra work | Audit trail is free — it's the source of truth |
+| "What is the balance?" | "What events produced this balance?" |
+| Losing history is normal | Losing history is impossible |
+
+## What Happens When You Deposit $50
+
+- Step 1: A `Deposit` command arrives (a request, not yet a fact)
+- Step 2: The command handler validates it — is the account open? Is the amount positive?
+- Step 3: If valid, a `MoneyDeposited { amount: 50, timestamp: now }` event is appended to the event store
+- Step 4: The event is immutable. It cannot be changed or deleted.
+- Step 5: When you need the balance, the system folds over all events: `AccountOpened` sets it to $0, each `MoneyDeposited` adds to it, each `MoneyWithdrawn` subtracts
+- Step 6: The balance you see is derived on demand — or cached as an update for performance
+
+<Aside type="note" title="State is managed, not forbidden">
+NeoHaskell doesn't eliminate state — it manages it differently. The testbed's `EventCounter.hs` uses `ConcurrentVar` for mutable state. The difference: state is always *derived from events*, never mutated directly. The `update` function in `Cart/Core.hs` takes an event and an entity and returns a new entity — exactly like a Redux reducer. If you've used Redux, you already understand this model.
+</Aside>
+
+## In NeoBank Terms
+
+- NeoBank's account balance is never stored as a column
+- It's the result of folding over `AccountOpened`, `MoneyDeposited`, and `MoneyWithdrawn` events
+- When a customer asks "what's my balance?", NeoBank replays their event stream
+- When a customer disputes a charge, NeoBank replays to any point in time — the history is always there
+- The audit trail isn't a separate system. It's the event store itself.
+- "Show me everything that happened to my account" is free — you already have it
+
+## The Full Picture
+
+{/* TODO: Code example showing side-by-side: SQL UPDATE vs NeoHaskell event append — include JS/TS, Python, Go equivalents */}
+{/* TODO: Code example showing balance derivation as a fold over events — include JS/TS, Python, Go equivalents */}
+{/* TODO: Annotated diagram: event stream → fold function → derived state */}
+
+- **Event type definition**: outline of what a `MoneyDeposited` event record looks like — fields, types, no mutable state
+- **Event store append**: what the append operation looks like — takes an event, returns nothing (fire and forget)
+- **Balance fold**: a pure function that takes a list of events and returns a balance — no database, no side effects
+- **Time-travel query**: the same fold function, but filtered to events before a given timestamp
+
+## How NeoHaskell Enforces This
+
+- The compiler enforces the event sourcing contract: every state change must go through the event log
+- You can't directly mutate entity state — there's no setter, no `balance = 150`
+- The `update` function signature enforces the pattern: `Event -> Entity -> Entity` (pure, no side effects)
+- Missing event handlers are compile errors — if you add a new event type, the compiler demands you handle it everywhere
+- The event store is append-only by design — the API has no `delete` or `update` operation
+
+## Testing This Concept
+
+{/* TODO: Code example showing a Given-When-Then test for balance derivation — include JS/TS, Python, Go equivalents */}
+
+- Testing event-sourced state is simpler than testing CRUD state
+- To test the balance: give a list of events, call the fold function, assert the result
+- No database setup, no mocking, no fixtures — just a list of events and an assertion
+- "Given these events, the balance should be X" is the entire test
+- Time-travel tests are trivial: filter the event list by timestamp, fold, assert
+
+## Going Deeper
+
+- [Commands and Handlers →](/concepts/commands-and-handlers) — how requests become events
+- [Updates →](/concepts/updates) — building multiple views from the same event stream
+- [From CRUD to Events →](/concepts/from-crud-to-events) — the complete side-by-side comparison
+- [Testing Event-Sourced Systems →](/concepts/testing-event-sourced-systems) — the full testing strategy
+- External: Martin Fowler's [Event Sourcing](https://martinfowler.com/eaaDev/EventSourcing.html) — the canonical reference
+
+:::caution[Coming Soon]
+Code examples on this page are placeholders. Full working code will be added when the NeoBank tutorial is complete.
+:::

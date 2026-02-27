@@ -1,0 +1,213 @@
+---
+title: "Using AI with NeoHaskell"
+description: "Copy-paste prompt for your AI assistant, the 5 most common mistakes AI makes with NeoHaskell, and how to spot them."
+keywords: [AI, copilot, ChatGPT, Claude, coding assistant, common mistakes, prompt, NeoHaskell conventions]
+---
+
+{/* 
+  CONTENT OUTLINE — REVISION 2 (10-expert consensus applied)
+  ==============================================================
+  Position: Getting Started — placed here (moved from guides/) because readers using
+    AI copilots need this BEFORE writing their first line of code
+  Time estimate: ~5 minutes to read, then reference as needed
+  Misconceptions addressed: #4 (just Haskell with different names — AI will make this mistake)
+  
+  Design principles from DOCS-PLAN:
+  - "Copy-paste NeoHaskell prompt for AI tools"
+  - "the 5 most common AI mistakes"
+  - "how to spot wrong patterns"
+  - Source: Sarah Drasner — "If 70% of developers use AI while coding, the AI guide belongs in Getting Started, not buried in Guides."
+  - Cross-references coming-from/haskell.mdx for the full Haskell→NeoHaskell mapping table
+  
+  Key insight from DOCS-PLAN (line 641):
+  "When a Haskell dev uses AI (Copilot, ChatGPT, Claude), the AI will generate standard Haskell.
+   This section lists the top 5 patterns the AI will get wrong and how to spot/fix them."
+  
+  This applies to ALL developers using AI, not just Haskell devs — AI tools trained on
+  Haskell code will generate standard Haskell when asked for NeoHaskell.
+  
+  Changes applied:
+  - Prerequisites added (change #2)
+  - Version placeholder added (change #1)
+  - "What's On This Page" section added (change #2)
+  - Recap closing section added (change #3)
+  - Two-panel code block format note added (change #8)
+*/}
+
+**Prerequisites**: None
+
+*~5 minutes to read · Reference page — come back when AI generates something suspicious · NeoHaskell vX.Y.Z*
+
+## What's On This Page
+
+- AI coding assistants (Copilot, ChatGPT, Claude, Cursor) don't know NeoHaskell's conventions yet
+- They'll generate code that looks like it should work — and sometimes compiles — but isn't idiomatic NeoHaskell
+- This page gives you:
+  1. A prompt to paste into your AI tool that teaches it NeoHaskell conventions
+  2. The 5 most common mistakes AI makes (so you can spot them instantly)
+  3. A quick "does this look right?" checklist
+
+## The NeoHaskell Prompt
+
+{/*
+  A copy-paste block that users can put into their AI assistant's system prompt
+  or paste at the start of a conversation. Should be comprehensive enough that
+  the AI generates correct NeoHaskell, but short enough to actually use.
+*/}
+
+- Provide a ready-to-copy prompt block (fenced code block with a "Copy" button)
+- The prompt should cover:
+  - "NeoHaskell is a Haskell dialect with these specific conventions..."
+  - Pipe operator `|>` instead of `$`
+  - Qualified imports always: `Array.map`, `Text.length`, never bare `map` or `length`
+  - `do` blocks for ALL bindings (no `let..in` or `where`)
+  - `case..of` for ALL pattern matching (no patterns in function definitions)
+  - `Task err val` instead of `IO a`
+  - `Result err val` with `Ok`/`Err` instead of `Either`
+  - `Module.yield` instead of `pure`/`return`
+  - Explicit lambdas, never point-free style
+  - Trait names: `Mappable` not `Functor`, `Thenable` not `Monad`, `Appendable` not `Semigroup`
+- Note: "Update this prompt when NeoHaskell conventions change. This targets vX.Y.Z."
+
+## The 5 Most Common AI Mistakes
+
+{/*
+  Each mistake follows the pattern:
+  1. What the AI generates (wrong)
+  2. What it should be (right)
+  3. How to spot it at a glance
+  
+  These should be the REAL top 5 based on what AI tools actually produce
+  when asked for Haskell-like code.
+  
+  Two-panel code block format note (change #8):
+  Each mistake should use a two-panel fenced code block (❌ wrong / ✅ right) format,
+  not inline code in bullets.
+*/}
+
+### Mistake 1: Using `$` Instead of `|>`
+
+❌ **Wrong:**
+```neohaskell
+putStrLn $ show $ length xs
+```
+
+✅ **Right:**
+```neohaskell
+xs |> Array.length |> Int.toText |> Console.log
+```
+
+- How to spot: if you see `$` anywhere, it's wrong. NeoHaskell uses `|>` exclusively.
+- Why it matters: `|>` reads left-to-right (data flows naturally); `$` reads right-to-left
+
+### Mistake 2: Bare Function Names Instead of Qualified Imports
+
+❌ **Wrong:**
+```neohaskell
+map f xs
+length xs
+filter p xs
+```
+
+✅ **Right:**
+```neohaskell
+Array.map f xs
+Array.length xs
+Array.filter p xs
+```
+
+- How to spot: if a function has no module prefix (no dot), it's probably wrong
+- Why it matters: qualified imports make the source of every function explicit
+
+### Mistake 3: `let..in` or `where` Instead of `do` Blocks
+
+❌ **Wrong:**
+```neohaskell
+let x = 5 in x + 1
+foo = bar where bar = 42
+```
+
+✅ **Right:**
+```neohaskell
+do
+  x <- 5
+  x + 1
+```
+
+- How to spot: if you see `let..in` or `where`, rewrite as a `do` block
+- Why it matters: one binding mechanism everywhere = less cognitive load
+
+### Mistake 4: Pattern Matching in Function Definitions
+
+❌ **Wrong:**
+```neohaskell
+factorial 0 = 1
+factorial n = n * factorial (n - 1)
+```
+
+✅ **Right:**
+```neohaskell
+factorial n = case n of
+  0 -> 1
+  _ -> n * factorial (n - 1)
+```
+
+- How to spot: if the same function name appears multiple times with different patterns, it's wrong
+- Why it matters: patterns are always visible at the use site, not split across declarations
+
+### Mistake 5: Standard Haskell Types and Typeclass Names
+
+❌ **Wrong:**
+```neohaskell
+IO ()
+Either String Int
+return 5
+Functor
+Monad
+```
+
+✅ **Right:**
+```neohaskell
+Task err val
+Result err val
+Task.yield 5
+Mappable
+Thenable
+```
+
+- How to spot: if you see `IO`, `Either`, `return`, `pure`, `Functor`, or `Monad` — it's standard Haskell, not NeoHaskell
+- Why it matters: NeoHaskell's naming is intentional — names describe behavior, not math heritage
+
+## Quick Checklist: "Does This AI Code Look Right?"
+
+{/*
+  A scannable yes/no checklist the reader can run through quickly
+  when reviewing AI-generated code.
+*/}
+
+- [ ] All function calls are qualified (`Module.function`, not bare `function`)
+- [ ] Uses `|>` for chaining, never `$`
+- [ ] Bindings are in `do` blocks, never `let..in` or `where`
+- [ ] Pattern matching uses `case..of`, never function-level patterns
+- [ ] Types are NeoHaskell names: `Task`, `Result`, `Text` (not `IO`, `Either`, `String`)
+- [ ] Typeclass/Trait names are NeoHaskell: `Mappable`, `Thenable` (not `Functor`, `Monad`)
+- [ ] String interpolation uses `[fmt|...|]`, not concatenation
+- [ ] No point-free style — all lambdas are explicit
+
+## When AI Gets It Right
+
+AI IS useful for NeoHaskell — it understands the logic, algorithms, and domain modeling. The mistakes are almost always syntactic/conventional, not logical.
+
+**Strategy**: let AI write the logic, then fix the NeoHaskell conventions using this checklist. Over time, AI tools will learn NeoHaskell conventions — this page will be less necessary.
+
+## Where to Go from Here
+
+You know how to spot AI mistakes. Now let's write your first event.
+
+- [Coming from Haskell](/coming-from/haskell/) — the full Haskell → NeoHaskell mapping table
+- [Cheat Sheet](/getting-started/cheat-sheet/) — quick reference for correct NeoHaskell syntax
+- **Next**: [Your First Events](/getting-started/first-events/) — write your first event type and see event sourcing in action (~10 minutes)
+
+:::caution[Coming Soon]
+The AI prompt and code examples on this page are placeholders. They will be finalized once NeoHaskell conventions are stable.
+:::

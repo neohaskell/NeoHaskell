@@ -1,0 +1,131 @@
+---
+title: "Effects"
+description: "How NeoHaskell handles side effects with typed errors."
+sidebar:
+  order: 41
+keywords: [effects, Task, typed errors, side effects, IO, error handling, composable]
+# entry_stage: 3 (NeoHaskell-aware)
+# exit_stage: 4 (NeoHaskell-fluent)
+# misconception: #12 (need to understand monads first)
+# tutorial_anchor: Tutorial Part 5 — Transfers
+---
+
+{/*
+  CONTENT OUTLINE — Effects
+  Entry: Stage 3 (NeoHaskell-aware), Exit: Stage 4 (NeoHaskell-fluent)
+  Misconception addressed: #12 (need to understand monads first)
+  Anchored from: Tutorial Part 5 — Transfers
+
+  Core message: not IO a, but Task err val — typed errors.
+  Every effectful computation declares its failure mode.
+  Composable error handling.
+  NeoHaskell hides the monad machinery — you use it without naming it.
+  Evidence: testbed uses Task.yield, do blocks like async/await. Word "monad" never appears in user code.
+*/}
+
+{/* POLYGLOT NOTE: All code examples on this page should include equivalent snippets in JS/TS, Python, and Go. See DOCS-PLAN.md Guiding Principle #9. */}
+
+import { Aside } from '@astrojs/starlight/components';
+
+## What You Might Expect
+
+- In most languages, side effects (database calls, HTTP requests, file I/O) can fail in unpredictable ways
+- Error handling is an afterthought: try/catch, nullable returns, or just letting it crash
+- In standard Haskell, effects are wrapped in `IO a` — but `IO` doesn't tell you what can go wrong
+- You've heard that functional programming makes effects complicated — monads, functors, applicatives
+
+## Why That Breaks
+
+- `IO a` says "this does something with the world" but not *what* can go wrong
+- A function that calls the database, sends an email, and charges a credit card all return `IO a` — you can't tell them apart
+- When something fails, you find out at runtime — not at compile time
+- Try/catch is invisible: you don't know which functions can throw without reading their implementation
+- The core problem: effects without typed errors are a black box
+
+## Effects: The Mental Model Shift
+
+- NeoHaskell uses `Task err val` instead of `IO a`
+- `Task err val` says: "this computation produces a `val` or fails with an `err`"
+- Every effectful computation **declares its failure mode** — the type tells you what can go wrong
+- Error handling is explicit and composable — you chain tasks, and errors propagate automatically
+- You never need to know about monads — `do` blocks work like `async/await`
+
+### Task vs IO
+
+| Standard Haskell | NeoHaskell | What changed |
+|-----------------|-----------|-------------|
+| `IO a` | `Task err val` | Failure mode is explicit in the type |
+| `Either a b` | `Result err val` with `Ok`/`Err` | Names describe intent, not position |
+| `pure` / `return` | `Task.yield` | Says what it does, not what it satisfies |
+| `>>=` (bind) | `do` blocks | Reads like sequential code |
+| `catch` / `throwIO` | `Task.catch`, `Result.mapErr` | Typed, composable error handling |
+
+<Aside type="note" title="No monads in user code">
+NeoHaskell's stdlib is designed so you never write `Monad`, `Functor`, or `Applicative` in your application code. The testbed's entire user-facing API contains zero references to these concepts. `do` blocks work like `async/await`. `Task.yield` replaces `pure`/`return`. The word "monad" never appears in user code — the framework handles all type-level wiring internally.
+</Aside>
+
+## What Happens When a Transfer Fails
+
+- A transfer involves multiple effects: debit one account, credit another, send a notification
+- Each step can fail: account not found, insufficient funds, notification service down
+- With `Task err val`, each failure mode is explicit in the type
+- If the debit succeeds but the credit fails, the system knows exactly what happened — and can compensate
+- The integration pattern (Tutorial Part 5) uses `Task` to model the full state machine: happy path, failure, compensation
+
+### Composing Tasks
+
+{/* TODO: Code example showing Task composition with do blocks — include JS/TS, Python, Go equivalents */}
+
+- Tasks compose with `do` blocks — sequential, readable, no callback hell
+- Error propagation is automatic — if any step fails, the whole chain fails with that error
+- `Task.catch` handles specific error types — you can recover from some failures and propagate others
+- `Task.map` transforms the success value — pure transformation, no new effects
+
+## In NeoBank Terms
+
+- The `Transfer` integration involves three tasks: `debitAccount`, `creditAccount`, `sendNotification`
+- Each task has a typed error: `AccountNotFound`, `InsufficientFunds`, `NotificationFailed`
+- If `debitAccount` fails with `InsufficientFunds`, the integration returns that error — no credit, no notification
+- If `creditAccount` fails after a successful debit, the integration runs a compensation task: `refundDebit`
+- The type system ensures every failure mode is handled — you can't forget the compensation case
+
+## The Full Picture
+
+{/* TODO: Code example showing a complete Task chain for a transfer — include JS/TS, Python, Go equivalents */}
+{/* TODO: Code example showing error handling with Task.catch — include JS/TS, Python, Go equivalents */}
+{/* TODO: Code example showing the integration pattern with compensation — include JS/TS, Python, Go equivalents */}
+
+- **Task definition**: `Task err val` — a computation that produces `val` or fails with `err`
+- **Task composition**: `do` blocks chain tasks sequentially — errors propagate automatically
+- **Error handling**: `Task.catch` handles specific errors; `Result.mapErr` transforms error types
+- **Compensation**: when a step fails, run a compensating task to undo previous steps
+- **Testing**: tasks are testable — mock the effects, assert the results
+
+## How NeoHaskell Enforces This
+
+- The `Task err val` type makes failure modes explicit — the compiler enforces that you handle them
+- `do` blocks enforce sequential composition — no accidental parallel execution
+- `Task.catch` is typed — you can only catch errors of the declared type
+- The compiler flags unhandled error cases — no silent failures
+- Pure functions (no `Task`) can't have side effects — the type system enforces the boundary
+
+## Testing This Concept
+
+{/* TODO: Code example showing a test for a Task-based function — include JS/TS, Python, Go equivalents */}
+{/* TODO: Show: mock the effect, assert the result */}
+
+- Test the happy path: mock all effects to succeed, assert the expected result
+- Test each failure mode: mock one effect to fail, assert the correct error is returned
+- Test compensation: mock a failure after a successful step, assert the compensation ran
+- Tasks are pure functions over effects — testing is straightforward with the right mocking strategy
+
+## Going Deeper
+
+- [Services →](/concepts/services) — how effects cross context boundaries
+- [Type Safety →](/concepts/type-safety) — how the type system enforces effect boundaries
+- [Testing Event-Sourced Systems →](/concepts/testing-event-sourced-systems) — testing effectful code
+- External: NeoHaskell's `Task` is inspired by Elm's `Task` and Rust's `Result` — both worth reading
+
+:::caution[Coming Soon]
+Code examples on this page are placeholders. Full working code will be added when the NeoBank tutorial is complete.
+:::

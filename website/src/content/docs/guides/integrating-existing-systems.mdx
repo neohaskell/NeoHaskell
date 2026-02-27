@@ -1,0 +1,222 @@
+---
+title: "Integrating Existing Systems"
+description: "How to introduce NeoHaskell into an existing architecture. Strangler fig pattern, HTTP integration, message queues, shared databases, and gradual migration."
+keywords: [integration, existing systems, strangler fig, HTTP, message queue, Kafka, RabbitMQ, migration, services, coexistence]
+sidebar:
+  order: 20
+---
+
+{/*
+  CONTENT OUTLINE — Integrating Existing Systems Guide
+  =====================================================
+  Position: Guides section, adoption
+  Goal: Reader has an existing system and wants to introduce NeoHaskell without a big-bang rewrite.
+  Prerequisites: Understanding of services (concepts/services.mdx)
+  Misconceptions addressed:
+    - #17 (NeoHaskell won't integrate with existing systems)
+    - #18 (you have to go all-in on NeoHaskell)
+  Tone: pragmatic — this is about real-world adoption, not ideal-world architecture
+
+  Sections:
+  1. Prerequisites
+  2. The Core Principle: You Don't Have to Rewrite Everything
+  3. The Strangler Fig Approach
+  4. HTTP API Integration Patterns
+  5. Message Queue Integration
+  6. Shared Database Strategies
+  7. Publishing NeoHaskell Events to Existing Infrastructure
+  8. Gradual Migration Path
+  9. Coexistence: NeoHaskell Alongside Non-NeoHaskell Services
+  10. Next Steps
+*/}
+
+{/* POLYGLOT NOTE: All code examples on this page should include equivalent snippets in JS/TS, Python, and Go. See DOCS-PLAN.md Guiding Principle #9. */}
+
+import { Aside } from '@astrojs/starlight/components';
+
+## Prerequisites
+
+- [Services](/concepts/services/) — you understand what a service is and why boundaries matter
+- Optional: [Deployment](/guides/deployment/) — you know how to run a NeoHaskell service
+
+## The Core Principle: You Don't Have to Rewrite Everything
+
+{/*
+  Address misconceptions #17 and #18 directly.
+  The key message: NeoHaskell is designed for incremental adoption.
+*/}
+
+
+- NeoHaskell is designed to coexist with existing systems, not replace them all at once
+- You can introduce NeoHaskell for one service while leaving everything else unchanged
+- The existing system doesn't need to know NeoHaskell exists — it just sees HTTP calls or database records
+- Misconception #17: "NeoHaskell won't integrate with existing systems"
+  - NeoHaskell services expose standard HTTP APIs — any system that can make HTTP calls can integrate
+  - NeoHaskell can consume from Kafka, RabbitMQ, and other message queues
+  - NeoHaskell can read from existing databases
+- Misconception #18: "You have to go all-in on NeoHaskell"
+  - You don't. Start with one service. Run it alongside your existing services.
+  - If it works, expand. If it doesn't, you've only changed one part of the system.
+
+<Aside type="note" title="The right first service">
+Pick a service that is naturally event-driven (has a clear audit trail requirement), has well-defined boundaries, and is small enough to rewrite in a few weeks. Avoid starting with the most complex or most critical part of your system.
+</Aside>
+
+## The Strangler Fig Approach
+
+{/*
+  The classic incremental migration pattern.
+  Show how it applies to NeoHaskell adoption.
+*/}
+
+
+- The strangler fig pattern: build the new system alongside the old one, gradually routing traffic to the new system
+- Applied to NeoHaskell: put a proxy or API gateway in front of your existing service
+  - New requests for the migrated service go to NeoHaskell
+  - Everything else goes to the existing service
+- Show: a diagram of the strangler fig setup (describe the diagram — actual diagram is TODO)
+  - Existing service still running
+  - NeoHaskell service running alongside it
+  - Proxy routing based on path or feature flag
+- Migration steps:
+  1. Identify the service to migrate
+  2. Build the NeoHaskell service (it can call the existing service for data it doesn't own yet)
+  3. Deploy both services
+  4. Route a small percentage of traffic to NeoHaskell (feature flag or canary)
+  5. Monitor — compare behavior between old and new
+  6. Gradually increase traffic to NeoHaskell
+  7. Decommission the old service for that service
+- Rollback: if NeoHaskell has a problem, route traffic back to the old service — no data loss because the old service was still running
+
+{/* TODO: architecture diagram */}
+
+## HTTP API Integration Patterns
+
+{/*
+  How NeoHaskell services call existing HTTP APIs, and how existing services call NeoHaskell.
+*/}
+
+
+- **NeoHaskell calling an existing HTTP API**:
+  - Define an Integration for the external service
+  - Show: an Integration definition that wraps an HTTP API
+  - Show: calling the integration from a command handler
+  - Error handling: map HTTP errors to domain errors with `Task.mapError`
+  - Retry logic: show how to add retries for transient failures
+- **Existing services calling NeoHaskell**:
+  - NeoHaskell exposes a standard HTTP API — no special client needed
+  - Show: the auto-generated OpenAPI spec
+  - Show: calling a NeoHaskell command endpoint from a curl command (or any HTTP client)
+- Authentication: NeoHaskell supports OAuth2 and API key authentication
+  - Show: how to configure authentication for incoming requests
+  - Show: how to pass authentication tokens to outgoing requests
+
+{/* TODO: code examples for Integration definition and HTTP calls — include JS/TS, Python, Go equivalents */}
+
+## Message Queue Integration
+
+{/*
+  Consuming from existing Kafka/RabbitMQ, and publishing to them.
+*/}
+
+
+- **Consuming from an existing message queue**:
+  - NeoHaskell can consume messages from Kafka, RabbitMQ, and other queues
+  - Show: a Kafka consumer integration definition
+  - Show: mapping incoming messages to NeoHaskell commands
+  - Error handling: what happens when a message can't be processed (dead letter queue)
+  - Idempotency: NeoHaskell commands are idempotent — duplicate messages are safe
+- **Publishing to an existing message queue**:
+  - NeoHaskell can publish events to Kafka, RabbitMQ, or any queue
+  - Show: an outbound integration that publishes events after a command succeeds
+  - Show: the event bridge pattern — NeoHaskell events → existing queue → existing consumers
+- Note: you don't need a message queue for NeoHaskell to work — PostgreSQL is the event store
+  - Message queues are for integrating with existing consumers, not for NeoHaskell's internal operation
+
+{/* TODO: code examples for Kafka consumer and publisher integrations — include JS/TS, Python, Go equivalents */}
+
+## Shared Database Strategies
+
+{/*
+  Reading from existing databases without owning them.
+  This is a common integration pattern during migration.
+*/}
+
+
+- Sometimes you need to read data from an existing database that NeoHaskell doesn't own
+- **Read-only access**: NeoHaskell can read from existing tables as a data source
+  - Show: a read-only integration that queries an existing database
+  - Show: mapping database rows to domain types
+  - Note: NeoHaskell should not write to tables it doesn't own — that creates coupling
+- **Dual-write during migration**: temporarily write to both the old database and the NeoHaskell event store
+  - Use when: you need the old system to keep working while you migrate
+  - Show: a command handler that writes an event AND updates the old database
+  - Risk: dual-write can get out of sync — have a reconciliation strategy
+- **Event-driven sync**: publish NeoHaskell events to a queue, have a consumer update the old database
+  - Cleaner than dual-write — the old database is a derived view, not the source of truth
+  - Show: the event bridge pattern for keeping an old database in sync
+
+{/* TODO: code examples for read-only integration and event-driven sync — include JS/TS, Python, Go equivalents */}
+
+## Publishing NeoHaskell Events to Existing Infrastructure
+
+{/*
+  The event bridge pattern — how to make NeoHaskell events visible to existing consumers.
+*/}
+
+
+- NeoHaskell events are stored in the event store — existing systems can't read them directly
+- The event bridge pattern: a NeoHaskell service reads its own events and publishes them to existing infrastructure
+- Show: an outbound integration that reads from the event store and publishes to Kafka
+- Show: an outbound integration that calls a webhook when an event occurs
+- Show: an outbound integration that updates a query in an existing database
+- Ordering guarantees: NeoHaskell events are ordered within a stream — the bridge preserves this order
+- At-least-once delivery: the bridge may deliver an event more than once — consumers should be idempotent
+
+{/* TODO: code examples for event bridge patterns — include JS/TS, Python, Go equivalents */}
+
+## Gradual Migration Path
+
+{/*
+  A concrete migration strategy — one service at a time.
+*/}
+
+
+- The recommended migration path:
+  1. **Identify services** in your existing system — where are the natural seams?
+  2. **Pick the first context** — smallest, most event-natural, least critical
+  3. **Build the NeoHaskell service** — it can call the existing system for data it doesn't own
+  4. **Deploy alongside** — run both systems, route traffic to NeoHaskell
+  5. **Validate** — compare behavior, check metrics, fix issues
+  6. **Expand** — once the first context is stable, pick the next one
+- What "done" looks like for a service:
+  - All commands for that context go through NeoHaskell
+  - The old service no longer handles those commands
+  - The old database tables for that context are read-only (or decommissioned)
+- Timeline: expect 2-4 weeks per service for a small team
+- Don't rush: it's better to have one stable NeoHaskell service than three unstable ones
+
+## Coexistence: NeoHaskell Alongside Non-NeoHaskell Services
+
+{/*
+  The steady-state: NeoHaskell services running alongside existing services.
+  This may be permanent, not just a migration phase.
+*/}
+
+
+- You don't have to migrate everything — some services may stay in their existing technology
+- NeoHaskell services are just HTTP services — they coexist with any other service
+- Service discovery: NeoHaskell services register with your existing service discovery (Consul, Kubernetes DNS, etc.)
+- Load balancing: NeoHaskell services work behind any load balancer
+- Observability: NeoHaskell emits standard logs and metrics — compatible with your existing monitoring stack
+- The goal is not "all NeoHaskell" — it's "the right tool for each service"
+
+## Next Steps
+
+- **Theory**: [Services](/concepts/services/) — the architectural principle behind this guide
+- **Adoption strategy**: [Adopting NeoHaskell at Work](/guides/adopting-at-work/) — the organizational side of adoption
+- **Deployment**: [Deployment](/guides/deployment/) — how to run NeoHaskell services in production
+
+:::caution[Coming Soon]
+This page is a content outline. The full guide with integration code examples and architecture diagrams is in progress.
+:::

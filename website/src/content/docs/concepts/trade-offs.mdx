@@ -1,0 +1,137 @@
+---
+title: "Trade-offs"
+description: "When event sourcing adds unnecessary complexity — and when it doesn't."
+sidebar:
+  order: 51
+keywords: [trade-offs, event sourcing complexity, when to use, CRUD vs events, overkill, honest assessment]
+# entry_stage: 4 (NeoHaskell-fluent)
+# exit_stage: 5 (NeoHaskell-native)
+# misconception: #13 (event sourcing only works for banking)
+# tutorial_anchor: Tutorial Part 6 — Audit Everything (capstone)
+---
+
+{/*
+  CONTENT OUTLINE — Trade-offs
+  Entry: Stage 4 (NeoHaskell-fluent), Exit: Stage 5 (NeoHaskell-native)
+  Misconception addressed: #13 (event sourcing only works for banking)
+  Anchored from: Tutorial Part 6 — Audit Everything (capstone)
+
+  This is the honesty page. No overselling.
+  Misconception: #13 (ES only works for banking) — but also the inverse: ES is always better.
+  When event sourcing adds unnecessary complexity.
+  Eventual consistency complexity.
+  Event store operations overhead.
+  Schema evolution overhead.
+  Learning curve.
+  Honest about when NeoHaskell is overkill.
+*/}
+
+import { Aside } from '@astrojs/starlight/components';
+
+## The Honest Assessment
+
+Event sourcing is a powerful pattern. NeoHaskell makes it the default. Neither of these facts means it's always the right choice.
+
+This page is honest about the costs. If you're evaluating NeoHaskell for a real project, read this before deciding.
+
+## When Event Sourcing Adds Unnecessary Complexity
+
+### Simple CRUD Applications
+
+- A settings page that stores user preferences: event sourcing adds zero value
+- A feature flag system: you don't need history, just the current state
+- A content management system where "what is" matters more than "what happened"
+- A simple form that saves data: the overhead of events, commands, and updates is unjustified
+- **The test**: if you'd never need to answer "what was the state at time T?", CRUD is simpler
+
+### Prototypes and MVPs
+
+- Event sourcing has a learning curve — it slows down initial development
+- For a prototype, you want to validate the idea, not the architecture
+- CRUD is faster to build. Migrate to events when you know you need them.
+- **The test**: if you're not sure the product will survive, don't optimize the architecture
+
+### Small Teams Without ES Experience
+
+- Event sourcing requires a mental model shift — it takes time to internalize
+- A team that doesn't understand the pattern will fight it, not use it
+- The learning curve is real: expect 2-4 weeks before the team is productive
+- **The test**: if the team isn't ready, the architecture will be misused
+
+## The Real Costs
+
+### Eventual Consistency Complexity
+
+- Cross-context operations are eventually consistent — this is a feature, but also a cost
+- "Did the loan disbursement credit my account?" requires understanding eventual consistency
+- Debugging eventual consistency issues is harder than debugging synchronous CRUD
+- Users expect immediate consistency — you need to design UX that handles eventual consistency gracefully
+- **Mitigation**: keep strong consistency within services; accept eventual consistency only where it's genuinely needed
+
+### Event Store Operations Overhead
+
+- Event stores grow forever — you're storing history, not just current state
+- Querying the event store is more complex than querying a relational database
+- Update rebuilds can be slow for large event streams
+- Backup and restore are more complex — you're backing up an append-only log, not a snapshot
+- **Mitigation**: snapshots reduce replay time; archiving old events reduces storage costs
+
+### Schema Evolution Overhead
+
+- Evolving event types requires upcasters — more code, more testing
+- Old events and new events must coexist — the system must handle both
+- A bad upcaster can corrupt your entire history — it's a high-stakes operation
+- **Mitigation**: additive changes (optional fields) avoid upcasters; test upcasters thoroughly
+
+### Learning Curve
+
+- The mental model shift from CRUD to events takes time
+- New team members need onboarding — "why can't I just update the row?" is a common question
+- AI-generated code (Copilot, Claude) defaults to CRUD patterns — you'll need to correct it
+- The NeoHaskell ecosystem is young — fewer tutorials, fewer Stack Overflow answers
+- **Mitigation**: the NeoBank tutorial is designed to minimize the learning curve; the compiler catches mistakes early
+
+## When NeoHaskell Is Overkill
+
+<Aside type="caution" title="Be honest with yourself">
+NeoHaskell is pre-release alpha software. Even if event sourcing is the right pattern for your domain, NeoHaskell might not be the right tool yet. Read the "When to Adopt" section of [Why NeoHaskell?](/concepts/why-neohaskell) before deciding.
+</Aside>
+
+- **Simple CRUD with no audit trail**: use something simpler. Event sourcing adds complexity that pays off only when you need history, replay, or audit.
+- **You need a mature ecosystem**: NeoHaskell is pre-release. The core is solid, but the package ecosystem is young.
+- **You need production war stories**: NeoHaskell doesn't have Fortune 500 case studies yet.
+- **Hiring at scale**: "NeoHaskell" on a job posting is an unknown. For a team of 2-5, this is fine. For a team of 50, factor in recruiter friction.
+- **You need it yesterday**: NeoHaskell is alpha. It's moving fast and will have breaking changes.
+
+## When Event Sourcing Is Worth the Cost
+
+The costs above are real. They're worth paying when:
+
+- **Audit trails are required**: regulatory compliance, dispute resolution, debugging — the event store is the audit log
+- **History matters**: "what was the state at time T?" is a real question you need to answer
+- **Replay is valuable**: fixing bugs by replaying corrected events, rebuilding updates, time-travel debugging
+- **Multiple views**: different updates from the same data — bank statement + monthly summary + audit trail
+- **Concurrency safety**: high-throughput writes without lost updates — append-only is inherently safe
+- **AI-generated code**: the compiler catches the classes of errors AI is worst at — missing handlers, wrong state transitions
+
+## The Decision Framework
+
+| Question | If yes | If no |
+|----------|--------|-------|
+| Do you need a complete audit trail? | Event sourcing | CRUD |
+| Do you need to answer "what was the state at time T?" | Event sourcing | CRUD |
+| Do you need multiple views of the same data? | Event sourcing | CRUD |
+| Is your domain naturally event-driven? | Event sourcing | Consider carefully |
+| Does your team understand event sourcing? | Event sourcing | Learn first, then decide |
+| Is NeoHaskell mature enough for your risk tolerance? | NeoHaskell | Wait or use another ES tool |
+
+## Going Deeper
+
+- [Why NeoHaskell? →](/concepts/why-neohaskell) — the full case for NeoHaskell, including honest anti-recommendations
+- [Architecture Evaluation →](/concepts/architecture-evaluation) — technical deep-dive for architects
+- [From CRUD to Events →](/concepts/from-crud-to-events) — the complete comparison
+- [Thinking in Events →](/concepts/thinking-in-events) — how to decide if your domain fits
+
+:::caution[Coming Soon]
+Code examples on this page are placeholders. Full working code will be added when the NeoBank tutorial is complete.
+:::

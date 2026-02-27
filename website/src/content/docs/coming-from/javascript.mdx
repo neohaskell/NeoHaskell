@@ -1,0 +1,98 @@
+---
+title: "Coming from JavaScript/TypeScript"
+description: "How your JS/TS knowledge maps to NeoHaskell — immutability, type inference, algebraic data types, and the event-first mental model."
+sidebar:
+  order: 1
+---
+
+{/*
+  CONTENT OUTLINE — Coming from JavaScript/TypeScript
+  Reader profile: knows let/const, React/Express, npm/yarn, TypeScript basics
+  Key insight to land: Redux reducers are the closest thing JS has to NeoHaskell's model.
+  The reader is closer than they think — but the direction is inverted.
+*/}
+
+{/* POLYGLOT NOTE: All code examples on this page should include equivalent snippets in JS/TS, Python, and Go. See DOCS-PLAN.md Guiding Principle #9. */}
+
+import { Tabs, TabItem, Aside } from '@astrojs/starlight/components';
+
+## In JavaScript/TypeScript, you'd write...
+
+- Variables that change: `let x = 5; x = 10` — mutation is the default
+- Objects you update in place: `user.name = "Alice"` or spread: `{ ...user, name: "Alice" }`
+- TypeScript types as optional annotations layered on top of JS
+- Union types for "one of these shapes": `type Shape = Circle | Square`
+- `async/await` for anything that takes time
+- `try/catch` for error handling — errors are thrown, not returned
+- `import { map } from 'lodash'` — named imports from packages
+- Redux reducers: `(state, action) => newState` — pure function, returns new state
+- React state: `useState`, `useReducer` — local mutation through controlled APIs
+
+## In NeoHaskell, the equivalent is...
+
+- **Immutability by default**: there's no `let x = 5; x = 10` — all bindings are final
+  - "Updating" a record means creating a new one with the changed field
+  - This isn't a restriction — it's what makes event sourcing work
+- **Type inference everywhere**: types are inferred, not annotated (like TypeScript but stricter)
+  - You write fewer type annotations than in TypeScript, not more
+  - The compiler infers types across entire programs
+- **Algebraic data types**: TypeScript unions become sum types
+  - `type Shape = Circle | Square` maps directly to NeoHaskell's `data Shape = Circle | Square`
+  - But NeoHaskell's pattern matching is exhaustive — the compiler forces you to handle every case
+- **`do` blocks instead of `async/await`**: sequential effects use `do` notation
+  - `await fetchUser(id)` becomes a line in a `do` block
+  - The `Task` type carries both the success value and the typed error
+- **`Result` instead of `try/catch`**: errors are values, not exceptions
+  - Functions that can fail return `Result err val` — you handle it explicitly
+  - No silent throws, no forgotten catch blocks
+- **Qualified imports**: `Array.map`, `Text.length` — always know where a function comes from
+  - No `import { map } from 'lodash'` ambiguity
+- **Commands and events instead of Redux actions**: the pattern is the same, the names are different
+  - Redux: `dispatch({ type: 'DEPOSIT', amount: 50 })` → NeoHaskell: `Deposit { amount: 50 }`
+  - Redux reducer: `(state, action) => newState` → NeoHaskell: `decide command state = [MoneyDeposited 50]`
+
+{/* TODO: side-by-side code table — TypeScript Redux reducer vs NeoHaskell decide function */}
+
+## But here's what's actually different...
+
+- **The direction of data flow**: in React/Redux, you manage state and derive events from it. In NeoHaskell, events are primary and state is derived from them.
+  - Redux: state lives in the store, actions modify it
+  - NeoHaskell: events live in the event log, state is computed by replaying them
+  - This isn't just a naming difference — it changes what "correct" means
+- **Errors are part of the type**: `Task err val` means the compiler knows what can go wrong
+  - TypeScript's `Promise<T>` doesn't encode the error type — you find out at runtime
+  - NeoHaskell's `Task NetworkError User` says exactly what can fail
+- **No runtime type errors**: TypeScript types disappear at runtime. NeoHaskell types are enforced by the compiler and never erased.
+- **The Redux insight**: if you've written Redux reducers, you've already written NeoHaskell-style code
+  - Pure function, takes current state and an action, returns new state
+  - NeoHaskell formalizes this pattern at the language level and enforces it everywhere
+  - The difference: NeoHaskell's "actions" are typed events, and the compiler ensures you handle all of them
+
+{/* TODO: concrete example — TypeScript silent failure vs NeoHaskell compiler error for missing event handler */}
+
+## Quick translation table
+
+| JavaScript/TypeScript | NeoHaskell | Notes |
+|----------------------|-----------|-------|
+| `let x = 5; x = 10` | Not possible — bindings are final | Use records with updated fields |
+| `{ ...user, name: "Alice" }` | `user { name = "Alice" }` | Record update syntax |
+| `type Shape = Circle \| Square` | `data Shape = Circle \| Square` | Sum types, exhaustive matching |
+| `async/await` | `do` blocks with `Task` | Same idea, typed errors |
+| `try/catch` | `Result err val` | Errors are values |
+| `Promise<T>` | `Task err val` | Error type is explicit |
+| `import { map } from 'lodash'` | `Array.map` | Qualified imports |
+| Redux reducer | `decide` function | Same pattern, enforced by compiler |
+| TypeScript interface | Record type | Structural, not nominal |
+| TypeScript union | Sum type (`data`) | Exhaustive pattern matching |
+
+<Aside type="tip" title="If you've used Redux">
+Redux reducers are the closest thing JavaScript has to NeoHaskell's model. If you've written `(state, action) => newState`, you already understand the core pattern. NeoHaskell just makes it the only way to change state — and the compiler enforces it.
+</Aside>
+
+{/* TODO: code examples for each row in the translation table — include JS/TS, Python, Go equivalents */}
+{/* TODO: section on npm/yarn → Nix + Hix package management */}
+{/* TODO: section on React component state vs NeoHaskell entity state */}
+
+:::caution[Coming Soon]
+This page is a content outline. Full prose, code examples, and runnable comparisons are in progress.
+:::

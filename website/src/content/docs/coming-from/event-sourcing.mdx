@@ -1,0 +1,113 @@
+---
+title: "Coming from Event Sourcing"
+description: "How NeoHaskell compares to Kafka, EventStoreDB, and Axon — what's genuinely better, what's different, and what's not ready yet."
+sidebar:
+  order: 6
+---
+
+{/*
+  CONTENT OUTLINE — Coming from Event Sourcing
+  Reader profile: experienced ES practitioner. Knows Kafka, EventStoreDB, Axon, Greg Young's work.
+  HONESTY REQUIREMENT (DOCS-PLAN line 653): Must acknowledge what NeoHaskell DOESN'T yet have.
+  Tone: "Here's what's genuinely better, here's what's different, and here's what's not ready yet."
+
+  CRITICAL WARNING (DOCS-PLAN line 653):
+  "Experienced ES developers will spot overselling instantly and leave."
+  Source: Martin Fowler — "The Coming from Event Sourcing page is the most dangerous page to get wrong."
+
+  This page must be scrupulously honest. No marketing language. No hedging on the gaps.
+  The audience knows ES deeply — they will fact-check every claim.
+*/}
+
+import { Aside } from '@astrojs/starlight/components';
+
+## You already know the hard parts
+
+- You know why event sourcing is powerful: audit trails, time-travel, replay, CQRS
+- You've also felt the friction: schema registries, consumer group management, event versioning, update rebuilds
+- NeoHaskell's claim is that some of that friction is accidental — caused by treating ES as an infrastructure concern rather than a language concern
+- Some of it is. Some of it isn't. This page is honest about which is which.
+
+<Aside type="caution" title="Pre-release software">
+NeoHaskell is pre-release (v0.1-alpha). The claims on this page are based on design properties, not production case studies. There are no Fortune 500 deployments. There are no large-scale battle-testing stories. If your evaluation requires production proof, wait.
+</Aside>
+
+## What's genuinely better
+
+These are real improvements, not marketing claims:
+
+- **No schema registry**: in Kafka + Avro/Protobuf, the schema registry is a separate system you maintain, version, and operate. In NeoHaskell, types ARE the schema. `data AccountEvent = MoneyDeposited { amount :: Int } | AccountClosed` is the schema. The compiler enforces it. No separate registry, no schema drift, no "the registry is down."
+
+- **No consumer groups**: in Kafka, updates require consumer group management — offset tracking, rebalancing, lag monitoring. In NeoHaskell, updates are pure functions: `fold :: [AccountEvent] -> AccountState`. No consumer groups, no offset management, no rebalancing. The update is just a function.
+
+- **Event versioning via algebraic data types**: adding a new event type is adding a constructor to a sum type. The compiler then forces you to handle the new case everywhere it's pattern-matched. You can't forget to update an update — the compiler won't let you compile until you do.
+
+- **Compiler-enforced event contracts**: in Kafka, a producer can publish any bytes. A consumer can consume any bytes. The contract is a convention, not a constraint. In NeoHaskell, the event type is the contract. A command handler that produces `MoneyDeposited` can only produce `MoneyDeposited` — the compiler enforces it.
+
+- **Testing without infrastructure**: Kafka-based ES testing requires a running Kafka cluster (or a mock). NeoHaskell's Given-When-Then tests are pure function tests — no infrastructure, no Docker, no test containers. Events in, events out.
+
+- **Transport-agnostic**: the same application code runs against different event transports by changing configuration. Start with the in-process event store for development, swap to PostgreSQL for production — no code changes.
+
+## What's different (not better or worse — just different)
+
+These are architectural differences that require adjustment, not improvements:
+
+- **Language-level vs infrastructure-level**: Kafka is infrastructure — it runs alongside your application. NeoHaskell's event sourcing is language-level — it's baked into the type system. This means you can't use NeoHaskell's event sourcing with a non-NeoHaskell service without a translation layer.
+
+- **Single-language ecosystem**: Kafka is polyglot — producers and consumers can be in any language. NeoHaskell's event sourcing is currently single-language. Cross-service communication requires explicit integration points.
+
+- **Configuration as code**: NeoHaskell's event store configuration is Haskell code, not YAML or environment variables. This is more powerful but requires a different mental model for operations teams.
+
+- **Update model**: NeoHaskell updates are in-process functions, not separate services. This is simpler for most cases but means updates run in the same process as command handlers. For very large update workloads, this may require rethinking.
+
+- **No streaming semantics**: NeoHaskell's current event model is request/response, not streaming. There's no equivalent of Kafka Streams or Flink for continuous event processing. This is a current limitation, not a design choice.
+
+## What's not ready yet
+
+This section is the most important one. Read it before evaluating NeoHaskell for production use.
+
+- **No distributed event store**: NeoHaskell currently uses PostgreSQL as its event store. There's no distributed event store, no multi-node replication, no partition tolerance story. If you need Kafka's durability and throughput guarantees, NeoHaskell doesn't have them yet.
+
+- **No consumer group equivalents at scale**: NeoHaskell's update model works well for single-node deployments. For large-scale distributed update workloads — the kind Kafka consumer groups handle — there's no equivalent yet.
+
+- **No production battle-testing**: NeoHaskell has no production deployments at scale. The design properties are sound, but "sound design" and "battle-tested" are different things. If you need proof from production systems, it doesn't exist yet.
+
+- **No large-scale deployment stories**: there are no case studies, no "we migrated from Kafka to NeoHaskell" stories, no performance benchmarks at scale. These will come — but they don't exist today.
+
+- **Event versioning is compile-time only**: NeoHaskell's algebraic data type approach to event versioning handles schema evolution at compile time. Runtime migration of existing events in the store is a separate concern that requires manual handling.
+
+- **Limited transport backends**: currently PostgreSQL and in-process. Kafka, EventStoreDB, and other backends are on the roadmap but not implemented.
+
+## The honest comparison
+
+| Concern | Kafka + Framework | EventStoreDB | NeoHaskell | Notes |
+|---------|------------------|-------------|-----------|-------|
+| Schema enforcement | Schema registry (separate system) | None (convention) | Compiler (built-in) | NeoHaskell wins |
+| Update model | Consumer groups | Subscriptions | Pure functions | NeoHaskell simpler |
+| Distributed scale | Excellent | Good | Not ready | Kafka wins |
+| Production maturity | Excellent | Good | Pre-release | Kafka/ESDB win |
+| Testing | Requires infrastructure | Requires infrastructure | Pure functions | NeoHaskell wins |
+| Event versioning | Manual + schema registry | Manual | Compiler-enforced | NeoHaskell wins |
+| Polyglot support | Excellent | Good | Single-language | Kafka wins |
+| Throughput | Very high | High | Unknown at scale | Kafka wins |
+| Operational complexity | High | Medium | Low (currently) | NeoHaskell wins |
+
+<Aside type="note" title="The right question">
+The question isn't "is NeoHaskell better than Kafka?" It's "what are you optimizing for?" If you need distributed scale and production maturity today, use Kafka. If you want compiler-enforced event contracts and simpler updates for a new system, NeoHaskell is worth evaluating — with eyes open about what's not ready.
+</Aside>
+
+## What NeoHaskell is actually solving
+
+- The core problem NeoHaskell addresses isn't Kafka's throughput or EventStoreDB's storage model
+- It's the discipline problem: event sourcing done well requires enormous discipline — schema discipline, versioning discipline, update discipline
+- Every mature ES team has stories about schema drift, forgotten update updates, and consumer group incidents
+- NeoHaskell's bet is that making ES a language concern — not an infrastructure concern — eliminates the discipline requirement
+- The compiler replaces the discipline. You can't forget to update an update. You can't publish the wrong event type. You can't skip the schema registry because there isn't one.
+- Whether that bet pays off at scale is still an open question. The design is sound. The production proof doesn't exist yet.
+
+{/* TODO: section on migrating from Kafka to NeoHaskell — what the integration story looks like */}
+{/* TODO: section on running NeoHaskell alongside existing ES infrastructure */}
+
+:::caution[Coming Soon]
+This page is a content outline. Full prose, detailed comparisons, and integration guides are in progress.
+:::

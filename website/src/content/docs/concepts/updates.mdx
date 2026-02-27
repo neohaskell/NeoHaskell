@@ -1,0 +1,135 @@
+---
+title: "Updates"
+description: "Deriving different views from the same stream of events."
+sidebar:
+  order: 20
+keywords: [updates, queries, CQRS, event fold, query, derived state, bank statement]
+# entry_stage: 2 (Event-thinker)
+# exit_stage: 4 (NeoHaskell-fluent)
+# misconception: #14 (can't do CRUD-style operations)
+# tutorial_anchor: Tutorial Part 3 — Transaction History
+---
+
+{/*
+  CONTENT OUTLINE — Updates
+  Entry: Stage 2 (Event-thinker), Exit: Stage 4 (NeoHaskell-fluent)
+  Misconception addressed: #14 (can't do CRUD-style operations)
+  Anchored from: Tutorial Part 3 — Transaction History
+
+  Core insight: an update = state derived from events.
+  Queries give you familiar query patterns.
+  Multiple updates from same events (bank statement + monthly summary = CQRS insight).
+  Checking balance IS a query.
+  NeoHaskell uses "Query" and "update" in code — the `update` function folds events into entity state.
+*/}
+
+{/* POLYGLOT NOTE: All code examples on this page should include equivalent snippets in JS/TS, Python, and Go. See DOCS-PLAN.md Guiding Principle #9. */}
+
+import { Aside } from '@astrojs/starlight/components';
+
+## What You Might Expect
+
+- If you can't `SELECT balance FROM accounts`, how do you read data?
+- Event sourcing sounds like it makes reads harder — you have to replay everything every time
+- CRUD gives you simple, fast reads: one query, one row, done
+- You're worried that event sourcing means giving up the query patterns you know
+
+## Why That Breaks
+
+- Without updates, you'd have to replay the entire event stream every time someone asks for their balance
+- That's slow, and it gets slower as the event stream grows
+- The solution isn't to go back to mutable state — it's to build *derived* state that looks like mutable state
+- The insight: you can have the write-side benefits of event sourcing AND the read-side simplicity of CRUD
+
+## Updates: The Mental Model Shift
+
+- An **update** is state derived by folding over events
+- It's a pure function: `[Event] -> QueryResult`
+- The query result looks exactly like a database table — you can query it with familiar patterns
+- The difference: the query result is *derived*, not the source of truth
+- You can build as many updates as you want from the same event stream — each one is a different view
+
+### The CQRS Insight
+
+- **Command side**: events are appended to the event store (write)
+- **Query side**: updates fold over events to produce query results (read)
+- Same events, different views — this is CQRS (Command Query Responsibility Segregation)
+- The bank statement and the monthly summary are two different updates of the same event stream
+- Adding a new view doesn't change the event store — just add a new update
+
+<Aside type="note" title="NeoHaskell Queries">
+In NeoHaskell's API, the `QueryOf` type class defines how to fold events into a query result. The `update` function is what folds events into entity state. This terminology matches the user-facing concept: you're answering a query, and the update function keeps state current.
+</Aside>
+
+## What Happens When You Check Your Balance
+
+- Step 1: A `GetBalance { accountId: 42 }` query arrives
+- Step 2: The system loads all events for account 42 from the event store
+- Step 3: The balance update folds over the events: `AccountOpened` sets it to $0, each `MoneyDeposited` adds, each `MoneyWithdrawn` subtracts
+- Step 4: The result is returned — the current balance
+- Step 5: For performance, the result can be cached — the update is recomputed only when new events arrive
+
+### Two Updates, One Event Stream
+
+- The **balance update** folds events into a single number: the current balance
+- The **bank statement update** folds events into a list of formatted transactions
+- The **monthly summary update** folds events into totals grouped by month
+- All three use the same event stream. None of them change the event store.
+- Adding a fourth update (e.g., "largest single deposit") requires zero changes to the write side
+
+## In NeoBank Terms
+
+- NeoBank's balance check is an update: fold `MoneyDeposited` and `MoneyWithdrawn` events, sum the amounts
+- NeoBank's transaction history is a different update: fold the same events into a formatted list
+- NeoBank's monthly summary is a third update: fold the same events, group by month, sum each group
+- All three are derived from the same event stream — no duplication, no drift
+- The "show me everything that happened" audit view is the event stream itself — no update needed
+
+### The Tutorial Moment
+
+- In Tutorial Part 3, you build two updates from the same events
+- The bank statement shows individual transactions with dates and amounts
+- The monthly summary shows totals grouped by month
+- Same events. Different views. This is the CQRS insight made concrete.
+
+## The Full Picture
+
+{/* TODO: Code example showing a balance update as a fold over events — include JS/TS, Python, Go equivalents */}
+{/* TODO: Code example showing a bank statement update — include JS/TS, Python, Go equivalents */}
+{/* TODO: Code example showing a monthly summary update — include JS/TS, Python, Go equivalents */}
+{/* TODO: Diagram: one event stream → multiple updates → multiple query results */}
+
+- **Update definition**: a pure function `[Event] -> QueryResult` — no side effects, no database
+- **Fold pattern**: start with an initial state, apply each event in order, return the final state
+- **Caching**: updates can be cached and updated incrementally — only process new events
+- **Rebuilding**: if the update logic changes, replay all events to rebuild the query result from scratch
+- **Multiple updates**: each update is independent — add, remove, or change updates without touching the event store
+
+## How NeoHaskell Enforces This
+
+- The `QueryOf` type class defines the fold function — the compiler enforces the signature
+- Updates are pure functions — they can't write to the event store or have side effects
+- Adding a new event type requires updating every update that handles it — the compiler flags missing cases
+- The query result type is separate from the event type — no accidental mutation of the source of truth
+
+## Testing This Concept
+
+{/* TODO: Code example showing an update test — include JS/TS, Python, Go equivalents */}
+
+- Update tests are the simplest tests in the system
+- Given: a list of events, Then: the expected query result
+- No command, no handler, no infrastructure — just fold and assert
+- Test the balance update: given `[AccountOpened, MoneyDeposited(50), MoneyWithdrawn(20)]`, then balance = $30
+- Test the monthly summary: given events across two months, then the correct totals for each month
+
+## Going Deeper
+
+- [Events, Not State →](/concepts/events-not-state) — why state is derived, not stored
+- [From CRUD to Events →](/concepts/from-crud-to-events) — how updates replace SELECT queries
+- [Testing Event-Sourced Systems →](/concepts/testing-event-sourced-systems) — testing updates as pure functions
+- [Schema Evolution →](/concepts/schema-evolution) — what happens to updates when event types change
+- External: Martin Fowler's [CQRS](https://martinfowler.com/bliki/CQRS.html) — the pattern that separates reads from writes
+
+:::caution[Coming Soon]
+Code examples on this page are placeholders. Full working code will be added when the NeoBank tutorial is complete.
+:::

@@ -1,0 +1,157 @@
+---
+title: "Thinking in Events"
+description: "A 5-step process for modeling any domain with events."
+sidebar:
+  order: 50
+keywords: [event modeling, domain modeling, 5-step process, event storming, generalization, logistics]
+# entry_stage: 4 (NeoHaskell-fluent)
+# exit_stage: 5 (NeoHaskell-native)
+# misconception: #13 (event sourcing only works for banking)
+# tutorial_anchor: Tutorial Part 6 — Audit Everything (capstone)
+---
+
+{/*
+  CONTENT OUTLINE — Thinking in Events
+  Entry: Stage 4 (NeoHaskell-fluent), Exit: Stage 5 (NeoHaskell-native)
+  Misconception addressed: #13 (event sourcing only works for banking)
+  Anchored from: Tutorial Part 6 — Audit Everything (capstone)
+
+  This is the "Thinking in React" equivalent for event sourcing.
+  5-step process: Identify events → Define commands → Design entities → Build queries → Connect services.
+  Use a NON-banking domain to prove generalization (logistics/shipment tracking).
+  The reader has finished the tutorial — this page proves the pattern transfers.
+*/}
+
+{/* POLYGLOT NOTE: All code examples on this page should include equivalent snippets in JS/TS, Python, and Go. See DOCS-PLAN.md Guiding Principle #9. */}
+
+import { Aside } from '@astrojs/starlight/components';
+
+## What You Might Expect
+
+- You've built NeoBank. You understand events, commands, updates, and services.
+- But you're wondering: does this only work for banking? Banking is naturally event-sourced.
+- Can you apply this to a logistics system? A social network? A content management system?
+- The mental model feels banking-specific — you're not sure how to transfer it.
+
+## Why That Breaks
+
+- Banking is the *clearest* example of event sourcing, not the *only* example
+- Every domain has events: packages move, orders are placed, users sign up, content is published
+- The banking analogy is a teaching tool — the pattern is universal
+- If you can only apply event sourcing to banking, you haven't internalized the pattern
+
+## Thinking in Events: The Mental Model Shift
+
+- Event sourcing isn't a banking pattern — it's a **modeling pattern**
+- Any domain where "what happened" matters more than "what is" is a candidate
+- The 5-step process works for any domain: logistics, e-commerce, healthcare, social networks
+- The goal: by the end of this page, you can model a new domain from scratch
+
+### The 5-Step Process
+
+1. **Identify events**: what are the facts that happen in this domain?
+2. **Define commands**: what requests trigger those facts?
+3. **Design entities**: what consistency boundaries protect the invariants?
+4. **Build queries**: what views do users need?
+5. **Connect services**: where are the independent models?
+
+<Aside type="note" title="This is the 'Thinking in React' equivalent">
+React's "Thinking in React" taught developers to see UIs as component trees. This page teaches you to see domains as event streams. The process is the same: start with the domain, identify the structure, then implement. The implementation details follow from the model.
+</Aside>
+
+## The Non-Banking Domain: Shipment Tracking
+
+To prove the pattern generalizes, we'll model a logistics system — specifically, shipment tracking.
+
+**The domain**: a package moves from sender to recipient through a series of locations. Status changes are events. Delivery is an update.
+
+### Step 1: Identify Events
+
+- What are the facts that happen in shipment tracking?
+- `ShipmentCreated { shipmentId, sender, recipient, weight }`
+- `ShipmentPickedUp { shipmentId, location, timestamp }`
+- `ShipmentInTransit { shipmentId, fromLocation, toLocation, timestamp }`
+- `ShipmentDelivered { shipmentId, location, timestamp, signature }`
+- `ShipmentDelayed { shipmentId, reason, estimatedDelivery }`
+- `DeliveryAttemptFailed { shipmentId, reason, nextAttempt }`
+- Rule: events describe what happened in the world, not what the system did
+
+### Step 2: Define Commands
+
+- What requests trigger those events?
+- `CreateShipment { sender, recipient, weight }` → `ShipmentCreated`
+- `RecordPickup { shipmentId, location }` → `ShipmentPickedUp`
+- `RecordTransit { shipmentId, fromLocation, toLocation }` → `ShipmentInTransit`
+- `RecordDelivery { shipmentId, location, signature }` → `ShipmentDelivered`
+- `ReportDelay { shipmentId, reason, estimatedDelivery }` → `ShipmentDelayed`
+- Commands can be rejected: `RecordDelivery` on a `Delivered` shipment returns an error
+
+### Step 3: Design Entities
+
+- What consistency boundaries protect the invariants?
+- The `Shipment` entity: one entity per shipment, enforces valid state transitions
+- Valid transitions: `Created → PickedUp → InTransit → Delivered`
+- Invalid transitions: `Delivered → PickedUp` is a type error
+- The entity state is derived from events — no mutable `status` column
+
+### Step 4: Build Queries
+
+- What views do users need?
+- **Current status**: fold events to get the latest status — `ShipmentStatus { status, location, timestamp }`
+- **Full tracking history**: fold events into a list of status changes — the complete journey
+- **Estimated delivery**: fold events to get the latest `estimatedDelivery` from delay events
+- **Delivery confirmation**: fold events to get the `signature` from the `ShipmentDelivered` event
+- Each query is a pure function: `[Event] -> Query`
+
+### Step 5: Connect Services
+
+- What are the independent models?
+- **Logistics context**: shipment tracking — events, commands, entities above
+- **Billing context**: charges per shipment — `ShipmentBilled`, `PaymentReceived`
+- **Notification context**: customer alerts — subscribes to `ShipmentDelivered`, sends email
+- Cross-context: `ShipmentDelivered` triggers billing and notification — eventual consistency across contexts
+
+## In NeoBank Terms (Comparison)
+
+| NeoBank | Shipment Tracking | The pattern |
+|---------|-----------------|-------------|
+| `AccountOpened` | `ShipmentCreated` | Entity creation event |
+| `MoneyDeposited` | `ShipmentPickedUp` | State change event |
+| Balance update | Current status update | Fold events → current state |
+| Transaction history | Tracking history | Fold events → ordered list |
+| Retail vs. Lending | Logistics vs. Billing | Service boundary |
+
+The pattern is identical. The domain is different. The code structure is the same.
+
+## The Full Picture
+
+{/* TODO: Code example showing the complete shipment tracking model — include JS/TS, Python, Go equivalents */}
+{/* TODO: Show: event types, command handlers, entity, updates */}
+{/* TODO: Diagram: shipment event stream → multiple updates */}
+
+- **Event types**: define the facts of the domain as algebraic data types
+- **Command handlers**: validate commands against entity state, produce events or errors
+- **Entity**: define valid state transitions as a type — invalid transitions don't compile
+- **Updates**: pure functions from event streams to queries
+- **Services**: identify where the independent models are, connect via events
+
+## How to Apply This to Your Domain
+
+- Start with events: "what are the facts that happen in this domain?"
+- If you can't name 5 events, the domain might not need event sourcing
+- If the events feel natural (they'd make sense to a domain expert), you're on the right track
+- If the events feel like system operations ("UserUpdated", "RecordSaved"), rename them to domain facts
+- The test: "would a domain expert use this language in a conversation?"
+
+## Going Deeper
+
+- [Events, Not State →](/concepts/events-not-state) — the foundation
+- [Commands and Handlers →](/concepts/commands-and-handlers) — step 2 in depth
+- [Updates →](/concepts/updates) — step 4 in depth
+- [Services →](/concepts/services) — step 5 in depth
+- [Trade-offs →](/concepts/trade-offs) — when NOT to apply this process
+- External: Alberto Brandolini's [Event Storming](https://www.eventstorming.com/) — a workshop technique for step 1
+
+:::caution[Coming Soon]
+Code examples on this page are placeholders. Full working code will be added when the NeoBank tutorial is complete.
+:::
