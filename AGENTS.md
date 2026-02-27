@@ -23,6 +23,7 @@ NeoHaskell/
 │   └── scripts/    # bootstrap.sh for curl-pipe install
 ├── testbed/        # Example app + Hurl acceptance tests
 └── website/        # Astro/Starlight docs (pnpm, i18n, auto-translation)
+```
 
 ## WHERE TO LOOK
 

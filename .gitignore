@@ -46,7 +46,6 @@ result
 .opencode/*
 !.opencode/agents/
 !.opencode/skills/
-!.opencode/agents/
 
 cli-next/default.nix
 
