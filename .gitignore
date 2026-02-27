@@ -61,3 +61,12 @@ uploads/
 IMPLEMENTATION_PLAN.md
 feature-progress.md
 .sisyphus/
+
+
+# Node.js / pnpm (website)
+node_modules/
+.astro/
+.genaiscript/
+
+# Rust / Cargo (installer)
+installer/target/
