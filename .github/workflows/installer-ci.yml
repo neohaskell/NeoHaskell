@@ -1,0 +1,131 @@
+# Installer CI — adapted for monorepo. Release tags use 'installer-v*' prefix
+# (e.g., installer-v0.1.0) to avoid conflicts with core library tags.
+#
+# NOTE: GitHub Actions path filters do NOT apply to tag-based triggers, so the
+# 'installer-v*' tag prefix is the sole disambiguation for installer releases.
+#
+# NOTE: installer/.github/workflows/integration.yml is intentionally NOT migrated
+# here. That workflow installs Nix on the CI runner (~30 min, real system changes)
+# and is too expensive for automated monorepo CI. It remains at
+# installer/.github/workflows/integration.yml as a manual-trigger reference.
+name: Installer CI
+
+on:
+  push:
+    branches: [main]
+    tags: ['installer-v*']
+    paths:
+      - 'installer/**'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'installer/**'
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: installer
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: installer
+      - run: cargo fmt --check
+      - run: cargo clippy -- -D warnings
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: installer
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: installer
+      - run: cargo test --locked --all-features
+
+  build:
+    name: Build (${{ matrix.target }})
+    runs-on: ${{ matrix.runner }}
+    defaults:
+      run:
+        working-directory: installer
+    strategy:
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            runner: ubuntu-latest
+            cross: true
+          - target: aarch64-unknown-linux-gnu
+            runner: ubuntu-latest
+            cross: true
+          - target: x86_64-apple-darwin
+            runner: macos-15-intel
+            cross: false
+          - target: aarch64-apple-darwin
+            runner: macos-latest
+            cross: false
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+          workspaces: installer
+      - name: Install cross
+        if: matrix.cross
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cross
+      - name: Build (cross)
+        if: matrix.cross
+        run: cross build --release --target ${{ matrix.target }}
+      - name: Build (native)
+        if: '!matrix.cross'
+        run: cargo build --release --target ${{ matrix.target }}
+      - name: Package
+        run: |
+          mkdir -p artifacts
+          cp target/${{ matrix.target }}/release/neo-install artifacts/installer-neo-install-${{ matrix.target }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: installer-neo-install-${{ matrix.target }}
+          path: installer/artifacts/installer-neo-install-${{ matrix.target }}
+
+  release:
+    name: Release
+    needs: [lint, test, build]
+    if: startsWith(github.ref, 'refs/tags/installer-v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+      - name: Generate checksums
+        run: |
+          cd artifacts
+          sha256sum installer-neo-install-* > SHA256SUMS.txt
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            artifacts/installer-neo-install-*
+            artifacts/SHA256SUMS.txt
+          generate_release_notes: true
