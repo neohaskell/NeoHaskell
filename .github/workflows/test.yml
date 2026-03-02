@@ -59,7 +59,7 @@ jobs:
           for i in $(seq 1 30); do pg_isready -h 127.0.0.1 -U neohaskell && break || sleep 1; done
         env:
           PGPASSWORD: neohaskell
-      - uses: DeterminateSystems/determinate-nix-action@v3.16.1
+      - uses: DeterminateSystems/determinate-nix-action@v3.16.3
         with:
           extra-conf: |
             accept-flake-config = true
@@ -106,7 +106,7 @@ jobs:
           for i in $(seq 1 30); do pg_isready -h 127.0.0.1 -U neohaskell && break || sleep 1; done
         env:
           PGPASSWORD: neohaskell
-      - uses: DeterminateSystems/determinate-nix-action@v3.16.1
+      - uses: DeterminateSystems/determinate-nix-action@v3.16.3
         with:
           extra-conf: |
             accept-flake-config = true
