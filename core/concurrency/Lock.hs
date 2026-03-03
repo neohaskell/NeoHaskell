@@ -4,6 +4,7 @@ module Lock (
   acquire,
   release,
   with,
+  withTimeout,
 ) where
 
 import Basics
@@ -12,6 +13,10 @@ import ConcurrentVar qualified
 import Control.Exception qualified
 import Task (Task)
 import Task qualified
+import Maybe (Maybe (..))
+import Result (Result (..))
+import Text (Text)
+import System.Timeout qualified as GhcTimeout
 
 
 newtype Lock = Lock
@@ -43,3 +48,22 @@ with self task =
       (\_ -> release self |> Task.runNoErrors)
       (\_ -> task |> Task.runNoErrors)
     |> Task.fromIO
+
+
+-- | Execute a task while holding the lock, with a timeout in seconds.
+-- Returns 'Err "lock timeout"' if the lock cannot be acquired within the timeout.
+-- Returns 'Ok result' if the task completes successfully.
+--
+-- SECURITY: Use this instead of 'with' for refresh operations to prevent deadlock.
+withTimeout :: forall value. Int -> Lock -> Task _ value -> Task _ (Result Text value)
+withTimeout timeoutSeconds self task = do
+  let microseconds = timeoutSeconds * 1000000
+  maybeUnit <- GhcTimeout.timeout microseconds (acquire self |> Task.runNoErrors) |> Task.fromIO
+  case maybeUnit of
+    Nothing -> Task.yield (Err "lock timeout")
+    Just _ -> do
+      taskResult <- task |> Task.asResult
+      release self |> Task.ignoreError
+      case taskResult of
+        Ok value -> Task.yield (Ok value)
+        Err err -> Task.throw err
