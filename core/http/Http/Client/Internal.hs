@@ -44,9 +44,15 @@ getRaw ::
 getRaw options = do
   let host = options.url |> Maybe.withDefault "<no url>"
   Log.debug [fmt|HTTP GET (raw/internal) #{host}|] |> Task.ignoreError
-  getRawInternalIO options
+  response <- getRawInternalIO options
     |> Task.fromFailableIO @HttpClient.HttpException
     |> Task.mapError sanitizeInternalHttpError
+  case options.maxResponseBytes of
+    Nothing -> Task.yield response
+    Just maxBytes ->
+      case response.body |> Bytes.length |> (\len -> len > maxBytes) of
+        True -> Task.throw (Http.ResponseTooLarge maxBytes)
+        False -> Task.yield response
 
 
 -- | Internal IO action for raw GET request

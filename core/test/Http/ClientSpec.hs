@@ -6,6 +6,15 @@ import Http.Client qualified as Http
 import Task qualified
 import Test
 import Text qualified
+import Http.Client.Internal qualified as HttpInternal
+
+-- WAI/Warp for mock server
+import qualified Control.Concurrent as GhcConcurrent
+import qualified Data.ByteString.Lazy as GhcLBS
+import qualified Network.HTTP.Types as GhcHTTP
+import qualified Network.Socket as GhcSocket
+import qualified Network.Wai as GhcWai
+import qualified Network.Wai.Handler.Warp as GhcWarp
 
 
 spec :: Spec Unit
@@ -23,6 +32,7 @@ spec = do
           case result of
             Err (Error _msg) -> Task.yield () -- Expected: typed error
             Err (InvalidUrl _) -> fail "Unexpected InvalidUrl from Http.get"
+            Err (ResponseTooLarge _) -> fail "Unexpected ResponseTooLarge from Http.get"
             Ok _ -> fail "Expected error for invalid URL"
 
         it "returns Error for unreachable host (does not crash)" \_ -> do
@@ -35,6 +45,7 @@ spec = do
           case result of
             Err (Error _msg) -> Task.yield () -- Expected: typed error
             Err (InvalidUrl _) -> fail "Unexpected InvalidUrl from Http.get"
+            Err (ResponseTooLarge _) -> fail "Unexpected ResponseTooLarge from Http.get"
             Ok _ -> fail "Expected error for unreachable host"
 
       describe "post" do
@@ -44,6 +55,7 @@ spec = do
           case result of
             Err (Error _msg) -> Task.yield ()
             Err (InvalidUrl _) -> fail "Unexpected InvalidUrl from Http.post"
+            Err (ResponseTooLarge _) -> fail "Unexpected ResponseTooLarge from Http.post"
             Ok _ -> fail "Expected error for invalid URL"
 
       describe "postForm" do
@@ -53,6 +65,7 @@ spec = do
           case result of
             Err (Error _msg) -> Task.yield ()
             Err (InvalidUrl _) -> fail "Unexpected InvalidUrl from Http.postForm"
+            Err (ResponseTooLarge _) -> fail "Unexpected ResponseTooLarge from Http.postForm"
             Ok _ -> fail "Expected error for invalid URL"
 
         it "returns Error for connection refused (does not crash)" \_ -> do
@@ -64,6 +77,7 @@ spec = do
           case result of
             Err (Error _msg) -> Task.yield ()
             Err (InvalidUrl _) -> fail "Unexpected InvalidUrl from Http.postForm"
+            Err (ResponseTooLarge _) -> fail "Unexpected ResponseTooLarge from Http.postForm"
             Ok _ -> fail "Expected error for connection refused"
 
     describe "Default Timeout (reliability)" do
@@ -101,6 +115,7 @@ spec = do
             -- Should contain useful info (host/category)
             msg |> shouldSatisfy (\t -> Text.contains "localhost" t)
           Err (InvalidUrl _) -> fail "Unexpected InvalidUrl from Http.postForm"
+          Err (ResponseTooLarge _) -> fail "Unexpected ResponseTooLarge from Http.postForm"
           Ok _ -> fail "Expected error"
 
     -- NOTE: getRaw is NOT exported from Http.Client (compile-time guarantee).
@@ -113,6 +128,7 @@ spec = do
         case result of
           Err (InvalidUrl _sanitized) -> Task.yield ()
           Err (Error _) -> fail "Expected InvalidUrl error, not generic Error"
+          Err (ResponseTooLarge _) -> fail "Unexpected ResponseTooLarge from Http.getSecure"
           Ok _ -> fail "Expected error for http:// URL"
 
       it "rejects HTTP:// URL (uppercase not recognized as https://)" \_ -> do
@@ -122,6 +138,7 @@ spec = do
         case result of
           Err (InvalidUrl _) -> Task.yield ()
           Err (Error _) -> fail "Expected InvalidUrl error, not generic Error"
+          Err (ResponseTooLarge _) -> fail "Unexpected ResponseTooLarge from Http.getSecure"
           Ok _ -> fail "Expected error for uppercase HTTP:// URL"
 
       it "error message strips query parameters (sanitizeUrlText applied)" \_ -> do
@@ -132,6 +149,7 @@ spec = do
             -- SECURITY: Query params must be stripped to prevent secret leakage in logs
             sanitized |> shouldSatisfy (\u -> not (Text.contains "super-secret-token" u))
           Err (Error _) -> fail "Expected InvalidUrl error, not generic Error"
+          Err (ResponseTooLarge _) -> fail "Unexpected ResponseTooLarge from Http.getSecure"
           Ok _ -> fail "Expected error for http:// URL"
 
       it "https:// URL passes scheme check (does not return InvalidUrl)" \_ -> do
@@ -144,4 +162,105 @@ spec = do
         case result of
           Err (InvalidUrl _) -> fail "https:// URLs must NOT be rejected with InvalidUrl"
           Err (Error _) -> Task.yield () -- Connection error expected
+          Err (ResponseTooLarge _) -> fail "Unexpected ResponseTooLarge from Http.getSecure"
           Ok _ -> Task.yield () -- OK if something is running on port 59996
+
+    describe "Response Size Limits (security)" do
+      -- CRITICAL: Unbounded response sizes enable OOM attacks.
+      -- Malicious servers can send arbitrary data to exhaust memory.
+      -- Enforce limits before processing.
+
+      it "default request has 10MB size limit" \_ -> do
+        let req = Http.request
+        req.maxResponseBytes |> shouldBe (Just (10 * 1024 * 1024))
+
+      it "withMaxResponseSize sets maxResponseBytes field" \_ -> do
+        let req = Http.request |> Http.withMaxResponseSize 512
+        req.maxResponseBytes |> shouldBe (Just 512)
+
+      it "withMaxResponseSize 1 causes ResponseTooLarge for any real response" \_ -> do
+        testPort <- getFreePort
+        serverThread <- GhcConcurrent.forkIO (GhcWarp.run testPort mockSmallResponseApp) |> Task.fromIO
+        GhcConcurrent.threadDelay 50000 |> Task.fromIO
+        let runTest = do
+              result <-
+                Http.request
+                  |> Http.withUrl [fmt|http://localhost:#{testPort}/test|]
+                  |> Http.withMaxResponseSize 1
+                  |> HttpInternal.getRaw
+                  |> Task.asResult
+              case result of
+                Err (ResponseTooLarge limit) -> limit |> shouldBe 1
+                Err _ -> fail "Expected ResponseTooLarge error"
+                Ok _ -> fail "Expected ResponseTooLarge error but got Ok"
+        let cleanup = GhcConcurrent.killThread serverThread |> Task.fromIO
+        runTest |> Task.finally cleanup
+
+      it "ResponseTooLarge error contains the configured limit" \_ -> do
+        testPort <- getFreePort
+        serverThread <- GhcConcurrent.forkIO (GhcWarp.run testPort mockSmallResponseApp) |> Task.fromIO
+        GhcConcurrent.threadDelay 50000 |> Task.fromIO
+        let runTest = do
+              result <-
+                Http.request
+                  |> Http.withUrl [fmt|http://localhost:#{testPort}/test|]
+                  |> Http.withMaxResponseSize 5
+                  |> HttpInternal.getRaw
+                  |> Task.asResult
+              case result of
+                Err (ResponseTooLarge limit) -> limit |> shouldBe 5
+                Err _ -> fail "Expected ResponseTooLarge, got different error"
+                Ok _ -> fail "Expected ResponseTooLarge error but got Ok"
+        let cleanup = GhcConcurrent.killThread serverThread |> Task.fromIO
+        runTest |> Task.finally cleanup
+
+      it "default 10MB limit allows normal responses through" \_ -> do
+        testPort <- getFreePort
+        serverThread <- GhcConcurrent.forkIO (GhcWarp.run testPort mockSmallResponseApp) |> Task.fromIO
+        GhcConcurrent.threadDelay 50000 |> Task.fromIO
+        let runTest = do
+              result <-
+                Http.request
+                  |> Http.withUrl [fmt|http://localhost:#{testPort}/test|]
+                  |> HttpInternal.getRaw
+                  |> Task.asResult
+              case result of
+                Ok _ -> Task.yield ()
+                Err _ -> fail "Expected Ok response under 10MB limit"
+        let cleanup = GhcConcurrent.killThread serverThread |> Task.fromIO
+        runTest |> Task.finally cleanup
+
+
+-- ============================================================================
+-- Test Helpers
+-- ============================================================================
+
+getFreePort :: Task _ Int
+getFreePort = do
+  Task.fromIO do
+    let hints = GhcSocket.defaultHints { GhcSocket.addrSocketType = GhcSocket.Stream }
+    addrInfos <- GhcSocket.getAddrInfo (Just hints) (Just "127.0.0.1") (Just "0")
+    case addrInfos of
+      [] -> pure 19901
+      (addr : _) -> do
+        sock <- GhcSocket.openSocket addr
+        GhcSocket.bind sock (GhcSocket.addrAddress addr)
+        port <- GhcSocket.socketPort sock
+        GhcSocket.close sock
+        pure (fromIntegral port)
+
+
+-- ============================================================================
+-- Mock Applications
+-- ============================================================================
+
+-- | Mock app that returns a small JSON response (used for size limit tests)
+mockSmallResponseApp :: GhcWai.Application
+mockSmallResponseApp _request respond = do
+  let responseBody = GhcLBS.fromStrict "{\"status\":\"ok\"}"
+  respond
+    ( GhcWai.responseLBS
+        GhcHTTP.status200
+        [(GhcHTTP.hContentType, "application/json")]
+        responseBody
+    )

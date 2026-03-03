@@ -111,6 +111,7 @@ spec = do
       case response of
         Err (Http.Error _msg) -> Task.yield ()
         Err (Http.InvalidUrl _) -> fail "Unexpected InvalidUrl from Internal.getRaw"
+        Err (Http.ResponseTooLarge _) -> fail "Unexpected ResponseTooLarge from Internal.getRaw"
         Ok _ -> fail "Expected error for unreachable host"
 
 
