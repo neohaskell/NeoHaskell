@@ -57,16 +57,19 @@ with self task =
 -- SECURITY: Use this instead of 'with' for refresh operations to prevent deadlock.
 withTimeout :: forall value. Int -> Lock -> Task _ value -> Task _ (Result Text value)
 withTimeout timeoutSeconds self task = do
-  let microseconds = timeoutSeconds * 1000000
-  maybeUnit <- GhcTimeout.timeout microseconds (acquire self |> Task.runNoErrors) |> Task.fromIO
-  case maybeUnit of
-    Nothing -> Task.yield (Err "lock timeout")
-    Just _ -> do
-      taskResult <-
-        Control.Exception.finally
-          (task |> Task.asResult |> Task.runNoErrors)
-          (release self |> Task.runNoErrors)
-          |> Task.fromIO
-      case taskResult of
-        Ok value -> Task.yield (Ok value)
-        Err err -> Task.throw err
+  case timeoutSeconds > 0 of
+    False -> Task.yield (Err "lock timeout: non-positive timeout")
+    True -> do
+      let microseconds = timeoutSeconds * 1000000
+      maybeUnit <- GhcTimeout.timeout microseconds (acquire self |> Task.runNoErrors) |> Task.fromIO
+      case maybeUnit of
+        Nothing -> Task.yield (Err "lock timeout")
+        Just _ -> do
+          taskResult <-
+            Control.Exception.finally
+              (task |> Task.asResult |> Task.runNoErrors)
+              (release self |> Task.runNoErrors)
+              |> Task.fromIO
+          case taskResult of
+            Ok value -> Task.yield (Ok value)
+            Err err -> Task.throw err

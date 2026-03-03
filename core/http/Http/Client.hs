@@ -64,7 +64,9 @@ data Request = Request
     -- ^ Maximum redirects to follow (default: 0 for SSRF protection)
     maxResponseBytes :: !(Maybe GhcInt.Int)
     -- ^ Maximum response body size in bytes (default: 10MB).
-    -- Prevents OOM attacks from malicious servers sending huge responses.
+    -- Enforced in 'getSecure' only. Other methods ('get', 'post', etc.) do not
+    -- check this limit. The check is post-read (full body is fetched first, then
+    -- size is validated). For true OOM prevention, use a streaming HTTP client.
     -- Set to Nothing to disable the limit (not recommended for external APIs).
   }
 
@@ -333,7 +335,9 @@ getRawIO options = do
   pure (extractResponseBytes httpResponse)
 
 
--- | Check response body size against the configured limit.
+-- | Post-read check: validates response body size against the configured limit.
+-- NOTE: The full response body has already been read into memory at this point.
+-- This is a detection mechanism, not an OOM prevention mechanism.
 -- Returns ResponseTooLarge if the body exceeds maxResponseBytes.
 checkResponseSize :: Request -> Response Bytes -> Task Error (Response Bytes)
 checkResponseSize options response =
