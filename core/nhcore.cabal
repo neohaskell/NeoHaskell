@@ -143,6 +143,7 @@ library
     Auth.OAuth2.TransactionStore.TransactionKey
     Auth.OAuth2.Types
     Auth.OAuth2.TokenRefresh
+    Auth.OAuth2.TokenManager
     Auth.Options
     Auth.SecretStore
     Auth.SecretStore.InMemory
@@ -371,6 +372,7 @@ test-suite nhcore-test
     Auth.OAuth2.TransactionStoreSpec
     Auth.OAuth2.TypesSpec
     Auth.OAuth2.TokenRefreshSpec
+    Auth.OAuth2.TokenManagerSpec
     Auth.UrlValidationSpec
     Http.ClientSpec
     Http.ClientRawSpec
@@ -449,6 +451,7 @@ test-suite nhcore-test-auth
     Auth.OAuth2.RoutesSpec
     Auth.OAuth2.StateTokenSpec
     Auth.OAuth2.TokenRefreshSpec
+    Auth.OAuth2.TokenManagerSpec
     Auth.OAuth2.TransactionStoreSpec
     Auth.OAuth2.TypesSpec
     Auth.UrlValidationSpec
