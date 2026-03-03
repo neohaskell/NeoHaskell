@@ -243,6 +243,7 @@ httpErrorToText :: Http.Error -> Text
 httpErrorToText err = case err of
   Http.Error msg -> msg
   Http.InvalidUrl url -> [fmt|Non-HTTPS URL rejected: #{url}|]
+  Http.ResponseTooLarge limit -> [fmt|Response exceeded size limit of #{limit} bytes|]
 
 
 -- | Expand environment variables in text.

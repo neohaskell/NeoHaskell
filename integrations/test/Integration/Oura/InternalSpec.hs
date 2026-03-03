@@ -16,7 +16,7 @@ import Integration.Oura.Internal
   , executePersonalInfoInternal
   )
 import Integration.Oura.Types (PaginatedResponse (..), SleepData (..), WorkoutData (..), PersonalInfoData (..))
-import Integration (ActionContext (..), IntegrationError (..))
+import Integration (ActionContext (..), IntegrationError (..), fromMap)
 import Auth.OAuth2.TokenRefresh (TokenRefreshError (..))
 import Auth.OAuth2.Types (OAuth2Error (TokenRequestFailed))
 import Auth.SecretStore.InMemory qualified as InMemorySecretStore
@@ -124,7 +124,7 @@ spec = do
         stubStore <- Task.runOrPanic InMemorySecretStore.new
         let emptyCtx = ActionContext
               { secretStore = stubStore
-              , providerRegistry = Map.empty
+              , providerRegistry = fromMap Map.empty
               , fileAccess = Nothing
               }
 

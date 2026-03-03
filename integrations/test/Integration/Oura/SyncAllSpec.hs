@@ -6,7 +6,7 @@ import Test.Hspec
 import Integration.Oura.SyncAll (SyncAll (..), SyncResult (..), executeSyncAll)
 import Integration.Oura.Types (PaginatedResponse (..), PersonalInfoData (..))
 import Integration.Oura.Internal (HttpFetch, HttpFetchSingle, OuraHttpError (..))
-import Integration (ActionContext (..), IntegrationError (..), CommandPayload)
+import Integration (ActionContext (..), IntegrationError (..), CommandPayload, fromMap)
 import Auth.SecretStore.InMemory qualified as InMemorySecretStore
 import Auth.SecretStore (SecretStore (..), TokenKey (..))
 import Auth.OAuth2.Types
@@ -231,7 +231,7 @@ setupMockContext = do
   let providerRegistry = Map.fromArray (Array.fromLinkedList [("oura", providerConfig)])
   Task.yield ActionContext
     { secretStore = secretStore
-    , providerRegistry = providerRegistry
+    , providerRegistry = fromMap providerRegistry
     , fileAccess = Nothing
     }
 

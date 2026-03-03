@@ -158,6 +158,7 @@ fetchDiscoveryDocument url = do
         let msg = case httpErr of
                     Http.Error m -> m
                     Http.InvalidUrl u -> u
+                    Http.ResponseTooLarge limitBytes -> [fmt|Response exceeded size limit of #{limitBytes} bytes|]
         Log.warn [fmt|Discovery document fetch failed: #{msg}|]
           |> Task.ignoreError
         Task.yield (Err (DiscoveryFetchFailed msg)))
@@ -193,6 +194,7 @@ fetchJwks jwksUri = do
               let msg = case httpErr of
                             Http.Error m -> m
                             Http.InvalidUrl u -> u
+                            Http.ResponseTooLarge limitBytes -> [fmt|Response exceeded size limit of #{limitBytes} bytes|]
               Task.yield (Err (JwksFetchFailed msg)))
 
       case result of
