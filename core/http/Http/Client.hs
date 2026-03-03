@@ -163,9 +163,13 @@ withRedirects count options =
 {-# INLINE withMaxResponseSize #-}
 withMaxResponseSize :: GhcInt.Int -> Request -> Request
 withMaxResponseSize maxBytes options =
-  options
-    { maxResponseBytes = Just maxBytes
-    }
+  case maxBytes > 0 of
+    True ->
+      options
+        { maxResponseBytes = Just maxBytes
+        }
+    False ->
+      panic [fmt|withMaxResponseSize requires positive bytes, got: #{maxBytes}|]
 
 
 data Error = Error Text
@@ -292,7 +296,7 @@ getIO options = do
   pure (extractResponse httpResponse)
 
 
--- | Performs a secure GET request, enforcing HTTPS and TLS 1.2+.
+-- | Performs a secure GET request, enforcing HTTPS.
 -- Rejects any URL that does not start with 'https://' with an 'InvalidUrl' error.
 -- The error message sanitizes the URL via 'sanitizeUrlText' to prevent secret leakage.
 -- Use 'Http.Client.Internal.getRaw' for trusted localhost callers (e.g., OAuth2 discovery).

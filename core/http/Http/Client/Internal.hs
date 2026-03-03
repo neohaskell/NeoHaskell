@@ -42,8 +42,7 @@ getRaw ::
   Http.Request ->
   Task Http.Error (Http.Response Bytes)
 getRaw options = do
-  let host = options.url |> Maybe.withDefault "<no url>"
-  Log.debug [fmt|HTTP GET (raw/internal) #{host}|] |> Task.ignoreError
+  Log.debug "HTTP GET (raw/internal)" |> Task.ignoreError
   response <- getRawInternalIO options
     |> Task.fromFailableIO @HttpClient.HttpException
     |> Task.mapError sanitizeInternalHttpError

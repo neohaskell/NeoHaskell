@@ -157,7 +157,7 @@ fetchDiscoveryDocument url = do
       |> Task.recover (\httpErr -> do
         let msg = case httpErr of
                     Http.Error m -> m
-                    Http.InvalidUrl u -> u
+                    Http.InvalidUrl _u -> "Invalid URL"
                     Http.ResponseTooLarge limitBytes -> [fmt|Response exceeded size limit of #{limitBytes} bytes|]
         Log.warn [fmt|Discovery document fetch failed: #{msg}|]
           |> Task.ignoreError
@@ -193,7 +193,7 @@ fetchJwks jwksUri = do
           |> Task.recover (\httpErr -> do
               let msg = case httpErr of
                             Http.Error m -> m
-                            Http.InvalidUrl u -> u
+                            Http.InvalidUrl _u -> "Invalid URL"
                             Http.ResponseTooLarge limitBytes -> [fmt|Response exceeded size limit of #{limitBytes} bytes|]
               Task.yield (Err (JwksFetchFailed msg)))
 

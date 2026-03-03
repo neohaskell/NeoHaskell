@@ -62,8 +62,11 @@ withTimeout timeoutSeconds self task = do
   case maybeUnit of
     Nothing -> Task.yield (Err "lock timeout")
     Just _ -> do
-      taskResult <- task |> Task.asResult
-      release self |> Task.ignoreError
+      taskResult <-
+        Control.Exception.finally
+          (task |> Task.asResult |> Task.runNoErrors)
+          (release self |> Task.runNoErrors)
+          |> Task.fromIO
       case taskResult of
         Ok value -> Task.yield (Ok value)
         Err err -> Task.throw err

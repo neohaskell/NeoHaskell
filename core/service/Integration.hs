@@ -115,7 +115,7 @@ data IntegrationError
 -- | Type-safe immutable registry of OAuth2 provider configurations.
 --
 -- The constructor is NOT exported, preventing mutation via pattern matching.
--- Use 'fromMap' to create and 'lookup'/'toList' to read.
+-- Use 'fromMap' to create and 'lookup'/'entries' to read.
 --
 -- SECURITY: Prevents accidental mutation of provider configs at runtime.
 -- Provider configs are set at startup and must not change.
