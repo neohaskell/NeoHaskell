@@ -710,6 +710,10 @@ parseHttpError httpError =
       case parseOAuthErrorFromMessage msg of
         Just oauthError -> oauthError
         Nothing -> NetworkError msg
+    Http.InvalidUrl url ->
+      -- InvalidUrl should not occur via Http.postForm (only via Http.getSecure)
+      -- but we handle it defensively to satisfy exhaustiveness
+      NetworkError [fmt|Request used non-HTTPS URL: #{url}|]
 
 
 -- | Attempt to extract OAuth2 error from error message.

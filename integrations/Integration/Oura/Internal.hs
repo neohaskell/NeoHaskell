@@ -110,8 +110,10 @@ httpRequestWithAuth accessToken url = do
   response <- Http.request
     |> Http.withUrl url
     |> Http.addHeader "Authorization" [fmt|Bearer #{accessToken}|]
-    |> Http.getRaw  -- Returns Response Bytes, no throw on non-2xx
-    |> Task.mapError (\(Http.Error msg) -> OtherHttpError msg)
+    |> Http.getSecure  -- SECURITY: Enforces HTTPS. Returns Response Bytes, no throw on non-2xx
+    |> Task.mapError (\httpErr -> case httpErr of
+        Http.Error msg -> OtherHttpError msg
+        Http.InvalidUrl url -> OtherHttpError [fmt|Non-HTTPS URL rejected: #{url}|])
   -- Check status code FIRST (before any JSON decoding)
   case response.statusCode of
     401 -> Task.throw Unauthorized

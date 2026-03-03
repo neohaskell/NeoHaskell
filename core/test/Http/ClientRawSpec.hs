@@ -5,6 +5,7 @@ import Basics
 import Bytes qualified
 import Core
 import Http.Client qualified as Http
+import Http.Client.Internal qualified as HttpInternal
 import Json qualified
 import Task qualified
 import Test
@@ -21,7 +22,7 @@ import qualified Network.Wai.Handler.Warp as GhcWarp
 
 spec :: Spec Unit
 spec = do
-  describe "Http.getRaw" do
+  describe "Http.Client.Internal.getRaw" do
     it "returns Ok with statusCode 401 on 401 response" \_ -> do
       testPort <- getFreePort
       serverThread <- GhcConcurrent.forkIO (GhcWarp.run testPort mock401App) |> Task.fromIO
@@ -30,7 +31,7 @@ spec = do
             response <-
               Http.request
                 |> Http.withUrl [fmt|http://localhost:#{testPort}/test|]
-                |> Http.getRaw
+                |> HttpInternal.getRaw
                 |> Task.asResult
             case response of
               Ok resp -> do
@@ -48,7 +49,7 @@ spec = do
             response <-
               Http.request
                 |> Http.withUrl [fmt|http://localhost:#{testPort}/test|]
-                |> Http.getRaw
+                |> HttpInternal.getRaw
                 |> Task.asResult
             case response of
               Ok resp -> do
@@ -69,7 +70,7 @@ spec = do
             response <-
               Http.request
                 |> Http.withUrl [fmt|http://localhost:#{testPort}/test|]
-                |> Http.getRaw
+                |> HttpInternal.getRaw
                 |> Task.asResult
             case response of
               Ok resp -> do
@@ -87,7 +88,7 @@ spec = do
             response <-
               Http.request
                 |> Http.withUrl [fmt|http://localhost:#{testPort}/test|]
-                |> Http.getRaw
+                |> HttpInternal.getRaw
                 |> Task.asResult
             case response of
               Ok resp -> do
@@ -105,10 +106,11 @@ spec = do
         Http.request
           |> Http.withUrl "http://localhost:59999/test"
           |> Http.withTimeout 1
-          |> Http.getRaw
+          |> HttpInternal.getRaw
           |> Task.asResult
       case response of
         Err (Http.Error _msg) -> Task.yield ()
+        Err (Http.InvalidUrl _) -> fail "Unexpected InvalidUrl from Internal.getRaw"
         Ok _ -> fail "Expected error for unreachable host"
 
 

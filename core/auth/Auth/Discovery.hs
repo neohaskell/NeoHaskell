@@ -154,7 +154,10 @@ fetchDiscoveryDocument url = do
       |> Http.withTimeout 30 -- 30 second timeout
       |> Http.get @DiscoveryDocument
       |> Task.map (\response -> Ok response.body)
-      |> Task.recover (\(Http.Error msg) -> do
+      |> Task.recover (\httpErr -> do
+        let msg = case httpErr of
+                    Http.Error m -> m
+                    Http.InvalidUrl u -> u
         Log.warn [fmt|Discovery document fetch failed: #{msg}|]
           |> Task.ignoreError
         Task.yield (Err (DiscoveryFetchFailed msg)))
@@ -186,7 +189,11 @@ fetchJwks jwksUri = do
           |> Http.withTimeout 30 -- 30 second timeout
           |> Http.get @Jose.JWKSet
           |> Task.map (\response -> extractJwkSetKeys response.body |> Array.fromLinkedList |> Ok)
-          |> Task.recover (\(Http.Error msg) -> Task.yield (Err (JwksFetchFailed msg)))
+          |> Task.recover (\httpErr -> do
+              let msg = case httpErr of
+                            Http.Error m -> m
+                            Http.InvalidUrl u -> u
+              Task.yield (Err (JwksFetchFailed msg)))
 
       case result of
         Ok _ -> Log.debug "JWKS fetched successfully" |> Task.ignoreError

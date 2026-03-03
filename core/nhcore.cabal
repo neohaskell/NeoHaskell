@@ -176,6 +176,7 @@ library
     Function
     Http
     Http.Client
+    Http.Client.Internal
     Integration
     Integration.Command
     Integration.Exit

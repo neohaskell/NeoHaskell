@@ -22,6 +22,7 @@ spec = do
           result <- Http.get @() req |> Task.asResult
           case result of
             Err (Error _msg) -> Task.yield () -- Expected: typed error
+            Err (InvalidUrl _) -> fail "Unexpected InvalidUrl from Http.get"
             Ok _ -> fail "Expected error for invalid URL"
 
         it "returns Error for unreachable host (does not crash)" \_ -> do
@@ -33,6 +34,7 @@ spec = do
           result <- Http.get @() req |> Task.asResult
           case result of
             Err (Error _msg) -> Task.yield () -- Expected: typed error
+            Err (InvalidUrl _) -> fail "Unexpected InvalidUrl from Http.get"
             Ok _ -> fail "Expected error for unreachable host"
 
       describe "post" do
@@ -41,6 +43,7 @@ spec = do
           result <- Http.post @() req () |> Task.asResult
           case result of
             Err (Error _msg) -> Task.yield ()
+            Err (InvalidUrl _) -> fail "Unexpected InvalidUrl from Http.post"
             Ok _ -> fail "Expected error for invalid URL"
 
       describe "postForm" do
@@ -49,6 +52,7 @@ spec = do
           result <- Http.postForm @() req [] |> Task.asResult
           case result of
             Err (Error _msg) -> Task.yield ()
+            Err (InvalidUrl _) -> fail "Unexpected InvalidUrl from Http.postForm"
             Ok _ -> fail "Expected error for invalid URL"
 
         it "returns Error for connection refused (does not crash)" \_ -> do
@@ -59,6 +63,7 @@ spec = do
           result <- Http.postForm @() req [("grant_type", "test")] |> Task.asResult
           case result of
             Err (Error _msg) -> Task.yield ()
+            Err (InvalidUrl _) -> fail "Unexpected InvalidUrl from Http.postForm"
             Ok _ -> fail "Expected error for connection refused"
 
     describe "Default Timeout (reliability)" do
@@ -95,4 +100,48 @@ spec = do
             msg |> shouldSatisfy (\t -> not (Text.contains "super-secret-value" t))
             -- Should contain useful info (host/category)
             msg |> shouldSatisfy (\t -> Text.contains "localhost" t)
+          Err (InvalidUrl _) -> fail "Unexpected InvalidUrl from Http.postForm"
           Ok _ -> fail "Expected error"
+
+    -- NOTE: getRaw is NOT exported from Http.Client (compile-time guarantee).
+    -- Callers must use Http.Client.Internal to access getRaw for trusted/localhost callers.
+
+    describe "getSecure" do
+      it "rejects http:// URL with InvalidUrl error" \_ -> do
+        let req = Http.request |> Http.withUrl "http://example.com"
+        result <- Http.getSecure req |> Task.asResult
+        case result of
+          Err (InvalidUrl _sanitized) -> Task.yield ()
+          Err (Error _) -> fail "Expected InvalidUrl error, not generic Error"
+          Ok _ -> fail "Expected error for http:// URL"
+
+      it "rejects HTTP:// URL (uppercase not recognized as https://)" \_ -> do
+        -- Text.startsWith is case-sensitive; 'HTTP://' does not start with 'https://'
+        let req = Http.request |> Http.withUrl "HTTP://example.com"
+        result <- Http.getSecure req |> Task.asResult
+        case result of
+          Err (InvalidUrl _) -> Task.yield ()
+          Err (Error _) -> fail "Expected InvalidUrl error, not generic Error"
+          Ok _ -> fail "Expected error for uppercase HTTP:// URL"
+
+      it "error message strips query parameters (sanitizeUrlText applied)" \_ -> do
+        let req = Http.request |> Http.withUrl "http://example.com/path?secret=super-secret-token&other=value"
+        result <- Http.getSecure req |> Task.asResult
+        case result of
+          Err (InvalidUrl sanitized) ->
+            -- SECURITY: Query params must be stripped to prevent secret leakage in logs
+            sanitized |> shouldSatisfy (\u -> not (Text.contains "super-secret-token" u))
+          Err (Error _) -> fail "Expected InvalidUrl error, not generic Error"
+          Ok _ -> fail "Expected error for http:// URL"
+
+      it "https:// URL passes scheme check (does not return InvalidUrl)" \_ -> do
+        -- https:// passes the scheme guard; connection failure expected but NOT InvalidUrl
+        let req =
+              Http.request
+                |> Http.withUrl "https://localhost:59996/neohaskell-test-nonexistent"
+                |> Http.withTimeout 1
+        result <- Http.getSecure req |> Task.asResult
+        case result of
+          Err (InvalidUrl _) -> fail "https:// URLs must NOT be rejected with InvalidUrl"
+          Err (Error _) -> Task.yield () -- Connection error expected
+          Ok _ -> Task.yield () -- OK if something is running on port 59996

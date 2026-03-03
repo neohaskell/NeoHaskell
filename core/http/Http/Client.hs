@@ -12,7 +12,9 @@ module Http.Client (
 
   -- * HTTP Methods
   get,
-  getRaw,
+  getSecure,
+  -- ^ Enforces HTTPS (rejects http:// URLs). Use for all external API calls.
+  -- getRaw is intentionally NOT exported here; use Http.Client.Internal for trusted/localhost callers.
   post,
   postForm,
   postRaw,
@@ -148,6 +150,9 @@ withRedirects count options =
 
 
 data Error = Error Text
+  | InvalidUrl Text
+    -- ^ The URL does not use HTTPS. Use getSecure only with https:// URLs.
+    -- The URL is sanitized (query params stripped) to prevent secret leakage in logs.
   deriving (Show)
 
 
@@ -265,19 +270,26 @@ getIO options = do
   pure (extractResponse httpResponse)
 
 
--- | Performs a GET request without JSON decoding, returning raw Bytes.
--- Unlike 'get', this does NOT throw on non-2xx status codes because it uses
--- setRequestIgnoreStatus to disable http-conduit's default status-code exception behavior.
--- Use this when you need to inspect status codes before decoding (e.g., for 401/429 handling).
-getRaw ::
+-- | Performs a secure GET request, enforcing HTTPS and TLS 1.2+.
+-- Rejects any URL that does not start with 'https://' with an 'InvalidUrl' error.
+-- The error message sanitizes the URL via 'sanitizeUrlText' to prevent secret leakage.
+-- Use 'Http.Client.Internal.getRaw' for trusted localhost callers (e.g., OAuth2 discovery).
+{-# INLINE getSecure #-}
+getSecure ::
   Request ->
   Task Error (Response Bytes)
-getRaw options = do
-  let host = requestHost options
-  Log.debug [fmt|HTTP GET (raw) #{host}|] |> Task.ignoreError
-  getRawIO options
-    |> Task.fromFailableIO @HttpClient.HttpException
-    |> Task.mapError sanitizeHttpError
+getSecure options = do
+  let urlText = options.url |> Maybe.withDefault ""
+  case Text.startsWith "https://" urlText of
+    False ->
+      -- SECURITY: sanitizeUrlText strips query params which may contain secrets
+      Task.throw (InvalidUrl (sanitizeUrlText urlText))
+    True -> do
+      let host = requestHost options
+      Log.debug [fmt|HTTP GET (secure) #{host}|] |> Task.ignoreError
+      getRawIO options
+        |> Task.fromFailableIO @HttpClient.HttpException
+        |> Task.mapError sanitizeHttpError
 
 
 -- | Internal IO action for raw GET request

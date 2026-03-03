@@ -240,7 +240,9 @@ executeHttpRequest method url headers body timeoutSeconds = do
 
 -- | Convert HTTP error to Text.
 httpErrorToText :: Http.Error -> Text
-httpErrorToText (Http.Error msg) = msg
+httpErrorToText err = case err of
+  Http.Error msg -> msg
+  Http.InvalidUrl url -> [fmt|Non-HTTPS URL rejected: #{url}|]
 
 
 -- | Expand environment variables in text.
