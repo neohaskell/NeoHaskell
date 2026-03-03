@@ -58,6 +58,7 @@ data TokenRefreshError err
 -- >   mockRefreshSuccess
 -- >   isUnauthorized
 -- >   (\token -> Task.yield [fmt|got #{token}|])
+{-# INLINE withValidToken #-}
 withValidToken ::
   forall err value.
   SecretStore ->

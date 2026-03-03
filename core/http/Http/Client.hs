@@ -62,7 +62,7 @@ data Request = Request
     -- ^ Request timeout in seconds (default: 10 seconds)
     maxRedirects :: GhcInt.Int,
     -- ^ Maximum redirects to follow (default: 0 for SSRF protection)
-    maxResponseBytes :: Maybe GhcInt.Int
+    maxResponseBytes :: !(Maybe GhcInt.Int)
     -- ^ Maximum response body size in bytes (default: 10MB).
     -- Prevents OOM attacks from malicious servers sending huge responses.
     -- Set to Nothing to disable the limit (not recommended for external APIs).
@@ -160,6 +160,7 @@ withRedirects count options =
 
 -- | Set the maximum response body size in bytes.
 -- Default is 10MB. Use this to override for specific endpoints.
+{-# INLINE withMaxResponseSize #-}
 withMaxResponseSize :: GhcInt.Int -> Request -> Request
 withMaxResponseSize maxBytes options =
   options

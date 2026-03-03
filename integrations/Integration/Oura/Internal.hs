@@ -628,7 +628,7 @@ mapTokenError err = case err of
   ActionFailed (OtherHttpError msg) -> NetworkError msg
   ActionFailed Unauthorized -> AuthenticationError "Unauthorized after refresh"
   ActionFailed (OuraRateLimited retryAfter) -> RateLimited retryAfter  -- Re-use existing IntegrationError constructor
-  LockAcquisitionTimeout lockKey -> UnexpectedError [fmt|Token refresh lock timeout: #{lockKey}|]
+  LockAcquisitionTimeout _lockKey -> UnexpectedError "Token refresh lock timeout"
 
 -- | Fetch all pages using pagination
 -- Uses baseUrl for first request, then appends &next_token=X for subsequent requests

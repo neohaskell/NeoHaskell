@@ -95,12 +95,14 @@ deleteImpl store key = do
     Just var -> var |> ConcurrentVar.modify (\_ -> Nothing)
 
 
+{-# INLINE atomicModifyImpl #-}
 atomicModifyImpl :: PerKeyStore -> TokenKey -> (Maybe TokenSet -> Maybe TokenSet) -> Task Text Unit
 atomicModifyImpl store key f = do
   var <- getOrCreateVar store key
   var |> ConcurrentVar.modify f
 
 
+{-# INLINE atomicModifyReturningImpl #-}
 atomicModifyReturningImpl ::
   forall result.
   PerKeyStore ->
