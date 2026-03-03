@@ -39,6 +39,7 @@ newtype EncryptionKey = EncryptionKey GhcBS.ByteString
 -- * Store nonce + ciphertext + auth tag
 --
 -- TODO(#294): Implement real AES-256-GCM encryption.
+{-# INLINE encryptToken #-}
 encryptToken :: EncryptionKey -> TokenSet -> Task Text TokenSet
 encryptToken encryptionKey tokenSet = do
   let _ = encryptionKey
@@ -48,6 +49,7 @@ encryptToken encryptionKey tokenSet = do
 -- | Decrypt a persisted token payload.
 --
 -- TODO(#294): Implement real AES-256-GCM decryption + tag verification.
+{-# INLINE decryptToken #-}
 decryptToken :: EncryptionKey -> TokenSet -> Task Text TokenSet
 decryptToken encryptionKey tokenSet = do
   let _ = encryptionKey

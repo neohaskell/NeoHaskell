@@ -57,6 +57,7 @@ data AuthAuditEvent = AuthAuditEvent
 
 -- | Create an audit event by hashing the token from a TokenSet.
 -- Uses SHA-256 for the token hash (one-way, non-reversible).
+{-# INLINE mkAuditEvent #-}
 mkAuditEvent :: Text -> AuthEventType -> TokenSet -> Task Text AuthAuditEvent
 mkAuditEvent actorId eventType tokenSet = do
   now <- DateTime.now
