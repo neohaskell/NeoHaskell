@@ -5,6 +5,7 @@ import Prelude (IO)
 import Auth.InMemorySecretStoreSpec qualified
 import Auth.JwtSpec qualified
 import Auth.MiddlewareSpec qualified
+import Auth.OAuth2.AuditLogSpec qualified
 import Auth.OAuth2.ClientSpec qualified
 import Auth.OAuth2.RoutesSpec qualified
 import Auth.OAuth2.StateTokenSpec qualified
@@ -21,6 +22,7 @@ main = Hspec.hspec do
   Hspec.describe "Auth.InMemorySecretStore" Auth.InMemorySecretStoreSpec.spec
   Hspec.describe "Auth.Jwt" Auth.JwtSpec.spec
   Hspec.describe "Auth.Middleware" Auth.MiddlewareSpec.spec
+  Hspec.describe "Auth.OAuth2.AuditLog" Auth.OAuth2.AuditLogSpec.spec
   Hspec.describe "Auth.OAuth2.Client" Auth.OAuth2.ClientSpec.spec
   Hspec.describe "Auth.OAuth2.Routes" Auth.OAuth2.RoutesSpec.spec
   Hspec.describe "Auth.OAuth2.StateToken" Auth.OAuth2.StateTokenSpec.spec
