@@ -258,10 +258,10 @@ executeWithFetch ::
   Maybe (Text -> command) ->                                 -- onError callback
   Task IntegrationError (Maybe CommandPayload)
 executeWithFetch ctx userId baseUrl fetchFn onSuccess onError = do
-  let ActionContext secretStore _ _ = ctx
+  let ActionContext {secretStore, refreshLocks} = ctx
   providerConfig <- getOuraProvider ctx
   let ValidatedOAuth2ProviderConfig {validatedProvider, clientId, clientSecret} = providerConfig
-  fetchResult <- withValidToken secretStore "oura" userId
+  fetchResult <- withValidToken secretStore refreshLocks "oura" userId
     (OAuth2.refreshTokenValidated validatedProvider clientId clientSecret)
     isUnauthorized
     (\accessToken -> fetchFn accessToken baseUrl)
@@ -628,6 +628,7 @@ mapTokenError err = case err of
   ActionFailed (OtherHttpError msg) -> NetworkError msg
   ActionFailed Unauthorized -> AuthenticationError "Unauthorized after refresh"
   ActionFailed (OuraRateLimited retryAfter) -> RateLimited retryAfter  -- Re-use existing IntegrationError constructor
+  LockAcquisitionTimeout lockKey -> UnexpectedError [fmt|Token refresh lock timeout: #{lockKey}|]
 
 -- | Fetch all pages using pagination
 -- Uses baseUrl for first request, then appends &next_token=X for subsequent requests

@@ -93,6 +93,7 @@ import Auth.OAuth2.StateToken qualified as StateToken
 import Auth.OAuth2.TransactionStore.InMemory qualified as InMemoryTransactionStore
 import Auth.SecretStore (SecretStore)
 import Auth.SecretStore.InMemory qualified as InMemorySecretStore
+import ConcurrentMap qualified
 
 import Basics
 import Log qualified
@@ -1143,11 +1144,13 @@ runWithResolved eventStore maybeFileUploadSetup fileUploadCleanup maybeWebAuthSe
       emptyStore <- case app.secretStore of
         Just store -> Task.yield store
         Nothing -> InMemorySecretStore.new
+      refreshLocksMap <- ConcurrentMap.new
       Task.yield
         ( Nothing
         , Integration.ActionContext
             { Integration.secretStore = emptyStore
             , Integration.providerRegistry = Integration.fromMap Map.empty
+            , Integration.refreshLocks = refreshLocksMap
             , Integration.fileAccess = maybeFileAccessContext
             }
         )
@@ -1178,10 +1181,12 @@ runWithResolved eventStore maybeFileUploadSetup fileUploadCleanup maybeWebAuthSe
       callbackRateLimiter <- RateLimiter.new RateLimiter.defaultCallbackConfig
       -- Build provider map from array, detecting duplicates
       providerMap <- buildProviderMap resolvedProviderConfigs
+      refreshLocksMap2 <- ConcurrentMap.new
       let actionContext =
             Integration.ActionContext
               { Integration.secretStore = tokenStore
               , Integration.providerRegistry = Integration.fromMap providerMap
+              , Integration.refreshLocks = refreshLocksMap2
               , Integration.fileAccess = maybeFileAccessContext
               }
       -- Create route handlers with loaded HMAC key and rate limiters

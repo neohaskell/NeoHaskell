@@ -5,6 +5,7 @@ module IntegrationSpec where
 
 import Array qualified
 import Auth.SecretStore.InMemory qualified as InMemorySecretStore
+import ConcurrentMap qualified
 import Core
 import GHC.TypeLits qualified as GHC
 import Integration qualified
@@ -40,10 +41,12 @@ type instance NameOf TestCommand = "TestCommand"
 makeContext :: Task Text Integration.ActionContext
 makeContext = do
   store <- InMemorySecretStore.new
+  locks <- ConcurrentMap.new
   Task.yield
     Integration.ActionContext
       { Integration.secretStore = store
       , Integration.providerRegistry = Integration.fromMap Map.empty
+      , Integration.refreshLocks = locks
       , Integration.fileAccess = Nothing
       }
 

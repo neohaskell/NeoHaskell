@@ -17,6 +17,7 @@ import Auth.OAuth2.Types (
 import Auth.SecretStore (SecretStore (..), TokenKey (..))
 import Auth.SecretStore.InMemory qualified as InMemory
 import ConcurrentVar qualified
+import ConcurrentMap qualified
 import Control.Concurrent qualified as GhcConcurrent
 import Core
 import Data.ByteString.Lazy qualified as GhcLBS
@@ -26,6 +27,7 @@ import Network.Wai.Handler.Warp qualified as GhcWarp
 import Task qualified
 import Test
 import Text qualified
+import Lock qualified
 
 
 spec :: Spec Unit
@@ -38,9 +40,11 @@ spec = do
       let key = TokenKey "oauth:provider:user1"
       store.put key tokenSet
 
+      refreshLocks <- ConcurrentMap.new
       (result :: Result (TokenRefreshError Text) Text) <-
         withValidToken
           store
+          refreshLocks
           "provider"
           "user1"
           mockRefreshSuccess
@@ -58,10 +62,12 @@ spec = do
       store.put key tokenSet
 
       attemptCounter <- ConcurrentVar.containing (0 :: Int)
+      refreshLocks <- ConcurrentMap.new
 
       (result :: Result (TokenRefreshError Text) Text) <-
         withValidToken
           store
+          refreshLocks
           "provider"
           "user1"
           mockRefreshSuccess -- Returns new token "new-access-token"
@@ -87,9 +93,11 @@ spec = do
       store <- InMemory.new
       -- No tokens stored
 
+      refreshLocks <- ConcurrentMap.new
       (result :: Result (TokenRefreshError Text) Text) <-
         withValidToken
           store
+          refreshLocks
           "provider"
           "user1"
           mockRefreshSuccess
@@ -111,9 +119,11 @@ spec = do
       let key = TokenKey "oauth:provider:user1"
       store.put key tokenSet
 
+      refreshLocks <- ConcurrentMap.new
       (result :: Result (TokenRefreshError Text) Text) <-
         withValidToken
           store
+          refreshLocks
           "provider"
           "user1"
           mockRefreshSuccess
@@ -130,9 +140,11 @@ spec = do
       let key = TokenKey "oauth:provider:user1"
       store.put key tokenSet
 
+      refreshLocks <- ConcurrentMap.new
       (result :: Result (TokenRefreshError Text) Text) <-
         withValidToken
           store
+          refreshLocks
           "provider"
           "user1"
           mockRefreshFailure -- Returns OAuth2Error
@@ -150,10 +162,12 @@ spec = do
       store.put key tokenSet
 
       attemptCounter <- ConcurrentVar.containing (0 :: Int)
+      refreshLocks <- ConcurrentMap.new
 
       (result :: Result (TokenRefreshError Text) Text) <-
         withValidToken
           store
+          refreshLocks
           "provider"
           "user1"
           mockRefreshSuccess
@@ -177,10 +191,12 @@ spec = do
       store.put key tokenSet
 
       refreshCount <- ConcurrentVar.containing (0 :: Int)
+      refreshLocks <- ConcurrentMap.new
 
       (result :: Result (TokenRefreshError Text) Text) <-
         withValidToken
           store
+          refreshLocks
           "provider"
           "user1"
           ( \_ -> do
@@ -209,9 +225,11 @@ spec = do
               , atomicModifyReturning = \_ _ -> Task.throw "connection refused"
               }
 
+      refreshLocks <- ConcurrentMap.new
       (result :: Result (TokenRefreshError Text) Text) <-
         withValidToken
           failingStore
+          refreshLocks
           "provider"
           "user1"
           mockRefreshSuccess
@@ -220,6 +238,72 @@ spec = do
           |> Task.asResult
 
       result |> shouldBe (Err (StorageError "connection refused"))
+
+    -- Path 9: LockAcquisitionTimeout error type exists and can be constructed
+    it "LockAcquisitionTimeout can be constructed and matched" \_ -> do
+      let err = LockAcquisitionTimeout "provider:user1"
+      case (err :: TokenRefreshError Text) of
+        LockAcquisitionTimeout key -> key |> shouldBe "provider:user1"
+        _ -> fail "Expected LockAcquisitionTimeout constructor"
+
+    -- Path 10: Per-key mutex double-check - skips refresh when another thread refreshed
+    it "skips refresh when token already refreshed while waiting for lock" \_ -> do
+      refreshCount <- ConcurrentVar.containing (0 :: Int)
+      resultVar <- ConcurrentVar.new
+
+      refreshLocks <- ConcurrentMap.new
+
+      -- Pre-acquire the lock to simulate another thread holding the refresh lock
+      let lockKey = ("provider:user1" :: Text)
+      blocker <- Lock.new
+      (sharedLock, _) <- refreshLocks |> ConcurrentMap.getOrInsert lockKey blocker
+      Lock.acquire sharedLock
+
+      store <- InMemory.new
+      let expiredTokenSet = makeTokenSetWithRefresh "expired-token" "refresh-token"
+      let key = TokenKey "oauth:provider:user1"
+      store.put key expiredTokenSet
+
+      let countingRefresh _ = do
+            refreshCount |> ConcurrentVar.modify (\c -> c + 1)
+            mockRefreshSuccessTask
+
+      -- Spawn background task — it will block at the lock waiting for release
+      let backgroundTask = do
+            r <-
+              withValidToken
+                store
+                refreshLocks
+                "provider"
+                "user1"
+                countingRefresh
+                isUnauthorized
+                ( \token ->
+                    case token of
+                      "expired-token" -> Task.throw ("401 Unauthorized" :: Text)
+                      t -> Task.yield ([fmt|success: #{t}|] :: Text)
+                )
+                |> Task.asResult
+            ConcurrentVar.set r resultVar
+      _ <- GhcConcurrent.forkIO (backgroundTask |> Task.runNoErrors) |> Task.fromIO
+
+      -- Give the background task time to reach and block at the lock
+      GhcConcurrent.threadDelay 50000 |> Task.fromIO  -- 50ms
+
+      -- Simulate: another thread refreshed the token in the store
+      let freshTokenSet = makeTokenSetWithRefresh "new-access-token" "new-refresh-token"
+      store.put key freshTokenSet
+
+      -- Release the lock — background task proceeds, double-check finds fresh token
+      Lock.release sharedLock
+
+      -- Blocking wait for the background task to complete
+      result <- ConcurrentVar.get resultVar
+
+      -- Verify: succeeded using already-fresh token (refresh was skipped)
+      result |> shouldBe (Ok "success: new-access-token")
+      finalRefreshCount <- ConcurrentVar.peek refreshCount
+      finalRefreshCount |> shouldBe 0
 
   -- Integration tests
   integrationSpec
@@ -321,10 +405,12 @@ integrationSpec = do
                     0 -> Task.throw "401 Unauthorized"
                     _ -> Task.yield ([fmt|success with #{token}|] :: Text)
 
+            refreshLocks <- ConcurrentMap.new
             -- Call withValidToken
             (result :: Result (TokenRefreshError Text) Text) <-
               withValidToken
                 store
+                refreshLocks
                 "mock"
                 "user1"
                 refreshAction

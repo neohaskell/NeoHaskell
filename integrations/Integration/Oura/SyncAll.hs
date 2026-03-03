@@ -82,7 +82,7 @@ executeSyncAll ::
   Task Integration.IntegrationError (Maybe Integration.CommandPayload)
 executeSyncAll httpFetch httpFetchSingle ctx config = do
   let SyncAll userId startDate endDate onComplete onError = config
-  let ActionContext secretStore _ _ = ctx
+  let ActionContext { secretStore, refreshLocks } = ctx
   providerConfig <- getOuraProvider ctx
   let ValidatedOAuth2ProviderConfig {validatedProvider, clientId, clientSecret} = providerConfig
   let refreshAction = OAuth2.refreshTokenValidated validatedProvider clientId clientSecret
@@ -111,7 +111,7 @@ executeSyncAll httpFetch httpFetchSingle ctx config = do
   let personalInfoUrl = [fmt|#{ouraApiBase}/personal_info|]
   
   -- Execute with token refresh - all 17 requests share the same token
-  fetchResult <- withValidToken secretStore "oura" userId refreshAction isUnauthorized
+  fetchResult <- withValidToken secretStore refreshLocks "oura" userId refreshAction isUnauthorized
     (\accessToken -> do
       -- Run all 17 in parallel pairs (8 pairs + 1 standalone)
       (sleepResult, activityResult) <- AsyncTask.runConcurrently

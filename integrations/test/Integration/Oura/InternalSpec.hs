@@ -20,6 +20,9 @@ import Integration (ActionContext (..), IntegrationError (..), fromMap)
 import Auth.OAuth2.TokenRefresh (TokenRefreshError (..))
 import Auth.OAuth2.Types (OAuth2Error (TokenRequestFailed))
 import Auth.SecretStore.InMemory qualified as InMemorySecretStore
+import ConcurrentMap qualified
+import ConcurrentMap (ConcurrentMap)
+import Lock (Lock)
 import Auth.OAuth2.Provider (ValidatedOAuth2ProviderConfig)
 import Task (Task)
 import Task qualified
@@ -122,9 +125,11 @@ spec = do
 
       it "missing provider throws UnexpectedError" do
         stubStore <- Task.runOrPanic InMemorySecretStore.new
+        emptyLocks <- Task.runOrPanic (ConcurrentMap.new :: Task Text (ConcurrentMap Text Lock))
         let emptyCtx = ActionContext
               { secretStore = stubStore
               , providerRegistry = fromMap Map.empty
+              , refreshLocks = emptyLocks
               , fileAccess = Nothing
               }
 

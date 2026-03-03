@@ -83,6 +83,8 @@ import Array (Array)
 import Array qualified
 import Auth.OAuth2.Provider (ValidatedOAuth2ProviderConfig)
 import Auth.SecretStore (SecretStore)
+import ConcurrentMap (ConcurrentMap)
+import Lock (Lock)
 import Basics
 import Bytes (Bytes)
 import Data.Proxy (Proxy (..))
@@ -151,6 +153,9 @@ entries registry = registry.getProviders |> Map.entries
 data ActionContext = ActionContext
   { secretStore :: SecretStore
   , providerRegistry :: ImmutableProviderRegistry
+  , refreshLocks :: ConcurrentMap Text Lock
+  -- ^ Per-key mutex map for token refresh operations (#333).
+  -- Prevents duplicate concurrent token refreshes for the same provider:userId.
   , fileAccess :: Maybe FileAccessContext
   -- ^ File access context for retrieving uploaded files.
   -- 'Nothing' when file uploads are not enabled in the application.

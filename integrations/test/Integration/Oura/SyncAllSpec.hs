@@ -24,6 +24,7 @@ import Auth.OAuth2.Provider (ValidatedOAuth2ProviderConfig (..))
 import Service.Command.Core (NameOf)
 import ConcurrentVar (ConcurrentVar)
 import ConcurrentVar qualified
+import ConcurrentMap qualified
 import AsyncTask qualified
 import Task (Task)
 import Task qualified
@@ -229,9 +230,11 @@ setupMockContext = do
         , failureRedirectUrl = "https://example.com/failure"
         }
   let providerRegistry = Map.fromArray (Array.fromLinkedList [("oura", providerConfig)])
+  locks <- ConcurrentMap.new
   Task.yield ActionContext
     { secretStore = secretStore
     , providerRegistry = fromMap providerRegistry
+    , refreshLocks = locks
     , fileAccess = Nothing
     }
 

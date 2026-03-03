@@ -5,6 +5,7 @@ import AsyncTask qualified
 
 import Auth.SecretStore (SecretStore (..))
 import Auth.SecretStore.InMemory qualified as InMemorySecretStore
+import ConcurrentMap qualified
 import ConcurrentVar qualified
 import Core
 import Integration qualified
@@ -47,11 +48,12 @@ instance Json.ToJSON ContextEvent
 makeContext :: Task Text Integration.ActionContext
 makeContext = do
   store <- InMemorySecretStore.new
-
+  locks <- ConcurrentMap.new
   Task.yield
     Integration.ActionContext
       { Integration.secretStore = store
       , Integration.providerRegistry = Integration.fromMap Map.empty
+      , Integration.refreshLocks = locks
       , Integration.fileAccess = Nothing
       }
 
@@ -113,9 +115,11 @@ spec = do
 
       eventStore <- InMemory.new |> Task.mapError toText
       emptyStore <- InMemorySecretStore.new
+      emptyLocks <- ConcurrentMap.new
       let emptyContext = Integration.ActionContext
             { Integration.secretStore = emptyStore
             , Integration.providerRegistry = Integration.fromMap Map.empty
+            , Integration.refreshLocks = emptyLocks
             , Integration.fileAccess = Nothing
             }
       dispatcher <-
