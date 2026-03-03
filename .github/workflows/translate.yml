@@ -117,7 +117,7 @@ jobs:
             done
           done
 
-      - uses: stefanzweifel/git-auto-commit-action@v5
+      - uses: stefanzweifel/git-auto-commit-action@v7
         with:
           file_pattern: 'website/src/content/docs/** website/translations/**'
           commit_message: '[translation] auto-translate docs'
