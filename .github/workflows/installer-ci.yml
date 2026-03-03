@@ -101,7 +101,7 @@ jobs:
         run: |
           mkdir -p artifacts
           cp target/${{ matrix.target }}/release/neo-install artifacts/installer-neo-install-${{ matrix.target }}
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: installer-neo-install-${{ matrix.target }}
           path: installer/artifacts/installer-neo-install-${{ matrix.target }}
