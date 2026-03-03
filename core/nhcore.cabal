@@ -383,6 +383,7 @@ test-suite nhcore-test
     Integration.ExitSpec
     Integration.RuntimeSpec
     Integration.TimerSpec
+    Integration.RegistrySpec
     IntegrationSpec
     IntSpec
     LogSpec
@@ -525,6 +526,7 @@ test-suite nhcore-test-integration
     Integration.ExitSpec
     Integration.RuntimeSpec
     Integration.TimerSpec
+    Integration.RegistrySpec
     IntegrationSpec
     Service.MockTransport
     Service.TestHelpers
