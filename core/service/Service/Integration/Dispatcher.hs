@@ -261,7 +261,7 @@ new store runners endpoints = do
   emptyStore <- InMemorySecretStore.new
   let emptyContext = Integration.ActionContext
         { Integration.secretStore = emptyStore
-        , Integration.providerRegistry = Map.empty
+        , Integration.providerRegistry = Integration.fromMap Map.empty
         , Integration.fileAccess = Nothing
         }
   newWithLifecycleConfig defaultConfig store runners [] endpoints emptyContext
@@ -280,7 +280,7 @@ newWithLifecycle store runners lifecycleRunners endpoints = do
   emptyStore <- InMemorySecretStore.new
   let emptyContext = Integration.ActionContext
         { Integration.secretStore = emptyStore
-        , Integration.providerRegistry = Map.empty
+        , Integration.providerRegistry = Integration.fromMap Map.empty
         , Integration.fileAccess = Nothing
         }
   newWithLifecycleConfig defaultConfig store runners lifecycleRunners endpoints emptyContext

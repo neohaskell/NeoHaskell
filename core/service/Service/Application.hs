@@ -1147,7 +1147,7 @@ runWithResolved eventStore maybeFileUploadSetup fileUploadCleanup maybeWebAuthSe
         ( Nothing
         , Integration.ActionContext
             { Integration.secretStore = emptyStore
-            , Integration.providerRegistry = Map.empty
+            , Integration.providerRegistry = Integration.fromMap Map.empty
             , Integration.fileAccess = maybeFileAccessContext
             }
         )
@@ -1181,7 +1181,7 @@ runWithResolved eventStore maybeFileUploadSetup fileUploadCleanup maybeWebAuthSe
       let actionContext =
             Integration.ActionContext
               { Integration.secretStore = tokenStore
-              , Integration.providerRegistry = providerMap
+              , Integration.providerRegistry = Integration.fromMap providerMap
               , Integration.fileAccess = maybeFileAccessContext
               }
       -- Create route handlers with loaded HMAC key and rate limiters

@@ -43,7 +43,7 @@ makeContext = do
   Task.yield
     Integration.ActionContext
       { Integration.secretStore = store
-      , Integration.providerRegistry = Map.empty
+      , Integration.providerRegistry = Integration.fromMap Map.empty
       , Integration.fileAccess = Nothing
       }
 

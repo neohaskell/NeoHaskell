@@ -2,7 +2,7 @@ module Integration.ContextSpec where
 
 import Array qualified
 import AsyncTask qualified
-import Auth.OAuth2.Provider (ValidatedOAuth2ProviderConfig)
+
 import Auth.SecretStore (SecretStore (..))
 import Auth.SecretStore.InMemory qualified as InMemorySecretStore
 import ConcurrentVar qualified
@@ -47,11 +47,11 @@ instance Json.ToJSON ContextEvent
 makeContext :: Task Text Integration.ActionContext
 makeContext = do
   store <- InMemorySecretStore.new
-  let providerRegistry = (Map.empty :: Map.Map Text ValidatedOAuth2ProviderConfig)
+
   Task.yield
     Integration.ActionContext
       { Integration.secretStore = store
-      , Integration.providerRegistry = providerRegistry
+      , Integration.providerRegistry = Integration.fromMap Map.empty
       , Integration.fileAccess = Nothing
       }
 
@@ -106,7 +106,7 @@ spec = do
             Dispatcher.OutboundRunner
               { entityTypeName = "TestEntity",
                 processEvent = \ctx _eventStore _event -> do
-                  let isEmpty = Map.length ctx.providerRegistry == 0
+                  let isEmpty = (ctx.providerRegistry |> Integration.entries |> Array.length) == 0
                   contextSeen |> ConcurrentVar.modify (\_ -> Just isEmpty)
                   Task.yield Array.empty
               }
@@ -115,7 +115,7 @@ spec = do
       emptyStore <- InMemorySecretStore.new
       let emptyContext = Integration.ActionContext
             { Integration.secretStore = emptyStore
-            , Integration.providerRegistry = Map.empty
+            , Integration.providerRegistry = Integration.fromMap Map.empty
             , Integration.fileAccess = Nothing
             }
       dispatcher <-

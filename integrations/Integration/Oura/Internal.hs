@@ -59,7 +59,7 @@ import Integration.Oura.RestModePeriod (RestModePeriod (..))
 import Integration.Oura.RingConfiguration (RingConfiguration (..))
 import Integration.Oura.SleepPeriod (SleepPeriod (..))
 import Service.Command.Core (NameOf)
-import Map qualified
+
 import Task (Task)
 import Task qualified
 import Text (Text)
@@ -113,7 +113,8 @@ httpRequestWithAuth accessToken url = do
     |> Http.getSecure  -- SECURITY: Enforces HTTPS. Returns Response Bytes, no throw on non-2xx
     |> Task.mapError (\httpErr -> case httpErr of
         Http.Error msg -> OtherHttpError msg
-        Http.InvalidUrl url -> OtherHttpError [fmt|Non-HTTPS URL rejected: #{url}|])
+        Http.InvalidUrl url -> OtherHttpError [fmt|Non-HTTPS URL rejected: #{url}|]
+        Http.ResponseTooLarge limit -> OtherHttpError [fmt|Response exceeded size limit of #{limit} bytes|])
   -- Check status code FIRST (before any JSON decoding)
   case response.statusCode of
     401 -> Task.throw Unauthorized
@@ -600,8 +601,7 @@ urlEncodeParam param =
 -- NOTE: ValidatedOAuth2ProviderConfig is from core/auth/Auth/OAuth2/Provider.hs:149-172
 getOuraProvider :: ActionContext -> Task Integration.IntegrationError ValidatedOAuth2ProviderConfig
 getOuraProvider ctx = do
-  let ActionContext _ providerRegistry _ = ctx
-  case Map.get "oura" providerRegistry of
+  case Integration.lookup "oura" ctx.providerRegistry of
     Nothing -> Task.throw (UnexpectedError "Oura provider not configured. Add Oura.makeOuraConfig to Application.withOAuth2.")
     Just provider -> Task.yield provider
 
