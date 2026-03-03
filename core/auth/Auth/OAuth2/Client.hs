@@ -610,9 +610,11 @@ requestTokens tokenEndpoint formParams = do
       case result of
         Err err -> Task.throw err
         Ok response -> do
-          now <- DateTime.now |> Task.mapError (\_ -> TokenRequestFailed "Failed to compute token expiry")
+          nowResult <- DateTime.now |> Task.mapError (\_ -> TokenRequestFailed "clock error") |> Task.asResult
           let ttlSeconds = response.body.expires_in
-          let expiresAt = ttlSeconds |> fmap (\seconds -> DateTime.addSeconds (fromIntegral seconds) now)
+          let expiresAt = case nowResult of
+                Err _ -> Nothing
+                Ok now -> ttlSeconds |> fmap (\seconds -> DateTime.addSeconds (fromIntegral seconds) now)
           Task.yield
             TokenSet
               { accessToken = mkAccessToken response.body.access_token
@@ -659,9 +661,11 @@ requestTokensValidated tokenEndpoint formParams = do
           |> Task.ignoreError
       Task.throw err
     Ok response -> do
-      now <- DateTime.now |> Task.mapError (\_ -> TokenRequestFailed "Failed to compute token expiry")
+      nowResult <- DateTime.now |> Task.mapError (\_ -> TokenRequestFailed "clock error") |> Task.asResult
       let ttlSeconds = response.body.expires_in
-      let expiresAt = ttlSeconds |> fmap (\seconds -> DateTime.addSeconds (fromIntegral seconds) now)
+      let expiresAt = case nowResult of
+            Err _ -> Nothing
+            Ok now -> ttlSeconds |> fmap (\seconds -> DateTime.addSeconds (fromIntegral seconds) now)
       -- AUDIT: Log success (no token values)
       Log.withScope [("component", "OAuth2"), ("endpoint", sanitizedEndpoint)] do
         Log.info "Token request succeeded"

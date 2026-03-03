@@ -211,12 +211,12 @@ data EncryptionConfig = EncryptionConfig
 - `Integration.InboundWorker.resetBackoff :: WorkerState -> WorkerState`
 
 **W5-A** (`core/auth/Auth/SecretStore.hs`, new `core/auth/Auth/OAuth2/TokenManager.hs`)
-- `SecretStore.getWithExpiry :: key -> SecretStore -> Task Text (Maybe TokenEntry)`
-- `SecretStore.putWithExpiry :: key -> TokenEntry -> SecretStore -> Task Text Unit`
-- `TokenManager.new :: TokenManagerConfig -> OAuth2Config -> Task Text TokenManager`
-- `TokenManager.getToken :: TokenManager -> Task Text TokenEntry`
-  - {-# INLINE #-} pragma for hot path
-- `TokenManager.startRefreshLoop :: TokenManager -> Task Text Unit`
+- `SecretStore.get :: TokenKey -> Task Text (Maybe TokenSet)` (unchanged interface)
+- `SecretStore.atomicModify :: TokenKey -> (Maybe TokenSet -> Maybe TokenSet) -> Task Text Unit`
+- `TokenManager.new :: SecretStore -> TokenManagerConfig -> Task Text TokenManager`
+- `TokenManager.getToken :: TokenManager -> Text -> Text -> (RefreshToken -> Task OAuth2Error TokenSet) -> Task (TokenRefreshError Text) TokenSet`
+  - {-# INLINE #-} on `needsProactiveRefresh` for hot path
+- `TokenManager.startRefreshLoop :: TokenManager -> Text -> Text -> (RefreshToken -> Task OAuth2Error TokenSet) -> Task Text Unit`
 
 **W5-B** (`core/auth/Auth/OAuth2/TokenRefresh.hs`, new `core/auth/Auth/SecretStore/Postgres.hs`)
 - `TokenRefresh.withAuditLog :: Logger -> TokenRefresh -> TokenRefresh`
@@ -243,7 +243,7 @@ data EncryptionConfig = EncryptionConfig
 - The dispatcher no longer sends irrelevant events to handlers. Handler logic is simpler and more predictable.
 - All hot-path data types use strict fields to prevent space leaks.
 
-- Dispatcher uses Map-based O(1) routing instead of O(n) handler scan.
+- Dispatcher uses Map-based O(log n) routing instead of O(n) handler scan.
 ### Negative
 
 - `CommandExecutor.execute` is a breaking change for callers that currently ignore the return value. All call sites must be updated to handle `Task CommandError Unit`.

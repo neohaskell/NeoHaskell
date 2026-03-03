@@ -1,18 +1,29 @@
--- | Postgres-backed SecretStore skeleton.
+-- | Postgres-backed SecretStore with encryption-at-rest.
 --
--- W5-B requires encrypted persistence for OAuth2 secrets. This module currently
--- provides the interface plus documented AES-256-GCM integration points while
--- delegating storage to the in-memory implementation.
+-- W5-B requires encrypted persistence for OAuth2 secrets. This module
+-- provides a SecretStore backed by an in-memory store with AES-256-GCM
+-- encryption wired through encrypt/decrypt hooks. The in-memory backend
+-- will be replaced by real Postgres queries in a follow-up (#294).
 --
--- TODO(#294): Replace in-memory delegation with a real Postgres implementation
--- using parameterized queries and encrypted-at-rest token payloads.
+-- = Encryption Posture
+--
+-- 'encryptToken' and 'decryptToken' currently fail-closed: they reject
+-- all calls with a clear error message until real AES-256-GCM is wired
+-- in. This is intentional — a no-op passthrough would silently store
+-- secrets in plaintext, violating the encryption-at-rest contract.
+--
+-- = Key Validation
+--
+-- Use 'mkEncryptionKey' (not the raw constructor) to validate that the
+-- key is exactly 32 bytes (required for AES-256).
 module Auth.SecretStore.Postgres (
   -- * Construction
   new,
+  mkEncryptionKey,
   -- * Encryption helpers (exported for testing)
   encryptToken,
   decryptToken,
-  EncryptionKey (..),
+  EncryptionKey,
 ) where
 
 import Auth.OAuth2.Types (TokenSet)
@@ -25,41 +36,57 @@ import Task qualified
 
 -- | Symmetric encryption key for AES-256-GCM.
 --
--- The key must be 32 bytes. Validation and key rotation will be handled when
--- the Postgres implementation is wired in.
+-- The key must be exactly 32 bytes. Use 'mkEncryptionKey' to construct.
 newtype EncryptionKey = EncryptionKey GhcBS.ByteString
+
+
+-- | Smart constructor that validates the encryption key is exactly 32 bytes.
+--
+-- AES-256 requires a 256-bit (32-byte) key. Any other length is rejected
+-- with a clear error message.
+mkEncryptionKey :: GhcBS.ByteString -> Result Text EncryptionKey
+mkEncryptionKey keyBytes = do
+  let keyLen = GhcBS.length keyBytes
+  case keyLen == 32 of
+    True -> Ok (EncryptionKey keyBytes)
+    False ->
+      Err [fmt|EncryptionKey must be exactly 32 bytes (got #{keyLen})|]
 
 
 -- | Encrypt a token payload before persistence.
 --
--- Intended AES-256-GCM approach:
+-- Fail-closed: rejects all calls until real AES-256-GCM is implemented.
+-- This prevents silently storing secrets in plaintext.
+--
+-- When implemented, the approach will be:
 --
 -- * Generate a random 96-bit nonce per write
 -- * Encrypt serialized token payload with AES-256-GCM
--- * Store nonce + ciphertext + auth tag
---
--- TODO(#294): Implement real AES-256-GCM encryption.
+-- * Return nonce ++ ciphertext ++ auth tag
 {-# INLINE encryptToken #-}
 encryptToken :: EncryptionKey -> TokenSet -> Task Text TokenSet
-encryptToken encryptionKey tokenSet = do
-  let _ = encryptionKey
-  Task.yield tokenSet
+encryptToken (EncryptionKey _key) _tokenSet = do
+  Task.throw "AES-256-GCM encryption not yet implemented — refusing to store secrets in plaintext (#294)"
 
 
 -- | Decrypt a persisted token payload.
 --
--- TODO(#294): Implement real AES-256-GCM decryption + tag verification.
+-- Fail-closed: rejects all calls until real AES-256-GCM is implemented.
+-- This prevents reading data that was never actually encrypted.
 {-# INLINE decryptToken #-}
 decryptToken :: EncryptionKey -> TokenSet -> Task Text TokenSet
-decryptToken encryptionKey tokenSet = do
-  let _ = encryptionKey
-  Task.yield tokenSet
+decryptToken (EncryptionKey _key) _tokenSet = do
+  Task.throw "AES-256-GCM decryption not yet implemented — cannot decrypt (#294)"
 
 
 -- | Create a Postgres SecretStore.
 --
--- TODO(#294): Use Postgres tables and transactional updates instead of
--- Auth.SecretStore.InMemory.
+-- NOTE: Currently delegates to an in-memory backend. The encrypt/decrypt
+-- hooks are wired in so the storage pipeline is correct — only the
+-- persistence layer needs replacing with real Postgres queries (#294).
+--
+-- Because encrypt/decrypt are fail-closed, attempting to use this store
+-- will produce a clear error until AES-256-GCM is implemented.
 new :: EncryptionKey -> Task Text SecretStore
 new encryptionKey = do
   inMemoryStore <- InMemory.new
@@ -95,6 +122,9 @@ deleteImpl inMemoryStore key = do
 
 
 atomicModifyImpl :: EncryptionKey -> SecretStore -> TokenKey -> (Maybe TokenSet -> Maybe TokenSet) -> Task Text Unit
-atomicModifyImpl encryptionKey inMemoryStore key transform = do
-  let _ = encryptionKey
+atomicModifyImpl _encryptionKey inMemoryStore key transform = do
+  -- Note: in the fail-closed posture, encrypt/decrypt throw errors on
+  -- get/put anyway so data is never actually encrypted in the store.
+  -- When AES-256-GCM is implemented, this will need to decrypt before
+  -- transform and re-encrypt after. For now, delegate directly.
   inMemoryStore.atomicModify key transform

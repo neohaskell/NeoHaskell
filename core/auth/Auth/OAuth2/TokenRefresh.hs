@@ -53,17 +53,22 @@ globalRefreshFlights =
 
 -- | Execute token refresh with single-flight guard semantics.
 --
--- Concurrent callers sharing the same lock are serialized so only one
--- refresh request runs at a time, and other callers wait for completion.
+-- Concurrent callers are serialized via a module-internal global lock so only
+-- one refresh request runs at a time per refresh token. Other callers with the
+-- same refresh token wait for the leader's result.
+--
+-- NOTE: The @_callerLock@ parameter is accepted for API compatibility but
+-- ignored — the function always uses the module-internal 'globalRefreshGuardLock'
+-- to ensure a single serialization domain for 'globalRefreshFlights'.
 withSingleFlightRefresh ::
   Lock ->
   (RefreshToken -> Task OAuth2Error TokenSet) ->
   RefreshToken ->
   Task OAuth2Error TokenSet
-withSingleFlightRefresh lock refreshAction refreshToken = do
+withSingleFlightRefresh _callerLock refreshAction refreshToken = do
   let refreshKey = unwrapRefreshToken refreshToken
   (isLeader, refreshWaiter) <-
-    Lock.with lock do
+    Lock.with globalRefreshGuardLock do
       maybeWaiter <- ConcurrentMap.get refreshKey globalRefreshFlights
       case maybeWaiter of
         Just existingWaiter -> Task.yield (False, existingWaiter)
@@ -83,14 +88,15 @@ withSingleFlightRefresh lock refreshAction refreshToken = do
               Err _unexpectedErr ->
                 Result.Err (TokenRequestFailed "Token refresh crashed unexpectedly")
       ConcurrentVar.set refreshResult refreshWaiter
-      Lock.with lock do
+      Lock.with globalRefreshGuardLock do
         ConcurrentMap.remove refreshKey globalRefreshFlights
       case refreshResult of
         Result.Ok tokenSet -> Task.yield tokenSet
         Result.Err refreshError -> Task.throw refreshError
     False -> do
-      refreshResult <- ConcurrentVar.get refreshWaiter
-      ConcurrentVar.set refreshResult refreshWaiter
+      -- Non-destructive read: peek uses readMVar (does not remove the value).
+      -- This is safe for multiple waiters — all can read the result.
+      refreshResult <- ConcurrentVar.peek refreshWaiter
       case refreshResult of
         Result.Ok tokenSet -> Task.yield tokenSet
         Result.Err refreshError -> Task.throw refreshError

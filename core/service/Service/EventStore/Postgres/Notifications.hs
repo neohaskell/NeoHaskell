@@ -147,6 +147,9 @@ getCurrentTimeMs = do
 -- and either stops (clean) or restarts with backoff (unexpected).
 -- Resets backoff to initialBackoff if the listener ran for longer than
 -- maxBackoff ms (indicating a successful connection that later failed).
+--
+-- After any restart (Ok or Err), re-subscribes the LISTEN channel since
+-- the Postgres connection may have been reset.
 keepaliveLoop :: NotificationConnection -> Int -> Task Text Unit
 keepaliveLoop conn currentBackoff = do
   isShuttingDown <- Var.get conn.shutdownRef
@@ -165,12 +168,14 @@ keepaliveLoop conn currentBackoff = do
       let runDurationMs = endTime - startTime
       case result of
         Ok _ -> do
-          -- waitForNotifications returned normally — treat as clean exit
-          Log.info "LISTEN/NOTIFY listener exited cleanly"
+          -- waitForNotifications returned normally — this is unexpected since
+          -- it should block indefinitely. Restart unless shutdown requested.
+          Log.warn "LISTEN/NOTIFY listener returned unexpectedly, restarting"
             |> Task.ignoreError
-          Task.yield ()
-        Err _ -> do
-          -- Unexpected failure — log critical and reconnect with backoff
+          resubscribeListens conn
+          keepaliveLoop conn conn.reconnectConfig.initialBackoff
+        Err err -> do
+          -- Unexpected failure — log with error details and reconnect with backoff
           -- Reset backoff if the listener ran for longer than maxBackoff ms
           -- (indicates a successful connection that later failed, not an immediate failure)
           let resetBackoff =
@@ -180,14 +185,28 @@ keepaliveLoop conn currentBackoff = do
                   True -> conn.reconnectConfig.initialBackoff
                   False -> currentBackoff
           Log.critical
-            [fmt|LISTEN/NOTIFY listener exited unexpectedly, reconnecting in {effectiveBackoff}ms|]
+            [fmt|LISTEN/NOTIFY listener failed: #{err}, reconnecting in {effectiveBackoff}ms|]
             |> Task.ignoreError
           AsyncTask.sleep effectiveBackoff
+          resubscribeListens conn
           let nextBackoff =
                 min
                   conn.reconnectConfig.maxBackoff
                   (round (fromIntegral effectiveBackoff * conn.reconnectConfig.backoffMultiplier))
           keepaliveLoop conn nextBackoff
+
+
+-- | Re-subscribe the global LISTEN channel after a connection reset.
+-- Without this, a reconnected Postgres connection would silently miss
+-- all notifications until the next explicit LISTEN.
+resubscribeListens :: NotificationConnection -> Task Text Unit
+resubscribeListens conn = do
+  let channelToListen = HasqlNotifications.toPgIdentifier "global"
+  HasqlNotifications.listen conn.rawListenConnection channelToListen
+    |> Task.fromIO
+    |> discard
+  Log.info "LISTEN/NOTIFY re-subscribed after reconnect"
+    |> Task.ignoreError
 
 
 subscribeToStream ::

@@ -66,7 +66,7 @@
 - ignore: { name: Use <$> }
 - ignore: { name: Replace case with maybe }
 - ignore: { name: Use when }
-- ignore: { name: Use lambda case }
+- ignore: { name: Use lambda-case }
 - ignore: { name: Use bimap }
 # Define some custom infix operators
 # - fixity: infixr 3 ~^#^~

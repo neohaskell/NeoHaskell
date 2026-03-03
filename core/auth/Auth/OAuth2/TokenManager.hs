@@ -94,7 +94,13 @@ getToken manager providerName userId refreshAction = do
               newTokens <-
                 withSingleFlightRefresh manager.refreshLock refreshAction rt
                   |> Task.mapError RefreshFailed
-              manager.secretStore.atomicModify tokenKey (\_ -> Just newTokens)
+              -- Only update if the key still exists (not concurrently deleted/rotated).
+              -- If the key was removed between our get and now, don't resurrect it.
+              manager.secretStore.atomicModify tokenKey (\existing ->
+                case existing of
+                  Just _ -> Just newTokens
+                  Nothing -> Nothing
+                )
                 |> Task.mapError StorageError
               Task.yield newTokens
 

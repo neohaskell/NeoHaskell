@@ -209,60 +209,33 @@ spec = do
 
   describe "ReconnectConfig" do
     describe "mkReconnectConfig" do
-      it "succeeds for a valid reconnect configuration" \_ -> do
-        let result = Notifications.mkReconnectConfig 100 30000 2.0
-        result |> shouldSatisfy Result.isOk
-
-      it "fails when multiplier is less than 1.0" \_ -> do
-        let result = Notifications.mkReconnectConfig 100 30000 0.5
-        result |> shouldSatisfy Result.isErr
-
-      it "fails when initial backoff is greater than max backoff" \_ -> do
-        let result = Notifications.mkReconnectConfig 5000 1000 2.0
-        result |> shouldSatisfy Result.isErr
-
-      it "accepts boundary values where initial equals max and multiplier is just above 1.0" \_ -> do
-        let result = Notifications.mkReconnectConfig 250 250 1.0001
-        result |> shouldSatisfy Result.isOk
-
-      it "rejects boundary values where multiplier equals 1.0" \_ -> do
-        let result = Notifications.mkReconnectConfig 250 250 1.0
-        result |> shouldSatisfy Result.isErr
-
-
-    describe "ReconnectConfig smart constructor validation" do
+      -- Valid configs
       it "accepts valid config: initial=500, max=30000, multiplier=2.0" \_ -> do
-        let result = mkReconnectConfig 500 30000 2.0
-        result |> shouldSatisfy Result.isOk
+        mkReconnectConfig 500 30000 2.0 |> shouldSatisfy Result.isOk
 
       it "accepts minimum valid config: initial=1, max=1, multiplier=1.001" \_ -> do
-        let result = mkReconnectConfig 1 1 1.001
-        result |> shouldSatisfy Result.isOk
+        mkReconnectConfig 1 1 1.001 |> shouldSatisfy Result.isOk
 
+      it "accepts boundary: initial equals max" \_ -> do
+        mkReconnectConfig 250 250 1.0001 |> shouldSatisfy Result.isOk
+
+      -- Invalid configs
       it "rejects initialBackoff=0" \_ -> do
-        let result = mkReconnectConfig 0 1000 2.0
-        result |> shouldSatisfy Result.isErr
+        mkReconnectConfig 0 1000 2.0 |> shouldSatisfy Result.isErr
 
       it "rejects negative initialBackoff" \_ -> do
-        let result = mkReconnectConfig (-1) 1000 2.0
-        result |> shouldSatisfy Result.isErr
+        mkReconnectConfig (-1) 1000 2.0 |> shouldSatisfy Result.isErr
 
       it "rejects maxBackoff < initialBackoff" \_ -> do
-        let result = mkReconnectConfig 1000 500 2.0
-        result |> shouldSatisfy Result.isErr
+        mkReconnectConfig 1000 500 2.0 |> shouldSatisfy Result.isErr
 
       it "rejects backoffMultiplier=1.0 (no growth)" \_ -> do
-        let result = mkReconnectConfig 500 30000 1.0
-        result |> shouldSatisfy Result.isErr
+        mkReconnectConfig 500 30000 1.0 |> shouldSatisfy Result.isErr
 
       it "rejects backoffMultiplier < 1.0 (shrinking backoff)" \_ -> do
-        let result = mkReconnectConfig 500 30000 0.5
-        result |> shouldSatisfy Result.isErr
+        mkReconnectConfig 500 30000 0.5 |> shouldSatisfy Result.isErr
 
-      it "accepts maxBackoff equal to initialBackoff" \_ -> do
-        let result = mkReconnectConfig 500 500 2.0
-        result |> shouldSatisfy Result.isOk
-
+      -- Field preservation
       it "preserves field values in valid config" \_ -> do
         let result = mkReconnectConfig 100 5000 1.5
         case result of

@@ -58,9 +58,13 @@ spec = do
     it "coalesces concurrent callers to one refresh request" \_ -> do
       lock <- Lock.new
       refreshCalls <- ConcurrentVar.containing (0 :: Int)
+      -- Barrier: refresh action blocks until we explicitly release it.
+      -- This ensures all 3 callers enqueue before the refresh completes.
+      barrier <- ConcurrentVar.new
       let refreshAction _ = do
             refreshCalls |> ConcurrentVar.modify (\count -> count + 1)
-            AsyncTask.sleep 20
+            -- Block until the test signals the barrier
+            ConcurrentVar.get barrier
             Task.yield
               TokenSet
                 { accessToken = mkAccessToken "shared-access-token"
@@ -73,6 +77,10 @@ spec = do
       task1 <- AsyncTask.run (withSingleFlightRefresh lock refreshAction (mkRefreshToken "shared-refresh-token") |> Task.mapError toText)
       task2 <- AsyncTask.run (withSingleFlightRefresh lock refreshAction (mkRefreshToken "shared-refresh-token") |> Task.mapError toText)
       task3 <- AsyncTask.run (withSingleFlightRefresh lock refreshAction (mkRefreshToken "shared-refresh-token") |> Task.mapError toText)
+
+      -- Give tasks time to enqueue, then release the barrier
+      AsyncTask.sleep 20
+      ConcurrentVar.set () barrier
 
       result1 <- AsyncTask.waitFor task1
       result2 <- AsyncTask.waitFor task2

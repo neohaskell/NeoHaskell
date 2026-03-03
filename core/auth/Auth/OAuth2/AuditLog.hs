@@ -1,12 +1,12 @@
 -- | Auth audit logging for GDPR compliance (W5-B, issue #336).
 --
 -- Provides an immutable audit trail for authentication lifecycle events.
--- All actor IDs are pseudonymous internal identifiers (not directly identifying).
+-- All actor IDs are pseudonymized via SHA-256 hashing at construction time.
 --
 -- = Security Notes
 --
 -- * tokenId is a SHA-256 hash of the token — one-way, non-reversible
--- * actorId should be a pseudonymous internal ID, not a user email or name
+-- * actorId is a SHA-256 hash of the raw actor ID — one-way, non-reversible
 -- * Audit events should be stored in an append-only manner
 module Auth.OAuth2.AuditLog (
   -- * Types
@@ -39,11 +39,10 @@ data AuthEventType
 
 -- | An immutable audit record for an authentication event.
 --
--- GDPR Note: actorId must be a pseudonymous internal ID.
--- If it is a directly identifying value (email, name), the audit log
--- table must be included in DSAR and erasure workflows.
+-- GDPR Note: actorId is SHA-256 hashed at construction time.
+-- The raw actor identifier (email, internal ID) is never stored.
 data AuthAuditEvent = AuthAuditEvent
-  { -- | Pseudonymous internal actor identifier.
+  { -- | SHA-256 hash of the actor identifier (one-way, non-reversible).
     actorId :: !Text
   , -- | Type of authentication event.
     eventType :: !AuthEventType
@@ -55,20 +54,24 @@ data AuthAuditEvent = AuthAuditEvent
   deriving (Generic, Show, Eq)
 
 
--- | Create an audit event by hashing the token from a TokenSet.
--- Uses SHA-256 for the token hash (one-way, non-reversible).
+-- | Create an audit event by hashing both the actor ID and token.
+-- Both are SHA-256 hashed (one-way, non-reversible) for GDPR pseudonymization.
 {-# INLINE mkAuditEvent #-}
 mkAuditEvent :: Text -> AuthEventType -> TokenSet -> Task Text AuthAuditEvent
-mkAuditEvent actorId eventType tokenSet = do
+mkAuditEvent rawActorId eventType tokenSet = do
   now <- DateTime.now
+  let actorBytes = GhcTextEncoding.encodeUtf8 rawActorId
+  let actorDigest = Hash.hash actorBytes :: Hash.Digest Hash.SHA256
+  let actorHashBytes = GhcEncoding.convertToBase GhcEncoding.Base16 actorDigest :: GhcBS.ByteString
+  let hashedActorId = GhcTextEncoding.decodeUtf8 actorHashBytes
   let rawToken = unwrapAccessToken tokenSet.accessToken
   let tokenBytes = GhcTextEncoding.encodeUtf8 rawToken
-  let digest = Hash.hash tokenBytes :: Hash.Digest Hash.SHA256
-  let hashBytes = GhcEncoding.convertToBase GhcEncoding.Base16 digest :: GhcBS.ByteString
-  let tokenId = GhcTextEncoding.decodeUtf8 hashBytes
+  let tokenDigest = Hash.hash tokenBytes :: Hash.Digest Hash.SHA256
+  let tokenHashBytes = GhcEncoding.convertToBase GhcEncoding.Base16 tokenDigest :: GhcBS.ByteString
+  let tokenId = GhcTextEncoding.decodeUtf8 tokenHashBytes
   Task.yield
     AuthAuditEvent
-      { actorId = actorId
+      { actorId = hashedActorId
       , eventType = eventType
       , tokenId = tokenId
       , occurredAt = now
