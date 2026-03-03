@@ -138,10 +138,13 @@ spec = do
           _ -> expectationFailure "Expected UnexpectedError with 'Oura provider not configured'"
 
     describe "mapTokenError" do
-      it "maps TokenNotFound to AuthenticationError" do
+      it "maps TokenNotFound to AuthenticationError without user ID" do
+        -- SECURITY: Error message must NOT contain user ID (GDPR Article 25, issue #337)
         let err = TokenNotFound "user1" :: TokenRefreshError OuraHttpError
         case mapTokenError err of
-          AuthenticationError msg -> Text.contains "user1" msg `shouldBe` True
+          AuthenticationError msg -> do
+            Text.contains "user1" msg `shouldBe` False
+            msg `shouldBe` "Token not found"
           _ -> expectationFailure "Expected AuthenticationError"
 
       it "maps RefreshTokenMissing to AuthenticationError" do

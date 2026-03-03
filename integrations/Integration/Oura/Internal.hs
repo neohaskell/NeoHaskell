@@ -619,7 +619,7 @@ isUnauthorized err = case err of
 --   ActionFailed err
 mapTokenError :: TokenRefreshError OuraHttpError -> IntegrationError
 mapTokenError err = case err of
-  TokenNotFound userId -> AuthenticationError [fmt|Token not found for user: #{userId}|]
+  TokenNotFound _userId -> AuthenticationError "Token not found"
   RefreshTokenMissing -> AuthenticationError "Refresh token missing"
   RefreshFailed oauth2Err -> AuthenticationError [fmt|Refresh failed: #{toText oauth2Err}|]
   StorageError msg -> UnexpectedError [fmt|Storage error: #{msg}|]
