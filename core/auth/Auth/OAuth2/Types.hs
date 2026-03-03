@@ -62,6 +62,7 @@ module Auth.OAuth2.Types (
 ) where
 
 import Auth.Hostname qualified as Hostname
+import Auth.OAuth2.StateToken (constEq)
 import Basics
 import Char (Char)
 import Control.Applicative qualified as GhcApplicative
@@ -325,11 +326,13 @@ instance Json.FromJSON State
 --   Ok () -> OAuth2.exchangeCode provider clientId secret redirectUri code
 --   Err err -> Task.throw err
 -- @
+{-# INLINE validateState #-}
 validateState :: State -> State -> Result OAuth2Error ()
 validateState expectedState returnedState = do
   let expected = unwrapState expectedState
   let returned = unwrapState returnedState
-  case expected == returned of
+  -- SECURITY: constant-time comparison prevents timing oracle attacks
+  case constEq expected returned of
     True -> Ok ()
     False -> Err (InvalidState "State parameter mismatch - possible CSRF attack")
 
@@ -347,12 +350,14 @@ validateState expectedState returnedState = do
 --   Ok () -> -- proceed with token exchange
 --   Err err -> -- reject the request
 -- @
+{-# INLINE validateRedirectUri #-}
 validateRedirectUri :: RedirectUri -> RedirectUri -> Result OAuth2Error ()
 validateRedirectUri registeredUri receivedUri = do
   let registered = unwrapRedirectUri registeredUri
   let received = unwrapRedirectUri receivedUri
   -- Step 1: Exact match required (no normalization)
-  case registered == received of
+  -- SECURITY: constant-time comparison prevents timing oracle attacks
+  case constEq registered received of
     False -> Err (InvalidRedirectUri "Redirect URI does not match registered URI")
     True -> do
       -- Step 2: No fragment allowed
