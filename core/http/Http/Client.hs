@@ -15,6 +15,7 @@ module Http.Client (
   get,
   getSecure,
   secureTlsSupportedVersions,
+  checkContentLengthHeaderLimit,
   -- ^ Enforces HTTPS (rejects http:// URLs). Use for all external API calls.
   -- getRaw is intentionally NOT exported here; use Http.Client.Internal for trusted/localhost callers.
   post,
@@ -34,7 +35,9 @@ import Basics
 import Bytes (Bytes)
 import Bytes qualified
 import Char (Char)
+import Control.Exception qualified as GhcException
 import Data.ByteString (ByteString)
+import Data.ByteString.Char8 qualified as GhcBSChar
 import Data.CaseInsensitive qualified as CI
 import Data.Either qualified as GhcEither
 import Default (Default (..))
@@ -45,11 +48,14 @@ import Map (Map)
 import Map qualified
 import Maybe (Maybe (..))
 import Maybe qualified
+import Result (Result (..))
 import Network.Connection qualified as Connection
 import Network.HTTP.Client qualified as HttpClient
 import Network.HTTP.Simple qualified as HttpSimple
 import Network.HTTP.Simple (setRequestIgnoreStatus)
 import Network.HTTP.Client.TLS qualified as HttpTls
+import Network.HTTP.Types (hContentLength)
+import Network.HTTP.Types.Status qualified as HttpStatus
 import Network.TLS qualified as TLS
 import System.IO qualified as GhcIO
 import System.IO.Unsafe qualified as GhcUnsafe
@@ -340,10 +346,41 @@ getSecure options = do
     True -> do
       let host = requestHost options
       Log.debug [fmt|HTTP GET (secure) #{host}|] |> Task.ignoreError
-      response <- getRawIO options
-        |> Task.fromFailableIO @HttpClient.HttpException
-        |> Task.mapError sanitizeHttpError
-      checkResponseSize options response
+      secureResult <- getSecureRawIO options |> Task.fromIO
+      case secureResult of
+        Err error -> Task.throw error
+        Ok response -> checkResponseSize options response
+
+
+-- | Internal IO action for secure raw GET request using TLS 1.2+ only.
+getSecureRawIO :: Request -> GhcIO.IO (Result Error (Response Bytes))
+getSecureRawIO options = do
+  httpResult <-
+    case options.maxResponseBytes of
+      Nothing ->
+        GhcException.try @HttpClient.HttpException do
+          response <- getRawIO options
+          pure (Ok response)
+      Just _ ->
+        GhcException.try @HttpClient.HttpException do
+          baseReq <- parseRequestUrl options
+          let req = baseReq
+                |> applyRequestOptions options
+                |> setRequestIgnoreStatus
+          rawResponse <- HttpClient.responseOpen req cachedSecureTlsManager
+          case checkContentLengthHeaderLimit options.maxResponseBytes (HttpClient.responseHeaders rawResponse) of
+            Just maxBytes -> do
+              HttpClient.responseClose rawResponse
+              pure (Err (ResponseTooLarge maxBytes))
+            Nothing -> do
+              responseBody <-
+                GhcException.finally
+                  (readBodyFully (HttpClient.responseBody rawResponse))
+                  (HttpClient.responseClose rawResponse)
+              pure (Ok (extractResponseBytesFromOpenResponse rawResponse responseBody))
+  case httpResult of
+    GhcEither.Left httpException -> pure (Err (sanitizeHttpError httpException))
+    GhcEither.Right responseResult -> pure responseResult
 
 
 -- | Internal IO action for secure raw GET request using TLS 1.2+ only.
@@ -360,9 +397,77 @@ getRawIO options = do
   pure (extractResponseBytes httpResponse)
 
 
+readBodyFully :: HttpClient.BodyReader -> GhcIO.IO ByteString
+readBodyFully reader = readBodyChunks reader GhcBSChar.empty
+
+
+readBodyChunks :: HttpClient.BodyReader -> ByteString -> GhcIO.IO ByteString
+readBodyChunks reader accumulatedBody = do
+  chunk <- HttpClient.brRead reader
+  case chunk == GhcBSChar.empty of
+    True -> pure accumulatedBody
+    False -> do
+      let nextBody = GhcBSChar.append accumulatedBody chunk
+      readBodyChunks reader nextBody
+
+
+checkContentLengthHeaderLimit :: Maybe GhcInt.Int -> [(CI.CI ByteString, ByteString)] -> Maybe GhcInt.Int
+checkContentLengthHeaderLimit maxResponseLimit responseHeaders =
+  case maxResponseLimit of
+    Nothing -> Nothing
+    Just maxBytes -> do
+      let parsedContentLength =
+            case findHeaderValue hContentLength responseHeaders of
+              Nothing -> Nothing
+              Just rawContentLength -> parseContentLengthHeader rawContentLength
+      case parsedContentLength of
+        Nothing -> Nothing
+        Just contentLength ->
+          case contentLength > maxBytes of
+            True -> Just maxBytes
+            False -> Nothing
+
+
+parseContentLengthHeader :: ByteString -> Maybe GhcInt.Int
+parseContentLengthHeader rawContentLength =
+  case GhcBSChar.readInt rawContentLength of
+    Nothing -> Nothing
+    Just (parsedContentLength, remainingBytes) ->
+      case GhcBSChar.null remainingBytes && parsedContentLength >= 0 of
+        True -> Just parsedContentLength
+        False -> Nothing
+
+
+findHeaderValue :: CI.CI ByteString -> [(CI.CI ByteString, ByteString)] -> Maybe ByteString
+findHeaderValue headerName headers =
+  case headers of
+    [] -> Nothing
+    (currentName, currentValue) : remainingHeaders ->
+      case currentName == headerName of
+        True -> Just currentValue
+        False -> findHeaderValue headerName remainingHeaders
+
+
+extractResponseBytesFromOpenResponse :: HttpClient.Response HttpClient.BodyReader -> ByteString -> Response Bytes
+extractResponseBytesFromOpenResponse rawResponse responseBody = Response
+  { statusCode = rawResponse |> HttpClient.responseStatus |> HttpStatus.statusCode
+  , headers = rawResponse |> HttpClient.responseHeaders |> extractRawHeaders
+  , body = responseBody |> Bytes.fromLegacy
+  }
+
+
+extractRawHeaders :: [(CI.CI ByteString, ByteString)] -> Array (Text, Text)
+extractRawHeaders rawHeaders =
+  rawHeaders
+    |> fmap
+      (\(name, value) ->
+        ( name |> CI.original |> Bytes.fromLegacy |> Text.fromBytes
+        , value |> Bytes.fromLegacy |> Text.fromBytes
+        ))
+    |> Array.fromLinkedList
+
+
 -- | Post-read check: validates response body size against the configured limit.
--- NOTE: The full response body has already been read into memory at this point.
--- This is a detection mechanism, not an OOM prevention mechanism.
 -- Returns ResponseTooLarge if the body exceeds maxResponseBytes.
 checkResponseSize :: Request -> Response Bytes -> Task Error (Response Bytes)
 checkResponseSize options response =
