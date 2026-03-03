@@ -83,14 +83,14 @@ Features marked ✅ are decided. Features marked ❌ are pending design.
 | --- | -------------------- | ------ | ------------------------------------------------- |
 | 1   | Functions            | ✅     | Council-reviewed (R1: 12 experts, R2: 10 experts) |
 | 2   | Enums                | ✅     | Council-reviewed (12 experts R1, 6 experts R2) |
-| 3   | Pattern Matching     | ❌     | 10/10 Tier 1 — unanimous                          |
-| 4   | Lambdas              | ❌     | 7/10 Tier 1                                       |
+| 3   | Pattern Matching     | ✅     | Council-reviewed (11 experts)                     |
+| 4   | Lambdas              | ✅     | Council-reviewed (7 experts)                      |
 | 5   | Error Handling       | ❌     | 8/10 Tier 1-2                                     |
 | 6   | Imports              | ✅     | Council-reviewed (8 experts)                      |
 | 7   | Comments             | ❌     | 5/10 Tier 1-2                                     |
 | 8   | String Interpolation | ❌     | 10/10 Tier 1-2                                    |
 | 9   | Type Aliases         | ✅     | Council-reviewed (5 experts)                      |
-| 10  | Newtypes             | ✅     | Council-reviewed (8 experts)                      |
+| 10  | Brands               | ✅     | Council-reviewed (R1: 8, R2: 7, R3: 5 experts)   |
 | 11  | Destructuring        | ❌     | 7/10 Tier 2                                       |
 | 12  | Traits & Impl        | ❌     | 6/10 Tier 2                                       |
 | 13  | Visibility           | ❌     | 6/10 Tier 2                                       |
@@ -431,7 +431,7 @@ zero-lookahead disambiguation.
 ```neohaskell
 fun identity<t>(x: t) : t = x
 
-fun map<a, b>(f: a -> b, list: Array<a>) : Array<b> {
+fun map<a, b>(f: (a) -> b, list: Array<a>) : Array<b> {
     Array.map(f, list)
 }
 
@@ -832,7 +832,7 @@ These are designed in later features:
 - GADTs / indexed types → Not planned (post-1.0)
 - Existential types → Not planned
 - Strict fields → Not planned (Haskell default is lazy)
-- Newtype (zero-cost wrapper) → Feature #10
+- Brand (zero-cost wrapper) → Feature #10
 
 ### Design Rationale
 
@@ -1057,7 +1057,7 @@ match point {
   #(0, 0)   => "origin",
   #(x, 0)   => "on x-axis",
   #(0, y)   => "on y-axis",
-  #(x, y)   => "general point at " ++ show(x) ++ ", " ++ show(y),
+  #(x, y)   => "general point at ${show(x)}, ${show(y)}",
 }
 
 -- Nested tuple
@@ -1137,7 +1137,7 @@ match value {
 -- Guards with record variants
 match shape {
   Circle { radius: r } if r > 100.0 => "large circle",
-  Circle { radius: r }              => "small circle with radius " ++ show(r),
+  Circle { radius: r }              => "small circle with radius ${show(r)}",
   Rectangle { width: w, height: h } if w == h => "square",
   Rectangle { width, height }       => "rectangle",
 }
@@ -1247,7 +1247,7 @@ when braces delimit the body. `when` (Kotlin) reads as a conditional, not struct
 decomposition. `match` is what Rust and F# use — growing mainstream familiarity.
 (Klabnik, Nystrom, Czaplicki, matklad, Wlaschin — 10/11 support)
 
-**Why `=>`?** NeoHaskell uses `->` for function types (`a -> b`). Reusing `->` in match
+**Why `=>`?** NeoHaskell uses `->` for function types (`(a) -> b`) and lambdas (`(x) -> body`). Reusing `->` in match
 arms creates visual collision — the reader must track two meanings for one symbol.
 `=>` is the "maps to" arrow in JavaScript, C#, Kotlin, and Scala. It creates clean visual
 distinction: `->` means type, `=>` means branch. (Klabnik, Nystrom, matklad — 9/11 support)
@@ -1288,11 +1288,360 @@ keeps function definitions uniform and scannable — `fun name` always finds the
 
 ---
 
-## 4. Lambdas ❌
+## 4. Lambdas ✅
 
-_To be designed._
+Designed via DX Council review (7 experts, Mar 2025).
 
----
+### Summary
+
+| Decision                | Choice                              | Council Support      |
+| ----------------------- | ----------------------------------- | -------------------- |
+| Syntax                  | `(x) -> body`                       | 6/7 — near-unanimous |
+| Arrow                   | `->` (same as function types)       | 6/7                  |
+| Parentheses             | Always required                     | User decision        |
+| Inline type annotations | `(x: Int) -> x * 2`                | 7/7 — unanimous      |
+| `it` shorthand          | Rejected                            | 7/7 — unanimous      |
+| `_` for unused params   | Yes                                 | 7/7 — unanimous      |
+| Multi-line body         | `(x) -> { block }`                  | 7/7 — unanimous      |
+| Generic lambdas         | `<t>(x: t) -> body`                 | 6/7 — R2             |
+| Function type syntax    | `(a, b) -> c` (not `a -> b -> c`)   | 7/7 — R2 unanimous   |
+| Single-param types      | `(a) -> b` (parens required)         | User decision        |
+
+### Expression Lambdas
+
+Single expression, no braces. The body is a single expression after `->` :
+
+```neohaskell
+-- Single parameter
+numbers |> Array.map((x) -> x * 2)
+
+-- Multiple parameters
+pairs |> Array.sortBy((a, b) -> compare(a.name, b.name))
+
+-- No parameters
+let thunk = () -> Task.yield(42)
+
+-- With pipe chains in body
+items |> Array.takeIf((item) -> item.price |> Money.greaterThan(minPrice))
+```
+
+### Block Lambdas
+
+Multiple statements require braces. Last expression is the return value:
+
+```neohaskell
+items |> Task.forEach((item) -> {
+    let! result = process(item)
+    let! _ = log(result)
+    Task.yield(result)
+})
+
+-- Effectful callback with record construction
+let handler = (response) -> {
+    let! body = parseJson(response.body)
+    let! _ = log("Received: ${body.status}")
+    Task.yield(OrderConfirmed {
+        orderId: body.orderId,
+        timestamp: body.timestamp,
+    })
+}
+```
+
+### Lambdas with Type Annotations
+
+Type annotations follow the existing postfix convention (`name: Type`):
+
+```neohaskell
+-- Annotated single parameter
+numbers |> Array.map((x: Int) -> x * 2)
+
+-- Annotated multiple parameters
+let add = (a: Int, b: Int) -> a + b
+
+-- Generic lambda (power-user feature — prefer named functions for complex cases)
+let identity = <t>(x: t) -> x
+let show = <t>(x: t) -> toString(x)
+```
+
+Type annotations on lambda parameters are **optional**. Use them when:
+- The compiler can't infer the type from context
+- You want to document intent for the reader
+- You need to disambiguate overloaded functions
+
+### Generic Lambdas
+
+Lambdas can introduce type variables with `<t>`, mirroring named function syntax:
+
+```neohaskell
+-- Generic identity lambda
+let identity = <t>(x: t) -> x
+
+-- Generic with constraint (inferred from context)
+let stringify = <t>(x: t) -> toString(x)
+
+-- Passing a generic lambda to a higher-order function
+applyToAll(<t>(x: t) -> transform(x))
+```
+
+Generic lambdas are a **power-user feature**. In most cases, prefer a named function
+with a proper type signature:
+
+```neohaskell
+-- Prefer this for non-trivial generic logic:
+fun identity<t>(x: t) : t = x
+
+-- Over this:
+let identity = <t>(x: t) -> x
+```
+
+**Transpilation:** `<t>(x: t) -> body` transpiles to a polymorphic `\x -> body` with
+a type annotation inferred or provided by context. The `<t>` is erased — Haskell's
+type inference handles polymorphism implicitly.
+
+### Unused Parameters
+
+`_` signals a deliberately ignored parameter:
+
+```neohaskell
+-- Ignore first parameter
+items |> Array.mapWithIndex((_, i) -> i)
+
+-- Ignore in callbacks
+{ onError: (_) -> DefaultError { message: "Something went wrong" } }
+```
+
+### Lambdas as Callbacks
+
+The most common pattern in event-sourced code — lambdas as record fields:
+
+```neohaskell
+let integration = HttpIntegration {
+    onSuccess: (response) -> {
+        CustomerNotified {
+            orderId: orderId,
+            status: response.body |> parseStatus,
+        }
+    },
+    onError: (err) -> {
+        NotificationFailed {
+            orderId: orderId,
+            errorMessage: err,
+        }
+    },
+}
+```
+
+### Lambdas with Pipes
+
+Lambdas compose naturally with `|>` :
+
+```neohaskell
+-- Predicate in filter
+users |> Array.takeIf((user) -> user.age >= 18)
+
+-- Transform in map
+orders |> Array.map((order) -> order.total |> Money.format)
+
+-- Multi-step pipeline with lambda
+rawData
+    |> Array.map((item) -> normalize(item))
+    |> Array.takeIf((item) -> item.isValid)
+    |> Array.sortBy((a, b) -> compare(a.priority, b.priority))
+```
+
+### Function Type Syntax
+
+Function types use `(params) -> return`, mirroring how functions are defined and lambdas are written.
+Parentheses are **always required**, even for single-parameter functions. This ensures type syntax
+matches definition syntax — no currying leaks through.
+
+```neohaskell
+-- Single-param function type
+fun applyTwice<a>(f: (a) -> a, x: a) : a = f(f(x))
+
+-- Multi-param function type
+fun zipWith<a, b, c>(f: (a, b) -> c, xs: Array<a>, ys: Array<b>) : Array<c> {
+    Array.zipWith(f, xs, ys)
+}
+
+-- No-param function type
+fun runLater(task: () -> Task<Unit>) : Task<Unit> {
+    task()
+}
+
+-- Callback type in records (common in integrations)
+record EventHandler<event, result> {
+    onSuccess: (event) -> result,
+    onError: (Text) -> result,
+}
+
+-- Type aliases for function types
+alias Predicate<a> = (a) -> Bool
+alias Transform<a, b> = (a) -> b
+alias Reducer<state, action> = (state, action) -> state
+```
+
+**Why `(a, b) -> c` instead of `a -> b -> c`?** NeoHaskell hides currying from the user.
+Functions are defined with `fun f(x, y) : z` — parenthesized argument lists. The type
+syntax mirrors this: `(x, y) -> z`. Haskell-style `a -> b -> c` leaks the currying
+abstraction and is ambiguous to the target audience ("does this take one argument and
+return `b -> c`?"). The transpiler converts `(a, b) -> c` to Haskell's `a -> b -> c`
+internally. (7/7 unanimous — R2 council review)
+
+### What Lambdas Do NOT Include
+
+- **No `it` shorthand** — rejected unanimously. Use explicit parameter names.
+- **No optional parentheses** — `(x) -> body` always, never `x -> body`.
+- **No pattern matching in parameters** — use `match` inside the body.
+- **No multi-equation lambdas** — use `match` for branching.
+- **No `return` keyword in lambdas** — last expression is always the result.
+
+### Transpilation Rules
+
+| NeoHaskell                                       | Haskell Output                              |
+| ------------------------------------------------ | ------------------------------------------- |
+| `(x) -> x * 2`                                  | `\x -> x * 2`                              |
+| `(x, y) -> x + y`                               | `\x y -> x + y`                            |
+| `() -> 42`                                       | `\() -> 42`                                |
+| `(x: Int) -> x * 2`                             | `\(x :: Int) -> x * 2`                     |
+| `(_) -> defaultValue`                            | `\_ -> defaultValue`                       |
+| `(item) -> { let! r = f(item); Task.yield(r) }` | `\item -> do { r <- f item; pure r }`      |
+| `<t>(x: t) -> x`                                | `\x -> x` (type inferred polymorphically)  |
+
+**Function type transpilation:**
+
+| NeoHaskell Type     | Haskell Output      |
+| ------------------- | ------------------- |
+| `(a) -> b`          | `a -> b`            |
+| `(a, b) -> c`       | `a -> b -> c`       |
+| `(a, b, c) -> d`    | `a -> b -> c -> d`  |
+| `() -> a`           | `() -> a`           |
+
+**Key rules:**
+- `(params) ->` → `\params ->`
+- Comma-separated params → space-separated (Haskell currying)
+- Type annotations → inline `::` annotations
+- Block body `{ ... }` → `do { ... }` (if effectful) or `let ... in ...` (if pure)
+- `_` passes through unchanged
+- Function types: `(a, b) -> c` → `a -> b -> c` (parenthesized to curried)
+- Generic lambdas: `<t>` erased, Haskell infers polymorphism
+
+### Error Messages
+
+**Missing parentheses around parameters:**
+
+```
+error: lambda parameters must be wrapped in parentheses
+  --> src/Main.nh:5:20
+  |
+5 | numbers |> Array.map(x -> x * 2)
+  |                      ^ expected `(` before parameter
+  |
+  = hint: write `(x) -> x * 2` instead of `x -> x * 2`
+```
+
+**Using `=>` instead of `->` in lambda:**
+
+```
+error: use `->` for lambdas, `=>` is for match branches
+  --> src/Main.nh:5:24
+  |
+5 | numbers |> Array.map((x) => x * 2)
+  |                          ^^ expected `->`
+  |
+  = hint: `=>` is used in `match` expressions; lambdas use `->`
+```
+
+**Using `\` (Haskell-style) lambda:**
+
+```
+error: unexpected `\` — NeoHaskell uses `(param) -> body` for lambdas
+  --> src/Main.nh:5:20
+  |
+5 | numbers |> Array.map(\x -> x * 2)
+  |                      ^ unexpected backslash
+  |
+  = hint: write `(x) -> x * 2` instead of `\x -> x * 2`
+```
+
+**Using `fn` or `fun` for anonymous function:**
+
+```
+error: anonymous functions don't need a keyword
+  --> src/Main.nh:5:20
+  |
+5 | numbers |> Array.map(fn(x) -> x * 2)
+  |                      ^^ remove `fn`
+  |
+  = hint: write `(x) -> x * 2` — no keyword needed for lambdas
+```
+
+**Block body without braces:**
+
+```
+error: multi-statement lambda requires braces `{ }`
+  --> src/Main.nh:5:30
+  |
+5 | items |> Task.forEach((item) ->
+6 |     let! result = process(item)
+  |     ^^^^ expected `{` for multi-statement body
+  |
+  = hint: wrap the body in braces: `(item) -> { ... }`
+```
+
+### Design Rationale
+
+**Why `(x) -> body`?** NeoHaskell's target audience (Java/C#/TypeScript developers) already
+writes `(x) => x * 2` daily. The only delta is `->` instead of `=>`, which is already
+established in NeoHaskell's function type syntax. This creates a consistent visual grammar:
+`->` means "produces" (function types, lambdas), `=>` means "matches to" (pattern branches).
+(Parish, Prasad, Van Slyck, Marohnić, Raymond, Dickey — 6/7 support)
+
+**Why not `\x -> body` (Haskell/Elm)?** The backslash is a historical ASCII approximation
+of λ. It means nothing to someone coming from Java or C#. Asking Jess to learn `\x ->`
+is asking her to decode programmer archaeology before she can write her first lambda.
+Pike & Kernighan dissented, arguing backslash is minimal tokens — but the council majority
+held that familiarity outweighs brevity for NeoHaskell's audience.
+
+**Why not `|x|` (Rust)?** NeoHaskell uses `|>` as a load-bearing pipe operator.
+`|item|` next to `|>` creates a visual collision that degrades scanability.
+
+**Why not `fn(x)` (mini-function)?** NeoHaskell already uses `fun` for named functions.
+Adding `fn` creates two keywords for one concept. "Wait, is it `fun` or `fn`?" is a
+question that should never exist.
+
+**Why no `it` shorthand?** Unanimous rejection (7/7). `it` works for trivial cases but
+creates real comprehension problems when lambdas nest or get extracted into variables.
+The savings are illusory — you save three keystrokes and spend them back in confusion.
+Optimizes for writing over reading, and code is read far more than it's written.
+
+**Why mandatory parentheses?** `(x) -> body` is always required, never `x -> body`.
+Parentheses signal "this is a parameter list" — a consistent visual cue. When adding
+a second parameter or type annotation, no syntax change is needed: `(x)` becomes
+`(x, y)` or `(x: Int)`. One form, no variants.
+
+**Why `_` for unused params?** Universal convention across Haskell, Rust, Python, and
+TypeScript. It communicates intent: "I know this parameter exists and I'm deliberately
+ignoring it." Omitting it would be the surprising choice.
+
+**Why generic lambdas `<t>(x: t) -> body`?** NeoHaskell uses `<t>` for generics in named
+functions. Refusing it in lambdas creates an asymmetry that breaks the mental model. TypeScript
+developers already know `<T>(x: T) => x`. The strangeness budget cost is near zero.
+Pike & Kernighan dissented — arguing generic lambdas are a code smell and you should write a
+named function instead. Council majority (6/7) held that consistency requires it, but noted
+it should be documented as a power-user feature.
+
+**Why `(a, b) -> c` for function types?** If `fun add(x: Int, y: Int) : Int` defines a
+function taking two args, the type should be `(Int, Int) -> Int`, not `Int -> Int -> Int`.
+Haskell-style `a -> b -> c` leaks currying through the abstraction boundary — a concept
+NeoHaskell explicitly hides. `(a, b) -> c` is unambiguous: takes two args, returns one.
+Three surfaces (definitions, lambdas, types) now use the same parenthesized-args model.
+Error messages become dramatically better: "expected `(Int, Int) -> Int`" is immediately
+parseable. (7/7 unanimous — R2 council review)
+
+**Why mandatory parens in function types?** `(Int) -> Text` not `Int -> Text`. Consistency
+across all arities: `() -> a` (no params), `(a) -> b` (one param), `(a, b) -> c` (two params).
+One form, always. Users never wonder "do I need parens here?" — the answer is always yes.
 
 ## 5. Error Handling ❌
 
@@ -1394,7 +1743,7 @@ The most common pattern in real code. Brings specific names into scope unqualifi
 ```neohaskell
 -- After: import Data.Map { Map } as Map
 fun buildIndex(items: Array<Text>) : Map<Text, Int> {
-    let pairs = Array.mapWithIndex(items, \item, i -> #(item, i))
+    let pairs = Array.mapWithIndex(items, (item, i) -> #(item, i))
     Map.fromList(pairs)
 }
 ```
@@ -1612,7 +1961,7 @@ Designed via DX Council review (5 experts, Feb 2025).
 | Definition keyword        | `alias`                                               | 5/5 — unanimous                   |
 | Transparency              | Fully transparent (interchangeable with original)     | 5/5 — unanimous                   |
 | Generic parameters        | Lowercase `<a>`, `<ok, err>`                          | Locked (consistent with generics) |
-| Distinction from newtypes | Aliases are transparent; newtypes are opaque wrappers | 5/5 — unanimous                   |
+| Distinction from brands | Aliases are transparent; brands are opaque wrappers   | 5/5 — unanimous                   |
 
 ### Simple Type Aliases
 
@@ -1630,7 +1979,7 @@ No runtime distinction. Useful for domain modeling and documentation.
 ```neohaskell
 alias Pair<a, b> = #(a, b)
 alias Dict<k, v> = Array<#(k, v)>
-alias Callback<a> = a -> Task<Unit>
+alias Callback<a> = (a) -> Task<Unit>
 
 -- Multi-line form (optional)
 alias Result<ok, err> =
@@ -1641,7 +1990,7 @@ alias Result<ok, err> =
 Generic parameters are lowercase (required for Haskell transpilation).
 Aliases can be parameterized just like records and types.
 
-### Transparency: Alias vs. Newtype
+### Transparency: Alias vs. Brand
 
 **Type aliases are fully transparent:**
 
@@ -1652,16 +2001,16 @@ fun getUserId(user: User) : UserId = user.id  -- Returns Int, type-checked as Us
 fun add(a: UserId, b: UserId) : UserId = a + b  -- Int + Int works directly
 ```
 
-**Newtypes are opaque wrappers** (Feature #10, designed later):
+**Brands are opaque wrappers** (Feature #10):
 
 ```neohaskell
-newtype UserId = UserId(Int)  -- Opaque: UserId ≠ Int at compile time
+brand UserId(Int)  -- Opaque: UserId ≠ Int at compile time
 
 fun getUserId(user: User) : UserId = UserId(user.id)  -- Must wrap
-fun add(a: UserId, b: UserId) : UserId = ???  -- Cannot add directly; must unwrap
+fun add(a: UserId, b: UserId) : UserId = UserId(a.value + b.value)  -- Must unwrap via .value
 ```
 
-Aliases are for documentation and domain clarity. Newtypes are for type safety.
+Aliases are for documentation and domain clarity. Brands are for type safety.
 
 ### Transpilation Rules
 
@@ -1669,13 +2018,13 @@ Aliases are for documentation and domain clarity. Newtypes are for type safety.
 | ------------------------------------- | -------------------------------- |
 | `alias UserId = Int`                  | `type UserId = Int`              |
 | `alias Pair<a, b> = #(a, b)`          | `type Pair a b = (a, b)`         |
-| `alias Callback<a> = a -> Task<Unit>` | `type Callback a = a -> Task ()` |
+| `alias Callback<a> = (a) -> Task<Unit>` | `type Callback a = a -> Task ()` |
 
 ### What Type Aliases Do NOT Include
 
 These are designed in later features:
 
-- Opaque wrappers → Feature #10 (Newtypes)
+- Opaque wrappers → Feature #10 (Brands)
 - Type constraints → Feature #12 (Traits & Impl)
 - Associated types → Not planned
 - Phantom types → Not planned
@@ -1689,9 +2038,9 @@ Target audience (Java/C#/JS developers) is familiar with type aliases from TypeS
 so the keyword choice is less critical than clarity.
 
 **Why fully transparent?** Haskell's `type` is transparent; Elm's `type alias` is transparent.
-Transparency is the standard for type aliases across languages. Opaque wrappers (newtypes) are
+Transparency is the standard for type aliases across languages. Opaque wrappers (brands) are
 a separate feature for when you need type safety. This separation is clearer than Haskell's
-distinction between `type` (transparent) and `newtype` (opaque).
+distinction between `type` (transparent) and `newtype` (opaque), which NeoHaskell calls `brand`.
 
 **Why lowercase generics?** Consistency with all other generic features in NeoHaskell.
 Haskell's type system uses case to distinguish type variables (`a`) from type constructors (`Int`).
@@ -1699,50 +2048,49 @@ The transpiler cannot reliably convert `<T>` → `t` because uppercase identifie
 constructors, not variables. Lowercase is non-negotiable.
 
 **Why no field accessors?** Type aliases are transparent — they don't create new types.
-Field accessors would only make sense for newtypes (Feature #10).
+Field accessors would only make sense for brands (Feature #10).
 
 ---
 
-## 10. Newtypes ✅
+## 10. Brands ✅
 
-Designed via DX Council review (8 experts, Feb 2026).
+Designed via DX Council review (R1: 8 experts Feb 2026, R2: 7 experts Mar 2026, R3: 5 experts Mar 2026).
 
 ### Summary
 
-| Decision            | Choice                                               | Council Support          |
-| ------------------- | ---------------------------------------------------- | ------------------------ |
-| Definition keyword  | `newtype`                                            | 8/8 — unanimous          |
-| Syntax              | `newtype Name(Type)` — tuple-style, no repeated name | 8/8 — unanimous          |
-| Unwrapping          | Pattern matching only                                | 8/8 — unanimous          |
-| Auto-derived traits | `Show`, `Eq` auto-derived (same as enums)             | 8/8 — unanimous (locked) |
-| Additional deriving | `deriving Trait` delegates to wrapped type           | 7/8                      |
-| Zero-cost guarantee | Yes — transpiles to Haskell `newtype`                | 8/8 — unanimous          |
-| Field accessors     | None — unwrap via pattern matching                   | 8/8 — unanimous          |
+| Decision            | Choice                                             | Council Support                       |
+| ------------------- | -------------------------------------------------- | ------------------------------------- |
+| Definition keyword  | `brand`                                            | R3: 5/5 — unanimous                  |
+| Syntax              | `brand Name(Type)` — tuple-style, no repeated name | R1: 8/8 — unanimous                  |
+| Unwrapping          | `.value` property (auto-generated) + pattern match | R2: 6/7 (.value), 1/7 (pattern only) |
+| Auto-derived traits | `Show`, `Eq` auto-derived (same as enums)          | R1: 8/8 — unanimous (locked)         |
+| Additional deriving | `deriving Trait` delegates to wrapped type          | R1: 7/8                              |
+| Zero-cost guarantee | Yes — transpiles to Haskell `newtype`               | R1: 8/8 — unanimous                  |
 
-### Basic Newtypes
+### Basic Brands
 
 ```neohaskell
-newtype Dollars(Float)
+brand Dollars(Float)
 
-newtype CustomerId(Int)
+brand CustomerId(Int)
 
-newtype Email(Text)
+brand Email(Text)
 
-newtype Name(Text)
+brand Name(Text)
 ```
 
-Zero-cost type-safe wrappers. Each `newtype` creates a distinct type that is represented
+Zero-cost type-safe wrappers. Each `brand` creates a distinct type that is represented
 identically to the wrapped type at runtime. `Dollars` and `Float` have different types
 but zero runtime overhead.
 
-### Generic Newtypes
+### Generic Brands
 
 ```neohaskell
-newtype Id<a>(a)
+brand Id<a>(a)
 
-newtype NonEmpty<a>(Array<a>)
+brand NonEmpty<a>(Array<a>)
 
-newtype Validated<a>(a)
+brand Validated<a>(a)
 ```
 
 Type parameters are lowercase (locked convention). Use semantic names
@@ -1756,7 +2104,7 @@ let price = Dollars(9.99)
 let userId = CustomerId(42)
 let email = Email("user@example.com")
 
--- Generic newtypes (type inferred)
+-- Generic brands (type inferred)
 let orderId = Id(1001)           -- Id<Int>
 let items = NonEmpty([1, 2, 3])   -- NonEmpty<Array<Int>>
 
@@ -1767,101 +2115,111 @@ let emptyId = Id:<Text>("")
 Construction syntax mirrors enum positional syntax: `Name(value)`. The type
 name IS the constructor — no separate constructor name like Haskell.
 
-### Unwrapping (Pattern Matching)
+### Unwrapping
+
+Every brand auto-generates a `.value` property for accessing the wrapped value:
 
 ```neohaskell
--- Via let binding
-let Dollars(amount) = price         -- amount : Float
-let CustomerId(raw) = userId        -- raw : Int
-let Email(address) = email          -- address : Text
+-- Via .value (recommended — 80% case)
+let amount = price.value             -- amount : Float
+let raw = userId.value               -- raw : Int
+let address = email.value            -- address : Text
 
--- In function bodies
-fun showPrice(price: Dollars) : Text {
-    let Dollars(amount) = price
-    "$" ++ show(amount)
-}
+-- In expressions
+fun addDollars(a: Dollars, b: Dollars) : Dollars = Dollars(a.value + b.value)
 
-fun addDollars(a: Dollars, b: Dollars) : Dollars {
-    let Dollars(x) = a
-    let Dollars(y) = b
-    Dollars(x + y)
-}
+fun showPrice(price: Dollars) : Text = "${price.value}"
 
--- Generic unwrapping
-fun unwrapId<a>(id: Id<a>) : a {
-    let Id(value) = id
-    value
-}
+-- In pipes
+price.value |> round |> Dollars
 ```
 
-Pattern matching is the **only** mechanism for unwrapping newtypes.
-No `.value` accessor — tuple-style newtypes have no named field.
-This is consistent with enum positional variant destructuring (Feature #3/11).
+**Via pattern matching** (available for `match` contexts and `let` destructuring):
+
+```neohaskell
+-- In match expressions
+match price {
+  Dollars(amount) => "${amount}",
+}
+
+-- In let bindings
+let Dollars(amount) = price
+
+-- Generic unwrapping
+fun unwrapId<a>(id: Id<a>) : a = id.value
+```
+
+**Convention:** Use `.value` for inline access. Use pattern matching when destructuring
+in `match` expressions or when multiple brands need simultaneous unwrapping in a complex
+pattern.
 
 ### Deriving
 
-`Show` and `Eq` are **auto-derived** for all newtypes. Additional derivations use
+`Show` and `Eq` are **auto-derived** for all brands. Additional derivations use
 explicit `deriving`, which **delegates to the wrapped type's implementation**:
 
 ```neohaskell
 -- Show and Eq are automatic — no annotation needed
-newtype Dollars(Float)
+brand Dollars(Float)
 
 -- Delegate Num and Ord to Float's implementations
-newtype Dollars(Float)
+brand Dollars(Float)
   deriving Num, Ord
 
 -- With Num derived, arithmetic just works:
 -- Dollars(1.50) + Dollars(2.50)  →  Dollars(4.00)
 
 -- Delegate Ord to Text's Ord
-newtype Name(Text)
+brand Name(Text)
   deriving Ord
 
 -- Multiple derivations
-newtype Score(Int)
+brand Score(Int)
   deriving Num, Ord, Bounded
 ```
 
-The `deriving` clause on newtypes differs from enums: it **delegates** to the
+The `deriving` clause on brands differs from enums: it **delegates** to the
 wrapped type's trait implementation rather than structurally deriving. This maps directly
 to Haskell's `GeneralizedNewtypeDeriving` extension.
 
 ### Transpilation Rules
 
-| NeoHaskell                                 | Haskell Output                                |
-| ------------------------------------------ | --------------------------------------------- |
-| `newtype Dollars(Float)`                   | `newtype Dollars = Dollars Float`             |
-|                                            | `  deriving (Show, Eq)`                       |
-| `newtype Id<a>(a)`                         | `newtype Id a = Id a`                         |
-|                                            | `  deriving (Show, Eq)`                       |
-| `newtype Dollars(Float) deriving Num, Ord` | `{-# LANGUAGE GeneralizedNewtypeDeriving #-}` |
-|                                            | `newtype Dollars = Dollars Float`             |
-|                                            | `  deriving (Show, Eq, Num, Ord)`             |
-| `Dollars(9.99)`                            | `Dollars 9.99`                                |
-| `let Dollars(x) = price`                   | `let (Dollars x) = price`                     |
+| NeoHaskell                               | Haskell Output                                |
+| ---------------------------------------- | --------------------------------------------- |
+| `brand Dollars(Float)`                   | `newtype Dollars = Dollars { value :: Float }` |
+|                                          | `  deriving (Show, Eq)`                       |
+| `brand Id<a>(a)`                         | `newtype Id a = Id { value :: a }`            |
+|                                          | `  deriving (Show, Eq)`                       |
+| `brand Dollars(Float) deriving Num, Ord` | `{-# LANGUAGE GeneralizedNewtypeDeriving #-}` |
+|                                          | `newtype Dollars = Dollars { value :: Float }` |
+|                                          | `  deriving (Show, Eq, Num, Ord)`             |
+| `Dollars(9.99)`                          | `Dollars 9.99`                                |
+| `price.value`                            | `value price` (record accessor)               |
+| `let Dollars(x) = price`                 | `let (Dollars x) = price`                     |
 
 The transpiler automatically:
 
 - Adds `= TypeName` as the constructor name (type name reused)
+- Generates a `value` record field for the wrapped type
 - Converts paren syntax to Haskell's space-separated form
 - Always includes `Show, Eq` in the `deriving` clause
 - Emits `GeneralizedNewtypeDeriving` pragma when additional traits are derived
+- Uses `DuplicateRecordFields` to avoid accessor name conflicts across brands
 
-### `newtype` vs `record` vs `type`
+### `brand` vs `record` vs `alias`
 
-| Construct                        | Use Case                    | Zero-Cost | Field Accessors | Haskell Output                            |
-| -------------------------------- | --------------------------- | --------- | --------------- | ----------------------------------------- |
-| `newtype Dollars(Float)`         | Type safety wrapper         | Yes       | No              | `newtype Dollars = Dollars Float`         |
-| `record Amount { value: Float }` | Structured data (one field) | No        | Yes (`.value`)  | `data Amount = Amount { value :: Float }` |
-| `enum Currency { Dollar Euro }`   | Sum type / enum             | N/A       | No              | `data Currency = Dollar \| Euro`          |
-| `alias Price = Float`            | Transparent synonym         | N/A       | N/A             | `type Price = Float`                      |
+| Construct                        | Use Case                    | Zero-Cost | `.value` Access | Haskell Output                              |
+| -------------------------------- | --------------------------- | --------- | --------------- | ------------------------------------------- |
+| `brand Dollars(Float)`           | Type safety wrapper         | Yes       | Yes (auto)      | `newtype Dollars = Dollars { value :: ... }` |
+| `record Amount { value: Float }` | Structured data (one field) | No        | Yes (`.value`)  | `data Amount = Amount { value :: Float }`   |
+| `enum Currency { Dollar Euro }`  | Sum type / enum             | N/A       | No              | `data Currency = Dollar \| Euro`            |
+| `alias Price = Float`            | Transparent synonym         | N/A       | N/A             | `type Price = Float`                        |
 
-**When to use `newtype`:**
+**When to use `brand`:**
 
 - Wrapping a primitive for type safety (`CustomerId`, `Email`, `Dollars`)
 - Zero-cost is important (no boxing overhead at runtime)
-- Single wrapped value, no named field needed
+- Single wrapped value
 - Want to derive traits from the wrapped type
 
 **When to use `record`:**
@@ -1876,96 +2234,92 @@ The transpiler automatically:
 - No type safety needed — just a shorter name
 - Fully transparent — interchangeable with original type
 
-### What Newtypes Do NOT Include
+### What Brands Do NOT Include
 
 These are designed in later features:
 
-- Pattern matching in function arguments → Feature #3
 - Full destructuring bindings → Feature #11
-- Trait implementations for newtypes → Feature #12
+- Trait implementations for brands → Feature #12
 - Deriving mechanism internals → Feature #12
-- `coerce` / safe coercion between newtype and wrapped type → Not planned (post-1.0)
-- Newtype deriving for multi-parameter typeclasses → Not planned
+- `coerce` / safe coercion between brand and wrapped type → Not planned (post-1.0)
+- Brand deriving for multi-parameter typeclasses → Not planned
 - Smart constructors (validation on construction) → Via module visibility (Feature #13)
-- Named-field newtypes → Use `record` instead
+- Named-field brands → Use `record` instead
 
 ### Error Messages
 
 ```
-error: `newtype` must wrap exactly one type
+error: `brand` must wrap exactly one type
   --> src/Domain.nh:5:1
   |
-5 | newtype Point(Float, Float)
-  |              ^^^^^^^^^^^^^ expected single type, found 2
+5 | brand Point(Float, Float)
+  |             ^^^^^^^^^^^^^ expected single type, found 2
   |
   = hint: use `record Point { x: Float, y: Float }` for multiple fields
   = hint: or use `enum Point { Point(Float, Float) }` for an enum wrapper
 ```
 
 ```
-error: `newtype` cannot have variants
+error: `brand` cannot have variants
   --> src/Domain.nh:3:1
   |
-3 | newtype Result = Ok(Int) | Err(Text)
-  |                         ^ variants not allowed in newtype
+3 | brand Result = Ok(Int) | Err(Text)
+  |                        ^ variants not allowed in brand
   |
   = hint: use `enum Result { Ok(Int) Err(Text) }` for an enum
 ```
 
 ```
-error: cannot access fields on a newtype
-  --> src/Main.nh:8:20
-  |
-8 |     let x = price.value
-  |                   ^^^^^ newtypes have no field accessors
-  |
-  = hint: unwrap via pattern matching: `let Dollars(x) = price`
-```
-
-```
-error: `newtype` cannot use brace syntax
+error: `brand` cannot use brace syntax
   --> src/Domain.nh:3:1
   |
-3 | newtype Dollars { amount: Float }
-  |                 ^^^^^^^^^^^^^^^^ use parentheses, not braces
+3 | brand Dollars { amount: Float }
+  |               ^^^^^^^^^^^^^^^^ use parentheses, not braces
   |
-  = hint: use `newtype Dollars(Float)` for a zero-cost wrapper
-  = hint: use `record Dollars { amount: Float }` if you need field access
+  = hint: use `brand Dollars(Float)` for a zero-cost wrapper
+  = hint: use `record Dollars { amount: Float }` if you need named fields
 ```
 
 ### Design Rationale
 
-**Why `newtype`?** It's the established term in the Haskell ecosystem (the transpilation target).
-Klabnik: low strangeness budget — Haskell/Rust developers recognize it, and others can infer
-"new type wrapper." matklad: greppable (`newtype Name` finds definitions), parser-friendly
-(commit at token 1, same as `fun`, `type`, `record`). Bernhardt: consistent naming pattern —
-`enum` (sum), `record` (product), `newtype` (wrapper), `alias` (synonym). (8/8 unanimous)
+**Why `brand`?** (R2/R3 revision) The original R1 council chose `newtype` (8/8), but R2 review
+(7 experts) unanimously rejected it as Haskell jargon — it describes the implementation, not
+the intent. R2 recommended `distinct` (6/7), but the language designer flagged SQL collision
+(`SELECT DISTINCT`). R3 (5 experts) unanimously recommended `brand`: TypeScript's "branded types"
+is the established term for exactly this pattern. Jess (target persona) has likely encountered
+`type Dollars = number & { readonly _brand: 'Dollars' }` in TS. The metaphor communicates
+identity-stamping — non-interchangeability — without leaking implementation.
+The family reads: `record` (shape), `enum` (choices), `alias` (rename), `brand` (identity).
 
-**Why `newtype Dollars(Float)` not `newtype Dollars = Dollars(Float)`?** The repeated name is
+**Why `brand Dollars(Float)` not `brand Dollars = Dollars(Float)`?** The repeated name is
 Haskell ceremony. "Why do I name it twice?" — every beginner asks this. In NeoHaskell, the type
 name IS the constructor, same as `record`. The transpiler adds the constructor name automatically.
-Borretti: less ceremony → more newtypes → more type safety. Breslav: similar to Kotlin's
-`value class Dollars(val amount: Double)` but even shorter. (8/8 unanimous)
+Borretti: less ceremony → more brands → more type safety. Breslav: similar to Kotlin's
+`value class Dollars(val amount: Double)` but even shorter. (R1: 8/8 unanimous)
 
-**Why pattern matching only, no `.value`?** Tuple-style `newtype Dollars(Float)` has no named
-field, so `.value` would be an ad-hoc invention inconsistent with the syntax. Pattern matching
-is consistent with enum destructuring (Feature #3). One mechanism for all unwrapping.
-Czaplicki: one way to do it, fewer concepts. (8/8 unanimous)
+**Why `.value`?** (R2 revision) R1 chose pattern-matching-only (8/8), but R2 review (7 experts)
+overturned this 6-to-1. The majority argued: Jess comes from Java/C#/TypeScript where property
+access is instinctive. Two lines of destructuring for a one-line operation creates friction that
+makes developers question whether type safety is worth the cost. `.value` is self-documenting,
+composes cleanly (`a.value + b.value`), and carries no failure connotation (unlike `.unwrap()`).
+Pike & Kernighan dissented: "every escape hatch subtracts from the guarantee" — invest in
+`deriving` instead. Both paths are supported: `.value` for the 80% case, `deriving` for
+arithmetic types, pattern matching for `match` contexts.
 
 **Why auto-derive Show/Eq?** Locked convention — all NeoHaskell types auto-derive Show and Eq.
-(8/8 unanimous, non-negotiable)
+(R1: 8/8 unanimous, non-negotiable)
 
-**Why `deriving` delegates to wrapped type?** This is the killer feature of newtypes. Without
-delegation, `newtype Dollars(Float)` can't participate in arithmetic without manual `impl`
-blocks — making newtypes burdensome for numeric wrappers. The transpiler emits
+**Why `deriving` delegates to wrapped type?** This is the killer feature of brands. Without
+delegation, `brand Dollars(Float)` can't participate in arithmetic without manual `impl`
+blocks — making brands burdensome for numeric wrappers. The transpiler emits
 `GeneralizedNewtypeDeriving` when needed. Syme: pragmatic, avoids over-abstraction.
 Czaplicki: conditional acceptance (would prefer no typeclasses at all, but accepts explicit
-`deriving` as the least-bad option). (7/8)
+`deriving` as the least-bad option). (R1: 7/8)
 
-**Why zero-cost guarantee?** Without zero-cost, `newtype` is just `type Name = Name(T)` with a
-different keyword. The guarantee is the defining semantic difference — it's why the feature
+**Why zero-cost guarantee?** Without zero-cost, `brand` is just `alias` with a different
+keyword. The guarantee is the defining semantic difference — it's why the feature
 exists. Haskell's `newtype` is erased at compile time; the transpiler preserves this.
-(8/8 unanimous)
+(R1: 8/8 unanimous)
 
 ---
 

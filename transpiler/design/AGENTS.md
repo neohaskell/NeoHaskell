@@ -69,9 +69,11 @@ When defining syntax features:
 | Pipe (`\|>`) | ✅ Defined |
 | Domain keywords | ✅ Defined |
 | Functions | ✅ Defined |
-| Pattern matching | ❌ Pending |
+| Pattern matching | ✅ Defined |
 | Traits/impl | ❌ Pending |
 | Enums | ✅ Defined |
+| Brands | ✅ Defined |
+| Lambdas | ✅ Defined |
 
 ## References
 
