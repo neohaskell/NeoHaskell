@@ -5,6 +5,7 @@ module Integration.RuntimeSpec where
 import Array qualified
 import AsyncTask qualified
 import Auth.SecretStore.InMemory qualified as InMemorySecretStore
+import ConcurrentMap qualified
 import ConcurrentVar qualified
 import Core
 import Integration qualified
@@ -90,10 +91,12 @@ type instance NameOf NotifyExternalSystem = "NotifyExternalSystem"
 makeContext :: Task Text Integration.ActionContext
 makeContext = do
   store <- InMemorySecretStore.new
+  locks <- ConcurrentMap.new
   Task.yield
     Integration.ActionContext
       { Integration.secretStore = store
-      , Integration.providerRegistry = Map.empty
+      , Integration.providerRegistry = Integration.fromMap Map.empty
+      , Integration.refreshLocks = locks
       , Integration.fileAccess = Nothing
       }
 

@@ -6,13 +6,16 @@ module Http.Client (
   addHeader,
   withTimeout,
   withRedirects,
+  withMaxResponseSize,
 
   -- * Response
   Response (..),
 
   -- * HTTP Methods
   get,
-  getRaw,
+  getSecure,
+  -- ^ Enforces HTTPS (rejects http:// URLs). Use for all external API calls.
+  -- getRaw is intentionally NOT exported here; use Http.Client.Internal for trusted/localhost callers.
   post,
   postForm,
   postRaw,
@@ -57,8 +60,14 @@ data Request = Request
     headers :: Map Text Text,
     timeoutSeconds :: Maybe GhcInt.Int,
     -- ^ Request timeout in seconds (default: 10 seconds)
-    maxRedirects :: GhcInt.Int
+    maxRedirects :: GhcInt.Int,
     -- ^ Maximum redirects to follow (default: 0 for SSRF protection)
+    maxResponseBytes :: !(Maybe GhcInt.Int)
+    -- ^ Maximum response body size in bytes (default: 10MB).
+    -- Enforced in 'getSecure' only. Other methods ('get', 'post', etc.) do not
+    -- check this limit. The check is post-read (full body is fetched first, then
+    -- size is validated). For true OOM prevention, use a streaming HTTP client.
+    -- Set to Nothing to disable the limit (not recommended for external APIs).
   }
 
 
@@ -72,7 +81,8 @@ instance Show Request where
           Just u -> Text.toLinkedList (sanitizeUrlText u)
     let timeout = show req.timeoutSeconds
     let redirects = show req.maxRedirects
-    [fmt|Request {url = #{urlText}, headers = <REDACTED>, timeoutSeconds = #{timeout}, maxRedirects = #{redirects}}|]
+    let maxBytes = show req.maxResponseBytes
+    [fmt|Request {url = #{urlText}, headers = <REDACTED>, timeoutSeconds = #{timeout}, maxRedirects = #{redirects}, maxResponseBytes = #{maxBytes}}|]
 
 
 -- | Sanitize URL Text to scheme://host:port only, removing path/query/credentials.
@@ -89,10 +99,12 @@ instance Default Request where
         timeoutSeconds = Just 10,
         -- ^ Default 10 second timeout for production safety.
         -- Prevents indefinite hangs under load. Override with withTimeout if needed.
-        maxRedirects = 0
+        maxRedirects = 0,
         -- ^ SECURITY: Default 0 redirects to prevent SSRF bypass.
         -- Attackers can redirect validated URLs to internal IPs (169.254.169.254).
         -- Use withRedirects to explicitly opt-in when needed.
+        maxResponseBytes = Just (10 * 1024 * 1024)
+        -- ^ Default 10MB limit to prevent OOM from malicious servers.
       }
 
 
@@ -129,6 +141,7 @@ addHeader key value options =
         , headers = newHeaders
         , timeoutSeconds = options.timeoutSeconds
         , maxRedirects = options.maxRedirects
+        , maxResponseBytes = options.maxResponseBytes
         }
 
 
@@ -147,7 +160,27 @@ withRedirects count options =
       panic [fmt|withRedirects requires non-negative count, got: #{count}|]
 
 
+-- | Set the maximum response body size in bytes.
+-- Default is 10MB. Use this to override for specific endpoints.
+{-# INLINE withMaxResponseSize #-}
+withMaxResponseSize :: GhcInt.Int -> Request -> Request
+withMaxResponseSize maxBytes options =
+  case maxBytes > 0 of
+    True ->
+      options
+        { maxResponseBytes = Just maxBytes
+        }
+    False ->
+      panic [fmt|withMaxResponseSize requires positive bytes, got: #{maxBytes}|]
+
+
 data Error = Error Text
+  | InvalidUrl Text
+    -- ^ The URL does not use HTTPS. Use getSecure only with https:// URLs.
+    -- The URL is sanitized (query params stripped) to prevent secret leakage in logs.
+  | ResponseTooLarge GhcInt.Int
+    -- ^ Response body exceeded the configured size limit.
+    -- The Int is the limit in bytes that was exceeded.
   deriving (Show)
 
 
@@ -265,19 +298,27 @@ getIO options = do
   pure (extractResponse httpResponse)
 
 
--- | Performs a GET request without JSON decoding, returning raw Bytes.
--- Unlike 'get', this does NOT throw on non-2xx status codes because it uses
--- setRequestIgnoreStatus to disable http-conduit's default status-code exception behavior.
--- Use this when you need to inspect status codes before decoding (e.g., for 401/429 handling).
-getRaw ::
+-- | Performs a secure GET request, enforcing HTTPS.
+-- Rejects any URL that does not start with 'https://' with an 'InvalidUrl' error.
+-- The error message sanitizes the URL via 'sanitizeUrlText' to prevent secret leakage.
+-- Use 'Http.Client.Internal.getRaw' for trusted localhost callers (e.g., OAuth2 discovery).
+{-# INLINE getSecure #-}
+getSecure ::
   Request ->
   Task Error (Response Bytes)
-getRaw options = do
-  let host = requestHost options
-  Log.debug [fmt|HTTP GET (raw) #{host}|] |> Task.ignoreError
-  getRawIO options
-    |> Task.fromFailableIO @HttpClient.HttpException
-    |> Task.mapError sanitizeHttpError
+getSecure options = do
+  let urlText = options.url |> Maybe.withDefault ""
+  case Text.startsWith "https://" urlText of
+    False ->
+      -- SECURITY: sanitizeUrlText strips query params which may contain secrets
+      Task.throw (InvalidUrl (sanitizeUrlText urlText))
+    True -> do
+      let host = requestHost options
+      Log.debug [fmt|HTTP GET (secure) #{host}|] |> Task.ignoreError
+      response <- getRawIO options
+        |> Task.fromFailableIO @HttpClient.HttpException
+        |> Task.mapError sanitizeHttpError
+      checkResponseSize options response
 
 
 -- | Internal IO action for raw GET request
@@ -292,6 +333,20 @@ getRawIO options = do
   -- httpBS returns Response ByteString; setRequestIgnoreStatus ensures no throw on 401/429
   httpResponse <- HttpSimple.httpBS req
   pure (extractResponseBytes httpResponse)
+
+
+-- | Post-read check: validates response body size against the configured limit.
+-- NOTE: The full response body has already been read into memory at this point.
+-- This is a detection mechanism, not an OOM prevention mechanism.
+-- Returns ResponseTooLarge if the body exceeds maxResponseBytes.
+checkResponseSize :: Request -> Response Bytes -> Task Error (Response Bytes)
+checkResponseSize options response =
+  case options.maxResponseBytes of
+    Nothing -> Task.yield response
+    Just maxBytes ->
+      case response.body |> Bytes.length |> (\len -> len > maxBytes) of
+        True -> Task.throw (ResponseTooLarge maxBytes)
+        False -> Task.yield response
 
 
 -- | Extract Response with Bytes body from http-client Response

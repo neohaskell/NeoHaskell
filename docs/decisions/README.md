@@ -49,6 +49,7 @@ ADRs document significant architectural decisions made during the development of
 | [0033](0033-config-dependent-oauth2-provider.md) | Config-Dependent OAuth2 Provider Factory | Proposed |
 | [0034](0034-cli-transport.md) | CliTransport — Command-Line Interface Transport | Proposed |
 | [0035](0035-config-dependent-application-builders.md) | Config-Dependent Application Builder Functions | Proposed |
+| [0036](0036-wave1-security-hardening.md) | Wave 1 Security Hardening | Accepted |
 
 ## Creating New ADRs
 

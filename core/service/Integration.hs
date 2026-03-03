@@ -36,6 +36,12 @@ module Integration (
   ActionContext (..),
   FileAccessContext (..),
 
+  -- * Provider Registry
+  ImmutableProviderRegistry,
+  fromMap,
+  lookup,
+  entries,
+
   -- * Outbound Construction (Jess's API)
   batch,
   none,
@@ -77,12 +83,15 @@ import Array (Array)
 import Array qualified
 import Auth.OAuth2.Provider (ValidatedOAuth2ProviderConfig)
 import Auth.SecretStore (SecretStore)
+import ConcurrentMap (ConcurrentMap)
+import Lock (Lock)
 import Basics
 import Bytes (Bytes)
 import Data.Proxy (Proxy (..))
 import GHC.TypeLits qualified as GHC
 import Json qualified
 import Map (Map)
+import Map qualified
 import Maybe (Maybe (..))
 import Service.Command.Core (NameOf)
 import Service.FileUpload.Core (FileAccessError, FileMetadata, FileRef)
@@ -103,6 +112,39 @@ data IntegrationError
   deriving (Eq, Show)
 
 
+-- | Type-safe immutable registry of OAuth2 provider configurations.
+--
+-- The constructor is NOT exported, preventing mutation via pattern matching.
+-- Use 'fromMap' to create and 'lookup'/'entries' to read.
+--
+-- SECURITY: Prevents accidental mutation of provider configs at runtime.
+-- Provider configs are set at startup and must not change.
+newtype ImmutableProviderRegistry
+  = ImmutableProviderRegistry
+      { getProviders :: Map Text ValidatedOAuth2ProviderConfig
+      }
+
+
+-- | Create an ImmutableProviderRegistry from a Map.
+-- Called once at application startup.
+{-# INLINE fromMap #-}
+fromMap :: Map Text ValidatedOAuth2ProviderConfig -> ImmutableProviderRegistry
+fromMap providers = ImmutableProviderRegistry {getProviders = providers}
+
+
+-- | Look up a provider by name.
+-- Returns Nothing if the provider is not registered.
+{-# INLINE lookup #-}
+lookup :: Text -> ImmutableProviderRegistry -> Maybe ValidatedOAuth2ProviderConfig
+lookup name registry = registry.getProviders |> Map.get name
+
+
+-- | Get all providers as a list of (name, config) pairs.
+{-# INLINE entries #-}
+entries :: ImmutableProviderRegistry -> Array (Text, ValidatedOAuth2ProviderConfig)
+entries registry = registry.getProviders |> Map.entries
+
+
 -- | Execution context for actions that need runtime dependencies.
 --
 -- This is created by Application.run and passed to actions at execution time.
@@ -110,7 +152,10 @@ data IntegrationError
 -- File-processing integrations use 'fileAccess'.
 data ActionContext = ActionContext
   { secretStore :: SecretStore
-  , providerRegistry :: Map Text ValidatedOAuth2ProviderConfig
+  , providerRegistry :: ImmutableProviderRegistry
+  , refreshLocks :: ConcurrentMap Text Lock
+  -- ^ Per-key mutex map for token refresh operations (#333).
+  -- Prevents duplicate concurrent token refreshes for the same provider:userId.
   , fileAccess :: Maybe FileAccessContext
   -- ^ File access context for retrieving uploaded files.
   -- 'Nothing' when file uploads are not enabled in the application.

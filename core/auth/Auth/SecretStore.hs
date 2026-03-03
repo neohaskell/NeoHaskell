@@ -43,6 +43,7 @@ module Auth.SecretStore (
 
 import Auth.OAuth2.Types (TokenSet)
 import Basics
+import Data.Hashable (Hashable)
 import Maybe (Maybe)
 import Task (Task)
 import Text (Text)
@@ -59,7 +60,7 @@ import Text (Text)
 -- SECURITY: Show instance is redacted to prevent PII leakage in logs.
 -- Keys often contain user IDs or other identifying information.
 newtype TokenKey = TokenKey Text
-  deriving (Generic, Eq, Ord)
+  deriving (Generic, Eq, Ord, Hashable)
 
 
 -- | Redacted Show instance - NEVER reveals the actual key content.
@@ -97,4 +98,13 @@ data SecretStore = SecretStore
     -- and returns the new value (or 'Nothing' to delete).
     -- Enables read-modify-write and compare-and-swap patterns.
     atomicModify :: TokenKey -> (Maybe TokenSet -> Maybe TokenSet) -> Task Text Unit
+  , -- | Atomically modify tokens and return a result.
+    -- The transformation function receives the current value (or 'Nothing')
+    -- and returns the new value (or 'Nothing' to delete) AND a result value.
+    -- Enables atomic check-and-refresh patterns without TOCTOU races.
+    atomicModifyReturning
+      :: forall result.
+         TokenKey
+      -> (Maybe TokenSet -> Task Text (Maybe TokenSet, result))
+      -> Task Text result
   }

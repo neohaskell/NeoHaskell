@@ -16,10 +16,13 @@ import Integration.Oura.Internal
   , executePersonalInfoInternal
   )
 import Integration.Oura.Types (PaginatedResponse (..), SleepData (..), WorkoutData (..), PersonalInfoData (..))
-import Integration (ActionContext (..), IntegrationError (..))
+import Integration (ActionContext (..), IntegrationError (..), fromMap)
 import Auth.OAuth2.TokenRefresh (TokenRefreshError (..))
 import Auth.OAuth2.Types (OAuth2Error (TokenRequestFailed))
 import Auth.SecretStore.InMemory qualified as InMemorySecretStore
+import ConcurrentMap qualified
+import ConcurrentMap (ConcurrentMap)
+import Lock (Lock)
 import Auth.OAuth2.Provider (ValidatedOAuth2ProviderConfig)
 import Task (Task)
 import Task qualified
@@ -122,9 +125,11 @@ spec = do
 
       it "missing provider throws UnexpectedError" do
         stubStore <- Task.runOrPanic InMemorySecretStore.new
+        emptyLocks <- Task.runOrPanic (ConcurrentMap.new :: Task Text (ConcurrentMap Text Lock))
         let emptyCtx = ActionContext
               { secretStore = stubStore
-              , providerRegistry = Map.empty
+              , providerRegistry = fromMap Map.empty
+              , refreshLocks = emptyLocks
               , fileAccess = Nothing
               }
 
@@ -138,11 +143,24 @@ spec = do
           _ -> expectationFailure "Expected UnexpectedError with 'Oura provider not configured'"
 
     describe "mapTokenError" do
-      it "maps TokenNotFound to AuthenticationError" do
+      it "maps TokenNotFound to AuthenticationError without user ID" do
+        -- SECURITY: Error message must NOT contain user ID (GDPR Article 25, issue #337)
         let err = TokenNotFound "user1" :: TokenRefreshError OuraHttpError
         case mapTokenError err of
-          AuthenticationError msg -> Text.contains "user1" msg `shouldBe` True
+          AuthenticationError msg -> do
+            Text.contains "user1" msg `shouldBe` False
+            msg `shouldBe` "Token not found"
           _ -> expectationFailure "Expected AuthenticationError"
+
+      it "maps LockAcquisitionTimeout to AuthenticationError without lock key" do
+        -- SECURITY: Error message must NOT contain lock key which embeds userId
+        let err = LockAcquisitionTimeout "providerName:user1" :: TokenRefreshError OuraHttpError
+        case mapTokenError err of
+          AuthenticationError msg -> do
+            Text.contains "user1" msg `shouldBe` False
+            Text.contains "Lock acquisition timed out" msg `shouldBe` True
+          _ -> expectationFailure "Expected AuthenticationError"
+
 
       it "maps RefreshTokenMissing to AuthenticationError" do
         let err = RefreshTokenMissing :: TokenRefreshError OuraHttpError

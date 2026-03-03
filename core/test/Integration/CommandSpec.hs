@@ -4,6 +4,7 @@ module Integration.CommandSpec where
 
 import Array qualified
 import Auth.SecretStore.InMemory qualified as InMemorySecretStore
+import ConcurrentMap qualified
 import Core
 import Integration qualified
 import Integration.Command qualified as Command
@@ -41,10 +42,12 @@ type instance NameOf ReserveStock = "ReserveStock"
 makeContext :: Task Text Integration.ActionContext
 makeContext = do
   store <- InMemorySecretStore.new
+  locks <- ConcurrentMap.new
   Task.yield
     Integration.ActionContext
       { Integration.secretStore = store
-      , Integration.providerRegistry = Map.empty
+      , Integration.providerRegistry = Integration.fromMap Map.empty
+      , Integration.refreshLocks = locks
       , Integration.fileAccess = Nothing
       }
 

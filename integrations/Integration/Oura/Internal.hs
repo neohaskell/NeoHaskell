@@ -59,7 +59,7 @@ import Integration.Oura.RestModePeriod (RestModePeriod (..))
 import Integration.Oura.RingConfiguration (RingConfiguration (..))
 import Integration.Oura.SleepPeriod (SleepPeriod (..))
 import Service.Command.Core (NameOf)
-import Map qualified
+
 import Task (Task)
 import Task qualified
 import Text (Text)
@@ -110,8 +110,11 @@ httpRequestWithAuth accessToken url = do
   response <- Http.request
     |> Http.withUrl url
     |> Http.addHeader "Authorization" [fmt|Bearer #{accessToken}|]
-    |> Http.getRaw  -- Returns Response Bytes, no throw on non-2xx
-    |> Task.mapError (\(Http.Error msg) -> OtherHttpError msg)
+    |> Http.getSecure  -- SECURITY: Enforces HTTPS. Returns Response Bytes, no throw on non-2xx
+    |> Task.mapError (\httpErr -> case httpErr of
+        Http.Error msg -> OtherHttpError msg
+        Http.InvalidUrl url -> OtherHttpError [fmt|Non-HTTPS URL rejected: #{url}|]
+        Http.ResponseTooLarge limit -> OtherHttpError [fmt|Response exceeded size limit of #{limit} bytes|])
   -- Check status code FIRST (before any JSON decoding)
   case response.statusCode of
     401 -> Task.throw Unauthorized
@@ -255,10 +258,10 @@ executeWithFetch ::
   Maybe (Text -> command) ->                                 -- onError callback
   Task IntegrationError (Maybe CommandPayload)
 executeWithFetch ctx userId baseUrl fetchFn onSuccess onError = do
-  let ActionContext secretStore _ _ = ctx
+  let ActionContext {secretStore, refreshLocks} = ctx
   providerConfig <- getOuraProvider ctx
   let ValidatedOAuth2ProviderConfig {validatedProvider, clientId, clientSecret} = providerConfig
-  fetchResult <- withValidToken secretStore "oura" userId
+  fetchResult <- withValidToken secretStore refreshLocks "oura" userId
     (OAuth2.refreshTokenValidated validatedProvider clientId clientSecret)
     isUnauthorized
     (\accessToken -> fetchFn accessToken baseUrl)
@@ -598,8 +601,7 @@ urlEncodeParam param =
 -- NOTE: ValidatedOAuth2ProviderConfig is from core/auth/Auth/OAuth2/Provider.hs:149-172
 getOuraProvider :: ActionContext -> Task Integration.IntegrationError ValidatedOAuth2ProviderConfig
 getOuraProvider ctx = do
-  let ActionContext _ providerRegistry _ = ctx
-  case Map.get "oura" providerRegistry of
+  case Integration.lookup "oura" ctx.providerRegistry of
     Nothing -> Task.throw (UnexpectedError "Oura provider not configured. Add Oura.makeOuraConfig to Application.withOAuth2.")
     Just provider -> Task.yield provider
 
@@ -619,13 +621,14 @@ isUnauthorized err = case err of
 --   ActionFailed err
 mapTokenError :: TokenRefreshError OuraHttpError -> IntegrationError
 mapTokenError err = case err of
-  TokenNotFound userId -> AuthenticationError [fmt|Token not found for user: #{userId}|]
+  TokenNotFound _userId -> AuthenticationError "Token not found"
   RefreshTokenMissing -> AuthenticationError "Refresh token missing"
   RefreshFailed oauth2Err -> AuthenticationError [fmt|Refresh failed: #{toText oauth2Err}|]
   StorageError msg -> UnexpectedError [fmt|Storage error: #{msg}|]
   ActionFailed (OtherHttpError msg) -> NetworkError msg
   ActionFailed Unauthorized -> AuthenticationError "Unauthorized after refresh"
   ActionFailed (OuraRateLimited retryAfter) -> RateLimited retryAfter  -- Re-use existing IntegrationError constructor
+  LockAcquisitionTimeout _lockKey -> AuthenticationError "Lock acquisition timed out"
 
 -- | Fetch all pages using pagination
 -- Uses baseUrl for first request, then appends &next_token=X for subsequent requests

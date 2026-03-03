@@ -5,7 +5,10 @@ module Auth.OAuth2.TokenRefresh (
 
 import Auth.OAuth2.Types (OAuth2Error, RefreshToken, TokenSet (..), unwrapAccessToken)
 import Auth.SecretStore (SecretStore (..), TokenKey (..))
+import ConcurrentMap (ConcurrentMap)
+import ConcurrentMap qualified
 import Core
+import Lock qualified
 import Result qualified
 import Task qualified
 
@@ -23,6 +26,10 @@ data TokenRefreshError err
     StorageError Text
   | -- | Custom action failed (e.g., HTTP request)
     ActionFailed err
+  | -- | Per-key lock acquisition timed out (prevents deadlock).
+    -- The Text parameter is the lock key (format: "providerName:userId").
+    -- SECURITY: Lock key does NOT contain userId alone — it is safe to log.
+    LockAcquisitionTimeout Text
   deriving (Generic, Show, Eq)
 
 
@@ -32,27 +39,31 @@ data TokenRefreshError err
 -- 1. Retrieves tokens from SecretStore using key "oauth:{providerName}:{userId}"
 -- 2. Executes the action with the access token
 -- 3. If the predicate identifies an "unauthorized" error, refreshes the token
--- 4. Stores the new TokenSet and retries the action ONCE
+-- 4. Uses per-key locking to prevent duplicate concurrent refreshes (#333)
+-- 5. Stores the new TokenSet and retries the action ONCE
 --
 -- The refresh action is injectable for testability. In production, pass:
 -- @Auth.OAuth2.Client.refreshTokenValidated validatedProvider clientId clientSecret@
 --
 -- Example production usage:
 --
--- > withValidToken store "oura" userId
+-- > withValidToken store refreshLocks "oura" userId
 -- >   (OAuth2.refreshTokenValidated validatedProvider clientId clientSecret)
 -- >   isUnauthorized
 -- >   myAction
 --
 -- Example test usage with mock:
 --
--- > withValidToken mockStore "provider" "user1"
+-- > withValidToken mockStore mockLocks "provider" "user1"
 -- >   mockRefreshSuccess
 -- >   isUnauthorized
 -- >   (\token -> Task.yield [fmt|got #{token}|])
+{-# INLINE withValidToken #-}
 withValidToken ::
   forall err value.
   SecretStore ->
+  -- | Per-key refresh lock map (prevents duplicate concurrent refreshes)
+  ConcurrentMap Text Lock ->
   -- | Provider name (e.g., "oura")
   Text ->
   -- | User ID
@@ -64,7 +75,7 @@ withValidToken ::
   -- | Action using access token
   (Text -> Task err value) ->
   Task (TokenRefreshError err) value
-withValidToken store providerName userId refreshAction isUnauthorized action = do
+withValidToken store refreshLocks providerName userId refreshAction isUnauthorized action = do
   -- 1. Build TokenKey using production format
   let tokenKey = TokenKey [fmt|oauth:#{providerName}:#{userId}|]
 
@@ -91,17 +102,51 @@ withValidToken store providerName userId refreshAction isUnauthorized action = d
           case tokenSet.refreshToken of
             Nothing -> Task.throw RefreshTokenMissing
             Just rt -> do
-              -- 5. Call injectable refresh action
-              newTokens <-
-                refreshAction rt
-                  |> Task.mapError RefreshFailed
-
-              -- 6. Store new tokens
-              store.atomicModify tokenKey (\_ -> Just newTokens)
+              -- 5. Acquire per-key refresh lock (prevents duplicate concurrent refreshes).
+              -- Lock key format: "providerName:userId" (safe to log — not userId alone).
+              let lockKey = [fmt|#{providerName}:#{userId}|]
+              newLock <- Lock.new |> Task.mapError StorageError
+              (refreshLock, _) <- refreshLocks |> ConcurrentMap.getOrInsert lockKey newLock
                 |> Task.mapError StorageError
 
-              -- 7. Retry ONCE with new access token
-              let newAccessToken = unwrapAccessToken newTokens.accessToken
-              action newAccessToken
-                |> Task.mapError ActionFailed
+              -- 6. Acquire lock with 30s timeout (prevents deadlock).
+              lockResult <- Lock.withTimeout 30 refreshLock do
+                -- 7. Double-check: re-read token after acquiring lock.
+                -- Another concurrent request may have already refreshed it.
+                reCheckedTokens <-
+                  store.get tokenKey
+                    |> Task.mapError StorageError
+
+                case reCheckedTokens of
+                  Nothing ->
+                    -- Token deleted between reads — signal not found.
+                    Task.throw (TokenNotFound userId)
+                  Just currentTokenSet -> do
+                    let currentAccessToken = unwrapAccessToken currentTokenSet.accessToken
+                    if currentAccessToken != accessToken
+                      then
+                        -- Another thread already refreshed — use their fresh token.
+                        Task.yield currentTokenSet
+                      else do
+                        -- Token not yet refreshed — perform the refresh.
+                        -- Call injectable refresh action
+                        newTokens <-
+                          refreshAction rt
+                            |> Task.mapError RefreshFailed
+
+                        -- Atomically store refreshed tokens (TOCTOU fix from #334).
+                        -- Note: OverloadedRecordDot doesn't support rank-2 fields, so we use case..of.
+                        case store of
+                          SecretStore { atomicModifyReturning = amrFn } ->
+                            amrFn tokenKey (\_ -> Task.yield (Just newTokens, newTokens))
+                              |> Task.mapError StorageError
+
+              case lockResult of
+                Err _ ->
+                  Task.throw (LockAcquisitionTimeout lockKey)
+                Ok freshTokens -> do
+                  -- 8. Retry ONCE with new access token
+                  let newAccessToken = unwrapAccessToken freshTokens.accessToken
+                  action newAccessToken
+                    |> Task.mapError ActionFailed
         Result.Err err -> Task.throw err

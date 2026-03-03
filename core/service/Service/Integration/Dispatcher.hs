@@ -259,9 +259,11 @@ new ::
   Task Text IntegrationDispatcher
 new store runners endpoints = do
   emptyStore <- InMemorySecretStore.new
+  emptyRefreshLocks <- ConcurrentMap.new
   let emptyContext = Integration.ActionContext
         { Integration.secretStore = emptyStore
-        , Integration.providerRegistry = Map.empty
+        , Integration.providerRegistry = Integration.fromMap Map.empty
+        , Integration.refreshLocks = emptyRefreshLocks
         , Integration.fileAccess = Nothing
         }
   newWithLifecycleConfig defaultConfig store runners [] endpoints emptyContext
@@ -278,9 +280,11 @@ newWithLifecycle ::
   Task Text IntegrationDispatcher
 newWithLifecycle store runners lifecycleRunners endpoints = do
   emptyStore <- InMemorySecretStore.new
+  emptyRefreshLocks <- ConcurrentMap.new
   let emptyContext = Integration.ActionContext
         { Integration.secretStore = emptyStore
-        , Integration.providerRegistry = Map.empty
+        , Integration.providerRegistry = Integration.fromMap Map.empty
+        , Integration.refreshLocks = emptyRefreshLocks
         , Integration.fileAccess = Nothing
         }
   newWithLifecycleConfig defaultConfig store runners lifecycleRunners endpoints emptyContext

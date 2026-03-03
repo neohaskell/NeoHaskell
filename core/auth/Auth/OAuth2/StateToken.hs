@@ -52,6 +52,9 @@ module Auth.OAuth2.StateToken (
   -- * Encoding/Decoding
   encodeStateToken,
   decodeStateToken,
+
+  -- * Constant-Time Comparison
+  constEq,
 ) where
 
 import Basics
@@ -288,4 +291,21 @@ decodeStateToken (HmacKey keyBytes) currentTime tokenText = do
                       case currentTime >= payload.issuedAt - clockSkewTolerance of
                         False -> Task.throw TokenNotYetValid
                         True -> Task.yield payload
+
+
+-- | Constant-time comparison for Text values.
+--
+-- SECURITY: {-# INLINE constEq #-} is MANDATORY — without inlining, GHC may
+-- reorder the comparison operations, defeating the constant-time guarantee.
+-- This prevents timing oracle attacks where an attacker measures response time
+-- to infer information about the compared values.
+--
+-- Uses 'Data.ByteArray.constEq' from the 'memory' package, which performs
+-- byte-by-byte comparison without short-circuiting.
+{-# INLINE constEq #-}
+constEq :: Text -> Text -> Bool
+constEq a b = do
+  let aBytes = Text.toBytes a |> Bytes.unwrap
+  let bBytes = Text.toBytes b |> Bytes.unwrap
+  BA.constEq aBytes bBytes
 

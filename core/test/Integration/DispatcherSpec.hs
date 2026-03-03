@@ -6,6 +6,7 @@ import Array qualified
 import AsyncTask qualified
 import Auth.SecretStore.InMemory qualified as InMemorySecretStore
 import ConcurrentVar qualified
+import ConcurrentMap qualified
 import Control.Exception qualified as GhcException
 import Core
 import DateTime qualified
@@ -96,10 +97,12 @@ makeTestEvent entityIdText seqNum globalPos = do
 makeContext :: Task Text Integration.ActionContext
 makeContext = do
   store <- InMemorySecretStore.new
+  locks <- ConcurrentMap.new
   Task.yield
     Integration.ActionContext
       { Integration.secretStore = store
-      , Integration.providerRegistry = Map.empty
+      , Integration.providerRegistry = Integration.fromMap Map.empty
+      , Integration.refreshLocks = locks
       , Integration.fileAccess = Nothing
       }
 

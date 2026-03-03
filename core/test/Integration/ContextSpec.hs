@@ -2,9 +2,10 @@ module Integration.ContextSpec where
 
 import Array qualified
 import AsyncTask qualified
-import Auth.OAuth2.Provider (ValidatedOAuth2ProviderConfig)
+
 import Auth.SecretStore (SecretStore (..))
 import Auth.SecretStore.InMemory qualified as InMemorySecretStore
+import ConcurrentMap qualified
 import ConcurrentVar qualified
 import Core
 import Integration qualified
@@ -47,11 +48,12 @@ instance Json.ToJSON ContextEvent
 makeContext :: Task Text Integration.ActionContext
 makeContext = do
   store <- InMemorySecretStore.new
-  let providerRegistry = (Map.empty :: Map.Map Text ValidatedOAuth2ProviderConfig)
+  locks <- ConcurrentMap.new
   Task.yield
     Integration.ActionContext
       { Integration.secretStore = store
-      , Integration.providerRegistry = providerRegistry
+      , Integration.providerRegistry = Integration.fromMap Map.empty
+      , Integration.refreshLocks = locks
       , Integration.fileAccess = Nothing
       }
 
@@ -106,16 +108,18 @@ spec = do
             Dispatcher.OutboundRunner
               { entityTypeName = "TestEntity",
                 processEvent = \ctx _eventStore _event -> do
-                  let isEmpty = Map.length ctx.providerRegistry == 0
+                  let isEmpty = (ctx.providerRegistry |> Integration.entries |> Array.length) == 0
                   contextSeen |> ConcurrentVar.modify (\_ -> Just isEmpty)
                   Task.yield Array.empty
               }
 
       eventStore <- InMemory.new |> Task.mapError toText
       emptyStore <- InMemorySecretStore.new
+      emptyLocks <- ConcurrentMap.new
       let emptyContext = Integration.ActionContext
             { Integration.secretStore = emptyStore
-            , Integration.providerRegistry = Map.empty
+            , Integration.providerRegistry = Integration.fromMap Map.empty
+            , Integration.refreshLocks = emptyLocks
             , Integration.fileAccess = Nothing
             }
       dispatcher <-
