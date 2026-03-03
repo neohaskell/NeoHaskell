@@ -180,6 +180,45 @@ basicCrudSpec newStore = do
       result |> shouldBe Nothing
 
 
+  describe "atomicModifyReturning" do
+    it "returns result when key does not exist (Nothing)" \_ -> do
+      store <- newStore
+      let key = TestUtils.makeTestTokenKey "amr-nonexistent"
+      -- case..of required: OverloadedRecordDot doesn't support rank-2 fields
+      result <- case store of
+        SecretStore { atomicModifyReturning = amrFn } ->
+          amrFn key \maybeTokens -> do
+            case maybeTokens of
+              Nothing -> Task.yield (Nothing, ("was-nothing" :: Text))
+              Just _ -> Task.yield (maybeTokens, "was-something")
+      result |> shouldBe ("was-nothing" :: Text)
+
+    it "returns result when key exists" \_ -> do
+      store <- newStore
+      let key = TestUtils.makeTestTokenKey "amr-existing"
+      let tokens = TestUtils.makeTestTokenSet
+      store.put key tokens
+      result <- case store of
+        SecretStore { atomicModifyReturning = amrFn } ->
+          amrFn key \maybeTokens -> do
+            case maybeTokens of
+              Nothing -> Task.yield (Nothing, ("was-nothing" :: Text))
+              Just _ -> Task.yield (maybeTokens, ("was-something" :: Text))
+      result |> shouldBe ("was-something" :: Text)
+
+    it "atomically updates stored value and returns the new tokens" \_ -> do
+      store <- newStore
+      let key = TestUtils.makeTestTokenKey "amr-update"
+      let tokens = TestUtils.makeTestTokenSet
+      let newTokens = TestUtils.makeTestTokenSetWithRefresh
+      store.put key tokens
+      returnedTokens <- case store of
+        SecretStore { atomicModifyReturning = amrFn } ->
+          amrFn key (\_ -> Task.yield (Just newTokens, newTokens))
+      stored <- store.get key
+      returnedTokens |> shouldBe newTokens
+      stored |> shouldBe (Just newTokens)
+
 -- | Tests for concurrent access patterns.
 concurrentAccessSpec :: Task Text SecretStore -> Spec Unit
 concurrentAccessSpec newStore = do

@@ -96,12 +96,18 @@ withValidToken store providerName userId refreshAction isUnauthorized action = d
                 refreshAction rt
                   |> Task.mapError RefreshFailed
 
-              -- 6. Store new tokens
-              store.atomicModify tokenKey (\_ -> Just newTokens)
-                |> Task.mapError StorageError
+              -- 6. Atomically store refreshed tokens and return them (TOCTOU fix).
+              -- Using atomicModifyReturning ensures the store-and-return is one atomic operation,
+              -- preventing races where the stored value differs from what we use for the retry.
+              -- Note: OverloadedRecordDot doesn't support rank-2 fields, so we use case..of.
+              freshTokens <-
+                case store of
+                  SecretStore { atomicModifyReturning = amrFn } ->
+                    amrFn tokenKey (\_ -> Task.yield (Just newTokens, newTokens))
+                      |> Task.mapError StorageError
 
               -- 7. Retry ONCE with new access token
-              let newAccessToken = unwrapAccessToken newTokens.accessToken
+              let newAccessToken = unwrapAccessToken freshTokens.accessToken
               action newAccessToken
                 |> Task.mapError ActionFailed
         Result.Err err -> Task.throw err

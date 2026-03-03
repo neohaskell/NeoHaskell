@@ -206,6 +206,7 @@ spec = do
               , put = \_ _ -> Task.yield ()
               , delete = \_ -> Task.yield ()
               , atomicModify = \_ _ -> Task.yield ()
+              , atomicModifyReturning = \_ _ -> Task.throw "connection refused"
               }
 
       (result :: Result (TokenRefreshError Text) Text) <-

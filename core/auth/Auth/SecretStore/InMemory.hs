@@ -22,16 +22,22 @@ module Auth.SecretStore.InMemory (
 ) where
 
 import Auth.OAuth2.Types (TokenSet)
-import Auth.SecretStore (SecretStore (..), TokenKey (..))
+import Auth.SecretStore (SecretStore (..), TokenKey)
 import Basics
+import ConcurrentMap (ConcurrentMap)
+import ConcurrentMap qualified
 import ConcurrentVar (ConcurrentVar)
 import ConcurrentVar qualified
-import Map (Map)
-import Map qualified
 import Maybe (Maybe (..))
 import Task (Task)
 import Task qualified
 import Text (Text)
+import Tuple qualified
+
+
+-- | Per-key storage: each token key gets its own ConcurrentVar.
+-- This allows concurrent operations on different keys without serialization.
+type PerKeyStore = ConcurrentMap TokenKey (ConcurrentVar (Maybe TokenSet))
 
 
 -- | Create a new in-memory SecretStore.
@@ -43,46 +49,68 @@ import Text (Text)
 -- @
 new :: Task Text SecretStore
 new = do
-  storage <- ConcurrentVar.containing Map.empty
-  Task.yield
-    SecretStore
-      { get = getImpl storage
-      , put = putImpl storage
-      , delete = deleteImpl storage
-      , atomicModify = atomicModifyImpl storage
-      }
+  store <- ConcurrentMap.new
+  Task.yield (makeStore store)
 
 
--- | Internal storage type.
-type Storage = ConcurrentVar (Map TokenKey TokenSet)
+makeStore :: PerKeyStore -> SecretStore
+makeStore store =
+  SecretStore
+    { get = getImpl store
+    , put = putImpl store
+    , delete = deleteImpl store
+    , atomicModify = atomicModifyImpl store
+    , atomicModifyReturning = atomicModifyReturningImpl store
+    }
 
 
-getImpl :: Storage -> TokenKey -> Task Text (Maybe TokenSet)
-getImpl storage key = do
-  store <- storage |> ConcurrentVar.peek
-  store |> Map.get key |> Task.yield
+-- | Get or create a ConcurrentVar for a key.
+-- If the key already has a var, returns it; otherwise inserts a new one.
+getOrCreateVar :: PerKeyStore -> TokenKey -> Task Text (ConcurrentVar (Maybe TokenSet))
+getOrCreateVar store key = do
+  newVar <- ConcurrentVar.containing Nothing
+  resultPair <- store |> ConcurrentMap.getOrInsert key newVar
+  Task.yield (Tuple.first resultPair)
 
 
-putImpl :: Storage -> TokenKey -> TokenSet -> Task Text Unit
-putImpl storage key tokens = do
-  storage |> ConcurrentVar.modify (\store -> store |> Map.set key tokens)
+getImpl :: PerKeyStore -> TokenKey -> Task Text (Maybe TokenSet)
+getImpl store key = do
+  maybeVar <- store |> ConcurrentMap.get key
+  case maybeVar of
+    Nothing -> Task.yield Nothing
+    Just var -> ConcurrentVar.peek var
 
 
-deleteImpl :: Storage -> TokenKey -> Task Text Unit
-deleteImpl storage key = do
-  storage |> ConcurrentVar.modify (\store -> store |> Map.remove key)
+putImpl :: PerKeyStore -> TokenKey -> TokenSet -> Task Text Unit
+putImpl store key tokens = do
+  var <- getOrCreateVar store key
+  var |> ConcurrentVar.modify (\_ -> Just tokens)
 
 
-atomicModifyImpl :: Storage -> TokenKey -> (Maybe TokenSet -> Maybe TokenSet) -> Task Text Unit
-atomicModifyImpl storage key transform = do
-  storage
-    |> ConcurrentVar.modify
-      ( \store -> do
-          let currentValue = store |> Map.get key
-          let newValue = transform currentValue
-          case newValue of
-            Just tokens ->
-              store |> Map.set key tokens
-            Nothing ->
-              store |> Map.remove key
-      )
+deleteImpl :: PerKeyStore -> TokenKey -> Task Text Unit
+deleteImpl store key = do
+  maybeVar <- store |> ConcurrentMap.get key
+  case maybeVar of
+    Nothing -> Task.yield ()
+    Just var -> var |> ConcurrentVar.modify (\_ -> Nothing)
+
+
+atomicModifyImpl :: PerKeyStore -> TokenKey -> (Maybe TokenSet -> Maybe TokenSet) -> Task Text Unit
+atomicModifyImpl store key f = do
+  var <- getOrCreateVar store key
+  var |> ConcurrentVar.modify f
+
+
+atomicModifyReturningImpl ::
+  forall result.
+  PerKeyStore ->
+  TokenKey ->
+  (Maybe TokenSet -> Task Text (Maybe TokenSet, result)) ->
+  Task Text result
+atomicModifyReturningImpl store key f = do
+  var <- getOrCreateVar store key
+  -- ConcurrentVar.modifyReturning requires Task Never callback.
+  -- We wrap f to run as IO (panicking on errors) then widen error type.
+  -- In practice, all callbacks use Task.yield so errors never occur.
+  let wrappedF value = f value |> Task.runOrPanic |> Task.fromIO
+  (var |> ConcurrentVar.modifyReturning wrappedF) |> Task.mapError never
