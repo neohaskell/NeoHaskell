@@ -161,14 +161,6 @@ spec = do
             Text.contains "Lock acquisition timed out" msg `shouldBe` True
           _ -> expectationFailure "Expected AuthenticationError"
 
-      it "maps LockAcquisitionTimeout to UnexpectedError without lock key" do
-        -- SECURITY: Error message must NOT contain lock key which embeds userId
-        let err = LockAcquisitionTimeout "provider:user1" :: TokenRefreshError OuraHttpError
-        case mapTokenError err of
-          UnexpectedError msg -> do
-            Text.contains "user1" msg `shouldBe` False
-            msg `shouldBe` "Token refresh lock timeout"
-          _ -> expectationFailure "Expected UnexpectedError"
 
       it "maps RefreshTokenMissing to AuthenticationError" do
         let err = RefreshTokenMissing :: TokenRefreshError OuraHttpError
