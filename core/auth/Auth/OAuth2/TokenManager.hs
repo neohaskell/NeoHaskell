@@ -100,6 +100,7 @@ getToken manager providerName userId refreshAction = do
 
 
 -- | Check if a token needs proactive refresh based on expiresAt and lead time.
+{-# INLINE needsProactiveRefresh #-}
 needsProactiveRefresh :: TokenManager -> TokenSet -> Task (TokenRefreshError Text) Bool
 needsProactiveRefresh manager tokenSet = do
   case tokenSet.expiresAt of
@@ -124,7 +125,7 @@ startRefreshLoop ::
   (RefreshToken -> Task OAuth2Error TokenSet) ->
   Task Text Unit
 startRefreshLoop manager providerName userId refreshAction = do
-  let loop = do
+  let loop consecutiveFailures = do
         -- Check every 30 seconds
         AsyncTask.sleep 30000
         result <-
@@ -132,6 +133,13 @@ startRefreshLoop manager providerName userId refreshAction = do
             |> Task.mapError toText
             |> Task.asResult
         case result of
-          Ok _ -> loop
-          Err _ -> loop
-  loop
+          Ok _ -> loop 0
+          Err _ -> do
+            let nextFailureCount = consecutiveFailures + 1
+            case nextFailureCount >= manager.config.maxRefreshRetries of
+              True ->
+                Task.throw
+                  [fmt|Token refresh loop stopped after {nextFailureCount} consecutive failures for provider {providerName}|]
+              False ->
+                loop nextFailureCount
+  loop 0

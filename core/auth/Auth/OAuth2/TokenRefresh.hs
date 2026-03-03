@@ -4,7 +4,7 @@ module Auth.OAuth2.TokenRefresh (
   withValidToken,
 ) where
 
-import Auth.OAuth2.Types (OAuth2Error, RefreshToken, TokenSet (..), unwrapAccessToken, unwrapRefreshToken)
+import Auth.OAuth2.Types (OAuth2Error (..), RefreshToken, TokenSet (..), unwrapAccessToken, unwrapRefreshToken)
 import Auth.SecretStore (SecretStore (..), TokenKey (..))
 import ConcurrentMap (ConcurrentMap)
 import ConcurrentMap qualified
@@ -74,7 +74,14 @@ withSingleFlightRefresh lock refreshAction refreshToken = do
 
   case isLeader of
     True -> do
-      refreshResult <- refreshAction refreshToken |> Task.asResult
+      safeRefreshResult <-
+        (refreshAction refreshToken |> Task.asResult :: Task Never (Result OAuth2Error TokenSet))
+          |> Task.asResultSafe
+      let refreshResult =
+            case safeRefreshResult of
+              Ok typedResult -> typedResult
+              Err _unexpectedErr ->
+                Result.Err (TokenRequestFailed "Token refresh crashed unexpectedly")
       ConcurrentVar.set refreshResult refreshWaiter
       Lock.with lock do
         ConcurrentMap.remove refreshKey globalRefreshFlights
