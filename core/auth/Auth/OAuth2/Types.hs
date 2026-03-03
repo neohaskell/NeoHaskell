@@ -67,6 +67,7 @@ import Char (Char)
 import Control.Applicative qualified as GhcApplicative
 import Data.Aeson qualified as Aeson
 import Data.Aeson.Types qualified as AesonTypes
+import DateTime (DateTime)
 import Json qualified
 import LinkedList qualified
 import Maybe (Maybe (..))
@@ -475,6 +476,11 @@ data TokenSet = TokenSet
     -- ^ Duration in seconds until access token expires (from OAuth2 expires_in).
     -- This is NOT a unix timestamp - it's a duration from the time of issuance.
     -- To get expiry time: currentTime + expiresInSeconds
+  , expiresAt :: Maybe DateTime
+    -- ^ Absolute expiration time, derived from expiresInSeconds when known.
+    -- Used by callers that need direct expiry checks without recomputing.
+  , ttl :: Maybe Int
+    -- ^ Time-to-live in seconds when the token was stored or refreshed.
   }
   deriving (Generic, Eq)
 
@@ -485,7 +491,9 @@ instance Show TokenSet where
     let access = show ts.accessToken
     let refresh = show ts.refreshToken
     let expires = show ts.expiresInSeconds
-    [fmt|TokenSet {accessToken = #{access}, refreshToken = #{refresh}, expiresInSeconds = #{expires}}|]
+    let expiresAtText = show ts.expiresAt
+    let ttlText = show ts.ttl
+    [fmt|TokenSet {accessToken = #{access}, refreshToken = #{refresh}, expiresInSeconds = #{expires}, expiresAt = #{expiresAtText}, ttl = #{ttlText}}|]
 
 
 -- | PKCE code verifier (RFC 7636).

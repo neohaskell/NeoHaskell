@@ -1,6 +1,7 @@
 module Auth.OAuth2.TokenRefreshSpec (spec) where
 
-import Auth.OAuth2.TokenRefresh (TokenRefreshError (..), withValidToken)
+import AsyncTask qualified
+import Auth.OAuth2.TokenRefresh (TokenRefreshError (..), withSingleFlightRefresh, withValidToken)
 import Auth.OAuth2.Client qualified as OAuth2
 import Auth.OAuth2.Types (
   ClientId (..),
@@ -19,6 +20,7 @@ import Auth.SecretStore.InMemory qualified as InMemory
 import ConcurrentVar qualified
 import Control.Concurrent qualified as GhcConcurrent
 import Core
+import Lock qualified
 import Data.ByteString.Lazy qualified as GhcLBS
 import Network.HTTP.Types qualified as GhcHTTP
 import Network.Wai qualified as GhcWai
@@ -30,6 +32,58 @@ import Text qualified
 
 spec :: Spec Unit
 spec = do
+  describe "TokenRefresh.withSingleFlightRefresh" do
+    it "returns refreshed tokens for a single caller" \_ -> do
+      lock <- Lock.new
+      refreshCalls <- ConcurrentVar.containing (0 :: Int)
+      let refreshAction _ = do
+            refreshCalls |> ConcurrentVar.modify (\count -> count + 1)
+            Task.yield
+              TokenSet
+                { accessToken = mkAccessToken "single-flight-access"
+                , refreshToken = Just (mkRefreshToken "single-flight-refresh")
+                , expiresInSeconds = Just 3600
+                , expiresAt = Nothing
+                , ttl = Just 3600
+                }
+
+      result <-
+        withSingleFlightRefresh lock refreshAction (mkRefreshToken "single-flight-refresh")
+          |> Task.mapError toText
+      refreshCallCount <- ConcurrentVar.peek refreshCalls
+
+      result.accessToken |> unwrapAccessToken |> shouldBe "single-flight-access"
+      refreshCallCount |> shouldBe 1
+
+    it "coalesces concurrent callers to one refresh request" \_ -> do
+      lock <- Lock.new
+      refreshCalls <- ConcurrentVar.containing (0 :: Int)
+      let refreshAction _ = do
+            refreshCalls |> ConcurrentVar.modify (\count -> count + 1)
+            AsyncTask.sleep 20
+            Task.yield
+              TokenSet
+                { accessToken = mkAccessToken "shared-access-token"
+                , refreshToken = Just (mkRefreshToken "shared-refresh-token")
+                , expiresInSeconds = Just 3600
+                , expiresAt = Nothing
+                , ttl = Just 3600
+                }
+
+      task1 <- AsyncTask.run (withSingleFlightRefresh lock refreshAction (mkRefreshToken "shared-refresh-token") |> Task.mapError toText)
+      task2 <- AsyncTask.run (withSingleFlightRefresh lock refreshAction (mkRefreshToken "shared-refresh-token") |> Task.mapError toText)
+      task3 <- AsyncTask.run (withSingleFlightRefresh lock refreshAction (mkRefreshToken "shared-refresh-token") |> Task.mapError toText)
+
+      result1 <- AsyncTask.waitFor task1
+      result2 <- AsyncTask.waitFor task2
+      result3 <- AsyncTask.waitFor task3
+      refreshCallCount <- ConcurrentVar.peek refreshCalls
+
+      refreshCallCount |> shouldBe 1
+      result1.accessToken |> unwrapAccessToken |> shouldBe "shared-access-token"
+      result2.accessToken |> unwrapAccessToken |> shouldBe "shared-access-token"
+      result3.accessToken |> unwrapAccessToken |> shouldBe "shared-access-token"
+
   describe "TokenRefresh.withValidToken" do
     -- Path 1: Happy path - action succeeds, no refresh needed
     it "returns action result when action succeeds" \_ -> do
@@ -107,6 +161,8 @@ spec = do
               { accessToken = mkAccessToken "expired"
               , refreshToken = Nothing -- No refresh token!
               , expiresInSeconds = Just 3600
+              , expiresAt = Nothing
+              , ttl = Just 3600
               }
       let key = TokenKey "oauth:provider:user1"
       store.put key tokenSet
@@ -116,6 +172,31 @@ spec = do
           store
           "provider"
           "user1"
+          mockRefreshSuccess
+          isUnauthorized
+          (\_ -> Task.throw "401 Unauthorized")
+          |> Task.asResult
+
+      result |> shouldBe (Err RefreshTokenMissing)
+
+    it "returns RefreshTokenMissing for expired tokens without a refresh path" \_ -> do
+      store <- InMemory.new
+      let expiredTokens =
+            TokenSet
+              { accessToken = mkAccessToken "expired-token"
+              , refreshToken = Nothing
+              , expiresInSeconds = Just 0
+              , expiresAt = Nothing
+              , ttl = Just 0
+              }
+      let key = TokenKey "oauth:provider:user-expired"
+      store.put key expiredTokens
+
+      (result :: Result (TokenRefreshError Text) Text) <-
+        withValidToken
+          store
+          "provider"
+          "user-expired"
           mockRefreshSuccess
           isUnauthorized
           (\_ -> Task.throw "401 Unauthorized")
@@ -237,6 +318,8 @@ mockRefreshSuccessTask =
       { accessToken = mkAccessToken "new-access-token"
       , refreshToken = Just (mkRefreshToken "new-refresh-token")
       , expiresInSeconds = Just 3600
+      , expiresAt = Nothing
+      , ttl = Just 3600
       }
 
 
@@ -259,6 +342,8 @@ makeTokenSetWithRefresh access refresh =
     { accessToken = mkAccessToken access
     , refreshToken = Just (mkRefreshToken refresh)
     , expiresInSeconds = Just 3600
+    , expiresAt = Nothing
+    , ttl = Just 3600
     }
 
 

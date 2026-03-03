@@ -49,6 +49,8 @@ makeTestTokenSet =
     { accessToken = testAccessToken
     , refreshToken = Nothing
     , expiresInSeconds = Just 3600
+    , expiresAt = Nothing
+    , ttl = Just 3600
     }
 
 
@@ -64,6 +66,8 @@ makeTestTokenSetWithRefresh =
     { accessToken = testAccessToken
     , refreshToken = Just testRefreshToken
     , expiresInSeconds = Just 3600
+    , expiresAt = Nothing
+    , ttl = Just 3600
     }
 
 

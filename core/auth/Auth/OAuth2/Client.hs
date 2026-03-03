@@ -116,6 +116,7 @@ import LinkedList qualified
 import Crypto.Random qualified as Random
 import Data.ByteArray.Encoding qualified as Encoding
 import Data.ByteString qualified as BS
+import DateTime qualified
 import Http.Client qualified as Http
 import Json qualified
 import Maybe (Maybe (..))
@@ -609,11 +610,16 @@ requestTokens tokenEndpoint formParams = do
       case result of
         Err err -> Task.throw err
         Ok response -> do
+          now <- DateTime.now |> Task.mapError (\_ -> TokenRequestFailed "Failed to compute token expiry")
+          let ttlSeconds = response.body.expires_in
+          let expiresAt = ttlSeconds |> fmap (\seconds -> DateTime.addSeconds (fromIntegral seconds) now)
           Task.yield
             TokenSet
               { accessToken = mkAccessToken response.body.access_token
               , refreshToken = response.body.refresh_token |> fmap mkRefreshToken
-              , expiresInSeconds = response.body.expires_in
+              , expiresInSeconds = ttlSeconds
+              , expiresAt = expiresAt
+              , ttl = ttlSeconds
               }
 
 
@@ -653,6 +659,9 @@ requestTokensValidated tokenEndpoint formParams = do
           |> Task.ignoreError
       Task.throw err
     Ok response -> do
+      now <- DateTime.now |> Task.mapError (\_ -> TokenRequestFailed "Failed to compute token expiry")
+      let ttlSeconds = response.body.expires_in
+      let expiresAt = ttlSeconds |> fmap (\seconds -> DateTime.addSeconds (fromIntegral seconds) now)
       -- AUDIT: Log success (no token values)
       Log.withScope [("component", "OAuth2"), ("endpoint", sanitizedEndpoint)] do
         Log.info "Token request succeeded"
@@ -661,7 +670,9 @@ requestTokensValidated tokenEndpoint formParams = do
         TokenSet
           { accessToken = mkAccessToken response.body.access_token
           , refreshToken = response.body.refresh_token |> fmap mkRefreshToken
-          , expiresInSeconds = response.body.expires_in
+          , expiresInSeconds = ttlSeconds
+          , expiresAt = expiresAt
+          , ttl = ttlSeconds
           }
 
 

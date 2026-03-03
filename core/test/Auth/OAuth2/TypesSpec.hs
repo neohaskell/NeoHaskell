@@ -74,6 +74,8 @@ spec = do
                   { accessToken = mkAccessToken "access-secret-123"
                   , refreshToken = Just (mkRefreshToken "refresh-secret-456")
                   , expiresInSeconds = Just 3600
+                  , expiresAt = Nothing
+                  , ttl = Just 3600
                   }
           let shown = toText tokens
           shown |> shouldSatisfy (\t -> not (Text.contains "access-secret-123" t))
@@ -92,9 +94,10 @@ spec = do
                 { accessToken = mkAccessToken "test"
                 , refreshToken = Nothing
                 , expiresInSeconds = Just 3600 -- 1 hour duration
+                , expiresAt = Nothing
+                , ttl = Just 3600
                 }
         -- The field should be accessible with correct name
         tokens.expiresInSeconds |> shouldBe (Just 3600)
-
 
 

@@ -1,11 +1,17 @@
 module Auth.OAuth2.TokenRefresh (
   TokenRefreshError (..),
+  withSingleFlightRefresh,
   withValidToken,
 ) where
 
-import Auth.OAuth2.Types (OAuth2Error, RefreshToken, TokenSet (..), unwrapAccessToken)
+import Auth.OAuth2.Types (OAuth2Error, RefreshToken, TokenSet (..), unwrapAccessToken, unwrapRefreshToken)
 import Auth.SecretStore (SecretStore (..), TokenKey (..))
+import ConcurrentMap (ConcurrentMap)
+import ConcurrentMap qualified
+import ConcurrentVar qualified
 import Core
+import IO qualified
+import Lock qualified
 import Result qualified
 import Task qualified
 
@@ -24,6 +30,63 @@ data TokenRefreshError err
   | -- | Custom action failed (e.g., HTTP request)
     ActionFailed err
   deriving (Generic, Show, Eq)
+
+
+type RefreshWaiter = ConcurrentVar (Result OAuth2Error TokenSet)
+
+
+globalRefreshGuardLock :: Lock
+globalRefreshGuardLock =
+  (Lock.new :: Task Never Lock)
+    |> Task.runNoErrors
+    |> IO.dangerouslyRun
+{-# NOINLINE globalRefreshGuardLock #-}
+
+
+globalRefreshFlights :: ConcurrentMap Text RefreshWaiter
+globalRefreshFlights =
+  (ConcurrentMap.new :: Task Never (ConcurrentMap Text RefreshWaiter))
+    |> Task.runNoErrors
+    |> IO.dangerouslyRun
+{-# NOINLINE globalRefreshFlights #-}
+
+
+-- | Execute token refresh with single-flight guard semantics.
+--
+-- Concurrent callers sharing the same lock are serialized so only one
+-- refresh request runs at a time, and other callers wait for completion.
+withSingleFlightRefresh ::
+  Lock ->
+  (RefreshToken -> Task OAuth2Error TokenSet) ->
+  RefreshToken ->
+  Task OAuth2Error TokenSet
+withSingleFlightRefresh lock refreshAction refreshToken = do
+  let refreshKey = unwrapRefreshToken refreshToken
+  (isLeader, refreshWaiter) <-
+    Lock.with lock do
+      maybeWaiter <- ConcurrentMap.get refreshKey globalRefreshFlights
+      case maybeWaiter of
+        Just existingWaiter -> Task.yield (False, existingWaiter)
+        Nothing -> do
+          newWaiter <- ConcurrentVar.new
+          ConcurrentMap.set refreshKey newWaiter globalRefreshFlights
+          Task.yield (True, newWaiter)
+
+  case isLeader of
+    True -> do
+      refreshResult <- refreshAction refreshToken |> Task.asResult
+      ConcurrentVar.set refreshResult refreshWaiter
+      Lock.with lock do
+        ConcurrentMap.remove refreshKey globalRefreshFlights
+      case refreshResult of
+        Result.Ok tokenSet -> Task.yield tokenSet
+        Result.Err refreshError -> Task.throw refreshError
+    False -> do
+      refreshResult <- ConcurrentVar.get refreshWaiter
+      ConcurrentVar.set refreshResult refreshWaiter
+      case refreshResult of
+        Result.Ok tokenSet -> Task.yield tokenSet
+        Result.Err refreshError -> Task.throw refreshError
 
 
 -- | Execute an action with automatic token refresh on unauthorized errors.
@@ -93,7 +156,7 @@ withValidToken store providerName userId refreshAction isUnauthorized action = d
             Just rt -> do
               -- 5. Call injectable refresh action
               newTokens <-
-                refreshAction rt
+                withSingleFlightRefresh globalRefreshGuardLock refreshAction rt
                   |> Task.mapError RefreshFailed
 
               -- 6. Store new tokens

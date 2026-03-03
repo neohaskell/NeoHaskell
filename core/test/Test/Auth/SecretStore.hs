@@ -251,6 +251,8 @@ concurrentAccessSpec newStore = do
           { accessToken = mkAccessToken "token"
           , refreshToken = Nothing
           , expiresInSeconds = Just 0
+          , expiresAt = Nothing
+          , ttl = Just 0
           }
     store.put key initialTokens
     -- Spawn 100 concurrent increments
@@ -394,4 +396,6 @@ makeTokenSetWithIndex index =
     { accessToken = mkAccessToken [fmt|access-token-#{toText index}|]
     , refreshToken = Just (mkRefreshToken [fmt|refresh-token-#{toText index}|])
     , expiresInSeconds = Just 3600
+    , expiresAt = Nothing
+    , ttl = Just 3600
     }
