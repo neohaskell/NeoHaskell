@@ -8,7 +8,7 @@ import Task qualified
 import Test
 import Text qualified
 import Http.Client.Internal qualified as HttpInternal
-import qualified Data.ByteString.Char8 as GhcBSChar
+import Data.ByteString.Char8 qualified as GhcBSChar
 
 -- WAI/Warp for mock server
 import qualified Control.Concurrent as GhcConcurrent
