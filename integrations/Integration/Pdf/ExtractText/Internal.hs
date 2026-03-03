@@ -232,8 +232,8 @@ fileAccessToIntegrationError :: FileAccessError -> Integration.IntegrationError
 fileAccessToIntegrationError err = case err of
   FileNotFound _ ->
     Integration.ValidationError "File not found"
-  StateLookupFailed _ msg ->
-    Integration.UnexpectedError [fmt|Failed to lookup file state: #{msg}|]
+  StateLookupFailed _ _ ->
+    Integration.UnexpectedError "PDF extraction failed: state lookup error"
   NotOwner _ ->
     Integration.AuthenticationError "Not authorized to access this file"
   FileExpired _ ->
@@ -242,8 +242,8 @@ fileAccessToIntegrationError err = case err of
     Integration.ValidationError "File has been deleted"
   BlobMissing _ ->
     Integration.UnexpectedError "File blob is missing from storage"
-  StorageError msg ->
-    Integration.UnexpectedError [fmt|Storage error: #{msg}|]
+  StorageError _ ->
+    Integration.UnexpectedError "PDF extraction failed: storage error"
 
 
 -- | Convert Subprocess.Error to IntegrationError.

@@ -28,7 +28,7 @@ import Integration.OpenRouter.Response qualified as OpenRouter
 import Json qualified
 import Maybe (Maybe (..))
 import Service.Command.Core (NameOf)
-import Service.FileUpload.Core (FileAccessError (..), FileRef (..))
+import Service.FileUpload.Core (FileAccessError (..))
 import Task (Task)
 import Task qualified
 import Text (Text)
@@ -171,20 +171,20 @@ buildExtractionPrompt config = case config.extractionMode of
 -- | Convert FileAccessError to IntegrationError.
 fileAccessToIntegrationError :: FileAccessError -> Integration.IntegrationError
 fileAccessToIntegrationError err = case err of
-  FileNotFound (FileRef ref) ->
-    Integration.ValidationError [fmt|File not found: #{ref}|]
-  StateLookupFailed _ msg ->
-    Integration.UnexpectedError [fmt|Failed to lookup file state: #{msg}|]
-  NotOwner (FileRef ref) ->
-    Integration.AuthenticationError [fmt|Not authorized to access file: #{ref}|]
-  FileExpired (FileRef ref) ->
-    Integration.ValidationError [fmt|File has expired: #{ref}|]
-  FileIsDeleted (FileRef ref) ->
-    Integration.ValidationError [fmt|File has been deleted: #{ref}|]
-  BlobMissing (FileRef ref) ->
-    Integration.UnexpectedError [fmt|File blob is missing from storage: #{ref}|]
-  StorageError msg ->
-    Integration.UnexpectedError [fmt|Storage error: #{msg}|]
+  FileNotFound _ ->
+    Integration.ValidationError "OCR file access failed: file not found"
+  StateLookupFailed _ _ ->
+    Integration.UnexpectedError "OCR file access failed: state lookup error"
+  NotOwner _ ->
+    Integration.AuthenticationError "OCR file access failed: access denied"
+  FileExpired _ ->
+    Integration.ValidationError "OCR file access failed: file expired"
+  FileIsDeleted _ ->
+    Integration.ValidationError "OCR file access failed: file deleted"
+  BlobMissing _ ->
+    Integration.UnexpectedError "OCR file access failed: storage unavailable"
+  StorageError _ ->
+    Integration.UnexpectedError "OCR file access failed: storage error"
 
 
 -- | Convert IntegrationError to Text for the onError callback.
