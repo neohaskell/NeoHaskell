@@ -266,7 +266,8 @@ execute eventStore entityFetcher entityName requestContext command = do
                               }
                     Err eventStoreError -> do
                       let errorText = [fmt|Event store insert failed for stream #{toText finalStreamId}: #{toText eventStoreError}|]
-                      Log.critical errorText |> Task.ignoreError
+                      Log.withScope [("component", "CommandExecutor"), ("event", "insert_failed")] do
+                        Log.critical errorText |> Task.ignoreError
                       Task.yield
                         CommandFailed
                           { error = errorText,

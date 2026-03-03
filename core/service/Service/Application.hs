@@ -1043,6 +1043,30 @@ runWithResolved ::
   Application ->
   Task Text Unit
 runWithResolved eventStore maybeFileUploadSetup fileUploadCleanup maybeWebAuthSetup app = do
+  safeResult <-
+    ( Task.fromIO (Task.runResult (runWithResolvedUnsafe eventStore maybeFileUploadSetup fileUploadCleanup maybeWebAuthSetup app)) :: Task Text (Result Text Unit)
+    )
+      |> Task.asResultSafe
+  case safeResult of
+    Err err -> do
+      Log.withScope [("component", "Application"), ("event", "unexpected_exception")] do
+        Log.critical [fmt|Application runtime crashed unexpectedly: #{err}|]
+          |> Task.ignoreError
+      Task.throw err
+    Ok result ->
+      case result of
+        Err err -> Task.throw err
+        Ok _ -> Task.yield unit
+
+
+runWithResolvedUnsafe ::
+  EventStore Json.Value ->
+  Maybe FileUploadSetup ->
+  Task Text () ->
+  Maybe WebAuthSetup ->
+  Application ->
+  Task Text Unit
+runWithResolvedUnsafe eventStore maybeFileUploadSetup fileUploadCleanup maybeWebAuthSetup app = do
   -- 1. Wire all query definitions and collect registries + endpoints + schemas
   wiredQueries <-
     app.queryDefinitions
@@ -1075,7 +1099,17 @@ runWithResolved eventStore maybeFileUploadSetup fileUploadCleanup maybeWebAuthSe
   -- 7. Collect command endpoints and schemas from all services, grouped by transport
   endpointsAndSchemasByTransport <-
     app.serviceRunners
-      |> Task.mapArray (\runner -> runner.getEndpointsByTransport eventStore app.transports)
+      |> Task.mapArray
+          ( \runner -> do
+              result <- runner.getEndpointsByTransport eventStore app.transports |> Task.asResult
+              case result of
+                Ok endpointsAndSchemas -> Task.yield endpointsAndSchemas
+                Err err ->
+                  Log.withScope [("component", "Application"), ("event", "service_runner_failed")] do
+                    Log.critical [fmt|Service runner failed to initialize: #{err}|]
+                      |> Task.ignoreError
+                    Task.throw err
+          )
 
   -- 8. Merge all endpoints and schemas by transport name
   let mergeEndpointsAndSchemas (serviceEndpoints, serviceSchemas) (handlersAcc, schemasAcc) = do
@@ -1312,7 +1346,10 @@ runWithAsync eventStore app = do
       taskWithErrorLogging = do
         result <- runWith eventStore app |> Task.asResult
         case result of
-          Err err -> Log.critical [fmt|Application failed: #{err}|]
+          Err err ->
+            Log.withScope [("component", "Application"), ("event", "worker_crash")] do
+              Log.critical [fmt|Application failed: #{err}|]
+                |> Task.ignoreError
           Ok _ -> Task.yield unit
   AsyncTask.run taskWithErrorLogging
     |> Task.mapError toText

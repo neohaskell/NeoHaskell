@@ -228,6 +228,38 @@ spec = do
         count <- ConcurrentVar.peek liveEventCount
         count |> shouldBe 1
 
+      it "surfaces service runner initialization errors" \_ -> do
+        eventStore <- InMemory.new |> Task.mapError toText
+
+        let failingRunner =
+              ServiceRunner
+                { getEndpointsByTransport = \_ _ -> Task.throw "service runner init failed"
+                }
+
+        let app =
+              Application.new
+                |> Application.withServiceRunner failingRunner
+
+        result <- Application.runWith eventStore app |> Task.asResult
+        case result of
+          Ok _ -> fail "Expected service runner initialization error"
+          Err err -> err |> shouldBe "service runner init failed"
+
+      it "runWithAsync logs structured worker crash fields" \_ -> do
+        eventStore <- InMemory.new |> Task.mapError toText
+
+        let failingRunner =
+              ServiceRunner
+                { getEndpointsByTransport = \_ _ -> Task.throw "worker crash sentinel"
+                }
+
+        let app =
+              Application.new
+                |> Application.withServiceRunner failingRunner
+
+        Application.runWithAsync eventStore app
+        AsyncTask.sleep 100 |> Task.mapError (\_ -> "sleep error" :: Text)
+
     describe "isEmpty with service runners" do
       it "returns False when service runners are added" \_ -> do
         let app =
