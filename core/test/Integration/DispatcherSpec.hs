@@ -967,3 +967,86 @@ spec = do
         -- With capacity=1 and timeout=10ms, event3 should be dropped
         count <- ConcurrentVar.peek processedCount
         count |> shouldBe 2
+
+    describe "entity filtering" do
+      it "only invokes runners whose entityTypeName matches the event's entityName" \_ -> do
+        -- Test for issue #323: Entity filtering
+        -- Verify that only runners registered for the matching entity type are invoked
+        testEntityCount <- ConcurrentVar.containing (0 :: Int)
+        orderEntityCount <- ConcurrentVar.containing (0 :: Int)
+
+        let testEntityRunner =
+              Dispatcher.OutboundRunner
+                { entityTypeName = "TestEntity",
+                  processEvent = \_maybeContext _eventStore _event -> do
+                    testEntityCount |> ConcurrentVar.modify (+ 1)
+                    Task.yield Array.empty
+                }
+
+        let orderEntityRunner =
+              Dispatcher.OutboundRunner
+                { entityTypeName = "OrderEntity",
+                  processEvent = \_maybeContext _eventStore _event -> do
+                    orderEntityCount |> ConcurrentVar.modify (+ 1)
+                    Task.yield Array.empty
+                }
+
+        eventStore <- InMemory.new |> Task.mapError toText
+        dispatcher <- Dispatcher.new eventStore [testEntityRunner, orderEntityRunner] Map.empty
+
+        -- Dispatch a TestEntity event
+        event <- makeTestEvent "entity-A" 1 1
+        _ <- Dispatcher.dispatch dispatcher event
+
+        -- Wait for processing
+        AsyncTask.sleep 500 |> Task.mapError (\_ -> "sleep error" :: Text)
+
+        -- Verify only the TestEntity runner was invoked
+        testCount <- ConcurrentVar.peek testEntityCount
+        orderCount <- ConcurrentVar.peek orderEntityCount
+        testCount |> shouldBe 1
+        orderCount |> shouldBe 0
+
+      it "does not crash when event arrives for unregistered entity type" \_ -> do
+        -- Test for issue #254: Non-matching event rejection
+        -- Verify that events for unregistered entity types are silently ignored
+        orderEntityCount <- ConcurrentVar.containing (0 :: Int)
+
+        let orderEntityRunner =
+              Dispatcher.OutboundRunner
+                { entityTypeName = "OrderEntity",
+                  processEvent = \_maybeContext _eventStore _event -> do
+                    orderEntityCount |> ConcurrentVar.modify (+ 1)
+                    Task.yield Array.empty
+                }
+
+        eventStore <- InMemory.new |> Task.mapError toText
+        dispatcher <- Dispatcher.new eventStore [orderEntityRunner] Map.empty
+
+        -- Create and dispatch a TestEntity event (no runner registered for it)
+        now <- DateTime.now
+        let streamId = StreamId.fromTextUnsafe "entity-A"
+        let testEvent =
+              Event
+                { entityName = EntityName "TestEntity",
+                  streamId = streamId,
+                  event = Json.encode (OrderingEvent {sequenceNum = 1}),
+                  metadata =
+                      EventMetadata
+                        { eventId = Uuid.nil,
+                          relatedUserSub = Nothing,
+                          correlationId = Nothing,
+                          causationId = Nothing,
+                          createdAt = now,
+                          localPosition = Just (StreamPosition 1),
+                          globalPosition = Just (StreamPosition 1)
+                        }
+                }
+        _ <- Dispatcher.dispatch dispatcher testEvent
+
+        -- Wait for processing (should complete without error)
+        AsyncTask.sleep 100 |> Task.mapError (\_ -> "sleep error" :: Text)
+
+        -- Verify the OrderEntity runner was never invoked
+        count <- ConcurrentVar.peek orderEntityCount
+        count |> shouldBe 0

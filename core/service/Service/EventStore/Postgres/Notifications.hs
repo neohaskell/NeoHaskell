@@ -12,10 +12,12 @@ module Service.EventStore.Postgres.Notifications (
 import AsyncTask qualified
 import Basics
 import Bytes qualified
-
 import Channel qualified
 import Core
 import Data.ByteString qualified
+import Data.Time.Clock.POSIX qualified as GhcPosix
+import GHC.Float (Double)
+import GHC.Real qualified as GhcReal
 import Hasql.Connection qualified as Hasql
 import Hasql.Notifications qualified as HasqlNotifications
 import Json qualified
@@ -86,8 +88,6 @@ defaultReconnectConfig =
     }
 
 
-
-
 -- | Legacy entry point used by Internal.hs.
 -- Wraps 'connect' with default reconnect config and starts keepalive.
 connectTo ::
@@ -129,15 +129,24 @@ connect cfg listenConn queryConn store = do
 
 -- | Start the keepalive/reconnect supervisor in the background.
 -- Runs 'waitForNotifications' and restarts it with exponential backoff
--- on unexpected exits. Does NOT restart on clean shutdown.
+-- on unexpected exits. Resets backoff after a long-running successful session.
 startKeepalive :: NotificationConnection -> Task Text Unit
 startKeepalive conn = do
   AsyncTask.run (keepaliveLoop conn conn.reconnectConfig.initialBackoff)
     |> Task.map (\_ -> ())
 
 
+-- | Get current time in milliseconds since epoch.
+getCurrentTimeMs :: Task Text Int
+getCurrentTimeMs = do
+  posixTime <- GhcPosix.getPOSIXTime |> Task.fromIO
+  Task.yield (round (GhcReal.realToFrac posixTime * 1000 :: Double))
+
+
 -- | Inner reconnect loop. Runs waitForNotifications, detects exit type,
 -- and either stops (clean) or restarts with backoff (unexpected).
+-- Resets backoff to initialBackoff if the listener ran for longer than
+-- maxBackoff ms (indicating a successful connection that later failed).
 keepaliveLoop :: NotificationConnection -> Int -> Task Text Unit
 keepaliveLoop conn currentBackoff = do
   isShuttingDown <- Var.get conn.shutdownRef
@@ -145,12 +154,15 @@ keepaliveLoop conn currentBackoff = do
     True ->
       Task.yield ()
     False -> do
+      startTime <- getCurrentTimeMs
       result <-
         (conn.rawListenConnection
           |> HasqlNotifications.waitForNotifications
             (handler conn.rawQueryConnection conn.subscriptionStore)
           |> Task.fromIO :: Task Text Unit)
           |> Task.asResultSafe
+      endTime <- getCurrentTimeMs
+      let runDurationMs = endTime - startTime
       case result of
         Ok _ -> do
           -- waitForNotifications returned normally — treat as clean exit
@@ -159,14 +171,22 @@ keepaliveLoop conn currentBackoff = do
           Task.yield ()
         Err _ -> do
           -- Unexpected failure — log critical and reconnect with backoff
+          -- Reset backoff if the listener ran for longer than maxBackoff ms
+          -- (indicates a successful connection that later failed, not an immediate failure)
+          let resetBackoff =
+                runDurationMs > conn.reconnectConfig.maxBackoff
+          let effectiveBackoff =
+                case resetBackoff of
+                  True -> conn.reconnectConfig.initialBackoff
+                  False -> currentBackoff
           Log.critical
-            [fmt|LISTEN/NOTIFY listener exited unexpectedly, reconnecting in {currentBackoff}ms|]
+            [fmt|LISTEN/NOTIFY listener exited unexpectedly, reconnecting in {effectiveBackoff}ms|]
             |> Task.ignoreError
-          AsyncTask.sleep currentBackoff
+          AsyncTask.sleep effectiveBackoff
           let nextBackoff =
                 min
                   conn.reconnectConfig.maxBackoff
-                  (round (fromIntegral currentBackoff * conn.reconnectConfig.backoffMultiplier))
+                  (round (fromIntegral effectiveBackoff * conn.reconnectConfig.backoffMultiplier))
           keepaliveLoop conn nextBackoff
 
 

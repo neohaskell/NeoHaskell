@@ -685,7 +685,9 @@ processStatelessEvent ::
   Task Text Unit
 processStatelessEvent dispatcher event = do
   let streamId = event.streamId
+  let eventEntityName = toText event.entityName
   dispatcher.outboundRunners
+    |> Array.dropIf (\runner -> not (runner.entityTypeName == eventEntityName))
     |> Task.forEach \runner -> do
       result <- runner.processEvent dispatcher.context dispatcher.eventStore event |> Task.asResult
       case result of
@@ -696,7 +698,6 @@ processStatelessEvent dispatcher event = do
         Err err -> do
           Log.warn [fmt|Error processing event (stream: #{toText streamId}): #{err}|]
             |> Task.ignoreError
-
 
 -- | Process an event through lifecycle runners.
 processLifecycleEvent ::
