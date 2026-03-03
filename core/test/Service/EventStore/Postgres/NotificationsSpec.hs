@@ -1,12 +1,15 @@
 module Service.EventStore.Postgres.NotificationsSpec (spec) where
 
 import Core
+
 import Result qualified
 import Text qualified
 import Json qualified
 import Service.Event (EntityName (..), Event (..), StreamId (..), StreamPosition (..))
 import Service.Event.EventMetadata (EventMetadata (..))
 import Service.Event.EventMetadata qualified as EventMetadata
+import Service.EventStore.Postgres.Notifications (mkReconnectConfig, ReconnectConfig (..))
+import Service.EventStore.Postgres.Notifications qualified as Notifications
 import Service.EventStore.Postgres.PostgresEventRecord (PostgresEventRecord (..))
 import Service.EventStore.Postgres.Sessions (EventNotificationPayload (..))
 import Service.EventStore.Postgres.Sessions qualified as Sessions
@@ -203,3 +206,68 @@ spec = do
             notification.localPosition |> shouldBe 0
             notification.inlinedStreamId |> shouldBe "my-stream"
             notification.entity |> shouldBe "MyEntity"
+
+  describe "ReconnectConfig" do
+    describe "mkReconnectConfig" do
+      it "succeeds for a valid reconnect configuration" \_ -> do
+        let result = Notifications.mkReconnectConfig 100 30000 2.0
+        result |> shouldSatisfy Result.isOk
+
+      it "fails when multiplier is less than 1.0" \_ -> do
+        let result = Notifications.mkReconnectConfig 100 30000 0.5
+        result |> shouldSatisfy Result.isErr
+
+      it "fails when initial backoff is greater than max backoff" \_ -> do
+        let result = Notifications.mkReconnectConfig 5000 1000 2.0
+        result |> shouldSatisfy Result.isErr
+
+      it "accepts boundary values where initial equals max and multiplier is just above 1.0" \_ -> do
+        let result = Notifications.mkReconnectConfig 250 250 1.0001
+        result |> shouldSatisfy Result.isOk
+
+      it "rejects boundary values where multiplier equals 1.0" \_ -> do
+        let result = Notifications.mkReconnectConfig 250 250 1.0
+        result |> shouldSatisfy Result.isErr
+
+
+    describe "ReconnectConfig smart constructor validation" do
+      it "accepts valid config: initial=500, max=30000, multiplier=2.0" \_ -> do
+        let result = mkReconnectConfig 500 30000 2.0
+        result |> shouldSatisfy Result.isOk
+
+      it "accepts minimum valid config: initial=1, max=1, multiplier=1.001" \_ -> do
+        let result = mkReconnectConfig 1 1 1.001
+        result |> shouldSatisfy Result.isOk
+
+      it "rejects initialBackoff=0" \_ -> do
+        let result = mkReconnectConfig 0 1000 2.0
+        result |> shouldSatisfy Result.isErr
+
+      it "rejects negative initialBackoff" \_ -> do
+        let result = mkReconnectConfig (-1) 1000 2.0
+        result |> shouldSatisfy Result.isErr
+
+      it "rejects maxBackoff < initialBackoff" \_ -> do
+        let result = mkReconnectConfig 1000 500 2.0
+        result |> shouldSatisfy Result.isErr
+
+      it "rejects backoffMultiplier=1.0 (no growth)" \_ -> do
+        let result = mkReconnectConfig 500 30000 1.0
+        result |> shouldSatisfy Result.isErr
+
+      it "rejects backoffMultiplier < 1.0 (shrinking backoff)" \_ -> do
+        let result = mkReconnectConfig 500 30000 0.5
+        result |> shouldSatisfy Result.isErr
+
+      it "accepts maxBackoff equal to initialBackoff" \_ -> do
+        let result = mkReconnectConfig 500 500 2.0
+        result |> shouldSatisfy Result.isOk
+
+      it "preserves field values in valid config" \_ -> do
+        let result = mkReconnectConfig 100 5000 1.5
+        case result of
+          Err err -> Test.fail [fmt|Expected Ok, got: #{err}|]
+          Ok cfg -> do
+            cfg.initialBackoff |> shouldBe 100
+            cfg.maxBackoff |> shouldBe 5000
+            cfg.backoffMultiplier |> shouldBe 1.5

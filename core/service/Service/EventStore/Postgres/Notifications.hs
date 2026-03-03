@@ -1,10 +1,19 @@
 module Service.EventStore.Postgres.Notifications (
+  ReconnectConfig (..),
+  NotificationConnection (..),
+  HeartbeatSignal (..),
+  mkReconnectConfig,
   connectTo,
+  connect,
+  startKeepalive,
   subscribeToStream,
 ) where
 
 import AsyncTask qualified
+import Basics
 import Bytes qualified
+
+import Channel qualified
 import Core
 import Data.ByteString qualified
 import Hasql.Connection qualified as Hasql
@@ -16,29 +25,149 @@ import Service.EventStore.Postgres.Sessions qualified as Sessions
 import Service.EventStore.Postgres.SubscriptionStore (SubscriptionStore)
 import Service.EventStore.Postgres.SubscriptionStore qualified as SubscriptionStore
 import Task qualified
+import Var qualified
 
 
+-- | Signal sent on the heartbeat channel.
+data HeartbeatSignal
+  = Heartbeat
+  | Shutdown
+  deriving (Show, Eq)
+
+
+-- | Configuration for exponential-backoff reconnect.
+-- Use 'mkReconnectConfig' to construct — validates invariants.
+data ReconnectConfig = ReconnectConfig
+  { initialBackoff :: !Int
+  -- ^ Initial backoff in milliseconds. Must be > 0.
+  , maxBackoff :: !Int
+  -- ^ Maximum backoff in milliseconds. Must be >= initialBackoff.
+  , backoffMultiplier :: !Float
+  -- ^ Backoff growth factor. Must be > 1.0.
+  }
+  deriving (Show, Eq)
+
+
+-- | Smart constructor for 'ReconnectConfig'.
+-- Returns Err if invariants are violated.
+mkReconnectConfig :: Int -> Int -> Float -> Result Text ReconnectConfig
+mkReconnectConfig initial maxB multiplier =
+  case initial > 0 && maxB >= initial && multiplier > 1.0 of
+    True ->
+      Ok
+        ReconnectConfig
+          { initialBackoff = initial
+          , maxBackoff = maxB
+          , backoffMultiplier = multiplier
+          }
+    False ->
+      Err
+        [fmt|Invalid ReconnectConfig: initialBackoff={initial} must be > 0, maxBackoff={maxB} must be >= initialBackoff, backoffMultiplier={multiplier} must be > 1.0|]
+
+
+-- | A live LISTEN/NOTIFY connection with keepalive support.
+data NotificationConnection = NotificationConnection
+  { rawListenConnection :: !Hasql.Connection
+  , rawQueryConnection :: !Hasql.Connection
+  , heartbeatChannel :: !(Channel HeartbeatSignal)
+  , reconnectConfig :: !ReconnectConfig
+  , subscriptionStore :: !SubscriptionStore
+  , shutdownRef :: !(Var Bool)
+  }
+
+
+-- | Default reconnect config: 500ms initial, 30s max, 2x multiplier.
+defaultReconnectConfig :: ReconnectConfig
+defaultReconnectConfig =
+  ReconnectConfig
+    { initialBackoff = 500
+    , maxBackoff = 30000
+    , backoffMultiplier = 2.0
+    }
+
+
+
+
+-- | Legacy entry point used by Internal.hs.
+-- Wraps 'connect' with default reconnect config and starts keepalive.
 connectTo ::
   Hasql.Connection ->
   Hasql.Connection ->
   SubscriptionStore ->
   Task Text Unit
 connectTo listenConnection queryConnection store = do
+  conn <- connect defaultReconnectConfig listenConnection queryConnection store
+  startKeepalive conn
+
+
+-- | Create a 'NotificationConnection' and register the LISTEN channel.
+connect ::
+  ReconnectConfig ->
+  Hasql.Connection ->
+  Hasql.Connection ->
+  SubscriptionStore ->
+  Task Text NotificationConnection
+connect cfg listenConn queryConn store = do
   let channelToListen = HasqlNotifications.toPgIdentifier "global"
-  HasqlNotifications.listen listenConnection channelToListen
+  HasqlNotifications.listen listenConn channelToListen
     |> Task.fromIO
     |> discard
+  heartbeat <- Channel.newBounded 10
+  shutdown <- Var.new False
   Log.info "LISTEN/NOTIFY listener started"
     |> Task.ignoreError
-  listenConnection
-    |> HasqlNotifications.waitForNotifications (handler queryConnection store)
-    |> Task.fromIO
-    |> AsyncTask.run
-    |> Task.andThen \_ -> do
-      Log.critical "LISTEN/NOTIFY listener exited unexpectedly"
-        |> Task.ignoreError
+  Task.yield
+    NotificationConnection
+      { rawListenConnection = listenConn
+      , rawQueryConnection = queryConn
+      , heartbeatChannel = heartbeat
+      , reconnectConfig = cfg
+      , subscriptionStore = store
+      , shutdownRef = shutdown
+      }
+
+
+-- | Start the keepalive/reconnect supervisor in the background.
+-- Runs 'waitForNotifications' and restarts it with exponential backoff
+-- on unexpected exits. Does NOT restart on clean shutdown.
+startKeepalive :: NotificationConnection -> Task Text Unit
+startKeepalive conn = do
+  AsyncTask.run (keepaliveLoop conn conn.reconnectConfig.initialBackoff)
+    |> Task.map (\_ -> ())
+
+
+-- | Inner reconnect loop. Runs waitForNotifications, detects exit type,
+-- and either stops (clean) or restarts with backoff (unexpected).
+keepaliveLoop :: NotificationConnection -> Int -> Task Text Unit
+keepaliveLoop conn currentBackoff = do
+  isShuttingDown <- Var.get conn.shutdownRef
+  case isShuttingDown of
+    True ->
       Task.yield ()
-    |> discard
+    False -> do
+      result <-
+        (conn.rawListenConnection
+          |> HasqlNotifications.waitForNotifications
+            (handler conn.rawQueryConnection conn.subscriptionStore)
+          |> Task.fromIO :: Task Text Unit)
+          |> Task.asResultSafe
+      case result of
+        Ok _ -> do
+          -- waitForNotifications returned normally — treat as clean exit
+          Log.info "LISTEN/NOTIFY listener exited cleanly"
+            |> Task.ignoreError
+          Task.yield ()
+        Err _ -> do
+          -- Unexpected failure — log critical and reconnect with backoff
+          Log.critical
+            [fmt|LISTEN/NOTIFY listener exited unexpectedly, reconnecting in {currentBackoff}ms|]
+            |> Task.ignoreError
+          AsyncTask.sleep currentBackoff
+          let nextBackoff =
+                min
+                  conn.reconnectConfig.maxBackoff
+                  (round (fromIntegral currentBackoff * conn.reconnectConfig.backoffMultiplier))
+          keepaliveLoop conn nextBackoff
 
 
 subscribeToStream ::
