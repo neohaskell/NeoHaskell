@@ -246,7 +246,7 @@ spec = do
               order
                 |> Array.fromLinkedList
                 |> Array.takeIf (\(entityId, _) -> entityId == "entity-A")
-                |> Array.map (\(_, seqNum) -> seqNum)
+                |> Array.map snd
 
         -- Should be [1, 2, 3] - strict ordering
         entityAEvents |> shouldBe [1, 2, 3]

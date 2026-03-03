@@ -241,7 +241,7 @@ concurrentAccessSpec newStore = do
       |> discard
     -- Final value should be one of the written values (last writer wins)
     result <- store.get key
-    result |> shouldSatisfy (\r -> case r of Just _ -> True; Nothing -> False)
+    result |> shouldSatisfy (\maybeTokenSet -> maybeTokenSet != Nothing)
 
   it "atomicModify is atomic under contention" \_ -> do
     store <- newStore
@@ -307,7 +307,7 @@ concurrentAccessSpec newStore = do
       Array.initialize 25 identity
         |> Array.map (\i -> do
           let key = TestUtils.makeTestTokenKey [fmt|key-#{toText i}|]
-          AsyncTask.run (store.atomicModify key (\ts -> ts)))
+          AsyncTask.run (store.atomicModify key identity))
         |> Task.mapArray identity
     -- Wait for all
     readTasks |> Array.map AsyncTask.waitFor |> Task.mapArray identity |> discard

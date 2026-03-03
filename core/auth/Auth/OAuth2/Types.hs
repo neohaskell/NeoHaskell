@@ -63,7 +63,7 @@ module Auth.OAuth2.Types (
 
 import Auth.Hostname qualified as Hostname
 import Basics
-import Char (Char)
+import Char (Char, isDigit, isLower, isUpper)
 import Control.Applicative qualified as GhcApplicative
 import Data.Aeson qualified as Aeson
 import Data.Aeson.Types qualified as AesonTypes
@@ -543,9 +543,9 @@ mkCodeVerifierUnsafe = CodeVerifier
 -- Allowed: [A-Z], [a-z], [0-9], "-", ".", "_", "~"
 isUnreservedChar :: Char -> Bool
 isUnreservedChar c =
-  (c >= 'A' && c <= 'Z')
-    || (c >= 'a' && c <= 'z')
-    || (c >= '0' && c <= '9')
+  isUpper c
+    || isLower c
+    || isDigit c
     || c == '-'
     || c == '.'
     || c == '_'
