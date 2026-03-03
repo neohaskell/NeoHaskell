@@ -3,6 +3,7 @@ module Http.ClientSpec where
 import Core
 import Http.Client (Error (..))
 import Http.Client qualified as Http
+import Network.TLS qualified as TLS
 import Task qualified
 import Test
 import Text qualified
@@ -122,6 +123,9 @@ spec = do
     -- Callers must use Http.Client.Internal to access getRaw for trusted/localhost callers.
 
     describe "getSecure" do
+      it "secure TLS manager allows TLS 1.3 and TLS 1.2 only" \_ -> do
+        Http.secureTlsSupportedVersions |> shouldBe [TLS.TLS13, TLS.TLS12]
+
       it "rejects http:// URL with InvalidUrl error" \_ -> do
         let req = Http.request |> Http.withUrl "http://example.com"
         result <- Http.getSecure req |> Task.asResult
