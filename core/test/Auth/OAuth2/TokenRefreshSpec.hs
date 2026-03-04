@@ -16,10 +16,13 @@ import Auth.OAuth2.Types (
  )
 import Auth.SecretStore (SecretStore (..), TokenKey (..))
 import Auth.SecretStore.InMemory qualified as InMemory
+import Array (Array)
+import Array qualified
+import AsyncTask qualified
 import ConcurrentVar qualified
 import ConcurrentMap qualified
 import Control.Concurrent qualified as GhcConcurrent
-import Core
+import Core hiding (Array)
 import Data.ByteString.Lazy qualified as GhcLBS
 import Network.HTTP.Types qualified as GhcHTTP
 import Network.Wai qualified as GhcWai
@@ -304,6 +307,52 @@ spec = do
       result |> shouldBe (Ok "success: new-access-token")
       finalRefreshCount <- ConcurrentVar.peek refreshCount
       finalRefreshCount |> shouldBe 0
+
+    -- Path 11: Concurrent stress test - 100 threads, exactly 1 refresh
+    it "performs exactly one refresh when 100 concurrent requests get 401" \_ -> do
+      refreshCounter <- ConcurrentVar.containing (0 :: Int)
+      successCounter <- ConcurrentVar.containing (0 :: Int)
+      store <- InMemory.new
+      let expiredTokenSet = makeTokenSetWithRefresh "expired-token" "refresh-token"
+      let key = TokenKey "oauth:provider:user1"
+      store.put key expiredTokenSet
+
+      let countingRefresh _ = do
+            refreshCounter |> ConcurrentVar.modify (\n -> n + 1)
+            mockRefreshSuccessTask
+
+      refreshLocks <- ConcurrentMap.new
+      let tokenAction token =
+            case token of
+              "expired-token" -> Task.throw ("401 Unauthorized" :: Text)
+              t -> Task.yield ([fmt|success: #{t}|] :: Text)
+
+      let singleTask = do
+            result <-
+              withValidToken
+                store
+                refreshLocks
+                "provider"
+                "user1"
+                countingRefresh
+                isUnauthorized
+                tokenAction
+                |> Task.asResult
+            case result of
+              Ok _ -> successCounter |> ConcurrentVar.modify (\n -> n + 1)
+              Err _ -> Task.yield ()
+
+      let tasks :: Array (Task Text Unit)
+          tasks = Array.initialize 100 (\_ -> singleTask)
+      AsyncTask.runAllIgnoringErrors tasks
+
+      -- Give all tasks time to complete
+      AsyncTask.sleep 3000
+
+      finalRefreshCount <- ConcurrentVar.peek refreshCounter
+      finalRefreshCount |> shouldBe 1
+      finalSuccessCount <- ConcurrentVar.peek successCounter
+      finalSuccessCount |> shouldBe 100
 
   -- Integration tests
   integrationSpec

@@ -3,10 +3,12 @@ module Http.ClientSpec where
 import Core
 import Http.Client (Error (..), secureTlsSupportedVersions)
 import Http.Client qualified as Http
+import Network.TLS qualified as TLS
 import Task qualified
 import Test
 import Text qualified
 import Http.Client.Internal qualified as HttpInternal
+import Data.ByteString.Char8 qualified as GhcBSChar
 
 -- WAI/Warp for mock server
 import qualified Control.Concurrent as GhcConcurrent
@@ -124,6 +126,29 @@ spec = do
     -- Callers must use Http.Client.Internal to access getRaw for trusted/localhost callers.
 
     describe "getSecure" do
+      it "secure TLS manager allows TLS 1.3 and TLS 1.2 only" \_ -> do
+        Http.secureTlsSupportedVersions |> shouldBe [TLS.TLS13, TLS.TLS12]
+
+      it "pre-check rejects oversized Content-Length before body read" \_ -> do
+        let headers = [(GhcHTTP.hContentLength, GhcBSChar.pack "1024")]
+        Http.checkContentLengthHeaderLimit (Just 128) headers |> shouldBe (Just 128)
+
+      it "pre-check skips when Content-Length header is missing" \_ -> do
+        let headers = [(GhcHTTP.hContentType, GhcBSChar.pack "application/json")]
+        Http.checkContentLengthHeaderLimit (Just 128) headers |> shouldBe Nothing
+
+      it "pre-check skips when Content-Length header is invalid" \_ -> do
+        let headers = [(GhcHTTP.hContentLength, GhcBSChar.pack "not-a-number")]
+        Http.checkContentLengthHeaderLimit (Just 128) headers |> shouldBe Nothing
+
+      it "pre-check skips when Content-Length header is negative" \_ -> do
+        let headers = [(GhcHTTP.hContentLength, GhcBSChar.pack "-5")]
+        Http.checkContentLengthHeaderLimit (Just 128) headers |> shouldBe Nothing
+
+      it "pre-check skips when maxResponseBytes is Nothing" \_ -> do
+        let headers = [(GhcHTTP.hContentLength, GhcBSChar.pack "999999")]
+        Http.checkContentLengthHeaderLimit Nothing headers |> shouldBe Nothing
+
       it "rejects http:// URL with InvalidUrl error" \_ -> do
         let req = Http.request |> Http.withUrl "http://example.com"
         result <- Http.getSecure req |> Task.asResult
