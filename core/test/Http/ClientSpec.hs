@@ -1,7 +1,7 @@
 module Http.ClientSpec where
 
 import Core
-import Http.Client (Error (..))
+import Http.Client (Error (..), secureTlsSupportedVersions)
 import Http.Client qualified as Http
 import Task qualified
 import Test
@@ -15,6 +15,8 @@ import qualified Network.HTTP.Types as GhcHTTP
 import qualified Network.Socket as GhcSocket
 import qualified Network.Wai as GhcWai
 import qualified Network.Wai.Handler.Warp as GhcWarp
+import qualified Network.TLS as GhcTLS
+import qualified Data.List as GhcList
 
 
 spec :: Spec Unit
@@ -164,6 +166,25 @@ spec = do
           Err (Error _) -> Task.yield () -- Connection error expected
           Err (ResponseTooLarge _) -> fail "Unexpected ResponseTooLarge from Http.getSecure"
           Ok _ -> Task.yield () -- OK if something is running on port 59996
+
+    describe "TLS Enforcement (security)" do
+      -- CRITICAL: getSecure must enforce TLS 1.2+ to prevent protocol downgrade attacks.
+      -- The secureTlsSupportedVersions list defines the allowed TLS versions.
+      -- tls >= 2.0 removed TLS 1.0/1.1 from the library, but we enforce explicitly
+      -- for defense-in-depth and to document the security intent.
+
+      it "secureTlsSupportedVersions allows only TLS 1.3 and TLS 1.2" \_ -> do
+        secureTlsSupportedVersions |> shouldBe [GhcTLS.TLS13, GhcTLS.TLS12]
+
+      it "secureTlsSupportedVersions has exactly 2 entries (no accidental additions)" \_ -> do
+        let count = GhcList.length secureTlsSupportedVersions
+        count |> shouldBe 2
+
+      it "secureTlsSupportedVersions prefers TLS 1.3 (listed first)" \_ -> do
+        -- TLS 1.3 should be preferred over 1.2 (order matters for negotiation)
+        case secureTlsSupportedVersions of
+          (first : _) -> first |> shouldBe GhcTLS.TLS13
+          [] -> fail "secureTlsSupportedVersions must not be empty"
 
     describe "Response Size Limits (security)" do
       -- CRITICAL: Unbounded response sizes enable OOM attacks.

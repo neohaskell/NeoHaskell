@@ -14,6 +14,7 @@ module Http.Client (
   -- * HTTP Methods
   get,
   getSecure,
+  secureTlsSupportedVersions,
   -- ^ Enforces HTTPS (rejects http:// URLs). Use for all external API calls.
   -- getRaw is intentionally NOT exported here; use Http.Client.Internal for trusted/localhost callers.
   post,
@@ -47,7 +48,11 @@ import Maybe qualified
 import Network.HTTP.Client qualified as HttpClient
 import Network.HTTP.Simple qualified as HttpSimple
 import Network.HTTP.Simple (setRequestIgnoreStatus)
+import Network.Connection qualified as GhcConnection
+import Network.HTTP.Client.TLS qualified as GhcHttpTls
+import Network.TLS qualified as GhcTLS
 import System.IO qualified as GhcIO
+import System.IO.Unsafe qualified as GhcUnsafe
 import Task (Task)
 import Task qualified
 import Text (Text)
@@ -298,9 +303,38 @@ getIO options = do
   pure (extractResponse httpResponse)
 
 
--- | Performs a secure GET request, enforcing HTTPS.
+-- | Allowed TLS protocol versions for secure connections.
+-- Only TLS 1.3 and TLS 1.2 are permitted. TLS 1.0/1.1 were removed from the tls
+-- library in 2.0, but we pin explicitly for defense-in-depth and documentation.
+secureTlsSupportedVersions :: [GhcTLS.Version]
+secureTlsSupportedVersions = [GhcTLS.TLS13, GhcTLS.TLS12]
+
+
+-- | TLS manager that enforces TLS 1.2+ minimum for all connections.
+-- Uses 'crypton-connection' TLSSettings with explicit version pinning.
+secureTlsManager :: GhcIO.IO HttpClient.Manager
+secureTlsManager = do
+  let tlsParams =
+        (GhcTLS.defaultParamsClient "" "")
+          { GhcTLS.clientSupported =
+              GhcTLS.defaultSupported
+                { GhcTLS.supportedVersions = secureTlsSupportedVersions
+                }
+          }
+  let tlsSettings = GhcConnection.TLSSettings tlsParams
+  let managerSettings = GhcHttpTls.mkManagerSettings tlsSettings Nothing
+  HttpClient.newManager managerSettings
+
+
+{-# NOINLINE cachedSecureTlsManager #-}
+cachedSecureTlsManager :: HttpClient.Manager
+cachedSecureTlsManager = GhcUnsafe.unsafePerformIO secureTlsManager
+
+
+-- | Performs a secure GET request, enforcing HTTPS and TLS 1.2+ minimum.
 -- Rejects any URL that does not start with 'https://' with an 'InvalidUrl' error.
 -- The error message sanitizes the URL via 'sanitizeUrlText' to prevent secret leakage.
+-- Uses a TLS manager pinned to TLS 1.2+ for defense-in-depth.
 -- Use 'Http.Client.Internal.getRaw' for trusted localhost callers (e.g., OAuth2 discovery).
 {-# INLINE getSecure #-}
 getSecure ::
@@ -321,7 +355,7 @@ getSecure options = do
       checkResponseSize options response
 
 
--- | Internal IO action for raw GET request
+-- | Internal IO action for secure raw GET request using TLS 1.2+ only.
 getRawIO ::
   Request ->
   GhcIO.IO (Response Bytes)
@@ -330,7 +364,7 @@ getRawIO options = do
   let req = baseReq
         |> applyRequestOptions options
         |> setRequestIgnoreStatus
-  -- httpBS returns Response ByteString; setRequestIgnoreStatus ensures no throw on 401/429
+        |> HttpSimple.setRequestManager cachedSecureTlsManager
   httpResponse <- HttpSimple.httpBS req
   pure (extractResponseBytes httpResponse)
 
