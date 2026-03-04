@@ -30,7 +30,7 @@ common common_cfg
     bytestring,
     case-insensitive,
     containers,
-    connection,
+    crypton-connection,
     contravariant-extras,
     crypton,
     data-default,

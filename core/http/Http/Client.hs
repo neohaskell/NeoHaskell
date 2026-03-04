@@ -309,9 +309,10 @@ getIO options = do
   pure (extractResponse httpResponse)
 
 
--- | Performs a secure GET request, enforcing HTTPS.
+-- | Performs a secure GET request, enforcing HTTPS and TLS 1.2+ minimum.
 -- Rejects any URL that does not start with 'https://' with an 'InvalidUrl' error.
 -- The error message sanitizes the URL via 'sanitizeUrlText' to prevent secret leakage.
+-- Uses a TLS manager pinned to TLS 1.2+ for defense-in-depth.
 -- Use 'Http.Client.Internal.getRaw' for trusted localhost callers (e.g., OAuth2 discovery).
 secureTlsSupportedVersions :: [TLS.Version]
 secureTlsSupportedVersions = [TLS.TLS13, TLS.TLS12]
@@ -321,7 +322,7 @@ secureTlsManager = do
   let tlsParams =
         (TLS.defaultParamsClient "" "")
           { TLS.clientSupported =
-              def
+              TLS.defaultSupported
                 { TLS.supportedVersions = secureTlsSupportedVersions
                 }
           }
