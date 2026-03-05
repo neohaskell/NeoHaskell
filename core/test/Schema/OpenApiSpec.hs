@@ -31,6 +31,43 @@ makeEndpointSchema reqSchema respSchema = do
     }
 
 
+-- | Extract the inline response schema from an OpenAPI spec at a given path and HTTP method.
+-- Fails with descriptive messages if any step in the traversal is missing.
+extractResponseSchema ::
+  [Char] ->
+  Lens.Getting (Maybe OpenApi.Operation) OpenApi.PathItem (Maybe OpenApi.Operation) ->
+  OpenApi.OpenApi ->
+  (OpenApi.Schema -> Task Text Unit) ->
+  Task Text Unit
+extractResponseSchema path operationLens openApiSpec assertion = do
+  let paths = openApiSpec |> Lens.view OpenApi.paths
+  let maybePathItem = InsOrdHashMap.lookup path paths
+  case maybePathItem of
+    Nothing -> Test.fail "Expected path not found in OpenAPI spec"
+    Just pathItem -> do
+      let maybeOp = pathItem |> Lens.view operationLens
+      case maybeOp of
+        Nothing -> Test.fail "Expected HTTP operation not found"
+        Just op -> do
+          let responses = op |> Lens.view OpenApi.responses
+          let responsesMap = responses |> Lens.view OpenApi.responses
+          let maybeResponse = InsOrdHashMap.lookup 200 responsesMap
+          case maybeResponse of
+            Nothing -> Test.fail "200 response not found"
+            Just (OpenApi.Inline response) -> do
+              let content = response |> Lens.view OpenApi.content
+              let maybeMediaType = InsOrdHashMap.lookup "application/json" content
+              case maybeMediaType of
+                Nothing -> Test.fail "application/json media type not found"
+                Just mediaType -> do
+                  let maybeSchema = mediaType |> Lens.view OpenApi.schema
+                  case maybeSchema of
+                    Nothing -> Test.fail "Schema not found"
+                    Just (OpenApi.Inline schema) -> assertion schema
+                    Just (OpenApi.Ref _) -> Test.fail "Schema is a reference, expected inline"
+            Just (OpenApi.Ref _) -> Test.fail "Response is a reference, expected inline"
+
+
 -- -----------------------------------------------------------------------------
 -- Tests
 -- -----------------------------------------------------------------------------
@@ -167,6 +204,32 @@ spec = do
       -- Verify paths are generated
       let paths = openApiSpec |> Lens.view OpenApi.paths
       InsOrdHashMap.size paths |> shouldSatisfy (\n -> n > 0)
+
+    it "query endpoint response schema is array type with items" \_ -> do
+      let apiInfo = ApiInfo "Test API" "1.0.0" ""
+      let commandSchemas = Map.empty
+      let querySchemas = Map.fromArray (Array.fromLinkedList
+            [ ("GetUser", makeEndpointSchema Nothing SText)
+            ])
+      let openApiSpec = OpenApiGen.toOpenApiSpec apiInfo commandSchemas querySchemas Map.empty Map.empty
+      extractResponseSchema "/queries/get-user" OpenApi.get openApiSpec (\schema -> do
+        let typeValue = schema |> Lens.view OpenApi.type_
+        typeValue |> shouldBe (Just OpenApi.OpenApiArray)
+        let items = schema |> Lens.view OpenApi.items
+        items |> shouldSatisfy (\x -> case x of { Just _ -> True; Nothing -> False })
+        )
+
+    it "command endpoint response schema is singular (not array)" \_ -> do
+      let apiInfo = ApiInfo "Test API" "1.0.0" ""
+      let commandSchemas = Map.fromArray (Array.fromLinkedList
+            [ ("CreateUser", makeEndpointSchema (Just (SObject (Array.fromLinkedList [FieldSchema "name" SText True ""]))) SText)
+            ])
+      let querySchemas = Map.empty
+      let openApiSpec = OpenApiGen.toOpenApiSpec apiInfo commandSchemas querySchemas Map.empty Map.empty
+      extractResponseSchema "/commands/create-user" OpenApi.post openApiSpec (\schema -> do
+        let typeValue = schema |> Lens.view OpenApi.type_
+        typeValue |> shouldBe (Just OpenApi.OpenApiString)
+        )
 
     it "combines command and query paths" \_ -> do
       let apiInfo = ApiInfo "Test API" "1.0.0" ""

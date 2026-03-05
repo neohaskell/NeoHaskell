@@ -286,9 +286,10 @@ makeQueryPath name schema = do
   let kebabName = name |> Text.toKebabCase
   let path = [fmt|/queries/#{kebabName}|]
   
+  let arraySchema = toOpenApiSchema (SArray schema.responseSchema)
   let responseContent = InsOrdHashMap.fromList
         [ ("application/json", GhcMonoid.mempty
-            |> Lens.set OpenApiLens.schema (Just (OpenApi.Inline (toOpenApiSchema schema.responseSchema)))
+            |> Lens.set OpenApiLens.schema (Just (OpenApi.Inline arraySchema))
           )
         ]
   
