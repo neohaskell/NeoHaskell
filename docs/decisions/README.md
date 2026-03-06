@@ -51,6 +51,7 @@ ADRs document significant architectural decisions made during the development of
 | [0035](0035-config-dependent-application-builders.md) | Config-Dependent Application Builder Functions | Proposed |
 | [0036](0036-wave1-security-hardening.md) | Wave 1 Security Hardening | Accepted |
 | [0037](0037-postgres-listen-keepalive-reconnect.md) | PostgreSQL LISTEN Connection Keepalive and Reconnection | Proposed |
+| [0038](0038-fix-flaky-subscription-test.md) | Fix Flaky Subscription Test Ordering Assertion | Accepted |
 
 ## Creating New ADRs
 
