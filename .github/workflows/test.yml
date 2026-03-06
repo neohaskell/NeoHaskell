@@ -9,6 +9,7 @@ on:
       - "testbed/**"
       - "integrations/**"
       - "nix/**"
+      - ".github/workflows/**"
   push:
     branches:
       - main
@@ -17,6 +18,7 @@ on:
       - "testbed/**"
       - "integrations/**"
       - "nix/**"
+      - ".github/workflows/**"
 
 permissions:
   id-token: write
