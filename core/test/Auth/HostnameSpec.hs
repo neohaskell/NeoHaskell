@@ -6,7 +6,7 @@ import Test
 
 
 spec :: Spec Unit
-spec = do
+spec = parallel do
   describe "Auth.Hostname" do
     describe "isLocalhost" do
       -- Positive cases: these should be recognized as localhost

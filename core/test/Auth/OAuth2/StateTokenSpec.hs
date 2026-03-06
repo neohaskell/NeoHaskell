@@ -15,7 +15,7 @@ import Text qualified
 
 
 spec :: Spec Unit
-spec = do
+spec = parallel do
   describe "Auth.OAuth2.StateToken" do
     -- ==========================================================================
     -- HMAC Key Creation

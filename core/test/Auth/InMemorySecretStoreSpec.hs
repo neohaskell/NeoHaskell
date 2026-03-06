@@ -11,6 +11,6 @@ import Test.Auth.SecretStore qualified as SecretStore
 
 
 spec :: Spec Unit
-spec = do
+spec = parallel do
   let newStore = InMemory.new |> Task.mapError toText
   SecretStore.spec newStore

@@ -7,7 +7,7 @@ import Test
 
 
 spec :: Spec Unit
-spec = do
+spec = parallel do
   describe "Auth.UrlValidation" do
     -- Existing literal IP validation (non-IO)
     describe "validateSecureUrl (literal IPs)" do

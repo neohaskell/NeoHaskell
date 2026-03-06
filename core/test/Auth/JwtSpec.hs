@@ -10,7 +10,7 @@ import Test.Auth.Jwt.Core qualified as JwtCore
 
 
 spec :: Spec Unit
-spec = do
+spec = parallel do
   describe "Auth.Jwt" do
     describe "validateToken" do
       -- RFC 8725 hardening tests

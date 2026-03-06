@@ -103,7 +103,7 @@ createTestDeps = do
 
 
 spec :: Spec Unit
-spec = do
+spec = parallel do
   describe "Auth.OAuth2.Routes" do
     -- ========================================================================
     -- handleConnect
