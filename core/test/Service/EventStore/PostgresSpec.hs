@@ -54,6 +54,8 @@ spec = do
 
     let newStore = do
           let ops = Internal.defaultOps
+          prevStore <- Postgres.new config |> Task.mapError toText
+          prevStore.close |> discard
           dropPostgres ops config
           Postgres.new config
             |> Task.map (EventStore.castEventStore @CartEvent)
@@ -68,6 +70,8 @@ spec = do
 
     let newCartStore = do
           let ops = Internal.defaultOps
+          prevStore <- Postgres.new config |> Task.mapError toText
+          prevStore.close |> discard
           dropPostgres ops config
           Postgres.new config
             |> Task.map (EventStore.castEventStore @CartEvent)
@@ -117,10 +121,10 @@ mockNewOps = do
         Var.increment initializeTableCalls
         Task.yield unit
 
-  let initializeSubscriptions :: Internal.Connection -> Internal.SubscriptionStore -> Internal.PostgresEventStore -> Task Text Unit
+  let initializeSubscriptions :: Internal.Connection -> Internal.SubscriptionStore -> Internal.PostgresEventStore -> Task Text (Task Text Unit)
       initializeSubscriptions _ _ _ = do
         Var.increment initializeSubscriptionsCalls
-        Task.yield unit
+        Task.yield (Task.yield unit)
 
   let release :: Internal.Connection -> Task Text Unit
       release _ = do

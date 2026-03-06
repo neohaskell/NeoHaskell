@@ -1,4 +1,6 @@
 {- HLINT ignore "Use camelCase" -}
+{-# LANGUAGE FlexibleInstances #-}
+
 module Test.Spec (
   Spec,
   describe,
@@ -22,6 +24,8 @@ module Test.Spec (
   fail,
   beforeAll,
   before,
+  after,
+  afterAll,
   whenEnvVar,
   shouldHaveDecreasingOrder,
   shouldBeLessThanOrEqual,
@@ -35,14 +39,92 @@ import Array qualified
 import Control.Monad qualified
 import Core
 import Environment qualified
+import Service.EventStore (EventStore (..))
 import Task qualified
 import Test.Hspec qualified as Hspec
+import Test.Service.Command.Decide.Context qualified as CommandDecideContext
+import Test.Service.CommandHandler.Execute.Context qualified as CommandHandlerExecuteContext
+import Test.Service.EntityFetcher.Fetch.Context qualified as EntityFetcherFetchContext
+import Test.Service.EntityFetcher.FetchWithCache.Context qualified as EntityFetcherFetchWithCacheContext
+import Test.Service.EventStore.BatchValidation.Context qualified as EventStoreBatchValidationContext
+import Test.Service.EventStore.GlobalStreamOrdering.Context qualified as EventStoreGlobalStreamOrderingContext
+import Test.Service.EventStore.IndividualStreamOrdering.Context qualified as EventStoreIndividualStreamOrderingContext
+import Test.Service.EventStore.OptimisticConcurrency.Context qualified as EventStoreOptimisticConcurrencyContext
+import Test.Service.EventStore.ReadAllBackwardsFromEnd.Context qualified as EventStoreReadAllBackwardsFromEndContext
+import Test.Service.EventStore.ReadAllForwardsFromStart.Context qualified as EventStoreReadAllForwardsFromStartContext
+import Test.Service.EventStore.StreamTruncation.Context qualified as EventStoreStreamTruncationContext
+import Test.Service.EventStore.Subscriptions.Context qualified as EventStoreSubscriptionsContext
+import Test.Service.QueryObjectStore.InMemory.Context qualified as QueryObjectStoreInMemoryContext
+import Test.Service.SnapshotCache.InMemory.Context qualified as SnapshotCacheInMemoryContext
 import Text qualified
 import Var qualified
 
 
 type Spec a = Hspec.SpecWith a
 
+
+class AutoCleanup context where
+  autoCleanup :: context -> Task Text Unit
+
+
+instance AutoCleanup (EventStore eventType) where
+  autoCleanup store = store.close
+
+
+instance AutoCleanup EventStoreReadAllForwardsFromStartContext.Context where
+  autoCleanup context = context.store.close
+
+
+instance AutoCleanup EventStoreReadAllBackwardsFromEndContext.Context where
+  autoCleanup context = context.store.close
+
+
+instance AutoCleanup EventStoreIndividualStreamOrderingContext.Context where
+  autoCleanup context = context.store.close
+
+
+instance AutoCleanup EventStoreGlobalStreamOrderingContext.Context where
+  autoCleanup context = context.store.close
+
+
+instance AutoCleanup EventStoreOptimisticConcurrencyContext.Context where
+  autoCleanup context = context.store.close
+
+
+instance AutoCleanup EventStoreStreamTruncationContext.Context where
+  autoCleanup context = context.store.close
+
+
+instance AutoCleanup EventStoreSubscriptionsContext.Context where
+  autoCleanup context = context.store.close
+
+
+instance AutoCleanup EventStoreBatchValidationContext.Context where
+  autoCleanup context = context.store.close
+
+
+instance AutoCleanup EntityFetcherFetchContext.Context where
+  autoCleanup context = context.store.close
+
+
+instance AutoCleanup EntityFetcherFetchWithCacheContext.Context where
+  autoCleanup context = context.store.close
+
+
+instance AutoCleanup CommandHandlerExecuteContext.Context where
+  autoCleanup context = context.cartStore.close
+
+
+instance AutoCleanup CommandDecideContext.Context where
+  autoCleanup _ = Task.yield unit
+
+
+instance AutoCleanup QueryObjectStoreInMemoryContext.Context where
+  autoCleanup _ = Task.yield unit
+
+
+instance AutoCleanup SnapshotCacheInMemoryContext.Context where
+  autoCleanup _ = Task.yield unit
 
 -- | Describe a group of tests
 describe :: Text -> Spec Unit -> Spec Unit
@@ -151,20 +233,26 @@ xdescribe name = Hspec.xdescribe (Text.toLinkedList name)
 
 
 -- | Run a Task before the tests
-beforeAll :: (HasCallStack, Show err) => Task err a -> (Spec a) -> Spec Unit
+beforeAll :: (HasCallStack, Show err, AutoCleanup context) => Task err context -> (Spec context) -> Spec Unit
 beforeAll beforeTask block =
   Hspec.beforeAll
     (Task.runOrPanic beforeTask)
-    block
+    ( Hspec.afterAll
+        (\context -> Task.runOrPanic (autoCleanup context))
+        block
+    )
 {-# INLINE beforeAll #-}
 
 
 -- | Run a Task before each test
-before :: (HasCallStack, Show err) => Task err a -> (Spec a) -> Spec Unit
+before :: (HasCallStack, Show err, AutoCleanup context) => Task err context -> (Spec context) -> Spec Unit
 before beforeTask block =
   Hspec.before
     (Task.runOrPanic beforeTask)
-    block
+    ( Hspec.after
+        (\context -> Task.runOrPanic (autoCleanup context))
+        block
+    )
 {-# INLINE before #-}
 
 
@@ -172,17 +260,22 @@ before beforeTask block =
 -- beforeWith :: a -> (a -> Task _ b) -> (b -> Hspec.Spec) -> Hspec.Spec
 -- beforeWith = Hspec.beforeWith
 
--- -- | Run an IO action after each test
--- after :: Task _ a -> Hspec.Spec -> Hspec.Spec
--- after = Hspec.after
+-- | Run a Task after each test
+after :: (HasCallStack, Show err) => Task err Unit -> Spec Unit -> Spec Unit
+after afterTask block =
+  Hspec.after_
+    (Task.runOrPanic afterTask)
+    block
+{-# INLINE after #-}
 
--- -- | Run an IO action around each test
--- around :: (Task _ a -> Task _ b) -> (a -> Hspec.Spec) -> Hspec.Spec
--- around = Hspec.around
 
--- -- | Run an IO action around each test with a specific value
--- aroundWith :: a -> (a -> Task _ b -> Task _ c) -> (b -> Hspec.Spec) -> Hspec.Spec
--- aroundWith = Hspec.aroundWith
+-- | Run a Task once after all tests in a group
+afterAll :: (HasCallStack, Show err) => Task err Unit -> Spec Unit -> Spec Unit
+afterAll afterTask block =
+  Hspec.afterAll_
+    (Task.runOrPanic afterTask)
+    block
+{-# INLINE afterAll #-}
 
 -- | Run tests in parallel
 parallel :: Hspec.Spec -> Hspec.Spec
