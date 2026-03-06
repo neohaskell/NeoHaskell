@@ -53,13 +53,12 @@ Replace the strict index-based ordering assertion with a position-set verificati
 
 ```haskell
 -- Verify events are complete (all positions present, no gaps or duplicates)
-receivedPositions <-
-  received
-    |> Array.map (\event -> event.metadata.localPosition |> Maybe.getOrDie)
-    |> Array.toLinkedList
-    |> GhcList.sort
-    |> Array.fromLinkedList
-    |> Task.yield
+let receivedPositions =
+      received
+        |> Array.map (\event -> event.metadata.localPosition |> Maybe.getOrDie)
+        |> Array.toLinkedList
+        |> GhcList.sort
+        |> Array.fromLinkedList
 let expectedPositions =
       Array.range 0 (rapidEventCount - 1)
         |> Array.map (\i -> Event.StreamPosition (i |> fromIntegral))
