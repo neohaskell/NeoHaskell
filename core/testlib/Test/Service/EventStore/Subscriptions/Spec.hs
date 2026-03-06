@@ -4,6 +4,7 @@ import Array qualified
 import AsyncTask qualified
 import ConcurrentVar qualified
 import Core
+import Data.List qualified as GhcList
 import Maybe qualified
 import Result qualified
 import Service.Event (Event (..))
@@ -400,15 +401,18 @@ spec newStore = do
           |> Array.length
           |> shouldBe rapidEventCount
 
-        -- Verify events are in order (starting from position 0 in this stream)
-        received
-          |> Array.indexed
-          |> Task.forEach
-            ( \(index, event) -> do
-                event.metadata.localPosition
-                  |> Maybe.getOrDie
-                  |> shouldBe (Event.StreamPosition (index |> fromIntegral))
-            )
+        -- Verify all stream positions 0..(rapidEventCount-1) are present
+        -- Delivery order is not guaranteed by the EventStore contract (see ADR-0038)
+        let receivedPositions =
+              received
+                |> Array.map (\event -> event.metadata.localPosition |> Maybe.getOrDie)
+                |> Array.toLinkedList
+                |> GhcList.sort
+                |> Array.fromLinkedList
+        let expectedPositions =
+              Array.range 0 (rapidEventCount - 1)
+                |> Array.map (\i -> Event.StreamPosition (i |> fromIntegral))
+        receivedPositions |> shouldBe expectedPositions
 
         -- Clean up subscription
         context.store.unsubscribe subscriptionId
