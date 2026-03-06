@@ -18,116 +18,192 @@ on:
       - "integrations/**"
       - "nix/**"
 
+permissions:
+  id-token: write
+  contents: read
+
 jobs:
-  tests-linux:
+  build:
     runs-on: ubuntu-latest
-
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - test-suite: nhcore-test-auth
-            needs-postgres: false
-          - test-suite: nhcore-test-core
-            needs-postgres: false
-          - test-suite: nhcore-test-integration
-            needs-postgres: false
-          - test-suite: nhcore-test-service
-            needs-postgres: true
-
-    services:
-      postgres:
-        image: ${{ matrix.needs-postgres && 'postgres:16-alpine' || '' }}
-        env:
-          POSTGRES_USER: neohaskell
-          POSTGRES_PASSWORD: neohaskell
-          POSTGRES_DB: neohaskell
-        ports:
-          - 5432:5432
-        options: >-
-          --name neohaskell_postgres
-          --health-cmd "pg_isready -U neohaskell" --health-interval 10s
-          --health-timeout 5s --health-retries 5
-
     steps:
       - uses: actions/checkout@v6
-      - name: Increase PostgreSQL max_connections
-        if: matrix.needs-postgres
-        run: |
-          psql -h 127.0.0.1 -U neohaskell -d neohaskell -c "ALTER SYSTEM SET max_connections = 200;"
-          docker restart neohaskell_postgres
-          for i in $(seq 1 30); do pg_isready -h 127.0.0.1 -U neohaskell && break || sleep 1; done
-        env:
-          PGPASSWORD: neohaskell
       - uses: DeterminateSystems/determinate-nix-action@v3.16.3
         with:
           extra-conf: |
             accept-flake-config = true
             extra-substituters = https://cache.iog.io https://neohaskell.cachix.org
             extra-trusted-public-keys = hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ= neohaskell.cachix.org-1:mo2cLaGbwqbrxs9xhqKK8jeNsn3osi7t6XoAmxSZssc=
-
-      - uses: cachix/cachix-action@v16
+      - uses: DeterminateSystems/magic-nix-cache-action@v12
+      - uses: actions/cache@v4
         with:
-          name: neohaskell
-          authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
-
+          path: dist-newstyle
+          key: ${{ runner.os }}-cabal-${{ hashFiles('**/*.cabal', 'cabal.project') }}
+          restore-keys: |
+            ${{ runner.os }}-cabal-
       - name: Build the project with cabal
         run: nix develop --command cabal build all --disable-documentation
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist-newstyle
+          path: dist-newstyle
+          compression-level: 0
+          retention-days: 1
+          if-no-files-found: error
 
-      - name: Run ${{ matrix.test-suite }}
-        run: LOG_LEVEL=Warn nix develop --command cabal test ${{ matrix.test-suite }}
+  test-core:
+    needs: [build]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: DeterminateSystems/determinate-nix-action@v3.16.3
+        with:
+          extra-conf: |
+            accept-flake-config = true
+            extra-substituters = https://cache.iog.io https://neohaskell.cachix.org
+            extra-trusted-public-keys = hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ= neohaskell.cachix.org-1:mo2cLaGbwqbrxs9xhqKK8jeNsn3osi7t6XoAmxSZssc=
+      - uses: DeterminateSystems/magic-nix-cache-action@v12
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist-newstyle
+          path: dist-newstyle
+      - name: Run nhcore-test-core
+        run: LOG_LEVEL=Warn nix develop --command cabal test nhcore-test-core
         env:
           LOG_LEVEL: Warn
 
-  integration-tests:
+  test-auth:
+    needs: [build]
     runs-on: ubuntu-latest
-    needs: tests-linux
-
-    services:
-      postgres:
-        image: postgres:16-alpine
-        env:
-          POSTGRES_USER: neohaskell
-          POSTGRES_PASSWORD: neohaskell
-          POSTGRES_DB: neohaskell
-        ports:
-          - 5432:5432
-        options: >-
-          --name neohaskell_postgres_integration
-          --health-cmd "pg_isready -U neohaskell" --health-interval 10s
-          --health-timeout 5s --health-retries 5
-
     steps:
       - uses: actions/checkout@v6
-      - name: Increase PostgreSQL max_connections
-        run: |
-          psql -h 127.0.0.1 -U neohaskell -d neohaskell -c "ALTER SYSTEM SET max_connections = 200;"
-          docker restart neohaskell_postgres_integration
-          for i in $(seq 1 30); do pg_isready -h 127.0.0.1 -U neohaskell && break || sleep 1; done
-        env:
-          PGPASSWORD: neohaskell
       - uses: DeterminateSystems/determinate-nix-action@v3.16.3
         with:
           extra-conf: |
             accept-flake-config = true
             extra-substituters = https://cache.iog.io https://neohaskell.cachix.org
             extra-trusted-public-keys = hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ= neohaskell.cachix.org-1:mo2cLaGbwqbrxs9xhqKK8jeNsn3osi7t6XoAmxSZssc=
-
-      - uses: cachix/cachix-action@v16
+      - uses: DeterminateSystems/magic-nix-cache-action@v12
+      - uses: actions/download-artifact@v4
         with:
-          name: neohaskell
-          authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
+          name: dist-newstyle
+          path: dist-newstyle
+      - name: Run nhcore-test-auth
+        run: LOG_LEVEL=Warn nix develop --command cabal test nhcore-test-auth
+        env:
+          LOG_LEVEL: Warn
 
-      - name: Build the project with cabal
-        run: nix develop --command cabal build all --disable-documentation
+  test-integration:
+    needs: [build]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: DeterminateSystems/determinate-nix-action@v3.16.3
+        with:
+          extra-conf: |
+            accept-flake-config = true
+            extra-substituters = https://cache.iog.io https://neohaskell.cachix.org
+            extra-trusted-public-keys = hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ= neohaskell.cachix.org-1:mo2cLaGbwqbrxs9xhqKK8jeNsn3osi7t6XoAmxSZssc=
+      - uses: DeterminateSystems/magic-nix-cache-action@v12
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist-newstyle
+          path: dist-newstyle
+      - name: Run nhcore-test-integration
+        run: LOG_LEVEL=Warn nix develop --command cabal test nhcore-test-integration
+        env:
+          LOG_LEVEL: Warn
 
+  test-service:
+    needs: [build]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: DeterminateSystems/determinate-nix-action@v3.16.3
+        with:
+          extra-conf: |
+            accept-flake-config = true
+            extra-substituters = https://cache.iog.io https://neohaskell.cachix.org
+            extra-trusted-public-keys = hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ= neohaskell.cachix.org-1:mo2cLaGbwqbrxs9xhqKK8jeNsn3osi7t6XoAmxSZssc=
+      - uses: DeterminateSystems/magic-nix-cache-action@v12
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist-newstyle
+          path: dist-newstyle
+      - name: Start PostgreSQL
+        run: |
+          docker run -d --name neohaskell_postgres \
+            -e POSTGRES_USER=neohaskell \
+            -e POSTGRES_PASSWORD=neohaskell \
+            -e POSTGRES_DB=neohaskell \
+            -p 5432:5432 \
+            postgres:16-alpine \
+            postgres -c max_connections=200
+          for i in $(seq 1 30); do
+            pg_isready -h 127.0.0.1 -U neohaskell && break || sleep 1
+          done
+        env:
+          PGPASSWORD: neohaskell
+      - name: Run nhcore-test-service
+        run: LOG_LEVEL=Warn nix develop --command cabal test nhcore-test-service
+        env:
+          LOG_LEVEL: Warn
+
+  test-hurl:
+    needs: [build]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: DeterminateSystems/determinate-nix-action@v3.16.3
+        with:
+          extra-conf: |
+            accept-flake-config = true
+            extra-substituters = https://cache.iog.io https://neohaskell.cachix.org
+            extra-trusted-public-keys = hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ= neohaskell.cachix.org-1:mo2cLaGbwqbrxs9xhqKK8jeNsn3osi7t6XoAmxSZssc=
+      - uses: DeterminateSystems/magic-nix-cache-action@v12
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist-newstyle
+          path: dist-newstyle
+      - name: Start PostgreSQL
+        run: |
+          docker run -d --name neohaskell_postgres \
+            -e POSTGRES_USER=neohaskell \
+            -e POSTGRES_PASSWORD=neohaskell \
+            -e POSTGRES_DB=neohaskell \
+            -p 5432:5432 \
+            postgres:16-alpine \
+            postgres -c max_connections=200
+          for i in $(seq 1 30); do
+            pg_isready -h 127.0.0.1 -U neohaskell && break || sleep 1
+          done
+        env:
+          PGPASSWORD: neohaskell
       - name: Install hurl
         run: |
           curl -LO https://github.com/Orange-OpenSource/hurl/releases/download/6.0.0/hurl_6.0.0_amd64.deb
           sudo dpkg -i hurl_6.0.0_amd64.deb
-
       - name: Install poppler-utils (for PDF extraction tests)
         run: sudo apt-get update && sudo apt-get install -y poppler-utils
-
       - name: Run integration tests
         run: nix develop --command ./testbed/scripts/run-tests.sh
+
+  ci-gate:
+    if: always()
+    needs: [test-core, test-auth, test-integration, test-service, test-hurl]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check all tests passed
+        run: |
+          results=(
+            "${{ needs.test-core.result }}"
+            "${{ needs.test-auth.result }}"
+            "${{ needs.test-integration.result }}"
+            "${{ needs.test-service.result }}"
+            "${{ needs.test-hurl.result }}"
+          )
+          for r in "${results[@]}"; do
+            if [[ "$r" != "success" ]]; then
+              echo "::error::Test job failed with result: $r"
+              exit 1
+            fi
+          done
