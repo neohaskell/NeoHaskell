@@ -30,14 +30,20 @@ connectTo listenConnection queryConnection store = do
     |> discard
   Log.info "LISTEN/NOTIFY listener started"
     |> Task.ignoreError
-  listenConnection
-    |> HasqlNotifications.waitForNotifications (handler queryConnection store)
-    |> Task.fromIO
+  let listener = do
+        result <- Task.asResultSafe do
+          (listenConnection
+            |> HasqlNotifications.waitForNotifications (handler queryConnection store)
+            |> Task.fromIO :: Task Text Unit)
+        case result of
+          Ok _ ->
+            Log.critical "LISTEN/NOTIFY listener returned unexpectedly"
+              |> Task.ignoreError
+          Err err ->
+            Log.critical [fmt|LISTEN/NOTIFY listener crashed: #{err}|]
+              |> Task.ignoreError
+  listener
     |> AsyncTask.run
-    |> Task.andThen \_ -> do
-      Log.critical "LISTEN/NOTIFY listener exited unexpectedly"
-        |> Task.ignoreError
-      Task.yield ()
     |> discard
 
 
