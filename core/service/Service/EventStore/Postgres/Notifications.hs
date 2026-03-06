@@ -1,5 +1,6 @@
 module Service.EventStore.Postgres.Notifications (
   connectTo,
+  nextBackoff,
   subscribeToStream,
 ) where
 
@@ -19,30 +20,34 @@ import Task qualified
 
 
 connectTo ::
-  Hasql.Connection ->
-  Hasql.Connection ->
+  Task Text (Hasql.Connection, Hasql.Connection) ->
   SubscriptionStore ->
   Task Text Unit
-connectTo listenConnection queryConnection store = do
-  let channelToListen = HasqlNotifications.toPgIdentifier "global"
-  HasqlNotifications.listen listenConnection channelToListen
-    |> Task.fromIO
-    |> discard
-  Log.info "LISTEN/NOTIFY listener started"
-    |> Task.ignoreError
-  let listener = do
+connectTo acquireConnections store = do
+  let listenerWithReconnect backoffMs = do
         result <- Task.asResultSafe do
-          (listenConnection
+          (listenConnection, queryConnection) <- acquireConnections
+          let channelToListen = HasqlNotifications.toPgIdentifier "global"
+          HasqlNotifications.listen listenConnection channelToListen
+            |> Task.fromIO
+            |> discard
+          Log.info "LISTEN/NOTIFY listener started"
+            |> Task.ignoreError
+          listenConnection
             |> HasqlNotifications.waitForNotifications (handler queryConnection store)
-            |> Task.fromIO :: Task Text Unit)
+            |> Task.fromIO
         case result of
-          Ok _ ->
-            Log.critical "LISTEN/NOTIFY listener returned unexpectedly"
+          Ok _ -> do
+            Log.critical "LISTEN/NOTIFY listener returned unexpectedly. Reconnecting..."
               |> Task.ignoreError
-          Err err ->
-            Log.critical [fmt|LISTEN/NOTIFY listener crashed: #{err}|]
+            AsyncTask.sleep backoffMs
+            listenerWithReconnect (nextBackoff backoffMs)
+          Err err -> do
+            Log.critical [fmt|LISTEN/NOTIFY listener crashed: #{err}. Reconnecting in #{backoffMs}ms...|]
               |> Task.ignoreError
-  listener
+            AsyncTask.sleep backoffMs
+            listenerWithReconnect (nextBackoff backoffMs)
+  listenerWithReconnect 1000
     |> AsyncTask.run
     |> discard
 
@@ -115,3 +120,8 @@ fetchFullEvent queryConnection globalPosition = do
   case Sessions.postgresRecordToEvent record of
     Err err -> Task.throw [fmt|Event record decode failed: #{err}|]
     Ok event -> Task.yield event
+
+
+nextBackoff :: Int -> Int
+nextBackoff backoffMs =
+  min 60000 (backoffMs * 2)

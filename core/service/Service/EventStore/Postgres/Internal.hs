@@ -6,6 +6,7 @@ module Service.EventStore.Postgres.Internal (
   Sessions.Connection (..),
   SubscriptionStore.SubscriptionStore (..),
   withConnection,
+  toConnectionSettings,
 ) where
 
 import Array (Array)
@@ -113,7 +114,12 @@ toConnectionSettings cfg = do
             Param.port (fromIntegral cfg.port),
             Param.dbname cfg.databaseName,
             Param.user cfg.user,
-            Param.password cfg.password
+            Param.password cfg.password,
+            -- TCP keepalive: detect dead connections in cloud environments (ADR-0037, #397)
+            Param.other "keepalives" "1",
+            Param.other "keepalives_idle" "30",
+            Param.other "keepalives_interval" "10",
+            Param.other "keepalives_count" "5"
           ]
   [params |> ConnectionSetting.connection]
 
@@ -141,16 +147,18 @@ defaultOps = do
           |> Task.mapError toText
 
   let initializeSubscriptions _pool subscriptionStore cfg = do
-        listenConnection <- Hasql.acquire (toConnectionSettings cfg) |> Task.fromIOEither |> Task.mapError toText
+        initialListenConnection <- Hasql.acquire (toConnectionSettings cfg) |> Task.fromIOEither |> Task.mapError toText
         Sessions.createEventNotificationTriggerFunctionSession
-          |> Sessions.runConnection listenConnection
+          |> Sessions.runConnection initialListenConnection
           |> Task.mapError toText
         Sessions.createEventNotificationTriggerSession
-          |> Sessions.runConnection listenConnection
+          |> Sessions.runConnection initialListenConnection
           |> Task.mapError toText
-
-        queryConnection <- Hasql.acquire (toConnectionSettings cfg) |> Task.fromIOEither |> Task.mapError toText
-        subscriptionStore |> Notifications.connectTo listenConnection queryConnection
+        let connectionFactory = do
+              listenConnection <- Hasql.acquire (toConnectionSettings cfg) |> Task.fromIOEither |> Task.mapError toText
+              queryConnection <- Hasql.acquire (toConnectionSettings cfg) |> Task.fromIOEither |> Task.mapError toText
+              Task.yield (listenConnection, queryConnection)
+        subscriptionStore |> Notifications.connectTo connectionFactory
 
   let release connection = do
         case connection of

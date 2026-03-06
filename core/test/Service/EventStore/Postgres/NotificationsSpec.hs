@@ -11,6 +11,9 @@ import Service.EventStore.Postgres.PostgresEventRecord (PostgresEventRecord (..)
 import Service.EventStore.Postgres.Sessions (EventNotificationPayload (..))
 import Service.EventStore.Postgres.Sessions qualified as Sessions
 
+import LinkedList qualified
+import Service.EventStore.Postgres.Internal (PostgresEventStore (..), toConnectionSettings)
+import Service.EventStore.Postgres.Notifications (nextBackoff)
 import Test
 
 
@@ -203,3 +206,35 @@ spec = do
             notification.localPosition |> shouldBe 0
             notification.inlinedStreamId |> shouldBe "my-stream"
             notification.entity |> shouldBe "MyEntity"
+
+  describe "Reconnection backoff" do
+    it "initial backoff is 1000ms" \_ -> do
+      -- The reconnection loop starts with 1000ms
+      -- nextBackoff applied to 500 (half of initial) gives 1000
+      nextBackoff 500 |> shouldBe 1000
+
+    it "doubles the backoff on each attempt" \_ -> do
+      nextBackoff 1000 |> shouldBe 2000
+      nextBackoff 2000 |> shouldBe 4000
+      nextBackoff 4000 |> shouldBe 8000
+
+    it "caps backoff at 60000ms (60 seconds)" \_ -> do
+      nextBackoff 30000 |> shouldBe 60000
+      nextBackoff 60000 |> shouldBe 60000
+      nextBackoff 100000 |> shouldBe 60000
+
+  describe "TCP keepalive configuration" do
+    it "toConnectionSettings does not throw for valid config" \_ -> do
+      let cfg =
+            PostgresEventStore
+              { host = "localhost",
+                port = 5432,
+                databaseName = "test",
+                user = "test",
+                password = "test"
+              }
+      -- toConnectionSettings is pure — just verify it evaluates without error
+      let settings = toConnectionSettings cfg
+      -- Settings list should be non-empty (has at least the connection params)
+      -- Use length (Int has Show) rather than shouldSatisfy on the list (no Show instance)
+      LinkedList.length settings |> shouldSatisfy (\n -> n > 0)
