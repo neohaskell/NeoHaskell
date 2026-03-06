@@ -1,3 +1,4 @@
+{- HLINT ignore "Use lambda-case" -}
 module Test.Service.EventStore.Subscriptions.Spec (spec) where
 
 import Array qualified
@@ -52,39 +53,38 @@ spec newStore = do
           context.store.subscribeToAllEvents subscriber
             |> Task.mapError toText
 
-        -- Insert some test events
-        let insertEvent event = do
-              context.store.insert event
-                |> Task.mapError toText
+        -- Wrap the test logic with guaranteed cleanup
+        Task.finally
+          (context.store.unsubscribe subscriptionId |> Task.mapError toText)
+          do
+            -- Insert some test events
+            let insertEvent event = do
+                  context.store.insert event
+                    |> Task.mapError toText
 
-        context.testEvents
-          |> Array.take 3
-          |> Task.mapArray insertEvent
-          |> discard
+            context.testEvents
+              |> Array.take 3
+              |> Task.mapArray insertEvent
+              |> discard
 
-        -- Wait briefly for async notifications to complete
-        AsyncTask.sleep 100 |> Task.mapError (\_ -> "timeout")
+            -- Wait briefly for async notifications to complete
+            AsyncTask.sleep 100 |> Task.mapError (\_ -> "timeout")
 
-        -- Check that we received the events
-        received <- ConcurrentVar.get receivedEvents
-        received
-          |> Array.length
-          |> shouldBe 3
+            -- Check that we received the events
+            received <- ConcurrentVar.get receivedEvents
+            received
+              |> Array.length
+              |> shouldBe 3
 
-        -- Verify the events are in correct order
-        received
-          |> Array.get 0
-          |> shouldSatisfy
-            ( \maybeEvent ->
-                case maybeEvent of
-                  Just event -> event.metadata.localPosition |> Maybe.getOrDie |> (==) (Event.StreamPosition 0)
-                  Nothing -> False
-            )
-
-        -- Clean up subscription
-        context.store.unsubscribe subscriptionId
-          |> Task.mapError toText
-          |> discard
+            -- Verify the events are in correct order
+            received
+              |> Array.get 0
+              |> shouldSatisfy
+                ( \maybeEvent ->
+                    case maybeEvent of
+                      Just event -> event.metadata.localPosition |> Maybe.getOrDie |> (==) (Event.StreamPosition 0)
+                      Nothing -> False
+                )
 
       it "allows subscribing to specific entity events only" \context -> do
         -- Create another entity and stream to test filtering
@@ -113,42 +113,41 @@ spec newStore = do
           context.store.subscribeToEntityEvents context.entityName subscriber
             |> Task.mapError toText
 
-        -- Insert event for our entity (use position 3 since first test used 0,1,2)
-        case context.testEvents |> Array.get 0 of
-          Just event -> do
-            context.store.insert event
+        -- Wrap the test logic with guaranteed cleanup
+        Task.finally
+          (context.store.unsubscribe subscriptionId |> Task.mapError toText)
+          do
+            -- Insert event for our entity (use position 3 since first test used 0,1,2)
+            case context.testEvents |> Array.get 0 of
+              Just event -> do
+                context.store.insert event
+                  |> Task.mapError toText
+                  |> discard
+              Nothing -> do
+                Task.throw "No test event"
+
+            -- Insert event for other entity (should be filtered out)
+            context.store.insert otherEvent
               |> Task.mapError toText
               |> discard
-          Nothing -> do
-            Task.throw "No test event"
 
-        -- Insert event for other entity (should be filtered out)
-        context.store.insert otherEvent
-          |> Task.mapError toText
-          |> discard
+            -- Wait a bit for async processing
+            AsyncTask.sleep 50 |> Task.mapError (\_ -> "timeout")
 
-        -- Wait a bit for async processing
-        AsyncTask.sleep 50 |> Task.mapError (\_ -> "timeout")
+            -- Check that we only received events for our entity
+            received <- ConcurrentVar.get receivedEvents
+            received
+              |> Array.length
+              |> shouldBe 1
 
-        -- Check that we only received events for our entity
-        received <- ConcurrentVar.get receivedEvents
-        received
-          |> Array.length
-          |> shouldBe 1
-
-        received
-          |> Array.get 0
-          |> shouldSatisfy
-            ( \maybeEvent ->
-                case maybeEvent of
-                  Just event -> event.entityName == context.entityName
-                  Nothing -> False
-            )
-
-        -- Clean up subscription
-        context.store.unsubscribe subscriptionId
-          |> Task.mapError toText
-          |> discard
+            received
+              |> Array.get 0
+              |> shouldSatisfy
+                ( \maybeEvent ->
+                    case maybeEvent of
+                      Just event -> event.entityName == context.entityName
+                      Nothing -> False
+                )
 
       it "allows subscribing to specific stream events only" \context -> do
         -- Create another stream to test filtering
@@ -175,42 +174,41 @@ spec newStore = do
           context.store.subscribeToStreamEvents context.entityName context.streamId subscriber
             |> Task.mapError toText
 
-        -- Insert event for our stream (use position 4 since previous tests used 0,1,2,3)
-        case context.testEvents |> Array.get 0 of
-          Just event -> do
-            context.store.insert event
+        -- Wrap the test logic with guaranteed cleanup
+        Task.finally
+          (context.store.unsubscribe subscriptionId |> Task.mapError toText)
+          do
+            -- Insert event for our stream (use position 4 since previous tests used 0,1,2,3)
+            case context.testEvents |> Array.get 0 of
+              Just event -> do
+                context.store.insert event
+                  |> Task.mapError toText
+                  |> discard
+              Nothing -> do
+                Task.throw "No test event"
+
+            -- Insert event for other stream (should be filtered out)
+            context.store.insert otherEvent
               |> Task.mapError toText
               |> discard
-          Nothing -> do
-            Task.throw "No test event"
 
-        -- Insert event for other stream (should be filtered out)
-        context.store.insert otherEvent
-          |> Task.mapError toText
-          |> discard
+            -- Wait a bit for async processing
+            AsyncTask.sleep 50 |> Task.mapError (\_ -> "timeout")
 
-        -- Wait a bit for async processing
-        AsyncTask.sleep 50 |> Task.mapError (\_ -> "timeout")
+            -- Check that we only received events for our stream
+            received <- ConcurrentVar.get receivedEvents
+            received
+              |> Array.length
+              |> shouldBe 1
 
-        -- Check that we only received events for our stream
-        received <- ConcurrentVar.get receivedEvents
-        received
-          |> Array.length
-          |> shouldBe 1
-
-        received
-          |> Array.get 0
-          |> shouldSatisfy
-            ( \maybeEvent ->
-                case maybeEvent of
-                  Just event -> event.streamId == context.streamId && event.entityName == context.entityName
-                  Nothing -> False
-            )
-
-        -- Clean up subscription
-        context.store.unsubscribe subscriptionId
-          |> Task.mapError toText
-          |> discard
+            received
+              |> Array.get 0
+              |> shouldSatisfy
+                ( \maybeEvent ->
+                    case maybeEvent of
+                      Just event -> event.streamId == context.streamId && event.entityName == context.entityName
+                      Nothing -> False
+                )
 
       it "handles subscription errors gracefully without affecting event store operations" \context -> do
         -- Create a subscriber that always fails
@@ -223,39 +221,38 @@ spec newStore = do
           context.store.subscribeToAllEvents failingSubscriber
             |> Task.mapError toText
 
-        -- Insert events - should succeed despite failing subscriber (use position 5)
-        insertResult <- case context.testEvents |> Array.get 0 of
-          Just event -> do
-            context.store.insert event |> Task.asResult
-          Nothing -> do
-            Task.yield (Err (EventStore.StorageFailure "No test event"))
+        -- Wrap the test logic with guaranteed cleanup
+        Task.finally
+          (context.store.unsubscribe subscriptionId |> Task.mapError toText)
+          do
+            -- Insert events - should succeed despite failing subscriber (use position 5)
+            insertResult <- case context.testEvents |> Array.get 0 of
+              Just event -> do
+                context.store.insert event |> Task.asResult
+              Nothing -> do
+                Task.yield (Err (EventStore.StorageFailure "No test event"))
 
-        -- Event store operation should succeed
-        insertResult
-          |> shouldSatisfy Result.isOk
+            -- Event store operation should succeed
+            insertResult
+              |> shouldSatisfy Result.isOk
 
-        -- Wait a bit for async processing
-        AsyncTask.sleep 50 |> Task.mapError (\_ -> "timeout")
+            -- Wait a bit for async processing
+            AsyncTask.sleep 50 |> Task.mapError (\_ -> "timeout")
 
-        -- Event should still be readable from store
-        events <-
-          context.store.readStreamForwardFrom
-            context.entityName
-            context.streamId
-            (Event.StreamPosition 0)
-            (EventStore.Limit 1)
-            |> Task.mapError toText
-            |> Task.andThen Stream.toArray
+            -- Event should still be readable from store
+            events <-
+              context.store.readStreamForwardFrom
+                context.entityName
+                context.streamId
+                (Event.StreamPosition 0)
+                (EventStore.Limit 1)
+                |> Task.mapError toText
+                |> Task.andThen Stream.toArray
 
-        events
-          |> EventStore.collectStreamEvents
-          |> Array.length
-          |> shouldBe 1
-
-        -- Clean up subscription
-        context.store.unsubscribe subscriptionId
-          |> Task.mapError toText
-          |> discard
+            events
+              |> EventStore.collectStreamEvents
+              |> Array.length
+              |> shouldBe 1
 
       it "supports multiple concurrent subscribers without interference" \context -> do
         -- Create multiple shared variables for different subscribers
@@ -283,41 +280,42 @@ spec newStore = do
 
         let (sub1, (sub2, sub3)) = subscriptionIds
 
-        -- Insert multiple events
-        adjustedEvents <- case (context.testEvents |> Array.get 0, context.testEvents |> Array.get 1, context.testEvents |> Array.get 2) of
-          (Just event1, Just event2, Just event3) -> do
-            Task.yield
-              ([event1, event2, event3])
-          _ -> do
-            Task.throw "Not enough test events"
-        let insertEvent event = do
-              context.store.insert event
-                |> Task.mapError toText
-        adjustedEvents
-          |> Task.mapArray insertEvent
-          |> discard
+        -- Wrap the test logic with guaranteed cleanup
+        Task.finally
+          (AsyncTask.runConcurrently
+            ( context.store.unsubscribe sub1 |> Task.mapError toText,
+              AsyncTask.runConcurrently
+                ( context.store.unsubscribe sub2 |> Task.mapError toText,
+                  context.store.unsubscribe sub3 |> Task.mapError toText
+                )
+            )
+            |> Task.map (\_ -> unit))
+          do
+            -- Insert multiple events
+            adjustedEvents <- case (context.testEvents |> Array.get 0, context.testEvents |> Array.get 1, context.testEvents |> Array.get 2) of
+              (Just event1, Just event2, Just event3) -> do
+                Task.yield
+                  ([event1, event2, event3])
+              _ -> do
+                Task.throw "Not enough test events"
+            let insertEvent event = do
+                  context.store.insert event
+                    |> Task.mapError toText
+            adjustedEvents
+              |> Task.mapArray insertEvent
+              |> discard
 
-        -- Wait for async processing
-        AsyncTask.sleep 50 |> Task.mapError (\_ -> "timeout")
+            -- Wait for async processing
+            AsyncTask.sleep 50 |> Task.mapError (\_ -> "timeout")
 
-        -- All subscribers should have received all events
-        received1 <- ConcurrentVar.get subscriber1Events
-        received2 <- ConcurrentVar.get subscriber2Events
-        received3 <- ConcurrentVar.get subscriber3Events
+            -- All subscribers should have received all events
+            received1 <- ConcurrentVar.get subscriber1Events
+            received2 <- ConcurrentVar.get subscriber2Events
+            received3 <- ConcurrentVar.get subscriber3Events
 
-        received1 |> Array.length |> shouldBe 3
-        received2 |> Array.length |> shouldBe 3
-        received3 |> Array.length |> shouldBe 3
-
-        -- Clean up all subscriptions
-        AsyncTask.runConcurrently
-          ( context.store.unsubscribe sub1 |> Task.mapError toText,
-            AsyncTask.runConcurrently
-              ( context.store.unsubscribe sub2 |> Task.mapError toText,
-                context.store.unsubscribe sub3 |> Task.mapError toText
-              )
-          )
-          |> discard
+            received1 |> Array.length |> shouldBe 3
+            received2 |> Array.length |> shouldBe 3
+            received3 |> Array.length |> shouldBe 3
 
       it "stops delivering events after unsubscription" \context -> do
         -- Create a shared variable to collect received events
@@ -332,40 +330,44 @@ spec newStore = do
           context.store.subscribeToAllEvents subscriber
             |> Task.mapError toText
 
-        -- Insert first event (use position 9)
-        case context.testEvents |> Array.get 0 of
-          Just event -> do
-            context.store.insert event
+        -- Wrap the test logic with guaranteed cleanup
+        Task.finally
+          (context.store.unsubscribe subscriptionId |> Task.mapError toText)
+          do
+            -- Insert first event (use position 9)
+            case context.testEvents |> Array.get 0 of
+              Just event -> do
+                context.store.insert event
+                  |> Task.mapError toText
+                  |> discard
+              Nothing -> do
+                Task.throw "No test event"
+
+            -- Wait for processing
+            AsyncTask.sleep 50 |> Task.mapError (\_ -> "timeout")
+
+            -- Unsubscribe (this is now inside the finally block, but we'll unsubscribe explicitly)
+            context.store.unsubscribe subscriptionId
               |> Task.mapError toText
               |> discard
-          Nothing -> do
-            Task.throw "No test event"
 
-        -- Wait for processing
-        AsyncTask.sleep 50 |> Task.mapError (\_ -> "timeout")
+            -- Insert second event after unsubscription (use position 10)
+            case context.testEvents |> Array.get 1 of
+              Just event -> do
+                context.store.insert event
+                  |> Task.mapError toText
+                  |> discard
+              Nothing -> do
+                Task.throw "No test event"
 
-        -- Unsubscribe
-        context.store.unsubscribe subscriptionId
-          |> Task.mapError toText
-          |> discard
+            -- Wait for potential processing
+            AsyncTask.sleep 50 |> Task.mapError (\_ -> "timeout")
 
-        -- Insert second event after unsubscription (use position 10)
-        case context.testEvents |> Array.get 1 of
-          Just event -> do
-            context.store.insert event
-              |> Task.mapError toText
-              |> discard
-          Nothing -> do
-            Task.throw "No test event"
-
-        -- Wait for potential processing
-        AsyncTask.sleep 50 |> Task.mapError (\_ -> "timeout")
-
-        -- Should only have received the first event
-        received <- ConcurrentVar.get receivedEvents
-        received
-          |> Array.length
-          |> shouldBe 1
+            -- Should only have received the first event
+            received <- ConcurrentVar.get receivedEvents
+            received
+              |> Array.length
+              |> shouldBe 1
 
       it "handles high-frequency event publishing without data loss" \context -> do
         -- Create a shared variable to collect received events
@@ -380,44 +382,43 @@ spec newStore = do
           context.store.subscribeToAllEvents subscriber
             |> Task.mapError toText
 
-        -- Rapidly insert many events
-        let rapidEventCount = 50
-        rapidEvents <- createRapidTestEventsFromPosition context.streamId context.entityName rapidEventCount 0
+        -- Wrap the test logic with guaranteed cleanup
+        Task.finally
+          (context.store.unsubscribe subscriptionId |> Task.mapError toText)
+          do
+            -- Rapidly insert many events
+            let rapidEventCount = 50
+            rapidEvents <- createRapidTestEventsFromPosition context.streamId context.entityName rapidEventCount 0
 
-        -- Insert all events as quickly as possible
-        let insertEvent event = do
-              context.store.insert event
-                |> Task.mapError toText
-        rapidEvents
-          |> Task.mapArray insertEvent
-          |> discard
+            -- Insert all events as quickly as possible
+            let insertEvent event = do
+                  context.store.insert event
+                    |> Task.mapError toText
+            rapidEvents
+              |> Task.mapArray insertEvent
+              |> discard
 
-        -- Wait for all async processing to complete
-        AsyncTask.sleep 100 |> Task.mapError (\_ -> "timeout")
+            -- Wait for all async processing to complete
+            AsyncTask.sleep 100 |> Task.mapError (\_ -> "timeout")
 
-        -- Verify all events were received
-        received <- ConcurrentVar.get receivedEvents
-        received
-          |> Array.length
-          |> shouldBe rapidEventCount
+            -- Verify all events were received
+            received <- ConcurrentVar.get receivedEvents
+            received
+              |> Array.length
+              |> shouldBe rapidEventCount
 
-        -- Verify all stream positions 0..(rapidEventCount-1) are present
-        -- Delivery order is not guaranteed by the EventStore contract (see ADR-0038)
-        let receivedPositions =
-              received
-                |> Array.map (\event -> event.metadata.localPosition |> Maybe.getOrDie)
-                |> Array.toLinkedList
-                |> GhcList.sort
-                |> Array.fromLinkedList
-        let expectedPositions =
-              Array.range 0 (rapidEventCount - 1)
-                |> Array.map (\i -> Event.StreamPosition (i |> fromIntegral))
-        receivedPositions |> shouldBe expectedPositions
-
-        -- Clean up subscription
-        context.store.unsubscribe subscriptionId
-          |> Task.mapError toText
-          |> discard
+            -- Verify all stream positions 0..(rapidEventCount-1) are present
+            -- Delivery order is not guaranteed by the EventStore contract (see ADR-0038)
+            let receivedPositions =
+                  received
+                    |> Array.map (\event -> event.metadata.localPosition |> Maybe.getOrDie)
+                    |> Array.toLinkedList
+                    |> GhcList.sort
+                    |> Array.fromLinkedList
+            let expectedPositions =
+                  Array.range 0 (rapidEventCount - 1)
+                    |> Array.map (\i -> Event.StreamPosition (i |> fromIntegral))
+            receivedPositions |> shouldBe expectedPositions
 
       it "subscribes from now on - only receives events inserted after subscription" \context -> do
         entity1IdText <- Uuid.generate |> Task.map toText
@@ -450,35 +451,36 @@ spec newStore = do
         -- Subscribe to all events (this should only receive NEW events "from now on")
         subscriptionId <- context.store.subscribeToAllEvents subscriber |> Task.mapError toText
 
-        -- Wait a bit to ensure subscription is active
-        AsyncTask.sleep 100 |> Task.mapError (\_ -> "timeout")
+        -- Wrap the test logic with guaranteed cleanup
+        Task.finally
+          (context.store.unsubscribe subscriptionId |> Task.mapError toText)
+          do
+            -- Wait a bit to ensure subscription is active
+            AsyncTask.sleep 100 |> Task.mapError (\_ -> "timeout")
 
-        -- Insert events for both entities AFTER subscribing (these SHOULD be received)
-        postSubscriptionEvents1 <- createTestEventsForEntity stream1Id entity1Id eventCount eventCount
-        postSubscriptionEvents2 <- createTestEventsForEntity stream2Id entity2Id eventCount eventCount
+            -- Insert events for both entities AFTER subscribing (these SHOULD be received)
+            postSubscriptionEvents1 <- createTestEventsForEntity stream1Id entity1Id eventCount eventCount
+            postSubscriptionEvents2 <- createTestEventsForEntity stream2Id entity2Id eventCount eventCount
 
-        -- Insert post-subscription events
-        postSubscriptionEvents1 |> Task.mapArray insertEvent |> discard
-        postSubscriptionEvents2 |> Task.mapArray insertEvent |> discard
+            -- Insert post-subscription events
+            postSubscriptionEvents1 |> Task.mapArray insertEvent |> discard
+            postSubscriptionEvents2 |> Task.mapArray insertEvent |> discard
 
-        -- Wait for events to be processed
-        AsyncTask.sleep 100 |> Task.mapError (\_ -> "timeout")
+            -- Wait for events to be processed
+            AsyncTask.sleep 100 |> Task.mapError (\_ -> "timeout")
 
-        -- Verify we received exactly the post-subscription events
-        received <- ConcurrentVar.get receivedEvents
+            -- Verify we received exactly the post-subscription events
+            received <- ConcurrentVar.get receivedEvents
 
-        -- Should have received exactly eventCount * 2 events (only post-subscription)
-        received |> Array.length |> shouldBe (eventCount * 2)
+            -- Should have received exactly eventCount * 2 events (only post-subscription)
+            received |> Array.length |> shouldBe (eventCount * 2)
 
-        -- Events should be properly ordered within each entity
-        let entity1Events = received |> Array.takeIf (\event -> event.entityName == entity1Id)
-        let entity2Events = received |> Array.takeIf (\event -> event.entityName == entity2Id)
+            -- Events should be properly ordered within each entity
+            let entity1Events = received |> Array.takeIf (\event -> event.entityName == entity1Id)
+            let entity2Events = received |> Array.takeIf (\event -> event.entityName == entity2Id)
 
-        entity1Events |> Array.length |> shouldBe eventCount
-        entity2Events |> Array.length |> shouldBe eventCount
-
-        -- Clean up subscription
-        context.store.unsubscribe subscriptionId |> Task.mapError toText |> discard
+            entity1Events |> Array.length |> shouldBe eventCount
+            entity2Events |> Array.length |> shouldBe eventCount
 
       it "subscribes from specific position - receives events after specified global position" \context -> do
         entity1IdText <- Uuid.generate |> Task.map toText
@@ -516,48 +518,49 @@ spec newStore = do
         subscriptionId <-
           context.store.subscribeToAllEventsFromPosition positionAfterFirstBatch subscriber |> Task.mapError toText
 
-        -- Wait a bit for subscription to process historical events
-        AsyncTask.sleep 50 |> Task.mapError (\_ -> "timeout")
+        -- Wrap the test logic with guaranteed cleanup
+        Task.finally
+          (context.store.unsubscribe subscriptionId |> Task.mapError toText)
+          do
+            -- Wait a bit for subscription to process historical events
+            AsyncTask.sleep 50 |> Task.mapError (\_ -> "timeout")
 
-        -- Insert SECOND batch of events (these should definitely be received)
-        secondBatchEvents1 <- createTestEventsForEntity stream1Id entity1Id eventCount eventCount
-        secondBatchEvents2 <- createTestEventsForEntity stream2Id entity2Id eventCount 0
+            -- Insert SECOND batch of events (these should definitely be received)
+            secondBatchEvents1 <- createTestEventsForEntity stream1Id entity1Id eventCount eventCount
+            secondBatchEvents2 <- createTestEventsForEntity stream2Id entity2Id eventCount 0
 
-        -- Insert second batch
-        secondBatchEvents1 |> Task.mapArray insertEvent |> discard
-        secondBatchEvents2 |> Task.mapArray insertEvent |> discard
+            -- Insert second batch
+            secondBatchEvents1 |> Task.mapArray insertEvent |> discard
+            secondBatchEvents2 |> Task.mapArray insertEvent |> discard
 
-        -- Wait for events to be processed
-        AsyncTask.sleep 100 |> Task.mapError (\_ -> "timeout")
+            -- Wait for events to be processed
+            AsyncTask.sleep 100 |> Task.mapError (\_ -> "timeout")
 
-        -- Verify we received exactly eventCount * 2 events (from second batch only)
-        received <- ConcurrentVar.get receivedEvents
+            -- Verify we received exactly eventCount * 2 events (from second batch only)
+            received <- ConcurrentVar.get receivedEvents
 
-        let (Event.StreamPosition expectedAfterPos) = positionAfterFirstBatch
+            let (Event.StreamPosition expectedAfterPos) = positionAfterFirstBatch
 
-        -- Should have received exactly eventCount * 2 events (second batch only)
-        received |> Array.length |> shouldBe (eventCount * 2)
+            -- Should have received exactly eventCount * 2 events (second batch only)
+            received |> Array.length |> shouldBe (eventCount * 2)
 
-        -- All received events should have global positions AFTER our subscription position
-        let eventsWithWrongPosition =
-              received
-                |> Array.takeIf
-                  ( \event -> do
-                      let (Event.StreamPosition eventGlobalPos) = event.metadata.globalPosition |> Maybe.getOrDie
-                      eventGlobalPos <= expectedAfterPos
-                  )
+            -- All received events should have global positions AFTER our subscription position
+            let eventsWithWrongPosition =
+                  received
+                    |> Array.takeIf
+                      ( \event -> do
+                          let (Event.StreamPosition eventGlobalPos) = event.metadata.globalPosition |> Maybe.getOrDie
+                          eventGlobalPos <= expectedAfterPos
+                      )
 
-        eventsWithWrongPosition |> Array.length |> shouldBe 0
+            eventsWithWrongPosition |> Array.length |> shouldBe 0
 
-        -- Events should be properly partitioned by entity
-        let entity1Events = received |> Array.takeIf (\event -> event.entityName == entity1Id)
-        let entity2Events = received |> Array.takeIf (\event -> event.entityName == entity2Id)
+            -- Events should be properly partitioned by entity
+            let entity1Events = received |> Array.takeIf (\event -> event.entityName == entity1Id)
+            let entity2Events = received |> Array.takeIf (\event -> event.entityName == entity2Id)
 
-        entity1Events |> Array.length |> shouldBe eventCount
-        entity2Events |> Array.length |> shouldBe eventCount
-
-        -- Clean up subscription
-        context.store.unsubscribe subscriptionId |> Task.mapError toText |> discard
+            entity1Events |> Array.length |> shouldBe eventCount
+            entity2Events |> Array.length |> shouldBe eventCount
 
       it "subscribes from start - receives ALL events including historical ones" \context -> do
         entity1IdText <- Uuid.generate |> Task.map toText
@@ -591,36 +594,37 @@ spec newStore = do
         subscriptionId <-
           context.store.subscribeToAllEventsFromStart subscriber |> Task.mapError toText
 
-        -- Wait for subscription to process historical events (catch-up phase)
-        AsyncTask.sleep 100 |> Task.mapError (\_ -> "timeout")
+        -- Wrap the test logic with guaranteed cleanup
+        Task.finally
+          (context.store.unsubscribe subscriptionId |> Task.mapError toText)
+          do
+            -- Wait for subscription to process historical events (catch-up phase)
+            AsyncTask.sleep 100 |> Task.mapError (\_ -> "timeout")
 
-        -- Insert SECOND batch of events AFTER subscribing (live events)
-        secondBatchEvents1 <- createTestEventsForEntity stream1Id entity1Id eventCount eventCount
-        secondBatchEvents2 <- createTestEventsForEntity stream2Id entity2Id eventCount eventCount
+            -- Insert SECOND batch of events AFTER subscribing (live events)
+            secondBatchEvents1 <- createTestEventsForEntity stream1Id entity1Id eventCount eventCount
+            secondBatchEvents2 <- createTestEventsForEntity stream2Id entity2Id eventCount eventCount
 
-        -- Insert second batch
-        secondBatchEvents1 |> Task.mapArray insertEvent |> discard
-        secondBatchEvents2 |> Task.mapArray insertEvent |> discard
+            -- Insert second batch
+            secondBatchEvents1 |> Task.mapArray insertEvent |> discard
+            secondBatchEvents2 |> Task.mapArray insertEvent |> discard
 
-        -- Wait for live events to be processed
-        AsyncTask.sleep 100 |> Task.mapError (\_ -> "timeout")
+            -- Wait for live events to be processed
+            AsyncTask.sleep 100 |> Task.mapError (\_ -> "timeout")
 
-        -- Verify we received ALL events (both historical and live)
-        received <- ConcurrentVar.get receivedEvents
+            -- Verify we received ALL events (both historical and live)
+            received <- ConcurrentVar.get receivedEvents
 
-        -- Should have received eventCount * 4 total events
-        -- (first batch: 5 entity1 + 5 entity2, second batch: 5 entity1 + 5 entity2)
-        received |> Array.length |> shouldBe (eventCount * 4)
+            -- Should have received eventCount * 4 total events
+            -- (first batch: 5 entity1 + 5 entity2, second batch: 5 entity1 + 5 entity2)
+            received |> Array.length |> shouldBe (eventCount * 4)
 
-        -- Events should be properly partitioned by entity
-        let entity1Events = received |> Array.takeIf (\event -> event.entityName == entity1Id)
-        let entity2Events = received |> Array.takeIf (\event -> event.entityName == entity2Id)
+            -- Events should be properly partitioned by entity
+            let entity1Events = received |> Array.takeIf (\event -> event.entityName == entity1Id)
+            let entity2Events = received |> Array.takeIf (\event -> event.entityName == entity2Id)
 
-        entity1Events |> Array.length |> shouldBe (eventCount * 2)
-        entity2Events |> Array.length |> shouldBe (eventCount * 2)
-
-        -- Clean up subscription
-        context.store.unsubscribe subscriptionId |> Task.mapError toText |> discard
+            entity1Events |> Array.length |> shouldBe (eventCount * 2)
+            entity2Events |> Array.length |> shouldBe (eventCount * 2)
 
 
 createTestEventsForEntity ::

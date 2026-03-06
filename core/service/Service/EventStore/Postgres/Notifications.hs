@@ -6,50 +6,67 @@ module Service.EventStore.Postgres.Notifications (
 
 import AsyncTask qualified
 import Bytes qualified
-import Core
+import Core hiding (Var)
 import Data.ByteString qualified
 import Hasql.Connection qualified as Hasql
 import Hasql.Notifications qualified as HasqlNotifications
 import Json qualified
 import Log qualified
+import Maybe (Maybe (..))
 import Service.Event (Event (..))
 import Service.EventStore.Postgres.Sessions qualified as Sessions
 import Service.EventStore.Postgres.SubscriptionStore (SubscriptionStore)
 import Service.EventStore.Postgres.SubscriptionStore qualified as SubscriptionStore
 import Task qualified
+import Var (Var)
+import Var qualified
 
 
 connectTo ::
   Task Text (Hasql.Connection, Hasql.Connection) ->
   SubscriptionStore ->
-  Task Text Unit
+  Task Text (Task Text Unit)
 connectTo acquireConnections store = do
+  shutdownRef <- (Var.new False :: Task Text (Var Bool))
+  currentConnectionsRef <- (Var.new (Maybe.Nothing :: Maybe (Hasql.Connection, Hasql.Connection)) :: Task Text (Var (Maybe (Hasql.Connection, Hasql.Connection))))
   let listenerWithReconnect backoffMs = do
-        result <- Task.asResultSafe do
-          (listenConnection, queryConnection) <- acquireConnections
-          let channelToListen = HasqlNotifications.toPgIdentifier "global"
-          HasqlNotifications.listen listenConnection channelToListen
-            |> Task.fromIO
-            |> discard
-          Log.info "LISTEN/NOTIFY listener started"
-            |> Task.ignoreError
-          listenConnection
-            |> HasqlNotifications.waitForNotifications (handler queryConnection store)
-            |> Task.fromIO
-        case result of
-          Ok _ -> do
-            Log.critical "LISTEN/NOTIFY listener returned unexpectedly. Reconnecting..."
+        isShutdown <- Var.get shutdownRef
+        Task.unless isShutdown do
+          result <- Task.asResultSafe do
+            (listenConnection, queryConnection) <- acquireConnections
+            currentConnectionsRef |> Var.set (Maybe.Just (listenConnection, queryConnection))
+            let channelToListen = HasqlNotifications.toPgIdentifier "global"
+            HasqlNotifications.listen listenConnection channelToListen
+              |> Task.fromIO
+              |> discard
+            Log.info "LISTEN/NOTIFY listener started"
               |> Task.ignoreError
-            AsyncTask.sleep backoffMs
-            listenerWithReconnect (nextBackoff backoffMs)
-          Err err -> do
-            Log.critical [fmt|LISTEN/NOTIFY listener crashed: #{err}. Reconnecting in #{backoffMs}ms...|]
-              |> Task.ignoreError
-            AsyncTask.sleep backoffMs
-            listenerWithReconnect (nextBackoff backoffMs)
-  listenerWithReconnect 1000
-    |> AsyncTask.run
-    |> discard
+            listenConnection
+              |> HasqlNotifications.waitForNotifications (handler queryConnection store)
+              |> Task.fromIO
+          case result of
+            Ok _ -> do
+              Log.critical "LISTEN/NOTIFY listener returned unexpectedly. Reconnecting..."
+                |> Task.ignoreError
+              AsyncTask.sleep backoffMs
+              listenerWithReconnect (nextBackoff backoffMs)
+            Err err -> do
+              Log.critical [fmt|LISTEN/NOTIFY listener crashed: #{err}. Reconnecting in #{backoffMs}ms...|]
+                |> Task.ignoreError
+              AsyncTask.sleep backoffMs
+              listenerWithReconnect (nextBackoff backoffMs)
+  asyncTask <- listenerWithReconnect 1000 |> AsyncTask.run
+  let cleanup = do
+        shutdownRef |> Var.set True
+        asyncTask |> AsyncTask.cancel
+        maybeConns <- Var.get currentConnectionsRef
+        case maybeConns of
+          Maybe.Nothing -> Task.yield unit
+          Maybe.Just (listenConn, queryConn) -> do
+            Hasql.release listenConn |> Task.fromIO
+            Hasql.release queryConn |> Task.fromIO
+            currentConnectionsRef |> Var.set Maybe.Nothing
+  Task.yield cleanup
 
 
 subscribeToStream ::

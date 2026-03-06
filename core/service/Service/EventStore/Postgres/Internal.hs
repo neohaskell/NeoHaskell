@@ -128,7 +128,7 @@ data Ops = Ops
   { acquire :: PostgresEventStore -> Task Text Sessions.Connection,
     release :: Sessions.Connection -> Task Text Unit,
     initializeTable :: Sessions.Connection -> Task Text Unit,
-    initializeSubscriptions :: Sessions.Connection -> SubscriptionStore -> PostgresEventStore -> Task Text Unit
+    initializeSubscriptions :: Sessions.Connection -> SubscriptionStore -> PostgresEventStore -> Task Text (Task Text Unit)
   }
 
 
@@ -154,6 +154,7 @@ defaultOps = do
         Sessions.createEventNotificationTriggerSession
           |> Sessions.runConnection initialListenConnection
           |> Task.mapError toText
+        Hasql.release initialListenConnection |> Task.fromIO
         let connectionFactory = do
               listenConnection <- Hasql.acquire (toConnectionSettings cfg) |> Task.fromIOEither |> Task.mapError toText
               queryConnection <- Hasql.acquire (toConnectionSettings cfg) |> Task.fromIOEither |> Task.mapError toText
@@ -210,7 +211,7 @@ new ops cfg =
       ( \pool -> do
           ops.initializeTable pool |> Task.mapError (TableInitializationError)
           subscriptionStore <- SubscriptionStore.new |> Task.mapError (toText .> SubscriptionInitializationError)
-          ops.initializeSubscriptions pool subscriptionStore cfg |> Task.mapError (SubscriptionInitializationError)
+          cleanup <- ops.initializeSubscriptions pool subscriptionStore cfg |> Task.mapError (SubscriptionInitializationError)
           let eventStore =
                 EventStore
                   { insert = insertImpl ops cfg 0,
@@ -227,7 +228,10 @@ new ops cfg =
                     subscribeToEntityEvents = subscribeToEntityEventsImpl ops cfg subscriptionStore,
                     subscribeToStreamEvents = subscribeToStreamEventsImpl ops cfg subscriptionStore,
                     unsubscribe = unsubscribeImpl subscriptionStore,
-                    truncateStream = truncateStreamImpl ops cfg
+                    truncateStream = truncateStreamImpl ops cfg,
+                    close = do
+                      cleanup
+                      ops.release pool |> Task.mapError toText |> discard
                   }
           Task.yield eventStore
       )
@@ -938,3 +942,4 @@ performReadStreamEvents
 
       stream |> Stream.end
       Task.yield stream
+

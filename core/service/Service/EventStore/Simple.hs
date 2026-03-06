@@ -64,9 +64,14 @@ new config = do
             subscribeToEntityEvents = subscribeToEntityEventsImpl store,
             subscribeToStreamEvents = subscribeToStreamEventsImpl store,
             unsubscribe = unsubscribeImpl store,
-            truncateStream = truncateStreamImpl config store
+            truncateStream = truncateStreamImpl config store,
+            close = closeImpl
           }
   Task.yield eventStore
+
+
+closeImpl :: Task Text Unit
+closeImpl = Task.yield unit
 
 
 -- PRIVATE
