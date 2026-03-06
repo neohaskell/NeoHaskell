@@ -32,7 +32,7 @@ testRedirectUri url =
 
 
 spec :: Spec Unit
-spec = do
+spec = parallel do
   describe "Auth.OAuth2.Client" do
     describe "HTTPS/SSRF Protection (security)" do
       -- CRITICAL: OAuth2 token endpoints MUST use HTTPS

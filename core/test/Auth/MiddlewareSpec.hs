@@ -14,7 +14,7 @@ import Test.Auth.Jwt.Core qualified as JwtCore
 
 
 spec :: Spec Unit
-spec = do
+spec = parallel do
   describe "Auth.Middleware" do
     describe "extractToken" do
       it "extracts Bearer token from Authorization header" \_ -> do

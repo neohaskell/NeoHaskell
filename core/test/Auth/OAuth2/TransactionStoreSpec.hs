@@ -24,7 +24,7 @@ isJust maybeVal =
 
 
 spec :: Spec Unit
-spec = do
+spec = parallel do
   describe "Auth.OAuth2.TransactionStore" do
     describe "InMemory Implementation" do
       -- ========================================================================

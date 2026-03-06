@@ -14,7 +14,7 @@ import Text qualified
 
 
 spec :: Spec Unit
-spec = do
+spec = parallel do
   describe "Auth.OAuth2.Types" do
     describe "Secret Redaction (security)" do
       -- CRITICAL: Secrets must never leak via Show instances

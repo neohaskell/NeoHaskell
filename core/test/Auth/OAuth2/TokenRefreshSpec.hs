@@ -346,8 +346,6 @@ spec = do
           tasks = Array.initialize 100 (\_ -> singleTask)
       AsyncTask.runAllIgnoringErrors tasks
 
-      -- Give all tasks time to complete
-      AsyncTask.sleep 3000
 
       finalRefreshCount <- ConcurrentVar.peek refreshCounter
       finalRefreshCount |> shouldBe 1
