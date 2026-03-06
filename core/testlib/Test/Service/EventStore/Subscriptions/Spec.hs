@@ -346,10 +346,7 @@ spec newStore = do
             -- Wait for processing
             AsyncTask.sleep 50 |> Task.mapError (\_ -> "timeout")
 
-            -- Unsubscribe (this is now inside the finally block, but we'll unsubscribe explicitly)
-            context.store.unsubscribe subscriptionId
-              |> Task.mapError toText
-              |> discard
+            -- Unsubscribe is handled by the finally block above
 
             -- Insert second event after unsubscription (use position 10)
             case context.testEvents |> Array.get 1 of

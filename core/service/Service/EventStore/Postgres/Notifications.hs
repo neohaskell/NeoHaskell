@@ -34,7 +34,13 @@ connectTo acquireConnections store = do
         Task.unless isShutdown do
           result <- Task.asResultSafe do
             (listenConnection, queryConnection) <- acquireConnections
-            currentConnectionsRef |> Var.set (Maybe.Just (listenConnection, queryConnection))
+            let releaseConns = do
+                  Hasql.release listenConnection |> Task.fromIO
+                  Hasql.release queryConnection |> Task.fromIO
+            trackResult <- Task.asResultSafe (currentConnectionsRef |> Var.set (Maybe.Just (listenConnection, queryConnection)) :: Task Text Unit)
+            case trackResult of
+              Err _ -> releaseConns
+              Ok _ -> pass
             let channelToListen = HasqlNotifications.toPgIdentifier "global"
             HasqlNotifications.listen listenConnection channelToListen
               |> Task.fromIO

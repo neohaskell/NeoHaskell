@@ -36,15 +36,14 @@ spec = do
     let newStore = do
           let withFreshStore operation = do
                 (store, pool) <- PostgresFileStore.newWithCleanup testConfig
-                result <- operation store |> Task.asResult
-                HasqlPool.release pool |> Task.fromIO
-                case result of
-                  Err err -> Task.throw err
-                  Ok value -> Task.yield value
+                Task.finally
+                  (HasqlPool.release pool |> Task.fromIO)
+                  (operation store)
           -- Reset table for test isolation using a short-lived pool
           (_, setupPool) <- PostgresFileStore.newWithCleanup testConfig
-          dropTable setupPool
-          HasqlPool.release setupPool |> Task.fromIO
+          Task.finally
+            (HasqlPool.release setupPool |> Task.fromIO)
+            (dropTable setupPool)
           let getState fileRef =
                 withFreshStore \store ->
                   store.getState fileRef

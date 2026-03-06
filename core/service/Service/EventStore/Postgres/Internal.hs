@@ -148,18 +148,20 @@ defaultOps = do
 
   let initializeSubscriptions _pool subscriptionStore cfg = do
         initialListenConnection <- Hasql.acquire (toConnectionSettings cfg) |> Task.fromIOEither |> Task.mapError toText
-        Sessions.createEventNotificationTriggerFunctionSession
-          |> Sessions.runConnection initialListenConnection
-          |> Task.mapError toText
-        Sessions.createEventNotificationTriggerSession
-          |> Sessions.runConnection initialListenConnection
-          |> Task.mapError toText
-        Hasql.release initialListenConnection |> Task.fromIO
-        let connectionFactory = do
-              listenConnection <- Hasql.acquire (toConnectionSettings cfg) |> Task.fromIOEither |> Task.mapError toText
-              queryConnection <- Hasql.acquire (toConnectionSettings cfg) |> Task.fromIOEither |> Task.mapError toText
-              Task.yield (listenConnection, queryConnection)
-        subscriptionStore |> Notifications.connectTo connectionFactory
+        Task.finally
+          (Hasql.release initialListenConnection |> Task.fromIO)
+          do
+            Sessions.createEventNotificationTriggerFunctionSession
+              |> Sessions.runConnection initialListenConnection
+              |> Task.mapError toText
+            Sessions.createEventNotificationTriggerSession
+              |> Sessions.runConnection initialListenConnection
+              |> Task.mapError toText
+            let connectionFactory = do
+                  listenConnection <- Hasql.acquire (toConnectionSettings cfg) |> Task.fromIOEither |> Task.mapError toText
+                  queryConnection <- Hasql.acquire (toConnectionSettings cfg) |> Task.fromIOEither |> Task.mapError toText
+                  Task.yield (listenConnection, queryConnection)
+            subscriptionStore |> Notifications.connectTo connectionFactory
 
   let release connection = do
         case connection of
@@ -204,38 +206,39 @@ new ::
   Ops ->
   PostgresEventStore ->
   Task Text (EventStore Json.Value)
-new ops cfg =
-  ops
-    |> withConnection
-      cfg
-      ( \pool -> do
-          ops.initializeTable pool |> Task.mapError (TableInitializationError)
-          subscriptionStore <- SubscriptionStore.new |> Task.mapError (toText .> SubscriptionInitializationError)
-          cleanup <- ops.initializeSubscriptions pool subscriptionStore cfg |> Task.mapError (SubscriptionInitializationError)
-          let eventStore =
-                EventStore
-                  { insert = insertImpl ops cfg 0,
-                    readStreamForwardFrom = readStreamForwardFromImpl ops cfg,
-                    readStreamBackwardFrom = readStreamBackwardFromImpl ops cfg,
-                    readAllStreamEvents = readAllStreamEventsImpl ops cfg,
-                    readAllEventsForwardFrom = readAllEventsForwardFromImpl ops cfg,
-                    readAllEventsBackwardFrom = readAllEventsBackwardFromImpl ops cfg,
-                    readAllEventsForwardFromFiltered = readAllEventsForwardFromFilteredImpl ops cfg,
-                    readAllEventsBackwardFromFiltered = readAllEventsBackwardFromFilteredImpl ops cfg,
-                    subscribeToAllEvents = subscribeToAllEventsImpl ops cfg subscriptionStore,
-                    subscribeToAllEventsFromPosition = subscribeToAllEventsFromPositionImpl ops cfg subscriptionStore,
-                    subscribeToAllEventsFromStart = subscribeToAllEventsFromStartImpl ops cfg subscriptionStore,
-                    subscribeToEntityEvents = subscribeToEntityEventsImpl ops cfg subscriptionStore,
-                    subscribeToStreamEvents = subscribeToStreamEventsImpl ops cfg subscriptionStore,
-                    unsubscribe = unsubscribeImpl subscriptionStore,
-                    truncateStream = truncateStreamImpl ops cfg,
-                    close = do
-                      cleanup
-                      ops.release pool |> Task.mapError toText |> discard
-                  }
-          Task.yield eventStore
-      )
-    |> Task.mapError toText
+new ops cfg = do
+  pool <- ops.acquire cfg |> Task.mapError toText
+  result <- Task.asResult do
+    ops.initializeTable pool |> Task.mapError (TableInitializationError .> toText)
+    subscriptionStore <- SubscriptionStore.new |> Task.mapError (toText .> SubscriptionInitializationError .> toText)
+    cleanup <- ops.initializeSubscriptions pool subscriptionStore cfg |> Task.mapError (SubscriptionInitializationError .> toText)
+    let eventStore =
+          EventStore
+            { insert = insertImpl ops cfg 0,
+              readStreamForwardFrom = readStreamForwardFromImpl ops cfg,
+              readStreamBackwardFrom = readStreamBackwardFromImpl ops cfg,
+              readAllStreamEvents = readAllStreamEventsImpl ops cfg,
+              readAllEventsForwardFrom = readAllEventsForwardFromImpl ops cfg,
+              readAllEventsBackwardFrom = readAllEventsBackwardFromImpl ops cfg,
+              readAllEventsForwardFromFiltered = readAllEventsForwardFromFilteredImpl ops cfg,
+              readAllEventsBackwardFromFiltered = readAllEventsBackwardFromFilteredImpl ops cfg,
+              subscribeToAllEvents = subscribeToAllEventsImpl ops cfg subscriptionStore,
+              subscribeToAllEventsFromPosition = subscribeToAllEventsFromPositionImpl ops cfg subscriptionStore,
+              subscribeToAllEventsFromStart = subscribeToAllEventsFromStartImpl ops cfg subscriptionStore,
+              subscribeToEntityEvents = subscribeToEntityEventsImpl ops cfg subscriptionStore,
+              subscribeToStreamEvents = subscribeToStreamEventsImpl ops cfg subscriptionStore,
+              unsubscribe = unsubscribeImpl subscriptionStore,
+              truncateStream = truncateStreamImpl ops cfg,
+              close = do
+                cleanup
+                ops.release pool |> Task.mapError toText |> discard
+            }
+    Task.yield eventStore
+  case result of
+    Ok store -> Task.yield store
+    Err err -> do
+      ops.release pool |> Task.mapError toText |> discard
+      Task.throw err
 
 
 insertImpl ::

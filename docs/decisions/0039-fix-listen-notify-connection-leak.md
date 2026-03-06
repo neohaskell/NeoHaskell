@@ -10,7 +10,7 @@ Accepted
 
 ### Root Cause Chain
 
-The leak is not a single bug but a chain of four compounding problems:
+The leak is not a single bug but a chain of five compounding problems:
 
 **1. Listener handle discarded at startup.**
 `Notifications.connectTo` in `Notifications.hs:51` calls `AsyncTask.run |> discard`. The `AsyncTask` handle is thrown away immediately, so the listener thread can never be cancelled. There is no way to stop it.
@@ -86,5 +86,5 @@ Add a test that creates an EventStore, calls `store.close`, then verifies the li
 - [GitHub Issue #397](https://github.com/neohaskell/NeoHaskell/issues/397) — Keepalive and reconnection (out of scope)
 - [GitHub Issue #405](https://github.com/neohaskell/NeoHaskell/issues/405) — False log messages (out of scope)
 - [ADR-0037](0037-postgres-listen-keepalive-reconnect.md) — PostgreSQL LISTEN Connection Keepalive and Reconnection
-- [Notifications.hs](../../core/service/Service/EventStore/Notifications.hs) — `connectTo` at line 51
+- [Notifications.hs](../../core/service/Service/EventStore/Postgres/Notifications.hs) — `connectTo`
 - [Test/Spec.hs](../../core/testlib/Test/Spec.hs) — Commented-out `afterAll`/`after` hooks

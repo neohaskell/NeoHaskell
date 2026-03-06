@@ -42,6 +42,7 @@ import Environment qualified
 import Service.EventStore (EventStore (..))
 import Task qualified
 import Test.Hspec qualified as Hspec
+import Test.Service.Command.Decide.Context qualified as CommandDecideContext
 import Test.Service.CommandHandler.Execute.Context qualified as CommandHandlerExecuteContext
 import Test.Service.EntityFetcher.Fetch.Context qualified as EntityFetcherFetchContext
 import Test.Service.EntityFetcher.FetchWithCache.Context qualified as EntityFetcherFetchWithCacheContext
@@ -53,6 +54,8 @@ import Test.Service.EventStore.ReadAllBackwardsFromEnd.Context qualified as Even
 import Test.Service.EventStore.ReadAllForwardsFromStart.Context qualified as EventStoreReadAllForwardsFromStartContext
 import Test.Service.EventStore.StreamTruncation.Context qualified as EventStoreStreamTruncationContext
 import Test.Service.EventStore.Subscriptions.Context qualified as EventStoreSubscriptionsContext
+import Test.Service.QueryObjectStore.InMemory.Context qualified as QueryObjectStoreInMemoryContext
+import Test.Service.SnapshotCache.InMemory.Context qualified as SnapshotCacheInMemoryContext
 import Text qualified
 import Var qualified
 
@@ -62,10 +65,6 @@ type Spec a = Hspec.SpecWith a
 
 class AutoCleanup context where
   autoCleanup :: context -> Task Text Unit
-
-
-instance {-# OVERLAPPABLE #-} AutoCleanup context where
-  autoCleanup _ = Task.yield unit
 
 
 instance AutoCleanup (EventStore eventType) where
@@ -114,6 +113,18 @@ instance AutoCleanup EntityFetcherFetchWithCacheContext.Context where
 
 instance AutoCleanup CommandHandlerExecuteContext.Context where
   autoCleanup context = context.cartStore.close
+
+
+instance AutoCleanup CommandDecideContext.Context where
+  autoCleanup _ = Task.yield unit
+
+
+instance AutoCleanup QueryObjectStoreInMemoryContext.Context where
+  autoCleanup _ = Task.yield unit
+
+
+instance AutoCleanup SnapshotCacheInMemoryContext.Context where
+  autoCleanup _ = Task.yield unit
 
 -- | Describe a group of tests
 describe :: Text -> Spec Unit -> Spec Unit

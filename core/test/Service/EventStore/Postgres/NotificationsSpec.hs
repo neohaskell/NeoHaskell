@@ -267,4 +267,6 @@ spec = do
         store2Result <- Postgres.new config |> Task.mapError toText |> Task.asResult
         case store2Result of
           Err err -> Test.fail [fmt|Second store creation failed after close: #{err}|]
-          Ok _ -> Task.yield unit
+          Ok store2 -> do
+            let closeOp2 = store2.close :: Task Text Unit
+            closeOp2
