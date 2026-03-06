@@ -70,8 +70,6 @@ jobs:
           path: dist-newstyle
       - name: Run nhcore-test-core
         run: LOG_LEVEL=Warn nix develop --command cabal test nhcore-test-core
-        env:
-          LOG_LEVEL: Warn
 
   test-auth:
     needs: [build]
@@ -91,8 +89,6 @@ jobs:
           path: dist-newstyle
       - name: Run nhcore-test-auth
         run: LOG_LEVEL=Warn nix develop --command cabal test nhcore-test-auth
-        env:
-          LOG_LEVEL: Warn
 
   test-integration:
     needs: [build]
@@ -112,8 +108,6 @@ jobs:
           path: dist-newstyle
       - name: Run nhcore-test-integration
         run: LOG_LEVEL=Warn nix develop --command cabal test nhcore-test-integration
-        env:
-          LOG_LEVEL: Warn
 
   test-service:
     needs: [build]
@@ -143,12 +137,14 @@ jobs:
           for i in $(seq 1 30); do
             pg_isready -h 127.0.0.1 -U neohaskell && break || sleep 1
           done
+          if ! pg_isready -h 127.0.0.1 -U neohaskell; then
+            echo "::error::PostgreSQL failed to start within 30 seconds"
+            exit 1
+          fi
         env:
           PGPASSWORD: neohaskell
       - name: Run nhcore-test-service
         run: LOG_LEVEL=Warn nix develop --command cabal test nhcore-test-service
-        env:
-          LOG_LEVEL: Warn
 
   test-hurl:
     needs: [build]
@@ -178,6 +174,10 @@ jobs:
           for i in $(seq 1 30); do
             pg_isready -h 127.0.0.1 -U neohaskell && break || sleep 1
           done
+          if ! pg_isready -h 127.0.0.1 -U neohaskell; then
+            echo "::error::PostgreSQL failed to start within 30 seconds"
+            exit 1
+          fi
         env:
           PGPASSWORD: neohaskell
       - name: Install hurl
