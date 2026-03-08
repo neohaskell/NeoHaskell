@@ -7,6 +7,7 @@ import Hasql.Session qualified as Session
 import Result qualified
 import Service.EventStore.Postgres (PostgresEventStore (..))
 import Service.FileUpload.FileStateStore.Postgres qualified as PostgresFileStore
+import Service.FileUpload.Web (FileStateStore (..))
 import Task qualified
 import Test
 import Test.Service.FileUpload.FileStateStore qualified as FileStateStoreSpec
@@ -30,15 +31,29 @@ spec = do
     -- Create store once per test. This follows the same pattern as
     -- Service.EventStore.PostgresSpec which also creates new stores per test.
     -- 
-    -- Note: newWithCleanup creates a pool internally. The pool is released
-    -- when garbage collected after each test. This is acceptable for tests
-    -- (not production) and matches the EventStore test patterns.
+    -- Note: newWithCleanup creates a pool internally. The pool is explicitly
+    -- released after use to prevent connection leaks in tests.
     let newStore = do
-          -- Use newWithCleanup to get the pool, then drop and recreate table
-          (_, pool) <- PostgresFileStore.newWithCleanup testConfig
-          dropTable pool
-          -- Create fresh store with new table
-          PostgresFileStore.new testConfig
+          let withFreshStore operation = do
+                (store, pool) <- PostgresFileStore.newWithCleanup testConfig
+                Task.finally
+                  (HasqlPool.release pool |> Task.fromIO)
+                  (operation store)
+          -- Reset table for test isolation using a short-lived pool
+          (_, setupPool) <- PostgresFileStore.newWithCleanup testConfig
+          Task.finally
+            (HasqlPool.release setupPool |> Task.fromIO)
+            (dropTable setupPool)
+          let getState fileRef =
+                withFreshStore \store ->
+                  store.getState fileRef
+          let setState fileRef state =
+                withFreshStore \store ->
+                  store.setState fileRef state
+          let updateState fileRef event =
+                withFreshStore \store ->
+                  store.updateState fileRef event
+          Task.yield FileStateStore {getState, setState, updateState}
     FileStateStoreSpec.spec newStore
 
 

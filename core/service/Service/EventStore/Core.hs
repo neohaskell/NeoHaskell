@@ -174,7 +174,9 @@ data EventStore eventType = EventStore
     --   will no longer be called for new events.
     unsubscribe :: SubscriptionId -> Task Error Unit,
     -- | Removes all the events up to a position
-    truncateStream :: EntityName -> StreamId -> StreamPosition -> Task Error Unit
+    truncateStream :: EntityName -> StreamId -> StreamPosition -> Task Error Unit,
+    -- | Release all resources held by this EventStore (connections, background tasks)
+    close :: Task Text Unit
   }
 
 
@@ -226,7 +228,8 @@ castEventStore rawStore =
       subscribeToStreamEvents = \entityName streamId callback -> do
         rawStore.subscribeToStreamEvents entityName streamId (handleSubscriptionRawEvent callback),
       unsubscribe = rawStore.unsubscribe,
-      truncateStream = rawStore.truncateStream
+      truncateStream = rawStore.truncateStream,
+      close = rawStore.close
     }
  where
   encodeInsertionPayload :: InsertionPayload eventType -> InsertionPayload Json.Value

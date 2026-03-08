@@ -14,6 +14,9 @@ import Service.EventStore.Postgres.Sessions qualified as Sessions
 import LinkedList qualified
 import Service.EventStore.Postgres.Internal (PostgresEventStore (..), toConnectionSettings)
 import Service.EventStore.Postgres.Notifications (nextBackoff)
+import Service.EventStore.Postgres qualified as Postgres
+import Task qualified
+import Service.EventStore.Core qualified as EventStore
 import Test
 
 
@@ -238,3 +241,32 @@ spec = do
       -- Settings list should be non-empty (has at least the connection params)
       -- Use length (Int has Show) rather than shouldSatisfy on the list (no Show instance)
       LinkedList.length settings |> shouldSatisfy (\n -> n > 0)
+
+  describe "Listener cleanup" do
+    whenEnvVar "POSTGRES_AVAILABLE" do
+      let config =
+            Postgres.PostgresEventStore
+              { host = "localhost",
+                databaseName = "neohaskell",
+                user = "neohaskell",
+                password = "neohaskell",
+                port = 5432
+              }
+      it "close stops the listener without crashing" \_ -> do
+        store <- Postgres.new config |> Task.mapError toText
+        let closeOp = store.close :: Task Text Unit
+        result <- closeOp |> Task.asResult
+        case result of
+          Err err -> Test.fail [fmt|store.close failed: #{err}|]
+          Ok _ -> Task.yield unit
+
+      it "close allows creating a new store on same database" \_ -> do
+        store1 <- Postgres.new config |> Task.mapError toText
+        let closeOp1 = store1.close :: Task Text Unit
+        closeOp1
+        store2Result <- Postgres.new config |> Task.mapError toText |> Task.asResult
+        case store2Result of
+          Err err -> Test.fail [fmt|Second store creation failed after close: #{err}|]
+          Ok store2 -> do
+            let closeOp2 = store2.close :: Task Text Unit
+            closeOp2
