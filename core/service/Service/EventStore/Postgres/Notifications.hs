@@ -35,21 +35,22 @@ connectTo acquireConnections store = do
           result <- Task.asResultSafe do
             (listenConnection, queryConnection) <- acquireConnections
             let releaseConns = do
+                  currentConnectionsRef |> Var.set Maybe.Nothing
                   Hasql.release listenConnection |> Task.fromIO
                   Hasql.release queryConnection |> Task.fromIO
-            trackResult <- Task.asResultSafe (currentConnectionsRef |> Var.set (Maybe.Just (listenConnection, queryConnection)) :: Task Text Unit)
-            case trackResult of
-              Err _ -> releaseConns
-              Ok _ -> pass
-            let channelToListen = HasqlNotifications.toPgIdentifier "global"
-            HasqlNotifications.listen listenConnection channelToListen
-              |> Task.fromIO
-              |> discard
-            Log.info "LISTEN/NOTIFY listener started"
-              |> Task.ignoreError
-            listenConnection
-              |> HasqlNotifications.waitForNotifications (handler queryConnection store)
-              |> Task.fromIO
+            Task.finally
+              releaseConns
+              do
+                currentConnectionsRef |> Var.set (Maybe.Just (listenConnection, queryConnection))
+                let channelToListen = HasqlNotifications.toPgIdentifier "global"
+                HasqlNotifications.listen listenConnection channelToListen
+                  |> Task.fromIO
+                  |> discard
+                Log.info "LISTEN/NOTIFY listener started"
+                  |> Task.ignoreError
+                listenConnection
+                  |> HasqlNotifications.waitForNotifications (handler queryConnection store)
+                  |> Task.fromIO
           case result of
             Ok _ -> do
               Log.critical "LISTEN/NOTIFY listener returned unexpectedly. Reconnecting..."

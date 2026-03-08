@@ -330,9 +330,9 @@ spec newStore = do
           context.store.subscribeToAllEvents subscriber
             |> Task.mapError toText
 
-        -- Wrap the test logic with guaranteed cleanup
+        -- Wrap the test logic with guaranteed cleanup (idempotent unsubscribe)
         Task.finally
-          (context.store.unsubscribe subscriptionId |> Task.mapError toText)
+          (context.store.unsubscribe subscriptionId |> Task.mapError toText |> Task.asResultSafe |> discard)
           do
             -- Insert first event (use position 9)
             case context.testEvents |> Array.get 0 of
@@ -346,7 +346,8 @@ spec newStore = do
             -- Wait for processing
             AsyncTask.sleep 50 |> Task.mapError (\_ -> "timeout")
 
-            -- Unsubscribe is handled by the finally block above
+            -- Explicitly unsubscribe BEFORE second insert
+            context.store.unsubscribe subscriptionId |> Task.mapError toText
 
             -- Insert second event after unsubscription (use position 10)
             case context.testEvents |> Array.get 1 of

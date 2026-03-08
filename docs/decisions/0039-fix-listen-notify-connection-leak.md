@@ -40,12 +40,14 @@ Fix the leak by giving `EventStore` an explicit lifecycle and wiring cleanup thr
 Change the return type from `Task Text Unit` to `Task Text (Task Text Unit)`. The inner `Task Text Unit` is a cancellation action. Callers are now responsible for calling it when they're done.
 
 **2. Add a `close` field to the `EventStore` record.**
+
 ```haskell
 data EventStore = EventStore
   { ...
   , close :: Task Text Unit
   }
 ```
+
 This gives every EventStore a standard lifecycle hook. The `SimpleEventStore` implementation provides a no-op. The Postgres implementation provides real cleanup.
 
 **3. Wire cleanup through `Internal.hs`.**

@@ -159,8 +159,12 @@ defaultOps = do
               |> Task.mapError toText
             let connectionFactory = do
                   listenConnection <- Hasql.acquire (toConnectionSettings cfg) |> Task.fromIOEither |> Task.mapError toText
-                  queryConnection <- Hasql.acquire (toConnectionSettings cfg) |> Task.fromIOEither |> Task.mapError toText
-                  Task.yield (listenConnection, queryConnection)
+                  queryResult <- Hasql.acquire (toConnectionSettings cfg) |> Task.fromIOEither |> Task.mapError toText |> Task.asResult
+                  case queryResult of
+                    Ok queryConnection -> Task.yield (listenConnection, queryConnection)
+                    Err err -> do
+                      Hasql.release listenConnection |> Task.fromIO
+                      Task.throw err
             subscriptionStore |> Notifications.connectTo connectionFactory
 
   let release connection = do
@@ -229,9 +233,10 @@ new ops cfg = do
               subscribeToStreamEvents = subscribeToStreamEventsImpl ops cfg subscriptionStore,
               unsubscribe = unsubscribeImpl subscriptionStore,
               truncateStream = truncateStreamImpl ops cfg,
-              close = do
-                cleanup
-                ops.release pool |> Task.mapError toText |> discard
+              close =
+                Task.finally
+                  (ops.release pool |> Task.mapError toText |> discard)
+                  cleanup
             }
     Task.yield eventStore
   case result of
