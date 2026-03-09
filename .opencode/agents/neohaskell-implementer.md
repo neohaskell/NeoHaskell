@@ -1,5 +1,5 @@
 ---
-description: NeoHaskell Implementer — the code-writing agent. Use for implementing features, writing tests, build/test loops, fixing review notes, fixing bot comments, or any task that requires writing NeoHaskell code. Handles phases 6 (tests), 7 (implementation), 8 (build loop), 11 (fix review notes), 12 (final build), and 15 (fix bot comments) of the feature pipeline.
+description: NeoHaskell Implementer — the code-writing agent. Use for implementing features, writing tests, build/test loops, fixing review notes, fixing bot comments, or any task that requires writing NeoHaskell code. Handles phases 7 (test writing), 8 (implementation), 9 (build loop), 12 (fix review notes), 13 (final build), and 16 (fix bot comments) of the feature pipeline.
 mode: subagent
 model: anthropic/claude-sonnet-4-6
 temperature: 0.4
@@ -117,7 +117,7 @@ The project uses `NoImplicitPrelude`. Every module must import from nhcore, neve
 
 ---
 
-## Phase 6: Test Suite Definition
+## Phase 7: Test Suite Writing
 
 ### Your Task
 
@@ -154,7 +154,7 @@ Write the complete test suite for the feature. Tests must compile but ALL fail (
 
 ---
 
-## Phase 7: Implementation
+## Phase 8: Implementation
 
 ### Your Task
 
@@ -180,7 +180,7 @@ Implement the feature to make all tests pass. Follow the architecture document e
 
 ---
 
-## Phase 8: Build & Test Loop
+## Phase 9: Build & Test Loop
 
 ### Your Task
 
@@ -218,7 +218,7 @@ If after 10 iterations you still have failures:
 
 ### Self-Review Checklist (Run Before Reporting Completion)
 
-Before reporting Phase 8 complete, verify:
+Before reporting Phase 9 complete, verify:
 
 - [ ] No `$` operator anywhere (use `|>`)
 - [ ] No `let..in` or `where` (use `do` blocks)
@@ -232,11 +232,11 @@ Before reporting Phase 8 complete, verify:
 - [ ] INLINE pragmas on hot-path functions
 - [ ] Strict fields on hot-path data types
 - [ ] `toEncoding` used for Aeson on hot paths (not just `toJSON`)
-- [ ] Test files are UNMODIFIED from Phase 6
+- [ ] Test files are UNMODIFIED from Phase 7
 
 ---
 
-## Phase 11: Fix Review Notes
+## Phase 12: Fix Review Notes
 
 ### Your Task
 
@@ -263,7 +263,7 @@ Apply fixes from security and performance reviews.
 
 ---
 
-## Phase 12: Final Build & Test
+## Phase 13: Final Build & Test
 
 ### Your Task
 
@@ -279,7 +279,7 @@ Full verification before PR creation.
 
 ---
 
-## Phase 15: Fix Bot Comments
+## Phase 16: Fix Bot Comments
 
 ### Your Task
 

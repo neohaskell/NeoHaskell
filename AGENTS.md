@@ -167,24 +167,25 @@ Every change MUST include tests. Tests are NOT optional.
 
 ## FEATURE IMPLEMENTATION PIPELINE
 
-NeoHaskell uses a 16-phase feature implementation pipeline orchestrated by Atlas (the main OpenCode agent). The pipeline is defined in the `neohaskell-feature-pipeline` skill and coordinated across 6 specialized agents.
+NeoHaskell uses a 17-phase feature implementation pipeline orchestrated by Atlas (the main OpenCode agent). The pipeline is defined in the `neohaskell-feature-pipeline` skill and coordinated across 7 specialized agents.
 
 ### Agents
 
 | Agent | Role | Phases | Model |
 |-------|------|--------|-------|
 | `neohaskell-devex-lead` | API design, naming, ADRs, architecture | 1, 4, 5 | claude-opus-4-6 |
-| `neohaskell-security-architect` | OWASP/NIST/EU security review | 2, 9 | claude-opus-4-6 |
-| `neohaskell-performance-lead` | 50k req/s performance review | 3, 10 | claude-opus-4-6 |
-| `neohaskell-community-lead` | PR descriptions, release notes | 13 | claude-sonnet-4-6 |
-| `neohaskell-implementer` | Code writing, tests, build loops | 6, 7, 8, 11, 12, 15 | claude-sonnet-4-6 |
-| `neohaskell-git-master` | Branch, commit, PR | 13 | claude-haiku-4-5 |
+| `neohaskell-security-architect` | OWASP/NIST/EU security review | 2, 10 | claude-opus-4-6 |
+| `neohaskell-performance-lead` | 50k req/s performance review | 3, 11 | claude-opus-4-6 |
+| `neohaskell-qa-designer` | Test spec design (outside-in TDD) | 6 | claude-opus-4-6 |
+| `neohaskell-community-lead` | PR descriptions, release notes | 14 | claude-sonnet-4-6 |
+| `neohaskell-implementer` | Code writing, tests, build loops | 7, 8, 9, 12, 13, 16 | claude-sonnet-4-6 |
+| `neohaskell-git-master` | Branch, commit, PR | 14 | claude-haiku-4-5 |
 
 ### Skills
 
 | Skill | Purpose | Used By |
 |-------|---------|---------|
-| `neohaskell-feature-pipeline` | 16-phase orchestration with PAUSE points | Atlas (orchestrator) |
+| `neohaskell-feature-pipeline` | 17-phase orchestration with PAUSE points | Atlas (orchestrator) |
 | `neohaskell-style-guide` | NeoHaskell coding conventions reference | All code-touching agents |
 | `neohaskell-adr-template` | ADR format and field guidance | devex-lead (Phase 1) |
 | `dx-council-cli` | CLI design expert panel (13 experts) | On-demand consultation |
@@ -199,16 +200,17 @@ NeoHaskell uses a 16-phase feature implementation pipeline orchestrated by Atlas
 | 3 | Performance Review (ADR) | performance-lead | |
 | 4 | DevEx Review | devex-lead | Yes |
 | 5 | Architecture Design | devex-lead | Yes |
-| 6 | Test Suite Definition | implementer | |
-| 7 | Implementation | implementer | |
-| 8 | Build & Test Loop | implementer | |
-| 9 | Security Review (Impl) | security-architect | Yes |
-| 10 | Performance Review (Impl) | performance-lead | Yes |
-| 11 | Fix Review Notes | implementer | |
-| 12 | Final Build & Test | implementer | |
-| 13 | Create PR | git-master + community-lead | Yes |
-| 14 | Bot Review | (wait for CI) | |
-| 15 | Fix Bot Comments | implementer | |
-| 16 | Final Approval & Merge | (human) | Yes |
+| 6 | Test Spec Design | qa-designer | Yes |
+| 7 | Test Suite Writing | implementer | |
+| 8 | Implementation | implementer | |
+| 9 | Build & Test Loop | implementer | |
+| 10 | Security Review (Impl) | security-architect | Yes |
+| 11 | Performance Review (Impl) | performance-lead | Yes |
+| 12 | Fix Review Notes | implementer | |
+| 13 | Final Build & Test | implementer | |
+| 14 | Create PR | git-master + community-lead | Yes |
+| 15 | Bot Review | (wait for CI) | |
+| 16 | Fix Bot Comments | implementer | |
+| 17 | Final Approval & Merge | (human) | Yes |
 
 PAUSE points require maintainer approval before the pipeline continues.

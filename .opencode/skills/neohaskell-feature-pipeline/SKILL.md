@@ -1,6 +1,6 @@
 ---
 name: neohaskell-feature-pipeline
-description: "Orchestrates the full 16-phase NeoHaskell feature implementation pipeline. Use when implementing new features, types, or modules for NeoHaskell. Triggers: 'implement feature', 'new NeoHaskell feature', 'feature pipeline', 'implement issue #', 'add type to nhcore', 'run feature pipeline', 'start pipeline'."
+description: "Orchestrates the full 17-phase NeoHaskell feature implementation pipeline. Use when implementing new features, types, or modules for NeoHaskell. Triggers: 'implement feature', 'new NeoHaskell feature', 'feature pipeline', 'implement issue #', 'add type to nhcore', 'run feature pipeline', 'start pipeline'."
 tags:
   - pipeline
   - orchestration
@@ -11,7 +11,7 @@ tags:
 
 # NeoHaskell Feature Implementation Pipeline
 
-This skill orchestrates the full 16-phase pipeline for implementing new features in NeoHaskell. It coordinates 6 specialized agents, enforces quality gates, and ensures every feature passes security, performance, and DevEx review before merging.
+This skill orchestrates the full 17-phase pipeline for implementing new features in NeoHaskell. It coordinates 7 specialized agents, enforces quality gates, and ensures every feature passes security, performance, and DevEx review before merging. Tests are designed BEFORE implementation (outside-in TDD).
 
 ## Variables (Set Before Starting)
 
@@ -41,17 +41,18 @@ ls docs/decisions/*.md | tail -1
 | 3 | Performance Review (ADR) | `neohaskell-performance-lead` | | `performance-notes.md` |
 | 4 | DevEx Review | `neohaskell-devex-lead` | **PAUSE** | DevEx checklist (pass/fail) |
 | 5 | Architecture Design | `neohaskell-devex-lead` | **PAUSE** | Architecture doc (module map, API signatures) |
-| 6 | Test Suite Definition | `neohaskell-implementer` | | Test files (compile, all fail) |
-| 7 | Implementation | `neohaskell-implementer` | | Source files |
-| 8 | Build & Test Loop | `neohaskell-implementer` | | All tests pass, hlint clean |
-| 9 | Security Review (Impl) | `neohaskell-security-architect` | **PAUSE** | `security-impl-notes.md` |
-| 10 | Performance Review (Impl) | `neohaskell-performance-lead` | **PAUSE** | `performance-impl-notes.md` |
-| 11 | Fix Review Notes | `neohaskell-implementer` | | Fixes applied |
-| 12 | Final Build & Test | `neohaskell-implementer` | | Clean build, all tests pass |
-| 13 | Create PR | `neohaskell-git-master` + `neohaskell-community-lead` | **PAUSE** | PR URL |
-| 14 | Bot Review | _(wait for CI)_ | | CI results |
-| 15 | Fix Bot Comments | `neohaskell-implementer` | | Fixes applied |
-| 16 | Final Approval & Merge | _(human)_ | **PAUSE** | Maintainer merges PR |
+| 6 | Test Spec Design | `neohaskell-qa-designer` | **PAUSE** | Test specification document |
+| 7 | Test Suite Writing | `neohaskell-implementer` | | Test files (compile, all fail) |
+| 8 | Implementation | `neohaskell-implementer` | | Source files |
+| 9 | Build & Test Loop | `neohaskell-implementer` | | All tests pass, hlint clean |
+| 10 | Security Review (Impl) | `neohaskell-security-architect` | **PAUSE** | `security-impl-notes.md` |
+| 11 | Performance Review (Impl) | `neohaskell-performance-lead` | **PAUSE** | `performance-impl-notes.md` |
+| 12 | Fix Review Notes | `neohaskell-implementer` | | Fixes applied |
+| 13 | Final Build & Test | `neohaskell-implementer` | | Clean build, all tests pass |
+| 14 | Create PR | `neohaskell-git-master` + `neohaskell-community-lead` | **PAUSE** | PR URL |
+| 15 | Bot Review | _(wait for CI)_ | | CI results |
+| 16 | Fix Bot Comments | `neohaskell-implementer` | | Fixes applied |
+| 17 | Final Approval & Merge | _(human)_ | **PAUSE** | Maintainer merges PR |
 
 ---
 
@@ -176,47 +177,87 @@ task(category="unspecified-high", load_skills=["neohaskell-style-guide"],
 **Output**: Architecture document with file paths, type signatures, integration points
 
 **⏸ PAUSE**: Report architecture design. Wait for maintainer approval.
-> "Architecture designed. New files: [list]. Public API: [key signatures]. Proceed to implementation?"
+> "Architecture designed. New files: [list]. Public API: [key signatures]. Proceed to test design?"
 
 ---
 
-### Phase 6: Test Suite Definition
+### Phase 6: Test Spec Design
+
+**Agent**: `neohaskell-qa-designer`
+**Skills to load**: `neohaskell-style-guide`
+**Input**: Architecture document from Phase 5
+
+This is the **outside-in TDD entry point**. The QA designer reads the architecture document and produces a comprehensive test specification covering every public API function with happy paths, edge cases, error conditions, serialization round-trips, and property-based invariants.
+
+**Delegate with**:
+```
+task(category="ultrabrain", load_skills=["neohaskell-style-guide"],
+  description="Design test specification for {FEATURE_NAME}",
+  prompt="TASK: Design a comprehensive test specification for {FEATURE_NAME}.
+    EXPECTED OUTCOME: Structured test specification document with every test case enumerated
+      in tabular format. Each test case must be specific enough to implement without ambiguity.
+    REQUIRED TOOLS: read, glob, grep, write, edit.
+    MUST DO: Read the architecture document to understand the public API. Read existing test files
+      for similar modules to match patterns (e.g., DecimalSpec.hs, RedactedSpec.hs, OAuth2ClientSpec.hs).
+      Apply the input analysis rubric to every function parameter. Cover: happy paths, edge cases
+      (empty, boundary, unicode, special chars), error conditions (every error constructor),
+      serialization round-trips, property-based invariants.
+      Minimum 3 test cases per public function. Target 3:1 edge-to-happy ratio.
+      Write the spec to a file.
+    MUST NOT DO: Write Haskell test code. Skip any public API function. Use vague test descriptions.
+    CONTEXT: Architecture doc: {architecture summary}. Module at {MODULE_PATH}. Test path: {TEST_PATH}.
+      Reference test files: core/test/DecimalSpec.hs, core/test-core/RedactedSpec.hs,
+      core/test/Auth/OAuth2/ClientSpec.hs for edge case patterns.")
+```
+
+**Output**: Test specification document with all test cases enumerated
+
+**⏸ PAUSE**: Report test spec summary (total test count, categories). Wait for maintainer approval.
+> "Test spec designed: {N} total test cases ({happy} happy paths, {edge} edge cases, {error} error conditions, {serial} serialization, {prop} property tests). Review spec before implementation?"
+
+---
+
+### Phase 7: Test Suite Writing
 
 **Agent**: `neohaskell-implementer`
 **Skills to load**: `neohaskell-style-guide`
-**Input**: Architecture document from Phase 5
+**Input**: Test specification from Phase 6 + Architecture document from Phase 5
+
+The implementer translates the QA designer's test specification into actual Haskell test code. Every row in the spec becomes an `it` block. No test cases are added or removed — the spec is the source of truth.
 
 **Delegate with**:
 ```
 task(category="unspecified-high", load_skills=["neohaskell-style-guide"],
-  description="Write test suite for {FEATURE_NAME}",
-  prompt="TASK: Write the complete test suite for {FEATURE_NAME} based on the architecture document.
+  description="Write test suite for {FEATURE_NAME} from spec",
+  prompt="TASK: Translate the test specification into Haskell test code for {FEATURE_NAME}.
     EXPECTED OUTCOME: Test files that compile but ALL tests fail (no implementation yet).
-    MUST DO: Cover unit tests, edge cases, serialization round-trips. Follow NeoHaskell test conventions.
+    MUST DO: Implement every test case from the test spec. Follow NeoHaskell test conventions exactly.
       Register tests in cabal file and test runner. Tests must compile with stub implementations.
-    MUST NOT DO: Write implementation code. Modify existing tests.
-    CONTEXT: Architecture doc: {architecture summary}. Test path: {TEST_PATH}.
-      Module path: {MODULE_PATH}.")
+      Each row in the spec = one `it` block. Do NOT add tests beyond the spec. Do NOT skip any.
+    MUST NOT DO: Write implementation code. Modify existing tests. Add test cases not in the spec.
+    CONTEXT: Test spec: {test_spec_summary}. Architecture doc: {architecture summary}.
+      Test path: {TEST_PATH}. Module path: {MODULE_PATH}.")
 ```
 
 **Output**: Test files created, all tests fail (red phase of TDD)
 
 ---
 
-### Phase 7: Implementation
+### Phase 8: Implementation
 
 **Agent**: `neohaskell-implementer`
 **Skills to load**: `neohaskell-style-guide`
-**Input**: Architecture document + test files from Phase 6
+**Input**: Architecture document + test files from Phase 7
 
-**Delegate with (continue session from Phase 6)**:
+**Delegate with (continue session from Phase 7)**:
 ```
-task(session_id="{phase6_session_id}", load_skills=["neohaskell-style-guide"],
+task(session_id="{phase7_session_id}", load_skills=["neohaskell-style-guide"],
   description="Implement {FEATURE_NAME}",
   prompt="TASK: Implement {FEATURE_NAME} to make all tests pass.
     EXPECTED OUTCOME: All source files created, following NeoHaskell conventions exactly.
     MUST DO: Follow architecture document precisely. All code must follow NeoHaskell style guide.
-      Use pipes, do-blocks, case expressions, descriptive type params, Task.yield, Result.
+      Use pipes, do-blocks, case expressions, if-then-else for Bools, descriptive type params,
+      Task.yield, Result. Import nhcore modules first.
     MUST NOT DO: Modify any test files. Use where/let-in. Use single-letter type params. Use $.
     CONTEXT: Tests at {TEST_PATH}. Module at {MODULE_PATH}.")
 ```
@@ -225,14 +266,14 @@ task(session_id="{phase6_session_id}", load_skills=["neohaskell-style-guide"],
 
 ---
 
-### Phase 8: Build & Test Loop
+### Phase 9: Build & Test Loop
 
 **Agent**: `neohaskell-implementer`
-**Input**: Implementation from Phase 7
+**Input**: Implementation from Phase 8
 
-**Delegate with (continue session from Phase 7)**:
+**Delegate with (continue session from Phase 8)**:
 ```
-task(session_id="{phase7_session_id}", load_skills=["neohaskell-style-guide"],
+task(session_id="{phase8_session_id}", load_skills=["neohaskell-style-guide"],
   description="Build and test {FEATURE_NAME}",
   prompt="TASK: Run build and test loop until all tests pass and hlint is clean.
     EXPECTED OUTCOME: `cabal build all` succeeds, `cabal test` passes, `hlint .` clean on changed files.
@@ -252,7 +293,7 @@ task(session_id="{phase7_session_id}", load_skills=["neohaskell-style-guide"],
 
 ---
 
-### Phase 9: Security Review (Implementation)
+### Phase 10: Security Review (Implementation)
 
 **Agent**: `neohaskell-security-architect`
 **Input**: Implemented source files
@@ -275,7 +316,7 @@ task(category="unspecified-high", load_skills=["neohaskell-style-guide"],
 
 ---
 
-### Phase 10: Performance Review (Implementation)
+### Phase 11: Performance Review (Implementation)
 
 **Agent**: `neohaskell-performance-lead`
 **Input**: Implemented source files
@@ -296,18 +337,18 @@ task(category="unspecified-high", load_skills=["neohaskell-style-guide"],
 
 **⏸ PAUSE**: Report performance findings. Wait for maintainer review.
 
-**Note**: Phases 9 and 10 can run in parallel.
+**Note**: Phases 10 and 11 can run in parallel.
 
 ---
 
-### Phase 11: Fix Review Notes
+### Phase 12: Fix Review Notes
 
 **Agent**: `neohaskell-implementer`
 **Input**: Security + performance review notes
 
-**Delegate with (continue session from Phase 8)**:
+**Delegate with (continue session from Phase 9)**:
 ```
-task(session_id="{phase8_session_id}", load_skills=["neohaskell-style-guide"],
+task(session_id="{phase9_session_id}", load_skills=["neohaskell-style-guide"],
   description="Fix review notes for {FEATURE_NAME}",
   prompt="TASK: Apply fixes from security and performance reviews.
     EXPECTED OUTCOME: All review findings addressed. Code compiles and tests pass.
@@ -319,17 +360,17 @@ task(session_id="{phase8_session_id}", load_skills=["neohaskell-style-guide"],
 
 **Output**: Fixes applied
 
-**Re-review trigger**: If security-relevant files changed, re-trigger Phase 9. If performance-relevant files changed (hot paths, serialization), re-trigger Phase 10.
+**Re-review trigger**: If security-relevant files changed, re-trigger Phase 10. If performance-relevant files changed (hot paths, serialization), re-trigger Phase 11.
 
 ---
 
-### Phase 12: Final Build & Test
+### Phase 13: Final Build & Test
 
 **Agent**: `neohaskell-implementer`
 
-**Delegate with (continue session from Phase 11)**:
+**Delegate with (continue session from Phase 12)**:
 ```
-task(session_id="{phase11_session_id}", load_skills=["neohaskell-style-guide"],
+task(session_id="{phase12_session_id}", load_skills=["neohaskell-style-guide"],
   description="Final build and test for {FEATURE_NAME}",
   prompt="TASK: Final build and test verification.
     EXPECTED OUTCOME: `cabal build all` succeeds, ALL test suites pass, `hlint .` clean.
@@ -343,7 +384,7 @@ task(session_id="{phase11_session_id}", load_skills=["neohaskell-style-guide"],
 
 ---
 
-### Phase 13: Create PR
+### Phase 14: Create PR
 
 **Agents**: `neohaskell-git-master` (branch + commit + PR) and `neohaskell-community-lead` (PR body)
 
@@ -375,7 +416,7 @@ task(category="git", load_skills=["git-master"],
 
 ---
 
-### Phase 14: Bot Review
+### Phase 15: Bot Review
 
 **Action**: Wait for CI to complete. Check status with:
 ```bash
@@ -386,7 +427,7 @@ No agent needed — just monitor CI status.
 
 ---
 
-### Phase 15: Fix Bot Comments
+### Phase 16: Fix Bot Comments
 
 **Agent**: `neohaskell-implementer`
 **Input**: CodeRabbit comments, CI failures
@@ -406,7 +447,7 @@ task(category="unspecified-high", load_skills=["neohaskell-style-guide"],
 
 ---
 
-### Phase 16: Final Approval & Merge
+### Phase 17: Final Approval & Merge
 
 **⏸ PAUSE**: Human gate. Maintainer reviews the PR, approves, and merges.
 > "CI is green, all bot comments resolved. PR ready for final review and merge: {PR_URL}"
@@ -418,11 +459,12 @@ The pipeline ends here. Merging is a human action — Atlas does not merge PRs.
 | Agent | Phases | Skills to Load | Write Access? |
 |-------|--------|---------------|---------------|
 | `neohaskell-devex-lead` | 1, 4, 5 | `neohaskell-adr-template`, `neohaskell-style-guide` | Yes (ADR files) |
-| `neohaskell-security-architect` | 2, 9 | `neohaskell-style-guide` | No (read-only) |
-| `neohaskell-performance-lead` | 3, 10 | `neohaskell-style-guide` | No (read-only) |
-| `neohaskell-implementer` | 6, 7, 8, 11, 12, 15 | `neohaskell-style-guide` | Yes (source + tests) |
-| `neohaskell-community-lead` | 13 (PR body) | — | No |
-| `neohaskell-git-master` | 13 (git) | `git-master` | No (bash only) |
+| `neohaskell-qa-designer` | 6 | `neohaskell-style-guide` | Yes (test spec doc) |
+| `neohaskell-security-architect` | 2, 10 | `neohaskell-style-guide` | No (read-only) |
+| `neohaskell-performance-lead` | 3, 11 | `neohaskell-style-guide` | No (read-only) |
+| `neohaskell-implementer` | 7, 8, 9, 12, 13, 16 | `neohaskell-style-guide` | Yes (source + tests) |
+| `neohaskell-community-lead` | 14 (PR body) | — | No |
+| `neohaskell-git-master` | 14 (git) | `git-master` | No (bash only) |
 
 ---
 
@@ -431,8 +473,8 @@ The pipeline ends here. Merging is a human action — Atlas does not merge PRs.
 These phases can run in parallel to save time:
 
 - **Phases 2 + 3**: Security and performance ADR reviews are independent
-- **Phases 9 + 10**: Security and performance implementation reviews are independent
-- **Phase 13**: Community lead (PR body) and git master (branch/commit) can prepare in parallel
+- **Phases 10 + 11**: Security and performance implementation reviews are independent
+- **Phase 14**: Community lead (PR body) and git master (branch/commit) can prepare in parallel
 
 ---
 
@@ -443,11 +485,12 @@ These phases can run in parallel to save time:
 | 1 (ADR) | ADR rejected | Revise ADR based on feedback, re-submit |
 | 2-3 (Reviews) | Critical/High finding | Revise ADR to address finding, re-run review |
 | 4 (DevEx) | Items fail checklist | Revise ADR/architecture, re-run DevEx review |
-| 6 (Tests) | Tests don't compile | Fix test compilation errors (not expectations) |
-| 8 (Build Loop) | 10 iterations exhausted | STOP. Report failure. Consult Oracle or ask human |
-| 9-10 (Impl Reviews) | Critical findings | Fix in Phase 11, re-trigger affected review |
-| 11 (Fix Notes) | Can't fix a finding | Escalate to maintainer with details |
-| 15 (Bot Comments) | CI still failing | Debug with full build output. Max 5 attempts, then escalate |
+| 6 (Test Spec) | Insufficient coverage | QA designer revises spec, adds missing cases |
+| 7 (Tests) | Tests don't compile | Fix test compilation errors (not expectations) |
+| 9 (Build Loop) | 10 iterations exhausted | STOP. Report failure. Consult Oracle or ask human |
+| 10-11 (Impl Reviews) | Critical findings | Fix in Phase 12, re-trigger affected review |
+| 12 (Fix Notes) | Can't fix a finding | Escalate to maintainer with details |
+| 16 (Bot Comments) | CI still failing | Debug with full build output. Max 5 attempts, then escalate |
 
 ---
 
@@ -456,6 +499,7 @@ These phases can run in parallel to save time:
 At pipeline completion, verify all deliverables exist:
 
 - [ ] ADR file: `docs/decisions/NNNN-slug.md` (Status: Proposed → Accepted after merge)
+- [ ] Test specification: test spec document reviewed and approved
 - [ ] Source module: `{MODULE_PATH}`
 - [ ] Test file: `{TEST_PATH}`
 - [ ] All tests passing: `cabal test` green
@@ -470,15 +514,15 @@ At pipeline completion, verify all deliverables exist:
 
 ## Session Continuity
 
-**Critical**: The implementer agent runs across phases 6 → 7 → 8 → 11 → 12 → 15. Always use `session_id` to continue the same session:
+**Critical**: The implementer agent runs across phases 7 → 8 → 9 → 12 → 13 → 16. Always use `session_id` to continue the same session:
 
 ```
-phase6_result = task(...) → session_id = "ses_xxx"
-phase7_result = task(session_id="ses_xxx", ...) → same session
+phase7_result = task(...) → session_id = "ses_xxx"
 phase8_result = task(session_id="ses_xxx", ...) → same session
-phase11_result = task(session_id="ses_xxx", ...) → same session
+phase9_result = task(session_id="ses_xxx", ...) → same session
 phase12_result = task(session_id="ses_xxx", ...) → same session
-phase15_result = task(session_id="ses_xxx", ...) → same session
+phase13_result = task(session_id="ses_xxx", ...) → same session
+phase16_result = task(session_id="ses_xxx", ...) → same session
 ```
 
 This preserves full context across all implementation phases, saving tokens and avoiding re-exploration.

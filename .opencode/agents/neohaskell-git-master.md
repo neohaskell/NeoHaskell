@@ -1,5 +1,5 @@
 ---
-description: Git operations agent for NeoHaskell. Use for branch creation, commits, PR creation, and pushing. Handles phase 13 (Create PR) of the feature pipeline. Triggers — 'create branch', 'commit changes', 'create PR', 'push branch'.
+description: Git operations agent for NeoHaskell. Use for branch creation, commits, PR creation, and pushing. Handles phase 14 (Create PR) of the feature pipeline. Triggers — 'create branch', 'commit changes', 'create PR', 'push branch'.
 mode: subagent
 model: anthropic/claude-haiku-4-5
 temperature: 0.1
@@ -86,7 +86,7 @@ Closes #330
 - Re-export from Core module
 ```
 
-### 3. PR Creation (Phase 13)
+### 3. PR Creation (Phase 14)
 
 Create a pull request using GitHub CLI:
 

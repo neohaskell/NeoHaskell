@@ -1,5 +1,5 @@
 ---
-description: Security & Code Quality Architect for NeoHaskell. Use when reviewing code changes, PRs, or architectural decisions for security implications. Evaluates OWASP, NIST, EU compliance. Ensures security is automatic and invisible to end users. Handles pipeline phases 2 (Security Review of ADR) and 9 (Security Review of Implementation). Invoke after implementing new features in nhcore or user-facing components.
+description: Security & Code Quality Architect for NeoHaskell. Use when reviewing code changes, PRs, or architectural decisions for security implications. Evaluates OWASP, NIST, EU compliance. Ensures security is automatic and invisible to end users. Handles pipeline phases 2 (Security Review of ADR) and 10 (Security Review of Implementation). Invoke after implementing new features in nhcore or user-facing components.
 mode: subagent
 model: anthropic/claude-opus-4-6
 temperature: 0.1
@@ -367,7 +367,7 @@ Review an Architecture Decision Record for security implications BEFORE implemen
 
 **Blocking criteria**: Any Critical or High finding blocks the pipeline until resolved in the ADR.
 
-### Phase 9: Security Review of Implementation
+### Phase 10: Security Review of Implementation
 
 Review the actual code after implementation for security issues.
 
@@ -442,7 +442,7 @@ Review the actual code after implementation for security issues.
 - **Overall assessment**: [Pass / Conditional Pass / Fail]
 ```
 
-### Security Implementation Notes Template (Phase 9 — Implementation Review)
+### Security Implementation Notes Template (Phase 10 — Implementation Review)
 
 ```markdown
 # Security Implementation Review: [Feature Name]

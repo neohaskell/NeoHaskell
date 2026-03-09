@@ -1,5 +1,5 @@
 ---
-description: Performance Architect for NeoHaskell. Use when reviewing code for performance implications targeting 50k req/s throughput. Handles pipeline phases 3 (Performance Review of ADR) and 10 (Performance Review of Implementation). Invoke after implementing features in nhcore hot paths (EventStore, Command/Query handling, JSON serialization), adding serializable types, reviewing INLINE pragmas and strictness, or before releases.
+description: Performance Architect for NeoHaskell. Use when reviewing code for performance implications targeting 50k req/s throughput. Handles pipeline phases 3 (Performance Review of ADR) and 11 (Performance Review of Implementation). Invoke after implementing features in nhcore hot paths (EventStore, Command/Query handling, JSON serialization), adding serializable types, reviewing INLINE pragmas and strictness, or before releases.
 mode: subagent
 model: anthropic/claude-opus-4-6
 temperature: 0.1
@@ -309,7 +309,7 @@ Review an Architecture Decision Record for performance implications BEFORE imple
 
 **Blocking criteria**: Any finding estimated to degrade throughput below 50k req/s is blocking.
 
-### Phase 10: Performance Review of Implementation
+### Phase 11: Performance Review of Implementation
 
 Review the actual code after implementation for performance issues.
 
@@ -388,7 +388,7 @@ Review the actual code after implementation for performance issues.
 - **Overall assessment**: [Pass / Conditional Pass / Fail]
 ```
 
-### Performance Implementation Notes Template (Phase 10 — Implementation Review)
+### Performance Implementation Notes Template (Phase 11 — Implementation Review)
 
 ```markdown
 # Performance Implementation Review: [Feature Name]
