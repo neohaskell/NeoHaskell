@@ -1,5 +1,5 @@
 ---
-name: dx-council
+name: dx-council-cli
 description: "Use when user says 'Ask the DX council' — spawns parallel agents roleplaying CLI design experts for opinionated consultation on developer experience questions."
 tags:
   - cli

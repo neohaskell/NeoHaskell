@@ -66,31 +66,36 @@ spec = do
     it "converts FileNotFound to ValidationError" do
       let ref = makeTestFileRef
       let err = fileAccessToIntegrationError (FileNotFound ref)
-      err `shouldBe` Integration.ValidationError "File not found: 00000000-0000-0000-0000-000000000001"
+      err `shouldBe` Integration.ValidationError "OCR file access failed: file not found"
 
     it "converts NotOwner to AuthenticationError" do
       let ref = makeTestFileRef
       let err = fileAccessToIntegrationError (NotOwner ref)
-      err `shouldBe` Integration.AuthenticationError "Not authorized to access file: 00000000-0000-0000-0000-000000000001"
+      err `shouldBe` Integration.AuthenticationError "OCR file access failed: access denied"
 
     it "converts FileExpired to ValidationError" do
       let ref = makeTestFileRef
       let err = fileAccessToIntegrationError (FileExpired ref)
-      err `shouldBe` Integration.ValidationError "File has expired: 00000000-0000-0000-0000-000000000001"
+      err `shouldBe` Integration.ValidationError "OCR file access failed: file expired"
 
     it "converts FileIsDeleted to ValidationError" do
       let ref = makeTestFileRef
       let err = fileAccessToIntegrationError (FileIsDeleted ref)
-      err `shouldBe` Integration.ValidationError "File has been deleted: 00000000-0000-0000-0000-000000000001"
+      err `shouldBe` Integration.ValidationError "OCR file access failed: file deleted"
 
     it "converts BlobMissing to UnexpectedError" do
       let ref = makeTestFileRef
       let err = fileAccessToIntegrationError (BlobMissing ref)
-      err `shouldBe` Integration.UnexpectedError "File blob is missing from storage: 00000000-0000-0000-0000-000000000001"
+      err `shouldBe` Integration.UnexpectedError "OCR file access failed: storage unavailable"
 
     it "converts StorageError to UnexpectedError" do
       let err = fileAccessToIntegrationError (StorageError "disk full")
-      err `shouldBe` Integration.UnexpectedError "Storage error: disk full"
+      err `shouldBe` Integration.UnexpectedError "OCR file access failed: storage error"
+
+    it "converts StateLookupFailed to UnexpectedError" do
+      let ref = makeTestFileRef
+      let err = fileAccessToIntegrationError (StateLookupFailed ref "internal error")
+      err `shouldBe` Integration.UnexpectedError "OCR file access failed: state lookup error"
 
   describe "defaultConfig" do
     it "has FullText extraction mode" do
