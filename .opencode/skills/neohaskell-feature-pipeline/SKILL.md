@@ -51,8 +51,7 @@ ls docs/decisions/*.md | tail -1
 | 13 | Create PR | `neohaskell-git-master` + `neohaskell-community-lead` | **PAUSE** | PR URL |
 | 14 | Bot Review | _(wait for CI)_ | | CI results |
 | 15 | Fix Bot Comments | `neohaskell-implementer` | | Fixes applied |
-| 16 | Final Approval | _(human)_ | **PAUSE** | Maintainer approval |
-| 17 | Merge | `neohaskell-git-master` | | Merged to main |
+| 16 | Final Approval & Merge | _(human)_ | **PAUSE** | Maintainer merges PR |
 
 ---
 
@@ -407,31 +406,12 @@ task(category="unspecified-high", load_skills=["neohaskell-style-guide"],
 
 ---
 
-### Phase 16: Final Approval
+### Phase 16: Final Approval & Merge
 
-**⏸ PAUSE**: Human gate. Maintainer reviews the PR and approves.
-> "CI is green, all bot comments resolved. PR ready for final review: {PR_URL}"
+**⏸ PAUSE**: Human gate. Maintainer reviews the PR, approves, and merges.
+> "CI is green, all bot comments resolved. PR ready for final review and merge: {PR_URL}"
 
----
-
-### Phase 17: Merge
-
-**Agent**: `neohaskell-git-master`
-
-**Delegate with**:
-```
-task(category="git", load_skills=["git-master"],
-  description="Merge PR #{PR_NUMBER}",
-  prompt="TASK: Merge PR #{PR_NUMBER} via squash merge.
-    EXPECTED OUTCOME: PR merged to main.
-    MUST DO: Verify CI is green. Use `gh pr merge --squash`. Report merge status.
-    MUST NOT DO: Merge if CI is failing. Force merge.
-    CONTEXT: PR: {PR_URL}.")
-```
-
-**Output**: PR merged
-
----
+The pipeline ends here. Merging is a human action — Atlas does not merge PRs.
 
 ## Agent Coordination Reference
 
@@ -442,7 +422,7 @@ task(category="git", load_skills=["git-master"],
 | `neohaskell-performance-lead` | 3, 10 | `neohaskell-style-guide` | No (read-only) |
 | `neohaskell-implementer` | 6, 7, 8, 11, 12, 15 | `neohaskell-style-guide` | Yes (source + tests) |
 | `neohaskell-community-lead` | 13 (PR body) | — | No |
-| `neohaskell-git-master` | 13 (git), 17 | `git-master` | No (bash only) |
+| `neohaskell-git-master` | 13 (git) | `git-master` | No (bash only) |
 
 ---
 
@@ -482,7 +462,7 @@ At pipeline completion, verify all deliverables exist:
 - [ ] Lint clean: `hlint .` clean on changed files
 - [ ] Security review: No Critical/High findings
 - [ ] Performance review: 50k req/s target maintained
-- [ ] PR merged to main
+- [ ] PR created and ready for maintainer review
 - [ ] README index updated in `docs/decisions/README.md`
 - [ ] `nhcore.cabal` updated with new modules
 

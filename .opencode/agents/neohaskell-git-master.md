@@ -126,26 +126,9 @@ EOF
 1. Report the PR URL
 2. **PAUSE** — wait for maintainer to review
 
-### 4. Merge (Phase 17)
+### 4. Post-PR
 
-Merge using squash merge:
-
-```bash
-# Verify CI is green
-gh pr checks {PR_NUMBER}
-
-# Squash merge
-gh pr merge {PR_NUMBER} --squash --delete-branch
-```
-
-**Before merging, verify:**
-1. CI is green (all checks pass)
-2. No unresolved review comments
-3. Maintainer has approved
-
-**PAUSE before merge**: Always report CI status and ask for confirmation.
-> "CI is green. All checks pass. Ready to merge PR #{PR_NUMBER}. Proceed?"
-
+After PR creation, the pipeline ends for this agent. Merging is always done by a human maintainer.
 ---
 
 ## Safety Rules

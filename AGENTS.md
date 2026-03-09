@@ -178,13 +178,13 @@ NeoHaskell uses a 17-phase feature implementation pipeline orchestrated by Atlas
 | `neohaskell-performance-lead` | 50k req/s performance review | 3, 10 | claude-opus-4 |
 | `neohaskell-community-lead` | PR descriptions, release notes | 13 | claude-sonnet-4 |
 | `neohaskell-implementer` | Code writing, tests, build loops | 6, 7, 8, 11, 12, 15 | claude-sonnet-4 |
-| `neohaskell-git-master` | Branch, commit, PR, merge | 13, 17 | claude-sonnet-4 |
+| `neohaskell-git-master` | Branch, commit, PR | 13 | claude-sonnet-4 |
 
 ### Skills
 
 | Skill | Purpose | Used By |
 |-------|---------|---------|
-| `neohaskell-feature-pipeline` | 17-phase orchestration with PAUSE points | Atlas (orchestrator) |
+| `neohaskell-feature-pipeline` | 16-phase orchestration with PAUSE points | Atlas (orchestrator) |
 | `neohaskell-style-guide` | NeoHaskell coding conventions reference | All code-touching agents |
 | `neohaskell-adr-template` | ADR format and field guidance | devex-lead (Phase 1) |
 | `dx-council-cli` | CLI design expert panel (13 experts) | On-demand consultation |
@@ -209,7 +209,6 @@ NeoHaskell uses a 17-phase feature implementation pipeline orchestrated by Atlas
 | 13 | Create PR | git-master + community-lead | Yes |
 | 14 | Bot Review | (wait for CI) | |
 | 15 | Fix Bot Comments | implementer | |
-| 16 | Final Approval | (human) | Yes |
-| 17 | Merge | git-master | |
+| 16 | Final Approval & Merge | (human) | Yes |
 
 PAUSE points require maintainer approval before the pipeline continues.
