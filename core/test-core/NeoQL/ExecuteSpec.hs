@@ -1,15 +1,13 @@
 module NeoQL.ExecuteSpec where
 
-import Array (Array)
 import Array qualified
-import Basics
+import Core
+import Json qualified
 import NeoQL (Expr (..), FieldName (..), Value (..))
 import NeoQL qualified
-import Json qualified
 import Result (Result (..))
 import Result qualified
-import Test.Hspec qualified as Hspec
-import Text (Text)
+import Test
 
 
 decodeFixtureResult :: Text -> Result Text Json.Value
@@ -25,54 +23,54 @@ decodeFixture source = do
     Result.Err err -> panic [fmt|Invalid JSON fixture: #{err}|]
 
 
-spec :: Hspec.Spec
+spec :: Spec Unit
 spec = do
-  Hspec.describe "NeoQL.Execute" do
-    Hspec.describe "string equality" do
-      Hspec.it "matches when field equals string value" do
+  describe "NeoQL.Execute" do
+    describe "string equality" do
+      it "matches when field equals string value" \_ -> do
         let decoded = decodeFixtureResult "{\"status\":\"pending\"}"
-        decoded `Hspec.shouldSatisfy` Result.isOk
+        decoded |> shouldSatisfy Result.isOk
 
         let expr = FieldEquals (FieldName "status") (StringValue "pending")
         let value = decodeFixture "{\"status\":\"pending\"}"
-        NeoQL.execute expr value `Hspec.shouldBe` True
+        NeoQL.execute expr value |> shouldBe True
 
-      Hspec.it "does not match when field differs" do
+      it "does not match when field differs" \_ -> do
         let expr = FieldEquals (FieldName "status") (StringValue "pending")
         let value = decodeFixture "{\"status\":\"paid\"}"
-        NeoQL.execute expr value `Hspec.shouldBe` False
+        NeoQL.execute expr value |> shouldBe False
 
-    Hspec.describe "number equality" do
-      Hspec.it "matches when field equals number value" do
+    describe "number equality" do
+      it "matches when field equals number value" \_ -> do
         let expr = FieldEquals (FieldName "count") (NumberValue 42)
         let value = decodeFixture "{\"count\":42}"
-        NeoQL.execute expr value `Hspec.shouldBe` True
+        NeoQL.execute expr value |> shouldBe True
 
-      Hspec.it "does not match when field differs" do
+      it "does not match when field differs" \_ -> do
         let expr = FieldEquals (FieldName "count") (NumberValue 42)
         let value = decodeFixture "{\"count\":41}"
-        NeoQL.execute expr value `Hspec.shouldBe` False
+        NeoQL.execute expr value |> shouldBe False
 
-    Hspec.describe "unknown field" do
-      Hspec.it "returns False for unknown field (silent non-match)" do
+    describe "unknown field" do
+      it "returns False for unknown field (silent non-match)" \_ -> do
         let expr = FieldEquals (FieldName "status") (StringValue "pending")
         let value = decodeFixture "{\"other\":\"pending\"}"
-        NeoQL.execute expr value `Hspec.shouldBe` False
+        NeoQL.execute expr value |> shouldBe False
 
-    Hspec.describe "type mismatch" do
-      Hspec.it "returns False when field is string but expr expects number" do
+    describe "type mismatch" do
+      it "returns False when field is string but expr expects number" \_ -> do
         let expr = FieldEquals (FieldName "count") (NumberValue 42)
         let value = decodeFixture "{\"count\":\"42\"}"
-        NeoQL.execute expr value `Hspec.shouldBe` False
+        NeoQL.execute expr value |> shouldBe False
 
-    Hspec.describe "field access (no filter)" do
-      Hspec.it "returns True for FieldAccess (projection, no filtering)" do
+    describe "field access (no filter)" do
+      it "returns True for FieldAccess (projection, no filtering)" \_ -> do
         let expr = FieldAccess (FieldName "status")
         let value = decodeFixture "{\"status\":\"pending\"}"
-        NeoQL.execute expr value `Hspec.shouldBe` True
+        NeoQL.execute expr value |> shouldBe True
 
-    Hspec.describe "non-object values" do
-      Hspec.it "returns False for non-object Aeson.Value" do
+    describe "non-object values" do
+      it "returns False for non-object Aeson.Value" \_ -> do
         let expr = FieldEquals (FieldName "status") (StringValue "pending")
         let stringValue = decodeFixture "\"pending\""
         let numberValue = decodeFixture "42"
@@ -80,14 +78,14 @@ spec = do
         let arrayValue = decodeFixture "[{\"status\":\"pending\"}]"
         let nullValue = decodeFixture "null"
 
-        NeoQL.execute expr stringValue `Hspec.shouldBe` False
-        NeoQL.execute expr numberValue `Hspec.shouldBe` False
-        NeoQL.execute expr boolValue `Hspec.shouldBe` False
-        NeoQL.execute expr arrayValue `Hspec.shouldBe` False
-        NeoQL.execute expr nullValue `Hspec.shouldBe` False
+        NeoQL.execute expr stringValue |> shouldBe False
+        NeoQL.execute expr numberValue |> shouldBe False
+        NeoQL.execute expr boolValue |> shouldBe False
+        NeoQL.execute expr arrayValue |> shouldBe False
+        NeoQL.execute expr nullValue |> shouldBe False
 
-    Hspec.describe "filterValues" do
-      Hspec.it "filters array keeping only matching objects" do
+    describe "filterValues" do
+      it "filters array keeping only matching objects" \_ -> do
         let expr = FieldEquals (FieldName "status") (StringValue "pending")
         let pendingA = decodeFixture "{\"status\":\"pending\",\"id\":1}"
         let paid = decodeFixture "{\"status\":\"paid\",\"id\":2}"
@@ -95,16 +93,16 @@ spec = do
         let nonObject = decodeFixture "\"pending\""
         let values = Array.fromLinkedList [pendingA, paid, pendingB, nonObject]
         let expected = Array.fromLinkedList [pendingA, pendingB]
-        NeoQL.filterValues expr values `Hspec.shouldBe` expected
+        NeoQL.filterValues expr values |> shouldBe expected
 
-      Hspec.it "returns empty array for empty input" do
+      it "returns empty array for empty input" \_ -> do
         let expr = FieldEquals (FieldName "status") (StringValue "pending")
         let values = Array.empty :: Array Json.Value
-        NeoQL.filterValues expr values `Hspec.shouldBe` Array.empty
+        NeoQL.filterValues expr values |> shouldBe Array.empty
 
-      Hspec.it "returns empty array when nothing matches" do
+      it "returns empty array when nothing matches" \_ -> do
         let expr = FieldEquals (FieldName "status") (StringValue "pending")
         let paidA = decodeFixture "{\"status\":\"paid\"}"
         let paidB = decodeFixture "{\"status\":\"cancelled\"}"
         let values = Array.fromLinkedList [paidA, paidB]
-        NeoQL.filterValues expr values `Hspec.shouldBe` Array.empty
+        NeoQL.filterValues expr values |> shouldBe Array.empty
