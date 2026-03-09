@@ -134,7 +134,7 @@ spec = do
       it "returns empty JSON array when no queries exist" \_ -> do
         store <- InMemoryStore.new |> Task.mapError toText
 
-        result <- Endpoint.createQueryEndpoint @TestQuery store Nothing |> Task.mapError endpointErrorToText
+        result <- Endpoint.createQueryEndpoint @TestQuery store Nothing Nothing |> Task.mapError endpointErrorToText
 
         result |> shouldBe "[]"
 
@@ -146,7 +146,7 @@ spec = do
         store.atomicUpdate queryId (\_ -> Just query)
           |> Task.mapError errorToText
 
-        result <- Endpoint.createQueryEndpoint @TestQuery store Nothing |> Task.mapError endpointErrorToText
+        result <- Endpoint.createQueryEndpoint @TestQuery store Nothing Nothing |> Task.mapError endpointErrorToText
 
         -- Result should be a JSON array containing the query
         let decoded = Json.decodeText @(Array TestQuery) result
@@ -173,7 +173,7 @@ spec = do
         store.atomicUpdate id2 (\_ -> Just query2) |> Task.mapError errorToText
         store.atomicUpdate id3 (\_ -> Just query3) |> Task.mapError errorToText
 
-        result <- Endpoint.createQueryEndpoint @TestQuery store Nothing |> Task.mapError endpointErrorToText
+        result <- Endpoint.createQueryEndpoint @TestQuery store Nothing Nothing |> Task.mapError endpointErrorToText
 
         let decoded = Json.decodeText @(Array TestQuery) result
         case decoded of
@@ -188,7 +188,7 @@ spec = do
         store.atomicUpdate queryId (\_ -> Just query)
           |> Task.mapError errorToText
 
-        result <- Endpoint.createQueryEndpoint @TestQuery store Nothing |> Task.mapError endpointErrorToText
+        result <- Endpoint.createQueryEndpoint @TestQuery store Nothing Nothing |> Task.mapError endpointErrorToText
 
         -- Verify the result is valid JSON by parsing it
         let parsed = Json.decodeText @Json.Value result
@@ -206,7 +206,7 @@ spec = do
           let query = AuthenticatedQuery {authQueryId = queryId, authQueryOwnerId = "user-1", authQueryData = "test"}
           store.atomicUpdate queryId (\_ -> Just query) |> Task.mapError errorToText
 
-          result <- Endpoint.createQueryEndpoint @AuthenticatedQuery store Nothing |> Task.asResult
+          result <- Endpoint.createQueryEndpoint @AuthenticatedQuery store Nothing Nothing |> Task.asResult
 
           case result of
             Err (Auth.AuthorizationError Unauthenticated) -> pass
@@ -227,7 +227,7 @@ spec = do
 
           -- User-1 should only see their own query
           let user1 = testUser "user-1" []
-          result <- Endpoint.createQueryEndpoint @OwnerOnlyQuery store (Just user1) |> Task.mapError endpointErrorToText
+          result <- Endpoint.createQueryEndpoint @OwnerOnlyQuery store (Just user1) Nothing |> Task.mapError endpointErrorToText
 
           let decoded = Json.decodeText @(Array OwnerOnlyQuery) result
           case decoded of
@@ -247,7 +247,7 @@ spec = do
 
           -- User-2 owns nothing, should see empty array
           let user2 = testUser "user-2" []
-          result <- Endpoint.createQueryEndpoint @OwnerOnlyQuery store (Just user2) |> Task.mapError endpointErrorToText
+          result <- Endpoint.createQueryEndpoint @OwnerOnlyQuery store (Just user2) Nothing |> Task.mapError endpointErrorToText
 
           let decoded = Json.decodeText @(Array OwnerOnlyQuery) result
           case decoded of
@@ -264,7 +264,7 @@ spec = do
 
           -- User without admin:read permission
           let userWithoutPerm = testUser "user-1" ["other:permission"]
-          result <- Endpoint.createQueryEndpoint @PermissionQuery store (Just userWithoutPerm) |> Task.asResult
+          result <- Endpoint.createQueryEndpoint @PermissionQuery store (Just userWithoutPerm) Nothing |> Task.asResult
 
           case result of
             Err (Auth.AuthorizationError (InsufficientPermissions perms)) -> do
@@ -281,7 +281,7 @@ spec = do
 
           -- User with admin:read permission
           let adminUser = testUser "admin-1" ["admin:read"]
-          result <- Endpoint.createQueryEndpoint @PermissionQuery store (Just adminUser) |> Task.mapError endpointErrorToText
+          result <- Endpoint.createQueryEndpoint @PermissionQuery store (Just adminUser) Nothing |> Task.mapError endpointErrorToText
 
           let decoded = Json.decodeText @(Array PermissionQuery) result
           case decoded of
@@ -305,7 +305,7 @@ spec = do
 
           -- User-1 passes canAccess (authenticated), canView filters to their data
           let user1 = testUser "user-1" []
-          result <- Endpoint.createQueryEndpoint @OwnerOnlyQuery store (Just user1) |> Task.mapError endpointErrorToText
+          result <- Endpoint.createQueryEndpoint @OwnerOnlyQuery store (Just user1) Nothing |> Task.mapError endpointErrorToText
 
           let decoded = Json.decodeText @(Array OwnerOnlyQuery) result
           case decoded of

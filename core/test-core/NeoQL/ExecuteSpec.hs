@@ -22,7 +22,7 @@ decodeFixture source = do
   let decoded = decodeFixtureResult source
   case decoded of
     Result.Ok value -> value
-    Result.Err _ -> Json.null
+    Result.Err err -> panic [fmt|Invalid JSON fixture: #{err}|]
 
 
 spec :: Hspec.Spec

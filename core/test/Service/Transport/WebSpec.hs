@@ -89,7 +89,7 @@ spec = do
         _ <- store.atomicUpdate queryId (\_ -> Just query) |> Task.mapError errorToText
 
         -- Execute: Try to access without authentication
-        result <- Endpoint.createQueryEndpoint @ProtectedQuery store Nothing |> Task.asResult
+        result <- Endpoint.createQueryEndpoint @ProtectedQuery store Nothing Nothing |> Task.asResult
 
         -- Verify: Should get Unauthenticated error (maps to HTTP 401)
         case result of
@@ -106,7 +106,7 @@ spec = do
         _ <- store.atomicUpdate queryId (\_ -> Just query) |> Task.mapError errorToText
 
         -- No user claims = simulates no auth configured or no token provided
-        result <- Endpoint.createQueryEndpoint @ProtectedQuery store Nothing |> Task.asResult
+        result <- Endpoint.createQueryEndpoint @ProtectedQuery store Nothing Nothing |> Task.asResult
 
         case result of
           Err (Auth.AuthorizationError Unauthenticated) -> pass
@@ -122,7 +122,7 @@ spec = do
 
         -- Execute: Access with authenticated user lacking admin:read permission
         let userWithoutPerm = testUser "user-1" ["other:permission"]
-        result <- Endpoint.createQueryEndpoint @AdminQuery store (Just userWithoutPerm) |> Task.asResult
+        result <- Endpoint.createQueryEndpoint @AdminQuery store (Just userWithoutPerm) Nothing |> Task.asResult
 
         -- Verify: Should get InsufficientPermissions error (maps to HTTP 403)
         case result of
@@ -141,7 +141,7 @@ spec = do
         _ <- store.atomicUpdate queryId (\_ -> Just query) |> Task.mapError errorToText
 
         let userWithoutPerm = testUser "user-1" []
-        result <- Endpoint.createQueryEndpoint @AdminQuery store (Just userWithoutPerm) |> Task.asResult
+        result <- Endpoint.createQueryEndpoint @AdminQuery store (Just userWithoutPerm) Nothing |> Task.asResult
 
         -- The error contains permissions for logging, but the HTTP layer
         -- (WebTransport) returns "Insufficient permissions" without specifics

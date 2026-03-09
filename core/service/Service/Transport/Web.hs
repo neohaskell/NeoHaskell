@@ -610,7 +610,8 @@ instance Transport WebTransport where
                     Task.yield (Result.Ok (Maybe.Just expr))
             case neoqlResult of
               Result.Err parseErr -> do
-                let errBody = [fmt|{"error":"parse_error","message":"#{parseErr}"}|]
+                let safeMsg = Json.encodeText parseErr
+                let errBody = [fmt|{"error":"parse_error","message":#{safeMsg}}|]
                 badRequest errBody respond
               Result.Ok maybeExpr -> do
                 -- Helper to process query with given user claims

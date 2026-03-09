@@ -91,7 +91,7 @@ common common_cfg
     with-utf8,
     yaml,
     megaparsec >= 9.0 && < 10,
-    scientific,
+    scientific >= 0.3 && < 0.4,
 
   default-extensions:
     ApplicativeDo

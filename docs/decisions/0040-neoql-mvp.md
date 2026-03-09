@@ -37,7 +37,7 @@ NeoQL is a small query language for NeoHaskell that lets clients express filters
 
 The grammar accepted by the MVP parser is:
 
-```
+```text
 expr        = fieldAccess ( "==" value )?
 fieldAccess = "." identifier
 value       = string | number
@@ -54,7 +54,7 @@ No other operators, no boolean connectives, no nested paths. The grammar is inte
 
 A new `neoql` source directory in `nhcore.cabal`, following the existing multi-source-dir pattern:
 
-```
+```text
 core/neoql/
   NeoQL.hs          -- re-exports (public API)
   NeoQL/
@@ -134,7 +134,7 @@ Field lookup uses `Aeson.Object` key access. The field name from the expression 
 
 NeoQL filtering runs after both authorization phases. The execution order for a query endpoint is:
 
-```
+```text
 canAccessImpl  (phase 1: can this user access this query type?)
   -> getAll    (fetch all records from store)
     -> canViewImpl  (phase 2: filter out records this user cannot see)
@@ -198,7 +198,7 @@ This is an internal wiring change, not an HTTP contract change. The external end
 
 Add to `nhcore.cabal` build-depends:
 
-```
+```text
 megaparsec >= 9.0 && < 10
 ```
 
