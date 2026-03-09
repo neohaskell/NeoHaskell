@@ -20,14 +20,14 @@ This is the authoritative coding style reference for the NeoHaskell project. Neo
 | 1 | Pipe operator over nesting | `x \|> foo \|> bar` | `bar $ foo x` or `bar (foo x)` |
 | 2 | Do blocks with let bindings | `do let y = expr` | `let y = expr in ...` or `where y = expr` |
 | 3 | Case expressions only | `case x of { ... }` | Pattern matching in function definitions |
-| 4 | Descriptive type parameters | `forall element result.` | `forall a b.` |
-| 5 | Qualified imports | `import Module qualified` | Unqualified module imports |
-| 6 | String interpolation | `[fmt\|Hello {name}!\|]` | `"Hello " <> name <> "!"` |
-| 7 | Result, not Either | `Result error value` | `Either error value` |
-| 8 | Task, not IO | `Task err val` | `IO a` |
-| 9 | Task.yield, not pure/return | `Task.yield value` | `pure value` or `return value` |
-| 10 | Forward composition | `f .> g` | `g . f` |
-| 11 | Strict fields on hot paths | `!fieldName` | Lazy fields in hot-path data types |
+| 4 | If-then-else for Bools | `if cond then a else b` | `case cond of True -> a; False -> b` |
+| 5 | Descriptive type parameters | `forall element result.` | `forall a b.` |
+| 6 | Qualified imports | `import Module qualified` | Unqualified module imports |
+| 7 | NeoHaskell modules first | `import Array qualified` | `import Data.Vector qualified` |
+| 8 | String interpolation | `[fmt\|Hello #{name}!\|]` | `"Hello " <> name <> "!"` |
+| 9 | Result, not Either | `Result error value` | `Either error value` |
+| 10 | Task, not IO | `Task err val` | `IO a` |
+| 11 | Task.yield, not pure/return | `Task.yield value` | `pure value` or `return value` |
 | 12 | INLINE pragmas on hot paths | `{-# INLINE fn #-}` | Missing INLINE on hot functions |
 
 ---
@@ -100,8 +100,10 @@ partitionBy predicate (Array vector) = (Array matching, Array nonMatching)
 
 All pattern matching happens in `case..of`. Never pattern match in function definitions.
 
+**Important**: Case expressions are for matching on **constructors** (`Ok`, `Err`, `Just`, `Nothing`, etc.), NOT for matching on `Bool` values. For `Bool`, use `if..then..else` (see Rule 4).
+
 ```haskell
--- CORRECT: case expression
+-- CORRECT: case expression on constructors
 withDefault fallback result =
   case result of
     Ok value -> value
@@ -131,7 +133,47 @@ getOrDie Nothing = panic "Got Nothing"
 
 ---
 
-## Rule 4: Descriptive Type Parameters
+## Rule 4: If-Then-Else for Bool Conditionals
+
+Use `if..then..else` for Bool conditions. Never `case` match on `True`/`False`. For monadic (Task) conditionals, prefer `Task.when` and `Task.unless`.
+
+```haskell
+-- CORRECT: if-then-else for pure expressions
+validate input =
+  if Text.isEmpty input
+    then Err EmptyInput
+    else Ok (ValidatedInput input)
+
+-- CORRECT: if-then-else inline
+let scheme = if isSecure then "https://" else "http://"
+
+-- CORRECT: Task.when for monadic conditionals
+Task.when shouldNotify do
+  Log.info [fmt|Sending notification for #{entityId}|]
+
+-- CORRECT: Task.unless for negated monadic conditionals
+Task.unless (Array.isEmpty errors) do
+  Task.throw [fmt|Validation failed: #{errorsText}|]
+
+-- WRONG: case matching on Bool
+validate input =
+  case Text.isEmpty input of
+    True -> Err EmptyInput
+    False -> Ok (ValidatedInput input)
+
+-- WRONG: case on Bool in nested chains
+case config.workerCapacity <= 0 of
+  True -> Just "workerCapacity must be positive"
+  False -> case config.timeoutMs <= 0 of
+    True -> Just "timeoutMs must be positive"
+    False -> Nothing
+```
+
+**Note**: `Task.when` and `Task.unless` are defined in `Task.hs` (part of nhcore). They are the preferred way to conditionally execute Task actions.
+
+---
+
+## Rule 5: Descriptive Type Parameters
 
 Type parameters must be descriptive. Never use single letters.
 
@@ -151,7 +193,7 @@ foldl :: forall a b. (a -> b -> b) -> b -> Array a -> b
 
 ---
 
-## Rule 5: Qualified Import Convention
+## Rule 6: Qualified Import Convention
 
 Import types unqualified, then import the module qualified. GHC base modules get a `Ghc` prefix.
 
@@ -187,15 +229,65 @@ import Data.Text qualified as T
 
 ---
 
-## Rule 6: String Interpolation with `[fmt|...|]`
+## Rule 7: NeoHaskell Modules First
 
-Use the `fmt` quasi-quoter for all string construction. Never concatenate with `<>` or `++`.
+**Always prefer nhcore modules over base/hackage equivalents.** NeoHaskell provides wrappers with friendly APIs. Only fall back to base/hackage when nhcore doesn't provide what you need.
+
+### nhcore Module Map
+
+| Need | Use (nhcore) | NOT (base/hackage) |
+|------|-------------|-------------------|
+| Strings | `Text`, `Text qualified` | `Data.Text` |
+| Arrays/Lists | `Array`, `Array qualified` | `Data.Vector`, `Data.List` |
+| Key-value maps | `Map`, `Map qualified` | `Data.Map.Strict` |
+| Optional values | `Maybe`, `Maybe qualified` | `Data.Maybe` |
+| Error handling | `Result`, `Result qualified` | `Data.Either` |
+| IO with errors | `Task`, `Task qualified` | `Control.Monad.Trans.Except` |
+| UUIDs | `Uuid`, `Uuid qualified` | `Data.UUID` |
+| Binary data | `Bytes` | `Data.ByteString` |
+| Sets | `Set`, `Set qualified` | `Data.Set` |
+| JSON | `Json qualified` | `Data.Aeson` |
+| HTTP | `Http.Client qualified` | `Network.HTTP.Client` |
+| File I/O | `File qualified` | `System.IO` |
+| Directories | `Directory qualified` | `System.Directory` |
+| Paths | `Path qualified` | `System.FilePath` |
+| Environment vars | `Environment qualified` | `System.Environment` |
+| Concurrency (MVar) | `ConcurrentVar` | `Control.Concurrent.MVar` |
+| Concurrency (Async) | `AsyncTask` | `Control.Concurrent.Async` |
+| Channels | `Channel` | `Control.Concurrent.Chan` |
+| Locks | `Lock` | `Control.Concurrent.MVar ()` pattern |
+| Concurrent maps | `ConcurrentMap` | `Control.Concurrent.STM.TVar` |
+
+### When nhcore Doesn't Have What You Need
+
+If you need functionality that nhcore doesn't provide:
+
+1. **Proceed with the base/hackage import** using the `Ghc` prefix convention (see Rule 6)
+2. **Create a GitHub issue** requesting the nhcore wrapper, tagged with `enhancement` and assigned to the community lead
+3. **Add a code comment** marking the import as a candidate for nhcore wrapping:
 
 ```haskell
--- CORRECT: fmt quasi-quoter
-greet name = [fmt|Hello {name}!|]
+-- TODO(nhcore): Replace with nhcore wrapper when available
+-- See: https://github.com/neohaskell/NeoHaskell/issues/XXX
+import Data.SomeGhcLib qualified as GhcSomeLib
+```
+
+This ensures the project incrementally grows its friendly API surface.
+
+---
+
+## Rule 8: String Interpolation with `[fmt|...|]`
+
+Use the `fmt` quasi-quoter for all string construction. Interpolation uses `#{expression}` syntax. Never concatenate with `<>` or `++`.
+
+```haskell
+-- CORRECT: fmt quasi-quoter with #{} interpolation
+greet name = [fmt|Hello #{name}!|]
 logRetry count = [fmt|Retrying command (attempt #{count})|]
-errorMessage id err = [fmt|Failed to process entity {id}: {err}|]
+errorMessage id err = [fmt|Failed to process entity #{id}: #{err}|]
+
+-- CORRECT: multi-variable interpolation
+connectionInfo host port db = [fmt|#{host}:#{port}/#{db}|]
 
 -- WRONG: String concatenation
 greet name = "Hello " <> name <> "!"
@@ -203,13 +295,16 @@ logRetry count = "Retrying command (attempt " <> show count <> ")"
 
 -- WRONG: Linked list concatenation
 greet name = "Hello " ++ name ++ "!"
+
+-- WRONG: Missing # in interpolation
+greet name = [fmt|Hello {name}!|]  -- This does NOT interpolate!
 ```
 
 The `fmt` quasi-quoter is imported from `Basics` (part of the NeoHaskell prelude).
 
 ---
 
-## Rule 7: Result Over Either
+## Rule 9: Result Over Either
 
 NeoHaskell uses `Result error value` instead of `Either`. Constructors are `Ok` and `Err`.
 
@@ -217,9 +312,9 @@ NeoHaskell uses `Result error value` instead of `Either`. Constructors are `Ok` 
 -- CORRECT: Result type
 validate :: Text -> Result ValidationError ValidatedInput
 validate input =
-  case Text.isEmpty input of
-    True -> Err EmptyInput
-    False -> Ok (ValidatedInput input)
+  if Text.isEmpty input
+    then Err EmptyInput
+    else Ok (ValidatedInput input)
 
 -- CORRECT: Result helpers
 Result.isOk result    -- check success
@@ -233,7 +328,7 @@ validate :: Text -> Either ValidationError ValidatedInput
 
 ---
 
-## Rule 8: Task Over IO
+## Rule 10: Task Over IO
 
 NeoHaskell uses `Task err val` instead of `IO`. Use `Task.yield` to return values.
 
@@ -252,27 +347,6 @@ readConfig = do
   contents <- readFile "config.json"
   pure (parseConfig contents)
 ```
-
----
-
-## Rule 9: Forward Composition (`.>`) and Backward Composition (`<.`)
-
-Use `.>` for left-to-right function composition and `<.` for right-to-left. These are defined in `Basics.hs`.
-
-```haskell
--- CORRECT: Forward composition (.>)
-length = unwrap .> Data.Vector.length
-isEmpty = unwrap .> Data.Vector.null
-fromInt = Prelude.show .> Data.Text.pack
-
--- CORRECT: Backward composition (<.)
-fromInt = Data.Text.pack <. Prelude.show
-
--- WRONG: Standard Haskell composition
-length = Data.Vector.length . unwrap
-```
-
-**Note**: Composition operators are for defining simple pipelines. For complex logic, use explicit `do` blocks with `let` bindings and `|>` pipes.
 
 ---
 
@@ -297,10 +371,14 @@ module ModuleName
   )
 where
 
--- Imports: types first, then qualified modules
+-- Imports: nhcore types first, then qualified nhcore modules, then GHC/external last
 import Basics
-import OtherType (OtherType)
-import OtherType qualified
+import Array (Array)
+import Array qualified
+import Result (Result (..))
+import Result qualified
+
+-- GHC/base only when nhcore doesn't provide what's needed
 import Data.SomeGhcLib qualified
 
 -- Implementation
@@ -369,6 +447,7 @@ The project uses these GHC extensions project-wide (set in `nhcore.cabal`):
 | Extension | What It Enables | Impact on Code |
 |-----------|----------------|----------------|
 | `NoImplicitPrelude` | No automatic Prelude import | Must import from nhcore (`Basics`, `Core`) |
+| `Strict` | All fields/bindings strict by default | `~` needed for laziness; `!` is redundant |
 | `OverloadedStrings` | String literals as Text | `"hello" :: Text` works |
 | `OverloadedRecordDot` | Dot syntax for record fields | `entity.fieldName` instead of `fieldName entity` |
 | `DuplicateRecordFields` | Same field names across types | Multiple types can have `id`, `name`, etc. |
@@ -379,6 +458,8 @@ The project uses these GHC extensions project-wide (set in `nhcore.cabal`):
 | `DeriveGeneric` | Generic deriving | `deriving (Generic)` |
 
 **Critical**: Because of `NoImplicitPrelude`, every module must import what it needs from nhcore. Never import from `Prelude` directly (use `import Prelude qualified` if absolutely necessary for GHC compatibility).
+
+**Critical**: Because of `Strict`, all fields are strict by default. Do NOT add redundant `!` bang patterns. Use `~` (tilde) to opt into laziness when needed.
 
 ---
 
@@ -404,14 +485,14 @@ processOrder order = do
 
 ```haskell
 -- WRONG
-toString (Ok value) = [fmt|Success: {value}|]
-toString (Err err) = [fmt|Error: {err}|]
+toString (Ok value) = [fmt|Success: #{value}|]
+toString (Err err) = [fmt|Error: #{err}|]
 
 -- FIX: Use case expression
 toString result =
   case result of
-    Ok value -> [fmt|Success: {value}|]
-    Err err -> [fmt|Error: {err}|]
+    Ok value -> [fmt|Success: #{value}|]
+    Err err -> [fmt|Error: #{err}|]
 ```
 
 ### Mistake 3: Single-letter type parameters
@@ -444,8 +525,8 @@ fetchEntity entityId = do
 -- WRONG
 logMessage = "Processing entity " <> entityId <> " with " <> show count <> " events"
 
--- FIX: Use fmt quasi-quoter
-logMessage = [fmt|Processing entity {entityId} with {count} events|]
+-- FIX: Use fmt quasi-quoter with #{} interpolation
+logMessage = [fmt|Processing entity #{entityId} with #{count} events|]
 ```
 
 ### Mistake 6: Orphan instances
@@ -460,16 +541,22 @@ instance Json.ToJSON MyType where ...  -- MyType is defined in Types.hs
 instance Json.ToJSON MyType where ...
 ```
 
-### Mistake 7: Importing from Prelude directly
+### Mistake 7: Importing from base/hackage instead of nhcore
 
 ```haskell
 -- WRONG
-import Prelude (show, map, filter)
+import Data.Text (Text)
+import Data.Text qualified as T
+import Data.Vector qualified as V
+import Data.Either (Either (..))
 
--- FIX: Use nhcore equivalents
-import Basics
+-- FIX: Use nhcore modules
+import Text (Text)
+import Text qualified
+import Array (Array)
 import Array qualified
--- Use Array.map, Array.filter, toText (instead of show)
+import Result (Result (..))
+import Result qualified
 ```
 
 ### Mistake 8: Using `$` instead of `|>`
@@ -482,6 +569,34 @@ result = Array.map transform $ Array.filter predicate items
 result = items
   |> Array.filter predicate
   |> Array.map transform
+```
+
+### Mistake 9: Case-matching on Bool values
+
+```haskell
+-- WRONG
+case Text.isEmpty input of
+  True -> Err EmptyInput
+  False -> Ok (ValidatedInput input)
+
+-- FIX: Use if-then-else
+if Text.isEmpty input
+  then Err EmptyInput
+  else Ok (ValidatedInput input)
+
+-- WRONG: Nested case on Bool (deeply confusing)
+case x <= 0 of
+  True -> Just "must be positive"
+  False -> case y <= 0 of
+    True -> Just "must also be positive"
+    False -> Nothing
+
+-- FIX: Use if-then-else (or guards if complex)
+if x <= 0
+  then Just "must be positive"
+  else if y <= 0
+    then Just "must also be positive"
+    else Nothing
 ```
 
 ---
@@ -526,23 +641,6 @@ getOrDie maybe = case maybe of
 {-# INLINE getOrDie #-}
 ```
 
-### When to Use Strict Fields
-
-```haskell
--- Hot-path data types: use strict fields
-data CommandExecutor = CommandExecutor
-  { !eventStore :: EventStore
-  , !entityFetcher :: EntityFetcher
-  , !maxRetries :: Int
-  }
-
--- Cold-path data types: lazy is fine
-data Config = Config
-  { appName :: Text
-  , port :: Int
-  }
-```
-
 ### When to Use SPECIALIZE
 
 ```haskell
@@ -550,6 +648,8 @@ data Config = Config
 fold :: forall element accumulator. (element -> accumulator -> accumulator) -> accumulator -> Array element -> accumulator
 {-# SPECIALIZE fold :: (Event -> EntityState -> EntityState) -> EntityState -> Array Event -> EntityState #-}
 ```
+
+**Note on Strict Fields**: The `Strict` extension is enabled project-wide, so all record fields and let-bindings are strict by default. Do NOT add redundant `!` bang patterns. Use `{-# UNPACK #-}` on primitive fields (`Int`, `Bool`, `Word`) in hot-path data types for unboxing. Use `~` (tilde) prefix when you explicitly need lazy evaluation.
 
 ---
 
@@ -559,11 +659,11 @@ When in doubt about conventions, refer to these canonical source files:
 
 | File | Demonstrates |
 |------|-------------|
-| `core/core/Text.hs` | Pipe chains, do-blocks, qualified imports, composition |
+| `core/core/Text.hs` | Pipe chains, do-blocks, qualified imports |
 | `core/core/Array.hs` | Collection operations, type parameters, do-blocks for pure code |
 | `core/core/Result.hs` | Case expressions, error handling |
-| `core/core/Task.hs` | Task.yield, error handling, do-blocks |
-| `core/core/Basics.hs` | Pipe operators, fmt quasi-quoter, composition operators |
+| `core/core/Task.hs` | Task.yield, Task.when/unless, error handling, do-blocks |
+| `core/core/Basics.hs` | Pipe operators, fmt quasi-quoter |
 | `core/test/IntSpec.hs` | Test structure, pipe assertions |
 | `core/test-core/RedactedSpec.hs` | String interpolation in tests, Result assertions |
 | `testbed/src/Testbed/Cart/Core.hs` | Entity/Event definitions, update function |

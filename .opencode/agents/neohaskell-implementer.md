@@ -65,11 +65,11 @@ These rules are non-negotiable. If you write code that violates any of these, se
 | 3 | Case expressions only | `case x of { ... }` | Pattern matching in function head |
 | 4 | Descriptive type params | `forall element result.` | `forall a b.` |
 | 5 | Qualified imports | `import Module qualified` | Unqualified module imports |
-| 6 | String interpolation | `[fmt\|Hello {name}!\|]` | `"Hello " <> name` |
+| 6 | String interpolation | `[fmt\|Hello #{name}!\|]` | `"Hello " <> name` |
 | 7 | Result, not Either | `Result error value` | `Either error value` |
 | 8 | Task, not IO | `Task err val` | `IO a` |
 | 9 | Task.yield | `Task.yield value` | `pure value` / `return value` |
-| 10 | Forward composition | `f .> g` | `g . f` |
+| 10 | If-then-else for Bools | `if cond then a else b` | `case cond of True -> ...; False -> ...` |
 
 ### Import Convention
 

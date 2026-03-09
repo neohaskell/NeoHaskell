@@ -58,7 +58,7 @@ NeoHaskell/
 - **Case only**: Pattern match in `case`, not function definitions
 - **Descriptive types**: `forall input output.` NOT `forall a b.`
 - **Qualified imports**: `Module.function` design (e.g., `EventStore.new`)
-- **String interpolation**: `[fmt|Hello {name}!|]` NOT `<>`/`++`
+- **String interpolation**: `[fmt|Hello #{name}!|]` NOT `<>`/`++`
 
 ### Base Imports
 

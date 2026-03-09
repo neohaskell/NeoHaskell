@@ -187,7 +187,7 @@ map :: forall element result. (element -> result) -> Array element -> Array resu
 
 8. **Result over Either**: Use `Result error value`
 
-9. **String Interpolation**: Use `[fmt|Hello {name}!|]`
+9. **String Interpolation**: Use `[fmt|Hello #{name}!|]` (note the `#` prefix for interpolation)
 
 10. **Type-Specific Yield**: Use `Task.yield (x + y)`, never `return` or `pure`
 

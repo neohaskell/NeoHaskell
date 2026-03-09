@@ -294,7 +294,7 @@ All code suggestions must follow NeoHaskell style:
 6. **Explicit forall** — `forall element result.` not `forall a b.`
 7. **Case-of for pattern matching** — no function definition pattern matching
 8. **Result over Either** — always use `Result error value`
-9. **String interpolation with fmt** — `[fmt|Hello {name}!|]`
+9. **String interpolation with fmt** — `[fmt|Hello #{name}!|]` (note: `#{var}` syntax, includes hash)
 10. **Type-specific yield** — `Task.yield`, never `pure` or `return`
 11. **nhcore only** — no external Haskell ecosystem dependencies
 
