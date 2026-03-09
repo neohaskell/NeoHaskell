@@ -125,24 +125,28 @@ Write the complete test suite for the feature. Tests must compile but ALL fail (
 
 ### Workflow
 
-1. Read the architecture document to understand types and API signatures
-2. Create stub type definitions (enough for tests to compile):
+1. Read the test specification document from Phase 6 (QA Designer output) — this is your primary input
+2. Read the architecture document to understand type signatures and module structure
+3. Create stub type definitions (enough for tests to compile):
+
    ```haskell
    -- Stub that compiles but always fails
    new :: Config -> Task CreateError MyType
    new _config = Task.throw NotImplemented
    ```
-3. Write tests covering:
+
+4. Translate each test case from the Phase 6 specification into Hspec test code:
+   - Follow the test specification EXACTLY — do not add, remove, or modify test cases
    - **Unit tests**: Happy path for each public function
    - **Edge cases**: Empty inputs, boundary values, zero, negative, overflow
    - **Serialization round-trips**: `decode (encode x) == x` for all serializable types
    - **Property-based tests**: QuickCheck for algebraic invariants (when applicable)
-4. Register tests:
+5. Register tests:
    - Add test module to `other-modules` in `nhcore.cabal` for the appropriate test suite
    - If using `nhcore-test-service` (manual registration), add to `core/test-service/Main.hs`
    - If using `nhcore-test` or `nhcore-test-core` (hspec-discover), just create `*Spec.hs` in the right directory
-5. Verify tests compile: `cabal build all`
-6. Verify all tests fail (they should — no implementation exists yet)
+6. Verify tests compile: `cabal build all`
+7. Verify all tests fail (they should — no implementation exists yet)
 
 ### Test Quality Requirements
 
@@ -308,6 +312,8 @@ Address CodeRabbit comments and CI failures on the PR.
 ## Event-Sourcing Patterns (Reference)
 
 When implementing features that integrate with the event-sourcing service layer:
+
+**TH Staging Note:** The endpoint functions referenced in the `command` macro (e.g., `'someEndpoint`) must be defined BEFORE the `command` splice. Define your endpoint handlers first, then invoke the TH macro.
 
 ### New Command
 

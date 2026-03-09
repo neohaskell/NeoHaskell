@@ -19,10 +19,12 @@ State is stored in .pipeline/state.json in the project root.
 """
 
 import argparse
+import fcntl
 import json
 import os
 import re
 import sys
+import tempfile
 from datetime import datetime, timezone
 
 # -------------------------------------------------------------------
@@ -31,6 +33,7 @@ from datetime import datetime, timezone
 
 PIPELINE_DIR = ".pipeline"
 STATE_FILE = os.path.join(PIPELINE_DIR, "state.json")
+LOCK_FILE = os.path.join(PIPELINE_DIR, ".lock")
 
 # -------------------------------------------------------------------
 # Phase Definitions
@@ -148,7 +151,11 @@ PHASES = {
     },
     14: {
         "name": "Create PR",
-        "agent": "neohaskell-git-master",
+        "agents": [
+            {"agent": "neohaskell-community-lead", "skills": [], "category": "writing", "role": "PR description"},
+            {"agent": "neohaskell-git-master", "skills": ["git-master"], "category": "git", "role": "PR submission"},
+        ],
+        "agent": "neohaskell-git-master",  # primary for backward compat
         "skills": ["git-master"],
         "category": "git",
         "pause": True,
@@ -521,10 +528,11 @@ Wait for:
 1. All CI checks to pass (green)
 2. CodeRabbit review to complete
 
-When all checks pass, mark complete:
+When CI and review have finished (pass or fail), mark Phase 15 complete:
   pipeline.py complete 15
 
-If CI fails, proceed to Phase 16 to fix issues.""",
+If CI fails, Phase 16 will address the issues.
+Phase 16 will not unlock until Phase 15 is marked complete.""",
     16: """Phase 16: Fix Bot Comments for "{feature_name}"
 
 TASK: Address CodeRabbit comments and CI failures on PR #{pr_number}.
@@ -546,7 +554,7 @@ CONTEXT:
 - PR: {pr_url}
 - PR number: {pr_number}
 - Feature: {feature_name}""",
-    17: """Phase 17: Final Approval & Merge for "{feature_name}"
+    17: """Phase 17: Final Approval & Merge for \"{feature_name}\"
 
 This is a HUMAN phase — no agent delegation.
 
@@ -556,7 +564,8 @@ The maintainer will:
 3. Merge when satisfied
 
 Pipeline is complete after merge.
-Mark approved when the maintainer merges:
+After the maintainer merges, mark complete and then approve:
+  pipeline.py complete 17
   pipeline.py approve 17""",
 }
 
@@ -625,24 +634,54 @@ def phase_is_ready(phase_num, state):
 
 
 def load_state():
-    """Load pipeline state from disk."""
+    """Load pipeline state from disk (with file lock)."""
     if not os.path.exists(STATE_FILE):
         print(
             "ERROR: No pipeline initialized. Run: pipeline.py init <feature>",
             file=sys.stderr,
         )
         sys.exit(1)
-    with open(STATE_FILE) as f:
-        return json.load(f)
+    os.makedirs(PIPELINE_DIR, exist_ok=True)
+    lock_fd = open(LOCK_FILE, "w")
+    fcntl.flock(lock_fd, fcntl.LOCK_EX)
+    try:
+        with open(STATE_FILE) as f:
+            state = json.load(f)
+        state["_lock_fd"] = lock_fd
+        return state
+    except Exception:
+        fcntl.flock(lock_fd, fcntl.LOCK_UN)
+        lock_fd.close()
+        raise
 
 
 def save_state(state):
-    """Save pipeline state to disk."""
+    """Save pipeline state to disk atomically (releases lock)."""
+    lock_fd = state.pop("_lock_fd", None)
     os.makedirs(PIPELINE_DIR, exist_ok=True)
     state["updated_at"] = datetime.now(timezone.utc).isoformat()
-    with open(STATE_FILE, "w") as f:
-        json.dump(state, f, indent=2)
-        f.write("\n")
+    # Atomic write: temp file + rename
+    fd, tmp_path = tempfile.mkstemp(dir=PIPELINE_DIR, suffix=".json")
+    try:
+        with os.fdopen(fd, "w") as f:
+            json.dump(state, f, indent=2)
+            f.write("\n")
+        os.replace(tmp_path, STATE_FILE)
+    except Exception:
+        os.unlink(tmp_path)
+        raise
+    finally:
+        if lock_fd:
+            fcntl.flock(lock_fd, fcntl.LOCK_UN)
+            lock_fd.close()
+
+
+def release_lock(state):
+    """Release lock without saving (for read-only operations)."""
+    lock_fd = state.pop("_lock_fd", None)
+    if lock_fd:
+        fcntl.flock(lock_fd, fcntl.LOCK_UN)
+        lock_fd.close()
 
 
 # -------------------------------------------------------------------
@@ -773,6 +812,7 @@ def cmd_status(args):
         print(f" ({awaiting} awaiting approval)")
     else:
         print()
+    release_lock(state)
 
 
 def cmd_next(args):
@@ -855,6 +895,10 @@ def cmd_next(args):
             "prompt": get_prompt(num, state),
         }
 
+        # Multi-agent phases: include ordered agent list
+        if "agents" in phase_def:
+            phase_info["agents"] = phase_def["agents"]
+
         # Add session continuation info for implementer phases
         continue_from = phase_def.get("continue_session_from")
         if continue_from:
@@ -869,6 +913,7 @@ def cmd_next(args):
         "phases": phases_output,
     }
     print(json.dumps(result, indent=2))
+    release_lock(state)
 
 
 def cmd_complete(args):
@@ -885,6 +930,7 @@ def cmd_complete(args):
 
     if phase_state["status"] == "completed":
         print(f"Phase {phase_num} is already completed.")
+        release_lock(state)
         return
 
     # Validate dependencies
@@ -944,6 +990,7 @@ def cmd_approve(args):
 
     if phase_state.get("approved_at"):
         print(f"Phase {phase_num} is already approved.")
+        release_lock(state)
         return
 
     phase_state["approved_at"] = datetime.now(timezone.utc).isoformat()
@@ -973,6 +1020,7 @@ def cmd_prompt(args):
         "prompt": prompt,
     }
     print(json.dumps(result, indent=2))
+    release_lock(state)
 
 
 def cmd_set(args):

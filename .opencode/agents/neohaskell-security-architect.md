@@ -109,7 +109,7 @@ decide :: MyCommand -> Maybe MyEntity -> RequestContext -> Decision MyEvent
 decide :: Uuid -> MyCommand -> Maybe MyEntity -> RequestContext -> Decision MyEvent
 ```
 
-`RequestContext` carries `Maybe UserClaims`, resolved file uploads, and tenant info. The type system guarantees every command handler has access to auth state.
+`RequestContext` carries `Maybe UserClaims`, resolved file uploads, `requestId`, and `timestamp`. For multi-tenant commands, the tenant `Uuid` is a separate leading argument (see `decide :: Uuid -> ... -> RequestContext -> Decision`), so reviews must verify both the `RequestContext` auth checks and the tenant-boundary handling. The type system guarantees every command handler has access to auth state.
 
 ### 4. URL Sanitization
 

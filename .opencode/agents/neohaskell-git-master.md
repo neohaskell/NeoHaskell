@@ -16,8 +16,26 @@ permission:
   edit: deny
   bash:
     "*": deny
-    "git *": allow
-    "gh *": allow
+    "git status*": allow
+    "git branch*": allow
+    "git checkout*": allow
+    "git switch*": allow
+    "git rev-parse*": allow
+    "git log*": allow
+    "git show*": allow
+    "git diff*": allow
+    "git add*": allow
+    "git commit*": allow
+    "git push*": allow
+    "git remote*": allow
+    "git fetch*": allow
+    "git merge-base*": allow
+    "gh pr create*": allow
+    "gh pr view*": allow
+    "gh pr status*": allow
+    "gh pr checks*": allow
+    "gh pr list*": allow
+    "gh api*": allow
     "ls*": allow
     "find*": allow
     "grep*": allow
