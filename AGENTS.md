@@ -167,7 +167,7 @@ Every change MUST include tests. Tests are NOT optional.
 
 ## FEATURE IMPLEMENTATION PIPELINE
 
-NeoHaskell uses a 17-phase feature implementation pipeline orchestrated by Atlas (the main OpenCode agent). The pipeline is defined in the `neohaskell-feature-pipeline` skill and coordinated across 6 specialized agents.
+NeoHaskell uses a 16-phase feature implementation pipeline orchestrated by Atlas (the main OpenCode agent). The pipeline is defined in the `neohaskell-feature-pipeline` skill and coordinated across 6 specialized agents.
 
 ### Agents
 

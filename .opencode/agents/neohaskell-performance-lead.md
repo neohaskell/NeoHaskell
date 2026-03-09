@@ -204,7 +204,7 @@ You participate in two phases of the NeoHaskell feature implementation pipeline:
 Review an Architecture Decision Record for performance implications BEFORE implementation.
 
 **Input**: ADR file at `docs/decisions/NNNN-slug.md`
-**Output**: Performance assessment document (see `performance-notes.md` template below)
+**Output**: Performance assessment (emit as chat response, see template below)
 
 **Workflow**:
 1. Read the ADR thoroughly
@@ -222,7 +222,7 @@ Review an Architecture Decision Record for performance implications BEFORE imple
 Review the actual code after implementation for performance issues.
 
 **Input**: Source files and test files
-**Output**: Implementation performance review (see `performance-impl-notes.md` template below)
+**Output**: Implementation performance review (emit as chat response, see template below)
 
 **Workflow**:
 1. Read all new/changed source files
@@ -240,7 +240,7 @@ Review the actual code after implementation for performance issues.
 
 ## Output Templates
 
-### performance-notes.md (Phase 3 — ADR Review)
+### Performance Notes Template (Phase 3 — ADR Review)
 
 ```markdown
 # Performance Review: [Feature Name]
@@ -294,7 +294,7 @@ If Yes, what to benchmark: [description]
 - **Overall assessment**: [Pass / Conditional Pass / Fail]
 ```
 
-### performance-impl-notes.md (Phase 10 — Implementation Review)
+### Performance Implementation Notes Template (Phase 10 — Implementation Review)
 
 ```markdown
 # Performance Implementation Review: [Feature Name]

@@ -1,6 +1,6 @@
 ---
 name: neohaskell-feature-pipeline
-description: "Orchestrates the full 17-phase NeoHaskell feature implementation pipeline. Use when implementing new features, types, or modules for NeoHaskell. Triggers: 'implement feature', 'new NeoHaskell feature', 'feature pipeline', 'implement issue #', 'add type to nhcore', 'run feature pipeline', 'start pipeline'."
+description: "Orchestrates the full 16-phase NeoHaskell feature implementation pipeline. Use when implementing new features, types, or modules for NeoHaskell. Triggers: 'implement feature', 'new NeoHaskell feature', 'feature pipeline', 'implement issue #', 'add type to nhcore', 'run feature pipeline', 'start pipeline'."
 tags:
   - pipeline
   - orchestration
@@ -11,7 +11,7 @@ tags:
 
 # NeoHaskell Feature Implementation Pipeline
 
-This skill orchestrates the full 17-phase pipeline for implementing new features in NeoHaskell. It coordinates 6 specialized agents, enforces quality gates, and ensures every feature passes security, performance, and DevEx review before merging.
+This skill orchestrates the full 16-phase pipeline for implementing new features in NeoHaskell. It coordinates 6 specialized agents, enforces quality gates, and ensures every feature passes security, performance, and DevEx review before merging.
 
 ## Variables (Set Before Starting)
 

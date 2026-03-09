@@ -275,7 +275,7 @@ Create the Architecture Decision Record for a new feature.
 **Skills to load**: `neohaskell-adr-template`, `neohaskell-style-guide`
 
 **Workflow**:
-1. Determine next ADR number: `ls docs/decisions/*.md | tail -1`
+1. Determine next ADR number: ask the maintainer for the current highest ADR number, or request a file listing of `docs/decisions/` to infer it
 2. Draft ADR following the template exactly (Status, Context, Decision, Consequences)
 3. Include type definitions, module placement, public API signatures
 4. All code examples must follow NeoHaskell style
@@ -307,12 +307,11 @@ Create the detailed architecture document that the implementer will follow.
 **Output**: Architecture document (see template below)
 
 **Workflow**:
-1. Define exact file paths for all new modules
+1. Define exact file paths for all new modules (request the current module tree from the maintainer if needed)
 2. Write all type signatures for the public API
 3. Map integration points with existing nhcore modules
-4. Specify cabal file changes (hs-source-dirs, modules, dependencies)
+4. Specify cabal file changes — request the current `nhcore.cabal` snippet from the maintainer to identify hs-source-dirs and exposed-modules
 5. Define dependency map (what imports what)
-
 **⏸ PAUSE after completion**: Report architecture design and wait for maintainer approval.
 
 ---
@@ -391,7 +390,7 @@ Emit this checklist as your Phase 4 output:
 
 Emit this document as your Phase 5 output:
 
-```markdown
+````markdown
 # Architecture: [Feature Name]
 
 ## Module Map
@@ -415,7 +414,7 @@ transform :: forall value. MyType -> value -> Result TransformError value
 | Existing Module | Integration | How |
 |----------------|-------------|-----|
 | `Core` | Re-export | Add to export list |
-| `Service.EventStore` | Event serialization | Aeson instances |
+| `Service.EventStore` | Event serialization | nhcore serialization (see existing patterns) |
 
 ## Dependency Map
 
@@ -423,7 +422,7 @@ transform :: forall value. MyType -> value -> Result TransformError value
 MyModule
   ├── Basics (pipes, fmt)
   ├── Result (error handling)
-  └── Data.Aeson (serialization)
+  └── Core (serialization via nhcore)
 ```
 
 ## Cabal Changes
@@ -431,7 +430,7 @@ MyModule
 - Add `[dir]` to hs-source-dirs in nhcore
 - Add `Module` to exposed-modules
 - Add test module to other-modules in test suite
-```
+````
 
 ---
 
