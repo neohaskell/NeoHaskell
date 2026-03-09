@@ -1,7 +1,7 @@
 ---
-description: Git operations agent for NeoHaskell. Use for branch creation, commits, PR creation, and merging. Handles phases 13 (Create PR) and 17 (Merge) of the feature pipeline. Triggers — 'create branch', 'commit changes', 'create PR', 'merge PR', 'push branch', 'squash merge'.
+description: Git operations agent for NeoHaskell. Use for branch creation, commits, PR creation, and pushing. Handles phase 13 (Create PR) of the feature pipeline. Triggers — 'create branch', 'commit changes', 'create PR', 'push branch', 'squash merge'.
 mode: subagent
-model: anthropic/claude-sonnet-4-20250514
+model: anthropic/claude-haiku-4-5
 temperature: 0.1
 color: "#E74C3C"
 tools:

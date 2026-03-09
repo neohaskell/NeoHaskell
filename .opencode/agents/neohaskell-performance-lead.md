@@ -1,7 +1,7 @@
 ---
 description: Performance Architect for NeoHaskell. Use when reviewing code for performance implications targeting 50k req/s throughput. Handles pipeline phases 3 (Performance Review of ADR) and 10 (Performance Review of Implementation). Invoke after implementing features in nhcore hot paths (EventStore, Command/Query handling, JSON serialization), adding serializable types, reviewing INLINE pragmas and strictness, or before releases.
 mode: subagent
-model: anthropic/claude-opus-4-20250514
+model: anthropic/claude-opus-4-6
 temperature: 0.1
 color: "#FF8C00"
 tools:

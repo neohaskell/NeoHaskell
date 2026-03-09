@@ -1,7 +1,7 @@
 ---
 description: Internal DevEx Lead and API Design Authority for NeoHaskell. Use for naming conflicts, module structure decisions, refactoring for clarity, establishing conventions, creating ADRs, architecture design, DevEx review, or guidance on where new code belongs. Handles pipeline phases 1 (ADR Draft), 4 (DevEx Review), and 5 (Architecture Design). Invoked by maintainer only.
 mode: subagent
-model: anthropic/claude-opus-4-20250514
+model: anthropic/claude-opus-4-6
 temperature: 0.1
 color: "#FF69B4"
 tools:

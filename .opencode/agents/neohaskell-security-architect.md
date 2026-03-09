@@ -1,7 +1,7 @@
 ---
 description: Security & Code Quality Architect for NeoHaskell. Use when reviewing code changes, PRs, or architectural decisions for security implications. Evaluates OWASP, NIST, EU compliance. Ensures security is automatic and invisible to end users. Handles pipeline phases 2 (Security Review of ADR) and 9 (Security Review of Implementation). Invoke after implementing new features in nhcore or user-facing components.
 mode: subagent
-model: anthropic/claude-opus-4-20250514
+model: anthropic/claude-opus-4-6
 temperature: 0.1
 color: "#4169E1"
 tools:

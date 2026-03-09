@@ -1,7 +1,7 @@
 ---
 description: NeoHaskell Implementer — the code-writing agent. Use for implementing features, writing tests, build/test loops, fixing review notes, fixing bot comments, or any task that requires writing NeoHaskell code. Handles phases 6 (tests), 7 (implementation), 8 (build loop), 11 (fix review notes), 12 (final build), and 15 (fix bot comments) of the feature pipeline.
 mode: subagent
-model: anthropic/claude-sonnet-4-20250514
+model: anthropic/claude-sonnet-4-6
 temperature: 0.4
 color: "#9B59B6"
 tools:

@@ -173,12 +173,12 @@ NeoHaskell uses a 17-phase feature implementation pipeline orchestrated by Atlas
 
 | Agent | Role | Phases | Model |
 |-------|------|--------|-------|
-| `neohaskell-devex-lead` | API design, naming, ADRs, architecture | 1, 4, 5 | claude-opus-4 |
-| `neohaskell-security-architect` | OWASP/NIST/EU security review | 2, 9 | claude-opus-4 |
-| `neohaskell-performance-lead` | 50k req/s performance review | 3, 10 | claude-opus-4 |
-| `neohaskell-community-lead` | PR descriptions, release notes | 13 | claude-sonnet-4 |
-| `neohaskell-implementer` | Code writing, tests, build loops | 6, 7, 8, 11, 12, 15 | claude-sonnet-4 |
-| `neohaskell-git-master` | Branch, commit, PR | 13 | claude-sonnet-4 |
+| `neohaskell-devex-lead` | API design, naming, ADRs, architecture | 1, 4, 5 | claude-opus-4-6 |
+| `neohaskell-security-architect` | OWASP/NIST/EU security review | 2, 9 | claude-opus-4-6 |
+| `neohaskell-performance-lead` | 50k req/s performance review | 3, 10 | claude-opus-4-6 |
+| `neohaskell-community-lead` | PR descriptions, release notes | 13 | claude-sonnet-4-6 |
+| `neohaskell-implementer` | Code writing, tests, build loops | 6, 7, 8, 11, 12, 15 | claude-sonnet-4-6 |
+| `neohaskell-git-master` | Branch, commit, PR | 13 | claude-haiku-4-5 |
 
 ### Skills
 

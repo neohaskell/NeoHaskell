@@ -1,7 +1,7 @@
 ---
 description: Community Lead and Technical Writer for NeoHaskell. Use for all community-facing content including documentation, tutorials, GitHub issues, social media posts, release notes, PR descriptions, and contributor guides. Writes for "Jess" - a time-constrained junior developer. Handles pipeline phase 13 (writes PR body and release notes). Triggers — 'write PR description', 'release notes', 'documentation', 'tutorial', 'community content'.
 mode: subagent
-model: anthropic/claude-sonnet-4-20250514
+model: anthropic/claude-sonnet-4-6
 temperature: 0.3
 color: "#32CD32"
 tools:
