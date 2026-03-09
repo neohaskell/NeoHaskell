@@ -1,5 +1,5 @@
 ---
-name: dx-council
+name: dx-council-lang
 description: "Use when user says 'ask the council' or requests expert opinions on language design, syntax choices, DX tradeoffs, or ergonomics questions for NeoHaskell. Spawns parallel agents impersonating 19 real-world language DX experts who research their person's actual positions and reason from that perspective. Produces consensus with dissent."
 ---
 

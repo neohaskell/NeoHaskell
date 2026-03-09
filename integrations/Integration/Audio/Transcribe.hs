@@ -116,7 +116,9 @@ data Config = Config
   --   Improves transcription accuracy for known languages.
   --   Nothing = auto-detect.
   , maxDurationSeconds :: Maybe Int
-  -- ^ Maximum audio duration to process in seconds.
+  -- ^ Soft hint for maximum audio duration in seconds.
+  --   The model is asked to transcribe only this many seconds.
+  --   Note: the full file is still uploaded — this does NOT truncate the payload.
   --   Nothing = no limit (process entire file).
   --   Non-positive values are ignored (treated as Nothing).
   --   Useful for capping costs on long recordings.

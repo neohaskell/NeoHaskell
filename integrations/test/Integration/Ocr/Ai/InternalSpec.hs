@@ -92,6 +92,11 @@ spec = do
       let err = fileAccessToIntegrationError (StorageError "disk full")
       err `shouldBe` Integration.UnexpectedError "OCR file access failed: storage error"
 
+    it "converts StateLookupFailed to UnexpectedError" do
+      let ref = makeTestFileRef
+      let err = fileAccessToIntegrationError (StateLookupFailed ref "internal error")
+      err `shouldBe` Integration.UnexpectedError "OCR file access failed: state lookup error"
+
   describe "defaultConfig" do
     it "has FullText extraction mode" do
       OcrAi.defaultConfig.extractionMode `shouldBe` FullText

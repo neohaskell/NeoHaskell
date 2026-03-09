@@ -71,6 +71,7 @@ The module accepts any MIME type string (the field is `Text`, not an enum), but 
 | `audio/mpeg` | MP3 | Compressed, most common format |
 | `audio/mp4` | M4A/AAC | Compressed, common on Apple devices |
 | `audio/ogg` | OGG/OGA | Open-source compressed format, common on Linux and web |
+
 The MIME type is passed through to OpenRouter's `userWithAttachment` as-is. Model support for specific audio formats depends on the chosen model (e.g., Gemini supports all three; other models may vary).
 
 ### 3. Type Definitions
@@ -355,7 +356,7 @@ No sensitive information (file paths, internal IDs beyond FileRef) is exposed in
 
 The module Haddock documentation MUST include a Data Privacy Notice section, equivalent to the one in `Integration.Ocr.Ai`:
 
-```
+```haskell
 -- == Data Privacy Notice
 --
 -- Audio file content is sent to third-party AI providers via OpenRouter.
