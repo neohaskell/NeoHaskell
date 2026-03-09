@@ -146,8 +146,8 @@ createDefinitionWithStore storeFactory = do
         -- 2. Wire all entities and collect their registries
         registry <- wireEntities @entities @query queryNameText rawEventStore queryStore
 
-        -- 3. Create endpoint handler (lambda accepts Maybe UserClaims)
-        let endpoint = \userClaims -> Endpoint.createQueryEndpoint queryStore userClaims
+        -- 3. Create endpoint handler (lambda accepts Maybe UserClaims and Maybe NeoQL.Expr)
+        let endpoint userClaims maybeExpr = Endpoint.createQueryEndpoint queryStore userClaims maybeExpr
 
         Task.yield (registry, (queryNameText, endpoint, endpointSchema))
     }

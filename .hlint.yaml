@@ -63,6 +63,7 @@
 - ignore: { name: Avoid lambda using `infix` }
 - ignore: { name: Avoid lambda }
 - ignore: { name: Use /= }
+- ignore: {name: Use isNothing}
 - ignore: { name: Use <$> }
 - ignore: { name: Replace case with maybe }
 - ignore: { name: Use when }

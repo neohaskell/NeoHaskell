@@ -90,6 +90,8 @@ common common_cfg
     warp,
     with-utf8,
     yaml,
+    megaparsec >= 9.0 && < 10,
+    scientific >= 0.3 && < 0.4,
 
   default-extensions:
     ApplicativeDo
@@ -190,6 +192,10 @@ library
     IO
     Int
     Json
+    NeoQL
+    NeoQL.Execute
+    NeoQL.Parser
+    NeoQL.Types
     LinkedList
     Lock
     Log
@@ -352,6 +358,7 @@ library
     schema
     testlib
     options-parser
+    neoql
 
   default-language: GHC2021
 
@@ -567,6 +574,8 @@ test-suite nhcore-test-core
     Http.ClientRawSpec
     Http.ClientSpec
     IntSpec
+    NeoQL.ExecuteSpec
+    NeoQL.ParserSpec
     LogSpec
     RedactedSpec
     Schema.OpenApiSpec
