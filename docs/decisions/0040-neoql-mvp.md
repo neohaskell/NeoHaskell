@@ -245,7 +245,7 @@ The following are explicitly out of scope for this ADR and tracked in Issue #391
 
 3. **New dependency**: `megaparsec` is added to `nhcore`. It is a well-maintained library with no transitive surprises, but it is a new entry in the dependency graph.
 
-4. **Internal handler signature change**: query endpoint wiring must pass `Maybe NeoQL.Expr` through transport and definition layers. This is source-compatible for HTTP clients but requires coordinated internal refactors.
+4. **Internal handler signature change**: query endpoint wiring must pass `Maybe NeoQL.Expr` through transport and definition layers. This is source-compatible for HTTP clients but requires coordination across internal refactorings.
 
 ### Risks
 

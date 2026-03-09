@@ -603,11 +603,13 @@ instance Transport WebTransport where
               Maybe.Nothing ->
                 Task.yield (Result.Ok Maybe.Nothing)
               Maybe.Just qText ->
-                case NeoQL.parse qText of
-                  Result.Err parseErr ->
-                    Task.yield (Result.Err parseErr)
-                  Result.Ok expr ->
-                    Task.yield (Result.Ok (Maybe.Just expr))
+                if Text.length qText > 500
+                  then Task.yield (Result.Err "NeoQL query too long (max 500 chars)")
+                  else case NeoQL.parse qText of
+                    Result.Err parseErr ->
+                      Task.yield (Result.Err parseErr)
+                    Result.Ok expr ->
+                      Task.yield (Result.Ok (Maybe.Just expr))
             case neoqlResult of
               Result.Err parseErr -> do
                 let safeMsg = Json.encodeText parseErr
