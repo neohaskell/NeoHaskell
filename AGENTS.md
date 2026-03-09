@@ -163,3 +163,53 @@ Every change MUST include tests. Tests are NOT optional.
 - Use `Result.isOk` / `Result.isErr` with `shouldSatisfy` for Result assertions
 - Use `Test.fail [fmt|message|]` for custom failure messages
 - Use `def` from `Default` for placeholder values in test records
+
+
+## FEATURE IMPLEMENTATION PIPELINE
+
+NeoHaskell uses a 17-phase feature implementation pipeline orchestrated by Atlas (the main OpenCode agent). The pipeline is defined in the `neohaskell-feature-pipeline` skill and coordinated across 6 specialized agents.
+
+### Agents
+
+| Agent | Role | Phases | Model |
+|-------|------|--------|-------|
+| `neohaskell-devex-lead` | API design, naming, ADRs, architecture | 1, 4, 5 | claude-opus-4 |
+| `neohaskell-security-architect` | OWASP/NIST/EU security review | 2, 9 | claude-opus-4 |
+| `neohaskell-performance-lead` | 50k req/s performance review | 3, 10 | claude-opus-4 |
+| `neohaskell-community-lead` | PR descriptions, release notes | 13 | claude-sonnet-4 |
+| `neohaskell-implementer` | Code writing, tests, build loops | 6, 7, 8, 11, 12, 15 | claude-sonnet-4 |
+| `neohaskell-git-master` | Branch, commit, PR, merge | 13, 17 | claude-sonnet-4 |
+
+### Skills
+
+| Skill | Purpose | Used By |
+|-------|---------|---------|
+| `neohaskell-feature-pipeline` | 17-phase orchestration with PAUSE points | Atlas (orchestrator) |
+| `neohaskell-style-guide` | NeoHaskell coding conventions reference | All code-touching agents |
+| `neohaskell-adr-template` | ADR format and field guidance | devex-lead (Phase 1) |
+| `dx-council-cli` | CLI design expert panel (13 experts) | On-demand consultation |
+| `dx-council-lang` | Language design expert panel (19 experts) | On-demand consultation |
+
+### Pipeline Phases
+
+| Phase | Name | Agent | PAUSE? |
+|-------|------|-------|--------|
+| 1 | ADR Draft | devex-lead | Yes |
+| 2 | Security Review (ADR) | security-architect | |
+| 3 | Performance Review (ADR) | performance-lead | |
+| 4 | DevEx Review | devex-lead | Yes |
+| 5 | Architecture Design | devex-lead | Yes |
+| 6 | Test Suite Definition | implementer | |
+| 7 | Implementation | implementer | |
+| 8 | Build & Test Loop | implementer | |
+| 9 | Security Review (Impl) | security-architect | Yes |
+| 10 | Performance Review (Impl) | performance-lead | Yes |
+| 11 | Fix Review Notes | implementer | |
+| 12 | Final Build & Test | implementer | |
+| 13 | Create PR | git-master + community-lead | Yes |
+| 14 | Bot Review | (wait for CI) | |
+| 15 | Fix Bot Comments | implementer | |
+| 16 | Final Approval | (human) | Yes |
+| 17 | Merge | git-master | |
+
+PAUSE points require maintainer approval before the pipeline continues.
