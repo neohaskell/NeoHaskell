@@ -24,6 +24,7 @@ NeoQL is a small query language for NeoHaskell that lets clients express filters
 4. **Graceful degradation**: absent `?q=` parameter returns the full authorized result set (existing behavior).
 5. **Clear error contract**: parse failures return HTTP 400; unknown fields return an empty array with HTTP 200.
 6. **Megaparsec for parsing**: consistent with the project's DSL parsing approach, with good error messages.
+7. **Input length guardrail**: `?q=` values over 500 characters return HTTP 400 before parsing.
 
 ### GitHub Issues
 
@@ -69,17 +70,17 @@ core/neoql/
 ```haskell
 -- NeoQL/Types.hs
 
-newtype FieldName = FieldName Text
+newtype FieldName = FieldName !Text
   deriving (Eq, Show)
 
 data Value
-  = StringValue Text
-  | NumberValue Double
+  = StringValue !Text
+  | NumberValue !Scientific
   deriving (Eq, Show)
 
 data Expr
-  = FieldAccess FieldName
-  | FieldEquals FieldName Value
+  = FieldAccess !FieldName
+  | FieldEquals !FieldName !Value
   deriving (Eq, Show)
 
 data FilterResult
@@ -88,6 +89,8 @@ data FilterResult
   | FieldNotFound
   deriving (Eq, Show)
 ```
+
+`Scientific` is chosen over `Double` for numeric literals so NeoQL number comparisons align directly with `Aeson.Number Scientific` without lossy conversion.
 
 `FilterResult` distinguishes "field present but value differs" from "field not present at all". The executor uses this to return an empty array (not an error) when a field is unknown.
 
@@ -107,10 +110,12 @@ The parser lives in `NeoQL/Parser.hs` and uses `megaparsec >= 9.0 && < 10`.
 The parser exports a single function:
 
 ```haskell
-parseExpr :: Text -> Result Text Expr
+parse :: Text -> Result Text Expr
 ```
 
-`Result Text Expr` — `Left` carries a human-readable parse error suitable for the HTTP 400 body.
+`Result Text Expr` — `Err` carries a human-readable parse error suitable for the HTTP 400 body.
+
+For consistency across transports, parse failures are formatted with a stable prefix and position detail, for example: `NeoQL parse error: unexpected '>' at position 12`.
 
 ### 5. Executor: Aeson.Value
 
@@ -148,11 +153,12 @@ This is enforced structurally: `createQueryEndpoint` in `Service.Query.Endpoint`
 | No `?q=` parameter | 200 | Full authorized result set (unchanged) |
 | Valid `?q=`, matches found | 200 | Filtered JSON array |
 | Valid `?q=`, no matches | 200 | Empty JSON array `[]` |
-| Invalid `?q=` syntax | 400 | Parse error message |
+| Invalid `?q=` syntax | 400 | `NeoQL parse error: ...` |
+| `?q=` exceeds 500 chars | 400 | `NeoQL query too long (max 500 chars)` |
 | Unknown field (valid syntax) | 200 | Empty JSON array `[]` |
 | Auth failure (pre-existing) | 401 / 403 | Unchanged |
 
-Returning 200 with an empty array for unknown fields avoids leaking schema information. A 400 is reserved for syntax errors only.
+Returning 200 with an empty array for unknown fields avoids leaking schema information. A 400 is reserved for malformed NeoQL input (syntax errors or over-limit length).
 
 ### 8. WebTransport Integration
 
@@ -161,12 +167,32 @@ Returning 200 with an empty array for unknown fields avoids leaking schema infor
 The flow:
 
 1. Extract `q` from `Request.queryString`
-2. If absent, call handler with no filter (existing path)
-3. If present, call `NeoQL.parseExpr`
-4. On parse error, return HTTP 400 immediately (before calling the handler)
-5. On parse success, call handler, then apply `NeoQL.filterValues` to the result before encoding
+2. If absent, call handler with `Maybe.Nothing` filter (existing behavior)
+3. If present and length > 500 chars, return HTTP 400 immediately
+4. If present and within limit, call `NeoQL.parse`
+5. On parse error, return HTTP 400 immediately (before calling the handler)
+6. On parse success, call handler with `Maybe.Just expr`
 
-The handler itself (`createQueryEndpoint`) does not need to know about NeoQL. Filtering is applied by the transport layer after the handler returns its authorized JSON text. This keeps the query handler API stable.
+NeoQL filtering is applied in `createQueryEndpoint` after `canViewImpl` and before `Json.encodeText`. This preserves the non-negotiable auth ordering while avoiding a decode -> filter -> re-encode cycle in the transport.
+
+This requires threading an optional expression into query handlers:
+
+```haskell
+type QueryEndpointHandler =
+  Maybe UserClaims ->
+  Maybe NeoQL.Expr ->
+  Task QueryEndpointError Text
+
+createQueryEndpoint ::
+  forall query.
+  ... =>
+  QueryObjectStore query ->
+  Maybe UserClaims ->
+  Maybe NeoQL.Expr ->
+  Task QueryEndpointError Text
+```
+
+This is an internal wiring change, not an HTTP contract change. The external endpoint behavior remains additive (`?q=` optional).
 
 ### 9. Dependency: megaparsec
 
@@ -203,11 +229,13 @@ The following are explicitly out of scope for this ADR and tracked in Issue #391
 
 3. **Security is preserved by construction**: the execution pipeline in `createQueryEndpoint` places NeoQL after both authorization phases. There is no code path where NeoQL runs before auth.
 
-4. **Incremental path to full NeoQL**: the grammar, parser, and executor are isolated in `core/neoql/`. Adding operators in a future ADR means extending these modules without touching the transport or query layers.
+4. **Single-pass filtering path**: filtering before JSON encoding avoids decode -> filter -> re-encode overhead in `Web.hs`.
 
-5. **Good error messages**: megaparsec produces structured parse errors. HTTP 400 responses can include a readable description of where the parse failed, which helps clients debug malformed expressions.
+5. **Incremental path to full NeoQL**: the grammar, parser, and executor are isolated in `core/neoql/`. Adding operators in a future ADR means extending these modules without changing endpoint URL contracts.
 
-6. **Existing behavior unchanged**: endpoints without a `?q=` parameter behave exactly as before. No migration required.
+6. **Good error messages**: megaparsec produces structured parse errors. HTTP 400 responses include a readable description of where the parse failed, which helps clients debug malformed expressions.
+
+7. **Existing behavior unchanged**: endpoints without a `?q=` parameter behave exactly as before. No migration required.
 
 ### Negative
 
@@ -217,9 +245,11 @@ The following are explicitly out of scope for this ADR and tracked in Issue #391
 
 3. **New dependency**: `megaparsec` is added to `nhcore`. It is a well-maintained library with no transitive surprises, but it is a new entry in the dependency graph.
 
+4. **Internal handler signature change**: query endpoint wiring must pass `Maybe NeoQL.Expr` through transport and definition layers. This is source-compatible for HTTP clients but requires coordinated internal refactors.
+
 ### Risks
 
-1. **Filter applied to encoded text, not typed values**: the executor works on `Aeson.Value` after JSON encoding. If a query handler returns non-standard JSON (e.g., numbers encoded as strings), equality comparisons may not behave as expected. Mitigated by documenting that NeoQL operates on the JSON representation.
+1. **Numeric comparison semantics**: NeoQL compares JSON numbers as `Scientific`. This avoids floating-point surprises from `Double`, but clients still need to send numeric literals (not quoted strings) for numeric equality checks.
 
 2. **Grammar expansion pressure**: once clients use NeoQL, there will be pressure to add operators. The deferred features list in this ADR and the full spec in Issue #391 provide a clear boundary. New operators require a new ADR.
 

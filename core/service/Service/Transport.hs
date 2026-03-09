@@ -19,6 +19,7 @@ import Service.Query.Auth (QueryEndpointError)
 import Service.Response (CommandResponse)
 import Task (Task)
 import Text (Text)
+import NeoQL (Expr)
 
 
 -- | Handler for a single command endpoint.
@@ -30,8 +31,8 @@ type EndpointHandler = RequestContext -> Bytes -> ((CommandResponse, Bytes) -> T
 
 -- | Handler for a single query endpoint.
 --
--- Takes Maybe UserClaims for authorization and returns query data as JSON Text.
--- The handler is responsible for:
+-- Takes Maybe UserClaims for authorization, Maybe NeoQL.Expr for optional filtering,
+-- and returns query data as JSON Text.
 -- 1. Calling canAccessImpl (pre-fetch auth check)
 -- 2. Fetching the data
 -- 3. Calling canViewImpl on each result (post-fetch auth filter)
@@ -43,7 +44,7 @@ type EndpointHandler = RequestContext -> Bytes -> ((CommandResponse, Bytes) -> T
 -- - StorageError -> 500
 --
 -- Used for GET /queries/{query-name} endpoints.
-type QueryEndpointHandler = Maybe UserClaims -> Task QueryEndpointError Text
+type QueryEndpointHandler = Maybe UserClaims -> Maybe Expr -> Task QueryEndpointError Text
 
 
 -- | Schema information for an endpoint (command or query).

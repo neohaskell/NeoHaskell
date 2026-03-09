@@ -63,6 +63,7 @@ import Task qualified
 import Text (Text)
 import Text qualified
 import ToText (toText)
+import NeoQL qualified
 
 
 -- | Auth configuration for WebTransport endpoints.
@@ -589,49 +590,72 @@ instance Transport WebTransport where
             Log.withScope [("component", "WebTransport"), ("query", queryName)] do
               Log.debug "Executing query"
                 |> Task.ignoreError
-            -- Helper to process query with given user claims
-            let processQueryWithClaims userClaims = do
-                  -- Execute the query handler with error recovery
-                  -- Handler performs internal canAccess/canView checks
-                  result <- handler userClaims |> Task.asResult
-                  case result of
-                    Result.Ok responseText -> okJson responseText
-                    Result.Err endpointError ->
-                      -- Pattern match on typed error for proper HTTP status
-                      case endpointError of
-                        AuthorizationError authErr ->
-                          case authErr of
-                            Unauthenticated -> unauthorized "Authentication required"
-                            Forbidden -> forbidden "Access denied"
-                            InsufficientPermissions _ -> forbidden "Insufficient permissions"
-                        StorageError _msg ->
-                          -- Don't expose internal error details to client
-                          -- The msg is logged server-side by the transport layer
-                          internalError "Internal server error"
-
-            -- Extract user claims (if auth configured)
-            case webTransport.authEnabled of
+            -- Extract and parse optional ?q= NeoQL filter
+            let queryParams = Wai.queryString request
+            let getQueryParam name = do
+                  let matches = queryParams |> LinkedList.filter (\(k, _) -> k == name)
+                  case matches of
+                    [] -> Maybe.Nothing
+                    ((_, v) : _) -> v |> fmap (\bs -> Bytes.fromLegacy bs |> Text.fromBytes)
+            let maybeQParam = getQueryParam "q"
+            -- Parse NeoQL expression (if present)
+            neoqlResult <- case maybeQParam of
               Maybe.Nothing ->
-                -- No auth configured, pass Nothing (query decides if that's OK)
-                processQueryWithClaims Maybe.Nothing
-              Maybe.Just auth -> do
-                -- Try to validate JWT token
-                -- The query's canAccessImpl decides if authentication is required
-                authResult <- Middleware.checkAuth (Maybe.Just auth.jwksManager) auth.authConfig Authenticated request
+                Task.yield (Result.Ok Maybe.Nothing)
+              Maybe.Just qText ->
+                case NeoQL.parse qText of
+                  Result.Err parseErr ->
+                    Task.yield (Result.Err parseErr)
+                  Result.Ok expr ->
+                    Task.yield (Result.Ok (Maybe.Just expr))
+            case neoqlResult of
+              Result.Err parseErr -> do
+                let errBody = [fmt|{"error":"parse_error","message":"#{parseErr}"}|]
+                badRequest errBody respond
+              Result.Ok maybeExpr -> do
+                -- Helper to process query with given user claims
+                let processQueryWithClaims userClaims = do
+                      -- Execute the query handler with error recovery
+                      -- Handler performs internal canAccess/canView checks
+                      result <- handler userClaims maybeExpr |> Task.asResult
+                      case result of
+                        Result.Ok responseText -> okJson responseText
+                        Result.Err endpointError ->
+                          -- Pattern match on typed error for proper HTTP status
+                          case endpointError of
+                            AuthorizationError authErr ->
+                              case authErr of
+                                Unauthenticated -> unauthorized "Authentication required"
+                                Forbidden -> forbidden "Access denied"
+                                InsufficientPermissions _ -> forbidden "Insufficient permissions"
+                            StorageError _msg ->
+                              -- Don't expose internal error details to client
+                              -- The msg is logged server-side by the transport layer
+                              internalError "Internal server error"
 
-                case authResult of
-                  Result.Err authErr ->
-                    -- Check if token was missing vs invalid
-                    case authErr of
-                      TokenMissing ->
-                        -- No token provided - let query handler decide if that's OK
-                        processQueryWithClaims Maybe.Nothing
-                      _ ->
-                        -- Invalid token provided - reject with appropriate error
-                        Middleware.respondWithAuthError authErr respond
-                  Result.Ok authContext ->
-                    -- Token valid - pass claims to handler
-                    processQueryWithClaims authContext.claims
+                -- Extract user claims (if auth configured)
+                case webTransport.authEnabled of
+                  Maybe.Nothing ->
+                    -- No auth configured, pass Nothing (query decides if that's OK)
+                    processQueryWithClaims Maybe.Nothing
+                  Maybe.Just auth -> do
+                    -- Try to validate JWT token
+                    -- The query's canAccessImpl decides if authentication is required
+                    authResult <- Middleware.checkAuth (Maybe.Just auth.jwksManager) auth.authConfig Authenticated request
+
+                    case authResult of
+                      Result.Err authErr ->
+                        -- Check if token was missing vs invalid
+                        case authErr of
+                          TokenMissing ->
+                            -- No token provided - let query handler decide if that's OK
+                            processQueryWithClaims Maybe.Nothing
+                          _ ->
+                            -- Invalid token provided - reject with appropriate error
+                            Middleware.respondWithAuthError authErr respond
+                      Result.Ok authContext ->
+                        -- Token valid - pass claims to handler
+                        processQueryWithClaims authContext.claims
           Maybe.Nothing ->
             notFound [fmt|Query not found: #{queryName}|]
       -- OAuth2 routes: /connect/{provider}, /callback/{provider}, /disconnect/{provider}

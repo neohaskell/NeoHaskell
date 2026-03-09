@@ -14,6 +14,8 @@ import Service.QueryObjectStore.Core (Error (..), QueryObjectStore (..))
 import Task (Task)
 import Task qualified
 import Text (Text)
+import NeoQL (Expr)
+import NeoQL qualified
 
 
 -- | Create an endpoint handler for a query type.
@@ -40,8 +42,9 @@ createQueryEndpoint ::
   ) =>
   QueryObjectStore query ->
   Maybe UserClaims ->
+  Maybe Expr ->
   Task QueryEndpointError Text
-createQueryEndpoint queryStore userClaims = do
+createQueryEndpoint queryStore userClaims maybeExpr = do
   -- Phase 1: Pre-fetch authorization
   case canAccessImpl @query userClaims of
     Just authErr -> Task.throw (Auth.AuthorizationError authErr)
@@ -56,7 +59,14 @@ createQueryEndpoint queryStore userClaims = do
             allQueries
               |> Array.takeIf (\query -> canViewImpl @query userClaims query == Nothing)
 
-      let responseText = authorizedQueries |> Json.encodeText
+      let filteredQueries =
+            case maybeExpr of
+              Maybe.Nothing -> authorizedQueries
+              Maybe.Just expr ->
+                authorizedQueries
+                  |> Array.takeIf (\query -> NeoQL.execute expr (Json.toJSON query))
+
+      let responseText = filteredQueries |> Json.encodeText
 
       Task.yield responseText
 
