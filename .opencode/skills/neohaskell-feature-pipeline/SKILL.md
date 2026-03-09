@@ -17,38 +17,43 @@ This skill orchestrates the full 17-phase pipeline for implementing new features
 
 This skill includes `pipeline.py` — a deterministic state machine that tracks pipeline state, enforces phase ordering and PAUSE gates, and generates agent-specific prompts. **Always use the script instead of interpreting the prose instructions below.**
 
+> **How to invoke**: Run via bash as `python3 .opencode/skills/neohaskell-feature-pipeline/pipeline.py <command>`. You can alias it for convenience: `PIPELINE="python3 .opencode/skills/neohaskell-feature-pipeline/pipeline.py"`
+
 ### Quick Start
 
 ```bash
+# Set up alias for convenience
+PIPELINE="python3 .opencode/skills/neohaskell-feature-pipeline/pipeline.py"
+
 # Initialize a new pipeline
-pipeline.py init "Feature Name" --issue 330 --module "core/path/Module.hs" --test "core/test/ModuleSpec.hs" --adr 0041
+$PIPELINE init "Feature Name" --issue 330 --module "core/path/Module.hs" --test "core/test/ModuleSpec.hs" --adr 0041
 
 # Check status (human-readable)
-pipeline.py status
+$PIPELINE status
 
 # Get next phase(s) as JSON — includes agent, skills, category, and prompt
-pipeline.py next
+$PIPELINE next
 
 # Mark a phase complete
-pipeline.py complete 1
+$PIPELINE complete 1
 
 # Approve a PAUSE-gated phase (maintainer action)
-pipeline.py approve 1
+$PIPELINE approve 1
 
 # Set variables (PR number, session IDs)
-pipeline.py set pr_number 450
-pipeline.py set session_id.7 "ses_xxx"
+$PIPELINE set pr_number 450
+$PIPELINE set session_id.7 "ses_xxx"
 ```
 
 ### Orchestrator Workflow
 
-1. Call `pipeline.py init` with feature details
-2. Call `pipeline.py next` — returns JSON with phase number, agent, skills, category, and prompt
+1. Run `$PIPELINE init` with feature details
+2. Call `$PIPELINE next` — returns JSON with phase number, agent, skills, category, and prompt
 3. Delegate to the specified agent: `task(subagent_type=agent, load_skills=skills, prompt=prompt)`
-4. After agent completes, store session ID: `pipeline.py set session_id.N <id>`
-5. Mark phase done: `pipeline.py complete N`
-6. For PAUSE phases, wait for maintainer to run `pipeline.py approve N`
-7. Repeat from step 2 until `pipeline.py next` returns `{"status": "complete"}`
+4. After agent completes, store session ID: `$PIPELINE set session_id.N <id>`
+5. Mark phase done: `$PIPELINE complete N`
+6. For PAUSE phases, wait for maintainer to run `$PIPELINE approve N`
+7. Repeat from step 2 until `$PIPELINE next` returns `{"status": "complete"}`
 
 ### Key Features
 

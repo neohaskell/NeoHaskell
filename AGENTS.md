@@ -214,3 +214,34 @@ NeoHaskell uses a 17-phase feature implementation pipeline orchestrated by Atlas
 | 17 | Final Approval & Merge | (human) | Yes |
 
 PAUSE points require maintainer approval before the pipeline continues.
+
+### How to Run the Pipeline
+
+The pipeline is driven by a **deterministic Python script** at `.opencode/skills/neohaskell-feature-pipeline/pipeline.py`. When implementing a feature, the orchestrator (Atlas/Sisyphus) MUST use this script via bash — not interpret the phases from prose.
+
+```bash
+# The script path (use this exact path)
+PIPELINE="python3 .opencode/skills/neohaskell-feature-pipeline/pipeline.py"
+
+# 1. Initialize a new pipeline
+$PIPELINE init "Feature Name" --issue 330 --module "core/path/Module.hs" --test "core/test/ModuleSpec.hs" --adr 0041
+
+# 2. Check current status
+$PIPELINE status
+
+# 3. Get next phase(s) as JSON — includes agent, skills, category, and prompt
+$PIPELINE next
+
+# 4. After delegating to agent, store session ID
+$PIPELINE set session_id.1 "ses_xxx"
+
+# 5. Mark phase complete
+$PIPELINE complete 1
+
+# 6. For PAUSE phases, wait for maintainer approval
+$PIPELINE approve 1
+
+# 7. Repeat steps 3-6 until 'next' returns {"status": "complete"}
+```
+
+**Orchestrator workflow**: Load `neohaskell-feature-pipeline` skill → call `pipeline.py next` → delegate to the agent/category/skills specified in the JSON output → store session ID → mark complete → repeat.
