@@ -58,7 +58,7 @@ NeoHaskell/
 - **Case only**: Pattern match in `case`, not function definitions
 - **Descriptive types**: `forall input output.` NOT `forall a b.`
 - **Qualified imports**: `Module.function` design (e.g., `EventStore.new`)
-- **String interpolation**: `[fmt|Hello {name}!|]` NOT `<>`/`++`
+- **String interpolation**: `[fmt|Hello #{name}!|]` NOT `<>`/`++`
 
 ### Base Imports
 
@@ -163,3 +163,85 @@ Every change MUST include tests. Tests are NOT optional.
 - Use `Result.isOk` / `Result.isErr` with `shouldSatisfy` for Result assertions
 - Use `Test.fail [fmt|message|]` for custom failure messages
 - Use `def` from `Default` for placeholder values in test records
+
+
+## FEATURE IMPLEMENTATION PIPELINE
+
+NeoHaskell uses a 17-phase feature implementation pipeline orchestrated by Atlas (the main OpenCode agent). The pipeline is defined in the `neohaskell-feature-pipeline` skill and coordinated across 7 specialized agents.
+
+### Agents
+
+| Agent | Role | Phases | Model |
+|-------|------|--------|-------|
+| `neohaskell-devex-lead` | API design, naming, ADRs, architecture | 1, 4, 5 | claude-opus-4-6 |
+| `neohaskell-security-architect` | OWASP/NIST/EU security review | 2, 10 | claude-opus-4-6 |
+| `neohaskell-performance-lead` | 50k req/s performance review | 3, 11 | claude-opus-4-6 |
+| `neohaskell-qa-designer` | Test spec design (outside-in TDD) | 6 | claude-opus-4-6 |
+| `neohaskell-community-lead` | PR descriptions, release notes | 14 | claude-sonnet-4-6 |
+| `neohaskell-implementer` | Code writing, tests, build loops | 7, 8, 9, 12, 13, 16 | claude-sonnet-4-6 |
+| `neohaskell-git-master` | Branch, commit, PR | 14 | claude-haiku-4-5 |
+
+### Skills
+
+| Skill | Purpose | Used By |
+|-------|---------|---------|
+| `neohaskell-feature-pipeline` | 17-phase orchestration with PAUSE points | Atlas (orchestrator) |
+| `neohaskell-style-guide` | NeoHaskell coding conventions reference | All code-touching agents |
+| `neohaskell-adr-template` | ADR format and field guidance | devex-lead (Phase 1) |
+| `dx-council-cli` | CLI design expert panel (13 experts) | On-demand consultation |
+| `dx-council-lang` | Language design expert panel (19 experts) | On-demand consultation |
+
+### Pipeline Phases
+
+| Phase | Name | Agent | PAUSE? |
+|-------|------|-------|--------|
+| 1 | ADR Draft | devex-lead | Yes |
+| 2 | Security Review (ADR) | security-architect | |
+| 3 | Performance Review (ADR) | performance-lead | |
+| 4 | DevEx Review | devex-lead | Yes |
+| 5 | Architecture Design | devex-lead | Yes |
+| 6 | Test Spec Design | qa-designer | Yes |
+| 7 | Test Suite Writing | implementer | |
+| 8 | Implementation | implementer | |
+| 9 | Build & Test Loop | implementer | |
+| 10 | Security Review (Impl) | security-architect | Yes |
+| 11 | Performance Review (Impl) | performance-lead | Yes |
+| 12 | Fix Review Notes | implementer | |
+| 13 | Final Build & Test | implementer | |
+| 14 | Create PR | git-master + community-lead | Yes |
+| 15 | Bot Review | (wait for CI) | |
+| 16 | Fix Bot Comments | implementer | |
+| 17 | Final Approval & Merge | (human) | Yes |
+
+PAUSE points require maintainer approval before the pipeline continues.
+
+### How to Run the Pipeline
+
+The pipeline is driven by a **deterministic Python script** at `.opencode/skills/neohaskell-feature-pipeline/pipeline.py`. When implementing a feature, the orchestrator (Atlas/Sisyphus) MUST use this script via bash — not interpret the phases from prose.
+
+```bash
+# The script path (use this exact path)
+PIPELINE="python3 .opencode/skills/neohaskell-feature-pipeline/pipeline.py"
+
+# 1. Initialize a new pipeline
+$PIPELINE init "Feature Name" --issue 330 --module "core/path/Module.hs" --test "core/test/ModuleSpec.hs" --adr 0041
+
+# 2. Check current status
+$PIPELINE status
+
+# 3. Get next phase(s) as JSON — includes agent, skills, category, and prompt
+$PIPELINE next
+
+# 4. After delegating to agent, store session ID
+$PIPELINE set session_id.1 "ses_xxx"
+
+# 5. Mark phase complete
+$PIPELINE complete 1
+
+# 6. For PAUSE phases, wait for maintainer approval
+$PIPELINE approve 1
+
+# 7. Repeat steps 3-6 until 'next' returns {"status": "complete"}
+```
+
+**Orchestrator workflow**: Load `neohaskell-feature-pipeline` skill → call `pipeline.py next` → delegate to the agent/category/skills specified in the JSON output → store session ID → mark complete → repeat.

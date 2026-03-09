@@ -60,6 +60,7 @@ uploads/
 IMPLEMENTATION_PLAN.md
 feature-progress.md
 .sisyphus/
+.pipeline/
 
 
 # Node.js / pnpm (website)
