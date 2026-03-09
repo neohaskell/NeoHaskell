@@ -29,7 +29,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      - uses: DeterminateSystems/determinate-nix-action@v3.16.3
+      - uses: DeterminateSystems/determinate-nix-action@v3.17.0
         with:
           extra-conf: |
             accept-flake-config = true
@@ -57,7 +57,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      - uses: DeterminateSystems/determinate-nix-action@v3.16.3
+      - uses: DeterminateSystems/determinate-nix-action@v3.17.0
         with:
           extra-conf: |
             accept-flake-config = true
@@ -76,7 +76,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      - uses: DeterminateSystems/determinate-nix-action@v3.16.3
+      - uses: DeterminateSystems/determinate-nix-action@v3.17.0
         with:
           extra-conf: |
             accept-flake-config = true
@@ -95,7 +95,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      - uses: DeterminateSystems/determinate-nix-action@v3.16.3
+      - uses: DeterminateSystems/determinate-nix-action@v3.17.0
         with:
           extra-conf: |
             accept-flake-config = true
@@ -114,7 +114,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      - uses: DeterminateSystems/determinate-nix-action@v3.16.3
+      - uses: DeterminateSystems/determinate-nix-action@v3.17.0
         with:
           extra-conf: |
             accept-flake-config = true
@@ -151,7 +151,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      - uses: DeterminateSystems/determinate-nix-action@v3.16.3
+      - uses: DeterminateSystems/determinate-nix-action@v3.17.0
         with:
           extra-conf: |
             accept-flake-config = true
