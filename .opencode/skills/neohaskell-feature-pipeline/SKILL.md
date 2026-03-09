@@ -13,6 +13,54 @@ tags:
 
 This skill orchestrates the full 17-phase pipeline for implementing new features in NeoHaskell. It coordinates 7 specialized agents, enforces quality gates, and ensures every feature passes security, performance, and DevEx review before merging. Tests are designed BEFORE implementation (outside-in TDD).
 
+## Script-Driven Execution (USE THIS)
+
+This skill includes `pipeline.py` — a deterministic state machine that tracks pipeline state, enforces phase ordering and PAUSE gates, and generates agent-specific prompts. **Always use the script instead of interpreting the prose instructions below.**
+
+### Quick Start
+
+```bash
+# Initialize a new pipeline
+pipeline.py init "Feature Name" --issue 330 --module "core/path/Module.hs" --test "core/test/ModuleSpec.hs" --adr 0041
+
+# Check status (human-readable)
+pipeline.py status
+
+# Get next phase(s) as JSON — includes agent, skills, category, and prompt
+pipeline.py next
+
+# Mark a phase complete
+pipeline.py complete 1
+
+# Approve a PAUSE-gated phase (maintainer action)
+pipeline.py approve 1
+
+# Set variables (PR number, session IDs)
+pipeline.py set pr_number 450
+pipeline.py set session_id.7 "ses_xxx"
+```
+
+### Orchestrator Workflow
+
+1. Call `pipeline.py init` with feature details
+2. Call `pipeline.py next` — returns JSON with phase number, agent, skills, category, and prompt
+3. Delegate to the specified agent: `task(subagent_type=agent, load_skills=skills, prompt=prompt)`
+4. After agent completes, store session ID: `pipeline.py set session_id.N <id>`
+5. Mark phase done: `pipeline.py complete N`
+6. For PAUSE phases, wait for maintainer to run `pipeline.py approve N`
+7. Repeat from step 2 until `pipeline.py next` returns `{"status": "complete"}`
+
+### Key Features
+
+- **Deterministic ordering**: Dependencies enforced by the script, not LLM interpretation
+- **PAUSE gates**: Phases with `pause_after: true` require explicit approval before continuing
+- **Parallel phases**: `next` returns multiple phases when they can run simultaneously (e.g., phases 2+3, 10+11)
+- **Session continuity**: `continue_session_id` in output tells you which previous session to resume
+- **Variable substitution**: Prompts auto-fill with feature name, paths, issue number, etc.
+- **Resumable**: State persists in `.pipeline/state.json` across sessions
+
+---
+
 ## Variables (Set Before Starting)
 
 | Variable | Description | Example |
