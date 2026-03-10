@@ -1643,10 +1643,97 @@ parseable. (7/7 unanimous — R2 council review)
 across all arities: `() -> a` (no params), `(a) -> b` (one param), `(a, b) -> c` (two params).
 One form, always. Users never wonder "do I need parens here?" — the answer is always yes.
 
-## 5. Error Handling ❌
+## 5. Error Handling ✅
 
-_To be designed._
+Decided via DX Council review (6 experts, Mar 2026).
 
+### Summary
+
+**No special error handling syntax for v1.** The existing primitives are sufficient:
+
+- `Task<err, val>` carries typed errors in effectful code
+- `Result<err, val>` carries typed errors in pure code
+- `let!` (monadic bind) propagates errors automatically — works for both `Task` and `Result`
+- `Task.throw(err)` / `Task.recover(handler, task)` for throwing and catching in Task context
+- `Task.mapError(f, task)` for error type conversion at boundaries
+- `match` on `Result`/`Maybe` for exhaustive pattern matching
+- `|>` pipes with `Result.andThen`, `Result.map` for railway-style composition
+
+### What Was Considered and Rejected
+
+| Feature | Verdict | Reasoning |
+| --- | --- | --- |
+| `try/catch` blocks | Rejected (3-3 split) | Creates a trap door for catch-all error swallowing. `Task.recover` + `match` is explicit and composable. |
+| `?` operator (Rust-style) | Deferred | Useful but not essential — `let!` already propagates errors. May revisit post-v1. |
+| `throw` keyword | Deferred | `Task.throw(err)` as a function is sufficient. A keyword adds strangeness budget cost for zero semantic gain. |
+| Result blocks (`result { let! x = ... }`) | Deferred | `let!` already works for Result via bind. Separate block syntax adds a new concept without new capability. |
+| Union error types (`Task<FileError \| HttpError, Text>`) | Deferred | Compelling for composition but requires type system support. Revisit when capabilities are designed. |
+
+### Design Rationale
+
+**Why no special syntax?** `let!` is NeoHaskell's universal bind operator. It works for `Task`,
+`Result`, `Maybe`, and any type that supports monadic composition. Adding `try/catch`, `?`, or
+`throw` keywords would create parallel error handling systems that fragment the developer's mental
+model. The council's strongest consensus: make the disciplined path (typed errors, `let!`, exhaustive
+`match`) the path of least resistance. Special syntax makes the lazy path (catch-all, string errors,
+swallow-and-log) too easy.
+
+**Why not try/catch?** The council split 3-3. The rejection camp (Wlaschin, Czaplicki, Borretti)
+argued that `try/catch` teaches the wrong mental model — errors aren't exceptional, they're data.
+The support camp (Nystrom, Breslav, King) argued Jess expects it. The tie-break: NeoHaskell's
+`Task.recover` + `match` is already more explicit and composable than `try/catch`. Adding try/catch
+would create a second, less disciplined path.
+
+**Why not `?` operator?** Four of six experts supported it, but `let!` already serves the same
+role for both `Task` and `Result`. Adding `?` would create two propagation mechanisms (`let!` for
+Task, `?` for Result) when one (`let!` for both) is sufficient and more consistent.
+
+**Error composition pattern (v1):** Use `Task.mapError` at boundaries to convert between error types.
+Define domain error types as enums. This is explicit and requires no new syntax:
+
+```neohaskell
+enum OrderError {
+    InvalidQuantity(Text),
+    OutOfStock(ProductId),
+    PaymentFailed(Text),
+}
+
+fun placeOrder(order: Order) : Task<OrderError, Confirmation> {
+    let! inventory = fetchInventory(order.sku)
+        |> Task.mapError((err) -> OrderError.OutOfStock(err))
+    let! payment = chargeCard(order.card, order.total)
+        |> Task.mapError((err) -> OrderError.PaymentFailed(err))
+    Task.yield(Confirmation { orderId: order.id })
+}
+```
+
+### Error Messages
+
+**Using `let` instead of `let!` for a Task/Result value:**
+
+```
+error: this expression returns a Task, but you used `let` instead of `let!`
+  --> src/Main.nh:5:12
+  |
+5 |     let user = fetchUser(id)
+  |         ^^^^ `fetchUser` returns Task<UserError, User>
+  |
+  = hint: use `let!` to unwrap the Task: `let! user = fetchUser(id)`
+  = hint: `let!` will propagate errors automatically
+```
+
+**Unhandled error type mismatch:**
+
+```
+error: error type mismatch
+  --> src/Main.nh:8:12
+  |
+8 |     let! inventory = fetchInventory(sku)
+  |                      ^^^^^^^^^^^^^^^^^ returns Task<HttpError, Inventory>
+  |
+  = expected: Task<OrderError, Inventory>
+  = hint: use `Task.mapError` to convert: `fetchInventory(sku) |> Task.mapError(toOrderError)`
+```
 ---
 
 ## 6. Imports ✅
