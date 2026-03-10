@@ -1,7 +1,7 @@
 # NeoHaskell Syntax Specification
 
 **Status:** In Progress  
-**Last updated:** 2026-02-27
+**Last updated:** 2026-03-10
 
 ---
 
@@ -85,17 +85,19 @@ Features marked ✅ are decided. Features marked ❌ are pending design.
 | 2   | Enums                | ✅     | Council-reviewed (12 experts R1, 6 experts R2) |
 | 3   | Pattern Matching     | ✅     | Council-reviewed (11 experts)                     |
 | 4   | Lambdas              | ✅     | Council-reviewed (7 experts)                      |
-| 5   | Error Handling       | ❌     | 8/10 Tier 1-2                                     |
+| 5   | Error Handling       | ✅     | Council-reviewed (6 experts, Mar 2026) — no special syntax needed |
 | 6   | Imports              | ✅     | Council-reviewed (8 experts)                      |
-| 7   | Comments             | ❌     | 5/10 Tier 1-2                                     |
-| 8   | String Interpolation | ❌     | 10/10 Tier 1-2                                    |
+| 7   | Comments             | ✅     | Design lead decision (Mar 2025)                   |
+| 8   | String Interpolation | ✅     | Design lead decision + council input (Mar 2025)   |
 | 9   | Type Aliases         | ✅     | Council-reviewed (5 experts)                      |
 | 10  | Brands               | ✅     | Council-reviewed (R1: 8, R2: 7, R3: 5 experts)   |
-| 11  | Destructuring        | ❌     | 7/10 Tier 2                                       |
-| 12  | Traits & Impl        | ❌     | 6/10 Tier 2                                       |
-| 13  | Visibility           | ❌     | 6/10 Tier 2                                       |
-| 14  | Guards               | ❌     | 4/10 Tier 2-3                                     |
-| 15  | Doc Comments         | ❌     | 5/10 Tier 2-3                                     |
+| 11  | Destructuring        | ✅     | Council-reviewed (3 experts, Mar 2025)            |
+| 12  | Traits & Impl        | ✅     | Council-reviewed (3 experts, Mar 2025)            |
+| 13  | Visibility           | ✅     | Council-reviewed (3 experts, Mar 2025) + user decision |
+| 14  | Guards               | ✅     | Dropped — covered by Feature #3 (match guards) + if/then/else (3/3 unanimous, Mar 2025) |
+| 15  | Doc Comments         | ✅     | Council-reviewed (3 experts, Mar 2025) + user decision |
+
+| 16  | Decorators           | ✅     | Council-reviewed (R1: 3, R2: 3, path: 3 experts) |
 
 ### Explicitly Deferred (post-1.0 or never)
 
@@ -105,11 +107,11 @@ Features marked ✅ are decided. Features marked ❌ are pending design.
 | Anonymous records        | 6/10 skip — named records are better for domain modeling |
 | Where clauses            | 4/10 skip — `let` covers 90% of cases                    |
 | Handler syntax           | Design later — needs real usage to inform                |
-| Macros / metaprogramming | 10/10 unanimous skip                                     |
+| Macros / metaprogramming | Superseded by Feature #16 (Decorators) — unified code gen  |
 | HKT / dependent types    | 10/10 unanimous skip                                     |
 | Separate `enum` keyword  | Now adopted — see Feature #2 (Enums)                     |
 | Implicit conversions     | 9/10 skip                                                |
-| Block comments `/* */`   | Skip — destroys line-by-line lexing                      |
+| Block comments `/* */`   | Reinstated — see Feature #7 (Comments)                   |
 
 ---
 
@@ -525,7 +527,7 @@ has more than 2-3 constraints, consider whether explicit function passing would 
 These are designed in later features:
 
 - Pattern matching in arguments → Feature #3
-- Guards → Feature #14
+- Guards → Covered by `if/then/else` chains in function bodies + pattern guards in `match` (Feature #3)
 - Lambdas → Feature #4
 - Default arguments → Not planned
 - Overloading → Via traits (Feature #12)
@@ -725,13 +727,13 @@ No special syntax needed. Self-reference is natural — the type name is in scop
 within its own definition. No `indirect` keyword (Swift) or `Box` wrapper (Rust)
 needed — Haskell handles recursion natively via lazy evaluation.
 
-### Deriving
+### Deriving (via Decorators — see Feature #16)
 
 `Show` and `Eq` are **auto-derived** for all enum types. Additional derivations use
-explicit `deriving`:
+`@derive` decorators (see Feature #16 for full decorator design):
 
 ```neohaskell
--- Show and Eq are automatic — no annotation needed
+// Show and Eq are automatic — no annotation needed
 enum Direction {
   North
   South
@@ -739,29 +741,25 @@ enum Direction {
   West
 }
 
--- Add Ord for ordering
+// Add Ord for ordering
+@derive(Ord)
 enum Priority {
   Low
   Medium
   High
 }
-  deriving Ord
 
--- Multiple additional derivations
+// Multiple additional derivations
+@derive(Ord, Bounded)
 enum Color {
   Red
   Green
   Blue
 }
-  deriving Ord, Bounded
 ```
 
-The transpiler always emits `deriving (Show, Eq)` plus any user-specified additions.
-If the user writes `deriving Ord`, the Haskell output is `deriving (Show, Eq, Ord)`.
-
-**Note:** Ord and serialization (JSON, etc.) deriving strategies are under active design.
-The current `deriving` syntax works for basic typeclasses; a more comprehensive approach
-for serialization and ordering will be specified in a future revision.
+The transpiler always emits `deriving (Show, Eq)` plus any `@derive`-specified additions.
+`@derive(Ord)` produces `deriving (Show, Eq, Ord)` in the Haskell output.
 
 ### Construction
 
@@ -801,7 +799,7 @@ Construction syntax mirrors the definition syntax:
 |                                                                               | `  deriving (Show, Eq)`                                                      |
 | `enum Shape { Circle { radius: Float } Rect { w: Float, h: Float } }`        | `data Shape = Circle { radius :: Float } \| Rect { w :: Float, h :: Float }` |
 |                                                                               | `  deriving (Show, Eq)`                                                      |
-| `enum Priority { Low Medium High } deriving Ord`                              | `data Priority = Low \| Medium \| High`                                      |
+| `@derive(Ord) enum Priority { Low Medium High }`                              | `data Priority = Low \| Medium \| High`                                      |
 |                                                                               | `  deriving (Show, Eq, Ord)`                                                 |
 | `Just(42)`                                                                    | `Just 42`                                                                    |
 | `Circle { radius: 5.0 }`                                                     | `Circle { radius = 5.0 }`                                                    |
@@ -828,7 +826,7 @@ These are designed in later features:
 - Exhaustive case analysis → Feature #3
 - Destructuring bindings → Feature #11
 - Trait implementations for variants → Feature #12
-- Guards on variant matching → Feature #14
+- Guards on variant matching → Covered by pattern guards in `match` arms (Feature #3)
 - GADTs / indexed types → Not planned (post-1.0)
 - Existential types → Not planned
 - Strict fields → Not planned (Haskell default is lazy)
@@ -868,7 +866,7 @@ and total. (King — critical safety concern, consensus support)
 **Why auto-derive `Show` and `Eq`?** Elm auto-derives structural equality. Kotlin
 auto-generates `equals`/`toString` for data classes. Explicit `deriving Show, Eq` on every
 type is Haskell ceremony that confuses beginners who expect `==` to "just work." Auto-deriving
-saves strangeness budget. Additional traits (`Ord`, `Bounded`) require explicit `deriving`.
+saves strangeness budget. Additional traits (`Ord`, `Bounded`) require explicit `@derive`.
 (Czaplicki, Syme, Feldman, Breslav — tie-break: Elm proximity, Kotlin precedent)
 
 **Why `record` and `enum` are separate?** `record` is for single-constructor types with
@@ -1230,8 +1228,8 @@ literal patterns correctly.
 
 These are designed in later features:
 
-- Destructuring in `let`/`fun` arguments → Feature #11
-- Full guard syntax (multi-way guards, pattern guards) → Feature #14
+- Destructuring in `let`/`let!` bindings → Feature #11 (irrefutable patterns only)
+- Full guard syntax (multi-way guards, pattern guards) → Dropped (Feature #14); covered by pattern guards in `match` + `if/then/else` chains
 - View patterns (function application in pattern position) → Not planned
 - Pattern synonyms → Not planned
 - Bang patterns (strict matching) → Not planned (Haskell-specific)
@@ -1736,21 +1734,25 @@ error: error type mismatch
 ```
 ---
 
-## 6. Imports ✅
+## 6. Imports ✅ (Revised Mar 2025)
 
-Designed via DX Council review (8 experts, Feb 2025).
+Originally designed via DX Council review (8 experts, Feb 2025).
+**Revised Mar 2025** to qualified-by-default (Go model) with council input (3 experts).
 
 ### Summary
 
-| Decision          | Choice                             | Council Support     |
-| ----------------- | ---------------------------------- | ------------------- |
-| Keyword           | `import`                           | 8/8 — unanimous     |
-| Selective imports | Braces `{ }`                       | 8/8 — unanimous     |
-| Qualified/aliased | `import Foo as F` (no `qualified`) | 8/8 — unanimous     |
-| Hiding            | Omitted (Elm approach)             | 6/8 — Elm tie-break |
-| Module = file     | One module per file                | 8/8 — unanimous     |
-| Re-exports        | `export import` modifier           | 8/8 — unanimous     |
-| Path style        | Dot-path (`Data.Map`)              | 8/8 — unanimous     |
+| Decision              | Choice                                     | Council Support                  |
+| --------------------- | ------------------------------------------ | -------------------------------- |
+| Keyword               | `import`                                   | 8/8 — unanimous (R1)              |
+| Default behavior      | **Qualified to last segment** (Go model)   | 3/3 conditional → approved (R2) |
+| Custom qualifier      | `import Foo.Bar as B`                      | 3/3 — unanimous (R2)              |
+| Explicit unqualified  | `open import Module`                       | 3/3 — unanimous (R2)              |
+| Selective imports     | Braces `{ }`                               | 8/8 — unanimous (R1)              |
+| Hiding                | Omitted (Elm approach)                     | 6/8 — Elm tie-break (R1)         |
+| Module = file         | One module per file                        | 8/8 — unanimous (R1)              |
+| Re-exports            | `export import Mod { items }`              | 8/8 (R1) + selective syntax (R2) |
+| Path style            | Dot-path (`Data.Map`)                      | 8/8 — unanimous (R1)              |
+| Magic file convention | Rejected (`Core.nh` auto-open)             | 3/3 — unanimous reject (R2)      |
 
 ### Module Declaration
 
@@ -1766,26 +1768,67 @@ module Data.Map
 - One module per file, strictly — no exceptions
 - If omitted, the compiler infers the module name from the file path
 
-### Import Everything (Unqualified)
+### Qualified-by-Default (Go Model)
+
+All imports are **automatically qualified** to the last segment of the module path:
 
 ```neohaskell
-import Data.List
-import Text.Printf
+import MyApp.Person.Event    // qualified as Event
+import Data.Map              // qualified as Map
+import Http.Client           // qualified as Client
+
+// Usage: always qualified
+let evt = Event.created(person)
+let m = Map.empty()
+let! resp = Client.get(url)
 ```
 
-Imports all exported names from the module into the current scope, unqualified.
-This is the simplest form — use it for small modules or when name clashes are unlikely.
+This desugars to `import MyApp.Person.Event qualified as Event` in Haskell.
+The last segment of the module path becomes the default qualifier.
+
+**Why?** Java/C#/JS developers already think in `ClassName.method()`. Go uses this exact
+model and it's widely praised for readability. When you read `Event.foo`, you immediately
+know where `foo` comes from. No hunting through imports.
+
+### Custom Qualifier
+
+Use `as` to change the qualifier name:
+
+```neohaskell
+import MyApp.Person.Event as PE    // qualified as PE
+import Data.Map as M               // qualified as M
+
+let evt = PE.created(person)
+let m = M.empty()
+```
+
+### Explicit Unqualified (`open import`)
+
+`open import` brings all exports into scope unqualified. Use **rarely and deliberately**:
+
+```neohaskell
+open import Test                   // DSL module — all names unqualified
+open import MyApp.Person.Core      // shared domain types unqualified
+
+import MyApp.Person.Event          // still qualified as Event
+```
+
+**Recommended linter rule:** Warn when a file has more than 2–3 `open import` statements.
+
+**Why `open import` not a magic file?** The council unanimously rejected a `Core.nh`
+auto-import convention (C#’s `GlobalUsings.cs` pattern) because it breaks file-level
+readability — you can’t understand a file by reading only that file.
 
 ### Selective Imports
 
 ```neohaskell
-import Data.Map { Map, fromList, toList }
-import Data.Maybe { Maybe(..) }
-import Html { div, text, Html }
+open import Data.Map { Map, fromList, toList }   // only these names unqualified
+open import Data.Maybe { Maybe(..) }             // type + all constructors
 ```
 
-Braces enclose the specific names to import. Commas separate items (trailing comma allowed).
-Consistent with NeoHaskell's "braces everywhere" principle and familiar to TypeScript developers.
+Braces enclose the specific names to import unqualified. Commas separate items
+(trailing comma allowed). Selective imports combine with `open import` — without
+`open`, imports are qualified-by-default and selective syntax is not needed.
 
 **Importing type constructors:**
 
@@ -1841,28 +1884,24 @@ uses the qualified alias for the function.
 ### Re-exports
 
 The `export import` modifier re-exports names from another module through the current module.
-This enables facade modules that present a clean public API.
+Use `{ }` for selective re-exports, matching the import syntax:
 
 ```neohaskell
 module Collections
 
--- Re-export everything from submodules
+// Re-export everything from submodules
 export import Collections.Map
 export import Collections.Set
 
--- Re-export specific items
+// Re-export specific items (selective)
 export import Collections.Internal { fromList, toList }
-
--- Re-export with alias
-export import Collections.Map as Map
+export import Collections.Map { Map(..) }
 ```
 
-Consumers can then write `import Collections` to get everything, or
-`import Collections { Map }` for specific items.
+Consumers can then `import Collections` to get all re-exported names (qualified as `Collections`).
 
-**Note:** Full export control (which names a module exposes by default) is
-designed in Feature #13 (Visibility). `export import` covers the re-export case only.
-
+**Note:** Full export control (which names a module exposes) is designed in
+Feature #13 (Visibility): `export` keyword per declaration, private by default.
 ### Prelude
 
 NeoHaskell has an implicit prelude import. Common types and functions are available
@@ -1908,23 +1947,20 @@ fun findUser(id: UserId) : Task<Maybe<User>> {
 
 ### Transpilation Rules
 
-| NeoHaskell                          | Haskell Output                                         |
-| ----------------------------------- | ------------------------------------------------------ |
-| `import Data.Map`                   | `import Data.Map`                                      |
-| `import Data.Map { Map, fromList }` | `import Data.Map (Map, fromList)`                      |
-| `import Data.Map as Map`            | `import qualified Data.Map as Map`                     |
-| `import Data.Map { Map } as Map`    | `import Data.Map (Map)`                                |
-|                                     | `import qualified Data.Map as Map`                     |
-| `import Data.Maybe { Maybe(..) }`   | `import Data.Maybe (Maybe(..))`                        |
-| `import Data.Maybe { Maybe(Just) }` | `import Data.Maybe (Maybe(Just))`                      |
-| `export import Foo`                 | Adds `module Foo` to module export list                |
-| `export import Foo { bar }`         | Adds `bar` to module export list + `import Foo (bar)`  |
-| `module Data.Map`                   | `module Data.Map where` (or with export list from #13) |
+| NeoHaskell                                     | Haskell Output                                           |
+| ---------------------------------------------- | -------------------------------------------------------- |
+| `import Data.Map`                              | `import qualified Data.Map as Map`                       |
+| `import Data.Map as M`                         | `import qualified Data.Map as M`                         |
+| `open import Test`                             | `import Test`                                            |
+| `open import Data.Map { Map, fromList }`       | `import Data.Map (Map, fromList)`                        |
+| `open import Data.Maybe { Maybe(..) }`         | `import Data.Maybe (Maybe(..))`                          |
+| `export import Foo`                            | Adds `module Foo` to module export list                  |
+| `export import Foo { bar, Baz(..) }`           | Adds `bar`, `Baz(..)` to export list + `import Foo ...`  |
+| `module Data.Map`                              | `module Data.Map where` (or with export list from #13)   |
 
-**Combined import transpilation:** `import Data.Map { Map } as Map` generates
-two Haskell import lines — one for the unqualified selective import and one for
-the qualified alias. This is the standard Haskell idiom for "type unqualified,
-functions qualified."
+**Qualified-by-default transpilation:** `import Data.Map` generates
+`import qualified Data.Map as Map` — the last segment becomes the qualifier.
+`open import` generates a standard unqualified Haskell import.
 
 ### Error Messages
 
@@ -1974,7 +2010,7 @@ These are designed in later features or explicitly excluded:
 - Wildcard selective imports (`import Foo { * }`) — `import Foo` already imports everything
 - Relative imports (`import ../Foo`) — all paths are absolute from project root
 - String-based paths (`import Foo from "package"`) — dot-paths are identifiers, not strings
-- Full export control (which names a module exposes) → Feature #13 (Visibility)
+- Full export control (which names a module exposes) → Feature #13 (Visibility) — `export` keyword
 - Package manager / dependency resolution → out of scope
 - Circular import resolution → handled by Haskell backend
 - Conditional imports / platform-specific imports → not planned
@@ -2020,20 +2056,282 @@ configuration. Dot-paths are unambiguous in a module=file system. (8/8 unanimous
 **Why `export import` for re-exports?** Re-exports should be syntactically loud, not
 silent (Nystrom). `export import` reads naturally as "export this import" and mirrors
 TypeScript's `export { } from` pattern conceptually. It composes with the existing
-import syntax — anything you can `import`, you can `export import`. Full export
-control is deferred to Feature #13. (8/8 consensus)
+import syntax — anything you can `import`, you can `export import`. Per-declaration
+export control is designed in Feature #13 (Visibility). (8/8 consensus)
 
 ---
 
-## 7. Comments ❌
+## 7. Comments ✅
 
-_To be designed._
+Design lead decision (Mar 2025).
 
+### Summary
+
+| Decision             | Choice                        | Notes                                    |
+| -------------------- | ----------------------------- | ---------------------------------------- |
+| Line comments        | `//`                          | Universal (C, Java, JS, Kotlin, Rust)    |
+| Block comments       | `/* */`                       | Overrides previous skip — see rationale  |
+| Doc comments         | `/** */`                      | JavaDoc/KDoc/TSDoc convention            |
+| Nesting block comments | Yes                         | `/* outer /* inner */ outer */` is valid  |
+
+### Line Comments
+
+```neohaskell
+// This is a line comment
+let x = 42 // inline comment
+```
+
+Single-line comments start with `//` and extend to the end of the line.
+This is the universal convention across C, C++, Java, JavaScript, TypeScript,
+Kotlin, Rust, Go, Swift, and C#. Zero strangeness budget cost.
+
+### Block Comments
+
+```neohaskell
+/* This is a block comment */
+
+/*
+  This is a multi-line
+  block comment
+*/
+
+/* Block comments /* can be nested */ safely */
+```
+
+Block comments use `/* */` delimiters. They **nest correctly** — an inner `/* */`
+does not prematurely close the outer block. This enables commenting out code that
+already contains block comments.
+
+**Previous council decision overridden:** The earlier council (Feb 2025) recommended
+skipping block comments because they "destroy line-by-line lexing." This is overridden
+because: (1) the lexer can track nesting depth with a simple counter, (2) every language
+in the target audience (Java, C#, JS, Kotlin) has block comments, and (3) commenting out
+a region of code is a fundamental workflow that `//` alone handles poorly.
+
+### Doc Comments
+
+```neohaskell
+/**
+ * Calculates the distance between two points.
+ *
+ * Returns the Euclidean distance as a Float.
+ */
+fun distance(x1: Float, y1: Float, x2: Float, y2: Float) : Float {
+    let dx = x2 - x1
+    let dy = y2 - y1
+    sqrt(dx * dx + dy * dy)
+}
+
+/** A person with a name and age. */
+record Person {
+  name: Text,
+  age: Int,
+}
+```
+
+Doc comments use `/** */` and attach to the declaration immediately following them.
+They are extracted by documentation tooling and displayed in IDE hover information.
+
+**Convention:** Use `/** */` for all public API documentation. Use `//` for
+implementation notes. Use `/* */` for temporarily disabling code.
+
+### Transpilation Rules
+
+| NeoHaskell           | Haskell Output              |
+| -------------------- | --------------------------- |
+| `// comment`         | `-- comment`                |
+| `/* comment */`      | `{- comment -}`             |
+| `/** doc comment */` | Haddock `-- | doc comment`  |
+
+Nested block comments `/* /* inner */ */` transpile to nested Haskell
+block comments `{- {- inner -} -}`, which GHC supports natively.
+
+### Design Rationale
+
+**Why `//` not `--`?** NeoHaskell's target audience (Java/C#/JS/Kotlin developers)
+writes `//` daily. Haskell's `--` is unfamiliar to them and spends strangeness budget
+on something with zero semantic value. The transpiler converts `//` to `--` transparently.
+
+**Why `/* */` not `{- -}`?** Same audience argument. `{- -}` is Haskell-specific syntax
+that no one in the target audience has seen. `/* */` is universal.
+
+**Why `/** */` for doc comments?** JavaDoc (`/** */`), KDoc (`/** */`), TSDoc (`/** */`),
+and JSDoc (`/** */`) all use this convention. The target audience already associates
+`/** */` with "this is API documentation." Haskell's Haddock uses `-- |` which is
+unfamiliar. The transpiler converts to Haddock format.
+
+**Why allow nested block comments?** Haskell supports nested `{- -}`, and it's
+genuinely useful — you can comment out a region that already contains block comments
+without breaking the lexer. Most C-family languages don't support nesting, which is
+a known pain point. NeoHaskell gets this for free from the Haskell backend.
 ---
 
-## 8. String Interpolation ❌
+## 8. String Interpolation ✅
 
-_To be designed._
+Design lead decision with council input (3 experts, Mar 2025).
+
+### Summary
+
+| Decision                  | Choice                                              | Notes                                    |
+| ------------------------- | --------------------------------------------------- | ---------------------------------------- |
+| Interpolation             | Built-in, all strings                               | Czaplicki model — one syntax, one behavior |
+| Syntax                    | `${expr}` inside double-quoted strings               | TypeScript/Kotlin/C# convention          |
+| Escaping                  | `\${` for literal `${`                              | Standard escape                          |
+| Expression support        | Any expression inside `${}`                         | Including pipes, function calls          |
+| Quasiquoters              | Deferred (post-1.0)                                 | Reserved: `` tag`content` `` syntax      |
+
+### Basic Interpolation
+
+```neohaskell
+let name = "Alice"
+let age = 30
+let greeting = "Hello ${name}, you are ${age} years old"
+```
+
+All double-quoted strings support interpolation. There is no opt-in prefix,
+no special string type, no backticks needed. `"text"` is the only string syntax
+and it always supports `${}`.
+
+### Expression Interpolation
+
+```neohaskell
+// Simple variables
+"Hello ${name}"
+
+// Field access
+"User: ${user.name}, age: ${user.age}"
+
+// Function calls
+"Total: ${Money.format(price)}"
+
+// Pipe expressions
+"Result: ${items |> Array.length |> show}"
+
+// Arithmetic
+"Next year you'll be ${age + 1}"
+
+// Method chains
+"Name: ${name |> Text.toUpper}"
+```
+
+Any valid NeoHaskell expression can appear inside `${}`. The expression
+must evaluate to a type that implements `Show` (auto-derived for all types).
+
+### Escaping
+
+```neohaskell
+// Literal ${
+"Price: \${amount}"  // Output: Price: ${amount}
+
+// Literal backslash before ${
+"Path: \\${dir}"     // Output: Path: \<value of dir>
+```
+
+Use `\${` to produce a literal `${` in the output.
+
+### Multi-line Strings
+
+```neohaskell
+let message = "
+  Hello ${name},
+
+  Your order #${order.id} has been shipped.
+  Expected delivery: ${order.deliveryDate |> Date.format}
+
+  Thanks,
+  The Team
+"
+```
+
+Interpolation works in multi-line strings (if supported). The `${}` syntax
+is consistent regardless of string length or line breaks.
+
+### Plain Strings (No Interpolation Needed)
+
+```neohaskell
+// Strings without ${} are just plain text — no performance cost
+let label = "Submit"
+let path = "/api/v1/users"
+```
+
+Strings that contain no `${}` expressions are plain `Text` values with
+no interpolation overhead. The compiler can optimize them as string literals.
+
+### Transpilation Rules
+
+| NeoHaskell                              | Haskell Output                                    |
+| --------------------------------------- | ------------------------------------------------- |
+| `"plain text"`                          | `"plain text"`                                    |
+| `"Hello ${name}"`                       | `"Hello " <> show name`                           |
+| `"${a} + ${b} = ${a + b}"`              | `show a <> " + " <> show b <> " = " <> show (a + b)` |
+| `"\${escaped}"`                         | `"${escaped}"`                                    |
+
+**Note:** The transpiler determines whether to use `show` based on the type of the
+expression. If the expression is already `Text`, no `show` call is emitted. For other
+types, `show` is used (which maps to the auto-derived `Show` instance).
+
+### Error Messages
+
+**Error: unclosed interpolation:**
+
+```
+error: unclosed string interpolation
+  --> src/Main.nh:5:20
+  |
+5 |     let msg = "Hello ${name"
+  |                          ^ expected `}` to close interpolation
+  |
+  = hint: add `}` after the expression: "Hello ${name}"
+```
+
+**Error: expression type has no Show instance:**
+
+```
+error: cannot interpolate value of type `Connection`
+  --> src/Main.nh:5:20
+  |
+5 |     let msg = "Connected to ${conn}"
+  |                              ^^^^ type `Connection` cannot be shown
+  |
+  = hint: implement `Show` for `Connection`, or use a field: "Connected to ${conn.host}"
+```
+
+### Quasiquoters (Deferred — Post-1.0)
+
+The syntax `` tag`content` `` is **reserved** for future quasiquoter support:
+
+```neohaskell
+// NOT YET AVAILABLE — reserved for future
+// let query = sql`SELECT * FROM users WHERE id = ${userId}`
+// let markup = html`<div class=${cls}>${content}</div>`
+```
+
+When implemented, this will desugar to Haskell's `[tag|content|]` quasiquoter
+syntax. This enables library-defined DSLs (SQL, HTML, regex, etc.) without
+language changes. The `${}` interpolation delimiter inside quasiquoters will
+map to `#{}` in the Haskell output.
+
+For now, use regular string interpolation or library functions for SQL, HTML, etc.
+
+### Design Rationale
+
+**Why built-in interpolation, not opt-in (`f"..."` or backticks)?** The council
+evaluated three models: (A) tagged template literals requiring `f` prefix,
+(B) untagged backticks with optional tags, (C) built-in interpolation in all strings.
+Model C won because it has the simplest mental model — one string syntax, one behavior.
+Kotlin, Dart, and C# all chose built-in interpolation and it's proven at scale.
+The `f` prefix (Python) or `$` prefix (C#) adds a decision point that beginners
+stumble over. "Does this string interpolate?" should never be a question.
+
+**Why `${}` not `{}`?** Bare braces conflict with NeoHaskell's record/block syntax.
+`${}` is unambiguous, familiar from TypeScript/JavaScript, and visually distinct.
+Kotlin uses `${}` for expressions and `$name` for simple variables; NeoHaskell
+uses `${}` for everything (simpler — one syntax, not two).
+
+**Why defer quasiquoters?** The council flagged extensibility (custom tags) as a
+potential fragmentation risk (Czaplicki) and "macros in disguise" concern. String
+interpolation covers 95% of use cases. Quasiquoters are reserved syntax for future
+design when real usage patterns emerge.
 
 ---
 
@@ -2113,7 +2411,7 @@ These are designed in later features:
 
 - Opaque wrappers → Feature #10 (Brands)
 - Type constraints → Feature #12 (Traits & Impl)
-- Associated types → Not planned
+- Associated types → Feature #12 (Traits & Impl, advanced)
 - Phantom types → Not planned
 
 ### Design Rationale
@@ -2240,32 +2538,32 @@ fun unwrapId<a>(id: Id<a>) : a = id.value
 in `match` expressions or when multiple brands need simultaneous unwrapping in a complex
 pattern.
 
-### Deriving
+### Deriving (via Decorators — see Feature #16)
 
 `Show` and `Eq` are **auto-derived** for all brands. Additional derivations use
-explicit `deriving`, which **delegates to the wrapped type's implementation**:
+`@derive` decorators, which **delegate to the wrapped type's implementation**:
 
 ```neohaskell
--- Show and Eq are automatic — no annotation needed
+// Show and Eq are automatic — no annotation needed
 brand Dollars(Float)
 
--- Delegate Num and Ord to Float's implementations
-brand Dollars(Float)
-  deriving Num, Ord
+// Delegate Num and Ord to Float's implementations
+@derive(Num, Ord)
+  brand Dollars(Float)
 
--- With Num derived, arithmetic just works:
--- Dollars(1.50) + Dollars(2.50)  →  Dollars(4.00)
+// With Num derived, arithmetic just works:
+// Dollars(1.50) + Dollars(2.50)  →  Dollars(4.00)
 
--- Delegate Ord to Text's Ord
-brand Name(Text)
-  deriving Ord
+// Delegate Ord to Text's Ord
+@derive(Ord)
+  brand Name(Text)
 
--- Multiple derivations
-brand Score(Int)
-  deriving Num, Ord, Bounded
+// Multiple derivations
+@derive(Num, Ord, Bounded)
+  brand Score(Int)
 ```
 
-The `deriving` clause on brands differs from enums: it **delegates** to the
+The `@derive` on brands differs from enums: it **delegates** to the
 wrapped type's trait implementation rather than structurally deriving. This maps directly
 to Haskell's `GeneralizedNewtypeDeriving` extension.
 
@@ -2277,7 +2575,7 @@ to Haskell's `GeneralizedNewtypeDeriving` extension.
 |                                          | `  deriving (Show, Eq)`                       |
 | `brand Id<a>(a)`                         | `newtype Id a = Id { value :: a }`            |
 |                                          | `  deriving (Show, Eq)`                       |
-| `brand Dollars(Float) deriving Num, Ord` | `{-# LANGUAGE GeneralizedNewtypeDeriving #-}` |
+| `@derive(Num, Ord) brand Dollars(Float)` | `{-# LANGUAGE GeneralizedNewtypeDeriving #-}` |
 |                                          | `newtype Dollars = Dollars { value :: Float }` |
 |                                          | `  deriving (Show, Eq, Num, Ord)`             |
 | `Dollars(9.99)`                          | `Dollars 9.99`                                |
@@ -2325,12 +2623,12 @@ The transpiler automatically:
 
 These are designed in later features:
 
-- Full destructuring bindings → Feature #11
+- Destructuring bindings → Feature #11 (tuples/records only; brands use `.value`)
 - Trait implementations for brands → Feature #12
 - Deriving mechanism internals → Feature #12
 - `coerce` / safe coercion between brand and wrapped type → Not planned (post-1.0)
 - Brand deriving for multi-parameter typeclasses → Not planned
-- Smart constructors (validation on construction) → Via module visibility (Feature #13)
+- Smart constructors (validation on construction) → Private brand + `export fun` smart constructor (Feature #13)
 - Named-field brands → Use `record` instead
 
 ### Error Messages
@@ -2396,12 +2694,12 @@ arithmetic types, pattern matching for `match` contexts.
 **Why auto-derive Show/Eq?** Locked convention — all NeoHaskell types auto-derive Show and Eq.
 (R1: 8/8 unanimous, non-negotiable)
 
-**Why `deriving` delegates to wrapped type?** This is the killer feature of brands. Without
+**Why `@derive` delegates to wrapped type on brands?** This is the killer feature of brands. Without
 delegation, `brand Dollars(Float)` can't participate in arithmetic without manual `impl`
 blocks — making brands burdensome for numeric wrappers. The transpiler emits
 `GeneralizedNewtypeDeriving` when needed. Syme: pragmatic, avoids over-abstraction.
 Czaplicki: conditional acceptance (would prefer no typeclasses at all, but accepts explicit
-`deriving` as the least-bad option). (R1: 7/8)
+`@derive` as the least-bad option). (R1: 7/8)
 
 **Why zero-cost guarantee?** Without zero-cost, `brand` is just `alias` with a different
 keyword. The guarantee is the defining semantic difference — it's why the feature
@@ -2410,34 +2708,1905 @@ exists. Haskell's `newtype` is erased at compile time; the transpiler preserves 
 
 ---
 
-## 11. Destructuring ❌
+## 11. Destructuring ✅
 
-_To be designed._
+Designed via DX Council review (3 experts: Klabnik, Nystrom, Czaplicki — Mar 2025).
+
+### Summary
+
+| Decision                      | Choice                                                    | Council Support                    |
+| ----------------------------- | --------------------------------------------------------- | ---------------------------------- |
+| `let` destructuring           | Irrefutable patterns only (tuples, records, wildcards)     | 3/3 — unanimous                  |
+| `let!` destructuring          | Same rules as `let` — irrefutable only                    | 3/3 — unanimous                  |
+| Refutable in `let`            | Forbidden — use `match` instead                           | 3/3 — unanimous                  |
+| Function param destructuring  | Not allowed — keep locked rule from Feature #1            | 2/3 (Klabnik, Nystrom)            |
+| Constructor patterns in `let` | Forbidden (incl. brands) — can't verify irrefutability    | Implementation constraint          |
+| Nested destructuring          | Allowed if all levels are irrefutable                      | 3/3 — unanimous                  |
+| Enforcement strategy          | Parser restriction + GHC `-Werror=incomplete-uni-patterns` | N/A (implementation decision)      |
+
+### Core Principle: Destructuring Always Succeeds
+
+`let` destructuring in NeoHaskell can **never fail at runtime**. If a pattern can
+fail to match, you must use `match` instead. This is enforced by the parser — only
+patterns with statically guaranteed shapes are allowed in `let` and `let!` bindings.
+
+**The rule:** If you can see from the syntax alone that the pattern always matches,
+it's allowed in `let`. If it requires type information to know, use `match`.
+
+### Allowed Patterns in `let` / `let!`
+
+These patterns are **always irrefutable** and can be verified syntactically:
+
+| Pattern Kind     | Example                        | Why Irrefutable                              |
+| ---------------- | ------------------------------ | -------------------------------------------- |
+| Variable         | `let x = expr`                 | Always matches (existing behavior)           |
+| Wildcard         | `let _ = expr`                 | Always matches                               |
+| Tuple            | `let #(x, y) = expr`          | Tuples have exactly one shape                |
+| Record (fields)  | `let { name, age } = person`   | Records have exactly one shape               |
+| Nested (irref.)  | `let #({ name }, y) = expr`   | All levels are irrefutable                   |
+
+### Forbidden Patterns in `let` / `let!`
+
+These patterns are **potentially refutable** and require `match`:
+
+| Pattern Kind        | Example                         | Why Forbidden                                  |
+| ------------------- | ------------------------------- | ---------------------------------------------- |
+| Constructor         | `let Just(x) = expr`           | `Maybe` has two constructors; could be `Nothing`|
+| Brand unwrap        | `let Dollars(x) = expr`        | Syntactically identical to constructor pattern  |
+| Literal             | `let 0 = expr`                 | Only matches one value                         |
+| Enum variant        | `let Active = expr`            | Enum may have other variants                   |
+
+**Why are brands forbidden?** Brands are single-constructor newtypes and are
+technically irrefutable. But the transpiler has no type information — it cannot
+distinguish `Dollars(x)` (brand, safe) from `Just(x)` (enum, unsafe). Since the
+parser can't tell the difference, all constructor patterns are forbidden in `let`.
+Use `.value` for brand access instead: `let amount = price.value`.
+
+### Tuple Destructuring
+
+```neohaskell
+// Two-element tuple
+let #(x, y) = getCoordinates()
+
+// Three-element tuple
+let #(r, g, b) = parseColor(hex)
+
+// Nested tuple
+let #(#(x1, y1), #(x2, y2)) = getBoundingBox()
+
+// Wildcard for unused elements
+let #(_, y) = getCoordinates()
+```
+
+Tuple patterns always match because a tuple `#(A, B)` has exactly one shape —
+there's no way for a 2-tuple to fail matching a 2-tuple pattern.
+
+### Record Destructuring
+
+```neohaskell
+// Field shorthand (binds name, age as local variables)
+let { name, age } = person
+
+// With renaming
+let { name: personName, age: personAge } = person
+
+// Partial — extract only some fields
+let { name } = person  // ignores age and other fields
+
+// From function return
+let { id, status } = getOrder(orderId)
+```
+
+Record patterns always match because a record type has exactly one constructor.
+Partial destructuring (extracting fewer fields than the record has) is allowed —
+unmentioned fields are simply ignored.
+
+### Effectful Destructuring (`let!`)
+
+```neohaskell
+// Effectful tuple destructuring
+fun processRequest(url: Text) : Task<Response> {
+  let! #(status, body) = httpGet(url)
+  let! #(headers, content) = parseResponse(body)
+  return Task.yield(Response { status, headers, content })
+}
+
+// Effectful record destructuring
+fun loadUser(userId: Uuid) : Task<UserProfile> {
+  let! { name, email, role } = fetchUser(userId)
+  return Task.yield(UserProfile { name, email, role })
+}
+
+// Mixed: some let, some let!
+fun enrichOrder(orderId: Uuid) : Task<EnrichedOrder> {
+  let! { items, total } = fetchOrder(orderId)
+  let #(discounted, savings) = applyDiscount(total, items)
+  return Task.yield(EnrichedOrder { items, discounted, savings })
+}
+```
+
+`let!` follows the same irrefutability rules as `let`. The `!` marks the
+binding as effectful (monadic bind), but the pattern constraints are identical.
+
+### Nested Destructuring
+
+```neohaskell
+// Tuple containing a record
+let #({ name, age }, score) = getPlayerData()
+
+// Record containing a tuple
+let { position: #(x, y), health } = getEntity(entityId)
+
+// Deep nesting
+let #({ coords: #(x, y) }, { name }) = getAnnotatedPoint()
+```
+
+Nesting is allowed as long as **every level** is irrefutable. Since tuples
+and records are always irrefutable, any nesting of tuples and records is safe.
+
+```neohaskell
+// FORBIDDEN — constructor pattern at nested level
+let #(Just(x), y) = expr  // ❌ Just is refutable
+let { result: Ok(v) } = expr  // ❌ Ok is refutable
+```
+
+### What to Use Instead of `let` for Refutable Patterns
+
+When you need to destructure a `Maybe`, `Result`, or enum variant, use `match`:
+
+```neohaskell
+// Instead of: let Just(x) = maybeValue  ❌
+// Write:
+match maybeValue {
+  Just(x) => doSomething(x),
+  Nothing => handleMissing(),
+}
+
+// Instead of: let Ok(value) = result  ❌
+// Write:
+match result {
+  Ok(value) => process(value),
+  Err(error) => handleError(error),
+}
+
+// Instead of: let Dollars(amount) = price  ❌
+// Write:
+let amount = price.value  // Use .value accessor for brands
+```
+
+### Grammar
+
+```
+let_destruct  := 'let' irrefutable_pat '=' expr
+let_destruct! := 'let!' irrefutable_pat '=' expr
+
+irrefutable_pat := LOWER_IDENT                          // variable
+                 | '_'                                   // wildcard
+                 | '#(' irrefutable_pat (',' irrefutable_pat)* ')'  // tuple
+                 | '{' field_pat (',' field_pat)* '}'     // record
+
+field_pat     := LOWER_IDENT                             // shorthand: { name }
+              | LOWER_IDENT ':' irrefutable_pat           // rename: { name: n }
+```
+
+The parser **rejects** any pattern outside this grammar in `let`/`let!` position.
+Constructor patterns (`UPPER_IDENT(...)`) are not in the grammar and produce a
+parse error with a helpful message.
+
+### Transpilation Rules
+
+| NeoHaskell                                | Haskell Output                                         |
+| ----------------------------------------- | ------------------------------------------------------ |
+| `let #(x, y) = expr`                      | `let (x, y) = expr`                                   |
+| `let #(x, _, z) = expr`                   | `let (x, _, z) = expr`                                |
+| `let { name, age } = person`              | `let name = name person; age = age person`             |
+| `let { name: n } = person`                | `let n = name person`                                  |
+| `let #({ name }, y) = expr`               | `let (tmp, y) = expr; name = name tmp`                 |
+| `let! #(x, y) = expr`                     | `(x, y) <- expr`                                      |
+| `let! { name, age } = expr`               | `tmp <- expr; let name = name tmp; age = age tmp`      |
+
+**Record destructuring note:** Record field shorthand `{ name }` transpiles to
+the Haskell record accessor function `name record`, not to a pattern match.
+This is because Haskell record patterns require the constructor name, which the
+NeoHaskell transpiler may not have in scope.
+
+**GHC safety net:** The transpiler emits `-Werror=incomplete-uni-patterns` in
+generated code. Even if a refutable pattern somehow reaches GHC (e.g., through
+a transpiler bug), GHC will reject it at compile time.
+
+### Error Messages
+
+**Error: constructor pattern in `let`:**
+
+```
+error: refutable pattern in `let` binding
+  --> src/App.nh:5:5
+  |
+5 |   let Just(x) = maybeValue
+  |       ^^^^ constructor patterns cannot appear in `let`
+  |
+  = hint: `Just(x)` might not match — the value could be `Nothing`
+  = hint: use `match` to handle all cases:
+  |
+  |   match maybeValue {
+  |     Just(x) => { ... },
+  |     Nothing => { ... },
+  |   }
+```
+
+**Error: brand unwrap in `let`:**
+
+```
+error: constructor pattern in `let` binding
+  --> src/App.nh:5:5
+  |
+5 |   let Dollars(amount) = price
+  |       ^^^^^^^ constructor patterns cannot appear in `let`
+  |
+  = hint: for brands, use `.value` to access the wrapped value:
+  |
+  |   let amount = price.value
+```
+
+**Error: refutable pattern in `let!`:**
+
+```
+error: refutable pattern in `let!` binding
+  --> src/App.nh:8:5
+  |
+8 |   let! Ok(data) = fetchData(url)
+  |        ^^ constructor patterns cannot appear in `let!`
+  |
+  = hint: bind the full result, then `match` it:
+  |
+  |   let! result = fetchData(url)
+  |   match result {
+  |     Ok(data) => { ... },
+  |     Err(e)   => { ... },
+  |   }
+```
+
+### Interaction with Other Features
+
+| Feature                    | Interaction                                                            |
+| -------------------------- | ---------------------------------------------------------------------- |
+| Pattern Matching (#3)      | `match` handles all patterns; `let` handles irrefutable subset         |
+| Functions (#1)             | No destructuring in function parameters (locked rule)                  |
+| Brands (#10)               | Use `.value` for access, not `let` destructuring                       |
+| Monadic Bind (#1)          | `let!` supports same patterns as `let`; effectful + destructure        |
+| Decorators (#16)           | No interaction                                                         |
+| Traits (#12)               | No interaction                                                         |
+
+### Enforcement Strategy
+
+Irrefutability is enforced at **two levels**:
+
+1. **Parser (primary):** The `let`/`let!` grammar only accepts variables, wildcards,
+   tuple patterns, and record field patterns. Constructor patterns are a parse error.
+   This catches 100% of refutable patterns at the NeoHaskell level.
+
+2. **GHC (safety net):** Generated Haskell files include `-Werror=incomplete-uni-patterns`.
+   If a refutable pattern somehow reaches GHC (transpiler bug), GHC rejects it.
+   This is defense-in-depth, not the primary mechanism.
+
+This two-level approach works because the transpiler is text-to-text with no type
+information. The parser handles the syntactic restriction; GHC handles the semantic
+verification.
+
+### Design Rationale
+
+**Why irrefutable only?** A `let` binding is a declaration, not a conditional.
+If it can fail, you've hidden a branch point in what looks like a simple assignment.
+This violates NeoHaskell's safety guarantee: no runtime pattern match failures.
+Rust, Elm, and Dart 3 all enforce this same restriction. (3/3 unanimous)
+
+**Why forbid brands in `let`?** Brands (`brand Dollars(Float)`) are technically
+irrefutable (single-constructor newtypes). But the transpiler has no type
+information — it cannot distinguish `Dollars(x)` (brand, safe) from `Just(x)`
+(enum, unsafe) at parse time. Rather than adding type resolution to the parser,
+we use `.value` for brand access. This is simpler and more consistent.
+
+**Why no function parameter destructuring?** The locked rule from Feature #1
+says "no pattern matching in function arguments." This keeps function signatures
+uniform and scannable. Destructure in the body with `let` instead:
+
+```neohaskell
+// Instead of:  fun greet({ name }: Person) : Text  ❌  (not allowed)
+// Write:
+fun greet(person: Person) : Text {
+  let { name } = person
+  "Hello ${name}"
+}
+```
+
+**Why generate record accessors, not patterns?** Haskell record patterns require
+the constructor name: `let (Person name _) = person`. The NeoHaskell transpiler
+may not know the constructor name (only the field names), so it generates accessor
+calls (`name person`) instead. This is semantically equivalent and doesn't require
+type information.
+
+**Why `-Werror=incomplete-uni-patterns` as safety net?** Defense-in-depth. The
+parser is the primary gate, but GHC's flag catches edge cases that the parser
+might miss (e.g., future syntax extensions). `-Wincomplete-uni-patterns` is part
+of `-Wall` since GHC 8.0 and catches exactly this class of error.
 
 ---
 
-## 12. Traits & Impl ❌
+## 12. Traits & Impl ✅
 
-_To be designed._
+Designed via DX Council review (3 experts: Klabnik, Nystrom, Czaplicki — Mar 2025).
+
+### Summary
+
+| Decision                  | Choice                                                 | Council Support                  |
+| ------------------------- | ------------------------------------------------------ | -------------------------------- |
+| Use `trait`/`impl`        | Yes — Rust naming, maps to Java `interface`/`implements` | 3/3 — unanimous                |
+| Trait definition          | `trait Name<t> { fun method(...) : Type }` with braces   | 3/3 — unanimous                |
+| Empty impl (marker)       | `impl Trait for Type` — no braces, one-liner             | 3/3 — unanimous                |
+| Impl with methods         | `impl Trait for Type { fun method(...) = ... }`          | 3/3 — unanimous                |
+| Superclass constraints    | `trait Ord<t> where t: Eq { ... }`                       | 3/3 — unanimous                |
+| Multi-parameter traits    | `trait QueryOf<entity, query> { ... }`                   | 3/3 — unanimous                |
+| Default method impls      | `fun method() : Type = defaultExpr` inline in trait      | 3/3 — unanimous                |
+| Associated types          | `type IdType = Uuid` inside trait (advanced)             | 3/3 — keep, flag as advanced   |
+| Constrained impl          | `impl<a> Trait for Type<a> where a: Constraint`          | 3/3 — unanimous                |
+| Hide from app developers  | Trait *definition* is a library-author activity           | 3/3 — unanimous                |
+
+### Core Principle: Interfaces You Already Know
+
+NeoHaskell traits are Haskell typeclasses with familiar syntax. If you've used
+Java interfaces, C# interfaces, or Rust traits — you already understand 90% of this.
+
+**For application developers:** You mostly *use* traits (via `where` constraints in
+functions) and *implement* them (via `impl` blocks). You rarely *define* new traits.
+Defining traits is a library-author activity.
+
+**For library authors:** The full trait system is available, including associated types,
+superclass constraints, multi-parameter traits, and default implementations.
+
+### Trait Definitions
+
+#### Simple Trait (Most Common)
+
+```neohaskell
+trait ToText<t> {
+  fun toText(value: t) : Text
+}
+
+trait Default<t> {
+  fun default() : t
+}
+```
+
+A trait declares a set of methods that types can implement. The generic
+parameter `<t>` is the type that will implement the trait.
+
+#### Trait with Default Implementations
+
+```neohaskell
+trait Documented<t> {
+  fun name() : Text = TypeName.reflect:<t>()
+  fun description() : Text = ""
+  fun examples() : Array<t> = Array.empty()
+  fun deprecated() : Bool = false
+}
+```
+
+Methods with `= expr` provide a default implementation. Implementors can
+override any or all defaults. If all methods have defaults, `impl` blocks
+can be empty (one-liner).
+
+#### Trait with Superclass Constraints
+
+```neohaskell
+trait Ord<t> where t: Eq {
+  fun compare(a: t, b: t) : Ordering
+}
+```
+
+The `where` clause declares that any type implementing `Ord` must also
+implement `Eq`. This is consistent with the `where` clause syntax used
+in function signatures.
+
+#### Multi-Parameter Trait
+
+```neohaskell
+trait QueryOf<entity, query> where entity: Entity, query: Query {
+  fun queryId(e: entity) : Uuid
+  fun combine(e: entity, existing: Maybe<query>) : QueryAction<query>
+}
+```
+
+Multiple type parameters are comma-separated inside `<>`. Constraints
+on each parameter use the same `where` clause.
+
+#### Trait with Associated Type (Advanced)
+
+```neohaskell
+trait Entity<entity> {
+  type IdType = Uuid  // associated type with default
+
+  fun initialState() : entity
+  fun update(event: EventOf<entity>, state: entity) : entity
+}
+```
+
+Associated types declare a type that depends on the implementing type.
+Defaults are optional — `type IdType = Uuid` means implementations can
+omit `IdType` and get `Uuid`.
+
+**Note:** Associated types are an advanced feature for library authors.
+Application developers rarely need them.
+
+### Impl Blocks
+
+#### Empty Impl — Marker/Derived (80% of All Instances)
+
+```neohaskell
+impl Json.FromJSON for MyType
+impl Json.ToJSON for MyType
+impl Default for CartEntity
+```
+
+When a trait can be implemented automatically (e.g., via Generic-based
+derivation or because all methods have defaults), the `impl` is a single
+line with **no braces**. This is the most common pattern — roughly 80%
+of all trait implementations in a typical NeoHaskell application.
+
+#### Impl with Methods
+
+```neohaskell
+impl Entity for CartEntity {
+  type IdType = Uuid
+
+  fun initialState() : CartEntity = CartEntity {
+    items: [],
+    total: Dollars(0.0),
+  }
+
+  fun update(event: CartEvent, state: CartEntity) : CartEntity = case event {
+    ItemAdded(item) => state { items: state.items |> Array.push(item) },
+    ItemRemoved(itemId) => state {
+      items: state.items |> Array.takeIf(\i => i.id != itemId),
+    },
+  }
+}
+```
+
+When methods need custom logic, the `impl` block uses braces and contains
+`fun` declarations. Associated types are set with `type Name = ConcreteType`.
+
+#### Multi-Parameter Impl
+
+```neohaskell
+impl QueryOf<CartEntity, CartSummary> {
+  fun queryId(cart: CartEntity) : Uuid = cart.id
+
+  fun combine(cart: CartEntity, existing: Maybe<CartSummary>) : QueryAction<CartSummary> =
+    QueryAction.Update(CartSummary {
+      cartId: cart.id,
+      itemCount: cart.items |> Array.length,
+      total: cart.total,
+    })
+}
+```
+
+For multi-parameter traits, the `impl` specifies all concrete types.
+The `for` keyword is omitted — the types after the trait name are the parameters.
+
+#### Constrained Impl
+
+```neohaskell
+impl<a> Json.FromJSON for Array<a> where a: Json.FromJSON
+
+impl<a> Default for Array<a> where a: Default {
+  fun default() : Array<a> = Array.empty()
+}
+```
+
+When an implementation depends on a constraint on a type variable,
+declare the variable with `impl<a>` and constrain it with `where`.
+This reads as: "Array<a> implements FromJSON *if* a implements FromJSON."
+
+### Grammar
+
+```
+trait_def   := 'trait' UPPER_IDENT '<' type_params '>' where_clause? '{' trait_body '}'
+trait_body  := (fun_sig | assoc_type)*
+fun_sig     := 'fun' LOWER_IDENT '(' params ')' ':' type ('=' expr)?
+assoc_type  := 'type' UPPER_IDENT ('=' type)?
+
+impl_def    := 'impl' ('<' type_params '>')? qual_trait ('for' type)? impl_body?
+impl_body   := '{' (fun_def | assoc_type_set)* '}'
+assoc_type_set := 'type' UPPER_IDENT '=' type
+qual_trait  := (MODULE '.')? UPPER_IDENT ('<' type_args '>')?
+```
+
+The parser disambiguates `impl Trait for Type` (single-param) from
+`impl Trait<A, B>` (multi-param) by the presence of `for`.
+
+### Transpilation Rules
+
+| NeoHaskell                                                | Haskell Output                                            |
+| --------------------------------------------------------- | --------------------------------------------------------- |
+| `trait Show<t> { fun show(x: t) : Text }`                 | `class Show t where show :: t -> Text`                    |
+| `trait Ord<t> where t: Eq { ... }`                         | `class (Eq t) => Ord t where ...`                         |
+| `trait QueryOf<e, q> where e: Entity, q: Query { ... }`   | `class (Entity e, Query q) => QueryOf e q where ...`      |
+| `trait Entity<e> { type IdType = Uuid; ... }`             | `class Entity e where type IdType e :: Type; type IdType e = Uuid; ...` |
+| `fun method() : Type = expr` (in trait)                    | `method :: Type; method = expr` (default impl)            |
+| `impl Json.FromJSON for MyType`                            | `instance Json.FromJSON MyType`                           |
+| `impl Entity for CartEntity { type IdType = Uuid; ... }`  | `instance Entity CartEntity where type IdType CartEntity = Uuid; ...` |
+| `impl QueryOf<CartEntity, CartSummary> { ... }`           | `instance QueryOf CartEntity CartSummary where ...`       |
+| `impl<a> FromJSON for Array<a> where a: FromJSON`         | `instance (FromJSON a) => FromJSON (Array a)`             |
+
+**Pragmas emitted automatically:**
+
+| Feature Used                 | GHC Extension Emitted             |
+| ---------------------------- | --------------------------------- |
+| Associated type              | `TypeFamilies`                    |
+| Associated type default      | `DefaultSignatures`               |
+| Multi-parameter trait         | `MultiParamTypeClasses`           |
+| Constrained instance          | `FlexibleInstances`               |
+| Type variable in instance     | `FlexibleInstances`               |
+
+### Error Messages
+
+**Error: missing trait method:**
+
+```
+error: `impl Entity for CartEntity` is missing required method `initialState`
+  --> src/Cart.nh:10:1
+  |
+10 | impl Entity for CartEntity {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^ missing `initialState`
+  |
+  = hint: the `Entity` trait requires these methods:
+          - fun initialState() : CartEntity
+          - fun update(event: CartEvent, state: CartEntity) : CartEntity
+```
+
+**Error: type doesn't satisfy trait constraint:**
+
+```
+error: `MyType` does not implement `Eq`, required by `Ord`
+  --> src/Types.nh:5:1
+  |
+5 | impl Ord for MyType {
+  |      ^^^ `Ord` requires `Eq`
+  |
+  = hint: add `impl Eq for MyType` or use `@derive(Eq)` (note: Eq is auto-derived
+          for all types — check that MyType is defined in NeoHaskell, not imported
+          from raw Haskell)
+```
+
+**Error: constraint not satisfied in function call:**
+
+```
+error: `MyType` does not implement `Ord`
+  --> src/App.nh:12:5
+  |
+12 |   items |> Array.sort
+   |            ^^^^^^^^^^ `Array.sort` requires `t: Ord`
+  |
+  = hint: `sort` has signature: fun sort<t>(xs: Array<t>) : Array<t> where t: Ord
+  = hint: add `@derive(Ord)` to the definition of `MyType`
+  = note: full constraint chain: sort requires Ord, Ord requires Eq (auto-derived ✓)
+```
+
+The transpiler translates GHC's typeclass error messages into trait-language errors.
+Constraint chains are shown explicitly so developers can trace why a constraint is needed.
+
+### Interaction with Other Features
+
+| Feature                  | Interaction                                                          |
+| ------------------------ | -------------------------------------------------------------------- |
+| Functions (Feature #1)   | `where` clause syntax shared: `fun f<t>(...) where t: Trait`         |
+| Enums (Feature #2)       | Enums can `impl` traits; `@derive` for auto-derivation               |
+| Brands (Feature #10)     | Brands delegate trait impls via `@derive` (GeneralizedNewtypeDeriving)|
+| Decorators (Feature #16) | `@derive(Trait)` is the primary way to implement standard traits      |
+| Visibility (Feature #13) | `export trait` makes it public; `impl` is always public              |
+
+### What Traits Do NOT Include
+
+These are explicitly out of scope for NeoHaskell traits:
+
+- Functional dependencies → Use associated types instead
+- Overlapping instances → Causes confusion; use explicit dispatch
+- Orphan instances → Discouraged (same as Haskell; warning by default)
+- Constraint kinds → Not exposed in surface syntax
+- Type-level list parameters → Framework internals only, written in raw Haskell
+- GADT-style trait definitions → Not supported
+- Deriving via → Replaced by `@derive` on brands (Feature #16)
+
+### Design Rationale
+
+**Why `trait`/`impl` not `class`/`instance`?** The target audience (Java/C#/JS developers)
+associates `class` with OOP class definitions, not typeclasses. `trait` maps naturally to
+"interface with capabilities" (Rust, Scala). `impl` maps to "implements" (Java/C#). This
+costs near-zero strangeness budget — the audience already knows these concepts.
+
+**Why one-liner empty impls?** ~80% of all trait implementations in a typical NeoHaskell
+application are empty/marker instances (e.g., `impl Json.FromJSON for MyType`). Making the
+dominant case frictionless matters more than syntactic uniformity. Braces are only required
+when there's something inside them.
+
+**Why hide associated types from beginners?** Associated types are a powerful feature for
+library authors, but application developers rarely need them. The documentation and error
+messages treat them as advanced — you'll encounter them when reading library code, not when
+writing application code.
+
+**Why show the full constraint chain in errors?** Trait constraints propagate — if `Ord`
+requires `Eq`, and `sort` requires `Ord`, then a type must implement both to use `sort`.
+This invisible propagation is the #1 source of confusion for newcomers (Nystrom: "function
+coloring sneaks in through constraints"). Showing the full chain in error messages makes
+the implicit explicit.
+
+**Why restrict advanced features?** NeoHaskell's philosophy is "pit of success" — the
+obvious path should work for 90% of code. Functional dependencies, overlapping instances,
+and type-level lists are power-user features that create confusion for newcomers and are
+rarely needed in application code. Library authors who need them can drop to raw Haskell
+for those specific modules.
 
 ---
 
-## 13. Visibility ❌
+## 13. Visibility ✅
 
-_To be designed._
+Designed via DX Council review (3 experts: Klabnik, Nystrom, Czaplicki — Mar 2025).
+Council was split 3 ways; user chose the `export` keyword model.
+
+### Summary
+
+| Decision                    | Choice                                                     | Notes                               |
+| --------------------------- | ---------------------------------------------------------- | ----------------------------------- |
+| Default visibility          | Private — all declarations are module-private by default     | User decision (Klabnik/Czaplicki aligned) |
+| Mechanism                   | `export` keyword per declaration                            | User decision (unified with `export import`) |
+| Granularity                 | All-or-nothing per declaration (type + constructors + fields)| Simplicity over fine-grained control |
+| Opaque types                | Not supported — `export` exports everything                 | Use private type + public smart constructor |
+| `impl` visibility           | Always public (matches Haskell instance semantics)           | No `export` needed on `impl`        |
+| Internal modules            | Convention (`Foo.Internal`) — no language feature            | 3/3 unanimous                       |
+| `export import` (re-exports)| Already designed in Feature #6                              | Same `export` keyword, unified      |
+
+### Core Principle: Private by Default, Explicit Exports
+
+Every declaration in NeoHaskell is **module-private by default**. To make something
+visible to other modules, prefix it with the `export` keyword. This applies uniformly
+to functions, types, traits, brands, enums, and type aliases.
+
+The `export` keyword serves double duty:
+- `export fun`, `export record`, etc. — makes a declaration public
+- `export import` — re-exports from another module (Feature #6)
+
+This unification means there's **one keyword** to learn for all visibility control.
+
+### Exporting Functions
+
+```neohaskell
+// Public — visible to importers
+export fun createUser(name: Text, email: Text) : User {
+  User { name, email, id: Uuid.generate() }
+}
+
+// Private — only usable within this module
+fun validateEmail(email: Text) : Bool {
+  email |> Text.contains("@")
+}
+
+// Private helper used by the public function
+fun normalizeEmail(email: Text) : Text {
+  email |> Text.trim |> Text.toLower
+}
+```
+
+### Exporting Types
+
+#### Records
+
+```neohaskell
+// Public — type, constructor, and all field accessors are exported
+export record User {
+  name: Text,
+  email: Text,
+  id: Uuid,
+}
+
+// Private — internal implementation detail
+record InternalCache {
+  entries: Map<Text, CacheEntry>,
+  maxSize: Int,
+}
+```
+
+`export record` exports the type name, the constructor, and all field accessor
+functions. There is no way to export a record without its fields — `export` is
+all-or-nothing.
+
+#### Enums
+
+```neohaskell
+// Public — type and ALL constructors exported
+export enum Priority { Low Medium High }
+
+// Public — type and all variant constructors exported
+export enum Result<error, value> {
+  Ok(value)
+  Err(error)
+}
+
+// Private — internal state machine
+enum ParserState {
+  Ready
+  Parsing(Text)
+  Done(AST)
+}
+```
+
+`export enum` exports the type name and all constructors. Enums are useless
+without their constructors (you can't pattern match on them), so exporting
+an enum always exports everything.
+
+#### Brands
+
+```neohaskell
+// Public — type AND constructor exported
+export brand UserId(Uuid)
+export brand Dollars(Float)
+
+// Private brand — internal only
+brand CacheKey(Text)
+```
+
+`export brand` exports the type name and the constructor. This is necessary
+because `.value` access (e.g., `userId.value`) uses the Haskell record accessor,
+which requires the constructor to be in scope.
+
+**Encapsulation pattern:** If you want an opaque brand with validation, make the
+brand private and export a smart constructor:
+
+```neohaskell
+// Brand is private — can't be constructed directly from outside
+brand Email(Text)
+
+// Smart constructor is public — validates before constructing
+export fun makeEmail(raw: Text) : Result<ValidationError, Email> {
+  match Text.contains("@", raw) {
+    true => Result.ok(Email(raw)),
+    false => Result.err(InvalidEmail(raw)),
+  }
+}
+
+// Accessor is public — reading is fine
+export fun emailToText(email: Email) : Text = email.value
+```
+
+#### Type Aliases
+
+```neohaskell
+export type Url = Text
+export type UserId = Uuid
+type InternalId = Int  // private
+```
+
+### Exporting Traits
+
+```neohaskell
+// Public trait — other modules can implement it
+export trait Serializable<t> {
+  fun serialize(value: t) : Text
+  fun deserialize(raw: Text) : Result<ParseError, t>
+}
+
+// Private trait — internal protocol
+trait Cacheable<t> {
+  fun cacheKey(value: t) : Text
+  fun ttl(value: t) : Int
+}
+```
+
+### Impl Visibility
+
+```neohaskell
+// Impls are ALWAYS public — no `export` keyword needed (or allowed)
+impl Serializable for User {
+  fun serialize(user: User) : Text = Json.encode(user)
+  fun deserialize(raw: Text) : Result<ParseError, User> = Json.decode(raw)
+}
+
+impl Entity for CartEntity {
+  fun initialState() : CartEntity = CartEntity { items: [] }
+  fun update(event: CartEvent, state: CartEntity) : CartEntity = ...
+}
+```
+
+Trait implementations (`impl`) are always globally visible. This matches Haskell's
+instance semantics — instances are not scoped to modules. There is no `export impl`
+syntax; writing `export impl` is a parse error.
+
+### Complete Module Example
+
+```neohaskell
+// File: src/MyApp/Users.nh
+
+import MyApp.Database
+import MyApp.Validation
+
+// --- Public API ---
+
+export record User {
+  name: Text,
+  email: Text,
+  id: UserId,
+}
+
+export brand UserId(Uuid)
+
+export fun createUser(name: Text, email: Text) : Task<AppError, User> {
+  let! validEmail = Validation.email(email)
+  let! id = generateId()
+  return Task.yield(User { name, email: validEmail, id })
+}
+
+export fun findUser(id: UserId) : Task<AppError, Maybe<User>> {
+  Database.query("SELECT * FROM users WHERE id = ${id.value}")
+}
+
+// --- Private internals ---
+
+fun generateId() : Task<AppError, UserId> {
+  let! uuid = Uuid.generate()
+  return Task.yield(UserId(uuid))
+}
+
+fun hashPassword(password: Text) : Text {
+  Crypto.sha256(password)
+}
+
+record UserRow {
+  user_name: Text,
+  user_email: Text,
+  user_id: Text,
+}
+
+fun rowToUser(row: UserRow) : User {
+  User {
+    name: row.user_name,
+    email: row.user_email,
+    id: UserId(Uuid.fromText(row.user_id)),
+  }
+}
+```
+
+### Grammar
+
+```
+export_decl := 'export' declaration
+declaration := fun_decl | record_decl | enum_decl | brand_decl
+             | trait_decl | type_alias_decl | import_decl
+
+// 'export' can prefix any declaration keyword:
+//   export fun ...
+//   export record ...
+//   export enum ...
+//   export brand ...
+//   export trait ...
+//   export type ...
+//   export import ...  (re-export, Feature #6)
+
+// NOT allowed:
+//   export impl ...  (impls are always public)
+//   export let ...   (let is not a top-level declaration)
+```
+
+### Transpilation Rules
+
+| NeoHaskell                                    | Haskell Output                                          |
+| --------------------------------------------- | ------------------------------------------------------- |
+| `export fun foo(...) = ...`                    | `foo` added to module export list                       |
+| `fun bar(...) = ...` (no export)               | `bar` NOT in module export list                         |
+| `export record User { name, email }`           | `User(..)` added to module export list                  |
+| `record Internal { ... }` (no export)          | `Internal` NOT in module export list                    |
+| `export enum Priority { Low Medium High }`     | `Priority(..)` added to module export list              |
+| `export brand UserId(Uuid)`                    | `UserId(..)` added to module export list                |
+| `export trait Mappable<t> { ... }`             | `Mappable(..)` added to module export list              |
+| `impl Trait for Type { ... }`                  | Instance always visible (Haskell semantics)             |
+| `export type Url = Text`                       | `Url` added to module export list                       |
+| `export import Foo { bar }`                    | `bar` added to export list + `import Foo (bar)`         |
+
+**Generated module header:**
+
+The transpiler collects all `export`-marked declarations and generates:
+
+```haskell
+module MyApp.Users (
+  User(..),    -- from: export record User
+  UserId(..),  -- from: export brand UserId
+  createUser,  -- from: export fun createUser
+  findUser,    -- from: export fun findUser
+  Url,         -- from: export type Url
+) where
+```
+
+Declarations without `export` are simply omitted from the module export list.
+GHC then enforces that they cannot be used from other modules.
+
+### Error Messages
+
+**Error: using a non-exported function:**
+
+```
+error: `hashPassword` is not exported from module `MyApp.Users`
+  --> src/MyApp/Auth.nh:10:5
+  |
+10 |   let hashed = Users.hashPassword(password)
+   |                     ^^^^^^^^^^^^ not exported
+  |
+  = hint: `hashPassword` is private to `MyApp.Users`
+  = hint: if you need this function, add `export` to its declaration in MyApp/Users.nh
+```
+
+**Error: using a non-exported type:**
+
+```
+error: `InternalCache` is not exported from module `MyApp.Cache`
+  --> src/MyApp/App.nh:5:12
+  |
+5 |   let cache: InternalCache = ...
+  |              ^^^^^^^^^^^^^ not exported
+  |
+  = hint: `InternalCache` is private to `MyApp.Cache`
+```
+
+**Error: trying to export an impl:**
+
+```
+error: `impl` blocks are always public — `export` is not needed
+  --> src/MyApp/Users.nh:15:1
+  |
+15 | export impl Serializable for User {
+   | ^^^^^^ remove `export`
+  |
+  = hint: trait implementations are globally visible in Haskell
+          and don't need (or support) export control
+```
+
+### Internal Modules (Convention)
+
+For library authors who need to expose internals for testing or advanced use,
+use the `Foo.Internal` naming convention:
+
+```neohaskell
+// File: src/MyLib/Parser/Internal.nh
+// Everything here is exported (for use by sibling modules)
+// But consumers know by convention: "Internal = unstable API"
+
+export fun tokenize(input: Text) : Array<Token> { ... }
+export fun buildAST(tokens: Array<Token>) : AST { ... }
+export record ParserState { ... }
+```
+
+```neohaskell
+// File: src/MyLib/Parser.nh
+// Public API — re-exports only the stable parts
+
+export import MyLib.Parser.Internal { tokenize }
+
+export fun parse(input: Text) : Result<ParseError, AST> {
+  let tokens = Internal.tokenize(input)
+  let ast = Internal.buildAST(tokens)
+  Result.ok(ast)
+}
+```
+
+This is a convention, not a language feature. The compiler does not enforce it.
+Library authors document that `*.Internal` modules have no stability guarantees.
+
+### Interaction with Other Features
+
+| Feature                       | Interaction                                                        |
+| ----------------------------- | ------------------------------------------------------------------ |
+| Imports (Feature #6)          | `export import` for re-exports uses same `export` keyword          |
+| Records (Feature #1)          | `export record` exports type + constructor + all field accessors   |
+| Enums (Feature #2)            | `export enum` exports type + all constructors                      |
+| Brands (Feature #10)          | `export brand` exports type + constructor; encapsulate via private brand + smart ctor |
+| Traits (Feature #12)          | `export trait` exports the trait; `impl` is always public          |
+| Type Aliases (Feature #9)     | `export type` exports the alias                                    |
+| Decorators (Feature #16)      | No interaction — decorators are orthogonal to visibility           |
+| Destructuring (Feature #11)   | No interaction                                                     |
+
+### Design Rationale
+
+**Why private by default?** The target audience (Java/C#/Kotlin developers) is used to
+explicit visibility. Haskell's "export everything" default leads to accidentally large
+API surfaces. Private-by-default forces intentional API design — every public item is a
+deliberate choice. Rust and Elm both default to private.
+
+**Why `export` not `pub`?** `export` unifies two existing concepts: `export import`
+(re-exports, Feature #6) and per-declaration visibility. One keyword instead of two.
+`export` also reads naturally in English: "export this function" is clearer than
+"pub this function." TypeScript developers write `export function` daily.
+
+**Why all-or-nothing (no granular constructor control)?** Haskell supports exporting
+a type without its constructors (`Foo` vs `Foo(..)`). But this adds complexity for
+marginal benefit. In NeoHaskell, if you want an opaque type, make the type private
+and export a smart constructor instead. This is a simpler mental model: "either the
+whole thing is public, or the whole thing is private."
+
+**Why are impls always public?** Haskell instances are globally visible — you can't
+scope an instance to a module. This is a fundamental property of the typeclass system:
+instance resolution must be coherent (no conflicting instances). Allowing private
+impls would break this guarantee and confuse the GHC backend.
+
+**Why convention for internal modules, not a language feature?** The `.Internal`
+convention is widely understood (Haskell, Java, Python all use it). A language-level
+feature would add syntax and enforcement complexity for a problem that naming alone
+solves. Library linters can warn about importing from `.Internal` modules.
 
 ---
 
-## 14. Guards ❌
+## 14. Guards — Dropped (Covered) ✅
 
-_To be designed._
+Evaluated by DX Council (3 experts: Klabnik, Nystrom, Czaplicki — Mar 2025). Unanimous: drop.
+
+### Decision
+
+Feature #14 is **fully covered** by two existing mechanisms:
+
+1. **Pattern guards in `match` arms** (Feature #3):
+   ```neohaskell
+   match value {
+     Just(n) if n > 0  => "positive",
+     Just(n) if n < 0  => "negative",
+     Just(_)           => "zero",
+     Nothing           => "absent",
+   }
+   ```
+
+2. **`if/then/else` chains** in function bodies (replacing Haskell's function-level guards):
+   ```neohaskell
+   fun classify(n: Int) : Text {
+     if n > 0 then "positive"
+     else if n < 0 then "negative"
+     else "zero"
+   }
+   ```
+
+There is no separate guard syntax. NeoHaskell follows the Elm model: `case` + `if/then/else`
+covers 100% of guard use cases without a third mechanism.
+
+### Why No Separate Guards
+
+**Redundancy is a UX tax** (Nystrom). Every additional mechanism forces developers to choose
+between equivalent tools — a meaningless decision that burns cognitive energy.
+
+**Elm battle-tested this** (Czaplicki). Elm had guards in early versions (pre-0.14) and
+deliberately removed them. Guards confused beginners and complicated exhaustiveness checking.
+The removal was net positive for the community.
+
+**Strangeness budget savings** (Klabnik). A third conditional mechanism doesn't pass the
+"is this worth the novelty budget?" test. Java/C#/JS developers already know `if/then/else` —
+it's free. Spend the budget on what makes NeoHaskell unique.
+
+### What About Multi-Way If?
+
+GHC's `MultiWayIf` extension (`if | cond1 -> expr1 | cond2 -> expr2`) is notation sugar,
+not new capability. `if/then/else if/then/else` chains are equivalent and familiar to the
+target audience. If deeply nested chains prove unreadable in practice, multi-way if can be
+revisited post-1.0 as a notation improvement.
+
+### What About Pattern Guards?
+
+Haskell's pattern guards (`| Just x <- lookup key map = ...`) allow pattern matching inside
+guard conditions. NeoHaskell handles this with `match` + `let!`:
+
+```neohaskell
+// Instead of Haskell pattern guards:
+//   f x | Just y <- lookup x map = y
+//       | otherwise              = defaultValue
+
+// NeoHaskell equivalent:
+fun f(x: Key) : Value {
+  match lookup(x, map) {
+    Just(y) => y,
+    Nothing => defaultValue,
+  }
+}
+```
+
+### Transpilation
+
+| NeoHaskell | Haskell Output |
+| --- | --- |
+| `if a then b else c` | `if a then b else c` |
+| `if a then b else if c then d else e` | `if a then b else if c then d else e` |
+| `Just(n) if n > 0 => expr` (in match) | `Just n \| n > 0 -> expr` |
+
+`if/then/else` transpiles 1:1 to Haskell. Pattern guards in `match` transpile to
+Haskell's `|` guard syntax inside `case..of` (already specified in Feature #3).
 
 ---
 
-## 15. Doc Comments ❌
+## 15. Doc Comments ✅
 
-_To be designed._
+Designed via DX Council review (3 experts: Klabnik, Nystrom, Czaplicki — Mar 2025).
+User decision: hybrid model with markdown enforcement and lifecycle tags only.
+
+### Summary
+
+| Decision | Choice | Council Support |
+| --- | --- | --- |
+| Content format | **Markdown enforced** | 3/3 unanimous |
+| Content model | **Hybrid**: prose-first + lifecycle tags | 2/3 (Klabnik, Nystrom); Czaplicki prefers minimal |
+| @param / @returns / @throws | **Not included** — type signature is the contract | User decision (aligned with Czaplicki) |
+| @deprecated | Included | 3/3 unanimous |
+| @since | Included | 3/3 unanimous |
+| @see | Included | 3/3 unanimous |
+| @example | Included | 3/3 unanimous |
+| Field docs | Supported (inline `/** */` before field) | Design lead decision |
+| Module-level docs | Supported (first `/** */` in file) | 3/3 unanimous |
+| Cross-references | `[Module.function]` bracket syntax | 2/3 (Klabnik, Nystrom) |
+
+### Core Principle: Prose-First, Markdown-Always
+
+Doc comment content is **parsed as markdown**. The first paragraph is the summary.
+Everything after is the detailed description. Tags provide machine-parseable lifecycle
+metadata — they do not duplicate information already in the type signature.
+
+**Why no @param / @returns / @throws?** The type signature already documents parameter
+names, types, and error types. Repeating `@param x - The number` when the signature says
+`x: Int` is redundant noise that trains developers to write lazy one-liner docs instead
+of clear prose. If a parameter needs explanation, explain it in the prose body.
+
+### Syntax
+
+#### Function Documentation
+
+```neohaskell
+/**
+ * Calculates the distance between two points.
+ *
+ * Uses the Euclidean distance formula. Both points must be in
+ * the same coordinate system.
+ *
+ * @example
+ * ```
+ * let d = distance(0.0, 0.0, 3.0, 4.0)
+ * // d == 5.0
+ * ```
+ *
+ * @since 1.0
+ * @see Point.distanceTo
+ */
+fun distance(x1: Float, y1: Float, x2: Float, y2: Float) : Float {
+  let dx = x2 - x1
+  let dy = y2 - y1
+  sqrt(dx * dx + dy * dy)
+}
+```
+
+#### Record Documentation
+
+```neohaskell
+/**
+ * A person with a name and age.
+ *
+ * Used as the primary identity type across the user management domain.
+ * Age must be non-negative.
+ */
+record Person {
+  /** The person's full name (first + last). */
+  name: Text,
+
+  /** Age in years. Must be >= 0. */
+  age: Int,
+}
+```
+
+#### Enum Documentation
+
+```neohaskell
+/**
+ * Represents the outcome of a validation step.
+ *
+ * @since 1.2
+ */
+enum ValidationResult {
+  /** Validation passed with no issues. */
+  Valid
+
+  /** Validation failed with one or more error messages. */
+  Invalid(Array<Text>)
+
+  /**
+   * Validation was skipped (e.g., feature flag disabled).
+   *
+   * @deprecated Use `Valid` with an empty check instead.
+   */
+  Skipped
+}
+```
+
+#### Module Documentation
+
+The first `/** */` comment in a file (before any declarations) becomes the module-level
+documentation:
+
+```neohaskell
+/**
+ * # Cart Commands
+ *
+ * This module contains all command handlers for the shopping cart domain.
+ * Each command validates business rules and produces events.
+ *
+ * @see Cart.Events, Cart.Queries
+ * @since 1.0
+ */
+
+import MyApp.Cart.Event
+import MyApp.Cart.Entity
+
+// ... declarations ...
+```
+
+#### Trait and Impl Documentation
+
+```neohaskell
+/**
+ * Types that can be mapped over.
+ *
+ * Mapping applies a function to the inner value(s) without changing
+ * the outer structure. Laws:
+ * - `map(identity, x) == x`
+ * - `map(f >> g, x) == map(g, map(f, x))`
+ *
+ * @see Thenable
+ */
+trait Mappable<container> {
+  /**
+   * Apply a function to every element inside the container.
+   *
+   * @example
+   * ```
+   * Array.map(add(1), [1, 2, 3]) // [2, 3, 4]
+   * ```
+   */
+  fun map(f: (a) -> b, container: container<a>) : container<b>
+}
+```
+
+### Available Tags
+
+All tags are **optional**. Prose is always primary.
+
+| Tag | Purpose | Applies to |
+| --- | --- | --- |
+| `@example` | Code example (fenced markdown block) | Functions, traits, modules |
+| `@deprecated` | Mark as deprecated with migration guidance | Any declaration |
+| `@since` | Version when this was introduced | Any declaration |
+| `@see` | Cross-reference to related declarations | Any declaration |
+
+#### @example
+
+Contains a fenced code block showing usage:
+
+```neohaskell
+/**
+ * Filters elements that satisfy a predicate.
+ *
+ * @example
+ * ```
+ * let evens = Array.filter(isEven, [1, 2, 3, 4, 5])
+ * // evens == [2, 4]
+ * ```
+ */
+fun filter(predicate: (a) -> Bool, array: Array<a>) : Array<a>
+```
+
+Multiple `@example` tags are allowed for different use cases.
+
+#### @deprecated
+
+Marks a declaration as deprecated. Must include migration guidance:
+
+```neohaskell
+/**
+ * Retrieves user by numeric ID.
+ *
+ * @deprecated Use `getUserByUuid` instead. Numeric IDs will be
+ *   removed in v3.0.
+ * @since 1.0
+ * @see getUserByUuid
+ */
+fun getUserById(id: Int) : Task<NotFound, User>
+```
+
+The transpiler emits a GHC `{-# DEPRECATED #-}` pragma alongside the Haddock comment.
+
+#### @since
+
+Records the version when a declaration was introduced:
+
+```neohaskell
+/**
+ * Converts a Text value to uppercase.
+ *
+ * @since 1.0
+ */
+fun toUpper(text: Text) : Text
+```
+
+#### @see
+
+Cross-references related declarations. Supports qualified names:
+
+```neohaskell
+/**
+ * Encodes a value to JSON text.
+ *
+ * @see Json.decode, Json.Value
+ */
+fun encode(value: a) : Text where a: ToJSON
+```
+
+### Markdown Features
+
+Doc comments support full CommonMark markdown:
+
+| Feature | Syntax | Example |
+| --- | --- | --- |
+| Bold | `**text**` | **important** |
+| Italic | `*text*` | *emphasis* |
+| Inline code | `` `code` `` | `Array.map` |
+| Code blocks | ```` ``` ```` fenced | Multi-line examples |
+| Links | `[text](url)` | External links |
+| Cross-refs | `[Module.function]` | Internal links (see below) |
+| Lists | `- item` or `1. item` | Bulleted or numbered |
+| Headings | `## Section` | Organize long docs |
+
+#### Cross-Reference Syntax
+
+Use bracket syntax to link to other declarations within the project:
+
+```neohaskell
+/**
+ * Like [Array.map] but also passes the index.
+ *
+ * See [Mappable] for the general mapping trait.
+ * For the inverse operation, see [Array.filter].
+ */
+fun indexedMap(f: (Int, a) -> b, array: Array<a>) : Array<b>
+```
+
+The transpiler resolves `[Module.function]` to Haddock's `'Module.function'` link syntax.
+Unresolved references produce a **compile warning**:
+
+```
+warning: unresolved doc reference
+  --> src/Array.nh:15:7
+  |
+15 |  * See [Array.foobar] for details.
+  |       ^^^^^^^^^^^^^^ not found
+  |
+  = hint: did you mean `Array.filter`?
+```
+
+### Leading Asterisks
+
+The leading `*` on each line inside `/** */` is **optional** and stripped by the parser:
+
+```neohaskell
+// Both are equivalent:
+
+/**
+ * This has leading asterisks.
+ * They are stripped.
+ */
+
+/**
+  This has no leading asterisks.
+  Also valid.
+*/
+```
+
+The parser strips the common leading whitespace prefix after removing optional `*` characters.
+This matches JavaDoc/KDoc convention where the `*` is decorative.
+
+### Field Documentation
+
+Fields in records and enum variants can have their own doc comments:
+
+```neohaskell
+record Config {
+  /** The hostname to connect to. */
+  host: Text,
+
+  /** Port number. Defaults to 443. */
+  port: Int,
+
+  /**
+   * Maximum number of retry attempts.
+   *
+   * Set to 0 to disable retries.
+   */
+  maxRetries: Int,
+}
+```
+
+Field doc comments transpile to Haddock's `-- ^` (post-comment) syntax attached
+to the corresponding record field in the generated Haskell.
+
+### Section Headers in Module Exports
+
+Module exports can be organized with section headers using `/** */` comments
+in the module's export list. This is a convention for documentation tooling:
+
+```neohaskell
+/**
+ * # Array
+ *
+ * Fast immutable arrays.
+ */
+
+// -- Construction --
+// (section headers rendered by doc tooling)
+
+export fun empty() : Array<a>
+export fun singleton(value: a) : Array<a>
+export fun repeat(n: Int, value: a) : Array<a>
+
+// -- Query --
+
+export fun length(array: Array<a>) : Int
+export fun isEmpty(array: Array<a>) : Bool
+```
+
+The transpiler collects exported items and generates Haddock section headers
+(`-- *`) in the Haskell module's export list.
+
+### Transpilation Rules
+
+| NeoHaskell | Haskell Output |
+| --- | --- |
+| `/** doc */` (before declaration) | `-- \| doc` (Haddock) |
+| `/** doc */` (before field) | `-- ^ doc` (Haddock post-comment) |
+| `/** doc */` (first in file) | Module Haddock header |
+| `**bold**` in doc | `__bold__` (Haddock) |
+| `*italic*` in doc | `/italic/` (Haddock) |
+| `` `code` `` in doc | `@code@` (Haddock) |
+| ```` ``` ```` fenced block | `@` block or `> ` prefixed lines (Haddock) |
+| `[Module.function]` cross-ref | `'Module.function'` (Haddock link) |
+| `[text](url)` link | `<url text>` (Haddock) |
+| `- list item` | `* list item` (Haddock uses `*`) |
+| `## Heading` | `== Heading` (Haddock) |
+| `@example` | Rendered as code block in Haddock |
+| `@deprecated msg` | `{-# DEPRECATED "msg" #-}` pragma + Haddock note |
+| `@since 1.0` | `@since 1.0` (Haddock supports this natively) |
+| `@see Module.func` | `'Module.func'` link in Haddock |
+| Leading `*` on lines | Stripped (decorative) |
+
+**Key transformation:** The transpiler converts CommonMark markdown to Haddock markup.
+This is a lossy conversion — Haddock supports a subset of markdown features. The transpiler
+handles the common cases (bold, italic, code, links, lists, headings) and passes through
+unsupported markdown as plain text with a compile warning.
+
+### Error Messages
+
+```
+error: invalid markdown in doc comment
+  --> src/MyModule.nh:5:4
+  |
+5 |  * See [broken link(
+  |       ^^^^^^^^^^^^^^ unclosed bracket
+  |
+  = hint: cross-references use [Module.function] syntax
+```
+
+```
+warning: doc comment not attached to any declaration
+  --> src/MyModule.nh:10:1
+  |
+10 | /** This comment is orphaned. */
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+11 |
+12 | // ... no declaration follows ...
+  |
+  = hint: doc comments must immediately precede a declaration
+```
+
+```
+warning: undocumented public declaration
+  --> src/MyModule.nh:3:1
+  |
+3 | export fun helper(x: Int) : Int {
+  | ^^^^^^ no doc comment found
+  |
+  = hint: add a /** */ comment before public declarations
+```
+
+### What Doc Comments Do NOT Include
+
+| Feature | Status | Reasoning |
+| --- | --- | --- |
+| `@param` | Not included | Type signature documents parameters |
+| `@returns` | Not included | Type signature documents return type |
+| `@throws` | Not included | Type signature documents error type (`Task<err, val>`) |
+| `@author` | Not included | Use version control (`git blame`) instead |
+| Doc tests (executable examples) | Deferred (post-1.0) | Valuable but adds complexity to the transpiler |
+| Markdown linting / style enforcement | Deferred | Future tooling concern, not language syntax |
+
+### Design Rationale
+
+**Why markdown?** Haddock uses custom markup (`@code@`, `/italic/`, `'links'`) that no one
+outside the Haskell community knows. CommonMark markdown is the universal documentation
+format — GitHub, Stack Overflow, Slack, Notion, and every modern tool uses it. Zero strangeness
+budget cost. The transpiler handles the conversion to Haddock markup.
+
+**Why no @param / @returns / @throws?** NeoHaskell has expressive type signatures:
+`fun fetch(url: Text) : Task<HttpError, Response>` already tells you the parameter name,
+its type, the error type, and the success type. Adding `@param url - The URL to fetch` is
+pure redundancy. Prose should explain *why* and *when*, not repeat *what* the types already say.
+This follows Elm's philosophy: type signatures are the parameter documentation.
+
+**Why keep @deprecated / @since / @see / @example?** These tags provide **lifecycle metadata**
+that cannot be inferred from the type signature. When was this introduced? Is it being phased
+out? What should I use instead? What does usage look like? These are questions the type system
+cannot answer. Tags make this metadata machine-parseable for IDEs and documentation generators.
+
+**Why [bracket] cross-references?** Kotlin's `[ClassName.method]` and Dart's `[ClassName]`
+bracket syntax is familiar to the target audience and reads naturally in prose: "Like
+[Array.map] but also passes the index." Haddock's `'Module.function'` tick syntax is
+unfamiliar. The transpiler converts brackets to Haddock ticks.
+
+**Why warn on undocumented exports?** Good documentation is a language value, not an
+afterthought. Warning (not erroring) on undocumented public declarations nudges developers
+toward documenting their APIs without blocking compilation. This can be promoted to an
+error via a compiler flag for strict projects.
 
 ---
 
-_Last updated: 2026-02-25_
+## 16. Decorators ✅
+
+Designed via DX Council review (R1: 3 experts, R2: 3 experts, path design: 3 experts, Mar 2025).
+
+### Summary
+
+| Decision                 | Choice                                             | Council Support                 |
+| ------------------------ | -------------------------------------------------- | ------------------------------- |
+| Unify all code gen       | Yes — `@decorator` replaces deriving, TH, instances | R2: 2/3 (Klabnik, Czaplicki)   |
+| Decorator syntax         | `@name` or `@name(args)`                           | 3/3 — unanimous                 |
+| Path model               | Simple name (last parameter is target)              | 3/3 — unanimous                 |
+| Field-level desugaring   | Full AST — collected per-type (Option C)            | 2/3 (Klabnik, Czaplicki)       |
+| Multiple decorators      | Batched (same name merged, different = separate)   | 2/3 (Klabnik, Czaplicki)       |
+| Evaluation order         | Top-to-bottom, source order                        | 3/3 — consensus                 |
+| Show/Eq auto-derive      | Kept — all types auto-derive Show, Eq               | Locked convention               |
+
+### Core Principle: One Mechanism for All Code Generation
+
+Haskell has **eight** different mechanisms for acting on a type to generate code:
+`deriving`, `deriving via`, `StandaloneDeriving`, empty `instance` declarations,
+Generic-based derivation, Template Haskell splices, deriving strategies, and GHC pragmas.
+
+NeoHaskell replaces **all of them** with one concept: `@decorators`.
+
+This is feature **subtraction** — one concept replacing eight. The complexity
+moves to the transpiler; the user sees one syntax, one mental model.
+
+### Type-Level Decorators
+
+```neohaskell
+// Derive trait instances (replaces `deriving`)
+@derive(Ord)
+enum Priority { Low Medium High }
+
+@derive(Num, Ord)
+brand Dollars(Float)
+
+// Code generation with config (replaces TH splices)
+@json(fieldNaming: CamelCase)
+record User {
+  name: Text,
+  age: Int,
+}
+
+// Multiple decorators compose (top-to-bottom)
+@derive(Ord, FromJSON)
+@json(fieldNaming: CamelCase)
+record ApiResponse {
+  status: Int,
+  body: Text,
+}
+```
+
+`@derive(Trait)` replaces Haskell's `deriving Trait`, `StandaloneDeriving`,
+`GeneralizedNewtypeDeriving`, and Generic-based empty instances.
+
+### Field-Level Decorators
+
+```neohaskell
+record Product {
+  name: Text,
+  @indexed @unique sku: Text,
+  @embedded description: Text,
+  @optional price: Money,
+}
+```
+
+Field decorators attach to individual record fields. They are **collected per-type**
+and passed to a single TH call that sees the full record definition including all
+field annotations.
+
+### Function-Level Decorators
+
+```neohaskell
+@memoize
+fun fibonacci(n: Int) : Int {
+  case n {
+    0 => 0,
+    1 => 1,
+    _ => fibonacci(n - 1) + fibonacci(n - 2),
+  }
+}
+
+@deprecated("Use findById instead")
+fun lookup(key: Text) : Maybe<Value> { ... }
+```
+
+Function decorators apply to the function declaration immediately following them.
+
+### Enum Variant Decorators
+
+```neohaskell
+enum Status {
+  @deprecated Active
+  Inactive
+  Archived
+}
+```
+
+Variant decorators attach to individual enum constructors.
+
+### Desugaring Rules
+
+Every decorator desugars to a Template Haskell splice call. The **last parameter
+is always the target name** — this is the locked convention.
+
+#### Type-level:
+
+```neohaskell
+@derive(Ord, FromJSON)
+enum Priority { Low Medium High }
+```
+
+Desugars to (after the type declaration):
+
+```haskell
+data Priority = Low | Medium | High
+  deriving (Show, Eq)  -- auto-derived, always
+
+-- TH splice:
+$(derive [''Ord, ''FromJSON] ''Priority)
+```
+
+**TH signature:** `derive :: [Name] -> Name -> Q [Dec]`
+
+#### Type-level with config:
+
+```neohaskell
+@json(fieldNaming: CamelCase)
+record User { name: Text, age: Int }
+```
+
+Desugars to:
+
+```haskell
+data User = User { name :: Text, age :: Int }
+  deriving (Show, Eq, Generic)
+
+$(json [FieldNaming CamelCase] ''User)
+```
+
+**TH signature:** `json :: [JsonOption] -> Name -> Q [Dec]`
+
+#### Field-level (collected per-type):
+
+```neohaskell
+record Product {
+  name: Text,
+  @indexed @unique sku: Text,
+  @embedded description: Text,
+}
+```
+
+Desugars to:
+
+```haskell
+data Product = Product { name :: Text, sku :: Text, description :: Text }
+  deriving (Show, Eq, Generic)
+
+$(processFields ''Product
+    [ ("sku", [Indexed, Unique])
+    , ("description", [Embedded])
+    ])
+```
+
+**TH signature:** `processFields :: Name -> [(String, [FieldAttr])] -> Q [Dec]`
+
+#### Function-level:
+
+```neohaskell
+@memoize
+fun fibonacci(n: Int) : Int { ... }
+```
+
+Desugars to:
+
+```haskell
+fibonacci :: Int -> Int
+fibonacci n = ...
+
+$(memoize 'fibonacci)
+```
+
+**TH signature:** `memoize :: Name -> Q [Dec]`
+
+### Multiple Decorator Behavior
+
+**Same-name decorators are merged:**
+
+```neohaskell
+// These are equivalent:
+@derive(Ord)
+@derive(FromJSON)
+enum Foo { A B C }
+
+@derive(Ord, FromJSON)
+enum Foo { A B C }
+
+// Both desugar to: derive [''Ord, ''FromJSON] ''Foo
+```
+
+**Different-name decorators are separate TH calls (top-to-bottom):**
+
+```neohaskell
+@derive(Ord, FromJSON)
+@json(fieldNaming: CamelCase)
+record User { ... }
+
+// Desugars to (in order):
+// 1. $(derive [''Ord, ''FromJSON] ''User)
+// 2. $(json [FieldNaming CamelCase] ''User)
+```
+
+### Decorator TH Function Signatures
+
+| Decorator level   | Signature pattern                               | Example                              |
+| ----------------- | ----------------------------------------------- | ------------------------------------ |
+| Type, no args     | `Name -> Q [Dec]`                               | `queryable ''StockLevel`             |
+| Type, with traits | `[Name] -> Name -> Q [Dec]`                     | `derive [''Ord] ''Priority`          |
+| Type, with config | `[Option] -> Name -> Q [Dec]`                   | `json [FieldNaming CamelCase] ''User`|
+| Field (collected) | `Name -> [(String, [FieldAttr])] -> Q [Dec]`    | `processFields ''Product [...]`      |
+| Function          | `Name -> Q [Dec]`                               | `memoize 'fibonacci`                 |
+
+**Convention:** The last parameter is always the target `Name`.
+Arguments (traits, config options) come before the target.
+This matches the existing `deriveQuery ''StockLevel [''StockEntity]` pattern
+already used in the NeoHaskell codebase.
+
+### Auto-Derived Traits
+
+`Show` and `Eq` are **always auto-derived** for all types (records, enums, brands).
+This is a locked convention — no `@derive(Show, Eq)` needed. The transpiler emits
+`deriving (Show, Eq)` unconditionally.
+
+Users add additional traits via `@derive`:
+
+```neohaskell
+// Show and Eq are automatic — only Ord needs explicit @derive
+@derive(Ord)
+enum Priority { Low Medium High }
+
+// Brands delegate to wrapped type (GeneralizedNewtypeDeriving)
+@derive(Num, Ord)
+brand Dollars(Float)
+```
+
+### Error Messages
+
+**Error: unknown decorator:**
+
+```
+error: unknown decorator `@serializable`
+  --> src/Types.nh:3:1
+  |
+3 | @serializable
+  | ^^^^^^^^^^^^^ not a known decorator
+  |
+  = hint: did you mean `@derive(FromJSON, ToJSON)`?
+  = hint: available decorators: @derive, @json, @memoize, @deprecated
+```
+
+**Error: decorator on wrong target:**
+
+```
+error: `@memoize` can only decorate functions
+  --> src/Types.nh:3:1
+  |
+3 | @memoize
+4 | record User { ... }
+  | ^^^^^^ this is a record, not a function
+  |
+  = hint: did you mean `@derive(...)` to derive trait instances?
+```
+
+**Error: derive failure (translated from TH):**
+
+```
+error: cannot derive `Num` for enum type `Priority`
+  --> src/Types.nh:3:1
+  |
+3 | @derive(Num)
+  |         ^^^ `Num` requires a numeric wrapped type
+  |
+  = hint: `Num` derivation works on brands wrapping numeric types: `brand Score(Int)`
+```
+
+The transpiler translates TH error messages into decorator-language errors.
+Users should never see raw TH output.
+
+### Transpilation Rules
+
+| NeoHaskell                                | Haskell Output                                          |
+| ----------------------------------------- | ------------------------------------------------------- |
+| `@derive(Ord) enum Foo { A B }`           | `data Foo = A \| B deriving (Show, Eq, Ord)`            |
+| `@derive(Num) brand Dollars(Float)`       | `newtype Dollars = Dollars Float`                       |
+|                                           | `  deriving (Show, Eq, Num)`                            |
+|                                           | `{-# LANGUAGE GeneralizedNewtypeDeriving #-}`           |
+| `@json(...) record User { ... }`          | `data User = ... deriving (Show, Eq, Generic)`          |
+|                                           | `$(json [...] ''User)`                                  |
+| `@memoize fun foo(...) = ...`             | `foo ... = ...`                                         |
+|                                           | `$(memoize 'foo)`                                       |
+| `record R { @indexed f: T }`              | `data R = R { f :: T } deriving (Show, Eq, Generic)`    |
+|                                           | `$(processFields ''R [("f", [Indexed])])`               |
+
+### What Decorators Replace
+
+| Old Haskell Mechanism                    | NeoHaskell Decorator              |
+| ---------------------------------------- | --------------------------------- |
+| `deriving (Trait)`                       | `@derive(Trait)`                  |
+| `deriving via SomeType`                  | `@derive(Trait)` on brand         |
+| `StandaloneDeriving`                     | `@derive(Trait)` (always inline)  |
+| `instance FromJSON T` (empty/Generic)    | `@derive(FromJSON)`               |
+| `$(deriveJSON opts ''T)` (TH splice)     | `@json(opts)`                     |
+| `$(deriveQuery ''T [''E])` (TH splice)   | `@query(Entity)`                  |
+| `GeneralizedNewtypeDeriving`             | `@derive(Trait)` on brand         |
+| `DeriveGeneric` + `DefaultSignatures`    | Implicit (transpiler emits)       |
+
+### Design Rationale
+
+**Why unify all code gen under decorators?** The council initially opposed (2-1)
+but flipped after the consolidation argument: Haskell has 8 mechanisms for the same
+fundamental operation (acting on a type to generate code). Replacing 8 with 1 is
+subtraction, not addition. Czaplicki: "This is honest compiler work — the complexity
+moves to the transpiler where it belongs." Klabnik: "One syntax replacing eight
+is feature subtraction, not addition."
+
+**Why `@` not `#[]` or `#[derive()]`?** Java (`@Override`), Python (`@decorator`),
+Kotlin (`@Annotation`), TypeScript (`@decorator`), C# (`[Attribute]`). The `@` prefix
+is the universal convention for the target audience. Rust's `#[...]` is Rust-specific.
+`@` costs zero strangeness budget.
+
+**Why batch same-name decorators?** `@derive(Ord, FromJSON)` is one logical operation
+(derive these traits). Batching into one TH call allows the derive function to see all
+requested traits and produce better error messages (e.g., "Ord and Bounded should be
+derived together").
+
+**Why collect field decorators per-type?** The TH function needs the full record context
+to generate correct code. A per-field call (`indexed ''Product "sku"`) lacks the context
+to know what other fields exist or what other decorators are applied. The Rust proc-macro
+model (full item AST) is proven.
+
+**Why last parameter = target name?** Convention from the existing codebase:
+`deriveQuery ''StockLevel [''StockEntity]` already puts the target name as a prominent
+parameter. Making it consistently last enables a uniform calling convention for all
+decorator TH functions.
+
+---
+
+_Last updated: 2026-03-10_
