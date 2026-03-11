@@ -65,7 +65,7 @@ jobs:
             extra-substituters = https://cache.iog.io https://neohaskell.cachix.org
             extra-trusted-public-keys = hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ= neohaskell.cachix.org-1:mo2cLaGbwqbrxs9xhqKK8jeNsn3osi7t6XoAmxSZssc=
 
-      - uses: DeterminateSystems/magic-nix-cache-action@v12
+      - uses: DeterminateSystems/magic-nix-cache-action@v13
       - uses: actions/cache@v5
         with:
           path: dist-newstyle
