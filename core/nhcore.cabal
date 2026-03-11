@@ -278,6 +278,7 @@ library
     Set
     Stream
     Subprocess
+    Syntax.Comment
     Task
     Test
     Test.AppSpec
@@ -365,6 +366,7 @@ library
     options-parser
     neoql
     parser
+    syntax
 
   default-language: GHC2021
 
@@ -595,6 +597,7 @@ test-suite nhcore-test-core
     StreamSpec
     Test.AppSpec.AppSpecSpec
     Test.AppSpec.VerifySpec
+    Syntax.CommentSpec
 
   type: exitcode-stdio-1.0
   hs-source-dirs: test-core, test
