@@ -49,6 +49,10 @@ toLayoutOptions options =
     }
 
 
+-- Fast mode intentionally uses a minimal width (fastWidth = 1) to trigger
+-- aggressive line breaks with the greedy layoutPretty algorithm. This bypasses
+-- the user's maxWidth setting to optimize layout performance by avoiding
+-- look-ahead. Use layoutSmart (Balanced mode) if you need width-aware layout.
 toFastLayoutOptions :: RenderOptions -> GhcPretty.LayoutOptions
 toFastLayoutOptions options =
   let fastRibbon = options.ribbonFraction * 0.4
@@ -84,20 +88,26 @@ sanitizeRenderOutput rendered =
       |> Text.replace "[1K" ""
       |> Text.replace "[2K" ""
       |> Text.replace "[K" ""
-      |> Text.replace "\n \n" "\n\n"
-      |> Text.replace "\n  \n" "\n\n"
-      |> Text.replace "\n   \n" "\n\n"
-      |> Text.replace "\n    \n" "\n\n"
-      |> Text.replace "\n     \n" "\n\n"
-      |> Text.replace "\n      \n" "\n\n"
-      |> Text.replace "\n       \n" "\n\n"
-      |> Text.replace "\n        \n" "\n\n"
-      |> Text.replace "\n         \n" "\n\n"
-      |> Text.replace "\n          \n" "\n\n"
-      |> Text.replace "\n           \n" "\n\n"
-      |> Text.replace "\n            \n" "\n\n"
+      |> stripWhitespaceOnlyLines
       |> collapseExcessiveNewlines
-      |> Text.replace "\n\nlet =\n" "\n\n    let =\n"
+
+
+stripWhitespaceOnlyLines :: Text -> Text
+stripWhitespaceOnlyLines textValue =
+  let sourceLines = textValue |> Text.lines
+      endsWithNewline = Text.endsWith "\n" textValue
+      isWhitespaceOnly lineText =
+        (not (Text.isEmpty lineText)) && Text.all isSpace lineText
+      filteredLines =
+        sourceLines
+          |> Array.filter (\lineText -> not (isWhitespaceOnly lineText))
+      resultText = filteredLines |> Text.joinWith "\n"
+  in
+    if endsWithNewline
+      then Text.append resultText "\n"
+      else resultText
+  where
+    isSpace char = char == ' ' || char == '\t'
 
 
 stripTrailingWhitespaceBeforeNewline :: Text -> Text

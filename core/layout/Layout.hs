@@ -298,7 +298,7 @@ indent n x =
 indentRelative :: Int -> Blueprint ann -> Blueprint ann
 indentRelative n x =
   let clamped = clamp 0 10_000 n
-  in wrap (GhcPretty.nest clamped (unwrap x))
+  in wrap (GhcPretty.indent clamped (unwrap x))
 {-# INLINE indentRelative #-}
 
 

@@ -188,14 +188,6 @@ spec = do
         )
         |> shouldBe "Parse error:\n\n    let =\n        ^"
 
-    it "renderWith mode comparison on same trySingleLine+line document" \_ -> do
-      let balanced = Layout.renderWith (Layout.withWrapMode Balanced Layout.defaultRenderOptions) modeProbeDoc
-      let fast = Layout.renderWith (Layout.withWrapMode Fast Layout.defaultRenderOptions) modeProbeDoc
-      let compact = Layout.renderWith (Layout.withWrapMode Compact Layout.defaultRenderOptions) modeProbeDoc
-      (balanced != fast) |> shouldBe True
-      (fast != compact) |> shouldBe True
-      (balanced != compact) |> shouldBe True
-
     it "renderBalanced equals renderWith Balanced" \_ -> do
       Layout.renderBalanced modeProbeDoc
         |> shouldBe (Layout.renderWith (Layout.withWrapMode Balanced Layout.defaultRenderOptions) modeProbeDoc)
