@@ -53,6 +53,8 @@ module Parser (
   runNamed,
   runOnFile,
   runMaybe,
+  -- * Position
+  position,
   -- * Error Rendering
   formatError,
   formatErrorCompact,
@@ -599,3 +601,31 @@ bracketed parser = between (symbol "[") (symbol "]") parser
 braced :: forall value. Parser value -> Parser value
 braced parser = between (symbol "{") (symbol "}") parser
 {-# INLINE braced #-}
+
+
+-- ---------------------------------------------------------------------------
+-- Position
+-- ---------------------------------------------------------------------------
+
+-- | Return the current source position without consuming any input.
+--
+-- Use this to capture the start position of a construct before parsing it:
+--
+-- @
+-- myParser :: Parser MyNode
+-- myParser = do
+--   pos <- Parser.position
+--   content <- ...
+--   Parser.yield (MyNode { position = pos, ... })
+-- @
+position :: Parser ParsePosition
+position = Internal.wrap do
+  sourcePos <- GhcMegaparsec.getSourcePos
+  currentOffset <- GhcMegaparsec.getOffset
+  Applicable.pure ParsePosition
+    { sourceName = sourcePos |> GhcMegaparsec.sourceName |> Text.fromLinkedList
+    , line       = sourcePos |> GhcMegaparsec.sourceLine |> GhcMegaparsec.unPos
+    , column     = sourcePos |> GhcMegaparsec.sourceColumn |> GhcMegaparsec.unPos
+    , offset     = currentOffset
+    }
+{-# INLINE position #-}

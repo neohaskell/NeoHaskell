@@ -56,6 +56,7 @@ ADRs document significant architectural decisions made during the development of
 | [0040](0040-neoql-mvp.md) | NeoQL MVP — Field Access and Equality Filtering | Proposed |
 | [0041](0041-audio-transcription-integration.md) | Audio Transcription Integration via Multimodal Models | Proposed |
 | [0042](0042-parser-library.md) | Parser Library — Beginner-Friendly megaparsec Wrapper | Proposed |
+| [0043](0043-neohaskell-comment-syntax-parsing.md) | NeoHaskell Comment Syntax Parsing | Proposed |
 
 ## Creating New ADRs
 
