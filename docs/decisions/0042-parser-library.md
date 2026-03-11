@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed
+Accepted
 
 ## Context
 
@@ -206,8 +206,8 @@ The complete public API of `Parser.hs`, organized by category. All operators fro
 | `oneOrMore`               | `Parser value -> Parser (Array value)`                        | One or more repetitions                |
 | `exactly`                 | `Int -> Parser value -> Parser (Array value)`                 | Exactly N repetitions                  |
 | `between`                 | `Parser open -> Parser close -> Parser value -> Parser value` | Between open and close parsers         |
-| `keepLeft`                | `Parser trailing -> Parser value -> Parser value`             | Run `value` first, then discard `trailing`; "value" is left of trailing in stream   |
-| `keepRight`               | `Parser leading -> Parser value -> Parser value`              | Discard `leading` first, then run `value`; "value" is right of leading in stream    |
+| `keepLeft`                | `Parser trailing -> Parser value -> Parser value`             | Parse `value` then discard `trailing`; call as `keepLeft trailing value` — "keep the left operand" |
+| `keepRight`               | `Parser leading -> Parser value -> Parser value`              | Discard `leading` then parse `value`; call as `keepRight leading value` — "keep the right operand" |
 | `pair`                    | `Parser left -> Parser right -> Parser (left, right)`         | Run both, keep both results            |
 | `separatedBy`             | `Parser separator -> Parser value -> Parser (Array value)`    | 0+ values with separator               |
 | `oneOrMoreSeparatedBy`    | `Parser separator -> Parser value -> Parser (Array value)`    | 1+ values with separator               |
@@ -550,7 +550,7 @@ expression = do
 | `Stream` / `VisualStream` / `TraversableStream` | `Parser` is Text-only in v1. No stream polymorphism.                                                                 |
 | `Void` error type                               | Confusing for beginners. Handled internally as `InternalFailure`.                                                    |
 | `ParseErrorBundle` / `ErrorItem` / `ErrorFancy` | Replaced by structured `ParseError` with friendly field names.                                                       |
-| `<                                              | >` operator                                                                                                          | Replaced by `Parser.choice` (takes an `Array`). More beginner-friendly; avoids the `Alt` vs `Alternative` confusion. |
+| `<\|>` operator                                                                                       | Replaced by `Parser.choice` (takes an `Array`). More beginner-friendly; avoids the `Alt` vs `Alternative` confusion. |
 | `<?>` / `label` operator                        | Replaced by named function `Parser.expecting`.                                                                       |
 | `<*`, `*>` operators                            | Replaced by `Parser.keepLeft` and `Parser.keepRight`.                                                                |
 | `runParserT` and transformer APIs               | No monad transformers in v1 public API.                                                                              |

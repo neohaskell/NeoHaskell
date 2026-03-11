@@ -203,26 +203,22 @@ spec = do
       let result = Parser.run p "let"
       result |> shouldBe (Result.Ok "let")
 
-    it "tries second alternative when first fails" \_ -> do
-      let p = Parser.choice
-                [ Parser.backtrack (Parser.keepLeft (Parser.char 'c') (Parser.text "ab"))
-                , Parser.text "ab"
-                ]
-      let result = Parser.run p "ab"
-      result |> shouldBe (Result.Ok "ab")
+    it "tries second alternative when first fails without consuming" \_ -> do
+      let p = Parser.choice [Parser.char 'x', Parser.char 'a']
+      let result = Parser.run p "a"
+      result |> shouldBe (Result.Ok 'a')
 
     it "fails when all alternatives fail" \_ -> do
       let p = Parser.choice [Parser.char 'x', Parser.char 'y']
       let result = Parser.run p "z"
       result |> shouldSatisfy Result.isErr
 
-    it "backtracks each alternative (input restored on failure before trying next)" \_ -> do
-      let p = Parser.choice
-                [ Parser.backtrack (Parser.keepLeft (Parser.char 'c') (Parser.text "ab"))
-                , Parser.text "ab"
-                ]
-      let result = Parser.run p "ab"
-      result |> shouldSatisfy Result.isOk
+    it "internally backtracks each alternative (choice wraps each with try)" \_ -> do
+      let p = Parser.choice [Parser.text "ab", Parser.text "ax"]
+      let result = Parser.run p "ax"
+      -- choice applies try to each alternative, so even partial consumption
+      -- by the first alt is backtracked, allowing "ax" to succeed
+      result |> shouldBe (Result.Ok "ax")
 
   describe "Parser.optional" do
     it "returns Just on success" \_ -> do
@@ -814,25 +810,30 @@ spec = do
       let row = Parser.separatedBy (Parser.char ',') cell
       let p = Parser.separatedBy (Parser.char '\n') row
       let result = Parser.run p "a,b\nc,d"
-      result |> shouldSatisfy Result.isOk
+      result |> shouldBe (Result.Ok [["a", "b"], ["c", "d"]])
 
   describe "Integration: config file parser" do
-    it "parses key=value pairs with # comments (ADR §8 example)" \_ -> do
+    it "parses key=value pairs (ADR section 8 example)" \_ -> do
       let keyPart = Parser.noneOfChars ['=', '\n'] |> Parser.oneOrMore
                       |> Parser.map Text.fromArray
       let valPart = Parser.noneOfChars ['\n'] |> Parser.zeroOrMore
                       |> Parser.map Text.fromArray
-      let comment = Parser.keepRight (Parser.char '#')
-                      (Parser.noneOfChars ['\n'] |> Parser.zeroOrMore)
-      let pair_ = Parser.keepRight (Parser.optional comment)
-                    (Parser.pair keyPart (Parser.keepRight (Parser.char '=') valPart))
+      let pair_ = Parser.pair keyPart (Parser.keepRight (Parser.char '=') valPart)
       let p = Parser.separatedBy (Parser.char '\n') pair_
       let result = Parser.run p "port=5432\nhost=localhost"
-      result |> shouldSatisfy Result.isOk
+      result |> shouldBe (Result.Ok [("port", "5432"), ("host", "localhost")])
 
   describe "Integration: arithmetic expression" do
-    it "parses Number, Add, Multiply expressions (ADR §8 example)" \_ -> do
-      -- Simple smoke test: verify the parser infrastructure works for composition
-      let numP = Parser.map (\d -> d :: Int) Parser.decimal
-      let result = Parser.run numP "1"
-      result |> shouldBe (Result.Ok 1)
+    it "parses and evaluates simple addition (ADR example)" \_ -> do
+      let numP = Parser.decimal
+      let addP = Parser.map (\(a, b) -> a + b)
+                   (Parser.pair numP (Parser.keepRight (Parser.char '+') numP))
+      let result = Parser.run addP "1+2"
+      result |> shouldBe (Result.Ok (3 :: Int))
+
+    it "parses multiplication" \_ -> do
+      let numP = Parser.decimal
+      let mulP = Parser.map (\(a, b) -> a * b)
+                   (Parser.pair numP (Parser.keepRight (Parser.char '*') numP))
+      let result = Parser.run mulP "3*4"
+      result |> shouldBe (Result.Ok (12 :: Int))

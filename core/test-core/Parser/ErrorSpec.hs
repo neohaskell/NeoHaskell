@@ -31,7 +31,7 @@ spec = do
       let err = extractError "demo.neo" (Parser.text "abc") "abX"
       let formatted = Parser.formatError err
       let firstLine = formatted |> Text.split "\n" |> Array.first |> Maybe.withDefault ""
-      firstLine |> shouldBe "Parse error in demo.neo at line 1, column 3"
+      firstLine |> shouldSatisfy (Text.contains "Parse error in demo.neo at line 1, column 3")
 
     it "third line is contextLine (the source line)" \_ -> do
       let err = extractError "demo.neo" (Parser.text "abc") "abX"
@@ -68,7 +68,7 @@ spec = do
       let err = extractError "test" (Parser.char 'a') "x"
       let formatted = Parser.formatError err
       -- At minimum, hints section should be non-empty
-      formatted |> shouldSatisfy (\t -> Text.length t > 0)
+      formatted |> shouldSatisfy (Text.contains "Hint:")
 
   -- ===========================================================
   -- 2.2 formatErrorCompact
@@ -131,6 +131,10 @@ spec = do
       let list = err.expected |> Array.toLinkedList
       let sorted = LinkedList.sort list
       sorted |> shouldBe list  -- already sorted = deduplicated
+      -- Verify no adjacent duplicates (sorted + no adj dups = deduplicated)
+      case sorted of
+        (a : b : _) -> a |> shouldSatisfy (\x -> x != b)
+        _ -> unit |> shouldBe unit
 
     it "is sorted alphabetically" \_ -> do
       let p = Parser.choice

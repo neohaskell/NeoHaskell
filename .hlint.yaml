@@ -69,6 +69,7 @@
 - ignore: { name: Use when }
 - ignore: { name: Use lambda case }
 - ignore: { name: Use bimap }
+- ignore: { name: Use uncurry }
 # Define some custom infix operators
 # - fixity: infixr 3 ~^#^~
 

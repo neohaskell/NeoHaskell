@@ -8,6 +8,7 @@ module Parser.Internal (
   unwrap,
   wrap,
   run,
+  runPartial,
   runNamed,
   runOnFile,
   runMaybe,
@@ -72,6 +73,12 @@ run parser input =
 {-# INLINE run #-}
 
 
+-- | Run a parser on input, requiring all input to be consumed (or zero tokens consumed).
+--
+-- __Zero-consumption rule__: If the parser succeeds but consumes zero tokens
+-- (e.g. via 'withDefault' or 'recover'), the result is returned even when
+-- input remains. Use 'runPartial' if you need explicit control over
+-- unconsumed input.
 runNamed :: Text -> Parser value -> Text -> Result ParseError value
 runNamed sourceName parser input =
   let initState = GhcMegaparsec.State
@@ -126,7 +133,31 @@ runNamed sourceName parser input =
             }
     (_, GhcEither.Left bundle) ->
       Result.Err (Error.fromBundle sourceName input bundle)
-{-# INLINE runNamed #-}
+{-# INLINABLE runNamed #-}
+
+
+-- | Run a parser without requiring full input consumption.
+--
+-- Unlike 'run', this returns successfully whenever the inner parser succeeds,
+-- regardless of remaining input. Useful for parsing prefixes or streaming input.
+runPartial :: Parser value -> Text -> Result ParseError value
+runPartial parser input =
+  let initState = GhcMegaparsec.State
+        { GhcMegaparsec.stateInput = input
+        , GhcMegaparsec.stateOffset = 0
+        , GhcMegaparsec.statePosState = GhcMegaparsec.PosState
+            { GhcMegaparsec.pstateInput = input
+            , GhcMegaparsec.pstateOffset = 0
+            , GhcMegaparsec.pstateSourcePos = GhcMegaparsec.initialPos (Text.toLinkedList "<input>")
+            , GhcMegaparsec.pstateTabWidth = GhcMegaparsec.defaultTabWidth
+            , GhcMegaparsec.pstateLinePrefix = ""
+            }
+        , GhcMegaparsec.stateParseErrors = []
+        }
+  in case GhcMegaparsec.runParser' (unwrap parser) initState of
+    (_, GhcEither.Right value) -> Result.Ok value
+    (_, GhcEither.Left bundle) ->
+      Result.Err (Error.fromBundle "<input>" input bundle)
 
 
 -- | Read a file and parse its contents.

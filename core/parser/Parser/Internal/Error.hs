@@ -44,7 +44,17 @@ fromBundle sourceName input bundle = do
   let (expectedArr, unexpectedMaybe) = extractItems firstError
   let hintsArr   = buildHints contextLineText colNum unexpectedMaybe expectedArr
   let rawMsg     = Text.fromLinkedList (GhcMegaparsec.errorBundlePretty bundle)
-  let summaryTxt = [fmt|Parse error in #{sourceName} at line #{lineNum}, column #{colNum}|]
+  let firstExpected = expectedArr |> Array.first |> Maybe.withDefault ""
+  let baseSummary = [fmt|Parse error in #{sourceName} at line #{lineNum}, column #{colNum}|]
+  let summaryTxt = case unexpectedMaybe of
+        Just u ->
+          if Array.isEmpty expectedArr
+            then [fmt|#{baseSummary}: unexpected #{u}|]
+            else [fmt|#{baseSummary}: unexpected #{u}, expected #{firstExpected}|]
+        Nothing ->
+          if Array.isEmpty expectedArr
+            then baseSummary
+            else [fmt|#{baseSummary}: expected #{firstExpected}|]
   ParseError
     { summary     = summaryTxt
     , position    = ParsePosition
@@ -71,12 +81,22 @@ fromSingleError
 fromSingleError megaErr = do
   let (expectedArr, unexpectedMaybe) = extractItems megaErr
   let rawMsg = Text.fromLinkedList (GhcMegaparsec.parseErrorPretty megaErr)
+  let firstExpectedSingle = expectedArr |> Array.first |> Maybe.withDefault ""
+  let summaryTxt = case unexpectedMaybe of
+        Just u ->
+          if Array.isEmpty expectedArr
+            then [fmt|Parse error: unexpected #{u}|]
+            else [fmt|Parse error: unexpected #{u}, expected #{firstExpectedSingle}|]
+        Nothing ->
+          if Array.isEmpty expectedArr
+            then "Parse error"
+            else [fmt|Parse error: expected #{firstExpectedSingle}|]
   ParseError
-    { summary     = "Parse error"
+    { summary     = summaryTxt
     , position    = ParsePosition
         { sourceName = "<unknown>"
-        , line       = 0
-        , column     = 0
+        , line       = 1
+        , column     = 1
         , offset     = GhcMegaparsec.errorOffset megaErr
         }
     , expected    = expectedArr
@@ -109,7 +129,7 @@ formatError parseError = do
         parseError.hints
           |> Array.map (\h -> [fmt|Hint: #{h}|])
           |> Text.joinWith "\n"
-  [ headerLine, "", contextLn, pointerLn, "", expectedLine, foundLine, hintLines ]
+  [ headerLine, contextLn, pointerLn, expectedLine, foundLine, hintLines ]
     |> Array.fromLinkedList
     |> Array.takeIf (\p -> not (Text.isEmpty p))
     |> Text.joinWith "\n"
@@ -264,5 +284,8 @@ buildHints _contextLine _col maybeUnexpected _expected =
                 then ["Check for a missing opening '[' earlier in the input"]
                 else if unexpected == "\"}\"" || unexpected == "'}'"
                   then ["Check for a missing opening '{' earlier in the input"]
-                  else ["Remove the unexpected token, or check for a missing separator before it"]
+                  else
+                    if Text.contains "\"" unexpected
+                      then ["Remove the unexpected token, or check for a missing separator before it"]
+                      else ["Check the input format or parser configuration"]
   in Array.fromLinkedList hintList

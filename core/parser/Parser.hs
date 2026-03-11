@@ -49,6 +49,7 @@ module Parser (
   ParseResult,
   -- * Running
   run,
+  runPartial,
   runNamed,
   runOnFile,
   runMaybe,
@@ -171,6 +172,14 @@ import Parser.Internal.Whitespace qualified as Whitespace
 run :: Parser value -> Text -> Result ParseError value
 run = Internal.run
 {-# INLINE run #-}
+
+-- | Run a parser without requiring full input consumption.
+--
+-- Unlike 'run', this returns successfully whenever the inner parser succeeds,
+-- regardless of remaining input. Useful for parsing prefixes or streaming input.
+runPartial :: Parser value -> Text -> Result ParseError value
+runPartial = Internal.runPartial
+{-# INLINE runPartial #-}
 
 runNamed :: Text -> Parser value -> Text -> Result ParseError value
 runNamed = Internal.runNamed
@@ -458,10 +467,18 @@ lower :: Parser Char
 lower = Internal.wrap GhcMegaparsecChar.lowerChar
 {-# INLINE lower #-}
 
+-- | Parses a single literal space character @' '@. Returns 'Char'.
+--
+-- __Note__: Does NOT match tabs or newlines. For flexible whitespace, use
+-- 'spaces' (zero or more) or 'whitespace' (one or more).
 space :: Parser Char
 space = Internal.wrap (GhcMegaparsecChar.char ' ')
 {-# INLINE space #-}
 
+-- | Consumes one or more whitespace characters (spaces, tabs, newlines).
+-- Returns 'Unit'. Fails on empty input or if first character is not whitespace.
+--
+-- For zero-or-more behavior (never fails), use 'spaces'.
 whitespace :: Parser Unit
 whitespace = Whitespace.whitespace
 {-# INLINE whitespace #-}
@@ -524,12 +541,20 @@ symbolWith = Whitespace.symbolWith
 -- Numeric Parsers
 -- ---------------------------------------------------------------------------
 
+-- | Parse an unsigned decimal integer.
+--
+-- __Warning__: Internally parses as @Integer@ and narrows via @fromIntegral@.
+-- Values outside the @Int@ range silently overflow.
 decimal :: Parser Int
 decimal =
   Internal.wrap (Mappable.fmap (Prelude.fromIntegral :: Prelude.Integer -> Int)
     (GhcLexer.lexeme (Internal.unwrap spaces) GhcLexer.decimal))
 {-# INLINE decimal #-}
 
+-- | Parse a signed decimal integer (handles leading @-@ sign).
+--
+-- __Warning__: Internally parses as @Integer@ and narrows via @fromIntegral@.
+-- Values outside the @Int@ range silently overflow.
 int :: Parser Int
 int =
   Internal.wrap (Mappable.fmap (Prelude.fromIntegral :: Prelude.Integer -> Int)
@@ -537,6 +562,10 @@ int =
        (GhcLexer.signed GhcMegaparsecChar.space GhcLexer.decimal)))
 {-# INLINE int #-}
 
+-- | Parse a signed floating-point number.
+--
+-- __Warning__: Internally parses as @Double@ and narrows via @realToFrac@.
+-- Precision loss may occur for values that require more than 24 bits of significand.
 float :: Parser Float
 float =
   Internal.wrap (Mappable.fmap (Prelude.realToFrac :: Prelude.Double -> Float)
@@ -544,6 +573,10 @@ float =
        (GhcLexer.signed GhcMegaparsecChar.space GhcLexer.float)))
 {-# INLINE float #-}
 
+-- | Parse an unsigned hexadecimal integer.
+--
+-- __Warning__: Internally parses as @Integer@ and narrows via @fromIntegral@.
+-- Values outside the @Int@ range silently overflow.
 hexadecimal :: Parser Int
 hexadecimal =
   Internal.wrap (Mappable.fmap (Prelude.fromIntegral :: Prelude.Integer -> Int)

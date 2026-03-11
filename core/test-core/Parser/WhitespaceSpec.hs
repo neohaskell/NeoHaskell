@@ -59,10 +59,6 @@ spec = do
       Parser.run (Parser.token (Parser.char 'ñ')) "ñ  "
         |> shouldBe (Result.Ok 'ñ')
 
-    it "preserves inner parser value" \_ -> do
-      Parser.run (Parser.token (Parser.char 'ñ')) "ñ  "
-        |> shouldBe (Result.Ok 'ñ')
-
   describe "Parser.tokenWith" do
     it "uses custom space consumer after the parser" \_ -> do
       let p = Parser.tokenWith (Parser.lineComment "#") (Parser.text "x")
@@ -120,10 +116,6 @@ spec = do
     it "skips content from prefix to end of line" \_ -> do
       let p = Parser.keepRight (Parser.lineComment "#") (Parser.char 'x')
       Parser.run p "# hello\nx" |> shouldBe (Result.Ok 'x')
-
-    it "does not consume beyond newline" \_ -> do
-      Parser.run (Parser.lineComment "#") "# only comment"
-        |> shouldBe (Result.Ok unit)
 
     it "skips comment up to EOF" \_ -> do
       Parser.run (Parser.lineComment "#") "# only comment"
