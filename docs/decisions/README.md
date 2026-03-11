@@ -54,6 +54,8 @@ ADRs document significant architectural decisions made during the development of
 | [0038](0038-fix-flaky-subscription-test.md) | Fix Flaky Subscription Test Ordering Assertion | Accepted |
 | [0039](0039-fix-listen-notify-connection-leak.md) | Fix LISTEN/NOTIFY Connection Leak in Test Teardown | Accepted |
 | [0040](0040-neoql-mvp.md) | NeoQL MVP — Field Access and Equality Filtering | Proposed |
+| [0041](0041-audio-transcription-integration.md) | Audio Transcription Integration via Multimodal Models | Proposed |
+| [0042](0042-parser-library.md) | Parser Library — Beginner-Friendly megaparsec Wrapper | Proposed |
 
 ## Creating New ADRs
 

@@ -28,6 +28,10 @@ import SetSpec qualified
 import StreamSpec qualified
 import Test.AppSpec.AppSpecSpec qualified
 import Test.AppSpec.VerifySpec qualified
+import ParserSpec qualified
+import Parser.ErrorSpec qualified
+import Parser.WhitespaceSpec qualified
+import Parser.FileSpec qualified
 import Test.Hspec qualified as Hspec
 
 
@@ -59,3 +63,7 @@ main = Hspec.hspec do
   Hspec.describe "Stream" StreamSpec.spec
   Hspec.describe "Test.AppSpec.AppSpec" Test.AppSpec.AppSpecSpec.spec
   Hspec.describe "Test.AppSpec.Verify" Test.AppSpec.VerifySpec.spec
+  Hspec.describe "Parser" ParserSpec.spec
+  Hspec.describe "Parser.Error" Parser.ErrorSpec.spec
+  Hspec.describe "Parser.Whitespace" Parser.WhitespaceSpec.spec
+  Hspec.describe "Parser.File" Parser.FileSpec.spec
