@@ -1,17 +1,17 @@
 ---
 name: dx-council-lang
-description: "Use when user says 'ask the council' or requests expert opinions on language design, syntax choices, DX tradeoffs, or ergonomics questions for NeoHaskell. Spawns parallel agents impersonating 19 real-world language DX experts who research their person's actual positions and reason from that perspective. Produces consensus with dissent."
+description: "Use when user says 'ask the council' or requests expert opinions on language design, syntax choices, DX tradeoffs, or ergonomics questions for NeoHaskell. Dynamically selects the 3 most relevant experts from a 19-person roster, spawns them as parallel agents who research their person's actual positions and reason from that perspective. Produces consensus with dissent."
 ---
 
 # DX Council — Language Design Expert Panel
 
-Summon 19 language design experts as parallel agents. Each researches their person's real opinions via web search and reasons from that expert's perspective. Results are synthesized into a consensus recommendation.
+Select the 3 most relevant experts from a 19-person roster based on the question, spawn them as parallel agents. Each researches their person's real opinions via web search and reasons from that perspective. Results are synthesized into a consensus recommendation.
 
 ## Trigger
 
 User says "ask the council" (or variants: "consult the council", "what would the council say", "council opinion on") followed by a language design question.
 
-## Expert Roster
+## Full Expert Roster (19)
 
 Read `references/experts.md` for full profiles. Brief roster:
 
@@ -41,7 +41,7 @@ Read `references/experts.md` for full profiles. Brief roster:
 
 ### Step 0: Read Expert Profiles
 
-Read `references/experts.md` in full. You need each expert's philosophy, known positions, search strategy, and voice to construct accurate agent prompts.
+Read `references/experts.md` in full. You need the Relevance Matrix, each expert's philosophy, known positions, search strategy, and voice.
 
 ### Step 1: Formulate the Question
 
@@ -53,15 +53,28 @@ CONTEXT: [Relevant NeoHaskell decisions already made - read from design/syntax.m
 OPTIONS: [If the user presented options, list them. If not, identify the option space.]
 ```
 
-### Step 2: Select Relevant Experts
+### Step 2: Select the 3 Most Relevant Experts
 
-Not all 19 experts need to weigh in on every question. Use the Relevance Matrix at the bottom of `references/experts.md` to select 8-12 experts most relevant to the specific question type.
+Using the Relevance Matrix at the bottom of `references/experts.md`, pick exactly 3 experts whose lenses are most useful for this specific question. Consider:
 
-**Always include:** Klabnik (strangeness budget), Nystrom (function coloring), Czaplicki (simplicity) - these three lenses apply to nearly every NeoHaskell decision.
+1. **Question domain** — match the question type to the matrix rows (e.g. "effect handling" → Nystrom, withoutboats, Syme, Czaplicki, Hickey)
+2. **Diversity of perspective** — pick experts who will disagree productively, not 3 who'll say the same thing
+3. **NeoHaskell fit** — prefer experts whose communities or philosophies directly relate to NeoHaskell's target audience (Java/C#/JS developers coming to FP)
 
-### Step 3: Spawn Expert Agents in Parallel
+**Show your selection with reasoning:**
 
-Spawn ALL selected experts as parallel background librarian agents. Each agent gets the following prompt template (fill in brackets from `references/experts.md`):
+```
+SELECTED PANEL:
+1. [Expert] — [why they're relevant to THIS question]
+2. [Expert] — [why they're relevant to THIS question]
+3. [Expert] — [why they're relevant to THIS question]
+
+CONSIDERED BUT EXCLUDED: [1-2 names and why they're less relevant here]
+```
+
+### Step 3: Spawn 3 Expert Agents in Parallel
+
+Spawn exactly three background librarian agents, one per selected expert, using this template:
 
 ```
 PERSONA: You are impersonating [EXPERT_NAME], [ROLE].
@@ -69,44 +82,35 @@ Your philosophy: [PHILOSOPHY from experts.md]
 Your known positions: [KNOWN_POSITIONS from experts.md]
 Your voice: [VOICE from experts.md]
 
-TASK: A new programming language called NeoHaskell is being designed. It transpiles
-to Haskell, targets Java/C#/JS developers, uses Elm as a baseline, adds braces
-instead of indentation, uses trait/impl instead of typeclass/instance, and has
-let! for monadic bind (F# style).
+TASK: NeoHaskell is a newcomer-friendly Haskell dialect that targets Java/C#/JS developers,
+uses braces, postfix type annotations, explicit effect markers like let!, and a strict novelty budget.
 
 The design team asks: [THE COUNCIL QUESTION]
 
 Context: [NEOHASKELL CONTEXT]
-
-Options being considered: [OPTIONS]
+Options: [OPTIONS]
 
 INSTRUCTIONS:
-1. SEARCH the web for [EXPERT_NAME]'s actual writings and opinions relevant to this
-   question. Search: [SEARCH_STRATEGY from experts.md]
+1. Search the web for [EXPERT_NAME]'s relevant writings/opinions.
+   Search: [SEARCH_STRATEGY from experts.md]
    Also search: "[EXPERT_NAME]" + [keywords from the question]
-2. Based on their REAL positions (from search results + known positions above),
-   construct their likely response.
-3. DO NOT invent positions. If you cannot find relevant opinions, extrapolate ONLY
-   from confirmed positions.
-4. Stay in character. Match their voice and reasoning style.
+2. Base your answer on confirmed positions first; extrapolate only when necessary.
+3. Do not invent positions.
+4. Stay in character and reasoning style.
 
-RESPONSE FORMAT (use exactly this structure):
-
+RESPONSE FORMAT:
 **[EXPERT_NAME]'s verdict:** [SUPPORT / OPPOSE / CONDITIONAL / ABSTAIN]
-
-**Position:** [2-4 sentences in their voice, stating their opinion on the specific question]
-
+**Position:** [2-4 sentences]
 **Reasoning:**
-- [bullet 1 explaining WHY, referencing their known writings/philosophy]
-- [bullet 2]
-- [bullet 3]
-
-**Concern:** [1-2 sentences on what they'd worry about with the proposed design]
-
-**Evidence:** [Links or references to their actual writings that support this position]
+- [bullet]
+- [bullet]
+- [bullet]
+**Concern:** [1-2 sentences]
+**Evidence:** [links or references]
 ```
 
 Launch each agent:
+
 ```
 task(
   subagent_type="librarian",
@@ -117,19 +121,27 @@ task(
 )
 ```
 
-### Step 4: Collect All Results
+### Step 4: Collect Results
 
-After spawning all agents, collect via `background_output(task_id=...)` for each.
+Collect all three via `background_output(task_id=...)`.
 
-If any agent fails or times out, note their absence. Do not retry. Proceed with available responses.
+If one agent fails, do not retry. Synthesize from available responses and explicitly note the missing perspective.
 
-### Step 5: Synthesize Consensus
+### Step 5: Synthesize
 
-After collecting all expert responses, produce the synthesis in this exact format:
+Produce output in this exact format:
 
 ---
 
 ## Council Verdict: [QUESTION SUMMARY]
+
+### Panel Selected
+
+| Expert | Lens | Why Selected |
+|--------|------|--------------|
+| [name] | [lens] | [1-sentence reason] |
+| [name] | [lens] | [1-sentence reason] |
+| [name] | [lens] | [1-sentence reason] |
 
 ### Quick Tally
 
@@ -142,92 +154,45 @@ After collecting all expert responses, produce the synthesis in this exact forma
 
 ### Consensus Position
 
-[2-3 paragraphs synthesizing the majority view. What do most experts agree on?
-Where is the common ground? What is the recommended path?]
+[1-2 short paragraphs]
 
 ### Key Arguments FOR
 
-[Bullet points - the strongest arguments from supporting experts, attributed]
+[bullets with attribution]
 
 ### Key Arguments AGAINST
 
-[Bullet points - the strongest arguments from opposing experts, attributed]
+[bullets with attribution]
 
 ### Conditions and Caveats
 
-[What the CONDITIONAL experts said - "this works IF..." statements]
+[conditional constraints]
 
-### Notable Dissent
+### Expert-Specific Impact Sections
 
-[Any expert whose position was particularly surprising or worth highlighting,
-with their reasoning. Dissent is valuable signal.]
+For each of the 3 selected experts, include a section:
 
-### Strangeness Budget Impact (Klabnik)
+### [Lens] Impact ([Expert Name])
 
-[Specifically call out how this decision spends or saves the strangeness budget]
-
-### Function Coloring Impact (Nystrom)
-
-[Specifically call out if this creates or avoids function coloring problems]
-
-### Pragmatics Check (Borretti)
-
-[Will developers ACTUALLY use this the way we intend? Or will they find shortcuts?]
+[How this decision relates to their specific area of expertise]
 
 ### Final Recommendation
 
-**The council recommends:** [CLEAR RECOMMENDATION]
-**Confidence:** [HIGH / MEDIUM / LOW] - based on degree of expert agreement
-**Dissent strength:** [STRONG / MILD / NONE] - how forcefully dissenters opposed
+**The council recommends:** [clear recommendation]
+**Confidence:** [HIGH / MEDIUM / LOW]
+**Dissent strength:** [STRONG / MILD / NONE]
 
 ---
 
 ### Step 6: Present to User
 
-Present the full synthesis. Wait for the user to accept, reject, or modify before updating any design documents.
-
-## Expert Grouping Strategy
-
-When spawning agents, use these groups to maximize parallelism:
-
-**Wave 1 - Core Panel (always spawn):**
-- Klabnik (strangeness budget)
-- Nystrom (function coloring)
-- Czaplicki (simplicity)
-- matklad (syntax analysis)
-- Wlaschin (FP teaching)
-
-**Wave 2 - Depth Panel (spawn based on relevance):**
-- Hickey (philosophy)
-- Syme (type system)
-- Feldman (teaching)
-- Borretti (pragmatics)
-
-**Wave 3 - Breadth Panel (spawn based on relevance):**
-- Hermans (cognitive science)
-- Wayne (empirical)
-- King (type ergonomics)
-- withoutboats (complexity)
-
-**Wave 4 - Practitioner Panel (spawn based on relevance):**
-- Matz (happiness)
-- DHH (convention)
-- Bernhardt (consistency)
-- Metz (craft)
-- Breslav (interop)
-- Turon (framework)
-
-Spawn all waves simultaneously (all background). Collect as they complete.
-
-## Rapid Mode
-
-If user says "quick council" or the question is narrow, spawn only Wave 1 (5 experts) for a fast verdict.
+Present the synthesis and wait for user validation before changing design docs.
 
 ## Anti-Patterns
 
-- DO NOT skip the web search. Each agent MUST search for the real expert's opinions.
-- DO NOT let agents agree with each other. Each reasons independently from their persona.
-- DO NOT suppress dissent. Disagreement is signal, not noise.
-- DO NOT present consensus as unanimous unless it actually is.
-- DO NOT update design documents before the user validates the council's recommendation.
-- DO NOT impersonate experts on topics they have never discussed. Use ABSTAIN.
+- Do not skip web search for expert alignment.
+- Do not force consensus when dissent exists.
+- Do not claim unanimity without evidence.
+- Do not update design docs before user validates council output.
+- Do not spawn more than 3 experts unless the user explicitly asks for a full council.
+- Do not pick 3 experts who will obviously agree — diversity of perspective is the point.
