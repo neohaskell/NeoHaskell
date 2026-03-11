@@ -202,6 +202,7 @@ library
     Map
     Mappable
     Maybe
+    Parser
     Path
     Record
     Redacted
@@ -341,7 +342,11 @@ library
     Var
     Version
 
-  -- other-modules:
+  other-modules:
+    Parser.Internal
+    Parser.Internal.Error
+    Parser.Internal.Types
+    Parser.Internal.Whitespace
   -- other-extensions:
   hs-source-dirs:
     auth
@@ -359,6 +364,7 @@ library
     testlib
     options-parser
     neoql
+    parser
 
   default-language: GHC2021
 
@@ -576,6 +582,10 @@ test-suite nhcore-test-core
     IntSpec
     NeoQL.ExecuteSpec
     NeoQL.ParserSpec
+    Parser.ErrorSpec
+    Parser.FileSpec
+    Parser.WhitespaceSpec
+    ParserSpec
     LogSpec
     RedactedSpec
     Schema.OpenApiSpec
