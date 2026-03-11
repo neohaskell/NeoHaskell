@@ -57,6 +57,7 @@ ADRs document significant architectural decisions made during the development of
 | [0041](0041-audio-transcription-integration.md) | Audio Transcription Integration via Multimodal Models | Proposed |
 | [0042](0042-parser-library.md) | Parser Library — Beginner-Friendly megaparsec Wrapper | Proposed |
 | [0043](0043-neohaskell-comment-syntax-parsing.md) | NeoHaskell Comment Syntax Parsing | Proposed |
+| [0044](0044-layout-library.md) | Layout Library — Beginner-Friendly prettyprinter Wrapper | Proposed |
 
 ## Creating New ADRs
 

@@ -92,6 +92,7 @@ common common_cfg
     yaml,
     megaparsec >= 9.0 && < 10,
     scientific >= 0.3 && < 0.4,
+    prettyprinter >=1.7.1 && <1.8,
 
   default-extensions:
     ApplicativeDo
@@ -192,11 +193,12 @@ library
     IO
     Int
     Json
+    Layout
+    LinkedList
     NeoQL
     NeoQL.Execute
     NeoQL.Parser
     NeoQL.Types
-    LinkedList
     Lock
     Log
     Map
@@ -348,6 +350,8 @@ library
     Parser.Internal.Error
     Parser.Internal.Types
     Parser.Internal.Whitespace
+    Layout.Internal
+    Layout.Internal.Render
   -- other-extensions:
   hs-source-dirs:
     auth
@@ -366,6 +370,7 @@ library
     options-parser
     neoql
     parser
+    layout
     syntax
 
   default-language: GHC2021
@@ -582,6 +587,8 @@ test-suite nhcore-test-core
     Http.ClientRawSpec
     Http.ClientSpec
     IntSpec
+    LayoutSpec
+    Layout.RenderSpec
     NeoQL.ExecuteSpec
     NeoQL.ParserSpec
     Parser.ErrorSpec

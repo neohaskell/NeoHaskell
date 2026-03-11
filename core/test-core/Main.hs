@@ -18,6 +18,8 @@ import Config.THSpec qualified
 import Http.ClientRawSpec qualified
 import Http.ClientSpec qualified
 import IntSpec qualified
+import Layout.RenderSpec qualified
+import LayoutSpec qualified
 import NeoQL.ExecuteSpec qualified
 import NeoQL.ParserSpec qualified
 import RedactedSpec qualified
@@ -54,6 +56,8 @@ main = Hspec.hspec do
   Hspec.describe "Http.Client" Http.ClientSpec.spec
   Hspec.describe "Http.ClientRaw" Http.ClientRawSpec.spec
   Hspec.describe "Int" IntSpec.spec
+  Hspec.describe "Layout" LayoutSpec.spec
+  Hspec.describe "Layout.Render" Layout.RenderSpec.spec
   Hspec.describe "NeoQL.Parser" NeoQL.ParserSpec.spec
   Hspec.describe "NeoQL.Execute" NeoQL.ExecuteSpec.spec
   Hspec.describe "Redacted" RedactedSpec.spec
