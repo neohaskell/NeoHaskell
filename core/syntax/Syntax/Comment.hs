@@ -129,7 +129,7 @@ blockComment :: Parser Comment
 blockComment = do
   pos <- Parser.position
   _ <- Parser.text "/*"
-  (capturedContent, maxDepth) <- go 1 1 ""
+  (capturedContent, maxDepth) <- go 1 1 Array.empty
   Parser.yield
     BlockComment
       { position = pos
@@ -137,25 +137,27 @@ blockComment = do
       , depth    = maxDepth
       }
   where
+    closeMarker = Text.toArray "*/"
+    openMarker = Text.toArray "/*"
     go currentDepth maxSeen accumulator =
       Parser.choice
         [ do
             _ <- Parser.text "*/"
             if currentDepth == 1
-              then Parser.yield (accumulator, maxSeen)
+              then Parser.yield (accumulator |> Text.fromArray, maxSeen)
               else do
-                let newContent = [fmt|#{accumulator}*/|]
-                go (currentDepth - 1) maxSeen newContent
+                let newChars = accumulator |> Array.append closeMarker
+                go (currentDepth - 1) maxSeen newChars
         , do
             _ <- Parser.text "/*"
             let newDepth = currentDepth + 1
             let newMax = Prelude.max newDepth maxSeen
-            let newContent = [fmt|#{accumulator}/*|]
-            go newDepth newMax newContent
+            let newChars = accumulator |> Array.append openMarker
+            go newDepth newMax newChars
         , do
             ch <- Parser.anyChar
-            let newContent = [fmt|#{accumulator}#{ch}|]
-            go currentDepth maxSeen newContent
+            let newChars = accumulator |> Array.push ch
+            go currentDepth maxSeen newChars
         ]
 
 

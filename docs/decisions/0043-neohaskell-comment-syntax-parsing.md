@@ -307,32 +307,36 @@ blockComment :: Parser Comment
 blockComment = do
   pos <- Parser.position
   _ <- Parser.text "/*"
-  let go currentDepth accumulator =
-        Parser.choice
-          [ do
-              _ <- Parser.text "*/"
-              if currentDepth == 1
-                then Parser.yield (accumulator, 1)
-                else do
-                  let newContent = accumulator |> Text.append "*/"
-                  go (currentDepth - 1) newContent
-          , do
-              _ <- Parser.text "/*"
-              let newContent = accumulator |> Text.append "/*"
-              go (currentDepth + 1) newContent
-          , do
-              ch <- Parser.anyChar
-              let newContent = accumulator |> Text.snoc ch
-              go currentDepth newContent
-          ]
-  (capturedContent, maxDepth) <- go 1 ""
+  (capturedContent, maxDepth) <- go 1 1 Array.empty
   Parser.yield
     BlockComment
       { position = pos
       , content  = capturedContent
       , depth    = maxDepth
       }
-{-# INLINE blockComment #-}
+  where
+    closeMarker = Text.toArray "*/"
+    openMarker  = Text.toArray "/*"
+    go currentDepth maxSeen accumulator =
+      Parser.choice
+        [ do
+            _ <- Parser.text "*/"
+            if currentDepth == 1
+              then Parser.yield (accumulator |> Text.fromArray, maxSeen)
+              else do
+                let newChars = accumulator |> Array.append closeMarker
+                go (currentDepth - 1) maxSeen newChars
+        , do
+            _ <- Parser.text "/*"
+            let newDepth = currentDepth + 1
+            let newMax = Prelude.max newDepth maxSeen
+            let newChars = accumulator |> Array.append openMarker
+            go newDepth newMax newChars
+        , do
+            ch <- Parser.anyChar
+            let newChars = accumulator |> Array.push ch
+            go currentDepth maxSeen newChars
+        ]
 ```
 
 #### `docComment` Parser
@@ -425,7 +429,7 @@ Complete mapping from NeoHaskell syntax spec §7:
 | ------------------------------ | --------------------------------------- | ------------------------------------------ |
 | `// hello world`               | `-- hello world`                        | One leading space stripped after `//`      |
 | `/* hello */`                  | `{- hello -}`                           | Flat block comment                         |
-| `/* outer /* inner */ outer */`| `{- outer {- inner -} outer -}`         | GHC supports native `{- -}` nesting        |
+| `/* outer /* inner */ outer */` | `{- outer {- inner -} outer -}` | GHC supports native `{- -}` nesting        |
 | `/** Calculates distance. */`  | `-- | Calculates distance.`             | Haddock single-line doc comment            |
 | Multi-line `/** ... */`        | Multiple `-- |` lines (one per line)    | Each content line becomes a Haddock line   |
 

@@ -621,10 +621,11 @@ braced parser = between (symbol "{") (symbol "}") parser
 position :: Parser ParsePosition
 position = Internal.wrap do
   sourcePos <- GhcMegaparsec.getSourcePos
+  currentOffset <- GhcMegaparsec.getOffset
   Applicable.pure ParsePosition
     { sourceName = sourcePos |> GhcMegaparsec.sourceName |> Text.fromLinkedList
     , line       = sourcePos |> GhcMegaparsec.sourceLine |> GhcMegaparsec.unPos
     , column     = sourcePos |> GhcMegaparsec.sourceColumn |> GhcMegaparsec.unPos
-    , offset     = 0
+    , offset     = currentOffset
     }
 {-# INLINE position #-}
