@@ -18,7 +18,7 @@
 -- == Transpilation
 --
 -- @
--- comment |> Syntax.Comment.toHaskell
+-- comment |> Syntax.Comment.toHaskell |> Layout.render
 -- @
 --
 -- Produces valid Haskell comment syntax:
@@ -45,6 +45,8 @@ import Parser qualified
 import Text (Text)
 import Text qualified
 import Prelude qualified
+import Layout (Blueprint)
+import Layout qualified
 
 
 -- | A NeoHaskell source comment, captured with its content and source position.
@@ -234,32 +236,32 @@ comment =
 -- __Multi-line doc comments__: each content line becomes a separate @-- |@ line.
 --
 -- @
--- toHaskell (LineComment { content = "hello", ... })
+-- toHaskell (LineComment { content = "hello", ... }) |> Layout.render
 --   == "-- hello"
 --
--- toHaskell (BlockComment { content = " world ", depth = 1, ... })
+-- toHaskell (BlockComment { content = " world ", depth = 1, ... }) |> Layout.render
 --   == "{- world -}"
 --
--- toHaskell (DocComment { content = "Calculates distance.", ... })
+-- toHaskell (DocComment { content = "Calculates distance.", ... }) |> Layout.render
 --   == "-- | Calculates distance."
 -- @
-toHaskell :: Comment -> Text
+toHaskell :: Comment -> Blueprint annotation
 toHaskell commentNode =
   case commentNode of
     LineComment { content = capturedContent } ->
-      [fmt|-- #{capturedContent}|]
+      Layout.text [fmt|-- #{capturedContent}|]
     BlockComment { content = capturedContent } -> do
       let innerHaskell =
             capturedContent
               |> Text.replace "/*" "{-"
               |> Text.replace "*/" "-}"
-      [fmt|{-#{innerHaskell}-}|]
+      Layout.text [fmt|{-#{innerHaskell}-}|]
     DocComment { content = capturedContent } -> do
       let contentLines = capturedContent |> Text.lines
       case Array.length contentLines of
         0 ->
-          "-- |"
+          Layout.text "-- |"
         _ ->
           contentLines
-            |> Array.map (\line -> [fmt|-- | #{line}|])
-            |> Text.joinWith "\n"
+            |> Array.map (\docLine -> Layout.text [fmt|-- | #{docLine}|])
+            |> Layout.stack
