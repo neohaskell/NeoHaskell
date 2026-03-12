@@ -1,6 +1,10 @@
 module Neo.Build.Core (
   BuildEntity (..),
   BuildEvent (..),
+  BuildStartedEvent (..),
+  ModuleTranspiledEvent (..),
+  BuildSucceededEvent (..),
+  BuildFailedEvent (..),
   initialState,
 ) where
 

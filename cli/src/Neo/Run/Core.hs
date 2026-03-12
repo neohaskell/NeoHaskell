@@ -1,6 +1,9 @@
 module Neo.Run.Core (
   AppEntity (..),
   AppEvent (..),
+  RunRequestedEvent (..),
+  AppStartedEvent (..),
+  AppStoppedEvent (..),
   initialState,
 ) where
 

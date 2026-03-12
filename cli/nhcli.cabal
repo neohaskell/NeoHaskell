@@ -44,8 +44,11 @@ library
   exposed-modules:
     App
     Neo.Build.Core
+    Neo.Build.Commands.StartBuild
     Neo.Project.Core
+    Neo.Project.Commands.InitProject
     Neo.Run.Core
+    Neo.Run.Commands.RunProject
   hs-source-dirs: src
   default-language: GHC2021
 

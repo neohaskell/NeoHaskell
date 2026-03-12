@@ -1,6 +1,11 @@
 module Neo.Project.Core (
   ProjectEntity (..),
   ProjectEvent (..),
+  ProjectInitRequestedEvent (..),
+  ProjectFileCreatedEvent (..),
+  GitInitializedEvent (..),
+  ProjectInitCompletedEvent (..),
+  ProjectInitFailedEvent (..),
   initialState,
 ) where
 
