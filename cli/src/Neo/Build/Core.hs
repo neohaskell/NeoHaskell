@@ -6,6 +6,7 @@ module Neo.Build.Core (
   BuildSucceededEvent (..),
   BuildFailedEvent (..),
   initialState,
+  update,
 ) where
 
 import Array qualified

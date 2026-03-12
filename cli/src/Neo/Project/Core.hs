@@ -7,6 +7,7 @@ module Neo.Project.Core (
   ProjectInitCompletedEvent (..),
   ProjectInitFailedEvent (..),
   initialState,
+  update,
 ) where
 
 import Array qualified

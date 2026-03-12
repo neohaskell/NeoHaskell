@@ -5,6 +5,7 @@ module Neo.Run.Core (
   AppStartedEvent (..),
   AppStoppedEvent (..),
   initialState,
+  update,
 ) where
 
 import Core

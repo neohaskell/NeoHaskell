@@ -78,3 +78,10 @@ test-suite nhcli-test
     nhcli,
     nhcore,
   default-language: GHC2021
+  other-modules:
+    Neo.Project.CoreSpec
+    Neo.Project.Commands.InitProjectSpec
+    Neo.Build.CoreSpec
+    Neo.Build.Commands.StartBuildSpec
+    Neo.Run.CoreSpec
+    Neo.Run.Commands.RunProjectSpec
