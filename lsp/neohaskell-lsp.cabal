@@ -1,0 +1,91 @@
+cabal-version: 3.4
+name: neohaskell-lsp
+version: 0.1.0.0
+synopsis: NeoHaskell Language Server
+description:
+  Language Server Protocol implementation for NeoHaskell.
+  Provides IDE features (diagnostics, formatting, semantic tokens)
+  via stdio transport.
+homepage: https://neohaskell.org
+license: Apache-2.0
+author: NeoHaskell Contributors
+maintainer: nhlib@nickseagull.dev
+category: Development
+build-type: Simple
+
+common common_cfg
+  ghc-options:
+    -Wall
+    -Wno-orphans
+    -threaded
+    -fno-warn-partial-type-signatures
+    -fno-warn-name-shadowing
+    -Werror
+
+  default-extensions:
+    ApplicativeDo
+    BlockArguments
+    DataKinds
+    DeriveDataTypeable
+    DuplicateRecordFields
+    ImportQualifiedPost
+    ImpredicativeTypes
+    NamedFieldPuns
+    NoFieldSelectors
+    NoImplicitPrelude
+    OverloadedLabels
+    OverloadedLists
+    OverloadedRecordDot
+    OverloadedStrings
+    PackageImports
+    PartialTypeSignatures
+    QualifiedDo
+    QuasiQuotes
+    Strict
+    TemplateHaskell
+    TypeApplications
+    TypeFamilies
+    TypeOperators
+
+  build-depends:
+    base
+
+library
+  import: common_cfg
+  exposed-modules:
+    NeoHaskell.LSP.Handlers
+    NeoHaskell.LSP.Server
+    NeoHaskell.LSP.State
+  build-depends:
+    aeson,
+    containers,
+    lsp >= 2.0 && < 3,
+    lsp-types >= 2.0 && < 3,
+    stm,
+    text
+  hs-source-dirs: src
+  default-language: GHC2021
+
+executable neohaskell-lsp
+  import: common_cfg
+  main-is: Main.hs
+  build-depends:
+    neohaskell-lsp
+  hs-source-dirs: launcher
+  default-language: GHC2021
+
+test-suite neohaskell-lsp-test
+  import: common_cfg
+  type: exitcode-stdio-1.0
+  main-is: Main.hs
+  hs-source-dirs: test
+  other-modules:
+  build-depends:
+    containers,
+    hspec,
+    neohaskell-lsp,
+    stm
+  default-language: GHC2021
+  ghc-options:
+    -rtsopts
+    -with-rtsopts=-N
