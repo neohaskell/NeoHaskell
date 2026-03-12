@@ -295,6 +295,9 @@ indent n x =
 {-# INLINE indent #-}
 
 
+-- | indentRelative uses GhcPretty.nest (not GhcPretty.indent) because nest only
+-- indents continuation lines after line breaks, while indent also adds leading
+-- spaces to the first line. The test suite expects nest semantics (no first-line spaces).
 indentRelative :: Int -> Blueprint ann -> Blueprint ann
 indentRelative n x =
   let clamped = clamp 0 10_000 n

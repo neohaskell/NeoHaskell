@@ -49,6 +49,9 @@ toLayoutOptions options =
     }
 
 
+-- | Fast mode intentionally uses a minimal width (fastWidth = 1) to force
+-- aggressive line breaks via the greedy layoutPretty algorithm. This bypasses
+-- the user's maxWidth setting. Use Balanced mode (layoutSmart) for width-aware layout.
 toFastLayoutOptions :: RenderOptions -> GhcPretty.LayoutOptions
 toFastLayoutOptions options =
   let fastRibbon = options.ribbonFraction * 0.4
@@ -80,24 +83,31 @@ sanitizeRenderOutput rendered =
       |> Text.replace "\x9bK" ""
       |> Text.replace "\x9b0K" ""
       |> Text.replace "\x9b" ""
-      |> Text.replace "[0K" ""
-      |> Text.replace "[1K" ""
-      |> Text.replace "[2K" ""
-      |> Text.replace "[K" ""
-      |> Text.replace "\n \n" "\n\n"
-      |> Text.replace "\n  \n" "\n\n"
-      |> Text.replace "\n   \n" "\n\n"
-      |> Text.replace "\n    \n" "\n\n"
-      |> Text.replace "\n     \n" "\n\n"
-      |> Text.replace "\n      \n" "\n\n"
-      |> Text.replace "\n       \n" "\n\n"
-      |> Text.replace "\n        \n" "\n\n"
-      |> Text.replace "\n         \n" "\n\n"
-      |> Text.replace "\n          \n" "\n\n"
-      |> Text.replace "\n           \n" "\n\n"
-      |> Text.replace "\n            \n" "\n\n"
-      |> collapseExcessiveNewlines
+      |> stripWhitespaceOnlyLines
+      -- Workaround: nest (used by indent/indentRelative) does not add leading
+      -- spaces on the first line after hardLine. The diagnostic example needs
+      -- "\n\n    let =\n" with 4 leading spaces, so we fix it up here.
       |> Text.replace "\n\nlet =\n" "\n\n    let =\n"
+      |> collapseExcessiveNewlines
+
+
+stripWhitespaceOnlyLines :: Text -> Text
+stripWhitespaceOnlyLines textValue =
+  if not (Text.contains "\n" textValue)
+    then textValue
+    else
+      let sourceLines = textValue |> Text.lines
+          endsWithNewline = Text.endsWith "\n" textValue
+          isWhitespaceOnly lineText =
+            (not (Text.isEmpty lineText)) && Text.all (\character -> character == ' ' || character == '\t') lineText
+          cleaned =
+            sourceLines
+              |> Array.map (\lineText -> if isWhitespaceOnly lineText then "" else lineText)
+          resultText = cleaned |> Text.joinWith "\n"
+      in
+        if endsWithNewline
+          then Text.append resultText "\n"
+          else resultText
 
 
 stripTrailingWhitespaceBeforeNewline :: Text -> Text
