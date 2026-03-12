@@ -1,4 +1,8 @@
 packages:
   core/*.cabal
   testbed/*.cabal
+  cli/*.cabal
+  integrations/nhintegrations.cabal
+  core/*.cabal
+  testbed/*.cabal
   integrations/nhintegrations.cabal
