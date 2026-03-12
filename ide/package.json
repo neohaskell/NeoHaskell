@@ -1,0 +1,71 @@
+{
+  "name": "neohaskell",
+  "displayName": "NeoHaskell",
+  "description": "NeoHaskell language support for VSCode",
+  "version": "0.1.0",
+  "publisher": "neohaskell",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/neohaskell/NeoHaskell.git"
+  },
+  "engines": {
+    "vscode": "^1.75.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "main": "./dist/extension.js",
+  "activationEvents": [
+    "onLanguage:neohaskell"
+  ],
+  "contributes": {
+    "languages": [
+      {
+        "id": "neohaskell",
+        "aliases": [
+          "NeoHaskell",
+          "neohaskell"
+        ],
+        "extensions": [
+          ".nh"
+        ],
+        "configuration": "./language-configuration.json",
+        "icon": {
+          "light": "./icons/neohaskell.svg",
+          "dark": "./icons/neohaskell.svg"
+        }
+      }
+    ],
+    "grammars": [
+      {
+        "language": "neohaskell",
+        "scopeName": "source.neohaskell",
+        "path": "./syntaxes/neohaskell.tmLanguage.json"
+      }
+    ],
+    "commands": []
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "webpack",
+    "watch": "webpack --watch",
+    "test": "node --test ./test/*.test.mjs",
+    "package": "vsce package",
+    "package:linux-x64": "vsce package --target linux-x64",
+    "package:linux-arm64": "vsce package --target linux-arm64",
+    "package:darwin-x64": "vsce package --target darwin-x64",
+    "package:darwin-arm64": "vsce package --target darwin-arm64",
+    "package:win32-x64": "vsce package --target win32-x64",
+    "package:all": "npm run package:linux-x64 && npm run package:linux-arm64 && npm run package:darwin-x64 && npm run package:darwin-arm64 && npm run package:win32-x64"
+  },
+  "devDependencies": {
+    "@types/node": "^20.17.24",
+    "@types/vscode": "^1.75.0",
+    "@vscode/vsce": "^3.6.0",
+    "ts-loader": "^9.5.2",
+    "typescript": "^5.8.2",
+    "webpack": "^5.98.0",
+    "webpack-cli": "^6.0.1"
+  }
+}

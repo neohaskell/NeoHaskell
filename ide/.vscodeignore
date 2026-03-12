@@ -1,0 +1,13 @@
+src/**
+test/**
+node_modules/**
+.vscode/**
+.vscode-test/**
+**/*.ts
+**/*.map
+webpack.config.js
+tsconfig.json
+package-lock.json
+npm-debug.log*
+yarn.lock
+pnpm-lock.yaml
