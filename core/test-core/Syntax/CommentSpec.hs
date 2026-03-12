@@ -6,6 +6,7 @@ import Parser qualified
 import Result qualified
 import Syntax.Comment (Comment (..))
 import Syntax.Comment qualified
+import Layout qualified
 import Test
 
 
@@ -214,6 +215,7 @@ spec = do
               , content  = "hello"
               }
       Syntax.Comment.toHaskell commentNode
+        |> Layout.render
         |> shouldBe "-- hello"
 
     it "transpiles flat block comment to {- -}" \_ -> do
@@ -224,6 +226,7 @@ spec = do
               , depth    = 1
               }
       Syntax.Comment.toHaskell commentNode
+        |> Layout.render
         |> shouldBe "{- world -}"
 
     it "transpiles nested block comment with marker substitution" \_ -> do
@@ -234,6 +237,7 @@ spec = do
               , depth    = 2
               }
       Syntax.Comment.toHaskell commentNode
+        |> Layout.render
         |> shouldBe "{- outer {- inner -} outer -}"
 
     it "transpiles single-line doc comment to -- |" \_ -> do
@@ -243,6 +247,7 @@ spec = do
               , content  = "Calculates distance."
               }
       Syntax.Comment.toHaskell commentNode
+        |> Layout.render
         |> shouldBe "-- | Calculates distance."
 
     it "transpiles multi-line doc comment to multiple -- | lines" \_ -> do
@@ -252,4 +257,5 @@ spec = do
               , content  = "Line one.\nLine two."
               }
       Syntax.Comment.toHaskell commentNode
+        |> Layout.render
         |> shouldBe "-- | Line one.\n-- | Line two."
