@@ -2,6 +2,320 @@
   "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
   "name": "NeoHaskell",
   "scopeName": "source.neohaskell",
-  "patterns": [],
-  "repository": {}
+  "patterns": [
+    {
+      "include": "#comments"
+    },
+    {
+      "include": "#strings"
+    },
+    {
+      "include": "#decorators"
+    },
+    {
+      "include": "#function_definition_names"
+    },
+    {
+      "include": "#type_definition_names"
+    },
+    {
+      "include": "#keywords_declaration"
+    },
+    {
+      "include": "#keywords_control"
+    },
+    {
+      "include": "#keywords_import"
+    },
+    {
+      "include": "#keywords_domain"
+    },
+    {
+      "include": "#keywords_additional"
+    },
+    {
+      "include": "#tuple_prefix"
+    },
+    {
+      "include": "#numbers"
+    },
+    {
+      "include": "#booleans"
+    },
+    {
+      "include": "#operators"
+    },
+    {
+      "include": "#types"
+    },
+    {
+      "include": "#variables"
+    }
+  ],
+  "repository": {
+    "comments": {
+      "patterns": [
+        {
+          "include": "#comments_doc"
+        },
+        {
+          "include": "#comments_block"
+        },
+        {
+          "include": "#comments_line"
+        }
+      ]
+    },
+    "comments_line": {
+      "patterns": [
+        {
+          "name": "comment.line.double-slash.neohaskell",
+          "match": "//.*$"
+        }
+      ]
+    },
+    "comments_doc": {
+      "patterns": [
+        {
+          "name": "comment.block.documentation.neohaskell",
+          "begin": "/\\*\\*",
+          "end": "\\*/",
+          "patterns": [
+            {
+              "include": "#comments_doc"
+            },
+            {
+              "include": "#comments_block"
+            }
+          ]
+        }
+      ]
+    },
+    "comments_block": {
+      "patterns": [
+        {
+          "name": "comment.block.neohaskell",
+          "begin": "/\\*",
+          "end": "\\*/",
+          "patterns": [
+            {
+              "include": "#comments_block"
+            }
+          ]
+        }
+      ]
+    },
+    "strings": {
+      "patterns": [
+        {
+          "name": "string.quoted.double.neohaskell",
+          "begin": "\"",
+          "end": "\"",
+          "patterns": [
+            {
+              "name": "constant.character.escape.neohaskell",
+              "match": "\\\\(?:\\\"|\\\\|n|t|\\$\\{|\\})"
+            },
+            {
+              "name": "meta.interpolation.neohaskell",
+              "begin": "\\$\\{",
+              "end": "\\}",
+              "patterns": [
+                {
+                  "include": "#comments"
+                },
+                {
+                  "include": "#strings"
+                },
+                {
+                  "include": "#numbers"
+                },
+                {
+                  "include": "#booleans"
+                },
+                {
+                  "include": "#operators"
+                },
+                {
+                  "include": "#types"
+                },
+                {
+                  "include": "#variables"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "decorators": {
+      "patterns": [
+        {
+          "name": "meta.annotation.neohaskell",
+          "begin": "(@[a-z][a-zA-Z0-9_]*)\\s*(\\()",
+          "beginCaptures": {
+            "1": {
+              "name": "storage.modifier.neohaskell"
+            },
+            "2": {
+              "name": "punctuation.section.group.begin.neohaskell"
+            }
+          },
+          "end": "(\\))",
+          "endCaptures": {
+            "1": {
+              "name": "punctuation.section.group.end.neohaskell"
+            }
+          },
+          "patterns": [
+            {
+              "include": "#strings"
+            },
+            {
+              "include": "#numbers"
+            },
+            {
+              "include": "#booleans"
+            },
+            {
+              "include": "#types"
+            },
+            {
+              "include": "#variables"
+            }
+          ]
+        },
+        {
+          "name": "storage.modifier.neohaskell",
+          "match": "@[a-z][a-zA-Z0-9_]*\\b"
+        }
+      ]
+    },
+    "function_definition_names": {
+      "patterns": [
+        {
+          "match": "\\b(fun)\\s+([a-z][a-zA-Z0-9_']*)",
+          "captures": {
+            "1": {
+              "name": "keyword.declaration.neohaskell"
+            },
+            "2": {
+              "name": "entity.name.function.neohaskell"
+            }
+          }
+        }
+      ]
+    },
+    "type_definition_names": {
+      "patterns": [
+        {
+          "match": "\\b(record|enum|brand|alias|trait)\\s+([A-Z][a-zA-Z0-9]*)",
+          "captures": {
+            "1": {
+              "name": "keyword.declaration.neohaskell"
+            },
+            "2": {
+              "name": "entity.name.type.neohaskell"
+            }
+          }
+        }
+      ]
+    },
+    "keywords_declaration": {
+      "patterns": [
+        {
+          "name": "keyword.declaration.neohaskell",
+          "match": "\\blet!(?=[\\s(])"
+        },
+        {
+          "name": "keyword.declaration.neohaskell",
+          "match": "\\b(?:let|fun|record|enum|brand|alias|trait|impl|module|agent)\\b"
+        }
+      ]
+    },
+    "keywords_control": {
+      "patterns": [
+        {
+          "name": "keyword.control.neohaskell",
+          "match": "\\b(?:if|then|else|match|return|where)\\b"
+        }
+      ]
+    },
+    "keywords_import": {
+      "patterns": [
+        {
+          "name": "keyword.control.import.neohaskell",
+          "match": "\\b(?:import|export|open|as)\\b"
+        }
+      ]
+    },
+    "keywords_domain": {
+      "patterns": [
+        {
+          "name": "keyword.declaration.neohaskell",
+          "match": "\\b(?:entity|command|query|event)\\b"
+        }
+      ]
+    },
+    "keywords_additional": {
+      "patterns": [
+        {
+          "name": "keyword.other.neohaskell",
+          "match": "\\b(?:has|deriving|for)\\b"
+        }
+      ]
+    },
+    "numbers": {
+      "patterns": [
+        {
+          "name": "constant.numeric.float.neohaskell",
+          "match": "\\b\\d+\\.\\d+(?:[eE][+-]?\\d+)?\\b"
+        },
+        {
+          "name": "constant.numeric.integer.neohaskell",
+          "match": "\\b\\d+\\b"
+        }
+      ]
+    },
+    "booleans": {
+      "patterns": [
+        {
+          "name": "constant.language.neohaskell",
+          "match": "\\b(?:True|False)\\b"
+        }
+      ]
+    },
+    "operators": {
+      "patterns": [
+        {
+          "name": "keyword.operator.neohaskell",
+          "match": "\\|>|->|=>|\\+\\+|==|/=|<=|>=|<|>|\\+|-|\\*|/"
+        }
+      ]
+    },
+    "tuple_prefix": {
+      "patterns": [
+        {
+          "name": "punctuation.definition.tuple.neohaskell",
+          "match": "#\\("
+        }
+      ]
+    },
+    "types": {
+      "patterns": [
+        {
+          "name": "entity.name.type.neohaskell",
+          "match": "\\b[A-Z][a-zA-Z0-9]*\\b"
+        }
+      ]
+    },
+    "variables": {
+      "patterns": [
+        {
+          "name": "variable.other.neohaskell",
+          "match": "(?<!\\w)[a-z][a-zA-Z0-9_']*(?!\\w)"
+        }
+      ]
+    }
+  }
 }

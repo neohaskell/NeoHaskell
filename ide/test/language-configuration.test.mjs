@@ -56,3 +56,19 @@ test("package contributions register NeoHaskell language and .nh extension", () 
   assert.ok(language.extensions.includes(".nh"));
   assert.equal(pkg.engines.vscode, "^1.75.0");
 });
+
+test("word pattern supports apostrophes", () => {
+  const config = readJson("language-configuration.json");
+  const re = new RegExp(config.wordPattern);
+
+  // Positive: valid identifiers
+  assert.ok(re.test("foo"));
+  assert.ok(re.test("foo_bar"));
+  assert.ok(re.test("x'"));
+  assert.ok(re.test("foo'bar"));
+  assert.ok(re.test("_hidden"));
+
+  // Negative: should not match as full identifier
+  assert.equal(re.test("123"), false);
+  assert.equal(re.test("-"), false);
+});

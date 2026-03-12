@@ -1,0 +1,46 @@
+// line comment
+/* block comment */
+/* nested /* block */ comment */
+/** doc comment */
+
+module Test
+
+import Data.Map as Map
+open import Data.Text { Text }
+export import MyLib { foo }
+
+@derive(Ord)
+record Person {
+  /** Name field */
+  name: Text,
+  @indexed age: Int,
+}
+
+enum Maybe<a> {
+  Nothing
+  Just(a)
+}
+
+brand UserId(Int)
+alias Url = Text
+
+trait Show<t> {
+  fun show(x: t) : Text
+}
+
+impl Show for Person {
+  fun show(p: Person) : Text = p.name
+}
+
+fun greet(name: Text) : Text = "Hello ${name}"
+
+fun main() : Task<Unit> {
+  let! user = fetchUser(42)
+  let #(x, y) = getPoint()
+  let result = match user {
+    Just(u) if u.age > 18 => u.name,
+    _ => "anonymous",
+  }
+  items |> Array.map((x) -> x + 1)
+  return Task.yield(result)
+}

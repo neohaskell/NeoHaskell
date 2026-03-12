@@ -70,3 +70,6 @@ node_modules/
 
 # Rust / Cargo (installer)
 installer/target/
+
+# VSCode extension packaging
+*.vsix
