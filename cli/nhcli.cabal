@@ -37,6 +37,7 @@ common common_cfg
     TypeOperators
 
   build-depends:
+    base,
     nhcore,
 
 library
@@ -45,10 +46,16 @@ library
     App
     Neo.Build.Core
     Neo.Build.Commands.StartBuild
+    Neo.Build.Service
+    Neo.Build.Integrations
     Neo.Project.Core
     Neo.Project.Commands.InitProject
+    Neo.Project.Service
+    Neo.Project.Integrations
     Neo.Run.Core
     Neo.Run.Commands.RunProject
+    Neo.Run.Service
+    Neo.Run.Integrations
   hs-source-dirs: src
   default-language: GHC2021
 
