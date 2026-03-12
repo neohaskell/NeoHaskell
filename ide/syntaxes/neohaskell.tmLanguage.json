@@ -281,7 +281,7 @@
       "patterns": [
         {
           "name": "constant.language.neohaskell",
-          "match": "\\b(?:True|False|Nothing)\\b"
+          "match": "\\b(?:True|False)\\b"
         }
       ]
     },
@@ -289,7 +289,7 @@
       "patterns": [
         {
           "name": "keyword.operator.neohaskell",
-          "match": "\\|>|->|=>|\\+\\+|==|/=|<=|>=|\\+|-|\\*|/"
+          "match": "\\|>|->|=>|\\+\\+|==|/=|<=|>=|<|>|\\+|-|\\*|/"
         }
       ]
     },
@@ -313,7 +313,7 @@
       "patterns": [
         {
           "name": "variable.other.neohaskell",
-          "match": "\\b[a-z][a-zA-Z0-9_']*\\b"
+          "match": "(?<!\\w)[a-z][a-zA-Z0-9_']*(?!\\w)"
         }
       ]
     }

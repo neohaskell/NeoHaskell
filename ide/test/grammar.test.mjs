@@ -55,3 +55,21 @@ test("operators include required multi-character tokens", () => {
   assert.equal(operatorPattern.includes("<="), true);
   assert.equal(operatorPattern.includes(">="), true);
 });
+
+test("standalone < and > operators are included after multi-char variants", () => {
+  const operatorPattern = grammar.repository.operators.patterns[0].match;
+  const idx_le = operatorPattern.indexOf("<=");
+  const idx_ge = operatorPattern.indexOf(">=");
+  const idx_lt = operatorPattern.indexOf("<", idx_le + 2);
+  const idx_gt = operatorPattern.indexOf(">", idx_ge + 2);
+  assert.ok(idx_lt > idx_le, "standalone < must appear after <=");
+  assert.ok(idx_gt > idx_ge, "standalone > must appear after >=");
+});
+
+test("Nothing is not classified as a boolean", () => {
+  const boolPattern = grammar.repository.booleans.patterns[0].match;
+  assert.equal(boolPattern.includes("Nothing"), false);
+  // Nothing is matched by the types rule (uppercase identifiers)
+  const typePattern = grammar.repository.types.patterns[0].match;
+  assert.ok(new RegExp(typePattern).test("Nothing"));
+});
