@@ -188,7 +188,7 @@ The complete public API of `Layout.hs`, organized by category. All operators fro
 | `appendWithSpace`      | `Blueprint ann -> Blueprint ann -> Blueprint ann`                     | Place two blueprints with a single space between                 |
 | `joinWith`             | `Blueprint ann -> Array (Blueprint ann) -> Blueprint ann`             | Concatenate with a separator between each pair                   |
 | `joinWords`            | `Array (Blueprint ann) -> Blueprint ann`                              | Space-separated; breaks entire group if too wide                 |
-| `stack`                | `Array (Blueprint ann) -> Blueprint ann`                              | Vertical concatenation with single line breaks between           |
+| `stack`                | `Array (Blueprint ann) -> Blueprint ann`                              | Vertical concatenation with line breaks and blank lines between  |
 | `joinParagraph`        | `Array (Blueprint ann) -> Blueprint ann`                              | Fill each line with items before wrapping; adds spaces           |
 | `joinAdaptive`         | `Array (Blueprint ann) -> Blueprint ann`                              | Uses `joinWords` if fits on one line; `stack` if not             |
 | `joinTight`            | `Array (Blueprint ann) -> Blueprint ann`                              | Horizontal concatenation without any separators                  |
@@ -354,7 +354,6 @@ instance ToBlueprint Colour where
       Green -> Layout.text "green"
       Blue -> Layout.text "blue"
 ```
-
 ### 7. Integration Examples
 
 #### Quick Start
