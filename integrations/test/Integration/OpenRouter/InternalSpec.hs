@@ -69,6 +69,8 @@ spec = do
               , top_p = Nothing
               , frequency_penalty = Nothing
               , presence_penalty = Nothing
+              , tools = Nothing
+              , tool_choice = Nothing
               }
       let encoded = Json.encodeText body
       Text.contains "\"model\":\"test-model\"" encoded `shouldBe` True
@@ -85,6 +87,8 @@ spec = do
               , top_p = Nothing
               , frequency_penalty = Nothing
               , presence_penalty = Nothing
+              , tools = Nothing
+              , tool_choice = Nothing
               }
       let encoded = Json.encodeText body
       Text.contains "\"temperature\"" encoded `shouldBe` True

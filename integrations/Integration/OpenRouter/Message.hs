@@ -193,14 +193,18 @@ instance Json.ToJSON Content where
 
 instance Json.FromJSON Content where
   parseJSON value = do
-    -- Try parsing as a plain text string first (backward compatible).
-    -- If that fails, parse as an array of content parts (multimodal).
-    case Json.decode value of
-      Ok (text :: Text) ->
-        Json.yield (TextContent text)
-      Err _ -> do
-        parts <- Json.parseJSON value
-        Json.yield (MultiContent parts)
+    -- Handle JSON null (e.g. when model returns tool calls with no text content).
+    if value == Json.null
+      then Json.yield (TextContent "")
+      else
+        -- Try parsing as a plain text string first (backward compatible).
+        -- If that fails, parse as an array of content parts (multimodal).
+        case Json.decode value of
+          Ok (text :: Text) ->
+            Json.yield (TextContent text)
+          Err _ -> do
+            parts <- Json.parseJSON value
+            Json.yield (MultiContent parts)
 
 
 -- | A single message in a conversation.

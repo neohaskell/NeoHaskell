@@ -1,3 +1,4 @@
+{- HLINT ignore "Redundant id" -}
 -- | Response types for OpenRouter chat completions.
 --
 -- This module provides types for parsing responses from the OpenRouter API.
@@ -27,6 +28,10 @@ module Integration.OpenRouter.Response
   , Choice (..)
   , Usage (..)
   , FinishReason (..)
+
+    -- * Tool Call Types
+  , ToolCall (..)
+  , ToolCallFunction (..)
   ) where
 
 import Array (Array)
@@ -34,7 +39,10 @@ import Basics
 import Integration.OpenRouter.Message (Message)
 import Json qualified
 import Maybe (Maybe)
+import Redacted (Redacted)
+import Redacted qualified
 import Text (Text)
+import Prelude qualified
 
 
 -- | Why the model stopped generating tokens.
@@ -108,19 +116,91 @@ instance Json.ToJSON Usage where
       ]
 
 
+-- | A function call made by the model.
+--
+-- NOTE: 'arguments' is wrapped in 'Redacted' because it contains
+-- AI-decoded command JSON with user-correlated data (cart IDs, quantities,
+-- etc.) that must not appear in logs. Unwrap only inside 'decodeArguments'.
+data ToolCallFunction = ToolCallFunction
+  { name :: Text
+  -- ^ Name of the tool (matches 'CommandTool.toolName')
+  , arguments :: Redacted Text
+  -- ^ JSON-encoded arguments string, redacted to prevent log leakage.
+  --   Unwrap with 'Redacted.unwrap' only inside 'decodeArguments'.
+  }
+  deriving (Generic)
+  -- NOTE: Show intentionally omitted — arguments contain user data.
+  -- NOTE: Eq implemented manually below (Redacted has no Eq).
+
+
+-- | Manual Eq instance for ToolCallFunction.
+-- Compares unwrapped arguments explicitly, as per Redacted.hs guidance.
+instance Eq ToolCallFunction where
+  a == b =
+    (a.name Prelude.== b.name)
+      Prelude.&& (Redacted.unwrap a.arguments Prelude.== Redacted.unwrap b.arguments)
+
+
+instance Json.FromJSON ToolCallFunction where
+  parseJSON = Json.withObject "ToolCallFunction" \obj -> do
+    name <- obj Json..: "name"
+    rawArguments <- obj Json..: "arguments"
+    let arguments = Redacted.wrap rawArguments
+    Json.yield ToolCallFunction {name, arguments}
+
+
+instance Json.ToJSON ToolCallFunction where
+  toJSON tcf =
+    Json.object
+      [ ("name", Json.toJSON tcf.name)
+      , ("arguments", Json.toJSON (Redacted.unwrap tcf.arguments))
+      ]
+
+
+-- | A tool call returned by the model.
+data ToolCall = ToolCall
+  { id :: Text
+  -- ^ Unique call identifier (e.g., "call_abc123")
+  , function :: ToolCallFunction
+  -- ^ The function name and encoded arguments
+  }
+  deriving (Eq, Generic)
+  -- NOTE: Show intentionally omitted — inherits sensitive data from ToolCallFunction.
+
+
+instance Json.FromJSON ToolCall where
+  parseJSON = Json.withObject "ToolCall" \obj -> do
+    id <- obj Json..: "id"
+    function <- obj Json..: "function"
+    Json.yield ToolCall {id, function}
+
+
+instance Json.ToJSON ToolCall where
+  toJSON tc =
+    Json.object
+      [ ("id", Json.toJSON tc.id)
+      , ("function", Json.toJSON tc.function)
+      ]
+
+
 -- | A single completion choice from the model.
 --
--- Most requests return a single choice, but the API supports
--- multiple choices via the @n@ parameter (not exposed in v1).
+-- Most requests return a single choice.
+-- 'toolCalls' is populated for tool_choice = "required" requests,
+-- empty for regular chat completion requests (backward compatible).
 data Choice = Choice
   { message :: Message
-    -- ^ The assistant's response message
+  -- ^ The assistant's response message
   , finishReason :: FinishReason
-    -- ^ Why generation stopped
-  , index :: Int
-    -- ^ Index of this choice (0 for single responses)
+  -- ^ Why generation stopped
+  , index :: {-# UNPACK #-} Int
+  -- ^ Index of this choice (0 for single responses)
+  , toolCalls :: Array ToolCall
+  -- ^ Tool calls made by the model (empty array for non-agent responses,
+  --   populated for tool_choice = "required" requests)
   }
-  deriving (Show, Eq, Generic)
+  deriving (Eq, Generic)
+  -- NOTE: Show removed — toolCalls contains ToolCall which has no Show.
 
 
 instance Json.FromJSON Choice where
@@ -128,7 +208,8 @@ instance Json.FromJSON Choice where
     message <- obj Json..: "message"
     finishReason <- obj Json..: "finish_reason"
     index <- obj Json..:? "index" Json..!= 0
-    Json.yield Choice {message, finishReason, index}
+    toolCalls <- obj Json..:? "tool_calls" Json..!= []  -- backward compatible: [] for non-agent
+    Json.yield Choice {message, finishReason, index, toolCalls}
 
 
 instance Json.ToJSON Choice where
@@ -137,6 +218,7 @@ instance Json.ToJSON Choice where
       [ ("message", Json.toJSON choice.message)
       , ("finish_reason", Json.toJSON choice.finishReason)
       , ("index", Json.toJSON choice.index)
+      , ("tool_calls", Json.toJSON choice.toolCalls)
       ]
 
 
@@ -160,7 +242,8 @@ data Response = Response
   , usage :: Maybe Usage
     -- ^ Token usage statistics (may be absent)
   }
-  deriving (Show, Eq, Generic)
+  deriving (Eq, Generic)
+  -- NOTE: Show removed — contains Array Choice which has no Show.
 
 
 instance Json.FromJSON Response where

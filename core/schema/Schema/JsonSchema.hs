@@ -1,0 +1,77 @@
+module Schema.JsonSchema
+  ( -- * Conversion
+    toJsonSchema
+  ) where
+
+import Array qualified
+import Basics
+import Json qualified
+import Schema (FieldSchema (..), Schema (..))
+import Text (Text)
+import Text qualified
+
+
+-- | Convert a NeoHaskell Schema to a JSON Schema Aeson Value.
+--
+-- Follows JSON Schema draft-07 semantics. See conversion rules below.
+{-# INLINEABLE toJsonSchema #-}
+toJsonSchema :: Schema -> Json.Value
+toJsonSchema schema = case schema of
+  SNull ->
+    Json.object [("type", Json.toJSON ("null" :: Text))]
+
+  SBool ->
+    Json.object [("type", Json.toJSON ("boolean" :: Text))]
+
+  SInt ->
+    Json.object [("type", Json.toJSON ("integer" :: Text))]
+
+  SNumber ->
+    Json.object [("type", Json.toJSON ("number" :: Text))]
+
+  SText ->
+    Json.object [("type", Json.toJSON ("string" :: Text))]
+
+  SArray innerSchema -> do
+    let items = toJsonSchema innerSchema
+    Json.object
+      [ ("type", Json.toJSON ("array" :: Text))
+      , ("items", items)
+      ]
+
+  SOptional innerSchema ->
+    toJsonSchema innerSchema
+
+  SObject fields -> do
+    let properties =
+          fields
+            |> Array.map (\field -> (field.fieldName, toJsonSchema field.fieldSchema))
+            |> Array.toLinkedList
+    let requiredNames =
+          fields
+            |> Array.takeIf (\field -> field.fieldRequired)
+            |> Array.map (\field -> field.fieldName)
+            |> Array.toLinkedList
+    Json.object
+      [ ("type", Json.toJSON ("object" :: Text))
+      , ("properties", Json.object properties)
+      , ("required", Json.toJSON requiredNames)
+      , ("additionalProperties", Json.toJSON False)
+      ]
+
+  SEnum variants -> do
+    let enumValues = variants |> Array.toLinkedList
+    Json.object
+      [ ("type", Json.toJSON ("string" :: Text))
+      , ("enum", Json.toJSON enumValues)
+      ]
+
+  SUnion variants -> do
+    let oneOf =
+          variants
+            |> Array.map (\(_name, variantSchema) -> toJsonSchema variantSchema)
+            |> Array.toLinkedList
+    Json.object [("oneOf", Json.toJSON oneOf)]
+
+  SRef refName ->
+    Json.object [("$ref", Json.toJSON (Text.append "#/definitions/" refName))]

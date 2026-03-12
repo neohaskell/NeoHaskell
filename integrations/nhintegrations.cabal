@@ -72,6 +72,9 @@ library
     Integration.OpenRouter.Message
     Integration.OpenRouter.Request
     Integration.OpenRouter.Response
+    Integration.Agent
+    Integration.Agent.Internal
+    Integration.Agent.Types
     Integration.Oura
     Integration.Oura.Activity
     Integration.Oura.DailyCardiovascularAge
@@ -123,6 +126,11 @@ test-suite nhintegrations-test
     Integration.Oura.SyncAllSpec
     Integration.Oura.TypesSpec
     Integration.Ocr.Ai.InternalSpec
+    Integration.Agent.CompileSpec
+    Integration.Agent.InternalSpec
+    Integration.Agent.Spec
+    Integration.Agent.TestFixtures
+    Integration.Agent.TypesSpec
   build-depends:
     hspec,
     nhintegrations
