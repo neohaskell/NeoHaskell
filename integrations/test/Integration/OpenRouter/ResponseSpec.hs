@@ -1,3 +1,4 @@
+{- HLINT ignore "Redundant id" -}
 module Integration.OpenRouter.ResponseSpec (spec) where
 
 import Array qualified
@@ -136,7 +137,7 @@ spec = do
           Result.Err err ->
             expectationFailure (Text.toLinkedList [fmt|Failed to decode: #{err}|])
 
-      it "encodes to JSON with unwrapped arguments" do
+      it "encodes to JSON with redacted arguments" do
         let tcf = ToolCallFunction
               { name = "AddItem"
               , arguments = Redacted.wrap ("{\"cartId\":\"c1\"}" :: Text)
@@ -144,7 +145,7 @@ spec = do
         let encoded = Json.encodeText tcf
         Text.contains "\"name\":\"AddItem\"" encoded `shouldBe` True
         Text.contains "\"arguments\"" encoded `shouldBe` True
-
+        Text.contains "<redacted>" encoded `shouldBe` True
     describe "ToolCall" do
       it "constructs with id and function" do
         let tc = ToolCall

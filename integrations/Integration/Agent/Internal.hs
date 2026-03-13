@@ -37,6 +37,7 @@ import Redacted qualified
 import Result (Result (..))
 import Service.Command.Core (NameOf)
 import Task (Task)
+import Task qualified
 import Text (Text)
 import Text qualified
 
@@ -57,9 +58,9 @@ openRouterBaseUrl :: Text
 openRouterBaseUrl = "https://openrouter.ai/api/v1"
 
 
--- | Full URL for chat completions endpoint. Top-level CAF — computed once per process.
+-- | Full URL for chat completions endpoint. Derived from base URL — CAF computed once per process.
 openRouterChatCompletionsUrl :: Text
-openRouterChatCompletionsUrl = "https://openrouter.ai/api/v1/chat/completions"
+openRouterChatCompletionsUrl = Text.append openRouterBaseUrl "/chat/completions"
 
 
 -- | Build the messages array from config and user prompt.
@@ -209,28 +210,34 @@ executeAgent ::
   Request command ->
   Task Integration.IntegrationError (Maybe Integration.CommandPayload)
 executeAgent ctx agentRequest = do
-  let body = buildAgentRequestBody agentRequest
-  let openRouterConfig = OpenRouterRequest.Config
-        { temperature = agentRequest.config.temperature
-        , maxTokens = agentRequest.config.maxTokens
-        , topP = Nothing
-        , frequencyPenalty = Nothing
-        , presencePenalty = Nothing
-        , referer = Nothing
-        , title = Nothing
-        , timeoutSeconds = agentRequest.config.timeoutSeconds
-        }
-  let headers = buildHeaders openRouterConfig
-  let httpRequest = Http.Request
-        { method = Http.POST
-        , url = openRouterChatCompletionsUrl
-        , headers = headers
-        , body = Http.json body
-        , onSuccess = handleAgentHttpSuccess agentRequest
-        , onError = Just (handleAgentHttpError agentRequest)
-        , auth = Http.Bearer "${OPENROUTER_API_KEY}"
-        , retry = Http.noRetry
-        , timeoutSeconds = agentRequest.config.timeoutSeconds
-        }
-  let httpAction = Integration.toAction httpRequest
-  Integration.runAction ctx httpAction
+  case Array.length agentRequest.tools == 0 of
+    True -> do
+      let errorCmd = agentRequest.onError "Agent.agent: tools list is empty"
+      let payload = Integration.makeCommandPayload errorCmd
+      Task.yield (Just payload)
+    False -> do
+      let body = buildAgentRequestBody agentRequest
+      let openRouterConfig = OpenRouterRequest.Config
+            { temperature = agentRequest.config.temperature
+            , maxTokens = agentRequest.config.maxTokens
+            , topP = Nothing
+            , frequencyPenalty = Nothing
+            , presencePenalty = Nothing
+            , referer = Nothing
+            , title = Nothing
+            , timeoutSeconds = agentRequest.config.timeoutSeconds
+            }
+      let headers = buildHeaders openRouterConfig
+      let httpRequest = Http.Request
+            { method = Http.POST
+            , url = openRouterChatCompletionsUrl
+            , headers = headers
+            , body = Http.json body
+            , onSuccess = handleAgentHttpSuccess agentRequest
+            , onError = Just (handleAgentHttpError agentRequest)
+            , auth = Http.Bearer "${OPENROUTER_API_KEY}"
+            , retry = Http.noRetry
+            , timeoutSeconds = agentRequest.config.timeoutSeconds
+            }
+      let httpAction = Integration.toAction httpRequest
+      Integration.runAction ctx httpAction

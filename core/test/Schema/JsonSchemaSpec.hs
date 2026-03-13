@@ -179,7 +179,7 @@ spec = do
                 ]
         result |> Test.shouldBe expected
 
-      Test.it "SUnion emits oneOf with each variant schema in input order" \_ -> do
+      Test.it "SUnion emits oneOf with discriminated entries in input order" \_ -> do
         let variants = Array.fromLinkedList
               [ ("Circle", SObject (Array.fromLinkedList [FieldSchema "radius" SInt True ""]))
               , ("Square", SObject (Array.fromLinkedList [FieldSchema "side" SInt True ""]))
@@ -199,9 +199,29 @@ spec = do
                 , ("required", Json.toJSON (["side"] :: [Text]))
                 , ("additionalProperties", Json.toJSON False)
                 ]
+        let circleEntry =
+              Json.object
+                [ ("type", Json.toJSON ("object" :: Text))
+                , ("properties", Json.object
+                    [ ("tag", Json.object [("const", Json.toJSON ("Circle" :: Text))])
+                    , ("contents", circleSchema)
+                    ])
+                , ("required", Json.toJSON (["tag", "contents"] :: [Text]))
+                , ("additionalProperties", Json.toJSON False)
+                ]
+        let squareEntry =
+              Json.object
+                [ ("type", Json.toJSON ("object" :: Text))
+                , ("properties", Json.object
+                    [ ("tag", Json.object [("const", Json.toJSON ("Square" :: Text))])
+                    , ("contents", squareSchema)
+                    ])
+                , ("required", Json.toJSON (["tag", "contents"] :: [Text]))
+                , ("additionalProperties", Json.toJSON False)
+                ]
         let expected =
               Json.object
-                [("oneOf", Json.toJSON ([circleSchema, squareSchema] :: [Json.Value]))]
+                [("oneOf", Json.toJSON ([circleEntry, squareEntry] :: [Json.Value]))]
         result |> Test.shouldBe expected
 
       Test.it "empty SUnion emits oneOf with empty array" \_ -> do

@@ -1026,7 +1026,7 @@ executeAgent ctx agentRequest = do
         }
   let httpRequest = Http.Request
         { method         = Http.POST
-        , url            = [fmt|#{openRouterBaseUrl}/chat/completions|]
+        , url            = openRouterChatCompletionsUrl
         , headers        = headers
         , body           = Http.json body
         , onSuccess      = handleAgentHttpSuccess agentRequest

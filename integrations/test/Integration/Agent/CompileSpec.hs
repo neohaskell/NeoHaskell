@@ -13,12 +13,16 @@ import Test.Hspec
 import Text (Text)
 
 
--- | NFData instance for Config (needed for shouldNotTypecheck).
+-- | Stub NFData instance required by shouldNotTypecheck.
+-- The actual Config type intentionally omits NFData; this exists only for testing.
+-- Orphan instance: acceptable in test-only module.
 instance NFData Config where
   rnf _ = ()
 
 
--- | NFData instance for ToolCallFunction (needed for shouldNotTypecheck).
+-- | Stub NFData instance required by shouldNotTypecheck.
+-- ToolCallFunction intentionally omits NFData to avoid deriving constraints.
+-- Orphan instance: acceptable in test-only module.
 instance NFData ToolCallFunction where
   rnf _ = ()
 
@@ -33,9 +37,6 @@ spec = do
       CompileTime.shouldNotTypecheck (show (defaultConfig :: Config))
         |> Task.runOrPanic
 
-    it "Show Config constraint cannot be satisfied" do
-      CompileTime.shouldNotTypecheck (show (defaultConfig :: Config))
-        |> Task.runOrPanic
 
     it "Eq still works for Config" do
       (defaultConfig == defaultConfig) `shouldBe` True

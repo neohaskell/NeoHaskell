@@ -1,3 +1,4 @@
+{- HLINT ignore "Use lambda-case" -}
 module Integration.Agent.InternalSpec (spec) where
 
 import Array (Array)
@@ -231,7 +232,8 @@ spec = do
         let result = validateToolName tools toolCall
         case result of
           Err msg ->
-            Text.length msg `shouldSatisfy` (\n -> n <= 200)  -- truncated name <= 100 + fixed prefix
+            -- 200 = max 100 chars for truncated tool name + ~100 chars for error prefix and formatting
+            Text.length msg `shouldSatisfy` (\n -> n <= 200)
           Ok _ -> expectationFailure "Expected Err for unregistered long name"
 
       it "name matching is case-sensitive" do
@@ -445,8 +447,29 @@ spec = do
         result `shouldBe` CommandError "Failed to decode tool arguments for AddItem"
 
       it "full happy path: 200 with valid tool and args returns decoded command" do
-        let response = makeResponseWithToolCall "AddItem" validArgsJson
-        let body = Json.encode response
+        -- Build JSON body directly (not through ToJSON) to simulate real API response
+        -- with actual (non-redacted) arguments, as OpenRouter would return.
+        let toolCallJson = Json.object
+              [ ("id", Json.toJSON ("call_1" :: Text))
+              , ("function", Json.object
+                  [ ("name", Json.toJSON ("AddItem" :: Text))
+                  , ("arguments", Json.toJSON validArgsJson)
+                  ])
+              ]
+        let choiceJson = Json.object
+              [ ("message", Json.object
+                  [ ("role", Json.toJSON ("assistant" :: Text))
+                  , ("content", Json.toJSON ("" :: Text))
+                  ])
+              , ("finish_reason", Json.toJSON ("stop" :: Text))
+              , ("index", Json.toJSON (0 :: Int))
+              , ("tool_calls", Json.toJSON ([toolCallJson] :: [Json.Value]))
+              ]
+        let body = Json.object
+              [ ("id", Json.toJSON ("gen-test" :: Text))
+              , ("model", Json.toJSON ("test-model" :: Text))
+              , ("choices", Json.toJSON ([choiceJson] :: [Json.Value]))
+              ]
         let httpResp = makeHttpResponse 200 body
         let result = handleAgentHttpSuccess @AgentCommand (makeAgentRequest tools (\err -> CommandError err)) httpResp
         result `shouldBe` CommandOk (AddItemCommand { cartId = "cart-1", stockId = "stock-1", quantity = 2 })

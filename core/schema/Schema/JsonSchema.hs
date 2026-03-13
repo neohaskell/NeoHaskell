@@ -69,7 +69,17 @@ toJsonSchema schema = case schema of
   SUnion variants -> do
     let oneOf =
           variants
-            |> Array.map (\(_name, variantSchema) -> toJsonSchema variantSchema)
+            |> Array.map (\(ctorName, variantSchema) -> do
+                let innerSchema = toJsonSchema variantSchema
+                Json.object
+                  [ ("type", Json.toJSON ("object" :: Text))
+                  , ("properties", Json.object
+                      [ ("tag", Json.object [("const", Json.toJSON ctorName)])
+                      , ("contents", innerSchema)
+                      ])
+                  , ("required", Json.toJSON (["tag", "contents"] :: [Text]))
+                  , ("additionalProperties", Json.toJSON False)
+                  ])
             |> Array.toLinkedList
     Json.object [("oneOf", Json.toJSON oneOf)]
 

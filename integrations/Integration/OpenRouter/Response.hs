@@ -35,6 +35,7 @@ module Integration.OpenRouter.Response
   ) where
 
 import Array (Array)
+import Array qualified
 import Basics
 import Integration.OpenRouter.Message (Message)
 import Json qualified
@@ -153,7 +154,7 @@ instance Json.ToJSON ToolCallFunction where
   toJSON tcf =
     Json.object
       [ ("name", Json.toJSON tcf.name)
-      , ("arguments", Json.toJSON (Redacted.unwrap tcf.arguments))
+      , ("arguments", Json.toJSON ("<redacted>" :: Text))
       ]
 
 
@@ -214,12 +215,20 @@ instance Json.FromJSON Choice where
 
 instance Json.ToJSON Choice where
   toJSON choice =
-    Json.object
-      [ ("message", Json.toJSON choice.message)
-      , ("finish_reason", Json.toJSON choice.finishReason)
-      , ("index", Json.toJSON choice.index)
-      , ("tool_calls", Json.toJSON choice.toolCalls)
-      ]
+    case Array.length choice.toolCalls == 0 of
+      True ->
+        Json.object
+          [ ("message", Json.toJSON choice.message)
+          , ("finish_reason", Json.toJSON choice.finishReason)
+          , ("index", Json.toJSON choice.index)
+          ]
+      False ->
+        Json.object
+          [ ("message", Json.toJSON choice.message)
+          , ("finish_reason", Json.toJSON choice.finishReason)
+          , ("index", Json.toJSON choice.index)
+          , ("tool_calls", Json.toJSON choice.toolCalls)
+          ]
 
 
 -- | Full response from OpenRouter chat completion API.
