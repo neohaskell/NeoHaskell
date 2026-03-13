@@ -7,12 +7,11 @@ module NeoHaskell.LSP.State
   )
 where
 
-import Prelude
+import Core
 
 import Control.Concurrent.STM (TVar, newTVarIO)
-import Data.Map.Strict (Map)
-import Data.Map.Strict qualified as Map
-import Data.Text (Text)
+import IO (FilePath)
+import Map qualified
 import Language.LSP.Protocol.Types qualified as LSP
 
 

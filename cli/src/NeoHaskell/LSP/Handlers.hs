@@ -3,16 +3,16 @@ module NeoHaskell.LSP.Handlers
   )
 where
 
-import Prelude
+import Core
 
 import Control.Concurrent.STM (atomically, modifyTVar', writeTVar)
 import Control.Monad.IO.Class (liftIO)
-import Data.Map.Strict qualified as Map
+import Map qualified
 import Language.LSP.Protocol.Message qualified as Msg
 import Language.LSP.Protocol.Types qualified as LSP
 import Language.LSP.Server qualified as LSP
 import Language.LSP.VFS (virtualFileText)
-import System.IO (hPutStrLn, stderr)
+import Console qualified
 
 import NeoHaskell.LSP.State (ServerState (..))
 
@@ -22,15 +22,13 @@ import NeoHaskell.LSP.State (ServerState (..))
 -- Combines notification handlers (lifecycle events) with request handlers
 -- (formatting, semantic tokens) into a single 'LSP.Handlers' value.
 handlers :: ServerState -> LSP.Handlers (LSP.LspM ())
-handlers state = mconcat
-  [ initializedHandler state
-  , didOpenHandler state
-  , didChangeHandler state
-  , didSaveHandler state
-  , didCloseHandler state
-  , formattingHandler
-  , semanticTokensHandler
-  ]
+handlers state = initializedHandler state
+  ++ didOpenHandler state
+  ++ didChangeHandler state
+  ++ didSaveHandler state
+  ++ didCloseHandler state
+  ++ formattingHandler
+  ++ semanticTokensHandler
 
 
 -- ---------------------------------------------------------------------------
@@ -50,9 +48,9 @@ initializedHandler state =
       atomically (writeTVar state.projectRoot root)
       case root of
         Just path ->
-          hPutStrLn stderr ("[neohaskell-lsp] Initialized with root: " <> path)
+          Console.error [fmt|[neohaskell-lsp] Initialized with root: #{path}|]
         Nothing ->
-          hPutStrLn stderr "[neohaskell-lsp] Initialized (no root path)"
+          Console.error "[neohaskell-lsp] Initialized (no root path)"
 
 
 -- | Handle @textDocument/didOpen@ notification.
@@ -65,7 +63,7 @@ didOpenHandler state =
     let uri = msg._params._textDocument._uri
         nuri = LSP.toNormalizedUri uri
         content = msg._params._textDocument._text
-    liftIO (atomically (modifyTVar' state.documents (Map.insert nuri content)))
+    liftIO (atomically (modifyTVar' state.documents (Map.set nuri content)))
     clearDiagnostics uri
 
 
@@ -83,7 +81,7 @@ didChangeHandler state =
     case mfile of
       Just vf -> do
         let content = virtualFileText vf
-        liftIO (atomically (modifyTVar' state.documents (Map.insert nuri content)))
+        liftIO (atomically (modifyTVar' state.documents (Map.set nuri content)))
       Nothing ->
         pure ()
 
@@ -101,7 +99,7 @@ didSaveHandler state =
     case mfile of
       Just vf -> do
         let content = virtualFileText vf
-        liftIO (atomically (modifyTVar' state.documents (Map.insert nuri content)))
+        liftIO (atomically (modifyTVar' state.documents (Map.set nuri content)))
       Nothing ->
         pure ()
 
@@ -116,7 +114,7 @@ didCloseHandler state =
   LSP.notificationHandler Msg.SMethod_TextDocumentDidClose \msg -> do
     let uri = msg._params._textDocument._uri
         nuri = LSP.toNormalizedUri uri
-    liftIO (atomically (modifyTVar' state.documents (Map.delete nuri)))
+    liftIO (atomically (modifyTVar' state.documents (Map.remove nuri)))
     clearDiagnostics uri
 
 

@@ -4,7 +4,7 @@ module NeoHaskell.LSP.Server
   )
 where
 
-import Prelude
+import Core
 
 import Control.Monad.IO.Class (liftIO)
 import Language.LSP.Protocol.Types qualified as LSP

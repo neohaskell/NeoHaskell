@@ -1,9 +1,9 @@
 module Main (main) where
 
-import Prelude
+import Core
 
 import Control.Concurrent.STM (atomically, readTVar)
-import Data.Map.Strict qualified as Map
+import Map qualified
 import Test.Hspec
 
 import NeoHaskell.LSP.State (ServerState (..), initState)

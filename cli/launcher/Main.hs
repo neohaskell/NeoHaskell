@@ -1,17 +1,17 @@
 module Main (main) where
 
-import Prelude
-
-import System.Environment (getArgs)
-import System.Exit (ExitCode (..), exitSuccess, exitWith)
-import System.IO (hPutStrLn, stderr)
-
+import Array qualified
+import Console qualified
+import Core
+import Environment qualified
+import IO qualified
 import NeoHaskell.LSP.Server qualified as Server
+import Task qualified
 
 
 -- | NeoHaskell LSP server version.
-version :: String
-version = "0.1.0.0"
+serverVersion :: Text
+serverVersion = "0.1.0.0"
 
 
 -- | Entry point for the @neohaskell-lsp@ executable.
@@ -23,16 +23,16 @@ version = "0.1.0.0"
 -- * @--log-level=debug|info|warn|error@: control log verbosity (placeholder)
 main :: IO ()
 main = do
-  args <- getArgs
+  args <- Environment.getArgs |> Task.runNoErrors
   case parseMode args of
     PrintVersion -> do
-      hPutStrLn stderr ("neohaskell-lsp " <> version)
-      exitSuccess
+      Console.error [fmt|neohaskell-lsp #{serverVersion}|]
+      IO.exitSuccess
     RunStdio _logLevel -> do
       exitCode <- Server.run
-      case exitCode of
-        0 -> exitSuccess
-        n -> exitWith (ExitFailure n)
+      if exitCode == 0
+        then IO.exitSuccess
+        else IO.exitFailure exitCode
 
 
 -- ---------------------------------------------------------------------------
@@ -43,6 +43,7 @@ main = do
 data Mode
   = RunStdio LogLevel
   | PrintVersion
+
 
 -- | Log verbosity level.
 -- Currently accepted but not wired to the @lsp@ library's logger.
@@ -58,23 +59,38 @@ data LogLevel
 --
 -- Recognises @--version@, @--stdio@, and @--log-level=LEVEL@.
 -- Defaults to @RunStdio Info@ when no arguments are given.
-parseMode :: [String] -> Mode
-parseMode = go Info
-  where
-    go logLevel [] = RunStdio logLevel
-    go logLevel (arg : rest) =
-      case arg of
-        "--version" -> PrintVersion
-        "--stdio"   -> go logLevel rest
-        _
-          | Just lvl <- parseLogLevelFlag arg -> go lvl rest
-          | otherwise -> go logLevel rest  -- ignore unknown flags
+parseMode :: Array Text -> Mode
+parseMode args = do
+  let argList = args |> Array.toLinkedList
+  parseArgs Info argList
 
-    parseLogLevelFlag :: String -> Maybe LogLevel
-    parseLogLevelFlag flag =
-      case flag of
-        "--log-level=debug" -> Just Debug
-        "--log-level=info"  -> Just Info
-        "--log-level=warn"  -> Just Warn
-        "--log-level=error" -> Just Error
-        _                   -> Nothing
+
+parseArgs :: LogLevel -> LinkedList Text -> Mode
+parseArgs logLevel args =
+  case args of
+    [] -> RunStdio logLevel
+    (arg : rest) ->
+      if arg == "--version"
+        then PrintVersion
+        else
+          if arg == "--stdio"
+            then parseArgs logLevel rest
+            else case parseLogLevelFlag arg of
+              Just lvl -> parseArgs lvl rest
+              Nothing -> parseArgs logLevel rest
+
+
+parseLogLevelFlag :: Text -> Maybe LogLevel
+parseLogLevelFlag flag =
+  if flag == "--log-level=debug"
+    then Just Debug
+    else
+      if flag == "--log-level=info"
+        then Just Info
+        else
+          if flag == "--log-level=warn"
+            then Just Warn
+            else
+              if flag == "--log-level=error"
+                then Just Error
+                else Nothing
