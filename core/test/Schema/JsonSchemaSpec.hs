@@ -238,3 +238,59 @@ spec = do
         let result = Schema.JsonSchema.toJsonSchema (SRef "")
         let expected = Json.object [("$ref", Json.toJSON ("#/definitions/" :: Text))]
         result |> Test.shouldBe expected
+
+      Test.it "field with non-empty description adds description to property schema" \_ -> do
+        let fields = Array.fromLinkedList [FieldSchema "name" SText True "The user name"]
+        let result = Schema.JsonSchema.toJsonSchema (SObject fields)
+        let expected =
+              Json.object
+                [ ("type", Json.toJSON ("object" :: Text))
+                , ("properties", Json.object
+                    [ ("name", Json.object
+                        [ ("type", Json.toJSON ("string" :: Text))
+                        , ("description", Json.toJSON ("The user name" :: Text))
+                        ])
+                    ])
+                , ("required", Json.toJSON (["name"] :: [Text]))
+                , ("additionalProperties", Json.toJSON False)
+                ]
+        result |> Test.shouldBe expected
+
+      Test.it "field with empty description omits description from property schema" \_ -> do
+        let fields = Array.fromLinkedList [FieldSchema "name" SText True ""]
+        let result = Schema.JsonSchema.toJsonSchema (SObject fields)
+        let expected =
+              Json.object
+                [ ("type", Json.toJSON ("object" :: Text))
+                , ("properties", Json.object
+                    [ ("name", Json.object
+                        [ ("type", Json.toJSON ("string" :: Text))
+                        ])
+                    ])
+                , ("required", Json.toJSON (["name"] :: [Text]))
+                , ("additionalProperties", Json.toJSON False)
+                ]
+        result |> Test.shouldBe expected
+
+      Test.it "mixed fields: described and undescribed" \_ -> do
+        let fields = Array.fromLinkedList
+              [ FieldSchema "id" SInt True "Unique identifier"
+              , FieldSchema "label" SText True ""
+              ]
+        let result = Schema.JsonSchema.toJsonSchema (SObject fields)
+        let expected =
+              Json.object
+                [ ("type", Json.toJSON ("object" :: Text))
+                , ("properties", Json.object
+                    [ ("id", Json.object
+                        [ ("type", Json.toJSON ("integer" :: Text))
+                        , ("description", Json.toJSON ("Unique identifier" :: Text))
+                        ])
+                    , ("label", Json.object
+                        [ ("type", Json.toJSON ("string" :: Text))
+                        ])
+                    ])
+                , ("required", Json.toJSON (["id", "label"] :: [Text]))
+                , ("additionalProperties", Json.toJSON False)
+                ]
+        result |> Test.shouldBe expected

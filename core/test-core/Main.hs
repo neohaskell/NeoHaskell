@@ -25,6 +25,7 @@ import NeoQL.ParserSpec qualified
 import RedactedSpec qualified
 import Schema.OpenApiSpec qualified
 import SchemaSpec qualified
+import Schema.JsonSchemaSpec qualified
 import Service.Transport.Web.SwaggerUISpec qualified
 import SetSpec qualified
 import StreamSpec qualified
@@ -63,6 +64,7 @@ main = Hspec.hspec do
   Hspec.describe "Redacted" RedactedSpec.spec
   Hspec.describe "Schema" SchemaSpec.spec
   Hspec.describe "Schema.OpenApi" Schema.OpenApiSpec.spec
+  Hspec.describe "Schema.JsonSchema" Schema.JsonSchemaSpec.spec
   Hspec.describe "Service.Transport.Web.SwaggerUI" Service.Transport.Web.SwaggerUISpec.spec
   Hspec.describe "Set" SetSpec.spec
   Hspec.describe "Stream" StreamSpec.spec

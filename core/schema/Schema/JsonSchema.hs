@@ -6,6 +6,9 @@ module Schema.JsonSchema
 import Array qualified
 import Basics
 import Json qualified
+import Data.Aeson qualified as Aeson
+import Data.Aeson.Key qualified as AesonKey
+import Data.Aeson.KeyMap qualified as AesonKeyMap
 import Schema (FieldSchema (..), Schema (..))
 import Text (Text)
 import Text qualified
@@ -45,7 +48,7 @@ toJsonSchema schema = case schema of
   SObject fields -> do
     let properties =
           fields
-            |> Array.map (\field -> (field.fieldName, toJsonSchema field.fieldSchema))
+            |> Array.map (\field -> (field.fieldName, fieldPropertySchema field))
             |> Array.toLinkedList
     let requiredNames =
           fields
@@ -85,3 +88,22 @@ toJsonSchema schema = case schema of
 
   SRef refName ->
     Json.object [("$ref", Json.toJSON (Text.append "#/definitions/" refName))]
+
+
+-- | Build a JSON Schema for an object property, including "description" when non-empty.
+fieldPropertySchema :: FieldSchema -> Json.Value
+fieldPropertySchema field = do
+  let baseSchema = toJsonSchema field.fieldSchema
+  if Text.isEmpty field.fieldDescription
+    then baseSchema
+    else addDescription field.fieldDescription baseSchema
+
+
+-- | Insert a "description" key into a JSON Schema Value.
+-- If the value is a JSON object, inserts the key. Otherwise returns the value unchanged.
+addDescription :: Text -> Json.Value -> Json.Value
+addDescription desc value = case value of
+  Aeson.Object km ->
+    Aeson.Object (AesonKeyMap.insert (AesonKey.fromText "description") (Json.toJSON desc) km)
+  _ ->
+    value
