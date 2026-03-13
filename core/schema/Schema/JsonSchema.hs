@@ -91,12 +91,25 @@ toJsonSchema schema = case schema of
 
 
 -- | Build a JSON Schema for an object property, including "description" when non-empty.
+--
+-- For \$ref schemas, Draft-07 requires wrapping in @allOf@ because sibling keywords
+-- next to @\$ref@ are ignored per spec section 8.3.
 fieldPropertySchema :: FieldSchema -> Json.Value
 fieldPropertySchema field = do
   let baseSchema = toJsonSchema field.fieldSchema
   if Text.isEmpty field.fieldDescription
     then baseSchema
-    else addDescription field.fieldDescription baseSchema
+    else case field.fieldSchema of
+      SRef _ ->
+        -- Draft-07: siblings of $ref are ignored, so wrap in allOf
+        Json.object
+          [ ("allOf", Json.toJSON
+              ([ baseSchema
+              , Json.object [("description", Json.toJSON field.fieldDescription)]
+              ] :: [Json.Value]))
+          ]
+      _ ->
+        addDescription field.fieldDescription baseSchema
 
 
 -- | Insert a "description" key into a JSON Schema Value.

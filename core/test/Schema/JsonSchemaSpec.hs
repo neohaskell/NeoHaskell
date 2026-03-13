@@ -294,3 +294,36 @@ spec = do
                 , ("additionalProperties", Json.toJSON False)
                 ]
         result |> Test.shouldBe expected
+
+      Test.it "field with SRef and description wraps in allOf (Draft-07 compliance)" \_ -> do
+        let fields = Array.fromLinkedList [FieldSchema "ref" (SRef "UserEntity") True "A user reference"]
+        let result = Schema.JsonSchema.toJsonSchema (SObject fields)
+        let expected =
+              Json.object
+                [ ("type", Json.toJSON ("object" :: Text))
+                , ("properties", Json.object
+                    [ ("ref", Json.object
+                        [ ("allOf", Json.toJSON
+                            ([ Json.object [("$ref", Json.toJSON ("#/definitions/UserEntity" :: Text))]
+                            , Json.object [("description", Json.toJSON ("A user reference" :: Text))]
+                            ] :: [Json.Value]))
+                        ])
+                    ])
+                , ("required", Json.toJSON (["ref"] :: [Text]))
+                , ("additionalProperties", Json.toJSON False)
+                ]
+        result |> Test.shouldBe expected
+
+      Test.it "field with SRef and empty description emits bare ref" \_ -> do
+        let fields = Array.fromLinkedList [FieldSchema "ref" (SRef "UserEntity") True ""]
+        let result = Schema.JsonSchema.toJsonSchema (SObject fields)
+        let expected =
+              Json.object
+                [ ("type", Json.toJSON ("object" :: Text))
+                , ("properties", Json.object
+                    [ ("ref", Json.object [("$ref", Json.toJSON ("#/definitions/UserEntity" :: Text))])
+                    ])
+                , ("required", Json.toJSON (["ref"] :: [Text]))
+                , ("additionalProperties", Json.toJSON False)
+                ]
+        result |> Test.shouldBe expected
