@@ -2,4 +2,4 @@ packages:
   core/*.cabal
   testbed/*.cabal
   integrations/nhintegrations.cabal
-  lsp/*.cabal
+  cli/*.cabal
