@@ -2,7 +2,6 @@ module RedactedSpec where
 
 import Core
 import Data.Aeson qualified as Aeson
-import Data.Either (Either (..))
 import Redacted qualified
 import Test
 import Text qualified

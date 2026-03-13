@@ -27,6 +27,8 @@
 --
 -- Existing environment variables are NOT overwritten.
 module Environment (
+  -- * Process Arguments
+  getArgs,
   -- * Reading Variables
   getVariable,
 
@@ -36,6 +38,8 @@ module Environment (
 ) where
 
 import Basics
+import Array (Array)
+import Array qualified
 import Configuration.Dotenv qualified as Dotenv
 import Control.Exception qualified as GhcException
 import Data.Bool qualified as GhcBool
@@ -47,6 +51,19 @@ import Task (Task)
 import Task qualified
 import Text (Text)
 import Text qualified
+
+-- | Get command-line arguments.
+--
+-- Returns the arguments passed to the program as an array of text values.
+--
+-- @
+-- args <- Environment.getArgs
+-- @
+getArgs :: Task _ (Array Text)
+getArgs =
+  System.Environment.getArgs
+    |> Task.fromIO
+    |> Task.map (\args -> args |> Array.fromLinkedList |> Array.map Text.fromLinkedList)
 
 
 -- | Get an environment variable.

@@ -572,6 +572,7 @@ test-suite nhcore-test-core
 
   other-modules:
     Command.FromSchemaSpec
+    ConsoleSpec
     ConcurrentMapSpec
     Config.ApplicationSpec
     Config.ConfigDependentSpec
@@ -584,9 +585,11 @@ test-suite nhcore-test-core
     Config.SecretSpec
     Config.THSpec
     DecimalSpec
+    EnvironmentSpec
     Http.ClientRawSpec
     Http.ClientSpec
     IntSpec
+    IOSpec
     LayoutSpec
     Layout.RenderSpec
     NeoQL.ExecuteSpec

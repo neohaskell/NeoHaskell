@@ -3,7 +3,6 @@ module Config.THSpec where
 import Config (defineConfig, doc, defaultsTo, envVar, field, required, secret, testWithConfig)
 import Core
 import Data.Aeson qualified as Aeson
-import Data.Either (Either (..))
 import Default qualified
 import Test
 import Text qualified

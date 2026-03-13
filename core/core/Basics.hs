@@ -107,6 +107,7 @@ module Basics (
   Prelude.Eq,
   Prelude.Ord,
   Prelude.Num,
+  Prelude.Either (..),
 
   -- * Reexported for records
   GHC.Records.HasField (..),

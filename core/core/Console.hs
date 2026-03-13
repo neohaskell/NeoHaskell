@@ -1,8 +1,9 @@
-module Console (log, readLine, print) where
+module Console (log, readLine, print, error) where
 
 import Appendable ((++))
 import Basics
 import Data.Text.IO qualified
+import System.IO qualified as GhcIO
 import GHC.Stack qualified as Stack
 import IO (IO)
 import LinkedList qualified
@@ -55,3 +56,7 @@ log text = do
 
 readLine :: IO Text
 readLine = Data.Text.IO.getLine
+
+
+error :: Text -> IO Unit
+error text = Data.Text.IO.hPutStrLn GhcIO.stderr text

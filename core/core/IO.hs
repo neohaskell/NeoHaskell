@@ -4,6 +4,8 @@ module IO (
   dangerouslyRun,
   finally,
   exitSuccess,
+  exitFailure,
+  FilePath,
   catchAny,
   onException,
   map,
@@ -13,7 +15,8 @@ module IO (
 ) where
 
 import Control.Exception qualified as GHC
-import GHC.IO (IO)
+
+import GHC.IO (IO, FilePath)
 import Result (Result (..))
 import System.Exit qualified as GHC
 import System.IO.Unsafe qualified as GHC
@@ -65,6 +68,10 @@ onException action cleanup = GHC.onException action cleanup
 
 exitSuccess :: IO a
 exitSuccess = GHC.exitSuccess
+
+
+exitFailure :: Prelude.Int -> IO a
+exitFailure n = GHC.exitWith (GHC.ExitFailure n)
 
 
 catchAny :: (GHC.SomeException -> IO a) -> IO a -> IO a

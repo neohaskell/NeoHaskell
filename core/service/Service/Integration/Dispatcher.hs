@@ -74,7 +74,6 @@ import ConcurrentVar qualified
 import Log qualified
 import Service.Response (CommandResponse (..))
 import Control.Concurrent.Async qualified as GhcAsync
-import Data.Either (Either (..))
 import Data.Time.Clock.POSIX qualified as GhcPosix
 import GHC.Float (Double)
 import GHC.Real qualified as GhcReal
