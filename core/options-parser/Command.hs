@@ -35,7 +35,6 @@ import OptEnvConf qualified
 import OptEnvConf.Args qualified as Args
 import OptEnvConf.EnvMap qualified as EnvMap
 import OptEnvConf.Error qualified as GhcOptError
-import Text.Colour qualified as GhcColour
 import Path (Path)
 import Result (Result (..))
 import Schema (FieldSchema (..), Schema (..))
@@ -44,6 +43,7 @@ import Task (Task)
 import Task qualified
 import Text (Text, fromLinkedList, toLinkedList)
 import Text qualified
+import Text.Colour qualified as GhcColour
 import ToText (ToText)
 import Unknown qualified
 
@@ -86,9 +86,9 @@ parseHandler options = do
   case parseResult of
     GHC.Right result -> Task.yield result
     GHC.Left errs -> do
-        let errorChunks = GhcOptError.renderErrors errs
-        let errorText = GhcColour.renderChunksText GhcColour.WithoutColours errorChunks
-        Task.throw (Error [fmt|Failed to parse CLI arguments:\n#{errorText}|])
+      let errorChunks = GhcOptError.renderErrors errs
+      let errorText = GhcColour.renderChunksText GhcColour.WithoutColours errorChunks
+      Task.throw (Error [fmt|Failed to parse CLI arguments:\n#{errorText}|])
 
 
 data TextConfig = TextConfig
@@ -322,11 +322,17 @@ fromSchema schema =
     SText ->
       map Json.String (OptionsParser (OptEnvConf.setting [OptEnvConf.reader OptEnvConf.str, OptEnvConf.argument]))
     SInt ->
-      map (\n -> Json.toJSON (n :: Int)) (OptionsParser (OptEnvConf.setting [OptEnvConf.reader OptEnvConf.auto, OptEnvConf.argument]))
+      map
+        (\n -> Json.toJSON (n :: Int))
+        (OptionsParser (OptEnvConf.setting [OptEnvConf.reader OptEnvConf.auto, OptEnvConf.argument]))
     SNumber ->
-      map (\n -> Json.toJSON (n :: Float)) (OptionsParser (OptEnvConf.setting [OptEnvConf.reader OptEnvConf.auto, OptEnvConf.argument]))
+      map
+        (\n -> Json.toJSON (n :: Float))
+        (OptionsParser (OptEnvConf.setting [OptEnvConf.reader OptEnvConf.auto, OptEnvConf.argument]))
     SBool ->
-      map Json.Bool (OptionsParser (OptEnvConf.setting [OptEnvConf.reader OptEnvConf.auto, OptEnvConf.argument]) :: OptionsParser Bool)
+      map
+        Json.Bool
+        (OptionsParser (OptEnvConf.setting [OptEnvConf.reader OptEnvConf.auto, OptEnvConf.argument]) :: OptionsParser Bool)
     _ ->
       map Json.String (OptionsParser (OptEnvConf.setting [OptEnvConf.reader OptEnvConf.str, OptEnvConf.argument]))
 
@@ -339,19 +345,34 @@ fromFieldSchema field = do
   let helpText = field.fieldDescription |> Text.toLinkedList
   case field.fieldSchema of
     SText -> do
-      let parser = OptEnvConf.setting [OptEnvConf.long kebabName, OptEnvConf.help helpText, OptEnvConf.option, OptEnvConf.reader OptEnvConf.str]
+      let parser =
+            OptEnvConf.setting
+              [OptEnvConf.long kebabName, OptEnvConf.help helpText, OptEnvConf.option, OptEnvConf.reader OptEnvConf.str]
       map (\val -> (field.fieldName, Json.String val)) (OptionsParser parser)
     SInt -> do
-      let parser = OptEnvConf.setting [OptEnvConf.long kebabName, OptEnvConf.help helpText, OptEnvConf.option, OptEnvConf.reader OptEnvConf.auto] :: OptEnvConf.Parser Int
+      let parser =
+            OptEnvConf.setting
+              [OptEnvConf.long kebabName, OptEnvConf.help helpText, OptEnvConf.option, OptEnvConf.reader OptEnvConf.auto] ::
+              OptEnvConf.Parser Int
       map (\n -> (field.fieldName, Json.toJSON n)) (OptionsParser parser)
     SNumber -> do
-      let parser = OptEnvConf.setting [OptEnvConf.long kebabName, OptEnvConf.help helpText, OptEnvConf.option, OptEnvConf.reader OptEnvConf.auto] :: OptEnvConf.Parser Float
+      let parser =
+            OptEnvConf.setting
+              [OptEnvConf.long kebabName, OptEnvConf.help helpText, OptEnvConf.option, OptEnvConf.reader OptEnvConf.auto] ::
+              OptEnvConf.Parser Float
       map (\n -> (field.fieldName, Json.toJSON n)) (OptionsParser parser)
     SBool -> do
-      let parser = OptEnvConf.setting [OptEnvConf.long kebabName, OptEnvConf.help helpText, OptEnvConf.switch True, OptEnvConf.value False]
+      let parser =
+            OptEnvConf.setting [OptEnvConf.long kebabName, OptEnvConf.help helpText, OptEnvConf.switch True, OptEnvConf.value False]
       map (\b -> (field.fieldName, Json.Bool b)) (OptionsParser parser)
     SOptional innerSchema -> do
-      let innerField = FieldSchema {fieldName = field.fieldName, fieldSchema = innerSchema, fieldRequired = False, fieldDescription = field.fieldDescription}
+      let innerField =
+            FieldSchema
+              { fieldName = field.fieldName,
+                fieldSchema = innerSchema,
+                fieldRequired = False,
+                fieldDescription = field.fieldDescription
+              }
       let (OptionsParser innerParser) = fromFieldSchema innerField
       let optionalParser = Applicative.optional innerParser
       map
@@ -362,9 +383,13 @@ fromFieldSchema field = do
         )
         (OptionsParser optionalParser)
     SEnum variants -> do
-      let variantList = variants |> Array.toLinkedList |> LinkedList.map Text.toLinkedList |> LinkedList.intersperse ", " |> LinkedList.concat
+      let variantList =
+            variants |> Array.toLinkedList |> LinkedList.map Text.toLinkedList |> LinkedList.intersperse ", " |> LinkedList.concat
       let enumHelp = helpText ++ " (one of: " ++ variantList ++ ")"
-      let parser = OptEnvConf.setting [OptEnvConf.long kebabName, OptEnvConf.help enumHelp, OptEnvConf.option, OptEnvConf.reader OptEnvConf.str] :: OptEnvConf.Parser Text
+      let parser =
+            OptEnvConf.setting
+              [OptEnvConf.long kebabName, OptEnvConf.help enumHelp, OptEnvConf.option, OptEnvConf.reader OptEnvConf.str] ::
+              OptEnvConf.Parser Text
       let checkedParser =
             OptEnvConf.checkMapEither
               ( \val ->
@@ -375,7 +400,13 @@ fromFieldSchema field = do
               parser
       map (\val -> (field.fieldName, Json.String val)) (OptionsParser checkedParser)
     SArray innerSchema -> do
-      let innerField = FieldSchema {fieldName = field.fieldName, fieldSchema = innerSchema, fieldRequired = field.fieldRequired, fieldDescription = field.fieldDescription}
+      let innerField =
+            FieldSchema
+              { fieldName = field.fieldName,
+                fieldSchema = innerSchema,
+                fieldRequired = field.fieldRequired,
+                fieldDescription = field.fieldDescription
+              }
       let (OptionsParser innerParser) = fromFieldSchema innerField
       let manyParser = map (\pairs -> pairs |> Mappable.fmap (\(_, v) -> v)) (OptionsParser (Applicative.many innerParser))
       map
@@ -385,5 +416,8 @@ fromFieldSchema field = do
         manyParser
     _ -> do
       -- Fallback: parse as JSON string for complex types
-      let parser = OptEnvConf.setting [OptEnvConf.long kebabName, OptEnvConf.help helpText, OptEnvConf.option, OptEnvConf.reader OptEnvConf.str] :: OptEnvConf.Parser Text
+      let parser =
+            OptEnvConf.setting
+              [OptEnvConf.long kebabName, OptEnvConf.help helpText, OptEnvConf.option, OptEnvConf.reader OptEnvConf.str] ::
+              OptEnvConf.Parser Text
       map (\val -> (field.fieldName, Json.String val)) (OptionsParser parser)
