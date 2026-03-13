@@ -47,9 +47,10 @@ No module in nhcore currently:
 4. **Uniform `do` block transpilation**: all brace blocks (`{ ... }`) transpile to Haskell `do` notation.
    GHC supports `do` in pure context, so no need to distinguish pure blocks (`let..in`) from effectful
    blocks — one codegen path handles both
-5. **`return` captured but not transpiled**: the `return` visual marker is parsed and stored as a boolean
-   `hasReturn` flag on the `Block` body. It is not emitted during transpilation (compiles to nothing for
-   now), but its presence in the AST enables future rewrite rules (e.g. early returns)
+5. **`return` captured but not transpiled**: the `return` keyword is parsed and stored as a
+   `ReturnStatement` node in the `BlockStatement` sum type at the statement level. It is not emitted
+   during transpilation (the expression is output as a bare expression for now), but its presence as a
+   distinct AST node enables future rewrite rules (e.g. early returns via `if`, loop breaks)
 6. **`toHaskell` produces `Blueprint`**: matches the `Syntax.Comment.toHaskell` signature; compose
    with `Layout.render` at the edge
 
@@ -789,7 +790,8 @@ spec = do
 
 4. **Zero-argument error message**: if the parser encounters `fun name :` (no parentheses before `:`),
    it emits a `Parser.problem` with a targeted message:
-   ```
+
+   ```text
    function 'name' has no parameter list
    hint: use 'name()' for a zero-argument function
    ```

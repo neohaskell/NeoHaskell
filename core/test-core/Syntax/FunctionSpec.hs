@@ -2,6 +2,7 @@ module Syntax.FunctionSpec (spec) where
 
 import Core
 import Array qualified
+import Result qualified
 import Parser qualified
 import Syntax.Function (BlockStatement (..), ConstantDef (..), FunctionBody (..), FunctionDef (..), TopLevelDecl (..), TypeConstraint (..))
 import Syntax.Function qualified
@@ -157,6 +158,27 @@ spec = do
           constantName |> shouldBe "pi"
           declaredType |> shouldBe "Float"
           constantValue |> shouldBe "3.14"
+
+  describe "functionDef (error cases)" do
+    it "fails when return type is missing" \_ -> do
+      let source = "fun add(x: Int, y: Int) = x + y"
+      let result = source |> Parser.run Syntax.Function.functionDef
+      result |> Result.isErr |> shouldBe True
+
+    it "fails when expression body is empty" \_ -> do
+      let source = "fun add(x: Int, y: Int) : Int ="
+      let result = source |> Parser.run Syntax.Function.functionDef
+      result |> Result.isErr |> shouldBe True
+
+    it "fails when block body is empty" \_ -> do
+      let source = "fun add(x: Int, y: Int) : Int {}"
+      let result = source |> Parser.run Syntax.Function.functionDef
+      result |> Result.isErr |> shouldBe True
+
+    it "fails when constant value is empty" \_ -> do
+      let source = "let pi : Float ="
+      let result = source |> Parser.run Syntax.Function.constantDef
+      result |> Result.isErr |> shouldBe True
 
   describe "topLevelDecl" do
     it "dispatches to function declarations" \_ -> do

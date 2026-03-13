@@ -221,7 +221,8 @@ constantDef = do
   parsedType <- captureConstantType
   _ <- Parser.char '='
   _ <- Parser.spaces
-  parsedValue <- captureExpressionUntil Parser.end
+  parsedValueText <- captureExpressionUntil Parser.end
+  parsedValue <- ensureNonEmpty "constant value" parsedValueText
   Parser.yield
     ConstantDef
       { position = pos
@@ -327,7 +328,7 @@ whereClause =
         _ <- Parser.text "where"
         _ <- Parser.notFollowedBy Parser.alphaNum
         _ <- Parser.whitespace
-        typeConstraint |> Parser.separatedOrTerminatedBy commaSeparator
+        typeConstraint |> Parser.separatedOrTerminatedBy (Parser.backtrack commaSeparator)
     , Parser.yield Array.empty
     ]
 {-# INLINE whereClause #-}
@@ -415,14 +416,17 @@ expressionBody = do
   _ <- Parser.char '='
   _ <- Parser.spaces
   expressionText <- captureExpressionUntil Parser.end
-  Parser.yield (Expression {exprText = expressionText})
+  nonEmptyExpression <- ensureNonEmpty "function body expression" expressionText
+  Parser.yield (Expression {exprText = nonEmptyExpression})
 
 
 blockBody :: Parser FunctionBody
 blockBody = do
   _ <- Parser.char '{'
   parsedStatements <- blockStatements
-  Parser.yield (Block {statements = parsedStatements})
+  if parsedStatements |> Array.isEmpty
+    then Parser.problem "function block body cannot be empty"
+    else Parser.yield (Block {statements = parsedStatements})
 
 
 blockStatements :: Parser (Array BlockStatement)
@@ -460,7 +464,8 @@ effectfulBindingStatement = do
   _ <- Parser.spaces
   _ <- Parser.char '='
   _ <- Parser.spaces
-  parsedBindingValue <- captureExpressionUntil statementTerminator
+  parsedBindingValueText <- captureExpressionUntil statementTerminator
+  parsedBindingValue <- ensureNonEmpty "effectful binding value" parsedBindingValueText
   Parser.yield
     EffectfulBinding
       { bindingName = parsedBindingName
@@ -477,7 +482,8 @@ pureBindingStatement = do
   _ <- Parser.spaces
   _ <- Parser.char '='
   _ <- Parser.spaces
-  parsedBindingValue <- captureExpressionUntil statementTerminator
+  parsedBindingValueText <- captureExpressionUntil statementTerminator
+  parsedBindingValue <- ensureNonEmpty "binding value" parsedBindingValueText
   Parser.yield
     PureBinding
       { bindingName = parsedBindingName
@@ -491,7 +497,8 @@ returnStatementParser = do
   _ <- Parser.notFollowedBy Parser.alphaNum
   _ <- Parser.whitespace
   expressionText <- captureExpressionUntil statementTerminator
-  Parser.yield (ReturnStatement {exprText = expressionText})
+  nonEmptyExpression <- ensureNonEmpty "return expression" expressionText
+  Parser.yield (ReturnStatement {exprText = nonEmptyExpression})
 
 
 bareExpressionStatement :: Parser BlockStatement
@@ -546,7 +553,7 @@ returnTypeTerminator =
   Parser.choice
     [ Parser.char '{' |> Parser.map (always unit)
     , Parser.char '=' |> Parser.map (always unit)
-    , whereKeywordAhead
+    , Parser.backtrack whereKeywordAhead
     , Parser.end
     ]
 
@@ -803,11 +810,9 @@ functionDefinitionBlueprint functionNode =
     Expression { exprText = expressionText } ->
       Layout.text [fmt|#{functionLhsText functionNode} = #{expressionText}|]
     Block { statements = blockStatementsList } -> do
-      let statementBlueprints = blockStatementsList |> Array.map blockStatementToBlueprint
-      Layout.stack
-        [ Layout.text [fmt|#{functionLhsText functionNode} = do|]
-        , statementBlueprints |> Layout.stack |> Layout.indent 2
-        ]
+      let indentedStatements = blockStatementsList |> Array.map (\stmt -> Layout.text "  " |> Layout.append (blockStatementToBlueprint stmt))
+      let doLine = Layout.text [fmt|#{functionLhsText functionNode} = do|]
+      Layout.stack (Array.prepend (Array.fromLinkedList [doLine]) indentedStatements)
 
 
 functionLhsText :: FunctionDef -> Text
