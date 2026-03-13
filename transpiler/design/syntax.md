@@ -514,9 +514,9 @@ has more than 2-3 constraints, consider whether explicit function passing would 
 | `fun f(x: Int) : Int = x + 1`                            | `f :: Int -> Int`               |
 |                                                          | `f x = x + 1`                   |
 | `fun f(x: Int) : Int { let y = x + 1; y * 2 }`           | `f :: Int -> Int`               |
-|                                                          | `f x = let y = x + 1 in y * 2`  |
+|                                                          | `f x = do { let y = x + 1; y * 2 }`  |
 | `fun f(x: Int) : Task<Int> { let! y = get(); return Task.yield(y) }` | `f :: Int -> Task Int`          |
-|                                                                      | `f x = do { y <- get; pure y }` |
+|                                                                      | `f x = do { y <- get; Task.yield y }` |
 | `let pi : Float = 3.14`                                  | `pi :: Float`                   |
 |                                                          | `pi = 3.14`                     |
 | `fun show<t>(x: t) : Text where t: Show { toString(x) }` | `show :: (Show t) => t -> Text` |

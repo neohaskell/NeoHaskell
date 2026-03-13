@@ -282,6 +282,7 @@ library
     Stream
     Subprocess
     Syntax.Comment
+    Syntax.Function
     Task
     Test
     Test.AppSpec
@@ -608,6 +609,7 @@ test-suite nhcore-test-core
     Test.AppSpec.AppSpecSpec
     Test.AppSpec.VerifySpec
     Syntax.CommentSpec
+    Syntax.FunctionSpec
 
   type: exitcode-stdio-1.0
   hs-source-dirs: test-core, test
