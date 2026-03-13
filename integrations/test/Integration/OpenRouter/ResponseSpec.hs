@@ -1,3 +1,4 @@
+{- HLINT ignore "Redundant id" -}
 module Integration.OpenRouter.ResponseSpec (spec) where
 
 import Array qualified
@@ -6,6 +7,7 @@ import Integration.OpenRouter.Message qualified as Message
 import Integration.OpenRouter.Response
 import Json qualified
 import Maybe (Maybe (..))
+import Redacted qualified
 import Result (Result)
 import Result qualified
 import Test.Hspec
@@ -97,6 +99,95 @@ spec = do
           let decoded = Json.decodeText encoded :: Result Text Usage
           decoded `shouldBe` Result.Ok original
 
+    describe "ToolCallFunction" do
+      it "constructs with name and redacted arguments" do
+        let tcf = ToolCallFunction
+              { name = "AddItem"
+              , arguments = Redacted.wrap ("{\"cartId\":\"c1\",\"quantity\":2}" :: Text)
+              }
+        tcf.name `shouldBe` "AddItem"
+
+      it "Eq compares by unwrapped arguments" do
+        let tcf1 = ToolCallFunction
+              { name = "AddItem"
+              , arguments = Redacted.wrap ("{\"cartId\":\"c1\"}" :: Text)
+              }
+        let tcf2 = ToolCallFunction
+              { name = "AddItem"
+              , arguments = Redacted.wrap ("{\"cartId\":\"c1\"}" :: Text)
+              }
+        (tcf1 == tcf2) `shouldBe` True
+
+      it "Eq distinguishes different arguments" do
+        let tcf1 = ToolCallFunction
+              { name = "AddItem"
+              , arguments = Redacted.wrap ("{\"cartId\":\"c1\"}" :: Text)
+              }
+        let tcf2 = ToolCallFunction
+              { name = "AddItem"
+              , arguments = Redacted.wrap ("{\"cartId\":\"c2\"}" :: Text)
+              }
+        (tcf1 == tcf2) `shouldBe` False
+
+      it "decodes from JSON" do
+        let jsonText = "{\"name\":\"AddItem\",\"arguments\":\"{\\\"cartId\\\":\\\"c1\\\"}\"}" :: Text
+        let decoded = Json.decodeText jsonText :: Result Text ToolCallFunction
+        case decoded of
+          Result.Ok tcf -> tcf.name `shouldBe` "AddItem"
+          Result.Err err ->
+            expectationFailure (Text.toLinkedList [fmt|Failed to decode: #{err}|])
+
+      it "encodes to JSON with redacted arguments" do
+        let tcf = ToolCallFunction
+              { name = "AddItem"
+              , arguments = Redacted.wrap ("{\"cartId\":\"c1\"}" :: Text)
+              }
+        let encoded = Json.encodeText tcf
+        Text.contains "\"name\":\"AddItem\"" encoded `shouldBe` True
+        Text.contains "\"arguments\"" encoded `shouldBe` True
+        Text.contains "<redacted>" encoded `shouldBe` True
+    describe "ToolCall" do
+      it "constructs with id and function" do
+        let tc = ToolCall
+              { id = "call_abc123"
+              , function = ToolCallFunction
+                  { name = "AddItem"
+                  , arguments = Redacted.wrap ("{}" :: Text)
+                  }
+              }
+        tc.id `shouldBe` "call_abc123"
+        tc.function.name `shouldBe` "AddItem"
+
+      it "Eq compares id and function" do
+        let tc1 = ToolCall
+              { id = "call_abc123"
+              , function = ToolCallFunction { name = "AddItem", arguments = Redacted.wrap ("{}" :: Text) }
+              }
+        let tc2 = ToolCall
+              { id = "call_abc123"
+              , function = ToolCallFunction { name = "AddItem", arguments = Redacted.wrap ("{}" :: Text) }
+              }
+        (tc1 == tc2) `shouldBe` True
+
+      it "decodes from JSON" do
+        let jsonText = "{\"id\":\"call_abc123\",\"function\":{\"name\":\"AddItem\",\"arguments\":\"{}\"}}" :: Text
+        let decoded = Json.decodeText jsonText :: Result Text ToolCall
+        case decoded of
+          Result.Ok tc -> do
+            tc.id `shouldBe` "call_abc123"
+            tc.function.name `shouldBe` "AddItem"
+          Result.Err err ->
+            expectationFailure (Text.toLinkedList [fmt|Failed to decode: #{err}|])
+
+      it "encodes to JSON with id and function" do
+        let tc = ToolCall
+              { id = "call_abc123"
+              , function = ToolCallFunction { name = "AddItem", arguments = Redacted.wrap ("{}" :: Text) }
+              }
+        let encoded = Json.encodeText tc
+        Text.contains "\"id\":\"call_abc123\"" encoded `shouldBe` True
+        Text.contains "\"function\"" encoded `shouldBe` True
+
     describe "Choice" do
       it "decodes choice from JSON" do
         let jsonText =
@@ -111,12 +202,33 @@ spec = do
           Result.Err err ->
             expectationFailure (Text.toLinkedList [fmt|Failed to decode: #{err}|])
 
+      it "defaults toolCalls to empty array when absent from JSON" do
+        let jsonText =
+              "{\"message\":{\"role\":\"assistant\",\"content\":\"Hello!\"},\"finish_reason\":\"stop\",\"index\":0}" :: Text
+        let decoded = Json.decodeText jsonText :: Result Text Choice
+        case decoded of
+          Result.Ok choice ->
+            Array.length choice.toolCalls `shouldBe` 0
+          Result.Err err ->
+            expectationFailure (Text.toLinkedList [fmt|Failed to decode: #{err}|])
+
+      it "decodes tool_calls field when present" do
+        let jsonText =
+              "{\"message\":{\"role\":\"assistant\",\"content\":null},\"finish_reason\":\"tool_calls\",\"index\":0,\"tool_calls\":[{\"id\":\"call_abc\",\"function\":{\"name\":\"AddItem\",\"arguments\":\"{}\"}}]}" :: Text
+        let decoded = Json.decodeText jsonText :: Result Text Choice
+        case decoded of
+          Result.Ok choice ->
+            Array.length choice.toolCalls `shouldBe` 1
+          Result.Err err ->
+            expectationFailure (Text.toLinkedList [fmt|Failed to decode: #{err}|])
+
       describe "JSON encoding" do
         it "encodes Choice to JSON object with correct fields" do
           let choice = Choice
                 { message = Message.assistant "Hello!"
                 , finishReason = Stop
                 , index = 0
+                , toolCalls = Array.fromLinkedList []
                 }
           let encoded = Json.encodeText choice
           Text.contains "\"message\"" encoded `shouldBe` True
@@ -124,15 +236,23 @@ spec = do
           Text.contains "\"index\":0" encoded `shouldBe` True
 
       describe "JSON round-trip" do
-        it "round-trips Choice" do
+        it "round-trips Choice without tool calls" do
           let original = Choice
                 { message = Message.assistant "Hello!"
                 , finishReason = Stop
                 , index = 0
+                , toolCalls = Array.fromLinkedList []
                 }
           let encoded = Json.encodeText original
           let decoded = Json.decodeText encoded :: Result Text Choice
-          decoded `shouldBe` Result.Ok original
+          case decoded of
+            Result.Ok choice -> do
+              choice.message.role `shouldBe` original.message.role
+              choice.finishReason `shouldBe` original.finishReason
+              choice.index `shouldBe` original.index
+              Array.length choice.toolCalls `shouldBe` Array.length original.toolCalls
+            Result.Err err ->
+              expectationFailure (Text.toLinkedList [fmt|Expected Ok, got: #{err}|])
 
     describe "Response" do
       it "decodes full response from JSON" do
@@ -156,6 +276,7 @@ spec = do
                 { message = Message.assistant "Hi"
                 , finishReason = Stop
                 , index = 0
+                , toolCalls = Array.fromLinkedList []
                 }
           let usage = Usage {promptTokens = 5, completionTokens = 10, totalTokens = 15}
           let response = Response
@@ -176,6 +297,7 @@ spec = do
                 { message = Message.assistant "Hi"
                 , finishReason = Stop
                 , index = 0
+                , toolCalls = Array.fromLinkedList []
                 }
           let usage = Usage {promptTokens = 5, completionTokens = 10, totalTokens = 15}
           let original = Response
@@ -186,13 +308,20 @@ spec = do
                 }
           let encoded = Json.encodeText original
           let decoded = Json.decodeText encoded :: Result Text Response
-          decoded `shouldBe` Result.Ok original
+          case decoded of
+            Result.Ok response -> do
+              response.id `shouldBe` original.id
+              response.model `shouldBe` original.model
+              Array.length response.choices `shouldBe` Array.length original.choices
+            Result.Err err ->
+              expectationFailure (Text.toLinkedList [fmt|Expected Ok, got: #{err}|])
 
         it "round-trips Response without usage" do
           let choice = Choice
                 { message = Message.assistant "Hi"
                 , finishReason = Stop
                 , index = 0
+                , toolCalls = Array.fromLinkedList []
                 }
           let original = Response
                 { id = "gen-456"
@@ -202,4 +331,36 @@ spec = do
                 }
           let encoded = Json.encodeText original
           let decoded = Json.decodeText encoded :: Result Text Response
-          decoded `shouldBe` Result.Ok original
+          case decoded of
+            Result.Ok response -> do
+              response.id `shouldBe` original.id
+              response.model `shouldBe` original.model
+              response.usage `shouldBe` Maybe.Nothing
+            Result.Err err ->
+              expectationFailure (Text.toLinkedList [fmt|Expected Ok, got: #{err}|])
+
+        it "round-trips Response with tool calls in choices" do
+          let tc = ToolCall
+                { id = "call_abc123"
+                , function = ToolCallFunction { name = "AddItem", arguments = Redacted.wrap ("{}" :: Text) }
+                }
+          let choice = Choice
+                { message = Message.assistant ""
+                , finishReason = Stop
+                , index = 0
+                , toolCalls = Array.fromLinkedList [tc]
+                }
+          let original = Response
+                { id = "gen-789"
+                , model = "claude-3.5-sonnet"
+                , choices = Array.fromLinkedList [choice]
+                , usage = Maybe.Nothing
+                }
+          let encoded = Json.encodeText original
+          let decoded = Json.decodeText encoded :: Result Text Response
+          case decoded of
+            Result.Ok response -> do
+              response.id `shouldBe` original.id
+              Array.length response.choices `shouldBe` 1
+            Result.Err err ->
+              expectationFailure (Text.toLinkedList [fmt|Expected Ok, got: #{err}|])

@@ -277,6 +277,7 @@ library
     Service.Transport.Cli.Output
     Schema
     Schema.OpenApi
+    Schema.JsonSchema
     Set
     Stream
     Subprocess
@@ -435,6 +436,7 @@ test-suite nhcore-test
     Service.SnapshotCache.InMemorySpec
     Schema.OpenApiSpec
     SchemaSpec
+    Schema.JsonSchemaSpec
     SetSpec
     StreamSpec
     Test.AppSpec.AppSpecSpec
@@ -599,6 +601,7 @@ test-suite nhcore-test-core
     RedactedSpec
     Schema.OpenApiSpec
     SchemaSpec
+    Schema.JsonSchemaSpec
     Service.Transport.Web.SwaggerUISpec
     SetSpec
     StreamSpec

@@ -73,6 +73,10 @@ data RequestBody = RequestBody
   , top_p :: Maybe Float
   , frequency_penalty :: Maybe Float
   , presence_penalty :: Maybe Float
+  , tools :: Maybe (Array Json.Value)
+  -- ^ Tool definitions array (Nothing = omit field, preserving current behaviour)
+  , tool_choice :: Maybe Text
+  -- ^ "required" forces the model to call a tool (Nothing = omit field)
   }
   deriving (Show, Eq, Generic)
 
@@ -90,6 +94,8 @@ instance Json.ToJSON RequestBody where
           , body.top_p |> fmap (\v -> ("top_p", Json.toJSON v))
           , body.frequency_penalty |> fmap (\v -> ("frequency_penalty", Json.toJSON v))
           , body.presence_penalty |> fmap (\v -> ("presence_penalty", Json.toJSON v))
+          , body.tools |> fmap (\v -> ("tools", Json.toJSON v))
+          , body.tool_choice |> fmap (\v -> ("tool_choice", Json.toJSON v))
           ]
           |> Array.getJusts
     let allFields = required |> Array.append optionalFields |> Array.toLinkedList
@@ -137,6 +143,8 @@ buildRequestBody request =
     , top_p = request.config.topP
     , frequency_penalty = request.config.frequencyPenalty
     , presence_penalty = request.config.presencePenalty
+    , tools = Nothing   -- new field, Nothing preserves existing behaviour
+    , tool_choice = Nothing   -- new field, Nothing preserves existing behaviour
     }
 
 
