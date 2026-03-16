@@ -365,21 +365,28 @@ dispatch dispatcher event =
             |> Task.ignoreError
         else do
           let streamId = event.streamId
+          let eventEntityName = event.entityName |> EntityName.toText
           Log.debug [fmt|Routing event to workers for stream #{toText streamId}|]
             |> Task.ignoreError
 
-          -- Handle stateless workers
-          if Array.isEmpty dispatcher.outboundRunners
+          -- Handle stateless workers (only if a matching runner exists)
+          let matchingStatelessRunners =
+                dispatcher.outboundRunners
+                  |> Array.takeIf (\runner -> runner.entityTypeName == eventEntityName)
+          if Array.isEmpty matchingStatelessRunners
             then pass
             else do
               worker <- getOrCreateStatelessWorker dispatcher streamId
               writeWorkerMessageWithTimeout dispatcher streamId (ProcessEvent event) worker.channel
 
-          -- Handle lifecycle workers
-          if Array.isEmpty dispatcher.lifecycleRunners
+          -- Handle lifecycle workers (only if a matching runner exists)
+          let matchingLifecycleRunners =
+                dispatcher.lifecycleRunners
+                  |> Array.takeIf (\runner -> runner.entityTypeName == eventEntityName)
+          if Array.isEmpty matchingLifecycleRunners
             then pass
             else do
-              lifecycleWorker <- getOrCreateLifecycleWorker dispatcher streamId
+              lifecycleWorker <- getOrCreateLifecycleWorker dispatcher streamId eventEntityName
               -- Update last activity time
               currentTime <- getCurrentTimeMs
               _ <- lifecycleWorker.lastActivityTime |> ConcurrentVar.swap currentTime
@@ -508,8 +515,9 @@ getOrCreateStatelessWorker dispatcher streamId = do
 getOrCreateLifecycleWorker ::
   IntegrationDispatcher ->
   StreamId ->
+  Text -> -- ^ Entity type name for filtering which lifecycle runners to initialize
   Task Text LifecycleEntityWorker
-getOrCreateLifecycleWorker dispatcher streamId = do
+getOrCreateLifecycleWorker dispatcher streamId entityTypeName = do
   -- First, check if there's an existing worker and its status
   maybeExisting <- dispatcher.lifecycleEntityWorkers |> ConcurrentMap.get streamId
 
@@ -523,7 +531,7 @@ getOrCreateLifecycleWorker dispatcher streamId = do
           Task.yield existingWorker
         Draining -> do
           -- Worker is draining, spawn new one to replace it
-          candidateWorker <- spawnLifecycleWorker dispatcher streamId
+          candidateWorker <- spawnLifecycleWorker dispatcher streamId entityTypeName
           -- Atomically replace the draining worker using getOrInsertIfM
           -- The predicate reads status inside STM, allowing replacement only if still Draining
           let shouldReplace existing = do
@@ -539,7 +547,7 @@ getOrCreateLifecycleWorker dispatcher streamId = do
           Task.yield actualWorker
     Nothing -> do
       -- No worker exists, spawn one
-      candidateWorker <- spawnLifecycleWorker dispatcher streamId
+      candidateWorker <- spawnLifecycleWorker dispatcher streamId entityTypeName
       (actualWorker, maybeDiscarded) <-
         dispatcher.lifecycleEntityWorkers
           |> ConcurrentMap.getOrInsert streamId candidateWorker
@@ -628,8 +636,9 @@ spawnStatelessWorker dispatcher streamId = do
 spawnLifecycleWorker ::
   IntegrationDispatcher ->
   StreamId ->
+  Text -> -- ^ Entity type name — only lifecycle runners matching this type are initialized
   Task Text LifecycleEntityWorker
-spawnLifecycleWorker dispatcher streamId = do
+spawnLifecycleWorker dispatcher streamId entityTypeName = do
   -- Generate unique ID for this worker instance
   uniqueId <- Uuid.generate
   workerChannel <- Channel.newBounded dispatcher.config.workerChannelCapacity
@@ -637,9 +646,12 @@ spawnLifecycleWorker dispatcher streamId = do
   lastActivity <- ConcurrentVar.containing currentTime
   workerStatus <- AtomicVar.containing Active
 
-  -- Initialize all lifecycle runners, tagging each state with its entity type
+  -- Initialize only lifecycle runners matching the entity type for this stream.
+  -- This avoids expensive resource allocation (DB connections, interpreters) for
+  -- runners that will never process events on this stream.
   states <-
     dispatcher.lifecycleRunners
+      |> Array.takeIf (\runner -> runner.entityTypeName == entityTypeName)
       |> Task.mapArray (\runner -> do
         state <- runner.spawnWorkerState streamId
         Task.yield (runner.entityTypeName, state)
@@ -699,40 +711,59 @@ spawnLifecycleWorker dispatcher streamId = do
       }
 
 
--- | Execute an action with retry for transient IO failures.
+-- | Execute an action with retry for transient IO failures, returning the
+-- result on success or 'Nothing' on failure.
 --
 -- Uses a two-layer error catching strategy:
 --
 -- 1. Inner layer ('Task.asResult'): catches 'Task.throw' errors (e.g., JSON decode
---    failures). These are non-retryable application errors handled within the action.
+--    failures). These are non-retryable application errors — logged and returned as
+--    'Nothing' immediately (no retry).
 -- 2. Outer layer ('Task.asResultSafe'): catches raw IO exceptions (e.g., network
 --    errors). These are transient and retried with exponential backoff.
 --
+-- The caller receives 'Just value' on success and dispatches side effects (e.g.,
+-- command sends) outside the retry boundary. This prevents duplicate side effects
+-- when retries occur.
+--
 -- Retry delays follow: @baseDelay * 2^attempt@ (e.g., 500ms, 1000ms, 2000ms).
 executeWithRetry ::
+  forall result.
   DispatcherConfig ->
   Text -> -- ^ Entity type name (for logging)
   StreamId -> -- ^ Stream ID (for logging)
-  Task Text Unit -> -- ^ Action to execute
-  Task Text Unit
+  Task Text result -> -- ^ Action to execute (should be pure/idempotent)
+  Task Text (Maybe result)
 executeWithRetry config entityType streamId action = do
   let maxRetries = config.maxEventRetries
   let baseDelay = config.retryBaseDelayMs
   let streamIdText = toText streamId
   let retryLoop attempt = do
-        result <- action |> Task.asResultSafe
-        case result of
-          Ok _ -> pass
-          Err err -> do
+        -- Inner layer: catch Task.throw errors (non-retryable)
+        let innerAction :: Task Text (Maybe result)
+            innerAction = do
+              innerResult <- action |> Task.asResult
+              case innerResult of
+                Ok value -> Task.yield (Just value)
+                Err err -> do
+                  Log.warn [fmt|[Integration] Failed to process event for #{entityType} (stream: #{streamIdText}): #{err}|]
+                    |> Task.ignoreError
+                  Task.yield Nothing
+        -- Outer layer: catch IO exceptions (retryable)
+        outerResult <- innerAction |> Task.asResultSafe
+        case outerResult of
+          Ok maybeValue -> Task.yield maybeValue
+          Err ioErr -> do
             let attemptNum = attempt + 1
             if attempt >= maxRetries
-              then
-                Log.warn [fmt|[Integration] Outbound processing failed for #{entityType} (stream: #{streamIdText}) after #{attemptNum} attempt(s): #{err}. Check network connectivity or increase maxEventRetries.|]
+              then do
+                Log.warn [fmt|[Integration] Outbound processing failed for #{entityType} (stream: #{streamIdText}) after #{attemptNum} attempt(s): #{ioErr}. Check network connectivity or increase maxEventRetries.|]
                   |> Task.ignoreError
+                Task.yield Nothing
               else do
                 let attemptFloat = Int.toFloat attempt
                 let delay = Float.toInt (Int.toFloat baseDelay * (2.0 ^ attemptFloat))
-                Log.debug [fmt|[Integration] Retry #{attemptNum}/#{maxRetries} for #{entityType} (stream: #{streamIdText}): #{err}, waiting #{delay}ms|]
+                Log.debug [fmt|[Integration] Retry #{attemptNum}/#{maxRetries} for #{entityType} (stream: #{streamIdText}): #{ioErr}, waiting #{delay}ms|]
                   |> Task.ignoreError
                 AsyncTask.sleep delay
                   |> Task.mapError (\_ -> "retry sleep error" :: Text)
@@ -756,16 +787,16 @@ processStatelessEvent dispatcher event = do
     |> Array.takeIf (\runner -> runner.entityTypeName == eventEntityName)
     |> Task.forEach \runner -> do
       let runnerEntityType = runner.entityTypeName
-      executeWithRetry dispatcher.config runnerEntityType streamId do
-        result <- runner.processEvent dispatcher.context dispatcher.eventStore event |> Task.asResult
-        case result of
-          Ok commands ->
-            commands
-              |> Task.forEach \payload ->
-                dispatchCommand dispatcher.commandEndpoints payload
-          Err err ->
-            Log.warn [fmt|[Integration] Failed to decode event for #{runnerEntityType} (stream: #{toText streamId}): #{err}|]
-              |> Task.ignoreError
+      -- Retry only wraps processEvent; dispatchCommand runs outside to avoid
+      -- duplicate command sends on retry.
+      maybeCommands <- executeWithRetry dispatcher.config runnerEntityType streamId
+        (runner.processEvent dispatcher.context dispatcher.eventStore event)
+      case maybeCommands of
+        Just commands ->
+          commands
+            |> Task.forEach \payload ->
+              dispatchCommand dispatcher.commandEndpoints payload
+        Nothing -> pass
 
 
 -- | Process an event through lifecycle runners.
@@ -783,17 +814,15 @@ processLifecycleEvent config states endpoints event = do
   let eventEntityName = event.entityName |> EntityName.toText
   states
     |> Array.takeIf (\(entityType, _) -> entityType == eventEntityName)
-    |> Task.forEach \(entityType, state) ->
-      executeWithRetry config entityType streamId do
-        result <- state.processEvent event |> Task.asResult
-        case result of
-          Ok commands ->
-            commands
-              |> Task.forEach \payload ->
-                dispatchCommand endpoints payload
-          Err err ->
-            Log.warn [fmt|[Integration] Failed to process lifecycle event for #{entityType} (stream: #{toText streamId}): #{err}|]
-              |> Task.ignoreError
+    |> Task.forEach \(entityType, state) -> do
+      maybeCommands <- executeWithRetry config entityType streamId
+        (state.processEvent event)
+      case maybeCommands of
+        Just commands ->
+          commands
+            |> Task.forEach \payload ->
+              dispatchCommand endpoints payload
+        Nothing -> pass
 
 
 -- | Drain remaining events from a stateless worker's channel before exiting.
