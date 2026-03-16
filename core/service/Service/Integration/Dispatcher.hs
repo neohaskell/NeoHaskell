@@ -762,7 +762,8 @@ executeWithRetry config entityType streamId action = do
                 Task.yield Nothing
               else do
                 let attemptFloat = Int.toFloat attempt
-                let delay = Float.toInt (Int.toFloat baseDelay * (2.0 ^ attemptFloat))
+                let candidateDelay = Float.toInt (Int.toFloat baseDelay * (2.0 ^ attemptFloat))
+                let delay = min candidateDelay 60000 -- Cap at 60s to prevent overflow
                 Log.debug [fmt|[Integration] Retry #{attemptNum}/#{maxRetries} for #{entityType} (stream: #{streamIdText}): #{ioErr}, waiting #{delay}ms|]
                   |> Task.ignoreError
                 AsyncTask.sleep delay
