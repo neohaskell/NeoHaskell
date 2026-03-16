@@ -168,6 +168,9 @@ addOrUpdateItem items itemId amount = do
 type instance EntityOf AddItemToCart = CartEntity
 
 
+type instance NameOf AddItemToCart = "AddItemToCart"
+
+
 instance Command AddItemToCart where
   getEntityIdImpl cmd = cmd.cartId |> Just
 
@@ -188,6 +191,9 @@ instance Command AddItemToCart where
 
 
 type instance EntityOf RemoveItemFromCart = CartEntity
+
+
+type instance NameOf RemoveItemFromCart = "RemoveItemFromCart"
 
 
 instance Command RemoveItemFromCart where
@@ -213,6 +219,9 @@ instance Command RemoveItemFromCart where
 
 
 type instance EntityOf CheckoutCart = CartEntity
+
+
+type instance NameOf CheckoutCart = "CheckoutCart"
 
 
 instance Command CheckoutCart where
@@ -257,6 +266,9 @@ instance Json.FromJSON AuthenticatedAddItem
 
 
 type instance EntityOf AuthenticatedAddItem = CartEntity
+
+
+type instance NameOf AuthenticatedAddItem = "AuthenticatedAddItem"
 
 
 instance Command AuthenticatedAddItem where
@@ -388,6 +400,9 @@ instance Json.FromJSON OwnedCartCheckout
 
 
 type instance EntityOf OwnedCartCheckout = OwnedCartEntity
+
+
+type instance NameOf OwnedCartCheckout = "OwnedCartCheckout"
 
 
 instance Command OwnedCartCheckout where

@@ -177,6 +177,7 @@ instance
     Eq entityIdType,
     Ord entityIdType,
     Show entityIdType,
+    Show event,
     Json.FromJSON cmd,
     Schema.ToSchema cmd,
     BuildHandlersForTransports transports,
