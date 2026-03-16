@@ -76,8 +76,10 @@ import Service.Response (CommandResponse (..))
 import Control.Concurrent.Async qualified as GhcAsync
 import Data.Either (Either (..))
 import Data.Time.Clock.POSIX qualified as GhcPosix
+import Float qualified
 import GHC.Float (Double)
 import GHC.Real qualified as GhcReal
+import Int qualified
 import Integration qualified
 import Json qualified
 import Map (Map)
@@ -88,6 +90,7 @@ import Uuid qualified
 import Result (Result (..))
 import Service.Auth qualified as Auth
 import Service.Event (Event (..))
+import Service.Event.EntityName qualified as EntityName
 import Service.Event.StreamId (StreamId)
 import Service.EventStore.Core (EventStore)
 import Service.Integration.Types (OutboundRunner (..), OutboundLifecycleRunner (..), WorkerState (..))
@@ -169,7 +172,16 @@ data DispatcherConfig = DispatcherConfig
     -- If exceeded, the event processing is cancelled and the worker continues
     -- with the next event. Default: Nothing (no timeout).
     -- This prevents slow integrations from blocking a worker indefinitely.
-    eventProcessingTimeoutMs :: Maybe Int
+    eventProcessingTimeoutMs :: Maybe Int,
+    -- | Maximum number of retry attempts for transient IO failures in outbound
+    -- event processing. Only IO exceptions (e.g., network errors) are retried;
+    -- application-level errors (e.g., JSON decode failures) are not.
+    -- Default: 3 (total attempts = initial + 3 retries)
+    maxEventRetries :: Int,
+    -- | Base delay in milliseconds for exponential backoff between retries.
+    -- Actual delays: baseDelay * 2^attempt (e.g., 500ms, 1000ms, 2000ms).
+    -- Default: 500
+    retryBaseDelayMs :: Int
   }
 
 
@@ -182,7 +194,9 @@ defaultConfig =
       enableReaper = True,
       workerChannelCapacity = 100,
       channelWriteTimeoutMs = 5000,
-      eventProcessingTimeoutMs = Just 30000
+      eventProcessingTimeoutMs = Just 30000,
+      maxEventRetries = 3,
+      retryBaseDelayMs = 500
     }
 
 
@@ -220,7 +234,7 @@ data LifecycleEntityWorker = LifecycleEntityWorker
     channel :: Channel (WorkerMessage (Event Json.Value)),
     workerTask :: AsyncTask Text Unit,
     lastActivityTime :: ConcurrentVar Int,
-    workerStates :: Array WorkerState, -- One per lifecycle runner
+    workerStates :: Array (Text, WorkerState), -- (entityTypeName, state) per lifecycle runner
     -- | Status for reaper coordination. When Draining, the dispatcher will
     -- spawn a new worker instead of using this one.
     -- Uses AtomicVar (TVar-based) so status can be read inside STM transactions
@@ -623,10 +637,13 @@ spawnLifecycleWorker dispatcher streamId = do
   lastActivity <- ConcurrentVar.containing currentTime
   workerStatus <- AtomicVar.containing Active
 
-  -- Initialize all lifecycle runners
+  -- Initialize all lifecycle runners, tagging each state with its entity type
   states <-
     dispatcher.lifecycleRunners
-      |> Task.mapArray (\runner -> runner.spawnWorkerState streamId)
+      |> Task.mapArray (\runner -> do
+        state <- runner.spawnWorkerState streamId
+        Task.yield (runner.entityTypeName, state)
+      )
 
   let workerLoop :: Task Text Unit
       workerLoop = do
@@ -634,17 +651,17 @@ spawnLifecycleWorker dispatcher streamId = do
         case message of
           Stop -> do
             -- Drain remaining events before cleanup
-            drainLifecycleWorker states dispatcher.commandEndpoints workerChannel
+            drainLifecycleWorker dispatcher.config states dispatcher.commandEndpoints workerChannel
             -- Cleanup on stop (reap or shutdown)
-            states |> Task.forEach (\state -> state.cleanup |> Task.ignoreError)
+            states |> Task.forEach (\(_, state) -> state.cleanup |> Task.ignoreError)
           ProcessEvent event -> do
             -- Update activity time
             newTime <- getCurrentTimeMs
             lastActivity |> ConcurrentVar.modify (\_ -> newTime)
-            -- Process event through all lifecycle runners with optional timeout
+            -- Process event through matching lifecycle runners with optional timeout
             processResult <- runWithTimeout
               dispatcher.config.eventProcessingTimeoutMs
-              (processLifecycleEvent states dispatcher.commandEndpoints event)
+              (processLifecycleEvent dispatcher.config states dispatcher.commandEndpoints event)
             case processResult of
               Ok _ -> pass
               Err err -> do
@@ -665,7 +682,7 @@ spawnLifecycleWorker dispatcher streamId = do
             Log.warn [fmt|Lifecycle worker crashed for stream #{toText streamId}: #{err}|]
               |> Task.ignoreError
             -- Attempt cleanup even on crash (best effort, after removal)
-            states |> Task.forEach (\state -> state.cleanup |> Task.ignoreError)
+            states |> Task.forEach (\(_, state) -> state.cleanup |> Task.ignoreError)
 
   workerTask <- AsyncTask.run safeWorkerLoop
   Log.withScope [("component", "Dispatcher")] do
@@ -682,45 +699,101 @@ spawnLifecycleWorker dispatcher streamId = do
       }
 
 
+-- | Execute an action with retry for transient IO failures.
+--
+-- Uses a two-layer error catching strategy:
+--
+-- 1. Inner layer ('Task.asResult'): catches 'Task.throw' errors (e.g., JSON decode
+--    failures). These are non-retryable application errors handled within the action.
+-- 2. Outer layer ('Task.asResultSafe'): catches raw IO exceptions (e.g., network
+--    errors). These are transient and retried with exponential backoff.
+--
+-- Retry delays follow: @baseDelay * 2^attempt@ (e.g., 500ms, 1000ms, 2000ms).
+executeWithRetry ::
+  DispatcherConfig ->
+  Text -> -- ^ Entity type name (for logging)
+  StreamId -> -- ^ Stream ID (for logging)
+  Task Text Unit -> -- ^ Action to execute
+  Task Text Unit
+executeWithRetry config entityType streamId action = do
+  let maxRetries = config.maxEventRetries
+  let baseDelay = config.retryBaseDelayMs
+  let streamIdText = toText streamId
+  let retryLoop attempt = do
+        result <- action |> Task.asResultSafe
+        case result of
+          Ok _ -> pass
+          Err err -> do
+            let attemptNum = attempt + 1
+            if attempt >= maxRetries
+              then
+                Log.warn [fmt|[Integration] Outbound processing failed for #{entityType} (stream: #{streamIdText}) after #{attemptNum} attempt(s): #{err}. Check network connectivity or increase maxEventRetries.|]
+                  |> Task.ignoreError
+              else do
+                let attemptFloat = Int.toFloat attempt
+                let delay = Float.toInt (Int.toFloat baseDelay * (2.0 ^ attemptFloat))
+                Log.debug [fmt|[Integration] Retry #{attemptNum}/#{maxRetries} for #{entityType} (stream: #{streamIdText}): #{err}, waiting #{delay}ms|]
+                  |> Task.ignoreError
+                AsyncTask.sleep delay
+                  |> Task.mapError (\_ -> "retry sleep error" :: Text)
+                retryLoop (attempt + 1)
+  retryLoop 0
+
+
 -- | Process an event through stateless runners.
+--
+-- Only runners whose 'entityTypeName' matches the event's 'entityName' are
+-- invoked (fixes issue #323). IO exceptions are retried with exponential
+-- backoff via 'executeWithRetry' (fixes issue #571).
 processStatelessEvent ::
   IntegrationDispatcher ->
   Event Json.Value ->
   Task Text Unit
 processStatelessEvent dispatcher event = do
   let streamId = event.streamId
+  let eventEntityName = event.entityName |> EntityName.toText
   dispatcher.outboundRunners
+    |> Array.takeIf (\runner -> runner.entityTypeName == eventEntityName)
     |> Task.forEach \runner -> do
-      result <- runner.processEvent dispatcher.context dispatcher.eventStore event |> Task.asResult
-      case result of
-        Ok commands -> do
-          commands
-            |> Task.forEach \payload -> do
-              dispatchCommand dispatcher.commandEndpoints payload
-        Err err -> do
-          Log.warn [fmt|Error processing event (stream: #{toText streamId}): #{err}|]
-            |> Task.ignoreError
+      let runnerEntityType = runner.entityTypeName
+      executeWithRetry dispatcher.config runnerEntityType streamId do
+        result <- runner.processEvent dispatcher.context dispatcher.eventStore event |> Task.asResult
+        case result of
+          Ok commands ->
+            commands
+              |> Task.forEach \payload ->
+                dispatchCommand dispatcher.commandEndpoints payload
+          Err err ->
+            Log.warn [fmt|[Integration] Failed to decode event for #{runnerEntityType} (stream: #{toText streamId}): #{err}|]
+              |> Task.ignoreError
 
 
 -- | Process an event through lifecycle runners.
+--
+-- Only runners whose entity type matches the event's entity name are invoked.
+-- IO exceptions are retried with exponential backoff.
 processLifecycleEvent ::
-  Array WorkerState ->
+  DispatcherConfig ->
+  Array (Text, WorkerState) ->
   Map Text EndpointHandler ->
   Event Json.Value ->
   Task Text Unit
-processLifecycleEvent states endpoints event = do
+processLifecycleEvent config states endpoints event = do
   let streamId = event.streamId
+  let eventEntityName = event.entityName |> EntityName.toText
   states
-    |> Task.forEach \state -> do
-      result <- state.processEvent event |> Task.asResult
-      case result of
-        Ok commands -> do
-          commands
-            |> Task.forEach \payload -> do
-              dispatchCommand endpoints payload
-        Err err -> do
-          Log.warn [fmt|Error processing lifecycle event (stream: #{toText streamId}): #{err}|]
-            |> Task.ignoreError
+    |> Array.takeIf (\(entityType, _) -> entityType == eventEntityName)
+    |> Task.forEach \(entityType, state) ->
+      executeWithRetry config entityType streamId do
+        result <- state.processEvent event |> Task.asResult
+        case result of
+          Ok commands ->
+            commands
+              |> Task.forEach \payload ->
+                dispatchCommand endpoints payload
+          Err err ->
+            Log.warn [fmt|[Integration] Failed to process lifecycle event for #{entityType} (stream: #{toText streamId}): #{err}|]
+              |> Task.ignoreError
 
 
 -- | Drain remaining events from a stateless worker's channel before exiting.
@@ -753,11 +826,12 @@ drainStatelessWorker dispatcher workerChannel = do
 --
 -- Similar to drainStatelessWorker but uses lifecycle event processing.
 drainLifecycleWorker ::
-  Array WorkerState ->
+  DispatcherConfig ->
+  Array (Text, WorkerState) ->
   Map Text EndpointHandler ->
   Channel (WorkerMessage (Event Json.Value)) ->
   Task Text Unit
-drainLifecycleWorker states endpoints workerChannel = do
+drainLifecycleWorker config states endpoints workerChannel = do
   maybeMessage <- workerChannel |> Channel.tryRead
   case maybeMessage of
     Nothing ->
@@ -766,12 +840,12 @@ drainLifecycleWorker states endpoints workerChannel = do
     Just message -> case message of
       Stop ->
         -- Another Stop, ignore and continue draining
-        drainLifecycleWorker states endpoints workerChannel
+        drainLifecycleWorker config states endpoints workerChannel
       ProcessEvent event -> do
         -- Process the remaining event
-        processLifecycleEvent states endpoints event
+        processLifecycleEvent config states endpoints event
         -- Continue draining
-        drainLifecycleWorker states endpoints workerChannel
+        drainLifecycleWorker config states endpoints workerChannel
 
 
 -- | Dispatch a command to the appropriate handler.

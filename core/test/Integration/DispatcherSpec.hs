@@ -72,13 +72,18 @@ type instance NameOf RecordProcessed = "RecordProcessed"
 
 -- | Create a test event with the given entity ID and sequence number.
 makeTestEvent :: Text -> Int -> Int -> Task Text (Event Json.Value)
-makeTestEvent entityIdText seqNum globalPos = do
+makeTestEvent = makeTestEventForEntity "TestEntity"
+
+
+-- | Create a test event for a specific entity type.
+makeTestEventForEntity :: Text -> Text -> Int -> Int -> Task Text (Event Json.Value)
+makeTestEventForEntity entityTypeName entityIdText seqNum globalPos = do
   -- Use fromTextUnsafe: test inputs are controlled and known to be valid
   let streamId = StreamId.fromTextUnsafe entityIdText
   now <- DateTime.now
   Task.yield
     Event
-      { entityName = EntityName "TestEntity",
+      { entityName = EntityName entityTypeName,
         streamId = streamId,
         event = Json.encode (OrderingEvent {sequenceNum = seqNum}),
         metadata =
@@ -139,10 +144,11 @@ spec = do
         count <- ConcurrentVar.peek processedCount
         count |> shouldBe 1
 
-      it "recovers from IO exceptions and processes subsequent events" \_ -> do
-        -- Verifies the fix for issue #400: when a worker throws a raw IO exception
-        -- (not a Task.throw error), safeWorkerLoop catches it, removes the dead
-        -- worker from the map, and a new worker is spawned for the next event.
+      it "catches IO exceptions at per-runner level and continues processing" \_ -> do
+        -- Verifies fix for issues #400/#571: when a runner throws a raw IO exception,
+        -- executeWithRetry catches it at the per-runner level. With maxEventRetries=0,
+        -- the event is skipped and the worker continues processing subsequent events
+        -- without crashing.
         processedEvents <- ConcurrentVar.containing ([] :: [Int])
         callCount <- ConcurrentVar.containing (0 :: Int)
 
@@ -176,7 +182,9 @@ spec = do
                 enableReaper = False,
                 workerChannelCapacity = 100,
                 channelWriteTimeoutMs = 5000,
-                eventProcessingTimeoutMs = Nothing
+                eventProcessingTimeoutMs = Nothing,
+                maxEventRetries = 0,
+                retryBaseDelayMs = 50
               }
             eventStore
             [crashOnFirstRunner]
@@ -184,22 +192,22 @@ spec = do
             Map.empty
             context
 
-        -- Dispatch first event - worker will crash from IO exception
+        -- Dispatch first event - IO exception caught at runner level, event skipped
         event1 <- makeTestEvent "entity-A" 1 1
         Dispatcher.dispatch dispatcher event1
 
-        -- Wait for crash + cleanup (worker removed from map)
+        -- Wait for processing (no crash, worker continues)
         AsyncTask.sleep 200 |> Task.mapError (\_ -> "sleep error" :: Text)
 
         -- Dispatch second event to the SAME entity
-        -- If the fix works, a new worker is spawned and processes this event
+        -- Worker is still alive and processes this event
         event2 <- makeTestEvent "entity-A" 2 2
         Dispatcher.dispatch dispatcher event2
 
         -- Wait for processing
         AsyncTask.sleep 200 |> Task.mapError (\_ -> "sleep error" :: Text)
 
-        -- Verify the second event was processed (proving worker recovery)
+        -- Verify the second event was processed (worker survived the IO exception)
         processed <- ConcurrentVar.peek processedEvents
         let processedArray = processed |> Array.fromLinkedList
         processedArray |> shouldBe [2]
@@ -503,7 +511,9 @@ spec = do
                 enableReaper = True,
                 workerChannelCapacity = 100,
                 channelWriteTimeoutMs = 5000,
-                eventProcessingTimeoutMs = Nothing
+                eventProcessingTimeoutMs = Nothing,
+                maxEventRetries = 3,
+                retryBaseDelayMs = 50
               }
             eventStore
             []
@@ -550,7 +560,9 @@ spec = do
                 enableReaper = True,
                 workerChannelCapacity = 100,
                 channelWriteTimeoutMs = 5000,
-                eventProcessingTimeoutMs = Nothing
+                eventProcessingTimeoutMs = Nothing,
+                maxEventRetries = 3,
+                retryBaseDelayMs = 50
               }
             eventStore
             []
@@ -682,7 +694,9 @@ spec = do
                 enableReaper = False,
                 workerChannelCapacity = 2,
                 channelWriteTimeoutMs = 20,
-                eventProcessingTimeoutMs = Nothing
+                eventProcessingTimeoutMs = Nothing,
+                maxEventRetries = 3,
+                retryBaseDelayMs = 50
               }
             eventStore
             [slowRunner]
@@ -764,7 +778,9 @@ spec = do
                 enableReaper = False,
                 workerChannelCapacity = 1,
                 channelWriteTimeoutMs = 10,  -- Very short timeout
-                eventProcessingTimeoutMs = Nothing
+                eventProcessingTimeoutMs = Nothing,
+                maxEventRetries = 3,
+                retryBaseDelayMs = 50
               }
             eventStore
             [blockingRunner]
@@ -826,7 +842,9 @@ spec = do
                 enableReaper = False,
                 workerChannelCapacity = 100,
                 channelWriteTimeoutMs = 50,
-                eventProcessingTimeoutMs = Nothing
+                eventProcessingTimeoutMs = Nothing,
+                maxEventRetries = 3,
+                retryBaseDelayMs = 50
               }
             eventStore
             [fastRunner]
@@ -935,7 +953,9 @@ spec = do
                 enableReaper = False,
                 workerChannelCapacity = 1,
                 channelWriteTimeoutMs = 10,
-                eventProcessingTimeoutMs = Nothing
+                eventProcessingTimeoutMs = Nothing,
+                maxEventRetries = 3,
+                retryBaseDelayMs = 50
               }
 
         eventStore <- InMemory.new |> Task.mapError toText
@@ -970,3 +990,274 @@ spec = do
         -- With capacity=1 and timeout=10ms, event3 should be dropped
         count <- ConcurrentVar.peek processedCount
         count |> shouldBe 2
+
+    describe "entity type filtering" do
+      it "only processes events for matching entity type" \_ -> do
+        -- Two runners for different entity types. Only the matching runner
+        -- should process each event. (Fixes issue #323)
+        processedByRunner <- ConcurrentVar.containing ([] :: [Text])
+
+        let runnerA =
+              Dispatcher.OutboundRunner
+                { entityTypeName = "EntityA",
+                  processEvent = \_ctx _store _event -> do
+                    processedByRunner |> ConcurrentVar.modify (\runners -> runners ++ ["RunnerA"])
+                    Task.yield Array.empty
+                }
+        let runnerB =
+              Dispatcher.OutboundRunner
+                { entityTypeName = "EntityB",
+                  processEvent = \_ctx _store _event -> do
+                    processedByRunner |> ConcurrentVar.modify (\runners -> runners ++ ["RunnerB"])
+                    Task.yield Array.empty
+                }
+
+        eventStore <- InMemory.new |> Task.mapError toText
+        dispatcher <- Dispatcher.new eventStore [runnerA, runnerB] Map.empty
+
+        -- Dispatch event for EntityA only
+        eventA <- makeTestEventForEntity "EntityA" "entity-1" 1 1
+        Dispatcher.dispatch dispatcher eventA
+
+        AsyncTask.sleep 100 |> Task.mapError (\_ -> "sleep error" :: Text)
+
+        -- Only RunnerA should have processed
+        runners <- ConcurrentVar.peek processedByRunner
+        runners |> Array.fromLinkedList |> shouldBe ["RunnerA"]
+
+      it "routes events to correct runners when multiple entity types exist" \_ -> do
+        -- Dispatch events for both entity types and verify correct routing
+        processedByRunner <- ConcurrentVar.containing ([] :: [(Text, Int)])
+
+        let runnerA =
+              Dispatcher.OutboundRunner
+                { entityTypeName = "EntityA",
+                  processEvent = \_ctx _store event -> do
+                    case Json.decode @OrderingTestEvent event.event of
+                      Err _ -> Task.yield Array.empty
+                      Ok decoded -> do
+                        processedByRunner
+                          |> ConcurrentVar.modify (\results -> results ++ [("RunnerA", decoded.sequenceNum)])
+                        Task.yield Array.empty
+                }
+        let runnerB =
+              Dispatcher.OutboundRunner
+                { entityTypeName = "EntityB",
+                  processEvent = \_ctx _store event -> do
+                    case Json.decode @OrderingTestEvent event.event of
+                      Err _ -> Task.yield Array.empty
+                      Ok decoded -> do
+                        processedByRunner
+                          |> ConcurrentVar.modify (\results -> results ++ [("RunnerB", decoded.sequenceNum)])
+                        Task.yield Array.empty
+                }
+
+        eventStore <- InMemory.new |> Task.mapError toText
+        dispatcher <- Dispatcher.new eventStore [runnerA, runnerB] Map.empty
+
+        -- Dispatch events for both entity types
+        eventA <- makeTestEventForEntity "EntityA" "entity-1" 1 1
+        eventB <- makeTestEventForEntity "EntityB" "entity-2" 2 2
+        Dispatcher.dispatch dispatcher eventA
+        Dispatcher.dispatch dispatcher eventB
+
+        AsyncTask.sleep 200 |> Task.mapError (\_ -> "sleep error" :: Text)
+
+        -- Each runner should only have processed its own entity type's event
+        results <- ConcurrentVar.peek processedByRunner
+        let resultsArray = results |> Array.fromLinkedList
+        let runnerAResults = resultsArray |> Array.takeIf (\(runner, _) -> runner == "RunnerA")
+        let runnerBResults = resultsArray |> Array.takeIf (\(runner, _) -> runner == "RunnerB")
+
+        Array.length runnerAResults |> shouldBe 1
+        Array.length runnerBResults |> shouldBe 1
+        runnerAResults |> Array.map Tuple.second |> shouldBe [1]
+        runnerBResults |> Array.map Tuple.second |> shouldBe [2]
+
+      it "skips events with no matching runner" \_ -> do
+        -- Event for an entity type with no registered runner should be silently skipped
+        processedCount <- ConcurrentVar.containing (0 :: Int)
+
+        let testRunner =
+              Dispatcher.OutboundRunner
+                { entityTypeName = "EntityA",
+                  processEvent = \_ctx _store _event -> do
+                    processedCount |> ConcurrentVar.modify (+ 1)
+                    Task.yield Array.empty
+                }
+
+        eventStore <- InMemory.new |> Task.mapError toText
+        dispatcher <- Dispatcher.new eventStore [testRunner] Map.empty
+
+        -- Dispatch event for an entity type with no matching runner
+        eventX <- makeTestEventForEntity "UnknownEntity" "entity-1" 1 1
+        Dispatcher.dispatch dispatcher eventX
+
+        AsyncTask.sleep 100 |> Task.mapError (\_ -> "sleep error" :: Text)
+
+        -- No runner should have processed
+        count <- ConcurrentVar.peek processedCount
+        count |> shouldBe 0
+
+    describe "outbound retry" do
+      it "retries on transient IO exception and succeeds" \_ -> do
+        -- When a runner throws a raw IO exception (e.g., network error),
+        -- executeWithRetry catches it and retries. On second attempt the
+        -- runner succeeds. (Fixes issue #571)
+        attemptCount <- ConcurrentVar.containing (0 :: Int)
+        processedEvents <- ConcurrentVar.containing ([] :: [Int])
+
+        let retryRunner =
+              Dispatcher.OutboundRunner
+                { entityTypeName = "TestEntity",
+                  processEvent = \_ctx _store event -> do
+                    case Json.decode @OrderingTestEvent event.event of
+                      Err _ -> Task.yield Array.empty
+                      Ok decoded -> do
+                        currentAttempt <- ConcurrentVar.peek attemptCount
+                        attemptCount |> ConcurrentVar.modify (+ 1)
+                        if currentAttempt == 0
+                          then
+                            Task.fromIO (GhcException.throwIO (GhcException.ErrorCall "transient network error"))
+                          else do
+                            processedEvents
+                              |> ConcurrentVar.modify (\evts -> evts ++ [decoded.sequenceNum])
+                            Task.yield Array.empty
+                }
+
+        eventStore <- InMemory.new |> Task.mapError toText
+        context <- makeContext
+        dispatcher <-
+          Dispatcher.newWithLifecycleConfig
+            Dispatcher.DispatcherConfig
+              { idleTimeoutMs = 60000,
+                reaperIntervalMs = 10000,
+                enableReaper = False,
+                workerChannelCapacity = 100,
+                channelWriteTimeoutMs = 5000,
+                eventProcessingTimeoutMs = Nothing,
+                maxEventRetries = 3,
+                retryBaseDelayMs = 50
+              }
+            eventStore
+            [retryRunner]
+            []
+            Map.empty
+            context
+
+        event <- makeTestEvent "entity-A" 1 1
+        Dispatcher.dispatch dispatcher event
+
+        -- Wait for retry (50ms delay) + processing
+        AsyncTask.sleep 300 |> Task.mapError (\_ -> "sleep error" :: Text)
+
+        -- Event should have been processed on retry
+        processed <- ConcurrentVar.peek processedEvents
+        processed |> Array.fromLinkedList |> shouldBe [1]
+
+        -- Should have taken 2 attempts (1 failure + 1 success)
+        attempts <- ConcurrentVar.peek attemptCount
+        attempts |> shouldBe 2
+
+      it "gives up after max retries and continues with next event" \_ -> do
+        -- When IO exceptions persist beyond maxEventRetries, the event is
+        -- skipped and the worker continues processing subsequent events.
+        attemptCount <- ConcurrentVar.containing (0 :: Int)
+        processedEvents <- ConcurrentVar.containing ([] :: [Int])
+
+        let alwaysFailFirstRunner =
+              Dispatcher.OutboundRunner
+                { entityTypeName = "TestEntity",
+                  processEvent = \_ctx _store event -> do
+                    case Json.decode @OrderingTestEvent event.event of
+                      Err _ -> Task.yield Array.empty
+                      Ok decoded -> do
+                        attemptCount |> ConcurrentVar.modify (+ 1)
+                        if decoded.sequenceNum == 1
+                          then
+                            Task.fromIO (GhcException.throwIO (GhcException.ErrorCall "persistent network error"))
+                          else do
+                            processedEvents
+                              |> ConcurrentVar.modify (\evts -> evts ++ [decoded.sequenceNum])
+                            Task.yield Array.empty
+                }
+
+        eventStore <- InMemory.new |> Task.mapError toText
+        context <- makeContext
+        dispatcher <-
+          Dispatcher.newWithLifecycleConfig
+            Dispatcher.DispatcherConfig
+              { idleTimeoutMs = 60000,
+                reaperIntervalMs = 10000,
+                enableReaper = False,
+                workerChannelCapacity = 100,
+                channelWriteTimeoutMs = 5000,
+                eventProcessingTimeoutMs = Nothing,
+                maxEventRetries = 2,
+                retryBaseDelayMs = 10
+              }
+            eventStore
+            [alwaysFailFirstRunner]
+            []
+            Map.empty
+            context
+
+        event1 <- makeTestEvent "entity-A" 1 1
+        event2 <- makeTestEvent "entity-A" 2 2
+        Dispatcher.dispatch dispatcher event1
+        Dispatcher.dispatch dispatcher event2
+
+        -- Wait for retries (10ms + 20ms = 30ms) + processing
+        AsyncTask.sleep 500 |> Task.mapError (\_ -> "sleep error" :: Text)
+
+        -- Event 1 exhausted retries and was skipped, event 2 processed normally
+        processed <- ConcurrentVar.peek processedEvents
+        processed |> Array.fromLinkedList |> shouldBe [2]
+
+        -- Event 1: 3 attempts (initial + 2 retries), event 2: 1 attempt = 4 total
+        attempts <- ConcurrentVar.peek attemptCount
+        attempts |> shouldBe 4
+
+      it "does not retry Task.throw errors" \_ -> do
+        -- Task.throw errors (e.g., JSON decode failures) are application-level
+        -- errors caught by Task.asResult inside the action. They are NOT
+        -- retried because they would fail the same way every time.
+        attemptCount <- ConcurrentVar.containing (0 :: Int)
+
+        let decodeFailRunner =
+              Dispatcher.OutboundRunner
+                { entityTypeName = "TestEntity",
+                  processEvent = \_ctx _store _event -> do
+                    attemptCount |> ConcurrentVar.modify (+ 1)
+                    Task.throw ("decode error: bad format" :: Text)
+                }
+
+        eventStore <- InMemory.new |> Task.mapError toText
+        context <- makeContext
+        dispatcher <-
+          Dispatcher.newWithLifecycleConfig
+            Dispatcher.DispatcherConfig
+              { idleTimeoutMs = 60000,
+                reaperIntervalMs = 10000,
+                enableReaper = False,
+                workerChannelCapacity = 100,
+                channelWriteTimeoutMs = 5000,
+                eventProcessingTimeoutMs = Nothing,
+                maxEventRetries = 3,
+                retryBaseDelayMs = 10
+              }
+            eventStore
+            [decodeFailRunner]
+            []
+            Map.empty
+            context
+
+        event <- makeTestEvent "entity-A" 1 1
+        Dispatcher.dispatch dispatcher event
+
+        AsyncTask.sleep 200 |> Task.mapError (\_ -> "sleep error" :: Text)
+
+        -- Should only be called once (Task.throw caught by inner Task.asResult,
+        -- action completes normally, no retry triggered)
+        attempts <- ConcurrentVar.peek attemptCount
+        attempts |> shouldBe 1
