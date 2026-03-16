@@ -6,24 +6,30 @@ module Service.CommandExecutor.Core (
   execute,
 ) where
 
+import Array (Array)
 import Array qualified
 import AsyncTask qualified
 import Basics
 import Decider (CommandResult (..), DecisionContext (..), runDecision)
 import Float qualified
+import GHC.TypeLits qualified as GHC
 import Int qualified
 import Json qualified
 import Log qualified
 import Maybe (Maybe (..))
+import Maybe qualified
+import Record qualified
 import Result (Result (..))
 import Service.Auth (RequestContext)
 import Service.Command (Event (..))
-import Service.Command.Core (Command (..), Entity (..), EntityOf, EventOf)
+import Service.Command.Core (Command (..), Entity (..), EntityOf, EventOf, NameOf)
 import Service.EntityFetcher.Core (EntityFetchResult (..), EntityFetcher, FetchedEntity (..))
 import Service.EntityFetcher.Core qualified
 import Service.Event (EntityName, InsertionPayload (..), InsertionType (..))
 import Service.Event qualified as Event
+import Service.Event.EntityName qualified as EntityName
 import Service.Event.StreamId (StreamId, ToStreamId (..))
+import Service.Event.StreamId qualified as StreamId
 import Service.EventStore.Core (EventStore)
 import Service.EventStore.Core qualified as EventStore
 import Task (Task)
@@ -83,6 +89,17 @@ awaitWithJitter retryCount = do
   AsyncTask.sleep jitteredDelay
 
 
+-- | Extract constructor names from a list of events for logging.
+--
+-- Uses 'Show' to get the textual representation and takes the first word,
+-- which is the constructor name (e.g., @"CartCreated"@ from @"CartCreated {..}"@).
+extractEventNames :: forall event. (Show event) => Array event -> Text
+extractEventNames events =
+  events
+    |> Array.map (\event -> toText event |> Text.words |> Array.first |> Maybe.withDefault "Unknown")
+    |> Text.joinWith ", "
+
+
 -- | Execute a command through the event-sourcing pipeline.
 --
 -- This function:
@@ -102,6 +119,8 @@ execute ::
     ToStreamId (EntityIdType commandEntity),
     Eq (EntityIdType commandEntity),
     Show (EntityIdType commandEntity),
+    Show commandEvent,
+    GHC.KnownSymbol (NameOf command),
     IsMultiTenant command ~ 'False
   ) =>
   EventStore commandEvent ->
@@ -143,11 +162,13 @@ execute eventStore entityFetcher entityName requestContext command = do
 
   let maxRetries = 10
 
+  let commandNameText = GHC.symbolVal (Record.Proxy @(NameOf command)) |> Text.fromLinkedList
+
   let retryLoop retryCount currentEntity currentStreamId = do
         let streamIdText = case currentStreamId of
-              Just sid -> toText sid
+              Just sid -> StreamId.toText sid
               Nothing -> "new-stream"
-        Log.withScope [("component", "CommandExecutor"), ("streamId", streamIdText), ("entityName", toText entityName)] do
+        Log.withScope [("component", "CommandExecutor"), ("streamId", streamIdText), ("entityName", EntityName.toText entityName), ("commandName", commandNameText)] do
           case retryCount of
             0 -> Log.info "Executing command" |> Task.ignoreError
             _ -> Log.debug [fmt|Retrying command (attempt #{retryCount})|] |> Task.ignoreError
@@ -227,7 +248,9 @@ execute eventStore entityFetcher entityName requestContext command = do
                   case insertResult of
                     Ok _success -> do
                       let eventsCount = Array.length events
-                      Log.info [fmt|Command executed successfully, #{toText eventsCount} event(s) inserted|] |> Task.ignoreError
+                      let eventNames = extractEventNames events
+                      Log.withScope [("eventsEmitted", eventNames)] do
+                        Log.info [fmt|Command executed successfully, #{toText eventsCount} event(s) inserted|] |> Task.ignoreError
                       Task.yield
                         CommandAccepted
                           { streamId = finalStreamId,

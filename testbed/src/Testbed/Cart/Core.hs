@@ -69,7 +69,7 @@ data CartEvent
         stockId :: Uuid,
         quantity :: Int
       }
-  deriving (Generic)
+  deriving (Eq, Show, Ord, Generic)
 
 
 getEventEntityId :: CartEvent -> Uuid
