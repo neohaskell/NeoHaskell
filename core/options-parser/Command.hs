@@ -1,6 +1,7 @@
 module Command (
-  OptionsParser,
+  OptionsParser (..),
   CommandOptions (..),
+  FlagConfig (..),
   PathConfig (..),
   TextConfig (..),
   text,

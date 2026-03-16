@@ -56,6 +56,8 @@ common common_cfg
 library
   import: common_cfg
   exposed-modules:
+    NeoHaskell.App
+    NeoHaskell.Cli.Lsp
     NeoHaskell.LSP.Handlers
     NeoHaskell.LSP.Server
     NeoHaskell.LSP.State
