@@ -440,6 +440,7 @@ test-suite nhcore-test
     Schema.JsonSchemaSpec
     SetSpec
     StreamSpec
+    TaskSpec
     Test.AppSpec.AppSpecSpec
     Test.AppSpec.VerifySpec
     Service.FileUpload.CoreSpec
@@ -606,6 +607,7 @@ test-suite nhcore-test-core
     Service.Transport.Web.SwaggerUISpec
     SetSpec
     StreamSpec
+    TaskSpec
     Test.AppSpec.AppSpecSpec
     Test.AppSpec.VerifySpec
     Syntax.CommentSpec
