@@ -34,7 +34,7 @@ import Applicable qualified
 import Array (Array)
 import Array qualified
 import Basics
-import Control.Exception (Exception, SomeException)
+import Control.Exception (Exception, SomeAsyncException, SomeException)
 import Control.Exception qualified as Exception
 import Control.Monad qualified
 import Control.Monad.IO.Class qualified as Monad
@@ -104,17 +104,25 @@ asResult task =
 {-# INLINE asResult #-}
 
 
--- | Like 'asResult', but also catches IO exceptions (not just ExceptT errors).
+-- | Like 'asResult', but also catches synchronous IO exceptions (not just ExceptT errors).
 --
 -- 'asResult' only catches errors thrown via 'Task.throw' (ExceptT layer).
--- IO exceptions from the underlying IO action propagate uncaught, which can
--- silently kill worker threads.
+-- Synchronous IO exceptions from the underlying IO action propagate uncaught,
+-- which can silently kill worker threads.
 --
--- 'asResultSafe' catches BOTH:
--- 1. ExceptT errors (from Task.throw) — converted via 'show'
--- 2. IO exceptions (from underlying IO) — converted via 'show'
+-- 'asResultSafe' catches:
+-- 1. ExceptT errors (from Task.throw) — converted to @Err@ via 'show'
+-- 2. Synchronous IO exceptions (from underlying IO) — converted to @Err@ via 'show'
 --
--- Essential for worker loops where uncaught IO exceptions would kill the thread.
+-- Asynchronous exceptions ('SomeAsyncException' and its subtypes, such as
+-- 'AsyncCancelled' and 'ThreadKilled') are __not__ caught — they are re-thrown
+-- so the GHC runtime and @async@ library can manage thread lifecycle correctly.
+--
+-- Callers that need cleanup on async cancellation should use 'Task.finally' to
+-- guarantee teardown runs regardless of how the task terminates.
+--
+-- Essential for worker loops where uncaught synchronous IO exceptions would
+-- kill the thread.
 asResultSafe ::
   forall err value err2.
   (Show err) =>
@@ -127,6 +135,11 @@ asResultSafe task = do
       |> Exception.try @SomeException
       |> fromIO
   case result of
+    Either.Left someException
+      | Just asyncEx <- Exception.fromException @SomeAsyncException someException ->
+          -- Re-throw async exceptions (AsyncCancelled, ThreadKilled, etc.)
+          -- These are runtime control signals, not application errors.
+          Exception.throwIO asyncEx |> fromIO
     Either.Left someException ->
       yield (Result.Err (show someException |> Text.fromLinkedList))
     Either.Right (Either.Left err) ->
