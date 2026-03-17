@@ -60,6 +60,7 @@ ADRs document significant architectural decisions made during the development of
 | [0044](0044-layout-library.md) | Layout Library — Beginner-Friendly prettyprinter Wrapper | Proposed |
 | [0045](0045-integration-agent.md) | Integration.Agent — Provider-Agnostic AI Agent via Tool Calling | Proposed |
 | [0046](0046-function-syntax-fun-keyword.md) | Function Syntax — `fun` Keyword Parsing and Transpilation | Proposed |
+| [0047](0047-eventvariantof-typeclass.md) | EventVariantOf Typeclass for Type-Safe Event Variant Wrapping | Proposed |
 
 ## Creating New ADRs
 
