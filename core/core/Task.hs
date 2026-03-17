@@ -34,7 +34,7 @@ import Applicable qualified
 import Array (Array)
 import Array qualified
 import Basics
-import Control.Exception (Exception, SomeException)
+import Control.Exception (Exception, SomeAsyncException, SomeException)
 import Control.Exception qualified as Exception
 import Control.Monad qualified
 import Control.Monad.IO.Class qualified as Monad
@@ -127,6 +127,11 @@ asResultSafe task = do
       |> Exception.try @SomeException
       |> fromIO
   case result of
+    Either.Left someException
+      | Just asyncEx <- Exception.fromException @SomeAsyncException someException ->
+          -- Re-throw async exceptions (AsyncCancelled, ThreadKilled, etc.)
+          -- These are runtime control signals, not application errors.
+          Exception.throwIO asyncEx |> fromIO
     Either.Left someException ->
       yield (Result.Err (show someException |> Text.fromLinkedList))
     Either.Right (Either.Left err) ->
