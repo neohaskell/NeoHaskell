@@ -42,7 +42,7 @@ spec = do
         outcome <- Task.fromIO (GhcAsync.waitCatch handle)
         case outcome of
           Either.Left someException ->
-            GhcException.fromException @GhcException.SomeAsyncException someException
+            GhcException.fromException @GhcAsync.AsyncCancelled someException
               |> shouldSatisfy (\m -> case m of { Just _ -> True; Nothing -> False })
           Either.Right _ ->
             Test.fail "expected async exception to propagate, but task returned a result"
@@ -57,7 +57,7 @@ spec = do
         outcome <- Task.fromIO (GhcAsync.waitCatch handle)
         case outcome of
           Either.Left someException ->
-            GhcException.fromException @GhcException.SomeAsyncException someException
-              |> shouldSatisfy (\m -> case m of { Just _ -> True; Nothing -> False })
+            GhcException.fromException @GhcException.AsyncException someException
+              |> shouldSatisfy (\m -> case m of { Just GhcException.ThreadKilled -> True; _ -> False })
           Either.Right _ ->
             Test.fail "expected ThreadKilled to propagate, but task returned a result"

@@ -1,7 +1,10 @@
+{-# OPTIONS_GHC -Wno-unused-imports #-}
+
 module AsyncTask (
   AsyncTask,
   run,
   waitFor,
+  waitCatch,
   cancel,
   sleep,
   process,
@@ -15,11 +18,13 @@ import Basics
 import Control.Concurrent qualified as Ghc
 import Control.Concurrent.Async qualified as GhcAsync
 import GHC.IO qualified as GHC
+import Data.Either qualified as GhcEither
 import Result (Result)
 import Result qualified
+import Text (Text)
+import Text qualified
 import Task (Task)
 import Task qualified
-import Text (Text)
 
 
 newtype AsyncTask err result = AsyncTask (GhcAsync.Async (Result err result))
@@ -37,6 +42,24 @@ waitFor :: (Show err) => AsyncTask err result -> Task err result
 waitFor (AsyncTask self) =
   GhcAsync.wait self
     |> Task.fromIOResult
+
+
+-- | Wait for an async task to complete without re-throwing its exceptions.
+--
+-- Unlike 'waitFor' which re-throws the task's exception into the calling
+-- thread, 'waitCatch' returns the outcome as a 'Result'. This is essential
+-- when waiting on tasks that were intentionally cancelled (e.g., during
+-- shutdown), where re-throwing 'AsyncCancelled' would be incorrect.
+waitCatch :: (Show err) => AsyncTask err result -> Task err2 (Result Text result)
+waitCatch (AsyncTask self) = do
+  outcome <- GhcAsync.waitCatch self |> Task.fromIO
+  case outcome of
+    GhcEither.Left someException ->
+      Task.yield (Result.Err (show someException |> Text.fromLinkedList))
+    GhcEither.Right taskResult ->
+      case taskResult of
+        Result.Ok value -> Task.yield (Result.Ok value)
+        Result.Err err -> Task.yield (Result.Err (show err |> Text.fromLinkedList))
 
 
 -- | Cancel a running async task.

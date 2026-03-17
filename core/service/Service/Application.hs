@@ -98,12 +98,9 @@ import ConcurrentMap qualified
 import Basics
 import Log qualified
 import Environment qualified
-import Control.Concurrent.Async qualified as GhcAsync
-import Data.Either qualified as GhcEither
 import System.IO qualified as GhcIO
 import Default (Default (..))
 import GHC.TypeLits qualified as GHC
-import IO qualified
 import Integration qualified
 import Integration.Lifecycle qualified as Lifecycle
 import Json qualified
@@ -1268,27 +1265,18 @@ runWithResolved eventStore maybeFileUploadSetup fileUploadCleanup maybeWebAuthSe
   -- 17. Cancel all inbound workers on shutdown
   Log.debug "Shutting down inbound workers..."
     |> Task.ignoreError
-  let shutdownTimeoutMs = 5000
-  let awaitWorkerShutdown worker = do
-        let awaitTask = AsyncTask.waitFor worker
-        let timeoutTask =
-              AsyncTask.sleep shutdownTimeoutMs
-                |> Task.andThen (\_ -> Task.throw [fmt|timeout|])
-        Task.fromIOResult do
-          raceResult <- GhcAsync.race (Task.runResult awaitTask) (Task.runResult timeoutTask)
-          case raceResult of
-            GhcEither.Left result -> IO.yield result
-            GhcEither.Right result -> IO.yield result
-        |> Task.asResult
   inboundWorkers
     |> Task.forEach \worker -> do
         AsyncTask.cancel worker
           |> Task.ignoreError
-        awaitResult <- awaitWorkerShutdown worker
+        -- Use waitCatch (not waitFor) because the worker was intentionally
+        -- cancelled: waitFor re-throws AsyncCancelled into the main thread,
+        -- while waitCatch returns the exception as a Result.Err value.
+        awaitResult <- AsyncTask.waitCatch worker
         case awaitResult of
           Ok _ -> Task.yield unit
           Err err ->
-            Log.warn [fmt|Inbound worker shutdown timed out or failed: #{err}|]
+            Log.warn [fmt|Inbound worker shutdown: #{err}|]
               |> Task.ignoreError
 
   -- Re-raise any transport error
