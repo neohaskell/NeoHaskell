@@ -391,7 +391,7 @@ withTestDedupEnv action = do
 
   -- Cleanup (best effort, log failures for CI debugging)
   cleanupResult <- Directory.removeRecursive tempDir
-    |> Task.mapError (\e -> [fmt|Failed to remove temp directory #{tempDirText}: #{show e}|])
+    |> Task.mapError (\_ -> [fmt|Failed to remove temp directory: #{tempDirText}|] :: Text)
     |> Task.asResult
   case cleanupResult of
     Ok _ -> pass
