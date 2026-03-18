@@ -1,10 +1,10 @@
 module Service.FileUpload.ContentDedupSpec where
 
-import Bytes (Bytes)
 import Bytes qualified
 import Core
 import Data.Char (isDigit)
 import Directory qualified
+import Log qualified
 import "nhcore" Path qualified
 import Service.FileUpload.BlobStore (BlobStore)
 import Service.FileUpload.BlobStore.Local (LocalBlobStoreConfig (..), createBlobStore)
@@ -389,11 +389,15 @@ withTestDedupEnv action = do
   -- Run action
   result <- action env |> Task.asResult
 
-  -- Cleanup (best effort)
-  Directory.removeRecursive tempDir
-    |> Task.mapError (\_ -> "Failed to remove temp directory" :: Text)
+  -- Cleanup (best effort, log failures for CI debugging)
+  cleanupResult <- Directory.removeRecursive tempDir
+    |> Task.mapError (\e -> [fmt|Failed to remove temp directory #{tempDirText}: #{show e}|])
     |> Task.asResult
-    |> discard
+  case cleanupResult of
+    Ok _ -> pass
+    Err cleanupErr ->
+      Log.warn [fmt|Test cleanup failed: #{cleanupErr}|]
+        |> Task.ignoreError
 
   -- Return result
   case result of

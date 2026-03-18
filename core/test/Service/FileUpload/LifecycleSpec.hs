@@ -94,7 +94,7 @@ spec = do
           case state of
             Confirmed confirmed -> do
               confirmed.metadata.ref |> shouldBe (FileRef "ref-1")
-              confirmed.metadata.contentHash |> shouldBe (ContentHash "hash-ref-1")
+              confirmed.metadata.contentHash |> shouldBe (ContentHash "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2")
             _ -> fail "Expected Confirmed state"
 
         it "is idempotent - confirming already Confirmed is no-op" \_ -> do
@@ -297,7 +297,7 @@ mkFileUploadedEvent refId uploadedAtTime expiresAtTime =
   FileUploaded FileUploadedData
     { fileRef = FileRef refId
     , ownerHash = OwnerHash [fmt|owner-#{refId}|]
-    , contentHash = ContentHash [fmt|hash-#{refId}|]
+    , contentHash = ContentHash "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2"
     , filename = [fmt|file-#{refId}.txt|]
     , contentType = "text/plain"
     , sizeBytes = 100

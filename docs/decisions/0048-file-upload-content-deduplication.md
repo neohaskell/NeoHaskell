@@ -78,7 +78,7 @@ instance Json.ToJSON ContentHash
 
 ### 2. Hash Computation: SHA-256 via `crypton`
 
-The content hash is computed using the same `Crypto.Hash` module already used in `Auth.OAuth2.TransactionStore.TransactionKey`. The implementation follows the identical pattern: hash the bytes, base64url-encode the digest.
+The content hash is computed using the same `Crypto.Hash` module already used in `Auth.OAuth2.TransactionStore.TransactionKey`. The implementation follows the identical pattern: hash the bytes, hex-encode (lowercase, Base16) the digest, producing a 64-character lowercase hex string.
 
 ```haskell
 -- In Service.FileUpload.Web (or a helper used by Web.hs)
@@ -87,8 +87,8 @@ computeContentHash content = do
   let contentBytes = Bytes.unwrap content
   let hashResult = Hash.hash contentBytes :: Hash.Digest Hash.SHA256
   let hashBytes = BA.convert hashResult :: BS.ByteString
-  let encoded = Encoding.convertToBase Encoding.Base64URLUnpadded hashBytes
-  let hashText = Bytes.fromLegacy encoded |> Text.fromBytes
+  let encoded = Encoding.convertToBase Encoding.Base16 hashBytes
+  let hashText = Bytes.fromLegacy encoded |> Text.fromBytes |> Text.toLower
   ContentHash hashText
 {-# INLINE computeContentHash #-}
 ```

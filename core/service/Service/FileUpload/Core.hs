@@ -33,6 +33,7 @@ import Data.Aeson qualified as GhcAeson
 import Data.Hashable qualified as GhcHashable
 import Json qualified
 import Maybe (Maybe)
+import Prelude qualified
 import Schema (ToSchema (..))
 import Schema qualified
 import Text (Text)
@@ -146,7 +147,19 @@ data FileUploadedData = FileUploadedData
   }
   deriving (Generic, Eq, Show)
 
-instance Json.FromJSON FileUploadedData
+instance Json.FromJSON FileUploadedData where
+  parseJSON = GhcAeson.withObject "FileUploadedData" \obj -> do
+    fileRef <- obj GhcAeson..: "fileRef"
+    ownerHash <- obj GhcAeson..: "ownerHash"
+    contentHash <- obj GhcAeson..:? "contentHash" GhcAeson..!= ContentHash ""
+    filename <- obj GhcAeson..: "filename"
+    contentType <- obj GhcAeson..: "contentType"
+    sizeBytes <- obj GhcAeson..: "sizeBytes"
+    blobKey <- obj GhcAeson..: "blobKey"
+    expiresAt <- obj GhcAeson..: "expiresAt"
+    uploadedAt <- obj GhcAeson..: "uploadedAt"
+    Prelude.pure FileUploadedData {fileRef, ownerHash, contentHash, filename, contentType, sizeBytes, blobKey, expiresAt, uploadedAt}
+
 instance Json.ToJSON FileUploadedData
 
 

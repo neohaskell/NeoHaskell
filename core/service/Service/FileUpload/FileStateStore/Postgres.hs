@@ -390,7 +390,11 @@ deserializeState row = case row.status of
     expiresAt <- requireField "expires_at" row.expiresAt
     let contentHash = case row.contentHash of
           Just ch -> ContentHash ch
-          Nothing -> ContentHash ""  -- Legacy rows without content hash
+          -- Legacy rows without content_hash: mapped to empty ContentHash for
+          -- deserialization only. Safe because findByContentHashSession queries
+          -- the actual DB column where NULL != any query parameter, so legacy
+          -- rows are never returned by dedup lookups.
+          Nothing -> ContentHash ""
     Ok (Pending Lifecycle.PendingFile
       { metadata = Lifecycle.FileMetadata
           { ref = FileRef row.fileRef
@@ -414,7 +418,11 @@ deserializeState row = case row.status of
     confirmedBy <- requireField "confirmed_by_request_id" row.confirmedByRequestId
     let contentHash = case row.contentHash of
           Just ch -> ContentHash ch
-          Nothing -> ContentHash ""  -- Legacy rows without content hash
+          -- Legacy rows without content_hash: mapped to empty ContentHash for
+          -- deserialization only. Safe because findByContentHashSession queries
+          -- the actual DB column where NULL != any query parameter, so legacy
+          -- rows are never returned by dedup lookups.
+          Nothing -> ContentHash ""
     Ok (Confirmed Lifecycle.ConfirmedFile
       { metadata = Lifecycle.FileMetadata
           { ref = FileRef row.fileRef

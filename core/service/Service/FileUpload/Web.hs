@@ -356,6 +356,8 @@ normalUploadFlow config blobStore stateStore ownerHash filename contentType cont
       Task.yield response
     Err stateErr -> do
       -- Check if this is a constraint violation (concurrent dedup race)
+      -- TODO(nhcore): Replace Text-based error matching with typed FileStateError
+      -- that includes SqlState/UniqueViolation variant. See PR #589 review.
       if Text.contains "23505" stateErr || Text.contains "duplicate key" stateErr
         then do
           -- Race condition: another upload of same content won the insert.

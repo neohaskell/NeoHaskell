@@ -216,7 +216,7 @@ spec newStore = do
         let (FileRef refText) = fileRef
         let event = mkFileUploadedEvent fileRef 1700000000 1700003600
         store.updateState fileRef event
-        result <- store.findByContentHash (OwnerHash [fmt|owner-#{refText}|]) (ContentHash [fmt|hash-#{refText}|])
+        result <- store.findByContentHash (OwnerHash [fmt|owner-#{refText}|]) (ContentHash "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789")
         result |> shouldBe (Just fileRef)
 
       it "returns FileRef for Confirmed file matching owner+hash" \_ -> do
@@ -231,7 +231,7 @@ spec newStore = do
               , confirmedAt = 1700000100
               }
         store.updateState fileRef confirmEvent
-        result <- store.findByContentHash (OwnerHash [fmt|owner-#{refText}|]) (ContentHash [fmt|hash-#{refText}|])
+        result <- store.findByContentHash (OwnerHash [fmt|owner-#{refText}|]) (ContentHash "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789")
         result |> shouldBe (Just fileRef)
 
       it "returns Nothing for Deleted file matching owner+hash" \_ -> do
@@ -246,7 +246,7 @@ spec newStore = do
               , deletedAt = 1700003700
               }
         store.updateState fileRef deleteEvent
-        result <- store.findByContentHash (OwnerHash [fmt|owner-#{refText}|]) (ContentHash [fmt|hash-#{refText}|])
+        result <- store.findByContentHash (OwnerHash [fmt|owner-#{refText}|]) (ContentHash "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789")
         result |> shouldBe Nothing
 
       it "returns Nothing when owner matches but hash does not" \_ -> do
@@ -261,10 +261,9 @@ spec newStore = do
       it "returns Nothing when hash matches but owner does not" \_ -> do
         store <- newStore
         fileRef <- generateFileRef
-        let (FileRef refText) = fileRef
         let event = mkFileUploadedEvent fileRef 1700000000 1700003600
         store.updateState fileRef event
-        result <- store.findByContentHash (OwnerHash "other-owner") (ContentHash [fmt|hash-#{refText}|])
+        result <- store.findByContentHash (OwnerHash "other-owner") (ContentHash "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789")
         result |> shouldBe Nothing
 
 
@@ -321,7 +320,7 @@ mkFileUploadedEvent (FileRef refText) uploadedAtTime expiresAtTime =
   FileUploaded FileUploadedData
     { fileRef = FileRef refText
     , ownerHash = OwnerHash [fmt|owner-#{refText}|]
-    , contentHash = ContentHash [fmt|hash-#{refText}|]
+    , contentHash = ContentHash "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789"
     , filename = [fmt|file-#{refText}.txt|]
     , contentType = "text/plain"
     , sizeBytes = 100
