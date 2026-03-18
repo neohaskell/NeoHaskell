@@ -177,6 +177,7 @@ library
     Documented
     DurableChannel
     Environment
+    EventVariantOf
     File
     Float
     Function
@@ -588,6 +589,7 @@ test-suite nhcore-test-core
     Config.SecretSpec
     Config.THSpec
     DecimalSpec
+    EventVariantOfSpec
     Http.ClientRawSpec
     Http.ClientSpec
     IntSpec

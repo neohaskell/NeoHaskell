@@ -5,6 +5,7 @@ import Prelude (IO)
 import Command.FromSchemaSpec qualified
 import ConcurrentMapSpec qualified
 import DecimalSpec qualified
+import EventVariantOfSpec qualified
 import Config.ApplicationSpec qualified
 import Config.ConfigDependentSpec qualified
 import Config.OAuth2ConfigDependentSpec qualified
@@ -46,6 +47,7 @@ main = Hspec.hspec do
   Hspec.describe "Command.FromSchema" Command.FromSchemaSpec.spec
   Hspec.describe "ConcurrentMap" ConcurrentMapSpec.spec
   Hspec.describe "Decimal" DecimalSpec.spec
+  Hspec.describe "EventVariantOf" EventVariantOfSpec.spec
   Hspec.describe "Config.Application" Config.ApplicationSpec.spec
   Hspec.describe "Config.ConfigDependent" Config.ConfigDependentSpec.spec
   Hspec.describe "Config.OAuth2ConfigDependent" Config.OAuth2ConfigDependentSpec.spec

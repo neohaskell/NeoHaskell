@@ -20,6 +20,7 @@ import Applicable
 import Array (Array)
 import Array qualified
 import Basics
+import EventVariantOf (EventVariantOf (..))
 import Control.Monad qualified as Monad
 import Log qualified
 import Mappable
@@ -126,14 +127,18 @@ generateUuid = GenUuid
 -- Use this when you don't care whether the entity exists or not. This is the least
 -- safe option as it doesn't enforce any stream state constraints.
 --
+-- Events can be the entity's event ADT directly, or any type with an
+-- 'EventVariantOf' instance for that ADT.
+--
 -- Example:
 --
 -- @
 -- decide cmd entity =
---   Decision.acceptAny [EventOccurred]
+--   Decider.acceptAny [EventOccurred]
 -- @
-acceptAny :: (Array a) -> Decision a
-acceptAny events =
+acceptAny :: forall event variant. (EventVariantOf event variant) => Array variant -> Decision event
+acceptAny variants = do
+  let events = variants |> Array.map fromVariant
   Accept AnyStreamState events
 
 
@@ -142,19 +147,23 @@ acceptAny events =
 -- Use this for entity creation commands. The command will fail if the entity already exists,
 -- preventing duplicate creation.
 --
+-- Events can be the entity's event ADT directly, or any type with an
+-- 'EventVariantOf' instance for that ADT.
+--
 -- Example:
 --
 -- @
 -- decide cmd entity = do
 --   case entity of
 --     Just _ ->
---       Decision.reject "Cart already exists!"
+--       Decider.reject "Cart already exists!"
 --     Nothing -> do
---       cartId <- Decision.generateUuid
---       Decision.acceptNew [CartCreated {cartCreatedId = cartId}]
+--       cartId <- Decider.generateUuid
+--       Decider.acceptNew [CartCreated {cartCreatedId = cartId}]
 -- @
-acceptNew :: (Array a) -> Decision a
-acceptNew events =
+acceptNew :: forall event variant. (EventVariantOf event variant) => Array variant -> Decision event
+acceptNew variants = do
+  let events = variants |> Array.map fromVariant
   Accept StreamCreation events
 
 
@@ -163,18 +172,22 @@ acceptNew events =
 -- Use this for entity update commands. The command will fail if the entity doesn't exist,
 -- ensuring you can't update something that hasn't been created.
 --
+-- Events can be the entity's event ADT directly, or any type with an
+-- 'EventVariantOf' instance for that ADT.
+--
 -- Example:
 --
 -- @
 -- decide cmd entity = do
 --   case entity of
 --     Nothing ->
---       Decision.reject "Cart does not exist!"
+--       Decider.reject "Cart does not exist!"
 --     Just _ ->
---       Decision.acceptExisting [CartUpdated]
+--       Decider.acceptExisting [CartUpdated]
 -- @
-acceptExisting :: (Array a) -> Decision a
-acceptExisting events =
+acceptExisting :: forall event variant. (EventVariantOf event variant) => Array variant -> Decision event
+acceptExisting variants = do
+  let events = variants |> Array.map fromVariant
   Accept ExistingStream events
 
 
@@ -183,19 +196,23 @@ acceptExisting events =
 -- Use this for optimistic concurrency control. The command will fail if the stream has
 -- been modified since the position was read, preventing concurrent modification conflicts.
 --
+-- Events can be the entity's event ADT directly, or any type with an
+-- 'EventVariantOf' instance for that ADT.
+--
 -- Example:
 --
 -- @
 -- decide cmd entity = do
 --   case entity of
 --     Nothing ->
---       Decision.reject "Cart does not exist!"
+--       Decider.reject "Cart does not exist!"
 --     Just e -> do
 --       let expectedPosition = e.version
---       Decision.acceptAfter expectedPosition [CartUpdated]
+--       Decider.acceptAfter expectedPosition [CartUpdated]
 -- @
-acceptAfter :: StreamPosition -> (Array a) -> Decision a
-acceptAfter pos events =
+acceptAfter :: forall event variant. (EventVariantOf event variant) => StreamPosition -> Array variant -> Decision event
+acceptAfter pos variants = do
+  let events = variants |> Array.map fromVariant
   Accept (InsertAfter pos) events
 
 
