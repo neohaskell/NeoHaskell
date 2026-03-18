@@ -2,8 +2,10 @@ module Service.FileUpload.CoreSpec where
 
 import Core
 import Json qualified
+import Result qualified
 import Service.FileUpload.Core (
   BlobKey (..),
+  ContentHash (..),
   FileConfirmedData (..),
   FileDeletedData (..),
   FileDeletionReason (..),
@@ -119,6 +121,7 @@ spec = do
         let eventData = FileUploadedData
               { fileRef = FileRef "ref-1"
               , ownerHash = OwnerHash "owner-hash"
+              , contentHash = ContentHash "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"
               , filename = "file.txt"
               , contentType = "text/plain"
               , sizeBytes = 500
@@ -131,6 +134,7 @@ spec = do
           FileUploaded uploaded -> do
             uploaded.fileRef |> shouldBe (FileRef "ref-1")
             uploaded.sizeBytes |> shouldBe 500
+            uploaded.contentHash |> shouldBe (ContentHash "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890")
           _ -> fail "Expected FileUploaded event"
 
       it "FileConfirmed event contains required fields" \_ -> do
@@ -158,6 +162,103 @@ spec = do
             deleted.fileRef |> shouldBe (FileRef "ref-1")
             deleted.reason |> shouldBe Orphaned
           _ -> fail "Expected FileDeleted event"
+
+    -- ==========================================================================
+    -- ContentHash Type
+    -- ==========================================================================
+    describe "ContentHash" do
+      describe "Construction" do
+        it "can be created from a 64-char hex string" \_ -> do
+          let ch = ContentHash "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"
+          ch |> shouldBe (ContentHash "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890")
+
+        it "can be created from empty text" \_ -> do
+          let ch = ContentHash ""
+          ch |> shouldBe (ContentHash "")
+
+        it "supports Eq comparison — equal values" \_ -> do
+          let ch1 = ContentHash "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"
+          let ch2 = ContentHash "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"
+          ch1 |> shouldBe ch2
+
+        it "supports Eq comparison — different values" \_ -> do
+          let ch1 = ContentHash "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"
+          let ch2 = ContentHash "bbbbbb1234567890abcdef1234567890abcdef1234567890abcdef1234567890"
+          ch1 |> shouldNotBe ch2
+
+        it "supports Ord for use in Maps — less than" \_ -> do
+          let ch1 = ContentHash "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          let ch2 = ContentHash "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          (ch1 < ch2) |> shouldBe True
+
+      describe "Redacted Show Instance" do
+        it "Show instance does not reveal the actual hash" \_ -> do
+          let ch = ContentHash "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          let shown = toText ch
+          shown |> shouldSatisfy (\t -> not (Text.contains "e3b0c44298fc" t))
+
+        it "Show instance contains REDACTED marker" \_ -> do
+          let ch = ContentHash "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          let shown = toText ch
+          shown |> shouldSatisfy (\t -> Text.contains "REDACTED" t)
+
+        it "Prevents accidental exposure in string interpolation" \_ -> do
+          let ch = ContentHash "secret-hash-value"
+          let msg = [fmt|Hash: #{ch}|]
+          msg |> shouldSatisfy (\s -> not (Text.contains "secret-hash-value" s))
+
+      describe "JSON Serialization" do
+        it "Round-trips a 64-char hex ContentHash through JSON" \_ -> do
+          let x = ContentHash "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"
+          Json.decodeText (Json.encodeText x) |> shouldBe (Ok x)
+
+        it "Round-trips empty ContentHash through JSON" \_ -> do
+          let x = ContentHash ""
+          Json.decodeText (Json.encodeText x) |> shouldBe (Ok x)
+
+        it "Decodes from valid JSON string" \_ -> do
+          Json.decodeText @ContentHash "\"somehashvalue\"" |> shouldSatisfy Result.isOk
+
+        it "Rejects non-string JSON (number)" \_ -> do
+          Json.decodeText @ContentHash "12345" |> shouldSatisfy Result.isErr
+
+        it "Rejects JSON object" \_ -> do
+          Json.decodeText @ContentHash "{}" |> shouldSatisfy Result.isErr
+
+        it "Rejects JSON null" \_ -> do
+          Json.decodeText @ContentHash "null" |> shouldSatisfy Result.isErr
+
+    -- ==========================================================================
+    -- FileUploadedData with contentHash
+    -- ==========================================================================
+    describe "FileUploadedData with contentHash" do
+      it "FileUploaded event contains contentHash field" \_ -> do
+        let eventData = FileUploadedData
+              { fileRef = FileRef "ref-1"
+              , ownerHash = OwnerHash "owner-hash"
+              , contentHash = ContentHash "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"
+              , filename = "file.txt"
+              , contentType = "text/plain"
+              , sizeBytes = 500
+              , blobKey = BlobKey "blob-1"
+              , expiresAt = 1700003600
+              , uploadedAt = 1700000000
+              }
+        eventData.contentHash |> shouldBe (ContentHash "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890")
+
+      it "FileUploadedData with contentHash round-trips through JSON" \_ -> do
+        let eventData = FileUploadedData
+              { fileRef = FileRef "ref-1"
+              , ownerHash = OwnerHash "owner-hash"
+              , contentHash = ContentHash "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"
+              , filename = "file.txt"
+              , contentType = "text/plain"
+              , sizeBytes = 500
+              , blobKey = BlobKey "blob-1"
+              , expiresAt = 1700003600
+              , uploadedAt = 1700000000
+              }
+        Json.decodeText (Json.encodeText eventData) |> shouldBe (Ok eventData)
 
     -- ==========================================================================
     -- FileDeletionReason Type

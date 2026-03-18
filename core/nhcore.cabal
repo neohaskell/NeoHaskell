@@ -444,6 +444,7 @@ test-suite nhcore-test
     TaskSpec
     Test.AppSpec.AppSpecSpec
     Test.AppSpec.VerifySpec
+    Service.FileUpload.ContentDedupSpec
     Service.FileUpload.CoreSpec
     Service.FileUpload.LifecycleSpec
     Service.FileUpload.BlobStore.LocalSpec
@@ -511,6 +512,7 @@ test-suite nhcore-test-service
     Service.EventStore.Postgres.NotificationsSpec
     Service.EventStore.PostgresSpec
     Service.FileUpload.BlobStore.LocalSpec
+    Service.FileUpload.ContentDedupSpec
     Service.FileUpload.CoreSpec
     Service.FileUpload.DownloadSpec
     Service.FileUpload.FileStateStore.InMemorySpec

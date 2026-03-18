@@ -71,6 +71,7 @@ import Result qualified
 import Service.EventStore.Postgres (PostgresEventStore (..))
 import Service.FileUpload.Core (
   BlobKey (..),
+  ContentHash (..),
   FileRef (..),
   FileUploadEvent (..),
   OwnerHash (..),
@@ -153,6 +154,7 @@ newWithCleanup config = do
         { getState = getStateImpl pool
         , setState = setStateImpl pool
         , updateState = updateStateImpl pool
+        , findByContentHash = findByContentHashImpl pool
         }
   Task.yield (store, pool)
 
@@ -247,6 +249,17 @@ updateStateImpl pool (FileRef fileRefText) event = do
     Ok _ -> Task.yield ()
 
 
+-- | Find an existing non-deleted file with matching owner and content hash.
+findByContentHashImpl :: HasqlPool.Pool -> OwnerHash -> ContentHash -> Task Text (Maybe FileRef)
+findByContentHashImpl pool (OwnerHash ownerHashText) (ContentHash contentHashText) = do
+  let session = findByContentHashSession ownerHashText contentHashText
+  result <- runPool pool session
+    |> Task.mapError (\err -> [fmt|Database error: #{show err}|])
+  case result of
+    Nothing -> Task.yield Nothing
+    Just fileRefText -> Task.yield (Just (FileRef fileRefText))
+
+
 -- ==========================================================================
 -- Cleanup Queries (for external cleanup workers)
 -- ==========================================================================
@@ -300,6 +313,7 @@ data FileStateRow = FileStateRow
   , uploadedAt :: Maybe Int64
   , expiresAt :: Maybe Int64
   , confirmedByRequestId :: Maybe Text
+  , contentHash :: Maybe Text
   }
   deriving (Generic, Eq, Show)
 
@@ -318,6 +332,7 @@ serializeState fileRefText state = case state of
     , uploadedAt = Nothing
     , expiresAt = Nothing
     , confirmedByRequestId = Nothing
+    , contentHash = Nothing
     }
   Pending pending -> FileStateRow
     { fileRef = fileRefText
@@ -330,6 +345,7 @@ serializeState fileRefText state = case state of
     , uploadedAt = Just pending.metadata.uploadedAt
     , expiresAt = Just pending.expiresAt
     , confirmedByRequestId = Nothing
+    , contentHash = Just (unwrapContentHash pending.metadata.contentHash)
     }
   Confirmed confirmed -> FileStateRow
     { fileRef = fileRefText
@@ -342,6 +358,7 @@ serializeState fileRefText state = case state of
     , uploadedAt = Just confirmed.metadata.uploadedAt
     , expiresAt = Nothing
     , confirmedByRequestId = Just confirmed.confirmedByRequestId
+    , contentHash = Just (unwrapContentHash confirmed.metadata.contentHash)
     }
   Deleted -> FileStateRow
     { fileRef = fileRefText
@@ -354,6 +371,7 @@ serializeState fileRefText state = case state of
     , uploadedAt = Nothing
     , expiresAt = Nothing
     , confirmedByRequestId = Nothing
+    , contentHash = Nothing
     }
 
 
@@ -370,6 +388,9 @@ deserializeState row = case row.status of
     sizeBytes <- requireField "size_bytes" row.sizeBytes
     uploadedAt <- requireField "uploaded_at" row.uploadedAt
     expiresAt <- requireField "expires_at" row.expiresAt
+    let contentHash = case row.contentHash of
+          Just ch -> ContentHash ch
+          Nothing -> ContentHash ""  -- Legacy rows without content hash
     Ok (Pending Lifecycle.PendingFile
       { metadata = Lifecycle.FileMetadata
           { ref = FileRef row.fileRef
@@ -378,6 +399,7 @@ deserializeState row = case row.status of
           , sizeBytes = sizeBytes
           , blobKey = BlobKey blobKey
           , uploadedAt = uploadedAt
+          , contentHash = contentHash
           }
       , ownerHash = OwnerHash ownerHash
       , expiresAt = expiresAt
@@ -390,6 +412,9 @@ deserializeState row = case row.status of
     sizeBytes <- requireField "size_bytes" row.sizeBytes
     uploadedAt <- requireField "uploaded_at" row.uploadedAt
     confirmedBy <- requireField "confirmed_by_request_id" row.confirmedByRequestId
+    let contentHash = case row.contentHash of
+          Just ch -> ContentHash ch
+          Nothing -> ContentHash ""  -- Legacy rows without content hash
     Ok (Confirmed Lifecycle.ConfirmedFile
       { metadata = Lifecycle.FileMetadata
           { ref = FileRef row.fileRef
@@ -398,6 +423,7 @@ deserializeState row = case row.status of
           , sizeBytes = sizeBytes
           , blobKey = BlobKey blobKey
           , uploadedAt = uploadedAt
+          , contentHash = contentHash
           }
       , ownerHash = OwnerHash ownerHash
       , confirmedByRequestId = confirmedBy
@@ -420,6 +446,11 @@ unwrapBlobKey (BlobKey t) = t
 -- | Unwrap OwnerHash
 unwrapOwnerHash :: OwnerHash -> Text
 unwrapOwnerHash (OwnerHash t) = t
+
+
+-- | Unwrap ContentHash
+unwrapContentHash :: ContentHash -> Text
+unwrapContentHash (ContentHash t) = t
 
 
 -- ==========================================================================
@@ -453,9 +484,13 @@ createTableSession =
         uploaded_at BIGINT,
         expires_at BIGINT,
         confirmed_by_request_id VARCHAR(255),
+        content_hash VARCHAR(64),
         created_at TIMESTAMPTZ DEFAULT NOW(),
         updated_at TIMESTAMPTZ DEFAULT NOW()
       );
+
+      ALTER TABLE file_upload_state
+        ADD COLUMN IF NOT EXISTS content_hash VARCHAR(64);
 
       CREATE INDEX IF NOT EXISTS idx_file_upload_state_status
         ON file_upload_state(status);
@@ -466,6 +501,11 @@ createTableSession =
 
       CREATE INDEX IF NOT EXISTS idx_file_upload_state_owner
         ON file_upload_state(owner_hash);
+
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_file_upload_state_content_dedup
+        ON file_upload_state(owner_hash, content_hash)
+        WHERE status IN ('pending', 'confirmed')
+          AND content_hash IS NOT NULL;
     |]
 
 
@@ -474,7 +514,7 @@ selectStateSession :: Text -> Session.Session (Maybe FileStateRow)
 selectStateSession fileRefText = do
   let sql =
         "SELECT file_ref, status, blob_key, owner_hash, filename, content_type, \
-        \size_bytes, uploaded_at, expires_at, confirmed_by_request_id \
+        \size_bytes, uploaded_at, expires_at, confirmed_by_request_id, content_hash \
         \FROM file_upload_state WHERE file_ref = $1"
   let encoder = Encoders.param (Encoders.nonNullable Encoders.text)
   let decoder = Decoders.rowMaybe rowDecoder
@@ -495,6 +535,7 @@ rowDecoder = do
   uploadedAt <- Decoders.column (Decoders.nullable Decoders.int8)
   expiresAt <- Decoders.column (Decoders.nullable Decoders.int8)
   confirmedByRequestId <- Decoders.column (Decoders.nullable Decoders.text)
+  contentHash <- Decoders.column (Decoders.nullable Decoders.text)
   pure FileStateRow
     { fileRef = fileRef
     , status = status
@@ -506,6 +547,7 @@ rowDecoder = do
     , uploadedAt = uploadedAt
     , expiresAt = expiresAt
     , confirmedByRequestId = confirmedByRequestId
+    , contentHash = contentHash
     }
 
 
@@ -515,8 +557,8 @@ upsertStateSession row = do
   let sql =
         "INSERT INTO file_upload_state \
         \(file_ref, status, blob_key, owner_hash, filename, content_type, \
-        \size_bytes, uploaded_at, expires_at, confirmed_by_request_id, updated_at) \
-        \VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW()) \
+        \size_bytes, uploaded_at, expires_at, confirmed_by_request_id, content_hash, updated_at) \
+        \VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW()) \
         \ON CONFLICT (file_ref) DO UPDATE SET \
         \status = EXCLUDED.status, \
         \blob_key = EXCLUDED.blob_key, \
@@ -527,6 +569,7 @@ upsertStateSession row = do
         \uploaded_at = EXCLUDED.uploaded_at, \
         \expires_at = EXCLUDED.expires_at, \
         \confirmed_by_request_id = EXCLUDED.confirmed_by_request_id, \
+        \content_hash = EXCLUDED.content_hash, \
         \updated_at = NOW()"
   let encoder =
         ((\r -> r.fileRef) >$< Encoders.param (Encoders.nonNullable Encoders.text))
@@ -539,6 +582,7 @@ upsertStateSession row = do
         <> ((\r -> r.uploadedAt) >$< Encoders.param (Encoders.nullable Encoders.int8))
         <> ((\r -> r.expiresAt) >$< Encoders.param (Encoders.nullable Encoders.int8))
         <> ((\r -> r.confirmedByRequestId) >$< Encoders.param (Encoders.nullable Encoders.text))
+        <> ((\r -> r.contentHash) >$< Encoders.param (Encoders.nullable Encoders.text))
   let decoder = Decoders.noResult
   let statement = Statement (Text.toBytes sql |> Bytes.unwrap) encoder decoder True
   Session.statement row statement
@@ -590,8 +634,8 @@ ensureRowExistsSession fileRefText = do
   let sql =
         "INSERT INTO file_upload_state \
         \(file_ref, status, blob_key, owner_hash, filename, content_type, \
-        \size_bytes, uploaded_at, expires_at, confirmed_by_request_id, updated_at) \
-        \VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW()) \
+        \size_bytes, uploaded_at, expires_at, confirmed_by_request_id, content_hash, updated_at) \
+        \VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW()) \
         \ON CONFLICT (file_ref) DO NOTHING"
   let encoder =
         ((\r -> r.fileRef) >$< Encoders.param (Encoders.nonNullable Encoders.text))
@@ -604,6 +648,7 @@ ensureRowExistsSession fileRefText = do
         <> ((\r -> r.uploadedAt) >$< Encoders.param (Encoders.nullable Encoders.int8))
         <> ((\r -> r.expiresAt) >$< Encoders.param (Encoders.nullable Encoders.int8))
         <> ((\r -> r.confirmedByRequestId) >$< Encoders.param (Encoders.nullable Encoders.text))
+        <> ((\r -> r.contentHash) >$< Encoders.param (Encoders.nullable Encoders.text))
   let decoder = Decoders.noResult
   let statement = Statement (Text.toBytes sql |> Bytes.unwrap) encoder decoder True
   Session.statement initialRow statement
@@ -614,12 +659,28 @@ selectForUpdateSession :: Text -> Session.Session (Maybe FileStateRow)
 selectForUpdateSession fileRefText = do
   let sql =
         "SELECT file_ref, status, blob_key, owner_hash, filename, content_type, \
-        \size_bytes, uploaded_at, expires_at, confirmed_by_request_id \
+        \size_bytes, uploaded_at, expires_at, confirmed_by_request_id, content_hash \
         \FROM file_upload_state WHERE file_ref = $1 FOR UPDATE"
   let encoder = Encoders.param (Encoders.nonNullable Encoders.text)
   let decoder = Decoders.rowMaybe rowDecoder
   let statement = Statement (Text.toBytes sql |> Bytes.unwrap) encoder decoder True
   Session.statement fileRefText statement
+
+
+-- | SQL session for content hash lookup.
+findByContentHashSession :: Text -> Text -> Session.Session (Maybe Text)
+findByContentHashSession ownerHashText contentHashText = do
+  let sql =
+        "SELECT file_ref FROM file_upload_state \
+        \WHERE owner_hash = $1 AND content_hash = $2 \
+        \AND status IN ('pending', 'confirmed') \
+        \LIMIT 1"
+  let encoder =
+        (Prelude.fst >$< Encoders.param (Encoders.nonNullable Encoders.text))
+        <> (Prelude.snd >$< Encoders.param (Encoders.nonNullable Encoders.text))
+  let decoder = Decoders.rowMaybe (Decoders.column (Decoders.nonNullable Decoders.text))
+  let statement = Statement (Text.toBytes sql |> Bytes.unwrap) encoder decoder True
+  Session.statement (ownerHashText, contentHashText) statement
 
 
 -- | Select expired pending files for cleanup

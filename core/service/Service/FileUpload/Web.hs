@@ -25,18 +25,28 @@ module Service.FileUpload.Web (
   newInMemoryFileStateStore,
   inMemoryFileStateStore,
 
+  -- * Content Deduplication
+  computeContentHash,
+  handleUploadImpl,
+
   -- * Cleanup
   startCleanupWorker,
   cleanupExpiredFiles,
 ) where
 
+import Array qualified
 import AsyncTask (AsyncTask)
 import AsyncTask qualified
 import Basics
 import Bytes (Bytes)
+import Bytes qualified
 import ConcurrentMap (ConcurrentMap)
 import ConcurrentMap qualified
 import ConcurrentVar qualified
+import Crypto.Hash qualified as Hash
+import Data.ByteArray qualified as BA
+import Data.ByteArray.Encoding qualified as Encoding
+import Data.ByteString qualified as BS
 import Log qualified
 import DateTime qualified
 
@@ -45,6 +55,7 @@ import Maybe (Maybe (..))
 import Result (Result (..))
 import Service.FileUpload.BlobStore (BlobStore (..))
 import Service.FileUpload.Core (
+  ContentHash (..),
   FileAccessError (..),
   FileDeletedData (..),
   FileDeletionReason (..),
@@ -64,6 +75,7 @@ import Service.FileUpload.Routes qualified as Routes
 import Task (Task)
 import Task qualified
 import Text (Text)
+import Text qualified
 
 
 
@@ -115,6 +127,8 @@ data FileStateStore = FileStateStore
   -- ^ Set the state for a file reference
   , updateState :: FileRef -> FileUploadEvent -> Task Text ()
   -- ^ Apply an event to update state
+  , findByContentHash :: OwnerHash -> ContentHash -> Task Text (Maybe FileRef)
+  -- ^ Find an existing non-deleted file with matching owner and content hash
   }
 
 
@@ -150,7 +164,38 @@ inMemoryFileStateStore store =
               in Lifecycle.update event currentState
         ConcurrentMap.update fileRef updateFn store
           |> Task.mapError (\_ -> "Failed to update state")
+    , findByContentHash = \ownerHash contentHash -> do
+        -- NOTE: O(n) scan — acceptable for dev/testing only. Production uses Postgres with indexed lookup.
+        allEntries <- ConcurrentMap.entries store
+          |> Task.mapError (\_ -> "Failed to read state map")
+        let entryList = allEntries |> Array.toLinkedList
+        Task.yield (findMatchingEntry ownerHash contentHash entryList)
     }
+
+
+-- | Search a list of (FileRef, FileUploadState) entries for a matching
+-- owner + content hash in Pending or Confirmed state.
+-- Returns the first matching FileRef, or Nothing.
+--
+-- NOTE: ConcurrentMap does NOT have a findFirst function.
+-- We use ConcurrentMap.entries to get all entries as an Array,
+-- convert to a linked list, and recurse manually.
+findMatchingEntry :: OwnerHash -> ContentHash -> [(FileRef, FileUploadState)] -> Maybe FileRef
+{-# INLINE findMatchingEntry #-}
+findMatchingEntry ownerHash contentHash entryList =
+  case entryList of
+    [] -> Nothing
+    (fileRef, state) : rest ->
+      case state of
+        Pending pending ->
+          if pending.ownerHash == ownerHash && pending.metadata.contentHash == contentHash
+            then Just fileRef
+            else findMatchingEntry ownerHash contentHash rest
+        Confirmed confirmed ->
+          if confirmed.ownerHash == ownerHash && confirmed.metadata.contentHash == contentHash
+            then Just fileRef
+            else findMatchingEntry ownerHash contentHash rest
+        _ -> findMatchingEntry ownerHash contentHash rest
 
 
 -- ==========================================================================
@@ -218,22 +263,80 @@ handleUploadImpl ::
 handleUploadImpl config blobStore stateStore ownerHash filename contentType content = Log.withScope [("component", "FileUpload")] do
   Log.info "Processing file upload"
     |> Task.ignoreError
+
+  -- 1. Compute content hash BEFORE any I/O
+  let contentHash = computeContentHash content
+  let ownerHashValue = OwnerHash ownerHash
+
+  -- 2. Check for existing upload with same content (dedup)
+  existingRef <- stateStore.findByContentHash ownerHashValue contentHash
+
+  case existingRef of
+    Just fileRef -> do
+      -- Duplicate detected — return existing FileRef without storing blob or emitting event
+      Log.info "Duplicate upload detected, returning existing FileRef"
+        |> Task.ignoreError
+      existingState <- stateStore.getState fileRef
+        |> Task.mapError (\_ -> "Failed to retrieve file state")
+      case existingState of
+        Just (Pending pendingFile) -> do
+          Task.yield UploadResponse
+            { fileRef = fileRef
+            , blobKey = pendingFile.metadata.blobKey
+            , filename = pendingFile.metadata.filename
+            , contentType = pendingFile.metadata.contentType
+            , sizeBytes = pendingFile.metadata.sizeBytes
+            , expiresAt = DateTime.fromEpochSeconds pendingFile.expiresAt
+            }
+        Just (Confirmed confirmedFile) -> do
+          now <- DateTime.now |> Task.mapError (\_ -> "Failed to get time")
+          Task.yield UploadResponse
+            { fileRef = fileRef
+            , blobKey = confirmedFile.metadata.blobKey
+            , filename = confirmedFile.metadata.filename
+            , contentType = confirmedFile.metadata.contentType
+            , sizeBytes = confirmedFile.metadata.sizeBytes
+            , expiresAt = now  -- Already confirmed, no meaningful expiry
+            }
+        _ -> do
+          -- Deleted or Initial — treat as no match, fall through to normal flow
+          normalUploadFlow config blobStore stateStore ownerHash filename contentType content contentHash
+
+    Nothing -> do
+      -- No duplicate — normal upload flow
+      normalUploadFlow config blobStore stateStore ownerHash filename contentType content contentHash
+
+
+-- | Normal upload flow (no dedup match found).
+-- Extracted from the original handleUploadImpl.
+normalUploadFlow ::
+  InternalFileUploadConfig ->
+  BlobStore ->
+  FileStateStore ->
+  Text ->  -- ownerHash
+  Text ->  -- filename
+  Text ->  -- contentType
+  Bytes -> -- content
+  ContentHash ->
+  Task Text UploadResponse
+normalUploadFlow config blobStore stateStore ownerHash filename contentType content contentHash = do
   let request = UploadRequest
         { filename = filename
         , contentType = contentType
         , content = content
         , ownerHash = ownerHash
         }
-  
-  -- Call the core upload handler (stores blob)
+
+  -- Call the core upload handler (validates + stores blob)
   response <- Routes.handleUpload config blobStore request
     |> Task.mapError uploadErrorToText
-  
-  -- Record the pending state
+
+  -- Record the pending state (with contentHash)
   now <- DateTime.now |> Task.mapError (\_ -> "Failed to get time")
   let event = FileUploaded FileUploadedData
         { fileRef = response.fileRef
         , ownerHash = OwnerHash ownerHash
+        , contentHash = contentHash
         , filename = response.filename
         , contentType = response.contentType
         , sizeBytes = response.sizeBytes
@@ -241,29 +344,67 @@ handleUploadImpl config blobStore stateStore ownerHash filename contentType cont
         , uploadedAt = DateTime.toEpochSeconds now
         , expiresAt = DateTime.toEpochSeconds response.expiresAt
         }
-  
+
   -- Update state, cleanup blob on failure to avoid orphaned blobs
   stateUpdateResult <- stateStore.updateState response.fileRef event
     |> Task.asResult
-  
+
   case stateUpdateResult of
     Ok _ -> do
       Log.info "File uploaded successfully"
         |> Task.ignoreError
       Task.yield response
     Err stateErr -> do
-      -- State update failed - cleanup the blob (best effort)
-      Log.warn "State update failed, cleaning up blob"
-        |> Task.ignoreError
-      deleteResult <- blobStore.delete response.blobKey
-        |> Task.asResult
-      case deleteResult of
-        Ok _ -> pass
-        Err _ -> 
-          Log.critical "Failed to cleanup blob after state update failure"
+      -- Check if this is a constraint violation (concurrent dedup race)
+      if Text.contains "23505" stateErr || Text.contains "duplicate key" stateErr
+        then do
+          -- Race condition: another upload of same content won the insert.
+          -- Retry findByContentHash to get the winner's FileRef.
+          Log.info "Constraint violation on insert, retrying dedup lookup"
             |> Task.ignoreError
-      -- Propagate the original state update error
-      Task.throw [fmt|Failed to record upload state: #{stateErr}|]
+          -- Clean up our blob since the other upload already stored one
+          _ <- blobStore.delete response.blobKey |> Task.asResult
+          retryRef <- stateStore.findByContentHash (OwnerHash ownerHash) contentHash
+          case retryRef of
+            Just existingFileRef -> do
+              existingState <- stateStore.getState existingFileRef
+                |> Task.mapError (\err -> [fmt|Failed to get state after retry: #{err}|])
+              case existingState of
+                Just (Pending pendingFile) ->
+                  Task.yield UploadResponse
+                    { fileRef = existingFileRef
+                    , blobKey = pendingFile.metadata.blobKey
+                    , filename = pendingFile.metadata.filename
+                    , contentType = pendingFile.metadata.contentType
+                    , sizeBytes = pendingFile.metadata.sizeBytes
+                    , expiresAt = DateTime.fromEpochSeconds pendingFile.expiresAt
+                    }
+                Just (Confirmed confirmedFile) -> do
+                  retryNow <- DateTime.now |> Task.mapError (\_ -> "Failed to get time")
+                  Task.yield UploadResponse
+                    { fileRef = existingFileRef
+                    , blobKey = confirmedFile.metadata.blobKey
+                    , filename = confirmedFile.metadata.filename
+                    , contentType = confirmedFile.metadata.contentType
+                    , sizeBytes = confirmedFile.metadata.sizeBytes
+                    , expiresAt = retryNow
+                    }
+                _ ->
+                  Task.throw "Upload failed due to a temporary conflict. Please retry."
+            Nothing ->
+              Task.throw "Upload failed due to a temporary conflict. Please retry."
+        else do
+          -- Not a constraint violation - original error handling
+          Log.warn "State update failed, cleaning up blob"
+            |> Task.ignoreError
+          deleteResult <- blobStore.delete response.blobKey
+            |> Task.asResult
+          case deleteResult of
+            Ok _ -> pass
+            Err _ ->
+              Log.critical "Failed to cleanup blob after state update failure"
+                |> Task.ignoreError
+          Task.throw "Failed to record upload state"
 
 
 -- | Convert upload error to text.
@@ -273,6 +414,21 @@ uploadErrorToText err = case err of
   InvalidContentType ct _ -> [fmt|Invalid content type: #{ct}|]
   InvalidFilename msg -> [fmt|Invalid filename: #{msg}|]
   StorageFailure msg -> [fmt|Storage failure: #{msg}|]
+
+
+-- | Compute SHA-256 content hash of file bytes.
+-- Returns a 64-character lowercase hex string (Base16 encoding).
+-- Follows the same pattern as Auth.OAuth2.TransactionStore.TransactionKey
+-- but uses hex encoding instead of base64url for VARCHAR(64) compatibility.
+computeContentHash :: Bytes -> ContentHash
+computeContentHash content = do
+  let contentBytes = Bytes.unwrap content
+  let hashResult = Hash.hash contentBytes :: Hash.Digest Hash.SHA256
+  let hashBytes = BA.convert hashResult :: BS.ByteString
+  let encoded = Encoding.convertToBase Encoding.Base16 hashBytes
+  let hashText = Bytes.fromLegacy encoded |> Text.fromBytes
+  ContentHash hashText
+{-# INLINE computeContentHash #-}
 
 
 -- | Handle file download.

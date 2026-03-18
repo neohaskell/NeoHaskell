@@ -23,6 +23,7 @@ module Test.Service.FileUpload.FileStateStore (
 import Core
 import Service.FileUpload.Core (
   BlobKey (..),
+  ContentHash (..),
   FileConfirmedData (..),
   FileDeletedData (..),
   FileDeletionReason (..),
@@ -200,6 +201,73 @@ spec newStore = do
         result2 |> shouldBe (Just state2)
 
 
+    -- ==========================================================================
+    -- findByContentHash
+    -- ==========================================================================
+    describe "findByContentHash" do
+      it "returns Nothing for non-existent owner+hash combination" \_ -> do
+        store <- newStore
+        result <- store.findByContentHash (OwnerHash "owner1") (ContentHash "hash1")
+        result |> shouldBe Nothing
+
+      it "returns FileRef for Pending file matching owner+hash" \_ -> do
+        store <- newStore
+        fileRef <- generateFileRef
+        let (FileRef refText) = fileRef
+        let event = mkFileUploadedEvent fileRef 1700000000 1700003600
+        store.updateState fileRef event
+        result <- store.findByContentHash (OwnerHash [fmt|owner-#{refText}|]) (ContentHash [fmt|hash-#{refText}|])
+        result |> shouldBe (Just fileRef)
+
+      it "returns FileRef for Confirmed file matching owner+hash" \_ -> do
+        store <- newStore
+        fileRef <- generateFileRef
+        let (FileRef refText) = fileRef
+        let uploadEvent = mkFileUploadedEvent fileRef 1700000000 1700003600
+        store.updateState fileRef uploadEvent
+        let confirmEvent = FileConfirmed FileConfirmedData
+              { fileRef = fileRef
+              , confirmedByRequestId = "request-123"
+              , confirmedAt = 1700000100
+              }
+        store.updateState fileRef confirmEvent
+        result <- store.findByContentHash (OwnerHash [fmt|owner-#{refText}|]) (ContentHash [fmt|hash-#{refText}|])
+        result |> shouldBe (Just fileRef)
+
+      it "returns Nothing for Deleted file matching owner+hash" \_ -> do
+        store <- newStore
+        fileRef <- generateFileRef
+        let (FileRef refText) = fileRef
+        let uploadEvent = mkFileUploadedEvent fileRef 1700000000 1700003600
+        store.updateState fileRef uploadEvent
+        let deleteEvent = FileDeleted FileDeletedData
+              { fileRef = fileRef
+              , reason = UserRequested
+              , deletedAt = 1700003700
+              }
+        store.updateState fileRef deleteEvent
+        result <- store.findByContentHash (OwnerHash [fmt|owner-#{refText}|]) (ContentHash [fmt|hash-#{refText}|])
+        result |> shouldBe Nothing
+
+      it "returns Nothing when owner matches but hash does not" \_ -> do
+        store <- newStore
+        fileRef <- generateFileRef
+        let (FileRef refText) = fileRef
+        let event = mkFileUploadedEvent fileRef 1700000000 1700003600
+        store.updateState fileRef event
+        result <- store.findByContentHash (OwnerHash [fmt|owner-#{refText}|]) (ContentHash "completely-different-hash")
+        result |> shouldBe Nothing
+
+      it "returns Nothing when hash matches but owner does not" \_ -> do
+        store <- newStore
+        fileRef <- generateFileRef
+        let (FileRef refText) = fileRef
+        let event = mkFileUploadedEvent fileRef 1700000000 1700003600
+        store.updateState fileRef event
+        result <- store.findByContentHash (OwnerHash "other-owner") (ContentHash [fmt|hash-#{refText}|])
+        result |> shouldBe Nothing
+
+
 -- ==========================================================================
 -- Test Helpers
 -- ==========================================================================
@@ -222,6 +290,7 @@ mkPendingState fileRef =
         , sizeBytes = 1024
         , blobKey = BlobKey "blob_test"
         , uploadedAt = 1700000000
+        , contentHash = ContentHash "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"
         }
     , ownerHash = OwnerHash "owner_test"
     , expiresAt = 1700003600
@@ -239,6 +308,7 @@ mkConfirmedState fileRef =
         , sizeBytes = 2048
         , blobKey = BlobKey "blob_confirmed"
         , uploadedAt = 1700000000
+        , contentHash = ContentHash "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
         }
     , ownerHash = OwnerHash "owner_confirmed"
     , confirmedByRequestId = "request_abc"
@@ -251,6 +321,7 @@ mkFileUploadedEvent (FileRef refText) uploadedAtTime expiresAtTime =
   FileUploaded FileUploadedData
     { fileRef = FileRef refText
     , ownerHash = OwnerHash [fmt|owner-#{refText}|]
+    , contentHash = ContentHash [fmt|hash-#{refText}|]
     , filename = [fmt|file-#{refText}.txt|]
     , contentType = "text/plain"
     , sizeBytes = 100
@@ -258,3 +329,4 @@ mkFileUploadedEvent (FileRef refText) uploadedAtTime expiresAtTime =
     , expiresAt = expiresAtTime
     , uploadedAt = uploadedAtTime
     }
+

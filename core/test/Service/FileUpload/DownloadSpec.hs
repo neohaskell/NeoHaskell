@@ -8,7 +8,7 @@ import Directory qualified
 import "nhcore" Path qualified
 import Service.FileUpload.BlobStore (BlobStore (..))
 import Service.FileUpload.BlobStore.Local (LocalBlobStoreConfig (..), createBlobStore)
-import Service.FileUpload.Core (BlobKey (..), FileAccessError (..), FileRef (..), OwnerHash (..))
+import Service.FileUpload.Core (BlobKey (..), ContentHash (..), FileAccessError (..), FileRef (..), OwnerHash (..))
 import Service.FileUpload.Download (DownloadResponse (..), handleDownload)
 import Service.FileUpload.Lifecycle (ConfirmedFile (..), FileMetadata (..), FileUploadState (..), PendingFile (..))
 import Task qualified
@@ -45,6 +45,7 @@ spec = do
                 , sizeBytes = 25
                 , blobKey = blobKey
                 , uploadedAt = DateTime.toEpochSeconds now
+                , contentHash = ContentHash "test-hash-for-download"
                 }
           let state = Pending PendingFile
                 { metadata = meta
@@ -87,6 +88,7 @@ spec = do
                 , sizeBytes = 100
                 , blobKey = blobKey
                 , uploadedAt = DateTime.toEpochSeconds now
+                , contentHash = ContentHash "test-hash-for-download"
                 }
           let state = Confirmed ConfirmedFile
                 { metadata = meta
@@ -130,6 +132,7 @@ spec = do
                 , sizeBytes = 14
                 , blobKey = blobKey
                 , uploadedAt = DateTime.toEpochSeconds now
+                , contentHash = ContentHash "test-hash-for-download"
                 }
           let state = Pending PendingFile
                 { metadata = meta
@@ -171,6 +174,7 @@ spec = do
                 , sizeBytes = 11
                 , blobKey = blobKey
                 , uploadedAt = DateTime.toEpochSeconds (DateTime.addSeconds (-7200) now)
+                , contentHash = ContentHash "test-hash-for-download"
                 }
           let state = Pending PendingFile
                 { metadata = meta
@@ -246,6 +250,7 @@ spec = do
                 , sizeBytes = 10
                 , blobKey = blobKey
                 , uploadedAt = DateTime.toEpochSeconds now
+                , contentHash = ContentHash "test-hash-for-download"
                 }
           let state = Pending PendingFile
                 { metadata = meta

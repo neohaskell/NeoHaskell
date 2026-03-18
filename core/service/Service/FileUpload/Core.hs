@@ -3,6 +3,7 @@ module Service.FileUpload.Core (
   FileRef (..),
   BlobKey (..),
   OwnerHash (..),
+  ContentHash (..),
 
   -- * File Metadata
   FileMetadata (..),
@@ -85,6 +86,19 @@ instance Json.FromJSON OwnerHash
 instance Json.ToJSON OwnerHash
 
 
+-- | SHA-256 hash of file content for deduplication.
+-- Encoded as a 64-character lowercase hex string (Base16).
+-- Show instance is redacted to prevent leaking content fingerprints in logs.
+newtype ContentHash = ContentHash Text
+  deriving (Generic, Eq, Ord)
+
+instance Show ContentHash where
+  show _ = "ContentHash <REDACTED>"
+
+instance Json.FromJSON ContentHash
+instance Json.ToJSON ContentHash
+
+
 -- ==========================================================================
 -- File Metadata
 -- ==========================================================================
@@ -122,6 +136,7 @@ instance Json.ToJSON ResolvedFile
 data FileUploadedData = FileUploadedData
   { fileRef :: FileRef
   , ownerHash :: OwnerHash
+  , contentHash :: ContentHash
   , filename :: Text
   , contentType :: Text
   , sizeBytes :: Int64

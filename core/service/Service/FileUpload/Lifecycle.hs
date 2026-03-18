@@ -22,6 +22,7 @@ import Basics
 import Maybe (Maybe (..))
 import Service.FileUpload.Core (
   BlobKey (..),
+  ContentHash (..),
   FileConfirmedData (..),
   FileRef (..),
   FileUploadEvent (..),
@@ -43,6 +44,7 @@ data FileMetadata = FileMetadata
   , sizeBytes :: Int64
   , blobKey :: BlobKey
   , uploadedAt :: Int64
+  , contentHash :: ContentHash
   }
   deriving (Generic, Eq, Show)
 
@@ -101,6 +103,7 @@ update event state = case event of
               , sizeBytes = uploaded.sizeBytes
               , blobKey = uploaded.blobKey
               , uploadedAt = uploaded.uploadedAt
+              , contentHash = uploaded.contentHash
               }
         , ownerHash = uploaded.ownerHash
         , expiresAt = uploaded.expiresAt
