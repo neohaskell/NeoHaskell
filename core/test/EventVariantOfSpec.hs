@@ -33,6 +33,11 @@ data StandaloneCreated = StandaloneCreated
 -- | EventVariantOf instance bridging StandaloneCreated to TestEvent.
 instance EventVariantOf TestEvent StandaloneCreated where
   fromVariant created = TestEventA { testId = created.standaloneId }
+  toVariant testEvent =
+    case testEvent of
+      TestEventA { testId = tid } ->
+        Just (StandaloneCreated { standaloneId = tid })
+      _ -> Nothing
 
 
 -- | Second standalone event type that maps to TestEventB.
@@ -45,6 +50,11 @@ data StandaloneLabeled = StandaloneLabeled
 -- | EventVariantOf instance bridging StandaloneLabeled to TestEvent.
 instance EventVariantOf TestEvent StandaloneLabeled where
   fromVariant labeled = TestEventB { testLabel = labeled.label }
+  toVariant testEvent =
+    case testEvent of
+      TestEventB { testLabel = lbl } ->
+        Just (StandaloneLabeled { label = lbl })
+      _ -> Nothing
 
 
 -- ============================================================
@@ -230,3 +240,101 @@ spec = do
             second |> shouldBe (Just (TestEventA { testId = 6 }))
           _ ->
             fail "Expected Accept constructor"
+
+    describe "toVariant" do
+
+      describe "identity instance" do
+        -- Test 20: happy — identity toVariant returns Just
+        it "toVariant returns Just for identity instance" \_ -> do
+          let original = TestEventA { testId = 42 }
+          let result = toVariant original :: Maybe TestEvent
+          result |> shouldBe (Just (TestEventA { testId = 42 }))
+
+        -- Test 21: happy — identity toVariant with second constructor
+        it "toVariant returns Just for second constructor" \_ -> do
+          let original = TestEventB { testLabel = "hello" }
+          let result = toVariant original :: Maybe TestEvent
+          result |> shouldBe (Just (TestEventB { testLabel = "hello" }))
+
+        -- Test 22: edge — identity toVariant with zero boundary
+        it "toVariant preserves zero boundary value" \_ -> do
+          let original = TestEventA { testId = 0 }
+          let result = toVariant original :: Maybe TestEvent
+          result |> shouldBe (Just (TestEventA { testId = 0 }))
+
+        -- Test 23: edge — identity toVariant with empty text
+        it "toVariant preserves empty text" \_ -> do
+          let original = TestEventB { testLabel = "" }
+          let result = toVariant original :: Maybe TestEvent
+          result |> shouldBe (Just (TestEventB { testLabel = "" }))
+
+      describe "custom variant extraction" do
+        -- Test 24: happy — extract matching variant
+        it "toVariant extracts StandaloneCreated from matching TestEventA" \_ -> do
+          let adtEvent = TestEventA { testId = 99 }
+          let result = toVariant adtEvent :: Maybe StandaloneCreated
+          result |> shouldBe (Just (StandaloneCreated { standaloneId = 99 }))
+
+        -- Test 25: happy — extract second matching variant
+        it "toVariant extracts StandaloneLabeled from matching TestEventB" \_ -> do
+          let adtEvent = TestEventB { testLabel = "world" }
+          let result = toVariant adtEvent :: Maybe StandaloneLabeled
+          result |> shouldBe (Just (StandaloneLabeled { label = "world" }))
+
+        -- Test 26: happy — non-matching constructor returns Nothing
+        it "toVariant returns Nothing for non-matching constructor (Created vs EventB)" \_ -> do
+          let adtEvent = TestEventB { testLabel = "wrong" }
+          let result = toVariant adtEvent :: Maybe StandaloneCreated
+          result |> shouldBe Nothing
+
+        -- Test 27: happy — non-matching constructor returns Nothing (reverse)
+        it "toVariant returns Nothing for non-matching constructor (Labeled vs EventA)" \_ -> do
+          let adtEvent = TestEventA { testId = 1 }
+          let result = toVariant adtEvent :: Maybe StandaloneLabeled
+          result |> shouldBe Nothing
+
+        -- Test 28: edge — extract with zero value
+        it "toVariant extracts variant with zero value" \_ -> do
+          let adtEvent = TestEventA { testId = 0 }
+          let result = toVariant adtEvent :: Maybe StandaloneCreated
+          result |> shouldBe (Just (StandaloneCreated { standaloneId = 0 }))
+
+        -- Test 29: edge — extract with negative value
+        it "toVariant extracts variant with negative value" \_ -> do
+          let adtEvent = TestEventA { testId = -1 }
+          let result = toVariant adtEvent :: Maybe StandaloneCreated
+          result |> shouldBe (Just (StandaloneCreated { standaloneId = -1 }))
+
+        -- Test 30: edge — extract with empty text
+        it "toVariant extracts variant with empty text" \_ -> do
+          let adtEvent = TestEventB { testLabel = "" }
+          let result = toVariant adtEvent :: Maybe StandaloneLabeled
+          result |> shouldBe (Just (StandaloneLabeled { label = "" }))
+
+      describe "round-trip (fromVariant . toVariant)" do
+        -- Test 31: happy — round-trip StandaloneCreated
+        it "fromVariant after toVariant round-trips StandaloneCreated" \_ -> do
+          let original = StandaloneCreated { standaloneId = 77 }
+          let adtEvent = fromVariant original :: TestEvent
+          let roundTripped = toVariant adtEvent :: Maybe StandaloneCreated
+          roundTripped |> shouldBe (Just original)
+
+        -- Test 32: happy — round-trip StandaloneLabeled
+        it "fromVariant after toVariant round-trips StandaloneLabeled" \_ -> do
+          let original = StandaloneLabeled { label = "round-trip" }
+          let adtEvent = fromVariant original :: TestEvent
+          let roundTripped = toVariant adtEvent :: Maybe StandaloneLabeled
+          roundTripped |> shouldBe (Just original)
+
+        -- Test 33: edge — round-trip with empty text
+        it "round-trip preserves empty text" \_ -> do
+          let original = StandaloneLabeled { label = "" }
+          let adtEvent = fromVariant original :: TestEvent
+          let roundTripped = toVariant adtEvent :: Maybe StandaloneLabeled
+          roundTripped |> shouldBe (Just original)
+
+        -- Test 34: edge — round-trip identity
+        it "round-trip works for identity instance" \_ -> do
+          let original = TestEventA { testId = 42 }
+          let roundTripped = toVariant (fromVariant original :: TestEvent) :: Maybe TestEvent
+          roundTripped |> shouldBe (Just original)
