@@ -4,7 +4,6 @@ module Service.OutboundIntegration.TH (
 
 import Control.Monad.Fail qualified as MonadFail
 import Core
-import Data.List qualified as GhcList
 import GHC.Base (String)
 import Language.Haskell.TH.Lib qualified as THLib
 import Language.Haskell.TH.Ppr qualified as THPpr
@@ -101,25 +100,39 @@ ERROR: Missing 'handleEvent' function for handler '#{handlerNameStr}'.
 Please add: `handleEvent :: #{entityTypeStr} -> #{eventTypeStr} -> Integration.Outbound`
 |]
 
-  -- Step 4: Validate handleEvent signature
+  -- Step 4: Validate handleEvent signature structurally.
+  -- Extract the first two argument types from the function type AST and
+  -- compare them directly as TH.Name values — no string manipulation.
   handleEventInfo <- TH.reify handleEventName
   case handleEventInfo of
     TH.VarI _ functionType _ -> do
-      let typeStr = THPpr.pprint functionType
-      let normalizedType = normalizeTypeString typeStr
-      let hasEntityType = entityTypeStr `isInfixOf` normalizedType
-      let hasEventType = eventTypeStr `isInfixOf` normalizedType
-      if not hasEntityType || not hasEventType
-        then do
-          let expectedSig = entityTypeStr ++ " -> " ++ eventTypeStr ++ " -> Outbound"
-          MonadFail.fail
-            [fmt|
+      let prettyType = THPpr.pprint functionType
+      case extractFunctionArgs functionType of
+        Just (arg1, arg2) -> do
+          let arg1Name = extractConName arg1
+          let arg2Name = extractConName arg2
+          let entityOk = arg1Name == Just entityType
+          let eventOk = arg2Name == Just eventType
+          if not entityOk || not eventOk
+            then do
+              let expectedSig = entityTypeStr ++ " -> " ++ eventTypeStr ++ " -> Outbound"
+              MonadFail.fail
+                [fmt|
 ERROR: 'handleEvent' has incorrect signature.
 
 Expected: #{expectedSig}
-Current:  #{normalizedType}
+Current:  #{prettyType}
 |]
-        else pure ()
+            else pure ()
+        Nothing -> do
+          let expectedSig = entityTypeStr ++ " -> " ++ eventTypeStr ++ " -> Outbound"
+          MonadFail.fail
+            [fmt|
+ERROR: 'handleEvent' does not look like a two-argument function.
+
+Expected: #{expectedSig}
+Current:  #{prettyType}
+|]
     _ -> pure ()
 
   -- Step 5: Look up required type names
@@ -179,37 +192,32 @@ orError errMsg mVal =
     Nothing -> MonadFail.fail errMsg
 
 
--- | Normalize a type string by removing module qualifiers.
-normalizeTypeString :: String -> String
-normalizeTypeString t =
-  t
-    |> GhcList.words
-    |> GhcList.map (\w -> w |> splitOn "." |> GhcList.last)
-    |> GhcList.unwords
+-- | Extract the first two argument types from a function type AST.
+--
+-- A type @A -> B -> C@ is represented in TH as:
+-- @AppT (AppT ArrowT A) (AppT (AppT ArrowT B) C)@
+--
+-- Returns @Just (A, B)@ for a two-or-more argument function, @Nothing@ otherwise.
+extractFunctionArgs :: TH.Type -> Maybe (TH.Type, TH.Type)
+extractFunctionArgs ty =
+  case ty of
+    TH.ForallT _ _ inner -> extractFunctionArgs inner
+    TH.AppT (TH.AppT TH.ArrowT arg1) rest ->
+      case rest of
+        TH.AppT (TH.AppT TH.ArrowT arg2) _ -> Just (arg1, arg2)
+        _ -> Nothing
+    _ -> Nothing
 
 
--- | Split a string by a delimiter.
-splitOn :: String -> String -> [String]
-splitOn delimiter str = do
-  let go acc current remaining =
-        case remaining of
-          [] -> GhcList.reverse (GhcList.reverse current : acc)
-          c : rest -> do
-            if GhcList.take (GhcList.length delimiter) remaining == delimiter
-              then go (GhcList.reverse current : acc) [] (GhcList.drop (GhcList.length delimiter) remaining)
-              else go acc (c : current) rest
-  go [] [] str
-
-
--- | Check if a string is an infix of another.
-isInfixOf :: String -> String -> Bool
-isInfixOf needle haystack = do
-  let go n h =
-        case n of
-          [] -> True
-          _ ->
-            case h of
-              [] -> False
-              _ : hs ->
-                (GhcList.take (GhcList.length n) h == n) || go n hs
-  go needle haystack
+-- | Extract the 'TH.Name' from a plain constructor type application.
+--
+-- Handles both bare @ConT name@ and applied types like @ConT name \`AppT\` ...@
+-- by stripping any type applications and returning the outermost constructor name.
+extractConName :: TH.Type -> Maybe TH.Name
+extractConName ty =
+  case ty of
+    TH.ConT name -> Just name
+    TH.AppT inner _ -> extractConName inner
+    TH.SigT inner _ -> extractConName inner
+    TH.ParensT inner -> extractConName inner
+    _ -> Nothing

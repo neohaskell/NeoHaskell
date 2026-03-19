@@ -80,7 +80,7 @@ The `EventVariantOf` typeclass (ADR-0047, #575, already merged) provides the ext
 
 **File layout:**
 
-```
+```text
 core/service/Service/OutboundIntegration/
   Core.hs    -- OutboundIntegration typeclass, HandledEvent type family
   TH.hs      -- outboundIntegration TH macro
@@ -140,7 +140,7 @@ class OutboundIntegration handler where
 
 The dispatch flow for a typed handler:
 
-```
+```text
 Event (JSON) → decode to event ADT → toVariant → Maybe eventVariant
                                                     │
                                           Nothing → skip (handler doesn't care)

@@ -11,6 +11,7 @@ import Core
 import Data.Proxy (Proxy (..))
 import DateTime qualified
 import Default (Default (..))
+import Data.Hashable qualified as GhcHashable
 import GHC.Enum qualified as GhcEnum
 import GHC.TypeLits (symbolVal)
 import Integration qualified
@@ -67,10 +68,6 @@ instance Json.ToJSON TestEntity
 instance Json.FromJSON TestEntity
 
 
-instance Default TestEntity where
-  def = TestEntity {entityId = Uuid.nil, entityName = "", itemCount = 0}
-
-
 -- | Type family instance: TestEntity's events are TestEvent
 type instance EventOf TestEntity = TestEvent
 
@@ -85,6 +82,10 @@ instance Entity TestEntity where
         entity {itemCount = entity.itemCount - 1}
       EntityCreated {createdId, createdName} ->
         entity {entityId = createdId, entityName = createdName}
+
+
+instance Default TestEntity where
+  def = initialStateImpl @TestEntity
 
 
 -- | Test command for Integration.batch actions
@@ -314,11 +315,11 @@ spec = do
 
     describe "KnownHash instance" do
 
-      -- Test 18: Consistent hash for same handler name
-      it "produces a consistent hash for the same handler name" \_ -> do
-        let hash1 = hashVal (Proxy :: Proxy "TestHandlerA")
-        let hash2 = hashVal (Proxy :: Proxy "TestHandlerA")
-        hash1 |> shouldBe hash2
+      -- Test 18: Generated hash matches Hashable.hash of the handler name string
+      it "produces a hash matching Hashable.hash of the handler name" \_ -> do
+        let generatedHash = hashVal (Proxy :: Proxy "TestHandlerA")
+        let expectedHash = GhcHashable.hash ("TestHandlerA" :: LinkedList Char)
+        generatedHash |> shouldBe expectedHash
 
       -- Test 19: Non-zero hash value (sanity check)
       it "produces a non-zero hash value" \_ -> do
@@ -354,7 +355,15 @@ spec = do
           let encodedEvent = Json.encode (ItemAdded {addedItemId = 1, addedQuantity = 5})
           rawEvent <- makeRawEvent "TestEntity" "stream-001" encodedEvent
           result <- runner.processEvent ctx eventStore rawEvent
-          Array.length result |> shouldBeGreaterThan 0
+          -- Verify exactly one command payload was emitted
+          Array.length result |> shouldBe 1
+          -- Verify the payload decodes to the expected command (commandValue = 1 + 5 = 6)
+          case Array.first result of
+            Nothing -> fail "Expected a command payload but got none"
+            Just payload -> do
+              case Json.decode @TestIntegrationCommand payload.commandData of
+                Err err -> fail [fmt|Failed to decode command payload: #{err}|]
+                Ok cmd -> cmd.commandValue |> shouldBe 6
 
         -- Test 26: processEvent returns empty array for undecodable event JSON
         it "returns empty array for undecodable event JSON" \_ -> do
