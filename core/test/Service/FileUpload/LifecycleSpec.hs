@@ -3,6 +3,7 @@ module Service.FileUpload.LifecycleSpec where
 import Core
 import Service.FileUpload.Core (
   BlobKey (..),
+  ContentHash (..),
   FileConfirmedData (..),
   FileDeletedData (..),
   FileDeletionReason (..),
@@ -47,6 +48,7 @@ spec = do
           let eventData = FileUploadedData
                 { fileRef = FileRef "ref-1"
                 , ownerHash = OwnerHash "owner-abc"
+                , contentHash = ContentHash "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"
                 , filename = "test.pdf"
                 , contentType = "application/pdf"
                 , sizeBytes = 1024
@@ -62,6 +64,7 @@ spec = do
               pending.metadata.filename |> shouldBe "test.pdf"
               pending.metadata.contentType |> shouldBe "application/pdf"
               pending.metadata.sizeBytes |> shouldBe 1024
+              pending.metadata.contentHash |> shouldBe (ContentHash "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890")
             _ -> fail "Expected Pending state"
 
       describe "FileConfirmed event" do
@@ -91,6 +94,7 @@ spec = do
           case state of
             Confirmed confirmed -> do
               confirmed.metadata.ref |> shouldBe (FileRef "ref-1")
+              confirmed.metadata.contentHash |> shouldBe (ContentHash "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2")
             _ -> fail "Expected Confirmed state"
 
         it "is idempotent - confirming already Confirmed is no-op" \_ -> do
@@ -236,6 +240,7 @@ spec = do
           let uploadEvent = FileUploaded FileUploadedData
                 { fileRef = FileRef "ref-1"
                 , ownerHash = OwnerHash "owner-xyz"
+                , contentHash = ContentHash "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"
                 , filename = "test.txt"
                 , contentType = "text/plain"
                 , sizeBytes = 100
@@ -250,6 +255,7 @@ spec = do
           let uploadEvent = FileUploaded FileUploadedData
                 { fileRef = FileRef "ref-1"
                 , ownerHash = OwnerHash "owner-xyz"
+                , contentHash = ContentHash "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"
                 , filename = "test.txt"
                 , contentType = "text/plain"
                 , sizeBytes = 100
@@ -291,6 +297,7 @@ mkFileUploadedEvent refId uploadedAtTime expiresAtTime =
   FileUploaded FileUploadedData
     { fileRef = FileRef refId
     , ownerHash = OwnerHash [fmt|owner-#{refId}|]
+    , contentHash = ContentHash "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2"
     , filename = [fmt|file-#{refId}.txt|]
     , contentType = "text/plain"
     , sizeBytes = 100

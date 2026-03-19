@@ -61,6 +61,7 @@ ADRs document significant architectural decisions made during the development of
 | [0045](0045-integration-agent.md) | Integration.Agent — Provider-Agnostic AI Agent via Tool Calling | Proposed |
 | [0046](0046-function-syntax-fun-keyword.md) | Function Syntax — `fun` Keyword Parsing and Transpilation | Proposed |
 | [0047](0047-eventvariantof-typeclass.md) | EventVariantOf Typeclass for Type-Safe Event Variant Wrapping | Proposed |
+| [0048](0048-file-upload-content-deduplication.md) | File Upload Content Deduplication via SHA-256 | Proposed |
 
 ## Creating New ADRs
 

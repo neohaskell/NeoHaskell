@@ -53,7 +53,10 @@ spec = do
           let updateState fileRef event =
                 withFreshStore \store ->
                   store.updateState fileRef event
-          Task.yield FileStateStore {getState, setState, updateState}
+          let findByContentHash ownerHashVal contentHashVal =
+                withFreshStore \store ->
+                  store.findByContentHash ownerHashVal contentHashVal
+          Task.yield FileStateStore {getState, setState, updateState, findByContentHash}
     FileStateStoreSpec.spec newStore
 
 

@@ -3,6 +3,7 @@ module Service.FileUpload.Core (
   FileRef (..),
   BlobKey (..),
   OwnerHash (..),
+  ContentHash (..),
 
   -- * File Metadata
   FileMetadata (..),
@@ -32,6 +33,7 @@ import Data.Aeson qualified as GhcAeson
 import Data.Hashable qualified as GhcHashable
 import Json qualified
 import Maybe (Maybe)
+import Prelude qualified
 import Schema (ToSchema (..))
 import Schema qualified
 import Text (Text)
@@ -85,6 +87,19 @@ instance Json.FromJSON OwnerHash
 instance Json.ToJSON OwnerHash
 
 
+-- | SHA-256 hash of file content for deduplication.
+-- Encoded as a 64-character lowercase hex string (Base16).
+-- Show instance is redacted to prevent leaking content fingerprints in logs.
+newtype ContentHash = ContentHash Text
+  deriving (Generic, Eq, Ord)
+
+instance Show ContentHash where
+  show _ = "ContentHash <REDACTED>"
+
+instance Json.FromJSON ContentHash
+instance Json.ToJSON ContentHash
+
+
 -- ==========================================================================
 -- File Metadata
 -- ==========================================================================
@@ -122,6 +137,7 @@ instance Json.ToJSON ResolvedFile
 data FileUploadedData = FileUploadedData
   { fileRef :: FileRef
   , ownerHash :: OwnerHash
+  , contentHash :: ContentHash
   , filename :: Text
   , contentType :: Text
   , sizeBytes :: Int64
@@ -131,7 +147,19 @@ data FileUploadedData = FileUploadedData
   }
   deriving (Generic, Eq, Show)
 
-instance Json.FromJSON FileUploadedData
+instance Json.FromJSON FileUploadedData where
+  parseJSON = GhcAeson.withObject "FileUploadedData" \obj -> do
+    fileRef <- obj GhcAeson..: "fileRef"
+    ownerHash <- obj GhcAeson..: "ownerHash"
+    contentHash <- obj GhcAeson..:? "contentHash" GhcAeson..!= ContentHash ""
+    filename <- obj GhcAeson..: "filename"
+    contentType <- obj GhcAeson..: "contentType"
+    sizeBytes <- obj GhcAeson..: "sizeBytes"
+    blobKey <- obj GhcAeson..: "blobKey"
+    expiresAt <- obj GhcAeson..: "expiresAt"
+    uploadedAt <- obj GhcAeson..: "uploadedAt"
+    Prelude.pure FileUploadedData {fileRef, ownerHash, contentHash, filename, contentType, sizeBytes, blobKey, expiresAt, uploadedAt}
+
 instance Json.ToJSON FileUploadedData
 
 

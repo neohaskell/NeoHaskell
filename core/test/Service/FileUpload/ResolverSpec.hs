@@ -8,7 +8,7 @@ import Map qualified
 import "nhcore" Path qualified
 import Service.FileUpload.BlobStore (BlobStore (..))
 import Service.FileUpload.BlobStore.Local (LocalBlobStoreConfig (..), createBlobStore)
-import Service.FileUpload.Core (BlobKey (..), FileAccessError (..), FileRef (..), OwnerHash (..))
+import Service.FileUpload.Core (BlobKey (..), ContentHash (..), FileAccessError (..), FileRef (..), OwnerHash (..))
 import Service.FileUpload.Lifecycle (ConfirmedFile (..), FileMetadata (..), FileUploadState (..), PendingFile (..))
 import Service.FileUpload.Resolver (ResolvedFile (..), resolveFileRef, resolveFileRefs)
 import Task qualified
@@ -39,6 +39,7 @@ spec = do
                 , sizeBytes = 1024
                 , blobKey = blobKey
                 , uploadedAt = DateTime.toEpochSeconds now
+                , contentHash = ContentHash "test-hash-for-resolver"
                 }
           let state = Pending PendingFile
                 { metadata = meta
@@ -84,6 +85,7 @@ spec = do
                 , sizeBytes = 2048
                 , blobKey = blobKey
                 , uploadedAt = DateTime.toEpochSeconds now
+                , contentHash = ContentHash "test-hash-for-resolver"
                 }
           let state = Confirmed ConfirmedFile
                 { metadata = meta
@@ -124,6 +126,7 @@ spec = do
                 , sizeBytes = 512
                 , blobKey = blobKey
                 , uploadedAt = DateTime.toEpochSeconds now
+                , contentHash = ContentHash "test-hash-for-resolver"
                 }
           let state = Pending PendingFile
                 { metadata = meta
@@ -164,6 +167,7 @@ spec = do
                 , sizeBytes = 256
                 , blobKey = blobKey
                 , uploadedAt = DateTime.toEpochSeconds (DateTime.addSeconds (-7200) now)
+                , contentHash = ContentHash "test-hash-for-resolver"
                 }
           let state = Pending PendingFile
                 { metadata = meta
@@ -239,6 +243,7 @@ spec = do
                 , sizeBytes = 128
                 , blobKey = blobKey
                 , uploadedAt = DateTime.toEpochSeconds now
+                , contentHash = ContentHash "test-hash-for-resolver"
                 }
           let state = Pending PendingFile
                 { metadata = meta
@@ -282,6 +287,7 @@ spec = do
                 , sizeBytes = 100
                 , blobKey = blobKey1
                 , uploadedAt = DateTime.toEpochSeconds now
+                , contentHash = ContentHash "test-hash-for-resolver-1"
                 }
           let state1 = Pending PendingFile
                 { metadata = meta1
@@ -296,6 +302,7 @@ spec = do
                 , sizeBytes = 200
                 , blobKey = blobKey2
                 , uploadedAt = DateTime.toEpochSeconds now
+                , contentHash = ContentHash "test-hash-for-resolver-2"
                 }
           let state2 = Pending PendingFile
                 { metadata = meta2
@@ -356,6 +363,7 @@ spec = do
                 , sizeBytes = 100
                 , blobKey = blobKey1
                 , uploadedAt = DateTime.toEpochSeconds now
+                , contentHash = ContentHash "test-hash-for-resolver"
                 }
           let state1 = Pending PendingFile
                 { metadata = meta1
