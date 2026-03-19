@@ -278,9 +278,12 @@ generateFileRef = do
   Task.yield (FileRef [fmt|file_#{Uuid.toText uuid}|])
 
 
--- | Create a Pending state for testing
+-- | Create a Pending state for testing.
+-- OwnerHash is derived from fileRef to ensure unique (owner_hash, content_hash)
+-- pairs per file, avoiding Postgres partial unique index violations.
 mkPendingState :: FileRef -> FileUploadState
-mkPendingState fileRef =
+mkPendingState fileRef = do
+  let (FileRef refText) = fileRef
   Pending Lifecycle.PendingFile
     { metadata = Lifecycle.FileMetadata
         { ref = fileRef
@@ -291,14 +294,17 @@ mkPendingState fileRef =
         , uploadedAt = 1700000000
         , contentHash = ContentHash "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"
         }
-    , ownerHash = OwnerHash "owner_test"
+    , ownerHash = OwnerHash [fmt|owner-#{refText}|]
     , expiresAt = 1700003600
     }
 
 
--- | Create a Confirmed state for testing
+-- | Create a Confirmed state for testing.
+-- OwnerHash is derived from fileRef to ensure unique (owner_hash, content_hash)
+-- pairs per file, avoiding Postgres partial unique index violations.
 mkConfirmedState :: FileRef -> FileUploadState
-mkConfirmedState fileRef =
+mkConfirmedState fileRef = do
+  let (FileRef refText) = fileRef
   Confirmed Lifecycle.ConfirmedFile
     { metadata = Lifecycle.FileMetadata
         { ref = fileRef
@@ -309,7 +315,7 @@ mkConfirmedState fileRef =
         , uploadedAt = 1700000000
         , contentHash = ContentHash "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
         }
-    , ownerHash = OwnerHash "owner_confirmed"
+    , ownerHash = OwnerHash [fmt|owner-confirmed-#{refText}|]
     , confirmedByRequestId = "request_abc"
     }
 

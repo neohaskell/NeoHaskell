@@ -57,7 +57,7 @@ jsonpath "$.contentType" == "application/pdf"
 
 
 # =============================================================================
-# Test 4: Multiple PDF uploads generate unique FileRefs
+# Test 4: Duplicate PDF uploads return the same FileRef (content dedup)
 # =============================================================================
 POST http://localhost:8080/files/upload
 [MultipartFormData]
@@ -75,8 +75,8 @@ HTTP 200
 [Captures]
 pdf_ref_2: jsonpath "$.fileRef"
 [Asserts]
-# Each upload should get a unique FileRef
-jsonpath "$.fileRef" != "{{pdf_ref_1}}"
+# Same content = same FileRef (content-addressable dedup via SHA-256)
+jsonpath "$.fileRef" == "{{pdf_ref_1}}"
 
 
 # =============================================================================
