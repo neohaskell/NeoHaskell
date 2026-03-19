@@ -8,12 +8,16 @@ module EventVariantOf
   , event
   ) where
 
+import Maybe (Maybe (..))
 
--- | Declares that @eventVariant@ can be converted into @event@.
+
+-- | Declares that @eventVariant@ can be converted to/from @event@.
 --
 -- This typeclass enables individual event types to be wrapped into
--- an entity's event ADT. The Decider smart constructors use this
--- constraint to accept variant types directly.
+-- an entity's event ADT ('fromVariant') and extracted back out
+-- ('toVariant'). The Decider smart constructors use 'fromVariant'
+-- to accept variant types directly. The OutboundIntegration dispatch
+-- uses 'toVariant' to extract specific variants for typed handlers.
 --
 -- The identity instance @EventVariantOf event event@ is provided,
 -- so existing code that passes the event ADT directly continues to work.
@@ -29,16 +33,27 @@ module EventVariantOf
 -- -- Identity instance (provided by default — every ADT is a variant of itself)
 -- instance EventVariantOf CartEvent CartEvent where
 --   fromVariant cartEvent = cartEvent
+--   toVariant cartEvent = Just cartEvent
 --
 -- -- Standalone event type with explicit instance
 -- data PdfUploaded = PdfUploaded { entityId :: Uuid, pdfRef :: Text }
 --
 -- instance EventVariantOf DocumentEvent PdfUploaded where
 --   fromVariant uploaded = DocumentPdfUploaded uploaded.entityId uploaded.pdfRef
+--   toVariant docEvent = case docEvent of
+--     DocumentPdfUploaded eid ref -> Just (PdfUploaded { entityId = eid, pdfRef = ref })
+--     _ -> Nothing
 -- @
 class EventVariantOf event eventVariant where
   -- | Convert an event variant into the parent event ADT.
   fromVariant :: eventVariant -> event
+
+  -- | Extract a specific event variant from the parent event ADT.
+  --
+  -- Returns 'Just' if the event matches this variant, 'Nothing' otherwise.
+  -- Used by OutboundIntegration dispatch to route decoded events to
+  -- typed handlers.
+  toVariant :: event -> Maybe eventVariant
 
 
 -- | Every event type is a variant of itself.
@@ -49,10 +64,15 @@ class EventVariantOf event eventVariant where
 -- @
 -- -- This still works (CartEvent is a variant of CartEvent):
 -- Decider.acceptExisting [ItemAdded { entityId = id, stockId = sid, quantity = 1 }]
+--
+-- -- And toVariant always succeeds for identity:
+-- toVariant (ItemAdded { entityId = id, stockId = sid, quantity = 1 }) == Just (ItemAdded ...)
 -- @
-instance EventVariantOf event event where
+instance {-# OVERLAPPABLE #-} EventVariantOf event event where
   fromVariant eventValue = eventValue
   {-# INLINE fromVariant #-}
+  toVariant eventValue = Just eventValue
+  {-# INLINE toVariant #-}
 
 
 -- | Wrap an event variant into the parent event ADT.
