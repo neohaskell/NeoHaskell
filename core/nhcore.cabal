@@ -242,6 +242,8 @@ library
     Service.Application.Integrations
     Service.Application.Transports
     Service.Application.Types
+    Service.OutboundIntegration.Core
+    Service.OutboundIntegration.TH
     Service.Query
     Service.Query.Auth
     Service.Query.Core
@@ -412,6 +414,7 @@ test-suite nhcore-test
     Integration.RegistrySpec
     IntegrationSpec
     IntSpec
+    OutboundIntegrationSpec
     LogSpec
     DecimalSpec
     Service.ApplicationSpec
@@ -599,6 +602,7 @@ test-suite nhcore-test-core
     Layout.RenderSpec
     NeoQL.ExecuteSpec
     NeoQL.ParserSpec
+    OutboundIntegrationSpec
     Parser.ErrorSpec
     Parser.FileSpec
     Parser.WhitespaceSpec

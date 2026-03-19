@@ -1,3 +1,4 @@
+{-# LANGUAGE TemplateHaskell #-}
 {-# OPTIONS_GHC -Wno-unused-imports #-}
 
 module Integration.RuntimeSpec where
@@ -17,6 +18,8 @@ import Service.Command.Core (NameOf)
 import Service.Entity.Core (Entity (..), EventOf)
 import Service.Event.EntityName (EntityName (..))
 import Service.EventStore.InMemory qualified as InMemory
+import Service.OutboundIntegration.Core (OutboundIntegration (..))
+import Service.OutboundIntegration.TH (outboundIntegration)
 import Service.TestHelpers (insertTypedEvent)
 import Task qualified
 import Test
@@ -88,6 +91,36 @@ instance Json.FromJSON NotifyExternalSystem
 type instance NameOf NotifyExternalSystem = "NotifyExternalSystem"
 
 
+-- | Test handler for withOutbound tests.
+-- Emits NotifyExternalSystem when TestEntityCreated occurs.
+data TestRuntimeHandler = TestRuntimeHandler
+  deriving (Generic, Typeable, Show)
+
+
+type instance EntityOf TestRuntimeHandler = TestEntity
+
+
+-- | handleEvent must appear before the TH splice.
+handleEvent :: TestEntity -> TestEntityEvent -> Integration.Outbound
+handleEvent entity event =
+  case event of
+    TestEntityCreated {initialValue} ->
+      Integration.batch
+        [ Integration.outbound
+            Command.Emit
+              { command =
+                  NotifyExternalSystem
+                    { targetEntityId = entity.entityId
+                    , notificationValue = initialValue
+                    }
+              }
+        ]
+    _ -> Integration.none
+
+
+outboundIntegration ''TestRuntimeHandler
+
+
 makeContext :: Task Text Integration.ActionContext
 makeContext = do
   store <- InMemorySecretStore.new
@@ -112,25 +145,9 @@ spec = do
       it "executes integration when entity event is persisted" \_ -> do
         eventStore <- InMemory.new |> Task.mapError toText
 
-        -- Define an integration that emits a command when TestEntityCreated occurs
-        let testIntegration :: TestEntity -> TestEntityEvent -> Integration.Outbound
-            testIntegration entity event = case event of
-              TestEntityCreated {initialValue} ->
-                Integration.batch
-                  [ Integration.outbound
-                      Command.Emit
-                        { command =
-                            NotifyExternalSystem
-                              { targetEntityId = entity.entityId
-                              , notificationValue = initialValue
-                              }
-                        }
-                  ]
-              _ -> Integration.none
-
         let app =
               Application.new
-                |> Application.withOutbound @() @TestEntity @TestEntityEvent (\_ -> testIntegration)
+                |> Application.withOutbound @TestRuntimeHandler
 
         -- Run app in background
         Application.runWithAsync eventStore app
@@ -145,11 +162,10 @@ spec = do
         -- Give integration time to process
         AsyncTask.sleep 100 |> Task.mapError (\_ -> "sleep error" :: Text)
 
-        -- Verify the integration was called
-        -- For now, test the integration function directly until runtime is wired
+        -- Verify the integration was called by testing handleEventImpl directly
         let entity = TestEntity {entityId = testEntityId, value = 42}
         let event = TestEntityCreated {initialValue = 42}
-        let outbound = testIntegration entity event
+        let outbound = handleEventImpl @TestRuntimeHandler entity event
         let actions = Integration.getActions outbound
         Array.length actions |> shouldBe 1
 

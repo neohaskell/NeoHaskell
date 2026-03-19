@@ -7,8 +7,9 @@ import Service.EventStore.Postgres (PostgresEventStore (..))
 import Service.FileUpload.Core (FileUploadConfig (..), FileStateStoreBackend (..))
 import Service.Transport.Web qualified as WebTransport
 import Testbed.Cart.Core (CartEntity)
-import Testbed.Cart.Integrations (cartIntegrations, periodicCartCreator)
+import Testbed.Cart.Integrations (periodicCartCreator)
 import Testbed.Cart.Integrations.EventCounter qualified as EventCounter
+import Testbed.Cart.Integrations.ReserveStockOnItemAdded (ReserveStockOnItemAdded)
 import Testbed.Cart.Queries.CartSummary (CartSummary)
 import Testbed.Config (TestbedConfig (..))
 import Testbed.Document.Core ()
@@ -45,8 +46,8 @@ app =
     |> Application.withService Testbed.Service.documentService
     |> Application.withQuery @CartSummary
     |> Application.withQuery @StockLevel
-    -- Outbound: reserve stock when items are added to cart (Process Manager)
-    |> Application.withOutbound cartIntegrations
+    -- Typed outbound handler: reserve stock when items are added to cart
+    |> Application.withOutbound @ReserveStockOnItemAdded
     -- Outbound with lifecycle: count events per entity (demonstrates stateful integration)
     |> Application.withOutboundLifecycle @() @CartEntity (\_ -> EventCounter.eventCounterIntegration)
     -- Inbound: create a cart every 30 seconds

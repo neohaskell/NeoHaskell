@@ -6,17 +6,15 @@
 --
 -- This module provides:
 --
--- * 'withOutbound' - Register outbound integrations (react to events)
 -- * 'withOutboundLifecycle' - Register stateful integrations with resource management
 -- * 'withInbound' - Register inbound integrations (external -> commands)
 -- * Runtime functions for starting integration workers
 module Service.Application.Integrations (
   -- * Configuration
-  withOutbound,
   withOutboundLifecycle,
   withInbound,
   -- * Runner Construction
-  createOutboundRunner,
+  createTypedOutboundRunner,
   createOutboundLifecycleRunner,
   -- * Runtime (internal)
   startIntegrationSubscriber,
@@ -37,7 +35,7 @@ import Map (Map)
 import Maybe (Maybe (..))
 import Maybe qualified
 import Result (Result (..))
-import Service.Entity.Core (Entity (..), EventOf)
+import Service.Entity.Core (Entity (..), EntityOf, EventOf)
 import Service.Event (Event (..), EntityName (..))
 import Service.Event.StreamId (StreamId (..))
 import Service.EventStore (EventStore (..))
@@ -45,6 +43,7 @@ import Service.EventStore.Core (Error)
 import Service.EntityFetcher.Core qualified as EntityFetcher
 import Service.Integration.Dispatcher qualified as Dispatcher
 import Service.Integration.Types (OutboundRunner (..), OutboundLifecycleRunner (..), WorkerState (..))
+import Service.OutboundIntegration.Core (OutboundIntegration (..))
 import Service.Transport (EndpointHandler)
 import Task (Task)
 import Task qualified
@@ -53,40 +52,35 @@ import ToText (toText)
 import TypeName qualified
 
 
--- | Create an outbound integration runner for an entity type.
+-- | Create an OutboundRunner from a typed OutboundIntegration handler.
 --
--- Outbound integrations react to entity events and can trigger external effects
--- or emit commands to other services (Process Manager pattern).
+-- This wraps the typed handler with:
+-- 1. JSON decoding of the full event ADT
+-- 2. Entity state reconstruction via event replay
+-- 3. Dispatch to 'handleEventImpl'
 --
--- The integration function receives the current entity state (reconstructed from
--- the event stream via replay) and the new event, and returns actions to execute.
---
--- Example:
---
--- @
--- app = Application.new
---   |> Application.withService cartService
---   |> Application.withOutbound cartIntegrations
--- @
-createOutboundRunner ::
-  forall entity event.
-  ( Json.FromJSON entity
+-- The handler's entity type and event type are determined by the type
+-- constraints. The event is decoded from JSON, the entity is reconstructed
+-- via event replay, and handleEventImpl is called.
+createTypedOutboundRunner ::
+  forall handler entity event.
+  ( OutboundIntegration handler
+  , entity ~ EntityOf handler
+  , event ~ EventOf entity
+  , event ~ HandledEvent handler
+  , Json.FromJSON entity
   , Json.FromJSON event
-  , Json.FromJSON (EventOf entity)
   , TypeName.Inspectable entity
   , Default entity
   , Entity entity
-  , EventOf entity ~ event
   ) =>
-  (entity -> event -> Integration.Outbound) ->
   OutboundRunner
-createOutboundRunner integrationFn = do
+createTypedOutboundRunner = do
   let typeName = TypeName.reflect @entity
   OutboundRunner
     { entityTypeName = typeName
     , processEvent = \ctx eventStore rawEvent -> do
         let streamId = rawEvent.streamId
-        -- Decode the event from JSON
         case Json.decode @event rawEvent.event of
           Err decodeErr -> do
             Log.withScope [("component", "Integration"), ("entityName", typeName), ("streamId", streamId |> toText)] do
@@ -94,12 +88,9 @@ createOutboundRunner integrationFn = do
                 |> Task.ignoreError
             Task.yield Array.empty
           Ok decodedEvent -> do
-            -- Reconstruct entity state via event replay
             entity <- fetchEntityState @entity eventStore typeName streamId
-            -- Call the integration function
-            let outbound = integrationFn entity decodedEvent
+            let outbound = handleEventImpl @handler entity decodedEvent
             let actions = Integration.getActions outbound
-            -- Execute all actions and collect command payloads
             actions
               |> Task.mapArray (\action -> do
                   result <- Integration.runAction ctx action |> Task.mapError toText
@@ -127,16 +118,12 @@ fetchEntityState ::
   StreamId ->
   Task Text entity
 fetchEntityState eventStore typeName streamId = do
-  -- Create EntityFetcher with the entity's update function
   let initialState = initialStateImpl @entity
   let updateFn = updateImpl @entity
-  -- We need to decode the JSON event to the entity's event type
-  -- Track decode errors alongside state to fail if any events couldn't be decoded
   let decodingReducer :: Json.Value -> (entity, Array Text) -> (entity, Array Text)
       decodingReducer jsonValue (state, errors) = do
         case Json.decode @(EventOf entity) jsonValue of
           Err decodeErr -> do
-            -- Track the error - we'll fail after fetching if any errors occurred
             let errorMsg = [fmt|Failed to decode event: #{decodeErr}|]
             (state, errors |> Array.push errorMsg)
           Ok event -> (updateFn event state, errors)
@@ -148,12 +135,9 @@ fetchEntityState eventStore typeName streamId = do
       |> Task.mapError (\err -> [fmt|[Integration] Failed to fetch entity #{typeName} (stream: #{streamId}): #{toText err}|])
   case result of
     EntityFetcher.EntityNotFound -> do
-      -- Entity doesn't exist yet - use initial state
-      -- This can happen if the integration receives the first event for a new entity
       Task.yield initialState
     EntityFetcher.EntityFound fetched -> do
       let (entityState, decodeErrors) = fetched.state
-      -- Fail if any events could not be decoded - this indicates schema drift or data corruption
       case Array.first decodeErrors of
         Just firstError -> do
           let errorCount = Array.length decodeErrors
@@ -163,27 +147,6 @@ fetchEntityState eventStore typeName streamId = do
             Log.debug [fmt|Entity state fetched|]
               |> Task.ignoreError
           Task.yield entityState
-
-
--- | Register an outbound integration for an entity type.
---
--- See 'createOutboundRunner' for details.
-withOutbound ::
-  forall entity event.
-  ( Json.FromJSON entity
-  , Json.FromJSON event
-  , Json.FromJSON (EventOf entity)
-  , TypeName.Inspectable entity
-  , Default entity
-  , Entity entity
-  , EventOf entity ~ event
-  ) =>
-  (entity -> event -> Integration.Outbound) ->
-  (Array OutboundRunner, Array OutboundLifecycleRunner, Array Integration.Inbound) ->
-  (Array OutboundRunner, Array OutboundLifecycleRunner, Array Integration.Inbound)
-withOutbound integrationFn (runners, lifecycleRunners, inbounds) = do
-  let runner = createOutboundRunner @entity @event integrationFn
-  (runners |> Array.push runner, lifecycleRunners, inbounds)
 
 
 -- | Register an outbound integration with lifecycle management.
@@ -209,9 +172,7 @@ createOutboundLifecycleRunner config = do
   OutboundLifecycleRunner
     { entityTypeName = typeName
     , spawnWorkerState = \streamId -> do
-        -- Initialize resources for this entity
         state <- config.initialize streamId
-        -- Return a WorkerState that captures the initialized state
         Task.yield WorkerState
           { processEvent = \event -> config.processEvent state event
           , cleanup = config.cleanup state
@@ -273,7 +234,6 @@ startIntegrationSubscriber maybeDispatcherConfig eventStore runners lifecycleRun
   if not hasRunners && not hasLifecycleRunners
     then Task.yield Nothing
     else do
-      -- Create dispatcher with both runner types and EventStore for entity reconstruction
       let config = Maybe.withDefault Dispatcher.defaultConfig maybeDispatcherConfig
       dispatcher <- Dispatcher.newWithLifecycleConfig config eventStore runners lifecycleRunners commandEndpoints ctx
 
@@ -289,8 +249,7 @@ startIntegrationSubscriber maybeDispatcherConfig eventStore runners lifecycleRun
 
       _ <- eventStore.subscribeToAllEvents processIntegrationEvent
         |> Task.mapError (toText :: Error -> Text)
-      
-      -- Return the dispatcher so it can be shutdown later
+
       Task.yield (Just dispatcher)
 
 
@@ -315,7 +274,6 @@ startInboundWorkers inbounds commandEndpoints = do
           |> Task.ignoreError
       inbounds
         |> Task.mapArray \inboundIntegration -> do
-            -- Start each worker in a background task with restart logic
             let workerWithRestartLoop :: Int -> Task Text Unit
                 workerWithRestartLoop backoffMs = do
                   let emitCommand payload = do
@@ -330,10 +288,8 @@ startInboundWorkers inbounds commandEndpoints = do
                         Log.warn [fmt|Inbound worker error: #{err}. Restarting in #{backoffMs}ms...|]
                           |> Task.ignoreError
                       AsyncTask.sleep backoffMs
-                      -- Exponential backoff: double the delay, max 60 seconds
                       let nextBackoff = min (backoffMs * 2) 60000
                       workerWithRestartLoop nextBackoff
                     Ok _ -> Task.yield unit
-            -- Run worker in background, starting with 1 second backoff
             AsyncTask.run (workerWithRestartLoop 1000)
               |> Task.mapError toText
