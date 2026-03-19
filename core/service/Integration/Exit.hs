@@ -9,7 +9,7 @@ import Task qualified
 
 -- | Create an outbound integration that exits the process when any event fires.
 --
--- Wire it as: @Application.withOutbound \@Entity \@Event Exit.onEvent@
+-- Use this as the 'handleEvent' function in an OutboundIntegration handler.
 onEvent :: entity -> event -> Integration.Outbound
 onEvent _entity _event =
   Integration.batch

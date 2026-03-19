@@ -23,6 +23,7 @@ import Layout.RenderSpec qualified
 import LayoutSpec qualified
 import NeoQL.ExecuteSpec qualified
 import NeoQL.ParserSpec qualified
+import OutboundIntegrationSpec qualified
 import RedactedSpec qualified
 import Schema.OpenApiSpec qualified
 import SchemaSpec qualified
@@ -65,6 +66,7 @@ main = Hspec.hspec do
   Hspec.describe "Layout.Render" Layout.RenderSpec.spec
   Hspec.describe "NeoQL.Parser" NeoQL.ParserSpec.spec
   Hspec.describe "NeoQL.Execute" NeoQL.ExecuteSpec.spec
+  Hspec.describe "OutboundIntegration" OutboundIntegrationSpec.spec
   Hspec.describe "Redacted" RedactedSpec.spec
   Hspec.describe "Schema" SchemaSpec.spec
   Hspec.describe "Schema.OpenApi" Schema.OpenApiSpec.spec

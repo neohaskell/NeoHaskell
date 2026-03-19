@@ -11,6 +11,7 @@
 -- NOTE: Full integration testing (actual config loading + event store creation)
 -- is done via the testbed integration tests. These unit tests verify the
 -- builder API surface and basic behavior.
+{-# LANGUAGE TemplateHaskell #-}
 module Config.ConfigDependentSpec where
 import Array qualified
 import Auth.SecretStore (SecretStore (..))
@@ -26,6 +27,7 @@ import Service.EventStore.InMemory qualified as InMemory
 import Service.EventStore.Postgres (PostgresEventStore (..))
 import Service.FileUpload.Core (FileUploadConfig (..), FileStateStoreBackend (..))
 import Service.Integration.Dispatcher qualified as Dispatcher
+import Service.OutboundIntegration.TH (outboundIntegration)
 import Service.Transport.Web qualified as Web
 import Task qualified
 import Test
@@ -201,6 +203,23 @@ instance Json.FromJSON NotifyExternalSystem
 
 
 type instance NameOf NotifyExternalSystem = "NotifyExternalSystem"
+
+
+-- | Test outbound handler for testing Application.withOutbound.
+-- Uses the typed OutboundIntegration pattern.
+data TestOutboundHandler = TestOutboundHandler
+  deriving (Generic, Typeable, Show)
+
+
+type instance EntityOf TestOutboundHandler = TestEntity
+
+
+-- | handleEvent must appear before the TH splice.
+handleEvent :: TestEntity -> TestEntityEvent -> Integration.Outbound
+handleEvent _entity _event = Integration.none
+
+
+outboundIntegration ''TestOutboundHandler
 
 
 spec :: Spec Unit
@@ -518,29 +537,29 @@ spec = do
         Ok _ -> fail "Expected error but got Ok"
         Err err -> err |> shouldSatisfy (Text.contains "runWith does not support config-dependent SecretStore")
 
-  describe "Application.withOutbound (config-dependent)" do
-    it "works with static config using @() pattern" \_ -> do
+  describe "Application.withOutbound (typed handler)" do
+    it "registers typed handler without error" \_ -> do
       let app = Application.new
-            |> Application.withOutbound @() @TestEntity @TestEntityEvent (\_ _entity _event -> Integration.none)
+            |> Application.withOutbound @TestOutboundHandler
       -- App builds without error (outbound runner stored directly)
       let _ = app
       shouldBe True True
 
-    it "stores factory with dynamic config" \_ -> do
+    it "typed handler builds application correctly" \_ -> do
       let app = Application.new
-            |> Application.withOutbound @MockConfig @TestEntity @TestEntityEvent (\_ _entity _event -> Integration.none)
-      -- App builds without error (deferred outbound reg stored)
+            |> Application.withOutbound @TestOutboundHandler
+      -- App builds without error
       let _ = app
       shouldBe True True
 
-    it "runWith rejects deferred outbound integrations" \_ -> do
+    it "runWith accepts typed outbound handler" \_ -> do
       eventStore <- InMemory.new |> Task.mapError toText
       let app = Application.new
-            |> Application.withOutbound @MockConfig @TestEntity @TestEntityEvent (\_ _entity _event -> Integration.none)
+            |> Application.withOutbound @TestOutboundHandler
       result <- Application.runWith eventStore app |> Task.asResult
       case result of
-        Ok _ -> fail "Expected error but got Ok"
-        Err err -> err |> shouldSatisfy (Text.contains "runWith does not support config-dependent outbound integrations")
+        Ok _ -> pass
+        Err err -> err |> shouldSatisfy (\e -> not (Text.contains "outbound" e))
 
   describe "Application.withOutboundLifecycle (config-dependent)" do
     it "works with static config using @() pattern" \_ -> do
@@ -695,14 +714,14 @@ spec = do
         Ok _ -> pass
         Err err -> err |> shouldSatisfy (\e -> not (Text.contains "config-dependent SecretStore" e))
 
-    it "runWith accepts evaluated outbound (static @() pattern)" \_ -> do
+    it "runWith accepts typed outbound handler" \_ -> do
       eventStore <- InMemory.new |> Task.mapError toText
       let app = Application.new
-            |> Application.withOutbound @() @TestEntity @TestEntityEvent (\_ _entity _event -> Integration.none)
+            |> Application.withOutbound @TestOutboundHandler
       result <- Application.runWith eventStore app |> Task.asResult
       case result of
         Ok _ -> pass
-        Err err -> err |> shouldSatisfy (\e -> not (Text.contains "config-dependent outbound" e))
+        Err err -> err |> shouldSatisfy (\e -> not (Text.contains "outbound" e))
 
     it "runWith accepts evaluated outbound lifecycle (static @() pattern)" \_ -> do
       eventStore <- InMemory.new |> Task.mapError toText

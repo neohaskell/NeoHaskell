@@ -39,7 +39,7 @@ import Text (Text)
 -- | A type-erased outbound integration runner.
 --
 -- This wraps an integration function with JSON decoding so it can process
--- raw events from the event store. Created by 'Application.withOutbound'.
+-- raw events from the event store. Created by 'Application.withOutbound' or 'Integrations.createTypedOutboundRunner'.
 --
 -- The 'processEvent' function receives the EventStore so it can reconstruct
 -- the entity state via event replay before calling the integration function.

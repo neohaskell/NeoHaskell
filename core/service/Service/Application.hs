@@ -112,8 +112,7 @@ import LinkedList (LinkedList)
 import Maybe (Maybe (..))
 import Result (Result (..))
 import Service.Command.Core (NameOf)
-import Service.Entity.Core (Entity (..), EventOf)
-import Service.Event ()
+import Service.Entity.Core (Entity (..), EntityOf, EventOf)
 import Service.EventStore (EventStore (..), EventStoreConfig (..))
 import Service.Query.Core (EntitiesOf, Query)
 import Service.Query.Definition (QueryDefinition (..), WireEntities)
@@ -128,6 +127,7 @@ import Service.ServiceDefinition.Core qualified as ServiceDefinition
 import Service.Application.Integrations qualified as Integrations
 import Service.Application.Transports qualified as Transports
 import Service.Integration.Dispatcher qualified as Dispatcher
+import Service.OutboundIntegration.Core (OutboundIntegration (..))
 import Service.Integration.Types (OutboundRunner, OutboundLifecycleRunner)
 import Service.Transport (Transport (..), QueryEndpointHandler)
 import Service.Transport.Web qualified as Web
@@ -324,24 +324,6 @@ data SecretStoreFactory where
   DeferredSecretStore :: (Typeable cfg) => (cfg -> SecretStore) -> SecretStoreFactory
 
 
--- | Deferred outbound integration registration.
--- Stores the factory function and all type constraints needed to create an OutboundRunner at resolution time.
-data DeferredOutboundReg where
-  MkDeferredOutboundReg ::
-    forall config entity event.
-    ( Typeable config
-    , Json.FromJSON entity
-    , Json.FromJSON event
-    , Json.FromJSON (EventOf entity)
-    , TypeName.Inspectable entity
-    , Default entity
-    , Entity entity
-    , EventOf entity ~ event
-    ) =>
-    (config -> entity -> event -> Integration.Outbound) ->
-    DeferredOutboundReg
-
-
 -- | Deferred outbound lifecycle registration.
 -- Stores a closure that captures the entity type at registration time,
 -- since entity is a phantom type parameter of createOutboundLifecycleRunner.
@@ -394,7 +376,6 @@ data Application = Application
     dispatcherConfigFactory :: Maybe DispatcherConfigFactory,
     secretStoreFactory :: Maybe SecretStoreFactory,
     -- | Deferred integration registrations. Resolved during Application.run after config is loaded.
-    deferredOutboundRegs :: Array DeferredOutboundReg,
     deferredOutboundLifecycleRegs :: Array DeferredOutboundLifecycleReg,
     deferredInboundRegs :: Array DeferredInboundReg
   }
@@ -431,7 +412,6 @@ new =
       healthCheckFactory = Nothing,
       dispatcherConfigFactory = Nothing,
       secretStoreFactory = Nothing,
-      deferredOutboundRegs = Array.empty,
       deferredOutboundLifecycleRegs = Array.empty,
       deferredInboundRegs = Array.empty
     }
@@ -896,17 +876,6 @@ run app =
      -- in step 2 (config loading). These values are only forced when runners
      -- execute, at which point the config is guaranteed to be set.
 
-     -- 5g. Resolve deferred outbound integration registrations
-     let resolvedOutboundRunners =
-           app.deferredOutboundRegs
-             |> Array.reduce
-               ( \reg acc -> case reg of
-                   MkDeferredOutboundReg mkFn -> do
-                     let integrationFn = mkFn Config.get
-                     acc |> Array.push (Integrations.createOutboundRunner integrationFn)
-               )
-               app.outboundRunners
-
      -- 5h. Resolve deferred outbound lifecycle registrations
      let resolvedOutboundLifecycleRunners =
            app.deferredOutboundLifecycleRegs
@@ -935,7 +904,6 @@ run app =
            , healthCheckConfig = resolvedHealthCheckConfig
            , dispatcherConfig = resolvedDispatcherConfig
            , secretStore = resolvedSecretStore
-           , outboundRunners = resolvedOutboundRunners
            , outboundLifecycleRunners = resolvedOutboundLifecycleRunners
            , inboundIntegrations = resolvedInboundIntegrations
            }
@@ -1010,9 +978,6 @@ runWith eventStore app = do
     Just (DeferredSecretStore _) ->
       Task.throw "runWith does not support config-dependent SecretStore. Use Application.run instead, or use: withSecretStore @() (\\_ -> yourStore)"
   -- Reject deferred integration registrations (runWith doesn't support config loading)
-  case Array.isEmpty app.deferredOutboundRegs of
-    False -> Task.throw "runWith does not support config-dependent outbound integrations. Use Application.run instead, or use: withOutbound @() (\\_ -> yourIntegrationFn)"
-    True -> pass
   case Array.isEmpty app.deferredOutboundLifecycleRegs of
     False -> Task.throw "runWith does not support config-dependent outbound lifecycle integrations. Use Application.run instead, or use: withOutboundLifecycle @() (\\_ -> yourConfig)"
     True -> pass
@@ -1313,58 +1278,37 @@ runWithAsync eventStore app = do
   Task.yield unit
 
 
--- | Register an outbound integration for an entity type.
+-- | Register a typed outbound integration handler.
 --
--- Outbound integrations react to entity events and can trigger external effects
--- or emit commands to other services (Process Manager pattern).
---
--- The integration function receives the current entity state (reconstructed via
--- event replay from the event store) and the new event, and returns actions to
--- execute.
+-- Each handler is a type that implements OutboundIntegration (via the TH macro).
+-- The handler's entity type, event type, and processing logic are all encoded
+-- in the type — no function parameters needed.
 --
 -- Example:
 --
 -- @
--- -- Static (no config needed):
 -- app = Application.new
---   |> Application.withService cartService
---   |> Application.withOutbound \@() \@CartEntity \@CartEvent (\_ -> cartIntegrations)
---
--- -- Config-dependent:
--- app = Application.new
---   |> Application.withConfig \@MyConfig
---   |> Application.withOutbound \@MyConfig \@CartEntity \@CartEvent (\cfg -> makeIntegrations cfg)
+--   |> Application.withOutbound \@ReserveStockOnItemAdded
+--   |> Application.withOutbound \@NotifyOwnerOnCartCreated
 -- @
 withOutbound ::
-  forall config entity event.
-  ( Typeable config
+  forall handler entity event.
+  ( OutboundIntegration handler
+  , entity ~ EntityOf handler
+  , event ~ EventOf entity
+  , event ~ HandledEvent handler
   , Json.FromJSON entity
   , Json.FromJSON event
   , Json.FromJSON (EventOf entity)
   , TypeName.Inspectable entity
   , Default entity
   , Entity entity
-  , EventOf entity ~ event
   ) =>
-  (config -> entity -> event -> Integration.Outbound) ->
   Application ->
   Application
-withOutbound mkIntegrationFn app = do
-  case eqT @config @() of
-    Just Refl -> do
-      let integrationFn = mkIntegrationFn ()
-      let (runners, lifecycleRunners, inbounds) =
-            Integrations.withOutbound @entity @event
-              integrationFn
-              (app.outboundRunners, app.outboundLifecycleRunners, app.inboundIntegrations)
-      app
-        { outboundRunners = runners
-        , outboundLifecycleRunners = lifecycleRunners
-        , inboundIntegrations = inbounds
-        }
-    Nothing -> do
-      let reg = MkDeferredOutboundReg @config @entity @event mkIntegrationFn
-      app {deferredOutboundRegs = app.deferredOutboundRegs |> Array.push reg}
+withOutbound app = do
+  let runner = Integrations.createTypedOutboundRunner @handler
+  app {outboundRunners = app.outboundRunners |> Array.push runner}
 
 
 -- | Register an outbound integration with lifecycle management.

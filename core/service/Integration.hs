@@ -87,6 +87,7 @@ import ConcurrentMap (ConcurrentMap)
 import Lock (Lock)
 import Basics
 import Bytes (Bytes)
+import Data.Aeson qualified as GhcAeson
 import Data.Proxy (Proxy (..))
 import GHC.TypeLits qualified as GHC
 import Json qualified
@@ -199,7 +200,8 @@ data CommandPayload = CommandPayload
 instance Json.FromJSON CommandPayload
 
 
-instance Json.ToJSON CommandPayload
+instance Json.ToJSON CommandPayload where
+  toEncoding = GhcAeson.genericToEncoding GhcAeson.defaultOptions
 
 
 -- | Internal representation of an action.
