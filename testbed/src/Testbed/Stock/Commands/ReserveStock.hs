@@ -10,7 +10,7 @@ import Json qualified
 import Service.Auth (RequestContext)
 import Service.Command.Core (TransportsOf)
 import Service.CommandExecutor.TH (command)
-import Service.Transport.Web (WebTransport)
+import Service.Transport.Internal (InternalTransport)
 import Testbed.Stock.Core
 
 
@@ -58,9 +58,7 @@ decide cmd entity _ctx = case entity of
 type instance EntityOf ReserveStock = StockEntity
 
 
--- NOTE: Using WebTransport for testability. In production, this would use InternalTransport
--- to indicate it's only triggered by integrations, not exposed via web.
-type instance TransportsOf ReserveStock = '[WebTransport]
+type instance TransportsOf ReserveStock = '[InternalTransport]
 
 
 command ''ReserveStock

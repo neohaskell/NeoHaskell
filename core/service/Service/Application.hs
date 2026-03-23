@@ -1040,8 +1040,8 @@ runWithResolved eventStore maybeFileUploadSetup fileUploadCleanup maybeWebAuthSe
     app.serviceRunners
       |> Task.mapArray (\runner -> runner.getEndpointsByTransport eventStore app.transports)
 
-  -- 8. Merge all endpoints and schemas by transport name
-  let mergeEndpointsAndSchemas (serviceEndpoints, serviceSchemas) (handlersAcc, schemasAcc) = do
+  -- 8. Merge all public endpoints and schemas by transport name, plus dispatch handlers
+  let mergeEndpointsAndSchemas (serviceEndpoints, serviceSchemas, serviceDispatch) (handlersAcc, schemasAcc, dispatchAcc) = do
         let mergedHandlers = serviceEndpoints
               |> Map.entries
               |> Array.reduce
@@ -1049,8 +1049,8 @@ runWithResolved eventStore maybeFileUploadSetup fileUploadCleanup maybeWebAuthSe
                       case innerAcc |> Map.get transportName of
                         Nothing -> innerAcc |> Map.set transportName cmdEndpoints
                         Just existing -> innerAcc |> Map.set transportName (Map.merge cmdEndpoints existing)
-                  )
-                  handlersAcc
+                   )
+                   handlersAcc
         let mergedSchemas = serviceSchemas
               |> Map.entries
               |> Array.reduce
@@ -1058,21 +1058,24 @@ runWithResolved eventStore maybeFileUploadSetup fileUploadCleanup maybeWebAuthSe
                       case innerAcc |> Map.get transportName of
                         Nothing -> innerAcc |> Map.set transportName cmdSchemas
                         Just existing -> innerAcc |> Map.set transportName (Map.merge cmdSchemas existing)
+                   )
+                   schemasAcc
+        let mergedDispatch = serviceDispatch
+              |> Map.entries
+              |> Array.reduce
+                  ( \(commandName, handler) innerAcc ->
+                      case innerAcc |> Map.get commandName of
+                        Nothing -> innerAcc |> Map.set commandName handler
+                        Just _ -> panic [fmt|Duplicate command handler registered for integration dispatch: #{commandName}|]
                   )
-                  schemasAcc
-        (mergedHandlers, mergedSchemas)
+                  dispatchAcc
+        (mergedHandlers, mergedSchemas, mergedDispatch)
 
-  let (combinedEndpointsByTransport, combinedSchemasByTransport) =
+  let (combinedEndpointsByTransport, combinedSchemasByTransport, combinedCommandEndpoints) =
         endpointsAndSchemasByTransport
-          |> Array.reduce mergeEndpointsAndSchemas (Map.empty, Map.empty)
+          |> Array.reduce mergeEndpointsAndSchemas (Map.empty, Map.empty, Map.empty)
 
-  -- 9. Flatten all command endpoints for integration dispatch
-  let combinedCommandEndpoints =
-        combinedEndpointsByTransport
-          |> Map.values
-          |> Array.reduce (\cmdMap acc -> Map.merge cmdMap acc) Map.empty
-
-  -- 10. Initialize auth if configured (using pre-resolved WebAuthSetup)
+  -- 9. Initialize auth if configured (using pre-resolved WebAuthSetup)
   maybeAuthEnabled <- case maybeWebAuthSetup of
     Nothing -> Task.yield Nothing
     Just (WebAuthSetup serverUrl overrides) -> do

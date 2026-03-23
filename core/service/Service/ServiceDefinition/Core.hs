@@ -24,11 +24,13 @@ import Json qualified
 import Map (Map)
 import Map qualified
 import Maybe (Maybe (..), withDefault)
+import Result (Result (..))
 import Record (Record)
 import Record qualified
 import Schema (FieldSchema (..), Schema)
 import Schema qualified
 import Service.Auth (RequestContext)
+import Service.Transport.Internal (InternalTransport)
 import Service.Transport (Transport (..), EndpointHandler, EndpointSchema (..))
 import Service.Command (EntityOf, EventOf)
 import Service.Command.Core (TransportsOf, NamesOf, AppendSymbols, AllKnownSymbols (..), Command (..), Entity (..), Event, NameOf)
@@ -126,6 +128,12 @@ getSymbolText _ =
     |> Text.fromLinkedList
 
 
+type family PublicTransports (transports :: [Type]) :: [Type] where
+  PublicTransports '[] = '[]
+  PublicTransports (InternalTransport ': rest) = PublicTransports rest
+  PublicTransports (transport ': rest) = transport ': PublicTransports rest
+
+
 data
   CommandDefinition
     (name :: Symbol)
@@ -165,6 +173,43 @@ class CommandInspect definition where
     Array (Text, EndpointHandler)
 
 
+  createDispatchHandler ::
+    definition ->
+    EventStore (CmdEvent definition) ->
+    Maybe (SnapshotCache (CmdEntity definition)) ->
+    Record.Proxy (Cmd definition) ->
+    EndpointHandler
+
+
+buildDispatchHandler ::
+  forall command name.
+  ( Command command,
+    Json.FromJSON command,
+    name ~ NameOf command,
+    Record.KnownSymbol name
+  ) =>
+  Record.Proxy command ->
+  (RequestContext -> command -> Task Text Response.CommandResponse) ->
+  EndpointHandler
+buildDispatchHandler _ handler requestContext body respond = do
+  let commandName =
+        GHC.symbolVal (Record.Proxy @name)
+          |> Text.fromLinkedList
+  let commandValue = body |> Json.decodeBytes @command
+  case commandValue of
+    Ok cmd -> do
+      response <- handler requestContext cmd
+      let responseJson = Json.encodeText response |> Text.toBytes
+      respond (response, responseJson)
+    Err _err -> do
+      let errorResponse =
+            Response.Failed
+              { error = [fmt|Invalid input for command #{commandName}|]
+              }
+      let responseJson = Json.encodeText errorResponse |> Text.toBytes
+      respond (errorResponse, responseJson)
+
+
 instance
   ( Command cmd,
     Entity entity,
@@ -180,7 +225,7 @@ instance
     Show event,
     Json.FromJSON cmd,
     Schema.ToSchema cmd,
-    BuildHandlersForTransports transports,
+    BuildHandlersForTransports (PublicTransports transports),
     AllKnownSymbols transportNames,
     name ~ NameOf cmd,
     Record.KnownSymbol name,
@@ -234,7 +279,31 @@ instance
           result <- CommandExecutor.execute eventStore fetcher entityName requestContext cmdInstance
           Task.yield (Response.fromExecutionResult result)
 
-    buildHandlersForAll @transports transportsMap cmd handler
+    buildHandlersForAll @(PublicTransports transports) transportsMap cmd handler
+
+
+  createDispatchHandler _ eventStore maybeCache cmd = do
+    let handler :: RequestContext -> cmd -> Task Text Response.CommandResponse
+        handler requestContext cmdInstance = do
+          fetcher <- case maybeCache of
+            Just cache ->
+              EntityFetcher.newWithCache
+                eventStore
+                cache
+                (initialStateImpl @entity)
+                (updateImpl @entity)
+                |> Task.mapError toText
+            Nothing ->
+              EntityFetcher.new
+                eventStore
+                (initialStateImpl @entity)
+                (updateImpl @entity)
+                |> Task.mapError toText
+          let entityName = EntityName (getSymbolText (Record.Proxy @(entityName)))
+          result <- CommandExecutor.execute eventStore fetcher entityName requestContext cmdInstance
+          Task.yield (Response.fromExecutionResult result)
+
+    buildDispatchHandler @cmd cmd handler
 
 
 -- | Iterates over a type-level list of transports and builds handlers for each.
@@ -312,9 +381,9 @@ command ::
     Schema.ToSchema cmd,
     commandName ~ NameOf cmd,
     commandTransports ~ TransportsOf cmd,
-    transportNames ~ NamesOf commandTransports,
+    transportNames ~ NamesOf (PublicTransports commandTransports),
     AllKnownSymbols transportNames,
-    BuildHandlersForTransports commandTransports,
+    BuildHandlersForTransports (PublicTransports commandTransports),
     entityName ~ NameOf entity,
     Record.KnownSymbol commandName,
     Record.KnownSymbol entityName,
@@ -362,12 +431,12 @@ command serviceDefinition = do
 -- all endpoints from all services and runs each transport once with combined endpoints.
 data ServiceRunner = ServiceRunner
   { -- | Get command endpoints and schemas for this service, grouped by transport name.
-    -- Returns a tuple of (handlers, schemas) where both are maps from transport name to command maps.
-    -- Application will merge these across all services and run transports.
+    -- Returns a tuple of (public handlers, public schemas, dispatch handlers).
+    -- The dispatch handlers are transport-independent command handlers used by integrations.
     getEndpointsByTransport ::
       EventStore Json.Value ->
       Map Text TransportValue ->
-      Task Text (Map Text (Map Text EndpointHandler), Map Text (Map Text Service.Transport.EndpointSchema))
+      Task Text (Map Text (Map Text EndpointHandler), Map Text (Map Text Service.Transport.EndpointSchema), Map Text EndpointHandler)
   }
 
 
@@ -405,8 +474,9 @@ toServiceRunner service =
 
 -- | Build command endpoints for a service, grouped by transport name.
 --
--- Returns a tuple of (handlers, schemas) where both are maps from transport name to command maps.
--- Application will merge these across all services and run each transport once.
+-- Returns a tuple of (public handlers, public schemas, dispatch handlers).
+-- Application will merge public maps across transports and merge dispatch handlers
+-- separately for integration command dispatch.
 buildEndpointsByTransport ::
   forall (cmds :: Record.Row Type) event entity.
   ( Record.AllFields cmds (CommandInspect),
@@ -421,7 +491,7 @@ buildEndpointsByTransport ::
   EventStore Json.Value ->
   Record.ContextRecord Record.I cmds ->
   Map Text TransportValue ->
-  Task Text (Map Text (Map Text EndpointHandler), Map Text (Map Text Service.Transport.EndpointSchema))
+  Task Text (Map Text (Map Text EndpointHandler), Map Text (Map Text Service.Transport.EndpointSchema), Map Text EndpointHandler)
 buildEndpointsByTransport rawEventStore commandDefinitions transportsMap = do
   let eventStore = rawEventStore |> EventStore.castEventStore @event
   let maybeCache = Nothing :: Maybe (SnapshotCache entity)
@@ -444,12 +514,31 @@ buildEndpointsByTransport rawEventStore commandDefinitions transportsMap = do
               |> Array.map (\(tName, handler) -> (tName, commandName x, handler, commandSchema x))
           )
 
+  let dispatchMapper ::
+        forall cmdDef cmd.
+        ( CommandInspect cmdDef,
+          cmd ~ Cmd cmdDef
+        ) =>
+        Record.I cmdDef ->
+        Record.K (Text, EndpointHandler) cmdDef
+      dispatchMapper (Record.I x) = do
+        let typedEventStore = GHC.unsafeCoerce eventStore :: EventStore (CmdEvent cmdDef)
+        let typedCache = GHC.unsafeCoerce maybeCache :: Maybe (SnapshotCache (CmdEntity cmdDef))
+        let dispatchHandler = createDispatchHandler x typedEventStore typedCache (Record.Proxy @cmd)
+        Record.K (commandName x, dispatchHandler)
+
   let endpoints :: Array (Text, Text, EndpointHandler, Schema) =
         commandDefinitions
           |> Record.cmap (Record.Proxy @(CommandInspect)) mapper
           |> Record.collapse
           |> Array.fromLinkedList
           |> Array.flatten
+
+  let dispatchHandlers :: Array (Text, EndpointHandler) =
+        commandDefinitions
+          |> Record.cmap (Record.Proxy @(CommandInspect)) dispatchMapper
+          |> Record.collapse
+          |> Array.fromLinkedList
 
   -- Group by transport name, detecting duplicate command handlers
   let groupByTransport (transportNameText, cmdName, handler, schema) (handlersAcc, schemasAcc) =
@@ -476,7 +565,17 @@ buildEndpointsByTransport rawEventStore commandDefinitions transportsMap = do
                 let newSchemas = schemasAcc |> Map.set transportNameText (existingSchemas |> Map.set cmdName endpointSchema)
                 (newHandlers, newSchemas)
 
-  Task.yield (endpoints |> Array.reduce groupByTransport (Map.empty, Map.empty))
+  let groupDispatch (cmdName, handler) dispatchAcc =
+        case dispatchAcc |> Map.get cmdName of
+          Just _ -> panic [fmt|Duplicate command handler registered for integration dispatch: #{cmdName}|]
+          Nothing -> dispatchAcc |> Map.set cmdName handler
+
+  let (handlersByTransport, schemasByTransport) =
+        endpoints |> Array.reduce groupByTransport (Map.empty, Map.empty)
+
+  let dispatchMap = dispatchHandlers |> Array.reduce groupDispatch Map.empty
+
+  Task.yield (handlersByTransport, schemasByTransport, dispatchMap)
 
 
 -- | Schema for CommandResponse union type.
@@ -514,5 +613,3 @@ commandResponseSchema = Schema.SUnion (Array.fromLinkedList
           }
       ]))
   ])
-
-
