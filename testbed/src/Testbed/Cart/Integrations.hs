@@ -4,14 +4,14 @@ module Testbed.Cart.Integrations (
 
 import Integration qualified
 import Integration.Timer qualified as Timer
-import Testbed.Cart.Commands.CreateCart (CreateCart (..))
+import Testbed.Cart.Commands.CreateCartInternal (CreateCartInternal (..))
 
 
 -- | Inbound integration: periodically creates new carts.
--- Every 3 seconds, submits a CreateCart command.
+-- Every 3 seconds, submits a CreateCartInternal command.
 periodicCartCreator :: Integration.Inbound
 periodicCartCreator =
   Timer.every Timer.Every
     { interval = Timer.seconds 3
-    , toCommand = \_ -> CreateCart
+    , toCommand = \_ -> CreateCartInternal
     }

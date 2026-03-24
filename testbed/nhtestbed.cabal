@@ -57,6 +57,7 @@ library
     Testbed.Config
     Testbed.Cart.Commands.AddItem
     Testbed.Cart.Commands.CreateCart
+    Testbed.Cart.Commands.CreateCartInternal
     Testbed.Cart.Core
     Testbed.Cart.Integrations
     Testbed.Cart.Integrations.EventCounter
