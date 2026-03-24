@@ -1115,7 +1115,10 @@ runWithResolved eventStore maybeFileUploadSetup fileUploadCleanup maybeWebAuthSe
 
   (combinedEndpointsByTransport, combinedSchemasByTransport, combinedCommandEndpoints) <-
     case mergedEndpointsResult of
-      Err err -> Task.throw err
+      Err err -> do
+        fileUploadCleanup
+          |> Task.ignoreError
+        Task.throw err
       Ok merged -> Task.yield merged
 
   -- 6. Create query subscriber with combined registry

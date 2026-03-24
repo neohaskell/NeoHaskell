@@ -141,12 +141,43 @@ type family IncludesInternalTransport (transports :: [Type]) :: Bool where
   IncludesInternalTransport (transport ': rest) = IncludesInternalTransport rest
 
 
+type family TypeExists (target :: Type) (types :: [Type]) :: Bool where
+  TypeExists target '[] = 'False
+  TypeExists target (target ': rest) = 'True
+  TypeExists target (value ': rest) = TypeExists target rest
+
+
+type family HasDuplicatePublicTransports (transports :: [Type]) :: Bool where
+  HasDuplicatePublicTransports '[] = 'False
+  HasDuplicatePublicTransports (transport ': rest) =
+    HasDuplicatePublicTransports' (TypeExists transport rest) rest
+
+
+type family HasDuplicatePublicTransports' (hasCurrentDuplicate :: Bool) (remaining :: [Type]) :: Bool where
+  HasDuplicatePublicTransports' 'True remaining = 'True
+  HasDuplicatePublicTransports' 'False remaining = HasDuplicatePublicTransports remaining
+
+
+type family AssertNoDuplicatePublicTransports (publicTransports :: [Type]) :: Constraint where
+  AssertNoDuplicatePublicTransports publicTransports = AssertNoDuplicatePublicTransports' (HasDuplicatePublicTransports publicTransports)
+
+
+type family AssertNoDuplicatePublicTransports' (hasDuplicates :: Bool) :: Constraint where
+  AssertNoDuplicatePublicTransports' 'False = ()
+  AssertNoDuplicatePublicTransports' 'True =
+    TypeError
+      ( 'Text "Invalid command transport declaration"
+          ':$$: 'Text "Public transport list contains repeated transport entries."
+          ':$$: 'Text "Each public transport must appear at most once in TransportsOf."
+      )
+
+
 type family AssertNoMixedTransports (transports :: [Type]) :: Constraint where
   AssertNoMixedTransports transports = AssertNoMixedTransports' (IncludesInternalTransport transports) (PublicTransports transports)
 
 
 type family AssertNoMixedTransports' (hasInternal :: Bool) (publicTransports :: [Type]) :: Constraint where
-  AssertNoMixedTransports' 'False publicTransports = ()
+  AssertNoMixedTransports' 'False publicTransports = AssertNoDuplicatePublicTransports publicTransports
   AssertNoMixedTransports' 'True '[] = ()
   AssertNoMixedTransports' 'True (transport ': rest) =
     TypeError
