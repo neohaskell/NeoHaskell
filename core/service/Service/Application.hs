@@ -1034,39 +1034,74 @@ runWithResolved eventStore maybeFileUploadSetup fileUploadCleanup maybeWebAuthSe
   -- 5. Merge all public endpoints and schemas by transport name, plus dispatch handlers
   -- Duplicate dispatch handler names are surfaced as Task errors (not panics).
   let mergeEndpointsAndSchemas (serviceEndpoints, serviceSchemas, serviceDispatch) (handlersAcc, schemasAcc, dispatchAcc) = do
-        let mergedHandlers = serviceEndpoints
+        let ensureNoDuplicateCommands :: Text -> Text -> Map Text value -> Map Text value -> Result Text Unit
+            ensureNoDuplicateCommands kind transportName incoming existing =
+              incoming
+                |> Map.entries
+                |> Array.reduce
+                    ( \(commandName, _value) innerResult ->
+                        case innerResult of
+                          Err err -> Err err
+                          Ok _ ->
+                            case existing |> Map.get commandName of
+                              Nothing -> Ok unit
+                              Just _ -> Err [fmt|Duplicate #{kind} registered for transport #{transportName} and command #{commandName}|]
+                    )
+                    (Ok unit)
+
+        let mergedHandlersResult = serviceEndpoints
               |> Map.entries
               |> Array.reduce
-                  ( \(transportName, cmdEndpoints) innerAcc ->
-                      case innerAcc |> Map.get transportName of
-                        Nothing -> innerAcc |> Map.set transportName cmdEndpoints
-                        Just existing -> innerAcc |> Map.set transportName (Map.merge cmdEndpoints existing)
-                   )
-                   handlersAcc
-        let mergedSchemas = serviceSchemas
-              |> Map.entries
-              |> Array.reduce
-                  ( \(transportName, cmdSchemas) innerAcc ->
-                      case innerAcc |> Map.get transportName of
-                        Nothing -> innerAcc |> Map.set transportName cmdSchemas
-                        Just existing -> innerAcc |> Map.set transportName (Map.merge cmdSchemas existing)
-                   )
-                   schemasAcc
-        let mergedDispatchResult = serviceDispatch
-              |> Map.entries
-              |> Array.reduce
-                  ( \(commandName, handler) innerResult ->
+                  ( \(transportName, cmdEndpoints) innerResult ->
                       case innerResult of
                         Err err -> Err err
                         Ok innerAcc ->
-                          case innerAcc |> Map.get commandName of
-                            Nothing -> Ok (innerAcc |> Map.set commandName handler)
-                            Just _ -> Err [fmt|Duplicate command handler registered for integration dispatch: #{commandName}|]
-                  )
-                  (Ok dispatchAcc)
-        case mergedDispatchResult of
+                          case innerAcc |> Map.get transportName of
+                            Nothing -> Ok (innerAcc |> Map.set transportName cmdEndpoints)
+                            Just existing ->
+                              case ensureNoDuplicateCommands "command handler" transportName cmdEndpoints existing of
+                                Err err -> Err err
+                                Ok _ -> Ok (innerAcc |> Map.set transportName (Map.merge cmdEndpoints existing))
+                   )
+                   (Ok handlersAcc)
+
+        let mergedSchemasResult = serviceSchemas
+              |> Map.entries
+              |> Array.reduce
+                  ( \(transportName, cmdSchemas) innerResult ->
+                      case innerResult of
+                        Err err -> Err err
+                        Ok innerAcc ->
+                          case innerAcc |> Map.get transportName of
+                            Nothing -> Ok (innerAcc |> Map.set transportName cmdSchemas)
+                            Just existing ->
+                              case ensureNoDuplicateCommands "command schema" transportName cmdSchemas existing of
+                                Err err -> Err err
+                                Ok _ -> Ok (innerAcc |> Map.set transportName (Map.merge cmdSchemas existing))
+                   )
+                   (Ok schemasAcc)
+
+        case mergedHandlersResult of
           Err err -> Err err
-          Ok mergedDispatch -> Ok (mergedHandlers, mergedSchemas, mergedDispatch)
+          Ok mergedHandlers ->
+            case mergedSchemasResult of
+              Err err -> Err err
+              Ok mergedSchemas ->
+                let mergedDispatchResult = serviceDispatch
+                      |> Map.entries
+                      |> Array.reduce
+                          ( \(commandName, handler) innerResult ->
+                              case innerResult of
+                                Err err -> Err err
+                                Ok innerAcc ->
+                                  case innerAcc |> Map.get commandName of
+                                    Nothing -> Ok (innerAcc |> Map.set commandName handler)
+                                    Just _ -> Err [fmt|Duplicate command handler registered for integration dispatch: #{commandName}|]
+                          )
+                          (Ok dispatchAcc)
+                 in case mergedDispatchResult of
+                      Err err -> Err err
+                      Ok mergedDispatch -> Ok (mergedHandlers, mergedSchemas, mergedDispatch)
 
   let mergedEndpointsResult =
         endpointsAndSchemasByTransport

@@ -77,8 +77,8 @@ core/service/Service/Transport/Internal.hs
 
 The service runtime handles it through a separate dispatch path:
 
-1. `Service.ServiceDefinition.Core` builds a transport-independent dispatch handler for every command.
-2. Commands marked with `InternalTransport` contribute to the dispatch map used by `Dispatcher.dispatchCommand`.
+1. `Service.ServiceDefinition.Core` builds transport-independent dispatch handlers only for commands marked with `InternalTransport`.
+2. `WebTransport`-only commands do not contribute to the internal dispatch map.
 3. `InternalTransport` contributes no public endpoint handlers, no endpoint schemas, and no runnable server.
 4. `Application.runWithResolved` merges the dispatch map directly instead of flattening public transport handlers for integration dispatch.
 
@@ -104,7 +104,7 @@ type instance TransportsOf RecordTranscription = '[InternalTransport]
 type instance TransportsOf UploadProposalPdf = '[WebTransport]
 ```
 
-If Jess needs both a public authenticated action and an internal workflow action, she writes two commands with separate names and decision logic rather than trying to make one command serve both roles.
+If Jess needs both a public authenticated action and an internal workflow action, she writes two commands with separate names and decision logic rather than trying to make one command serve both roles. A single command cannot combine `InternalTransport` and public transports.
 
 This keeps the mental model simple:
 

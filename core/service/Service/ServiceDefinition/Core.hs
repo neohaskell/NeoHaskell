@@ -18,6 +18,7 @@ module Service.ServiceDefinition.Core (
 import Array (Array)
 import Array qualified
 import Basics
+import Data.Kind (Constraint)
 import GHC.TypeLits (ErrorMessage (..), TypeError)
 import GHC.TypeLits qualified as GHC
 import Json qualified
@@ -134,6 +135,39 @@ type family PublicTransports (transports :: [Type]) :: [Type] where
   PublicTransports (transport ': rest) = transport ': PublicTransports rest
 
 
+type family IncludesInternalTransport (transports :: [Type]) :: Bool where
+  IncludesInternalTransport '[] = 'False
+  IncludesInternalTransport (InternalTransport ': rest) = 'True
+  IncludesInternalTransport (transport ': rest) = IncludesInternalTransport rest
+
+
+type family AssertNoMixedTransports (transports :: [Type]) :: Constraint where
+  AssertNoMixedTransports transports = AssertNoMixedTransports' (IncludesInternalTransport transports) (PublicTransports transports)
+
+
+type family AssertNoMixedTransports' (hasInternal :: Bool) (publicTransports :: [Type]) :: Constraint where
+  AssertNoMixedTransports' 'False publicTransports = ()
+  AssertNoMixedTransports' 'True '[] = ()
+  AssertNoMixedTransports' 'True (transport ': rest) =
+    TypeError
+      ( 'Text "Invalid command transport declaration"
+          ':$$: 'Text "A command cannot declare InternalTransport together with public transports."
+          ':$$: 'Text "If you need both public and internal behavior, define two separate commands."
+      )
+
+
+class KnownBool (value :: Bool) where
+  boolValue :: Bool
+
+
+instance KnownBool 'False where
+  boolValue = False
+
+
+instance KnownBool 'True where
+  boolValue = True
+
+
 data
   CommandDefinition
     (name :: Symbol)
@@ -179,6 +213,11 @@ class CommandInspect definition where
     Maybe (SnapshotCache (CmdEntity definition)) ->
     Record.Proxy (Cmd definition) ->
     EndpointHandler
+
+
+  includeInDispatchMap ::
+    definition ->
+    Bool
 
 
 buildDispatchHandler ::
@@ -269,12 +308,14 @@ instance
     Ord entityIdType,
     Show entityIdType,
     Show event,
-    Json.FromJSON cmd,
-    Schema.ToSchema cmd,
-    BuildHandlersForTransports (PublicTransports transports),
-    AllKnownSymbols transportNames,
-    name ~ NameOf cmd,
-    Record.KnownSymbol name,
+     Json.FromJSON cmd,
+     Schema.ToSchema cmd,
+     BuildHandlersForTransports (PublicTransports transports),
+     KnownBool (IncludesInternalTransport transports),
+     AssertNoMixedTransports transports,
+     AllKnownSymbols transportNames,
+     name ~ NameOf cmd,
+     Record.KnownSymbol name,
     Record.KnownSymbol entityName,
     Json.FromJSON event,
     Json.ToJSON event,
@@ -318,6 +359,9 @@ instance
           buildCommandResponseHandler @cmd @entity @event @entityName eventStore maybeCache requestContext cmdInstance
 
     buildDispatchHandler @cmd cmd handler
+
+
+  includeInDispatchMap _ = boolValue @(IncludesInternalTransport transports)
 
 
 -- | Iterates over a type-level list of transports and builds handlers for each.
@@ -534,12 +578,15 @@ buildEndpointsByTransport rawEventStore commandDefinitions transportsMap = do
           cmd ~ Cmd cmdDef
         ) =>
         Record.I cmdDef ->
-        Record.K (Text, EndpointHandler) cmdDef
+        Record.K (Maybe (Text, EndpointHandler)) cmdDef
       dispatchMapper (Record.I x) = do
-        let typedEventStore = GHC.unsafeCoerce eventStore :: EventStore (CmdEvent cmdDef)
-        let typedCache = GHC.unsafeCoerce maybeCache :: Maybe (SnapshotCache (CmdEntity cmdDef))
-        let dispatchHandler = createDispatchHandler x typedEventStore typedCache (Record.Proxy @cmd)
-        Record.K (commandName x, dispatchHandler)
+        if includeInDispatchMap x
+          then do
+            let typedEventStore = GHC.unsafeCoerce eventStore :: EventStore (CmdEvent cmdDef)
+            let typedCache = GHC.unsafeCoerce maybeCache :: Maybe (SnapshotCache (CmdEntity cmdDef))
+            let dispatchHandler = createDispatchHandler x typedEventStore typedCache (Record.Proxy @cmd)
+            Record.K (Just (commandName x, dispatchHandler))
+          else Record.K Nothing
 
   let endpoints :: Array (Text, Text, EndpointHandler, Schema) =
         commandDefinitions
@@ -548,11 +595,18 @@ buildEndpointsByTransport rawEventStore commandDefinitions transportsMap = do
           |> Array.fromLinkedList
           |> Array.flatten
 
-  let dispatchHandlers :: Array (Text, EndpointHandler) =
+  let dispatchHandlers =
         commandDefinitions
           |> Record.cmap (Record.Proxy @(CommandInspect)) dispatchMapper
           |> Record.collapse
           |> Array.fromLinkedList
+          |> Array.reduce
+              (\maybeHandler acc ->
+                case maybeHandler of
+                  Nothing -> acc
+                  Just handler -> acc |> Array.push handler
+              )
+              Array.empty
 
   -- Group by transport name, detecting duplicate command handlers
   let groupByTransport (transportNameText, cmdName, handler, schema) (handlersAcc, schemasAcc) =
