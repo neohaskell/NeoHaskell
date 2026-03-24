@@ -1026,21 +1026,13 @@ runWithResolved eventStore maybeFileUploadSetup fileUploadCleanup maybeWebAuthSe
         wiredQueries
           |> Array.reduce (\(_reg, (name, _handler, schema)) acc -> acc |> Map.set name schema) Map.empty
 
-  -- 4. Create query subscriber with combined registry
-  subscriber <- Subscriber.new eventStore combinedRegistry
-
-  -- 5. Rebuild all queries from historical events
-  Subscriber.rebuildAll subscriber
-
-  -- 6. Start live subscription
-  Subscriber.start subscriber
-
-  -- 7. Collect command endpoints and schemas from all services, grouped by transport
+  -- 4. Collect command endpoints and schemas from all services, grouped by transport
   endpointsAndSchemasByTransport <-
     app.serviceRunners
       |> Task.mapArray (\runner -> runner.getEndpointsByTransport eventStore app.transports)
 
-  -- 8. Merge all public endpoints and schemas by transport name, plus dispatch handlers
+  -- 5. Merge all public endpoints and schemas by transport name, plus dispatch handlers
+  -- Duplicate dispatch handler names are surfaced as Task errors (not panics).
   let mergeEndpointsAndSchemas (serviceEndpoints, serviceSchemas, serviceDispatch) (handlersAcc, schemasAcc, dispatchAcc) = do
         let mergedHandlers = serviceEndpoints
               |> Map.entries
@@ -1060,20 +1052,45 @@ runWithResolved eventStore maybeFileUploadSetup fileUploadCleanup maybeWebAuthSe
                         Just existing -> innerAcc |> Map.set transportName (Map.merge cmdSchemas existing)
                    )
                    schemasAcc
-        let mergedDispatch = serviceDispatch
+        let mergedDispatchResult = serviceDispatch
               |> Map.entries
               |> Array.reduce
-                  ( \(commandName, handler) innerAcc ->
-                      case innerAcc |> Map.get commandName of
-                        Nothing -> innerAcc |> Map.set commandName handler
-                        Just _ -> panic [fmt|Duplicate command handler registered for integration dispatch: #{commandName}|]
+                  ( \(commandName, handler) innerResult ->
+                      case innerResult of
+                        Err err -> Err err
+                        Ok innerAcc ->
+                          case innerAcc |> Map.get commandName of
+                            Nothing -> Ok (innerAcc |> Map.set commandName handler)
+                            Just _ -> Err [fmt|Duplicate command handler registered for integration dispatch: #{commandName}|]
                   )
-                  dispatchAcc
-        (mergedHandlers, mergedSchemas, mergedDispatch)
+                  (Ok dispatchAcc)
+        case mergedDispatchResult of
+          Err err -> Err err
+          Ok mergedDispatch -> Ok (mergedHandlers, mergedSchemas, mergedDispatch)
 
-  let (combinedEndpointsByTransport, combinedSchemasByTransport, combinedCommandEndpoints) =
+  let mergedEndpointsResult =
         endpointsAndSchemasByTransport
-          |> Array.reduce mergeEndpointsAndSchemas (Map.empty, Map.empty, Map.empty)
+          |> Array.reduce
+              (\serviceResult accResult ->
+                case accResult of
+                  Err err -> Err err
+                  Ok acc -> mergeEndpointsAndSchemas serviceResult acc
+              )
+              (Ok (Map.empty, Map.empty, Map.empty))
+
+  (combinedEndpointsByTransport, combinedSchemasByTransport, combinedCommandEndpoints) <-
+    case mergedEndpointsResult of
+      Err err -> Task.throw err
+      Ok merged -> Task.yield merged
+
+  -- 6. Create query subscriber with combined registry
+  subscriber <- Subscriber.new eventStore combinedRegistry
+
+  -- 7. Rebuild all queries from historical events
+  Subscriber.rebuildAll subscriber
+
+  -- 8. Start live subscription
+  Subscriber.start subscriber
 
   -- 9. Initialize auth if configured (using pre-resolved WebAuthSetup)
   maybeAuthEnabled <- case maybeWebAuthSetup of

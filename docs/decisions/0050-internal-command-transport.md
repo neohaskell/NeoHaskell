@@ -122,6 +122,10 @@ module Service.Transport.Internal (
 data InternalTransport = InternalTransport
 
 type instance NameOf InternalTransport = "InternalTransport"
+```
+
+```haskell
+-- Runtime hooks are owned by service runtime modules, not Service.Transport.Internal.
 
 dispatchCommand ::
   Map Text EndpointHandler ->
@@ -134,6 +138,8 @@ buildEndpointsByTransport ::
   Map Text TransportValue ->
   Task Text (Map Text (Map Text EndpointHandler), Map Text (Map Text EndpointSchema), Map Text EndpointHandler)
 ```
+
+`dispatchCommand` is implemented in `Service.Integration.Dispatcher` and `buildEndpointsByTransport` is implemented in `Service.ServiceDefinition.Core`.
 
 Implementation consequences of this API:
 

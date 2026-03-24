@@ -210,6 +210,52 @@ buildDispatchHandler _ handler requestContext body respond = do
       respond (errorResponse, responseJson)
 
 
+buildCommandResponseHandler ::
+  forall cmd entity event entityName name.
+  ( Command cmd,
+    name ~ NameOf cmd,
+    Record.KnownSymbol name,
+    Record.KnownHash name,
+    Entity entity,
+    Event event,
+    event ~ EventOf entity,
+    entity ~ EntityOf cmd,
+    entity ~ EntityOf event,
+    IsMultiTenant cmd ~ False,
+    StreamId.ToStreamId (EntityIdType entity),
+    Eq (EntityIdType entity),
+    Ord (EntityIdType entity),
+    Show (EntityIdType entity),
+    Show event,
+    Record.KnownSymbol entityName,
+    Json.FromJSON event,
+    Json.ToJSON event
+  ) =>
+  EventStore event ->
+  Maybe (SnapshotCache entity) ->
+  RequestContext ->
+  cmd ->
+  Task Text Response.CommandResponse
+buildCommandResponseHandler eventStore maybeCache requestContext cmdInstance = do
+  fetcher <- case maybeCache of
+    Just cache ->
+      EntityFetcher.newWithCache
+        eventStore
+        cache
+        (initialStateImpl @entity)
+        (updateImpl @entity)
+        |> Task.mapError toText
+    Nothing ->
+      EntityFetcher.new
+        eventStore
+        (initialStateImpl @entity)
+        (updateImpl @entity)
+        |> Task.mapError toText
+  let entityName = EntityName (getSymbolText (Record.Proxy @entityName))
+  result <- CommandExecutor.execute eventStore fetcher entityName requestContext cmdInstance
+  Task.yield (Response.fromExecutionResult result)
+
+
 instance
   ( Command cmd,
     Entity entity,
@@ -260,48 +306,16 @@ instance
   createHandlers _ eventStore maybeCache transportsMap cmd = do
     -- Build the handler that will receive RequestContext at call time
     let handler :: RequestContext -> cmd -> Task Text Response.CommandResponse
-        handler requestContext cmdInstance = do
-          fetcher <- case maybeCache of
-            Just cache ->
-              EntityFetcher.newWithCache
-                eventStore
-                cache
-                (initialStateImpl @entity)
-                (updateImpl @entity)
-                |> Task.mapError toText
-            Nothing ->
-              EntityFetcher.new
-                eventStore
-                (initialStateImpl @entity)
-                (updateImpl @entity)
-                |> Task.mapError toText
-          let entityName = EntityName (getSymbolText (Record.Proxy @(entityName)))
-          result <- CommandExecutor.execute eventStore fetcher entityName requestContext cmdInstance
-          Task.yield (Response.fromExecutionResult result)
+        handler requestContext cmdInstance =
+          buildCommandResponseHandler @cmd @entity @event @entityName eventStore maybeCache requestContext cmdInstance
 
     buildHandlersForAll @(PublicTransports transports) transportsMap cmd handler
 
 
   createDispatchHandler _ eventStore maybeCache cmd = do
     let handler :: RequestContext -> cmd -> Task Text Response.CommandResponse
-        handler requestContext cmdInstance = do
-          fetcher <- case maybeCache of
-            Just cache ->
-              EntityFetcher.newWithCache
-                eventStore
-                cache
-                (initialStateImpl @entity)
-                (updateImpl @entity)
-                |> Task.mapError toText
-            Nothing ->
-              EntityFetcher.new
-                eventStore
-                (initialStateImpl @entity)
-                (updateImpl @entity)
-                |> Task.mapError toText
-          let entityName = EntityName (getSymbolText (Record.Proxy @(entityName)))
-          result <- CommandExecutor.execute eventStore fetcher entityName requestContext cmdInstance
-          Task.yield (Response.fromExecutionResult result)
+        handler requestContext cmdInstance =
+          buildCommandResponseHandler @cmd @entity @event @entityName eventStore maybeCache requestContext cmdInstance
 
     buildDispatchHandler @cmd cmd handler
 
@@ -565,15 +579,22 @@ buildEndpointsByTransport rawEventStore commandDefinitions transportsMap = do
                 let newSchemas = schemasAcc |> Map.set transportNameText (existingSchemas |> Map.set cmdName endpointSchema)
                 (newHandlers, newSchemas)
 
-  let groupDispatch (cmdName, handler) dispatchAcc =
-        case dispatchAcc |> Map.get cmdName of
-          Just _ -> panic [fmt|Duplicate command handler registered for integration dispatch: #{cmdName}|]
-          Nothing -> dispatchAcc |> Map.set cmdName handler
+  let groupDispatch (cmdName, handler) dispatchResult =
+        case dispatchResult of
+          Err err -> Err err
+          Ok dispatchAcc ->
+            case dispatchAcc |> Map.get cmdName of
+              Just _ -> Err [fmt|Duplicate command handler registered for integration dispatch: #{cmdName}|]
+              Nothing -> Ok (dispatchAcc |> Map.set cmdName handler)
 
   let (handlersByTransport, schemasByTransport) =
         endpoints |> Array.reduce groupByTransport (Map.empty, Map.empty)
 
-  let dispatchMap = dispatchHandlers |> Array.reduce groupDispatch Map.empty
+  let dispatchMapResult = dispatchHandlers |> Array.reduce groupDispatch (Ok Map.empty)
+
+  dispatchMap <- case dispatchMapResult of
+    Err err -> Task.throw err
+    Ok mapValue -> Task.yield mapValue
 
   Task.yield (handlersByTransport, schemasByTransport, dispatchMap)
 
