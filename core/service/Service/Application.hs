@@ -1026,53 +1026,111 @@ runWithResolved eventStore maybeFileUploadSetup fileUploadCleanup maybeWebAuthSe
         wiredQueries
           |> Array.reduce (\(_reg, (name, _handler, schema)) acc -> acc |> Map.set name schema) Map.empty
 
-  -- 4. Create query subscriber with combined registry
-  subscriber <- Subscriber.new eventStore combinedRegistry
-
-  -- 5. Rebuild all queries from historical events
-  Subscriber.rebuildAll subscriber
-
-  -- 6. Start live subscription
-  Subscriber.start subscriber
-
-  -- 7. Collect command endpoints and schemas from all services, grouped by transport
+  -- 4. Collect command endpoints and schemas from all services, grouped by transport
   endpointsAndSchemasByTransport <-
     app.serviceRunners
       |> Task.mapArray (\runner -> runner.getEndpointsByTransport eventStore app.transports)
 
-  -- 8. Merge all endpoints and schemas by transport name
-  let mergeEndpointsAndSchemas (serviceEndpoints, serviceSchemas) (handlersAcc, schemasAcc) = do
-        let mergedHandlers = serviceEndpoints
-              |> Map.entries
-              |> Array.reduce
-                  ( \(transportName, cmdEndpoints) innerAcc ->
-                      case innerAcc |> Map.get transportName of
-                        Nothing -> innerAcc |> Map.set transportName cmdEndpoints
-                        Just existing -> innerAcc |> Map.set transportName (Map.merge cmdEndpoints existing)
-                  )
-                  handlersAcc
-        let mergedSchemas = serviceSchemas
-              |> Map.entries
-              |> Array.reduce
-                  ( \(transportName, cmdSchemas) innerAcc ->
-                      case innerAcc |> Map.get transportName of
-                        Nothing -> innerAcc |> Map.set transportName cmdSchemas
-                        Just existing -> innerAcc |> Map.set transportName (Map.merge cmdSchemas existing)
-                  )
-                  schemasAcc
-        (mergedHandlers, mergedSchemas)
+  -- 5. Merge all public endpoints and schemas by transport name, plus dispatch handlers
+  -- Duplicate dispatch handler names are surfaced as Task errors (not panics).
+  let mergeEndpointsAndSchemas (serviceEndpoints, serviceSchemas, serviceDispatch) (handlersAcc, schemasAcc, dispatchAcc) = do
+        let ensureNoDuplicateCommands :: Text -> Text -> Map Text value -> Map Text value -> Result Text Unit
+            ensureNoDuplicateCommands kind transportName incoming existing =
+              incoming
+                |> Map.entries
+                |> Array.reduce
+                    ( \(commandName, _value) innerResult ->
+                        case innerResult of
+                          Err err -> Err err
+                          Ok _ ->
+                            case existing |> Map.get commandName of
+                              Nothing -> Ok unit
+                              Just _ -> Err [fmt|Duplicate #{kind} registered for transport #{transportName} and command #{commandName}|]
+                    )
+                    (Ok unit)
 
-  let (combinedEndpointsByTransport, combinedSchemasByTransport) =
+        let mergedHandlersResult = serviceEndpoints
+              |> Map.entries
+              |> Array.reduce
+                  ( \(transportName, cmdEndpoints) innerResult ->
+                      case innerResult of
+                        Err err -> Err err
+                        Ok innerAcc ->
+                          case innerAcc |> Map.get transportName of
+                            Nothing -> Ok (innerAcc |> Map.set transportName cmdEndpoints)
+                            Just existing ->
+                              case ensureNoDuplicateCommands "command handler" transportName cmdEndpoints existing of
+                                Err err -> Err err
+                                Ok _ -> Ok (innerAcc |> Map.set transportName (Map.merge cmdEndpoints existing))
+                   )
+                   (Ok handlersAcc)
+
+        let mergedSchemasResult = serviceSchemas
+              |> Map.entries
+              |> Array.reduce
+                  ( \(transportName, cmdSchemas) innerResult ->
+                      case innerResult of
+                        Err err -> Err err
+                        Ok innerAcc ->
+                          case innerAcc |> Map.get transportName of
+                            Nothing -> Ok (innerAcc |> Map.set transportName cmdSchemas)
+                            Just existing ->
+                              case ensureNoDuplicateCommands "command schema" transportName cmdSchemas existing of
+                                Err err -> Err err
+                                Ok _ -> Ok (innerAcc |> Map.set transportName (Map.merge cmdSchemas existing))
+                   )
+                   (Ok schemasAcc)
+
+        case mergedHandlersResult of
+          Err err -> Err err
+          Ok mergedHandlers ->
+            case mergedSchemasResult of
+              Err err -> Err err
+              Ok mergedSchemas ->
+                let mergedDispatchResult = serviceDispatch
+                      |> Map.entries
+                      |> Array.reduce
+                          ( \(commandName, handler) innerResult ->
+                              case innerResult of
+                                Err err -> Err err
+                                Ok innerAcc ->
+                                  case innerAcc |> Map.get commandName of
+                                    Nothing -> Ok (innerAcc |> Map.set commandName handler)
+                                    Just _ -> Err [fmt|Duplicate command handler registered for integration dispatch: #{commandName}|]
+                          )
+                          (Ok dispatchAcc)
+                 in case mergedDispatchResult of
+                      Err err -> Err err
+                      Ok mergedDispatch -> Ok (mergedHandlers, mergedSchemas, mergedDispatch)
+
+  let mergedEndpointsResult =
         endpointsAndSchemasByTransport
-          |> Array.reduce mergeEndpointsAndSchemas (Map.empty, Map.empty)
+          |> Array.reduce
+              (\serviceResult accResult ->
+                case accResult of
+                  Err err -> Err err
+                  Ok acc -> mergeEndpointsAndSchemas serviceResult acc
+              )
+              (Ok (Map.empty, Map.empty, Map.empty))
 
-  -- 9. Flatten all command endpoints for integration dispatch
-  let combinedCommandEndpoints =
-        combinedEndpointsByTransport
-          |> Map.values
-          |> Array.reduce (\cmdMap acc -> Map.merge cmdMap acc) Map.empty
+  (combinedEndpointsByTransport, combinedSchemasByTransport, combinedCommandEndpoints) <-
+    case mergedEndpointsResult of
+      Err err -> do
+        fileUploadCleanup
+          |> Task.ignoreError
+        Task.throw err
+      Ok merged -> Task.yield merged
 
-  -- 10. Initialize auth if configured (using pre-resolved WebAuthSetup)
+  -- 6. Create query subscriber with combined registry
+  subscriber <- Subscriber.new eventStore combinedRegistry
+
+  -- 7. Rebuild all queries from historical events
+  Subscriber.rebuildAll subscriber
+
+  -- 8. Start live subscription
+  Subscriber.start subscriber
+
+  -- 9. Initialize auth if configured (using pre-resolved WebAuthSetup)
   maybeAuthEnabled <- case maybeWebAuthSetup of
     Nothing -> Task.yield Nothing
     Just (WebAuthSetup serverUrl overrides) -> do

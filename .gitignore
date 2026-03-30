@@ -73,3 +73,5 @@ installer/target/
 
 # VSCode extension packaging
 *.vsix
+
+.ruff_cache

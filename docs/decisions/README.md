@@ -62,6 +62,7 @@ ADRs document significant architectural decisions made during the development of
 | [0046](0046-function-syntax-fun-keyword.md) | Function Syntax — `fun` Keyword Parsing and Transpilation | Proposed |
 | [0047](0047-eventvariantof-typeclass.md) | EventVariantOf Typeclass for Type-Safe Event Variant Wrapping | Proposed |
 | [0048](0048-file-upload-content-deduplication.md) | File Upload Content Deduplication via SHA-256 | Proposed |
+| [0050](0050-internal-command-transport.md) | Internal Command Transport | Proposed |
 
 ## Creating New ADRs
 

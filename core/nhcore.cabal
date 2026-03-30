@@ -276,6 +276,7 @@ library
     Service.Transport.Web
     Service.Transport.Web.BuiltinSchemas
     Service.Transport.Web.SwaggerUI
+    Service.Transport.Internal
     Service.Transport.Cli
     Service.Transport.Cli.Output
     Schema
@@ -434,6 +435,7 @@ test-suite nhcore-test
     Service.TestHelpers
     Service.Transport.CliSpec
     Service.Transport.Cli.OutputSpec
+    Service.Transport.InternalSpec
     Service.Transport.WebSpec
     Service.Transport.Web.SwaggerUISpec
     Service.Transport.Web.HealthCheckSpec
@@ -534,6 +536,7 @@ test-suite nhcore-test-service
     Service.TestHelpers
     Service.Transport.CliSpec
     Service.Transport.Cli.OutputSpec
+    Service.Transport.InternalSpec
     Service.Transport.WebSpec
 
   type: exitcode-stdio-1.0
