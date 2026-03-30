@@ -78,16 +78,16 @@ core/service/Service/Transport/Internal.hs
 The separation between public and internal commands is enforced at compile time through type families in `Service.ServiceDefinition.Core`:
 
 1. **`PublicTransports`** — A type family that filters `InternalTransport` out of a command's transport list. Only the remaining public transports are passed to `BuildHandlersForTransports`, so internal commands never produce public endpoint handlers or schemas.
-2. **`IncludesInternalTransport`** — A type family that returns `'True` if `InternalTransport` appears in the transport list. At runtime, `includeInDispatchMap` uses this to decide whether a command contributes a transport-independent dispatch handler.
+2. **`IncludesInternalTransport`** — A type family that returns `'True` if `InternalTransport` appears in the transport list. At runtime, `includeInDispatchMap` uses this to decide whether a command contributes a transport-independent dispatch handler. Only `InternalTransport` commands are included in this map — `WebTransport`-only commands are not.
 3. **`AssertNoMixedTransports`** — A type family that produces a compile-time error if a command declares both `InternalTransport` and any public transport. This enforces the rule that a single command serves one intent.
 
 The runtime data flow uses a 3-tuple instead of the previous 2-tuple:
 
 1. `Service.ServiceDefinition.Core.buildEndpointsByTransport` returns `(public handlers by transport, public schemas by transport, dispatch handlers)`.
 2. `Service.Application.runWithResolved` merges the three maps independently across all services, detecting duplicate command names at merge time.
-3. The dispatch handler map flows directly to `Dispatcher.dispatchCommand` and inbound integration workers, bypassing the public transport layer entirely.
+3. The dispatch handler map — which contains **only `InternalTransport` commands** — flows directly to `Dispatcher.dispatchCommand` and inbound integration workers, bypassing the public transport layer entirely.
 
-This keeps the public transport layer and the integration dispatch layer distinct. Jess marks a command as internal in one obvious place, and the compiler prevents accidental exposure.
+This means integrations can dispatch commands, but only commands explicitly declared with `InternalTransport`. A `WebTransport` command is not reachable from integrations; if an action needs to be triggerable from both an HTTP call and an integration, two separate commands with separate names must be defined. This keeps the public transport layer and the integration dispatch layer distinct. Jess marks a command as internal in one obvious place, and the compiler prevents accidental exposure.
 
 ### 4. Type Definition
 

@@ -375,21 +375,14 @@ instance
     Map Text TransportValue ->
     Record.Proxy cmd ->
     Array (Text, EndpointHandler)
-  createHandlers _ eventStore maybeCache transportsMap cmd = do
-    -- Build the handler that will receive RequestContext at call time
-    let handler :: RequestContext -> cmd -> Task Text Response.CommandResponse
-        handler requestContext cmdInstance =
-          buildCommandResponseHandler @cmd @entity @event @entityName eventStore maybeCache requestContext cmdInstance
-
-    buildHandlersForAll @(PublicTransports transports) transportsMap cmd handler
+  createHandlers _ eventStore maybeCache transportsMap cmd =
+    buildHandlersForAll @(PublicTransports transports) transportsMap cmd
+      (buildCommandResponseHandler @cmd @entity @event @entityName eventStore maybeCache)
 
 
-  createDispatchHandler _ eventStore maybeCache cmd = do
-    let handler :: RequestContext -> cmd -> Task Text Response.CommandResponse
-        handler requestContext cmdInstance =
-          buildCommandResponseHandler @cmd @entity @event @entityName eventStore maybeCache requestContext cmdInstance
-
-    buildDispatchHandler @cmd cmd handler
+  createDispatchHandler _ eventStore maybeCache cmd =
+    buildDispatchHandler @cmd cmd
+      (buildCommandResponseHandler @cmd @entity @event @entityName eventStore maybeCache)
 
 
   includeInDispatchMap _ = boolValue @(IncludesInternalTransport transports)

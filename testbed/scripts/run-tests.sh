@@ -27,7 +27,7 @@ echo "Running NeoHaskell Testbed Tests..."
 echo ""
 
 is_testbed_ready() {
-	curl -sf http://localhost:8080/queries/cart-summary >/dev/null 2>&1
+	curl -sf http://localhost:8080/health >/dev/null 2>&1
 }
 
 # Check if hurl is installed
