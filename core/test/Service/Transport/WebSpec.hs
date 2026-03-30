@@ -14,6 +14,7 @@ import Service.Query.Auth (QueryAuthError (..))
 import Service.Query.Auth qualified as Auth
 import Service.Query.Core qualified
 import Service.Query.Endpoint qualified as Endpoint
+import Service.Query.Pagination (QueryPageRequest (..), absoluteMaxLimit)
 import Service.QueryObjectStore.Core (Error (..), QueryObjectStore (..))
 import Service.QueryObjectStore.InMemory qualified as InMemoryStore
 import Task qualified
@@ -89,7 +90,7 @@ spec = do
         _ <- store.atomicUpdate queryId (\_ -> Just query) |> Task.mapError errorToText
 
         -- Execute: Try to access without authentication
-        result <- Endpoint.createQueryEndpoint @ProtectedQuery store Nothing Nothing |> Task.asResult
+        result <- Endpoint.createQueryEndpoint @ProtectedQuery store Nothing Nothing defaultPageRequest |> Task.asResult
 
         -- Verify: Should get Unauthenticated error (maps to HTTP 401)
         case result of
@@ -106,7 +107,7 @@ spec = do
         _ <- store.atomicUpdate queryId (\_ -> Just query) |> Task.mapError errorToText
 
         -- No user claims = simulates no auth configured or no token provided
-        result <- Endpoint.createQueryEndpoint @ProtectedQuery store Nothing Nothing |> Task.asResult
+        result <- Endpoint.createQueryEndpoint @ProtectedQuery store Nothing Nothing defaultPageRequest |> Task.asResult
 
         case result of
           Err (Auth.AuthorizationError Unauthenticated) -> pass
@@ -122,7 +123,7 @@ spec = do
 
         -- Execute: Access with authenticated user lacking admin:read permission
         let userWithoutPerm = testUser "user-1" ["other:permission"]
-        result <- Endpoint.createQueryEndpoint @AdminQuery store (Just userWithoutPerm) Nothing |> Task.asResult
+        result <- Endpoint.createQueryEndpoint @AdminQuery store (Just userWithoutPerm) Nothing defaultPageRequest |> Task.asResult
 
         -- Verify: Should get InsufficientPermissions error (maps to HTTP 403)
         case result of
@@ -141,7 +142,7 @@ spec = do
         _ <- store.atomicUpdate queryId (\_ -> Just query) |> Task.mapError errorToText
 
         let userWithoutPerm = testUser "user-1" []
-        result <- Endpoint.createQueryEndpoint @AdminQuery store (Just userWithoutPerm) Nothing |> Task.asResult
+        result <- Endpoint.createQueryEndpoint @AdminQuery store (Just userWithoutPerm) Nothing defaultPageRequest |> Task.asResult
 
         -- The error contains permissions for logging, but the HTTP layer
         -- (WebTransport) returns "Insufficient permissions" without specifics
@@ -211,6 +212,11 @@ testUser userId permissions =
       tenantId = Nothing,
       rawClaims = Map.empty
     }
+
+
+-- | Default page request for tests
+defaultPageRequest :: QueryPageRequest
+defaultPageRequest = QueryPageRequest { limit = absoluteMaxLimit, offset = 0 }
 
 
 -- | Create a mock WAI request with an Authorization header

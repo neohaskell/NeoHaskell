@@ -249,6 +249,7 @@ library
     Service.Query.Core
     Service.Query.Definition
     Service.Query.Endpoint
+    Service.Query.Pagination
     Service.Query.Registry
     Service.Query.Subscriber
     Service.Query.TH
@@ -416,6 +417,7 @@ test-suite nhcore-test
     IntegrationSpec
     IntSpec
     OutboundIntegrationSpec
+    EventVariantOfSpec
     LogSpec
     DecimalSpec
     Service.ApplicationSpec
@@ -428,6 +430,7 @@ test-suite nhcore-test
     Service.EventStore.PostgresSpec
     Service.MockTransport
     Service.Query.EndpointSpec
+    Service.Query.PaginationSpec
     Service.Query.RegistrySpec
     Service.Query.SubscriberSpec
     Service.Query.THSpec
@@ -527,6 +530,7 @@ test-suite nhcore-test-service
     Service.FileUpload.RoutesSpec
     Service.MockTransport
     Service.Query.EndpointSpec
+    Service.Query.PaginationSpec
     Service.Query.RegistrySpec
     Service.Query.SubscriberSpec
     Service.Query.THSpec

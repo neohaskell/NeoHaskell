@@ -9,6 +9,7 @@ import Service.Query.Auth (QueryAuthError (..), QueryEndpointError)
 import Service.Query.Auth qualified as Auth
 import Service.Query.Core qualified
 import Service.Query.Endpoint qualified as Endpoint
+import Service.Query.Pagination (QueryPageRequest (..), QueryPageResponse (..), absoluteMaxLimit)
 import Service.QueryObjectStore.Core (Error (..), QueryObjectStore (..))
 import Service.QueryObjectStore.InMemory qualified as InMemoryStore
 import Task qualified
@@ -127,16 +128,27 @@ testUser userId permissions =
     }
 
 
+-- | Default page request for tests (large enough to not affect existing tests)
+defaultPageRequest :: QueryPageRequest
+defaultPageRequest = QueryPageRequest { limit = absoluteMaxLimit, offset = 0 }
+
+
 spec :: Spec Unit
 spec = do
   describe "Service.Query.Endpoint" do
     describe "createQueryEndpoint" do
-      it "returns empty JSON array when no queries exist" \_ -> do
+      it "returns empty response when no queries exist" \_ -> do
         store <- InMemoryStore.new |> Task.mapError toText
 
-        result <- Endpoint.createQueryEndpoint @TestQuery store Nothing Nothing |> Task.mapError endpointErrorToText
+        result <- Endpoint.createQueryEndpoint @TestQuery store Nothing Nothing defaultPageRequest |> Task.mapError endpointErrorToText
 
-        result |> shouldBe "[]"
+        let decoded = Json.decodeText @(QueryPageResponse TestQuery) result
+        case decoded of
+          Ok response -> do
+            Array.length response.items |> shouldBe 0
+            response.total |> shouldBe 0
+            response.hasMore |> shouldBe False
+          Err _err -> fail "Failed to decode result"
 
       it "returns JSON array with single query" \_ -> do
         store <- InMemoryStore.new |> Task.mapError toText
@@ -146,20 +158,20 @@ spec = do
         store.atomicUpdate queryId (\_ -> Just query)
           |> Task.mapError errorToText
 
-        result <- Endpoint.createQueryEndpoint @TestQuery store Nothing Nothing |> Task.mapError endpointErrorToText
+        result <- Endpoint.createQueryEndpoint @TestQuery store Nothing Nothing defaultPageRequest |> Task.mapError endpointErrorToText
 
-        -- Result should be a JSON array containing the query
-        let decoded = Json.decodeText @(Array TestQuery) result
+        -- Result should be a paginated response containing the query
+        let decoded = Json.decodeText @(QueryPageResponse TestQuery) result
         case decoded of
-          Ok queries -> do
-            Array.length queries |> shouldBe 1
-            let firstQuery = queries |> Array.get 0
+          Ok response -> do
+            Array.length response.items |> shouldBe 1
+            let firstQuery = response.items |> Array.get 0
             case firstQuery of
               Just q -> q.name |> shouldBe "test"
               Nothing -> fail "Expected query not found"
           Err _err -> fail "Failed to decode result"
 
-      it "returns JSON array with multiple queries" \_ -> do
+      it "returns response with multiple queries" \_ -> do
         store <- InMemoryStore.new |> Task.mapError toText
         id1 <- Uuid.generate
         id2 <- Uuid.generate
@@ -173,11 +185,11 @@ spec = do
         store.atomicUpdate id2 (\_ -> Just query2) |> Task.mapError errorToText
         store.atomicUpdate id3 (\_ -> Just query3) |> Task.mapError errorToText
 
-        result <- Endpoint.createQueryEndpoint @TestQuery store Nothing Nothing |> Task.mapError endpointErrorToText
+        result <- Endpoint.createQueryEndpoint @TestQuery store Nothing Nothing defaultPageRequest |> Task.mapError endpointErrorToText
 
-        let decoded = Json.decodeText @(Array TestQuery) result
+        let decoded = Json.decodeText @(QueryPageResponse TestQuery) result
         case decoded of
-          Ok queries -> Array.length queries |> shouldBe 3
+          Ok response -> Array.length response.items |> shouldBe 3
           Err _err -> fail "Failed to decode result"
 
       it "returns valid JSON that can be parsed" \_ -> do
@@ -188,7 +200,7 @@ spec = do
         store.atomicUpdate queryId (\_ -> Just query)
           |> Task.mapError errorToText
 
-        result <- Endpoint.createQueryEndpoint @TestQuery store Nothing Nothing |> Task.mapError endpointErrorToText
+        result <- Endpoint.createQueryEndpoint @TestQuery store Nothing Nothing defaultPageRequest |> Task.mapError endpointErrorToText
 
         -- Verify the result is valid JSON by parsing it
         let parsed = Json.decodeText @Json.Value result
@@ -206,7 +218,7 @@ spec = do
           let query = AuthenticatedQuery {authQueryId = queryId, authQueryOwnerId = "user-1", authQueryData = "test"}
           store.atomicUpdate queryId (\_ -> Just query) |> Task.mapError errorToText
 
-          result <- Endpoint.createQueryEndpoint @AuthenticatedQuery store Nothing Nothing |> Task.asResult
+          result <- Endpoint.createQueryEndpoint @AuthenticatedQuery store Nothing Nothing defaultPageRequest |> Task.asResult
 
           case result of
             Err (Auth.AuthorizationError Unauthenticated) -> pass
@@ -227,18 +239,18 @@ spec = do
 
           -- User-1 should only see their own query
           let user1 = testUser "user-1" []
-          result <- Endpoint.createQueryEndpoint @OwnerOnlyQuery store (Just user1) Nothing |> Task.mapError endpointErrorToText
+          result <- Endpoint.createQueryEndpoint @OwnerOnlyQuery store (Just user1) Nothing defaultPageRequest |> Task.mapError endpointErrorToText
 
-          let decoded = Json.decodeText @(Array OwnerOnlyQuery) result
+          let decoded = Json.decodeText @(QueryPageResponse OwnerOnlyQuery) result
           case decoded of
-            Ok queries -> do
-              Array.length queries |> shouldBe 1
-              case queries |> Array.get 0 of
+            Ok response -> do
+              Array.length response.items |> shouldBe 1
+              case response.items |> Array.get 0 of
                 Just q -> q.ownerId |> shouldBe "user-1"
                 Nothing -> fail "Expected query not found"
             Err _err -> fail "Failed to decode result"
 
-        it "returns empty array when user owns nothing" \_ -> do
+        it "returns empty items when user owns nothing" \_ -> do
           store <- InMemoryStore.new @OwnerOnlyQuery |> Task.mapError toText
           queryId <- Uuid.generate
 
@@ -247,11 +259,11 @@ spec = do
 
           -- User-2 owns nothing, should see empty array
           let user2 = testUser "user-2" []
-          result <- Endpoint.createQueryEndpoint @OwnerOnlyQuery store (Just user2) Nothing |> Task.mapError endpointErrorToText
+          result <- Endpoint.createQueryEndpoint @OwnerOnlyQuery store (Just user2) Nothing defaultPageRequest |> Task.mapError endpointErrorToText
 
-          let decoded = Json.decodeText @(Array OwnerOnlyQuery) result
+          let decoded = Json.decodeText @(QueryPageResponse OwnerOnlyQuery) result
           case decoded of
-            Ok queries -> Array.length queries |> shouldBe 0
+            Ok response -> Array.length response.items |> shouldBe 0
             Err _err -> fail "Failed to decode result"
 
       describe "InsufficientPermissions error (403)" do
@@ -264,7 +276,7 @@ spec = do
 
           -- User without admin:read permission
           let userWithoutPerm = testUser "user-1" ["other:permission"]
-          result <- Endpoint.createQueryEndpoint @PermissionQuery store (Just userWithoutPerm) Nothing |> Task.asResult
+          result <- Endpoint.createQueryEndpoint @PermissionQuery store (Just userWithoutPerm) Nothing defaultPageRequest |> Task.asResult
 
           case result of
             Err (Auth.AuthorizationError (InsufficientPermissions perms)) -> do
@@ -281,11 +293,11 @@ spec = do
 
           -- User with admin:read permission
           let adminUser = testUser "admin-1" ["admin:read"]
-          result <- Endpoint.createQueryEndpoint @PermissionQuery store (Just adminUser) Nothing |> Task.mapError endpointErrorToText
+          result <- Endpoint.createQueryEndpoint @PermissionQuery store (Just adminUser) Nothing defaultPageRequest |> Task.mapError endpointErrorToText
 
-          let decoded = Json.decodeText @(Array PermissionQuery) result
+          let decoded = Json.decodeText @(QueryPageResponse PermissionQuery) result
           case decoded of
-            Ok queries -> Array.length queries |> shouldBe 1
+            Ok response -> Array.length response.items |> shouldBe 1
             Err _err -> fail "Failed to decode result"
 
       describe "two-phase authorization" do
@@ -305,15 +317,15 @@ spec = do
 
           -- User-1 passes canAccess (authenticated), canView filters to their data
           let user1 = testUser "user-1" []
-          result <- Endpoint.createQueryEndpoint @OwnerOnlyQuery store (Just user1) Nothing |> Task.mapError endpointErrorToText
+          result <- Endpoint.createQueryEndpoint @OwnerOnlyQuery store (Just user1) Nothing defaultPageRequest |> Task.mapError endpointErrorToText
 
-          let decoded = Json.decodeText @(Array OwnerOnlyQuery) result
+          let decoded = Json.decodeText @(QueryPageResponse OwnerOnlyQuery) result
           case decoded of
-            Ok queries -> do
+            Ok response -> do
               -- User-1 should see their 2 queries, not user-2's
-              Array.length queries |> shouldBe 2
+              Array.length response.items |> shouldBe 2
               -- Check no queries belong to other users (using any with negation)
-              let hasOtherOwner = queries |> Array.any (\q -> q.ownerId != "user-1")
+              let hasOtherOwner = response.items |> Array.any (\q -> q.ownerId != "user-1")
               hasOtherOwner |> shouldBe False
             Err _err -> fail "Failed to decode result"
 
