@@ -17,10 +17,10 @@ retry-interval: 100
 
 HTTP/1.1 200
 [Captures]
-query_1_count: jsonpath "$" count
+query_1_count: jsonpath "$.items" count
 
 [Asserts]
-jsonpath "$[?(@.cartSummaryId == '{{known_cart_id}}')]" count == 1
+jsonpath "$.items[?(@.cartSummaryId == '{{known_cart_id}}')]" count == 1
 
 # Query 2: Should have same or more carts (never fewer, data is append-only)
 GET http://localhost:8080/queries/cart-summary
@@ -31,11 +31,11 @@ retry-interval: 100
 HTTP/1.1 200
 
 [Asserts]
-jsonpath "$" count >= {{query_1_count}}
-jsonpath "$[?(@.cartSummaryId == '{{known_cart_id}}')]" count == 1
+jsonpath "$.items" count >= {{query_1_count}}
+jsonpath "$.items[?(@.cartSummaryId == '{{known_cart_id}}')]" count == 1
 # Values should be unchanged
-jsonpath "$[?(@.cartSummaryId == '{{known_cart_id}}')].isEmpty" nth 0 == true
-jsonpath "$[?(@.cartSummaryId == '{{known_cart_id}}')].itemCount" nth 0 == 0
+jsonpath "$.items[?(@.cartSummaryId == '{{known_cart_id}}')].isEmpty" nth 0 == true
+jsonpath "$.items[?(@.cartSummaryId == '{{known_cart_id}}')].itemCount" nth 0 == 0
 
 # Query 3: One more time to confirm consistency
 GET http://localhost:8080/queries/cart-summary
@@ -46,7 +46,7 @@ retry-interval: 100
 HTTP/1.1 200
 
 [Asserts]
-jsonpath "$" count >= {{query_1_count}}
-jsonpath "$[?(@.cartSummaryId == '{{known_cart_id}}')]" count == 1
-jsonpath "$[?(@.cartSummaryId == '{{known_cart_id}}')].isEmpty" nth 0 == true
-jsonpath "$[?(@.cartSummaryId == '{{known_cart_id}}')].itemCount" nth 0 == 0
+jsonpath "$.items" count >= {{query_1_count}}
+jsonpath "$.items[?(@.cartSummaryId == '{{known_cart_id}}')]" count == 1
+jsonpath "$.items[?(@.cartSummaryId == '{{known_cart_id}}')].isEmpty" nth 0 == true
+jsonpath "$.items[?(@.cartSummaryId == '{{known_cart_id}}')].itemCount" nth 0 == 0

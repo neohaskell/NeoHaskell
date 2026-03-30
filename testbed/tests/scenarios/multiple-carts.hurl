@@ -46,16 +46,16 @@ Content-Type: application/json
 
 [Asserts]
 # All three carts should exist in results
-jsonpath "$[?(@.cartSummaryId == '{{cart_1_id}}')]" count == 1
-jsonpath "$[?(@.cartSummaryId == '{{cart_2_id}}')]" count == 1
-jsonpath "$[?(@.cartSummaryId == '{{cart_3_id}}')]" count == 1
+jsonpath "$.items[?(@.cartSummaryId == '{{cart_1_id}}')]" count == 1
+jsonpath "$.items[?(@.cartSummaryId == '{{cart_2_id}}')]" count == 1
+jsonpath "$.items[?(@.cartSummaryId == '{{cart_3_id}}')]" count == 1
 
 # All should be empty (initial state)
-jsonpath "$[?(@.cartSummaryId == '{{cart_1_id}}')].isEmpty" nth 0 == true
-jsonpath "$[?(@.cartSummaryId == '{{cart_2_id}}')].isEmpty" nth 0 == true
-jsonpath "$[?(@.cartSummaryId == '{{cart_3_id}}')].isEmpty" nth 0 == true
+jsonpath "$.items[?(@.cartSummaryId == '{{cart_1_id}}')].isEmpty" nth 0 == true
+jsonpath "$.items[?(@.cartSummaryId == '{{cart_2_id}}')].isEmpty" nth 0 == true
+jsonpath "$.items[?(@.cartSummaryId == '{{cart_3_id}}')].isEmpty" nth 0 == true
 
 # All should have zero items
-jsonpath "$[?(@.cartSummaryId == '{{cart_1_id}}')].itemCount" nth 0 == 0
-jsonpath "$[?(@.cartSummaryId == '{{cart_2_id}}')].itemCount" nth 0 == 0
-jsonpath "$[?(@.cartSummaryId == '{{cart_3_id}}')].itemCount" nth 0 == 0
+jsonpath "$.items[?(@.cartSummaryId == '{{cart_1_id}}')].itemCount" nth 0 == 0
+jsonpath "$.items[?(@.cartSummaryId == '{{cart_2_id}}')].itemCount" nth 0 == 0
+jsonpath "$.items[?(@.cartSummaryId == '{{cart_3_id}}')].itemCount" nth 0 == 0

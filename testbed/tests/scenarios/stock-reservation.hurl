@@ -26,9 +26,9 @@ retry-interval: 100
 
 HTTP/1.1 200
 [Asserts]
-jsonpath "$[?(@.stockLevelId == '{{stock_id}}')]" count == 1
-jsonpath "$[?(@.stockLevelId == '{{stock_id}}')].available" nth 0 == 100
-jsonpath "$[?(@.stockLevelId == '{{stock_id}}')].reserved" nth 0 == 0
+jsonpath "$.items[?(@.stockLevelId == '{{stock_id}}')]" count == 1
+jsonpath "$.items[?(@.stockLevelId == '{{stock_id}}')].available" nth 0 == 100
+jsonpath "$.items[?(@.stockLevelId == '{{stock_id}}')].reserved" nth 0 == 0
 
 # Step 3: Create a cart
 POST http://localhost:8080/commands/create-cart
@@ -58,8 +58,8 @@ retry-interval: 200
 HTTP/1.1 200
 [Asserts]
 # Stock should now show 95 available, 5 reserved
-jsonpath "$[?(@.stockLevelId == '{{stock_id}}')].available" nth 0 == 95
-jsonpath "$[?(@.stockLevelId == '{{stock_id}}')].reserved" nth 0 == 5
+jsonpath "$.items[?(@.stockLevelId == '{{stock_id}}')].available" nth 0 == 95
+jsonpath "$.items[?(@.stockLevelId == '{{stock_id}}')].reserved" nth 0 == 5
 
 # Step 6: Add more items to verify integration works multiple times
 POST http://localhost:8080/commands/add-item
@@ -80,5 +80,5 @@ retry-interval: 200
 HTTP/1.1 200
 [Asserts]
 # Stock should now show 85 available, 15 reserved (5 + 10)
-jsonpath "$[?(@.stockLevelId == '{{stock_id}}')].available" nth 0 == 85
-jsonpath "$[?(@.stockLevelId == '{{stock_id}}')].reserved" nth 0 == 15
+jsonpath "$.items[?(@.stockLevelId == '{{stock_id}}')].available" nth 0 == 85
+jsonpath "$.items[?(@.stockLevelId == '{{stock_id}}')].reserved" nth 0 == 15

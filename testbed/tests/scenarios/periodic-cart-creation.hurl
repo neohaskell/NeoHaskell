@@ -12,7 +12,7 @@ HTTP/1.1 200
 Content-Type: application/json
 
 [Captures]
-initial_count: jsonpath "$" count
+initial_count: jsonpath "$.items" count
 
 # Step 2: Wait for timer to fire (at least 3 seconds)
 # Then query again and verify a new cart was created
@@ -26,11 +26,11 @@ HTTP/1.1 200
 Content-Type: application/json
 
 [Captures]
-first_count: jsonpath "$" count
+first_count: jsonpath "$.items" count
 
 [Asserts]
 # Cart count should have increased by at least 1
-jsonpath "$" count > {{initial_count}}
+jsonpath "$.items" count > {{initial_count}}
 
 # Step 3: Wait for another timer tick and verify another cart
 GET http://localhost:8080/queries/cart-summary
@@ -43,8 +43,8 @@ HTTP/1.1 200
 Content-Type: application/json
 
 [Captures]
-second_count: jsonpath "$" count
+second_count: jsonpath "$.items" count
 
 [Asserts]
 # Should have increased again (2nd timer tick)
-jsonpath "$" count > {{first_count}}
+jsonpath "$.items" count > {{first_count}}
