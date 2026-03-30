@@ -1,11 +1,6 @@
 ---
 name: neohaskell-adr-template
-description: "ADR (Architecture Decision Record) template for NeoHaskell. Use when creating a new ADR, drafting a decision document, or starting a new feature proposal. Triggers: 'new ADR', 'create ADR', 'architecture decision', 'decision record', 'feature proposal', 'ADR draft'."
-tags:
-  - adr
-  - architecture
-  - decisions
-  - documentation
+description: ADR (Architecture Decision Record) template for NeoHaskell. Use when creating a new ADR, drafting a decision document, or starting a new feature proposal. Triggers on 'new ADR', 'create ADR', 'architecture decision', 'decision record', 'feature proposal', 'ADR draft'.
 ---
 
 # NeoHaskell ADR Template
@@ -28,8 +23,6 @@ Use this skill when creating Architecture Decision Records for the NeoHaskell pr
 - Documentation updates
 - Adding new commands or entities (domain logic)
 
----
-
 ## Numbering Convention
 
 ADRs are numbered sequentially with 4-digit zero-padding: `NNNN-short-description.md`
@@ -40,15 +33,11 @@ ADRs are numbered sequentially with 4-digit zero-padding: `NNNN-short-descriptio
 ls docs/decisions/*.md | tail -1
 ```
 
-As of the last update, the next available number is **0041**.
-
 **File naming**: Use lowercase kebab-case for the description slug.
 
 Examples:
 - `0041-decimal-arithmetic-operations.md`
 - `0042-websocket-transport-adapter.md`
-
----
 
 ## ADR Template
 
@@ -146,8 +135,6 @@ transform :: MyType -> TransformResult
 - [relevant/source/file.hs](../../relevant/source/file.hs)
 ```
 
----
-
 ## Field-by-Field Guidance
 
 ### Title (`# ADR-NNNN: [Title]`)
@@ -224,36 +211,6 @@ Link to:
 - Source files (`[path/to/file.hs](../../path/to/file.hs)`)
 - External RFCs or standards (if relevant)
 
----
-
-## Examples of Good vs. Bad ADR Sections
-
-### Good Context (from ADR-0022)
-
-> NeoHaskell lacks a decimal or fixed-point number type for precise financial calculations. This gap forces downstream applications to use workarounds that are error-prone and verbose.
->
-> ### Current State
-> 1. **No decimal type in nhcore**: The core library provides `Int`, `Int64`, and `Float` (which is `Prelude.Double`), but no fixed-point decimal type suitable for monetary values.
-> 2. **Workaround with Int64 cents**: Applications store monetary values as `Int64` representing cents (e.g., `1250` for 12.50 EUR), requiring manual conversion at every boundary.
-
-### Bad Context (avoid this)
-
-> We should add a decimal type because other languages have one and it would be useful for money.
-
-### Good Decision Table (from ADR-0022)
-
-> | Candidate | Verdict | Rationale |
-> |-----------|---------|-----------|
-> | `Money` | Rejected | Too specific — implies currency, but the type is useful for any fixed-point arithmetic |
-> | `FixedPoint` | Rejected | Too technical for NeoHaskell's newcomer-friendly philosophy |
-> | `Decimal` | **Chosen** | Familiar from C#, Python, Java. Self-documenting, no conflicts |
-
-### Bad Decision Table (avoid this)
-
-> We chose Decimal because it's the best option.
-
----
-
 ## Updating the README Index
 
 After creating an ADR, add it to the index table in `docs/decisions/README.md`:
@@ -262,12 +219,7 @@ After creating an ADR, add it to the index table in `docs/decisions/README.md`:
 | [NNNN](NNNN-slug.md) | Title | Proposed |
 ```
 
-Insert it in numerical order at the end of the table. The columns are:
-1. ADR number (linked to file)
-2. Title (plain text)
-3. Status
-
----
+Insert it in numerical order at the end of the table.
 
 ## NeoHaskell-Specific ADR Considerations
 
