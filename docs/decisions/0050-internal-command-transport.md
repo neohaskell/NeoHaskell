@@ -71,18 +71,23 @@ The new internal-only command marker is named `InternalTransport`.
 core/service/Service/Transport/Internal.hs
 ```
 
-### 3. Runtime Behavior: Marker-Only Internal Transport
+### 3. Runtime Behavior: Compile-Time Transport Filtering
 
-`InternalTransport` is a type-level marker in `TransportsOf`, not a normal runnable `Transport`.
+`InternalTransport` is a type-level marker in `TransportsOf`. It is **not** a `Transport` instance — it has no `buildHandler`, `assembleTransport`, or `runTransport` methods.
 
-The service runtime handles it through a separate dispatch path:
+The separation between public and internal commands is enforced at compile time through type families in `Service.ServiceDefinition.Core`:
 
-1. `Service.ServiceDefinition.Core` builds transport-independent dispatch handlers only for commands marked with `InternalTransport`.
-2. `WebTransport`-only commands do not contribute to the internal dispatch map.
-3. `InternalTransport` contributes no public endpoint handlers, no endpoint schemas, and no runnable server.
-4. `Application.runWithResolved` merges the dispatch map directly instead of flattening public transport handlers for integration dispatch.
+1. **`PublicTransports`** — A type family that filters `InternalTransport` out of a command's transport list. Only the remaining public transports are passed to `BuildHandlersForTransports`, so internal commands never produce public endpoint handlers or schemas.
+2. **`IncludesInternalTransport`** — A type family that returns `'True` if `InternalTransport` appears in the transport list. At runtime, `includeInDispatchMap` uses this to decide whether a command contributes a transport-independent dispatch handler.
+3. **`AssertNoMixedTransports`** — A type family that produces a compile-time error if a command declares both `InternalTransport` and any public transport. This enforces the rule that a single command serves one intent.
 
-This keeps the public transport layer and the integration dispatch layer distinct. Jess still marks a command as internal in one obvious place, but she never registers or runs an internal transport adapter.
+The runtime data flow uses a 3-tuple instead of the previous 2-tuple:
+
+1. `Service.ServiceDefinition.Core.buildEndpointsByTransport` returns `(public handlers by transport, public schemas by transport, dispatch handlers)`.
+2. `Service.Application.runWithResolved` merges the three maps independently across all services, detecting duplicate command names at merge time.
+3. The dispatch handler map flows directly to `Dispatcher.dispatchCommand` and inbound integration workers, bypassing the public transport layer entirely.
+
+This keeps the public transport layer and the integration dispatch layer distinct. Jess marks a command as internal in one obvious place, and the compiler prevents accidental exposure.
 
 ### 4. Type Definition
 
@@ -114,6 +119,8 @@ This keeps the mental model simple:
 
 ### 6. Public API and Runtime Hooks
 
+The transport marker module is minimal:
+
 ```haskell
 module Service.Transport.Internal (
   InternalTransport (..),
@@ -124,28 +131,41 @@ data InternalTransport = InternalTransport
 type instance NameOf InternalTransport = "InternalTransport"
 ```
 
+The type families that implement the compile-time filtering live in `Service.ServiceDefinition.Core`:
+
 ```haskell
--- Runtime hooks are owned by service runtime modules, not Service.Transport.Internal.
+-- Filters InternalTransport out of the transport list, leaving only public transports.
+type family PublicTransports (transports :: [Type]) :: [Type]
 
-dispatchCommand ::
-  Map Text EndpointHandler ->
-  Integration.CommandPayload ->
-  Task Text Unit
+-- Returns 'True if InternalTransport is in the transport list.
+type family IncludesInternalTransport (transports :: [Type]) :: Bool
 
+-- Produces a compile-time error if InternalTransport is mixed with public transports.
+type family AssertNoMixedTransports (transports :: [Type]) :: Constraint
+```
+
+The runtime entry points are owned by service runtime modules:
+
+```haskell
+-- Service.ServiceDefinition.Core
 buildEndpointsByTransport ::
   EventStore Json.Value ->
   Record.ContextRecord Record.I cmds ->
   Map Text TransportValue ->
   Task Text (Map Text (Map Text EndpointHandler), Map Text (Map Text EndpointSchema), Map Text EndpointHandler)
-```
 
-`dispatchCommand` is implemented in `Service.Integration.Dispatcher` and `buildEndpointsByTransport` is implemented in `Service.ServiceDefinition.Core`.
+-- Service.Integration.Dispatcher
+dispatchCommand ::
+  Map Text EndpointHandler ->
+  Integration.CommandPayload ->
+  Task Text Unit
+```
 
 Implementation consequences of this API:
 
-- `Service.ServiceDefinition.Core` must filter public transports away from `InternalTransport` while still building dispatch handlers for commands that use it.
-- `Service.Application` must merge dispatch handlers separately from public transport endpoint maps.
-- `Service.Application.Transports` remains responsible only for runnable, user-facing transports.
+- `Service.ServiceDefinition.Core` uses `PublicTransports` to filter the transport list before building public handlers, and `IncludesInternalTransport` to decide whether a command contributes a dispatch handler.
+- `Service.Application` merges the 3-tuple across all services, detecting duplicate command names at merge time as `Task` errors.
+- `Service.Application.Transports` remains responsible only for runnable, user-facing transports and never sees `InternalTransport`.
 - `Service.Transport.Web` only sees command handlers registered under actual public transports such as `WebTransport`.
 
 ### 7. Authentication Model
@@ -170,9 +190,9 @@ Jess should not write an `InternalTransport` command whose purpose depends on us
 
 ### Negative
 
-- The service runtime gains a second command-routing path: public transport handlers and internal dispatch handlers are no longer the same map.
-- Jess must model public and internal entry points as separate commands if both are needed.
-- Several service runtime modules must coordinate the distinction between runnable transports and internal-only handlers.
+- The service runtime returns a 3-tuple from endpoint building, adding a separate dispatch handler map alongside the public transport maps.
+- Jess must model public and internal entry points as separate commands if both are needed. Attempting to mix `InternalTransport` with public transports in a single `TransportsOf` declaration produces a compile-time error.
+- `Service.ServiceDefinition.Core` gains several type families for compile-time transport filtering.
 
 ### Risks
 
@@ -197,5 +217,6 @@ Jess should not write an `InternalTransport` command whose purpose depends on us
 - [core/service/Service/Application.hs](../../core/service/Service/Application.hs)
 - [core/service/Service/Application/Transports.hs](../../core/service/Service/Application/Transports.hs)
 - [core/service/Service/Integration/Dispatcher.hs](../../core/service/Service/Integration/Dispatcher.hs)
+- [core/service/Service/Transport/Internal.hs](../../core/service/Service/Transport/Internal.hs)
 - [core/service/Service/Transport/Cli.hs](../../core/service/Service/Transport/Cli.hs)
 - [testbed/src/Testbed/Stock/Commands/ReserveStock.hs](../../testbed/src/Testbed/Stock/Commands/ReserveStock.hs)
