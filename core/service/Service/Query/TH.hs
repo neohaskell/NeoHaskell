@@ -113,18 +113,32 @@ Available helpers from Service.Query.Auth:
   - publicView             -- Anyone can view (use only after canAccess check)
 |]
 
+  -- Optionally look up maxResults :: Int for per-query pagination cap.
+  -- If defined, wire it to maxResultsImpl. If not, the default applies.
+  maybeMaxResultsName <- TH.lookupValueName "maxResults"
+
+  let maxResultsBinding = case maybeMaxResultsName of
+        Just maxResultsName ->
+          [ TH.FunD
+              (TH.mkName "maxResultsImpl")
+              [TH.Clause [] (TH.NormalB (TH.VarE maxResultsName)) []]
+          ]
+        Nothing -> []
+
   let queryInstance =
         TH.InstanceD
           Nothing
           []
           (TH.ConT queryClassName `TH.AppT` TH.ConT queryTypeName)
-          [ TH.FunD
-              (TH.mkName "canAccessImpl")
-              [TH.Clause [] (TH.NormalB (TH.VarE canAccessName)) []],
-            TH.FunD
-              (TH.mkName "canViewImpl")
-              [TH.Clause [] (TH.NormalB (TH.VarE canViewName)) []]
-          ]
+          ( [ TH.FunD
+                (TH.mkName "canAccessImpl")
+                [TH.Clause [] (TH.NormalB (TH.VarE canAccessName)) []],
+              TH.FunD
+                (TH.mkName "canViewImpl")
+                [TH.Clause [] (TH.NormalB (TH.VarE canViewName)) []]
+            ]
+              ++ maxResultsBinding
+          )
 
   -- Generate KnownHash instance
   knownHashInstances <- deriveKnownHash queryTypeStr

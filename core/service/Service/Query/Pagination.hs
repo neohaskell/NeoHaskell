@@ -17,6 +17,7 @@ module Service.Query.Pagination (
   -- * Constants
   defaultLimit,
   absoluteMaxLimit,
+  absoluteMaxOffset,
 
   -- * Parsing
   parsePageRequest,
@@ -80,11 +81,17 @@ absoluteMaxLimit :: Int
 absoluteMaxLimit = 1000
 
 
+-- | Absolute maximum offset — hard cap (10,000,000).
+-- Prevents arithmetic overflow in @offset + effectiveLimit@ calculations.
+absoluteMaxOffset :: Int
+absoluteMaxOffset = 10_000_000
+
+
 -- | Parse pagination parameters from raw query string values.
 --
 -- Invalid or missing values fall back to defaults.
 -- Limit is clamped to @[1, absoluteMaxLimit]@.
--- Offset is clamped to @[0, 10_000_000]@.
+-- Offset is clamped to @[0, absoluteMaxOffset]@.
 --
 -- @
 -- parsePageRequest (Just "25") (Just "50")
@@ -108,5 +115,5 @@ parsePageRequest maybeLimitText maybeOffsetText = do
           |> Maybe.withDefault 0
   QueryPageRequest
     { limit = parsedLimit |> max 1 |> min absoluteMaxLimit
-    , offset = parsedOffset |> max 0 |> min 10_000_000
+    , offset = parsedOffset |> max 0 |> min absoluteMaxOffset
     }

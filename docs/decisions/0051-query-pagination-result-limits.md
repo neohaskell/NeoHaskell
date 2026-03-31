@@ -42,7 +42,7 @@ This creates three problems:
 
 1. **Opt-in for Jess, safe by default**: Pagination works out of the box with sensible defaults. Jess doesn't need to think about it unless she wants custom limits.
 
-2. **Backward compatible**: Existing queries continue to work. Clients that don't send pagination params get results up to the default limit. No breaking changes.
+2. **Graceful degradation**: Clients that don't send pagination parameters receive results up to the default limit. However, the response format change from bare array to `QueryPageResponse` object is a breaking change for existing API consumers (acceptable pre-1.0).
 
 3. **Per-query configurability**: Each query type can declare its own maximum result limit. A lightweight `CartSummary` might allow 1000 results; a heavy `AuditLog` might cap at 50.
 
@@ -203,7 +203,7 @@ The endpoint response changes from a bare JSON array to a `QueryPageResponse` ob
 
 This is a **breaking change** for API consumers. However, NeoHaskell is pre-1.0 and the query API is explicitly unstable. The `QueryPageResponse` wrapper provides essential metadata that clients need for any production use.
 
-An `X-Total-Count` response header is also set for client convenience, following common REST API conventions.
+The `total` field in the response body provides the count. An `X-Total-Count` response header may be added in a future iteration for REST convention compliance.
 
 ### 7. Module Placement
 

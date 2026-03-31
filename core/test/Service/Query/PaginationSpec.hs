@@ -7,6 +7,7 @@ import Service.Query.Pagination
   ( QueryPageRequest (..),
     QueryPageResponse (..),
     absoluteMaxLimit,
+    absoluteMaxOffset,
     defaultLimit,
     parsePageRequest,
   )
@@ -83,9 +84,9 @@ spec = do
           let result = parsePageRequest Nothing (Just "0")
           result.offset |> shouldBe 0
 
-        it "clamps very large offset to 10_000_000" \_ -> do
+        it "clamps very large offset to absoluteMaxOffset" \_ -> do
           let result = parsePageRequest Nothing (Just "99999999")
-          result.offset |> shouldBe 10000000
+          result.offset |> shouldBe absoluteMaxOffset
 
         it "falls back to default on non-numeric offset" \_ -> do
           let result = parsePageRequest Nothing (Just "xyz")
