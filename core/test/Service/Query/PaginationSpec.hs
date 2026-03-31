@@ -2,6 +2,8 @@ module Service.Query.PaginationSpec where
 
 import Array qualified
 import Core
+import Data.Aeson qualified as Aeson
+import Data.Aeson.KeyMap qualified as KeyMap
 import Json qualified
 import Service.Query.Pagination
   ( QueryPageRequest (..),
@@ -106,7 +108,12 @@ spec = do
         let encoded = Json.encodeText response
         let decoded = Json.decodeText @Json.Value encoded
         case decoded of
-          Ok _ -> pass
+          Ok (Aeson.Object obj) -> do
+            KeyMap.member "items" obj |> shouldBe True
+            KeyMap.member "total" obj |> shouldBe True
+            KeyMap.member "hasMore" obj |> shouldBe True
+            KeyMap.member "effectiveLimit" obj |> shouldBe True
+          Ok _ -> fail "Expected JSON object"
           Err _err -> fail "Failed to encode/decode QueryPageResponse"
 
       it "round-trips through JSON encode/decode" \_ -> do
@@ -136,4 +143,5 @@ spec = do
             Array.length roundTripped.items |> shouldBe 0
             roundTripped.total |> shouldBe 0
             roundTripped.hasMore |> shouldBe False
+            roundTripped.effectiveLimit |> shouldBe 100
           Err _err -> fail "Failed to round-trip empty QueryPageResponse"

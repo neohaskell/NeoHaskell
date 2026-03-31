@@ -104,7 +104,7 @@ If a client sends `limit=5000`, the server caps to the query's `maxResults` (or 
 
 | Candidate | Verdict | Rationale |
 |-----------|---------|-----------|
-| Add `maxResultsImpl` to `Query` typeclass | Rejected | Modifies a core typeclass, adding a method that not all queries need to customize. Also requires updating `deriveQuery` TH macro. |
+| Add `maxResultsImpl` to `Query` typeclass with no default (require every instance to implement it) | Rejected | Forces every query to specify a limit even when the default is fine. Breaks all existing `deriveQuery` call sites. |
 | Separate `PaginatedQuery` typeclass | Rejected | Over-engineering — adds a new typeclass for a single default method. |
 | Default function with per-query override via `maxResults` | **Chosen** | Add a `maxResultsImpl` method to the `Query` typeclass with a default implementation returning `absoluteMaxLimit`. Queries that need tighter limits override it. The TH macro picks up a `maxResults` function if defined. |
 
@@ -168,17 +168,12 @@ createQueryEndpoint queryStore userClaims maybeExpr pageRequest = do
 The web transport parses `?limit=N&offset=M` from query parameters alongside the existing `?q=` NeoQL parameter:
 
 ```haskell
-let limitParam = getQueryParam "limit"
-      |> Maybe.andThen Text.toInt
-      |> Maybe.withDefault defaultLimit
-let offsetParam = getQueryParam "offset"
-      |> Maybe.andThen Text.toInt
-      |> Maybe.withDefault 0
-let pageRequest = QueryPageRequest
-      { limit = max 1 (min limitParam absoluteMaxLimit)
-      , offset = max 0 (min offsetParam 10_000_000)
-      }
+let pageRequest = Pagination.parsePageRequest
+      (getQueryParam "limit")
+      (getQueryParam "offset")
 ```
+
+The `parsePageRequest` function handles parsing, defaults, and clamping (limit to `[1, absoluteMaxLimit]`, offset to `[0, absoluteMaxOffset]`).
 
 Invalid values (negative, non-numeric) fall back to defaults. This follows the established pattern of graceful degradation used by the NeoQL `?q=` parameter.
 
