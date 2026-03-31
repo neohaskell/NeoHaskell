@@ -187,11 +187,13 @@ Invalid values (negative, non-numeric) fall back to defaults. This follows the e
 The endpoint response changes from a bare JSON array to a `QueryPageResponse` object:
 
 **Before:**
+
 ```json
 [{"cartSummaryId": "...", "itemCount": 3}, ...]
 ```
 
 **After:**
+
 ```json
 {
   "items": [{"cartSummaryId": "...", "itemCount": 3}, ...],

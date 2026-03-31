@@ -24,6 +24,9 @@ spec = do
       it "absoluteMaxLimit is 1000" \_ -> do
         absoluteMaxLimit |> shouldBe 1000
 
+      it "absoluteMaxOffset is 10_000_000" \_ -> do
+        absoluteMaxOffset |> shouldBe 10_000_000
+
     describe "parsePageRequest" do
       describe "happy paths" do
         it "parses valid limit and offset" \_ -> do
