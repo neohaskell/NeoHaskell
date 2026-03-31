@@ -19,6 +19,7 @@ import Basics
 import Maybe (Maybe)
 import Service.Entity.Core (Entity)
 import Service.Query.Auth (QueryAuthError)
+import Service.Query.Pagination (absoluteMaxLimit)
 import Uuid (Uuid)
 
 
@@ -85,6 +86,13 @@ class Query query where
   -- Returns 'Nothing' if viewing is allowed, or 'Just error' to deny.
   -- This is called AFTER data is fetched, allowing ownership checks.
   canViewImpl :: Maybe UserClaims -> query -> Maybe QueryAuthError
+
+  -- | Maximum results this query type will return in a single page.
+  --
+  -- Default: 'absoluteMaxLimit' (1000). To override, define
+  -- @maxResults :: Int@ in your query module before calling @deriveQuery@.
+  maxResultsImpl :: Int
+  maxResultsImpl = absoluteMaxLimit
 
 
 -- | Defines how an entity contributes to a query (read model).

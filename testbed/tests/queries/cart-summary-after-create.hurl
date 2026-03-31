@@ -25,11 +25,11 @@ Content-Type: application/json
 
 [Asserts]
 # Our cart must exist in the results
-jsonpath "$[?(@.cartSummaryId == '{{new_cart_id}}')]" count == 1
+jsonpath "$.items[?(@.cartSummaryId == '{{new_cart_id}}')]" count == 1
 
 # Verify the cart has correct initial state:
 # - itemCount should be 0 (newly created, no items)
 # - isEmpty should be true
-jsonpath "$[?(@.cartSummaryId == '{{new_cart_id}}')].itemCount" nth 0 == 0
-jsonpath "$[?(@.cartSummaryId == '{{new_cart_id}}')].isEmpty" nth 0 == true
+jsonpath "$.items[?(@.cartSummaryId == '{{new_cart_id}}')].itemCount" nth 0 == 0
+jsonpath "$.items[?(@.cartSummaryId == '{{new_cart_id}}')].isEmpty" nth 0 == true
 

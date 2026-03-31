@@ -53,6 +53,7 @@ import Service.FileUpload.Core qualified as FileUpload
 import Service.FileUpload.Web (FileUploadRoutes (..))
 import Service.CommandExecutor.TH (deriveKnownHash)
 import Service.Query.Auth (QueryAuthError (..), QueryEndpointError (..))
+import Service.Query.Pagination qualified as Pagination
 import Service.Response (CommandResponse)
 import Service.Response qualified as Response
 import Service.Transport (EndpointHandler, Endpoints (..), Transport (..))
@@ -616,11 +617,15 @@ instance Transport WebTransport where
                 let errBody = [fmt|{"error":"parse_error","message":#{safeMsg}}|]
                 badRequest errBody respond
               Result.Ok maybeExpr -> do
+                -- Parse pagination parameters
+                let pageRequest = Pagination.parsePageRequest
+                      (getQueryParam "limit")
+                      (getQueryParam "offset")
                 -- Helper to process query with given user claims
                 let processQueryWithClaims userClaims = do
                       -- Execute the query handler with error recovery
                       -- Handler performs internal canAccess/canView checks
-                      result <- handler userClaims maybeExpr |> Task.asResult
+                      result <- handler userClaims maybeExpr pageRequest |> Task.asResult
                       case result of
                         Result.Ok responseText -> okJson responseText
                         Result.Err endpointError ->

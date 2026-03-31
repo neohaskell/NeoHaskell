@@ -10,6 +10,7 @@ import Maybe (Maybe (..))
 import Service.Query.Auth (QueryEndpointError)
 import Service.Query.Auth qualified as Auth
 import Service.Query.Core (Query (..))
+import Service.Query.Pagination (QueryPageRequest (..), QueryPageResponse (..))
 import Service.QueryObjectStore.Core (Error (..), QueryObjectStore (..))
 import Task (Task)
 import Task qualified
@@ -20,20 +21,21 @@ import NeoQL qualified
 
 -- | Create an endpoint handler for a query type.
 --
--- Returns all instances of the query as a JSON array.
--- Used for the HTTP endpoint: GET /queries/{query-name}
+-- Returns a paginated response with items, total count, hasMore flag,
+-- and the effective limit that was applied.
 --
 -- This handler performs two-phase authorization:
 -- 1. canAccessImpl (pre-fetch): "Can this user access this query type at all?"
 -- 2. canViewImpl (post-fetch): "Can this user view this specific instance?"
 --
--- Returns typed QueryEndpointError for proper HTTP status mapping.
+-- Pagination is applied AFTER authorization and NeoQL filtering.
+-- The @total@ count reflects only authorized, filtered results.
 --
 -- Example:
 --
 -- @
 -- handler <- Endpoint.createQueryEndpoint @UserOrders queryStore
--- -- Returns: "[{\"userId\":\"...\",\"orders\":[...]}, ...]"
+-- -- Returns: "{\"items\":[...],\"total\":142,\"hasMore\":true,\"effectiveLimit\":100}"
 -- @
 createQueryEndpoint ::
   forall query.
@@ -43,8 +45,9 @@ createQueryEndpoint ::
   QueryObjectStore query ->
   Maybe UserClaims ->
   Maybe Expr ->
+  QueryPageRequest ->
   Task QueryEndpointError Text
-createQueryEndpoint queryStore userClaims maybeExpr = do
+createQueryEndpoint queryStore userClaims maybeExpr pageRequest = do
   -- Phase 1: Pre-fetch authorization
   case canAccessImpl @query userClaims of
     Just authErr -> Task.throw (Auth.AuthorizationError authErr)
@@ -66,7 +69,23 @@ createQueryEndpoint queryStore userClaims maybeExpr = do
                 authorizedQueries
                   |> Array.takeIf (\query -> NeoQL.execute expr (Json.toJSON query))
 
-      let responseText = filteredQueries |> Json.encodeText
+      -- SECURITY: total computed AFTER canViewImpl and NeoQL filtering.
+      -- Exposing pre-auth count would leak record existence to unauthorized users.
+      let total = Array.length filteredQueries
+      let effectiveLimit = min pageRequest.limit (maxResultsImpl @query)
+      let pagedItems =
+            filteredQueries
+              |> Array.drop pageRequest.offset
+              |> Array.take effectiveLimit
+      let hasMore = pageRequest.offset + effectiveLimit < total
+      let response = QueryPageResponse
+            { items = pagedItems
+            , total = total
+            , hasMore = hasMore
+            , effectiveLimit = effectiveLimit
+            }
+
+      let responseText = response |> Json.encodeText
 
       Task.yield responseText
 

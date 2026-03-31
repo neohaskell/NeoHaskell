@@ -7,5 +7,8 @@ HTTP/1.1 200
 Content-Type: application/json
 
 [Asserts]
-# Response must be a JSON array (even if empty)
-jsonpath "$" isCollection
+# Response must be a paginated object with items array
+jsonpath "$.items" isCollection
+jsonpath "$.total" isInteger
+jsonpath "$.hasMore" isBoolean
+jsonpath "$.effectiveLimit" isInteger

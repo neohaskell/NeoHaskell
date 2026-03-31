@@ -16,6 +16,7 @@ import Schema (Schema)
 import Service.Auth (RequestContext, UserClaims)
 import Service.Command.Core (Command, NameOf)
 import Service.Query.Auth (QueryEndpointError)
+import Service.Query.Pagination (QueryPageRequest)
 import Service.Response (CommandResponse)
 import Task (Task)
 import Text (Text)
@@ -44,7 +45,7 @@ type EndpointHandler = RequestContext -> Bytes -> ((CommandResponse, Bytes) -> T
 -- - StorageError -> 500
 --
 -- Used for GET /queries/{query-name} endpoints.
-type QueryEndpointHandler = Maybe UserClaims -> Maybe Expr -> Task QueryEndpointError Text
+type QueryEndpointHandler = Maybe UserClaims -> Maybe Expr -> QueryPageRequest -> Task QueryEndpointError Text
 
 
 -- | Schema information for an endpoint (command or query).
