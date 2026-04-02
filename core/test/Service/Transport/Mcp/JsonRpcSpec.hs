@@ -85,10 +85,10 @@ spec = do
           Err _ -> pass
 
       it "handles unicode in method name" \_ -> do
-        let input = "{\"jsonrpc\":\"2.0\",\"method\":\"tst/\xC3\xA9\",\"id\":1}" |> Text.toBytes
+        let input = "{\"jsonrpc\":\"2.0\",\"method\":\"tst/\x00E9\",\"id\":1}" |> Text.toBytes
         case parseRequest input of
           Ok req -> do
-            req.method |> shouldSatisfy (Text.contains "\xC3\xA9")
+            req.method |> shouldSatisfy (Text.contains "\x00E9")
           Err _ -> fail "Expected Ok for unicode method"
 
     -- ====================================================================

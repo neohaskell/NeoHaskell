@@ -64,10 +64,10 @@ data JsonRpcError = JsonRpcError
 parseRequest :: Bytes -> Result JsonRpcResponse JsonRpcRequest
 parseRequest bytes = do
   let rawBytes = Bytes.unwrap bytes
-  case Aeson.decodeStrict' rawBytes of
+  case Aeson.decodeStrict' @Json.Value rawBytes of
     Nothing ->
       Err (errorResponse Nothing (parseError "Malformed JSON"))
-    Just obj ->
+    Just (Aeson.Object obj) ->
       case AesonKeyMap.lookup (AesonKey.fromText "jsonrpc") obj of
         Nothing ->
           Err (errorResponse Nothing (invalidRequest "Missing jsonrpc field"))
@@ -90,6 +90,8 @@ parseRequest bytes = do
               Err (errorResponse Nothing (invalidRequest "Unsupported jsonrpc version"))
         _ ->
           Err (errorResponse Nothing (invalidRequest "Invalid jsonrpc field"))
+    Just _ ->
+      Err (errorResponse Nothing (invalidRequest "Request must be a JSON object"))
 {-# INLINE parseRequest #-}
 
 
@@ -173,10 +175,17 @@ encodeResponse response = do
         , (AesonKey.fromText "id", case response.id of { Just v -> v; Nothing -> Aeson.Null })
         , case response.error of
             Just err ->
-              (AesonKey.fromText "error", Json.object
-                [ "code" Json..= err.code
-                , "message" Json..= err.message
-                ])
+              let errObj = case err.errorData of
+                    Just d -> Json.object
+                      [ "code" Json..= err.code
+                      , "message" Json..= err.message
+                      , "data" Json..= d
+                      ]
+                    Nothing -> Json.object
+                      [ "code" Json..= err.code
+                      , "message" Json..= err.message
+                      ]
+              in (AesonKey.fromText "error", errObj)
             Nothing ->
               (AesonKey.fromText "result", case response.result of { Just v -> v; Nothing -> Aeson.Null })
         ]

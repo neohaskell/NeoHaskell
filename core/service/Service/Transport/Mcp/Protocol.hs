@@ -44,7 +44,10 @@ resourceUriPrefix = "neohaskell://queries/"
 
 -- | Mutable server state tracking initialization and cached responses.
 data ServerState = ServerState
-  { initialized :: ConcurrentVar Bool
+  { initReceived :: ConcurrentVar Bool
+    -- ^ Whether 'initialize' request was received
+  , initialized :: ConcurrentVar Bool
+    -- ^ Whether 'notifications/initialized' was received (full handshake complete)
   , serverName :: Text
   , serverVersion :: Text
   , commandEndpoints :: Map Text EndpointHandler
@@ -64,11 +67,13 @@ newServerState ::
   Map Text EndpointSchema ->
   Task Text ServerState
 newServerState serverName serverVersion commandEndpoints queryEndpoints commandSchemas querySchemas = do
+  initReceivedVar <- ConcurrentVar.containing False
   initializedVar <- ConcurrentVar.containing False
   let cachedTools = buildToolsList commandSchemas
   let cachedResources = buildResourcesList querySchemas
   Task.yield ServerState
-    { initialized = initializedVar
+    { initReceived = initReceivedVar
+    , initialized = initializedVar
     , serverName = serverName
     , serverVersion = serverVersion
     , commandEndpoints = commandEndpoints
@@ -87,6 +92,7 @@ handleRequest state request = do
   isInitialized <- ConcurrentVar.peek state.initialized
   case request.method of
     "initialize" -> do
+      _ <- ConcurrentVar.swap True state.initReceived
       let result = Json.object
             [ "protocolVersion" Json..= mcpProtocolVersion
             , "capabilities" Json..= Json.object
@@ -103,8 +109,13 @@ handleRequest state request = do
       Task.yield (Just (JsonRpc.successResponse requestId result))
 
     "notifications/initialized" -> do
-      _ <- ConcurrentVar.swap True state.initialized
-      Task.yield Nothing
+      wasInitReceived <- ConcurrentVar.peek state.initReceived
+      if wasInitReceived
+        then do
+          _ <- ConcurrentVar.swap True state.initialized
+          Task.yield Nothing
+        else
+          Task.yield Nothing
 
     _ -> do
       if isInitialized
@@ -162,16 +173,19 @@ handleToolsCall state request = do
             Nothing ->
               Task.yield (Just (JsonRpc.errorResponse requestId (JsonRpc.invalidParams [fmt|Unknown tool: #{toolName}|])))
             Just handler -> do
-              requestContext <- Auth.anonymousContext
-              let argBytes = Json.encodeText arguments |> Text.toBytes
-              ConcurrentVar.new
-                |> Task.andThen (\resultVar -> do
-                  handler requestContext argBytes (\(commandResponse, _responseBytes) -> do
-                    let callToolResult = Response.toCallToolResult commandResponse
-                    ConcurrentVar.set callToolResult resultVar
-                    )
-                  callToolResultVal <- ConcurrentVar.get resultVar
-                  Task.yield (Just (JsonRpc.successResponse requestId callToolResultVal))
+              let callTask = do
+                    requestContext <- Auth.anonymousContext
+                    let argBytes = Json.encodeText arguments |> Text.toBytes
+                    resultVar <- ConcurrentVar.new
+                    handler requestContext argBytes (\(commandResponse, _responseBytes) -> do
+                      let callToolResult = Response.toCallToolResult commandResponse
+                      ConcurrentVar.set callToolResult resultVar
+                      )
+                    callToolResultVal <- ConcurrentVar.get resultVar
+                    Task.yield (Just (JsonRpc.successResponse requestId callToolResultVal))
+              callTask
+                |> Task.recover (\_ ->
+                  Task.yield (Just (JsonRpc.errorResponse requestId JsonRpc.internalError))
                   )
 
 
@@ -205,16 +219,24 @@ handleResourcesRead state request = do
           case GhcText.stripPrefix resourceUriPrefix uri of
             Nothing ->
               Task.yield (Just (JsonRpc.errorResponse requestId (JsonRpc.invalidParams [fmt|Invalid resource URI: #{uri}|])))
-            Just queryName -> do
+            Just queryNameWithParams -> do
+              -- Strip query parameters (e.g., "cart-summary?id=..." -> "cart-summary")
+              let queryName = case GhcText.breakOn "?" queryNameWithParams of
+                    (name, _) -> name
               case Map.get queryName state.queryEndpoints of
                 Nothing ->
                   Task.yield (Just (JsonRpc.errorResponse requestId (JsonRpc.invalidParams [fmt|Unknown resource: #{uri}|])))
                 Just queryHandler -> do
-                  let defaultPageRequest = QueryPageRequest { limit = 100, offset = 0 }
-                  queryResult <- queryHandler Nothing Nothing defaultPageRequest
-                    |> Task.mapError (\_ -> "Query execution failed" :: Text)
-                  let resourceContent = Response.toResourceContent uri queryResult
-                  Task.yield (Just (JsonRpc.successResponse requestId resourceContent))
+                  let queryTask = do
+                        let defaultPageRequest = QueryPageRequest { limit = 100, offset = 0 }
+                        queryResult <- queryHandler Nothing Nothing defaultPageRequest
+                          |> Task.mapError (\_ -> "Query execution failed" :: Text)
+                        let resourceContent = Response.toResourceContent uri queryResult
+                        Task.yield (Just (JsonRpc.successResponse requestId resourceContent))
+                  queryTask
+                    |> Task.recover (\_ ->
+                      Task.yield (Just (JsonRpc.errorResponse requestId JsonRpc.internalError))
+                      )
 
 
 -- | Extract URI from resources/read params.

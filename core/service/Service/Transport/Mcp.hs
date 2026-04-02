@@ -2,7 +2,10 @@ module Service.Transport.Mcp (
   McpTransport (..),
 ) where
 
+import Bytes qualified
 import Core
+import Data.ByteString qualified as GhcByteString
+import Data.ByteString.Char8 qualified as GhcByteStringChar8
 import GHC.TypeLits qualified
 import Json qualified
 import Record qualified
@@ -11,6 +14,9 @@ import Service.CommandExecutor.TH (deriveKnownHash)
 import Service.Response (CommandResponse)
 import Service.Response qualified as Response
 import Service.Transport (EndpointHandler, Endpoints (..), Transport (..))
+import Service.Transport.Mcp.JsonRpc qualified as JsonRpc
+import Service.Transport.Mcp.Protocol qualified as Protocol
+import System.IO qualified as GhcIO
 import Task qualified
 import Text qualified
 
@@ -66,8 +72,39 @@ instance Transport McpTransport where
   assembleTransport ::
     Endpoints McpTransport ->
     Task Text Unit
-  assembleTransport _endpoints = do
-    Task.yield unit
+  assembleTransport endpoints = do
+    let mcpTransport = endpoints.transport
+    serverState <- Protocol.newServerState
+      mcpTransport.serverName
+      mcpTransport.serverVersion
+      endpoints.commandEndpoints
+      endpoints.queryEndpoints
+      endpoints.commandSchemas
+      endpoints.querySchemas
+    -- STDIO event loop: read JSON-RPC from stdin, dispatch, write to stdout
+    let loop = do
+          isEof <- Task.fromIO GhcIO.isEOF
+          if isEof
+            then Task.yield unit
+            else do
+              line <- Task.fromIO (GhcByteStringChar8.hGetLine GhcIO.stdin)
+              let request = JsonRpc.parseRequest (Bytes.fromLegacy line)
+              case request of
+                Err errResp -> do
+                  let encoded = JsonRpc.encodeResponse errResp
+                  Task.fromIO (GhcByteString.hPut GhcIO.stdout (Bytes.unwrap encoded))
+                  Task.fromIO (GhcIO.hFlush GhcIO.stdout)
+                  loop
+                Ok req -> do
+                  maybeResp <- Protocol.handleRequest serverState req
+                  case maybeResp of
+                    Nothing -> loop
+                    Just resp -> do
+                      let encoded = JsonRpc.encodeResponse resp
+                      Task.fromIO (GhcByteString.hPut GhcIO.stdout (Bytes.unwrap encoded))
+                      Task.fromIO (GhcIO.hFlush GhcIO.stdout)
+                      loop
+    loop
 
 
   runTransport :: McpTransport -> Task Text Unit -> Task Text Unit
