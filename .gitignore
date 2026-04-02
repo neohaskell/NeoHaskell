@@ -61,6 +61,7 @@ IMPLEMENTATION_PLAN.md
 feature-progress.md
 .sisyphus/
 .pipeline/
+docs/architecture/
 
 
 # Node.js / pnpm (website)
