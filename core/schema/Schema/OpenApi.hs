@@ -280,19 +280,41 @@ makeCommandPath name schema = do
 
 -- | Create OpenAPI path item for a query endpoint.
 --
--- Queries use GET /queries/{name} with no request body.
+-- Queries use GET /queries/{name} with pagination and NeoQL filtering.
+-- The response is a paginated envelope matching 'QueryPageResponse':
+-- @{ items: [...], total: Int, hasMore: Bool, effectiveLimit: Int }@
 makeQueryPath :: Text -> EndpointSchema -> (Text, OpenApi.PathItem)
 makeQueryPath name schema = do
   let kebabName = name |> Text.toKebabCase
   let path = [fmt|/queries/#{kebabName}|]
-  
-  let arraySchema = toOpenApiSchema (SArray schema.responseSchema)
+
+  -- Build the paginated envelope schema matching QueryPageResponse
+  let itemsArraySchema = toOpenApiSchema (SArray schema.responseSchema)
+  let totalSchema = GhcMonoid.mempty
+        |> Lens.set OpenApiLens.type_ (Just OpenApi.OpenApiInteger)
+        |> Lens.set OpenApiLens.description (Just "Total matching items after authorization filtering")
+  let hasMoreSchema = GhcMonoid.mempty
+        |> Lens.set OpenApiLens.type_ (Just OpenApi.OpenApiBoolean)
+        |> Lens.set OpenApiLens.description (Just "Whether more items exist beyond this page")
+  let effectiveLimitSchema = GhcMonoid.mempty
+        |> Lens.set OpenApiLens.type_ (Just OpenApi.OpenApiInteger)
+        |> Lens.set OpenApiLens.description (Just "Actual page size limit applied (may be lower than requested)")
+  let envelopeSchema = GhcMonoid.mempty
+        |> Lens.set OpenApiLens.type_ (Just OpenApi.OpenApiObject)
+        |> Lens.set OpenApiLens.properties (InsOrdHashMap.fromList
+              [ ("items", OpenApi.Inline itemsArraySchema)
+              , ("total", OpenApi.Inline totalSchema)
+              , ("hasMore", OpenApi.Inline hasMoreSchema)
+              , ("effectiveLimit", OpenApi.Inline effectiveLimitSchema)
+              ])
+        |> Lens.set OpenApiLens.required ["items", "total", "hasMore", "effectiveLimit"]
+
   let responseContent = InsOrdHashMap.fromList
         [ ("application/json", GhcMonoid.mempty
-            |> Lens.set OpenApiLens.schema (Just (OpenApi.Inline arraySchema))
+            |> Lens.set OpenApiLens.schema (Just (OpenApi.Inline envelopeSchema))
           )
         ]
-  
+
   let responses = OpenApi.Responses
         { OpenApi._responsesDefault = Nothing
         , OpenApi._responsesResponses = InsOrdHashMap.fromList
@@ -311,13 +333,40 @@ makeQueryPath name schema = do
               ))
             ]
         }
-  
+
+  -- Query parameters for pagination and NeoQL filtering
+  let limitParam = GhcMonoid.mempty
+        |> Lens.set OpenApiLens.name "limit"
+        |> Lens.set OpenApiLens.in_ OpenApi.ParamQuery
+        |> Lens.set OpenApiLens.required (Just False)
+        |> Lens.set OpenApiLens.schema (Just (OpenApi.Inline (GhcMonoid.mempty
+             |> Lens.set OpenApiLens.type_ (Just OpenApi.OpenApiInteger)
+             |> Lens.set OpenApiLens.description (Just "Max items per page (default: 100, max: 1000)")
+           )))
+  let offsetParam = GhcMonoid.mempty
+        |> Lens.set OpenApiLens.name "offset"
+        |> Lens.set OpenApiLens.in_ OpenApi.ParamQuery
+        |> Lens.set OpenApiLens.required (Just False)
+        |> Lens.set OpenApiLens.schema (Just (OpenApi.Inline (GhcMonoid.mempty
+             |> Lens.set OpenApiLens.type_ (Just OpenApi.OpenApiInteger)
+             |> Lens.set OpenApiLens.description (Just "Starting position (default: 0)")
+           )))
+  let qParam = GhcMonoid.mempty
+        |> Lens.set OpenApiLens.name "q"
+        |> Lens.set OpenApiLens.in_ OpenApi.ParamQuery
+        |> Lens.set OpenApiLens.required (Just False)
+        |> Lens.set OpenApiLens.schema (Just (OpenApi.Inline (GhcMonoid.mempty
+             |> Lens.set OpenApiLens.type_ (Just OpenApi.OpenApiString)
+             |> Lens.set OpenApiLens.description (Just "NeoQL filter expression")
+           )))
+
   -- All queries use the fixed "Queries" tag
   let operation = GhcMonoid.mempty
         |> Lens.set OpenApiLens.summary (Just name)
         |> Lens.set OpenApiLens.description (Just schema.description)
         |> Lens.set OpenApiLens.deprecated (Just schema.deprecated)
         |> Lens.set OpenApiLens.tags ["Queries"]
+        |> Lens.set OpenApiLens.parameters [OpenApi.Inline limitParam, OpenApi.Inline offsetParam, OpenApi.Inline qParam]
         |> Lens.set OpenApiLens.responses responses
 
   let pathItem = GhcMonoid.mempty

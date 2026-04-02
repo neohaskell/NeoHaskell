@@ -205,7 +205,7 @@ spec = do
       let paths = openApiSpec |> Lens.view OpenApi.paths
       InsOrdHashMap.size paths |> shouldSatisfy (\n -> n > 0)
 
-    it "query endpoint response schema is array type with items" \_ -> do
+    it "query endpoint response schema is paginated object" \_ -> do
       let apiInfo = ApiInfo "Test API" "1.0.0" ""
       let commandSchemas = Map.empty
       let querySchemas = Map.fromArray (Array.fromLinkedList
@@ -214,9 +214,99 @@ spec = do
       let openApiSpec = OpenApiGen.toOpenApiSpec apiInfo commandSchemas querySchemas Map.empty Map.empty
       extractResponseSchema "/queries/get-user" OpenApi.get openApiSpec (\schema -> do
         let typeValue = schema |> Lens.view OpenApi.type_
-        typeValue |> shouldBe (Just OpenApi.OpenApiArray)
-        let items = schema |> Lens.view OpenApi.items
-        items |> shouldSatisfy (\x -> case x of { Just _ -> True; Nothing -> False })
+        typeValue |> shouldBe (Just OpenApi.OpenApiObject)
+        )
+
+    it "query endpoint response has all four required properties" \_ -> do
+      let apiInfo = ApiInfo "Test API" "1.0.0" ""
+      let querySchemas = Map.fromArray (Array.fromLinkedList
+            [ ("GetUser", makeEndpointSchema Nothing SText)
+            ])
+      let openApiSpec = OpenApiGen.toOpenApiSpec apiInfo Map.empty querySchemas Map.empty Map.empty
+      extractResponseSchema "/queries/get-user" OpenApi.get openApiSpec (\schema -> do
+        let properties = schema |> Lens.view OpenApi.properties
+        InsOrdHashMap.size properties |> shouldBe 4
+        InsOrdHashMap.member "items" properties |> shouldBe True
+        InsOrdHashMap.member "total" properties |> shouldBe True
+        InsOrdHashMap.member "hasMore" properties |> shouldBe True
+        InsOrdHashMap.member "effectiveLimit" properties |> shouldBe True
+        )
+
+    it "query endpoint response requires all four properties" \_ -> do
+      let apiInfo = ApiInfo "Test API" "1.0.0" ""
+      let querySchemas = Map.fromArray (Array.fromLinkedList
+            [ ("GetUser", makeEndpointSchema Nothing SText)
+            ])
+      let openApiSpec = OpenApiGen.toOpenApiSpec apiInfo Map.empty querySchemas Map.empty Map.empty
+      extractResponseSchema "/queries/get-user" OpenApi.get openApiSpec (\schema -> do
+        let required = schema |> Lens.view OpenApi.required
+        LinkedList.length required |> shouldBe 4
+        )
+
+    it "query items property is array of item schema" \_ -> do
+      let apiInfo = ApiInfo "Test API" "1.0.0" ""
+      let querySchemas = Map.fromArray (Array.fromLinkedList
+            [ ("GetUser", makeEndpointSchema Nothing SText)
+            ])
+      let openApiSpec = OpenApiGen.toOpenApiSpec apiInfo Map.empty querySchemas Map.empty Map.empty
+      extractResponseSchema "/queries/get-user" OpenApi.get openApiSpec (\schema -> do
+        let properties = schema |> Lens.view OpenApi.properties
+        case InsOrdHashMap.lookup "items" properties of
+          Nothing -> Test.fail "items property not found"
+          Just (OpenApi.Inline itemsSchema) -> do
+            let typeValue = itemsSchema |> Lens.view OpenApi.type_
+            typeValue |> shouldBe (Just OpenApi.OpenApiArray)
+            let items = itemsSchema |> Lens.view OpenApi.items
+            items |> shouldSatisfy (\x -> case x of { Just _ -> True; Nothing -> False })
+          Just (OpenApi.Ref _) -> Test.fail "items is a reference, expected inline"
+        )
+
+    it "query total property is integer" \_ -> do
+      let apiInfo = ApiInfo "Test API" "1.0.0" ""
+      let querySchemas = Map.fromArray (Array.fromLinkedList
+            [ ("GetUser", makeEndpointSchema Nothing SText)
+            ])
+      let openApiSpec = OpenApiGen.toOpenApiSpec apiInfo Map.empty querySchemas Map.empty Map.empty
+      extractResponseSchema "/queries/get-user" OpenApi.get openApiSpec (\schema -> do
+        let properties = schema |> Lens.view OpenApi.properties
+        case InsOrdHashMap.lookup "total" properties of
+          Nothing -> Test.fail "total property not found"
+          Just (OpenApi.Inline totalSchema) -> do
+            let typeValue = totalSchema |> Lens.view OpenApi.type_
+            typeValue |> shouldBe (Just OpenApi.OpenApiInteger)
+          Just (OpenApi.Ref _) -> Test.fail "total is a reference, expected inline"
+        )
+
+    it "query hasMore property is boolean" \_ -> do
+      let apiInfo = ApiInfo "Test API" "1.0.0" ""
+      let querySchemas = Map.fromArray (Array.fromLinkedList
+            [ ("GetUser", makeEndpointSchema Nothing SText)
+            ])
+      let openApiSpec = OpenApiGen.toOpenApiSpec apiInfo Map.empty querySchemas Map.empty Map.empty
+      extractResponseSchema "/queries/get-user" OpenApi.get openApiSpec (\schema -> do
+        let properties = schema |> Lens.view OpenApi.properties
+        case InsOrdHashMap.lookup "hasMore" properties of
+          Nothing -> Test.fail "hasMore property not found"
+          Just (OpenApi.Inline hasMoreSchema) -> do
+            let typeValue = hasMoreSchema |> Lens.view OpenApi.type_
+            typeValue |> shouldBe (Just OpenApi.OpenApiBoolean)
+          Just (OpenApi.Ref _) -> Test.fail "hasMore is a reference, expected inline"
+        )
+
+    it "query effectiveLimit property is integer" \_ -> do
+      let apiInfo = ApiInfo "Test API" "1.0.0" ""
+      let querySchemas = Map.fromArray (Array.fromLinkedList
+            [ ("GetUser", makeEndpointSchema Nothing SText)
+            ])
+      let openApiSpec = OpenApiGen.toOpenApiSpec apiInfo Map.empty querySchemas Map.empty Map.empty
+      extractResponseSchema "/queries/get-user" OpenApi.get openApiSpec (\schema -> do
+        let properties = schema |> Lens.view OpenApi.properties
+        case InsOrdHashMap.lookup "effectiveLimit" properties of
+          Nothing -> Test.fail "effectiveLimit property not found"
+          Just (OpenApi.Inline elSchema) -> do
+            let typeValue = elSchema |> Lens.view OpenApi.type_
+            typeValue |> shouldBe (Just OpenApi.OpenApiInteger)
+          Just (OpenApi.Ref _) -> Test.fail "effectiveLimit is a reference, expected inline"
         )
 
     it "command endpoint response schema is singular (not array)" \_ -> do
@@ -369,3 +459,116 @@ spec = do
       let tags = openApiSpec |> Lens.view OpenApi.tags
       -- Should have 4 tags: User, Queries, Authentication, Files
       InsOrdHashSet.size tags |> shouldBe 4
+
+  describe "toOpenApiSpec - Query Parameters" do
+    it "query endpoint has three query parameters" \_ -> do
+      let apiInfo = ApiInfo "Test API" "1.0.0" ""
+      let querySchemas = Map.fromArray (Array.fromLinkedList
+            [ ("GetUser", makeEndpointSchema Nothing SText)
+            ])
+      let openApiSpec = OpenApiGen.toOpenApiSpec apiInfo Map.empty querySchemas Map.empty Map.empty
+      let paths = openApiSpec |> Lens.view OpenApi.paths
+      case InsOrdHashMap.lookup "/queries/get-user" paths of
+        Nothing -> Test.fail "Expected path not found"
+        Just pathItem -> do
+          case pathItem |> Lens.view OpenApi.get of
+            Nothing -> Test.fail "GET operation not found"
+            Just op -> do
+              let params = op |> Lens.view OpenApi.parameters
+              LinkedList.length params |> shouldBe 3
+
+    it "query endpoint has limit parameter" \_ -> do
+      let apiInfo = ApiInfo "Test API" "1.0.0" ""
+      let querySchemas = Map.fromArray (Array.fromLinkedList
+            [ ("GetUser", makeEndpointSchema Nothing SText)
+            ])
+      let openApiSpec = OpenApiGen.toOpenApiSpec apiInfo Map.empty querySchemas Map.empty Map.empty
+      let paths = openApiSpec |> Lens.view OpenApi.paths
+      case InsOrdHashMap.lookup "/queries/get-user" paths of
+        Nothing -> Test.fail "Expected path not found"
+        Just pathItem -> do
+          case pathItem |> Lens.view OpenApi.get of
+            Nothing -> Test.fail "GET operation not found"
+            Just op -> do
+              let params = op |> Lens.view OpenApi.parameters
+              let hasLimit = params |> LinkedList.any (\ref -> case ref of
+                    OpenApi.Inline param -> (param |> Lens.view OpenApi.name) == "limit"
+                    _ -> False)
+              hasLimit |> shouldBe True
+
+    it "query endpoint has offset parameter" \_ -> do
+      let apiInfo = ApiInfo "Test API" "1.0.0" ""
+      let querySchemas = Map.fromArray (Array.fromLinkedList
+            [ ("GetUser", makeEndpointSchema Nothing SText)
+            ])
+      let openApiSpec = OpenApiGen.toOpenApiSpec apiInfo Map.empty querySchemas Map.empty Map.empty
+      let paths = openApiSpec |> Lens.view OpenApi.paths
+      case InsOrdHashMap.lookup "/queries/get-user" paths of
+        Nothing -> Test.fail "Expected path not found"
+        Just pathItem -> do
+          case pathItem |> Lens.view OpenApi.get of
+            Nothing -> Test.fail "GET operation not found"
+            Just op -> do
+              let params = op |> Lens.view OpenApi.parameters
+              let hasOffset = params |> LinkedList.any (\ref -> case ref of
+                    OpenApi.Inline param -> (param |> Lens.view OpenApi.name) == "offset"
+                    _ -> False)
+              hasOffset |> shouldBe True
+
+    it "query endpoint has q parameter" \_ -> do
+      let apiInfo = ApiInfo "Test API" "1.0.0" ""
+      let querySchemas = Map.fromArray (Array.fromLinkedList
+            [ ("GetUser", makeEndpointSchema Nothing SText)
+            ])
+      let openApiSpec = OpenApiGen.toOpenApiSpec apiInfo Map.empty querySchemas Map.empty Map.empty
+      let paths = openApiSpec |> Lens.view OpenApi.paths
+      case InsOrdHashMap.lookup "/queries/get-user" paths of
+        Nothing -> Test.fail "Expected path not found"
+        Just pathItem -> do
+          case pathItem |> Lens.view OpenApi.get of
+            Nothing -> Test.fail "GET operation not found"
+            Just op -> do
+              let params = op |> Lens.view OpenApi.parameters
+              let hasQ = params |> LinkedList.any (\ref -> case ref of
+                    OpenApi.Inline param -> (param |> Lens.view OpenApi.name) == "q"
+                    _ -> False)
+              hasQ |> shouldBe True
+
+  describe "toOpenApiSpec - Query Edge Cases" do
+    it "query with complex object item schema wraps correctly in envelope" \_ -> do
+      let apiInfo = ApiInfo "Test API" "1.0.0" ""
+      let fields = Array.fromLinkedList
+            [ FieldSchema "name" SText True "User name"
+            , FieldSchema "age" SInt True "User age"
+            ]
+      let querySchemas = Map.fromArray (Array.fromLinkedList
+            [ ("GetUser", makeEndpointSchema Nothing (SObject fields))
+            ])
+      let openApiSpec = OpenApiGen.toOpenApiSpec apiInfo Map.empty querySchemas Map.empty Map.empty
+      extractResponseSchema "/queries/get-user" OpenApi.get openApiSpec (\schema -> do
+        let typeValue = schema |> Lens.view OpenApi.type_
+        typeValue |> shouldBe (Just OpenApi.OpenApiObject)
+        let properties = schema |> Lens.view OpenApi.properties
+        case InsOrdHashMap.lookup "items" properties of
+          Nothing -> Test.fail "items property not found"
+          Just (OpenApi.Inline itemsSchema) -> do
+            let itemsType = itemsSchema |> Lens.view OpenApi.type_
+            itemsType |> shouldBe (Just OpenApi.OpenApiArray)
+          Just (OpenApi.Ref _) -> Test.fail "items is a reference, expected inline"
+        )
+
+    it "multiple query endpoints each get paginated schema" \_ -> do
+      let apiInfo = ApiInfo "Test API" "1.0.0" ""
+      let querySchemas = Map.fromArray (Array.fromLinkedList
+            [ ("GetUser", makeEndpointSchema Nothing SText)
+            , ("GetOrder", makeEndpointSchema Nothing SInt)
+            ])
+      let openApiSpec = OpenApiGen.toOpenApiSpec apiInfo Map.empty querySchemas Map.empty Map.empty
+      extractResponseSchema "/queries/get-user" OpenApi.get openApiSpec (\schema -> do
+        let typeValue = schema |> Lens.view OpenApi.type_
+        typeValue |> shouldBe (Just OpenApi.OpenApiObject)
+        )
+      extractResponseSchema "/queries/get-order" OpenApi.get openApiSpec (\schema -> do
+        let typeValue = schema |> Lens.view OpenApi.type_
+        typeValue |> shouldBe (Just OpenApi.OpenApiObject)
+        )
