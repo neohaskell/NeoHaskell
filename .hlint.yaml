@@ -70,6 +70,7 @@
 - ignore: { name: Use lambda case }
 - ignore: { name: Use bimap }
 - ignore: { name: Use uncurry }
+- ignore: { name: Redundant id }
 # Define some custom infix operators
 # - fixity: infixr 3 ~^#^~
 

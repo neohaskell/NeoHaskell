@@ -28,6 +28,10 @@ import Service.SnapshotCache.InMemorySpec qualified
 import Service.Transport.CliSpec qualified
 import Service.Transport.Cli.OutputSpec qualified
 import Service.Transport.InternalSpec qualified
+import Service.Transport.McpSpec qualified
+import Service.Transport.Mcp.JsonRpcSpec qualified
+import Service.Transport.Mcp.ProtocolSpec qualified
+import Service.Transport.Mcp.ResponseSpec qualified
 import Service.Transport.WebSpec qualified
 import Test.Hspec qualified as Hspec
 
@@ -60,4 +64,8 @@ main = Hspec.hspec do
   Hspec.describe "Service.Transport.Cli" Service.Transport.CliSpec.spec
   Hspec.describe "Service.Transport.Cli.Output" Service.Transport.Cli.OutputSpec.spec
   Hspec.describe "Service.Transport.Internal" Service.Transport.InternalSpec.spec
+  Hspec.describe "Service.Transport.Mcp" Service.Transport.McpSpec.spec
+  Hspec.describe "Service.Transport.Mcp.JsonRpc" Service.Transport.Mcp.JsonRpcSpec.spec
+  Hspec.describe "Service.Transport.Mcp.Protocol" Service.Transport.Mcp.ProtocolSpec.spec
+  Hspec.describe "Service.Transport.Mcp.Response" Service.Transport.Mcp.ResponseSpec.spec
   Hspec.describe "Service.Transport.Web" Service.Transport.WebSpec.spec
