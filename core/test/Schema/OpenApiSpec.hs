@@ -241,6 +241,10 @@ spec = do
       extractResponseSchema "/queries/get-user" OpenApi.get openApiSpec (\schema -> do
         let required = schema |> Lens.view OpenApi.required
         LinkedList.length required |> shouldBe 4
+        LinkedList.any (\name -> name == "items") required |> shouldBe True
+        LinkedList.any (\name -> name == "total") required |> shouldBe True
+        LinkedList.any (\name -> name == "hasMore") required |> shouldBe True
+        LinkedList.any (\name -> name == "effectiveLimit") required |> shouldBe True
         )
 
     it "query items property is array of item schema" \_ -> do
@@ -492,7 +496,13 @@ spec = do
             Just op -> do
               let params = op |> Lens.view OpenApi.parameters
               let hasLimit = params |> LinkedList.any (\ref -> case ref of
-                    OpenApi.Inline param -> (param |> Lens.view OpenApi.name) == "limit"
+                    OpenApi.Inline param ->
+                      (param |> Lens.view OpenApi.name) == "limit"
+                        && (param |> Lens.view OpenApi.in_) == OpenApi.ParamQuery
+                        && (param |> Lens.view OpenApi.required) == Just False
+                        && case param |> Lens.view OpenApi.schema of
+                             Just (OpenApi.Inline s) -> (s |> Lens.view OpenApi.type_) == Just OpenApi.OpenApiInteger
+                             _ -> False
                     _ -> False)
               hasLimit |> shouldBe True
 
@@ -511,7 +521,13 @@ spec = do
             Just op -> do
               let params = op |> Lens.view OpenApi.parameters
               let hasOffset = params |> LinkedList.any (\ref -> case ref of
-                    OpenApi.Inline param -> (param |> Lens.view OpenApi.name) == "offset"
+                    OpenApi.Inline param ->
+                      (param |> Lens.view OpenApi.name) == "offset"
+                        && (param |> Lens.view OpenApi.in_) == OpenApi.ParamQuery
+                        && (param |> Lens.view OpenApi.required) == Just False
+                        && case param |> Lens.view OpenApi.schema of
+                             Just (OpenApi.Inline s) -> (s |> Lens.view OpenApi.type_) == Just OpenApi.OpenApiInteger
+                             _ -> False
                     _ -> False)
               hasOffset |> shouldBe True
 
@@ -530,7 +546,13 @@ spec = do
             Just op -> do
               let params = op |> Lens.view OpenApi.parameters
               let hasQ = params |> LinkedList.any (\ref -> case ref of
-                    OpenApi.Inline param -> (param |> Lens.view OpenApi.name) == "q"
+                    OpenApi.Inline param ->
+                      (param |> Lens.view OpenApi.name) == "q"
+                        && (param |> Lens.view OpenApi.in_) == OpenApi.ParamQuery
+                        && (param |> Lens.view OpenApi.required) == Just False
+                        && case param |> Lens.view OpenApi.schema of
+                             Just (OpenApi.Inline s) -> (s |> Lens.view OpenApi.type_) == Just OpenApi.OpenApiString
+                             _ -> False
                     _ -> False)
               hasQ |> shouldBe True
 

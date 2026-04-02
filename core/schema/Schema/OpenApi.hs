@@ -339,25 +339,25 @@ makeQueryPath name schema = do
         |> Lens.set OpenApiLens.name "limit"
         |> Lens.set OpenApiLens.in_ OpenApi.ParamQuery
         |> Lens.set OpenApiLens.required (Just False)
+        |> Lens.set OpenApiLens.description (Just "Max items per page (default: 100, max: 1000)")
         |> Lens.set OpenApiLens.schema (Just (OpenApi.Inline (GhcMonoid.mempty
              |> Lens.set OpenApiLens.type_ (Just OpenApi.OpenApiInteger)
-             |> Lens.set OpenApiLens.description (Just "Max items per page (default: 100, max: 1000)")
            )))
   let offsetParam = GhcMonoid.mempty
         |> Lens.set OpenApiLens.name "offset"
         |> Lens.set OpenApiLens.in_ OpenApi.ParamQuery
         |> Lens.set OpenApiLens.required (Just False)
+        |> Lens.set OpenApiLens.description (Just "Starting position (default: 0)")
         |> Lens.set OpenApiLens.schema (Just (OpenApi.Inline (GhcMonoid.mempty
              |> Lens.set OpenApiLens.type_ (Just OpenApi.OpenApiInteger)
-             |> Lens.set OpenApiLens.description (Just "Starting position (default: 0)")
            )))
   let qParam = GhcMonoid.mempty
         |> Lens.set OpenApiLens.name "q"
         |> Lens.set OpenApiLens.in_ OpenApi.ParamQuery
         |> Lens.set OpenApiLens.required (Just False)
+        |> Lens.set OpenApiLens.description (Just "NeoQL filter expression")
         |> Lens.set OpenApiLens.schema (Just (OpenApi.Inline (GhcMonoid.mempty
              |> Lens.set OpenApiLens.type_ (Just OpenApi.OpenApiString)
-             |> Lens.set OpenApiLens.description (Just "NeoQL filter expression")
            )))
 
   -- All queries use the fixed "Queries" tag
