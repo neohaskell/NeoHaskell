@@ -280,6 +280,10 @@ library
     Service.Transport.Internal
     Service.Transport.Cli
     Service.Transport.Cli.Output
+    Service.Transport.Mcp
+    Service.Transport.Mcp.JsonRpc
+    Service.Transport.Mcp.Protocol
+    Service.Transport.Mcp.Response
     Schema
     Schema.OpenApi
     Schema.JsonSchema
@@ -439,6 +443,10 @@ test-suite nhcore-test
     Service.Transport.CliSpec
     Service.Transport.Cli.OutputSpec
     Service.Transport.InternalSpec
+    Service.Transport.McpSpec
+    Service.Transport.Mcp.JsonRpcSpec
+    Service.Transport.Mcp.ProtocolSpec
+    Service.Transport.Mcp.ResponseSpec
     Service.Transport.WebSpec
     Service.Transport.Web.SwaggerUISpec
     Service.Transport.Web.HealthCheckSpec
@@ -541,6 +549,10 @@ test-suite nhcore-test-service
     Service.Transport.CliSpec
     Service.Transport.Cli.OutputSpec
     Service.Transport.InternalSpec
+    Service.Transport.McpSpec
+    Service.Transport.Mcp.JsonRpcSpec
+    Service.Transport.Mcp.ProtocolSpec
+    Service.Transport.Mcp.ResponseSpec
     Service.Transport.WebSpec
 
   type: exitcode-stdio-1.0
