@@ -66,6 +66,7 @@ ADRs document significant architectural decisions made during the development of
 | [0050](0050-internal-command-transport.md) | Internal Command Transport | Accepted |
 | [0051](0051-query-pagination-result-limits.md) | Query Pagination and Result Limits | Accepted |
 | [0052](0052-mcp-stdio-transport.md) | McpTransport — MCP STDIO Transport for AI Assistant Integration | Accepted |
+| [0053](0053-openapi-query-pagination-schema.md) | OpenAPI Query Pagination Schema | Proposed |
 
 ## Creating New ADRs
 
