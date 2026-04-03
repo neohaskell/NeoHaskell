@@ -217,7 +217,10 @@ tenantOnly getTenantId user query = case user of
   Just claims ->
     case claims.tenantId of
       Nothing -> Just Forbidden
-      Just claimTenantId ->
-        if Text.toLower claimTenantId == Text.toLower (getTenantId query)
-          then Nothing
-          else Just Forbidden
+      Just claimTenantId -> do
+        let queryTenantId = getTenantId query
+        if Text.isEmpty claimTenantId || Text.isEmpty queryTenantId
+          then Just Forbidden
+          else if Text.toLower claimTenantId == Text.toLower queryTenantId
+            then Nothing
+            else Just Forbidden

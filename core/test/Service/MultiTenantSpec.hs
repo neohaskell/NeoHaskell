@@ -79,6 +79,13 @@ streamIdSpecs = do
     let resultText = StreamId.toText result
     resultText |> Text.endsWith original |> shouldBe True
 
+  it "handles empty stream ID text" \_ -> do
+    tenantUuid <- Uuid.generate
+    let result = StreamId.withTenant tenantUuid (StreamId "")
+    let resultText = StreamId.toText result
+    let expectedPrefix = [fmt|tenant-#{Uuid.toText tenantUuid}/|]
+    resultText |> shouldBe expectedPrefix
+
   it "result stays within maxLength for typical inputs" \_ -> do
     tenantUuid <- Uuid.generate
     entityUuid <- Uuid.generate
@@ -142,11 +149,11 @@ tenantOnlySpecs = do
     let result = Auth.tenantOnly (\q -> q.tenantId) (Just claims) query
     result |> shouldBe (Just Forbidden)
 
-  it "allows when both tenant IDs are empty strings" \_ -> do
+  it "rejects when both tenant IDs are empty strings" \_ -> do
     let claims = claimsWithTenant (Just "")
     let query = TenantQuery {tenantQueryId = Uuid.nil, tenantId = ""}
     let result = Auth.tenantOnly (\q -> q.tenantId) (Just claims) query
-    result |> shouldBe Nothing
+    result |> shouldBe (Just Forbidden)
 
 
 -- ============================================================================

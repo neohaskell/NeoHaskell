@@ -102,5 +102,9 @@ instance ToStreamId Uuid where
 -- Used by CommandExecutor for multi-tenant commands to ensure
 -- event streams are physically isolated per tenant.
 withTenant :: Uuid -> StreamId -> StreamId
-withTenant tenantUuid (StreamId streamIdText) =
-  StreamId [fmt|tenant-#{Uuid.toText tenantUuid}/#{streamIdText}|]
+withTenant tenantUuid (StreamId streamIdText) = do
+  let combined = [fmt|tenant-#{Uuid.toText tenantUuid}/#{streamIdText}|]
+  let len = Text.length combined
+  if len > maxLength
+    then panic [fmt|Tenant-scoped StreamId exceeds maximum length of #{maxLength} characters (got #{len})|]
+    else StreamId combined

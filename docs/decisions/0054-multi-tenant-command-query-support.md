@@ -89,9 +89,9 @@ case requestContext.user of
         Task.yield CommandRejected { reason = "Forbidden" }
       Just tenantIdText ->
         case Uuid.fromText tenantIdText of
-          Err _ ->
+          Nothing ->
             Task.yield CommandRejected { reason = "Forbidden" }
-          Ok tenantUuid -> do
+          Just tenantUuid -> do
             Log.debug "Multi-tenant command: tenant extracted from token" |> Task.ignoreError
             -- Proceed with tenant-scoped execution
             let maybeEntityId = (getEntityIdImpl @command) tenantUuid command
