@@ -5,6 +5,7 @@ module Service.Event.StreamId (
   toText,
   fromText,
   fromTextUnsafe,
+  withTenant,
   maxLength,
 ) where
 
@@ -92,3 +93,18 @@ instance ToStreamId StreamId where
 
 instance ToStreamId Uuid where
   toStreamId uuid = uuid |> Uuid.toText |> StreamId
+
+
+-- | Create a tenant-scoped StreamId by prefixing with the tenant UUID.
+--
+-- Produces: @tenant-{tenantUuid}/{streamIdText}@
+--
+-- Used by CommandExecutor for multi-tenant commands to ensure
+-- event streams are physically isolated per tenant.
+withTenant :: Uuid -> StreamId -> StreamId
+withTenant tenantUuid (StreamId streamIdText) = do
+  let combined = [fmt|tenant-#{Uuid.toText tenantUuid}/#{streamIdText}|]
+  let len = Text.length combined
+  if len > maxLength
+    then panic [fmt|Tenant-scoped StreamId exceeds maximum length of #{maxLength} characters (got #{len})|]
+    else StreamId combined

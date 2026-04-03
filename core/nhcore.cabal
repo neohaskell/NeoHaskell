@@ -433,6 +433,7 @@ test-suite nhcore-test
     Service.EventStore.Postgres.NotificationsSpec
     Service.EventStore.PostgresSpec
     Service.MockTransport
+    Service.MultiTenantSpec
     Service.Query.EndpointSpec
     Service.Query.PaginationSpec
     Service.Query.RegistrySpec
@@ -553,6 +554,7 @@ test-suite nhcore-test-service
     Service.Transport.Mcp.JsonRpcSpec
     Service.Transport.Mcp.ProtocolSpec
     Service.Transport.Mcp.ResponseSpec
+    Service.MultiTenantSpec
     Service.Transport.WebSpec
 
   type: exitcode-stdio-1.0

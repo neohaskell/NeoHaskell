@@ -46,6 +46,7 @@ module Service.Query.Auth (
 
   -- * Post-fetch Helpers (canView)
   ownerOnly,
+  tenantOnly,
   publicView,
 ) where
 
@@ -55,6 +56,7 @@ import Auth.Claims (UserClaims (..))
 import Basics
 import Maybe (Maybe (..))
 import Text (Text)
+import Text qualified
 
 
 -- | Errors that can occur during query authorization.
@@ -192,3 +194,33 @@ ownerOnly getOwnerId user query = case user of
     case claims.sub == getOwnerId query of
       True -> Nothing
       False -> Just Forbidden
+
+
+-- | Restrict viewing to instances belonging to the requesting user's tenant.
+--
+-- Takes a function that extracts the tenant ID from the query instance
+-- and compares it to the authenticated user's tenantId claim.
+-- Comparison is case-insensitive to handle OAuth providers that may
+-- return UUIDs in different casing.
+--
+-- @
+-- canView = tenantOnly (\query -> query.tenantId)
+-- @
+tenantOnly ::
+  forall query.
+  (query -> Text) ->
+  Maybe UserClaims ->
+  query ->
+  Maybe QueryAuthError
+tenantOnly getTenantId user query = case user of
+  Nothing -> Just Unauthenticated
+  Just claims ->
+    case claims.tenantId of
+      Nothing -> Just Forbidden
+      Just claimTenantId -> do
+        let queryTenantId = getTenantId query
+        if Text.isEmpty claimTenantId || Text.isEmpty queryTenantId
+          then Just Forbidden
+          else if Text.toLower claimTenantId == Text.toLower queryTenantId
+            then Nothing
+            else Just Forbidden

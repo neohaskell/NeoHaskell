@@ -15,6 +15,14 @@ module Test.Service.Command.Core (
   applyOwnedCartEvent,
   -- Events
   OwnedCartEvent (..),
+  -- Multi-Tenant Commands
+  TenantAddItem (..),
+  TenantCreateCart (..),
+  -- Multi-Tenant Entity and Events
+  TenantCartEntity (..),
+  TenantCartEvent (..),
+  initialTenantCartState,
+  applyTenantCartEvent,
 ) where
 
 import Array qualified
@@ -432,3 +440,163 @@ instance Command OwnedCartCheckout where
                         let event = OwnedCartCheckedOut {entityId = cart.cartId}
                         [event]
                           |> Decider.acceptExisting
+
+
+-- ============================================================================
+-- Multi-Tenant Entity and Events
+-- ============================================================================
+
+data TenantCartEntity = TenantCartEntity
+  { cartId :: Uuid,
+    tenantId :: Uuid,
+    cartItems :: Array (Uuid, Int),
+    cartCheckedOut :: Bool
+  }
+  deriving (Eq, Show, Ord, Generic)
+
+
+instance Json.ToJSON TenantCartEntity
+
+
+instance Json.FromJSON TenantCartEntity
+
+
+data TenantCartEvent
+  = TenantCartCreated {entityId :: Uuid, tenantId :: Uuid}
+  | TenantItemAdded {entityId :: Uuid, itemId :: Uuid, amount :: Int}
+  deriving (Eq, Show, Generic)
+
+
+instance Json.ToJSON TenantCartEvent
+
+
+instance Json.FromJSON TenantCartEvent
+
+
+type instance EventOf TenantCartEntity = TenantCartEvent
+
+
+type instance EntityOf TenantCartEvent = TenantCartEntity
+
+
+instance Entity TenantCartEntity where
+  initialStateImpl = initialTenantCartState
+  updateImpl = applyTenantCartEvent
+
+
+instance Event TenantCartEvent where
+  getEventEntityIdImpl event =
+    case event of
+      TenantCartCreated eid _ -> eid
+      TenantItemAdded eid _ _ -> eid
+
+
+initialTenantCartState :: TenantCartEntity
+initialTenantCartState =
+  TenantCartEntity
+    { cartId = def,
+      tenantId = def,
+      cartItems = Array.empty,
+      cartCheckedOut = False
+    }
+
+
+applyTenantCartEvent :: TenantCartEvent -> TenantCartEntity -> TenantCartEntity
+applyTenantCartEvent event state = do
+  case event of
+    TenantCartCreated {entityId, tenantId} ->
+      TenantCartEntity
+        { cartId = entityId,
+          tenantId = tenantId,
+          cartItems = Array.empty,
+          cartCheckedOut = False
+        }
+    TenantItemAdded {itemId, amount} -> do
+      let updatedItems = addOrUpdateItem state.cartItems itemId amount
+      TenantCartEntity
+        { cartId = state.cartId,
+          tenantId = state.tenantId,
+          cartItems = updatedItems,
+          cartCheckedOut = state.cartCheckedOut
+        }
+
+
+-- ============================================================================
+-- Multi-Tenant Commands
+-- ============================================================================
+
+data TenantCreateCart = TenantCreateCart
+  deriving (Eq, Show, Ord, Generic)
+
+
+instance Json.ToJSON TenantCreateCart
+
+
+instance Json.FromJSON TenantCreateCart
+
+
+type instance EntityOf TenantCreateCart = TenantCartEntity
+
+
+type instance NameOf TenantCreateCart = "TenantCreateCart"
+
+
+instance Command TenantCreateCart where
+  type IsMultiTenant TenantCreateCart = True
+
+
+  getEntityIdImpl :: Uuid -> TenantCreateCart -> Maybe Uuid
+  getEntityIdImpl _tenantId _cmd = Nothing
+
+
+  decideImpl :: Uuid -> TenantCreateCart -> Maybe TenantCartEntity -> RequestContext -> Decision TenantCartEvent
+  decideImpl tenantId _cmd entity _ctx =
+    case entity of
+      Just _ ->
+        Decider.reject "Cart already exists"
+      Nothing -> do
+        entityId <- Decider.generateUuid
+        [TenantCartCreated {entityId = entityId, tenantId = tenantId}]
+          |> Decider.acceptNew
+
+
+data TenantAddItem = TenantAddItem
+  { cartId :: Uuid,
+    itemId :: Uuid,
+    amount :: Int
+  }
+  deriving (Eq, Show, Ord, Generic)
+
+
+instance Json.ToJSON TenantAddItem
+
+
+instance Json.FromJSON TenantAddItem
+
+
+type instance EntityOf TenantAddItem = TenantCartEntity
+
+
+type instance NameOf TenantAddItem = "TenantAddItem"
+
+
+instance Command TenantAddItem where
+  type IsMultiTenant TenantAddItem = True
+
+
+  getEntityIdImpl :: Uuid -> TenantAddItem -> Maybe Uuid
+  getEntityIdImpl _tenantId cmd = cmd.cartId |> Just
+
+
+  decideImpl :: Uuid -> TenantAddItem -> Maybe TenantCartEntity -> RequestContext -> Decision TenantCartEvent
+  decideImpl _tenantId cmd entity _ctx =
+    case entity of
+      Nothing ->
+        Decider.reject "Cart does not exist"
+      Just cart -> do
+        if cart.cartCheckedOut
+          then Decider.reject "Cannot add items to a checked out cart"
+          else
+            TenantItemAdded {entityId = cart.cartId, itemId = cmd.itemId, amount = cmd.amount}
+              |> Array.wrap
+              |> Decider.acceptExisting
