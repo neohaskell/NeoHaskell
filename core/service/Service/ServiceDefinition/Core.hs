@@ -34,7 +34,7 @@ import Service.Auth (RequestContext)
 import Service.Transport.Internal (InternalTransport)
 import Service.Transport (Transport (..), EndpointHandler, EndpointSchema (..))
 import Service.Command (EntityOf, EventOf)
-import Service.Command.Core (TransportsOf, NamesOf, AppendSymbols, AllKnownSymbols (..), Command (..), Entity (..), Event, NameOf)
+import Service.Command.Core (TransportsOf, NamesOf, AppendSymbols, AllKnownSymbols (..), Command (..), Entity (..), Event, KnownMultiTenant (..), NameOf)
 import Service.CommandExecutor qualified as CommandExecutor
 import Service.Response qualified as Response
 import Service.EntityFetcher.Core qualified as EntityFetcher
@@ -291,7 +291,7 @@ buildCommandResponseHandler ::
     event ~ EventOf entity,
     entity ~ EntityOf cmd,
     entity ~ EntityOf event,
-    IsMultiTenant cmd ~ False,
+    KnownMultiTenant (IsMultiTenant cmd),
     StreamId.ToStreamId (EntityIdType entity),
     Eq (EntityIdType entity),
     Ord (EntityIdType entity),
@@ -350,7 +350,7 @@ instance
     Record.KnownSymbol entityName,
     Json.FromJSON event,
     Json.ToJSON event,
-    IsMultiTenant cmd ~ False,
+    KnownMultiTenant (IsMultiTenant cmd),
     Record.KnownHash name
   ) =>
   CommandInspect (CommandDefinition name transports cmd transportNames event entity entityName entityIdType)

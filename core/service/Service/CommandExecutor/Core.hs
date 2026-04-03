@@ -20,9 +20,10 @@ import Maybe (Maybe (..))
 import Maybe qualified
 import Record qualified
 import Result (Result (..))
-import Service.Auth (RequestContext)
+import Auth.Claims (UserClaims (..))
+import Service.Auth (RequestContext (..))
 import Service.Command (Event (..))
-import Service.Command.Core (Command (..), Entity (..), EntityOf, EventOf, NameOf)
+import Service.Command.Core (Command (..), Entity (..), EntityOf, EventOf, KnownMultiTenant (..), NameOf, SBool (..))
 import Service.EntityFetcher.Core (EntityFetchResult (..), EntityFetcher, FetchedEntity (..))
 import Service.EntityFetcher.Core qualified
 import Service.Event (EntityName, InsertionPayload (..), InsertionType (..))
@@ -37,6 +38,7 @@ import Task qualified
 import Text (Text)
 import Text qualified
 import ToText (toText)
+import Uuid (Uuid)
 import Uuid qualified
 
 
@@ -121,7 +123,7 @@ execute ::
     Show (EntityIdType commandEntity),
     Show commandEvent,
     GHC.KnownSymbol (NameOf command),
-    IsMultiTenant command ~ 'False
+    KnownMultiTenant (IsMultiTenant command)
   ) =>
   EventStore commandEvent ->
   EntityFetcher commandEntity commandEvent ->
@@ -130,8 +132,61 @@ execute ::
   command ->
   Task Text ExecutionResult
 execute eventStore entityFetcher entityName requestContext command = do
-  -- Extract the entity ID from the command
-  let maybeEntityId = (getEntityIdImpl @command) command
+  case sbool @(IsMultiTenant command) of
+    SFalse -> do
+      -- Single-tenant path: extract entity ID directly (unchanged behavior)
+      let maybeEntityId = (getEntityIdImpl @command) command
+      executeInner eventStore entityFetcher entityName requestContext command maybeEntityId Nothing
+
+    STrue -> do
+      -- Multi-tenant path: extract and validate tenant UUID from JWT
+      case requestContext.user of
+        Nothing ->
+          Task.yield CommandRejected {reason = "Unauthorized"}
+        Just claims ->
+          case claims.tenantId of
+            Nothing -> do
+              Log.debug "Multi-tenant command rejected: no tenantId in token" |> Task.ignoreError
+              Task.yield CommandRejected {reason = "Forbidden"}
+            Just tenantIdText ->
+              case Uuid.fromText tenantIdText of
+                Nothing -> do
+                  Log.debug "Multi-tenant command rejected: invalid tenantId format" |> Task.ignoreError
+                  Task.yield CommandRejected {reason = "Forbidden"}
+                Just tenantUuid -> do
+                  let maybeEntityId = (getEntityIdImpl @command) tenantUuid command
+                  executeInner eventStore entityFetcher entityName requestContext command maybeEntityId (Just tenantUuid)
+
+
+-- | Internal execution logic shared between single-tenant and multi-tenant paths.
+executeInner ::
+  forall command commandEntity commandEvent.
+  ( Command command,
+    commandEntity ~ EntityOf command,
+    commandEvent ~ EventOf commandEntity,
+    commandEntity ~ EntityOf commandEvent,
+    Event commandEvent,
+    Entity commandEntity,
+    ToStreamId (EntityIdType commandEntity),
+    Eq (EntityIdType commandEntity),
+    Show (EntityIdType commandEntity),
+    Show commandEvent,
+    GHC.KnownSymbol (NameOf command),
+    KnownMultiTenant (IsMultiTenant command)
+  ) =>
+  EventStore commandEvent ->
+  EntityFetcher commandEntity commandEvent ->
+  EntityName ->
+  RequestContext ->
+  command ->
+  Maybe (EntityIdType commandEntity) ->
+  Maybe Uuid ->
+  Task Text ExecutionResult
+executeInner eventStore entityFetcher entityName requestContext command maybeEntityId maybeTenantUuid = do
+  -- Helper to apply tenant scoping to a stream ID
+  let scopeStreamId streamId = case maybeTenantUuid of
+        Nothing -> streamId
+        Just tenantUuid -> StreamId.withTenant tenantUuid streamId
 
   -- Helper function to fetch entity with error handling
   let fetchEntity streamId = do
@@ -141,23 +196,18 @@ execute eventStore entityFetcher entityName requestContext command = do
 
         case result of
           Ok (EntityFound fetchedEntity) -> do
-            -- Extract just the state from FetchedEntity
             Task.yield (Just fetchedEntity.state, Just streamId)
           Ok EntityNotFound -> do
-            -- No events for this stream yet, entity doesn't exist
             Task.yield (Nothing, Just streamId)
           Err error -> do
-            -- Actual error occurred (network, permissions, corruption)
-            -- Re-throw the error to propagate it properly
             Task.throw (toText error)
 
   -- Resolve the entity state based on whether we have an entity ID
   (maybeEntity, maybeStreamId) <- case maybeEntityId of
     Just entityId -> do
-      let streamId = toStreamId entityId
+      let streamId = toStreamId entityId |> scopeStreamId
       fetchEntity streamId
     Nothing -> do
-      -- No entity ID means we're creating a new entity
       Task.yield (Nothing, Nothing)
 
   let maxRetries = 10
@@ -172,14 +222,17 @@ execute eventStore entityFetcher entityName requestContext command = do
           case retryCount of
             0 -> Log.info "Executing command" |> Task.ignoreError
             _ -> Log.debug [fmt|Retrying command (attempt #{retryCount})|] |> Task.ignoreError
-          -- TODO: Extract decision context into service context
           let decisionContext =
                 DecisionContext
                   { genUuid = Uuid.generate
                   }
 
-          -- Execute the decision logic with RequestContext
-          let decision = (decideImpl @command) command currentEntity requestContext
+          -- Execute the decision logic, dispatching tenant UUID if multi-tenant
+          let decision = case sbool @(IsMultiTenant command) of
+                SFalse -> (decideImpl @command) command currentEntity requestContext
+                STrue -> case maybeTenantUuid of
+                  Just tenantUuid -> (decideImpl @command) tenantUuid command currentEntity requestContext
+                  Nothing -> panic "unreachable: multi-tenant command without tenant UUID"
           commandResult <- runDecision decisionContext decision
 
           case commandResult of
@@ -189,7 +242,6 @@ execute eventStore entityFetcher entityName requestContext command = do
                   { reason = reason
                   }
             AcceptCommand insertionType events -> do
-              -- Validate insertion type constraints against current entity state
               let validationError = case insertionType of
                     StreamCreation ->
                       case currentEntity of
@@ -199,7 +251,7 @@ execute eventStore entityFetcher entityName requestContext command = do
                       case currentEntity of
                         Nothing -> Just "Cannot update entity: entity does not exist"
                         Just _ -> Nothing
-                    _ -> Nothing -- InsertAfter and AnyStreamState don't have these constraints
+                    _ -> Nothing
               case validationError of
                 Just errorMsg ->
                   Task.yield
@@ -207,12 +259,10 @@ execute eventStore entityFetcher entityName requestContext command = do
                       { reason = errorMsg
                       }
                 Nothing -> do
-                  -- Determine the stream ID
                   finalStreamId <- case currentStreamId of
                     Just sid -> Task.yield sid
                     Nothing -> do
                       let eventEntityIds = events |> Array.map (\e -> getEventEntityIdImpl e)
-                      -- Check if all entity IDs are the same
                       case Array.first eventEntityIds of
                         Nothing -> do
                           Task.throw "No events to extract entity ID from"
@@ -221,26 +271,21 @@ execute eventStore entityFetcher entityName requestContext command = do
                           let totalCount = Array.length eventEntityIds
                           if matchingCount == totalCount
                             then do
-                              let streamId = toStreamId firstId
+                              let streamId = toStreamId firstId |> scopeStreamId
                               Task.yield streamId
                             else do
                               let idsText = eventEntityIds |> Array.map toText |> Text.joinWith ", "
                               Task.throw [fmt|Events have different entity IDs: #{idsText}|]
 
-                  -- Build insertion payload
                   payload <-
                     Event.payloadFromEvents entityName finalStreamId events
 
-                  -- Map insertion types to EventStore types:
-                  -- We use AnyStreamState for most cases since we don't track exact positions
-                  -- Only InsertAfter carries position information
                   let finalInsertionType = case insertionType of
                         InsertAfter pos -> InsertAfter pos
                         _ -> AnyStreamState
 
                   let payloadWithType = payload {insertionType = finalInsertionType}
 
-                  -- Persist to event store
                   insertResult <-
                     eventStore.insert payloadWithType
                       |> Task.asResult
@@ -258,27 +303,21 @@ execute eventStore entityFetcher entityName requestContext command = do
                             retriesAttempted = retryCount
                           }
                     Err (EventStore.InsertionError Event.ConsistencyCheckFailed) -> do
-                      -- Concurrency conflict, retry if we haven't exceeded max retries
                       Log.warn [fmt|Concurrency conflict on attempt #{toText (retryCount + 1)}|] |> Task.ignoreError
                       if retryCount < maxRetries
                         then do
-                          -- Wait with exponential backoff and jitter
                           awaitWithJitter retryCount
 
-                          -- Re-fetch the entity with latest state
                           refetchResult <-
                             entityFetcher.fetch entityName finalStreamId
                               |> Task.asResult
 
                           case refetchResult of
                             Ok (EntityFound freshFetchedEntity) -> do
-                              -- Retry with fresh state (extract state from FetchedEntity)
                               retryLoop (retryCount + 1) (Just freshFetchedEntity.state) (Just finalStreamId)
                             Ok EntityNotFound -> do
-                              -- Entity doesn't exist, retry with Nothing
                               retryLoop (retryCount + 1) Nothing (Just finalStreamId)
                             Err refetchError -> do
-                              -- Actual fetch error occurred, propagate it
                               Log.warn [fmt|Failed to refetch entity for retry: #{toText refetchError}|] |> Task.ignoreError
                               Task.throw "Failed to refetch entity for retry"
                         else do
@@ -296,5 +335,4 @@ execute eventStore entityFetcher entityName requestContext command = do
                             retriesAttempted = retryCount
                           }
 
-  -- Start the retry loop
   retryLoop 0 maybeEntity maybeStreamId

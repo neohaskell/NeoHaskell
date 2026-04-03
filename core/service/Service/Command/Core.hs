@@ -1,4 +1,5 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
+{-# LANGUAGE GADTs #-}
 
 module Service.Command.Core (
   -- * Command Abstraction
@@ -15,6 +16,8 @@ module Service.Command.Core (
   -- * Multi-Tenancy Support
   GetEntityIdFunction,
   DecideFunction,
+  SBool (..),
+  KnownMultiTenant (..),
 
   -- * Request Context
   RequestContext (..),
@@ -146,3 +149,24 @@ type family DecideFunction (isTenant :: Bool) command entity event where
     command -> Maybe entity -> RequestContext -> Decision event
   DecideFunction 'True command entity event =
     Uuid -> command -> Maybe entity -> RequestContext -> Decision event
+
+
+-- | Singleton boolean for reifying IsMultiTenant at runtime.
+-- Used internally by CommandExecutor to dispatch between
+-- single-tenant and multi-tenant execution paths.
+data SBool (b :: Bool) where
+  STrue :: SBool 'True
+  SFalse :: SBool 'False
+
+
+-- | Reify the IsMultiTenant type family at the value level.
+class KnownMultiTenant (b :: Bool) where
+  sbool :: SBool b
+
+
+instance KnownMultiTenant 'True where
+  sbool = STrue
+
+
+instance KnownMultiTenant 'False where
+  sbool = SFalse
