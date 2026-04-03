@@ -161,12 +161,14 @@ tenantOnly getTenantId user query = case user of
   Just claims ->
     case claims.tenantId of
       Nothing -> Just Forbidden
-      Just claimTenantId ->
-        -- Normalize both sides to lowercase for case-insensitive comparison.
-        -- OAuth providers may return UUIDs in different casing.
-        case Text.toLower claimTenantId == Text.toLower (getTenantId query) of
-          True -> Nothing
-          False -> Just Forbidden
+      Just claimTenantId -> do
+        let queryTenantId = getTenantId query
+        -- Reject empty tenant IDs defensively.
+        if Text.isEmpty claimTenantId || Text.isEmpty queryTenantId
+          then Just Forbidden
+          else if Text.toLower claimTenantId == Text.toLower queryTenantId
+            then Nothing
+            else Just Forbidden
 ```
 
 This approach:
