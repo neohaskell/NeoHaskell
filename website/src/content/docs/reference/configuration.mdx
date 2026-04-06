@@ -29,7 +29,7 @@ defineConfig
   ]
 ```
 
-`defineConfig` is a Template Haskell splice. It takes a type name (as a `String`) and a list of field specs, and generates:
+`defineConfig` is a code-generation macro. It takes a type name (as a `String`) and a list of field specs, and generates:
 
 - The `data MyConfig = MyConfig { ... }` record type.
 - Parsers for environment variables and CLI arguments.
@@ -43,7 +43,7 @@ import Config qualified
 
 | Function | Description |
 |---|---|
-| `Config.field @Type "fieldName"` | Declare a field with a given Haskell type. |
+| `Config.field @Type "fieldName"` | Declare a field with the given type. |
 | `Config.doc "description"` | Human-readable description (shown in `--help`). |
 | `Config.defaultsTo value` | Default value if the user doesn't provide one. |
 | `Config.envVar "NAME"` | Environment variable to read from. |

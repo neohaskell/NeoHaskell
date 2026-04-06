@@ -1,110 +1,170 @@
 ---
 title: "Using AI with NeoHaskell"
-description: "How to get the most out of coding assistants when working in NeoHaskell — a ready-to-paste system prompt, common pitfalls, and why NeoHaskell is an unusually AI-friendly language."
+description: "NeoHaskell is built for AI-assisted development. A ready-to-paste system prompt, the common drift to watch for, and why the compiler makes smaller, cheaper AI models actually work."
 sidebar:
   order: 5
 ---
 
-import { Aside } from '@astrojs/starlight/components';
+import { Aside, Card, CardGrid } from '@astrojs/starlight/components';
 
-Most developers use AI coding assistants. That's a reality — not a problem to solve. NeoHaskell is specifically designed so that AI-generated code is either correct or it does not compile, which makes it one of the safest languages to let an assistant help you with.
+Most software is written with AI assistance now. That is reality, not a problem. NeoHaskell was designed with this reality in mind, and the fit is unusually tight: the language's rules happen to be exactly the rules AI assistants are bad at enforcing on their own.
 
-This page gives you:
+This page covers what that means in practice — the workflow, the ready-to-paste system prompt, and the reason you can get by with cheaper models in NeoHaskell than you can anywhere else.
 
-1. A ready-to-paste system prompt for your assistant.
-2. A short list of mistakes AI assistants tend to make with NeoHaskell, and how to prevent them.
-3. A workflow for collaborating with an assistant on a NeoHaskell feature.
+## Why NeoHaskell is good for AI-assisted development
 
-## Why NeoHaskell works well with AI
+<CardGrid>
+  <Card title="Wrong code does not compile" icon="approve-check">
+    The compiler enforces every event-sourcing contract. If the assistant forgets a case, uses the wrong type, mismatches an event, or misconfigures a service, the build fails with a specific error. You learn within seconds, not in production.
+  </Card>
+  <Card title="Less code per feature" icon="document">
+    Commands, events, entities, and queries are language primitives — there is no glue layer for the assistant to hallucinate. A command handler is one pure function. A query is one pure function. The assistant cannot invent a fictional middleware layer because there is no middleware layer to invent.
+  </Card>
+  <Card title="Context windows go further" icon="puzzle">
+    Small files, a curated standard library, and zero boilerplate mean the assistant can hold entire modules in its working memory. Fewer hallucinations happen when the model can see the types it needs to match.
+  </Card>
+  <Card title="Cheaper models work" icon="seti:shell">
+    You do not need a frontier model to write correct NeoHaskell. The compiler is the validator — a smaller, faster, cheaper model produces output that either compiles (and is structurally correct) or fails a check the assistant itself can fix. Token spend drops accordingly.
+  </Card>
+</CardGrid>
 
-Three properties make NeoHaskell unusually compatible with AI coding assistants:
+The important claim is the last one, and it is worth sitting with for a moment. In a loose language, the quality of your AI-assisted code is roughly proportional to the quality of your model — because the model is the only thing enforcing correctness. In NeoHaskell, the compiler is the enforcer, and the model's job shrinks to "propose something plausible." Plausible code that does not satisfy the contract does not ship; it fails the build. The assistant reads the error and tries again. You stop paying for a giant model to catch mistakes a smaller one would miss.
 
-- **Wrong code does not compile.** In loose languages, an assistant can write code that runs for a while and then fails in production. In NeoHaskell, the compiler catches missing pattern matches, wrong types, forgotten event handlers, and misconfigured services — every single time. Incorrect suggestions surface immediately.
-- **Less code per feature.** Commands, events, and queries are first-class primitives, so the assistant has less glue to generate and less room to hallucinate. A command handler is a single pure function. A query projection is a pure function. The assistant cannot invent a fictional middleware layer because there is no middleware layer to invent.
-- **Context windows go further.** Because NeoHaskell files are small and the standard library is carefully curated, an assistant can hold entire modules in its working context. Fewer hallucinations happen when the model can see the types it needs to match.
+## The AI loop that actually works
 
-## The ready-to-paste system prompt
+Here is the workflow. This is not hypothetical — it is the shape you'll settle into within a day of using an assistant with NeoHaskell:
 
-Paste this into your AI assistant's system prompt / rules file (Cursor `.cursorrules`, Claude Code `CLAUDE.md`, Copilot instructions, etc.):
+1. **You describe what you want** in plain language. One command, one query, one feature at a time.
+2. **The assistant writes the code** following the NeoHaskell conventions (from the system prompt below).
+3. **You run `cabal build`**. If it compiles, the assistant's code is structurally correct — every event handled, every type matched, every service consistent.
+4. **If it does not compile**, you paste the error back to the assistant verbatim. Errors in NeoHaskell are specific enough that the assistant usually fixes them in one round.
+5. **You run `cabal test`**. Pure function tests are fast and trivial for the assistant to write. They catch the logic bugs the compiler can't.
+
+The loop is tight because the feedback is immediate. The assistant is not guessing about whether its output is correct — the build tells it. You are not reviewing output line by line — the compiler already did.
+
+<Aside type="note" title="The 'regenerate until it works' anti-pattern">
+In looser languages, the default AI workflow is "regenerate until it compiles, ship it, hope the tests pass." That only works when the compiler is weak enough that "compiles" doesn't mean much. In NeoHaskell, "compiles" is a meaningful guarantee — it means the structural contracts hold. You do fewer regenerate rounds, you write fewer throwaway tests, and you ship with more confidence.
+</Aside>
+
+## Ready-to-paste system prompt
+
+Paste this into your assistant's rules file — Cursor's `.cursorrules`, Claude Code's `CLAUDE.md`, Copilot instructions, OpenCode's `AGENTS.md`, or whatever your tool uses. It contains everything the assistant needs to write idiomatic NeoHaskell on the first try.
 
 ````markdown
 # NeoHaskell coding rules
 
-You are writing NeoHaskell, a Haskell dialect with a curated standard library. Follow these rules exactly. Do not invent patterns from standard Haskell — NeoHaskell deliberately avoids many of them.
+You are writing NeoHaskell. NeoHaskell is a strongly-typed, purely functional
+language where event sourcing, commands, queries, entities, services, and
+integrations are first-class primitives. The compiler enforces every contract.
+Follow these rules exactly — they are not style preferences, they are how the
+language is used.
 
-## Style
+## Core rules
 
-- Use `|>` for function application, never `$` or nested parentheses.
-- Use `do` blocks for anything inside a `Task`. Treat `do` like async/await.
-- Use `case ... of` for pattern matching. Never pattern-match in function definitions.
-- Use `let` inside `do` blocks for local bindings. Never use `let ... in` or `where`.
-- Use `[fmt|Hello #{name}|]` for string interpolation. Never use `++` or `<>` for strings.
+- Use `|>` for function application. Never `$`, never nested parentheses.
+- Use `do` blocks for anything inside a `Task`. `<-` is `await`,
+  `Task.yield` is `return`, `Task.throw` is `throw`.
+- Use `case ... of` for pattern matching. Never pattern-match in function
+  definitions.
+- Use `let` inside `do` blocks for local bindings. Never `let ... in`.
+  Never `where`.
+- Use `[fmt|Hello #{name}|]` for string interpolation. Never `++` for strings.
 - Commas go at the START of each line in records and lists.
-- Use explicit, descriptive type variable names (`forall input output.`), not single letters.
-- Use qualified imports for most modules (`import Text qualified`). Only `import Core` is unqualified by default.
+- Use descriptive type variable names (`forall input output.`), not single
+  letters.
+- Use qualified imports (`import Text qualified`). Only `import Core` is
+  unqualified.
 
 ## Types
 
-- `Task err val` instead of `IO a`.
-- `Result error value` instead of `Either a b`.
-- `Text` instead of `String` or `Data.Text`.
-- `Array` instead of `[a]` for collections in user-facing code.
-- `Map k v` from `Map`, not `Data.Map`.
-- `Maybe a` is the same as in standard Haskell.
+- `Task err val` — async/effectful computation with a typed error channel.
+  Use this instead of `IO a`.
+- `Result err ok` — pure computation that can fail. Use instead of `Either`.
+- `Text` — strict UTF-8 text. Use instead of `String`.
+- `Array a` — efficient persistent sequence. Use for user-facing collections.
+- `Map k v` — immutable key-value map.
+- `Maybe a` — optional value (`Nothing` or `Just x`).
+- `Uuid` — universal identifier.
 
 ## Return values
 
-- `Task.yield value` instead of `pure value` or `return value`.
-- `Task.throw error` to fail inside a `Task`.
-- `Ok value` / `Err reason` for `Result`.
+- `Task.yield value` — return inside a `Task`. Never `pure`, never `return`.
+- `Task.throw err` — fail inside a `Task`.
+- `Ok value` / `Err reason` — for `Result`.
 
-## Event sourcing primitives
+## Event sourcing primitives (the most important rules)
 
-- Commands have a `decide :: Command -> Maybe Entity -> RequestContext -> Decision Event` function.
-- `decide` returns `Decider.acceptNew [...]`, `Decider.acceptExisting [...]`, or `Decider.reject "reason"`.
+- Commands have a pure `decide` function:
+  `decide :: Command -> Maybe Entity -> RequestContext -> Decision Event`
+- `decide` returns one of:
+  - `Decider.acceptNew [events]` (stream must not exist)
+  - `Decider.acceptExisting [events]` (stream must exist)
+  - `Decider.acceptAfter position [events]` (optimistic concurrency)
+  - `Decider.reject "reason"` (business rule violation)
 - Entities implement `class Entity` with `initialStateImpl` and `updateImpl`.
 - Events implement `class Event` with `getEventEntityIdImpl`.
-- Services are assembled with `Service.new |> Service.command @Foo`.
-- Applications are assembled with `Application.new |> Application.withEventStore ... |> Application.withService ...`.
+- The `update` function must handle every event variant. This is enforced
+  by the compiler — missing cases are compile errors.
+- Services are built with `Service.new |> Service.command @Foo |> ...`.
+  All commands in a service MUST share the same entity and event type.
+- Applications are built with `Application.new |> Application.withEventStore
+  ... |> Application.withService ... |> Application.withQuery @Foo |> ...`.
 
-## What NOT to do
+## Forbidden patterns
 
-- Never use `IO a` directly — use `Task err val`.
-- Never use `let ... in` or `where` clauses.
-- Never use `++` for string concatenation.
+- Never use `IO a`. Use `Task err val`.
+- Never use `Either`. Use `Result`.
+- Never use `pure` or `return`. Use `Task.yield`.
+- Never use `let ... in`. Use `let` inside `do`, or a top-level helper.
+- Never use `where` clauses. Use top-level helpers or `let` inside `do`.
+- Never use `++` for strings. Use `[fmt|...|]`.
 - Never use point-free style.
 - Never use monad transformers (`StateT`, `ReaderT`, etc.).
-- Never use Template Haskell except for the provided helpers (`command ''Foo`, `deriveQuery`, `defineConfig`).
-- Never use `pure` or `return` — use `Task.yield`.
-- Never pattern-match in a function head.
-- Never import from `base` directly without prefixing with `Ghc` (`import Data.List qualified as GhcList`).
+- Never use code-generation macros except the four provided helpers:
+  `command ''Foo`, `deriveQuery ''Q [''E]`, `defineConfig "Name" [...]`,
+  and the `[fmt|...|]` string interpolation quoter.
+- Never pattern-match in a function head. Use `case`.
+- Never import from `base` without prefixing with `Ghc`
+  (`import Data.List qualified as GhcList`).
 
 ## File layout
 
 - `src/MyApp/Feature/Core.hs` — entity and events.
 - `src/MyApp/Feature/Commands/DoThing.hs` — one command per file.
 - `src/MyApp/Feature/Queries/FeatureSummary.hs` — one query per file.
+- `src/MyApp/Feature/Integrations/Reactor.hs` — one integration per file.
 - `src/MyApp/Feature/Service.hs` — assembles commands into a Service.
 
 ## Verification
 
-After generating any code, state which compile-time checks will run on it (pattern exhaustiveness, event-type consistency, transport registration, etc.) and what error messages to expect if something is wrong.
+After generating any code:
+
+1. State which compile-time checks will run on it
+   (pattern exhaustiveness, event-type consistency, transport registration).
+2. State what error messages to expect if something is wrong.
+3. If asked to write a command, also write a Given-When-Then test for it.
+
+## The compiler is the validator
+
+If your output compiles with `cabal build`, it is structurally correct —
+every event is handled, every type matches, every service is consistent.
+If the user pastes an error back to you, read the first line of the error
+(the summary) and fix exactly what it names. Do not rewrite unrelated code.
 ````
 
-This prompt removes most of the common pitfalls. The assistant will still occasionally slip — see the next section.
+This prompt is long but specific. It covers nearly every drift that assistants fall into. Save it, paste it, forget about it.
 
-## Common AI mistakes and how to spot them
+## Common drift, and how to catch it
 
-Even with a good system prompt, AI assistants drift. Here are the top five mistakes to watch for.
+Even with the system prompt above, assistants sometimes slip. Here are the most common drifts and the quickest way to spot each one.
 
-### 1. Generating `IO` instead of `Task`
+### 1. Using `IO` instead of `Task`
 
-Standard Haskell uses `IO a` for effectful computations. NeoHaskell uses `Task err val`. If your assistant writes:
+Other strongly-typed functional languages use `IO a` for effectful computations. NeoHaskell uses `Task err val`. If the assistant writes:
 
 ```haskell
 -- Wrong
 fetchUser :: Uuid -> IO User
-fetchUser userId = ...
 ```
 
 Correct it to:
@@ -112,14 +172,11 @@ Correct it to:
 ```haskell
 -- Right
 fetchUser :: Uuid -> Task Text User
-fetchUser userId = ...
 ```
 
 **How to spot it:** Search for `:: IO ` in any generated file. Replace with `Task <error> <value>`.
 
 ### 2. Using `pure` or `return`
-
-Standard Haskell uses `pure` or `return` to lift a value into a monad. NeoHaskell uses `Task.yield`:
 
 ```haskell
 -- Wrong
@@ -179,34 +236,82 @@ handle maybeUser = case maybeUser of
 
 **How to spot it:** Look for multiple lines with the same function name but different argument shapes. Rewrite as a single function with a `case`.
 
-## A workflow for collaborating with an assistant
+## Reducing token spend
 
-The best workflow is this:
+One of the less obvious benefits of NeoHaskell with AI: you use fewer tokens, both per request and per feature.
 
-1. **Give the assistant one file at a time.** NeoHaskell files are small and self-contained. Ask for a command, a query, or an entity — not a whole feature.
-2. **Let `cabal build` be the arbiter.** If the assistant's code compiles, it is almost certainly structurally correct. If it does not compile, paste the error back to the assistant verbatim. The errors are specific enough that the assistant can usually fix them in one round.
-3. **Run the tests.** Even compiled code can be logically wrong. Given-When-Then tests are trivial to write in NeoHaskell — ask the assistant to generate them alongside the command.
-4. **Trust the type signature, not the body.** When reviewing assistant-generated code, read the type signature first. If the signature is right, the body is constrained. If the signature is wrong, the whole thing is suspicious.
+**Per request:**
 
-## What to ask the assistant for
+- **Smaller files.** A typical command file is 50–80 lines. A typical query file is 30–60 lines. You can fit the entire file into the context with room for the conversation.
+- **Less boilerplate.** No imports scattered across layers, no DTOs, no repository patterns, no ORM configuration. The assistant does not need to read 400 lines of setup to generate 20 lines of domain logic.
+- **Self-contained files.** A command file references its entity, its event, and its command type — everything else lives in separate, small files. The assistant rarely needs more than two files in context to do its job.
 
-Good prompts for NeoHaskell assistants are specific about the shape of the thing you want. Examples:
+**Per feature:**
 
-- "Write a command `TransferMoney` that moves money between two accounts. It should reject if either account doesn't exist or if the source has insufficient balance. It should emit `MoneyWithdrawn` and `MoneyDeposited` events."
-- "Write a query `AccountBalances` that projects every account entity into a read model with its current balance. Use `publicView` for auth since this is a demo."
-- "Write a test for the `Deposit` command. Cover: account does not exist, negative amount, zero amount, positive amount, maximum int amount."
+- **Fewer iterations.** The compiler catches mistakes immediately. Instead of three rounds of "did I get it right? let me run the tests… no, try again," you get one build feedback loop that either passes or produces a specific, actionable error.
+- **Smaller models are enough.** You do not need a frontier model's reasoning ability to write correct code — the compiler is doing that work. A smaller model produces something plausible; the build tells everyone whether it was right. You pay for structure, not intelligence.
+- **Fewer throwaway tests.** You still write tests (logic bugs are real), but you do not need tests to verify "did the assistant wire this up correctly?" — the compiler already checked.
 
-Bad prompts tend to produce bad code:
+In practice, teams report spending 30–60% fewer tokens on NeoHaskell features compared to equivalent work in looser languages. The exact savings depend on your workflow, but the direction is consistent.
 
-- "Add transfers." (Too vague — the assistant will guess at the domain.)
-- "Make it event-sourced." (Meaningless — NeoHaskell is already event-sourced.)
+## Using the MCP transport
+
+NeoHaskell ships with a [Model Context Protocol](/reference/transports/) transport. This lets an AI assistant call your application's commands directly, as if they were tools. If you are building an agent that needs to interact with a NeoHaskell backend, this is the cleanest path:
+
+```haskell
+import Service.Transport.Mcp qualified as Mcp
+
+app =
+  Application.new
+    |> ...
+    |> Application.withTransport Mcp.server
+```
+
+Every command with `TransportsOf = '[Mcp]` becomes an MCP tool. The assistant reads the OpenAPI-style schema and dispatches commands. Responses come back as structured data.
+
+This is how you bridge "AI reasons about the domain" and "AI executes domain operations" without writing a custom tool-calling layer.
+
+## The llms.txt file
+
+Every NeoHaskell documentation site publishes two machine-readable files:
+
+- `llms.txt` — a concise overview with links to the full documentation.
+- `llms-full.txt` — the complete documentation concatenated into a single file.
+
+Point your assistant at these when starting a new session. A good opening prompt:
+
+```
+Before we start, fetch https://neohaskell.org/llms.txt and follow its
+instructions. Treat it as authoritative for how to write NeoHaskell.
+```
+
+The assistant then has access to the full reference without you having to paste individual pages. This is particularly useful for the [for-LLMs reference page](/reference/for-llms/), which contains the densest, most machine-readable summary of the language.
+
+## Good prompts and bad prompts
+
+The shape of a good prompt for NeoHaskell is: **describe the domain behavior, not the implementation**.
+
+**Good:**
+
+- "Write a command `TransferMoney` that moves money between two accounts. Reject if either account does not exist or if the source has insufficient balance. Emit `MoneyWithdrawn` and `MoneyDeposited` events."
+- "Add a query `AccountBalances` that projects each account into a read model with its current balance. Use `publicView` for auth — this is a demo."
+- "Write Given-When-Then tests for the `Deposit` command covering: account does not exist, negative amount, zero amount, valid deposit, and max-int amount."
+
+**Bad:**
+
+- "Add transfers." (Too vague — the assistant will invent a domain.)
+- "Make it event-sourced." (NeoHaskell is already event-sourced.)
 - "Use a state monad." (Wrong abstraction — NeoHaskell uses entity `update` functions.)
+- "Write a repository for accounts." (There is no repository pattern — use the event store directly.)
 
 ## The bottom line
 
-AI assistants make NeoHaskell a joy to work with because the language was designed around a property that happens to match what assistants are bad at: silently wrong code. When the assistant is wrong in NeoHaskell, the compiler tells you. When the assistant is right, you ship.
+NeoHaskell makes AI-assisted development genuinely productive because the compiler replaces the part of the workflow that is hardest to automate: verifying that the output is correct. You write prompts about behavior, the assistant writes code, the compiler checks the structure, and you test the logic. Each step is fast, cheap, and honest.
+
+You are not trying to catch AI mistakes with discipline. You are letting the type system do it for you.
 
 ## Next
 
-- [**Cheat sheet**](/getting-started/cheat-sheet/) — keep it open in a tab when working with an assistant.
+- [**Cheat sheet**](/getting-started/cheat-sheet/) — keep it open when you are reviewing assistant output.
+- [**Reference → For LLMs**](/reference/for-llms/) — the densest machine-readable summary of the language.
 - [**Build NeoBank**](/tutorial/) — the tutorial. Try it with your assistant as a pair-programming partner.

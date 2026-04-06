@@ -1,6 +1,6 @@
 ---
 title: NeoHaskell
-description: A dialect of Haskell where event sourcing, commands, queries, and services are language primitives. The compiler enforces what other frameworks leave to discipline.
+description: A language where event sourcing, commands, queries, and services are first-class primitives. The compiler enforces what other frameworks leave to discipline.
 template: splash
 hero:
   tagline: Event sourcing as a language. The compiler enforces what other frameworks leave to discipline.
@@ -20,7 +20,7 @@ hero:
 
 import { Card, CardGrid } from '@astrojs/starlight/components';
 
-NeoHaskell is a dialect of Haskell built around one idea: **commands, events, entities, queries, services, and integrations are first-class language constructs, not patterns you implement in a framework.** You do not wire up a CQRS library. You do not decide whether to use event sourcing. You write a `decide` function, return a `Decision`, and the compiler makes sure every piece of your domain is consistent before the program runs.
+NeoHaskell is a language built around one idea: **commands, events, entities, queries, services, and integrations are first-class language constructs, not patterns you implement in a framework.** You do not wire up a CQRS library. You do not decide whether to use event sourcing. You write a `decide` function, return a `Decision`, and the compiler makes sure every piece of your domain is consistent before the program runs.
 
 The result: a codebase that reads like pseudocode, a type checker that catches entire categories of bugs other languages leave for production, and an architecture that scales from a single-file prototype to a distributed system without rewriting.
 
@@ -117,6 +117,17 @@ Commands are **requests** ("I want to deposit $50"). The `decide` function revie
 
 This is how banks work. It is how accounting works. It is how git works. NeoHaskell just makes it how your code works, and lets the compiler keep everyone honest.
 
+## Built for AI-assisted development
+
+NeoHaskell was designed for a world where AI assistants write most of the code. The language's opinionated structure, small files, and compiler-enforced contracts turn a property other languages envy into a default: **if the assistant's output compiles, it is structurally correct.**
+
+- **The compiler is the validator.** Wrong code does not compile — missing event handlers, mismatched types, broken service boundaries are all caught at build time.
+- **Cheaper models are enough.** You do not need a frontier-tier model to produce correct NeoHaskell. A smaller, faster model writes plausible code; the compiler verifies it; you ship.
+- **Fewer tokens per feature.** Small files, zero boilerplate, and predictable file layout mean whole modules fit in the assistant's context with room to spare.
+- **MCP transport built in.** Expose every command as an [MCP](/reference/transports/) tool — the same command file, zero extra code.
+
+See [**Using AI with NeoHaskell**](/getting-started/using-ai/) for the ready-to-paste system prompt and the workflow that reliably produces correct code on the first build.
+
 ## Already know a language?
 
 <CardGrid>
@@ -129,14 +140,16 @@ This is how banks work. It is how accounting works. It is how git works. NeoHask
   <Card title="Go" icon="seti:go">
     [How your Go mental model maps to NeoHaskell →](/coming-from/go/)
   </Card>
-  <Card title="Haskell" icon="seti:haskell">
-    [How NeoHaskell differs from GHC Haskell →](/coming-from/haskell/)
+  <Card title="CRUD systems" icon="seti:db">
+    [How CRUD concepts translate to NeoHaskell →](/coming-from/crud/)
   </Card>
 </CardGrid>
 
+More language-specific pages (including existing event-sourcing frameworks) live in the [Coming From…](/coming-from/) section of the sidebar.
+
 ## The promise
 
-Every page in this documentation is written to hold up one promise: **you should never feel like you need permission to be here.** NeoHaskell's ancestor language has a reputation for being intimidating, academic, and closed off to anyone without a category theory textbook. This is not that. If you have ever written a Redux reducer, a REST handler, or a SQL query, you already know how to think in NeoHaskell — you just need the syntax.
+Every page in this documentation is written to hold up one promise: **you should never feel like you need permission to be here.** Strongly-typed functional languages have a reputation for being intimidating, academic, and closed off to anyone without a category theory textbook. This is not that. If you have ever written a Redux reducer, a REST handler, or a SQL query, you already know how to think in NeoHaskell — you just need the syntax.
 
 Start with the [10-minute quickstart](/getting-started/installation/) if you want to feel the language in your hands. Start with [the tutorial](/tutorial/) if you want to build something real. Start with [Why NeoHaskell?](/concepts/why-neohaskell/) if you want to know what you are signing up for.
 

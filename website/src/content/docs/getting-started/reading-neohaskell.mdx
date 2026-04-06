@@ -1,6 +1,6 @@
 ---
 title: "Reading NeoHaskell"
-description: "A visual tour of NeoHaskell syntax for developers coming from mainstream languages. Read any NeoHaskell file without Haskell background."
+description: "A visual tour of NeoHaskell syntax for developers coming from mainstream languages. Read any NeoHaskell file without prior functional-programming background."
 sidebar:
   order: 3
 ---
@@ -9,7 +9,7 @@ import { Aside } from '@astrojs/starlight/components';
 
 You opened a NeoHaskell file for the first time and the syntax felt alien. That's normal. In five minutes, it won't.
 
-NeoHaskell's ancestor language (Haskell) has a reputation for unreadable symbols. NeoHaskell deliberately sheds most of that. What's left is a small, consistent set of building blocks. Here they are, with what each one means in languages you probably already know.
+Strongly-typed functional languages have a reputation for unreadable symbols. NeoHaskell deliberately sheds most of that. What's left is a small, consistent set of building blocks. Here they are, with what each one means in languages you probably already know.
 
 ## The dictionary
 
@@ -305,7 +305,7 @@ message = [fmt|Hello, #{name}! You have #{count} unread messages.|]
 `#{expr}` injects any expression into the string. Think of it as JavaScript's backtick template literals, except instead of `${x}` you write `#{x}`.
 
 <Aside type="note" title="Never use ++ for strings">
-In other Haskell code you might see `"Hello, " ++ name`. NeoHaskell style is to use `[fmt|Hello, #{name}|]` instead — cleaner, faster, more explicit.
+You may see `"Hello, " ++ name` in older code or snippets from other places — NeoHaskell style is to use `[fmt|Hello, #{name}|]` instead. It is cleaner, faster, and more explicit.
 </Aside>
 
 ## The vocabulary you need

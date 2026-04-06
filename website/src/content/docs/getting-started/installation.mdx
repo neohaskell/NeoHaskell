@@ -13,11 +13,11 @@ You are five minutes away from a working NeoHaskell environment. The whole insta
 2. Add yourself to Nix's trusted users list.
 3. Clone the NeoHaskell template and run `nix develop` inside it.
 
-That's the whole thing. No Haskell toolchain to install. No GHC versions to manage. No Stack or Cabal to configure. Nix takes care of the compiler, the standard library, the editor integration, and the tooling. You do not need to know anything about Nix to use it — treat it as a black box that gives you a working shell.
+That's the whole thing. No compiler toolchain to install by hand. No version juggling. Nix takes care of the compiler, the standard library, the editor integration, and the build tooling. You do not need to know anything about Nix to use it — treat it as a black box that gives you a working shell.
 
 ## What you'll have at the end
 
-- A shell where `cabal build`, `cabal run`, `cabal test`, and your editor's Haskell Language Server all work.
+- A shell where `cabal build`, `cabal run`, `cabal test`, and your editor's language server all work.
 - The NeoHaskell template project on your disk, ready to modify.
 - A fully-specified environment pinned to a known-good set of tool versions.
 
@@ -25,10 +25,10 @@ That's the whole thing. No Haskell toolchain to install. No GHC versions to mana
 
 <Aside type="note" title="Things people assume they need — and don't">
 - **Docker or Kubernetes.** Not now, not for deployment, not ever unless you want to.
-- **Haskell installed separately.** Nix provides GHC.
-- **GHC, Cabal, or Stack configured by hand.** Nix provides those too.
+- **A compiler installed separately.** Nix provides it.
+- **Any build tool configured by hand.** Nix provides those too.
 - **Prior Nix experience.** You will run exactly three Nix commands in this guide and none afterwards.
-- **An existing Haskell project to adapt.** The template is self-contained.
+- **An existing project to adapt.** The template is self-contained.
 </Aside>
 
 ## Supported platforms
@@ -169,11 +169,11 @@ You will spend nearly all your time in `src/MyApp/Domain/`. The other files you'
 
 ## Editor setup
 
-NeoHaskell works with any editor that supports the Haskell Language Server.
+NeoHaskell works with any editor that supports its language server (HLS, which the template ships with).
 
 <Tabs syncKey="editor">
   <TabItem label="VS Code">
-    Install the **Haskell** extension by haskell.org. When you open the project inside the `nix develop` shell, the extension will pick up the language server automatically.
+    Install the language server extension for NeoHaskell from the VS Code marketplace (search for "HLS"). When you open the project inside the `nix develop` shell, the extension will pick up the language server automatically.
 
     To make VS Code always use the dev shell, install [`direnv`](https://direnv.net/) and the VS Code **direnv** extension, then run:
 
@@ -185,15 +185,15 @@ NeoHaskell works with any editor that supports the Haskell Language Server.
     Now opening the project folder in VS Code automatically loads the dev shell — no `nix develop` needed.
   </TabItem>
   <TabItem label="Neovim">
-    Any LSP-capable config works. The easiest path is [nvim-lspconfig](https://github.com/neovim/nvim-lspconfig) with `haskell-language-server`. Run Neovim from inside the `nix develop` shell so it finds the language server on your `PATH`.
+    Any LSP-capable config works. The easiest path is [nvim-lspconfig](https://github.com/neovim/nvim-lspconfig) configured to use HLS as the LSP server. Run Neovim from inside the `nix develop` shell so it finds the server on your `PATH`.
 
     Or, as with VS Code, use [`direnv`](https://direnv.net/) and launch Neovim from the project directory — direnv loads the shell transparently.
   </TabItem>
   <TabItem label="Emacs">
-    Use [`lsp-mode`](https://emacs-lsp.github.io/lsp-mode/) or [`eglot`](https://github.com/joaotavora/eglot) with `haskell-language-server`. Launch Emacs from the dev shell, or use [`envrc-mode`](https://github.com/purcell/envrc) to load the shell automatically on project visits.
+    Use [`lsp-mode`](https://emacs-lsp.github.io/lsp-mode/) or [`eglot`](https://github.com/joaotavora/eglot) pointed at HLS. Launch Emacs from the dev shell, or use [`envrc-mode`](https://github.com/purcell/envrc) to load the shell automatically on project visits.
   </TabItem>
   <TabItem label="Other">
-    Any editor with LSP support works. Configure it to run `haskell-language-server-wrapper` as the LSP server for `.hs` files, and make sure the editor launches from inside the `nix develop` shell (or uses direnv).
+    Any editor with LSP support works. Configure it to run HLS as the LSP server for `.hs` files, and make sure the editor launches from inside the `nix develop` shell (or uses direnv).
   </TabItem>
 </Tabs>
 
@@ -210,6 +210,31 @@ cabal run             # Run the example
 ```
 
 If you forget `nix develop` and run `cabal build` outside the shell, it will fail because `cabal` is not on your `PATH` — that's expected. The dev shell is what makes everything work.
+
+## Getting started with AI
+
+If you use an AI coding assistant — Claude Code, Cursor, Copilot, OpenCode, or anything similar — you can hand it a short prompt that makes it productive in NeoHaskell immediately. Paste this into your assistant as your first message in a new NeoHaskell project:
+
+````markdown
+I'm building a NeoHaskell application. NeoHaskell is a strongly-typed
+functional language where commands, events, entities, queries, services,
+and integrations are language primitives enforced by the compiler.
+
+Fetch https://neohaskell.org/llms.txt and follow it as the source of truth
+for how to write NeoHaskell code. If you need deeper reference, fetch
+https://neohaskell.org/llms-full.txt.
+
+Key rules:
+- Use `|>` for function application, never `$`.
+- Use `do` blocks for `Task`, `Task.yield` to return, `Task.throw` to fail.
+- Use `case ... of` for pattern matching, never in function heads.
+- Use `[fmt|Hello #{name}|]` for strings, never `++`.
+- Commands end with `command ''YourCommand`.
+- Services must share one entity/event type.
+- If the build fails, read the first line of the error and fix exactly that.
+````
+
+For the full system prompt (with every rule, every common drift pattern, and the recommended workflow), see [Using AI with NeoHaskell](/getting-started/using-ai/). That page also covers why NeoHaskell lets you use cheaper, smaller models productively — the compiler does the verification work a larger model would otherwise need to do.
 
 ## Troubleshooting
 
@@ -229,7 +254,7 @@ experimental-features = nix-command flakes
 
 The first run downloads a few hundred megabytes of toolchain. If it feels stuck but your network traffic is still flowing, it is working — just slow. If you haven't completed Step 2 (trusted users), you'll miss the binary cache and have to build GHC from source, which takes much longer. Double-check the trusted-users line before retrying.
 
-### Editor does not find `haskell-language-server`
+### Editor does not find the language server
 
 Your editor is not launching from inside the `nix develop` shell. Either launch your editor from a terminal that already ran `nix develop`, or set up `direnv` as described in the editor section.
 

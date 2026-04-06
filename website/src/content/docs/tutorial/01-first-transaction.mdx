@@ -188,10 +188,10 @@ Walk through what just happened.
 - `getEntityId _ = Nothing` — this command is *creating* an account, so there's no existing ID to target.
 - `decide` — the business logic. If an account already exists at this ID, we reject. Otherwise we generate a UUID and emit an `AccountOpened` event. **We do not touch any balance field. The event is the only thing that happens.**
 - The type-family lines (`type instance EntityOf ...`) tell the compiler which entity this command affects and which transports carry it.
-- `command ''OpenAccount` — that last line is Template Haskell that generates the HTTP endpoint, JSON schema, handler registration, and everything else. You write domain logic; it generates the wiring.
+- `command ''OpenAccount` — that last line is a code-generation macro that produces the HTTP endpoint, JSON schema, handler registration, and everything else. You write domain logic; the macro generates the wiring.
 
 <Aside type="tip" title="Why the double-tick?">
-`''OpenAccount` (with two ticks) is Template Haskell syntax meaning "the name `OpenAccount` as a value." You don't need to understand how it works — just know that every command file ends with this line.
+`''OpenAccount` (with two ticks) is the syntax for "the name `OpenAccount` as a value the macro can work with." You don't need to understand how it works — just know that every command file ends with this line.
 </Aside>
 
 ## Step 3 — The Deposit command

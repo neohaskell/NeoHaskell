@@ -13,7 +13,7 @@ This page is for architects and senior engineers deciding whether NeoHaskell bel
 
 NeoHaskell is three things wearing one label:
 
-1. **A Haskell dialect** with a curated standard library and specific style conventions.
+1. **A language** with a curated standard library and specific style conventions.
 2. **An event-sourcing and CQRS framework** that bakes commands, events, entities, queries, services, and integrations into the language's type system.
 3. **A service runtime** with HTTP, CLI, and MCP transports, a PostgreSQL event store, OAuth2 integration, and a configuration system.
 
@@ -24,7 +24,7 @@ Most evaluations focus on #2 because that's where the marketing claims live. But
 - **Small-to-medium teams** (2–15 engineers) building systems with meaningful state transitions: fintech, scheduling, workflow automation, healthcare, supply chain, collaborative tools.
 - **Teams that value correctness and type safety** more than language popularity.
 - **Teams that have the autonomy to pick their stack.** "My CTO will let me try anything that compiles" is a good sign; "I need approval from an architecture review board" is a warning.
-- **Teams with at least one engineer** comfortable enough with Haskell or a similar language to handle the inevitable weird library edge case.
+- **Teams with at least one engineer** comfortable enough with a strongly-typed functional style to handle the inevitable weird edge case.
 
 ## Who it's NOT for
 
@@ -78,19 +78,19 @@ The difference is:
 
 - **Axon enforces its contracts at runtime.** An aggregate missing an `@EventSourcingHandler` for a new event type is a runtime exception. NeoHaskell catches it at compile time.
 - **Axon uses annotations.** NeoHaskell uses types. Annotations are easier to introduce gradually; types are harder to circumvent once in place.
-- **Axon is Java, with Java's verbosity and Java's ecosystem.** NeoHaskell is a curated Haskell, with different trade-offs.
+- **Axon is Java, with Java's verbosity and Java's ecosystem.** NeoHaskell is a curated, strongly-typed language with different trade-offs.
 
 **When to pick Axon:** you're on the JVM, you have a Java team, and you want mature tooling with proven scalability in enterprise settings.
 
 **When to pick NeoHaskell:** you want compiler-level guarantees and you don't already have a JVM investment.
 
-### vs. "just use Haskell"
+### vs. rolling your own framework
 
-Regular Haskell gives you the type system but not the event-sourcing primitives. You'd pick libraries like Eventful, eventstore-client, or roll-your-own. You'd spend your first week fighting monad transformer stacks. The outcome depends heavily on library choices.
+Any general-purpose language can host an event-sourcing framework — you just build it. That means picking libraries for each layer (storage, dispatch, projections, serialization), writing the glue, documenting the conventions, and hoping your team follows them. The outcome depends heavily on library choices and discipline.
 
-NeoHaskell is an opinionated curation. The standard library is chosen to make domain code approachable. The event-sourcing primitives are baked in. The style guide is specific. You give up some flexibility; you get a much shorter ramp.
+NeoHaskell is an opinionated curation. The standard library is chosen to make domain code approachable. The event-sourcing primitives are baked in. The style guide is specific. You give up some flexibility; you get a much shorter ramp and a tighter feedback loop.
 
-**When to pick regular Haskell:** you need bleeding-edge libraries, you want full control, and your team is already deeply Haskell-native.
+**When to roll your own:** you need bleeding-edge libraries, you want full control, and your team already has strong opinions and the time to enforce them.
 
 **When to pick NeoHaskell:** you want event-sourcing-first, you care about accessibility, and you don't want to shop for libraries.
 
@@ -166,7 +166,7 @@ Adopting NeoHaskell for your first project? Here's a quick sanity check. Answer 
 
 - [ ] Our domain has interesting state transitions (not pure CRUD).
 - [ ] We value audit trails, replayability, or historical debugging.
-- [ ] We have at least one engineer who is excited to learn Haskell.
+- [ ] We have at least one engineer who is excited to learn NeoHaskell.
 - [ ] We have autonomy over our tech stack — no architecture review board involvement.
 - [ ] The system we're building is new (greenfield), not a rewrite of an existing database-driven system.
 - [ ] We can tolerate a longer ramp in exchange for a better ongoing experience.

@@ -31,7 +31,7 @@ Same cause as above — same fix.
 
 You forgot to provide a `NameOf` instance for your command type.
 
-**Fix:** The `command ''Foo` Template Haskell line at the bottom of your command file generates this automatically — make sure you haven't removed it. If you still get the error after the TH line, check that the command type is at the top level of the module and is exported.
+**Fix:** The `command ''Foo` macro line at the bottom of your command file generates this automatically — make sure you haven't removed it. If you still get the error after the macro line, check that the command type is at the top level of the module and is exported.
 
 ### "No instance for (Schema.ToSchema ...) arising from a use of 'command'"
 
@@ -86,7 +86,7 @@ instance QueryOf Foo Bar where
 
 Two different query types were derived with the same name.
 
-**Fix:** Rename one of them. Each query type gets a `NameOf` instance based on its Haskell name — the kebab-case form — so `MyQuery` and `MyOtherQuery` both get unique names, but `MyQuery` in two modules collides.
+**Fix:** Rename one of them. Each query type gets a `NameOf` instance based on its type name — the kebab-case form — so `MyQuery` and `MyOtherQuery` both get unique names, but `MyQuery` in two modules collides.
 
 ## When wiring the application
 

@@ -7,7 +7,7 @@ sidebar:
 
 ## The `Command` typeclass
 
-Every command type implements this typeclass. In practice, you use the `command ''Foo` Template Haskell helper to generate it — but here's the underlying contract.
+Every command type implements this typeclass. In practice, you use the `command ''Foo` code-generation macro to generate it — but here's the underlying contract.
 
 ```haskell
 class Command command where
@@ -47,11 +47,11 @@ type instance TransportsOf YourCommand = '[WebTransport, Cli]
 
 | Type family | Purpose |
 |---|---|
-| `NameOf command` | Stringly-typed symbol used for URLs, JSON schemas, CLI names. Auto-derived from the Haskell name by the `command ''Foo` helper. |
+| `NameOf command` | Stringly-typed symbol used for URLs, JSON schemas, CLI names. Auto-derived from the type name by the `command ''Foo` helper. |
 | `EntityOf command` | Which entity the command acts on. |
 | `TransportsOf command` | Which transports the command is exposed over. Must be either one internal or one-or-more public transports, never mixed. |
 
-## The Template Haskell helper
+## The `command` macro
 
 ```haskell
 import Service.CommandExecutor.TH (command)

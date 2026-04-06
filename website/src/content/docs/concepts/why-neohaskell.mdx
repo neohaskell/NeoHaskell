@@ -17,7 +17,7 @@ This page answers all three without ceremony.
 
 ## The one-sentence pitch
 
-**NeoHaskell is Haskell with event sourcing, commands, queries, and services promoted from library patterns to language primitives — and with a standard library designed so you never have to learn what a monad is to ship a feature.**
+**NeoHaskell is a language with event sourcing, commands, queries, and services promoted from library patterns to language primitives — and with a standard library designed so you never have to learn what a monad is to ship a feature.**
 
 If that sentence is enough, go [install it](/getting-started/installation/). If you want the full argument, keep reading.
 
@@ -32,6 +32,23 @@ In most languages, event sourcing is a library. You import it, follow its conven
 - **Events can only come out of accepted commands.** There is no code path that lets you mutate entity state without recording why.
 
 That last one is the point. You cannot write a function that "just updates the balance." There is nowhere to put it. Every state change goes through `decide`, every `decide` returns a `Decision`, and every `Decision` that accepts produces events. The compiler will not let you cheat.
+
+## Built for AI-assisted development
+
+The same properties that make NeoHaskell safe for humans make it **unusually effective for AI coding assistants**. Most developers work with Claude Code, Cursor, Copilot, OpenCode, or a similar tool now. In loose languages, the quality of the generated code is roughly proportional to the intelligence of the model you pay for — because the model is the only thing enforcing correctness.
+
+In NeoHaskell, **the compiler is the enforcer**. Wrong code does not compile. Missing event handlers, mismatched types, broken service boundaries, forgotten transport registrations — all caught at build time, every time. The assistant's job shrinks from "be smart enough to be correct" to "propose something plausible and let the build tell us whether it was right."
+
+The practical consequences are hard to overstate:
+
+- **Cheaper models work.** You do not need a frontier-tier model to produce correct NeoHaskell. A smaller, faster, cheaper model generates plausible code; the compiler verifies it; errors go back to the assistant for a quick fix. Token spend drops sharply.
+- **Fewer iterations per feature.** The feedback loop is immediate and specific. A typical NeoHaskell feature takes one or two assistant rounds plus a `cabal build`, versus four to six rounds of "run the tests, read the output, guess what's wrong" in looser languages.
+- **Less context per request.** NeoHaskell files are small — a typical command is 50–80 lines, a query is 30–60. Whole modules fit in the assistant's working context with room for the conversation. Fewer tokens per request, fewer hallucinations per response.
+- **Predictable file layout.** Every command lives in `Commands/DoThing.hs`. Every query in `Queries/FeatureView.hs`. Every service in `Service.hs`. The assistant never has to guess where to put the file it is writing.
+
+This is not marketing. It is a structural property: a language where invalid code does not compile pairs naturally with a tool that produces plausible-but-sometimes-wrong code, because the expensive part (verification) is free.
+
+See [Using AI with NeoHaskell](/getting-started/using-ai/) for the ready-to-paste system prompt, the workflow, and the specific drift patterns to watch for.
 
 ## What it looks like when something breaks
 
@@ -88,9 +105,9 @@ NeoHaskell does not have glue. The `command ''DepositMoney` line at the bottom o
 
 These are the closest comparisons. Axon treats commands, events, and aggregates as first-class concepts the same way NeoHaskell does. The difference is that Axon enforces its contracts at runtime with annotations; NeoHaskell enforces them at compile time with types. A misconfigured Axon aggregate is a `NullPointerException` in production. A misconfigured NeoHaskell entity is a red squiggle in your editor.
 
-### vs. "just use Haskell"
+### vs. rolling your own in a general-purpose language
 
-Regular Haskell has none of this built in. You would pick a library (Eventful, eventstore-client, etc.), fight with monad transformers, and spend your first week learning what a `MonadReader` is. NeoHaskell's standard library is designed so you never need to. The word "monad" does not appear in any user-facing tutorial on this site. You use `do` blocks the way you use async/await in JavaScript. `Task.yield` replaces `pure`. `Result` replaces `Either`. There is no transformer stack.
+Rolling your own event-sourcing framework in any general-purpose language means picking a library for each layer, writing the glue, and hoping your team follows the conventions. NeoHaskell's standard library is designed so you never have to make those choices. The word "monad" does not appear in any user-facing tutorial on this site. You use `do` blocks the way you use async/await in JavaScript. `Task.yield` replaces `pure`. `Result` replaces `Either`. There is no framework stack — the language *is* the framework.
 
 ## Accessible syntax, actually
 
@@ -183,14 +200,14 @@ The compiler's job is to make sure your code matches your types. If your types a
 **What is NOT a reason to say no:**
 
 - "My team does not know functional programming." NeoHaskell code uses records, pattern matching, `if/then/else`, and pipes. Any developer who has written a Redux reducer has the skills.
-- "Haskell is slow." NeoHaskell compiles to native code via GHC. Throughput targets for the core library are in the tens of thousands of requests per second.
+- "It must be slow." NeoHaskell compiles to native code. Throughput targets for the core library are in the tens of thousands of requests per second.
 - "We only build CLI tools." The same code runs as a CLI.
 - "We need to integrate with existing systems." Inbound and outbound integrations are first-class.
 
 ## Current status
 
 <Aside type="caution">
-NeoHaskell is in active development. The service layer, event store, commands, queries, and integrations are stable enough to build real applications — there are several running in production today. The syntax layer (custom `.nh` files) is still being designed. Until that ships, you write NeoHaskell in Haskell files with a carefully curated standard library.
+NeoHaskell is in active development. The service layer, event store, commands, queries, and integrations are stable enough to build real applications — there are several running in production today. The custom `.nh` syntax is still being designed. Until that ships, you write NeoHaskell in `.hs` files using its carefully curated standard library and style guide.
 </Aside>
 
 **Works today:** event-sourcing primitives, commands, events, entities, queries, services, integrations, PostgreSQL event store, in-memory event store, web transport, CLI transport, MCP transport, declarative configuration, file uploads, OAuth2, OpenAPI spec generation, multi-tenant support.

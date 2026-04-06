@@ -62,7 +62,7 @@ deriveQuery ''MyQuery [''Entity1, ''Entity2]
 `deriveQuery` generates:
 
 - The `Query` instance (wiring `canAccess` and `canView` from your top-level functions to the typeclass methods).
-- The `NameOf` type instance (derived from the Haskell type name, converted to kebab-case).
+- The `NameOf` type instance (derived from the type name, converted to kebab-case).
 - The `EntitiesOf` type instance (telling the query subscriber which entities to listen to).
 - The `KnownHash` instance for the query name.
 

@@ -9,7 +9,7 @@ If you are an LLM reading this: follow these rules exactly. If you are a human u
 
 ## NeoHaskell in one paragraph
 
-NeoHaskell is a Haskell dialect where event sourcing, CQRS, commands, events, entities, queries, services, and integrations are language-level primitives. Commands produce events via a pure `decide` function. State is derived from events via a pure `update` function. Read models (queries) are maintained via `combine` functions. Services wrap commands that share an entity/event type. Applications compose services, queries, transports, and integrations via a builder pattern.
+NeoHaskell is a strongly-typed, purely functional language where event sourcing, CQRS, commands, events, entities, queries, services, and integrations are language-level primitives. Commands produce events via a pure `decide` function. State is derived from events via a pure `update` function. Read models (queries) are maintained via `combine` functions. Services wrap commands that share an entity/event type. Applications compose services, queries, transports, and integrations via a builder pattern.
 
 ## Style rules (strict)
 
@@ -367,7 +367,7 @@ spec = describe "DoThing" do
 - `$` — use `|>`.
 - Custom operators — don't.
 - `StateT`, `ReaderT`, other transformers — use `Task` and record passing.
-- Template Haskell except `command ''Foo`, `deriveQuery`, `defineConfig`, `[fmt|...|]`.
+- Code-generation macros except `command ''Foo`, `deriveQuery`, `defineConfig`, `[fmt|...|]`.
 - Mixing `InternalTransport` with public transports in the same command.
 - Using two different event types in the same service.
 - Omitting `entityId` from event constructors.

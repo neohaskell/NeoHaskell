@@ -13,9 +13,9 @@ You've heard that NeoHaskell is "type safe." Most languages call themselves that
 
 The goal of type safety is not to make you write type annotations. It is to make **certain classes of bugs impossible to write**. A program that type-checks is not a correct program — the compiler can't read your mind. But a program that type-checks is a program that has certain failure modes ruled out, and those failure modes are the ones that bite hardest in production.
 
-NeoHaskell is built on GHC, the compiler for Haskell. That gives you the standard Haskell type system. But NeoHaskell's event-sourcing primitives layer additional type-level constraints on top, and those are what make the *specific* bugs in event-sourced systems impossible.
+NeoHaskell has a powerful, strongly-typed compiler that catches entire categories of bugs at build time. On top of that, its event-sourcing primitives layer additional type-level constraints, and those are what make the *specific* bugs in event-sourced systems impossible.
 
-## What the Haskell type system gives you
+## What a strong type system gives you
 
 Before the event-sourcing bits, here's what you get just from having a strong type system at all:
 
@@ -70,7 +70,7 @@ There is no "truthy" value in NeoHaskell. There is no automatic conversion from 
 
 ## What NeoHaskell's event-sourcing primitives add
 
-This is where NeoHaskell goes beyond vanilla Haskell. These checks are specific to event-sourcing contracts — and they're the bugs that bite hardest in event-sourced systems written in other languages.
+These checks are specific to event-sourcing contracts — and they're the bugs that bite hardest in event-sourced systems written in other languages.
 
 ### 1. Missing event handlers
 
