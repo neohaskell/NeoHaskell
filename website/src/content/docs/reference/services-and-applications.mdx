@@ -1,0 +1,237 @@
+---
+title: "Services and applications"
+description: "Reference for Service.new, Service.command, Application.new, and every Application.with* builder."
+sidebar:
+  order: 5
+---
+
+## `Service`
+
+A `Service` bundles commands that share an entity and event type.
+
+```haskell
+import Service qualified
+```
+
+| Function | Signature | Description |
+|---|---|---|
+| `Service.new` | `Service '[] '[]` | Empty service. |
+| `Service.command @Cmd` | `Service cmds transports -> Service ... ...` | Register a command type. |
+
+Typical use:
+
+```haskell
+service :: Service _ _
+service =
+  Service.new
+    |> Service.command @CreateCart
+    |> Service.command @AddItem
+    |> Service.command @RemoveItem
+    |> Service.command @Checkout
+```
+
+The underscores in the return type let the compiler infer the exact type. You can write the full type if you prefer, but it includes type-level lists that are tedious to spell out.
+
+**Compile-time constraint:** all commands must share the same `EntityOf` and `EventOf`. Mixing types produces a custom error message.
+
+## `Application`
+
+An `Application` combines services, queries, integrations, transports, and event-store configuration into a single runnable unit.
+
+```haskell
+import Service.Application qualified as Application
+import Service.Application (Application)
+```
+
+### Construction
+
+| Function | Description |
+|---|---|
+| `Application.new` | Empty application. |
+| `Application.withConfig @Config` | Register a typed configuration. Must come before factories that depend on it. |
+
+### Event store
+
+| Function | Description |
+|---|---|
+| `Application.withEventStore @() factory` | Static event-store factory (takes unit config). |
+| `Application.withEventStore factory` | Config-dependent factory (takes your app config type). |
+
+### Transports
+
+| Function | Description |
+|---|---|
+| `Application.withTransport WebTransport.server` | Register the HTTP transport. |
+| `Application.withTransport Cli.cli` | Register the CLI transport. |
+| `Application.withTransport Mcp.server` | Register the MCP transport. |
+
+Multiple transports can be registered — each runs independently.
+
+### Services
+
+| Function | Description |
+|---|---|
+| `Application.withService service` | Register a service with all its commands. |
+| `Application.withServiceRunner runner` | Register a pre-built `ServiceRunner` (lower-level). |
+
+### Queries
+
+| Function | Description |
+|---|---|
+| `Application.withQuery @QueryType` | Register a query type for automatic wiring. |
+| `Application.withQueryObjectStore config` | Configure the query storage backend. Defaults to in-memory. |
+| `Application.withQueryEndpoint name handler` | Register a custom query endpoint (lower-level). |
+
+### Integrations
+
+| Function | Description |
+|---|---|
+| `Application.withOutbound @Integration` | Register a typed outbound integration. |
+| `Application.withOutboundLifecycle @config @Entity factory` | Register a stateful outbound integration with lifecycle. |
+| `Application.withInbound @config factory` | Register an inbound integration. |
+
+### Auth and OAuth
+
+| Function | Description |
+|---|---|
+| `Application.withAuth @config factory` | Enable JWT authentication via an auth server URL. |
+| `Application.withAuthOverrides overrides` | Advanced auth customization. |
+| `Application.withOAuth2StateKey envVarName` | Set the environment variable holding the OAuth2 HMAC key. |
+| `Application.withOAuth2Provider @config factory` | Register an OAuth2 provider. |
+
+### File uploads
+
+| Function | Description |
+|---|---|
+| `Application.withFileUpload factory` | Enable file upload support with the given config. |
+
+### CORS and API info
+
+| Function | Description |
+|---|---|
+| `Application.withCors @config factory` | Configure CORS headers. |
+| `Application.withApiInfo @config factory` | Set API metadata for the OpenAPI spec. |
+
+### Health check
+
+| Function | Description |
+|---|---|
+| `Application.withHealthCheck @config factory` | Customize the health check endpoint. |
+| `Application.withoutHealthCheck` | Disable the default `/health` endpoint. |
+
+### Secret store
+
+| Function | Description |
+|---|---|
+| `Application.withSecretStore @config factory` | Configure a secret store for token/credential management. |
+
+### Dispatcher
+
+| Function | Description |
+|---|---|
+| `Application.withDispatcherConfig @config factory` | Tune the command dispatcher (worker count, timeouts, etc.). |
+
+### Running
+
+| Function | Description |
+|---|---|
+| `Application.run app` | Run the app to completion. Loads config, creates event store, rebuilds queries, starts transports and integrations. |
+| `Application.runWith store app` | Run with a pre-built event store (useful for tests). |
+| `Application.runWithAsync store app` | Non-blocking run that returns a handle. |
+
+## A complete example
+
+```haskell
+module App (app) where
+
+import Core
+import MyApp.Config (MyConfig (..))
+import MyApp.Integrations.WelcomeEmail (WelcomeEmail)
+import MyApp.Queries.UserDashboard (UserDashboard)
+import MyApp.Queries.PostFeed (PostFeed)
+import MyApp.Services qualified as Services
+import Service.Application (Application)
+import Service.Application qualified as Application
+import Service.EventStore.Postgres (PostgresEventStore (..))
+import Service.Transport.Web qualified as WebTransport
+
+
+app :: Application
+app =
+  Application.new
+    |> Application.withConfig @MyConfig
+    |> Application.withEventStore makePostgresConfig
+    |> Application.withAuth getAuthUrl
+    |> Application.withTransport WebTransport.server
+    |> Application.withService Services.userService
+    |> Application.withService Services.postService
+    |> Application.withQuery @UserDashboard
+    |> Application.withQuery @PostFeed
+    |> Application.withOutbound @WelcomeEmail
+
+
+getAuthUrl :: MyConfig -> Text
+getAuthUrl config = config.authServerUrl
+
+
+makePostgresConfig :: MyConfig -> PostgresEventStore
+makePostgresConfig config =
+  PostgresEventStore
+    { user = config.dbUser
+    , password = config.dbPassword
+    , host = config.dbHost
+    , databaseName = config.dbName
+    , port = config.dbPort
+    }
+```
+
+`main.hs` then:
+
+```haskell
+module Main where
+
+import App (app)
+import Core
+import Service.Application qualified as Application
+import Task qualified
+
+
+main :: IO ()
+main = Task.runMain (Application.run app)
+```
+
+## Configuration factory pattern
+
+Many `with*` functions accept either a unit config (`@()`) or a factory that takes your application config type. This lets you defer config-dependent decisions to runtime, after the config has been loaded.
+
+```haskell
+-- Static (no config needed)
+Application.withEventStore @() (\_ -> InMemory.new)
+
+-- Dynamic (uses MyConfig)
+Application.withEventStore makePostgresConfig
+```
+
+The second form requires that you also call `withConfig @MyConfig` earlier in the chain. The compiler enforces this.
+
+## Inspection helpers
+
+Useful for debugging and testing the application graph:
+
+| Function | Description |
+|---|---|
+| `Application.isEmpty app` | `True` if no configuration has been set. |
+| `Application.hasEventStore app` | Event store registered? |
+| `Application.hasServiceRunners app` | Any services registered? |
+| `Application.serviceRunnerCount app` | How many? |
+| `Application.hasTransports app` | Any transports registered? |
+| `Application.transportCount app` | How many? |
+| `Application.hasQueryDefinitions app` | Any queries registered? |
+| `Application.queryDefinitionCount app` | How many? |
+
+## Where to go from here
+
+- **[Services concept](/concepts/services/)** — the "why" behind services.
+- **[Integrations](/reference/integrations/)** — reference for the integration builders.
+- **[Transports](/reference/transports/)** — what `withTransport` accepts.
+- **[Configuration](/reference/configuration/)** — how `withConfig` works.

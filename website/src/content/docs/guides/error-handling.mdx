@@ -1,195 +1,293 @@
 ---
-title: "Error Handling"
-description: "Typed errors in NeoHaskell. The Task err val pattern, error propagation, composing error types across services, and recovery strategies."
-keywords: [error handling, Task, Result, typed errors, error propagation, Ok, Err, andThen]
+title: "Error handling"
+description: "When to reject, when to throw, when to use Result, and how to keep your errors typed and recoverable."
 sidebar:
   order: 2
 ---
 
-{/*
-  CONTENT OUTLINE — Error Handling Guide
-  =======================================
-  Position: Guides section, second guide
-  Goal: Reader arrives knowing they need to handle errors properly. They leave with a complete error handling strategy.
-  Prerequisites: Tutorial Part 2+ (reader has seen Result.err in context)
-  Related concept: concepts/effects.mdx
-  Tone: practical — show the pattern, explain why it works, show the edge cases
-
-  Sections:
-  1. Prerequisites
-  2. What You'll Have at the End
-  3. The Result Type: Ok and Err
-  4. The Task Type: Async Results
-  5. Error Propagation with Task.andThen
-  6. Custom Error Types for Your Domain
-  7. Composing Error Types Across Services
-  8. Error Recovery Strategies
-  9. Logging and Observability
-  10. Next Steps
-*/}
-
-{/* POLYGLOT NOTE: All code examples on this page should include equivalent snippets in JS/TS, Python, and Go. See DOCS-PLAN.md Guiding Principle #9. */}
-
 import { Aside } from '@astrojs/starlight/components';
 
-## Prerequisites
+NeoHaskell gives you three ways to represent something going wrong: `Decider.reject`, `Task.throw`, and `Result`. They're not interchangeable. Picking the right one matters for both correctness and operational clarity.
 
-- Completed [Tutorial Part 2](/tutorial/part-2/) or higher — you've seen `Result.err` and `Task` in context
-- Optional: [Effects](/concepts/effects/) — the theory behind why NeoHaskell handles errors this way
+This guide explains when to use each, how they compose, and the specific patterns you'll see in real code.
 
-## What You'll Have at the End
+## The three error types
 
-- A clear mental model for `Result` and `Task` types
-- Error propagation that composes cleanly without try/catch
-- Custom error types that document every failure mode in the type signature
-- A strategy for errors that cross service boundaries
-- Logging and observability hooks for production error tracking
+| Mechanism | Lives in | Used for | Carries |
+|---|---|---|---|
+| **`Decider.reject reason`** | `Decision` (pure) | Business rule violations inside a command | A `Text` reason |
+| **`Task.throw err`** | `Task err val` (effectful) | System failures — I/O, network, etc. | A typed error of your choice |
+| **`Result err val`** | Any (pure) | Pure computations that can fail | A typed error |
 
-## The Result Type: Ok and Err
+## When to use `Decider.reject`
 
-{/*
-  The foundation. Result is the synchronous error type.
-  Show the type, show the constructors, show basic usage.
-*/}
+Use rejection for **expected business outcomes** inside a command's `decide` function.
 
+- "Account doesn't exist."
+- "Insufficient balance."
+- "Email already registered."
+- "Permission denied."
 
-- `Result err val` represents a computation that either succeeds (`Ok val`) or fails (`Err err`)
-- This is not an exception — it's a value. You can pass it around, store it, pattern match on it.
-- The type signature documents every possible failure: `Result AccountError Account` tells you exactly what can go wrong
-- Pattern matching on Result is exhaustive — the compiler forces you to handle both cases
-- Show: creating an `Ok` value
-- Show: creating an `Err` value
-- Show: pattern matching on a Result
-- Contrast with exceptions: exceptions are invisible in type signatures; Result errors are explicit
-- Note: `Result` is for synchronous operations. For async operations, use `Task`.
+A rejection is not a bug. It's a normal, expected outcome — the domain told the caller no. The caller gets a structured `Rejected` response with the reason; your logs stay quiet.
 
-{/* TODO: code example showing Result pattern match — include JS/TS, Python, Go equivalents */}
+```haskell
+decide :: Deposit -> Maybe Account -> RequestContext -> Decision AccountEvent
+decide cmd account _ctx = case account of
+  Nothing -> Decider.reject "Account does not exist"
+  Just _  -> if cmd.amount <= 0
+    then Decider.reject "Amount must be positive"
+    else Decider.acceptExisting [ MoneyDeposited { ... } ]
+```
 
-## The Task Type: Async Results
+Rejection reasons are free text. Keep them user-friendly — they might appear in an API response, an error toast, or a metric label. Use full sentences, not codes.
 
-{/*
-  Task is the async version of Result. It's the primary type for effectful operations.
-*/}
-
-
-- `Task err val` is like `Result err val` but for async operations (database calls, HTTP requests, file I/O)
-- A `Task` is a description of a computation — it doesn't run until you execute it
-- The error type `err` is explicit in the signature — no hidden exceptions
-- Show: a function that returns `Task DatabaseError User`
-- Show: running a Task with `Task.run`
-- Show: the difference between a Task that succeeds and one that fails
-- Note: most NeoHaskell operations return `Task` — command handlers, queries, integrations
-
-{/* TODO: code example showing Task creation and execution — include JS/TS, Python, Go equivalents */}
-
-## Error Propagation with Task.andThen
-
-{/*
-  The key composition operator. This is how you chain operations without nesting.
-*/}
-
-
-- `Task.andThen` chains two Tasks: if the first succeeds, run the second with the result; if the first fails, short-circuit
-- This replaces nested try/catch blocks — errors propagate automatically
-- Show: chaining two Tasks with `andThen`
-- Show: a chain of three Tasks — each step only runs if the previous succeeded
-- Show: the equivalent code with try/catch (to illustrate why andThen is better)
-- `Task.map` transforms the success value without changing the error type
-- `Task.mapError` transforms the error value — useful when composing across modules
-- Show: using `Task.map` to transform a result
-- Note: the chain reads top-to-bottom, like a pipeline — no indentation hell
-
-{/* TODO: code example showing andThen chain vs try/catch equivalent — include JS/TS, Python, Go equivalents */}
-
-## Custom Error Types for Your Domain
-
-{/*
-  How to define error types that are meaningful to your domain.
-*/}
-
-
-- Define error types as sum types (union types) — one constructor per failure mode
-- Example: `AccountError = AccountNotFound | InsufficientFunds | AccountAlreadyClosed`
-- Each constructor can carry data: `InsufficientFunds { requested: Amount, available: Amount }`
-- The error type becomes documentation — anyone reading the function signature knows every way it can fail
-- Show: defining a custom error type
-- Show: returning a custom error from a command handler
-- Show: pattern matching on a custom error to produce a user-facing message
-- Convention: name error types after the domain concept, not the operation (`AccountError`, not `DepositError`)
-- Keep error types in the same module as the entity they describe
-
-{/* TODO: code example showing custom error type definition and usage — include JS/TS, Python, Go equivalents */}
-
-## Composing Error Types Across Services
-
-{/*
-  The hard part: when you call code from another service, the error types don't match.
-  This section shows the standard patterns for handling this.
-*/}
-
-
-- When a Service calls an Integration, the error types are different — you need to compose them
-- Option 1: `Task.mapError` — transform the inner error into the outer error type
-  - Use when: the outer context knows about the inner error and wants to handle it specifically
-  - Show: mapping a `DatabaseError` to an `AccountError`
-- Option 2: Wrap in a sum type — add a constructor for "integration failed"
-  - Use when: the outer context doesn't care about the details of the inner failure
-  - Show: `AccountError = ... | IntegrationFailed Text`
-- Option 3: Use a shared error type — define a common error type for cross-context failures
-  - Use when: multiple services share the same infrastructure errors
-  - Show: a `ServiceError` type that wraps infrastructure errors
-- Guideline: keep domain errors domain-specific; wrap infrastructure errors at the boundary
-
-{/* TODO: code example showing error composition across services — include JS/TS, Python, Go equivalents */}
-
-## Error Recovery Strategies
-
-{/*
-  What to do when an error occurs. Not all errors are fatal.
-*/}
-
-
-- `Task.orElse` — try an alternative if the first Task fails
-  - Use when: you have a fallback (e.g., cache miss → fetch from database)
-  - Show: `Task.orElse` with a fallback Task
-- `Task.recover` — handle a specific error and continue
-  - Use when: a specific error is expected and recoverable
-  - Show: recovering from `AccountNotFound` by creating a new account
-- `Task.attempt` — convert a failing Task into a `Result` — never fails, always returns `Ok (Result err val)`
-  - Use when: you want to inspect the error without propagating it
-  - Show: using `Task.attempt` to log an error and continue
-- Guideline: recover at the boundary, not deep in the call stack
-- Guideline: don't recover from errors you don't understand — let them propagate
-
-{/* TODO: code example showing recovery patterns — include JS/TS, Python, Go equivalents */}
-
-## Logging and Observability for Errors
-
-{/*
-  How to get visibility into errors in production.
-*/}
-
-
-- NeoHaskell's structured logging integrates with the error type system
-- Show: logging an error with context using `Log.error`
-- Show: adding structured fields to an error log (entity ID, command type, error details)
-- Show: the difference between logging and recovering — you can do both
-- Correlation IDs: every command execution gets a correlation ID — include it in error logs
-- Error metrics: show how to emit a counter metric when a specific error occurs
-- Note: because errors are values, you can inspect them before logging — no stack trace archaeology
-
-{/* TODO: code example showing structured error logging — include JS/TS, Python, Go equivalents */}
-
-<Aside type="note" title="Errors vs. Domain Rejections">
-Not every "failure" is an error. A command that's rejected because the business rules say no (e.g., insufficient funds) is a domain rejection — it's expected, it's correct behavior, and it should be modeled as a `Result.err` with a domain error type. Reserve `Task` failures for unexpected infrastructure problems (database down, network timeout). The distinction matters for monitoring: domain rejections are business metrics; infrastructure failures are alerts.
+<Aside type="note" title="Why not use exceptions?">
+If you threw an exception from `decide`, the command executor would catch it as an unexpected failure and log it as an error. That's wrong — the command simply wasn't accepted. Rejection is the semantic fit.
 </Aside>
 
-## Next Steps
+## When to use `Task.throw`
 
-- **Theory**: [Effects](/concepts/effects/) — why NeoHaskell models effects as values and what that enables
-- **Related guide**: [Testing](/guides/testing/) — how to test error paths with Given-When-Then
-- **Related guide**: [Reading Error Messages](/guides/reading-error-messages/) — when the compiler itself gives you an error
+Use `Task.throw` for **unexpected system failures** in effectful code (anywhere you're inside a `Task`).
 
-:::caution[Coming Soon]
-This page is a content outline. The full guide with code examples is in progress.
-:::
+- "Database connection lost."
+- "External API returned 503."
+- "Failed to parse configuration file."
+- "Deserialization failed."
+
+`Task.throw` puts a typed error into the failure channel of the `Task`. It propagates up through `<-` bindings until someone catches it with `Task.recover` or until it reaches the top of the call stack.
+
+```haskell
+fetchConfig :: Path -> Task Text Config
+fetchConfig path = do
+  contents <- readFile path
+  case parseConfig contents of
+    Ok config -> Task.yield config
+    Err parseError -> Task.throw [fmt|Invalid config at #{path}: #{parseError}|]
+```
+
+Notice that the error channel is `Text` here — a human-readable message. For richer errors, use a sum type:
+
+```haskell
+data ConfigError
+  = FileNotFound Path
+  | ParseError Text
+  | MissingRequiredField Text
+
+fetchConfig :: Path -> Task ConfigError Config
+fetchConfig path = do
+  contents <- readFile path |> Task.mapError (\_ -> FileNotFound path)
+  case parseConfig contents of
+    Ok config -> Task.yield config
+    Err parseError -> Task.throw (ParseError parseError)
+```
+
+Typed errors let callers switch on the failure type and react differently to different causes.
+
+## When to use `Result`
+
+Use `Result err val` in **pure code** that can fail but isn't inside a `Task`.
+
+```haskell
+parseAge :: Text -> Result Text Int
+parseAge text = case Int.fromText text of
+  Nothing -> Err "not a valid integer"
+  Just n -> if n < 0 then Err "age must be non-negative" else Ok n
+```
+
+`Result` is the pure cousin of `Task`. It's what you use inside `decide` functions (which are pure), or in helper functions that don't need side effects.
+
+Converting a `Result` to a `Task`:
+
+```haskell
+fromResult :: Result err val -> Task err val
+fromResult r = case r of
+  Ok v -> Task.yield v
+  Err e -> Task.throw e
+```
+
+## The decision tree
+
+Use this to pick the right tool:
+
+```
+Is the failure a business rule violation inside a decide function?
+├── YES → Decider.reject
+└── NO  → Is the code inside a Task?
+         ├── YES → Task.throw
+         └── NO  → Result
+```
+
+## Propagation
+
+Errors propagate automatically in `do` blocks. If any `<-` step fails, the rest of the block is skipped:
+
+```haskell
+loadDashboard :: Uuid -> Task Text Dashboard
+loadDashboard userId = do
+  user <- fetchUser userId       -- if this fails, posts/stats are never fetched
+  posts <- fetchPosts userId     -- if this fails, stats is never fetched
+  stats <- fetchStats userId
+  Task.yield Dashboard { user = user, posts = posts, stats = stats }
+```
+
+If `fetchUser` fails, the whole task fails with whatever error `fetchUser` threw. The caller sees the error; you didn't have to write try/catch.
+
+## Recovering from errors
+
+Three ways to recover:
+
+### `Task.recover`
+
+Run a recovery function when the task fails:
+
+```haskell
+fetchUserOrDefault :: Uuid -> Task err User
+fetchUserOrDefault userId =
+  fetchUser userId
+    |> Task.recover (\_err -> Task.yield defaultUser)
+```
+
+### `Task.asResult`
+
+Convert a failing task into one that always succeeds with a `Result`:
+
+```haskell
+handleRequest :: Uuid -> Task err Text
+handleRequest userId = do
+  result <- Task.asResult (fetchUser userId)
+  case result of
+    Ok user -> Task.yield [fmt|Hello, #{user.name}|]
+    Err reason -> Task.yield [fmt|Could not load user: #{reason}|]
+```
+
+### `Task.mapError`
+
+Transform one error type into another as the task propagates:
+
+```haskell
+readConfigTyped :: Path -> Task AppError Config
+readConfigTyped path =
+  readConfig path
+    |> Task.mapError (\textErr -> AppConfigError textErr)
+```
+
+This is how you compose errors across layers: the lower layer uses its own error type, the upper layer converts as it wraps.
+
+## Composing errors across services
+
+Different parts of your system may use different error types. The pattern is:
+
+1. **Each service layer uses its native error type.** The event store uses `EventStoreError`. The HTTP transport uses `Text`. Your integration uses `IntegrationError`. Etc.
+2. **Adapters map between layers.** When you call the event store from an integration, you `Task.mapError` to convert.
+3. **At the top of the call stack, you have one type.** Usually `Text`, often wrapped in a richer type that includes the layer the error came from.
+
+A typical wrapper:
+
+```haskell
+data AppError
+  = EventStoreFailure Text
+  | IntegrationFailure IntegrationError
+  | ValidationFailure Text
+
+runApp :: Application -> Task AppError Unit
+runApp app = do
+  Application.run app |> Task.mapError EventStoreFailure
+```
+
+## Logging errors
+
+When you catch an error, log it before recovering:
+
+```haskell
+fetchWithFallback :: Uuid -> Task err User
+fetchWithFallback userId =
+  fetchUser userId
+    |> Task.recover (\err -> do
+        Log.warn [fmt|fetchUser failed for #{userId}: #{err}. Using fallback.|]
+        Task.ignoreError
+        fetchUserFromReplica userId)
+```
+
+A rule of thumb: **every caught error should be logged somewhere**. Silently swallowed errors are the source of half of all production mysteries.
+
+## Rejection reasons vs. error messages
+
+Rejection reasons (from `Decider.reject`) are **user-facing**. They should be actionable by the caller:
+
+- ✅ "Insufficient funds"
+- ✅ "Email must be a valid address"
+- ✅ "This account is closed and cannot accept deposits"
+- ❌ "Balance check failed at line 47 of Withdraw.hs"
+- ❌ "null pointer at AccountService.java:213"
+
+Error messages (from `Task.throw`) are **developer-facing**. They go to logs and alerting, not to users:
+
+- ✅ "Failed to connect to PostgreSQL: connection refused (127.0.0.1:5432)"
+- ✅ "JSON decode failed at offset 142: expected integer, got string"
+- ✅ "OAuth2 token refresh failed: invalid_grant"
+
+Never show a raw `Task.throw` error to an end user. Wrap it and replace the message with something helpful.
+
+## Pattern: authorization inside decide
+
+A common pattern you'll see in real codebases:
+
+```haskell
+decide cmd entity ctx = case ctx.user of
+  Nothing ->
+    Decider.reject "Authentication required"
+  Just user ->
+    case entity of
+      Nothing ->
+        Decider.reject "Resource does not exist"
+      Just e ->
+        if e.ownerId /= user.sub
+          then Decider.reject "You do not own this resource"
+          else -- ... proceed
+            Decider.acceptExisting [ ... ]
+```
+
+Authorization failures are rejections, not exceptions. They're expected outcomes — the caller asked for something they're not allowed to do. Log them if you want (for audit), but don't treat them as bugs.
+
+## Pattern: graceful degradation
+
+When a secondary feature fails, let the primary feature succeed:
+
+```haskell
+serveHomepage :: Task err HomepageHtml
+serveHomepage = do
+  posts <- fetchPosts  -- primary data
+  sidebar <- fetchSidebar
+    |> Task.recover (\_err -> Task.yield emptySidebar)  -- graceful fallback
+  Task.yield (render posts sidebar)
+```
+
+If the sidebar service is down, the user still sees the posts. If the main data fails, the whole request fails.
+
+## Pattern: retry with backoff
+
+For transient failures, retry with exponential backoff:
+
+```haskell
+import Timer qualified
+
+retryWithBackoff :: Int -> Task err val -> Task err val
+retryWithBackoff maxAttempts action = go 1
+  where
+    go attempt
+      | attempt >= maxAttempts = action
+      | otherwise =
+          action |> Task.recover (\_err -> do
+            Timer.sleep (Timer.seconds (2 ^ attempt))
+            go (attempt + 1))
+```
+
+<Aside type="caution" title="Let the executor handle command retries">
+The command executor already retries on concurrency conflicts automatically. Don't wrap commands in your own retry logic — you'll double up.
+</Aside>
+
+## Where to go from here
+
+- **[Effects and concurrency](/concepts/effects/)** — deeper look at `Task`.
+- **[Reading error messages](/guides/reading-error-messages/)** — specifically for compiler errors.
+- **[Testing](/guides/testing/)** — how to test error paths.

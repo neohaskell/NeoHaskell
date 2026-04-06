@@ -1,0 +1,220 @@
+---
+title: "Commands and decisions"
+description: "Reference for the Command typeclass, Decision monad, and the Decider smart constructors."
+sidebar:
+  order: 2
+---
+
+## The `Command` typeclass
+
+Every command type implements this typeclass. In practice, you use the `command ''Foo` Template Haskell helper to generate it — but here's the underlying contract.
+
+```haskell
+class Command command where
+  type IsMultiTenant command :: Bool
+  type IsMultiTenant command = 'False
+
+  getEntityIdImpl ::
+    GetEntityIdFunction (IsMultiTenant command) command (EntityIdType (EntityOf command))
+
+  decideImpl ::
+    DecideFunction (IsMultiTenant command) command (EntityOf command) (EventOf (EntityOf command))
+```
+
+- **`IsMultiTenant`** — type-level flag that selects between single-tenant and multi-tenant command shapes. Defaults to `'False`.
+- **`getEntityIdImpl`** — extract the target entity ID from the command (returning `Nothing` for creation commands).
+- **`decideImpl`** — the decision function.
+
+### `DecideFunction`
+
+```haskell
+type family DecideFunction (isTenant :: Bool) command entity event where
+  DecideFunction 'False command entity event =
+    command -> Maybe entity -> RequestContext -> Decision event
+  DecideFunction 'True command entity event =
+    Uuid -> command -> Maybe entity -> RequestContext -> Decision event
+```
+
+Single-tenant commands take three arguments: the command, the current entity (or `Nothing`), and the request context. Multi-tenant commands take a tenant UUID as the first argument.
+
+## Type families you'll declare
+
+```haskell
+type instance NameOf YourCommand = "YourCommand"
+type instance EntityOf YourCommand = YourEntity
+type instance TransportsOf YourCommand = '[WebTransport, Cli]
+```
+
+| Type family | Purpose |
+|---|---|
+| `NameOf command` | Stringly-typed symbol used for URLs, JSON schemas, CLI names. Auto-derived from the Haskell name by the `command ''Foo` helper. |
+| `EntityOf command` | Which entity the command acts on. |
+| `TransportsOf command` | Which transports the command is exposed over. Must be either one internal or one-or-more public transports, never mixed. |
+
+## The Template Haskell helper
+
+```haskell
+import Service.CommandExecutor.TH (command)
+
+-- ... your decide/getEntityId definitions ...
+
+command ''YourCommand
+```
+
+`command ''YourCommand` generates:
+
+- The `Command` instance.
+- The `NameOf` type instance (if not already declared).
+- The `KnownHash` instance for the command name.
+- The JSON schema registration.
+- The handler that binds `decideImpl` to your local `decide` function.
+
+Place this line at the bottom of your command file.
+
+## The `Decision` monad
+
+```haskell
+data Decision event
+
+-- Instances: Functor, Applicative, Monad
+```
+
+A `Decision event` is a pure, free-monad computation that ultimately produces either an `AcceptCommand` or `RejectCommand` result. Inside a `Decision`, you can:
+
+- Generate UUIDs via `Decider.generateUuid`.
+- Use `do` notation to sequence steps.
+- Terminate with `Decider.acceptNew`, `Decider.acceptExisting`, `Decider.acceptAfter`, `Decider.acceptAny`, or `Decider.reject`.
+
+### `Decider` smart constructors
+
+```haskell
+import Decider qualified
+```
+
+| Constructor | Signature | Use case |
+|---|---|---|
+| `Decider.acceptNew` | `Array event -> Decision event` | Creation command — succeed only if the stream doesn't exist. |
+| `Decider.acceptExisting` | `Array event -> Decision event` | Update command — succeed only if the stream exists. |
+| `Decider.acceptAfter` | `StreamPosition -> Array event -> Decision event` | Optimistic concurrency — succeed only if the stream is at this position. |
+| `Decider.acceptAny` | `Array event -> Decision event` | Accept regardless of stream state. |
+| `Decider.reject` | `Text -> Decision a` | Reject with a reason. |
+| `Decider.generateUuid` | `Decision Uuid` | Generate a UUID inside a decision. |
+
+Events passed to accept constructors must be either the entity's event ADT directly or a type with an `EventVariantOf` instance.
+
+### `runDecision`
+
+```haskell
+runDecision ::
+  DecisionContext ->
+  Decision event ->
+  Task Text (CommandResult event)
+```
+
+Used primarily in tests. Takes a `DecisionContext` (which provides the UUID generator) and a `Decision`, and produces a `Task` that resolves to the final `CommandResult`.
+
+## `CommandResult`
+
+```haskell
+data CommandResult event
+  = AcceptCommand InsertionType (Array event)
+  | RejectCommand Text
+```
+
+What `runDecision` returns. `AcceptCommand` includes the insertion type (which determines how the events are appended) and the events themselves.
+
+## `InsertionType`
+
+```haskell
+data InsertionType
+  = StreamCreation       -- only if stream doesn't exist
+  | ExistingStream       -- only if stream exists
+  | InsertAfter StreamPosition  -- optimistic concurrency
+  | AnyStreamState       -- regardless
+```
+
+Chosen automatically by the `acceptNew` / `acceptExisting` / `acceptAfter` / `acceptAny` helpers.
+
+## `RequestContext`
+
+```haskell
+data RequestContext = RequestContext
+  { user :: Maybe UserClaims
+  }
+
+data UserClaims = UserClaims
+  { sub :: Text                    -- Subject (user ID)
+  , claims :: Map Text Json.Value  -- All JWT claims
+  }
+```
+
+Passed to `decide` as the third (or fourth, for multi-tenant) argument. Use it for authorization checks.
+
+## Example: a full command file
+
+```haskell
+module MyApp.User.Commands.ChangeEmail (
+  ChangeEmail (..),
+  getEntityId,
+  decide,
+) where
+
+import Core
+import Decider qualified
+import Json qualified
+import Service.Auth (RequestContext (..), UserClaims (..))
+import Service.Command.Core (TransportsOf)
+import Service.CommandExecutor.TH (command)
+import Service.Transport.Web (WebTransport)
+import MyApp.User.Core
+
+
+data ChangeEmail = ChangeEmail
+  { userId :: Uuid
+  , newEmail :: Text
+  }
+  deriving (Generic, Show)
+
+
+instance Json.FromJSON ChangeEmail
+instance Json.ToJSON ChangeEmail
+
+
+getEntityId :: ChangeEmail -> Maybe Uuid
+getEntityId cmd = Just cmd.userId
+
+
+decide :: ChangeEmail -> Maybe User -> RequestContext -> Decision UserEvent
+decide cmd user ctx = case user of
+  Nothing ->
+    Decider.reject "User does not exist"
+  Just u ->
+    case ctx.user of
+      Nothing ->
+        Decider.reject "Authentication required"
+      Just claims ->
+        if Uuid.toText u.id /= claims.sub
+          then Decider.reject "You can only change your own email"
+          else if u.email == cmd.newEmail
+            then Decider.reject "New email matches current email"
+            else Decider.acceptExisting
+              [ EmailChanged
+                  { entityId = cmd.userId
+                  , oldEmail = u.email
+                  , newEmail = cmd.newEmail
+                  }
+              ]
+
+
+type instance EntityOf ChangeEmail = User
+type instance TransportsOf ChangeEmail = '[WebTransport]
+
+
+command ''ChangeEmail
+```
+
+## Where to go from here
+
+- **[Entities and events](/reference/entities/)** — the other half of the command story.
+- **[Commands concept](/concepts/commands-and-handlers/)** — the "why" behind these types.
+- **[Services and applications](/reference/services-and-applications/)** — how commands are assembled.

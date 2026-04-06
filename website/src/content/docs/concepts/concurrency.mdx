@@ -1,127 +1,181 @@
 ---
-title: "Concurrency"
-description: "Channels, locks, and async patterns in NeoHaskell."
+title: "Concurrency patterns"
+description: "Practical concurrency with Channel, Lock, ConcurrentVar, and AsyncTask. When to use each, with examples."
 sidebar:
-  order: 42
-keywords: [concurrency, channels, async, ConcurrentVar, event replay, parallel, native code]
-# entry_stage: 3 (NeoHaskell-aware)
-# exit_stage: 4 (NeoHaskell-fluent)
-# misconception: #11 (Haskell is slow)
-# tutorial_anchor: Tutorial Part 6 — Audit Everything
+  order: 9
 ---
-
-{/*
-  CONTENT OUTLINE — Concurrency
-  Entry: Stage 3 (NeoHaskell-aware), Exit: Stage 4 (NeoHaskell-fluent)
-  Misconception addressed: #11 (Haskell is slow)
-  Anchored from: Tutorial Part 6 — Audit Everything
-
-  Core message: NeoHaskell compiles to native code with built-in concurrency primitives.
-  Channels, locks, async patterns.
-  Event replay at scale benefits from concurrency.
-  Evidence from testbed: ConcurrentVar used in EventCounter.hs.
-  Immutable events make concurrent reads safe by default.
-*/}
-
-{/* POLYGLOT NOTE: All code examples on this page should include equivalent snippets in JS/TS, Python, and Go. See DOCS-PLAN.md Guiding Principle #9. */}
 
 import { Aside } from '@astrojs/starlight/components';
 
-## What You Might Expect
+[Effects and concurrency](/concepts/effects/) covered the `Task` type and the basic primitives. This page is about *when* to reach for each concurrency tool and the patterns that make them work together.
 
-- "Haskell is slow" — you've heard this, or assumed it from the academic reputation
-- Concurrency in functional languages sounds complicated: no shared mutable state, so how do you coordinate?
-- Event replay sounds inherently sequential — you have to process events in order
-- You're worried that NeoHaskell's purity constraints make concurrent programming harder, not easier
+## The tools, in one table
 
-## Why That Breaks
+| Tool | Use when… | Key operations |
+|---|---|---|
+| **`AsyncTask`** | You want to run tasks in parallel | `start`, `wait`, `cancel` |
+| **`Channel`** | Producer and consumer need to communicate | `new`, `send`, `receive` |
+| **`Lock`** | Multiple tasks need exclusive access to something | `new`, `with` |
+| **`ConcurrentVar`** | You have shared mutable state | `new`, `read`, `write`, `modify` |
+| **`ConcurrentMap`** | You need a shared key/value store | `new`, `get`, `set`, `delete` |
 
-- GHC (NeoHaskell's compiler) produces native code that's competitive with Go and Java
-- Immutable data is *safer* for concurrency, not harder — no data races by default
-- Event replay can be parallelized: different event streams can be replayed concurrently
-- The constraint isn't "no shared state" — it's "shared state must be explicit and safe"
+Don't reach for a primitive until you need it. Most code in a NeoHaskell application is single-threaded from the application's point of view — you write `decide` functions and `combine` functions that are pure, and the runtime handles request parallelism for you.
 
-## Concurrency: The Mental Model Shift
+## Pattern 1 — Parallel fetches
 
-- NeoHaskell compiles to native code — no interpreter, no VM overhead
-- Concurrency primitives are built-in: channels, locks, async workflows
-- Immutable events make concurrent reads safe by default — no locks needed for reading
-- Mutable state is explicit: `ConcurrentVar` is the safe, typed wrapper for shared mutable state
-- The compiler enforces safe concurrency — data races are a type error, not a runtime crash
+The most common concurrency need is "run these three independent queries at the same time and collect the results."
 
-### Why Immutability Helps Concurrency
+```haskell
+import AsyncTask qualified
 
-- In CRUD systems, concurrent writes to the same row require locks — and locks cause contention
-- In event-sourced systems, events are immutable — concurrent reads need no locks
-- Writes are appends — the event store serializes appends, but reads are fully concurrent
-- Updates can be rebuilt concurrently: each event stream is independent
+buildDashboard :: Uuid -> Task Text Dashboard
+buildDashboard userId = do
+  userHandle <- AsyncTask.start (fetchUser userId)
+  postsHandle <- AsyncTask.start (fetchRecentPosts userId)
+  statsHandle <- AsyncTask.start (fetchActivityStats userId)
 
-<Aside type="note" title="ConcurrentVar in the testbed">
-The testbed's `EventCounter.hs` uses `ConcurrentVar` for mutable state — a typed, safe wrapper around a mutable reference. This is how NeoHaskell handles shared mutable state: explicitly, with a type that makes the concurrency visible. You can't accidentally share mutable state — you have to opt in with `ConcurrentVar`.
+  user <- AsyncTask.wait userHandle
+  posts <- AsyncTask.wait postsHandle
+  stats <- AsyncTask.wait statsHandle
+
+  Task.yield Dashboard { user = user, posts = posts, stats = stats }
+```
+
+All three `AsyncTask.start` calls launch immediately. The three `AsyncTask.wait` calls block in sequence, but because the tasks are already running, total time is max of the three durations — not the sum.
+
+## Pattern 2 — Fan out, fan in
+
+Running the same task on a list of inputs, in parallel:
+
+```haskell
+fetchAllUsers :: Array Uuid -> Task Text (Array User)
+fetchAllUsers userIds = do
+  handles <- Task.mapArray (\id -> AsyncTask.start (fetchUser id)) userIds
+  Task.mapArray AsyncTask.wait handles
+```
+
+Each fetch runs independently. If one fails, `Task.mapArray` on the `wait` step propagates the failure.
+
+## Pattern 3 — Timeouts
+
+Wrap a task in a timeout:
+
+```haskell
+import Timer qualified
+
+fetchWithTimeout :: Task Text User
+fetchWithTimeout = do
+  handle <- AsyncTask.start (fetchUser userId)
+  result <- Task.recover
+    (\_ -> Task.throw "Fetch timed out")
+    (Timer.withTimeout (Timer.seconds 5) (AsyncTask.wait handle))
+  Task.yield result
+```
+
+`Timer.withTimeout` races a timer against the task. Whichever finishes first wins.
+
+## Pattern 4 — Shared counter with ConcurrentVar
+
+When multiple tasks need to update a single value:
+
+```haskell
+import ConcurrentVar qualified
+
+countingExample :: Array Int -> Task Text Int
+countingExample items = do
+  counter <- ConcurrentVar.new 0
+  Task.forEach items \item -> do
+    ConcurrentVar.modify counter (\n -> n + item)
+  ConcurrentVar.read counter
+```
+
+`ConcurrentVar.modify` is atomic — two tasks updating the same var cannot lose writes.
+
+<Aside type="caution" title="ConcurrentVar is not your database">
+Use `ConcurrentVar` for *in-process* state — caches, counters, coordination flags. For anything that needs to survive a restart, use events and the event store. `ConcurrentVar` is a memory primitive, not a persistence layer.
 </Aside>
 
-## What Happens When You Replay Events at Scale
+## Pattern 5 — Producer/consumer with Channel
 
-- Tutorial Part 6 replays all events to build a complete audit trail
-- With 1 million events across 10,000 accounts, sequential replay would be slow
-- Concurrent replay: each account's event stream is independent — replay them in parallel
-- The result: 10,000 concurrent folds, each producing a balance — then aggregate
-- NeoHaskell's concurrency primitives make this straightforward: spawn a task per account, collect results
+When one task produces work and another consumes it:
 
-### Concurrency Patterns
+```haskell
+import Channel qualified
 
-| Pattern | When to use | NeoHaskell primitive |
-|---------|------------|---------------------|
-| **Parallel update rebuild** | Rebuilding queries from events | `Task.parallel` or async tasks |
-| **Concurrent event processing** | Processing events from multiple streams | Channels |
-| **Shared state** | Counters, caches, rate limiters | `ConcurrentVar` |
-| **Async workflows** | Integrations, long-running processes | `Task` with async composition |
+processJobs :: Task Text Unit
+processJobs = do
+  jobChannel <- Channel.new
 
-## In NeoBank Terms
+  -- Producer: push new jobs onto the channel
+  AsyncTask.start do
+    Task.forever do
+      job <- fetchNextJobFromApi
+      Channel.send jobChannel job
 
-- NeoBank's audit trail (Tutorial Part 6) replays all events across all accounts
-- Sequential replay: process each account one at a time — slow for large datasets
-- Concurrent replay: process all accounts in parallel — fast, and safe because events are immutable
-- The balance counter uses `ConcurrentVar` — multiple requests can read/update it safely
-- The transfer integration uses async tasks — debit and credit can be initiated concurrently, with coordination
+  -- Consumer: pop jobs and process them
+  Task.forever do
+    job <- Channel.receive jobChannel
+    processJob job
+```
 
-## The Full Picture
+`Channel.send` doesn't block unless the channel is full (if you created it with a bound). `Channel.receive` blocks until something is available.
 
-{/* TODO: Code example showing concurrent event replay with Task.parallel — include JS/TS, Python, Go equivalents */}
-{/* TODO: Code example showing ConcurrentVar for a shared counter — include JS/TS, Python, Go equivalents */}
-{/* TODO: Code example showing channel-based event processing — include JS/TS, Python, Go equivalents */}
+Use `DurableChannel` if you need the same pattern but with on-disk persistence — jobs survive a restart.
 
-- **Native compilation**: NeoHaskell compiles to native code via GHC — no JVM, no interpreter
-- **Green threads**: GHC's runtime provides lightweight threads — millions of concurrent tasks
-- **Channels**: typed, safe communication between concurrent tasks
-- **ConcurrentVar**: typed mutable reference — safe for concurrent reads and writes
-- **Task.parallel**: run multiple tasks concurrently, collect results when all complete
-- **Async composition**: chain tasks with async/await semantics — readable, safe, composable
+## Pattern 6 — Mutex with Lock
 
-## How NeoHaskell Enforces This
+When you need to serialize access to a resource:
 
-- `ConcurrentVar` is the only way to share mutable state — you can't accidentally share a plain reference
-- Channels are typed — you can't send the wrong type of message
-- The `Task` type makes concurrency explicit — you know which computations are concurrent
-- Pure functions (no `Task`, no `ConcurrentVar`) are safe to call from any number of concurrent tasks
-- The compiler enforces that concurrent state access goes through safe primitives
+```haskell
+import Lock qualified
 
-## Testing This Concept
+exclusiveAccess :: Task Text Unit
+exclusiveAccess = do
+  lock <- Lock.new
+  Task.forEach items \item ->
+    Lock.with lock do
+      -- Only one task at a time can be inside this block
+      updateSharedResource item
+```
 
-{/* TODO: Code example showing a concurrent test — include JS/TS, Python, Go equivalents */}
+`Lock.with` runs the inner action while holding the lock. It's released automatically when the action finishes or fails.
 
-- Test concurrent update rebuild: spawn N tasks, assert all produce correct results
-- Test `ConcurrentVar` under concurrent access: multiple tasks read/write, assert final state is correct
-- Property-based test: "concurrent replay of the same events always produces the same result"
-- Stress test: replay 10,000 events concurrently, assert no data races (the type system already guarantees this)
+## Pattern 7 — Per-key locking with ConcurrentMap
 
-## Going Deeper
+Sometimes you want to lock *per key* rather than one global lock. This is common in OAuth token refresh: you don't want two tasks refreshing the same user's token at once, but you're fine with different users refreshing concurrently.
 
-- [Effects →](/concepts/effects) — how `Task` models concurrent effects
-- [Updates →](/concepts/updates) — how updates benefit from concurrent replay
-- [Architecture Evaluation →](/concepts/architecture-evaluation) — performance characteristics and scaling patterns
-- External: GHC's [Parallel and Concurrent Haskell](https://simonmar.github.io/pages/pcph.html) — the definitive reference
+```haskell
+import ConcurrentMap qualified
+import Lock qualified
 
-:::caution[Coming Soon]
-Code examples on this page are placeholders. Full working code will be added when the NeoBank tutorial is complete.
-:::
+refreshTokenFor :: ConcurrentMap Text Lock -> Text -> Task Text Token
+refreshTokenFor locks userId = do
+  lock <- ConcurrentMap.getOrCreate locks userId Lock.new
+  Lock.with lock do
+    currentToken <- readCurrentToken userId
+    if Token.expired currentToken
+      then doRefresh currentToken
+      else Task.yield currentToken
+```
+
+## Integrations are implicitly concurrent
+
+Most of the time, you don't write concurrency primitives yourself. NeoHaskell's integration runtime already runs integrations concurrently — outbound integrations react to events in parallel, inbound integrations run their own workers, and the command executor handles request-level concurrency.
+
+If you find yourself reaching for `AsyncTask.start` inside a `decide` function, stop. `decide` is pure and can't do async work. What you want is an integration that fires off the work in response to an event. The integration runs concurrently with the rest of the system and can do whatever I/O it needs.
+
+## Debugging concurrency bugs
+
+Concurrency bugs are the worst kind. A few habits that help:
+
+- **Prefer immutable data.** Passing a value between tasks is always safe.
+- **Limit shared state.** Every `ConcurrentVar` or `ConcurrentMap` is a potential bug source.
+- **Use events for cross-task coordination** when possible. Events are serialized by the event store — you get ordering for free.
+- **Wrap tricky sections with `Log.withScope`** so logs from different tasks are distinguishable.
+- **Tests are your friend.** Write a test that spawns a hundred concurrent commands and asserts the final state is consistent. If it passes, you're probably fine. If it fails, you've found the bug early.
+
+## Where to go from here
+
+- **[Effects and concurrency](/concepts/effects/)** — the foundation (`Task` and the combinators).
+- **[Reference → Concurrency primitives](/reference/core-types/)** — detailed API for each tool.
+- **[Guides → Testing](/guides/testing/)** — how to write concurrency tests that actually catch bugs.

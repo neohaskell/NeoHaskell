@@ -1,72 +1,238 @@
 ---
-title: "Coming from CRUD"
-description: "How REST endpoints and SQL updates map to events and commands. Short version — full treatment in the concept page."
+title: "Coming from CRUD systems"
+description: "Direct mappings from Django/Rails/ASP.NET/Spring-style CRUD architectures to NeoHaskell's event-sourced model."
 sidebar:
-  order: 3
+  order: 5
 ---
-
-{/*
-  CONTENT OUTLINE — Coming from CRUD
-  Per DOCS-PLAN: This is a SHORT version that links to concepts/from-crud-to-events.mdx
-  The full treatment lives in the concept page. This page is the quick translation.
-  Reader profile: REST API developer, SQL database user, knows PUT/POST/DELETE
-  Key insight: UPDATE balance SET 150 → record MoneyDeposited $50
-*/}
-
-{/* POLYGLOT NOTE: All code examples on this page should include equivalent snippets in JS/TS, Python, and Go. See DOCS-PLAN.md Guiding Principle #9. */}
 
 import { Aside } from '@astrojs/starlight/components';
 
-## The core translation
+If most of your career has been "REST endpoint → service layer → repository → ORM → database table", NeoHaskell is going to feel different at every layer. This page is the shortest path from what you know to what you'll write.
 
-- In CRUD, you update state: `UPDATE accounts SET balance = 150 WHERE id = 42`
-- In NeoHaskell, you record what happened: `MoneyDeposited { accountId = 42, amount = 50 }`
-- The balance isn't stored — it's computed by replaying all deposit and withdrawal events
-- This isn't a performance trick — it's a different model of what "data" means
+The [From CRUD to events](/concepts/from-crud-to-events/) concept page has the full version with all the translations. This page is the quick reference aimed at "what do I *stop* doing and what do I *start* doing."
 
-## Quick translation table
+## What you stop doing
 
-| CRUD / REST | NeoHaskell | What changed |
-|-------------|-----------|-------------|
-| `UPDATE balance SET 150` | Record `MoneyDeposited { amount = 50 }` | Store the cause, not the effect |
-| `SELECT balance FROM accounts WHERE id = 42` | Fold over all transactions for account 42 | State is computed, not stored |
-| `POST /deposit` (REST endpoint) | `Deposit` command + `decide` handler | Handler returns events, not a response |
-| `PUT /account/42` (update resource) | Command that produces events | No direct mutation |
-| `DELETE /account/42` | `CloseAccount` command → `AccountClosed` event | Deletion is an event, not erasure |
-| Database table | Event stream | Append-only log, not mutable rows |
-| Foreign key | Service reference | Cross-entity access is explicit |
-| Database migration | Event versioning | Schema evolution through new event types |
-| ORM model | Entity (computed from events) | State is derived, not stored |
-| SQL transaction | Command handler (atomic event append) | Consistency at the command level |
+### Stop writing controllers
 
-## The mental model shift
+In Django, Rails, ASP.NET, or Spring, you write a controller that:
 
-- CRUD asks: "What is the current state?"
-- Event sourcing asks: "What happened to produce this state?"
-- Both questions have the same answer — but event sourcing keeps the history
-- With CRUD, `balance = 150` tells you the balance. It doesn't tell you why.
-- With events, you know every deposit, every withdrawal, every correction — and when each happened
-- This means: time-travel debugging, audit logs, and "what was the balance on Tuesday?" — for free
+1. Parses the request.
+2. Validates the input.
+3. Calls a service method.
+4. Returns a response.
 
-<Aside type="note" title="When CRUD is fine">
-Not every system needs event sourcing. Simple CRUD is the right choice when you don't need history, audit trails, or replay. NeoHaskell is honest about this — see [When to adopt — and when to wait](/concepts/why-neohaskell/#when-to-adopt--and-when-to-wait).
-</Aside>
+In NeoHaskell, you write a **command**. That's it. The transport layer (HTTP, CLI, MCP) is generated from the command declaration. The JSON schema is generated. The URL route is generated. The OpenAPI spec is generated. You don't write any of that.
 
-## For the full treatment
+### Stop writing repositories
 
-This page covers the quick translation. The complete guide — with side-by-side code, the "Why That Breaks" section, and the full mental model shift — is in the concept page:
+Repositories are the pattern where you wrap database access behind an interface so you can swap implementations. In NeoHaskell, the event store is the database. You don't wrap it because there's nothing to wrap — its interface is standardized across in-memory, Postgres, and any future backend.
 
-**[From CRUD to Events →](/concepts/from-crud-to-events/)**
+### Stop writing ORMs
 
-That page covers:
-- What you'd expect to build (and why it seems reasonable)
-- Why the CRUD approach breaks down for event-sourced systems
-- The mental model shift in detail
-- Side-by-side code comparisons
-- When CRUD is actually the right choice
+NeoHaskell doesn't have an ORM. There's no `User.find`, no `db.session.query`, no `@Entity` annotations. The closest equivalent is a **query** — a read model you define, and NeoHaskell maintains it for you from events.
 
-{/* TODO: short code example — SQL UPDATE vs NeoHaskell event recording — include JS/TS, Python, Go equivalents */}
+### Stop writing DTOs
 
-:::caution[Coming Soon]
-This page is a content outline. Full prose and code examples are in progress.
-:::
+A Data Transfer Object is a type that exists to translate between your domain model and your API. In NeoHaskell, the command type **is** the API type. The entity type **is** the domain type. There's no translation layer because there's nothing to translate — the compiler enforces both at once.
+
+### Stop writing UPDATE statements
+
+This is the big one. You never write `UPDATE accounts SET balance = balance + 50`. You emit a `MoneyDeposited` event. The balance is derived from events by a pure function. If this feels alien, read [Events, not state](/concepts/events-not-state/) — it's the core mental shift.
+
+### Stop writing audit tables
+
+Your audit table is the event store. You had it all along — you just didn't know.
+
+### Stop writing soft deletes
+
+You don't add a `deleted_at` column. You emit a `UserDeactivated` event and let projections handle the consequences. Events are append-only; "deletion" is always a new event, never a modification.
+
+### Stop writing migration scripts for schema changes
+
+If you want a new field, you add it to the event type. You handle it in `update` and any projections that care. No migration script runs against existing data — old events keep their old shape, new events have the new shape, and the compiler makes sure both paths are handled.
+
+## What you start doing
+
+### Start writing commands
+
+A command is a typed record that represents an intent:
+
+```haskell
+data Deposit = Deposit
+  { accountId :: Uuid
+  , amount :: Int
+  }
+```
+
+You write a `decide` function that turns the command into either events (if accepted) or a rejection (if not). The `command ''Deposit` Template Haskell line at the bottom generates the rest.
+
+### Start writing events
+
+An event is a typed record of a fact that happened:
+
+```haskell
+data AccountEvent
+  = MoneyDeposited { entityId :: Uuid, amount :: Int }
+  | MoneyWithdrawn { entityId :: Uuid, amount :: Int }
+```
+
+Events are immutable. They accumulate in the event store. Everything else is derived from them.
+
+### Start writing update functions
+
+An `update` function is a pure fold from event and state to new state:
+
+```haskell
+update :: AccountEvent -> Account -> Account
+update event account = case event of
+  MoneyDeposited { amount } -> account { balance = account.balance + amount }
+  MoneyWithdrawn { amount } -> account { balance = account.balance - amount }
+```
+
+This is what replaces every UPDATE statement you've ever written. The rule: any state change is a *new version of the state derived from the old version and an event*.
+
+### Start writing queries
+
+A query is a read model — a denormalized view maintained from events. You declare the shape and write `combine` instances that produce the shape from each contributing entity:
+
+```haskell
+data UserOrders = UserOrders
+  { userId :: Uuid
+  , orderCount :: Int
+  }
+
+instance QueryOf Order UserOrders where
+  queryId order = order.userId
+  combine order existing = case existing of
+    Just uo -> Update uo { orderCount = uo.orderCount + 1 }
+    Nothing -> NoOp
+```
+
+NeoHaskell maintains this for you. Every time an `Order` entity changes, `combine` runs, and the stored read model is updated.
+
+### Start thinking in state machines
+
+Most domain concepts are state machines. An order is `placed → paid → shipped → delivered` (or `placed → cancelled`). An account is `opened → active → closed`. A subscription is `active → past_due → cancelled`.
+
+In CRUD, you stuff these into a `status` column and hope everyone remembers the rules. In NeoHaskell, you model them with events and enforce transitions in `decide`. The state machine becomes explicit, testable, and auditable.
+
+### Start treating failure as data
+
+A `Decider.reject` is not an exception. It's a structured, first-class response. The caller gets a clean "no" with a reason. Your logs stay quiet.
+
+Use `Task.throw` only for **system failures** — database down, network timeout, config invalid. Business rule violations use `Decider.reject`.
+
+## The mental flip
+
+The single most important thing to internalize: **writing state is no longer allowed**. You write events. You read state.
+
+If you catch yourself typing "set the balance to..." or "mark the order as paid..." or "delete the user...", stop. Ask: **what happened?** Then name the event.
+
+- "Set the balance to $50" → "$50 was deposited" → `MoneyDeposited { amount = 50 }`.
+- "Mark the order as paid" → "Payment was received" → `PaymentReceived { orderId }`.
+- "Delete the user" → "User account was closed" → `UserAccountClosed { userId }`.
+
+The event is what actually happened in the world. The state is what you compute from the events.
+
+## A side-by-side example
+
+Rails CRUD:
+
+```ruby
+class UsersController < ApplicationController
+  def create
+    user = User.new(user_params)
+    if user.save
+      render json: user, status: :created
+    else
+      render json: user.errors, status: :unprocessable_entity
+    end
+  end
+
+  private
+  def user_params
+    params.require(:user).permit(:email, :name)
+  end
+end
+```
+
+NeoHaskell equivalent:
+
+```haskell
+module MyApp.User.Commands.RegisterUser (
+  RegisterUser (..),
+  getEntityId,
+  decide,
+) where
+
+import Core
+import Decider qualified
+import Json qualified
+import Service.Auth (RequestContext)
+import Service.Command.Core (TransportsOf)
+import Service.CommandExecutor.TH (command)
+import Service.Transport.Web (WebTransport)
+import MyApp.User.Core
+import Text qualified
+
+
+data RegisterUser = RegisterUser
+  { email :: Text
+  , name :: Text
+  }
+  deriving (Generic, Show)
+
+
+instance Json.FromJSON RegisterUser
+
+
+getEntityId :: RegisterUser -> Maybe Uuid
+getEntityId _ = Nothing
+
+
+decide :: RegisterUser -> Maybe User -> RequestContext -> Decision UserEvent
+decide cmd existing _ctx = case existing of
+  Just _ -> Decider.reject "User already exists"
+  Nothing ->
+    if Text.isEmpty cmd.email
+      then Decider.reject "Email is required"
+      else if Text.isEmpty cmd.name
+        then Decider.reject "Name is required"
+        else do
+          userId <- Decider.generateUuid
+          Decider.acceptNew
+            [ UserRegistered
+                { entityId = userId
+                , email = cmd.email
+                , name = cmd.name
+                }
+            ]
+
+
+type instance EntityOf RegisterUser = User
+type instance TransportsOf RegisterUser = '[WebTransport]
+
+command ''RegisterUser
+```
+
+One file. No routes file. No schema file. No migration. The command is the endpoint, the validator, the handler, the model, and the schema all at once.
+
+## The ramp-up
+
+For a seasoned CRUD developer, the learning curve looks roughly like:
+
+- **Day 1–3:** Keep asking "where's the repository?" and "how do I write an UPDATE?" Resist.
+- **Day 4–7:** Write your first commands and events. Feel slow.
+- **Week 2:** Start to see the collapse — one file replacing five.
+- **Week 3–4:** Start to enjoy it. The compiler catches bugs you used to catch in code review.
+- **Month 2:** Realize you don't miss the ORM.
+
+The mental shift is the hard part. The code is straightforward.
+
+## Where to go from here
+
+- **[Thinking in events](/concepts/thinking-in-events/)** — the full mental model.
+- **[From CRUD to events](/concepts/from-crud-to-events/)** — every CRUD pattern, translated.
+- **[Installation](/getting-started/installation/)** — get set up.
+- **[Build NeoBank](/tutorial/)** — a worked example of the whole thing.

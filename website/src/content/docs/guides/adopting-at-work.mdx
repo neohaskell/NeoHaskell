@@ -1,266 +1,182 @@
 ---
-title: "Adopting NeoHaskell at Work"
-description: "A pragmatic guide to introducing NeoHaskell at your company. Pilot proposal template, objection responses, integration strategy, and success metrics."
-keywords: [adoption, work, organization, pilot, proposal, objections, hiring, migration, team, enterprise]
+title: "Adopting NeoHaskell at work"
+description: "A pragmatic guide to introducing NeoHaskell at your company — proposal templates, objection responses, pilot strategies, and success metrics."
 sidebar:
-  order: 21
+  order: 8
 ---
-
-{/*
-  CONTENT OUTLINE — Adopting NeoHaskell at Work Guide
-  =====================================================
-  Position: Guides section, adoption (last guide)
-  Goal: Reader has finished the tutorial and wants to use NeoHaskell at work.
-  They leave with a concrete plan, a proposal template, and answers to the hard questions.
-  Prerequisites: Completed tutorial
-  Source: Dan Abramov — "Give them the playbook, or they'll fail at adoption and blame the tool"
-  Tone: pragmatic, honest — NOT a marketing page. Acknowledge real concerns.
-
-  Sections:
-  1. Prerequisites
-  2. This Is Not a Marketing Page
-  3. Start with One Service
-  4. The Pilot Proposal Template
-  5. Answering the Hard Questions
-  6. Running NeoHaskell Alongside Existing Services
-  7. Measuring Success
-  8. If the Pilot Fails
-  9. Next Steps
-*/}
 
 import { Aside } from '@astrojs/starlight/components';
 
-## Prerequisites
+This is the guide you want if you just finished the tutorial, you're convinced, and now you have to explain this decision to the rest of your team. Enthusiasm is not a plan. This page is the plan.
 
-- Completed the [NeoHaskell Tutorial](/tutorial/) — you've built something and understand the tradeoffs
-- Optional: [Integrating Existing Systems](/guides/integrating-existing-systems/) — the technical side of coexistence
+Adopting a new language is rarely a technical problem — it's an organizational problem. The code works. The real questions are: will the team learn it? Will we be able to hire? What if the champion leaves? What if it turns out to be the wrong call? Addressing those questions honestly is what makes an adoption stick.
 
-## This Is Not a Marketing Page
+## Step 1 — Be honest with yourself about fit
 
-This guide doesn't try to convince you NeoHaskell is right for your organization. You've already decided to try it. This guide gives you the tools to do it well.
+Before you pitch NeoHaskell to anyone, check the [trade-offs](/concepts/trade-offs/) page and the [architecture evaluation](/concepts/architecture-evaluation/). Answer these questions for yourself first:
 
-- What this guide covers:
-  - How to pick the right pilot project
-  - A fill-in-the-blanks proposal template
-  - Pre-written answers to the objections you'll hear
-  - How to measure whether the pilot succeeded
-  - What to do if it doesn't work out
-- What this guide doesn't cover:
-  - Why NeoHaskell is good (see [Why NeoHaskell](/concepts/why-neohaskell/))
-  - How to build NeoHaskell applications (see the [Tutorial](/tutorial/))
+- Does our domain genuinely benefit from event sourcing? If not, NeoHaskell is over-engineering.
+- Do we have at least one engineer (ideally two) willing to learn it deeply?
+- Do we have the organizational appetite for a slower first month in exchange for a faster long-term pace?
+- What will we do if the maintainers of NeoHaskell disappear in a year?
 
-## Start with One Service
+If you can't answer these confidently, don't pitch it yet. Do a weekend project first, validate your own conviction, then come back.
 
-{/*
-  The most important advice: don't try to do too much at once.
-  Pick the right first project.
-*/}
+## Step 2 — Pick a pilot project
 
-- The biggest mistake in technology adoption: trying to prove the technology by using it everywhere at once
-- Start with one service. One team.
-- Criteria for a good first service:
-  - **Naturally event-driven**: has a clear audit trail requirement, or the business already thinks in events
-  - **Well-defined boundaries**: clear inputs and outputs, minimal dependencies on other systems
-  - **Small enough to rewrite**: a team of 2-3 can build it in 4-8 weeks
-  - **Not the most critical system**: if it fails, the business doesn't stop
-  - **Has a motivated champion**: someone on the team who wants to make it work
-- Criteria for a bad first service:
-  - The most complex system in your architecture
-  - A system with many external dependencies
-  - A system that's currently on fire (don't adopt new technology during a crisis)
-  - A system where the team is already stretched thin
-- Examples of good first services:
-  - Audit logging service
-  - Notification service
-  - Order status tracking
-  - User activity feed
-  - Inventory management for a small product catalog
+The single biggest factor in a successful adoption is the pilot project. Pick badly and you'll spend months fighting. Pick well and you'll have a reference everyone can point to.
 
-<Aside type="note" title="The audit trail test">
-Ask: "Does the business care about the history of this data, not just the current state?" If yes, it's a good candidate for event sourcing. If the answer is "we just need the current value," event sourcing adds complexity without benefit.
-</Aside>
+### Ideal pilot characteristics
 
-## The Pilot Proposal Template
+- **New feature, not a rewrite.** Rewriting an existing system means you're fighting the old one and the new language at the same time. A new feature lets NeoHaskell succeed on its own merits.
+- **Clearly bounded.** The smaller and more independent the better. "Add a new microservice" is easier than "rewrite the checkout flow."
+- **Domain-rich.** NeoHaskell shines when there are interesting state transitions. A settings panel is a bad pilot. An order management service is a good one.
+- **Non-critical, but visible.** If the pilot fails, the business doesn't suffer. If it succeeds, people notice.
+- **Has a clear success metric.** "Fewer bugs in production", "faster feature delivery", "better audit capability" — pick one and measure it.
 
-{/*
-  A fill-in-the-blanks document that readers can adapt for their organization.
-  This is the most actionable part of the guide.
-*/}
+### Anti-patterns
 
-- Show: a complete proposal template with fill-in-the-blanks sections
-- The template covers:
+- **The "rewrite everything" pilot.** Never. Always additive.
+- **The "tiny CRUD endpoint" pilot.** Doesn't show the benefits of NeoHaskell; people come away thinking "that was a lot of work for a simple feature."
+- **The "mission-critical" pilot.** If it fails, the damage is catastrophic. Start lower stakes.
+- **The "nobody needs this" pilot.** If nobody cares about the feature, success doesn't buy you political capital.
 
-### Problem Statement
+## Step 3 — Write a proposal
 
-- What problem does this pilot solve?
-- Why is the current solution inadequate?
-- What's the cost of not solving it?
-- Show: example problem statement for an audit logging service
+You need something written down. A proposal for engineering leadership should cover:
 
-### Proposed Scope
+1. **The problem.** What's the specific pain point NeoHaskell solves for us? Be concrete — "we've had three incidents in the last year where state was inconsistent across services and we couldn't reconstruct the history" is much better than "we want better types."
+2. **The proposal.** "We pilot NeoHaskell for [specific feature] with [specific engineer(s)] over [specific timeline]."
+3. **The investment.** Engineering time, training, tooling setup.
+4. **The success criteria.** What outcomes would justify broader adoption? What would trigger a rollback?
+5. **The rollback plan.** If the pilot fails, how do we unwind it without wasting the work?
+6. **The FAQ.** Preempt the objections. The next section is the material for this.
 
-- Which service will be built with NeoHaskell?
-- What are the explicit boundaries? (what's in scope, what's out of scope)
-- What existing systems will it integrate with?
-- Show: example scope definition
+Keep the proposal to two pages. Executives read the summary and the FAQ. Detail goes in appendices.
 
-### Success Criteria
+## Step 4 — Preempt the objections
 
-- How will you know the pilot succeeded?
-- Specific, measurable criteria (not "the team likes it")
-- Examples:
-  - Bug rate: fewer than X bugs per 1000 commands in the first 3 months
-  - Development velocity: feature delivery time compared to baseline
-  - Onboarding time: new team member productive in under N days
-  - Audit compliance: 100% of state changes are auditable
-- Show: example success criteria table
+Here are the objections you will hear, and honest responses.
 
-### Rollback Plan
+### "Who will maintain this after you leave?"
 
-- What happens if the pilot fails?
-- How do you revert to the previous approach?
-- What's the maximum acceptable loss? (time, money, data)
-- Show: example rollback plan
-- Note: because NeoHaskell services are standalone, rollback is usually "route traffic back to the old service"
+**Response:** "Any engineer who can read Go or Python can learn NeoHaskell in a few weeks. The [tutorial](/tutorial/) gets them productive, and the [concept pages](/concepts/) teach the mental model. If I leave, the next engineer will ramp up faster than on any legacy codebase because the code is smaller and the compiler catches most mistakes."
 
-### Timeline
+### "We can't hire NeoHaskell developers."
 
-- Week 1-2: setup, tooling, first service skeleton
-- Week 3-6: core functionality built and tested
-- Week 7-8: integration testing, deployment, monitoring
-- Week 9-12: production traffic, monitoring, iteration
-- Week 13: pilot review — go/no-go decision
-- Show: a Gantt-style timeline (described, not drawn)
+**Response:** "We don't need to. We hire generalists and train them — the same way we'd train someone on our internal frameworks, except the training materials are better. The relevant skill is thinking in events, and that transfers from any language."
 
-{/* TODO: actual proposal template as a downloadable/copyable document */}
+### "What if NeoHaskell is abandoned?"
 
-## Answering the Hard Questions
+**Response:** "It compiles to native code via GHC, which is a production-grade compiler with decades of history. If the NeoHaskell project stagnates, we can keep running the code we have indefinitely. If we need to add new features, we can fork it. It's open-source and the code is approachable."
 
-{/*
-  Pre-written responses to the objections you'll hear.
-  These are honest answers, not marketing spin.
-*/}
+### "Functional programming is too hard for our team."
 
-### "What if the developer who knows NeoHaskell leaves?"
+**Response:** "The code we'll write looks like this [show a `decide` function from the tutorial]. It has `case`, `if`, records, and pipes. No monads, no category theory, no academic jargon in our application code. Any developer who has written a Redux reducer has the skills."
 
-- NeoHaskell compiles to GHC Haskell — any Haskell developer can read and maintain the output
-- The event sourcing patterns are standard — any developer who understands event sourcing can work with the codebase
-- The code is more readable than typical Haskell — the tutorial's NeoBank code reads like pseudocode
-- Honest answer: there is a learning curve. Budget 2-4 weeks for a new developer to become productive.
-- Mitigation: document the domain model well. The type system helps — the types ARE the documentation.
+### "We already have patterns for event sourcing in [X]. Why switch?"
 
-### "What about hiring? Can we find NeoHaskell developers?"
+**Response:** "We have patterns, but the compiler doesn't enforce them. In NeoHaskell, breaking the event-sourcing contract is a compile error, not a runtime one. That's the difference between 'we have a convention' and 'the convention is a type.'"
 
-- Honest answer: you can't hire "NeoHaskell developers" — the language is new
-- What you can hire: Haskell developers (who can learn NeoHaskell quickly), or developers who want to learn
-- The learning curve for a developer with functional programming experience: 1-2 weeks
-- The learning curve for a developer without FP experience: 4-8 weeks
-- NeoHaskell's accessible syntax helps — it's not "scary Haskell"
-- Mitigation: invest in training. The tutorial is designed for this.
+### "This will slow us down in the short term."
 
-### "What about ecosystem maturity? Are there enough libraries?"
+**Response:** "Yes, for about a month. After that, we'll be faster than before because the compiler catches mistakes that currently become production incidents. The pilot project's metrics will tell us whether the tradeoff holds."
 
-- Honest answer: NeoHaskell is pre-release. The core is solid, but the ecosystem is young.
-- What works today: event sourcing primitives, PostgreSQL, HTTP, OAuth2, file uploads, OpenAPI
-- What's coming: more integrations, more transport backends, more tooling
-- What's missing: NeoHaskell doesn't have the breadth of npm or PyPI
-- Mitigation: NeoHaskell can call any HTTP API — if a native integration doesn't exist, you can wrap an HTTP API
-- Mitigation: NeoHaskell is built on GHC Haskell — the Haskell ecosystem (Hackage) is available
+### "We can't afford to experiment."
 
-### "What if we need to migrate away from NeoHaskell?"
+**Response:** "We also can't afford to keep fighting the same class of bugs. The pilot is bounded — one feature, one timeline, clear success criteria. If it doesn't work, we spent a month; if it does, we learned how to build more reliable systems."
 
-- The event store is portable — events are JSON in a PostgreSQL table
-- You can read those events from any language or framework
-- The domain model is explicit in the types — it's not hidden in framework magic
-- Honest answer: migrating away is possible, but it's work. The same is true of any technology.
-- The event log is the most valuable artifact — even if you stop using NeoHaskell, you keep the history
+## Step 5 — Run the pilot
 
-### "Is NeoHaskell production-ready?"
+During the pilot, some habits that help:
 
-- Honest answer: NeoHaskell is pre-release (v0.1-alpha). It's not battle-tested at scale.
-- What this means for your pilot: expect rough edges, expect to report bugs, expect breaking changes
-- What this doesn't mean: the core event sourcing model is sound. The compiler guarantees are real.
-- Recommendation: use NeoHaskell for a non-critical pilot. Don't use it for your payment processing system yet.
+### Over-communicate
 
-{/* TODO: expand each answer with more specific talking points */}
+Send a weekly update to your engineering org. Include:
 
-## Running NeoHaskell Alongside Existing Services
+- What shipped.
+- What surprised you (good and bad).
+- What you learned.
+- What's next.
 
-- NeoHaskell services are standard HTTP services — they coexist with any existing architecture
-- See the full technical guide: [Integrating Existing Systems](/guides/integrating-existing-systems/)
-- Key points for the organizational conversation:
-  - No "rip and replace" — NeoHaskell runs alongside existing services
-  - Existing teams don't need to change anything — they just see a new HTTP service
-  - The pilot is isolated — if it fails, it doesn't affect other systems
-  - Rollback is routing traffic back to the old service
+Short, specific, regular. People trust work they can see. Missing updates breed suspicion.
 
-## Measuring Success
+### Write down the lessons
 
-{/*
-  Concrete metrics for the pilot. This is what you report back to stakeholders.
-*/}
+Keep a living document of "things we learned about NeoHaskell that surprised us." This becomes your internal onboarding doc when you expand.
 
-- Measure these things during the pilot:
+### Benchmark against the alternative
 
-### Bug Rate
+If the pilot replaces something that would have been built in another language, keep track of the "alternate history" — how many lines of code, how many bugs, how much test coverage. When you pitch broader adoption, these numbers will matter.
 
-- Track bugs per 1000 commands (or per 1000 API calls)
-- Compare to the baseline from the old system
-- Distinguish: domain rejections (expected) vs. bugs (unexpected behavior)
-- NeoHaskell's compiler eliminates whole classes of bugs — you should see fewer type-related bugs
+### Pair with skeptics
 
-### Development Velocity
+Invite your most skeptical teammate to pair-program on the pilot. Either they'll become your second champion, or you'll learn about objections you hadn't considered. Both outcomes are good.
 
-- Track time from requirement to deployed feature
-- Compare to the baseline from the old system
-- Note: velocity may be slower at first (learning curve), then faster (less debugging)
-- Track separately: time spent debugging vs. time spent building
+### Don't sell it internally until you're ready
 
-### Onboarding Time
+Early in the pilot, focus on making the pilot work. Resist the urge to evangelize until you have something compelling to show. Early evangelism with unfinished work creates headwinds.
 
-- Track how long it takes a new team member to make their first production contribution
-- Compare to the baseline from the old system
-- NeoHaskell's type system helps onboarding — the compiler guides new developers
+## Step 6 — Evaluate honestly
 
-### Audit Compliance
+At the end of the pilot:
 
-- If the pilot is in a regulated domain: track audit completeness
-- Every state change should be in the event log — verify this
-- Compare to the old system: how many state changes were unaudited?
+- Did it meet the success criteria?
+- Did it cost more or less than you expected?
+- What surprised you?
+- What would you do differently next time?
+- Would the team be comfortable continuing in NeoHaskell?
 
-### Team Satisfaction
+Write it up honestly. If the pilot failed, say so. A failed pilot that you can explain is better than a "success" that nobody believes.
 
-- Survey the team at the start, middle, and end of the pilot
-- Ask: "Would you use NeoHaskell for the next project?"
-- Ask: "What's the biggest pain point?"
-- This is qualitative, but it matters — a technology that the team hates won't be adopted
+## Step 7 — Expand or unwind
 
-{/* TODO: metrics template/spreadsheet */}
+If the pilot succeeded:
 
-## If the Pilot Fails
+1. **Present the results** to engineering leadership.
+2. **Propose the next project.** Don't try to convert everything at once; pick another bounded feature.
+3. **Train a second champion.** Someone who's not you.
+4. **Document conventions.** As you adopt more of the language, write down the patterns that work and the ones that don't.
+5. **Grow incrementally.** Six months of gradual adoption beats one big-bang switch.
 
-- Define "failure" before you start — what would make you stop?
-- Common failure modes:
-  - The team can't get productive in the expected time
-  - The ecosystem is missing something critical
-  - Performance doesn't meet requirements
-  - The pilot scope was too large
-- If the pilot fails: document what you learned, report honestly to stakeholders
-- What failure is NOT: "we didn't like the syntax" or "it was different from what we're used to"
-- What failure IS: "we couldn't deliver the required functionality in the required time"
-- The event log is still valuable even if you stop using NeoHaskell — you can read it from any language
+If the pilot failed:
 
-<Aside type="note" title="Failure is information">
-A failed pilot that's well-documented is more valuable than a successful pilot that nobody learned from. Write up what you tried, what worked, what didn't, and why. This helps the NeoHaskell community improve the language and tooling.
-</Aside>
+1. **Document why.** Was it the language, the problem, the team, the timing? Be specific.
+2. **Unwind carefully.** The feature you built needs to keep running (or be rewritten in your usual stack). Don't let the "pilot" code become orphaned tech debt.
+3. **Share the lessons.** A failed pilot is a learning opportunity for the org. Treat it that way.
 
-## Next Steps
+## A realistic timeline
 
-- **Technical integration**: [Integrating Existing Systems](/guides/integrating-existing-systems/) — the technical side of coexistence
-- **Deployment**: [Deployment](/guides/deployment/) — how to run NeoHaskell in production
-- **Community**: [NeoHaskell Discord](https://discord.gg/neohaskell) — talk to other teams who are adopting NeoHaskell
-- **Feedback**: if your pilot succeeds or fails, tell us — [GitHub Discussions](https://github.com/neohaskell/neohaskell/discussions)
+For a team of 2–3 engineers running a pilot:
 
-:::caution[Coming Soon]
-This page is a content outline. The full guide with a downloadable proposal template and detailed metrics framework is in progress.
-:::
+- **Week 1:** Installation, template setup, tutorial completion for the pilot team.
+- **Week 2:** First few commands and queries written. Productive but slow.
+- **Week 3:** Feature feels "small enough" that the team is confident shipping.
+- **Week 4:** First feature deployed to a canary environment.
+- **Weeks 5–8:** Iterate, fix bugs, learn the edge cases. Feature running in production.
+- **Weeks 9–12:** Second feature, often 2x faster than the first.
+- **Month 4+:** Consider expanding. The team should feel comfortable picking up NeoHaskell work without friction.
+
+This timeline is optimistic for a team with no prior functional programming experience. If everyone on the team comes from OOP backgrounds, add another 2–4 weeks to the ramp.
+
+## When to stop trying
+
+Some adoptions don't stick. Signs that it's time to step back:
+
+- After the pilot, the team is still not comfortable working in NeoHaskell. This is OK — not every team has the interest.
+- Leadership won't commit to broader adoption even after a successful pilot. This is usually organizational, not technical.
+- You, the champion, have left the company (or plan to). Adoption that depends on one person rarely survives.
+
+If any of these happen, the honest answer is to wind down the NeoHaskell work and continue in your usual stack. Keep the experience — it's valuable for the next team, the next company, or the next problem.
+
+## The bottom line
+
+NeoHaskell adoption is about **earning trust incrementally**. A great pilot earns the right to a second project. A second success earns the right to a standard. You don't get that trust by evangelizing — you get it by shipping something that demonstrably works better than the alternative.
+
+Pick a pilot you can win. Ship it. Measure. Expand.
+
+## Where to go from here
+
+- **[Architecture evaluation](/concepts/architecture-evaluation/)** — the technical tradeoffs in more depth.
+- **[Integrating existing systems](/guides/integrating-existing-systems/)** — how to coexist with legacy code during the transition.
+- **[Deployment](/guides/deployment/)** — operational concerns when the pilot goes to production.

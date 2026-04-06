@@ -1,143 +1,251 @@
 ---
 title: "Installation"
-description: "Set up NeoHaskell on your machine with a single command. Run neo --version within 5 minutes."
-keywords: [installation, setup, nix, getting started, macos, linux, windows, wsl]
+description: "Get NeoHaskell running in under five minutes. Install Determinate Nix, clone the template, run nix develop."
+sidebar:
+  order: 1
 ---
 
-{/* 
-  CONTENT OUTLINE — REVISION 2 (10-expert consensus applied)
-  ==============================================================
-  Position: Getting Started step 1 (first page after the section index)
-  Time estimate: ~5 minutes (active), 2-5 minutes (waiting for Nix download)
-  Misconceptions addressed: #16 (need Docker/K8s), #12 (need to understand monads first)
-  Starlight components: Tabs (OS-specific), Steps (numbered instructions)
-  
-  Design principles from DOCS-PLAN:
-  - Installation Friction Mitigation section: "Design the Nix experience as if it's the product"
-  - "run this one command" not "install Nix, then install NeoHaskell"
-  - Time estimates for every step
-  - Platform-specific tabs for macOS / Linux / Windows (WSL)
-  - Troubleshooting section: top 5 installation failures
-  - Misconception-busting elevated to note aside (change #11)
-  - Zero-install escape hatch surfaced before Step 1 (change #6)
-  - Forward tension added to Next Steps (change #5)
-  - Version placeholder added (change #1)
-*/}
+import { Steps, Tabs, TabItem, Aside } from '@astrojs/starlight/components';
 
-**Time**: ~5 minutes active work + 2-5 minutes download time · NeoHaskell vX.Y.Z
+You are five minutes away from a working NeoHaskell environment. The whole installation is three steps:
 
-## What You'll Have at the End
+1. Install [Determinate Nix](https://determinate.systems/nix).
+2. Add yourself to Nix's trusted users list.
+3. Clone the NeoHaskell template and run `nix develop` inside it.
 
-- NeoHaskell installed and working
-- `neo --version` prints a version number
-- You're ready for [Your First Events](/getting-started/first-events/)
+That's the whole thing. No Haskell toolchain to install. No GHC versions to manage. No Stack or Cabal to configure. Nix takes care of the compiler, the standard library, the editor integration, and the tooling. You do not need to know anything about Nix to use it — treat it as a black box that gives you a working shell.
 
-## Before You Start
+## What you'll have at the end
 
-{/*
-  Prerequisites: minimal. Just a terminal and internet.
-  Explicitly state "you don't need" to address common assumptions.
-*/}
+- A shell where `cabal build`, `cabal run`, `cabal test`, and your editor's Haskell Language Server all work.
+- The NeoHaskell template project on your disk, ready to modify.
+- A fully-specified environment pinned to a known-good set of tool versions.
 
-- What you need: a terminal and an internet connection
+## What you don't need
 
-:::note[You don't need any of this]
-- Docker or Kubernetes (Misconception #16)
-- Haskell installed separately
-- GHC, Cabal, or Stack
-- Any prior Nix experience
-- NeoHaskell uses **Nix** to manage its toolchain — but you don't need to know Nix. The installer handles everything.
-:::
+<Aside type="note" title="Things people assume they need — and don't">
+- **Docker or Kubernetes.** Not now, not for deployment, not ever unless you want to.
+- **Haskell installed separately.** Nix provides GHC.
+- **GHC, Cabal, or Stack configured by hand.** Nix provides those too.
+- **Prior Nix experience.** You will run exactly three Nix commands in this guide and none afterwards.
+- **An existing Haskell project to adapt.** The template is self-contained.
+</Aside>
 
-## Install NeoHaskell
+## Supported platforms
 
-:::tip[Can't install right now?]
-[Skip to the zero-install option](#zero-install-alternative) — try NeoHaskell in your browser with GitHub Codespaces.
-:::
+NeoHaskell runs on:
 
-{/*
-  The main event. One command per platform.
-  Use Starlight Tabs for macOS / Linux / Windows WSL.
-  Use Starlight Steps for numbered sequence.
-  Time estimate on every step per DOCS-PLAN.
-*/}
+- **macOS** (Apple Silicon and Intel)
+- **Linux** (x86_64 and ARM64)
+- **Windows via WSL2** (install Determinate Nix inside WSL, not on Windows directly)
 
-### Step 1: Run the Install Command (~30 seconds)
+If you are on Windows without WSL, [follow Microsoft's WSL2 setup guide](https://learn.microsoft.com/en-us/windows/wsl/install) first, then come back.
 
-- Platform-specific tabs (Starlight `<Tabs>`):
-  - **macOS**: The install command (single curl/sh one-liner)
-  - **Linux**: The install command (same or similar one-liner)
-  - **Windows**: "NeoHaskell requires WSL (Windows Subsystem for Linux)" — link to WSL setup, then the Linux command
+## Step 1 — Install Determinate Nix
 
-:::note[What's happening]
-This installs Nix (if you don't have it) and then NeoHaskell. Nix is a package manager that ensures everyone gets the exact same toolchain — no "works on my machine" issues.
-:::
+Determinate Nix is a polished installer for Nix with sensible defaults. It is the fastest way to get a working Nix installation.
 
-### Step 2: Wait for the Download (~2-5 minutes)
+<Tabs syncKey="platform">
+  <TabItem label="macOS / Linux / WSL">
+    Run this command in your terminal:
 
-- "This downloads approximately ~500MB. Go make coffee."
-- Show what the terminal output looks like so the reader knows it's working
-- What to do if it seems stuck (it's probably still downloading — Nix is verbose)
+    ```bash
+    curl -fsSL https://install.determinate.systems/nix | sh -s -- install
+    ```
 
-### Step 3: Verify the Installation (~10 seconds)
+    The installer will ask you a few questions. Accept the defaults unless you know you want something different. When it finishes, close your terminal and open a new one — this refreshes your `PATH` so the `nix` command is available.
 
-- Run `neo --version`
-- Expected output: `NeoHaskell vX.Y.Z`
-- If this works, you're done. Skip to [Next Steps](#next-steps).
+    Verify the installation:
 
-## Zero-Install Alternative
+    ```bash
+    nix --version
+    ```
 
-{/*
-  DOCS-PLAN says: "Offer a playground or GitHub Codespaces option so readers can 
-  start the tutorial without any local setup"
-  This is the escape hatch for people who can't or don't want to install locally.
-*/}
+    You should see a line like `nix (Determinate Nix 3.x.x)`.
+  </TabItem>
+</Tabs>
 
-- **GitHub Codespaces**: Open the NeoHaskell playground in a browser — no installation needed
-  - Link to Codespaces template / playground repo
-  - "Click the button, wait ~60 seconds, and you have a full NeoHaskell environment"
-- **When to use this**: if you're on a machine where you can't install software, or just want to try NeoHaskell without committing to a local setup
-- Limitation: "The tutorial works best with a local install. Codespaces is great for exploring, but some guides assume local tooling."
+<Aside type="tip" title="Already have Nix?">
+If you already have Nix installed from another source (nix.org, Lix, etc.), you do not need to reinstall. Just make sure **flakes are enabled** in your `nix.conf`:
+
+```conf
+experimental-features = nix-command flakes
+```
+
+Determinate Nix has flakes on by default, which is why we recommend it.
+</Aside>
+
+## Step 2 — Add yourself as a trusted user
+
+Nix runs build workers in a sandbox. To let the NeoHaskell template use its shared binary cache (which makes the first `nix develop` take about two minutes instead of thirty), you need to be on the trusted users list.
+
+<Steps>
+1. **Edit the Nix daemon config file.** Its location depends on your install:
+
+   ```bash
+   sudo nano /etc/nix/nix.conf
+   ```
+
+2. **Add a line** with your username (replace `your-username` with the output of `whoami`):
+
+   ```conf
+   trusted-users = root your-username
+   ```
+
+   If the line already exists, append your username after the existing ones, separated by a space.
+
+3. **Restart the Nix daemon.** On macOS:
+
+   ```bash
+   sudo launchctl kickstart -k system/org.nixos.nix-daemon
+   ```
+
+   On Linux with systemd:
+
+   ```bash
+   sudo systemctl restart nix-daemon
+   ```
+</Steps>
+
+You only need to do this once per machine.
+
+## Step 3 — Clone the template and enter the dev shell
+
+<Steps>
+1. **Clone the NeoHaskell starter template** to a directory of your choice:
+
+   ```bash
+   git clone https://github.com/neohaskell/template my-first-app
+   cd my-first-app
+   ```
+
+2. **Enter the development shell:**
+
+   ```bash
+   nix develop
+   ```
+
+   The first time you run this, Nix downloads GHC, the NeoHaskell core library, and all build tooling. This takes a couple of minutes on a decent internet connection. The output will look busy — a lot of files scroll by, and Nix asks to use the binary cache (say yes).
+
+   When it finishes, your shell prompt will change to indicate you are inside the dev shell. You now have `cabal`, `ghc`, `hlint`, `fourmolu`, and every other tool the project uses.
+
+3. **Verify everything works:**
+
+   ```bash
+   cabal build
+   ```
+
+   The first build compiles the example application. On modern hardware this takes about thirty seconds. Subsequent builds are incremental and much faster.
+
+4. **Run the example:**
+
+   ```bash
+   cabal run
+   ```
+
+   You should see the example app start up. If it does, you're done — your environment is ready.
+</Steps>
+
+## What the template gives you
+
+The template is a minimal, runnable application structured the way you'll structure real projects:
+
+```text
+my-first-app/
+├── flake.nix              # Nix environment (don't modify unless you know why)
+├── cabal.project          # Cabal build config
+├── my-app.cabal           # Package definition
+├── src/
+│   ├── App.hs             # Application entry point
+│   └── MyApp/
+│       ├── Config.hs      # Typed configuration
+│       └── Domain/        # Your commands, events, entities, queries
+├── tests/
+│   └── Spec.hs            # Test entry point
+└── uploads/               # File upload directory (if using file uploads)
+```
+
+You will spend nearly all your time in `src/MyApp/Domain/`. The other files you'll modify once during setup and then rarely touch.
+
+## Editor setup
+
+NeoHaskell works with any editor that supports the Haskell Language Server.
+
+<Tabs syncKey="editor">
+  <TabItem label="VS Code">
+    Install the **Haskell** extension by haskell.org. When you open the project inside the `nix develop` shell, the extension will pick up the language server automatically.
+
+    To make VS Code always use the dev shell, install [`direnv`](https://direnv.net/) and the VS Code **direnv** extension, then run:
+
+    ```bash
+    echo "use flake" > .envrc
+    direnv allow
+    ```
+
+    Now opening the project folder in VS Code automatically loads the dev shell — no `nix develop` needed.
+  </TabItem>
+  <TabItem label="Neovim">
+    Any LSP-capable config works. The easiest path is [nvim-lspconfig](https://github.com/neovim/nvim-lspconfig) with `haskell-language-server`. Run Neovim from inside the `nix develop` shell so it finds the language server on your `PATH`.
+
+    Or, as with VS Code, use [`direnv`](https://direnv.net/) and launch Neovim from the project directory — direnv loads the shell transparently.
+  </TabItem>
+  <TabItem label="Emacs">
+    Use [`lsp-mode`](https://emacs-lsp.github.io/lsp-mode/) or [`eglot`](https://github.com/joaotavora/eglot) with `haskell-language-server`. Launch Emacs from the dev shell, or use [`envrc-mode`](https://github.com/purcell/envrc) to load the shell automatically on project visits.
+  </TabItem>
+  <TabItem label="Other">
+    Any editor with LSP support works. Configure it to run `haskell-language-server-wrapper` as the LSP server for `.hs` files, and make sure the editor launches from inside the `nix develop` shell (or uses direnv).
+  </TabItem>
+</Tabs>
+
+## Daily workflow
+
+Once installed, your daily loop looks like this:
+
+```bash
+cd my-first-app
+nix develop           # Enter the dev shell (skipped automatically if you use direnv)
+cabal build           # Build
+cabal test            # Run tests
+cabal run             # Run the example
+```
+
+If you forget `nix develop` and run `cabal build` outside the shell, it will fail because `cabal` is not on your `PATH` — that's expected. The dev shell is what makes everything work.
 
 ## Troubleshooting
 
-{/*
-  DOCS-PLAN says: "The 5 most common installation failures and their fixes, based on Discord reports"
-  These should be real failure modes, not hypothetical ones.
-*/}
+### "command not found: nix" after installation
 
-### Top 5 Installation Issues
+Close your terminal and open a new one. The installer adds Nix to your shell's init scripts, which only take effect on new sessions.
 
-1. **"command not found: nix"** — The Nix installer needs a new shell session. Close your terminal and open a new one.
-2. **"error: experimental features 'nix-command flakes' are disabled"** — NeoHaskell uses Nix Flakes. The installer should enable this automatically. If not: show the manual config line.
-3. **macOS Gatekeeper blocks the download** — System Preferences → Security → Allow. Show the exact click path.
-4. **"disk space"** — Nix needs ~2GB free. If you're low on space, the error message tells you.
-5. **WSL-specific: "unable to access the network"** — Windows firewall/proxy settings. Link to the WSL networking troubleshooting guide.
+### "experimental features 'nix-command flakes' are disabled"
 
-:::tip[Still stuck?]
-Join the [NeoHaskell Discord](https://discord.gg/neohaskell) — the `#help` channel has people who've seen every installation issue.
-:::
+You installed Nix from a source other than Determinate, and flakes are off by default. Edit `~/.config/nix/nix.conf` (creating it if needed) and add:
 
-## Updating NeoHaskell
+```conf
+experimental-features = nix-command flakes
+```
 
-- How to update to the latest version (single command)
-- How to pin a specific version (for tutorial stability)
-- How to check if you're up to date
+### `nix develop` takes forever
 
-## Uninstalling
+The first run downloads a few hundred megabytes of toolchain. If it feels stuck but your network traffic is still flowing, it is working — just slow. If you haven't completed Step 2 (trusted users), you'll miss the binary cache and have to build GHC from source, which takes much longer. Double-check the trusted-users line before retrying.
 
-- How to remove NeoHaskell
-- How to remove Nix entirely (if desired)
-- "This won't affect any other tools on your system"
+### Editor does not find `haskell-language-server`
 
-## Next Steps
+Your editor is not launching from inside the `nix develop` shell. Either launch your editor from a terminal that already ran `nix develop`, or set up `direnv` as described in the editor section.
 
-You have NeoHaskell. Now let's see what makes it different — in under 20 lines of code.
+### Windows without WSL
 
-- ✅ NeoHaskell is installed
-- **Next**: [Your First Events](/getting-started/first-events/) — deposit money and watch your balance get calculated from events (~10 minutes)
-- **Optional**: [Reading NeoHaskell](/getting-started/reading-neohaskell/) — if you want to get comfortable reading the syntax first (~5 minutes)
+NeoHaskell does not support native Windows directly. Install WSL2, run Ubuntu or Debian inside it, and follow the Linux instructions.
 
-:::caution[Coming Soon]
-The installation commands on this page are placeholders. Actual commands will be added once the NeoHaskell installer is finalized.
-:::
+### Still stuck?
+
+- Check the [NeoHaskell Discord](https://discord.gg/wDj3UYzec8) — active channel, fast responses.
+- [Open an issue](https://github.com/neohaskell/neohaskell/issues).
+
+## Next steps
+
+You have a working NeoHaskell environment. Now choose your path:
+
+- [**Your first events**](/getting-started/first-events/) — ten-minute walkthrough that records an event, reads it back, and derives state from it.
+- [**Build NeoBank**](/tutorial/) — a full tutorial that builds a banking service from scratch.
+- [**Reading NeoHaskell**](/getting-started/reading-neohaskell/) — if you want to get comfortable with the syntax before touching code.

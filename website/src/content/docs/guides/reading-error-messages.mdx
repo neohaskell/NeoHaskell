@@ -1,193 +1,256 @@
 ---
-title: "Reading Error Messages"
-description: "How to read NeoHaskell compiler errors. Annotated examples of real error messages — type mismatches, missing patterns, unknown functions, and more."
-keywords: [error messages, compiler errors, type mismatch, pattern match, debugging, reading errors]
+title: "Reading error messages"
+description: "A practical guide to interpreting NeoHaskell compiler errors fast. Real messages, what they mean, and exactly how to fix them."
 sidebar:
   order: 3
 ---
 
-{/*
-  CONTENT OUTLINE — Reading Error Messages Guide
-  ===============================================
-  Position: Guides section, third guide
-  Goal: Reader is stuck on a compiler error. They leave knowing how to read any NeoHaskell error.
-  Prerequisites: None — this is for stuck readers at any level
-  Style: Julia Evans annotated-diagram style — show the error, label each part, explain what it means
-  Tone: friendly, non-condescending — reading compiler errors is a skill, not obvious knowledge
-
-  Key insight (Julia Evans): "Reading error messages is a teachable skill."
-  Key insight: "Organize by what they were trying to do."
-
-  Sections:
-  1. The General Skill (what to look for first, second, third)
-  2. Anatomy of a NeoHaskell Error Message (labeled diagram)
-  3. Error 1: Type Mismatch
-  4. Error 2: Missing Pattern Match
-  5. Error 3: Unknown Function (forgot module prefix)
-  6. Error 4: Wrong Import
-  7. Error 5: Linter Warning (used $ instead of |>)
-  8. When You're Still Stuck
-*/}
-
 import { Aside } from '@astrojs/starlight/components';
 
-Reading compiler errors is a skill. It's not obvious, it's not intuitive the first time, and nobody is born knowing how to do it. This page teaches it directly.
+NeoHaskell compiler errors can look intimidating the first time. This page teaches you to read them fast. The secret is that they follow a predictable structure, and once you know the structure, you can skim most errors in two seconds and zero in on the fix.
 
-## The General Skill
+## The anatomy of a compiler error
 
-{/*
-  Before showing specific errors, teach the meta-skill.
-  What do you look for first? Where is the useful information?
-*/}
+Every GHC error has the same rough shape:
 
-When you see a NeoHaskell error, read it in this order:
+```text
+src/MyApp/Foo.hs:42:15: error:
+    <summary of the problem in one or two lines>
 
-1. **The file and line number** — top of the error, tells you where to look
-2. **The error category** — "type mismatch", "unknown variable", "non-exhaustive patterns" — tells you what kind of problem it is
-3. **The "expected" vs "actual" section** — for type errors, this is the most useful part
-4. **The suggestion** — NeoHaskell often tells you what to do. Read it.
-5. **The context** — the surrounding code shown in the error. This confirms you're looking at the right place.
+    <detailed expansion — types involved, expected vs. actual>
 
-- Most errors are in the first 3 lines — don't scroll past them looking for more information
-- The error message is not blaming you — it's describing a mismatch between what you wrote and what the compiler expected
-- If the error is confusing, look at the line number first, then read the code at that line — often the error makes sense once you see the code
+    |
+ 42 |   result = someFunction wrongArg
+    |                         ^^^^^^^^
+```
 
-## Anatomy of a NeoHaskell Error Message
+Four parts:
 
-{/*
-  Show a generic error message with each part labeled.
-  This is the "map" that makes all subsequent examples easier to read.
-*/}
+1. **Location** (`file:line:col`)
+2. **Summary** (a one-sentence description)
+3. **Detail** (the specific types and what's wrong with them)
+4. **Source pointer** (the line of code with a caret showing the exact position)
 
-- Show a complete error message (a type mismatch is a good example)
-- Label each part with an annotation:
-  - **File path and line:column** — where the error is
-  - **Error code** — a short identifier (useful for searching)
-  - **Error category** — the type of problem
-  - **The problematic expression** — the code that caused the error, highlighted
-  - **Expected type** — what the compiler expected
-  - **Actual type** — what it found instead
-  - **Suggestion** — what to do (not always present, but often helpful)
-  - **Context** — surrounding lines for orientation
-- Note: NeoHaskell errors are designed to be readable — they're more verbose than GHC errors by design
+**Read the summary first, then the detail.** The source pointer is last. Most errors can be understood from the summary alone.
 
-{/* TODO: actual annotated diagram with a real error message once compiler output format is finalized */}
+## Error catalog — what you'll actually see
 
-## Error 1: Type Mismatch
+### "Couldn't match expected type ... with actual type ..."
 
-{/*
-  The most common error. Show a real example, annotate it, explain the fix.
-*/}
+This is the most common error. You passed one type where another was expected.
 
-**What it looks like**: `Expected type X, but got type Y`
+```text
+src/MyApp/Deposit.hs:15:20: error:
+    • Couldn't match expected type 'Int' with actual type 'Text'
+    • In the second argument of 'Deposit', namely 'amount'
+      In the expression: Deposit { accountId = ..., amount = "50" }
+```
 
-- When you see this: you passed the wrong type to a function, or a function returned the wrong type
-- Show the full error message
-- Annotate: which part is "expected", which part is "actual"
-- Explain: the compiler is telling you the types don't match — one of them is wrong
-- How to fix:
-  - Look at the function's type signature — what does it expect?
-  - Look at what you're passing — what type is it?
-  - One of them needs to change
-- Common cause: forgetting to unwrap a `Maybe` or `Result` before passing it to a function
-- Common cause: using a `Text` where an `Int` is expected (or vice versa)
-- Common cause: a function returns `Task err val` but you're treating it as `val`
+**What it means:** `Deposit.amount` is `Int`, but you passed `"50"` which is `Text`.
 
-{/* TODO: real error message example with annotations */}
+**The fix:** Write `50` (without quotes), or use `Int.fromText "50"` if you really have a string.
 
-## Error 2: Missing Pattern Match
+### "Non-exhaustive patterns in function ..."
 
-{/*
-  Non-exhaustive patterns. Common when adding a new event or command variant.
-*/}
+You forgot to handle a case in a `case` expression or a function.
 
-**What it looks like**: `Non-exhaustive patterns in case expression`
+```text
+src/MyApp/Account.hs:88:1: warning:
+    Non-exhaustive patterns in function update
 
-- When you see this: you added a new constructor to a type but didn't handle it everywhere
-- This is the compiler enforcing completeness — it's a feature, not a bug
-- Show the full error message
-- Annotate: which case expression is incomplete, which constructor is missing
-- How to fix:
-  - Add a case for the missing constructor
-  - If you don't know what to do with it yet, use `_ -> Task.fail (NotImplemented "...")`
-- Common cause: adding a new event type and forgetting to update the query fold
-- Common cause: adding a new command type and forgetting to update the command handler
-- Note: this is exactly the compiler catching the "missing event handler" problem described in [Why NeoHaskell](/concepts/why-neohaskell/)
+    In an equation for 'update':
+        Patterns of type 'AccountEvent' not matched:
+            MoneyWithdrawn{}
+```
 
-{/* TODO: real error message example with annotations */}
+**What it means:** Your `update` function handles some `AccountEvent` cases but not `MoneyWithdrawn`.
 
-## Error 3: Unknown Function (Forgot Module Prefix)
+**The fix:** Add a `MoneyWithdrawn` branch to the `case` expression.
 
-{/*
-  Very common for beginners. The function exists, but you forgot to qualify it.
-*/}
-
-**What it looks like**: `Variable not in scope: functionName`
-
-- When you see this: you used a function without its module prefix, or you forgot to import the module
-- Show the full error message
-- Annotate: the function name that's not found, the suggestion (if any)
-- How to fix:
-  - Check if the function is in a module you haven't imported
-  - Add the module prefix: `List.map` instead of `map`
-  - Or add the import: `import Data.List (map)`
-- Common cause: using `map` instead of `List.map`
-- Common cause: using `andThen` instead of `Task.andThen`
-- Common cause: a typo in the function name (the error message often suggests the closest match)
-- Tip: NeoHaskell uses qualified imports by convention — always prefix with the module name
-
-{/* TODO: real error message example with annotations */}
-
-## Error 4: Wrong Import
-
-{/*
-  Importing something that doesn't exist, or importing from the wrong module.
-*/}
-
-**What it looks like**: `Module 'X' does not export 'Y'`
-
-- When you see this: you're trying to import something that doesn't exist in that module
-- Show the full error message
-- Annotate: the module name, the thing you tried to import
-- How to fix:
-  - Check the module's documentation — is the name spelled correctly?
-  - Check if it moved to a different module in a recent version
-  - Use `neo docs` to look up what a module exports
-- Common cause: importing `Task.andThen` as a standalone function instead of using it qualified
-- Common cause: a function was renamed between versions
-
-{/* TODO: real error message example with annotations */}
-
-## Error 5: Linter Warning (Used `$` Instead of `|>`)
-
-{/*
-  NeoHaskell's linter enforces the pipe operator style.
-  This is a warning, not an error, but it's confusing the first time.
-*/}
-
-**What it looks like**: `Warning: Use |> instead of $`
-
-- When you see this: you used Haskell's `$` operator instead of NeoHaskell's `|>` pipe operator
-- This is a linter warning, not a compiler error — your code still compiles
-- Show the full warning message
-- Annotate: the line with `$`, the suggested replacement with `|>`
-- How to fix: replace `f $ g x` with `g x |> f`
-- Why NeoHaskell prefers `|>`: it reads left-to-right, matching the direction of data flow
-- Note: `$` and `|>` are equivalent in behavior — this is purely a style preference enforced by the linter
-
-{/* TODO: real warning message example with annotations */}
-
-## When You're Still Stuck
-
-- Copy the error message and search for it in the [NeoHaskell Discord](https://discord.gg/neohaskell) `#help` channel
-- The [Common Errors](/guides/common-errors/) guide is organized by what you were trying to do — it may have your exact error
-- If the error is in a file you didn't write (a library), the problem is usually in how you're calling it, not in the library itself
-- `neo check` runs the type checker without building — faster feedback loop when debugging type errors
-
-<Aside type="tip" title="The error is almost always on the line before">
-Type errors often point to the line where the mismatch is detected, not where it was introduced. If the error points to line 42 but line 42 looks fine, look at line 41 — that's often where the wrong type was created.
+<Aside type="note" title="This is a warning, but it should be treated as an error">
+By default GHC emits non-exhaustive patterns as a warning, not an error. The NeoHaskell build pipeline treats warnings as errors, so it *will* fail the build. Fix it.
 </Aside>
 
-:::caution[Coming Soon]
-This page is a content outline. The full guide with annotated error message diagrams is in progress.
-:::
+### "Variable not in scope: ..."
+
+You used a name that isn't imported.
+
+```text
+src/MyApp/Deposit.hs:12:10: error:
+    Variable not in scope: Text.trim
+```
+
+**What it means:** You called `Text.trim` but didn't import the `Text` module.
+
+**The fix:** Add `import Text qualified` to the top of the file.
+
+### "No instance for (Entity Foo)"
+
+You tried to use a type as an entity but didn't give it the `Entity` instance.
+
+```text
+src/MyApp/Account.hs:14:1: error:
+    • No instance for (Entity Account) arising from a use of 'withService'
+```
+
+**The fix:** Add the `instance Entity Account where ...` declaration to your `Core.hs`.
+
+### "Event type mismatch in service definition!"
+
+Two commands in the same service use different event types.
+
+```text
+error:
+    Event type mismatch in service definition!
+
+    All commands in a service must use the same event type.
+
+    Expected event type: CartEvent
+    But command 'ProcessPayment' uses event type: PaymentEvent
+
+    To fix: Ensure all commands in this service share a common event type.
+```
+
+**The fix:** Move `ProcessPayment` to a separate service that handles `PaymentEvent`. Or merge the two event types if they really belong together.
+
+### "Couldn't match expected type 'Task Text ...' with actual type ..."
+
+You returned a raw value where a `Task` was expected.
+
+```text
+error:
+    • Couldn't match expected type 'Task Text User'
+                  with actual type 'User'
+    • In the expression: someUser
+```
+
+**The fix:** Wrap the value in `Task.yield`:
+
+```haskell
+fetchUser :: Task Text User
+fetchUser = Task.yield someUser
+```
+
+### "Variable not in scope: pure"
+
+You tried to use `pure` but NeoHaskell uses `Task.yield` instead.
+
+```text
+error:
+    Variable not in scope: pure :: User -> Task err User
+```
+
+**The fix:** Replace `pure` with `Task.yield`.
+
+### "Ambiguous type variable"
+
+The compiler can't figure out which type you meant.
+
+```text
+error:
+    • Ambiguous type variable 'a0' arising from a use of 'Json.decode'
+    • In the expression: Json.decode someBytes
+```
+
+**The fix:** Add a type annotation to tell the compiler what you want:
+
+```haskell
+result :: User
+result = Json.decode @User someBytes
+```
+
+### "Orphan instance"
+
+You defined a typeclass instance in a module that doesn't own either the typeclass or the type.
+
+```text
+warning:
+    Orphan instance: instance Json.ToJSON MyType
+```
+
+**The fix:** Move the instance to the module that defines `MyType` (usually the same file). Orphan instances can cause confusing behavior and GHC warns about them by default.
+
+### "Record update has multiple constructors"
+
+You tried to update a field on a record, but the type has multiple constructors and not all of them have that field.
+
+```text
+error:
+    • Record update has multiple constructors
+```
+
+**The fix:** Use a `case` expression to handle each constructor explicitly:
+
+```haskell
+case event of
+  AccountOpened { ... } -> event { ... }
+  MoneyDeposited { ... } -> event { ... }
+```
+
+### "Could not find module 'Core'"
+
+Your `.cabal` file isn't set up to include the NeoHaskell core library.
+
+**The fix:** Check that the `build-depends:` section of your `.cabal` file includes `nhcore`. If you're starting from the template, this is already configured.
+
+## The "type error wall of text" strategy
+
+Sometimes you get a multi-screen error. Here's how to handle it:
+
+1. **Read the first line of the summary.** This tells you the category of problem.
+2. **Look at the first `•` (bullet).** That's the main complaint.
+3. **Look at the source pointer.** The `^^^^^^` shows you exactly where.
+4. **Go to your code.** Fix the thing at that location.
+5. **Rebuild.** Often the "wall of text" collapses into one small error once you fix the first mistake.
+
+Do NOT try to parse the entire error message on first read. The first problem is almost always the real one; the rest are consequences.
+
+## Tooling tips
+
+### Use HLS (Haskell Language Server)
+
+If you have HLS set up in your editor, you'll see errors inline as you type. This catches most issues before you ever run `cabal build`. The NeoHaskell template ships with HLS config, so it should "just work" when your editor is pointed at the right project.
+
+### Use `cabal build --ghc-options="-fdefer-type-errors"` for exploration
+
+If you're refactoring and want to keep iterating without fixing every error immediately, you can defer type errors to runtime:
+
+```bash
+cabal build --ghc-options="-fdefer-type-errors"
+```
+
+This lets broken code run (and fail at runtime when it hits the error). Use sparingly — it hides problems.
+
+### Use `:reload` in GHCi
+
+If you're exploring in GHCi and you change a file, `:reload` picks up the new version and re-type-checks. Faster than exiting and restarting.
+
+## When an error makes no sense
+
+Rare but real: sometimes an error points to a line that looks obviously correct. The usual causes:
+
+- **A hidden typeclass mismatch.** Some function expects a typeclass you forgot to derive.
+- **A type family that doesn't match.** `type instance EntityOf Foo = Bar` but you wrote `Baz` somewhere.
+- **An implicit import.** The function you're using comes from a module you didn't import, and there's a same-named local function.
+
+When this happens, try:
+
+1. Look for any `type instance` declarations related to the types in the error.
+2. Check that you've imported all the modules you think you imported.
+3. Try adding an explicit type annotation to the problematic expression. Often the annotation will either fix the error or produce a better one.
+
+## When all else fails
+
+Post the error message in the [NeoHaskell Discord](https://discord.gg/wDj3UYzec8). Include:
+
+- The exact error message.
+- The relevant code (5–10 lines of context).
+- What you were trying to do.
+
+Someone will help.
+
+## Where to go from here
+
+- **[Common errors](/guides/common-errors/)** — a catalog of specific error messages and their fixes.
+- **[Error handling](/guides/error-handling/)** — handling errors at runtime (a different concern).
+- **[Testing](/guides/testing/)** — how to catch errors before they hit production.

@@ -35,11 +35,9 @@ export default defineConfig({
 			defaultLocale: 'root',
 			locales: {
 				root: { label: 'English', lang: 'en' },
-				es: { label: 'Español' },
-				ru: { label: 'Русский' },
-				hy: { label: 'Հայերեն' },
-				fr: { label: 'Français' },
-				ja: { label: '日本語' },
+				// Non-English locales are temporarily disabled during the docs revamp.
+				// They will be re-enabled once the translation pipeline rebuilds
+				// translations from the new English source.
 			},
 			social: [{ icon: 'github', label: 'GitHub', href: 'https://github.com/neohaskell/neohaskell' }],
 			sidebar: [

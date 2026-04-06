@@ -1,13 +1,17 @@
 ---
 title: NeoHaskell
-description: Event sourcing as a language. The compiler enforces what other tools leave to discipline.
+description: A dialect of Haskell where event sourcing, commands, queries, and services are language primitives. The compiler enforces what other frameworks leave to discipline.
 template: splash
 hero:
-  tagline: Event sourcing as a language — the compiler enforces what other tools leave to discipline.
+  tagline: Event sourcing as a language. The compiler enforces what other frameworks leave to discipline.
   actions:
-    - text: Get Started
+    - text: Get started
       link: /getting-started/installation/
       icon: right-arrow
+    - text: Build NeoBank
+      link: /tutorial/
+      icon: seti:haskell
+      variant: minimal
     - text: GitHub
       link: https://github.com/neohaskell/neohaskell
       icon: external
@@ -16,41 +20,124 @@ hero:
 
 import { Card, CardGrid } from '@astrojs/starlight/components';
 
+NeoHaskell is a dialect of Haskell built around one idea: **commands, events, entities, queries, services, and integrations are first-class language constructs, not patterns you implement in a framework.** You do not wire up a CQRS library. You do not decide whether to use event sourcing. You write a `decide` function, return a `Decision`, and the compiler makes sure every piece of your domain is consistent before the program runs.
+
+The result: a codebase that reads like pseudocode, a type checker that catches entire categories of bugs other languages leave for production, and an architecture that scales from a single-file prototype to a distributed system without rewriting.
+
+## Pick a door
+
 <CardGrid>
   <Card title="Build something in 10 minutes" icon="rocket">
-    Go from zero to a working event-sourced app. Install NeoHaskell, deposit some money, and see your balance derived from events — not stored, derived.
+    You are a developer. You learn by building. [Install NeoHaskell](/getting-started/installation/), record your first event, and watch the compiler catch a bug you would have shipped in JavaScript.
 
-    [Get started →](/getting-started/installation/)
+    **[Install →](/getting-started/installation/)**
   </Card>
-  <Card title="How it compares to what you know" icon="setting">
-    Event sourcing with compiler guarantees. See how NeoHaskell compares to EventStoreDB, Kafka, and Axon — tradeoffs, performance, and adoption path.
+  <Card title="Build a bank in an afternoon" icon="open-book">
+    The NeoBank tutorial takes you from zero to a running event-sourced banking service. Accounts, transactions, transfers, audit trail. Seven lessons. About 200 lines of code.
 
-    [Evaluate NeoHaskell →](/concepts/why-neohaskell/)
+    **[Start the tutorial →](/tutorial/)**
   </Card>
-  <Card title="Why this matters for your team" icon="open-book">
-    Event sourcing reduces long-term cost. Understand the value proposition, risk assessment, and proof points — without the implementation details.
+  <Card title="Evaluate the tradeoffs" icon="setting">
+    You are deciding whether to bring NeoHaskell into a project. Start here: what the language is, what the compiler enforces, where it fits, and where it does not.
 
-    [Learn why →](/concepts/why-neohaskell/)
+    **[Why NeoHaskell? →](/concepts/why-neohaskell/)**
   </Card>
 </CardGrid>
 
-## Learn by building
+## What it looks like
 
-The [NeoBank tutorial](/tutorial/) takes you from zero to a working banking service with accounts, transactions, transfers, and a complete audit trail. Each part builds one concept. It'll feel like enterprise software — it's about 200 lines of code.
+Here is a complete command — the kind of code you will write in production. Read it once, top to bottom. No setup, no preamble, just the thing:
+
+```haskell
+module Bank.Commands.DepositMoney (DepositMoney (..), decide) where
+
+import Core
+import Decider qualified
+import Service.Auth (RequestContext)
+import Service.CommandExecutor.TH (command)
+import Service.Transport.Web (WebTransport)
+import Bank.Account.Core (Account, AccountEvent (..))
+
+
+data DepositMoney = DepositMoney
+  { accountId :: Uuid
+  , amount :: Int
+  }
+  deriving (Generic, Show)
+
+
+getEntityId :: DepositMoney -> Maybe Uuid
+getEntityId cmd = Just cmd.accountId
+
+
+decide :: DepositMoney -> Maybe Account -> RequestContext -> Decision AccountEvent
+decide cmd account _ctx = case account of
+  Nothing ->
+    Decider.reject "Account does not exist"
+  Just _ ->
+    if cmd.amount <= 0
+      then Decider.reject "Deposit amount must be positive"
+      else
+        Decider.acceptExisting
+          [ MoneyDeposited
+              { entityId = cmd.accountId
+              , amount = cmd.amount
+              }
+          ]
+
+
+type instance EntityOf DepositMoney = Account
+type instance TransportsOf DepositMoney = '[WebTransport]
+command ''DepositMoney
+```
+
+That is the whole command. The compiler will reject this code if:
+
+- `Account` does not have an event type.
+- `AccountEvent` does not include `MoneyDeposited`.
+- The `update` function for `Account` does not handle `MoneyDeposited`.
+- You forgot to return a `Decision`.
+- You pattern-matched on a case that does not exist.
+
+You did not write a validator. You did not register this command with a dispatcher. You did not wire it into a test harness. The compiler did. The last line — `command ''DepositMoney` — generates the endpoint, the JSON schema, the CLI parser, and the handler registration. Your domain logic is the entire file.
+
+## The idea in one picture
+
+```text
+   Command                     Event                     State
+   ───────                    ───────                   ───────
+     "I want to       accepted    "This     folded into    "current
+      deposit   ────────────────►  happened"  ───────────►  balance
+      $50"      rejected                                   is $50"
+                     │
+                     └──► "reason: account closed"
+```
+
+Commands are **requests** ("I want to deposit $50"). The `decide` function reviews them against the current state and either accepts them (producing events) or rejects them (with a reason). Events are **immutable facts** ("$50 was deposited"). State is **derived by folding events** — it is never stored directly.
+
+This is how banks work. It is how accounting works. It is how git works. NeoHaskell just makes it how your code works, and lets the compiler keep everyone honest.
 
 ## Already know a language?
 
 <CardGrid>
-  <Card title="JavaScript / TypeScript" icon="seti:javascript">
-    [How your JS/TS maps to NeoHaskell →](/coming-from/javascript/)
+  <Card title="JavaScript or TypeScript" icon="seti:javascript">
+    [How your JS/TS mental model maps to NeoHaskell →](/coming-from/javascript/)
   </Card>
   <Card title="Python" icon="seti:python">
-    [How your Python maps to NeoHaskell →](/coming-from/python/)
+    [How your Python mental model maps to NeoHaskell →](/coming-from/python/)
   </Card>
   <Card title="Go" icon="seti:go">
-    [How your Go maps to NeoHaskell →](/coming-from/go/)
+    [How your Go mental model maps to NeoHaskell →](/coming-from/go/)
   </Card>
   <Card title="Haskell" icon="seti:haskell">
     [How NeoHaskell differs from GHC Haskell →](/coming-from/haskell/)
   </Card>
 </CardGrid>
+
+## The promise
+
+Every page in this documentation is written to hold up one promise: **you should never feel like you need permission to be here.** NeoHaskell's ancestor language has a reputation for being intimidating, academic, and closed off to anyone without a category theory textbook. This is not that. If you have ever written a Redux reducer, a REST handler, or a SQL query, you already know how to think in NeoHaskell — you just need the syntax.
+
+Start with the [10-minute quickstart](/getting-started/installation/) if you want to feel the language in your hands. Start with [the tutorial](/tutorial/) if you want to build something real. Start with [Why NeoHaskell?](/concepts/why-neohaskell/) if you want to know what you are signing up for.
+
+Welcome in.

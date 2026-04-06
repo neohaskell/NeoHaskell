@@ -1,0 +1,154 @@
+---
+title: "Testing"
+description: "Reference for the Test module — describe, it, shouldBe, shouldSatisfy, and the test helpers."
+sidebar:
+  order: 10
+---
+
+NeoHaskell uses Hspec for testing, re-exported via the `Test` module.
+
+```haskell
+import Test
+```
+
+## Test structure
+
+```haskell
+module MyApp.MyFeatureSpec where
+
+import Core
+import Test
+
+spec :: Spec Unit
+spec = do
+  describe "MyFeature" do
+    it "does something" \_ -> do
+      Task.yield ()
+
+    it "does something else" \_ -> do
+      Task.yield ()
+```
+
+Every test file exports a `spec :: Spec Unit`. Hspec-discover picks up files named `*Spec.hs` automatically — you don't register them manually.
+
+## Helpers
+
+| Helper | Signature | Description |
+|---|---|---|
+| `describe "label" body` | `Text -> Spec Unit -> Spec Unit` | Group related tests. Nest freely. |
+| `it "label" action` | `Text -> (x -> Task Text Unit) -> Spec Unit` | Single test case. |
+| `shouldBe expected` | `(Eq a, Show a) => a -> a -> Task Text Unit` | Assert equality. |
+| `shouldSatisfy pred` | `(Show a) => (a -> Bool) -> a -> Task Text Unit` | Assert a predicate holds. |
+| `Test.fail "message"` | `Text -> Task Text a` | Explicitly fail with a message. |
+| `pending "reason"` | `Text -> Task Text Unit` | Mark as pending (not yet implemented). |
+
+Assertions are written as `value |> shouldBe expected`. The pipe reads as "take this value, compare to this expected."
+
+## Writing Given-When-Then tests
+
+The standard pattern for testing a command's `decide` function:
+
+```haskell
+import Decider (runDecision, DecisionContext (..), CommandResult (..))
+import Service.Auth (RequestContext (..))
+import Task qualified
+import Uuid qualified
+
+-- Helper: run decide in a test context.
+runDecide ::
+  MyCommand ->
+  Maybe MyEntity ->
+  Task Text (CommandResult MyEvent)
+runDecide cmd entity = do
+  let ctx = DecisionContext { genUuid = Task.yield Uuid.nil }
+  let reqCtx = RequestContext { user = Nothing }
+  runDecision ctx (decide cmd entity reqCtx)
+
+
+-- Helper: construct a test entity.
+anEntity :: MyEntity
+anEntity = MyEntity { ... }
+
+
+spec :: Spec Unit
+spec = describe "MyCommand" do
+  it "rejects when entity does not exist" \_ -> do
+    let cmd = MyCommand { ... }
+    result <- runDecide cmd Nothing
+    result |> shouldBe (RejectCommand "Entity does not exist")
+
+  it "accepts valid commands" \_ -> do
+    let cmd = MyCommand { ... }
+    result <- runDecide cmd (Just anEntity)
+    case result of
+      AcceptCommand _ events -> do
+        Array.length events |> shouldBe 1
+      _ -> Test.fail "Expected AcceptCommand"
+```
+
+## Testing `update` functions
+
+```haskell
+spec :: Spec Unit
+spec = describe "Entity.update" do
+  it "applies MyEvent correctly" \_ -> do
+    let state = initialState { someField = 10 }
+    let event = MyEvent { delta = 5 }
+    let result = update event state
+    result.someField |> shouldBe 15
+```
+
+## Testing `combine` functions
+
+```haskell
+spec :: Spec Unit
+spec = describe "MyQuery.combine" do
+  it "projects entity state to query shape" \_ -> do
+    let entity = MyEntity { ... }
+    case combine entity Nothing of
+      Update query -> do
+        query.someField |> shouldBe expectedValue
+      _ -> Test.fail "Expected Update"
+```
+
+## Integration tests with an in-memory event store
+
+For tests that exercise the full command flow (decide + append + project), use `InMemory.new`:
+
+```haskell
+import Service.EventStore.InMemory qualified as InMemory
+
+spec :: Spec Unit
+spec = describe "End-to-end" do
+  it "commands produce the expected projections" \_ -> do
+    store <- InMemory.new |> Task.mapError toText
+    -- ... dispatch commands through the real executor
+    -- ... read back the projection
+    -- ... assert
+    Task.yield ()
+```
+
+## Running tests
+
+```bash
+cabal test           # Run all test suites
+cabal test nhcore-test-core    # Run a specific suite
+```
+
+## Test suite naming
+
+NeoHaskell projects typically have multiple test suites to separate concerns:
+
+| Suite | What it tests |
+|---|---|
+| `*-test-core` | Pure logic — no external dependencies. Fast. |
+| `*-test-service` | Service layer — requires PostgreSQL. Slower. |
+| `*-test-integration` | Full integration tests. Slowest. |
+
+Run fast suites on every commit, full suites in CI.
+
+## Where to go from here
+
+- **[Testing guide](/guides/testing/)** — practical recipes.
+- **[Testing event-sourced systems (concept)](/concepts/testing-event-sourced-systems/)** — the "why" behind the patterns.
+- **[Tutorial Part 2](/tutorial/02-account-rules/)** — your first hands-on test.

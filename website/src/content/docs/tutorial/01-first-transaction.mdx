@@ -1,10 +1,458 @@
 ---
-title: "Part 1: Your First Transaction"
-description: "Deposit money, derive a balance, and see why events beat UPDATE statements."
+title: "Part 1 — Your first transaction"
+description: "Open a bank account, deposit money, derive the balance from events. Your first NeoBank feature in about 60 lines of code."
 ---
 
-Your goal — deposit money into an account and see the balance. But first, you'll see why the traditional approach (UPDATE balance SET 150) fails when a customer disputes a charge. Then you'll build it with events — and discover that 12 lines of code is all it takes.
+import { Aside, Steps } from '@astrojs/starlight/components';
 
-:::caution[Coming Soon]
-This page is under development. Check back soon!
-:::
+**What you'll build in this part:** A working banking service where you can open an account, deposit money into it, and ask for the balance. All three features — opening, depositing, and balance queries — come from a single event stream. You will not store a balance anywhere. You will derive it.
+
+**Reading time:** ~20 minutes · **Lines of code:** ~60
+
+## What you'll learn
+
+- How to define an **entity** (the thing whose state you care about — here, an `Account`).
+- How to define **events** (immutable facts about what happened).
+- How to define **commands** (requests to do something).
+- How to write a **decide** function (accept or reject a command, producing events).
+- How to write an **update** function (fold events into state).
+- How to wire everything into a running application.
+
+## The CRUD code that fails
+
+Before we start, think about how you'd write this in a database-first style. You'd have an `accounts` table with an `id` column, an `owner` column, and a `balance` column. A deposit would be:
+
+```sql
+UPDATE accounts SET balance = balance + 50 WHERE id = 'abc-123';
+```
+
+Done? Not really. Imagine a year passes and legal asks: "what was the balance of account abc-123 at 3pm last Tuesday?" You can't answer. You threw the history away.
+
+This is the bug NeoHaskell fixes by default. Let's build the correct version.
+
+## Step 1 — The entity and its events
+
+We need to define two things: what an `Account` is, and what events can happen to it. Create the file `src/NeoBank/Account/Core.hs`:
+
+```haskell
+module NeoBank.Account.Core (
+  Account (..),
+  AccountEvent (..),
+  initialState,
+) where
+
+import Core
+import Json qualified
+import Service.Command.Core (Event (..))
+
+
+-- | An account — the thing whose state we care about.
+data Account = Account
+  { accountId :: Uuid
+  , ownerName :: Text
+  , balance :: Int
+  }
+  deriving (Generic, Show, Eq)
+
+
+instance Json.FromJSON Account
+instance Json.ToJSON Account
+
+
+-- | Every account starts empty.
+initialState :: Account
+initialState =
+  Account
+    { accountId = Uuid.nil
+    , ownerName = ""
+    , balance = 0
+    }
+
+
+type instance NameOf Account = "Account"
+
+
+instance Entity Account where
+  initialStateImpl = initialState
+  updateImpl = update
+
+
+-- | Events — the immutable facts that can happen to an account.
+data AccountEvent
+  = AccountOpened
+      { entityId :: Uuid
+      , ownerName :: Text
+      }
+  | MoneyDeposited
+      { entityId :: Uuid
+      , amount :: Int
+      }
+  deriving (Eq, Show, Generic)
+
+
+instance Json.FromJSON AccountEvent
+instance Json.ToJSON AccountEvent
+
+
+type instance EventOf Account = AccountEvent
+type instance EntityOf AccountEvent = Account
+
+
+instance Event AccountEvent where
+  getEventEntityIdImpl event = case event of
+    AccountOpened { entityId } -> entityId
+    MoneyDeposited { entityId } -> entityId
+
+
+-- | The heart of event sourcing: fold an event into the entity state.
+update :: AccountEvent -> Account -> Account
+update event account = case event of
+  AccountOpened { entityId, ownerName } ->
+    Account
+      { accountId = entityId
+      , ownerName = ownerName
+      , balance = 0
+      }
+  MoneyDeposited { amount } ->
+    account { balance = account.balance + amount }
+```
+
+Read that one more time with the understanding that **this is the whole spec for what an account is**. The field list is the shape of state. The event list is the shape of every change that can happen. The `update` function is how each change takes effect. There is no database schema. There is no migration. There is this file.
+
+<Aside type="note" title="Why do events carry entityId?">
+Every event has to know which stream it belongs to. `entityId` is how the event store routes events into the right stream. Without it, the system wouldn't know which account a deposit affected.
+</Aside>
+
+## Step 2 — The OpenAccount command
+
+Commands are how the outside world asks the bank to do things. Our first command is `OpenAccount`. Create `src/NeoBank/Account/Commands/OpenAccount.hs`:
+
+```haskell
+module NeoBank.Account.Commands.OpenAccount (
+  OpenAccount (..),
+  getEntityId,
+  decide,
+) where
+
+import Core
+import Decider qualified
+import Json qualified
+import Service.Auth (RequestContext)
+import Service.Command.Core (TransportsOf)
+import Service.CommandExecutor.TH (command)
+import Service.Transport.Web (WebTransport)
+import NeoBank.Account.Core
+
+
+-- | The command: "I want to open an account for this person."
+data OpenAccount = OpenAccount
+  { ownerName :: Text
+  }
+  deriving (Generic, Show)
+
+
+instance Json.FromJSON OpenAccount
+instance Json.ToJSON OpenAccount
+
+
+-- | Account creation: we don't know the ID yet (we're creating it).
+getEntityId :: OpenAccount -> Maybe Uuid
+getEntityId _ = Nothing
+
+
+-- | The decision: accept the command, producing an AccountOpened event.
+decide :: OpenAccount -> Maybe Account -> RequestContext -> Decision AccountEvent
+decide cmd existing _ctx = case existing of
+  Just _ ->
+    Decider.reject "Account already exists"
+  Nothing -> do
+    newId <- Decider.generateUuid
+    Decider.acceptNew
+      [ AccountOpened
+          { entityId = newId
+          , ownerName = cmd.ownerName
+          }
+      ]
+
+
+type instance EntityOf OpenAccount = Account
+type instance TransportsOf OpenAccount = '[WebTransport]
+
+
+command ''OpenAccount
+```
+
+Walk through what just happened.
+
+- `data OpenAccount = OpenAccount { ownerName :: Text }` — the shape of the request.
+- `getEntityId _ = Nothing` — this command is *creating* an account, so there's no existing ID to target.
+- `decide` — the business logic. If an account already exists at this ID, we reject. Otherwise we generate a UUID and emit an `AccountOpened` event. **We do not touch any balance field. The event is the only thing that happens.**
+- The type-family lines (`type instance EntityOf ...`) tell the compiler which entity this command affects and which transports carry it.
+- `command ''OpenAccount` — that last line is Template Haskell that generates the HTTP endpoint, JSON schema, handler registration, and everything else. You write domain logic; it generates the wiring.
+
+<Aside type="tip" title="Why the double-tick?">
+`''OpenAccount` (with two ticks) is Template Haskell syntax meaning "the name `OpenAccount` as a value." You don't need to understand how it works — just know that every command file ends with this line.
+</Aside>
+
+## Step 3 — The Deposit command
+
+Create `src/NeoBank/Account/Commands/Deposit.hs`:
+
+```haskell
+module NeoBank.Account.Commands.Deposit (
+  Deposit (..),
+  getEntityId,
+  decide,
+) where
+
+import Core
+import Decider qualified
+import Json qualified
+import Service.Auth (RequestContext)
+import Service.Command.Core (TransportsOf)
+import Service.CommandExecutor.TH (command)
+import Service.Transport.Web (WebTransport)
+import NeoBank.Account.Core
+
+
+-- | The command: "Deposit this much into this account."
+data Deposit = Deposit
+  { accountId :: Uuid
+  , amount :: Int
+  }
+  deriving (Generic, Show)
+
+
+instance Json.FromJSON Deposit
+instance Json.ToJSON Deposit
+
+
+-- | This command targets an existing account, so we return its ID.
+getEntityId :: Deposit -> Maybe Uuid
+getEntityId cmd = Just cmd.accountId
+
+
+-- | Business rules:
+--   - The account must exist.
+--   - The amount must be positive.
+decide :: Deposit -> Maybe Account -> RequestContext -> Decision AccountEvent
+decide cmd account _ctx = case account of
+  Nothing ->
+    Decider.reject "Account does not exist"
+  Just _ ->
+    if cmd.amount <= 0
+      then Decider.reject "Deposit amount must be positive"
+      else
+        Decider.acceptExisting
+          [ MoneyDeposited
+              { entityId = cmd.accountId
+              , amount = cmd.amount
+              }
+          ]
+
+
+type instance EntityOf Deposit = Account
+type instance TransportsOf Deposit = '[WebTransport]
+
+
+command ''Deposit
+```
+
+Notice the difference between `OpenAccount` and `Deposit`:
+
+- `OpenAccount` uses `acceptNew` — "only accept this if the account doesn't exist yet." This is creation.
+- `Deposit` uses `acceptExisting` — "only accept this if the account does exist." This is modification.
+
+The event store enforces these guarantees. If two `OpenAccount` commands race each other, only one wins — the other gets a rejection. You get that for free.
+
+## Step 4 — The service
+
+A service bundles related commands together. Create `src/NeoBank/Account/Service.hs`:
+
+```haskell
+module NeoBank.Account.Service (service) where
+
+import Core
+import NeoBank.Account.Commands.Deposit (Deposit)
+import NeoBank.Account.Commands.OpenAccount (OpenAccount)
+import NeoBank.Account.Core ()
+import Service qualified
+
+
+service :: Service _ _
+service =
+  Service.new
+    |> Service.command @OpenAccount
+    |> Service.command @Deposit
+```
+
+Read this as "make a new service, then register `OpenAccount` and `Deposit` commands in it." The `_` underscores in the return type let the compiler infer the exact type — you don't have to spell it out.
+
+<Aside type="note" title="Why can't I list two different entity types in one service?">
+Every command in a service must share the same entity and event type. If you mix types, the compiler will tell you so with an error that says exactly which command is wrong. This is a feature — a service is a consistency boundary, and mixing boundaries is a modeling error.
+</Aside>
+
+## Step 5 — Wire it into the application
+
+Open `src/App.hs` and replace its contents with:
+
+```haskell
+module App (app) where
+
+import Core
+import Service.Application (Application)
+import Service.Application qualified as Application
+import Service.EventStore.InMemory qualified as InMemory
+import Service.Transport.Web qualified as WebTransport
+import NeoBank.Account.Service qualified as Account
+
+
+app :: Application
+app =
+  Application.new
+    |> Application.withEventStore @() (\_ -> InMemory.new)
+    |> Application.withTransport WebTransport.server
+    |> Application.withService Account.service
+```
+
+We're using an in-memory event store. It loses everything on restart. In Part 6 we'll switch to PostgreSQL — it's a one-line change.
+
+## Step 6 — Run it
+
+```bash
+cabal build
+cabal run
+```
+
+Your NeoBank is now listening on port 8080. Open a second terminal and open an account:
+
+```bash
+curl -X POST http://localhost:8080/commands/OpenAccount \
+  -H 'Content-Type: application/json' \
+  -d '{"ownerName": "Alice"}'
+```
+
+You should get back something like:
+
+```json
+{
+  "kind": "Accepted",
+  "entityId": "3f5a7b2c-1234-4567-89ab-cdef01234567",
+  "events": [
+    {
+      "kind": "AccountOpened",
+      "entityId": "3f5a7b2c-1234-4567-89ab-cdef01234567",
+      "ownerName": "Alice"
+    }
+  ]
+}
+```
+
+Copy that `entityId` — you'll need it to deposit money. Run:
+
+```bash
+curl -X POST http://localhost:8080/commands/Deposit \
+  -H 'Content-Type: application/json' \
+  -d '{"accountId": "3f5a7b2c-1234-4567-89ab-cdef01234567", "amount": 50}'
+```
+
+You should see:
+
+```json
+{
+  "kind": "Accepted",
+  "entityId": "3f5a7b2c-1234-4567-89ab-cdef01234567",
+  "events": [
+    {
+      "kind": "MoneyDeposited",
+      "entityId": "3f5a7b2c-1234-4567-89ab-cdef01234567",
+      "amount": 50
+    }
+  ]
+}
+```
+
+Deposit another 25:
+
+```bash
+curl -X POST http://localhost:8080/commands/Deposit \
+  -H 'Content-Type: application/json' \
+  -d '{"accountId": "3f5a7b2c-1234-4567-89ab-cdef01234567", "amount": 25}'
+```
+
+Now — and this is the point of the whole exercise — **there is no `balance` column anywhere in this system.** Not in the database. Not in the event store. Nowhere. The account's current balance is `50 + 25 = 75` because we can fold the event stream. The events are the truth. The balance is computed on demand.
+
+## Check your understanding
+
+Which of these best describes what an event is in NeoHaskell?
+
+1. A log message for debugging.
+2. An immutable fact about something that happened in the domain.
+3. A notification sent to another service.
+4. A database row that gets updated.
+
+<details>
+<summary>Click to reveal the answer</summary>
+
+**The correct answer is #2: an immutable fact about something that happened in the domain.**
+
+Here is why the other answers are wrong:
+
+- **#1 — Log message.** Events aren't log messages. You can't delete them, filter them by severity, or drop them when disk is full. The entire state of your system derives from them.
+- **#3 — Notification.** Events might trigger notifications later (through integrations — we'll cover those in Part 5), but the event itself is a recorded fact, not a message.
+- **#4 — Database row that gets updated.** Events are append-only. They are *never* updated. That's the whole point — if you could mutate an event, you'd lose the history.
+
+</details>
+
+Hold on to this mental model. It is the single most important thing in event sourcing.
+
+## What you just built
+
+- Two commands — `OpenAccount` and `Deposit`.
+- Two events — `AccountOpened` and `MoneyDeposited`.
+- One entity — `Account`.
+- A working HTTP service that accepts commands and stores events.
+- A balance that is *derived* from events, not stored.
+
+All of that is about 60 lines of code.
+
+## The compiler protection you are already getting
+
+Try this: open `Core.hs` and add a new event variant without updating the `update` function:
+
+```haskell
+data AccountEvent
+  = AccountOpened { entityId :: Uuid, ownerName :: Text }
+  | MoneyDeposited { entityId :: Uuid, amount :: Int }
+  | MoneyWithdrawn { entityId :: Uuid, amount :: Int }  -- new
+  deriving (Eq, Show, Generic)
+```
+
+Save, run `cabal build`, and watch:
+
+```text
+error: [GHC-18872]
+    Non-exhaustive patterns in function update
+
+    In an equation for 'update':
+        Patterns of type 'AccountEvent' not matched:
+            MoneyWithdrawn{}
+```
+
+The compiler knows `update` doesn't handle the new case. No runtime error, no failing test, no surprise in production. It knows, now, at build time, with the exact line number.
+
+Revert that change before moving on (or add a `MoneyWithdrawn` case that subtracts — we'll formalize this in the next part).
+
+## Recap
+
+- **Events are facts.** We recorded `AccountOpened` and `MoneyDeposited`. They are immutable and append-only.
+- **State is derived.** The balance is a fold over events via `update`. There is no balance field in storage.
+- **Commands are intents.** `OpenAccount` and `Deposit` are requests; `decide` decides whether to accept them.
+- **Pure functions do the work.** `decide` and `update` are both pure — no database access, no I/O, trivial to test.
+- **The compiler enforces the contract.** Missing an event handler is a compile error.
+
+## Next
+
+You have an account. You can deposit into it. But our bank is currently a one-way street — you can only put money in. That is a bad bank. In Part 2, we add withdrawals, and we use the type system to make overdrafts impossible.
+
+[**Part 2 — Account rules →**](/tutorial/02-account-rules/)

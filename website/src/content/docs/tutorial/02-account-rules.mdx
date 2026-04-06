@@ -1,10 +1,353 @@
 ---
-title: "Part 2: Account Rules"
-description: "Add overdraft protection and let the compiler catch your bugs."
+title: "Part 2 — Account rules"
+description: "Add withdrawals and overdraft protection. Let the compiler catch an illegal-state bug. Write your first Given-When-Then tests."
 ---
 
-The requirement — don't let anyone overdraw their account. You'll add validation rules, handle declined commands with Result.err, and write your first Given-When-Then test. The wow moment: the compiler prevents a real bug before it ever runs.
+import { Aside } from '@astrojs/starlight/components';
 
-:::caution[Coming Soon]
-This page is under development. Check back soon!
-:::
+**What you'll build in this part:** Withdrawals, with a rule that says you cannot go negative. We will let the compiler catch a bug we accidentally-on-purpose introduce. Then we'll write the first tests — Given-When-Then style, zero mocks.
+
+**Reading time:** ~25 minutes · **Lines of code added:** ~50
+
+## What you'll learn
+
+- How to add a new event to an existing entity.
+- How to add a new command and let the compiler verify nothing else is broken.
+- How to express business rules in `decide` functions.
+- How to write Given-When-Then tests for commands.
+- The most important naming rule for events.
+
+## The rule
+
+**Customers can withdraw money, but only if they have enough balance. No overdrafts.**
+
+This is a business rule. In a traditional system it would live in several places — maybe a database constraint, maybe a service-layer check, maybe a frontend validation. In NeoHaskell it lives in exactly one place: the `decide` function of the `Withdraw` command. And the compiler will verify the rest of the code is consistent with it.
+
+## Step 1 — Add the event
+
+Open `src/NeoBank/Account/Core.hs` and add a new variant to `AccountEvent`:
+
+```haskell
+data AccountEvent
+  = AccountOpened
+      { entityId :: Uuid
+      , ownerName :: Text
+      }
+  | MoneyDeposited
+      { entityId :: Uuid
+      , amount :: Int
+      }
+  | MoneyWithdrawn
+      { entityId :: Uuid
+      , amount :: Int
+      }
+  deriving (Eq, Show, Generic)
+```
+
+Save. Run `cabal build`. You should see:
+
+```text
+error: [GHC-18872]
+    Non-exhaustive patterns in function update
+
+    In an equation for 'update':
+        Patterns of type 'AccountEvent' not matched:
+            MoneyWithdrawn{}
+```
+
+Good. That is the compiler protecting you. It knows you added a new event and it knows you haven't taught `update` what to do with it. This is exactly the bug that bites people who use event sourcing as a library in other languages. The library doesn't know your event type changed, so it can't warn you. The compiler does.
+
+Also remember `getEventEntityIdImpl` — it pattern-matches on every event too, so it needs to know about the new variant. Add both:
+
+```haskell
+update :: AccountEvent -> Account -> Account
+update event account = case event of
+  AccountOpened { entityId, ownerName } ->
+    Account
+      { accountId = entityId
+      , ownerName = ownerName
+      , balance = 0
+      }
+  MoneyDeposited { amount } ->
+    account { balance = account.balance + amount }
+  MoneyWithdrawn { amount } ->
+    account { balance = account.balance - amount }
+
+
+instance Event AccountEvent where
+  getEventEntityIdImpl event = case event of
+    AccountOpened { entityId } -> entityId
+    MoneyDeposited { entityId } -> entityId
+    MoneyWithdrawn { entityId } -> entityId
+```
+
+Rebuild. Green.
+
+<Aside type="note" title="Why is update safe to compute negative balances?">
+`update` is a **state reconstruction** function — it has to be able to replay any sequence of events, even historical ones. If our bank later relaxes the no-overdraft rule, we want old events to still replay correctly. The *rule* against overdrafts lives in `decide`, which is where business logic belongs. The `update` function is just math.
+</Aside>
+
+## Step 2 — The Withdraw command
+
+Create `src/NeoBank/Account/Commands/Withdraw.hs`:
+
+```haskell
+module NeoBank.Account.Commands.Withdraw (
+  Withdraw (..),
+  getEntityId,
+  decide,
+) where
+
+import Core
+import Decider qualified
+import Json qualified
+import Service.Auth (RequestContext)
+import Service.Command.Core (TransportsOf)
+import Service.CommandExecutor.TH (command)
+import Service.Transport.Web (WebTransport)
+import NeoBank.Account.Core
+
+
+-- | The command: "Withdraw this much from this account."
+data Withdraw = Withdraw
+  { accountId :: Uuid
+  , amount :: Int
+  }
+  deriving (Generic, Show)
+
+
+instance Json.FromJSON Withdraw
+instance Json.ToJSON Withdraw
+
+
+getEntityId :: Withdraw -> Maybe Uuid
+getEntityId cmd = Just cmd.accountId
+
+
+-- | Business rules:
+--   - The account must exist.
+--   - The amount must be positive.
+--   - The account must have at least that much balance.
+decide :: Withdraw -> Maybe Account -> RequestContext -> Decision AccountEvent
+decide cmd account _ctx = case account of
+  Nothing ->
+    Decider.reject "Account does not exist"
+  Just acc ->
+    if cmd.amount <= 0
+      then Decider.reject "Withdrawal amount must be positive"
+      else if cmd.amount > acc.balance
+        then Decider.reject "Insufficient funds"
+        else
+          Decider.acceptExisting
+            [ MoneyWithdrawn
+                { entityId = cmd.accountId
+                , amount = cmd.amount
+                }
+            ]
+
+
+type instance EntityOf Withdraw = Account
+type instance TransportsOf Withdraw = '[WebTransport]
+
+
+command ''Withdraw
+```
+
+The business rules are the three guards inside `decide`. There is nowhere else for the rule to live. No middleware layer. No database trigger. No frontend validator. The compiler checks the types; the three `if` statements check the rules.
+
+## Step 3 — Register it
+
+Open `src/NeoBank/Account/Service.hs` and add the new command:
+
+```haskell
+module NeoBank.Account.Service (service) where
+
+import Core
+import NeoBank.Account.Commands.Deposit (Deposit)
+import NeoBank.Account.Commands.OpenAccount (OpenAccount)
+import NeoBank.Account.Commands.Withdraw (Withdraw)
+import NeoBank.Account.Core ()
+import Service qualified
+
+
+service :: Service _ _
+service =
+  Service.new
+    |> Service.command @OpenAccount
+    |> Service.command @Deposit
+    |> Service.command @Withdraw
+```
+
+## Step 4 — Run it
+
+```bash
+cabal build
+cabal run
+```
+
+Open an account, deposit 100, try to withdraw 150:
+
+```bash
+curl -X POST http://localhost:8080/commands/OpenAccount \
+  -H 'Content-Type: application/json' -d '{"ownerName": "Alice"}'
+# Copy the entityId
+curl -X POST http://localhost:8080/commands/Deposit \
+  -H 'Content-Type: application/json' \
+  -d '{"accountId": "THE-ID-FROM-ABOVE", "amount": 100}'
+curl -X POST http://localhost:8080/commands/Withdraw \
+  -H 'Content-Type: application/json' \
+  -d '{"accountId": "THE-ID-FROM-ABOVE", "amount": 150}'
+```
+
+You should see:
+
+```json
+{
+  "kind": "Rejected",
+  "reason": "Insufficient funds"
+}
+```
+
+Withdraw 75 instead:
+
+```bash
+curl -X POST http://localhost:8080/commands/Withdraw \
+  -H 'Content-Type: application/json' \
+  -d '{"accountId": "THE-ID-FROM-ABOVE", "amount": 75}'
+```
+
+Accepted. Try 75 again (only 25 left):
+
+```json
+{
+  "kind": "Rejected",
+  "reason": "Insufficient funds"
+}
+```
+
+Correct. The current balance of 25 isn't enough to cover 75, so the command is rejected.
+
+## The naming rule
+
+You just named your third event: `MoneyWithdrawn`. Stop and notice what's good about that name.
+
+| Good | Bad | Why |
+|---|---|---|
+| `MoneyWithdrawn` | `BalanceUpdated` | "Money was withdrawn" is a domain fact. "Balance was updated" is an implementation detail. |
+| `AccountOpened` | `AccountCreated` | Banks *open* accounts. "Open" is the domain word. |
+| `MoneyDeposited` | `DepositProcessed` | "Processed" is programmer-speak. |
+| `InsufficientFunds` (rejection reason) | `VALIDATION_ERROR_4B2` | Humans read rejection reasons. |
+
+The rule: **if your event name would make sense in a conversation between bankers, it is a good name. If it only makes sense to programmers, rename it.**
+
+Events are the permanent record of what happened in your domain. They outlive code, they outlive features, they outlive teams. Name them like you are writing for the person who will audit your system in ten years.
+
+## Step 5 — Your first test
+
+Event sourcing makes testing almost offensively simple. A command test is "given these past events, when I run this command, I expect these new events." We can write that literally, with no mocks, no fixtures, no database.
+
+Create `tests/NeoBank/Account/Commands/WithdrawSpec.hs`:
+
+```haskell
+module NeoBank.Account.Commands.WithdrawSpec where
+
+import Array qualified
+import Core
+import Decider (runDecision, DecisionContext (..), CommandResult (..))
+import NeoBank.Account.Commands.Withdraw (Withdraw (..), decide)
+import NeoBank.Account.Core
+import Service.Auth (RequestContext (..))
+import Task qualified
+import Test
+import Uuid qualified
+
+
+-- | A helper: run a decide function and return the result.
+runDecide ::
+  Withdraw ->
+  Maybe Account ->
+  Task Text (CommandResult AccountEvent)
+runDecide cmd entity = do
+  let ctx = DecisionContext { genUuid = Uuid.nil |> Task.yield }
+  let reqCtx = RequestContext { user = Nothing }
+  runDecision ctx (decide cmd entity reqCtx)
+
+
+-- | A helper: assemble a test account at a specific balance.
+anAccount :: Int -> Account
+anAccount balance =
+  Account
+    { accountId = Uuid.nil
+    , ownerName = "Alice"
+    , balance = balance
+    }
+
+
+spec :: Spec Unit
+spec = describe "Withdraw" do
+  it "rejects when the account does not exist" \_ -> do
+    let cmd = Withdraw { accountId = Uuid.nil, amount = 50 }
+    result <- runDecide cmd Nothing
+    result |> shouldBe (RejectCommand "Account does not exist")
+
+  it "rejects non-positive amounts" \_ -> do
+    let cmd = Withdraw { accountId = Uuid.nil, amount = 0 }
+    result <- runDecide cmd (Just (anAccount 100))
+    result |> shouldBe (RejectCommand "Withdrawal amount must be positive")
+
+  it "rejects when balance is insufficient" \_ -> do
+    let cmd = Withdraw { accountId = Uuid.nil, amount = 150 }
+    result <- runDecide cmd (Just (anAccount 100))
+    result |> shouldBe (RejectCommand "Insufficient funds")
+
+  it "accepts valid withdrawals and emits MoneyWithdrawn" \_ -> do
+    let cmd = Withdraw { accountId = Uuid.nil, amount = 40 }
+    result <- runDecide cmd (Just (anAccount 100))
+    let expected =
+          AcceptCommand
+            ExistingStream
+            (Array.fromLinkedList
+              [ MoneyWithdrawn { entityId = Uuid.nil, amount = 40 } ])
+    result |> shouldBe expected
+```
+
+Read the test cases. Each one is a `Given` (what the account looks like), a `When` (what command we run), and a `Then` (what result we expect). There is no database. There is no server. There is no mock. Just a pure function being tested for what it returns.
+
+Run the tests:
+
+```bash
+cabal test
+```
+
+All four should pass.
+
+## Step 6 — Add a test that catches a bug
+
+Let's make sure our logic is really correct. What if the user withdraws exactly their balance?
+
+Add one more `it` block to the spec:
+
+```haskell
+  it "accepts withdrawals equal to the exact balance" \_ -> do
+    let cmd = Withdraw { accountId = Uuid.nil, amount = 100 }
+    result <- runDecide cmd (Just (anAccount 100))
+    case result of
+      AcceptCommand _ _ -> Task.yield ()
+      _ -> Test.fail "Expected AcceptCommand for exact-balance withdrawal"
+```
+
+Run the tests. They pass — our `>` comparison is correct. Had we written `>=` by accident, this test would have caught it. Good.
+
+## Recap
+
+- **Adding a new event** is a one-line change to the `AccountEvent` sum type. The compiler tells you every place that needs to handle it.
+- **Adding a new command** is a new file. The business rules live in `decide`.
+- **Business rules** are expressed as rejections from `decide`. No other layer enforces them.
+- **Events are named after what happened in the domain** — not what the system did.
+- **Tests are Given-When-Then**, no mocks, no database. Pure functions give you trivially testable code.
+
+## Next
+
+You have accounts. You have deposits. You have withdrawals with overdraft protection. What you don't have yet is a way to *see* what happened. Let's fix that — in Part 3 we'll build two different views of the same event stream: a full bank statement and a monthly summary. This is CQRS in its natural habitat.
+
+[**Part 3 — Transaction history →**](/tutorial/03-transaction-history/)

@@ -1,10 +1,456 @@
 ---
-title: "Part 3: Transaction History"
-description: "Build two different views from the same events."
+title: "Part 3 — Transaction history"
+description: "Build two independent views from the same event stream — a full statement and a monthly summary. CQRS, in its natural habitat."
 ---
 
-The requirement — show a formatted bank statement AND a monthly summary. You'll build two updates from the same event stream, and that's when CQRS clicks: same events, completely different views. This is the insight that makes event sourcing powerful.
+import { Aside } from '@astrojs/starlight/components';
 
-:::caution[Coming Soon]
-This page is under development. Check back soon!
-:::
+**What you'll build in this part:** Two read models (NeoHaskell calls them **queries**) built from the same event stream. The first is a full statement that lists every transaction on an account. The second is a monthly summary: total deposits, total withdrawals, and ending balance. Same events, two completely different shapes of output.
+
+**Reading time:** ~25 minutes · **Lines of code added:** ~70
+
+## What you'll learn
+
+- What a query is and why it is separate from an entity.
+- How to write a `QueryOf` instance that folds entity state into a read model.
+- How to register queries with the application.
+- How to query the read side via HTTP.
+- How to debug a projection that compiles but is wrong.
+
+## The insight
+
+In Part 1, we built a thing that stores events and derives the balance. In Part 2, we added rules. But we only have *one* view of our data — the current balance, implicit in the entity state. A real bank needs more:
+
+- **The customer** wants a full list of transactions, newest first.
+- **The customer's accountant** wants a monthly summary of totals.
+- **The fraud team** wants a list of suspiciously large withdrawals.
+- **Management** wants the total amount of money on deposit across all accounts.
+
+In a CRUD system, each of these becomes a SQL query that's fragile and slow. In an event-sourced system, each one is a **separate read model** — a pure function of the entity state, maintained automatically as events arrive.
+
+This is the CQRS insight: **the shape you write in is not the shape you read from**. Write commands into events. Read any shape you want out of projections.
+
+## What queries are
+
+A **query** in NeoHaskell is a type that represents a read model. You define the shape, and NeoHaskell maintains it for you by folding each entity's state into the query whenever the entity changes.
+
+The lifecycle is:
+
+1. A command is accepted, producing events.
+2. Events are applied to an entity via `update` (you already wrote this).
+3. NeoHaskell notices the entity changed and calls `combine` on every query that depends on that entity type.
+4. The query returns a `QueryAction` — `Update` (write this new value), `Delete` (remove it), or `NoOp` (nothing changed).
+5. The new read model is stored and made available over HTTP.
+
+You don't write any of the plumbing. You write the `combine` function and register the query with the application.
+
+## Step 1 — The statement query
+
+Let's build the full transaction history view. It's a list of every deposit and withdrawal, with the amount and a label. Create `src/NeoBank/Account/Queries/Statement.hs`:
+
+```haskell
+{-# LANGUAGE TemplateHaskell #-}
+
+module NeoBank.Account.Queries.Statement (
+  Statement (..),
+  StatementLine (..),
+  canAccess,
+  canView,
+) where
+
+import Array qualified
+import Core
+import Json qualified
+import Service.Query.Auth (QueryAuthError, UserClaims, publicAccess, publicView)
+import Service.Query.TH (deriveQuery)
+import NeoBank.Account.Core (Account (..))
+
+
+-- | A single row on a statement.
+data StatementLine = StatementLine
+  { kind :: Text         -- "deposit" or "withdrawal"
+  , amount :: Int
+  }
+  deriving (Eq, Show, Generic)
+
+
+instance Json.FromJSON StatementLine
+instance Json.ToJSON StatementLine
+instance ToSchema StatementLine
+
+
+-- | A full statement for an account.
+data Statement = Statement
+  { accountId :: Uuid
+  , ownerName :: Text
+  , lines :: Array StatementLine
+  , currentBalance :: Int
+  }
+  deriving (Eq, Show, Generic)
+
+
+instance Json.FromJSON Statement
+instance Json.ToJSON Statement
+instance ToSchema Statement
+
+
+canAccess :: Maybe UserClaims -> Maybe QueryAuthError
+canAccess = publicAccess
+
+
+canView :: Maybe UserClaims -> Statement -> Maybe QueryAuthError
+canView = publicView
+
+
+deriveQuery ''Statement [''Account]
+```
+
+That's the query *type*. Now we need to tell NeoHaskell how to build it from an entity. Add this instance at the bottom of the file:
+
+```haskell
+instance QueryOf Account Statement where
+  queryId account = account.accountId
+
+  combine account maybeExisting =
+    case maybeExisting of
+      Nothing ->
+        -- First time we see this account. Build the initial statement.
+        Update Statement
+          { accountId = account.accountId
+          , ownerName = account.ownerName
+          , lines = Array.empty
+          , currentBalance = account.balance
+          }
+      Just existing ->
+        -- Account changed. Note that at this point we only have the
+        -- current state of the entity, not the events that got us here.
+        -- For a full per-event history, see the note below.
+        Update existing
+          { currentBalance = account.balance
+          , ownerName = account.ownerName
+          }
+```
+
+<Aside type="caution" title="A note on projections">
+The `combine` function receives the *current* entity state, not the event that just happened. If your projection needs per-event history (like "list every deposit"), the right approach is to keep that history *in the entity itself* as a list of past transactions. In Part 4 we'll refactor `Account` to do exactly that. For now, we'll carry the current balance in our statement, and build the per-line history when we introduce the proper entity-level list.
+</Aside>
+
+## Step 2 — Add transactions to the entity
+
+Since we want the statement to show every transaction, we need the entity to carry that list. Open `src/NeoBank/Account/Core.hs` and extend `Account`:
+
+```haskell
+data Account = Account
+  { accountId :: Uuid
+  , ownerName :: Text
+  , balance :: Int
+  , history :: Array Transaction
+  }
+  deriving (Generic, Show, Eq)
+
+
+data Transaction = Transaction
+  { kind :: Text
+  , amount :: Int
+  }
+  deriving (Generic, Show, Eq)
+
+
+instance Json.FromJSON Transaction
+instance Json.ToJSON Transaction
+
+
+initialState :: Account
+initialState =
+  Account
+    { accountId = Uuid.nil
+    , ownerName = ""
+    , balance = 0
+    , history = Array.empty
+    }
+```
+
+Don't forget to `import Array qualified` at the top.
+
+Now the `update` function has to maintain the `history` list:
+
+```haskell
+update :: AccountEvent -> Account -> Account
+update event account = case event of
+  AccountOpened { entityId, ownerName } ->
+    Account
+      { accountId = entityId
+      , ownerName = ownerName
+      , balance = 0
+      , history = Array.empty
+      }
+  MoneyDeposited { amount } ->
+    account
+      { balance = account.balance + amount
+      , history = Array.push
+          (Transaction { kind = "deposit", amount = amount })
+          account.history
+      }
+  MoneyWithdrawn { amount } ->
+    account
+      { balance = account.balance - amount
+      , history = Array.push
+          (Transaction { kind = "withdrawal", amount = amount })
+          account.history
+      }
+```
+
+The compiler will walk you through any spot you missed — run `cabal build` and follow the errors.
+
+## Step 3 — Rebuild the statement from history
+
+Now that the entity carries every transaction, the statement can just reflect it. Update `combine` in `Statement.hs`:
+
+```haskell
+instance QueryOf Account Statement where
+  queryId account = account.accountId
+
+  combine account _maybeExisting =
+    Update Statement
+      { accountId = account.accountId
+      , ownerName = account.ownerName
+      , lines = account.history
+          |> Array.map
+              (\t -> StatementLine { kind = t.kind, amount = t.amount })
+      , currentBalance = account.balance
+      }
+```
+
+The second argument — the previous statement — is `_maybeExisting` because we rebuild the whole thing from the entity every time. This is fine; it's a small list and `combine` is fast.
+
+## Step 4 — Register the query with the application
+
+Open `src/App.hs`:
+
+```haskell
+module App (app) where
+
+import Core
+import Service.Application (Application)
+import Service.Application qualified as Application
+import Service.EventStore.InMemory qualified as InMemory
+import Service.Transport.Web qualified as WebTransport
+import NeoBank.Account.Queries.Statement (Statement)
+import NeoBank.Account.Service qualified as Account
+
+
+app :: Application
+app =
+  Application.new
+    |> Application.withEventStore @() (\_ -> InMemory.new)
+    |> Application.withTransport WebTransport.server
+    |> Application.withService Account.service
+    |> Application.withQuery @Statement
+```
+
+The `withQuery @Statement` line does everything — registers the projection, wires it to the entity, and exposes it at `GET /queries/statement`.
+
+## Step 5 — Run and query
+
+```bash
+cabal build
+cabal run
+```
+
+Open an account, deposit, withdraw, and then fetch the statement:
+
+```bash
+# Open
+curl -X POST http://localhost:8080/commands/OpenAccount \
+  -H 'Content-Type: application/json' -d '{"ownerName": "Alice"}'
+# ... copy the entityId
+curl -X POST http://localhost:8080/commands/Deposit \
+  -H 'Content-Type: application/json' \
+  -d '{"accountId": "ID", "amount": 100}'
+curl -X POST http://localhost:8080/commands/Withdraw \
+  -H 'Content-Type: application/json' \
+  -d '{"accountId": "ID", "amount": 30}'
+curl http://localhost:8080/queries/statement/ID
+```
+
+You should see:
+
+```json
+{
+  "accountId": "ID",
+  "ownerName": "Alice",
+  "lines": [
+    { "kind": "deposit", "amount": 100 },
+    { "kind": "withdrawal", "amount": 30 }
+  ],
+  "currentBalance": 70
+}
+```
+
+That's your first query — a read model that was built for you, from the events, by the machinery you wired up in five lines.
+
+## Step 6 — The monthly summary query
+
+Let's add a second view over the same data. Create `src/NeoBank/Account/Queries/MonthlySummary.hs`:
+
+```haskell
+{-# LANGUAGE TemplateHaskell #-}
+
+module NeoBank.Account.Queries.MonthlySummary (
+  MonthlySummary (..),
+  canAccess,
+  canView,
+) where
+
+import Array qualified
+import Core
+import Json qualified
+import Service.Query.Auth (QueryAuthError, UserClaims, publicAccess, publicView)
+import Service.Query.TH (deriveQuery)
+import NeoBank.Account.Core (Account (..), Transaction (..))
+
+
+data MonthlySummary = MonthlySummary
+  { accountId :: Uuid
+  , totalDeposits :: Int
+  , totalWithdrawals :: Int
+  , endingBalance :: Int
+  , transactionCount :: Int
+  }
+  deriving (Eq, Show, Generic)
+
+
+instance Json.FromJSON MonthlySummary
+instance Json.ToJSON MonthlySummary
+instance ToSchema MonthlySummary
+
+
+canAccess :: Maybe UserClaims -> Maybe QueryAuthError
+canAccess = publicAccess
+
+
+canView :: Maybe UserClaims -> MonthlySummary -> Maybe QueryAuthError
+canView = publicView
+
+
+deriveQuery ''MonthlySummary [''Account]
+
+
+instance QueryOf Account MonthlySummary where
+  queryId account = account.accountId
+
+  combine account _existing = do
+    let deposits =
+          account.history
+            |> Array.filter (\t -> t.kind == "deposit")
+            |> Array.reduce (\t acc -> acc + t.amount) 0
+    let withdrawals =
+          account.history
+            |> Array.filter (\t -> t.kind == "withdrawal")
+            |> Array.reduce (\t acc -> acc + t.amount) 0
+    Update MonthlySummary
+      { accountId = account.accountId
+      , totalDeposits = deposits
+      , totalWithdrawals = withdrawals
+      , endingBalance = account.balance
+      , transactionCount = Array.length account.history
+      }
+```
+
+Register it in `App.hs`:
+
+```haskell
+import NeoBank.Account.Queries.MonthlySummary (MonthlySummary)
+
+app :: Application
+app =
+  Application.new
+    |> Application.withEventStore @() (\_ -> InMemory.new)
+    |> Application.withTransport WebTransport.server
+    |> Application.withService Account.service
+    |> Application.withQuery @Statement
+    |> Application.withQuery @MonthlySummary
+```
+
+Run it. Now you can query both:
+
+```bash
+curl http://localhost:8080/queries/statement/ID
+curl http://localhost:8080/queries/monthly-summary/ID
+```
+
+The monthly summary comes back shaped totally differently:
+
+```json
+{
+  "accountId": "ID",
+  "totalDeposits": 100,
+  "totalWithdrawals": 30,
+  "endingBalance": 70,
+  "transactionCount": 2
+}
+```
+
+Two completely different views. Same event stream. Zero coordination between them. If you change one, the other is unaffected. That is CQRS.
+
+## The debugging moment
+
+Let's intentionally break something. Change the `MonthlySummary` projection to a buggy version:
+
+```haskell
+let deposits =
+      account.history
+        |> Array.reduce (\t acc -> acc + t.amount) 0
+        -- Oops! Forgot the filter.
+```
+
+Recompile. It builds fine — the types are right, the code is valid. But now `totalDeposits` includes withdrawals too, so your numbers are wrong.
+
+This is the kind of bug that the compiler *cannot* catch — it's a logic error, not a type error. The test you should write catches it instantly:
+
+```haskell
+-- tests/NeoBank/Account/Queries/MonthlySummarySpec.hs
+spec :: Spec Unit
+spec = describe "MonthlySummary" do
+  it "counts only deposits under totalDeposits" \_ -> do
+    let account = Account
+          { accountId = Uuid.nil
+          , ownerName = "Alice"
+          , balance = 70
+          , history = Array.fromLinkedList
+              [ Transaction { kind = "deposit", amount = 100 }
+              , Transaction { kind = "withdrawal", amount = 30 }
+              ]
+          }
+    case combine account Nothing of
+      Update summary -> do
+        summary.totalDeposits |> shouldBe 100
+        summary.totalWithdrawals |> shouldBe 30
+        summary.endingBalance |> shouldBe 70
+      _ -> Test.fail "Expected Update action"
+```
+
+Run it. With the bug in place, you get:
+
+```text
+expected: 100
+ but got: 130
+```
+
+That's how event-sourced bugs surface: the compiler doesn't catch them, but the projection tests do — and projection tests are pure function tests, which means they run in milliseconds and require no infrastructure.
+
+Fix the bug (add the filter back) and watch the test turn green.
+
+## Recap
+
+- **Queries are read models.** They live in separate files from commands and entities.
+- **The same entity can power any number of queries.** We built two completely different shapes from the same event stream.
+- **Queries are declared with `deriveQuery` and implemented with `QueryOf`.** NeoHaskell handles the rest — registration, storage, HTTP endpoint.
+- **Projection bugs are logic bugs**, so they need tests. Those tests are trivial because `combine` is a pure function.
+- **CQRS is not an advanced pattern.** It's the default way event-sourced systems work. Different questions produce different views — that's it.
+
+## Next
+
+You have one type of account. Real banks have checking *and* savings (and business, and high-yield, and...). In Part 4 we'll add a savings account type to our system. Spoiler: it's almost free.
+
+[**Part 4 — Multiple accounts →**](/tutorial/04-multiple-accounts/)

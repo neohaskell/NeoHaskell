@@ -1,222 +1,268 @@
 ---
-title: "Integrating Existing Systems"
-description: "How to introduce NeoHaskell into an existing architecture. Strangler fig pattern, HTTP integration, message queues, shared databases, and gradual migration."
-keywords: [integration, existing systems, strangler fig, HTTP, message queue, Kafka, RabbitMQ, migration, services, coexistence]
+title: "Integrating existing systems"
+description: "Inbound and outbound integrations, webhook handlers, and connecting NeoHaskell to services you already run."
 sidebar:
-  order: 20
+  order: 7
 ---
-
-{/*
-  CONTENT OUTLINE — Integrating Existing Systems Guide
-  =====================================================
-  Position: Guides section, adoption
-  Goal: Reader has an existing system and wants to introduce NeoHaskell without a big-bang rewrite.
-  Prerequisites: Understanding of services (concepts/services.mdx)
-  Misconceptions addressed:
-    - #17 (NeoHaskell won't integrate with existing systems)
-    - #18 (you have to go all-in on NeoHaskell)
-  Tone: pragmatic — this is about real-world adoption, not ideal-world architecture
-
-  Sections:
-  1. Prerequisites
-  2. The Core Principle: You Don't Have to Rewrite Everything
-  3. The Strangler Fig Approach
-  4. HTTP API Integration Patterns
-  5. Message Queue Integration
-  6. Shared Database Strategies
-  7. Publishing NeoHaskell Events to Existing Infrastructure
-  8. Gradual Migration Path
-  9. Coexistence: NeoHaskell Alongside Non-NeoHaskell Services
-  10. Next Steps
-*/}
-
-{/* POLYGLOT NOTE: All code examples on this page should include equivalent snippets in JS/TS, Python, and Go. See DOCS-PLAN.md Guiding Principle #9. */}
 
 import { Aside } from '@astrojs/starlight/components';
 
-## Prerequisites
+The world does not consist of NeoHaskell applications. Your system needs to talk to existing databases, third-party APIs, message brokers, payment processors, email services, and the occasional shell script. This guide shows the patterns.
 
-- [Services](/concepts/services/) — you understand what a service is and why boundaries matter
-- Optional: [Deployment](/guides/deployment/) — you know how to run a NeoHaskell service
+NeoHaskell calls external connections **integrations**. There are two kinds:
 
-## The Core Principle: You Don't Have to Rewrite Everything
+- **Outbound integrations** react to domain events by doing things in the outside world (or emitting follow-up commands). Examples: send an email when a user registers, call a payment processor when an order is placed, publish to Kafka when an invoice is paid.
+- **Inbound integrations** take input from the outside world (webhooks, polling, timers) and convert it into commands. Examples: accept Stripe webhooks and emit `PaymentReceived` commands, poll an SFTP drop every hour and emit `FileDelivered` commands, fire a `DailyReport` command on a schedule.
 
-{/*
-  Address misconceptions #17 and #18 directly.
-  The key message: NeoHaskell is designed for incremental adoption.
-*/}
+Both are first-class, typed, and compile-checked. You don't use a message queue client; you don't write a webhook controller; you don't set up a cron job. You write an integration and plug it into the application.
 
+## Outbound integrations
 
-- NeoHaskell is designed to coexist with existing systems, not replace them all at once
-- You can introduce NeoHaskell for one service while leaving everything else unchanged
-- The existing system doesn't need to know NeoHaskell exists — it just sees HTTP calls or database records
-- Misconception #17: "NeoHaskell won't integrate with existing systems"
-  - NeoHaskell services expose standard HTTP APIs — any system that can make HTTP calls can integrate
-  - NeoHaskell can consume from Kafka, RabbitMQ, and other message queues
-  - NeoHaskell can read from existing databases
-- Misconception #18: "You have to go all-in on NeoHaskell"
-  - You don't. Start with one service. Run it alongside your existing services.
-  - If it works, expand. If it doesn't, you've only changed one part of the system.
+An outbound integration listens for events on a specific entity type and produces actions in response. The shape is:
 
-<Aside type="note" title="The right first service">
-Pick a service that is naturally event-driven (has a clear audit trail requirement), has well-defined boundaries, and is small enough to rewrite in a few weeks. Avoid starting with the most complex or most critical part of your system.
-</Aside>
+```haskell
+instance OutboundIntegration MyIntegration where
+  reactTo _config entity event = case event of
+    SomeEvent { ... } -> Integration.batch [ ... actions ... ]
+    _ -> Integration.none
+```
 
-## The Strangler Fig Approach
+`reactTo` is a pure function. It takes the current entity state, the new event, and returns a collection of actions to execute. Actions might be:
 
-{/*
-  The classic incremental migration pattern.
-  Show how it applies to NeoHaskell adoption.
-*/}
+- Emitting a follow-up command (`Integration.emitCommand`).
+- Making an HTTP call (via a custom `Action` implementation).
+- Writing to a shared database.
+- Enqueueing a job in a traditional queue.
 
+### Example: email on signup
 
-- The strangler fig pattern: build the new system alongside the old one, gradually routing traffic to the new system
-- Applied to NeoHaskell: put a proxy or API gateway in front of your existing service
-  - New requests for the migrated service go to NeoHaskell
-  - Everything else goes to the existing service
-- Show: a diagram of the strangler fig setup (describe the diagram — actual diagram is TODO)
-  - Existing service still running
-  - NeoHaskell service running alongside it
-  - Proxy routing based on path or feature flag
-- Migration steps:
-  1. Identify the service to migrate
-  2. Build the NeoHaskell service (it can call the existing service for data it doesn't own yet)
-  3. Deploy both services
-  4. Route a small percentage of traffic to NeoHaskell (feature flag or canary)
-  5. Monitor — compare behavior between old and new
-  6. Gradually increase traffic to NeoHaskell
-  7. Decommission the old service for that service
-- Rollback: if NeoHaskell has a problem, route traffic back to the old service — no data loss because the old service was still running
+Let's build an integration that sends a welcome email when a user registers. We'll assume you have a `Sendgrid` module somewhere that knows how to POST to Sendgrid's API.
 
-{/* TODO: architecture diagram */}
+```haskell
+module MyApp.User.Integrations.WelcomeEmail (
+  WelcomeEmail (..),
+) where
 
-## HTTP API Integration Patterns
-
-{/*
-  How NeoHaskell services call existing HTTP APIs, and how existing services call NeoHaskell.
-*/}
+import Core
+import Integration qualified
+import MyApp.User.Core (User, UserEvent (..))
+import Service.OutboundIntegration.Core (OutboundIntegration (..))
+import Sendgrid qualified
 
 
-- **NeoHaskell calling an existing HTTP API**:
-  - Define an Integration for the external service
-  - Show: an Integration definition that wraps an HTTP API
-  - Show: calling the integration from a command handler
-  - Error handling: map HTTP errors to domain errors with `Task.mapError`
-  - Retry logic: show how to add retries for transient failures
-- **Existing services calling NeoHaskell**:
-  - NeoHaskell exposes a standard HTTP API — no special client needed
-  - Show: the auto-generated OpenAPI spec
-  - Show: calling a NeoHaskell command endpoint from a curl command (or any HTTP client)
-- Authentication: NeoHaskell supports OAuth2 and API key authentication
-  - Show: how to configure authentication for incoming requests
-  - Show: how to pass authentication tokens to outgoing requests
-
-{/* TODO: code examples for Integration definition and HTTP calls — include JS/TS, Python, Go equivalents */}
-
-## Message Queue Integration
-
-{/*
-  Consuming from existing Kafka/RabbitMQ, and publishing to them.
-*/}
+data WelcomeEmail = WelcomeEmail
 
 
-- **Consuming from an existing message queue**:
-  - NeoHaskell can consume messages from Kafka, RabbitMQ, and other queues
-  - Show: a Kafka consumer integration definition
-  - Show: mapping incoming messages to NeoHaskell commands
-  - Error handling: what happens when a message can't be processed (dead letter queue)
-  - Idempotency: NeoHaskell commands are idempotent — duplicate messages are safe
-- **Publishing to an existing message queue**:
-  - NeoHaskell can publish events to Kafka, RabbitMQ, or any queue
-  - Show: an outbound integration that publishes events after a command succeeds
-  - Show: the event bridge pattern — NeoHaskell events → existing queue → existing consumers
-- Note: you don't need a message queue for NeoHaskell to work — PostgreSQL is the event store
-  - Message queues are for integrating with existing consumers, not for NeoHaskell's internal operation
-
-{/* TODO: code examples for Kafka consumer and publisher integrations — include JS/TS, Python, Go equivalents */}
-
-## Shared Database Strategies
-
-{/*
-  Reading from existing databases without owning them.
-  This is a common integration pattern during migration.
-*/}
+type instance EntityOf WelcomeEmail = User
 
 
-- Sometimes you need to read data from an existing database that NeoHaskell doesn't own
-- **Read-only access**: NeoHaskell can read from existing tables as a data source
-  - Show: a read-only integration that queries an existing database
-  - Show: mapping database rows to domain types
-  - Note: NeoHaskell should not write to tables it doesn't own — that creates coupling
-- **Dual-write during migration**: temporarily write to both the old database and the NeoHaskell event store
-  - Use when: you need the old system to keep working while you migrate
-  - Show: a command handler that writes an event AND updates the old database
-  - Risk: dual-write can get out of sync — have a reconciliation strategy
-- **Event-driven sync**: publish NeoHaskell events to a queue, have a consumer update the old database
-  - Cleaner than dual-write — the old database is a derived view, not the source of truth
-  - Show: the event bridge pattern for keeping an old database in sync
+instance OutboundIntegration WelcomeEmail where
+  reactTo _config user event = case event of
+    UserRegistered { email } ->
+      Integration.batch
+        [ Integration.outbound
+            Sendgrid.Email
+              { to = email
+              , templateId = "welcome-template"
+              , variables = Map.fromList [("name", user.name)]
+              }
+        ]
 
-{/* TODO: code examples for read-only integration and event-driven sync — include JS/TS, Python, Go equivalents */}
+    _ -> Integration.none
+```
 
-## Publishing NeoHaskell Events to Existing Infrastructure
+The `Sendgrid.Email` record is a **config record** — it describes what email to send. `Sendgrid` provides a `ToAction` instance that turns the config into an actual HTTP call. You don't write HTTP-handling code inside the integration; you describe what you want, and the library knows how to do it.
 
-{/*
-  The event bridge pattern — how to make NeoHaskell events visible to existing consumers.
-*/}
+Register the integration with the application:
+
+```haskell
+app :: Application
+app = Application.new
+  |> Application.withEventStore ...
+  |> Application.withService userService
+  |> Application.withOutbound @WelcomeEmail
+```
+
+Done. Every `UserRegistered` event now fires a welcome email, with retry logic and error handling managed by the runtime.
+
+### Example: forwarding to Kafka
+
+If you have a Kafka-based event backbone and want NeoHaskell events to flow into it, you build an outbound integration that publishes to Kafka:
+
+```haskell
+instance OutboundIntegration KafkaForwarder where
+  reactTo _config _entity event =
+    Integration.batch
+      [ Integration.outbound
+          Kafka.Publish
+            { topic = "user-events"
+            , key = Json.encodeText event
+            , payload = Json.encodeText event
+            }
+      ]
+```
+
+Now every event on the `User` entity is mirrored to Kafka. Downstream services (Spark jobs, analytics, legacy systems) can subscribe to the Kafka topic without knowing anything about NeoHaskell.
+
+### Example: emitting a follow-up command
+
+Integrations can also emit commands back into the system — this is how sagas work. When event A happens, run command B:
+
+```haskell
+instance OutboundIntegration OrderToInventory where
+  reactTo _config _order event = case event of
+    OrderPlaced { items, orderId } ->
+      Integration.batch
+        [ Integration.outbound
+            ReserveItems
+              { orderId = orderId
+              , items = items
+              }
+        ]
+
+    _ -> Integration.none
+```
+
+`ReserveItems` is a command on the inventory service (marked `InternalTransport` so it's not exposed via HTTP). The integration emits it; the runtime dispatches it to the inventory service. The two services remain decoupled — neither calls the other directly.
+
+## Outbound integrations with lifecycle
+
+Some integrations have state that spans multiple events. For example, a rate limiter that tracks API calls per user, or a batch emitter that buffers events and flushes periodically. For these, use `withOutboundLifecycle`:
+
+```haskell
+-- A stateful integration that batches events
+batchingIntegration :: OutboundLifecycleIntegration User UserEvent
+batchingIntegration = do
+  buffer <- ConcurrentVar.new Array.empty
+  -- ... construct the integration with access to `buffer` ...
+```
+
+Lifecycle integrations are more advanced; see the testbed for a full example.
+
+## Inbound integrations
+
+Inbound integrations take input from the outside world and feed it into NeoHaskell as commands.
+
+### Example: a periodic timer
+
+```haskell
+import Integration.Timer qualified as Timer
+import MyApp.Report.Commands.GenerateDailyReport (GenerateDailyReport (..))
 
 
-- NeoHaskell events are stored in the event store — existing systems can't read them directly
-- The event bridge pattern: a NeoHaskell service reads its own events and publishes them to existing infrastructure
-- Show: an outbound integration that reads from the event store and publishes to Kafka
-- Show: an outbound integration that calls a webhook when an event occurs
-- Show: an outbound integration that updates a query in an existing database
-- Ordering guarantees: NeoHaskell events are ordered within a stream — the bridge preserves this order
-- At-least-once delivery: the bridge may deliver an event more than once — consumers should be idempotent
+dailyReportTimer :: Integration.Inbound
+dailyReportTimer =
+  Timer.every
+    Timer.Every
+      { interval = Timer.hours 24
+      , toCommand = \_ -> GenerateDailyReport {}
+      }
+```
 
-{/* TODO: code examples for event bridge patterns — include JS/TS, Python, Go equivalents */}
+Every 24 hours, this fires a `GenerateDailyReport` command. The command is dispatched through the same command executor as external commands — so it goes through `decide`, produces events, updates projections, etc. The timer is just an event producer.
 
-## Gradual Migration Path
+Register it:
 
-{/*
-  A concrete migration strategy — one service at a time.
-*/}
+```haskell
+Application.new
+  |> ...
+  |> Application.withInbound @() (\_ -> dailyReportTimer)
+```
 
+### Example: a webhook handler
 
-- The recommended migration path:
-  1. **Identify services** in your existing system — where are the natural seams?
-  2. **Pick the first context** — smallest, most event-natural, least critical
-  3. **Build the NeoHaskell service** — it can call the existing system for data it doesn't own
-  4. **Deploy alongside** — run both systems, route traffic to NeoHaskell
-  5. **Validate** — compare behavior, check metrics, fix issues
-  6. **Expand** — once the first context is stable, pick the next one
-- What "done" looks like for a service:
-  - All commands for that context go through NeoHaskell
-  - The old service no longer handles those commands
-  - The old database tables for that context are read-only (or decommissioned)
-- Timeline: expect 2-4 weeks per service for a small team
-- Don't rush: it's better to have one stable NeoHaskell service than three unstable ones
+For webhooks from services like Stripe or Slack, the pattern is:
 
-## Coexistence: NeoHaskell Alongside Non-NeoHaskell Services
+1. Add a public HTTP route that accepts the webhook payload.
+2. Validate the webhook signature.
+3. Convert the payload to a command.
+4. Dispatch the command.
 
-{/*
-  The steady-state: NeoHaskell services running alongside existing services.
-  This may be permanent, not just a migration phase.
-*/}
+You can do this inside a custom inbound integration:
 
+```haskell
+stripeWebhook :: Integration.Inbound
+stripeWebhook = Integration.inbound
+  InboundConfig
+    { run = \emit -> do
+        Http.serve "/webhooks/stripe" \request -> do
+          verified <- Stripe.verifySignature request
+          case verified of
+            Ok event ->
+              emit (PaymentReceived { paymentId = event.id, ... })
+            Err reason -> do
+              Log.warn [fmt|Invalid Stripe signature: #{reason}|]
+              Task.yield ()
+    }
+```
 
-- You don't have to migrate everything — some services may stay in their existing technology
-- NeoHaskell services are just HTTP services — they coexist with any other service
-- Service discovery: NeoHaskell services register with your existing service discovery (Consul, Kubernetes DNS, etc.)
-- Load balancing: NeoHaskell services work behind any load balancer
-- Observability: NeoHaskell emits standard logs and metrics — compatible with your existing monitoring stack
-- The goal is not "all NeoHaskell" — it's "the right tool for each service"
+The `emit` callback dispatches the command into the NeoHaskell system.
 
-## Next Steps
+## Integrations are typed
 
-- **Theory**: [Services](/concepts/services/) — the architectural principle behind this guide
-- **Adoption strategy**: [Adopting NeoHaskell at Work](/guides/adopting-at-work/) — the organizational side of adoption
-- **Deployment**: [Deployment](/guides/deployment/) — how to run NeoHaskell services in production
+Every integration has a specific entity type and event type it reacts to. The compiler enforces that:
 
-:::caution[Coming Soon]
-This page is a content outline. The full guide with integration code examples and architecture diagrams is in progress.
-:::
+- The event type matches the entity's event type.
+- Commands you emit are registered with the application.
+- The transports required by emitted commands are registered.
+
+This is a big deal in practice. In a Kafka-based system, you might have a producer publishing "UserCreated" and a consumer listening for "UserCreated" — but if someone renames the event, the two are silently desynced until a test fails. In NeoHaskell, the sync is a type constraint; the compiler rejects the rename unless both sides are updated.
+
+## Handling failure in integrations
+
+Integrations can fail. An HTTP call might return 503. An email service might be rate-limited. A downstream command might be rejected.
+
+The integration runtime handles transient failures with retries (with exponential backoff). For permanent failures, you handle them inside the integration's `reactTo`:
+
+```haskell
+instance OutboundIntegration EmailOrLog where
+  reactTo _config user event = case event of
+    UserRegistered { email } ->
+      Integration.batch
+        [ Integration.outbound (Sendgrid.Email { to = email, ... })
+            -- If this fails, we also log
+        , Integration.outbound
+            (LogWarning { message = [fmt|Welcome email pending for #{email}|] })
+        ]
+    _ -> Integration.none
+```
+
+The two actions run in order. If the first fails, the second still runs (unless you explicitly decide otherwise in the action's implementation).
+
+For persistent coordination — "if this fails, retry in 5 minutes" — you use an integration with lifecycle state, or you emit a `RetryLater` command that schedules the retry.
+
+## Integrating with a legacy database
+
+Sometimes you need to read from or write to a database that an old system owns. The cleanest pattern:
+
+1. **Don't write to it from NeoHaskell directly.** Instead, emit a domain event and have an outbound integration call the legacy system's API (even if the "API" is just a SQL stored procedure).
+2. **Read from it via a custom data source**, wrapped as an integration. This keeps the database access out of the domain logic.
+
+If you truly must share a database between NeoHaskell and a legacy system, the usual pattern is to use the event store as the source of truth and expose a read replica of projections into the legacy system's schema via a separate integration.
+
+## Integrating with message brokers
+
+If you already use RabbitMQ, NATS, or Kafka:
+
+- **Outbound:** Write an outbound integration that publishes events to the broker.
+- **Inbound:** Write an inbound integration that subscribes to topics and emits commands.
+
+Both are a few dozen lines of code. The hardest part is usually handling broker-specific features like consumer groups, offsets, or dead-letter queues — and those are features of the broker, not NeoHaskell.
+
+## Strangler fig pattern
+
+Introducing NeoHaskell into an existing system is usually a strangler fig: the old system keeps running, NeoHaskell takes over one feature at a time.
+
+1. **Pick a bounded feature** — ideally one with a clear input/output boundary.
+2. **Write the NeoHaskell service** for that feature.
+3. **Route traffic through NeoHaskell** for the new feature.
+4. **Use integrations** to keep old and new systems in sync where they overlap.
+5. **Expand** as confidence grows.
+
+The typical failure mode is trying to migrate everything at once. Don't. Start with one service, prove the value, expand.
+
+## Where to go from here
+
+- **[Adopting at work](/guides/adopting-at-work/)** — the political and organizational side.
+- **[Tutorial Part 5](/tutorial/05-transfers/)** — the full worked example of cross-entity coordination via integrations.
+- **[Core concepts → Services](/concepts/services/)** — why services are the right unit for integrations.

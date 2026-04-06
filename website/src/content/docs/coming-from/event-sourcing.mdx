@@ -1,113 +1,148 @@
 ---
-title: "Coming from Event Sourcing"
-description: "How NeoHaskell compares to Kafka, EventStoreDB, and Axon — what's genuinely better, what's different, and what's not ready yet."
+title: "Coming from other event-sourcing frameworks"
+description: "How NeoHaskell compares to Axon, EventStoreDB, Eventuate, Commanded, EventFlow, and other event-sourcing frameworks you may have used."
 sidebar:
   order: 6
 ---
 
-{/*
-  CONTENT OUTLINE — Coming from Event Sourcing
-  Reader profile: experienced ES practitioner. Knows Kafka, EventStoreDB, Axon, Greg Young's work.
-  HONESTY REQUIREMENT (DOCS-PLAN line 653): Must acknowledge what NeoHaskell DOESN'T yet have.
-  Tone: "Here's what's genuinely better, here's what's different, and here's what's not ready yet."
-
-  CRITICAL WARNING (DOCS-PLAN line 653):
-  "Experienced ES developers will spot overselling instantly and leave."
-  Source: Martin Fowler — "The Coming from Event Sourcing page is the most dangerous page to get wrong."
-
-  This page must be scrupulously honest. No marketing language. No hedging on the gaps.
-  The audience knows ES deeply — they will fact-check every claim.
-*/}
-
 import { Aside } from '@astrojs/starlight/components';
 
-## You already know the hard parts
+If you've already built event-sourced systems in another language or framework, you're bringing useful instincts. This page maps the concepts you already know to NeoHaskell's vocabulary, and calls out the specific places NeoHaskell does things differently.
 
-- You know why event sourcing is powerful: audit trails, time-travel, replay, CQRS
-- You've also felt the friction: schema registries, consumer group management, event versioning, update rebuilds
-- NeoHaskell's claim is that some of that friction is accidental — caused by treating ES as an infrastructure concern rather than a language concern
-- Some of it is. Some of it isn't. This page is honest about which is which.
+## Vocabulary translation
 
-<Aside type="caution" title="Pre-release software">
-NeoHaskell is pre-release (v0.1-alpha). The claims on this page are based on design properties, not production case studies. There are no Fortune 500 deployments. There are no large-scale battle-testing stories. If your evaluation requires production proof, wait.
+Event sourcing has a few competing vocabularies. Here's how NeoHaskell's terms map to the common ones.
+
+| Standard ES / DDD | Axon | Commanded (Elixir) | EventStoreDB | NeoHaskell |
+|---|---|---|---|---|
+| Aggregate | Aggregate | Aggregate | Stream | **Entity** |
+| Aggregate root | Aggregate root | — | — | **Entity** (same thing) |
+| Event sourcing handler | `@EventSourcingHandler` | `apply/2` | — | **`update` function** |
+| Command handler | `@CommandHandler` | `execute/2` | — | **`decide` function** |
+| Saga | Saga / process manager | Process manager | — | **Integration** (outbound with lifecycle) |
+| Projection / read model | `@EventHandler` / projection | Projector | Subscription | **Query** (`QueryOf`) |
+| Bounded context | Bounded context | Application | — | **Service** |
+| Event store | EventStorageEngine | — | EventStoreDB | **EventStore** (built-in, pluggable) |
+| Event bus | Axon SimpleEventBus | — | — | Implicit — the framework handles it |
+
+If you're reading about something in DDD or CQRS literature, translate "aggregate" to "entity" and "read model" to "query" — the rest is close enough to follow.
+
+<Aside type="note" title="Why the terminology change?">
+The DDD/CQRS vocabulary is precise but dense. "Aggregate" means multiple things in different books. "Projection" overlaps with database terminology. NeoHaskell picks words that are shorter, clearer to newcomers, and don't carry the academic baggage.
 </Aside>
 
-## What's genuinely better
+## What NeoHaskell does differently
 
-These are real improvements, not marketing claims:
+### Language primitives, not framework annotations
 
-- **No schema registry**: in Kafka + Avro/Protobuf, the schema registry is a separate system you maintain, version, and operate. In NeoHaskell, types ARE the schema. `data AccountEvent = MoneyDeposited { amount :: Int } | AccountClosed` is the schema. The compiler enforces it. No separate registry, no schema drift, no "the registry is down."
+Axon (Java), EventFlow (.NET), and Commanded (Elixir) all use **annotations** or **macros** to mark methods as command handlers, event handlers, and so on. The framework scans for them at startup and wires things up.
 
-- **No consumer groups**: in Kafka, updates require consumer group management — offset tracking, rebalancing, lag monitoring. In NeoHaskell, updates are pure functions: `fold :: [AccountEvent] -> AccountState`. No consumer groups, no offset management, no rebalancing. The update is just a function.
+NeoHaskell uses **types**. A command is a type that implements the `Command` typeclass. An entity is a type that implements the `Entity` typeclass. The connections between them are expressed with type families:
 
-- **Event versioning via algebraic data types**: adding a new event type is adding a constructor to a sum type. The compiler then forces you to handle the new case everywhere it's pattern-matched. You can't forget to update an update — the compiler won't let you compile until you do.
+```haskell
+type instance EntityOf Deposit = Account
+type instance EventOf Account = AccountEvent
+```
 
-- **Compiler-enforced event contracts**: in Kafka, a producer can publish any bytes. A consumer can consume any bytes. The contract is a convention, not a constraint. In NeoHaskell, the event type is the contract. A command handler that produces `MoneyDeposited` can only produce `MoneyDeposited` — the compiler enforces it.
+The compiler verifies the connections. If you wire something up wrong, you get a compile error, not a runtime exception. This is the biggest structural advantage over annotation-based frameworks.
 
-- **Testing without infrastructure**: Kafka-based ES testing requires a running Kafka cluster (or a mock). NeoHaskell's Given-When-Then tests are pure function tests — no infrastructure, no Docker, no test containers. Events in, events out.
+### Typed consistency boundaries
 
-- **Transport-agnostic**: the same application code runs against different event transports by changing configuration. Start with the in-process event store for development, swap to PostgreSQL for production — no code changes.
+In most frameworks, you write an aggregate and hope everyone remembers it's a consistency boundary. Mix commands from two aggregates in the same handler? The framework can't tell. Runtime bug.
 
-## What's different (not better or worse — just different)
+In NeoHaskell, a service is a type-checked consistency boundary. Two commands in one service must share the same entity and event type. If you try to mix, you get:
 
-These are architectural differences that require adjustment, not improvements:
+```text
+Event type mismatch in service definition!
 
-- **Language-level vs infrastructure-level**: Kafka is infrastructure — it runs alongside your application. NeoHaskell's event sourcing is language-level — it's baked into the type system. This means you can't use NeoHaskell's event sourcing with a non-NeoHaskell service without a translation layer.
+All commands in a service must use the same event type.
 
-- **Single-language ecosystem**: Kafka is polyglot — producers and consumers can be in any language. NeoHaskell's event sourcing is currently single-language. Cross-service communication requires explicit integration points.
+Expected event type: CartEvent
+But command 'ProcessPayment' uses event type: PaymentEvent
+```
 
-- **Configuration as code**: NeoHaskell's event store configuration is Haskell code, not YAML or environment variables. This is more powerful but requires a different mental model for operations teams.
+The compiler catches it before you run a single test.
 
-- **Update model**: NeoHaskell updates are in-process functions, not separate services. This is simpler for most cases but means updates run in the same process as command handlers. For very large update workloads, this may require rethinking.
+### No serialization framework glue
 
-- **No streaming semantics**: NeoHaskell's current event model is request/response, not streaming. There's no equivalent of Kafka Streams or Flink for continuous event processing. This is a current limitation, not a design choice.
+In most ES frameworks, you pick a serialization library (Jackson, Newtonsoft, Jackson again, Poison) and wire it up separately from the event store. You write upcaster classes, migration handlers, and "legacy" event wrappers.
 
-## What's not ready yet
+NeoHaskell serializes events automatically via `aeson` (using the `Json.FromJSON` / `Json.ToJSON` instances you derive). Schema evolution is handled by **never modifying old event types** — you add new variants instead. There's no upcasting framework because there's nothing to upcast.
 
-This section is the most important one. Read it before evaluating NeoHaskell for production use.
+### Transport-agnostic commands
 
-- **No distributed event store**: NeoHaskell currently uses PostgreSQL as its event store. There's no distributed event store, no multi-node replication, no partition tolerance story. If you need Kafka's durability and throughput guarantees, NeoHaskell doesn't have them yet.
+In Axon, a command is dispatched via the Axon command bus. In Commanded, it's dispatched via the Commanded router. In most frameworks, the command machinery is tied to one transport mechanism.
 
-- **No consumer group equivalents at scale**: NeoHaskell's update model works well for single-node deployments. For large-scale distributed update workloads — the kind Kafka consumer groups handle — there's no equivalent yet.
+NeoHaskell commands declare their transports with `TransportsOf`:
 
-- **No production battle-testing**: NeoHaskell has no production deployments at scale. The design properties are sound, but "sound design" and "battle-tested" are different things. If you need proof from production systems, it doesn't exist yet.
+```haskell
+type instance TransportsOf CreateCart = '[WebTransport, Cli, Mcp]
+```
 
-- **No large-scale deployment stories**: there are no case studies, no "we migrated from Kafka to NeoHaskell" stories, no performance benchmarks at scale. These will come — but they don't exist today.
+The same command is available over HTTP, CLI, and MCP. You choose which transports to register with the application, and the compiler verifies consistency.
 
-- **Event versioning is compile-time only**: NeoHaskell's algebraic data type approach to event versioning handles schema evolution at compile time. Runtime migration of existing events in the store is a separate concern that requires manual handling.
+### Sagas as regular integrations
 
-- **Limited transport backends**: currently PostgreSQL and in-process. Kafka, EventStoreDB, and other backends are on the roadmap but not implemented.
+Axon has a specific `@Saga` abstraction with its own lifecycle rules. Commanded has process managers. EventFlow has sagas.
 
-## The honest comparison
+NeoHaskell uses **outbound integrations with lifecycle** for saga-like patterns. An integration is a pure function from events to actions. You model the saga's state machine as its own entity, and the integration reacts to its events to drive the next step. This is the pattern in [Tutorial Part 5](/tutorial/05-transfers/).
 
-| Concern | Kafka + Framework | EventStoreDB | NeoHaskell | Notes |
-|---------|------------------|-------------|-----------|-------|
-| Schema enforcement | Schema registry (separate system) | None (convention) | Compiler (built-in) | NeoHaskell wins |
-| Update model | Consumer groups | Subscriptions | Pure functions | NeoHaskell simpler |
-| Distributed scale | Excellent | Good | Not ready | Kafka wins |
-| Production maturity | Excellent | Good | Pre-release | Kafka/ESDB win |
-| Testing | Requires infrastructure | Requires infrastructure | Pure functions | NeoHaskell wins |
-| Event versioning | Manual + schema registry | Manual | Compiler-enforced | NeoHaskell wins |
-| Polyglot support | Excellent | Good | Single-language | Kafka wins |
-| Throughput | Very high | High | Unknown at scale | Kafka wins |
-| Operational complexity | High | Medium | Low (currently) | NeoHaskell wins |
+The result is more code to spell out, but simpler to reason about — a saga is "just" an entity plus an integration, not a special kind of thing.
 
-<Aside type="note" title="The right question">
-The question isn't "is NeoHaskell better than Kafka?" It's "what are you optimizing for?" If you need distributed scale and production maturity today, use Kafka. If you want compiler-enforced event contracts and simpler updates for a new system, NeoHaskell is worth evaluating — with eyes open about what's not ready.
-</Aside>
+### Snapshots are automatic
 
-## What NeoHaskell is actually solving
+Most frameworks make you opt into snapshotting — you write a snapshot trigger, a snapshot store, and handlers to restore from snapshots.
 
-- The core problem NeoHaskell addresses isn't Kafka's throughput or EventStoreDB's storage model
-- It's the discipline problem: event sourcing done well requires enormous discipline — schema discipline, versioning discipline, update discipline
-- Every mature ES team has stories about schema drift, forgotten update updates, and consumer group incidents
-- NeoHaskell's bet is that making ES a language concern — not an infrastructure concern — eliminates the discipline requirement
-- The compiler replaces the discipline. You can't forget to update an update. You can't publish the wrong event type. You can't skip the schema registry because there isn't one.
-- Whether that bet pays off at scale is still an open question. The design is sound. The production proof doesn't exist yet.
+NeoHaskell does it automatically via the `SnapshotCache`. Entities are cached after reconstruction, and subsequent loads start from the cache. You don't configure it; it's just on.
 
-{/* TODO: section on migrating from Kafka to NeoHaskell — what the integration story looks like */}
-{/* TODO: section on running NeoHaskell alongside existing ES infrastructure */}
+### Projections rebuild on startup
 
-:::caution[Coming Soon]
-This page is a content outline. Full prose, detailed comparisons, and integration guides are in progress.
-:::
+In EventStoreDB-based systems, projection rebuilds are manual or tooling-driven. In NeoHaskell, on startup the framework replays every event through every registered query, producing fresh read models. This takes care of "I changed the projection logic and need to rebuild" without you writing a migration script.
+
+For large stores, this can take time on startup, but it means read models are always consistent with the current projection code.
+
+### Testing is direct
+
+In most frameworks, testing requires spinning up a test runner, mocking a command bus, fake event stores, and assertion helpers that check sequences of events. It works, but it's heavyweight.
+
+In NeoHaskell, `decide`, `update`, and `combine` are all pure functions. You test them by calling them with constructed inputs and asserting on outputs. No test runner beyond Hspec, no mocks. See [Testing event-sourced systems](/concepts/testing-event-sourced-systems/).
+
+## What NeoHaskell does similarly
+
+- **Commands produce events.** Same as every other ES framework.
+- **Events are immutable.** Standard.
+- **Entities (aggregates) are reconstructed from events.** Standard.
+- **Projections (read models) are denormalized views.** Standard.
+- **CQRS separates the write side from the read side.** Standard.
+- **Optimistic concurrency per stream.** Same model as EventStoreDB.
+
+If you've done CQRS in Axon, Commanded, or EventFlow, you'll recognize the overall architecture immediately. The concepts are the same; NeoHaskell just pulls them into the type system instead of into runtime annotations.
+
+## Migration from an existing system
+
+If you have an existing system built on Kafka, EventStoreDB, or another framework, and you want to try NeoHaskell:
+
+1. **Start with a new service.** Don't migrate existing data; add a new service that emits and consumes events.
+2. **Bridge the two systems.** Write outbound integrations that publish NeoHaskell events to your existing bus (Kafka, etc.). Write inbound integrations that subscribe to relevant topics and emit NeoHaskell commands.
+3. **Expand gradually.** Once the new service is stable, consider rewriting the next piece.
+4. **Don't migrate all historical events.** Old events stay in the old store. New events go into the NeoHaskell event store. The two streams can coexist indefinitely.
+
+The [Integrating existing systems](/guides/integrating-existing-systems/) guide has the full playbook for this.
+
+## What NeoHaskell still lacks vs. established frameworks
+
+Be honest about this:
+
+- **No first-class schema registry.** You write event types in code; there's no external schema registry with versioning workflows.
+- **No distributed deployment primitives out of the box.** Multi-region event routing, cross-datacenter replication, etc., are your responsibility (or via PostgreSQL's native replication).
+- **Smaller ecosystem.** Axon has been around for years; NeoHaskell is pre-release. Expect to write more integrations from scratch.
+- **Less battle-tested.** Axon runs at banking scale. NeoHaskell has real users but fewer big-name deployments.
+
+If your priority is "proven at scale", you're still better off with Axon or a mature CQRS library in your current language. If your priority is "strongest possible compile-time guarantees and the smallest possible codebase", NeoHaskell is ahead.
+
+## Where to go from here
+
+- **[Installation](/getting-started/installation/)** — get set up.
+- **[Architecture evaluation](/concepts/architecture-evaluation/)** — the deeper comparison with specific frameworks.
+- **[Build NeoBank](/tutorial/)** — the tutorial, which will feel fast if you already know ES.
+- **[Cheat sheet](/getting-started/cheat-sheet/)** — quick reference.

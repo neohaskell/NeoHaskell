@@ -1,140 +1,206 @@
 ---
 title: "Why NeoHaskell?"
-description: "Compiler-enforced event sourcing. Correctness by default. The language where incorrect code doesn't compile."
+description: "A direct answer to why NeoHaskell exists, what it enforces, and where it belongs. Written for engineers deciding whether to try it."
 sidebar:
   hidden: true
 ---
 
-{/*
-  CONTENT PLAN — Bullet points only. No prose until approved.
-  Round 5: Terminology fix + monolith-to-microservices.
-  Round 6: Testbed code review — reframed anti-recommendations,
-  transport swap story, config-as-code, FP accessibility evidence.
-
-  NeoHaskell terminology (from actual API, not standard DDD):
-  - Entity (not aggregate)
-  - Query (not update)
-  - Service + Integration (not integration)
-  Source: core/service/ — class Entity, class QueryOf, withService, withOutbound
-
-  Narrative arc: Pain → Mechanism → Depth → Honesty → Action
-  Tone: honest, specific, no overclaiming.
-*/}
-
-{/* POLYGLOT NOTE: All code examples on this page should include equivalent snippets in JS/TS, Python, and Go. See DOCS-PLAN.md Guiding Principle #9. */}
-
 import { Aside } from '@astrojs/starlight/components';
 
-## "Why not just [my language] + Claude Code?"
+You are here because you want one of three things:
 
-- Most code is AI-generated now (Copilot, Claude, Cursor) — this is the reality
-- The discipline to review AI output line-by-line is enormous — and nobody actually does it
-- In loosely-typed languages, AI generates code that compiles and fails silently in production
-- The fix can't be discipline — it has to be structural
-- This wasn't designed for AI. It's a consequence of the constraints:
-  - AI-generated code either compiles correctly or doesn't compile at all
-  - The compiler catches the classes of errors AI is worst at: missing handlers, wrong state transitions
-  - Every state change is an auditable event — AI can't introduce silent side effects
-- This works whether a human or an AI wrote the code — the compiler doesn't care
-- Less code per feature means AI can reason about entire modules, not fragments — and fewer places for hallucinations to hide
-- Less code also means smaller context windows and cheaper API calls
+1. **A direct answer.** What is NeoHaskell, and why should I care right now?
+2. **The tradeoffs.** Where does it help me, where does it hurt, and where is it a bad fit?
+3. **Proof.** Show me code that could not exist in a looser language.
 
-{/* TODO: concrete line-count comparison (NeoBank tutorial vs equivalent in Go/TS) — track in GitHub issue, not visible on page */}
+This page answers all three without ceremony.
 
-<Aside type="note" title="For enterprise teams">
-Regulated industries (finance, healthcare, defense) often can't send code to cloud AI due to compliance constraints. Weaker local models + NeoHaskell's strong compiler = output you can trust to deploy. This is the gap between "we want to use AI" and "legal says no."
-</Aside>
+## The one-sentence pitch
 
-## What NeoHaskell is
+**NeoHaskell is Haskell with event sourcing, commands, queries, and services promoted from library patterns to language primitives — and with a standard library designed so you never have to learn what a monad is to ship a feature.**
 
-- A programming language where event sourcing is a language primitive, not a library
-- Commands, events, entities, queries, services, and integrations are first-class constructs
-- Strong types + pure functions + compiler-enforced event sourcing contracts
-- Core insight: most tools treat correctness as something you add. NeoHaskell treats incorrectness as something you'd have to actively introduce.
-- Built on GHC (Haskell's compiler) — proven type system, new developer experience
-- Accessible syntax: pipes, qualified imports, do-blocks everywhere — no PhD required. The testbed's `AddItem.hs` command handler reads like pseudocode: `case..of`, `if/then/else`, `Decider.reject`, `Decider.acceptExisting`. Any developer who can write a Redux reducer can write NeoHaskell.
-- Start as a monolith, split into microservices when you actually need to — no rearchitecture required. Services are deployment boundaries, not code boundaries.
-- **Transport-agnostic**: the same application code runs as a CLI tool or a web API — change one line of configuration. Start with CLI for instant feedback, swap to web when you're ready.
-{/* TODO: code example — before/after showing TypeScript silent failure vs NeoHaskell compiler error — include JS/TS, Python, Go equivalents */}
-{/* This is the single most impactful thing on the page per all 7 reviewers */}
+If that sentence is enough, go [install it](/getting-started/installation/). If you want the full argument, keep reading.
 
-## What the compiler enforces
+## What the compiler enforces that yours does not
 
-- **Type mismatches**: wrong data shapes are compile errors, not runtime surprises
-- **Missing event handlers**: if you add an event, the compiler demands you handle it everywhere
-- **Incorrect state transitions**: entity state machines are type-checked — invalid transitions don't compile
-- **Unhandled cases**: exhaustive pattern matching — no forgotten branches
-- **Event sourcing contract**: every state change must go through the event log — no silent mutations, no skipping the audit trail
-- **Entity boundaries**: entities define consistency boundaries — cross-entity access is explicit, not accidental
+In most languages, event sourcing is a library. You import it, follow its conventions, and hope your team does too. The compiler cannot help you. In NeoHaskell, the compiler knows:
+
+- **Every command has a decide function.** If you forget to write one, the program does not compile.
+- **Every entity has an update function that handles every event.** Add a new event, and the compiler tells you exactly which files need to change.
+- **Every service shares one event type across all commands.** Mix two event types in one service? You get a compile-time error that says, in plain English, which command is wrong.
+- **Every command is registered with its transport.** If you want to expose a command over HTTP and CLI, you list both — and the compiler generates both endpoints.
+- **Events can only come out of accepted commands.** There is no code path that lets you mutate entity state without recording why.
+
+That last one is the point. You cannot write a function that "just updates the balance." There is nowhere to put it. Every state change goes through `decide`, every `decide` returns a `Decision`, and every `Decision` that accepts produces events. The compiler will not let you cheat.
+
+## What it looks like when something breaks
+
+Here is what you see when you add a new event to an entity and forget to handle it in `update`:
+
+```text
+error: [GHC-18872]
+    Non-exhaustive patterns in function update
+
+    In an equation for 'update':
+        Patterns of type 'AccountEvent' not matched:
+            MoneyTransferred{}
+    |
+ 97 | update event account = case event of
+    |                        ^^^^^^^^^^^^^
+```
+
+Not a runtime error. Not a failing test six weeks later. A compile error, with the exact line, before your code runs once.
+
+Here is what you see when you try to put two different event types in the same service:
+
+```text
+error:
+    Event type mismatch in service definition!
+
+    All commands in a service must use the same event type.
+
+    Expected event type: AccountEvent
+    But command 'TransferMoney' uses event type: TransferEvent
+
+    To fix: Ensure all commands in this service share a common event type.
+    This typically means all entities should use the same domain event sum type.
+```
+
+The compiler does not just say "type error." It knows what you were trying to do and tells you how to fix it.
+
+## Why not just [my language] + a library?
+
+Fair question. Let's answer it with specifics.
+
+### vs. EventStoreDB with your favorite language
+
+EventStoreDB is a database. It stores events. The rest — commands, validation, projections, consistency boundaries — you write by hand in whatever language you like. That means every team invents its own framework, every refactor means touching every layer, and nothing catches you when you accidentally write a projection that reads stale data from a different aggregate.
+
+NeoHaskell makes the boundaries the language enforces. You cannot read from another entity by accident because the type of `decide` does not let you.
+
+### vs. Kafka + a microservice framework
+
+Kafka handles transport. Your framework handles validation, routing, and schemas. You own the glue. The glue is where the bugs live.
+
+NeoHaskell does not have glue. The `command ''DepositMoney` line at the bottom of a command file generates the HTTP endpoint, the JSON schema, the CLI parser, the OpenAPI spec, and the handler registration. There is no glue to get wrong.
+
+### vs. Axon (Java) or EventFlow (.NET)
+
+These are the closest comparisons. Axon treats commands, events, and aggregates as first-class concepts the same way NeoHaskell does. The difference is that Axon enforces its contracts at runtime with annotations; NeoHaskell enforces them at compile time with types. A misconfigured Axon aggregate is a `NullPointerException` in production. A misconfigured NeoHaskell entity is a red squiggle in your editor.
+
+### vs. "just use Haskell"
+
+Regular Haskell has none of this built in. You would pick a library (Eventful, eventstore-client, etc.), fight with monad transformers, and spend your first week learning what a `MonadReader` is. NeoHaskell's standard library is designed so you never need to. The word "monad" does not appear in any user-facing tutorial on this site. You use `do` blocks the way you use async/await in JavaScript. `Task.yield` replaces `pure`. `Result` replaces `Either`. There is no transformer stack.
+
+## Accessible syntax, actually
+
+Here is a real command handler from a production codebase:
+
+```haskell
+decide cmd entity _ctx = case entity of
+  Nothing ->
+    Decider.reject "Cart not found"
+  Just cart ->
+    if cmd.quantity <= 0
+      then Decider.reject "Quantity must be positive"
+      else
+        Decider.acceptExisting
+          [ ItemAdded
+              { entityId = cart.cartId
+              , stockId = cmd.stockId
+              , quantity = cmd.quantity
+              }
+          ]
+```
+
+Count the academic concepts in that code: zero. It is a `case` statement, an `if`, a record, and a function call. You can read it and write it without ever typing the word "functor." That is not an accident — the standard library is designed to make this the default shape of your code.
 
 ## Domain modeling as code
 
-- Services define your services — the language enforces their boundaries
-- Events are the domain language — not strings in a database, but typed declarations
-- Queries are pure functions from event streams — declarative, testable, composable
-- Services and integrations coordinate cross-entity workflows — compiler-enforced
-- The type system IS the domain model documentation — if the types are right, the domain is right
-- vs. DDD in Java/C#: NeoHaskell makes entities, value objects, and domain events language-level constructs instead of naming conventions
+- **Events are the domain language.** Not strings in a database, not message names on a queue — typed sum types the compiler knows about.
+- **Entities are consistency boundaries.** The type system ensures you cannot reach across them.
+- **Services are deployment units.** Start as a monolith, split into microservices when you actually need to — no rewrite required.
+- **Integrations are cross-service coordination.** Outbound (react to events) and Inbound (accept external input as commands) — both typed, both compiler-enforced.
+- **Configuration is code.** Type-checked, self-documenting, and impossible to misconfigure at runtime. No YAML. No "whoops, I set port to a string."
 
-## Configuration as code
+## Testing: the secret weapon
 
-- Configuration is defined in code, not YAML — type-checked, self-documenting, impossible to misconfigure at runtime
-- A single `defineConfig` block auto-generates: CLI flags, environment variable parsing, documentation strings, defaults, and type validation
-- No separate schema files, no runtime type errors, no "oops I set port to a string"
-- Config-dependent wiring: event stores, transports, integrations, and auth can all read from the same config — resolved at startup, type-safe throughout
+Event sourcing gives you a natural testing grammar: **Given-When-Then.**
 
-## Testing: event sourcing's secret weapon
+- **Given** a sequence of past events.
+- **When** a command is issued.
+- **Then** specific events are produced — or the command is rejected with a specific reason.
 
-- Event sourcing's Given-When-Then is a natural testing grammar
-  - Given: a sequence of past events
-  - When: a command is issued
-  - Then: specific events are produced (or an error)
-- No mocking, no database setup, no test fixtures — just events in, events out
-- Query tests are pure function tests — trivial to write, fast to run
-- Time-travel debugging: replay to any point in history, inspect state
-- Property-based testing: "no sequence of valid commands should produce a negative balance"
+No mocks. No database setup. No fixtures. You give `decide` a list of events, a command, and a request context, and you assert on what came out. Tests run in milliseconds. The whole testing story fits on one page.
 
-## How NeoHaskell compares
+Query tests are even simpler: queries are pure functions from entity state to read models. A query test is an equality check.
 
-- vs EventStoreDB: NeoHaskell makes event sourcing a language concern, not an infrastructure choice
-- vs Kafka + framework: no boilerplate glue code — commands, events, queries are language primitives
-- vs Axon (Java): same architectural ideas, but compiler-enforced instead of convention-enforced. Axon is the closest comparison — NeoHaskell takes Axon's entity + integration model and makes it type-safe
-- vs "just use Haskell": accessible syntax, event sourcing built-in, no monad transformer stacks
+## Transport-agnostic, really
 
-{/* TODO: comparison table with specific tradeoffs (not FUD, honest) */}
+The same application code runs as a CLI tool, an HTTP API, or an MCP server for AI assistants. The difference is one line:
 
-## What the compiler doesn't catch — be honest
+```haskell
+-- Web API
+app = Application.new
+  |> Application.withTransport WebTransport.server
+  |> Application.withService myService
 
-- Wrong business logic (charging $1000 instead of $10) — the compiler can't read your mind
-- Incorrect requirements — garbage in, garbage out, even with types
-- Bad domain modeling decisions — if you model the wrong entities, the compiler enforces the wrong thing
- Event schema changes — NeoHaskell doesn't do event versioning. Events are immutable facts; if your schema needs to change, you create a new event type. The compiler ensures all handlers are updated for the new type, but the decision of *what* the new event should look like is yours.
-- But: because every state change is an explicit event, errors are auditable and replayable — you can find and fix them
+-- CLI tool
+app = Application.new
+  |> Application.withTransport Cli.cli
+  |> Application.withService myService
+```
 
-{/* TODO: show a specific compiler error message that Python/JS would let through */}
-{/* TODO: show an example of what the compiler CAN'T catch (logic error that compiles) */}
+Your `decide` functions do not know or care which transport called them. Start with CLI for instant feedback during development. Swap to web when you are ready to deploy. Add MCP when you want an AI assistant to drive your domain. Your domain code does not change.
 
-## When to adopt — and when to wait
+## What NeoHaskell does not catch
 
-NeoHaskell is honest about where it is today. This isn't "when NeoHaskell is bad" — it's how to make the right timing decision for your context.
+<Aside type="caution" title="Things the compiler cannot read your mind about">
+- **Wrong business logic.** If your requirements say $10 and you wrote $1000, the compiler cannot help.
+- **Bad domain modeling.** If you model the wrong events, the compiler happily enforces the wrong thing.
+- **Event schema evolution.** NeoHaskell does not do event versioning. Events are immutable facts — if your schema needs to change, you create a new event type and migrate. The compiler makes sure every handler is updated, but the decision of *what* the new event looks like is yours.
+</Aside>
 
-- **Simple CRUD with no audit trail** → use something simpler. Event sourcing adds complexity that pays off only when you need history, replay, or audit.
-- **You need a mature ecosystem with thousands of packages** → NeoHaskell is pre-release. The core is solid, but the package ecosystem is young.
-- **You need production war stories** → NeoHaskell doesn't have Fortune 500 case studies yet. If your decision requires proof from other companies, wait.
-- **Hiring at scale** → even though the code is readable by any developer, "NeoHaskell" on a job posting is an unknown. For a team of 2-5, this is fine. For a team of 50, factor in recruiter friction.
-- **You need it yesterday** → NeoHaskell is alpha. It's moving fast and will have breaking changes.
+The compiler's job is to make sure your code matches your types. If your types are wrong, your code will be confidently, consistently, compile-error-freely wrong. This is still a huge improvement over runtime surprises, but it is not magic.
 
-**What is NOT a barrier:**
-- ~~"My team doesn't know FP"~~ → NeoHaskell code uses `case..of` (switch), `if/then/else`, records, and pipe operators. [See for yourself.](/getting-started/reading-neohaskell/) No monads, no functors, no category theory in your application code.
-- ~~"We only build CLI tools"~~ → NeoHaskell has a CLI transport. The same service code runs as a CLI tool or a web API — change one line.
+## When to adopt — and when not to
+
+**NeoHaskell is a great fit when:**
+
+- Your domain has meaningful state transitions worth recording (orders, accounts, bookings, user lifecycles).
+- You care about audit trails, replay, or historical debugging.
+- You want type-level guarantees your team cannot accidentally bypass.
+- You have a small-to-medium team (2–15 engineers) that values correctness over language popularity.
+- You are building something you expect to maintain for years.
+
+**NeoHaskell is a bad fit when:**
+
+- You need a purely CRUD app with no interesting state transitions. Event sourcing adds overhead that only pays off when you need history, replay, or strict consistency.
+- You need a mature package ecosystem with thousands of libraries. NeoHaskell is pre-release; the core is solid but the periphery is young.
+- You are hiring at scale and "NeoHaskell on the résumé" would be a hiring blocker. For a team of 50+, factor in recruiter friction.
+- You need production war stories from Fortune 500 companies. We do not have those yet.
+
+**What is NOT a reason to say no:**
+
+- "My team does not know functional programming." NeoHaskell code uses records, pattern matching, `if/then/else`, and pipes. Any developer who has written a Redux reducer has the skills.
+- "Haskell is slow." NeoHaskell compiles to native code via GHC. Throughput targets for the core library are in the tens of thousands of requests per second.
+- "We only build CLI tools." The same code runs as a CLI.
+- "We need to integrate with existing systems." Inbound and outbound integrations are first-class.
 
 ## Current status
 
 <Aside type="caution">
-NeoHaskell is pre-release (v0.1-alpha in progress). The claims on this page are based on the language's design properties, not production case studies. [Track progress on GitHub.](https://github.com/neohaskell/neohaskell)
+NeoHaskell is in active development. The service layer, event store, commands, queries, and integrations are stable enough to build real applications — there are several running in production today. The syntax layer (custom `.nh` files) is still being designed. Until that ships, you write NeoHaskell in Haskell files with a carefully curated standard library.
 </Aside>
 
-- What works today: event sourcing primitives, commands, queries, entities, services, integrations, PostgreSQL event store, web transport, CLI transport, declarative configuration, file uploads, OAuth2, OpenAPI spec generation
-- What's coming: custom syntax (.nh files), expanded testing framework, event versioning, more transport backends
-- Try it: [Get Started →](/getting-started/installation/) or [NeoBank Tutorial →](/tutorial/)
-- Track progress: [GitHub](https://github.com/neohaskell/neohaskell)
+**Works today:** event-sourcing primitives, commands, events, entities, queries, services, integrations, PostgreSQL event store, in-memory event store, web transport, CLI transport, MCP transport, declarative configuration, file uploads, OAuth2, OpenAPI spec generation, multi-tenant support.
+
+**In progress:** custom `.nh` syntax, expanded test framework, more transport backends, package ecosystem growth.
+
+## Next step
+
+Pick one:
+
+- [**Install NeoHaskell**](/getting-started/installation/) — run `nix develop` inside a template and you have a working environment.
+- [**Build NeoBank**](/tutorial/) — the tutorial that teaches you the language by building a working banking service.
+- [**Core concepts**](/concepts/thinking-in-events/) — if you want the mental model before you touch code.

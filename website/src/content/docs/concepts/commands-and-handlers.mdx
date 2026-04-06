@@ -1,131 +1,236 @@
 ---
-title: "Commands and Handlers"
-description: "How requests become events through command processing."
+title: "Commands and handlers"
+description: "The full story of how a command becomes an event — from HTTP request to event store append. Every layer explained."
 sidebar:
-  order: 11
-keywords: [commands, handlers, command handler, event sourcing, validation, reject, accept]
-# entry_stage: 1 (Event-curious)
-# exit_stage: 3 (NeoHaskell-aware)
-# misconception: #7 (events are my API)
-# tutorial_anchor: Tutorial Part 1 — Your First Transaction
+  order: 4
 ---
-
-{/*
-  CONTENT OUTLINE — Commands and Handlers
-  Entry: Stage 1 (Event-curious), Exit: Stage 3 (NeoHaskell-aware)
-  Misconception addressed: #7 (events are my API)
-  Anchored from: Tutorial Part 1
-
-  Core distinction: commands are requests (can be rejected), events are facts (already happened).
-  Banking analogy: deposit slip vs. transaction record.
-  Rosetta Stone row: "Do something" → Deposit slip → Command.
-  Handler pattern: validate → decide → produce events OR reject.
-  NeoHaskell enforcement: typed commands, exhaustive handler matching.
-*/}
-
-{/* POLYGLOT NOTE: All code examples on this page should include equivalent snippets in JS/TS, Python, and Go. See DOCS-PLAN.md Guiding Principle #9. */}
 
 import { Aside } from '@astrojs/starlight/components';
 
-## What You Might Expect
+Commands are where the outside world meets your domain. A user clicks a button, an integration fires, a CLI tool runs — and somewhere along the way, a command object shows up at your `decide` function. This page walks through the full lifecycle of a command in NeoHaskell, so you understand exactly what happens at each step and why.
 
-- In a REST API, you'd expose endpoints: `POST /accounts/42/deposit`
-- The endpoint receives data, validates it, updates the database, returns a response
-- The "API" is the set of endpoints — what you expose is what clients call
-- Events, if you've heard of them, sound like the thing you'd publish to a message queue for other services
+## The four moving parts
 
-## Why That Breaks
+Before the walkthrough, here are the characters in the story:
 
-- If events are your API, clients can send any event — including ones that shouldn't exist yet
-- A client could send `MoneyWithdrawn` before `AccountOpened` — the event log would be corrupted
-- Events represent facts that *already happened*. You can't send a fact about the future.
-- Exposing events as your API removes the ability to validate, reject, or enforce business rules
-- The system has no way to say "no" — every event that arrives gets recorded as truth
+1. **The command** — a typed record describing what the caller wants.
+2. **The `decide` function** — a pure function that turns the command into a `Decision` (accept or reject).
+3. **The command executor** — the runtime machinery that runs `decide` safely and stores the resulting events.
+4. **The event store** — the append-only log where events live forever.
 
-## Commands and Handlers: The Mental Model Shift
+Everything else (the HTTP transport, the JSON parser, the authorization check, the retries) is plumbing. The four above are the concepts that matter.
 
-- **Commands** are requests. They describe *intent*, not fact. They can be rejected.
-- **Events** are facts. They describe *what happened*. They cannot be undone.
-- A command is a deposit slip. An event is the transaction record.
-- The deposit slip might be rejected (insufficient funds, account closed, invalid amount).
-- The transaction record is permanent — it happened, it's recorded, it's immutable.
-- **The handler** is the decision-maker: it receives a command, validates it, and either produces events or returns an error.
+## The full lifecycle
 
-### The Deposit Slip Analogy
+Let's follow a single request end to end. Imagine the caller makes this HTTP request:
 
-- You walk into a bank and fill out a deposit slip (the command)
-- The teller checks: is your account open? Is the amount valid? Is the currency correct?
-- If yes: the teller records a transaction (the event) — a permanent fact in the ledger
-- If no: the teller hands back the slip with a rejection reason — no event is recorded
-- The deposit slip is not the transaction. The command is not the event.
+```http
+POST /commands/Deposit HTTP/1.1
+Content-Type: application/json
 
-### The Rosetta Stone
+{ "accountId": "abc-123", "amount": 50 }
+```
 
-| What you'd say | Banking term | NeoHaskell term | What it actually is |
-|---------------|-------------|-----------------|-------------------|
-| "Do something" | Deposit slip | Command | A request that may be accepted or rejected |
-| "Something happened" | Transaction | Event | An immutable record of a fact |
-| "The decision-maker" | Bank teller | Handler | Validates commands, produces events or errors |
+### Step 1 — Transport decodes the request
 
-## What Happens When a Command Arrives
+The HTTP transport receives the request, parses the JSON body into the `Deposit` type, and constructs a `RequestContext` (containing authentication info, user claims, trace IDs, etc.).
 
-- Step 1: Client sends a `Deposit { accountId: 42, amount: 50 }` command
-- Step 2: The handler loads the current entity state (by folding over past events)
-- Step 3: The handler validates: is the account open? Is the amount positive?
-- Step 4a: If valid — the handler produces `MoneyDeposited { amount: 50 }` and returns it
-- Step 4b: If invalid — the handler returns an error (e.g., `AccountNotOpen`) and produces no events
-- Step 5: The event store appends the event (only if step 4a happened)
-- Step 6: The client receives either a success response or the rejection reason
+This is pure plumbing. You didn't write it. The line `command ''Deposit` at the bottom of your command file generated this for you.
 
-<Aside type="note" title="Commands can fail. Events cannot.">
-This is the most important distinction. A command is a *request* — it might not be granted. An event is a *fact* — it already happened. Once an event is in the store, it's permanent. The handler is the gatekeeper that decides which commands become events.
-</Aside>
+### Step 2 — Executor fetches the current entity
 
-## In NeoBank Terms
+The executor now needs the current state of the account. It calls the `EntityFetcher`, which:
 
-- NeoBank exposes commands, not events: `Deposit`, `Withdraw`, `OpenAccount`, `Transfer`
-- Clients never directly write events — they send commands and receive results
-- The `Deposit` command handler checks: is the account open? Is the amount positive? Is it within daily limits?
-- If all checks pass, it produces `MoneyDeposited` — a permanent fact in the ledger
-- If any check fails, it returns a `DepositDeclined` error — no event is recorded, no state changes
-- The event log stays clean: every event in it represents something that genuinely happened
+1. Looks up the snapshot cache for this entity ID. If a cached snapshot exists, it uses that as the starting point.
+2. Reads any events that have arrived since the snapshot was taken.
+3. Folds those events into the snapshot using the entity's `update` function.
+4. Returns the current `Account` state (or `Nothing` if no events exist for this ID yet).
 
-### Handler Pattern
+This is how `decide` receives a fresh, correct view of the entity without you having to touch the database yourself.
 
-{/* TODO: Code example showing the handler pattern: validate → decide → produce events OR reject — include JS/TS, Python, Go equivalents */}
-{/* TODO: Show the Decider.reject and Decider.acceptExisting pattern from testbed AddItem.hs */}
+### Step 3 — Decide is called
 
-- **Validate**: check preconditions against current entity state
-- **Decide**: use `case..of` to branch on the command type and entity state
-- **Accept**: return events that represent what happened (`Decider.acceptExisting`)
-- **Reject**: return an error with a reason (`Decider.reject`) — no events produced
+Your pure `decide` function runs:
 
-## How NeoHaskell Enforces This
+```haskell
+decide :: Deposit -> Maybe Account -> RequestContext -> Decision AccountEvent
+decide cmd account _ctx = case account of
+  Nothing ->
+    Decider.reject "Account does not exist"
+  Just _ ->
+    if cmd.amount <= 0
+      then Decider.reject "Deposit amount must be positive"
+      else
+        Decider.acceptExisting
+          [ MoneyDeposited
+              { entityId = cmd.accountId
+              , amount = cmd.amount
+              }
+          ]
+```
 
-- Commands and events are separate types — you can't accidentally use one as the other
-- The handler function signature enforces the pattern: `Command -> Entity -> Result Error [Event]`
-- Exhaustive pattern matching: if you add a new command type, the compiler demands you handle it
-- The event store API only accepts events — there's no way to write a command to the store
-- `Decider.reject` and `Decider.acceptExisting` are the only two outcomes — no silent failures
+It receives the command, the current entity state, and the request context. It returns a `Decision`. That's it. This function is pure — no I/O, no database access, no side effects. You can test it in isolation by passing fake inputs.
 
-## Testing This Concept
+The `Decision` is one of:
 
-{/* TODO: Code example showing a Given-When-Then test for command rejection — include JS/TS, Python, Go equivalents */}
-{/* TODO: Show: given AccountClosed event, when Deposit command, then DepositDeclined error */}
+- **`Accept` + `InsertionType` + events** — "go ahead, persist these events under the given insertion mode."
+- **`Reject` + reason** — "no, and here's why."
 
-- Testing command handlers is straightforward: give entity state, send command, assert result
-- Test the happy path: valid command → expected events produced
-- Test the rejection path: invalid command → expected error, no events produced
-- No database, no HTTP, no mocking — just entity state, command, and assertion
-- The Given-When-Then pattern maps directly: Given (entity state) → When (command) → Then (events or error)
+### Step 4 — Executor persists the events
 
-## Going Deeper
+If `decide` returned an `Accept`, the executor tries to append the events to the entity's stream in the event store. The `InsertionType` controls the concurrency rule:
 
-- [Events, Not State →](/concepts/events-not-state) — what events are and why they're immutable
-- [Type Safety →](/concepts/type-safety) — how the compiler enforces command/event separation
-- [Testing Event-Sourced Systems →](/concepts/testing-event-sourced-systems) — the full testing strategy
-- [Services →](/concepts/services) — how commands route across context boundaries
+- **`StreamCreation`** (`acceptNew`) — succeed only if the stream doesn't exist yet. Used for creation commands.
+- **`ExistingStream`** (`acceptExisting`) — succeed only if the stream already exists. Used for mutation commands.
+- **`InsertAfter position`** (`acceptAfter`) — succeed only if the stream is at exactly this position. Used for optimistic concurrency.
+- **`AnyStreamState`** (`acceptAny`) — succeed regardless. Rarely used.
 
-:::caution[Coming Soon]
-Code examples on this page are placeholders. Full working code will be added when the NeoBank tutorial is complete.
-:::
+If the insertion succeeds, the events are now part of the event store. Future reads will see them.
+
+### Step 5 — Executor handles concurrency conflicts
+
+If the insertion fails because another command raced ahead and modified the stream, the executor does **not** immediately error. Instead, it retries:
+
+1. Re-fetches the entity (so it gets the latest state including the other command's events).
+2. Runs `decide` again with the new state.
+3. Tries to append again.
+
+This retry loop uses exponential backoff and caps at a maximum number of attempts (default 10). Because `decide` is pure, running it twice produces the same result for the same inputs — the retry is safe.
+
+The practical effect: your `decide` function never has to think about concurrency. You always see the latest state. If two commands race, they're serialized automatically.
+
+### Step 6 — Transport returns the response
+
+Once the events are persisted (or the command is rejected), the executor returns a `CommandResponse`. The transport serializes it to JSON and sends it back to the caller:
+
+```json
+{
+  "kind": "Accepted",
+  "entityId": "abc-123",
+  "events": [
+    { "kind": "MoneyDeposited", "entityId": "abc-123", "amount": 50 }
+  ]
+}
+```
+
+Or, on rejection:
+
+```json
+{
+  "kind": "Rejected",
+  "reason": "Account does not exist"
+}
+```
+
+### Step 7 — Projections and integrations react
+
+This step happens asynchronously and does not block the response. The newly appended events are visible to:
+
+- **Queries (projections).** Every registered query that depends on this entity type is notified. Their `combine` functions run, producing `Update` / `Delete` / `NoOp` actions. The query's read model is updated.
+- **Outbound integrations.** Every integration that subscribes to this entity type is notified. Their `reactTo` functions run, potentially emitting more commands or triggering external side effects.
+
+Both of these read from the same event stream and are replayable. You can rebuild a projection from scratch by replaying all events through `combine`. You can test an integration by passing in events and asserting on the actions it produces.
+
+## Why the split matters
+
+Notice how sharply the roles are separated:
+
+- **The command** describes what the caller wants. It's a data record.
+- **`decide`** is a pure function that makes a decision. It doesn't know about HTTP, storage, or concurrency.
+- **The executor** handles all the impure stuff — fetching, persisting, retrying, serializing.
+- **The event store** is append-only and content-agnostic — it just stores bytes.
+
+This separation is what makes NeoHaskell commands testable, replayable, and type-safe. You test `decide` by calling it with mocks — it's a pure function, no framework needed. You test the executor via integration tests. You trust the event store because it's just an append log.
+
+## What `decide` should do
+
+`decide` should answer one question: **given the current state, what should happen next?**
+
+It should:
+
+- Read the command.
+- Read the entity state (or notice it doesn't exist).
+- Apply business rules (using the fields of both).
+- Return either `Accept` with events or `Reject` with a reason.
+
+It should **not**:
+
+- Talk to external systems (that's what integrations are for).
+- Access databases (the state has already been loaded for you).
+- Do random I/O (it must be pure for the retry logic to work).
+- Throw exceptions on business errors (use `Decider.reject` instead).
+
+## The `RequestContext` parameter
+
+The third argument to `decide` is a `RequestContext`. It contains information about the caller — most notably authentication claims. You use it to make authorization decisions:
+
+```haskell
+decide :: Withdraw -> Maybe Account -> RequestContext -> Decision AccountEvent
+decide cmd account ctx = case ctx.user of
+  Nothing ->
+    Decider.reject "Authentication required"
+  Just user ->
+    case account of
+      Nothing -> Decider.reject "Account does not exist"
+      Just acc ->
+        if Uuid.toText acc.ownerId /= user.sub
+          then Decider.reject "You do not own this account"
+          else
+            -- ... proceed
+```
+
+Authorization is *just code in `decide`*. There is no middleware layer, no annotation, no magic. If `ctx.user.sub` doesn't match the account's owner, you reject.
+
+## Multi-tenant commands
+
+If your system has tenants, you can mark a command as multi-tenant:
+
+```haskell
+instance Command CreateCart where
+  type IsMultiTenant CreateCart = 'True
+  getEntityIdImpl tenantId cmd = ...
+  decideImpl tenantId cmd entity ctx = ...
+```
+
+In multi-tenant commands, both `getEntityId` and `decide` receive an extra `Uuid` argument representing the tenant. The framework routes events to per-tenant streams automatically — tenant isolation is enforced at the event store layer, not by your code remembering to filter.
+
+## Rejections are not errors
+
+A `Decider.reject` is not an exception. It's a first-class outcome. The caller gets a `Rejected` response, but nothing about the system is broken. This is important:
+
+- **You don't need try/catch.** Rejection is part of the type signature.
+- **You don't pollute logs.** Rejections are expected outcomes, not errors.
+- **You can reason about rejection reasons.** They're just strings; log them, show them to the user, use them for metrics.
+
+Reserve actual errors (thrown exceptions, `Task.throw`) for situations where the system itself has a problem — database connection lost, serialization bug, etc.
+
+## Testing commands
+
+Because `decide` is pure, testing commands is trivial:
+
+```haskell
+spec :: Spec Unit
+spec = describe "Deposit" do
+  it "rejects when account does not exist" \_ -> do
+    let cmd = Deposit { accountId = someId, amount = 50 }
+    let result = runDecision defaultContext (decide cmd Nothing defaultAuth)
+    result |> shouldBe (RejectCommand "Account does not exist")
+
+  it "accepts valid deposits" \_ -> do
+    let account = Just (Account { ..., balance = 0 })
+    let cmd = Deposit { accountId = someId, amount = 50 }
+    let result = runDecision defaultContext (decide cmd account defaultAuth)
+    case result of
+      AcceptCommand _ events ->
+        events |> shouldBe (Array.fromLinkedList
+          [MoneyDeposited { entityId = someId, amount = 50 }])
+      _ -> Test.fail "Expected accept"
+```
+
+No database, no HTTP server, no mocks. You construct the inputs, you call `decide`, you assert on the outputs.
+
+## Where to go from here
+
+- **[Updates (projections)](/concepts/updates/)** — how events become the read side.
+- **[Services](/concepts/services/)** — how commands group into cohesive domain units.
+- **[Testing event-sourced systems](/concepts/testing-event-sourced-systems/)** — deeper testing patterns.

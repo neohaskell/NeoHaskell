@@ -1,10 +1,115 @@
 ---
-title: "Tutorial: Build NeoBank"
-description: "Build an event-sourced banking service and learn NeoHaskell along the way."
+title: "Build NeoBank"
+description: "The canonical NeoHaskell tutorial. Build an event-sourced banking service with accounts, transactions, transfers, and a full audit trail. Six parts, about 200 lines of code."
 ---
 
-By the end of this tutorial, you'll have built NeoBank — a banking service with accounts, transactions, transfers, and a complete audit trail. It'll feel like enterprise software. It was about 200 lines of code. Each part builds on the previous, introducing one new concept at a time.
+import { Aside, Card, CardGrid } from '@astrojs/starlight/components';
 
-:::caution[Coming Soon]
-This page is under development. Check back soon!
-:::
+Every bank in the world runs on the same idea: **do not change the number, record what happened.** A deposit isn't "set balance to $150" — it's "recorded: $50 deposited." A withdrawal isn't "set balance to $100" — it's "recorded: $50 withdrawn." The balance is a number you derive from the ledger, not a number you store.
+
+NeoHaskell is built on this idea. The best way to prove it works is to build a bank.
+
+By the end of this tutorial, your NeoBank will handle:
+
+- Opening accounts.
+- Depositing and withdrawing money, with overdraft protection the compiler enforces.
+- Producing bank statements and monthly summaries from the same events.
+- Managing multiple accounts per customer (checking *and* savings).
+- Transferring money between accounts — with failure, compensation, and a full state machine.
+- A complete audit trail you get for free because the events were there all along.
+
+It will feel like enterprise software. It will be about 200 lines of code.
+
+## What you are building
+
+<CardGrid>
+  <Card title="Part 1 — Your first transaction">
+    Open an account, deposit money, watch the balance come out of the event log.
+  </Card>
+  <Card title="Part 2 — Account rules">
+    Add withdrawals and overdraft protection. Let the compiler catch an illegal-state bug for you.
+  </Card>
+  <Card title="Part 3 — Transaction history">
+    Build two different views from the same event stream — a statement and a monthly summary. This is CQRS in plain sight.
+  </Card>
+  <Card title="Part 4 — Multiple accounts">
+    Add savings accounts. One new variant, zero rewrites.
+  </Card>
+  <Card title="Part 5 — Transfers">
+    Move money between accounts with full compensation on failure. The saga pattern, compiler-enforced.
+  </Card>
+  <Card title="Part 6 — Audit everything">
+    Replay the entire history of the bank to any point in time. You already built this in Part 1 — you just didn't notice.
+  </Card>
+</CardGrid>
+
+## Who this tutorial is for
+
+- **You know how to program.** Any language — JavaScript, Python, Go, Ruby, C#, Java. If you've written a REST handler, a database query, or a Redux reducer, you have the skills.
+- **You are new to NeoHaskell, new to event sourcing, or both.** We teach both from scratch. No prior Haskell experience required. No prior CQRS experience required.
+- **You have NeoHaskell installed.** If you don't, [do that first](/getting-started/installation/) — it takes about five minutes.
+
+## Who this tutorial is *not* for
+
+- **People who want a language reference.** This is a narrative tutorial. Every concept is introduced in the context of building something. If you want a reference, start with the [cheat sheet](/getting-started/cheat-sheet/).
+- **People who want a production-ready bank.** We're building a learning tool, not a payments processor. Part 6 discusses what a production bank would need that we're leaving out.
+
+## The rules of the game
+
+A few things to know before you start:
+
+- **Each part builds on the previous.** You can skim forward to get a sense of where we're going, but the code depends on what came before.
+- **Every part ends with running code you wrote.** No "and that's all for today — here's where you can see the finished version on GitHub." You compile it, you run it, you query it.
+- **The compiler is your teacher.** When something goes wrong, the compiler error will almost always tell you exactly what to fix. We deliberately make you trip over a few errors so you learn to read them.
+- **We'll teach the syntax as we go.** Every new syntactic element gets a brief aside the first time it appears. If you want the full treatment up front, work through [Reading NeoHaskell](/getting-started/reading-neohaskell/) before starting.
+
+## The domain
+
+**NeoBank** is a simple checking-and-savings bank. The requirements:
+
+1. Customers can open a checking account.
+2. Customers can deposit money into their account.
+3. Customers can withdraw money, but only if they have enough balance (no overdrafts).
+4. Customers can see a list of every transaction on their account, in order.
+5. Customers can see a monthly summary (total deposits, total withdrawals, ending balance).
+6. Customers can have both a checking account and a savings account.
+7. Customers can transfer money between their accounts — and if the transfer fails halfway through, the system must not lose money.
+8. The bank must be able to reconstruct every account's exact state at any point in history, for audit.
+
+That's the spec. By Part 6, every bullet above will be working, testable, and provably correct.
+
+## The starting point
+
+You'll work inside a freshly-cloned NeoHaskell template. If you haven't already:
+
+```bash
+git clone https://github.com/neohaskell/template neobank
+cd neobank
+nix develop
+```
+
+Then create the top-level structure you'll fill in during the tutorial:
+
+```bash
+mkdir -p src/NeoBank/Account/Commands
+mkdir -p src/NeoBank/Account/Queries
+```
+
+You'll add more directories later (for transfers, multi-account support, etc.) but this is enough to start.
+
+## The emotional arc
+
+If the last few lines felt dry, here is the emotional arc you should expect as you go through this tutorial:
+
+- **Part 1:** "Wait, that was it?" — the feature you built in twelve lines surprises you.
+- **Part 2:** "The compiler just prevented a real bug." — you see type-level protection in action.
+- **Part 3:** "Two completely different views from the same events?" — CQRS clicks.
+- **Part 4:** "Adding a new account type was trivial?" — the polymorphism pays off.
+- **Part 5:** "It handles the failure case too?" — the compensation logic feels too easy.
+- **Part 6:** "I accidentally built an audit trail." — the big reveal.
+
+Those reactions are not accidental. They are what the language was designed to make you feel. Let them happen.
+
+## Ready?
+
+Go to [**Part 1 — Your first transaction**](/tutorial/01-first-transaction/) and let's get started.

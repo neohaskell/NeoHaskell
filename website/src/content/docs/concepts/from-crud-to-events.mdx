@@ -1,174 +1,320 @@
 ---
-title: "From CRUD to Events"
-description: "The complete guide to shifting from UPDATE statements to event streams."
+title: "From CRUD to events"
+description: "Every CRUD pattern you know, translated to the event-sourced equivalent. Side-by-side examples for refactoring your mental model."
 sidebar:
-  order: 12
-keywords: [CRUD, event sourcing, migration, REST, SQL, UPDATE, event stream, mental model]
-# entry_stage: 0 (CRUD-thinker)
-# exit_stage: 2 (Event-thinker)
-# misconception: #1 (need tables/columns), #3 (can just update a field), #14 (can't do CRUD-style operations)
-# tutorial_anchor: Tutorial Part 1 — Your First Transaction (also: Getting Started, Coming From CRUD)
+  order: 2
 ---
-
-{/*
-  CONTENT OUTLINE — From CRUD to Events
-  Entry: Stage 0 (CRUD-thinker), Exit: Stage 2 (Event-thinker)
-  Misconceptions addressed: #1, #3, #14
-  Anchored from: Tutorial Part 1, Getting Started, Coming From CRUD
-
-  This is the MOST IMPORTANT page for the primary audience.
-  Structure: What You Might Expect → Why That Breaks → Mental Model Shift → Side-by-Side Code → When CRUD Is Fine
-  Detailed CRUD→ES mapping:
-    - UPDATE balance → record MoneyDeposited
-    - SELECT balance → fold over transactions
-    - REST endpoint → command handler
-    - Database table → event stream
-  Honestly address when CRUD is still the right choice.
-  Cross-referenced from: Tutorial Part 1, Getting Started, Coming From CRUD.
-*/}
-
-{/* POLYGLOT NOTE: All code examples on this page should include equivalent snippets in JS/TS, Python, and Go. See DOCS-PLAN.md Guiding Principle #9. */}
 
 import { Aside } from '@astrojs/starlight/components';
 
-## What You Might Expect
+You've been writing CRUD code your whole career. You know the patterns. INSERT. SELECT. UPDATE. DELETE. A REST endpoint per operation. An ORM somewhere. Migrations in a folder. A validation layer. A controller. A service. A repository.
 
-- You've built REST APIs: `GET /users/42`, `POST /users`, `PUT /users/42`, `DELETE /users/42`
-- Your database has tables: `users`, `accounts`, `transactions`
-- State changes are `UPDATE` statements: `UPDATE accounts SET balance = 150 WHERE id = 42`
-- Reads are `SELECT` statements: `SELECT balance FROM accounts WHERE id = 42`
-- This model is simple, well-understood, and works for most web apps
-- You're wondering: why would I give this up?
+This page translates every piece of that world into its event-sourced equivalent. Not by reinventing your mental model all at once, but by taking each pattern you already know and showing what replaces it.
 
-## Why That Breaks
+## The direct translations
 
-- **The dispute problem**: a customer disputes a charge from 3 months ago. What was their balance before it? With `UPDATE`, that information is gone.
-- **The audit problem**: regulations require a complete transaction history. You're retrofitting an audit log — a second source of truth that can drift from the first.
-- **The bug problem**: a bug corrupts the balance column. You have no way to reconstruct the correct value from scratch.
-- **The concurrency problem**: two deposits arrive simultaneously. Both read balance = $100, both write balance = $150. One deposit is silently lost.
-- **The "what happened" problem**: your CEO asks "how many accounts went negative last quarter?" You can't answer — you only stored the current state.
-- The pattern: CRUD stores *answers*. When the question changes, you have no way to re-derive the answer.
+### INSERT → Create event
 
-## From CRUD to Events: The Mental Model Shift
+**CRUD:**
+```sql
+INSERT INTO users (id, email) VALUES ('...', 'alice@example.com');
+```
 
-- Instead of storing *what is*, store *what happened*
-- Every state change becomes an event: an immutable record of a fact
-- Current state is derived by replaying events — it's never stored directly
-- This isn't a new idea. It's how accounting has worked for centuries.
+**NeoHaskell:**
+```haskell
+-- The command
+data RegisterUser = RegisterUser { email :: Text }
 
-### The Complete Mapping
+-- The decision
+decide cmd existing _ctx = case existing of
+  Just _ -> Decider.reject "User already exists"
+  Nothing -> do
+    userId <- Decider.generateUuid
+    Decider.acceptNew
+      [ UserRegistered { entityId = userId, email = cmd.email } ]
+```
 
-| CRUD concept | Event sourcing equivalent | What changed |
-|-------------|--------------------------|-------------|
-| `UPDATE accounts SET balance = 150` | Record `MoneyDeposited { amount: 50 }` | Store the cause, not the effect |
-| `SELECT balance FROM accounts` | Fold over `MoneyDeposited` and `MoneyWithdrawn` events | Derive state, don't query it |
-| `POST /accounts/42/deposit` (REST endpoint) | `Deposit` command handler | Validate intent, produce facts |
-| `accounts` database table | Event stream per account | Append-only log, not mutable rows |
-| `DELETE FROM accounts WHERE id = 42` | `AccountClosed` event | Record that it happened, don't erase history |
-| Audit log table (separate) | The event store itself | History is the source of truth, not a side effect |
-| Database migration | Event upcasting | Evolve the schema without losing history |
+The INSERT becomes a `UserRegistered` event. The event is immutable; once written, it's the record that "yes, on this day, at this time, we registered a user with this email."
 
-### What You Gain
+### UPDATE → Domain event
 
-- **Complete history**: every state at every point in time, forever
-- **Audit trail for free**: the event store is the audit log — no separate system
-- **Time-travel debugging**: replay to any point in time to inspect state
-- **Multiple views**: build different updates from the same events (bank statement + monthly summary)
-- **Concurrency safety**: events are appended, not updated — no lost writes
-- **Testability**: tests are just "given these events, when this command, then these events" — no database needed
+**CRUD:**
+```sql
+UPDATE users SET email = 'new@example.com' WHERE id = '...';
+```
 
-### What You Give Up
+**NeoHaskell:**
+```haskell
+decide cmd user _ctx = case user of
+  Nothing -> Decider.reject "User does not exist"
+  Just _ ->
+    Decider.acceptExisting
+      [ UserEmailChanged
+          { entityId = cmd.userId
+          , oldEmail = u.email  -- if you have the user `u` in scope
+          , newEmail = cmd.newEmail
+          }
+      ]
+```
 
-- **Simple reads**: `SELECT balance` becomes "fold over events" — more complex, but cacheable
-- **Familiar tooling**: SQL GUIs, ORMs, and query builders don't apply directly
-- **Small footprint**: event stores grow forever — you're storing history, not just current state
-- **Simplicity for simple problems**: if you don't need history, audit trails, or replay, CRUD is simpler
+Important detail: the event is named after what **happened in the domain**, not what the system did. `UserEmailChanged` is the domain fact. `UpdateUser` is a SQL-speak name — avoid it. The event often carries both the old and the new value so projections can reason about the change.
 
-## Side-by-Side: Depositing $50
+### DELETE → "Marked as..." event
 
-{/* TODO: Side-by-side code block: SQL UPDATE approach vs NeoHaskell event approach */}
-{/* TODO: Show the full flow: command → handler → event → event store → update */}
+**CRUD:**
+```sql
+DELETE FROM users WHERE id = '...';
+```
 
-### The CRUD Way
+**NeoHaskell:**
+```haskell
+Decider.acceptExisting
+  [ UserDeactivated
+      { entityId = userId
+      , reason = "User requested account deletion"
+      , deactivatedAt = now
+      }
+  ]
+```
 
-- Receive `POST /accounts/42/deposit` with `{ amount: 50 }`
-- Run `SELECT balance FROM accounts WHERE id = 42` — get $100
-- Run `UPDATE accounts SET balance = 150 WHERE id = 42`
-- Return `{ balance: 150 }`
-- History: gone. Concurrency: unsafe. Audit: manual.
+Events are append-only. You never actually delete anything. What you do is record a new fact — "this user was deactivated" — and your projections handle the consequences. For user-visible "deletion" you might also emit a `UserDataRedacted` event that strips PII from read models while leaving the event log structure intact.
 
-### The Event Way
-
-- Receive `Deposit { accountId: 42, amount: 50 }` command
-- Load entity state by folding over past events — current balance is $100
-- Validate: account open? Amount positive? Within limits?
-- Append `MoneyDeposited { amount: 50, timestamp: now }` to the event store
-- Return success
-- History: permanent. Concurrency: safe (append-only). Audit: free.
-
-## In NeoBank Terms
-
-- NeoBank has no `accounts` table with a `balance` column
-- It has an event stream per account: `AccountOpened`, `MoneyDeposited`, `MoneyWithdrawn`
-- The balance is derived by folding over the stream — calculated, not stored
-- When a customer asks "what's my balance?", NeoBank replays their event stream
-- When a customer disputes a charge, NeoBank replays to any point in time
-- The audit trail is the event store — no separate system, no drift, no retrofitting
-
-<Aside type="note" title="You can still query like CRUD">
-Event sourcing doesn't mean you lose familiar query patterns. Updates give you queries that look exactly like database tables — you can query them with familiar patterns. The difference: the update is derived from events, not the source of truth. [→ Deep dive: Updates](/concepts/updates)
+<Aside type="note" title="GDPR and the right to be forgotten">
+"Append-only" does not mean you have to store personal data forever. The standard pattern is to store PII in a separate side table keyed by event ID, and to respond to a redaction request by nulling those rows. The event log still has the event, but the sensitive payload is gone. See the [Schema evolution](/concepts/schema-evolution/) page for details.
 </Aside>
 
-## The Full Picture
+### SELECT → Query
 
-{/* TODO: Diagram showing: Commands → Handler → Events → Event Store → Updates → Queries */}
-{/* TODO: Code example: complete deposit flow from command to update — include JS/TS, Python, Go equivalents */}
+**CRUD:**
+```sql
+SELECT name, email, created_at FROM users WHERE id = '...';
+```
 
-- **Commands** arrive (deposit slip)
-- **Handlers** validate and decide (bank teller)
-- **Events** are appended to the event store (transaction record)
-- **Updates** fold over events to produce queries (account statement)
-- **Queries** answer queries with familiar patterns (current balance, transaction history)
+**NeoHaskell:**
 
-The read side looks like CRUD. The write side is event sourcing. This is CQRS — Command Query Responsibility Segregation — and it's the natural shape of event-sourced systems.
+Define a query that projects what you need. The projection stays up to date automatically as events arrive:
 
-## When CRUD Is Still the Right Choice
+```haskell
+data UserProfile = UserProfile
+  { userId :: Uuid
+  , name :: Text
+  , email :: Text
+  , createdAt :: DateTime
+  }
 
-Event sourcing adds complexity. It pays off when you need:
+instance QueryOf User UserProfile where
+  queryId user = user.id
+  combine user _existing = Update UserProfile
+    { userId = user.id
+    , name = user.name
+    , email = user.email
+    , createdAt = user.createdAt
+    }
+```
 
-- **Audit trails**: regulatory compliance, dispute resolution, debugging
-- **History**: "what was the state at time T?" questions
-- **Replay**: rebuilding state from scratch, fixing bugs by replaying corrected events
-- **Multiple views**: different updates from the same data
-- **Concurrency safety**: high-throughput writes without lost updates
+Read it via `GET /queries/user-profile/{id}`. Performance is equivalent to a SQL `SELECT` on a denormalized table — because that's essentially what it is. The difference is that the denormalization is automatic, driven by events, and you can build as many different projections as you like from the same event stream.
 
-CRUD is still the right choice when:
+### JOIN → Query across entities
 
-- **You don't need history**: a settings page, a user profile, a feature flag — these don't need audit trails
-- **The domain is simple**: if your app is a form that saves data, event sourcing is overkill
-- **You're prototyping**: CRUD is faster to build. Migrate to events when you know you need them.
-- **Your team isn't ready**: event sourcing has a learning curve. Don't adopt it before the team understands it.
+**CRUD:**
+```sql
+SELECT u.name, COUNT(o.id)
+FROM users u
+LEFT JOIN orders o ON o.user_id = u.id
+GROUP BY u.id;
+```
 
-<Aside type="caution" title="Honest assessment">
-NeoHaskell makes event sourcing the default — but that doesn't mean every problem needs event sourcing. The [Trade-offs](/concepts/trade-offs) page is honest about when NeoHaskell adds unnecessary complexity.
-</Aside>
+**NeoHaskell:**
 
-## How NeoHaskell Enforces This
+Define a query that listens to both `User` and `Order` entities:
 
-- The compiler enforces the event sourcing contract: state changes go through events, not direct mutation
-- There's no `UPDATE` equivalent — you can't set a field directly on an entity
-- The `update` function signature enforces the pattern: `Event -> Entity -> Entity`
-- The event store API is append-only — no delete, no update
-- Updates are pure functions — they can't have side effects or write to the event store
+```haskell
+data UserOrders = UserOrders
+  { userId :: Uuid
+  , userName :: Text
+  , orderCount :: Int
+  }
 
-## Going Deeper
+deriveQuery ''UserOrders [''User, ''Order]
 
-- [Events, Not State →](/concepts/events-not-state) — the core mental model
-- [Commands and Handlers →](/concepts/commands-and-handlers) — how requests become events
-- [Updates →](/concepts/updates) — building queries from events
-- [Trade-offs →](/concepts/trade-offs) — honest about when event sourcing adds unnecessary complexity
-- External: Martin Fowler's [CQRS](https://martinfowler.com/bliki/CQRS.html) — the pattern that separates reads from writes
+instance QueryOf User UserOrders where
+  queryId user = user.id
+  combine user existing = Update UserOrders
+    { userId = user.id
+    , userName = user.name
+    , orderCount = existing |> Maybe.map (.orderCount) |> Maybe.withDefault 0
+    }
 
-:::caution[Coming Soon]
-Code examples on this page are placeholders. Full working code will be added when the NeoBank tutorial is complete.
-:::
+instance QueryOf Order UserOrders where
+  queryId order = order.userId
+  combine order existing = case existing of
+    Just uo -> Update uo { orderCount = uo.orderCount + 1 }
+    Nothing -> NoOp  -- User query not built yet; skip this event
+```
+
+The query doesn't do an actual JOIN — it maintains a denormalized read model that gets updated whenever either entity changes. Reads are single-row lookups; updates are incremental.
+
+### Migration → Add an event variant
+
+**CRUD:**
+```sql
+ALTER TABLE users ADD COLUMN phone VARCHAR(20);
+```
+
+**NeoHaskell:**
+```haskell
+data UserEvent
+  = UserRegistered { entityId :: Uuid, email :: Text }
+  | UserEmailChanged { entityId :: Uuid, oldEmail :: Text, newEmail :: Text }
+  | UserPhoneAdded { entityId :: Uuid, phone :: Text }  -- new
+```
+
+Add the variant. The compiler will tell you every place that needs to handle it. No database migration to write, no backfill script, no rollback plan. Existing users simply have no `UserPhoneAdded` event in their stream — that's fine, it means their phone is not set.
+
+For more complex schema changes, see [Schema evolution](/concepts/schema-evolution/).
+
+### Validation layer → Decide function
+
+**CRUD:**
+```python
+def register_user(email):
+    if not email:
+        raise ValueError("Email is required")
+    if "@" not in email:
+        raise ValueError("Email is invalid")
+    if db.query(User).filter_by(email=email).exists():
+        raise ValueError("Email already in use")
+    db.session.add(User(email=email))
+```
+
+**NeoHaskell:**
+```haskell
+decide cmd existing _ctx = case existing of
+  Just _ ->
+    Decider.reject "User already exists"
+  Nothing ->
+    if Text.isEmpty cmd.email
+      then Decider.reject "Email is required"
+      else if not (Text.contains "@" cmd.email)
+        then Decider.reject "Email is invalid"
+        else do
+          userId <- Decider.generateUuid
+          Decider.acceptNew [ UserRegistered { entityId = userId, email = cmd.email } ]
+```
+
+Validation lives in `decide` because that's the layer with the context to validate correctly: it sees the command, the current state, and the request context. Putting it anywhere else (middleware, ORM hooks, triggers) means that layer has an incomplete view of the domain.
+
+### Transaction → Decider insertion mode
+
+**CRUD:**
+```sql
+BEGIN;
+UPDATE accounts SET balance = balance - 50 WHERE id = 'A';
+UPDATE accounts SET balance = balance + 50 WHERE id = 'B';
+COMMIT;
+```
+
+**NeoHaskell:**
+
+You don't need a transaction because each entity has its own event stream, and `acceptExisting` / `acceptAfter` provide optimistic concurrency per stream. For cross-entity operations like transfers, you use the saga pattern (an integration that coordinates the flow). See [Tutorial Part 5 — Transfers](/tutorial/05-transfers/) for the full pattern.
+
+The `Decider` has three insertion modes that act like transactional guarantees per-stream:
+
+- `acceptNew` — "only if the stream doesn't exist yet" (creation).
+- `acceptExisting` — "only if the stream already exists" (update).
+- `acceptAfter position` — "only if the stream is at exactly this position" (optimistic concurrency).
+
+Two concurrent commands on the same stream can race; `acceptAfter` lets you ensure the second one sees the effects of the first (or fails with a conflict and retries).
+
+### Audit log → You already have it
+
+**CRUD:** A separate `audit_log` table, painstakingly maintained by triggers or application-level logging. Often incomplete. Often wrong. Often out of sync.
+
+**NeoHaskell:** The event store *is* the audit log. Every action that has ever affected your system is recorded, immutable, in order, with a timestamp. You don't write one; you had one the whole time.
+
+### Soft delete → Deactivation event
+
+**CRUD:**
+```sql
+UPDATE users SET deleted_at = NOW() WHERE id = '...';
+```
+
+**NeoHaskell:**
+```haskell
+Decider.acceptExisting
+  [ UserDeactivated { entityId = userId, reason = "..." } ]
+```
+
+Soft delete was always a kludge around the fact that CRUD can't record "what happened, exactly, when". Event sourcing gets this right by default.
+
+### Optimistic locking → acceptAfter
+
+**CRUD:**
+```sql
+UPDATE users SET email = 'new', version = version + 1
+WHERE id = '...' AND version = :expected_version;
+```
+
+**NeoHaskell:**
+```haskell
+Decider.acceptAfter expectedPosition
+  [ UserEmailChanged { ... } ]
+```
+
+The stream position is the version. If another command has advanced the stream since you read it, `acceptAfter` rejects with a conflict and the executor automatically retries with the fresh state.
+
+### Nested resources → Entity + projection
+
+**CRUD:** `/users/:id/orders` → JOIN against `orders` table.
+
+**NeoHaskell:** A `UserOrders` query (as shown above) that maintains a denormalized view for each user. Read it with a single lookup.
+
+## What CRUD doesn't translate
+
+A few CRUD patterns have no good event-sourced equivalent, because they shouldn't exist in event-sourced systems:
+
+### Hard UPDATE WHERE with a bulk condition
+
+**CRUD:**
+```sql
+UPDATE invoices SET status = 'paid' WHERE due_date < '2024-01-01';
+```
+
+**NeoHaskell:** You wouldn't do this. Each invoice is its own entity with its own stream. "Mark all overdue invoices paid" would be a scheduled integration that iterates over invoices and issues individual `MarkPaid` commands. It's more code, but it's also more honest — bulk updates erase the granularity your domain actually has.
+
+### Cascade delete
+
+**CRUD:**
+```sql
+DELETE FROM orders WHERE user_id = '...';  -- cascades to order_items
+```
+
+**NeoHaskell:** You emit a `UserAccountClosed` event. Any projections that listed orders for that user filter out the closed user's data. The orders themselves are not deleted — they're still facts, they still happened. If you need them gone for regulatory reasons, see the PII redaction pattern.
+
+### Silent ON UPDATE triggers
+
+**CRUD:** A trigger that fires on every update and writes to some side table.
+
+**NeoHaskell:** You'd write an explicit outbound integration. Triggers hide side effects; integrations make them visible in the code.
+
+## The mental compression
+
+Here's the short version of everything above:
+
+- **INSERT** → `acceptNew` event.
+- **UPDATE** → `acceptExisting` domain event.
+- **DELETE** → deactivation/redaction event.
+- **SELECT** → projection (query).
+- **JOIN** → multi-entity projection.
+- **MIGRATION** → add event variant.
+- **VALIDATION** → `decide` function.
+- **TRANSACTION** → `acceptAfter` or saga.
+- **AUDIT LOG** → you already have it.
+
+Once this translation becomes reflex, reading event-sourced code will feel as natural as reading CRUD code does now.
+
+## Where to go from here
+
+- **[Events, not state](/concepts/events-not-state/)** — deeper look at why derived state is the better default.
+- **[Commands and handlers](/concepts/commands-and-handlers/)** — the full story of how commands become events.
+- **[Updates (projections)](/concepts/updates/)** — how queries work in depth.

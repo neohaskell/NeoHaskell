@@ -1,10 +1,90 @@
 ---
-title: "What's Next"
-description: "You built a bank. Here's where to go from here."
+title: "What's next"
+description: "You built a bank. Here's where to go from here, depending on what you want to do."
 ---
 
-You just built an event-sourced banking service with accounts, transactions, transfers, and a complete audit trail. Now what? Three paths forward — build something new with the logistics domain, dive deeper into the theory with Core Concepts, or bring NeoHaskell to your team.
+import { Card, CardGrid } from '@astrojs/starlight/components';
 
-:::caution[Coming Soon]
-This page is under development. Check back soon!
-:::
+You just built an event-sourced banking service. Accounts. Deposits. Withdrawals with overdraft protection. Two account types with their own rules. Transfers with a saga. A full audit trail. Multiple read models. Configuration. PostgreSQL persistence. Tests.
+
+**Seriously — that's a real thing you built. Stop and take it in.**
+
+If this is the first working event-sourced system you've ever shipped, you just joined a small group of engineers who can look at a domain, model it as events, and build something that is correct by construction. The language did a lot of the work, but you did the modeling. Modeling is the hard part.
+
+Now — where to?
+
+## Pick your path
+
+<CardGrid>
+  <Card title="I want to build something else" icon="rocket">
+    The fastest way to learn is to build. Try modeling a domain you know — a task tracker, a warehouse, a reservation system, a simple forum — using the same patterns. Events, entities, commands, queries. Aim for the shape of the NeoBank codebase. [Guides](/guides/) have recipes for common features.
+  </Card>
+  <Card title="I want to understand the theory deeper" icon="open-book">
+    The [Core concepts](/concepts/) section goes into the *why* behind what you built. Read them in order: **Thinking in events → Events, not state → Commands and handlers → Services → Type safety**. Each one is a deeper dive into an idea the tutorial only touched on.
+  </Card>
+  <Card title="I want to use this at work" icon="setting">
+    Check out [Adopting at work](/guides/adopting-at-work/) for the practical playbook: how to introduce event sourcing to a skeptical team, how to interop with legacy systems, and when to stop trying to convince people and just ship the first useful thing.
+  </Card>
+  <Card title="I want to go production-ready" icon="approve-check">
+    Read the [Deployment guide](/guides/deployment/), the [Testing guide](/guides/testing/), and the [PostgreSQL event store guide](/guides/postgresql-event-store/). These cover the operational side — logging, metrics, failover, backup, query replay, schema migrations.
+  </Card>
+</CardGrid>
+
+## Specific recipes
+
+If you want a recipe for a specific pattern you encountered in the tutorial:
+
+- **Testing commands and queries:** [Guides → Testing](/guides/testing/)
+- **Schema evolution** (your event type changes): [Core Concepts → Schema evolution](/concepts/schema-evolution/)
+- **Integrating with external systems** (webhooks, third-party APIs): [Guides → Integrating existing systems](/guides/integrating-existing-systems/)
+- **Error handling patterns:** [Guides → Error handling](/guides/error-handling/)
+- **Reading compiler errors effectively:** [Guides → Reading error messages](/guides/reading-error-messages/)
+
+## Common next questions
+
+### "Where do I put validation?"
+
+In the `decide` function of the relevant command. That is the only layer with the context to validate correctly — it sees the command, the current entity, and the request context. Validation libraries that live in a different layer are validating in the wrong place.
+
+### "What about authorization?"
+
+Two places. `canAccess` on queries decides "can this user access this query type at all?". `canView` decides "can this user see this specific instance of a query?". For commands, you check the `RequestContext` inside `decide`. A full write-up is in the [Auth and authorization guide](/guides/error-handling/) (and the `Service.Auth` module has all the primitives you need).
+
+### "How do I do long-running background work?"
+
+Inbound integrations with a timer. `Integration.Timer.every` lets you fire a command on a schedule. Outbound integrations let you react to events by calling external services. Both are typed and compile-checked.
+
+### "What about deployment?"
+
+NeoHaskell compiles to a single static binary via GHC. You can drop it on any Linux box, in any container, or behind a reverse proxy. See [Guides → Deployment](/guides/deployment/) for specifics.
+
+### "How do I query across entities?"
+
+A query can list multiple entity types in its `deriveQuery` call. You write a `QueryOf` instance for each entity that contributes. That's how a read model like "customer dashboard" can combine data from user entities, order entities, and subscription entities into one document.
+
+### "What about schema evolution — what if my event shape has to change?"
+
+Create a new event type. Keep the old one. Events are immutable facts — you don't rewrite history. The [Schema evolution page](/concepts/schema-evolution/) has the full pattern, but the short version is: new events alongside old events, and your `update` function handles both.
+
+## Stay connected
+
+NeoHaskell is open-source and built in public. If you want to help shape it, or just lurk:
+
+- **Discord:** [NeoHaskell server](https://discord.gg/wDj3UYzec8) — active channel, real conversations, questions welcome.
+- **GitHub:** [neohaskell/neohaskell](https://github.com/neohaskell/neohaskell) — issues, PRs, discussions.
+- **Examples:** The testbed in the main repo is a live example of every feature. Read the code; it's good.
+
+## A closing thought
+
+You started this tutorial not knowing how to write NeoHaskell. A few hours later, you have:
+
+- A working event-sourced banking service.
+- A mental model for commands, events, entities, queries, and integrations.
+- Enough muscle memory to start modeling your own domain.
+- The confidence that the compiler will tell you when you make a mistake.
+
+That is a substantial amount of progress for one afternoon. The rest — the ecosystem, the tooling, the advanced patterns — comes as you need it. You don't have to know everything. You just have to know enough to start.
+
+Start. Build something. Then come back and tell us what you built.
+
+**Welcome to NeoHaskell.**

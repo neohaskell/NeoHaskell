@@ -1,168 +1,319 @@
 ---
 title: "Testing"
-description: "How to test event-sourced systems with Given-When-Then patterns. Unit tests, query tests, cross-entity tests, and property-based testing."
-keywords: [testing, given-when-then, event sourcing, unit tests, property-based testing, neo test]
+description: "A practical guide to unit, integration, and property-based testing for NeoHaskell event-sourced systems. With concrete recipes."
 sidebar:
   order: 1
 ---
 
-{/*
-  CONTENT OUTLINE — Testing Guide
-  ================================
-  Position: Guides section, first guide
-  Goal: Reader arrives knowing they need to test their NeoHaskell app. They leave with a complete testing strategy.
-  Misconception addressed: #19 (testing event-sourced systems is hard)
-  Prerequisites: Tutorial Part 2+ (reader has seen Given-When-Then in context)
-  Related concept: concepts/testing-event-sourced-systems.mdx (theory)
-  Tone: practical, no fluff — this is a reference guide, not a tutorial
-
-  Sections:
-  1. Prerequisites
-  2. What You'll Have at the End
-  3. Unit Testing Command Handlers (Given-When-Then)
-  4. Testing Queries (pure function tests)
-  5. Cross-Entity Testing
-  6. Property-Based Testing
-  7. Test Organization and Naming
-  8. Running Tests
-  9. Next Steps
-*/}
-
-{/* POLYGLOT NOTE: All code examples on this page should include equivalent snippets in JS/TS, Python, and Go. See DOCS-PLAN.md Guiding Principle #9. */}
-
 import { Aside } from '@astrojs/starlight/components';
 
-## Prerequisites
+This guide is the practical companion to [Testing event-sourced systems](/concepts/testing-event-sourced-systems/). The concept page explained *why* testing is easy; this page is *how* to set it up, the specific recipes you'll use day-to-day, and how to wire tests into CI.
 
-- Completed [Tutorial Part 2](/tutorial/part-2/) or higher — you've seen the Given-When-Then pattern in action
-- Optional: [Testing Event-Sourced Systems](/concepts/testing-event-sourced-systems/) — the theory behind why this works
+## Setup
 
-## What You'll Have at the End
+The NeoHaskell template ships with a `tests/` directory pre-wired for `hspec-discover`. Every file named `*Spec.hs` anywhere under `tests/` is automatically picked up. You don't register tests manually.
 
-- A working test suite for command handlers, queries, and cross-entity workflows
-- Property-based tests that verify invariants across arbitrary command sequences
-- A naming convention that makes test intent obvious at a glance
-- Tests that run fast with no database setup, no mocking, no fixtures
+A minimal test file looks like this:
 
-## Unit Testing Command Handlers
+```haskell
+module NeoBank.Account.Commands.DepositSpec where
 
-{/*
-  The core of NeoHaskell testing. Given-When-Then maps directly to the event sourcing model.
-  Show the pattern, then show what each part means.
-*/}
+import Core
+import Test
 
+spec :: Spec Unit
+spec = describe "Deposit" do
+  it "does something" \_ -> do
+    Task.yield ()
+```
 
-- The Given-When-Then pattern is not a convention — it's the natural shape of event sourcing
-  - **Given**: a list of past events that establish the entity's current state
-  - **When**: a command issued against that state
-  - **Then**: the events that should be produced (or the error that should be returned)
-- No database setup — the event store is just a list in memory during tests
-- No mocking — command handlers are pure functions; there's nothing to mock
-- Show the test helper functions: `given`, `when`, `then`, `thenError`
-- Show a complete test for a happy path (command succeeds, events produced)
-- Show a complete test for a rejection path (command fails, error returned)
-- Show a test for a state-dependent decision (command succeeds only if entity is in a specific state)
-- Explain: the `Given` list is the entire history — you can test any state by constructing the right event sequence
-- Note: tests are deterministic — same inputs always produce same outputs
+Run all tests:
 
-{/* TODO: actual code examples once test helper API is finalized — include JS/TS, Python, Go equivalents */}
+```bash
+cabal test
+```
 
-## Testing Queries
+Run only a specific suite:
 
-{/*
-  Queries are pure functions from event streams. Testing them is trivial.
-  This section should be short — the point is that it's easy.
-*/}
+```bash
+cabal test nhcore-test-core
+```
 
+## The test helpers you'll use
 
-- Queries are pure functions: `[Event] -> QueryResult`
-- Testing a query = calling a function with a list of events and checking the output
-- No framework needed — standard unit test assertions work
-- Show a complete query test: build an event list, call the query function, assert the result
-- Show a test for an empty event list (initial state)
-- Show a test for a sequence of events that changes the result
-- Note: because queries are pure, they're the easiest thing to test in the entire system
+The `Test` module (imported as `import Test`) re-exports the common helpers:
 
-{/* TODO: code example showing query test pattern — include JS/TS, Python, Go equivalents */}
+| Helper | Purpose |
+|---|---|
+| `describe "..."` | Group related tests |
+| `it "..."` | A single test |
+| `shouldBe expected` | Assert equality |
+| `shouldSatisfy predicate` | Assert a predicate holds |
+| `Test.fail "message"` | Fail with a custom message |
+| `pending "reason"` | Mark a test as pending (not yet implemented) |
 
-## Cross-Entity Testing
+## Recipe 1 — Testing a command's decide function
 
-{/*
-  Testing workflows that span multiple entities. This is where most frameworks get complicated.
-  NeoHaskell keeps it simple because everything is still events.
-*/}
+The most common test. You want to verify that `decide` produces the right result for a given input. The pattern:
 
+1. Set up a test entity state.
+2. Build the command.
+3. Run `decide` via `runDecision`.
+4. Assert on the result.
 
-- Cross-entity workflows are tested the same way as single-entity tests — just with events from multiple streams
-- The test helper accepts events from any entity, not just one
-- Show a test for a workflow that reads state from Entity A and writes to Entity B
-- Show how to test a Service that coordinates multiple entities
-- Explain: the key insight is that cross-entity state is still just a list of events — the test doesn't care which entity produced them
-- Common mistake: trying to test cross-entity logic by testing each entity in isolation — this misses the coordination logic
+```haskell
+module NeoBank.Account.Commands.WithdrawSpec where
 
-{/* TODO: code example from NeoBank tutorial (Part 5 patterns) — include JS/TS, Python, Go equivalents */}
-
-## Property-Based Testing
-
-{/*
-  The most powerful testing technique for event-sourced systems.
-  The invariant "no sequence of valid commands produces invalid state" is testable.
-*/}
+import Array qualified
+import Core
+import Decider (runDecision, DecisionContext (..), CommandResult (..))
+import NeoBank.Account.Commands.Withdraw (Withdraw (..), decide)
+import NeoBank.Account.Core
+import Service.Auth (RequestContext (..))
+import Service.Event (InsertionType (..))
+import Task qualified
+import Test
+import Uuid qualified
 
 
-- Property-based testing generates random inputs and checks that invariants hold
-- The key invariant for event-sourced systems: "no sequence of valid commands should produce invalid state"
-- Examples of invariants to test:
-  - Account balance never goes negative (if overdraft is not allowed)
-  - An entity can't be in two mutually exclusive states simultaneously
-  - Event count only increases, never decreases
-  - Replaying all events always produces the same final state
-- NeoHaskell integrates with QuickCheck-style property testing
-- Show how to define a generator for valid commands
-- Show how to write an invariant as a property
-- Note: property tests are slower than unit tests — run them in CI, not on every save
-
-{/* TODO: code example showing property test for NeoBank account invariants — include JS/TS, Python, Go equivalents */}
-
-## Test Organization and Naming
-
-{/*
-  Conventions that make test suites readable and maintainable.
-*/}
+-- A helper that runs decide with a default context.
+runDecide ::
+  Withdraw ->
+  Maybe Account ->
+  Task Text (CommandResult AccountEvent)
+runDecide cmd entity = do
+  let ctx = DecisionContext { genUuid = Task.yield Uuid.nil }
+  let reqCtx = RequestContext { user = Nothing }
+  runDecision ctx (decide cmd entity reqCtx)
 
 
-- File structure: one test file per command handler, one per query
-  - `test/Bank/Account/DepositCommandTest.hs`
-  - `test/Bank/Account/BalanceQueryTest.hs`
-- Naming convention for test cases: `[context]_[action]_[expected outcome]`
-  - Example: `activeAccount_deposit_producesDepositedEvent`
-  - Example: `closedAccount_deposit_rejectsWithAccountClosedError`
-- Group tests by entity state (Given), not by command type
-- Use descriptive event lists in Given — name the helper functions after the state they create
-  - `accountWithBalance 100` instead of `[AccountOpened, MoneyDeposited 100]`
-- Keep test files short — if a test file is over 100 lines, split it
-
-## Running Tests
-
-{/*
-  The practical mechanics of running tests.
-*/}
+-- A helper that builds a test account.
+anAccount :: Int -> Account
+anAccount balance =
+  Account
+    { accountId = Uuid.nil
+    , ownerName = "Alice"
+    , accountType = Checking
+    , balance = balance
+    , history = Array.empty
+    }
 
 
-- Run all tests: `neo test`
-- Run tests for a specific module: `neo test Bank.Account`
-- Run tests matching a pattern: `neo test --match "deposit"`
-- Watch mode (re-run on file change): `neo test --watch`
-- Test output format: shows Given/When/Then for each failing test — easy to read
-- CI integration: `neo test` exits with code 1 on failure — works with any CI system
-- Test speed: unit tests run in milliseconds; property tests take a few seconds
+spec :: Spec Unit
+spec = describe "Withdraw" do
+  it "rejects when account does not exist" \_ -> do
+    let cmd = Withdraw { accountId = Uuid.nil, amount = 50 }
+    result <- runDecide cmd Nothing
+    result |> shouldBe (RejectCommand "Account does not exist")
 
-## Next Steps
+  it "rejects negative amounts" \_ -> do
+    let cmd = Withdraw { accountId = Uuid.nil, amount = -10 }
+    result <- runDecide cmd (Just (anAccount 100))
+    result |> shouldBe (RejectCommand "Withdrawal amount must be positive")
 
-- **Theory**: [Testing Event-Sourced Systems](/concepts/testing-event-sourced-systems/) — why Given-When-Then works and what it can't catch
-- **Related guide**: [Error Handling](/guides/error-handling/) — how to test error paths specifically
-- **Tutorial**: [Part 5](/tutorial/part-5/) — cross-entity testing in the NeoBank context
+  it "rejects insufficient balance" \_ -> do
+    let cmd = Withdraw { accountId = Uuid.nil, amount = 200 }
+    result <- runDecide cmd (Just (anAccount 100))
+    result |> shouldBe (RejectCommand "Insufficient funds")
 
-:::caution[Coming Soon]
-This page is a content outline. The full guide with code examples is in progress.
-:::
+  it "accepts valid withdrawal and emits MoneyWithdrawn" \_ -> do
+    let cmd = Withdraw { accountId = Uuid.nil, amount = 40 }
+    result <- runDecide cmd (Just (anAccount 100))
+    let expected =
+          AcceptCommand
+            ExistingStream
+            (Array.fromLinkedList
+              [ MoneyWithdrawn { entityId = Uuid.nil, amount = 40 } ])
+    result |> shouldBe expected
+```
+
+The key insight: `decide` is a pure function. Everything else in the test is boilerplate that you write once (`runDecide`, `anAccount`) and reuse across every test for that command.
+
+## Recipe 2 — Testing the update function
+
+Testing `update` is even simpler. It's a pure function from event and state to new state:
+
+```haskell
+module NeoBank.Account.UpdateSpec where
+
+import Core
+import NeoBank.Account.Core
+import Test
+
+spec :: Spec Unit
+spec = describe "Account.update" do
+  it "adds balance on deposit" \_ -> do
+    let account = initialState { balance = 100 }
+    let event = MoneyDeposited { entityId = Uuid.nil, amount = 50 }
+    let result = update event account
+    result.balance |> shouldBe 150
+
+  it "subtracts balance on withdrawal" \_ -> do
+    let account = initialState { balance = 100 }
+    let event = MoneyWithdrawn { entityId = Uuid.nil, amount = 30 }
+    let result = update event account
+    result.balance |> shouldBe 70
+
+  it "can replay a sequence and produce the expected final state" \_ -> do
+    let events =
+          [ AccountOpened { entityId = Uuid.nil, ownerName = "Alice", accountType = Checking }
+          , MoneyDeposited { entityId = Uuid.nil, amount = 100 }
+          , MoneyWithdrawn { entityId = Uuid.nil, amount = 30 }
+          , MoneyDeposited { entityId = Uuid.nil, amount = 20 }
+          ]
+    let final = events |> LinkedList.foldl update initialState
+    final.balance |> shouldBe 90
+```
+
+The last test is a *replay* test: you build a sequence of events, fold them through `update`, and assert on the final state. This is how you test that your entity state machine is correct.
+
+## Recipe 3 — Testing a query's combine function
+
+Queries are pure functions. Test them the same way:
+
+```haskell
+module NeoBank.Account.Queries.StatementSpec where
+
+import Array qualified
+import Core
+import NeoBank.Account.Core
+import NeoBank.Account.Queries.Statement
+import Service.Query.Core (QueryAction (..))
+import Test
+
+spec :: Spec Unit
+spec = describe "Statement" do
+  it "builds a statement with lines from history" \_ -> do
+    let account = Account
+          { accountId = Uuid.nil
+          , ownerName = "Alice"
+          , accountType = Checking
+          , balance = 70
+          , history = Array.fromLinkedList
+              [ Transaction { kind = "deposit", amount = 100 }
+              , Transaction { kind = "withdrawal", amount = 30 }
+              ]
+          }
+    case combine account Nothing of
+      Update statement -> do
+        statement.currentBalance |> shouldBe 70
+        Array.length statement.lines |> shouldBe 2
+      _ -> Test.fail "Expected Update"
+```
+
+## Recipe 4 — Testing the full command flow end-to-end
+
+Unit tests verify `decide`, `update`, and `combine` in isolation. Integration tests verify the whole command flow: decide → append → rebuild entity → update projection. For these, use the in-memory event store.
+
+```haskell
+module NeoBank.EndToEndSpec where
+
+import Core
+import Service.EventStore.InMemory qualified as InMemory
+import Test
+import -- ... your domain imports
+
+spec :: Spec Unit
+spec = describe "End-to-end flow" do
+  it "persists events and rebuilds correct state after a command sequence" \_ -> do
+    store <- InMemory.new |> Task.mapError toText
+    -- ... dispatch commands via the executor
+    -- ... read the resulting state
+    -- ... assert
+    Task.yield ()
+```
+
+The template repository has example integration tests you can copy. The full pattern is more verbose than the unit-test recipes above, but it's the right call for verifying wiring.
+
+## Recipe 5 — Testing an integration
+
+Integrations are pure functions from events to actions. Test the `reactTo` function directly:
+
+```haskell
+module NeoBank.Transfer.Integrations.OrchestratorSpec where
+
+import Array qualified
+import Core
+import Integration qualified
+import NeoBank.Transfer.Core
+import NeoBank.Transfer.Integrations.Orchestrator
+import Test
+
+spec :: Spec Unit
+spec = describe "Transfer Orchestrator" do
+  it "emits a Withdraw action when a transfer is requested" \_ -> do
+    let transfer = initialState { transferId = Uuid.nil }
+    let event = TransferRequested
+          { entityId = Uuid.nil
+          , sourceAccountId = sourceId
+          , destinationAccountId = destId
+          , amount = 50
+          }
+    let outbound = reactTo Orchestrator transfer event
+    Array.length (Integration.getActions outbound) |> shouldBe 1
+
+  it "emits nothing for unrelated events" \_ -> do
+    let transfer = initialState { transferId = Uuid.nil }
+    let event = TransferFailed { entityId = Uuid.nil, reason = "test" }
+    let outbound = reactTo Orchestrator transfer event
+    Array.length (Integration.getActions outbound) |> shouldBe 0
+```
+
+## Recipe 6 — Property-based testing
+
+Property-based tests check that a *property* holds for any input. Great for invariants like "no sequence of valid commands produces a negative balance."
+
+```haskell
+module NeoBank.Account.PropertiesSpec where
+
+import Core
+import NeoBank.Account.Core
+import Test
+
+spec :: Spec Unit
+spec = describe "Account invariants" do
+  it "balance after replay equals sum of deposits minus sum of withdrawals" \_ -> do
+    -- forAll is the property-test runner
+    -- genValidEvents is a generator you write for your domain
+    Test.forAll genValidEvents \events -> do
+      let final = events |> LinkedList.foldl update initialState
+      let expectedBalance =
+            events
+              |> LinkedList.foldr deltaFrom 0
+      final.balance |> shouldBe expectedBalance
+
+deltaFrom :: AccountEvent -> Int -> Int
+deltaFrom event acc = case event of
+  MoneyDeposited { amount } -> acc + amount
+  MoneyWithdrawn { amount } -> acc - amount
+  _ -> acc
+```
+
+Property tests shine when you have invariants that are hard to express with specific examples — "always", "never", or "for any input". The [Testing event-sourced systems](/concepts/testing-event-sourced-systems/) concept page has more examples.
+
+## Running tests in CI
+
+The NeoHaskell template ships with a GitHub Actions workflow that runs `cabal test` on every push. The important gotcha: tests that use PostgreSQL (for the real event store) need a running PostgreSQL instance in CI. The template includes a PostgreSQL service container configuration — use it as a starting point.
+
+For the unit and projection tests, no external services are needed. They run in parallel and finish in seconds.
+
+## What to test
+
+- **Every `decide` function**, with at least one rejection and one acceptance case.
+- **Every `update` function**, with a replay test for representative sequences.
+- **Every `combine` function** in queries, covering each event type that affects it.
+- **Every integration's `reactTo`**, for each event it cares about.
+- **One or two end-to-end tests per service** to verify the wiring.
+- **Property tests** for your most important invariants (usually balance-like constraints).
+
+Don't test:
+
+- The framework itself. Trust `withService`, `withQuery`, etc. — they're tested in the nhcore test suite.
+- Pure serialization. `Json.FromJSON` and `Json.ToJSON` are covered by the compiler; if the types line up, encoding works.
+- Trivial `getEntityId` and `getEventEntityIdImpl` functions. They're one-liners.
+
+## Where to go from here
+
+- **[Testing event-sourced systems (concept)](/concepts/testing-event-sourced-systems/)** — the "why" behind the patterns above.
+- **[NeoBank tutorial Part 2](/tutorial/02-account-rules/)** — your first hands-on test.
+- **[Guides → Error handling](/guides/error-handling/)** — how to test error paths specifically.

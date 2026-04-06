@@ -1,99 +1,373 @@
 ---
 title: "Coming from Python"
-description: "How your Python knowledge maps to NeoHaskell — events vs models, handlers vs views, and the shift from ORM-think to event-think."
+description: "Django, Flask, FastAPI, SQLAlchemy — how the concepts you know in Python map onto NeoHaskell. Dataclasses, decorators, async, and typed errors."
 sidebar:
   order: 2
 ---
 
-{/*
-  CONTENT OUTLINE — Coming from Python
-  Reader profile: Django/Flask developer, knows ORM models, decorators, type hints
-  Key insight to land: Django models are state snapshots. NeoHaskell records events.
-  The ORM is the thing to unlearn — not Python syntax.
-*/}
+import { Aside } from '@astrojs/starlight/components';
 
-import { Tabs, TabItem, Aside } from '@astrojs/starlight/components';
+If you write Python (Django, Flask, FastAPI, or anything else), NeoHaskell will feel unfamiliar at the syntactic level but surprisingly clean at the conceptual level. Most of what you already know about clean code — dataclasses, type hints, separation of concerns — maps directly onto NeoHaskell patterns. This page draws the lines.
 
-## In Python, you'd write...
+## The big-picture mapping
 
-- Django models as the source of truth: `class Account(Model): balance = IntegerField()`
-- ORM updates that mutate state directly: `account.balance = 150; account.save()`
-- Flask/Django views that handle HTTP requests and return responses
-- Decorators for cross-cutting concerns: `@login_required`, `@cache_page`
-- Type hints as optional annotations: `def get_user(id: int) -> User:`
-- List comprehensions: `[x * 2 for x in items if x > 0]`
-- `try/except` for error handling — exceptions propagate up the call stack
-- `requirements.txt` / `pyproject.toml` for dependencies
-- `None` as the absence of a value — `if user is None:`
+| Python | NeoHaskell | Notes |
+|---|---|---|
+| `async def f() -> T:` | `f :: Task err val` | Async with typed error channel. |
+| `await x` | `x <- someTask` (inside `do`) | Same idea. |
+| `raise ValueError("msg")` | `Task.throw "msg"` | Typed, not untyped. |
+| `try/except` | `Task.recover` | Typed recovery. |
+| `@dataclass` | `data Foo = Foo { a :: Int, ... }` | Product type. |
+| `Enum` / `StrEnum` | `data Color = Red | Green | Blue` | Sum type. |
+| `Union[A, B]` or `A | B` | `data Either' = L A | R B` | Discriminated union. |
+| `Optional[T]` | `Maybe T` | No `None` hiding anywhere. |
+| `list[T]` | `Array T` | Backed by efficient sequence. |
+| `dict[K, V]` | `Map K V` | Immutable, persistent. |
+| `with ctx:` | `Lock.with`, `Task.finally` | Resource scoping. |
+| `for x in xs: ...` | `Array.forEach`, `Task.forEach` | Iteration. |
+| Comprehension `[f(x) for x in xs]` | `xs |> Array.map f` | Same thing. |
+| `if x: ...` | `if x then ... else ...` | Same. |
+| Decorator `@require_login` | `RequestContext` check in `decide` | Different shape, same goal. |
+| Django model | Entity (`data Foo = Foo { ... }`) | Domain object. |
+| Django view | Command (`decide` function) | Handler. |
+| Django serializer | Auto-generated from the command type | No need to write by hand. |
+| Django URL | Auto-generated from the command name | No need to write by hand. |
+| SQLAlchemy query | Query (`deriveQuery`) | Read model. |
+| Celery task | Integration (inbound or outbound) | Async worker. |
 
-## In NeoHaskell, the equivalent is...
+The core insight: **Python gives you tools. NeoHaskell gives you types that guarantee the tools were used.** You still write business logic in familiar-looking code — pattern matching, records, if/else — but the compiler enforces that every piece is consistent.
 
-- **Events instead of model updates**: instead of `account.balance = 150`, you record `MoneyDeposited { amount = 50 }`
-  - The balance is never stored directly — it's computed by replaying events
-  - `account.save()` doesn't exist — events are appended, never overwritten
-- **Command handlers instead of views**: Flask routes become command handlers
-  - `@app.route('/deposit', methods=['POST'])` → a `Deposit` command type + a `decide` function
-  - The handler doesn't touch the database — it validates the command and returns events
-- **Queries instead of ORM queries**: `Account.objects.get(id=id)` → a `Query` that folds over events
-  - Queries are pure functions — no database calls, no side effects
-  - They're fast because they read from in-memory updates, not live SQL
-- **Full type system instead of type hints**: types aren't optional annotations — they're enforced
-  - `def get_user(id: int) -> User:` can still return `None` at runtime
-  - NeoHaskell's `getUser :: UserId -> Task NotFound User` means it either returns a `User` or a `NotFound` error — nothing else
-- **`Array.map`/`Array.filter` with pipes instead of list comprehensions**:
-  - `[x * 2 for x in items if x > 0]` → `items |> Array.filter (\x -> x > 0) |> Array.map (\x -> x * 2)`
-  - More verbose, but composable and type-checked at each step
-- **Traits instead of decorators**: cross-cutting behavior is expressed through the type system, not decoration
-  - `@login_required` → the command type itself carries authentication requirements
-- **`Maybe` instead of `None`**: absence of a value is explicit in the type
-  - `if user is None:` → `case user of { Nothing -> ...; Just u -> ... }`
-  - The compiler forces you to handle the missing case
+## A side-by-side example
 
-{/* TODO: side-by-side code — Django view vs NeoHaskell command handler */}
-{/* TODO: side-by-side code — Django ORM query vs NeoHaskell Query */}
+A typical Django view that creates a user:
 
-## But here's what's actually different...
+```python
+from django.shortcuts import get_object_or_404
+from rest_framework.response import Response
+from rest_framework.views import APIView
 
-- **The ORM is the thing to unlearn**: Django's ORM trains you to think of the database as the source of truth
-  - In NeoHaskell, the event log is the source of truth — the database is a derived view
-  - This isn't a performance optimization — it's a different model of what "data" means
-- **State is computed, not stored**: `account.balance` doesn't exist as a field you read
-  - Balance is the result of folding all `MoneyDeposited` and `MoneyWithdrawn` events
-  - This means you can always ask "what was the balance at 3pm on Tuesday?" — for free
-- **Errors are part of the function signature**: Python's `try/except` hides what can go wrong
-  - A function that raises `ValueError` or `DatabaseError` doesn't say so in its signature
-  - NeoHaskell's `Task DatabaseError Account` tells you exactly what can fail before you call it
-- **No mutable global state**: Django's `settings.py`, thread-local storage, `g` in Flask — these patterns don't exist
-  - Configuration is passed explicitly through the type system
-  - This makes testing trivial: no setup/teardown, no mocking global state
-- **Decorators vs types**: Python decorators are runtime behavior. NeoHaskell's type system is compile-time.
-  - `@login_required` can be forgotten. A command type that requires authentication can't be called without it.
+class CreateUserView(APIView):
+    def post(self, request):
+        email = request.data.get("email")
+        if not email:
+            return Response({"error": "Email is required"}, status=400)
+        if "@" not in email:
+            return Response({"error": "Invalid email"}, status=400)
+        if User.objects.filter(email=email).exists():
+            return Response({"error": "Email in use"}, status=409)
+        user = User.objects.create(email=email)
+        return Response({"id": user.id, "email": user.email})
+```
 
-{/* TODO: concrete example — Django model with silent data loss vs NeoHaskell event log */}
+The NeoHaskell equivalent:
 
-## Quick translation table
+```haskell
+module MyApp.User.Commands.CreateUser (
+  CreateUser (..),
+  getEntityId,
+  decide,
+) where
 
-| Python / Django | NeoHaskell | Notes |
-|----------------|-----------|-------|
-| `class Account(Model)` | `data Account = Account { ... }` | Record type, not a database model |
-| `account.balance = 150; account.save()` | `MoneyDeposited { amount = 50 }` | Record event, don't mutate state |
-| `Account.objects.get(id=id)` | `Query` over event stream | Pure function, no DB call |
-| `@app.route('/deposit', methods=['POST'])` | `Deposit` command + `decide` function | Handler returns events, not responses |
-| `def f(x: int) -> User:` | `f :: Int -> Task Err User` | Error type is explicit |
-| `[x for x in items if x > 0]` | `Array.filter (\x -> x > 0) items` | Pipe-composable |
-| `try/except ValueError` | `Result ValueError val` | Errors are values |
-| `None` | `Maybe val` | Compiler forces you to handle absence |
-| `@login_required` | Type-level auth requirement | Compile-time, not runtime |
-| `requirements.txt` | Nix + Hix | Reproducible builds |
+import Core
+import Decider qualified
+import Json qualified
+import Service.Auth (RequestContext)
+import Service.Command.Core (TransportsOf)
+import Service.CommandExecutor.TH (command)
+import Service.Transport.Web (WebTransport)
+import MyApp.User.Core
+import Text qualified
 
-<Aside type="tip" title="The Django ORM insight">
-Django's ORM is the hardest thing to unlearn. It trains you to think "update the record." NeoHaskell trains you to think "record what happened." The balance isn't a field you set — it's the answer to "what do all the deposit and withdrawal events add up to?"
-</Aside>
 
-{/* TODO: section on Django migrations vs event versioning */}
-{/* TODO: section on Django admin vs NeoHaskell query-based dashboards */}
-{/* TODO: section on Python async (asyncio) vs NeoHaskell Task */}
+data CreateUser = CreateUser { email :: Text }
+  deriving (Generic, Show)
 
-:::caution[Coming Soon]
-This page is a content outline. Full prose, code examples, and runnable comparisons are in progress.
-:::
+instance Json.FromJSON CreateUser
+
+
+getEntityId :: CreateUser -> Maybe Uuid
+getEntityId _ = Nothing
+
+
+decide :: CreateUser -> Maybe User -> RequestContext -> Decision UserEvent
+decide cmd existing _ctx = case existing of
+  Just _ -> Decider.reject "Email in use"
+  Nothing ->
+    if Text.isEmpty cmd.email
+      then Decider.reject "Email is required"
+      else if not (Text.contains "@" cmd.email)
+        then Decider.reject "Invalid email"
+        else do
+          userId <- Decider.generateUuid
+          Decider.acceptNew
+            [ UserRegistered
+                { entityId = userId
+                , email = cmd.email
+                }
+            ]
+
+
+type instance EntityOf CreateUser = User
+type instance TransportsOf CreateUser = '[WebTransport]
+
+command ''CreateUser
+```
+
+The two files do the same thing. Differences:
+
+- No URL routing — `command ''CreateUser` generates it automatically.
+- No serializer — the type IS the serializer.
+- Validation lives in one place (`decide`), not spread across multiple layers.
+- Status codes are implicit — acceptance becomes 200, rejection becomes 400, system failures become 500.
+- The event is the record of what happened — you can't forget to log it, because the event store always records it.
+
+## Dataclasses vs. data types
+
+Python's `@dataclass` and NeoHaskell's `data` declarations do the same job:
+
+```python
+from dataclasses import dataclass
+
+@dataclass
+class User:
+    id: str
+    name: str
+    email: str
+```
+
+```haskell
+data User = User
+  { id :: Uuid
+  , name :: Text
+  , email :: Text
+  }
+  deriving (Generic, Show)
+```
+
+The NeoHaskell version is a little more verbose (you have to derive `Generic` for JSON support, for instance) but the concept is identical. A dataclass is a record type. That's it.
+
+## Type hints
+
+Python type hints are optional — the runtime doesn't enforce them. NeoHaskell types are mandatory and enforced at compile time. If you've been using `mypy` or `pyright` with strict settings, you already have the mental model — NeoHaskell just removes the option of ignoring it.
+
+```python
+# Python with type hints
+def add(a: int, b: int) -> int:
+    return a + b
+```
+
+```haskell
+-- NeoHaskell
+add :: Int -> Int -> Int
+add a b = a + b
+```
+
+Same thing. NeoHaskell's type annotation is on its own line above the function; Python's is inline with the parameters.
+
+## Async
+
+Python `asyncio` and NeoHaskell `Task` are conceptually the same. Both represent computations that will eventually produce a value and might fail along the way.
+
+```python
+async def load_dashboard(user_id: str) -> Dashboard:
+    user = await fetch_user(user_id)
+    posts = await fetch_posts(user.id)
+    stats = await fetch_stats(user.id)
+    return Dashboard(user=user, posts=posts, stats=stats)
+```
+
+```haskell
+loadDashboard :: Uuid -> Task Text Dashboard
+loadDashboard userId = do
+  user <- fetchUser userId
+  posts <- fetchPosts user.id
+  stats <- fetchStats user.id
+  Task.yield Dashboard { user = user, posts = posts, stats = stats }
+```
+
+`await` becomes `<-`. `return` becomes `Task.yield`. The `do` block is the body of an async function.
+
+NeoHaskell's error channel is typed. If the function returns `Task Text User`, you know the error is a `Text`. In Python, an async function can raise anything, and you find out at runtime.
+
+## Parallelism
+
+Python `asyncio.gather` is NeoHaskell `AsyncTask.start` + `AsyncTask.wait`:
+
+```python
+async def load():
+    users, posts, stats = await asyncio.gather(
+        fetch_users(),
+        fetch_posts(),
+        fetch_stats(),
+    )
+```
+
+```haskell
+load = do
+  usersHandle <- AsyncTask.start fetchUsers
+  postsHandle <- AsyncTask.start fetchPosts
+  statsHandle <- AsyncTask.start fetchStats
+  users <- AsyncTask.wait usersHandle
+  posts <- AsyncTask.wait postsHandle
+  stats <- AsyncTask.wait statsHandle
+  Task.yield (users, posts, stats)
+```
+
+More lines, but cleaner separation between "start" and "wait" — which helps when you want to interleave other work.
+
+## Error handling
+
+Python's exceptions are untyped. NeoHaskell's errors are typed. This is the single most important difference in day-to-day coding.
+
+```python
+try:
+    user = fetch_user(user_id)
+except UserNotFound:
+    return None
+except DatabaseError as e:
+    log.error(f"DB error: {e}")
+    raise
+```
+
+```haskell
+do
+  result <- Task.asResult (fetchUser userId)
+  case result of
+    Ok user -> Task.yield (Just user)
+    Err err -> do
+      Log.error [fmt|Failed to fetch user: #{err}|]
+      Task.throw err
+```
+
+The difference is that in NeoHaskell, `fetchUser`'s signature tells you exactly what errors it can produce. In Python, you have to read the source or the docs.
+
+## SQLAlchemy vs. the event store
+
+In Python, data access usually goes through SQLAlchemy (or a similar ORM):
+
+```python
+user = db.session.query(User).filter_by(id=user_id).one_or_none()
+if user:
+    user.email = new_email
+    db.session.commit()
+```
+
+In NeoHaskell, you don't touch a database directly. You dispatch a command that produces an event:
+
+```haskell
+ChangeEmail { userId = userId, newEmail = newEmail }
+-- ... the command executor handles everything
+```
+
+The event store records the change. Your projections update automatically. You never wrote an UPDATE statement.
+
+## Django ORM vs. queries
+
+Django ORM's `Meta.ordering` and `Manager` layers give you custom views of your data. NeoHaskell queries do the same thing, but they're kept fresh automatically as events arrive:
+
+```python
+# Django
+class OrderManager(models.Manager):
+    def recent_for_user(self, user_id):
+        return self.filter(user_id=user_id).order_by("-created_at")[:20]
+```
+
+```haskell
+-- NeoHaskell: define a query that maintains a per-user recent orders list
+data RecentOrdersForUser = RecentOrdersForUser
+  { userId :: Uuid
+  , orders :: Array OrderSummary
+  }
+
+instance QueryOf Order RecentOrdersForUser where
+  queryId order = order.userId
+  combine order existing = case existing of
+    Just ro ->
+      Update ro
+        { orders = ro.orders
+            |> Array.push (toSummary order)
+            |> Array.take 20
+        }
+    Nothing ->
+      Update RecentOrdersForUser
+        { userId = order.userId
+        , orders = Array.fromLinkedList [toSummary order]
+        }
+```
+
+The Django ORM version queries the database on every call. The NeoHaskell version maintains a denormalized read model that's updated incrementally — same read cost, no query latency.
+
+## Celery vs. integrations
+
+Celery tasks are Python's answer to background work. NeoHaskell uses integrations:
+
+```python
+# Celery
+@app.task
+def send_welcome_email(user_id):
+    user = User.objects.get(id=user_id)
+    sendgrid.send(to=user.email, template="welcome")
+```
+
+```haskell
+-- NeoHaskell outbound integration
+instance OutboundIntegration WelcomeEmail where
+  reactTo _config user event = case event of
+    UserRegistered { email } ->
+      Integration.batch
+        [ Integration.outbound
+            Sendgrid.Email { to = email, template = "welcome" }
+        ]
+    _ -> Integration.none
+```
+
+The integration is a pure function of `event → action`. The runtime dispatches it. You don't worry about queue configuration, retries, or dead letters — the framework handles them.
+
+## Decorators vs. typeclasses
+
+Python decorators are mostly about cross-cutting concerns — auth, logging, validation, caching. NeoHaskell doesn't have decorators, because most decorator use cases are handled differently:
+
+- **Auth decorators** (`@require_login`) → check `ctx.user` in the `decide` function.
+- **Validation decorators** (`@validate_email`) → check fields in the `decide` function.
+- **Logging decorators** → structured logging via `Log.info` at the relevant points.
+- **Caching decorators** (`@lru_cache`) → use `ConcurrentMap` or let projections do the work.
+
+You end up with more explicit code (you see where auth is checked, you see where validation happens), which trades a bit of sugar for a lot of clarity.
+
+## Testing
+
+pytest:
+
+```python
+def test_rejects_if_user_does_not_exist():
+    result = handle_deposit(DepositCmd(amount=50), user=None)
+    assert result.error == "User not found"
+```
+
+NeoHaskell:
+
+```haskell
+it "rejects if account does not exist" \_ -> do
+  let cmd = Deposit { accountId = Uuid.nil, amount = 50 }
+  result <- runDecide cmd Nothing
+  result |> shouldBe (RejectCommand "Account does not exist")
+```
+
+Same shape. No fixtures. No mocks. Pure functions all the way down.
+
+## The learning curve
+
+For a Python developer, expect the ramp to feel like this:
+
+- **Day 1:** Unfamiliar syntax. `<-` and `|>` look weird. Type signatures are confusing.
+- **Day 3:** You can read code but writing it still requires the cheat sheet.
+- **Week 1:** Writing feels OK. Compiler errors still intimidate you.
+- **Week 2:** You start to trust the compiler — errors point at real bugs, and you start fixing them faster than you'd write tests for the equivalent Python code.
+- **Week 3:** You realize the whole Django controller + serializer + model + manager stack collapses into one `decide` function, and you stop missing Python.
+
+## Where to go from here
+
+- **[Installation](/getting-started/installation/)** — get a working environment.
+- **[Your first events](/getting-started/first-events/)** — your first NeoHaskell code.
+- **[Build NeoBank](/tutorial/)** — the full tutorial, about an afternoon of work.
+- **[From CRUD to events](/concepts/from-crud-to-events/)** — the mental shift.

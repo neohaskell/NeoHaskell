@@ -1,0 +1,249 @@
+---
+title: "Configuration"
+description: "Reference for defineConfig, Config.field, environment variables, CLI flags, and the Config DSL."
+sidebar:
+  order: 9
+---
+
+NeoHaskell's configuration system lets you declare a typed config record that automatically becomes a CLI interface and an environment-variable loader.
+
+## `defineConfig`
+
+```haskell
+{-# LANGUAGE TemplateHaskell #-}
+
+module MyApp.Config (MyConfig (..), HasMyConfig) where
+
+import Config (defineConfig)
+import Config qualified
+import Core
+
+
+defineConfig
+  "MyConfig"
+  [ Config.field @Text "dbHost"
+      |> Config.doc "PostgreSQL host"
+      |> Config.defaultsTo ("localhost" :: Text)
+      |> Config.envVar "DB_HOST"
+  , ...
+  ]
+```
+
+`defineConfig` is a Template Haskell splice. It takes a type name (as a `String`) and a list of field specs, and generates:
+
+- The `data MyConfig = MyConfig { ... }` record type.
+- Parsers for environment variables and CLI arguments.
+- A `HasMyConfig` typeclass for accessing the config globally after it's loaded.
+
+## Field helpers
+
+```haskell
+import Config qualified
+```
+
+| Function | Description |
+|---|---|
+| `Config.field @Type "fieldName"` | Declare a field with a given Haskell type. |
+| `Config.doc "description"` | Human-readable description (shown in `--help`). |
+| `Config.defaultsTo value` | Default value if the user doesn't provide one. |
+| `Config.envVar "NAME"` | Environment variable to read from. |
+| `Config.cliLong "flag"` | Long CLI flag name (defaults to the field name). |
+| `Config.cliShort 'c'` | Short CLI flag. |
+| `Config.secret` | Mark as sensitive (excluded from `--help` output and logs). |
+
+Fields are built by chaining these. The first one (`Config.field`) is mandatory; everything else is optional.
+
+### Supported field types
+
+The `@Type` annotation on `Config.field` accepts:
+
+- `Text`
+- `Int`
+- `Double`
+- `Bool`
+- `Maybe Text`, `Maybe Int`, etc. (for optional fields)
+- `Path` (validated as a filesystem path)
+
+For more complex types, wrap them in a field that takes `Text` and parse in your application code.
+
+## A complete example
+
+```haskell
+{-# LANGUAGE TemplateHaskell #-}
+
+module MyApp.Config (MyConfig (..), HasMyConfig) where
+
+import Config (defineConfig)
+import Config qualified
+import Core
+
+
+defineConfig
+  "MyConfig"
+  [ Config.field @Text "dbHost"
+      |> Config.doc "PostgreSQL host"
+      |> Config.defaultsTo ("localhost" :: Text)
+      |> Config.envVar "DB_HOST"
+  , Config.field @Int "dbPort"
+      |> Config.doc "PostgreSQL port"
+      |> Config.defaultsTo (5432 :: Int)
+      |> Config.envVar "DB_PORT"
+  , Config.field @Text "dbUser"
+      |> Config.doc "PostgreSQL username"
+      |> Config.defaultsTo ("myapp" :: Text)
+      |> Config.envVar "DB_USER"
+  , Config.field @Text "dbPassword"
+      |> Config.doc "PostgreSQL password"
+      |> Config.defaultsTo ("changeme" :: Text)
+      |> Config.envVar "DB_PASSWORD"
+      |> Config.secret
+  , Config.field @Text "dbName"
+      |> Config.doc "PostgreSQL database name"
+      |> Config.defaultsTo ("myapp" :: Text)
+      |> Config.envVar "DB_NAME"
+  , Config.field @Int "httpPort"
+      |> Config.doc "HTTP server port"
+      |> Config.defaultsTo (8080 :: Int)
+      |> Config.envVar "HTTP_PORT"
+      |> Config.cliLong "port"
+      |> Config.cliShort 'p'
+  , Config.field @Text "authServerUrl"
+      |> Config.doc "OAuth auth server URL"
+      |> Config.envVar "AUTH_SERVER_URL"
+  ]
+```
+
+This generates a `MyConfig` record with seven fields. At runtime, each field is loaded from:
+
+1. CLI argument (if provided).
+2. Environment variable (if set).
+3. `.env` file (if present).
+4. Default value (if any).
+
+Fields with no default *and* no value set are errors.
+
+## Using the config in the application
+
+Register it with `withConfig`:
+
+```haskell
+app :: Application
+app =
+  Application.new
+    |> Application.withConfig @MyConfig
+    |> Application.withEventStore makePostgresConfig
+    |> ...
+
+
+makePostgresConfig :: MyConfig -> PostgresEventStore
+makePostgresConfig config =
+  PostgresEventStore
+    { user = config.dbUser
+    , password = config.dbPassword
+    , host = config.dbHost
+    , databaseName = config.dbName
+    , port = config.dbPort
+    }
+```
+
+The factory function `makePostgresConfig` is called *after* `Application.run` has loaded the config from environment/CLI — so it can access every field directly.
+
+## `.env` files
+
+During development, you can put config in a `.env` file in the project root:
+
+```env
+DB_HOST=localhost
+DB_PORT=5432
+DB_USER=neohaskell
+DB_PASSWORD=neohaskell
+DB_NAME=neohaskell
+HTTP_PORT=8080
+```
+
+`Application.run` automatically loads `.env` if present, so `cabal run` works without setting environment variables.
+
+In production, you'd set environment variables through your deployment system and omit the `.env` file.
+
+## CLI interface
+
+Every config field automatically becomes a CLI flag:
+
+```bash
+./my-app --help
+```
+
+Shows:
+
+```text
+Usage: my-app [OPTIONS]
+
+  My application
+
+Options:
+  --db-host TEXT          PostgreSQL host
+  --db-port INT           PostgreSQL port
+  --db-user TEXT          PostgreSQL username
+  --db-name TEXT          PostgreSQL database name
+  --port INT              HTTP server port  (-p)
+  --auth-server-url TEXT  OAuth auth server URL
+  -h, --help              Show this help
+```
+
+Notice that:
+
+- `dbPassword` is excluded because it's marked `Config.secret`.
+- `httpPort` renders as `--port` because it has `Config.cliLong "port"`.
+- Short flags are shown where defined.
+
+## Accessing the config
+
+After `Application.run` has loaded the config, you access it in three ways:
+
+1. **Via a factory function passed to `with*` builders.** This is the standard approach — you don't access the config directly; the framework passes it to you.
+2. **Via `Config.get @MyConfig` in a `Task`.** Use this when you need the config inside an integration or a custom handler.
+3. **Via the `HasMyConfig` typeclass.** An implicit parameter-style access, useful for library code that wants to be polymorphic over the config type.
+
+```haskell
+-- Method 2: explicit access
+myTask :: Task Text Unit
+myTask = do
+  let config = Config.get @MyConfig
+  Log.info [fmt|DB host is #{config.dbHost}|]
+```
+
+## Secrets
+
+Fields marked with `Config.secret` are:
+
+- Excluded from `--help` output.
+- Excluded from log dumps.
+- Excluded from config-export commands (if any).
+
+They are **not** encrypted at rest — marking a field as secret just means the framework won't accidentally print it. For actual secret storage, pair with `Application.withSecretStore` and a real secret manager.
+
+## Validation
+
+Config parsing is type-checked:
+
+- `Config.field @Int "port"` requires the value to parse as an integer.
+- `Config.field @Maybe Text "name"` means optional (absent is OK).
+- A required field with no default and no value causes an error at startup.
+
+For custom validation (e.g., "port must be between 1 and 65535"), you validate in the factory function that builds the downstream config:
+
+```haskell
+makePostgresConfig :: MyConfig -> PostgresEventStore
+makePostgresConfig config =
+  if config.dbPort < 1 || config.dbPort > 65535
+    then panic [fmt|Invalid port: #{config.dbPort}|]
+    else PostgresEventStore { ... }
+```
+
+A panic at startup fails fast before any services start.
+
+## Where to go from here
+
+- **[Services and applications](/reference/services-and-applications/)** — how `withConfig` fits into the builder.
+- **[Deployment](/guides/deployment/)** — environment variables in production.
+- **[Tutorial Part 6](/tutorial/06-audit-everything/)** — the first time you use `defineConfig`.

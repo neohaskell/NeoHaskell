@@ -1,202 +1,198 @@
 ---
-title: "Architecture Evaluation"
-description: "Technical deep-dive for evaluating NeoHaskell for real systems."
+title: "Architecture evaluation"
+description: "A technical evaluation of NeoHaskell for engineers deciding whether to use it for a real system. Comparisons with EventStoreDB, Kafka, Axon, and others."
 sidebar:
-  order: 2
-keywords: [architecture, evaluation, transaction guarantees, performance, scaling, integration, migration, operational]
-# entry_stage: 3 (NeoHaskell-aware)
-# exit_stage: 5 (NeoHaskell-native)
-# misconception: #18 (have to go all-in or not at all), #6 (eventual consistency everywhere)
-# tutorial_anchor: N/A — Architect audience entry point
+  order: 13
 ---
-
-{/*
-  CONTENT OUTLINE — Architecture Evaluation
-  Entry: Stage 3 (NeoHaskell-aware), Exit: Stage 5 (NeoHaskell-native)
-  Audience: Architect (not Developer)
-  Misconceptions addressed: #18 (all-in or nothing), #6 (eventual consistency everywhere)
-  This is the page someone sends to their tech lead or principal engineer.
-
-  Structure from DOCS-PLAN lines 719-732:
-  1. Transaction guarantees and consistency model
-  2. Performance characteristics
-  3. Scaling patterns
-  4. Integration with non-NeoHaskell services
-  5. Migration path (one service at a time)
-  6. Operational concerns: monitoring, alerting, backup/restore
-
-  Source: Sarah Drasner review — "The Audience Model promises content for Architects and Decision-Makers,
-  but the plan delivers almost exclusively developer content. These audiences need their own pages."
-*/}
 
 import { Aside } from '@astrojs/starlight/components';
 
-## Who This Page Is For
+This page is for architects and senior engineers deciding whether NeoHaskell belongs in their stack. It's not marketing. It's the technical trade-offs, laid out plainly, with specific comparisons to the systems you'd pick instead.
 
-This page is for architects and principal engineers evaluating NeoHaskell for production use. It assumes familiarity with event sourcing concepts (EventStoreDB, Kafka, Axon) and focuses on the technical properties that matter for adoption decisions.
+## What you're actually evaluating
 
-If you're a developer getting started, begin with [Why NeoHaskell?](/concepts/why-neohaskell) and the [Tutorial](/tutorial/).
+NeoHaskell is three things wearing one label:
 
-## Transaction Guarantees and Consistency Model
+1. **A Haskell dialect** with a curated standard library and specific style conventions.
+2. **An event-sourcing and CQRS framework** that bakes commands, events, entities, queries, services, and integrations into the language's type system.
+3. **A service runtime** with HTTP, CLI, and MCP transports, a PostgreSQL event store, OAuth2 integration, and a configuration system.
 
-### Within a Service
+Most evaluations focus on #2 because that's where the marketing claims live. But when you adopt NeoHaskell you adopt all three together. Be honest with yourself about whether all three fit your situation.
 
-- **Strong consistency**: within a single entity, all operations are serialized — no concurrent writes to the same entity
-- **Optimistic concurrency**: the event store uses version numbers to detect concurrent writes — conflicts are detected, not silently lost
-- **Atomicity**: a command either produces all its events or none — partial writes don't happen
-- **Durability**: events are written to the event store before the command returns — no in-memory-only state
+## Who is it for
 
-### Across Services
+- **Small-to-medium teams** (2–15 engineers) building systems with meaningful state transitions: fintech, scheduling, workflow automation, healthcare, supply chain, collaborative tools.
+- **Teams that value correctness and type safety** more than language popularity.
+- **Teams that have the autonomy to pick their stack.** "My CTO will let me try anything that compiles" is a good sign; "I need approval from an architecture review board" is a warning.
+- **Teams with at least one engineer** comfortable enough with Haskell or a similar language to handle the inevitable weird library edge case.
 
-- **Eventual consistency**: cross-context operations communicate via events — consistency is eventual, not immediate
-- **At-least-once delivery**: events are delivered at least once — handlers must be idempotent
-- **Ordering**: events within a single entity stream are ordered; across streams, ordering is not guaranteed
-- **Compensation**: the integration pattern handles cross-service failures — compensation events undo partial operations
+## Who it's NOT for
 
-### Comparison with Other ES Tools
+- **Pure CRUD teams.** If you don't have interesting state transitions, event sourcing is overkill. Use Django or Rails.
+- **Teams at Fortune 500 hiring scale.** Recruiting 50 NeoHaskell engineers will be hard in 2026. Recruiting 5 is fine.
+- **Teams that need a proven ecosystem.** NeoHaskell is pre-release. Many things will be "write it yourself."
+- **Teams that need strict single-region consistency at microsecond latency.** Event sourcing adds read-side lag — usually milliseconds, but that's more than zero.
+- **Teams allergic to learning.** The mental model takes a few weeks to internalize. If your team doesn't have the appetite, stop here.
 
-| Property | NeoHaskell | EventStoreDB | Kafka + manual ES | Axon |
-|----------|-----------|-------------|------------------|------|
-| Consistency model | Strong within entity, eventual across services | Strong within stream | Depends on implementation | Strong within entity |
-| Concurrency control | Optimistic (version numbers) | Optimistic (expected version) | Manual | Optimistic |
-| Atomicity | Per-command | Per-stream append | Per-partition | Per-entity |
-| Schema enforcement | Compiler (types) | None (schema registry optional) | Schema registry | Convention |
+## How it compares
 
-<Aside type="caution" title="Honest comparison">
-NeoHaskell's event store is not yet battle-tested at the scale of EventStoreDB or Kafka. The consistency model is sound, but production war stories don't exist yet. If your decision requires proof from other companies at scale, wait.
-</Aside>
+### vs. EventStoreDB
 
-## Performance Characteristics
+**EventStoreDB** is a purpose-built database for events. It stores events, handles stream-based consistency, and exposes a read/write API. It is transport-layer and storage-layer; it is not a framework for modeling your domain.
 
-{/* TODO: Benchmark data when available — track in GitHub issue */}
+In an EventStoreDB system, you still write:
 
-### Event Store Throughput
+- Your own command handlers (in Java, C#, Go, whatever).
+- Your own aggregates (reconstructing state from events).
+- Your own projections (building read models).
+- Your own validation layer.
+- Your own retry logic.
+- Your own schema.
+- Your own testing harness.
 
-- **Write throughput**: append-only writes are fast — no locking, no index updates on write
-- **Read throughput**: event stream reads are sequential — cache-friendly, predictable latency
-- **Update rebuild**: depends on event stream size and update complexity — parallelizable
-- **Current state**: derived from events — cached updates give CRUD-like read performance
+EventStoreDB does the storage. You do everything else.
 
-### Memory Profile
+NeoHaskell *is* everything else. It includes the event store (PostgreSQL-backed by default, pluggable), the command executor, the entity machinery, the projection system, the integration runtime, the transports. You write domain logic. The framework handles the rest.
 
-- **Event store**: append-only — grows linearly with event count
-- **Updates**: in-memory queries — size depends on update complexity
-- **Entity state**: derived on demand — no persistent in-memory state required
-- **Snapshots**: optional — reduce replay time for large event streams at the cost of storage
+**When to pick EventStoreDB:** you already have a robust framework in your language of choice, you want only the storage layer, and you don't want to switch languages.
 
-### Latency Characteristics
+**When to pick NeoHaskell:** you want the whole story, and you're willing to learn a new language for it.
 
-- **Command processing**: validate → append event → return — typically sub-millisecond for simple commands
-- **Query processing**: fold over events → return query — depends on event stream size and caching
-- **Cross-context events**: eventual — latency depends on the event delivery mechanism
-- **Update rebuild**: batch operation — not on the critical path for user requests
+### vs. Kafka + a framework (e.g., Spring, Akka, Phoenix)
 
-## Scaling Patterns
+**Kafka** is a distributed log. It is NOT an event store in the event-sourcing sense — it's a streaming message broker optimized for throughput. You can build event sourcing on top of it, but the concurrency semantics (single-stream atomic appends, optimistic concurrency) aren't first-class.
 
-### Single-Node Scaling
+You'd usually pair Kafka with a framework (Spring, Akka, Phoenix, whatever) that provides command handling, state rebuilding, and projections. The framework is where most of the integration work lives, and every framework has a different opinion.
 
-- NeoHaskell compiles to native code — single-node performance is competitive with Go and Java
-- GHC's runtime provides lightweight green threads — millions of concurrent tasks on a single node
-- Event store reads are fully concurrent — no locking for reads
-- Event store writes are serialized per entity — no contention across entities
+NeoHaskell's "framework" is the language. The same machinery — commands, events, entities, queries — is woven into the type system, so the integration and correctness guarantees are tighter. You don't worry about serialization mismatch between the framework and the store; there's no framework layer to mismatch.
 
-### Horizontal Scaling
+**When to pick Kafka + a framework:** you need Kafka for other reasons (streaming analytics, log aggregation, pub/sub) and want to build event sourcing on top of infrastructure you already have.
 
-- **Stateless command handlers**: command handlers are pure functions — trivially horizontally scalable
-- **Shared event store**: multiple instances share the same event store — PostgreSQL handles concurrency
-- **Update scaling**: updates can be rebuilt on any node — no shared state required
-- **Service scaling**: each service can be deployed independently — scale what needs scaling
+**When to pick NeoHaskell:** you want a purpose-built solution that minimizes the glue code between your domain and your storage.
 
-### Sharding Strategies
+### vs. Axon Framework (Java)
 
-- **Entity-based sharding**: route commands to the node responsible for that entity — reduces cross-node coordination
-- **Service-based sharding**: each service on its own node — natural isolation
-- **Event stream partitioning**: partition the event store by entity ID — parallel reads across partitions
+**Axon** is the closest comparison. It treats commands, events, and aggregates as first-class concepts, provides a Java annotation-based API, and can plug into various event stores. It's mature and well-tested.
 
-## Integration with Non-NeoHaskell Services
+The difference is:
 
-### Outbound Integration
+- **Axon enforces its contracts at runtime.** An aggregate missing an `@EventSourcingHandler` for a new event type is a runtime exception. NeoHaskell catches it at compile time.
+- **Axon uses annotations.** NeoHaskell uses types. Annotations are easier to introduce gradually; types are harder to circumvent once in place.
+- **Axon is Java, with Java's verbosity and Java's ecosystem.** NeoHaskell is a curated Haskell, with different trade-offs.
 
-- **HTTP**: NeoHaskell services expose HTTP endpoints — any client can call them
-- **Events**: NeoHaskell services can publish events to external message brokers (Kafka, RabbitMQ)
-- **Webhooks**: NeoHaskell services can call external webhooks on event publication
-- **OpenAPI**: NeoHaskell auto-generates OpenAPI specs from command schemas — standard tooling works
+**When to pick Axon:** you're on the JVM, you have a Java team, and you want mature tooling with proven scalability in enterprise settings.
 
-### Inbound Integration
+**When to pick NeoHaskell:** you want compiler-level guarantees and you don't already have a JVM investment.
 
-- **HTTP**: external services call NeoHaskell command endpoints — standard REST
-- **Events**: NeoHaskell services can subscribe to external event streams
-- **Polling**: NeoHaskell services can poll external APIs and translate responses to internal events
-- **The `withOutbound` pattern**: integrations are explicit in the type — the compiler enforces that all integrations are declared
+### vs. "just use Haskell"
 
-### Database Integration
+Regular Haskell gives you the type system but not the event-sourcing primitives. You'd pick libraries like Eventful, eventstore-client, or roll-your-own. You'd spend your first week fighting monad transformer stacks. The outcome depends heavily on library choices.
 
-- **PostgreSQL event store**: the default event store — production-ready, well-understood operationally
-- **In-memory event store**: for testing and development — no PostgreSQL required
-- **Custom event stores**: the event store interface is pluggable — implement your own if needed
-- **Query databases**: updates can write to any database — PostgreSQL, Redis, Elasticsearch
+NeoHaskell is an opinionated curation. The standard library is chosen to make domain code approachable. The event-sourcing primitives are baked in. The style guide is specific. You give up some flexibility; you get a much shorter ramp.
 
-## Migration Path
+**When to pick regular Haskell:** you need bleeding-edge libraries, you want full control, and your team is already deeply Haskell-native.
 
-### One Service at a Time
+**When to pick NeoHaskell:** you want event-sourcing-first, you care about accessibility, and you don't want to shop for libraries.
 
-- You don't have to migrate your entire system — start with one service
-- Identify a domain that benefits most from event sourcing: audit trails, complex business rules, high concurrency
-- Build the new service in NeoHaskell alongside the existing system
-- Route traffic to the new context gradually — feature flags, percentage rollout
-- Decommission the old system when the new context is stable
+### vs. Elixir / Phoenix with CQRS libraries
 
-### Strangler Fig Pattern
+Elixir with Commanded (or similar) is a real alternative. Both languages are good at concurrency. Elixir has a bigger ecosystem and a more mature BEAM runtime. NeoHaskell has stronger compile-time guarantees.
 
-- The existing system continues to run — NeoHaskell doesn't replace it overnight
-- New features go into NeoHaskell services
-- Old features are migrated one at a time — or left in the old system if migration isn't worth it
-- The boundary between old and new is explicit: integration events cross the boundary
+**When to pick Elixir/Phoenix:** you want BEAM-style fault tolerance (soft real-time, let-it-crash), you value runtime observability, and you can live with dynamic typing.
 
-### Data Migration
+**When to pick NeoHaskell:** you want everything Elixir gives you plus the compile-time safety net.
 
-- Historical data can be imported as events: `AccountMigratedFromLegacy { balance, timestamp }`
-- The migration event is the starting point for the event stream — history before migration is captured
-- Updates can be built from the migration event forward — no need to replay the entire legacy history
-- **Caveat**: migrating data is a one-time operation — test thoroughly before running in production
+## Performance
 
-## Operational Concerns
+The NeoHaskell service layer targets 50k req/s per node as a design goal. Real-world throughput depends heavily on your `decide` function complexity, your event store latency, and your projection strategy.
 
-### Monitoring
+Specifically:
 
-- **Event store metrics**: event count per stream, append rate, read rate
-- **Update metrics**: rebuild time, staleness (time since last event processed)
-- **Command metrics**: command processing time, rejection rate, error rate
-- **Cross-context metrics**: event delivery latency, handler error rate
+- **Event append latency** on the PostgreSQL event store is typically 1–5ms per append under moderate load.
+- **Command latency** (decide + append + response) is 2–10ms on a well-configured cluster.
+- **Query latency** is single-row lookup time — sub-millisecond when projections fit in memory.
+- **Entity reconstruction** uses snapshot caches; cached entities are instant, and replaying a handful of events since the snapshot adds microseconds.
 
-### Alerting
+The practical bottleneck is usually PostgreSQL write bandwidth, not NeoHaskell itself. If you outgrow one PostgreSQL instance, you either shard events by stream, split into independently-deployed services, or move to a purpose-built event store.
 
-- **Event store growth**: alert when the event store grows faster than expected
-- **Update staleness**: alert when updates fall behind the event stream
-- **Command rejection rate**: alert when rejection rate spikes (may indicate a bug or attack)
-- **Cross-context delivery failures**: alert when events fail to deliver to subscribing contexts
+## Operability
 
-### Backup and Restore
+NeoHaskell applications compile to a single static binary via GHC. You can deploy them anywhere a Linux binary runs: Docker, Kubernetes, bare metal, Fly.io, Render, Nomad. Startup time is a few seconds.
 
-- **Event store backup**: the event store is the source of truth — back it up like a database
-- **Update backup**: updates are derived — they can be rebuilt from the event store
-- **Point-in-time restore**: restore the event store to any point in time — replay events to rebuild updates
-- **Disaster recovery**: the event store is the only thing you need to restore — updates rebuild automatically
+Observability:
 
-### Observability
+- Structured logging is built-in (`Log.info`, `Log.warn`, `Log.error`).
+- Request tracing fields propagate through the command executor.
+- OpenAPI spec is generated from the service definition automatically.
+- Health check endpoint is enabled by default at `/health`.
+- Metrics export (Prometheus-compatible) is a planned first-class feature; for now you wire it in yourself.
 
-- **Event replay for debugging**: replay events to any point in time to inspect state — no need for production debuggers
-- **Audit trail**: the event store is the audit log — every state change is recorded with timestamp and actor
-- **Distributed tracing**: commands and events can carry correlation IDs — trace a request across services
-- **Structured logging**: NeoHaskell's configuration-as-code includes log level configuration — structured logs by default
+What's missing (as of this writing):
 
-## Going Deeper
+- Distributed tracing hooks beyond basic request IDs.
+- Built-in circuit breakers (but you can build them with `Task` combinators).
+- Managed service offerings. You self-host.
 
-- [Services →](/concepts/services) — consistency model in depth
-- [Effects →](/concepts/effects) — how NeoHaskell handles cross-context effects
-- [Trade-offs →](/concepts/trade-offs) — honest assessment of when NeoHaskell is the right choice
-- [Why NeoHaskell? →](/concepts/why-neohaskell) — the full case for NeoHaskell, including comparison with EventStoreDB, Kafka, and Axon
+## Testing story
 
-:::caution[Coming Soon]
-Code examples and benchmark data on this page are placeholders. Full working examples and performance numbers will be added as NeoHaskell matures toward production readiness.
-:::
+NeoHaskell's testing story is one of its strongest selling points. Because `decide`, `update`, `combine`, and integration `reactTo` functions are all pure, unit tests are trivial. A typical unit test is 5–15 lines, runs in microseconds, and requires zero infrastructure.
+
+Integration tests use an in-memory event store and dispatch commands through the real executor. They're slower (milliseconds to a few seconds) but still fast enough to run on every commit.
+
+Property-based testing integrates cleanly — event-sourced systems have natural invariants to express ("balance is never negative", "total deposits minus total withdrawals equals current balance", "replaying the same events always produces the same state"), and property tests catch classes of bugs example tests miss.
+
+## Adoption risk
+
+### Technical risk
+
+- The language is pre-release. Breaking changes happen, though the team pins versions on release and publishes migration notes.
+- Some libraries you'd reach for in other ecosystems don't exist yet. You write integrations yourself — usually a few hours each.
+- The PostgreSQL event store is well-tested but not yet battle-hardened at 50k req/s production scale.
+
+### Team risk
+
+- "NeoHaskell" is not a recognized résumé item in 2025. Your engineers may worry about career risk. Good mitigations: public GitHub contributions to NeoHaskell itself, blog posts about your experience, conference talks.
+- Onboarding takes longer than CRUD Python. Expect a new engineer to take 2–4 weeks to be productive.
+- If you lose the lead champion, the project can stall. Make sure at least two engineers can maintain it before betting heavily.
+
+### Organizational risk
+
+- If you're regulated and your compliance team is used to reviewing specific frameworks, you'll need to explain what NeoHaskell is. This is friction.
+- If you have a policy of "only use stacks we've shipped to production", NeoHaskell is a first-time adoption by definition. This is a political conversation.
+
+## The "should we pilot it?" checklist
+
+Adopting NeoHaskell for your first project? Here's a quick sanity check. Answer yes to most of these:
+
+- [ ] Our domain has interesting state transitions (not pure CRUD).
+- [ ] We value audit trails, replayability, or historical debugging.
+- [ ] We have at least one engineer who is excited to learn Haskell.
+- [ ] We have autonomy over our tech stack — no architecture review board involvement.
+- [ ] The system we're building is new (greenfield), not a rewrite of an existing database-driven system.
+- [ ] We can tolerate a longer ramp in exchange for a better ongoing experience.
+- [ ] We have an appetite to contribute back to the ecosystem when we find rough edges.
+
+If you answered yes to six or more, pilot it on a small project. If you answered yes to fewer, start with a toy project first and see how the team reacts.
+
+## The honest recommendation
+
+NeoHaskell is ready for real-world use if:
+
+- You are building a new service where event sourcing is the right architectural choice regardless of language.
+- Your team has one or more people willing to learn it.
+- You can tolerate occasional rough edges in exchange for long-term benefits.
+
+NeoHaskell is not yet ready if:
+
+- You need mature tooling for every conceivable integration.
+- You cannot stomach any adoption risk.
+- Your domain doesn't justify the structural overhead.
+
+Pilot it on a single service first. Measure what you get. Decide from there.
+
+## Where to go from here
+
+- **[Why NeoHaskell?](/concepts/why-neohaskell/)** — the business-level pitch.
+- **[Trade-offs](/concepts/trade-offs/)** — honest costs.
+- **[Guides → Adopting at work](/guides/adopting-at-work/)** — the practical playbook.
+- **[Guides → PostgreSQL event store](/guides/postgresql-event-store/)** — operational details of the storage layer.

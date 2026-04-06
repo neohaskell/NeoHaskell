@@ -1,10 +1,332 @@
 ---
-title: "Part 4: Multiple Accounts"
-description: "Add a savings account without changing existing code."
+title: "Part 4 — Multiple accounts"
+description: "Add a savings account type. One new field, a few extra rules, and the same entity keeps working. The polymorphism pays off."
 ---
 
-The requirement — support checking and savings accounts. You'll learn about multiple entities (not services — that's Part 5) and discover that adding a new account type is trivial when your system is built on events.
+import { Aside } from '@astrojs/starlight/components';
 
-:::caution[Coming Soon]
-This page is under development. Check back soon!
-:::
+**What you'll build in this part:** Support for two kinds of accounts per customer — checking and savings — with their own rules. Savings accounts cannot go to zero; a minimum balance is enforced. And yet, we'll add this without duplicating any of the code we already wrote.
+
+**Reading time:** ~20 minutes · **Lines of code added:** ~30
+
+## What you'll learn
+
+- How to extend an entity with a discriminator field without breaking existing events.
+- How to put per-type rules in `decide` functions.
+- Why you do *not* need a new service or a new entity for this — it's the same `Account`.
+- How the compiler guides you through the refactor.
+
+## The wrong way (and why we are not doing it)
+
+A lazy approach would be to create a completely separate `SavingsAccount` entity, with its own events, its own commands, its own service. Two parallel code paths for something that is 95% the same.
+
+A better approach is to recognize that **checking and savings are variants of the same concept** — they both have an ID, a balance, an owner, and a history of transactions. The only difference is the rules. So we'll add a discriminator to the existing entity and put the rule differences in the `decide` functions.
+
+This is the same decision you'd make in OOP ("inheritance vs. composition") or in SQL ("two tables vs. one table with a type column"). In event sourcing, the answer is almost always "one entity, one event type, business rules in the commands."
+
+## Step 1 — Add an account type
+
+Open `src/NeoBank/Account/Core.hs` and add a new type:
+
+```haskell
+data AccountType
+  = Checking
+  | Savings
+  deriving (Eq, Show, Generic)
+
+
+instance Json.FromJSON AccountType
+instance Json.ToJSON AccountType
+```
+
+Add a field to `Account`:
+
+```haskell
+data Account = Account
+  { accountId :: Uuid
+  , ownerName :: Text
+  , accountType :: AccountType
+  , balance :: Int
+  , history :: Array Transaction
+  }
+  deriving (Generic, Show, Eq)
+```
+
+Update `initialState`:
+
+```haskell
+initialState :: Account
+initialState =
+  Account
+    { accountId = Uuid.nil
+    , ownerName = ""
+    , accountType = Checking
+    , balance = 0
+    , history = Array.empty
+    }
+```
+
+Extend `AccountOpened` to carry the account type so `update` can set it correctly:
+
+```haskell
+data AccountEvent
+  = AccountOpened
+      { entityId :: Uuid
+      , ownerName :: Text
+      , accountType :: AccountType
+      }
+  | MoneyDeposited
+      { entityId :: Uuid
+      , amount :: Int
+      }
+  | MoneyWithdrawn
+      { entityId :: Uuid
+      , amount :: Int
+      }
+  deriving (Eq, Show, Generic)
+```
+
+And update `update`:
+
+```haskell
+update :: AccountEvent -> Account -> Account
+update event account = case event of
+  AccountOpened { entityId, ownerName, accountType } ->
+    Account
+      { accountId = entityId
+      , ownerName = ownerName
+      , accountType = accountType
+      , balance = 0
+      , history = Array.empty
+      }
+  MoneyDeposited { amount } ->
+    account
+      { balance = account.balance + amount
+      , history = Array.push
+          (Transaction { kind = "deposit", amount = amount })
+          account.history
+      }
+  MoneyWithdrawn { amount } ->
+    account
+      { balance = account.balance - amount
+      , history = Array.push
+          (Transaction { kind = "withdrawal", amount = amount })
+          account.history
+      }
+```
+
+Run `cabal build`. The compiler will flag the `OpenAccount` command — it has to produce an `AccountOpened` event, but it's missing the new `accountType` field.
+
+## Step 2 — Update OpenAccount to accept a type
+
+Open `src/NeoBank/Account/Commands/OpenAccount.hs` and add the field:
+
+```haskell
+data OpenAccount = OpenAccount
+  { ownerName :: Text
+  , accountType :: AccountType
+  }
+  deriving (Generic, Show)
+
+
+instance Json.FromJSON OpenAccount
+instance Json.ToJSON OpenAccount
+```
+
+Make sure to `import NeoBank.Account.Core` at the top to get `AccountType`. Then update the event construction:
+
+```haskell
+decide cmd existing _ctx = case existing of
+  Just _ ->
+    Decider.reject "Account already exists"
+  Nothing -> do
+    newId <- Decider.generateUuid
+    Decider.acceptNew
+      [ AccountOpened
+          { entityId = newId
+          , ownerName = cmd.ownerName
+          , accountType = cmd.accountType
+          }
+      ]
+```
+
+Build. Green.
+
+## Step 3 — Savings rules in the Withdraw command
+
+Now the interesting part. Savings accounts cannot go below a minimum balance — let's say `10`. We express this in the `Withdraw` command's `decide` function:
+
+```haskell
+-- src/NeoBank/Account/Commands/Withdraw.hs
+decide :: Withdraw -> Maybe Account -> RequestContext -> Decision AccountEvent
+decide cmd account _ctx = case account of
+  Nothing ->
+    Decider.reject "Account does not exist"
+  Just acc ->
+    if cmd.amount <= 0
+      then Decider.reject "Withdrawal amount must be positive"
+      else
+        let floor = minimumBalance acc.accountType
+        in if (acc.balance - cmd.amount) < floor
+             then Decider.reject
+                    [fmt|Withdrawal would breach minimum balance of #{floor}|]
+             else
+               Decider.acceptExisting
+                 [ MoneyWithdrawn
+                     { entityId = cmd.accountId
+                     , amount = cmd.amount
+                     }
+                 ]
+
+
+-- | How low can each account type go?
+minimumBalance :: AccountType -> Int
+minimumBalance accountType = case accountType of
+  Checking -> 0
+  Savings -> 10
+```
+
+<Aside type="tip" title="NeoHaskell style note">
+NeoHaskell prefers putting small helper functions like `minimumBalance` at the top level of the module, not buried in a `where` clause. This keeps everything visible and testable.
+</Aside>
+
+Import `AccountType` and the format quoter in that file if they aren't already:
+
+```haskell
+import NeoBank.Account.Core (Account (..), AccountType (..), AccountEvent (..))
+```
+
+Run `cabal build`. The compiler will walk you through any missed imports.
+
+## Step 4 — Test it
+
+Run the app:
+
+```bash
+cabal run
+```
+
+Open a checking account and a savings account:
+
+```bash
+curl -X POST http://localhost:8080/commands/OpenAccount \
+  -H 'Content-Type: application/json' \
+  -d '{"ownerName": "Alice", "accountType": "Checking"}'
+# copy this ID as CHECKING_ID
+
+curl -X POST http://localhost:8080/commands/OpenAccount \
+  -H 'Content-Type: application/json' \
+  -d '{"ownerName": "Alice", "accountType": "Savings"}'
+# copy this ID as SAVINGS_ID
+```
+
+Deposit 100 into each:
+
+```bash
+curl -X POST http://localhost:8080/commands/Deposit \
+  -H 'Content-Type: application/json' \
+  -d '{"accountId": "CHECKING_ID", "amount": 100}'
+
+curl -X POST http://localhost:8080/commands/Deposit \
+  -H 'Content-Type: application/json' \
+  -d '{"accountId": "SAVINGS_ID", "amount": 100}'
+```
+
+Try to withdraw all 100 from the savings account:
+
+```bash
+curl -X POST http://localhost:8080/commands/Withdraw \
+  -H 'Content-Type: application/json' \
+  -d '{"accountId": "SAVINGS_ID", "amount": 100}'
+```
+
+You should see:
+
+```json
+{
+  "kind": "Rejected",
+  "reason": "Withdrawal would breach minimum balance of 10"
+}
+```
+
+Withdraw 100 from checking — that works:
+
+```bash
+curl -X POST http://localhost:8080/commands/Withdraw \
+  -H 'Content-Type: application/json' \
+  -d '{"accountId": "CHECKING_ID", "amount": 100}'
+```
+
+Two different rules, one entity, no duplicated code. The rules live where they belong — in the business-logic functions — and the compiler knows every command must handle every account type correctly.
+
+## A test for each rule
+
+Add tests for both account types in `tests/NeoBank/Account/Commands/WithdrawSpec.hs`:
+
+```haskell
+  it "allows withdrawing to zero on checking" \_ -> do
+    let acc = (anAccount 100) { accountType = Checking }
+    let cmd = Withdraw { accountId = Uuid.nil, amount = 100 }
+    result <- runDecide cmd (Just acc)
+    case result of
+      AcceptCommand _ _ -> Task.yield ()
+      _ -> Test.fail "Expected accept on checking withdrawal to zero"
+
+  it "rejects withdrawing below savings minimum" \_ -> do
+    let acc = (anAccount 100) { accountType = Savings }
+    let cmd = Withdraw { accountId = Uuid.nil, amount = 100 }
+    result <- runDecide cmd (Just acc)
+    case result of
+      RejectCommand reason ->
+        reason |> shouldSatisfy (Text.contains "minimum balance")
+      _ -> Test.fail "Expected reject on savings over-withdrawal"
+
+  it "allows withdrawing down to the savings minimum" \_ -> do
+    let acc = (anAccount 100) { accountType = Savings }
+    let cmd = Withdraw { accountId = Uuid.nil, amount = 90 }
+    result <- runDecide cmd (Just acc)
+    case result of
+      AcceptCommand _ _ -> Task.yield ()
+      _ -> Test.fail "Expected accept on savings withdrawal to minimum"
+```
+
+Don't forget `import NeoBank.Account.Core (Account (..), AccountType (..))` and `import Text qualified`. Update `anAccount` to include a default account type:
+
+```haskell
+anAccount :: Int -> Account
+anAccount balance =
+  Account
+    { accountId = Uuid.nil
+    , ownerName = "Alice"
+    , accountType = Checking
+    , balance = balance
+    , history = Array.empty
+    }
+```
+
+All five `Withdraw` tests should pass.
+
+## What we did NOT do
+
+Notice what we didn't need:
+
+- **We didn't create a separate service for savings.** It's the same service.
+- **We didn't create a separate command hierarchy.** `Deposit` and `Withdraw` work for both types.
+- **We didn't introduce inheritance.** There is no `SavingsAccount extends Account` — the `accountType` field discriminates at runtime.
+- **We didn't add generics or phantom types.** The entity is a plain record.
+- **We didn't touch the `Statement` or `MonthlySummary` queries.** They still work unchanged, because the entity shape changed only in ways they don't care about (they project the `history` and `balance` fields, which are unchanged).
+
+That is the payoff for modeling this correctly: adding a new account type was a mechanical change, guided entirely by the compiler errors, with existing tests and queries untouched.
+
+## Recap
+
+- **Multiple entity types can share an entity** when they share most of their shape. Use a discriminator field.
+- **Per-type rules live in `decide` functions.** That is the natural home for business logic.
+- **Small helper functions go at the top level** of the command module — not in a `where` clause.
+- **The compiler walks you through every change.** Add a field, fix the errors, move on.
+
+## Next
+
+Now that we have checking and savings, customers will want to move money between them. Transfers are the trickiest part of any banking system — they span two accounts, they can fail halfway, and if you lose track, you lose money. In Part 5, we'll build transfers properly. This is where the real magic happens.
+
+[**Part 5 — Transfers →**](/tutorial/05-transfers/)

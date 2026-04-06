@@ -1,37 +1,76 @@
 ---
 title: Core Concepts
-description: The mental models behind NeoHaskell — why it works this way.
+description: The mental models behind NeoHaskell — the concepts, not the syntax.
 sidebar:
   order: 0
 ---
 
 import { Card, CardGrid } from '@astrojs/starlight/components';
 
-Core Concepts explain the *why* behind NeoHaskell. Each page takes a concept you'll encounter in the tutorial and gives it the full treatment — mental model shift, concrete examples, and how the compiler enforces it.
+The tutorial showed you *how* to do things in NeoHaskell. This section explains *why*. If the tutorial was about moves, this is about strategy. You don't need these pages to be productive — you can build real systems using only the tutorial patterns — but reading them will change how you think about state, consistency, and domain modeling.
 
-## Start here
+## Read them in this order
 
 <CardGrid>
-  <Card title="Why NeoHaskell?" icon="star">
-    What NeoHaskell offers, how it compares, and when it's NOT the right choice.
+  <Card title="1. Thinking in events" icon="seti:clock">
+    The one mental shift that makes everything else click.
 
-    [Read more →](/concepts/why-neohaskell/)
+    [Read →](/concepts/thinking-in-events/)
   </Card>
-  <Card title="From CRUD to Events" icon="right-arrow">
-    The most important mental model shift — from UPDATE statements to event streams.
+  <Card title="2. From CRUD to events" icon="random">
+    If you've been writing database-first code your whole career, this is the bridge.
 
-    [Read more →](/concepts/from-crud-to-events/)
+    [Read →](/concepts/from-crud-to-events/)
+  </Card>
+  <Card title="3. Events, not state" icon="puzzle">
+    Why storing state is a lie — and what to do instead.
+
+    [Read →](/concepts/events-not-state/)
+  </Card>
+  <Card title="4. Commands and handlers" icon="seti:pipeline">
+    How intent becomes fact.
+
+    [Read →](/concepts/commands-and-handlers/)
+  </Card>
+  <Card title="5. Updates (projections)" icon="list-format">
+    How you read the same events a dozen different ways.
+
+    [Read →](/concepts/updates/)
+  </Card>
+  <Card title="6. Services" icon="list-format">
+    Consistency boundaries, deployment units, and why they're the same thing.
+
+    [Read →](/concepts/services/)
+  </Card>
+  <Card title="7. Type safety" icon="approve-check">
+    What the compiler enforces, and why that matters more than you think.
+
+    [Read →](/concepts/type-safety/)
+  </Card>
+  <Card title="8. Effects and concurrency" icon="rocket">
+    How NeoHaskell handles async, failure, and parallelism without you writing any callbacks.
+
+    [Read →](/concepts/effects/)
+  </Card>
+  <Card title="9. Testing event-sourced systems" icon="approve-check">
+    Given-When-Then as a first-class workflow.
+
+    [Read →](/concepts/testing-event-sourced-systems/)
+  </Card>
+  <Card title="10. Schema evolution" icon="seti:db">
+    How to change an event shape without breaking history.
+
+    [Read →](/concepts/schema-evolution/)
+  </Card>
+  <Card title="11. Trade-offs" icon="warning">
+    What event sourcing costs and when it's the wrong call.
+
+    [Read →](/concepts/trade-offs/)
   </Card>
 </CardGrid>
 
-## How to read this section
+## Why it's in this order
 
-Every concept page follows a pattern:
+The early pages bridge you from the mental model you probably already have (CRUD) to the mental model NeoHaskell assumes (events). The middle pages break down the specific primitives — commands, queries, services. The later pages cover the harder questions you'll run into once you've shipped something.
 
-1. **What You Might Expect** — starting from your CRUD assumptions
-2. **Why That Breaks** — the specific failure that motivates the shift
-3. **The Mental Model Shift** — what changes in how you think
-4. **In NeoBank Terms** — explained using the banking domain from the tutorial
-5. **The Full Picture** — complete explanation with code
-
-You don't need to read these in order. Each page stands alone. But if you're following the tutorial, the concept pages are linked at the moments they become relevant.
+You can jump around, but the earlier pages often refer back to each other, and the later pages assume you've read the earlier ones.

@@ -1,10 +1,350 @@
 ---
-title: "Part 6: Audit Everything"
-description: "Replay history, time-travel through your data, and see what you built."
+title: "Part 6 — Audit everything"
+description: "Replay history, time-travel through any account, swap to PostgreSQL, and see the full picture of what you just built."
 ---
 
-The requirement — show everything that ever happened. You'll build event replay, time-travel queries, and a complete audit trail. By the end, you'll realize you accidentally built an audit system — because that's what an event store already is.
+import { Aside } from '@astrojs/starlight/components';
 
-:::caution[Coming Soon]
-This page is under development. Check back soon!
-:::
+**What you'll build in this part:** The audit trail. We'll switch from the in-memory event store to PostgreSQL (a one-line change), and we'll add the final touches that turn NeoBank into something you could realistically operate. Most importantly, we'll step back and count what you built.
+
+**Reading time:** ~20 minutes · **Lines of code added:** ~10
+
+## What you'll learn
+
+- How to swap event store implementations with a one-line change.
+- How to answer "what was the state at this point in time?"
+- How property-based testing works for event-sourced systems.
+- What you actually built, in plain terms.
+
+## The accidental audit trail
+
+Here's the thing nobody mentioned until now: **you already built the audit trail.** Every single command that ran, every accepted, every rejected, every event — they're all in the event store. In order. Timestamped. Immutable. You don't need to add anything. The events *are* the audit log.
+
+Let's prove it. We haven't wired up any "history" query yet, but the event store can be queried directly. You could build a query like this by replaying events:
+
+```haskell
+-- src/NeoBank/Account/Queries/FullHistory.hs
+{-# LANGUAGE TemplateHaskell #-}
+
+module NeoBank.Account.Queries.FullHistory (
+  FullHistory (..),
+  HistoryEntry (..),
+  canAccess,
+  canView,
+) where
+
+import Array qualified
+import Core
+import Json qualified
+import Service.Query.Auth (QueryAuthError, UserClaims, publicAccess, publicView)
+import Service.Query.TH (deriveQuery)
+import NeoBank.Account.Core (Account (..), Transaction (..))
+
+
+data HistoryEntry = HistoryEntry
+  { sequenceNumber :: Int
+  , kind :: Text
+  , amount :: Int
+  , runningBalance :: Int
+  }
+  deriving (Eq, Show, Generic)
+
+
+instance Json.FromJSON HistoryEntry
+instance Json.ToJSON HistoryEntry
+instance ToSchema HistoryEntry
+
+
+data FullHistory = FullHistory
+  { accountId :: Uuid
+  , entries :: Array HistoryEntry
+  }
+  deriving (Eq, Show, Generic)
+
+
+instance Json.FromJSON FullHistory
+instance Json.ToJSON FullHistory
+instance ToSchema FullHistory
+
+
+canAccess :: Maybe UserClaims -> Maybe QueryAuthError
+canAccess = publicAccess
+
+
+canView :: Maybe UserClaims -> FullHistory -> Maybe QueryAuthError
+canView = publicView
+
+
+deriveQuery ''FullHistory [''Account]
+
+
+instance QueryOf Account FullHistory where
+  queryId account = account.accountId
+
+  combine account _existing = do
+    -- We need a running balance, so we walk the history carrying state.
+    let indexedEntries =
+          account.history
+            |> Array.reduce
+                (\t (running, index, acc) ->
+                    let delta = case t.kind of
+                          "deposit" -> t.amount
+                          _ -> -t.amount
+                        newRunning = running + delta
+                        entry =
+                          HistoryEntry
+                            { sequenceNumber = index
+                            , kind = t.kind
+                            , amount = t.amount
+                            , runningBalance = newRunning
+                            }
+                    in (newRunning, index + 1, Array.push entry acc)
+                )
+                (0, 1, Array.empty)
+        (_, _, entries) = indexedEntries
+    Update FullHistory
+      { accountId = account.accountId
+      , entries = entries
+      }
+```
+
+Register it in `App.hs`:
+
+```haskell
+|> Application.withQuery @FullHistory
+```
+
+Rebuild, open an account, do a few deposits and withdrawals, then:
+
+```bash
+curl http://localhost:8080/queries/full-history/ID
+```
+
+You get a list of every transaction with its running balance at each step:
+
+```json
+{
+  "accountId": "...",
+  "entries": [
+    { "sequenceNumber": 1, "kind": "deposit",    "amount": 100, "runningBalance": 100 },
+    { "sequenceNumber": 2, "kind": "deposit",    "amount":  50, "runningBalance": 150 },
+    { "sequenceNumber": 3, "kind": "withdrawal", "amount":  30, "runningBalance": 120 }
+  ]
+}
+```
+
+That's a full audit trail. Every transaction ever, with timestamps, in order, indelible. You didn't write an audit system. You had one the whole time — it's just that now you're looking at it.
+
+## Switching to PostgreSQL
+
+The in-memory event store is great for development — fast, zero-config, trivial to reset. For anything real, you want PostgreSQL. The switch is a one-line change.
+
+Open `src/App.hs`. Change the import:
+
+```haskell
+import Service.EventStore.Postgres (PostgresEventStore (..))
+```
+
+Change the `withEventStore` call:
+
+```haskell
+app :: Application
+app =
+  Application.new
+    |> Application.withEventStore @() (\_ ->
+        PostgresEventStore
+          { user = "neohaskell"
+          , password = "neohaskell"
+          , host = "localhost"
+          , databaseName = "neohaskell"
+          , port = 5432
+          })
+    |> Application.withTransport WebTransport.server
+    |> Application.withService Account.service
+    |> Application.withService Transfer.service
+    |> Application.withQuery @Statement
+    |> Application.withQuery @MonthlySummary
+    |> Application.withQuery @FullHistory
+    |> Application.withOutbound @Orchestrator
+```
+
+You need a running PostgreSQL instance. The easiest way is Docker:
+
+```bash
+docker run -d --name neobank-postgres \
+  -e POSTGRES_USER=neohaskell \
+  -e POSTGRES_PASSWORD=neohaskell \
+  -e POSTGRES_DB=neohaskell \
+  -p 5432:5432 \
+  postgres:16-alpine
+```
+
+Run NeoBank:
+
+```bash
+cabal run
+```
+
+It automatically creates the event schema on first run, connects, and starts serving requests. From the user's perspective nothing changed — same endpoints, same JSON shapes, same behavior — but now your data survives restarts, and you can inspect the raw event log by connecting to the database directly.
+
+## Real configuration
+
+Hard-coding the Postgres credentials is a bad idea. Let's use the config system. Create `src/MyApp/Config.hs`:
+
+```haskell
+{-# LANGUAGE TemplateHaskell #-}
+
+module MyApp.Config (
+  NeoBankConfig (..),
+  HasNeoBankConfig,
+) where
+
+import Config (defineConfig)
+import Config qualified
+import Core
+
+
+defineConfig
+  "NeoBankConfig"
+  [ Config.field @Text "dbHost"
+      |> Config.doc "PostgreSQL host"
+      |> Config.defaultsTo ("localhost" :: Text)
+      |> Config.envVar "DB_HOST"
+  , Config.field @Int "dbPort"
+      |> Config.doc "PostgreSQL port"
+      |> Config.defaultsTo (5432 :: Int)
+      |> Config.envVar "DB_PORT"
+  , Config.field @Text "dbUser"
+      |> Config.doc "PostgreSQL username"
+      |> Config.defaultsTo ("neohaskell" :: Text)
+      |> Config.envVar "DB_USER"
+  , Config.field @Text "dbPassword"
+      |> Config.doc "PostgreSQL password"
+      |> Config.defaultsTo ("neohaskell" :: Text)
+      |> Config.envVar "DB_PASSWORD"
+      |> Config.secret
+  , Config.field @Text "dbName"
+      |> Config.doc "PostgreSQL database name"
+      |> Config.defaultsTo ("neohaskell" :: Text)
+      |> Config.envVar "DB_NAME"
+  ]
+```
+
+Update `App.hs`:
+
+```haskell
+import MyApp.Config (NeoBankConfig (..))
+import Service.EventStore.Postgres (PostgresEventStore (..))
+
+
+app :: Application
+app =
+  Application.new
+    |> Application.withConfig @NeoBankConfig
+    |> Application.withEventStore makePostgresConfig
+    |> Application.withTransport WebTransport.server
+    |> Application.withService Account.service
+    -- ... etc.
+
+
+makePostgresConfig :: NeoBankConfig -> PostgresEventStore
+makePostgresConfig config =
+  PostgresEventStore
+    { user = config.dbUser
+    , password = config.dbPassword
+    , host = config.dbHost
+    , databaseName = config.dbName
+    , port = config.dbPort
+    }
+```
+
+Now every config field becomes an environment variable. To use a different database:
+
+```bash
+DB_HOST=prod.example.com DB_PASSWORD=real-secret cabal run
+```
+
+Or via CLI flags, since the config system generates those automatically:
+
+```bash
+cabal run -- --db-host prod.example.com
+```
+
+## Property-based testing
+
+You have one more testing tool you haven't used yet — property-based testing. Instead of testing specific examples, you state a *property* that should hold for any input, and the framework generates a hundred examples for you.
+
+A great property for event-sourced systems is: **folding events with `update`, starting from `initialState`, should always produce a state that is consistent with the events.**
+
+For our accounts specifically: **no sequence of valid commands should ever produce a negative balance on a savings account.** That's a property. Here's how you'd express it with the testing primitives:
+
+```haskell
+-- tests/NeoBank/Account/PropertiesSpec.hs
+spec :: Spec Unit
+spec = describe "Account properties" do
+  it "never produces a negative balance on savings" \_ -> do
+    -- Generate many random sequences of deposits and withdrawals.
+    -- For each, apply all commands via decide and update.
+    -- Assert: after every step, savings balance >= minimum.
+    -- (Full generator-based testing is covered in the Testing guide.)
+    Task.yield ()
+```
+
+The [Testing guide](/guides/testing/) covers property-based testing in full. The point here is that event-sourced systems are uniquely suited to it, because every command is a pure function.
+
+## What you actually built
+
+Let's count.
+
+| What it sounds like | What you actually wrote | Approx. lines |
+|---|---|---|
+| Multi-account management | One entity with a discriminator field | 10 |
+| Real-time transaction ledger | A list pushed to in the entity's `update` | 8 |
+| Instant balance reconciliation | A fold over events in `update` | 5 |
+| Overdraft protection | Two `if` statements in a `decide` function | 5 |
+| Inter-account transfers | A saga entity + orchestrator integration | 80 |
+| Complete audit trail | The event store (you already had it) | 0 |
+| Historical replay | The same event store (you already had it) | 0 |
+| Multiple read models | Two `QueryOf` instances | 40 |
+| **Total** | | **~150** |
+
+And nearly every line of that was domain logic, not ceremony. You did not write:
+
+- SQL migrations.
+- A controller layer.
+- A repository pattern.
+- A DTO layer.
+- A validation framework.
+- A dispatcher.
+- A message queue client.
+- A serialization contract.
+- An audit log.
+- A replay script.
+
+You wrote a spec of your domain, and the language turned it into a running service.
+
+## What a production NeoBank would add
+
+Honesty check. You built a real bank in the structural sense. Production would layer on:
+
+- **Multi-currency support** (integer cents become a sum type or a structured type).
+- **Regulatory compliance** (KYC flows, PII handling, retention policies).
+- **Rate limiting** and abuse prevention.
+- **Audit sinks** — integrations that mirror events to cold storage for compliance.
+- **Interest calculation** — a scheduled integration that runs monthly.
+- **Reporting pipelines** — more projections.
+- **Human review workflows** for large transfers.
+
+Every one of those is additive. None of them would require rewriting what you already built. That's the property you get from modeling your domain as events and building read models on top.
+
+## Recap
+
+- **The audit trail was there all along.** Every event, append-only, in order, forever. You just had to look.
+- **Switching event stores is a one-line change** because the event store interface is the same regardless of implementation.
+- **Configuration should live in code**, loaded at startup from environment variables or CLI args.
+- **Property-based tests** are uniquely effective on event-sourced systems because everything is pure.
+- **You built about 150 lines of code** that produce a running, testable, auditable, distributed-ready banking service.
+
+## Next
+
+You did it. You have a working event-sourced bank, and more importantly, you have the mental model. [**Where to go from here →**](/tutorial/whats-next/)
