@@ -35,7 +35,7 @@ The result: you move faster because you delegate the tedious verification to a t
 
 When the compiler validates structure, the model's job shrinks to "propose something plausible." It does not need to be brilliant — it needs to be close enough that the compiler can tell it where it's off. A smaller, faster, cheaper model writes NeoHaskell as effectively as a frontier model writes Python, because the expensive part (catching structural errors) is handled by the build, not the model.
 
-Teams using NeoHaskell with AI report spending 30–60% fewer tokens per feature compared to equivalent work in mainstream languages. The direction is consistent even if the exact number depends on the domain.
+The structural reason is straightforward: fewer files to read, fewer lines per file, and a build step that replaces the "did the model get it right?" review. Token spend scales with how much context the model needs and how many rounds it takes to converge. Both shrink when the compiler handles verification.
 
 ### Adding a feature cannot silently break an existing one
 
