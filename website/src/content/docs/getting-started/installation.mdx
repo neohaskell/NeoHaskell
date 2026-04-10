@@ -211,31 +211,6 @@ cabal run             # Run the example
 
 If you forget `nix develop` and run `cabal build` outside the shell, it will fail because `cabal` is not on your `PATH` — that's expected. The dev shell is what makes everything work.
 
-## Getting started with AI
-
-If you use an AI coding assistant — Claude Code, Cursor, Copilot, OpenCode, or anything similar — you can hand it a short prompt that makes it productive in NeoHaskell immediately. Paste this into your assistant as your first message in a new NeoHaskell project:
-
-````markdown
-I'm building a NeoHaskell application. NeoHaskell is a strongly-typed
-functional language where commands, events, entities, queries, services,
-and integrations are language primitives enforced by the compiler.
-
-Fetch https://neohaskell.org/llms.txt and follow it as the source of truth
-for how to write NeoHaskell code. If you need deeper reference, fetch
-https://neohaskell.org/llms-full.txt.
-
-Key rules:
-- Use `|>` for function application, never `$`.
-- Use `do` blocks for `Task`, `Task.yield` to return, `Task.throw` to fail.
-- Use `case ... of` for pattern matching, never in function heads.
-- Use `[fmt|Hello #{name}|]` for strings, never `++`.
-- Commands end with `command ''YourCommand`.
-- Services must share one entity/event type.
-- If the build fails, read the first line of the error and fix exactly that.
-````
-
-For the full system prompt (with every rule, every common drift pattern, and the recommended workflow), see [Using AI with NeoHaskell](/getting-started/using-ai/). That page also covers why NeoHaskell lets you use cheaper, smaller models productively — the compiler does the verification work a larger model would otherwise need to do.
-
 ## Troubleshooting
 
 ### "command not found: nix" after installation
