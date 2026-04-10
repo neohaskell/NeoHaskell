@@ -1,16 +1,16 @@
 ---
 title: NeoHaskell
-description: A language where event sourcing, commands, queries, and services are first-class primitives. The compiler enforces what other frameworks leave to discipline.
+description: The core language. Write your business logic with compiler guarantees. Everything else plugs in around it.
 template: splash
 hero:
-  tagline: Event sourcing as a language. The compiler enforces what other frameworks leave to discipline.
+  tagline: The core language. Your business logic, with guarantees. Everything else plugs in.
   actions:
     - text: Get started
       link: /getting-started/installation/
       icon: right-arrow
-    - text: Build NeoBank
-      link: /tutorial/
-      icon: seti:haskell
+    - text: Why NeoHaskell?
+      link: /concepts/why-neohaskell/
+      icon: open-book
       variant: minimal
     - text: GitHub
       link: https://github.com/neohaskell/neohaskell
@@ -18,59 +18,32 @@ hero:
       variant: minimal
 ---
 
-import { Card, CardGrid } from '@astrojs/starlight/components';
+import { Card, CardGrid, Aside } from '@astrojs/starlight/components';
 
-NeoHaskell is a language built around one idea: **commands, events, entities, queries, services, and integrations are first-class language constructs, not patterns you implement in a framework.** You do not wire up a CQRS library. You do not decide whether to use event sourcing. You write a `decide` function, return a `Decision`, and the compiler makes sure every piece of your domain is consistent before the program runs.
+## Every application has two parts
 
-The result: a codebase that reads like pseudocode, a type checker that catches entire categories of bugs other languages leave for production, and an architecture that scales from a single-file prototype to a distributed system without rewriting.
+**The shell** — HTTP routing, database connections, file I/O, external APIs. Important, but interchangeable. You can swap your web framework, your database, your queue. The product still works.
 
-## Pick a door
+**The core** — Your business logic. The rules that make your product yours. *"Premium customers get 15% off orders over $500."* *"If payment fails twice, escalate to support."* *"An account cannot go negative."* This is what you cannot swap out. This is your competitive advantage.
 
-<CardGrid>
-  <Card title="Build something in 10 minutes" icon="rocket">
-    You are a developer. You learn by building. [Install NeoHaskell](/getting-started/installation/), record your first event, and watch the compiler catch a bug you would have shipped in JavaScript.
+Most languages mix these together. Your pricing rule lives next to your HTTP handler, which lives next to your ORM call. When the rule changes, you are touching three layers and hoping you don't break the plumbing.
 
-    **[Install →](/getting-started/installation/)**
-  </Card>
-  <Card title="Build a bank in an afternoon" icon="open-book">
-    The NeoBank tutorial takes you from zero to a running event-sourced banking service. Accounts, transactions, transfers, audit trail. Seven lessons. About 200 lines of code.
-
-    **[Start the tutorial →](/tutorial/)**
-  </Card>
-  <Card title="Evaluate the tradeoffs" icon="setting">
-    You are deciding whether to bring NeoHaskell into a project. Start here: what the language is, what the compiler enforces, where it fits, and where it does not.
-
-    **[Why NeoHaskell? →](/concepts/why-neohaskell/)**
-  </Card>
-</CardGrid>
+**NeoHaskell keeps them separate.** You write the core. The shell plugs in.
 
 ## What it looks like
 
-Here is a complete command — the kind of code you will write in production. Read it once, top to bottom. No setup, no preamble, just the thing:
+You describe what happens in your domain:
 
 ```haskell
-module Bank.Commands.DepositMoney (DepositMoney (..), decide) where
-
-import Core
-import Decider qualified
-import Service.Auth (RequestContext)
-import Service.CommandExecutor.TH (command)
-import Service.Transport.Web (WebTransport)
-import Bank.Account.Core (Account, AccountEvent (..))
-
-
 data DepositMoney = DepositMoney
   { accountId :: Uuid
   , amount :: Int
   }
-  deriving (Generic, Show)
+```
 
+You describe how to handle it:
 
-getEntityId :: DepositMoney -> Maybe Uuid
-getEntityId cmd = Just cmd.accountId
-
-
-decide :: DepositMoney -> Maybe Account -> RequestContext -> Decision AccountEvent
+```haskell
 decide cmd account _ctx = case account of
   Nothing ->
     Decider.reject "Account does not exist"
@@ -84,49 +57,49 @@ decide cmd account _ctx = case account of
               , amount = cmd.amount
               }
           ]
-
-
-type instance EntityOf DepositMoney = Account
-type instance TransportsOf DepositMoney = '[WebTransport]
-command ''DepositMoney
 ```
 
-That is the whole command. The compiler will reject this code if:
+The shell is handled for you:
 
-- `Account` does not have an event type.
-- `AccountEvent` does not include `MoneyDeposited`.
-- The `update` function for `Account` does not handle `MoneyDeposited`.
-- You forgot to return a `Decision`.
-- You pattern-matched on a case that does not exist.
+- HTTP endpoint — generated.
+- JSON schema and OpenAPI spec — generated.
+- CLI parser — generated.
+- Event persistence — automatic.
+- State reconstruction — automatic.
+- Audit trail — automatic.
 
-You did not write a validator. You did not register this command with a dispatcher. You did not wire it into a test harness. The compiler did. The last line — `command ''DepositMoney` — generates the endpoint, the JSON schema, the CLI parser, and the handler registration. Your domain logic is the entire file.
+You wrote the business rule. NeoHaskell handled the plumbing.
 
-## The idea in one picture
+## Why your core deserves its own language
 
-```text
-   Command                     Event                     State
-   ───────                    ───────                   ───────
-     "I want to       accepted    "This     folded into    "current
-      deposit   ────────────────►  happened"  ───────────►  balance
-      $50"      rejected                                   is $50"
-                     │
-                     └──► "reason: account closed"
-```
+**If it compiles, the logic is structurally correct.** Add a new rule to your domain and forget to handle it somewhere? The compiler tells you exactly where before the program runs. Not a test. Not a code reviewer. The compiler.
 
-Commands are **requests** ("I want to deposit $50"). The `decide` function reviews them against the current state and either accepts them (producing events) or rejects them (with a reason). Events are **immutable facts** ("$50 was deposited"). State is **derived by folding events** — it is never stored directly.
+**In an era of AI-assisted coding, your core is the last line of defense.** AI is great at writing shell code — routing, boilerplate, CRUD. But when it writes core logic without guardrails, mistakes hide in the part of your system that matters most. NeoHaskell is the guardrail. The compiler validates the assistant's output so you don't have to review every line by hand.
 
-This is how banks work. It is how accounting works. It is how git works. NeoHaskell just makes it how your code works, and lets the compiler keep everyone honest.
+**Your core should be readable.** Business logic that reads like business language. When rules change, you see exactly what to update — because the rules are the code, not a layer buried inside framework abstractions.
 
-## Built for AI-assisted development
+**Your core should be auditable.** Every state change is recorded as an immutable fact. Every decision is traceable. Complete history — no audit logger required, no history table to maintain. Ready for debugging, compliance, or feeding into your analytics pipeline.
 
-NeoHaskell was designed for a world where AI assistants write most of the code. The language's opinionated structure, small files, and compiler-enforced contracts turn a property other languages envy into a default: **if the assistant's output compiles, it is structurally correct.**
+## Two starting points
 
-- **The compiler is the validator.** Wrong code does not compile — missing event handlers, mismatched types, broken service boundaries are all caught at build time.
-- **Cheaper models are enough.** You do not need a frontier-tier model to produce correct NeoHaskell. A smaller, faster model writes plausible code; the compiler verifies it; you ship.
-- **Fewer tokens per feature.** Small files, zero boilerplate, and predictable file layout mean whole modules fit in the assistant's context with room to spare.
-- **MCP transport built in.** Expose every command as an [MCP](/reference/transports/) tool — the same command file, zero extra code.
+<CardGrid>
+  <Card title="I want to build something new" icon="rocket">
+    NeoHaskell provides the core language and pre-built integrations for the shell. HTTP server, database, auth — ready to use. Full application, minimal setup.
 
-See [**Using AI with NeoHaskell**](/getting-started/using-ai/) for the ready-to-paste system prompt and the workflow that reliably produces correct code on the first build.
+    **[Get started →](/getting-started/installation/)**
+  </Card>
+  <Card title="I want to integrate with my existing system" icon="setting">
+    Your existing Python / JS / Java / Go system becomes the shell. NeoHaskell becomes the core. They talk via HTTP. Clean separation. No rewrite.
+
+    **[Why NeoHaskell? →](/concepts/why-neohaskell/)**
+  </Card>
+</CardGrid>
+
+## Learn by building
+
+The [NeoBank tutorial](/tutorial/) takes you from zero to a working banking service — accounts, transactions, transfers, and a complete audit trail. Six parts, about 200 lines of core logic. It will feel like enterprise software. The tutorial teaches you the language by building something real, not by lecturing you about type theory.
+
+**[Start the tutorial →](/tutorial/)**
 
 ## Already know a language?
 
@@ -145,12 +118,12 @@ See [**Using AI with NeoHaskell**](/getting-started/using-ai/) for the ready-to-
   </Card>
 </CardGrid>
 
-More language-specific pages (including existing event-sourcing frameworks) live in the [Coming From…](/coming-from/) section of the sidebar.
+More language-specific pages live in the [Coming From...](/coming-from/) section of the sidebar.
 
 ## The promise
 
-Every page in this documentation is written to hold up one promise: **you should never feel like you need permission to be here.** Strongly-typed functional languages have a reputation for being intimidating, academic, and closed off to anyone without a category theory textbook. This is not that. If you have ever written a Redux reducer, a REST handler, or a SQL query, you already know how to think in NeoHaskell — you just need the syntax.
+Every page in this documentation is written to hold up one promise: **you should never feel like you need permission to be here.** If you have ever written a switch statement, a REST handler, or a form validation function, you already know how to think in NeoHaskell — you just need the syntax.
 
-Start with the [10-minute quickstart](/getting-started/installation/) if you want to feel the language in your hands. Start with [the tutorial](/tutorial/) if you want to build something real. Start with [Why NeoHaskell?](/concepts/why-neohaskell/) if you want to know what you are signing up for.
+Start with the [quickstart](/getting-started/installation/) if you want to feel the language in your hands. Start with [the tutorial](/tutorial/) if you want to build something real. Start with [Why NeoHaskell?](/concepts/why-neohaskell/) if you want to understand the reasoning.
 
 Welcome in.

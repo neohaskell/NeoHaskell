@@ -1,139 +1,155 @@
 ---
 title: "Why NeoHaskell?"
-description: "Ship faster, break less, spend less on AI. NeoHaskell is the language where the compiler does the work you currently do by hand."
+description: "Your business logic deserves guarantees that general-purpose languages cannot provide. NeoHaskell is the core language — specialized for the part of your system that matters most."
 sidebar:
   hidden: true
 ---
 
 import { Aside } from '@astrojs/starlight/components';
 
-## The problem
+## The core problem
 
-You describe a feature. Your AI assistant writes the code. It looks right. It compiles. It passes a few tests. You ship it.
+Your application has two parts.
 
-Three weeks later, a customer reports that their account balance is wrong. You dig in and discover the assistant wrote a function that silently skips a case your domain should have handled. The code compiled because nothing in your language required it to handle that case. The tests passed because nobody thought to write a test for a scenario nobody knew existed. The bug has been in production for three weeks, and now you are explaining it to your VP.
+**The shell** is the infrastructure: HTTP routing, database connections, file I/O, queue consumers, external API calls. It is important. It is also interchangeable. You can swap Express for Fastify. PostgreSQL for MySQL. Kafka for RabbitMQ. The product still works.
 
-This is the problem NeoHaskell solves. Not with more tests. Not with better prompts. Not with a smarter model. **With a compiler that refuses to build code where cases are missing, contracts are broken, or state changes go unrecorded.**
+**The core** is your business logic. The rules that make your product yours. *"Premium customers get 15% off orders over $500 on Fridays."* *"An account cannot go negative."* *"If payment fails twice, escalate to support."* This is what you cannot swap out. This is your competitive advantage.
 
-## The pitch
+In most systems, the core and the shell are mixed together. Your pricing rule lives inside an HTTP handler, which lives inside a service class, which calls an ORM, which runs a SQL query. When the rule changes, you are touching four layers and hoping you don't break the plumbing. When something goes wrong, you are debugging across four layers to figure out whether the bug is in the rule, the handler, the service, or the query.
 
-**NeoHaskell is the language where incorrect code does not compile — so you ship faster, because you stop spending time finding bugs that the compiler already found.**
+**NeoHaskell separates them.** You write the core — the rules, the decisions, the domain — in a language that gives your business logic the guarantees it deserves. The shell (HTTP, databases, queues, AI transports) plugs in around it.
 
-That is the whole thing. Everything else on this page is a consequence.
+## Why the core needs guarantees
 
-## What that means in practice
+Your shell can tolerate a bug. A 500 error on a rarely-used endpoint is bad but survivable. A misconfigured route is a deploy away from fixed.
 
-### You stop reviewing AI output line by line
+Your core cannot tolerate a bug. A pricing rule that silently gives the wrong discount loses revenue on every transaction. A permission check that misses a case is a security hole. A workflow that skips a step creates data that can never be reconciled.
 
-In most languages, the only way to trust AI-generated code is to read every line. The model is the sole enforcer of correctness. If you miss something, production catches it for you.
+General-purpose languages treat your core the same as your shell — the same type system, the same error handling, the same "hope the tests catch it" safety net. NeoHaskell gives your core stronger guarantees:
 
-In NeoHaskell, the compiler is the enforcer. If the assistant forgets to handle a case, the build fails. If it uses the wrong type, the build fails. If it wires a feature incorrectly, the build fails — with a specific message that says what is wrong and where. You review architecture and intent. The compiler reviews structure and consistency.
+**If it compiles, every case is handled.** Add a new rule to your domain and forget to handle it somewhere? The compiler tells you exactly which files, which functions, which lines need to change. Not a test. Not a code reviewer. The compiler, before the program runs once.
 
-The result: you move faster because you delegate the tedious verification to a tool that never gets tired and never skips a line.
+**Every state change is recorded.** Not because you built an audit logger. Because the language is structured so that state can only change through recorded facts. When someone asks "why is this customer's balance $47.32?", the answer is in the event log — every deposit, withdrawal, fee, and adjustment, in order, since the account was opened.
 
-### You use cheaper, smaller AI models
+**The rules are the code.** There is no service layer that "interprets" business rules from a config file. There is no framework that "infers" behavior from annotations. Your domain logic is written as pure functions that take input and produce output. You read the function, you read the rule. They are the same thing.
 
-When the compiler validates structure, the model's job shrinks to "propose something plausible." It does not need to be brilliant — it needs to be close enough that the compiler can tell it where it's off. A smaller, faster, cheaper model writes NeoHaskell as effectively as a frontier model writes Python, because the expensive part (catching structural errors) is handled by the build, not the model.
+## What this means for AI-assisted development
 
-The structural reason is straightforward: fewer files to read, fewer lines per file, and a build step that replaces the "did the model get it right?" review. Token spend scales with how much context the model needs and how many rounds it takes to converge. Both shrink when the compiler handles verification.
+AI is changing how code gets written. Copilots, coding agents, generated PRs — velocity is increasing. That is great for the shell. Boilerplate writes itself. CRUD endpoints, database migrations, routing glue — an AI assistant handles these in seconds.
 
-### Adding a feature cannot silently break an existing one
+But your core? The business rules that define your product? You need guarantees, not suggestions.
 
-When you add a new capability to your system — a new kind of transaction, a new status, a new field — the compiler immediately tells you every place in the codebase that needs to account for it. Not "might need to change." Not "you should check." It tells you exactly which files, exactly which functions, exactly which lines do not handle the new case yet. You fix them, rebuild, and the guarantee holds again.
+NeoHaskell is the guardrail that makes AI-assisted development safe for the part of your system that matters most. The compiler validates every piece of AI-generated core logic. If the assistant forgets a case, introduces a type mismatch, or wires something incorrectly — the build fails with a specific error. The assistant reads the error and fixes it in one round. You do not review lines of code by hand; the compiler reviewed them for you.
 
-In a language without this property, adding a feature is an act of faith. You add the thing, you write some tests, you ship, and you hope you didn't forget a handler somewhere in a file you haven't opened in months. In NeoHaskell, the compiler opened every file for you.
+The practical consequences:
 
-### You get a complete audit trail without building one
+- **You use cheaper, smaller models.** The compiler does the verification. The model just needs to be plausible, not perfect.
+- **You spend fewer tokens per feature.** Core files are small (50–80 lines). Whole modules fit in the assistant's context window.
+- **Your prompts get better over time.** When you understand the compiler's feedback, you write prompts that produce correct code on the first build.
 
-Every state change in a NeoHaskell application is recorded as an immutable fact. Not because you wrote an audit logger. Not because you added a `history` table. Because the language is structured so that state can only change through recorded facts. The audit trail is the default, not a feature you layer on.
+And every fact your core records — every event, every decision — is structured data ready for analytics, training, or feeding back into your AI systems. You get that for free because the architecture produces it by default.
 
-When a customer asks "why is my balance $47.32?", the answer is in the event log: a list of every deposit, withdrawal, transfer, and fee, in order, with timestamps, since the account was opened. You did not write a single line of audit code. The architecture gave it to you.
+## How it works in practice
 
-### Your domain is the code
+### If you are building something new
 
-In most systems, the architecture lives in a diagram, the business rules live in a service layer, the data lives in a database, and the wiring lives in configuration files. When any of these drift apart — and they always drift — you get bugs.
-
-In NeoHaskell, you describe your domain once. The rules, the state transitions, the boundaries between systems, the way data flows — all of it is expressed in the same typed code. There is no diagram to keep in sync. There is no YAML to misconfigure. The code is the architecture, and the compiler ensures it is consistent.
-
-### You start simple and scale without rewriting
-
-A NeoHaskell application starts as a single process running against an in-memory store. When you need persistence, you change one line to use PostgreSQL. When you need to split a service out, you move its module to a separate deployment — same code, different wiring. When you need an HTTP API, a CLI tool, or an MCP integration for AI agents, you register a transport. Your domain code does not change.
-
-There is no "we need to rewrite for scale" moment, because the architecture boundaries are in the types from day one. You just move the deployment line.
-
-## Built for AI-assisted development
-
-Everything above compounds when an AI assistant is doing the writing. Here is why.
-
-**The feedback loop is immediate.** The assistant writes code. You run the build. If it fails, the error is specific enough that the assistant fixes it in one round — usually by adding a single missing case or import. No guessing, no stack-trace archaeology, no "run the tests and see what happens."
-
-**Context windows go further.** NeoHaskell files are small. A command is 50–80 lines. A query is 30–60. Entire modules fit in the assistant's working context. When the model can see all the types it needs to satisfy, it hallucinates less.
-
-**The file layout is predictable.** Every command, every query, every service, every integration has a canonical location. The assistant never has to guess where a file goes. It puts the file in the right place because there is only one right place.
-
-**Your prompts become better over time.** When you understand the compiler's feedback, you start writing prompts that preempt errors: "add the event and make sure the update function handles it." That is a prompt that produces correct code on the first try. You earn that instinct by working with the compiler, and once you have it, the assistant becomes dramatically faster.
-
-See [Using AI with NeoHaskell](/getting-started/using-ai/) for the ready-to-paste system prompt, the workflow, and the specific patterns to watch for.
-
-## What it feels like
-
-Here is a real handler from a production codebase. Read it top to bottom:
+NeoHaskell provides the core language and a pre-built shell. You write your business logic — commands, rules, events — and NeoHaskell provides the HTTP server, the event store, the API documentation, the CLI, and the MCP transport for AI agents. Full application, minimal setup.
 
 ```haskell
-decide cmd entity _ctx = case entity of
+-- Your core: the business rule
+decide cmd account _ctx = case account of
   Nothing ->
-    Decider.reject "Cart not found"
-  Just cart ->
-    if cmd.quantity <= 0
-      then Decider.reject "Quantity must be positive"
+    Decider.reject "Account does not exist"
+  Just acc ->
+    if cmd.amount > acc.balance
+      then Decider.reject "Insufficient funds"
       else
         Decider.acceptExisting
-          [ ItemAdded
-              { entityId = cart.cartId
-              , stockId = cmd.stockId
-              , quantity = cmd.quantity
+          [ MoneyWithdrawn
+              { entityId = acc.accountId
+              , amount = cmd.amount
               }
           ]
 ```
 
-That is a `case` statement, an `if`, a record, and a function call. No academic concepts. No framework magic. No annotations. The business rule ("quantity must be positive") is right there on line four. The state change ("item was added") is right there on line seven. An AI assistant can write this. A junior developer can read this. The compiler guarantees that every case is handled.
+The shell is handled:
 
-## What the compiler does not catch
+- HTTP endpoint at `POST /commands/Withdraw` — generated.
+- JSON schema and OpenAPI spec — generated.
+- Event persisted to PostgreSQL — automatic.
+- Account state reconstructed from events — automatic.
+- Audit trail — automatic. You did not write it. It was always there.
+
+### If you have an existing system
+
+Your existing system becomes the shell. NeoHaskell becomes the core. They talk via HTTP.
+
+Your Python / Java / Go / JavaScript code sends a command:
+
+```python
+response = requests.post(
+    "http://core-service/commands/Withdraw",
+    json={"accountId": "abc-123", "amount": 50}
+)
+```
+
+NeoHaskell processes it, applies the rules, records the facts, and returns the result. Your existing code reacts to the result. Clean separation. No rewrite. The complex logic lives in one readable place with compiler guarantees. Everything else stays where it is.
+
+## What goes in the core?
+
+Not everything. Just the parts that matter most:
+
+- **Pricing logic** — "15% off for premium customers on orders over $500."
+- **Permission rules** — "Managers can approve expenses under $10k."
+- **Workflow decisions** — "If payment fails twice, escalate to support."
+- **Domain validation** — "Orders must have at least one item."
+- **State machines** — "An order goes from placed to paid to shipped to delivered — never backwards."
+- **Financial calculations** — "Balance is the sum of all deposits minus all withdrawals."
+
+These rules are your product. They change when the business changes. They break when the business breaks. They deserve a language that catches mistakes before they reach production.
+
+The HTTP routing, the database connections, the queue consumers, the email sending — that is shell code. It is important, but it does not need the same level of compile-time protection. Use whatever tools you already have for the shell.
+
+## What NeoHaskell does not do
 
 <Aside type="caution" title="Honest limitations">
-- **Wrong business logic.** If the requirement says $10 and you wrote $1000, the compiler cannot help.
+- **Wrong business logic.** If the requirement says $10 and you wrote $1000, the compiler cannot read your mind.
 - **Bad modeling decisions.** If you model the wrong things, the compiler will faithfully enforce the wrong model.
-- **Event schema changes.** Events are immutable facts. If the shape needs to change, you create a new event type. The compiler ensures every handler is updated for the new type, but the decision of *what* the new event looks like is yours.
+- **Shell concerns.** NeoHaskell does not try to be the best HTTP framework or the best ORM. It provides good-enough shell integrations so you can focus on the core. If you need a specialized shell, bring your own.
 </Aside>
-
-The compiler guarantees that your code is consistent with your types. If your types are wrong, your code will be consistently wrong. This is still a massive improvement over "your code might be wrong and nobody will notice until production," but it is not omniscience.
 
 ## When NeoHaskell is the right call
 
-- Your system has meaningful state transitions — orders, accounts, bookings, workflows, user lifecycles.
+- Your system has business rules worth protecting — pricing, permissions, workflows, financial logic, compliance.
 - You are using AI to write code and you want structural guarantees on the output.
 - You care about audit trails, historical debugging, or regulatory compliance.
-- You are a small-to-medium team (2–15 engineers) building something you expect to maintain for years.
+- You are building something you expect to maintain for years.
 
 ## When it is not
 
-- Your system is a simple CRUD app with no interesting state transitions.
+- Your system is mostly shell — a thin API over a database with no interesting business rules.
 - You need a massive package ecosystem with pre-built integrations for every SaaS product.
-- You are hiring 50+ engineers and need a universally recognized language on the job posting.
 - You need production case studies from Fortune 500 companies before you can commit.
 
 ## What is NOT a reason to hesitate
 
-- **"My team doesn't know functional programming."** NeoHaskell uses records, `if/then/else`, pattern matching, and pipes. Anyone who has written a Redux reducer or a switch statement can read and write this code.
-- **"It must be slow."** NeoHaskell compiles to native code with throughput targets in the tens of thousands of requests per second.
-- **"We only build CLI tools."** NeoHaskell has a CLI transport. Same domain code, different delivery.
-- **"We need to integrate with existing systems."** Inbound and outbound integrations are first-class.
-- **"AI won't know how to write it."** AI assistants write NeoHaskell effectively because the compiler catches their mistakes. The [Using AI](/getting-started/using-ai/) page has a ready-to-paste prompt.
+- **"My team doesn't know NeoHaskell."** The core reads like business rules. Anyone who has seen a switch statement can review it. One person owns the core; everyone else calls the API.
+- **"AI won't know how to write it."** AI writes NeoHaskell effectively because the compiler catches mistakes. The [Using AI](/getting-started/using-ai/) page has a ready-to-paste prompt.
+- **"What if NeoHaskell disappears?"** You keep the model. Commands, events, rules — that is architecture, not syntax. Rewrite the core in anything. The design survives the tool.
+
+## The adoption path
+
+1. **Pick one context.** Something painful. Complex rules, frequent bugs. Pricing, permissions, validation.
+2. **Model the core.** Commands, events, handlers. A few days with an AI assistant; a couple of weeks without.
+3. **Deploy alongside.** Your system calls the new core service. Keep old logic as fallback.
+4. **Compare and decide.** Works? Expand. Doesn't? A contained experiment, not a failed migration.
+
+No big-bang rewrite. No commitment. Just an experiment with a clear exit.
 
 ## Current status
 
 <Aside type="caution">
-NeoHaskell is in active development. The service layer, event store, commands, queries, and integrations are stable enough for production use — there are real applications running today. The custom `.nh` syntax is still in design. Until that ships, you write NeoHaskell in `.hs` files using its curated standard library and style guide.
+NeoHaskell is in active development. The core language — commands, events, entities, queries, services, integrations — is stable enough for production use. There are real applications running today. The custom `.nh` syntax is still in design. Until that ships, you write NeoHaskell in `.hs` files using its curated standard library and style guide.
 </Aside>
 
 **Works today:** commands, events, entities, queries, services, integrations, PostgreSQL event store, web transport, CLI transport, MCP transport, declarative configuration, file uploads, OAuth2, OpenAPI spec generation, multi-tenant support.
@@ -145,5 +161,5 @@ NeoHaskell is in active development. The service layer, event store, commands, q
 Pick one:
 
 - [**Install NeoHaskell**](/getting-started/installation/) — three commands, five minutes, working environment.
-- [**Build NeoBank**](/tutorial/) — a tutorial that teaches the language by building a working banking service.
-- [**Core concepts**](/concepts/thinking-in-events/) — if you want the mental model before you touch code.
+- [**Build NeoBank**](/tutorial/) — learn the language by building a working banking service.
+- [**Core concepts**](/concepts/thinking-in-events/) — understand the mental model before you touch code.
