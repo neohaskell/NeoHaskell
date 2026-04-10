@@ -1,23 +1,36 @@
 ---
 title: "Reading error messages"
-description: "A practical guide to interpreting NeoHaskell compiler errors fast. Real messages, what they mean, and exactly how to fix them."
+description: "How to read NeoHaskell compiler errors — on your own, with an AI assistant, or both. The better you read them, the better you can guide your assistant."
 sidebar:
   order: 3
 ---
 
 import { Aside } from '@astrojs/starlight/components';
 
-NeoHaskell compiler errors can look intimidating the first time. This page teaches you to read them fast. The secret is that they follow a predictable structure, and once you know the structure, you can skim most errors in two seconds and zero in on the fix.
+NeoHaskell compiler errors are specific, actionable, and well-structured. They are also one of the best tools you have for collaborating with an AI assistant. If your assistant generates code that doesn't compile, the error is the fastest path to a fix — and understanding the error yourself is how you guide the assistant toward better output over time.
 
-## The anatomy of a compiler error
+This page teaches you to read errors two ways:
 
-Every GHC error has the same rough shape:
+1. **Reading them yourself** — for when you want to fix the problem directly.
+2. **Reading them with an assistant** — for when you want to paste the error and get a fix, but you also want to understand *why* the fix works so you can steer next time.
+
+## Why learning to read errors matters (even with AI)
+
+You might be thinking: "I'll just paste the error into my assistant and let it fix things." That works. NeoHaskell errors are specific enough that an assistant usually fixes them in one round.
+
+But here's the thing: **the better you understand errors, the better your prompts become.** An engineer who sees "Non-exhaustive patterns in function update" and knows it means "I added an event and forgot to handle it" will write prompts like "add a `TransferCompleted` event and make sure `update` handles it." An engineer who doesn't understand the error will write "fix whatever is wrong." The first prompt produces correct code. The second produces a guess.
+
+Understanding errors is not about replacing your assistant. It is about becoming a better driver of it.
+
+## The anatomy of an error
+
+Every NeoHaskell compiler error follows the same shape:
 
 ```text
 src/MyApp/Foo.hs:42:15: error:
-    <summary of the problem in one or two lines>
+    <summary — one or two lines>
 
-    <detailed expansion — types involved, expected vs. actual>
+    <detail — the specific types and what's wrong>
 
     |
  42 |   result = someFunction wrongArg
@@ -26,18 +39,24 @@ src/MyApp/Foo.hs:42:15: error:
 
 Four parts:
 
-1. **Location** (`file:line:col`)
-2. **Summary** (a one-sentence description)
-3. **Detail** (the specific types and what's wrong with them)
-4. **Source pointer** (the line of code with a caret showing the exact position)
+1. **Location** (`file:line:col`) — where the problem is.
+2. **Summary** — what went wrong, in one sentence.
+3. **Detail** — the specific types or constraints that failed.
+4. **Source pointer** — the exact expression, underlined.
 
-**Read the summary first, then the detail.** The source pointer is last. Most errors can be understood from the summary alone.
+**Read the summary first.** It tells you the category. The detail tells you the specifics. The source pointer shows you the exact spot. Most errors can be understood from the summary alone.
 
-## Error catalog — what you'll actually see
+### When pasting to an assistant
+
+Paste the **entire error**, not just the summary. The assistant needs the types and the source location to give a precise fix. But read the summary yourself first — even a two-second glance builds your instinct for what went wrong, and over time you'll find yourself fixing errors faster than the assistant round-trips.
+
+## Error catalog
+
+Here are the errors you will actually see, what they mean, and what to tell your assistant if you want it to fix them for you.
 
 ### "Couldn't match expected type ... with actual type ..."
 
-This is the most common error. You passed one type where another was expected.
+The most common error. A type mismatch at a specific call site.
 
 ```text
 src/MyApp/Deposit.hs:15:20: error:
@@ -46,13 +65,15 @@ src/MyApp/Deposit.hs:15:20: error:
       In the expression: Deposit { accountId = ..., amount = "50" }
 ```
 
-**What it means:** `Deposit.amount` is `Int`, but you passed `"50"` which is `Text`.
+**What it means:** `Deposit.amount` expects `Int`, but you passed `"50"` (a `Text`).
 
-**The fix:** Write `50` (without quotes), or use `Int.fromText "50"` if you really have a string.
+**How to fix it yourself:** Write `50` (without quotes), or convert with `Int.fromText "50"`.
+
+**What to tell your assistant:** "The `amount` field is `Int` but you passed a string. Use the integer literal, not a quoted string."
 
 ### "Non-exhaustive patterns in function ..."
 
-You forgot to handle a case in a `case` expression or a function.
+You added a new event variant but didn't handle it everywhere.
 
 ```text
 src/MyApp/Account.hs:88:1: warning:
@@ -63,17 +84,19 @@ src/MyApp/Account.hs:88:1: warning:
             MoneyWithdrawn{}
 ```
 
-**What it means:** Your `update` function handles some `AccountEvent` cases but not `MoneyWithdrawn`.
+**What it means:** The `update` function handles some `AccountEvent` cases but not `MoneyWithdrawn`.
 
-**The fix:** Add a `MoneyWithdrawn` branch to the `case` expression.
+**How to fix it yourself:** Add a `MoneyWithdrawn` branch to the `case` expression in `update`.
 
-<Aside type="note" title="This is a warning, but it should be treated as an error">
-By default GHC emits non-exhaustive patterns as a warning, not an error. The NeoHaskell build pipeline treats warnings as errors, so it *will* fail the build. Fix it.
+**What to tell your assistant:** "You added `MoneyWithdrawn` to the event type but didn't add a case for it in the `update` function. Add a branch that handles `MoneyWithdrawn` — it should subtract the amount from the balance."
+
+<Aside type="tip" title="This is the most important error in NeoHaskell">
+This error is the compiler telling you: "you changed the domain and forgot to update the code that processes it." In other languages this is a production bug. In NeoHaskell it is a build failure. If your assistant ever generates code that adds an event without handling it, this error catches it instantly — paste it back and the assistant will add the missing branch.
 </Aside>
 
 ### "Variable not in scope: ..."
 
-You used a name that isn't imported.
+A name was used but not imported.
 
 ```text
 src/MyApp/Deposit.hs:12:10: error:
@@ -82,18 +105,26 @@ src/MyApp/Deposit.hs:12:10: error:
 
 **What it means:** You called `Text.trim` but didn't import the `Text` module.
 
-**The fix:** Add `import Text qualified` to the top of the file.
+**How to fix it yourself:** Add `import Text qualified` to the top of the file.
+
+**What to tell your assistant:** "You used `Text.trim` but forgot to add `import Text qualified` at the top."
+
+<Aside type="note" title="AI assistants drift on imports">
+This is one of the most common AI mistakes — using a function from a module that isn't imported. If you see "Variable not in scope" in assistant-generated code, the fix is always the same: add the import. Over time you'll learn which modules your project uses most and can preemptively tell the assistant "make sure to import `Text qualified` and `Array qualified`."
+</Aside>
 
 ### "No instance for (Entity Foo)"
 
-You tried to use a type as an entity but didn't give it the `Entity` instance.
+You tried to use a type as an entity but didn't give it the required typeclass instance.
 
 ```text
 src/MyApp/Account.hs:14:1: error:
     • No instance for (Entity Account) arising from a use of 'withService'
 ```
 
-**The fix:** Add the `instance Entity Account where ...` declaration to your `Core.hs`.
+**How to fix it yourself:** Add `instance Entity Account where ...` to your `Core.hs`.
+
+**What to tell your assistant:** "The `Account` type is missing its `Entity` instance. Add `instance Entity Account where initialStateImpl = initialState; updateImpl = update` to the Core module."
 
 ### "Event type mismatch in service definition!"
 
@@ -111,7 +142,13 @@ error:
     To fix: Ensure all commands in this service share a common event type.
 ```
 
-**The fix:** Move `ProcessPayment` to a separate service that handles `PaymentEvent`. Or merge the two event types if they really belong together.
+**How to fix it yourself:** Move `ProcessPayment` to its own service, or merge the event types.
+
+**What to tell your assistant:** "The service mixes `CartEvent` and `PaymentEvent`. Move `ProcessPayment` into a separate `PaymentService` module with its own `Service.new |> Service.command @ProcessPayment`."
+
+<Aside type="note" title="This error has a plain-English fix instruction">
+NeoHaskell custom errors include a "To fix:" line. When you see one, you can paste it directly to your assistant — it is already phrased as an instruction.
+</Aside>
 
 ### "Couldn't match expected type 'Task Text ...' with actual type ..."
 
@@ -124,23 +161,22 @@ error:
     • In the expression: someUser
 ```
 
-**The fix:** Wrap the value in `Task.yield`:
+**How to fix it yourself:** Wrap the value in `Task.yield`.
 
-```haskell
-fetchUser :: Task Text User
-fetchUser = Task.yield someUser
-```
+**What to tell your assistant:** "You returned a raw `User` where a `Task Text User` was expected. Wrap it in `Task.yield`."
 
 ### "Variable not in scope: pure"
 
-You tried to use `pure` but NeoHaskell uses `Task.yield` instead.
+You (or your assistant) used `pure` instead of `Task.yield`.
 
 ```text
 error:
     Variable not in scope: pure :: User -> Task err User
 ```
 
-**The fix:** Replace `pure` with `Task.yield`.
+**How to fix it yourself:** Replace `pure` with `Task.yield`.
+
+**What to tell your assistant:** "NeoHaskell uses `Task.yield` instead of `pure`. Replace every `pure` with `Task.yield`." (This is a common AI drift — the system prompt covers it, but assistants forget.)
 
 ### "Ambiguous type variable"
 
@@ -152,12 +188,13 @@ error:
     • In the expression: Json.decode someBytes
 ```
 
-**The fix:** Add a type annotation to tell the compiler what you want:
+**How to fix it yourself:** Add a type annotation:
 
 ```haskell
-result :: User
 result = Json.decode @User someBytes
 ```
+
+**What to tell your assistant:** "Add `@User` (or whatever the target type is) after `Json.decode` to resolve the ambiguity."
 
 ### "Orphan instance"
 
@@ -168,7 +205,9 @@ warning:
     Orphan instance: instance Json.ToJSON MyType
 ```
 
-**The fix:** Move the instance to the module that defines `MyType` (usually the same file). Orphan instances can cause confusing behavior and GHC warns about them by default.
+**How to fix it yourself:** Move the instance to the module that defines `MyType`.
+
+**What to tell your assistant:** "Move the `Json.ToJSON MyType` instance into the same module where `MyType` is defined."
 
 ### "Record update has multiple constructors"
 
@@ -179,37 +218,68 @@ error:
     • Record update has multiple constructors
 ```
 
-**The fix:** Use a `case` expression to handle each constructor explicitly:
+**How to fix it yourself:** Use a `case` expression to handle each constructor explicitly.
 
-```haskell
-case event of
-  AccountOpened { ... } -> event { ... }
-  MoneyDeposited { ... } -> event { ... }
-```
+**What to tell your assistant:** "The record update is ambiguous because the type has multiple constructors. Use `case event of` and handle each constructor with its own record update."
 
 ### "Could not find module 'Core'"
 
 Your `.cabal` file isn't set up to include the NeoHaskell core library.
 
-**The fix:** Check that the `build-depends:` section of your `.cabal` file includes `nhcore`. If you're starting from the template, this is already configured.
+**How to fix it yourself:** Check that `build-depends:` includes `nhcore`. The template already does this.
 
-## The "type error wall of text" strategy
+**What to tell your assistant:** "The `Core` module isn't found. Check that `nhcore` is listed in `build-depends` in the `.cabal` file."
 
-Sometimes you get a multi-screen error. Here's how to handle it:
+## The wall-of-text strategy
 
-1. **Read the first line of the summary.** This tells you the category of problem.
-2. **Look at the first `•` (bullet).** That's the main complaint.
-3. **Look at the source pointer.** The `^^^^^^` shows you exactly where.
-4. **Go to your code.** Fix the thing at that location.
-5. **Rebuild.** Often the "wall of text" collapses into one small error once you fix the first mistake.
+Sometimes you get a multi-screen error. Here is how to handle it, whether you're fixing it yourself or pasting it to an assistant.
 
-Do NOT try to parse the entire error message on first read. The first problem is almost always the real one; the rest are consequences.
+**For yourself:**
+
+1. Read the first line of the summary. That's the category.
+2. Look at the first `•` bullet. That's the main complaint.
+3. Look at the source pointer. That's the exact location.
+4. Fix it. Rebuild. The wall usually collapses to one small error.
+
+**For your assistant:**
+
+1. Paste the **entire** error — all of it, not just the first line.
+2. Say: "Fix the first error in this output. Don't change anything else."
+3. Rebuild. If more errors remain, paste the next one.
+
+Do not ask the assistant to "fix all the errors" from a wall of text. It will try to address every message at once and often break things. Fix them one at a time. Each fix usually resolves several downstream errors.
+
+## The feedback loop with AI
+
+Here is the pattern that becomes second nature:
+
+```text
+You write a prompt → Assistant generates code → You run cabal build
+    ↓                                                    ↓
+  (clean)                                          (error)
+    ↓                                                    ↓
+  Ship it                                     Paste the error back
+                                                         ↓
+                                              Assistant fixes it
+                                                         ↓
+                                              You run cabal build again
+```
+
+Two things make this loop fast in NeoHaskell:
+
+1. **Errors are specific.** "Non-exhaustive patterns in function update — Patterns of type 'AccountEvent' not matched: MoneyWithdrawn" tells the assistant *exactly* what to do. There is no guessing. Compare this to a Python `TypeError` at runtime with a 50-line stack trace — the assistant has to reason about program state, not just types.
+
+2. **Fixes are small.** Most errors require adding one line (an import), one branch (a pattern match), or one wrapper (`Task.yield`). The assistant does not need to rethink the architecture. It needs to add a missing piece that the compiler identified precisely.
+
+Over time, you'll notice the loop tightening. You'll start preempting errors in your prompts: "make sure to handle every event variant," "don't forget the import for `Array`," "wrap the return value in `Task.yield`." That's not you doing the assistant's job — it's you being a better collaborator because you understand the language's feedback.
 
 ## Tooling tips
 
 ### Use HLS (the language server)
 
-If you have HLS set up in your editor, you'll see errors inline as you type. This catches most issues before you ever run `cabal build`. The NeoHaskell template ships with HLS config, so it should "just work" when your editor is pointed at the right project.
+If HLS is set up in your editor, you see errors inline as you type. This catches most issues before you ever run `cabal build`. The NeoHaskell template ships with HLS config, so it should "just work" when your editor is pointed at the right project.
+
+With an AI assistant, this creates an even tighter loop: you see the error in your editor, tell the assistant about it, and the assistant fixes it without a full rebuild cycle.
 
 ### Use `cabal build --ghc-options="-fdefer-type-errors"` for exploration
 
@@ -219,38 +289,38 @@ If you're refactoring and want to keep iterating without fixing every error imme
 cabal build --ghc-options="-fdefer-type-errors"
 ```
 
-This lets broken code run (and fail at runtime when it hits the error). Use sparingly — it hides problems.
+This lets broken code compile (and fail at runtime when it hits the deferred error). Use sparingly — it hides problems. But it's useful when you're exploring a large refactor and want to see how far you get before circling back to fix types.
 
-### Use `:reload` in GHCi
-
-If you're exploring in GHCi and you change a file, `:reload` picks up the new version and re-type-checks. Faster than exiting and restarting.
-
-## When an error makes no sense
+## When an error genuinely confuses you
 
 Rare but real: sometimes an error points to a line that looks obviously correct. The usual causes:
 
 - **A hidden typeclass mismatch.** Some function expects a typeclass you forgot to derive.
-- **A type family that doesn't match.** `type instance EntityOf Foo = Bar` but you wrote `Baz` somewhere.
-- **An implicit import.** The function you're using comes from a module you didn't import, and there's a same-named local function.
+- **A type family that doesn't match.** `type instance EntityOf Foo = Bar` but you wrote `Baz` somewhere else.
+- **An implicit import conflict.** A function from a different module shadows the one you meant.
 
-When this happens, try:
+When this happens:
 
-1. Look for any `type instance` declarations related to the types in the error.
-2. Check that you've imported all the modules you think you imported.
-3. Try adding an explicit type annotation to the problematic expression. Often the annotation will either fix the error or produce a better one.
+1. **Try asking your assistant** with the full error and 10 lines of context. Assistants are good at these — they can see the type family chain that you might miss.
+2. **Add an explicit type annotation** to the problematic expression. Often the annotation either fixes the error or produces a better one that reveals the real issue.
+3. **Check your `type instance` declarations.** These are the most common source of "the error makes no sense" situations — a typo in a type family instance can produce an error that points somewhere else entirely.
 
-## When all else fails
+If none of that works, post the error in the [NeoHaskell Discord](https://discord.gg/wDj3UYzec8) with the error message, the relevant code, and what you were trying to do. Someone who has seen the error before will point you at the fix.
 
-Post the error message in the [NeoHaskell Discord](https://discord.gg/wDj3UYzec8). Include:
+## The bigger picture
 
-- The exact error message.
-- The relevant code (5–10 lines of context).
-- What you were trying to do.
+Error messages are not obstacles. They are **the compiler collaborating with you.** Every error is the language saying "I know what you meant, and here's what doesn't line up yet." In NeoHaskell, the errors are more specific than in most languages because the type system encodes more information — which means the errors carry more actionable detail.
 
-Someone will help.
+When you work with an AI assistant, the compiler becomes a three-way conversation: you describe intent, the assistant proposes code, the compiler says whether the proposal satisfies the contract. The faster you can read the compiler's part of the conversation, the faster the whole loop runs.
+
+You do not need to memorize every error on this page. You need to know three things:
+
+1. Read the summary first.
+2. The fix is almost always one line.
+3. If you don't understand the error, paste the whole thing to your assistant — the error is structured enough that the assistant will.
 
 ## Where to go from here
 
-- **[Common errors](/guides/common-errors/)** — a catalog of specific error messages and their fixes.
-- **[Error handling](/guides/error-handling/)** — handling errors at runtime (a different concern).
-- **[Testing](/guides/testing/)** — how to catch errors before they hit production.
+- **[Common errors](/guides/common-errors/)** — a catalog organized by what you were doing when the error appeared.
+- **[Error handling](/guides/error-handling/)** — runtime errors (a different concern from compile-time errors).
+- **[Using AI with NeoHaskell](/getting-started/using-ai/)** — the full AI workflow, including the system prompt that prevents most errors in the first place.
