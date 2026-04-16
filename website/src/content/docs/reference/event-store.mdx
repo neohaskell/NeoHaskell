@@ -1,0 +1,147 @@
+---
+title: "Event store"
+description: "Reference for the event-store backends — InMemory for development, PostgresEventStore for production — plus the EventStore interface."
+sidebar:
+  order: 8
+---
+
+The event store is where events live. NeoHaskell ships with two backends and a pluggable interface for building your own.
+
+## `InMemory`
+
+The in-memory event store. Fast, zero-config, non-persistent. Ideal for development and tests.
+
+```haskell
+import Service.EventStore.InMemory qualified as InMemory
+
+
+app =
+  Application.new
+    |> Application.withEventStore @() (\_ -> InMemory.new)
+    |> ...
+```
+
+`InMemory.new` returns a `Task` that constructs a new store. It takes no configuration.
+
+**When to use:**
+
+- Development.
+- Unit tests.
+- Integration tests.
+- Demos.
+
+**When NOT to use:**
+
+- Production. Everything vanishes on restart.
+
+## `PostgresEventStore`
+
+The PostgreSQL-backed event store. Production-ready, ACID-compliant, handles high throughput.
+
+```haskell
+import Service.EventStore.Postgres (PostgresEventStore (..))
+
+
+app =
+  Application.new
+    |> Application.withConfig @MyConfig
+    |> Application.withEventStore makePostgresConfig
+    |> ...
+
+
+makePostgresConfig :: MyConfig -> PostgresEventStore
+makePostgresConfig config =
+  PostgresEventStore
+    { user = config.dbUser
+    , password = config.dbPassword
+    , host = config.dbHost
+    , databaseName = config.dbName
+    , port = config.dbPort
+    }
+```
+
+### Configuration fields
+
+| Field | Type | Description |
+|---|---|---|
+| `user` | `Text` | PostgreSQL username. |
+| `password` | `Text` | PostgreSQL password. |
+| `host` | `Text` | PostgreSQL host. |
+| `databaseName` | `Text` | PostgreSQL database name. |
+| `port` | `Int` | PostgreSQL port (typically 5432). |
+
+The store manages its own schema — on startup, it verifies the expected tables exist and creates them if not. You don't need to run migrations manually.
+
+### What it creates
+
+The Postgres event store creates a small set of tables:
+
+- `events` — the append-only log of events.
+- `streams` — per-stream metadata (position, version).
+- `snapshots` — entity snapshots for fast reconstruction.
+- Supporting indices and functions.
+
+You don't need to interact with these directly. Treat the event store as an opaque interface.
+
+### Operational notes
+
+- Writes are O(1) per append with a bounded number of index updates.
+- Reads are served from the PostgreSQL query planner's cache in practice.
+- Snapshots are taken automatically to keep entity reconstruction fast.
+- Multi-tenant commands are scoped to per-tenant streams at the store level.
+
+See the [PostgreSQL event store guide](/guides/postgresql-event-store/) for production concerns like sizing, backups, replication, and monitoring.
+
+## The `EventStore` interface
+
+If you want to implement a custom event store, you implement the `EventStore` class in `Service.EventStore.Core`. The interface is:
+
+```haskell
+data EventStore event = EventStore
+  { insert :: StreamId -> InsertionType -> Array event -> Task Text (Array StreamPosition)
+  , readStream :: StreamId -> Task Text (Array (StreamPosition, event))
+  , subscribeToAllEvents :: (event -> Task Text Unit) -> Task Text Unit
+  -- ... more methods
+  }
+```
+
+The important operations:
+
+- **`insert`** — append events to a stream, honoring the insertion type (creation, existing, after position, any).
+- **`readStream`** — read all events for a specific stream (used for entity reconstruction).
+- **`subscribeToAllEvents`** — subscribe to new events as they arrive (used by query subscribers and outbound integrations).
+
+Custom event stores are rare — most users stick with `InMemory` for tests and `PostgresEventStore` for production. But the interface is there if you need to plug into a different backend.
+
+## Switching between stores
+
+Because the interface is the same, switching from in-memory to Postgres is a one-line change:
+
+```haskell
+-- Development
+|> Application.withEventStore @() (\_ -> InMemory.new)
+
+-- Production
+|> Application.withEventStore makePostgresConfig
+```
+
+Your domain code does not change. Your tests keep running against the in-memory store; your production deployment uses Postgres.
+
+## Test helpers
+
+For integration tests that want to exercise the real event-store interface, use `InMemory.new` directly:
+
+```haskell
+it "appends events and reads them back" \_ -> do
+  store <- InMemory.new |> Task.mapError toText
+  let typedStore = EventStore.castEventStore @MyEvent store
+  _ <- typedStore.insert streamId StreamCreation events
+  result <- typedStore.readStream streamId
+  Array.length result |> shouldBe (Array.length events)
+```
+
+## Where to go from here
+
+- **[PostgreSQL event store guide](/guides/postgresql-event-store/)** — production operation.
+- **[Tutorial Part 6](/tutorial/06-audit-everything/)** — the moment you switch from in-memory to Postgres.
+- **[Services and applications](/reference/services-and-applications/)** — how `withEventStore` fits into the builder.

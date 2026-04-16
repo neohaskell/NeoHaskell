@@ -1,131 +1,208 @@
 ---
-title: "Effects"
-description: "How NeoHaskell handles side effects with typed errors."
+title: "Effects and concurrency"
+description: "How NeoHaskell handles async, I/O, failure, and parallelism with the Task type."
 sidebar:
-  order: 41
-keywords: [effects, Task, typed errors, side effects, IO, error handling, composable]
-# entry_stage: 3 (NeoHaskell-aware)
-# exit_stage: 4 (NeoHaskell-fluent)
-# misconception: #12 (need to understand monads first)
-# tutorial_anchor: Tutorial Part 5 — Transfers
+  order: 8
 ---
-
-{/*
-  CONTENT OUTLINE — Effects
-  Entry: Stage 3 (NeoHaskell-aware), Exit: Stage 4 (NeoHaskell-fluent)
-  Misconception addressed: #12 (need to understand monads first)
-  Anchored from: Tutorial Part 5 — Transfers
-
-  Core message: not IO a, but Task err val — typed errors.
-  Every effectful computation declares its failure mode.
-  Composable error handling.
-  NeoHaskell hides the monad machinery — you use it without naming it.
-  Evidence: testbed uses Task.yield, do blocks like async/await. Word "monad" never appears in user code.
-*/}
-
-{/* POLYGLOT NOTE: All code examples on this page should include equivalent snippets in JS/TS, Python, and Go. See DOCS-PLAN.md Guiding Principle #9. */}
 
 import { Aside } from '@astrojs/starlight/components';
 
-## What You Might Expect
+Most languages handle side effects by letting every function do whatever it wants. A function might open a file, call a network service, read from the global clock, print to stderr, or start a thread — and none of that is visible from its signature. You only find out at runtime.
 
-- In most languages, side effects (database calls, HTTP requests, file I/O) can fail in unpredictable ways
-- Error handling is an afterthought: try/catch, nullable returns, or just letting it crash
-- In standard Haskell, effects are wrapped in `IO a` — but `IO` doesn't tell you what can go wrong
-- You've heard that functional programming makes effects complicated — monads, functors, applicatives
+NeoHaskell takes the opposite approach. Every side effect is tracked in the type system via the `Task` type. If a function has side effects, its return type says so. If it doesn't, you can trust that it's pure and you can test it as a pure function.
 
-## Why That Breaks
+This page explains what `Task` is, how to work with it, and how NeoHaskell handles concurrency without you writing a single callback.
 
-- `IO a` says "this does something with the world" but not *what* can go wrong
-- A function that calls the database, sends an email, and charges a credit card all return `IO a` — you can't tell them apart
-- When something fails, you find out at runtime — not at compile time
-- Try/catch is invisible: you don't know which functions can throw without reading their implementation
-- The core problem: effects without typed errors are a black box
+## The Task type
 
-## Effects: The Mental Model Shift
+```haskell
+Task err value
+```
 
-- NeoHaskell uses `Task err val` instead of `IO a`
-- `Task err val` says: "this computation produces a `val` or fails with an `err`"
-- Every effectful computation **declares its failure mode** — the type tells you what can go wrong
-- Error handling is explicit and composable — you chain tasks, and errors propagate automatically
-- You never need to know about monads — `do` blocks work like `async/await`
+Read this as: "an asynchronous computation that will eventually produce a `value`, or fail with an error of type `err`."
 
-### Task vs IO
+Compare it to familiar equivalents:
 
-| Standard Haskell | NeoHaskell | What changed |
-|-----------------|-----------|-------------|
-| `IO a` | `Task err val` | Failure mode is explicit in the type |
-| `Either a b` | `Result err val` with `Ok`/`Err` | Names describe intent, not position |
-| `pure` / `return` | `Task.yield` | Says what it does, not what it satisfies |
-| `>>=` (bind) | `do` blocks | Reads like sequential code |
-| `catch` / `throwIO` | `Task.catch`, `Result.mapErr` | Typed, composable error handling |
+| Language | Equivalent |
+|---|---|
+| JavaScript | `Promise<value>` (but with a typed error) |
+| Rust | `async fn() -> Result<value, err>` |
+| Go | `func() (value, error)` (but composable) |
+| Java | `CompletableFuture<value>` (but with a typed error) |
 
-<Aside type="note" title="No monads in user code">
-NeoHaskell's stdlib is designed so you never write `Monad`, `Functor`, or `Applicative` in your application code. The testbed's entire user-facing API contains zero references to these concepts. `do` blocks work like `async/await`. `Task.yield` replaces `pure`/`return`. The word "monad" never appears in user code — the framework handles all type-level wiring internally.
+The critical feature is that `err` is typed. A `Task Text User` returns a `User` on success and a `Text` message on failure. You know, from the type, that this function can fail, and you know what shape the failure takes. There is no surprise exception hiding in the body.
+
+## Working with Task
+
+Inside a `do` block, `<-` unwraps a `Task`:
+
+```haskell
+loadUserAndPosts :: Uuid -> Task Text (User, Array Post)
+loadUserAndPosts userId = do
+  user <- fetchUser userId
+  posts <- fetchPostsByUser userId
+  Task.yield (user, posts)
+```
+
+If `fetchUser` fails, the whole block short-circuits — `posts` is never fetched, the block returns `Task.throw`ing the same error. This is exactly how `async/await` works in JavaScript, except the failure type is in the signature.
+
+## Task combinators
+
+Beyond `do` blocks, you can compose tasks with a few combinators:
+
+```haskell
+Task.yield value           -- Lift a pure value into a Task
+Task.throw error           -- Fail with a typed error
+Task.map f task            -- Transform the value
+Task.mapError f task       -- Transform the error
+Task.andThen f task        -- Monadic bind (fmapping, but for Tasks)
+Task.forEach xs action     -- Run a task for each element of a list
+Task.forever task          -- Run forever (use sparingly)
+Task.recover handler task  -- If task fails, run handler instead
+```
+
+A typical pipeline:
+
+```haskell
+fetchUser userId
+  |> Task.map formatUserName
+  |> Task.mapError (\err -> [fmt|Fetch failed: #{err}|])
+```
+
+## Integrating with legacy IO
+
+Sometimes you need to call a function that returns raw `IO a` (from `base` or a legacy library). Convert it with `Task.fromIO`:
+
+```haskell
+currentTime :: Task err DateTime
+currentTime = Task.fromIO getCurrentTimeFromSystem
+```
+
+If the IO action can throw exceptions, use `Task.fromFailableIO` instead — it catches exceptions and converts them to a typed error:
+
+```haskell
+readConfig :: FilePath -> Task Text Config
+readConfig path =
+  Task.fromFailableIO readFileRaw path
+    |> Task.map parseConfig
+```
+
+`Task.fromFailableIO` converts any thrown exception into the error channel. From then on, you handle it with `Task.recover` or `Task.mapError` — no try/catch needed.
+
+## Failure is data
+
+Unlike exceptions, a `Task` failure is a first-class value. You can inspect it, log it, convert it, wrap it, recover from it. You don't need `try`/`catch`/`finally`. You handle failure by:
+
+- **Letting it propagate.** If you don't catch it, the error flows up through `<-` bindings and out of the function. Same mental model as rethrowing in JS/TS.
+- **Catching with `Task.recover`.** If `task` fails, run the recovery function:
+  ```haskell
+  fetchUser userId
+    |> Task.recover (\err -> do
+        Log.warn [fmt|Primary failed: #{err}. Trying fallback.|]
+        fetchUserFromReplica userId)
+  ```
+- **Converting to a `Result`.** `Task.asResult` turns a failing task into one that always succeeds with a `Result`:
+  ```haskell
+  result <- Task.asResult (fetchUser userId)
+  case result of
+    Ok user -> ...
+    Err reason -> ...
+  ```
+
+<Aside type="note" title="Why not use exceptions?">
+Exceptions are invisible in type signatures. A function that looks pure might throw on every third call, and you only discover this at runtime. Task forces the failure to be named in the type, which means the compiler helps you handle it (or at least remember it exists).
 </Aside>
 
-## What Happens When a Transfer Fails
+## Concurrency
 
-- A transfer involves multiple effects: debit one account, credit another, send a notification
-- Each step can fail: account not found, insufficient funds, notification service down
-- With `Task err val`, each failure mode is explicit in the type
-- If the debit succeeds but the credit fails, the system knows exactly what happened — and can compensate
-- The integration pattern (Tutorial Part 5) uses `Task` to model the full state machine: happy path, failure, compensation
+NeoHaskell gives you primitives for concurrent tasks via the `AsyncTask` module (for parallelism) and the runtime's ability to spawn effectful workers.
 
-### Composing Tasks
+### Running things in parallel
 
-{/* TODO: Code example showing Task composition with do blocks — include JS/TS, Python, Go equivalents */}
+```haskell
+import AsyncTask qualified
 
-- Tasks compose with `do` blocks — sequential, readable, no callback hell
-- Error propagation is automatic — if any step fails, the whole chain fails with that error
-- `Task.catch` handles specific error types — you can recover from some failures and propagate others
-- `Task.map` transforms the success value — pure transformation, no new effects
+loadEverything :: Task Text Dashboard
+loadEverything = do
+  userHandle <- AsyncTask.start (fetchUser userId)
+  postsHandle <- AsyncTask.start (fetchPosts userId)
+  ordersHandle <- AsyncTask.start (fetchOrders userId)
 
-## In NeoBank Terms
+  user <- AsyncTask.wait userHandle
+  posts <- AsyncTask.wait postsHandle
+  orders <- AsyncTask.wait ordersHandle
 
-- The `Transfer` integration involves three tasks: `debitAccount`, `creditAccount`, `sendNotification`
-- Each task has a typed error: `AccountNotFound`, `InsufficientFunds`, `NotificationFailed`
-- If `debitAccount` fails with `InsufficientFunds`, the integration returns that error — no credit, no notification
-- If `creditAccount` fails after a successful debit, the integration runs a compensation task: `refundDebit`
-- The type system ensures every failure mode is handled — you can't forget the compensation case
+  Task.yield Dashboard { user = user, posts = posts, orders = orders }
+```
 
-## The Full Picture
+Three fetches run concurrently. The dashboard isn't assembled until all three finish. If any one fails, the whole pipeline fails.
 
-{/* TODO: Code example showing a complete Task chain for a transfer — include JS/TS, Python, Go equivalents */}
-{/* TODO: Code example showing error handling with Task.catch — include JS/TS, Python, Go equivalents */}
-{/* TODO: Code example showing the integration pattern with compensation — include JS/TS, Python, Go equivalents */}
+### Channels
 
-- **Task definition**: `Task err val` — a computation that produces `val` or fails with `err`
-- **Task composition**: `do` blocks chain tasks sequentially — errors propagate automatically
-- **Error handling**: `Task.catch` handles specific errors; `Result.mapErr` transforms error types
-- **Compensation**: when a step fails, run a compensating task to undo previous steps
-- **Testing**: tasks are testable — mock the effects, assert the results
+For producer/consumer patterns, use `Channel`:
 
-## How NeoHaskell Enforces This
+```haskell
+import Channel qualified
 
-- The `Task err val` type makes failure modes explicit — the compiler enforces that you handle them
-- `do` blocks enforce sequential composition — no accidental parallel execution
-- `Task.catch` is typed — you can only catch errors of the declared type
-- The compiler flags unhandled error cases — no silent failures
-- Pure functions (no `Task`) can't have side effects — the type system enforces the boundary
+pipelineExample = do
+  ch <- Channel.new
+  -- Producer
+  AsyncTask.start (forEach items \item -> Channel.send ch item)
+  -- Consumer
+  forever do
+    item <- Channel.receive ch
+    process item
+```
 
-## Testing This Concept
+### Shared mutable state
 
-{/* TODO: Code example showing a test for a Task-based function — include JS/TS, Python, Go equivalents */}
-{/* TODO: Show: mock the effect, assert the result */}
+Real concurrent systems need shared state. NeoHaskell gives you `ConcurrentVar` (a mutex-protected cell), `Lock`, and `ConcurrentMap` for this purpose. Shared state is visible and explicit — you have to opt into it, and when you do, the concurrency primitive is in the type.
 
-- Test the happy path: mock all effects to succeed, assert the expected result
-- Test each failure mode: mock one effect to fail, assert the correct error is returned
-- Test compensation: mock a failure after a successful step, assert the compensation ran
-- Tasks are pure functions over effects — testing is straightforward with the right mocking strategy
+```haskell
+import ConcurrentVar qualified
 
-## Going Deeper
+counter = do
+  var <- ConcurrentVar.new 0
+  AsyncTask.start (incrementer var)
+  AsyncTask.start (incrementer var)
+  -- ...
+```
 
-- [Services →](/concepts/services) — how effects cross context boundaries
-- [Type Safety →](/concepts/type-safety) — how the type system enforces effect boundaries
-- [Testing Event-Sourced Systems →](/concepts/testing-event-sourced-systems) — testing effectful code
-- External: NeoHaskell's `Task` is inspired by Elm's `Task` and Rust's `Result` — both worth reading
+## Why `decide` doesn't return a Task
 
-:::caution[Coming Soon]
-Code examples on this page are placeholders. Full working code will be added when the NeoBank tutorial is complete.
-:::
+You might have noticed that `decide` functions do *not* return `Task`:
+
+```haskell
+decide :: Deposit -> Maybe Account -> RequestContext -> Decision AccountEvent
+```
+
+That's not an oversight. `decide` is pure. It's not allowed to do I/O. It's not allowed to access the outside world. This is deliberate: a pure `decide` function is trivially testable, and more importantly, it can be *replayed*. If the command executor needs to retry after a concurrency conflict, it just calls `decide` again with the fresh state. There are no side effects to undo.
+
+If your business logic really needs an external lookup (like "check the user's credit score from an external service"), that's not a job for `decide`. You do the lookup *before* dispatching the command, and pass the result into the command as a field. Or you use the inbound integration pattern to react to the result of the external call.
+
+This separation — pure decisions, effectful integrations — is how NeoHaskell stays testable at the core while still being able to talk to the messy outside world.
+
+## The runtime
+
+NeoHaskell uses the GHC runtime under the hood, which means lightweight green threads, preemptive scheduling, and STM for shared state if you need it. The practical implications:
+
+- **Spawning a task is cheap** — microseconds, kilobytes of memory.
+- **Blocking a task does not block a thread** — the runtime moves other work onto the OS thread while the blocked task waits.
+- **You can have thousands of concurrent tasks** without worrying about thread pool sizing.
+- **IO-bound workloads scale linearly** with work, not with threads.
+
+For most NeoHaskell applications, you never think about thread pools, work queues, or scheduling policies. You write `do` blocks, the runtime figures out the rest.
+
+## The short version
+
+- `Task err val` is the type of effectful computations. Think `Promise<val>` with a typed error.
+- `do` blocks sequence tasks. `<-` is `await`. `Task.yield` is `return`. `Task.throw` is `throw`.
+- Failure is data, not exceptions. You handle it with `Task.recover`, `Task.asResult`, or propagation.
+- `AsyncTask.start` / `AsyncTask.wait` for parallelism. `Channel` for producer/consumer. `ConcurrentVar` / `Lock` for shared state.
+- `decide` is pure by design — no tasks, no I/O.
+
+## Where to go from here
+
+- **[Testing event-sourced systems](/concepts/testing-event-sourced-systems/)** — testing `Task`-returning code.
+- **[Reference → Task](/reference/core-types/)** — full list of combinators.
+- **[Guides → Error handling](/guides/error-handling/)** — patterns for when things go wrong.

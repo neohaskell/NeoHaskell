@@ -1,133 +1,224 @@
 ---
-title: "Schema Evolution"
-description: "How event types change over time without breaking history."
+title: "Schema evolution"
+description: "How to change event shapes without breaking history, without versioning, and without the usual nightmare."
 sidebar:
-  order: 30
-keywords: [schema evolution, event versioning, upcasting, algebraic data types, migration, backward compatibility]
-# entry_stage: 3 (NeoHaskell-aware)
-# exit_stage: 4 (NeoHaskell-fluent)
-# misconception: #9 (schema evolution will be a nightmare)
-# tutorial_anchor: Tutorial Part 4 — Multiple Accounts
+  order: 11
 ---
-
-{/*
-  CONTENT OUTLINE — Schema Evolution
-  Entry: Stage 3 (NeoHaskell-aware), Exit: Stage 4 (NeoHaskell-fluent)
-  Misconception addressed: #9 (schema evolution will be a nightmare)
-  Anchored from: Tutorial Part 4 — Multiple Accounts
-
-  Core message: events are immutable but event TYPES evolve.
-  Algebraic data types for event versioning.
-  Upcasting strategies.
-  Too important to defer to "advanced" — moved to Core Concepts.
-  Concrete trigger: Tutorial Part 4 adds a savings account type, making schema evolution concrete.
-*/}
-
-{/* POLYGLOT NOTE: All code examples on this page should include equivalent snippets in JS/TS, Python, and Go. See DOCS-PLAN.md Guiding Principle #9. */}
 
 import { Aside } from '@astrojs/starlight/components';
 
-## What You Might Expect
+"What happens when my event schema needs to change?" is the most frequent honest question about event sourcing. It's a good question. The answer in NeoHaskell is different from what you'd expect if you've done this in Kafka or EventStoreDB — and it's simpler, once you accept one constraint: **events are never modified**.
 
-- Database migrations are painful: `ALTER TABLE`, data backfills, downtime windows
-- Schema changes break existing data — you have to migrate everything at once
-- In event sourcing, events are immutable — so changing the schema sounds impossible
-- "What happens to old events when I change the event type?" is a common fear
+This page walks through every kind of schema change you might want to make and shows how to handle each one without rewriting history.
 
-## Why That Breaks
+## The one rule
 
-- If you can't evolve your event types, your domain model is frozen at v1
-- Business requirements change. New fields are needed. Old fields become irrelevant.
-- The fear: "I have 10 million events in the store. If I change the event type, they all break."
-- The reality: this is a solved problem — but it requires understanding the right approach
+**Events are immutable facts. You do not modify them. If you need a different shape, you create a new event type.**
 
-## Schema Evolution: The Mental Model Shift
+That's it. Everything else flows from this rule. There is no event versioning system in NeoHaskell. There is no "upcasting" step. There is no schema registry to migrate. The "migration" is always the same: add a new type, teach your code to handle both, and let old events stay old.
 
-- **Events are immutable** — the events already in the store never change
-- **Event types evolve** — the code that defines and handles events can change
-- The key: old events and new events can coexist in the same store
-- **Upcasting** converts old event formats to new ones at read time — the store stays unchanged
-- Algebraic data types make versioning explicit: `MoneyDeposited_V1`, `MoneyDeposited_V2` are different types
+This sounds restrictive. In practice it's liberating. Let's walk through the scenarios.
 
-### The Two Strategies
+## Scenario 1 — Adding an optional field
 
-| Strategy | When to use | How it works |
-|----------|------------|-------------|
-| **Additive changes** | Adding optional fields | Old events have `Nothing` for the new field; new events have `Just value` |
-| **Upcasting** | Changing field types, renaming, restructuring | Old events are converted to new format at read time |
+You have a `UserRegistered` event with `userId` and `email`. You want to add an optional `phoneNumber` field.
 
-### What "Upcasting" Means
+**Don't do this:**
+```haskell
+data UserEvent
+  = UserRegistered { userId :: Uuid, email :: Text, phoneNumber :: Maybe Text }  -- modified
+```
 
-- An upcaster is a function: `OldEvent -> NewEvent`
-- When the system reads an old event from the store, it runs the upcaster before processing
-- The store still contains the original event — the upcaster is applied in memory
-- Multiple upcasters can chain: V1 → V2 → V3 — each step is a pure function
+That would change the JSON shape of every existing event in your store. Some events already written to disk would be missing `phoneNumber`, and decoding would fail (or silently default to `Nothing`, which is a lie — those events existed before the field did, so the truth is "the field was not recorded").
 
-<Aside type="note" title="The store is the source of truth">
-Upcasting never modifies the event store. Old events stay exactly as they were written. The upcaster is applied at read time, in memory. This means you can always replay from the original events — even if you've upcasted 10 times.
-</Aside>
+**Do this:**
+```haskell
+data UserEvent
+  = UserRegistered { userId :: Uuid, email :: Text }
+  | UserPhoneNumberAdded { userId :: Uuid, phoneNumber :: Text }
+```
 
-## What Happens When You Add a Savings Account
+If a user registered *before* the feature, they have a `UserRegistered` event. If they register *after*, they still have `UserRegistered` — and if they've also added a phone, they have a separate `UserPhoneNumberAdded` event. The history is honest about what happened when.
 
-- Tutorial Part 4 adds a savings account type to NeoBank
-- The existing `AccountOpened` event has no `accountType` field — it was always checking
-- Option 1 (additive): add `accountType: Maybe AccountType` — old events default to `Checking`
-- Option 2 (new event): create `SavingsAccountOpened` as a separate event type
-- Option 3 (upcasting): add `accountType: AccountType` and write an upcaster that sets old events to `Checking`
-- Each option has tradeoffs — the right choice depends on how different savings accounts are from checking
+If your projection wants to know "does this user have a phone number?", the `update` function combines the events:
 
-## In NeoBank Terms
+```haskell
+update :: UserEvent -> User -> User
+update event user = case event of
+  UserRegistered { userId, email } ->
+    User { userId = userId, email = email, phoneNumber = Nothing }
+  UserPhoneNumberAdded { phoneNumber } ->
+    user { phoneNumber = Just phoneNumber }
+```
 
-- NeoBank's `AccountOpened` event starts simple: `{ accountId, ownerId, timestamp }`
-- In Part 4, savings accounts need an interest rate: `{ accountId, ownerId, timestamp, interestRate }`
-- Old events don't have `interestRate` — they're checking accounts with no interest
-- The upcaster: `AccountOpened_V1 -> AccountOpened_V2` sets `interestRate = Nothing` for old events
-- New events include `interestRate = Just 0.02` for savings accounts
-- The event store contains both V1 and V2 events — the system handles both transparently
+## Scenario 2 — Removing a field
 
-### When to Use Each Strategy
+You have a `MoneyDeposited` event with `accountId`, `amount`, and `depositedByBranchId`. You've decided `depositedByBranchId` is useless and you want to remove it.
 
-- **Additive (optional field)**: the new field is optional and has a sensible default for old events
-- **New event type**: the new event is semantically different enough to deserve its own type
-- **Upcasting**: the field is required and old events need a migration value
-- **Avoid**: changing the meaning of an existing field — this is the most dangerous change
+**Don't do this:** Modify the event type. You can't retroactively remove a field that was recorded in past events.
 
-## The Full Picture
+**Do this:** Leave the field in the data, but stop reading it. Keep it in the record definition (because you still need to decode old events). Remove any reference to it in your `update` function, queries, or integrations. Over time, if the field is truly unused and you don't anticipate needing it, you *could* write a one-time migration that replaces the events with a new type — but most of the time you just leave it there. It costs nothing.
 
-{/* TODO: Code example showing an additive change to AccountOpened — include JS/TS, Python, Go equivalents */}
-{/* TODO: Code example showing an upcaster function — include JS/TS, Python, Go equivalents */}
-{/* TODO: Code example showing how the system applies upcasters at read time — include JS/TS, Python, Go equivalents */}
+If you genuinely need to remove the field (for PII reasons, say), use the redaction pattern:
 
-- **Version tagging**: events can include a version field to identify which schema they use
-- **Upcaster registry**: the system maintains a registry of upcasters, applied in order
-- **Update rebuilding**: when event types change, updates can be rebuilt from the original events
-- **Backward compatibility**: old code can still read old events; new code handles both
-- **Forward compatibility**: new events with optional fields are readable by old code (with defaults)
+```haskell
+data UserEvent
+  = UserRegistered { userId :: Uuid, email :: Text }
+  | UserEmailRedacted { userId :: Uuid }  -- new
+```
 
-## How NeoHaskell Enforces This
+When a user requests deletion, you emit `UserEmailRedacted`. Your `update` function handles it by clearing the email field. The original `UserRegistered` event is still in the store, but your projections no longer expose the email. For stricter compliance (e.g., GDPR "right to be forgotten"), you can store the email in a side table keyed by event ID and null out the side table row. The event log structure stays intact; the sensitive payload is gone.
 
-- Algebraic data types make versioning explicit — `V1` and `V2` are different types, not different strings
-- The compiler enforces that upcasters handle all cases — no silent failures for unrecognized event versions
-- Adding a new event type requires updating all handlers — the compiler flags missing cases
-- The upcaster function signature is type-checked — you can't accidentally return the wrong type
+## Scenario 3 — Renaming a field
 
-## Testing This Concept
+You want to rename `email` to `emailAddress` in `UserRegistered`.
 
-{/* TODO: Code example showing a test for an upcaster — include JS/TS, Python, Go equivalents */}
-{/* TODO: Show: given a V1 event, the upcaster produces the correct V2 event */}
+**Don't do this:** Rename it. Existing events would fail to decode.
 
-- Test each upcaster as a pure function: given a V1 event, assert the correct V2 event
-- Test that updates produce the same result with V1 and V2 events (after upcasting)
-- Test the full replay: given a mix of V1 and V2 events, assert the correct final state
-- Property-based test: "upcasting is idempotent — applying it twice produces the same result"
+**Do this:** You have two options.
 
-## Going Deeper
+**Option A — Live with the name.** Field renames are almost never worth the churn. The name is in your event log forever; the code just calls `event.email` and that's that. This is the right answer 90% of the time.
 
-- [Events, Not State →](/concepts/events-not-state) — why events are immutable
-- [Updates →](/concepts/updates) — how updates handle evolving event types
-- [Type Safety →](/concepts/type-safety) — how algebraic data types make versioning explicit
-- External: Greg Young's [Versioning in an Event Sourced System](https://leanpub.com/esversioning) — the definitive reference
+**Option B — New event type.** Create `UserRegisteredV2` (or, better, a new name that reflects whatever prompted the change):
 
-:::caution[Coming Soon]
-Code examples on this page are placeholders. Full working code will be added when the NeoBank tutorial is complete.
-:::
+```haskell
+data UserEvent
+  = UserRegistered { userId :: Uuid, email :: Text }                    -- legacy
+  | UserEmailCorrected { userId :: Uuid, emailAddress :: Text }         -- new
+```
+
+New registrations emit `UserRegistered` as before (you can't retroactively rename the field). New corrections emit `UserEmailCorrected`. Your `update` function handles both. This is a lot of work for a field rename, which is why Option A is usually right.
+
+## Scenario 4 — Changing a field's type
+
+You have `MoneyDeposited { amount :: Int }` (cents). You want to support fractional amounts, so you need `Decimal` instead of `Int`.
+
+**Don't do this:** Change the type. Existing integers would fail to decode as decimals.
+
+**Do this:** Emit a new event variant that uses the new type:
+
+```haskell
+data AccountEvent
+  = MoneyDeposited { entityId :: Uuid, amount :: Int }           -- legacy (cents)
+  | MoneyDepositedPrecise { entityId :: Uuid, amount :: Decimal } -- new
+```
+
+New deposits use `MoneyDepositedPrecise`. Old deposits stay as `MoneyDeposited`. The `update` function handles both and uses whichever precision the event carries.
+
+If you want your projections to use the new type uniformly, you can convert in `update`:
+
+```haskell
+update event account = case event of
+  MoneyDeposited { amount } ->
+    account { balance = account.balance + Decimal.fromInt amount }
+  MoneyDepositedPrecise { amount } ->
+    account { balance = account.balance + amount }
+```
+
+The entity's balance is `Decimal` from day one; the old events are lifted into the new type at read time.
+
+## Scenario 5 — Splitting a compound event
+
+You have `PaymentProcessed { amount, recipient, method, currency }` and you realize "processed" actually meant three distinct things: the payment was initiated, then validated, then settled. You want to split it.
+
+**Don't do this:** Retroactively split existing events. Impossible.
+
+**Do this:** New events for new payments; leave old payments alone. The old `PaymentProcessed` continues to exist as a compound event for historical payments, while new code emits the fine-grained events:
+
+```haskell
+data PaymentEvent
+  = PaymentProcessed { ... }  -- legacy, compound
+  | PaymentInitiated { ... }  -- new
+  | PaymentValidated { ... }  -- new
+  | PaymentSettled { ... }    -- new
+```
+
+Your `update` function handles both paths. Old payments look like a single transition from "nothing" to "fully processed." New payments look like three transitions. Projections that want to show the phases of a payment can show them for new events; for old ones, there's only one transition, and that's historically accurate.
+
+## Scenario 6 — Merging two events
+
+You have `CartItemAdded` and `CartItemQuantityChanged` and you decide you want a single `CartItemUpdated` that covers both.
+
+**Don't do this:** Replace the existing events with a new one. The old ones are in the store.
+
+**Do this:** Again, additive. Introduce `CartItemUpdated` and emit it from new commands. Old events continue to replay through the existing handlers. Your `update` function grows; the existing code doesn't change.
+
+If you *really* want to clean up, you can rewrite old events as part of a one-time migration — dump the event store to a new store, translating as you go. This is expensive and rarely worth it. The common answer is to add the new type and let the old type age out naturally.
+
+## Scenario 7 — Adding a new entity type
+
+Your accounts become complicated enough that you want to split them into `CheckingAccount` and `SavingsAccount` with different event types.
+
+**Don't do this:** Fork the existing event type. The old events are still typed as `AccountEvent`.
+
+**Do this:** Keep the existing `Account` / `AccountEvent` as-is. Introduce a new entity if you really need a fresh type hierarchy:
+
+```haskell
+-- Old
+data AccountEvent
+  = AccountOpened { ..., accountType :: AccountType }
+  | MoneyDeposited { ... }
+  | MoneyWithdrawn { ... }
+
+-- New (introduced later, separate entity, separate events)
+data SavingsVaultEvent
+  = SavingsVaultCreated { ... }
+  | InterestAccrued { ... }
+```
+
+The old `Account` keeps working for everything you built before. New features use the new entity. The two can coexist.
+
+In practice, the tutorial showed the *other* solution: add a discriminator field (`accountType`) and keep one entity. That's usually simpler. Only split into new entities when the two shapes have genuinely different rules and behaviors.
+
+## The principle behind it all
+
+Every schema change in event sourcing is **additive**. You add new events, new types, new fields. You never modify the existing ones. This might feel wasteful — "but I have 500 old events that are kind of duplicated!" — but the cost is trivial. Disk is cheap. Decoding is fast. The benefit is that **history is always honest**. An event log where old events have been rewritten is no longer a log; it's just "current state" with a pretense.
+
+## Dealing with legacy event types in code
+
+Over time, you'll have old event types you don't want to write to every day. Two practical habits:
+
+### Group them in a legacy module
+
+Put legacy event handlers in a separate module so they don't clutter the main code path:
+
+```haskell
+module MyApp.Account.Events.Legacy where
+
+updateLegacyEvent :: LegacyEvent -> Account -> Account
+updateLegacyEvent = ...
+```
+
+The main `update` function imports this and delegates for legacy cases.
+
+### Add a comment explaining why
+
+When you add a new event variant specifically because you needed schema evolution, note it in a comment:
+
+```haskell
+data AccountEvent
+  = -- Original events
+    AccountOpened { ... }
+  | MoneyDeposited { ... }
+    -- Schema evolution, 2025-04: added fractional support
+  | MoneyDepositedPrecise { ... }
+```
+
+Future you will thank present you.
+
+## The common fear — "what if we need to change everything?"
+
+Sometimes you really do need a fundamental shift. The old model was wrong; the new model is radically different. For those situations:
+
+1. **Freeze the old event types.** No new events of the old types are emitted.
+2. **Build the new model alongside.** New events, new entities, new services.
+3. **Run both for a while.** Read from both models, write only to the new one.
+4. **Retire the old model** when nothing reads from it anymore.
+
+This is called the "strangler fig" pattern, and it's how real systems migrate. It's the same pattern you'd use to migrate any system — just that in event-sourced systems the migration is *always* possible because the source data is event streams, which you can replay into any new shape.
+
+## Where to go from here
+
+- **[From CRUD to events](/concepts/from-crud-to-events/)** — the mental model that makes schema evolution feel natural.
+- **[Trade-offs](/concepts/trade-offs/)** — an honest look at the costs of this approach.
+- **[Guides → Adopting at work](/guides/adopting-at-work/)** — how to make the case for event sourcing to a team that's skeptical about schema changes.

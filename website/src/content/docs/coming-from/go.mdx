@@ -1,103 +1,338 @@
 ---
 title: "Coming from Go"
-description: "How your Go knowledge maps to NeoHaskell — algebraic types, Traits, Task-based concurrency, and typed errors."
+description: "Structs, interfaces, goroutines, errors as values — how your Go mental model maps onto NeoHaskell."
 sidebar:
-  order: 5
+  order: 3
 ---
 
-{/*
-  CONTENT OUTLINE — Coming from Go
-  Reader profile: Go developer, knows structs, interfaces, goroutines, channels, `if err != nil`
-  Key insight to land: Go's explicit error handling is the right instinct — NeoHaskell takes it further
-  by making the error type part of the function signature, not just a convention.
-  Goroutines → Task is the concurrency translation.
-*/}
+import { Aside } from '@astrojs/starlight/components';
 
-import { Tabs, TabItem, Aside } from '@astrojs/starlight/components';
+Go and NeoHaskell share more DNA than you'd expect. Both languages value explicit error handling, static typing, minimal magic, and compile-to-binary simplicity. Most of what you know from Go translates cleanly — you gain pattern matching and algebraic data types, you lose some ceremony, and the concurrency story is different enough to be interesting.
 
-## In Go, you'd write...
-
-- Structs for data: `type Account struct { Balance int; Owner string }`
-- Interfaces for behavior: `type Repository interface { Save(Account) error }`
-- Goroutines for concurrency: `go func() { ... }()`
-- Channels for communication: `ch := make(chan Event)`
-- Explicit error returns: `func GetAccount(id string) (Account, error)`
-- `if err != nil { return nil, err }` — the Go error handling pattern
-- Packages with explicit imports: `import "fmt"`, `import "github.com/user/pkg"`
-- Pointer receivers for mutation: `func (a *Account) Deposit(amount int)`
-- `nil` as the zero value for pointers, interfaces, slices, maps
-
-## In NeoHaskell, the equivalent is...
-
-- **Algebraic data types instead of structs**: Go structs become NeoHaskell records
-  - `type Account struct { Balance int }` → `data Account = Account { balance :: Int }`
-  - But NeoHaskell also has sum types — `data Shape = Circle Float | Rectangle Float Float`
-  - Go has no direct equivalent of sum types (tagged unions require interface + type switch)
-- **Traits instead of interfaces**: Go interfaces become NeoHaskell Traits (type classes)
-  - `type Repository interface { Save(Account) error }` → a Trait with a `save` method
-  - Key difference: Traits are resolved at compile time, not runtime — no interface dispatch overhead
-  - Traits can also express mathematical properties (Mappable, Appendable) that Go interfaces can't
-- **`Task` instead of goroutines**: concurrent effects use the `Task` type
-  - `go func() { result <- compute() }()` → `Task.spawn compute`
-  - Tasks are composable and type-safe — the compiler knows what each task can fail with
-  - No data races — immutability means there's nothing to race over
-- **Typed errors instead of `error` interface**: `Task err val` makes the error type explicit
-  - Go's `error` is an interface — any type can be an error, and callers don't know what to expect
-  - NeoHaskell's `Task NetworkError Account` says exactly what can go wrong
-  - No `if err != nil` — you handle errors with `case` expressions that the compiler enforces
-- **`Maybe` instead of `nil`**: absence of a value is explicit in the type
-  - Go's `nil` can appear anywhere a pointer, interface, or slice is used — silently
-  - NeoHaskell's `Maybe val` forces you to handle the absent case at compile time
-- **Qualified imports**: `Array.map`, `Text.length` — always know where a function comes from
-  - Similar to Go's `fmt.Println` convention, but enforced for all imports
-
-{/* TODO: side-by-side code — Go struct + methods vs NeoHaskell record + functions */}
-{/* TODO: side-by-side code — Go goroutine + channel vs NeoHaskell Task */}
-
-## But here's what's actually different...
-
-- **No mutation**: Go structs can be mutated through pointer receivers. NeoHaskell has no mutation.
-  - `func (a *Account) Deposit(amount int) { a.Balance += amount }` doesn't exist
-  - Instead: `deposit :: Amount -> Account -> Account` returns a new `Account`
-  - This is what makes event sourcing work — every state change is explicit and traceable
-- **The error handling instinct is right, but incomplete**: Go's explicit error returns are the right idea
-  - Go: `func GetAccount(id string) (Account, error)` — error is explicit, but untyped
-  - NeoHaskell: `getAccount :: AccountId -> Task NotFound Account` — error is typed
-  - The difference: in Go, you know a function can fail. In NeoHaskell, you know exactly how.
-- **Interfaces vs Traits**: Go interfaces are structural (any type with the right methods satisfies them)
-  - NeoHaskell Traits are also structural, but resolved at compile time
-  - More importantly: Traits can express constraints that Go interfaces can't — "this type must be sortable AND serializable"
-- **Goroutines vs Tasks**: goroutines are cheap threads — you spawn them and hope for the best
-  - NeoHaskell Tasks are typed effects — the compiler tracks what each task can do and what it can fail with
-  - No `sync.WaitGroup`, no `select` statements — composition is handled by the type system
-- **No `nil` panics**: Go's `nil` is a runtime error waiting to happen. NeoHaskell has no `nil`.
-  - Every value is always valid — absence is expressed through `Maybe`, not through a special zero value
-
-{/* TODO: concrete example — Go nil pointer panic vs NeoHaskell compile error */}
-
-## Quick translation table
+## The big-picture mapping
 
 | Go | NeoHaskell | Notes |
-|----|-----------|-------|
-| `type Account struct { ... }` | `data Account = Account { ... }` | Record type |
-| `type Shape interface { Area() float64 }` | Trait with `area` method | Compile-time dispatch |
-| `go func() { ... }()` | `Task.spawn` | Typed, composable |
-| `ch := make(chan Event)` | NeoHaskell channels | Type-safe communication |
-| `func f() (Account, error)` | `f :: Task Err Account` | Error type is explicit |
-| `if err != nil { return err }` | `case result of { Err e -> ...; Ok v -> ... }` | Exhaustive, compiler-enforced |
-| `nil` | `Maybe val` | Absence is explicit in the type |
-| `import "fmt"` | Qualified imports | `Text.format`, `Array.map` |
-| `*Account` (pointer receiver) | Not needed — no mutation | Records are immutable |
-| `interface{}` / `any` | Type parameters | Typed generics |
+|---|---|---|
+| `type Foo struct { A int }` | `data Foo = Foo { a :: Int }` | Records. |
+| `type Color int` + consts | `data Color = Red | Green | Blue` | Sum type, with real guarantees. |
+| `interface { Foo() }` | `class Foo a where foo :: a -> Unit` | Typeclasses, richer than interfaces. |
+| `(value, error)` return | `Task err value` | Typed error, composable. |
+| `if err != nil { return err }` | Automatic via `<-` in `do` blocks | No boilerplate. |
+| `go f()` | `AsyncTask.start f` | Lightweight concurrent task. |
+| Channels | `Channel` | Same semantics. |
+| `context.Context` | `Task` + `RequestContext` | Scoped state. |
+| `defer close()` | `Task.finally` | Cleanup on exit. |
+| Map `map[K]V` | `Map K V` | Immutable, persistent. |
+| Slice `[]T` | `Array T` | Efficient persistent sequence. |
+| `nil` | `Nothing` (from `Maybe`) | Type-tracked. |
+| `switch { case ...: }` | `case x of` | Pattern matching, exhaustive. |
+| `const Foo = 42` | `foo :: Int; foo = 42` | Same idea. |
+| Build: `go build` | Build: `cabal build` | Single binary out. |
 
-<Aside type="tip" title="The error handling connection">
-Go developers often take to NeoHaskell's error handling quickly — the instinct to make errors explicit is already there. The shift is from `(value, error)` tuples to `Task err val` types. Same idea, but the compiler enforces it instead of convention.
-</Aside>
+## A side-by-side example
 
-{/* TODO: section on Go modules vs Nix + Hix */}
-{/* TODO: section on Go testing vs NeoHaskell Given-When-Then */}
-{/* TODO: section on Go's context.Context vs NeoHaskell's effect system */}
+Here's a typical Go handler for a deposit operation:
 
-:::caution[Coming Soon]
-This page is a content outline. Full prose, code examples, and runnable comparisons are in progress.
-:::
+```go
+type Deposit struct {
+    AccountID string
+    Amount    int
+}
+
+func (h *Handler) HandleDeposit(ctx context.Context, cmd Deposit) error {
+    account, err := h.accounts.Get(ctx, cmd.AccountID)
+    if err != nil {
+        return err
+    }
+    if account == nil {
+        return errors.New("account does not exist")
+    }
+    if cmd.Amount <= 0 {
+        return errors.New("amount must be positive")
+    }
+    return h.accounts.AppendEvent(ctx, MoneyDeposited{
+        AccountID: cmd.AccountID,
+        Amount:    cmd.Amount,
+    })
+}
+```
+
+In NeoHaskell:
+
+```haskell
+data Deposit = Deposit
+  { accountId :: Uuid
+  , amount :: Int
+  }
+  deriving (Generic)
+
+instance Json.FromJSON Deposit
+
+
+getEntityId :: Deposit -> Maybe Uuid
+getEntityId cmd = Just cmd.accountId
+
+
+decide :: Deposit -> Maybe Account -> RequestContext -> Decision AccountEvent
+decide cmd account _ctx = case account of
+  Nothing -> Decider.reject "account does not exist"
+  Just _ ->
+    if cmd.amount <= 0
+      then Decider.reject "amount must be positive"
+      else Decider.acceptExisting
+        [ MoneyDeposited { entityId = cmd.accountId, amount = cmd.amount } ]
+
+
+type instance EntityOf Deposit = Account
+type instance TransportsOf Deposit = '[WebTransport]
+
+command ''Deposit
+```
+
+Some notes:
+
+- The NeoHaskell version is *smaller*, not bigger. The `if err != nil { return err }` pattern disappears because failure is part of the type.
+- There's no database access inside `decide` — the account is already loaded by the command executor and passed in. You don't write "fetch then validate then write"; you write "validate, then describe the change."
+- The event-store append is implicit. You return `acceptExisting [event]` and the framework handles the rest.
+
+## Error handling
+
+Go's `(value, error)` is a great pattern. NeoHaskell's `Task err val` is the same idea, but composable without boilerplate.
+
+```go
+func load() (*Dashboard, error) {
+    user, err := fetchUser()
+    if err != nil { return nil, err }
+    posts, err := fetchPosts(user.ID)
+    if err != nil { return nil, err }
+    stats, err := fetchStats(user.ID)
+    if err != nil { return nil, err }
+    return &Dashboard{User: user, Posts: posts, Stats: stats}, nil
+}
+```
+
+```haskell
+load :: Task Text Dashboard
+load = do
+  user <- fetchUser
+  posts <- fetchPosts user.id
+  stats <- fetchStats user.id
+  Task.yield Dashboard { user = user, posts = posts, stats = stats }
+```
+
+The Go version is 8 lines; the NeoHaskell version is 5. The difference: NeoHaskell's `<-` operator automatically propagates the error. If `fetchUser` fails, the entire function fails with the same error — you don't write the check. Go's verbosity is a feature (it makes error handling visible), but NeoHaskell gets the same safety with less boilerplate because the types force you to acknowledge failure.
+
+## Concurrency
+
+Go's goroutines and channels are famously nice. NeoHaskell's equivalents are `AsyncTask` and `Channel` — similar, but with a few differences.
+
+### Parallel execution
+
+```go
+var wg sync.WaitGroup
+results := make([]Result, 3)
+for i, url := range urls {
+    wg.Add(1)
+    go func(i int, url string) {
+        defer wg.Done()
+        results[i] = fetch(url)
+    }(i, url)
+}
+wg.Wait()
+```
+
+```haskell
+results <- Task.mapArray (\url -> AsyncTask.start (fetch url)) urls
+  |> Task.andThen (Task.mapArray AsyncTask.wait)
+```
+
+The NeoHaskell version is shorter because the types handle the synchronization. No `WaitGroup`, no manual slicing, no closure-in-a-loop.
+
+### Channels
+
+```go
+ch := make(chan Message, 10)
+
+go producer(ch)
+go consumer(ch)
+```
+
+```haskell
+ch <- Channel.new
+AsyncTask.start (producer ch)
+AsyncTask.start (consumer ch)
+```
+
+`Channel.send` and `Channel.receive` work like Go's `<-` send/receive. The main difference is that NeoHaskell channels are typed: `Channel Message` only accepts `Message` values. Go channels are already typed — this is basically the same.
+
+### Context and cancellation
+
+Go's `context.Context` is how you propagate deadlines, cancellation, and request-scoped values. NeoHaskell's equivalent is **implicit through Task** for cancellation (structured concurrency — a spawned task that's cancelled propagates the cancellation) and **explicit through `RequestContext`** for request-scoped values like auth.
+
+## Structs vs. records
+
+```go
+type User struct {
+    ID    string
+    Name  string
+    Email string
+}
+
+u := User{ID: "abc", Name: "Alice", Email: "a@example.com"}
+fmt.Println(u.Name)
+```
+
+```haskell
+data User = User
+  { id :: Uuid
+  , name :: Text
+  , email :: Text
+  }
+
+u = User { id = abcId, name = "Alice", email = "a@example.com" }
+Console.log u.name
+```
+
+Nearly identical. NeoHaskell's records also support **record update** out of the box:
+
+```haskell
+u2 = u { name = "Bob" }  -- new User, same fields except name
+```
+
+Go requires you to build a new struct literal by hand. NeoHaskell's record update syntax is more ergonomic for partial updates.
+
+## Interfaces vs. typeclasses
+
+Go interfaces are satisfied structurally — any type with the right methods implements the interface. NeoHaskell typeclasses are **nominal** — you explicitly declare that a type implements a class:
+
+```go
+type Stringer interface {
+    String() string
+}
+
+func (u User) String() string {
+    return u.Name
+}
+```
+
+```haskell
+class Stringer a where
+  toString :: a -> Text
+
+instance Stringer User where
+  toString user = user.name
+```
+
+The NeoHaskell version is more ceremony but less ambiguous. In Go, you can accidentally satisfy an interface you didn't mean to. In NeoHaskell, the instance is explicit.
+
+Also: NeoHaskell typeclasses can have **associated types** and **default methods**, which Go interfaces can't:
+
+```haskell
+class Command cmd where
+  type EntityOf cmd :: Type  -- associated type
+  decideImpl :: cmd -> Maybe (EntityOf cmd) -> RequestContext -> Decision event
+```
+
+This is how NeoHaskell's command framework works under the hood.
+
+## Errors as values
+
+Go famously treats errors as values. NeoHaskell does too, but the type system tracks them:
+
+```go
+user, err := fetchUser(id)
+if err != nil {
+    return nil, fmt.Errorf("fetch user: %w", err)
+}
+```
+
+```haskell
+user <- fetchUser id
+  |> Task.mapError (\e -> [fmt|fetch user: #{e}|])
+```
+
+The `|>` pipe and `Task.mapError` do the same thing as Go's `fmt.Errorf` wrapping. The differences:
+
+- Go's `error` is an interface; you can put anything in there.
+- NeoHaskell's error is a typed channel; `Task Text User` can only fail with `Text`.
+
+Both are explicit about errors. Go asks you to write the check; NeoHaskell does it for you while still making the type visible.
+
+## No nil panics
+
+Go's `nil` pointers are a well-known source of runtime bugs. NeoHaskell eliminates them: instead of a `*User` that might be `nil`, you have `Maybe User`, and the compiler refuses to let you dereference without checking.
+
+```go
+user := fetchUser(id)  // returns *User, might be nil
+fmt.Println(user.Name) // PANIC if nil
+```
+
+```haskell
+user <- fetchUser id  -- returns Maybe User
+case user of
+  Nothing -> Task.throw "not found"
+  Just u -> Console.log u.name
+```
+
+You can't forget the nil check. The compiler forces it.
+
+## Build and deploy
+
+Go's `go build` produces a single binary. `cabal build` does the same in NeoHaskell. Both deploy as "copy the binary and run it." Both have fast startup. Both are statically typed and don't need a runtime VM.
+
+One difference: Go binaries are typically smaller than NeoHaskell binaries. NeoHaskell includes the GHC runtime, which adds a few MB of baseline size. In practice, this is 20-40 MB vs. Go's 5-15 MB. For most deployment scenarios this doesn't matter.
+
+## Testing
+
+Go's `testing` package is minimal and sufficient. NeoHaskell's testing uses Hspec, which is similar in shape:
+
+```go
+func TestDeposit_RejectsWhenAccountDoesNotExist(t *testing.T) {
+    result := deposit(DepositCmd{Amount: 50}, nil)
+    if result.Error != "account does not exist" {
+        t.Errorf("expected rejection, got %v", result)
+    }
+}
+```
+
+```haskell
+it "rejects when account does not exist" \_ -> do
+  let cmd = Deposit { accountId = Uuid.nil, amount = 50 }
+  result <- runDecide cmd Nothing
+  result |> shouldBe (RejectCommand "account does not exist")
+```
+
+Go's test harness is less magical; NeoHaskell's is more declarative. Both run fast and require minimal setup.
+
+## What you'll miss from Go
+
+- **The ecosystem.** Go has a huge library for everything. NeoHaskell's library ecosystem is smaller.
+- **Compile speed.** GHC is slower than `go build`, especially on a fresh build.
+- **The simplicity mantra.** Go famously resists new features. NeoHaskell has a richer type system, which can feel like "too much" until you're used to it.
+- **Standard tools.** `go fmt`, `go vet`, `go doc` are standardized. NeoHaskell uses `fourmolu`, `hlint`, and `haddock` — all good, but slightly less unified.
+
+## What you'll gain over Go
+
+- **Exhaustive pattern matching** on sum types. No more "I forgot a case in the switch."
+- **Errors as types, not interfaces.** The error channel is specific and traceable.
+- **Event sourcing as a language primitive.** You don't build an event store; you have one.
+- **Pure functions everywhere.** Testing is trivial because there's nothing to mock.
+- **More powerful type-level guarantees** — service consistency, transport registration, etc.
+
+## The learning curve for a Go developer
+
+Go developers typically ramp up on NeoHaskell faster than most. The reasons:
+
+- You already think in explicit error values.
+- You already understand build-compile-deploy as a unit.
+- You already value simplicity.
+- You're not scared of static types.
+
+Expect about a week to get comfortable with the syntax, another week to internalize the event-sourcing mental model, and by week three you'll be writing production-quality code.
+
+## Where to go from here
+
+- **[Installation](/getting-started/installation/)** — get set up.
+- **[Your first events](/getting-started/first-events/)** — your first NeoHaskell code.
+- **[Build NeoBank](/tutorial/)** — the full tutorial.
+- **[Cheat sheet](/getting-started/cheat-sheet/)** — for when you forget a syntax.

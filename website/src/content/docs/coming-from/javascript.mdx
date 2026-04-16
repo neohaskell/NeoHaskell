@@ -1,98 +1,313 @@
 ---
-title: "Coming from JavaScript/TypeScript"
-description: "How your JS/TS knowledge maps to NeoHaskell — immutability, type inference, algebraic data types, and the event-first mental model."
+title: "Coming from JavaScript or TypeScript"
+description: "Your JS/TS mental model, translated directly into NeoHaskell. Records, pattern matching, async/await, and how the same concepts work with stronger types."
 sidebar:
   order: 1
 ---
 
-{/*
-  CONTENT OUTLINE — Coming from JavaScript/TypeScript
-  Reader profile: knows let/const, React/Express, npm/yarn, TypeScript basics
-  Key insight to land: Redux reducers are the closest thing JS has to NeoHaskell's model.
-  The reader is closer than they think — but the direction is inverted.
-*/}
+import { Aside } from '@astrojs/starlight/components';
 
-{/* POLYGLOT NOTE: All code examples on this page should include equivalent snippets in JS/TS, Python, and Go. See DOCS-PLAN.md Guiding Principle #9. */}
+If you write JavaScript or TypeScript for a living, NeoHaskell will feel surprisingly familiar. The main adjustments are cosmetic (different syntax for the same ideas) and the biggest conceptual shift is thinking in events instead of mutations. This page walks through the translations.
 
-import { Tabs, TabItem, Aside } from '@astrojs/starlight/components';
+## The big-picture mapping
 
-## In JavaScript/TypeScript, you'd write...
+| JavaScript / TypeScript | NeoHaskell | Notes |
+|---|---|---|
+| `async function f() { ... }` | `f :: Task err val` | Both represent "eventually a value, may fail." |
+| `await somePromise` | `x <- someTask` (inside `do`) | Literally the same idea. |
+| `throw new Error("...")` | `Task.throw "..."` | Typed error instead of untyped. |
+| `try/catch` | `Task.recover` | Catches typed errors. |
+| `Promise.all([a, b, c])` | `AsyncTask.start` + `AsyncTask.wait` | Parallel composition. |
+| `Array.map(fn)` | `Array.map fn arr` | Same idea, different arg order. |
+| `x?.y?.z` | `Maybe` chains via `andThen` | Null safety at the type level. |
+| `if/else` | `if/then/else` | Same. |
+| `switch (x)` | `case x of` | Pattern matching with exhaustive checking. |
+| `const x = 5` | `let x = 5` (inside `do`) | Local immutable binding. |
+| `type Foo = { a: number }` | `data Foo = Foo { a :: Int }` | Record types. |
+| `type Result = "ok" | "err"` | `data Result = Ok | Err` | Discriminated unions. |
+| `interface Foo { ... }` | `class Foo where ...` | Typeclasses (more powerful than interfaces). |
+| `import * as x from "..."` | `import X qualified` | Qualified imports. |
+| Object spread <code>{`{...x, y: 1}`}</code> | `x { y = 1 }` | Record update. |
+| Template literals (backticks with `$\{name\}`) | `[fmt|hi #\{name\}|]` | String interpolation. |
 
-- Variables that change: `let x = 5; x = 10` — mutation is the default
-- Objects you update in place: `user.name = "Alice"` or spread: `{ ...user, name: "Alice" }`
-- TypeScript types as optional annotations layered on top of JS
-- Union types for "one of these shapes": `type Shape = Circle | Square`
-- `async/await` for anything that takes time
-- `try/catch` for error handling — errors are thrown, not returned
-- `import { map } from 'lodash'` — named imports from packages
-- Redux reducers: `(state, action) => newState` — pure function, returns new state
-- React state: `useState`, `useReducer` — local mutation through controlled APIs
+Almost every JS/TS construct has a direct NeoHaskell equivalent. Learning the syntax takes a weekend; learning the mental model takes a week.
 
-## In NeoHaskell, the equivalent is...
+## A side-by-side example
 
-- **Immutability by default**: there's no `let x = 5; x = 10` — all bindings are final
-  - "Updating" a record means creating a new one with the changed field
-  - This isn't a restriction — it's what makes event sourcing work
-- **Type inference everywhere**: types are inferred, not annotated (like TypeScript but stricter)
-  - You write fewer type annotations than in TypeScript, not more
-  - The compiler infers types across entire programs
-- **Algebraic data types**: TypeScript unions become sum types
-  - `type Shape = Circle | Square` maps directly to NeoHaskell's `data Shape = Circle | Square`
-  - But NeoHaskell's pattern matching is exhaustive — the compiler forces you to handle every case
-- **`do` blocks instead of `async/await`**: sequential effects use `do` notation
-  - `await fetchUser(id)` becomes a line in a `do` block
-  - The `Task` type carries both the success value and the typed error
-- **`Result` instead of `try/catch`**: errors are values, not exceptions
-  - Functions that can fail return `Result err val` — you handle it explicitly
-  - No silent throws, no forgotten catch blocks
-- **Qualified imports**: `Array.map`, `Text.length` — always know where a function comes from
-  - No `import { map } from 'lodash'` ambiguity
-- **Commands and events instead of Redux actions**: the pattern is the same, the names are different
-  - Redux: `dispatch({ type: 'DEPOSIT', amount: 50 })` → NeoHaskell: `Deposit { amount: 50 }`
-  - Redux reducer: `(state, action) => newState` → NeoHaskell: `decide command state = [MoneyDeposited 50]`
+Here's a TypeScript function that fetches a user and checks permissions:
 
-{/* TODO: side-by-side code table — TypeScript Redux reducer vs NeoHaskell decide function */}
+```ts
+async function loadProfile(userId: string, viewerId: string): Promise<Profile> {
+  const user = await fetchUser(userId);
+  if (user === null) {
+    throw new Error("User not found");
+  }
+  if (user.id !== viewerId && !user.profilePublic) {
+    throw new Error("Not allowed to view this profile");
+  }
+  return {
+    id: user.id,
+    name: user.name,
+    bio: user.bio,
+  };
+}
+```
 
-## But here's what's actually different...
+The same thing in NeoHaskell:
 
-- **The direction of data flow**: in React/Redux, you manage state and derive events from it. In NeoHaskell, events are primary and state is derived from them.
-  - Redux: state lives in the store, actions modify it
-  - NeoHaskell: events live in the event log, state is computed by replaying them
-  - This isn't just a naming difference — it changes what "correct" means
-- **Errors are part of the type**: `Task err val` means the compiler knows what can go wrong
-  - TypeScript's `Promise<T>` doesn't encode the error type — you find out at runtime
-  - NeoHaskell's `Task NetworkError User` says exactly what can fail
-- **No runtime type errors**: TypeScript types disappear at runtime. NeoHaskell types are enforced by the compiler and never erased.
-- **The Redux insight**: if you've written Redux reducers, you've already written NeoHaskell-style code
-  - Pure function, takes current state and an action, returns new state
-  - NeoHaskell formalizes this pattern at the language level and enforces it everywhere
-  - The difference: NeoHaskell's "actions" are typed events, and the compiler ensures you handle all of them
+```haskell
+loadProfile :: Uuid -> Uuid -> Task Text Profile
+loadProfile userId viewerId = do
+  user <- fetchUser userId
+  case user of
+    Nothing ->
+      Task.throw "User not found"
+    Just u ->
+      if u.id /= viewerId && not u.profilePublic
+        then Task.throw "Not allowed to view this profile"
+        else
+          Task.yield Profile
+            { id = u.id
+            , name = u.name
+            , bio = u.bio
+            }
+```
 
-{/* TODO: concrete example — TypeScript silent failure vs NeoHaskell compiler error for missing event handler */}
+Notice the shape is almost identical. The differences:
 
-## Quick translation table
+- `Task` instead of `Promise`.
+- Explicit `Maybe` check with `case` instead of a truthy null check.
+- Pattern matching with `Just u` to extract the value.
+- `Task.yield` instead of `return`, `Task.throw` instead of `throw new Error`.
+- Records built with field names, not object literal shorthand.
 
-| JavaScript/TypeScript | NeoHaskell | Notes |
-|----------------------|-----------|-------|
-| `let x = 5; x = 10` | Not possible — bindings are final | Use records with updated fields |
-| `{ ...user, name: "Alice" }` | `user { name = "Alice" }` | Record update syntax |
-| `type Shape = Circle \| Square` | `data Shape = Circle \| Square` | Sum types, exhaustive matching |
-| `async/await` | `do` blocks with `Task` | Same idea, typed errors |
-| `try/catch` | `Result err val` | Errors are values |
-| `Promise<T>` | `Task err val` | Error type is explicit |
-| `import { map } from 'lodash'` | `Array.map` | Qualified imports |
-| Redux reducer | `decide` function | Same pattern, enforced by compiler |
-| TypeScript interface | Record type | Structural, not nominal |
-| TypeScript union | Sum type (`data`) | Exhaustive pattern matching |
+## Promises vs. Tasks
 
-<Aside type="tip" title="If you've used Redux">
-Redux reducers are the closest thing JavaScript has to NeoHaskell's model. If you've written `(state, action) => newState`, you already understand the core pattern. NeoHaskell just makes it the only way to change state — and the compiler enforces it.
+You know `Promise<T>`. NeoHaskell has `Task err val`. The key difference is that `Task` has a **typed error channel**. In TypeScript, a `Promise<User>` can reject with anything — an Error, a string, an object, `undefined`. You find out what at runtime. In NeoHaskell, `Task Text User` can only fail with a `Text`, and the type system tracks it.
+
+Because errors are typed:
+
+- You don't need to write type guards in catch blocks.
+- You know every failure a function can produce by reading its signature.
+- Propagating errors is automatic through `<-` bindings.
+
+## `await` vs. `<-`
+
+Both do the same thing: "run this async operation and bind the result to a name."
+
+```ts
+// TS
+async function f() {
+  const user = await fetchUser(userId);
+  const posts = await fetchPosts(user.id);
+  return { user, posts };
+}
+```
+
+```haskell
+-- NeoHaskell
+f :: Task Text Response
+f = do
+  user <- fetchUser userId
+  posts <- fetchPosts user.id
+  Task.yield Response { user = user, posts = posts }
+```
+
+The left-arrow `<-` is NeoHaskell's version of `await`. It has to appear inside a `do` block, which is the equivalent of an async function body.
+
+## Immutable data by default
+
+In JavaScript you can mutate objects freely:
+
+```ts
+user.name = "Alice";           // Mutation
+user.posts.push(newPost);      // Mutation
+```
+
+In NeoHaskell, you can't. Every "update" creates a new record:
+
+```haskell
+user2 = user { name = "Alice" }                         -- Returns a new record
+user3 = user { posts = Array.push newPost user.posts }  -- Returns a new record
+```
+
+The original `user` is untouched. This feels awkward at first but becomes reassuring: when you hold a value, you know it won't change under you. This is what makes event replay safe and what makes tests trivial.
+
+<Aside type="tip" title="If you like Immer or Immutable.js...">
+Then you're already halfway there. NeoHaskell's immutability works the same way but without the library — it's built into the language. Every record is treated the way Immer makes objects behave.
 </Aside>
 
-{/* TODO: code examples for each row in the translation table — include JS/TS, Python, Go equivalents */}
-{/* TODO: section on npm/yarn → Nix + Hix package management */}
-{/* TODO: section on React component state vs NeoHaskell entity state */}
+## Types
 
-:::caution[Coming Soon]
-This page is a content outline. Full prose, code examples, and runnable comparisons are in progress.
-:::
+TypeScript's structural types are loose. `{ name: string }` is a shape; anything with that shape fits. NeoHaskell's types are **nominal** — if you declare `User` and `Product` with the same fields, they're still different types.
+
+This matters for safety: you can't accidentally pass a `Product` where a `User` is expected, even if they have the same fields. It also matters for refactoring: when you rename `User.email` to `User.emailAddress`, the compiler tells you every place to update. In TypeScript with structural types, the same rename might silently unify with a different type that happens to have the same shape.
+
+## Discriminated unions
+
+TypeScript lets you build discriminated unions with `type A = { kind: "a" } | { kind: "b" }`. NeoHaskell has them natively:
+
+```ts
+type Shape =
+  | { kind: "circle", radius: number }
+  | { kind: "rect", width: number, height: number };
+
+function area(shape: Shape): number {
+  switch (shape.kind) {
+    case "circle": return Math.PI * shape.radius ** 2;
+    case "rect": return shape.width * shape.height;
+  }
+}
+```
+
+```haskell
+data Shape
+  = Circle { radius :: Float }
+  | Rect { width :: Float, height :: Float }
+
+area :: Shape -> Float
+area shape = case shape of
+  Circle { radius } -> pi * radius * radius
+  Rect { width, height } -> width * height
+```
+
+The compiler enforces exhaustive matching — miss a case and it's a compile error. In TypeScript, with the `"strict"` flag, you can get close to this with a `never` check, but NeoHaskell does it by default.
+
+## `null` vs. `Maybe`
+
+TypeScript gives you `T | null | undefined` and asks you to remember to check. NeoHaskell gives you `Maybe T`:
+
+```ts
+function firstName(user: User | null): string {
+  if (user === null) return "stranger";
+  return user.name;
+}
+```
+
+```haskell
+firstName :: Maybe User -> Text
+firstName maybeUser = case maybeUser of
+  Nothing -> "stranger"
+  Just user -> user.name
+```
+
+If you try to read `user.name` without unwrapping the `Maybe`, the compiler stops you. There is no way to accidentally dereference a `Nothing`.
+
+## Classes vs. data types
+
+TypeScript classes bundle state and methods. NeoHaskell separates them: state is a `data` type, functions that operate on it are top-level functions.
+
+```ts
+class User {
+  constructor(public name: string, public email: string) {}
+  greet(): string { return `Hello, ${this.name}`; }
+}
+
+const u = new User("Alice", "a@example.com");
+console.log(u.greet());
+```
+
+```haskell
+data User = User
+  { name :: Text
+  , email :: Text
+  }
+
+greet :: User -> Text
+greet user = [fmt|Hello, #{user.name}|]
+
+main = do
+  let u = User { name = "Alice", email = "a@example.com" }
+  Console.log (greet u)
+```
+
+There's no `this`. There's no constructor. A record is just data; functions operate on it from outside. This is simpler in practice — you know exactly what `greet` does because it can't reach into hidden state.
+
+## Typeclasses vs. interfaces
+
+TypeScript interfaces describe the shape of a type. NeoHaskell typeclasses describe *behavior* that a type can implement:
+
+```ts
+interface Stringable { toString(): string; }
+
+class User implements Stringable {
+  toString() { return this.name; }
+}
+```
+
+```haskell
+class Stringable a where
+  toString :: a -> Text
+
+instance Stringable User where
+  toString user = user.name
+```
+
+The differences:
+
+- Typeclasses let you add behavior to types you don't own. You can write `instance Stringable Int` without modifying `Int`.
+- Typeclass dispatch is resolved at compile time, not runtime. No virtual dispatch.
+- Typeclasses can have default implementations (`class Stringable a where { toString = ... }`), and instances can override them.
+
+You won't use typeclasses much in application code. They're mostly plumbing for the framework (`Entity`, `Command`, `QueryOf`, etc.).
+
+## Where to write what
+
+| In JS/TS you'd put it in... | In NeoHaskell it goes in... |
+|---|---|
+| Express controller | A **command** file + `decide` function |
+| Service layer (business logic) | The `decide` function |
+| DB layer / ORM | The event store (automatic) |
+| Pipes/middleware | Integrations or `RequestContext` |
+| Repository pattern | N/A — the event store replaces it |
+| Validation schema (Zod, Yup) | The `decide` function |
+| DTO transformer | The command type itself |
+| `useReducer` / Redux reducer | The `update` function |
+| REST endpoint definition | Auto-generated from `command ''Foo` |
+| OpenAPI schema | Auto-generated from `command ''Foo` |
+
+A lot of layers collapse. The thing you'd spread across a Zod schema + a controller + a service + a repository + an ORM call + a DTO all live in one `decide` function.
+
+## Testing
+
+In TypeScript you might use Jest or Vitest with mocks:
+
+```ts
+test("rejects if user does not exist", async () => {
+  const mockFetch = jest.fn().mockResolvedValue(null);
+  const result = await deposit({ amount: 50 }, mockFetch);
+  expect(result.error).toBe("User not found");
+});
+```
+
+In NeoHaskell, `decide` is pure. No mocks needed:
+
+```haskell
+it "rejects if account does not exist" \_ -> do
+  let cmd = Deposit { accountId = Uuid.nil, amount = 50 }
+  result <- runDecide cmd Nothing
+  result |> shouldBe (RejectCommand "Account does not exist")
+```
+
+Fewer moving parts, faster tests, no setup/teardown.
+
+## Deployment
+
+In TypeScript you deploy a Node bundle, a set of environment variables, and hopefully a running database. In NeoHaskell you deploy a single binary, the same set of environment variables, and a running PostgreSQL instance. The binary is a few dozen MB; cold start is a few seconds.
+
+## The mental shift
+
+The mechanical stuff is easy. The real adjustment is thinking in events:
+
+- Instead of "update the user's email", you think "record that the user changed their email."
+- Instead of "the order is shipped", you think "there was a `OrderShipped` event, and the projection now says the order is shipped."
+- Instead of "delete the user", you think "record a `UserAccountClosed` event."
+
+Read [Thinking in events](/concepts/thinking-in-events/) and [From CRUD to events](/concepts/from-crud-to-events/) for the full mental shift. It takes a few days of writing code to internalize.
+
+## Where to go from here
+
+- **[Installation](/getting-started/installation/)** — five minutes to a working environment.
+- **[Your first events](/getting-started/first-events/)** — your first piece of NeoHaskell code.
+- **[Build NeoBank](/tutorial/)** — the full tutorial.
+- **[Cheat sheet](/getting-started/cheat-sheet/)** — for when you forget a syntax.

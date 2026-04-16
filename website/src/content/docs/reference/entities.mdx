@@ -1,0 +1,217 @@
+---
+title: "Entities and events"
+description: "Reference for the Entity and Event typeclasses, type families, and how to declare them."
+sidebar:
+  order: 3
+---
+
+## The `Entity` typeclass
+
+An entity is a stateful domain object whose state is derived by folding events.
+
+```haskell
+class Entity entity where
+  type EntityIdType entity :: Type
+  type EntityIdType entity = Uuid
+
+  initialStateImpl :: entity
+
+  updateImpl :: EventOf entity -> entity -> entity
+```
+
+- **`EntityIdType`** — the type of the ID used for this entity. Defaults to `Uuid`. Override for entities that need strings or integers.
+- **`initialStateImpl`** — the starting state before any events are applied.
+- **`updateImpl`** — the reducer that folds events into state. **This function must be pure.**
+
+You'll typically write:
+
+```haskell
+instance Entity Account where
+  initialStateImpl = initialState
+  updateImpl = update
+```
+
+Where `initialState` and `update` are your own top-level functions.
+
+## The `Event` typeclass
+
+Every event type implements this:
+
+```haskell
+class Event event where
+  getEventEntityIdImpl :: event -> EntityIdType (EntityOf event)
+```
+
+The one method — `getEventEntityIdImpl` — extracts the ID of the entity stream this event belongs to. The event store uses this to route events to the correct stream.
+
+```haskell
+instance Event AccountEvent where
+  getEventEntityIdImpl event = case event of
+    AccountOpened { entityId } -> entityId
+    MoneyDeposited { entityId } -> entityId
+    MoneyWithdrawn { entityId } -> entityId
+```
+
+The standard convention is to give every event variant an `entityId` field of the same name, so this function is a simple pattern match.
+
+## Type families
+
+You declare these alongside the entity and event types:
+
+```haskell
+type instance NameOf YourEntity = "YourEntity"
+type instance EventOf YourEntity = YourEventType
+type instance EntityOf YourEventType = YourEntity
+```
+
+| Type family | Purpose |
+|---|---|
+| `NameOf entity` | Symbol used for stream naming, HTTP paths, etc. |
+| `EventOf entity` | Which event type this entity consumes. |
+| `EntityOf event` | Which entity owns this event type. |
+
+These form a bidirectional link: the entity knows its event type, and each event knows its entity type. The compiler uses these to check consistency across the rest of the framework.
+
+## Required instances
+
+For an entity type to work with the service layer, it needs:
+
+- `Generic` (for JSON derivation)
+- `Json.FromJSON`, `Json.ToJSON`
+- `Entity`
+- `NameOf` type instance
+
+For an event type:
+
+- `Generic`
+- `Json.FromJSON`, `Json.ToJSON`
+- `Event`
+- `EventOf` type instance
+- `EntityOf` type instance
+
+You typically derive `Show` and `Eq` too — they're needed for tests.
+
+## A complete example
+
+```haskell
+module MyApp.User.Core (
+  User (..),
+  UserEvent (..),
+  initialState,
+) where
+
+import Core
+import Json qualified
+import Service.Command.Core (Event (..))
+
+
+-- The entity
+data User = User
+  { userId :: Uuid
+  , email :: Text
+  , name :: Text
+  , isActive :: Bool
+  }
+  deriving (Generic, Show, Eq)
+
+
+instance Json.FromJSON User
+instance Json.ToJSON User
+
+
+initialState :: User
+initialState =
+  User
+    { userId = Uuid.nil
+    , email = ""
+    , name = ""
+    , isActive = True
+    }
+
+
+type instance NameOf User = "User"
+
+
+instance Entity User where
+  initialStateImpl = initialState
+  updateImpl = update
+
+
+-- The events
+data UserEvent
+  = UserRegistered
+      { entityId :: Uuid
+      , email :: Text
+      , name :: Text
+      }
+  | EmailChanged
+      { entityId :: Uuid
+      , oldEmail :: Text
+      , newEmail :: Text
+      }
+  | NameChanged
+      { entityId :: Uuid
+      , oldName :: Text
+      , newName :: Text
+      }
+  | UserDeactivated
+      { entityId :: Uuid
+      }
+  deriving (Eq, Show, Generic)
+
+
+instance Json.FromJSON UserEvent
+instance Json.ToJSON UserEvent
+
+
+type instance EventOf User = UserEvent
+type instance EntityOf UserEvent = User
+
+
+instance Event UserEvent where
+  getEventEntityIdImpl event = case event of
+    UserRegistered { entityId } -> entityId
+    EmailChanged { entityId } -> entityId
+    NameChanged { entityId } -> entityId
+    UserDeactivated { entityId } -> entityId
+
+
+-- The update function
+update :: UserEvent -> User -> User
+update event user = case event of
+  UserRegistered { entityId, email, name } ->
+    User
+      { userId = entityId
+      , email = email
+      , name = name
+      , isActive = True
+      }
+  EmailChanged { newEmail } ->
+    user { email = newEmail }
+  NameChanged { newName } ->
+    user { name = newName }
+  UserDeactivated {} ->
+    user { isActive = False }
+```
+
+This file is self-contained — it defines the entity, the events, the type-family connections, and the update function. Every command that operates on `User` will reference this module.
+
+## Custom entity ID types
+
+If your entity uses a non-UUID ID (for example, a user email or a composite key), override `EntityIdType`:
+
+```haskell
+instance Entity Account where
+  type EntityIdType Account = AccountId  -- not Uuid
+
+  initialStateImpl = initialState
+  updateImpl = update
+```
+
+`AccountId` must have a `StreamId.ToStreamId` instance so the event store can route it. For string-like IDs, use `newtype AccountId = AccountId Text deriving (Generic, Show, Eq, Ord)` and define the instance yourself — see `Service.Event.StreamId` for details.
+
+## Where to go from here
+
+- **[Commands and decisions](/reference/commands/)** — the command side of the equation.
+- **[Entities concept — see Commands and handlers](/concepts/commands-and-handlers/)** — the "why" behind entities and updates.
+- **[Services and applications](/reference/services-and-applications/)** — how entities are wired into applications.

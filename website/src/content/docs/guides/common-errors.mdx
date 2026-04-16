@@ -1,283 +1,206 @@
 ---
-title: "Common Errors"
-description: "Solutions to frequently encountered NeoHaskell errors, organized by what you were trying to do — not by error message."
-keywords: [common errors, troubleshooting, type mismatch, pattern match, command handler, query, configuration, debugging]
+title: "Common errors"
+description: "The specific errors you will actually hit, organized by what you were doing when you hit them. Each with a direct fix."
 sidebar:
   order: 4
 ---
 
-{/*
-  CONTENT OUTLINE — Common Errors Guide
-  ======================================
-  Position: Guides section, fourth guide
-  Goal: Reader is stuck on a specific error. They find their situation, get the fix, move on.
-  Prerequisites: None — this is a reference guide for stuck readers
-  Format: Decision tree — "What were you trying to do?" → "What error did you see?" → Fix
-  Style: Julia Evans — organize by intent, not by error message
-  Tone: direct, no fluff — reader is frustrated, get them unstuck fast
+Rather than a generic "here are the error categories" page, this is a catalog of specific errors keyed to the situation that produces them. When you see one of these, jump to the section and apply the fix.
 
-  Key insight: When you're stuck, you know your intent before you understand the error.
-  So organize by intent, not by error message.
+## When adding a new event type
 
-  Sections organized by INTENT:
-  1. "I was trying to handle a command"
-  2. "I was trying to build a query"
-  3. "I was trying to test something"
-  4. "I was trying to define a type"
-  5. "I was trying to run my app"
-  6. "I was trying to use an integration"
-  7. Still stuck?
-*/}
+### "Non-exhaustive patterns in function update"
 
-{/* POLYGLOT NOTE: All code examples on this page should include equivalent snippets in JS/TS, Python, and Go. See DOCS-PLAN.md Guiding Principle #9. */}
+You added a new variant to an event type and didn't handle it everywhere.
 
-import { Aside } from '@astrojs/starlight/components';
+**Fix:** Add a branch for the new variant in:
 
-Find what you were trying to do. Find the error you saw. Get the fix.
+- The `update` function
+- The `getEventEntityIdImpl` function (if the new event has an `entityId` field)
+- Any `combine` function in queries that cares about the new event
 
-If you're not sure what kind of error you have, start with [Reading Error Messages](/guides/reading-error-messages/) — it teaches you how to identify the error category.
+The compiler will walk you through each one.
 
----
+### "Non-exhaustive patterns in function getEventEntityIdImpl"
 
-## I Was Trying to Handle a Command
+Same cause as above — same fix.
 
-### `Expected type 'Decider.Decision Event Error', but got type 'Event'`
+## When adding a new command
 
-{/*
-  Common mistake: returning an event directly instead of wrapping it in Decider.accept
-*/}
+### "Could not deduce (Record.KnownSymbol ...) arising from a use of 'command'"
 
+You forgot to provide a `NameOf` instance for your command type.
 
-- **What happened**: you returned an event directly from a command handler instead of wrapping it
-- **Fix**: wrap the event in `Decider.accept myEvent` or `Decider.acceptExisting myEvent`
-- **Why**: command handlers must return a `Decision` — the compiler enforces this
-- Show: the wrong code and the corrected version side by side
+**Fix:** The `command ''Foo` macro line at the bottom of your command file generates this automatically — make sure you haven't removed it. If you still get the error after the macro line, check that the command type is at the top level of the module and is exported.
 
-{/* TODO: code example — include JS/TS, Python, Go equivalents */}
+### "No instance for (Schema.ToSchema ...) arising from a use of 'command'"
 
-### `Non-exhaustive patterns in case expression` (in a command handler)
+Your command type needs a `ToSchema` instance so NeoHaskell can generate the OpenAPI spec.
 
-{/*
-  Added a new command variant but didn't handle it in the handler.
-*/}
+**Fix:** Add `deriving (Generic)` to the command type and import `import Schema qualified`. The `command ''Foo` line will derive the rest.
 
+### "No instance for (Json.FromJSON ...)"
 
-- **What happened**: you added a new command constructor but didn't add a case for it in the handler
-- **Fix**: add a case for the new constructor
-- **Why**: NeoHaskell requires exhaustive pattern matching — every command must be handled
-- Show: the error pointing to the case expression, then the fix
+Same fix — ensure `deriving (Generic)` and add `instance Json.FromJSON YourCommand`.
 
-{/* TODO: code example — include JS/TS, Python, Go equivalents */}
+### "Couldn't match type 'EventOf EntityOf SomeCommand'"
 
-### `Couldn't match type 'EntityState' with 'Maybe EntityState'`
+You declared `EntityOf SomeCommand = Foo` but `Foo`'s `EventOf` isn't what `decide` returns.
 
-{/*
-  Forgetting that entity state is wrapped in Maybe (entity might not exist yet).
-*/}
+**Fix:** Verify the chain:
+- `EntityOf YourCommand = YourEntity`
+- `EventOf YourEntity = YourEvent`
+- `decide ... -> Decision YourEvent`
 
+All three must line up. The compiler error usually names exactly which link is broken.
 
-- **What happened**: you're treating the entity state as if it always exists, but it might be `Nothing` (entity not yet created)
-- **Fix**: pattern match on `Nothing` (entity doesn't exist) and `Just state` (entity exists) separately
-- **Why**: entities start as `Nothing` — the first command creates them
-- Show: the pattern match structure for a command that requires an existing entity vs. one that creates it
+## When adding a new service
 
-{/* TODO: code example — include JS/TS, Python, Go equivalents */}
+### "Event type mismatch in service definition!"
 
-### `Ambiguous type variable` in a command handler
+You tried to register two commands in the same service, but they have different event types.
 
-- **What happened**: the compiler can't infer the type of an expression — usually a literal like `0` or `""`
-- **Fix**: add a type annotation: `(0 :: Int)` or `("" :: Text)`
-- Show: the error and the annotation fix
+**Fix:** Put each command in a service matching its entity/event type. If you have `CartCommand`s and `OrderCommand`s, you need `cartService` and `orderService` as two separate things. The compiler error names the specific command that caused the mismatch.
 
-{/* TODO: code example — include JS/TS, Python, Go equivalents */}
+### "No instance for (ServiceEventType cmds)"
 
----
+Your service has no commands registered yet.
 
-## I Was Trying to Build a Query
+**Fix:** Add at least one `|> Service.command @SomeCommand`.
 
-### `Couldn't match type 'Event' with 'MySpecificEvent'`
+## When adding a new query
 
-{/*
-  Trying to pattern match on a specific event type in a query fold.
-*/}
+### "No instance for (QueryOf Foo Bar)"
 
+You declared a query that depends on entity `Foo` but didn't write the `QueryOf Foo Bar` instance.
 
-- **What happened**: you're pattern matching on a specific event constructor in a query fold, but the fold receives the union type
-- **Fix**: pattern match on the full event union type, handle each constructor
-- Show: the correct fold structure with all event constructors handled
+**Fix:** Add:
 
-{/* TODO: code example — include JS/TS, Python, Go equivalents */}
+```haskell
+instance QueryOf Foo Bar where
+  queryId foo = foo.id
+  combine foo existing = Update Bar { ... }
+```
 
-### `Non-exhaustive patterns in case expression` (in a query fold)
+### "deriveQuery: symbol already exists"
 
-- **What happened**: you added a new event type but didn't add a case for it in the query fold
-- **Fix**: add a case for the new event — if the query doesn't care about it, use `_ -> accumulator`
-- Show: the fix with a wildcard case for unrelated events
+Two different query types were derived with the same name.
 
-{/* TODO: code example — include JS/TS, Python, Go equivalents */}
+**Fix:** Rename one of them. Each query type gets a `NameOf` instance based on its type name — the kebab-case form — so `MyQuery` and `MyOtherQuery` both get unique names, but `MyQuery` in two modules collides.
 
-### Query returns `Nothing` when you expect a value
+## When wiring the application
 
-- **What happened**: this is usually a logic error, not a type error — the fold isn't accumulating correctly
-- **Debugging steps**:
-  - Check that the initial accumulator is correct
-  - Check that the fold is updating the accumulator on the right events
-  - Add a `Debug.trace` to print the accumulator at each step
-- Show: a common fold mistake (updating the wrong field) and the fix
+### "withEventStore requires withConfig when the factory uses the config parameter"
 
-{/* TODO: code example — include JS/TS, Python, Go equivalents */}
+You called `withEventStore makePostgresConfig` where `makePostgresConfig` takes your config type, but you never called `withConfig @MyConfig`.
 
----
+**Fix:** Add `|> Application.withConfig @MyConfig` before the `withEventStore` call. Or, if you don't need config, use the `@()` form: `withEventStore @() (\_ -> someConfig)`.
 
-## I Was Trying to Test Something
+### "No EventStore configured. Use withEventStore."
 
-### Test assertion failure: `Expected [EventA, EventB], got [EventA]`
+You called `Application.run` without ever calling `withEventStore`.
 
-{/*
-  The test expected more events than were produced.
-*/}
+**Fix:** Add `|> Application.withEventStore ...` to the builder chain.
 
+### "Application.withConfig called twice. Only one config per Application is supported."
 
-- **What happened**: your command handler produced fewer events than the test expected
-- **Debugging steps**:
-  - Check the command handler logic — is there a condition that prevents the second event?
-  - Check the `Given` events — is the entity in the right state for the command to produce all expected events?
-  - Add a `Debug.trace` in the handler to see what branch is being taken
-- Show: a test with a missing event and how to diagnose it
+You chained `withConfig` twice with different types.
 
-{/* TODO: code example — include JS/TS, Python, Go equivalents */}
+**Fix:** Consolidate into a single config type that contains everything you need.
 
-### `Couldn't match type 'Event' with 'TestEvent'`
+### "Transport not registered: &lt;name&gt;"
 
-- **What happened**: you're using a test-specific event type that doesn't match the production event type
-- **Fix**: use the production event type in tests — don't create separate test types
-- Show: the correct test structure using production types
+Your command declares a transport via `TransportsOf`, but the application hasn't registered that transport with `withTransport`.
 
-{/* TODO: code example — include JS/TS, Python, Go equivalents */}
+**Fix:** Add `|> Application.withTransport WebTransport.server` (or whichever transport the command expects) to the builder chain.
 
-### Property test fails with a specific command sequence
+## When running tests
 
-- **What happened**: the property test found a sequence of commands that violates an invariant
-- **What to do**:
-  - The test output shows the minimal failing sequence — read it carefully
-  - Reproduce the failure as a unit test (easier to debug)
-  - Fix the invariant violation in the command handler
-- Show: how to read a property test failure output
+### "cabal: No such target component: nhcore-test-core"
 
-{/* TODO: code example — include JS/TS, Python, Go equivalents */}
+You're running tests from the wrong directory, or the test suite name doesn't match.
 
----
+**Fix:** Run `cabal test` (no arguments) to run all suites. If you want a specific suite, check the `.cabal` file for the exact name.
 
-## I Was Trying to Define a Type
+### "Test suite failed to build"
 
-### `Multiple declarations of 'ConstructorName'`
+Your test file has a compile error. Look at the output above the "test suite failed to build" line for the actual error.
 
-{/*
-  Two types in the same module have a constructor with the same name.
-*/}
+### "Connection refused (127.0.0.1:5432)"
 
+You're running a test suite that requires PostgreSQL, but PostgreSQL isn't running.
 
-- **What happened**: two types in the same module have a constructor with the same name
-- **Fix**: rename one of the constructors, or move one type to a different module
-- **Why**: Haskell constructors are in the same namespace as functions — names must be unique per module
-- Show: the error and the rename fix
+**Fix:** Start PostgreSQL:
 
-{/* TODO: code example — include JS/TS, Python, Go equivalents */}
+```bash
+docker run -d --name neohaskell-postgres \
+  -e POSTGRES_USER=neohaskell \
+  -e POSTGRES_PASSWORD=neohaskell \
+  -e POSTGRES_DB=neohaskell \
+  -p 5432:5432 \
+  postgres:16-alpine
+```
 
-### `Record field 'fieldName' is not a member of type 'TypeName'`
+Or run only the suites that don't need Postgres: `cabal test nhcore-test-core`.
 
-- **What happened**: you're accessing a field that doesn't exist on the type, or you're using the wrong type
-- **Fix**: check the type definition — is the field spelled correctly? Is it on the right type?
-- Show: the error and the fix
+## When running the app
 
-{/* TODO: code example — include JS/TS, Python, Go equivalents */}
+### "No EventStore configured"
 
-### `Duplicate record field 'fieldName'`
+You called `Application.run` without `withEventStore`.
 
-- **What happened**: you defined the same field name twice in a record type
-- **Fix**: remove the duplicate field
-- Show: the error and the fix
+**Fix:** Add `withEventStore` to the builder chain.
 
-{/* TODO: code example — include JS/TS, Python, Go equivalents */}
+### "Connection refused" on startup
 
----
+PostgreSQL isn't running, or the credentials in your config don't match.
 
-## I Was Trying to Run My App
+**Fix:** Verify PostgreSQL is up and the `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_NAME` environment variables match. For local dev, the template uses `localhost`, `5432`, `neohaskell`, `neohaskell`, `neohaskell`.
 
-### `Configuration error: missing required field 'X'`
+### "Event store schema migration failed"
 
-{/*
-  A required configuration field is not set.
-*/}
+The database user doesn't have permission to create tables.
 
+**Fix:** Grant the necessary privileges, or use a superuser account for local development.
 
-- **What happened**: a required configuration field is not set in your environment or config file
-- **Fix**: set the missing field — either as an environment variable or in your config file
-- Show: how to find which fields are required (the `defineConfig` definition)
-- Show: how to set a field as an environment variable
+### "Command dispatched to unknown transport"
 
-{/* TODO: code example — include JS/TS, Python, Go equivalents */}
+An integration tried to dispatch a command, but the command's `TransportsOf` does not include a transport that's registered with the app.
 
-### `Address already in use (port 8080)`
+**Fix:** Ensure the command has `InternalTransport` listed in `TransportsOf`, or register the public transport it expects.
 
-- **What happened**: another process is already using the port your app wants to bind to
-- **Fix options**:
-  - Kill the other process: `lsof -ti:8080 | xargs kill`
-  - Change your app's port in the configuration
-- Show: how to change the port in `defineConfig`
+## When deploying
 
-### `Event store connection failed`
+### "binary not found" in production
 
-- **What happened**: the app can't connect to the event store (PostgreSQL or in-memory)
-- **Fix for in-memory**: this shouldn't happen — check if you accidentally configured PostgreSQL
-- **Fix for PostgreSQL**: check the connection string, check that PostgreSQL is running
-- Show: the configuration for each event store type
+You forgot to `cabal build` before deploying, or the deploy artifact doesn't include the binary.
 
-{/* TODO: code example — include JS/TS, Python, Go equivalents */}
+**Fix:** Your deploy script should run `cabal build` inside the Nix dev shell and copy the resulting binary from `dist-newstyle/build/...` to the deploy target.
 
-### `neo: command not found`
+### "Glibc version mismatch"
 
-- **What happened**: NeoHaskell is not installed or not in your PATH
-- **Fix**: follow the [Installation guide](/getting-started/installation/)
-- If you just installed: open a new terminal session — the PATH update requires a new shell
+You built the binary on one Linux version and deployed to another with an incompatible libc.
 
----
+**Fix:** Build inside a container that matches your deploy environment, or use static linking via `ghc-options: -static`.
 
-## I Was Trying to Use an Integration
+### "FATAL: no pg_hba.conf entry"
 
-### `Couldn't match type 'Integration.Result' with 'Task MyError MyValue'`
+PostgreSQL is rejecting the connection because of access control rules.
 
-{/*
-  Integration error types don't match the service's error type.
-*/}
+**Fix:** Update `pg_hba.conf` on the Postgres server to allow connections from your application host.
 
+## General debugging habits
 
-- **What happened**: the integration returns a different error type than your service expects
-- **Fix**: use `Task.mapError` to transform the integration error into your service's error type
-- Show: the `Task.mapError` pattern for wrapping integration errors
+When you're stuck:
 
-{/* TODO: code example — include JS/TS, Python, Go equivalents */}
+1. **Rebuild from scratch.** `cabal clean && cabal build` clears any stale build cache.
+2. **Read the error summary, not the whole wall of text.** The first line of the error is usually the real problem; everything else is consequences.
+3. **Add a type annotation.** If a type error looks confusing, add an explicit type signature to the problematic expression. Often the annotation either fixes the problem or produces a better error.
+4. **Check the imports.** Many "variable not in scope" errors come from forgetting to import a module.
+5. **Ask in Discord.** The [NeoHaskell Discord](https://discord.gg/wDj3UYzec8) has people who have seen every error on this page and many that aren't.
 
-### HTTP integration returns 404 but no error is raised
+## Where to go from here
 
-- **What happened**: the integration is treating 404 as a success (empty response) instead of an error
-- **Fix**: check the integration's error handling — 404 should map to a domain error like `NotFound`
-- Show: how to map HTTP status codes to domain errors in an integration
-
-{/* TODO: code example — include JS/TS, Python, Go equivalents */}
-
----
-
-## Still Stuck?
-
-- [Reading Error Messages](/guides/reading-error-messages/) — teaches you how to read any compiler error
-- [NeoHaskell Discord](https://discord.gg/neohaskell) `#help` channel — paste your error, get help
-- Search the error message text — someone has probably seen it before
-
-<Aside type="tip" title="Search tip">
-When searching for an error, remove the specific type names and search for the pattern. Instead of searching `Couldn't match type 'AccountState' with 'Maybe AccountState'`, search `Couldn't match type with Maybe` — you'll find more results.
-</Aside>
-
-:::caution[Coming Soon]
-This page is a content outline. The full guide with exact error messages and code examples is in progress.
-:::
+- **[Reading error messages](/guides/reading-error-messages/)** — general strategy for GHC errors.
+- **[Error handling](/guides/error-handling/)** — runtime errors, not compile-time errors.
+- **[Testing](/guides/testing/)** — how to catch errors before production.

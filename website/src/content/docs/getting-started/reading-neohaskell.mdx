@@ -1,144 +1,333 @@
 ---
 title: "Reading NeoHaskell"
-description: "A 5-minute visual guide to reading NeoHaskell code. No prerequisites — just follow the arrows."
-keywords: [reading code, syntax, visual guide, annotated code, beginner, NeoHaskell basics]
+description: "A visual tour of NeoHaskell syntax for developers coming from mainstream languages. Read any NeoHaskell file without prior functional-programming background."
+sidebar:
+  order: 3
 ---
 
-{/* 
-  CONTENT OUTLINE — REVISION 2 (10-expert consensus applied)
-  ==============================================================
-  Position: Getting Started — optional step between Installation and First Events
-  Time estimate: ~5 minutes
-  Misconceptions addressed: #5 (need category theory), #12 (need to understand monads first)
-  Style: Julia Evans-style annotated code blocks — visual, friendly, zero prerequisites
-  
-  Design principles from DOCS-PLAN:
-  - "Julia Evans style — visual, friendly, zero prerequisites"
-  - "5-minute annotated code walkthrough"
-  - This is a READING guide, not a WRITING guide (that's syntax-warmup.mdx)
-  - No prerequisites — reader may not have even installed NeoHaskell yet
-  - Goal: reader can LOOK at NeoHaskell code and not feel lost
-  - Bold-on-first-use for syntax constructs (Layer 2), max 3-5 per page
-  - Prerequisites added (change #2)
-  - Version placeholder added (change #1)
-  - Recap closing section added (change #3)
-  - Code example domain note added (change #4)
-  - Forward tension added (change #5)
-*/}
+import { Aside } from '@astrojs/starlight/components';
 
-**Prerequisites**: None
+You opened a NeoHaskell file for the first time and the syntax felt alien. That's normal. In five minutes, it won't.
 
-*~5 minutes · NeoHaskell vX.Y.Z*
+Strongly-typed functional languages have a reputation for unreadable symbols. NeoHaskell deliberately sheds most of that. What's left is a small, consistent set of building blocks. Here they are, with what each one means in languages you probably already know.
 
-## Why This Page Exists
+## The dictionary
 
-{/*
-  Set expectations: this is optional, purely visual, no typing required.
-  Address the "compound unfamiliarity" problem (Martin Fowler's concern from DOCS-PLAN).
-*/}
+| You see | In NeoHaskell this means | In JS/TS, think… |
+|---|---|---|
+| `data Foo = Foo { a :: Int, b :: Text }` | Define a record type with two fields | `type Foo = { a: number, b: string }` |
+| `data Result = Ok | Err` | Define a sum type (either Ok or Err) | `type Result = { kind: "ok" } \| { kind: "err" }` |
+| `case value of` | Pattern match — exhaustive switch | `switch (value.kind)` — but enforced |
+| `let x = 5` | Bind a local value | `const x = 5` |
+| `x |> f |> g` | Apply `f` to `x`, then `g` to the result | `g(f(x))` (or `x.then(f).then(g)` conceptually) |
+| `func arg1 arg2` | Call `func(arg1, arg2)` | `func(arg1, arg2)` |
+| `do { ... }` | Sequence of steps inside a `Task` | `async () => { ... }` |
+| `Task.yield x` | Return `x` from an async-style block | `return x` |
+| `Task.throw e` | Fail with error `e` | `throw e` |
+| `-- comment` | Line comment | `// comment` |
+| `{- ... -}` | Block comment | `/* ... */` |
 
-- NeoHaskell code looks different from JavaScript, Python, or Java — and that's intentional
-- This page shows you how to read it. Not write it — just read it.
-- By the end, you'll look at any NeoHaskell code block in the tutorial and know what's going on
-- No installation needed. No typing. Just look at the annotated examples and follow the arrows.
+If you memorize that table, you can read any NeoHaskell file. Seriously — that's almost the whole syntax.
 
-{/*
-  Code example domain note (change #4):
-  Examples should use NeoBank-domain code (deposits, balances) to prime the tutorial.
-*/}
+## An annotated tour
 
-## Reading a Function
+Here is a real command file. We'll walk through it line by line.
 
-{/*
-  First annotated code block. Show a complete, small function.
-  Julia Evans-style: arrows pointing to each part of the syntax.
-  The function should do something obviously useful (not contrived).
-  
-  Bold-on-first-use constructs for this page:
-  1. type annotations (the :: line above a function)
-  2. |> pipe operator
-  3. do blocks
-  4. case..of pattern matching
-  
-  That's 4 — within the 3-5 max limit.
-*/}
+```haskell
+module MyApp.Cart.Commands.AddItem (
+  AddItem (..),
+  decide,
+) where
+```
 
-- Show a small, complete NeoHaskell function (5-8 lines) with annotated arrows
-- The function should do something readable: e.g., "calculate a total from a list of deposits"
-- Annotations point to:
-  - The **type annotation** (`::`) — "this line tells you what goes in and what comes out"
-    - Read it like: `functionName :: Input -> Output` means "takes an Input, gives you an Output"
-    - "You can ignore type annotations when reading. They're for the compiler. Your eyes should go to the code below."
-  - The function body — "this is the actual code, the type annotation above is the contract"
-- Key message: "NeoHaskell reads top-to-bottom, left-to-right. No surprises."
+**What you see:** A module declaration that exports `AddItem` (with all its fields — that's what `(..)` means) and the `decide` function.
 
-## Reading the Pipe Operator
+**JS analogue:** `export { AddItem, decide } from './MyApp/Cart/Commands/AddItem';`
 
-{/*
-  The |> pipe is the single most common NeoHaskell idiom.
-  Show it as "data flows left to right, like reading English."
-  Compare briefly to method chaining in JS/Python for familiarity.
-*/}
+---
 
-- Show the **pipe operator (`|>`)** in a 3-4 line chain
-- Annotate: "data flows left to right — read it like a recipe"
-  - Step 1: start with this value
-  - Step 2: |> pass it to this function
-  - Step 3: |> then pass the result to this function
-- Comparison callout: "If you've seen `array.filter(...).map(...).reduce(...)` in JavaScript — the pipe operator is the same idea, just with a different shape"
-- "Every time you see `|>`, just think 'then'"
+```haskell
+import Core
+import Decider qualified
+import Service.Transport.Web (WebTransport)
+```
 
-## Reading a Do Block
+**What you see:** Three imports.
 
-{/*
-  do blocks are how NeoHaskell sequences steps.
-  Show a simple do block that does 2-3 things in order.
-*/}
+- `import Core` imports everything from `Core` into scope, unqualified.
+- `import Decider qualified` imports `Decider` but requires you to call things as `Decider.reject`, `Decider.acceptExisting`, etc. — namespace-prefixed.
+- `import Service.Transport.Web (WebTransport)` imports only `WebTransport` from that module.
 
-- Show a **`do` block** that performs 2-3 steps
-- Annotate: "`do` means 'do these things in order'"
-  - `name <- getInput` means "get the input and call it `name`"
-  - The `<-` arrow means "get the result and give it this name"
-  - Lines without `<-` are "just do this, I don't need the result"
-- Key message: "A do block is a recipe. Each line is a step. They run top to bottom."
+**JS analogue:**
+```js
+import * from 'core';
+import * as Decider from 'decider';
+import { WebTransport } from 'service/transport/web';
+```
 
-## Reading Pattern Matching
+---
 
-{/*
-  case..of is how NeoHaskell makes decisions.
-  Show a case expression that handles 2-3 cases.
-*/}
+```haskell
+data AddItem = AddItem
+  { cartId :: Uuid
+  , stockId :: Uuid
+  , quantity :: Int
+  }
+  deriving (Generic, Show)
+```
 
-- Show a **`case..of`** expression that handles 2-3 patterns
-- Annotate: "`case..of` means 'look at this value and decide what to do'"
-  - Each branch is a possibility
-  - The `->` arrow means "if it matches this pattern, do that"
-  - The compiler ensures you handle every case — nothing falls through
-- Comparison callout: "Like a `switch` statement, but the compiler checks you covered every case"
+**What you see:** A record type with three fields. `deriving (Generic, Show)` tells the compiler to auto-generate some boilerplate — you don't have to know what it does yet, just that it's required.
 
-## Putting It Together
+**JS/TS analogue:**
+```ts
+type AddItem = {
+  cartId: string;  // a UUID
+  stockId: string;
+  quantity: number;
+};
+```
 
-{/*
-  Show a slightly longer function (~10-12 lines) that uses ALL of the above:
-  type annotation, pipe, do block, case..of.
-  This is the "now you can read anything" moment.
-  Don't explain every line — let the reader apply what they just learned.
-*/}
+The field types are on the right side of `::`. Read `cartId :: Uuid` as "cartId has type Uuid."
 
-- Show a complete example (~10-12 lines) that combines type annotation, pipes, do block, and case..of
-- Minimal annotation — the reader should be able to read this using what they learned above
-- Call out: "If you can read this, you can read any code in the tutorial"
-- Brief note on what's NOT covered here: record syntax, type definitions, modules — "you'll meet these in the tutorial, and they'll make sense in context"
+---
 
-## You're Ready
+```haskell
+decide :: AddItem -> Maybe CartEntity -> RequestContext -> Decision CartEvent
+```
 
-You can now read NeoHaskell code. That's all you need.
+**What you see:** A type signature for a function called `decide`.
 
-- You don't need to memorize anything — bookmark the [Cheat Sheet](/getting-started/cheat-sheet/) for quick lookups
-- You can read the syntax. Now let's use it to build something — deposit money and watch your balance get calculated from events.
-- **Next**: [Your First Events](/getting-started/first-events/) — write your first event type and see event sourcing in action (~10 minutes)
-- **Optional**: [Syntax Warm-up](/getting-started/syntax-warmup/) — type a few expressions yourself to build muscle memory (~5 minutes)
+**How to read it:** "decide takes an `AddItem`, a `Maybe CartEntity`, a `RequestContext`, and returns a `Decision CartEvent`."
 
-:::caution[Coming Soon]
-The annotated code examples on this page are placeholders. Actual NeoHaskell code with visual annotations will be added once the annotated code block component is built.
-:::
+Each `->` separates an argument. The last one is the return type. So this function has three inputs and one output.
+
+**TypeScript equivalent:**
+```ts
+function decide(
+  cmd: AddItem,
+  cart: CartEntity | null,
+  ctx: RequestContext
+): Decision<CartEvent>
+```
+
+<Aside type="tip" title="Why is 'Maybe CartEntity' different from 'CartEntity | null'?">
+`Maybe` is the explicit "this could be missing" type. It forces you to check for `Nothing` before using the value — the compiler won't let you skip that step. It's the same idea as TypeScript's strict null checks, but always on, always enforced.
+</Aside>
+
+---
+
+```haskell
+decide cmd cart _ctx = case cart of
+  Nothing ->
+    Decider.reject "Cart not found"
+  Just c ->
+    if cmd.quantity <= 0
+      then Decider.reject "Quantity must be positive"
+      else
+        Decider.acceptExisting
+          [ ItemAdded
+              { entityId = c.cartId
+              , stockId = cmd.stockId
+              , quantity = cmd.quantity
+              }
+          ]
+```
+
+**What you see:** The function body. Arguments are listed after the function name (`cmd`, `cart`, `_ctx` — the underscore means "we don't use this one"). Everything after `=` is the value the function returns.
+
+**Read it like this:**
+- `case cart of` — switch on whether `cart` is `Nothing` (null) or `Just c` (not null, with the value bound to `c`).
+- `Nothing -> Decider.reject "Cart not found"` — if null, reject with a reason.
+- `Just c -> if cmd.quantity <= 0 then ... else ...` — if non-null, check the quantity.
+- `Decider.acceptExisting [...]` — accept the command and produce a list of events (one in this case).
+
+**JS/TS equivalent:**
+```ts
+function decide(cmd, cart, _ctx) {
+  if (cart === null) {
+    return Decider.reject("Cart not found");
+  }
+  if (cmd.quantity <= 0) {
+    return Decider.reject("Quantity must be positive");
+  }
+  return Decider.acceptExisting([
+    {
+      kind: "ItemAdded",
+      entityId: cart.cartId,
+      stockId: cmd.stockId,
+      quantity: cmd.quantity,
+    },
+  ]);
+}
+```
+
+The logic is identical. NeoHaskell uses `case`/`if`/records the same way TypeScript does. The difference is that the compiler forces you to handle *every* case of `cart`, every case of the event type downstream, every missing field, every type mismatch — before the program runs.
+
+## The pipe operator
+
+You will see `|>` everywhere. It is not magic. It is just function application, written left-to-right instead of inside-out.
+
+```haskell
+x |> f |> g |> h
+```
+
+Means exactly the same as:
+
+```haskell
+h (g (f x))
+```
+
+Which in TypeScript is:
+
+```ts
+h(g(f(x)))
+```
+
+Use whichever reads better. NeoHaskell prefers `|>` because it reads top-down and lines up cleanly in vertical chains:
+
+```haskell
+Application.new
+  |> Application.withEventStore config
+  |> Application.withTransport WebTransport.server
+  |> Application.withService cartService
+  |> Application.withQuery @CartSummary
+```
+
+Read that as: "Take a new Application. Add an event store. Add a web transport. Add a cart service. Add a query." Each step transforms the value and hands the result to the next step.
+
+**JS equivalent:**
+```js
+withQuery(
+  withService(
+    withTransport(
+      withEventStore(Application.new, config),
+      WebTransport.server
+    ),
+    cartService
+  ),
+  CartSummary
+);
+```
+
+…or with the proposed pipe operator:
+```js
+Application.new
+  |> withEventStore(%, config)
+  |> withTransport(%, WebTransport.server)
+  |> withService(%, cartService)
+  |> withQuery(%, CartSummary);
+```
+
+NeoHaskell has had pipes since day one. They are not an afterthought.
+
+## `do` blocks
+
+A `do` block is a sequence of steps inside a `Task`. Each step can be named with `<-` (bind) or just executed for its side effect.
+
+```haskell
+handleRequest :: Request -> Task Text Response
+handleRequest req = do
+  user <- fetchUser req.userId
+  cart <- fetchCart user.id
+  updatedCart <- addItem cart req.item
+  Task.yield (renderResponse updatedCart)
+```
+
+**Read it as:**
+
+1. Fetch a user. Bind the result to `user`.
+2. Fetch that user's cart. Bind the result to `cart`.
+3. Add an item. Bind the result to `updatedCart`.
+4. Return a rendered response.
+
+**TypeScript equivalent:**
+
+```ts
+async function handleRequest(req: Request): Promise<Response> {
+  const user = await fetchUser(req.userId);
+  const cart = await fetchCart(user.id);
+  const updatedCart = await addItem(cart, req.item);
+  return renderResponse(updatedCart);
+}
+```
+
+`<-` is `await`. `Task.yield` is `return`. `Task.throw` is `throw`. If any step throws, the whole block short-circuits. That is it. If someone tells you a `do` block is a monad and starts drawing arrows, ignore them — for your purposes, it is async/await.
+
+## Record access
+
+NeoHaskell uses **dot notation** for records, the way nearly every mainstream language does:
+
+```haskell
+user.name           -- Get the name field
+user.address.city   -- Nested access
+```
+
+If you had a variable `cart` of type `CartEntity` with a `cartId` field, you write `cart.cartId`. That is all there is to it.
+
+## Record construction
+
+Creating a record uses the field names explicitly:
+
+```haskell
+user = User
+  { name = "Alice"
+  , email = "alice@example.com"
+  , age = 30
+  }
+```
+
+Notice the commas go at the **start** of each line, not the end. That is a NeoHaskell style convention — it makes adding and removing lines cleaner in diffs.
+
+## Record update
+
+Updating some fields of an existing record looks like this:
+
+```haskell
+olderUser = user { age = user.age + 1 }
+```
+
+This does not mutate `user`. It creates a *new* record with `age` bumped by one, and leaves `user` alone. NeoHaskell has no mutation in your domain code — every "update" is really "build a new version based on the old one."
+
+## Strings
+
+Plain strings use double quotes:
+
+```haskell
+greeting = "Hello, world!"
+```
+
+For interpolation, use the `[fmt|...|]` quoter:
+
+```haskell
+message = [fmt|Hello, #{name}! You have #{count} unread messages.|]
+```
+
+`#{expr}` injects any expression into the string. Think of it as JavaScript's backtick template literals, except instead of `${x}` you write `#{x}`.
+
+<Aside type="note" title="Never use ++ for strings">
+You may see `"Hello, " ++ name` in older code or snippets from other places — NeoHaskell style is to use `[fmt|Hello, #{name}|]` instead. It is cleaner, faster, and more explicit.
+</Aside>
+
+## The vocabulary you need
+
+You now have enough to read any NeoHaskell file. A few more terms to know — they appear so often that knowing them by name helps:
+
+- **`Uuid`** — a universally unique identifier. Just a string on the wire.
+- **`Text`** — a string. Use this, not the older `String`.
+- **`Int`** — an integer.
+- **`Array`** — an ordered collection. `Array.map`, `Array.filter`, etc.
+- **`Map`** — a key-value dictionary. `Map.get`, `Map.set`.
+- **`Maybe a`** — either `Just a` (a value) or `Nothing` (no value).
+- **`Result err ok`** — either `Ok ok` (success) or `Err err` (failure).
+- **`Task err ok`** — an async computation that can succeed with `ok` or fail with `err`.
+- **`Decision event`** — what `decide` returns: a request to accept (producing events) or reject (with a reason).
+
+## Try it
+
+Grab any file from [the NeoHaskell testbed](https://github.com/neohaskell/neohaskell/tree/main/testbed/src) and read it. With the dictionary above, you should be able to follow along. If you hit something confusing, jump to the [cheat sheet](/getting-started/cheat-sheet/) for quick reference.
+
+## Next
+
+- [**Syntax warm-up**](/getting-started/syntax-warmup/) — ten hands-on exercises to cement the basics.
+- [**Your first events**](/getting-started/first-events/) — if you skipped ahead, this is where you write your first NeoHaskell code.
+- [**Build NeoBank**](/tutorial/) — the tutorial.

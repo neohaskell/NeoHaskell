@@ -1,181 +1,338 @@
 ---
-title: "Your First Events"
-description: "Deposit money and watch your balance get calculated from events — not stored, calculated. Under 20 lines of code."
-keywords: [event sourcing, first event, getting started, quick start, deposit, balance, CRUD, derived state]
+title: "Your first events"
+description: "Ten minutes to your first event-sourced feature. Record a deposit, replay events, derive state."
+sidebar:
+  order: 2
 ---
 
-{/* 
-  CONTENT OUTLINE — REVISION 2 (10-expert consensus applied)
-  ===========================================================
-  Position: Getting Started step 2 (after Installation, before Tutorial)
-  Time estimate: ~10 minutes
-  Mental model stage: 0 → 1 ("I store data in rows" → "Banks record transactions")
-  Misconceptions addressed: #2 (ES is a library), #3 (just update a field), #10 (FP means no state)
-  Layer system: All 3 layers active (narrative, bold-on-first-use syntax, concept links)
-  
-  Consensus changes applied:
-  - [Unanimous] Added keywords, prerequisites, version placeholder, time estimate
-  - [8+/10] Softened "10 lines" to "under 20 lines", removed Commands concept link,
-    removed time-travel claim, consolidated to one file
-  - [7/10] Rosetta Stone as one mini-table, fold shown without naming Array.foldl,
-    naming callout elevated to Aside, Full Picture merged into Derive section
-  - [5+/10] Headings standardized, "audit trail" rewritten for beginners,
-    forward tension in recap, Misconception #3 explicit, overlap note in Next Steps
-*/}
+import { Aside, Steps } from '@astrojs/starlight/components';
 
-**Prerequisites**: [Install NeoHaskell](/getting-started/installation/) first. **Optional**: [Syntax Warm-up](/getting-started/syntax-warmup/) if NeoHaskell syntax is new to you.
+You have NeoHaskell installed. Now let's feel what it is like to use. By the end of this page, you will have written a command, emitted an event, replayed it to derive state, and watched the compiler catch a bug you would have shipped in any loose language.
 
-*~10 minutes · NeoHaskell vX.Y.Z*
+This whole thing takes about ten minutes. No prior functional-programming experience required — we will explain every line.
 
-## What You'll Learn
+## The setup
 
-- How to define an event type (`MoneyDeposited`)
-- How to store events in NeoHaskell's built-in event store
-- How your balance is **calculated from events** — never stored, never stale
-- Why this matters: under 20 lines give you a complete history of every change — automatically
+We are going to model a tiny piggy bank. It has one feature: **deposit money**. No withdrawals yet, no balance checks, no overdraft. Just the simplest possible version of the single most important idea in NeoHaskell — **state comes from events, not the other way around.**
 
-## Understand the Problem
+In CRUD code, depositing money means running an `UPDATE` on a row:
 
-{/* 
-  Hook: Start from what the reader already knows. Show a familiar CRUD pattern,
-  then reveal the question it can't answer. JS/Python added alongside SQL
-  for readers who don't write raw SQL (Tania, Swyx, Evans, 5/10).
-*/}
+```sql
+UPDATE accounts SET balance = balance + 50 WHERE id = '...';
+```
 
-- Show a familiar mental model: "I have a balance, I update it"
-  - SQL: `UPDATE accounts SET balance = 150 WHERE id = 1`
-  - JavaScript: `account.balance = 150`
-  - Python: `account.balance = 150`
-  - This feels natural — it's how every app works
-- Pose the question that breaks it: **"What was the balance before the dispute?"**
-  - The UPDATE destroyed the history — there's no way to know
-  - Banks figured this out centuries ago: they don't update balances, they record transactions
-- Let's see what that looks like in code.
+The balance changed. The reason is gone. If someone later asks "why is the balance what it is?" the database cannot tell you. The history was never recorded.
 
-{/* → Concept link (Layer 3), end of section: [→ Deep dive: From CRUD to Events](/concepts/from-crud-to-events) */}
+In NeoHaskell, you never touch a balance field. You record a fact — *"$50 was deposited"* — and the balance becomes a number you compute from all the facts so far. When someone asks "why?", the facts are the answer.
 
-## The Rosetta Stone
+## Step 1 — Open the template
 
-{/*
-  Consolidated mini-table — shown once, referenced inline later.
-  6/10 agreed fragmented usage weakened impact.
-  One table is screenshot-shareable.
-*/}
+Make sure you are inside a freshly-cloned NeoHaskell template and in its dev shell:
 
-- Before diving into code, here's the mapping between familiar terms and NeoHaskell:
+```bash
+cd my-first-app
+nix develop
+```
 
-| What you'd say | Banking term | NeoHaskell term | What it actually is |
-|---------------|-------------|-----------------|-------------------|
-| "Something happened" | Transaction | **Event** | An immutable record of a fact |
-| "Show me everything" | Audit log | **Event Store** | The append-only source of truth |
-| "What's my balance?" | Account statement | **Update** | State derived from events |
+The template ships with an empty `PiggyBank` module you can fill in. Create these four files under `src/MyApp/PiggyBank/`:
 
-## Define Your First Event
+```text
+src/MyApp/PiggyBank/
+├── Core.hs              # Entity and events
+├── Commands/
+│   └── Deposit.hs       # The Deposit command
+└── Service.hs           # Wires commands into a service
+```
 
-{/* 
-  Julia Evans-style annotated code block — arrows/callouts pointing to 
-  sum type variants and record field syntax (NOT warm-up syntax).
-  Bold-on-first-use limited to 3 constructs: type, |>, do.
-*/}
+## Step 2 — Define the entity and the event
 
-- An **event** is an immutable fact about something that happened — not what the system did, but what happened in the world
-- In NeoHaskell, there's no UPDATE — state changes are always expressed as events. The compiler enforces this.
-  - This addresses Misconception #3: "I can just update a field"
-- Define an event type: `MoneyDeposited`
-  - Show the NeoHaskell type definition (annotated code block)
-  - **Bold-on-first-use**: the **`type`** keyword — defines a new data type
-  - Annotate: point out that the event carries the data it needs (amount, account ID)
-  - Code block with file path label: `title="src/Bank/Main.hs"`
+Open `src/MyApp/PiggyBank/Core.hs` and paste this in:
 
-:::tip[Naming Rule]
-Good event names make sense to a banker: `MoneyDeposited`, not `BalanceUpdated`. If your event name would make sense in a conversation between bankers, it's a good name. If it only makes sense to programmers, rename it.
-:::
+```haskell
+module MyApp.PiggyBank.Core (
+  PiggyBank (..),
+  PiggyBankEvent (..),
+  initialState,
+) where
 
-- Key insight: "You didn't import an event sourcing library. NeoHaskell events are just types — the language makes event sourcing the default."
-  - This addresses Misconception #2: "Event sourcing is a library I import"
+import Core
+import Json qualified
+import Service.Command.Core (Event (..))
 
-{/* → Concept link (Layer 3), end of section: [→ Deep dive: Events, Not State](/concepts/events-not-state) */}
 
-## Store an Event
+-- | The entity — the thing whose state we care about.
+data PiggyBank = PiggyBank
+  { bankId :: Uuid
+  , balance :: Int
+  }
+  deriving (Generic, Show)
 
-{/*
-  Event store clarified as in-memory for this example (Martin's precision).
-  Kafka/RabbitMQ comparison reframed positively (Fowler/Swyx compromise).
-*/}
 
-- Introduce the **event store**: an append-only log where events are recorded (for this example, stored in memory — the tutorial shows persistent storage later)
-  - NeoHaskell includes a built-in event store — no external infrastructure needed to get started
-  - This addresses Misconception #8: "I'll need a message broker"
-- Write the code to store a `MoneyDeposited` event
-  - **Bold-on-first-use**: the **pipe operator (`|>`)** — passes the left side as input to the right side
-  - **Bold-on-first-use**: **`do`** blocks — the way NeoHaskell sequences steps (like "first do this, then do that")
-  - Code block with file path label: `title="src/Bank/Main.hs"`
-- Run it — the reader should see confirmation that the event was stored
-  - Show the exact terminal command and expected output
-  - "You just recorded a fact. Not a row update — a fact. It can never be changed or deleted."
+instance Json.FromJSON PiggyBank
+instance Json.ToJSON PiggyBank
 
-:::note[Events are not log messages]
-An event is NOT a log message for debugging — you can't delete it, and your entire system state derives from it. It's the source of truth, not a side effect.
-:::
 
-{/* Concept link removed — no command is introduced on this page, so linking to Commands and Handlers would be misleading (Steve, Martin, Kent, 8/10 consensus) */}
+-- | The starting point. Every PiggyBank begins empty.
+initialState :: PiggyBank
+initialState =
+  PiggyBank
+    { bankId = Uuid.nil
+    , balance = 0
+    }
 
-## Derive Your Balance
 
-{/*
-  The "aha" moment. Balance is calculated by replaying events.
-  Fold shown via pattern matching WITHOUT naming Array.foldl (7/10 consensus).
-  "The Full Picture" merged into this section (6/10 consensus).
-  All code consolidated into src/Bank/Main.hs (8/10 consensus).
-*/}
+-- | NameOf is how NeoHaskell knows what to call this entity on the wire.
+type instance NameOf PiggyBank = "PiggyBank"
 
-- Pose the question: "Where's the balance?"
-  - "There's no `balance` column. There's no `balance` variable. So where is it?"
-- Introduce **update**: state derived from events
-  - A **update** walks through your events one by one, building up the current state
-  - (Refer back to the Rosetta Stone: "What's my balance?" → Account statement → Update)
-- Write a `getBalance` function that processes events
-  - Show: `MoneyDeposited` → add the deposit amount to a running total
-  - The result: the current balance, calculated fresh from the complete history
-  - Code block with file path label: `title="src/Bank/Main.hs"`
-- Run it — the reader sees their balance: `$50.00`
-  - "That balance was never stored. It was calculated from the event history. If you deposit again, it recalculates."
-  - This addresses Misconception #10: "Functional programming means no state" — there IS state, it's just derived
 
-{/* → Concept link (Layer 3), end of section: [→ Deep dive: Updates](/concepts/updates) */}
+-- | Entity tells NeoHaskell "this is a stateful thing you can rebuild from events."
+instance Entity PiggyBank where
+  initialStateImpl = initialState
+  updateImpl = update
 
-### The Complete Code
 
-- The complete working example — everything in one file:
-  - Event type + store + derive balance = under 20 lines of meaningful code
-  - Collapsible `<details>` with the full working listing, file path label: `title="src/Bank/Main.hs"` (complete file)
-- What you get from those lines:
-  - A complete history of every change (the event store IS the history)
-  - Reproducible state — run the update again, get the same answer every time
-  - No data loss (events are immutable — nothing is ever overwritten)
+-- | The event type — every fact that can happen to a piggy bank.
+data PiggyBankEvent
+  = MoneyDeposited
+      { entityId :: Uuid
+      , amount :: Int
+      }
+  deriving (Eq, Show, Generic)
 
-## Review and Next Steps
 
-{/*
-  Recap reframed as zoom-out (Swyx, Dan, Sarah — 5+/10).
-  Forward tension added (Abramov).
-  Tutorial as single dominant CTA (Drasner, 7/10).
-  Overlap note for Tutorial Part 1 (Kent, 5/10).
-*/}
+instance Json.FromJSON PiggyBankEvent
+instance Json.ToJSON PiggyBankEvent
 
-- You defined **events** — immutable facts about what happened (deposits, not balance updates)
-- You stored them in an **event store** — an append-only log, not a mutable database
-- You derived your **balance** with a **update** — state calculated from history, never stored directly
-- You just built the core of every event-sourced system: facts in, state out. The tutorial extends these same three ideas into a full banking service.
-- But what happens when someone tries to withdraw more than they have? That's where the tutorial starts.
 
-**Start the tutorial** → [Build NeoBank](/tutorial/) — the tutorial revisits these concepts with more depth: commands, validation, and your first test.
+-- | Every event has to know which entity it belongs to.
+type instance EventOf PiggyBank = PiggyBankEvent
+type instance EntityOf PiggyBankEvent = PiggyBank
 
-Also useful:
-- [Events, Not State](/concepts/events-not-state) — the deep dive into why this approach works
-- [From CRUD to Events](/concepts/from-crud-to-events) — a systematic comparison of what changes and why
-- [Cheat Sheet](/getting-started/cheat-sheet/) — quick reference for NeoHaskell syntax
 
-:::caution[Coming Soon]
-The code examples on this page are placeholders. Actual NeoHaskell code will be added once the NeoBank domain model is finalized.
-:::
+instance Event PiggyBankEvent where
+  getEventEntityIdImpl event = case event of
+    MoneyDeposited { entityId } -> entityId
+
+
+-- | The heart of event sourcing: given the current state and an event,
+-- produce the new state. This is a pure function. You could call it from ghci.
+update :: PiggyBankEvent -> PiggyBank -> PiggyBank
+update event bank = case event of
+  MoneyDeposited { amount } ->
+    bank { balance = bank.balance + amount }
+```
+
+There is a lot on that page, but nearly all of it is boilerplate that NeoHaskell's type classes require. The **actual logic** is in two places:
+
+- `initialState` — where the entity starts.
+- `update` — how each event changes the state.
+
+That is the whole thing. Your balance is no longer a column you write to — it is **the result of folding `update` over every event that has ever happened to this piggy bank**. Start at zero. Apply `MoneyDeposited { amount = 50 }`. You have 50. Apply another with 25. You have 75. The balance is derived, not stored.
+
+<Aside type="tip" title="Why the record syntax?">
+`bank { balance = bank.balance + amount }` is record-update syntax: "give me a new bank that is the same as the old one except with `balance` set to this value." It is not a mutation — `update` returns a *new* `PiggyBank`. The original is untouched. This is why events can be replayed safely.
+</Aside>
+
+## Step 3 — Write the command
+
+Open `src/MyApp/PiggyBank/Commands/Deposit.hs` and paste this in:
+
+```haskell
+module MyApp.PiggyBank.Commands.Deposit (
+  Deposit (..),
+  getEntityId,
+  decide,
+) where
+
+import Core
+import Decider qualified
+import Json qualified
+import Service.Auth (RequestContext)
+import Service.Command.Core (TransportsOf)
+import Service.CommandExecutor.TH (command)
+import Service.Transport.Web (WebTransport)
+import MyApp.PiggyBank.Core
+
+
+-- | The command — a request to deposit money.
+data Deposit = Deposit
+  { bankId :: Uuid
+  , amount :: Int
+  }
+  deriving (Generic, Show)
+
+
+instance Json.FromJSON Deposit
+instance Json.ToJSON Deposit
+
+
+-- | Which entity is this command about?
+-- Returning Just means "this command targets an existing entity."
+-- Returning Nothing would mean "this command creates a new entity."
+getEntityId :: Deposit -> Maybe Uuid
+getEntityId cmd = Just cmd.bankId
+
+
+-- | The heart of a command: given the command and the current state,
+-- either accept it (producing events) or reject it (with a reason).
+-- This is a pure function — no I/O, no surprises.
+decide :: Deposit -> Maybe PiggyBank -> RequestContext -> Decision PiggyBankEvent
+decide cmd bank _ctx = case bank of
+  Nothing ->
+    Decider.reject "Piggy bank does not exist"
+  Just _ ->
+    if cmd.amount <= 0
+      then Decider.reject "Deposit amount must be positive"
+      else
+        Decider.acceptExisting
+          [ MoneyDeposited
+              { entityId = cmd.bankId
+              , amount = cmd.amount
+              }
+          ]
+
+
+-- Wire up the command so NeoHaskell knows which entity it acts on,
+-- which transports can carry it, and how to register it.
+type instance EntityOf Deposit = PiggyBank
+type instance TransportsOf Deposit = '[WebTransport]
+command ''Deposit
+```
+
+Read that `decide` function top to bottom. Notice what it does *not* do:
+
+- It does not open a database connection.
+- It does not acquire a lock.
+- It does not return the new balance.
+- It does not mutate anything.
+
+It takes the command, looks at the current entity, and returns a `Decision`. If the decision is **accept**, it lists the events to record. If the decision is **reject**, it gives a reason. That's it. Running `decide` a million times will produce identical results given identical inputs — it is a pure function. Tests become trivial.
+
+## Step 4 — Wire up the service
+
+Open `src/MyApp/PiggyBank/Service.hs`:
+
+```haskell
+module MyApp.PiggyBank.Service (service) where
+
+import Core
+import MyApp.PiggyBank.Commands.Deposit (Deposit)
+import MyApp.PiggyBank.Core ()
+import Service qualified
+
+
+service :: Service _ _
+service =
+  Service.new
+    |> Service.command @Deposit
+```
+
+`Service.new |> Service.command @Deposit` reads as "start a new service, then register the `Deposit` command." You can chain as many commands as you like — the compiler checks that they all share the same entity/event types.
+
+## Step 5 — Plug it into the application
+
+Open `src/App.hs` and replace its contents with this:
+
+```haskell
+module App (app) where
+
+import Core
+import Service.Application (Application)
+import Service.Application qualified as Application
+import Service.EventStore.InMemory qualified as InMemory
+import Service.Transport.Web qualified as WebTransport
+import MyApp.PiggyBank.Service qualified as PiggyBank
+
+
+app :: Application
+app =
+  Application.new
+    |> Application.withEventStore @() (\_ -> InMemory.new)
+    |> Application.withTransport WebTransport.server
+    |> Application.withService PiggyBank.service
+```
+
+We are using an **in-memory event store** here. It loses all data when the program restarts — perfect for a quickstart, useless for production. Later you will swap it for PostgreSQL with a one-line change.
+
+## Step 6 — Run it
+
+```bash
+cabal build
+cabal run
+```
+
+Your app starts an HTTP server on port 8080. In a second terminal, post a deposit command:
+
+```bash
+curl -X POST http://localhost:8080/commands/Deposit \
+  -H 'Content-Type: application/json' \
+  -d '{"bankId": "00000000-0000-0000-0000-000000000001", "amount": 50}'
+```
+
+The response will be a rejection — `"Piggy bank does not exist"`. That is correct. `decide` saw no entity, so it refused. The compiler made you think about that case, and you handled it.
+
+To make this work end-to-end, you would add a `CreatePiggyBank` command (see [the tutorial](/tutorial/) for a full walkthrough). For now, focus on the shape of what just happened:
+
+1. You defined an entity type and an event type.
+2. You wrote a pure function (`update`) that folds events into state.
+3. You wrote another pure function (`decide`) that converts commands into events.
+4. You wired them into a service, plugged the service into an application, and launched an HTTP server.
+
+That's it. No ORM. No repository pattern. No dispatcher to configure. No controller class. No validator library. Four files and a `cabal run`.
+
+## The bug the compiler just caught
+
+Here is the punchline. Change the `PiggyBankEvent` type in `Core.hs` to add a second event, but do not update the `update` function:
+
+```haskell
+data PiggyBankEvent
+  = MoneyDeposited
+      { entityId :: Uuid
+      , amount :: Int
+      }
+  | MoneyWithdrawn
+      { entityId :: Uuid
+      , amount :: Int
+      }
+  deriving (Eq, Show, Generic)
+```
+
+Save the file and run `cabal build`. You get this:
+
+```text
+error: [GHC-18872]
+    Non-exhaustive patterns in function update
+
+    In an equation for 'update':
+        Patterns of type 'PiggyBankEvent' not matched:
+            MoneyWithdrawn{}
+```
+
+The compiler caught it. Not a test. Not a code reviewer. Not a production outage. The compiler, at the moment you introduced the mismatch, with the exact file and line number. This is the difference between "event sourcing as a library" and "event sourcing as a language." The library cannot enforce this. The language does.
+
+Fix it by handling the new case in `update`:
+
+```haskell
+update :: PiggyBankEvent -> PiggyBank -> PiggyBank
+update event bank = case event of
+  MoneyDeposited { amount } ->
+    bank { balance = bank.balance + amount }
+  MoneyWithdrawn { amount } ->
+    bank { balance = bank.balance - amount }
+```
+
+Rebuild. Green. The contract is satisfied, and you *cannot* forget a case — the compiler will not let you ship broken code.
+
+## What you just learned
+
+- **Events are immutable facts.** You record what happened, never what state "is now."
+- **State is derived from events** by a pure `update` function.
+- **Commands are intents.** A `decide` function reviews them and either accepts (producing events) or rejects (with a reason).
+- **The compiler enforces the contract** between commands, events, entities, and the `update` function.
+- **Everything is a pure function** until you hit the transport layer — which means everything is trivially testable.
+
+## Next
+
+- [**Reading NeoHaskell**](/getting-started/reading-neohaskell/) — if the syntax felt alien and you want to understand it piece by piece.
+- [**Build NeoBank**](/tutorial/) — the full tutorial where you build accounts, balances, transfers, and an audit trail.
+- [**Concepts: Events, not state**](/concepts/events-not-state/) — the mental model, spelled out in prose.

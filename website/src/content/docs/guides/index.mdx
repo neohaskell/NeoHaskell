@@ -1,40 +1,55 @@
 ---
 title: Guides
-description: Solve a specific problem with NeoHaskell.
+description: Practical, problem-oriented guides for building real systems in NeoHaskell.
 sidebar:
   order: 0
 ---
 
-import { CardGrid, Card } from '@astrojs/starlight/components';
+import { Card, CardGrid } from '@astrojs/starlight/components';
 
-Guides are goal-oriented — each one solves a specific problem. Unlike the tutorial, you don't need to read them in order. Pick what you need.
+The [tutorial](/tutorial/) teaches you the language. The [concept pages](/concepts/) explain the ideas. This section is for the real problems you'll hit once you start shipping: testing strategies, deployment, integrating with the outside world, adopting event sourcing at work, handling errors, and dealing with the kinds of things tutorials skip.
+
+Each guide is self-contained. Read the ones you need, skip the rest, come back later.
 
 <CardGrid>
   <Card title="Testing" icon="approve-check">
-    Given-When-Then patterns, update testing, and property-based testing.
+    Unit tests, integration tests, property-based tests, and how to wire them all into CI.
 
-    [Testing guide →](/guides/testing/)
+    [Read →](/guides/testing/)
   </Card>
-  <Card title="Error Handling" icon="warning">
-    Typed errors, Result patterns, and error propagation across services.
+  <Card title="Error handling" icon="warning">
+    Rejections, exceptions, `Task` failures, and when to use each.
 
-    [Error handling guide →](/guides/error-handling/)
+    [Read →](/guides/error-handling/)
+  </Card>
+  <Card title="Reading error messages" icon="open-book">
+    The cheat sheet for interpreting NeoHaskell compiler errors fast.
+
+    [Read →](/guides/reading-error-messages/)
+  </Card>
+  <Card title="Common errors" icon="warning">
+    Specific errors you will hit and exactly how to fix each one.
+
+    [Read →](/guides/common-errors/)
+  </Card>
+  <Card title="PostgreSQL event store" icon="seti:db">
+    Running NeoHaskell with Postgres in production — sizing, backups, replication.
+
+    [Read →](/guides/postgresql-event-store/)
   </Card>
   <Card title="Deployment" icon="rocket">
-    From NeoHaskell code to a running service in production.
+    Building, shipping, and operating NeoHaskell services.
 
-    [Deployment guide →](/guides/deployment/)
+    [Read →](/guides/deployment/)
   </Card>
-  <Card title="PostgreSQL Event Store" icon="setting">
-    Using PostgreSQL as your production event store.
+  <Card title="Integrating existing systems" icon="seti:shell">
+    Inbound integrations, outbound integrations, and webhooks.
 
-    [PostgreSQL guide →](/guides/postgresql-event-store/)
+    [Read →](/guides/integrating-existing-systems/)
+  </Card>
+  <Card title="Adopting at work" icon="star">
+    The political and organizational playbook for introducing event sourcing to a real team.
+
+    [Read →](/guides/adopting-at-work/)
   </Card>
 </CardGrid>
-
-### More guides
-
-- [Reading Error Messages](/guides/reading-error-messages/) — How to parse NeoHaskell compiler output
-- [Common Errors](/guides/common-errors/) — Error lookup organized by what you were trying to do
-- [Integrating Existing Systems](/guides/integrating-existing-systems/) — Introduce NeoHaskell one service at a time
-- [Adopting NeoHaskell at Work](/guides/adopting-at-work/) — The playbook for bringing NeoHaskell to your team

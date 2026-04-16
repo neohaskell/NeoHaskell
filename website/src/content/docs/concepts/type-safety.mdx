@@ -1,132 +1,227 @@
 ---
-title: "Type Safety"
-description: "How NeoHaskell's compiler prevents bugs before they run."
+title: "Type safety"
+description: "What the NeoHaskell compiler catches that other languages let through. Specific examples with error messages."
 sidebar:
-  order: 21
-keywords: [type safety, compiler, exhaustive pattern matching, invalid states, algebraic data types, type system]
-# entry_stage: 2 (Event-thinker)
-# exit_stage: 3 (NeoHaskell-aware)
-# misconception: #15 (compiler errors will be cryptic)
-# tutorial_anchor: Tutorial Part 2 — Account Rules
+  order: 7
 ---
-
-{/*
-  CONTENT OUTLINE — Type Safety
-  Entry: Stage 2 (Event-thinker), Exit: Stage 3 (NeoHaskell-aware)
-  Misconception addressed: #15 (compiler errors will be cryptic)
-  Anchored from: Tutorial Part 2 — Account Rules
-
-  Core message: the compiler is a collaborator, not an adversary.
-  Key insight: invalid states become unrepresentable — the compiler prevents the overdraft before the test does.
-  Evidence from testbed: AddItem.hs decide function uses case..of, if/then/else, Decider.reject.
-  Zero type class constraints visible to the user. A JavaScript developer can read every line.
-  Show what happens when you try to skip validation.
-*/}
-
-{/* POLYGLOT NOTE: All code examples on this page should include equivalent snippets in JS/TS, Python, and Go. See DOCS-PLAN.md Guiding Principle #9. */}
 
 import { Aside } from '@astrojs/starlight/components';
 
-## What You Might Expect
+You've heard that NeoHaskell is "type safe." Most languages call themselves that. This page is a concrete list of the specific things the compiler catches in NeoHaskell that the compilers of other popular languages let through — and why those things matter.
 
-- Type systems in other languages feel like bureaucracy: write the code, then annotate it
-- Compiler errors are cryptic: "expected `Foo<Bar<Baz>>`, got `Foo<Bar<Qux>>`"
-- The type system catches trivial mistakes (wrong argument order) but misses real bugs (wrong business logic)
-- You've learned to work around the type system, not with it
-- "Just add a cast" is a common escape hatch
+## The goal of type safety
 
-## Why That Breaks
+The goal of type safety is not to make you write type annotations. It is to make **certain classes of bugs impossible to write**. A program that type-checks is not a correct program — the compiler can't read your mind. But a program that type-checks is a program that has certain failure modes ruled out, and those failure modes are the ones that bite hardest in production.
 
-- A cast silences the compiler — but the bug is still there
-- Loosely-typed code lets AI-generated code compile and fail silently in production
-- Missing a case in a switch statement is a runtime error, not a compile error
-- The overdraft bug compiles. The wrong state transition compiles. The missing handler compiles.
-- The type system that doesn't catch business logic errors isn't doing its job.
+NeoHaskell has a powerful, strongly-typed compiler that catches entire categories of bugs at build time. On top of that, its event-sourcing primitives layer additional type-level constraints, and those are what make the *specific* bugs in event-sourced systems impossible.
 
-## Type Safety: The Mental Model Shift
+## What a strong type system gives you
 
-- The compiler isn't checking your work — it's **preventing entire categories of bugs from existing**
-- Invalid states become *unrepresentable*: if the type system can't express it, the code can't produce it
-- Exhaustive pattern matching means no forgotten branches — every case is handled or the code doesn't compile
-- The compiler catches the overdraft before the test does, and the test catches it before the customer does
-- **The compiler is a collaborator, not an adversary**
+Before the event-sourcing bits, here's what you get just from having a strong type system at all:
 
-### What "Invalid States Unrepresentable" Means
+### 1. No null pointer errors
 
-- In CRUD: an account can be `status = "open"` or `status = "closed"` — a string, anything goes
-- In NeoHaskell: account status is a type with exactly two constructors: `Open` and `Closed`
-- You can't accidentally set `status = "opne"` — that string doesn't exist in the type
-- You can't withdraw from a closed account — the type system makes that branch impossible to write
-- The type IS the documentation: if the type is right, the domain is right
+A variable of type `Account` has an `Account` in it. It is never `null`. If the value might be missing, the type is `Maybe Account`, and the compiler forces you to check for `Nothing` before using the value.
 
-### Exhaustive Pattern Matching
+```haskell
+-- Wrong: won't compile
+greet :: Maybe User -> Text
+greet user = [fmt|Hello, #{user.name}|]  -- ERROR: user is Maybe User, not User
 
-- When you handle an event or command, you use `case..of` to branch on the type
-- If you add a new event type (`DailyLimitSet`), the compiler immediately flags every `case..of` that doesn't handle it
-- No forgotten branches. No "I forgot to handle the new case." No silent failures.
-- This is the most valuable property for teams: adding a feature forces you to handle it everywhere
+-- Right
+greet :: Maybe User -> Text
+greet user = case user of
+  Nothing -> "Hello, stranger"
+  Just u -> [fmt|Hello, #{u.name}|]
+```
 
-<Aside type="note" title="Readable by any developer">
-NeoHaskell's type system is powerful, but the code it produces is readable. The testbed's `AddItem.hs` decide function uses `case..of` (switch), `if/then/else`, and `Decider.reject` / `Decider.acceptExisting`. Zero type class constraints visible to the user. A JavaScript developer can read every line. The compiler does the heavy lifting invisibly.
+### 2. Exhaustive pattern matching
+
+When you `case` on a sum type, you have to handle every case. Forget one, and the compiler tells you:
+
+```haskell
+data Color = Red | Green | Blue
+
+classify :: Color -> Text
+classify c = case c of
+  Red -> "warm"
+  Blue -> "cool"
+-- Error:
+-- Non-exhaustive patterns in function classify
+-- Patterns of type 'Color' not matched: Green
+```
+
+### 3. Type mismatches at call sites
+
+If a function expects an `Int` and you pass it a `Text`, you don't find out at runtime. You find out at compile time:
+
+```haskell
+deposit :: Int -> Account -> Account
+deposit amount account = account { balance = account.balance + amount }
+
+-- Wrong: won't compile
+deposit "50" myAccount
+-- Error: Couldn't match expected type 'Int' with actual type 'String'
+```
+
+### 4. Implicit conversions are not a thing
+
+There is no "truthy" value in NeoHaskell. There is no automatic conversion from `Int` to `Text`. If you want one, you spell it out: `toText myInt`. The compiler will not "help" you by converting silently and then producing wrong results later.
+
+## What NeoHaskell's event-sourcing primitives add
+
+These checks are specific to event-sourcing contracts — and they're the bugs that bite hardest in event-sourced systems written in other languages.
+
+### 1. Missing event handlers
+
+When you add a new event variant, the compiler tells you every place that needs to handle it:
+
+```haskell
+data AccountEvent
+  = AccountOpened { ... }
+  | MoneyDeposited { ... }
+  | MoneyWithdrawn { ... }  -- new
+
+-- Error:
+-- Non-exhaustive patterns in function update
+-- Patterns of type 'AccountEvent' not matched: MoneyWithdrawn{}
+```
+
+And for `getEventEntityIdImpl`:
+
+```text
+Non-exhaustive patterns in function getEventEntityIdImpl
+Patterns of type 'AccountEvent' not matched: MoneyWithdrawn{}
+```
+
+In Java or C# with annotation-based event-sourcing frameworks, adding an event type is a silent change — the framework doesn't know you forgot to handle it until it encounters one at runtime. NeoHaskell tells you at build time.
+
+### 2. Wrong entity type for a command
+
+Every command declares its entity type via `EntityOf`. If you accidentally use the wrong type, the compiler catches it:
+
+```haskell
+-- Command for Account entity
+decide :: Deposit -> Maybe Account -> RequestContext -> Decision AccountEvent
+decide cmd account _ctx = ...
+
+-- Wrong: emitting a CartEvent from an Account command
+Decider.acceptExisting [ ItemAdded { ... } ]
+-- Error: Couldn't match type 'CartEvent' with 'AccountEvent'
+```
+
+### 3. Mixed event types in a service
+
+Every command in a service must share the same event type. If you mix them, the error is explicit and specific:
+
+```text
+Event type mismatch in service definition!
+
+All commands in a service must use the same event type.
+
+Expected event type: AccountEvent
+But command 'ProcessPayment' uses event type: PaymentEvent
+
+To fix: Ensure all commands in this service share a common event type.
+This typically means all entities should use the same domain event sum type.
+```
+
+This is a type-level check implemented with custom error messages. You get a compiler error that reads like a maintainer wrote it.
+
+### 4. Missing transport configuration
+
+Commands declare their transports with `TransportsOf`. If you forget, the compiler notices:
+
+```haskell
+-- Missing type instance TransportsOf Deposit = '[...]
+-- Error: No instance for (AllKnownSymbols (NamesOf (TransportsOf Deposit)))
+```
+
+The error is technical, but it points you at the exact problem.
+
+### 5. Forbidden transport combinations
+
+Commands can be either public (via transports like `WebTransport`) or internal (via `InternalTransport`), but not both:
+
+```haskell
+type instance TransportsOf Deposit = '[WebTransport, InternalTransport]
+
+-- Error:
+-- Invalid command transport declaration
+-- A command cannot declare InternalTransport together with public transports.
+-- If you need both public and internal behavior, define two separate commands.
+```
+
+### 6. Duplicate transport declarations
+
+If you accidentally list the same public transport twice, the compiler catches it:
+
+```text
+Invalid command transport declaration
+Public transport list contains repeated transport entries.
+Each public transport must appear at most once in TransportsOf.
+```
+
+### 7. Query/entity mismatches
+
+Queries declare which entities they depend on via `deriveQuery`. If a `QueryOf` instance claims an entity type that isn't listed, the compiler complains. If a listed entity has no `QueryOf` instance, the compiler complains.
+
+## The errors read like English
+
+NeoHaskell makes heavy use of GHC's custom error messages. Most event-sourcing errors come with:
+
+- A plain-English explanation of what went wrong.
+- The specific types involved.
+- An instruction on how to fix it.
+
+Compare this to the Java equivalent, which is typically:
+
+```text
+RuntimeException: No handler found for event type com.example.AccountEvent$MoneyWithdrawn
+  at com.example.framework.dispatcher.ReflectiveEventDispatcher.dispatch(...)
+  at ...
+```
+
+You get a stack trace at runtime, after the event has already been stored. The NeoHaskell error is at build time, before you even shipped.
+
+## The bugs NeoHaskell does NOT catch
+
+Be honest with yourself about this. The compiler cannot:
+
+- **Read your mind.** If your spec says "minimum balance 10" and you wrote "> 0", the compiler won't know.
+- **Verify business rules.** The *structure* of your `decide` function is type-checked, but the *content* is up to you.
+- **Detect wrong events.** Recording `MoneyWithdrawn` when the user actually deposited money is a logic bug, not a type bug.
+- **Guarantee performance.** Your `combine` function might run in linear time when it should be constant.
+
+For those, you still need tests. The compiler catches the categories of bugs where "being told at build time" is worth more than "being told at runtime"; tests catch the rest.
+
+<Aside type="note" title="The right mental model">
+Type safety is a safety net for the mechanical parts of your code. It catches "you forgot a case," "you used the wrong type," "you wired the service incorrectly." Tests are the safety net for the semantic parts — "did I implement the rule correctly?" You need both.
 </Aside>
 
-## What Happens When You Try to Skip Validation
+## Type inference
 
-{/* TODO: Code example showing what happens when you try to withdraw from a closed account — include JS/TS, Python, Go equivalents */}
-{/* TODO: Show the compiler error — friendly, specific, actionable */}
+You almost never have to write type annotations in NeoHaskell. The compiler infers them from the shapes of functions and values. When you do add annotations, they act as documentation for future readers (including you, next Tuesday).
 
-- You write a `Withdraw` handler that doesn't check if the account is open
-- The compiler doesn't catch this — it's valid code, just wrong business logic
-- But: if you model account state as a type (`Open | Closed`), the compiler can enforce the check
-- The pattern: **make illegal states unrepresentable** — encode business rules in types, not runtime checks
-- When you try to call `withdraw` on a `Closed` account, the type system rejects it at compile time
+The convention in NeoHaskell is to write type signatures for top-level definitions and leave local bindings alone. That gives you a clean API surface while keeping function bodies uncluttered.
 
-## In NeoBank Terms
+```haskell
+-- Top-level: explicit signature
+decide :: Deposit -> Maybe Account -> RequestContext -> Decision AccountEvent
+decide cmd account ctx = do
+  let balanceCheck = ...  -- local: no annotation
+  let amountCheck = ...   -- local: no annotation
+  -- ...
+```
 
-- NeoBank's account state is a type: `Open`, `Closed`, `Frozen` — not a string column
-- A `Withdraw` command on a `Closed` account is a type error, not a runtime error
-- The overdraft check is enforced by the type system: `withdraw` requires `balance >= amount`
-- Adding a new account type (savings, checking) requires handling it in every command handler — the compiler tells you where
-- The compiler caught the overdraft bug before the test ran. The test confirmed it. The customer never saw it.
+## Generic vs. specific type errors
 
-## The Full Picture
+A type error in NeoHaskell can be generic (a fundamental mismatch) or specific (a custom error message from a typeclass with `TypeError`). The specific ones are almost always the easier to read, because they were written by humans for humans. When you hit a generic error, the trick is to read it top to bottom — the first line is the "expected vs. actual" summary, and everything else is context.
 
-{/* TODO: Code example showing account state as an algebraic data type — include JS/TS, Python, Go equivalents */}
-{/* TODO: Code example showing exhaustive pattern matching on account state — include JS/TS, Python, Go equivalents */}
-{/* TODO: Show a friendly compiler error for a missing case */}
+A good habit: **read the first line, then scroll back to your code and look at the exact line mentioned**. Don't try to parse the entire error at once. Read the summary, check your code, iterate.
 
-- **Algebraic data types**: define account state as a sum type — `Open | Closed | Frozen`
-- **Pattern matching**: handle each case explicitly — the compiler enforces completeness
-- **Type-checked state transitions**: `withdraw` only accepts `Open` accounts — `Closed` is a type error
-- **Friendly error messages**: NeoHaskell explicitly focuses on readable, actionable compiler errors
-- **No escape hatches**: there's no `unsafeCoerce` in application code — the type system is the contract
+## Where to go from here
 
-## How NeoHaskell Enforces This
-
-- **Missing event handlers**: add a new event type, the compiler flags every unhandled `case..of`
-- **Incorrect state transitions**: entity state machines are type-checked — invalid transitions don't compile
-- **Type mismatches**: wrong data shapes are compile errors, not runtime surprises
-- **Unhandled cases**: exhaustive pattern matching — no forgotten branches
-- **Event sourcing contract**: every state change must go through the event log — no silent mutations
-
-## Testing This Concept
-
-{/* TODO: Code example showing a test that the compiler already caught — include JS/TS, Python, Go equivalents */}
-{/* TODO: Show: the test you don't need to write because the compiler already caught it */}
-
-- Some tests become unnecessary — the compiler already caught the bug
-- The tests you do write are for business logic the compiler can't verify (wrong amount, wrong account)
-- Given-When-Then maps naturally: Given (entity state) → When (command) → Then (events or error)
-- Property-based testing: "no sequence of valid commands should produce a negative balance"
-- The compiler handles the structural correctness; tests handle the business correctness
-
-## Going Deeper
-
-- [Commands and Handlers →](/concepts/commands-and-handlers) — how the type system enforces the command/event boundary
-- [Testing Event-Sourced Systems →](/concepts/testing-event-sourced-systems) — what tests remain after the compiler does its job
-- [Schema Evolution →](/concepts/schema-evolution) — how types evolve without breaking history
-- External: "Making Illegal States Unrepresentable" — Yaron Minsky's classic talk on type-driven design
-
-:::caution[Coming Soon]
-Code examples on this page are placeholders. Full working code will be added when the NeoBank tutorial is complete.
-:::
+- **[Reading error messages](/guides/reading-error-messages/)** — a guide to interpreting NeoHaskell compiler errors quickly.
+- **[Effects and concurrency](/concepts/effects/)** — how the type system tracks what can fail and what can't.
+- **[Testing event-sourced systems](/concepts/testing-event-sourced-systems/)** — the tests you write to catch what types can't.

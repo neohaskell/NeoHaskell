@@ -1,138 +1,246 @@
 ---
-title: "Syntax Warm-up"
-description: "Type a few NeoHaskell expressions and see what happens. 5 minutes of hands-on practice before the tutorial."
-keywords: [syntax, warm-up, practice, REPL, hands-on, pipe operator, do block, pattern matching, type annotation]
+title: "Syntax warm-up"
+description: "Ten short exercises to cement the NeoHaskell building blocks. Records, pattern matching, pipes, do blocks, Maybe, Result."
+sidebar:
+  order: 4
 ---
 
-{/* 
-  CONTENT OUTLINE — REVISION 2 (10-expert consensus applied)
-  ==============================================================
-  Position: Getting Started — optional step between Reading NeoHaskell and First Events
-  Time estimate: ~5 minutes
-  Prerequisites: NeoHaskell installed (for REPL)
-  Misconceptions addressed: #5 (need category theory), #12 (need to understand monads)
-  
-  Design principles from DOCS-PLAN:
-  - "5-minute hands-on warm-up where the reader types 3-5 small NeoHaskell expressions and sees output"
-  - "NOT a language tutorial — just enough muscle memory that the tutorial's syntax doesn't feel alien"
-  - "Covers: do blocks, |> pipe, type annotations, case..of"
-  - "Each example is 1-3 lines with immediate REPL output"
-  - Source: Tania Rascia — "Let the reader's fingers learn the syntax before their brain has to learn the concepts."
-  
-  Key distinction from reading-neohaskell.mdx:
-  - Reading NeoHaskell = LOOK at code (passive, no install needed)
-  - Syntax Warm-up = TYPE code (active, requires installation)
-  
-  Changes applied:
-  - Version placeholder added (change #1)
-  - Recap closing section expanded (change #3)
-  - Code example domain note added (change #4)
-  - Forward tension added (change #5)
-  - REPL multi-line guidance added before Expression 3 (change #9)
-*/}
+import { Aside } from '@astrojs/starlight/components';
 
-**Prerequisites**: [Install NeoHaskell](/getting-started/installation/) first.
+You've read about the syntax. Now let's build muscle memory. Work through these ten exercises in order. Each takes about thirty seconds. By the end, the language will feel familiar, not alien.
 
-*~5 minutes · Hands-on · NeoHaskell vX.Y.Z*
+You can do these in any NeoHaskell module — create a scratch file inside your template project, or use `ghci` from the dev shell if you prefer a REPL.
 
-## What This Is (and Isn't)
+## Exercise 1 — Define a record
 
-- This is a warm-up, not a tutorial. You'll type 5 small expressions, see the output, and move on.
-- Goal: your fingers know the basic shapes so the tutorial's syntax doesn't slow you down
-- NOT covered: what these features mean, when to use them, or how they fit together — the tutorial teaches all of that in context
+**Goal:** Make a record type for a book.
 
-{/*
-  Code example domain note (change #4):
-  Examples should use throwaway expressions (strings, numbers, basic math) — NOT domain-specific.
-*/}
+```haskell
+data Book = Book
+  { title :: Text
+  , author :: Text
+  , pages :: Int
+  }
+  deriving (Show)
+```
 
-## Start the REPL
+**Test it:** Construct one.
 
-{/*
-  Get the reader into the REPL immediately.
-  Show the exact command and what the prompt looks like.
-*/}
+```haskell
+myBook :: Book
+myBook = Book
+  { title = "The Goal"
+  , author = "Eliyahu Goldratt"
+  , pages = 384
+  }
+```
 
-- Run `neo repl` in your terminal
-- You should see: the NeoHaskell REPL prompt (show exact output)
-- "Type expressions after the prompt and press Enter to see the result"
+**Key takeaway:** Commas go at the start of each line, not the end. Field names are explicit. `deriving (Show)` lets you print the value for debugging.
 
-## Expression 1: A Simple Value
+---
 
-{/*
-  Absolute baseline — type a value, see it back.
-  Proves the REPL works and builds confidence.
-*/}
+## Exercise 2 — Read a field
 
-- Type a string literal and see it echoed back
-- Type a number and see it echoed back
-- Type a simple arithmetic expression and see the result
-- "NeoHaskell evaluates the expression and shows you the result. That's it."
+**Goal:** Get the title of `myBook`.
 
-## Expression 2: The Pipe Operator
+```haskell
+title :: Text
+title = myBook.title
+```
 
-{/*
-  |> is the most common NeoHaskell idiom.
-  Show 1-3 lines that chain operations with pipes.
-*/}
+**Key takeaway:** Dot access, just like JavaScript or Python.
 
-- Type a pipe chain: value `|>` function `|>` function
-  - Example shape: start with a string, pipe it through `Text.toUpperCase`, pipe through `Text.length`
-  - Show the output
-- "Read `|>` as 'then'. Start with a value, then transform it, then transform again."
-- Try one more: a number piped through 2 functions
+---
 
-## Expression 3: A Do Block
+## Exercise 3 — Update a field
 
-{/*
-  do blocks sequence steps. Show the REPL can handle multi-line.
-  Keep it to 2-3 lines.
-  Multi-line guidance added (change #9).
-*/}
+**Goal:** Make a copy of `myBook` with one more page.
 
-:::tip[Multi-line input in the REPL]
-To type a multi-line expression (like a `do` block), just keep typing. The REPL will wait for you to finish. When you're done, press Enter twice to execute.
-:::
+```haskell
+longerBook :: Book
+longerBook = myBook { pages = myBook.pages + 1 }
+```
 
-- Type a small `do` block (2-3 lines):
-  - Bind a value with `<-`
-  - Use the bound value
-  - Show the output
-- "A do block runs steps in order. `<-` means 'get the result and call it this name.'"
+**Key takeaway:** Record update creates a new record — it never mutates the original. `myBook` still has its original `pages` value.
 
-## Expression 4: Pattern Matching
+---
 
-{/*
-  case..of with 2 patterns. Keep it tiny.
-*/}
+## Exercise 4 — Pattern match with `case`
 
-- Type a `case..of` expression with 2 branches
-  - Example shape: match on a boolean, return different strings
-  - Show the output
-- Change the input value, run again, see the other branch fire
-- "case..of looks at a value and picks the matching branch. The compiler makes sure you handle every case."
+**Goal:** Categorize a book by its page count.
 
-## Expression 5: Putting Them Together
+```haskell
+sizeLabel :: Book -> Text
+sizeLabel book = case book.pages of
+  n | n < 100 -> "pamphlet"
+  n | n < 300 -> "short"
+  n | n < 600 -> "average"
+  _ -> "tome"
+```
 
-{/*
-  Combine pipe + do + pattern matching in one small expression.
-  This mirrors what the tutorial code looks like.
-*/}
+**Key takeaway:** `case` with guards (`|`) is how you express "if this, elif that, else." The underscore `_` catches anything not matched above.
 
-- Type a 3-4 line expression that uses `|>` and `case..of` together
-  - Example shape: pipe a value into a case expression that returns different results
-  - Show the output
-- "This is what tutorial code looks like. You just typed it."
+---
 
-## Review and Next Steps
+## Exercise 5 — Pipe a value through functions
 
-Your fingers know the shapes. Now let's put them to work — you're about to write your first event.
+**Goal:** Take a book title, uppercase it, and trim whitespace.
 
-- You've typed NeoHaskell. That's the warm-up.
-- Exit the REPL: `:quit`
-- **Next**: [Your First Events](/getting-started/first-events/) — write your first event type and see event sourcing in action (~10 minutes)
-- **Bookmark**: [Cheat Sheet](/getting-started/cheat-sheet/) — the quick reference for everything you just typed, plus more
+```haskell
+import Text qualified
 
-:::caution[Coming Soon]
-The REPL examples on this page are placeholders. Actual NeoHaskell expressions will be added once the REPL is available.
-:::
+cleanTitle :: Book -> Text
+cleanTitle book =
+  book.title
+    |> Text.trim
+    |> Text.toUpper
+```
+
+**Key takeaway:** `|>` reads left-to-right. `book.title` is the value, `Text.trim` transforms it, `Text.toUpper` transforms the result of that. You can read this as "take the title, trim it, then uppercase it."
+
+---
+
+## Exercise 6 — Work with `Maybe`
+
+**Goal:** Write a function that returns the first character of a title, or `Nothing` if the title is empty.
+
+```haskell
+import Maybe qualified
+import Text qualified
+
+firstLetter :: Text -> Maybe Char
+firstLetter text = case Text.uncons text of
+  Nothing -> Nothing
+  Just (c, _) -> Just c
+```
+
+**Test it:**
+
+```haskell
+firstLetter "NeoHaskell"  -- Just 'N'
+firstLetter ""            -- Nothing
+```
+
+**Key takeaway:** `Maybe` forces you to think about "what if it's missing?" The compiler will not let you skip the `Nothing` case.
+
+---
+
+## Exercise 7 — Work with `Result`
+
+**Goal:** Parse an integer from text, returning either `Ok n` or `Err reason`.
+
+```haskell
+import Int qualified
+
+parseAge :: Text -> Result Text Int
+parseAge text = case Int.fromText text of
+  Nothing -> Err "not a valid integer"
+  Just n -> if n < 0
+    then Err "age cannot be negative"
+    else Ok n
+```
+
+**Test it:**
+
+```haskell
+parseAge "42"    -- Ok 42
+parseAge "-3"    -- Err "age cannot be negative"
+parseAge "hello" -- Err "not a valid integer"
+```
+
+**Key takeaway:** `Result err ok` expresses "this might fail, and here's why." Unlike exceptions, failures are part of the type — you have to handle them.
+
+---
+
+## Exercise 8 — A sum type
+
+**Goal:** Model a traffic light with three colors.
+
+```haskell
+data Light
+  = Red
+  | Yellow
+  | Green
+  deriving (Eq, Show)
+
+nextLight :: Light -> Light
+nextLight light = case light of
+  Red -> Green
+  Green -> Yellow
+  Yellow -> Red
+```
+
+**Key takeaway:** This is the most basic sum type — three variants with no fields. The compiler will reject `nextLight` if you miss a case. Try commenting out one branch and watch it scream.
+
+---
+
+## Exercise 9 — A sum type with fields
+
+**Goal:** Model a payment event that can be a deposit or a withdrawal, each with an amount.
+
+```haskell
+data PaymentEvent
+  = Deposited { amount :: Int }
+  | Withdrawn { amount :: Int }
+  deriving (Show)
+
+describe :: PaymentEvent -> Text
+describe event = case event of
+  Deposited { amount } -> [fmt|Deposited $#{amount}|]
+  Withdrawn { amount } -> [fmt|Withdrew $#{amount}|]
+```
+
+**Test it:**
+
+```haskell
+describe (Deposited { amount = 50 })  -- "Deposited $50"
+describe (Withdrawn { amount = 20 })  -- "Withdrew $20"
+```
+
+**Key takeaway:** Sum types with record fields are how you describe "one of several different shapes of data." Every event type in NeoHaskell looks like this. Fold over them with `case`.
+
+---
+
+## Exercise 10 — A `do` block
+
+**Goal:** Write a task that reads a name from the console and prints a greeting.
+
+```haskell
+import Console qualified
+
+greet :: Task Text Unit
+greet = do
+  Console.print "What is your name?"
+  name <- Console.readLine
+  Console.print [fmt|Hello, #{name}!|]
+```
+
+**Key takeaway:** `do` blocks sequence steps. `<-` captures a value from a step that returns something. Steps without `<-` are run for their effect. This is async/await with a different name.
+
+---
+
+## Quick reference — the moves you just learned
+
+| Move | Syntax |
+|---|---|
+| Define a record | `data Foo = Foo { a :: Int, b :: Text }` |
+| Construct a record | `Foo { a = 1, b = "x" }` |
+| Read a field | `foo.a` |
+| Update a field | `foo { a = 42 }` |
+| Pattern match | `case x of ...` |
+| Pipe | `x \|> f \|> g` |
+| Maybe | `Just x` or `Nothing` |
+| Result | `Ok x` or `Err reason` |
+| Sum type | `data Light = Red \| Yellow \| Green` |
+| Do block | `do { x <- step1; step2 x }` |
+| String interpolation | `[fmt\|hello #{name}\|]` |
+
+That is the entire vocabulary you need for the tutorial. If any of these feel shaky, re-read the exercise — muscle memory is about repetition, not complexity.
+
+## What's next
+
+You know how to read NeoHaskell. You know how to write the basic moves. You're ready for the real thing.
+
+- [**Build NeoBank**](/tutorial/) — the tutorial that teaches you the full language by building a banking service.
+- [**Your first events**](/getting-started/first-events/) — if you want one more small warm-up before the tutorial.
+- [**Cheat sheet**](/getting-started/cheat-sheet/) — one-page reference for when you forget a syntax.

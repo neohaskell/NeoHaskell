@@ -1,154 +1,250 @@
 ---
-title: "Testing Event-Sourced Systems"
-description: "Given events, when command, then expect — testing that reads like a specification."
+title: "Testing event-sourced systems"
+description: "Given-When-Then testing that reads like a specification. Zero mocks. Zero database. Pure functions everywhere."
 sidebar:
-  order: 22
-keywords: [testing, Given-When-Then, event sourcing, property-based testing, test pyramid, unit tests]
-# entry_stage: 2 (Event-thinker)
-# exit_stage: 3 (NeoHaskell-aware)
-# misconception: #19 (testing ES is hard)
-# tutorial_anchor: Tutorial Part 2 — Account Rules
+  order: 10
 ---
-
-{/*
-  CONTENT OUTLINE — Testing Event-Sourced Systems
-  Entry: Stage 2 (Event-thinker), Exit: Stage 3 (NeoHaskell-aware)
-  Misconception addressed: #19 (testing ES is hard)
-  Anchored from: Tutorial Part 2 — Account Rules
-
-  Core message: event-sourced systems are EASIER to test, not harder.
-  Given-When-Then maps directly to events-command-events.
-  Testing Trophy adapted for ES: type safety → unit tests → integration → E2E.
-  No mocking needed — just events in, events out.
-  Property-based testing intro.
-  Source: Kent C. Dodds Testing Trophy.
-*/}
-
-{/* POLYGLOT NOTE: All code examples on this page should include equivalent snippets in JS/TS, Python, and Go. See DOCS-PLAN.md Guiding Principle #9. */}
 
 import { Aside } from '@astrojs/starlight/components';
 
-## What You Might Expect
+Event sourcing is the most testable architecture you can use for a business system. This isn't marketing — it's a direct consequence of how the pieces are shaped. Commands are pure functions from state to events. Projections are pure functions from entity state to read models. Integrations are pure functions from events to actions. Test each one by passing in data and asserting on the output.
 
-- Testing a REST API requires: a running database, HTTP client setup, test fixtures, teardown logic
-- Testing business logic requires mocking: mock the database, mock the email service, mock the payment gateway
-- Integration tests are slow and flaky — they depend on external services
-- "Testing is hard" is a common complaint, especially for complex business logic
-- Event sourcing sounds like it would make testing *more* complex, not less
+No mocks. No in-memory database setup. No fixtures. No "stand up a test container." Just pure function tests.
 
-## Why That Breaks
+## The three kinds of tests
 
-- Mocking is a symptom of tight coupling — your business logic is tangled with infrastructure
-- Test fixtures drift from production data — the test passes but the real scenario fails
-- Slow tests mean developers skip them — the feedback loop breaks down
-- The more you mock, the less you're testing the real behavior
-- The core problem: CRUD systems mix business logic with infrastructure, making both hard to test in isolation
+An event-sourced NeoHaskell application has three layers, each tested differently:
 
-## Testing Event-Sourced Systems: The Mental Model Shift
+1. **Command tests** — did `decide` produce the right events for the right inputs?
+2. **Query tests** — did `combine` produce the right read model for a given entity state?
+3. **Integration tests** — did the whole system, wired together, behave correctly end-to-end?
 
-- Event-sourced systems have a natural testing grammar: **Given-When-Then**
-- **Given**: a sequence of past events (the starting state)
-- **When**: a command is issued (the action)
-- **Then**: specific events are produced — or a specific error is returned
-- No database. No HTTP. No mocking. Just events in, events out.
-- The test IS the specification. If you can write the test, you've specified the behavior.
+The first two are pure function tests. The third uses a test harness that spins up an in-memory event store and dispatches commands through the real command executor. All three are fast and reliable.
 
-### Why It's Easier
+## Command tests — Given-When-Then
 
-- Business logic is a pure function: `Command -> Entity -> Result Error [Event]`
-- Pure functions are trivially testable: give inputs, assert outputs
-- No side effects means no mocking — the function doesn't touch the database or network
-- Tests run in milliseconds — no I/O, no setup, no teardown
-- The event stream IS the test fixture — no separate fixture management
+Commands test as pure functions. The grammar is straightforward:
 
-## The Testing Trophy for Event Sourcing
+- **Given** past events (or an entity state built from them).
+- **When** a command is dispatched.
+- **Then** specific events are produced (or the command is rejected).
 
-{/* TODO: Diagram showing the Testing Trophy adapted for event sourcing */}
+Here's a test for the `Withdraw` command from the tutorial:
 
-Adapted from Kent C. Dodds' Testing Trophy — the layers from bottom to top:
+```haskell
+module NeoBank.Account.Commands.WithdrawSpec where
 
-| Layer | What it tests | How many | Speed |
-|-------|--------------|----------|-------|
-| **Type safety** | Invalid states, missing handlers, wrong types | Infinite (compiler) | Instant |
-| **Unit tests** | Command handlers, update logic, business rules | Many | Milliseconds |
-| **Integration tests** | Event store, updates, cross-entity flows | Some | Seconds |
-| **End-to-end tests** | Full user flows, transport layer | Few | Minutes |
+import Array qualified
+import Core
+import Decider (runDecision, DecisionContext (..), CommandResult (..))
+import NeoBank.Account.Commands.Withdraw (Withdraw (..), decide)
+import NeoBank.Account.Core
+import Service.Auth (RequestContext (..))
+import Service.Event (InsertionType (..))
+import Task qualified
+import Test
+import Uuid qualified
 
-The key insight: **type safety replaces a huge category of unit tests**. Tests you'd write in a dynamically-typed language to catch type errors don't exist in NeoHaskell — the compiler already caught them.
 
-<Aside type="note" title="The tests you don't write">
-In a dynamically-typed language, you write tests like "it should reject a non-numeric amount." In NeoHaskell, that test doesn't exist — the type system makes a non-numeric amount impossible to pass. The compiler handles structural correctness; your tests handle business correctness.
+-- A helper: run decide in a test context.
+runDecide ::
+  Withdraw ->
+  Maybe Account ->
+  Task Text (CommandResult AccountEvent)
+runDecide cmd entity = do
+  let ctx = DecisionContext { genUuid = Task.yield Uuid.nil }
+  let reqCtx = RequestContext { user = Nothing }
+  runDecision ctx (decide cmd entity reqCtx)
+
+
+-- A helper: make an account at a specific balance.
+anAccount :: Int -> Account
+anAccount balance =
+  Account
+    { accountId = Uuid.nil
+    , ownerName = "Test"
+    , accountType = Checking
+    , balance = balance
+    , history = Array.empty
+    }
+
+
+spec :: Spec Unit
+spec = describe "Withdraw" do
+  it "rejects when the account does not exist" \_ -> do
+    let cmd = Withdraw { accountId = Uuid.nil, amount = 50 }
+    result <- runDecide cmd Nothing
+    result |> shouldBe (RejectCommand "Account does not exist")
+
+  it "rejects zero or negative amounts" \_ -> do
+    let cmd = Withdraw { accountId = Uuid.nil, amount = 0 }
+    result <- runDecide cmd (Just (anAccount 100))
+    result |> shouldBe (RejectCommand "Withdrawal amount must be positive")
+
+  it "rejects insufficient funds" \_ -> do
+    let cmd = Withdraw { accountId = Uuid.nil, amount = 150 }
+    result <- runDecide cmd (Just (anAccount 100))
+    result |> shouldBe (RejectCommand "Insufficient funds")
+
+  it "accepts valid withdrawals" \_ -> do
+    let cmd = Withdraw { accountId = Uuid.nil, amount = 40 }
+    result <- runDecide cmd (Just (anAccount 100))
+    let expected =
+          AcceptCommand
+            ExistingStream
+            (Array.fromLinkedList
+              [ MoneyWithdrawn { entityId = Uuid.nil, amount = 40 } ])
+    result |> shouldBe expected
+```
+
+Every test is three lines:
+
+1. Build the command (the "When").
+2. Call `runDecide` with a given entity state (the "Given").
+3. Assert the result (the "Then").
+
+No database. No fixtures. No mocks. The test runs in microseconds. You can write a hundred of these in an afternoon.
+
+## Query tests — combine is a pure function
+
+Testing queries is even simpler because `combine` takes two values and returns one value:
+
+```haskell
+spec :: Spec Unit
+spec = describe "MonthlySummary" do
+  it "counts only deposits under totalDeposits" \_ -> do
+    let account = Account
+          { accountId = Uuid.nil
+          , ownerName = "Alice"
+          , accountType = Checking
+          , balance = 70
+          , history = Array.fromLinkedList
+              [ Transaction { kind = "deposit", amount = 100 }
+              , Transaction { kind = "withdrawal", amount = 30 }
+              ]
+          }
+    case combine account Nothing of
+      Update summary -> do
+        summary.totalDeposits |> shouldBe 100
+        summary.totalWithdrawals |> shouldBe 30
+        summary.endingBalance |> shouldBe 70
+      _ -> Test.fail "Expected Update action"
+
+  it "returns NoOp for empty history on incremental update" \_ -> do
+    -- When combine is called with the same entity state twice,
+    -- the second call should be a no-op-equivalent update.
+    let account = ...
+    let existing = Just MonthlySummary { ... }
+    case combine account existing of
+      Update _ -> Task.yield ()  -- expected
+      _ -> Test.fail "Expected Update action"
+```
+
+Query tests are where you catch logic bugs that the type system can't. A query's `combine` function compiles whether you wrote `+` or `-` — the test is what tells you which is correct.
+
+## Given-When-Then as a DSL
+
+For more complex scenarios — where you want to replay multiple events before running the command — NeoHaskell provides the `AppSpec` testing helpers:
+
+```haskell
+spec :: Spec Unit
+spec = describe "Full account lifecycle" do
+  specificationFor testAccount do
+    scenario "deposit then withdraw" do
+      given AccountOpened { entityId = aliceId, ownerName = "Alice", accountType = Checking }
+      given MoneyDeposited { entityId = aliceId, amount = 100 }
+      when Withdraw { accountId = aliceId, amount = 40 }
+      then_ emits MoneyWithdrawn { entityId = aliceId, amount = 40 }
+
+    scenario "withdrawal exceeds balance" do
+      given AccountOpened { entityId = aliceId, ownerName = "Alice", accountType = Checking }
+      given MoneyDeposited { entityId = aliceId, amount = 100 }
+      when Withdraw { accountId = aliceId, amount = 500 }
+      then_ rejects "Insufficient funds"
+```
+
+The DSL reads like a spec. This is literally the test style you'd write with a pen on a whiteboard — "given these events, when this command runs, then these events are produced." You don't have to translate it to code; the code *is* the translation.
+
+## Integration tests — the whole stack
+
+For end-to-end tests, use the in-memory event store and the real command executor. This lets you test the full stack — decide, executor, event store, query subscribers, integrations — without touching a real database.
+
+```haskell
+it "builds a correct statement query after a sequence of commands" \_ -> do
+  -- Set up an in-memory app
+  store <- InMemory.new |> Task.mapError toText
+  let app = Application.new
+        |> Application.withEventStore @() (\_ -> Task.yield store)
+        |> Application.withTransport MockTransport.new
+        |> Application.withService NeoBank.Account.service
+        |> Application.withQuery @Statement
+
+  -- Run the commands through the executor
+  executor <- createExecutor app
+  _ <- dispatch executor (OpenAccount { ownerName = "Alice", accountType = Checking })
+  _ <- dispatch executor (Deposit { accountId = aliceId, amount = 100 })
+  _ <- dispatch executor (Withdraw { accountId = aliceId, amount = 30 })
+
+  -- Assert on the query
+  statement <- queryByIdOrFail @Statement aliceId
+  statement.currentBalance |> shouldBe 70
+  Array.length statement.lines |> shouldBe 2
+```
+
+Integration tests are slower than unit tests (hundreds of milliseconds vs. microseconds) but they verify the wiring. Run them in CI to catch regressions; run unit tests locally for fast iteration.
+
+## Property-based testing
+
+Event-sourced systems are uniquely suited to property-based testing. Instead of writing specific examples, you express properties that should hold for *any* sequence of commands:
+
+- "No sequence of valid commands should produce a negative balance on a checking account."
+- "The sum of all deposits minus the sum of all withdrawals should equal the current balance."
+- "Replaying the event stream twice should produce identical entity state."
+- "A query's `combine` function should be idempotent with respect to identical entity states."
+
+NeoHaskell integrates with QuickCheck-style property testing. A property test might look like:
+
+```haskell
+it "preserves balance invariants" \_ -> do
+  Test.forAll genValidCommandSequence \commands -> do
+    finalState <- replayCommands commands
+    finalState.balance |> shouldSatisfy (>= 0)
+```
+
+The generator `genValidCommandSequence` produces random sequences of valid commands; the framework runs the property against hundreds of them and reports any failing case (with an automatically minimized counterexample).
+
+<Aside type="tip" title="When to use property tests">
+Reach for property-based tests when your invariants are stronger than any single example can show — especially "never" and "always" properties. Keep example tests for the specific cases you want to document explicitly.
 </Aside>
 
-## What Happens When You Test a Deposit
+## Testing integrations
 
-{/* TODO: Code example showing a complete Given-When-Then test for a deposit — include JS/TS, Python, Go equivalents */}
+Integrations are pure functions from events to actions, so they test like any other pure function:
 
-- **Given**: `[AccountOpened { balance: 0 }]` — the account exists with zero balance
-- **When**: `Deposit { amount: 50 }` command is issued
-- **Then**: `[MoneyDeposited { amount: 50 }]` events are produced
-- The test is 5 lines. It runs in under a millisecond. It has no dependencies.
+```haskell
+it "emits a Withdraw when a transfer is requested" \_ -> do
+  let transfer = initialState { transferId = Uuid.nil }
+  let event = TransferRequested
+        { entityId = Uuid.nil
+        , sourceAccountId = sourceId
+        , destinationAccountId = destId
+        , amount = 50
+        }
+  let outbound = reactTo Orchestrator transfer event
+  let actions = Integration.getActions outbound
+  Array.length actions |> shouldBe 1
+```
 
-### Testing Rejection
+You construct an event, call `reactTo` on the integration, and assert on the actions it emits. For outbound actions that make HTTP calls, you can mock the `ActionContext` to assert what would have been sent without actually sending it.
 
-- **Given**: `[AccountOpened { balance: 0 }]`
-- **When**: `Withdraw { amount: 100 }` command (more than the balance)
-- **Then**: `InsufficientFunds` error is returned, no events produced
-- Same structure. Same speed. Same simplicity.
+## Why this works so well
 
-## In NeoBank Terms
+Everything in this page comes down to one property: **the core of your application is pure functions**. Pure functions are the easiest thing to test, and NeoHaskell has structured your code so that the interesting logic is all pure. The impure parts — the event store, the transports, the external APIs — are at the edges, and they're small enough to test with in-memory stubs.
 
-- Every NeoBank feature has a Given-When-Then test
-- The deposit test: given an open account, when a deposit command, then `MoneyDeposited` event
-- The overdraft test: given an open account with $0, when a withdrawal command, then `InsufficientFunds` error
-- The transfer test: given two open accounts, when a transfer command, then `TransferRequested` event on both
-- The audit test: given 10 events, when a replay query, then the correct balance at each point in time
-- None of these tests touch a database, a network, or a mock
+Compare this to traditional layered systems, where you need Docker Compose to run the database, a mock HTTP server for external APIs, and a fake user for auth. Setting up the test environment is half the work; writing the actual test is the easy part. In NeoHaskell, the ratio is flipped.
 
-## The Full Picture
+## Where to go from here
 
-{/* TODO: Code example showing a complete test suite for NeoBank account operations — include JS/TS, Python, Go equivalents */}
-{/* TODO: Show: unit test → integration test → property-based test progression */}
-
-### Unit Tests (command handlers)
-
-- Test each command handler in isolation
-- Given: entity state (derived from events), When: command, Then: events or error
-- No infrastructure, no mocking, millisecond execution
-
-### Unit Tests (updates)
-
-- Test each update as a pure function
-- Given: list of events, Then: expected query
-- Update tests are even simpler than handler tests — no command, just fold
-
-### Integration Tests
-
-- Test the full flow: command → event store → update → query
-- These tests use a real (in-memory) event store
-- Slower than unit tests, but still fast — no network, no external services
-
-### Property-Based Tests
-
-- "No sequence of valid commands should produce a negative balance"
-- Generate random sequences of valid commands, assert the invariant holds
-- Finds edge cases that hand-written tests miss
-- NeoHaskell's pure functions make property-based testing straightforward
-
-## How NeoHaskell Enforces This
-
-- The `update` function signature enforces testability: `Event -> Entity -> Entity` (pure)
-- The `decide` function signature enforces testability: `Command -> Entity -> Result Error [Event]` (pure)
-- No IO in business logic — side effects are pushed to the edges
-- The testing framework provides Given-When-Then helpers that match the event sourcing model
-
-## Going Deeper
-
-- [Type Safety →](/concepts/type-safety) — what the compiler catches before tests run
-- [Updates →](/concepts/updates) — testing queries as pure functions
-- [Events, Not State →](/concepts/events-not-state) — why pure functions make testing easy
-- External: Kent C. Dodds' [Testing Trophy](https://kentcdodds.com/blog/the-testing-trophy-and-testing-classifications) — the original framework this adapts
-
-:::caution[Coming Soon]
-Code examples on this page are placeholders. Full working code will be added when the NeoBank tutorial is complete.
-:::
+- **[Guides → Testing](/guides/testing/)** — practical recipes for the most common test types.
+- **[Effects and concurrency](/concepts/effects/)** — understanding `Task` and why pure functions are so valuable.
+- **[NeoBank tutorial Part 2](/tutorial/02-account-rules/)** — your first hands-on test.

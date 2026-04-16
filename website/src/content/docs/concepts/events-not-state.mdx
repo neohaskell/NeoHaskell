@@ -1,135 +1,129 @@
 ---
-title: "Events, Not State"
-description: "The core mental model shift — storing what happened instead of what is."
+title: "Events, not state"
+description: "Why storing state is a lie, and why deriving it from events is more correct, more debuggable, and often faster."
 sidebar:
-  order: 10
-keywords: [event sourcing, immutable events, state derivation, append-only log, event store]
-# entry_stage: 0 (CRUD-thinker)
-# exit_stage: 2 (Event-thinker)
-# misconception: #1 (need tables/columns), #3 (can just update a field), #10 (FP means no state)
-# tutorial_anchor: Tutorial Part 1 — Your First Transaction
+  order: 3
 ---
-
-{/*
-  CONTENT OUTLINE — Events, Not State
-  Entry: Stage 0 (CRUD-thinker), Exit: Stage 2 (Event-thinker)
-  Misconceptions addressed: #1, #3, #10
-  Anchored from: Tutorial Part 1
-
-  Narrative arc: familiar CRUD pain → banking analogy as bridge → mental model shift → NeoHaskell mechanics
-  Key insight: state is derived, not stored. The ledger is the original event store.
-  Evidence from testbed: EventCounter.hs uses ConcurrentVar — state is managed, not forbidden.
-  The update function in Cart/Core.hs is a pure function (event + entity → new entity), exactly like a Redux reducer.
-*/}
-
-{/* POLYGLOT NOTE: All code examples on this page should include equivalent snippets in JS/TS, Python, and Go. See DOCS-PLAN.md Guiding Principle #9. */}
 
 import { Aside } from '@astrojs/starlight/components';
 
-## What You Might Expect
+Most software is built on the assumption that the interesting thing worth storing is the current state. The account has a balance. The order has a status. The user has a role. We write these current values to a row in a database, and we UPDATE them when things change.
 
-- If you've built web apps, you expect a `users` table with a `balance` column
-- When a deposit happens, you run `UPDATE accounts SET balance = 150 WHERE id = 42`
-- The database holds the current truth — one row, one value, always up to date
-- Querying state is trivial: `SELECT balance FROM accounts WHERE id = 42`
-- This feels natural because it mirrors how you think about "what is" right now
+This is a convenient fiction that has a real cost. This page is about the cost, and about what you get when you stop paying it.
 
-## Why That Breaks
+## The fiction
 
-- A customer disputes a charge. You need to know: what was the balance *before* the dispute?
-- With `UPDATE`, that information is gone. The row was overwritten.
-- You add an audit log table. Now you're maintaining two sources of truth — and they can drift.
-- A bug corrupts the balance column. You have no way to reconstruct the correct value.
-- Regulatory compliance requires a complete transaction history. You're retrofitting it.
-- The core problem: **you stored the answer, not the question**. You can't re-derive the answer from scratch.
+"The balance is $1,247.32" is not a fact about the world. It is a *summary* of facts about the world. The actual facts are things like:
 
-## Events, Not State: The Mental Model Shift
+- On March 3rd, $500 was deposited.
+- On March 5th, $100 was withdrawn.
+- On March 10th, a $2 fee was charged.
+- On March 15th, $850 was deposited.
+- ... and so on, fifty more entries.
 
-- Instead of storing *what is*, store *what happened*
-- A deposit isn't "set balance to $150" — it's "recorded: $50 deposited on Tuesday"
-- The balance is derived by replaying all events: open($0) + deposit($50) + deposit($100) = $150
-- Events are immutable facts. They never change. They never get deleted.
-- State is an *update* — a view derived from events, not the source of truth itself
-- This isn't a new idea: **banks have worked this way for centuries**
+$1,247.32 is the result of summing all of that. It is derived. It is not primary.
 
-### The Ledger Analogy
+When you store `balance = 1247.32` in a database, you are storing the summary and throwing away the facts. This is efficient but lossy. You saved some bytes and you lost every question whose answer requires the history.
 
-- A bank ledger doesn't have a "current balance" row that gets updated
-- It has a list of entries: deposits, withdrawals, transfers — each with a date and amount
-- The balance is calculated by summing the entries
-- If you want the balance from last Tuesday, you sum entries up to that date
-- NeoHaskell's event store is a ledger. Your application state is the running total.
+## Questions that need the history
 
-### What Changes
+Here are questions a `balance` column cannot answer:
 
-| CRUD thinking | Event thinking |
-|--------------|---------------|
-| Store the current state | Store every event that led to it |
-| `UPDATE balance SET 150` | Record `MoneyDeposited { amount: 50 }` |
-| Query the row | Fold over the event stream |
-| Audit log is extra work | Audit trail is free — it's the source of truth |
-| "What is the balance?" | "What events produced this balance?" |
-| Losing history is normal | Losing history is impossible |
+1. **What was the balance on March 7th?**
+2. **How many deposits happened in March?**
+3. **What was the largest single withdrawal?**
+4. **Who initiated the $100 withdrawal on March 5th?**
+5. **If we reverse the $2 fee (because it was charged in error), what should the balance have been on March 11th?**
+6. **If our fee structure had been 1% instead of 2%, what would the ending balance be?**
+7. **When did the balance first exceed $1000?**
+8. **How many times did the balance briefly dip below $100?**
 
-## What Happens When You Deposit $50
+Every one of these questions is important at some point. Regulatory audits ask them. Customer support needs them. Product managers want them for analytics. Bug fixes depend on them. Incident reviews require them.
 
-- Step 1: A `Deposit` command arrives (a request, not yet a fact)
-- Step 2: The command handler validates it — is the account open? Is the amount positive?
-- Step 3: If valid, a `MoneyDeposited { amount: 50, timestamp: now }` event is appended to the event store
-- Step 4: The event is immutable. It cannot be changed or deleted.
-- Step 5: When you need the balance, the system folds over all events: `AccountOpened` sets it to $0, each `MoneyDeposited` adds to it, each `MoneyWithdrawn` subtracts
-- Step 6: The balance you see is derived on demand — or cached as an update for performance
+In CRUD, every question becomes a political decision: *should we log this? Should we add a history table? How far back?* You end up with audit tables, history tables, journals, logs, and a hundred little ad-hoc attempts to recover the information you threw away.
 
-<Aside type="note" title="State is managed, not forbidden">
-NeoHaskell doesn't eliminate state — it manages it differently. The testbed's `EventCounter.hs` uses `ConcurrentVar` for mutable state. The difference: state is always *derived from events*, never mutated directly. The `update` function in `Cart/Core.hs` takes an event and an entity and returns a new entity — exactly like a Redux reducer. If you've used Redux, you already understand this model.
-</Aside>
+In event sourcing, **every question is answered by the same mechanism**: fold the events. The events are right there. Always. You don't need to decide what to log; the log is the primary store.
 
-## In NeoBank Terms
+## The cost of storing state
 
-- NeoBank's account balance is never stored as a column
-- It's the result of folding over `AccountOpened`, `MoneyDeposited`, and `MoneyWithdrawn` events
-- When a customer asks "what's my balance?", NeoBank replays their event stream
-- When a customer disputes a charge, NeoBank replays to any point in time — the history is always there
-- The audit trail isn't a separate system. It's the event store itself.
-- "Show me everything that happened to my account" is free — you already have it
+People assume that storing state is cheaper than storing events. It's not, once you factor in the cost of losing information. Here is a rough accounting of what CRUD's "cheaper" storage actually costs you over time:
 
-## The Full Picture
+| Cost | Reason |
+|---|---|
+| **Audit tables** | You need to reconstruct history *somehow*, so you build a side channel. |
+| **Migration scripts** | Changing the schema means rewriting existing rows, which means writing and testing migrations. |
+| **Race conditions** | Multiple concurrent updates to the same row require locking or optimistic concurrency, implemented by hand. |
+| **Lost reasons** | "Why did the balance change?" Nobody knows. |
+| **Untestable edge cases** | Bugs that depend on specific state histories are impossible to reproduce. |
+| **Limited analytics** | "How did usage change over time?" Requires you to have been recording something. |
+| **Denormalized projections done by hand** | Any specialized view (dashboards, reports) becomes a separate table you maintain by hand, often with consistency bugs. |
 
-{/* TODO: Code example showing side-by-side: SQL UPDATE vs NeoHaskell event append — include JS/TS, Python, Go equivalents */}
-{/* TODO: Code example showing balance derivation as a fold over events — include JS/TS, Python, Go equivalents */}
-{/* TODO: Annotated diagram: event stream → fold function → derived state */}
+In event sourcing, each of these becomes either free or a natural consequence of the architecture:
 
-- **Event type definition**: outline of what a `MoneyDeposited` event record looks like — fields, types, no mutable state
-- **Event store append**: what the append operation looks like — takes an event, returns nothing (fire and forget)
-- **Balance fold**: a pure function that takes a list of events and returns a balance — no database, no side effects
-- **Time-travel query**: the same fold function, but filtered to events before a given timestamp
+| Benefit | Why |
+|---|---|
+| **Audit for free** | Events *are* the audit log. |
+| **Migrations are additive** | New event types, no table rewrites. |
+| **Concurrency is per-stream** | Events are atomic at the stream level; optimistic concurrency is built in. |
+| **Reasons are in the events** | Each event has context (who, when, why). |
+| **Reproducible bugs** | Bugs that depend on history can be replayed from the event log. |
+| **Analytics for free** | Fold events however you want, whenever you want. |
+| **Projections are just code** | Define a `combine` function; the runtime maintains it. |
 
-## How NeoHaskell Enforces This
+## "But isn't storing state simpler?"
 
-- The compiler enforces the event sourcing contract: every state change must go through the event log
-- You can't directly mutate entity state — there's no setter, no `balance = 150`
-- The `update` function signature enforces the pattern: `Event -> Entity -> Entity` (pure, no side effects)
-- Missing event handlers are compile errors — if you add a new event type, the compiler demands you handle it everywhere
-- The event store is append-only by design — the API has no `delete` or `update` operation
+It is simpler *to write a row*. It is not simpler *to own the system*. You pay the complexity cost later, in the form of audit tables, migrations, reconciliation scripts, and the endless explanations to stakeholders about why the data doesn't match reality.
 
-## Testing This Concept
+Event sourcing moves the complexity *forward*. Instead of a simple write followed by a year of ad-hoc reconstruction, you write events that are slightly more structured, and from then on every question is answerable.
 
-{/* TODO: Code example showing a Given-When-Then test for balance derivation — include JS/TS, Python, Go equivalents */}
+## "But isn't storing state faster?"
 
-- Testing event-sourced state is simpler than testing CRUD state
-- To test the balance: give a list of events, call the fold function, assert the result
-- No database setup, no mocking, no fixtures — just a list of events and an assertion
-- "Given these events, the balance should be X" is the entire test
-- Time-travel tests are trivial: filter the event list by timestamp, fold, assert
+Reading state from a denormalized row is faster than folding a thousand events, yes. This is why event-sourced systems build **projections** (NeoHaskell calls them queries). A projection is a denormalized read model that is updated incrementally as events arrive. Reading a projection is a single-row lookup — exactly the same cost as CRUD.
 
-## Going Deeper
+The difference is that in CRUD, the denormalized row is the *only* store. In event sourcing, the denormalized row is a *cache* over the event log. If the cache gets stale or corrupted, you rebuild it by replaying the events. The source of truth is never in doubt.
 
-- [Commands and Handlers →](/concepts/commands-and-handlers) — how requests become events
-- [Updates →](/concepts/updates) — building multiple views from the same event stream
-- [From CRUD to Events →](/concepts/from-crud-to-events) — the complete side-by-side comparison
-- [Testing Event-Sourced Systems →](/concepts/testing-event-sourced-systems) — the full testing strategy
-- External: Martin Fowler's [Event Sourcing](https://martinfowler.com/eaaDev/EventSourcing.html) — the canonical reference
+NeoHaskell also caches entity state via snapshot caches — so even when you fetch an entity via the event store, you don't replay events from the beginning. You start from the most recent snapshot and replay only what's come since.
 
-:::caution[Coming Soon]
-Code examples on this page are placeholders. Full working code will be added when the NeoBank tutorial is complete.
-:::
+## "What about write performance?"
+
+Appending an event is cheaper than `UPDATE` — it's a pure append, no row rewrite, no index update on the updated row. On PostgreSQL with the NeoHaskell event store, you can sustain tens of thousands of events per second per stream, and many more across streams.
+
+The bottleneck is usually not the event store. It's the projections that update on every event. And projections are fixable (you batch, you denormalize, you cache). The event store itself is typically nowhere near its limits.
+
+## The philosophical part
+
+Here's the deeper idea. **State is not a thing. State is a view.** Different readers want different views. The CRUD mistake is to pretend there's one canonical "current state" that everyone agrees on. There isn't.
+
+- The accountant's view is the P&L.
+- The customer service rep's view is the transaction history.
+- The fraud team's view is the list of suspicious patterns.
+- The machine learning team's view is the feature vector.
+- The customer's view is the current balance.
+
+In CRUD you pick one view, call it "state", and everyone else has to synthesize their view from it — with inevitable drift and inconsistency. In event sourcing, every view is built from the same events, independently, and they cannot diverge from the source of truth.
+
+**Events are the thing. State is whatever the reader needs.**
+
+## The practical mechanics in NeoHaskell
+
+In NeoHaskell, the separation is explicit:
+
+- **Events** live in the event store. Append-only. Immutable.
+- **Entities** are the in-memory representation, reconstructed from events via an `update` function. This is what commands see when they make decisions.
+- **Queries** are read models derived from entity state, maintained incrementally via `combine`. This is what readers see.
+
+Each layer does exactly one thing. Events are the truth. Entities answer "what is the current state of this one thing right now?" Queries answer "what does this view of the data look like?" You can add new queries without touching the existing ones. You can delete a query and rebuild it from the events. You can migrate a projection's shape without touching the event store.
+
+## The short version
+
+- Storing state means storing a summary and throwing away the facts.
+- Events are the facts. State is the summary.
+- CRUD systems pay a hidden tax in audit tables, migrations, and lost answers.
+- Event-sourced systems get audit, replay, and analytics for free.
+- Performance is not a problem — projections and entity caching give you the read speed of CRUD with the fidelity of event sourcing.
+
+## Where to go from here
+
+- **[Commands and handlers](/concepts/commands-and-handlers/)** — how intent becomes event.
+- **[Updates (projections)](/concepts/updates/)** — how you go from events back to useful views.
+- **[Trade-offs](/concepts/trade-offs/)** — when event sourcing is the wrong choice.

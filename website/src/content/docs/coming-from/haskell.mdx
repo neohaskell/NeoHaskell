@@ -1,130 +1,297 @@
 ---
 title: "Coming from Haskell"
-description: "The full Rosetta Stone. Every enforced divergence from GHC Haskell, with rationale. NeoHaskell is a dialect, not a skin."
+description: "Every deliberate divergence from standard Haskell, with the reasoning. If you already know GHC Haskell, this is the fastest orientation."
 sidebar:
   order: 4
 ---
 
-{/*
-  CONTENT OUTLINE — Coming from Haskell
-  THE MOST IMPORTANT Coming From page per DOCS-PLAN.
-  Reader profile: GHC Haskell developer. Knows monads, IO, type classes, cabal/stack.
-  Key misconception to disabuse: "NeoHaskell is just Haskell with different names."
-  It's not. The differences are deliberate and enforced. This page explains every one.
-
-  DOCS-PLAN note (line 693): In practice, NeoHaskell developers NEVER write type class
-  constraints (Monad, Functor, Applicative) in application code. The framework handles
-  all type-level wiring internally. This is more radical than "different names."
-
-  Tone: "We know you know Haskell. Here's why we made a different choice."
-  Not defensive — explanatory.
-*/}
-
-{/* POLYGLOT NOTE: All code examples on this page should include equivalent snippets in JS/TS, Python, and Go. See DOCS-PLAN.md Guiding Principle #9. */}
-
 import { Aside } from '@astrojs/starlight/components';
 
-## NeoHaskell is a dialect, not a skin
+If you already know GHC Haskell, NeoHaskell will feel like a curated, opinionated reinterpretation of what you already know. Most of the syntax is identical — it compiles with GHC, after all. The differences are in the standard library, the conventions, and the philosophy. This page is the complete diff.
 
-- NeoHaskell is built on GHC — the same compiler, the same type system, the same runtime
-- But it makes deliberate, opinionated choices that differ from standard GHC Haskell
-- These aren't bugs or oversights — they're the point
-- The goal: a Haskell that reads like pseudocode to any developer, not just Haskell developers
-- If you assume NeoHaskell is "just Haskell with different names," you'll be surprised
+## The core philosophy difference
 
-<Aside type="caution" title="The deeper difference">
-The Rosetta Stone below understates the divergence. In practice, NeoHaskell developers never write type class constraints (`Monad`, `Functor`, `Applicative`) in their application code at all. The framework handles all type-level wiring internally. User code consists of: data types (records + sum types), pure functions (`update`, `decide`, `combine`), case expressions, and pipe-based composition. This is more radical than "different names for the same concepts" — it's "you never interact with these concepts directly."
-</Aside>
+Haskell's philosophy is "solve whatever problem you have; the type system will help." NeoHaskell's philosophy is "most business systems need the same patterns; let's bake those in and make the common case trivial."
 
-## The Full Rosetta Stone
+This means NeoHaskell is **more opinionated** than Haskell. It has a specific style, a specific standard library, a specific way of doing effectful computation, and a specific set of domain primitives (commands, events, entities, queries, services, integrations) baked into the type system. You give up some flexibility; you get a much shorter ramp and a tighter feedback loop.
 
-{/* CRITICAL: This table must be complete and accurate. Source: DOCS-PLAN lines 678-691 */}
+NeoHaskell is not Haskell with fewer features. It is Haskell with **different defaults** — defaults chosen to make newcomers productive fast and experienced developers write fewer bugs.
 
-| Haskell | NeoHaskell | Why NeoHaskell chose differently | Enforced by |
-|---------|-----------|--------------------------------|-------------|
-| `IO a` | `Task err val` | Typed errors — every effectful computation declares its failure mode | Compiler |
-| `Either a b` | `Result err val` with `Ok`/`Err` | Names describe intent, not position | Compiler |
-| `pure` / `return` | `Module.yield` (e.g., `Task.yield`, `Result.ok`) | Says what it does, not what it satisfies | Linter (hlint) |
-| `$` | `\|>` (pipe operator) | Left-to-right data flow, like reading English | Linter |
-| `let..in` / `where` | `do` blocks for ALL bindings | One way to bind, always — reduces cognitive load | Linter |
-| Pattern matching in function defs | `case..of` only | Patterns are always visible at the use site | Linter |
-| Point-free style `map f . filter g` | Explicit lambdas always | Readability over cleverness | Linter |
-| `import Module (func)` | Qualified imports: `Array.map`, `Text.length` | Always know where a function comes from | Convention (enforced by linter) |
-| `forall a b.` | `forall input output.` | Type variables describe their role | Convention |
-| `Functor` / `Monad` / `Semigroup` | `Mappable` / `Thenable` / `Appendable` | Names describe behavior, not math heritage | Stdlib |
-| Stack / Cabal | Nix + Hix | Reproducible builds by default | Tooling |
-| `putStrLn` / string concatenation | `[fmt\|Hello {name}!\|]` | String interpolation via quasiquoters | Stdlib |
+## Standard library replacements
 
-## Why would you do this?
+The most visible change. NeoHaskell replaces or re-exports many `base` types and functions:
 
-{/* One-paragraph rationale per row. Tone: explanatory, not defensive. */}
+| Haskell (base) | NeoHaskell | Notes |
+|---|---|---|
+| `IO a` | `Task err val` | Typed error channel. |
+| `Either a b` | `Result err ok` | Renamed with explicit parameters. |
+| `Maybe a` | `Maybe a` | Same. |
+| `String` | `Text` | Strict, UTF-8, no linked lists. |
+| `[a]` (user-facing) | `Array a` | Efficient persistent sequence. |
+| `Data.Map.Strict.Map` | `Map k v` | Re-exported and renamed. |
+| `pure` / `return` | `Task.yield` / `Result.ok` | No confusion about which "pure" you mean. |
+| `>>=` | `|>` with combinators (and `do` notation) | Same semantics, different syntax. |
+| `<$>`, `fmap` | `Mappable.map` / type-specific `map` | Same idea, specific forms. |
+| `$` | `|>` | Pipes over backwards application. |
+| `throwIO` | `Task.throw` | Typed errors. |
+| `bracket` | `Task.finally` | Scoped cleanup. |
 
-- **`IO a` → `Task err val`**: `IO a` is honest about effects but silent about failures. Every `IO` action can throw any exception — the type says nothing about what can go wrong. `Task err val` makes the failure mode part of the type. `Task NetworkError User` tells you exactly what can fail before you call it. This isn't just documentation — the compiler enforces it.
+You can still use `base` when necessary — the convention is to import it with a `Ghc` prefix:
 
-- **`Either a b` → `Result err val`**: `Either` is positional — `Left` is conventionally the error, `Right` is the success, but nothing enforces this. `Result err val` with `Ok`/`Err` constructors makes the intent explicit. You can't accidentally put a success value in `Err` or an error in `Ok`.
+```haskell
+import Data.List qualified as GhcList
+```
 
-- **`pure`/`return` → `Module.yield`**: `pure` and `return` satisfy the Applicative/Monad laws — they're defined by what they satisfy, not what they do. `Task.yield` says "lift this value into a Task." `Result.ok` says "this is a successful result." The name describes the action, not the typeclass obligation.
+This visually flags "I'm reaching outside the NeoHaskell standard library." If you see `GhcList.something` in someone's code, it's a deliberate escape hatch.
 
-- **`$` → `|>`**: `f $ g $ h x` reads right-to-left. `x |> h |> g |> f` reads left-to-right, like English. Data flows in the direction you read. This is a small change with a large readability impact, especially for developers coming from other languages.
+## Syntax conventions
 
-- **`let..in`/`where` → `do` blocks everywhere**: Haskell has three ways to bind names: `let..in`, `where`, and `do` notation. NeoHaskell has one: `do` blocks. Fewer ways to do the same thing means less cognitive overhead when reading unfamiliar code.
+Same compiler, different style. NeoHaskell enforces these through the style guide and `hlint`:
 
-- **Pattern matching in function defs → `case..of` only**: Haskell lets you pattern match in function definitions: `f [] = ...; f (x:xs) = ...`. NeoHaskell requires `case..of`. The reason: patterns in function definitions are invisible at the call site. `case..of` makes the branching explicit where it happens.
+### Pipes over `$`
 
-- **Point-free style → explicit lambdas**: `map f . filter g` is clever. `\xs -> xs |> Array.filter g |> Array.map f` is readable. NeoHaskell optimizes for the reader who didn't write the code, not the writer who did.
+```haskell
+-- Haskell
+print $ map toUpper $ filter isAlpha text
 
-- **Named imports → qualified imports**: `import Data.List (sort, nub, group)` — where does `sort` come from? `List.sort` — obvious. Qualified imports are already a Haskell best practice; NeoHaskell makes them mandatory.
+-- NeoHaskell
+text
+  |> Text.filter Char.isAlpha
+  |> Text.toUpper
+  |> Console.print
+```
 
-- **`forall a b.` → `forall input output.`**: `a` and `b` are conventional but meaningless. `input` and `output` describe what the type variable represents. This matters most in complex signatures where the relationship between type variables is the whole point.
+The pipe reads top-to-bottom; `$` reads inside-out. NeoHaskell prefers the former unconditionally.
 
-- **`Functor`/`Monad`/`Semigroup` → `Mappable`/`Thenable`/`Appendable`**: `Functor` is a category theory term. `Mappable` describes what it does. A developer who doesn't know category theory can read `Mappable` and understand it. A developer who does know category theory can still read `Mappable` and understand it.
+### `do` blocks, not `let..in`
 
-- **Stack/Cabal → Nix + Hix**: Stack and Cabal are good tools, but reproducible builds require extra configuration. Nix makes reproducibility the default — the same build on any machine, any CI system, any developer's laptop.
+```haskell
+-- Haskell
+computeResult :: Int -> Int
+computeResult x =
+  let
+    doubled = x * 2
+    squared = x * x
+  in
+    doubled + squared
 
-- **String concatenation → `[fmt|...|]`**: `"Hello, " ++ name ++ "!"` is error-prone and hard to read. `[fmt|Hello, {name}!|]` is clear, type-safe, and handles formatting automatically.
+-- NeoHaskell
+computeResult :: Int -> Int
+computeResult x = do
+  let doubled = x * 2
+  let squared = x * x
+  doubled + squared
+```
 
-{/* TODO: code examples for each row showing the before/after — include JS/TS, Python, Go equivalents */}
+Inside a `do` block, NeoHaskell uses `let` as a statement, not `let..in`. Outside a `do` block, you'd write small functions instead.
 
-## Common AI mistakes for Haskell developers
+### No `where` clauses
 
-{/* Cross-reference: getting-started/using-ai.mdx */}
+```haskell
+-- Haskell
+go :: Int -> Int
+go n = helper + 1
+  where helper = n * 2
 
-When a Haskell developer uses AI (Copilot, ChatGPT, Claude), the AI will generate standard GHC Haskell. Here are the top 5 patterns the AI gets wrong:
+-- NeoHaskell
+helper :: Int -> Int
+helper n = n * 2
 
-- **Using `IO` instead of `Task`**: AI will write `main :: IO ()` and `getLine :: IO String`. In NeoHaskell, effects use `Task`. The linter will catch this, but it's the most common AI mistake.
+go :: Int -> Int
+go n = helper n + 1
+```
 
-- **Using `$` instead of `|>`**: AI will write `putStrLn $ show $ length xs`. NeoHaskell uses `xs |> Array.length |> Text.show |> Console.print`. The linter flags `$` usage.
+NeoHaskell lifts helper functions to the top level. This feels verbose at first, but it keeps them visible and reusable.
 
-- **Writing type class constraints in application code**: AI will write `(Monad m, MonadError e m) => ...`. In NeoHaskell application code, you never write these constraints — the framework handles them. If the AI generates constraints, it's generating framework-level code, not application code.
+### Case expressions, not pattern-matched function clauses
 
-- **Using `where` clauses**: AI will write `where` bindings. NeoHaskell uses `do` blocks for all bindings. The linter flags `where` in application code.
+```haskell
+-- Haskell
+handle :: Maybe User -> Text
+handle Nothing = "none"
+handle (Just u) = u.name
 
-- **Point-free style**: AI loves point-free. `map f . filter g . sortBy h` is idiomatic Haskell but forbidden in NeoHaskell. Always use explicit lambdas and pipes.
+-- NeoHaskell
+handle :: Maybe User -> Text
+handle maybeUser = case maybeUser of
+  Nothing -> "none"
+  Just u -> u.name
+```
 
-<Aside type="tip" title="Working with AI">
-See [Using AI with NeoHaskell](/getting-started/using-ai/) for a full guide on prompting AI tools to generate NeoHaskell-style code instead of standard Haskell.
-</Aside>
+One function, one body. Pattern matching lives inside the body via `case`.
 
-## What stayed the same
+### String interpolation with `fmt`
 
-Your Haskell knowledge isn't wasted — it's redirected. These things are the same:
+```haskell
+-- Haskell
+greet name = "Hello, " ++ name ++ "!"
 
-- **Algebraic data types**: `data Shape = Circle Float | Rectangle Float Float` — identical syntax
-- **Type classes** (called Traits in NeoHaskell): same concept, different name, same power
-- **`deriving`**: `deriving (Show, Eq, Ord)` works the same way
-- **Records**: record syntax, record update syntax — same
-- **Modules**: module system, qualified imports — same (and now mandatory)
-- **GHC under the hood**: the same compiler, the same optimizations, the same runtime performance
-- **Pure functions**: referential transparency, no side effects — same
-- **Pattern matching**: `case..of` expressions — same (just the only way to pattern match now)
-- **Type inference**: Hindley-Milner — same algorithm, same power
-- **Lazy evaluation**: same default evaluation strategy
+-- NeoHaskell
+greet name = [fmt|Hello, #{name}!|]
+```
 
-The Haskell intuitions you've built — thinking in types, composing functions, reasoning about effects — all transfer directly. The surface syntax is different. The underlying model is the same.
+Never use `++` for strings in NeoHaskell. Use `[fmt|...|]` everywhere.
 
-{/* TODO: side-by-side code showing a complete NeoHaskell module vs equivalent GHC Haskell */}
-{/* TODO: section on hlint configuration — which rules enforce NeoHaskell style */}
+### Qualified imports by default
 
-:::caution[Coming Soon]
-This page is a content outline. Full prose, code examples, and the complete hlint rule set are in progress.
-:::
+```haskell
+-- Haskell
+import qualified Data.Text as T
+import qualified Data.Map.Strict as Map
+
+-- NeoHaskell
+import Text qualified
+import Map qualified
+```
+
+The NeoHaskell style is `import <Module> qualified` without an alias — you refer to `Text.trim`, `Map.get`, etc. Modules are named to be ergonomic without aliasing.
+
+### Descriptive type variable names
+
+```haskell
+-- Haskell
+compose :: (b -> c) -> (a -> b) -> a -> c
+
+-- NeoHaskell
+compose :: (b -> c) -> (a -> b) -> a -> c
+-- ...actually the same in this case, but for multi-parameter generic functions:
+
+-- Haskell
+transform :: m a -> (a -> m b) -> m b
+
+-- NeoHaskell
+transform :: monad input -> (input -> monad output) -> monad output
+```
+
+NeoHaskell uses descriptive type variable names in domain code (`input`, `output`, `entity`, `event`). Single-letter names are allowed in truly polymorphic helper functions where no domain name fits.
+
+## Features NeoHaskell deliberately avoids
+
+These are valid Haskell features that NeoHaskell does not use in application code. They may appear in the framework internals, but you should not use them in your own services.
+
+### Monad transformers
+
+Standard Haskell uses `StateT`, `ReaderT`, `ExceptT`, etc., stacked on top of `IO`. NeoHaskell uses `Task err val` as the sole effect type, with explicit record-passing for environment.
+
+**Why:** Monad transformer stacks are hard to teach, have confusing error messages, and lock you into one library's conventions. `Task` is one type; it's easier to reason about.
+
+### Template Haskell (except for framework helpers)
+
+The only TH NeoHaskell uses in user code is:
+
+- `command ''Foo` — generates command wiring.
+- `deriveQuery ''Foo [''Bar, ''Baz]` — generates query wiring.
+- `defineConfig "MyConfig" [...]` — generates configuration types.
+
+Everything else — custom splices, lenses-via-TH, quasiquoters other than `[fmt|...|]` — is avoided.
+
+**Why:** Template Haskell slows compilation, breaks tooling, and makes error messages opaque. We limit it to the few places where the benefit is overwhelming.
+
+### Lens and optics
+
+NeoHaskell uses **record dot notation** (`user.name`) and **record update** (`user { name = "Alice" }`) instead of the `lens` library.
+
+**Why:** Lenses are powerful but introduce a steep learning curve and a new mental model. Record dot notation does 90% of what lens does with zero extra concepts.
+
+### `where` clauses
+
+Already covered above. Use top-level helpers or `let` inside `do`.
+
+### Point-free style
+
+```haskell
+-- Haskell (point-free)
+countEvens = length . filter even
+
+-- NeoHaskell
+countEvens :: Array Int -> Int
+countEvens xs = xs |> Array.filter Int.isEven |> Array.length
+```
+
+Point-free is elegant until you have to debug it. NeoHaskell prefers explicit parameters.
+
+### Custom operators
+
+NeoHaskell sticks with `|>`, `<|`, standard arithmetic, and occasionally `<$>` for framework code. You are not encouraged to define custom operators in application code.
+
+**Why:** Custom operators are a cognitive tax for every reader.
+
+### `return` and `pure`
+
+Both exist. Both are banned in NeoHaskell code. Use `Task.yield` instead.
+
+**Why:** "Return" is confusing (it's not the C `return`). "Pure" is confusing (it's overloaded with "pure function"). `Task.yield` is unambiguous and reads correctly out loud.
+
+## Event sourcing primitives
+
+The big addition. NeoHaskell's service layer adds first-class types for event sourcing:
+
+- `Command` — typeclass for commands.
+- `Entity` — typeclass for entities (thing-with-state).
+- `Event` — typeclass for events.
+- `Query` / `QueryOf` — typeclasses for read models.
+- `Decision` — free monad for command decision logic.
+- `Task` — effectful computation with typed errors.
+- `Service` / `Application` — builder patterns for assembling systems.
+- `OutboundIntegration` / `Inbound` — cross-service coordination.
+
+None of these exist in standard Haskell. You build them yourself with libraries, and every library has a different opinion. NeoHaskell bakes them into the standard library so everyone uses the same conventions.
+
+## Compiler extensions enabled by default
+
+NeoHaskell enables a consistent set of extensions in `fourmolu.yaml` / `cabal.project`. You don't manage them per-file:
+
+- `OverloadedRecordDot` — for `user.name` syntax.
+- `OverloadedStrings` — for `[fmt|...|]`.
+- `GeneralizedNewtypeDeriving`
+- `DeriveGeneric`
+- `DuplicateRecordFields`
+- `NoFieldSelectors`
+- `DataKinds` (for the type-level symbol machinery)
+- `TypeFamilies`
+
+If you're used to adding a wall of `{-# LANGUAGE ... #-}` pragmas at the top of every file, you'll find NeoHaskell refreshingly quiet.
+
+## What stays the same
+
+Let's be clear about what you *don't* have to relearn:
+
+- **The type system.** Same as GHC Haskell. Same generics, same kinds, same typeclass dispatch.
+- **Pattern matching.** Same syntax.
+- **Data types.** `data`, `newtype`, records — identical.
+- **Type classes.** Same mechanism, slightly different style.
+- **`do` notation.** Same.
+- **Type signatures.** Same.
+
+If you can write GHC Haskell, you can write NeoHaskell in an hour.
+
+## When to use the escape hatch
+
+NeoHaskell is opinionated, but it's not a prison. Sometimes you genuinely need something from the Haskell ecosystem that NeoHaskell doesn't wrap. In those cases:
+
+1. Import it with a `Ghc` prefix: `import Data.Something qualified as GhcSomething`.
+2. Wrap the parts you need in a small adapter module.
+3. Don't let the escape hatch spread — keep it contained.
+
+This pattern keeps the NeoHaskell code pure while letting you reach into the broader ecosystem when needed.
+
+## Things you'll like
+
+- **Compile times** are similar to regular Haskell (not faster, not slower).
+- **Error messages** are customized for the event-sourcing primitives, which means better errors than stock GHC for those specific mistakes.
+- **Testing** is trivially easy because the framework forces pure functions into the core of your logic.
+- **Deployment** is just a binary. No runtime, no interpreter, no container orchestration required (though you can use those if you want).
+
+## Things you'll miss
+
+- **Some libraries** don't exist in the NeoHaskell ecosystem yet. You'll occasionally wrap a `base` library to use it.
+- **Monad transformers** are hard to avoid in some advanced patterns. NeoHaskell doesn't give you clean alternatives for every StateT/ReaderT use case.
+- **Advanced type-level programming** is possible but discouraged in user code.
+- **The Haskell community's tutorials** don't always translate — a lot of them assume `IO`, `String`, monad transformers, and lens.
+
+## Where to go from here
+
+- **[Installation](/getting-started/installation/)** — should take about five minutes given you already have Haskell experience.
+- **[Cheat sheet](/getting-started/cheat-sheet/)** — the differences in one page.
+- **[Build NeoBank](/tutorial/)** — work through the tutorial. Most of it will feel familiar, but the event-sourcing parts will be new.
+- **[Core concepts](/concepts/)** — the ideas that make this more than "Haskell with different naming."

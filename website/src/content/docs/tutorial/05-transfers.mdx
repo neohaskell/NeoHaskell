@@ -1,10 +1,513 @@
 ---
-title: "Part 5: Transfers"
-description: "Move money between accounts and handle what goes wrong."
+title: "Part 5 — Transfers"
+description: "Move money between two accounts, handle failure, and learn how integrations coordinate cross-entity workflows."
 ---
 
-The requirement — transfer money between accounts. This is where it gets real: cross-entity commands, an integration with a full state machine (happy path, failure, compensation), and your first cross-entity test. The wow moment: it handles the failure case too.
+import { Aside } from '@astrojs/starlight/components';
 
-:::caution[Coming Soon]
-This page is under development. Check back soon!
-:::
+**What you'll build in this part:** A transfer operation that moves money between two accounts. Withdrawals and deposits each already work on their own — what makes transfers interesting is that they span two entities, so we need a pattern that keeps them consistent even when something goes wrong.
+
+**Reading time:** ~30 minutes · **Lines of code added:** ~100
+
+## What you'll learn
+
+- Why you cannot do a transfer inside a single command.
+- The integration pattern for cross-entity workflows.
+- How to use **outbound integrations** to react to events.
+- How to emit commands from integrations (the saga pattern, compiler-enforced).
+- How to handle failure and emit compensating events.
+
+## Why transfers are hard
+
+A transfer looks simple: take money from account A, put it in account B. But what happens if:
+
+- Account B doesn't exist?
+- Account A doesn't have enough balance?
+- The first event is written, but the system crashes before the second?
+- Two transfers race each other from the same account?
+
+In a traditional database you'd wrap both updates in a single transaction. In event sourcing we don't have that option — each account is its own event stream, and we don't want a global lock on the whole bank.
+
+The answer is to model the transfer *as its own thing* — not as "a withdrawal plus a deposit" but as "a transfer that goes through phases: requested, funds reserved, funds deposited, completed, or failed and compensated." This is the saga pattern, and NeoHaskell makes it a first-class concept through **integrations**.
+
+## The plan
+
+We will introduce:
+
+1. A new **command**: `RequestTransfer`. This creates a `Transfer` entity.
+2. A new **entity**: `Transfer`, which tracks the state of a transfer as it moves through phases.
+3. An **outbound integration**: when a transfer is requested, it triggers a withdrawal on the source account.
+4. More integration: when the withdrawal succeeds, trigger a deposit on the destination.
+5. Compensation: if the deposit fails, emit a refund event on the source account.
+
+Integrations are pure, typed, and compiler-checked. There is no message bus to configure, no Kafka topic to manage, no serialization format to pick. You write a function that takes an event and returns commands to emit.
+
+<Aside type="note" title="This is not the only way to do transfers">
+There are simpler approaches — you could record a `TransferRequested` event on both accounts at once via a shared command. But that only works if both accounts are in the same service. The integration pattern works across service boundaries, which is what real systems need. We're teaching the general pattern here because it scales further.
+</Aside>
+
+## Step 1 — The Transfer entity
+
+Create `src/NeoBank/Transfer/Core.hs`:
+
+```haskell
+module NeoBank.Transfer.Core (
+  Transfer (..),
+  TransferStatus (..),
+  TransferEvent (..),
+  initialState,
+) where
+
+import Core
+import Json qualified
+import Service.Command.Core (Event (..))
+
+
+data TransferStatus
+  = Requested
+  | WithdrawalDone
+  | Completed
+  | Failed
+  deriving (Eq, Show, Generic)
+
+
+instance Json.FromJSON TransferStatus
+instance Json.ToJSON TransferStatus
+
+
+data Transfer = Transfer
+  { transferId :: Uuid
+  , sourceAccountId :: Uuid
+  , destinationAccountId :: Uuid
+  , amount :: Int
+  , status :: TransferStatus
+  , failureReason :: Maybe Text
+  }
+  deriving (Generic, Show, Eq)
+
+
+instance Json.FromJSON Transfer
+instance Json.ToJSON Transfer
+
+
+initialState :: Transfer
+initialState =
+  Transfer
+    { transferId = Uuid.nil
+    , sourceAccountId = Uuid.nil
+    , destinationAccountId = Uuid.nil
+    , amount = 0
+    , status = Requested
+    , failureReason = Nothing
+    }
+
+
+type instance NameOf Transfer = "Transfer"
+
+
+instance Entity Transfer where
+  initialStateImpl = initialState
+  updateImpl = update
+
+
+data TransferEvent
+  = TransferRequested
+      { entityId :: Uuid
+      , sourceAccountId :: Uuid
+      , destinationAccountId :: Uuid
+      , amount :: Int
+      }
+  | TransferWithdrawalRecorded
+      { entityId :: Uuid
+      }
+  | TransferCompleted
+      { entityId :: Uuid
+      }
+  | TransferFailed
+      { entityId :: Uuid
+      , reason :: Text
+      }
+  deriving (Eq, Show, Generic)
+
+
+instance Json.FromJSON TransferEvent
+instance Json.ToJSON TransferEvent
+
+
+type instance EventOf Transfer = TransferEvent
+type instance EntityOf TransferEvent = Transfer
+
+
+instance Event TransferEvent where
+  getEventEntityIdImpl event = case event of
+    TransferRequested { entityId } -> entityId
+    TransferWithdrawalRecorded { entityId } -> entityId
+    TransferCompleted { entityId } -> entityId
+    TransferFailed { entityId } -> entityId
+
+
+update :: TransferEvent -> Transfer -> Transfer
+update event transfer = case event of
+  TransferRequested { entityId, sourceAccountId, destinationAccountId, amount } ->
+    Transfer
+      { transferId = entityId
+      , sourceAccountId = sourceAccountId
+      , destinationAccountId = destinationAccountId
+      , amount = amount
+      , status = Requested
+      , failureReason = Nothing
+      }
+  TransferWithdrawalRecorded {} ->
+    transfer { status = WithdrawalDone }
+  TransferCompleted {} ->
+    transfer { status = Completed }
+  TransferFailed { reason } ->
+    transfer
+      { status = Failed
+      , failureReason = Just reason
+      }
+```
+
+The `Transfer` entity is a state machine. Its states are `Requested → WithdrawalDone → Completed` (happy path) or `Requested → Failed` (unhappy path). The events drive transitions.
+
+## Step 2 — The RequestTransfer command
+
+Create `src/NeoBank/Transfer/Commands/RequestTransfer.hs`:
+
+```haskell
+module NeoBank.Transfer.Commands.RequestTransfer (
+  RequestTransfer (..),
+  getEntityId,
+  decide,
+) where
+
+import Core
+import Decider qualified
+import Json qualified
+import Service.Auth (RequestContext)
+import Service.Command.Core (TransportsOf)
+import Service.CommandExecutor.TH (command)
+import Service.Transport.Web (WebTransport)
+import NeoBank.Transfer.Core
+
+
+data RequestTransfer = RequestTransfer
+  { sourceAccountId :: Uuid
+  , destinationAccountId :: Uuid
+  , amount :: Int
+  }
+  deriving (Generic, Show)
+
+
+instance Json.FromJSON RequestTransfer
+instance Json.ToJSON RequestTransfer
+
+
+getEntityId :: RequestTransfer -> Maybe Uuid
+getEntityId _ = Nothing
+
+
+decide :: RequestTransfer -> Maybe Transfer -> RequestContext -> Decision TransferEvent
+decide cmd existing _ctx = case existing of
+  Just _ ->
+    Decider.reject "Transfer already exists"
+  Nothing ->
+    if cmd.amount <= 0
+      then Decider.reject "Transfer amount must be positive"
+      else if cmd.sourceAccountId == cmd.destinationAccountId
+        then Decider.reject "Cannot transfer to the same account"
+        else do
+          transferId <- Decider.generateUuid
+          Decider.acceptNew
+            [ TransferRequested
+                { entityId = transferId
+                , sourceAccountId = cmd.sourceAccountId
+                , destinationAccountId = cmd.destinationAccountId
+                , amount = cmd.amount
+                }
+            ]
+
+
+type instance EntityOf RequestTransfer = Transfer
+type instance TransportsOf RequestTransfer = '[WebTransport]
+
+
+command ''RequestTransfer
+```
+
+`RequestTransfer` just records the intent. It doesn't actually move any money — it emits a `TransferRequested` event and returns. The integrations do the rest.
+
+Create `src/NeoBank/Transfer/Commands/RecordWithdrawal.hs`, `CompleteTransfer.hs`, and `FailTransfer.hs`. These are internal commands — they'll be emitted by integrations, not by humans. The shape is the same in each case; here is `RecordWithdrawal`:
+
+```haskell
+module NeoBank.Transfer.Commands.RecordWithdrawal (
+  RecordWithdrawal (..),
+  getEntityId,
+  decide,
+) where
+
+import Core
+import Decider qualified
+import Json qualified
+import Service.Auth (RequestContext)
+import Service.Command.Core (TransportsOf)
+import Service.CommandExecutor.TH (command)
+import Service.Transport.Internal (InternalTransport)
+import NeoBank.Transfer.Core
+
+
+data RecordWithdrawal = RecordWithdrawal
+  { transferId :: Uuid
+  }
+  deriving (Generic, Show)
+
+
+instance Json.FromJSON RecordWithdrawal
+instance Json.ToJSON RecordWithdrawal
+
+
+getEntityId :: RecordWithdrawal -> Maybe Uuid
+getEntityId cmd = Just cmd.transferId
+
+
+decide :: RecordWithdrawal -> Maybe Transfer -> RequestContext -> Decision TransferEvent
+decide cmd transfer _ctx = case transfer of
+  Nothing ->
+    Decider.reject "Transfer does not exist"
+  Just t ->
+    case t.status of
+      Requested ->
+        Decider.acceptExisting
+          [ TransferWithdrawalRecorded { entityId = cmd.transferId } ]
+      _ ->
+        Decider.reject "Transfer is not in Requested state"
+
+
+type instance EntityOf RecordWithdrawal = Transfer
+type instance TransportsOf RecordWithdrawal = '[InternalTransport]
+
+
+command ''RecordWithdrawal
+```
+
+`InternalTransport` means "this command is only invokable from inside the app, never from outside over HTTP." The compiler will refuse to mix `InternalTransport` with any public transport like `WebTransport` in the same command — you choose one or the other, and the compiler enforces it.
+
+Follow the same pattern for `CompleteTransfer` (which handles `WithdrawalDone → Completed`) and `FailTransfer` (which handles `* → Failed` with a reason).
+
+## Step 3 — The Transfer service
+
+Create `src/NeoBank/Transfer/Service.hs`:
+
+```haskell
+module NeoBank.Transfer.Service (service) where
+
+import Core
+import NeoBank.Transfer.Commands.CompleteTransfer (CompleteTransfer)
+import NeoBank.Transfer.Commands.FailTransfer (FailTransfer)
+import NeoBank.Transfer.Commands.RecordWithdrawal (RecordWithdrawal)
+import NeoBank.Transfer.Commands.RequestTransfer (RequestTransfer)
+import NeoBank.Transfer.Core ()
+import Service qualified
+
+
+service :: Service _ _
+service =
+  Service.new
+    |> Service.command @RequestTransfer
+    |> Service.command @RecordWithdrawal
+    |> Service.command @CompleteTransfer
+    |> Service.command @FailTransfer
+```
+
+## Step 4 — The outbound integration
+
+This is where we react to `TransferRequested` by triggering a withdrawal on the source account. Create `src/NeoBank/Transfer/Integrations/Orchestrator.hs`:
+
+```haskell
+module NeoBank.Transfer.Integrations.Orchestrator (
+  Orchestrator (..),
+) where
+
+import Core
+import Integration qualified
+import Json qualified
+import NeoBank.Account.Commands.Withdraw (Withdraw (..))
+import NeoBank.Account.Commands.Deposit (Deposit (..))
+import NeoBank.Transfer.Commands.CompleteTransfer (CompleteTransfer (..))
+import NeoBank.Transfer.Commands.FailTransfer (FailTransfer (..))
+import NeoBank.Transfer.Commands.RecordWithdrawal (RecordWithdrawal (..))
+import NeoBank.Transfer.Core (Transfer (..), TransferEvent (..))
+import Service.OutboundIntegration.Core (OutboundIntegration (..))
+
+
+data Orchestrator = Orchestrator
+
+
+type instance EntityOf Orchestrator = Transfer
+
+
+instance OutboundIntegration Orchestrator where
+  reactTo _config transfer event = case event of
+    TransferRequested { entityId, sourceAccountId, amount } ->
+      -- When a transfer is requested, emit a withdrawal on the source.
+      Integration.batch
+        [ Integration.outbound
+            Withdraw
+              { accountId = sourceAccountId
+              , amount = amount
+              }
+        ]
+
+    TransferWithdrawalRecorded { entityId } ->
+      -- Withdrawal went through. Now deposit into the destination.
+      Integration.batch
+        [ Integration.outbound
+            Deposit
+              { accountId = transfer.destinationAccountId
+              , amount = transfer.amount
+              }
+        , Integration.outbound
+            CompleteTransfer
+              { transferId = entityId
+              }
+        ]
+
+    _ ->
+      Integration.none
+```
+
+Read that carefully. What it says is:
+
+- **When I see a `TransferRequested` event**, emit a `Withdraw` command.
+- **When I see a `TransferWithdrawalRecorded` event**, emit a `Deposit` command and a `CompleteTransfer` command.
+- **For every other event**, do nothing.
+
+The integration runtime picks up these commands and dispatches them to the right services. If any of them fail, we get back an error — and we can emit a `FailTransfer` event to compensate. In a real system you'd wire the full failure handling here; we're keeping it short for the tutorial. Add failure handling by listening for rejection signals in your Orchestrator or by writing a secondary integration.
+
+<Aside type="note" title="Why do we need RecordWithdrawal at all?">
+The Orchestrator tells the `Account` service to withdraw money. But the `Account` service doesn't know about transfers. So how does the Transfer entity learn that the withdrawal succeeded? We need a separate step that records the fact *on the transfer* — that's `RecordWithdrawal`. In a fuller tutorial, you'd listen to the Account service's `MoneyWithdrawn` event via an integration and emit `RecordWithdrawal` automatically. For now, let's keep it readable.
+</Aside>
+
+## Step 5 — Wire everything
+
+Open `src/App.hs`:
+
+```haskell
+module App (app) where
+
+import Core
+import Service.Application (Application)
+import Service.Application qualified as Application
+import Service.EventStore.InMemory qualified as InMemory
+import Service.Transport.Web qualified as WebTransport
+import NeoBank.Account.Queries.MonthlySummary (MonthlySummary)
+import NeoBank.Account.Queries.Statement (Statement)
+import NeoBank.Account.Service qualified as Account
+import NeoBank.Transfer.Integrations.Orchestrator (Orchestrator)
+import NeoBank.Transfer.Service qualified as Transfer
+
+
+app :: Application
+app =
+  Application.new
+    |> Application.withEventStore @() (\_ -> InMemory.new)
+    |> Application.withTransport WebTransport.server
+    |> Application.withService Account.service
+    |> Application.withService Transfer.service
+    |> Application.withQuery @Statement
+    |> Application.withQuery @MonthlySummary
+    |> Application.withOutbound @Orchestrator
+```
+
+One new service, one new integration, three new lines in `App.hs`. Everything else stayed the same.
+
+## Step 6 — Run it
+
+```bash
+cabal build
+cabal run
+```
+
+Open two accounts, deposit 100 into the first, then request a transfer:
+
+```bash
+# Open checking (A)
+curl -X POST http://localhost:8080/commands/OpenAccount \
+  -H 'Content-Type: application/json' \
+  -d '{"ownerName":"Alice","accountType":"Checking"}'
+# ... copy ACCOUNT_A
+
+# Open checking (B)
+curl -X POST http://localhost:8080/commands/OpenAccount \
+  -H 'Content-Type: application/json' \
+  -d '{"ownerName":"Bob","accountType":"Checking"}'
+# ... copy ACCOUNT_B
+
+# Deposit 100 into A
+curl -X POST http://localhost:8080/commands/Deposit \
+  -H 'Content-Type: application/json' \
+  -d '{"accountId":"ACCOUNT_A","amount":100}'
+
+# Transfer 40 from A to B
+curl -X POST http://localhost:8080/commands/RequestTransfer \
+  -H 'Content-Type: application/json' \
+  -d '{"sourceAccountId":"ACCOUNT_A","destinationAccountId":"ACCOUNT_B","amount":40}'
+```
+
+Let the integration run for a second, then query both statements:
+
+```bash
+curl http://localhost:8080/queries/statement/ACCOUNT_A
+# Balance: 60
+curl http://localhost:8080/queries/statement/ACCOUNT_B
+# Balance: 40
+```
+
+The money moved. Neither command handler knew anything about the other account. The Orchestrator integration glued them together.
+
+## What if the withdrawal fails?
+
+Try to transfer more than A has:
+
+```bash
+curl -X POST http://localhost:8080/commands/RequestTransfer \
+  -H 'Content-Type: application/json' \
+  -d '{"sourceAccountId":"ACCOUNT_A","destinationAccountId":"ACCOUNT_B","amount":10000}'
+```
+
+The Orchestrator emits a `Withdraw` command, but the Account service rejects it ("Insufficient funds"). The transfer stays in `Requested` state forever, which is a bug — it should be marked `Failed`. The exercise for the motivated reader is to add a second integration that listens for rejected `Withdraw` commands and emits `FailTransfer`. The pattern is identical to the Orchestrator.
+
+## Testing the orchestrator
+
+Integrations are easy to test in isolation because they are pure functions. A test looks like this:
+
+```haskell
+it "emits a Withdraw when a transfer is requested" \_ -> do
+  let transfer = initialState { transferId = Uuid.nil }
+  let event = TransferRequested
+        { entityId = Uuid.nil
+        , sourceAccountId = sourceId
+        , destinationAccountId = destId
+        , amount = 50
+        }
+  let outbound = reactTo Orchestrator transfer event
+  let actions = Integration.getActions outbound
+  Array.length actions |> shouldBe 1
+  -- Additional assertions on the Action content go here.
+```
+
+The full test story for integrations is covered in [Guides → Testing](/guides/testing/).
+
+## Recap
+
+- **Transfers span multiple entities**, so they cannot live in a single command.
+- **Model the transfer as its own entity** — a small state machine with events for each transition.
+- **Integrations react to events and emit commands.** They are pure functions of event → list of commands.
+- **InternalTransport** marks commands that can only be invoked from inside the app — not over HTTP.
+- **Failure handling is compensation.** You emit events that move the state machine into `Failed`, and your projections can take it from there.
+
+## Next
+
+You have built a real bank. Accounts, deposits, withdrawals, multiple account types, and transfers. One thing remains — the thing you came here for in the first place: you have an audit trail. In Part 6 we'll show you how to replay the entire history, answer "what did the state look like at 3pm?", and finally see how little extra work was needed for what you already have.
+
+[**Part 6 — Audit everything →**](/tutorial/06-audit-everything/)

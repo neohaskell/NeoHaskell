@@ -1,19 +1,68 @@
 ---
 title: Reference
-description: API reference documentation for NeoHaskell modules, types, and functions.
+description: Direct reference for NeoHaskell's core modules, types, and wiring primitives.
+sidebar:
+  order: 0
 ---
 
-Reference documentation provides the exact details — function signatures, type definitions, module APIs, and CLI commands. This is where you go when you know *what* you're looking for and need the specifics.
+import { Card, CardGrid } from '@astrojs/starlight/components';
 
-## How to read this section
+Terse, direct reference for the things you'll look up by name. These pages don't teach concepts — for that, see [Core Concepts](/concepts/). They're optimized for "I need to remember the exact shape of X."
 
-Reference docs are organized by module. Each entry includes:
+<CardGrid>
+  <Card title="Core types" icon="seti:c">
+    `Text`, `Int`, `Array`, `Map`, `Maybe`, `Result`, `Task` — the types you use every day.
 
-- **Type signature** — what goes in, what comes out
-- **Description** — what it does, in one paragraph
-- **Examples** — at least one usage example
-- **Related** — links to concept pages and guides
+    [Read →](/reference/core-types/)
+  </Card>
+  <Card title="Commands and decisions" icon="pencil">
+    The `Command` typeclass, the `Decision` monad, `Decider.acceptNew`, `Decider.reject`, and friends.
 
-:::caution[Coming Soon]
-Reference documentation will be auto-generated from NeoHaskell source code. Hand-written entries will be added for cross-cutting patterns like error handling conventions and naming conventions.
-:::
+    [Read →](/reference/commands/)
+  </Card>
+  <Card title="Entities and events" icon="list-format">
+    The `Entity` and `Event` typeclasses, type families, and how to wire them up.
+
+    [Read →](/reference/entities/)
+  </Card>
+  <Card title="Queries" icon="list-format">
+    `Query`, `QueryOf`, `deriveQuery`, `combine`, and query auth helpers.
+
+    [Read →](/reference/queries/)
+  </Card>
+  <Card title="Services and applications" icon="setting">
+    `Service.new`, `Service.command`, `Application.new`, all the `with*` builders.
+
+    [Read →](/reference/services-and-applications/)
+  </Card>
+  <Card title="Integrations" icon="seti:shell">
+    Outbound integrations, inbound integrations, timers, and the `ToAction` typeclass.
+
+    [Read →](/reference/integrations/)
+  </Card>
+  <Card title="Transports" icon="seti:plan">
+    `WebTransport`, `Cli`, `Mcp`, `InternalTransport`, and transport configuration.
+
+    [Read →](/reference/transports/)
+  </Card>
+  <Card title="Event store" icon="seti:db">
+    `InMemory`, `PostgresEventStore`, and the `EventStore` interface.
+
+    [Read →](/reference/event-store/)
+  </Card>
+  <Card title="Configuration" icon="setting">
+    `defineConfig`, `Config.field`, environment variables, CLI flags.
+
+    [Read →](/reference/configuration/)
+  </Card>
+  <Card title="Testing" icon="approve-check">
+    `Spec`, `describe`, `it`, `shouldBe`, `shouldSatisfy`, and the test helpers.
+
+    [Read →](/reference/testing/)
+  </Card>
+  <Card title="For LLMs" icon="seti:json">
+    Concise, dense reference suitable for AI assistants.
+
+    [Read →](/reference/for-llms/)
+  </Card>
+</CardGrid>

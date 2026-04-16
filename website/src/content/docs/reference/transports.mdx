@@ -1,0 +1,142 @@
+---
+title: "Transports"
+description: "Reference for WebTransport, Cli, Mcp, and InternalTransport — how commands are exposed to the outside world."
+sidebar:
+  order: 7
+---
+
+A **transport** is how commands are delivered from outside the application into the command executor. NeoHaskell ships with several transports; you can also write your own.
+
+## Built-in transports
+
+| Transport | Module | Purpose |
+|---|---|---|
+| `WebTransport` | `Service.Transport.Web` | HTTP/JSON REST endpoints. |
+| `Cli` | `Service.Transport.Cli` | Command-line subcommands. |
+| `Mcp` | `Service.Transport.Mcp` | Model Context Protocol (for AI assistants). |
+| `InternalTransport` | `Service.Transport.Internal` | In-process only; not exposed externally. |
+
+## Declaring transports on commands
+
+Each command declares which transports it's available over:
+
+```haskell
+type instance TransportsOf MyCommand = '[WebTransport, Cli]
+```
+
+The type-level list can contain any number of public transports, or exactly one `InternalTransport`. You cannot mix public and internal transports in the same command — the compiler rejects that with a specific error message.
+
+## `WebTransport`
+
+HTTP/JSON REST. Commands become `POST /commands/CommandName`, and queries become `GET /queries/query-name/:id`.
+
+```haskell
+import Service.Transport.Web qualified as WebTransport
+
+
+app =
+  Application.new
+    |> ...
+    |> Application.withTransport WebTransport.server
+```
+
+`WebTransport.server` is the default configuration. Customize it by passing a configured value:
+
+```haskell
+let webTransport = WebTransport.server
+      { WebTransport.port = 8080
+      , WebTransport.host = "0.0.0.0"
+      }
+in Application.withTransport webTransport
+```
+
+### Features
+
+- **Automatic OpenAPI spec** at `/openapi.json`.
+- **Swagger UI** at `/docs` (in development mode).
+- **Health check** at `/health` (configurable).
+- **OAuth2 callback routes** if `withOAuth2Provider` is registered.
+- **CORS** if `withCors` is configured.
+- **JWT auth** if `withAuth` is configured.
+
+## `Cli`
+
+Command-line interface. Commands become subcommands of the binary; arguments map to command fields.
+
+```haskell
+import Service.Transport.Cli qualified as Cli
+
+
+app =
+  Application.new
+    |> ...
+    |> Application.withTransport Cli.cli
+```
+
+With a `Deposit` command, you'd invoke it as:
+
+```bash
+./your-app deposit --account-id "abc-123" --amount 50
+```
+
+The Cli transport automatically parses JSON-schema-compatible fields as command-line options.
+
+## `Mcp`
+
+Model Context Protocol. Exposes commands and queries as MCP tools for AI assistants.
+
+```haskell
+import Service.Transport.Mcp qualified as Mcp
+
+
+app =
+  Application.new
+    |> ...
+    |> Application.withTransport Mcp.server
+```
+
+The MCP transport uses STDIO by default (suitable for local integration with Claude Desktop, Cursor, etc.). Each command becomes an MCP tool that the assistant can call; each query becomes a readable resource.
+
+## `InternalTransport`
+
+Used for commands that should only be invoked from inside the application — typically by integrations, not by external clients.
+
+```haskell
+import Service.Transport.Internal (InternalTransport)
+
+type instance TransportsOf RecordWithdrawal = '[InternalTransport]
+```
+
+Internal commands:
+
+- Are NOT exposed over HTTP, CLI, or MCP.
+- Can still be dispatched via `Integration.emitCommand`.
+- Are included in the command dispatch map so integrations can address them.
+- Can include exactly one `InternalTransport`, never mixed with public transports.
+
+This is the right choice for commands like `FailTransfer`, `CompleteOrder`, or other state-machine transitions that should not be user-triggered.
+
+## Running multiple transports
+
+You can register as many transports as you want. Commands declare which transports they're available over; the application registers transports at the app level. The intersection determines which commands are actually exposed on which transports.
+
+```haskell
+app =
+  Application.new
+    |> Application.withTransport WebTransport.server
+    |> Application.withTransport Cli.cli
+    |> Application.withTransport Mcp.server
+    |> Application.withService service
+```
+
+A command declared as `TransportsOf = '[WebTransport]` is exposed only over HTTP. A command declared as `'[WebTransport, Cli]` is exposed over both. A command declared as `'[InternalTransport]` is exposed over none.
+
+## Writing a custom transport
+
+You can implement the `Transport` typeclass to support additional protocols — gRPC, WebSockets, message queues, etc. This is more advanced and typically reserved for integration library authors rather than application developers. See `Service.Transport.Internal` for the class definition.
+
+## Where to go from here
+
+- **[Services and applications](/reference/services-and-applications/)** — how to register transports with the app.
+- **[Commands and decisions](/reference/commands/)** — how to declare transports on commands.
+- **[Tutorial Part 6](/tutorial/06-audit-everything/)** — an example of running multiple transports together.

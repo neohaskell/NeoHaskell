@@ -1,0 +1,274 @@
+---
+title: "Core types"
+description: "Reference for the types you use every day: Text, Int, Array, Map, Maybe, Result, Task, and the common operations on each."
+sidebar:
+  order: 1
+---
+
+This page is a direct reference for the foundational types in NeoHaskell's standard library. Most of these are available unqualified via `import Core`.
+
+## Text
+
+Strict UTF-8 text.
+
+```haskell
+import Text qualified
+```
+
+| Function | Signature | Description |
+|---|---|---|
+| `Text.fromLinkedList` | `[Char] -> Text` | Convert a legacy `String` to `Text`. |
+| `Text.toLinkedList` | `Text -> [Char]` | Convert a `Text` to a legacy `String`. |
+| `Text.length` | `Text -> Int` | Character count. |
+| `Text.isEmpty` | `Text -> Bool` | `True` if zero characters. |
+| `Text.trim` | `Text -> Text` | Strip leading and trailing whitespace. |
+| `Text.toUpper` | `Text -> Text` | Uppercase. |
+| `Text.toLower` | `Text -> Text` | Lowercase. |
+| `Text.contains` | `Text -> Text -> Bool` | Substring test. |
+| `Text.startsWith` | `Text -> Text -> Bool` | Prefix test. |
+| `Text.endsWith` | `Text -> Text -> Bool` | Suffix test. |
+| `Text.split` | `Text -> Text -> Array Text` | Split by delimiter. |
+| `Text.join` | `Text -> Array Text -> Text` | Join with separator. |
+| `Text.replace` | `Text -> Text -> Text -> Text` | Find and replace. |
+| `Text.toBytes` | `Text -> Bytes` | Encode as UTF-8. |
+
+### String interpolation
+
+```haskell
+name = "Alice"
+age = 30
+message = [fmt|#{name} is #{age} years old|]
+```
+
+Use `[fmt|...|]` for any string with interpolation. Never use `++`.
+
+## Int
+
+Signed integer (64-bit on most platforms).
+
+```haskell
+import Int qualified
+```
+
+| Function | Signature | Description |
+|---|---|---|
+| `Int.fromText` | `Text -> Maybe Int` | Parse from text. |
+| `Int.toText` | `Int -> Text` | Convert to text. |
+| `Int.isEven` | `Int -> Bool` | Even test. |
+| `Int.isOdd` | `Int -> Bool` | Odd test. |
+| `Int.abs` | `Int -> Int` | Absolute value. |
+| `Int.min`, `Int.max` | `Int -> Int -> Int` | Min/max. |
+
+Arithmetic uses standard operators: `+`, `-`, `*`, `/`, `mod`, `rem`.
+
+## Array
+
+Persistent, indexable sequence.
+
+```haskell
+import Array qualified
+```
+
+| Function | Signature | Description |
+|---|---|---|
+| `Array.empty` | `Array a` | Empty array. |
+| `Array.fromLinkedList` | `[a] -> Array a` | From a legacy list. |
+| `Array.toLinkedList` | `Array a -> [a]` | To a legacy list. |
+| `Array.length` | `Array a -> Int` | Size. |
+| `Array.isEmpty` | `Array a -> Bool` | Empty test. |
+| `Array.push` | `a -> Array a -> Array a` | Append. |
+| `Array.prepend` | `Array a -> Array a -> Array a` | Prepend another array. |
+| `Array.append` | `Array a -> Array a -> Array a` | Concatenate. |
+| `Array.map` | `(a -> b) -> Array a -> Array b` | Transform each element. |
+| `Array.filter` | `(a -> Bool) -> Array a -> Array a` | Keep matching elements. |
+| `Array.reduce` | `(a -> acc -> acc) -> acc -> Array a -> acc` | Fold. |
+| `Array.find` | `(a -> Bool) -> Array a -> Maybe a` | First matching. |
+| `Array.any`, `Array.all` | `(a -> Bool) -> Array a -> Bool` | Predicate tests. |
+| `Array.take` | `Int -> Array a -> Array a` | First n elements. |
+| `Array.drop` | `Int -> Array a -> Array a` | Skip first n. |
+| `Array.flatten` | `Array (Array a) -> Array a` | Concatenate nested. |
+| `Array.reverse` | `Array a -> Array a` | Reverse. |
+
+## Map
+
+Immutable, ordered key-value map.
+
+```haskell
+import Map qualified
+```
+
+| Function | Signature | Description |
+|---|---|---|
+| `Map.empty` | `Map k v` | Empty. |
+| `Map.fromList` | `[(k, v)] -> Map k v` | From pairs. |
+| `Map.get` | `k -> Map k v -> Maybe v` | Lookup. |
+| `Map.set` | `k -> v -> Map k v -> Map k v` | Insert or replace. |
+| `Map.delete` | `k -> Map k v -> Map k v` | Remove by key. |
+| `Map.has` | `k -> Map k v -> Bool` | Key existence. |
+| `Map.keys` | `Map k v -> Array k` | All keys. |
+| `Map.values` | `Map k v -> Array v` | All values. |
+| `Map.entries` | `Map k v -> Array (k, v)` | All pairs. |
+| `Map.length` | `Map k v -> Int` | Size. |
+| `Map.isEmpty` | `Map k v -> Bool` | Empty test. |
+| `Map.map` | `(v -> w) -> Map k v -> Map k w` | Transform values. |
+
+## Maybe
+
+```haskell
+data Maybe a = Nothing | Just a
+```
+
+```haskell
+import Maybe qualified
+```
+
+| Function | Signature | Description |
+|---|---|---|
+| `Maybe.map` | `(a -> b) -> Maybe a -> Maybe b` | Transform the value if present. |
+| `Maybe.andThen` | `(a -> Maybe b) -> Maybe a -> Maybe b` | Chain. |
+| `Maybe.withDefault` | `a -> Maybe a -> a` | Extract or fallback. |
+| `Maybe.isJust` | `Maybe a -> Bool` | `True` if `Just`. |
+| `Maybe.isNothing` | `Maybe a -> Bool` | `True` if `Nothing`. |
+
+## Result
+
+```haskell
+data Result err val = Ok val | Err err
+```
+
+```haskell
+import Result qualified
+```
+
+| Function | Signature | Description |
+|---|---|---|
+| `Result.map` | `(val -> new) -> Result err val -> Result err new` | Transform the success value. |
+| `Result.mapError` | `(err -> new) -> Result err val -> Result new val` | Transform the error. |
+| `Result.andThen` | `(val -> Result err new) -> Result err val -> Result err new` | Chain. |
+| `Result.withDefault` | `val -> Result err val -> val` | Extract or fallback. |
+| `Result.isOk` | `Result err val -> Bool` | Success test. |
+| `Result.isErr` | `Result err val -> Bool` | Failure test. |
+| `Result.toMaybe` | `Result err val -> Maybe val` | Discard error. |
+| `Result.fromMaybe` | `err -> Maybe val -> Result err val` | Lift with error. |
+
+## Task
+
+```haskell
+newtype Task err value = Task { runTask :: ExceptT err IO value }
+```
+
+Asynchronous computation with a typed error channel.
+
+```haskell
+import Task qualified
+```
+
+| Function | Signature | Description |
+|---|---|---|
+| `Task.yield` | `value -> Task err value` | Return a value. |
+| `Task.throw` | `err -> Task err value` | Fail with an error. |
+| `Task.map` | `(input -> output) -> Task err input -> Task err output` | Transform the success value. |
+| `Task.mapError` | `(err -> newErr) -> Task err value -> Task newErr value` | Transform the error. |
+| `Task.andThen` | `(value -> Task err newVal) -> Task err value -> Task err newVal` | Chain (monadic bind). |
+| `Task.recover` | `(err -> Task err value) -> Task err value -> Task err value` | Run a recovery function on failure. |
+| `Task.asResult` | `Task err value -> Task never (Result err value)` | Convert failure into a `Result`. |
+| `Task.finally` | `Task err' Unit -> Task err value -> Task err value` | Run cleanup regardless of outcome. |
+| `Task.forEach` | `Array a -> (a -> Task err Unit) -> Task err Unit` | Iterate. |
+| `Task.mapArray` | `(a -> Task err b) -> Array a -> Task err (Array b)` | Sequential map. |
+| `Task.forever` | `Task err Unit -> Task err Unit` | Run forever (until error). |
+| `Task.fromIO` | `IO a -> Task err a` | Wrap a raw `IO` action. |
+| `Task.fromFailableIO` | `IO a -> Task Text a` | Wrap an `IO` action that might throw. |
+
+## Uuid
+
+```haskell
+import Uuid qualified
+```
+
+| Function | Signature | Description |
+|---|---|---|
+| `Uuid.nil` | `Uuid` | The nil UUID (all zeros). |
+| `Uuid.toText` | `Uuid -> Text` | Convert to canonical text form. |
+| `Uuid.fromText` | `Text -> Maybe Uuid` | Parse from text. |
+| `Uuid.generate` | `Task err Uuid` | Generate a new random UUID. |
+
+## Json
+
+```haskell
+import Json qualified
+```
+
+| Function | Signature | Description |
+|---|---|---|
+| `Json.encode` | `a -> Json.Value` | Encode to a JSON value. |
+| `Json.encodeText` | `a -> Text` | Encode to JSON text. |
+| `Json.encodeBytes` | `a -> Bytes` | Encode to UTF-8 bytes. |
+| `Json.decode` | `Json.Value -> Result Text a` | Decode from a JSON value. |
+| `Json.decodeText` | `Text -> Result Text a` | Decode from JSON text. |
+| `Json.decodeBytes` | `Bytes -> Result Text a` | Decode from UTF-8 bytes. |
+
+Derive instances via `deriving (Generic)` plus `instance Json.FromJSON Foo` and `instance Json.ToJSON Foo`.
+
+## Console
+
+```haskell
+import Console qualified
+```
+
+| Function | Signature | Description |
+|---|---|---|
+| `Console.log` | `Text -> Task err Unit` | Print a line to stdout. |
+| `Console.print` | `(Show a) => a -> Task err Unit` | Print a debug representation. |
+| `Console.readLine` | `Task err Text` | Read a line from stdin. |
+
+## Log
+
+Structured logging.
+
+```haskell
+import Log qualified
+```
+
+| Function | Signature | Description |
+|---|---|---|
+| `Log.debug` | `Text -> Task err Unit` | Debug-level log. |
+| `Log.info` | `Text -> Task err Unit` | Info-level log. |
+| `Log.warn` | `Text -> Task err Unit` | Warn-level log. |
+| `Log.error` | `Text -> Task err Unit` | Error-level log. |
+| `Log.withScope` | `[(Text, Text)] -> Task err a -> Task err a` | Add structured fields to the current logging scope. |
+
+## Concurrency primitives
+
+```haskell
+import AsyncTask qualified
+import Channel qualified
+import Lock qualified
+import ConcurrentVar qualified
+import ConcurrentMap qualified
+```
+
+See [Effects and concurrency](/concepts/effects/) and [Concurrency patterns](/concepts/concurrency/) for usage.
+
+| Function | Module | Description |
+|---|---|---|
+| `AsyncTask.start` | `AsyncTask` | Spawn a task. |
+| `AsyncTask.wait` | `AsyncTask` | Wait for a task to finish. |
+| `Channel.new` | `Channel` | Create an unbounded channel. |
+| `Channel.send` | `Channel` | Send a value. |
+| `Channel.receive` | `Channel` | Receive a value. |
+| `Lock.new` | `Lock` | Create a lock. |
+| `Lock.with` | `Lock` | Run a task while holding the lock. |
+| `ConcurrentVar.new` | `ConcurrentVar` | Create a shared mutable cell. |
+| `ConcurrentVar.read` | `ConcurrentVar` | Read the current value. |
+| `ConcurrentVar.write` | `ConcurrentVar` | Replace the value. |
+| `ConcurrentVar.modify` | `ConcurrentVar` | Atomic update. |
+| `ConcurrentMap.new` | `ConcurrentMap` | Create a shared map. |
+| `ConcurrentMap.get` | `ConcurrentMap` | Lookup. |
+| `ConcurrentMap.set` | `ConcurrentMap` | Insert/update. |
+| `ConcurrentMap.delete` | `ConcurrentMap` | Remove a key. |
+
+## Where to go from here
+
+- **[Commands and decisions](/reference/commands/)** — reference for the command-side types.
+- **[Queries](/reference/queries/)** — reference for the read-side types.
+- **[Task concept](/concepts/effects/)** — the "why" behind `Task`.

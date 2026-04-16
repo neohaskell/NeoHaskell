@@ -1,0 +1,231 @@
+---
+title: "Integrations"
+description: "Reference for outbound integrations, inbound integrations, timers, and the ToAction typeclass."
+sidebar:
+  order: 6
+---
+
+## Outbound integrations
+
+Outbound integrations react to domain events and produce actions.
+
+### `OutboundIntegration`
+
+```haskell
+class OutboundIntegration integration where
+  reactTo ::
+    integration ->
+    EntityOf integration ->
+    EventOf (EntityOf integration) ->
+    Integration.Outbound
+```
+
+Define one instance per integration type. The `reactTo` function is pure — it takes the config (of type `integration`), the current entity state, and the event that just happened, and returns an `Outbound` collection of actions.
+
+```haskell
+data MyIntegration = MyIntegration
+
+type instance EntityOf MyIntegration = User
+
+instance OutboundIntegration MyIntegration where
+  reactTo _config user event = case event of
+    UserRegistered { email } ->
+      Integration.batch
+        [ Integration.outbound Sendgrid.Email { to = email, ... } ]
+    _ -> Integration.none
+```
+
+Register with the application:
+
+```haskell
+Application.new
+  |> ...
+  |> Application.withOutbound @MyIntegration
+```
+
+### Outbound construction helpers
+
+```haskell
+import Integration qualified
+```
+
+| Function | Description |
+|---|---|
+| `Integration.batch [action1, action2, ...]` | Combine multiple actions into one outbound result. |
+| `Integration.none` | No actions for this event. |
+| `Integration.outbound config` | Wrap a config record in an action (requires a `ToAction` instance). |
+| `Integration.emitCommand cmd` | Action that dispatches a command back into the system. |
+| `Integration.noCommand` | Action that produces no follow-up command. |
+
+### The `ToAction` typeclass
+
+```haskell
+class ToAction config where
+  toAction :: config -> Action
+```
+
+Integration package authors (like `Sendgrid`, `Slack`, `Stripe`) implement this. Users just build config records and pass them to `Integration.outbound`.
+
+```haskell
+-- Library author (Nick)
+instance ToAction Sendgrid.Email where
+  toAction config = Integration.action \ctx -> do
+    response <- Http.post "https://api.sendgrid.com/..." |> Http.send
+    Integration.noCommand
+
+-- Library user (Jess)
+Integration.outbound Sendgrid.Email
+  { to = "alice@example.com"
+  , templateId = "welcome"
+  }
+```
+
+## Outbound with lifecycle
+
+For integrations that need state across events (rate limiters, batch buffers, token caches), use `withOutboundLifecycle`:
+
+```haskell
+Application.new
+  |> ...
+  |> Application.withOutboundLifecycle @Config @Entity (\config -> runner)
+```
+
+See the NeoHaskell testbed for a full example (`EventCounter` integration).
+
+## Inbound integrations
+
+Inbound integrations feed external input into NeoHaskell as commands.
+
+### `Integration.Inbound`
+
+```haskell
+newtype Inbound = Inbound InboundInternal
+```
+
+You construct one from an `InboundConfig`:
+
+```haskell
+data InboundConfig command = InboundConfig
+  { run :: (command -> Task IntegrationError Unit) -> Task IntegrationError Unit
+  }
+
+
+myInbound :: Integration.Inbound
+myInbound = Integration.inbound
+  InboundConfig
+    { run = \emit -> do
+        -- Do any setup you need
+        forever do
+          external <- receiveFromQueue
+          emit (toCommand external)
+    }
+```
+
+`run` receives an `emit` callback that dispatches a command into NeoHaskell. Call it whenever you have a command to fire.
+
+Register with the application:
+
+```haskell
+Application.withInbound @() (\_ -> myInbound)
+```
+
+### Timers
+
+For periodic commands, use the timer helper:
+
+```haskell
+import Integration.Timer qualified as Timer
+```
+
+| Function | Description |
+|---|---|
+| `Timer.every config` | Fire a command on a fixed interval. |
+| `Timer.seconds n` | A duration of n seconds. |
+| `Timer.minutes n` | A duration of n minutes. |
+| `Timer.hours n` | A duration of n hours. |
+
+```haskell
+dailyReport :: Integration.Inbound
+dailyReport =
+  Timer.every
+    Timer.Every
+      { interval = Timer.hours 24
+      , toCommand = \_ -> GenerateDailyReport
+      }
+```
+
+The command is fired through the same executor as external commands — it goes through `decide`, produces events, updates projections, etc.
+
+## Integration errors
+
+```haskell
+data IntegrationError
+  = NetworkError Text
+  | AuthenticationError Text
+  | ValidationError Text
+  | RateLimited Int       -- retry after N seconds
+  | PermanentFailure Text
+  | UnexpectedError Text
+```
+
+When an integration action fails, it returns one of these. Transient errors (`NetworkError`, `RateLimited`) trigger automatic retries with backoff. Permanent errors (`PermanentFailure`, `ValidationError`) do not — they bubble up for you to handle.
+
+## The `ActionContext`
+
+When an action runs, it receives an `ActionContext`:
+
+```haskell
+data ActionContext = ActionContext
+  { secretStore :: SecretStore
+  , providerRegistry :: ImmutableProviderRegistry
+  , refreshLocks :: ConcurrentMap Text Lock
+  , fileAccess :: Maybe FileAccessContext
+  }
+```
+
+This is how actions access:
+
+- Secrets (API keys, tokens) via `SecretStore`.
+- OAuth2 provider configs via `providerRegistry`.
+- Shared locks for things like OAuth token refresh.
+- Uploaded files (if file uploads are enabled).
+
+Most integrations don't need any of this — they just construct an HTTP request and send it. It's available when you do.
+
+## Command payload construction
+
+When an integration emits a command, it packages it as a `CommandPayload`:
+
+```haskell
+data CommandPayload = CommandPayload
+  { commandType :: Text
+  , commandData :: Json.Value
+  }
+```
+
+You don't usually construct these directly — `Integration.emitCommand` and `Integration.encodeCommand` do it for you.
+
+## Testing integrations
+
+Integrations are pure functions of events to actions, so they test directly:
+
+```haskell
+it "emits a welcome email on registration" \_ -> do
+  let user = User { ..., email = "alice@example.com" }
+  let event = UserRegistered { entityId = aliceId, email = "alice@example.com" }
+  let outbound = reactTo WelcomeEmail user event
+  Array.length (Integration.getActions outbound) |> shouldBe 1
+```
+
+Helpers:
+
+| Function | Description |
+|---|---|
+| `Integration.getActions outbound` | Extract the list of actions from an `Outbound`. |
+| `Integration.runAction ctx action` | Execute an action in a test context. |
+
+## Where to go from here
+
+- **[Integrating existing systems guide](/guides/integrating-existing-systems/)** — practical patterns.
+- **[Services and applications](/reference/services-and-applications/)** — how integrations are wired in.
+- **[Tutorial Part 5](/tutorial/05-transfers/)** — a full worked example of the saga pattern.

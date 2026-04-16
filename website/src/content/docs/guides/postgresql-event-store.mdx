@@ -1,223 +1,231 @@
 ---
-title: "PostgreSQL Event Store"
-description: "Using PostgreSQL as your production event store. Setup, schema design, connection management, migration from in-memory, and performance tuning."
-keywords: [postgresql, event store, production, persistence, database, connection pooling, migration, backup]
+title: "PostgreSQL event store"
+description: "Running NeoHaskell with PostgreSQL in production — configuration, sizing, backup, replication, and operational concerns."
 sidebar:
-  order: 11
+  order: 5
 ---
-
-{/*
-  CONTENT OUTLINE — PostgreSQL Event Store Guide
-  ================================================
-  Position: Guides section, production operations (follows deployment)
-  Goal: Reader needs persistent event storage. They leave with PostgreSQL configured and running.
-  Prerequisites: Completed tutorial, deployment guide basics
-  Misconception addressed: #8 (need a message broker) — PostgreSQL IS the event store
-  Tone: practical — show the setup, explain the design decisions, cover the operational concerns
-
-  Sections:
-  1. Prerequisites
-  2. What You'll Have at the End
-  3. Why PostgreSQL (not a custom event store)
-  4. Setting Up PostgreSQL
-  5. Schema Design
-  6. Migrating from In-Memory Event Store
-  7. Connection Management and Pooling
-  8. Performance Tuning
-  9. Backup and Restore
-  10. Monitoring Event Store Health
-  11. Next Steps
-*/}
 
 import { Aside } from '@astrojs/starlight/components';
 
-## Prerequisites
+The in-memory event store is perfect for development and tests but loses everything on restart. For production, you use PostgreSQL. This guide covers how to set it up, how to size it, how to back it up, and what to watch in production.
 
-- Completed [Tutorial Parts 1-4](/tutorial/) or have a working NeoHaskell application
-- Read [Deployment](/guides/deployment/) — you understand how to configure and run your service
-- PostgreSQL 14+ installed (locally or a managed service like RDS, Cloud SQL, Supabase)
+## Why PostgreSQL
 
-## What You'll Have at the End
+NeoHaskell's event store is PostgreSQL-backed by design. The reasoning:
 
-- PostgreSQL configured as your event store
-- A schema that supports append-only event storage with efficient queries
-- Connection pooling configured for production load
-- A backup strategy
-- Monitoring for event store health
+- **PostgreSQL is everywhere.** Your ops team already knows it.
+- **ACID at the stream level.** Optimistic concurrency on append is atomic.
+- **Great tooling.** Backup, replication, monitoring, disaster recovery — all well-established.
+- **Scales further than you think.** With proper schema design and partitioning, a single Postgres instance handles tens of thousands of events per second.
+- **Flexible.** If you outgrow Postgres, the event store interface is pluggable — you can swap in a custom backend.
 
-## Why PostgreSQL (Not a Custom Event Store)
+## Switching from InMemory to Postgres
 
-{/*
-  Address misconception #8: you don't need a message broker or a specialized event store.
-  PostgreSQL is sufficient for most use cases, and it's a technology teams already know.
-*/}
+You already saw this in [Tutorial Part 6](/tutorial/06-audit-everything/). The switch is a one-line change:
 
-- PostgreSQL is a proven, battle-tested database that most teams already know how to operate
-- Event sourcing requires append-only writes and sequential reads — PostgreSQL handles both efficiently
-- You don't need Kafka, RabbitMQ, or EventStoreDB for most NeoHaskell applications
-  - Those tools solve different problems (stream processing, pub/sub at scale)
-  - For a single service or a small cluster of services, PostgreSQL is simpler and sufficient
-- PostgreSQL gives you: ACID transactions, point-in-time recovery, replication, and a mature ecosystem of tooling
-- When you might need something else:
-  - Millions of events per second (rare — most services never reach this)
-  - Cross-service event streaming at scale (consider Kafka at that point)
-  - For most teams: PostgreSQL first, migrate if you hit limits
+```haskell
+-- Before
+Application.withEventStore @() (\_ -> InMemory.new)
 
-<Aside type="note" title="Misconception: You need a message broker">
-NeoHaskell doesn't require Kafka, RabbitMQ, or any message broker. The event store IS the source of truth. If you need to publish events to other services, NeoHaskell can do that — but it's a separate concern from the event store itself.
+-- After
+Application.withEventStore makePostgresConfig
+
+
+makePostgresConfig :: NeoBankConfig -> PostgresEventStore
+makePostgresConfig config =
+  PostgresEventStore
+    { user = config.dbUser
+    , password = config.dbPassword
+    , host = config.dbHost
+    , databaseName = config.dbName
+    , port = config.dbPort
+    }
+```
+
+On startup, the event store:
+
+1. Connects to PostgreSQL.
+2. Checks that the expected schema exists, creating it if not.
+3. Starts serving reads and writes.
+
+The schema it creates is a few tables — one for events, one for stream metadata, a couple for snapshots. You don't manage them by hand; the store manages its own schema.
+
+## Configuration
+
+Use the `Config` system to pull credentials from environment variables:
+
+```haskell
+{-# LANGUAGE TemplateHaskell #-}
+
+module MyApp.Config (NeoBankConfig (..), HasNeoBankConfig) where
+
+import Config (defineConfig)
+import Config qualified
+import Core
+
+defineConfig
+  "NeoBankConfig"
+  [ Config.field @Text "dbHost"
+      |> Config.doc "PostgreSQL host"
+      |> Config.defaultsTo ("localhost" :: Text)
+      |> Config.envVar "DB_HOST"
+  , Config.field @Int "dbPort"
+      |> Config.doc "PostgreSQL port"
+      |> Config.defaultsTo (5432 :: Int)
+      |> Config.envVar "DB_PORT"
+  , Config.field @Text "dbUser"
+      |> Config.doc "PostgreSQL username"
+      |> Config.defaultsTo ("neohaskell" :: Text)
+      |> Config.envVar "DB_USER"
+  , Config.field @Text "dbPassword"
+      |> Config.doc "PostgreSQL password"
+      |> Config.defaultsTo ("neohaskell" :: Text)
+      |> Config.envVar "DB_PASSWORD"
+      |> Config.secret
+  , Config.field @Text "dbName"
+      |> Config.doc "PostgreSQL database name"
+      |> Config.defaultsTo ("neohaskell" :: Text)
+      |> Config.envVar "DB_NAME"
+  ]
+```
+
+`Config.secret` flags the password as sensitive, which means it won't be printed by `--help` or included in config dumps.
+
+In production, pass the credentials via environment variables:
+
+```bash
+DB_HOST=postgres.prod.internal \
+DB_PORT=5432 \
+DB_USER=neobank_app \
+DB_PASSWORD=$(vault read -field=password kv/neobank/db) \
+DB_NAME=neobank \
+./neobank
+```
+
+## Sizing a production instance
+
+Rules of thumb for a single PostgreSQL instance:
+
+| Load | Instance size | Notes |
+|---|---|---|
+| < 1k events/sec | db.t3.medium equivalent, 100 GB SSD | Comfortable headroom |
+| 1k–5k events/sec | db.m6i.large / 4 vCPU, 16 GB RAM | Watch WAL generation |
+| 5k–20k events/sec | db.m6i.2xlarge / 8 vCPU, 32 GB RAM | Dedicate IOPS |
+| 20k+ events/sec | Tune carefully; consider partitioning | Usually need custom setup |
+
+The bottlenecks you'll hit, in order:
+
+1. **Write IOPS.** Events are small but append-heavy. Provision enough IOPS for your peak write rate.
+2. **WAL bandwidth.** Every append writes to WAL. Replication lag becomes noticeable before throughput does.
+3. **Memory for indexes.** Queries against the event store need the main index in RAM for good performance.
+
+For most applications, you never hit these limits. A comfortable default for a production system with moderate traffic is a 4 vCPU / 16 GB RAM instance with 500 GB of SSD. You can monitor and scale up from there.
+
+## Connection pooling
+
+NeoHaskell uses `hasql-pool` internally. The default pool size is conservative (10 connections per instance). For high-throughput applications, tune this in the event store config:
+
+```haskell
+PostgresEventStore
+  { ... default fields ...
+  , poolSize = 50  -- if exposed; otherwise use default
+  }
+```
+
+A good rule: pool size should equal the maximum concurrent number of commands you expect at peak. Too few connections means requests wait; too many connections overloads Postgres.
+
+Postgres itself has a `max_connections` setting (default 100). If you run many NeoHaskell instances against one database, make sure `max_connections` is high enough to handle them all plus some headroom for admin connections and background workers.
+
+## Backup and recovery
+
+The event log is the source of truth. If you lose it, you lose your application's memory. Treat backups accordingly.
+
+### Continuous backup (recommended)
+
+Use PostgreSQL's continuous archiving (PITR) so you can restore to any point in time. On AWS RDS, this is "automated backups with point-in-time recovery." On self-hosted Postgres, use `pg_basebackup` + WAL archiving to S3 (or equivalent).
+
+### Nightly snapshots
+
+In addition to continuous backup, take a full snapshot every night and store it in a separate region. A ransomware attack or a bad migration can wipe continuous backups if they live next to the live database.
+
+### Verify restores
+
+A backup you haven't tested restoring is not a backup. Once a month, restore your latest backup to a scratch environment and verify that NeoHaskell can start and serve queries against it. Automate this if possible.
+
+## Read replicas
+
+For read-heavy workloads, you can run PostgreSQL read replicas and point your projection rebuild or query subscriber at them. This keeps the primary free for event appends.
+
+<Aside type="caution" title="Replicas have lag">
+Read replicas are eventually consistent with the primary. If your projections read from a replica, they can fall behind. This is usually fine — the projections themselves are eventually consistent with events — but make sure your SLOs account for the added lag.
 </Aside>
 
-## Setting Up PostgreSQL
+## Partitioning
 
-{/*
-  The practical setup steps. Local development and production.
-*/}
+If your event volume grows large enough that a single `events` table becomes a problem (typically > 100 million rows), you can partition the table by stream or by date. PostgreSQL native partitioning works well for this.
 
-- Local development: run PostgreSQL with Docker Compose
-  - Show: a minimal `docker-compose.yml` with PostgreSQL
-  - Show: the connection string format
-- Production: use a managed PostgreSQL service (recommended)
-  - AWS RDS, Google Cloud SQL, Supabase, Neon, Railway — all work
-  - Managed services handle backups, replication, and upgrades
-- Show: the NeoHaskell configuration for PostgreSQL event store
-  - The connection string: `postgresql://user:password@host:5432/dbname`
-  - Connection pool size
-  - SSL mode
-- Show: running database migrations with `neo db migrate`
-- Note: NeoHaskell creates the event store schema automatically on first run — you don't need to write SQL
+The NeoHaskell event store does not partition automatically — you'd do this as a custom operational step. The internal layout of the events table is documented; reach out on Discord if you need help setting this up.
 
-{/* TODO: docker-compose.yml example and configuration code */}
+## Monitoring
 
-## Schema Design
+Watch these metrics on your production event store:
 
-{/*
-  What the event store schema looks like. Why it's designed this way.
-  Readers who want to understand the internals or optimize queries.
-*/}
+- **Append latency** — p50, p95, p99. Watch for regressions.
+- **Events per second** — to catch traffic spikes before they hit capacity.
+- **WAL generation rate** — helps you plan replication bandwidth.
+- **Connection pool utilization** — if you see 100% utilization, bump the pool size or investigate slow queries.
+- **Replication lag** (if using replicas) — keep under 1s for read-your-writes safety.
+- **Disk usage** — events accumulate. Plan for growth.
+- **Cache hit ratio** — PostgreSQL's internal stats. A healthy database has > 99% cache hit on indexes.
 
-- NeoHaskell uses an append-only events table — events are never updated or deleted
-- Show: the events table schema (simplified):
-  - `id` — auto-incrementing sequence (global ordering)
-  - `stream_id` — the entity ID (e.g., account ID)
-  - `stream_type` — the entity type (e.g., "BankAccount")
-  - `event_type` — the event constructor name (e.g., "MoneyDeposited")
-  - `payload` — the event data as JSON
-  - `metadata` — correlation ID, causation ID, timestamp, user ID
-  - `version` — the event's position within the stream (for optimistic concurrency)
-  - `created_at` — wall clock time (for debugging, not for business logic)
-- Indexes:
-  - Primary key on `id` (global ordering)
-  - Index on `(stream_id, version)` — for reading a specific entity's events
-  - Index on `stream_type` — for reading all events of a type (for queries)
-- Why append-only: you can't change history. This is a feature — it enables time-travel debugging and audit trails.
-- Note: the `version` field enables optimistic concurrency — if two commands try to write to the same entity simultaneously, one will fail with a conflict error
+NeoHaskell exposes structured logs for each command. Feed them into your observability stack (DataDog, Honeycomb, Loki, whatever) and set alerts on error rate, p99 latency, and append failures.
 
-{/* TODO: SQL schema example */}
+## Schema evolution at the database level
 
-## Migrating from In-Memory Event Store
+The event store manages its own schema. Upgrades to NeoHaskell may include schema migrations — they run on startup and are idempotent. In a zero-downtime deployment, you'd:
 
-{/*
-  The key selling point: it's a single configuration change.
-*/}
+1. Deploy the new version to a canary instance and let it run the migration.
+2. Verify the migration succeeded.
+3. Roll the rest of the fleet once the schema is confirmed good.
 
-- Switching from in-memory to PostgreSQL is a single configuration change
-- Show: the before (in-memory) and after (PostgreSQL) configuration
-- What happens to existing data: the in-memory store loses data on restart — there's nothing to migrate
-- If you have data you want to keep: export it first (show the `neo export` command), then import after switching
-- Note: this is why the in-memory store is only for development — don't use it in staging or production
+Migrations in the NeoHaskell event store are designed to be backwards-compatible: a new version reads old events correctly without needing to rewrite them.
 
-{/* TODO: configuration before/after example */}
+## Common production issues
 
-## Connection Management and Pooling
+### High WAL generation
 
-{/*
-  How to configure connection pooling for production load.
-*/}
+**Symptom:** Replication is lagging or backup storage is growing fast.
 
-- NeoHaskell uses a connection pool — it doesn't open a new database connection for every command
-- Default pool size: 10 connections (suitable for most applications)
-- Show: how to configure the pool size in `defineConfig`
-- Pool sizing guidelines:
-  - Start with 10 connections
-  - Monitor `pg_stat_activity` to see actual connection usage
-  - Increase if you see connection wait times
-  - Don't set it too high — PostgreSQL has a max connection limit
-- PgBouncer: for very high connection counts, use PgBouncer as a connection pooler in front of PostgreSQL
-  - Show: when to use PgBouncer (hundreds of app instances, each with their own pool)
-- Connection string with SSL: always use SSL in production
-  - Show: the SSL connection string format
+**Cause:** Either many commands are being processed (legitimate) or something is causing spurious writes (bug).
 
-{/* TODO: configuration example */}
+**Fix:** Check command rates via your observability stack. If writes are legitimate, you may need a bigger instance or faster disks. If they're not, investigate what's generating the writes.
 
-## Performance Tuning
+### Slow entity reconstruction
 
-{/*
-  How to optimize PostgreSQL for event store workloads.
-  Most teams won't need this, but it's good to have.
-*/}
+**Symptom:** Commands that target a single entity take longer than expected.
 
-- Event store workloads are write-heavy and sequential-read-heavy — different from typical OLTP
-- PostgreSQL settings to tune:
-  - `shared_buffers` — increase to cache more of the events table in memory
-  - `wal_level` — set to `replica` for replication
-  - `checkpoint_completion_target` — set to `0.9` to spread checkpoint I/O
-- Partitioning: for very large event stores (billions of events), partition the events table by `created_at`
-  - Show: how to enable partitioning in NeoHaskell configuration
-- Archiving old events: events older than N months can be moved to cold storage
-  - Show: the `neo archive` command
-- Query performance: if queries are slow, check that the `stream_type` index is being used
-  - Show: how to use `EXPLAIN ANALYZE` to diagnose slow queries
+**Cause:** Long event streams with no recent snapshot cache. Every command reconstructs the entity from the full stream.
 
-{/* TODO: PostgreSQL configuration examples */}
+**Fix:** NeoHaskell takes snapshots automatically. If reconstruction is still slow, check that snapshot caching is enabled in your config and that the snapshot cache is not full.
 
-## Backup and Restore
+### Connection pool exhausted
 
-{/*
-  How to back up and restore the event store.
-  This is critical — the event store is the source of truth.
-*/}
+**Symptom:** Latency spikes; logs show "failed to acquire connection."
 
-- The event store is the source of truth — losing it means losing all history
-- Backup strategies:
-  - **Continuous WAL archiving** (recommended): streams WAL to S3 or similar — point-in-time recovery
-  - **pg_dump**: periodic full backups — simpler, but you lose events since the last backup
-  - **Managed service backups**: if using RDS/Cloud SQL, enable automated backups
-- Show: how to configure WAL archiving with `wal-g` or `pgbackrest`
-- Restore procedure:
-  - Show: how to restore from a pg_dump backup
-  - Show: how to restore to a specific point in time with WAL archiving
-- Testing backups: restore to a test environment periodically — don't find out your backups are broken during an incident
-- Note: because events are immutable and append-only, restoring is simpler than with mutable databases — you can't have partial writes
+**Cause:** Too many concurrent commands for your pool size.
 
-{/* TODO: backup configuration examples */}
+**Fix:** Increase pool size, ensure `max_connections` on Postgres is higher than the sum of all pool sizes, investigate whether commands are blocking longer than expected.
 
-## Monitoring Event Store Health
+### Replica lag growing
 
-{/*
-  What to monitor to know the event store is healthy.
-*/}
+**Symptom:** Projections reading from a read replica are out of date.
 
-- Key metrics to monitor:
-  - **Connection pool utilization**: are you running out of connections?
-  - **Query latency**: how long does it take to read an entity's events?
-  - **Write latency**: how long does it take to append an event?
-  - **Table size**: how fast is the events table growing?
-  - **Replication lag**: if using read replicas, how far behind are they?
-- Show: the PostgreSQL queries to check these metrics
-- Show: how to expose these metrics to Prometheus via `postgres_exporter`
-- Alerts to set:
-  - Connection pool > 80% utilized
-  - Write latency p99 > 100ms
-  - Replication lag > 30 seconds
+**Cause:** Replica hardware is slower than primary, or network bandwidth to replica is saturated.
 
-{/* TODO: monitoring configuration examples */}
+**Fix:** Point projections at the primary temporarily, fix the replica, then switch back.
 
-## Next Steps
+## Where to go from here
 
-- **Back to deployment**: [Deployment](/guides/deployment/) — the full deployment picture
-- **If integrating with existing systems**: [Integrating Existing Systems](/guides/integrating-existing-systems/)
-- **PostgreSQL documentation**: [PostgreSQL 16 Docs](https://www.postgresql.org/docs/16/) — the authoritative reference
-
-:::caution[Coming Soon]
-This page is a content outline. The full guide with SQL examples, configuration snippets, and operational runbooks is in progress.
-:::
+- **[Deployment](/guides/deployment/)** — how to ship the compiled NeoHaskell binary.
+- **[Tutorial Part 6](/tutorial/06-audit-everything/)** — the first time you switch from in-memory to Postgres.
+- **[Testing](/guides/testing/)** — how to test against the real event store.

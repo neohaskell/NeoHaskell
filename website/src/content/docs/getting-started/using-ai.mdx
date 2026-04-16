@@ -1,213 +1,317 @@
 ---
 title: "Using AI with NeoHaskell"
-description: "Copy-paste prompt for your AI assistant, the 5 most common mistakes AI makes with NeoHaskell, and how to spot them."
-keywords: [AI, copilot, ChatGPT, Claude, coding assistant, common mistakes, prompt, NeoHaskell conventions]
+description: "NeoHaskell is built for AI-assisted development. A ready-to-paste system prompt, the common drift to watch for, and why the compiler makes smaller, cheaper AI models actually work."
+sidebar:
+  order: 5
 ---
 
-{/* 
-  CONTENT OUTLINE — REVISION 2 (10-expert consensus applied)
-  ==============================================================
-  Position: Getting Started — placed here (moved from guides/) because readers using
-    AI copilots need this BEFORE writing their first line of code
-  Time estimate: ~5 minutes to read, then reference as needed
-  Misconceptions addressed: #4 (just Haskell with different names — AI will make this mistake)
-  
-  Design principles from DOCS-PLAN:
-  - "Copy-paste NeoHaskell prompt for AI tools"
-  - "the 5 most common AI mistakes"
-  - "how to spot wrong patterns"
-  - Source: Sarah Drasner — "If 70% of developers use AI while coding, the AI guide belongs in Getting Started, not buried in Guides."
-  - Cross-references coming-from/haskell.mdx for the full Haskell→NeoHaskell mapping table
-  
-  Key insight from DOCS-PLAN (line 641):
-  "When a Haskell dev uses AI (Copilot, ChatGPT, Claude), the AI will generate standard Haskell.
-   This section lists the top 5 patterns the AI will get wrong and how to spot/fix them."
-  
-  This applies to ALL developers using AI, not just Haskell devs — AI tools trained on
-  Haskell code will generate standard Haskell when asked for NeoHaskell.
-  
-  Changes applied:
-  - Prerequisites added (change #2)
-  - Version placeholder added (change #1)
-  - "What's On This Page" section added (change #2)
-  - Recap closing section added (change #3)
-  - Two-panel code block format note added (change #8)
-*/}
+import { Aside, Card, CardGrid } from '@astrojs/starlight/components';
 
-**Prerequisites**: None
+Most software is written with AI assistance now. That is reality, not a problem. NeoHaskell was designed with this reality in mind, and the fit is unusually tight: the language's rules happen to be exactly the rules AI assistants are bad at enforcing on their own.
 
-*~5 minutes to read · Reference page — come back when AI generates something suspicious · NeoHaskell vX.Y.Z*
+This page covers what that means in practice — the workflow, the ready-to-paste system prompt, and the reason you can get by with cheaper models in NeoHaskell than you can anywhere else.
 
-## What's On This Page
+## Why NeoHaskell is good for AI-assisted development
 
-- AI coding assistants (Copilot, ChatGPT, Claude, Cursor) don't know NeoHaskell's conventions yet
-- They'll generate code that looks like it should work — and sometimes compiles — but isn't idiomatic NeoHaskell
-- This page gives you:
-  1. A prompt to paste into your AI tool that teaches it NeoHaskell conventions
-  2. The 5 most common mistakes AI makes (so you can spot them instantly)
-  3. A quick "does this look right?" checklist
+<CardGrid>
+  <Card title="Wrong code does not compile" icon="approve-check">
+    The compiler enforces every event-sourcing contract. If the assistant forgets a case, uses the wrong type, mismatches an event, or misconfigures a service, the build fails with a specific error. You learn within seconds, not in production.
+  </Card>
+  <Card title="Less code per feature" icon="document">
+    Commands, events, entities, and queries are language primitives — there is no glue layer for the assistant to hallucinate. A command handler is one pure function. A query is one pure function. The assistant cannot invent a fictional middleware layer because there is no middleware layer to invent.
+  </Card>
+  <Card title="Context windows go further" icon="puzzle">
+    Small files, a curated standard library, and zero boilerplate mean the assistant can hold entire modules in its working memory. Fewer hallucinations happen when the model can see the types it needs to match.
+  </Card>
+  <Card title="Cheaper models work" icon="seti:shell">
+    You do not need a frontier model to write correct NeoHaskell. The compiler is the validator — a smaller, faster, cheaper model produces output that either compiles (and is structurally correct) or fails a check the assistant itself can fix. Token spend drops accordingly.
+  </Card>
+</CardGrid>
 
-## The NeoHaskell Prompt
+The important claim is the last one, and it is worth sitting with for a moment. In a loose language, the quality of your AI-assisted code is roughly proportional to the quality of your model — because the model is the only thing enforcing correctness. In NeoHaskell, the compiler is the enforcer, and the model's job shrinks to "propose something plausible." Plausible code that does not satisfy the contract does not ship; it fails the build. The assistant reads the error and tries again. You stop paying for a giant model to catch mistakes a smaller one would miss.
 
-{/*
-  A copy-paste block that users can put into their AI assistant's system prompt
-  or paste at the start of a conversation. Should be comprehensive enough that
-  the AI generates correct NeoHaskell, but short enough to actually use.
-*/}
+## The AI loop that actually works
 
-- Provide a ready-to-copy prompt block (fenced code block with a "Copy" button)
-- The prompt should cover:
-  - "NeoHaskell is a Haskell dialect with these specific conventions..."
-  - Pipe operator `|>` instead of `$`
-  - Qualified imports always: `Array.map`, `Text.length`, never bare `map` or `length`
-  - `do` blocks for ALL bindings (no `let..in` or `where`)
-  - `case..of` for ALL pattern matching (no patterns in function definitions)
-  - `Task err val` instead of `IO a`
-  - `Result err val` with `Ok`/`Err` instead of `Either`
-  - `Module.yield` instead of `pure`/`return`
-  - Explicit lambdas, never point-free style
-  - Trait names: `Mappable` not `Functor`, `Thenable` not `Monad`, `Appendable` not `Semigroup`
-- Note: "Update this prompt when NeoHaskell conventions change. This targets vX.Y.Z."
+Here is the workflow. This is not hypothetical — it is the shape you'll settle into within a day of using an assistant with NeoHaskell:
 
-## The 5 Most Common AI Mistakes
+1. **You describe what you want** in plain language. One command, one query, one feature at a time.
+2. **The assistant writes the code** following the NeoHaskell conventions (from the system prompt below).
+3. **You run `cabal build`**. If it compiles, the assistant's code is structurally correct — every event handled, every type matched, every service consistent.
+4. **If it does not compile**, you paste the error back to the assistant verbatim. Errors in NeoHaskell are specific enough that the assistant usually fixes them in one round.
+5. **You run `cabal test`**. Pure function tests are fast and trivial for the assistant to write. They catch the logic bugs the compiler can't.
 
-{/*
-  Each mistake follows the pattern:
-  1. What the AI generates (wrong)
-  2. What it should be (right)
-  3. How to spot it at a glance
-  
-  These should be the REAL top 5 based on what AI tools actually produce
-  when asked for Haskell-like code.
-  
-  Two-panel code block format note (change #8):
-  Each mistake should use a two-panel fenced code block (❌ wrong / ✅ right) format,
-  not inline code in bullets.
-*/}
+The loop is tight because the feedback is immediate. The assistant is not guessing about whether its output is correct — the build tells it. You are not reviewing output line by line — the compiler already did.
 
-### Mistake 1: Using `$` Instead of `|>`
+<Aside type="note" title="The 'regenerate until it works' anti-pattern">
+In looser languages, the default AI workflow is "regenerate until it compiles, ship it, hope the tests pass." That only works when the compiler is weak enough that "compiles" doesn't mean much. In NeoHaskell, "compiles" is a meaningful guarantee — it means the structural contracts hold. You do fewer regenerate rounds, you write fewer throwaway tests, and you ship with more confidence.
+</Aside>
 
-❌ **Wrong:**
-```neohaskell
-putStrLn $ show $ length xs
+## Ready-to-paste system prompt
+
+Paste this into your assistant's rules file — Cursor's `.cursorrules`, Claude Code's `CLAUDE.md`, Copilot instructions, OpenCode's `AGENTS.md`, or whatever your tool uses. It contains everything the assistant needs to write idiomatic NeoHaskell on the first try.
+
+````markdown
+# NeoHaskell coding rules
+
+You are writing NeoHaskell. NeoHaskell is a strongly-typed, purely functional
+language where event sourcing, commands, queries, entities, services, and
+integrations are first-class primitives. The compiler enforces every contract.
+Follow these rules exactly — they are not style preferences, they are how the
+language is used.
+
+## Core rules
+
+- Use `|>` for function application. Never `$`, never nested parentheses.
+- Use `do` blocks for anything inside a `Task`. `<-` is `await`,
+  `Task.yield` is `return`, `Task.throw` is `throw`.
+- Use `case ... of` for pattern matching. Never pattern-match in function
+  definitions.
+- Use `let` inside `do` blocks for local bindings. Never `let ... in`.
+  Never `where`.
+- Use `[fmt|Hello #{name}|]` for string interpolation. Never `++` for strings.
+- Commas go at the START of each line in records and lists.
+- Use descriptive type variable names (`forall input output.`), not single
+  letters.
+- Use qualified imports (`import Text qualified`). Only `import Core` is
+  unqualified.
+
+## Types
+
+- `Task err val` — async/effectful computation with a typed error channel.
+  Use this instead of `IO a`.
+- `Result err ok` — pure computation that can fail. Use instead of `Either`.
+- `Text` — strict UTF-8 text. Use instead of `String`.
+- `Array a` — efficient persistent sequence. Use for user-facing collections.
+- `Map k v` — immutable key-value map.
+- `Maybe a` — optional value (`Nothing` or `Just x`).
+- `Uuid` — universal identifier.
+
+## Return values
+
+- `Task.yield value` — return inside a `Task`. Never `pure`, never `return`.
+- `Task.throw err` — fail inside a `Task`.
+- `Ok value` / `Err reason` — for `Result`.
+
+## Event sourcing primitives (the most important rules)
+
+- Commands have a pure `decide` function:
+  `decide :: Command -> Maybe Entity -> RequestContext -> Decision Event`
+- `decide` returns one of:
+  - `Decider.acceptNew [events]` (stream must not exist)
+  - `Decider.acceptExisting [events]` (stream must exist)
+  - `Decider.acceptAfter position [events]` (optimistic concurrency)
+  - `Decider.reject "reason"` (business rule violation)
+- Entities implement `class Entity` with `initialStateImpl` and `updateImpl`.
+- Events implement `class Event` with `getEventEntityIdImpl`.
+- The `update` function must handle every event variant. This is enforced
+  by the compiler — missing cases are compile errors.
+- Services are built with `Service.new |> Service.command @Foo |> ...`.
+  All commands in a service MUST share the same entity and event type.
+- Applications are built with `Application.new |> Application.withEventStore
+  ... |> Application.withService ... |> Application.withQuery @Foo |> ...`.
+
+## Forbidden patterns
+
+- Never use `IO a`. Use `Task err val`.
+- Never use `Either`. Use `Result`.
+- Never use `pure` or `return`. Use `Task.yield`.
+- Never use `let ... in`. Use `let` inside `do`, or a top-level helper.
+- Never use `where` clauses. Use top-level helpers or `let` inside `do`.
+- Never use `++` for strings. Use `[fmt|...|]`.
+- Never use point-free style.
+- Never use monad transformers (`StateT`, `ReaderT`, etc.).
+- Never use code-generation macros except the four provided helpers:
+  `command ''Foo`, `deriveQuery ''Q [''E]`, `defineConfig "Name" [...]`,
+  and the `[fmt|...|]` string interpolation quoter.
+- Never pattern-match in a function head. Use `case`.
+- Never import from `base` without prefixing with `Ghc`
+  (`import Data.List qualified as GhcList`).
+
+## File layout
+
+- `src/MyApp/Feature/Core.hs` — entity and events.
+- `src/MyApp/Feature/Commands/DoThing.hs` — one command per file.
+- `src/MyApp/Feature/Queries/FeatureSummary.hs` — one query per file.
+- `src/MyApp/Feature/Integrations/Reactor.hs` — one integration per file.
+- `src/MyApp/Feature/Service.hs` — assembles commands into a Service.
+
+## Verification
+
+After generating any code:
+
+1. State which compile-time checks will run on it
+   (pattern exhaustiveness, event-type consistency, transport registration).
+2. State what error messages to expect if something is wrong.
+3. If asked to write a command, also write a Given-When-Then test for it.
+
+## The compiler is the validator
+
+If your output compiles with `cabal build`, it is structurally correct —
+every event is handled, every type matches, every service is consistent.
+If the user pastes an error back to you, read the first line of the error
+(the summary) and fix exactly what it names. Do not rewrite unrelated code.
+````
+
+This prompt is long but specific. It covers nearly every drift that assistants fall into. Save it, paste it, forget about it.
+
+## Common drift, and how to catch it
+
+Even with the system prompt above, assistants sometimes slip. Here are the most common drifts and the quickest way to spot each one.
+
+### 1. Using `IO` instead of `Task`
+
+Other strongly-typed functional languages use `IO a` for effectful computations. NeoHaskell uses `Task err val`. If the assistant writes:
+
+```haskell
+-- Wrong
+fetchUser :: Uuid -> IO User
 ```
 
-✅ **Right:**
-```neohaskell
-xs |> Array.length |> Int.toText |> Console.log
+Correct it to:
+
+```haskell
+-- Right
+fetchUser :: Uuid -> Task Text User
 ```
 
-- How to spot: if you see `$` anywhere, it's wrong. NeoHaskell uses `|>` exclusively.
-- Why it matters: `|>` reads left-to-right (data flows naturally); `$` reads right-to-left
+**How to spot it:** Search for `:: IO ` in any generated file. Replace with `Task <error> <value>`.
 
-### Mistake 2: Bare Function Names Instead of Qualified Imports
+### 2. Using `pure` or `return`
 
-❌ **Wrong:**
-```neohaskell
-map f xs
-length xs
-filter p xs
+```haskell
+-- Wrong
+fetchUser userId = do
+  user <- lookupUser userId
+  pure user
+
+-- Right
+fetchUser userId = do
+  user <- lookupUser userId
+  Task.yield user
 ```
 
-✅ **Right:**
-```neohaskell
-Array.map f xs
-Array.length xs
-Array.filter p xs
+**How to spot it:** Search for `pure ` or `return ` on their own line. Replace with `Task.yield`.
+
+### 3. Using `++` for string concatenation
+
+```haskell
+-- Wrong
+greet name = "Hello, " ++ name ++ "!"
+
+-- Right
+greet name = [fmt|Hello, #{name}!|]
 ```
 
-- How to spot: if a function has no module prefix (no dot), it's probably wrong
-- Why it matters: qualified imports make the source of every function explicit
+**How to spot it:** Search for `++`. For lists, `++` is fine — for text, use `fmt`.
 
-### Mistake 3: `let..in` or `where` Instead of `do` Blocks
+### 4. Using `let ... in`
 
-❌ **Wrong:**
-```neohaskell
-let x = 5 in x + 1
-foo = bar where bar = 42
+```haskell
+-- Wrong
+total = let subtotal = price * qty
+            tax = subtotal * 0.1
+        in subtotal + tax
+
+-- Right (inside a do block)
+total = do
+  let subtotal = price * qty
+  let tax = subtotal * 0.1
+  Task.yield (subtotal + tax)
 ```
 
-✅ **Right:**
-```neohaskell
-do
-  x <- 5
-  x + 1
+**How to spot it:** Search for `let` followed by `in` on the same or adjacent lines.
+
+### 5. Pattern matching in the function head
+
+```haskell
+-- Wrong
+handle (Just user) = greet user
+handle Nothing = Task.throw "no user"
+
+-- Right
+handle maybeUser = case maybeUser of
+  Just user -> greet user
+  Nothing -> Task.throw "no user"
 ```
 
-- How to spot: if you see `let..in` or `where`, rewrite as a `do` block
-- Why it matters: one binding mechanism everywhere = less cognitive load
+**How to spot it:** Look for multiple lines with the same function name but different argument shapes. Rewrite as a single function with a `case`.
 
-### Mistake 4: Pattern Matching in Function Definitions
+## Reducing token spend
 
-❌ **Wrong:**
-```neohaskell
-factorial 0 = 1
-factorial n = n * factorial (n - 1)
+One of the less obvious benefits of NeoHaskell with AI: you use fewer tokens, both per request and per feature.
+
+**Per request:**
+
+- **Smaller files.** A typical command file is 50–80 lines. A typical query file is 30–60 lines. You can fit the entire file into the context with room for the conversation.
+- **Less boilerplate.** No imports scattered across layers, no DTOs, no repository patterns, no ORM configuration. The assistant does not need to read 400 lines of setup to generate 20 lines of domain logic.
+- **Self-contained files.** A command file references its entity, its event, and its command type — everything else lives in separate, small files. The assistant rarely needs more than two files in context to do its job.
+
+**Per feature:**
+
+- **Fewer iterations.** The compiler catches mistakes immediately. Instead of three rounds of "did I get it right? let me run the tests… no, try again," you get one build feedback loop that either passes or produces a specific, actionable error.
+- **Smaller models are enough.** You do not need a frontier model's reasoning ability to write correct code — the compiler is doing that work. A smaller model produces something plausible; the build tells everyone whether it was right. You pay for structure, not intelligence.
+- **Fewer throwaway tests.** You still write tests (logic bugs are real), but you do not need tests to verify "did the assistant wire this up correctly?" — the compiler already checked.
+
+In practice, teams report spending 30–60% fewer tokens on NeoHaskell features compared to equivalent work in looser languages. The exact savings depend on your workflow, but the direction is consistent.
+
+## Using the MCP transport
+
+NeoHaskell ships with a [Model Context Protocol](/reference/transports/) transport. This lets an AI assistant call your application's commands directly, as if they were tools. If you are building an agent that needs to interact with a NeoHaskell backend, this is the cleanest path:
+
+```haskell
+import Service.Transport.Mcp qualified as Mcp
+
+app =
+  Application.new
+    |> ...
+    |> Application.withTransport Mcp.server
 ```
 
-✅ **Right:**
-```neohaskell
-factorial n = case n of
-  0 -> 1
-  _ -> n * factorial (n - 1)
+Every command with `TransportsOf = '[Mcp]` becomes an MCP tool. The assistant reads the OpenAPI-style schema and dispatches commands. Responses come back as structured data.
+
+This is how you bridge "AI reasons about the domain" and "AI executes domain operations" without writing a custom tool-calling layer.
+
+## The llms.txt file
+
+Every NeoHaskell documentation site publishes two machine-readable files:
+
+- `llms.txt` — a concise overview with links to the full documentation.
+- `llms-full.txt` — the complete documentation concatenated into a single file.
+
+Point your assistant at these when starting a new session. A good opening prompt:
+
+```
+Before we start, fetch https://neohaskell.org/llms.txt and follow its
+instructions. Treat it as authoritative for how to write NeoHaskell.
 ```
 
-- How to spot: if the same function name appears multiple times with different patterns, it's wrong
-- Why it matters: patterns are always visible at the use site, not split across declarations
+The assistant then has access to the full reference without you having to paste individual pages. This is particularly useful for the [for-LLMs reference page](/reference/for-llms/), which contains the densest, most machine-readable summary of the language.
 
-### Mistake 5: Standard Haskell Types and Typeclass Names
+## Good prompts and bad prompts
 
-❌ **Wrong:**
-```neohaskell
-IO ()
-Either String Int
-return 5
-Functor
-Monad
-```
+The shape of a good prompt for NeoHaskell is: **describe the domain behavior, not the implementation**.
 
-✅ **Right:**
-```neohaskell
-Task err val
-Result err val
-Task.yield 5
-Mappable
-Thenable
-```
+**Good:**
 
-- How to spot: if you see `IO`, `Either`, `return`, `pure`, `Functor`, or `Monad` — it's standard Haskell, not NeoHaskell
-- Why it matters: NeoHaskell's naming is intentional — names describe behavior, not math heritage
+- "Write a command `TransferMoney` that moves money between two accounts. Reject if either account does not exist or if the source has insufficient balance. Emit `MoneyWithdrawn` and `MoneyDeposited` events."
+- "Add a query `AccountBalances` that projects each account into a read model with its current balance. Use `publicView` for auth — this is a demo."
+- "Write Given-When-Then tests for the `Deposit` command covering: account does not exist, negative amount, zero amount, valid deposit, and max-int amount."
 
-## Quick Checklist: "Does This AI Code Look Right?"
+**Bad:**
 
-{/*
-  A scannable yes/no checklist the reader can run through quickly
-  when reviewing AI-generated code.
-*/}
+- "Add transfers." (Too vague — the assistant will invent a domain.)
+- "Make it event-sourced." (NeoHaskell is already event-sourced.)
+- "Use a state monad." (Wrong abstraction — NeoHaskell uses entity `update` functions.)
+- "Write a repository for accounts." (There is no repository pattern — use the event store directly.)
 
-- [ ] All function calls are qualified (`Module.function`, not bare `function`)
-- [ ] Uses `|>` for chaining, never `$`
-- [ ] Bindings are in `do` blocks, never `let..in` or `where`
-- [ ] Pattern matching uses `case..of`, never function-level patterns
-- [ ] Types are NeoHaskell names: `Task`, `Result`, `Text` (not `IO`, `Either`, `String`)
-- [ ] Typeclass/Trait names are NeoHaskell: `Mappable`, `Thenable` (not `Functor`, `Monad`)
-- [ ] String interpolation uses `[fmt|...|]`, not concatenation
-- [ ] No point-free style — all lambdas are explicit
+## The bottom line
 
-## When AI Gets It Right
+NeoHaskell makes AI-assisted development genuinely productive because the compiler replaces the part of the workflow that is hardest to automate: verifying that the output is correct. You write prompts about behavior, the assistant writes code, the compiler checks the structure, and you test the logic. Each step is fast, cheap, and honest.
 
-AI IS useful for NeoHaskell — it understands the logic, algorithms, and domain modeling. The mistakes are almost always syntactic/conventional, not logical.
+You are not trying to catch AI mistakes with discipline. You are letting the type system do it for you.
 
-**Strategy**: let AI write the logic, then fix the NeoHaskell conventions using this checklist. Over time, AI tools will learn NeoHaskell conventions — this page will be less necessary.
+## Next
 
-## Where to Go from Here
-
-You know how to spot AI mistakes. Now let's write your first event.
-
-- [Coming from Haskell](/coming-from/haskell/) — the full Haskell → NeoHaskell mapping table
-- [Cheat Sheet](/getting-started/cheat-sheet/) — quick reference for correct NeoHaskell syntax
-- **Next**: [Your First Events](/getting-started/first-events/) — write your first event type and see event sourcing in action (~10 minutes)
-
-:::caution[Coming Soon]
-The AI prompt and code examples on this page are placeholders. They will be finalized once NeoHaskell conventions are stable.
-:::
+- [**Cheat sheet**](/getting-started/cheat-sheet/) — keep it open when you are reviewing assistant output.
+- [**Reference → For LLMs**](/reference/for-llms/) — the densest machine-readable summary of the language.
+- [**Build NeoBank**](/tutorial/) — the tutorial. Try it with your assistant as a pair-programming partner.

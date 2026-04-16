@@ -1,209 +1,340 @@
 ---
-title: "Cheat Sheet"
-description: "Quick reference for NeoHaskell syntax and patterns. Two-column 'I want to... / Write this...' format."
-keywords: [cheat sheet, quick reference, syntax reference, NeoHaskell patterns, printable, bookmark]
+title: "Cheat sheet"
+description: "One-page reference for NeoHaskell syntax, common imports, core types, event sourcing primitives, and wiring patterns. Bookmark this."
+sidebar:
+  order: 6
 ---
 
-{/* 
-  CONTENT OUTLINE — REVISION 2 (10-expert consensus applied)
-  ==============================================================
-  Position: Getting Started — reference page, linked from Tutorial Part 1
-  Time estimate: N/A (reference page, not linear reading)
-  Misconceptions addressed: #4 (just Haskell with different names), #5 (need category theory)
-  
-  Design principles from DOCS-PLAN:
-  - "I want to... / Write this..." quick reference
-  - Two-column format
-  - Printable
-  - Linked from Part 1 as "your NeoHaskell phrasebook"
-  - Layer 2 mechanism: "Standalone syntax quick reference page: getting-started/cheat-sheet.mdx serves as the go-to reference for NeoHaskell syntax"
-  
-  Audience: Tutorial reader who needs to look something up mid-flow.
-  This is NOT a comprehensive language reference — it's the 80/20 of syntax
-  that covers everything in the tutorial.
-  
-  Changes applied:
-  - Prerequisites added (change #2)
-  - Version placeholder added (change #1)
-  - "What's On This Page" section added (change #2)
-  - Recap closing section added (change #3)
-  - Haskell table replaced with cross-reference (change #7)
-  - Common Error Messages section added (change #10)
-*/}
+A single page of the moves you'll make most often. Bookmark it. Keep it open in a tab while you work.
 
-**Prerequisites**: None
+## Imports you'll always have
 
-*Bookmark this page — you'll come back to it during the tutorial. · NeoHaskell vX.Y.Z*
+```haskell
+import Core                        -- Unqualified — Text, Int, Array, Maybe, Result, Task, etc.
+import Text qualified              -- Text.trim, Text.toUpper, etc.
+import Array qualified             -- Array.map, Array.filter, Array.push
+import Map qualified               -- Map.get, Map.set, Map.empty
+import Task qualified              -- Task.yield, Task.throw, Task.map
+import Decider qualified           -- Decider.acceptNew, Decider.reject
+import Json qualified              -- Json.encode, Json.decode
+```
 
-## What's On This Page
+`import Core` is unqualified and gives you the essentials. Everything else is qualified by convention.
 
-- Find what you want to do in the left column
-- See how to write it in the right column
-- Every example is self-contained — you can copy-paste into the REPL
-- This covers everything you need for the [NeoBank Tutorial](/tutorial/). For comprehensive reference, see the [API Reference](/reference/).
+## Core types
 
-## Values and Types
+| Type | What it is | Example |
+|---|---|---|
+| `Text` | A string | `"hello"` |
+| `Int` | An integer | `42` |
+| `Uuid` | A UUID | `Uuid.nil`, `cmd.entityId` |
+| `Array a` | An ordered collection | `Array.fromLinkedList [1, 2, 3]` |
+| `Map k v` | A key-value dictionary | `Map.empty`, `Map.set "a" 1 m` |
+| `Maybe a` | `Just x` or `Nothing` | `Just 5`, `Nothing` |
+| `Result err ok` | `Ok x` or `Err reason` | `Ok 42`, `Err "bad input"` |
+| `Task err val` | Async computation that can fail | `Task.yield 42`, `Task.throw "nope"` |
 
-{/*
-  The absolute basics: defining values, type annotations, basic types.
-*/}
+## Syntax reference
 
-| I want to... | Write this |
-|---|---|
-| Define a value | `name = "NeoBank"` |
-| Add a type annotation | `name :: Text` / `name = "NeoBank"` |
-| Define a number | `amount = 50.00` |
-| Define a boolean | `isOpen = True` |
-| Define a list | `deposits = [50.00, 25.00, 100.00]` |
+### Records
 
-## Functions
+```haskell
+-- Define
+data User = User
+  { name :: Text
+  , age :: Int
+  }
+  deriving (Show, Generic)
 
-{/*
-  Function definition, application, pipes.
-*/}
+-- Construct
+alice = User { name = "Alice", age = 30 }
 
-| I want to... | Write this |
-|---|---|
-| Define a function | `double x = x * 2` |
-| Call a function | `double 5` (no parentheses around args) |
-| Chain operations | `value \|> function1 \|> function2` |
-| Use a qualified function | `Array.map`, `Text.length`, `Result.ok` |
-| Define a multi-step function | Use a `do` block (see below) |
+-- Read
+alice.name
 
-## Do Blocks
+-- Update
+olderAlice = alice { age = alice.age + 1 }
+```
 
-{/*
-  The primary sequencing mechanism in NeoHaskell.
-*/}
+### Pattern matching
 
-| I want to... | Write this |
-|---|---|
-| Run steps in order | `do` block with each step on a new line |
-| Bind a result to a name | `result <- someAction` |
-| Use a value without binding | Just write the expression on its own line |
-| Return a value from a do block | Last expression in the block is the return value |
+```haskell
+classify :: Int -> Text
+classify n = case n of
+  0 -> "zero"
+  1 -> "one"
+  n | n < 0 -> "negative"
+    | n < 10 -> "small"
+    | otherwise -> "large"
+```
 
-- Show a complete do block example (3-4 lines)
+### Sum types
 
-## Pattern Matching
+```haskell
+data Event
+  = UserSignedUp { userId :: Uuid, email :: Text }
+  | UserDeleted { userId :: Uuid }
+  deriving (Show, Generic)
 
-{/*
-  case..of is the only pattern matching form in NeoHaskell (no function-level patterns).
-*/}
+describe :: Event -> Text
+describe event = case event of
+  UserSignedUp { email } -> [fmt|Sign-up: #{email}|]
+  UserDeleted { userId } -> [fmt|Deleted: #{userId}|]
+```
 
-| I want to... | Write this |
-|---|---|
-| Match on a value | `case value of ...` with branches |
-| Handle multiple cases | One branch per pattern, separated by newlines |
-| Match on a specific constructor | `Deposited amount -> ...` |
-| Catch everything else | `_ -> ...` (underscore matches anything) |
+### Pipes
 
-- Show a complete case..of example (3-4 lines)
-- Note: "NeoHaskell uses `case..of` for ALL pattern matching — there are no patterns in function definitions"
+```haskell
+-- Equivalent to: Text.toUpper (Text.trim someText)
+someText
+  |> Text.trim
+  |> Text.toUpper
+```
 
-## Defining Types
+### Do blocks (Task)
 
-{/*
-  Type definitions — the reader will encounter these in the tutorial
-  when defining events and commands.
-*/}
+```haskell
+loadUser :: Uuid -> Task Text User
+loadUser userId = do
+  user <- fetchFromDb userId
+  let greeting = [fmt|Hello, #{user.name}!|]
+  Console.print greeting
+  Task.yield user
+```
 
-| I want to... | Write this |
-|---|---|
-| Define a new type | `type MyType = ...` |
-| Define a type with fields (record) | `type Account = { id :: Text, balance :: Decimal }` |
-| Define a type with variants (sum type) | `type Event = Deposited Amount \| Withdrawn Amount` |
-| Create a value of a record type | `Account { id = "123", balance = 50.00 }` |
-| Create a value of a variant type | `Deposited 50.00` |
+- `<-` binds the result of a step (like `await`).
+- `let` inside `do` binds a local value.
+- `Task.yield` returns.
+- `Task.throw` fails.
 
-## Working with Results
+### String interpolation
 
-{/*
-  Result is how NeoHaskell handles operations that can fail.
-  Corresponds to Haskell's Either but with clearer names.
-*/}
+```haskell
+message = [fmt|User #{user.name} is #{user.age} years old|]
+```
 
-| I want to... | Write this |
-|---|---|
-| Return success | `Result.ok value` |
-| Return an error | `Result.err "insufficient funds"` |
-| Handle success/failure | `case result of` / `Ok value -> ...` / `Err msg -> ...` |
+Use `[fmt|...|]` for any string you'd interpolate. Never use `++`.
 
-## Working with Tasks
+## Event sourcing primitives
 
-{/*
-  Task is how NeoHaskell handles side effects (IO).
-  Corresponds to Haskell's IO but with typed errors.
-*/}
+### Define an entity
 
-| I want to... | Write this |
-|---|---|
-| Perform an effectful action | Put it in a `do` block |
-| Print to the console | `Console.log "Hello"` |
-| Sequence two actions | Two lines in a `do` block |
+```haskell
+data Cart = Cart
+  { cartId :: Uuid
+  , items :: Array CartItem
+  }
+  deriving (Generic, Show)
 
-## String Formatting
+instance Json.FromJSON Cart
+instance Json.ToJSON Cart
 
-{/*
-  NeoHaskell uses quasiquoter-based string interpolation.
-*/}
+type instance NameOf Cart = "Cart"
 
-| I want to... | Write this |
-|---|---|
-| Interpolate a variable | `[fmt\|Hello {name}!\|]` |
-| Concatenate text | `text1 \|> Text.append text2` |
+instance Entity Cart where
+  initialStateImpl = Cart { cartId = Uuid.nil, items = Array.empty }
+  updateImpl = update
 
-## Common Operators
+update :: CartEvent -> Cart -> Cart
+update event cart = case event of
+  CartCreated { entityId } ->
+    cart { cartId = entityId }
+  ItemAdded { item } ->
+    cart { items = Array.push item cart.items }
+```
 
-| Symbol | Meaning | Example |
-|--------|---------|---------|
-| `\|>` | Pipe (pass left to right) | `x \|> f \|> g` |
-| `::` | Type annotation | `x :: Int` |
-| `<-` | Bind in do block | `result <- action` |
-| `->` | Function arrow / case branch | `Int -> Text` / `True -> "yes"` |
-| `_` | Wildcard (ignore this value) | `_ -> defaultValue` |
+### Define events
 
-## Common Error Messages
+```haskell
+data CartEvent
+  = CartCreated { entityId :: Uuid }
+  | ItemAdded { entityId :: Uuid, item :: CartItem }
+  deriving (Eq, Show, Generic)
 
-{/*
-  The 3-5 most common compiler errors that tutorial readers will encounter.
-  These should be real error messages with explanations.
-*/}
+instance Json.FromJSON CartEvent
+instance Json.ToJSON CartEvent
 
-| Error | What it means | How to fix it |
-|-------|---------------|--------------|
-| `Type mismatch: expected Text, got Int` | You're using the wrong type somewhere | Check the type annotation and make sure the value matches |
-| `Unknown function: map` | You forgot the module prefix | Use `Array.map` instead of bare `map` |
-| `Pattern not exhaustive` | Your `case..of` doesn't handle all possibilities | Add a `_ -> ...` branch to catch the rest |
-| `Unexpected token: $` | You used `$` instead of `\|>` | Replace `$` with `\|>` for the pipe operator |
-| `Undefined variable: x` | You used a variable that doesn't exist | Check the spelling and make sure it's in scope |
+type instance EventOf Cart = CartEvent
+type instance EntityOf CartEvent = Cart
 
-## NeoHaskell vs. Other Languages
+instance Event CartEvent where
+  getEventEntityIdImpl event = case event of
+    CartCreated { entityId } -> entityId
+    ItemAdded { entityId } -> entityId
+```
 
-{/*
-  Quick Rosetta Stone for common operations.
-  Addresses the "I know X, how do I say it in NeoHaskell?" question.
-*/}
+### Define a command
 
-| In JavaScript / Python | In NeoHaskell |
-|---|---|
-| `if (x) { ... } else { ... }` | `case x of True -> ... ; False -> ...` |
-| `array.map(f)` | `array \|> Array.map f` |
-| `array.filter(f)` | `array \|> Array.filter f` |
-| `try { ... } catch (e) { ... }` | `case result of Ok v -> ... ; Err e -> ...` |
-| `console.log(msg)` | `Console.log msg` |
-| `const x = value` | `x = value` (everything is immutable by default) |
+```haskell
+data CreateCart = CreateCart
+  deriving (Generic, Show)
 
-## Coming from Haskell?
+instance Json.FromJSON CreateCart
 
-**Coming from Haskell?** See the [full Haskell → NeoHaskell mapping table](/coming-from/haskell/).
+getEntityId :: CreateCart -> Maybe Uuid
+getEntityId _ = Nothing  -- Creation commands don't target an existing entity
 
-## Where to Go from Here
+decide :: CreateCart -> Maybe Cart -> RequestContext -> Decision CartEvent
+decide _cmd cart _ctx = case cart of
+  Just _ -> Decider.reject "Cart already exists"
+  Nothing -> do
+    cartId <- Decider.generateUuid
+    Decider.acceptNew [CartCreated { entityId = cartId }]
 
-- You have the syntax. Now let's build something real.
-- **Next**: [Your First Events](/getting-started/first-events/) — write your first event type and see event sourcing in action (~10 minutes)
-- **Bookmark**: [API Reference](/reference/) — the comprehensive reference for all NeoHaskell modules and functions
+type instance EntityOf CreateCart = Cart
+type instance TransportsOf CreateCart = '[WebTransport]
 
-:::caution[Coming Soon]
-The code examples on this page are placeholders. Actual NeoHaskell syntax will be verified against the compiler once available.
-:::
+command ''CreateCart
+```
+
+### Define a query (read model)
+
+```haskell
+data CartSummary = CartSummary
+  { cartId :: Uuid
+  , itemCount :: Int
+  }
+  deriving (Eq, Show, Generic)
+
+instance Json.ToJSON CartSummary
+instance Json.FromJSON CartSummary
+instance ToSchema CartSummary
+
+canAccess :: Maybe UserClaims -> Maybe QueryAuthError
+canAccess = publicAccess
+
+canView :: Maybe UserClaims -> CartSummary -> Maybe QueryAuthError
+canView = publicView
+
+deriveQuery ''CartSummary [''Cart]
+
+instance QueryOf Cart CartSummary where
+  queryId cart = cart.cartId
+  combine cart _existing =
+    Update CartSummary
+      { cartId = cart.cartId
+      , itemCount = Array.length cart.items
+      }
+```
+
+## Decider moves
+
+```haskell
+-- Accept only if entity does not exist (creation commands)
+Decider.acceptNew [events...]
+
+-- Accept only if entity exists (update commands)
+Decider.acceptExisting [events...]
+
+-- Accept regardless
+Decider.acceptAny [events...]
+
+-- Optimistic concurrency — accept only if stream is at this position
+Decider.acceptAfter position [events...]
+
+-- Reject with a reason
+Decider.reject "reason"
+
+-- Generate a UUID inside a Decision
+cartId <- Decider.generateUuid
+```
+
+## Assembling a service
+
+```haskell
+service :: Service _ _
+service =
+  Service.new
+    |> Service.command @CreateCart
+    |> Service.command @AddItem
+    |> Service.command @RemoveItem
+```
+
+All commands in one service must share the same entity/event types — the compiler enforces this.
+
+## Assembling an application
+
+```haskell
+app :: Application
+app =
+  Application.new
+    |> Application.withConfig @MyConfig
+    |> Application.withEventStore makePostgresConfig
+    |> Application.withTransport WebTransport.server
+    |> Application.withService cartService
+    |> Application.withService orderService
+    |> Application.withQuery @CartSummary
+    |> Application.withQuery @OrderHistory
+    |> Application.withOutbound @EmailNotifications
+```
+
+## Config
+
+```haskell
+defineConfig "MyConfig"
+  [ Config.field @Text "dbHost"
+      |> Config.doc "PostgreSQL host"
+      |> Config.defaultsTo ("localhost" :: Text)
+      |> Config.envVar "DB_HOST"
+  , Config.field @Int "httpPort"
+      |> Config.doc "HTTP server port"
+      |> Config.defaultsTo (8080 :: Int)
+      |> Config.envVar "HTTP_PORT"
+      |> Config.cliLong "port"
+  ]
+```
+
+## Common errors and what they mean
+
+| Error fragment | What it means | Fix |
+|---|---|---|
+| `Non-exhaustive patterns in function update` | You added an event but didn't handle it in `update` | Add a case for the new event |
+| `Event type mismatch in service definition!` | Two commands in one service use different event types | Move one command to its own service, or unify the event types |
+| `No instance for (Entity Foo)` | You forgot the `instance Entity Foo` declaration | Add the instance with `initialStateImpl` and `updateImpl` |
+| `Couldn't match expected type 'Task Text a'` | A function returned `IO` or a raw value where `Task` was expected | Wrap with `Task.yield` or use `Task.fromIO` |
+| `Variable not in scope: pure` | You used `pure` instead of `Task.yield` | Replace `pure` with `Task.yield` |
+
+## Testing patterns
+
+### Given-When-Then command test
+
+```haskell
+spec :: Spec Unit
+spec = describe "Deposit command" do
+  it "rejects when the account does not exist" \_ -> do
+    let result = runDecision context (decide depositCmd Nothing noAuth)
+    result |> shouldSatisfy isRejectedWith "Account does not exist"
+
+  it "accepts a valid deposit" \_ -> do
+    let account = Just (Account { accountId = someId, balance = 100 })
+    let result = runDecision context (decide depositCmd account noAuth)
+    result |> shouldSatisfy (producesEvent (MoneyDeposited { amount = 50 }))
+```
+
+### Query projection test
+
+```haskell
+it "counts items in a cart" \_ -> do
+  let cart = Cart { cartId = someId, items = Array.fromLinkedList [item1, item2] }
+  let result = combine cart Nothing
+  result |> shouldBe (Update CartSummary { cartId = someId, itemCount = 2 })
+```
+
+## Forbidden patterns
+
+Avoid these — they are not NeoHaskell style and will fight the tooling:
+
+- `let ... in` — use `let` inside a `do` block instead
+- `where` clauses — use `let` inside `do` instead
+- `pure` / `return` — use `Task.yield`
+- `IO a` — use `Task err val`
+- `Either a b` — use `Result err ok`
+- `++` for strings — use `[fmt|...|]`
+- Point-free style — write the arguments
+- Pattern matching in function definitions — use `case`
+- Code-generation macros except the provided helpers (`command`, `deriveQuery`, `defineConfig`, `[fmt|...|]`)
+
+## Next
+
+- [**Build NeoBank**](/tutorial/) — put this knowledge to work.
+- [**Core concepts**](/concepts/thinking-in-events/) — the deeper "why" behind the moves on this page.
