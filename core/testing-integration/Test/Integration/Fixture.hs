@@ -29,6 +29,7 @@ import Environment qualified
 import Result (Result (..))
 import Service.Integration.Adapter (Integration (..))
 import Service.Integration.Canonical qualified as Canonical
+import Service.Integration.Fixture qualified as ProdFixture
 import Service.Integration.IntegrationError (IntegrationError (..))
 import System.Directory qualified as GhcDir
 import System.FilePath qualified as GhcFilePath
@@ -69,6 +70,9 @@ record ::
   Array request ->
   Task IntegrationError ()
 record integrationName rules requests = do
+  validName <- case ProdFixture.validateIntegrationName integrationName of
+    Ok v -> Task.yield v
+    Err err -> Task.throw (ValidationFailure err)
   envResult <-
     Environment.getVariable "NEOHASKELL_RECORD_FIXTURES"
       |> Task.asResult
@@ -79,7 +83,7 @@ record integrationName rules requests = do
     False -> Task.yield ()
     True -> do
       projectRoot <- resolveProjectRoot
-      Task.forEach (recordOne projectRoot integrationName rules) requests
+      Task.forEach (recordOne projectRoot validName rules) requests
   where
     recordOne root name activeRules request = do
       response <- runReal request
@@ -95,6 +99,9 @@ record integrationName rules requests = do
         Ok hex -> do
           let dir = GhcFilePath.joinPath [Text.toLinkedList root, "tests", "fixtures", "local", Text.toLinkedList name]
           let filePath = dir GhcFilePath.</> (Text.toLinkedList hex ++ ".json")
+          let localRootAssembled =
+                GhcFilePath.joinPath [Text.toLinkedList root, "tests", "fixtures", "local"]
+          assertInsideRoot localRootAssembled filePath
           let content = Aeson.object [(AesonKey.fromText "request", redactedRequest), (AesonKey.fromText "response", redactedResponse)]
           writeFixture dir filePath content
 
@@ -105,6 +112,9 @@ promote ::
   Array Text ->
   Task IntegrationError ()
 promote integrationName hashPrefixes = do
+  validName <- case ProdFixture.validateIntegrationName integrationName of
+    Ok v -> Task.yield v
+    Err err -> Task.throw (ValidationFailure err)
   envResult <-
     Environment.getVariable "NEOHASKELL_PROMOTE_FIXTURES"
       |> Task.asResult
@@ -122,14 +132,14 @@ promote integrationName hashPrefixes = do
             "tests",
             "fixtures",
             "local",
-            Text.toLinkedList integrationName
+            Text.toLinkedList validName
           ]
   let committedDir =
         GhcFilePath.joinPath
           [ Text.toLinkedList projectRoot,
             "tests",
             "fixtures",
-            Text.toLinkedList integrationName
+            Text.toLinkedList validName
           ]
   filesResult <-
     GhcDir.listDirectory localDir
@@ -151,6 +161,8 @@ promoteOne :: [Char] -> [Char] -> [Char] -> Task IntegrationError ()
 promoteOne localDir committedDir filename = do
   let src = localDir GhcFilePath.</> filename
   let dest = committedDir GhcFilePath.</> filename
+  assertInsideRoot localDir src
+  assertInsideRoot committedDir dest
   bytes <-
     ByteString.readFile src
       |> Task.fromIO
@@ -242,8 +254,11 @@ writeFixture dir filePath content = do
     _unused = dir
 
 
--- | Look up the project root from @NEOHASKELL_PROJECT_ROOT@; falls back to
--- the current working directory.
+-- | Look up the project root from @NEOHASKELL_PROJECT_ROOT@. ADR-0055 §4
+-- forbids an implicit cwd fallback: a test binary launched from the wrong
+-- directory would otherwise record sandbox responses (potentially
+-- containing real tokens) into an unrelated repository tree with no
+-- @tests/fixtures/local/@ gitignore.
 resolveProjectRoot :: Task IntegrationError Text
 resolveProjectRoot = do
   envResult <-
@@ -251,8 +266,32 @@ resolveProjectRoot = do
       |> Task.asResult
   case envResult of
     Ok v -> Task.yield v
-    Err _ -> do
-      cwd <-
-        GhcDir.getCurrentDirectory
-          |> Task.fromIO
-      Task.yield (Text.fromLinkedList cwd)
+    Err _ ->
+      Task.throw
+        ( ValidationFailure
+            "NEOHASKELL_PROJECT_ROOT must be set for Test.Integration.Fixture record/promote"
+        )
+
+
+-- | Fail the task if the resolved target is not a descendant of the
+-- expected root. Canonicalises both sides so intermediate symlinks are
+-- followed, defeating escape attempts via symlinked path components.
+assertInsideRoot :: [Char] -> [Char] -> Task IntegrationError ()
+assertInsideRoot root target = do
+  rootCanon <-
+    GhcDir.canonicalizePath root
+      |> Task.fromIO
+  targetParent <- do
+    let parent = GhcFilePath.takeDirectory target
+    GhcDir.createDirectoryIfMissing True parent
+      |> Task.fromIO
+    GhcDir.canonicalizePath parent
+      |> Task.fromIO
+  let targetCanon = targetParent GhcFilePath.</> GhcFilePath.takeFileName target
+  case rootCanon `GhcList.isPrefixOf` targetCanon of
+    True -> Task.yield ()
+    False ->
+      Task.throw
+        ( ValidationFailure
+            [fmt|Fixture path escape: #{Text.fromLinkedList targetCanon} is not inside #{Text.fromLinkedList rootCanon}|]
+        )

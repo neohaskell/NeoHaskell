@@ -76,29 +76,30 @@ scanValue allowed jpath val acc =
               entries
 
 
--- | Inspect a single string value for secret-shaped patterns.
+-- | Inspect a single string value for secret-shaped patterns. Prefix
+-- matching runs as a substring scan so that secrets embedded in free-text
+-- fields (e.g. @"auth: Bearer sk_..."@) are still caught.
 scanString :: Text -> Text -> [Text]
 scanString jpath text = do
-  let trimmed = text
-  let prefixMatches =
+  let substringMatches =
         secretPrefixes
-          |> GhcList.filter (\p -> p `Text.startsWith` trimmed)
-  let prefixFindings =
-        prefixMatches
-          |> GhcList.map (\p -> [fmt|entropy: #{jpath} starts with secret prefix #{p}|])
+          |> GhcList.filter (\p -> Text.contains p text)
+  let substringFindings =
+        substringMatches
+          |> GhcList.map (\p -> [fmt|entropy: #{jpath} contains secret marker #{p}|])
   let longHexFinding =
-        if looksLikeLongHex trimmed
+        if looksLikeLongHex text
           then [[fmt|entropy: #{jpath} looks like a long hex token|]]
           else []
   let longBase64Finding =
-        if looksLikeLongBase64 trimmed
+        if looksLikeLongBase64 text
           then [[fmt|entropy: #{jpath} looks like a base64 blob|]]
           else []
   let shannonFinding =
-        if Text.length trimmed >= 20 && shannonEntropy trimmed > 4.0
+        if Text.length text >= 20 && shannonEntropy text > 4.0
           then [[fmt|entropy: #{jpath} has high Shannon entropy|]]
           else []
-  prefixFindings ++ longHexFinding ++ longBase64Finding ++ shannonFinding
+  substringFindings ++ longHexFinding ++ longBase64Finding ++ shannonFinding
 
 
 -- | At least 32 consecutive lowercase hex characters.

@@ -63,6 +63,9 @@ feature-progress.md
 .pipeline/
 docs/architecture/
 
+# Locally recorded integration fixtures (never commit — may contain real sandbox responses)
+**/tests/fixtures/local/
+
 
 # Node.js / pnpm (website)
 node_modules/

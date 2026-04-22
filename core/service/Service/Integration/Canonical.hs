@@ -48,9 +48,19 @@ version = CanonicalVersion.version
 -- | Encode a 'Aeson.ToJSON' value into canonical JSON bytes.
 --
 -- Returns 'Err' when the value contains 'NaN' or '±Infinity'.
+--
+-- RFC 8785 canonicalisation requires key-sorted object output, which
+-- cannot be produced by a pure streaming encoder — we must inspect every
+-- key of every object before emitting any of them. 'encode' therefore
+-- builds one 'Aeson.Value' per call. For the production hot path, the
+-- only caller is 'Service.Integration.Debug.log' at @Debug@ severity,
+-- which is off by default in production; the fixture-lookup path
+-- (@--integrations=fake@) is not hot. 'INLINE' lets the single Value
+-- tree fuse with its consumer at the call site under @-O1@.
 encode :: (Aeson.ToJSON value) => value -> Result IntegrationError ByteString
 encode value =
   encodeValue (Aeson.toJSON value)
+{-# INLINE encode #-}
 
 
 -- | Hash a 'Aeson.ToJSON' value as lowercase hex SHA-256 of its canonical bytes.
@@ -59,6 +69,7 @@ hash value = do
   case encode value of
     Err err -> Err err
     Ok bytes -> Ok (hashBytes bytes)
+{-# INLINE hash #-}
 
 
 -- | Hash already-canonical bytes to lowercase hex SHA-256.

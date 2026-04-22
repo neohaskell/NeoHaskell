@@ -195,10 +195,14 @@ extractResponse val =
 
 -- Filesystem helpers -------------------------------------------------------
 
--- | Canonicalise a path via 'GhcDir.makeAbsolute', surfacing IOError text.
+-- | Canonicalise a path via 'GhcDir.canonicalizePath' — this resolves every
+-- intermediate symbolic link in the path, not just the final component
+-- (which is what 'GhcDir.makeAbsolute' would do). Combined with the
+-- subsequent prefix check against the canonicalised project root, this
+-- blocks escape attempts via symlinked parent directories.
 makeAbsoluteSafe :: FilePath -> Task Text FilePath
 makeAbsoluteSafe p =
-  GhcDir.makeAbsolute p
+  GhcDir.canonicalizePath p
     |> Task.fromFailableIO @GhcIOError.IOError
     |> Task.mapError (Text.fromLinkedList . show)
 

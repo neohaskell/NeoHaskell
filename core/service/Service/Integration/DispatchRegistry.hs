@@ -31,6 +31,7 @@ newtype DispatchRegistry = DispatchRegistry (GhcMap.Map TypeRep Unknown)
 -- | Empty registry.
 empty :: DispatchRegistry
 empty = DispatchRegistry GhcMap.empty
+{-# INLINE empty #-}
 
 
 -- | Register a dispatcher closure for a request type.
@@ -46,6 +47,7 @@ register closure (DispatchRegistry m) = do
   let key = typeRep (Proxy @request)
   let erased = Unknown.fromValue closure
   DispatchRegistry (GhcMap.insert key erased m)
+{-# INLINE register #-}
 
 
 -- | Look up a dispatcher closure for a request type.
@@ -55,6 +57,10 @@ register closure (DispatchRegistry m) = do
 -- * The type was never registered.
 -- * The stored closure's erased type does not match @request -> Task _ _@
 --   (guards against 'unsafeCoerce' slippage).
+--
+-- Marked 'INLINE' so the 'case Maybe' in 'ShimEmit.emit' can fuse across
+-- module boundaries after specialisation, preserving ADR-0055 §3's
+-- "one direct function call per emit" hot-path property.
 lookup ::
   forall request.
   (Integration request, Typeable request, Typeable (Response request)) =>
@@ -65,8 +71,10 @@ lookup (DispatchRegistry m) = do
   case GhcMap.lookup key m of
     Nothing -> Nothing
     Just erased -> Unknown.toValue erased
+{-# INLINE lookup #-}
 
 
 -- | Count of registrations.
 size :: DispatchRegistry -> Int
 size (DispatchRegistry m) = GhcMap.size m
+{-# INLINE size #-}
