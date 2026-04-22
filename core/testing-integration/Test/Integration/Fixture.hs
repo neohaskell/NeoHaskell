@@ -184,7 +184,7 @@ applyRedactionRules rules value =
     applyRule rule val = case rule of
       RedactJsonPath _ replacement -> replaceAtPath val replacement
       RedactHeader _ _ -> val
-      RedactMatching pattern replacement -> redactMatchingInValue pattern replacement val
+      RedactMatching regex replacement -> redactMatchingInValue regex replacement val
       AllowEntropyPath _ -> val
 
 
@@ -199,10 +199,10 @@ replaceAtPath value replacement =
 
 
 redactMatchingInValue :: Text -> Text -> Aeson.Value -> Aeson.Value
-redactMatchingInValue pattern replacement value =
+redactMatchingInValue regex replacement value =
   rewriteStrings
     ( \text ->
-        if Text.contains pattern text
+        if Text.contains regex text
           then Aeson.String replacement
           else Aeson.String text
     )
