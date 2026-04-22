@@ -68,6 +68,7 @@ ADRs document significant architectural decisions made during the development of
 | [0052](0052-mcp-stdio-transport.md) | McpTransport — MCP STDIO Transport for AI Assistant Integration | Accepted |
 | [0053](0053-openapi-query-pagination-schema.md) | OpenAPI Query Pagination Schema | Accepted |
 | [0054](0054-multi-tenant-command-query-support.md) | Multi-Tenant Support for Commands and Queries | Accepted |
+| [0055](0055-declarative-integrations-with-fakes.md) | Declarative Integrations with Real/Fake Parity | Proposed |
 
 ## Creating New ADRs
 
