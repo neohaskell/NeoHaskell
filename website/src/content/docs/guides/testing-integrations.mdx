@@ -1,0 +1,240 @@
+---
+title: "Testing integrations"
+description: "Testing outbound and inbound integrations against fakes — unit tests, contract tests, property tests, end-to-end runs, and recording real traffic as fixtures."
+sidebar:
+  order: 8
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+The [Integrating existing systems](/guides/integrating-existing-systems/) guide explained how to *write* an integration. This guide is about *testing* one — against a fake that you trust to behave like the real thing, without touching the network in your test suite or poisoning staging with test traffic.
+
+NeoHaskell ships two separate tools for this, and you'll usually use both:
+
+| Tool | What it does | Lives in |
+|---|---|---|
+| `Test.Integration` helpers | Unit / contract / property tests against the fake of a single integration | `nhcore:testing` sublibrary |
+| `--integrations=fake` flag | Boots your real application binary with every outbound integration swapped for its fake | `nhcore` (production) |
+
+The first runs in milliseconds inside `hspec`. The second is how you run end-to-end smoke tests, acceptance tests, or a local dev copy of the app without hitting Sendgrid, Stripe, or your payment processor.
+
+## The contract every integration signs
+
+When you declare an integration, the typeclass asks for two implementations of the same operation:
+
+```haskell
+class Integration request where
+  type Response request
+  runReal :: request -> Task IntegrationError (Response request)
+  runFake :: request -> Task IntegrationError (Response request)
+```
+
+{/* source: neohaskell/neohaskell/core/service/Service/Integration/Adapter.hs@c85a75c */}
+
+`runReal` makes the HTTP call. `runFake` returns a plausible-looking response without leaving the process. The framework treats them as interchangeable behind a compile-time dispatch table — your domain code calls `Integration.emit` and never knows which one ran.
+
+This is the one thing you have to actually *write* per integration. Everything below is machinery built on top of it.
+
+## Wire `nhcore:testing` into your test suite
+
+The helpers that let you drive fakes from tests live in a separate cabal sublibrary so they cannot leak into production code paths. Add it to your test-suite's `build-depends` (the `neohaskell new` template does this for you):
+
+```cabal
+test-suite myapp-test
+  build-depends:
+    base,
+    myapp,
+    nhcore,
+    nhcore:testing
+```
+
+<Aside type="note">
+If you try to `import Test.Integration` from a production `executable` or from your main `library` stanza, GHC will reject it — `Test.Integration.*` isn't in scope there. That's the whole point of the split: `simulate`, `record`, `promote`, and `fakeProperty` cannot be called from production code, ever.
+</Aside>
+
+In a test module:
+
+```haskell
+import Test.Integration qualified as TestIntegration
+```
+
+That single import gives you every test-only helper described below.
+
+## Recipe 1 — Contract tests
+
+A contract test asserts one simple property: *whatever my fake returns must parse under the declared `Response` schema.* Without it, it's easy for a fake to drift — the fake returns fields that don't exist anymore, or forgets a field the real API always sends.
+
+`contractTests` generates a full test tree for you. You give it an integration type and a name:
+
+```haskell
+module MyApp.Integrations.ContractSpec where
+
+import Test
+import Test.Integration qualified as TestIntegration
+import MyApp.Integrations.Sendgrid (SendEmail)
+
+
+spec :: Spec Unit
+spec = do
+  TestIntegration.contractTests @SendEmail "sendgrid"
+  TestIntegration.contractTests @Stripe.Charge "stripe"
+  TestIntegration.contractTests @Slack.PostMessage "slack"
+```
+
+{/* source: neohaskell/neohaskell/core/testing-integration/Test/Integration/Contract.hs@c85a75c */}
+
+Under the hood, `contractTests` runs `runFake` against QuickCheck-generated requests, JSON-encodes the response, and asserts it round-trips through `FromJSON`. If a field drifts, the test fails loudly the next CI run.
+
+**Requirements:** the request type needs `Arbitrary` and `Show`; the response type needs `ToJSON` and `FromJSON`. The `Integration` constraint is already there from declaring the integration itself.
+
+## Recipe 2 — Property tests over fakes
+
+`fakeProperty` lets you assert domain invariants over arbitrary requests — the kind of property test that's valuable for payments, quotas, or anything with arithmetic:
+
+```haskell
+spec :: Spec Unit
+spec = describe "Sendgrid" do
+  it "fake always returns a non-empty message id" \_ -> do
+    TestIntegration.fakeProperty @SendEmail \_req resp -> do
+      resp.messageId |> Text.isEmpty |> shouldBe False
+```
+
+{/* source: neohaskell/neohaskell/core/testing-integration/Test/Integration/Property.hs@c85a75c */}
+
+The lambda is called once per QuickCheck-generated request with the request and the fake's response. Put the invariants of your domain here — not the invariants of the remote API.
+
+## Recipe 3 — Driving an inbound integration with `simulate`
+
+Inbound integrations (webhooks, timers, pollers) are harder to unit-test because they don't have a request/response shape. You don't call them — they call you.
+
+`simulate` pushes a synthetic trigger through the inbound fake, the same way the real service would push a real webhook:
+
+```haskell
+spec :: Spec Unit
+spec = describe "Stripe webhook" do
+  it "routes PaymentSucceeded into PaymentReceived command" \_ -> do
+    let trigger = StripeEvent
+          { eventType = "payment_intent.succeeded"
+          , paymentId = "pi_test_123"
+          , amount = 2500
+          }
+    TestIntegration.simulate @StripeWebhook trigger
+    -- ... assert that a PaymentReceived command was dispatched
+```
+
+{/* source: neohaskell/neohaskell/core/testing-integration/Test/Integration/Simulate.hs@c85a75c */}
+
+`simulate` is the inbound analogue of "call the fake outbound dispatcher". It gives you symmetric test ergonomics across both directions.
+
+## Recipe 4 — End-to-end tests with the whole app on fakes
+
+Sometimes you want to exercise the full machinery — command executor, event store, projections, outbound reactions — with *every* external call swapped for its fake. You don't want a dozen separate test helpers; you want your real binary, with fakes.
+
+That's what `--integrations=fake` does. Run your compiled application with:
+
+```bash
+NEOHASKELL_ALLOW_FAKE_INTEGRATIONS=1 \
+  ./myapp --integrations=fake
+```
+
+Every outbound integration now dispatches to `runFake`. Your command handlers, projections, and inbound routes are otherwise unchanged. You can hit HTTP endpoints with `curl`, run Playwright or Cypress against your API, or drive it from a Python acceptance-test harness — it's just your app, with the network wiring pinned to the fakes.
+
+{/* source: neohaskell/neohaskell/core/service/Service/Integration/Selection.hs@c85a75c */}
+
+### The `NEOHASKELL_ALLOW_FAKE_INTEGRATIONS` gate
+
+`--integrations=fake` is only honoured when the environment variable is set. Without the gate, the CLI flag is rejected at boot with an error pointing at the docs. This exists so that:
+
+- Production binaries refuse to silently dispatch to fakes, even if a stray argv somehow reaches them.
+- The environment variable is something you set explicitly in staging, CI, or your dev shell — never in a production deployment manifest.
+
+A process without the gate that passes `--integrations=fake` exits with a clear error message before it finishes booting. There is no configuration path that makes this soft-fail.
+
+### Hybrid mode — only some fakes
+
+Sometimes you want to test against fakes for the services that cost money or take time, while keeping everything else real. Use `hybrid`:
+
+```bash
+NEOHASKELL_ALLOW_FAKE_INTEGRATIONS=1 \
+  ./myapp --integrations=hybrid \
+    --fake=sendgrid \
+    --fake=stripe
+```
+
+Named integrations dispatch to their fakes; all others use the real implementation. The name you pass must match the integration's declared name — the gate validates `[A-Za-z0-9_]+` and rejects anything else.
+
+## Recipe 5 — Recording real traffic as fixtures
+
+Fakes drift. Stripe adds a field, your fake doesn't reflect it, and your tests keep passing while prod breaks. The antidote is to periodically record a real-API interaction and check the captured payload into source control — a fixture.
+
+`record` calls `runReal` and writes the response to disk when `NEOHASKELL_RECORD_FIXTURES=1`:
+
+```haskell
+spec :: Spec Unit
+spec = describe "Sendgrid fixtures" do
+  it "captures a welcome email send" \_ -> do
+    let requests = Array.fromLinkedList
+          [ SendEmail { to = "alice@example.com", template = "welcome" } ]
+    TestIntegration.record
+      @SendEmail
+      "sendgrid"
+      TestIntegration.defaultRedactionRules
+      requests
+```
+
+{/* source: neohaskell/neohaskell/core/testing-integration/Test/Integration/Fixture.hs@c85a75c */}
+
+When `NEOHASKELL_RECORD_FIXTURES` is unset, `record` is a no-op — your test suite doesn't hit the network on every run. When the variable is set, it captures into `tests/fixtures/local/<integration>/<hash>.json`. The `local/` directory is in `.gitignore` by default; fixtures only enter the committed tree when you explicitly promote them:
+
+```bash
+NEOHASKELL_PROMOTE_FIXTURES=1 \
+  cabal run -- myapp-fixture-promote sendgrid <hash-prefix>
+```
+
+Committed fixtures live at `tests/fixtures/<integration>/<hash>.json` and should be reviewed like any other code change.
+
+### Redaction
+
+Real API responses contain real data — email addresses, phone numbers, bearer tokens, webhook signing secrets. Before `record` writes anything to disk it:
+
+1. Applies the `RedactionRule`s you pass (plus `defaultRedactionRules` for common email and phone shapes).
+2. Runs an **entropy scan** that detects common secret shapes: `sk_`, `pk_`, `Bearer `, `whsec_`, JWT prefixes, long hex/Base64 blobs, and arbitrary high-entropy strings.
+3. **Aborts the recording** if the scan finds an unredacted secret.
+
+You add integration-specific rules:
+
+```haskell
+sendgridRules :: Array TestIntegration.RedactionRule
+sendgridRules =
+  TestIntegration.defaultRedactionRules
+    |> Array.push (TestIntegration.RedactHeader "Authorization" "<redacted>")
+    |> Array.push (TestIntegration.RedactJsonPath "$.customer.email" "<redacted-email>")
+```
+
+If the entropy scan fires on a value that you *know* is not a secret (a deterministic base64-encoded image, say), acknowledge it with `AllowEntropyPath` pointing at its JSON path. There's no silent-override — every high-entropy value either matches a redaction rule or matches an allow rule, or the recording fails.
+
+## When to use which
+
+A rough decision guide:
+
+- **Changing the fake?** Run the contract test suite. Cheap, runs in milliseconds, catches schema drift.
+- **Writing or changing a command handler that emits an integration call?** Unit test `decide` with your in-memory store as usual — the integration is abstracted out, nothing to stub.
+- **Want to prove a business invariant holds across *any* input to an integration?** `fakeProperty`.
+- **Testing an inbound webhook or timer?** `simulate` with a synthetic trigger.
+- **Running acceptance tests or a local dev copy?** Boot with `--integrations=fake` (with the env gate set) and hit it like a real service.
+- **Worried your fake has drifted from the real API?** Use `record` occasionally — in a separate opt-in job, not on every CI run — and review promoted fixtures as part of your PR flow.
+
+## What you can't do, and why
+
+A few deliberate omissions:
+
+- **Stateful fake scaffolding.** If your fake needs to remember prior calls (a fake bank account with a running balance, a fake order that transitions through states), you roll your own `IORef`/`ConcurrentVar` inside the fake. The framework does not provide a state-machine DSL; it's premature until two or three stateful fakes have shipped and their shape is clear.
+- **Real-API contract tests by default.** `record` never runs in ordinary CI because the env variable is unset. That's intentional — you don't want every PR hitting Sendgrid.
+- **Mocking from production code.** There is no way to call `simulate`, `record`, `promote`, or `fakeProperty` from a module that isn't in the test suite. The cabal sublibrary boundary is the enforcement.
+
+## Where to go from here
+
+- **[Testing](/guides/testing/)** — unit tests for `decide`, `update`, and `combine`. Integration tests start there.
+- **[Integrating existing systems](/guides/integrating-existing-systems/)** — how to actually write `runReal` and `runFake` for a new integration.
+- **[Deployment](/guides/deployment/)** — how to ensure `NEOHASKELL_ALLOW_FAKE_INTEGRATIONS` never makes it into production configuration.
+- **[Integrations reference](/reference/integrations/)** — the full typeclass and API surface.
