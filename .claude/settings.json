@@ -57,7 +57,8 @@
     ],
     "deny": [
       "Bash(rm -rf:*)",
-      "Bash(git push:*)",
+      "Bash(git push --force:*)",
+      "Bash(git push -f:*)",
       "Bash(git reset --hard:*)",
       "Read(.git/**)",
       "Write(.git/**)"
