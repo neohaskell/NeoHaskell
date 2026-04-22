@@ -537,6 +537,13 @@ test-suite nhcore-test-service
     Service.FileUpload.LifecycleSpec
     Service.FileUpload.ResolverSpec
     Service.FileUpload.RoutesSpec
+    Service.Integration.AdapterSpec
+    Service.Integration.ContractSpec
+    Service.Integration.DispatchRegistrySpec
+    Service.Integration.FixtureSpec
+    Service.Integration.PropertySpec
+    Service.Integration.RecorderSpec
+    Service.Integration.SelectionSpec
     Service.MockTransport
     Service.Query.EndpointSpec
     Service.Query.PaginationSpec
@@ -582,6 +589,7 @@ test-suite nhcore-test-integration
     Integration.TimerSpec
     Integration.RegistrySpec
     IntegrationSpec
+    Service.Integration.InboundSpec
     Service.MockTransport
     Service.TestHelpers
 
@@ -630,6 +638,7 @@ test-suite nhcore-test-core
     ParserSpec
     LogSpec
     RedactedSpec
+    Service.Integration.CanonicalSpec
     Schema.OpenApiSpec
     SchemaSpec
     Schema.JsonSchemaSpec
