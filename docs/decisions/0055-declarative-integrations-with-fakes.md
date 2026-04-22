@@ -183,7 +183,15 @@ Compile-time exclusion from production module paths is a stronger guarantee than
 
 ### 3. Selection via `Application.run` — CLI Flag Gated by Environment Variable
 
-Selection happens in the default CLI surface of `Application.run`. No Haskell source change is required to flip from real to fake. The CLI flag alone is insufficient: `--integrations=fake` and `--integrations=hybrid --fake=NAME` are **only honoured** when the environment variable `NEOHASKELL_ALLOW_FAKE_INTEGRATIONS=1` is present in the process environment. Without the env var, `Application.run` rejects the flag at startup with a clear error and exits non-zero.
+Selection happens in the default CLI surface of `Application.run`. No Haskell source change is required to flip from real to fake. The CLI flag alone is insufficient: `--integrations=fake` and `--integrations=hybrid --fake=NAME` are **only honoured** when the environment variable `NEOHASKELL_ALLOW_FAKE_INTEGRATIONS=1` is present in the process environment. Without the env var, `Application.run` rejects the flag at startup with an error and exits non-zero. The error text must include (a) the offending flag, (b) the exact env-var name and required value `NEOHASKELL_ALLOW_FAKE_INTEGRATIONS=1`, and (c) a pointer to the test-wiring documentation. For example:
+
+```
+error: --integrations=fake requires NEOHASKELL_ALLOW_FAKE_INTEGRATIONS=1
+       in the process environment. This gate exists so production binaries
+       cannot silently dispatch to fake implementations. Set the env var in
+       your test harness or staging deployment only — never in production.
+       See: https://neohaskell.org/docs/integrations/fake-mode
+```
 
 | Flag | Env-var requirement | Meaning |
 |------|---------------------|---------|
