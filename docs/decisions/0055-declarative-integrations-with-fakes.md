@@ -243,7 +243,7 @@ Fixtures live under `<projectRoot>/tests/fixtures/<integration-name>/<hash>.json
 
 - `<projectRoot>` is the absolute path resolved from the `Application` config at wire-up time (not `getCurrentDirectory`). The framework refuses to resolve fixture paths against an unset project root — there is no implicit fallback to `cwd`.
 - `<integration-name>` is produced by the `NameOf` type family already used by commands and queries (e.g. `SendEmail`). Because `NameOf` is computed at the type level by the framework, it is never user-controlled. The framework additionally validates that the rendered name matches `[A-Za-z0-9_]+`; any other characters cause fixture loading to fail at startup with a clear error (this catches typos in custom `NameOf` instances, not just malicious input).
-- `<hash>` is the hex-encoded (full 64 character, lower-case) SHA-256 of the request serialised to canonical JSON (RFC 8785 / JCS — see §12). Hex-only means the hash never contributes path-dangerous characters.
+- `<hash>` is the hex-encoded (full 64 character, lower-case) SHA-256 of the request serialised with `Data.Aeson.encode` over a sorted-key `Value`. Fixture files are only ever read and written by Haskell test binaries in this repository, so we deliberately do not use RFC 8785 or any other cross-language canonical form — a plain aeson+sort roundtrip gives us the only property we need: same request → same hash on repeated runs. Hex-only means the hash never contributes path-dangerous characters.
 
 **Path assembly and validation**. The final path is built with `System.FilePath`'s `</>` combinator and then passed through `System.Directory.makeAbsolute`. Before any read or write, the framework asserts that the canonicalised absolute path is a descendant of `<projectRoot>/tests/fixtures/` (prefix check on the resolved absolute path). A mismatch — including attempts like `..`, symlinks pointing outside the root, or Unicode homoglyphs — causes the lookup to be treated as a miss (read path) or the record to fail with an error (write path). This makes fixture-path construction safe even if a future change accidentally plumbs user-controlled text into `<integration-name>` (e.g. via the `--fake=NAME` CLI argument); the validation rejects the value at the boundary rather than trusting callers.
 
@@ -265,7 +265,7 @@ Each file holds the request (for human readability and grep) and the response:
 
 Lookup order when `--integrations=fake` is active:
 
-1. Compute the canonical-JSON SHA-256 of the request.
+1. Compute the SHA-256 of the request's sorted-key aeson encoding.
 2. If `tests/fixtures/<integration-name>/<hash>.json` exists, decode its `response` field as `Response request` and return it.
 3. Otherwise, invoke the instance's `runFake` (default: Arbitrary).
 
@@ -273,7 +273,7 @@ No declarative matcher DSL. A fixture matches one specific request and nothing e
 
 | Candidate | Verdict | Rationale |
 |-----------|---------|-----------|
-| Hash-keyed files (SHA-256 of canonical JSON) | **Chosen** | Deterministic, grep-friendly, no manifest to maintain. Drop in a file, it works. Canonical JSON normalises field order so hand-edits stay stable. |
+| Hash-keyed files (SHA-256 of sorted-key aeson encoding) | **Chosen** | Deterministic, grep-friendly, no manifest to maintain. Drop in a file, it works. Sorting keys before encoding keeps hashes stable across hand edits. |
 | Named fixture files with a manifest mapping scenario-name → request-matcher | Rejected | Introduces a matcher DSL for no gain in the common case (record-and-replay). Adds a manifest file that must stay in sync with fixture files. |
 | A single fixture JSONL per integration | Rejected | Harder to diff, harder to hand-edit, harder to share across branches without conflicts. |
 
@@ -323,7 +323,7 @@ For each `Integration` instance, the framework auto-generates a single property 
 2. **Real output parses as Response.** When `NEOHASKELL_CONTRACT_SANDBOX=1` is set and sandbox credentials are available, generate arbitrary requests, call `runReal`, assert each response parses.
 3. **Structural compatibility.** Both fake and real outputs must satisfy the same `ToSchema` shape derived from `Response request`.
 
-Request and response types should define `toEncoding` (via `genericToEncoding defaultOptions`) so the round-trip and the canonical-JSON hashing path both avoid the quadratic `Value`-tree construction cost. This is an instance-level concern but must be called out in the integration authoring guide so Jess doesn't silently land `toJSON`-only instances that halve throughput in fixture-lookup mode.
+Request and response types should define `toEncoding` (via `genericToEncoding defaultOptions`) so the contract-test round-trip avoids an intermediate `Value` tree. This is an instance-level concern but must be called out in the integration authoring guide so Jess doesn't silently land `toJSON`-only instances that halve throughput in contract-check code paths.
 
 Contract tests live in a test-suite target, not the production executable. Its QuickCheck dependency is consequently linked only into test binaries, keeping the production binary free of the test-framework surface.
 
@@ -382,7 +382,7 @@ Production modules (linked into every NeoHaskell application binary):
 ```text
 core/service/Service/Integration/
   Adapter.hs       -- Integration, InboundIntegration typeclasses (no Arbitrary superclass)
-  Canonical.hs     -- First-party RFC 8785 canonical-JSON encoder + SHA-256 hasher (see §12)
+  FixtureKey.hs    -- Newtype wrapper over the sorted-key aeson SHA-256 request hash
   Fixture.hs       -- Fixture lookup and path validation (read-only in production)
   Selection.hs     -- CLI flag + env-var gate parsing, wiring selection, dispatcher shim
   Debug.hs         -- IntegrationDebug structured-log carrier with Redacted fields (see §11)
@@ -512,32 +512,15 @@ data IntegrationDebug = IntegrationDebug
 log :: IntegrationDebug -> Task never ()
 ```
 
-`requestHash` is the same canonical-JSON SHA-256 used for fixture lookup, so a log line cross-references the fixture file in a safe, token-free way.
+`requestHash` is the same sorted-key aeson SHA-256 used for fixture lookup, so a log line cross-references the fixture file in a safe, token-free way.
 
 **Contract-test failure output**. When a contract-test assertion fails, the default QuickCheck shrink/print path would render the full request and response. The framework intercepts that path: if `Response request` contains a `Redacted` field, or if the response size exceeds a threshold, the failure output prints only the request hash and the failing assertion, pointing the author at the fixture file for inspection. For non-`Redacted` responses, the full request/response is printed as today, because that is the debuggability payoff of the tests.
 
-### 12. Canonical JSON — RFC 8785 First-Party Implementation
+### 12. Fixture Hash Derivation
 
-Fixture hashing requires a deterministic canonical form. The Haskell ecosystem has no well-maintained RFC 8785 / JCS implementation (`canonical-json` on Hackage implements an older scheme used by the cabal signature format, not JCS). Rather than depend on an unmaintained library or build our own bespoke canonical form, nhcore ships a first-party RFC 8785 encoder:
+Fixture hashing uses `Data.Aeson.encode` applied to the request's `ToJSON` value, with object keys recursively sorted before encoding, SHA-256ed, and hex-encoded. Fixtures are only ever read and written by Haskell test binaries in this repository, so we deliberately do not ship a cross-language canonicalisation scheme (RFC 8785, JCS, etc.) — sort-and-encode gives us the only property we actually need: same request → same hash on repeated runs of the same binary. The ~20 lines live in `Service.Integration.FixtureKey`; there is no versioning number because there is no byte-level spec to diverge from.
 
-```haskell
-module Service.Integration.Canonical (encode, hash) where
-
-encode :: (ToEncoding request) => request -> ByteString
-hash :: (ToEncoding request) => request -> Text   -- lowercase hex SHA-256 of encode
-```
-
-Implementation constraints:
-
-- Routes through `toEncoding` (not `toJSON`) to avoid the intermediate `Value` tree.
-- Object keys are UTF-16-sorted per RFC 8785 §3.2.3 (not bytewise UTF-8-sorted).
-- Numbers are serialised per ECMA-262 §7.1.12.1 (IEEE 754 + "shortest round-trippable" formatting).
-- Rejects `NaN` and `±Infinity` at encode time with a `ValidationFailure`.
-- String escape rules follow RFC 8785 §3.2.2.2 (minimal escaping, control-char passthrough as `\uXXXX`).
-
-The implementation is backed by the full official RFC 8785 test-vector suite, committed to `core/service/test/Canonical/Vectors/`. The hashing algorithm and canonical form are versioned: `Canonical.version :: Int` is exposed so a future bug-fix release can announce a framework-level version bump and known-broken fixture hashes. Pinning the canonicaliser to a first-party module means a platform-differing output bug is a framework bug, not a "which JCS library are you on?" coordination problem.
-
-The `Canonical` module is production-linked (needed for fixture *lookup* in fake mode, and used by `Integration.Debug` for request hashes), but its public surface is the two functions above — no extension points that could be misused to influence the hash.
+If cross-language fixture sharing is ever needed, a canonical-JSON implementation can be added in a follow-up ADR. Until then we pay no maintenance cost for a guarantee we do not use.
 
 ## Consequences
 
@@ -556,29 +539,26 @@ The `Canonical` module is production-linked (needed for fixture *lookup* in fake
 ### Negative
 
 - **Response types wanting the default fake must have `Arbitrary`.** For custom records this is a one-liner via `Generic`, but exotic types (opaque identifiers, ADTs with business invariants) require Nick to hand-write an `Arbitrary` instance — or override `runFake`.
-- **Hash-keyed fixtures are not hand-authorable from scratch.** A human cannot sit down and write a fixture without first generating the canonical-JSON hash of a request. In practice authors record-and-edit, but the ergonomics are worse than a named-scenario file.
+- **Hash-keyed fixtures are not hand-authorable from scratch.** A human cannot sit down and write a fixture without first generating the request's SHA-256. In practice authors record-and-edit, but the ergonomics are worse than a named-scenario file.
 - **Secret-bearing integrations cost more to fake.** Because `Redacted` fields block the Arbitrary default, authors of Stripe-like integrations must write `runFake` explicitly. This is deliberate (prevents accidental secret serialisation) but is additional work relative to the "pure record, pure response" happy path.
 - **Breaks ADR-0008 and ADR-0049's adapter layer.** Every integration package and testbed example that today defines `ToAction` or calls `Integration.outbound` on a config record must be rewritten. Scope is manageable (few dozen call sites) but not trivial.
 - **Stateful fakes have no framework scaffolding.** Nick who writes a payment state machine rolls his own `IORef`/`TVar` storage. Different stateful integrations will diverge in how they model state. Deliberate — a framework state-machine DSL is premature — but it does mean test-code ergonomics vary per integration.
 - **Two-library cabal split adds build complexity.** Splitting `Test.Integration.*` into a separate `nhcore:testing` library stanza means test-suite targets must list `nhcore:testing` in addition to `nhcore`. Mitigated by updating the `neohaskell new` template.
-- **First-party RFC 8785 encoder is code nhcore now owns.** No external library drops in — we maintain the JCS implementation and its conformance tests in-tree. Weighed against the zero maintained alternatives in the Haskell ecosystem, this is a net positive.
 
 ### Risks
 
 1. **Schema drift detection misses semantic drift.** Sendgrid could change the meaning of `status = "queued"` without changing the response shape. The framework won't catch it. This is inherent to schema-level checking and is explicitly the tradeoff chosen in §6.
 2. **Sandbox-hitting contract tests introduce flakes.** When `NEOHASKELL_CONTRACT_SANDBOX=1` is on, network instability can fail PR builds unrelated to the change. The mitigation is that this env var is opt-in, typically run on a scheduled job rather than per-PR.
-3. **Fixture file churn on canonical-JSON changes.** If `Service.Integration.Canonical` gains a bug fix that changes byte-level output, existing fixture hashes no longer match. Mitigation: `Canonical.version` is published; a version bump invalidates fixtures explicitly, and the migration path is a re-record pass.
-4. **Arbitrary-generated data can violate integration invariants.** Generated `SendEmail.to` might not be a valid email; the real API would reject it but `runFake` happily returns a generated response. Mitigation: `runFake` is a stub, not a simulator — tests asserting real-API validation behaviour must override `runFake` or use fixtures.
-5. **`NEOHASKELL_ALLOW_FAKE_INTEGRATIONS=1` could leak into production environments.** A deployment copied from staging to production might retain the env var. Mitigation: startup logs an `ERROR`-level line naming active fakes; `/health` exposes `integrations.mode`; deploy checks can enforce the value. This is defence-in-depth — the env var gate is still strictly better than a CLI flag alone.
-6. **Contract-test output redaction is a heuristic.** The rule "if the `Response` type has a `Redacted` field, print only the hash" is coarse. A response containing both a secret and a non-secret field will have its non-secret field hidden in failure output too, which hurts debuggability. Mitigation: authors can shrink/print explicit fields inside the property body when the response type is known.
+3. **Arbitrary-generated data can violate integration invariants.** Generated `SendEmail.to` might not be a valid email; the real API would reject it but `runFake` happily returns a generated response. Mitigation: `runFake` is a stub, not a simulator — tests asserting real-API validation behaviour must override `runFake` or use fixtures.
+4. **`NEOHASKELL_ALLOW_FAKE_INTEGRATIONS=1` could leak into production environments.** A deployment copied from staging to production might retain the env var. Mitigation: startup logs an `ERROR`-level line naming active fakes; `/health` exposes `integrations.mode`; deploy checks can enforce the value. This is defence-in-depth — the env var gate is still strictly better than a CLI flag alone.
+5. **Contract-test output redaction is a heuristic.** The rule "if the `Response` type has a `Redacted` field, print only the hash" is coarse. A response containing both a secret and a non-secret field will have its non-secret field hidden in failure output too, which hurts debuggability. Mitigation: authors can shrink/print explicit fields inside the property body when the response type is known.
 
 ### Mitigations
 
 - **Arbitrary cost**: ship `Generic`-derived defaults in framework code, document the one-liner for custom types, provide `deriving Arbitrary` in the style guide.
-- **Fixture authoring ergonomics**: the recorder handles the common case. For hand-authoring, documentation shows the pattern: write the request as a Haskell literal in a scratch test, print the canonical JSON and its hash, save the file.
+- **Fixture authoring ergonomics**: the recorder handles the common case. For hand-authoring, documentation shows the pattern: write the request as a Haskell literal in a scratch test, print the request hash, save the file at that name.
 - **Migration**: ADR-0008 and ADR-0049's adapter call sites are updated in the same PR series that lands this ADR. The testbed serves as the reference migration.
 - **Stateful fake patterns**: a follow-up ADR may introduce a state-machine helper module once two or three stateful integrations have shipped and their shared shape is clear. Until then, Nick writes the `IORef`/`TVar` plumbing directly.
-- **Canonical JSON conformance**: the RFC 8785 test-vector suite is committed under `core/service/test/Canonical/Vectors/` and is gating on every PR. Any change to canonical output that doesn't also bump `Canonical.version` is a CI failure.
 - **Test-only library boundary**: `nhcore:testing` is documented as test-suite-only. The `neohaskell new` project template wires `nhcore:testing` into the test-suite stanza by default so authors never need to think about the split.
 
 ## Future Work
@@ -597,4 +577,3 @@ The `Canonical` module is production-linked (needed for fixture *lookup* in fake
 - [core/service/Integration.hs](../../core/service/Integration.hs) — current top-level re-exports, updated by this ADR.
 - [core/service/Service/Integration/Types.hs](../../core/service/Service/Integration/Types.hs) — `OutboundRunner` type-erased runner, adapted to dispatch via the new typeclass.
 - [core/service/Service/OutboundIntegration/Core.hs](../../core/service/Service/OutboundIntegration/Core.hs) — `OutboundIntegration` typeclass (unchanged).
-- [RFC 8785: JSON Canonicalization Scheme (JCS)](https://datatracker.ietf.org/doc/html/rfc8785) — canonical JSON used for fixture hashing.

@@ -28,8 +28,8 @@ import Data.Vector qualified as Vector
 import Environment qualified
 import Result (Result (..))
 import Service.Integration.Adapter (Integration (..))
-import Service.Integration.Canonical qualified as Canonical
 import Service.Integration.Fixture qualified as ProdFixture
+import Service.Integration.FixtureKey qualified as FixtureKey
 import Service.Integration.IntegrationError (IntegrationError (..))
 import System.Directory qualified as GhcDir
 import System.FilePath qualified as GhcFilePath
@@ -94,16 +94,14 @@ record integrationName rules requests = do
       case EntropyScan.scanForSecrets (collectAllowedPaths activeRules) redactedResponse of
         Err issues -> Task.throw (ValidationFailure (Text.joinWith "; " (Array.fromLinkedList issues)))
         Ok _ -> Task.yield ()
-      case Canonical.hash request of
-        Err e -> Task.throw e
-        Ok hex -> do
-          let dir = GhcFilePath.joinPath [Text.toLinkedList root, "tests", "fixtures", "local", Text.toLinkedList name]
-          let filePath = dir GhcFilePath.</> (Text.toLinkedList hex ++ ".json")
-          let localRootAssembled =
-                GhcFilePath.joinPath [Text.toLinkedList root, "tests", "fixtures", "local"]
-          assertInsideRoot localRootAssembled filePath
-          let content = Aeson.object [(AesonKey.fromText "request", redactedRequest), (AesonKey.fromText "response", redactedResponse)]
-          writeFixture dir filePath content
+      let hex = FixtureKey.toText (FixtureKey.fromRequest request)
+      let dir = GhcFilePath.joinPath [Text.toLinkedList root, "tests", "fixtures", "local", Text.toLinkedList name]
+      let filePath = dir GhcFilePath.</> (Text.toLinkedList hex ++ ".json")
+      let localRootAssembled =
+            GhcFilePath.joinPath [Text.toLinkedList root, "tests", "fixtures", "local"]
+      assertInsideRoot localRootAssembled filePath
+      let content = Aeson.object [(AesonKey.fromText "request", redactedRequest), (AesonKey.fromText "response", redactedResponse)]
+      writeFixture dir filePath content
 
 
 -- | Promote local fixture files matching any of the given hash prefixes.

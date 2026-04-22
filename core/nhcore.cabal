@@ -191,8 +191,6 @@ library
     Integration.Lifecycle
     Integration.Timer
     Service.Integration.Adapter
-    Service.Integration.Canonical
-    Service.Integration.Canonical.Version
     Service.Integration.Debug
     Service.Integration.Dispatcher
     Service.Integration.DispatchRegistry
@@ -685,7 +683,6 @@ test-suite nhcore-test-core
     ParserSpec
     LogSpec
     RedactedSpec
-    Service.Integration.CanonicalSpec
     Schema.OpenApiSpec
     SchemaSpec
     Schema.JsonSchemaSpec
