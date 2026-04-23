@@ -12,6 +12,7 @@ on:
 
 jobs:
   claude-review:
+    if: false # Disabled pending Claude Code GitHub App installation
     # Optional: Filter by PR author
     # if: |
     #   github.event.pull_request.user.login == 'external-contributor' ||
