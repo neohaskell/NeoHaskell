@@ -3,6 +3,7 @@
 module Service.Application (
   -- * Application Type
   Application (..),
+  IntegrationRegistrationEntry (..),
 
   -- * ServiceRunner Type
   ServiceRunner (..),
@@ -107,7 +108,6 @@ import Service.Integration.Adapter (Integration, mkDispatcher)
 import Service.Integration.Adapter qualified as Adapter
 import Service.Integration.DispatchRegistry (DispatchRegistry)
 import Service.Integration.DispatchRegistry qualified as DispatchRegistry
-import Service.Integration.GlobalRegistry qualified as GlobalRegistry
 import Service.Integration.Selection (Selection (..))
 import Service.Integration.Selection qualified as Selection
 import Integration.Lifecycle qualified as Lifecycle
@@ -797,34 +797,7 @@ run app =
            |> Task.ignoreError
 
      -- 2b. Parse ADR-0055 integration selection from argv and wire DispatchRegistry
-     selection <- Selection.parseSelection
-       |> Task.mapError (\err -> [fmt|Integration flag error: #{err}|])
-     let registry =
-           app.integrationRegistrations
-             |> Array.reduce
-                 (\entry reg -> entry.registerInto selection reg)
-                 DispatchRegistry.empty
-     Task.fromIO (GlobalRegistry.setGlobal registry)
-     let maybeIntegrationStatus = case selection of
-           Real -> Nothing
-           Fake -> do
-             let names = app.integrationRegistrations |> Array.map (\e -> e.integrationName)
-             Just (IntegrationStatus { mode = "fake", fakes = names })
-           Hybrid fakeNames ->
-             Just (IntegrationStatus { mode = "hybrid", fakes = fakeNames })
-     case selection of
-       Real -> pass
-       Fake -> do
-         let names =
-               app.integrationRegistrations
-                 |> Array.map (\e -> e.integrationName)
-                 |> Text.joinWith ", "
-         Log.critical [fmt|Fake integrations active: #{names}|]
-           |> Task.ignoreError
-       Hybrid fakeNames -> do
-         let names = fakeNames |> Text.joinWith ", "
-         Log.critical [fmt|Fake integrations active: #{names}|]
-           |> Task.ignoreError
+     (registry, maybeIntegrationStatus) <- buildIntegrationContext app
 
      -- 3. Validate EventStore is configured and create it
      eventStore <- case app.eventStoreFactory of
@@ -960,7 +933,7 @@ run app =
            , outboundLifecycleRunners = resolvedOutboundLifecycleRunners
            , inboundIntegrations = resolvedInboundIntegrations
            }
-     runWithResolved eventStore maybeFileUploadSetup fileUploadCleanup maybeWebAuthSetup maybeIntegrationStatus resolvedApp
+     runWithResolved eventStore maybeFileUploadSetup fileUploadCleanup maybeWebAuthSetup maybeIntegrationStatus registry resolvedApp
 
 
 -- | Run application with a provided EventStore.
@@ -1037,6 +1010,8 @@ runWith eventStore app = do
   case Array.isEmpty app.deferredInboundRegs of
     False -> Task.throw "runWith does not support config-dependent inbound integrations. Use Application.run instead, or use: withInbound @() (\\_ -> yourInbound)"
     True -> pass
+  -- Build ADR-0055 DispatchRegistry and integration status (same helper as run)
+  (registry, maybeIntegrationStatus) <- buildIntegrationContext app
   let resolvedApp = app
         { corsConfig = resolvedCorsConfig
         , apiInfo = resolvedApiInfo
@@ -1044,7 +1019,7 @@ runWith eventStore app = do
         , dispatcherConfig = resolvedDispatcherConfig
         , secretStore = resolvedSecretStore
         }
-  runWithResolved eventStore maybeFileUploadSetup fileUploadCleanup maybeWebAuthSetup Nothing resolvedApp
+  runWithResolved eventStore maybeFileUploadSetup fileUploadCleanup maybeWebAuthSetup maybeIntegrationStatus registry resolvedApp
 
 
 -- | Internal: Run application with pre-resolved EventStore, FileUpload, and Auth.
@@ -1057,9 +1032,10 @@ runWithResolved ::
   Task Text () ->
   Maybe WebAuthSetup ->
   Maybe IntegrationStatus ->
+  DispatchRegistry ->
   Application ->
   Task Text Unit
-runWithResolved eventStore maybeFileUploadSetup fileUploadCleanup maybeWebAuthSetup maybeIntegrationStatus app = do
+runWithResolved eventStore maybeFileUploadSetup fileUploadCleanup maybeWebAuthSetup maybeIntegrationStatus integrationRegistry app = do
   -- 1. Wire all query definitions and collect registries + endpoints + schemas
   wiredQueries <-
     app.queryDefinitions
@@ -1226,6 +1202,7 @@ runWithResolved eventStore maybeFileUploadSetup fileUploadCleanup maybeWebAuthSe
             , Integration.providerRegistry = Integration.fromMap Map.empty
             , Integration.refreshLocks = refreshLocksMap
             , Integration.fileAccess = maybeFileAccessContext
+            , Integration.outboundDispatch = integrationRegistry
             }
         )
     Just (OAuth2Setup envVarName providerFactories) -> do
@@ -1262,6 +1239,7 @@ runWithResolved eventStore maybeFileUploadSetup fileUploadCleanup maybeWebAuthSe
               , Integration.providerRegistry = Integration.fromMap providerMap
               , Integration.refreshLocks = refreshLocksMap2
               , Integration.fileAccess = maybeFileAccessContext
+              , Integration.outboundDispatch = integrationRegistry
               }
       -- Create route handlers with loaded HMAC key and rate limiters
       let routeDeps =
@@ -1360,6 +1338,48 @@ runWithResolved eventStore maybeFileUploadSetup fileUploadCleanup maybeWebAuthSe
   case result of
     Err err -> Task.throw err
     Ok _ -> Task.yield unit
+
+
+-- | Parse the ADR-0055 @--integrations@ CLI flag and build the
+-- 'DispatchRegistry' from the application's registered integrations.
+--
+-- Also emits the startup 'Log.critical' line when fake or hybrid mode is
+-- active, and returns the 'IntegrationStatus' block that the @/health@
+-- endpoint surfaces (only in fake/hybrid modes — real mode returns
+-- 'Nothing', keeping the health body minimal).
+--
+-- Shared by 'run' and 'runWith' so both entry points wire integrations
+-- identically.
+buildIntegrationContext :: Application -> Task Text (DispatchRegistry, Maybe IntegrationStatus)
+buildIntegrationContext app = do
+  selection <- Selection.parseSelection
+    |> Task.mapError (\err -> [fmt|Integration flag error: #{err}|])
+  let registry =
+        app.integrationRegistrations
+          |> Array.reduce
+              (\entry reg -> entry.registerInto selection reg)
+              DispatchRegistry.empty
+  let maybeStatus = case selection of
+        Real -> Nothing
+        Fake -> do
+          let names = app.integrationRegistrations |> Array.map (\e -> e.integrationName)
+          Just (IntegrationStatus { mode = "fake", fakes = names })
+        Hybrid fakeNames ->
+          Just (IntegrationStatus { mode = "hybrid", fakes = fakeNames })
+  case selection of
+    Real -> pass
+    Fake -> do
+      let names =
+            app.integrationRegistrations
+              |> Array.map (\e -> e.integrationName)
+              |> Text.joinWith ", "
+      Log.critical [fmt|Fake integrations active: #{names}|]
+        |> Task.ignoreError
+    Hybrid fakeNames -> do
+      let names = fakeNames |> Text.joinWith ", "
+      Log.critical [fmt|Fake integrations active: #{names}|]
+        |> Task.ignoreError
+  Task.yield (registry, maybeStatus)
 
 
 -- | Merge two QueryRegistries by combining their updaters.

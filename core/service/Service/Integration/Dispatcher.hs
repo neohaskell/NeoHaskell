@@ -93,6 +93,7 @@ import Service.Event (Event (..))
 import Service.Event.EntityName qualified as EntityName
 import Service.Event.StreamId (StreamId)
 import Service.EventStore.Core (EventStore)
+import Service.Integration.DispatchRegistry qualified as DispatchRegistry
 import Service.Integration.Types (OutboundRunner (..), OutboundLifecycleRunner (..), WorkerState (..))
 import Service.Transport (EndpointHandler)
 import Task (Task)
@@ -279,6 +280,7 @@ new store runners endpoints = do
         , Integration.providerRegistry = Integration.fromMap Map.empty
         , Integration.refreshLocks = emptyRefreshLocks
         , Integration.fileAccess = Nothing
+        , Integration.outboundDispatch = DispatchRegistry.empty
         }
   newWithLifecycleConfig defaultConfig store runners [] endpoints emptyContext
 
@@ -300,6 +302,7 @@ newWithLifecycle store runners lifecycleRunners endpoints = do
         , Integration.providerRegistry = Integration.fromMap Map.empty
         , Integration.refreshLocks = emptyRefreshLocks
         , Integration.fileAccess = Nothing
+        , Integration.outboundDispatch = DispatchRegistry.empty
         }
   newWithLifecycleConfig defaultConfig store runners lifecycleRunners endpoints emptyContext
 

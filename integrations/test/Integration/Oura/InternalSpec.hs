@@ -17,6 +17,7 @@ import Integration.Oura.Internal
   )
 import Integration.Oura.Types (PaginatedResponse (..), SleepData (..), WorkoutData (..), PersonalInfoData (..))
 import Integration (ActionContext (..), IntegrationError (..), fromMap)
+import Service.Integration.DispatchRegistry qualified as DispatchRegistry
 import Auth.OAuth2.TokenRefresh (TokenRefreshError (..))
 import Auth.OAuth2.Types (OAuth2Error (TokenRequestFailed))
 import Auth.SecretStore.InMemory qualified as InMemorySecretStore
@@ -131,6 +132,7 @@ spec = do
               , providerRegistry = fromMap Map.empty
               , refreshLocks = emptyLocks
               , fileAccess = Nothing
+              , outboundDispatch = DispatchRegistry.empty
               }
 
         let task :: Task Text (Result IntegrationError ValidatedOAuth2ProviderConfig)

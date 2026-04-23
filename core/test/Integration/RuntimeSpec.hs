@@ -18,6 +18,7 @@ import Service.Command.Core (NameOf)
 import Service.Entity.Core (Entity (..), EventOf)
 import Service.Event.EntityName (EntityName (..))
 import Service.EventStore.InMemory qualified as InMemory
+import Service.Integration.DispatchRegistry qualified as DispatchRegistry
 import Service.OutboundIntegration.Core (OutboundIntegration (..))
 import Service.OutboundIntegration.TH (outboundIntegration)
 import Service.TestHelpers (insertTypedEvent)
@@ -131,6 +132,7 @@ makeContext = do
       , Integration.providerRegistry = Integration.fromMap Map.empty
       , Integration.refreshLocks = locks
       , Integration.fileAccess = Nothing
+      , Integration.outboundDispatch = DispatchRegistry.empty
       }
 
 
