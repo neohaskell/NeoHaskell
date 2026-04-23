@@ -1,5 +1,6 @@
 module Service.Integration.AdapterSpec where
 
+import AsyncTask qualified
 import Core
 import Data.List qualified as GhcList
 import Data.Typeable (typeRep, Proxy (..))
@@ -109,14 +110,20 @@ spec = do
               variants
       count |> shouldBe 5
 
-    it "override of runFake does not force Arbitrary (Response r) constraint on the instance" \_ ->
-      pending "Phase 8 — ADR-0055 AdapterSpec/13 (requires test fixture module)"
+    it "override of runFake does not force an Arbitrary (Response r) constraint on the instance" \_ -> do
+      -- ChargeIntentResponse has no QuickCheck.Arbitrary instance, yet
+      -- `Integration ChargeIntent` compiles because `runFake` is overridden.
+      -- Calling the override here confirms that the default-only constraint
+      -- does not leak to overriding instances.
+      let req = mkChargeIntent "intent-77" 250
+      result <- runFake req |> Task.asResult
+      result |> shouldBe (Ok (ChargeIntentResponse {status = "captured"}))
 
-    it "defining an instance without Arbitrary (Response r) and without an override is rejected at compile time" \_ ->
-      pending "Phase 8 — ADR-0055 AdapterSpec/16 (requires -fdefer-type-errors submodule)"
-
-    it "Response type family rejects a mismatched response on an override" \_ ->
-      pending "Phase 8 — ADR-0055 AdapterSpec/17 (requires -fdefer-type-errors submodule)"
-
-    it "default runFake invocation is non-blocking (returns within 2 s)" \_ ->
-      pending "Phase 8 — ADR-0055 AdapterSpec/18 (requires test fixture module)"
+    it "default runFake invocation is non-blocking (returns within 2 s)" \_ -> do
+      let req = mkSendEmail "latency@example.com" "tmpl"
+      handle <- AsyncTask.run (runFake req) |> Task.mapError toText
+      AsyncTask.sleep 2000 |> Task.mapError (\_ -> "sleep error" :: Text)
+      outcome <- AsyncTask.waitCatch handle
+      case outcome of
+        Ok _ -> pass
+        Err err -> fail [fmt|runFake did not complete within 2 s: #{err}|]

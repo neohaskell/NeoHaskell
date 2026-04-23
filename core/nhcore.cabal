@@ -193,7 +193,6 @@ library
     Service.Integration.Adapter
     Service.Integration.Dispatcher
     Service.Integration.DispatchRegistry
-    Service.Integration.GlobalRegistry
     Service.Integration.IntegrationError
     Service.Integration.Selection
     Service.Integration.ShimEmit
@@ -549,6 +548,7 @@ test-suite nhcore-test-service
     Service.Integration.DispatchRegistrySpec
     Service.Integration.SelectionSpec
     Service.Integration.TestFixtures
+    Service.Integration.WireupSpec
     Service.MockTransport
     Service.Query.EndpointSpec
     Service.Query.PaginationSpec

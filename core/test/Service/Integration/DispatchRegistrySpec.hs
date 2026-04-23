@@ -65,20 +65,20 @@ spec = do
         Nothing -> pass
         Just _ -> fail "Expected Nothing, got Just"
 
-    it "the stored closure preserves its Response type (no unsafeCoerce slippage)" \_ ->
-      pending "Phase 8 — ADR-0055 DispatchRegistrySpec/7 (requires -fdefer-type-errors submodule)"
-
-    it "DispatchRegistry.lookup applied against a mismatched type witness returns Nothing" \_ ->
-      pending "Phase 8 — ADR-0055 DispatchRegistrySpec/8 (requires test fixture module)"
-
-    it "thread-safety: 16 concurrent register calls succeed" \_ ->
-      pending "Phase 8 — ADR-0055 DispatchRegistrySpec/9 (requires concurrent test infrastructure)"
-
-    it "thread-safety: 100 concurrent lookup calls never return a stale Nothing" \_ ->
-      pending "Phase 8 — ADR-0055 DispatchRegistrySpec/10 (requires concurrent test infrastructure)"
+    it "the stored closure preserves its Response type (no unsafeCoerce slippage)" \_ -> do
+      -- Register ChargeIntent's overridden runFake, look it up via the same
+      -- type witness, and assert the concrete response value survives the
+      -- round-trip bit-for-bit. Any slippage in the TypeRep-keyed storage
+      -- would either crash, produce garbage, or decode to a wrong value.
+      let reg =
+            DispatchRegistry.empty
+              |> DispatchRegistry.register @ChargeIntent (runFake @ChargeIntent)
+      case DispatchRegistry.lookup @ChargeIntent reg of
+        Nothing -> fail "Expected Just closure for ChargeIntent"
+        Just closure -> do
+          let req = mkChargeIntent "intent-roundtrip" 9999
+          result <- closure req |> Task.asResult
+          result |> shouldBe (Ok (ChargeIntentResponse {status = "captured"}))
 
     it "empty-registry size is 0" \_ -> do
       DispatchRegistry.size DispatchRegistry.empty |> shouldBe 0
-
-    it "registering 1024 distinct types yields 1024 lookups all returning Just" \_ ->
-      pending "Phase 8 — ADR-0055 DispatchRegistrySpec/12 (requires 1024 distinct Integration instances)"

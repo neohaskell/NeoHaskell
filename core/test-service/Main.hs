@@ -21,6 +21,7 @@ import Service.FileUpload.RoutesSpec qualified
 import Service.Integration.AdapterSpec qualified
 import Service.Integration.DispatchRegistrySpec qualified
 import Service.Integration.SelectionSpec qualified
+import Service.Integration.WireupSpec qualified
 import Service.Query.EndpointSpec qualified
 import Service.Query.RegistrySpec qualified
 import Service.Query.SubscriberSpec qualified
@@ -60,6 +61,7 @@ main = Hspec.hspec do
   Hspec.describe "Service.Integration.Adapter" Service.Integration.AdapterSpec.spec
   Hspec.describe "Service.Integration.DispatchRegistry" Service.Integration.DispatchRegistrySpec.spec
   Hspec.describe "Service.Integration.Selection" Service.Integration.SelectionSpec.spec
+  Hspec.describe "Service.Integration.Wireup" Service.Integration.WireupSpec.spec
   Hspec.describe "Service.Query.Endpoint" Service.Query.EndpointSpec.spec
   Hspec.describe "Service.Query.Registry" Service.Query.RegistrySpec.spec
   Hspec.describe "Service.Query.Subscriber" Service.Query.SubscriberSpec.spec
