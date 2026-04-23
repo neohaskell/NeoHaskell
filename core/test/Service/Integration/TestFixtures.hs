@@ -52,6 +52,9 @@ instance QuickCheck.Arbitrary SendEmailResponse where
 instance Integration SendEmail where
   type Response SendEmail = SendEmailResponse
   runReal _req = Task.throw (TransientFailure "not implemented in tests")
+  runFake _req = do
+    response <- QuickCheck.generate QuickCheck.arbitrary |> Task.fromIO
+    Task.yield response
 
 
 data ChargeIntent = ChargeIntent

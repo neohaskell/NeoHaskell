@@ -45,8 +45,11 @@ data Selection
   deriving (Eq, Show, Generic)
 
 
--- | Set of integration names that should dispatch to fakes in hybrid mode.
-newtype FakeNameRegistry = FakeNameRegistry (Set Text)
+-- | Registry of integrations that should dispatch to fakes.
+data FakeNameRegistry
+  = NoFakeNames
+  | AllFakeNames
+  | SomeFakeNames (Set Text)
   deriving (Eq, Show, Generic)
 
 
@@ -147,17 +150,20 @@ isFakeByName name selection =
 -- | Build a 'FakeNameRegistry' from a selection for hybrid dispatch lookup.
 fromSelection :: Selection -> FakeNameRegistry
 fromSelection selection = case selection of
-  Real -> FakeNameRegistry Set.empty
-  Fake -> FakeNameRegistry Set.empty
-  Hybrid names -> FakeNameRegistry (Set.fromArray names)
+  Real -> NoFakeNames
+  Fake -> AllFakeNames
+  Hybrid names -> SomeFakeNames (Set.fromArray names)
 
 
 fakeNameMember :: Text -> FakeNameRegistry -> Bool
-fakeNameMember name (FakeNameRegistry set) = Set.member name set
+fakeNameMember name registry = case registry of
+  NoFakeNames -> False
+  AllFakeNames -> True
+  SomeFakeNames set -> Set.member name set
 
 
 fakeNameFromArray :: Array Text -> FakeNameRegistry
-fakeNameFromArray names = FakeNameRegistry (Set.fromArray names)
+fakeNameFromArray names = SomeFakeNames (Set.fromArray names)
 
 
 -- Helpers ------------------------------------------------------------------

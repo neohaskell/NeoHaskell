@@ -20,7 +20,7 @@ spec = do
       let repDirect = typeRep (Proxy @SendEmailResponse)
       repResp |> shouldBe repDirect
 
-    it "default runFake produces a parseable SendEmailResponse" \_ -> do
+    it "runFake produces a parseable SendEmailResponse" \_ -> do
       let req = mkSendEmail "alice@example.com" "template-001"
       result <- runFake req |> Task.asResult
       case result of
@@ -32,21 +32,21 @@ spec = do
       result <- runFake req |> Task.asResult
       result |> shouldBe (Ok (ChargeIntentResponse {status = "captured"}))
 
-    it "default runFake handles an empty Array (Text,Text) in the request" \_ -> do
+    it "runFake handles an empty Array (Text,Text) in the request" \_ -> do
       let req = SendEmail { to = "bob@example.com", templateId = "t1", variables = [] }
       result <- runFake req |> Task.asResult
       case result of
         Err err -> fail [fmt|Expected Ok, got Err: #{toText err}|]
         Ok _ -> pass
 
-    it "default runFake handles a single-element variables collection" \_ -> do
+    it "runFake handles a single-element variables collection" \_ -> do
       let req = SendEmail { to = "carol@example.com", templateId = "t2", variables = [("key", "val")] }
       result <- runFake req |> Task.asResult
       case result of
         Err err -> fail [fmt|Expected Ok, got Err: #{toText err}|]
         Ok _ -> pass
 
-    it "default runFake handles a multi-element variables collection of 1024 pairs" \_ -> do
+    it "runFake handles a multi-element variables collection of 1024 pairs" \_ -> do
       let pairs = GhcList.replicate 1024 ("k", "v")
       let req = SendEmail { to = "dave@example.com", templateId = "t3", variables = pairs }
       result <- runFake req |> Task.asResult
@@ -54,14 +54,14 @@ spec = do
         Err err -> fail [fmt|Expected Ok, got Err: #{toText err}|]
         Ok _ -> pass
 
-    it "default runFake handles Unicode / multi-byte to field" \_ -> do
+    it "runFake handles Unicode / multi-byte to field" \_ -> do
       let req = mkSendEmail "用户@例子.广告" "tmpl"
       result <- runFake req |> Task.asResult
       case result of
         Err err -> fail [fmt|Expected Ok, got Err: #{toText err}|]
         Ok _ -> pass
 
-    it "default runFake handles an empty to Text" \_ -> do
+    it "runFake handles an empty to Text" \_ -> do
       let req = mkSendEmail "" "tmpl"
       result <- runFake req |> Task.asResult
       case result of
@@ -88,38 +88,22 @@ spec = do
       (AuthenticationFailure == AuthenticationFailure) |> shouldBe True
       (AuthenticationFailure != TransportFailure "") |> shouldBe True
 
-    it "every IntegrationError constructor is reachable (exhaustiveness check)" \_ -> do
-      let variants :: [IntegrationError]
-          variants =
-            [ TransportFailure "a",
-              AuthenticationFailure,
-              PermanentFailure "b",
-              TransientFailure "c",
-              ValidationFailure "d"
-            ]
-      let count =
-            GhcList.foldl'
-              ( \acc variant -> case variant of
-                  TransportFailure _ -> acc + 1
-                  AuthenticationFailure -> acc + 1
-                  PermanentFailure _ -> acc + 1
-                  TransientFailure _ -> acc + 1
-                  ValidationFailure _ -> acc + 1
-              )
-              (0 :: Int)
-              variants
-      count |> shouldBe 5
+    it "every IntegrationError constructor is covered by the tag helper" \_ -> do
+      let tag variant = case variant of
+            TransportFailure _ -> "transport" :: Text
+            AuthenticationFailure -> "auth"
+            PermanentFailure _ -> "permanent"
+            TransientFailure _ -> "transient"
+            ValidationFailure _ -> "validation"
+      GhcList.map tag [TransportFailure "a", AuthenticationFailure, PermanentFailure "b", TransientFailure "c", ValidationFailure "d"]
+        |> shouldBe ["transport", "auth", "permanent", "transient", "validation"]
 
-    it "override of runFake does not force an Arbitrary (Response r) constraint on the instance" \_ -> do
-      -- ChargeIntentResponse has no QuickCheck.Arbitrary instance, yet
-      -- `Integration ChargeIntent` compiles because `runFake` is overridden.
-      -- Calling the override here confirms that the default-only constraint
-      -- does not leak to overriding instances.
+    it "explicit runFake override is called instead of the declared default" \_ -> do
       let req = mkChargeIntent "intent-77" 250
       result <- runFake req |> Task.asResult
       result |> shouldBe (Ok (ChargeIntentResponse {status = "captured"}))
 
-    it "default runFake invocation is non-blocking (returns within 2 s)" \_ -> do
+    it "runFake invocation is non-blocking (returns within 2 s)" \_ -> do
       let req = mkSendEmail "latency@example.com" "tmpl"
       handle <- AsyncTask.run (runFake req) |> Task.mapError toText
       AsyncTask.sleep 2000 |> Task.mapError (\_ -> "sleep error" :: Text)

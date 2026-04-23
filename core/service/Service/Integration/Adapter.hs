@@ -1,5 +1,4 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
-{-# LANGUAGE DefaultSignatures #-}
 
 module Service.Integration.Adapter
   ( Integration (..),
@@ -13,7 +12,6 @@ import Service.Integration.IntegrationError (IntegrationError)
 import Service.Integration.Selection (Selection (..))
 import Task (Task)
 import Task qualified
-import Test.QuickCheck qualified as QuickCheck
 import TypeName qualified
 
 
@@ -23,15 +21,6 @@ class Integration request where
   runReal :: request -> Task IntegrationError (Response request)
 
   runFake :: request -> Task IntegrationError (Response request)
-  default runFake ::
-    (QuickCheck.Arbitrary (Response request)) =>
-    request ->
-    Task IntegrationError (Response request)
-  runFake _request = do
-    generated <-
-      QuickCheck.generate QuickCheck.arbitrary
-        |> Task.fromIO
-    Task.yield generated
 
 
 -- | Build a pre-bound dispatcher closure for a request type based on the
