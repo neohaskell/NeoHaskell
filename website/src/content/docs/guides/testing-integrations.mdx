@@ -82,13 +82,13 @@ To boot the binary with every outbound integration using its fake:
 myapp --integrations=fake
 ```
 
-NeoHaskell logs one `ERROR`-level line at startup naming the active fakes, so it's impossible to miss in CI or container logs:
+NeoHaskell logs one `critical`-level line at startup naming the active fakes, so it's impossible to miss in CI or container logs:
 
 ```
-[ERROR] Fake integrations active: Sendgrid, Stripe
+[CRITICAL] Fake integrations active: Sendgrid, Stripe
 ```
 
-The `/health` endpoint also reports the mode:
+The `/health` endpoint also reports the mode whenever fakes are active:
 
 ```json
 {
@@ -100,8 +100,10 @@ The `/health` endpoint also reports the mode:
 }
 ```
 
+In real mode (the default — no `--integrations` flag, or `--integrations=real`) the `/health` response **omits the `integrations` block entirely**. The absence of the key is the production signal; a deploy-check should assert that `integrations` is *not present* in the response rather than matching a string value.
+
 <Aside type="caution">
-The `--integrations=fake` flag is visible in `ps` and in container orchestration UIs. Production deployments must not pass it. A deploy-check that greps argv or polls `/health?integrations.mode=real` catches any misconfiguration.
+The `--integrations=fake` flag is visible in `ps` and in container orchestration UIs. Production deployments must not pass it. A deploy-check that greps argv or asserts the `integrations` key is absent from `/health` catches any misconfiguration.
 </Aside>
 
 ## `--integrations=hybrid` — selective faking

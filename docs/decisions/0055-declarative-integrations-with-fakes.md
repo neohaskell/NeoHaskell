@@ -163,7 +163,7 @@ Selection happens in the default CLI surface of `Application.run`. No Haskell so
 - **Single source of truth.** One mechanism to audit, one mechanism to revoke. Two-mechanism gates encourage the "I'll set the env var globally and forget" anti-pattern that defeats the gate.
 - **Production deploys simply do not pass the flag.** Real deployments invoke the binary with no `--integrations` flag (or with `--integrations=real`); the default is the safe choice. A deploy-check asserts on argv.
 
-On startup, if fake mode is active, `Application.run` logs one line at `ERROR` level (visible in all log aggregations without opt-in) naming the integrations currently in fake mode, and the `/health` endpoint exposes `integrations.mode=fake|hybrid|real` and `integrations.fakes=[...]`. This lets a deploy-check assert that no production instance is ever in fake mode, even if argv inspection is unavailable.
+On startup, if fake mode is active, `Application.run` logs one line at `critical` level (visible in all log aggregations without opt-in) naming the integrations currently in fake mode, and the `/health` endpoint exposes `integrations.mode=fake|hybrid` and `integrations.fakes=[...]`. In real mode the `/health` response omits the `integrations` block entirely — absence of the key is the production signal, so a deploy-check asserts "no `integrations` key present" rather than matching a string. This lets a deploy-check assert that no production instance is ever in fake mode, even if argv inspection is unavailable.
 
 | Candidate | Verdict | Rationale |
 |-----------|---------|-----------|
@@ -281,7 +281,7 @@ Sensitive diagnostic context is the integration author's concern. The framework 
 ### Risks
 
 1. **Arbitrary-generated data can violate integration invariants.** Generated `SendEmail.to` might not be a valid email; the real API would reject it but `runFake` happily returns a generated response. Mitigation: `runFake` is a stub, not a simulator — tests asserting real-API validation behaviour must override `runFake`.
-2. **A `--integrations=fake` flag could land in a production deployment manifest.** A Helm chart, systemd unit, or Kubernetes spec copied from staging might retain the flag. Mitigation: startup logs an `ERROR`-level line naming active fakes; `/health` exposes `integrations.mode`; deploy checks assert on argv (a single grep) and on `/health`. Removing the env-var gate accepts that argv-based audit is the line of defence; the gain is one mechanism to audit instead of two.
+2. **A `--integrations=fake` flag could land in a production deployment manifest.** A Helm chart, systemd unit, or Kubernetes spec copied from staging might retain the flag. Mitigation: startup logs a `critical`-level line naming active fakes; `/health` exposes `integrations.mode` in fake/hybrid mode (real mode omits the block); deploy checks assert on argv (a single grep) and on the absence of `integrations` in `/health`. Removing the env-var gate accepts that argv-based audit is the line of defence; the gain is one mechanism to audit instead of two.
 3. **Fakes silently drift from real APIs.** Without contract testing, a fake that returns a field the real API removed will keep passing tests. Mitigation is operational: integration authors maintain their own real-vs-fake parity discipline. If this becomes a recurring pain we add a follow-up ADR for contract testing.
 
 ### Mitigations
