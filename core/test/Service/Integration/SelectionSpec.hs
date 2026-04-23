@@ -9,86 +9,51 @@ import Test
 import Text qualified
 
 
--- | Run the pure parser with a synthetic gate and argv.
-parse :: Bool -> [Text] -> Task Text Selection
-parse gateOpen args =
-  Selection.parseSelectionFromArgs gateOpen args
+-- | Run the pure parser with a synthetic argv list.
+parse :: [Text] -> Task Text Selection
+parse args =
+  Selection.parseSelectionFromArgs args
 
 
 spec :: Spec Unit
 spec = do
   describe "Service.Integration.Selection" do
-    it "defaults to Real with no flag and no env var" \_ -> do
-      result <- Task.asResult (parse False [])
+    it "defaults to Real with no flag" \_ -> do
+      result <- Task.asResult (parse [])
       result |> shouldBe (Ok Real)
 
-    it "returns Real when --integrations=real and no env var" \_ -> do
-      result <- Task.asResult (parse False ["--integrations=real"])
+    it "returns Real when --integrations=real" \_ -> do
+      result <- Task.asResult (parse ["--integrations=real"])
       result |> shouldBe (Ok Real)
 
-    it "aborts when --integrations=fake but env var absent" \_ -> do
-      result <- Task.asResult (parse False ["--integrations=fake"])
-      case result of
-        Err txt -> do
-          Text.contains "--integrations=fake" txt |> shouldBe True
-          Text.contains "NEOHASKELL_ALLOW_FAKE_INTEGRATIONS=1" txt |> shouldBe True
-        Ok _ -> fail "expected error"
-
-    it "accepts --integrations=fake with env var = 1" \_ -> do
-      result <- Task.asResult (parse True ["--integrations=fake"])
+    it "accepts --integrations=fake" \_ -> do
+      result <- Task.asResult (parse ["--integrations=fake"])
       result |> shouldBe (Ok Fake)
 
-    it "accepts --integrations=hybrid --fake=Sendgrid --fake=Stripe with env var set" \_ -> do
-      result <- Task.asResult (parse True ["--integrations=hybrid", "--fake=Sendgrid", "--fake=Stripe"])
+    it "accepts --integrations=hybrid --fake=Sendgrid --fake=Stripe" \_ -> do
+      result <- Task.asResult (parse ["--integrations=hybrid", "--fake=Sendgrid", "--fake=Stripe"])
       result |> shouldBe (Ok (Hybrid (Array.fromLinkedList ["Sendgrid", "Stripe"])))
 
-    it "aborts hybrid when env var absent" \_ -> do
-      result <- Task.asResult (parse False ["--integrations=hybrid", "--fake=Sendgrid"])
+    it "rejects unknown --integrations=X value" \_ -> do
+      result <- Task.asResult (parse ["--integrations=unknown"])
       case result of
-        Err txt -> do
-          Text.contains "--integrations=hybrid" txt |> shouldBe True
-          Text.contains "NEOHASKELL_ALLOW_FAKE_INTEGRATIONS=1" txt |> shouldBe True
+        Err txt -> Text.contains "unknown" txt |> shouldBe True
         Ok _ -> fail "expected error"
 
-    it "error text mentions flag name --integrations=fake" \_ -> do
-      result <- Task.asResult (parse False ["--integrations=fake"])
+    it "error text mentions the invalid value" \_ -> do
+      result <- Task.asResult (parse ["--integrations=bogus"])
       case result of
-        Err txt -> Text.contains "--integrations=fake" txt |> shouldBe True
+        Err txt -> Text.contains "bogus" txt |> shouldBe True
         Ok _ -> fail "expected error"
 
-    it "error text mentions env var NEOHASKELL_ALLOW_FAKE_INTEGRATIONS=1" \_ -> do
-      result <- Task.asResult (parse False ["--integrations=fake"])
-      case result of
-        Err txt -> Text.contains "NEOHASKELL_ALLOW_FAKE_INTEGRATIONS=1" txt |> shouldBe True
-        Ok _ -> fail "expected error"
-
-    it "error text mentions docs URL" \_ -> do
-      result <- Task.asResult (parse False ["--integrations=fake"])
-      case result of
-        Err txt -> Text.contains "neohaskell.org/docs/integrations/fake-mode" txt |> shouldBe True
-        Ok _ -> fail "expected error"
-
-    it "treats NEOHASKELL_ALLOW_FAKE_INTEGRATIONS=0 as gate closed" \_ -> do
-      result <- Task.asResult (parse False ["--integrations=fake"])
-      case result of
-        Err txt -> Text.contains "NEOHASKELL_ALLOW_FAKE_INTEGRATIONS=1" txt |> shouldBe True
-        Ok _ -> fail "expected error"
-
-    it "treats env var with trailing whitespace as gate closed" \_ -> do
-      -- Our pure parser only accepts True/False for the gate.
-      result <- Task.asResult (parse False ["--integrations=fake"])
-      case result of
-        Err _ -> Task.yield ()
-        Ok _ -> fail "expected error"
-
-    it "rejects --fake= name containing invalid chars with validation error" \_ -> do
-      result <- Task.asResult (parse True ["--integrations=hybrid", "--fake=Evil/../"])
+    it "rejects --fake= name containing invalid chars" \_ -> do
+      result <- Task.asResult (parse ["--integrations=hybrid", "--fake=Evil/../"])
       case result of
         Err txt -> Text.contains "[A-Za-z0-9_]" txt |> shouldBe True
         Ok _ -> fail "expected validation error"
 
     it "hybrid with unknown-but-well-formed integration name is accepted" \_ -> do
-      result <- Task.asResult (parse True ["--integrations=hybrid", "--fake=UnknownSvc"])
+      result <- Task.asResult (parse ["--integrations=hybrid", "--fake=UnknownSvc"])
       result |> shouldBe (Ok (Hybrid (Array.fromLinkedList ["UnknownSvc"])))
 
     it "isFakeByName Sendgrid (Hybrid [Sendgrid, Stripe]) is True" \_ -> do

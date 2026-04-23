@@ -16,7 +16,7 @@ import Maybe (Maybe (..))
 import Maybe qualified
 import Service.ServiceDefinition.Core (TransportValue (..))
 import Service.Transport (Transport (..), QueryEndpointHandler, EndpointHandler, Endpoints (..), EndpointSchema (..))
-import Service.Transport.Web (WebTransport (..), AuthEnabled, OAuth2Config, FileUploadEnabled (..), CorsConfig, HealthCheckConfig)
+import Service.Transport.Web (WebTransport (..), AuthEnabled, OAuth2Config, FileUploadEnabled (..), CorsConfig, HealthCheckConfig, IntegrationStatus)
 import Service.Application.Types (ApiInfo)
 import Task (Task)
 import Task qualified
@@ -51,8 +51,10 @@ runTransports ::
   -- ^ Optional CORS configuration for WebTransport
   Maybe HealthCheckConfig ->
   -- ^ Optional health check configuration for WebTransport
+  Maybe IntegrationStatus ->
+  -- ^ Optional integration selection status for /health reporting
   Task Text Unit
-runTransports transportsMap endpointsByTransport schemasByTransport queryEndpoints querySchemas maybeWebAuth maybeOAuth2 maybeFileUpload maybeApiInfo maybeCors maybeHealthCheck = do
+runTransports transportsMap endpointsByTransport schemasByTransport queryEndpoints querySchemas maybeWebAuth maybeOAuth2 maybeFileUpload maybeApiInfo maybeCors maybeHealthCheck maybeIntegrationStatus = do
   transportsMap
     |> Map.entries
     |> Task.forEach \(transportName, transportVal) -> do
@@ -75,7 +77,7 @@ runTransports transportsMap endpointsByTransport schemasByTransport queryEndpoin
 
         -- Handle WebTransport specially to configure auth, OAuth2, and file uploads
         case transportName of
-          "WebTransport" -> runWebTransport transportVal commandEndpointsForTransport commandSchemasForTransport queryEndpoints querySchemas maybeWebAuth maybeOAuth2 maybeFileUpload maybeApiInfo maybeCors maybeHealthCheck
+          "WebTransport" -> runWebTransport transportVal commandEndpointsForTransport commandSchemasForTransport queryEndpoints querySchemas maybeWebAuth maybeOAuth2 maybeFileUpload maybeApiInfo maybeCors maybeHealthCheck maybeIntegrationStatus
           _ -> runGenericTransport transportVal commandEndpointsForTransport commandSchemasForTransport queryEndpoints querySchemas
 
 
@@ -99,8 +101,9 @@ runWebTransport ::
   Maybe ApiInfo ->
   Maybe CorsConfig ->
   Maybe HealthCheckConfig ->
+  Maybe IntegrationStatus ->
   Task Text Unit
-runWebTransport transportVal commandEndpoints commandSchemas queryEndpoints querySchemas maybeAuth maybeOAuth2 maybeFileUpload maybeApiInfo maybeCors maybeHealthCheck = do
+runWebTransport transportVal commandEndpoints commandSchemas queryEndpoints querySchemas maybeAuth maybeOAuth2 maybeFileUpload maybeApiInfo maybeCors maybeHealthCheck maybeIntegrationStatus = do
   case transportVal of
     TransportValue transport -> do
       -- Cast the existentially-typed transport to WebTransport
@@ -121,6 +124,7 @@ runWebTransport transportVal commandEndpoints commandSchemas queryEndpoints quer
             , maxBodySize = coordinatedMaxBodySize
             , corsConfig = maybeCors
             , healthCheck = maybeHealthCheck
+            , integrationStatus = maybeIntegrationStatus
             }
       -- Build endpoints with the configured transport
       let endpoints :: Endpoints WebTransport =

@@ -191,12 +191,9 @@ library
     Integration.Lifecycle
     Integration.Timer
     Service.Integration.Adapter
-    Service.Integration.Debug
     Service.Integration.Dispatcher
     Service.Integration.DispatchRegistry
-    Service.Integration.Fixture
-    Service.Integration.FixtureKey
-    Service.Integration.Inbound
+    Service.Integration.GlobalRegistry
     Service.Integration.IntegrationError
     Service.Integration.Selection
     Service.Integration.ShimEmit
@@ -396,30 +393,6 @@ library
 
   default-language: GHC2021
 
-library testing
-  import: common_cfg
-  visibility: public
-  exposed-modules:
-    Test.Integration
-    Test.Integration.Contract
-    Test.Integration.EntropyScan
-    Test.Integration.Fixture
-    Test.Integration.Property
-    Test.Integration.Simulate
-  hs-source-dirs: testing-integration
-  default-language: GHC2021
-  build-depends:
-    base,
-    nhcore,
-    QuickCheck,
-    aeson,
-    bytestring,
-    containers,
-    directory,
-    filepath,
-    hspec,
-    text,
-    vector,
 
 test-suite nhcore-test
   import: common_cfg
@@ -573,12 +546,9 @@ test-suite nhcore-test-service
     Service.FileUpload.ResolverSpec
     Service.FileUpload.RoutesSpec
     Service.Integration.AdapterSpec
-    Service.Integration.ContractSpec
     Service.Integration.DispatchRegistrySpec
-    Service.Integration.FixtureSpec
-    Service.Integration.PropertySpec
-    Service.Integration.RecorderSpec
     Service.Integration.SelectionSpec
+    Service.Integration.TestFixtures
     Service.MockTransport
     Service.Query.EndpointSpec
     Service.Query.PaginationSpec
@@ -611,7 +581,6 @@ test-suite nhcore-test-service
     filepath,
     hspec,
     nhcore,
-    nhcore:testing,
     text,
 
 test-suite nhcore-test-integration
@@ -631,7 +600,6 @@ test-suite nhcore-test-integration
     Integration.TimerSpec
     Integration.RegistrySpec
     IntegrationSpec
-    Service.Integration.InboundSpec
     Service.MockTransport
     Service.TestHelpers
 
@@ -643,7 +611,6 @@ test-suite nhcore-test-integration
     base,
     hspec,
     nhcore,
-    nhcore:testing,
     text,
 
 test-suite nhcore-test-core
@@ -704,6 +671,5 @@ test-suite nhcore-test-core
     bytestring,
     hspec,
     nhcore,
-    nhcore:testing,
     scientific,
     text,

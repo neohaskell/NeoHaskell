@@ -10,7 +10,6 @@ import Integration.RuntimeSpec qualified
 import Integration.TimerSpec qualified
 import Integration.RegistrySpec qualified
 import IntegrationSpec qualified
-import Service.Integration.InboundSpec qualified
 import Test.Hspec qualified as Hspec
 
 
@@ -24,4 +23,3 @@ main = Hspec.hspec do
   Hspec.describe "Integration.Timer" Integration.TimerSpec.spec
   Hspec.describe "Integration.Registry" Integration.RegistrySpec.spec
   Hspec.describe "Integration" IntegrationSpec.spec
-  Hspec.describe "Service.Integration.Inbound" Service.Integration.InboundSpec.spec

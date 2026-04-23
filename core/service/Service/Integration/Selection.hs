@@ -1,8 +1,9 @@
--- | CLI flag + environment-variable gate for integration selection.
+-- | CLI flag parsing for outbound-integration selection.
 --
--- Implements ADR-0055 §3: @--integrations=fake@ or @--integrations=hybrid@
--- is only honoured when @NEOHASKELL_ALLOW_FAKE_INTEGRATIONS=1@ is in the
--- process environment.
+-- Implements ADR-0055 §2: @--integrations=fake@ (or @=hybrid@) is honoured
+-- solely on the basis of the CLI flag.  There is no environment-variable gate.
+-- The flag is visible in @ps@, in container orchestration UIs, and in CI logs,
+-- providing a single, auditable switch.
 module Service.Integration.Selection
   ( Selection (..),
     FakeNameRegistry (..),
@@ -14,8 +15,6 @@ module Service.Integration.Selection
     fakeNameMember,
     fakeNameFromArray,
     validateFakeName,
-    envGateName,
-    envGateValue,
     docsUrl,
   )
 where
@@ -26,7 +25,6 @@ import Basics
 import Control.Monad qualified as Monad
 import Data.Char qualified as GhcChar
 import Data.List qualified as GhcList
-import Environment qualified
 import Data.Maybe qualified as GhcMaybe
 import Maybe (Maybe (..))
 import Result (Result (..))
@@ -39,7 +37,7 @@ import Text (Text)
 import Text qualified
 
 
--- | Outbound-integration selection mode — see ADR-0055 §3.
+-- | Outbound-integration selection mode — see ADR-0055 §2.
 data Selection
   = Real
   | Fake
@@ -52,54 +50,33 @@ newtype FakeNameRegistry = FakeNameRegistry (Set Text)
   deriving (Eq, Show, Generic)
 
 
-envGateName :: Text
-envGateName = "NEOHASKELL_ALLOW_FAKE_INTEGRATIONS"
-
-
-envGateValue :: Text
-envGateValue = "1"
-
-
 docsUrl :: Text
 docsUrl = "https://neohaskell.org/docs/integrations/fake-mode"
 
 
--- | Parse the selection from the real process env + argv.
+-- | Parse the selection from the real process argv.
 parseSelection :: Task Text Selection
 parseSelection = do
   argv <-
     GhcEnv.getArgs
       |> Task.fromIO
   let args = argv |> GhcList.map Text.fromLinkedList
-  envResult <-
-    Environment.getVariable envGateName
-      |> Task.asResult
-  let gateOpen = case envResult of
-        Ok value -> value == envGateValue
-        Err _ -> False
-  parseSelectionFromArgs gateOpen args
+  parseSelectionFromArgs args
 
 
--- | Pure-ish parser that derives a 'Selection' from the pre-captured env
--- and argv. Exposed for tests so they can seed the gate and args in
--- isolation from the real process environment.
-parseSelectionFromArgs :: Bool -> [Text] -> Task Text Selection
-parseSelectionFromArgs gateOpen args = do
+-- | Pure parser that derives a 'Selection' from a pre-captured argv list.
+-- Exposed for tests so they can seed args in isolation from the real process.
+parseSelectionFromArgs :: [Text] -> Task Text Selection
+parseSelectionFromArgs args = do
   let mode = parseModeFlag args
   let fakes = parseFakeFlags args
   case mode of
     Nothing -> Task.yield Real
     Just "real" -> Task.yield Real
-    Just "fake" ->
-      if gateOpen
-        then Task.yield Fake
-        else Task.throw (gateClosedMessage "--integrations=fake")
-    Just "hybrid" ->
-      if gateOpen
-        then do
-          validated <- validateFakeNames fakes
-          Task.yield (Hybrid validated)
-        else Task.throw (gateClosedMessage "--integrations=hybrid")
+    Just "fake" -> Task.yield Fake
+    Just "hybrid" -> do
+      validated <- validateFakeNames fakes
+      Task.yield (Hybrid validated)
     Just other ->
       Task.throw [fmt|unknown --integrations=#{other}; valid values are real, fake, hybrid|]
 
@@ -151,37 +128,20 @@ validateFakeName name =
         || c == '_'
 
 
-gateClosedMessage :: Text -> Text
-gateClosedMessage flag =
-  [fmt|#{flag} requires #{envGateName}=#{envGateValue}
-in the process environment. This gate exists so production binaries
-cannot silently dispatch to fake implementations. Set the env var in
-your test harness or staging deployment only — never in production.
-See: #{docsUrl}|]
-
-
 -- | Emit an 'ERROR' level log line naming the active fakes when the
--- selection is non-'Real'. Presently the log sink is deliberately minimal
--- (no structured logger wiring in Phase 8).
+-- selection is non-'Real'. Logging wiring into Application.run is
+-- tracked in ADR-0055 §2.
 validateOrThrow :: Selection -> Task Text Selection
-validateOrThrow selection = do
-  case selection of
-    Real -> Task.yield selection
-    Fake ->
-      -- NOTE: logging wiring is out of scope for Phase 8 (Application.run
-      -- integration lands later); we still return the selection.
-      Task.yield selection
-    Hybrid _names ->
-      Task.yield selection
+validateOrThrow selection = Task.yield selection
 
 
 -- | True when an integration name is routed to its fake.
 isFakeByName :: Text -> Selection -> Bool
-isFakeByName _name selection =
+isFakeByName name selection =
   case selection of
     Real -> False
     Fake -> True
-    Hybrid names -> Array.contains _name names
+    Hybrid names -> Array.contains name names
 
 
 -- | Build a 'FakeNameRegistry' from a selection for hybrid dispatch lookup.
@@ -209,7 +169,7 @@ stripPrefix prefix text =
     else Nothing
 
 
-lastList :: [a] -> Maybe a
+lastList :: [item] -> Maybe item
 lastList xs = case xs of
   [] -> Nothing
   [x] -> Just x

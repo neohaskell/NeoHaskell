@@ -5,7 +5,7 @@ import Data.Aeson qualified as Aeson
 import Data.Aeson.KeyMap qualified as GhcKeyMap
 import Data.ByteString.Lazy qualified as GhcLBS
 import Prelude (Either (..), String)
-import Service.Transport.Web (HealthCheckConfig (..), WebTransport (..), healthResponseBody, isHealthCheckPath, server)
+import Service.Transport.Web (HealthCheckConfig (..), WebTransport (..), buildHealthResponse, isHealthCheckPath, server)
 import Test
 import Text qualified
 
@@ -45,15 +45,17 @@ spec = do
         let transport = server {healthCheck = Just HealthCheckConfig {healthPath = "_health"}}
         isHealthCheckPath "health" transport |> shouldBe False
 
-    describe "healthResponseBody" do
+    describe "buildHealthResponse" do
       it "is valid JSON" \_ -> do
-        let decoded = Aeson.eitherDecode healthResponseBody :: Either String Aeson.Value
+        let body = buildHealthResponse server
+        let decoded = Aeson.eitherDecode body :: Either String Aeson.Value
         case decoded of
           Left err -> fail (Text.fromLinkedList err)
           Right _ -> pass
 
       it "contains status ok" \_ -> do
-        let decoded = Aeson.eitherDecode healthResponseBody :: Either String Aeson.Value
+        let body = buildHealthResponse server
+        let decoded = Aeson.eitherDecode body :: Either String Aeson.Value
         case decoded of
           Left err -> fail (Text.fromLinkedList err)
           Right val -> do
@@ -67,11 +69,12 @@ spec = do
 
     describe "security" do
       it "health response body does not contain version info" \_ -> do
-        let bodyText = GhcLBS.toStrict healthResponseBody
+        let bodyText = GhcLBS.toStrict (buildHealthResponse server)
         bodyText |> shouldBe "{\"status\":\"ok\"}"
 
-      it "health response body is minimal (no extra fields)" \_ -> do
-        let decoded = Aeson.eitherDecode healthResponseBody :: Either String Aeson.Value
+      it "health response body is minimal for server with no integration status" \_ -> do
+        let body = buildHealthResponse server
+        let decoded = Aeson.eitherDecode body :: Either String Aeson.Value
         case decoded of
           Left _ -> fail "Not valid JSON"
           Right (Aeson.Object obj) -> do

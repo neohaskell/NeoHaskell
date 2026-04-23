@@ -19,11 +19,7 @@ import Service.FileUpload.LifecycleSpec qualified
 import Service.FileUpload.ResolverSpec qualified
 import Service.FileUpload.RoutesSpec qualified
 import Service.Integration.AdapterSpec qualified
-import Service.Integration.ContractSpec qualified
 import Service.Integration.DispatchRegistrySpec qualified
-import Service.Integration.FixtureSpec qualified
-import Service.Integration.PropertySpec qualified
-import Service.Integration.RecorderSpec qualified
 import Service.Integration.SelectionSpec qualified
 import Service.Query.EndpointSpec qualified
 import Service.Query.RegistrySpec qualified
@@ -62,11 +58,7 @@ main = Hspec.hspec do
   Hspec.describe "Service.FileUpload.Resolver" Service.FileUpload.ResolverSpec.spec
   Hspec.describe "Service.FileUpload.Routes" Service.FileUpload.RoutesSpec.spec
   Hspec.describe "Service.Integration.Adapter" Service.Integration.AdapterSpec.spec
-  Hspec.describe "Service.Integration.Contract" Service.Integration.ContractSpec.spec
   Hspec.describe "Service.Integration.DispatchRegistry" Service.Integration.DispatchRegistrySpec.spec
-  Hspec.describe "Service.Integration.Fixture" Service.Integration.FixtureSpec.spec
-  Hspec.describe "Service.Integration.Property" Service.Integration.PropertySpec.spec
-  Hspec.describe "Service.Integration.Recorder" Service.Integration.RecorderSpec.spec
   Hspec.describe "Service.Integration.Selection" Service.Integration.SelectionSpec.spec
   Hspec.describe "Service.Query.Endpoint" Service.Query.EndpointSpec.spec
   Hspec.describe "Service.Query.Registry" Service.Query.RegistrySpec.spec
