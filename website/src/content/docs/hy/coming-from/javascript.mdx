@@ -1,0 +1,94 @@
+---
+title: "JavaScript կամ TypeScript ից անցում"
+description: "JS/TS մտային մոդել, անմիջապես թարգմանված NeoHaskell-ի մեջ։ Ռեկորդներ, նմուշների համեմատություն, async/await, և նույն հասկացությունները ավելի ուժեղ տիպերով աշխատելը։"
+sidebar:
+  order: 1
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+Եթե դուք գրում եք JavaScript կամ TypeScript ապրուստով, NeoHaskell-ը ձեզ համար շատ ծանոթ կթվա։ Հիմնական կարգավորումները մակերեսային են (նույն գաղափարների տարբեր շարահյուսություն) և ամենամեծ հասկացութային փոփոխությունը մտածել իրադարձություններով, այլ ոչ թե փոփոխություններով։ Այս էջը քայլ առ քայլ անցկացնում է թարգմանությունները։
+
+## Մեծ պատկերի քարտեզ
+
+| JavaScript / TypeScript | NeoHaskell | Նշումներ |
+|---|---|---|
+| `async function f() { ... }` | `f :: Task err val` | Երկուսն էլ "իրադարձություն, որը կարող է ձախողվել" են ներկայացնում։ |
+| `await somePromise` | `x <- someTask` (inside `do`) | Գրեթե նույն գաղափարը։ |
+| `throw new Error("...")` | `Task.throw "..."` | Տիպային սխալ անտիպ փոխարեն։ |
+| `try/catch` | `Task.recover` | Տիպային սխալներ բռնել։ |
+| `Promise.all([a, b, c])` | `AsyncTask.start` + `AsyncTask.wait` | Զուգահեռ կազմություն։ |
+| `Array.map(fn)` | `Array.map fn arr` | Նույն գաղափար, տարբեր արգումենտների հերթականություն։ |
+| `x?.y?.z` | `Maybe` շղթաներ `andThen`-ի միջոցով | Տիպերի մակարդակում բացակայության անվտանգություն։ |
+| `if/else` | `if/then/else` | Նույնը։ |
+| `switch (x)` | `case x of` | Նմուշների համեմատություն համապարփակ ստուգմամբ։ |
+| `const x = 5` | `let x = 5` (inside `do`) | Լոկալ անփոփոխ կապում։ |
+| `type Foo = { a: number }` | `data Foo = Foo { a :: Int }` | Ռեկորդ տիպեր։ |
+| `type Result = "ok" | "err"` | `data Result = Ok | Err` | Տարբերակված միություններ։ |
+| `interface Foo { ... }` | `class Foo where ...` | Տիպ դասեր (ավելի հզոր քան ինտերֆեյսներ)։ |
+| `import * as x from "..."` | `import X qualified` | Որակավորված ներմուծումներ։ |
+| Object spread <code>{`{...x, y: 1}`}</code> | `x { y = 1 }` | Ռեկորդ թարմացում։ |
+| Template literals (backticks with `$\{name\}`) | `[fmt|hi #\{name\}|]` | Տողերի ինտերպոլացիա։ |
+
+Գրեթե յուրաքանչյուր JS/TS կոնստրուկտ ունի ուղղակի NeoHaskell համարժեք։ Շարահյուսություն սովորելը շաբաթ է տևում; մտային մոդել սովորելը շաբաթ է տևում։
+
+## Կողք կողքի օրինակ
+
+Այստեղ է TypeScript ֆունկցիան, որը օգտագործող է բեռնում և թույլտվություններ է ստուգում.
+
+```ts
+async function loadProfile(userId: string, viewerId: string): Promise<Profile> {
+  const user = await fetchUser(userId);
+  if (user === null) {
+    throw new Error("User not found");
+  }
+  if (user.id !== viewerId && !user.profilePublic) {
+    throw new Error("Not allowed to view this profile");
+  }
+  return {
+    id: user.id,
+    name: user.name,
+    bio: user.bio,
+  };
+}
+```
+
+Նույն բանը NeoHaskell-ում.
+
+```haskell
+loadProfile :: Uuid -> Uuid -> Task Text Profile
+loadProfile userId viewerId = do
+  user <- fetchUser userId
+  case user of
+    Nothing ->
+      Task.throw "User not found"
+    Just u ->
+      if u.id /= viewerId && not u.profilePublic
+        then Task.throw "Not allowed to view this profile"
+        else
+          Task.yield Profile
+            { id = u.id
+            , name = u.name
+            , bio = u.bio
+            }
+```
+
+Նկատեք որ ձևը գրեթե նույնն է։ Տարբերություններն են.
+
+- `Task` փոխարեն `Promise`։
+- Գրավոր `Maybe` ստուգում `case`-ի միջոցով այլ ոչ թե ճշմարտանման բացակայության ստուգում։
+- Նմուշների համեմատություն `Just u`-ի միջոցով արժեք արդյունքի համար։
+- `Task.yield` փոխարեն `return`, `Task.throw` փոխարեն `throw new Error`։
+- Ռեկորդներ կառուցված դաշտերի անուններով, այլ ոչ թե օբյեկտ գրառման կարճ ձևով։
+
+## Համոզումներ ընդդեմ Տասկեր
+
+Ձեզ հայտնի է `Promise<T>`։ NeoHaskell-ում կա `Task err val`։ Գլխավոր տարբերությունն այն է, որ `Task`-ը ունի **տիպային սխալի ալիք**։ TypeScript-ում `Promise<User>`-ը կարող է մերժվել ցանկացած բանով — Սխալ, տող, օբյեկտ, `undefined`։ Դուք իմանում եք ինչ է հաջորդ ժամանակ։ NeoHaskell-ում `Task Text User`-ը կարող է միայն ձախողվել `Text`-ով, և տիպերի համակարգը հետևում է դրան։
+
+Որովհետև սխալները տիպային են.
+
+- Դուք չեք պետք գրեք տիպերի պահապաններ բռնելու բլոկներում։
+- Դուք գիտեք ամեն մի ձախողում, որ ֆունկցիան կարող է արտադրել ֆունկցիայի ստորագրությունը կարդալով։
+- Սխալների փոխանցումը ավտոմատ է `<-` կապումների միջոցով։
+
+## `await` ընդդեմ `<-
