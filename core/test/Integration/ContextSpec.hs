@@ -16,6 +16,7 @@ import Service.Event.EventMetadata qualified as EventMetadata
 import Service.Event.StreamId qualified as StreamId
 import Service.EventStore.InMemory qualified as InMemory
 import Service.Integration.Dispatcher qualified as Dispatcher
+import Service.Integration.DispatchRegistry qualified as DispatchRegistry
 import Task qualified
 import Test
 import Test.Auth.TestUtils qualified as TestUtils
@@ -55,6 +56,7 @@ makeContext = do
       , Integration.providerRegistry = Integration.fromMap Map.empty
       , Integration.refreshLocks = locks
       , Integration.fileAccess = Nothing
+      , Integration.outboundDispatch = DispatchRegistry.empty
       }
 
 
@@ -121,6 +123,7 @@ spec = do
             , Integration.providerRegistry = Integration.fromMap Map.empty
             , Integration.refreshLocks = emptyLocks
             , Integration.fileAccess = Nothing
+            , Integration.outboundDispatch = DispatchRegistry.empty
             }
       dispatcher <-
         Dispatcher.newWithLifecycleConfig

@@ -1,0 +1,137 @@
+---
+title: "Testing integrations"
+description: "How to test outbound integrations against fakes — unit tests, fake mode, and hybrid mode."
+sidebar:
+  order: 8
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+The [Integrating existing systems](/guides/integrating-existing-systems/) guide explained how to *write* an integration. This guide is about *testing* one — calling the fake instead of the real network, without changing your domain code.
+
+## The contract every integration signs
+
+When you declare an integration, the typeclass requires two implementations:
+
+```haskell
+class Integration request where
+  type Response request
+  runReal :: request -> Task IntegrationError (Response request)
+  runFake :: request -> Task IntegrationError (Response request)
+```
+
+`runReal` makes the real network call. `runFake` returns a plausible-looking response without leaving the process. The framework routes to one or the other at startup — your domain code calls `Integration.emit` and never knows which ran.
+
+## The default fake: just add `Arbitrary`
+
+For a stateless integration where any well-formed response is fine, you don't need to write `runFake` at all. Derive `Arbitrary` on the response type and the default kicks in:
+
+```haskell
+data SendEmailResponse = SendEmailResponse
+  { messageId :: Text, status :: Text }
+  deriving (Generic, Arbitrary, ToJSON, FromJSON, Show)
+
+instance Integration SendEmail where
+  type Response SendEmail = SendEmailResponse
+  runReal req = Http.post "https://api.sendgrid.com/v3/mail/send"
+    |> Http.jsonBody req
+    |> Http.send
+    |> Task.mapError toIntegrationError
+  -- runFake omitted — QuickCheck-generated SendEmailResponse is used
+```
+
+## Writing a stateful fake
+
+When you need to model state (e.g. a payment lifecycle), override `runFake`:
+
+```haskell
+instance Integration ChargeIntent where
+  type Response ChargeIntent = ChargeIntentResponse
+  runReal req = Http.post "https://api.stripe.com/v1/payment_intents/…" |> …
+  runFake req = do
+    state <- PaymentFakeState.get req.intentId
+    case state of
+      Authorized -> do
+        PaymentFakeState.set req.intentId Captured
+        Task.yield (ChargeIntentResponse { status = "captured" })
+      Captured ->
+        Task.throw (PermanentFailure "already captured")
+      NotFound ->
+        Task.throw (ValidationFailure "unknown intent")
+```
+
+The state store (`PaymentFakeState`) is whatever you need — an `IORef`, a `TVar`, etc. The framework does not prescribe a state-machine DSL.
+
+## Calling `runFake` directly in tests
+
+Tests call `runFake` directly; there's no wrapper library needed:
+
+```haskell
+it "returns captured status for authorized intent" \_ -> do
+  PaymentFakeState.prime intentId Authorized
+  result <- runFake (ChargeIntent { intentId = intentId, amount = 1000 })
+    |> Task.asResult
+  result |> shouldBe (Ok (ChargeIntentResponse { status = "captured" }))
+```
+
+## `--integrations=fake` — all fakes at startup
+
+To boot the binary with every outbound integration using its fake:
+
+```shell
+myapp --integrations=fake
+```
+
+NeoHaskell logs one `critical`-level line at startup naming the active fakes, so it's impossible to miss in CI or container logs:
+
+```
+[CRITICAL] Fake integrations active: Sendgrid, Stripe
+```
+
+The `/health` endpoint also reports the mode whenever fakes are active:
+
+```json
+{
+  "status": "ok",
+  "integrations": {
+    "mode": "fake",
+    "fakes": []
+  }
+}
+```
+
+In real mode (the default — no `--integrations` flag, or `--integrations=real`) the `/health` response **omits the `integrations` block entirely**. The absence of the key is the production signal; a deploy-check should assert that `integrations` is *not present* in the response rather than matching a string value.
+
+<Aside type="caution">
+The `--integrations=fake` flag is visible in `ps` and in container orchestration UIs. Production deployments must not pass it. A deploy-check that greps argv or asserts the `integrations` key is absent from `/health` catches any misconfiguration.
+</Aside>
+
+## `--integrations=hybrid` — selective faking
+
+To run with only some integrations faked (useful in staging when you want Stripe live but Sendgrid stubbed):
+
+```shell
+myapp --integrations=hybrid --fake=Sendgrid --fake=Slack
+```
+
+`/health` reports which integrations are faked:
+
+```json
+{
+  "integrations": {
+    "mode": "hybrid",
+    "fakes": ["Sendgrid", "Slack"]
+  }
+}
+```
+
+## Selection summary
+
+| Flag | Behaviour |
+|------|-----------|
+| *(absent)* | All integrations use `runReal` |
+| `--integrations=real` | Same as absent |
+| `--integrations=fake` | All integrations use `runFake` |
+| `--integrations=hybrid --fake=Name …` | Named integrations use `runFake`; others use `runReal` |
+
+There is no environment variable switch. The CLI flag is the single, visible audit boundary.

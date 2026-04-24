@@ -96,6 +96,7 @@ import Map qualified
 import Maybe (Maybe (..))
 import Service.Command.Core (NameOf)
 import Service.FileUpload.Core (FileAccessError, FileMetadata, FileRef)
+import Service.Integration.DispatchRegistry (DispatchRegistry)
 import Task (Task)
 import Task qualified
 import Text (Text)
@@ -160,6 +161,11 @@ data ActionContext = ActionContext
   , fileAccess :: Maybe FileAccessContext
   -- ^ File access context for retrieving uploaded files.
   -- 'Nothing' when file uploads are not enabled in the application.
+  , outboundDispatch :: DispatchRegistry
+  -- ^ ADR-0055 registry of pre-bound outbound-integration dispatcher closures.
+  -- Populated once at startup by 'Application.run' based on the
+  -- @--integrations@ CLI flag; read by 'Service.Integration.ShimEmit.emit'.
+  -- Defaults to the empty registry in tests and non-integration contexts.
   }
 
 

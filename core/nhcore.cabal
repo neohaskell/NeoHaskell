@@ -40,6 +40,7 @@ common common_cfg
     dotenv >= 0.11 && < 0.13,
     fast-logger >= 3.0 && < 4,
     file-embed,
+    filepath,
     ghc-prim,
     hashable,
     insert-ordered-containers,
@@ -189,7 +190,12 @@ library
     Integration.Exit
     Integration.Lifecycle
     Integration.Timer
+    Service.Integration.Adapter
     Service.Integration.Dispatcher
+    Service.Integration.DispatchRegistry
+    Service.Integration.IntegrationError
+    Service.Integration.Selection
+    Service.Integration.ShimEmit
     Service.Integration.Types
     IO
     Int
@@ -386,6 +392,7 @@ library
 
   default-language: GHC2021
 
+
 test-suite nhcore-test
   import: common_cfg
   default-language: GHC2021
@@ -537,6 +544,11 @@ test-suite nhcore-test-service
     Service.FileUpload.LifecycleSpec
     Service.FileUpload.ResolverSpec
     Service.FileUpload.RoutesSpec
+    Service.Integration.AdapterSpec
+    Service.Integration.DispatchRegistrySpec
+    Service.Integration.SelectionSpec
+    Service.Integration.TestFixtures
+    Service.Integration.WireupSpec
     Service.MockTransport
     Service.Query.EndpointSpec
     Service.Query.PaginationSpec
@@ -556,14 +568,21 @@ test-suite nhcore-test-service
     Service.Transport.Mcp.ResponseSpec
     Service.MultiTenantSpec
     Service.Transport.WebSpec
+    Service.Transport.Web.HealthCheckSpec
 
   type: exitcode-stdio-1.0
   hs-source-dirs: test-service, test
   main-is: Main.hs
   build-depends:
+    QuickCheck,
+    aeson,
     base,
+    bytestring,
+    directory,
+    filepath,
     hspec,
     nhcore,
+    text,
 
 test-suite nhcore-test-integration
   import: common_cfg
@@ -589,9 +608,11 @@ test-suite nhcore-test-integration
   hs-source-dirs: test-integration, test
   main-is: Main.hs
   build-depends:
+    QuickCheck,
     base,
     hspec,
     nhcore,
+    text,
 
 test-suite nhcore-test-core
   import: common_cfg
@@ -646,6 +667,10 @@ test-suite nhcore-test-core
   hs-source-dirs: test-core, test
   main-is: Main.hs
   build-depends:
+    aeson,
     base,
+    bytestring,
     hspec,
     nhcore,
+    scientific,
+    text,

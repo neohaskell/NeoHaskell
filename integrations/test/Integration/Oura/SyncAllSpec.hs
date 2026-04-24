@@ -7,6 +7,7 @@ import Integration.Oura.SyncAll (SyncAll (..), SyncResult (..), executeSyncAll)
 import Integration.Oura.Types (PaginatedResponse (..), PersonalInfoData (..))
 import Integration.Oura.Internal (HttpFetch, HttpFetchSingle, OuraHttpError (..))
 import Integration (ActionContext (..), IntegrationError (..), CommandPayload, fromMap)
+import Service.Integration.DispatchRegistry qualified as DispatchRegistry
 import Auth.SecretStore.InMemory qualified as InMemorySecretStore
 import Auth.SecretStore (SecretStore (..), TokenKey (..))
 import Auth.OAuth2.Types
@@ -236,6 +237,7 @@ setupMockContext = do
     , providerRegistry = fromMap providerRegistry
     , refreshLocks = locks
     , fileAccess = Nothing
+    , outboundDispatch = DispatchRegistry.empty
     }
 
 

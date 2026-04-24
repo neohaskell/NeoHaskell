@@ -18,6 +18,10 @@ import Service.FileUpload.FileStateStore.PostgresSpec qualified
 import Service.FileUpload.LifecycleSpec qualified
 import Service.FileUpload.ResolverSpec qualified
 import Service.FileUpload.RoutesSpec qualified
+import Service.Integration.AdapterSpec qualified
+import Service.Integration.DispatchRegistrySpec qualified
+import Service.Integration.SelectionSpec qualified
+import Service.Integration.WireupSpec qualified
 import Service.Query.EndpointSpec qualified
 import Service.Query.RegistrySpec qualified
 import Service.Query.SubscriberSpec qualified
@@ -33,6 +37,7 @@ import Service.Transport.Mcp.JsonRpcSpec qualified
 import Service.Transport.Mcp.ProtocolSpec qualified
 import Service.Transport.Mcp.ResponseSpec qualified
 import Service.Transport.WebSpec qualified
+import Service.Transport.Web.HealthCheckSpec qualified
 import Test.Hspec qualified as Hspec
 
 
@@ -54,6 +59,10 @@ main = Hspec.hspec do
   Hspec.describe "Service.FileUpload.Lifecycle" Service.FileUpload.LifecycleSpec.spec
   Hspec.describe "Service.FileUpload.Resolver" Service.FileUpload.ResolverSpec.spec
   Hspec.describe "Service.FileUpload.Routes" Service.FileUpload.RoutesSpec.spec
+  Hspec.describe "Service.Integration.Adapter" Service.Integration.AdapterSpec.spec
+  Hspec.describe "Service.Integration.DispatchRegistry" Service.Integration.DispatchRegistrySpec.spec
+  Hspec.describe "Service.Integration.Selection" Service.Integration.SelectionSpec.spec
+  Hspec.describe "Service.Integration.Wireup" Service.Integration.WireupSpec.spec
   Hspec.describe "Service.Query.Endpoint" Service.Query.EndpointSpec.spec
   Hspec.describe "Service.Query.Registry" Service.Query.RegistrySpec.spec
   Hspec.describe "Service.Query.Subscriber" Service.Query.SubscriberSpec.spec
@@ -69,3 +78,4 @@ main = Hspec.hspec do
   Hspec.describe "Service.Transport.Mcp.Protocol" Service.Transport.Mcp.ProtocolSpec.spec
   Hspec.describe "Service.Transport.Mcp.Response" Service.Transport.Mcp.ResponseSpec.spec
   Hspec.describe "Service.Transport.Web" Service.Transport.WebSpec.spec
+  Hspec.describe "Health Check" Service.Transport.Web.HealthCheckSpec.spec

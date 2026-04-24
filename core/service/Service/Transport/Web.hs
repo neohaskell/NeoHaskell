@@ -5,9 +5,10 @@ module Service.Transport.Web (
   FileUploadEnabled (..),
   CorsConfig (..),
   HealthCheckConfig (..),
+  IntegrationStatus (..),
   server,
   isHealthCheckPath,
-  healthResponseBody,
+  buildHealthResponse,
 ) where
 
 import Auth.Config qualified
@@ -24,6 +25,7 @@ import Bytes (Bytes)
 import Bytes qualified
 import ConcurrentVar qualified
 import Log qualified
+import Data.Aeson qualified as Aeson
 import Data.ByteString qualified as GhcBS
 import Data.ByteString.Lazy qualified as GhcLBS
 import Data.IORef qualified as GhcIORef
@@ -125,6 +127,14 @@ data HealthCheckConfig = HealthCheckConfig
   }
 
 
+-- | Integration mode and active fakes for the /health endpoint.
+-- Set by Application.run based on the --integrations flag.
+data IntegrationStatus = IntegrationStatus
+  { mode :: !Text
+  , fakes :: !(Array Text)
+  }
+
+
 -- | HTTP/JSON transport using WAI/Warp.
 data WebTransport = WebTransport
   { port :: Int,
@@ -141,7 +151,9 @@ data WebTransport = WebTransport
     corsConfig :: Maybe CorsConfig,
     -- | Optional health check endpoint. Enabled by default at /health.
     -- Set via Application.withHealthCheck or disabled via Application.withoutHealthCheck.
-    healthCheck :: Maybe HealthCheckConfig
+    healthCheck :: Maybe HealthCheckConfig,
+    -- | Integration selection status for /health reporting. Set via Application.run.
+    integrationStatus :: Maybe IntegrationStatus
   }
 
 
@@ -168,7 +180,8 @@ server =
       fileUploadEnabled = Nothing,
       apiInfo = Nothing,
       corsConfig = Nothing,
-      healthCheck = Just HealthCheckConfig {healthPath = "health"}
+      healthCheck = Just HealthCheckConfig {healthPath = "health"},
+      integrationStatus = Nothing
     }
 
 
@@ -981,7 +994,7 @@ instance Transport WebTransport where
                     [ (HTTP.hContentType, "application/json")
                     , ("X-Content-Type-Options", "nosniff")
                     ]
-              respond (Wai.responseLBS HTTP.status200 headers healthResponseBody)
+              respond (Wai.responseLBS HTTP.status200 headers (buildHealthResponse endpoints.transport))
       _ ->
         notFound "Not found"
 
@@ -1168,7 +1181,20 @@ isHealthCheckPath pathSegment transport =
     Just config -> pathSegment == config.healthPath
 
 
--- | Static JSON response body for the health endpoint.
--- Minimal response to avoid information disclosure.
-healthResponseBody :: GhcLBS.ByteString
-healthResponseBody = "{\"status\":\"ok\"}"
+-- | Build the JSON response body for the health endpoint.
+-- When integration status is present it is included in the response.
+buildHealthResponse :: WebTransport -> GhcLBS.ByteString
+buildHealthResponse transport =
+  case transport.integrationStatus of
+    Nothing -> "{\"status\":\"ok\"}"
+    Just (IntegrationStatus {mode = intMode, fakes = intFakes}) ->
+      Aeson.encode
+        ( Json.object
+            [ "status" Json..= ("ok" :: Text)
+            , "integrations" Json..=
+                Json.object
+                  [ "mode" Json..= intMode
+                  , "fakes" Json..= intFakes
+                  ]
+            ]
+        )

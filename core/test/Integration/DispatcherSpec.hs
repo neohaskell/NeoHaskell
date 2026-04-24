@@ -26,6 +26,7 @@ import Service.Event.StreamId qualified as StreamId
 import Service.EventStore.InMemory qualified as InMemory
 import Service.Application.Integrations qualified as Integrations
 import Service.Integration.Dispatcher qualified as Dispatcher
+import Service.Integration.DispatchRegistry qualified as DispatchRegistry
 import Task qualified
 import Test
 import Text qualified
@@ -109,6 +110,7 @@ makeContext = do
       , Integration.providerRegistry = Integration.fromMap Map.empty
       , Integration.refreshLocks = locks
       , Integration.fileAccess = Nothing
+      , Integration.outboundDispatch = DispatchRegistry.empty
       }
 
 

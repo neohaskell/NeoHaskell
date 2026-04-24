@@ -11,6 +11,7 @@ import Integration.Command qualified as Command
 import Json qualified
 import Map qualified
 import Service.Command.Core (NameOf)
+import Service.Integration.DispatchRegistry qualified as DispatchRegistry
 import Task qualified
 import Test
 import Text qualified
@@ -49,6 +50,7 @@ makeContext = do
       , Integration.providerRegistry = Integration.fromMap Map.empty
       , Integration.refreshLocks = locks
       , Integration.fileAccess = Nothing
+      , Integration.outboundDispatch = DispatchRegistry.empty
       }
 
 

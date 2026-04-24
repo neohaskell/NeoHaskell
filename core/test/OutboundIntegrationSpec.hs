@@ -25,6 +25,7 @@ import Service.Event.EventMetadata (EventMetadata (..))
 import Service.Event.StreamId (StreamId)
 import Service.Event.StreamId qualified as StreamId
 import Service.EventStore.InMemory qualified as InMemory
+import Service.Integration.DispatchRegistry qualified as DispatchRegistry
 import Service.Integration.Types (OutboundRunner (..))
 import Service.OutboundIntegration.Core (OutboundIntegration (..))
 import Service.OutboundIntegration.TH (outboundIntegration)
@@ -166,6 +167,7 @@ makeContext = do
       , Integration.providerRegistry = Integration.fromMap Map.empty
       , Integration.refreshLocks = locks
       , Integration.fileAccess = Nothing
+      , Integration.outboundDispatch = DispatchRegistry.empty
       }
 
 

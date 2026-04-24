@@ -12,6 +12,8 @@ on:
 
 jobs:
   claude-review:
+    # actionlint:ignore:if
+    if: false # Disabled pending Claude Code GitHub App installation — re-enable once the App is installed
     # Optional: Filter by PR author
     # if: |
     #   github.event.pull_request.user.login == 'external-contributor' ||

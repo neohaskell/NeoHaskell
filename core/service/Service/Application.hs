@@ -3,6 +3,7 @@
 module Service.Application (
   -- * Application Type
   Application (..),
+  IntegrationRegistrationEntry (..),
 
   -- * ServiceRunner Type
   ServiceRunner (..),
@@ -33,6 +34,7 @@ module Service.Application (
   withOutbound,
   withOutboundLifecycle,
   withInbound,
+  withIntegration,
   withAuth,
   withAuthOverrides,
   withApiInfo,
@@ -102,6 +104,12 @@ import System.IO qualified as GhcIO
 import Default (Default (..))
 import GHC.TypeLits qualified as GHC
 import Integration qualified
+import Service.Integration.Adapter (Integration, mkDispatcher)
+import Service.Integration.Adapter qualified as Adapter
+import Service.Integration.DispatchRegistry (DispatchRegistry)
+import Service.Integration.DispatchRegistry qualified as DispatchRegistry
+import Service.Integration.Selection (Selection (..))
+import Service.Integration.Selection qualified as Selection
 import Integration.Lifecycle qualified as Lifecycle
 import Json qualified
 import Map (Map)
@@ -155,6 +163,7 @@ import Text qualified
 import ToText (toText)
 import TypeName qualified
 import Service.Application.Types (ApiInfo (..), defaultApiInfo)
+import Service.Transport.Web (IntegrationStatus (..))
 
 
 -- | Configuration for WebTransport authentication.
@@ -345,6 +354,17 @@ data DeferredInboundReg where
     (config -> Integration.Inbound) ->
     DeferredInboundReg
 
+
+-- | Registration entry for an ADR-0055 Integration type.
+-- Stores the integration name (for hybrid-mode and ERROR logging) and a
+-- function that, given the active Selection, inserts the pre-bound closure
+-- into the DispatchRegistry.
+data IntegrationRegistrationEntry = IntegrationRegistrationEntry
+  { integrationName :: !Text
+  , registerInto :: Selection -> DispatchRegistry -> DispatchRegistry
+  }
+
+
 data Application = Application
   { configSpec :: Maybe ConfigSpec,
     -- | EventStore factory. Resolved during Application.run after config is loaded.
@@ -377,7 +397,9 @@ data Application = Application
     secretStoreFactory :: Maybe SecretStoreFactory,
     -- | Deferred integration registrations. Resolved during Application.run after config is loaded.
     deferredOutboundLifecycleRegs :: Array DeferredOutboundLifecycleReg,
-    deferredInboundRegs :: Array DeferredInboundReg
+    deferredInboundRegs :: Array DeferredInboundReg,
+    -- | ADR-0055 Integration registrations. Built at startup into a DispatchRegistry.
+    integrationRegistrations :: Array IntegrationRegistrationEntry
   }
 
 
@@ -413,7 +435,8 @@ new =
       dispatcherConfigFactory = Nothing,
       secretStoreFactory = Nothing,
       deferredOutboundLifecycleRegs = Array.empty,
-      deferredInboundRegs = Array.empty
+      deferredInboundRegs = Array.empty,
+      integrationRegistrations = Array.empty
     }
 
 
@@ -773,6 +796,9 @@ run app =
          Log.info "Configuration loaded successfully"
            |> Task.ignoreError
 
+     -- 2b. Parse ADR-0055 integration selection from argv and wire DispatchRegistry
+     (registry, maybeIntegrationStatus) <- buildIntegrationContext app
+
      -- 3. Validate EventStore is configured and create it
      eventStore <- case app.eventStoreFactory of
        Nothing -> Task.throw "No EventStore configured. Use withEventStore."
@@ -907,7 +933,7 @@ run app =
            , outboundLifecycleRunners = resolvedOutboundLifecycleRunners
            , inboundIntegrations = resolvedInboundIntegrations
            }
-     runWithResolved eventStore maybeFileUploadSetup fileUploadCleanup maybeWebAuthSetup resolvedApp
+     runWithResolved eventStore maybeFileUploadSetup fileUploadCleanup maybeWebAuthSetup maybeIntegrationStatus registry resolvedApp
 
 
 -- | Run application with a provided EventStore.
@@ -984,6 +1010,8 @@ runWith eventStore app = do
   case Array.isEmpty app.deferredInboundRegs of
     False -> Task.throw "runWith does not support config-dependent inbound integrations. Use Application.run instead, or use: withInbound @() (\\_ -> yourInbound)"
     True -> pass
+  -- Build ADR-0055 DispatchRegistry and integration status (same helper as run)
+  (registry, maybeIntegrationStatus) <- buildIntegrationContext app
   let resolvedApp = app
         { corsConfig = resolvedCorsConfig
         , apiInfo = resolvedApiInfo
@@ -991,7 +1019,7 @@ runWith eventStore app = do
         , dispatcherConfig = resolvedDispatcherConfig
         , secretStore = resolvedSecretStore
         }
-  runWithResolved eventStore maybeFileUploadSetup fileUploadCleanup maybeWebAuthSetup resolvedApp
+  runWithResolved eventStore maybeFileUploadSetup fileUploadCleanup maybeWebAuthSetup maybeIntegrationStatus registry resolvedApp
 
 
 -- | Internal: Run application with pre-resolved EventStore, FileUpload, and Auth.
@@ -1003,9 +1031,11 @@ runWithResolved ::
   Maybe FileUploadSetup ->
   Task Text () ->
   Maybe WebAuthSetup ->
+  Maybe IntegrationStatus ->
+  DispatchRegistry ->
   Application ->
   Task Text Unit
-runWithResolved eventStore maybeFileUploadSetup fileUploadCleanup maybeWebAuthSetup app = do
+runWithResolved eventStore maybeFileUploadSetup fileUploadCleanup maybeWebAuthSetup maybeIntegrationStatus integrationRegistry app = do
   -- 1. Wire all query definitions and collect registries + endpoints + schemas
   wiredQueries <-
     app.queryDefinitions
@@ -1172,6 +1202,7 @@ runWithResolved eventStore maybeFileUploadSetup fileUploadCleanup maybeWebAuthSe
             , Integration.providerRegistry = Integration.fromMap Map.empty
             , Integration.refreshLocks = refreshLocksMap
             , Integration.fileAccess = maybeFileAccessContext
+            , Integration.outboundDispatch = integrationRegistry
             }
         )
     Just (OAuth2Setup envVarName providerFactories) -> do
@@ -1208,6 +1239,7 @@ runWithResolved eventStore maybeFileUploadSetup fileUploadCleanup maybeWebAuthSe
               , Integration.providerRegistry = Integration.fromMap providerMap
               , Integration.refreshLocks = refreshLocksMap2
               , Integration.fileAccess = maybeFileAccessContext
+              , Integration.outboundDispatch = integrationRegistry
               }
       -- Create route handlers with loaded HMAC key and rate limiters
       let routeDeps =
@@ -1281,7 +1313,7 @@ runWithResolved eventStore maybeFileUploadSetup fileUploadCleanup maybeWebAuthSe
   -- When transports complete (or fail), cancel inbound workers for clean shutdown
   -- Use Task.finally to ensure cleanup always runs even if runTransports fails
   result <-
-    Transports.runTransports app.transports combinedEndpointsByTransport combinedSchemasByTransport combinedQueryEndpoints combinedQuerySchemas maybeAuthEnabled maybeOAuth2Config maybeFileUploadEnabled app.apiInfo app.corsConfig app.healthCheckConfig
+    Transports.runTransports app.transports combinedEndpointsByTransport combinedSchemasByTransport combinedQueryEndpoints combinedQuerySchemas maybeAuthEnabled maybeOAuth2Config maybeFileUploadEnabled app.apiInfo app.corsConfig app.healthCheckConfig maybeIntegrationStatus
       |> Task.finally cleanupAll
       |> Task.asResult
 
@@ -1306,6 +1338,48 @@ runWithResolved eventStore maybeFileUploadSetup fileUploadCleanup maybeWebAuthSe
   case result of
     Err err -> Task.throw err
     Ok _ -> Task.yield unit
+
+
+-- | Parse the ADR-0055 @--integrations@ CLI flag and build the
+-- 'DispatchRegistry' from the application's registered integrations.
+--
+-- Also emits the startup 'Log.critical' line when fake or hybrid mode is
+-- active, and returns the 'IntegrationStatus' block that the @/health@
+-- endpoint surfaces (only in fake/hybrid modes — real mode returns
+-- 'Nothing', keeping the health body minimal).
+--
+-- Shared by 'run' and 'runWith' so both entry points wire integrations
+-- identically.
+buildIntegrationContext :: Application -> Task Text (DispatchRegistry, Maybe IntegrationStatus)
+buildIntegrationContext app = do
+  selection <- Selection.parseSelection
+    |> Task.mapError (\err -> [fmt|Integration flag error: #{err}|])
+  let registry =
+        app.integrationRegistrations
+          |> Array.reduce
+              (\entry reg -> entry.registerInto selection reg)
+              DispatchRegistry.empty
+  let maybeStatus = case selection of
+        Real -> Nothing
+        Fake -> do
+          let names = app.integrationRegistrations |> Array.map (\e -> e.integrationName)
+          Just (IntegrationStatus { mode = "fake", fakes = names })
+        Hybrid fakeNames ->
+          Just (IntegrationStatus { mode = "hybrid", fakes = fakeNames })
+  case selection of
+    Real -> pass
+    Fake -> do
+      let names =
+            app.integrationRegistrations
+              |> Array.map (\e -> e.integrationName)
+              |> Text.joinWith ", "
+      Log.critical [fmt|Fake integrations active: #{names}|]
+        |> Task.ignoreError
+    Hybrid fakeNames -> do
+      let names = fakeNames |> Text.joinWith ", "
+      Log.critical [fmt|Fake integrations active: #{names}|]
+        |> Task.ignoreError
+  Task.yield (registry, maybeStatus)
 
 
 -- | Merge two QueryRegistries by combining their updaters.
@@ -1466,6 +1540,38 @@ withInbound mkInbound app = do
     Nothing -> do
       let reg = MkDeferredInboundReg @config mkInbound
       app {deferredInboundRegs = app.deferredInboundRegs |> Array.push reg}
+
+
+-- | Register an ADR-0055 outbound integration type.
+--
+-- At startup, 'Application.run' parses the @--integrations=@ flag, builds a
+-- pre-bound closure for each registered type, and stores them in a
+-- 'DispatchRegistry'. Domain code then calls 'Service.Integration.ShimEmit.emit'
+-- (or the global wrapper) to dispatch without knowing whether real or fake ran.
+--
+-- Example:
+--
+-- @
+-- app = Application.new
+--   |> Application.withIntegration \@SendEmail
+--   |> Application.withIntegration \@ChargeIntent
+-- @
+withIntegration ::
+  forall request.
+  ( Integration request
+  , Typeable request
+  , Typeable (Adapter.Response request)
+  , TypeName.Inspectable request
+  ) =>
+  Application ->
+  Application
+withIntegration app = do
+  let name = TypeName.reflect @request
+  let registerInto_ selection registry =
+        let closure = mkDispatcher @request selection
+        in DispatchRegistry.register @request closure registry
+  let entry = IntegrationRegistrationEntry { integrationName = name, registerInto = registerInto_ }
+  app {integrationRegistrations = app.integrationRegistrations |> Array.push entry}
 
 
 -- | Enable JWT authentication for WebTransport.
