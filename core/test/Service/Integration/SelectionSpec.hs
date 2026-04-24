@@ -70,3 +70,18 @@ spec = do
     it "validateOrThrow Fake returns Fake" \_ -> do
       result <- Task.asResult (Selection.validateOrThrow Fake)
       result |> shouldBe (Ok Fake)
+
+    it "isFakeByName _ Real always returns False" \_ -> do
+      Selection.isFakeByName "Anything" Real |> shouldBe False
+
+    it "hybrid with no --fake args parses to Hybrid []" \_ -> do
+      result <- Task.asResult (parse ["--integrations=hybrid"])
+      result |> shouldBe (Ok (Hybrid (Array.fromLinkedList [])))
+
+    it "validateOrThrow Real returns Real" \_ -> do
+      result <- Task.asResult (Selection.validateOrThrow Real)
+      result |> shouldBe (Ok Real)
+
+    it "validateOrThrow Hybrid returns Hybrid" \_ -> do
+      result <- Task.asResult (Selection.validateOrThrow (Hybrid (Array.fromLinkedList ["Sendgrid"])))
+      result |> shouldBe (Ok (Hybrid (Array.fromLinkedList ["Sendgrid"])))

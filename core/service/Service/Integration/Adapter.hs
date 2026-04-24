@@ -11,7 +11,6 @@ import Basics
 import Service.Integration.IntegrationError (IntegrationError)
 import Service.Integration.Selection (Selection (..))
 import Task (Task)
-import Task qualified
 import TypeName qualified
 
 

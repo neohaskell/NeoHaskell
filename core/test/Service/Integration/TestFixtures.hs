@@ -1,5 +1,3 @@
-{-# LANGUAGE AllowAmbiguousTypes #-}
-
 module Service.Integration.TestFixtures
   ( SendEmail (..),
     SendEmailResponse (..),

@@ -98,3 +98,35 @@ spec = do
             msg |> shouldSatisfy (\t -> Text.contains "Integration not registered" t)
           Err other -> fail [fmt|Expected PermanentFailure, got: #{toText other}|]
           Ok _ -> fail "Expected PermanentFailure for unregistered integration"
+
+      it "ShimEmit.emit in hybrid mode falls through to runReal for non-named integration" \_ -> do
+        let app =
+              Application.new
+                |> Application.withIntegration @SendEmail
+        let registry = buildRegistry app (Hybrid (Array.fromLinkedList ["NonExistent"]))
+        let req = mkSendEmail "alice@example.com" "template-001"
+        result <- ShimEmit.emit registry req |> Task.asResult
+        case result of
+          Err (TransientFailure _) -> pass
+          Err other -> fail [fmt|Expected TransientFailure from real fixture, got: #{toText other}|]
+          Ok _ -> fail "Expected runReal fixture to throw, but got Ok"
+
+      it "registering the same integration twice results in size 1 (last-write-wins)" \_ -> do
+        let app =
+              Application.new
+                |> Application.withIntegration @SendEmail
+                |> Application.withIntegration @SendEmail
+        let registry = buildRegistry app Fake
+        DispatchRegistry.size registry |> shouldBe 1
+
+      it "Hybrid [] routes all integrations through runReal" \_ -> do
+        let app =
+              Application.new
+                |> Application.withIntegration @SendEmail
+        let registry = buildRegistry app (Hybrid (Array.fromLinkedList []))
+        let req = mkSendEmail "alice@example.com" "template-001"
+        result <- ShimEmit.emit registry req |> Task.asResult
+        case result of
+          Err (TransientFailure _) -> pass
+          Err other -> fail [fmt|Expected TransientFailure from real fixture, got: #{toText other}|]
+          Ok _ -> fail "Expected runReal fixture to throw, but got Ok"

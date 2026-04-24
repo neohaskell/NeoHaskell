@@ -132,3 +132,39 @@ spec = do
                   _ -> fail "Expected array 'fakes'"
               Just _ -> fail "Expected integrations to be an object"
           Right _ -> fail "Expected JSON object"
+
+      it "integrations.fakes array contains the named fakes in hybrid mode" \_ -> do
+        let status = IntegrationStatus {mode = "hybrid", fakes = Array.fromLinkedList ["Sendgrid"]}
+        let transport = server {integrationStatus = Just status}
+        let body = buildHealthResponse transport
+        let decoded = Aeson.eitherDecode body :: Either String Aeson.Value
+        case decoded of
+          Left err -> fail (Text.fromLinkedList err)
+          Right (Aeson.Object obj) ->
+            case GhcKeyMap.lookup "integrations" obj of
+              Nothing -> fail "Expected 'integrations' key in hybrid mode"
+              Just (Aeson.Object inner) ->
+                case GhcKeyMap.lookup "fakes" inner of
+                  Just (Aeson.Array arr) ->
+                    Aeson.encode (Aeson.Array arr) |> GhcLBS.toStrict |> shouldBe "[\"Sendgrid\"]"
+                  _ -> fail "Expected array 'fakes'"
+              Just _ -> fail "Expected integrations to be an object"
+          Right _ -> fail "Expected JSON object"
+
+      it "integrations.fakes is an empty array when hybrid fakes list is empty" \_ -> do
+        let status = IntegrationStatus {mode = "hybrid", fakes = Array.fromLinkedList []}
+        let transport = server {integrationStatus = Just status}
+        let body = buildHealthResponse transport
+        let decoded = Aeson.eitherDecode body :: Either String Aeson.Value
+        case decoded of
+          Left err -> fail (Text.fromLinkedList err)
+          Right (Aeson.Object obj) ->
+            case GhcKeyMap.lookup "integrations" obj of
+              Nothing -> fail "Expected 'integrations' key in hybrid mode"
+              Just (Aeson.Object inner) ->
+                case GhcKeyMap.lookup "fakes" inner of
+                  Just (Aeson.Array arr) ->
+                    Aeson.encode (Aeson.Array arr) |> GhcLBS.toStrict |> shouldBe "[]"
+                  _ -> fail "Expected array 'fakes'"
+              Just _ -> fail "Expected integrations to be an object"
+          Right _ -> fail "Expected JSON object"

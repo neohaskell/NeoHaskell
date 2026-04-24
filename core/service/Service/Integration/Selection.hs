@@ -131,9 +131,8 @@ validateFakeName name =
         || c == '_'
 
 
--- | Emit an 'ERROR' level log line naming the active fakes when the
--- selection is non-'Real'. Logging wiring into Application.run is
--- tracked in ADR-0055 §2.
+-- | No-op stub — returns the selection unchanged.
+-- Logging of active fakes into Application.run is tracked in ADR-0055 §2.
 validateOrThrow :: Selection -> Task Text Selection
 validateOrThrow selection = Task.yield selection
 
@@ -176,7 +175,4 @@ stripPrefix prefix text =
 
 
 lastList :: [item] -> Maybe item
-lastList xs = case xs of
-  [] -> Nothing
-  [x] -> Just x
-  _ : rest -> lastList rest
+lastList xs = GhcMaybe.listToMaybe (GhcList.reverse xs)
