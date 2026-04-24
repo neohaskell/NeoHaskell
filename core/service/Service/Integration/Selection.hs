@@ -15,7 +15,6 @@ module Service.Integration.Selection
     fakeNameMember,
     fakeNameFromArray,
     validateFakeName,
-    docsUrl,
   )
 where
 
@@ -53,10 +52,6 @@ data FakeNameRegistry
   deriving (Eq, Show, Generic)
 
 
-docsUrl :: Text
-docsUrl = "https://neohaskell.org/docs/integrations/fake-mode"
-
-
 -- | Parse the selection from the real process argv.
 parseSelection :: Task Text Selection
 parseSelection = do
@@ -81,7 +76,7 @@ parseSelectionFromArgs args = do
       validated <- validateFakeNames fakes
       Task.yield (Hybrid validated)
     Just other ->
-      Task.throw [fmt|unknown --integrations=#{other}; valid values are real, fake, hybrid|]
+      Task.throw [fmt|unknown --integrations=#{other}; valid values are real, fake, hybrid; see https://neohaskell.org/docs/integrations/fake-mode|]
 
 
 parseModeFlag :: [Text] -> Maybe Text
@@ -99,18 +94,13 @@ parseFakeFlags args = do
 
 
 validateFakeNames :: [Text] -> Task Text (Array Text)
-validateFakeNames names =
-  case names of
-    [] -> Task.yield (Array.fromLinkedList [])
-    _ -> do
-      validated <-
-        Monad.mapM
-          ( \name -> case validateFakeName name of
-              Err err -> Task.throw err
-              Ok ok -> Task.yield ok
-          )
-          names
-      Task.yield (Array.fromLinkedList validated)
+validateFakeNames names = do
+  validated <- Monad.mapM validateOne names
+  Task.yield (Array.fromLinkedList validated)
+  where
+    validateOne name = case validateFakeName name of
+      Err err -> Task.throw err
+      Ok ok -> Task.yield ok
 
 
 -- | Validate a per-fake name. Accepts only @[A-Za-z0-9_]+@.
@@ -139,11 +129,7 @@ validateOrThrow selection = Task.yield selection
 
 -- | True when an integration name is routed to its fake.
 isFakeByName :: Text -> Selection -> Bool
-isFakeByName name selection =
-  case selection of
-    Real -> False
-    Fake -> True
-    Hybrid names -> Array.contains name names
+isFakeByName name selection = fakeNameMember name (fromSelection selection)
 
 
 -- | Build a 'FakeNameRegistry' from a selection for hybrid dispatch lookup.

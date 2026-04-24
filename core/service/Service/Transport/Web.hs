@@ -25,6 +25,7 @@ import Bytes (Bytes)
 import Bytes qualified
 import ConcurrentVar qualified
 import Log qualified
+import Data.Aeson qualified as Aeson
 import Data.ByteString qualified as GhcBS
 import Data.ByteString.Lazy qualified as GhcLBS
 import Data.IORef qualified as GhcIORef
@@ -1186,10 +1187,14 @@ buildHealthResponse :: WebTransport -> GhcLBS.ByteString
 buildHealthResponse transport =
   case transport.integrationStatus of
     Nothing -> "{\"status\":\"ok\"}"
-    Just (IntegrationStatus {mode = intMode, fakes = intFakes}) -> do
-      let quotedFakes =
-            intFakes
-              |> Array.map (\f -> [fmt|"#{f}"|])
-              |> Text.joinWith ","
-      let body = [fmt|{{"status":"ok","integrations":{{"mode":"#{intMode}","fakes":[#{quotedFakes}]}}}}|]
-      GhcLBS.fromStrict (body |> Text.toBytes |> Bytes.unwrap)
+    Just (IntegrationStatus {mode = intMode, fakes = intFakes}) ->
+      Aeson.encode
+        ( Json.object
+            [ "status" Json..= ("ok" :: Text)
+            , "integrations" Json..=
+                Json.object
+                  [ "mode" Json..= intMode
+                  , "fakes" Json..= intFakes
+                  ]
+            ]
+        )

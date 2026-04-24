@@ -37,6 +37,7 @@ import Service.Transport.Mcp.JsonRpcSpec qualified
 import Service.Transport.Mcp.ProtocolSpec qualified
 import Service.Transport.Mcp.ResponseSpec qualified
 import Service.Transport.WebSpec qualified
+import Service.Transport.Web.HealthCheckSpec qualified
 import Test.Hspec qualified as Hspec
 
 
@@ -77,3 +78,4 @@ main = Hspec.hspec do
   Hspec.describe "Service.Transport.Mcp.Protocol" Service.Transport.Mcp.ProtocolSpec.spec
   Hspec.describe "Service.Transport.Mcp.Response" Service.Transport.Mcp.ResponseSpec.spec
   Hspec.describe "Service.Transport.Web" Service.Transport.WebSpec.spec
+  Hspec.describe "Health Check" Service.Transport.Web.HealthCheckSpec.spec

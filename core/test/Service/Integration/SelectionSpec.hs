@@ -35,9 +35,9 @@ spec = do
       result |> shouldBe (Ok (Hybrid (Array.fromLinkedList ["Sendgrid", "Stripe"])))
 
     it "rejects unknown --integrations=X value" \_ -> do
-      result <- Task.asResult (parse ["--integrations=unknown"])
+      result <- Task.asResult (parse ["--integrations=nonesuch"])
       case result of
-        Err txt -> Text.contains "unknown" txt |> shouldBe True
+        Err txt -> Text.contains "nonesuch" txt |> shouldBe True
         Ok _ -> fail "expected error"
 
     it "error text mentions the invalid value" \_ -> do

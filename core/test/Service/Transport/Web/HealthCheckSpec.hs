@@ -106,10 +106,14 @@ spec = do
           Right (Aeson.Object obj) ->
             case GhcKeyMap.lookup "integrations" obj of
               Nothing -> fail "Expected 'integrations' key in fake mode"
-              Just (Aeson.Object inner) ->
+              Just (Aeson.Object inner) -> do
                 case GhcKeyMap.lookup "mode" inner of
                   Just (Aeson.String m) -> m |> shouldBe "fake"
                   _ -> fail "Expected string 'mode' inside integrations"
+                case GhcKeyMap.lookup "fakes" inner of
+                  Just (Aeson.Array arr) ->
+                    Aeson.encode (Aeson.Array arr) |> GhcLBS.toStrict |> shouldBe "[\"Sendgrid\",\"Stripe\"]"
+                  _ -> fail "Expected array 'fakes'"
               Just _ -> fail "Expected integrations to be an object"
           Right _ -> fail "Expected JSON object"
 
@@ -127,23 +131,6 @@ spec = do
                 case GhcKeyMap.lookup "mode" inner of
                   Just (Aeson.String m) -> m |> shouldBe "hybrid"
                   _ -> fail "Expected string 'mode'"
-                case GhcKeyMap.lookup "fakes" inner of
-                  Just (Aeson.Array _) -> pass
-                  _ -> fail "Expected array 'fakes'"
-              Just _ -> fail "Expected integrations to be an object"
-          Right _ -> fail "Expected JSON object"
-
-      it "integrations.fakes array contains the named fakes in hybrid mode" \_ -> do
-        let status = IntegrationStatus {mode = "hybrid", fakes = Array.fromLinkedList ["Sendgrid"]}
-        let transport = server {integrationStatus = Just status}
-        let body = buildHealthResponse transport
-        let decoded = Aeson.eitherDecode body :: Either String Aeson.Value
-        case decoded of
-          Left err -> fail (Text.fromLinkedList err)
-          Right (Aeson.Object obj) ->
-            case GhcKeyMap.lookup "integrations" obj of
-              Nothing -> fail "Expected 'integrations' key in hybrid mode"
-              Just (Aeson.Object inner) ->
                 case GhcKeyMap.lookup "fakes" inner of
                   Just (Aeson.Array arr) ->
                     Aeson.encode (Aeson.Array arr) |> GhcLBS.toStrict |> shouldBe "[\"Sendgrid\"]"
@@ -165,6 +152,23 @@ spec = do
                 case GhcKeyMap.lookup "fakes" inner of
                   Just (Aeson.Array arr) ->
                     Aeson.encode (Aeson.Array arr) |> GhcLBS.toStrict |> shouldBe "[]"
+                  _ -> fail "Expected array 'fakes'"
+              Just _ -> fail "Expected integrations to be an object"
+          Right _ -> fail "Expected JSON object"
+
+      it "correctly escapes special characters in fake names (JSON injection guard)" \_ -> do
+        let status = IntegrationStatus {mode = "hybrid", fakes = Array.fromLinkedList ["Bad\"Name"]}
+        let transport = server {integrationStatus = Just status}
+        let body = buildHealthResponse transport
+        case Aeson.eitherDecode body :: Either String Aeson.Value of
+          Left err -> fail (Text.fromLinkedList err)
+          Right (Aeson.Object obj) ->
+            case GhcKeyMap.lookup "integrations" obj of
+              Nothing -> fail "Expected 'integrations' key"
+              Just (Aeson.Object inner) ->
+                case GhcKeyMap.lookup "fakes" inner of
+                  Just (Aeson.Array arr) ->
+                    Aeson.encode (Aeson.Array arr) |> GhcLBS.toStrict |> shouldBe "[\"Bad\\\"Name\"]"
                   _ -> fail "Expected array 'fakes'"
               Just _ -> fail "Expected integrations to be an object"
           Right _ -> fail "Expected JSON object"

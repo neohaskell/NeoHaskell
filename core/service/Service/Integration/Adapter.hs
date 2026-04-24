@@ -33,9 +33,9 @@ mkDispatcher ::
   (Integration request, TypeName.Inspectable request) =>
   Selection ->
   (request -> Task IntegrationError (Response request))
-mkDispatcher selection = do
+mkDispatcher selection =
   let name = TypeName.reflect @request
-  case selection of
+  in case selection of
     Real -> runReal
     Fake -> runFake
     Hybrid fakes ->

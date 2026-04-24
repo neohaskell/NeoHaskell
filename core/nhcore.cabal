@@ -568,6 +568,7 @@ test-suite nhcore-test-service
     Service.Transport.Mcp.ResponseSpec
     Service.MultiTenantSpec
     Service.Transport.WebSpec
+    Service.Transport.Web.HealthCheckSpec
 
   type: exitcode-stdio-1.0
   hs-source-dirs: test-service, test
