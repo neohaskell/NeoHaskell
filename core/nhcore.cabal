@@ -432,6 +432,7 @@ test-suite nhcore-test
     LogSpec
     DecimalSpec
     Service.ApplicationSpec
+    TextSpec
     Service.CommandHandlerSpec
     Service.CommandSpec
     Service.EventStore.InMemorySpec
@@ -662,6 +663,7 @@ test-suite nhcore-test-core
     Test.AppSpec.VerifySpec
     Syntax.CommentSpec
     Syntax.FunctionSpec
+    TextSpec
 
   type: exitcode-stdio-1.0
   hs-source-dirs: test-core, test
