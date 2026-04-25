@@ -1,4 +1,8 @@
 {
+  "autocompact_percentage_override": 75,
+  "env": {
+    "BASH_MAX_OUTPUT_LENGTH": "150000"
+  },
   "hooks": {
     "PreToolUse": [
       {
@@ -61,7 +65,18 @@
       "Bash(git push -f:*)",
       "Bash(git reset --hard:*)",
       "Read(.git/**)",
-      "Write(.git/**)"
+      "Write(.git/**)",
+      "Read(dist-newstyle/**)",
+      "Read(**/dist-newstyle/**)",
+      "Read(installer/target/**)",
+      "Read(**/target/**)",
+      "Read(**/node_modules/**)",
+      "Read(website/.astro/**)",
+      "Read(website/dist/**)",
+      "Read(**/.next/**)",
+      "Read(**/build/**)",
+      "Read(**/__pycache__/**)",
+      "Read(**/.venv/**)"
     ]
   }
 }
