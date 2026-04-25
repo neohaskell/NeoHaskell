@@ -424,6 +424,7 @@ test-suite nhcore-test
     EventVariantOfSpec
     LogSpec
     DecimalSpec
+    DeciderSpec
     Service.ApplicationSpec
     Service.CommandHandlerSpec
     Service.CommandSpec
