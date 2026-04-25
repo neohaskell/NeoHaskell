@@ -22,9 +22,6 @@ import Array (Array)
 import Array qualified
 import Basics
 import EventVariantOf (EventVariantOf (..))
-import Data.Text.Encoding qualified as TextEncoding
-import Data.UUID.V5 qualified as UuidV5
-import Data.ByteString qualified as GhcByteString
 import Uuid qualified
 import Control.Monad qualified as Monad
 import Log qualified
@@ -134,12 +131,8 @@ generateUuid = GenUuid
 -- The deterministic nature means anyone with access to the inputs can reproduce the ID.
 generateDeterministicUuid :: Uuid -> Text -> Decision Uuid
 generateDeterministicUuid namespace name =
-  name
-    |> TextEncoding.encodeUtf8
-    |> GhcByteString.unpack
-    |> UuidV5.generateNamed (Uuid.toLegacy namespace)
-    |> Uuid.fromLegacy
-    |> Return
+  Uuid.generateV5 namespace name |> Return
+
 
 -- | Accept a command regardless of stream state, emitting the given events.
 --

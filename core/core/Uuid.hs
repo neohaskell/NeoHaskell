@@ -6,6 +6,7 @@ module Uuid (
   toText,
   fromText,
   nil,
+  generateV5,
 ) where
 
 import Basics
@@ -13,6 +14,9 @@ import Data.Default (Default (..))
 import Data.Text (Text)
 import Data.UUID qualified as UUID
 import Data.UUID.V4 qualified as V4
+import Data.UUID.V5 qualified as V5
+import Data.Text.Encoding qualified as TextEncoding
+import Data.ByteString qualified as GhcByteString
 import Json (FromJSON, ToJSON)
 import Maybe (Maybe (..))
 import Task (Task)
@@ -58,6 +62,15 @@ toText (Uuid uuid) = do
 
 nil :: Uuid
 nil = fromLegacy UUID.nil
+-- | Generate a deterministic UUID (v5) from a namespace and a name.
+generateV5 :: Uuid -> Text -> Uuid
+generateV5 (Uuid ns) name =
+  name
+    |> TextEncoding.encodeUtf8
+    |> GhcByteString.unpack
+    |> V5.generateNamed ns
+    |> Uuid
+
 
 
 -- | Parse a UUID from its text representation.
