@@ -62,6 +62,8 @@ toText (Uuid uuid) = do
 
 nil :: Uuid
 nil = fromLegacy UUID.nil
+
+
 -- | Generate a deterministic UUID (v5) from a namespace and a name.
 generateV5 :: Uuid -> Text -> Uuid
 generateV5 (Uuid ns) name =
@@ -70,7 +72,7 @@ generateV5 (Uuid ns) name =
     |> GhcByteString.unpack
     |> V5.generateNamed ns
     |> Uuid
-
+{-# INLINE generateV5 #-}
 
 
 -- | Parse a UUID from its text representation.

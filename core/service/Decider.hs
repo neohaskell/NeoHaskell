@@ -132,6 +132,7 @@ generateUuid = GenUuid
 generateDeterministicUuid :: Uuid -> Text -> Decision Uuid
 generateDeterministicUuid namespace name =
   Uuid.generateV5 namespace name |> Return
+{-# INLINE generateDeterministicUuid #-}
 
 
 -- | Accept a command regardless of stream state, emitting the given events.
