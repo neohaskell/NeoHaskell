@@ -1,0 +1,112 @@
+id: bugfix
+type: group
+kind: sequential
+children:
+  - id: reproduce
+    type: leaf
+    executor: claude_code
+    model: haiku-4.5
+    bundles_required: [neo_prelude]
+    verifier:
+      type: schema
+      id: yaml-valid
+    outputs:
+      - artifact: .pipeline/bug-summary.yaml
+        reversibility: none
+
+  - id: write-regression-test
+    type: leaf
+    executor: claude_code
+    model: sonnet-4.6
+    bundles_required: [test_patterns, neo_prelude]
+    verifier:
+      type: diff
+      id: cabal-build-ok
+      timeout_s: 300
+    outputs: []
+
+  - id: diagnose
+    type: leaf
+    executor: claude_code
+    model: sonnet-4.6
+    prompt_template: prompts/bug-diagnosis.md
+    bundles_required: [neo_prelude]
+    verifier:
+      type: schema
+      id: yaml-valid
+    outputs:
+      - artifact: .pipeline/diagnosis.yaml
+        reversibility: none
+
+  - id: fix
+    type: leaf
+    executor: claude_code
+    model: sonnet-4.6
+    bundles_required: [neo_prelude, event_sourcing_patterns]
+    verifier:
+      type: diff
+      id: cabal-build-ok
+      timeout_s: 300
+    outputs:
+      - artifact: source (modified)
+        reversibility: atomic-diff
+
+  - id: verify-fix
+    type: leaf
+    executor: claude_code
+    model: haiku-4.5
+    bundles_required: []
+    verifier:
+      type: diff
+      id: cabal-test-ok
+      timeout_s: 300
+    outputs: []
+
+  - id: review-loop
+    type: loop
+    max_iterations: 2
+    accumulator_artifact: .pipeline/findings/review-cumulative.yaml
+    exit_condition:
+      type: deterministic
+      id: no-blocking-findings
+    on_budget_exhausted: escalate
+    iteration_body:
+      id: review-loop-body
+      type: group
+      kind: sequential
+      children:
+        - id: security-review
+          type: leaf
+          executor: claude_code
+          model: sonnet-4.6
+          bundles_required: [security_baseline]
+          verifier:
+            type: schema
+            id: yaml-valid
+          outputs:
+            - artifact: .pipeline/findings/security-review-iter{N}.yaml
+              reversibility: none
+        - id: fix-findings
+          type: leaf
+          executor: claude_code
+          model: sonnet-4.6
+          bundles_required: [neo_prelude]
+          verifier:
+            type: diff
+            id: cabal-build-ok
+            timeout_s: 300
+          outputs:
+            - artifact: source (modified)
+              reversibility: atomic-diff
+
+  - id: write-pr-body
+    type: leaf
+    executor: claude_code
+    model: haiku-4.5
+    bundles_required: []
+    verifier:
+      type: schema
+      id: artifact-exists
+    outputs:
+      - artifact: .pipeline/pr-body.md
+        reversibility: atomic-diff

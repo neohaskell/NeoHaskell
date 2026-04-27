@@ -1,4 +1,4 @@
-# Bundle Authoring — Fase 0
+# Bundle Authoring — Phase 0
 
 This document contains the operational content for the missing context bundles in the Atomic Orchestration design.
 

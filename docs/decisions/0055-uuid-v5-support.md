@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed
+Accepted (merged 2026-04-27)
 
 ## Context
 
@@ -47,15 +47,13 @@ The function will be added to the `Decider` module. It performs the hashing and 
 ```haskell
 -- | Generate a deterministic UUID (v5) from a namespace and a name.
 -- Same inputs always produce the same UUID.
+-- See SECURITY WARNING in Uuid.generateV5.
 generateDeterministicUuid :: Uuid -> Text -> Decision Uuid
 generateDeterministicUuid namespace name =
-  name
-    |> TextEncoding.encodeUtf8
-    |> GhcByteString.unpack
-    |> UuidV5.generateNamed (Uuid.toLegacy namespace)
-    |> Uuid.fromLegacy
-    |> Return
+  Uuid.generateV5 namespace name |> Return
 ```
+
+Note: An `{-# INLINE generateDeterministicUuid #-}` pragma follows the function body to allow GHC to eliminate the `Return` wrapper during fusion.
 
 ### 3. Module Placement
 

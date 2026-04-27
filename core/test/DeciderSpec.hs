@@ -41,7 +41,7 @@ spec = do
         let ns = Uuid.nil
         let uuid1 = Uuid.generateV5 ns "name-a"
         let uuid2 = Uuid.generateV5 ns "name-b"
-        uuid1 |> shouldSatisfy (\u -> u != uuid2)
+        uuid1 |> shouldNotBe uuid2
 
       it "different namespaces produce different UUIDs for the same name" \_ -> do
         let ns1 = Uuid.fromText "6ba7b810-9dad-11d1-80b4-00c04fd430c8"
@@ -51,7 +51,7 @@ spec = do
         let name = "same-name"
         let uuid1 = Uuid.generateV5 ns1 name
         let uuid2 = Uuid.generateV5 ns2 name
-        uuid1 |> shouldSatisfy (\u -> u != uuid2)
+        uuid1 |> shouldNotBe uuid2
 
   describe "Decider" do
     describe "generateDeterministicUuid" do
@@ -71,21 +71,22 @@ spec = do
              generated |> shouldBe expected
           _ -> Test.fail "Decision rejected"
 
-      it "is deterministic: calling twice with same inputs yields the same result" \_ -> do
+      it "generates the same UUID as Uuid.generateV5" \_ -> do
         let ns = Uuid.nil
         let name = "stable-id"
+        let expected = Uuid.generateV5 ns name
         let ctx = Decider.DecisionContext { Decider.genUuid = Task.throw "GenUuid must not be called" }
 
-        result1 <- do
-                     uuid <- Decider.generateDeterministicUuid ns name
-                     Decider.acceptAny @Uuid [uuid]
-                   |> Decider.runDecision ctx
-        result2 <- do
-                     uuid <- Decider.generateDeterministicUuid ns name
-                     Decider.acceptAny @Uuid [uuid]
-                   |> Decider.runDecision ctx
+        result <- do
+                    uuid <- Decider.generateDeterministicUuid ns name
+                    Decider.acceptAny @Uuid [uuid]
+                  |> Decider.runDecision ctx
 
-        result1 |> shouldBe result2
+        case result of
+          Decider.AcceptCommand _ events -> do
+            let generated = events |> Array.get 0 |> Maybe.withDefault (panic "no uuid")
+            generated |> shouldBe expected
+          _ -> Test.fail "Decision rejected"
 
       it "does not invoke genUuid" \_ -> do
         let ns = Uuid.nil

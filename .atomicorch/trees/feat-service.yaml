@@ -1,0 +1,221 @@
+id: feat-service
+type: group
+kind: sequential
+children:
+  - id: trigger
+    type: leaf
+    executor: claude_code
+    model: haiku-4.5
+    bundles_required: []
+    prompt_template: prompts/trigger.md
+    verifier:
+      type: schema
+      id: yaml-valid
+    outputs:
+      - artifact: .pipeline/trigger.yaml
+        reversibility: none
+
+  - id: adr-design-loop
+    type: loop
+    max_iterations: 4
+    accumulator_artifact: .pipeline/findings/adr-cumulative.yaml
+    exit_condition:
+      type: deterministic
+      id: no-blocking-findings
+    on_budget_exhausted: escalate
+    iteration_body:
+      id: adr-loop-body
+      type: group
+      kind: sequential
+      children:
+        - id: architect
+          type: leaf
+          executor: claude_code
+          model: sonnet-4.6
+          prompt_template: prompts/adr-architect.md
+          bundles_required: [neo_prelude, style_guide, event_sourcing_patterns, devex_jess]
+          verifier:
+            type: schema
+            id: artifact-exists
+          outputs:
+            - artifact: docs/decisions/0000-draft.md
+              reversibility: atomic-diff
+        - id: parallel-review
+          type: group
+          kind: parallel
+          children:
+            - id: security-adr-review
+              type: leaf
+              executor: claude_code
+              model: sonnet-4.6
+              prompt_template: prompts/security-adr-review.md
+              bundles_required: [security_baseline]
+              verifier:
+                type: schema
+                id: artifact-exists
+              outputs:
+                - artifact: .pipeline/findings/security-adr-iter{N}.yaml
+                  reversibility: none
+            - id: devex-adr-review
+              type: leaf
+              executor: claude_code
+              model: sonnet-4.6
+              bundles_required: [devex_jess]
+              verifier:
+                type: schema
+                id: artifact-exists
+              outputs:
+                - artifact: .pipeline/findings/devex-adr-iter{N}.yaml
+                  reversibility: none
+
+  - id: architecture-design
+    type: leaf
+    executor: claude_code
+    model: sonnet-4.6
+    prompt_template: prompts/architecture-design.md
+    bundles_required: [neo_prelude, style_guide, event_sourcing_patterns]
+    verifier:
+      type: schema
+      id: artifact-exists
+    outputs:
+      - artifact: docs/designs/0055-uuid-architecture.md
+        reversibility: atomic-diff
+
+  - id: test-spec
+    type: leaf
+    executor: claude_code
+    model: sonnet-4.6
+    bundles_required: [qa_rubric, test_patterns]
+    verifier:
+      type: schema
+      id: artifact-exists
+    outputs:
+      - artifact: .pipeline/test-spec.md
+        reversibility: atomic-diff
+
+  - id: write-tests
+    type: leaf
+    executor: claude_code
+    model: sonnet-4.6
+    bundles_required: [test_patterns, neo_prelude]
+    verifier:
+      type: diff
+      id: cabal-build-ok
+      timeout_s: 300
+    outputs:
+      - artifact: tests (modified)
+        reversibility: atomic-diff
+
+  - id: implement
+    type: leaf
+    executor: claude_code
+    model: sonnet-4.6
+    prompt_template: prompts/implement.md
+    bundles_required: [neo_prelude, event_sourcing_patterns]
+    verifier:
+      type: diff
+      id: cabal-build-ok
+      timeout_s: 300
+    outputs:
+      - artifact: source (modified)
+        reversibility: atomic-diff
+
+  - id: green-loop
+    type: loop
+    max_iterations: 5
+    accumulator_artifact: .pipeline/build-fail-history.jsonl
+    exit_condition:
+      type: deterministic
+      id: no-blocking-findings
+    on_budget_exhausted: escalate
+    iteration_body:
+      id: green-loop-body
+      type: group
+      kind: sequential
+      children:
+        - id: run-tests
+          type: leaf
+          executor: claude_code
+          model: haiku-4.5
+          bundles_required: []
+          verifier:
+            type: diff
+            id: cabal-test-ok
+            command: ["cabal", "test", "nhcore-test-core", "nhcore-test-auth"]
+            timeout_s: 300
+          outputs: []
+        - id: diagnose-and-fix
+          type: leaf
+          executor: claude_code
+          model: sonnet-4.6
+          bundles_required: [neo_prelude, event_sourcing_patterns]
+          verifier:
+            type: diff
+            id: cabal-build-ok
+            timeout_s: 300
+          outputs:
+            - artifact: source (modified)
+              reversibility: atomic-diff
+
+  - id: impl-review-loop
+    type: loop
+    max_iterations: 3
+    accumulator_artifact: .pipeline/findings/impl-cumulative.yaml
+    exit_condition:
+      type: deterministic
+      id: no-blocking-findings
+    on_budget_exhausted: escalate
+    iteration_body:
+      type: group
+      kind: sequential
+      children:
+        - id: parallel-review
+          type: group
+          kind: parallel
+          children:
+            - id: security-impl-review
+              type: leaf
+              executor: claude_code
+              model: sonnet-4.6
+              bundles_required: [security_baseline]
+              verifier:
+                type: schema
+                id: yaml-valid
+              outputs:
+                - artifact: .pipeline/findings/security-impl-iter{N}.yaml
+                  reversibility: none
+            - id: perf-impl-review
+              type: leaf
+              executor: claude_code
+              model: sonnet-4.6
+              bundles_required: [perf_baseline]
+              verifier:
+                type: schema
+                id: yaml-valid
+              outputs:
+                - artifact: .pipeline/findings/perf-impl-iter{N}.yaml
+                  reversibility: none
+        - id: fix-findings
+          type: leaf
+          executor: claude_code
+          model: sonnet-4.6
+          bundles_required: [neo_prelude, event_sourcing_patterns]
+          verifier:
+            type: diff
+            id: cabal-build-ok
+            timeout_s: 300
+          outputs:
+            - artifact: source (modified)
+              reversibility: atomic-diff
+
+  - id: write-pr-body
+    type: leaf
+    executor: claude_code
+    model: haiku-4.5
+    bundles_required: []
+    verifier:
+      type: schema
+      id: artifact-exists
+    outputs:
+      - artifact: .pipeline/pr-body.md
+        reversibility: atomic-diff

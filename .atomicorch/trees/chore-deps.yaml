@@ -1,0 +1,48 @@
+id: chore-deps
+type: group
+kind: sequential
+children:
+  - id: read-changelog
+    type: leaf
+    executor: claude_code
+    model: haiku-4.5
+    bundles_required: []
+    verifier:
+      type: schema
+      id: yaml-valid
+    outputs:
+      - artifact: .pipeline/dep-changelog.yaml
+        reversibility: none
+  - id: update-lockfile
+    type: leaf
+    executor: claude_code
+    model: haiku-4.5
+    bundles_required: []
+    verifier:
+      type: diff
+      id: cabal-build-ok
+      timeout_s: 300
+    outputs:
+      - artifact: cabal.project (modified)
+        reversibility: atomic-diff
+  - id: build-and-smoke-test
+    type: leaf
+    executor: claude_code
+    model: haiku-4.5
+    bundles_required: []
+    verifier:
+      type: diff
+      id: cabal-test-ok
+      timeout_s: 300
+    outputs: []
+  - id: write-pr-body
+    type: leaf
+    executor: claude_code
+    model: haiku-4.5
+    bundles_required: []
+    verifier:
+      type: schema
+      id: artifact-exists
+    outputs:
+      - artifact: .pipeline/pr-body.md
+        reversibility: atomic-diff

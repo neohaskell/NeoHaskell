@@ -1,0 +1,69 @@
+schema_version: 1
+project:
+  name: neohaskell
+  language: haskell
+paths:
+  bundles_dir: .atomicorch/bundles
+  trees_dir: .atomicorch/trees
+  verifiers_dir: .atomicorch/scripts  # verifier scripts live here
+  scripts_dir: .atomicorch/scripts
+  schemas_dir: .atomicorch/schemas
+  prompts_dir: .atomicorch/prompts
+categories:
+  - id: feat(service)
+    tree: feat-service.yaml
+    cross_vendor_required: true
+    adr_required: true
+    axes: [security, performance, devex, style, test, doc]
+  - id: feat(core)
+    tree: feat-service.yaml
+    cross_vendor_required: true
+    adr_required: true
+    axes: [security, performance, devex, style, test, doc]
+  - id: fix(core)
+    tree: bugfix.yaml
+    cross_vendor_required: true
+    adr_required: false
+    axes: [security, performance, style, test]
+  - id: fix(service)
+    tree: bugfix.yaml
+    cross_vendor_required: true
+    adr_required: false
+    axes: [security, performance, style, test]
+  - id: chore(deps)
+    tree: chore-deps.yaml
+    cross_vendor_required: false
+    adr_required: false
+    axes: [style]
+  - id: test
+    tree: chore-deps.yaml
+    cross_vendor_required: false
+    adr_required: false
+    axes: [style, test]
+  - id: docs
+    tree: chore-deps.yaml
+    cross_vendor_required: false
+    adr_required: false
+    axes: [doc]
+build:
+  build_command: ["nix", "develop", "--command", "cabal", "build", "all"]
+  test_command: ["nix", "develop", "--command", "cabal", "test", "all"]
+  affected_test_command: [".atomicorch/scripts/test-affected.sh"]
+  hlint_command: ["nix", "develop", "--command", "hlint", "."]
+critical_areas:
+  - core/auth/
+  - core/http/
+  - core/crypto/
+  - core/eventstore/
+  - core/service/Service/Command/
+models:
+  default_routing:
+    haiku-4.5: anthropic/claude-haiku-4-5
+    gemini-3-flash: google/gemini-3-flash
+    sonnet-4.6: anthropic/claude-sonnet-4-6
+    gemini-3-pro: google/gemini-3-pro
+    opus-4.7: anthropic/claude-opus-4-7
+budgets:
+  per_task_max_usd: 10.0
+  per_leaf_max_tokens_in: 50000
+  per_leaf_max_wall_clock_ms: 600000

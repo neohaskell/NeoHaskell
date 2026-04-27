@@ -1,6 +1,6 @@
 ```yaml
 version: 1
-adr: docs/decisions/0056-deterministic-uuid-generation-in-decision-monad.md
+adr: docs/decisions/0055-uuid-v5-support.md
 
 modules:
   - name: Uuid
@@ -151,14 +151,11 @@ integration_points:
   - existing_module: core/service/Decider.hs
     change: add-export
     detail: >
-      generateDeterministicUuid is implemented at line 132 and exported at line 17.
-      The {-# INLINE generateDeterministicUuid #-} pragma specified in the public_api
-      signature is absent from the current file and must be added immediately after
-      the function body to allow GHC to eliminate the Return wrapper during fusion.
+      generateDeterministicUuid is implemented at line 132, exported at line 17, and marked {-# INLINE #-} at line 135.
   - existing_module: core/core/Uuid.hs
     change: add-export
     detail: >
-      generateV5 is implemented at line 66 and exported at line 9. No further change required.
+      Uuid.generateV5 is exported at line 9. No further change required.
   - existing_module: core/test/DeciderSpec.hs
     change: add-export
     detail: >
@@ -180,11 +177,10 @@ cabal_changes:
   - file: core/nhcore.cabal
     stanza: test-suite nhcore-test
     add_exposed_modules: []
-    add_other_modules: []
+    add_other_modules: [DeciderSpec]
     add_build_depends: []
     note: >
-      DeciderSpec (line 427) is already in other-modules for nhcore-test.
-      No cabal changes needed.
+      DeciderSpec was added to other-modules for nhcore-test in this PR.
 
 flags_for_human_review: []
 
@@ -192,7 +188,7 @@ reuse_summary:
   - utility: Uuid.generateV5
     used_in: [Decider.generateDeterministicUuid]
     reason: >
-      All SHA-1 / RFC 4122 v5 logic lives in Uuid.generateV5 (core/core/Uuid.hs:66).
+      All SHA-1 / RFC 4122 v5 logic lives in Uuid.generateV5.
       Decider.generateDeterministicUuid is a one-line Return wrapper; duplicating
       the computation in Decider would violate the single-responsibility split between
       the primitive type layer and the free monad API layer.
@@ -204,7 +200,7 @@ reuse_summary:
 
 do_not_create:
   - considered: DeterministicUuid standalone helper module
-    nhcore_alternative: Uuid.generateV5 at core/core/Uuid.hs:66 — the full implementation is already there and exported.
+    nhcore_alternative: Uuid.generateV5 — the full implementation is already there and exported.
   - considered: Uuid.Namespace sum type with DNS/URL/OID/X500 pre-baked RFC 4122 constants
     nhcore_alternative: >
       Uuid.nil (core/core/Uuid.hs:63) and Uuid.fromText (core/core/Uuid.hs:77) cover all
