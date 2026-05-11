@@ -298,7 +298,17 @@ insertImpl config store payload = do
               InsertAfter (StreamPosition afterPos) ->
                 fromIntegral afterPos < currentLength && positionMatches
 
-  result <-
+  -- The critical section only covers the append + consistency check plus a
+  -- snapshot of the subscribers active at commit time. Subscriber notification
+  -- and disk persistence run AFTER the lock is released so a subscriber handler
+  -- that reads back from the store (taking globalLock via ensureStream) cannot
+  -- deadlock the insert. See #625.
+  --
+  -- The subscriber snapshot is captured inside the lock so concurrent
+  -- subscribe/unsubscribe between commit and dispatch cannot drop an event
+  -- (handler removed after commit) or deliver an event older than the
+  -- subscription (handler added after commit).
+  (result, eventsToNotify, subscribersSnapshot) <-
     Lock.with store.globalLock do
       currentStreamEvents <- channel |> DurableChannel.getAndTransform unchanged
       let consistencyCheckPassed = appendCondition currentStreamEvents
@@ -315,29 +325,39 @@ insertImpl config store payload = do
           let finalEvents = payload |> fromInsertionPayload globalPosition streamLength
           channel |> DurableChannel.checkAndWrite appendCondition finalEvents |> discard
 
-          finalEvents |> Task.forEach (notifySubscribers store)
           let finalEvent = finalEvents |> Array.last |> Maybe.getOrDie
           Log.withScope [("component", "EventStore.Simple")] do
             Log.debug [fmt|Inserted #{toText (Array.length finalEvents)} event(s) for #{toText entityName}/#{toText streamId}|]
               |> Task.ignoreError
 
-          -- Persist to disk if persistent mode is enabled
-          if config.persistent
-            then persistEvents config entityName streamId finalEvents
-            else pass
-
+          subscribersSnapshot <- ConcurrentVar.peek store.subscriptions
           Task.yield
             ( Ok
                 InsertionSuccess
                   { localPosition = finalEvent.metadata.localPosition |> Maybe.withDefault (StreamPosition 0),
                     globalPosition = finalEvent.metadata.globalPosition |> Maybe.withDefault (StreamPosition 0)
-                  }
+                  },
+              finalEvents,
+              subscribersSnapshot
             )
         else do
           Log.withScope [("component", "EventStore.Simple")] do
             Log.warn [fmt|Consistency check failed for #{toText entityName}/#{toText streamId}|]
               |> Task.ignoreError
-          Task.yield (Err ConsistencyCheckFailed)
+          Task.yield (Err ConsistencyCheckFailed, Array.empty, Map.empty)
+
+  -- Notify subscribers after releasing the lock. Each insert still waits for
+  -- its own notifications to drain before returning, preserving ordering: two
+  -- sequential inserts deliver in order.
+  eventsToNotify
+    |> Task.forEach (notifySubscribers subscribersSnapshot)
+    |> Task.ignoreError
+
+  -- Persist to disk if persistent mode is enabled. Done outside the lock so a
+  -- slow disk write does not block readers and never crosses an async boundary.
+  if config.persistent && not (Array.isEmpty eventsToNotify)
+    then persistEvents config entityName streamId eventsToNotify |> Task.ignoreError
+    else pass
 
   case result of
     Ok success -> Task.yield success
@@ -596,10 +616,16 @@ generateSubscriptionId = do
   uuid |> toText |> SubscriptionId |> Task.yield
 
 
-notifySubscribers :: StreamStore -> Event Json.Value -> Task Never Unit
-notifySubscribers store event = do
-  -- Get subscriptions snapshot without locks
-  allSubscriptions <- ConcurrentVar.peek store.subscriptions
+-- | Dispatch one event to every subscription in the given snapshot.
+-- The snapshot must be taken inside the critical section so concurrent
+-- subscribe/unsubscribe between commit and dispatch cannot deliver an
+-- event to a handler that wasn't active at commit time (or drop one
+-- that was).
+notifySubscribers ::
+  Map SubscriptionId Subscription ->
+  Event Json.Value ->
+  Task Never Unit
+notifySubscribers allSubscriptions event = do
   let relevantSubscriptions =
         allSubscriptions
           |> Map.entries
