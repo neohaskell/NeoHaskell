@@ -566,11 +566,18 @@ spec newStore = do
         -- handler that read back from the store (e.g. readStreamForwardFrom →
         -- ensureStream → Lock.with globalLock) deadlocked the insert.
 
-        -- Subscriber handler reads from the same store, exercising the lock.
+        -- readStarted proves the handler actually entered the re-entrant read
+        -- path. Without it the assertion would pass if notification ever
+        -- became fire-and-forget — insert would finish quickly even though the
+        -- bug class (a synchronous handler that recursively reads) had not
+        -- really been exercised.
+        readStarted <- ConcurrentVar.containing False
+
         let readingHandler event = do
               if event.entityName != context.entityName
                 then Task.yield unit
                 else do
+                  readStarted |> ConcurrentVar.modify (\_ -> True)
                   context.store.readStreamForwardFrom
                     event.entityName
                     event.streamId
@@ -609,9 +616,11 @@ spec newStore = do
                           AsyncTask.sleep 50 |> Task.mapError (\_ -> "timeout")
                           pollUntilDone (attemptsLeft - 1)
                 done <- pollUntilDone 40
+                handlerRan <- ConcurrentVar.peek readStarted
 
                 AsyncTask.cancel insertTask |> Task.asResultSafe |> discard
                 done |> shouldBe True
+                handlerRan |> shouldBe True
               Nothing -> Task.throw "No test event"
 
       it "subscribes from start - receives ALL events including historical ones" \context -> do
