@@ -560,6 +560,60 @@ spec newStore = do
             entity1Events |> Array.length |> shouldBe eventCount
             entity2Events |> Array.length |> shouldBe eventCount
 
+      it "subscriber handlers can read from the same store without deadlocking insert" \context -> do
+        -- Regression for #625: insertImpl in SimpleEventStore used to invoke
+        -- notifySubscribers while still holding store.globalLock. Any subscriber
+        -- handler that read back from the store (e.g. readStreamForwardFrom →
+        -- ensureStream → Lock.with globalLock) deadlocked the insert.
+
+        -- Subscriber handler reads from the same store, exercising the lock.
+        let readingHandler event = do
+              if event.entityName != context.entityName
+                then Task.yield unit
+                else do
+                  context.store.readStreamForwardFrom
+                    event.entityName
+                    event.streamId
+                    (Event.StreamPosition 0)
+                    (EventStore.Limit 100)
+                    |> Task.mapError toText
+                    |> Task.andThen Stream.toArray
+                    |> discard
+                  Task.yield unit
+
+        subscriptionId <-
+          context.store.subscribeToAllEvents readingHandler
+            |> Task.mapError toText
+
+        Task.finally
+          (context.store.unsubscribe subscriptionId |> Task.mapError toText)
+          do
+            case context.testEvents |> Array.get 0 of
+              Just testEvent -> do
+                -- Run insert on a background thread and poll a completion flag.
+                -- If the deadlock is present, the flag never flips and the test
+                -- fails with a bounded timeout rather than hanging the suite.
+                completionFlag <- ConcurrentVar.containing False
+                insertTask <- AsyncTask.run do
+                  context.store.insert testEvent
+                    |> Task.mapError toText
+                    |> discard
+                  completionFlag |> ConcurrentVar.modify (\_ -> True)
+                  Task.yield unit
+
+                let pollUntilDone attemptsLeft = do
+                      done <- ConcurrentVar.peek completionFlag
+                      if done || attemptsLeft <= (0 :: Int)
+                        then Task.yield done
+                        else do
+                          AsyncTask.sleep 50 |> Task.mapError (\_ -> "timeout")
+                          pollUntilDone (attemptsLeft - 1)
+                done <- pollUntilDone 40
+
+                AsyncTask.cancel insertTask |> Task.asResultSafe |> discard
+                done |> shouldBe True
+              Nothing -> Task.throw "No test event"
+
       it "subscribes from start - receives ALL events including historical ones" \context -> do
         entity1IdText <- Uuid.generate |> Task.map toText
         let entity1Id = Event.EntityName entity1IdText
