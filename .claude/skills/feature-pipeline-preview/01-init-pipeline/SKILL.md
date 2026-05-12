@@ -3,6 +3,7 @@ name: 01-init-pipeline
 description: Initialises the pipeline state machine for a NeoHaskell feature.
 kind: leaf
 executor: script
+model: claude-haiku-4-5-20251001
 ---
 
 # Init pipeline

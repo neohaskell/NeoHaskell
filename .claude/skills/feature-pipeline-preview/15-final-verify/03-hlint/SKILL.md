@@ -3,6 +3,7 @@ name: 03-hlint
 description: Runs hlint on changed files as a strict gate with no retry.
 kind: leaf
 executor: script
+model: claude-haiku-4-5-20251001
 ---
 
 # Final Hlint

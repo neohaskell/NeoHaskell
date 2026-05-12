@@ -3,6 +3,7 @@ name: 02-test
 description: Runs cabal test as a strict gate with no retry.
 kind: leaf
 executor: script
+model: claude-haiku-4-5-20251001
 ---
 
 # Final Test

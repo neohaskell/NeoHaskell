@@ -3,6 +3,7 @@ name: 03-record
 description: Persists grounded security findings to the pipeline state and marks phase 4 complete.
 kind: leaf
 executor: script
+model: claude-haiku-4-5-20251001
 ---
 
 # Record Security Findings

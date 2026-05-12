@@ -3,6 +3,7 @@ name: 02-submit
 description: Stages, commits, pushes the branch, opens the PR, and records the PR URL and number.
 kind: leaf
 executor: script
+model: claude-haiku-4-5-20251001
 ---
 
 # Submit PR

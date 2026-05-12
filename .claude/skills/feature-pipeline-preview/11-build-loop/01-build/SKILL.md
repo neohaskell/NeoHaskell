@@ -3,6 +3,7 @@ name: 01-build
 description: Runs cabal build all and streams the output to the pipeline log.
 kind: leaf
 executor: script
+model: claude-haiku-4-5-20251001
 ---
 
 # Build

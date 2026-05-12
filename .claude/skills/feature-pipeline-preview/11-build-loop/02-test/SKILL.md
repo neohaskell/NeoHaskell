@@ -3,6 +3,7 @@ name: 02-test
 description: Runs cabal test with streaming details and writes the output to the pipeline log.
 kind: leaf
 executor: script
+model: claude-haiku-4-5-20251001
 ---
 
 # Test

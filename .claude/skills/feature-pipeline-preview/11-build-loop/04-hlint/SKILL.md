@@ -3,6 +3,7 @@ name: 04-hlint
 description: Runs hlint on changed files and writes the output to the pipeline log.
 kind: leaf
 executor: script
+model: claude-haiku-4-5-20251001
 ---
 
 # Hlint

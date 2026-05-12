@@ -3,6 +3,7 @@ name: 01-wait-checks
 description: Watches GitHub PR checks until they pass or fail.
 kind: leaf
 executor: script
+model: claude-haiku-4-5-20251001
 ---
 
 # Wait Checks

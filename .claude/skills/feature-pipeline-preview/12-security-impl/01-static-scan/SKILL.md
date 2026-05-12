@@ -3,6 +3,7 @@ name: 01-static-scan
 description: Runs the static security checks script across changed files and emits raw findings JSON.
 kind: leaf
 executor: script
+model: claude-haiku-4-5-20251001
 ---
 
 # Static Security Scan

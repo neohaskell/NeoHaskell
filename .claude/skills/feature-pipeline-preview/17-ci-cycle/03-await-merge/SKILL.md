@@ -3,6 +3,7 @@ name: 03-await-merge
 description: Prints maintainer merge instructions and closes the pipeline.
 kind: leaf
 executor: script
+model: claude-haiku-4-5-20251001
 ---
 
 # Await Merge

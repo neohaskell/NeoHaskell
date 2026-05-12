@@ -3,6 +3,7 @@ name: 02-classify-feature
 description: Classifies the feature into a complexity tier that drives every later grounding pass.
 kind: leaf
 executor: script
+model: claude-haiku-4-5-20251001
 ---
 
 # Classify feature

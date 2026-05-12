@@ -3,6 +3,7 @@ name: 04-record
 description: Persists grounded implementation performance findings and marks phase 13 complete.
 kind: leaf
 executor: script
+model: claude-haiku-4-5-20251001
 ---
 
 # Record Implementation Performance Findings
