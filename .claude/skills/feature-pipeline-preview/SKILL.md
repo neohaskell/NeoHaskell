@@ -27,7 +27,7 @@ The pipeline has two distinguishing characteristics:
 ## Steps
 
 1. **Init pipeline** — read `./01-init-pipeline/SKILL.md` and follow it with `{feature_name, issue_number, module_path, test_path, branch_name, adr_number}`. Verify: `.pipeline/state.json` exists and `pipeline.py status` lists phase 1 as completed.
-2. **Classify feature** — read `./02-classify-feature/SKILL.md` and follow it. Verify: `.pipeline/classification.json` exists with `tier ∈ {trivial, simple, moderate, complex, security-critical}`.
+2. **Classify feature** — spawn an Agent (model: haiku) and instruct it to read `./02-classify-feature/SKILL.md` and follow it. Verify: `.pipeline/classification.json` exists with `tier ∈ {trivial, simple, moderate, complex, security-critical}`.
 3. **ADR draft 🔒** — spawn an Agent (model: opus) and instruct it to read `./03-adr-draft/SKILL.md` and follow it. Verify: `docs/decisions/NNNN-slug.md` exists with Status: Proposed. Then `pipeline.py complete 3` and stop until `pipeline.py approve 3`.
 4. **Security review (ADR)** — spawn an Agent (model: haiku) and instruct it to read `./04-security-adr/SKILL.md` and follow it. Verify: `.pipeline/findings-04.json` exists with `blockers >= 0`. If `blockers > 0`, stop and surface to maintainer.
 5. **Performance review (ADR)** — spawn an Agent (model: haiku) and instruct it to read `./05-performance-adr/SKILL.md` and follow it. Verify: `.pipeline/findings-05.json` exists. May run in parallel with step 4.

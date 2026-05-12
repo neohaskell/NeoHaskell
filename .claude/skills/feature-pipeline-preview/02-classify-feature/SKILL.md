@@ -1,55 +1,26 @@
 ---
 name: 02-classify-feature
-description: Classifies the feature into a complexity tier that drives every later grounding pass.
-kind: leaf
-executor: script
+description: Classifies the feature into a complexity tier via opus judgment, then persists it for the grounding loop.
+kind: process
+executor: haiku
 model: claude-haiku-4-5-20251001
 ---
 
 # Classify feature
 
-Emits the feature's tier (`trivial` / `simple` / `moderate` / `complex` / `security-critical`) to `.pipeline/classification.json`. The grounding loop reads this file to scale review intensity.
+Decides the feature's tier (`trivial` / `simple` / `moderate` / `complex` / `security-critical`) using an opus-tier judgment leaf, then persists the decision to `.pipeline/classification.json`. The grounding loop in phases 4, 5, 12, 13 reads this file to scale review intensity.
 
-## Inputs
-
-- `feature_name` — string, from pipeline state (auto-fetched).
-- `issue_text` — string, the issue body (may be empty).
-- `module_path` — string, from pipeline state.
-- `touches` — JSON array of file globs (may be empty).
-- `adds_dep` — boolean, does this feature add a new cabal/npm/nix dep?
-- `external_io` — boolean, does it perform network/file/process IO?
-- `touches_secrets` — boolean, does it produce/compare/store a secret value?
-- `touches_auth` — boolean, does it touch auth or multi-tenant authorization?
-
-The orchestrator gathers these from the ADR section "Decision drivers" and from the diff scope. Leave the booleans `false` if there is no evidence; the classifier prefers under-classifying to over-classifying.
-
-## Plan (Karpathy 1 + 4)
-
-1. Assemble the JSON payload from inputs → verify: valid JSON with the keys above.
-2. Pipe payload into `classify-feature.py` → verify: stdout contains `"tier": "<one of the five>"`.
-3. Persist the tier via `pipeline.py classify <tier> "<rationale>"` → verify: `.pipeline/classification.json` exists with the chosen tier.
-4. Mark phase 2 complete → verify: `pipeline.py status` shows phase 2 done.
-
-Assumptions:
-- `pipeline.py` and `classify-feature.py` exist under `.claude/skills/feature-pipeline-preview/scripts/`.
-- The pipeline has been initialised (phase 1 complete).
-
-If any assumption fails, refuse — do not invent a tier inline.
+Classification is the load-bearing input for every grounding pass. A wrong call here cascades — a `trivial`-misclassified security feature skips the cryptographic and authorisation rubrics; a `security-critical`-misclassified mock test fixture accumulates a cascade of `constEq` / `ScrubbedBytes` / SHA-pinning recommendations. The decision step uses opus because the cost of a wrong call is higher than the cost of the model.
 
 ## Steps
 
-1. Build the input JSON object from the gathered fields.
-2. Run `printf '%s' "$payload" | python3 .claude/skills/feature-pipeline-preview/scripts/classify-feature.py`. Capture `tier` and `rationale`.
-3. Run `python3 .claude/skills/feature-pipeline-preview/scripts/pipeline.py classify "$tier" "$rationale"`. Surface stderr on non-zero.
-4. Run `python3 .claude/skills/feature-pipeline-preview/scripts/pipeline.py complete 2`.
+1. **Decide** — spawn an Agent (model: opus) and instruct it to read `./01-decide/SKILL.md` and follow it on the available context (feature name, issue text, module path, ADR draft if present, the diff scope so far). Verify: stdout contains a single JSON document with `tier`, `rationale`, and `signals`; `tier` is one of the five valid values.
+2. **Persist** — read `./02-persist/SKILL.md` and follow it with the JSON document from step 1. Verify: `.pipeline/classification.json` exists with the chosen `tier`; `pipeline.py status` lists phase 2 as completed.
 
-## Output
+Walk these steps in order. After each, run the verify check before continuing. If a verify fails, stop and surface.
 
-- `.pipeline/classification.json` exists with keys `tier`, `rationale`, `classified_at`.
-- Phase 2 marked complete; pipeline now ready for phase 3.
+## Shared invariants
 
-## Refusals
-
-- Pipeline not initialised → stop, point at phase 1.
-- Classifier exits non-zero → surface stderr, do not write a fallback tier.
-- The maintainer overrides the classifier with a hand-picked tier outside the cascade → record the override in the `rationale` field rather than silently substituting.
+- The decide step is the only step that interprets the feature; the persist step does not second-guess or override it.
+- The decide step uses opus because the cost of misclassification is higher than the cost of the model.
+- A maintainer override (e.g. forcing `security-critical` on what the agent calls `simple`) is recorded in the `rationale` field rather than silently substituted.
