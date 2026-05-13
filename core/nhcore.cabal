@@ -432,6 +432,7 @@ test-suite nhcore-test
     LogSpec
     DecimalSpec
     Service.ApplicationSpec
+    Service.AuthSpec
     TextSpec
     Service.CommandHandlerSpec
     Service.CommandSpec
@@ -478,6 +479,11 @@ test-suite nhcore-test
     Service.FileUpload.DownloadSpec
     Service.FileUpload.FileStateStore.InMemorySpec
     Service.FileUpload.FileStateStore.PostgresSpec
+    Service.Integration.AdapterSpec
+    Service.Integration.DispatchRegistrySpec
+    Service.Integration.SelectionSpec
+    Service.Integration.TestFixtures
+    Service.Integration.WireupSpec
 
   -- other-extensions:
   type: exitcode-stdio-1.0
