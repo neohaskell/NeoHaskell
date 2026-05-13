@@ -8,51 +8,35 @@ model: claude-haiku-4-5-20251001
 
 # Record Implementation Security Findings
 
-Writes the grounded findings to `.pipeline/findings-12.json` and registers them via the pipeline script.
+Reads grounded findings on stdin, writes `.pipeline/findings-12.json` with aggregate counts, registers it via the pipeline state machine, and marks phase 12 complete. All work happens inside `scripts/record-findings.py` — this leaf just routes input into the script.
 
 ## Inputs
 
-- stdin or `--input <path>` — JSON array of grounded findings from step 3.
+- stdin (or `--input <path>`) — JSON array of grounded findings from step 3. Each finding should carry at least `severity_after_grounding` and `grounding_outcome`.
 
 ## Plan (Karpathy 1 + 4)
 
-1. Read findings JSON → verify: array parses.
-2. Compute aggregate counts → verify: counts sum to total.
-3. Write `.pipeline/findings-12.json` → verify: file exists.
-4. Call `pipeline.py findings 12 <path>` then `pipeline.py complete 12` → verify: both exit 0.
+1. Pipe the grounded-findings JSON into `record-findings.py` with `--phase 12 --severity-scheme security` → verify: exit 0.
+2. The script stamps every finding with a `blocker` flag (true for severities `Critical` / `High`), computes aggregates, writes the file, then calls `pipeline.py findings 12 ...` and `pipeline.py complete 12` → verify: stdout names the output path and counts.
 
 Assumptions:
-- An empty findings array is valid.
-- `blocker` flags are derived from `severity_after_grounding in (Critical, High)`.
+- The script exists at `.claude/skills/feature-pipeline-preview/scripts/record-findings.py`.
+- The pipeline is initialised and phase 12 is ready (depends on phase 11).
 
-If any assumption fails, refuse — do not guess.
+If any assumption fails, refuse — do not inline a fallback recorder.
 
 ## Steps (Karpathy 2 + 3)
 
-1. Run a single inline python invocation:
-
-```
-python3 -c "import sys, json
-data = json.load(sys.stdin)
-for f in data:
-    f['blocker'] = f.get('severity_after_grounding') in ('Critical','High')
-blockers = sum(1 for f in data if f['blocker'])
-kept = sum(1 for f in data if f.get('grounding_outcome') == 'keep')
-demoted = sum(1 for f in data if f.get('grounding_outcome') == 'demote')
-framework = sum(1 for f in data if f.get('grounding_outcome') == 'framework-debt')
-out = {'total_findings': len(data), 'blockers': blockers, 'kept': kept, 'demoted': demoted, 'framework_debt': framework, 'findings': data}
-open('.pipeline/findings-12.json','w').write(json.dumps(out, indent=2))"
-```
-
-2. Run `python3 .claude/skills/feature-pipeline-preview/scripts/pipeline.py findings 12 .pipeline/findings-12.json`.
-3. Run `python3 .claude/skills/feature-pipeline-preview/scripts/pipeline.py complete 12`.
-4. Surface stderr on any non-zero exit.
+1. Invoke `python3 .claude/skills/feature-pipeline-preview/scripts/record-findings.py --phase 12 --severity-scheme security`, piping in the grounded findings JSON on stdin (or pass `--input <path>` if the prior step wrote to a file).
+2. Surface stdout to the orchestrator.
+3. On non-zero exit, surface stderr verbatim and stop — do not retry, do not reinterpret.
 
 ## Output
 
-`.pipeline/findings-12.json` written; phase 12 marked complete.
+`.pipeline/findings-12.json` written with per-finding `blocker` flags and the aggregate envelope (`total_findings`, `blockers`, `kept`, `demoted`, `framework_debt`). Phase 12 marked complete.
 
 ## Refusals
 
-- stdin not valid JSON → refuse: "input is not a JSON array".
-- `pipeline.py` returns non-zero → refuse and surface stderr.
+- Script not found → refuse with the missing path.
+- Script exits 1 (input error) → surface stderr; the producer step must re-emit valid JSON.
+- Script exits 2 (pipeline state error) → surface stderr; the orchestrator must resolve the prerequisite phase before re-running.
