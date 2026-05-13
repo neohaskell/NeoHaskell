@@ -16,7 +16,7 @@ Replaces the phase 9 stubs with a real implementation that follows the architect
 - `docs/architecture/<adr-number>-<slug>-tests.md` — test spec (read-only reference).
 - The stub module created in phase 9.
 
-## Plan (Karpathy 1 + 4)
+## Plan
 
 1. Read the architecture doc and identify the stub module → verify: stubs exist.
 2. Plan implementation per architecture decisions → verify: every public function in the doc has a planned body.
@@ -30,7 +30,7 @@ Assumptions:
 
 If any assumption fails, refuse — do not guess.
 
-## Steps (Karpathy 2 + 3)
+## Steps
 
 1. Load the architecture doc.
 2. For each public function, replace the stub body with the real implementation.

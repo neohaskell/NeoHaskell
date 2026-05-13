@@ -14,7 +14,7 @@ Runs `hlint` on changed files and writes the output to `.pipeline/hlint.log`. An
 
 - The list of changed files from `git diff --name-only` (filtered to `.hs`).
 
-## Plan (Karpathy 1 + 4)
+## Plan
 
 1. Compute the changed Haskell files list → verify: list captured (may be empty).
 2. Run `hlint` on the list → verify: log file written.
@@ -27,7 +27,7 @@ Assumptions:
 
 If any assumption fails, refuse — do not guess.
 
-## Steps (Karpathy 2 + 3)
+## Steps
 
 1. Compute changed files: `git diff --name-only HEAD | grep '\.hs$'`.
 2. If the list is empty, write an empty `.pipeline/hlint.log` and exit 0.

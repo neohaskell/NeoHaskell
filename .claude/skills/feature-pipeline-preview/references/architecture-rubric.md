@@ -1,6 +1,6 @@
 # Architecture design quality rubric
 
-The acceptance bar for a phase-7 architecture document. Eight yes/no questions, grounded in merged ADRs (0048, 0049, 0052) and the Karpathy guidelines. The review-quality agent applies every question to the architecture doc produced by phase 7.1.
+The acceptance bar for a phase-7 architecture document. Eight yes/no questions, grounded in merged ADRs (0048, 0049, 0052). The review-quality agent applies every question to the architecture doc produced by phase 7.1.
 
 The architecture doc passes when every question lands `yes`. The standard is "implementation-ready" — phase 9 (test writing) and phase 10 (implementation) must be able to proceed from this document with **no further design decisions**.
 
@@ -8,7 +8,7 @@ The architecture doc passes when every question lands `yes`. The standard is "im
 
 - [How to use this rubric](#how-to-use-this-rubric)
 - [The eight checks](#the-eight-checks)
-- [Karpathy carrier rules](#karpathy-carrier-rules)
+- [Carrier rules](#carrier-rules)
 - [Exemplar references](#exemplar-references)
 
 ## How to use this rubric
@@ -31,7 +31,7 @@ If every question is `pass` or `n/a`, the producer step is approved and the agen
 7. **Concurrency & persistence decisions are stated.** If the feature touches event-store / command / query / persistence layers, the doc names the specific Hasql statements (or "no persistence — pure type"), the specific event-stream IDs the feature emits or consumes, and the specific RequestContext threading the commands require. If it does not touch these layers, the doc says so explicitly.
 8. **Visibility decisions are explicit.** For each new type and function, the doc states whether it is exported from the module's public interface or internal-only. Smart-constructor types name whether the constructor itself is exported (typically `no`, with the smart constructor as the only public construction path — Redacted, Decimal, ContentHash).
 
-## Karpathy carrier rules
+## Carrier rules
 
 - **Think before coding.** Every design decision in the doc cites the ADR section that motivated it. A decision without an ADR cite is a `fail` — the decision is either speculative or undocumented.
 - **Simplicity first.** No abstraction, type class, or helper module is introduced unless the doc names two or more concrete call sites that need it. Single-use abstractions fail this check.

@@ -15,7 +15,7 @@ Stages the changes, commits, pushes the branch, opens the PR via `gh`, and store
 - `.pipeline/pr-title.txt`
 - `.pipeline/pr-body.md`
 
-## Plan (Karpathy 1 + 4)
+## Plan
 
 1. Confirm the current branch is not `main` → verify: `git branch --show-current` differs from `main`.
 2. Stage and commit changed files → verify: `git status` is clean afterwards.
@@ -28,7 +28,7 @@ Assumptions:
 
 If any assumption fails, refuse — do not guess.
 
-## Steps (Karpathy 2 + 3)
+## Steps
 
 1. Run: `BRANCH=$(git branch --show-current)`. If `$BRANCH = main`, refuse.
 2. Stage changed files: `git add -u` plus any new files explicitly listed in the architecture doc.

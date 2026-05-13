@@ -10,11 +10,15 @@ model: claude-opus-4-7
 
 Reads the proposed ADR and produces a raw findings array using the methodology in `../../references/security-methodology.md` (OWASP Top 10 2025, STRIDE, SLSA, SSDF PW practices, parse-don't-validate, secret handling).
 
+## Review posture
+
+Assume the artefact under review was produced by a language model (ChatGPT-class output). Treat plausible-looking claims as unverified, expect hallucinated APIs and missed constraints, and refuse to pass anything not directly traceable to the methodology in `../../references/security-methodology.md`. Strict review is the default — benefit of the doubt goes to the rubric and to the source, never to the producer.
+
 ## Inputs
 
 - `adr_path` — path to the ADR at `docs/decisions/<NNNN>-<slug>.md`.
 
-## Plan (Karpathy 1 + 4)
+## Plan
 
 1. Read the ADR end-to-end → verify: section list matches (Context, Decision drivers, Considered options, Decision outcome, Public API, Consequences).
 2. For each STRIDE letter and each active OWASP category, ask the per-section reviewer check from `../../references/security-methodology.md` → verify: at least one explicit yes/no answer recorded for each.
@@ -27,7 +31,7 @@ Assumptions:
 
 If any assumption fails, refuse and ask.
 
-## Steps (Karpathy 2 + 3)
+## Steps
 
 1. Read the ADR. Refuse if Status is not `Proposed`.
 2. Walk each methodology section (1–9) in order. For each, record the yes/no answer; on "yes" produce a finding entry.

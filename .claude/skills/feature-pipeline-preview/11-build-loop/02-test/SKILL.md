@@ -14,7 +14,7 @@ Runs `cabal test --test-show-details=streaming` and writes the output to `.pipel
 
 - None — the working directory must be the repo root.
 
-## Plan (Karpathy 1 + 4)
+## Plan
 
 1. Confirm `.pipeline/` exists → verify: directory exists.
 2. Run `cabal test --test-show-details=streaming` redirecting stdout+stderr to `.pipeline/test.log` → verify: log file exists.
@@ -27,7 +27,7 @@ Assumptions:
 
 If any assumption fails, refuse — do not guess.
 
-## Steps (Karpathy 2 + 3)
+## Steps
 
 1. Run: `cabal test --test-show-details=streaming > .pipeline/test.log 2>&1`.
 2. Capture the exit code.

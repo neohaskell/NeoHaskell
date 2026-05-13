@@ -14,7 +14,7 @@ Runs `cabal build all` and writes the output to `.pipeline/build.log`.
 
 - None — the working directory must be the repo root.
 
-## Plan (Karpathy 1 + 4)
+## Plan
 
 1. Confirm `.pipeline/` exists → verify: directory exists.
 2. Run `cabal build all` redirecting stdout+stderr to `.pipeline/build.log` → verify: log file exists.
@@ -27,7 +27,7 @@ Assumptions:
 
 If any assumption fails, refuse — do not guess.
 
-## Steps (Karpathy 2 + 3)
+## Steps
 
 1. Run: `cabal build all > .pipeline/build.log 2>&1`.
 2. Capture the exit code.

@@ -19,7 +19,7 @@ Bootstraps `.pipeline/state.json` for the feature so subsequent phases can drive
 - `branch_name` — string, git branch (default `feature/<slug>`).
 - `adr_number` — string, 4-digit ADR number (may be empty).
 
-## Plan (Karpathy 1 + 4)
+## Plan
 
 1. Validate inputs → verify: `feature_name` non-empty.
 2. Run `python3 .claude/skills/feature-pipeline-preview/scripts/pipeline.py init "$feature_name" [--issue …] [--module …] [--test …] [--branch …] [--adr …]` → verify: exit code 0.

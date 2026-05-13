@@ -1,6 +1,6 @@
 # Test spec design quality rubric
 
-The acceptance bar for a phase-8 test specification. Eight yes/no questions, grounded in patterns merged across `core/test/DecimalSpec.hs`, `core/test/TextSpec.hs`, `core/test/StreamSpec.hs`, `core/test/RedactedSpec.hs`, and the Karpathy guidelines. The review-quality agent applies every question to the test spec produced by phase 8.1.
+The acceptance bar for a phase-8 test specification. Eight yes/no questions, grounded in patterns merged across `core/test/DecimalSpec.hs`, `core/test/TextSpec.hs`, `core/test/StreamSpec.hs`, `core/test/RedactedSpec.hs`. The review-quality agent applies every question to the test spec produced by phase 8.1.
 
 The test spec passes when every question lands `yes`. The standard is "phase 9 can write Haskell tests from this spec without making coverage decisions".
 
@@ -8,7 +8,7 @@ The test spec passes when every question lands `yes`. The standard is "phase 9 c
 
 - [How to use this rubric](#how-to-use-this-rubric)
 - [The eight checks](#the-eight-checks)
-- [Karpathy carrier rules](#karpathy-carrier-rules)
+- [Carrier rules](#carrier-rules)
 - [Exemplar references](#exemplar-references)
 
 ## How to use this rubric
@@ -31,7 +31,7 @@ If every question is `pass` or `n/a`, the agent runs `pipeline.py complete 8`. A
 7. **Each error condition reproduced.** For every error case listed in the architecture doc's "Errors" section, there is a test case whose stated purpose is to provoke that error. The test description names the trigger condition (e.g. "divides by zero", "rejects empty handle"). Generic "error handling" cases fail this check.
 8. **Layout matches existing specs.** The spec organises cases as `describe "Module" > describe "Function" > it "specific case"` (DecimalSpec, TextSpec, StreamSpec). Flat lists or cases grouped by concept rather than by function fail this check.
 
-## Karpathy carrier rules
+## Carrier rules
 
 - **Think before coding.** Each non-trivial test case has a one-line "what this case proves" rationale in the spec. Cases without rationale fail the carrier rule — the spec author has not articulated the goal.
 - **Simplicity first.** No test case exists only to "cover a code path" — every case has a behavioural meaning. Coverage-driven cases that duplicate behavioural ones fail this carrier rule.

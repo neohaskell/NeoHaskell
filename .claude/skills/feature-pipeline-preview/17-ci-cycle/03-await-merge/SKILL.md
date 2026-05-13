@@ -15,7 +15,7 @@ Prints merge instructions to the maintainer, marks phase 17 complete, and approv
 - `pipeline.py get pr_url` → PR URL.
 - `pipeline.py get pr_number` → PR number.
 
-## Plan (Karpathy 1 + 4)
+## Plan
 
 1. Resolve `pr_url` and `pr_number` → verify: both set.
 2. Print the maintainer instructions → verify: output emitted.
@@ -28,7 +28,7 @@ Assumptions:
 
 If any assumption fails, refuse — do not guess.
 
-## Steps (Karpathy 2 + 3)
+## Steps
 
 1. `URL=$(python3 .claude/skills/feature-pipeline-preview/scripts/pipeline.py get pr_url)`.
 2. `NUM=$(python3 .claude/skills/feature-pipeline-preview/scripts/pipeline.py get pr_number)`.

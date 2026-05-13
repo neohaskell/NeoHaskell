@@ -14,7 +14,7 @@ Runs `sec-static-checks.py` against the implementation's changed files and emits
 
 - The changed file list from `git diff --name-only HEAD` (filtered to `.hs`).
 
-## Plan (Karpathy 1 + 4)
+## Plan
 
 1. Compute the changed Haskell files list → verify: list captured.
 2. Invoke `sec-static-checks.py` with the list → verify: stdout is a JSON array.
@@ -27,7 +27,7 @@ Assumptions:
 
 If any assumption fails, refuse — do not guess.
 
-## Steps (Karpathy 2 + 3)
+## Steps
 
 1. Compute changed files: `git diff --name-only HEAD | grep '\.hs$'`.
 2. Run: `python3 .claude/skills/feature-pipeline-preview/scripts/sec-static-checks.py <files...>`.

@@ -12,18 +12,22 @@ Reads the produced architecture doc and the ADR, applies every check in `../../r
 
 This step is the auto-gate that replaces the human PAUSE: when the rubric says `pass`, the pipeline advances automatically; when it says `fail`, the pipeline halts here with the rubric record as the audit trail.
 
+## Review posture
+
+Assume the artefact under review was produced by a language model (ChatGPT-class output). Treat plausible-looking claims as unverified, expect hallucinated APIs and missed constraints, and refuse to pass anything not directly traceable to the rubric in `../../references/architecture-rubric.md` and the source ADR. Strict review is the default — benefit of the doubt goes to the rubric and to the source, never to the producer.
+
 ## Inputs
 
 - `docs/architecture/<adr-number>-<slug>.md` — produced by `../01-produce/`.
 - `docs/decisions/<adr-number>-<slug>.md` — the source ADR.
-- `../../references/architecture-rubric.md` — the eight-check rubric + four Karpathy carrier rules.
+- `../../references/architecture-rubric.md` — the eight-check rubric + four carrier rules.
 - `../../references/nhcore-context.md` — to verify that every reused upstream symbol exists.
 
-## Plan (Karpathy 1 + 4)
+## Plan
 
 1. Load all four inputs → verify: every file exists.
 2. For each of the eight rubric checks, decide `pass` / `fail` / `n/a` from evidence in the architecture doc vs the ADR → verify: every check has a verdict + an evidence cite (section + line).
-3. For each of the four Karpathy carrier rules, decide `pass` / `fail` → verify: every rule has a verdict.
+3. For each of the four carrier rules, decide `pass` / `fail` → verify: every rule has a verdict.
 4. Write the rubric record to `.pipeline/architecture-rubric.json` → verify: file exists with `checks`, `carriers`, `verdict`.
 5. If `verdict == "pass"`, run `pipeline.py complete 7` and print `RUBRIC: pass`. If `verdict == "fail"`, print `RUBRIC: fail` plus the failing check names and refuse — do NOT mark phase 7 complete.
 
@@ -34,7 +38,7 @@ Assumptions:
 
 If any assumption fails, refuse — do not guess.
 
-## Steps (Karpathy 2 + 3)
+## Steps
 
 1. Load the architecture doc, the ADR, the rubric, and the nhcore-context reference.
 2. Walk each rubric check 1-8 in order:

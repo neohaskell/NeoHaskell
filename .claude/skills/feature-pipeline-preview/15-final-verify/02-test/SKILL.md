@@ -14,7 +14,7 @@ Runs `cabal test` and writes the output to `.pipeline/final-test.log`. Non-zero 
 
 - None — the working directory must be the repo root.
 
-## Plan (Karpathy 1 + 4)
+## Plan
 
 1. Confirm `.pipeline/` exists → verify: directory exists.
 2. Run `cabal test` redirecting to `.pipeline/final-test.log` → verify: log written.
@@ -26,7 +26,7 @@ Assumptions:
 
 If any assumption fails, refuse — do not guess.
 
-## Steps (Karpathy 2 + 3)
+## Steps
 
 1. Run: `cabal test > .pipeline/final-test.log 2>&1`.
 2. Capture the exit code.

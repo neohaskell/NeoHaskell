@@ -18,7 +18,7 @@ Reads the ADR + DevEx review and writes `docs/architecture/<adr-number>-<slug>.m
 - `../../references/architecture-rubric.md` — the rubric the doc will be judged against; the producer must satisfy it.
 - `../../references/nhcore-context.md` — framework conventions the doc references.
 
-## Plan (Karpathy 1 + 4)
+## Plan
 
 1. Load all five inputs → verify: every file exists.
 2. Compute the target path `docs/architecture/<adr-number>-<slug>.md` → verify: parent directory exists; refuse to overwrite if the file already exists with different content.
@@ -32,14 +32,14 @@ Assumptions:
 
 If any assumption fails, refuse — do not guess.
 
-## Steps (Karpathy 2 + 3)
+## Steps
 
 1. Load the inputs. Refuse on missing files.
 2. Enumerate the ADR's decisions. For each, write the corresponding section:
    - `## Module map` — every new file path; integrate with existing layout (`core/<area>/<Module>.hs`).
    - `## Public types` — full signatures, doc-by-example, visibility (`exported` / `internal`).
    - `## Public functions` — full signatures, doc-by-example, every type parameter named (no single letters).
-   - `## Internal helpers` — full signatures plus the call sites that justify them (no single-use helpers — see Karpathy "simplicity first").
+   - `## Internal helpers` — full signatures plus the call sites that justify them (no single-use helpers — single-use abstractions are rejected).
    - `## Imports` — qualified, with the exact symbol set imported per upstream module.
    - `## nhcore utilities used` — exact module + symbol per row.
    - `## Errors` — every error ADT constructor, the condition that produces it, and the user-facing message.

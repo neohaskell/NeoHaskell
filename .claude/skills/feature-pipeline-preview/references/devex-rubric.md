@@ -1,6 +1,6 @@
 # DevEx review quality rubric
 
-The acceptance bar for a phase-6 DevEx review. Eight yes/no questions, grounded in patterns merged across `core/core/Redacted.hs`, `core/decimal/Decimal.hs`, `core/core/Uuid.hs`, `core/core/Result.hs`, `core/core/Array.hs`, and the Karpathy guidelines.
+The acceptance bar for a phase-6 DevEx review. Eight yes/no questions, grounded in patterns merged across `core/core/Redacted.hs`, `core/decimal/Decimal.hs`, `core/core/Uuid.hs`, `core/core/Result.hs`, `core/core/Array.hs`.
 
 The review-quality agent applies every question to the DevEx review produced by phase 6.1 against the ADR. A finding survives only if it would be made by a senior reviewer reading the ADR cold. The DevEx review PASSES when every question lands `yes`.
 
@@ -8,7 +8,7 @@ The review-quality agent applies every question to the DevEx review produced by 
 
 - [How to use this rubric](#how-to-use-this-rubric)
 - [The eight checks](#the-eight-checks)
-- [Karpathy carrier rules](#karpathy-carrier-rules)
+- [Carrier rules](#carrier-rules)
 - [Exemplar references](#exemplar-references)
 
 ## How to use this rubric
@@ -22,7 +22,7 @@ If every question is `pass` or `n/a`, the produce step passes. If any is `fail`,
 
 ## The eight checks
 
-1. **Naming convention — conversions.** Every type-conversion function in the ADR's public API is named `fromX` or `toX`, never `xToY` or `convertX` (Karpathy "match existing style"; ref Decimal `fromCents`/`toCents`, Uuid `fromText`/`toText`).
+1. **Naming convention — conversions.** Every type-conversion function in the ADR's public API is named `fromX` or `toX`, never `xToY` or `convertX` (ref Decimal `fromCents`/`toCents`, Uuid `fromText`/`toText`).
 2. **Naming convention — predicates and queries.** Every boolean predicate is named `is*` or uses plural form (e.g. `contains`); every query returns the value directly without an `xOrError` wrapper (Result `isOk`/`isErr`; Text `isPascalCase`).
 3. **Subject-first arguments / pipe-friendliness.** Every operation on a value takes that value as the first argument so the call site reads `value |> Module.action` (Decimal, Text, Stream).
 4. **No boolean blindness.** No function takes two-or-more `Bool` parameters; no function returns `Bool` where `Maybe a` / `Result e a` is semantically correct. `Decimal.divide` returns `Maybe` for the zero-divisor case; the ADR follows that pattern.
@@ -31,9 +31,9 @@ If every question is `pass` or `n/a`, the produce step passes. If any is `fail`,
 7. **Type-parameter discipline.** No type parameter is named with a single letter; no function carries more than three type parameters before its first arrow. Names are descriptive (`element`, `result`), never `a`/`b`/`c` (NeoHaskell style guide).
 8. **Jess affordance.** Every public function passes the four Jess tests (autocomplete / shrug / default / 15-minute) recorded in the DevEx review with a one-line rationale per test. A `fail` on any Jess test is a `fail` on this check.
 
-## Karpathy carrier rules
+## Carrier rules
 
-The review also enforces the Karpathy guidelines as cross-cutting:
+The review also enforces these cross-cutting principles:
 
 - **Simplicity first.** The ADR proposes the minimum public surface the feature needs. If the review identifies a function that is "useful but speculative", the check fails — the function must be deferred or justified by a concrete caller in the ADR's Context section.
 - **Surgical changes.** No public-API addition outside the feature's scope. If the ADR proposes touching adjacent modules' public API without naming why, the check fails.

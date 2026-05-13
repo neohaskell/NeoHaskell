@@ -14,7 +14,7 @@ Reads CodeRabbit / bot comments on the PR, addresses each, and pushes fix-up com
 
 - `pipeline.py get pr_number` → PR number.
 
-## Plan (Karpathy 1 + 4)
+## Plan
 
 1. Resolve the PR number → verify: integer captured.
 2. Fetch comments via `gh api repos/neohaskell/NeoHaskell/pulls/<N>/comments` → verify: JSON array returned.
@@ -28,7 +28,7 @@ Assumptions:
 
 If any assumption fails, refuse — do not guess.
 
-## Steps (Karpathy 2 + 3)
+## Steps
 
 1. `NUM=$(python3 .claude/skills/feature-pipeline-preview/scripts/pipeline.py get pr_number)`.
 2. Fetch: `gh api repos/neohaskell/NeoHaskell/pulls/$NUM/comments`.

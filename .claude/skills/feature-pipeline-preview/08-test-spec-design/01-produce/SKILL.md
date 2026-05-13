@@ -16,7 +16,7 @@ Reads the architecture doc and writes `docs/architecture/<adr-number>-<slug>-tes
 - `.pipeline/classification.json` — provides `adr-number` and slug.
 - `../../references/test-spec-rubric.md` — the rubric the spec will be judged against; the producer must satisfy it.
 
-## Plan (Karpathy 1 + 4)
+## Plan
 
 1. Load all three inputs → verify: every file exists.
 2. Enumerate every public function and type from the architecture doc → verify: list non-empty.
@@ -30,7 +30,7 @@ Assumptions:
 
 If any assumption fails, refuse — do not guess.
 
-## Steps (Karpathy 2 + 3)
+## Steps
 
 1. Load the architecture doc and classification. Refuse on missing inputs.
 2. Enumerate every public function, every public type, every error ADT constructor.

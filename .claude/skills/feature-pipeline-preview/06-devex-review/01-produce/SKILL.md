@@ -10,6 +10,10 @@ model: claude-opus-4-7
 
 Reads the ADR and the grounded security/performance findings, evaluates the API surface against the Jess persona, and writes `.pipeline/devex-review.md`.
 
+## Review posture
+
+Assume the artefact under review was produced by a language model (ChatGPT-class output). Treat plausible-looking claims as unverified, expect hallucinated APIs and missed constraints, and refuse to pass anything not directly traceable to the rubric in `../../references/devex-rubric.md` and the ADR itself. Strict review is the default — benefit of the doubt goes to the rubric and to the source, never to the producer.
+
 ## Inputs
 
 - `docs/decisions/<adr-number>-<slug>.md` — the ADR from phase 3.
@@ -18,7 +22,7 @@ Reads the ADR and the grounded security/performance findings, evaluates the API 
 - `../../references/jess-persona.md` — the persona profile.
 - `../../references/devex-rubric.md` — the rubric the review will be judged against; the producer must satisfy it.
 
-## Plan (Karpathy 1 + 4)
+## Plan
 
 1. Read the ADR, both findings files, the Jess persona, and the rubric → verify: all five exist.
 2. Identify every public function / type / error in the ADR's Public API → verify: list is non-empty.
@@ -32,7 +36,7 @@ Assumptions:
 
 If any assumption fails, refuse — do not guess.
 
-## Steps (Karpathy 2 + 3)
+## Steps
 
 1. Load the ADR, both findings files, the persona, and the rubric. Refuse on any missing input.
 2. Walk the ADR's Public API. For each public entry, record naming, signature shape, doc example, Jess-test results.

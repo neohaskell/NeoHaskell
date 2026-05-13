@@ -16,7 +16,7 @@ Writes `.pipeline/pr-body.md` with the PR title, description, checklist, and ref
 - `.pipeline/findings-04.json`, `.pipeline/findings-05.json`, `.pipeline/findings-12.json`, `.pipeline/findings-13.json`
 - `.pipeline/classification.json` — contains issue number and slug.
 
-## Plan (Karpathy 1 + 4)
+## Plan
 
 1. Read the ADR, all four findings files, and classification → verify: all exist.
 2. Draft a conventional-commit title → verify: matches `<type>(<scope>): <subject>`.
@@ -29,7 +29,7 @@ Assumptions:
 
 If any assumption fails, refuse — do not guess.
 
-## Steps (Karpathy 2 + 3)
+## Steps
 
 1. Load the ADR, findings, and classification.
 2. Draft a conventional-commit title under 72 characters.

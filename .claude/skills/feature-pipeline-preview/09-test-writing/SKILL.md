@@ -15,7 +15,7 @@ Translates the test spec into Haskell `hspec` tests and stub implementations suc
 - `docs/architecture/<adr-number>-<slug>-tests.md` — test spec.
 - `docs/architecture/<adr-number>-<slug>.md` — architecture doc.
 
-## Plan (Karpathy 1 + 4)
+## Plan
 
 1. Read the test spec and architecture doc → verify: both exist.
 2. Translate every spec case into an `hspec` test → verify: case count matches spec.
@@ -29,7 +29,7 @@ Assumptions:
 
 If any assumption fails, refuse — do not guess.
 
-## Steps (Karpathy 2 + 3)
+## Steps
 
 1. Load the test spec and architecture doc.
 2. Create the source module under the path specified by the architecture doc, with stub function bodies.

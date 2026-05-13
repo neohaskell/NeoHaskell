@@ -10,6 +10,10 @@ model: claude-sonnet-4-6
 
 Reads changed source files plus siblings and applies every section of the security methodology, producing raw findings with `file:line` locations.
 
+## Review posture
+
+Assume the artefact under review was produced by a language model (ChatGPT-class output). Treat plausible-looking claims as unverified, expect hallucinated APIs and missed constraints, and refuse to pass anything not directly traceable to the methodology in `../../references/security-methodology.md` and the actual source lines. Strict review is the default — benefit of the doubt goes to the rubric and to the source, never to the producer.
+
 ## Inputs
 
 - stdin — JSON array of static-scan findings from step 1.
@@ -17,7 +21,7 @@ Reads changed source files plus siblings and applies every section of the securi
 - `../../references/security-methodology.md`
 - `../../references/nhcore-context.md`
 
-## Plan (Karpathy 1 + 4)
+## Plan
 
 1. Read stdin → verify: array parses (may be empty).
 2. Read the changed files and their siblings → verify: at least one file loaded.
@@ -31,7 +35,7 @@ Assumptions:
 
 If any assumption fails, refuse — do not guess.
 
-## Steps (Karpathy 2 + 3)
+## Steps
 
 1. Parse stdin into the static-scan finding list.
 2. Resolve the changed file list and load the source files plus immediate siblings.

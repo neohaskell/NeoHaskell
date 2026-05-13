@@ -16,7 +16,7 @@ Reads the implementation security and performance findings and resolves every bl
 - `.pipeline/findings-13.json`
 - `docs/architecture/<adr-number>-<slug>.md`
 
-## Plan (Karpathy 1 + 4)
+## Plan
 
 1. Read both findings files → verify: both load.
 2. Filter to entries with `blocker: true` → verify: list captured.
@@ -30,7 +30,7 @@ Assumptions:
 
 If any assumption fails, refuse — do not guess.
 
-## Steps (Karpathy 2 + 3)
+## Steps
 
 1. Load `.pipeline/findings-12.json` and `.pipeline/findings-13.json`.
 2. Collect every entry where `blocker: true`.

@@ -14,7 +14,7 @@ Reads the decide step's JSON output, calls `pipeline.py classify <tier> "<ration
 
 - `decide_output` — the JSON document on stdout from `../01-decide/`. Must parse to an object with at least `tier` (one of `trivial`, `simple`, `moderate`, `complex`, `security-critical`) and `rationale` (string).
 
-## Plan (Karpathy 1 + 4)
+## Plan
 
 1. Parse the JSON → verify: `tier` and `rationale` are present, `tier` is one of the five valid values.
 2. Run `pipeline.py classify "$tier" "$rationale"` → verify: exit 0; `.pipeline/classification.json` exists with the tier.

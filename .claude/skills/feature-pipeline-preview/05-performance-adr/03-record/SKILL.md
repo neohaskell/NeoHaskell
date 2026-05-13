@@ -14,7 +14,7 @@ Reads grounded findings on stdin, writes `.pipeline/findings-05.json` with aggre
 
 - stdin (or `--input <path>`) — JSON array of grounded findings from step 2. Each finding should carry at least `severity_after_grounding` and `grounding_outcome`.
 
-## Plan (Karpathy 1 + 4)
+## Plan
 
 1. Pipe the grounded-findings JSON into `record-findings.py` with `--phase 5 --severity-scheme performance` → verify: exit 0.
 2. The script writes the file, calls `pipeline.py findings 5 ...` and `pipeline.py complete 5` internally → verify: stdout names the output path and the finding/blocker counts.
@@ -25,7 +25,7 @@ Assumptions:
 
 If any assumption fails, refuse — do not inline a fallback recorder.
 
-## Steps (Karpathy 2 + 3)
+## Steps
 
 1. Invoke `python3 .claude/skills/feature-pipeline-preview/scripts/record-findings.py --phase 5 --severity-scheme performance`, piping in the grounded findings JSON on stdin (or pass `--input <path>` if the prior step wrote to a file).
 2. Surface stdout (the success line) to the orchestrator.

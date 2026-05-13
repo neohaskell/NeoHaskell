@@ -17,7 +17,7 @@ Produces `docs/decisions/NNNN-<slug>.md` matching the NeoHaskell ADR template, w
 - `issue_number` — string.
 - `module_path` — string.
 
-## Plan (Karpathy 1 + 4)
+## Plan
 
 1. Read the existing `docs/decisions/` directory → verify: the chosen ADR number is unused.
 2. Read the `neohaskell-adr-template` skill if needed → verify: section list matches the template (Context, Decision drivers, Considered options, Decision outcome, Public API, Consequences).
@@ -30,7 +30,7 @@ Assumptions:
 
 If any assumption fails (style guide unclear, ADR template missing), refuse and ask.
 
-## Steps (Karpathy 2 + 3)
+## Steps
 
 1. Compute the ADR path: `docs/decisions/<adr_number>-<slug>.md`. Refuse on file existing.
 2. Draft each section — keep code examples short, name only the public API the feature introduces, reference `#<issue_number>` once at the top.

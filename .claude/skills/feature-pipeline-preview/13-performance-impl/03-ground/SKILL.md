@@ -15,7 +15,7 @@ Filters merged static + deep performance findings through the 4-question groundi
 - stdin — JSON array of merged findings from step 2.
 - `.pipeline/classification.json` — feature classification.
 
-## Plan (Karpathy 1 + 4)
+## Plan
 
 1. Read stdin → verify: array parses.
 2. Read classification → verify: `tier` field exists.
@@ -29,7 +29,7 @@ Assumptions:
 
 If any assumption fails, refuse — do not guess.
 
-## Steps (Karpathy 2 + 3)
+## Steps
 
 1. Parse stdin findings; if empty, emit `[]` and exit 0.
 2. Load classification and reference docs.

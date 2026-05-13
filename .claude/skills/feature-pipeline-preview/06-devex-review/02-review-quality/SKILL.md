@@ -12,18 +12,22 @@ Reads the DevEx review and the ADR, applies every check in `../../references/dev
 
 This step is the auto-gate that replaces the human PAUSE: when the rubric says `pass`, the pipeline advances automatically; when it says `fail`, the pipeline halts here with the rubric record as the audit trail.
 
+## Review posture
+
+Assume the artefact under review was produced by a language model (ChatGPT-class output). Treat plausible-looking claims as unverified, expect hallucinated APIs and missed constraints, and refuse to pass anything not directly traceable to the rubric in `../../references/devex-rubric.md` and the ADR itself. Strict review is the default — benefit of the doubt goes to the rubric and to the source, never to the producer.
+
 ## Inputs
 
 - `.pipeline/devex-review.md` — produced by `../01-produce/`.
 - `docs/decisions/<adr-number>-<slug>.md` — the ADR the review covers.
-- `../../references/devex-rubric.md` — the eight-check rubric + three Karpathy carrier rules.
+- `../../references/devex-rubric.md` — the eight-check rubric + three carrier rules.
 - `../../references/jess-persona.md` — for cross-referencing the Jess affordance check.
 
-## Plan (Karpathy 1 + 4)
+## Plan
 
 1. Load all four inputs → verify: every file exists; refuse on any missing.
 2. For each of the eight rubric checks, decide `pass` / `fail` / `n/a` from the evidence in the review + ADR → verify: every check has a verdict + an evidence cite (file path + section/line).
-3. For each of the three Karpathy carrier rules, decide `pass` / `fail` → verify: every rule has a verdict.
+3. For each of the three carrier rules, decide `pass` / `fail` → verify: every rule has a verdict.
 4. Write the rubric record JSON to `.pipeline/devex-review-rubric.json` → verify: file exists with `checks`, `carriers`, `verdict`.
 5. If `verdict == "pass"`, run `pipeline.py complete 6` and print `RUBRIC: pass`. If `verdict == "fail"`, print `RUBRIC: fail` plus the failing check names and refuse — do NOT mark phase 6 complete.
 
@@ -34,7 +38,7 @@ Assumptions:
 
 If any assumption fails, refuse — do not guess.
 
-## Steps (Karpathy 2 + 3)
+## Steps
 
 1. Load the DevEx review, the ADR, the rubric, and the Jess persona.
 2. Walk each rubric check 1-8 in order. For each, scan the DevEx review for the relevant per-entry verdicts and cross-reference the ADR's Public API. Record `pass` / `fail` / `n/a` plus the supporting cite.

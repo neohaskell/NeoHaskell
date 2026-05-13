@@ -32,7 +32,7 @@ The orchestrator gathers what is available. Any missing field is `""` or `[]` â€
 
 ## Decision algorithm
 
-Karpathy 1 + 4 â€” state assumptions, define the verifiable goal, then execute:
+State assumptions, define the verifiable goal, then execute:
 
 1. **Read every input present.** If the ADR exists at `adr_path`, read it end-to-end and consult its "Decision drivers" and "Public API" sections. If only `feature_name` + `issue_text` are present, work from those.
 2. **Collect six signals.** For each, record `true` / `false` / `unknown`:

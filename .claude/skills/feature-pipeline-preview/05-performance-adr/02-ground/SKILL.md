@@ -15,7 +15,7 @@ Filters raw performance findings through the 4-question grounding loop, the over
 - stdin — JSON array of raw findings from step 1.
 - `.pipeline/classification.json` — feature classification.
 
-## Plan (Karpathy 1 + 4)
+## Plan
 
 1. Read stdin into a finding list → verify: array parses, every entry has `severity`, `rule`, `location`, `recommendation`.
 2. Read `.pipeline/classification.json` → verify: `tier` field exists.
@@ -28,7 +28,7 @@ Assumptions:
 
 If any assumption fails, refuse — do not guess.
 
-## Steps (Karpathy 2 + 3)
+## Steps
 
 1. Parse stdin findings; if empty, emit `[]` and exit 0.
 2. Load classification tier and reference docs.

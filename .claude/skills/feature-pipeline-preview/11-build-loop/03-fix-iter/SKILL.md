@@ -16,7 +16,7 @@ Reads the latest build and test logs and applies a targeted fix to the implement
 - `.pipeline/test.log`
 - `docs/architecture/<adr-number>-<slug>.md` — architecture doc.
 
-## Plan (Karpathy 1 + 4)
+## Plan
 
 1. Read both logs → verify: at least one ends with a failure marker.
 2. Identify the root cause (compile error, type mismatch, test failure, runtime exception) → verify: a single hypothesis is named.
@@ -30,7 +30,7 @@ Assumptions:
 
 If any assumption fails, refuse — do not guess.
 
-## Steps (Karpathy 2 + 3)
+## Steps
 
 1. Load the build and test logs and the architecture doc.
 2. Locate the first failure in the logs and identify the responsible source file.

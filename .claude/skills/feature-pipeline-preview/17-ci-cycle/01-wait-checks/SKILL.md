@@ -14,7 +14,7 @@ Runs `gh pr checks <pr_number> --watch` and exits 0 only when every check passes
 
 - `pipeline.py get pr_number` → the PR number from phase 16.
 
-## Plan (Karpathy 1 + 4)
+## Plan
 
 1. Resolve the PR number via `pipeline.py get pr_number` → verify: integer captured.
 2. Run `gh pr checks <NUM> --watch` → verify: command exits.
@@ -27,7 +27,7 @@ Assumptions:
 
 If any assumption fails, refuse — do not guess.
 
-## Steps (Karpathy 2 + 3)
+## Steps
 
 1. Run: `NUM=$(python3 .claude/skills/feature-pipeline-preview/scripts/pipeline.py get pr_number)`.
 2. If `NUM` is empty, refuse.
