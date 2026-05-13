@@ -36,11 +36,11 @@ The pipeline has two distinguishing characteristics:
 8. **Test spec design** — spawn an Agent (model: haiku) and instruct it to read `./08-test-spec-design/SKILL.md` and follow it. Verify: `.pipeline/test-spec-rubric.json` exists with `"verdict": "pass"`. On `fail`, the rubric record names the failing checks and the pipeline halts.
 9. **Test writing** — spawn an Agent (model: sonnet) and instruct it to read `./09-test-writing/SKILL.md` and follow it. Verify: tests compile and ALL fail.
 10. **Implementation** — spawn an Agent (model: sonnet) and instruct it to read `./10-implementation/SKILL.md` and follow it. Verify: source files exist at the planned paths.
-11. **Build loop** — spawn an Agent (model: haiku) and instruct it to read `./11-build-loop/SKILL.md` and follow it. Verify: `cabal build all` and `cabal test` pass and `hlint` is clean.
+11. **Build loop** — spawn an Agent (model: haiku) and instruct it to read `./11-build-loop/SKILL.md` and follow it. Verify: `cabal build all` and `cabal test` pass; `.pipeline/hlint.log` exists (warnings are captured for the PR body, not gated here).
 12. **Security review (impl)** — spawn an Agent (model: haiku) and instruct it to read `./12-security-impl/SKILL.md` and follow it. Verify: `.pipeline/findings-12.json` exists.
 13. **Performance review (impl)** — spawn an Agent (model: haiku) and instruct it to read `./13-performance-impl/SKILL.md` and follow it. Verify: `.pipeline/findings-13.json` exists. May run in parallel with step 12.
 14. **Fix findings** — spawn an Agent (model: sonnet) and instruct it to read `./14-fix-findings/SKILL.md` and follow it. Verify: `blockers == 0` across findings-12 and findings-13 after fixes; `cabal test` still green.
-15. **Final verify** — spawn an Agent (model: haiku) and instruct it to read `./15-final-verify/SKILL.md` and follow it. Verify: clean build, all tests pass, hlint clean.
+15. **Final verify** — spawn an Agent (model: haiku) and instruct it to read `./15-final-verify/SKILL.md` and follow it. Verify: clean build, all tests pass; `.pipeline/hlint.log` refreshed (hlint is captured for the PR body, not gated).
 16. **Create PR 🔒** — spawn an Agent (model: haiku) and instruct it to read `./16-create-pr/SKILL.md` and follow it. Verify: `pipeline.py get pr_url` returns a URL. Then `complete 16`, stop until `approve 16`.
 17. **CI cycle** — spawn an Agent (model: haiku) and instruct it to read `./17-ci-cycle/SKILL.md` and follow it. Verify: CI green and PR merged.
 

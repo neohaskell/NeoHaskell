@@ -1,6 +1,6 @@
 ---
 name: 04-hlint
-description: Runs hlint on changed files and writes the output to the pipeline log.
+description: Runs hlint on changed files and captures warnings for later surfacing in the PR body.
 kind: leaf
 executor: script
 model: claude-haiku-4-5-20251001
@@ -8,22 +8,21 @@ model: claude-haiku-4-5-20251001
 
 # Hlint
 
-Runs `hlint` on changed files and writes the output to `.pipeline/hlint.log`. Any output is treated as failure.
+Runs `hlint` on the changed Haskell files and writes the output to `.pipeline/hlint.log`. Hlint warnings are **collected, not gated** — this leaf does not fail the build loop on warnings. The PR-body step in phase 16 surfaces the log contents to the PR reviewer.
 
 ## Inputs
 
-- The list of changed files from `git diff --name-only` (filtered to `.hs`).
+- The list of changed files from `git diff --name-only HEAD` (filtered to `.hs`).
 
 ## Plan
 
 1. Compute the changed Haskell files list → verify: list captured (may be empty).
-2. Run `hlint` on the list → verify: log file written.
-3. Capture exit code → verify: integer captured.
-4. Treat any non-empty output as failure → verify: caller sees the exit code.
+2. Run `hlint` on the list, redirecting stdout+stderr to `.pipeline/hlint.log` → verify: log written.
+3. Always exit 0 — the leaf's job is to record the warnings, not to block on them → verify: caller sees exit 0 unless hlint is missing or the working tree is corrupt.
 
 Assumptions:
-- CI treats hlint warnings as errors; any hlint output means the loop is not green.
-- Empty change list is valid — hlint exits 0 immediately.
+- The build loop already gates on `cabal build all` and `cabal test`. Hlint is style guidance, not correctness, so it does not need to stop the loop.
+- The PR-body step (phase 16.1) reads `.pipeline/hlint.log` and embeds any non-empty contents in the PR description so a human reviewer (or CI's hlint check) sees them.
 
 If any assumption fails, refuse — do not guess.
 
@@ -31,16 +30,15 @@ If any assumption fails, refuse — do not guess.
 
 1. Compute changed files: `git diff --name-only HEAD | grep '\.hs$'`.
 2. If the list is empty, write an empty `.pipeline/hlint.log` and exit 0.
-3. Otherwise run: `hlint <files...> > .pipeline/hlint.log 2>&1`.
-4. Capture the exit code.
-5. If exit is non-zero or the log is non-empty, surface the log tail and exit non-zero.
-6. Otherwise exit 0.
+3. Otherwise run: `hlint <files...> > .pipeline/hlint.log 2>&1 || true` — the trailing `|| true` keeps the leaf at exit 0 regardless of how many warnings hlint emitted.
+4. If the log is non-empty, print a one-line summary to stdout (`hlint produced N warning(s); see .pipeline/hlint.log and the PR body`). Do not surface as failure.
+5. Exit 0.
 
 ## Output
 
-`.pipeline/hlint.log` written; exit code propagated.
+`.pipeline/hlint.log` written (possibly empty). Exit code is always 0 unless a hard environmental failure occurred (hlint missing, not in a git repo).
 
 ## Refusals
 
-- `hlint` not on PATH → refuse: "hlint not found on PATH".
-- Repo not a git working tree → refuse: "not in a git repo".
+- `hlint` not on PATH → refuse: "hlint not found on PATH" and exit non-zero. This is an environment failure, not a style warning.
+- Repo not a git working tree → refuse: "not in a git repo" and exit non-zero.
