@@ -34,7 +34,7 @@ If any assumption fails, refuse — do not guess.
 2. Fetch: `gh api repos/neohaskell/NeoHaskell/pulls/$NUM/comments`.
 3. Filter to bot authors (CodeRabbit, etc.).
 4. For each comment, decide: real issue (fix with an edit) or false positive (reply on the thread explaining why).
-5. After all edits, run `cabal build all` and `cabal test` to confirm nothing regressed.
+5. After all edits, run `nix develop --command cabal build all` and `nix develop --command cabal test` to confirm nothing regressed.
 6. Stage, commit with a `chore(review): address bot feedback` message, and push.
 7. Increment the cycle counter via `pipeline.py iter 17`. If > 5, refuse and escalate.
 

@@ -21,7 +21,7 @@ Replaces the phase 9 stubs with a real implementation that follows the architect
 1. Read the architecture doc and identify the stub module → verify: stubs exist.
 2. Plan implementation per architecture decisions → verify: every public function in the doc has a planned body.
 3. Implement using nhcore primitives first; fall back to Hackage only with a `Ghc` prefix as last resort → verify: imports list is auditable.
-4. Confirm compilation → verify: `cabal build all` succeeds.
+4. Confirm compilation → verify: `nix develop --command cabal build all` succeeds.
 
 Assumptions:
 - NeoHaskell style is strict: pipes (`|>`) over nesting, `do`+`let` over `let..in`/`where`, `case`...`of` over guards in arg lists, qualified imports, `[fmt|...|]` for strings, `Task`/`Result` not `IO`/`Either`, no `$`, no point-free.
@@ -36,13 +36,13 @@ If any assumption fails, refuse — do not guess.
 2. For each public function, replace the stub body with the real implementation.
 3. Reach into nhcore (`Text`, `Array`, `Result`, `Task`, `EventStore`, etc.) before any external package.
 4. If an external package is unavoidable, alias it with a `Ghc` prefix (e.g. `import qualified Data.Map.Strict as GhcMap`).
-5. Run `cabal build all` to confirm compilation.
+5. Run `nix develop --command cabal build all` to confirm compilation.
 6. Do not run tests here — that is phase 11.
 7. Run `python3 .claude/skills/feature-pipeline-preview/scripts/pipeline.py complete 10`.
 
 ## Output
 
-Stubs replaced with real implementations; `cabal build all` green; phase 10 marked complete.
+Stubs replaced with real implementations; `nix develop --command cabal build all` green; phase 10 marked complete.
 
 ## Refusals
 

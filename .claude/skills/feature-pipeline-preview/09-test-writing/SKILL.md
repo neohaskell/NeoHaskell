@@ -19,8 +19,8 @@ Translates the test spec into Haskell `hspec` tests and stub implementations suc
 
 1. Read the test spec and architecture doc → verify: both exist.
 2. Translate every spec case into an `hspec` test → verify: case count matches spec.
-3. Create implementation stubs with `Task.throw` or `error` so the module compiles → verify: `cabal build all` succeeds.
-4. Register the test suite in `nhcore.cabal` and confirm every test fails → verify: `cabal test` runs and every new test is red.
+3. Create implementation stubs with `Task.throw` or `error` so the module compiles → verify: `nix develop --command cabal build all` succeeds.
+4. Register the test suite in `nhcore.cabal` and confirm every test fails → verify: `nix develop --command cabal test` runs and every new test is red.
 
 Assumptions:
 - Tests follow NeoHaskell style: pipes, `do`+`let`, `case`...`of`, qualified imports, `[fmt|...|]`.
@@ -36,8 +36,8 @@ If any assumption fails, refuse — do not guess.
 3. Create the test module under `core/test/...` mirroring the source path.
 4. For each spec case, write an `hspec` `it` block referencing the spec case name.
 5. Register the new test module in `nhcore.cabal` (and the source module if new).
-6. Run `cabal build all` to confirm compilation.
-7. Run `cabal test --test-show-details=streaming` to confirm every new test fails.
+6. Run `nix develop --command cabal build all` to confirm compilation.
+7. Run `nix develop --command cabal test --test-show-details=streaming` to confirm every new test fails.
 8. Run `python3 .claude/skills/feature-pipeline-preview/scripts/pipeline.py complete 9`.
 
 ## Output

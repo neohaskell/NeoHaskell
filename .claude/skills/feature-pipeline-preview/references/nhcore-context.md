@@ -4,10 +4,28 @@ Compiler flags and framework conventions that change what a review must (and mus
 
 ## Contents
 
+- [Toolchain invocation](#toolchain-invocation)
 - [Global compiler flags](#global-compiler-flags)
 - [Custom Prelude](#custom-prelude)
 - [Framework-provided defaults](#framework-provided-defaults)
 - [Red-flag-but-already-handled list](#red-flag-but-already-handled-list)
+
+## Toolchain invocation
+
+Every Haskell-toolchain command (`cabal`, `hlint`, `ghc`, `hspec-discover`, etc.) must be invoked through the repo's nix dev shell. The canonical form is:
+
+```
+nix develop --command <command> <args...>
+```
+
+Examples used by the pipeline's leaves:
+
+- `nix develop --command cabal build all`
+- `nix develop --command cabal test --test-show-details=streaming`
+- `nix develop --command cabal test`
+- `nix develop --command hlint <files...>`
+
+Bare `cabal ...` / `hlint ...` calls will fail outside the dev shell because the toolchain is pinned by `flake.nix`. System-level tools (`git`, `gh`, `python3`) are not wrapped — they live on the user's PATH and do not depend on the dev shell. Refusal: if `nix` is not on PATH, the leaf cannot proceed and must surface the missing binary rather than fall back to system `cabal`.
 
 ## Global compiler flags
 

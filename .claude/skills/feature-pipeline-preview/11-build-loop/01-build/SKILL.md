@@ -8,7 +8,7 @@ model: claude-haiku-4-5-20251001
 
 # Build
 
-Runs `cabal build all` and writes the output to `.pipeline/build.log`.
+Runs `nix develop --command cabal build all` and writes the output to `.pipeline/build.log`.
 
 ## Inputs
 
@@ -17,7 +17,7 @@ Runs `cabal build all` and writes the output to `.pipeline/build.log`.
 ## Plan
 
 1. Confirm `.pipeline/` exists → verify: directory exists.
-2. Run `cabal build all` redirecting stdout+stderr to `.pipeline/build.log` → verify: log file exists.
+2. Run `nix develop --command cabal build all` redirecting stdout+stderr to `.pipeline/build.log` → verify: log file exists.
 3. Capture exit code → verify: integer captured.
 4. On non-zero exit, stop the loop → verify: caller receives the non-zero exit.
 
@@ -29,7 +29,7 @@ If any assumption fails, refuse — do not guess.
 
 ## Steps
 
-1. Run: `cabal build all > .pipeline/build.log 2>&1`.
+1. Run: `nix develop --command cabal build all > .pipeline/build.log 2>&1`.
 2. Capture the exit code.
 3. If exit is non-zero, surface the tail of `.pipeline/build.log` and exit non-zero.
 4. If exit is zero, exit 0.
@@ -41,4 +41,4 @@ If any assumption fails, refuse — do not guess.
 ## Refusals
 
 - `.pipeline/` missing → refuse: "pipeline not initialised; run phase 01 first".
-- `cabal` not on PATH → refuse: "cabal not found on PATH".
+- `nix` not on PATH → refuse: "nix not found; the repo's dev shell is required for cabal".

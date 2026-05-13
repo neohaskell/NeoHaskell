@@ -30,7 +30,7 @@ If any assumption fails, refuse — do not guess.
 
 1. Compute changed files: `git diff --name-only HEAD | grep '\.hs$'`.
 2. If the list is empty, write an empty `.pipeline/hlint.log` and exit 0.
-3. Otherwise run: `hlint <files...> > .pipeline/hlint.log 2>&1 || true` — the trailing `|| true` keeps the leaf at exit 0 regardless of how many warnings hlint emitted.
+3. Otherwise run: `nix develop --command hlint <files...> > .pipeline/hlint.log 2>&1 || true` — the trailing `|| true` keeps the leaf at exit 0 regardless of how many warnings hlint emitted.
 4. If the log is non-empty, print a one-line summary to stdout (`hlint produced N warning(s); see .pipeline/hlint.log and the PR body`). Do not surface as failure.
 5. Exit 0.
 
@@ -40,5 +40,5 @@ If any assumption fails, refuse — do not guess.
 
 ## Refusals
 
-- `hlint` not on PATH → refuse: "hlint not found on PATH" and exit non-zero. This is an environment failure, not a style warning.
+- `nix` not on PATH → refuse: "nix not found; the repo's dev shell is required for hlint" and exit non-zero. Environment failure, not a style warning.
 - Repo not a git working tree → refuse: "not in a git repo" and exit non-zero.

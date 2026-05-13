@@ -21,7 +21,7 @@ Reads the latest build and test logs and applies a targeted fix to the implement
 1. Read both logs → verify: at least one ends with a failure marker.
 2. Identify the root cause (compile error, type mismatch, test failure, runtime exception) → verify: a single hypothesis is named.
 3. Edit only implementation files → verify: no file under `core/test/` or `testbed/tests/` is touched.
-4. Re-run `cabal build all` (or full loop on caller's next step) → verify: at least one previously-failing signal now passes.
+4. Re-run `nix develop --command cabal build all` (or full loop on caller's next step) → verify: at least one previously-failing signal now passes.
 
 Assumptions:
 - Test files are immutable; only implementation files may change.
@@ -36,7 +36,7 @@ If any assumption fails, refuse — do not guess.
 2. Locate the first failure in the logs and identify the responsible source file.
 3. Form a single hypothesis for the root cause.
 4. Edit the implementation file(s) to address the hypothesis.
-5. Re-run `cabal build all > .pipeline/build.log 2>&1`.
+5. Re-run `nix develop --command cabal build all > .pipeline/build.log 2>&1`.
 6. If build passes, the caller will re-run tests on the next loop turn.
 7. Increment the iteration counter via `python3 .claude/skills/feature-pipeline-preview/scripts/pipeline.py iter 11`.
 8. If the counter exceeds 10, refuse and escalate.

@@ -21,7 +21,7 @@ Reads the implementation security and performance findings and resolves every bl
 1. Read both findings files → verify: both load.
 2. Filter to entries with `blocker: true` → verify: list captured.
 3. Address each blocker with a code edit → verify: every blocker has a corresponding diff.
-4. Re-run `cabal build all && cabal test` → verify: both pass.
+4. Re-run `nix develop --command cabal build all && nix develop --command cabal test` → verify: both pass.
 
 Assumptions:
 - Only blocker findings (`blocker: true`) must be fixed in this phase. Non-blockers are tracked but not blocking.
@@ -35,8 +35,8 @@ If any assumption fails, refuse — do not guess.
 1. Load `.pipeline/findings-12.json` and `.pipeline/findings-13.json`.
 2. Collect every entry where `blocker: true`.
 3. For each blocker, locate the `file:line`, read the surrounding code, and apply a targeted fix.
-4. Run `cabal build all`. If it fails, fix and retry.
-5. Run `cabal test`. If it fails, fix and retry.
+4. Run `nix develop --command cabal build all`. If it fails, fix and retry.
+5. Run `nix develop --command cabal test`. If it fails, fix and retry.
 6. If any fix changes a public type or module boundary, stop and escalate to the maintainer for re-review.
 7. Run `python3 .claude/skills/feature-pipeline-preview/scripts/pipeline.py complete 14`.
 
