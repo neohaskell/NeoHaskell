@@ -3,8 +3,7 @@ module Test.Service.Command.Decide.Spec where
 import Array qualified
 import Auth.Claims (UserClaims (..))
 import Core
-import Data.Time.Calendar qualified as GhcCalendar
-import Data.Time.Clock qualified as GhcClock
+import DateTime qualified
 import Map qualified
 import Service.Auth (RequestContext (..))
 import Service.Auth qualified as Auth
@@ -368,7 +367,7 @@ authenticatedContext userId =
     { user = Just (testUser userId)
     , files = Map.empty
     , requestId = Uuid.nil
-    , timestamp = GhcClock.UTCTime (GhcCalendar.fromGregorian 1970 1 1) 0
+    , timestamp = DateTime.fromEpochSeconds 0
     }
 
 
