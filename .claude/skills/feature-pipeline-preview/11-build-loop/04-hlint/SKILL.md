@@ -12,7 +12,7 @@ Runs `hlint` on the changed Haskell files and writes the output to `.pipeline/hl
 
 ## Inputs
 
-- The list of changed files from `git diff --name-only HEAD` (filtered to `.hs`).
+- The list of changed Haskell files from `git diff --name-only HEAD -- '*.hs' '*.lhs'` (the pathspec keeps an empty match exit-code 0).
 
 ## Plan
 
@@ -28,7 +28,7 @@ If any assumption fails, refuse — do not guess.
 
 ## Steps
 
-1. Compute changed files: `git diff --name-only HEAD | grep '\.hs$'`.
+1. Compute changed files: `git diff --name-only HEAD -- '*.hs' '*.lhs'` (pathspec is empty-match safe — no `grep` pipe).
 2. If the list is empty, write an empty `.pipeline/hlint.log` and exit 0.
 3. Otherwise run: `nix develop --command hlint <files...> > .pipeline/hlint.log 2>&1 || true` — the trailing `|| true` keeps the leaf at exit 0 regardless of how many warnings hlint emitted.
 4. If the log is non-empty, print a one-line summary to stdout (`hlint produced N warning(s); see .pipeline/hlint.log and the PR body`). Do not surface as failure.

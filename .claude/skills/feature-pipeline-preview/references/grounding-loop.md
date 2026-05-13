@@ -43,7 +43,7 @@ For each finding the deep-audit produced, the grounding pass answers four yes/no
 | `complex` | New event-store layer, new auth flow, new networked service. | full Top-10 + STRIDE + SSDF PW.1/5/7/9 | full digest + profiling required | keep all justified findings |
 | `security-critical` | Anything emitting/comparing secrets, signing, key material, multi-tenant authorisation. | every section, no skipping | full digest + profiling required | keep all justified findings |
 
-The classification is computed by `scripts/classify-feature.py` and stored at `.pipeline/classification.json`. If the grounding pass disagrees with the classifier, it records its rebuttal and asks the maintainer to re-run classification — it does not silently override.
+The classification is produced by phase 2 (`02-classify-feature/`) — an opus `01-decide` step emits the JSON, a script `02-persist` step writes `.pipeline/classification.json`. If the grounding pass disagrees with the classifier, it records its rebuttal and asks the maintainer to re-run classification — it does not silently override.
 
 ## Overkill catalogue (auto-demote unless justified)
 

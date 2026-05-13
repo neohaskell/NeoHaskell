@@ -74,5 +74,5 @@ The persist step will read this JSON verbatim. Any deviation (preamble, multiple
 ## Refusals
 
 - All inputs are empty or contradictory → refuse: "insufficient evidence to classify"; do not invent a tier.
-- A signal is `unknown` AND it would flip the rule that fires → refuse: "signal `<name>` cannot be determined from inputs; ask the maintainer".
+- Any signal remains `unknown` at emit time → refuse: "signal `<name>` cannot be determined from inputs; ask the maintainer". The JSON output schema is boolean-only; `unknown` is a scratchpad state for the decision algorithm and must never appear in the emitted JSON.
 - The chosen tier contradicts the explicit issue body (e.g. issue says "this stores OAuth tokens" but no auth/secret signal was set) → refuse: name the contradiction and stop.

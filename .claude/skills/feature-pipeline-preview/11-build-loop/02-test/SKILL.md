@@ -29,10 +29,12 @@ If any assumption fails, refuse — do not guess.
 
 ## Steps
 
-1. Run: `nix develop --command cabal test --test-show-details=streaming > .pipeline/test.log 2>&1`.
-2. Capture the exit code.
-3. If exit is non-zero, surface the tail of `.pipeline/test.log` and exit non-zero.
-4. If exit is zero, exit 0.
+1. If `.pipeline/` does not exist, refuse: "pipeline not initialised; run phase 01 first" and exit non-zero.
+2. If `nix` is not on PATH (`command -v nix`), refuse: "nix not found; the repo's dev shell is required for cabal" and exit non-zero.
+3. Run: `nix develop --command cabal test --test-show-details=streaming > .pipeline/test.log 2>&1`.
+4. Capture the exit code.
+5. If exit is non-zero, surface the tail of `.pipeline/test.log` and exit non-zero.
+6. If exit is zero, exit 0.
 
 ## Output
 

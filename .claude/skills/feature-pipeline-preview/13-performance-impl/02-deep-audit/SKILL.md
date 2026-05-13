@@ -42,8 +42,9 @@ If any assumption fails, refuse — do not guess.
 3. Load the performance methodology and nhcore context.
 4. For each methodology section (1-9), walk the code and produce findings.
 5. For each finding, populate `severity` (Blocking/Advisory/Informational), `rule` (e.g. `inline-pragmas`, `tojson-without-toencoding`, `tvar-map-contention`), `location` (`file:line`), `message`, `recommendation`.
-6. Merge static-scan findings with deep findings (deduplicate by `rule` + `location`).
-7. Emit the merged JSON array on stdout.
+6. Normalise every finding's location first: if a static-scan entry carries `file` and `line` instead of `location`, set `location = "<file>:<line>"` before dedup. After normalisation every entry has the same `location` shape (`file:line`).
+7. Merge static-scan findings with deep findings (deduplicate by the normalised `rule` + `location` pair).
+8. Emit the merged JSON array on stdout.
 
 ## Output
 

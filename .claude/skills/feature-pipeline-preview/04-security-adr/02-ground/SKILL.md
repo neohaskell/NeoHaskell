@@ -13,7 +13,7 @@ Filters raw security findings through the 4-question grounding loop, the overkil
 ## Inputs
 
 - stdin — JSON array of raw findings from step 1 (threat-model output).
-- `.pipeline/classification.json` — feature classification (`trivial`/`standard`/`complex`).
+- `.pipeline/classification.json` — feature classification, one of the five pipeline tiers (`trivial` / `simple` / `moderate` / `complex` / `security-critical`).
 
 ## Plan
 

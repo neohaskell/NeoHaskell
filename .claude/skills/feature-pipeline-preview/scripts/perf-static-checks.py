@@ -137,8 +137,10 @@ def scan_file(path: str) -> list[dict]:
     lines = content.splitlines()
     findings: list[dict] = []
 
-    # Single-line rules.
-    single_line = [r for r in RULES if r["id"] not in {"P1"}]
+    # Single-line rules that are truly line-local. P1, P5, P11 need
+    # multi-line context to avoid floods of false positives, so they are
+    # handled separately below.
+    single_line = [r for r in RULES if r["id"] not in {"P1", "P5", "P11"}]
     for idx, line in enumerate(lines):
         for rule in single_line:
             if rule["pattern"].search(line):
@@ -164,6 +166,43 @@ def scan_file(path: str) -> list[dict]:
                 "rule": "tojson-without-toencoding",
                 "snippet": line.rstrip(),
                 "message": "`toJSON` defined without `toEncoding`. Add `toEncoding` for hot-path codecs (>2x faster).",
+            })
+
+    # P5: [fmt|...|] is only flagged when the surrounding context looks
+    # loop-like (`where`/`do`/`let`/`case` within +/- 2 lines). A bare
+    # `[fmt|` in a top-level binding is fine; the cost only matters in a
+    # recursive or tight-loop context.
+    for idx, line in enumerate(lines):
+        if "[fmt|" not in line:
+            continue
+        context = "\n".join(
+            lines[max(0, idx - 2): min(len(lines), idx + 3)]
+        )
+        if re.search(r"\b(where|do|let|case)\b", context):
+            findings.append({
+                "file": path,
+                "line": idx + 1,
+                "severity": "informational",
+                "rule": "fmt-in-recursive-context",
+                "snippet": line.rstrip(),
+                "message": "`[fmt|...|]` allocates a builder per invocation. Confirm this is not inside a tight loop.",
+            })
+
+    # P11: an INLINE pragma is only worth flagging when the immediately
+    # following function body is long (> 25 lines in the next 40-line
+    # window). Short INLINEd functions are exactly what INLINE is for.
+    for idx, line in enumerate(lines):
+        if not re.search(r"\{-#\s*INLINE\b", line):
+            continue
+        body_window = lines[idx + 1: min(len(lines), idx + 40)]
+        if len(body_window) > 25:
+            findings.append({
+                "file": path,
+                "line": idx + 1,
+                "severity": "informational",
+                "rule": "inline-pragma-emitted",
+                "snippet": line.rstrip(),
+                "message": "INLINE pragma — verify the target function is small (< ~10 lines) and on a hot path.",
             })
 
     return findings

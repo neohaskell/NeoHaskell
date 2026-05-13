@@ -44,6 +44,7 @@ If any assumption fails, refuse — do not guess.
 2. Walk each rubric check 1-8 in order. For each, scan the DevEx review for the relevant per-entry verdicts and cross-reference the ADR's Public API. Record `pass` / `fail` / `n/a` plus the supporting cite.
 3. Walk the three carrier rules (Simplicity / Surgical / Goal-driven). Record verdicts.
 4. Compose the rubric record:
+
    ```json
    {
      "phase": 6,
@@ -53,6 +54,7 @@ If any assumption fails, refuse — do not guess.
      "verdict": "pass" | "fail"
    }
    ```
+
 5. Write `.pipeline/devex-review-rubric.json`.
 6. If every entry in `checks` and `carriers` is `pass` or `n/a`, run `python3 .claude/skills/feature-pipeline-preview/scripts/pipeline.py complete 6` and print `RUBRIC: pass`.
 7. Otherwise, print `RUBRIC: fail` followed by the failing check IDs and their cites, then refuse: name the producer step that must re-run and the concrete edits needed.

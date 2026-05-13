@@ -75,12 +75,28 @@ def load_findings(path: str | None) -> list[dict]:
     return data
 
 
+VALID_OUTCOMES = {"keep", "demote", "drop", "framework-debt"}
+
+
 def compute_record(
     findings: list[dict], blocker_set: set[str]
 ) -> dict:
-    """Stamp every finding with `blocker` and emit the aggregate envelope."""
-    for f in findings:
-        sev = str(f.get("severity_after_grounding", "")).strip().lower()
+    """Stamp every finding with `blocker` and emit the aggregate envelope.
+
+    Fail-closed: a missing `severity_after_grounding` or an unknown
+    `grounding_outcome` is rejected before the blocker count is computed,
+    so phase advance cannot suppress a real blocker via a malformed record.
+    """
+    for i, f in enumerate(findings):
+        if "severity_after_grounding" not in f:
+            die(f"input[{i}] missing 'severity_after_grounding'")
+        outcome = f.get("grounding_outcome")
+        if outcome not in VALID_OUTCOMES:
+            die(
+                f"input[{i}] has invalid 'grounding_outcome' "
+                f"(expected one of {sorted(VALID_OUTCOMES)}, got {outcome!r})"
+            )
+        sev = str(f["severity_after_grounding"]).strip().lower()
         f["blocker"] = sev in blocker_set
     blockers = sum(1 for f in findings if f["blocker"])
     kept = sum(1 for f in findings if f.get("grounding_outcome") == "keep")

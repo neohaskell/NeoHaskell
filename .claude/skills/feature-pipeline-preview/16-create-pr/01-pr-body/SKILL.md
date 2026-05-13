@@ -14,7 +14,8 @@ Writes `.pipeline/pr-body.md` with the PR title, description, checklist, referen
 
 - `.pipeline/adr-draft.md`
 - `.pipeline/findings-04.json`, `.pipeline/findings-05.json`, `.pipeline/findings-12.json`, `.pipeline/findings-13.json`
-- `.pipeline/classification.json` — contains issue number and slug.
+- `.pipeline/classification.json` — contains the classification `tier` and `rationale` for the Summary section.
+- Pipeline state — `issue_number`, `slug`, and `adr_number` come from `python3 .claude/skills/feature-pipeline-preview/scripts/pipeline.py get <key>` (initialised in phase 01), not from `classification.json`.
 - `.pipeline/hlint.log` — the canonical hlint output from the most recent run (refreshed by phase 15.3); may be empty.
 
 ## Plan
@@ -26,7 +27,7 @@ Writes `.pipeline/pr-body.md` with the PR title, description, checklist, referen
 
 Assumptions:
 - The PR body is written for Jess (newcomer voice, community-writer tone).
-- The issue number is in `.pipeline/classification.json` under `issue_number`.
+- The issue number is sourced from pipeline state (`pipeline.py get issue_number`), set when the orchestrator ran `pipeline.py init --issue ...` in phase 01. It is **not** stored in `classification.json`.
 - `.pipeline/hlint.log` is the canonical record. Build-loop and final-verify both write it; the final-verify pass overwrites with the post-fix state. An empty file means hlint was clean; a non-empty file is surfaced verbatim into the PR body so the human reviewer (and CI's own hlint check) see exactly what hlint reported.
 
 If any assumption fails, refuse — do not guess.

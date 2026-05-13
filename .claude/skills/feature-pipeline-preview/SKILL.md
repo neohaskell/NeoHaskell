@@ -41,10 +41,10 @@ The pipeline has two distinguishing characteristics:
 13. **Performance review (impl)** — spawn an Agent (model: haiku) and instruct it to read `./13-performance-impl/SKILL.md` and follow it. Verify: `.pipeline/findings-13.json` exists. May run in parallel with step 12.
 14. **Fix findings** — spawn an Agent (model: sonnet) and instruct it to read `./14-fix-findings/SKILL.md` and follow it. Verify: `blockers == 0` across findings-12 and findings-13 after fixes; `cabal test` still green.
 15. **Final verify** — spawn an Agent (model: haiku) and instruct it to read `./15-final-verify/SKILL.md` and follow it. Verify: clean build, all tests pass; `.pipeline/hlint.log` refreshed (hlint is captured for the PR body, not gated).
-16. **Create PR 🔒** — spawn an Agent (model: haiku) and instruct it to read `./16-create-pr/SKILL.md` and follow it. Verify: `pipeline.py get pr_url` returns a URL. Then `complete 16`, stop until `approve 16`.
+16. **Create PR 🔒** — spawn an Agent (model: haiku) and instruct it to read `./16-create-pr/SKILL.md` and follow it. Verify: `python3 .claude/skills/feature-pipeline-preview/scripts/pipeline.py get pr_url` returns a URL. The submit leaf calls `pipeline.py complete 16` itself; then stop until the maintainer runs `python3 .claude/skills/feature-pipeline-preview/scripts/pipeline.py approve 16`.
 17. **CI cycle** — spawn an Agent (model: haiku) and instruct it to read `./17-ci-cycle/SKILL.md` and follow it. Verify: CI green and PR merged.
 
-After each step the orchestrator runs `pipeline.py complete <N>`. PAUSE-gated steps then stop and wait for the maintainer's `pipeline.py approve <N>` before continuing.
+Phase completion is owned by each phase's own skill — the orchestrator never calls `pipeline.py complete <N>` unconditionally. Rubric-gated phases (6, 7, 8) and the script-style record leaves (2, 4, 5, 12, 13) call `complete <N>` only when the gate passes; the test-writing, implementation, build-loop, fix-findings, final-verify, and create-PR phases call it from their last step on success. PAUSE-gated phases (3, 16, 17) then stop and wait for the maintainer's `python3 .claude/skills/feature-pipeline-preview/scripts/pipeline.py approve <N>` before continuing.
 
 ## Refusals
 

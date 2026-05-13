@@ -52,9 +52,11 @@ If any assumption fails, refuse — do not guess.
    - Check 8 (visibility): every type/function tagged `exported` or `internal`.
 3. Walk the four carrier rules (Think / Simplicity / Surgical / Goal-driven). Record verdicts.
 4. Compose the rubric record:
+
    ```json
    { "phase": 7, "checks": [...], "carriers": [...], "failing": [...], "verdict": "pass" | "fail" }
    ```
+
 5. Write `.pipeline/architecture-rubric.json`.
 6. On `pass`: run `python3 .claude/skills/feature-pipeline-preview/scripts/pipeline.py complete 7`; print `RUBRIC: pass`.
 7. On `fail`: print `RUBRIC: fail` with the failing check IDs, their cites, and the concrete edits needed; refuse to mark phase 7 complete.

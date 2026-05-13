@@ -26,7 +26,7 @@ Assume the artefact under review was produced by a language model (ChatGPT-class
 
 1. Read the ADR, both findings files, the Jess persona, and the rubric → verify: all five exist.
 2. Identify every public function / type / error in the ADR's Public API → verify: list is non-empty.
-3. For each public API entry, record the four Jess tests + the six rubric checks (naming-conversions, predicates, subject-first, no-boolean-blindness, grouped-by-category, doc-by-example, type-parameter-discipline, Jess-affordance) with a per-entry verdict → verify: every entry has eight verdicts.
+3. For each public API entry, record the eight DevEx rubric checks (naming-conversions, predicates, subject-first, no-boolean-blindness, grouped-by-category, doc-by-example, type-parameter-discipline, Jess-affordance) with a per-entry verdict → verify: every entry has eight verdicts.
 4. Fold security and performance findings into a single "API-surface impact" section → verify: every blocking finding from phases 4/5 that touches the public API is named.
 5. Write `.pipeline/devex-review.md` → verify: file exists with the sections in the Output contract below.
 

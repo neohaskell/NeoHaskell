@@ -21,7 +21,7 @@ Reads the ADR + DevEx review and writes `docs/architecture/<adr-number>-<slug>.m
 ## Plan
 
 1. Load all five inputs → verify: every file exists.
-2. Compute the target path `docs/architecture/<adr-number>-<slug>.md` → verify: parent directory exists; refuse to overwrite if the file already exists with different content.
+2. Compute the target path `docs/architecture/<adr-number>-<slug>.md` → verify: parent directory exists. Overwrite behaviour is idempotent — if the file already exists with byte-identical content, skip the write and continue; if the file exists with different content, refuse so a re-run after rubric failure does not silently clobber an in-flight design.
 3. For each ADR decision, resolve module placement, full type signatures, exact imports, exact nhcore utilities, error ADTs, persistence statements, concurrency notes, and visibility decisions → verify: no `TBD`, `?`, `TODO`, or placeholder remains.
 4. Write the doc with the sections listed in the Output contract → verify: every section is non-empty.
 

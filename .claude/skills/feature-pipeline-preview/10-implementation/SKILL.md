@@ -38,7 +38,8 @@ If any assumption fails, refuse — do not guess.
 4. If an external package is unavoidable, alias it with a `Ghc` prefix (e.g. `import qualified Data.Map.Strict as GhcMap`).
 5. Run `nix develop --command cabal build all` to confirm compilation.
 6. Do not run tests here — that is phase 11.
-7. Run `python3 .claude/skills/feature-pipeline-preview/scripts/pipeline.py complete 10`.
+7. Verify no test files changed: `git diff --name-only HEAD -- 'core/test/' 'testbed/tests/'` (and any other test directories the architecture doc names) must return empty. Refuse if any match — `tests are immutable in phase 10`.
+8. Run `python3 .claude/skills/feature-pipeline-preview/scripts/pipeline.py complete 10`.
 
 ## Output
 

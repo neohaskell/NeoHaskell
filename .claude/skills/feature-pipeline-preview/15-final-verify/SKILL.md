@@ -14,7 +14,7 @@ Strict gate on `cabal build all` and `cabal test`. Hlint runs as a warning colle
 
 1. **Build** — read `./01-build/SKILL.md` and follow it. Verify: exit 0.
 2. **Test** — read `./02-test/SKILL.md` and follow it. Verify: exit 0.
-3. **Hlint (warning collector)** — read `./03-hlint/SKILL.md` and follow it. Verify: `.pipeline/hlint.log` exists; exit is 0 unless hlint is missing.
+3. **Hlint (warning collector)** — read `./03-hlint/SKILL.md` and follow it. Verify: `.pipeline/hlint.log` exists (the leaf writes a `hlint: missing` placeholder when hlint is unavailable); exit is 0.
 
 Walk these steps in order. After each, run the verify check before continuing. If step 1 or 2 fails, stop and surface — no iteration is allowed in this phase; the maintainer returns to phase 11 or 14. Step 3 never gates.
 

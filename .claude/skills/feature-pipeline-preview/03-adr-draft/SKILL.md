@@ -12,7 +12,7 @@ Produces `docs/decisions/NNNN-<slug>.md` matching the NeoHaskell ADR template, w
 
 ## Inputs
 
-- `adr_number` — 4-digit string. The orchestrator picks the next number with `ls docs/decisions/*.md | tail -1` before invoking this leaf.
+- `adr_number` — 4-digit string. The orchestrator derives the next number by parsing the 4-digit numeric prefix of every `docs/decisions/NNNN-*.md` file, taking the max, and adding one (zero-padded to 4 digits). Empty directory yields `0001`. Non-numeric or short prefixes are ignored.
 - `feature_name` — string.
 - `issue_number` — string.
 - `module_path` — string.

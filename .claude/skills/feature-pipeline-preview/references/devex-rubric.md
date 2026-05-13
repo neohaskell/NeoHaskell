@@ -2,7 +2,7 @@
 
 The acceptance bar for a phase-6 DevEx review. Eight yes/no questions, grounded in patterns merged across `core/core/Redacted.hs`, `core/decimal/Decimal.hs`, `core/core/Uuid.hs`, `core/core/Result.hs`, `core/core/Array.hs`.
 
-The review-quality agent applies every question to the DevEx review produced by phase 6.1 against the ADR. A finding survives only if it would be made by a senior reviewer reading the ADR cold. The DevEx review PASSES when every question lands `yes`.
+The review-quality agent applies every question to the DevEx review produced by phase 6.1 against the ADR. A finding survives only if it would be made by a senior reviewer reading the ADR cold. The DevEx review PASSES when every question lands `pass` or `n/a` (verdicts are recorded as `pass` / `fail` / `n/a` — never `yes` / `no`).
 
 ## Contents
 

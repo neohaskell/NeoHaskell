@@ -12,7 +12,7 @@ Runs `sec-static-checks.py` against the implementation's changed files and emits
 
 ## Inputs
 
-- The changed file list from `git diff --name-only HEAD` (filtered to `.hs`).
+- The changed Haskell file list from a merge-base diff: `BASE=$(git merge-base HEAD origin/main 2>/dev/null || git merge-base HEAD main) && git diff --name-only "$BASE" HEAD -- '*.hs' '*.lhs'`. The pathspec keeps an empty match exit-code 0.
 
 ## Plan
 
@@ -29,7 +29,7 @@ If any assumption fails, refuse — do not guess.
 
 ## Steps
 
-1. Compute changed files: `git diff --name-only HEAD | grep '\.hs$'`.
+1. Compute changed files against the merge-base so the PR delta is exact and empty matches stay exit-0: `BASE=$(git merge-base HEAD origin/main 2>/dev/null || git merge-base HEAD main); git diff --name-only "$BASE" HEAD -- '*.hs' '*.lhs'`.
 2. Run: `python3 .claude/skills/feature-pipeline-preview/scripts/sec-static-checks.py <files...>`.
 3. If exit is non-zero, surface stderr and exit non-zero.
 4. Otherwise pass stdout through unchanged.

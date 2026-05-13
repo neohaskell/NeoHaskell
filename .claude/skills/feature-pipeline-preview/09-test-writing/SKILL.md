@@ -24,7 +24,8 @@ Translates the test spec into Haskell `hspec` tests and stub implementations suc
 
 Assumptions:
 - Tests follow NeoHaskell style: pipes, `do`+`let`, `case`...`of`, qualified imports, `[fmt|...|]`.
-- Stubs use `Task.throw` for `Task` returns and `error "not implemented"` for pure ones.
+- Stubs use `Task.throw` for `Task` returns and `error "not implemented"` for pure ones. Stubs must throw a sentinel value (e.g. `error "not implemented"` or a dedicated `NotImplemented` constructor) that **cannot** match the concrete domain error a real test expects — never use the same domain error constructor the spec asserts against.
+- Error-path tests assert the exact domain error constructor (and any payload fields the architecture doc names), not a generic `shouldThrow`/anyException matcher. A test that only catches "any exception" is a false-green hazard against the stub above and must be rewritten before the suite is admitted.
 - nhcore has `Strict` globally — never add `!` annotations.
 
 If any assumption fails, refuse — do not guess.
@@ -49,3 +50,4 @@ Test module and stub source module written, cabal updated, every new test compil
 - Test spec or architecture doc missing → refuse: "prerequisite phase output missing".
 - Build fails after stubbing → refuse and surface the build error.
 - Any new test passes against a stub → refuse: "test <name> passes against stub; spec is wrong".
+- Any error-path test uses a generic `shouldThrow`/anyException-style matcher instead of asserting the exact domain error constructor and payload → refuse: "test <name> would false-green against `Task.throw` / `error` stubs; assert the concrete error".

@@ -421,16 +421,25 @@ def cmd_get(args: argparse.Namespace) -> None:
 
 
 def cmd_reset(args: argparse.Namespace) -> None:
-    if not os.path.exists(STATE_FILE):
-        print("No pipeline state to delete.")
-        return
-    # Only remove the state files we own; preserve .gitignore.
-    for fname in ("state.json", "classification.json", ".lock"):
-        path = os.path.join(PIPELINE_DIR, fname)
-        if os.path.exists(path):
-            os.remove(path)
-    # Findings files may have been registered elsewhere — leave them.
-    print("Pipeline state cleared.")
+    # Acquire the lock so a concurrent command cannot race the destructive
+    # delete (e.g. a `complete` in flight while reset is wiping state).
+    lock = _acquire_lock()
+    try:
+        if not os.path.exists(STATE_FILE):
+            print("No pipeline state to delete.")
+            return
+        # Only remove the state files we own; preserve .gitignore. The
+        # `.lock` file is removed last so the lock fd we still hold is the
+        # final reference; the OS releases the flock when we close below.
+        for fname in ("state.json", "classification.json", ".lock"):
+            path = os.path.join(PIPELINE_DIR, fname)
+            if os.path.exists(path):
+                os.remove(path)
+        # Findings files may have been registered elsewhere — leave them.
+        print("Pipeline state cleared.")
+    finally:
+        fcntl.flock(lock, fcntl.LOCK_UN)
+        lock.close()
 
 
 # ---------- argparse wiring ----------

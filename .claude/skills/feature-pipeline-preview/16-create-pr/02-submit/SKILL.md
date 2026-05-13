@@ -30,16 +30,17 @@ If any assumption fails, refuse — do not guess.
 
 ## Steps
 
-1. Run: `BRANCH=$(git branch --show-current)`. If `$BRANCH = main`, refuse.
-2. Stage changed files: `git add -u` plus any new files explicitly listed in the architecture doc.
-3. Read title from `.pipeline/pr-title.txt`.
-4. Commit: `git commit -m "$(cat .pipeline/pr-title.txt)"`.
-5. Push: `git push -u origin "$BRANCH"`.
-6. Run: `URL=$(gh pr create --title "$(cat .pipeline/pr-title.txt)" --body-file .pipeline/pr-body.md)`.
-7. Extract the PR number with `gh pr view --json number -q .number`.
-8. Run `python3 .claude/skills/feature-pipeline-preview/scripts/pipeline.py set pr_url "$URL"`.
-9. Run `python3 .claude/skills/feature-pipeline-preview/scripts/pipeline.py set pr_number "$NUM"`.
-10. Run `python3 .claude/skills/feature-pipeline-preview/scripts/pipeline.py complete 16`.
+1. Run: `BRANCH=$(git branch --show-current)`. If `$BRANCH = main`, refuse: "cannot PR from main".
+2. Run: `command -v gh >/dev/null 2>&1` — if non-zero, refuse: "gh not found" and exit non-zero.
+3. Stage changed files: `git add -u` plus any new files explicitly listed in the architecture doc.
+4. Read title from `.pipeline/pr-title.txt`.
+5. Commit: `git commit -m "$(cat .pipeline/pr-title.txt)"`.
+6. Push: `git push -u origin "$BRANCH"`.
+7. Run: `URL=$(gh pr create --title "$(cat .pipeline/pr-title.txt)" --body-file .pipeline/pr-body.md)`.
+8. Extract the PR number: `NUM=$(gh pr view --json number -q .number)`.
+9. Run `python3 .claude/skills/feature-pipeline-preview/scripts/pipeline.py set pr_url "$URL"`.
+10. Run `python3 .claude/skills/feature-pipeline-preview/scripts/pipeline.py set pr_number "$NUM"`.
+11. Run `python3 .claude/skills/feature-pipeline-preview/scripts/pipeline.py complete 16`.
 
 ## Output
 

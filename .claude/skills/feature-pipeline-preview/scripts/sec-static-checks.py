@@ -192,11 +192,17 @@ def gather_paths(args: argparse.Namespace) -> list[str]:
         with open(args.paths_from) as f:
             paths.extend(p.strip() for p in f if p.strip())
     # Only scan files that actually exist and look like sources we want.
+    # Deduplicate so a path that arrives via both --paths-from and a CLI
+    # argument is scanned once; otherwise downstream finding IDs collide.
     out: list[str] = []
+    seen: set[str] = set()
     for p in paths:
         if not os.path.isfile(p):
             continue
+        if p in seen:
+            continue
         if p.endswith((".hs", ".lhs", ".sh", ".nix", ".cabal")):
+            seen.add(p)
             out.append(p)
     return out
 

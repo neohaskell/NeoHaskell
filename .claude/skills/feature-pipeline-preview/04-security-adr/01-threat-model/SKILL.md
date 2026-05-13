@@ -28,6 +28,7 @@ Assumptions:
 - The ADR exists at `adr_path` and uses the NeoHaskell template.
 - The `references/security-methodology.md` digest is authoritative for the questions to ask.
 - The framework defaults in `../../references/nhcore-context.md` are honoured — flag a finding only when the diff bypasses or contradicts a framework default.
+- An ADR section being empty or contradicting itself is not a hard stop — it is recorded as an `owasp-A06 / insecure design` finding in the emitted array, and processing continues.
 
 If any assumption fails, refuse and ask.
 
@@ -46,4 +47,3 @@ Stdout: a JSON array of raw findings. Stderr: empty unless an assumption was vio
 
 - ADR missing or wrong Status → name the violation, stop.
 - Methodology reference missing → refuse and ask the user to restore the skill.
-- An ADR section is empty or contradicts itself → record a finding under "owasp-A06 / insecure design" and continue.

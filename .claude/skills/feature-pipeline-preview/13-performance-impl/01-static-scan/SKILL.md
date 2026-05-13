@@ -12,7 +12,7 @@ Runs `perf-static-checks.py` against the implementation's changed files and emit
 
 ## Inputs
 
-- The changed file list from `git diff --name-only HEAD` (filtered to `.hs`).
+- The changed Haskell file list from `git diff --name-only HEAD -- '*.hs' '*.lhs'` (the pathspec keeps an empty match exit-code 0; `.lhs` is included because `perf-static-checks.py` accepts both extensions).
 
 ## Plan
 
@@ -29,7 +29,7 @@ If any assumption fails, refuse — do not guess.
 
 ## Steps
 
-1. Compute changed files: `git diff --name-only HEAD | grep '\.hs$'`.
+1. Compute changed files: `git diff --name-only HEAD -- '*.hs' '*.lhs'` (pathspec is empty-match safe — no `grep` pipe).
 2. Run: `python3 .claude/skills/feature-pipeline-preview/scripts/perf-static-checks.py <files...>`.
 3. If exit is non-zero, surface stderr and exit non-zero.
 4. Otherwise pass stdout through unchanged.

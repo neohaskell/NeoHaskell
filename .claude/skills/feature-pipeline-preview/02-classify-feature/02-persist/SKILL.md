@@ -28,7 +28,7 @@ If any assumption fails, refuse — do not invent a tier.
 
 ## Steps
 
-1. Extract `tier` and `rationale` from the decide step's JSON. Use `jq -r '.tier'` and `jq -r '.rationale'` for a clean parse; fail with the parse error on stderr if either field is missing.
+1. Extract `tier` and `rationale` from the decide step's JSON. Use `jq -er '.tier'` and `jq -er '.rationale'` so missing or `null` fields exit non-zero with the parser error on stderr.
 2. Invoke `python3 .claude/skills/feature-pipeline-preview/scripts/pipeline.py classify "$tier" "$rationale"`. Surface stderr on non-zero exit.
 3. Invoke `python3 .claude/skills/feature-pipeline-preview/scripts/pipeline.py complete 2`. Surface stderr on non-zero exit.
 

@@ -35,8 +35,8 @@ If any assumption fails, refuse — do not guess.
 1. Load `.pipeline/findings-12.json` and `.pipeline/findings-13.json`.
 2. Collect every entry where `blocker: true`.
 3. For each blocker, locate the `file:line`, read the surrounding code, and apply a targeted fix.
-4. Run `nix develop --command cabal build all`. If it fails, fix and retry.
-5. Run `nix develop --command cabal test`. If it fails, fix and retry.
+4. Run `nix develop --command cabal build all`. If it fails, apply one more targeted fix and retry — bounded to a total of 3 attempts (1 initial + 2 retries). If still failing, refuse and surface the build log.
+5. Run `nix develop --command cabal test`. If it fails, apply one more targeted fix and retry — bounded to a total of 3 attempts (1 initial + 2 retries). If still failing, refuse and surface the test log.
 6. If any fix changes a public type or module boundary, stop and escalate to the maintainer for re-review.
 7. Run `python3 .claude/skills/feature-pipeline-preview/scripts/pipeline.py complete 14`.
 
