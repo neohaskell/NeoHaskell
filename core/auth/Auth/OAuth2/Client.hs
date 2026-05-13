@@ -801,4 +801,4 @@ sanitizeUrlForError urlText = do
         Just auth -> do
           let host = Text.fromLinkedList (URI.uriRegName auth)
           let port = Text.fromLinkedList (URI.uriPort auth)
-          scheme |> Text.append ("//" |> Text.append (host |> Text.append port))
+          scheme |> Text.append "//" |> Text.append host |> Text.append port
