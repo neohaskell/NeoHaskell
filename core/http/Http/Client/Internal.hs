@@ -135,7 +135,7 @@ sanitizeInternalHttpError exception = do
                         True -> "https://" :: Text
                         False -> "http://" :: Text
                   let host = toText (show (HttpClient.host req))
-                  Text.append scheme host
+                  scheme |> Text.append host
           [fmt|Invalid URL: #{truncated}|]
   Http.Error msg
 

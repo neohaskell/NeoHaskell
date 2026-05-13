@@ -249,7 +249,7 @@ sanitizeUrl url = do
             False -> "http://" :: Text
       let hostText = toText (show (HttpClient.host req))
       let portText = toText (show (HttpClient.port req))
-      Text.append schemeText (Text.append hostText (Text.append ":" portText))
+      schemeText |> Text.append hostText |> Text.append ":" |> Text.append portText
 
 
 -- | Categorize HTTP exception content without revealing sensitive details

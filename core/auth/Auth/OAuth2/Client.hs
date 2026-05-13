@@ -777,14 +777,14 @@ urlEncode text = do
 -- We only expose the error category and sanitized host, not full URL.
 sanitizeValidationError :: ValidationError -> Text
 sanitizeValidationError err = case err of
-  NotHttps url -> Text.append "URL must use HTTPS: " (sanitizeUrlForError url)
-  PrivateIpBlocked url -> Text.append "URL points to private IP: " (sanitizeUrlForError url)
+  NotHttps url -> "URL must use HTTPS: " |> Text.append (sanitizeUrlForError url)
+  PrivateIpBlocked url -> "URL points to private IP: " |> Text.append (sanitizeUrlForError url)
   MalformedUrl _ -> "Malformed URL"
   MissingHostname _ -> "URL missing hostname"
-  DnsResolutionBlocked url _ -> Text.append "DNS resolved to private IP: " (sanitizeUrlForError url)
+  DnsResolutionBlocked url _ -> "DNS resolved to private IP: " |> Text.append (sanitizeUrlForError url)
   -- SECURITY: Don't expose DNS resolution failure reasons - may leak infrastructure info
-  DnsResolutionFailed url _ -> Text.append "DNS resolution failed for " (sanitizeUrlForError url)
-  DnsResolutionTimeout url -> Text.append "DNS resolution timed out for " (sanitizeUrlForError url)
+  DnsResolutionFailed url _ -> "DNS resolution failed for " |> Text.append (sanitizeUrlForError url)
+  DnsResolutionTimeout url -> "DNS resolution timed out for " |> Text.append (sanitizeUrlForError url)
   SingleLabelHostname _ -> "Single-label hostname not allowed (use FQDN)"
 
 
@@ -801,4 +801,4 @@ sanitizeUrlForError urlText = do
         Just auth -> do
           let host = Text.fromLinkedList (URI.uriRegName auth)
           let port = Text.fromLinkedList (URI.uriPort auth)
-          Text.append scheme (Text.append "//" (Text.append host port))
+          scheme |> Text.append "//" |> Text.append host |> Text.append port

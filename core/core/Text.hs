@@ -172,11 +172,15 @@ replace = Data.Text.replace
 
 -- BUILDING AND SPLITTING
 
--- | Append two strings. You can also use the @(++)@ operator to do this.
+-- | Append the first argument to the end of the second argument.
 --
--- > append "butter" "fly" == "butterfly"
+-- Subject-first: designed for use with pipes, where the value being
+-- appended to is the subject piped in.
+--
+-- > "butter" |> Text.append "fly" == "butterfly"
+-- > Text.append "fly" "butter" == "butterfly"
 append :: Text -> Text -> Text
-append = Data.Text.append
+append suffix subject = Data.Text.append subject suffix
 
 
 -- | Concatenate many strings into one.

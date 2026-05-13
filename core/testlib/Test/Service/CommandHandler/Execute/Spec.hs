@@ -101,9 +101,9 @@ basicExecutionSpecs newCartStoreAndFetcher = do
           cart.cartId |> shouldBe context.cartId
           Array.length cart.cartItems |> shouldBe 1
         CommandRejected msg ->
-          fail (Text.append "Expected CommandAccepted, got CommandRejected: " msg)
+          fail ("Expected CommandAccepted, got CommandRejected: " |> Text.append msg)
         CommandFailed err _ ->
-          fail (Text.append "Expected CommandAccepted, got CommandFailed: " err)
+          fail ("Expected CommandAccepted, got CommandFailed: " |> Text.append err)
 
     it "executes command that rejects due to business rules" \context -> do
       -- Try to add item to non-existent cart

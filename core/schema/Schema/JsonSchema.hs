@@ -87,7 +87,7 @@ toJsonSchema schema = case schema of
     Json.object [("oneOf", Json.toJSON oneOf)]
 
   SRef refName ->
-    Json.object [("$ref", Json.toJSON (Text.append "#/definitions/" refName))]
+    Json.object [("$ref", Json.toJSON ("#/definitions/" |> Text.append refName))]
 
 
 -- | Build a JSON Schema for an object property, including "description" when non-empty.

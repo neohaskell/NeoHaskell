@@ -45,9 +45,8 @@ module Service.Auth (
 
 import Auth.Claims (UserClaims (..))
 import Basics
-import Data.Time (UTCTime)
-import Data.Time.Calendar qualified as GhcCalendar
-import Data.Time.Clock qualified as GhcClock
+import DateTime (DateTime)
+import DateTime qualified
 import Map (Map)
 import Map qualified
 import Maybe (Maybe (..))
@@ -71,7 +70,7 @@ data RequestContext = RequestContext
   -- Commands can look up FileRef values to get file metadata.
   , requestId :: Uuid
   -- ^ Unique identifier for this request (for tracing/logging)
-  , timestamp :: UTCTime
+  , timestamp :: DateTime
   -- ^ When the request was received
   }
   deriving (Generic, Show)
@@ -85,7 +84,7 @@ emptyContext =
     { user = Nothing
     , files = Map.empty
     , requestId = Uuid.nil
-    , timestamp = GhcClock.UTCTime (GhcCalendar.fromGregorian 1970 1 1) 0
+    , timestamp = DateTime.fromEpochSeconds 0
     }
 
 
@@ -93,7 +92,7 @@ emptyContext =
 anonymousContext :: Task err RequestContext
 anonymousContext = do
   reqId <- Uuid.generate
-  now <- GhcClock.getCurrentTime |> Task.fromIO
+  now <- DateTime.now
   Task.yield
     RequestContext
       { user = Nothing
@@ -107,7 +106,7 @@ anonymousContext = do
 authenticatedContext :: UserClaims -> Task err RequestContext
 authenticatedContext claims = do
   reqId <- Uuid.generate
-  now <- GhcClock.getCurrentTime |> Task.fromIO
+  now <- DateTime.now
   Task.yield
     RequestContext
       { user = Just claims

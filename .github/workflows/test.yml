@@ -154,7 +154,13 @@ jobs:
   test-hurl:
     needs: [build]
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # 40m: the dev-shell entry pulls HLS / fourmolu / hlint / ormolu /
+    # stylish-haskell / floskell on cold magic-nix-cache, and the post-job
+    # cache upload step pushes those same paths back to GHA cache (~12m).
+    # Tests themselves run in ~8.5m, dev-shell pull ~5m, post-cache upload
+    # ~12m worst case. 40m absorbs the cold-cache one-time cost; warm-cache
+    # runs finish in ~10m total.
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v6
       - uses: DeterminateSystems/determinate-nix-action@v3.19.0

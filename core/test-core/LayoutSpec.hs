@@ -550,7 +550,7 @@ spec = do
       Layout.mapAnnotations identity doc |> expectSameRender doc
 
     it "mapAnnotations one-to-one transform preserves rendering" \_ -> do
-      Layout.mapAnnotations (\ann -> Text.append ann "-x") (Layout.withAnnotation ("tag" :: Text) (Layout.text "x"))
+      Layout.mapAnnotations (\ann -> ann |> Text.append "-x") (Layout.withAnnotation ("tag" :: Text) (Layout.text "x"))
         |> expectRender "x"
 
     it "mapAnnotations composes over nested annotations" \_ -> do
