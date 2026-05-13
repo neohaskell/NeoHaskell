@@ -154,7 +154,11 @@ jobs:
   test-hurl:
     needs: [build]
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # 25m (was 15m): the dev-shell entry pulls HLS / fourmolu / hlint /
+    # ormolu / stylish-haskell / floskell, which on a cold magic-nix-cache
+    # can eat ~5m before the hurl tests run. Typical runtime is ~8.5m;
+    # 25m absorbs cold-cache pulls without being permissive.
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v6
       - uses: DeterminateSystems/determinate-nix-action@v3.19.0
