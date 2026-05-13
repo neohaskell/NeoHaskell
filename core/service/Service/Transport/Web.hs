@@ -266,7 +266,7 @@ extractBoundary contentType = do
             else if Text.length cleaned > 70
               then Result.Err "Boundary exceeds maximum length"
               else do
-                let boundaryWithPrefix = Text.append "--" cleaned
+                let boundaryWithPrefix = "--" |> Text.append cleaned
                 Result.Ok (boundaryWithPrefix |> Text.toBytes)
 
 

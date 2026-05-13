@@ -106,7 +106,7 @@ stripWhitespaceOnlyLines textValue =
           resultText = cleaned |> Text.joinWith "\n"
       in
         if endsWithNewline
-          then Text.append resultText "\n"
+          then resultText |> Text.append "\n"
           else resultText
 
 
@@ -128,7 +128,7 @@ stripTrailingWhitespaceBeforeNewline rendered =
       normalizedText = normalizedLines |> Text.joinWith "\n"
   in
     if endsWithNewline
-      then Text.append normalizedText "\n"
+      then normalizedText |> Text.append "\n"
       else normalizedText
 
 
