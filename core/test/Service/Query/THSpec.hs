@@ -7,6 +7,7 @@ import Core
 import Data.Proxy (Proxy (..))
 import GHC.TypeLits (symbolVal)
 import Json qualified
+import Language.Haskell.TH.Syntax qualified as TH
 import Service.Query.Auth (QueryAuthError)
 import Service.Query.TH (deriveQuery)
 import Test
@@ -156,6 +157,105 @@ instance QueryOf UserEntity SimpleQuery where
 
 
 -- ============================================================================
+-- ADR-0057: Fresh query type — no pre-existing Show / Generic / ToJSON / FromJSON
+-- Tests whether deriveQuery emits those instances (impl-driven: red until
+-- phase 10 wires emitInstanceIfMissing).
+-- ============================================================================
+
+data FreshQuery = FreshQuery {freshQueryId :: Uuid, freshQueryValue :: Int}
+
+
+-- canAccess and canView are already in scope (defined above with public access).
+deriveQuery ''FreshQuery [''UserEntity]
+
+
+instance QueryOf UserEntity FreshQuery where
+  queryId user = user.userId
+  combine user _maybeExisting =
+    Update FreshQuery {freshQueryId = user.userId, freshQueryValue = 0}
+
+
+$(do
+    is <- TH.reifyInstances ''Show [TH.ConT ''FreshQuery]
+    case is of
+      [] -> [d| hasFreshQueryShow :: Bool; hasFreshQueryShow = False |]
+      _ : _ -> [d| hasFreshQueryShow :: Bool; hasFreshQueryShow = True |])
+
+
+$(do
+    is <- TH.reifyInstances ''Generic [TH.ConT ''FreshQuery]
+    case is of
+      [] -> [d| hasFreshQueryGeneric :: Bool; hasFreshQueryGeneric = False |]
+      _ : _ -> [d| hasFreshQueryGeneric :: Bool; hasFreshQueryGeneric = True |])
+
+
+$(do
+    is <- TH.reifyInstances ''Json.ToJSON [TH.ConT ''FreshQuery]
+    case is of
+      [] -> [d| hasFreshQueryToJSON :: Bool; hasFreshQueryToJSON = False |]
+      _ : _ -> [d| hasFreshQueryToJSON :: Bool; hasFreshQueryToJSON = True |])
+
+
+$(do
+    is <- TH.reifyInstances ''Json.FromJSON [TH.ConT ''FreshQuery]
+    case is of
+      [] -> [d| hasFreshQueryFromJSON :: Bool; hasFreshQueryFromJSON = False |]
+      _ : _ -> [d| hasFreshQueryFromJSON :: Bool; hasFreshQueryFromJSON = True |])
+
+
+-- ToSchema probe
+$(do
+    is <- TH.reifyInstances ''ToSchema [TH.ConT ''FreshQuery]
+    case is of
+      [] -> [d| hasFreshQueryToSchema :: Bool; hasFreshQueryToSchema = False |]
+      _ : _ -> [d| hasFreshQueryToSchema :: Bool; hasFreshQueryToSchema = True |])
+
+
+-- ============================================================================
+-- ADR-0057: Empty (zero-field) query type
+-- ============================================================================
+
+data EmptyQuery = EmptyQuery
+
+
+deriveQuery ''EmptyQuery [''UserEntity]
+
+
+instance QueryOf UserEntity EmptyQuery where
+  queryId user = user.userId
+  combine _ _maybeExisting = Update EmptyQuery
+
+
+$(do
+    is <- TH.reifyInstances ''Json.ToJSON [TH.ConT ''EmptyQuery]
+    case is of
+      [] -> [d| hasEmptyQueryToJSON :: Bool; hasEmptyQueryToJSON = False |]
+      _ : _ -> [d| hasEmptyQueryToJSON :: Bool; hasEmptyQueryToJSON = True |])
+
+
+-- ============================================================================
+-- ADR-0057: Sum-type query (regression — Show is already derived manually)
+-- ============================================================================
+
+data SumQuery
+  = SumQueryA {sqaId :: Uuid}
+  | SumQueryB {sqbId :: Uuid, sqbValue :: Int}
+  deriving (Eq, Show, Generic)
+
+
+instance Json.ToJSON SumQuery
+instance Json.FromJSON SumQuery
+
+
+deriveQuery ''SumQuery [''UserEntity]
+
+
+instance QueryOf UserEntity SumQuery where
+  queryId user = user.userId
+  combine _ _maybeExisting = Update (SumQueryA {sqaId = Uuid.nil})
+
+
+-- ============================================================================
 -- Tests
 -- ============================================================================
 
@@ -225,6 +325,47 @@ spec = do
           case action of
             NoOp -> pass
             _ -> fail "Expected NoOp action"
+
+      describe "ADR-0057 — deriveQuery emits Show/Generic/JSON/ToSchema" do
+
+        describe "happy paths (impl-driven: red until phase 10)" do
+
+          it "[impl-driven] emits Show on fresh query type with no pre-existing instances" \_ -> do
+            hasFreshQueryShow |> shouldBe True
+
+          it "[impl-driven] emits Generic on fresh query type with no pre-existing instances" \_ -> do
+            hasFreshQueryGeneric |> shouldBe True
+
+          it "[impl-driven] emits ToJSON on fresh query type with no pre-existing instances" \_ -> do
+            hasFreshQueryToJSON |> shouldBe True
+
+          it "[impl-driven] emits FromJSON on fresh query type with no pre-existing instances" \_ -> do
+            hasFreshQueryFromJSON |> shouldBe True
+
+          it "[impl-driven] emits ToSchema on fresh query type with no pre-existing instances" \_ -> do
+            hasFreshQueryToSchema |> shouldBe True
+
+          it "[impl-driven] emits ToJSON for empty (zero-field) query type" \_ -> do
+            hasEmptyQueryToJSON |> shouldBe True
+
+        describe "idempotency (regression: already-derived types)" do
+
+          it "[regression] UserOrders compiles without duplicate-instance error (Show/Generic/ToJSON/FromJSON pre-existing)" \_ -> do
+            -- Successful compilation of the module proves idempotency.
+            pass
+
+          it "[regression] SimpleQuery compiles without duplicate-instance error (Show/Generic/ToJSON/FromJSON pre-existing)" \_ -> do
+            pass
+
+        describe "edge cases" do
+
+          it "[regression] sum-type query: Show handles multiple constructors" \_ -> do
+            let q1 = SumQueryA {sqaId = Uuid.nil}
+            let q2 = SumQueryB {sqbId = Uuid.nil, sqbValue = 42}
+            let s1 = show q1
+            let s2 = show q2
+            (Text.fromLinkedList s1 |> Text.startsWith "SumQueryA") |> shouldBe True
+            (Text.fromLinkedList s2 |> Text.startsWith "SumQueryB") |> shouldBe True
 
 
 -- Helper function to verify Query instance exists

@@ -5,12 +5,14 @@ module Service.CommandExecutor.TH (
 
 import Control.Monad.Fail qualified as MonadFail
 import Core
+import Data.Aeson qualified as Json
 import Data.Hashable qualified as Hashable
 import Data.List qualified as GhcList
 import GHC.Base (String)
 import Language.Haskell.TH.Lib qualified as THLib
 import Language.Haskell.TH.Ppr qualified as THPpr
 import Language.Haskell.TH.Syntax qualified as TH
+import Service.CommandExecutor.TH.Internal (emitInstanceIfMissing)
 
 
 data MultiTenancyMode
@@ -513,5 +515,46 @@ Please ensure you have `import Core` at the top of your module.
           (TH.ConT toSchemaClassName `TH.AppT` TH.ConT someName)
           [] -- Empty body, uses default implementation from Generic
 
-  pure ([nameOfInstance, commandInstance, toSchemaInstance] ++ knownHashInstance)
+  showDecls <-
+    emitInstanceIfMissing ''Show someName do
+      pure
+        [ TH.StandaloneDerivD
+            (Just TH.StockStrategy)
+            []
+            (TH.ConT ''Show `TH.AppT` TH.ConT someName)
+        ]
+  genericDecls <-
+    emitInstanceIfMissing ''Generic someName do
+      pure
+        [ TH.StandaloneDerivD
+            (Just TH.StockStrategy)
+            []
+            (TH.ConT ''Generic `TH.AppT` TH.ConT someName)
+        ]
+  fromJsonDecls <-
+    emitInstanceIfMissing ''Json.FromJSON someName do
+      pure
+        [ TH.InstanceD
+            Nothing
+            []
+            (TH.ConT ''Json.FromJSON `TH.AppT` TH.ConT someName)
+            []
+        ]
+  toJsonDecls <-
+    emitInstanceIfMissing ''Json.ToJSON someName do
+      pure
+        [ TH.InstanceD
+            Nothing
+            []
+            (TH.ConT ''Json.ToJSON `TH.AppT` TH.ConT someName)
+            []
+        ]
+  pure
+    ( [nameOfInstance, commandInstance, toSchemaInstance]
+        ++ knownHashInstance
+        ++ showDecls
+        ++ genericDecls
+        ++ fromJsonDecls
+        ++ toJsonDecls
+    )
 {-# INLINE command #-}

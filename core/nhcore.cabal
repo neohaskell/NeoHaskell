@@ -100,6 +100,7 @@ common common_cfg
     BlockArguments
     DataKinds
     DeriveDataTypeable
+    DerivingStrategies
     DuplicateRecordFields
     ImportQualifiedPost
     ImplicitParams
@@ -115,6 +116,7 @@ common common_cfg
     PartialTypeSignatures
     QualifiedDo
     QuasiQuotes
+    StandaloneDeriving
     Strict
     TemplateHaskell
     TypeApplications
@@ -223,12 +225,14 @@ library
     Service.CommandExecutor
     Service.CommandExecutor.Core
     Service.CommandExecutor.TH
+    Service.CommandExecutor.TH.Internal
     Service.Entity
     Service.Entity.Core
     Service.EntityFetcher
     Service.EntityFetcher.Core
     Service.Error
     Service.Event
+    Service.Event.TH
     Service.Event.EntityName
     Service.Event.EventMetadata
     Service.Event.StreamId
@@ -484,6 +488,12 @@ test-suite nhcore-test
     Service.Integration.SelectionSpec
     Service.Integration.TestFixtures
     Service.Integration.WireupSpec
+    Service.CommandExecutor.TH.AlreadyDerivedCommandFixture
+    Service.CommandExecutor.TH.FreshCommandFixture
+    Service.CommandExecutor.TH.PartialDerivedCommandFixture
+    Service.CommandExecutor.TH.SumCommandFixture
+    Service.CommandExecutor.THSpec
+    Service.Event.THSpec
 
   -- other-extensions:
   type: exitcode-stdio-1.0
@@ -535,8 +545,14 @@ test-suite nhcore-test-service
 
   other-modules:
     Service.ApplicationSpec
+    Service.CommandExecutor.THSpec
+    Service.CommandExecutor.TH.AlreadyDerivedCommandFixture
+    Service.CommandExecutor.TH.FreshCommandFixture
+    Service.CommandExecutor.TH.PartialDerivedCommandFixture
+    Service.CommandExecutor.TH.SumCommandFixture
     Service.CommandHandlerSpec
     Service.CommandSpec
+    Service.Event.THSpec
     Service.EventStore.InMemorySpec
     Service.EventStore.SimpleSpec
     Service.EventStore.Postgres.SubscriptionStoreSpec
