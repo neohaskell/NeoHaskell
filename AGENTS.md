@@ -68,6 +68,24 @@ When unavoidable, prefix with `Ghc`:
 import Data.List qualified as GhcList
 ```
 
+### Concept Markers (`command`, `event`, `deriveQuery`)
+
+Each marker emits `Show`, `Generic`, `Json.FromJSON`, and `Json.ToJSON`
+(plus `ToSchema` for queries) for the named type — idempotently, via
+`TH.reifyInstances`. Two rules:
+
+- **Marker last.** The marker splice must come *after* every other
+  declaration in the file, including any custom `Json.ToJSON` /
+  `Json.FromJSON` instance you want to keep. Declaring a custom instance
+  *after* the marker produces a `Duplicate instance declarations`
+  compile error because the marker has already emitted the derived one.
+- **Custom encodings stay possible.** Want a tagged-sum `Json.ToJSON`
+  or `omitNothingFields`? Declare it *before* the marker call; the
+  marker detects it via `reifyInstances` and emits no duplicate.
+
+The four-pack helper lives at `Service.TH.Boilerplate` and is shared by
+all three markers — see ADR-0057.
+
 ## ANTI-PATTERNS (FORBIDDEN)
 
 - `let..in` or `where` clauses
