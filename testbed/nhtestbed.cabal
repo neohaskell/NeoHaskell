@@ -26,6 +26,7 @@ common common_cfg
     BlockArguments
     DataKinds
     DeriveDataTypeable
+    DerivingStrategies
     DuplicateRecordFields
     ImportQualifiedPost
     ImpredicativeTypes
@@ -40,6 +41,7 @@ common common_cfg
     PartialTypeSignatures
     QualifiedDo
     QuasiQuotes
+    StandaloneDeriving
     Strict
     TemplateHaskell
     TypeApplications

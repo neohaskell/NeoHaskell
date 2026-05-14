@@ -3,6 +3,7 @@ module Main (main) where
 import Prelude (IO)
 
 import Service.ApplicationSpec qualified
+import Service.CommandExecutor.THSpec qualified
 import Service.CommandHandlerSpec qualified
 import Service.CommandSpec qualified
 import Service.EventStore.InMemorySpec qualified
@@ -22,6 +23,7 @@ import Service.Integration.AdapterSpec qualified
 import Service.Integration.DispatchRegistrySpec qualified
 import Service.Integration.SelectionSpec qualified
 import Service.Integration.WireupSpec qualified
+import Service.Event.THSpec qualified
 import Service.Query.EndpointSpec qualified
 import Service.Query.RegistrySpec qualified
 import Service.Query.SubscriberSpec qualified
@@ -44,6 +46,7 @@ import Test.Hspec qualified as Hspec
 main :: IO ()
 main = Hspec.hspec do
   Hspec.describe "Service.Application" Service.ApplicationSpec.spec
+  Hspec.describe "Service.CommandExecutor.TH" Service.CommandExecutor.THSpec.spec
   Hspec.describe "Service.CommandHandler" Service.CommandHandlerSpec.spec
   Hspec.describe "Service.Command" Service.CommandSpec.spec
   Hspec.describe "Service.EventStore.InMemory" Service.EventStore.InMemorySpec.spec
@@ -63,6 +66,7 @@ main = Hspec.hspec do
   Hspec.describe "Service.Integration.DispatchRegistry" Service.Integration.DispatchRegistrySpec.spec
   Hspec.describe "Service.Integration.Selection" Service.Integration.SelectionSpec.spec
   Hspec.describe "Service.Integration.Wireup" Service.Integration.WireupSpec.spec
+  Hspec.describe "Service.Event.TH" Service.Event.THSpec.spec
   Hspec.describe "Service.Query.Endpoint" Service.Query.EndpointSpec.spec
   Hspec.describe "Service.Query.Registry" Service.Query.RegistrySpec.spec
   Hspec.describe "Service.Query.Subscriber" Service.Query.SubscriberSpec.spec

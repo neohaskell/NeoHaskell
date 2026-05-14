@@ -9,6 +9,7 @@ import Data.List qualified as GhcList
 import GHC.Base (String)
 import Language.Haskell.TH.Lib qualified as THLib
 import Language.Haskell.TH.Syntax qualified as TH
+import Service.TH.Boilerplate (emitEmptyInstance, emitJsonAndDerivingBoilerplate)
 
 
 -- | Derive Query-related instances for a query type.
@@ -143,7 +144,17 @@ Available helpers from Service.Query.Auth:
   -- Generate KnownHash instance
   knownHashInstances <- deriveKnownHash queryTypeStr
 
-  pure ([nameOfInstance, entitiesOfInstance, queryInstance] ++ knownHashInstances)
+  -- Lookup ToSchema for queries (new — ADR-0057)
+  toSchemaClassName <- lookupOrFail "ToSchema"
+
+  boilerplateDecls <- emitJsonAndDerivingBoilerplate queryTypeName
+  toSchemaDecls <- emitEmptyInstance toSchemaClassName queryTypeName
+  pure
+    ( [nameOfInstance, entitiesOfInstance, queryInstance]
+        ++ knownHashInstances
+        ++ boilerplateDecls
+        ++ toSchemaDecls
+    )
 
 
 -- | Derives a KnownHash instance for a given string at compile time.

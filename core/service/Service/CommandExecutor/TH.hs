@@ -11,6 +11,7 @@ import GHC.Base (String)
 import Language.Haskell.TH.Lib qualified as THLib
 import Language.Haskell.TH.Ppr qualified as THPpr
 import Language.Haskell.TH.Syntax qualified as TH
+import Service.TH.Boilerplate (emitJsonAndDerivingBoilerplate)
 
 
 data MultiTenancyMode
@@ -513,5 +514,10 @@ Please ensure you have `import Core` at the top of your module.
           (TH.ConT toSchemaClassName `TH.AppT` TH.ConT someName)
           [] -- Empty body, uses default implementation from Generic
 
-  pure ([nameOfInstance, commandInstance, toSchemaInstance] ++ knownHashInstance)
+  boilerplateDecls <- emitJsonAndDerivingBoilerplate someName
+  pure
+    ( [nameOfInstance, commandInstance, toSchemaInstance]
+        ++ knownHashInstance
+        ++ boilerplateDecls
+    )
 {-# INLINE command #-}
