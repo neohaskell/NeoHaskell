@@ -1,0 +1,49 @@
+---
+name: 01-threat-model
+description: Produces raw security findings from the design draft using OWASP + STRIDE applied to a feature diff.
+kind: leaf
+executor: opus
+model: claude-opus-4-7
+---
+
+# Threat model
+
+Reads the proposed design draft and produces a raw findings array using the methodology in `../../references/security-methodology.md` (OWASP Top 10 2025, STRIDE, SLSA, SSDF PW practices, parse-don't-validate, secret handling).
+
+## Review posture
+
+Assume the artefact under review was produced by a language model (ChatGPT-class output). Treat plausible-looking claims as unverified, expect hallucinated APIs and missed constraints, and refuse to pass anything not directly traceable to the methodology in `../../references/security-methodology.md`. Strict review is the default — benefit of the doubt goes to the rubric and to the source, never to the producer.
+
+## Inputs
+
+- `design_path` — path to the design draft at `.integration-pipeline/integration-design.md`.
+
+## Plan
+
+1. Read the design draft end-to-end → verify: section list matches (Context, Decision drivers, Considered options, Decision outcome, Public API, Consequences).
+2. For each STRIDE letter and each active OWASP category, ask the per-section reviewer check from `../../references/security-methodology.md` → verify: at least one explicit yes/no answer recorded for each.
+3. Emit a raw findings JSON array → verify: every entry has `id`, `severity` (Critical/High/Medium/Low/Informational), `rule` (e.g. "tampering", "info-disclosure", "owasp-A03"), `location` (design draft section), `message` (one paragraph), `recommendation` (one paragraph).
+
+Assumptions:
+- The design draft exists at `design_path` and uses the NeoHaskell template.
+- The `references/security-methodology.md` digest is authoritative for the questions to ask.
+- The framework defaults in `../../references/nhcore-context.md` are honoured — flag a finding only when the diff bypasses or contradicts a framework default.
+- An design draft section being empty or contradicting itself is not a hard stop — it is recorded as an `owasp-A06 / insecure design` finding in the emitted array, and processing continues.
+
+If any assumption fails, refuse and ask.
+
+## Steps
+
+1. Read the design draft. Refuse if Status is not `Proposed`.
+2. Walk each methodology section (1–9) in order. For each, record the yes/no answer; on "yes" produce a finding entry.
+3. Cap raw severity by the answer's actual impact on the feature's reachable surface. Do NOT apply blast-radius filtering — that is the grounding step's job.
+4. Emit the JSON array on stdout. Do not write any file (the record step owns persistence).
+
+## Output
+
+Stdout: a JSON array of raw findings. Stderr: empty unless an assumption was violated.
+
+## Refusals
+
+- Design draft missing or wrong Status → name the violation, stop.
+- Methodology reference missing → refuse and ask the user to restore the skill.

@@ -1,0 +1,74 @@
+---
+name: 03-design-draft
+description: Drafts the outbound integration's design document at .integration-pipeline/integration-design.md in Status Proposed.
+kind: leaf
+executor: opus
+model: claude-opus-4-7
+---
+
+# Integration design draft
+
+Produces `.integration-pipeline/integration-design.md` matching the integration design template, with Status: Proposed. The design doc is the input to every later phase (security, perf, devex, architecture, test spec).
+
+**This pipeline never writes to `docs/decisions/`.** Repo-level ADRs are reserved for repo-level architecture; an outbound integration is scoped to be portable to a separate repo, and an ADR slot here would orphan if/when that move happens. The design doc therefore lives in the per-checkout `.integration-pipeline/` directory and travels with the integration's source.
+
+## Inputs
+
+- `integration_name` — string, from `pipeline.py get integration_name`.
+- `issue_number` — string, from `pipeline.py get issue_number` (may be empty).
+- `module_name` — string, Pascal-case suffix (e.g. `Stripe`), from `pipeline.py get module_name`.
+- `module_path` — string, from `pipeline.py get module_path` (default `integrations/Integration/<module_name>.hs`).
+- `design_path` — string, from `pipeline.py get design_path` (always `.integration-pipeline/integration-design.md`).
+
+## Plan
+
+1. Read pipeline variables → verify: `integration_name` and `design_path` non-empty; `design_path` starts with `.integration-pipeline/`.
+2. Refuse if `design_path` already exists with content — re-runs after maintainer feedback go through `pipeline.py reset` or an explicit overwrite gesture.
+3. Draft the doc with every required section, every code example following the NeoHaskell style guide → verify: file written and contains `Status: Proposed`.
+4. Mark phase 3 complete → verify: `pipeline.py status` shows phase 3 awaiting approval.
+
+Assumptions:
+- The `.integration-pipeline/` directory exists (phase 1 created it).
+- The maintainer will review the draft before approving phase 3.
+- Implementation lives under `integrations/Integration/<module_name>/` and `integrations/Integration/<module_name>.hs`.
+
+If any assumption fails (style guide unclear, design template missing), refuse and ask.
+
+## Required sections
+
+The draft must contain every section listed below. Wording mirrors the NeoHaskell ADR template so reviewers familiar with feature ADRs see no surprise, but the doc is **not** an ADR and must not claim a `docs/decisions/` number.
+
+1. `# <integration_name> integration design` — title.
+2. `Status: Proposed` — single line, on its own.
+3. `## Context` — what external system this integrates with, why now, what user need it serves, the link to issue `#<issue_number>` if present.
+4. `## Decision drivers` — bulleted list of forces driving the design (deadline, security, perf budget, Jess affordance).
+5. `## Considered options` — at least two alternatives, with one-paragraph trade-off each.
+6. `## Decision outcome` — the chosen option, restated in one paragraph.
+7. `## Trust boundary` — what crosses the network, what secrets are needed, where they are sourced, what error modes the caller sees.
+8. `## Public API` — every public function, type, and error the integration exports, with full signatures and a one-line doc-by-example for each. This is the surface the DevEx review (phase 6) inspects.
+9. `## Out of scope` — adjacent concerns explicitly excluded (e.g. inbound webhooks if this is request/response only).
+10. `## Consequences` — positive and negative downstream effects.
+11. `## Portability note` — one short paragraph confirming that this integration is built to be portable to a separate repo and that no design artefact has been written to `docs/decisions/` or `docs/architecture/`.
+
+## Steps
+
+1. Compute the target path from `pipeline.py get design_path`. Refuse if the file exists and is non-empty.
+2. Draft each section — keep code examples short, name only the public API the integration introduces, reference `#<issue_number>` once at the top of `## Context`.
+3. Apply the NeoHaskell style to every code example: pipes, do-blocks, `case ... of`, `Task`/`Result`, no `let..in`, no `where`, no `$`, no single-letter type params. Refuse if the chosen API forces any of these.
+4. Apply the Jess persona check (`../references/jess-persona.md`): every public function reachable from the `## Public API` block should be usable in 15 minutes from autocomplete alone. Refuse the design if it is not.
+5. Verify the `## Portability note` section is present and does not reference `docs/decisions/` or `docs/architecture/` as a target.
+6. Write the file with `Status: Proposed`.
+7. Run `python3 .claude/skills/integration-pipeline-preview/scripts/pipeline.py complete 3`.
+
+## Output
+
+- The file at `pipeline.py get design_path` (default `.integration-pipeline/integration-design.md`) exists, Status: Proposed, all 11 sections present.
+- Phase 3 marked complete; pipeline now in `waiting_for_approval` for phase 3.
+
+## Refusals
+
+- Design path already exists with content → stop, do not overwrite. Tell the maintainer to reset or move the existing file.
+- Maintainer asks to write to `docs/decisions/...` or `docs/architecture/...` → refuse and explain: outbound integrations are scoped to be portable; the repo-level ADR slots would orphan.
+- Design forces NeoHaskell-style violations → surface the conflict; do not silently rewrite the API.
+- Integration fails the Jess 15-minute test → surface the failure and request a redesign before drafting.
+- `## Portability note` would be missing or would reference `docs/decisions/` / `docs/architecture/` → refuse the draft.
