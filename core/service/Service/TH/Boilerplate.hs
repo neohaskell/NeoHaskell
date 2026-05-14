@@ -1,8 +1,11 @@
--- | Internal helpers for TH marker boilerplate emission.
+-- | Shared TH primitives for concept-marker boilerplate emission.
 --
--- NOT exported from any public interface.  Used only by
--- Service.CommandExecutor.TH, Service.Query.TH, and Service.Event.TH.
-module Service.CommandExecutor.TH.Internal (
+-- Internal to nhcore.  Used by Service.CommandExecutor.TH,
+-- Service.Query.TH, and Service.Event.TH to emit the JSON and
+-- @deriving stock@ instances every command, event, and query type
+-- needs, while remaining a no-op when an instance is already in scope
+-- (so consumers can declare custom encodings before the marker call).
+module Service.TH.Boilerplate (
   emitInstanceIfMissing,
   emitStockDeriving,
   emitEmptyInstance,

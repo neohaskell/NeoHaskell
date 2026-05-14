@@ -11,7 +11,7 @@ import GHC.Base (String)
 import Language.Haskell.TH.Lib qualified as THLib
 import Language.Haskell.TH.Ppr qualified as THPpr
 import Language.Haskell.TH.Syntax qualified as TH
-import Service.CommandExecutor.TH.Internal (emitJsonAndDerivingBoilerplate)
+import Service.TH.Boilerplate (emitJsonAndDerivingBoilerplate)
 
 
 data MultiTenancyMode

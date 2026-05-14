@@ -225,7 +225,6 @@ library
     Service.CommandExecutor
     Service.CommandExecutor.Core
     Service.CommandExecutor.TH
-    Service.CommandExecutor.TH.Internal
     Service.Entity
     Service.Entity.Core
     Service.EntityFetcher
@@ -283,6 +282,7 @@ library
     Service.FileUpload.Web
     Service.ServiceDefinition
     Service.ServiceDefinition.Core
+    Service.TH.Boilerplate
     Service.Transport
     Service.Transport.Web
     Service.Transport.Web.BuiltinSchemas

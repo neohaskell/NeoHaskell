@@ -9,7 +9,7 @@ import Data.List qualified as GhcList
 import GHC.Base (String)
 import Language.Haskell.TH.Lib qualified as THLib
 import Language.Haskell.TH.Syntax qualified as TH
-import Service.CommandExecutor.TH.Internal (emitEmptyInstance, emitJsonAndDerivingBoilerplate)
+import Service.TH.Boilerplate (emitEmptyInstance, emitJsonAndDerivingBoilerplate)
 
 
 -- | Derive Query-related instances for a query type.

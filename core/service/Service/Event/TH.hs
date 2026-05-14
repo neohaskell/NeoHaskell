@@ -19,7 +19,7 @@ module Service.Event.TH (
 
 import Language.Haskell.TH.Lib qualified as THLib
 import Language.Haskell.TH.Syntax qualified as TH
-import Service.CommandExecutor.TH.Internal (emitJsonAndDerivingBoilerplate)
+import Service.TH.Boilerplate (emitJsonAndDerivingBoilerplate)
 
 
 -- | Derive Show, Generic, Json.FromJSON, and Json.ToJSON for an event type.
