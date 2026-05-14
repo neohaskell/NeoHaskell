@@ -4,13 +4,12 @@ module Service.Query.TH (
 
 import Control.Monad.Fail qualified as MonadFail
 import Core
-import Data.Aeson qualified as Json
 import Data.Hashable qualified as Hashable
 import Data.List qualified as GhcList
 import GHC.Base (String)
 import Language.Haskell.TH.Lib qualified as THLib
 import Language.Haskell.TH.Syntax qualified as TH
-import Service.CommandExecutor.TH.Internal (emitInstanceIfMissing)
+import Service.CommandExecutor.TH.Internal (emitEmptyInstance, emitJsonAndDerivingBoilerplate)
 
 
 -- | Derive Query-related instances for a query type.
@@ -148,56 +147,12 @@ Available helpers from Service.Query.Auth:
   -- Lookup ToSchema for queries (new — ADR-0057)
   toSchemaClassName <- lookupOrFail "ToSchema"
 
-  showDecls <-
-    emitInstanceIfMissing ''Show queryTypeName do
-      pure
-        [ TH.StandaloneDerivD
-            (Just TH.StockStrategy)
-            []
-            (TH.ConT ''Show `TH.AppT` TH.ConT queryTypeName)
-        ]
-  genericDecls <-
-    emitInstanceIfMissing ''Generic queryTypeName do
-      pure
-        [ TH.StandaloneDerivD
-            (Just TH.StockStrategy)
-            []
-            (TH.ConT ''Generic `TH.AppT` TH.ConT queryTypeName)
-        ]
-  fromJsonDecls <-
-    emitInstanceIfMissing ''Json.FromJSON queryTypeName do
-      pure
-        [ TH.InstanceD
-            Nothing
-            []
-            (TH.ConT ''Json.FromJSON `TH.AppT` TH.ConT queryTypeName)
-            []
-        ]
-  toJsonDecls <-
-    emitInstanceIfMissing ''Json.ToJSON queryTypeName do
-      pure
-        [ TH.InstanceD
-            Nothing
-            []
-            (TH.ConT ''Json.ToJSON `TH.AppT` TH.ConT queryTypeName)
-            []
-        ]
-  toSchemaDecls <-
-    emitInstanceIfMissing toSchemaClassName queryTypeName do
-      pure
-        [ TH.InstanceD
-            Nothing
-            []
-            (TH.ConT toSchemaClassName `TH.AppT` TH.ConT queryTypeName)
-            []
-        ]
+  boilerplateDecls <- emitJsonAndDerivingBoilerplate queryTypeName
+  toSchemaDecls <- emitEmptyInstance toSchemaClassName queryTypeName
   pure
     ( [nameOfInstance, entitiesOfInstance, queryInstance]
         ++ knownHashInstances
-        ++ showDecls
-        ++ genericDecls
-        ++ fromJsonDecls
-        ++ toJsonDecls
+        ++ boilerplateDecls
         ++ toSchemaDecls
     )
 
