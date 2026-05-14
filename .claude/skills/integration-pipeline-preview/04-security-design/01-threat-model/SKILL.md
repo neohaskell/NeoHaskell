@@ -28,7 +28,7 @@ Assumptions:
 - The design draft exists at `design_path` and uses the NeoHaskell template.
 - The `references/security-methodology.md` digest is authoritative for the questions to ask.
 - The framework defaults in `../../references/nhcore-context.md` are honoured — flag a finding only when the diff bypasses or contradicts a framework default.
-- An design draft section being empty or contradicting itself is not a hard stop — it is recorded as an `owasp-A06 / insecure design` finding in the emitted array, and processing continues.
+- A design draft section being empty or contradicting itself is not a hard stop — it is recorded as an `owasp-A06 / insecure design` finding in the emitted array, and processing continues.
 
 If any assumption fails, refuse and ask.
 

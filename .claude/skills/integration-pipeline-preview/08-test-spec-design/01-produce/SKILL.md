@@ -13,7 +13,7 @@ Reads the architecture doc and writes `.integration-pipeline/integration-tests.m
 ## Inputs
 
 - `.integration-pipeline/integration-architecture.md` — produced by phase 7.
-- `.integration-pipeline/classification.json` — provides  and slug.
+- `.integration-pipeline/classification.json` — provides the complexity `tier` and `rationale`.
 - `../../references/test-spec-rubric.md` — the rubric the spec will be judged against; the producer must satisfy it.
 
 ## Plan

@@ -37,7 +37,7 @@ If any assumption fails, refuse — do not guess.
 2. Create the source module under the path specified by the architecture doc, with stub function bodies.
 3. Create the test module under `integrations/test/...` mirroring the source path.
 4. For each spec case, write an `hspec` `it` block referencing the spec case name.
-5. Register the new test module in `nhcore.cabal` (and the source module if new).
+5. Register the new test module in `integrations/nhintegrations.cabal` (and the source module if new).
 6. Run `nix develop --command cabal build all` to confirm compilation.
 7. Run `nix develop --command cabal test --test-show-details=streaming` to confirm every new test fails.
 8. Run `python3 .claude/skills/integration-pipeline-preview/scripts/pipeline.py complete 9`.

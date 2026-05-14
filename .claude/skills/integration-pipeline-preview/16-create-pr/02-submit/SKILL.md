@@ -32,15 +32,22 @@ If any assumption fails, refuse — do not guess.
 
 1. Run: `BRANCH=$(git branch --show-current)`. If `$BRANCH = main`, refuse: "cannot PR from main".
 2. Run: `command -v gh >/dev/null 2>&1` — if non-zero, refuse: "gh not found" and exit non-zero.
-3. Stage changed files: `git add -u` plus any new files explicitly listed in the architecture doc.
-4. Read title from `.integration-pipeline/pr-title.txt`.
-5. Commit: `git commit -m "$(cat .integration-pipeline/pr-title.txt)"`.
-6. Push: `git push -u origin "$BRANCH"`.
-7. Run: `URL=$(gh pr create --title "$(cat .integration-pipeline/pr-title.txt)" --body-file .integration-pipeline/pr-body.md)`.
-8. Extract the PR number: `NUM=$(gh pr view --json number -q .number)`.
-9. Run `python3 .claude/skills/integration-pipeline-preview/scripts/pipeline.py set pr_url "$URL"`.
-10. Run `python3 .claude/skills/integration-pipeline-preview/scripts/pipeline.py set pr_number "$NUM"`.
-11. Run `python3 .claude/skills/integration-pipeline-preview/scripts/pipeline.py complete 16`.
+3. Verify both input files exist: `test -f .integration-pipeline/pr-title.txt && test -f .integration-pipeline/pr-body.md`. Refuse with "PR body or title file missing" on failure.
+4. Stage changed files. `git add -u` alone is unsafe here because new integration code is untracked. Resolve the integration's module + test paths from pipeline state:
+   - `MODULE_PATH=$(python3 .claude/skills/integration-pipeline-preview/scripts/pipeline.py get module_path)`
+   - `TEST_PATH=$(python3 .claude/skills/integration-pipeline-preview/scripts/pipeline.py get test_path)`
+   - `MODULE_NAME=$(python3 .claude/skills/integration-pipeline-preview/scripts/pipeline.py get module_name)`
+   - `git add -u` (catches edits to existing tracked files such as `integrations/nhintegrations.cabal`).
+   - For each of `$MODULE_PATH`, `$TEST_PATH`, and `integrations/Integration/$MODULE_NAME/` (the integration's directory tree): if the path is non-empty AND exists on disk, run `git add -- "$PATH"`. Skip silently when empty/missing — pipeline state allows them to be unset until the architecture phase decides.
+   - Confirm `.integration-pipeline/` is NOT staged: `git diff --cached --name-only | grep -q '^\.integration-pipeline/' && refuse "pipeline state must not be committed"`.
+5. Read title from `.integration-pipeline/pr-title.txt`.
+6. Commit: `git commit -m "$(cat .integration-pipeline/pr-title.txt)"`.
+7. Push: `git push -u origin "$BRANCH"`.
+8. Run: `URL=$(gh pr create --title "$(cat .integration-pipeline/pr-title.txt)" --body-file .integration-pipeline/pr-body.md)`.
+9. Extract the PR number: `NUM=$(gh pr view --json number -q .number)`.
+10. Run `python3 .claude/skills/integration-pipeline-preview/scripts/pipeline.py set pr_url "$URL"`.
+11. Run `python3 .claude/skills/integration-pipeline-preview/scripts/pipeline.py set pr_number "$NUM"`.
+12. Run `python3 .claude/skills/integration-pipeline-preview/scripts/pipeline.py complete 16`.
 
 ## Output
 

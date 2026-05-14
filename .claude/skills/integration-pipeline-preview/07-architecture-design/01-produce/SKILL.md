@@ -1,6 +1,6 @@
 ---
 name: 01-produce
-description: Produces the implementation-ready architecture document for the feature.
+description: Produces the implementation-ready architecture document for the integration.
 kind: leaf
 executor: opus
 model: claude-opus-4-7
@@ -14,7 +14,7 @@ Reads the design draft + DevEx review and writes `.integration-pipeline/integrat
 
 - `.integration-pipeline/integration-design.md` — the design draft from phase 3.
 - `.integration-pipeline/devex-review.md` — the DevEx review from phase 6.
-- `.integration-pipeline/classification.json` — provides  and the slug.
+- `.integration-pipeline/classification.json` — provides the complexity `tier` and `rationale`.
 - `../../references/architecture-rubric.md` — the rubric the doc will be judged against; the producer must satisfy it.
 - `../../references/nhcore-context.md` — framework conventions the doc references.
 
@@ -36,7 +36,7 @@ If any assumption fails, refuse — do not guess.
 
 1. Load the inputs. Refuse on missing files.
 2. Enumerate the design draft's decisions. For each, write the corresponding section:
-   - `## Module map` — every new file path; integrate with existing layout (`core/<area>/<Module>.hs`).
+   - `## Module map` — every new file path under `integrations/Integration/<module_name>/`, with `integrations/Integration/<module_name>.hs` as the top-level entry. Never route integration code under `core/`.
    - `## Public types` — full signatures, doc-by-example, visibility (`exported` / `internal`).
    - `## Public functions` — full signatures, doc-by-example, every type parameter named (no single letters).
    - `## Internal helpers` — full signatures plus the call sites that justify them (no single-use helpers — single-use abstractions are rejected).

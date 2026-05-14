@@ -8,7 +8,7 @@ model: claude-opus-4-7
 
 # Hot-Path Analysis
 
-Reads the design draft draft and asks every section of the performance methodology against it, emitting raw findings without filtering.
+Reads the design draft and asks every section of the performance methodology against it, emitting raw findings without filtering.
 
 ## Review posture
 
@@ -16,13 +16,13 @@ Assume the artefact under review was produced by a language model (ChatGPT-class
 
 ## Inputs
 
-- `.integration-pipeline/adr-draft.md` — the design draft produced in phase 3.
+- `.integration-pipeline/integration-design.md` — the design draft produced in phase 3.
 - `../../references/performance-methodology.md` — methodology digest.
 - `../../references/nhcore-context.md` — nhcore performance context.
 
 ## Plan
 
-1. Read the design draft draft → verify: file exists and is non-empty.
+1. Read the design draft → verify: file exists and is non-empty.
 2. Read the performance methodology and nhcore context → verify: both load.
 3. For each numbered section of the methodology, ask its question against the design draft → verify: every section produces at least an explicit "not applicable" finding or a real finding.
 4. Emit a JSON array of raw findings on stdout → verify: each entry has `severity`, `rule`, `location`, `recommendation`.
@@ -35,7 +35,7 @@ If any assumption fails, refuse — do not guess.
 
 ## Steps
 
-1. Load the design draft draft from `.integration-pipeline/adr-draft.md`.
+1. Load the design draft from `.integration-pipeline/integration-design.md`.
 2. Load the performance methodology and nhcore context references.
 3. For each methodology section (1-9), reason about the design draft section that maps to it; produce one or more findings.
 4. For each finding, populate:
@@ -51,5 +51,5 @@ JSON array of raw performance findings on stdout.
 
 ## Refusals
 
-- `.integration-pipeline/adr-draft.md` missing → refuse: "no design draft; run phase 03 first".
+- `.integration-pipeline/integration-design.md` missing → refuse: "no design draft; run phase 03 first".
 - Reference files missing → refuse: "performance methodology or nhcore context missing".

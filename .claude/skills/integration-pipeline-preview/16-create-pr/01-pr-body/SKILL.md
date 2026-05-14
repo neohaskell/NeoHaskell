@@ -36,18 +36,19 @@ If any assumption fails, refuse — do not guess.
 
 1. Load the design draft, findings, classification, and hlint log.
 2. Draft a conventional-commit title under 72 characters.
-3. Draft body sections in this order: Summary, Design draft reference, Changes, Security (link to findings-04 + findings-12), Performance (findings-05 + findings-13), Tests, Hlint, Checklist, `Closes #<issue_number>`.
+3. Draft body sections in this order: Summary, Design draft reference, Changes, Security (link to findings-04 + findings-12), Performance (findings-05 + findings-13), Tests, Hlint, Checklist. Append a final `Closes #<issue_number>` footer iff `pipeline.py get issue_number` is non-empty; otherwise omit the footer entirely.
 4. Render the **Hlint** section as follows:
    - If `.integration-pipeline/hlint.log` is empty: a single line `Hlint clean.`.
-   - Otherwise: a heading `### Hlint warnings`, a one-line preface noting the warnings did not block the pipeline and that CI's hlint check is the canonical gate, then the log contents inside a fenced ```` ``` ```` block. If the log exceeds ~80 lines, embed the first 80 lines verbatim and add a `...truncated; full log at .integration-pipeline/hlint.log` line.
-5. Render the **Checklist** as follows. Use `- [x]` for items the pipeline can attest to, `- [ ]` for items pending CI/maintainer:
+   - Otherwise: a heading `### Hlint warnings`, a one-line preface noting the warnings did not block the pipeline and that CI's hlint check is the canonical gate, then the log contents inside a fenced ```` ``` ```` block. If the log exceeds 80 lines, embed the first 80 lines verbatim and append a single `...truncated; full log at .integration-pipeline/hlint.log` line; the limit is a hard 80-line count (use `head -n 80`), not an approximation.
+5. Compute `N`, the warning count, as `grep -c "^[^ ]" .integration-pipeline/hlint.log` (each hlint warning starts on its own non-indented line; lines indented by spaces are continuation context for the preceding warning). If `grep` returns 0 for a non-empty file (e.g. the log is all continuation text), fall back to `wc -l < .integration-pipeline/hlint.log`.
+6. Render the **Checklist** as follows. Use `- [x]` for items the pipeline can attest to, `- [ ]` for items pending CI/maintainer:
    - `[x] Design draft approved` (phase 3 was approved)
    - `[x] Security findings grounded` (phase 12 marked complete)
    - `[x] Performance findings grounded` (phase 13 marked complete)
    - `[x] Tests passing` (phase 15 build + test gates passed)
-   - `Hlint:` followed by `clean ✓` when the log is empty, otherwise `N warning(s) — see the Hlint warnings section above` (no checkbox, since this is informational not gating).
-6. Write `.integration-pipeline/pr-title.txt` with the title only.
-7. Write `.integration-pipeline/pr-body.md` with the body.
+   - `Hlint:` followed by `clean ✓` when the log is empty, otherwise `<N> warning(s) — see the Hlint warnings section above` using the `N` from step 5 (no checkbox, since this is informational not gating).
+7. Write `.integration-pipeline/pr-title.txt` with the title only.
+8. Write `.integration-pipeline/pr-body.md` with the body.
 
 ## Output
 

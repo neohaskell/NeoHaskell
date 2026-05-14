@@ -21,5 +21,5 @@ Walk these steps in order. After step 2, PAUSE — wait for explicit maintainer 
 
 - PR body targets Jess as the reader (community-writer voice).
 - Title follows conventional-commit format.
-- Closes the originating issue with `Closes #N`.
+- If `pipeline.py get issue_number` returns a non-empty value, the PR body closes that issue with `Closes #N`. Otherwise the closing footer is omitted.
 - Branch is never `main`; the branch hook enforces this.

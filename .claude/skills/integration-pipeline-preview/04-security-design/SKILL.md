@@ -16,7 +16,7 @@ Runs a threat-model pass, then the mandatory grounding pass against the integrat
 2. **Ground** — spawn an Agent (model: sonnet) and instruct it to read `./02-ground/SKILL.md` and follow it on the threat-model output, the classification at `.integration-pipeline/classification.json`, and the references in `../references/grounding-loop.md`. Verify: stdout returns a JSON array where every finding has a `grounding_outcome` and a `severity_after_grounding`.
 3. **Record** — read `./03-record/SKILL.md` and follow it. Verify: `.integration-pipeline/findings-04.json` is written and `pipeline.py status` shows the findings registered for phase 4.
 
-Walk these steps in order. The grounding step MUST run, even on a `trivial` integration with zero raw findings — the resulting record is the audit trail. After step 3, the orchestrator runs `pipeline.py complete 4`.
+Walk these steps in order. The grounding step MUST run, even on a `trivial` integration with zero raw findings — the resulting record is the audit trail. The record leaf (step 3) calls `pipeline.py complete 4` internally via `scripts/record-findings.py`; the orchestrator must not call it again.
 
 ## Shared invariants
 
