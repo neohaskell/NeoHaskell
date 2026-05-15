@@ -88,6 +88,18 @@ Rule: wrap every secret in a dedicated newtype that (a) hand-writes `Show` to pr
 
 Reviewer check: any `deriving (Show, ToJSON, Generic, FromJSON)` on a type carrying a secret? Reject. Does any log/trace/exception render the secret value? Reject (use `Redacted` or hand-written `Show`). Is the secret kept in a plain `Text`/`String` (immutable, copied on GC, never zeroed) instead of `ScrubbedBytes`? Flag for long-lived secrets. Is the secret sourced from an env var (acceptable, but prefer file-mount or secret manager for production per OWASP) or from a tracked config file (reject)? Is there a single read-at-boot site, or is the env var read repeatedly?
 
+### 8a. NeoHaskell-specific: config-sourced secrets, never env-var reads in integration code
+
+Rule: in this codebase, the *only* sanctioned secret source for an outbound integration is the user's project `Config.hs` declared via the `Config.field @(Redacted Text) ... |> Config.required |> Config.envVar "..." |> Config.secret` DSL. The framework reads the env var once at boot, fails fast on missing required secrets, and exposes the value via the implicit `?config` parameter. Integration code reads `?config.<fieldName>` (or uses a `HasField "<fieldName>" config (Redacted Text)` constraint) and carries the value as `Redacted Text` end-to-end. There must be exactly one `Redacted.unwrap` site per integration — the line that constructs the outbound request header / auth tuple. Multiple unwraps, or any unwrap outside the request-builder module, is a finding.
+
+Reviewer check (raise as blocker on a `security-critical` integration):
+
+- Does the integration's source contain `Env.lookupEnv`, `System.Environment.getEnv`, or a `"${FOO_API_KEY}"` literal that gets expanded by a runtime helper? Reject — the integration should read `?config.<field>` instead.
+- Does the integration's public API accept a `Text` API key, OAuth token, or webhook signing secret as a function parameter? Reject — accept `Redacted Text` only, or remove the parameter and source from `?config`.
+- Does the integration declare `instance ToJSON Request` (or derive `Generic` + `ToJSON`) on a record that contains an unwrapped secret? Reject — either wrap the field as `Redacted Text` (whose `ToJSON` prints `"<redacted>"`) or hand-write the `ToJSON` instance to omit the secret.
+- Is there more than one `Redacted.unwrap` call site in the integration? Each additional site is a separate finding — narrow to one.
+- Legacy callout: `Integration.OpenRouter`, `Integration.Oura`, and `Integration.Http`'s `${VAR}` expansion in `Auth` are pre-existing tech debt, not exemplars. Cite them only to flag follow-up migration work; do not use them to justify new env-var reads in a new integration.
+
 Sources: <https://cheatsheetseries.owasp.org/cheatsheets/Secrets_Management_Cheat_Sheet.html> ; <https://hackage.haskell.org/package/securemem> ; <https://blog.arcjet.com/storing-secrets-in-env-vars-considered-harmful/> ; <https://blog.gitguardian.com/secure-your-secrets-with-env/>
 
 ## 9. The overkill smell / proportional review

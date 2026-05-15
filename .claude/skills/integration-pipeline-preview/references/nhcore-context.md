@@ -48,6 +48,27 @@ Bare `cabal ...` / `hlint ...` calls will fail outside the dev shell because the
 ## Framework-provided defaults
 
 - `Redacted` wrapper for secret values; hand-written `Show` printing `<redacted>` is the established pattern for secret newtypes (e.g. `ClientSecret`, `AccessToken`, `RefreshToken`, `HmacKey`).
+- **Config-sourced secrets, never env-var reads in integration code.** Every secret an integration needs (API keys, OAuth tokens, webhook signing secrets, bearers) is declared as a `Redacted Text` field in the user's project `Config.hs` via the `Config.field` / `Config.required` / `Config.envVar` / `Config.secret` DSL. The framework loads it once at startup, fails fast if missing, and exposes it via the implicit `?config` parameter. Integration code reads `?config.<fieldName>` and carries the value as `Redacted Text` end-to-end. **Integrations MUST NOT read environment variables themselves**, MUST NOT accept raw `Text` keys in their public API, and MUST NOT use the legacy `"${VAR}"` literal-expansion pattern (some older integrations like `Integration.OpenRouter` still do — those are tech debt awaiting migration, not a pattern to emulate). Canonical user-side declaration:
+
+  ```haskell
+  Config.field @(Redacted Text) "<integrationName>ApiKey"
+    |> Config.doc "<one-line purpose>"
+    |> Config.required
+    |> Config.envVar "<UPPER_SNAKE_ENV_VAR>"
+    |> Config.secret
+  ```
+
+  Canonical integration-side `send`-style signature:
+
+  ```haskell
+  send ::
+    ( ?config :: config
+    , HasField "<integrationName>ApiKey" config (Redacted Text)
+    ) =>
+    ... ->
+    Request command
+  ```
+
 - `canAccess` / `canView` two-phase authorization is a compile-time requirement for every query.
 - `RequestContext` threading is compile-time-enforced for every command.
 - `constEq` is the constant-time comparison primitive, with a mandatory `{-# INLINE constEq #-}` pragma.
@@ -63,3 +84,4 @@ A grounding pass demotes any finding that names one of these conditions, because
 - "SQL string concatenation risk" → Hasql forbids it; demote unless the diff bypasses Hasql.
 - "Lazy `String` in hot path" → nhcore exports `Text`, not `String`; demote unless `String` appears.
 - "Missing `pure`/`return` discipline" → `Task.yield`/`Result.ok` are the framework calls; demote.
+- "Secret stored as plain `Text`" → if the integration consumes the value via `?config.<field>` declared as `@(Redacted Text)`, the framework handles redaction; demote. Only kept-as-blocker when the diff actually unwraps `Redacted` somewhere other than the single audited site building the outbound request header.
