@@ -101,23 +101,7 @@ encodeRequest ::
   Text
 encodeRequest req =
   do
-    let bodyFields = case req.body of
-          HtmlBody html ->
-            Array.fromLinkedList [("htmlContent", Json.encode html)]
-          TextBody text ->
-            Array.fromLinkedList [("textContent", Json.encode text)]
-          Template { templateId, params } ->
-            do
-              let paramsJson =
-                    params
-                      |> Map.entries
-                      |> Array.map (\(k, v) -> (k, Json.encode v))
-                      |> Array.toLinkedList
-                      |> Json.object
-              Array.fromLinkedList
-                [ ("templateId", Json.encode templateId)
-                , ("params", paramsJson)
-                ]
+    let bodyFields = encodeBodyFields req.body
     let requiredFields =
           Array.fromLinkedList
             [ ("sender", Json.encode req.sender)
@@ -152,3 +136,32 @@ optionalArrayField fieldName arr =
   case Array.length arr of
     0 -> Nothing
     _ -> Just (fieldName, Json.encode arr)
+
+
+-- | Encode a map entry (key-value tuple) to JSON.
+encodeMapEntry :: (Text, Text) -> (Text, Json.Value)
+encodeMapEntry tuple =
+  case tuple of
+    (k, v) -> (k, Json.encode v)
+
+
+-- | Encode the body fields based on the Body variant.
+encodeBodyFields :: Body -> Array (Text, Json.Value)
+encodeBodyFields body =
+  case body of
+    HtmlBody html ->
+      Array.fromLinkedList [("htmlContent", Json.encode html)]
+    TextBody text ->
+      Array.fromLinkedList [("textContent", Json.encode text)]
+    Template { templateId, params } ->
+      do
+        let paramsJson =
+              params
+                |> Map.entries
+                |> Array.map encodeMapEntry
+                |> Array.toLinkedList
+                |> Json.object
+        Array.fromLinkedList
+          [ ("templateId", Json.encode templateId)
+          , ("params", paramsJson)
+          ]
