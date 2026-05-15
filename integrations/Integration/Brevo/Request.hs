@@ -36,7 +36,20 @@ data Address = Address
   } deriving (Eq, Show, Generic)
 
 
-instance Json.ToJSON Address
+-- | Hand-written ToJSON: Brevo's API expects @name@ omitted (not @null@)
+-- when no display name is supplied.
+instance Json.ToJSON Address where
+  toJSON addr =
+    case addr.name of
+      Nothing ->
+        Json.object [("email", Json.toJSON addr.email)]
+      Just displayName ->
+        Json.object
+          [ ("name", Json.toJSON displayName)
+          , ("email", Json.toJSON addr.email)
+          ]
+
+
 instance Json.FromJSON Address
 
 
@@ -45,9 +58,21 @@ instance Json.FromJSON Address
 newtype Sender = Sender Address deriving (Eq, Show)
 
 
+instance Json.ToJSON Sender where
+  toJSON s =
+    case s of
+      Sender addr -> Json.toJSON addr
+
+
 -- | A recipient address (one of: to, cc, bcc, replyTo). A newtype over
 -- 'Address' to prevent accidental swap with 'Sender'.
 newtype Recipient = Recipient Address deriving (Eq, Show)
+
+
+instance Json.ToJSON Recipient where
+  toJSON r =
+    case r of
+      Recipient addr -> Json.toJSON addr
 
 
 -- | Mutually-exclusive email body type. Brevo refuses requests that combine
@@ -78,7 +103,7 @@ data Request command = Request
   , apiKey :: Redacted Text
   , onSuccess :: Response -> command
   , onError :: Text -> command
-  } deriving (Generic)
+  }
 
 
 -- | Build a sender from just an email address (no display name).

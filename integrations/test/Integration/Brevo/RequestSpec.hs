@@ -48,14 +48,14 @@ spec = do
   describe "Integration.Brevo.send" do
     it "constructs Request with default fields populated from parameters (happy path: single recipient, HtmlBody)" do
       let testCfg = TestConfig { brevoApiKey = Redacted.wrap "test-api-key-123" }
-      let request = let ?config = testCfg in
-            send
-              (Brevo.sender "noreply@myapp.com")
-              (Brevo.recipient "user@example.com")
-              "Welcome"
-              (HtmlBody "<h1>Welcome</h1>")
-              (\_ -> ("success" :: Text))
-              (\_ -> ("error" :: Text))
+      let ?config = testCfg
+      let request = send
+            (Brevo.sender "noreply@myapp.com")
+            (Brevo.recipient "user@example.com")
+            "Welcome"
+            (HtmlBody "<h1>Welcome</h1>")
+            (\_ -> ("success" :: Text))
+            (\_ -> ("error" :: Text))
       request.subject `shouldBe` "Welcome"
       request.body `shouldBe` HtmlBody "<h1>Welcome</h1>"
       request.cc `shouldBe` Array.empty
@@ -65,39 +65,39 @@ spec = do
 
     it "constructs Request with TextBody variant" do
       let testCfg = TestConfig { brevoApiKey = Redacted.wrap "test-api-key-123" }
-      let request = let ?config = testCfg in
-            send
-              (Brevo.sender "noreply@myapp.com")
-              (Brevo.recipient "user@example.com")
-              "Welcome"
-              (TextBody "Welcome to MyApp")
-              (\_ -> ("success" :: Text))
-              (\_ -> ("error" :: Text))
+      let ?config = testCfg
+      let request = send
+            (Brevo.sender "noreply@myapp.com")
+            (Brevo.recipient "user@example.com")
+            "Welcome"
+            (TextBody "Welcome to MyApp")
+            (\_ -> ("success" :: Text))
+            (\_ -> ("error" :: Text))
       request.body `shouldBe` TextBody "Welcome to MyApp"
 
     it "constructs Request with single recipient (edge: verifies recipient type-safety via Recipient newtype)" do
       let testCfg = TestConfig { brevoApiKey = Redacted.wrap "test-api-key-123" }
       let recipientVal = Brevo.recipient "user@example.com"
-      let request = let ?config = testCfg in
-            send
-              (Brevo.sender "from@example.com")
-              recipientVal
-              "Test"
-              (HtmlBody "<p>Hi</p>")
-              (\_ -> ("success" :: Text))
-              (\_ -> ("error" :: Text))
+      let ?config = testCfg
+      let request = send
+            (Brevo.sender "from@example.com")
+            recipientVal
+            "Test"
+            (HtmlBody "<p>Hi</p>")
+            (\_ -> ("success" :: Text))
+            (\_ -> ("error" :: Text))
       request.to `shouldBe` Array.wrap (Brevo.recipient "user@example.com")
 
     it "constructs Request with config-provided API key (edge: implicit config parameter)" do
       let testCfg = TestConfig { brevoApiKey = Redacted.wrap "test-api-key-123" }
-      let request = let ?config = testCfg in
-            send
-              (Brevo.sender "from@example.com")
-              (Brevo.recipient "to@example.com")
-              "Test"
-              (HtmlBody "<p>Hi</p>")
-              (\_ -> ("success" :: Text))
-              (\_ -> ("error" :: Text))
+      let ?config = testCfg
+      let request = send
+            (Brevo.sender "from@example.com")
+            (Brevo.recipient "to@example.com")
+            "Test"
+            (HtmlBody "<p>Hi</p>")
+            (\_ -> ("success" :: Text))
+            (\_ -> ("error" :: Text))
       Redacted.unwrap request.apiKey `shouldBe` "test-api-key-123"
 
   describe "Integration.Brevo.Address" do

@@ -12,9 +12,10 @@ module Integration.Brevo.Internal
   , BrevoResponseHandler (..)
   ) where
 
+import Array (Array)
 import Array qualified
 import Basics
-import Integration.Brevo.Request (Address (..), Body (..), Recipient (..), Request (..), Sender (..))
+import Integration.Brevo.Request (Body (..), Request (..))
 import Integration.Brevo.Response (Response)
 import Integration.Http qualified as Http
 import Json qualified
@@ -91,66 +92,63 @@ handleBrevoResponse handler response =
 
 
 -- | Encode a Brevo Request to the JSON shape expected by the Brevo API.
+--
+-- Optional fields (@cc@, @bcc@, @replyTo@, @tags@) are omitted entirely
+-- when empty / Nothing, matching Brevo's wire contract.
 encodeRequest ::
   forall command.
   Request command ->
   Text
 encodeRequest req =
   do
-    let Sender senderAddress = req.sender
-    let senderJson = addressToJson senderAddress
-    let toJsonArray = req.to |> Array.map recipientToJson
-    let ccJsonArray = req.cc |> Array.map recipientToJson
-    let bccJsonArray = req.bcc |> Array.map recipientToJson
-    let replyToJson = req.replyTo |> fmap recipientToJson
-    let tagsJsonArray = req.tags |> Array.map Json.encode
     let bodyFields = case req.body of
           HtmlBody html ->
             Array.fromLinkedList [("htmlContent", Json.encode html)]
           TextBody text ->
             Array.fromLinkedList [("textContent", Json.encode text)]
           Template { templateId, params } ->
-            let paramsJson =
-                  params
-                    |> Map.entries
-                    |> Array.map (\(k, v) -> (k, Json.encode v))
-                    |> Array.toLinkedList
-                    |> Json.object
-            in
+            do
+              let paramsJson =
+                    params
+                      |> Map.entries
+                      |> Array.map (\(k, v) -> (k, Json.encode v))
+                      |> Array.toLinkedList
+                      |> Json.object
               Array.fromLinkedList
                 [ ("templateId", Json.encode templateId)
                 , ("params", paramsJson)
                 ]
-    let baseFields =
+    let requiredFields =
           Array.fromLinkedList
-            [ ("sender", senderJson)
-            , ("to", Json.encode toJsonArray)
+            [ ("sender", Json.encode req.sender)
+            , ("to", Json.encode req.to)
             , ("subject", Json.encode req.subject)
-            , ("cc", Json.encode ccJsonArray)
-            , ("bcc", Json.encode bccJsonArray)
-            , ("replyTo", Json.encode replyToJson)
-            , ("tags", Json.encode tagsJsonArray)
             ]
-    let allFields = baseFields |> Array.append bodyFields |> Array.toLinkedList
+    let optionalFields =
+          [ optionalArrayField "cc" req.cc
+          , optionalArrayField "bcc" req.bcc
+          , req.replyTo |> fmap (\r -> ("replyTo", Json.encode r))
+          , optionalArrayField "tags" req.tags
+          ]
+            |> Array.fromLinkedList
+            |> Array.getJusts
+    let allFields =
+          requiredFields
+            |> Array.append optionalFields
+            |> Array.append bodyFields
+            |> Array.toLinkedList
     Json.encodeText (Json.object allFields)
 
 
--- | Encode an Address to a JSON value.
-addressToJson :: Address -> Json.Value
-addressToJson addr =
-  case addr.name of
-    Nothing ->
-      Json.object
-        [ ("email", Json.encode addr.email)
-        ]
-    Just displayName ->
-      Json.object
-        [ ("name", Json.encode displayName)
-        , ("email", Json.encode addr.email)
-        ]
-
-
--- | Encode a Recipient to a JSON value by extracting its inner Address.
-recipientToJson :: Recipient -> Json.Value
-recipientToJson (Recipient addr) =
-  addressToJson addr
+-- | Pair @(name, JSON array)@ when @arr@ is non-empty, otherwise 'Nothing'.
+-- Used to omit empty optional array fields from the Brevo request body.
+optionalArrayField ::
+  forall a.
+  Json.ToJSON a =>
+  Text ->
+  Array a ->
+  Maybe (Text, Json.Value)
+optionalArrayField fieldName arr =
+  case Array.length arr of
+    0 -> Nothing
+    _ -> Just (fieldName, Json.encode arr)
