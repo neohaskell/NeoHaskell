@@ -47,6 +47,14 @@ Bare `cabal ...` / `hlint ...` calls will fail outside the dev shell because the
 
 ## Framework-provided defaults
 
+- **Wrap `Integration.Http` by default.** If the integration's outbound shape is HTTP request/response over HTTPS (no WebSocket, no Server-Sent Events, no long-lived socket, no background daemon, no scheduled poller, no non-HTTP transport), the integration **MUST** wrap `Integration.Http` rather than hand-roll an HTTP client. This covers ~95% of outbound integrations (REST/JSON APIs, GraphQL POST-only, webhooks-out). The canonical layout — used by `Integration.Brevo`, `Integration.OpenRouter`, `Integration.Oura` — is four files:
+    - `integrations/Integration/<Module>.hs` — re-export shell.
+    - `integrations/Integration/<Module>/Request.hs` — Jess-facing `Request`, smart constructors, body/auth-shape types.
+    - `integrations/Integration/<Module>/Response.hs` — `Response` and helper types with JSON instances.
+    - `integrations/Integration/<Module>/Internal.hs` — `toHttpRequest :: ... -> Http.Request command`, response dispatch, and the `ToAction (Request command)` instance so `Integration.outbound brevoReq` works directly.
+
+  Wrapping inherits `Integration.Http`'s retry, timeout, `Auth` redaction, env-var expansion (legacy), and `ToAction` machinery — re-implementing any of these in a new integration is a design-phase refusal. Departures from this default are allowed **only** when one of the following is concretely true and named in the design's `## Decision drivers`: the integration uses WebSocket / SSE / chunked-streaming response, holds a long-lived TCP/gRPC connection, runs a background polling daemon or scheduled timer, or speaks a non-HTTP wire protocol (raw TCP, UDP, IPC, file-system notify). A vague "for performance" or "for flexibility" is not a valid departure reason.
+
 - `Redacted` wrapper for secret values; hand-written `Show` printing `<redacted>` is the established pattern for secret newtypes (e.g. `ClientSecret`, `AccessToken`, `RefreshToken`, `HmacKey`).
 - **Config-sourced secrets, never env-var reads in integration code.** Every secret an integration needs (API keys, OAuth tokens, webhook signing secrets, bearers) is declared as a `Redacted Text` field in the user's project `Config.hs` via the `Config.field` / `Config.required` / `Config.envVar` / `Config.secret` DSL. The framework loads it once at startup, fails fast if missing, and exposes it via the implicit `?config` parameter. Integration code reads `?config.<fieldName>` and carries the value as `Redacted Text` end-to-end. **Integrations MUST NOT read environment variables themselves**, MUST NOT accept raw `Text` keys in their public API, and MUST NOT use the legacy `"${VAR}"` literal-expansion pattern (some older integrations like `Integration.OpenRouter` still do — those are tech debt awaiting migration, not a pattern to emulate). Canonical user-side declaration:
 
