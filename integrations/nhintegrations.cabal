@@ -100,6 +100,10 @@ library
     Integration.Pdf
     Integration.Pdf.ExtractText
     Integration.Pdf.ExtractText.Internal
+    Integration.Brevo
+    Integration.Brevo.Request
+    Integration.Brevo.Response
+    Integration.Brevo.Internal
   hs-source-dirs: .
   default-language: GHC2021
 
@@ -131,6 +135,9 @@ test-suite nhintegrations-test
     Integration.Agent.Spec
     Integration.Agent.TestFixtures
     Integration.Agent.TypesSpec
+    Integration.Brevo.RequestSpec
+    Integration.Brevo.ResponseSpec
+    Integration.Brevo.InternalSpec
   build-depends:
     hspec,
     nhintegrations
