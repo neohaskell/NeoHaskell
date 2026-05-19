@@ -174,7 +174,10 @@ handleToolsCall state request = do
               Task.yield (Just (JsonRpc.errorResponse requestId (JsonRpc.invalidParams [fmt|Unknown tool: #{toolName}|])))
             Just handler -> do
               let callTask = do
-                    requestContext <- Auth.anonymousContext
+                    -- Trusted context: MCP is a local process-trust transport,
+                    -- not an external untrusted caller. Bypasses the
+                    -- canExecuteImpl gate so the pre-gate semantics survive.
+                    requestContext <- Auth.trustedContext
                     let argBytes = Json.encodeText arguments |> Text.toBytes
                     resultVar <- ConcurrentVar.new
                     handler requestContext argBytes (\(commandResponse, _responseBytes) -> do

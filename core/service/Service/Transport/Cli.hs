@@ -142,8 +142,11 @@ instance Transport CliTransport where
     -- Parse CLI args
     (_cmdName, selectedHandler, jsonVal) <- Command.parseHandler options
       |> Task.mapError (\_ -> "Failed to parse CLI arguments")
-    -- Build request context (anonymous for CLI)
-    requestContext <- Auth.anonymousContext
+    -- Build a trusted context for CLI invocations: the operator is invoking
+    -- the binary directly, no external untrusted caller is involved, so the
+    -- dispatcher's canExecuteImpl gate is bypassed (preserving pre-gate
+    -- behaviour where every CLI command was reachable).
+    requestContext <- Auth.trustedContext
     -- Encode JSON value to bytes
     let requestBytes = Json.encodeText jsonVal |> Text.toBytes
     -- Call the handler

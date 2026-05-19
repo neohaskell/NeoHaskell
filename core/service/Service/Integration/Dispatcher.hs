@@ -891,8 +891,13 @@ dispatchCommand endpoints payload = do
   let cmdType = payload.commandType
   case Map.get cmdType endpoints of
     Just handler -> do
-      -- Create anonymous context for system-triggered commands
-      requestContext <- Auth.anonymousContext
+      -- System-triggered commands (inbound timers, outbound integration
+      -- callbacks) run on the framework's behalf, not on behalf of an
+      -- external caller. Use trustedContext so the dispatcher's
+      -- canExecuteImpl gate bypasses them — otherwise inbound integrations
+      -- like the periodic timer would be rejected by the default
+      -- authenticatedAccess gate.
+      requestContext <- Auth.trustedContext
       let cmdBytes = Json.encodeText payload.commandData |> Text.toBytes
       let responseCallback (response, _) = do
             case response of
