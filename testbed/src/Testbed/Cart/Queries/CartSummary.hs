@@ -9,7 +9,8 @@ module Testbed.Cart.Queries.CartSummary (
 import Array qualified
 import Core
 import Json qualified
-import Service.Query.Auth (AccessError, UserClaims, publicAccess, publicView)
+import Service.AccessControl (AccessError, UserClaims)
+import Service.AccessControl qualified as AccessControl
 import Service.Query.TH (deriveQuery)
 import Testbed.Cart.Core (CartEntity (..))
 
@@ -42,13 +43,13 @@ instance ToSchema CartSummary
 -- | Authorization: Public access for demo/testing purposes
 -- In a real app, you might use authenticatedAccess here
 canAccess :: Maybe UserClaims -> Maybe AccessError
-canAccess = publicAccess
+canAccess claims = AccessControl.publicAccess claims
 
 
 -- | Authorization: Public view for demo/testing purposes
 -- In a real app, you might use ownerOnly (.ownerId) here
 canView :: Maybe UserClaims -> CartSummary -> Maybe AccessError
-canView = publicView
+canView claims cartSummary = AccessControl.publicView claims cartSummary
 
 
 -- | Use TH to derive Query instances.

@@ -10,8 +10,8 @@ import Map qualified
 import Network.HTTP.Types.Header qualified as HTTP
 import Network.Wai qualified as Wai
 import Network.Wai.Internal qualified as WaiInternal
-import Service.Query.Auth (AccessError (..))
-import Service.Query.Auth qualified as Auth
+import Service.AccessControl (AccessError (..))
+import Service.AccessControl qualified as Auth
 import Service.Query.Core qualified
 import Service.Query.Endpoint qualified as Endpoint
 import Service.Query.Pagination (QueryPageRequest (..), absoluteMaxLimit)

@@ -17,7 +17,7 @@ import Map qualified
 import Maybe (Maybe (..))
 import Text (Text)
 import ToText (toText)
-import Service.Query.Auth (AccessError (..))
+import Service.AccessControl (AccessError (..))
 import Service.Command.Core (Command (..), UserClaims (..))
 import Test
 

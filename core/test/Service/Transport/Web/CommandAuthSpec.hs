@@ -28,7 +28,7 @@ import Map qualified
 import Maybe (Maybe (..))
 import Network.HTTP.Types.Status qualified as HTTP
 import Service.Auth qualified as Auth
-import Service.Query.Auth (AccessError (..))
+import Service.AccessControl (AccessError (..))
 import Service.Command.Core (Command (..), UserClaims (..))
 import Service.CommandExecutor qualified as CommandExecutor
 import Service.CommandExecutor.Core (ExecutionResult (..))

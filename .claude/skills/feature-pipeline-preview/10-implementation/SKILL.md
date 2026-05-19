@@ -27,6 +27,7 @@ Assumptions:
 - NeoHaskell style is strict: pipes (`|>`) over nesting, `do`+`let` over `let..in`/`where`, `case`...`of` over guards in arg lists, qualified imports, `[fmt|...|]` for strings, `Task`/`Result` not `IO`/`Either`, no `$`, no point-free.
 - nhcore has `Strict` enabled globally — never add `!` annotations.
 - Test files are immutable in this phase — never edit them.
+- **Boy scout rule applies.** Any file this phase opens for writing is fair game for fixing pre-existing style debt (unqualified imports, point-free top-levels, wildcard params, raw `String`/`IO`/`Either`, `$`, `let..in`/`where`, `<>`/`++`). The rule does not apply to test bodies/assertions (still immutable) but it does apply to helpers, imports, and fixtures the phase legitimately touches. See `../references/nhcore-context.md#boy-scout-rule`.
 
 If any assumption fails, refuse — do not guess.
 

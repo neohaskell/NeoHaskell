@@ -15,7 +15,7 @@ import Basics
 import Map qualified
 import Maybe (Maybe (..))
 import Text (Text)
-import Service.Query.Auth (
+import Service.AccessControl (
   AccessError (..),
  )
 import Service.Command.CanAccess.NoCanAccessFixture (CommandWithoutCanAccess (..))

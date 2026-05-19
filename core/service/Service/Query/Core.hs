@@ -18,7 +18,7 @@ import Auth.Claims (UserClaims)
 import Basics
 import Maybe (Maybe)
 import Service.Entity.Core (Entity)
-import Service.Query.Auth (AccessError)
+import Service.AccessControl (AccessError)
 import Service.Query.Pagination (absoluteMaxLimit)
 import Uuid (Uuid)
 

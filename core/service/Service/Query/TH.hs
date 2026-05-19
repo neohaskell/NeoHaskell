@@ -89,7 +89,7 @@ Please add the following function to your module:
   canAccess :: Maybe UserClaims -> Maybe AccessError
   canAccess = authenticatedAccess  -- Secure default: requires login
 
-Available helpers from Service.Query.Auth:
+Available helpers from Service.AccessControl:
   - authenticatedAccess    -- Requires valid JWT token (RECOMMENDED DEFAULT)
   - requirePermission "x"  -- Requires specific permission
   - publicAccess           -- Anyone can access (use only for truly public data)
@@ -109,7 +109,7 @@ Please add the following function to your module:
   canView :: Maybe UserClaims -> #{queryTypeStr} -> Maybe AccessError
   canView = ownerOnly (.ownerId)  -- Secure default: only owner can view
 
-Available helpers from Service.Query.Auth:
+Available helpers from Service.AccessControl:
   - ownerOnly (.ownerId)   -- Only the owner can view (RECOMMENDED for user data)
   - publicView             -- Anyone can view (use only after canAccess check)
 |]

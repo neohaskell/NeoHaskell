@@ -254,7 +254,7 @@ library
     Service.OutboundIntegration.Core
     Service.OutboundIntegration.TH
     Service.Query
-    Service.Query.Auth
+    Service.AccessControl
     Service.Query.Core
     Service.Query.Definition
     Service.Query.Endpoint

@@ -29,7 +29,7 @@
 -- canAccess = publicAccess  -- EXPLICIT opt-in to public access
 -- canView = publicView
 -- @
-module Service.Query.Auth (
+module Service.AccessControl (
   -- * Re-exports
   UserClaims (..),
 

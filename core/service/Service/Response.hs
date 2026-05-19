@@ -5,7 +5,7 @@ module Service.Response (
 
 import Basics
 import Json qualified
-import Service.Query.Auth (AccessError)
+import Service.AccessControl (AccessError)
 import Service.CommandExecutor.Core (ExecutionResult (..))
 import Service.Event.StreamId qualified as StreamId
 import Text (Text)

@@ -46,7 +46,7 @@ import GHC.TypeLits qualified as GHC
 import Maybe (Maybe)
 import Record qualified
 import Service.Auth (RequestContext (..), UserClaims (..))
-import Service.Query.Auth (AccessError, authenticatedAccess)
+import Service.AccessControl (AccessError, authenticatedAccess)
 import Service.Entity.Core (Entity (..), EntityOf, Event (..), EventOf)
 import Text (Text)
 import Text qualified

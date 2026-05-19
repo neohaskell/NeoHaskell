@@ -57,7 +57,7 @@ import Service.FileUpload.Core (FileRef (..))
 import Service.FileUpload.Core qualified as FileUpload
 import Service.FileUpload.Web (FileUploadRoutes (..))
 import Service.CommandExecutor.TH (deriveKnownHash)
-import Service.Query.Auth (AccessError (..), QueryEndpointError (..))
+import Service.AccessControl (AccessError (..), QueryEndpointError (..))
 import Service.Query.Pagination qualified as Pagination
 import Service.Response (CommandResponse)
 import Service.Response qualified as Response

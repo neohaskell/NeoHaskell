@@ -1,4 +1,4 @@
--- | Tests for Service.Query.Auth helper functions.
+-- | Tests for Service.AccessControl helper functions.
 --
 -- These tests cover publicAccess, authenticatedAccess, requirePermission,
 -- requireAnyPermission, requireAllPermissions, and the AccessError type alias.
@@ -14,7 +14,7 @@ import Map qualified
 import Maybe (Maybe (..))
 import Text (Text)
 import ToText (toText)
-import Service.Query.Auth (
+import Service.AccessControl (
   AccessError,
   AccessError (..),
   authenticatedAccess,
@@ -55,7 +55,7 @@ someClaims = mkClaims Array.empty
 
 spec :: Spec Unit
 spec = do
-  describe "Service.Query.Auth" do
+  describe "Service.AccessControl" do
 
     -- ========================================================================
     -- publicAccess

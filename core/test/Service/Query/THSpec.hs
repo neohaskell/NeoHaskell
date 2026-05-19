@@ -8,7 +8,7 @@ import Data.Proxy (Proxy (..))
 import GHC.TypeLits (symbolVal)
 import Json qualified
 import Language.Haskell.TH.Syntax qualified as TH
-import Service.Query.Auth (AccessError)
+import Service.AccessControl (AccessError)
 import Service.Query.TH (deriveQuery)
 import Test
 import Text qualified

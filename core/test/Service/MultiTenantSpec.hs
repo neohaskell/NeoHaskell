@@ -16,8 +16,8 @@ import Service.Event.StreamId (StreamId (..))
 import Service.Event.StreamId qualified as StreamId
 import Service.EventStore.Core qualified as EventStore
 import Service.EventStore.InMemory qualified as InMemory
-import Service.Query.Auth (AccessError (..))
-import Service.Query.Auth qualified as Auth
+import Service.AccessControl (AccessError (..))
+import Service.AccessControl qualified as Auth
 import Task qualified
 import Test
 import Test.Service.Command.Core (
