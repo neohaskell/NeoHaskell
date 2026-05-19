@@ -221,7 +221,6 @@ library
     Service
     Service.Auth
     Service.Command
-    Service.Command.Auth
     Service.Command.Core
     Service.CommandExecutor
     Service.CommandExecutor.Core

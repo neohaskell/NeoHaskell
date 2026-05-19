@@ -87,7 +87,7 @@ main = Hspec.hspec do
   Hspec.describe "Service.Transport.Mcp.Response" Service.Transport.Mcp.ResponseSpec.spec
   Hspec.describe "Service.Transport.Web" Service.Transport.WebSpec.spec
   Hspec.describe "Health Check" Service.Transport.Web.HealthCheckSpec.spec
-  Hspec.describe "Service.Command.Auth" Service.Command.AuthSpec.spec
+  Hspec.describe "Service.Query.Auth" Service.Command.AuthSpec.spec
   Hspec.describe "Service.Command.CanAccess" Service.Command.CanAccessSpec.spec
   Hspec.describe "Service.Transport.Web.CommandAuth" Service.Transport.Web.CommandAuthSpec.spec
   Hspec.describe "Service.CommandExecutor.AuditLogging" Service.CommandExecutor.AuditLoggingSpec.spec

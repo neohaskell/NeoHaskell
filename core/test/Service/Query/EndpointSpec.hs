@@ -5,7 +5,7 @@ import Auth.Claims (UserClaims (..))
 import Core
 import Json qualified
 import Map qualified
-import Service.Query.Auth (QueryAuthError (..), QueryEndpointError)
+import Service.Query.Auth (AccessError (..), QueryEndpointError)
 import Service.Query.Auth qualified as Auth
 import Service.Query.Core qualified
 import Service.Query.Endpoint qualified as Endpoint

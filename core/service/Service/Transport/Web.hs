@@ -56,7 +56,7 @@ import Service.FileUpload.Core (FileRef (..))
 import Service.FileUpload.Core qualified as FileUpload
 import Service.FileUpload.Web (FileUploadRoutes (..))
 import Service.CommandExecutor.TH (deriveKnownHash)
-import Service.Query.Auth (QueryAuthError (..), QueryEndpointError (..))
+import Service.Query.Auth (AccessError (..), QueryEndpointError (..))
 import Service.Query.Pagination qualified as Pagination
 import Service.Response (CommandResponse)
 import Service.Response qualified as Response
@@ -1233,7 +1233,7 @@ buildHealthResponse transport =
 -- The message intentionally carries no information about the caller's
 -- claims or the permission name — that data stays on the server side and
 -- is only visible in the audit log.
-unauthorizedResponse :: QueryAuthError -> (HTTP.Status, Text)
+unauthorizedResponse :: AccessError -> (HTTP.Status, Text)
 unauthorizedResponse authError =
   case authError of
     Unauthenticated -> (HTTP.status401, "Authentication required")

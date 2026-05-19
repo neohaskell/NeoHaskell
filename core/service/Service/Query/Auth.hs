@@ -34,7 +34,7 @@ module Service.Query.Auth (
   UserClaims (..),
 
   -- * Error Types
-  QueryAuthError (..),
+  AccessError (..),
   QueryEndpointError (..),
 
   -- * Pre-fetch Helpers (canAccess)
@@ -61,7 +61,7 @@ import Text qualified
 
 
 -- | Errors that can occur during query authorization.
-data QueryAuthError
+data AccessError
   = -- | No user identity provided (not authenticated)
     Unauthenticated
   | -- | User lacks permission to view this specific instance
@@ -71,17 +71,17 @@ data QueryAuthError
   deriving (Generic, Eq, Ord, Show)
 
 
-instance Json.ToJSON QueryAuthError
+instance Json.ToJSON AccessError
 
 
-instance Json.FromJSON QueryAuthError
+instance Json.FromJSON AccessError
 
 
 -- | Errors that can occur during query endpoint execution.
 -- This typed error enables proper HTTP status mapping without string matching.
 data QueryEndpointError
   = -- | Authorization failed (maps to 401 or 403)
-    AuthorizationError QueryAuthError
+    AuthorizationError AccessError
   | -- | Storage/serialization failed (maps to 500)
     StorageError Text
   deriving (Generic, Eq, Show)
@@ -99,7 +99,7 @@ data QueryEndpointError
 -- @
 -- canAccess = authenticatedAccess  -- RECOMMENDED
 -- @
-authenticatedAccess :: Maybe UserClaims -> Maybe QueryAuthError
+authenticatedAccess :: Maybe UserClaims -> Maybe AccessError
 authenticatedAccess user = case user of
   Nothing -> Just Unauthenticated
   Just _ -> Nothing
@@ -114,7 +114,7 @@ authenticatedAccess user = case user of
 -- -- Only use for genuinely public data
 -- canAccess = publicAccess
 -- @
-publicAccess :: Maybe UserClaims -> Maybe QueryAuthError
+publicAccess :: Maybe UserClaims -> Maybe AccessError
 publicAccess _ = Nothing
 
 
@@ -123,7 +123,7 @@ publicAccess _ = Nothing
 -- @
 -- canAccess = requirePermission "inventory:read"
 -- @
-requirePermission :: Text -> Maybe UserClaims -> Maybe QueryAuthError
+requirePermission :: Text -> Maybe UserClaims -> Maybe AccessError
 requirePermission permission user = case user of
   Nothing -> Just Unauthenticated
   Just claims ->
@@ -137,7 +137,7 @@ requirePermission permission user = case user of
 -- @
 -- canAccess = requireAnyPermission ["admin:read", "manager:read"]
 -- @
-requireAnyPermission :: Array Text -> Maybe UserClaims -> Maybe QueryAuthError
+requireAnyPermission :: Array Text -> Maybe UserClaims -> Maybe AccessError
 requireAnyPermission requiredPermissions user = case user of
   Nothing -> Just Unauthenticated
   Just claims -> do
@@ -154,7 +154,7 @@ requireAnyPermission requiredPermissions user = case user of
 -- @
 -- canAccess = requireAllPermissions ["inventory:read", "warehouse:access"]
 -- @
-requireAllPermissions :: Array Text -> Maybe UserClaims -> Maybe QueryAuthError
+requireAllPermissions :: Array Text -> Maybe UserClaims -> Maybe AccessError
 requireAllPermissions requiredPermissions user = case user of
   Nothing -> Just Unauthenticated
   Just claims -> do
@@ -177,7 +177,7 @@ requireAllPermissions requiredPermissions user = case user of
 -- @
 -- canView = publicView
 -- @
-publicView :: forall query. Maybe UserClaims -> query -> Maybe QueryAuthError
+publicView :: forall query. Maybe UserClaims -> query -> Maybe AccessError
 publicView _ _ = Nothing
 
 
@@ -194,7 +194,7 @@ ownerOnly ::
   (query -> Text) ->
   Maybe UserClaims ->
   query ->
-  Maybe QueryAuthError
+  Maybe AccessError
 ownerOnly getOwnerId user query = case user of
   Nothing -> Just Unauthenticated
   Just claims ->
@@ -218,7 +218,7 @@ tenantOnly ::
   (query -> Text) ->
   Maybe UserClaims ->
   query ->
-  Maybe QueryAuthError
+  Maybe AccessError
 tenantOnly getTenantId user query = case user of
   Nothing -> Just Unauthenticated
   Just claims ->

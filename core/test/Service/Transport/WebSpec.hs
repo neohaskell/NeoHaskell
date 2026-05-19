@@ -10,7 +10,7 @@ import Map qualified
 import Network.HTTP.Types.Header qualified as HTTP
 import Network.Wai qualified as Wai
 import Network.Wai.Internal qualified as WaiInternal
-import Service.Query.Auth (QueryAuthError (..))
+import Service.Query.Auth (AccessError (..))
 import Service.Query.Auth qualified as Auth
 import Service.Query.Core qualified
 import Service.Query.Endpoint qualified as Endpoint

@@ -3,9 +3,9 @@
 -- The Web transport itself is a thin shell over two load-bearing parts:
 --
 --   * The dispatcher (@Service.CommandExecutor.Core.execute@) which calls
---     'canAccessImpl' before 'decideImpl'. Every transport routes through
+--     'canExecuteImpl' before 'decideImpl'. Every transport routes through
 --     this single entry point, so parity is by construction.
---   * The HTTP rendering of 'CommandAuthError' done by Web.hs via
+--   * The HTTP rendering of 'AccessError' done by Web.hs via
 --     'unauthorizedResponse' and 'unauthorizedResponseBody'.
 --
 -- This spec therefore exercises three layers:
@@ -28,7 +28,7 @@ import Map qualified
 import Maybe (Maybe (..))
 import Network.HTTP.Types.Status qualified as HTTP
 import Service.Auth qualified as Auth
-import Service.Command.Auth (QueryAuthError (..))
+import Service.Query.Auth (AccessError (..))
 import Service.Command.Core (Command (..), UserClaims (..))
 import Service.CommandExecutor qualified as CommandExecutor
 import Service.CommandExecutor.Core (ExecutionResult (..))
@@ -115,40 +115,40 @@ spec = do
 
 typeclassDispatchSpecs :: Spec Unit
 typeclassDispatchSpecs = do
-  describe "canAccessImpl resolves correctly per command policy (TH wiring)" do
+  describe "canExecuteImpl resolves correctly per command policy (TH wiring)" do
     describe "default command (canAccess omitted → authenticatedAccess)" do
       it "[non-happy] no claims → Just Unauthenticated" \_ -> do
-        let result = canAccessImpl @CommandWithoutCanAccess Nothing
+        let result = canExecuteImpl @CommandWithoutCanAccess Nothing
         result |> shouldBe (Just Unauthenticated)
 
       it "[happy] claims present → Nothing" \_ -> do
         let claims = mkClaims Array.empty
-        let result = canAccessImpl @CommandWithoutCanAccess (Just claims)
+        let result = canExecuteImpl @CommandWithoutCanAccess (Just claims)
         result |> shouldBe Nothing
 
     describe "public command (canAccess = publicAccess)" do
       it "[happy] no claims → Nothing" \_ -> do
-        let result = canAccessImpl @CommandWithPublicAccess Nothing
+        let result = canExecuteImpl @CommandWithPublicAccess Nothing
         result |> shouldBe Nothing
 
       it "[happy] claims present → Nothing" \_ -> do
         let claims = mkClaims Array.empty
-        let result = canAccessImpl @CommandWithPublicAccess (Just claims)
+        let result = canExecuteImpl @CommandWithPublicAccess (Just claims)
         result |> shouldBe Nothing
 
     describe "permission-gated command (canAccess = requirePermission \"admin:delete\")" do
       it "[non-happy] no claims → Just Unauthenticated" \_ -> do
-        let result = canAccessImpl @CommandWithAdminDelete Nothing
+        let result = canExecuteImpl @CommandWithAdminDelete Nothing
         result |> shouldBe (Just Unauthenticated)
 
       it "[happy] permission present → Nothing" \_ -> do
         let claims = mkClaims ["admin:delete"]
-        let result = canAccessImpl @CommandWithAdminDelete (Just claims)
+        let result = canExecuteImpl @CommandWithAdminDelete (Just claims)
         result |> shouldBe Nothing
 
       it "[non-happy] permission absent → Just InsufficientPermissions" \_ -> do
         let claims = mkClaims ["user:read"]
-        let result = canAccessImpl @CommandWithAdminDelete (Just claims)
+        let result = canExecuteImpl @CommandWithAdminDelete (Just claims)
         result |> shouldBe (Just (InsufficientPermissions ["admin:delete"]))
 
 
@@ -159,7 +159,7 @@ typeclassDispatchSpecs = do
 
 httpRenderingSpecs :: Spec Unit
 httpRenderingSpecs = do
-  describe "Web transport renders CommandAuthError to HTTP via pure helpers" do
+  describe "Web transport renders AccessError to HTTP via pure helpers" do
     it "Unauthenticated → 401 with 'Authentication required'" \_ -> do
       case unauthorizedResponse Unauthenticated of
         (status, msg) -> do
@@ -208,7 +208,7 @@ httpRenderingSpecs = do
 
 dispatcherParitySpecs :: Spec Unit
 dispatcherParitySpecs = do
-  describe "shared dispatcher: canAccessImpl fires before decideImpl" do
+  describe "shared dispatcher: canExecuteImpl fires before decideImpl" do
     -- The dispatcher is the single entry point all transports route through.
     -- Exercising it once proves parity by construction: Web, Cli, Mcp, and
     -- Internal each delegate to 'CommandExecutor.execute', so any transport
@@ -216,7 +216,7 @@ dispatcherParitySpecs = do
     -- architecturally visible change.
 
     it "anonymous + default-auth command → dispatcher rejects with CommandUnauthorized Unauthenticated" \_ -> do
-      -- AuthenticatedAddItem inherits 'canAccessImpl = authenticatedAccess'
+      -- AuthenticatedAddItem inherits 'canExecuteImpl = authenticatedAccess'
       -- (no override in testlib), so anonymous context must reject at the
       -- dispatcher BEFORE decideImpl runs. We verify this by passing an
       -- emptyContext and asserting the dispatcher emits CommandUnauthorized,
@@ -230,7 +230,7 @@ dispatcherParitySpecs = do
         other -> fail [fmt|Expected CommandUnauthorized Unauthenticated from dispatcher gate, got #{toText other}|]
 
     it "anonymous + publicAccess command → dispatcher passes through (gate does NOT short-circuit)" \_ -> do
-      -- AddItemToCart has 'canAccessImpl = publicAccess' in testlib. The
+      -- AddItemToCart has 'canExecuteImpl = publicAccess' in testlib. The
       -- dispatcher must pass through to decideImpl; the resulting reject
       -- comes from the business rule (Cart does not exist), proving the
       -- gate is per-command and not a blanket reject.

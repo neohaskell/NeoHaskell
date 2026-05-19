@@ -1,6 +1,6 @@
 -- | Audit-logging tests for CommandUnauthorized.
 --
--- These tests verify that canAccessImpl returns the correct errors for different
+-- These tests verify that canExecuteImpl returns the correct errors for different
 -- command types and auth states, and that the error constructors carry the right data
 -- for audit logging (constructor name, never permission strings or PII).
 --
@@ -14,7 +14,7 @@ import Map qualified
 import Maybe (Maybe (..))
 import Text (Text)
 import ToText (toText)
-import Service.Command.Auth (QueryAuthError (..))
+import Service.Query.Auth (AccessError (..))
 import Service.Command.Core (Command (..), UserClaims (..))
 import Test
 
@@ -42,43 +42,43 @@ spec :: Spec Unit
 spec = do
   describe "Service.CommandExecutor.Core audit logging for CommandUnauthorized" do
 
-    it "[non-happy] canAccessImpl returns Just Unauthenticated for anonymous caller on default command" \_ -> do
-      -- spec case: logs exactly one Log.warn record when canAccessImpl returns Just Unauthenticated
+    it "[non-happy] canExecuteImpl returns Just Unauthenticated for anonymous caller on default command" \_ -> do
+      -- spec case: logs exactly one Log.warn record when canExecuteImpl returns Just Unauthenticated
       -- This proves: audit trail should contain Unauthenticated constructor name
-      -- RED: canAccessImpl stub panics instead of returning Just Unauthenticated
-      let result = canAccessImpl @CommandWithoutCanAccess Nothing
+      -- RED: canExecuteImpl stub panics instead of returning Just Unauthenticated
+      let result = canExecuteImpl @CommandWithoutCanAccess Nothing
       result |> shouldBe (Just Unauthenticated)
 
-    it "[non-happy] claims_present = False when user = Nothing → canAccessImpl returns Unauthenticated" \_ -> do
+    it "[non-happy] claims_present = False when user = Nothing → canExecuteImpl returns Unauthenticated" \_ -> do
       -- spec case: logs claims_present = False when requestContext.user = Nothing
       -- This proves: audit trail correctly reflects absence of claims
-      -- RED: canAccessImpl stub panics
-      let result = canAccessImpl @CommandWithoutCanAccess Nothing
+      -- RED: canExecuteImpl stub panics
+      let result = canExecuteImpl @CommandWithoutCanAccess Nothing
       result |> shouldBe (Just Unauthenticated)
 
-    it "[non-happy] claims_present = True when user = Just claims → canAccessImpl returns InsufficientPermissions" \_ -> do
+    it "[non-happy] claims_present = True when user = Just claims → canExecuteImpl returns InsufficientPermissions" \_ -> do
       -- spec case: logs claims_present = True when requestContext.user = Just claims
       -- This proves: audit trail correctly reflects presence of claims
-      -- RED: canAccessImpl (TH stub) panics instead of returning InsufficientPermissions
+      -- RED: canExecuteImpl (TH stub) panics instead of returning InsufficientPermissions
       let claimsPresent = mkClaims Array.empty
-      let result = canAccessImpl @CommandWithAdminDelete (Just claimsPresent)
+      let result = canExecuteImpl @CommandWithAdminDelete (Just claimsPresent)
       result |> shouldBe (Just (InsufficientPermissions ["admin:delete"]))
 
     it "[non-happy] constructor name InsufficientPermissions (not permission contents) is auditable" \_ -> do
       -- spec case: logs constructor name InsufficientPermissions (never the permission list)
       -- This proves: audit uses constructor name for error type, not permission details
-      -- RED: canAccessImpl (TH stub) panics instead of returning InsufficientPermissions
+      -- RED: canExecuteImpl (TH stub) panics instead of returning InsufficientPermissions
       let claims = mkClaims Array.empty
-      let result = canAccessImpl @CommandWithAdminDelete (Just claims)
+      let result = canExecuteImpl @CommandWithAdminDelete (Just claims)
       -- The result contains InsufficientPermissions for audit logging
       -- but the audit log should only record the constructor name, not the perms list
       case result of
         Just (InsufficientPermissions _) -> pass
         other -> fail [fmt|expected InsufficientPermissions for audit log, got #{toText other}|]
 
-    it "[non-happy] canAccessImpl never returns claim contents in error payload" \_ -> do
+    it "[non-happy] canExecuteImpl never returns claim contents in error payload" \_ -> do
       -- spec case: even when claims contain PII (sub, email, permissions),
-      -- the CommandAuthError payload carries only the required permission name(s).
+      -- the AccessError payload carries only the required permission name(s).
       -- This proves: claim contents do not flow into the value the dispatcher
       -- would emit to the audit log; the constructor + permission-name shape is
       -- the maximum information a rejection carries.
@@ -90,7 +90,7 @@ spec = do
             , tenantId = Just "tenant-marker-abc"
             , rawClaims = Map.empty
             }
-      let result = canAccessImpl @CommandWithAdminDelete (Just pii)
+      let result = canExecuteImpl @CommandWithAdminDelete (Just pii)
       case result of
         Just (InsufficientPermissions required) -> do
           -- The payload contains only the required permission name.
@@ -108,10 +108,10 @@ spec = do
             Nothing -> pass
         other -> fail [fmt|expected InsufficientPermissions [admin:delete], got #{toText other}|]
 
-    it "[non-happy] canAccessImpl with default command returns Unauthenticated (command type identifiable)" \_ -> do
+    it "[non-happy] canExecuteImpl with default command returns Unauthenticated (command type identifiable)" \_ -> do
       -- spec case: logs command type name extracted from the typeclass dispatch
       -- This proves: audit trail identifies which command was rejected
       -- The command type CommandWithoutCanAccess is the type being tested
-      -- RED: canAccessImpl stub panics; the @CommandWithoutCanAccess dispatch fails
-      let result = canAccessImpl @CommandWithoutCanAccess Nothing
+      -- RED: canExecuteImpl stub panics; the @CommandWithoutCanAccess dispatch fails
+      let result = canExecuteImpl @CommandWithoutCanAccess Nothing
       result |> shouldBe (Just Unauthenticated)

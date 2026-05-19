@@ -1,7 +1,7 @@
--- | Tests for Service.Command.Auth helper functions.
+-- | Tests for Service.Query.Auth helper functions.
 --
 -- These tests cover publicAccess, authenticatedAccess, requirePermission,
--- requireAnyPermission, requireAllPermissions, and the CommandAuthError type alias.
+-- requireAnyPermission, requireAllPermissions, and the AccessError type alias.
 --
 -- All tests are RED against the phase-9 stubs and should go GREEN in phase 10.
 module Service.Command.AuthSpec where
@@ -14,9 +14,9 @@ import Map qualified
 import Maybe (Maybe (..))
 import Text (Text)
 import ToText (toText)
-import Service.Command.Auth (
-  CommandAuthError,
-  QueryAuthError (..),
+import Service.Query.Auth (
+  AccessError,
+  AccessError (..),
   authenticatedAccess,
   publicAccess,
   requireAllPermissions,
@@ -55,7 +55,7 @@ someClaims = mkClaims Array.empty
 
 spec :: Spec Unit
 spec = do
-  describe "Service.Command.Auth" do
+  describe "Service.Query.Auth" do
 
     -- ========================================================================
     -- publicAccess
@@ -248,16 +248,16 @@ spec = do
             fail [fmt|expected one missing permission, got #{toText other}|]
 
     -- ========================================================================
-    -- CommandAuthError type alias and constructors
+    -- AccessError type alias and constructors
     -- ========================================================================
-    describe "CommandAuthError" do
+    describe "AccessError" do
       it "[happy] Unauthenticated constructor is exported and usable" \_ -> do
         -- spec case: Unauthenticated constructor is exported and usable
         -- This proves: public API exports the error constructors
         -- The Unauthenticated constructor must be in scope and equal to itself.
         -- This compile-time check also verifies the export works.
-        let err = Unauthenticated :: CommandAuthError
-        let wrapped = Just err :: Maybe CommandAuthError
+        let err = Unauthenticated :: AccessError
+        let wrapped = Just err :: Maybe AccessError
         case wrapped of
           Just Unauthenticated -> pass
           _ -> fail "Unauthenticated constructor not exported or does not match"
@@ -266,13 +266,13 @@ spec = do
         -- spec case: InsufficientPermissions constructor carries Array Text of missing permissions
         -- This proves: permission list is part of the type signature
         let err = InsufficientPermissions ["admin:delete", "user:modify"]
-        case (Just err :: Maybe CommandAuthError) of
+        case (Just err :: Maybe AccessError) of
           Just (InsufficientPermissions perms) ->
             Array.length perms |> shouldBe 2
           _ -> fail "InsufficientPermissions constructor shape mismatch"
 
-      it "[happy] CommandAuthError type alias resolves to QueryAuthError (compile-time check)" \_ -> do
-        -- spec case: CommandAuthError type alias resolves to QueryAuthError
+      it "[happy] AccessError type alias resolves to AccessError (compile-time check)" \_ -> do
+        -- spec case: AccessError type alias resolves to AccessError
         -- This proves: error types are unified across Command and Query paths
         -- Verified via successful compilation of this module (the type unifies at compile time)
         pass

@@ -5,7 +5,7 @@ module Service.Response (
 
 import Basics
 import Json qualified
-import Service.Command.Auth (CommandAuthError)
+import Service.Query.Auth (AccessError)
 import Service.CommandExecutor.Core (ExecutionResult (..))
 import Service.Event.StreamId qualified as StreamId
 import Text (Text)
@@ -25,7 +25,7 @@ data CommandResponse
       { error :: Text
       }
   | Unauthorized
-      { authError :: CommandAuthError
+      { authError :: AccessError
       }
   deriving (Eq, Show, Ord, Generic)
 

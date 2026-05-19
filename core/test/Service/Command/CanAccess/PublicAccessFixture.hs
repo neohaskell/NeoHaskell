@@ -11,8 +11,8 @@ import Core
 import Decider qualified
 import Json qualified
 import Service.Auth (RequestContext)
-import Service.Command.Auth (CommandAuthError, publicAccess)
-import Service.Command.Core (Command (..), UserClaims)
+import Service.Query.Auth (AccessError, publicAccess)
+import Service.Command.Core (UserClaims)
 import Service.CommandExecutor.TH (command)
 import Uuid qualified
 
@@ -54,7 +54,7 @@ type instance EntityOf CommandWithPublicAccess = CanAccessPubEntity
 
 
 -- | Public access override — any caller may invoke this command.
-canAccess :: Maybe UserClaims -> Maybe CommandAuthError
+canAccess :: Maybe UserClaims -> Maybe AccessError
 canAccess = publicAccess
 
 

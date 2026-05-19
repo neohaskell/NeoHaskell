@@ -31,9 +31,9 @@ import Path as Reexported (Path, path)
 import Record as Reexported (KnownHash (..), Record)
 import Result as Reexported (Result (..))
 import Schema as Reexported (Schema (..), FieldSchema (..), ToSchema (..))
--- NOTE: canAccessImpl is excluded here to avoid name conflict with Query.canAccessImpl.
--- Import Service.Command.Core directly to use canAccessImpl on Command.
-import Service.Command as Reexported (Command (IsMultiTenant, getEntityIdImpl, decideImpl), NameOf)
+-- Command's auth method is named 'canExecuteImpl' (paired with 'execute') to
+-- coexist with 'Query.canAccessImpl' under one Core re-export.
+import Service.Command as Reexported (Command (IsMultiTenant, getEntityIdImpl, decideImpl, canExecuteImpl), NameOf)
 import Service.Entity as Reexported (Entity (..), EntityOf, EventOf)
 import Service.Event as Reexported (InsertionType (..), StreamId, ToStreamId (..))
 import Service.OutboundIntegration.Core as Reexported (OutboundIntegration (..))

@@ -22,8 +22,8 @@ import Record qualified
 import Result (Result (..))
 import Auth.Claims (UserClaims (..))
 import Service.Auth (RequestContext (..))
-import Service.Command.Auth (CommandAuthError)
-import Service.Query.Auth (QueryAuthError (..))
+import Service.Query.Auth (AccessError)
+import Service.Query.Auth (AccessError (..))
 import Service.Command (Event (..))
 import Service.Command.Core (Command (..), Entity (..), EntityOf, EventOf, KnownMultiTenant (..), NameOf, SBool (..))
 import Service.EntityFetcher.Core (EntityFetchResult (..), EntityFetcher, FetchedEntity (..))
@@ -61,7 +61,7 @@ data ExecutionResult
         retriesAttempted :: Int
       }
   | CommandUnauthorized
-      { authError :: CommandAuthError
+      { authError :: AccessError
       }
   deriving (Eq, Show, Ord, Generic)
 
@@ -137,17 +137,18 @@ execute ::
   command ->
   Task Text ExecutionResult
 execute eventStore entityFetcher entityName requestContext command = do
-  -- Authorization check: consult canAccessImpl before any I/O or entity fetch.
+  -- Authorization check: consult canExecuteImpl before any I/O or entity fetch.
   -- This is a pure check — no event-store calls are made on rejection.
-  case canAccessImpl @command (requestContext.user) of
+  case canExecuteImpl @command (requestContext.user) of
     Just authErr -> do
       -- Audit log: one Log.warn per rejection.
       -- Fields: command type name, claims_present boolean, constructor name.
       -- Never log claim contents, permission strings, or token bytes.
       let commandTypeText = GHC.symbolVal (Record.Proxy @(NameOf command)) |> Text.fromLinkedList
-      let claimsPresent = (case requestContext.user of
-            Nothing -> "false"
-            Just _  -> "true") :: Text
+      let claimsPresent =
+            requestContext.user
+              |> Maybe.map (\_ -> "true")
+              |> Maybe.withDefault ("false" :: Text)
       let constructorName = (case authErr of
             Unauthenticated              -> "Unauthenticated"
             Forbidden                    -> "Forbidden"
