@@ -16,8 +16,8 @@ import Service.Event.StreamId (StreamId (..))
 import Service.Event.StreamId qualified as StreamId
 import Service.EventStore.Core qualified as EventStore
 import Service.EventStore.InMemory qualified as InMemory
-import Service.Query.Auth (QueryAuthError (..))
-import Service.Query.Auth qualified as Auth
+import Service.AccessControl (AccessError (..))
+import Service.AccessControl qualified as Auth
 import Task qualified
 import Test
 import Test.Service.Command.Core (
@@ -244,8 +244,8 @@ multiTenantExecutionSpecs = do
     let cmd = TenantAddItem {cartId = Uuid.nil, itemId = Uuid.nil, amount = 5}
     result <- CommandExecutor.execute store fetcher tenantCartEntityName Auth.emptyContext cmd
     case result of
-      CommandRejected {reason} -> reason |> shouldBe "Unauthorized"
-      other -> fail [fmt|Expected CommandRejected, got #{toText other}|]
+      CommandUnauthorized {authError} -> authError |> shouldBe Unauthenticated
+      other -> fail [fmt|Expected CommandUnauthorized Unauthenticated, got #{toText other}|]
 
   it "rejects when no tenantId in claims" \_ -> do
     (store, fetcher) <- newTenantStoreAndFetcher
@@ -253,8 +253,8 @@ multiTenantExecutionSpecs = do
     let cmd = TenantAddItem {cartId = Uuid.nil, itemId = Uuid.nil, amount = 5}
     result <- CommandExecutor.execute store fetcher tenantCartEntityName ctx cmd
     case result of
-      CommandRejected {reason} -> reason |> shouldBe "Forbidden"
-      other -> fail [fmt|Expected CommandRejected, got #{toText other}|]
+      CommandUnauthorized {authError} -> authError |> shouldBe Forbidden
+      other -> fail [fmt|Expected CommandUnauthorized Forbidden, got #{toText other}|]
 
   it "rejects when tenantId is not valid UUID" \_ -> do
     (store, fetcher) <- newTenantStoreAndFetcher
@@ -262,8 +262,8 @@ multiTenantExecutionSpecs = do
     let cmd = TenantAddItem {cartId = Uuid.nil, itemId = Uuid.nil, amount = 5}
     result <- CommandExecutor.execute store fetcher tenantCartEntityName ctx cmd
     case result of
-      CommandRejected {reason} -> reason |> shouldBe "Forbidden"
-      other -> fail [fmt|Expected CommandRejected, got #{toText other}|]
+      CommandUnauthorized {authError} -> authError |> shouldBe Forbidden
+      other -> fail [fmt|Expected CommandUnauthorized Forbidden, got #{toText other}|]
 
   it "rejects when tenantId is empty string" \_ -> do
     (store, fetcher) <- newTenantStoreAndFetcher
@@ -271,8 +271,8 @@ multiTenantExecutionSpecs = do
     let cmd = TenantAddItem {cartId = Uuid.nil, itemId = Uuid.nil, amount = 5}
     result <- CommandExecutor.execute store fetcher tenantCartEntityName ctx cmd
     case result of
-      CommandRejected {reason} -> reason |> shouldBe "Forbidden"
-      other -> fail [fmt|Expected CommandRejected, got #{toText other}|]
+      CommandUnauthorized {authError} -> authError |> shouldBe Forbidden
+      other -> fail [fmt|Expected CommandUnauthorized Forbidden, got #{toText other}|]
 
 
 -- ============================================================================

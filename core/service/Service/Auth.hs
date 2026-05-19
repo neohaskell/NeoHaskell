@@ -40,6 +40,7 @@ module Service.Auth (
   emptyContext,
   anonymousContext,
   authenticatedContext,
+  trustedContext,
   withFiles,
 ) where
 
@@ -72,6 +73,13 @@ data RequestContext = RequestContext
   -- ^ Unique identifier for this request (for tracing/logging)
   , timestamp :: DateTime
   -- ^ When the request was received
+  , trustedBypass :: Bool
+  -- ^ When True, the command executor's 'canExecuteImpl' gate is skipped.
+  -- Set by 'trustedContext' for transports that ran without JWT auth
+  -- configured ('Application.withAuth' not wired); preserves the
+  -- "no-auth deployment" semantics where every command was reachable
+  -- regardless of its 'canAccess' declaration. False on every other
+  -- constructor.
   }
   deriving (Generic, Show)
 
@@ -85,6 +93,7 @@ emptyContext =
     , files = Map.empty
     , requestId = Uuid.nil
     , timestamp = DateTime.fromEpochSeconds 0
+    , trustedBypass = False
     }
 
 
@@ -99,6 +108,7 @@ anonymousContext = do
       , files = Map.empty
       , requestId = reqId
       , timestamp = now
+      , trustedBypass = False
       }
 
 
@@ -113,6 +123,32 @@ authenticatedContext claims = do
       , files = Map.empty
       , requestId = reqId
       , timestamp = now
+      , trustedBypass = False
+      }
+
+
+-- | Create a context for "no JWT auth configured" deployments.
+--
+-- The command executor's 'canExecuteImpl' gate is skipped when this
+-- context is supplied, so every command remains reachable regardless of
+-- its 'canAccess' declaration. Only the Web transport should construct
+-- this — and only when 'authEnabled = Nothing' (i.e. the application
+-- never wired 'Application.withAuth').
+--
+-- Tests that exercise the gate should use 'anonymousContext' or
+-- 'authenticatedContext'; 'trustedContext' is reserved for the
+-- transport-level configuration switch.
+trustedContext :: Task err RequestContext
+trustedContext = do
+  reqId <- Uuid.generate
+  now <- DateTime.now
+  Task.yield
+    RequestContext
+      { user = Nothing
+      , files = Map.empty
+      , requestId = reqId
+      , timestamp = now
+      , trustedBypass = True
       }
 
 

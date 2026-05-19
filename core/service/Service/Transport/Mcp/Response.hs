@@ -56,6 +56,16 @@ toCallToolResult response =
         [ "content" Json..= Json.toJSON contentBlocks
         , "isError" Json..= Json.toJSON True
         ]
+    Unauthorized {} -> do
+      let block = Json.object
+            [ "type" Json..= ("text" :: Text)
+            , "text" Json..= ("Command unauthorized" :: Text)
+            ]
+      let contentBlocks = Array.fromLinkedList [block] :: Array Json.Value
+      Json.object
+        [ "content" Json..= Json.toJSON contentBlocks
+        , "isError" Json..= Json.toJSON True
+        ]
 {-# INLINE toCallToolResult #-}
 
 

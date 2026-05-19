@@ -9,8 +9,11 @@ module Service.Transport.Web (
   server,
   isHealthCheckPath,
   buildHealthResponse,
+  unauthorizedResponse,
+  unauthorizedResponseBody,
 ) where
 
+import Auth.Claims (UserClaims)
 import Auth.Config qualified
 import Auth.Error (AuthError (..))
 import Auth.Jwks (JwksManager)
@@ -54,7 +57,7 @@ import Service.FileUpload.Core (FileRef (..))
 import Service.FileUpload.Core qualified as FileUpload
 import Service.FileUpload.Web (FileUploadRoutes (..))
 import Service.CommandExecutor.TH (deriveKnownHash)
-import Service.Query.Auth (QueryAuthError (..), QueryEndpointError (..))
+import Service.AccessControl (AccessError (..), QueryEndpointError (..))
 import Service.Query.Pagination qualified as Pagination
 import Service.Response (CommandResponse)
 import Service.Response qualified as Response
@@ -390,6 +393,11 @@ commandResponseToHttpStatus response = case response of
   Response.Accepted {} -> HTTP.status200
   Response.Rejected {} -> HTTP.status400
   Response.Failed {} -> HTTP.status400
+  Response.Unauthorized {authError} ->
+    case authError of
+      Unauthenticated           -> HTTP.status401
+      Forbidden                 -> HTTP.status403
+      InsufficientPermissions _ -> HTTP.status403
 
 
 instance Transport WebTransport where
@@ -556,13 +564,27 @@ instance Transport WebTransport where
                         requestContext
                         bodyBytes
                         ( \(commandResponse, responseBytes) -> do
-                            -- Map the CommandResponse directly to HTTP status (no decoding needed)
+                            -- Map CommandUnauthorized to 401/403 with a clean message body.
+                            -- Mirror the query-side AuthorizationError mapping (lines ~655-659).
                             let httpStatus = commandResponseToHttpStatus commandResponse
-
+                            let (statusOverride, bodyOverride :: Maybe Text) = case commandResponse of
+                                  Response.Unauthorized {authError} ->
+                                    case unauthorizedResponse authError of
+                                      (statusCode, message) -> (statusCode, Just message)
+                                  _ -> (httpStatus, Nothing)
+                            let finalBodyBytes = case bodyOverride of
+                                  Maybe.Just msg ->
+                                    -- Wrap the message in a JSON envelope so the
+                                    -- application/json content-type is honoured.
+                                    unauthorizedResponseBody msg
+                                      |> Text.toBytes
+                                      |> Bytes.toLazyLegacy
+                                  Maybe.Nothing ->
+                                    responseBytes
+                                      |> Bytes.toLazyLegacy
                             let responseBody =
-                                  responseBytes
-                                    |> Bytes.toLazyLegacy
-                                    |> Wai.responseLBS httpStatus [(HTTP.hContentType, "application/json")]
+                                  finalBodyBytes
+                                    |> Wai.responseLBS statusOverride [(HTTP.hContentType, "application/json")]
                             respondValue <- respond responseBody
                             respondVar |> ConcurrentVar.set respondValue
                             Task.yield ()
@@ -572,26 +594,28 @@ instance Transport WebTransport where
                               ConcurrentVar.get respondVar
                           )
 
-            -- Check authentication and build RequestContext
+            -- Resolve auth and dispatch.
+            --
+            -- 'authEnabled = Nothing' means the application never wired
+            -- 'Application.withAuth'. The trusted context bypasses the
+            -- dispatcher's 'canExecuteImpl' gate so the legacy no-auth
+            -- deployment story keeps working: every command stays
+            -- reachable regardless of its 'canAccess' declaration.
+            --
+            -- When JWT auth IS configured, 'withResolvedClaims' folds the
+            -- three-way auth-resolution rule (TokenMissing → anonymous
+            -- fallthrough, other AuthError → reject, Ok → claims) and we
+            -- adapt the resolved claims to a command-side RequestContext.
             case webTransport.authEnabled of
-              Nothing -> do
-                -- No auth configured, use anonymous context
-                requestContext <- Auth.anonymousContext
+              Maybe.Nothing -> do
+                requestContext <- Auth.trustedContext
                 processCommandWithContext requestContext
-              Just auth -> do
-                -- Validate JWT token (permission checks done in command's decide method)
-                authResult <- Middleware.checkAuth (Just auth.jwksManager) auth.authConfig Authenticated request
-
-                case authResult of
-                  Result.Err authErr ->
-                    -- Return 401/403 response
-                    Middleware.respondWithAuthError authErr respond
-                  Result.Ok authContext -> do
-                    -- Build RequestContext from AuthContext claims
-                    requestContext <- case authContext.claims of
-                      Maybe.Just claims -> Auth.authenticatedContext claims
-                      Maybe.Nothing -> Auth.anonymousContext
-                    processCommandWithContext requestContext
+              Maybe.Just auth ->
+                withResolvedClaims auth request respond \claims -> do
+                  requestContext <- case claims of
+                    Maybe.Just c  -> Auth.authenticatedContext c
+                    Maybe.Nothing -> Auth.anonymousContext
+                  processCommandWithContext requestContext
           Maybe.Nothing ->
             notFound [fmt|Command not found: #{commandName}|]
       ["queries", queryNameKebab] -> do
@@ -654,29 +678,13 @@ instance Transport WebTransport where
                               -- The msg is logged server-side by the transport layer
                               internalError "Internal server error"
 
-                -- Extract user claims (if auth configured)
+                -- The query's canAccessImpl decides if authentication is
+                -- required; we only need to hand it the resolved claims.
+                -- 'authEnabled = Nothing' deployments hand the query
+                -- 'Nothing' claims (existing behaviour pre-PR).
                 case webTransport.authEnabled of
-                  Maybe.Nothing ->
-                    -- No auth configured, pass Nothing (query decides if that's OK)
-                    processQueryWithClaims Maybe.Nothing
-                  Maybe.Just auth -> do
-                    -- Try to validate JWT token
-                    -- The query's canAccessImpl decides if authentication is required
-                    authResult <- Middleware.checkAuth (Maybe.Just auth.jwksManager) auth.authConfig Authenticated request
-
-                    case authResult of
-                      Result.Err authErr ->
-                        -- Check if token was missing vs invalid
-                        case authErr of
-                          TokenMissing ->
-                            -- No token provided - let query handler decide if that's OK
-                            processQueryWithClaims Maybe.Nothing
-                          _ ->
-                            -- Invalid token provided - reject with appropriate error
-                            Middleware.respondWithAuthError authErr respond
-                      Result.Ok authContext ->
-                        -- Token valid - pass claims to handler
-                        processQueryWithClaims authContext.claims
+                  Maybe.Nothing -> processQueryWithClaims Maybe.Nothing
+                  Maybe.Just auth -> withResolvedClaims auth request respond processQueryWithClaims
           Maybe.Nothing ->
             notFound [fmt|Query not found: #{queryName}|]
       -- OAuth2 routes: /connect/{provider}, /callback/{provider}, /disconnect/{provider}
@@ -1198,3 +1206,56 @@ buildHealthResponse transport =
                   ]
             ]
         )
+
+
+-- | Resolve the request's auth state into a 'Maybe UserClaims' and hand it
+-- to the continuation. Shared between the command and query dispatch
+-- paths when JWT auth IS configured. The three-way rule:
+--
+--   * TokenMissing        → 'Maybe.Nothing' (anonymous fallthrough; the
+--                            command's 'canExecuteImpl' or the query's
+--                            'canAccessImpl' decides whether that's OK).
+--   * Any other AuthError → reject via 'respondWithAuthError'; the
+--                            continuation is never called.
+--   * Token valid         → pass 'authContext.claims' to the
+--                            continuation.
+--
+-- An invalid token is never silently accepted: only 'TokenMissing'
+-- reaches the caller as 'Maybe.Nothing'.
+--
+-- The "no auth configured" branch is handled at the call site (via
+-- 'Auth.trustedContext' for commands, or 'Maybe.Nothing' claims for
+-- queries) because the two paths diverge there.
+withResolvedClaims ::
+  AuthEnabled ->
+  Wai.Request ->
+  (Wai.Response -> Task Text Wai.ResponseReceived) ->
+  (Maybe UserClaims -> Task Text Wai.ResponseReceived) ->
+  Task Text Wai.ResponseReceived
+withResolvedClaims auth request respond k = do
+  authResult <-
+    Middleware.checkAuth (Maybe.Just auth.jwksManager) auth.authConfig Authenticated request
+  case authResult of
+    Result.Err authErr -> case authErr of
+      TokenMissing -> k Maybe.Nothing
+      _            -> Middleware.respondWithAuthError authErr respond
+    Result.Ok authContext -> k authContext.claims
+
+
+-- | Map a per-command auth error to its HTTP status and user-facing message.
+-- The message intentionally carries no information about the caller's
+-- claims or the permission name — that data stays on the server side and
+-- is only visible in the audit log.
+unauthorizedResponse :: AccessError -> (HTTP.Status, Text)
+unauthorizedResponse authError =
+  case authError of
+    Unauthenticated -> (HTTP.status401, "Authentication required")
+    Forbidden -> (HTTP.status403, "Access denied")
+    InsufficientPermissions _ -> (HTTP.status403, "Insufficient permissions")
+
+
+-- | Wrap an auth error message in the {"error": ...} JSON envelope so the
+-- response body matches the application/json content-type.
+unauthorizedResponseBody :: Text -> Text
+unauthorizedResponseBody msg =
+  Json.object ["error" Json..= msg] |> Json.encodeText

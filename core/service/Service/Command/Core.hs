@@ -23,6 +23,9 @@ module Service.Command.Core (
   RequestContext (..),
   UserClaims (..),
 
+  -- * Authorization
+  AccessError,
+
   -- * Re-exported from Service.Entity (backward compatibility)
   Entity (..),
   Event (..),
@@ -43,6 +46,7 @@ import GHC.TypeLits qualified as GHC
 import Maybe (Maybe)
 import Record qualified
 import Service.Auth (RequestContext (..), UserClaims (..))
+import Service.AccessControl (AccessError, authenticatedAccess)
 import Service.Entity.Core (Entity (..), EntityOf, Event (..), EventOf)
 import Text (Text)
 import Text qualified
@@ -125,6 +129,22 @@ class Command command where
   -- This is pure business logic that takes the command and optional current entity state,
   -- returning a Decision that either accepts with events or rejects with a reason.
   decideImpl :: DecideFunction (IsMultiTenant command) command (EntityOf command) (EventOf (EntityOf command))
+
+  -- | Authorization check run before 'decideImpl'.
+  --
+  -- Returns 'Nothing' if the caller may execute this command, or
+  -- 'Just' an 'AccessError' explaining why not. Defaults to
+  -- 'authenticatedAccess' so a command with no 'canAccess' definition
+  -- blocks unauthenticated callers — going public is an explicit opt-in.
+  --
+  -- The name pairs with the dispatcher entry point ('execute') and avoids
+  -- a re-export clash with 'Service.Query.Core.canAccessImpl'. The user
+  -- still writes a top-level 'canAccess'; the TH macro wires it here.
+  --
+  -- An invalid token is never silently accepted: the Web transport rejects
+  -- any AuthError other than TokenMissing before reaching this method.
+  canExecuteImpl :: Maybe UserClaims -> Maybe AccessError
+  canExecuteImpl = authenticatedAccess
 
 
 -- | Determines the signature of 'getEntityIdImpl' based on multi-tenancy.

@@ -7,6 +7,16 @@ description: NeoHaskell coding style reference and enforcement rules. Load when 
 
 This is the authoritative coding style reference for the NeoHaskell project. NeoHaskell is NOT standard Haskell — it has its own conventions that differ significantly. Violations of these rules are hard failures.
 
+## Boy scout rule (load-bearing)
+
+When this skill is loaded to write or modify Haskell code, **every file the diff opens for writing is fair game for cleaning up pre-existing style debt**. If a touched file already has unqualified `import Module (helper)`, point-free top-level bodies, `_` wildcard parameters, `let..in`/`where`, `$`, `<>`/`++` for strings, or raw `String`/`IO`/`Either`, fix those violations in the same edit — not in a follow-up PR.
+
+Scope: only files the current change already includes. The rule never asks for a repo-wide reformat.
+
+Test bodies and assertions remain immutable when an immutability rule is in force (e.g. phase 10 of the feature pipeline); the boy scout rule applies to surrounding helpers, imports, and fixtures that the current step legitimately touches.
+
+When applying it, mention the cleanup in the commit message under a separate "Boy scout cleanup:" bullet so reviewers can distinguish the load-bearing change from the style sweep.
+
 ## Quick Reference: Syntax Rules
 
 | # | Rule | Correct | Wrong |

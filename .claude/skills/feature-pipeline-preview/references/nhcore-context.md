@@ -4,11 +4,20 @@ Compiler flags and framework conventions that change what a review must (and mus
 
 ## Contents
 
+- [Boy scout rule](#boy-scout-rule)
 - [Toolchain invocation](#toolchain-invocation)
 - [Global compiler flags](#global-compiler-flags)
 - [Custom Prelude](#custom-prelude)
 - [Framework-provided defaults](#framework-provided-defaults)
 - [Red-flag-but-already-handled list](#red-flag-but-already-handled-list)
+
+## Boy scout rule
+
+Every phase that opens a file to write to it must leave that file at least as clean as it found it. Concretely: when an implementation, fix-findings, build-loop, or build-iter step modifies a file that *also* contains pre-existing style debt — unqualified `import Module (helper)`, point-free top-level bodies, `_` wildcard parameters, raw `String`/`IO`/`Either`, `$` operators, `let..in` or `where`, `<>`/`++` for string concat — the agent fixes the debt while it is touching the file. The rule applies even when the style violation is unrelated to the original task: every file the diff lists is now ours.
+
+The rule does **not** mean "rewrite every file in the repo": it applies only to files the current phase's diff already includes. Untouched files stay untouched. The rule also does **not** override "tests are immutable in phase 10" — test bodies / assertions stay immutable; only the surrounding helpers, imports, and fixtures that the implementation phase legitimately touches fall under the cleanup obligation.
+
+When applying the boy scout rule, the cleanup is mentioned in the phase's commit message under a separate "Boy scout cleanup:" bullet so reviewers can distinguish the load-bearing change from the style sweep.
 
 ## Toolchain invocation
 

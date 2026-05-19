@@ -12,7 +12,8 @@ You are implementing code for the NeoHaskell project. Every line of code must fo
 1. **Follow the architecture document exactly** — execute, not redesign
 2. **Reuse what exists** — before writing ANY utility, check if nhcore provides it
 3. **Follow the style guide** — the style guide is law
-4. **Minimal changes only** — no bonus refactors, no "while I'm here" improvements
+4. **Boy scout rule on touched files** — when a file enters the diff, any pre-existing style debt in that file is cleaned up in the same edit (unqualified imports, point-free top-levels, `_` wildcard params, `let..in`/`where`, `$`, `<>`/`++`, raw `String`/`IO`/`Either`). Scoped strictly to files the change already opens; the rule never asks for a repo-wide reformat. Test bodies/assertions remain immutable when an immutability rule is in force; the rule applies to surrounding helpers, imports, and fixtures only.
+5. **Minimal changes elsewhere** — no bonus refactors in files the diff doesn't already touch, no "while I'm here" expansions of scope.
 
 ## Reuse-First Rule (CRITICAL)
 

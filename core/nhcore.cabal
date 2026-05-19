@@ -254,7 +254,7 @@ library
     Service.OutboundIntegration.Core
     Service.OutboundIntegration.TH
     Service.Query
-    Service.Query.Auth
+    Service.AccessControl
     Service.Query.Core
     Service.Query.Definition
     Service.Query.Endpoint
@@ -494,6 +494,13 @@ test-suite nhcore-test
     Service.CommandExecutor.TH.SumCommandFixture
     Service.CommandExecutor.THSpec
     Service.Event.THSpec
+    Service.Command.AuthSpec
+    Service.Command.CanAccessSpec
+    Service.Command.CanAccess.NoCanAccessFixture
+    Service.Command.CanAccess.PublicAccessFixture
+    Service.Command.CanAccess.PermissionFixture
+    Service.Transport.Web.CommandAuthSpec
+    Service.CommandExecutor.AuditLoggingSpec
 
   -- other-extensions:
   type: exitcode-stdio-1.0
@@ -592,6 +599,13 @@ test-suite nhcore-test-service
     Service.MultiTenantSpec
     Service.Transport.WebSpec
     Service.Transport.Web.HealthCheckSpec
+    Service.Command.AuthSpec
+    Service.Command.CanAccessSpec
+    Service.Command.CanAccess.NoCanAccessFixture
+    Service.Command.CanAccess.PublicAccessFixture
+    Service.Command.CanAccess.PermissionFixture
+    Service.Transport.Web.CommandAuthSpec
+    Service.CommandExecutor.AuditLoggingSpec
 
   type: exitcode-stdio-1.0
   hs-source-dirs: test-service, test

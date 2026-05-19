@@ -495,6 +495,21 @@ Please ensure you have `import Core` at the top of your module.
   -- Generate KnownHash instance using type name (same as NameOf)
   knownHashInstance <- deriveKnownHash commandNameStr
 
+  -- Look up optional user-defined 'canAccess' function.
+  -- If present, bind it to 'canExecuteImpl'; otherwise the typeclass
+  -- default ('authenticatedAccess') applies.
+  maybeCanAccess <- TH.lookupValueName "canAccess"
+
+  let canAccessBinding = case maybeCanAccess of
+        Just canAccessName ->
+          -- User defined a top-level 'canAccess' function: wire it into the
+          -- typeclass method 'canExecuteImpl'.  GHC type-checks the body and
+          -- will report a mismatch against 'canAccess' if the type is wrong.
+          [TH.ValD (TH.VarP (TH.mkName "canExecuteImpl")) (TH.NormalB (TH.VarE canAccessName)) []]
+        Nothing ->
+          -- No user-defined canAccess; typeclass default ('authenticatedAccess') applies.
+          []
+
   let commandInstance =
         TH.InstanceD
           Nothing
@@ -504,6 +519,7 @@ Please ensure you have `import Core` at the top of your module.
               ++ [ TH.ValD (TH.VarP (TH.mkName "getEntityIdImpl")) (TH.NormalB (TH.VarE getEntityId)) [],
                    TH.ValD (TH.VarP (TH.mkName "decideImpl")) (TH.NormalB (TH.VarE decide)) []
                  ]
+              ++ canAccessBinding
           )
 
   -- Generate ToSchema instance (uses Generic default implementation)

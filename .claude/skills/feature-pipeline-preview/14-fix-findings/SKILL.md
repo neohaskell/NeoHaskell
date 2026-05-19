@@ -27,6 +27,7 @@ Assumptions:
 - Only blocker findings (`blocker: true`) must be fixed in this phase. Non-blockers are tracked but not blocking.
 - If a fix significantly changes the architecture, escalate to the maintainer for re-review before continuing.
 - Test files remain immutable.
+- **Boy scout rule applies.** When the fix re-opens a file, any pre-existing style debt in that file gets cleaned up in the same diff — unqualified imports, point-free top-levels, wildcard `_` params, `let..in`/`where`, `$`, `<>`/`++` for strings, raw `String`/`IO`/`Either`. The rule is scoped to files the fix already touches; nothing else gets reformatted. See `../references/nhcore-context.md#boy-scout-rule`.
 
 If any assumption fails, refuse — do not guess.
 

@@ -8,7 +8,7 @@ import Data.Proxy (Proxy (..))
 import GHC.TypeLits (symbolVal)
 import Json qualified
 import Language.Haskell.TH.Syntax qualified as TH
-import Service.Query.Auth (QueryAuthError)
+import Service.AccessControl (AccessError)
 import Service.Query.TH (deriveQuery)
 import Test
 import Text qualified
@@ -102,11 +102,11 @@ instance Json.FromJSON UserOrders
 
 -- Authorization functions for all test queries (public access)
 -- Using polymorphic types so one definition works for all queries
-canAccess :: Maybe UserClaims -> Maybe QueryAuthError
+canAccess :: Maybe UserClaims -> Maybe AccessError
 canAccess _ = Nothing
 
 
-canView :: forall query. Maybe UserClaims -> query -> Maybe QueryAuthError
+canView :: forall query. Maybe UserClaims -> query -> Maybe AccessError
 canView _ _ = Nothing
 
 

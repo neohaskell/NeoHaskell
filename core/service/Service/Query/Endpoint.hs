@@ -7,8 +7,8 @@ import Auth.Claims (UserClaims)
 import Basics
 import Json qualified
 import Maybe (Maybe (..))
-import Service.Query.Auth (QueryEndpointError)
-import Service.Query.Auth qualified as Auth
+import Service.AccessControl (QueryEndpointError)
+import Service.AccessControl qualified as Auth
 import Service.Query.Core (Query (..))
 import Service.Query.Pagination (QueryPageRequest (..), QueryPageResponse (..))
 import Service.QueryObjectStore.Core (Error (..), QueryObjectStore (..))

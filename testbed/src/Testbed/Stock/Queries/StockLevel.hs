@@ -8,7 +8,8 @@ module Testbed.Stock.Queries.StockLevel (
 
 import Core
 import Json qualified
-import Service.Query.Auth (QueryAuthError, UserClaims, publicAccess, publicView)
+import Service.AccessControl (AccessError, UserClaims)
+import Service.AccessControl qualified as AccessControl
 import Service.Query.TH (deriveQuery)
 import Testbed.Stock.Core (StockEntity (..))
 
@@ -32,13 +33,13 @@ instance ToSchema StockLevel
 
 
 -- | Authorization: Anyone can access stock levels (public catalog data)
-canAccess :: Maybe UserClaims -> Maybe QueryAuthError
-canAccess = publicAccess
+canAccess :: Maybe UserClaims -> Maybe AccessError
+canAccess claims = AccessControl.publicAccess claims
 
 
 -- | Authorization: Anyone can view any stock level
-canView :: Maybe UserClaims -> StockLevel -> Maybe QueryAuthError
-canView = publicView
+canView :: Maybe UserClaims -> StockLevel -> Maybe AccessError
+canView claims stockLevel = AccessControl.publicView claims stockLevel
 
 
 -- | Use TH to derive Query instances.

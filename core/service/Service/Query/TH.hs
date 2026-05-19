@@ -18,10 +18,10 @@ import Service.TH.Boilerplate (emitEmptyInstance, emitJsonAndDerivingBoilerplate
 --
 -- @
 -- -- Define auth functions in your query module
--- canAccess :: Maybe UserClaims -> Maybe QueryAuthError
+-- canAccess :: Maybe UserClaims -> Maybe AccessError
 -- canAccess = authenticatedAccess
 --
--- canView :: Maybe UserClaims -> CartSummary -> Maybe QueryAuthError
+-- canView :: Maybe UserClaims -> CartSummary -> Maybe AccessError
 -- canView = ownerOnly (.ownerId)
 --
 -- deriveQuery ''CartSummary [''CartEntity]
@@ -86,10 +86,10 @@ It is checked BEFORE fetching any data from storage.
 
 Please add the following function to your module:
 
-  canAccess :: Maybe UserClaims -> Maybe QueryAuthError
+  canAccess :: Maybe UserClaims -> Maybe AccessError
   canAccess = authenticatedAccess  -- Secure default: requires login
 
-Available helpers from Service.Query.Auth:
+Available helpers from Service.AccessControl:
   - authenticatedAccess    -- Requires valid JWT token (RECOMMENDED DEFAULT)
   - requirePermission "x"  -- Requires specific permission
   - publicAccess           -- Anyone can access (use only for truly public data)
@@ -106,10 +106,10 @@ It is checked AFTER fetching data, allowing instance-level authorization.
 
 Please add the following function to your module:
 
-  canView :: Maybe UserClaims -> #{queryTypeStr} -> Maybe QueryAuthError
+  canView :: Maybe UserClaims -> #{queryTypeStr} -> Maybe AccessError
   canView = ownerOnly (.ownerId)  -- Secure default: only owner can view
 
-Available helpers from Service.Query.Auth:
+Available helpers from Service.AccessControl:
   - ownerOnly (.ownerId)   -- Only the owner can view (RECOMMENDED for user data)
   - publicView             -- Anyone can view (use only after canAccess check)
 |]

@@ -18,7 +18,7 @@ import Auth.Claims (UserClaims)
 import Basics
 import Maybe (Maybe)
 import Service.Entity.Core (Entity)
-import Service.Query.Auth (QueryAuthError)
+import Service.AccessControl (AccessError)
 import Service.Query.Pagination (absoluteMaxLimit)
 import Uuid (Uuid)
 
@@ -62,10 +62,10 @@ data QueryAction query
 --
 -- @
 -- -- In the query module:
--- canAccess :: Maybe UserClaims -> Maybe QueryAuthError
+-- canAccess :: Maybe UserClaims -> Maybe AccessError
 -- canAccess = authenticatedAccess
 --
--- canView :: Maybe UserClaims -> CartSummary -> Maybe QueryAuthError
+-- canView :: Maybe UserClaims -> CartSummary -> Maybe AccessError
 -- canView = ownerOnly (.ownerId)
 --
 -- deriveQuery ''CartSummary [''CartEntity]
@@ -79,13 +79,13 @@ class Query query where
   --
   -- Returns 'Nothing' if access is allowed, or 'Just error' to deny.
   -- This is called BEFORE any database/storage access.
-  canAccessImpl :: Maybe UserClaims -> Maybe QueryAuthError
+  canAccessImpl :: Maybe UserClaims -> Maybe AccessError
 
   -- | Authorization check after fetching data.
   --
   -- Returns 'Nothing' if viewing is allowed, or 'Just error' to deny.
   -- This is called AFTER data is fetched, allowing ownership checks.
-  canViewImpl :: Maybe UserClaims -> query -> Maybe QueryAuthError
+  canViewImpl :: Maybe UserClaims -> query -> Maybe AccessError
 
   -- | Maximum results this query type will return in a single page.
   --

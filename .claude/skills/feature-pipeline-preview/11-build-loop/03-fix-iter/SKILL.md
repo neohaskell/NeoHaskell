@@ -27,6 +27,7 @@ Assumptions:
 - Test files are immutable; only implementation files may change.
 - The iteration counter caps at 10. After the 10th iteration with failure, refuse and surface for the maintainer.
 - NeoHaskell style is strict — fixes must respect pipes, `do`+`let`, `case`...`of`, qualified imports.
+- **Boy scout rule applies.** When the fix re-opens a file, any pre-existing style debt in that file is cleaned up in the same diff — unqualified imports, point-free top-levels, wildcard `_` params, `let..in`/`where`, `$`, `<>`/`++`, raw `String`/`IO`/`Either`. Scoped strictly to files the fix is already editing; nothing else gets reformatted. See `../../references/nhcore-context.md#boy-scout-rule`.
 
 If any assumption fails, refuse — do not guess.
 

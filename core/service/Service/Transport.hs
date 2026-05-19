@@ -15,7 +15,7 @@ import Record qualified
 import Schema (Schema)
 import Service.Auth (RequestContext, UserClaims)
 import Service.Command.Core (Command, NameOf)
-import Service.Query.Auth (QueryEndpointError)
+import Service.AccessControl (QueryEndpointError)
 import Service.Query.Pagination (QueryPageRequest)
 import Service.Response (CommandResponse)
 import Task (Task)
