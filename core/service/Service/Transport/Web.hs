@@ -9,6 +9,8 @@ module Service.Transport.Web (
   server,
   isHealthCheckPath,
   buildHealthResponse,
+  unauthorizedResponse,
+  unauthorizedResponseBody,
 ) where
 
 import Auth.Config qualified
@@ -566,20 +568,14 @@ instance Transport WebTransport where
                             let httpStatus = commandResponseToHttpStatus commandResponse
                             let (statusOverride, bodyOverride :: Maybe Text) = case commandResponse of
                                   Response.Unauthorized {authError} ->
-                                    case authError of
-                                      Unauthenticated ->
-                                        (HTTP.status401, Just "Authentication required")
-                                      Forbidden ->
-                                        (HTTP.status403, Just "Access denied")
-                                      InsufficientPermissions _ ->
-                                        (HTTP.status403, Just "Insufficient permissions")
+                                    case unauthorizedResponse authError of
+                                      (statusCode, message) -> (statusCode, Just message)
                                   _ -> (httpStatus, Nothing)
                             let finalBodyBytes = case bodyOverride of
                                   Maybe.Just msg ->
                                     -- Wrap the message in a JSON envelope so the
                                     -- application/json content-type is honoured.
-                                    Json.object ["error" Json..= msg]
-                                      |> Json.encodeText
+                                    unauthorizedResponseBody msg
                                       |> Text.toBytes
                                       |> Bytes.toLazyLegacy
                                   Maybe.Nothing ->
@@ -1231,3 +1227,22 @@ buildHealthResponse transport =
                   ]
             ]
         )
+
+
+-- | Map a per-command auth error to its HTTP status and user-facing message.
+-- The message intentionally carries no information about the caller's
+-- claims or the permission name — that data stays on the server side and
+-- is only visible in the audit log.
+unauthorizedResponse :: QueryAuthError -> (HTTP.Status, Text)
+unauthorizedResponse authError =
+  case authError of
+    Unauthenticated -> (HTTP.status401, "Authentication required")
+    Forbidden -> (HTTP.status403, "Access denied")
+    InsufficientPermissions _ -> (HTTP.status403, "Insufficient permissions")
+
+
+-- | Wrap an auth error message in the {"error": ...} JSON envelope so the
+-- response body matches the application/json content-type.
+unauthorizedResponseBody :: Text -> Text
+unauthorizedResponseBody msg =
+  Json.object ["error" Json..= msg] |> Json.encodeText
