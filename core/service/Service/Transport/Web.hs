@@ -13,6 +13,7 @@ module Service.Transport.Web (
   unauthorizedResponseBody,
 ) where
 
+import Auth.Claims (UserClaims)
 import Auth.Config qualified
 import Auth.Error (AuthError (..))
 import Auth.Jwks (JwksManager)
@@ -593,34 +594,16 @@ instance Transport WebTransport where
                               ConcurrentVar.get respondVar
                           )
 
-            -- Check authentication and build RequestContext.
-            -- TokenMissing degrades to anonymous context so canAccessImpl can decide.
-            -- Any other AuthError (malformed, expired, bad signature) rejects immediately.
-            case webTransport.authEnabled of
-              Nothing -> do
-                -- No auth configured: use anonymous context.
-                requestContext <- Auth.anonymousContext
-                processCommandWithContext requestContext
-              Just auth -> do
-                authResult <-
-                  Middleware.checkAuth (Maybe.Just auth.jwksManager) auth.authConfig Authenticated request
-                case authResult of
-                  Result.Err authErr ->
-                    case authErr of
-                      TokenMissing -> do
-                        -- Missing token: build anonymous context, let the dispatcher's
-                        -- canAccessImpl decide whether this command tolerates that.
-                        requestContext <- Auth.anonymousContext
-                        processCommandWithContext requestContext
-                      _ ->
-                        -- Any other AuthError (malformed, expired, bad signature, infra)
-                        -- still rejects. An invalid token is never silently accepted.
-                        Middleware.respondWithAuthError authErr respond
-                  Result.Ok authContext -> do
-                    requestContext <- case authContext.claims of
-                      Maybe.Just claims -> Auth.authenticatedContext claims
-                      Maybe.Nothing    -> Auth.anonymousContext
-                    processCommandWithContext requestContext
+            -- Resolve auth into a 'Maybe UserClaims', then build the
+            -- command-side 'RequestContext' from the result. TokenMissing
+            -- falls through with no claims so the dispatcher's
+            -- 'canExecuteImpl' can decide; any other AuthError is rejected
+            -- by 'withResolvedClaims' before reaching here.
+            withResolvedClaims webTransport.authEnabled request respond \claims -> do
+              requestContext <- case claims of
+                Maybe.Just c  -> Auth.authenticatedContext c
+                Maybe.Nothing -> Auth.anonymousContext
+              processCommandWithContext requestContext
           Maybe.Nothing ->
             notFound [fmt|Command not found: #{commandName}|]
       ["queries", queryNameKebab] -> do
@@ -683,29 +666,9 @@ instance Transport WebTransport where
                               -- The msg is logged server-side by the transport layer
                               internalError "Internal server error"
 
-                -- Extract user claims (if auth configured)
-                case webTransport.authEnabled of
-                  Maybe.Nothing ->
-                    -- No auth configured, pass Nothing (query decides if that's OK)
-                    processQueryWithClaims Maybe.Nothing
-                  Maybe.Just auth -> do
-                    -- Try to validate JWT token
-                    -- The query's canAccessImpl decides if authentication is required
-                    authResult <- Middleware.checkAuth (Maybe.Just auth.jwksManager) auth.authConfig Authenticated request
-
-                    case authResult of
-                      Result.Err authErr ->
-                        -- Check if token was missing vs invalid
-                        case authErr of
-                          TokenMissing ->
-                            -- No token provided - let query handler decide if that's OK
-                            processQueryWithClaims Maybe.Nothing
-                          _ ->
-                            -- Invalid token provided - reject with appropriate error
-                            Middleware.respondWithAuthError authErr respond
-                      Result.Ok authContext ->
-                        -- Token valid - pass claims to handler
-                        processQueryWithClaims authContext.claims
+                -- The query's canAccessImpl decides if authentication is
+                -- required; we only need to hand it the resolved claims.
+                withResolvedClaims webTransport.authEnabled request respond processQueryWithClaims
           Maybe.Nothing ->
             notFound [fmt|Query not found: #{queryName}|]
       -- OAuth2 routes: /connect/{provider}, /callback/{provider}, /disconnect/{provider}
@@ -1227,6 +1190,41 @@ buildHealthResponse transport =
                   ]
             ]
         )
+
+
+-- | Resolve the request's auth state into a 'Maybe UserClaims' and hand it
+-- to the continuation. Shared between the command and query dispatch
+-- paths because both apply the same three-way rule:
+--
+--   * No auth configured  → 'Maybe.Nothing' (caller decides).
+--   * TokenMissing        → 'Maybe.Nothing' (anonymous fallthrough; the
+--                            command's 'canExecuteImpl' or the query's
+--                            'canAccessImpl' decides whether that's OK).
+--   * Any other AuthError → reject via 'respondWithAuthError'; the
+--                            continuation is never called.
+--   * Token valid         → pass 'authContext.claims' to the
+--                            continuation.
+--
+-- An invalid token is never silently accepted: only 'TokenMissing'
+-- reaches the caller as 'Maybe.Nothing'.
+withResolvedClaims ::
+  Maybe AuthEnabled ->
+  Wai.Request ->
+  (Wai.Response -> Task Text Wai.ResponseReceived) ->
+  (Maybe UserClaims -> Task Text Wai.ResponseReceived) ->
+  Task Text Wai.ResponseReceived
+withResolvedClaims authEnabled request respond k =
+  case authEnabled of
+    Maybe.Nothing ->
+      k Maybe.Nothing
+    Maybe.Just auth -> do
+      authResult <-
+        Middleware.checkAuth (Maybe.Just auth.jwksManager) auth.authConfig Authenticated request
+      case authResult of
+        Result.Err authErr -> case authErr of
+          TokenMissing -> k Maybe.Nothing
+          _            -> Middleware.respondWithAuthError authErr respond
+        Result.Ok authContext -> k authContext.claims
 
 
 -- | Map a per-command auth error to its HTTP status and user-facing message.
