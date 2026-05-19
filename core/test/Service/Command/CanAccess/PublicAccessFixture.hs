@@ -11,7 +11,8 @@ import Core
 import Decider qualified
 import Json qualified
 import Service.Auth (RequestContext)
-import Service.Query.Auth (AccessError, publicAccess)
+import Service.Query.Auth (AccessError)
+import Service.Query.Auth qualified as QueryAuth
 import Service.Command.Core (UserClaims)
 import Service.CommandExecutor.TH (command)
 import Uuid qualified
@@ -55,15 +56,15 @@ type instance EntityOf CommandWithPublicAccess = CanAccessPubEntity
 
 -- | Public access override — any caller may invoke this command.
 canAccess :: Maybe UserClaims -> Maybe AccessError
-canAccess = publicAccess
+canAccess claims = QueryAuth.publicAccess claims
 
 
 getEntityId :: CommandWithPublicAccess -> Maybe Uuid
-getEntityId _ = Nothing
+getEntityId _command = Nothing
 
 
 decide :: CommandWithPublicAccess -> Maybe CanAccessPubEntity -> RequestContext -> Decision CanAccessPubEvent
-decide _ _ _ = Decider.acceptNew [CanAccessPubEventCreated Uuid.nil]
+decide _command _entity _context = Decider.acceptNew [CanAccessPubEventCreated Uuid.nil]
 
 
 command ''CommandWithPublicAccess

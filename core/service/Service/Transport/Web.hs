@@ -594,16 +594,28 @@ instance Transport WebTransport where
                               ConcurrentVar.get respondVar
                           )
 
-            -- Resolve auth into a 'Maybe UserClaims', then build the
-            -- command-side 'RequestContext' from the result. TokenMissing
-            -- falls through with no claims so the dispatcher's
-            -- 'canExecuteImpl' can decide; any other AuthError is rejected
-            -- by 'withResolvedClaims' before reaching here.
-            withResolvedClaims webTransport.authEnabled request respond \claims -> do
-              requestContext <- case claims of
-                Maybe.Just c  -> Auth.authenticatedContext c
-                Maybe.Nothing -> Auth.anonymousContext
-              processCommandWithContext requestContext
+            -- Resolve auth and dispatch.
+            --
+            -- 'authEnabled = Nothing' means the application never wired
+            -- 'Application.withAuth'. The trusted context bypasses the
+            -- dispatcher's 'canExecuteImpl' gate so the legacy no-auth
+            -- deployment story keeps working: every command stays
+            -- reachable regardless of its 'canAccess' declaration.
+            --
+            -- When JWT auth IS configured, 'withResolvedClaims' folds the
+            -- three-way auth-resolution rule (TokenMissing → anonymous
+            -- fallthrough, other AuthError → reject, Ok → claims) and we
+            -- adapt the resolved claims to a command-side RequestContext.
+            case webTransport.authEnabled of
+              Maybe.Nothing -> do
+                requestContext <- Auth.trustedContext
+                processCommandWithContext requestContext
+              Maybe.Just auth ->
+                withResolvedClaims auth request respond \claims -> do
+                  requestContext <- case claims of
+                    Maybe.Just c  -> Auth.authenticatedContext c
+                    Maybe.Nothing -> Auth.anonymousContext
+                  processCommandWithContext requestContext
           Maybe.Nothing ->
             notFound [fmt|Command not found: #{commandName}|]
       ["queries", queryNameKebab] -> do
@@ -668,7 +680,11 @@ instance Transport WebTransport where
 
                 -- The query's canAccessImpl decides if authentication is
                 -- required; we only need to hand it the resolved claims.
-                withResolvedClaims webTransport.authEnabled request respond processQueryWithClaims
+                -- 'authEnabled = Nothing' deployments hand the query
+                -- 'Nothing' claims (existing behaviour pre-PR).
+                case webTransport.authEnabled of
+                  Maybe.Nothing -> processQueryWithClaims Maybe.Nothing
+                  Maybe.Just auth -> withResolvedClaims auth request respond processQueryWithClaims
           Maybe.Nothing ->
             notFound [fmt|Query not found: #{queryName}|]
       -- OAuth2 routes: /connect/{provider}, /callback/{provider}, /disconnect/{provider}
@@ -1194,9 +1210,8 @@ buildHealthResponse transport =
 
 -- | Resolve the request's auth state into a 'Maybe UserClaims' and hand it
 -- to the continuation. Shared between the command and query dispatch
--- paths because both apply the same three-way rule:
+-- paths when JWT auth IS configured. The three-way rule:
 --
---   * No auth configured  → 'Maybe.Nothing' (caller decides).
 --   * TokenMissing        → 'Maybe.Nothing' (anonymous fallthrough; the
 --                            command's 'canExecuteImpl' or the query's
 --                            'canAccessImpl' decides whether that's OK).
@@ -1207,24 +1222,24 @@ buildHealthResponse transport =
 --
 -- An invalid token is never silently accepted: only 'TokenMissing'
 -- reaches the caller as 'Maybe.Nothing'.
+--
+-- The "no auth configured" branch is handled at the call site (via
+-- 'Auth.trustedContext' for commands, or 'Maybe.Nothing' claims for
+-- queries) because the two paths diverge there.
 withResolvedClaims ::
-  Maybe AuthEnabled ->
+  AuthEnabled ->
   Wai.Request ->
   (Wai.Response -> Task Text Wai.ResponseReceived) ->
   (Maybe UserClaims -> Task Text Wai.ResponseReceived) ->
   Task Text Wai.ResponseReceived
-withResolvedClaims authEnabled request respond k =
-  case authEnabled of
-    Maybe.Nothing ->
-      k Maybe.Nothing
-    Maybe.Just auth -> do
-      authResult <-
-        Middleware.checkAuth (Maybe.Just auth.jwksManager) auth.authConfig Authenticated request
-      case authResult of
-        Result.Err authErr -> case authErr of
-          TokenMissing -> k Maybe.Nothing
-          _            -> Middleware.respondWithAuthError authErr respond
-        Result.Ok authContext -> k authContext.claims
+withResolvedClaims auth request respond k = do
+  authResult <-
+    Middleware.checkAuth (Maybe.Just auth.jwksManager) auth.authConfig Authenticated request
+  case authResult of
+    Result.Err authErr -> case authErr of
+      TokenMissing -> k Maybe.Nothing
+      _            -> Middleware.respondWithAuthError authErr respond
+    Result.Ok authContext -> k authContext.claims
 
 
 -- | Map a per-command auth error to its HTTP status and user-facing message.

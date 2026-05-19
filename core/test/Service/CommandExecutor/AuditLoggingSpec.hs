@@ -1,10 +1,13 @@
 -- | Audit-logging tests for CommandUnauthorized.
 --
--- These tests verify that canExecuteImpl returns the correct errors for different
--- command types and auth states, and that the error constructors carry the right data
--- for audit logging (constructor name, never permission strings or PII).
---
--- All tests are RED against phase-9 stubs and go GREEN in phase 10.
+-- These tests verify that 'canExecuteImpl' returns the correct error
+-- constructor for different command types and auth states. The
+-- 'InsufficientPermissions' constructor legitimately carries the
+-- required permission name on the return value (so an audit emitter can
+-- log it server-side); what the tests guard against is leaking caller
+-- PII — claim sub, email, name, or tenantId — into that payload. The
+-- HTTP body never sees the permission name at all (asserted in
+-- Service.Transport.Web.CommandAuthSpec).
 module Service.CommandExecutor.AuditLoggingSpec where
 
 import Array (Array)

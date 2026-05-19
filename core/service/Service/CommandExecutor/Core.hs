@@ -139,7 +139,14 @@ execute ::
 execute eventStore entityFetcher entityName requestContext command = do
   -- Authorization check: consult canExecuteImpl before any I/O or entity fetch.
   -- This is a pure check — no event-store calls are made on rejection.
-  case canExecuteImpl @command (requestContext.user) of
+  --
+  -- Trusted-mode requests (transports that ran without JWT auth configured)
+  -- bypass the gate entirely so the no-auth deployment story is preserved:
+  -- commands without an explicit 'canAccess' override stay reachable.
+  let gateResult = case requestContext.trustedBypass of
+        True  -> Nothing
+        False -> canExecuteImpl @command (requestContext.user)
+  case gateResult of
     Just authErr -> do
       -- Audit log: one Log.warn per rejection.
       -- Fields: command type name, claims_present boolean, constructor name.

@@ -13,7 +13,8 @@ import Core
 import Decider qualified
 import Json qualified
 import Service.Auth (RequestContext)
-import Service.Query.Auth (AccessError, requirePermission)
+import Service.Query.Auth (AccessError)
+import Service.Query.Auth qualified as QueryAuth
 import Service.Command.Core (UserClaims)
 import Service.CommandExecutor.TH (command)
 import Uuid qualified
@@ -57,15 +58,15 @@ type instance EntityOf CommandWithAdminDelete = CanAccessPermEntity
 
 -- | Require "admin:delete" permission to invoke this command.
 canAccess :: Maybe UserClaims -> Maybe AccessError
-canAccess = requirePermission "admin:delete"
+canAccess claims = QueryAuth.requirePermission "admin:delete" claims
 
 
 getEntityId :: CommandWithAdminDelete -> Maybe Uuid
-getEntityId _ = Nothing
+getEntityId _command = Nothing
 
 
 decide :: CommandWithAdminDelete -> Maybe CanAccessPermEntity -> RequestContext -> Decision CanAccessPermEvent
-decide _ _ _ = Decider.acceptNew [CanAccessPermEventCreated Uuid.nil]
+decide _command _entity _context = Decider.acceptNew [CanAccessPermEventCreated Uuid.nil]
 
 
 command ''CommandWithAdminDelete

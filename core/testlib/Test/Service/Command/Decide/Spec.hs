@@ -368,6 +368,7 @@ authenticatedContext userId =
     , files = Map.empty
     , requestId = Uuid.nil
     , timestamp = DateTime.fromEpochSeconds 0
+    , trustedBypass = False
     }
 
 

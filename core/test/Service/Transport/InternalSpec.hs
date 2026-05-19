@@ -11,7 +11,8 @@ import Service qualified
 import Service.Auth (RequestContext)
 import Service.Auth qualified as Auth
 import Auth.Claims (UserClaims)
-import Service.Query.Auth (AccessError, publicAccess)
+import Service.Query.Auth (AccessError)
+import Service.Query.Auth qualified as QueryAuth
 import Service.Command.Core (Event (..), TransportsOf)
 import Service.CommandExecutor.TH (command)
 import Service.EntityFetcher.Core qualified as EntityFetcher
@@ -116,7 +117,7 @@ decide cmd maybeEntity _ctx =
 
 
 canAccess :: Maybe UserClaims -> Maybe AccessError
-canAccess = publicAccess
+canAccess claims = QueryAuth.publicAccess claims
 
 
 command ''CreateInternalRecord

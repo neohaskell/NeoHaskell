@@ -229,37 +229,34 @@ dispatcherParitySpecs = do
         CommandUnauthorized {authError} -> authError |> shouldBe Unauthenticated
         other -> fail [fmt|Expected CommandUnauthorized Unauthenticated from dispatcher gate, got #{toText other}|]
 
-    it "anonymous + publicAccess command → dispatcher passes through (gate does NOT short-circuit)" \_ -> do
+    it "anonymous + publicAccess command → dispatcher routes to decideImpl, business reject fires" \_ -> do
       -- AddItemToCart has 'canExecuteImpl = publicAccess' in testlib. The
       -- dispatcher must pass through to decideImpl; the resulting reject
       -- comes from the business rule (Cart does not exist), proving the
-      -- gate is per-command and not a blanket reject.
+      -- gate is per-command and not a blanket reject. We assert the EXACT
+      -- post-gate outcome rather than just "not unauthorized", so a
+      -- regression that silently turns the gate-pass into another result
+      -- (Accepted, Failed, or a different rejection reason) does not slip
+      -- past.
       (store, fetcher) <- newCartStoreAndFetcher
       cartId <- Uuid.generate
       let cmd = AddItemToCart {cartId = cartId, itemId = Uuid.nil, amount = 1}
       result <- CommandExecutor.execute store fetcher cartEntityName Auth.emptyContext cmd
       case result of
-        CommandUnauthorized {} ->
-          fail "Expected dispatcher to pass publicAccess command through to decideImpl, but it short-circuited with CommandUnauthorized"
-        _ ->
-          -- Any other outcome (Accepted or Rejected from decideImpl) proves
-          -- the gate opened. The decider rejects with 'Cart does not exist'
-          -- because we did not seed the entity, which is the load-bearing
-          -- signal here.
-          pass
+        CommandRejected {reason} -> reason |> shouldBe "Cart does not exist"
+        other -> fail [fmt|Expected CommandRejected "Cart does not exist" from decideImpl, got #{toText other}|]
 
-    it "authenticated user + default-auth command → dispatcher passes through" \_ -> do
+    it "authenticated user + default-auth command → dispatcher routes to decideImpl, business reject fires" \_ -> do
       -- AuthenticatedAddItem with a valid user must pass the
-      -- 'authenticatedAccess' default and reach decideImpl. Again the
-      -- business outcome ('Cart does not exist') is what we expect — what
-      -- matters is that we did NOT short-circuit at the dispatcher.
+      -- 'authenticatedAccess' default and reach decideImpl. The business
+      -- outcome we assert is 'Cart does not exist' (no entity seeded) —
+      -- a regression in the gate that returned anything else (Accepted,
+      -- a different reject reason, or Unauthorized) is caught explicitly.
       (store, fetcher) <- newCartStoreAndFetcher
       cartId <- Uuid.generate
       ctx <- Auth.authenticatedContext (mkClaims Array.empty)
       let cmd = AuthenticatedAddItem {cartId = cartId, itemId = Uuid.nil, amount = 1}
       result <- CommandExecutor.execute store fetcher cartEntityName ctx cmd
       case result of
-        CommandUnauthorized {} ->
-          fail "Expected dispatcher to pass authenticated user through to decideImpl, but it short-circuited with CommandUnauthorized"
-        _ ->
-          pass
+        CommandRejected {reason} -> reason |> shouldBe "Cart does not exist"
+        other -> fail [fmt|Expected CommandRejected "Cart does not exist" from decideImpl, got #{toText other}|]
