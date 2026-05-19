@@ -564,7 +564,7 @@ instance Transport WebTransport where
                             -- Map CommandUnauthorized to 401/403 with a clean message body.
                             -- Mirror the query-side AuthorizationError mapping (lines ~655-659).
                             let httpStatus = commandResponseToHttpStatus commandResponse
-                            let (statusOverride, bodyOverride) = case commandResponse of
+                            let (statusOverride, bodyOverride :: Maybe Text) = case commandResponse of
                                   Response.Unauthorized {authError} ->
                                     case authError of
                                       Unauthenticated ->
@@ -576,7 +576,10 @@ instance Transport WebTransport where
                                   _ -> (httpStatus, Nothing)
                             let finalBodyBytes = case bodyOverride of
                                   Maybe.Just msg ->
-                                    msg
+                                    -- Wrap the message in a JSON envelope so the
+                                    -- application/json content-type is honoured.
+                                    Json.object ["error" Json..= msg]
+                                      |> Json.encodeText
                                       |> Text.toBytes
                                       |> Bytes.toLazyLegacy
                                   Maybe.Nothing ->

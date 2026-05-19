@@ -77,15 +77,36 @@ spec = do
         other -> fail [fmt|expected InsufficientPermissions for audit log, got #{toText other}|]
 
     it "[non-happy] canAccessImpl never returns claim contents in error payload" \_ -> do
-      -- spec case: never logs claim subject (sub), permissions array, or token bytes
-      -- This proves: audit trail does not leak credentials
-      -- RED: canAccessImpl stub panics
-      let claimsWithSub = mkClaims Array.empty
-      let result = canAccessImpl @CommandWithoutCanAccess Nothing
-      -- canAccessImpl should return Unauthenticated (no user), not expose claim contents
-      result |> shouldBe (Just Unauthenticated)
-      let _ = claimsWithSub
-      pass
+      -- spec case: even when claims contain PII (sub, email, permissions),
+      -- the CommandAuthError payload carries only the required permission name(s).
+      -- This proves: claim contents do not flow into the value the dispatcher
+      -- would emit to the audit log; the constructor + permission-name shape is
+      -- the maximum information a rejection carries.
+      let pii = UserClaims
+            { sub = "leakable-pii-marker@example.com"
+            , email = Just "leakable-pii-marker@example.com"
+            , name = Just "Real Name Marker"
+            , permissions = ["user:read"]
+            , tenantId = Just "tenant-marker-abc"
+            , rawClaims = Map.empty
+            }
+      let result = canAccessImpl @CommandWithAdminDelete (Just pii)
+      case result of
+        Just (InsufficientPermissions required) -> do
+          -- The payload contains only the required permission name.
+          required |> shouldBe ["admin:delete"]
+          -- No PII fields appear anywhere in the payload.
+          Array.any (\p -> p == pii.sub) required |> shouldBe False
+          case pii.email of
+            Just e  -> Array.any (\p -> p == e) required |> shouldBe False
+            Nothing -> pass
+          case pii.name of
+            Just n  -> Array.any (\p -> p == n) required |> shouldBe False
+            Nothing -> pass
+          case pii.tenantId of
+            Just t  -> Array.any (\p -> p == t) required |> shouldBe False
+            Nothing -> pass
+        other -> fail [fmt|expected InsufficientPermissions [admin:delete], got #{toText other}|]
 
     it "[non-happy] canAccessImpl with default command returns Unauthenticated (command type identifiable)" \_ -> do
       -- spec case: logs command type name extracted from the typeclass dispatch

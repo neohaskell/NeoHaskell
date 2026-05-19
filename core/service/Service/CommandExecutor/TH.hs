@@ -495,9 +495,9 @@ Please ensure you have `import Core` at the top of your module.
   -- Generate KnownHash instance using type name (same as NameOf)
   knownHashInstance <- deriveKnownHash commandNameStr
 
-  -- STUB: look up optional user-defined 'canAccess' function.
-  -- Phase 10 will generate a proper 'canAccessImpl' binding from this.
-  -- For now, if found, we produce an error stub binding so tests stay red.
+  -- Look up optional user-defined 'canAccess' function.
+  -- If present, bind it to 'canAccessImpl'; otherwise the typeclass
+  -- default ('authenticatedAccess') applies.
   maybeCanAccess <- TH.lookupValueName "canAccess"
 
   let canAccessBinding = case maybeCanAccess of

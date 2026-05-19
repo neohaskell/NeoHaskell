@@ -163,20 +163,23 @@ execute eventStore entityFetcher entityName requestContext command = do
           executeInner eventStore entityFetcher entityName requestContext command maybeEntityId Nothing
 
         STrue -> do
-          -- Multi-tenant path: extract and validate tenant UUID from JWT
+          -- Multi-tenant path: extract and validate tenant UUID from JWT.
+          -- Auth-shaped failures (no user, no tenantId, bad tenantId) ride the
+          -- CommandUnauthorized channel so transports map them to 401/403,
+          -- matching the per-command auth gate above.
           case requestContext.user of
             Nothing ->
-              Task.yield CommandRejected {reason = "Unauthorized"}
+              Task.yield (CommandUnauthorized {authError = Unauthenticated})
             Just claims ->
               case claims.tenantId of
                 Nothing -> do
                   Log.debug "Multi-tenant command rejected: no tenantId in token" |> Task.ignoreError
-                  Task.yield CommandRejected {reason = "Forbidden"}
+                  Task.yield (CommandUnauthorized {authError = Forbidden})
                 Just tenantIdText ->
                   case Uuid.fromText tenantIdText of
                     Nothing -> do
                       Log.debug "Multi-tenant command rejected: invalid tenantId format" |> Task.ignoreError
-                      Task.yield CommandRejected {reason = "Forbidden"}
+                      Task.yield (CommandUnauthorized {authError = Forbidden})
                     Just tenantUuid -> do
                       let maybeEntityId = (getEntityIdImpl @command) tenantUuid command
                       executeInner eventStore entityFetcher entityName requestContext command maybeEntityId (Just tenantUuid)
