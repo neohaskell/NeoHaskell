@@ -5,6 +5,7 @@ module Service.Response (
 
 import Basics
 import Json qualified
+import Service.Command.Auth (CommandAuthError)
 import Service.CommandExecutor.Core (ExecutionResult (..))
 import Service.Event.StreamId qualified as StreamId
 import Text (Text)
@@ -22,6 +23,9 @@ data CommandResponse
       }
   | Failed
       { error :: Text
+      }
+  | Unauthorized
+      { authError :: CommandAuthError
       }
   deriving (Eq, Show, Ord, Generic)
 
@@ -46,4 +50,8 @@ fromExecutionResult result = case result of
   CommandFailed {error} ->
     Failed
       { error = error
+      }
+  CommandUnauthorized {authError} ->
+    Unauthorized
+      { authError = authError
       }

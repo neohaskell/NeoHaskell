@@ -28,3 +28,4 @@ formatResponse format response =
         Response.Accepted {entityId} -> entityId
         Response.Rejected {reason} -> reason
         Response.Failed {error} -> error
+        Response.Unauthorized {} -> "Unauthorized"

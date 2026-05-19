@@ -390,6 +390,11 @@ commandResponseToHttpStatus response = case response of
   Response.Accepted {} -> HTTP.status200
   Response.Rejected {} -> HTTP.status400
   Response.Failed {} -> HTTP.status400
+  Response.Unauthorized {authError} ->
+    case authError of
+      Unauthenticated           -> HTTP.status401
+      Forbidden                 -> HTTP.status403
+      InsufficientPermissions _ -> HTTP.status403
 
 
 instance Transport WebTransport where
@@ -556,13 +561,30 @@ instance Transport WebTransport where
                         requestContext
                         bodyBytes
                         ( \(commandResponse, responseBytes) -> do
-                            -- Map the CommandResponse directly to HTTP status (no decoding needed)
+                            -- Map CommandUnauthorized to 401/403 with a clean message body.
+                            -- Mirror the query-side AuthorizationError mapping (lines ~655-659).
                             let httpStatus = commandResponseToHttpStatus commandResponse
-
+                            let (statusOverride, bodyOverride) = case commandResponse of
+                                  Response.Unauthorized {authError} ->
+                                    case authError of
+                                      Unauthenticated ->
+                                        (HTTP.status401, Just "Authentication required")
+                                      Forbidden ->
+                                        (HTTP.status403, Just "Access denied")
+                                      InsufficientPermissions _ ->
+                                        (HTTP.status403, Just "Insufficient permissions")
+                                  _ -> (httpStatus, Nothing)
+                            let finalBodyBytes = case bodyOverride of
+                                  Maybe.Just msg ->
+                                    msg
+                                      |> Text.toBytes
+                                      |> Bytes.toLazyLegacy
+                                  Maybe.Nothing ->
+                                    responseBytes
+                                      |> Bytes.toLazyLegacy
                             let responseBody =
-                                  responseBytes
-                                    |> Bytes.toLazyLegacy
-                                    |> Wai.responseLBS httpStatus [(HTTP.hContentType, "application/json")]
+                                  finalBodyBytes
+                                    |> Wai.responseLBS statusOverride [(HTTP.hContentType, "application/json")]
                             respondValue <- respond responseBody
                             respondVar |> ConcurrentVar.set respondValue
                             Task.yield ()
@@ -572,25 +594,33 @@ instance Transport WebTransport where
                               ConcurrentVar.get respondVar
                           )
 
-            -- Check authentication and build RequestContext
+            -- Check authentication and build RequestContext.
+            -- TokenMissing degrades to anonymous context so canAccessImpl can decide.
+            -- Any other AuthError (malformed, expired, bad signature) rejects immediately.
             case webTransport.authEnabled of
               Nothing -> do
-                -- No auth configured, use anonymous context
+                -- No auth configured: use anonymous context.
                 requestContext <- Auth.anonymousContext
                 processCommandWithContext requestContext
               Just auth -> do
-                -- Validate JWT token (permission checks done in command's decide method)
-                authResult <- Middleware.checkAuth (Just auth.jwksManager) auth.authConfig Authenticated request
-
+                authResult <-
+                  Middleware.checkAuth (Maybe.Just auth.jwksManager) auth.authConfig Authenticated request
                 case authResult of
                   Result.Err authErr ->
-                    -- Return 401/403 response
-                    Middleware.respondWithAuthError authErr respond
+                    case authErr of
+                      TokenMissing -> do
+                        -- Missing token: build anonymous context, let the dispatcher's
+                        -- canAccessImpl decide whether this command tolerates that.
+                        requestContext <- Auth.anonymousContext
+                        processCommandWithContext requestContext
+                      _ ->
+                        -- Any other AuthError (malformed, expired, bad signature, infra)
+                        -- still rejects. An invalid token is never silently accepted.
+                        Middleware.respondWithAuthError authErr respond
                   Result.Ok authContext -> do
-                    -- Build RequestContext from AuthContext claims
                     requestContext <- case authContext.claims of
                       Maybe.Just claims -> Auth.authenticatedContext claims
-                      Maybe.Nothing -> Auth.anonymousContext
+                      Maybe.Nothing    -> Auth.anonymousContext
                     processCommandWithContext requestContext
           Maybe.Nothing ->
             notFound [fmt|Command not found: #{commandName}|]

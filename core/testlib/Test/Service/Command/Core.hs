@@ -31,7 +31,8 @@ import Core
 import Decider qualified
 import Json qualified
 import Service.Auth (RequestContext (..))
-import Service.Command.Core (Event (..))
+import Service.Command.Auth (publicAccess)
+import Service.Command.Core (Command (canAccessImpl), Event (..))
 import Test.Service.EventStore.Core (CartEvent (..))
 import Uuid ()
 
@@ -183,6 +184,9 @@ instance Command AddItemToCart where
   getEntityIdImpl cmd = cmd.cartId |> Just
 
 
+  canAccessImpl = publicAccess
+
+
   decideImpl :: AddItemToCart -> Maybe CartEntity -> RequestContext -> Decision CartEvent
   decideImpl cmd entity _ctx =
     case entity of
@@ -206,6 +210,9 @@ type instance NameOf RemoveItemFromCart = "RemoveItemFromCart"
 
 instance Command RemoveItemFromCart where
   getEntityIdImpl cmd = cmd.cartId |> Just
+
+
+  canAccessImpl = publicAccess
 
 
   decideImpl :: RemoveItemFromCart -> Maybe CartEntity -> RequestContext -> Decision CartEvent
@@ -234,6 +241,9 @@ type instance NameOf CheckoutCart = "CheckoutCart"
 
 instance Command CheckoutCart where
   getEntityIdImpl cmd = cmd.cartId |> Just
+
+
+  canAccessImpl = publicAccess
 
 
   decideImpl :: CheckoutCart -> Maybe CartEntity -> RequestContext -> Decision CartEvent
@@ -549,6 +559,9 @@ instance Command TenantCreateCart where
   getEntityIdImpl _tenantId _cmd = Nothing
 
 
+  canAccessImpl = publicAccess
+
+
   decideImpl :: Uuid -> TenantCreateCart -> Maybe TenantCartEntity -> RequestContext -> Decision TenantCartEvent
   decideImpl tenantId _cmd entity _ctx =
     case entity of
@@ -586,6 +599,9 @@ instance Command TenantAddItem where
 
   getEntityIdImpl :: Uuid -> TenantAddItem -> Maybe Uuid
   getEntityIdImpl _tenantId cmd = cmd.cartId |> Just
+
+
+  canAccessImpl = publicAccess
 
 
   decideImpl :: Uuid -> TenantAddItem -> Maybe TenantCartEntity -> RequestContext -> Decision TenantCartEvent

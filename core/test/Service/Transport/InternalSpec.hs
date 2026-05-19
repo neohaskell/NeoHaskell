@@ -10,7 +10,9 @@ import Map qualified
 import Service qualified
 import Service.Auth (RequestContext)
 import Service.Auth qualified as Auth
-import Service.Command.Core (Event (..), TransportsOf)
+import Auth.Claims (UserClaims)
+import Service.Command.Auth (CommandAuthError, publicAccess)
+import Service.Command.Core (Command (canAccessImpl), Event (..), TransportsOf)
 import Service.CommandExecutor.TH (command)
 import Service.EntityFetcher.Core qualified as EntityFetcher
 import Service.Event.EntityName (EntityName (..))
@@ -111,6 +113,10 @@ decide cmd maybeEntity _ctx =
     Nothing ->
       [InternalCreated {entityId = cmd.recordId}]
         |> Decider.acceptNew
+
+
+canAccess :: Maybe UserClaims -> Maybe CommandAuthError
+canAccess = publicAccess
 
 
 command ''CreateInternalRecord

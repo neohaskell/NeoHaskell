@@ -104,6 +104,8 @@ basicExecutionSpecs newCartStoreAndFetcher = do
           fail ("Expected CommandAccepted, got CommandRejected: " |> Text.append msg)
         CommandFailed err _ ->
           fail ("Expected CommandAccepted, got CommandFailed: " |> Text.append err)
+        CommandUnauthorized _ ->
+          fail "Expected CommandAccepted, got CommandUnauthorized"
 
     it "executes command that rejects due to business rules" \context -> do
       -- Try to add item to non-existent cart
@@ -118,6 +120,8 @@ basicExecutionSpecs newCartStoreAndFetcher = do
           fail "Expected CommandRejected, got CommandAccepted"
         CommandFailed _err _ ->
           fail "Expected CommandRejected, got CommandFailed"
+        CommandUnauthorized _ ->
+          fail "Expected CommandRejected, got CommandUnauthorized"
 
     it "appends events to existing stream successfully" \context -> do
       -- Create cart with initial item
@@ -186,6 +190,8 @@ basicExecutionSpecs newCartStoreAndFetcher = do
           fail "Expected CommandAccepted, got CommandRejected"
         CommandFailed _err _ ->
           fail "Expected CommandAccepted, got CommandFailed"
+        CommandUnauthorized _ ->
+          fail "Expected CommandAccepted, got CommandUnauthorized"
 
 
 retryLogicSpecs ::
@@ -275,6 +281,8 @@ retryLogicSpecs newCartStoreAndFetcher = do
           fail "Expected CommandAccepted after retry, got CommandRejected"
         CommandFailed _err _ ->
           fail "Expected CommandAccepted after retry, got CommandFailed"
+        CommandUnauthorized _ ->
+          fail "Expected CommandAccepted after retry, got CommandUnauthorized"
 
     it "stops retrying when InsertionType is StreamCreation and stream exists" \context -> do
       -- Create a cart (stream exists)
@@ -400,11 +408,13 @@ concurrencySpecs newCartStoreAndFetcher = do
         CommandAccepted {} -> pure unit
         CommandRejected _msg -> fail "Command 1 rejected"
         CommandFailed _err _ -> fail "Command 1 failed"
+        CommandUnauthorized _ -> fail "Command 1 unauthorized"
 
       case result2 of
         CommandAccepted {} -> pure unit
         CommandRejected _msg -> fail "Command 2 rejected"
         CommandFailed _err _ -> fail "Command 2 failed"
+        CommandUnauthorized _ -> fail "Command 2 unauthorized"
 
       -- Verify final state has both items
       let sid = getEntityIdImpl @AddItemToCart cmd1 |> (Maybe.getOrDie .> Uuid.toText .> StreamId.fromTextUnsafe)
@@ -467,11 +477,13 @@ concurrencySpecs newCartStoreAndFetcher = do
         CommandAccepted {} -> pure unit
         CommandRejected _msg -> fail "Command 1 rejected"
         CommandFailed _err _ -> fail "Command 1 failed"
+        CommandUnauthorized _ -> fail "Command 1 unauthorized"
 
       case result2 of
         CommandAccepted {} -> pure unit
         CommandRejected _msg -> fail "Command 2 rejected"
         CommandFailed _err _ -> fail "Command 2 failed"
+        CommandUnauthorized _ -> fail "Command 2 unauthorized"
 
       -- Verify both carts have their items
       cart1 <-
@@ -513,6 +525,8 @@ errorScenarioSpecs newCartStoreAndFetcher = do
           fail "Expected CommandRejected, got CommandAccepted"
         CommandFailed _err _ ->
           fail "Expected CommandRejected, got CommandFailed"
+        CommandUnauthorized _ ->
+          fail "Expected CommandRejected, got CommandUnauthorized"
 
     it "returns CommandRejected when cart is already checked out" \context -> do
       -- Create cart and check it out
@@ -569,6 +583,8 @@ errorScenarioSpecs newCartStoreAndFetcher = do
           fail "Expected CommandRejected, got CommandAccepted"
         CommandFailed _err _ ->
           fail "Expected CommandRejected, got CommandFailed"
+        CommandUnauthorized _ ->
+          fail "Expected CommandRejected, got CommandUnauthorized"
 
     it "handles EventStore errors gracefully" \context -> do
       -- Test that CommandHandler properly propagates errors from EventStore
@@ -585,3 +601,5 @@ errorScenarioSpecs newCartStoreAndFetcher = do
           fail "Expected CommandRejected, got CommandAccepted"
         CommandFailed _err _ ->
           fail "Expected CommandRejected, got CommandFailed"
+        CommandUnauthorized _ ->
+          fail "Expected CommandRejected, got CommandUnauthorized"

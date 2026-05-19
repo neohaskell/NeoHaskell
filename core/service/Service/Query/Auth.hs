@@ -54,6 +54,7 @@ import Array (Array)
 import Array qualified
 import Auth.Claims (UserClaims (..))
 import Basics
+import Json qualified
 import Maybe (Maybe (..))
 import Text (Text)
 import Text qualified
@@ -67,7 +68,13 @@ data QueryAuthError
     Forbidden
   | -- | User lacks required permission/scope
     InsufficientPermissions (Array Text)
-  deriving (Generic, Eq, Show)
+  deriving (Generic, Eq, Ord, Show)
+
+
+instance Json.ToJSON QueryAuthError
+
+
+instance Json.FromJSON QueryAuthError
 
 
 -- | Errors that can occur during query endpoint execution.

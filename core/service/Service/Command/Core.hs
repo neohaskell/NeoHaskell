@@ -23,6 +23,9 @@ module Service.Command.Core (
   RequestContext (..),
   UserClaims (..),
 
+  -- * Authorization
+  CommandAuthError,
+
   -- * Re-exported from Service.Entity (backward compatibility)
   Entity (..),
   Event (..),
@@ -43,6 +46,7 @@ import GHC.TypeLits qualified as GHC
 import Maybe (Maybe)
 import Record qualified
 import Service.Auth (RequestContext (..), UserClaims (..))
+import Service.Command.Auth (CommandAuthError, authenticatedAccess)
 import Service.Entity.Core (Entity (..), EntityOf, Event (..), EventOf)
 import Text (Text)
 import Text qualified
@@ -125,6 +129,18 @@ class Command command where
   -- This is pure business logic that takes the command and optional current entity state,
   -- returning a Decision that either accepts with events or rejects with a reason.
   decideImpl :: DecideFunction (IsMultiTenant command) command (EntityOf command) (EventOf (EntityOf command))
+
+  -- | Authorization check run before 'decideImpl'.
+  --
+  -- Returns 'Nothing' if the caller may execute this command, or
+  -- 'Just' a 'CommandAuthError' explaining why not. Defaults to
+  -- 'authenticatedAccess' so a command with no 'canAccess' definition
+  -- blocks unauthenticated callers — going public is an explicit opt-in.
+  --
+  -- An invalid token is never silently accepted: the Web transport rejects
+  -- any AuthError other than TokenMissing before reaching this method.
+  canAccessImpl :: Maybe UserClaims -> Maybe CommandAuthError
+  canAccessImpl = authenticatedAccess
 
 
 -- | Determines the signature of 'getEntityIdImpl' based on multi-tenancy.

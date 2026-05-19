@@ -22,6 +22,8 @@ import Record qualified
 import Result (Result (..))
 import Auth.Claims (UserClaims (..))
 import Service.Auth (RequestContext (..))
+import Service.Command.Auth (CommandAuthError)
+import Service.Query.Auth (QueryAuthError (..))
 import Service.Command (Event (..))
 import Service.Command.Core (Command (..), Entity (..), EntityOf, EventOf, KnownMultiTenant (..), NameOf, SBool (..))
 import Service.EntityFetcher.Core (EntityFetchResult (..), EntityFetcher, FetchedEntity (..))
@@ -57,6 +59,9 @@ data ExecutionResult
   | CommandFailed
       { error :: Text,
         retriesAttempted :: Int
+      }
+  | CommandUnauthorized
+      { authError :: CommandAuthError
       }
   deriving (Eq, Show, Ord, Generic)
 
@@ -132,30 +137,49 @@ execute ::
   command ->
   Task Text ExecutionResult
 execute eventStore entityFetcher entityName requestContext command = do
-  case sbool @(IsMultiTenant command) of
-    SFalse -> do
-      -- Single-tenant path: extract entity ID directly (unchanged behavior)
-      let maybeEntityId = (getEntityIdImpl @command) command
-      executeInner eventStore entityFetcher entityName requestContext command maybeEntityId Nothing
+  -- Authorization check: consult canAccessImpl before any I/O or entity fetch.
+  -- This is a pure check — no event-store calls are made on rejection.
+  case canAccessImpl @command (requestContext.user) of
+    Just authErr -> do
+      -- Audit log: one Log.warn per rejection.
+      -- Fields: command type name, claims_present boolean, constructor name.
+      -- Never log claim contents, permission strings, or token bytes.
+      let commandTypeText = GHC.symbolVal (Record.Proxy @(NameOf command)) |> Text.fromLinkedList
+      let claimsPresent = (case requestContext.user of
+            Nothing -> "false"
+            Just _  -> "true") :: Text
+      let constructorName = (case authErr of
+            Unauthenticated              -> "Unauthenticated"
+            Forbidden                    -> "Forbidden"
+            InsufficientPermissions _    -> "InsufficientPermissions") :: Text
+      Log.warn [fmt|CommandUnauthorized command:#{commandTypeText} claims_present:#{claimsPresent} error:#{constructorName}|]
+        |> Task.ignoreError
+      Task.yield (CommandUnauthorized {authError = authErr})
+    Nothing ->
+      case sbool @(IsMultiTenant command) of
+        SFalse -> do
+          -- Single-tenant path: extract entity ID directly (unchanged behavior)
+          let maybeEntityId = (getEntityIdImpl @command) command
+          executeInner eventStore entityFetcher entityName requestContext command maybeEntityId Nothing
 
-    STrue -> do
-      -- Multi-tenant path: extract and validate tenant UUID from JWT
-      case requestContext.user of
-        Nothing ->
-          Task.yield CommandRejected {reason = "Unauthorized"}
-        Just claims ->
-          case claims.tenantId of
-            Nothing -> do
-              Log.debug "Multi-tenant command rejected: no tenantId in token" |> Task.ignoreError
-              Task.yield CommandRejected {reason = "Forbidden"}
-            Just tenantIdText ->
-              case Uuid.fromText tenantIdText of
+        STrue -> do
+          -- Multi-tenant path: extract and validate tenant UUID from JWT
+          case requestContext.user of
+            Nothing ->
+              Task.yield CommandRejected {reason = "Unauthorized"}
+            Just claims ->
+              case claims.tenantId of
                 Nothing -> do
-                  Log.debug "Multi-tenant command rejected: invalid tenantId format" |> Task.ignoreError
+                  Log.debug "Multi-tenant command rejected: no tenantId in token" |> Task.ignoreError
                   Task.yield CommandRejected {reason = "Forbidden"}
-                Just tenantUuid -> do
-                  let maybeEntityId = (getEntityIdImpl @command) tenantUuid command
-                  executeInner eventStore entityFetcher entityName requestContext command maybeEntityId (Just tenantUuid)
+                Just tenantIdText ->
+                  case Uuid.fromText tenantIdText of
+                    Nothing -> do
+                      Log.debug "Multi-tenant command rejected: invalid tenantId format" |> Task.ignoreError
+                      Task.yield CommandRejected {reason = "Forbidden"}
+                    Just tenantUuid -> do
+                      let maybeEntityId = (getEntityIdImpl @command) tenantUuid command
+                      executeInner eventStore entityFetcher entityName requestContext command maybeEntityId (Just tenantUuid)
 
 
 -- | Internal execution logic shared between single-tenant and multi-tenant paths.
