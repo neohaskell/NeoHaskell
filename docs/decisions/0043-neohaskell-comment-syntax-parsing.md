@@ -624,7 +624,7 @@ spec = do
 
 - [#471: NeoHaskell comment syntax parsing](https://github.com/neohaskell/NeoHaskell/issues/471)
 - [#464: Transpiler syntax MVP](https://github.com/neohaskell/NeoHaskell/issues/464) — blocked on comment handling
-- [transpiler/design/syntax.md §7 — Comments](../../transpiler/design/syntax.md)
+- `transpiler/design/syntax.md §7 — Comments` (design doc removed 2025-05; transpiler not yet implemented)
 - [ADR-0042: Parser Library — Beginner-Friendly megaparsec Wrapper](0042-parser-library.md) — `Parser.*` primitives used by this module
 - [core/parser/Parser.hs](../../core/parser/Parser.hs) — public API including `lineComment`, `blockComment`, `blockCommentNested`
 - [core/parser/Parser/Internal/Whitespace.hs](../../core/parser/Parser/Internal/Whitespace.hs) — existing SKIP implementations (returns `Unit`)
