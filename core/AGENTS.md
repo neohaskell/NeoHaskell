@@ -146,3 +146,11 @@ task |> Task.mapError toAppError
 | `service/Decider.hs` | Decision monad for commands |
 | `service/Integration.hs` | Outbound/Inbound integrations |
 | `testlib/Test/Spec.hs` | Test specification DSL |
+
+## TEST REGISTRATION
+
+nhcore uses a **multi-source-dir** layout (9 `hs-source-dirs`). New modules must go in the correct subdirectory, not just anywhere under `core/`.
+
+All test suites use `hspec-discover` for auto-discovery — adding a `*Spec.hs` file under the correct directory is sufficient for it to be picked up.
+
+**Cabal `other-modules`**: every test module must also be listed in `other-modules` under the corresponding test-suite stanza in `core/nhcore.cabal`. A missing entry causes a build failure with `Module not found in the package` at test time.

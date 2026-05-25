@@ -804,8 +804,7 @@ spec = do
 
 - [#465: Function Syntax (fun keyword)](https://github.com/neohaskell/NeoHaskell/issues/465)
 - [#464: Transpiler syntax MVP](https://github.com/neohaskell/NeoHaskell/issues/464) — parent issue
-- [transpiler/design/syntax.md §1 — Functions](../../transpiler/design/syntax.md) — authoritative
-  spec with all grammar, examples, transpilation table, and DX Council decisions
+- `transpiler/design/syntax.md §1 — Functions` (design doc removed 2025-05; transpiler not yet implemented)
 - [ADR-0042: Parser Library](0042-parser-library.md) — combinators used by all parsers in this module
 - [ADR-0043: NeoHaskell Comment Syntax Parsing](0043-neohaskell-comment-syntax-parsing.md) — `Syntax.*`
   namespace precedent, `toHaskell` pattern, module structure

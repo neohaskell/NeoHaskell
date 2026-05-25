@@ -1,52 +1,72 @@
 # NeoHaskell
 
-NeoHaskell is a newcomer-friendly Haskell dialect. Monorepo with core library (nhcore), testbed, transpiler, CLI, Rust installer, and Astro website. Event-sourcing + CQRS architecture.
+Newcomer-friendly Haskell dialect. Monorepo: core library (`nhcore`), testbed, outbound integrations, transpiler, LSP, CLI, Rust installer, Astro website. Architecture: event-sourcing + CQRS.
 
-## Where things live
+## Directory map
 
-| Task | Location |
+| Component | Location | Package |
+|---|---|---|
+| Core primitives (Text, Array, Result, Task) | `core/core/` | nhcore |
+| Event-sourcing / CQRS | `core/service/Service/` | nhcore |
+| Concurrency primitives | `core/concurrency/` | nhcore |
+| Test utilities | `core/testlib/` | nhcore |
+| Outbound integrations (Brevo, OpenRouter, …) | `integrations/Integration/` | nhintegrations |
+| Testbed (reference app + acceptance tests) | `testbed/` | nhtestbed |
+| Website (Astro/Starlight) | `website/` | — |
+
+Deep reference for each package: the `AGENTS.md` file in that directory.
+
+## Style (mandatory)
+
+| Use | Never |
 |---|---|
-| Core types (Text, Array, Result) | `core/core/` |
-| Event-sourcing | `core/service/Service/` |
-| Concurrency primitives | `core/concurrency/` |
-| Tests | `core/test/`, `testbed/tests/` |
-| CLI design | `cli/design/` |
-| Transpiler design | `transpiler/design/` |
-| Installer (Rust) | `installer/` |
-| Website (Astro/Starlight) | `website/` |
+| `x \|> foo \|> bar` | `bar $ foo x`, `$` |
+| `do let y = expr` | `let..in`, `where` |
+| `case x of` | patterns in function head |
+| `[fmt\|Hello #{name}!\|]` | `<>` / `++` for strings |
+| `Result err val` | `Either` |
+| `Task err val` | `IO` |
+| `Task.yield v` | `pure`, `return` |
+| `forall element result.` | single-letter type params |
+| `import Foo (Foo); import Foo qualified` | unqualified imports |
 
-## Universal style rules
+Full enforcement → invoke `neohaskell-style-guide`.
 
-- **Pipes over nesting**: `x |> foo |> bar` — not `bar $ foo x`
-- **Do + let** for bindings — never `let..in` / `where`
-- **`case ... of`** for pattern matching — never in function arg lists
-- **Qualified imports**: `EventStore.new` style
-- **String interpolation**: `[fmt|Hello #{name}!|]` — not `<>` / `++`
-- **`Task err val`** instead of `IO`; **`Result error value`** instead of `Either`
-- **`Task.yield` / `Result.ok`** instead of `pure` / `return`
-
-## Forbidden
-
-`let..in`, `where`, point-free style, single-letter type params, raw `IO`, `Either`, `<>`/`++` for string concat.
-
-## Build / test
+## Build & test
 
 ```bash
-cabal build all                 # Build everything
-cabal test                      # All tests
-cabal test nhcore-test-core     # Core only (no Postgres needed)
-hlint .                         # Lint (CI treats warnings as errors)
-./scripts/run-doctest           # Doctests
+cabal build all                 # everything
+cabal test nhcore-test-core     # core only (no Postgres)
+cabal test                      # all (Postgres needed for service/integration suites)
+hlint .                         # lint — CI treats warnings as errors
+./scripts/run-doctest           # doctests
+./testbed/scripts/run-tests.sh  # acceptance tests (auto-starts app)
 ```
 
-Test suites needing PostgreSQL: `nhcore-test-service`, `nhcore-test-integration`, `nhcore-test`.
+## Skills
 
-## Reference
+| When you need to… | Skill |
+|---|---|
+| New feature end-to-end (ADR → PR) | `feature-pipeline-preview` |
+| New outbound integration (design → PR) | `integration-pipeline-preview` |
+| Write or review NeoHaskell code | `neohaskell-implementer` |
+| Style / convention question | `neohaskell-style-guide` |
+| Draft an ADR (interactive interview) | `neohaskell-adr-architect` |
+| Draft an ADR (template only) | `neohaskell-adr-template` |
+| DX / API ergonomics review | `neohaskell-devex-review` |
+| Security review | `neohaskell-security-review` |
+| Performance review | `neohaskell-performance-review` |
+| Design test specification | `neohaskell-qa-designer` |
+| Write docs, PR body, release notes | `neohaskell-community-writer` |
+| Language syntax / DX tradeoff decision | `dx-council-lang` |
 
-- **Detailed conventions, full pipeline, all test patterns**: see [AGENTS.md](AGENTS.md)
-- **Style enforcement**: invoke the `neohaskell-style-guide` skill
-- **Feature implementation pipeline**: invoke the `neohaskell-feature-pipeline` skill (17 phases, run via `python3 .opencode/skills/neohaskell-feature-pipeline/pipeline.py`)
-- **ADR drafting**: invoke `neohaskell-adr-architect` or `neohaskell-adr-template`
+**Feature pipeline state:** `.pipeline/state.json`
+Resume: `python3 .claude/skills/feature-pipeline-preview/scripts/pipeline.py status`
+
+**Integration pipeline state:** `.integration-pipeline/state.json`
+Resume: `python3 .claude/skills/integration-pipeline-preview/scripts/pipeline.py status`
+
+ADRs live in `docs/decisions/NNNN-slug.md`.
 
 ## Non-negotiable
 
@@ -54,3 +74,13 @@ Test suites needing PostgreSQL: `nhcore-test-service`, `nhcore-test-integration`
 - Bug fixes include regression tests
 - Never modify existing test expectations without maintainer approval
 - Branch off `main`; never edit `main` directly (enforced by hook)
+
+## Test suites
+
+| Suite | Scope | PostgreSQL | Auto-discovered |
+|-------|-------|-----------|----------------|
+| `nhcore-test-core` | Core primitives | No | Yes (hspec-discover) |
+| `nhcore-test-auth` | Auth & JWT | No | Yes (hspec-discover) |
+| `nhcore-test-service` | EventStore, Commands, Queries | Yes | **No** — manual registration in `core/test-service/Main.hs` |
+| `nhcore-test-integration` | Integration tests | Yes | Yes (hspec-discover) |
+| `nhcore-test` | All of the above | Yes | Yes (hspec-discover) |

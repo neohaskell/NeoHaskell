@@ -78,3 +78,7 @@ Application.new
   |> Application.withOutbound @CartEntity @CartEvent integrations
   |> Application.run
 ```
+
+## TEST REGISTRATION
+
+Test modules under `core/test-service/` use **manual registration** in `core/test-service/Main.hs` — new spec modules must be imported and added to the `Hspec.describe` list. The goal is to migrate to `hspec-discover` auto-discovery; until then, forgetting the registration step means tests compile but silently never run.
