@@ -1,16 +1,22 @@
+{-# OPTIONS_GHC -Wno-unused-imports -Wno-unused-top-binds #-}
 module Service.Query.Subscriber (
   QuerySubscriber (..),
   new,
   start,
   stop,
   rebuildAll,
+  rebuildFrom,
 ) where
 
+import Array (Array)
+import Array qualified
 import Basics
 import ConcurrentVar (ConcurrentVar)
 import ConcurrentVar qualified
 import Log qualified
 import Json qualified
+import Map (Map)
+import Map qualified
 import Maybe (Maybe (..))
 import Result (Result (..))
 import Service.Event (Event (..))
@@ -20,6 +26,7 @@ import Service.EventStore (EventStore (..))
 import Service.EventStore.Core (Error, Limit (..), ReadAllMessage (..), SubscriptionId)
 import Service.Query.Registry (QueryRegistry, QueryUpdater (..))
 import Service.Query.Registry qualified as Registry
+import Service.Query.Checkpoint (CheckpointStore (..))
 import Stream qualified
 import Task (Task)
 import Task qualified
@@ -33,7 +40,8 @@ data QuerySubscriber = QuerySubscriber
   { eventStore :: EventStore Json.Value,
     registry :: QueryRegistry,
     lastProcessedPosition :: ConcurrentVar (Maybe StreamPosition),
-    subscriptionId :: ConcurrentVar (Maybe SubscriptionId)
+    subscriptionId :: ConcurrentVar (Maybe SubscriptionId),
+    ready :: ConcurrentVar Bool
   }
 
 
@@ -42,12 +50,14 @@ new :: EventStore Json.Value -> QueryRegistry -> Task Text QuerySubscriber
 new eventStore registry = do
   lastProcessedPosition <- ConcurrentVar.containing Nothing
   subscriptionId <- ConcurrentVar.containing Nothing
+  ready <- ConcurrentVar.containing False
   Task.yield
     QuerySubscriber
       { eventStore,
         registry,
         lastProcessedPosition,
-        subscriptionId
+        subscriptionId,
+        ready
       }
 
 
@@ -92,6 +102,198 @@ rebuildAll subscriber = do
           |> Task.ignoreError
 
   Task.yield unit
+
+
+-- | Internal helper: determine which queries need processing.
+-- Compares checkpoint positions against the message stream position.
+needsProcessing :: Map Text StreamPosition -> ReadAllMessage Json.Value -> Array Text
+needsProcessing checkpoints message =
+  case message of
+    AllEvent rawEvent ->
+      case rawEvent.metadata.globalPosition of
+        Nothing -> Array.empty
+        Just eventPosition ->
+          checkpoints
+            |> Map.entries
+            |> Array.reduce
+              ( \(queryName, checkpointPosition) matchingQueryNames ->
+                  if checkpointPosition < eventPosition
+                    then matchingQueryNames |> Array.push queryName
+                    else matchingQueryNames
+              )
+              Array.empty
+    _ -> Array.empty
+
+
+-- | Rebuild queries from a specific stream position using checkpoint data.
+rebuildFrom :: QuerySubscriber -> StreamPosition -> Task Text Unit
+rebuildFrom subscriber fromPosition = do
+  subscriber.ready |> ConcurrentVar.modify (\_ -> False)
+
+  let (StreamPosition rawFromPosition) = fromPosition
+  let defaultCheckpoint = StreamPosition (rawFromPosition - 1)
+
+  rebuildChunkLoop subscriber defaultCheckpoint fromPosition Map.empty
+rebuildChunkLoop ::
+  QuerySubscriber ->
+  StreamPosition ->
+  StreamPosition ->
+  Map Text StreamPosition ->
+  Task Text Unit
+rebuildChunkLoop subscriber defaultCheckpoint readPosition checkpoints = do
+  messageStream <-
+    subscriber.eventStore.readAllEventsForwardFrom readPosition (Limit 1000)
+      |> Task.mapError (toText :: Error -> Text)
+
+  (eventsReplayed, maybeLastPosition, nextCheckpoints) <-
+    messageStream
+      |> Stream.consume
+        ( \(replayedCount, lastGlobalPosition, checkpointMap) message -> do
+            case message of
+              AllEvent rawEvent -> do
+                let updatersForEntity = Registry.getUpdatersForEntity rawEvent.entityName subscriber.registry
+                let checkpointMapWithDefaults =
+                      updatersForEntity
+                        |> Array.reduce
+                          ( \updater acc ->
+                              if acc |> Map.contains updater.queryName
+                                then acc
+                                else acc |> Map.set updater.queryName defaultCheckpoint
+                          )
+                          checkpointMap
+                let queryNamesNeedingProcessing = needsProcessing checkpointMapWithDefaults message
+                successfulQueryNames <-
+                  processUpdatersForEvent rawEvent updatersForEntity queryNamesNeedingProcessing
+                let updatedCheckpointMap =
+                      case rawEvent.metadata.globalPosition of
+                        Just globalPosition ->
+                          successfulQueryNames
+                            |> Array.reduce
+                              (\queryName acc -> acc |> Map.set queryName globalPosition)
+                              checkpointMapWithDefaults
+                        Nothing -> checkpointMapWithDefaults
+                case rawEvent.metadata.globalPosition of
+                  Just globalPosition -> do
+                    subscriber.lastProcessedPosition
+                      |> ConcurrentVar.modify (\_ -> Just globalPosition)
+                    Task.yield (replayedCount + 1, Just globalPosition, updatedCheckpointMap)
+                  Nothing ->
+                    Task.yield (replayedCount + 1, lastGlobalPosition, updatedCheckpointMap)
+              _ ->
+                Task.yield (replayedCount, lastGlobalPosition, checkpointMap)
+        )
+        (0, Nothing, checkpoints)
+
+  if eventsReplayed == 0
+    then do
+      subscriber.ready |> ConcurrentVar.modify (\_ -> True)
+      Log.withScope [("component", "QuerySubscriber")] do
+        Log.info "Query rebuild from checkpoint complete. No more events."
+          |> Task.ignoreError
+      Task.yield unit
+    else do
+      logRebuildChunkProgress subscriber eventsReplayed maybeLastPosition
+      let nextReadPosition =
+            case maybeLastPosition of
+              Just (StreamPosition globalPosition) -> StreamPosition (globalPosition + 1)
+              Nothing ->
+                case readPosition of
+                  StreamPosition currentPosition ->
+                    StreamPosition (currentPosition + fromIntegral eventsReplayed)
+      rebuildChunkLoop subscriber defaultCheckpoint nextReadPosition nextCheckpoints
+
+
+processUpdatersForEvent ::
+  Event Json.Value ->
+  Array QueryUpdater ->
+  Array Text ->
+  Task Text (Array Text)
+processUpdatersForEvent rawEvent updatersForEntity queryNamesNeedingProcessing =
+  processUpdatersForEventAtIndex rawEvent updatersForEntity queryNamesNeedingProcessing 0 Array.empty
+
+
+processUpdatersForEventAtIndex ::
+  Event Json.Value ->
+  Array QueryUpdater ->
+  Array Text ->
+  Int ->
+  Array Text ->
+  Task Text (Array Text)
+processUpdatersForEventAtIndex rawEvent updatersForEntity queryNamesNeedingProcessing updaterIndex successfulQueryNames =
+  case updatersForEntity |> Array.get updaterIndex of
+    Nothing ->
+      Task.yield successfulQueryNames
+    Just updater -> do
+      let updaterName = updater.queryName
+      if queryNamesNeedingProcessing |> Array.contains updaterName
+        then do
+          result <- updater.updateQuery rawEvent |> Task.asResult
+          case result of
+            Ok _ ->
+              processUpdatersForEventAtIndex
+                rawEvent
+                updatersForEntity
+                queryNamesNeedingProcessing
+                (updaterIndex + 1)
+                (successfulQueryNames |> Array.push updaterName)
+            Err errText -> do
+              Log.withScope [("component", "QuerySubscriber"), ("queryName", updaterName)] do
+                Log.warn [fmt|Query updater failed: #{errText}|]
+                  |> Task.ignoreError
+              processUpdatersForEventAtIndex
+                rawEvent
+                updatersForEntity
+                queryNamesNeedingProcessing
+                (updaterIndex + 1)
+                successfulQueryNames
+        else
+          processUpdatersForEventAtIndex
+            rawEvent
+            updatersForEntity
+            queryNamesNeedingProcessing
+            (updaterIndex + 1)
+            successfulQueryNames
+
+logRebuildChunkProgress ::
+  QuerySubscriber ->
+  Int ->
+  Maybe StreamPosition ->
+  Task Text Unit
+logRebuildChunkProgress subscriber eventsReplayed maybeLastPosition = do
+  maybeHeadPosition <- readHeadPosition subscriber
+  Log.withScope [("component", "QuerySubscriber")] do
+    case (maybeLastPosition, maybeHeadPosition) of
+      (Just (StreamPosition lastPosition), Just (StreamPosition headPosition)) -> do
+        let lagFromHead =
+              if headPosition > lastPosition
+                then headPosition - lastPosition
+                else 0
+        Log.info
+          [fmt|Query rebuild chunk complete. eventsReplayed=#{eventsReplayed}, lagFromHead=#{lagFromHead}|]
+          |> Task.ignoreError
+      _ ->
+        Log.info
+          [fmt|Query rebuild chunk complete. eventsReplayed=#{eventsReplayed}, lagFromHead=unknown|]
+          |> Task.ignoreError
+
+
+readHeadPosition :: QuerySubscriber -> Task Text (Maybe StreamPosition)
+readHeadPosition subscriber = do
+  headStream <-
+    subscriber.eventStore.readAllEventsBackwardFrom (StreamPosition 9223372036854775807) (Limit 1)
+      |> Task.mapError (toText :: Error -> Text)
+  readHeadPositionFromStream headStream
+
+
+readHeadPositionFromStream :: Stream.Stream (ReadAllMessage Json.Value) -> Task Text (Maybe StreamPosition)
+readHeadPositionFromStream stream = do
+  maybeMessage <- Stream.readNext stream
+  case maybeMessage of
+    Nothing -> Task.yield Nothing
+    Just message ->
+      case message of
+        AllEvent rawEvent -> Task.yield rawEvent.metadata.globalPosition
+        _ -> readHeadPositionFromStream stream
 
 
 -- | Start live subscription for query updates.

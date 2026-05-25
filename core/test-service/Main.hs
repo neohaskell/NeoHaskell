@@ -29,7 +29,10 @@ import Service.Query.RegistrySpec qualified
 import Service.Query.SubscriberSpec qualified
 import Service.Query.THSpec qualified
 import Service.Query.UpdaterSpec qualified
+import Service.Query.CheckpointSpec qualified
+import Service.Query.SubscriberCheckpointSpec qualified
 import Service.QueryObjectStore.InMemorySpec qualified
+import Service.QueryObjectStore.PostgresSpec qualified
 import Service.SnapshotCache.InMemorySpec qualified
 import Service.Transport.CliSpec qualified
 import Service.Transport.Cli.OutputSpec qualified
@@ -76,7 +79,10 @@ main = Hspec.hspec do
   Hspec.describe "Service.Query.Subscriber" Service.Query.SubscriberSpec.spec
   Hspec.describe "Service.Query.TH" Service.Query.THSpec.spec
   Hspec.describe "Service.Query.Updater" Service.Query.UpdaterSpec.spec
+  Hspec.describe "Service.Query.Checkpoint" Service.Query.CheckpointSpec.spec
+  Hspec.describe "Service.Query.SubscriberCheckpoint" Service.Query.SubscriberCheckpointSpec.spec
   Hspec.describe "Service.QueryObjectStore.InMemory" Service.QueryObjectStore.InMemorySpec.spec
+  Hspec.describe "Service.QueryObjectStore.Postgres" Service.QueryObjectStore.PostgresSpec.spec
   Hspec.describe "Service.SnapshotCache.InMemory" Service.SnapshotCache.InMemorySpec.spec
   Hspec.describe "Service.Transport.Cli" Service.Transport.CliSpec.spec
   Hspec.describe "Service.Transport.Cli.Output" Service.Transport.Cli.OutputSpec.spec

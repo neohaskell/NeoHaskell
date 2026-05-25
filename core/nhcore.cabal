@@ -263,9 +263,11 @@ library
     Service.Query.Subscriber
     Service.Query.TH
     Service.Query.Updater
+    Service.Query.Checkpoint
     Service.QueryObjectStore
     Service.QueryObjectStore.Core
     Service.QueryObjectStore.InMemory
+    Service.QueryObjectStore.Postgres
     Service.Response
     Service.SnapshotCache
     Service.SnapshotCache.Core
@@ -580,13 +582,16 @@ test-suite nhcore-test-service
     Service.Integration.TestFixtures
     Service.Integration.WireupSpec
     Service.MockTransport
+    Service.Query.CheckpointSpec
     Service.Query.EndpointSpec
     Service.Query.PaginationSpec
     Service.Query.RegistrySpec
     Service.Query.SubscriberSpec
+    Service.Query.SubscriberCheckpointSpec
     Service.Query.THSpec
     Service.Query.UpdaterSpec
     Service.QueryObjectStore.InMemorySpec
+    Service.QueryObjectStore.PostgresSpec
     Service.SnapshotCache.InMemorySpec
     Service.TestHelpers
     Service.Transport.CliSpec
