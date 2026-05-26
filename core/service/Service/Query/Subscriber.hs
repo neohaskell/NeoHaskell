@@ -37,11 +37,11 @@ import ToText (toText)
 -- | The QuerySubscriber listens to events from the EventStore and
 -- dispatches them to registered QueryUpdaters.
 data QuerySubscriber = QuerySubscriber
-  { eventStore :: EventStore Json.Value,
-    registry :: QueryRegistry,
-    lastProcessedPosition :: ConcurrentVar (Maybe StreamPosition),
-    subscriptionId :: ConcurrentVar (Maybe SubscriptionId),
-    ready :: ConcurrentVar Bool
+  { eventStore :: EventStore Json.Value
+  , registry :: QueryRegistry
+  , lastProcessedPosition :: ConcurrentVar (Maybe StreamPosition)
+  , subscriptionId :: ConcurrentVar (Maybe SubscriptionId)
+  , ready :: ConcurrentVar Bool
   }
 
 
@@ -53,55 +53,12 @@ new eventStore registry = do
   ready <- ConcurrentVar.containing False
   Task.yield
     QuerySubscriber
-      { eventStore,
-        registry,
-        lastProcessedPosition,
-        subscriptionId,
-        ready
+      { eventStore
+      , registry
+      , lastProcessedPosition
+      , subscriptionId
+      , ready
       }
-
-
--- | Rebuild all queries from the beginning of the event store.
--- Called on application startup before starting live subscription.
-rebuildAll :: QuerySubscriber -> Task Text Unit
-rebuildAll subscriber = do
-  Log.withScope [("component", "QuerySubscriber")] do
-    Log.info "Starting query rebuild from event store..."
-      |> Task.ignoreError
-
-  -- Read all events from the beginning (use large limit)
-  messageStream <-
-    subscriber.eventStore.readAllEventsForwardFrom (StreamPosition 0) (Limit 9223372036854775807)
-      |> Task.mapError (toText :: Error -> Text)
-
-  -- Process each message incrementally via Stream.consume
-  messageStream
-    |> Stream.consume
-      ( \_ message -> do
-          case message of
-            AllEvent rawEvent -> do
-              processEvent subscriber rawEvent
-              -- Update last processed position
-              case rawEvent.metadata.globalPosition of
-                Just pos -> subscriber.lastProcessedPosition |> ConcurrentVar.modify (\_ -> Just pos)
-                Nothing -> pass
-            _ -> pass
-          Task.yield unit
-      )
-      unit
-
-  -- Log completion
-  maybeLastPos <- ConcurrentVar.peek subscriber.lastProcessedPosition
-  Log.withScope [("component", "QuerySubscriber")] do
-    case maybeLastPos of
-      Just pos ->
-        Log.info [fmt|Query rebuild complete. Last position: #{pos}|]
-          |> Task.ignoreError
-      Nothing ->
-        Log.info "Query rebuild complete. No events found."
-          |> Task.ignoreError
-
-  Task.yield unit
 
 
 -- | Internal helper: determine which queries need processing.
@@ -126,21 +83,39 @@ needsProcessing checkpoints message =
 
 
 -- | Rebuild queries from a specific stream position using checkpoint data.
-rebuildFrom :: QuerySubscriber -> StreamPosition -> Task Text Unit
-rebuildFrom subscriber fromPosition = do
+--
+-- Loads persisted checkpoints from the CheckpointStore, hydrates them,
+-- and processes events in chunks. Checkpoints are persisted after each chunk.
+-- The subscriber's 'ready' flag is guaranteed to be set on every exit path.
+rebuildFrom :: QuerySubscriber -> CheckpointStore -> StreamPosition -> Task Text Unit
+rebuildFrom subscriber checkpointStore fromPosition = do
   subscriber.ready |> ConcurrentVar.modify (\_ -> False)
+
+  -- Hydrate persisted checkpoints before rebuilding
+  persistedCheckpoints <- checkpointStore.getPositions
 
   let (StreamPosition rawFromPosition) = fromPosition
   let defaultCheckpoint = StreamPosition (rawFromPosition - 1)
 
-  rebuildChunkLoop subscriber defaultCheckpoint fromPosition Map.empty
+  let cleanup = do
+        subscriber.ready |> ConcurrentVar.modify (\_ -> True)
+        Log.withScope [("component", "QuerySubscriber")] do
+          Log.info "Query rebuild finished (ready flag set)."
+            |> Task.ignoreError
+
+  -- Wrap the chunk loop with a finalizer so ready is reset on every exit path
+  Task.finally cleanup do
+    rebuildChunkLoop subscriber checkpointStore defaultCheckpoint fromPosition persistedCheckpoints
+
+
 rebuildChunkLoop ::
   QuerySubscriber ->
+  CheckpointStore ->
   StreamPosition ->
   StreamPosition ->
   Map Text StreamPosition ->
   Task Text Unit
-rebuildChunkLoop subscriber defaultCheckpoint readPosition checkpoints = do
+rebuildChunkLoop subscriber checkpointStore defaultCheckpoint readPosition checkpoints = do
   messageStream <-
     subscriber.eventStore.readAllEventsForwardFrom readPosition (Limit 1000)
       |> Task.mapError (toText :: Error -> Text)
@@ -186,12 +161,16 @@ rebuildChunkLoop subscriber defaultCheckpoint readPosition checkpoints = do
 
   if eventsReplayed == 0
     then do
-      subscriber.ready |> ConcurrentVar.modify (\_ -> True)
       Log.withScope [("component", "QuerySubscriber")] do
         Log.info "Query rebuild from checkpoint complete. No more events."
           |> Task.ignoreError
       Task.yield unit
     else do
+      -- Persist updated checkpoints after each chunk
+      nextCheckpoints
+        |> Map.entries
+        |> Task.forEach (\(queryName, pos) -> checkpointStore.setPosition queryName pos)
+
       logRebuildChunkProgress subscriber eventsReplayed maybeLastPosition
       let nextReadPosition =
             case maybeLastPosition of
@@ -200,7 +179,7 @@ rebuildChunkLoop subscriber defaultCheckpoint readPosition checkpoints = do
                 case readPosition of
                   StreamPosition currentPosition ->
                     StreamPosition (currentPosition + fromIntegral eventsReplayed)
-      rebuildChunkLoop subscriber defaultCheckpoint nextReadPosition nextCheckpoints
+      rebuildChunkLoop subscriber checkpointStore defaultCheckpoint nextReadPosition nextCheckpoints
 
 
 processUpdatersForEvent ::
@@ -238,8 +217,10 @@ processUpdatersForEventAtIndex rawEvent updatersForEntity queryNamesNeedingProce
                 (successfulQueryNames |> Array.push updaterName)
             Err errText -> do
               Log.withScope [("component", "QuerySubscriber"), ("queryName", updaterName)] do
-                Log.warn [fmt|Query updater failed: #{errText}|]
+                Log.warn [fmt|Query updater failed for #{updaterName}: #{errText}|]
                   |> Task.ignoreError
+              -- Failed updaters are NOT added to successfulQueryNames,
+              -- so their checkpoint won't advance and they'll be retried next chunk.
               processUpdatersForEventAtIndex
                 rawEvent
                 updatersForEntity
@@ -253,6 +234,54 @@ processUpdatersForEventAtIndex rawEvent updatersForEntity queryNamesNeedingProce
             queryNamesNeedingProcessing
             (updaterIndex + 1)
             successfulQueryNames
+
+
+-- | Rebuild all queries from the beginning of the event store.
+-- Called on application startup before starting live subscription.
+--
+-- This is the legacy no-checkpoint path. For checkpoint-aware rebuild,
+-- use 'rebuildFrom' with a CheckpointStore.
+rebuildAll :: QuerySubscriber -> Task Text Unit
+rebuildAll subscriber = do
+  subscriber.ready |> ConcurrentVar.modify (\_ -> False)
+
+  let cleanup = do
+        subscriber.ready |> ConcurrentVar.modify (\_ -> True)
+        Log.withScope [("component", "QuerySubscriber")] do
+          Log.info "Query rebuild finished (ready flag set)."
+            |> Task.ignoreError
+
+  Task.finally cleanup do
+    Log.withScope [("component", "QuerySubscriber")] do
+      Log.info "Starting query rebuild from event store..."
+        |> Task.ignoreError
+
+    -- Read all events from the beginning (use large limit)
+    messageStream <-
+      subscriber.eventStore.readAllEventsForwardFrom (StreamPosition 0) (Limit 9223372036854775807)
+        |> Task.mapError (toText :: Error -> Text)
+
+    -- Process each message incrementally via Stream.consume
+    let handler = \_ message -> do
+          case message of
+            AllEvent rawEvent -> do
+              processEvent subscriber rawEvent
+              case rawEvent.metadata.globalPosition of
+                Just pos -> subscriber.lastProcessedPosition |> ConcurrentVar.modify (\_ -> Just pos)
+                Nothing -> pass
+            _ -> pass
+          Task.yield unit
+    messageStream |> Stream.consume handler unit
+    maybeLastPos <- ConcurrentVar.peek subscriber.lastProcessedPosition
+    Log.withScope [("component", "QuerySubscriber")] do
+      case maybeLastPos of
+        Just pos ->
+          Log.info [fmt|Query rebuild complete. Last position: #{pos}|]
+            |> Task.ignoreError
+        Nothing ->
+          Log.info "Query rebuild complete. No events found."
+            |> Task.ignoreError
+
 
 logRebuildChunkProgress ::
   QuerySubscriber ->

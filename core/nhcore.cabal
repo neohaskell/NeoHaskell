@@ -264,6 +264,7 @@ library
     Service.Query.TH
     Service.Query.Updater
     Service.Query.Checkpoint
+    Service.Query.Checkpoint.InMemory
     Service.QueryObjectStore
     Service.QueryObjectStore.Core
     Service.QueryObjectStore.InMemory

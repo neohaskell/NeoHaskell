@@ -1154,11 +1154,14 @@ runWithResolved eventStore maybeFileUploadSetup fileUploadCleanup maybeWebAuthSe
   -- 6. Create query subscriber with combined registry
   subscriber <- Subscriber.new eventStore combinedRegistry
 
-  -- 7. Rebuild all queries from historical events
-  Subscriber.rebuildAll subscriber
+  -- 7. Start async query rebuild and live subscription
+  -- The rebuild runs in the background so transports can bind immediately.
+  -- /health returns 200 right away; /ready returns 200 when subscriber.ready is True.
+  AsyncTask.run do
+    Subscriber.rebuildAll subscriber
+    Subscriber.start subscriber
 
-  -- 8. Start live subscription
-  Subscriber.start subscriber
+  pass
 
   -- 9. Initialize auth if configured (using pre-resolved WebAuthSetup)
   maybeAuthEnabled <- case maybeWebAuthSetup of

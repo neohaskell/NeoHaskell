@@ -160,7 +160,7 @@ spec = do
         -- runWith should complete without error even with mock runners
         Application.runWith eventStore app
 
-      it "rebuilds queries before starting services" \_ -> do
+      it "rebuilds queries asynchronously after startup" \_ -> do
         -- Create event store with existing events
         eventStore <- InMemory.new |> Task.mapError toText
 
@@ -187,6 +187,9 @@ spec = do
                 |> withQueryRegistry registry
 
         Application.runWith eventStore app
+
+        -- Rebuild now runs asynchronously; wait for it to complete
+        AsyncTask.sleep 100 |> Task.mapError (\_ -> "sleep error" :: Text)
 
         rebuilt <- ConcurrentVar.peek rebuildCalled
         rebuilt |> shouldBe True

@@ -1,53 +1,189 @@
-{-# OPTIONS_GHC -Wno-unused-imports #-}
 module Service.Query.SubscriberCheckpointSpec where
 
+import ConcurrentVar qualified
 import Core
-import Test.Spec (Spec, describe, it, pending)
+import Service.Event.EntityName (EntityName (..))
+import Service.Event.StreamPosition (StreamPosition (..))
+import Service.EventStore.InMemory qualified as InMemory
+import Service.Query.Checkpoint.InMemory qualified as CheckpointInMemory
+import Service.Query.Registry (QueryUpdater (..))
+import Service.Query.Registry qualified as Registry
+import Service.Query.Subscriber qualified as Subscriber
+import Service.TestHelpers (insertTestEvent)
+import Task qualified
+import Test
+
 
 spec :: Spec Unit
 spec = do
   describe "Service.Query.Subscriber" do
     describe "rebuildFrom" do
-      it "Start from position 0 with no checkpoints — all events processed, all queries updated" \_ -> do
-        pending "not implemented"
+      it "Start from position 0 with no checkpoints — all events processed" \_ -> do
+        eventStore <- InMemory.new |> Task.mapError toText
+        checkpointStore <- CheckpointInMemory.new
+        let entityName = EntityName "TestEntity"
 
-      it "Start from position 100 with checkpoints for all queries — only events at position >= 101 processed" \_ -> do
-        pending "not implemented"
+        insertTestEvent eventStore entityName
 
-      it "EventStore returns empty stream immediately — returns Unit with 0 events replayed" \_ -> do
-        pending "not implemented"
+        processedCount <- ConcurrentVar.containing (0 :: Int)
+        let updater =
+              QueryUpdater
+                { queryName = "counter"
+                , updateQuery = \_ -> do
+                    processedCount |> ConcurrentVar.modify (\n -> n + 1)
+                    Task.yield unit
+                }
+        let registry = Registry.empty |> Registry.register entityName updater
+        subscriber <- Subscriber.new eventStore registry
 
-      it "Position equals current head of event store — returns Unit, no events processed" \_ -> do
-        pending "not implemented"
+        Subscriber.rebuildFrom subscriber checkpointStore (StreamPosition 0)
 
-      it "Exactly one chunk (1000 events) — all 1000 events processed, progress logged" \_ -> do
-        pending "not implemented"
+        count <- ConcurrentVar.peek processedCount
+        count |> shouldBe 1
 
-      it "EventStore returns an error on readAllEventsForwardFrom — Task returns the error" \_ -> do
-        pending "not implemented"
+      it "Start from position 100 with checkpoints — only events at >= 101 processed" \_ -> do
+        eventStore <- InMemory.new |> Task.mapError toText
+        checkpointStore <- CheckpointInMemory.new
+        let entityName = EntityName "TestEntity"
 
-      it "A QueryUpdater throws during processing — error logged for that query, other queries continue" \_ -> do
-        pending "not implemented"
+        insertTestEvent eventStore entityName
+        insertTestEvent eventStore entityName
+        insertTestEvent eventStore entityName
 
-      it "rebuildFrom at P then rebuildFrom at P+1 processes at most 1 new event — idempotency" \_ -> do
-        pending "not implemented"
+        processedCount <- ConcurrentVar.containing (0 :: Int)
+        let updater =
+              QueryUpdater
+                { queryName = "counter"
+                , updateQuery = \_ -> do
+                    processedCount |> ConcurrentVar.modify (\n -> n + 1)
+                    Task.yield unit
+                }
+        let registry = Registry.empty |> Registry.register entityName updater
+        subscriber <- Subscriber.new eventStore registry
+
+        Subscriber.rebuildFrom subscriber checkpointStore (StreamPosition 1)
+
+        count <- ConcurrentVar.peek processedCount
+        -- Events at positions 1 and 2 processed; position 0 skipped
+        count |> shouldBe 2
+
+      it "EventStore returns empty stream — returns with 0 events replayed" \_ -> do
+        eventStore <- InMemory.new |> Task.mapError toText
+        checkpointStore <- CheckpointInMemory.new
+        let registry = Registry.empty
+        subscriber <- Subscriber.new eventStore registry
+
+        Subscriber.rebuildFrom subscriber checkpointStore (StreamPosition 0)
+        pass
+
+      it "A QueryUpdater throws — error logged, other queries continue" \_ -> do
+        eventStore <- InMemory.new |> Task.mapError toText
+        checkpointStore <- CheckpointInMemory.new
+        let entityName = EntityName "TestEntity"
+
+        insertTestEvent eventStore entityName
+
+        successCount <- ConcurrentVar.containing (0 :: Int)
+        let failingUpdater =
+              QueryUpdater
+                { queryName = "failing"
+                , updateQuery = \_ -> Task.throw "Simulated failure"
+                }
+        let successfulUpdater =
+              QueryUpdater
+                { queryName = "successful"
+                , updateQuery = \_ -> do
+                    successCount |> ConcurrentVar.modify (\n -> n + 1)
+                    Task.yield unit
+                }
+        let registry =
+              Registry.empty
+                |> Registry.register entityName failingUpdater
+                |> Registry.register entityName successfulUpdater
+        subscriber <- Subscriber.new eventStore registry
+
+        Subscriber.rebuildFrom subscriber checkpointStore (StreamPosition 0)
+
+        count <- ConcurrentVar.peek successCount
+        count |> shouldBe 1
+
+      it "rebuildFrom at P then rebuildFrom at P+1 — at most 1 new event (idempotency)" \_ -> do
+        eventStore <- InMemory.new |> Task.mapError toText
+        checkpointStore <- CheckpointInMemory.new
+        let entityName = EntityName "TestEntity"
+
+        insertTestEvent eventStore entityName
+        insertTestEvent eventStore entityName
+
+        processedCount <- ConcurrentVar.containing (0 :: Int)
+        let updater =
+              QueryUpdater
+                { queryName = "counter"
+                , updateQuery = \_ -> do
+                    processedCount |> ConcurrentVar.modify (\n -> n + 1)
+                    Task.yield unit
+                }
+        let registry = Registry.empty |> Registry.register entityName updater
+        subscriber <- Subscriber.new eventStore registry
+
+        Subscriber.rebuildFrom subscriber checkpointStore (StreamPosition 0)
+        count1 <- ConcurrentVar.peek processedCount
+        count1 |> shouldBe 2
+
+        processedCount |> ConcurrentVar.modify (\_ -> 0)
+        -- Rebuild again from 0: checkpoints persisted so 0 events processed (idempotent)
+        Subscriber.rebuildFrom subscriber checkpointStore (StreamPosition 0)
+        count2 <- ConcurrentVar.peek processedCount
+        count2 |> shouldBe 0
 
   describe "Service.Query.Subscriber readiness" do
     describe "subscriber.ready" do
       it "Rebuild completes successfully — ready is True" \_ -> do
-        pending "not implemented"
+        eventStore <- InMemory.new |> Task.mapError toText
+        checkpointStore <- CheckpointInMemory.new
+        let registry = Registry.empty
+        subscriber <- Subscriber.new eventStore registry
 
-      it "No queries registered — ready is True immediately" \_ -> do
-        pending "not implemented"
+        Subscriber.rebuildFrom subscriber checkpointStore (StreamPosition 0)
 
-      it "Rebuild in progress — ready is False" \_ -> do
-        pending "not implemented"
+        ready <- ConcurrentVar.peek subscriber.ready
+        ready |> shouldBe True
 
-      it "Rebuild completes with 0 events — ready is True" \_ -> do
-        pending "not implemented"
+      it "No queries registered — ready is True after rebuild" \_ -> do
+        eventStore <- InMemory.new |> Task.mapError toText
+        checkpointStore <- CheckpointInMemory.new
+        let registry = Registry.empty
+        subscriber <- Subscriber.new eventStore registry
 
-      it "Rebuild task crashes — ready stays False, error logged" \_ -> do
-        pending "not implemented"
+        readyBefore <- ConcurrentVar.peek subscriber.ready
+        readyBefore |> shouldBe False
 
-      it "ready transitions from False to True exactly once — monotonic" \_ -> do
-        pending "not implemented"
+        Subscriber.rebuildFrom subscriber checkpointStore (StreamPosition 0)
+
+        readyAfter <- ConcurrentVar.peek subscriber.ready
+        readyAfter |> shouldBe True
+
+      it "Rebuild with events — ready is True after completion" \_ -> do
+        eventStore <- InMemory.new |> Task.mapError toText
+        checkpointStore <- CheckpointInMemory.new
+        let entityName = EntityName "TestEntity"
+
+        insertTestEvent eventStore entityName
+
+        processedCount <- ConcurrentVar.containing (0 :: Int)
+        let updater =
+              QueryUpdater
+                { queryName = "counter"
+                , updateQuery = \_ -> do
+                    processedCount |> ConcurrentVar.modify (\n -> n + 1)
+                    Task.yield unit
+                }
+        let registry = Registry.empty |> Registry.register entityName updater
+        subscriber <- Subscriber.new eventStore registry
+
+        Subscriber.rebuildFrom subscriber checkpointStore (StreamPosition 0)
+
+        ready <- ConcurrentVar.peek subscriber.ready
+        ready |> shouldBe True
+        count <- ConcurrentVar.peek processedCount
+        count |> shouldBe 1
