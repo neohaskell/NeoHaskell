@@ -188,6 +188,24 @@ statement using Hasql's typed `Statement` API (string concatenation is
 unrepresentable — see ADR-0027 / EventStore.Postgres precedent). One
 transaction, no two-table coupling.
 
+Serialization to `state_json` runs on the per-event hot path. Any
+persisted query state must implement `toEncoding` directly — either
+via `Generic`-derived `deriveJSON` or hand-written `toEncoding` — to
+write straight into the encoding `Builder` without materialising an
+intermediate `Value` tree. A `toJSON`-only instance is rejected at
+compile time by a `QueryStateSerializable` constraint on
+`useQueryObjectStore`.
+
+**Data classification.** `state_json` inherits the data-classification
+properties of its source events; this ADR does not introduce a new PII
+surface (the same data already lives in `eventstore.events` JSONB
+under ADR-0004). Encryption-at-rest, if required, is a Postgres-
+deployment concern at the cluster/tablespace layer, not an
+application-schema one. Queries that *project* sensitive fields out of
+events should drop them explicitly in the `QueryUpdater` —
+documenting this in the `useQueryObjectStore` haddock is in-scope for
+phase 10.
+
 ### 2. Startup resume
 
 For each registered query, on startup the framework runs:
@@ -223,6 +241,26 @@ spawn, and transports bind immediately. `/health` (ADR-0025) keeps its
 existing meaning — the process is up — and is unaffected by rebuild
 state. `/ready` is the new endpoint that gates on
 `subscriber.readiness`.
+
+**Rebuild timeout.** Each query's rebuild runs under a configurable
+per-query timeout (default `5 minutes`, settable via
+`RebuildOptions { timeout :: Duration }`). On timeout or updater
+exception, the readiness state flips to a third constructor:
+
+```haskell
+data Readiness
+  = Rebuilding
+  | Ready
+  | Failed Text     -- reason: timeout, updater exception, hash-replay failure
+  deriving (Eq, Show)
+```
+
+`Failed` is a terminal state for that query — `/ready` reports it
+distinctly so the orchestrator stops flapping, and the per-query
+endpoint returns `503` with `X-Query-Status: failed`. Recovery
+requires operator intervention (fix the updater, then restart).
+Updater exceptions are logged at `WARN` with the offending event
+position, the query name, and a truncated payload digest.
 
 ### 4. Chunked reads + progress
 
@@ -432,6 +470,7 @@ GET /ready     → 200 {"status":"ready"}        (when overallReadiness == Ready
 GET /queries/{name}
                → 200 [...]                     (when readinessOf name == Ready)
                → 503 {"status":"rebuilding"}   with header X-Query-Status: rebuilding
+               → 503 {"status":"failed","reason":"..."}  with header X-Query-Status: failed
 ```
 
 `/health` (ADR-0025) is unchanged — the process is alive. `/ready` is
