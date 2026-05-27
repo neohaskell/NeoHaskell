@@ -31,20 +31,20 @@ ADR-0007 already flags this in its Related Work section as item #4
   serverless Postgres warmup should not turn into a multi-minute window
   where the load balancer sees a dead port.
 - **Shipping one-line code fixes** — a no-op deploy should not force a
-  full read-model re-derivation. Persisting the checkpoint and the
-  store turns that into a few cents of Postgres reads instead of a
-  full replay.
+  full read-model re-derivation. Persisting state with its position
+  turns that into a few cents of Postgres reads instead of a full
+  replay.
 - **Adding a query to an existing service** — only the newly-added
   query should replay from `StreamPosition 0`. Pre-existing queries
-  continue from their stored checkpoint.
+  continue from their stored position.
 
 ### Design Goals
 
-1. **HTTP `/healthz` is constant-time** regardless of event count, so
+1. **HTTP `/health` is constant-time** regardless of event count, so
    liveness probes succeed the moment the process binds.
-2. **`/readyz` reflects actual catch-up state**, so traffic is only
+2. **`/ready` reflects actual catch-up state**, so traffic is only
    routed to a machine when its read models are current.
-3. **Per-query checkpoints**, so adding or evolving one query does not
+3. **Per-query positions**, so adding or evolving one query does not
    penalise the others.
 4. **Persistent `QueryObjectStore` backend**, so a restart does not
    discard work the previous process already paid for.
@@ -67,41 +67,46 @@ ADR-0007 already flags this in its Related Work section as item #4
 - **The default `QueryObjectStoreConfig` in `Service.Application` stays
   in-memory** — adding Postgres must be a one-line opt-in, not a
   required dependency for hello-world apps.
-- **Checkpoint writes must be transactional with the object write** —
-  otherwise a crash between the two creates either a duplicate apply
-  (if checkpoint is written first) or a lost update (if object is
-  written first). Both are observable as read-model drift.
-- **Readiness is a first-class concept** — `/healthz` (liveness) and
-  `/readyz` (readiness) are separate endpoints. The framework owns
-  both. Jess never writes either one by hand.
+- **The persisted position and the persisted state must commit
+  together** — otherwise a crash between the two creates either a
+  duplicate apply (if position is written first) or a lost update (if
+  state is written first). Both are observable as read-model drift.
+  The fix is to keep them in the *same row* — precedent: ADR-0006
+  `Snapshot { state, position }`.
+- **Readiness is a first-class concept** — `/health` (liveness, per
+  ADR-0025) and `/ready` (readiness) are separate endpoints. The
+  framework owns both. Jess never writes either one by hand.
 - **One readiness flag per query, plus an aggregate** — global
   readiness is `all queries are ready`. A slow query does not have
   to block the rest.
 
 ## Considered options
 
-### Option 1 — Persistent `QueryObjectStore.Postgres` + per-query checkpoint + async rebuild (chosen)
+### Option 1 — Persistent `QueryObjectStore.Postgres` with embedded position + async rebuild (chosen)
 
 Layered set of small changes:
 
 1. New `Service.QueryObjectStore.Postgres` backend (table
    `query_object_store` keyed by `(query_name, instance_uuid)`, JSON
-   column for the serialised query).
-2. New `Service.Query.Checkpoint` module + table `query_checkpoint`
-   keyed by `query_name`, updated transactionally in the same
-   statement batch as the object write inside `atomicUpdate`.
+   column for the serialised query state, `position` and `query_hash`
+   columns in the same row — same shape as `Snapshot { state, position }`
+   in ADR-0006).
+2. `atomicUpdate` is a single
+   `INSERT ... ON CONFLICT (query_name, instance_uuid) DO UPDATE`
+   that writes state and position together. One transaction, one
+   table, no two-table coupling.
 3. `Subscriber.rebuildAll` is split into `rebuildFrom` (per-query,
    resumable, chunked) and `rebuildAllAsync` which spawns the work via
    `AsyncTask.run` and flips `subscriber.readiness` when done.
 4. `Application.run` becomes non-blocking on rebuild — transports
-   bind immediately, `/healthz` is 200, `/readyz` waits on
+   bind immediately, `/health` is 200 (ADR-0025), `/ready` waits on
    `subscriber.readiness`. Per-query endpoints respect per-query
-   readiness with `X-Query-Status: rebuilding` + 503.
+   readiness with response header `X-Query-Status: rebuilding`.
 5. Chunked reads (default `Limit 1000` per page) with progress logging
    and observability counters.
 6. `KnownHash` mismatch (`deriveQuery`-derived) triggers a full replay
-   of the affected query only — checkpoint for that query is cleared
-   at startup.
+   of the affected query only — rows with the stale hash are deleted
+   at startup, that query replays from `StreamPosition 0`.
 
 ### Option 2 — Synchronous rebuild + Postgres `QueryObjectStore` only
 
@@ -109,15 +114,15 @@ Persist the object store but keep the synchronous rebuild and the
 single global cursor.
 
 - Rejected: still re-reads the full event history on every restart
-  because there is no checkpoint. Strictly worse than option 1 on boot
-  time; only marginally better on memory pressure.
+  because there is no per-query position. Strictly worse than option 1
+  on boot time; only marginally better on memory pressure.
 
 ### Option 3 — Async rebuild + InMemory only
 
 Spin off `rebuildAll` to an async task, but keep the in-memory store
-and no checkpoint.
+and no persisted position.
 
-- Rejected: unblocks startup but `/readyz` stays 503 for the full
+- Rejected: unblocks startup but `/ready` stays 503 for the full
   rebuild window on every restart. Acceptable only for tiny event
   stores — useless at scale.
 
@@ -145,9 +150,9 @@ Defer all replay until the first `GET /queries/{name}` call hits.
 
 | Option | Verdict | Reason |
 |--------|---------|--------|
-| 1. Postgres store + per-query checkpoint + async | **Chosen** | Only design that satisfies all seven goals. |
+| 1. Postgres store with embedded position + async | **Chosen** | Only design that satisfies all seven goals. |
 | 2. Postgres store, sync rebuild | Rejected | Still O(events) on boot. |
-| 3. Async rebuild, InMemory store | Rejected | `/readyz` still flaps on every restart. |
+| 3. Async rebuild, InMemory store | Rejected | `/ready` still flaps on every restart. |
 | 4. JSONL snapshots | Rejected | Weaker recovery semantics than Postgres. |
 | 5. Lazy hydration | Rejected | Unbounded first-request latency. |
 | 6. Live-only queries | Rejected | Silently loses pre-existing events. |
@@ -160,39 +165,46 @@ ships on its own, and each is independently testable.
 ### 1. Persistent `QueryObjectStore.Postgres`
 
 New module `Service.QueryObjectStore.Postgres` provides a Hasql-backed
-`QueryObjectStore` implementation. Schema:
+`QueryObjectStore` implementation. Position lives **inside** the
+state row (precedent: ADR-0006 `Snapshot { state, position }`) so the
+state write and the position write commit together by construction.
+Schema:
 
 ```sql
 CREATE TABLE query_object_store (
   query_name        TEXT NOT NULL,
   instance_uuid     UUID NOT NULL,
-  payload           JSONB NOT NULL,
+  query_hash        TEXT NOT NULL,           -- KnownHash-derived, used for schema evolution
+  position          BIGINT NOT NULL,         -- StreamPosition reached at this state
+  state_json        JSONB NOT NULL,
+  updated_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
   PRIMARY KEY (query_name, instance_uuid)
 );
 ```
 
-`atomicUpdate` becomes a single `INSERT … ON CONFLICT DO UPDATE`
+`atomicUpdate` becomes a single
+`INSERT ... ON CONFLICT (query_name, instance_uuid) DO UPDATE`
 statement using Hasql's typed `Statement` API (string concatenation is
-unrepresentable — see ADR-0027 / EventStore.Postgres precedent). The
-`QueryObjectStoreConfig` typeclass already exposes the right entry
-point; the new module just adds another instance.
+unrepresentable — see ADR-0027 / EventStore.Postgres precedent). One
+transaction, no two-table coupling.
 
-### 2. Per-query checkpoint
+### 2. Startup resume
 
-New module `Service.Query.Checkpoint` and table:
+For each registered query, on startup the framework runs:
 
 ```sql
-CREATE TABLE query_checkpoint (
-  query_name        TEXT PRIMARY KEY,
-  last_position     BIGINT NOT NULL,
-  known_hash        TEXT NOT NULL
-);
+SELECT min(position)
+FROM query_object_store
+WHERE query_name = ?
+  AND query_hash = ?
 ```
 
-The checkpoint is updated in the same Hasql transaction as the object
-write. The `known_hash` column stores the `KnownHash` derived by
-`deriveQuery`; a mismatch at startup means schema evolved and the row
-is deleted, forcing a full replay for that query only.
+The minimum position across that query's rows is the resume point —
+the subscriber starts there. Rows whose `query_hash` does not match
+the current `KnownHash`-derived hash for that query are treated as
+garbage and deleted; that query then replays from `StreamPosition 0`.
+Schema evolution is therefore explicit and per-query: a hash change
+forces a full replay of exactly that query, nothing else.
 
 ### 3. Async rebuild + readiness
 
@@ -207,9 +219,10 @@ data Readiness
 ```
 
 `Application.run` replaces the synchronous call site with an async
-spawn, and transports bind immediately. The readiness endpoints
-(`/healthz`, `/readyz`) are added to the WebTransport route table
-alongside the existing `/health` (ADR-0025).
+spawn, and transports bind immediately. `/health` (ADR-0025) keeps its
+existing meaning — the process is up — and is unaffected by rebuild
+state. `/ready` is the new endpoint that gates on
+`subscriber.readiness`.
 
 ### 4. Chunked reads + progress
 
@@ -224,28 +237,137 @@ page, and emits the three observability counters
 core/service/
   Service/
     Query/
-      Checkpoint.hs               -- new: checkpoint trait + types
-      Checkpoint/
-        InMemory.hs               -- default impl (mirrors InMemory QueryObjectStore)
-        Postgres.hs               -- transactional impl, sharing the pool
       Subscriber.hs               -- modified: rebuildFrom, readiness
     QueryObjectStore/
-      Postgres.hs                 -- new: Hasql-backed implementation
-  Service/
+      Postgres.hs                 -- new: Hasql-backed implementation (state + position in one row)
     Transport/
       Web/
-        Readiness.hs              -- new: /healthz + /readyz handlers
+        Readiness.hs              -- new: /ready handler (/health stays in existing module)
 ```
 
 Follows the established flat structure with one level of nesting for
-implementation variants.
+implementation variants. No `Service.Query.Checkpoint` module — the
+position lives inside `QueryObjectStore` rows, so there is nothing
+separate to put behind a trait.
+
+### Performance testing
+
+A dedicated benchmark suite exercises the new design under the
+conditions that motivated it. Each suite below names its assertion
+shape; floor numbers are filled in during benchmarking (phase 5).
+
+1. **HTTP-bind latency** (Hurl + `time_total`): `/health` returns
+   `200` within X ms of process start, *flat* across event counts
+   1k / 10k / 100k.
+2. **Cold-start replay throughput** (`tasty-bench` or whatever
+   harness `EventStore` already uses): events/sec replayed at chunk
+   size `1000` through one trivial updater, reported as a single
+   number.
+3. **Warm-restart latency**: with `query_object_store` already at
+   head, `/ready` flips to `200` within X ms regardless of N. Proves
+   "skip already-processed work" actually skips.
+4. **Chunked-read memory bound**: heap stays under M bytes during a
+   100k-event replay. Proves chunking, not just termination.
+5. **`atomicUpdate` contention** (`criterion` or equivalent): K
+   concurrent updates to the same `(query_name, instance_uuid)` —
+   throughput curve reported at K = 1, 10, 100.
+6. **Per-query selective replay**: hash mismatch on 1 of K queries
+   replays only that one; other queries' rebuild times statistically
+   indistinguishable from the no-mismatch baseline.
+7. **Catch-up during live events**: replay running concurrently with
+   live appends → effective catch-up rate ≥ append rate at steady
+   state.
+8. **Idempotent replay (property)**: replaying the same N events
+   twice produces byte-identical state and an identical final
+   position.
+
+Suites match the rigor expected of `EventStore.Postgres`. Phase 8
+(test spec) checks for an existing `tasty-bench` harness under
+`core/test-service/`; if absent, adding a minimal harness is
+in-scope for this ADR's implementation.
+
+### Concurrency & correctness testing
+
+Async rebuild + live subscription + persistent store creates concrete
+hazards. Each `H#` below has a named test counterpart.
+
+- **H1 — Replay racing live subscription.** Async replay catches up
+  to position `P` while the live subscriber is already processing
+  events `≥ P`; the same event can hit `atomicUpdate` from two
+  threads in indeterminate order.
+  - Test: race test seeds the EventStore at positions `1..1000`,
+    starts replay, injects a live event near the boundary; final
+    state is byte-equal to a "replay only, no live" reference.
+
+- **H2 — Lost write via `ON CONFLICT DO UPDATE`.** Two concurrent
+  updates with positions `(Pₐ, P_b)` where `Pₐ > P_b` — naïve
+  last-writer-wins overwrites the higher position with the lower
+  one.
+  - Test: property test asserts `position` is monotonically
+    non-decreasing per `(query_name, instance_uuid)` under any
+    random interleaving of `N = 100` concurrent updates.
+  - Resolution: `atomicUpdate` uses CAS-on-position semantics — the
+    SQL `DO UPDATE` fires only `WHERE query_object_store.position < EXCLUDED.position`.
+
+- **H3 — Crash mid-update.** Process killed between event fetch and
+  Postgres commit; after restart, replay must converge.
+  - Test: crash injection (`Task.throw` or `pg_terminate_backend`)
+    at three points — pre-write, mid-transaction,
+    post-write-pre-ack. Restart and verify state converges to the
+    expected baseline.
+
+- **H4 — Readiness flag visibility.** `subscriber.readiness` flips
+  to `Ready` before the last `query_object_store` write is durable
+  → a request lands and reads stale or missing state.
+  - Test: assert no query read can succeed before its last write is
+    observable via a *fresh* Postgres connection (no caching).
+
+- **H5 — Hash-mismatch mid-flight.** Hash changes for query `Q`; we
+  delete `Q`'s rows and replay from `0` while a concurrent live
+  event arrives for `Q`.
+  - Test: trigger a hash change while live events are arriving for
+    that query; final state equals "fresh replay from 0 with all
+    events"; other queries' positions are unchanged.
+
+- **H6 — Chunk-boundary tearing.** Chunked read at `Limit 1000`;
+  causally-linked events that span chunks must still produce
+  identical state to a single-chunk read.
+  - Test: property test —
+    `replay (events₁ ++ events₂) ≡ replay events₁ ; replay events₂`
+    from the same starting position, for any split point.
+
+- **H7 — Init ordering.** Live subscription started before all
+  queries registered → events silently dropped for unregistered
+  queries.
+  - Test: register a query *after* `Application.run` has started →
+    either rejected with a clear error or accepted with full replay
+    from `0`. No silent drops, asserted by a sum projection.
+
+- **H8 — AsyncTask cancellation on shutdown.** SIGTERM during
+  rebuild → `AsyncTask` cancelled; persisted position must be safe
+  (no partial commits past it).
+  - Test: Hurl scenario — SIGTERM mid-rebuild, restart; replay
+    resumes from the persisted position; no events double-counted
+    (asserted via a sum-style query).
+
+- **H9 — Multi-writer (future-proofing only).** Out of MVP scope,
+  but the design must not preclude it.
+  - Test: assert the contract — `atomicUpdate` with a stale
+    `expectedPosition` rejects rather than overwrites. Keeps the
+    door open for HA without designing for it now.
+
+Race orchestration follows the barrier pattern used in
+`core/test/Service/EventStore/` (verified during phase 8). Crash
+injection helpers under `core/testlib/Test/Service/` — added
+in-scope if missing.
 
 ## Public API
 
 The framework already provides `useQueryObjectStore`, `withQuery`, and
-the `/health` endpoint. The new surface area is minimal: the
-`Postgres` constructor, an opt-in `useQueryCheckpoint`, and the
-readiness gate (which is on by default).
+the `/health` endpoint (ADR-0025). The new surface area is minimal:
+the `Postgres` constructor for `QueryObjectStore`, the framework-owned
+`/ready` endpoint (which is on by default), and the response header
+`X-Query-Status: rebuilding` on query endpoints during rebuild.
 
 ### `Service.QueryObjectStore.Postgres`
 
@@ -255,6 +377,8 @@ module Service.QueryObjectStore.Postgres (
 ) where
 
 import Service.QueryObjectStore.Core (QueryObjectStoreConfig (..))
+import Text (Text)
+
 
 data PostgresQueryObjectStoreConfig = PostgresQueryObjectStoreConfig
   { host :: Text,
@@ -264,6 +388,7 @@ data PostgresQueryObjectStoreConfig = PostgresQueryObjectStoreConfig
     port :: Int
   }
   deriving (Eq, Ord, Show)
+
 
 instance QueryObjectStoreConfig PostgresQueryObjectStoreConfig where
   createQueryObjectStore config = do
@@ -277,62 +402,6 @@ instance QueryObjectStoreConfig PostgresQueryObjectStoreConfig where
         }
 ```
 
-### `Service.Query.Checkpoint`
-
-```haskell
-module Service.Query.Checkpoint (
-  Checkpoint (..),
-  CheckpointStore (..),
-  CheckpointStoreConfig (..),
-  Error (..),
-) where
-
-import Service.Event.StreamPosition (StreamPosition)
-import Text (Text)
-
-data Checkpoint = Checkpoint
-  { queryName :: Text,
-    lastPosition :: StreamPosition,
-    knownHash :: Text
-  }
-  deriving (Eq, Show)
-
-data Error
-  = StorageError Text
-  | SerializationError Text
-  deriving (Eq, Show)
-
-data CheckpointStore = CheckpointStore
-  { get :: Text -> Task Error (Maybe Checkpoint),
-    set :: Checkpoint -> Task Error Unit,
-    delete :: Text -> Task Error Unit,
-    getAll :: Task Error (Array Checkpoint)
-  }
-
-class CheckpointStoreConfig config where
-  createCheckpointStore :: config -> Task Text CheckpointStore
-```
-
-### `Service.Query.Subscriber` (new entry points)
-
-```haskell
--- | Spawn the rebuild on an async task. Returns immediately.
--- Transports are free to bind before the inner Task completes.
-rebuildAllAsync :: QuerySubscriber -> Task Text (AsyncTask Unit)
-
--- | Resume a single query from its checkpoint (or from 0 on hash mismatch).
--- Page size defaults to 1000 events.
-rebuildFrom ::
-  QuerySubscriber ->
-  Text ->            -- queryName
-  StreamPosition ->  -- start position (exclusive)
-  Task Text Unit
-
--- | Inspect readiness. Used by /readyz and per-query endpoints.
-readinessOf :: QuerySubscriber -> Text -> Task Text Readiness
-overallReadiness :: QuerySubscriber -> Task Text Readiness
-```
-
 ### Application builder
 
 ```haskell
@@ -340,22 +409,24 @@ app :: Application
 app =
   Application.new
     |> Application.withEventStore postgresEventStoreConfig
-    |> Application.useQueryObjectStore postgresQueryObjectStoreConfig
-    |> Application.useQueryCheckpoint postgresCheckpointConfig
+    |> Application.useQueryObjectStore postgresConfig
+    |> Application.useReadinessEndpoint
     |> Application.withQuery @UserOrders
     |> Application.withService userService
 ```
 
-`useQueryCheckpoint` is opt-in. When absent, the framework falls back
-to an `InMemory` checkpoint store — same boot semantics as today
-(full replay on every restart) but the async path still applies, so
-`/healthz` is constant-time regardless.
+`useQueryObjectStore postgresConfig` is the entire opt-in for
+persistent state with embedded position — there is no separate
+checkpoint builder. `useReadinessEndpoint` is on by default; the
+explicit form is shown so Jess sees one autocomplete entry that
+covers the readiness contract.
 
 ### Readiness endpoint contract
 
 ```text
-GET /healthz   → 200 {"status":"alive"}        (always, while the process is up)
-GET /readyz    → 200 {"status":"ready"}        (when overallReadiness == Ready)
+GET /health    → 200 {"status":"ok"}           (ADR-0025; unchanged)
+
+GET /ready     → 200 {"status":"ready"}        (when overallReadiness == Ready)
                → 503 {"status":"rebuilding", "queries":[{name,lag}]}
 
 GET /queries/{name}
@@ -363,8 +434,10 @@ GET /queries/{name}
                → 503 {"status":"rebuilding"}   with header X-Query-Status: rebuilding
 ```
 
-`/health` (ADR-0025) keeps its current behaviour for backwards
-compatibility; `/healthz` and `/readyz` are the new probe pair.
+`/health` (ADR-0025) is unchanged — the process is alive. `/ready` is
+the new probe that reflects subscriber catch-up. Per-query degraded
+mode is a header (`X-Query-Status: rebuilding`) on the existing query
+endpoint, not a separate URL.
 
 ### Example: handling a rebuilding query in client code
 
@@ -384,46 +457,50 @@ response body:
 
 ### Positive
 
-1. **HTTP readiness is constant-time on warm restart.** `/healthz`
-   succeeds the moment the process binds; rebuild work is invisible to
-   liveness probes.
-2. **Rolling deploys stop flapping.** Load balancers only route to
-   machines whose `subscriber.readiness == Ready`.
+1. **HTTP liveness is constant-time on warm restart.** `/health`
+   succeeds the moment the process binds; rebuild work is invisible
+   to liveness probes (ADR-0025 semantics preserved).
+2. **Rolling deploys stop flapping.** Load balancers route to
+   machines only when `subscriber.readiness == Ready`, observed via
+   `/ready`.
 3. **Persistent state survives restarts.** A no-op deploy reads zero
    events from the EventStore for queries that were caught up before
    the restart.
-4. **Per-query isolation.** Adding `OrderSummary` to a service with a
+4. **Position is embedded in the persisted state record** (precedent:
+   ADR-0006 `Snapshot`). Serverless-ready — the DB row IS the cache,
+   no separate cursor to synchronise.
+5. **Per-query isolation.** Adding `OrderSummary` to a service with a
    caught-up `UserOrders` only replays the new query.
-5. **Schema evolution is safe and explicit.** A `KnownHash` change
+6. **Schema evolution is safe and explicit.** A `KnownHash` change
    forces a full replay for exactly that query, leaving the others
    untouched.
-6. **Observable rebuild progress.** `events_replayed`,
+7. **Observable rebuild progress.** `events_replayed`,
    `lag_from_head`, `duration_seconds` are emitted per query — a slow
    rebuild becomes a measurement rather than a guess.
-7. **Default API stays Jess-clean.** Apps that do not opt into
-   Postgres or a custom checkpoint store keep working unchanged; the
-   only visible difference is that `/healthz` returns immediately.
-8. **Aligns with existing precedents.** Same trait + Postgres-impl
-   pattern as ADR-0006 (snapshot cache) and ADR-0004 (EventStore);
-   readiness contract mirrors ADR-0027 (pool health) and ADR-0025
-   (health endpoint).
+8. **Default API stays Jess-clean.** Apps that do not opt into
+   Postgres keep working unchanged; the only visible difference is
+   that `/health` returns immediately and `/ready` is a new probe
+   they can ignore until they need it.
+9. **Aligns with existing precedents.** Same trait + Postgres-impl
+   pattern as ADR-0006 (snapshot cache, same `state + position`
+   shape) and ADR-0004 (EventStore); readiness contract extends
+   ADR-0025 (`/health`).
 
 ### Negative
 
-1. **Two new tables.** `query_object_store` and `query_checkpoint`
-   must be migrated into the user's Postgres schema. The
-   `EventStore.Postgres` migration pattern is the precedent — the
-   framework runs the migration on startup.
+1. **One new table.** `query_object_store` must be migrated into the
+   user's Postgres schema. The `EventStore.Postgres` migration
+   pattern is the precedent — the framework runs the migration on
+   startup.
 2. **Larger surface for `QueryObjectStore` implementations.** Future
-   backends (Redis, DynamoDB) must provide transactional semantics
-   spanning both the object write and the checkpoint write, or accept
-   a documented at-least-once apply semantics for the seam between
-   them.
+   backends (Redis, DynamoDB) must support an atomic
+   compare-and-swap on `(state, position)` per row, or accept a
+   documented at-least-once apply semantics.
 3. **Per-query readiness adds one `ConcurrentVar` per registered
-   query.** Negligible memory cost (a handful of bytes per query) but
-   it is a new concurrency primitive on the hot path of every event
-   delivery. The 50k req/s budget is not affected because reads only
-   touch `ConcurrentVar.peek`.
+   query.** Negligible memory cost (a handful of bytes per query)
+   but it is a new concurrency primitive on the hot path of every
+   event delivery. The 50k req/s budget is not affected because
+   reads only touch `ConcurrentVar.peek`.
 4. **`X-Query-Status: rebuilding` is a new client contract.** Hurl
    smoke tests and acceptance tests need to learn the header. JSON
    503 body is documented but new.
@@ -436,31 +513,31 @@ response body:
 
 | Risk | Mitigation |
 |------|------------|
-| Transactional `INSERT … ON CONFLICT DO UPDATE` on `query_object_store` + `query_checkpoint` is a non-trivial Hasql `Statement`. Splitting writes risks data loss. | Single statement using a Hasql `Pipeline` or a `Session` wrapping both — same pattern as `EventStore.Postgres` already uses for insert + notify. Reviewed in phase 4 (security) and phase 5 (perf). |
+| `INSERT ... ON CONFLICT DO UPDATE` with CAS-on-position semantics is a non-trivial Hasql `Statement`. | Single statement using Hasql's typed `Statement` API — same pattern as `EventStore.Postgres` already uses for insert + notify. Reviewed in phase 4 (security) and phase 5 (perf). |
 | `KnownHash` mismatch path could be exploited to force expensive replays. | Hash is derived at compile time by `deriveQuery`; not user-controlled at runtime. Replay is per-query, not global, and progress is observable. |
-| Async rebuild masks updater failures. | Mandatory structured-log + counter on updater failure; `/readyz` body lists per-query lag so a stuck query is visible. |
-| Long catch-up windows on first deploy of a Postgres-backed store. | Acceptable — first deploy is the one time per service that O(eventCount) work is unavoidable. Progress logging makes it observable; the async path keeps `/healthz` honest throughout. |
-| Hash mismatch + crash mid-rebuild could leave checkpoint stale. | Checkpoint is only ever updated transactionally with the object write — a crash mid-rebuild simply resumes from the last successfully-committed position. |
+| Async rebuild masks updater failures. | Mandatory structured-log + counter on updater failure; `/ready` body lists per-query lag so a stuck query is visible. |
+| Long catch-up windows on first deploy of a Postgres-backed store. | Acceptable — first deploy is the one time per service that O(eventCount) work is unavoidable. Progress logging makes it observable; the async path keeps `/health` honest throughout. |
+| Hash mismatch + crash mid-rebuild could leave row stale. | State and position are written in the same row, so a crash mid-rebuild simply resumes from the last successfully-committed position; CAS-on-position prevents regression. |
 
 ### Mitigations
 
-- Migration script for the two new tables follows the existing
+- Migration script for the new table follows the existing
   `EventStore.Postgres` precedent (idempotent `CREATE TABLE IF NOT
   EXISTS`, runs on startup).
-- Default `useQueryCheckpoint` falls back to in-memory, so the
+- Default `useQueryObjectStore` falls back to in-memory, so the
   framework does not become harder to spin up locally.
-- Hurl acceptance tests in `testbed/` add coverage for `/healthz`,
-  `/readyz`, and the `X-Query-Status: rebuilding` header on a query
-  endpoint hit during rebuild.
+- Hurl acceptance tests in `testbed/` add coverage for `/ready` and
+  the `X-Query-Status: rebuilding` header on a query endpoint hit
+  during rebuild.
 - ADR-0007 status section is updated to cross-reference this ADR.
 
 ## References
 
 - [#650: Query rebuild blocks HTTP readiness on every restart](https://github.com/neohaskell/NeoHaskell/issues/650)
 - [ADR-0007: Queries (Read Models)](0007-queries-read-models.md) — original CQRS read-model design; §"Application Startup Sequence" and §"Related Work" item 4.
-- [ADR-0006: Entity Snapshot Cache](0006-entity-snapshot-cache.md) — precedent for the trait + persisted-position pattern.
+- [ADR-0006: Entity Snapshot Cache](0006-entity-snapshot-cache.md) — precedent for the `state + position` in-one-row shape.
 - [ADR-0004: EventStore Abstraction](0004-eventstore-abstraction.md) — Postgres backend template.
-- [ADR-0025: Auto Health Endpoint for WebTransport Apps](0025-auto-health-endpoint.md) — `/health` precedent; `/healthz` + `/readyz` extend it.
+- [ADR-0025: Auto Health Endpoint for WebTransport Apps](0025-auto-health-endpoint.md) — `/health` precedent; `/ready` extends it.
 - [ADR-0027: PostgreSQL Connection Pool Health for Serverless Databases](0027-postgres-pool-health.md) — readiness-signal precedent; pool config to inherit.
 - [core/service/Service/Query/Subscriber.hs](../../core/service/Service/Query/Subscriber.hs) — current `rebuildAll`.
 - [core/service/Service/Application.hs](../../core/service/Service/Application.hs) (lines 1154–1161) — synchronous call site.
