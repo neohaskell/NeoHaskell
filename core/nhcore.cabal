@@ -266,6 +266,7 @@ library
     Service.QueryObjectStore
     Service.QueryObjectStore.Core
     Service.QueryObjectStore.InMemory
+    Service.QueryObjectStore.Postgres
     Service.Response
     Service.SnapshotCache
     Service.SnapshotCache.Core
@@ -286,6 +287,7 @@ library
     Service.Transport
     Service.Transport.Web
     Service.Transport.Web.BuiltinSchemas
+    Service.Transport.Web.Readiness
     Service.Transport.Web.SwaggerUI
     Service.Transport.Internal
     Service.Transport.Cli
@@ -606,6 +608,10 @@ test-suite nhcore-test-service
     Service.Command.CanAccess.PermissionFixture
     Service.Transport.Web.CommandAuthSpec
     Service.CommandExecutor.AuditLoggingSpec
+    Service.QueryObjectStore.PostgresSpec
+    Service.Query.Subscriber.ReadinessSpec
+    Service.Transport.Web.ReadinessSpec
+    Service.Application.ReadinessBuilderSpec
 
   type: exitcode-stdio-1.0
   hs-source-dirs: test-service, test

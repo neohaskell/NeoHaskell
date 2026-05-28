@@ -46,6 +46,9 @@ module Service.Application (
   withHealthCheck,
   withoutHealthCheck,
   withDispatcherConfig,
+  useQueryObjectStore,
+  useReadinessEndpoint,
+  withoutReadinessEndpoint,
 
   -- * Health Check Re-export
   Web.HealthCheckConfig (..),
@@ -2270,3 +2273,29 @@ formatOAuth2ValidationError providerName provider oauthError = do
       [fmt|Provider '#{providerName}' unexpected InvalidPkceVerifier during validation: #{errMsg}|]
     InvalidRedirectUri errMsg ->
       [fmt|Provider '#{providerName}' unexpected InvalidRedirectUri during validation: #{errMsg}|]
+
+
+-- | Wire a persistent query object store backend into the application.
+--
+-- Stub — not implemented.
+useQueryObjectStore ::
+  forall config.
+  (QueryObjectStoreConfig config) =>
+  config ->
+  Application ->
+  Application
+useQueryObjectStore _ _ = panic "not implemented: Application.useQueryObjectStore"
+
+
+-- | Enable the /ready HTTP endpoint (on by default, shown for discoverability).
+--
+-- Stub — not implemented.
+useReadinessEndpoint :: Application -> Application
+useReadinessEndpoint _ = panic "not implemented: Application.useReadinessEndpoint"
+
+
+-- | Disable the /ready endpoint entirely.
+--
+-- Stub — not implemented.
+withoutReadinessEndpoint :: Application -> Application
+withoutReadinessEndpoint _ = panic "not implemented: Application.withoutReadinessEndpoint"

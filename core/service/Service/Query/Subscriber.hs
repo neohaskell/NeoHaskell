@@ -1,9 +1,17 @@
 module Service.Query.Subscriber (
   QuerySubscriber (..),
+  Readiness (..),
+  RebuildOptions (..),
+  QueryRebuildError (..),
   new,
   start,
   stop,
   rebuildAll,
+  rebuildFrom,
+  rebuildAllAsync,
+  readinessOf,
+  readinessOfQuery,
+  rebuildOptionsDefault,
 ) where
 
 import Basics
@@ -141,6 +149,94 @@ processEventHandler subscriber rawEvent = do
   case rawEvent.metadata.globalPosition of
     Just pos -> subscriber.lastProcessedPosition |> ConcurrentVar.modify (\_ -> Just pos)
     Nothing -> pass
+
+
+-- | Readiness state of a query rebuild.
+data Readiness
+  = Rebuilding
+  | Ready
+  | Failed Text
+  deriving (Eq, Show, Generic)
+
+
+-- | Options controlling a per-query rebuild.
+data RebuildOptions = RebuildOptions
+  { chunkSize :: Int
+    -- ^ Events per fetch (default: 1000).
+  , timeout :: Int
+    -- ^ Per-query rebuild timeout in seconds (default: 300).
+  , logProgress :: Bool
+    -- ^ Emit a log message after each chunk (default: True).
+  , deleteStaleHashFirst :: Bool
+    -- ^ Delete rows with mismatched query_hash before replaying (default: True).
+  }
+  deriving (Eq, Show)
+
+
+-- | Errors produced during a query rebuild.
+data QueryRebuildError
+  = RebuildTimeout Text
+    -- ^ Rebuild took longer than the configured timeout.
+  | UpdaterException Text
+    -- ^ QueryUpdater returned Err during replay.
+  | HashMismatchReplay Text
+    -- ^ Hash mismatch forced a replay, but the replay itself failed.
+  | CheckpointFetchFailed Text
+    -- ^ Could not read the resume position from the object store.
+  | EventStoreFailed Text
+    -- ^ EventStore.readFrom returned Err.
+  deriving (Eq, Show, Generic)
+
+
+-- | Default rebuild options.
+rebuildOptionsDefault :: RebuildOptions
+rebuildOptionsDefault = RebuildOptions
+  { chunkSize = 1000
+  , timeout = 300
+  , logProgress = True
+  , deleteStaleHashFirst = True
+  }
+
+
+-- | Resumable per-query rebuild from a given StreamPosition.
+--
+-- Stub — not implemented.
+rebuildFrom
+  :: QuerySubscriber
+  -> Text
+  -> StreamPosition
+  -> RebuildOptions
+  -> Task QueryRebuildError Unit
+rebuildFrom _ _ _ _ = panic "not implemented: Service.Query.Subscriber.rebuildFrom"
+
+
+-- | Spawn async rebuild for all registered queries, updating readiness states.
+--
+-- Stub — not implemented.
+rebuildAllAsync
+  :: QuerySubscriber
+  -> RebuildOptions
+  -> Task QueryRebuildError Unit
+rebuildAllAsync _ _ = panic "not implemented: Service.Query.Subscriber.rebuildAllAsync"
+
+
+-- | Fetch the aggregate readiness state of all registered queries.
+--
+-- Stub — not implemented.
+readinessOf
+  :: QuerySubscriber
+  -> Task Text Readiness
+readinessOf _ = panic "not implemented: Service.Query.Subscriber.readinessOf"
+
+
+-- | Fetch the readiness state for a specific named query.
+--
+-- Stub — not implemented.
+readinessOfQuery
+  :: QuerySubscriber
+  -> Text
+  -> Task Text (Maybe Readiness)
+readinessOfQuery _ _ = panic "not implemented: Service.Query.Subscriber.readinessOfQuery"
 
 
 -- | Process a single raw event through all relevant query updaters.
