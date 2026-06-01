@@ -5,6 +5,7 @@ module Service.Query.Registry (
   isEmpty,
   register,
   getUpdatersForEntity,
+  getAllUpdaters,
   mergeInto,
 ) where
 
@@ -58,6 +59,14 @@ register entityName updater (QueryRegistry registry) = do
 getUpdatersForEntity :: EntityName -> QueryRegistry -> Array QueryUpdater
 getUpdatersForEntity entityName (QueryRegistry registry) =
   registry |> Map.get entityName |> Maybe.withDefault Array.empty
+
+
+-- | Get all QueryUpdaters registered across all entity types.
+getAllUpdaters :: QueryRegistry -> Array QueryUpdater
+getAllUpdaters (QueryRegistry registry) =
+  registry
+    |> Map.values
+    |> Array.flatMap identity
 
 
 -- | Merge all updaters from source registry into target registry.

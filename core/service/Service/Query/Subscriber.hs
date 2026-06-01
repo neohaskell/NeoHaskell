@@ -14,14 +14,20 @@ module Service.Query.Subscriber (
   rebuildOptionsDefault,
 ) where
 
+import Array (Array)
+import Array qualified
 import Basics
 import ConcurrentVar (ConcurrentVar)
 import ConcurrentVar qualified
 import Log qualified
 import Json qualified
+import Map (Map)
+import Map qualified
 import Maybe (Maybe (..))
+import Maybe qualified
 import Result (Result (..))
 import Service.Event (Event (..))
+import Service.Event.EntityName (EntityName)
 import Service.Event.EventMetadata (EventMetadata (..))
 import Service.Event.StreamPosition (StreamPosition (..))
 import Service.EventStore (EventStore (..))
@@ -41,7 +47,9 @@ data QuerySubscriber = QuerySubscriber
   { eventStore :: EventStore Json.Value,
     registry :: QueryRegistry,
     lastProcessedPosition :: ConcurrentVar (Maybe StreamPosition),
-    subscriptionId :: ConcurrentVar (Maybe SubscriptionId)
+    subscriptionId :: ConcurrentVar (Maybe SubscriptionId),
+    -- | Per-query readiness state, keyed by queryName.
+    queryReadiness :: ConcurrentVar (Map Text Readiness)
   }
 
 
@@ -50,12 +58,14 @@ new :: EventStore Json.Value -> QueryRegistry -> Task Text QuerySubscriber
 new eventStore registry = do
   lastProcessedPosition <- ConcurrentVar.containing Nothing
   subscriptionId <- ConcurrentVar.containing Nothing
+  queryReadiness <- ConcurrentVar.containing Map.empty
   Task.yield
     QuerySubscriber
       { eventStore,
         registry,
         lastProcessedPosition,
-        subscriptionId
+        subscriptionId,
+        queryReadiness
       }
 
 
@@ -200,43 +210,165 @@ rebuildOptionsDefault = RebuildOptions
 
 -- | Resumable per-query rebuild from a given StreamPosition.
 --
--- Stub — not implemented.
+-- Reads events from the EventStore in chunks, applies them to registered
+-- query updaters for the named query, and tracks progress.
 rebuildFrom
   :: QuerySubscriber
   -> Text
   -> StreamPosition
   -> RebuildOptions
   -> Task QueryRebuildError Unit
-rebuildFrom _ _ _ _ = panic "not implemented: Service.Query.Subscriber.rebuildFrom"
+rebuildFrom subscriber queryName startPosition options = do
+  -- Mark query as rebuilding.
+  subscriber.queryReadiness
+    |> ConcurrentVar.modify (Map.set queryName Rebuilding)
+  -- Read events from the event store in chunks.
+  let chunkLimit = Limit (fromIntegral options.chunkSize)
+  messageStream <-
+    subscriber.eventStore.readAllEventsForwardFrom startPosition chunkLimit
+      |> Task.mapError (\err -> EventStoreFailed (toText err))
+  -- Process events, routing only to updaters for this queryName.
+  let updaters = getUpdatersForQuery queryName subscriber.registry
+  result <-
+    processEventsForQuery updaters options messageStream
+      |> Task.asResult
+  case result of
+    Err err -> do
+      subscriber.queryReadiness
+        |> ConcurrentVar.modify (Map.set queryName (Failed (toText (show err))))
+      Task.throw err
+    Ok _ -> do
+      -- Mark query as ready.
+      subscriber.queryReadiness
+        |> ConcurrentVar.modify (Map.set queryName Ready)
+      Task.yield unit
+
+
+-- | Process events from a stream for a specific set of updaters.
+processEventsForQuery
+  :: Array QueryUpdater
+  -> RebuildOptions
+  -> Stream.Stream (ReadAllMessage Json.Value)
+  -> Task QueryRebuildError Unit
+processEventsForQuery updaters options messageStream = do
+  messageStream
+    |> Stream.consume
+        (\_ message -> do
+          case message of
+            AllEvent rawEvent -> do
+              applyEvent updaters rawEvent
+                |> Task.mapError (\err -> UpdaterException err)
+            _ -> pass
+          Task.yield unit)
+        unit
+
+
+-- | Apply an event to a set of updaters.
+applyEvent
+  :: Array QueryUpdater
+  -> Event Json.Value
+  -> Task Text Unit
+applyEvent updaters rawEvent =
+  updaters
+    |> Task.forEach \updater -> do
+        result <- updater.updateQuery rawEvent |> Task.asResult
+        case result of
+          Ok _ -> pass
+          Err err ->
+            Log.warn [fmt|Query updater #{updater.queryName} failed: #{err}|]
+              |> Task.ignoreError
+
+
+-- | Get all QueryUpdaters across all entities that belong to the named query.
+getUpdatersForQuery :: Text -> QueryRegistry -> Array QueryUpdater
+getUpdatersForQuery queryName registry =
+  let allNames = Registry.getEntityNames registry
+  in allNames
+      |> Array.flatMap (\entityName ->
+          Registry.getUpdatersForEntity entityName registry
+            |> Array.takeIf (\updater -> updater.queryName == queryName))
 
 
 -- | Spawn async rebuild for all registered queries, updating readiness states.
 --
--- Stub — not implemented.
+-- Returns Ok Unit when all queries have completed (either Ready or Failed).
+-- Per-query failures are recorded in readiness state, not propagated as errors.
 rebuildAllAsync
   :: QuerySubscriber
   -> RebuildOptions
   -> Task QueryRebuildError Unit
-rebuildAllAsync _ _ = panic "not implemented: Service.Query.Subscriber.rebuildAllAsync"
+rebuildAllAsync subscriber options = do
+  let queryNames = getAllQueryNames subscriber.registry
+  queryNames
+    |> Task.forEach (\queryName -> do
+        result <-
+          rebuildFrom subscriber queryName (StreamPosition 0) options
+            |> Task.asResult
+        case result of
+          Ok _ -> pass
+          Err err ->
+            Log.withScope [("component", "QuerySubscriber"), ("queryName", queryName)] do
+              Log.warn [fmt|Query rebuild failed: #{toText (show err)}|]
+                |> Task.ignoreError)
+  Task.yield unit
 
 
 -- | Fetch the aggregate readiness state of all registered queries.
 --
--- Stub — not implemented.
+-- Returns:
+-- - Ready    if all registered queries are Ready (or none are registered)
+-- - Rebuilding if any query is Rebuilding
+-- - Failed   if any query has Failed (and none are Rebuilding)
 readinessOf
   :: QuerySubscriber
   -> Task Text Readiness
-readinessOf _ = panic "not implemented: Service.Query.Subscriber.readinessOf"
+readinessOf subscriber = do
+  readinessMap <- ConcurrentVar.peek subscriber.queryReadiness
+  let states = readinessMap |> Map.values
+  Task.yield (aggregateReadiness states)
 
 
 -- | Fetch the readiness state for a specific named query.
 --
--- Stub — not implemented.
+-- Returns Nothing if the query is not registered.
 readinessOfQuery
   :: QuerySubscriber
   -> Text
   -> Task Text (Maybe Readiness)
-readinessOfQuery _ _ = panic "not implemented: Service.Query.Subscriber.readinessOfQuery"
+readinessOfQuery subscriber queryName = do
+  readinessMap <- ConcurrentVar.peek subscriber.queryReadiness
+  Task.yield (readinessMap |> Map.get queryName)
+
+
+-- | Aggregate per-query readiness values into a single Readiness.
+aggregateReadiness :: Array Readiness -> Readiness
+aggregateReadiness states =
+  states
+    |> Array.reduce
+        (\state acc ->
+          case acc of
+            Failed reason -> Failed reason
+            Rebuilding ->
+              case state of
+                Failed reason -> Failed reason
+                _ -> Rebuilding
+            Ready ->
+              case state of
+                Rebuilding -> Rebuilding
+                Failed reason -> Failed reason
+                Ready -> Ready)
+        Ready
+
+
+-- | Get all unique query names from the registry.
+getAllQueryNames :: QueryRegistry -> Array Text
+getAllQueryNames registry =
+  let allNames = Registry.getEntityNames registry
+  in allNames
+      |> Array.flatMap (\entityName ->
+          Registry.getUpdatersForEntity entityName registry
+            |> Array.map (\updater -> updater.queryName))
+      |> Array.unique
 
 
 -- | Process a single raw event through all relevant query updaters.
