@@ -9,6 +9,9 @@ module Service.Transport.Web (
   server,
   isHealthCheckPath,
   buildHealthResponse,
+  isReadinessPath,
+  respondReadiness,
+  renderReadiness,
   unauthorizedResponse,
   unauthorizedResponseBody,
 ) where
@@ -63,7 +66,11 @@ import Service.Response (CommandResponse)
 import Service.Response qualified as Response
 import Service.Transport (EndpointHandler, Endpoints (..), Transport (..))
 import Service.Transport.Web.BuiltinSchemas qualified as BuiltinSchemas
+import Service.Transport.Web.Readiness (ReadinessConfig)
+import Service.Transport.Web.Readiness qualified as Readiness
 import Service.Transport.Web.SwaggerUI qualified as SwaggerUI
+import Service.Query.Subscriber (Readiness)
+import Service.Query.Subscriber qualified as Subscriber
 import Task (Task)
 import Task qualified
 import Text (Text)
@@ -156,7 +163,13 @@ data WebTransport = WebTransport
     -- Set via Application.withHealthCheck or disabled via Application.withoutHealthCheck.
     healthCheck :: Maybe HealthCheckConfig,
     -- | Integration selection status for /health reporting. Set via Application.run.
-    integrationStatus :: Maybe IntegrationStatus
+    integrationStatus :: Maybe IntegrationStatus,
+    -- | Readiness endpoint configuration. Set via Application.withReadinessProbe.
+    -- When Nothing, GET /ready returns 404.
+    readinessConfig :: Maybe ReadinessConfig,
+    -- | Readiness probe closure. Built from the live Subscriber in Application.run.
+    -- When Nothing, GET /ready returns 404.
+    readinessProbe :: Maybe (Task Text Readiness)
   }
 
 
@@ -184,7 +197,9 @@ server =
       apiInfo = Nothing,
       corsConfig = Nothing,
       healthCheck = Just HealthCheckConfig {healthPath = "health"},
-      integrationStatus = Nothing
+      integrationStatus = Nothing,
+      readinessConfig = Nothing,
+      readinessProbe = Nothing
     }
 
 
@@ -1003,6 +1018,10 @@ instance Transport WebTransport where
                     , ("X-Content-Type-Options", "nosniff")
                     ]
               respond (Wai.responseLBS HTTP.status200 headers (buildHealthResponse endpoints.transport))
+      [pathSegment]
+        | Wai.requestMethod request == "GET"
+        , isReadinessPath pathSegment endpoints.transport ->
+            respondReadiness endpoints.transport respond
       _ ->
         notFound "Not found"
 
@@ -1206,6 +1225,58 @@ buildHealthResponse transport =
                   ]
             ]
         )
+
+
+-- | Check if a path segment matches the configured readiness path.
+-- Returns False if readiness config is absent (readinessConfig = Nothing).
+isReadinessPath :: Text -> WebTransport -> Bool
+isReadinessPath pathSegment transport =
+  case transport.readinessConfig of
+    Nothing -> False
+    Just cfg -> pathSegment == cfg.readinessPath
+
+
+-- | Respond to a GET /ready request using the transport's readiness probe.
+-- Returns 404 when no probe is configured, 200 when Ready, 503 otherwise.
+respondReadiness
+  :: WebTransport
+  -> (Wai.Response -> Task Text Wai.ResponseReceived)
+  -> Task Text Wai.ResponseReceived
+respondReadiness transport respond =
+  case transport.readinessProbe of
+    Nothing ->
+      respond (Wai.responseLBS HTTP.status404 [] "")
+    Just probe -> do
+      readiness <- probe |> Task.recover (\err -> Task.yield (Subscriber.Failed err))
+      let (status, body) = renderReadiness readiness
+      let headers =
+            [ (HTTP.hContentType, "application/json")
+            , ("X-Content-Type-Options", "nosniff")
+            ]
+      respond (Wai.responseLBS status headers body)
+
+
+-- | Map a Readiness value to an HTTP status and JSON body.
+-- Body shapes per ADR-0059's "Readiness endpoint contract":
+--   Ready          → 200 {"status":"ready"}
+--   Rebuilding     → 503 {"status":"rebuilding"}
+--   Failed reason  → 503 {"status":"failed","reason":"..."}
+renderReadiness :: Readiness -> (HTTP.Status, GhcLBS.ByteString)
+renderReadiness readiness =
+  case readiness of
+    Subscriber.Ready ->
+      (HTTP.status200, "{\"status\":\"ready\"}")
+    Subscriber.Rebuilding ->
+      (HTTP.status503, "{\"status\":\"rebuilding\"}")
+    Subscriber.Failed reason ->
+      ( HTTP.status503
+      , Aeson.encode
+          ( Json.object
+              [ "status" Json..= ("failed" :: Text)
+              , "reason" Json..= reason
+              ]
+          )
+      )
 
 
 -- | Resolve the request's auth state into a 'Maybe UserClaims' and hand it

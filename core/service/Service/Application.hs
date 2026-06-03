@@ -46,6 +46,8 @@ module Service.Application (
   withHealthCheck,
   withoutHealthCheck,
   withDispatcherConfig,
+  useQueryObjectStore,
+  useReadinessEndpoint,
 
   -- * Health Check Re-export
   Web.HealthCheckConfig (..),
@@ -164,6 +166,7 @@ import ToText (toText)
 import TypeName qualified
 import Service.Application.Types (ApiInfo (..), defaultApiInfo)
 import Service.Transport.Web (IntegrationStatus (..))
+import Service.Transport.Web.Readiness (ReadinessConfig (..))
 
 
 -- | Configuration for WebTransport authentication.
@@ -399,7 +402,10 @@ data Application = Application
     deferredOutboundLifecycleRegs :: Array DeferredOutboundLifecycleReg,
     deferredInboundRegs :: Array DeferredInboundReg,
     -- | ADR-0055 Integration registrations. Built at startup into a DispatchRegistry.
-    integrationRegistrations :: Array IntegrationRegistrationEntry
+    integrationRegistrations :: Array IntegrationRegistrationEntry,
+    -- | Readiness endpoint configuration. Enabled by default at /ready.
+    -- Use useReadinessEndpoint to customize.
+    readinessConfig :: Maybe ReadinessConfig
   }
 
 
@@ -436,7 +442,8 @@ new =
       secretStoreFactory = Nothing,
       deferredOutboundLifecycleRegs = Array.empty,
       deferredInboundRegs = Array.empty,
-      integrationRegistrations = Array.empty
+      integrationRegistrations = Array.empty,
+      readinessConfig = Just ReadinessConfig {readinessPath = "ready", includeQueryStatus = True}
     }
 
 
@@ -1154,8 +1161,14 @@ runWithResolved eventStore maybeFileUploadSetup fileUploadCleanup maybeWebAuthSe
   -- 6. Create query subscriber with combined registry
   subscriber <- Subscriber.new eventStore combinedRegistry
 
-  -- 7. Rebuild all queries from historical events
-  Subscriber.rebuildAll subscriber
+  -- 7. Spawn async rebuild for all queries so transports bind immediately.
+  -- /ready returns 503 (Rebuilding) until each query catches up.
+  -- The task handle is stored to be awaited after transports exit (ensuring
+  -- orderly shutdown and making test assertions about rebuild completion work).
+  -- Per ADR-0059 blocker fix: async spawn prevents HTTP readiness blocking.
+  rebuildTask <-
+    AsyncTask.run (Subscriber.rebuildAllAsync subscriber Subscriber.rebuildOptionsDefault)
+      |> Task.mapError toText
 
   -- 8. Start live subscription
   Subscriber.start subscriber
@@ -1313,11 +1326,23 @@ runWithResolved eventStore maybeFileUploadSetup fileUploadCleanup maybeWebAuthSe
   -- When transports complete (or fail), cancel inbound workers for clean shutdown
   -- Use Task.finally to ensure cleanup always runs even if runTransports fails
   result <-
-    Transports.runTransports app.transports combinedEndpointsByTransport combinedSchemasByTransport combinedQueryEndpoints combinedQuerySchemas maybeAuthEnabled maybeOAuth2Config maybeFileUploadEnabled app.apiInfo app.corsConfig app.healthCheckConfig maybeIntegrationStatus
+    Transports.runTransports app.transports combinedEndpointsByTransport combinedSchemasByTransport combinedQueryEndpoints combinedQuerySchemas maybeAuthEnabled maybeOAuth2Config maybeFileUploadEnabled app.apiInfo app.corsConfig app.healthCheckConfig maybeIntegrationStatus app.readinessConfig subscriber
       |> Task.finally cleanupAll
       |> Task.asResult
 
-  -- 17. Cancel all inbound workers on shutdown
+  -- 17. Wait for the async rebuild task to complete (if still running).
+  -- In production the transport runs indefinitely, so the rebuild finishes
+  -- long before transports exit. In tests (no transports), transports exit
+  -- immediately and we wait here to preserve the "rebuild before return"
+  -- ordering that test assertions depend on.
+  rebuildResult <- AsyncTask.waitCatch rebuildTask
+  case rebuildResult of
+    Err rebuildErr ->
+      Log.warn [fmt|Async query rebuild finished with error: #{rebuildErr}|]
+        |> Task.ignoreError
+    Ok _ -> pass
+
+  -- 18. Cancel all inbound workers on shutdown
   Log.debug "Shutting down inbound workers..."
     |> Task.ignoreError
   inboundWorkers
@@ -2270,3 +2295,48 @@ formatOAuth2ValidationError providerName provider oauthError = do
       [fmt|Provider '#{providerName}' unexpected InvalidPkceVerifier during validation: #{errMsg}|]
     InvalidRedirectUri errMsg ->
       [fmt|Provider '#{providerName}' unexpected InvalidRedirectUri during validation: #{errMsg}|]
+
+
+-- | Wire a persistent query object store backend into the application.
+--
+-- Equivalent to 'withQueryObjectStore'; provided for discoverability in the
+-- builder chain alongside 'withQuery' and 'withService'.
+--
+-- Example:
+--
+-- @
+-- app = Application.new
+--   |> Application.withEventStore postgresEventStoreConfig
+--   |> Application.useQueryObjectStore (PostgresQueryObjectStoreConfig { ... })
+--   |> Application.withQuery \@UserOrders
+--   |> Application.run
+-- @
+useQueryObjectStore ::
+  forall config.
+  (QueryObjectStoreConfig config) =>
+  config ->
+  Application ->
+  Application
+useQueryObjectStore config app =
+  app {queryObjectStoreConfig = Just (QueryObjectStoreConfigValue config)}
+
+
+-- | Enable the /ready HTTP endpoint (on by default, shown for discoverability).
+--
+-- The /ready endpoint returns 200 when all registered queries have completed
+-- their rebuild, and 503 while any query is still replaying. Calling this
+-- function is optional — the endpoint is on by default. It is exposed in the
+-- public API so Jess can see the feature and understand the /health vs /ready
+-- distinction without reading prose.
+--
+-- Example:
+--
+-- @
+-- app = Application.new
+--   |> Application.useReadinessEndpoint
+--   |> Application.withQuery \@UserOrders
+--   |> Application.run
+-- @
+useReadinessEndpoint :: Application -> Application
+useReadinessEndpoint app =
+  app {readinessConfig = Just ReadinessConfig {readinessPath = "ready", includeQueryStatus = True}}

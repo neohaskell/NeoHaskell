@@ -81,6 +81,6 @@ ADRs live in `docs/decisions/NNNN-slug.md`.
 |-------|-------|-----------|----------------|
 | `nhcore-test-core` | Core primitives | No | Yes (hspec-discover) |
 | `nhcore-test-auth` | Auth & JWT | No | Yes (hspec-discover) |
-| `nhcore-test-service` | EventStore, Commands, Queries | Yes | **No** — manual registration in `core/test-service/Main.hs` |
+| `nhcore-test-service` | EventStore, Commands, Queries | Yes (mostly); Postgres-only specs (`PostgresSpec`) gate on `POSTGRES_AVAILABLE=true` and self-skip otherwise | **No** — manual registration in `core/test-service/Main.hs` |
 | `nhcore-test-integration` | Integration tests | Yes | Yes (hspec-discover) |
 | `nhcore-test` | All of the above | Yes | Yes (hspec-discover) |

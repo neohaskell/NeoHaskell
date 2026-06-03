@@ -8,7 +8,7 @@ model: claude-opus-4-7
 
 # NeoHaskell feature pipeline
 
-Coordinates the 17-phase pipeline for landing a NeoHaskell feature. State machine lives in `scripts/pipeline.py`; each phase dispatches to a child node. Replaces the older `neohaskell-feature-pipeline` skill.
+Coordinates the 18-phase pipeline for landing a NeoHaskell feature. State machine lives in `scripts/pipeline.py`; each phase dispatches to a child node. Replaces the older `neohaskell-feature-pipeline` skill.
 
 The pipeline has two distinguishing characteristics:
 
@@ -19,10 +19,12 @@ The pipeline has two distinguishing characteristics:
 
 - All state lives in `.pipeline/state.json` and `.pipeline/findings-*.json`. Drive via `python3 .claude/skills/feature-pipeline-preview/scripts/pipeline.py <cmd>`.
 - The pipeline must be initialised before any phase runs. Phase 1 calls `pipeline.py init`.
-- PAUSE-gated phases (marked 🔒 below) stop the orchestrator until the maintainer runs `pipeline.py approve <N>`. The PAUSE remains only on phases 3 (ADR draft), 16 (PR creation), and 17 (CI cycle / merge) — every other phase auto-gates on its rubric or findings.
+- PAUSE-gated phases (marked 🔒 below) stop the orchestrator until the maintainer runs `pipeline.py approve <N>`. The PAUSE remains only on phases 3 (ADR draft), 16 (PR creation), 17 (Opus PR review), and 18 (CI cycle / merge) — every other phase auto-gates on its rubric or findings.
 - Every step reads [`references/jess-persona.md`](./references/jess-persona.md) and [`references/nhcore-context.md`](./references/nhcore-context.md) when delegating to a sonnet child.
 - The grounding pass is mandatory — it cannot be skipped to "save time", and it cannot be merged with the deep-audit step.
 - The review-quality steps on phases 6/7/8 are mandatory and must be run by a different agent invocation from the producer step (independence is what makes the gate trustworthy).
+- **Trust-but-verify after every leaf.** When any leaf calls `pipeline.py complete <N>`, the orchestrator MUST independently re-verify the leaf's claimed outputs before advancing the cursor. For build/test-gated phases (11, 15), re-read `.pipeline/test.log` and confirm `0 failures` across all suites. For findings-gated phases (4, 5, 12, 13, 17), re-read the findings JSON and confirm the leaf's blocker-count claim. For fix-findings (14), confirm `blockers == 0` across both findings files. Canonical implementation: [`scripts/verify-leaf.py`](./scripts/verify-leaf.py) — invoke as `python3 .claude/skills/feature-pipeline-preview/scripts/verify-leaf.py <N>`. If the verify fails, refuse to advance and surface the mismatch.
+- **Diff-shape policing.** After each phase, run `git diff --name-only HEAD` and check the changed paths against [`references/phase-allowed-paths.md`](./references/phase-allowed-paths.md). Any path outside the phase's allow-list refuses `complete <N>` and surfaces the offending paths.
 
 ## Steps
 
@@ -42,9 +44,10 @@ The pipeline has two distinguishing characteristics:
 14. **Fix findings** — spawn an Agent (model: sonnet) and instruct it to read `./14-fix-findings/SKILL.md` and follow it. Verify: `blockers == 0` across findings-12 and findings-13 after fixes; `cabal test` still green.
 15. **Final verify** — spawn an Agent (model: haiku) and instruct it to read `./15-final-verify/SKILL.md` and follow it. Verify: clean build, all tests pass; `.pipeline/hlint.log` refreshed (hlint is captured for the PR body, not gated).
 16. **Create PR 🔒** — spawn an Agent (model: haiku) and instruct it to read `./16-create-pr/SKILL.md` and follow it. Verify: `python3 .claude/skills/feature-pipeline-preview/scripts/pipeline.py get pr_url` returns a URL. The submit leaf calls `pipeline.py complete 16` itself; then stop until the maintainer runs `python3 .claude/skills/feature-pipeline-preview/scripts/pipeline.py approve 16`.
-17. **CI cycle** — spawn an Agent (model: haiku) and instruct it to read `./17-ci-cycle/SKILL.md` and follow it. Verify: CI green and PR merged.
+17. **Opus PR review 🔒** — spawn an Agent (model: opus) and instruct it to read `./17-opus-pr-review/SKILL.md` and follow it. Verify: `.pipeline/findings-17.json` exists. Then PAUSE until `pipeline.py approve 17`.
+18. **CI cycle** — spawn an Agent (model: haiku) and instruct it to read `./18-ci-cycle/SKILL.md` and follow it. Verify: CI green and PR merged.
 
-Phase completion is owned by each phase's own skill — the orchestrator never calls `pipeline.py complete <N>` unconditionally. Rubric-gated phases (6, 7, 8) and the script-style record leaves (2, 4, 5, 12, 13) call `complete <N>` only when the gate passes; the test-writing, implementation, build-loop, fix-findings, final-verify, and create-PR phases call it from their last step on success. PAUSE-gated phases (3, 16, 17) then stop and wait for the maintainer's `python3 .claude/skills/feature-pipeline-preview/scripts/pipeline.py approve <N>` before continuing.
+Phase completion is owned by each phase's own skill — the orchestrator never calls `pipeline.py complete <N>` unconditionally. Rubric-gated phases (6, 7, 8) and the script-style record leaves (2, 4, 5, 12, 13) call `complete <N>` only when the gate passes; the test-writing, implementation, build-loop, fix-findings, final-verify, and create-PR phases call it from their last step on success. PAUSE-gated phases (3, 16, 17, 18) then stop and wait for the maintainer's `python3 .claude/skills/feature-pipeline-preview/scripts/pipeline.py approve <N>` before continuing.
 
 ## Refusals
 

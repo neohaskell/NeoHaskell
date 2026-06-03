@@ -31,14 +31,20 @@ If any assumption fails, refuse — do not guess.
 
 1. If `.pipeline/` does not exist, refuse: "pipeline not initialised; run phase 01 first" and exit non-zero.
 2. If `nix` is not on PATH (`command -v nix`), refuse: "nix not found; the repo's dev shell is required for cabal" and exit non-zero.
-3. Run: `nix develop --command cabal test --test-show-details=streaming > .pipeline/test.log 2>&1`.
+3. Run: `nix develop --command cabal test all --test-show-details=streaming > .pipeline/test.log 2>&1`.
 4. Capture the exit code.
-5. If exit is non-zero, surface the tail of `.pipeline/test.log` and exit non-zero.
-6. If exit is zero, exit 0.
+5. **Snapshot rollover (deterministic).** Before parsing the new run, if `.pipeline/test-counts.json` exists from the previous run, atomically rename it to `.pipeline/test-counts.prev.json` (overwriting any older snapshot). This guarantees the diff in step 7 always compares against a well-defined prior snapshot — no race conditions, no orphaned files.
+6. Parse per-suite summary lines from `.pipeline/test.log` (the lines matching `^N examples, M failures(, K pending)?$` immediately above each `Test suite <name>: PASS/FAIL` marker). Emit a JSON object to `.pipeline/test-counts.json` keyed by suite name with fields `{examples, failures, pending}`.
+7. If `.pipeline/test-counts.prev.json` exists (from step 5's rollover), diff against it and surface:
+   - Any suite where `pending` increased → warning: "pending count grew for <suite>; review whether real tests were demoted to pending without a fixture being lifted"
+   - Any suite where `pending` decreased without a corresponding test-file diff → finding: "pending count dropped for <suite> with no fixture work in this diff; suggests tests were deleted rather than satisfied"
+   The check is a heuristic flag, not a refusal — the build-loop continues either way.
+8. If exit (from step 4) is non-zero, surface the tail of `.pipeline/test.log` and exit non-zero.
+9. If exit is zero, exit 0.
 
 ## Output
 
-`.pipeline/test.log` written; exit code propagated.
+`.pipeline/test.log` and `.pipeline/test-counts.json` written; exit code propagated.
 
 ## Refusals
 
