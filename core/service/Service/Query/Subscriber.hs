@@ -18,12 +18,11 @@ module Service.Query.Subscriber (
 
 import Array (Array)
 import Array qualified
+import AsyncTask (RaceWinner (..))
 import AsyncTask qualified
 import Basics
 import ConcurrentVar (ConcurrentVar)
 import ConcurrentVar qualified
-import Control.Concurrent.Async qualified as GhcAsync
-import Data.Either qualified as GhcEither
 import Json qualified
 import Log qualified
 import Map (Map)
@@ -40,7 +39,6 @@ import Service.Query.Registry qualified as Registry
 import Service.QueryObjectStore.Core (QueryObjectStore (..))
 import Service.QueryObjectStore.Postgres (CheckpointStore (..))
 import Stream qualified
-import Uuid (Uuid)
 import Uuid qualified
 import Task (Task)
 import Task qualified
@@ -302,17 +300,13 @@ rebuildFrom subscriber queryName startPosition options = do
   -- Wrap the actual rebuild in a timeout race.
   let timeoutSec = options.timeout
   let timeoutMs = timeoutSec * 1000
-  raceResult <- Task.fromIO do
-    GhcAsync.race
-      (Task.runResult (rebuildFromInner subscriber queryName startPosition options))
-      (do
-        _ <- AsyncTask.sleep timeoutMs |> Task.runResult
-        pure unit
-      )
+  raceResult <-
+    AsyncTask.race
+      (rebuildFromInner subscriber queryName startPosition options)
+      (AsyncTask.sleep timeoutMs |> Task.mapError (\(_ :: Text) -> RebuildTimeout "sleep failed"))
   case raceResult of
-    GhcEither.Left (Ok _) -> Task.yield unit
-    GhcEither.Left (Err err) -> Task.throw err
-    GhcEither.Right _ -> do
+    LeftWon _ -> pass
+    RightWon _ -> do
       -- Timeout: flip readiness to Failed
       let timeoutMsg = [fmt|Rebuild timeout (> #{timeoutSec}s): #{queryName}|]
       subscriber.queryReadiness
@@ -340,7 +334,7 @@ rebuildFromInner subscriber queryName startPosition options = do
   -- A store.get failure raises CheckpointFetchFailed.
   case subscriber.objectStore of
     Just store -> do
-      _ <- store.get nilUuid
+      _ <- store.get Uuid.nil
         |> Task.mapError (\err -> CheckpointFetchFailed (toText (show err)))
       pass
     Nothing -> pass
@@ -363,11 +357,11 @@ rebuildFromInner subscriber queryName startPosition options = do
 
   messageStream <- case streamResult of
     Err err ->
-      case hashMismatchOccurred of
-        True ->
+      if hashMismatchOccurred
+        then
           -- Hash mismatch deletion succeeded but replay read failed → H5
           Task.throw (HashMismatchReplay [fmt|Query #{queryName}: stale hash deleted, but replay failed: #{toText err}|])
-        False ->
+        else
           Task.throw (EventStoreFailed (toText err))
     Ok stream -> Task.yield stream
 
@@ -383,11 +377,10 @@ rebuildFromInner subscriber queryName startPosition options = do
       subscriber.queryReadiness
         |> ConcurrentVar.modify (Map.set queryName (Failed errText))
       Task.throw err
-    Ok _ -> do
+    Ok _ ->
       -- Mark query as ready.
       subscriber.queryReadiness
         |> ConcurrentVar.modify (Map.set queryName Ready)
-      Task.yield unit
 
 
 -- | Resolve the effective start position, performing hash-mismatch cleanup if needed.
@@ -432,14 +425,6 @@ resolveStartPosition subscriber queryName startPosition _options =
           Task.yield (StreamPosition 0, True)
 
 
--- | Return the nil UUID for store availability checks.
---
--- Used only to test store.get availability (CheckpointFetchFailed detection).
--- Not used for actual data retrieval; the nil UUID is a safe sentinel value.
-nilUuid :: Uuid
-nilUuid = Uuid.nil
-
-
 -- | Process events from a stream for a specific set of updaters.
 -- Returns Err Text when any updater fails (propagated as UpdaterException).
 processEventsForQuery
@@ -450,11 +435,10 @@ processEventsForQuery
 processEventsForQuery updaters _options messageStream =
   messageStream
     |> Stream.consume
-        (\_ message -> do
+        (\_ message ->
           case message of
             AllEvent rawEvent -> applyEvent updaters rawEvent
-            _ -> pass
-          Task.yield unit)
+            _ -> pass)
         unit
 
 
@@ -506,7 +490,6 @@ rebuildAllAsync subscriber options = do
             Log.withScope [("component", "QuerySubscriber"), ("queryName", queryName)] do
               Log.warn [fmt|Query rebuild failed: #{toText (show err)}|]
                 |> Task.ignoreError)
-  Task.yield unit
 
 
 -- | Fetch the aggregate readiness state of all registered queries.

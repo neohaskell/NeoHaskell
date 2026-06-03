@@ -66,7 +66,7 @@ getAllUpdaters :: QueryRegistry -> Array QueryUpdater
 getAllUpdaters (QueryRegistry registry) =
   registry
     |> Map.values
-    |> Array.flatMap identity
+    |> Array.flatten
 
 
 -- | Merge all updaters from source registry into target registry.

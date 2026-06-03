@@ -2,7 +2,7 @@ module Service.QueryObjectStore.Postgres (
   PostgresQueryObjectStoreConfig (..),
   QueryObjectStoreError (..),
   CheckpointStore (..),
-  createQueryObjectStore,
+  newFromConfig,
   createCheckpointStore,
 ) where
 
@@ -69,16 +69,7 @@ instance Core.QueryObjectStoreConfig PostgresQueryObjectStoreConfig where
 
 -- | Create a Postgres-backed QueryObjectStore from the given config.
 --
--- Exported as public API; tests import this directly.
-createQueryObjectStore
-  :: forall query.
-     (Json.FromJSON query, Json.ToJSON query)
-  => PostgresQueryObjectStoreConfig
-  -> Task QueryObjectStoreError (QueryObjectStore query)
-createQueryObjectStore = newFromConfig
-
-
--- | Internal implementation.
+-- Use qualified at call sites: @PostgresQueryObjectStore.newFromConfig cfg@.
 newFromConfig
   :: forall query.
      (Json.FromJSON query, Json.ToJSON query)
@@ -86,13 +77,14 @@ newFromConfig
   -> Task QueryObjectStoreError (QueryObjectStore query)
 newFromConfig config = do
   pool <- acquirePool config
-  _ <- initializeTable pool
-  Task.yield
-    QueryObjectStore
-      { get = getImpl pool
-      , atomicUpdate = atomicUpdateImpl pool
-      , getAll = getAllImpl pool
-      }
+  initializeTable pool
+    |> Task.andThen (\_ ->
+        Task.yield
+          QueryObjectStore
+            { get = getImpl pool
+            , atomicUpdate = atomicUpdateImpl pool
+            , getAll = getAllImpl pool
+            })
 
 
 -- | Acquire a Hasql connection pool and verify connectivity.
@@ -182,14 +174,21 @@ createTableSession =
 
 -- | Namespace used by the QueryObjectStore trait implementations.
 --
--- The trait's get / atomicUpdate / getAll operate on per-instance state
--- without a query-specific name. We park those rows under this stable
--- namespace so they never collide with checkpoint rows (which carry a
--- real query name set by rebuildFrom).
+-- Why this exists (deferred trait extension):
+-- The QueryObjectStore trait in Service.QueryObjectStore.Core was designed
+-- before ADR-0059's checkpoint feature. Its get / atomicUpdate / getAll
+-- signatures take only an instance Uuid — there is no query_name parameter.
+-- ADR-0059 added the (query_name, instance_uuid) composite primary key for
+-- checkpoint rows, but extending the trait to thread query_name through every
+-- method is a larger refactor (touches Core.hs, InMemory.hs, Postgres.hs,
+-- Application.hs, and every test fixture).
 --
--- This is distinct from checkpoint logic: checkpoint rows are written by
--- the internal helpers (resumeFromCheckpoint / deleteStaleHash) with the
--- actual query name. Trait rows are written here with traitNamespace.
+-- This namespace is the impedance bridge: trait rows are written here under
+-- a fixed sentinel so they never collide with checkpoint rows (which carry
+-- the real query name set by Subscriber.rebuildFrom via the CheckpointStore
+-- helpers resumeFromCheckpoint and deleteStaleHash). When the trait is
+-- properly extended in a follow-up, this namespace and these trait-only
+-- helpers can be deleted.
 traitNamespace :: Text
 traitNamespace = "__trait__"
 
