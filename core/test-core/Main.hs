@@ -2,6 +2,7 @@ module Main (main) where
 
 import Prelude (IO)
 
+import AsyncTask.RaceSpec qualified
 import Command.FromSchemaSpec qualified
 import ConcurrentMapSpec qualified
 import DecimalSpec qualified
@@ -45,6 +46,7 @@ import Test.Hspec qualified as Hspec
 
 main :: IO ()
 main = Hspec.hspec do
+  Hspec.describe "AsyncTask.Race" AsyncTask.RaceSpec.spec
   Hspec.describe "Command.FromSchema" Command.FromSchemaSpec.spec
   Hspec.describe "ConcurrentMap" ConcurrentMapSpec.spec
   Hspec.describe "Decimal" DecimalSpec.spec

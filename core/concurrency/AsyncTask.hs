@@ -2,12 +2,14 @@
 
 module AsyncTask (
   AsyncTask,
+  RaceWinner (..),
   run,
   waitFor,
   waitCatch,
   cancel,
   sleep,
   process,
+  race,
   runConcurrently,
   runAllIgnoringErrors,
 ) where
@@ -19,6 +21,7 @@ import Control.Concurrent qualified as Ghc
 import Control.Concurrent.Async qualified as GhcAsync
 import GHC.IO qualified as GHC
 import Data.Either qualified as GhcEither
+import Prelude qualified
 import Result (Result)
 import Result qualified
 import Text (Text)
@@ -80,6 +83,28 @@ process task processor =
     internalProcessor
     |> GhcAsync.withAsync (Task.runResult task)
     |> Task.fromIOResult
+
+
+-- | The winner of a 'race': 'LeftWon' means the left task finished first,
+--   'RightWon' means the right task finished first.
+data RaceWinner a b
+  = LeftWon a
+  | RightWon b
+  deriving (Prelude.Show, Eq)
+
+
+-- | Run two Tasks concurrently; return the result of whichever finishes first.
+--   The loser is cancelled. Errors in the winner propagate; errors in the
+--   loser are ignored. Mirrors the semantics of
+--   'Control.Concurrent.Async.race' but stays inside the Task error channel.
+race :: forall err a b. (Show err) => Task err a -> Task err b -> Task err (RaceWinner a b)
+race leftTask rightTask = Task.fromIOResult do
+  outcome <- GhcAsync.race (Task.runResult leftTask) (Task.runResult rightTask)
+  case outcome of
+    GhcEither.Left (Result.Ok a) -> pure (Result.Ok (LeftWon a))
+    GhcEither.Left (Result.Err e) -> pure (Result.Err e)
+    GhcEither.Right (Result.Ok b) -> pure (Result.Ok (RightWon b))
+    GhcEither.Right (Result.Err e) -> pure (Result.Err e)
 
 
 sleep :: Int -> Task _ Unit

@@ -610,8 +610,6 @@ test-suite nhcore-test-service
     Service.CommandExecutor.AuditLoggingSpec
     Service.QueryObjectStore.PostgresSpec
     Service.Query.Subscriber.ReadinessSpec
-    Service.Transport.Web.ReadinessSpec
-    Service.Application.ReadinessBuilderSpec
 
   type: exitcode-stdio-1.0
   hs-source-dirs: test-service, test
@@ -666,6 +664,7 @@ test-suite nhcore-test-core
     -Wno-missing-home-modules
 
   other-modules:
+    AsyncTask.RaceSpec
     Command.FromSchemaSpec
     ConcurrentMapSpec
     Config.ApplicationSpec
