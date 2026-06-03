@@ -27,6 +27,12 @@ if [ "${CLAUDE_CODE_REMOTE:-}" != "true" ]; then
   exit 0
 fi
 
+# Run asynchronously: the session starts immediately while this provisions Nix,
+# the toolchain, and the cabal index in the background. The JSON control line
+# must be the first thing written to stdout. Timeout is generous because a cold
+# dev-shell pull + cabal build can take a while.
+echo '{"async": true, "asyncTimeout": 1800000}'
+
 NIX_PROFILE_BIN="/nix/var/nix/profiles/default/bin"
 NIX_CUSTOM_CONF="/etc/nix/nix.custom.conf"
 
