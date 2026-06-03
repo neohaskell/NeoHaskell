@@ -330,8 +330,13 @@ rebuildFromInner
   -> RebuildOptions
   -> Task QueryRebuildError Unit
 rebuildFromInner subscriber queryName startPosition options = do
-  -- Step 1: If an object store is configured, check checkpoint availability.
+  -- Step 1: If an object store is configured, probe its availability.
+  -- Uuid.nil is used as a no-op probe key: it is guaranteed never to be
+  -- a real instance UUID (Uuid.generate uses v4 random), so the lookup
+  -- either returns Nothing (store is up) or fails (store is unavailable).
   -- A store.get failure raises CheckpointFetchFailed.
+  -- (A dedicated `healthCheck` trait method would be cleaner; this is
+  -- the minimum-disruption path until the trait is extended.)
   case subscriber.objectStore of
     Just store -> do
       _ <- store.get Uuid.nil
@@ -406,9 +411,13 @@ resolveStartPosition subscriber queryName startPosition _options =
   case subscriber.checkpointStore of
     Nothing -> Task.yield (startPosition, False)
     Just cpStore -> do
-      -- Use empty string as the "current known hash" placeholder.
-      -- Full schema-hash tracking (KnownHash) is deferred; the hash mechanism
-      -- is exercisable via test fixtures that control resumeFromCheckpoint.
+      -- TODO(#NNN): replace this placeholder with the compile-time
+      -- `KnownHash` for the query, so ADR-0059's H5 (schema-evolution
+      -- detection) actually fires in production. Today the empty hash
+      -- means resumeFromCheckpoint always sees a "mismatch" against any
+      -- pre-existing row, forcing a full replay — safe but inefficient.
+      -- The hash-mismatch test fixtures (HashMismatchSpec) currently
+      -- exercise the mechanism by controlling resumeFromCheckpoint directly.
       let currentHash = ""
       resumeResult <-
         cpStore.resumeFromCheckpoint queryName currentHash
