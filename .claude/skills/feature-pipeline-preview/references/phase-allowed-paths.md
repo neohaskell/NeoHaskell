@@ -16,7 +16,7 @@ The orchestrator's check is best-effort and based on globs. If a diff path is am
 | 6 DevEx review | `.pipeline/devex-review-rubric.json`, `.pipeline/devex-review.md` | |
 | 7 Architecture design | `docs/architecture/NNNN-slug.md`, `.pipeline/architecture-rubric.json` | |
 | 8 Test spec design | `docs/architecture/NNNN-slug-tests.md`, `.pipeline/test-spec-rubric.json` | |
-| 9 Test writing | `core/test/`, `core/test-service/`, `testbed/`, `core/nhcore.cabal` (other-modules registration), plus the source-module **stubs** named in the architecture doc under `core/service/`. | The source-module stubs are limited to the exact paths the architecture doc names. Nothing else under `core/service/` may be touched. |
+| 9 Test writing | `core/test/`, `core/test-core/`, `core/test-service/`, `testbed/`, `core/nhcore.cabal` (other-modules registration), plus the source-module **stubs** named in the architecture doc under `core/service/` or `core/concurrency/`. | The source-module stubs are limited to the exact paths the architecture doc names. Nothing else under `core/service/` or `core/concurrency/` may be touched. |
 | 10 Implementation | Source modules under `core/service/` named in the architecture doc, `core/nhcore.cabal` (exposed-modules), `integrations/` (if the architecture doc names it). | **Never test files.** If the implementation needs a test fixture change, the agent must refuse and escalate to the maintainer. |
 | 11 Build loop | Same paths as phase 10 (fix-iter is implementation work). | Includes `.pipeline/build.log`, `.pipeline/test.log`, `.pipeline/test-counts.json`, `.pipeline/hlint.log`. |
 | 12 Security review (impl) | `.pipeline/findings-12.json` only | |
