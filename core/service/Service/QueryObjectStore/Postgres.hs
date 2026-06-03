@@ -300,11 +300,15 @@ deleteSession queryName rawUuid = do
   Session.statement (queryName, rawUuid) stmt
 
 
--- | UPSERT into query_object_store with CAS-on-position semantics.
+-- | UPSERT into query_object_store for the trait's @atomicUpdate@.
 --
--- The WHERE clause prevents updates when stored position >= incoming position,
--- addressing hazard H2 (lost writes via last-writer-wins).
--- query_hash is stored alongside state to enable schema-evolution detection (H5).
+-- Note: the trait API carries no position, so this write does NOT apply
+-- CAS-on-position. (Doing so with a hardcoded position = 0 would make
+-- every conflict branch a silent no-op — the bug fixed in this revision.)
+-- Hazard H2 (lost-write CAS) is enforced on the checkpoint pathway via
+-- 'CheckpointStore' helpers, which carry a real advancing position.
+-- query_hash is stored alongside state to keep the row shape consistent
+-- with checkpoint rows, but is empty in the trait namespace.
 upsertSession :: Text -> UUID.UUID -> Json.Value -> Session.Session ()
 upsertSession queryName rawUuid jsonVal = do
   let sql =
@@ -313,10 +317,7 @@ upsertSession queryName rawUuid jsonVal = do
         \VALUES ($1, $2, '', 0, $3, now()) \
         \ON CONFLICT (query_name, instance_uuid) DO UPDATE \
         \SET state_json  = EXCLUDED.state_json, \
-        \    query_hash  = EXCLUDED.query_hash, \
-        \    position    = EXCLUDED.position, \
-        \    updated_at  = now() \
-        \WHERE query_object_store.position < EXCLUDED.position"
+        \    updated_at  = now()"
   let encoder =
         ((\(a, _, _) -> a) >$< Encoders.param (Encoders.nonNullable Encoders.text))
           <> ((\(_, b, _) -> b) >$< Encoders.param (Encoders.nonNullable Encoders.uuid))

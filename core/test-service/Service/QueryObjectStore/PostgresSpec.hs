@@ -104,7 +104,11 @@ postgresTests = do
         Ok _ -> fail "Expected failure but got success"
 
     it "fails with ConnectionFailed if pool size is zero or negative" \_ -> do
-      -- A port of 0 is an invalid config — treated as pool-size/config validation failure.
+      -- NOTE: this test originally exercised pool-size validation, but the
+      -- PostgresQueryObjectStoreConfig record has no pool-size field today.
+      -- We use port = 0 as a proxy for "any invalid pool/connection config" —
+      -- libpq rejects port 0 at acquire time, surfacing as ConnectionFailed.
+      -- A proper pool-size validation test would need that field to exist first.
       let badConfig = testConfig { port = 0 }
       result <-
         mkStore badConfig
@@ -132,6 +136,31 @@ postgresTests = do
 
     it "rejects write when new position is less than or equal to existing" \_ -> do
       pending "QueryObjectStore trait's atomicUpdate has no position parameter; CAS-on-position semantics are exercised via CheckpointStore.atomicUpdate (which carries position separately)"
+
+    it "second atomicUpdate on the same UUID overwrites the first" \_ -> do
+      -- Regression: trait writes used to share position = 0, so a CAS-on-position
+      -- ON CONFLICT clause silently dropped every update after the first.
+      store <- mkStore testConfig |> Task.mapError mkErrorToText
+      instanceId <- Uuid.generate
+      let first = simpleState "first"
+      let second = simpleState "second"
+      _ <-
+        store.atomicUpdate instanceId (\_ -> Just first)
+          |> Task.mapError storeErrorToText
+      _ <-
+        store.atomicUpdate instanceId (\_ -> Just second)
+          |> Task.mapError storeErrorToText
+      result <-
+        store.get instanceId
+          |> Task.mapError storeErrorToText
+          |> Task.asResult
+      case result of
+        Ok (Just got) ->
+          if got == second
+            then pass
+            else fail [fmt|second write was dropped; got #{toText (show got)}|]
+        Ok Nothing -> fail "Expected Just (second state) but got Nothing"
+        Err err -> fail [fmt|Expected Just state but got error: #{err}|]
 
     it "fails with StatementFailed if query_name is NULL" \_ -> do
       -- NULL Text is unrepresentable in Haskell's type system; the NOT NULL constraint is
