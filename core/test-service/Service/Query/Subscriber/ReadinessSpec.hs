@@ -3,6 +3,7 @@ module Service.Query.Subscriber.ReadinessSpec where
 import Array qualified
 import AsyncTask qualified
 import Core
+import Data.Hashable qualified as Hashable
 import Json qualified
 import Service.Event (Event (..), EntityName (..), StreamId (..))
 import Service.Event.EventMetadata qualified as EventMetadata
@@ -19,6 +20,7 @@ import Service.Query.Subscriber (
   RebuildOptions (..),
   newWithStore,
   newWithCheckpointStore,
+  queryHashFor,
   rebuildOptionsDefault,
   )
 import Service.Query.Subscriber qualified as Subscriber
@@ -374,3 +376,20 @@ spec = do
 
     it "QueryRebuildError round-trips correctly" \_ -> do
       pending "QueryRebuildError ToJSON/FromJSON instances not yet implemented"
+
+  describe "queryHashFor" do
+    it "matches Data.Hashable on the String form of the query name" \_ -> do
+      -- Load-bearing invariant for ADR-0059 H5: the runtime hash MUST match
+      -- the compile-time hash produced by deriveQuery / deriveKnownHash, both
+      -- of which compute `Hashable.hash (nameStr :: String)` at TH-time. If
+      -- this assertion ever breaks, every restart of every checkpointed query
+      -- will see a hash mismatch and force a full replay.
+      let name = "UserOrders" :: [Char]
+      let expected = (Hashable.hash name |> show |> toText)
+      queryHashFor "UserOrders" |> shouldBe expected
+
+    it "produces stable hashes across calls (pure function)" \_ -> do
+      queryHashFor "Anything" |> shouldBe (queryHashFor "Anything")
+
+    it "produces different hashes for different names" \_ -> do
+      (queryHashFor "QueryA" != queryHashFor "QueryB") |> shouldBe True

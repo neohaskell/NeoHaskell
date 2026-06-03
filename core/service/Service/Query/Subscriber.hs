@@ -14,6 +14,7 @@ module Service.Query.Subscriber (
   readinessOf,
   readinessOfQuery,
   rebuildOptionsDefault,
+  queryHashFor,
 ) where
 
 import Array (Array)
@@ -23,6 +24,7 @@ import AsyncTask qualified
 import Basics
 import ConcurrentVar (ConcurrentVar)
 import ConcurrentVar qualified
+import Data.Hashable qualified as Hashable
 import Json qualified
 import Log qualified
 import Map (Map)
@@ -43,6 +45,7 @@ import Uuid qualified
 import Task (Task)
 import Task qualified
 import Text (Text)
+import Text qualified
 import ToText (toText)
 
 
@@ -411,14 +414,13 @@ resolveStartPosition subscriber queryName startPosition _options =
   case subscriber.checkpointStore of
     Nothing -> Task.yield (startPosition, False)
     Just cpStore -> do
-      -- TODO(#NNN): replace this placeholder with the compile-time
-      -- `KnownHash` for the query, so ADR-0059's H5 (schema-evolution
-      -- detection) actually fires in production. Today the empty hash
-      -- means resumeFromCheckpoint always sees a "mismatch" against any
-      -- pre-existing row, forcing a full replay — safe but inefficient.
-      -- The hash-mismatch test fixtures (HashMismatchSpec) currently
-      -- exercise the mechanism by controlling resumeFromCheckpoint directly.
-      let currentHash = ""
+      -- ADR-0059 §H5: schema-evolution detection. The hash must match the
+      -- compile-time value emitted by `deriveQuery` (Service.Query.TH), which
+      -- is `Hashable.hash (queryName :: String)`. We reproduce that exact
+      -- computation here at runtime so a checkpoint row written by an older
+      -- compiled binary is detected as "matching" by a newer one (and vice
+      -- versa) iff the query name is unchanged.
+      let currentHash = queryHashFor queryName
       resumeResult <-
         cpStore.resumeFromCheckpoint queryName currentHash
           |> Task.mapError (\err -> CheckpointFetchFailed (toText (show err)))
@@ -432,6 +434,23 @@ resolveStartPosition subscriber queryName startPosition _options =
             cpStore.deleteStaleHash queryName currentHash
               |> Task.mapError (\err -> CheckpointFetchFailed (toText (show err)))
           Task.yield (StreamPosition 0, True)
+
+
+-- | Compute the schema-evolution hash for a query name.
+--
+-- Must produce the same value as the compile-time hash emitted by
+-- `Service.Query.TH.deriveKnownHash` (and the equivalent in
+-- `Service.CommandExecutor.TH`), which both use `Hashable.hash` on the
+-- query name in its `String` form. We mirror that exact pipeline:
+-- Text → Array Char → [Char] → Hashable.hash :: Int → Text.
+queryHashFor :: Text -> Text
+queryHashFor queryName =
+  queryName
+    |> Text.toArray
+    |> Array.toLinkedList
+    |> Hashable.hash
+    |> show
+    |> toText
 
 
 -- | Process events from a stream for a specific set of updaters.
