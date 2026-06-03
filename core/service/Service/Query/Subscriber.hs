@@ -280,6 +280,8 @@ data QueryRebuildError
     -- ^ Hash mismatch forced a replay, but the replay itself failed.
   | CheckpointFetchFailed Text
     -- ^ Could not read the resume position from the object store.
+  | CheckpointWriteFailed Text
+    -- ^ Could not persist the new checkpoint after a successful rebuild.
   | EventStoreFailed Text
     -- ^ EventStore.readFrom returned Err.
   deriving (Eq, Show, Generic)
@@ -403,7 +405,7 @@ rebuildFromInner subscriber queryName startPosition options = do
       case subscriber.checkpointStore of
         Just cpStore ->
           cpStore.writeCheckpoint queryName (queryHashFor queryName) finalPos
-            |> Task.mapError (\err -> CheckpointFetchFailed (toText (show err)))
+            |> Task.mapError (\err -> CheckpointWriteFailed (toText (show err)))
         Nothing -> pass
       -- Mark query as ready.
       subscriber.queryReadiness

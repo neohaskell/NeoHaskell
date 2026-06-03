@@ -75,6 +75,18 @@ def lint_file(path: Path) -> list[tuple[Path, int, str, str]]:
     # Rule: task-fromio-runresult-roundtrip
     # Look for Task.fromIO and Task.runResult appearing within the same
     # expression span (10-line window heuristic).
+    #
+    # Exemption: nhcore concurrency primitives (core/concurrency/*.hs) are
+    # the canonical home for IO-escape patterns — they're the modules that
+    # expose Task-native abstractions over IO libraries. Skipping them
+    # prevents the lint from self-flagging legitimate primitive plumbing.
+    path_str = str(path)
+    is_concurrency_primitive = (
+        "core/concurrency/" in path_str.replace("\\", "/")
+    )
+    if is_concurrency_primitive:
+        return findings
+
     fromio_re = re.compile(r"\bTask\.fromIO\b")
     runresult_re = re.compile(r"\bTask\.runResult\b")
     for idx, line in enumerate(lines, start=1):

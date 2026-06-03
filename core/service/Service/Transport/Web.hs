@@ -66,9 +66,11 @@ import Service.Response (CommandResponse)
 import Service.Response qualified as Response
 import Service.Transport (EndpointHandler, Endpoints (..), Transport (..))
 import Service.Transport.Web.BuiltinSchemas qualified as BuiltinSchemas
-import Service.Transport.Web.Readiness (ReadinessConfig (..))
+import Service.Transport.Web.Readiness (ReadinessConfig)
+import Service.Transport.Web.Readiness qualified as Readiness
 import Service.Transport.Web.SwaggerUI qualified as SwaggerUI
-import Service.Query.Subscriber (Readiness (..))
+import Service.Query.Subscriber (Readiness)
+import Service.Query.Subscriber qualified as Subscriber
 import Task (Task)
 import Task qualified
 import Text (Text)
@@ -1245,7 +1247,7 @@ respondReadiness transport respond =
     Nothing ->
       respond (Wai.responseLBS HTTP.status404 [] "")
     Just probe -> do
-      readiness <- probe |> Task.recover (\err -> Task.yield (Failed err))
+      readiness <- probe |> Task.recover (\err -> Task.yield (Subscriber.Failed err))
       let (status, body) = renderReadiness readiness
       let headers =
             [ (HTTP.hContentType, "application/json")
@@ -1255,23 +1257,23 @@ respondReadiness transport respond =
 
 
 -- | Map a Readiness value to an HTTP status and JSON body.
--- Ready → 200 {"status":"ready"}
--- Rebuilding → 503 {"status":"rebuilding"}
--- Failed reason → 503 {"status":"failed","failedQueries":[{"reason":"..."}]}
+-- Body shapes per ADR-0059's "Readiness endpoint contract":
+--   Ready          → 200 {"status":"ready"}
+--   Rebuilding     → 503 {"status":"rebuilding"}
+--   Failed reason  → 503 {"status":"failed","reason":"..."}
 renderReadiness :: Readiness -> (HTTP.Status, GhcLBS.ByteString)
 renderReadiness readiness =
   case readiness of
-    Ready ->
+    Subscriber.Ready ->
       (HTTP.status200, "{\"status\":\"ready\"}")
-    Rebuilding ->
+    Subscriber.Rebuilding ->
       (HTTP.status503, "{\"status\":\"rebuilding\"}")
-    Failed reason ->
+    Subscriber.Failed reason ->
       ( HTTP.status503
       , Aeson.encode
           ( Json.object
               [ "status" Json..= ("failed" :: Text)
-              , "failedQueries" Json..=
-                  ([ Json.object ["reason" Json..= reason] ] :: [Aeson.Value])
+              , "reason" Json..= reason
               ]
           )
       )
