@@ -15,6 +15,8 @@ module Service.Query.Subscriber (
   readinessOfQuery,
   rebuildOptionsDefault,
   queryHashFor,
+  -- | Exported for testing the live-subscription checkpoint write path.
+  processEventHandler,
 ) where
 
 import Array (Array)
@@ -233,6 +235,17 @@ processEventHandler subscriber rawEvent = do
   case rawEvent.metadata.globalPosition of
     Just pos -> subscriber.lastProcessedPosition |> ConcurrentVar.modify (\_ -> Just pos)
     Nothing -> pass
+  -- Persist checkpoint for every registered query after each live event.
+  -- CAS-on-position in the SQL protects against position regression.
+  -- Task.ignoreError keeps a transient DB blip from killing the subscription.
+  case (subscriber.checkpointStore, rawEvent.metadata.globalPosition) of
+    (Just cpStore, Just (StreamPosition p)) -> do
+      let queryNames = getAllQueryNames subscriber.registry
+      queryNames
+        |> Task.forEach (\qn ->
+            cpStore.writeCheckpoint qn (queryHashFor qn) p
+              |> Task.ignoreError)
+    _ -> pass
 
 
 -- | Readiness state of a query rebuild.
@@ -385,7 +398,13 @@ rebuildFromInner subscriber queryName startPosition options = do
       subscriber.queryReadiness
         |> ConcurrentVar.modify (Map.set queryName (Failed errText))
       Task.throw err
-    Ok _ ->
+    Ok finalPos -> do
+      -- Persist the new checkpoint so a restart can resume from finalPos.
+      case subscriber.checkpointStore of
+        Just cpStore ->
+          cpStore.writeCheckpoint queryName (queryHashFor queryName) finalPos
+            |> Task.mapError (\err -> CheckpointFetchFailed (toText (show err)))
+        Nothing -> pass
       -- Mark query as ready.
       subscriber.queryReadiness
         |> ConcurrentVar.modify (Map.set queryName Ready)
@@ -454,20 +473,25 @@ queryHashFor queryName =
 
 
 -- | Process events from a stream for a specific set of updaters.
--- Returns Err Text when any updater fails (propagated as UpdaterException).
+-- Returns the maximum globalPosition seen (0 if no events), or Err Text when
+-- any updater fails (propagated as UpdaterException).
 processEventsForQuery
   :: Array QueryUpdater
   -> RebuildOptions
   -> Stream.Stream (ReadAllMessage Json.Value)
-  -> Task Text Unit
+  -> Task Text Int64
 processEventsForQuery updaters _options messageStream =
   messageStream
     |> Stream.consume
-        (\_ message ->
+        (\lastPos message ->
           case message of
-            AllEvent rawEvent -> applyEvent updaters rawEvent
-            _ -> pass)
-        unit
+            AllEvent rawEvent -> do
+              applyEvent updaters rawEvent
+              case rawEvent.metadata.globalPosition of
+                Just (StreamPosition p) -> Task.yield (max lastPos p)
+                Nothing -> Task.yield lastPos
+            _ -> Task.yield lastPos)
+        0
 
 
 -- | Apply an event to a set of updaters.

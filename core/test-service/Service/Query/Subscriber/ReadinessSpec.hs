@@ -2,10 +2,12 @@ module Service.Query.Subscriber.ReadinessSpec where
 
 import Array qualified
 import AsyncTask qualified
+import ConcurrentVar qualified
 import Core
 import Data.Hashable qualified as Hashable
 import Json qualified
 import Service.Event (Event (..), EntityName (..), StreamId (..))
+import Service.Event.EventMetadata (EventMetadata (..))
 import Service.Event.EventMetadata qualified as EventMetadata
 import Service.Event.StreamPosition (StreamPosition (..))
 import Service.EventStore (EventStore (..))
@@ -20,6 +22,7 @@ import Service.Query.Subscriber (
   RebuildOptions (..),
   newWithStore,
   newWithCheckpointStore,
+  processEventHandler,
   queryHashFor,
   rebuildOptionsDefault,
   )
@@ -126,6 +129,7 @@ spec = do
       let mockCpStore = CheckpointStore
             { resumeFromCheckpoint = \_ _ -> Task.yield Nothing
             , deleteStaleHash = \_ _ -> Task.yield unit
+            , writeCheckpoint = \_ _ _ -> Task.yield unit
             }
       subscriber <- newWithCheckpointStore failingStore Registry.empty mockCpStore
       result <-
@@ -393,3 +397,92 @@ spec = do
 
     it "produces different hashes for different names" \_ -> do
       (queryHashFor "QueryA" != queryHashFor "QueryB") |> shouldBe True
+
+  describe "checkpoint write path" do
+    it "writes checkpoint with final position at end of rebuild" \_ -> do
+      -- Fixture: 3 synthetic events with explicit positions fed via a stubbed
+      -- event store, a trivial updater, and a recording mock CheckpointStore.
+      -- After rebuildFrom completes, exactly one writeCheckpoint call should be
+      -- recorded with the maximum (final) position seen during replay.
+      baseStore <- InMemory.new |> Task.mapError toText
+      eventMeta <- EventMetadata.new
+      let mkEvent pos =
+            Event
+              { entityName = EntityName "write-test-entity"
+              , streamId = StreamId "write-test-stream"
+              , event = Json.null
+              , metadata = eventMeta { globalPosition = Just (StreamPosition pos) }
+              }
+      let stubbedStore = baseStore
+            { readAllEventsForwardFrom = \_ _ ->
+                Stream.fromArray
+                  ( Array.fromLinkedList
+                      [ AllEvent (mkEvent 10)
+                      , AllEvent (mkEvent 20)
+                      , AllEvent (mkEvent 30)
+                      ]
+                  )
+            }
+      let trivialUpdater = QueryUpdater
+            { queryName = "writeTest"
+            , updateQuery = \_ -> Task.yield unit
+            }
+      let registry = Registry.register (EntityName "write-test-entity") trivialUpdater Registry.empty
+      -- Build recording mock: logs every writeCheckpoint call.
+      log <- ConcurrentVar.containing Array.empty
+      let mockCpStore = CheckpointStore
+            { resumeFromCheckpoint = \_ _ -> Task.yield Nothing
+            , deleteStaleHash = \_ _ -> Task.yield unit
+            , writeCheckpoint = \name hash pos -> do
+                log |> ConcurrentVar.modify (Array.push (name, hash, pos))
+                Task.yield unit
+            }
+      subscriber <- newWithCheckpointStore stubbedStore registry mockCpStore
+      result <-
+        Subscriber.rebuildFrom subscriber "writeTest" (StreamPosition 0) rebuildOptionsDefault
+          |> Task.asResult
+      case result of
+        Err err -> fail [fmt|Expected rebuild to succeed but got: #{toText (show err)}|]
+        Ok _ -> pass
+      calls <- ConcurrentVar.peek log
+      do
+        let expected = Array.wrap ("writeTest", queryHashFor "writeTest", 30)
+        calls |> shouldBe expected
+
+    it "writes checkpoint per live-subscription event via processEventHandler" \_ -> do
+      -- Fixture: a subscriber with one registered updater and a recording mock
+      -- CheckpointStore. Drive processEventHandler directly with a single event
+      -- at position 42. Assert exactly one writeCheckpoint call recorded.
+      baseStore <- InMemory.new |> Task.mapError toText
+      eventMeta <- EventMetadata.new
+      let syntheticEvent =
+            Event
+              { entityName = EntityName "live-test-entity"
+              , streamId = StreamId "live-test-stream"
+              , event = Json.null
+              , metadata = eventMeta { globalPosition = Just (StreamPosition 42) }
+              }
+      let trivialUpdater = QueryUpdater
+            { queryName = "liveTest"
+            , updateQuery = \_ -> Task.yield unit
+            }
+      let registry = Registry.register (EntityName "live-test-entity") trivialUpdater Registry.empty
+      log <- ConcurrentVar.containing Array.empty
+      let mockCpStore = CheckpointStore
+            { resumeFromCheckpoint = \_ _ -> Task.yield Nothing
+            , deleteStaleHash = \_ _ -> Task.yield unit
+            , writeCheckpoint = \name hash pos -> do
+                log |> ConcurrentVar.modify (Array.push (name, hash, pos))
+                Task.yield unit
+            }
+      subscriber <- newWithCheckpointStore baseStore registry mockCpStore
+      result <-
+        processEventHandler subscriber syntheticEvent
+          |> Task.asResult
+      case result of
+        Err err -> fail [fmt|Expected processEventHandler to succeed but got: #{toText err}|]
+        Ok _ -> pass
+      calls <- ConcurrentVar.peek log
+      do
+        let expected = Array.wrap ("liveTest", queryHashFor "liveTest", 42)
+        calls |> shouldBe expected

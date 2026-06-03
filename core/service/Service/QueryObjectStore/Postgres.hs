@@ -360,6 +360,13 @@ data CheckpointStore = CheckpointStore
     --
     -- Called before a full replay when a schema change is detected.
   , deleteStaleHash :: Text -> Text -> Task QueryObjectStoreError Unit
+    -- | Persist (query_name, query_hash, position) for checkpoint resume.
+    --
+    -- Uses CAS-on-position (ADR-0059 §"Concurrency & persistence", hazard H2):
+    -- the row is only updated if the incoming position is strictly greater than
+    -- the stored position. A nil UUID is used as the checkpoint marker row key,
+    -- keeping checkpoint rows separate from per-instance trait rows.
+  , writeCheckpoint :: Text -> Text -> Int64 -> Task QueryObjectStoreError Unit
   }
 
 
@@ -369,6 +376,7 @@ createCheckpointStore pool =
   CheckpointStore
     { resumeFromCheckpoint = resumeFromCheckpointImpl pool
     , deleteStaleHash = deleteStaleHashImpl pool
+    , writeCheckpoint = writeCheckpointImpl pool
     }
 
 
@@ -394,3 +402,36 @@ deleteStaleHashImpl pool queryName queryHash = do
   let decoder = Decoders.noResult
   let stmt = Statement (sql |> Text.toBytes |> Bytes.unwrap) encoder decoder True
   runPool pool (Session.statement (queryName, queryHash) stmt)
+
+
+-- | Persist a checkpoint row for (query_name, query_hash, position).
+--
+-- The nil UUID is the checkpoint marker key — one row per query, isolated
+-- from the trait's per-instance rows written under '__trait__'.
+writeCheckpointImpl :: Pool -> Text -> Text -> Int64 -> Task QueryObjectStoreError Unit
+writeCheckpointImpl pool queryName queryHash position =
+  runPool pool (writeCheckpointSession queryName queryHash position)
+
+
+-- | INSERT ... ON CONFLICT DO UPDATE with CAS-on-position.
+--
+-- Only advances the stored position when the incoming position is strictly
+-- greater, preventing lost-write regression (ADR-0059 hazard H2).
+writeCheckpointSession :: Text -> Text -> Int64 -> Session.Session ()
+writeCheckpointSession queryName queryHash position = do
+  let sql =
+        "INSERT INTO query_object_store \
+        \  (query_name, instance_uuid, query_hash, position, state_json, updated_at) \
+        \VALUES ($1, '00000000-0000-0000-0000-000000000000'::uuid, $2, $3, '{}'::jsonb, now()) \
+        \ON CONFLICT (query_name, instance_uuid) DO UPDATE \
+        \SET position   = EXCLUDED.position, \
+        \    query_hash = EXCLUDED.query_hash, \
+        \    updated_at = now() \
+        \WHERE query_object_store.position < EXCLUDED.position"
+  let encoder =
+        ((\(a, _, _) -> a) >$< Encoders.param (Encoders.nonNullable Encoders.text))
+          <> ((\(_, b, _) -> b) >$< Encoders.param (Encoders.nonNullable Encoders.text))
+          <> ((\(_, _, c) -> c) >$< Encoders.param (Encoders.nonNullable Encoders.int8))
+  let decoder = Decoders.noResult
+  let stmt = Statement (sql |> Text.toBytes |> Bytes.unwrap) encoder decoder True
+  Session.statement (queryName, queryHash, position) stmt
