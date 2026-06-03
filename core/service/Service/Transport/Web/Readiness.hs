@@ -1,7 +1,6 @@
 module Service.Transport.Web.Readiness (
   ReadinessConfig (..),
   handleReadinessRequest,
-  handleQueryReadinessRequest,
 ) where
 
 import Basics
@@ -28,12 +27,3 @@ data ReadinessConfig = ReadinessConfig
 -- route registration and is exercised by unit tests against the readiness state.
 handleReadinessRequest :: Task Text Unit
 handleReadinessRequest = Task.yield unit
-
-
--- | Handle GET /queries/{name} readiness degradation.
---
--- Returns Ok Unit when the handler runs. The caller is responsible for
--- checking per-query readiness via Subscriber.readinessOfQuery and writing
--- the appropriate HTTP response (200, 503, or 404).
-handleQueryReadinessRequest :: Task Text Unit
-handleQueryReadinessRequest = Task.yield unit

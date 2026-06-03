@@ -582,3 +582,13 @@ response body:
 - [core/service/Service/Application.hs](../../core/service/Service/Application.hs) (lines 1154–1161) — synchronous call site.
 - [core/service/Service/QueryObjectStore/Core.hs](../../core/service/Service/QueryObjectStore/Core.hs) — trait that needs a Postgres impl.
 - [core/service/Service/EventStore/Postgres/Internal.hs](../../core/service/Service/EventStore/Postgres/Internal.hs) — template for the new Postgres backend.
+
+---
+
+## Implementation notes
+
+- **`withoutReadinessEndpoint` is deferred.** Decision C of this ADR prescribed
+  a public builder `Application.withoutReadinessEndpoint` for opt-out. During
+  PR review the maintainer called YAGNI on that opt-out and the function was
+  removed. `/ready` is always on with no opt-out today. A follow-up issue will
+  track adding the opt-out only if a real deployment surfaces the need.

@@ -48,7 +48,6 @@ module Service.Application (
   withDispatcherConfig,
   useQueryObjectStore,
   useReadinessEndpoint,
-  withoutReadinessEndpoint,
 
   -- * Health Check Re-export
   Web.HealthCheckConfig (..),
@@ -405,7 +404,7 @@ data Application = Application
     -- | ADR-0055 Integration registrations. Built at startup into a DispatchRegistry.
     integrationRegistrations :: Array IntegrationRegistrationEntry,
     -- | Readiness endpoint configuration. Enabled by default at /ready.
-    -- Use useReadinessEndpoint to customize, or withoutReadinessEndpoint to disable.
+    -- Use useReadinessEndpoint to customize.
     readinessConfig :: Maybe ReadinessConfig
   }
 
@@ -2341,12 +2340,3 @@ useQueryObjectStore config app =
 useReadinessEndpoint :: Application -> Application
 useReadinessEndpoint app =
   app {readinessConfig = Just ReadinessConfig {readinessPath = "ready", includeQueryStatus = True}}
-
-
--- | Disable the /ready endpoint entirely.
---
--- Use when the deployment infrastructure does not need a readiness probe, or
--- when a custom readiness check is provided at the infrastructure layer.
-withoutReadinessEndpoint :: Application -> Application
-withoutReadinessEndpoint app =
-  app {readinessConfig = Nothing}
