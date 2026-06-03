@@ -1,13 +1,17 @@
 module Service.QueryObjectStore.Postgres (
   PostgresQueryObjectStoreConfig (..),
   QueryObjectStoreError (..),
+  CheckpointStore (..),
   createQueryObjectStore,
+  createCheckpointStore,
 ) where
 
 import Array (Array)
 import Array qualified
 import Basics
 import Data.Functor.Contravariant ((>$<))
+import Data.Semigroup ((<>))
+import Data.Tuple (fst, snd)
 import Data.UUID qualified as UUID
 import Hasql.Decoders qualified as Decoders
 import Hasql.Encoders qualified as Encoders
@@ -22,7 +26,9 @@ import Hasql.Statement (Statement (..))
 import Json qualified
 import Maybe (Maybe (..))
 import Result (Result (..))
-import Service.QueryObjectStore.Core (Error (..), QueryObjectStore (..), QueryObjectStoreConfig (..))
+import Result qualified
+import Service.QueryObjectStore.Core (Error (..), QueryObjectStore (..))
+import Service.QueryObjectStore.Core qualified as Core
 import Task (Task)
 import Task qualified
 import Text (Text)
@@ -55,7 +61,7 @@ data PostgresQueryObjectStoreConfig = PostgresQueryObjectStoreConfig
   deriving (Eq, Show)
 
 
-instance QueryObjectStoreConfig PostgresQueryObjectStoreConfig where
+instance Core.QueryObjectStoreConfig PostgresQueryObjectStoreConfig where
   createQueryObjectStore config =
     newFromConfig config
       |> Task.mapError toText
@@ -80,6 +86,7 @@ newFromConfig
   -> Task QueryObjectStoreError (QueryObjectStore query)
 newFromConfig config = do
   pool <- acquirePool config
+  _ <- initializeTable pool
   Task.yield
     QueryObjectStore
       { get = getImpl pool
@@ -131,7 +138,66 @@ pingSession :: Session.Session ()
 pingSession = Session.sql "SELECT 1"
 
 
+-- | Initialize the query_object_store table if it doesn't exist.
+--
+-- Schema per ADR-0059: includes query_name (sharding key), instance_uuid,
+-- query_hash (schema evolution), position (resume point), state_json, updated_at.
+-- Primary key is (query_name, instance_uuid) to support per-tenant/per-instance sharding.
+initializeTable :: Pool -> Task QueryObjectStoreError ()
+initializeTable pool = do
+  runPool pool createTableSession
+    |> Task.mapError (\e -> StatementFailed (toText (show e)))
+
+
+-- | Create the query_object_store table — ADR-0059 schema.
+--
+-- Uses CREATE TABLE IF NOT EXISTS so this is additive and idempotent:
+-- safe to run on every startup without destroying persisted query state.
+--
+-- PRIMARY KEY (query_name, instance_uuid) supports per-query sharding.
+-- query_hash enables hash-mismatch detection for schema evolution (H5).
+-- position enables CAS-on-position for lost-write prevention (H2).
+--
+-- Note: If a pre-existing deployment has a stale schema (e.g., missing
+-- columns), a one-time manual migration is required. This PR's scope is
+-- correct fresh creation; schema evolution is out of scope.
+--
+-- Test suites that need a clean table per run should TRUNCATE or DROP/recreate
+-- via their own setup hooks — production code must never do a DROP.
+createTableSession :: Session.Session ()
+createTableSession =
+  Session.sql
+    [fmt|
+      CREATE TABLE IF NOT EXISTS query_object_store (
+        query_name    TEXT        NOT NULL,
+        instance_uuid UUID        NOT NULL,
+        query_hash    TEXT        NOT NULL,
+        position      BIGINT      NOT NULL,
+        state_json    JSONB       NOT NULL,
+        updated_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+        PRIMARY KEY (query_name, instance_uuid)
+      );
+    |]
+
+
+-- | Namespace used by the QueryObjectStore trait implementations.
+--
+-- The trait's get / atomicUpdate / getAll operate on per-instance state
+-- without a query-specific name. We park those rows under this stable
+-- namespace so they never collide with checkpoint rows (which carry a
+-- real query name set by rebuildFrom).
+--
+-- This is distinct from checkpoint logic: checkpoint rows are written by
+-- the internal helpers (resumeFromCheckpoint / deleteStaleHash) with the
+-- actual query name. Trait rows are written here with traitNamespace.
+traitNamespace :: Text
+traitNamespace = "__trait__"
+
+
 -- | Get a single query instance by UUID.
+--
+-- Looks up state under the traitNamespace so trait rows are isolated
+-- from checkpoint rows written by rebuildFrom checkpoint helpers.
 getImpl
   :: forall query.
      (Json.FromJSON query)
@@ -140,7 +206,7 @@ getImpl
   -> Task Error (Maybe query)
 getImpl pool uuid = do
   let rawUuid = Uuid.toLegacy uuid
-  result <- runPool pool (selectJsonSession rawUuid)
+  result <- runPool pool (selectJsonSession traitNamespace rawUuid)
     |> Task.mapError (\e -> StorageError (toText (show e)))
   case result of
     Nothing -> Task.yield Nothing
@@ -151,6 +217,14 @@ getImpl pool uuid = do
 
 
 -- | Atomically update a query instance.
+--
+-- Uses INSERT ... ON CONFLICT (query_name, instance_uuid) DO UPDATE with
+-- CAS-on-position semantics per ADR-0059 §"atomicUpdateStatement":
+-- the row is updated only if the incoming position is strictly greater than
+-- the stored position. This prevents lost writes (H2).
+--
+-- Writes under traitNamespace so these rows are isolated from per-query
+-- checkpoint rows that carry a real query name.
 atomicUpdateImpl
   :: forall query.
      (Json.FromJSON query, Json.ToJSON query)
@@ -160,7 +234,7 @@ atomicUpdateImpl
   -> Task Error Unit
 atomicUpdateImpl pool uuid updateFn = do
   let rawUuid = Uuid.toLegacy uuid
-  maybeJson <- runPool pool (selectJsonSession rawUuid)
+  maybeJson <- runPool pool (selectJsonSession traitNamespace rawUuid)
     |> Task.mapError (\e -> StorageError (toText (show e)))
   maybeExisting <- case maybeJson of
     Nothing -> Task.yield Nothing
@@ -170,22 +244,22 @@ atomicUpdateImpl pool uuid updateFn = do
         Ok val -> Task.yield (Just val)
   case updateFn maybeExisting of
     Nothing ->
-      runPool pool (deleteSession rawUuid)
+      runPool pool (deleteSession traitNamespace rawUuid)
         |> Task.mapError (\e -> StorageError (toText (show e)))
     Just newVal -> do
       let encoded = Json.encode newVal
-      runPool pool (upsertSession rawUuid encoded)
+      runPool pool (upsertSession traitNamespace rawUuid encoded)
         |> Task.mapError (\e -> StorageError (toText (show e)))
 
 
--- | Get all query instances.
+-- | Get all query instances in the traitNamespace.
 getAllImpl
   :: forall query.
      (Json.FromJSON query)
   => Pool
   -> Task Error (Array query)
 getAllImpl pool = do
-  jsonValues <- runPool pool selectAllSession
+  jsonValues <- runPool pool (selectAllSession traitNamespace)
     |> Task.mapError (\e -> StorageError (toText (show e)))
   let buildResult =
         jsonValues
@@ -203,48 +277,120 @@ getAllImpl pool = do
     Ok arr -> Task.yield arr
 
 
--- | SELECT state_json ... WHERE instance_uuid = ?
-selectJsonSession :: UUID.UUID -> Session.Session (Maybe Json.Value)
-selectJsonSession rawUuid = do
-  let sql = "SELECT state_json FROM query_object_store WHERE instance_uuid = $1 LIMIT 1"
-  let encoder = Encoders.param (Encoders.nonNullable Encoders.uuid)
+-- | SELECT state_json ... WHERE query_name = ? AND instance_uuid = ?
+selectJsonSession :: Text -> UUID.UUID -> Session.Session (Maybe Json.Value)
+selectJsonSession queryName rawUuid = do
+  let sql = "SELECT state_json FROM query_object_store WHERE query_name = $1 AND instance_uuid = $2 LIMIT 1"
+  let encoder =
+        (fst >$< Encoders.param (Encoders.nonNullable Encoders.text))
+          <> (snd >$< Encoders.param (Encoders.nonNullable Encoders.uuid))
   let decoder = Decoders.rowMaybe (Decoders.column (Decoders.nonNullable Decoders.jsonb))
   let stmt = Statement (sql |> Text.toBytes |> Bytes.unwrap) encoder decoder True
-  Session.statement rawUuid stmt
+  Session.statement (queryName, rawUuid) stmt
 
 
--- | DELETE FROM query_object_store WHERE instance_uuid = ?
-deleteSession :: UUID.UUID -> Session.Session ()
-deleteSession rawUuid = do
-  let sql = "DELETE FROM query_object_store WHERE instance_uuid = $1"
-  let encoder = Encoders.param (Encoders.nonNullable Encoders.uuid)
-  let decoder = Decoders.noResult
-  let stmt = Statement (sql |> Text.toBytes |> Bytes.unwrap) encoder decoder True
-  Session.statement rawUuid stmt
-
-
--- | UPSERT into query_object_store.
-upsertSession :: UUID.UUID -> Json.Value -> Session.Session ()
-upsertSession rawUuid jsonVal = do
-  let sql =
-        "INSERT INTO query_object_store (instance_uuid, state_json, updated_at) \
-        \VALUES ($1, $2, now()) \
-        \ON CONFLICT (instance_uuid) DO UPDATE \
-        \SET state_json = EXCLUDED.state_json, updated_at = now()"
+-- | DELETE FROM query_object_store WHERE query_name = ? AND instance_uuid = ?
+deleteSession :: Text -> UUID.UUID -> Session.Session ()
+deleteSession queryName rawUuid = do
+  let sql = "DELETE FROM query_object_store WHERE query_name = $1 AND instance_uuid = $2"
   let encoder =
-        (fst >$< Encoders.param (Encoders.nonNullable Encoders.uuid))
-          <> (snd >$< Encoders.param (Encoders.nonNullable Encoders.jsonb))
+        (fst >$< Encoders.param (Encoders.nonNullable Encoders.text))
+          <> (snd >$< Encoders.param (Encoders.nonNullable Encoders.uuid))
   let decoder = Decoders.noResult
   let stmt = Statement (sql |> Text.toBytes |> Bytes.unwrap) encoder decoder True
-  Session.statement (rawUuid, jsonVal) stmt
+  Session.statement (queryName, rawUuid) stmt
 
 
--- | SELECT all state_json values.
-selectAllSession :: Session.Session (Array Json.Value)
-selectAllSession = do
-  let sql = "SELECT state_json FROM query_object_store"
-  let encoder = Encoders.noParams
+-- | UPSERT into query_object_store with CAS-on-position semantics.
+--
+-- The WHERE clause prevents updates when stored position >= incoming position,
+-- addressing hazard H2 (lost writes via last-writer-wins).
+-- query_hash is stored alongside state to enable schema-evolution detection (H5).
+upsertSession :: Text -> UUID.UUID -> Json.Value -> Session.Session ()
+upsertSession queryName rawUuid jsonVal = do
+  let sql =
+        "INSERT INTO query_object_store \
+        \  (query_name, instance_uuid, query_hash, position, state_json, updated_at) \
+        \VALUES ($1, $2, '', 0, $3, now()) \
+        \ON CONFLICT (query_name, instance_uuid) DO UPDATE \
+        \SET state_json  = EXCLUDED.state_json, \
+        \    query_hash  = EXCLUDED.query_hash, \
+        \    position    = EXCLUDED.position, \
+        \    updated_at  = now() \
+        \WHERE query_object_store.position < EXCLUDED.position"
+  let encoder =
+        ((\(a, _, _) -> a) >$< Encoders.param (Encoders.nonNullable Encoders.text))
+          <> ((\(_, b, _) -> b) >$< Encoders.param (Encoders.nonNullable Encoders.uuid))
+          <> ((\(_, _, c) -> c) >$< Encoders.param (Encoders.nonNullable Encoders.jsonb))
+  let decoder = Decoders.noResult
+  let stmt = Statement (sql |> Text.toBytes |> Bytes.unwrap) encoder decoder True
+  Session.statement (queryName, rawUuid, jsonVal) stmt
+
+
+-- | SELECT all state_json values for a given query_name namespace.
+selectAllSession :: Text -> Session.Session (Array Json.Value)
+selectAllSession queryName = do
+  let sql = "SELECT state_json FROM query_object_store WHERE query_name = $1"
+  let encoder = Encoders.param (Encoders.nonNullable Encoders.text)
   let decoder = Decoders.rowList (Decoders.column (Decoders.nonNullable Decoders.jsonb))
   let stmt = Statement (sql |> Text.toBytes |> Bytes.unwrap) encoder decoder True
-  rows <- Session.statement () stmt
+  rows <- Session.statement queryName stmt
   rows |> Array.fromLinkedList |> pure
+
+
+-- ---------------------------------------------------------------------------
+-- Checkpoint helpers (Defect 2 / ADR-0059 §Internal helpers)
+-- ---------------------------------------------------------------------------
+
+-- | Operations for hash-aware checkpoint management.
+--
+-- This is separate from the QueryObjectStore trait (which handles
+-- generic per-instance state). Checkpoint operations carry the
+-- query_name and query_hash explicitly, which the trait API does not.
+--
+-- Created by createCheckpointStore from a live Pool; tests may supply
+-- a mock CheckpointStore without a real Postgres connection.
+data CheckpointStore = CheckpointStore
+  { -- | Fetch the minimum persisted position for a query whose hash matches.
+    --
+    -- Returns Nothing when no rows for (queryName, queryHash) exist —
+    -- i.e., the query has never been persisted or the hash has changed.
+    resumeFromCheckpoint :: Text -> Text -> Task QueryObjectStoreError (Maybe Int64)
+    -- | Delete all rows for a query whose hash does NOT match queryHash.
+    --
+    -- Called before a full replay when a schema change is detected.
+  , deleteStaleHash :: Text -> Text -> Task QueryObjectStoreError Unit
+  }
+
+
+-- | Create a CheckpointStore backed by the given Postgres Pool.
+createCheckpointStore :: Pool -> CheckpointStore
+createCheckpointStore pool =
+  CheckpointStore
+    { resumeFromCheckpoint = resumeFromCheckpointImpl pool
+    , deleteStaleHash = deleteStaleHashImpl pool
+    }
+
+
+-- | SELECT MIN(position) FROM query_object_store WHERE query_name = ? AND query_hash = ?
+resumeFromCheckpointImpl :: Pool -> Text -> Text -> Task QueryObjectStoreError (Maybe Int64)
+resumeFromCheckpointImpl pool queryName queryHash = do
+  let sql = "SELECT MIN(position) FROM query_object_store WHERE query_name = $1 AND query_hash = $2"
+  let encoder =
+        (fst >$< Encoders.param (Encoders.nonNullable Encoders.text))
+          <> (snd >$< Encoders.param (Encoders.nonNullable Encoders.text))
+  let decoder = Decoders.singleRow (Decoders.column (Decoders.nullable Decoders.int8))
+  let stmt = Statement (sql |> Text.toBytes |> Bytes.unwrap) encoder decoder True
+  runPool pool (Session.statement (queryName, queryHash) stmt)
+
+
+-- | DELETE FROM query_object_store WHERE query_name = ? AND query_hash != ?
+deleteStaleHashImpl :: Pool -> Text -> Text -> Task QueryObjectStoreError Unit
+deleteStaleHashImpl pool queryName queryHash = do
+  let sql = "DELETE FROM query_object_store WHERE query_name = $1 AND query_hash != $2"
+  let encoder =
+        (fst >$< Encoders.param (Encoders.nonNullable Encoders.text))
+          <> (snd >$< Encoders.param (Encoders.nonNullable Encoders.text))
+  let decoder = Decoders.noResult
+  let stmt = Statement (sql |> Text.toBytes |> Bytes.unwrap) encoder decoder True
+  runPool pool (Session.statement (queryName, queryHash) stmt)

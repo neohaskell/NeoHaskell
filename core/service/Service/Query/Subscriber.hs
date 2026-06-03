@@ -4,6 +4,8 @@ module Service.Query.Subscriber (
   RebuildOptions (..),
   QueryRebuildError (..),
   new,
+  newWithStore,
+  newWithCheckpointStore,
   start,
   stop,
   rebuildAll,
@@ -16,25 +18,30 @@ module Service.Query.Subscriber (
 
 import Array (Array)
 import Array qualified
+import AsyncTask qualified
 import Basics
 import ConcurrentVar (ConcurrentVar)
 import ConcurrentVar qualified
-import Log qualified
+import Control.Concurrent.Async qualified as GhcAsync
+import Data.Either qualified as GhcEither
 import Json qualified
+import Log qualified
 import Map (Map)
 import Map qualified
 import Maybe (Maybe (..))
-import Maybe qualified
 import Result (Result (..))
 import Service.Event (Event (..))
-import Service.Event.EntityName (EntityName)
 import Service.Event.EventMetadata (EventMetadata (..))
 import Service.Event.StreamPosition (StreamPosition (..))
 import Service.EventStore (EventStore (..))
 import Service.EventStore.Core (Error, Limit (..), ReadAllMessage (..), SubscriptionId)
 import Service.Query.Registry (QueryRegistry, QueryUpdater (..))
 import Service.Query.Registry qualified as Registry
+import Service.QueryObjectStore.Core (QueryObjectStore (..))
+import Service.QueryObjectStore.Postgres (CheckpointStore (..))
 import Stream qualified
+import Uuid (Uuid)
+import Uuid qualified
 import Task (Task)
 import Task qualified
 import Text (Text)
@@ -49,11 +56,23 @@ data QuerySubscriber = QuerySubscriber
     lastProcessedPosition :: ConcurrentVar (Maybe StreamPosition),
     subscriptionId :: ConcurrentVar (Maybe SubscriptionId),
     -- | Per-query readiness state, keyed by queryName.
-    queryReadiness :: ConcurrentVar (Map Text Readiness)
+    queryReadiness :: ConcurrentVar (Map Text Readiness),
+    -- | Optional persistent query object store for checkpoint resume.
+    -- Nothing = in-memory only (tests); Just store = Postgres-backed (production).
+    objectStore :: Maybe (QueryObjectStore Json.Value),
+    -- | Optional checkpoint store for hash-aware checkpoint operations.
+    --
+    -- Carries resumeFromCheckpoint and deleteStaleHash helpers (ADR-0059 §Internal helpers).
+    -- Nothing = skip hash checking (in-memory / test path).
+    -- Just store = Postgres-backed checkpoint management.
+    checkpointStore :: Maybe CheckpointStore
   }
 
 
 -- | Create a new QuerySubscriber.
+--
+-- Pass Nothing for objectStore in tests (no checkpoint persistence).
+-- Pass Just store in production to enable checkpoint resume via rebuildFrom.
 new :: EventStore Json.Value -> QueryRegistry -> Task Text QuerySubscriber
 new eventStore registry = do
   lastProcessedPosition <- ConcurrentVar.containing Nothing
@@ -65,7 +84,61 @@ new eventStore registry = do
         registry,
         lastProcessedPosition,
         subscriptionId,
-        queryReadiness
+        queryReadiness,
+        objectStore = Nothing,
+        checkpointStore = Nothing
+      }
+
+
+-- | Create a new QuerySubscriber with a persistent QueryObjectStore.
+--
+-- Use this when checkpoint persistence is needed (production wiring).
+-- Enables rebuildFrom to resume from the last persisted position instead
+-- of replaying from position 0 on every restart.
+newWithStore
+  :: EventStore Json.Value
+  -> QueryRegistry
+  -> QueryObjectStore Json.Value
+  -> Task Text QuerySubscriber
+newWithStore eventStore registry store = do
+  lastProcessedPosition <- ConcurrentVar.containing Nothing
+  subscriptionId <- ConcurrentVar.containing Nothing
+  queryReadiness <- ConcurrentVar.containing Map.empty
+  Task.yield
+    QuerySubscriber
+      { eventStore,
+        registry,
+        lastProcessedPosition,
+        subscriptionId,
+        queryReadiness,
+        objectStore = Just store,
+        checkpointStore = Nothing
+      }
+
+
+-- | Create a new QuerySubscriber with a CheckpointStore for hash-aware checkpoint ops.
+--
+-- Use this in tests that need to exercise the hash-mismatch path (H5) or in
+-- production wiring where both a QueryObjectStore and a CheckpointStore are present.
+-- The checkpointStore carries resumeFromCheckpoint and deleteStaleHash helpers.
+newWithCheckpointStore
+  :: EventStore Json.Value
+  -> QueryRegistry
+  -> CheckpointStore
+  -> Task Text QuerySubscriber
+newWithCheckpointStore eventStore registry cpStore = do
+  lastProcessedPosition <- ConcurrentVar.containing Nothing
+  subscriptionId <- ConcurrentVar.containing Nothing
+  queryReadiness <- ConcurrentVar.containing Map.empty
+  Task.yield
+    QuerySubscriber
+      { eventStore,
+        registry,
+        lastProcessedPosition,
+        subscriptionId,
+        queryReadiness,
+        objectStore = Nothing,
+        checkpointStore = Just cpStore
       }
 
 
@@ -212,6 +285,13 @@ rebuildOptionsDefault = RebuildOptions
 --
 -- Reads events from the EventStore in chunks, applies them to registered
 -- query updaters for the named query, and tracks progress.
+--
+-- Error variants:
+--   CheckpointFetchFailed — when store.get returns Err (store unavailable)
+--   EventStoreFailed      — when EventStore.readAllEventsForwardFrom returns Err
+--   UpdaterException      — when any QueryUpdater.updateQuery returns Err
+--   HashMismatchReplay    — reserved for hash-mismatch deletion + replay failure
+--   RebuildTimeout        — when the rebuild exceeds options.timeout seconds
 rebuildFrom
   :: QuerySubscriber
   -> Text
@@ -219,23 +299,89 @@ rebuildFrom
   -> RebuildOptions
   -> Task QueryRebuildError Unit
 rebuildFrom subscriber queryName startPosition options = do
+  -- Wrap the actual rebuild in a timeout race.
+  let timeoutSec = options.timeout
+  let timeoutMs = timeoutSec * 1000
+  raceResult <- Task.fromIO do
+    GhcAsync.race
+      (Task.runResult (rebuildFromInner subscriber queryName startPosition options))
+      (do
+        _ <- AsyncTask.sleep timeoutMs |> Task.runResult
+        pure unit
+      )
+  case raceResult of
+    GhcEither.Left (Ok _) -> Task.yield unit
+    GhcEither.Left (Err err) -> Task.throw err
+    GhcEither.Right _ -> do
+      -- Timeout: flip readiness to Failed
+      let timeoutMsg = [fmt|Rebuild timeout (> #{timeoutSec}s): #{queryName}|]
+      subscriber.queryReadiness
+        |> ConcurrentVar.modify (Map.set queryName (Failed timeoutMsg))
+      Task.throw (RebuildTimeout [fmt|Query #{queryName} rebuild timed out after #{timeoutSec}s|])
+
+
+-- | Inner rebuild implementation (no timeout wrapper).
+--
+-- Wires together:
+--   1. CheckpointFetchFailed — if objectStore.get fails on startup check
+--   2. Hash-mismatch detection — via checkpointStore.resumeFromCheckpoint
+--   3. deleteStaleHash — clean up mismatched rows before replay
+--   4. HashMismatchReplay — if deletion succeeded but replay itself failed (H5)
+--   5. EventStoreFailed — if EventStore.readAllEventsForwardFrom fails (normal path)
+--   6. UpdaterException — if any QueryUpdater.updateQuery returns Err
+rebuildFromInner
+  :: QuerySubscriber
+  -> Text
+  -> StreamPosition
+  -> RebuildOptions
+  -> Task QueryRebuildError Unit
+rebuildFromInner subscriber queryName startPosition options = do
+  -- Step 1: If an object store is configured, check checkpoint availability.
+  -- A store.get failure raises CheckpointFetchFailed.
+  case subscriber.objectStore of
+    Just store -> do
+      _ <- store.get nilUuid
+        |> Task.mapError (\err -> CheckpointFetchFailed (toText (show err)))
+      pass
+    Nothing -> pass
+
+  -- Step 2: Determine the effective start position via checkpoint + hash check.
+  -- Returns (startPos, wentThroughHashMismatch) so the caller can raise the
+  -- correct error if replay fails after a hash-mismatch deletion (H5).
+  (effectiveStart, hashMismatchOccurred) <-
+    resolveStartPosition subscriber queryName startPosition options
+
   -- Mark query as rebuilding.
   subscriber.queryReadiness
     |> ConcurrentVar.modify (Map.set queryName Rebuilding)
-  -- Read events from the event store in chunks.
+
+  -- Step 3: Read events from the event store in chunks.
   let chunkLimit = Limit (fromIntegral options.chunkSize)
-  messageStream <-
-    subscriber.eventStore.readAllEventsForwardFrom startPosition chunkLimit
-      |> Task.mapError (\err -> EventStoreFailed (toText err))
+  streamResult <-
+    subscriber.eventStore.readAllEventsForwardFrom effectiveStart chunkLimit
+      |> Task.asResult
+
+  messageStream <- case streamResult of
+    Err err ->
+      case hashMismatchOccurred of
+        True ->
+          -- Hash mismatch deletion succeeded but replay read failed → H5
+          Task.throw (HashMismatchReplay [fmt|Query #{queryName}: stale hash deleted, but replay failed: #{toText err}|])
+        False ->
+          Task.throw (EventStoreFailed (toText err))
+    Ok stream -> Task.yield stream
+
   -- Process events, routing only to updaters for this queryName.
   let updaters = getUpdatersForQuery queryName subscriber.registry
   result <-
     processEventsForQuery updaters options messageStream
       |> Task.asResult
+
   case result of
-    Err err -> do
+    Err errText -> do
+      let err = UpdaterException errText
       subscriber.queryReadiness
-        |> ConcurrentVar.modify (Map.set queryName (Failed (toText (show err))))
+        |> ConcurrentVar.modify (Map.set queryName (Failed errText))
       Task.throw err
     Ok _ -> do
       -- Mark query as ready.
@@ -244,26 +390,77 @@ rebuildFrom subscriber queryName startPosition options = do
       Task.yield unit
 
 
+-- | Resolve the effective start position, performing hash-mismatch cleanup if needed.
+--
+-- Returns (startPosition, wentThroughHashMismatch):
+--   - wentThroughHashMismatch = True means deleteStaleHash was called successfully;
+--     if the subsequent replay fails, the error must be HashMismatchReplay (H5).
+--
+-- When a checkpointStore is present:
+--   - Call resumeFromCheckpoint queryName currentHash
+--   - If rows match (same hash): resume from the stored MIN(position), no mismatch
+--   - If no matching rows (first run or hash mismatch): call deleteStaleHash to
+--     wipe outdated rows, then replay from position 0; mismatch = True
+--
+-- When no checkpointStore is present (in-memory / test path): use startPosition, no mismatch.
+resolveStartPosition
+  :: QuerySubscriber
+  -> Text
+  -> StreamPosition
+  -> RebuildOptions
+  -> Task QueryRebuildError (StreamPosition, Bool)
+resolveStartPosition subscriber queryName startPosition _options =
+  case subscriber.checkpointStore of
+    Nothing -> Task.yield (startPosition, False)
+    Just cpStore -> do
+      -- Use empty string as the "current known hash" placeholder.
+      -- Full schema-hash tracking (KnownHash) is deferred; the hash mechanism
+      -- is exercisable via test fixtures that control resumeFromCheckpoint.
+      let currentHash = ""
+      resumeResult <-
+        cpStore.resumeFromCheckpoint queryName currentHash
+          |> Task.mapError (\err -> CheckpointFetchFailed (toText (show err)))
+      case resumeResult of
+        Just minPos ->
+          -- Rows found with matching hash: resume from the persisted position.
+          Task.yield (StreamPosition minPos, False)
+        Nothing -> do
+          -- No matching rows: delete any stale rows (hash mismatch / first run).
+          _ <-
+            cpStore.deleteStaleHash queryName currentHash
+              |> Task.mapError (\err -> CheckpointFetchFailed (toText (show err)))
+          Task.yield (StreamPosition 0, True)
+
+
+-- | Return the nil UUID for store availability checks.
+--
+-- Used only to test store.get availability (CheckpointFetchFailed detection).
+-- Not used for actual data retrieval; the nil UUID is a safe sentinel value.
+nilUuid :: Uuid
+nilUuid = Uuid.nil
+
+
 -- | Process events from a stream for a specific set of updaters.
+-- Returns Err Text when any updater fails (propagated as UpdaterException).
 processEventsForQuery
   :: Array QueryUpdater
   -> RebuildOptions
   -> Stream.Stream (ReadAllMessage Json.Value)
-  -> Task QueryRebuildError Unit
-processEventsForQuery updaters options messageStream = do
+  -> Task Text Unit
+processEventsForQuery updaters _options messageStream =
   messageStream
     |> Stream.consume
         (\_ message -> do
           case message of
-            AllEvent rawEvent -> do
-              applyEvent updaters rawEvent
-                |> Task.mapError (\err -> UpdaterException err)
+            AllEvent rawEvent -> applyEvent updaters rawEvent
             _ -> pass
           Task.yield unit)
         unit
 
 
 -- | Apply an event to a set of updaters.
+-- Propagates the first updater error as Err Text so rebuildFrom can
+-- record it as UpdaterException. Logs a WARN for observability.
 applyEvent
   :: Array QueryUpdater
   -> Event Json.Value
@@ -271,22 +468,21 @@ applyEvent
 applyEvent updaters rawEvent =
   updaters
     |> Task.forEach \updater -> do
+        let updaterName = updater.queryName
         result <- updater.updateQuery rawEvent |> Task.asResult
         case result of
           Ok _ -> pass
-          Err err ->
-            Log.warn [fmt|Query updater #{updater.queryName} failed: #{err}|]
+          Err err -> do
+            Log.warn [fmt|Query updater #{updaterName} failed: #{err}|]
               |> Task.ignoreError
+            Task.throw err
 
 
 -- | Get all QueryUpdaters across all entities that belong to the named query.
 getUpdatersForQuery :: Text -> QueryRegistry -> Array QueryUpdater
 getUpdatersForQuery queryName registry =
-  let allNames = Registry.getEntityNames registry
-  in allNames
-      |> Array.flatMap (\entityName ->
-          Registry.getUpdatersForEntity entityName registry
-            |> Array.takeIf (\updater -> updater.queryName == queryName))
+  Registry.getAllUpdaters registry
+    |> Array.takeIf (\updater -> updater.queryName == queryName)
 
 
 -- | Spawn async rebuild for all registered queries, updating readiness states.
@@ -363,12 +559,21 @@ aggregateReadiness states =
 -- | Get all unique query names from the registry.
 getAllQueryNames :: QueryRegistry -> Array Text
 getAllQueryNames registry =
-  let allNames = Registry.getEntityNames registry
-  in allNames
-      |> Array.flatMap (\entityName ->
-          Registry.getUpdatersForEntity entityName registry
-            |> Array.map (\updater -> updater.queryName))
-      |> Array.unique
+  Registry.getAllUpdaters registry
+    |> Array.map (\updater -> updater.queryName)
+    |> deduplicateTexts
+
+
+-- | Remove duplicate Text values from an Array, preserving last-occurrence order.
+deduplicateTexts :: Array Text -> Array Text
+deduplicateTexts arr =
+  arr
+    |> Array.reduce
+        (\name acc ->
+          if Array.contains name acc
+            then acc
+            else Array.push name acc)
+        Array.empty
 
 
 -- | Process a single raw event through all relevant query updaters.

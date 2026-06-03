@@ -1,20 +1,32 @@
 module Service.Query.Subscriber.ReadinessSpec where
 
+import Array qualified
+import AsyncTask qualified
 import Core
 import Json qualified
+import Service.Event (Event (..), EntityName (..), StreamId (..))
+import Service.Event.EventMetadata qualified as EventMetadata
 import Service.Event.StreamPosition (StreamPosition (..))
+import Service.EventStore (EventStore (..))
+import Service.EventStore.Core (Limit (..), ReadAllMessage (..))
+import Service.EventStore.Core qualified as EventStoreCore
 import Service.EventStore.InMemory qualified as InMemory
+import Service.Query.Registry (QueryUpdater (..))
 import Service.Query.Registry qualified as Registry
 import Service.Query.Subscriber (
+  QueryRebuildError (..),
   Readiness (..),
   RebuildOptions (..),
-  QueryRebuildError (..),
+  newWithStore,
+  newWithCheckpointStore,
   rebuildOptionsDefault,
   )
 import Service.Query.Subscriber qualified as Subscriber
-import Service.QueryObjectStore.Core (QueryObjectStore)
-import Service.QueryObjectStore.Postgres (PostgresQueryObjectStoreConfig (..), QueryObjectStoreError (..))
+import Service.QueryObjectStore.Core (QueryObjectStore (..))
+import Service.QueryObjectStore.Core qualified as QOSCore
+import Service.QueryObjectStore.Postgres (CheckpointStore (..), PostgresQueryObjectStoreConfig (..), QueryObjectStoreError (..))
 import Service.QueryObjectStore.Postgres qualified as PostgresQOS
+import Stream qualified
 import Task qualified
 import Test
 
@@ -74,27 +86,53 @@ spec = do
         Err err -> fail [fmt|Expected success but got: #{toText (show err)}|]
 
     it "fails with RebuildTimeout if rebuild exceeds the configured timeout duration" \_ -> do
-      eventStore <- InMemory.new |> Task.mapError toText
-      subscriber <- Subscriber.new eventStore Registry.empty
-      let opts = rebuildOptionsDefault { timeout = 1 }
+      -- Fixture: an EventStore whose readAllEventsForwardFrom blocks for 5 seconds.
+      -- The rebuild timeout is 1 second, so the GhcAsync.race fires the sleep branch first.
+      baseStore <- InMemory.new |> Task.mapError toText
+      let slowStore = baseStore
+            { readAllEventsForwardFrom = \_ _ -> do
+                AsyncTask.sleep 5000
+                baseStore.readAllEventsForwardFrom (StreamPosition 0) (Limit 1000)
+            }
+      subscriber <- Subscriber.new slowStore Registry.empty
       result <-
-        Subscriber.rebuildFrom subscriber "test-query" (StreamPosition 0) opts
+        Subscriber.rebuildFrom subscriber "slow-query" (StreamPosition 0)
+          rebuildOptionsDefault { timeout = 1 }
           |> Task.asResult
       case result of
         Err (RebuildTimeout _) -> pass
-        Ok _ -> fail "Expected RebuildTimeout but got Ok"
         Err other -> fail [fmt|Expected RebuildTimeout but got: #{toText (show other)}|]
+        Ok _ -> fail "Expected RebuildTimeout but rebuild completed without error"
 
     it "fails with UpdaterException if the QueryUpdater returns Err" \_ -> do
-      eventStore <- InMemory.new |> Task.mapError toText
-      subscriber <- Subscriber.new eventStore Registry.empty
+      -- Fixture: a failing QueryUpdater + EventStore that returns a synthetic AllEvent stream.
+      -- applyEvent now propagates updater errors as Err Text (fixed in this phase).
+      baseStore <- InMemory.new |> Task.mapError toText
+      eventMeta <- EventMetadata.new
+      let syntheticEvent =
+            Event
+              { entityName = EntityName "test-entity"
+              , streamId = StreamId "test-stream"
+              , event = Json.null
+              , metadata = eventMeta
+              }
+      let stubbedStore = baseStore
+            { readAllEventsForwardFrom = \_ _ ->
+                Stream.fromArray (Array.wrap (AllEvent syntheticEvent))
+            }
+      let failingUpdater = QueryUpdater
+            { queryName = "failing-query"
+            , updateQuery = \_ -> Task.throw "fixture updater failure"
+            }
+      let registry = Registry.register (EntityName "test-entity") failingUpdater Registry.empty
+      subscriber <- Subscriber.new stubbedStore registry
       result <-
-        Subscriber.rebuildFrom subscriber "test-query" (StreamPosition 0) rebuildOptionsDefault
+        Subscriber.rebuildFrom subscriber "failing-query" (StreamPosition 0) rebuildOptionsDefault
           |> Task.asResult
       case result of
         Err (UpdaterException _) -> pass
-        Ok _ -> fail "Expected UpdaterException but got Ok"
         Err other -> fail [fmt|Expected UpdaterException but got: #{toText (show other)}|]
+        Ok _ -> fail "Expected UpdaterException but rebuild succeeded"
 
     it "deletes rows with mismatched query_hash before replaying" \_ -> do
       -- Side-effect test: row deletion is not verifiable without DB and test doubles.
@@ -109,15 +147,28 @@ spec = do
         Err err -> fail [fmt|Expected success but got: #{toText (show err)}|]
 
     it "fails with HashMismatchReplay if hash-mismatch deletion succeeds but replay fails" \_ -> do
-      eventStore <- InMemory.new |> Task.mapError toText
-      subscriber <- Subscriber.new eventStore Registry.empty
+      -- Fixture: a CheckpointStore where:
+      --   resumeFromCheckpoint → Nothing  (forces the hash-mismatch / first-run deletion path)
+      --   deleteStaleHash      → Ok ()    (deletion succeeds)
+      -- Combined with an EventStore that always throws → rebuildFromInner wraps the
+      -- event-store failure as HashMismatchReplay (H5).
+      baseStore <- InMemory.new |> Task.mapError toText
+      let failingStore = baseStore
+            { readAllEventsForwardFrom = \_ _ ->
+                Task.throw (EventStoreCore.StorageFailure "fixture event store failure")
+            }
+      let mockCpStore = CheckpointStore
+            { resumeFromCheckpoint = \_ _ -> Task.yield Nothing
+            , deleteStaleHash = \_ _ -> Task.yield unit
+            }
+      subscriber <- newWithCheckpointStore failingStore Registry.empty mockCpStore
       result <-
-        Subscriber.rebuildFrom subscriber "test-query" (StreamPosition 0) rebuildOptionsDefault
+        Subscriber.rebuildFrom subscriber "hash-mismatch-query" (StreamPosition 0) rebuildOptionsDefault
           |> Task.asResult
       case result of
         Err (HashMismatchReplay _) -> pass
-        Ok _ -> fail "Expected HashMismatchReplay but got Ok"
         Err other -> fail [fmt|Expected HashMismatchReplay but got: #{toText (show other)}|]
+        Ok _ -> fail "Expected HashMismatchReplay but rebuild succeeded"
 
     it "does not log progress if logProgress=False" \_ -> do
       -- Side-effect test: log suppression is not testable without test doubles.
@@ -133,15 +184,22 @@ spec = do
         Err err -> fail [fmt|Expected success but got: #{toText (show err)}|]
 
     it "fails with CheckpointFetchFailed if query_object_store is unavailable on startup" \_ -> do
+      -- Fixture: a QueryObjectStore whose get always throws — simulates an unavailable store.
+      -- newWithStore wires the store into the subscriber; rebuildFrom calls store.get first.
       eventStore <- InMemory.new |> Task.mapError toText
-      subscriber <- Subscriber.new eventStore Registry.empty
+      let failingStore = QueryObjectStore
+            { get = \_ -> Task.throw (QOSCore.StorageError "fixture store unavailable")
+            , atomicUpdate = \_ _ -> Task.throw (QOSCore.StorageError "fixture store unavailable")
+            , getAll = Task.throw (QOSCore.StorageError "fixture store unavailable")
+            }
+      subscriber <- newWithStore eventStore Registry.empty failingStore
       result <-
         Subscriber.rebuildFrom subscriber "test-query" (StreamPosition 0) rebuildOptionsDefault
           |> Task.asResult
       case result of
         Err (CheckpointFetchFailed _) -> pass
-        Ok _ -> fail "Expected CheckpointFetchFailed but got Ok"
         Err other -> fail [fmt|Expected CheckpointFetchFailed but got: #{toText (show other)}|]
+        Ok _ -> fail "Expected CheckpointFetchFailed but rebuild succeeded"
 
     it "handles chunk boundaries without tearing state" \_ -> do
       -- Side-effect test: state identity across chunk splits is not testable without test doubles.
@@ -167,15 +225,21 @@ spec = do
         Err err -> fail [fmt|Expected success but got: #{toText (show err)}|]
 
     it "fails with EventStoreFailed if EventStore.readFrom returns Err" \_ -> do
-      eventStore <- InMemory.new |> Task.mapError toText
-      subscriber <- Subscriber.new eventStore Registry.empty
+      -- Fixture: an EventStore whose readAllEventsForwardFrom always throws.
+      -- record update on the InMemory base store overrides just the one method.
+      baseStore <- InMemory.new |> Task.mapError toText
+      let failingStore = baseStore
+            { readAllEventsForwardFrom = \_ _ ->
+                Task.throw (EventStoreCore.StorageFailure "fixture event store failure")
+            }
+      subscriber <- Subscriber.new failingStore Registry.empty
       result <-
         Subscriber.rebuildFrom subscriber "test-query" (StreamPosition 0) rebuildOptionsDefault
           |> Task.asResult
       case result of
         Err (EventStoreFailed _) -> pass
-        Ok _ -> fail "Expected EventStoreFailed but got Ok"
         Err other -> fail [fmt|Expected EventStoreFailed but got: #{toText (show other)}|]
+        Ok _ -> fail "Expected EventStoreFailed but rebuild succeeded"
 
   describe "rebuildAllAsync" do
     it "spawns async tasks for all registered queries and returns when all complete successfully" \_ -> do
