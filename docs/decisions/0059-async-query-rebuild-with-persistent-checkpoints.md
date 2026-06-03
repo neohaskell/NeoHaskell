@@ -592,3 +592,32 @@ response body:
   PR review the maintainer called YAGNI on that opt-out and the function was
   removed. `/ready` is always on with no opt-out today. A follow-up issue will
   track adding the opt-out only if a real deployment surfaces the need.
+
+## Status: complete — follow-ups tracked
+
+PR [#656](https://github.com/neohaskell/NeoHaskell/pull/656) delivers the
+core of this ADR: async startup so transports bind immediately, the `/ready`
+HTTP endpoint with the documented JSON shape, persistent checkpoint write +
+resume (CAS-on-position, real-Postgres tested), hash-mismatch detection
+wired against the runtime hash, and per-query readiness tracking exposed
+via `Subscriber.readinessOf` / `readinessOfQuery`. The user-visible
+symptom from issue #650 (query rebuild blocks HTTP readiness on every
+restart) is resolved.
+
+The remaining ADR-promised behaviors are tracked as follow-ups under
+the [ADR-0059 follow-ups epic (#671)](https://github.com/neohaskell/NeoHaskell/issues/671).
+With those landed, this ADR is end-to-end complete. The epic is
+prioritized as:
+
+- **P1 — operational impact:** mid-rebuild checkpoints (#661),
+  SIGTERM cancellation safety (#662), `/ready` per-query lag/ETA (#663),
+  `X-Query-Status` header on query endpoints (#664).
+- **P2 — future-proofing:** multi-instance projections (#665),
+  field-level schema hashing (#666), versioned migration file (#667).
+- **P3 — cosmetic / refactor:** `Postgres.Internal` module split (#668),
+  `Subscriber.Readiness` module split (#669),
+  `QueryStateSerializable` constraint (#670).
+
+This ADR is considered **closed** with respect to PR #656. Re-open or
+supersede if any of the follow-ups surface a design choice that
+contradicts this document.
