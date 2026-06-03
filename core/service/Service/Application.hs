@@ -1326,7 +1326,7 @@ runWithResolved eventStore maybeFileUploadSetup fileUploadCleanup maybeWebAuthSe
   -- When transports complete (or fail), cancel inbound workers for clean shutdown
   -- Use Task.finally to ensure cleanup always runs even if runTransports fails
   result <-
-    Transports.runTransports app.transports combinedEndpointsByTransport combinedSchemasByTransport combinedQueryEndpoints combinedQuerySchemas maybeAuthEnabled maybeOAuth2Config maybeFileUploadEnabled app.apiInfo app.corsConfig app.healthCheckConfig maybeIntegrationStatus
+    Transports.runTransports app.transports combinedEndpointsByTransport combinedSchemasByTransport combinedQueryEndpoints combinedQuerySchemas maybeAuthEnabled maybeOAuth2Config maybeFileUploadEnabled app.apiInfo app.corsConfig app.healthCheckConfig maybeIntegrationStatus app.readinessConfig subscriber
       |> Task.finally cleanupAll
       |> Task.asResult
 

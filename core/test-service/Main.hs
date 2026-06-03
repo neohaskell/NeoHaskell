@@ -40,6 +40,7 @@ import Service.Transport.Mcp.ProtocolSpec qualified
 import Service.Transport.Mcp.ResponseSpec qualified
 import Service.Transport.WebSpec qualified
 import Service.Transport.Web.HealthCheckSpec qualified
+import Service.Transport.Web.ReadinessRouteSpec qualified
 import Service.Command.AuthSpec qualified
 import Service.Command.CanAccessSpec qualified
 import Service.Transport.Web.CommandAuthSpec qualified
@@ -89,6 +90,7 @@ main = Hspec.hspec do
   Hspec.describe "Service.Transport.Mcp.Response" Service.Transport.Mcp.ResponseSpec.spec
   Hspec.describe "Service.Transport.Web" Service.Transport.WebSpec.spec
   Hspec.describe "Health Check" Service.Transport.Web.HealthCheckSpec.spec
+  Hspec.describe "Service.Transport.Web.ReadinessRoute" Service.Transport.Web.ReadinessRouteSpec.spec
   Hspec.describe "Service.Command.Auth" Service.Command.AuthSpec.spec
   Hspec.describe "Service.Command.CanAccess" Service.Command.CanAccessSpec.spec
   Hspec.describe "Service.Transport.Web.CommandAuth" Service.Transport.Web.CommandAuthSpec.spec
