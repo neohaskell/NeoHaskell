@@ -43,47 +43,20 @@ testConfig = PostgresQueryObjectStoreConfig
 
 -- | Typed helper to resolve the polymorphic `query` variable.
 createTestStore :: Task QueryObjectStoreError (QueryObjectStore Json.Value)
-createTestStore = PostgresQOS.createQueryObjectStore testConfig
+createTestStore = PostgresQOS.newFromConfig testConfig
 
 
 spec :: Spec Unit
 spec = do
   describe "rebuildFrom" do
     it "replays all events from startPosition to EventStore head and writes to store" \_ -> do
-      eventStore <- InMemory.new |> Task.mapError toText
-      subscriber <- Subscriber.new eventStore Registry.empty
-      result <-
-        Subscriber.rebuildFrom subscriber "test-query" (StreamPosition 0) rebuildOptionsDefault
-          |> Task.asResult
-      case result of
-        Ok _ -> pass
-        Err err -> fail [fmt|Expected success but got: #{toText (show err)}|]
+      pending "needs a registered QueryUpdater and a populated EventStore to observe that rows are actually written; current empty-registry setup completes in microseconds without exercising any replay logic"
 
     it "reads events in chunks respecting the configured chunkSize" \_ -> do
-      -- Side-effect test: asserting chunk count is not testable without test doubles.
-      -- Invoke rebuildFrom and assert Ok (observable only once implemented).
-      eventStore <- InMemory.new |> Task.mapError toText
-      subscriber <- Subscriber.new eventStore Registry.empty
-      let opts = rebuildOptionsDefault { chunkSize = 1000 }
-      result <-
-        Subscriber.rebuildFrom subscriber "test-query" (StreamPosition 0) opts
-          |> Task.asResult
-      case result of
-        Ok _ -> pass
-        Err err -> fail [fmt|Expected success but got: #{toText (show err)}|]
+      pending "needs a registered QueryUpdater plus enough events in the EventStore to observe chunked reads; current empty-registry setup completes in microseconds without exercising chunk boundaries"
 
     it "emits progress log message after each chunk completes" \_ -> do
-      -- Side-effect test: log count is not testable without test doubles.
-      -- Invoke rebuildFrom with logProgress=True and assert Ok.
-      eventStore <- InMemory.new |> Task.mapError toText
-      subscriber <- Subscriber.new eventStore Registry.empty
-      let opts = rebuildOptionsDefault { logProgress = True }
-      result <-
-        Subscriber.rebuildFrom subscriber "test-query" (StreamPosition 0) opts
-          |> Task.asResult
-      case result of
-        Ok _ -> pass
-        Err err -> fail [fmt|Expected success but got: #{toText (show err)}|]
+      pending "needs a log capture fixture to assert structured progress entries; not assertable against the global Log writer without test doubles"
 
     it "fails with RebuildTimeout if rebuild exceeds the configured timeout duration" \_ -> do
       -- Fixture: an EventStore whose readAllEventsForwardFrom blocks for 5 seconds.
@@ -135,16 +108,7 @@ spec = do
         Ok _ -> fail "Expected UpdaterException but rebuild succeeded"
 
     it "deletes rows with mismatched query_hash before replaying" \_ -> do
-      -- Side-effect test: row deletion is not verifiable without DB and test doubles.
-      -- Invoke rebuildFrom and assert Ok (observable once implemented).
-      eventStore <- InMemory.new |> Task.mapError toText
-      subscriber <- Subscriber.new eventStore Registry.empty
-      result <-
-        Subscriber.rebuildFrom subscriber "test-query" (StreamPosition 0) rebuildOptionsDefault
-          |> Task.asResult
-      case result of
-        Ok _ -> pass
-        Err err -> fail [fmt|Expected success but got: #{toText (show err)}|]
+      pending "needs a CheckpointStore fixture pre-seeded with mismatched-hash rows plus an observability hook on deleteStaleHash; current empty subscriber has no checkpointStore"
 
     it "fails with HashMismatchReplay if hash-mismatch deletion succeeds but replay fails" \_ -> do
       -- Fixture: a CheckpointStore where:
@@ -171,17 +135,7 @@ spec = do
         Ok _ -> fail "Expected HashMismatchReplay but rebuild succeeded"
 
     it "does not log progress if logProgress=False" \_ -> do
-      -- Side-effect test: log suppression is not testable without test doubles.
-      -- Invoke rebuildFrom with logProgress=False and assert Ok.
-      eventStore <- InMemory.new |> Task.mapError toText
-      subscriber <- Subscriber.new eventStore Registry.empty
-      let opts = rebuildOptionsDefault { logProgress = False }
-      result <-
-        Subscriber.rebuildFrom subscriber "test-query" (StreamPosition 0) opts
-          |> Task.asResult
-      case result of
-        Ok _ -> pass
-        Err err -> fail [fmt|Expected success but got: #{toText (show err)}|]
+      pending "needs a log capture fixture to confirm no progress entries are emitted; not assertable against the global Log writer without test doubles"
 
     it "fails with CheckpointFetchFailed if query_object_store is unavailable on startup" \_ -> do
       -- Fixture: a QueryObjectStore whose get always throws — simulates an unavailable store.
@@ -202,27 +156,10 @@ spec = do
         Ok _ -> fail "Expected CheckpointFetchFailed but rebuild succeeded"
 
     it "handles chunk boundaries without tearing state" \_ -> do
-      -- Side-effect test: state identity across chunk splits is not testable without test doubles.
-      -- Invoke rebuildFrom on 1500 events and assert Ok (verifiable once implemented).
-      eventStore <- InMemory.new |> Task.mapError toText
-      subscriber <- Subscriber.new eventStore Registry.empty
-      result <-
-        Subscriber.rebuildFrom subscriber "test-query" (StreamPosition 0) rebuildOptionsDefault
-          |> Task.asResult
-      case result of
-        Ok _ -> pass
-        Err err -> fail [fmt|Expected success but got: #{toText (show err)}|]
+      pending "needs a registered QueryUpdater and enough events to observe chunk-boundary transitions; current empty-registry setup completes in a single empty chunk without exercising any boundary"
 
     it "resumes from checkpoint when startPosition > 0" \_ -> do
-      -- Invoke rebuildFrom with startPosition=500 and assert Ok.
-      eventStore <- InMemory.new |> Task.mapError toText
-      subscriber <- Subscriber.new eventStore Registry.empty
-      result <-
-        Subscriber.rebuildFrom subscriber "test-query" (StreamPosition 500) rebuildOptionsDefault
-          |> Task.asResult
-      case result of
-        Ok _ -> pass
-        Err err -> fail [fmt|Expected success but got: #{toText (show err)}|]
+      pending "needs a registered QueryUpdater and enough events to observe resume-vs-replay-from-zero divergence; current empty-registry setup produces identical (empty) results at any startPosition"
 
     it "fails with EventStoreFailed if EventStore.readFrom returns Err" \_ -> do
       -- Fixture: an EventStore whose readAllEventsForwardFrom always throws.
@@ -243,97 +180,28 @@ spec = do
 
   describe "rebuildAllAsync" do
     it "spawns async tasks for all registered queries and returns when all complete successfully" \_ -> do
-      eventStore <- InMemory.new |> Task.mapError toText
-      subscriber <- Subscriber.new eventStore Registry.empty
-      result <-
-        Subscriber.rebuildAllAsync subscriber rebuildOptionsDefault
-          |> Task.asResult
-      case result of
-        Ok _ -> pass
-        Err err -> fail [fmt|Expected success but got: #{toText (show err)}|]
+      pending "needs at least one registered QueryUpdater to observe that async tasks are spawned; current empty-registry setup completes immediately with no tasks"
 
     it "sets per-query readiness to Rebuilding at start and Ready on completion" \_ -> do
-      -- Side-effect test: readiness transitions require concurrent observation.
-      -- Invoke rebuildAllAsync and assert Ok (transitions verifiable once implemented).
-      eventStore <- InMemory.new |> Task.mapError toText
-      subscriber <- Subscriber.new eventStore Registry.empty
-      result <-
-        Subscriber.rebuildAllAsync subscriber rebuildOptionsDefault
-          |> Task.asResult
-      case result of
-        Ok _ -> pass
-        Err err -> fail [fmt|Expected success but got: #{toText (show err)}|]
+      pending "needs concurrent observation of the readiness state mid-rebuild; requires a registered QueryUpdater and a synchronisation point to read Rebuilding before it transitions to Ready"
 
     it "sets readiness to Failed if any query's rebuild times out" \_ -> do
-      -- Expect the task to complete (Ok) once implemented: timeout failures are per-query
-      -- state changes, not aggregate Task failures. readinessOf would return Failed.
-      eventStore <- InMemory.new |> Task.mapError toText
-      subscriber <- Subscriber.new eventStore Registry.empty
-      result <-
-        Subscriber.rebuildAllAsync subscriber rebuildOptionsDefault { timeout = 1 }
-          |> Task.asResult
-      case result of
-        Ok _ -> pass
-        Err err -> fail [fmt|Expected success (per-query failure via readiness state) but got: #{toText (show err)}|]
+      pending "needs a registered QueryUpdater whose rebuild exceeds the configured timeout; current empty-registry setup returns immediately without entering any timeout path"
 
     it "sets readiness to Failed if any query's updater throws an exception" \_ -> do
-      -- Updater exceptions are per-query; aggregate task still returns Ok.
-      eventStore <- InMemory.new |> Task.mapError toText
-      subscriber <- Subscriber.new eventStore Registry.empty
-      result <-
-        Subscriber.rebuildAllAsync subscriber rebuildOptionsDefault
-          |> Task.asResult
-      case result of
-        Ok _ -> pass
-        Err err -> fail [fmt|Expected success (per-query updater failure via readiness state) but got: #{toText (show err)}|]
+      pending "needs a registered QueryUpdater that throws an exception during applyEvent; current empty-registry setup never calls any updater"
 
     it "continues rebuilding other queries even if one fails" \_ -> do
-      -- Failure isolation: other queries still reach Ready.
-      -- Invoke rebuildAllAsync and assert Ok.
-      eventStore <- InMemory.new |> Task.mapError toText
-      subscriber <- Subscriber.new eventStore Registry.empty
-      result <-
-        Subscriber.rebuildAllAsync subscriber rebuildOptionsDefault
-          |> Task.asResult
-      case result of
-        Ok _ -> pass
-        Err err -> fail [fmt|Expected success (failure isolation) but got: #{toText (show err)}|]
+      pending "needs at least two registered QueryUpdaters where one fails; current empty-registry setup has no queries to isolate"
 
     it "logs structured WARN message with query name and error when a query fails" \_ -> do
-      -- Side-effect test: WARN log is not assertable without test doubles.
-      -- Invoke rebuildAllAsync and assert Ok.
-      eventStore <- InMemory.new |> Task.mapError toText
-      subscriber <- Subscriber.new eventStore Registry.empty
-      result <-
-        Subscriber.rebuildAllAsync subscriber rebuildOptionsDefault
-          |> Task.asResult
-      case result of
-        Ok _ -> pass
-        Err err -> fail [fmt|Expected success but got: #{toText (show err)}|]
+      pending "needs a log capture fixture to assert the WARN entry; not assertable against the global Log writer without test doubles"
 
     it "respects the per-query timeout configured in RebuildOptions" \_ -> do
-      -- Side-effect test: each query gets its own timeout from options.
-      -- Invoke rebuildAllAsync with short timeout and assert Ok (aggregate task).
-      eventStore <- InMemory.new |> Task.mapError toText
-      subscriber <- Subscriber.new eventStore Registry.empty
-      result <-
-        Subscriber.rebuildAllAsync subscriber rebuildOptionsDefault { timeout = 10 }
-          |> Task.asResult
-      case result of
-        Ok _ -> pass
-        Err err -> fail [fmt|Expected success but got: #{toText (show err)}|]
+      pending "needs a registered QueryUpdater whose rebuild is slow enough to observe the timeout being applied per-query; current empty-registry setup ignores all timeout configuration"
 
     it "can be cancelled via AsyncTask.cancel without leaving partial writes" \_ -> do
-      -- Side-effect test: cancellation safety requires running the task then cancelling.
-      -- Invoke rebuildAllAsync and assert Ok (cancellation safety verifiable once implemented).
-      eventStore <- InMemory.new |> Task.mapError toText
-      subscriber <- Subscriber.new eventStore Registry.empty
-      result <-
-        Subscriber.rebuildAllAsync subscriber rebuildOptionsDefault
-          |> Task.asResult
-      case result of
-        Ok _ -> pass
-        Err err -> fail [fmt|Expected success (H8 cancellation safety) but got: #{toText (show err)}|]
+      pending "needs a running rebuildAllAsync task plus an AsyncTask handle to cancel mid-flight; not testable as a sequential Task without concurrency fixtures"
 
   describe "readinessOf" do
     it "returns Ready when all registered queries are caught up" \_ -> do
@@ -369,17 +237,7 @@ spec = do
         Err err -> fail [fmt|Expected success but got: #{toText (show err)}|]
 
     it "handles state transitions during concurrent rebuilds" \_ -> do
-      -- Concurrency test: forward-only transitions require concurrent observation.
-      -- Invoke readinessOf on an empty subscriber and assert Ready.
-      eventStore <- InMemory.new |> Task.mapError toText
-      subscriber <- Subscriber.new eventStore Registry.empty
-      result <-
-        Subscriber.readinessOf subscriber
-          |> Task.asResult
-      case result of
-        Ok Ready -> pass
-        Ok _ -> fail "readinessOf returned wrong state — expected Ready for empty subscriber"
-        Err err -> fail [fmt|Expected success but got: #{toText (show err)}|]
+      pending "needs concurrent observation of state transitions during an active rebuild; asserting readinessOf on an empty subscriber does not exercise any transition"
 
   describe "readinessOfQuery" do
     it "returns Just Ready when the named query is caught up" \_ -> do
@@ -422,252 +280,85 @@ spec = do
 
   describe "Concurrency Hazard H1: Replay racing live subscription" do
     it "handles simultaneous replay and live events without duplication" \_ -> do
-      -- H1: assert rebuildFrom completes without error (duplication check requires test doubles).
-      eventStore <- InMemory.new |> Task.mapError toText
-      subscriber <- Subscriber.new eventStore Registry.empty
-      result <-
-        Subscriber.rebuildFrom subscriber "h1-query" (StreamPosition 0) rebuildOptionsDefault
-          |> Task.asResult
-      case result of
-        Ok _ -> pass
-        Err err -> fail [fmt|H1: Expected success but got: #{toText (show err)}|]
+      pending "needs a multi-writer fixture with a live subscription running concurrently alongside rebuildFrom; current sequential empty-registry setup cannot observe replay-vs-live-event ordering"
 
   describe "Concurrency Hazard H2: Lost write via ON CONFLICT DO UPDATE" do
     it "prevents position regression via CAS-on-position" \_ -> do
-      result <-
-        createTestStore
-          |> Task.asResult
-      case result of
-        Err (ConnectionFailed _) -> pass
-        Err other -> fail [fmt|H2 setup: expected ConnectionFailed or Ok, got: #{toText (show other)}|]
-        Ok _ -> pass
+      pending "needs POSTGRES_AVAILABLE + a multi-writer / crash-injection fixture; currently the test passes vacuously when Postgres is unavailable, which is a worse-of-both-worlds outcome"
 
     it "is not a last-writer-wins pattern (lower positions do not overwrite higher)" \_ -> do
-      result <-
-        createTestStore
-          |> Task.asResult
-      case result of
-        Err (ConnectionFailed _) -> pass
-        Err other -> fail [fmt|H2 setup: expected ConnectionFailed or Ok, got: #{toText (show other)}|]
-        Ok _ -> pass
+      pending "needs POSTGRES_AVAILABLE + a multi-writer / crash-injection fixture; currently the test passes vacuously when Postgres is unavailable, which is a worse-of-both-worlds outcome"
 
   describe "Concurrency Hazard H3: Crash mid-update" do
     it "restarts from persisted position after process crash pre-write" \_ -> do
-      result <-
-        createTestStore
-          |> Task.asResult
-      case result of
-        Err (ConnectionFailed _) -> pass
-        Err other -> fail [fmt|H3 setup: expected ConnectionFailed or Ok, got: #{toText (show other)}|]
-        Ok _ -> pass
+      pending "needs POSTGRES_AVAILABLE + a multi-writer / crash-injection fixture; currently the test passes vacuously when Postgres is unavailable, which is a worse-of-both-worlds outcome"
 
     it "converges to correct state after crash mid-transaction" \_ -> do
-      result <-
-        createTestStore
-          |> Task.asResult
-      case result of
-        Err (ConnectionFailed _) -> pass
-        Err other -> fail [fmt|H3 setup: expected ConnectionFailed or Ok, got: #{toText (show other)}|]
-        Ok _ -> pass
+      pending "needs POSTGRES_AVAILABLE + a multi-writer / crash-injection fixture; currently the test passes vacuously when Postgres is unavailable, which is a worse-of-both-worlds outcome"
 
     it "does not re-apply events from after the persisted position on restart" \_ -> do
-      result <-
-        createTestStore
-          |> Task.asResult
-      case result of
-        Err (ConnectionFailed _) -> pass
-        Err other -> fail [fmt|H3 setup: expected ConnectionFailed or Ok, got: #{toText (show other)}|]
-        Ok _ -> pass
+      pending "needs POSTGRES_AVAILABLE + a multi-writer / crash-injection fixture; currently the test passes vacuously when Postgres is unavailable, which is a worse-of-both-worlds outcome"
 
   describe "Concurrency Hazard H4: Readiness flag visibility" do
     it "never flips readiness to Ready before the last query_object_store write is durable" \_ -> do
-      -- H4: readiness must only flip after durable write; simplified to readinessOf assertion.
-      eventStore <- InMemory.new |> Task.mapError toText
-      subscriber <- Subscriber.new eventStore Registry.empty
-      result <-
-        Subscriber.readinessOf subscriber
-          |> Task.asResult
-      case result of
-        Ok _ -> pass
-        Err err -> fail [fmt|H4: Expected success but got: #{toText (show err)}|]
+      pending "needs a registered QueryUpdater and a hook on the query_object_store write to observe that the Ready flag is only set after the write is confirmed durable; empty-registry setup completes immediately"
 
     it "ensures writes are visible before any request lands on the ready query" \_ -> do
-      eventStore <- InMemory.new |> Task.mapError toText
-      subscriber <- Subscriber.new eventStore Registry.empty
-      result <-
-        Subscriber.readinessOf subscriber
-          |> Task.asResult
-      case result of
-        Ok _ -> pass
-        Err err -> fail [fmt|H4 stale read: Expected success but got: #{toText (show err)}|]
+      pending "needs a concurrent HTTP fixture to observe that requests after readinessOf=Ready always see the written state; not assertable without a running web server and a concurrency fixture"
 
   describe "Concurrency Hazard H5: Hash-mismatch mid-flight" do
     it "deletes stale hash rows atomically before replay starts" \_ -> do
-      -- H5: assert rebuildFrom completes Ok (deletion verified via DB state once implemented).
-      eventStore <- InMemory.new |> Task.mapError toText
-      subscriber <- Subscriber.new eventStore Registry.empty
-      result <-
-        Subscriber.rebuildFrom subscriber "h5-query" (StreamPosition 0) rebuildOptionsDefault
-          |> Task.asResult
-      case result of
-        Ok _ -> pass
-        Err err -> fail [fmt|H5 atomic delete: Expected success but got: #{toText (show err)}|]
+      pending "needs a CheckpointStore fixture pre-seeded with mismatched-hash rows plus an observability hook on deleteStaleHash to confirm the deletion happens before any replay; empty subscriber has no checkpointStore"
 
     it "replays affected query only; other queries unaffected" \_ -> do
-      eventStore <- InMemory.new |> Task.mapError toText
-      subscriber <- Subscriber.new eventStore Registry.empty
-      result <-
-        Subscriber.rebuildFrom subscriber "h5-query" (StreamPosition 0) rebuildOptionsDefault
-          |> Task.asResult
-      case result of
-        Ok _ -> pass
-        Err err -> fail [fmt|H5 per-query isolation: Expected success but got: #{toText (show err)}|]
+      pending "needs two registered QueryUpdaters where one has a mismatched hash; current empty-registry setup has no queries to isolate"
 
     it "handles concurrent live events arriving during hash-mismatch deletion" \_ -> do
-      eventStore <- InMemory.new |> Task.mapError toText
-      subscriber <- Subscriber.new eventStore Registry.empty
-      result <-
-        Subscriber.rebuildFrom subscriber "h5-query" (StreamPosition 0) rebuildOptionsDefault
-          |> Task.asResult
-      case result of
-        Ok _ -> pass
-        Err err -> fail [fmt|H5 concurrent live events: Expected success but got: #{toText (show err)}|]
+      pending "needs a multi-writer fixture with live events arriving while deleteStaleHash is in flight; not testable as a sequential Task without concurrency fixtures"
 
   describe "Concurrency Hazard H6: Chunk-boundary tearing" do
     it "produces identical state regardless of chunk boundaries" \_ -> do
-      eventStore <- InMemory.new |> Task.mapError toText
-      subscriber <- Subscriber.new eventStore Registry.empty
-      result <-
-        Subscriber.rebuildFrom subscriber "h6-query" (StreamPosition 0) rebuildOptionsDefault
-          |> Task.asResult
-      case result of
-        Ok _ -> pass
-        Err err -> fail [fmt|H6 chunk idempotency: Expected success but got: #{toText (show err)}|]
+      pending "needs a registered QueryUpdater and enough events to observe that state after chunkSize=N matches state after chunkSize=M; current empty-registry setup produces an empty state regardless"
 
     it "does not lose events at chunk boundaries" \_ -> do
-      eventStore <- InMemory.new |> Task.mapError toText
-      subscriber <- Subscriber.new eventStore Registry.empty
-      result <-
-        Subscriber.rebuildFrom subscriber "h6-query" (StreamPosition 0) rebuildOptionsDefault
-          |> Task.asResult
-      case result of
-        Ok _ -> pass
-        Err err -> fail [fmt|H6 no event loss: Expected success but got: #{toText (show err)}|]
+      pending "needs a registered QueryUpdater and enough events spanning multiple chunks to assert no event is skipped at a boundary; current empty-registry setup has no events to lose"
 
     it "does not duplicate events at chunk boundaries" \_ -> do
-      eventStore <- InMemory.new |> Task.mapError toText
-      subscriber <- Subscriber.new eventStore Registry.empty
-      result <-
-        Subscriber.rebuildFrom subscriber "h6-query" (StreamPosition 0) rebuildOptionsDefault
-          |> Task.asResult
-      case result of
-        Ok _ -> pass
-        Err err -> fail [fmt|H6 no duplication: Expected success but got: #{toText (show err)}|]
+      pending "needs a registered QueryUpdater and enough events spanning multiple chunks to assert no event is applied twice at a boundary; current empty-registry setup has no events to duplicate"
 
   describe "Concurrency Hazard H7: Init ordering" do
     it "registers a query after Application.run and requires full replay from position 0" \_ -> do
-      -- H7: late-registered query must not be silently dropped.
-      -- Invoke rebuildFrom (represents the late registration path) and assert Ok.
-      eventStore <- InMemory.new |> Task.mapError toText
-      subscriber <- Subscriber.new eventStore Registry.empty
-      result <-
-        Subscriber.rebuildFrom subscriber "late-query" (StreamPosition 0) rebuildOptionsDefault
-          |> Task.asResult
-      case result of
-        Ok _ -> pass
-        Err err -> fail [fmt|H7 late registration: Expected success but got: #{toText (show err)}|]
+      pending "needs a late-registered QueryUpdater (registered after Application.run) plus a pre-existing event history to assert that a full replay from position 0 is triggered; current empty-registry setup has no queries and no history"
 
     it "does not silently drop events for unregistered queries" \_ -> do
-      eventStore <- InMemory.new |> Task.mapError toText
-      subscriber <- Subscriber.new eventStore Registry.empty
-      result <-
-        Subscriber.rebuildFrom subscriber "h7-query" (StreamPosition 0) rebuildOptionsDefault
-          |> Task.asResult
-      case result of
-        Ok _ -> pass
-        Err err -> fail [fmt|H7 no silent drops: Expected success but got: #{toText (show err)}|]
+      pending "needs events in the EventStore for entity types that have no registered QueryUpdater, plus an assertion that those events are not silently discarded; current empty-registry setup has no events and no queries"
 
   describe "Concurrency Hazard H8: AsyncTask cancellation on shutdown" do
     it "persists position consistently when rebuild is cancelled via SIGTERM" \_ -> do
-      -- H8: assert rebuildAllAsync completes Ok (cancellation safety via persisted position).
-      eventStore <- InMemory.new |> Task.mapError toText
-      subscriber <- Subscriber.new eventStore Registry.empty
-      result <-
-        Subscriber.rebuildAllAsync subscriber rebuildOptionsDefault
-          |> Task.asResult
-      case result of
-        Ok _ -> pass
-        Err err -> fail [fmt|H8 SIGTERM safety: Expected success but got: #{toText (show err)}|]
+      pending "needs a running rebuildAllAsync task that is cancelled mid-flight plus an assertion that the persisted checkpoint position is consistent; not testable as a sequential Task without concurrency fixtures"
 
     it "resumes correctly after SIGTERM-interrupted rebuild" \_ -> do
-      -- H8: resume from position 500 (simulates post-SIGTERM restart).
-      eventStore <- InMemory.new |> Task.mapError toText
-      subscriber <- Subscriber.new eventStore Registry.empty
-      result <-
-        Subscriber.rebuildFrom subscriber "h8-query" (StreamPosition 500) rebuildOptionsDefault
-          |> Task.asResult
-      case result of
-        Ok _ -> pass
-        Err err -> fail [fmt|H8 resume after SIGTERM: Expected success but got: #{toText (show err)}|]
+      pending "needs a CheckpointStore pre-seeded with a mid-rebuild checkpoint position and an EventStore with events beyond that position to assert that replay resumes rather than restarts; current empty-registry setup has no checkpoint and no events"
 
   describe "Concurrency Hazard H9: Multi-writer (future-proofing)" do
     it "rejects stale writes when multiple processes attempt concurrent updates" \_ -> do
-      result <-
-        createTestStore
-          |> Task.asResult
-      case result of
-        Err (ConnectionFailed _) -> pass
-        Err other -> fail [fmt|H9 setup: expected ConnectionFailed or Ok, got: #{toText (show other)}|]
-        Ok _ -> pass
+      pending "needs POSTGRES_AVAILABLE + a multi-writer / crash-injection fixture; currently the test passes vacuously when Postgres is unavailable, which is a worse-of-both-worlds outcome"
 
     it "accommodates the contract for future multi-writer implementations" \_ -> do
-      result <-
-        createTestStore
-          |> Task.asResult
-      case result of
-        Err (ConnectionFailed _) -> pass
-        Err other -> fail [fmt|H9 setup: expected ConnectionFailed or Ok, got: #{toText (show other)}|]
-        Ok _ -> pass
+      pending "needs POSTGRES_AVAILABLE + a multi-writer / crash-injection fixture; currently the test passes vacuously when Postgres is unavailable, which is a worse-of-both-worlds outcome"
 
   describe "Property-based invariants" do
     it "position never decreases for any (query_name, instance_uuid) — atomicUpdate position monotonicity" \_ -> do
-      result <-
-        createTestStore
-          |> Task.asResult
-      case result of
-        Err (ConnectionFailed _) -> pass
-        Err other -> fail [fmt|property setup: expected ConnectionFailed or Ok, got: #{toText (show other)}|]
-        Ok _ -> pass
+      pending "needs POSTGRES_AVAILABLE + a multi-writer / crash-injection fixture; currently the test passes vacuously when Postgres is unavailable, which is a worse-of-both-worlds outcome"
 
     it "replay(E) == replay(replay(E)) for any event sequence E — rebuildFrom idempotency" \_ -> do
-      eventStore <- InMemory.new |> Task.mapError toText
-      subscriber <- Subscriber.new eventStore Registry.empty
-      result <-
-        Subscriber.rebuildFrom subscriber "idempotent-query" (StreamPosition 0) rebuildOptionsDefault
-          |> Task.asResult
-      case result of
-        Ok _ -> pass
-        Err err -> fail [fmt|property idempotency: Expected success but got: #{toText (show err)}|]
+      pending "needs a registered QueryUpdater and a fixed event sequence to assert that replay(replay(E)) produces the same state as replay(E); current empty-registry setup produces an empty state for any E"
 
     it "state is invariant to chunk boundary placement — chunk-boundary transparency" \_ -> do
-      eventStore <- InMemory.new |> Task.mapError toText
-      subscriber <- Subscriber.new eventStore Registry.empty
-      result <-
-        Subscriber.rebuildFrom subscriber "boundary-query" (StreamPosition 0) rebuildOptionsDefault
-          |> Task.asResult
-      case result of
-        Ok _ -> pass
-        Err err -> fail [fmt|property chunk-boundary transparency: Expected success but got: #{toText (show err)}|]
+      pending "needs a registered QueryUpdater and a fixed event sequence replayed with different chunkSize values to assert identical resulting state; current empty-registry setup produces an empty state regardless of chunkSize"
 
     it "readinessOf == Ready iff all readinessOfQuery return Ready — readiness aggregate consistency" \_ -> do
-      eventStore <- InMemory.new |> Task.mapError toText
-      subscriber <- Subscriber.new eventStore Registry.empty
-      result <-
-        Subscriber.readinessOf subscriber
-          |> Task.asResult
-      case result of
-        Ok _ -> pass
-        Err err -> fail [fmt|property readiness aggregate: Expected success but got: #{toText (show err)}|]
+      pending "needs at least one registered QueryUpdater to have a non-trivial aggregate (a zero-query system is trivially consistent); current empty-registry setup does not distinguish aggregate from per-query consistency"
 
   describe "Round-trip serialization" do
     it "Readiness round-trips correctly" \_ -> do
