@@ -60,7 +60,8 @@ PHASES: dict[int, dict[str, Any]] = {
     14: {"name": "Fix findings",           "depends": [12, 13],"pause": False},
     15: {"name": "Final verify",           "depends": [14],    "pause": False},
     16: {"name": "Create PR",              "depends": [15],    "pause": True},
-    17: {"name": "CI cycle",               "depends": [16],    "pause": True},
+    17: {"name": "Opus PR review",         "depends": [16],    "pause": True},
+    18: {"name": "CI cycle",               "depends": [17],    "pause": True},
 }
 
 VALID_TIERS = {"trivial", "simple", "moderate", "complex", "security-critical"}
@@ -217,7 +218,7 @@ def cmd_status(args: argparse.Namespace) -> None:
     print(f"{'-'*3}  {'-'*30}  {'-'*18}")
     for n in sorted(PHASES):
         p = PHASES[n]
-        s = state["phases"][str(n)]
+        s = state["phases"].get(str(n), {"status": "pending", "approved_at": None, "completed_at": None, "findings_path": None})
         if s["status"] == "completed" and p["pause"]:
             disp = "approved" if s.get("approved_at") else "needs approval"
         elif s["status"] == "completed":
@@ -394,7 +395,7 @@ def cmd_findings(args: argparse.Namespace) -> None:
 def cmd_iter(args: argparse.Namespace) -> None:
     """Increment and print the iteration counter for a phase.
 
-    Used by the build-loop (phase 11) and the bot-fix loop (phase 17) to
+    Used by the build-loop (phase 11) and the bot-fix loop (phase 18) to
     cap themselves at a fixed number of retries without each leaf having
     to manage its own counter file.
     """

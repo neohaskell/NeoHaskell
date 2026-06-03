@@ -15,7 +15,7 @@ Drafts a PR body and submits the pull request.
 1. **PR body** — spawn an Agent (model: sonnet) and instruct it to read `./01-pr-body/SKILL.md` and follow it. Verify: both `.pipeline/pr-body.md` and `.pipeline/pr-title.txt` exist — submit needs the title file.
 2. **Submit** — read `./02-submit/SKILL.md` and follow it. Verify: PR URL captured in pipeline state; phase 16 marked complete.
 
-Walk these steps in order. After step 2, PAUSE — wait for explicit maintainer approval before phase 17 runs.
+Walk these steps in order. After step 2, PAUSE — wait for explicit maintainer approval before phase 17 runs (Opus PR review).
 
 ## Shared invariants
 

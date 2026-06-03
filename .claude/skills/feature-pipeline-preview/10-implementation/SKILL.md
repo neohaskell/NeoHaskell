@@ -51,3 +51,7 @@ Stubs replaced with real implementations; `nix develop --command cabal build all
 - Architecture doc missing → refuse: "no architecture doc; run phase 07 first".
 - Build fails → refuse and surface the error.
 - Any test file changed → refuse: "tests are immutable in this phase".
+- Any import of `Control.Concurrent.Async`, `Data.Either`, `Data.IORef`, `Data.Map`, `Data.Map.Strict`, `Data.Vector` (or any other `Control.*`/`Data.*` module) WITHOUT a `Ghc` prefix alias → refuse: "import must be aliased with `Ghc` prefix per nhcore convention (e.g. `import qualified Data.Map.Strict as GhcMap`)".
+- The `Task.fromIO (… Task.runResult …)` round-trip pattern (or its inverse) detected anywhere → refuse: "stop escaping Task to use an IO library — add the missing primitive to nhcore (e.g. `AsyncTask.race`, `Task.timeout`) and use it instead. Document the new primitive in `core/concurrency/AsyncTask.hs` or `core/core/Task.hs` with a unit test before consuming it here."
+
+Static checks for both patterns above live at `../../scripts/lint-imports.py`. The phase 10 leaf SHOULD invoke it against every source module it edits before calling `pipeline.py complete 10`.
