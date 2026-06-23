@@ -13,7 +13,8 @@ import Data.Functor.Contravariant ((>$<))
 import Data.Semigroup ((<>))
 import Data.Tuple (fst, snd)
 import Data.UUID qualified as UUID
-import Default (Default (..))
+import Default (Default)
+import Default qualified
 import Hasql.Decoders qualified as Decoders
 import Hasql.Encoders qualified as Encoders
 import Hasql.Pool (Pool)
@@ -111,28 +112,33 @@ newFromConfig config = do
 -- | Acquire a Hasql connection pool and verify connectivity.
 acquirePool :: PostgresQueryObjectStoreConfig -> Task QueryObjectStoreError Pool
 acquirePool cfg = do
-  let params =
-        ConnectionSettingConnection.params
-          [ Param.host cfg.host
-          , Param.port (fromIntegral cfg.port)
-          , Param.dbname cfg.databaseName
-          , Param.user cfg.user
-          , Param.password cfg.password
-          ]
-  let settings = [params |> ConnectionSetting.connection]
-  let poolConfig =
-        [ HasqlPoolConfig.staticConnectionSettings settings
-        , HasqlPoolConfig.size cfg.poolSize
-        , HasqlPoolConfig.agingTimeout 300
-        , HasqlPoolConfig.idlenessTimeout 60
-        ]
-          |> HasqlPoolConfig.settings
-  pool <- HasqlPool.acquire poolConfig
-    |> Task.fromIO
-  pingResult <- runPool pool pingSession |> Task.asResult
-  case pingResult of
-    Err err -> Task.throw (ConnectionFailed (toText (show err)))
-    Ok _ -> Task.yield pool
+  let size = cfg.poolSize
+  case size > 0 of
+    False ->
+      Task.throw (ConnectionFailed [fmt|poolSize must be > 0, got #{size}|])
+    True -> do
+      let params =
+            ConnectionSettingConnection.params
+              [ Param.host cfg.host
+              , Param.port (fromIntegral cfg.port)
+              , Param.dbname cfg.databaseName
+              , Param.user cfg.user
+              , Param.password cfg.password
+              ]
+      let settings = [params |> ConnectionSetting.connection]
+      let poolConfig =
+            [ HasqlPoolConfig.staticConnectionSettings settings
+            , HasqlPoolConfig.size cfg.poolSize
+            , HasqlPoolConfig.agingTimeout 300
+            , HasqlPoolConfig.idlenessTimeout 60
+            ]
+              |> HasqlPoolConfig.settings
+      pool <- HasqlPool.acquire poolConfig
+        |> Task.fromIO
+      pingResult <- runPool pool pingSession |> Task.asResult
+      case pingResult of
+        Err err -> Task.throw (ConnectionFailed (toText (show err)))
+        Ok _ -> Task.yield pool
 
 
 -- | Run a Hasql session on the pool.

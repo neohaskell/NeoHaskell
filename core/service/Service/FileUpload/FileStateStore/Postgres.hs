@@ -91,6 +91,7 @@ import Text qualified
 data PostgresFileStoreError
   = PoolError HasqlPool.UsageError
   | DeserializationError Text
+  | InvalidPoolSize Text
   deriving (Eq, Show)
 
 
@@ -166,25 +167,30 @@ newWithCleanup config = do
 -- shared connection budget once keeps the aggregate B1ms budget coherent.
 createPool :: PostgresEventStore -> Task PostgresFileStoreError HasqlPool.Pool
 createPool cfg = do
-  let params =
-        ConnectionSettingConnection.params
-          [ Param.host cfg.host
-          , Param.port (fromIntegral cfg.port)
-          , Param.dbname cfg.databaseName
-          , Param.user cfg.user
-          , Param.password cfg.password
-          ]
-  let settings = [params |> ConnectionSetting.connection]
-  let poolConfig =
-        [ HasqlPoolConfig.staticConnectionSettings settings
-        , HasqlPoolConfig.size cfg.poolSize
-        , HasqlPoolConfig.agingTimeout 300
-        , HasqlPoolConfig.idlenessTimeout 60
-        , HasqlPoolConfig.observationHandler logPoolObservation
-        ]
-          |> HasqlPoolConfig.settings
-  HasqlPool.acquire poolConfig
-    |> Task.fromIO
+  let size = cfg.poolSize
+  case size > 0 of
+    False ->
+      Task.throw (InvalidPoolSize [fmt|poolSize must be > 0, got #{size}|])
+    True -> do
+      let params =
+            ConnectionSettingConnection.params
+              [ Param.host cfg.host
+              , Param.port (fromIntegral cfg.port)
+              , Param.dbname cfg.databaseName
+              , Param.user cfg.user
+              , Param.password cfg.password
+              ]
+      let settings = [params |> ConnectionSetting.connection]
+      let poolConfig =
+            [ HasqlPoolConfig.staticConnectionSettings settings
+            , HasqlPoolConfig.size cfg.poolSize
+            , HasqlPoolConfig.agingTimeout 300
+            , HasqlPoolConfig.idlenessTimeout 60
+            , HasqlPoolConfig.observationHandler logPoolObservation
+            ]
+              |> HasqlPoolConfig.settings
+      HasqlPool.acquire poolConfig
+        |> Task.fromIO
 
 
 -- | Log connection pool lifecycle events for observability.

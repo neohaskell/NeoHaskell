@@ -18,7 +18,9 @@ import Service.EventStore.Postgres.Internal (PostgresEventStore (..))
 import Service.EventStore.Postgres.Internal qualified as EventStore
 import Service.QueryObjectStore.Postgres (PostgresQueryObjectStoreConfig (..))
 import Service.QueryObjectStore.Postgres qualified as QueryObjectStore
+import Task qualified
 import Test.Hspec qualified as Hspec
+import Text qualified
 
 
 -- | The EventStore pool's default size (also used by the FileUpload pool,
@@ -105,3 +107,19 @@ spec = Hspec.describe "Service.EventStore.Postgres.PoolBudget" do
       -- Negative control: a hypothetical +20 bump must break the gate,
       -- pinning the gate's direction without mutating the real defaults.
       ((fixedBudget + 20 <= b1msUsableCeiling - adminHeadroom)) |> Hspec.shouldBe False
+
+  Hspec.describe "fail-fast poolSize validation (EventStore acquire)" do
+    Hspec.it "rejects poolSize = 0 with a clear error" do
+      result <-
+        EventStore.defaultOps.acquire ((def :: PostgresEventStore) {EventStore.poolSize = 0})
+          |> Task.runResult
+      case result of
+        Err err -> (err |> Text.contains "poolSize must be > 0") |> Hspec.shouldBe True
+        Ok _ -> Hspec.expectationFailure "expected poolSize=0 to be rejected"
+    Hspec.it "rejects a negative poolSize with a clear error" do
+      result <-
+        EventStore.defaultOps.acquire ((def :: PostgresEventStore) {EventStore.poolSize = -1})
+          |> Task.runResult
+      case result of
+        Err err -> (err |> Text.contains "poolSize must be > 0") |> Hspec.shouldBe True
+        Ok _ -> Hspec.expectationFailure "expected negative poolSize to be rejected"

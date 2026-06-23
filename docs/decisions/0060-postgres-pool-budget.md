@@ -112,9 +112,11 @@ be **intentional and bounded**, and shown to fit comfortably under 35
 
 ### Option 1 — Configurable, defaulted `size` field per config + cabal version pin (chosen)
 
-Add `HasqlPoolConfig.size <n>` to all three pool configs, sourced from a
-configurable, defaulted `poolSize :: Int` field on each Postgres config
-record (defaulted via a `Default` instance), and pin `hasql-pool` with a
+Add `HasqlPoolConfig.size <n>` to all three pool configs, sourced from
+configurable, defaulted `poolSize :: Int` fields on
+`PostgresEventStore` and `PostgresQueryObjectStoreConfig` (defaulted via
+`Default` instances). FileUpload reuses `PostgresEventStore.poolSize`.
+Pin `hasql-pool` with a
 `>= 1.3 && < 1.4` bound in `core/nhcore.cabal`. Document the aggregate
 budget in this ADR and (per WI-6) in the deployment guide.
 
@@ -227,9 +229,11 @@ the API is a one-line, reviewed widening.
 
 ### 2. Configurable, defaulted `poolSize` field on each Postgres config
 
-Each Postgres config record gains a `poolSize :: Int` field that feeds
-`HasqlPoolConfig.size`, defaulted via a `Default` instance so an unset
-field is the safe `B1ms` value. EventStore example
+`PostgresEventStore` and `PostgresQueryObjectStoreConfig` each gain their
+own `poolSize :: Int` field that feeds `HasqlPoolConfig.size`, defaulted
+via a `Default` instance so an unset field is the safe `B1ms` value.
+FileUpload does not define its own field — it reuses
+`PostgresEventStore.poolSize`. EventStore example
 (`Service.EventStore.Postgres.Internal`):
 
 ```haskell

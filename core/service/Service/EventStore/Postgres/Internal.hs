@@ -13,7 +13,8 @@ import Array (Array)
 import Array qualified
 import AsyncTask qualified
 import Basics
-import Default (Default (..))
+import Default (Default)
+import Default qualified
 import Hasql.Connection qualified as Hasql
 import Hasql.Connection.Setting qualified as ConnectionSetting
 import Hasql.Connection.Setting qualified as Hasql
@@ -156,11 +157,16 @@ data Ops = Ops
 defaultOps :: Ops
 defaultOps = do
   let acquire cfg = do
-        toConnectionSettings cfg
-          |> toConnectionPoolSettings cfg.poolSize
-          |> HasqlPool.acquire
-          |> Task.fromIO
-          |> Task.map (Sessions.Connection)
+        let size = cfg.poolSize
+        case size > 0 of
+          False ->
+            Task.throw [fmt|poolSize must be > 0, got #{size}|]
+          True ->
+            toConnectionSettings cfg
+              |> toConnectionPoolSettings cfg.poolSize
+              |> HasqlPool.acquire
+              |> Task.fromIO
+              |> Task.map (Sessions.Connection)
 
   let initializeTable connection = do
         Sessions.createEventsTableSession
