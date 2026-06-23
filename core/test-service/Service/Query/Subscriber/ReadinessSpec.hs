@@ -37,7 +37,7 @@ import Test
 
 
 testConfig :: PostgresQueryObjectStoreConfig
-testConfig = PostgresQueryObjectStoreConfig
+testConfig = def
   { host = "localhost"
   , databaseName = "neohaskell"
   , user = "neohaskell"

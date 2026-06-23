@@ -229,7 +229,7 @@ spec = do
   describe "TCP keepalive configuration" do
     it "toConnectionSettings does not throw for valid config" \_ -> do
       let cfg =
-            PostgresEventStore
+            (def :: PostgresEventStore)
               { host = "localhost",
                 port = 5432,
                 databaseName = "test",
@@ -245,7 +245,7 @@ spec = do
   describe "Listener cleanup" do
     whenEnvVar "POSTGRES_AVAILABLE" do
       let config =
-            Postgres.PostgresEventStore
+            (def :: Postgres.PostgresEventStore)
               { host = "localhost",
                 databaseName = "neohaskell",
                 user = "neohaskell",

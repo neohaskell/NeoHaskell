@@ -47,7 +47,7 @@ data MockConfig = MockConfig
 
 -- | Helper to create a PostgresEventStore factory for testing.
 makeEventStoreFactory :: MockConfig -> PostgresEventStore
-makeEventStoreFactory cfg = PostgresEventStore
+makeEventStoreFactory cfg = def
   { host = cfg.mockDbHost
   , port = cfg.mockDbPort
   , user = "test"
@@ -71,7 +71,7 @@ makeFileUploadFactory cfg = FileUploadConfig
 
 -- | Direct PostgresEventStore config for testing backwards compatibility.
 directPostgresConfig :: PostgresEventStore
-directPostgresConfig = PostgresEventStore
+directPostgresConfig = def
   { host = "localhost"
   , port = 5432
   , user = "test"
@@ -270,7 +270,7 @@ spec = do
     it "second withEventStore call overwrites first" \_ -> do
       -- When withEventStore is called multiple times, the last one wins.
       let differentFactory :: MockConfig -> PostgresEventStore
-          differentFactory cfg = PostgresEventStore
+          differentFactory cfg = def
             { host = cfg.mockDbHost  -- Uses config, different from directPostgresConfig
             , port = cfg.mockDbPort
             , user = "factory-user"  -- Distinguishable from direct config

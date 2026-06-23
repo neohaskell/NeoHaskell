@@ -16,7 +16,7 @@ import Test.Service.FileUpload.FileStateStore qualified as FileStateStoreSpec
 -- | Test configuration - same as other Postgres tests in the codebase
 testConfig :: PostgresEventStore
 testConfig =
-  PostgresEventStore
+  def
     { host = "localhost"
     , databaseName = "neohaskell"
     , user = "neohaskell"
