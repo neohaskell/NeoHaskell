@@ -2,22 +2,40 @@ module Service.EventStore.Postgres.PoolBudgetSpec (spec) where
 
 -- | Pure unit spec for the ADR-0060 Postgres connection-pool budget.
 --
--- This spec runs unconditionally (no Postgres). It guards the three
--- explicit pool-size constants and the documented Azure Flexible Server
--- B1ms aggregate budget. See ADR-0060 and the architecture doc
--- docs/architecture/0060-postgres-pool-budget.md.
+-- This spec runs unconditionally (no Postgres). It guards the configurable,
+-- defaulted pool-size fields on the Postgres config records and the documented
+-- Azure Flexible Server B1ms aggregate budget. See ADR-0060.
 --
--- Note: the ADR's Testing §1 ("assert the constructed HasqlPoolConfig.Config
--- carries the expected size") is not implementable — the Config record's
--- @size@ field lives in the hidden module Hasql.Pool.Config.Config. These
--- constant-value + budget assertions are the implementable substitute that
--- catches the same regression class (a future builder merge dropping a size).
+-- The pool sizes are now defaulted fields on the config records (default 6 on
+-- 'PostgresEventStore', shared by the EventStore and FileUpload pools; default
+-- 4 on 'PostgresQueryObjectStoreConfig'), supplied via their 'Default'
+-- instances. These assertions pin the defaults, confirm overrides are
+-- respected, and encode the B1ms budget arithmetic so a future default bump
+-- that breaks it fails the suite rather than production.
 
 import Core
-import Service.EventStore.Postgres.Internal (eventStorePoolSize)
-import Service.FileUpload.FileStateStore.Postgres (fileUploadPoolSize)
-import Service.QueryObjectStore.Postgres (queryObjectStorePoolSize)
+import Service.EventStore.Postgres.Internal (PostgresEventStore (..))
+import Service.EventStore.Postgres.Internal qualified as EventStore
+import Service.QueryObjectStore.Postgres (PostgresQueryObjectStoreConfig (..))
+import Service.QueryObjectStore.Postgres qualified as QueryObjectStore
 import Test.Hspec qualified as Hspec
+
+
+-- | The EventStore pool's default size (also used by the FileUpload pool,
+-- which shares the EventStore config's 'poolSize').
+eventStorePoolSize :: Int
+eventStorePoolSize = (def :: PostgresEventStore).poolSize
+
+
+-- | The FileUpload pool size: it shares the EventStore config's 'poolSize'
+-- field, so the default is identical to the EventStore default.
+fileUploadPoolSize :: Int
+fileUploadPoolSize = (def :: PostgresEventStore).poolSize
+
+
+-- | The QueryObjectStore pool's default size.
+queryObjectStorePoolSize :: Int
+queryObjectStorePoolSize = (def :: PostgresQueryObjectStoreConfig).poolSize
 
 
 -- | Azure Flexible Server B1ms usable-connection ceiling (~35).
@@ -37,6 +55,9 @@ fixedUnpooledConnections = 3
 
 -- | The documented worst-case fixed connection demand: the three pools plus
 -- the fixed unpooled connections (per-stream subscriptions, term N, excluded).
+--
+-- FileUpload shares the EventStore config's pool, so its contribution to the
+-- worst-case budget is the EventStore default size again (6 + 4 + 6 + 3 = 19).
 fixedBudget :: Int
 fixedBudget =
   eventStorePoolSize
@@ -47,38 +68,40 @@ fixedBudget =
 
 spec :: Hspec.Spec
 spec = Hspec.describe "Service.EventStore.Postgres.PoolBudget" do
-  Hspec.describe "eventStorePoolSize" do
+  Hspec.describe "PostgresEventStore.poolSize (default via Default instance)" do
     Hspec.it "is the ADR-0060 B1ms default of 6" do
-      eventStorePoolSize |> Hspec.shouldBe 6
+      (def :: PostgresEventStore).poolSize |> Hspec.shouldBe 6
     Hspec.it "is strictly positive" do
-      (eventStorePoolSize > 0) |> Hspec.shouldBe True
+      ((def :: PostgresEventStore).poolSize > 0) |> Hspec.shouldBe True
     Hspec.it "does not on its own exceed the B1ms usable ceiling" do
-      (eventStorePoolSize <= b1msUsableCeiling) |> Hspec.shouldBe True
+      ((def :: PostgresEventStore).poolSize <= b1msUsableCeiling) |> Hspec.shouldBe True
+    Hspec.it "respects an explicit override" do
+      ((def :: PostgresEventStore) {EventStore.poolSize = 10}).poolSize |> Hspec.shouldBe 10
 
-  Hspec.describe "queryObjectStorePoolSize" do
+  Hspec.describe "PostgresQueryObjectStoreConfig.poolSize (default via Default instance)" do
     Hspec.it "is the ADR-0060 B1ms default of 4" do
-      queryObjectStorePoolSize |> Hspec.shouldBe 4
+      (def :: PostgresQueryObjectStoreConfig).poolSize |> Hspec.shouldBe 4
     Hspec.it "is strictly positive" do
-      (queryObjectStorePoolSize > 0) |> Hspec.shouldBe True
-    Hspec.it "is no larger than the EventStore pool" do
-      (queryObjectStorePoolSize <= eventStorePoolSize) |> Hspec.shouldBe True
+      ((def :: PostgresQueryObjectStoreConfig).poolSize > 0) |> Hspec.shouldBe True
+    Hspec.it "is no larger than the EventStore pool default" do
+      ((def :: PostgresQueryObjectStoreConfig).poolSize <= eventStorePoolSize) |> Hspec.shouldBe True
+    Hspec.it "respects an explicit override" do
+      ((def :: PostgresQueryObjectStoreConfig) {QueryObjectStore.poolSize = 8}).poolSize |> Hspec.shouldBe 8
 
-  Hspec.describe "fileUploadPoolSize" do
-    Hspec.it "is the ADR-0060 B1ms default of 2" do
-      fileUploadPoolSize |> Hspec.shouldBe 2
-    Hspec.it "is strictly positive" do
-      (fileUploadPoolSize > 0) |> Hspec.shouldBe True
-    Hspec.it "is the smallest of the three pools" do
-      (fileUploadPoolSize <= queryObjectStorePoolSize) |> Hspec.shouldBe True
+  Hspec.describe "FileUpload pool (shares the EventStore config's poolSize)" do
+    Hspec.it "uses the EventStore config's poolSize default of 6" do
+      fileUploadPoolSize |> Hspec.shouldBe 6
+    Hspec.it "tracks an EventStore poolSize override (shared field)" do
+      ((def :: PostgresEventStore) {EventStore.poolSize = 12}).poolSize |> Hspec.shouldBe 12
 
   Hspec.describe "B1ms aggregate budget invariant" do
-    Hspec.it "fixed budget equals the documented 15 connections" do
-      fixedBudget |> Hspec.shouldBe 15
+    Hspec.it "fixed budget equals the documented 19 connections" do
+      fixedBudget |> Hspec.shouldBe 19
     Hspec.it "fixed budget fits under the B1ms usable ceiling with admin headroom" do
       (fixedBudget <= b1msUsableCeiling - adminHeadroom) |> Hspec.shouldBe True
     Hspec.it "leaves at least one slot of per-stream subscription margin" do
       ((b1msUsableCeiling - adminHeadroom) - fixedBudget >= 1) |> Hspec.shouldBe True
     Hspec.it "would fail the ceiling gate if a pool were bumped past the margin" do
       -- Negative control: a hypothetical +20 bump must break the gate,
-      -- pinning the gate's direction without mutating the real constants.
+      -- pinning the gate's direction without mutating the real defaults.
       ((fixedBudget + 20 <= b1msUsableCeiling - adminHeadroom)) |> Hspec.shouldBe False

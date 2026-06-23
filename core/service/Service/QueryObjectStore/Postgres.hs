@@ -4,7 +4,6 @@ module Service.QueryObjectStore.Postgres (
   CheckpointStore (..),
   newFromConfig,
   createCheckpointStore,
-  queryObjectStorePoolSize,
 ) where
 
 import Array (Array)
@@ -14,6 +13,7 @@ import Data.Functor.Contravariant ((>$<))
 import Data.Semigroup ((<>))
 import Data.Tuple (fst, snd)
 import Data.UUID qualified as UUID
+import Default (Default (..))
 import Hasql.Decoders qualified as Decoders
 import Hasql.Encoders qualified as Encoders
 import Hasql.Pool (Pool)
@@ -58,8 +58,28 @@ data PostgresQueryObjectStoreConfig = PostgresQueryObjectStoreConfig
   , user :: Text
   , password :: Text
   , port :: Int
+    -- | Connection-pool size for the QueryObjectStore pool. Defaults to 4,
+    -- sized for Azure Flexible Server B1ms (~35 usable connections); see
+    -- ADR-0060 for the aggregate budget. Raise per deployment tier via this
+    -- field.
+  , poolSize :: Int
   }
   deriving (Eq, Show)
+
+
+-- | Default config: connection-field placeholders plus the ADR-0060 B1ms
+-- default pool size of 4. Use record-update syntax to set the real
+-- connection fields, e.g. @def { host = "...", databaseName = "..." }@.
+instance Default PostgresQueryObjectStoreConfig where
+  def =
+    PostgresQueryObjectStoreConfig
+      { host = ""
+      , databaseName = ""
+      , user = ""
+      , password = ""
+      , port = 5432
+      , poolSize = 4
+      }
 
 
 instance Core.QueryObjectStoreConfig PostgresQueryObjectStoreConfig where
@@ -88,11 +108,6 @@ newFromConfig config = do
             })
 
 
--- | Connection-pool size for the QueryObjectStore pool. See ADR-0060.
-queryObjectStorePoolSize :: Int
-queryObjectStorePoolSize = 4
-
-
 -- | Acquire a Hasql connection pool and verify connectivity.
 acquirePool :: PostgresQueryObjectStoreConfig -> Task QueryObjectStoreError Pool
 acquirePool cfg = do
@@ -107,7 +122,7 @@ acquirePool cfg = do
   let settings = [params |> ConnectionSetting.connection]
   let poolConfig =
         [ HasqlPoolConfig.staticConnectionSettings settings
-        , HasqlPoolConfig.size queryObjectStorePoolSize
+        , HasqlPoolConfig.size cfg.poolSize
         , HasqlPoolConfig.agingTimeout 300
         , HasqlPoolConfig.idlenessTimeout 60
         ]

@@ -2046,7 +2046,7 @@ initializeFileUpload fileConfig = do
       Task.yield (FileUpload.inMemoryFileStateStore inMemoryStore, Task.yield ())
 
     PostgresStateStore {pgHost, pgPort, pgDatabase, pgUser, pgPassword} -> do
-      let postgresConfig = PostgresEventStore
+      let postgresConfig = def
             { host = pgHost
             , port = pgPort
             , databaseName = pgDatabase

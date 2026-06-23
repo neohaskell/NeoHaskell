@@ -7,14 +7,13 @@ module Service.EventStore.Postgres.Internal (
   SubscriptionStore.SubscriptionStore (..),
   withConnection,
   toConnectionSettings,
-  eventStorePoolSize,
 ) where
 
 import Array (Array)
 import Array qualified
 import AsyncTask qualified
 import Basics
-import Default ()
+import Default (Default (..))
 import Hasql.Connection qualified as Hasql
 import Hasql.Connection.Setting qualified as ConnectionSetting
 import Hasql.Connection.Setting qualified as Hasql
@@ -68,26 +67,39 @@ data PostgresEventStore = PostgresEventStore
     databaseName :: Text,
     user :: Text,
     password :: Text,
-    port :: Int
+    port :: Int,
+    -- | Connection-pool size for the EventStore pool (also shared by the
+    -- FileUpload state-store pool). Defaults to 6, sized for Azure Flexible
+    -- Server B1ms (~35 usable connections); see ADR-0060 for the aggregate
+    -- budget. Raise per deployment tier via this field.
+    poolSize :: Int
   }
   deriving (Eq, Ord, Show)
+
+
+-- | Default config: connection-field placeholders plus the ADR-0060 B1ms
+-- default pool size of 6. Use record-update syntax to set the real
+-- connection fields, e.g. @def { host = "...", databaseName = "..." }@.
+instance Default PostgresEventStore where
+  def =
+    PostgresEventStore
+      { host = "",
+        databaseName = "",
+        user = "",
+        password = "",
+        port = 5432,
+        poolSize = 6
+      }
 
 
 instance EventStoreConfig PostgresEventStore where
   createEventStore = new defaultOps
 
 
--- | Connection-pool size for the EventStore pool.
--- Sized for Azure Flexible Server B1ms (~35 usable connections);
--- see ADR-0060 for the aggregate budget. Raise per deployment tier.
-eventStorePoolSize :: Int
-eventStorePoolSize = 6
-
-
-toConnectionPoolSettings :: LinkedList Hasql.Setting -> HasqlPoolConfig.Config
-toConnectionPoolSettings settings =
+toConnectionPoolSettings :: Int -> LinkedList Hasql.Setting -> HasqlPoolConfig.Config
+toConnectionPoolSettings poolSize settings =
   [ HasqlPoolConfig.staticConnectionSettings settings
-  , HasqlPoolConfig.size eventStorePoolSize
+  , HasqlPoolConfig.size poolSize
   , HasqlPoolConfig.agingTimeout 300
   , HasqlPoolConfig.idlenessTimeout 60
   , HasqlPoolConfig.observationHandler logPoolObservation
@@ -145,7 +157,7 @@ defaultOps :: Ops
 defaultOps = do
   let acquire cfg = do
         toConnectionSettings cfg
-          |> toConnectionPoolSettings
+          |> toConnectionPoolSettings cfg.poolSize
           |> HasqlPool.acquire
           |> Task.fromIO
           |> Task.map (Sessions.Connection)

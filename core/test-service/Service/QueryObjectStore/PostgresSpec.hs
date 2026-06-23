@@ -19,7 +19,7 @@ import Uuid qualified
 -- | Standard test config pointing at the local Postgres instance.
 testConfig :: PostgresQueryObjectStoreConfig
 testConfig =
-  PostgresQueryObjectStoreConfig
+  def
     { host = "localhost"
     , databaseName = "neohaskell"
     , user = "neohaskell"
@@ -104,11 +104,11 @@ postgresTests = do
         Ok _ -> fail "Expected failure but got success"
 
     it "fails with ConnectionFailed if pool size is zero or negative" \_ -> do
-      -- NOTE: this test originally exercised pool-size validation, but the
-      -- PostgresQueryObjectStoreConfig record has no pool-size field today.
-      -- We use port = 0 as a proxy for "any invalid pool/connection config" —
-      -- libpq rejects port 0 at acquire time, surfacing as ConnectionFailed.
-      -- A proper pool-size validation test would need that field to exist first.
+      -- NOTE: PostgresQueryObjectStoreConfig now carries a 'poolSize' field
+      -- (ADR-0060), but this test exercises the connection path rather than
+      -- pool-size validation: we use port = 0 as a proxy for "any invalid
+      -- connection config" — libpq rejects port 0 at acquire time, surfacing
+      -- as ConnectionFailed.
       let badConfig = testConfig { port = 0 }
       result <-
         mkStore badConfig

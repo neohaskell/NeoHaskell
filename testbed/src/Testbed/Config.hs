@@ -46,6 +46,10 @@ defineConfig
       |> Config.doc "PostgreSQL database name"
       |> Config.defaultsTo ("neohaskell" :: Text)
       |> Config.envVar "DB_NAME"
+  , Config.field @Int "dbPoolSize"
+      |> Config.doc "PostgreSQL connection-pool size for the EventStore (shared with FileUpload); see ADR-0060"
+      |> Config.defaultsTo (6 :: Int)
+      |> Config.envVar "DB_POOL_SIZE"
   , Config.field @Int "httpPort"
       |> Config.doc "HTTP server port"
       |> Config.defaultsTo (8080 :: Int)

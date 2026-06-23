@@ -20,12 +20,13 @@ spec :: Spec Unit
 spec = do
   describe "PostgresEventStore" do
     let config =
-          Postgres.PostgresEventStore
-            { host = "localhost",
-              databaseName = "neohaskell",
-              user = "neohaskell",
-              password = "neohaskell",
-              port = 5432
+          Internal.PostgresEventStore
+            { Internal.host = "localhost",
+              Internal.databaseName = "neohaskell",
+              Internal.user = "neohaskell",
+              Internal.password = "neohaskell",
+              Internal.port = 5432,
+              Internal.poolSize = 6
             }
     describe "new method" do
       it "acquires the connection" \_ -> do

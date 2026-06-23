@@ -69,13 +69,15 @@ be **intentional and bounded**, and shown to fit comfortably under 35
    sum (3 pools + listener pair + init-listen + per-stream
    subscriptions + admin headroom) is written down and shown to be
    `< 35`.
-4. **Tier-tunable** — the per-pool sizes are constants in one obvious
-   place, so moving to a larger tier is a one-line change per pool, not
-   a redesign. (A full config-field surface is explicitly out of scope
-   — see Decision §3.)
+4. **Tier-tunable without a rebuild** — the per-pool sizes are
+   configurable, defaulted fields on the config records, so moving to a
+   larger tier is changing a field value (or an env var, if the app
+   threads one through), not editing library source. The safe `B1ms`
+   defaults mean an unset field is still correct out of the box.
 5. **No behaviour change for Jess** — local/dev apps and the in-memory
-   default path are unaffected; this is invisible to anyone not
-   deploying to a constrained Postgres tier.
+   default path are unaffected; the new fields are defaulted, so
+   hello-world never has to mention them. This is invisible to anyone
+   not deploying to a constrained Postgres tier.
 
 ### GitHub Issue
 
@@ -108,29 +110,31 @@ be **intentional and bounded**, and shown to fit comfortably under 35
 
 ## Considered options
 
-### Option 1 — Explicit per-pool `size` constants + cabal version pin (chosen)
+### Option 1 — Configurable, defaulted `size` field per config + cabal version pin (chosen)
 
-Add `HasqlPoolConfig.size <n>` to all three pool configs with a named
-top-level constant per pool, and pin `hasql-pool` with a
+Add `HasqlPoolConfig.size <n>` to all three pool configs, sourced from a
+configurable, defaulted `poolSize :: Int` field on each Postgres config
+record (defaulted via a `Default` instance), and pin `hasql-pool` with a
 `>= 1.3 && < 1.4` bound in `core/nhcore.cabal`. Document the aggregate
 budget in this ADR and (per WI-6) in the deployment guide.
 
 Per-pool split (defaults sized for `B1ms`):
 
-| Pool | Constant | Size | Why |
-|------|----------|------|-----|
-| EventStore | `eventStorePoolSize` | `6` | Busiest pool: command appends, entity fetches, query catch-up reads all route through it. |
-| QueryObjectStore | `queryObjectStorePoolSize` | `4` | Read-model writes during rebuild + read-model reads; bursty during cold-start replay, quiet at steady state. |
-| FileUpload | `fileUploadPoolSize` | `2` | Only active when a client uses file uploads; metadata writes only (bytes are out-of-band). |
+| Pool | Field | Default | Why |
+|------|-------|---------|-----|
+| EventStore | `PostgresEventStore.poolSize` | `6` | Busiest pool: command appends, entity fetches, query catch-up reads all route through it. |
+| QueryObjectStore | `PostgresQueryObjectStoreConfig.poolSize` | `4` | Read-model writes during rebuild + read-model reads; bursty during cold-start replay, quiet at steady state. |
+| FileUpload | shares `PostgresEventStore.poolSize` | `6` | FileUpload is configured from the same `PostgresEventStore` record, so it shares the EventStore pool size rather than owning an independent knob. Metadata writes only (bytes are out-of-band). |
 
-Aggregate worst-case demand on `B1ms` (≈35 usable):
+Aggregate worst-case demand on `B1ms` (≈35 usable), with all sizes at
+their defaults:
 
 ```text
   EventStore pool        6
   QueryObjectStore pool  4
-  FileUpload pool        2
+  FileUpload pool        6   (shares PostgresEventStore.poolSize)
   ----------------------- 
-  pooled subtotal       12
+  pooled subtotal       16
 
   Listener pair          2   (persistent, unpooled)
   Init-listen            1   (transient, unpooled)
@@ -139,14 +143,16 @@ Aggregate worst-case demand on `B1ms` (≈35 usable):
 
   Per-stream subs        N   (1 each; bounded by deployment, see WI-4 #683)
   ----------------------- 
-  steady-state total    15 + N
+  steady-state total    19 + N
 ```
 
-With `N = 0` the app uses **15** of 35. That leaves **20** for active
+With `N = 0` the app uses **19** of 35. That leaves **16** for active
 stream subscriptions plus an operator `psql` session and a maintenance
-task. A deployment can safely run up to ~17 concurrent stream
+task. A deployment can safely run a healthy number of concurrent stream
 subscriptions before approaching the ceiling, and WI-4 (#683) will both
-release per-stream connections on unsubscribe and document this cap.
+release per-stream connections on unsubscribe and document this cap. If
+FileUpload's shared size proves too generous (it is often unused), WI-2
+(#681) can give it an independent, smaller size.
 
 ### Option 2 — Pin `hasql-pool` only; leave sizes at the library default
 
@@ -167,19 +173,18 @@ Call `size` everywhere but leave the cabal dependency unbounded.
   to drift on a bump. The pin is cheap insurance and the issue's
   acceptance criteria require it. Fails Design Goal 2.
 
-### Option 4 — Add a per-pool size config field (env-driven)
+### Option 4 — Module-level size constants (previously chosen, superseded)
 
-Thread a `poolSize :: Int` field through `PostgresEventStore`,
-`PostgresQueryObjectStoreConfig`, and the FileUpload config, wired from
-env via `Config.field`.
+Set each `HasqlPoolConfig.size` from a top-level `Int` constant in its
+module (`eventStorePoolSize = 6`, etc.), with no config field.
 
-- Rejected for now: adds three new public config fields (and a fourth
-  surface area for Jess to misconfigure) to solve a problem the
-  constants already solve. The tier-upgrade use case is rare and
-  advanced; a documented edit of one constant per pool is sufficient.
-  Revisit if multiple clients need per-deploy tuning without a rebuild
-  — at which point WI-2's shared builder (#681) is the natural home for
-  a single `poolSize` field rather than three.
+- Rejected: editing a constant in library source is the wrong shape for
+  a framework. A per-client deployment cannot raise its pool budget
+  without forking and rebuilding nhcore, and the size is invisible to
+  the application's own config surface. A configurable, defaulted field
+  (Option 1) gives the same safe `B1ms` default at zero cost to Jess
+  while letting an operator tune the budget per deployment. (This was
+  the initial form of this PR; this ADR revision supersedes it.)
 
 ### Option 5 — One shared pool for all three subsystems
 
@@ -194,10 +199,10 @@ Collapse EventStore / QueryObjectStore / FileUpload onto a single
 
 | Option | Verdict | Reason |
 |--------|---------|--------|
-| 1. Explicit sizes + pin | **Chosen** | Only option that makes the budget both explicit (Goal 1) and stable (Goal 2), and documents it under 35 (Goal 3). |
+| 1. Configurable defaulted field + pin | **Chosen** | Makes the budget explicit (Goal 1), stable (Goal 2), documented under 35 (Goal 3), and tunable per deployment without a rebuild (Goal 4) — while keeping a safe default so Jess sees nothing new (Goal 5). |
 | 2. Pin only | Rejected | Budget stable but unreadable at call site. |
 | 3. Sizes only | Rejected | Other pool defaults still drift on a bump. |
-| 4. Config field | Rejected (deferred) | New public surface for a rare advanced need; defer to WI-2. |
+| 4. Module constants | Rejected (superseded) | Editing library source to tune a deploy is the wrong shape for a framework; the defaulted field gives the same default at no extra cost. |
 | 5. Shared pool | Rejected | Out of scope; couples unrelated subsystems. |
 
 ## Decision outcome
@@ -220,24 +225,36 @@ The upper bound `< 1.4` freezes the default-size behaviour and the
 `observationHandler`) nhcore depends on. A future minor bump that keeps
 the API is a one-line, reviewed widening.
 
-### 2. Explicit `size` on all three pools
+### 2. Configurable, defaulted `poolSize` field on each Postgres config
 
-Each pool gains a named top-level size constant and a
-`HasqlPoolConfig.size` entry. EventStore example
+Each Postgres config record gains a `poolSize :: Int` field that feeds
+`HasqlPoolConfig.size`, defaulted via a `Default` instance so an unset
+field is the safe `B1ms` value. EventStore example
 (`Service.EventStore.Postgres.Internal`):
 
 ```haskell
--- | Connection-pool size for the EventStore pool.
--- Sized for Azure Flexible Server B1ms (~35 usable connections);
--- see ADR-0060 for the aggregate budget. Raise per deployment tier.
-eventStorePoolSize :: Int
-eventStorePoolSize = 6
+data PostgresEventStore = PostgresEventStore
+  { host :: Text,
+    databaseName :: Text,
+    user :: Text,
+    password :: Text,
+    port :: Int,
+    poolSize :: Int   -- defaults to 6, shared by the FileUpload pool
+  }
+  deriving (Eq, Ord, Show)
 
 
-toConnectionPoolSettings :: LinkedList Hasql.Setting -> HasqlPoolConfig.Config
-toConnectionPoolSettings settings =
+instance Default PostgresEventStore where
+  def =
+    PostgresEventStore
+      { host = "", databaseName = "", user = "", password = "",
+        port = 5432, poolSize = 6 }
+
+
+toConnectionPoolSettings :: Int -> LinkedList Hasql.Setting -> HasqlPoolConfig.Config
+toConnectionPoolSettings poolSize settings =
   [ HasqlPoolConfig.staticConnectionSettings settings
-  , HasqlPoolConfig.size eventStorePoolSize
+  , HasqlPoolConfig.size poolSize
   , HasqlPoolConfig.agingTimeout 300
   , HasqlPoolConfig.idlenessTimeout 60
   , HasqlPoolConfig.observationHandler logPoolObservation
@@ -245,21 +262,28 @@ toConnectionPoolSettings settings =
     |> HasqlPoolConfig.settings
 ```
 
-QueryObjectStore (`acquirePool`) and FileUpload (`createPool`) take the
-analogous change with `queryObjectStorePoolSize = 4` and
-`fileUploadPoolSize = 2` respectively. The existing `agingTimeout` /
-`idlenessTimeout` / `observationHandler` entries are unchanged (ADR-0027
-behaviour preserved).
+`PostgresQueryObjectStoreConfig` takes the analogous change with a
+`poolSize` field defaulted to `4`; its `acquirePool` reads
+`cfg.poolSize`. FileUpload's `createPool` takes a `PostgresEventStore`
+and reads `cfg.poolSize` too — **it shares the EventStore config's pool
+size** rather than owning an independent field, so there is no separate
+FileUpload knob. The existing `agingTimeout` / `idlenessTimeout` /
+`observationHandler` entries are unchanged (ADR-0027 behaviour
+preserved).
 
-### 3. Sizes are constants, not config fields
+### 3. Sizes are defaulted config fields, shared where the config is shared
 
-The three sizes are top-level `Int` constants in their respective
-modules, not new fields on the config records. This keeps the public
-config surface (and Jess's autocomplete) unchanged. A tier upgrade is a
-documented edit of the three constants. If per-deploy tuning without a
-rebuild becomes a real requirement across clients, the follow-up is a
-single `poolSize` field on WI-2's shared builder (#681) — not three
-parallel fields added here.
+The EventStore and QueryObjectStore sizes are defaulted fields on their
+respective config records; the FileUpload pool reuses the
+`PostgresEventStore.poolSize` it is already given. Because the fields are
+defaulted, the public config surface that Jess must understand is
+unchanged for hello-world — `def { host = ..., ... }` still works and an
+omitted `poolSize` is the safe `B1ms` value. A tier upgrade sets the
+field (e.g. via the application's own config / env wiring, as the
+testbed demonstrates with a `DB_POOL_SIZE`-backed `dbPoolSize` field),
+with no rebuild of nhcore. WI-2 (#681) now scopes only the shared
+connection-settings builder + `sslmode`, and could later give FileUpload
+an independent size if its shared default proves too generous.
 
 ### 4. Module placement
 
@@ -267,9 +291,9 @@ No new modules. Changes are confined to:
 
 ```text
 core/nhcore.cabal                                          -- pin hasql-pool
-core/service/Service/EventStore/Postgres/Internal.hs       -- eventStorePoolSize + size
-core/service/Service/QueryObjectStore/Postgres.hs          -- queryObjectStorePoolSize + size
-core/service/Service/FileUpload/FileStateStore/Postgres.hs -- fileUploadPoolSize + size
+core/service/Service/EventStore/Postgres/Internal.hs       -- poolSize field + Default + size
+core/service/Service/QueryObjectStore/Postgres.hs          -- poolSize field + Default + size
+core/service/Service/FileUpload/FileStateStore/Postgres.hs -- size from shared PostgresEventStore.poolSize
 ```
 
 ### Performance & testing
@@ -278,35 +302,48 @@ This is a configuration change, not a hot-path change — there is no new
 allocation, no new per-event work. `size` is read once at pool
 construction. No benchmark is required (tier: `simple`).
 
-Verification is by assertion on the constructed pool config and the
-documented budget:
+Verification is by assertion on the defaulted fields and the documented
+budget (`core/test-service/Service/EventStore/Postgres/PoolBudgetSpec.hs`):
 
-1. **Pool-config assertion** — a test in
-   `core/test-service/Service/QueryObjectStore/PostgresSpec.hs` (and the
-   sibling EventStore / FileUpload specs) asserts the constructed
-   `HasqlPoolConfig.Config` carries the expected `size`. This guards
-   against silently dropping the `size` entry in a future refactor
-   (notably WI-2's builder merge).
-2. **Budget arithmetic** — a pure unit test asserts
+1. **Default assertion** — a pure unit test asserts
+   `(def :: PostgresEventStore).poolSize == 6` and
+   `(def :: PostgresQueryObjectStoreConfig).poolSize == 4`, pinning the
+   `B1ms` defaults supplied by the `Default` instances.
+2. **Override respected** — the same spec asserts
+   `(def { poolSize = 10 }).poolSize == 10`, confirming the field is
+   genuinely configurable.
+3. **Budget arithmetic** — a pure unit test asserts
    `eventStorePoolSize + queryObjectStorePoolSize + fileUploadPoolSize
-   + 3 (listener pair + init-listen) ≤ 35 − adminHeadroom`, encoding
-   the `B1ms` budget so a future size bump that breaks it fails the
-   suite rather than production.
-3. **No regression** — existing EventStore / QueryObjectStore /
+   (= 6 + 4 + 6, FileUpload sharing the EventStore size) + 3 (listener
+   pair + init-listen) = 19 ≤ 35 − adminHeadroom`, encoding the `B1ms`
+   budget so a future default bump that breaks it fails the suite rather
+   than production.
+4. **No regression** — existing EventStore / QueryObjectStore /
    FileUpload specs continue to pass (Postgres-gated specs self-skip
    when `POSTGRES_AVAILABLE` is unset).
 
 ## Public API
 
-**No public API change.** The three sizes are internal constants; the
-config records (`PostgresEventStore`,
-`PostgresQueryObjectStoreConfig`, the FileUpload config) are unchanged.
-Jess's `Application.withEventStore postgresConfig` call is byte-for-byte
-the same. The only externally observable effect is that a deployed app
-opens a known, bounded number of Postgres connections.
+**Additive, defaulted field.** `PostgresEventStore` and
+`PostgresQueryObjectStoreConfig` each gain a `poolSize :: Int` field,
+defaulted (6 and 4 respectively) via a `Default` instance. FileUpload's
+config is `PostgresEventStore`, so it shares that pool size — no new
+FileUpload field. Because the field is defaulted, idiomatic construction
+via `def { ... }` is unchanged for callers who do not care about it, and
+Jess's `Application.withEventStore postgresConfig` call works exactly as
+before. The only new surface is the optional `poolSize` field for
+operators who want to raise the budget per deployment.
 
 ```haskell
--- Unchanged — no new fields, no new builder, no new knob.
+-- Default budget (B1ms-safe) — poolSize omitted, uses the Default instance.
+postgresEventStoreConfig :: PostgresEventStore
+postgresEventStoreConfig =
+  def { host = "...", databaseName = "...", user = "...", password = "..." }
+
+-- Tier upgrade — raise the budget for a larger Postgres tier.
+biggerConfig :: PostgresEventStore
+biggerConfig = postgresEventStoreConfig { poolSize = 12 }
+
 app :: Application
 app =
   Application.new
@@ -320,34 +357,38 @@ app =
 ### Positive
 
 1. **The connection budget is explicit and reviewable.** A deploy
-   reviewer reads three named constants, not `hasql-pool` source.
+   reviewer reads the defaulted `poolSize` fields and the `Default`
+   instances, not `hasql-pool` source.
 2. **The budget is stable across dependency bumps.** The `< 1.4` pin
    freezes the default-size behaviour and the `Config` API nhcore uses.
-3. **`B1ms` fits with margin.** Worst-case steady-state is `15 + N`
-   connections; with the documented `N` cap the app stays well under
-   the 35-usable ceiling, leaving room for `psql` and maintenance.
-4. **Tier upgrades are a one-line-per-pool edit.** Moving to General
-   Purpose is changing three constants, with the budget math in this
-   ADR as the guide.
-5. **Jess sees nothing new.** No config field, no autocomplete entry,
-   no behaviour change for local/dev or the in-memory default path.
-6. **Sets up WI-2 cleanly.** The explicit `size` is expressed so the
-   shared builder (#681) lifts it without re-deciding the numbers.
+3. **`B1ms` fits with margin.** Worst-case steady-state is `19 + N`
+   connections; with the documented `N` cap the app stays under the
+   35-usable ceiling, leaving room for `psql` and maintenance.
+4. **Tier upgrades need no rebuild.** Moving to General Purpose is
+   setting `poolSize` on the config (e.g. from an env var, as the
+   testbed shows), with the budget math in this ADR as the guide.
+5. **Jess sees a defaulted field, not a required one.** The field is
+   optional at the call site (`def { ... }` omits it), so hello-world
+   and the in-memory default path are unaffected.
+6. **Sets up WI-2 cleanly.** The `poolSize` field is expressed so the
+   shared builder (#681) can lift it without re-deciding the numbers,
+   and can later split FileUpload onto its own size.
 
 ### Negative
 
-1. **The numbers are a judgement call, not measured.** `6 / 4 / 2` is
-   reasoned from each pool's role, not from production load data. They
-   are deliberately conservative for `B1ms`; a real deployment may show
-   the EventStore pool wants more and FileUpload wants none. The budget
-   math, not the exact split, is the contract.
-2. **Three constants in three files.** Until WI-2 unifies the builders,
-   the sizes live in three places. The boy-scout obligation is *not*
-   to merge them here (that is WI-2's scope) — only to add the `size`
-   call cleanly at each site.
-3. **A tier upgrade still requires a rebuild.** Constants, not env
-   config, means changing the budget is a code change. Accepted as the
-   right default; Option 4 / WI-2 is the escape hatch if this bites.
+1. **The numbers are a judgement call, not measured.** `6 / 4` plus a
+   FileUpload pool that shares the EventStore `6` is reasoned from each
+   pool's role, not from production load data. They are deliberately
+   conservative for `B1ms`; a real deployment may show the EventStore
+   pool wants more and FileUpload wants none. The budget math, not the
+   exact split, is the contract.
+2. **FileUpload shares the EventStore size.** Until WI-2, FileUpload has
+   no independent knob — raising the EventStore size raises FileUpload's
+   too. This is accepted because FileUpload is often unused and the
+   shared default keeps the budget coherent; WI-2 (#681) can split it.
+3. **Two new public config fields.** `poolSize` on two records is new
+   surface area Jess could in principle misconfigure. Mitigated by the
+   safe default — an omitted field is always correct for `B1ms`.
 
 ### Risks
 
@@ -355,7 +396,7 @@ app =
 |------|------------|
 | Sizes too small → pool starvation under real load (acquisition timeouts). | `acquisitionTimeout` surfaces this as a clean retryable error, not a hang; sizes are documented as a starting point and the budget math shows headroom to raise EventStore first. |
 | Sizes too large → `B1ms` connection exhaustion under stream-subscription churn. | Per-stream connections are the unbounded term; WI-4 (#683) releases them on unsubscribe and documents the concurrency cap. The budget test fails the build if the fixed terms alone exceed the ceiling. |
-| WI-2 builder merge silently drops a `size` entry. | The pool-config assertion test (Testing §1) fails if `size` is missing from any constructed config. |
+| WI-2 builder merge silently drops a `size` entry or default. | The `PoolBudgetSpec` default assertions (Testing §1–2) fail if either `Default` instance stops yielding the documented size, and the budget arithmetic test (Testing §3) fails if the defaults stop fitting under the ceiling. |
 | `hasql-pool` minor bump changes the `Config` API behind the `< 1.4` bound. | Pinned to `< 1.4`; a bump is a reviewed, deliberate widening, at which point the `size` API is re-verified. |
 
 ### Mitigations
@@ -373,7 +414,7 @@ app =
 
 - [#680: WI-1 — Pin `hasql-pool` + explicit pool sizes](https://github.com/neohaskell/NeoHaskell/issues/680)
 - [#679: Epic — Deploy-readiness on Azure Flexible Server](https://github.com/neohaskell/NeoHaskell/issues/679)
-- [#681: WI-2 — Unify connection-settings builders](https://github.com/neohaskell/NeoHaskell/issues/681) — natural home for a future shared `poolSize`.
+- [#681: WI-2 — Unify connection-settings builders + sslmode](https://github.com/neohaskell/NeoHaskell/issues/681) — now scoped to the shared builder and `sslmode`; the `poolSize` field landed here. WI-2 could later give FileUpload an independent size.
 - [#683: WI-4 — Release per-stream connections on unsubscribe](https://github.com/neohaskell/NeoHaskell/issues/683) — bounds the per-stream `N` term.
 - [#685: WI-6 — Deployment documentation](https://github.com/neohaskell/NeoHaskell/issues/685) — mirrors this budget into the deploy guide.
 - [ADR-0027: PostgreSQL Connection Pool Health for Serverless Databases](0027-postgres-pool-health.md) — `agingTimeout` / `idlenessTimeout` / `observationHandler`; this ADR adds `size` alongside them.
