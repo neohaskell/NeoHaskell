@@ -143,6 +143,25 @@ selectEventByGlobalPositionSession globalPos = do
   Session.statement globalPos statement
 
 
+-- | Read every event with @GlobalPosition > cursor@, ascending. Used by the
+-- LISTEN/NOTIFY reconnect catch-up (ADR-0061) to replay the gap. The cursor is
+-- parameterised (@$1@), never interpolated, mirroring
+-- 'selectEventByGlobalPositionSession'. The @>@ (strict) makes the read
+-- exclusive of the cursor, so the already-dispatched cursor event is not
+-- re-read.
+selectEventsForwardFromGlobalPositionSession ::
+  Int64 ->
+  Session.Session (Array PostgresEventRecord)
+selectEventsForwardFromGlobalPositionSession cursor = do
+  let query :: Text = "SELECT EventId, GlobalPosition, LocalPosition, InlinedStreamId, Entity, EventData, Metadata FROM Events WHERE GlobalPosition > $1 ORDER BY GlobalPosition ASC"
+  let encoder = Encoders.param (Encoders.nonNullable Encoders.int8)
+  let decoder = Decoders.rowVector PostgresEventRecord.rowDecoder
+  let statement :: Statement Int64 (Array PostgresEventRecord) =
+        Statement (query |> Text.toBytes |> Bytes.unwrap) encoder decoder True
+          |> Mappable.map Array.fromLegacy
+  Session.statement cursor statement
+
+
 createEventsTableSession :: Session.Session Unit
 createEventsTableSession =
   Session.sql
