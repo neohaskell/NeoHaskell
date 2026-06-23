@@ -7,6 +7,7 @@ module Service.EventStore.Postgres.Internal (
   SubscriptionStore.SubscriptionStore (..),
   withConnection,
   toConnectionSettings,
+  eventStorePoolSize,
 ) where
 
 import Array (Array)
@@ -76,9 +77,17 @@ instance EventStoreConfig PostgresEventStore where
   createEventStore = new defaultOps
 
 
+-- | Connection-pool size for the EventStore pool.
+-- Sized for Azure Flexible Server B1ms (~35 usable connections);
+-- see ADR-0060 for the aggregate budget. Raise per deployment tier.
+eventStorePoolSize :: Int
+eventStorePoolSize = 6
+
+
 toConnectionPoolSettings :: LinkedList Hasql.Setting -> HasqlPoolConfig.Config
 toConnectionPoolSettings settings =
   [ HasqlPoolConfig.staticConnectionSettings settings
+  , HasqlPoolConfig.size eventStorePoolSize
   , HasqlPoolConfig.agingTimeout 300
   , HasqlPoolConfig.idlenessTimeout 60
   , HasqlPoolConfig.observationHandler logPoolObservation

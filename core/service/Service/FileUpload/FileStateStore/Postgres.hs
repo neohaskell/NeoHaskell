@@ -46,6 +46,9 @@ module Service.FileUpload.FileStateStore.Postgres (
   -- Do NOT create pools per-call - that causes connection leaks.
   findExpiredPendingFiles,
   deleteFileState,
+
+  -- * Pool configuration
+  fileUploadPoolSize,
 ) where
 
 import Basics
@@ -159,6 +162,11 @@ newWithCleanup config = do
   Task.yield (store, pool)
 
 
+-- | Connection-pool size for the FileUpload pool. See ADR-0060.
+fileUploadPoolSize :: Int
+fileUploadPoolSize = 2
+
+
 -- | Create a connection pool from PostgresEventStore config
 createPool :: PostgresEventStore -> Task PostgresFileStoreError HasqlPool.Pool
 createPool cfg = do
@@ -173,6 +181,7 @@ createPool cfg = do
   let settings = [params |> ConnectionSetting.connection]
   let poolConfig =
         [ HasqlPoolConfig.staticConnectionSettings settings
+        , HasqlPoolConfig.size fileUploadPoolSize
         , HasqlPoolConfig.agingTimeout 300
         , HasqlPoolConfig.idlenessTimeout 60
         , HasqlPoolConfig.observationHandler logPoolObservation
