@@ -62,7 +62,7 @@
   "devDependencies": {
     "@types/node": "^20.17.24",
     "@types/vscode": "^1.75.0",
-    "@vscode/vsce": "^3.6.0",
+    "@vscode/vsce": "^3.9.2",
     "ts-loader": "^9.5.2",
     "typescript": "^5.8.2",
     "webpack": "^5.98.0",
