@@ -10,7 +10,7 @@ The orchestrator's check is best-effort and based on globs. If a diff path is am
 |-------|--------------------|-------|
 | 1 Init | `.pipeline/` only | Pure state-machine init. |
 | 2 Classify | `.pipeline/classification.json` only | |
-| 3 ADR draft | `docs/decisions/NNNN-slug.md`, `.pipeline/` | |
+| 3 ADR draft | `docs/decisions/NNNN-slug.md`, `.pipeline/` | Commits the ADR and opens a draft PR via `gh`; no source changes. |
 | 4 Security review (ADR) | `.pipeline/findings-04.json` only | |
 | 5 Performance review (ADR) | `.pipeline/findings-05.json` only | |
 | 6 DevEx review | `.pipeline/devex-review-rubric.json`, `.pipeline/devex-review.md` | |
@@ -23,7 +23,7 @@ The orchestrator's check is best-effort and based on globs. If a diff path is am
 | 13 Performance review (impl) | `.pipeline/findings-13.json` only | |
 | 14 Fix findings | Source modules under `core/service/`, `integrations/`, `core/nhcore.cabal`. Test files only on explicit maintainer authorization — default is forbidden. | The orchestrator checks for an authorization marker in the phase-14 agent prompt before allowing test-file changes. |
 | 15 Final verify | `.pipeline/` only | |
-| 16 Create PR | `.pipeline/pr-body.md`, `.pipeline/pr-title.txt`. Also commits the existing tree without modifying source. | The submit step's `git commit` includes whatever the tree contains; it does not write source. |
+| 16 Finalize PR | `.pipeline/pr-body.md`, `.pipeline/pr-title.txt`. Also commits the existing tree without modifying source, then marks the phase-3 draft PR ready. | The submit step's `git commit` includes whatever the tree contains; it does not write source. |
 | 17 Opus PR review | Step 1: `.pipeline/findings-17.json` only. Step 2 (after approve): whatever paths the accepted findings name. | Per-finding fix scope is enforced by the `proposed_fix.file` field. |
 | 18 CI cycle | Whatever fixes the CI/bot loop produces (typically small targeted edits to `core/service/` or `core/test*/`). | |
 
