@@ -15,9 +15,15 @@ import LinkedList qualified
 import Array qualified
 import ConcurrentVar qualified
 import Hasql.Connection qualified as Hasql
+import Hasql.Session qualified as Session
+import Hasql.Decoders qualified as Decoders
+import Hasql.Encoders qualified as Encoders
+import Hasql.Statement (Statement (..))
+import Bytes qualified
+import AsyncTask qualified
 import Var qualified
 import Service.EventStore.Postgres.Internal (PostgresEventStore (..), toConnectionSettings)
-import Service.EventStore.Postgres.Notifications (nextBackoff, catchUpFromCursor)
+import Service.EventStore.Postgres.Notifications (nextBackoff, catchUpFromCursor, connectTo)
 import Service.EventStore.Postgres.SubscriptionStore (SubscriptionStore)
 import Service.EventStore.Postgres.SubscriptionStore qualified as SubscriptionStore
 import Service.EventStore (EventStore (..))
@@ -301,7 +307,7 @@ spec = do
           maxBefore <- currentMaxPosition conn
           insertN conn entityName 3
           records <-
-            Sessions.selectEventsForwardFromGlobalPositionSession maxBefore
+            Sessions.selectEventsForwardFromGlobalPositionSession maxBefore 1000
               |> Sessions.runConnection conn
               |> Task.mapError toText
           let positions = records |> Array.map (\r -> r.globalPosition)
@@ -314,7 +320,7 @@ spec = do
           insertN conn entityName 2
           maxNow <- currentMaxPosition conn
           records <-
-            Sessions.selectEventsForwardFromGlobalPositionSession maxNow
+            Sessions.selectEventsForwardFromGlobalPositionSession maxNow 1000
               |> Sessions.runConnection conn
               |> Task.mapError toText
           (records |> Array.length) |> shouldBe 0
@@ -324,7 +330,7 @@ spec = do
           insertN conn entityName 1
           maxNow <- currentMaxPosition conn
           records <-
-            Sessions.selectEventsForwardFromGlobalPositionSession (maxNow + 1000)
+            Sessions.selectEventsForwardFromGlobalPositionSession (maxNow + 1000) 1000
               |> Sessions.runConnection conn
               |> Task.mapError toText
           (records |> Array.length) |> shouldBe 0
@@ -335,7 +341,7 @@ spec = do
           insertN conn entityName 2
           -- Read from the position of the FIRST new event: it must be excluded.
           records <-
-            Sessions.selectEventsForwardFromGlobalPositionSession (maxBefore + 1)
+            Sessions.selectEventsForwardFromGlobalPositionSession (maxBefore + 1) 1000
               |> Sessions.runConnection conn
               |> Task.mapError toText
           let positions = records |> Array.map (\r -> r.globalPosition)
@@ -388,6 +394,92 @@ spec = do
           result <- catchUpFromCursor conn store cursor |> Task.asResult
           result |> shouldSatisfy resultIsErr
 
+  -- ADR-0061 (issue #682) — TRUE reconnect-path regression. The B1–B4 cases
+  -- above exercise 'catchUpFromCursor' in isolation; they never drive the
+  -- 'connectTo' / 'listenerWithReconnect' wiring, so the load-bearing contract
+  -- (LISTEN re-established by the loop BEFORE catch-up runs, and the shared
+  -- in-memory cursor surviving the reconnect) is untested by them — a wiring
+  -- regression would reintroduce #682 while keeping B1–B4 green.
+  --
+  -- This case drives the ACTUAL path: it starts a listener via 'connectTo' with
+  -- a connection factory under the test's control, forces the live listen
+  -- backend to drop (server-side 'pg_terminate_backend', which wakes
+  -- 'waitForNotifications' immediately — it does not rely on TCP keepalive
+  -- timing), inserts events DURING the outage, and asserts that after the
+  -- supervised loop reconnects, EVERY missed event is dispatched (none skipped)
+  -- and the shared cursor advanced past them across the reconnect.
+  describe "listener reconnect catch-up (connectTo wiring)" do
+    whenEnvVar "POSTGRES_AVAILABLE" do
+      it "re-establishes LISTEN and catches up all events missed during the outage (D1, issue #682)" \_ -> do
+        let cfg =
+              (def :: PostgresEventStore)
+                { host = "localhost",
+                  databaseName = "neohaskell",
+                  user = "neohaskell",
+                  password = "neohaskell",
+                  port = 5432
+                }
+        -- Ensure events table + trigger exist.
+        store0 <- Postgres.new cfg |> Task.mapError toText
+        store0.close
+        subStore <- SubscriptionStore.new |> Task.mapError toText
+        let entityName = EntityName "ReconnectWiringEntity"
+        collector <- ConcurrentVar.containing Array.empty
+        attachCollector subStore collector
+        -- Track factory invocations and the first connect's listen backend PID,
+        -- so the test can terminate exactly that backend to force a reconnect.
+        connectCount <- Var.new (0 :: Int)
+        firstPidRef <- Var.new (Nothing :: Maybe Int64)
+        adminConn <- acquireConn cfg
+        let factory = do
+              listenConn <- acquireConn cfg
+              queryConn <- acquireConn cfg
+              currentCount <- Var.get connectCount
+              Task.when (currentCount == 0) do
+                pid <- backendPid listenConn
+                firstPidRef |> Var.set (Just pid)
+              connectCount |> Var.set (currentCount + 1)
+              Task.yield (listenConn, queryConn)
+        cleanup <- subStore |> connectTo factory
+        let teardown = do
+              cleanup
+              (Hasql.release adminConn |> Task.fromIO) |> Task.asResult |> discard
+        let scenario = do
+              -- Wait for the first connect to establish LISTEN + initialise cursor.
+              waitUntil 50 (do n <- Var.get connectCount; Task.yield (n >= 1))
+              waitUntil 50 do
+                p <- Var.get firstPidRef
+                case p of
+                  Just _ -> Task.yield True
+                  Nothing -> Task.yield False
+              maybePid <- Var.get firstPidRef
+              firstPid <- case maybePid of
+                Just pid -> Task.yield pid
+                Nothing -> Task.throw "first connect never reported a backend PID"
+              -- Force the live listen socket to drop (the outage begins).
+              terminateBackend adminConn firstPid
+              -- Insert events while no LISTEN is active: NOTIFY is lost for these,
+              -- so only the reconnect catch-up can deliver them.
+              insertN adminConn entityName 3
+              -- Wait for the supervised loop to reconnect (factory called again)
+              -- and catch up. Generous bound: first backoff is 1000ms.
+              waitUntil 200 (do n <- Var.get connectCount; Task.yield (n >= 2))
+              waitUntil 200 (do
+                received <- ConcurrentVar.peek collector
+                Task.yield (Array.length received >= 3))
+              received <- ConcurrentVar.peek collector
+              Task.yield received
+        result <- Task.finally teardown scenario |> Task.asResult
+        case result of
+          Err err -> Test.fail [fmt|reconnect wiring test failed: #{err}|]
+          Ok received -> do
+            -- Every event committed during the outage reached live dispatch.
+            (received |> Array.length) |> shouldBe 3
+            -- The reconnect actually happened (loop re-acquired connections).
+            reconnects <- Var.get connectCount
+            reconnects |> shouldSatisfy (\n -> n >= 2)
+
+
 
 -- | A reconnect-catch-up Postgres fixture: acquire a fresh query connection,
 -- build a SubscriptionStore, run the body on a unique entity name, and always
@@ -411,11 +503,16 @@ catchUpFixture body = do
     Hasql.acquire (toConnectionSettings cfg)
       |> Task.fromIOEither
       |> Task.mapError toText
-  subStore <- SubscriptionStore.new |> Task.mapError toText
-  let entityName = EntityName "ReconnectCatchUpEntity"
-  result <- body conn subStore entityName |> Task.asResult
-  -- Best-effort release (B4 may have already released it).
-  (Hasql.release conn |> Task.fromIO) |> Task.asResult |> discard
+  -- Bracket the connection: release it on EVERY path, so an exception in
+  -- SubscriptionStore.new or in the body cannot leak the Hasql connection.
+  -- Release is best-effort because B4 may already have released it.
+  let releaseConn = (Hasql.release conn |> Task.fromIO) |> Task.asResult |> discard
+  result <-
+    Task.finally releaseConn do
+      subStore <- SubscriptionStore.new |> Task.mapError toText
+      let entityName = EntityName "ReconnectCatchUpEntity"
+      body conn subStore entityName
+    |> Task.asResult
   case result of
     Err err -> Test.fail [fmt|catch-up fixture body failed: #{err}|]
     Ok _ -> Task.yield unit
@@ -434,8 +531,11 @@ insertN _conn entityName n = do
             port = 5432
           }
   store <- Postgres.new cfg |> Task.mapError toText
-  Task.forEach (\_ -> insertTestEvent store entityName) (Array.fromLinkedList (rangeList n))
-  store.close
+  -- Bracket the temporary store: close it on EVERY path, so a failure in
+  -- Task.forEach cannot leak the Postgres store/its pool.
+  Task.finally
+    store.close
+    (Task.forEach (\_ -> insertTestEvent store entityName) (Array.fromLinkedList (rangeList n)))
 
 
 -- | The current MAX(globalPosition), or -1 when the table is empty.
@@ -506,3 +606,69 @@ resultIsErr result =
   case result of
     Err _ -> True
     Ok _ -> False
+
+
+-- | Acquire a raw Hasql connection from the test config (used to drive the
+-- reconnect wiring test's connection factory and its admin connection).
+acquireConn :: PostgresEventStore -> Task Text Hasql.Connection
+acquireConn cfg =
+  Hasql.acquire (toConnectionSettings cfg)
+    |> Task.fromIOEither
+    |> Task.mapError toText
+
+
+-- | The PostgreSQL backend process id (@pg_backend_pid()@) of a connection.
+-- Captured for the listener's listen connection so the test can terminate
+-- exactly that backend and force a reconnect.
+backendPid :: Hasql.Connection -> Task Text Int64
+backendPid conn = do
+  let query :: Text = "SELECT pg_backend_pid() :: int8"
+  let decoder = Decoders.singleRow (Decoders.column (Decoders.nonNullable Decoders.int8))
+  let statement :: Statement Unit Int64 =
+        Statement (query |> Text.toBytes |> Bytes.unwrap) Encoders.noParams decoder True
+  runRawSession conn (Session.statement unit statement)
+
+
+-- | Server-side terminate a backend by pid (@pg_terminate_backend@). Unlike a
+-- TCP drop this delivers a FATAL packet to the client immediately, so the
+-- listener's blocked @waitForNotifications@ wakes without waiting on keepalive
+-- timers.
+terminateBackend :: Hasql.Connection -> Int64 -> Task Text Unit
+terminateBackend conn pid = do
+  let query :: Text = "SELECT pg_terminate_backend(($1) :: int4) :: bool"
+  let encoder = Encoders.param (Encoders.nonNullable Encoders.int8)
+  let decoder = Decoders.singleRow (Decoders.column (Decoders.nonNullable Decoders.bool))
+  let statement :: Statement Int64 Bool =
+        Statement (query |> Text.toBytes |> Bytes.unwrap) encoder decoder True
+  runRawSession conn (Session.statement pid statement) |> discard
+
+
+-- | Run a Hasql session on a raw connection, surfacing any error as Text.
+runRawSession :: Hasql.Connection -> Session.Session result -> Task Text result
+runRawSession conn session = do
+  result <- Session.run session conn |> Task.fromIO |> Task.map Result.fromEither
+  case result of
+    Err err -> Task.throw [fmt|raw session failed: #{err}|]
+    Ok res -> Task.yield res
+
+
+-- | Poll @condition@ every @stepMs@ milliseconds, up to ~60 attempts (so the
+-- generous 200ms steps cover the listener's first 1000ms reconnect backoff with
+-- margin). Throws on timeout so a wiring regression fails loudly rather than
+-- hanging. Deterministic on success: returns as soon as the condition holds.
+waitUntil :: Int -> Task Text Bool -> Task Text Unit
+waitUntil stepMs condition =
+  waitUntilLoop stepMs condition 60
+
+
+waitUntilLoop :: Int -> Task Text Bool -> Int -> Task Text Unit
+waitUntilLoop stepMs condition attemptsLeft = do
+  case attemptsLeft <= 0 of
+    True -> Task.throw "waitUntil timed out"
+    False -> do
+      satisfied <- condition
+      case satisfied of
+        True -> Task.yield unit
+        False -> do
+          AsyncTask.sleep stepMs |> Task.mapError (\_ -> "waitUntil sleep failed")
+          waitUntilLoop stepMs condition (attemptsLeft - 1)

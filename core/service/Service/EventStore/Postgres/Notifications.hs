@@ -5,6 +5,7 @@ module Service.EventStore.Postgres.Notifications (
   catchUpFromCursor,
 ) where
 
+import Array qualified
 import AsyncTask qualified
 import Bytes qualified
 import Core hiding (Var)
@@ -14,8 +15,8 @@ import Hasql.Notifications qualified as HasqlNotifications
 import Json qualified
 import Log qualified
 import Maybe (Maybe (..))
-import Service.Event (Event (..), StreamPosition (..))
-import Service.EventStore.Postgres.PostgresEventRecord (PostgresEventRecord (..))
+import Service.Event (Event (..), StreamPosition (StreamPosition))
+import Service.EventStore.Postgres.PostgresEventRecord (PostgresEventRecord (globalPosition))
 import Service.EventStore.Postgres.Sessions qualified as Sessions
 import Service.EventStore.Postgres.SubscriptionStore (SubscriptionStore)
 import Service.EventStore.Postgres.SubscriptionStore qualified as SubscriptionStore
@@ -199,12 +200,28 @@ initialiseOrCatchUp queryConnection store lastProcessedRef initialisedRef = do
       catchUpFromCursor queryConnection store lastProcessedRef
 
 
+-- | Catch-up batch size: events read per forward page during a reconnect
+-- catch-up. Matches the ADR-0059 query-rebuild chunk size (1000) so the two
+-- forward-replay paths page consistently and the catch-up read stays bounded
+-- regardless of how long the listener was offline.
+catchUpBatchSize :: Int64
+catchUpBatchSize = 1000
+
+
 -- | Replay every event committed after the last-processed @globalPosition@
 -- through the shared 'SubscriptionStore', advancing the cursor as it goes.
 -- Invoked on each listener reconnect, AFTER @LISTEN@ is re-established and
 -- BEFORE the live wait, so the gap created while the listen socket was down
 -- reaches live dispatch (ADR-0061). The dispatch sink is identical to the
 -- live handler's, so there is one sink and one read implementation.
+--
+-- The read is BOUNDED: rather than pulling every row after the cursor into one
+-- 'Array' (which a long outage could blow up), it reads in pages of
+-- 'catchUpBatchSize', dispatches each page, advances the cursor to the last
+-- 'globalPosition' in the page (via 'dispatchCaughtUpRecord'), and repeats until
+-- a page returns fewer rows than the limit (the gap is drained). Paging is
+-- monotonic in @globalPosition@, so at-least-once/idempotency are preserved and
+-- ordering is unchanged.
 catchUpFromCursor ::
   Hasql.Connection ->
   SubscriptionStore ->
@@ -213,10 +230,15 @@ catchUpFromCursor ::
 catchUpFromCursor queryConnection store lastProcessedRef = do
   cursor <- Var.get lastProcessedRef
   records <-
-    Sessions.selectEventsForwardFromGlobalPositionSession cursor
+    Sessions.selectEventsForwardFromGlobalPositionSession cursor catchUpBatchSize
       |> Sessions.runConnection queryConnection
       |> Task.mapError toText
   records |> Task.forEach (dispatchCaughtUpRecord store lastProcessedRef)
+  -- A full page means there may be more rows after it: 'dispatchCaughtUpRecord'
+  -- has already advanced the cursor past this page, so loop to drain the rest.
+  -- A short page means the gap is exhausted and catch-up is done.
+  Task.when (Array.length records == fromIntegral catchUpBatchSize) do
+    catchUpFromCursor queryConnection store lastProcessedRef
 
 
 -- | Decode a caught-up record, dispatch it through the same sink the live

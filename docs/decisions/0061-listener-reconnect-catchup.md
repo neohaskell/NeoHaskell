@@ -138,18 +138,25 @@ listener and is discarded only when the listener is cancelled.
 `subscribeToAllEventsFromPositionImpl` feeds catch-up events to a
 **single** callback because it is registering **one** subscription. The
 listener is different: it is the shared delivery channel for **all**
-live subscriptions. So the listener's catch-up reuses the *read* half
-of the existing path — read events forward from a position via the
-EventStore's forward-read — but sinks each event into
+live subscriptions. So the listener's catch-up uses a dedicated
+position-based forward read but sinks each event into
 `SubscriptionStore.dispatch event.streamId event`, the exact sink the
-live `processNotification` already uses (Notifications.hs line 115).
+live `processNotification` already uses (Notifications.hs).
 
-Concretely, the catch-up step calls the existing position-based read
-(`readAllEventsForwardFrom` / `selectMaxGlobalPosition` in
-`Internal.hs`) over the listener's `queryConnection`, iterates the
-returned events in `globalPosition` order, and for each one runs the
-same dispatch the live handler runs. This keeps one dispatch sink and
-one read implementation; the reconnect path adds only the glue.
+Concretely, the catch-up step calls
+`selectEventsForwardFromGlobalPositionSession cursor limit` (added in
+`Service.EventStore.Postgres.Sessions`) over the listener's
+`queryConnection`. That session reads at most `limit` rows with
+`GlobalPosition > $1 ORDER BY GlobalPosition ASC LIMIT $2` — the strict
+`>` boundary makes the read exclusive of the already-dispatched cursor,
+and the `LIMIT` keeps each read bounded. `catchUpFromCursor` loops:
+read a batch (`limit` = the ADR-0059 rebuild chunk size, 1000),
+dispatch each event in `globalPosition` order through the live sink,
+advance the in-memory cursor to the last position in the batch, and
+repeat until a batch returns fewer than `limit` rows (the gap is
+drained). This keeps one dispatch sink and a bounded reconnect read; a
+long outage cannot pull the whole gap into one `Array`. The reconnect
+path adds only the batched read and the loop glue.
 
 ### 4. Idempotency and at-least-once semantics
 
@@ -246,7 +253,9 @@ connectTo ::
 ```
 
 The catch-up is an internal helper invoked inside the reconnect loop,
-reusing the existing forward-read from `Internal.hs`.
+using the batched forward read
+`selectEventsForwardFromGlobalPositionSession` in
+`Service.EventStore.Postgres.Sessions`.
 
 ## Consequences
 
@@ -255,9 +264,11 @@ reusing the existing forward-read from `Internal.hs`.
 - **The silent lost-NOTIFY gap is closed** — events inserted while the
   listener is down reach live projections and integrations after
   reconnect. This is the highest-value correctness item in epic #679.
-- **One read implementation, one dispatch sink** — the reconnect path
-  reuses the tested forward-read and the existing `SubscriptionStore`
-  fan-out; no parallel catch-up logic to keep in sync.
+- **One dispatch sink, one bounded read** — the reconnect path sinks
+  catch-up events through the existing `SubscriptionStore` fan-out (the
+  same sink the live handler uses) and reads the gap with a single
+  batched forward session (`selectEventsForwardFromGlobalPositionSession`);
+  no parallel dispatch logic to keep in sync, and the read is memory-bounded.
 - **No persistence, no migration, no new dependency** — the events
   table is the only durable cursor; the in-memory `Var` is the only new
   state, scoped to the listener's lifetime.
@@ -270,8 +281,12 @@ reusing the existing forward-read from `Internal.hs`.
   dispatched twice. Acceptable because projection apply is idempotent by
   `globalPosition`, but it is a behavioural note worth recording.
 - **Catch-up cost is `O(events-in-the-gap)`** — a very long outage means
-  a larger catch-up read on reconnect. Bounded by the actual gap, not by
-  total log size, so it is proportional to downtime and self-limiting.
+  more catch-up rows to replay on reconnect. The work is bounded by the
+  actual gap, not by total log size, so it is proportional to downtime and
+  self-limiting. Memory is additionally bounded per reconnect: the read
+  pages in batches of 1000 (`selectEventsForwardFromGlobalPositionSession`
+  with a `LIMIT`), so even a multi-hour outage never pulls the whole gap
+  into one `Array`.
 
 ### Risks
 
@@ -317,5 +332,6 @@ reusing the existing forward-read from `Internal.hs`.
 - [#661: Scale-to-zero shutdown cluster](https://github.com/neohaskell/NeoHaskell/issues/661)
 - [#662: Scale-to-zero shutdown cluster](https://github.com/neohaskell/NeoHaskell/issues/662)
 - [core/service/Service/EventStore/Postgres/Notifications.hs](../../core/service/Service/EventStore/Postgres/Notifications.hs)
+- [core/service/Service/EventStore/Postgres/Sessions.hs](../../core/service/Service/EventStore/Postgres/Sessions.hs)
 - [core/service/Service/EventStore/Postgres/Internal.hs](../../core/service/Service/EventStore/Postgres/Internal.hs)
 - [core/service/Service/EventStore/Postgres/SubscriptionStore.hs](../../core/service/Service/EventStore/Postgres/SubscriptionStore.hs)
