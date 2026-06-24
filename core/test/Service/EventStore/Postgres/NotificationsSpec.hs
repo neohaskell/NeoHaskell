@@ -4,7 +4,8 @@ import Core
 import Result qualified
 import Text qualified
 import Json qualified
-import Service.Event (EntityName (..), Event (..), StreamId (..), StreamPosition (..))
+import Service.Event (EntityName (..), Event (..), Insertion (..), InsertionPayload (..), StreamId (..), StreamPosition (..))
+import Service.Event.StreamId qualified as StreamId
 import Service.Event.EventMetadata (EventMetadata (..))
 import Service.Event.EventMetadata qualified as EventMetadata
 import Service.EventStore.Postgres.PostgresEventRecord (PostgresEventRecord (..))
@@ -12,11 +13,26 @@ import Service.EventStore.Postgres.Sessions (EventNotificationPayload (..))
 import Service.EventStore.Postgres.Sessions qualified as Sessions
 
 import LinkedList qualified
+import Array qualified
+import ConcurrentVar qualified
+import Uuid qualified
+import Hasql.Connection qualified as Hasql
+import Hasql.Session (Session)
+import Hasql.Session qualified as Session
+import Hasql.Decoders qualified as Decoders
+import Hasql.Encoders qualified as Encoders
+import Hasql.Statement (Statement)
+import Hasql.Statement qualified as HasqlStatement
+import Bytes qualified
+import AsyncTask qualified
+import Var qualified
 import Service.EventStore.Postgres.Internal (PostgresEventStore (..), toConnectionSettings)
-import Service.EventStore.Postgres.Notifications (nextBackoff)
+import Service.EventStore.Postgres.Notifications (nextBackoff, catchUpFromCursor, connectTo)
+import Service.EventStore.Postgres.SubscriptionStore (SubscriptionStore)
+import Service.EventStore.Postgres.SubscriptionStore qualified as SubscriptionStore
+import Service.EventStore (EventStore (..))
 import Service.EventStore.Postgres qualified as Postgres
 import Task qualified
-import Service.EventStore.Core qualified as EventStore
 import Test
 
 
@@ -270,3 +286,493 @@ spec = do
           Ok store2 -> do
             let closeOp2 = store2.close :: Task Text Unit
             closeOp2
+
+  -- ADR-0061: reconnect catch-up — the cursor never moves backwards (monotonic
+  -- max), so an out-of-order or duplicate boundary event during catch-up keeps
+  -- at-least-once safety without skipping or regressing the cursor. These are
+  -- pure and need no Postgres.
+  describe "cursor advance (monotonic max)" do
+    it "keeps the higher position when an earlier one arrives (C1)" \_ -> do
+      max (5 :: Int64) 3 |> shouldBe 5
+      max (5 :: Int64) 9 |> shouldBe 9
+
+    it "stays put for an equal position — idempotent re-delivery (C2)" \_ -> do
+      max (7 :: Int64) 7 |> shouldBe 7
+
+    it "advances correctly at the zero boundary (C3)" \_ -> do
+      max (0 :: Int64) 0 |> shouldBe 0
+      max (0 :: Int64) 1 |> shouldBe 1
+
+  describe "selectEventsForwardFromGlobalPositionSession" do
+    whenEnvVar "POSTGRES_AVAILABLE" do
+      it "returns only events strictly after the cursor, ascending (A1)" \_ -> do
+        catchUpFixture \conn _store entityName -> do
+          maxBefore <- currentMaxPosition conn
+          insertN conn entityName 3
+          records <-
+            Sessions.selectEventsForwardFromGlobalPositionSession maxBefore 1000
+              |> Sessions.runConnection conn
+              |> Task.mapError toText
+          let positions = records |> Array.map (\r -> r.globalPosition)
+          (records |> Array.length) |> shouldBe 3
+          (positions |> isAscending) |> shouldBe True
+          (positions |> allInArray (\p -> p > maxBefore)) |> shouldBe True
+
+      it "returns empty when the cursor equals the current max (A2)" \_ -> do
+        catchUpFixture \conn _store entityName -> do
+          insertN conn entityName 2
+          maxNow <- currentMaxPosition conn
+          records <-
+            Sessions.selectEventsForwardFromGlobalPositionSession maxNow 1000
+              |> Sessions.runConnection conn
+              |> Task.mapError toText
+          (records |> Array.length) |> shouldBe 0
+
+      it "returns empty when the cursor is above the current max (A3)" \_ -> do
+        catchUpFixture \conn _store entityName -> do
+          insertN conn entityName 1
+          maxNow <- currentMaxPosition conn
+          records <-
+            Sessions.selectEventsForwardFromGlobalPositionSession (maxNow + 1000) 1000
+              |> Sessions.runConnection conn
+              |> Task.mapError toText
+          (records |> Array.length) |> shouldBe 0
+
+      it "is exclusive of the cursor position (A4)" \_ -> do
+        catchUpFixture \conn _store entityName -> do
+          maxBefore <- currentMaxPosition conn
+          insertN conn entityName 2
+          -- Read from the position of the FIRST new event: it must be excluded.
+          records <-
+            Sessions.selectEventsForwardFromGlobalPositionSession (maxBefore + 1) 1000
+              |> Sessions.runConnection conn
+              |> Task.mapError toText
+          let positions = records |> Array.map (\r -> r.globalPosition)
+          (positions |> allInArray (\p -> p > maxBefore + 1)) |> shouldBe True
+
+  describe "catchUpFromCursor (reconnect catch-up)" do
+    whenEnvVar "POSTGRES_AVAILABLE" do
+      it "dispatches every event committed during the outage — no events skipped (B1, issue #682)" \_ -> do
+        catchUpFixture \conn store entityName -> do
+          collector <- ConcurrentVar.containing Array.empty
+          attachCollector store collector
+          maxBefore <- currentMaxPosition conn
+          cursor <- Var.new maxBefore
+          -- Simulate the outage: events commit while no LISTEN is active.
+          insertN conn entityName 3
+          -- Reconnect catch-up replays the gap.
+          catchUpFromCursor conn store cursor
+          received <- ConcurrentVar.peek collector
+          (received |> Array.length) |> shouldBe 3
+
+      it "dispatches nothing when there is no gap (B2)" \_ -> do
+        catchUpFixture \conn store entityName -> do
+          insertN conn entityName 2
+          collector <- ConcurrentVar.containing Array.empty
+          attachCollector store collector
+          maxNow <- currentMaxPosition conn
+          cursor <- Var.new maxNow
+          catchUpFromCursor conn store cursor
+          received <- ConcurrentVar.peek collector
+          (received |> Array.length) |> shouldBe 0
+
+      it "advances the cursor to the last caught-up position (B3)" \_ -> do
+        catchUpFixture \conn store entityName -> do
+          collector <- ConcurrentVar.containing Array.empty
+          attachCollector store collector
+          maxBefore <- currentMaxPosition conn
+          cursor <- Var.new maxBefore
+          insertN conn entityName 3
+          maxAfter <- currentMaxPosition conn
+          catchUpFromCursor conn store cursor
+          finalCursor <- Var.get cursor
+          finalCursor |> shouldBe maxAfter
+
+      it "propagates a read failure rather than silently skipping the gap (B4)" \_ -> do
+        catchUpFixture \conn store entityName -> do
+          let _ = entityName
+          -- Close the connection, then attempt catch-up: the read must error.
+          Hasql.release conn |> Task.fromIO
+          cursor <- Var.new (0 :: Int64)
+          result <- catchUpFromCursor conn store cursor |> Task.asResult
+          result |> shouldSatisfy resultIsErr
+
+  -- ADR-0061 (issue #682) — TRUE reconnect-path regression. The B1–B4 cases
+  -- above exercise 'catchUpFromCursor' in isolation; they never drive the
+  -- 'connectTo' / 'listenerWithReconnect' wiring, so the load-bearing contract
+  -- (LISTEN re-established by the loop BEFORE catch-up runs, and the shared
+  -- in-memory cursor surviving the reconnect) is untested by them — a wiring
+  -- regression would reintroduce #682 while keeping B1–B4 green.
+  --
+  -- This case drives the ACTUAL path and is engineered so that the outage events
+  -- can ONLY arrive via catch-up, never live:
+  --
+  --   1. Start a listener via 'connectTo' with a connection factory under the
+  --      test's control.
+  --   2. Prove the FIRST listener is fully live by inserting a SENTINEL event and
+  --      waiting until it is dispatched. A delivered sentinel proves LISTEN is
+  --      established and the in-memory cursor has advanced to the sentinel — so
+  --      anything inserted afterwards starts strictly past the cursor.
+  --   3. Terminate exactly the first listen backend (server-side
+  --      'pg_terminate_backend', which wakes 'waitForNotifications' immediately —
+  --      no reliance on TCP keepalive timing).
+  --   4. GATE the factory's SECOND invocation on a ConcurrentVar the test has not
+  --      released yet, then insert the outage events. Because the reconnect
+  --      cannot re-acquire a connection (and therefore cannot re-LISTEN) until
+  --      the gate opens, every outage NOTIFY is lost — leaving catch-up as the
+  --      ONLY possible delivery path. Without this gate the reconnect loop could
+  --      race ahead and re-LISTEN before the outage inserts, delivering them live
+  --      and passing the test without exercising catch-up at all.
+  --   5. Open the gate, let the loop reconnect, and assert that the dispatched
+  --      set contains the EXACT outage event ids (none skipped) — proving the
+  --      shared cursor survived the reconnect and catch-up replayed the gap.
+  describe "listener reconnect catch-up (connectTo wiring)" do
+    whenEnvVar "POSTGRES_AVAILABLE" do
+      it "re-establishes LISTEN and catches up all events missed during the outage (D1, issue #682)" \_ -> do
+        let cfg =
+              (def :: PostgresEventStore)
+                { host = "localhost",
+                  databaseName = "neohaskell",
+                  user = "neohaskell",
+                  password = "neohaskell",
+                  port = 5432
+                }
+        -- Ensure events table + trigger exist.
+        store0 <- Postgres.new cfg |> Task.mapError toText
+        store0.close
+        subStore <- SubscriptionStore.new |> Task.mapError toText
+        let entityName = EntityName "ReconnectWiringEntity"
+        collector <- ConcurrentVar.containing Array.empty
+        attachCollector subStore collector
+        -- Track factory invocations and the first connect's listen backend PID,
+        -- so the test can terminate exactly that backend to force a reconnect.
+        connectCount <- Var.new (0 :: Int)
+        firstPidRef <- Var.new (Nothing :: Maybe Int64)
+        -- Reconnect gate: an empty ConcurrentVar that blocks the factory's SECOND
+        -- (reconnect) invocation until the test fills it. 'peek' (readMVar) is
+        -- used so the gate stays open for any further reconnect attempts rather
+        -- than emptying after one release.
+        reconnectGate <- (ConcurrentVar.new :: Task Text (ConcurrentVar Unit))
+        adminConn <- acquireConn cfg
+        let factory = do
+              currentCount <- Var.get connectCount
+              -- Hold every reconnect (count >= 1) at the gate until the test has
+              -- finished the outage inserts, guaranteeing they cannot be picked
+              -- up by a freshly re-established LISTEN.
+              Task.when (currentCount >= 1) do
+                ConcurrentVar.peek reconnectGate
+              listenConn <- acquireConn cfg
+              queryConn <- acquireConn cfg
+              Task.when (currentCount == 0) do
+                pid <- backendPid listenConn
+                firstPidRef |> Var.set (Just pid)
+              connectCount |> Var.set (currentCount + 1)
+              Task.yield (listenConn, queryConn)
+        cleanup <- subStore |> connectTo factory
+        let teardown = do
+              cleanup
+              (Hasql.release adminConn |> Task.fromIO) |> Task.asResult |> discard
+        let scenario = do
+              -- Wait for the first connect to establish LISTEN + initialise cursor.
+              waitUntil 50 (do n <- Var.get connectCount; Task.yield (n >= 1))
+              waitUntil 50 do
+                p <- Var.get firstPidRef
+                case p of
+                  Just _ -> Task.yield True
+                  Nothing -> Task.yield False
+              maybePid <- Var.get firstPidRef
+              firstPid <- case maybePid of
+                Just pid -> Task.yield pid
+                Nothing -> Task.throw "first connect never reported a backend PID"
+              -- Prove the first listener is LIVE: insert a sentinel and wait for
+              -- it to be dispatched. Delivery proves LISTEN is up and the cursor
+              -- has advanced to the sentinel, so the later outage inserts begin
+              -- strictly past the cursor.
+              sentinelIds <- insertN adminConn entityName 1
+              sentinelId <- case Array.get 0 sentinelIds of
+                Just sid -> Task.yield sid
+                Nothing -> Task.throw "sentinel insert returned no id"
+              waitUntil 100 do
+                received <- ConcurrentVar.peek collector
+                Task.yield (dispatchedIds received |> Array.contains sentinelId)
+              -- Force the live listen socket to drop (the outage begins). The
+              -- reconnect loop will now wake and call the factory again, where it
+              -- blocks on the still-closed gate.
+              terminateBackend adminConn firstPid
+              -- Insert events while no LISTEN is active: NOTIFY is lost for these,
+              -- so only the reconnect catch-up can deliver them. Capture their
+              -- exact ids so we can assert the specific events were dispatched.
+              outageIds <- insertN adminConn entityName 3
+              -- Open the gate: the reconnect may now acquire connections and
+              -- re-LISTEN. By construction every outage NOTIFY is already gone, so
+              -- the only way these ids can appear is via catch-up.
+              reconnectGate |> ConcurrentVar.set unit
+              -- Wait for the supervised loop to reconnect (factory called again)
+              -- and catch up. Generous bound: first backoff is 1000ms.
+              waitUntil 200 (do n <- Var.get connectCount; Task.yield (n >= 2))
+              waitUntil 200 do
+                received <- ConcurrentVar.peek collector
+                let dispatched = dispatchedIds received
+                Task.yield (outageIds |> allInArray (\oid -> dispatched |> Array.contains oid))
+              received <- ConcurrentVar.peek collector
+              Task.yield (received, outageIds)
+        result <- Task.finally teardown scenario |> Task.asResult
+        case result of
+          Err err -> Test.fail [fmt|reconnect wiring test failed: #{err}|]
+          Ok (received, outageIds) -> do
+            -- Every SPECIFIC event committed during the outage reached dispatch
+            -- via catch-up: the dispatched id set must be a superset of the
+            -- outage ids (a bare length check could be satisfied by any events).
+            let dispatched = dispatchedIds received
+            outageIds
+              |> allInArray (\oid -> dispatched |> Array.contains oid)
+              |> shouldBe True
+            -- The reconnect actually happened (loop re-acquired connections).
+            reconnects <- Var.get connectCount
+            reconnects |> shouldSatisfy (\n -> n >= 2)
+
+
+
+-- | A reconnect-catch-up Postgres fixture: acquire a fresh query connection,
+-- build a SubscriptionStore, run the body on a unique entity name, and always
+-- release the connection afterwards.
+catchUpFixture ::
+  (Hasql.Connection -> SubscriptionStore -> EntityName -> Task Text Unit) ->
+  Task Text Unit
+catchUpFixture body = do
+  let cfg =
+        (def :: PostgresEventStore)
+          { host = "localhost",
+            databaseName = "neohaskell",
+            user = "neohaskell",
+            password = "neohaskell",
+            port = 5432
+          }
+  -- Ensure the events table + trigger exist by creating a store once.
+  store0 <- Postgres.new cfg |> Task.mapError toText
+  store0.close
+  conn <-
+    Hasql.acquire (toConnectionSettings cfg)
+      |> Task.fromIOEither
+      |> Task.mapError toText
+  -- Bracket the connection: release it on EVERY path, so an exception in
+  -- SubscriptionStore.new or in the body cannot leak the Hasql connection.
+  -- Release is best-effort because B4 may already have released it.
+  let releaseConn = (Hasql.release conn |> Task.fromIO) |> Task.asResult |> discard
+  result <-
+    Task.finally releaseConn do
+      subStore <- SubscriptionStore.new |> Task.mapError toText
+      let entityName = EntityName "ReconnectCatchUpEntity"
+      body conn subStore entityName
+    |> Task.asResult
+  case result of
+    Err err -> Test.fail [fmt|catch-up fixture body failed: #{err}|]
+    Ok _ -> Task.yield unit
+
+
+-- | Insert @n@ events into the global stream via a fresh store on the same DB,
+-- exercising the real insert + NOTIFY-trigger path. Returns the event ids of
+-- the inserted events (in insertion order) so callers can assert that those
+-- EXACT events — not merely some count of events — were later dispatched.
+insertN :: Hasql.Connection -> EntityName -> Int -> Task Text (Array Uuid)
+insertN _conn entityName n = do
+  let cfg =
+        (def :: PostgresEventStore)
+          { host = "localhost",
+            databaseName = "neohaskell",
+            user = "neohaskell",
+            password = "neohaskell",
+            port = 5432
+          }
+  store <- Postgres.new cfg |> Task.mapError toText
+  -- Bracket the temporary store: close it on EVERY path, so a failure in
+  -- Task.mapArray cannot leak the Postgres store/its pool.
+  Task.finally
+    store.close
+    (Task.mapArray (\_ -> insertReturningId store entityName) (Array.fromLinkedList (rangeList n)))
+
+
+-- | Insert a single event with a freshly-generated id and RETURN that id.
+-- Unlike 'insertTestEvent' (which discards the id), this lets the reconnect
+-- regression assert that the specific outage writes were dispatched.
+--
+-- IMPORTANT: the dispatched 'Event' reconstructs 'metadata' from the stored
+-- metadata JSON column (see 'postgresRecordToEvent'), so its 'eventId' is the
+-- one carried by 'EventMetadata', NOT the 'Insertion' id. We therefore pin BOTH
+-- the insertion id and the metadata 'eventId' to the same generated value and
+-- return that, so the id we assert on is exactly the id later dispatched.
+insertReturningId :: EventStore Json.Value -> EntityName -> Task Text Uuid
+insertReturningId store entityName = do
+  eventId <- Uuid.generate
+  streamId <- StreamId.new
+  baseMetadata <- EventMetadata.new
+  let metadata = baseMetadata {EventMetadata.eventId = eventId}
+  let insertion =
+        Insertion
+          { id = eventId,
+            event = Json.encode (),
+            metadata = metadata
+          }
+  let payload =
+        InsertionPayload
+          { streamId = streamId,
+            entityName = entityName,
+            insertionType = AnyStreamState,
+            insertions = [insertion]
+          }
+  store.insert payload
+    |> Task.mapError toText
+    |> discard
+  Task.yield eventId
+
+
+-- | The current MAX(globalPosition), or -1 when the table is empty.
+currentMaxPosition :: Hasql.Connection -> Task Text Int64
+currentMaxPosition conn = do
+  maybeMax <-
+    Sessions.selectMaxGlobalPosition
+      |> Sessions.runConnection conn
+      |> Task.mapError toText
+  case maybeMax of
+    Nothing -> Task.yield (-1)
+    Just (StreamPosition p) -> Task.yield p
+
+
+-- | Register a global subscription that appends every dispatched event to the
+-- collector.
+attachCollector ::
+  SubscriptionStore ->
+  ConcurrentVar.ConcurrentVar (Array (Event Json.Value)) ->
+  Task Text Unit
+attachCollector store collector = do
+  let callback event = do
+        collector |> ConcurrentVar.modify (\events -> events |> Array.push event)
+        Task.yield unit
+  store
+    |> SubscriptionStore.addGlobalSubscription callback
+    |> Task.mapError toText
+    |> discard
+
+
+-- | True when every element of the array satisfies the predicate.
+allInArray :: (a -> Bool) -> Array a -> Bool
+allInArray predicate arr =
+  (arr |> Array.takeIf predicate |> Array.length) == (arr |> Array.length)
+
+
+-- | The event ids of a set of dispatched events, used to assert that the
+-- SPECIFIC outage events (not merely some count) were delivered.
+dispatchedIds :: Array (Event Json.Value) -> Array Uuid
+dispatchedIds events =
+  events |> Array.map (\event -> event.metadata.eventId)
+
+
+-- | True when the positions are in strictly ascending order.
+isAscending :: Array Int64 -> Bool
+isAscending arr =
+  checkAscending (Array.toLinkedList arr)
+
+
+checkAscending :: LinkedList Int64 -> Bool
+checkAscending xs =
+  case xs of
+    [] -> True
+    [_] -> True
+    (a : b : rest) -> a < b && checkAscending (b : rest)
+
+
+-- | A list @[1 .. n]@ used only to drive @n@ inserts.
+rangeList :: Int -> LinkedList Int
+rangeList n =
+  if n <= 0
+    then []
+    else buildRange 1 n
+
+
+buildRange :: Int -> Int -> LinkedList Int
+buildRange lo hi =
+  if lo > hi
+    then []
+    else lo : buildRange (lo + 1) hi
+
+
+resultIsErr :: Result err val -> Bool
+resultIsErr result =
+  case result of
+    Err _ -> True
+    Ok _ -> False
+
+
+-- | Acquire a raw Hasql connection from the test config (used to drive the
+-- reconnect wiring test's connection factory and its admin connection).
+acquireConn :: PostgresEventStore -> Task Text Hasql.Connection
+acquireConn cfg =
+  Hasql.acquire (toConnectionSettings cfg)
+    |> Task.fromIOEither
+    |> Task.mapError toText
+
+
+-- | The PostgreSQL backend process id (@pg_backend_pid()@) of a connection.
+-- Captured for the listener's listen connection so the test can terminate
+-- exactly that backend and force a reconnect.
+backendPid :: Hasql.Connection -> Task Text Int64
+backendPid conn = do
+  let query :: Text = "SELECT pg_backend_pid() :: int8"
+  let decoder = Decoders.singleRow (Decoders.column (Decoders.nonNullable Decoders.int8))
+  let statement :: Statement Unit Int64 =
+        HasqlStatement.Statement (query |> Text.toBytes |> Bytes.unwrap) Encoders.noParams decoder True
+  runRawSession conn (Session.statement unit statement)
+
+
+-- | Server-side terminate a backend by pid (@pg_terminate_backend@). Unlike a
+-- TCP drop this delivers a FATAL packet to the client immediately, so the
+-- listener's blocked @waitForNotifications@ wakes without waiting on keepalive
+-- timers.
+--
+-- 'pg_terminate_backend' returns 'False' when the pid is not a running backend
+-- (already gone, or the caller lacks privilege). We do NOT discard that result:
+-- if termination did not actually happen, the listener's live socket is still
+-- up, so the outage never starts and the reconnect catch-up is never exercised.
+-- Throwing here makes such a no-op fail the regression loudly instead of letting
+-- it pass for the wrong reason.
+terminateBackend :: Hasql.Connection -> Int64 -> Task Text Unit
+terminateBackend conn pid = do
+  let query :: Text = "SELECT pg_terminate_backend(($1) :: int4) :: bool"
+  let encoder = Encoders.param (Encoders.nonNullable Encoders.int8)
+  let decoder = Decoders.singleRow (Decoders.column (Decoders.nonNullable Decoders.bool))
+  let statement :: Statement Int64 Bool =
+        HasqlStatement.Statement (query |> Text.toBytes |> Bytes.unwrap) encoder decoder True
+  terminated <- runRawSession conn (Session.statement pid statement)
+  Task.unless terminated do
+    Task.throw [fmt|pg_terminate_backend(#{pid}) returned False: backend was not terminated|]
+
+
+-- | Run a Hasql session on a raw connection, surfacing any error as Text.
+runRawSession :: Hasql.Connection -> Session result -> Task Text result
+runRawSession conn session = do
+  result <- Session.run session conn |> Task.fromIO |> Task.map Result.fromEither
+  case result of
+    Err err -> Task.throw [fmt|raw session failed: #{err}|]
+    Ok res -> Task.yield res
+
+
+-- | Poll @condition@ every @stepMs@ milliseconds, up to ~60 attempts (so the
+-- generous 200ms steps cover the listener's first 1000ms reconnect backoff with
+-- margin). Throws on timeout so a wiring regression fails loudly rather than
+-- hanging. Deterministic on success: returns as soon as the condition holds.
+waitUntil :: Int -> Task Text Bool -> Task Text Unit
+waitUntil stepMs condition =
+  waitUntilLoop stepMs condition 60
+
+
+waitUntilLoop :: Int -> Task Text Bool -> Int -> Task Text Unit
+waitUntilLoop stepMs condition attemptsLeft = do
+  case attemptsLeft <= 0 of
+    True -> Task.throw "waitUntil timed out"
+    False -> do
+      satisfied <- condition
+      case satisfied of
+        True -> Task.yield unit
+        False -> do
+          AsyncTask.sleep stepMs |> Task.mapError (\_ -> "waitUntil sleep failed")
+          waitUntilLoop stepMs condition (attemptsLeft - 1)

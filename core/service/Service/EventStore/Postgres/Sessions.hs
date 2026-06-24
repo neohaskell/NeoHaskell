@@ -143,6 +143,31 @@ selectEventByGlobalPositionSession globalPos = do
   Session.statement globalPos statement
 
 
+-- | Read at most @limit@ events with @GlobalPosition > cursor@, ascending. Used
+-- by the LISTEN/NOTIFY reconnect catch-up (ADR-0061) to replay the gap in
+-- bounded batches, so a long listener outage cannot pull an unbounded result
+-- set into one 'Array' (the caller, 'catchUpFromCursor', loops over batches and
+-- advances the cursor between them). Both the cursor (@$1@) and the batch limit
+-- (@$2@) are parameterised, never interpolated, mirroring
+-- 'selectEventByGlobalPositionSession'. The @>@ (strict) makes the read
+-- exclusive of the cursor, so the already-dispatched cursor event is not
+-- re-read.
+selectEventsForwardFromGlobalPositionSession ::
+  Int64 ->
+  Int64 ->
+  Session.Session (Array PostgresEventRecord)
+selectEventsForwardFromGlobalPositionSession cursor limit = do
+  let query :: Text = "SELECT EventId, GlobalPosition, LocalPosition, InlinedStreamId, Entity, EventData, Metadata FROM Events WHERE GlobalPosition > $1 ORDER BY GlobalPosition ASC LIMIT $2"
+  let encoder =
+        (fst >$< Encoders.param (Encoders.nonNullable Encoders.int8))
+          <> (snd >$< Encoders.param (Encoders.nonNullable Encoders.int8))
+  let decoder = Decoders.rowVector PostgresEventRecord.rowDecoder
+  let statement :: Statement (Int64, Int64) (Array PostgresEventRecord) =
+        Statement (query |> Text.toBytes |> Bytes.unwrap) encoder decoder True
+          |> Mappable.map Array.fromLegacy
+  Session.statement (cursor, limit) statement
+
+
 createEventsTableSession :: Session.Session Unit
 createEventsTableSession =
   Session.sql
