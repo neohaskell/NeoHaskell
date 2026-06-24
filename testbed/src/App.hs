@@ -68,7 +68,8 @@ makePostgresConfig config =
       password = config.dbPassword,
       host = config.dbHost,
       databaseName = config.dbName,
-      port = config.dbPort
+      port = config.dbPort,
+      poolSize = config.dbPoolSize
     }
 
 
