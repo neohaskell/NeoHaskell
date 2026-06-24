@@ -4,7 +4,8 @@ import Core
 import Result qualified
 import Text qualified
 import Json qualified
-import Service.Event (EntityName (..), Event (..), StreamId (..), StreamPosition (..))
+import Service.Event (EntityName (..), Event (..), Insertion (..), InsertionPayload (..), StreamId (..), StreamPosition (..))
+import Service.Event.StreamId qualified as StreamId
 import Service.Event.EventMetadata (EventMetadata (..))
 import Service.Event.EventMetadata qualified as EventMetadata
 import Service.EventStore.Postgres.PostgresEventRecord (PostgresEventRecord (..))
@@ -14,11 +15,14 @@ import Service.EventStore.Postgres.Sessions qualified as Sessions
 import LinkedList qualified
 import Array qualified
 import ConcurrentVar qualified
+import Uuid qualified
 import Hasql.Connection qualified as Hasql
+import Hasql.Session (Session)
 import Hasql.Session qualified as Session
 import Hasql.Decoders qualified as Decoders
 import Hasql.Encoders qualified as Encoders
-import Hasql.Statement (Statement (..))
+import Hasql.Statement (Statement)
+import Hasql.Statement qualified as HasqlStatement
 import Bytes qualified
 import AsyncTask qualified
 import Var qualified
@@ -27,7 +31,6 @@ import Service.EventStore.Postgres.Notifications (nextBackoff, catchUpFromCursor
 import Service.EventStore.Postgres.SubscriptionStore (SubscriptionStore)
 import Service.EventStore.Postgres.SubscriptionStore qualified as SubscriptionStore
 import Service.EventStore (EventStore (..))
-import Service.TestHelpers (insertTestEvent)
 import Service.EventStore.Postgres qualified as Postgres
 import Task qualified
 import Test
@@ -401,13 +404,28 @@ spec = do
   -- in-memory cursor surviving the reconnect) is untested by them — a wiring
   -- regression would reintroduce #682 while keeping B1–B4 green.
   --
-  -- This case drives the ACTUAL path: it starts a listener via 'connectTo' with
-  -- a connection factory under the test's control, forces the live listen
-  -- backend to drop (server-side 'pg_terminate_backend', which wakes
-  -- 'waitForNotifications' immediately — it does not rely on TCP keepalive
-  -- timing), inserts events DURING the outage, and asserts that after the
-  -- supervised loop reconnects, EVERY missed event is dispatched (none skipped)
-  -- and the shared cursor advanced past them across the reconnect.
+  -- This case drives the ACTUAL path and is engineered so that the outage events
+  -- can ONLY arrive via catch-up, never live:
+  --
+  --   1. Start a listener via 'connectTo' with a connection factory under the
+  --      test's control.
+  --   2. Prove the FIRST listener is fully live by inserting a SENTINEL event and
+  --      waiting until it is dispatched. A delivered sentinel proves LISTEN is
+  --      established and the in-memory cursor has advanced to the sentinel — so
+  --      anything inserted afterwards starts strictly past the cursor.
+  --   3. Terminate exactly the first listen backend (server-side
+  --      'pg_terminate_backend', which wakes 'waitForNotifications' immediately —
+  --      no reliance on TCP keepalive timing).
+  --   4. GATE the factory's SECOND invocation on a ConcurrentVar the test has not
+  --      released yet, then insert the outage events. Because the reconnect
+  --      cannot re-acquire a connection (and therefore cannot re-LISTEN) until
+  --      the gate opens, every outage NOTIFY is lost — leaving catch-up as the
+  --      ONLY possible delivery path. Without this gate the reconnect loop could
+  --      race ahead and re-LISTEN before the outage inserts, delivering them live
+  --      and passing the test without exercising catch-up at all.
+  --   5. Open the gate, let the loop reconnect, and assert that the dispatched
+  --      set contains the EXACT outage event ids (none skipped) — proving the
+  --      shared cursor survived the reconnect and catch-up replayed the gap.
   describe "listener reconnect catch-up (connectTo wiring)" do
     whenEnvVar "POSTGRES_AVAILABLE" do
       it "re-establishes LISTEN and catches up all events missed during the outage (D1, issue #682)" \_ -> do
@@ -430,11 +448,21 @@ spec = do
         -- so the test can terminate exactly that backend to force a reconnect.
         connectCount <- Var.new (0 :: Int)
         firstPidRef <- Var.new (Nothing :: Maybe Int64)
+        -- Reconnect gate: an empty ConcurrentVar that blocks the factory's SECOND
+        -- (reconnect) invocation until the test fills it. 'peek' (readMVar) is
+        -- used so the gate stays open for any further reconnect attempts rather
+        -- than emptying after one release.
+        reconnectGate <- (ConcurrentVar.new :: Task Text (ConcurrentVar Unit))
         adminConn <- acquireConn cfg
         let factory = do
+              currentCount <- Var.get connectCount
+              -- Hold every reconnect (count >= 1) at the gate until the test has
+              -- finished the outage inserts, guaranteeing they cannot be picked
+              -- up by a freshly re-established LISTEN.
+              Task.when (currentCount >= 1) do
+                ConcurrentVar.peek reconnectGate
               listenConn <- acquireConn cfg
               queryConn <- acquireConn cfg
-              currentCount <- Var.get connectCount
               Task.when (currentCount == 0) do
                 pid <- backendPid listenConn
                 firstPidRef |> Var.set (Just pid)
@@ -456,25 +484,49 @@ spec = do
               firstPid <- case maybePid of
                 Just pid -> Task.yield pid
                 Nothing -> Task.throw "first connect never reported a backend PID"
-              -- Force the live listen socket to drop (the outage begins).
+              -- Prove the first listener is LIVE: insert a sentinel and wait for
+              -- it to be dispatched. Delivery proves LISTEN is up and the cursor
+              -- has advanced to the sentinel, so the later outage inserts begin
+              -- strictly past the cursor.
+              sentinelIds <- insertN adminConn entityName 1
+              sentinelId <- case Array.get 0 sentinelIds of
+                Just sid -> Task.yield sid
+                Nothing -> Task.throw "sentinel insert returned no id"
+              waitUntil 100 do
+                received <- ConcurrentVar.peek collector
+                Task.yield (dispatchedIds received |> Array.contains sentinelId)
+              -- Force the live listen socket to drop (the outage begins). The
+              -- reconnect loop will now wake and call the factory again, where it
+              -- blocks on the still-closed gate.
               terminateBackend adminConn firstPid
               -- Insert events while no LISTEN is active: NOTIFY is lost for these,
-              -- so only the reconnect catch-up can deliver them.
-              insertN adminConn entityName 3
+              -- so only the reconnect catch-up can deliver them. Capture their
+              -- exact ids so we can assert the specific events were dispatched.
+              outageIds <- insertN adminConn entityName 3
+              -- Open the gate: the reconnect may now acquire connections and
+              -- re-LISTEN. By construction every outage NOTIFY is already gone, so
+              -- the only way these ids can appear is via catch-up.
+              reconnectGate |> ConcurrentVar.set unit
               -- Wait for the supervised loop to reconnect (factory called again)
               -- and catch up. Generous bound: first backoff is 1000ms.
               waitUntil 200 (do n <- Var.get connectCount; Task.yield (n >= 2))
-              waitUntil 200 (do
+              waitUntil 200 do
                 received <- ConcurrentVar.peek collector
-                Task.yield (Array.length received >= 3))
+                let dispatched = dispatchedIds received
+                Task.yield (outageIds |> allInArray (\oid -> dispatched |> Array.contains oid))
               received <- ConcurrentVar.peek collector
-              Task.yield received
+              Task.yield (received, outageIds)
         result <- Task.finally teardown scenario |> Task.asResult
         case result of
           Err err -> Test.fail [fmt|reconnect wiring test failed: #{err}|]
-          Ok received -> do
-            -- Every event committed during the outage reached live dispatch.
-            (received |> Array.length) |> shouldBe 3
+          Ok (received, outageIds) -> do
+            -- Every SPECIFIC event committed during the outage reached dispatch
+            -- via catch-up: the dispatched id set must be a superset of the
+            -- outage ids (a bare length check could be satisfied by any events).
+            let dispatched = dispatchedIds received
+            outageIds
+              |> allInArray (\oid -> dispatched |> Array.contains oid)
+              |> shouldBe True
             -- The reconnect actually happened (loop re-acquired connections).
             reconnects <- Var.get connectCount
             reconnects |> shouldSatisfy (\n -> n >= 2)
@@ -519,8 +571,10 @@ catchUpFixture body = do
 
 
 -- | Insert @n@ events into the global stream via a fresh store on the same DB,
--- exercising the real insert + NOTIFY-trigger path.
-insertN :: Hasql.Connection -> EntityName -> Int -> Task Text Unit
+-- exercising the real insert + NOTIFY-trigger path. Returns the event ids of
+-- the inserted events (in insertion order) so callers can assert that those
+-- EXACT events — not merely some count of events — were later dispatched.
+insertN :: Hasql.Connection -> EntityName -> Int -> Task Text (Array Uuid)
 insertN _conn entityName n = do
   let cfg =
         (def :: PostgresEventStore)
@@ -532,10 +586,44 @@ insertN _conn entityName n = do
           }
   store <- Postgres.new cfg |> Task.mapError toText
   -- Bracket the temporary store: close it on EVERY path, so a failure in
-  -- Task.forEach cannot leak the Postgres store/its pool.
+  -- Task.mapArray cannot leak the Postgres store/its pool.
   Task.finally
     store.close
-    (Task.forEach (\_ -> insertTestEvent store entityName) (Array.fromLinkedList (rangeList n)))
+    (Task.mapArray (\_ -> insertReturningId store entityName) (Array.fromLinkedList (rangeList n)))
+
+
+-- | Insert a single event with a freshly-generated id and RETURN that id.
+-- Unlike 'insertTestEvent' (which discards the id), this lets the reconnect
+-- regression assert that the specific outage writes were dispatched.
+--
+-- IMPORTANT: the dispatched 'Event' reconstructs 'metadata' from the stored
+-- metadata JSON column (see 'postgresRecordToEvent'), so its 'eventId' is the
+-- one carried by 'EventMetadata', NOT the 'Insertion' id. We therefore pin BOTH
+-- the insertion id and the metadata 'eventId' to the same generated value and
+-- return that, so the id we assert on is exactly the id later dispatched.
+insertReturningId :: EventStore Json.Value -> EntityName -> Task Text Uuid
+insertReturningId store entityName = do
+  eventId <- Uuid.generate
+  streamId <- StreamId.new
+  baseMetadata <- EventMetadata.new
+  let metadata = baseMetadata {EventMetadata.eventId = eventId}
+  let insertion =
+        Insertion
+          { id = eventId,
+            event = Json.encode (),
+            metadata = metadata
+          }
+  let payload =
+        InsertionPayload
+          { streamId = streamId,
+            entityName = entityName,
+            insertionType = AnyStreamState,
+            insertions = [insertion]
+          }
+  store.insert payload
+    |> Task.mapError toText
+    |> discard
+  Task.yield eventId
 
 
 -- | The current MAX(globalPosition), or -1 when the table is empty.
@@ -570,6 +658,13 @@ attachCollector store collector = do
 allInArray :: (a -> Bool) -> Array a -> Bool
 allInArray predicate arr =
   (arr |> Array.takeIf predicate |> Array.length) == (arr |> Array.length)
+
+
+-- | The event ids of a set of dispatched events, used to assert that the
+-- SPECIFIC outage events (not merely some count) were delivered.
+dispatchedIds :: Array (Event Json.Value) -> Array Uuid
+dispatchedIds events =
+  events |> Array.map (\event -> event.metadata.eventId)
 
 
 -- | True when the positions are in strictly ascending order.
@@ -625,7 +720,7 @@ backendPid conn = do
   let query :: Text = "SELECT pg_backend_pid() :: int8"
   let decoder = Decoders.singleRow (Decoders.column (Decoders.nonNullable Decoders.int8))
   let statement :: Statement Unit Int64 =
-        Statement (query |> Text.toBytes |> Bytes.unwrap) Encoders.noParams decoder True
+        HasqlStatement.Statement (query |> Text.toBytes |> Bytes.unwrap) Encoders.noParams decoder True
   runRawSession conn (Session.statement unit statement)
 
 
@@ -633,18 +728,27 @@ backendPid conn = do
 -- TCP drop this delivers a FATAL packet to the client immediately, so the
 -- listener's blocked @waitForNotifications@ wakes without waiting on keepalive
 -- timers.
+--
+-- 'pg_terminate_backend' returns 'False' when the pid is not a running backend
+-- (already gone, or the caller lacks privilege). We do NOT discard that result:
+-- if termination did not actually happen, the listener's live socket is still
+-- up, so the outage never starts and the reconnect catch-up is never exercised.
+-- Throwing here makes such a no-op fail the regression loudly instead of letting
+-- it pass for the wrong reason.
 terminateBackend :: Hasql.Connection -> Int64 -> Task Text Unit
 terminateBackend conn pid = do
   let query :: Text = "SELECT pg_terminate_backend(($1) :: int4) :: bool"
   let encoder = Encoders.param (Encoders.nonNullable Encoders.int8)
   let decoder = Decoders.singleRow (Decoders.column (Decoders.nonNullable Decoders.bool))
   let statement :: Statement Int64 Bool =
-        Statement (query |> Text.toBytes |> Bytes.unwrap) encoder decoder True
-  runRawSession conn (Session.statement pid statement) |> discard
+        HasqlStatement.Statement (query |> Text.toBytes |> Bytes.unwrap) encoder decoder True
+  terminated <- runRawSession conn (Session.statement pid statement)
+  Task.unless terminated do
+    Task.throw [fmt|pg_terminate_backend(#{pid}) returned False: backend was not terminated|]
 
 
 -- | Run a Hasql session on a raw connection, surfacing any error as Text.
-runRawSession :: Hasql.Connection -> Session.Session result -> Task Text result
+runRawSession :: Hasql.Connection -> Session result -> Task Text result
 runRawSession conn session = do
   result <- Session.run session conn |> Task.fromIO |> Task.map Result.fromEither
   case result of
