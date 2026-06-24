@@ -59,7 +59,7 @@ PHASES: dict[int, dict[str, Any]] = {
     13: {"name": "Performance review (impl)","depends": [11],  "pause": False},
     14: {"name": "Fix findings",           "depends": [12, 13],"pause": False},
     15: {"name": "Final verify",           "depends": [14],    "pause": False},
-    16: {"name": "Create PR",              "depends": [15],    "pause": True},
+    16: {"name": "Finalize PR",            "depends": [15],    "pause": True},
     17: {"name": "Opus PR review",         "depends": [16],    "pause": True},
     18: {"name": "CI cycle",               "depends": [17],    "pause": True},
 }
