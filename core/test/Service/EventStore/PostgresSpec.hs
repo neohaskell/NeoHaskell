@@ -103,8 +103,15 @@ spec = do
               |> Task.map (EventStore.castEventStore @CartEvent)
               |> Task.mapError toText
 
+          -- WI-2 made 'toConnectionSettings' return a 'Result' (port validation).
+          -- Surface any settings error into this spec's Text error channel before
+          -- acquiring the admin connection.
+          adminSettings <-
+            case toConnectionSettings config of
+              Ok settings -> Task.yield settings
+              Err err -> Task.throw err
           adminConn <-
-            Hasql.acquire (toConnectionSettings config)
+            Hasql.acquire adminSettings
               |> Task.fromIOEither
               |> Task.mapError toText
 
