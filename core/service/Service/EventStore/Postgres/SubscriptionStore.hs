@@ -22,11 +22,11 @@ import Core
 import Json qualified
 import Log qualified
 import Map qualified
-import Prelude qualified
 import Service.Event (EntityName, Event (..), StreamPosition)
 import Service.Event.EventMetadata (EventMetadata (..))
 import Service.EventStore.Core (SubscriptionId (..))
 import Task qualified
+import Text qualified
 import Uuid qualified
 
 
@@ -51,15 +51,24 @@ data SubscriptionInfo = SubscriptionInfo
   }
 
 
--- Hand-written Show: the callback and onRemove are Task/closure fields with no
--- Show instance, so they are elided. (ADR-0063 §1.)
+-- Hand-written Show: 'callback' is a bare function ('SubscriptionCallback' is a
+-- type synonym for @Event Json.Value -> Task Text Unit@), which has no sensible
+-- 'Show' instance, so full @deriving Show@ is not possible. The function field is
+-- rendered as a @<function>@ placeholder; 'onRemove' is a 'Task', shown via its
+-- placeholder 'Show' instance. (ADR-0063 §1.)
 instance Show SubscriptionInfo where
-  show info =
-    "SubscriptionInfo {startingGlobalPosition = "
-      ++ Prelude.show info.startingGlobalPosition
-      ++ ", entityNameFilter = "
-      ++ Prelude.show info.entityNameFilter
-      ++ ", callback = <function>, onRemove = <task>}"
+  show info = renderSubscriptionInfo info |> Text.toLinkedList
+
+
+-- | Render a 'SubscriptionInfo' as 'Text'. The record-dot field accesses live
+-- here (outside the 'fmt' interpolation) because 'OverloadedRecordDot' is not in
+-- scope inside the quasi-quoter's @#{}@ expressions.
+renderSubscriptionInfo :: SubscriptionInfo -> Text
+renderSubscriptionInfo info = do
+  let startingGlobalPosition = toText info.startingGlobalPosition
+  let entityNameFilter = toText info.entityNameFilter
+  let onRemove = toText info.onRemove
+  [fmt|SubscriptionInfo {startingGlobalPosition = #{startingGlobalPosition}, entityNameFilter = #{entityNameFilter}, callback = <function>, onRemove = #{onRemove}}|]
 
 
 type Subscriptions =

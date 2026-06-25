@@ -108,35 +108,42 @@ spec = do
               |> Task.fromIOEither
               |> Task.mapError toText
 
-          let entityName = EntityName "ConnReleaseRegressionEntity"
-          let callback _event = Task.yield unit
+          -- Guaranteed teardown: release the admin connection and close the store
+          -- whether the body succeeds, throws, or the final assertion fails.
+          -- Otherwise a failure here leaks connections into later Postgres-gated
+          -- specs and contaminates them.
+          let cleanup = do
+                Hasql.release adminConn |> Task.fromIO
+                store.close |> Task.mapError toText |> Task.ignoreError
 
-          -- Warm-up: one subscribe/unsubscribe cycle forces the Hasql pool and
-          -- the store's listener connections to fully establish, so the baseline
-          -- reflects steady state rather than a lazily-growing pool. (The pooled
-          -- connection borrowed by withConnectionAndError is what would otherwise
-          -- inflate the post-loop count and mask the per-stream release.)
-          subscribeUnsubscribeCycles store entityName callback 1
-          AsyncTask.sleep 500 |> Task.mapError (\_ -> "warm-up settle sleep failed")
-          baseline <- countUserBackends adminConn
+          Task.finally cleanup do
+            let entityName = EntityName "ConnReleaseRegressionEntity"
+            let callback _event = Task.yield unit
 
-          -- Now run N more cycles. Each opens ONE dedicated per-stream connection
-          -- that unsubscribe must release; with the leak the count would climb by
-          -- N. With the fix the dedicated connection is gone each cycle, so the
-          -- steady-state count does not grow.
-          let cycleN = 5 :: Int
-          subscribeUnsubscribeCycles store entityName callback cycleN
+            -- Warm-up: one subscribe/unsubscribe cycle forces the Hasql pool and
+            -- the store's listener connections to fully establish, so the baseline
+            -- reflects steady state rather than a lazily-growing pool. (The pooled
+            -- connection borrowed by withConnectionAndError is what would otherwise
+            -- inflate the post-loop count and mask the per-stream release.)
+            subscribeUnsubscribeCycles store entityName callback 1
+            -- Poll until the backend count settles instead of a fixed sleep, so
+            -- the baseline reflects steady state regardless of teardown timing.
+            baseline <- pollSettledBackends adminConn Nothing
 
-          -- Allow libpq teardown to settle so pg_stat_activity reflects the release.
-          AsyncTask.sleep 500 |> Task.mapError (\_ -> "settle sleep failed")
-          afterCycles <- countUserBackends adminConn
+            -- Now run N more cycles. Each opens ONE dedicated per-stream connection
+            -- that unsubscribe must release; with the leak the count would climb by
+            -- N. With the fix the dedicated connection is gone each cycle, so the
+            -- steady-state count does not grow.
+            let cycleN = 5 :: Int
+            subscribeUnsubscribeCycles store entityName callback cycleN
 
-          Hasql.release adminConn |> Task.fromIO
-          store.close |> discard
+            -- Poll until the count settles to at-or-below the baseline (or a bounded
+            -- timeout expires), so pg_stat_activity reflects the per-stream releases.
+            afterCycles <- pollSettledBackends adminConn (Just baseline)
 
-          -- No net growth across the N measured cycles: a leak would leave
-          -- baseline + cycleN dedicated connections; the fix keeps it at baseline.
-          (afterCycles <= baseline) |> shouldBe True
+            -- No net growth across the N measured cycles: a leak would leave
+            -- baseline + cycleN dedicated connections; the fix keeps it at baseline.
+            (afterCycles <= baseline) |> shouldBe True
 
 
 
@@ -213,12 +220,14 @@ subscribeUnsubscribeCycles store entityName callback n =
       subscribeUnsubscribeCycles store entityName callback (n - 1)
 
 
--- | Count the backends currently open for the test database user via
--- pg_stat_activity. The dedicated per-stream connections are opened by the same
--- user, so a leak shows up as a higher count.
+-- | Count the backends currently open for the test database user, scoped to the
+-- current database. The dedicated per-stream connections are opened by the same
+-- user against the same database, so a leak shows up as a higher count. Scoping
+-- to @current_database()@ keeps unrelated sessions for the same user on other
+-- databases from inflating the count.
 countUserBackends :: Hasql.Connection -> Task Text Int64
 countUserBackends conn = do
-  let query :: Text = "SELECT count(*) :: int8 FROM pg_stat_activity WHERE usename = current_user"
+  let query :: Text = "SELECT count(*) :: int8 FROM pg_stat_activity WHERE usename = current_user AND datname = current_database()"
   let decoder = Decoders.singleRow (Decoders.column (Decoders.nonNullable Decoders.int8))
   let statement :: Statement Unit Int64 =
         HasqlStatement.Statement (query |> Text.toBytes |> Bytes.unwrap) Encoders.noParams decoder True
@@ -226,3 +235,31 @@ countUserBackends conn = do
   case result of
     Err err -> Task.throw [fmt|pg_stat_activity count failed: #{err}|]
     Ok count -> Task.yield count
+
+
+-- | Poll 'countUserBackends' until it settles, replacing a fixed sleep so the
+-- test is deterministic regardless of how long libpq teardown takes.
+--
+-- "Settled" means two consecutive samples (50 ms apart) are equal AND, when a
+-- @target@ baseline is supplied, the count is at or below it. Polling stops as
+-- soon as it settles, or after a bounded number of attempts (≈5 s), returning
+-- the last sample either way so the caller's assertion still runs.
+pollSettledBackends :: Hasql.Connection -> Maybe Int64 -> Task Text Int64
+pollSettledBackends conn target = do
+  let maxAttempts = 100 :: Int
+  let stepMs = 50
+  let atOrBelowTarget count =
+        case target of
+          Nothing -> True
+          Just baseline -> count <= baseline
+  let loop attempts previous = do
+        current <- countUserBackends conn
+        let settled = case previous of
+              Just prev -> current == prev && atOrBelowTarget current
+              Nothing -> False
+        case settled || attempts >= maxAttempts of
+          True -> Task.yield current
+          False -> do
+            AsyncTask.sleep stepMs |> Task.mapError (\_ -> "poll settle sleep failed")
+            loop (attempts + 1) (Just current)
+  loop 0 Nothing

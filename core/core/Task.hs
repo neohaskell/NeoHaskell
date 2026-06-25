@@ -64,6 +64,13 @@ newtype Task err value = Task
   deriving (Functor, Applicable.Applicative, Monad)
 
 
+-- | A 'Task' wraps a deferred effect, so the value it will produce cannot be
+-- inspected without running it. This placeholder instance lets records that
+-- hold a 'Task' field still derive (or hand-write) 'Show'.
+instance Prelude.Show (Task err value) where
+  show _ = "Task"
+
+
 yield :: value -> Task _ value
 yield value = Task (Applicable.pure value)
 {-# INLINE yield #-}
