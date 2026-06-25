@@ -252,11 +252,13 @@ spec = do
                 user = "test",
                 password = "test"
               }
-      -- toConnectionSettings is pure — just verify it evaluates without error
-      let settings = toConnectionSettings cfg
-      -- Settings list should be non-empty (has at least the connection params)
-      -- Use length (Int has Show) rather than shouldSatisfy on the list (no Show instance)
-      LinkedList.length settings |> shouldSatisfy (\n -> n > 0)
+      -- toConnectionSettings is pure — for a valid config it returns Ok.
+      case toConnectionSettings cfg of
+        Err err -> Test.fail [fmt|Expected Ok settings, got: #{err}|]
+        Ok settings ->
+          -- Settings list should be non-empty (has at least the connection params).
+          -- Use length (Int has Show) rather than shouldSatisfy on the list (no Show).
+          LinkedList.length settings |> shouldSatisfy (\n -> n > 0)
 
   describe "Listener cleanup" do
     whenEnvVar "POSTGRES_AVAILABLE" do
@@ -551,8 +553,11 @@ catchUpFixture body = do
   -- Ensure the events table + trigger exist by creating a store once.
   store0 <- Postgres.new cfg |> Task.mapError toText
   store0.close
+  connSettings <- case toConnectionSettings cfg of
+    Err err -> Task.throw err
+    Ok settings -> Task.yield settings
   conn <-
-    Hasql.acquire (toConnectionSettings cfg)
+    Hasql.acquire connSettings
       |> Task.fromIOEither
       |> Task.mapError toText
   -- Bracket the connection: release it on EVERY path, so an exception in
@@ -707,9 +712,12 @@ resultIsErr result =
 -- reconnect wiring test's connection factory and its admin connection).
 acquireConn :: PostgresEventStore -> Task Text Hasql.Connection
 acquireConn cfg =
-  Hasql.acquire (toConnectionSettings cfg)
-    |> Task.fromIOEither
-    |> Task.mapError toText
+  case toConnectionSettings cfg of
+    Err err -> Task.throw err
+    Ok settings ->
+      Hasql.acquire settings
+        |> Task.fromIOEither
+        |> Task.mapError toText
 
 
 -- | The PostgreSQL backend process id (@pg_backend_pid()@) of a connection.

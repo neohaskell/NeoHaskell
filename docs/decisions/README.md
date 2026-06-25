@@ -71,6 +71,7 @@ ADRs document significant architectural decisions made during the development of
 | [0055](0055-declarative-integrations-with-fakes.md) | Declarative Integrations with Real/Fake Parity | Proposed |
 | [0056](0056-request-context-timestamp-as-datetime.md) | Retype `RequestContext.timestamp` as `DateTime` | Proposed |
 | [0061](0061-listener-reconnect-catchup.md) | Replay from Last globalPosition on LISTEN/NOTIFY Listener Reconnect | Proposed |
+| [0062](0062-shared-connection-settings-builder.md) | Single Shared Postgres Connection-Settings Builder | Proposed |
 
 ## Creating New ADRs
 
