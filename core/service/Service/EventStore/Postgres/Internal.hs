@@ -786,9 +786,15 @@ subscribeToStreamEventsImpl ops cfg store entityName streamId callback =
       Sessions.selectMaxGlobalPosition
         |> Sessions.run conn
         |> Task.mapError (toText .> StorageFailure)
+
+    -- Release the dedicated per-stream connection when this subscription is
+    -- removed. Owned by the SubscriptionId, run best-effort on unsubscribe
+    -- (ADR-0063 §3).
+    let releaseConnection = Hasql.release connection |> Task.fromIO
+
     subscriptionId <-
       store
-        |> SubscriptionStore.addStreamSubscriptionFromPosition entityName streamId currentMaxPosition callback
+        |> SubscriptionStore.addStreamSubscriptionWithCleanup entityName streamId currentMaxPosition releaseConnection callback
         |> Task.mapError (\err -> SubscriptionError (SubscriptionId "stream") (err |> toText))
     Log.debug [fmt|Subscription created: #{toText subscriptionId}|] |> Task.ignoreError
     Task.yield subscriptionId

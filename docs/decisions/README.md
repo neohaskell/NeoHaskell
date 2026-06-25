@@ -72,6 +72,7 @@ ADRs document significant architectural decisions made during the development of
 | [0056](0056-request-context-timestamp-as-datetime.md) | Retype `RequestContext.timestamp` as `DateTime` | Proposed |
 | [0061](0061-listener-reconnect-catchup.md) | Replay from Last globalPosition on LISTEN/NOTIFY Listener Reconnect | Proposed |
 | [0062](0062-shared-connection-settings-builder.md) | Single Shared Postgres Connection-Settings Builder | Proposed |
+| [0063](0063-per-stream-subscription-connection-release.md) | Release Per-Stream Subscription Connections on Unsubscribe | Proposed |
 
 ## Creating New ADRs
 
