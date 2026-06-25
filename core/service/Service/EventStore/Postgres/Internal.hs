@@ -16,20 +16,15 @@ import Basics
 import Default (Default)
 import Default qualified
 import Hasql.Connection qualified as Hasql
-import Hasql.Connection.Setting qualified as ConnectionSetting
 import Hasql.Connection.Setting qualified as Hasql
-import Hasql.Connection.Setting.Connection qualified as ConnectionSettingConnection
-import Hasql.Connection.Setting.Connection.Param qualified as Param
 import Hasql.Pool qualified as HasqlPool
-import Hasql.Pool.Config qualified as HasqlPoolConfig
-import Hasql.Pool.Observation (ConnectionStatus (..), ConnectionTerminationReason (..), Observation (..))
 import Json qualified
 import Log qualified
-import Prelude qualified
 import LinkedList (LinkedList)
 import Maybe (Maybe (..))
 import Maybe qualified
 import Result (Result (..))
+import Service.Infra.Postgres.ConnectionConfig qualified as ConnectionConfig
 import Service.Event
 import Service.Event.EntityName qualified as EntityName
 import Service.Event.EventMetadata (EventMetadata (..))
@@ -97,53 +92,16 @@ instance EventStoreConfig PostgresEventStore where
   createEventStore = new defaultOps
 
 
-toConnectionPoolSettings :: Int -> LinkedList Hasql.Setting -> HasqlPoolConfig.Config
-toConnectionPoolSettings poolSize settings =
-  [ HasqlPoolConfig.staticConnectionSettings settings
-  , HasqlPoolConfig.size poolSize
-  , HasqlPoolConfig.agingTimeout 300
-  , HasqlPoolConfig.idlenessTimeout 60
-  , HasqlPoolConfig.observationHandler logPoolObservation
-  ]
-    |> HasqlPoolConfig.settings
-
-
--- | Log connection pool lifecycle events for observability.
--- Only logs termination events to avoid overhead under high load.
--- See ADR-0027 for rationale.
-logPoolObservation :: Observation -> Prelude.IO ()
-logPoolObservation observation = case observation of
-  ConnectionObservation _uuid status -> case status of
-    TerminatedConnectionStatus reason -> case reason of
-      AgingConnectionTerminationReason ->
-        ((Log.debug "[Pool] Connection terminated (aging timeout)" |> Task.ignoreError :: Task Text Unit) |> Task.runOrPanic)
-      IdlenessConnectionTerminationReason ->
-        ((Log.debug "[Pool] Connection terminated (idleness timeout)" |> Task.ignoreError :: Task Text Unit) |> Task.runOrPanic)
-      NetworkErrorConnectionTerminationReason err ->
-        ((Log.critical [fmt|[Pool] Connection terminated (network error: #{show err})|] |> Task.ignoreError :: Task Text Unit) |> Task.runOrPanic)
-      ReleaseConnectionTerminationReason ->
-        Prelude.pure ()
-      InitializationErrorTerminationReason err ->
-        ((Log.critical [fmt|[Pool] Connection terminated (init error: #{show err})|] |> Task.ignoreError :: Task Text Unit) |> Task.runOrPanic)
-    _ -> Prelude.pure ()
-
-
 toConnectionSettings :: PostgresEventStore -> LinkedList Hasql.Setting
-toConnectionSettings cfg = do
-  let params =
-        ConnectionSettingConnection.params
-          [ Param.host cfg.host,
-            Param.port (fromIntegral cfg.port),
-            Param.dbname cfg.databaseName,
-            Param.user cfg.user,
-            Param.password cfg.password,
-            -- TCP keepalive: detect dead connections in cloud environments (ADR-0037, #397)
-            Param.other "keepalives" "1",
-            Param.other "keepalives_idle" "30",
-            Param.other "keepalives_interval" "10",
-            Param.other "keepalives_count" "5"
-          ]
-  [params |> ConnectionSetting.connection]
+toConnectionSettings cfg =
+  ConnectionConfig.toConnectionParams
+    ConnectionConfig.ConnectionParams
+      { host = cfg.host,
+        databaseName = cfg.databaseName,
+        user = cfg.user,
+        password = cfg.password,
+        port = cfg.port
+      }
 
 
 data Ops = Ops
@@ -163,7 +121,7 @@ defaultOps = do
             Task.throw [fmt|poolSize must be > 0, got #{size}|]
           True ->
             toConnectionSettings cfg
-              |> toConnectionPoolSettings cfg.poolSize
+              |> ConnectionConfig.toPoolConfig cfg.poolSize
               |> HasqlPool.acquire
               |> Task.fromIO
               |> Task.map (Sessions.Connection)

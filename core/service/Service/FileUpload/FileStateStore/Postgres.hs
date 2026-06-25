@@ -53,21 +53,16 @@ import Bytes qualified
 import Core
 import Data.Functor.Contravariant ((>$<))
 import Data.Semigroup ((<>))
-import Hasql.Connection.Setting qualified as ConnectionSetting
-import Hasql.Connection.Setting.Connection qualified as ConnectionSettingConnection
-import Hasql.Connection.Setting.Connection.Param qualified as Param
 import Hasql.Decoders qualified as Decoders
 import Hasql.Encoders qualified as Encoders
 import Hasql.Pool (Pool)
 import Hasql.Pool qualified as HasqlPool
-import Hasql.Pool.Config qualified as HasqlPoolConfig
-import Hasql.Pool.Observation (ConnectionStatus (..), ConnectionTerminationReason (..), Observation (..))
 import Hasql.Session qualified as Session
-import Log qualified
 import Prelude qualified
 import Hasql.Statement (Statement (..))
 
 import Result qualified
+import Service.Infra.Postgres.ConnectionConfig qualified as ConnectionConfig
 import Service.EventStore.Postgres (PostgresEventStore (..))
 import Service.FileUpload.Core (
   BlobKey (..),
@@ -172,45 +167,18 @@ createPool cfg = do
     False ->
       Task.throw (InvalidPoolSize [fmt|poolSize must be > 0, got #{size}|])
     True -> do
-      let params =
-            ConnectionSettingConnection.params
-              [ Param.host cfg.host
-              , Param.port (fromIntegral cfg.port)
-              , Param.dbname cfg.databaseName
-              , Param.user cfg.user
-              , Param.password cfg.password
-              ]
-      let settings = [params |> ConnectionSetting.connection]
-      let poolConfig =
-            [ HasqlPoolConfig.staticConnectionSettings settings
-            , HasqlPoolConfig.size cfg.poolSize
-            , HasqlPoolConfig.agingTimeout 300
-            , HasqlPoolConfig.idlenessTimeout 60
-            , HasqlPoolConfig.observationHandler logPoolObservation
-            ]
-              |> HasqlPoolConfig.settings
+      let settings =
+            ConnectionConfig.toConnectionParams
+              ConnectionConfig.ConnectionParams
+                { host = cfg.host
+                , databaseName = cfg.databaseName
+                , user = cfg.user
+                , password = cfg.password
+                , port = cfg.port
+                }
+      let poolConfig = ConnectionConfig.toPoolConfig cfg.poolSize settings
       HasqlPool.acquire poolConfig
         |> Task.fromIO
-
-
--- | Log connection pool lifecycle events for observability.
--- Only logs termination events to avoid overhead under high load.
--- See ADR-0027 for rationale.
-logPoolObservation :: Observation -> Prelude.IO ()
-logPoolObservation observation = case observation of
-  ConnectionObservation _uuid status -> case status of
-    TerminatedConnectionStatus reason -> case reason of
-      AgingConnectionTerminationReason ->
-        ((Log.debug "[Pool] Connection terminated (aging timeout)" |> Task.ignoreError :: Task Text Unit) |> Task.runOrPanic)
-      IdlenessConnectionTerminationReason ->
-        ((Log.debug "[Pool] Connection terminated (idleness timeout)" |> Task.ignoreError :: Task Text Unit) |> Task.runOrPanic)
-      NetworkErrorConnectionTerminationReason err ->
-        ((Log.critical [fmt|[Pool] Connection terminated (network error: #{show err})|] |> Task.ignoreError :: Task Text Unit) |> Task.runOrPanic)
-      ReleaseConnectionTerminationReason ->
-        Prelude.pure ()
-      InitializationErrorTerminationReason err ->
-        ((Log.critical [fmt|[Pool] Connection terminated (init error: #{show err})|] |> Task.ignoreError :: Task Text Unit) |> Task.runOrPanic)
-    _ -> Prelude.pure ()
 
 
 -- | Create the file_upload_state table if it doesn't exist.

@@ -19,16 +19,13 @@ import Hasql.Decoders qualified as Decoders
 import Hasql.Encoders qualified as Encoders
 import Hasql.Pool (Pool)
 import Hasql.Pool qualified as HasqlPool
-import Hasql.Pool.Config qualified as HasqlPoolConfig
-import Hasql.Connection.Setting qualified as ConnectionSetting
-import Hasql.Connection.Setting.Connection qualified as ConnectionSettingConnection
-import Hasql.Connection.Setting.Connection.Param qualified as Param
 import Hasql.Session qualified as Session
 import Hasql.Statement (Statement (..))
 import Json qualified
 import Maybe (Maybe (..))
 import Result (Result (..))
 import Result qualified
+import Service.Infra.Postgres.ConnectionConfig qualified as ConnectionConfig
 import Service.QueryObjectStore.Core (Error (..), QueryObjectStore (..))
 import Service.QueryObjectStore.Core qualified as Core
 import Task (Task)
@@ -117,22 +114,16 @@ acquirePool cfg = do
     False ->
       Task.throw (ConnectionFailed [fmt|poolSize must be > 0, got #{size}|])
     True -> do
-      let params =
-            ConnectionSettingConnection.params
-              [ Param.host cfg.host
-              , Param.port (fromIntegral cfg.port)
-              , Param.dbname cfg.databaseName
-              , Param.user cfg.user
-              , Param.password cfg.password
-              ]
-      let settings = [params |> ConnectionSetting.connection]
-      let poolConfig =
-            [ HasqlPoolConfig.staticConnectionSettings settings
-            , HasqlPoolConfig.size cfg.poolSize
-            , HasqlPoolConfig.agingTimeout 300
-            , HasqlPoolConfig.idlenessTimeout 60
-            ]
-              |> HasqlPoolConfig.settings
+      let settings =
+            ConnectionConfig.toConnectionParams
+              ConnectionConfig.ConnectionParams
+                { host = cfg.host
+                , databaseName = cfg.databaseName
+                , user = cfg.user
+                , password = cfg.password
+                , port = cfg.port
+                }
+      let poolConfig = ConnectionConfig.toPoolConfig cfg.poolSize settings
       pool <- HasqlPool.acquire poolConfig
         |> Task.fromIO
       pingResult <- runPool pool pingSession |> Task.asResult
