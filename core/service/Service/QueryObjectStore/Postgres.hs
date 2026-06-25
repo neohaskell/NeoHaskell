@@ -113,23 +113,24 @@ acquirePool cfg = do
   case size > 0 of
     False ->
       Task.throw (ConnectionFailed [fmt|poolSize must be > 0, got #{size}|])
-    True -> do
-      let settings =
-            ConnectionConfig.toConnectionParams
-              ConnectionConfig.ConnectionParams
-                { host = cfg.host
-                , databaseName = cfg.databaseName
-                , user = cfg.user
-                , password = cfg.password
-                , port = cfg.port
-                }
-      let poolConfig = ConnectionConfig.toPoolConfig cfg.poolSize settings
-      pool <- HasqlPool.acquire poolConfig
-        |> Task.fromIO
-      pingResult <- runPool pool pingSession |> Task.asResult
-      case pingResult of
-        Err err -> Task.throw (ConnectionFailed (toText (show err)))
-        Ok _ -> Task.yield pool
+    True ->
+      case ConnectionConfig.toConnectionParams
+             ConnectionConfig.ConnectionParams
+               { host = cfg.host
+               , databaseName = cfg.databaseName
+               , user = cfg.user
+               , password = cfg.password
+               , port = cfg.port
+               } of
+        Err portErr -> Task.throw (ConnectionFailed portErr)
+        Ok settings -> do
+          let poolConfig = ConnectionConfig.toPoolConfig cfg.poolSize settings
+          pool <- HasqlPool.acquire poolConfig
+            |> Task.fromIO
+          pingResult <- runPool pool pingSession |> Task.asResult
+          case pingResult of
+            Err err -> Task.throw (ConnectionFailed (toText (show err)))
+            Ok _ -> Task.yield pool
 
 
 -- | Run a Hasql session on the pool.

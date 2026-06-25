@@ -238,7 +238,7 @@ data ConnectionParams = ConnectionParams
     password :: Text,
     port :: Int
   }
-  deriving (Eq, Ord, Show)
+  deriving (Eq, Ord)
 ```
 
 ### 2. `toConnectionParams` — the single libpq param builder

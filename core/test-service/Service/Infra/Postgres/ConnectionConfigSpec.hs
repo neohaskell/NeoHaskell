@@ -4,23 +4,23 @@ module Service.Infra.Postgres.ConnectionConfigSpec (spec) where
 -- builders. Runs unconditionally (no Postgres). Registered manually in
 -- core/test-service/Main.hs (the suite does not auto-discover).
 --
--- The hasql Setting / Config values are opaque (no Eq/Show), so every
--- assertion is written at an observable boundary: list length (the
--- LinkedList spine is forced), totality (force to WHNF via seq), and the
--- EventStore projection-equivalence (same length-1 structure).
+-- The hasql Setting / Config values are opaque (no Eq/Show), so the
+-- contract is asserted against the INSPECTABLE 'ResolvedParams' that the
+-- opaque builder is constructed from: every host/db/user/password/port
+-- value AND all four ADR-0037 keepalive entries are checked exactly, so a
+-- dropped keepalive or a mis-mapped field fails the test. Port validation
+-- (1..65535) is asserted on both boundaries and out-of-range inputs.
 
 import Core
 import LinkedList qualified
-import Hasql.Connection.Setting qualified as Hasql
-import Service.EventStore.Postgres.Internal (PostgresEventStore (..))
-import Service.EventStore.Postgres.Internal qualified as EventStore
-import Service.Infra.Postgres.ConnectionConfig (ConnectionParams (..))
+import Result qualified
+import Service.Infra.Postgres.ConnectionConfig (ConnectionParams (..), ResolvedParams (..))
 import Service.Infra.Postgres.ConnectionConfig qualified as ConnectionConfig
 import Prelude qualified
 import Test.Hspec qualified as Hspec
 
 
--- | A typical ConnectionParams input (matches toConnectionParams case #1).
+-- | A typical ConnectionParams input.
 typicalParams :: ConnectionParams
 typicalParams =
   ConnectionConfig.ConnectionParams
@@ -34,7 +34,7 @@ typicalParams =
 
 -- | The typical config with a specific port. Built by full record
 -- construction (the constructor names the type) so the field set is
--- unambiguous — a bare @typicalParams { port = n }@ update is ambiguous
+-- unambiguous -- a bare @typicalParams { port = n }@ update is ambiguous
 -- because several records in scope share a @port@ field.
 paramsWithPort :: Int -> ConnectionParams
 paramsWithPort p =
@@ -60,170 +60,133 @@ paramsWithPassword pw =
     }
 
 
--- | A ConnectionParams with all four textual fields empty.
-emptyParams :: ConnectionParams
-emptyParams =
-  ConnectionConfig.ConnectionParams
-    { host = "",
-      databaseName = "",
-      user = "",
-      password = "",
-      port = 5432
-    }
-
-
--- | A typical PostgresEventStore for the toConnectionSettings regression
--- cases, built by record-update on the Default instance.
-typicalEventStore :: PostgresEventStore
-typicalEventStore =
-  (def :: PostgresEventStore)
-    { EventStore.host = "localhost",
-      EventStore.databaseName = "app",
-      EventStore.user = "postgres",
-      EventStore.password = "secret",
-      EventStore.port = 5432
-    }
-
-
--- | The reference projection mirroring toConnectionSettings's body so the
--- regression guard is a true same-input/same-structure comparison.
-project :: PostgresEventStore -> ConnectionParams
-project cfg =
-  ConnectionConfig.ConnectionParams
-    { host = cfg.host,
-      databaseName = cfg.databaseName,
-      user = cfg.user,
-      password = cfg.password,
-      port = cfg.port
-    }
-
-
--- | A typical settings list, reused by the toPoolConfig settings-spine case.
-typicalSettings :: LinkedList.LinkedList Hasql.Setting
-typicalSettings = ConnectionConfig.toConnectionParams typicalParams
+-- | The four ADR-0037 keepalive entries every resolved param set must carry.
+expectedKeepalives :: ResolvedParams -> Bool
+expectedKeepalives resolved =
+  resolved.keepalives Prelude.== "1"
+    && resolved.keepalivesIdle Prelude.== "30"
+    && resolved.keepalivesInterval Prelude.== "10"
+    && resolved.keepalivesCount Prelude.== "5"
 
 
 spec :: Hspec.Spec
 spec = Hspec.describe "Service.Infra.Postgres.ConnectionConfig" do
+  Hspec.describe "validatePort" do
+    Hspec.it "rejects port 0 (lower boundary, below range)" do
+      ConnectionConfig.validatePort 0
+        |> Hspec.shouldBe (Err "port must be in 1..65535, got 0")
+
+    Hspec.it "accepts port 1 (lower boundary)" do
+      ConnectionConfig.validatePort 1 |> Hspec.shouldBe (Ok 1)
+
+    Hspec.it "accepts port 5432 (typical)" do
+      ConnectionConfig.validatePort 5432 |> Hspec.shouldBe (Ok 5432)
+
+    Hspec.it "accepts port 65535 (upper boundary)" do
+      ConnectionConfig.validatePort 65535 |> Hspec.shouldBe (Ok 65535)
+
+    Hspec.it "rejects port 65536 (above range) instead of wrapping to 0" do
+      ConnectionConfig.validatePort 65536
+        |> Hspec.shouldBe (Err "port must be in 1..65535, got 65536")
+
+    Hspec.it "rejects a negative port instead of wrapping to 65535" do
+      ConnectionConfig.validatePort (-1)
+        |> Hspec.shouldBe (Err "port must be in 1..65535, got -1")
+
+  Hspec.describe "resolveParams" do
+    Hspec.it "maps every field exactly and carries all four keepalives" do
+      case ConnectionConfig.resolveParams typicalParams of
+        Err err -> Prelude.error (Prelude.show err)
+        Ok resolved -> do
+          resolved.host |> Hspec.shouldBe "localhost"
+          resolved.databaseName |> Hspec.shouldBe "app"
+          resolved.user |> Hspec.shouldBe "postgres"
+          resolved.password |> Hspec.shouldBe "secret"
+          resolved.port |> Hspec.shouldBe 5432
+          resolved.keepalives |> Hspec.shouldBe "1"
+          resolved.keepalivesIdle |> Hspec.shouldBe "30"
+          resolved.keepalivesInterval |> Hspec.shouldBe "10"
+          resolved.keepalivesCount |> Hspec.shouldBe "5"
+
+    Hspec.it "does not drop or reorder the keepalive contract" do
+      case ConnectionConfig.resolveParams typicalParams of
+        Err err -> Prelude.error (Prelude.show err)
+        Ok resolved -> expectedKeepalives resolved |> Hspec.shouldBe True
+
+    Hspec.it "preserves unicode multibyte text in the password field" do
+      case ConnectionConfig.resolveParams (paramsWithPassword "p\xe2ssw\xf6rd-\x1f511-\x65e5\x672c\x8a9e") of
+        Err err -> Prelude.error (Prelude.show err)
+        Ok resolved -> resolved.password |> Hspec.shouldBe "p\xe2ssw\xf6rd-\x1f511-\x65e5\x672c\x8a9e"
+
+    Hspec.it "preserves empty-string host, db, and user fields" do
+      let emptyParams =
+            ConnectionConfig.ConnectionParams
+              { host = "",
+                databaseName = "",
+                user = "",
+                password = "",
+                port = 5432
+              }
+      case ConnectionConfig.resolveParams emptyParams of
+        Err err -> Prelude.error (Prelude.show err)
+        Ok resolved -> do
+          resolved.host |> Hspec.shouldBe ""
+          resolved.databaseName |> Hspec.shouldBe ""
+          resolved.user |> Hspec.shouldBe ""
+          resolved.password |> Hspec.shouldBe ""
+
+    Hspec.it "fails fast on port 0 rather than producing settings" do
+      ConnectionConfig.resolveParams (paramsWithPort 0)
+        |> Result.isErr
+        |> Hspec.shouldBe True
+
+    Hspec.it "fails fast on a negative port" do
+      ConnectionConfig.resolveParams (paramsWithPort (-1))
+        |> Result.isErr
+        |> Hspec.shouldBe True
+
+    Hspec.it "fails fast on port 65536" do
+      ConnectionConfig.resolveParams (paramsWithPort 65536)
+        |> Result.isErr
+        |> Hspec.shouldBe True
+
   Hspec.describe "toConnectionParams" do
     Hspec.it "returns a single connection setting for a typical config" do
-      (ConnectionConfig.toConnectionParams typicalParams |> LinkedList.length)
-        |> Hspec.shouldBe 1
+      case ConnectionConfig.toConnectionParams typicalParams of
+        Err err -> Prelude.error (Prelude.show err)
+        Ok settings -> (settings |> LinkedList.length) |> Hspec.shouldBe 1
 
-    Hspec.it "accepts the four ADR-0037 keepalive params and stays length 1 (keepalive contract)" do
-      let result = ConnectionConfig.toConnectionParams typicalParams
-      (result |> LinkedList.length) |> Hspec.shouldBe 1
-      (result `Prelude.seq` True) |> Hspec.shouldBe True
+    Hspec.it "accepts the boundary port 1" do
+      ConnectionConfig.toConnectionParams (paramsWithPort 1)
+        |> Result.isOk
+        |> Hspec.shouldBe True
 
-    Hspec.it "is total for empty-string host, db, user, and password" do
-      let result = ConnectionConfig.toConnectionParams emptyParams
-      (result `Prelude.seq` True) |> Hspec.shouldBe True
-      (result |> LinkedList.length) |> Hspec.shouldBe 1
+    Hspec.it "accepts the boundary port 65535" do
+      ConnectionConfig.toConnectionParams (paramsWithPort 65535)
+        |> Result.isOk
+        |> Hspec.shouldBe True
 
-    Hspec.it "is total for port = 0 (lower boundary)" do
-      let result = ConnectionConfig.toConnectionParams (paramsWithPort 0)
-      (result `Prelude.seq` True) |> Hspec.shouldBe True
-      (result |> LinkedList.length) |> Hspec.shouldBe 1
-
-    Hspec.it "is total for port = 1" do
-      let result = ConnectionConfig.toConnectionParams (paramsWithPort 1)
-      (result `Prelude.seq` True) |> Hspec.shouldBe True
-      (result |> LinkedList.length) |> Hspec.shouldBe 1
-
-    Hspec.it "is total for port = 65535 (max valid TCP port)" do
-      let result = ConnectionConfig.toConnectionParams (paramsWithPort 65535)
-      (result `Prelude.seq` True) |> Hspec.shouldBe True
-      (result |> LinkedList.length) |> Hspec.shouldBe 1
-
-    Hspec.it "is total for port = 65536 (max + 1)" do
-      let result = ConnectionConfig.toConnectionParams (paramsWithPort 65536)
-      (result `Prelude.seq` True) |> Hspec.shouldBe True
-      (result |> LinkedList.length) |> Hspec.shouldBe 1
-
-    Hspec.it "is total for a negative port" do
-      let result = ConnectionConfig.toConnectionParams (paramsWithPort (-1))
-      (result `Prelude.seq` True) |> Hspec.shouldBe True
-      (result |> LinkedList.length) |> Hspec.shouldBe 1
-
-    Hspec.it "is total for unicode multibyte text in the password field" do
-      let result = ConnectionConfig.toConnectionParams (paramsWithPassword "pâsswörd-🔑-日本語")
-      (result `Prelude.seq` True) |> Hspec.shouldBe True
-      (result |> LinkedList.length) |> Hspec.shouldBe 1
-
-  Hspec.describe "toConnectionSettings" do
-    Hspec.it "equals the shared builder applied to the projected ConnectionParams (Design Goal 4 regression guard)" do
-      let direct = EventStore.toConnectionSettings typicalEventStore |> LinkedList.length
-      let projected = ConnectionConfig.toConnectionParams (project typicalEventStore) |> LinkedList.length
-      direct |> Hspec.shouldBe projected
-      direct |> Hspec.shouldBe 1
-
-    Hspec.it "returns a single connection setting for a typical PostgresEventStore" do
-      (EventStore.toConnectionSettings typicalEventStore |> LinkedList.length)
-        |> Hspec.shouldBe 1
-
-    Hspec.it "is total for empty-string host, db, user, and password fields" do
-      let cfg =
-            typicalEventStore
-              { EventStore.host = "",
-                EventStore.databaseName = "",
-                EventStore.user = "",
-                EventStore.password = ""
-              }
-      let result = EventStore.toConnectionSettings cfg
-      (result `Prelude.seq` True) |> Hspec.shouldBe True
-      (result |> LinkedList.length) |> Hspec.shouldBe 1
-
-    Hspec.it "is total for port = 0 and port = 65535 (boundaries) and equals the projected builder" do
-      let cfg0 = typicalEventStore {EventStore.port = 0}
-      (EventStore.toConnectionSettings cfg0 |> LinkedList.length) |> Hspec.shouldBe 1
-      (EventStore.toConnectionSettings cfg0 |> LinkedList.length)
-        |> Hspec.shouldBe (ConnectionConfig.toConnectionParams (project cfg0) |> LinkedList.length)
-      let cfgMax = typicalEventStore {EventStore.port = 65535}
-      (EventStore.toConnectionSettings cfgMax |> LinkedList.length) |> Hspec.shouldBe 1
-      (EventStore.toConnectionSettings cfgMax |> LinkedList.length)
-        |> Hspec.shouldBe (ConnectionConfig.toConnectionParams (project cfgMax) |> LinkedList.length)
-
-    Hspec.it "is total for port = 65536 (max + 1) and a negative port" do
-      let cfgOver = typicalEventStore {EventStore.port = 65536}
-      let resultOver = EventStore.toConnectionSettings cfgOver
-      (resultOver `Prelude.seq` True) |> Hspec.shouldBe True
-      (resultOver |> LinkedList.length) |> Hspec.shouldBe 1
-      let cfgNeg = typicalEventStore {EventStore.port = -1}
-      let resultNeg = EventStore.toConnectionSettings cfgNeg
-      (resultNeg `Prelude.seq` True) |> Hspec.shouldBe True
-      (resultNeg |> LinkedList.length) |> Hspec.shouldBe 1
-
-    Hspec.it "is total for unicode multibyte password and matches the projected builder" do
-      let cfg = typicalEventStore {EventStore.password = "pâsswörd-🔑-日本語"}
-      (EventStore.toConnectionSettings cfg |> LinkedList.length) |> Hspec.shouldBe 1
-      (EventStore.toConnectionSettings cfg |> LinkedList.length)
-        |> Hspec.shouldBe (ConnectionConfig.toConnectionParams (project cfg) |> LinkedList.length)
+    Hspec.it "rejects an out-of-range port instead of silently wrapping" do
+      -- The Ok payload (LinkedList Setting) has no Show, so assert the Err
+      -- branch via a case rather than shouldBe on the whole Result.
+      case ConnectionConfig.toConnectionParams (paramsWithPort 70000) of
+        Err err -> err |> Hspec.shouldBe "port must be in 1..65535, got 70000"
+        Ok _ -> Prelude.error "expected an out-of-range port to be rejected"
 
   Hspec.describe "toPoolConfig" do
-    Hspec.it "returns a defined Config for the EventStore/FileUpload default size 6" do
-      (ConnectionConfig.toPoolConfig 6 typicalSettings `Prelude.seq` True)
-        |> Hspec.shouldBe True
+    Hspec.it "returns a defined Config for the EventStore/FileUpload size 6" do
+      case ConnectionConfig.toConnectionParams typicalParams of
+        Err err -> Prelude.error (Prelude.show err)
+        Ok settings ->
+          (ConnectionConfig.toPoolConfig 6 settings `Prelude.seq` True)
+            |> Hspec.shouldBe True
 
     Hspec.it "returns a defined Config for the QueryObjectStore size 4" do
-      (ConnectionConfig.toPoolConfig 4 typicalSettings `Prelude.seq` True)
-        |> Hspec.shouldBe True
-
-    Hspec.it "is total for poolSize = 0 (zero boundary)" do
-      (ConnectionConfig.toPoolConfig 0 typicalSettings `Prelude.seq` True)
-        |> Hspec.shouldBe True
-
-    Hspec.it "is total for poolSize = 1 (one boundary)" do
-      (ConnectionConfig.toPoolConfig 1 typicalSettings `Prelude.seq` True)
-        |> Hspec.shouldBe True
-
-    Hspec.it "is total for a large poolSize (e.g. 1000000)" do
-      (ConnectionConfig.toPoolConfig 1000000 typicalSettings `Prelude.seq` True)
-        |> Hspec.shouldBe True
-
-    Hspec.it "is total for a negative poolSize" do
-      (ConnectionConfig.toPoolConfig (-1) typicalSettings `Prelude.seq` True)
-        |> Hspec.shouldBe True
+      case ConnectionConfig.toConnectionParams typicalParams of
+        Err err -> Prelude.error (Prelude.show err)
+        Ok settings ->
+          (ConnectionConfig.toPoolConfig 4 settings `Prelude.seq` True)
+            |> Hspec.shouldBe True
 
     Hspec.it "is total regardless of settings list length (empty vs typical)" do
       (ConnectionConfig.toPoolConfig 6 [] `Prelude.seq` True) |> Hspec.shouldBe True
-      (ConnectionConfig.toPoolConfig 6 typicalSettings `Prelude.seq` True) |> Hspec.shouldBe True

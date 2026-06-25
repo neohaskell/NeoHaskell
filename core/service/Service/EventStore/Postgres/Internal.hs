@@ -92,7 +92,7 @@ instance EventStoreConfig PostgresEventStore where
   createEventStore = new defaultOps
 
 
-toConnectionSettings :: PostgresEventStore -> LinkedList Hasql.Setting
+toConnectionSettings :: PostgresEventStore -> Result Text (LinkedList Hasql.Setting)
 toConnectionSettings cfg =
   ConnectionConfig.toConnectionParams
     ConnectionConfig.ConnectionParams
@@ -102,6 +102,16 @@ toConnectionSettings cfg =
         password = cfg.password,
         port = cfg.port
       }
+
+
+-- | Resolve connection settings inside a Task, surfacing a port-validation
+-- error (see 'ConnectionConfig.validatePort') as a Text failure. Used by the
+-- LISTEN/NOTIFY paths that acquire one-off connections directly.
+connectionSettingsOrThrow :: PostgresEventStore -> Task Text (LinkedList Hasql.Setting)
+connectionSettingsOrThrow cfg =
+  case toConnectionSettings cfg of
+    Ok settings -> Task.yield settings
+    Err err -> Task.throw err
 
 
 data Ops = Ops
@@ -120,11 +130,15 @@ defaultOps = do
           False ->
             Task.throw [fmt|poolSize must be > 0, got #{size}|]
           True ->
-            toConnectionSettings cfg
-              |> ConnectionConfig.toPoolConfig cfg.poolSize
-              |> HasqlPool.acquire
-              |> Task.fromIO
-              |> Task.map (Sessions.Connection)
+            case toConnectionSettings cfg of
+              Err portErr ->
+                Task.throw portErr
+              Ok settings ->
+                settings
+                  |> ConnectionConfig.toPoolConfig cfg.poolSize
+                  |> HasqlPool.acquire
+                  |> Task.fromIO
+                  |> Task.map (Sessions.Connection)
 
   let initializeTable connection = do
         Sessions.createEventsTableSession
@@ -132,7 +146,8 @@ defaultOps = do
           |> Task.mapError toText
 
   let initializeSubscriptions _pool subscriptionStore cfg = do
-        initialListenConnection <- Hasql.acquire (toConnectionSettings cfg) |> Task.fromIOEither |> Task.mapError toText
+        listenSettings <- connectionSettingsOrThrow cfg
+        initialListenConnection <- Hasql.acquire listenSettings |> Task.fromIOEither |> Task.mapError toText
         Task.finally
           (Hasql.release initialListenConnection |> Task.fromIO)
           do
@@ -143,8 +158,9 @@ defaultOps = do
               |> Sessions.runConnection initialListenConnection
               |> Task.mapError toText
             let connectionFactory = do
-                  listenConnection <- Hasql.acquire (toConnectionSettings cfg) |> Task.fromIOEither |> Task.mapError toText
-                  queryResult <- Hasql.acquire (toConnectionSettings cfg) |> Task.fromIOEither |> Task.mapError toText |> Task.asResult
+                  factorySettings <- connectionSettingsOrThrow cfg
+                  listenConnection <- Hasql.acquire factorySettings |> Task.fromIOEither |> Task.mapError toText
+                  queryResult <- Hasql.acquire factorySettings |> Task.fromIOEither |> Task.mapError toText |> Task.asResult
                   case queryResult of
                     Ok queryConnection -> Task.yield (listenConnection, queryConnection)
                     Err err -> do
@@ -756,8 +772,11 @@ subscribeToStreamEventsImpl ::
 subscribeToStreamEventsImpl ops cfg store entityName streamId callback =
   ops |> withConnectionAndError cfg \conn -> do
     -- Subscribe to the stream-specific notification channel
+    streamSettings <-
+      connectionSettingsOrThrow cfg
+        |> Task.mapError (\err -> SubscriptionError (SubscriptionId "stream") err)
     connection <-
-      Hasql.acquire (toConnectionSettings cfg)
+      Hasql.acquire streamSettings
         |> Task.fromIOEither
         |> Task.mapError (\err -> SubscriptionError (SubscriptionId "stream") (err |> toText))
     Notifications.subscribeToStream connection streamId

@@ -87,6 +87,7 @@ data PostgresFileStoreError
   = PoolError HasqlPool.UsageError
   | DeserializationError Text
   | InvalidPoolSize Text
+  | InvalidPort Text
   deriving (Eq, Show)
 
 
@@ -166,19 +167,20 @@ createPool cfg = do
   case size > 0 of
     False ->
       Task.throw (InvalidPoolSize [fmt|poolSize must be > 0, got #{size}|])
-    True -> do
-      let settings =
-            ConnectionConfig.toConnectionParams
-              ConnectionConfig.ConnectionParams
-                { host = cfg.host
-                , databaseName = cfg.databaseName
-                , user = cfg.user
-                , password = cfg.password
-                , port = cfg.port
-                }
-      let poolConfig = ConnectionConfig.toPoolConfig cfg.poolSize settings
-      HasqlPool.acquire poolConfig
-        |> Task.fromIO
+    True ->
+      case ConnectionConfig.toConnectionParams
+             ConnectionConfig.ConnectionParams
+               { host = cfg.host
+               , databaseName = cfg.databaseName
+               , user = cfg.user
+               , password = cfg.password
+               , port = cfg.port
+               } of
+        Err portErr -> Task.throw (InvalidPort portErr)
+        Ok settings -> do
+          let poolConfig = ConnectionConfig.toPoolConfig cfg.poolSize settings
+          HasqlPool.acquire poolConfig
+            |> Task.fromIO
 
 
 -- | Create the file_upload_state table if it doesn't exist.
