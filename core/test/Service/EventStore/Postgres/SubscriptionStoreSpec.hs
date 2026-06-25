@@ -12,6 +12,7 @@ import Service.Event.EventMetadata qualified as EventMetadata
 import Service.Event.StreamId qualified as StreamId
 import Service.EventStore.Postgres.SubscriptionStore (Error (..), SubscriptionStore (..))
 import Service.EventStore.Postgres.SubscriptionStore qualified as SubscriptionStore
+import Service.EventStore.Core (SubscriptionId (..))
 import Task qualified
 import Test
 import Test.Service.EventStore.Core (CartEvent (..))
@@ -348,6 +349,229 @@ spec = do
             -- Dispatch completed successfully within timeout
             count <- ConcurrentVar.get executionCount
             count |> shouldBe 5
+
+
+    describe "addStreamSubscriptionWithCleanup (ADR-0063)" do
+      it "registers a stream subscription that is dispatched to like any other stream sub" \_ -> do
+        store <- SubscriptionStore.new |> Task.mapError toText
+        streamId <- StreamId.new
+        let entityName = Event.EntityName "TestEntity"
+
+        executionCount <- ConcurrentVar.containing (0 :: Int)
+        let callback _msg = do
+              executionCount |> ConcurrentVar.modify (\n -> n + 1)
+              Task.yield unit
+        let noopCleanup = Task.yield unit
+
+        store
+          |> SubscriptionStore.addStreamSubscriptionWithCleanup entityName streamId Nothing noopCleanup callback
+          |> discard
+          |> Task.mapError toText
+
+        subscriptions <- store |> SubscriptionStore.getStreamSubscriptions streamId |> Task.mapError toText
+        subscriptions |> Map.length |> shouldBe 1
+
+        event <- createTestEvent |> Task.mapError toText
+        store |> SubscriptionStore.dispatch streamId event |> Task.mapError toText
+        count <- ConcurrentVar.get executionCount
+        count |> shouldBe 1
+
+      it "stores the supplied onRemove so it runs on removeSubscription" \_ -> do
+        store <- SubscriptionStore.new |> Task.mapError toText
+        streamId <- StreamId.new
+        let entityName = Event.EntityName "TestEntity"
+
+        cleanupRuns <- ConcurrentVar.containing (0 :: Int)
+        let callback _msg = Task.yield unit
+        let cleanup = do
+              cleanupRuns |> ConcurrentVar.modify (\n -> n + 1)
+              Task.yield unit
+
+        subId <-
+          store
+            |> SubscriptionStore.addStreamSubscriptionWithCleanup entityName streamId Nothing cleanup callback
+            |> Task.mapError toText
+
+        store |> SubscriptionStore.removeSubscription subId |> Task.mapError toText
+
+        runs <- ConcurrentVar.get cleanupRuns
+        runs |> shouldBe 1
+
+      it "does not run onRemove at registration time" \_ -> do
+        store <- SubscriptionStore.new |> Task.mapError toText
+        streamId <- StreamId.new
+        let entityName = Event.EntityName "TestEntity"
+
+        cleanupRuns <- ConcurrentVar.containing (0 :: Int)
+        let callback _msg = Task.yield unit
+        let cleanup = do
+              cleanupRuns |> ConcurrentVar.modify (\n -> n + 1)
+              Task.yield unit
+
+        store
+          |> SubscriptionStore.addStreamSubscriptionWithCleanup entityName streamId Nothing cleanup callback
+          |> discard
+          |> Task.mapError toText
+
+        runs <- ConcurrentVar.get cleanupRuns
+        runs |> shouldBe 0
+
+      it "keeps subscriptions for different streams separate" \_ -> do
+        store <- SubscriptionStore.new |> Task.mapError toText
+        streamId1 <- StreamId.new
+        streamId2 <- StreamId.new
+        let entityName = Event.EntityName "TestEntity"
+        let callback _msg = Task.yield unit
+        let noopCleanup = Task.yield unit
+
+        store |> SubscriptionStore.addStreamSubscriptionWithCleanup entityName streamId1 Nothing noopCleanup callback |> discard |> Task.mapError toText
+        store |> SubscriptionStore.addStreamSubscriptionWithCleanup entityName streamId1 Nothing noopCleanup callback |> discard |> Task.mapError toText
+        store |> SubscriptionStore.addStreamSubscriptionWithCleanup entityName streamId2 Nothing noopCleanup callback |> discard |> Task.mapError toText
+
+        subs1 <- store |> SubscriptionStore.getStreamSubscriptions streamId1 |> Task.mapError toText
+        subs2 <- store |> SubscriptionStore.getStreamSubscriptions streamId2 |> Task.mapError toText
+        subs1 |> Map.length |> shouldBe 2
+        subs2 |> Map.length |> shouldBe 1
+
+    describe "removeSubscription cleanup (ADR-0063)" do
+      it "runs the stored onRemove exactly once on remove" \_ -> do
+        store <- SubscriptionStore.new |> Task.mapError toText
+        streamId <- StreamId.new
+        let entityName = Event.EntityName "TestEntity"
+
+        cleanupRuns <- ConcurrentVar.containing (0 :: Int)
+        let callback _msg = Task.yield unit
+        let cleanup = do
+              cleanupRuns |> ConcurrentVar.modify (\n -> n + 1)
+              Task.yield unit
+
+        subId <-
+          store
+            |> SubscriptionStore.addStreamSubscriptionWithCleanup entityName streamId Nothing cleanup callback
+            |> Task.mapError toText
+        store |> SubscriptionStore.removeSubscription subId |> Task.mapError toText
+
+        runs <- ConcurrentVar.get cleanupRuns
+        runs |> shouldBe 1
+        subscriptions <- store |> SubscriptionStore.getStreamSubscriptions streamId |> Task.mapError toText
+        subscriptions |> Map.length |> shouldBe 0
+
+      it "stays total when onRemove throws (unsubscribe never fails)" \_ -> do
+        store <- SubscriptionStore.new |> Task.mapError toText
+        streamId <- StreamId.new
+        let entityName = Event.EntityName "TestEntity"
+
+        let callback _msg = Task.yield unit
+        let failingCleanup = Task.throw "release failed on purpose"
+
+        subId <-
+          store
+            |> SubscriptionStore.addStreamSubscriptionWithCleanup entityName streamId Nothing failingCleanup callback
+            |> Task.mapError toText
+
+        result <- store |> SubscriptionStore.removeSubscription subId |> Task.asResult
+        case result of
+          Err err -> Test.fail [fmt|removeSubscription must stay total, but failed: #{toText err}|]
+          Ok _ -> Task.yield unit
+
+        subscriptions <- store |> SubscriptionStore.getStreamSubscriptions streamId |> Task.mapError toText
+        subscriptions |> Map.length |> shouldBe 0
+
+      it "is a no-op for a never-registered id (runs no cleanup)" \_ -> do
+        store <- SubscriptionStore.new |> Task.mapError toText
+        streamId <- StreamId.new
+        let entityName = Event.EntityName "TestEntity"
+        let unknownId = SubscriptionId "never-registered-id"
+
+        -- Register a real cleanup-bearing subscription, then remove a DIFFERENT
+        -- (unknown) id: the unknown remove must be a no-op AND must not fire the
+        -- registered subscription's cleanup.
+        cleanupRuns <- ConcurrentVar.containing (0 :: Int)
+        let callback _msg = Task.yield unit
+        let cleanup = do
+              cleanupRuns |> ConcurrentVar.modify (\n -> n + 1)
+              Task.yield unit
+        store
+          |> SubscriptionStore.addStreamSubscriptionWithCleanup entityName streamId Nothing cleanup callback
+          |> discard
+          |> Task.mapError toText
+
+        result <- store |> SubscriptionStore.removeSubscription unknownId |> Task.asResult
+        case result of
+          Err err -> Test.fail [fmt|removing an unknown id must be a no-op, but failed: #{toText err}|]
+          Ok _ -> Task.yield unit
+
+        runs <- ConcurrentVar.get cleanupRuns
+        runs |> shouldBe 0
+        -- The real subscription is still registered (unknown remove touched nothing).
+        subscriptions <- store |> SubscriptionStore.getStreamSubscriptions streamId |> Task.mapError toText
+        subscriptions |> Map.length |> shouldBe 1
+
+      it "is a no-op (and does not re-run cleanup) on a double remove" \_ -> do
+        store <- SubscriptionStore.new |> Task.mapError toText
+        streamId <- StreamId.new
+        let entityName = Event.EntityName "TestEntity"
+
+        cleanupRuns <- ConcurrentVar.containing (0 :: Int)
+        let callback _msg = Task.yield unit
+        let cleanup = do
+              cleanupRuns |> ConcurrentVar.modify (\n -> n + 1)
+              Task.yield unit
+
+        subId <-
+          store
+            |> SubscriptionStore.addStreamSubscriptionWithCleanup entityName streamId Nothing cleanup callback
+            |> Task.mapError toText
+
+        store |> SubscriptionStore.removeSubscription subId |> Task.mapError toText
+        result <- store |> SubscriptionStore.removeSubscription subId |> Task.asResult
+        case result of
+          Err err -> Test.fail [fmt|second removeSubscription must be a no-op, but failed: #{toText err}|]
+          Ok _ -> Task.yield unit
+
+        runs <- ConcurrentVar.get cleanupRuns
+        runs |> shouldBe 1
+
+      it "leaves global and entity subscriptions no-op cleanup unaffected" \_ -> do
+        store <- SubscriptionStore.new |> Task.mapError toText
+        streamId <- StreamId.new
+        let entityName = Event.EntityName "TestEntity"
+        let callback _msg = Task.yield unit
+
+        -- A stream subscription with a real cleanup coexists with global/entity
+        -- subscriptions; removing the global and entity subs must run NO cleanup
+        -- (their onRemove is a no-op) and must not touch the stream cleanup.
+        cleanupRuns <- ConcurrentVar.containing (0 :: Int)
+        let cleanup = do
+              cleanupRuns |> ConcurrentVar.modify (\n -> n + 1)
+              Task.yield unit
+        store
+          |> SubscriptionStore.addStreamSubscriptionWithCleanup entityName streamId Nothing cleanup callback
+          |> discard
+          |> Task.mapError toText
+
+        globalId <- store |> SubscriptionStore.addGlobalSubscription callback |> Task.mapError toText
+        entityId <- store |> SubscriptionStore.addEntitySubscription entityName callback |> Task.mapError toText
+
+        globalResult <- store |> SubscriptionStore.removeSubscription globalId |> Task.asResult
+        case globalResult of
+          Err err -> Test.fail [fmt|removing a global subscription must be total: #{toText err}|]
+          Ok _ -> Task.yield unit
+
+        entityResult <- store |> SubscriptionStore.removeSubscription entityId |> Task.asResult
+        case entityResult of
+          Err err -> Test.fail [fmt|removing an entity subscription must be total: #{toText err}|]
+          Ok _ -> Task.yield unit
+
+        globalSubs <- store.globalSubscriptions |> ConcurrentVar.peek
+        entitySubs <- store.entitySubscriptions |> ConcurrentVar.peek
+        globalSubs |> Map.length |> shouldBe 0
+        entitySubs |> Map.getOrElse entityName Map.empty |> Map.length |> shouldBe 0
+        -- The stream subscription and its cleanup are untouched by the removals.
+        runs <- ConcurrentVar.get cleanupRuns
+        runs |> shouldBe 0
+        streamSubs <- store |> SubscriptionStore.getStreamSubscriptions streamId |> Task.mapError toText
+        streamSubs |> Map.length |> shouldBe 1
 
 
 -- Helper function to create a test event
