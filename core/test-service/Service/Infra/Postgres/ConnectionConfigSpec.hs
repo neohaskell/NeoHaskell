@@ -412,27 +412,33 @@ spec = Hspec.describe "Service.Infra.Postgres.ConnectionConfig" do
       let pairs = pairsOfOk (ConnectionConfig.toParamPairs (paramsRemoteHost SslModeVerifyFull))
       (pairs |> Prelude.elem ("host", "db.example.com")) |> Hspec.shouldBe True
 
-    Hspec.it "keeps every base coordinate (host/port/dbname/user/password) for EVERY sslMode -- table sweep" do
-      let modes :: [SslMode]
-          modes =
-            [ SslModeUnset,
-              SslModeDisable,
-              SslModeAllow,
-              SslModePrefer,
-              SslModeRequire,
-              SslModeVerifyCa,
-              SslModeVerifyFull
+    Hspec.it "keeps every base coordinate (host/port/dbname/user/password) for EVERY sslMode -- table sweep over both the no-CA and hardened CA-bundle paths" do
+      -- Covers BOTH the no-CA path (every mode, sslRootCert = Nothing) AND the
+      -- deployed hardened path where verify-ca/verify-full append sslrootcert
+      -- (and verify-full also channel_binding) -- exactly the case that must
+      -- still carry host/port/dbname/user/password and not push them out (#694).
+      let cases :: [(SslMode, Maybe Text)]
+          cases =
+            [ (SslModeUnset, Nothing),
+              (SslModeDisable, Nothing),
+              (SslModeAllow, Nothing),
+              (SslModePrefer, Nothing),
+              (SslModeRequire, Nothing),
+              (SslModeVerifyCa, Nothing),
+              (SslModeVerifyFull, Nothing),
+              (SslModeVerifyCa, Just "/etc/ca.pem"),
+              (SslModeVerifyFull, Just "/etc/ca.pem")
             ]
       let baseKeys :: [Text]
           baseKeys = ["host", "port", "dbname", "user", "password"]
-      let allModesKeepBase =
-            modes
+      let allCasesKeepBase =
+            cases
               |> Prelude.all
-                ( \mode -> do
-                    let pairs = pairsOfOk (ConnectionConfig.toParamPairs (paramsWithSsl mode Nothing))
+                ( \(mode, rootCert) -> do
+                    let pairs = pairsOfOk (ConnectionConfig.toParamPairs (paramsWithSsl mode rootCert))
                     baseKeys |> Prelude.all (\k -> hasKey k pairs)
                 )
-      allModesKeepBase |> Hspec.shouldBe True
+      allCasesKeepBase |> Hspec.shouldBe True
 
   Hspec.describe "toParamPairs (additive sslMode/sslRootCert)" do
     Hspec.it "with SslModeUnset emits exactly the base params and NO ssl params (byte-identical no-regression baseline)" do

@@ -106,6 +106,20 @@ sslThreadingSpec =
         |> Result.map (LinkedList.any (\(k, v) -> k == "sslmode" && v == "require"))
         |> shouldBe (Ok True)
 
+    it "threads verify-full + sslrootcert + channel_binding through FileUpload's config bridge (hardened path keeps the CA bundle)" \_ -> do
+      -- Guards 'toEventStoreConfig' against silently dropping pgSslRootCert: the
+      -- full hardened posture (sslmode + sslrootcert + channel_binding) must
+      -- survive the FileUpload mapping, not just the sslmode knob.
+      paramsFor (configFor SslModeVerifyFull (Just "/etc/ca.pem"))
+        |> ConnectionConfig.toParamPairs
+        |> Result.map
+          ( \pairs ->
+              LinkedList.any (\(k, v) -> k == "sslmode" && v == "verify-full") pairs
+                && LinkedList.any (\(k, v) -> k == "sslrootcert" && v == "/etc/ca.pem") pairs
+                && LinkedList.any (\(k, v) -> k == "channel_binding" && v == "require") pairs
+          )
+        |> shouldBe (Ok True)
+
     it "emits NO sslmode param for SslModeUnset (default-off, no regression)" \_ -> do
       paramsFor (configFor SslModeUnset Nothing)
         |> ConnectionConfig.toParamPairs
