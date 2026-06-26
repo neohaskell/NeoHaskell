@@ -99,6 +99,39 @@ lengthOfOk result =
     Ok xs -> LinkedList.length xs
     Err e -> Prelude.error (Prelude.show e)
 
+
+-- | Extract the Ok (key, value) param-pair list, failing hard on Err. The pairs
+-- have Eq/Show (unlike the opaque hasql Setting), so the contract can be
+-- asserted exactly -- which key/value pairs are present, and which are NOT.
+pairsOfOk :: Result Text (LinkedList (Text, Text)) -> LinkedList (Text, Text)
+pairsOfOk result =
+  case result of
+    Ok pairs -> pairs
+    Err e -> Prelude.error (Prelude.show e)
+
+
+-- | True when the (key, value) pair list contains the given key (value
+-- ignored) -- used to assert presence/absence of a param by name.
+hasKey :: Text -> LinkedList (Text, Text) -> Bool
+hasKey key pairs =
+  pairs |> Prelude.any (\(k, _) -> k Prelude.== key)
+
+
+-- | A remote-host config mirroring the #694 reproduction: a non-localhost host
+-- that the bug silently replaced with the local Unix-socket default. Full
+-- record construction for the same disambiguation reason as 'paramsWithPort'.
+paramsRemoteHost :: ConnectionConfig.SslMode -> ConnectionParams
+paramsRemoteHost mode =
+  ConnectionConfig.ConnectionParams
+    { host = "db.example.com",
+      databaseName = "app",
+      user = "postgres",
+      password = "secret",
+      port = 5432,
+      sslMode = mode,
+      sslRootCert = Nothing
+    }
+
 spec :: Hspec.Spec
 spec = Hspec.describe "Service.Infra.Postgres.ConnectionConfig" do
   Hspec.describe "validatePort" do
@@ -181,6 +214,41 @@ spec = Hspec.describe "Service.Infra.Postgres.ConnectionConfig" do
       ConnectionConfig.resolveParams (paramsWithPort 65536)
         |> Result.isErr
         |> Hspec.shouldBe True
+
+  Hspec.describe "toConnectionParams (#694 regression: one connection setting)" do
+    -- #694: hasql's 'staticConnectionSettings' applies every
+    -- 'ConnectionSetting.connection' by REPLACING the whole connection string
+    -- (last-wins). Emitting the TLS params as a SEPARATE connection Setting
+    -- therefore silently dropped host/port/dbname and libpq fell back to the
+    -- local Unix socket. The contract is now: ALL params live in exactly ONE
+    -- connection Setting, so the list length is 1 for EVERY sslMode -- never
+    -- 2+, which is the smoking gun of the host-dropping bug.
+    Hspec.it "emits exactly ONE connection setting for SslModeRequire (a 2nd would drop host via last-wins)" do
+      case ConnectionConfig.toConnectionParams (paramsWithSsl SslModeRequire Nothing) of
+        Err err -> Prelude.error (Prelude.show err)
+        Ok settings -> (settings |> LinkedList.length) |> Hspec.shouldBe 1
+
+    Hspec.it "emits exactly ONE connection setting for verify-full + rootCert (sslmode+sslrootcert+channel_binding must not split it)" do
+      case ConnectionConfig.toConnectionParams (paramsWithSsl SslModeVerifyFull (Just "/etc/ca.pem")) of
+        Err err -> Prelude.error (Prelude.show err)
+        Ok settings -> (settings |> LinkedList.length) |> Hspec.shouldBe 1
+
+    Hspec.it "emits exactly ONE connection setting for EVERY SslMode (table sweep: none may add a host-dropping 2nd setting)" do
+      let modes :: [SslMode]
+          modes =
+            [ SslModeUnset,
+              SslModeDisable,
+              SslModeAllow,
+              SslModePrefer,
+              SslModeRequire,
+              SslModeVerifyCa,
+              SslModeVerifyFull
+            ]
+      let allSingle =
+            modes
+              |> Prelude.all
+                (\m -> lengthOfOk (ConnectionConfig.toConnectionParams (paramsWithSsl m (Just "/etc/ca.pem"))) Prelude.== 1)
+      allSingle |> Hspec.shouldBe True
 
   Hspec.describe "toConnectionParams" do
     Hspec.it "returns a single connection setting for a typical config" do
@@ -331,63 +399,116 @@ spec = Hspec.describe "Service.Infra.Postgres.ConnectionConfig" do
         Ok r ->
           r.sslRootCert |> Hspec.shouldBe Nothing
 
-  Hspec.describe "toConnectionParams (additive sslMode/sslRootCert)" do
-    Hspec.it "with SslModeRequire produces an Ok settings list one entry longer than the unset baseline" do
-      let baseLen = lengthOfOk (ConnectionConfig.toConnectionParams (paramsWithSsl SslModeUnset Nothing))
-      let reqLen = lengthOfOk (ConnectionConfig.toConnectionParams (paramsWithSsl SslModeRequire Nothing))
-      reqLen |> Hspec.shouldBe (baseLen + 1)
+  Hspec.describe "toParamPairs (#694: base params survive every sslMode)" do
+    -- The smoking gun of #694: with a set sslMode, the host/port/dbname/user/
+    -- password coordinates were dropped and libpq fell back to the local Unix
+    -- socket. The whole base set must now ride in the SAME param list as the
+    -- TLS params, so every base coordinate is present for EVERY mode.
+    Hspec.it "keeps the remote host param under SslModeRequire (the exact param #694 dropped)" do
+      let pairs = pairsOfOk (ConnectionConfig.toParamPairs (paramsRemoteHost SslModeRequire))
+      (pairs |> Prelude.elem ("host", "db.example.com")) |> Hspec.shouldBe True
 
-    Hspec.it "with SslModeUnset emits the same settings-list length as the pre-WI-5 baseline (no regression)" do
-      case ConnectionConfig.toConnectionParams (paramsWithSsl SslModeUnset Nothing) of
-        Err err -> Prelude.error (Prelude.show err)
-        Ok settings -> (settings |> LinkedList.length) |> Hspec.shouldBe 1
+    Hspec.it "keeps the remote host param under SslModeVerifyFull" do
+      let pairs = pairsOfOk (ConnectionConfig.toParamPairs (paramsRemoteHost SslModeVerifyFull))
+      (pairs |> Prelude.elem ("host", "db.example.com")) |> Hspec.shouldBe True
 
-    Hspec.it "with SslModeVerifyFull + Just rootCert produces a list longer than require alone (sslmode + sslrootcert + channel_binding)" do
-      let reqLen = lengthOfOk (ConnectionConfig.toConnectionParams (paramsWithSsl SslModeRequire Nothing))
-      let vfLen = lengthOfOk (ConnectionConfig.toConnectionParams (paramsWithSsl SslModeVerifyFull (Just "/etc/ca.pem")))
-      (vfLen Prelude.> reqLen) |> Hspec.shouldBe True
+    Hspec.it "keeps every base coordinate (host/port/dbname/user/password) for EVERY sslMode -- table sweep over both the no-CA and hardened CA-bundle paths" do
+      -- Covers BOTH the no-CA path (every mode, sslRootCert = Nothing) AND the
+      -- deployed hardened path where verify-ca/verify-full append sslrootcert
+      -- (and verify-full also channel_binding) -- exactly the case that must
+      -- still carry host/port/dbname/user/password and not push them out (#694).
+      let cases :: [(SslMode, Maybe Text)]
+          cases =
+            [ (SslModeUnset, Nothing),
+              (SslModeDisable, Nothing),
+              (SslModeAllow, Nothing),
+              (SslModePrefer, Nothing),
+              (SslModeRequire, Nothing),
+              (SslModeVerifyCa, Nothing),
+              (SslModeVerifyFull, Nothing),
+              (SslModeVerifyCa, Just "/etc/ca.pem"),
+              (SslModeVerifyFull, Just "/etc/ca.pem")
+            ]
+      let baseKeys :: [Text]
+          baseKeys = ["host", "port", "dbname", "user", "password"]
+      let allCasesKeepBase =
+            cases
+              |> Prelude.all
+                ( \(mode, rootCert) -> do
+                    let pairs = pairsOfOk (ConnectionConfig.toParamPairs (paramsWithSsl mode rootCert))
+                    baseKeys |> Prelude.all (\k -> hasKey k pairs)
+                )
+      allCasesKeepBase |> Hspec.shouldBe True
 
-    Hspec.it "with SslModeVerifyFull but Nothing rootCert emits no sslrootcert (boundary: empty cert path)" do
-      let reqLen = lengthOfOk (ConnectionConfig.toConnectionParams (paramsWithSsl SslModeRequire Nothing))
-      let vfLen = lengthOfOk (ConnectionConfig.toConnectionParams (paramsWithSsl SslModeVerifyFull Nothing))
-      vfLen |> Hspec.shouldBe reqLen
+  Hspec.describe "toParamPairs (additive sslMode/sslRootCert)" do
+    Hspec.it "with SslModeUnset emits exactly the base params and NO ssl params (byte-identical no-regression baseline)" do
+      let pairs = pairsOfOk (ConnectionConfig.toParamPairs (paramsWithSsl SslModeUnset Nothing))
+      pairs
+        |> Hspec.shouldBe
+          [ ("host", "localhost"),
+            ("port", "5432"),
+            ("dbname", "app"),
+            ("user", "postgres"),
+            ("password", "secret"),
+            ("keepalives", "1"),
+            ("keepalives_idle", "30"),
+            ("keepalives_interval", "10"),
+            ("keepalives_count", "5")
+          ]
 
-    Hspec.it "emits exactly base + sslmode + sslrootcert + channel_binding for verify-full + cert (observes the EMITTED settings: no sslcert/sslkey leaks in)" do
-      -- The opaque hasql Setting list has no Eq/Show, so observe the emitted
-      -- OUTPUT by count rather than just the resolved params: the unset
-      -- baseline is 1 (the single base Setting), and verify-full WITH a root
-      -- cert must add exactly 3 -- sslmode, sslrootcert, channel_binding. A
-      -- leaked sslcert/sslkey client-cert param would push the count past
-      -- baseLen + 3, so this pins the no-mTLS guarantee on the emitted Setting
-      -- list, not merely on the inspectable ResolvedParams.
-      let baseLen = lengthOfOk (ConnectionConfig.toConnectionParams (paramsWithSsl SslModeUnset Nothing))
-      let vfLen = lengthOfOk (ConnectionConfig.toConnectionParams (paramsWithSsl SslModeVerifyFull (Just "/etc/ca.pem")))
-      vfLen |> Hspec.shouldBe (baseLen + 3)
+    Hspec.it "with SslModeRequire appends sslmode=require after the base params (and nothing else)" do
+      let pairs = pairsOfOk (ConnectionConfig.toParamPairs (paramsWithSsl SslModeRequire Nothing))
+      pairs
+        |> Hspec.shouldBe
+          [ ("host", "localhost"),
+            ("port", "5432"),
+            ("dbname", "app"),
+            ("user", "postgres"),
+            ("password", "secret"),
+            ("keepalives", "1"),
+            ("keepalives_idle", "30"),
+            ("keepalives_interval", "10"),
+            ("keepalives_count", "5"),
+            ("sslmode", "require")
+          ]
 
-    Hspec.it "emits sslrootcert but NOT channel_binding for verify-ca + cert (channel_binding is verify-full only)" do
-      let baseLen = lengthOfOk (ConnectionConfig.toConnectionParams (paramsWithSsl SslModeUnset Nothing))
-      let verifyCaLen = lengthOfOk (ConnectionConfig.toConnectionParams (paramsWithSsl SslModeVerifyCa (Just "/etc/ca.pem")))
-      verifyCaLen |> Hspec.shouldBe (baseLen + 2)
+    Hspec.it "with SslModeVerifyFull + cert emits exactly sslmode + sslrootcert + channel_binding and NO sslcert/sslkey (no-mTLS guarantee, ADR-0064 §3)" do
+      let pairs = pairsOfOk (ConnectionConfig.toParamPairs (paramsWithSsl SslModeVerifyFull (Just "/etc/ca.pem")))
+      (pairs |> Prelude.elem ("sslmode", "verify-full")) |> Hspec.shouldBe True
+      (pairs |> Prelude.elem ("sslrootcert", "/etc/ca.pem")) |> Hspec.shouldBe True
+      (pairs |> Prelude.elem ("channel_binding", "require")) |> Hspec.shouldBe True
+      (pairs |> hasKey "sslcert") |> Hspec.shouldBe False
+      (pairs |> hasKey "sslkey") |> Hspec.shouldBe False
+
+    Hspec.it "with SslModeVerifyFull but Nothing rootCert emits sslmode only -- no sslrootcert, no channel_binding (boundary: empty cert path)" do
+      let pairs = pairsOfOk (ConnectionConfig.toParamPairs (paramsWithSsl SslModeVerifyFull Nothing))
+      (pairs |> Prelude.elem ("sslmode", "verify-full")) |> Hspec.shouldBe True
+      (pairs |> hasKey "sslrootcert") |> Hspec.shouldBe False
+      (pairs |> hasKey "channel_binding") |> Hspec.shouldBe False
+
+    Hspec.it "with SslModeVerifyCa + cert emits sslrootcert but NOT channel_binding (channel_binding is verify-full only)" do
+      let pairs = pairsOfOk (ConnectionConfig.toParamPairs (paramsWithSsl SslModeVerifyCa (Just "/etc/ca.pem")))
+      (pairs |> Prelude.elem ("sslrootcert", "/etc/ca.pem")) |> Hspec.shouldBe True
+      (pairs |> hasKey "channel_binding") |> Hspec.shouldBe False
 
     Hspec.it "does NOT emit sslrootcert for a non-verifying mode even when a cert path is supplied (verify-only gating)" do
-      -- 'require' is non-verifying: a root cert is meaningless, so the emitted
-      -- settings for require+cert must equal require+no-cert (sslmode only).
-      let reqNoCert = lengthOfOk (ConnectionConfig.toConnectionParams (paramsWithSsl SslModeRequire Nothing))
-      let reqWithCert = lengthOfOk (ConnectionConfig.toConnectionParams (paramsWithSsl SslModeRequire (Just "/etc/ca.pem")))
+      -- 'require' is non-verifying: a root cert is meaningless, so require+cert
+      -- must equal require+no-cert (sslmode only).
+      let reqWithCert = pairsOfOk (ConnectionConfig.toParamPairs (paramsWithSsl SslModeRequire (Just "/etc/ca.pem")))
+      let reqNoCert = pairsOfOk (ConnectionConfig.toParamPairs (paramsWithSsl SslModeRequire Nothing))
       reqWithCert |> Hspec.shouldBe reqNoCert
+      (reqWithCert |> hasKey "sslrootcert") |> Hspec.shouldBe False
 
     Hspec.it "ignores a root cert for every non-verifying mode (disable/allow/prefer/require) -- table sweep of the verify-only gate" do
-      let baseLen = lengthOfOk (ConnectionConfig.toConnectionParams (paramsWithSsl SslModeUnset Nothing))
       let nonVerifying :: [SslMode]
           nonVerifying = [SslModeDisable, SslModeAllow, SslModePrefer, SslModeRequire]
-      let allIgnoreCert =
+      let noneEmitRootCert =
             nonVerifying
               |> Prelude.all
                 ( \mode ->
-                    lengthOfOk (ConnectionConfig.toConnectionParams (paramsWithSsl mode (Just "/etc/ca.pem")))
-                      Prelude.== (baseLen + 1)
+                    Prelude.not (hasKey "sslrootcert" (pairsOfOk (ConnectionConfig.toParamPairs (paramsWithSsl mode (Just "/etc/ca.pem")))))
                 )
-      allIgnoreCert |> Hspec.shouldBe True
+      noneEmitRootCert |> Hspec.shouldBe True
 
   Hspec.describe "textToSslMode / sslModeToText round-trip" do
     Hspec.it "round-trips every token-bearing SslMode: parse (toText m) back to Ok m" do
