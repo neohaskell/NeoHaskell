@@ -1,0 +1,151 @@
+---
+title: "Python-ից եկող"
+description: "Django, Flask, FastAPI, SQLAlchemy — թե ինչպես են Python-ում ճանաչված հասկացությունները քարտեզագրվում ՆեոՀասկելի վրա։ Dataclasses, դեկորատորներ, async, և տիպային սխալներ։"
+sidebar:
+  order: 2
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+Եթե դուք գրում եք Python (Django, Flask, FastAPI կամ այլ բան), NeoHaskell-ը կթվա անծանոթ շարահյուսության մակարդակում, բայց զարմանալիորեն մաքուր հասկացության մակարդակում։ Ամեն ինչ, ինչ դուք արդեն գիտեք մաքուր կոդի մասին — dataclasses, տիպային հուշումներ, մտահոգությունների բաժանում — ուղղակիորեն քարտեզագրվում է NeoHaskell ձևաչափերի վրա։ Այս էջը գծեր է քաշում։
+
+## Մեծ պատկերի քարտեզագրում
+
+| Python | NeoHaskell | Նշումներ |
+|---|---|---|
+| `async def f() -> T:` | `f :: Task err val` | Async տիպային սխալ ալիքով։ |
+| `await x` | `x <- someTask` (inside `do`) | Նույն գաղափարը։ |
+| `raise ValueError("msg")` | `Task.throw "msg"` | Տիպային, ոչ ոչ տիպային։ |
+| `try/except` | `Task.recover` | Տիպային վերականգնում։ |
+| `@dataclass` | `data Foo = Foo { a :: Int, ... }` | Բազմության տիպ։ |
+| `Enum` / `StrEnum` | `data Color = Red | Green | Blue` | Գումարային տիպ։ |
+| `Union[A, B]` or `A | B` | `data Either' = L A | R B` | Առանձնացված միություն։ |
+| `Optional[T]` | `Maybe T` | Ոչ մի `None` թաքնված ոչ մի տեղ։ |
+| `list[T]` | `Array T` | Արդյունավետ հաջորդականության հետ։ |
+| `dict[K, V]` | `Map K V` | Անփոփոխ ու մնայուն։ |
+| `with ctx:` | `Lock.with`, `Task.finally` | Ռեսուրսի սահմանում։ |
+| `for x in xs: ...` | `Array.forEach`, `Task.forEach` | Իտերացիա։ |
+| Comprehension `[f(x) for x in xs]` | `xs |> Array.map f` | Նույն բանը։ |
+| `if x: ...` | `if x then ... else ...` | Նույն բանը։ |
+| Decorator `@require_login` | `RequestContext` ստուգում `decide`-ում | Տարբեր ձև, նույն նպատակ։ |
+| Django model | Entity (`data Foo = Foo { ... }`) | Դոմեն օբյեկտ։ |
+| Django view | Command (`decide` ֆունկցիա) | Handler։ |
+| Django serializer | Auto-generated from the command type | Ոչ մի ձեռքով գրված բան։ |
+| Django URL | Auto-generated from the command name | Ոչ մի ձեռքով գրված բան։ |
+| SQLAlchemy query | Query (`deriveQuery`) | Read model։ |
+| Celery task | Integration (inbound or outbound) | Async worker։ |
+
+Կորի մտահոգությունը. **Python-ը ձեզ գործիքներ է տալիս։ NeoHaskell-ը ձեզ տիպեր է տալիս, որոնք երաշխավորում են, որ գործիքները օգտագործվել են։** Դուք դեռ բիզնես տրամաբանություն եք գրում ծանոթ տեսքով կոդ — նմուշային համընկնում, ռեկորդներ, if/else — բայց կոմպիլյատորը ստուգում է, որ ամեն ինչ համատեղելի է։
+
+## Կողք կողքի օրինակ
+
+Django-ի տիպիկ տեսարան, որը ստեղծում է օգտատիրոջ.
+
+```python
+from django.shortcuts import get_object_or_404
+from rest_framework.response import Response
+from rest_framework.views import APIView
+
+class CreateUserView(APIView):
+    def post(self, request):
+        email = request.data.get("email")
+        if not email:
+            return Response({"error": "Email is required"}, status=400)
+        if "@" not in email:
+            return Response({"error": "Invalid email"}, status=400)
+        if User.objects.filter(email=email).exists():
+            return Response({"error": "Email in use"}, status=409)
+        user = User.objects.create(email=email)
+        return Response({"id": user.id, "email": user.email})
+```
+
+NeoHaskell-ի համարժեքը.
+
+```haskell
+module MyApp.User.Commands.CreateUser (
+  CreateUser (..),
+  getEntityId,
+  decide,
+) where
+
+import Core
+import Decider qualified
+import Json qualified
+import Service.Auth (RequestContext)
+import Service.Command.Core (TransportsOf)
+import Service.CommandExecutor.TH (command)
+import Service.Transport.Web (WebTransport)
+import MyApp.User.Core
+import Text qualified
+
+
+data CreateUser = CreateUser { email :: Text }
+  deriving (Generic, Show)
+
+instance Json.FromJSON CreateUser
+
+
+getEntityId :: CreateUser -> Maybe Uuid
+getEntityId _ = Nothing
+
+
+decide :: CreateUser -> Maybe User -> RequestContext -> Decision UserEvent
+decide cmd existing _ctx = case existing of
+  Just _ -> Decider.reject "Email in use"
+  Nothing ->
+    if Text.isEmpty cmd.email
+      then Decider.reject "Email is required"
+      else if not (Text.contains "@" cmd.email)
+        then Decider.reject "Invalid email"
+        else do
+          userId <- Decider.generateUuid
+          Decider.acceptNew
+            [ UserRegistered
+                { entityId = userId
+                , email = cmd.email
+                }
+            ]
+
+
+type instance EntityOf CreateUser = User
+type instance TransportsOf CreateUser = '[WebTransport]
+
+command ''CreateUser
+```
+
+Երկու ֆայլերը նույն բանն են անում։ Տարբերություններ.
+
+- Ոչ մի URL ուղղում — `command ''CreateUser` ավտոմատ կերպով ստեղծում է այն։
+- Ոչ մի սերիալիզացիա — տիպը ինքն է սերիալիզացիան։
+- Ստուգումը մեկ տեղ է (`decide`), ոչ թե բաշխված է բազմաթիվ շերտերով։
+- Ստատուս կոդերը իմպլիցիտ են — ընդունում է 200, մերժում է 400, համակարգի ձախողումներ են 500։
+- Իրադարձությունը այն բանի գրառումն է, թե ինչ է տեղի ունեցել — դուք չեք կարող մոռանալ այն գրառել, քանի որ իրադարձությունների պահոցը միշտ այն գրառում է։
+
+## Dataclasses vs. տվյալների տիպեր
+
+Python-ի `@dataclass`-ը և NeoHaskell-ի `data` հայտարարությունը նույն աշխատանքն են կատարում.
+
+```python
+from dataclasses import dataclass
+
+@dataclass
+class User:
+    id: str
+    name: str
+    email: str
+```
+
+```haskell
+data User = User
+  { id :: Uuid
+  , name :: Text
+  , email :: Text
+  }
+  deriving (Generic, Show)
+```
+
+NeoHaskell-ի տարբերակը մի փոքր ավելի բառապաշար է (դուք պետք է ժառանգեք `Generic` JSON աջակցության համար, օրինակ), բայց հասկացությունը նույնն է։ Dataclass-ը ռեկորդ տիպ է։ Դա այն է։
+
+## Տիպային հուշումներ
+
+Python-ի տիպային հուշումները ոչ պարտադիր են — ժաման
