@@ -1,7 +1,10 @@
 module Service.Infra.Postgres.ConnectionConfig (
+  SslMode (..),
   ConnectionParams (..),
   ResolvedParams (..),
   validatePort,
+  sslModeToText,
+  textToSslMode,
   resolveParams,
   toConnectionParams,
   toPoolConfig,
@@ -22,6 +25,7 @@ import Hasql.Pool.Observation (ConnectionStatus (..), ConnectionTerminationReaso
 import Log qualified
 import Result qualified
 import Task qualified
+import Service.Infra.Postgres.SslMode (SslMode (..), sslModeToText, textToSslMode)
 import Prelude qualified
 
 
@@ -33,7 +37,14 @@ data ConnectionParams = ConnectionParams
     databaseName :: Text,
     user :: Text,
     password :: Text,
-    port :: Int
+    port :: Int,
+    -- WI-5 (#684): optional TLS hardening. 'SslModeUnset' (the default the
+    -- pool configs pass) emits no sslmode param, so libpq keeps its 'prefer'
+    -- default and localhost/dev is unchanged.
+    sslMode :: SslMode,
+    -- Optional CA-bundle path for 'verify-full' (root CAs only; never an
+    -- intermediate or server cert).
+    sslRootCert :: Maybe Text
   }
   deriving (Eq, Ord)
 
@@ -55,7 +66,12 @@ data ResolvedParams = ResolvedParams
     keepalives :: Text,
     keepalivesIdle :: Text,
     keepalivesInterval :: Text,
-    keepalivesCount :: Text
+    keepalivesCount :: Text,
+    -- WI-5 (#684): carried through unchanged so the spec can assert exactly
+    -- which TLS params each mode emits. 'SslModeUnset' here means
+    -- 'toConnectionParams' appends no sslmode param.
+    sslMode :: SslMode,
+    sslRootCert :: Maybe Text
   }
   deriving (Eq)
 
@@ -91,8 +107,50 @@ resolveParams cfg =
           keepalives = "1",
           keepalivesIdle = "30",
           keepalivesInterval = "10",
-          keepalivesCount = "5"
+          keepalivesCount = "5",
+          -- WI-5 (#684): copy both TLS fields through unchanged.
+          sslMode = cfg.sslMode,
+          sslRootCert = cfg.sslRootCert
         }
+
+
+-- | Conditional TLS 'Setting' list appended after the keepalive Setting.
+-- Returns [] for 'SslModeUnset' (byte-identical to pre-WI-5 — the dev/CI
+-- no-regression guarantee, ADR-0064 §2). For any set mode it emits the
+-- sslmode param as its own Setting; for a verifying mode WITH a root cert it
+-- additionally emits sslrootcert (and for verify-full: channel_binding=require)
+-- each as their own Setting. NEVER emits sslcert/sslkey (ADR-0064 §3).
+sslParams :: ResolvedParams -> LinkedList Setting
+sslParams resolved =
+  case sslModeToText resolved.sslMode of
+    Nothing -> []
+    Just token ->
+      paramSetting (Param.other "sslmode" token) : rootCertParams resolved.sslMode resolved.sslRootCert
+
+
+-- | The 'verify-full' companion Settings: the sslrootcert path and, for
+-- verify-full, channel_binding=require — each as an individual Setting.
+-- Emits [] when no root cert path is supplied, so 'require' alone adds nothing.
+-- Forwards a PATH only — pins no cert (ADR-0064 §"Root-only trust"). NEVER emits
+-- sslcert/sslkey.
+rootCertParams :: SslMode -> Maybe Text -> LinkedList Setting
+rootCertParams mode maybeRootCert =
+  case maybeRootCert of
+    Nothing -> []
+    Just path -> do
+      let channelBinding = case mode of
+            SslModeVerifyFull -> [paramSetting (Param.other "channel_binding" "require")]
+            _ -> []
+      paramSetting (Param.other "sslrootcert" path) : channelBinding
+
+
+-- | Wrap a single 'Param.Param' into a 'Setting' so ssl params are individual
+-- list entries (each adds 1 to 'LinkedList.length', making the length assertions
+-- in the spec numerically meaningful).
+paramSetting :: Param.Param -> Setting
+paramSetting p =
+  ConnectionSettingConnection.params [p]
+    |> ConnectionSetting.connection
 
 
 -- | The single place libpq connection params are constructed (ADR-0062
@@ -104,20 +162,21 @@ toConnectionParams cfg =
   cfg
     |> resolveParams
     |> Result.map \resolved -> do
-      let params =
-            ConnectionSettingConnection.params
-              [ Param.host resolved.host,
-                Param.port resolved.port,
-                Param.dbname resolved.databaseName,
-                Param.user resolved.user,
-                Param.password resolved.password,
-                Param.other "keepalives" resolved.keepalives,
-                Param.other "keepalives_idle" resolved.keepalivesIdle,
-                Param.other "keepalives_interval" resolved.keepalivesInterval,
-                Param.other "keepalives_count" resolved.keepalivesCount
-                -- WI-5 (#684) adds: Param.other "sslmode" "<mode>" here.
-              ]
-      [params |> ConnectionSetting.connection]
+      let baseParams =
+            [ Param.host resolved.host,
+              Param.port resolved.port,
+              Param.dbname resolved.databaseName,
+              Param.user resolved.user,
+              Param.password resolved.password,
+              Param.other "keepalives" resolved.keepalives,
+              Param.other "keepalives_idle" resolved.keepalivesIdle,
+              Param.other "keepalives_interval" resolved.keepalivesInterval,
+              Param.other "keepalives_count" resolved.keepalivesCount
+            ]
+      let baseSetting =
+            ConnectionSettingConnection.params baseParams
+              |> ConnectionSetting.connection
+      baseSetting : sslParams resolved
 
 
 -- | The single place 'Hasql.Pool.Config' is constructed (ADR-0062 section 3).

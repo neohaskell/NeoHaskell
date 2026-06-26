@@ -4,6 +4,8 @@ import Core
 import Service.Application (Application, ApiInfo (..))
 import Service.Application qualified as Application
 import Service.EventStore.Postgres (PostgresEventStore (..))
+import Service.Infra.Postgres.ConnectionConfig (textToSslMode)
+import Text qualified
 import Service.FileUpload.Core (FileUploadConfig (..), FileStateStoreBackend (..))
 import Service.Transport.Web qualified as WebTransport
 import Testbed.Cart.Core (CartEntity)
@@ -69,7 +71,18 @@ makePostgresConfig config =
       host = config.dbHost,
       databaseName = config.dbName,
       port = config.dbPort,
-      poolSize = config.dbPoolSize
+      poolSize = config.dbPoolSize,
+      -- WI-5 (#684): parse DB_SSL_MODE; unknown tokens fail fast at startup
+      -- (ADR-0064 §4: "unknown token is a single clean config error").
+      -- makePostgresConfig is pure so we panic on Err — the error is caught
+      -- by Application.run before any connection is attempted.
+      sslMode = case textToSslMode config.dbSslMode of
+        Ok mode -> mode
+        Err e -> panic e,
+      -- WI-5 (#684): map "" (the Config default) to Nothing; any path -> Just path.
+      sslRootCert = case Text.isEmpty config.dbSslRootCert of
+        True -> Nothing
+        False -> Just config.dbSslRootCert
     }
 
 
@@ -87,6 +100,16 @@ makeFileUploadConfig config = FileUploadConfig
       , pgDatabase = config.dbName
       , pgUser = config.dbUser
       , pgPassword = config.dbPassword
+      -- WI-5 (#684): the FileUpload state-store pool MUST inherit the same
+      -- DB_SSL_MODE / DB_SSL_ROOT_CERT the EventStore pool gets, else file
+      -- operations silently downgrade TLS (ADR-0064). Parse identically to
+      -- makePostgresConfig so the operator path is uniform.
+      , pgSslMode = case textToSslMode config.dbSslMode of
+          Ok mode -> mode
+          Err e -> panic e
+      , pgSslRootCert = case Text.isEmpty config.dbSslRootCert of
+          True -> Nothing
+          False -> Just config.dbSslRootCert
       }
   , maxFileSizeBytes = 10485760  -- 10 MB
   , pendingTtlSeconds = 21600    -- 6 hours

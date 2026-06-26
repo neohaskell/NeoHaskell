@@ -61,8 +61,11 @@ data PostgresQueryObjectStoreConfig = PostgresQueryObjectStoreConfig
     -- ADR-0060 for the aggregate budget. Raise per deployment tier via this
     -- field.
   , poolSize :: Int
+    -- WI-5 (#684): optional TLS hardening. Both default to off.
+  , sslMode :: ConnectionConfig.SslMode
+  , sslRootCert :: Maybe Text
   }
-  deriving (Eq, Show)
+  deriving (Eq)
 
 
 -- | Default config: connection-field placeholders plus the ADR-0060 B1ms
@@ -77,6 +80,8 @@ instance Default PostgresQueryObjectStoreConfig where
       , password = ""
       , port = 5432
       , poolSize = 4
+      , sslMode = ConnectionConfig.SslModeUnset
+      , sslRootCert = Nothing
       }
 
 
@@ -121,6 +126,8 @@ acquirePool cfg = do
                , user = cfg.user
                , password = cfg.password
                , port = cfg.port
+               , sslMode = cfg.sslMode
+               , sslRootCert = cfg.sslRootCert
                } of
         Err portErr -> Task.throw (ConnectionFailed portErr)
         Ok settings -> do

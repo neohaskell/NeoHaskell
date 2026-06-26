@@ -36,6 +36,7 @@ import Maybe (Maybe)
 import Prelude qualified
 import Schema (ToSchema (..))
 import Schema qualified
+import Service.Infra.Postgres.SslMode (SslMode)
 import Text (Text)
 
 
@@ -296,6 +297,13 @@ data FileStateStoreBackend
       -- ^ Database user
       , pgPassword :: Text
       -- ^ Database password
+      , pgSslMode :: SslMode
+      -- ^ libpq TLS negotiation mode (WI-5 #684 / ADR-0064). 'SslModeUnset'
+      -- (the dev/CI default) emits no sslmode param; 'SslModeRequire' and the
+      -- verifying modes forbid a silent TLS downgrade on the FileUpload pool.
+      , pgSslRootCert :: Maybe Text
+      -- ^ Optional CA-bundle path for the verifying modes (WI-5 #684). Server
+      -- auth only -- never a client cert.
       }
   -- ^ PostgreSQL storage (persistent, recommended for production)
   deriving (Generic, Eq)
@@ -318,13 +326,15 @@ instance Json.ToJSON FileStateStoreBackend where
     InMemoryStateStore -> GhcAeson.object
       [ ("tag", GhcAeson.toJSON @Text "InMemoryStateStore")
       ]
-    PostgresStateStore {pgHost, pgPort, pgDatabase, pgUser} -> GhcAeson.object
+    PostgresStateStore {pgHost, pgPort, pgDatabase, pgUser, pgSslMode, pgSslRootCert} -> GhcAeson.object
       [ ("tag", GhcAeson.toJSON @Text "PostgresStateStore")
       , ("pgHost", GhcAeson.toJSON pgHost)
       , ("pgPort", GhcAeson.toJSON pgPort)
       , ("pgDatabase", GhcAeson.toJSON pgDatabase)
       , ("pgUser", GhcAeson.toJSON pgUser)
       , ("pgPassword", GhcAeson.toJSON @Text "<REDACTED>")
+      , ("pgSslMode", GhcAeson.toJSON pgSslMode)
+      , ("pgSslRootCert", GhcAeson.toJSON pgSslRootCert)
       ]
 
 

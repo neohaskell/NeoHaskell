@@ -19,6 +19,7 @@ import Service.FileUpload.Core (
   OwnerHash (..),
   ResolvedFile (..),
  )
+import Service.Infra.Postgres.ConnectionConfig (SslMode (..))
 import Test
 import Text qualified
 
@@ -302,6 +303,8 @@ spec = do
                   , pgDatabase = "testdb"
                   , pgUser = "testuser"
                   , pgPassword = "testpass"
+                  , pgSslMode = SslModeUnset
+                  , pgSslRootCert = Nothing
                   }
               , maxFileSizeBytes = 10485760
               , pendingTtlSeconds = 21600

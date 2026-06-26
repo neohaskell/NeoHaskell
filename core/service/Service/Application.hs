@@ -120,6 +120,7 @@ import Record qualified
 import Schema qualified
 import LinkedList (LinkedList)
 import Maybe (Maybe (..))
+import Maybe qualified
 import Result (Result (..))
 import Service.Command.Core (NameOf)
 import Service.Entity.Core (Entity (..), EntityOf, EventOf)
@@ -142,7 +143,7 @@ import Service.Integration.Types (OutboundRunner, OutboundLifecycleRunner)
 import Service.Transport (Transport (..), QueryEndpointHandler)
 import Service.Transport.Web qualified as Web
 import Path qualified
-import Service.EventStore.Postgres.Internal (PostgresEventStore (..))
+import Service.EventStore.Postgres.Internal ()  -- instance-only: Default PostgresEventStore for the FileUpload pool fallback
 import Service.FileUpload.BlobStore.Local qualified as LocalBlobStore
 import Service.FileUpload.BlobStore.Local (LocalBlobStoreConfig (..))
 import Service.FileUpload.Core (FileUploadConfig (..), FileStateStoreBackend (..), InternalFileUploadConfig (..))
@@ -2045,14 +2046,15 @@ initializeFileUpload fileConfig = do
       -- No cleanup needed for in-memory store
       Task.yield (FileUpload.inMemoryFileStateStore inMemoryStore, Task.yield ())
 
-    PostgresStateStore {pgHost, pgPort, pgDatabase, pgUser, pgPassword} -> do
-      let postgresConfig = def
-            { host = pgHost
-            , port = pgPort
-            , databaseName = pgDatabase
-            , user = pgUser
-            , password = pgPassword
-            }
+    backend@(PostgresStateStore {}) -> do
+      -- WI-5 (#684): reuse the shared PostgresStateStore -> PostgresEventStore
+      -- mapping so the FileUpload state-store pool inherits the operator's
+      -- pgSslMode/pgSslRootCert exactly like the EventStore pool -- no silent
+      -- TLS downgrade on file operations (ADR-0064). 'withDefault def' is
+      -- unreachable here (we matched PostgresStateStore) but keeps it total.
+      let postgresConfig =
+            PostgresFileStore.toEventStoreConfig backend
+              |> Maybe.withDefault def
       (store, pool) <- PostgresFileStore.newWithCleanup postgresConfig
         |> Task.mapError (\err -> [fmt|Failed to initialize PostgreSQL file state store: #{err}|])
       -- Cleanup action releases the connection pool
