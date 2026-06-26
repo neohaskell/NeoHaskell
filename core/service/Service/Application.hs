@@ -120,7 +120,6 @@ import Record qualified
 import Schema qualified
 import LinkedList (LinkedList)
 import Maybe (Maybe (..))
-import Maybe qualified
 import Result (Result (..))
 import Service.Command.Core (NameOf)
 import Service.Entity.Core (Entity (..), EntityOf, EventOf)
@@ -2050,11 +2049,12 @@ initializeFileUpload fileConfig = do
       -- WI-5 (#684): reuse the shared PostgresStateStore -> PostgresEventStore
       -- mapping so the FileUpload state-store pool inherits the operator's
       -- pgSslMode/pgSslRootCert exactly like the EventStore pool -- no silent
-      -- TLS downgrade on file operations (ADR-0064). 'withDefault def' is
-      -- unreachable here (we matched PostgresStateStore) but keeps it total.
-      let postgresConfig =
-            PostgresFileStore.toEventStoreConfig backend
-              |> Maybe.withDefault def
+      -- TLS downgrade on file operations (ADR-0064). The Nothing branch is
+      -- unreachable (we matched PostgresStateStore), so fail loudly rather
+      -- than let a future refactor silently produce an empty DB connection.
+      postgresConfig <- case PostgresFileStore.toEventStoreConfig backend of
+        Just cfg -> Task.yield cfg
+        Nothing -> Task.throw "unreachable: non-Postgres FileStateStoreBackend in Postgres path"
       (store, pool) <- PostgresFileStore.newWithCleanup postgresConfig
         |> Task.mapError (\err -> [fmt|Failed to initialize PostgreSQL file state store: #{err}|])
       -- Cleanup action releases the connection pool

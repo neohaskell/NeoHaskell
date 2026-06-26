@@ -11,7 +11,7 @@ module Service.Infra.Postgres.SslMode (
 -- 'Service.Infra.Postgres.ConnectionConfig' re-exports all three names, so
 -- existing call sites are unaffected.
 
-import Basics
+import Basics (Eq, Ord, Show, fmt, (|>))
 import Json qualified
 import Maybe (Maybe (..))
 import Maybe qualified

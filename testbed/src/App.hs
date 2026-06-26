@@ -4,7 +4,7 @@ import Core
 import Service.Application (Application, ApiInfo (..))
 import Service.Application qualified as Application
 import Service.EventStore.Postgres (PostgresEventStore (..))
-import Service.Infra.Postgres.ConnectionConfig (textToSslMode)
+import Service.Infra.Postgres.ConnectionConfig qualified as ConnectionConfig
 import Text qualified
 import Service.FileUpload.Core (FileUploadConfig (..), FileStateStoreBackend (..))
 import Service.Transport.Web qualified as WebTransport
@@ -76,7 +76,7 @@ makePostgresConfig config =
       -- (ADR-0064 §4: "unknown token is a single clean config error").
       -- makePostgresConfig is pure so we panic on Err — the error is caught
       -- by Application.run before any connection is attempted.
-      sslMode = case textToSslMode config.dbSslMode of
+      sslMode = case ConnectionConfig.textToSslMode config.dbSslMode of
         Ok mode -> mode
         Err e -> panic e,
       -- WI-5 (#684): map "" (the Config default) to Nothing; any path -> Just path.
@@ -104,7 +104,7 @@ makeFileUploadConfig config = FileUploadConfig
       -- DB_SSL_MODE / DB_SSL_ROOT_CERT the EventStore pool gets, else file
       -- operations silently downgrade TLS (ADR-0064). Parse identically to
       -- makePostgresConfig so the operator path is uniform.
-      , pgSslMode = case textToSslMode config.dbSslMode of
+      , pgSslMode = case ConnectionConfig.textToSslMode config.dbSslMode of
           Ok mode -> mode
           Err e -> panic e
       , pgSslRootCert = case Text.isEmpty config.dbSslRootCert of

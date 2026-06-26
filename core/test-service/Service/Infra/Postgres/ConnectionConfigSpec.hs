@@ -352,11 +352,42 @@ spec = Hspec.describe "Service.Infra.Postgres.ConnectionConfig" do
       let vfLen = lengthOfOk (ConnectionConfig.toConnectionParams (paramsWithSsl SslModeVerifyFull Nothing))
       vfLen |> Hspec.shouldBe reqLen
 
-    Hspec.it "never emits a client-cert param for any mode (no-mTLS, by construction)" do
-      case ConnectionConfig.resolveParams (paramsWithSsl SslModeVerifyFull (Just "/etc/ca.pem")) of
-        Err _ -> Prelude.error "expected Ok but got Err"
-        Ok r ->
-          r.sslRootCert |> Hspec.shouldBe (Just "/etc/ca.pem")
+    Hspec.it "emits exactly base + sslmode + sslrootcert + channel_binding for verify-full + cert (observes the EMITTED settings: no sslcert/sslkey leaks in)" do
+      -- The opaque hasql Setting list has no Eq/Show, so observe the emitted
+      -- OUTPUT by count rather than just the resolved params: the unset
+      -- baseline is 1 (the single base Setting), and verify-full WITH a root
+      -- cert must add exactly 3 -- sslmode, sslrootcert, channel_binding. A
+      -- leaked sslcert/sslkey client-cert param would push the count past
+      -- baseLen + 3, so this pins the no-mTLS guarantee on the emitted Setting
+      -- list, not merely on the inspectable ResolvedParams.
+      let baseLen = lengthOfOk (ConnectionConfig.toConnectionParams (paramsWithSsl SslModeUnset Nothing))
+      let vfLen = lengthOfOk (ConnectionConfig.toConnectionParams (paramsWithSsl SslModeVerifyFull (Just "/etc/ca.pem")))
+      vfLen |> Hspec.shouldBe (baseLen + 3)
+
+    Hspec.it "emits sslrootcert but NOT channel_binding for verify-ca + cert (channel_binding is verify-full only)" do
+      let baseLen = lengthOfOk (ConnectionConfig.toConnectionParams (paramsWithSsl SslModeUnset Nothing))
+      let verifyCaLen = lengthOfOk (ConnectionConfig.toConnectionParams (paramsWithSsl SslModeVerifyCa (Just "/etc/ca.pem")))
+      verifyCaLen |> Hspec.shouldBe (baseLen + 2)
+
+    Hspec.it "does NOT emit sslrootcert for a non-verifying mode even when a cert path is supplied (verify-only gating)" do
+      -- 'require' is non-verifying: a root cert is meaningless, so the emitted
+      -- settings for require+cert must equal require+no-cert (sslmode only).
+      let reqNoCert = lengthOfOk (ConnectionConfig.toConnectionParams (paramsWithSsl SslModeRequire Nothing))
+      let reqWithCert = lengthOfOk (ConnectionConfig.toConnectionParams (paramsWithSsl SslModeRequire (Just "/etc/ca.pem")))
+      reqWithCert |> Hspec.shouldBe reqNoCert
+
+    Hspec.it "ignores a root cert for every non-verifying mode (disable/allow/prefer/require) -- table sweep of the verify-only gate" do
+      let baseLen = lengthOfOk (ConnectionConfig.toConnectionParams (paramsWithSsl SslModeUnset Nothing))
+      let nonVerifying :: [SslMode]
+          nonVerifying = [SslModeDisable, SslModeAllow, SslModePrefer, SslModeRequire]
+      let allIgnoreCert =
+            nonVerifying
+              |> Prelude.all
+                ( \mode ->
+                    lengthOfOk (ConnectionConfig.toConnectionParams (paramsWithSsl mode (Just "/etc/ca.pem")))
+                      Prelude.== (baseLen + 1)
+                )
+      allIgnoreCert |> Hspec.shouldBe True
 
   Hspec.describe "textToSslMode / sslModeToText round-trip" do
     Hspec.it "round-trips every token-bearing SslMode: parse (toText m) back to Ok m" do

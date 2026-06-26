@@ -280,8 +280,23 @@ pins the no-regression guarantee for dev/CI.
 `PostgresEventStore` and `PostgresQueryObjectStoreConfig` each gain
 `sslMode :: SslMode` (default `SslModeUnset`) and `sslRootCert :: Maybe
 Text` (default `Nothing`) in their record and `Default` instance, and
-forward both into their `ConnectionParams` projection. Because FileUpload
-reuses `PostgresEventStore`, it inherits the field with no extra edit.
+forward both into their `ConnectionParams` projection.
+
+FileUpload required an explicit remediation here — its inheritance was
+**not** pristine. The FileUpload state-store pool is built from the
+*declarative* `FileStateStoreBackend` (`PostgresStateStore { … }`), which
+is a separate config record from `PostgresEventStore`. Before this change
+that record carried no TLS fields, so the FileUpload pool was assembled
+with libpq's default `prefer` regardless of the operator's `DB_SSL_MODE`:
+a **silent TLS downgrade** on every file operation while the EventStore
+and QueryObjectStore pools were correctly hardened. This PR closes that
+gap by adding `pgSslMode :: SslMode` / `pgSslRootCert :: Maybe Text` to
+`PostgresStateStore` and threading them through the shared
+`toEventStoreConfig` mapping into the `PostgresEventStore` ->
+`ConnectionParams` projection, so the FileUpload pool now honours the
+operator's mode exactly like the other two — all pools uniform, no silent
+downgrade.
+
 The LISTEN/NOTIFY one-off connections build their settings from the same
 `PostgresEventStore` via `toConnectionSettings`, so they are covered too.
 This is the ADR-0062 guarantee in action: one builder, every connection
@@ -313,17 +328,25 @@ ships the enum + parser, and the testbed demonstrates the env binding.
 ### 5. Module / file placement
 
 ```text
-core/service/Service/Infra/Postgres/ConnectionConfig.hs   -- add SslMode + sslModeToText; sslMode/sslRootCert on ConnectionParams + ResolvedParams; emit on the seam
+core/service/Service/Infra/Postgres/SslMode.hs            -- NEW Core-free leaf module: SslMode + sslModeToText + textToSslMode (imports only granular primitives, never Core)
+core/service/Service/Infra/Postgres/ConnectionConfig.hs   -- re-exports SslMode/sslModeToText/textToSslMode; adds sslMode/sslRootCert on ConnectionParams + ResolvedParams; emits on the seam
 core/service/Service/EventStore/Postgres/Internal.hs      -- PostgresEventStore gains defaulted sslMode/sslRootCert; toConnectionSettings forwards them
 core/service/Service/QueryObjectStore/Postgres.hs         -- PostgresQueryObjectStoreConfig gains defaulted fields; acquirePool forwards them
-core/service/Service/FileUpload/FileStateStore/Postgres.hs -- reuses PostgresEventStore; no field edit, projection picks the fields up
+core/service/Service/FileUpload/Core.hs                   -- declarative PostgresStateStore backend gains pgSslMode/pgSslRootCert
+core/service/Service/FileUpload/FileStateStore/Postgres.hs -- toEventStoreConfig threads pgSslMode/pgSslRootCert into the shared PostgresEventStore projection
 testbed/src/Testbed/Config.hs, testbed/src/App.hs         -- optional DB_SSL_MODE / DB_SSL_ROOT_CERT env binding, defaulted off
-core/nhcore.cabal                                         -- no new module; SslMode is exported from the existing ConnectionConfig module
+core/nhcore.cabal                                         -- registers the new Service.Infra.Postgres.SslMode module
 ```
 
-`SslMode` and `sslModeToText` are added to the existing
-`Service.Infra.Postgres.ConnectionConfig` export list — no new module,
-no new namespace.
+`SslMode`, `sslModeToText` and `textToSslMode` live in a **new** Core-free
+leaf module `Service.Infra.Postgres.SslMode` — they are *not* colocated in
+`ConnectionConfig`. The low-level `Service.FileUpload.Core` must carry an
+`SslMode` field on its declarative `PostgresStateStore` backend, and
+`ConnectionConfig` (which transitively pulls in `Core`) would have formed a
+`Core` <-> `FileUpload.Core` import cycle. The leaf module imports only
+granular primitives (never `Core`), breaking the cycle. The richer
+`Service.Infra.Postgres.ConnectionConfig` **re-exports** all three names, so
+existing call sites that import them from `ConnectionConfig` are unaffected.
 
 ### Performance & testing
 

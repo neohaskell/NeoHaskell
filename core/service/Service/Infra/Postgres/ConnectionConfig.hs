@@ -128,20 +128,24 @@ sslParams resolved =
       paramSetting (Param.other "sslmode" token) : rootCertParams resolved.sslMode resolved.sslRootCert
 
 
--- | The 'verify-full' companion Settings: the sslrootcert path and, for
--- verify-full, channel_binding=require — each as an individual Setting.
--- Emits [] when no root cert path is supplied, so 'require' alone adds nothing.
--- Forwards a PATH only — pins no cert (ADR-0064 §"Root-only trust"). NEVER emits
--- sslcert/sslkey.
+-- | The verifying-mode companion Settings. 'sslrootcert' is emitted ONLY for
+-- the verifying modes ('SslModeVerifyCa' / 'SslModeVerifyFull') and only when a
+-- root cert path is supplied — a root cert is meaningless for the non-verifying
+-- modes ('disable'/'allow'/'prefer'/'require'), so it is NEVER sent for them
+-- even if the environment provides a path (ADR-0064 §3). 'verify-full'
+-- additionally emits channel_binding=require. Forwards a PATH only — pins no
+-- cert (ADR-0064 §"Root-only trust"). NEVER emits sslcert/sslkey.
 rootCertParams :: SslMode -> Maybe Text -> LinkedList Setting
 rootCertParams mode maybeRootCert =
-  case maybeRootCert of
-    Nothing -> []
-    Just path -> do
-      let channelBinding = case mode of
-            SslModeVerifyFull -> [paramSetting (Param.other "channel_binding" "require")]
-            _ -> []
-      paramSetting (Param.other "sslrootcert" path) : channelBinding
+  case (mode, maybeRootCert) of
+    (SslModeVerifyCa, Just path) ->
+      [paramSetting (Param.other "sslrootcert" path)]
+    (SslModeVerifyFull, Just path) ->
+      [ paramSetting (Param.other "sslrootcert" path),
+        paramSetting (Param.other "channel_binding" "require")
+      ]
+    _ ->
+      []
 
 
 -- | Wrap a single 'Param.Param' into a 'Setting' so ssl params are individual

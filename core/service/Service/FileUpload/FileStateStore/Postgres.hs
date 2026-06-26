@@ -69,10 +69,11 @@ import Service.FileUpload.Core (
   BlobKey (..),
   ContentHash (..),
   FileRef (..),
-  FileStateStoreBackend (..),
+  FileStateStoreBackend,
   FileUploadEvent (..),
   OwnerHash (..),
  )
+import Service.FileUpload.Core qualified as FileUploadCore
 import Service.FileUpload.Lifecycle (FileUploadState (..))
 import Service.FileUpload.Lifecycle qualified as Lifecycle
 import Service.FileUpload.Web (FileStateStore (..))
@@ -167,8 +168,8 @@ newWithCleanup config = do
 toEventStoreConfig :: FileStateStoreBackend -> Maybe PostgresEventStore
 toEventStoreConfig backend =
   case backend of
-    InMemoryStateStore -> Nothing
-    PostgresStateStore {pgHost, pgPort, pgDatabase, pgUser, pgPassword, pgSslMode, pgSslRootCert} ->
+    FileUploadCore.InMemoryStateStore -> Nothing
+    FileUploadCore.PostgresStateStore {pgHost, pgPort, pgDatabase, pgUser, pgPassword, pgSslMode, pgSslRootCert} ->
       Just
         ( def
             { host = pgHost,
