@@ -50,6 +50,14 @@ defineConfig
       |> Config.doc "PostgreSQL connection-pool size for the EventStore (shared with FileUpload); must be > 0; see ADR-0060"
       |> Config.defaultsTo (6 :: Int)
       |> Config.envVar "DB_POOL_SIZE"
+  , Config.field @Text "dbSslMode"
+      |> Config.doc "Postgres TLS mode: unset|disable|allow|prefer|require|verify-ca|verify-full (default unset = libpq 'prefer'; localhost/dev needs nothing)"
+      |> Config.defaultsTo ("unset" :: Text)
+      |> Config.envVar "DB_SSL_MODE"
+  , Config.field @Text "dbSslRootCert"
+      |> Config.doc "Path to a root-CA bundle for verify-full (root CAs only; empty = none)"
+      |> Config.defaultsTo ("" :: Text)
+      |> Config.envVar "DB_SSL_ROOT_CERT"
   , Config.field @Int "httpPort"
       |> Config.doc "HTTP server port"
       |> Config.defaultsTo (8080 :: Int)

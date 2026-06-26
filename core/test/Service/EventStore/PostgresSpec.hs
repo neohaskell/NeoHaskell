@@ -18,6 +18,7 @@ import Var qualified
 import Service.Event (EntityName (..), Event)
 import Service.Event.StreamId qualified as StreamId
 import Service.EventStore.Postgres.Internal (toConnectionSettings)
+import Service.Infra.Postgres.ConnectionConfig qualified as ConnectionConfig
 import Result qualified
 import Text qualified
 import Bytes qualified
@@ -39,7 +40,9 @@ spec = do
               Internal.user = "neohaskell",
               Internal.password = "neohaskell",
               Internal.port = 5432,
-              Internal.poolSize = 6
+              Internal.poolSize = 6,
+              Internal.sslMode = ConnectionConfig.SslModeUnset,
+              Internal.sslRootCert = Nothing
             }
     describe "new method" do
       it "acquires the connection" \_ -> do

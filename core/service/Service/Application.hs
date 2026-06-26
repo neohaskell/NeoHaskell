@@ -142,7 +142,7 @@ import Service.Integration.Types (OutboundRunner, OutboundLifecycleRunner)
 import Service.Transport (Transport (..), QueryEndpointHandler)
 import Service.Transport.Web qualified as Web
 import Path qualified
-import Service.EventStore.Postgres.Internal (PostgresEventStore (..))
+import Service.EventStore.Postgres.Internal ()  -- instance-only: Default PostgresEventStore for the FileUpload pool fallback
 import Service.FileUpload.BlobStore.Local qualified as LocalBlobStore
 import Service.FileUpload.BlobStore.Local (LocalBlobStoreConfig (..))
 import Service.FileUpload.Core (FileUploadConfig (..), FileStateStoreBackend (..), InternalFileUploadConfig (..))
@@ -2045,14 +2045,16 @@ initializeFileUpload fileConfig = do
       -- No cleanup needed for in-memory store
       Task.yield (FileUpload.inMemoryFileStateStore inMemoryStore, Task.yield ())
 
-    PostgresStateStore {pgHost, pgPort, pgDatabase, pgUser, pgPassword} -> do
-      let postgresConfig = def
-            { host = pgHost
-            , port = pgPort
-            , databaseName = pgDatabase
-            , user = pgUser
-            , password = pgPassword
-            }
+    backend@(PostgresStateStore {}) -> do
+      -- WI-5 (#684): reuse the shared PostgresStateStore -> PostgresEventStore
+      -- mapping so the FileUpload state-store pool inherits the operator's
+      -- pgSslMode/pgSslRootCert exactly like the EventStore pool -- no silent
+      -- TLS downgrade on file operations (ADR-0064). The Nothing branch is
+      -- unreachable (we matched PostgresStateStore), so fail loudly rather
+      -- than let a future refactor silently produce an empty DB connection.
+      postgresConfig <- case PostgresFileStore.toEventStoreConfig backend of
+        Just cfg -> Task.yield cfg
+        Nothing -> Task.throw "unreachable: non-Postgres FileStateStoreBackend in Postgres path"
       (store, pool) <- PostgresFileStore.newWithCleanup postgresConfig
         |> Task.mapError (\err -> [fmt|Failed to initialize PostgreSQL file state store: #{err}|])
       -- Cleanup action releases the connection pool

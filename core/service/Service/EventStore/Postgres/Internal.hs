@@ -68,9 +68,12 @@ data PostgresEventStore = PostgresEventStore
     -- FileUpload state-store pool). Defaults to 6, sized for Azure Flexible
     -- Server B1ms (~35 usable connections); see ADR-0060 for the aggregate
     -- budget. Raise per deployment tier via this field.
-    poolSize :: Int
+    poolSize :: Int,
+    -- WI-5 (#684): optional TLS hardening. Both default to off.
+    sslMode :: ConnectionConfig.SslMode,
+    sslRootCert :: Maybe Text
   }
-  deriving (Eq, Ord, Show)
+  deriving (Eq, Ord)
 
 
 -- | Default config: connection-field placeholders plus the ADR-0060 B1ms
@@ -84,7 +87,9 @@ instance Default PostgresEventStore where
         user = "",
         password = "",
         port = 5432,
-        poolSize = 6
+        poolSize = 6,
+        sslMode = ConnectionConfig.SslModeUnset,
+        sslRootCert = Nothing
       }
 
 
@@ -100,7 +105,9 @@ toConnectionSettings cfg =
         databaseName = cfg.databaseName,
         user = cfg.user,
         password = cfg.password,
-        port = cfg.port
+        port = cfg.port,
+        sslMode = cfg.sslMode,
+        sslRootCert = cfg.sslRootCert
       }
 
 

@@ -14,7 +14,7 @@ module Service.Infra.Postgres.ConnectionConfigSpec (spec) where
 import Core
 import LinkedList qualified
 import Result qualified
-import Service.Infra.Postgres.ConnectionConfig (ConnectionParams (..), ResolvedParams (..))
+import Service.Infra.Postgres.ConnectionConfig (ConnectionParams (..), ResolvedParams (..), SslMode (..))
 import Service.Infra.Postgres.ConnectionConfig qualified as ConnectionConfig
 import Prelude qualified
 import Test.Hspec qualified as Hspec
@@ -28,7 +28,9 @@ typicalParams =
       databaseName = "app",
       user = "postgres",
       password = "secret",
-      port = 5432
+      port = 5432,
+      sslMode = ConnectionConfig.SslModeUnset,
+      sslRootCert = Nothing
     }
 
 
@@ -43,7 +45,9 @@ paramsWithPort p =
       databaseName = "app",
       user = "postgres",
       password = "secret",
-      port = p
+      port = p,
+      sslMode = ConnectionConfig.SslModeUnset,
+      sslRootCert = Nothing
     }
 
 
@@ -56,7 +60,9 @@ paramsWithPassword pw =
       databaseName = "app",
       user = "postgres",
       password = pw,
-      port = 5432
+      port = 5432,
+      sslMode = ConnectionConfig.SslModeUnset,
+      sslRootCert = Nothing
     }
 
 
@@ -68,6 +74,30 @@ expectedKeepalives resolved =
     && resolved.keepalivesInterval Prelude.== "10"
     && resolved.keepalivesCount Prelude.== "5"
 
+
+-- | The typical config with explicit TLS fields, full record construction
+-- (the constructor names the type) so the field set is unambiguous.
+paramsWithSsl :: ConnectionConfig.SslMode -> Maybe Text -> ConnectionParams
+paramsWithSsl mode rootCert =
+  ConnectionConfig.ConnectionParams
+    { host = "localhost",
+      databaseName = "app",
+      user = "postgres",
+      password = "secret",
+      port = 5432,
+      sslMode = mode,
+      sslRootCert = rootCert
+    }
+
+
+-- | Extract the length of an Ok payload, failing hard on Err (mirrors existing
+-- idiom at spec lines 99/113/156). The Ok payload LinkedList Setting has no
+-- Show, so we cannot shouldBe on the whole Result.
+lengthOfOk :: Result Text (LinkedList a) -> Int
+lengthOfOk result =
+  case result of
+    Ok xs -> LinkedList.length xs
+    Err e -> Prelude.error (Prelude.show e)
 
 spec :: Hspec.Spec
 spec = Hspec.describe "Service.Infra.Postgres.ConnectionConfig" do
@@ -125,7 +155,9 @@ spec = Hspec.describe "Service.Infra.Postgres.ConnectionConfig" do
                 databaseName = "",
                 user = "",
                 password = "",
-                port = 5432
+                port = 5432,
+                sslMode = ConnectionConfig.SslModeUnset,
+                sslRootCert = Nothing
               }
       case ConnectionConfig.resolveParams emptyParams of
         Err err -> Prelude.error (Prelude.show err)
@@ -190,3 +222,183 @@ spec = Hspec.describe "Service.Infra.Postgres.ConnectionConfig" do
 
     Hspec.it "is total regardless of settings list length (empty vs typical)" do
       (ConnectionConfig.toPoolConfig 6 [] `Prelude.seq` True) |> Hspec.shouldBe True
+
+  Hspec.describe "sslModeToText" do
+    Hspec.it "maps SslModeRequire to Just \"require\" (the canonical opt-in token)" do
+      ConnectionConfig.sslModeToText ConnectionConfig.SslModeRequire
+        |> Hspec.shouldBe (Just "require")
+
+    Hspec.it "maps SslModeUnset to Nothing (no token — the default emits no sslmode param)" do
+      ConnectionConfig.sslModeToText ConnectionConfig.SslModeUnset
+        |> Hspec.shouldBe Nothing
+
+    Hspec.it "maps SslModeDisable to Just \"disable\"" do
+      ConnectionConfig.sslModeToText ConnectionConfig.SslModeDisable
+        |> Hspec.shouldBe (Just "disable")
+
+    Hspec.it "maps SslModeAllow to Just \"allow\"" do
+      ConnectionConfig.sslModeToText ConnectionConfig.SslModeAllow
+        |> Hspec.shouldBe (Just "allow")
+
+    Hspec.it "maps SslModePrefer to Just \"prefer\"" do
+      ConnectionConfig.sslModeToText ConnectionConfig.SslModePrefer
+        |> Hspec.shouldBe (Just "prefer")
+
+    Hspec.it "maps SslModeVerifyCa to Just \"verify-ca\"" do
+      ConnectionConfig.sslModeToText ConnectionConfig.SslModeVerifyCa
+        |> Hspec.shouldBe (Just "verify-ca")
+
+    Hspec.it "maps SslModeVerifyFull to Just \"verify-full\" (the high-assurance token)" do
+      ConnectionConfig.sslModeToText ConnectionConfig.SslModeVerifyFull
+        |> Hspec.shouldBe (Just "verify-full")
+
+    Hspec.it "is total over the 7-constructor enum (table sweep guards a future dropped/typo'd token)" do
+      let table :: [(ConnectionConfig.SslMode, Maybe Text)]
+          table =
+            [ (ConnectionConfig.SslModeUnset, Nothing),
+              (ConnectionConfig.SslModeDisable, Just "disable"),
+              (ConnectionConfig.SslModeAllow, Just "allow"),
+              (ConnectionConfig.SslModePrefer, Just "prefer"),
+              (ConnectionConfig.SslModeRequire, Just "require"),
+              (ConnectionConfig.SslModeVerifyCa, Just "verify-ca"),
+              (ConnectionConfig.SslModeVerifyFull, Just "verify-full")
+            ]
+      (table |> Prelude.all (\(m, t) -> ConnectionConfig.sslModeToText m Prelude.== t))
+        |> Hspec.shouldBe True
+
+  Hspec.describe "textToSslMode" do
+    Hspec.it "parses \"require\" to Ok SslModeRequire (the canonical operator token)" do
+      ConnectionConfig.textToSslMode "require"
+        |> Hspec.shouldBe (Ok SslModeRequire)
+
+    Hspec.it "parses the empty string to Ok SslModeUnset (default-off: operator sets nothing)" do
+      ConnectionConfig.textToSslMode ""
+        |> Hspec.shouldBe (Ok SslModeUnset)
+
+    Hspec.it "parses the literal \"unset\" to Ok SslModeUnset (the explicit default token)" do
+      ConnectionConfig.textToSslMode "unset"
+        |> Hspec.shouldBe (Ok SslModeUnset)
+
+    Hspec.it "parses an unknown token \"requre\" to Err naming the bad value and the valid set" do
+      ConnectionConfig.textToSslMode "requre"
+        |> Hspec.shouldBe (Err "unknown DB_SSL_MODE \"requre\"; expected one of: unset, disable, allow, prefer, require, verify-ca, verify-full")
+
+    Hspec.it "rejects a unicode-multibyte unknown token to Err (multibyte boundary on the Err branch)" do
+      ConnectionConfig.textToSslMode "requëre"
+        |> Hspec.shouldBe (Err "unknown DB_SSL_MODE \"requëre\"; expected one of: unset, disable, allow, prefer, require, verify-ca, verify-full")
+
+    Hspec.it "parses \"disable\" to Ok SslModeDisable" do
+      ConnectionConfig.textToSslMode "disable"
+        |> Hspec.shouldBe (Ok SslModeDisable)
+
+    Hspec.it "parses \"verify-full\" to Ok SslModeVerifyFull (hyphenated high-assurance token)" do
+      ConnectionConfig.textToSslMode "verify-full"
+        |> Hspec.shouldBe (Ok SslModeVerifyFull)
+
+    Hspec.it "case-folds an uppercase token \"REQUIRE\" to Ok SslModeRequire" do
+      ConnectionConfig.textToSslMode "REQUIRE"
+        |> Hspec.shouldBe (Ok SslModeRequire)
+
+    Hspec.it "trims surrounding whitespace \"  require  \" to Ok SslModeRequire" do
+      ConnectionConfig.textToSslMode "  require  "
+        |> Hspec.shouldBe (Ok SslModeRequire)
+
+  Hspec.describe "resolveParams (additive sslMode/sslRootCert)" do
+    Hspec.it "carries SslModeRequire and Just rootCert path through unchanged" do
+      case ConnectionConfig.resolveParams (paramsWithSsl SslModeRequire (Just "/etc/ca.pem")) of
+        Err _ -> Prelude.error "expected Ok but got Err"
+        Ok r -> do
+          r.sslMode |> Hspec.shouldBe SslModeRequire
+          r.sslRootCert |> Hspec.shouldBe (Just "/etc/ca.pem")
+
+    Hspec.it "carries SslModeUnset and Nothing through as the default-off mirror (no-regression)" do
+      case ConnectionConfig.resolveParams (paramsWithSsl SslModeUnset Nothing) of
+        Err _ -> Prelude.error "expected Ok but got Err"
+        Ok r -> do
+          r.sslMode |> Hspec.shouldBe SslModeUnset
+          r.sslRootCert |> Hspec.shouldBe Nothing
+
+    Hspec.it "carries SslModeVerifyFull with Just rootCert through (high-assurance copy-through)" do
+      case ConnectionConfig.resolveParams (paramsWithSsl SslModeVerifyFull (Just "/etc/postgresql/azure-roots.pem")) of
+        Err _ -> Prelude.error "expected Ok but got Err"
+        Ok r -> do
+          r.sslMode |> Hspec.shouldBe SslModeVerifyFull
+          r.sslRootCert |> Hspec.shouldBe (Just "/etc/postgresql/azure-roots.pem")
+
+    Hspec.it "carries Nothing rootCert distinctly from a path (boundary: no cert supplied)" do
+      case ConnectionConfig.resolveParams (paramsWithSsl SslModeVerifyFull Nothing) of
+        Err _ -> Prelude.error "expected Ok but got Err"
+        Ok r ->
+          r.sslRootCert |> Hspec.shouldBe Nothing
+
+  Hspec.describe "toConnectionParams (additive sslMode/sslRootCert)" do
+    Hspec.it "with SslModeRequire produces an Ok settings list one entry longer than the unset baseline" do
+      let baseLen = lengthOfOk (ConnectionConfig.toConnectionParams (paramsWithSsl SslModeUnset Nothing))
+      let reqLen = lengthOfOk (ConnectionConfig.toConnectionParams (paramsWithSsl SslModeRequire Nothing))
+      reqLen |> Hspec.shouldBe (baseLen + 1)
+
+    Hspec.it "with SslModeUnset emits the same settings-list length as the pre-WI-5 baseline (no regression)" do
+      case ConnectionConfig.toConnectionParams (paramsWithSsl SslModeUnset Nothing) of
+        Err err -> Prelude.error (Prelude.show err)
+        Ok settings -> (settings |> LinkedList.length) |> Hspec.shouldBe 1
+
+    Hspec.it "with SslModeVerifyFull + Just rootCert produces a list longer than require alone (sslmode + sslrootcert + channel_binding)" do
+      let reqLen = lengthOfOk (ConnectionConfig.toConnectionParams (paramsWithSsl SslModeRequire Nothing))
+      let vfLen = lengthOfOk (ConnectionConfig.toConnectionParams (paramsWithSsl SslModeVerifyFull (Just "/etc/ca.pem")))
+      (vfLen Prelude.> reqLen) |> Hspec.shouldBe True
+
+    Hspec.it "with SslModeVerifyFull but Nothing rootCert emits no sslrootcert (boundary: empty cert path)" do
+      let reqLen = lengthOfOk (ConnectionConfig.toConnectionParams (paramsWithSsl SslModeRequire Nothing))
+      let vfLen = lengthOfOk (ConnectionConfig.toConnectionParams (paramsWithSsl SslModeVerifyFull Nothing))
+      vfLen |> Hspec.shouldBe reqLen
+
+    Hspec.it "emits exactly base + sslmode + sslrootcert + channel_binding for verify-full + cert (observes the EMITTED settings: no sslcert/sslkey leaks in)" do
+      -- The opaque hasql Setting list has no Eq/Show, so observe the emitted
+      -- OUTPUT by count rather than just the resolved params: the unset
+      -- baseline is 1 (the single base Setting), and verify-full WITH a root
+      -- cert must add exactly 3 -- sslmode, sslrootcert, channel_binding. A
+      -- leaked sslcert/sslkey client-cert param would push the count past
+      -- baseLen + 3, so this pins the no-mTLS guarantee on the emitted Setting
+      -- list, not merely on the inspectable ResolvedParams.
+      let baseLen = lengthOfOk (ConnectionConfig.toConnectionParams (paramsWithSsl SslModeUnset Nothing))
+      let vfLen = lengthOfOk (ConnectionConfig.toConnectionParams (paramsWithSsl SslModeVerifyFull (Just "/etc/ca.pem")))
+      vfLen |> Hspec.shouldBe (baseLen + 3)
+
+    Hspec.it "emits sslrootcert but NOT channel_binding for verify-ca + cert (channel_binding is verify-full only)" do
+      let baseLen = lengthOfOk (ConnectionConfig.toConnectionParams (paramsWithSsl SslModeUnset Nothing))
+      let verifyCaLen = lengthOfOk (ConnectionConfig.toConnectionParams (paramsWithSsl SslModeVerifyCa (Just "/etc/ca.pem")))
+      verifyCaLen |> Hspec.shouldBe (baseLen + 2)
+
+    Hspec.it "does NOT emit sslrootcert for a non-verifying mode even when a cert path is supplied (verify-only gating)" do
+      -- 'require' is non-verifying: a root cert is meaningless, so the emitted
+      -- settings for require+cert must equal require+no-cert (sslmode only).
+      let reqNoCert = lengthOfOk (ConnectionConfig.toConnectionParams (paramsWithSsl SslModeRequire Nothing))
+      let reqWithCert = lengthOfOk (ConnectionConfig.toConnectionParams (paramsWithSsl SslModeRequire (Just "/etc/ca.pem")))
+      reqWithCert |> Hspec.shouldBe reqNoCert
+
+    Hspec.it "ignores a root cert for every non-verifying mode (disable/allow/prefer/require) -- table sweep of the verify-only gate" do
+      let baseLen = lengthOfOk (ConnectionConfig.toConnectionParams (paramsWithSsl SslModeUnset Nothing))
+      let nonVerifying :: [SslMode]
+          nonVerifying = [SslModeDisable, SslModeAllow, SslModePrefer, SslModeRequire]
+      let allIgnoreCert =
+            nonVerifying
+              |> Prelude.all
+                ( \mode ->
+                    lengthOfOk (ConnectionConfig.toConnectionParams (paramsWithSsl mode (Just "/etc/ca.pem")))
+                      Prelude.== (baseLen + 1)
+                )
+      allIgnoreCert |> Hspec.shouldBe True
+
+  Hspec.describe "textToSslMode / sslModeToText round-trip" do
+    Hspec.it "round-trips every token-bearing SslMode: parse (toText m) back to Ok m" do
+      let modes :: [SslMode]
+          modes = [SslModeDisable, SslModeAllow, SslModePrefer, SslModeRequire, SslModeVerifyCa, SslModeVerifyFull]
+      let roundTrips =
+            modes
+              |> Prelude.all
+                ( \m ->
+                    case ConnectionConfig.sslModeToText m of
+                      Just token -> ConnectionConfig.textToSslMode token Prelude.== Ok m
+                      Nothing -> False
+                )
+      roundTrips |> Hspec.shouldBe True

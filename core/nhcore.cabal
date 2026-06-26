@@ -244,6 +244,7 @@ library
     Service.EventStore.Postgres.Internal
     Service.EventStore.Postgres.Core
     Service.Infra.Postgres.ConnectionConfig
+    Service.Infra.Postgres.SslMode
     Service.EventStore.Postgres.Notifications
     Service.EventStore.Postgres.PostgresEventRecord
     Service.EventStore.Postgres.Sessions

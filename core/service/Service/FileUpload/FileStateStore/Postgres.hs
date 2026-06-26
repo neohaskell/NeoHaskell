@@ -36,6 +36,7 @@ module Service.FileUpload.FileStateStore.Postgres (
   -- * Initialization
   new,
   newWithCleanup,
+  toEventStoreConfig,
 
   -- * Types
   Pool,
@@ -68,9 +69,11 @@ import Service.FileUpload.Core (
   BlobKey (..),
   ContentHash (..),
   FileRef (..),
+  FileStateStoreBackend,
   FileUploadEvent (..),
   OwnerHash (..),
  )
+import Service.FileUpload.Core qualified as FileUploadCore
 import Service.FileUpload.Lifecycle (FileUploadState (..))
 import Service.FileUpload.Lifecycle qualified as Lifecycle
 import Service.FileUpload.Web (FileStateStore (..))
@@ -156,6 +159,30 @@ newWithCleanup config = do
   Task.yield (store, pool)
 
 
+-- | Build the shared 'PostgresEventStore' connection config that the FileUpload
+-- state-store pool runs on, from the declarative 'PostgresStateStore' backend.
+-- WI-5 (#684): threads the operator's @pgSslMode@/@pgSslRootCert@ through so the
+-- FileUpload pool honours DB_SSL_MODE exactly like the EventStore pool, closing
+-- the silent-TLS-downgrade gap (ADR-0064). 'InMemoryStateStore' has no Postgres
+-- connection config, so it maps to 'Nothing'.
+toEventStoreConfig :: FileStateStoreBackend -> Maybe PostgresEventStore
+toEventStoreConfig backend =
+  case backend of
+    FileUploadCore.InMemoryStateStore -> Nothing
+    FileUploadCore.PostgresStateStore {pgHost, pgPort, pgDatabase, pgUser, pgPassword, pgSslMode, pgSslRootCert} ->
+      Just
+        ( def
+            { host = pgHost,
+              port = pgPort,
+              databaseName = pgDatabase,
+              user = pgUser,
+              password = pgPassword,
+              sslMode = pgSslMode,
+              sslRootCert = pgSslRootCert
+            }
+        )
+
+
 -- | Create a connection pool from PostgresEventStore config.
 --
 -- The FileUpload state-store pool shares the EventStore config's 'poolSize'
@@ -175,6 +202,8 @@ createPool cfg = do
                , user = cfg.user
                , password = cfg.password
                , port = cfg.port
+               , sslMode = cfg.sslMode
+               , sslRootCert = cfg.sslRootCert
                } of
         Err portErr -> Task.throw (InvalidPort portErr)
         Ok settings -> do
