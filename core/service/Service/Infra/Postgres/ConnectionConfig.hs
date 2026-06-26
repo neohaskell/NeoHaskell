@@ -6,6 +6,7 @@ module Service.Infra.Postgres.ConnectionConfig (
   sslModeToText,
   textToSslMode,
   resolveParams,
+  toParamPairs,
   toConnectionParams,
   toPoolConfig,
   logPoolObservation,
@@ -22,6 +23,7 @@ import Hasql.Connection.Setting.Connection.Param qualified as Param
 import Hasql.Pool.Config (Config)
 import Hasql.Pool.Config qualified as HasqlPoolConfig
 import Hasql.Pool.Observation (ConnectionStatus (..), ConnectionTerminationReason (..), Observation (..))
+import LinkedList qualified
 import Log qualified
 import Result qualified
 import Task qualified
@@ -114,73 +116,105 @@ resolveParams cfg =
         }
 
 
--- | Conditional TLS 'Setting' list appended after the keepalive Setting.
+-- | The base libpq (key, value) params every pool always sends: the five
+-- connection coordinates plus the four ADR-0037 keepalive entries. Plain
+-- inspectable data (see 'toParamPairs').
+baseParamPairs :: ResolvedParams -> LinkedList (Text, Text)
+baseParamPairs resolved =
+  [ ("host", resolved.host),
+    ("port", portToText resolved.port),
+    ("dbname", resolved.databaseName),
+    ("user", resolved.user),
+    ("password", resolved.password),
+    -- TCP keepalive: detect dead connections in cloud environments
+    -- (ADR-0037, #397) -- on ALL three pools.
+    ("keepalives", resolved.keepalives),
+    ("keepalives_idle", resolved.keepalivesIdle),
+    ("keepalives_interval", resolved.keepalivesInterval),
+    ("keepalives_count", resolved.keepalivesCount)
+  ]
+
+
+-- | Render the validated port to its libpq decimal text form. A standalone
+-- helper so the 'fmt' splice only ever sees a bare variable -- the quasiquoter
+-- does not parse a 'resolved.port' record-dot accessor (OverloadedRecordDot).
+portToText :: Word16 -> Text
+portToText p = [fmt|#{p}|]
+
+
+-- | Conditional TLS (key, value) params appended AFTER the base params.
 -- Returns [] for 'SslModeUnset' (byte-identical to pre-WI-5 — the dev/CI
 -- no-regression guarantee, ADR-0064 §2). For any set mode it emits the
--- sslmode param as its own Setting; for a verifying mode WITH a root cert it
--- additionally emits sslrootcert (and for verify-full: channel_binding=require)
--- each as their own Setting. NEVER emits sslcert/sslkey (ADR-0064 §3).
-sslParams :: ResolvedParams -> LinkedList Setting
-sslParams resolved =
+-- sslmode param; for a verifying mode WITH a root cert it additionally emits
+-- sslrootcert (and for verify-full: channel_binding=require). NEVER emits
+-- sslcert/sslkey (ADR-0064 §3).
+sslParamPairs :: ResolvedParams -> LinkedList (Text, Text)
+sslParamPairs resolved =
   case sslModeToText resolved.sslMode of
     Nothing -> []
     Just token ->
-      paramSetting (Param.other "sslmode" token) : rootCertParams resolved.sslMode resolved.sslRootCert
+      ("sslmode", token) : rootCertParamPairs resolved.sslMode resolved.sslRootCert
 
 
--- | The verifying-mode companion Settings. 'sslrootcert' is emitted ONLY for
--- the verifying modes ('SslModeVerifyCa' / 'SslModeVerifyFull') and only when a
+-- | The verifying-mode companion params. 'sslrootcert' is emitted ONLY for the
+-- verifying modes ('SslModeVerifyCa' / 'SslModeVerifyFull') and only when a
 -- root cert path is supplied — a root cert is meaningless for the non-verifying
 -- modes ('disable'/'allow'/'prefer'/'require'), so it is NEVER sent for them
 -- even if the environment provides a path (ADR-0064 §3). 'verify-full'
 -- additionally emits channel_binding=require. Forwards a PATH only — pins no
 -- cert (ADR-0064 §"Root-only trust"). NEVER emits sslcert/sslkey.
-rootCertParams :: SslMode -> Maybe Text -> LinkedList Setting
-rootCertParams mode maybeRootCert =
+rootCertParamPairs :: SslMode -> Maybe Text -> LinkedList (Text, Text)
+rootCertParamPairs mode maybeRootCert =
   case (mode, maybeRootCert) of
     (SslModeVerifyCa, Just path) ->
-      [paramSetting (Param.other "sslrootcert" path)]
+      [("sslrootcert", path)]
     (SslModeVerifyFull, Just path) ->
-      [ paramSetting (Param.other "sslrootcert" path),
-        paramSetting (Param.other "channel_binding" "require")
+      [ ("sslrootcert", path),
+        ("channel_binding", "require")
       ]
     _ ->
       []
 
 
--- | Wrap a single 'Param.Param' into a 'Setting' so ssl params are individual
--- list entries (each adds 1 to 'LinkedList.length', making the length assertions
--- in the spec numerically meaningful).
-paramSetting :: Param.Param -> Setting
-paramSetting p =
-  ConnectionSettingConnection.params [p]
-    |> ConnectionSetting.connection
+-- | The complete, ORDERED libpq (key, value) parameter set — base params first,
+-- then any conditional TLS params — that the single connection 'Setting' is
+-- built from (ADR-0062 section 2). Carries the four ADR-0037 keepalives for
+-- every pool and fails fast on an out-of-range port (see 'validatePort').
+--
+-- Exposed as plain inspectable data because the hasql 'Param'/'Setting' types
+-- are opaque (no Eq/Show) and the modules that render them to a connection
+-- string are internal to hasql, so this is the ONLY place a test can assert the
+-- exact params — including that 'host' survives a set sslMode (the #694
+-- regression) and that no sslcert/sslkey ever leaks in (ADR-0064 §3).
+toParamPairs :: ConnectionParams -> Result Text (LinkedList (Text, Text))
+toParamPairs cfg =
+  cfg
+    |> resolveParams
+    |> Result.map \resolved -> baseParamPairs resolved ++ sslParamPairs resolved
 
 
 -- | The single place libpq connection params are constructed (ADR-0062
--- section 2). Carries the four ADR-0037 keepalives for every pool and fails
--- fast on an out-of-range port (see 'validatePort'). Returns a 'Result' so
--- the three pools surface the typed error in their own error channel.
+-- section 2). Returns a 'Result' so the three pools surface the typed error in
+-- their own error channel.
+--
+-- Every param — base AND the conditional TLS params — goes into ONE
+-- 'ConnectionSettingConnection.params', i.e. a SINGLE 'ConnectionSetting.connection'
+-- (#694). hasql's 'Hasql.Pool.Config.staticConnectionSettings' applies each
+-- 'ConnectionSetting.connection' by REPLACING the whole connection string
+-- (last-wins, not merge), so emitting the TLS params as a second connection
+-- Setting silently dropped host/port/dbname and libpq fell back to the local
+-- Unix socket. Returning a one-element list keeps the 'LinkedList Setting'
+-- shape every pool already threads through 'toPoolConfig'.
 toConnectionParams :: ConnectionParams -> Result Text (LinkedList Setting)
 toConnectionParams cfg =
   cfg
-    |> resolveParams
-    |> Result.map \resolved -> do
-      let baseParams =
-            [ Param.host resolved.host,
-              Param.port resolved.port,
-              Param.dbname resolved.databaseName,
-              Param.user resolved.user,
-              Param.password resolved.password,
-              Param.other "keepalives" resolved.keepalives,
-              Param.other "keepalives_idle" resolved.keepalivesIdle,
-              Param.other "keepalives_interval" resolved.keepalivesInterval,
-              Param.other "keepalives_count" resolved.keepalivesCount
-            ]
-      let baseSetting =
-            ConnectionSettingConnection.params baseParams
-              |> ConnectionSetting.connection
-      baseSetting : sslParams resolved
+    |> toParamPairs
+    |> Result.map \pairs ->
+      [ pairs
+          |> LinkedList.map (\(key, value) -> Param.other key value)
+          |> ConnectionSettingConnection.params
+          |> ConnectionSetting.connection
+      ]
 
 
 -- | The single place 'Hasql.Pool.Config' is constructed (ADR-0062 section 3).

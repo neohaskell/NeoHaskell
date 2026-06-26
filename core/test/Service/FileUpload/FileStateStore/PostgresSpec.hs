@@ -90,17 +90,27 @@ sslThreadingSpec =
         |> Result.map (\r -> r.sslRootCert)
         |> shouldBe (Ok (Just "/etc/postgresql/azure-roots.pem"))
 
-    it "emits an sslmode param for Require (one entry past the unset baseline)" \_ -> do
+    it "threads sslmode=require into the single connection setting for Require (#694: ONE setting, never 2)" \_ -> do
+      -- #694: the TLS params must ride INSIDE the one connection setting, not a
+      -- second one (a 2nd 'ConnectionSetting.connection' makes hasql drop the
+      -- host via last-wins). So the setting count is 1 for Require, same as the
+      -- unset baseline -- the sslmode now lives in the shared param list.
       paramsFor (configFor SslModeRequire Nothing)
         |> ConnectionConfig.toConnectionParams
         |> Result.map LinkedList.length
-        |> shouldBe (Ok 2)
+        |> shouldBe (Ok 1)
+
+    it "carries the sslmode=require param through FileUpload's threading (asserted on the inspectable pairs)" \_ -> do
+      paramsFor (configFor SslModeRequire Nothing)
+        |> ConnectionConfig.toParamPairs
+        |> Result.map (LinkedList.any (\(k, v) -> k == "sslmode" && v == "require"))
+        |> shouldBe (Ok True)
 
     it "emits NO sslmode param for SslModeUnset (default-off, no regression)" \_ -> do
       paramsFor (configFor SslModeUnset Nothing)
-        |> ConnectionConfig.toConnectionParams
-        |> Result.map LinkedList.length
-        |> shouldBe (Ok 1)
+        |> ConnectionConfig.toParamPairs
+        |> Result.map (LinkedList.any (\(k, _) -> k == "sslmode"))
+        |> shouldBe (Ok False)
 
 
 spec :: Spec Unit
