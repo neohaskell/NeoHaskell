@@ -123,18 +123,35 @@ For most applications, you never hit these limits. A comfortable default for a p
 
 ## Connection pooling
 
-NeoHaskell uses `hasql-pool` internally. The default pool size is conservative (10 connections per instance). For high-throughput applications, tune this in the event store config:
+NeoHaskell uses `hasql-pool` internally, with **three** pools per app, each at an explicit, deploy-tier-safe default:
+
+| Pool | Default size | What flows through it |
+|---|---|---|
+| EventStore | `6` | Command appends, entity fetches, query catch-up reads |
+| QueryObjectStore | `4` | Read-model writes during rebuild, read-model reads |
+| FileUpload | `6` | File metadata writes (shares the EventStore pool size) |
+
+On top of the pools, the app keeps a persistent `LISTEN/NOTIFY` listener pair (2 connections) and opens **one connection per active stream subscription**. So the steady-state demand is `6 + 4 + 6 + 2 + 1 (init) = 19` connections, plus one for each active stream subscription.
+
+The EventStore pool size is tunable from the environment with `DB_POOL_SIZE` (default `6`), which also sizes the FileUpload pool since it shares that config. Raise it on a larger Postgres tier; the EventStore pool is the one to grow first.
 
 ```haskell
 PostgresEventStore
-  { ... default fields ...
-  , poolSize = 50  -- if exposed; otherwise use default
+  { ... connection fields ...
+  , poolSize = 12  -- omit to use the B1ms-safe default of 6
   }
 ```
 
-A good rule: pool size should equal the maximum concurrent number of commands you expect at peak. Too few connections means requests wait; too many connections overloads Postgres.
+Postgres itself has a `max_connections` setting. Make sure it's higher than the sum of every pool plus the listener pair, per-stream subscriptions, and headroom for admin connections and background workers. On a small tier this budget is tight — see the [Flexible Server connection budget](/guides/azure-postgresql-flexible-server/#the-connection-budget-on-b1ms) for the full arithmetic on Azure `B1ms`.
 
-Postgres itself has a `max_connections` setting (default 100). If you run many NeoHaskell instances against one database, make sure `max_connections` is high enough to handle them all plus some headroom for admin connections and background workers.
+## Running on Azure Flexible Server
+
+If your managed Postgres is **Azure Database for PostgreSQL — Flexible Server** (our standard cloud target), two rules carry the deployment:
+
+- **Connect on the direct port `5432`, never the PgBouncer pooler on `6432`.** PgBouncer's transaction mode silently breaks `LISTEN/NOTIFY`, so live projections and integrations stop firing with no error. On the Burstable `B1ms` tier there's no pooler, so `5432` is automatic; on larger tiers, keep `DB_PORT=5432`.
+- **Optionally harden TLS** with `DB_SSL_MODE=require` (forbid silent plaintext downgrade) or `verify-full` with a root-CA bundle (`DB_SSL_ROOT_CERT`). It's off by default, so localhost and dev are unaffected, and it applies uniformly to all three pools and the `LISTEN/NOTIFY` connections.
+
+The full golden path — connection budget, scale-to-zero pairing with Container Apps, and storage cost — lives in the dedicated **[Azure PostgreSQL Flexible Server](/guides/azure-postgresql-flexible-server/)** guide.
 
 ## Backup and recovery
 
@@ -226,6 +243,7 @@ Migrations in the NeoHaskell event store are designed to be backwards-compatible
 
 ## Where to go from here
 
+- **[Azure PostgreSQL Flexible Server](/guides/azure-postgresql-flexible-server/)** — the cheap, repeatable cloud deployment on Azure `B1ms`.
 - **[Deployment](/guides/deployment/)** — how to ship the compiled NeoHaskell binary.
 - **[Tutorial Part 6](/tutorial/06-audit-everything/)** — the first time you switch from in-memory to Postgres.
 - **[Testing](/guides/testing/)** — how to test against the real event store.

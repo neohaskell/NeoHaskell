@@ -166,14 +166,19 @@ The app prints structured logs to stdout. In a container, these are picked up au
 
 ## Health checks
 
-NeoHaskell exposes a health endpoint at `/health` by default:
+NeoHaskell exposes two endpoints by default — a **liveness** check at `/health` and a **readiness** check at `/ready`:
 
 ```bash
 curl http://localhost:8080/health
-# {"status":"ok"}
+# {"status":"ok"}     — the HTTP server is up
+
+curl http://localhost:8080/ready
+# {"status":"ready"}  — every query projection has caught up
 ```
 
-For Kubernetes:
+`/health` reports the process is alive. `/ready` returns `503` while the app is still rebuilding its query projections (for example, right after a cold start against a non-empty event store) and flips to `200` once they're current — so the load balancer holds traffic back until the read models can answer correctly.
+
+For Kubernetes (or Azure Container Apps), point liveness at `/health` and readiness at `/ready`:
 
 ```yaml
 livenessProbe:
@@ -184,7 +189,7 @@ livenessProbe:
   periodSeconds: 10
 readinessProbe:
   httpGet:
-    path: /health
+    path: /ready
     port: 8080
   initialDelaySeconds: 5
   periodSeconds: 5
@@ -259,8 +264,21 @@ Two things to watch:
 1. **Projections rebuilt under the new version** may have a shape that old code doesn't understand. If you introduced a new field in a projection, the old code won't know about it. This is usually harmless (the field is just ignored), but verify.
 2. **Events emitted under the new version** are still in the store after rollback. Make sure the old code handles them gracefully (usually by ignoring unknown variants — NeoHaskell does this via the `AnyStreamState` insertion type and the exhaustiveness checks in `update`).
 
+## Deploying on Azure (Container Apps + Flexible Server)
+
+The cheap, repeatable cloud setup we use for client projects is **Azure Container Apps** (scale-to-zero) in front of **Azure Database for PostgreSQL — Flexible Server** (Burstable `B1ms`). It needs no code change — just the environment variables above plus a couple of operational rules.
+
+The one trap worth flagging here: with Container Apps `minReplicas=0`, your app scales to zero when idle, but **a request that cold-starts your app does not wake the database**. Keep the Flexible Server always-on (it's cheap on `B1ms`) so a cold-started replica always finds a live database. Pair the `/health` (liveness) and `/ready` (readiness) probes above so traffic waits for projections to catch up after a cold start.
+
+<Aside type="caution" title="Connect on the direct port 5432, never the pooler on 6432">
+Flexible Server's larger tiers ship a built-in PgBouncer pooler on `6432` whose transaction mode silently breaks `LISTEN/NOTIFY`, killing live projections and integrations with no error. Always set `DB_PORT=5432`.
+</Aside>
+
+The full runbook — connection budget, TLS hardening, scheduled-stop tradeoffs, and storage cost — is in **[Azure Database for PostgreSQL Flexible Server](/guides/azure-postgresql-flexible-server/)**.
+
 ## Where to go from here
 
+- **[Azure PostgreSQL Flexible Server](/guides/azure-postgresql-flexible-server/)** — the full golden-path runbook for the Container Apps + Flexible Server deployment.
 - **[PostgreSQL event store](/guides/postgresql-event-store/)** — production persistence details.
 - **[Adopting at work](/guides/adopting-at-work/)** — how to introduce NeoHaskell deployments into an existing infrastructure.
 - **[Error handling](/guides/error-handling/)** — what happens when things go wrong.
