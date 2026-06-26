@@ -1,0 +1,237 @@
+---
+title: "Azure Database for PostgreSQL Flexible Server"
+description: "The golden path for running a NeoHaskell app on Azure Database for PostgreSQL Flexible Server behind Container Apps: env-only connection config, the direct-5432 rule, the B1ms connection budget, TLS hardening, scale-to-zero pairing, and storage cost."
+sidebar:
+  order: 7
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+This is the deployment we run for real client projects: one NeoHaskell container on **Azure Container Apps**, talking to one **Azure Database for PostgreSQL — Flexible Server** on the cheap **Burstable `B1ms`** tier. It is the cheapest setup that still survives maintenance restarts and failovers without losing events.
+
+The best part: **connecting NeoHaskell to Flexible Server takes zero code change.** Everything below is configuration. You set some environment variables, you follow one load-bearing rule about ports, and you size the database so it doesn't run out of connections. That's the whole job.
+
+This guide is the runbook. If you just want the moving parts, start with [the short version](#the-short-version); if you're standing up a new client, read it top to bottom once.
+
+## The short version
+
+1. Create a Flexible Server on the `B1ms` tier and a database inside it.
+2. Point NeoHaskell at it with environment variables — `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_NAME`.
+3. **Connect on the direct port `5432`. Never the pooler on `6432`.** (See [the direct-5432 rule](#the-direct-5432-rule) — this one is load-bearing.)
+4. Leave the database **always-on**. Your app scales to zero; the database does not wake itself up.
+5. Optionally harden TLS with `DB_SSL_MODE=require`.
+6. Keep an eye on storage growth and backup retention so the bill doesn't surprise you.
+
+## Why Flexible Server
+
+Flexible Server is first-party Azure PostgreSQL. NeoHaskell's event store *is* PostgreSQL (see the [PostgreSQL event store guide](/guides/postgresql-event-store/)), so this is the natural fit:
+
+- **It's real Postgres.** NeoHaskell speaks the Postgres wire protocol. Flexible Server speaks the Postgres wire protocol. Nothing in your application code changes — the same binary that runs against your local `docker compose` Postgres runs against Flexible Server.
+- **`B1ms` is cheap.** The Burstable tier is built for workloads that are quiet most of the time and occasionally busy — exactly the shape of a small per-client app. It's the baseline we standardize on.
+- **It keeps `LISTEN/NOTIFY`.** NeoHaskell's live projections and integrations are driven by Postgres `LISTEN/NOTIFY`. Flexible Server supports it natively. (The alternatives — Azure SQL, Cosmos DB — don't, which would mean a data-layer rewrite that also regresses correctness. Flexible Server wins on every lens.)
+
+<Aside type="note" title="Why not a managed connection pooler or a serverless SQL?">
+The whole point of NeoHaskell on Postgres is that you don't rewrite anything. A NoSQL or T-SQL backend would be cheaper at idle but would cost you `LISTEN/NOTIFY`, a Haskell driver, and portability. Burstable `B1ms` keeps all three for a few dollars a month.
+</Aside>
+
+## Connecting: environment variables only
+
+NeoHaskell reads its database configuration from environment variables. There is no connection string to assemble and no code to edit. Here are the variables your app reads (these are the real names — they come straight from the testbed's config):
+
+{/* source: neohaskell/neohaskell/testbed/src/Testbed/Config.hs@2a45427 */}
+
+| Variable | What it is | Default | For Flexible Server |
+|---|---|---|---|
+| `DB_HOST` | Database host | `localhost` | `<your-server>.postgres.database.azure.com` |
+| `DB_PORT` | Database port | `5432` | `5432` — **the direct port, see below** |
+| `DB_USER` | Username | `neohaskell` | your admin or app user |
+| `DB_PASSWORD` | Password (secret) | `neohaskell` | from a real secret store |
+| `DB_NAME` | Database name | `neohaskell` | the database you created |
+| `DB_POOL_SIZE` | EventStore pool size | `6` | leave at `6` on `B1ms` |
+| `DB_SSL_MODE` | TLS mode | `unset` | `require` (optional, recommended) |
+| `DB_SSL_ROOT_CERT` | CA bundle path | _(empty)_ | only for `verify-full` |
+
+A complete launch command looks like this:
+
+```bash
+DB_HOST=myclient-db.postgres.database.azure.com \
+DB_PORT=5432 \
+DB_USER=appuser \
+DB_PASSWORD=$(az keyvault secret show --vault-name myclient-kv --name db-password --query value -o tsv) \
+DB_NAME=myclient \
+DB_SSL_MODE=require \
+HTTP_PORT=8080 \
+./your-app
+```
+
+On Container Apps you'd set these as environment variables (and the password as a secret reference) in the container app's configuration instead of on the command line. The names are identical.
+
+<Aside type="tip" title="Localhost still works with nothing set">
+Every one of these has a sensible default. Running locally against `docker compose` Postgres needs no database config at all — the defaults point at `localhost`. The Flexible Server values are what you add **only** when you deploy.
+</Aside>
+
+## The direct-5432 rule
+
+This is the one rule you cannot get wrong.
+
+<Aside type="danger" title="Always connect on 5432. Never the pooler on 6432.">
+Flexible Server's General Purpose and Memory Optimized tiers ship a built-in **PgBouncer** connection pooler on port **`6432`**. PgBouncer in its default *transaction* mode **silently breaks `LISTEN/NOTIFY`** — the notifications NeoHaskell relies on to drive live projections and integrations never arrive.
+
+The failure is silent. Your app starts, commands succeed, events are stored — but live projections stop updating and outbound integrations stop firing, with no error and no log line. Always set `DB_PORT=5432` (the **direct** endpoint).
+</Aside>
+
+The good news on `B1ms`: **the Burstable tier has no PgBouncer at all**, so the only port available is the direct `5432`. You get the right behavior automatically. The rule matters the moment you upgrade to a General Purpose or Memory Optimized tier (where the pooler exists and is tempting) — keep `DB_PORT=5432` and leave the `6432` pooler switched off.
+
+NeoHaskell already manages its own connection pools (next section), so you are not giving up pooling by skipping PgBouncer — you're keeping the pooling that works with `LISTEN/NOTIFY` and dropping the one that breaks it.
+
+## The connection budget on B1ms
+
+`B1ms` is small. It allows **50 total connections**, of which roughly **15 are reserved** for Azure's superuser, replication, and maintenance — leaving about **35 usable**. A single NeoHaskell app has to fit inside that 35, and it opens connections from several places.
+
+Here's the full budget (the numbers are the shipped defaults):
+
+```text
+  EventStore pool        6   (DB_POOL_SIZE, default 6)
+  QueryObjectStore pool  4
+  FileUpload pool        6   (shares the EventStore pool size)
+  ----------------------- 
+  pooled subtotal       16
+
+  Listener pair          2   (persistent LISTEN/NOTIFY connections)
+  Init-listen            1   (transient, during startup)
+  ----------------------- 
+  fixed overhead         3
+
+  Per-stream subscription  1 each, while subscribed
+  ----------------------- 
+  steady-state total    19 + (number of active stream subscriptions)
+```
+
+With no stream subscriptions, a NeoHaskell app uses **19 of the 35** usable connections. That leaves about **16** for active stream subscriptions, an operator `psql` session, and a maintenance task.
+
+<Aside type="caution" title="Keep concurrent stream subscriptions bounded on B1ms">
+Each active per-stream subscription holds **one** dedicated connection for as long as it's subscribed. On `B1ms`, keep concurrent stream subscriptions to **around 14** so you stay clear of the 35-usable ceiling with headroom for `psql` and maintenance. NeoHaskell releases each subscription's connection on unsubscribe, so well-behaved subscribe/unsubscribe cycles don't accumulate connections — but a lot of *simultaneously open* subscriptions will. If you need more, move up a tier.
+</Aside>
+
+If you exceed the ceiling, Postgres rejects new connections with `FATAL: remaining connection slots are reserved` — an outage, not a slowdown. So the budget is a hard limit, not a guideline.
+
+**Raising the budget for a bigger tier.** `DB_POOL_SIZE` tunes the EventStore pool (and, because it shares that config, the FileUpload pool). Moving to **B2s** or a **General Purpose** tier raises `max_connections`, so you can raise `DB_POOL_SIZE` and run more concurrent subscriptions. The rule of thumb: raise the EventStore pool first, since command appends, entity fetches, and query catch-up reads all flow through it.
+
+<Aside type="note" title="Why restarts don't lose events">
+A `B1ms` maintenance restart or failover drops the `LISTEN/NOTIFY` connections. NeoHaskell reconnects and does a **position-based catch-up read** — it replays from the last processed position before resuming live dispatch, so events inserted during the outage are *not* silently skipped. You don't have to configure anything for this; it's why Flexible Server's regular restarts are safe.
+</Aside>
+
+## TLS hardening (optional, recommended)
+
+You don't *need* TLS config to connect — libpq's default already negotiates TLS against Flexible Server. The reason to set a mode is to **forbid a silent downgrade**: with the default, a stripped or misconfigured negotiation can quietly fall back to plaintext, sending your password and event data unencrypted with no error.
+
+Two modes are worth knowing. Both are off by default, so localhost and dev are completely unaffected.
+
+### `require` — forbid the downgrade
+
+```bash
+DB_SSL_MODE=require
+```
+
+This makes every NeoHaskell Postgres connection refuse to proceed unencrypted. A downgrade attempt fails loudly at connect time instead of leaking plaintext. This is the recommended baseline for any production deploy — one variable, no certificates to manage.
+
+### `verify-full` — also authenticate the server
+
+```bash
+DB_SSL_MODE=verify-full
+DB_SSL_ROOT_CERT=/etc/postgresql/azure-roots.pem
+```
+
+This adds protection against an active man-in-the-middle: libpq verifies the server's certificate chains to a trusted root **and** that the hostname matches. You supply a CA bundle containing the roots Azure uses:
+
+- **DigiCert Global Root G2**
+- **Microsoft RSA Root CA 2017**
+
+<Aside type="caution" title="Root certificates only — never an intermediate or the server cert">
+Put **only the root CAs** in your bundle. Microsoft rotates Flexible Server's *intermediate* certificates on an ongoing basis, so pinning an intermediate or the server certificate would break your connection the next time they rotate. Roots are stable; trust those and let the chain validate normally.
+</Aside>
+
+<Aside type="danger" title="Never set a client certificate">
+Azure Database for PostgreSQL has **no mutual-TLS support**. There is deliberately no client-certificate option in NeoHaskell — supplying `sslcert`/`sslkey` would *break* the connection, not harden it. `DB_SSL_ROOT_CERT` is a server-authentication bundle only.
+</Aside>
+
+The mode applies uniformly to **every** Postgres connection NeoHaskell opens — the EventStore pool, the QueryObjectStore pool, the FileUpload pool, and the `LISTEN/NOTIFY` connections. You set it once; you can't accidentally harden one pool and forget another.
+
+## Pairing with Container Apps scale-to-zero
+
+The cheap Container Apps setup runs with `minReplicas=0`: when no requests come in, your app scales all the way to zero and you pay nothing for compute. A request arrives, Container Apps cold-starts a replica, and you're serving again.
+
+There's one trap, and it's the whole reason this section exists:
+
+<Aside type="danger" title="The database does NOT wake up on a request">
+Scaling your *app* to zero is free and safe. But a request that cold-starts your app does **not** wake the database. If you also stop the database to save money, a cold-started replica boots, tries to connect, and finds nothing there — the request fails.
+</Aside>
+
+You have two workable options:
+
+1. **Keep the database always-on (recommended).** Leave the Flexible Server running 24/7. On `B1ms` this is cheap enough that it's the right default. A cold-started app replica always finds a live database, and the only thing scaling to zero is your (free-at-idle) compute.
+
+2. **Scheduled stop during known off-hours.** Flexible Server supports a scheduled stop/start. If a client genuinely has hours where nobody touches the system (say, overnight), you can stop the database then and accept a **dark window** — any request during the stop window fails until the database is started again. Only do this when you're certain about the traffic pattern; the savings on `B1ms` are small and the failure mode is real.
+
+### Pair the health probes
+
+NeoHaskell serves two HTTP endpoints out of the box — use both in your Container Apps probes:
+
+- **`GET /health`** — *liveness.* Returns `200 {"status":"ok"}` once the HTTP server is up. Tells Container Apps the replica is alive.
+- **`GET /ready`** — *readiness.* Returns `503` while the app is still rebuilding its query projections after a cold start, then `200 {"status":"ready"}` once every projection has caught up. Tells the load balancer not to send traffic until the read models are current.
+
+```yaml
+# Container Apps / Kubernetes-style probes
+livenessProbe:
+  httpGet: { path: /health, port: 8080 }
+  initialDelaySeconds: 10
+  periodSeconds: 10
+readinessProbe:
+  httpGet: { path: /ready, port: 8080 }
+  initialDelaySeconds: 5
+  periodSeconds: 5
+```
+
+The readiness gate matters most on a scale-from-zero cold start against a non-empty event store: the app needs a moment to replay projections, and `/ready` holds traffic back until it's genuinely ready to answer queries correctly.
+
+## Storage growth and cost
+
+Flexible Server storage is **provisioned and grows-only**. You pick a size up front; you can grow it later, but you **cannot shrink it** without a dump-and-restore. An event store only ever accumulates events, so plan for steady growth.
+
+A few cost realities to keep in mind:
+
+- **Classic Premium SSD is tiered.** Storage comes in fixed steps — 32 GiB, 64 GiB, 128 GiB, and up — at roughly **$0.115 per GiB-month** (approximate; check the current [Azure pricing calculator](https://azure.microsoft.com/pricing/calculator/), it varies by region and changes over time). **IOPS are coupled to the size** on this tier — a bigger disk buys more IOPS. If you need more throughput, you grow the disk.
+
+- **Premium SSD v2 needs General Purpose.** The newer Premium SSD v2 (which decouples IOPS from size) is **not available on the Burstable tier** — it requires General Purpose or higher. On `B1ms` you're on classic Premium SSD.
+
+<Aside type="caution" title="The backup-and-GRS cost trap">
+Backups up to **100% of your provisioned storage** are **free**. Beyond that, backup storage is billed — and **Geo-Redundant Storage (GRS)** roughly doubles the backup footprint. The usual way to get surprised is a long **point-in-time-recovery (PITR) retention window** on a store that's growing: the retained backups quietly exceed 100% of provisioned storage and you start paying, with GRS multiplying it. **Cap your PITR retention** to what the client actually needs, and watch the backup-storage line as the event log grows.
+</Aside>
+
+## Troubleshooting
+
+### Live projections stopped updating, but commands still work
+
+Almost always the **direct-5432 rule**: you're connected through the PgBouncer pooler on `6432`, which silently drops `LISTEN/NOTIFY`. Set `DB_PORT=5432` and restart.
+
+### `FATAL: remaining connection slots are reserved`
+
+You've hit the `B1ms` connection ceiling. Count your active stream subscriptions (each holds one connection) against [the budget](#the-connection-budget-on-b1ms). Reduce concurrent subscriptions, or move to a larger tier and raise `DB_POOL_SIZE`.
+
+### First request after a quiet period fails to connect
+
+Your database is stopped. With Container Apps scale-to-zero, a request wakes the *app*, not the *database*. Keep the database always-on, or confirm it isn't inside a scheduled stop window.
+
+### TLS connection fails after turning on `verify-full`
+
+Your CA bundle is probably wrong. Use the **root** CAs only (DigiCert Global Root G2 + Microsoft RSA Root CA 2017) — not an intermediate, which rotates. If you don't need server authentication, `DB_SSL_MODE=require` gives you downgrade protection with no certificate to manage.
+
+## Where to go from here
+
+- **[PostgreSQL event store](/guides/postgresql-event-store/)** — sizing, backups, replication, and the connection pool in more depth.
+- **[Deployment](/guides/deployment/)** — building the container image and the rest of the deploy pipeline.
+- **[Error handling](/guides/error-handling/)** — what your app does when the database blips.
+
+---
+
+Stuck for more than 15 minutes? That's on us, not you. Join our [Discord](https://discord.gg/wDj3UYzec8) — we'd love to help you get your client deployed.
