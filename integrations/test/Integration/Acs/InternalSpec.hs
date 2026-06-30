@@ -1,9 +1,11 @@
 module Integration.Acs.InternalSpec (spec) where
 
 import Array qualified
+import Auth.SecretStore.InMemory qualified as InMemorySecretStore
 import Basics
-import Control.Exception qualified as Exception
-import Integration (ToAction (..))
+import ConcurrentMap (ConcurrentMap)
+import ConcurrentMap qualified
+import Integration (ActionContext (..), CommandPayload (..), ToAction (..), fromMap, runAction)
 import Integration.Acs.Internal
   ( AcsResponseHandler (..)
   , encodeBodyField
@@ -20,11 +22,16 @@ import Integration.Acs.Request (Address (..), Body (..), Recipient (..), Request
 import Integration.Acs.Response (Response (..))
 import Integration.Http qualified as Http
 import Json qualified
+import Lock (Lock)
+import Map qualified
 import Maybe (Maybe (..))
 import Maybe qualified
 import Redacted qualified
 import Result qualified
 import Service.Command.Core (NameOf)
+import Service.Integration.DispatchRegistry qualified as DispatchRegistry
+import Task (Task)
+import Task qualified
 import Test.Hspec
 import Text (Text)
 import Text qualified
@@ -305,17 +312,33 @@ spec = do
         result `shouldSatisfy` (\msg -> not (msg == ""))
 
   describe "Integration.Acs.Internal.ToAction instance" do
-    it "validates endpoint before unwrapping token, routes https to toHttpRequest (happy path, SEC-001, stub is red)" do
+    it "accepts an https endpoint: passes the guard and builds a Bearer request (happy path, SEC-001)" do
       let req = makeTestRequestForToAction "https://my-acs.communication.azure.com"
-      -- evaluate forces the thunk in IO; stub panics → exception → test is red
-      _ <- Exception.evaluate (toAction req)
-      pure ()
+      -- The instance gates on validateEndpoint, then builds the Http.Request.
+      validateEndpoint req.endpoint `shouldBe` Result.Ok "https://my-acs.communication.azure.com"
+      (toHttpRequest req).auth `shouldBe` Http.Bearer "test-token"
 
-    it "rejects non-https endpoint and emits error command without unwrapping token (edge: SEC-001 guard, token leak prevention, stub is red)" do
+    it "rejects a non-https endpoint: emits the onError command, never unwrapping the token (edge: SEC-001 guard)" do
+      stubStore <- Task.runOrPanic InMemorySecretStore.new
+      emptyLocks <- Task.runOrPanic (ConcurrentMap.new :: Task Text (ConcurrentMap Text Lock))
+      let ctx = ActionContext
+            { secretStore = stubStore
+            , providerRegistry = fromMap Map.empty
+            , refreshLocks = emptyLocks
+            , fileAccess = Nothing
+            , outboundDispatch = DispatchRegistry.empty
+            }
       let req = makeTestRequestForToAction "http://my-acs.communication.azure.com"
-      -- evaluate forces the thunk in IO; stub panics → exception → test is red
-      _ <- Exception.evaluate (toAction req)
-      pure ()
+      emitted <- Task.runOrPanic (runAction ctx (toAction req))
+      case emitted of
+        Just (CommandPayload { commandType = cmdType, commandData = cmdData }) -> do
+          -- The emitted command is the onError result carrying the guard message;
+          -- reaching it proves the token was never unwrapped (validateEndpoint
+          -- short-circuits before toHttpRequest).
+          cmdType `shouldBe` "TestAcsCommand"
+          Text.contains "https" (Json.encodeText cmdData) `shouldBe` True
+        Nothing ->
+          expectationFailure "expected an onError command for a non-https endpoint"
 
 
 -- Test helpers
@@ -388,6 +411,7 @@ type instance NameOf TestAcsCommand = "TestAcsCommand"
 
 
 -- | Test helper for ToAction tests; uses TestAcsCommand which satisfies the constraint.
+-- 'onError' carries the guard message through so the SEC-001 test can inspect it.
 makeTestRequestForToAction :: Text -> Request TestAcsCommand
 makeTestRequestForToAction endpointVal =
   Request
@@ -398,5 +422,5 @@ makeTestRequestForToAction endpointVal =
     , body = HtmlBody "<p>Test</p>"
     , accessToken = Redacted.wrap "test-token"
     , onSuccess = \_ -> TestAcsCommand "success"
-    , onError = \_ -> TestAcsCommand "error"
+    , onError = \message -> TestAcsCommand message
     }

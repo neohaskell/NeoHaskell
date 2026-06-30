@@ -62,8 +62,10 @@ instance
         -- Non-https endpoint: emit the error command directly.
         -- The Bearer token is never unwrapped in this branch.
         Integration.action (\_ctx -> Integration.emitCommand (req.onError message))
-      Result.Ok _ ->
-        req |> toHttpRequest |> Integration.toAction
+      Result.Ok trimmedEndpoint ->
+        -- Use the trimmed endpoint so leading/trailing whitespace never
+        -- reaches the request URL (CodeRabbit: honor validateEndpoint's result).
+        req { endpoint = trimmedEndpoint } |> toHttpRequest |> Integration.toAction
 
 
 -- | Accept only an https endpoint; anything else would leak the Bearer token.
@@ -89,7 +91,7 @@ toHttpRequest ::
   Http.Request command
 toHttpRequest req =
   do
-    let endpointBase = req.endpoint
+    let endpointBase = Text.trim req.endpoint
     let url = [fmt|#{endpointBase}/emails:send?api-version=2023-03-31|]
     let tokenValue = Redacted.unwrap req.accessToken
     let encodedBody = encodeRequest req
@@ -154,14 +156,18 @@ encodeBodyField body =
 
 -- | Encode a Recipient as a JSON object @{ "address": "..." }@.
 encodeRecipientAddress :: Recipient -> Json.Value
-encodeRecipientAddress (Recipient (Address { email = emailVal })) =
-  Json.object [("address", Json.encode emailVal)]
+encodeRecipientAddress recipientVal =
+  case recipientVal of
+    Recipient (Address { email = emailVal }) ->
+      Json.object [("address", Json.encode emailVal)]
 
 
 -- | Extract the email address from a Sender.
 senderEmail :: Sender -> Text
-senderEmail (Sender (Address { email = emailVal })) =
-  emailVal
+senderEmail senderVal =
+  case senderVal of
+    Sender (Address { email = emailVal }) ->
+      emailVal
 
 
 -- | Dispatch the ACS HTTP response on status code.

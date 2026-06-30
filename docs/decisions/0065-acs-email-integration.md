@@ -386,9 +386,11 @@ neither is present. The send is reported as succeeded in every `202` case; an
 empty `operationId` simply means "accepted, id not captured" (the id only feeds
 out-of-scope delivery polling). The body also carries a `status` field
 (`NotStarted` / `Running` / `Succeeded` / `Failed` / `Canceled`) which we do not
-inspect. On a `4xx`/`5xx` error, ACS returns a safe, non-sensitive
-`x-ms-error-code` response header; the dispatcher MAY append that code to the
-sanitized message for diagnosability without ever echoing the token or body.
+inspect. On a `4xx`/`5xx` error, ACS also returns a safe, non-sensitive
+`x-ms-error-code` response header. The current `handleAcsResponse` returns
+**status-only** messages and does not read that header; a future revision could
+append it for extra diagnosability without ever echoing the token or body. It is
+intentionally not appended today.
 
 ```haskell
 handleAcsResponse ::

@@ -32,7 +32,13 @@ import Text (Text)
 data Address = Address
   { name :: Maybe Text
   , email :: Text
-  } deriving (Eq, Show, Generic)
+  } deriving (Eq, Generic)
+
+
+-- | 'Show' redacts the address so recipient/sender PII never lands in logs
+-- or error text via @show@. (Equality and JSON still use the real fields.)
+instance Show Address where
+  show _ = "Address <redacted>"
 
 
 -- | Hand-written ToJSON: omit the @name@ field entirely when no display
@@ -56,13 +62,21 @@ instance Json.FromJSON Address
 
 
 -- | The sender address.  A newtype over 'Address' to prevent accidental
--- swap with 'Recipient'.
-newtype Sender = Sender Address deriving (Eq, Show)
+-- swap with 'Recipient'.  'Show' redacts the email (no PII leak).
+newtype Sender = Sender Address deriving (Eq)
+
+
+instance Show Sender where
+  show _ = "Sender <redacted>"
 
 
 -- | A recipient address.  A newtype over 'Address' to prevent accidental
--- swap with 'Sender'.
-newtype Recipient = Recipient Address deriving (Eq, Show)
+-- swap with 'Sender'.  'Show' redacts the email (no PII leak).
+newtype Recipient = Recipient Address deriving (Eq)
+
+
+instance Show Recipient where
+  show _ = "Recipient <redacted>"
 
 
 -- | Mutually-exclusive email body.  ACS rejects a request that sets both

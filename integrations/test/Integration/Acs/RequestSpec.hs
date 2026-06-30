@@ -129,10 +129,10 @@ spec = do
       let s = Sender addr
       s `shouldBe` Sender (Address { name = Nothing, email = "sender@example.com" })
 
-    it "Show Sender does not leak email address (edge: Sender Show instance)" do
+    it "Show Sender redacts the email address (edge: no PII leak via Show)" do
       let s = Sender (Address { name = Nothing, email = "secret@example.com" })
-      let shown = show s
-      shown `shouldSatisfy` (\str -> not (str == ""))
+      -- Exact, fixed output: the email string cannot appear in it.
+      show s `shouldBe` "Sender <redacted>"
 
   describe "Integration.Acs.Recipient" do
     it "constructs Recipient newtype wrapping Address (happy path)" do
@@ -140,10 +140,10 @@ spec = do
       let r = Recipient addr
       r `shouldBe` Recipient (Address { name = Nothing, email = "user@example.com" })
 
-    it "Show Recipient does not leak email address (edge: Recipient Show instance)" do
+    it "Show Recipient redacts the email address (edge: no PII leak via Show)" do
       let r = Recipient (Address { name = Nothing, email = "user@example.com" })
-      let shown = show r
-      shown `shouldSatisfy` (\str -> not (str == ""))
+      -- Exact, fixed output: the email string cannot appear in it.
+      show r `shouldBe` "Recipient <redacted>"
 
   describe "Integration.Acs.Body" do
     describe "HtmlBody variant" do
