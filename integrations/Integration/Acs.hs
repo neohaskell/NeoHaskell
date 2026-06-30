@@ -1,5 +1,3 @@
-{-# LANGUAGE ImplicitParams #-}
-
 -- | Azure Communication Services transactional email integration for NeoHaskell.
 --
 -- Send transactional emails (sign-up confirmations, password resets, receipts,
