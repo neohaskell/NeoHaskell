@@ -181,8 +181,15 @@ data Body
   deriving (Eq, Show, Generic)
 
 
--- | A complete ACS email send. 'accessToken' is 'Redacted Text' so the Entra
--- Bearer token is never logged or serialized by accident.
+-- | A complete ACS email send, produced by 'send' and consumed by
+-- 'Integration.outbound'. 'accessToken' is 'Redacted Text' so the Entra Bearer
+-- token is never logged or serialized by accident. Jess never builds this record
+-- by hand — 'send' is the only constructor:
+--
+-- @
+-- request = Acs.send "https://my-acs.communication.azure.com" sender recipient
+--             "Subject" (Acs.HtmlBody "<h1>Hi</h1>") onSuccess onError
+-- @
 data Request command = Request
   { endpoint :: Text
   , sender :: Sender
@@ -521,6 +528,14 @@ data Body
 -- Reads the Entra Bearer token from @?config.acsAccessToken@. The endpoint
 -- must be an @https://@ URL — a non-https endpoint is reported through the
 -- error callback and the token is never transmitted.
+--
+-- @
+-- Acs.send "https://my-acs.communication.azure.com"
+--   (Acs.sender "noreply@myapp.com") (Acs.recipient info.email)
+--   "Your order is confirmed" (Acs.HtmlBody "<h1>Thanks</h1>")
+--   (\\r -> EmailSent { operationId = r.operationId }) (\\e -> EmailFailed { reason = e })
+--   |> Integration.outbound
+-- @
 send ::
   forall command config.
   ( ?config :: config
