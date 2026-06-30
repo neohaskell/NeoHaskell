@@ -74,6 +74,7 @@ ADRs document significant architectural decisions made during the development of
 | [0062](0062-shared-connection-settings-builder.md) | Single Shared Postgres Connection-Settings Builder | Proposed |
 | [0063](0063-per-stream-subscription-connection-release.md) | Release Per-Stream Subscription Connections on Unsubscribe | Proposed |
 | [0064](0064-optional-sslmode-tls-hardening.md) | Optional `sslmode` TLS Hardening for Postgres Connections | Proposed |
+| [0065](0065-acs-email-integration.md) | Azure Communication Services Email Integration | Proposed |
 
 ## Creating New ADRs
 
