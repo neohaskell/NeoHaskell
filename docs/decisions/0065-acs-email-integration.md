@@ -493,9 +493,13 @@ module Integration.Acs
 
 ```haskell
 -- | Build a sender from an email address.
+--
+-- @Acs.sender "noreply@myapp.com"@
 sender :: Text -> Sender
 
 -- | Build a recipient from an email address.
+--
+-- @Acs.recipient "user@example.com"@
 recipient :: Text -> Recipient
 ```
 
@@ -503,6 +507,8 @@ recipient :: Text -> Recipient
 
 ```haskell
 -- | Mutually-exclusive email body (compile-time exclusive html vs text).
+--
+-- @Acs.HtmlBody "<h1>Hi</h1>"@  —  or  —  @Acs.TextBody "Hi"@
 data Body
   = HtmlBody Text
   | TextBody Text
@@ -535,6 +541,8 @@ send ::
 ```haskell
 -- | The accepted-send payload; carries the ACS operation id (best-effort —
 -- empty when a 202 body carried no id). Decoded from the ACS wire field @id@.
+--
+-- @\\response -> EmailSent { operationId = response.operationId }@
 data Response = Response { operationId :: Text }
 ```
 
