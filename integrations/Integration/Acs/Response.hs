@@ -2,7 +2,8 @@
 --
 -- Provides the 'Response' record decoded from ACS's HTTP 202 response.
 -- The ACS wire field is @id@; the Haskell field is 'operationId'.
--- Phase 10 will implement the custom FromJSON instance that maps the two.
+-- Custom 'FromJSON' and 'ToJSON' instances map between the two so that
+-- round-trips and ACS wire-format decoding both work correctly.
 module Integration.Acs.Response
   ( Response (..)
   ) where
@@ -20,12 +21,17 @@ data Response = Response
   } deriving (Eq, Show, Generic)
 
 
--- Stub: generic ToJSON encodes as {"operationId":"..."} — mismatches the wire
--- field "id", which the real phase-10 instance will fix.
-instance Json.ToJSON Response
+-- | Custom ToJSON: writes 'operationId' using the ACS wire key @id@,
+-- ensuring that round-trips match the ACS wire format.
+instance Json.ToJSON Response where
+  toJSON resp =
+    Json.object [("id", Json.encode resp.operationId)]
 
 
--- Stub: always fails so every round-trip assertion is red.
--- Phase 10 will replace this with a custom parser reading the "id" key.
+-- | Custom FromJSON: reads the ACS wire key @id@ into 'operationId'.
+-- This is the mapping required by ADR-0065; the wire field is @id@, not
+-- @operationId@.
 instance Json.FromJSON Response where
-  parseJSON _ = Json.fail "Response.fromJSON stub: not implemented"
+  parseJSON = Json.withObject "Response" \obj -> do
+    opId <- obj Json..: "id"
+    Json.yield Response { operationId = opId }

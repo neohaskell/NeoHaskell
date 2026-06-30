@@ -19,6 +19,7 @@ module Integration.Acs.Request
   ) where
 
 import Array (Array)
+import Array qualified
 import Basics
 import Integration.Acs.Response (Response)
 import Json qualified
@@ -34,14 +35,24 @@ data Address = Address
   } deriving (Eq, Show, Generic)
 
 
--- Stub: generic ToJSON (omits nothing, no custom key mapping).
--- Phase 10 will provide the ACS wire shape (omit name when Nothing).
-instance Json.ToJSON Address
+-- | Hand-written ToJSON: omit the @name@ field entirely when no display
+-- name is supplied, rather than serialising @null@.  This matches ACS wire
+-- contract and mirrors the Brevo pattern.
+instance Json.ToJSON Address where
+  toJSON addr =
+    case addr.name of
+      Nothing ->
+        Json.object [("email", Json.encode addr.email)]
+      Just displayName ->
+        Json.object
+          [ ("name", Json.encode displayName)
+          , ("email", Json.encode addr.email)
+          ]
 
 
--- Stub: always fails so round-trip tests are red.
-instance Json.FromJSON Address where
-  parseJSON _ = Json.fail "Address.fromJSON stub: not implemented"
+-- | Generic FromJSON: Aeson's generic decoder treats a missing @name@ field
+-- as 'Nothing', which round-trips correctly with the custom 'ToJSON'.
+instance Json.FromJSON Address
 
 
 -- | The sender address.  A newtype over 'Address' to prevent accidental
@@ -62,13 +73,13 @@ data Body
   deriving (Eq, Show, Generic)
 
 
--- Stub: generic ToJSON (uses constructor names, not ACS wire keys).
+-- | Generic ToJSON for round-trip testing.  The ACS wire body is hand-built
+-- by 'Internal.encodeBodyField'; this instance is only used in tests.
 instance Json.ToJSON Body
 
 
--- Stub: always fails so round-trip tests are red.
-instance Json.FromJSON Body where
-  parseJSON _ = Json.fail "Body.fromJSON stub: not implemented"
+-- | Generic FromJSON for round-trip testing.
+instance Json.FromJSON Body
 
 
 -- | A complete ACS email send, produced by 'send' and consumed by
@@ -88,22 +99,36 @@ data Request command = Request
 
 -- | Build a sender from just an email address (no display name).
 --
--- Stub: throws to make every test that calls 'sender' red.
+-- @
+-- Acs.sender "noreply\@myapp.com"
+-- @
 sender :: Text -> Sender
-sender _email = panic "Acs.sender stub: not implemented"
+sender email =
+  Sender (Address { name = Nothing, email })
 
 
 -- | Build a recipient from just an email address (no display name).
 --
--- Stub: throws to make every test that calls 'recipient' red.
+-- @
+-- Acs.recipient "user\@example.com"
+-- @
 recipient :: Text -> Recipient
-recipient _email = panic "Acs.recipient stub: not implemented"
+recipient email =
+  Recipient (Address { name = Nothing, email })
 
 
 -- | Send one transactional email through an ACS Email resource.
 -- Reads the Entra Bearer token from @?config.acsAccessToken@.
+-- The endpoint must use @https://@ — a non-https endpoint is reported
+-- through the error callback without ever unwrapping the token.
 --
--- Stub: throws to make every test that calls 'send' red.
+-- @
+-- Acs.send "https://my-acs.communication.azure.com"
+--   (Acs.sender "noreply\@myapp.com") (Acs.recipient info.email)
+--   "Your order is confirmed" (Acs.HtmlBody "\<h1\>Thanks\<\/h1\>")
+--   (\\r -> EmailSent { operationId = r.operationId }) (\\e -> EmailFailed { reason = e })
+--   |> Integration.outbound
+-- @
 send ::
   forall command config.
   ( ?config :: config
@@ -117,5 +142,14 @@ send ::
   (Response -> command) ->
   (Text -> command) ->
   Request command
-send _endpoint _sender _recipient _subject _body _onSuccess _onError =
-  panic "Acs.send stub: not implemented"
+send endpointVal senderVal recipientVal subjectVal bodyVal onSuccess onError =
+  Request
+    { endpoint = endpointVal
+    , sender = senderVal
+    , to = Array.wrap recipientVal
+    , subject = subjectVal
+    , body = bodyVal
+    , accessToken = ?config.acsAccessToken
+    , onSuccess
+    , onError
+    }
