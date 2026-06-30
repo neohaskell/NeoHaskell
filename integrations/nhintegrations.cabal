@@ -104,6 +104,10 @@ library
     Integration.Brevo.Request
     Integration.Brevo.Response
     Integration.Brevo.Internal
+    Integration.Acs
+    Integration.Acs.Request
+    Integration.Acs.Response
+    Integration.Acs.Internal
   hs-source-dirs: .
   default-language: GHC2021
 
@@ -138,6 +142,9 @@ test-suite nhintegrations-test
     Integration.Brevo.RequestSpec
     Integration.Brevo.ResponseSpec
     Integration.Brevo.InternalSpec
+    Integration.Acs.RequestSpec
+    Integration.Acs.ResponseSpec
+    Integration.Acs.InternalSpec
   build-depends:
     hspec,
     nhintegrations
