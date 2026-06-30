@@ -10,6 +10,7 @@
 module Integration.Acs.Internal
   ( -- * Transformation (exported for testing)
     toHttpRequest
+  , planAction
   , encodeRequest
   , encodeBodyField
   , encodeRecipientAddress
@@ -57,15 +58,30 @@ instance
   ToAction (Request command)
   where
   toAction req =
-    case validateEndpoint req.endpoint of
+    case planAction req of
       Result.Err message ->
         -- Non-https endpoint: emit the error command directly.
         -- The Bearer token is never unwrapped in this branch.
         Integration.action (\_ctx -> Integration.emitCommand (req.onError message))
-      Result.Ok trimmedEndpoint ->
-        -- Use the trimmed endpoint so leading/trailing whitespace never
-        -- reaches the request URL (CodeRabbit: honor validateEndpoint's result).
-        req { endpoint = trimmedEndpoint } |> toHttpRequest |> Integration.toAction
+      Result.Ok httpReq ->
+        Integration.toAction httpReq
+
+
+-- | Pure planning step for the 'ToAction' instance: validate the endpoint
+-- (SEC-001) and, on success, build the 'Http.Request' from the trimmed
+-- endpoint.  Returns 'Result.Err' with the guard message for a non-https
+-- endpoint (the token is never unwrapped), 'Result.Ok' the request otherwise.
+-- Exposed for testing so both branches are assertable without a live HTTP call.
+planAction ::
+  forall command.
+  Request command ->
+  Result Text (Http.Request command)
+planAction req =
+  case validateEndpoint req.endpoint of
+    Result.Err message ->
+      Result.Err message
+    Result.Ok trimmedEndpoint ->
+      Result.Ok (toHttpRequest (req { endpoint = trimmedEndpoint }))
 
 
 -- | Accept only an https endpoint; anything else would leak the Bearer token.
@@ -154,12 +170,21 @@ encodeBodyField body =
       Array.fromLinkedList [("plainText", Json.encode text)]
 
 
--- | Encode a Recipient as a JSON object @{ "address": "..." }@.
+-- | Encode a Recipient as a JSON object @{ "address": "..." }@, adding
+-- @"displayName"@ when the address carries a name (ACS @EmailAddress@ shape).
+-- The optional name is only omitted when absent — never silently dropped.
 encodeRecipientAddress :: Recipient -> Json.Value
 encodeRecipientAddress recipientVal =
   case recipientVal of
-    Recipient (Address { email = emailVal }) ->
-      Json.object [("address", Json.encode emailVal)]
+    Recipient (Address { name = nameVal, email = emailVal }) ->
+      case nameVal of
+        Nothing ->
+          Json.object [("address", Json.encode emailVal)]
+        Just displayName ->
+          Json.object
+            [ ("address", Json.encode emailVal)
+            , ("displayName", Json.encode displayName)
+            ]
 
 
 -- | Extract the email address from a Sender.

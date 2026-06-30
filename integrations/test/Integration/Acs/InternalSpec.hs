@@ -14,6 +14,7 @@ import Integration.Acs.Internal
   , handleAcsResponse
   , operationIdFrom
   , operationIdFromLocation
+  , planAction
   , senderEmail
   , toHttpRequest
   , validateEndpoint
@@ -131,6 +132,18 @@ spec = do
       let jsonText = Json.encodeText encoded
       Text.contains "user@example.com" jsonText `shouldBe` True
       Text.contains "\"address\"" jsonText `shouldBe` True
+
+    it "includes displayName when the recipient carries a name (no data loss)" do
+      let rcpt = Recipient (Address { name = Just "Jane Doe", email = "jane@example.com" })
+      let jsonText = Json.encodeText (encodeRecipientAddress rcpt)
+      Text.contains "\"displayName\"" jsonText `shouldBe` True
+      Text.contains "Jane Doe" jsonText `shouldBe` True
+      Text.contains "jane@example.com" jsonText `shouldBe` True
+
+    it "omits displayName entirely when the recipient has no name (edge: optional field)" do
+      let rcpt = Recipient (Address { name = Nothing, email = "user@example.com" })
+      let jsonText = Json.encodeText (encodeRecipientAddress rcpt)
+      Text.contains "displayName" jsonText `shouldBe` False
 
   describe "Integration.Acs.Internal.senderEmail" do
     it "extracts email from Sender newtype (happy path)" do
@@ -311,12 +324,27 @@ spec = do
         let result = handleAcsResponse handler response
         result `shouldSatisfy` (\msg -> not (msg == ""))
 
+  describe "Integration.Acs.Internal.planAction" do
+    it "plans an https endpoint into a Bearer Http.Request, trimming whitespace (happy path, SEC-001)" do
+      -- planAction is the exact decision the ToAction Ok branch runs; a
+      -- regression there is caught here without a live HTTP call.
+      let req = makeTestRequestForToAction "  https://my-acs.communication.azure.com  "
+      case planAction req of
+        Result.Ok httpReq -> do
+          httpReq.auth `shouldBe` Http.Bearer "test-token"
+          Text.startsWith "https://my-acs.communication.azure.com/emails:send" httpReq.url `shouldBe` True
+        Result.Err message ->
+          expectationFailure [fmt|expected Ok for an https endpoint, got Err: #{message}|]
+
+    it "plans a non-https endpoint as a guard error, never building a request (edge: SEC-001)" do
+      let req = makeTestRequestForToAction "http://my-acs.communication.azure.com"
+      case planAction req of
+        Result.Err message ->
+          Text.contains "https" message `shouldBe` True
+        Result.Ok _ ->
+          expectationFailure "expected Err for a non-https endpoint"
+
   describe "Integration.Acs.Internal.ToAction instance" do
-    it "accepts an https endpoint: passes the guard and builds a Bearer request (happy path, SEC-001)" do
-      let req = makeTestRequestForToAction "https://my-acs.communication.azure.com"
-      -- The instance gates on validateEndpoint, then builds the Http.Request.
-      validateEndpoint req.endpoint `shouldBe` Result.Ok "https://my-acs.communication.azure.com"
-      (toHttpRequest req).auth `shouldBe` Http.Bearer "test-token"
 
     it "rejects a non-https endpoint: emits the onError command, never unwrapping the token (edge: SEC-001 guard)" do
       stubStore <- Task.runOrPanic InMemorySecretStore.new

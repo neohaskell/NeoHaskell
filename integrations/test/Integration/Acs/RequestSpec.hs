@@ -131,8 +131,8 @@ spec = do
 
     it "Show Sender redacts the email address (edge: no PII leak via Show)" do
       let s = Sender (Address { name = Nothing, email = "secret@example.com" })
-      -- Exact, fixed output: the email string cannot appear in it.
-      show s `shouldBe` "Sender <redacted>"
+      -- Fixed repo-standard sentinel: the email string cannot appear in it.
+      show s `shouldBe` "<redacted>"
 
   describe "Integration.Acs.Recipient" do
     it "constructs Recipient newtype wrapping Address (happy path)" do
@@ -142,8 +142,8 @@ spec = do
 
     it "Show Recipient redacts the email address (edge: no PII leak via Show)" do
       let r = Recipient (Address { name = Nothing, email = "user@example.com" })
-      -- Exact, fixed output: the email string cannot appear in it.
-      show r `shouldBe` "Recipient <redacted>"
+      -- Fixed repo-standard sentinel: the email string cannot appear in it.
+      show r `shouldBe` "<redacted>"
 
   describe "Integration.Acs.Body" do
     describe "HtmlBody variant" do

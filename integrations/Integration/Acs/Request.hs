@@ -36,9 +36,10 @@ data Address = Address
 
 
 -- | 'Show' redacts the address so recipient/sender PII never lands in logs
--- or error text via @show@. (Equality and JSON still use the real fields.)
+-- or error text via @show@.  Uses the repo-standard @\<redacted\>@ sentinel
+-- (same as 'Redacted').  Equality and JSON still use the real fields.
 instance Show Address where
-  show _ = "Address <redacted>"
+  show _ = "<redacted>"
 
 
 -- | Hand-written ToJSON: omit the @name@ field entirely when no display
@@ -67,7 +68,7 @@ newtype Sender = Sender Address deriving (Eq)
 
 
 instance Show Sender where
-  show _ = "Sender <redacted>"
+  show _ = "<redacted>"
 
 
 -- | A recipient address.  A newtype over 'Address' to prevent accidental
@@ -76,7 +77,7 @@ newtype Recipient = Recipient Address deriving (Eq)
 
 
 instance Show Recipient where
-  show _ = "Recipient <redacted>"
+  show _ = "<redacted>"
 
 
 -- | Mutually-exclusive email body.  ACS rejects a request that sets both
