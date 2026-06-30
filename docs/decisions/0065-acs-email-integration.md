@@ -57,10 +57,14 @@ plain `Bearer <token>`, which is what this integration emits.
 
 ### Design drivers
 
-1. **Mirror Brevo exactly.** Jess already learned `Brevo.send (Brevo.sender …)
+1. **Mirror Brevo's *surface*.** Jess already learned `Brevo.send (Brevo.sender …)
    (Brevo.recipient …) subject (Brevo.HtmlBody …) onSuccess onError |>
-   Integration.outbound`. The ACS spelling must be identical apart from the
-   module name and one extra `endpoint` argument, so she reuses one mental model.
+   Integration.outbound`. The ACS spelling is identical apart from the module name
+   and one extra `endpoint` argument, so she reuses one mental model. The
+   *internals* deliberately diverge from Brevo where Brevo is wrong or incomplete:
+   ACS ships the `ToAction` instance Brevo omits (§4), validates the endpoint
+   scheme before unwrapping the token (§4, SEC-001), and always treats a `202` as
+   an accepted send so a retry can never double-send (§6, SEC-002).
 2. **Two-persona split (ADR-0015).** Facade `Integration.Acs` exposes only pure
    records and smart constructors; all HTTP/IO/Task lives in
    `Integration.Acs.Internal`, which is not re-exported.
@@ -139,7 +143,7 @@ Adopt Option A. Concretely:
 | `Integration.Acs` | Jess | Re-exports `Request (..)`, `Body (..)`, `Sender (..)`, `Recipient (..)`, smart constructors `send`/`sender`/`recipient`, and `Response (..)` |
 | `Integration.Acs.Request` | Jess | `Request` record, `Body` sum, `Address`/`Sender`/`Recipient` types, smart constructors |
 | `Integration.Acs.Response` | Jess | `Response { operationId :: Text }` |
-| `Integration.Acs.Internal` | Nick | `toHttpRequest`, `encodeRequest`, `AcsResponseHandler`, status dispatch — **not re-exported** |
+| `Integration.Acs.Internal` | Nick | `ToAction` instance, `validateEndpoint`, `toHttpRequest`, `encodeRequest`, `AcsResponseHandler`, status dispatch — **not re-exported** |
 
 `Integration.Acs.Internal` is the single module that touches `Integration.Http`
 and the single site that calls `Redacted.unwrap`.
@@ -242,12 +246,51 @@ send endpointVal senderVal recipientVal subjectVal bodyVal onSuccess onError =
     }
 ```
 
-### 4. `toHttpRequest` — the single unwrap site
+### 4. `ToAction` instance + endpoint guard + the single unwrap site
+
+`Integration.Acs.Internal` supplies the `ToAction (Request command)` instance —
+the bridge that lets Jess write `Acs.send … |> Integration.outbound`. (Note:
+`Integration.Brevo` is currently missing this instance, so "mirror Brevo exactly"
+is *not* sufficient; this ADR follows the complete integrations — `OpenRouter`,
+`Pdf`, `Ocr`, `Agent` — which delegate to `Integration.Http`'s `ToAction` via
+`toHttpRequest`.)
+
+The `ToAction` instance is also where the **endpoint scheme is validated before
+the token is ever unwrapped** (security finding SEC-001). The Entra Bearer token
+must never be transmitted over cleartext, so an `endpoint` that does not begin
+with `https://` (case-insensitive, after trimming) short-circuits to `onError`
+with a clear message — `toHttpRequest` is never called, `Redacted.unwrap` never
+runs, and no HTTP request leaves the process. Only an `https://` endpoint reaches
+the delegation path.
+
+```haskell
+instance
+  (Json.ToJSON command, KnownSymbol (NameOf command)) =>
+  Integration.ToAction (Request command)
+  where
+  toAction req =
+    case validateEndpoint req.endpoint of
+      Result.Err message ->
+        -- No https → emit the error directly; the token is never unwrapped.
+        Integration.action (\_ctx -> Integration.emitCommand (req.onError message))
+      Result.Ok _ ->
+        req |> toHttpRequest |> Integration.toAction
+
+
+-- | Accept only an https endpoint; anything else would leak the Bearer token.
+validateEndpoint :: Text -> Result Text Text
+validateEndpoint endpoint =
+  do
+    let trimmed = Text.trim endpoint
+    if Text.toLower trimmed |> Text.startsWith "https://"
+      then Result.Ok trimmed
+      else Result.Err "ACS endpoint must use https (refusing to send the Bearer token over cleartext)"
+```
 
 `Internal.toHttpRequest` is the only place that unwraps the token and the only
-place that constructs the HTTP request. It targets the ACS Email send route with
-the pinned API version and attaches `Http.Bearer`, which produces
-`Authorization: Bearer <token>`.
+place that constructs the HTTP request. It is reached only for an already-validated
+`https://` endpoint. It targets the ACS Email send route with the pinned API
+version and attaches `Http.Bearer`, which produces `Authorization: Bearer <token>`.
 
 ```haskell
 toHttpRequest ::
@@ -321,21 +364,24 @@ encodeBodyField body =
 ### 6. Status dispatch — `202` success, sanitized errors
 
 `handleAcsResponse` mirrors `handleBrevoResponse` but treats `202 Accepted` as
-success (ACS sends are asynchronous) and decodes the `operationId` from the
-response body. Auth failures and throttling get explicit messages; every other
-`4xx`/`5xx` collapses to a status-only message so neither the token nor the raw
-body can leak.
+success (ACS sends are asynchronous). Auth failures and throttling get explicit
+messages; every other `4xx`/`5xx` collapses to a status-only message so neither
+the token nor the raw body can leak.
 
-The ACS success body is `EmailSendResult { "id": ..., "status": ... }`. The
-operation id arrives under the wire key **`id`** (the same id also appears in the
-`Operation-Location` response header); the decoder maps `id` → `operationId`,
-mirroring the request-side `email` → `address` mapping (see §7). The body also
-carries a `status` field (`NotStarted` / `Running` / `Succeeded` / `Failed` /
-`Canceled`); for fire-and-forget send we treat any `202` as accepted and do not
-inspect `status` — polling is out of scope. On error, ACS returns a safe,
-non-sensitive `x-ms-error-code` response header; the dispatcher MAY append that
-code to the sanitized message for diagnosability without leaking the token or
-body, but never echoes the response body itself.
+**A `202` always routes to `onSuccess`, never `onError`.** This is a deliberate
+correctness decision (security finding SEC-002): a `202` means ACS has *accepted
+and queued* the email. Routing an accepted-but-unparseable `202` to `onError` —
+as a naive mirror of Brevo's `201` branch would — invites a `onError → retry`
+handler to send a **duplicate transactional email**. The operation id is
+best-effort: the dispatcher reads it from the body wire key **`id`**, falling
+back to the `Operation-Location` response header, and finally to `""` when
+neither is present. The send is reported as succeeded in every `202` case; an
+empty `operationId` simply means "accepted, id not captured" (the id only feeds
+out-of-scope delivery polling). The body also carries a `status` field
+(`NotStarted` / `Running` / `Succeeded` / `Failed` / `Canceled`) which we do not
+inspect. On a `4xx`/`5xx` error, ACS returns a safe, non-sensitive
+`x-ms-error-code` response header; the dispatcher MAY append that code to the
+sanitized message for diagnosability without ever echoing the token or body.
 
 ```haskell
 handleAcsResponse ::
@@ -346,11 +392,8 @@ handleAcsResponse ::
 handleAcsResponse handler response =
   case response.statusCode of
     202 ->
-      case Json.decode response.body of
-        Result.Ok acsResponse ->
-          handler.onSuccess acsResponse
-        Result.Err _ ->
-          handler.onError "Failed to parse ACS response"
+      -- Accepted. Always succeed; never re-send on a 202.
+      handler.onSuccess (Response { operationId = operationIdFrom response })
     401 ->
       handler.onError "Authentication failed (HTTP 401): unauthorized"
     403 ->
@@ -363,6 +406,20 @@ handleAcsResponse handler response =
       handler.onError [fmt|ACS server error (HTTP #{status})|]
     status ->
       handler.onError [fmt|Unexpected HTTP status #{status}|]
+
+
+-- | Best-effort ACS operation id: body @id@, then the @Operation-Location@
+-- header, then empty. A 202 is always an accepted send regardless.
+operationIdFrom :: Http.Response -> Text
+operationIdFrom response =
+  case Json.decode response.body of
+    Result.Ok parsed ->
+      parsed.operationId
+    Result.Err _ ->
+      response.headers
+        |> Array.find (\(name, _) -> Text.toLower name == "operation-location")
+        |> Maybe.map (\(_, value) -> operationIdFromLocation value)
+        |> Maybe.withDefault ""
 ```
 
 ### 7. Response
@@ -402,7 +459,7 @@ Config.field @(Redacted Text) "acsAccessToken"
 | Facade re-exporting Request/Body/Sender/Recipient/constructors/Response | `integrations/Integration/Acs.hs` |
 | Request record, `Body`, `Address`/`Sender`/`Recipient`, smart constructors | `integrations/Integration/Acs/Request.hs` |
 | `Response { operationId }` | `integrations/Integration/Acs/Response.hs` |
-| `toHttpRequest`, `encodeRequest`, `AcsResponseHandler`, status dispatch | `integrations/Integration/Acs/Internal.hs` |
+| `ToAction` instance, `validateEndpoint`, `toHttpRequest`, `encodeRequest`, `AcsResponseHandler`, status dispatch | `integrations/Integration/Acs/Internal.hs` |
 | Expose the four modules under `exposed-modules` | `integrations/nhintegrations.cabal` |
 | Register `Integration.Acs.RequestSpec`, `ResponseSpec`, `InternalSpec` | `integrations/nhintegrations.cabal` (test suite `other-modules`) |
 | Request encoding / smart-constructor tests | `integrations/test/Integration/Acs/RequestSpec.hs` |
@@ -411,25 +468,53 @@ Config.field @(Redacted Text) "acsAccessToken"
 
 ## Public API
 
-```haskell
--- Integration.Acs (Jess's surface)
+`Integration.Acs` re-exports its surface in category groups (the same grouping the
+facade's export list uses, mirroring the `Array` / `Brevo` convention):
 
+```haskell
+module Integration.Acs
+  ( -- * Construction — build the address values
+    sender
+  , recipient
+
+    -- * Email body — mutually-exclusive content variant
+  , Body (..)
+
+    -- * Operation — send one transactional email
+  , send
+  , Request (..)
+
+    -- * Response — the accepted-send payload
+  , Response (..)
+  ) where
+```
+
+### Construction
+
+```haskell
 -- | Build a sender from an email address.
 sender :: Text -> Sender
 
 -- | Build a recipient from an email address.
 recipient :: Text -> Recipient
+```
 
--- | Mutually-exclusive email body.
+### Email body
+
+```haskell
+-- | Mutually-exclusive email body (compile-time exclusive html vs text).
 data Body
   = HtmlBody Text
   | TextBody Text
+```
 
--- | The accepted-send payload; carries the ACS operation id.
-data Response = Response { operationId :: Text }
+### Operation
 
+```haskell
 -- | Send one transactional email through an ACS Email resource.
--- Reads the Entra Bearer token from @?config.acsAccessToken@.
+-- Reads the Entra Bearer token from @?config.acsAccessToken@. The endpoint
+-- must be an @https://@ URL — a non-https endpoint is reported through the
+-- error callback and the token is never transmitted.
 send ::
   forall command config.
   ( ?config :: config
@@ -443,6 +528,14 @@ send ::
   (Response -> command) ->   -- ^ on 202 Accepted
   (Text -> command) ->       -- ^ on sanitized error
   Request command
+```
+
+### Response
+
+```haskell
+-- | The accepted-send payload; carries the ACS operation id (best-effort —
+-- empty when a 202 body carried no id). Decoded from the ACS wire field @id@.
+data Response = Response { operationId :: Text }
 ```
 
 Jess's call site, identical to Brevo apart from the module name and the leading
@@ -474,6 +567,12 @@ Acs.send
   hash, signing string, or HMAC key.
 - **Errors are safe by default.** `onError` receives a short, status-derived
   string; the token and raw response body are never echoed back.
+- **No token leak over cleartext.** A non-`https://` endpoint short-circuits to
+  `onError` before the token is unwrapped, so the Bearer credential can never be
+  put on the wire in the clear (SEC-001).
+- **A retry can never double-send.** Every `202` is reported as a success, so an
+  `onError → retry` handler is never triggered for an email ACS already accepted
+  (SEC-002).
 - **Single-vendor Azure path.** Teams consolidating on Azure drop a second email
   vendor and keep the same outbound-handler ergonomics.
 
@@ -495,8 +594,9 @@ Acs.send
   an integration failure to an operator who does not know Entra tokens are
   short-lived.
 - **Endpoint typo produces an opaque failure.** A malformed `endpoint` argument
-  (wrong region, missing scheme) yields a generic client/connection error rather
-  than a guided message.
+  (wrong region) yields a generic client/connection error rather than a guided
+  message. A missing/incorrect *scheme* is handled explicitly — a non-https
+  endpoint returns the guided `onError` "ACS endpoint must use https".
 - **ACS API-version drift.** The `2023-03-31` (GA) API version is pinned in
   `toHttpRequest`. A newer GA, `2025-09-01`, also exists; its request/response
   contract is identical for the subset this integration uses (`senderAddress`,
