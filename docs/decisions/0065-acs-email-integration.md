@@ -32,6 +32,15 @@ connection-string/HMAC path **out** and supports Bearer-only, with the token
 supplied by the caller as `Redacted Text` (Azure SDKs and the `az` CLI already
 mint these tokens, so Jess never touches crypto).
 
+The Bearer token must be acquired for the ACS data-plane scope
+`https://communication.azure.com/.default`, and the identity (managed identity
+or service principal) needs the `acs.email.write` permission — typically via an
+Azure RBAC role assignment on the ACS resource. Both are the caller's
+responsibility, exactly like minting a Brevo API key; the integration only
+forwards the resulting token. The ACS `Authorization` header itself is marked
+`Required` and accepts either the HMAC-SHA256 scheme (out of scope here) or a
+plain `Bearer <token>`, which is what this integration emits.
+
 ### Use cases
 
 - **Azure-native SaaS sign-up.** Jess runs her app on Azure Container Apps and
@@ -312,9 +321,21 @@ encodeBodyField body =
 ### 6. Status dispatch — `202` success, sanitized errors
 
 `handleAcsResponse` mirrors `handleBrevoResponse` but treats `202 Accepted` as
-success (ACS sends are asynchronous) and decodes the `operationId`. Auth failures
-and throttling get explicit messages; every other `4xx`/`5xx` collapses to a
-status-only message so neither the token nor the raw body can leak.
+success (ACS sends are asynchronous) and decodes the `operationId` from the
+response body. Auth failures and throttling get explicit messages; every other
+`4xx`/`5xx` collapses to a status-only message so neither the token nor the raw
+body can leak.
+
+The ACS success body is `EmailSendResult { "id": ..., "status": ... }`. The
+operation id arrives under the wire key **`id`** (the same id also appears in the
+`Operation-Location` response header); the decoder maps `id` → `operationId`,
+mirroring the request-side `email` → `address` mapping (see §7). The body also
+carries a `status` field (`NotStarted` / `Running` / `Succeeded` / `Failed` /
+`Canceled`); for fire-and-forget send we treat any `202` as accepted and do not
+inspect `status` — polling is out of scope. On error, ACS returns a safe,
+non-sensitive `x-ms-error-code` response header; the dispatcher MAY append that
+code to the sanitized message for diagnosability without leaking the token or
+body, but never echoes the response body itself.
 
 ```haskell
 handleAcsResponse ::
@@ -346,9 +367,16 @@ handleAcsResponse handler response =
 
 ### 7. Response
 
+ACS's success body is `{ "id": "<uuid>", "status": "Running" }`. The wire key is
+`id`, so the decoder cannot rely on Generic field-name matching (which would look
+for `operationId`); like the request encoder, it maps the ACS key explicitly —
+reading `id` into `operationId`. `ResponseSpec` therefore decodes a literal
+`{"id": "..."}` payload, and ignores the `status` field.
+
 ```haskell
 -- | ACS's success payload for an accepted email send. ACS is asynchronous;
--- 'operationId' identifies the send for later delivery-status polling.
+-- 'operationId' identifies the send for later delivery-status polling. Decoded
+-- from the ACS wire field @id@ (not @operationId@).
 data Response = Response
   { operationId :: Text
   }
@@ -361,7 +389,7 @@ Jess adds one config field, exactly like `brevoApiKey`:
 
 ```haskell
 Config.field @(Redacted Text) "acsAccessToken"
-  |> Config.doc "Azure Communication Services Entra ID Bearer token"
+  |> Config.doc "ACS Entra ID Bearer token (scope https://communication.azure.com/.default, permission acs.email.write)"
   |> Config.required
   |> Config.envVar "ACS_ACCESS_TOKEN"
   |> Config.secret
@@ -469,8 +497,12 @@ Acs.send
 - **Endpoint typo produces an opaque failure.** A malformed `endpoint` argument
   (wrong region, missing scheme) yields a generic client/connection error rather
   than a guided message.
-- **ACS API-version drift.** The `2023-03-31` API version is pinned in
-  `toHttpRequest`; a future ACS breaking change would require a code update.
+- **ACS API-version drift.** The `2023-03-31` (GA) API version is pinned in
+  `toHttpRequest`. A newer GA, `2025-09-01`, also exists; its request/response
+  contract is identical for the subset this integration uses (`senderAddress`,
+  `content.subject`/`html`/`plainText`, `recipients.to[].address`, the `202` +
+  body `id` success shape), so the pin is safe today and a future ACS breaking
+  change — or a deliberate version bump — would require only the single URL edit.
 
 ### Mitigations
 
@@ -495,5 +527,7 @@ Acs.send
 - [integrations/Integration/Brevo/Response.hs](../../integrations/Integration/Brevo/Response.hs)
 - [integrations/Integration/Brevo/Internal.hs](../../integrations/Integration/Brevo/Internal.hs)
 - [integrations/Integration/Http/Auth.hs](../../integrations/Integration/Http/Auth.hs)
+- [ACS Email - Send REST API (2023-03-31)](https://learn.microsoft.com/en-us/rest/api/communication/email/email/send?view=rest-communication-email-2023-03-31)
+- [ACS REST authentication (Entra ID scope, acs.email.write)](https://learn.microsoft.com/en-us/rest/api/communication/authentication)
 </content>
 </invoke>
