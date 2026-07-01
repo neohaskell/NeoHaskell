@@ -60,6 +60,19 @@ spec = do
       azureEndpoint "https://openai.azure.com.attacker.com"
         `shouldBe` Result.Err "Azure endpoint host is not in the allowed Azure host suffix set"
 
+    it "rejects a label-boundary lookalike that ends with an allowed suffix WITHOUT a dot boundary (SECURITY: SEC-001 sovereign-cloud bypass)" do
+      -- "notazure.us" literally ends with the sovereign suffix "azure.us" but is
+      -- an attacker-registrable domain; a plain suffix match would accept it.
+      azureEndpoint "https://notazure.us"
+        `shouldBe` Result.Err "Azure endpoint host is not in the allowed Azure host suffix set"
+
+    it "rejects a label-boundary lookalike prepended to a public-cloud suffix (SECURITY: SEC-001 no-dot bypass)" do
+      azureEndpoint "https://evilopenai.azure.com"
+        `shouldBe` Result.Err "Azure endpoint host is not in the allowed Azure host suffix set"
+
+    it "accepts a host that equals an allowed suffix exactly (boundary: host == suffix)" do
+      Result.isOk (azureEndpoint "https://openai.azure.com") `shouldBe` True
+
     it "accepts a mixed-case HTTPS:// scheme (edge: case-insensitive scheme check)" do
       Result.isOk (azureEndpoint "HTTPS://my-res.openai.azure.com") `shouldBe` True
 
@@ -191,7 +204,7 @@ spec = do
       let ?config = TestConfig { azureAiApiKey = Redacted.wrap "k" }
       case azureEndpoint "https://my-res.openai.azure.com" of
         Result.Ok ep -> do
-          let onErr = \msg -> [fmt|err:#{msg}|] :: Text
+          let onErr msg = [fmt|err:#{msg}|] :: Text
           let req = chatCompletion ep [Message.user "Hi"] "gpt-4o"
                       (\_ -> ("ok" :: Text)) onErr
           req.onError "boom" `shouldBe` "err:boom"

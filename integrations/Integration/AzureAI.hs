@@ -8,13 +8,12 @@
 -- @
 -- import Integration qualified
 -- import Integration.AzureAI qualified as AzureAI
--- import Integration.AzureAI.Message qualified as Message
 --
 -- case AzureAI.azureEndpoint "https://my-res.openai.azure.com" of
 --   Result.Ok endpoint ->
 --     AzureAI.chatCompletion
 --       endpoint
---       [Message.system "Be concise.", Message.user question]
+--       [AzureAI.system "Be concise.", AzureAI.user question]
 --       "gpt-4o"
 --       (\\response -> GotAnswer { response })
 --       (\\err -> AiError { err })

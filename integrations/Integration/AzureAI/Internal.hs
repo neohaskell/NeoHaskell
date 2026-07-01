@@ -39,7 +39,7 @@ import Text (Text)
 import Text qualified
 
 
--- | Nick's internal JSON body. Jess never sees this type.
+-- | Internal wire-format JSON body, not exposed to Integration.AzureAI callers.
 -- Mirrors 'Integration.OpenRouter.Internal.RequestBody' minus tools/tool_choice.
 data RequestBody = RequestBody
   { messages          :: Array Message

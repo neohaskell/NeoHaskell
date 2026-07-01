@@ -3,7 +3,7 @@
 -- | Request types and endpoint validation for Azure AI chat completions.
 --
 -- Provides 'AzureEndpoint' (validated by construction), 'Config', 'Request',
--- and the 'chatCompletion' smart constructor for Jess's use.
+-- and the 'chatCompletion' smart constructor for the integration's callers.
 module Integration.AzureAI.Request
   ( -- * Endpoint validation
     AzureEndpoint
@@ -64,7 +64,7 @@ data Config = Config
   deriving (Show, Eq, Generic)
 
 
--- | The request Jess builds; consumed by Integration.outbound.
+-- | The request the caller builds; consumed by Integration.outbound.
 -- 'apiKey' is 'Redacted Text', sourced from ?config by 'chatCompletion'.
 -- No Show/ToJSON — the unwrapped key can never leak via a derived instance.
 data Request command = Request
@@ -155,7 +155,11 @@ azureEndpointAllowing extraSuffixes raw =
           Result.Err reason ->
             Result.Err reason
           Result.Ok host ->
-            if allowed |> Array.any (\suffix -> Text.endsWith suffix host)
+            -- Label-boundary match: the host must equal an allowed suffix or end
+            -- with ".<suffix>". A plain 'Text.endsWith suffix host' would accept
+            -- lookalikes such as "notazure.us" for the suffix "azure.us" (an
+            -- attacker-registrable domain), leaking the api-key. SEC-001.
+            if allowed |> Array.any (\suffix -> host == suffix || Text.endsWith [fmt|.#{suffix}|] host)
               then Result.Ok (AzureEndpoint trimmed)
               else Result.Err "Azure endpoint host is not in the allowed Azure host suffix set"
       else
@@ -171,7 +175,7 @@ azureEndpointAllowing extraSuffixes raw =
 --   Result.Ok endpoint ->
 --     AzureAI.chatCompletion
 --       endpoint
---       [Message.system "Be concise.", Message.user question]
+--       [AzureAI.system "Be concise.", AzureAI.user question]
 --       "gpt-4o"
 --       (\\response -> GotAnswer { response })
 --       (\\err -> AiError { err })
