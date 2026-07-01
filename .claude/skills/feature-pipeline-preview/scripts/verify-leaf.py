@@ -74,11 +74,25 @@ def count_blockers(findings_path: Path) -> int | None:
     except json.JSONDecodeError as e:
         print(f"verify-leaf: cannot parse {findings_path}: {e}", file=sys.stderr)
         return None
-    if not isinstance(data, list):
-        print(f"verify-leaf: {findings_path}: expected array", file=sys.stderr)
+    # record-findings.py writes an envelope: {"blockers": N, "findings": [...]}.
+    # A bare array (hand-authored / legacy) is still accepted for compatibility.
+    if isinstance(data, dict):
+        if isinstance(data.get("blockers"), int):
+            return data["blockers"]
+        entries = data.get("findings")
+    elif isinstance(data, list):
+        entries = data
+    else:
+        entries = None
+    if not isinstance(entries, list):
+        print(
+            f"verify-leaf: {findings_path}: expected an array or an "
+            f"envelope with 'blockers'/'findings'",
+            file=sys.stderr,
+        )
         return None
     blockers = 0
-    for entry in data:
+    for entry in entries:
         if not isinstance(entry, dict):
             continue
         if entry.get("blocker") is True or entry.get("severity") == "blocker":
@@ -130,9 +144,16 @@ def verify_opus_review() -> int:
         data = json.loads(path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as e:
         return fail(f"phase 17: cannot parse {path}: {e}")
-    if not isinstance(data, list):
-        return fail("phase 17: findings-17.json is not an array")
-    return ok(f"phase 17: {len(data)} findings recorded in findings-17.json")
+    if isinstance(data, dict) and isinstance(data.get("findings"), list):
+        n = len(data["findings"])
+    elif isinstance(data, list):
+        n = len(data)
+    else:
+        return fail(
+            "phase 17: findings-17.json is neither an array nor an "
+            "envelope with 'findings'"
+        )
+    return ok(f"phase 17: {n} findings recorded in findings-17.json")
 
 
 def verify_ci() -> int:
