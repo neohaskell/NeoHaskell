@@ -108,6 +108,9 @@ library
     Integration.Acs.Request
     Integration.Acs.Response
     Integration.Acs.Internal
+    Integration.AzureAI
+    Integration.AzureAI.Request
+    Integration.AzureAI.Internal
   hs-source-dirs: .
   default-language: GHC2021
 
@@ -145,6 +148,8 @@ test-suite nhintegrations-test
     Integration.Acs.RequestSpec
     Integration.Acs.ResponseSpec
     Integration.Acs.InternalSpec
+    Integration.AzureAI.RequestSpec
+    Integration.AzureAI.InternalSpec
   build-depends:
     hspec,
     nhintegrations
