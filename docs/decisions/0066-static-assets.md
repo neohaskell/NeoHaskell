@@ -69,6 +69,34 @@ paper over: if the assets and the API share an origin, no CORS is needed at all.
 
 ## Decision
 
+### Public API Surface
+
+The entire developer-facing surface, grouped by role. Everything lives in
+`Service.Transport.Web` and is re-exported so `Application.withStaticAssets` is
+the only new name a developer imports.
+
+**Construction** — the config record the developer builds:
+
+```haskell
+StaticAssets { root :: Text, spaFallback :: Maybe Text }
+```
+
+**Configuration** — the one combinator that installs it, same shape as
+`withCors` / `withApiInfo`:
+
+```haskell
+Application.withStaticAssets
+  :: forall config. Typeable config
+  => (config -> StaticAssets) -> Application -> Application
+```
+
+**Behaviour / errors** — what the developer can rely on:
+
+- Missing or empty `root` → loud startup **warning**, the API still serves (§4).
+- Unmatched path with `spaFallback = Just doc` → `doc` is served so deep links
+  work; with `Nothing` → `404`.
+- A `..` / escape path → `404` (never confirms existence; §8).
+
 ### 1. An Application-Level Combinator, Consistent with the Existing Family
 
 Add `Application.withStaticAssets`, an `Application` combinator that sets an
@@ -90,8 +118,19 @@ Add a configuration type next to `CorsConfig` / `HealthCheckConfig` in
 
 ```haskell
 -- | Static asset serving configuration for WebTransport.
--- When set, unmatched non-API GET requests are served from 'root' on disk.
--- Set via Application.withStaticAssets.
+--
+-- When set, unmatched non-API GET requests are served from 'root' on disk,
+-- with correct Cache-Control and an optional SPA deep-link fallback.
+-- Set via 'Application.withStaticAssets'.
+--
+-- Example:
+--
+-- @
+-- StaticAssets
+--   { root = "static"                 -- the folder your build outputs to
+--   , spaFallback = Just "index.html" -- deep links fall back to the SPA shell
+--   }
+-- @
 data StaticAssets = StaticAssets
   { root :: Text
   -- ^ Directory whose contents are served (e.g., "static").
@@ -126,6 +165,22 @@ supports both the `@()`-immediate form and the config-deferred form with a
 single signature — identical ergonomics to `withApiInfo`:
 
 ```haskell
+-- | Serve a directory of static SPA assets from the WebTransport.
+--
+-- Files are the unmatched-route fallback: every API branch (commands, queries,
+-- health, OAuth2, files, docs) is matched first; only then are files served,
+-- with correct Cache-Control and an optional @index.html@ deep-link fallback.
+--
+-- Use the @\@()@ immediate form when the config does not depend on app config
+-- (identical ergonomics to 'withCors' / 'withApiInfo'):
+--
+-- @
+-- app = Application.new
+--   |> Application.withTransport WebTransport.server
+--   |> Application.withStaticAssets \@()
+--       (\\_ -> StaticAssets { root = "static", spaFallback = Just "index.html" })
+--   |> Application.withService MyService.service
+-- @
 withStaticAssets ::
   forall config.
   (Typeable config) =>
@@ -146,6 +201,18 @@ Resolution mirrors `withCors` end to end:
 
 No new resolution *shape* is introduced — this is the same plumbing the family
 already uses.
+
+**Startup validation (no silent blank site).** When the factory resolves,
+`Application.run` checks `root`: if the directory does not exist or is empty, it
+logs a loud `Log.warn` (e.g. `static assets root "static" not found — no files
+will be served`) and the app continues serving the API normally. A missing build
+must never be a *silent* all-404 site — that is the DevEx failure mode of a
+typo'd `root` (`"staic"`) — but static serving is an opt-in add-on and must not
+take the API down when the frontend build simply has not run yet, so this warns,
+it does not throw. This mirrors the family's existing non-fatal `Log.warn` for
+degraded-but-usable config (e.g. the in-memory-`SecretStore` warning), and
+contrasts the hard-fail guards for *required* infrastructure at
+`Application.hs:854,865`.
 
 ### 5. Terminal Fallback — API Routes Always Win
 
