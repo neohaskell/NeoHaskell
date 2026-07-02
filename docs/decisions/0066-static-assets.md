@@ -9,7 +9,7 @@ Proposed
 A NeoHaskell `WebTransport` serves the command/query API (plus health, readiness,
 OAuth2, file upload, and OpenAPI docs) from a single WAI/Warp server. It has no
 way to serve a directory of static frontend assets. Today a developer who has
-built a Single-Page Application (SPA) — a Vite/React/Svelte `dist/` folder of
+built a Single-Page Application (SPA) — a Vite/React/Svelte build folder of
 `index.html` plus content-hashed JS/CSS bundles — must stand up a *second*
 server (nginx, a CDN, `wai-app-static`, or `python -m http.server`) just to
 hand those files to the browser, then wire CORS (ADR-0024) so the SPA can reach
@@ -37,13 +37,13 @@ paper over: if the assets and the API share an origin, no CORS is needed at all.
 
 ### Use Cases
 
-- **Single-process full-stack app**: One NeoHaskell binary serves `dist/` at
+- **Single-process full-stack app**: One NeoHaskell binary serves `static/` at
   `/` and the API at `/commands/*` and `/queries/*` — no second server, no CORS.
 - **SPA deep links**: A user reloads `/orders/42` (a client-side route with no
   matching file on disk). The server returns `index.html` so the SPA's router
   can take over, instead of a 404.
 - **Hot rebuild during development**: The dev edits the frontend, the bundler
-  rewrites `dist/`, and the browser must pick up the *new* `index.html` (never a
+  rewrites `static/`, and the browser must pick up the *new* `index.html` (never a
   stale cached one) while still caching content-hashed bundles aggressively.
 
 ### Design Goals
@@ -81,7 +81,7 @@ identically: one pipe line between `withTransport` and `withService`.
 | **Application-level `Application.withStaticAssets`** | **Chosen** | Matches the nine existing web combinators exactly. Zero new idioms for the developer to learn. `Maybe StaticAssets` field, factory resolution, and record-update threading are a copy of the `withCors` path. |
 | Transport-level `WebTransport.withStaticAssets :: StaticAssets -> WebTransport -> WebTransport`, nested inside `withTransport (WebTransport.server \|> ...)` | Rejected | Would *found* a brand-new convention: `WebTransport` currently exposes **zero** combinators of its own, so this lone transport-level builder would sit inconsistently beside nine decoupled `Application`-level ones until (and unless) they all migrate. Smaller-diff and coupled-by-construction, but the whole point of this feature is proportionate consistency, not starting a migration. Revisit only if the family is deliberately moved as a set. |
 | Depend on `wai-app-static` | Rejected | WAI's `responseFile` already streams files; a dependency buys nothing but supply-chain surface. This is why the feature is `moderate`, not `complex`. |
-| Auto-serve a convention dir (`./public` / `./dist`) with zero config | Rejected | Silently serving disk contents the moment a `WebTransport` is added changes 404 semantics for every existing API-only app and is an exposure footgun. Opt-in with good internal defaults is safer. |
+| Auto-serve a convention dir (`./public` / `./static`) with zero config | Rejected | Silently serving disk contents the moment a `WebTransport` is added changes 404 semantics for every existing API-only app and is an exposure footgun. Opt-in with good internal defaults is safer. |
 
 ### 2. `StaticAssets` Configuration Type
 
@@ -94,7 +94,7 @@ Add a configuration type next to `CorsConfig` / `HealthCheckConfig` in
 -- Set via Application.withStaticAssets.
 data StaticAssets = StaticAssets
   { root :: Text
-  -- ^ Directory whose contents are served (e.g., "dist").
+  -- ^ Directory whose contents are served (e.g., "static").
   , spaFallback :: Maybe Text
   -- ^ Document served for unmatched non-API paths so client-side routing
   --   works on deep links (e.g., Just "index.html"). Nothing = no fallback.
@@ -205,7 +205,7 @@ app =
   Application.new
     |> Application.withTransport WebTransport.server
     |> Application.withStaticAssets @()
-        (\_ -> StaticAssets { root = "dist", spaFallback = Just "index.html" })
+        (\_ -> StaticAssets { root = "static", spaFallback = Just "index.html" })
     |> Application.withService MyService.service
 ```
 
@@ -271,7 +271,7 @@ traversal guard, and route ordering are handled by the framework.
 
 - **Serving a directory that contains secrets**: If a developer points `root` at
   a directory with sensitive files, those become public. Mitigation: it is
-  opt-in and documented as "serve your built SPA output (e.g. `dist`)", and the
+  opt-in and documented as "serve your built SPA output (e.g. `static`)", and the
   traversal guard prevents escaping `root` — but the developer still chooses
   `root`.
 - **Bundler hash naming variance**: A bundler that does not emit
