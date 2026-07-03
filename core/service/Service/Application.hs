@@ -43,6 +43,7 @@ module Service.Application (
   withOAuth2Provider,
   withFileUpload,
   withCors,
+  withStaticAssets,
   withHealthCheck,
   withoutHealthCheck,
   withDispatcherConfig,
@@ -51,6 +52,9 @@ module Service.Application (
 
   -- * Health Check Re-export
   Web.HealthCheckConfig (..),
+
+  -- * Static Assets Re-export (ADR-0066)
+  Web.StaticAssets (..),
 
   -- * Dispatcher Config Re-exports
   Dispatcher.DispatcherConfig (..),
@@ -102,6 +106,7 @@ import ConcurrentMap qualified
 import Basics
 import Log qualified
 import Environment qualified
+import System.Directory qualified as GhcDir
 import System.IO qualified as GhcIO
 import Default (Default (..))
 import GHC.TypeLits qualified as GHC
@@ -312,6 +317,13 @@ data CorsFactory where
   DeferredCors :: (Typeable cfg) => (cfg -> Web.CorsConfig) -> CorsFactory
 
 
+-- | Factory for static asset serving configuration (ADR-0066).
+-- Internal plumbing; mirrors CorsFactory exactly.
+data StaticAssetsFactory where
+  EvaluatedStaticAssets :: !Web.StaticAssets -> StaticAssetsFactory
+  DeferredStaticAssets :: (Typeable cfg) => (cfg -> Web.StaticAssets) -> StaticAssetsFactory
+
+
 -- | Factory for API info configuration.
 data ApiInfoFactory where
   EvaluatedApiInfo :: !ApiInfo -> ApiInfoFactory
@@ -405,7 +417,11 @@ data Application = Application
     integrationRegistrations :: Array IntegrationRegistrationEntry,
     -- | Readiness endpoint configuration. Enabled by default at /ready.
     -- Use useReadinessEndpoint to customize.
-    readinessConfig :: Maybe ReadinessConfig
+    readinessConfig :: Maybe ReadinessConfig,
+    -- | Static asset serving factory (ADR-0066). Resolved during Application.run.
+    staticAssetsFactory :: Maybe StaticAssetsFactory,
+    -- | Resolved static asset serving config. Set during Application.run from factory.
+    staticAssetsConfig :: Maybe Web.StaticAssets
   }
 
 
@@ -443,7 +459,9 @@ new =
       deferredOutboundLifecycleRegs = Array.empty,
       deferredInboundRegs = Array.empty,
       integrationRegistrations = Array.empty,
-      readinessConfig = Just ReadinessConfig {readinessPath = "ready", includeQueryStatus = True}
+      readinessConfig = Just ReadinessConfig {readinessPath = "ready", includeQueryStatus = True},
+      staticAssetsFactory = Nothing,
+      staticAssetsConfig = Nothing
     }
 
 
@@ -856,6 +874,35 @@ run app =
              let appConfig = Config.get
              Task.yield (Just (mkConfig appConfig))
 
+     -- 5b2. Resolve StaticAssetsFactory (ADR-0066)
+     resolvedStaticAssets <- case app.staticAssetsFactory of
+       Nothing -> Task.yield Nothing
+       Just (EvaluatedStaticAssets assets) -> do
+         let rootStr = assets.root
+         let rootPath = rootStr |> Text.toLinkedList
+         rootExists <- GhcDir.doesDirectoryExist rootPath |> Task.fromIO
+         case rootExists of
+           False ->
+             Log.warn [fmt|static assets root "#{rootStr}" does not exist — no files will be served|]
+               |> Task.ignoreError
+               |> Task.andThen (\_ -> Task.yield (Just assets))
+           True -> Task.yield (Just assets)
+       Just (DeferredStaticAssets makeAssets) -> do
+         case app.configSpec of
+           Nothing -> Task.throw "withStaticAssets requires withConfig when the factory uses the config parameter. If you don't need config, use: withStaticAssets @() (\\_ -> yourStaticAssets)"
+           Just _ -> do
+             let appConfig = Config.get
+             let assets = makeAssets appConfig
+             let rootStr = assets.root
+             let rootPath = rootStr |> Text.toLinkedList
+             rootExists <- GhcDir.doesDirectoryExist rootPath |> Task.fromIO
+             case rootExists of
+               False ->
+                 Log.warn [fmt|static assets root "#{rootStr}" does not exist — no files will be served|]
+                   |> Task.ignoreError
+                   |> Task.andThen (\_ -> Task.yield (Just assets))
+               True -> Task.yield (Just assets)
+
      -- 5c. Resolve ApiInfoFactory
      resolvedApiInfo <- case app.apiInfoFactory of
        Nothing -> Task.yield app.apiInfo
@@ -939,6 +986,7 @@ run app =
            , secretStore = resolvedSecretStore
            , outboundLifecycleRunners = resolvedOutboundLifecycleRunners
            , inboundIntegrations = resolvedInboundIntegrations
+           , staticAssetsConfig = resolvedStaticAssets
            }
      runWithResolved eventStore maybeFileUploadSetup fileUploadCleanup maybeWebAuthSetup maybeIntegrationStatus registry resolvedApp
 
@@ -1010,6 +1058,11 @@ runWith eventStore app = do
     Just (EvaluatedSecretStore store) -> Task.yield (Just store)
     Just (DeferredSecretStore _) ->
       Task.throw "runWith does not support config-dependent SecretStore. Use Application.run instead, or use: withSecretStore @() (\\_ -> yourStore)"
+  resolvedStaticAssets <- case app.staticAssetsFactory of
+    Nothing -> Task.yield Nothing
+    Just (EvaluatedStaticAssets assets) -> Task.yield (Just assets)
+    Just (DeferredStaticAssets _) ->
+      Task.throw "runWith does not support config-dependent StaticAssets. Use Application.run instead, or use: withStaticAssets @() (\\_ -> yourStaticAssets)"
   -- Reject deferred integration registrations (runWith doesn't support config loading)
   case Array.isEmpty app.deferredOutboundLifecycleRegs of
     False -> Task.throw "runWith does not support config-dependent outbound lifecycle integrations. Use Application.run instead, or use: withOutboundLifecycle @() (\\_ -> yourConfig)"
@@ -1025,6 +1078,7 @@ runWith eventStore app = do
         , healthCheckConfig = resolvedHealthCheckConfig
         , dispatcherConfig = resolvedDispatcherConfig
         , secretStore = resolvedSecretStore
+        , staticAssetsConfig = resolvedStaticAssets
         }
   runWithResolved eventStore maybeFileUploadSetup fileUploadCleanup maybeWebAuthSetup maybeIntegrationStatus registry resolvedApp
 
@@ -1326,7 +1380,7 @@ runWithResolved eventStore maybeFileUploadSetup fileUploadCleanup maybeWebAuthSe
   -- When transports complete (or fail), cancel inbound workers for clean shutdown
   -- Use Task.finally to ensure cleanup always runs even if runTransports fails
   result <-
-    Transports.runTransports app.transports combinedEndpointsByTransport combinedSchemasByTransport combinedQueryEndpoints combinedQuerySchemas maybeAuthEnabled maybeOAuth2Config maybeFileUploadEnabled app.apiInfo app.corsConfig app.healthCheckConfig maybeIntegrationStatus app.readinessConfig subscriber
+    Transports.runTransports app.transports combinedEndpointsByTransport combinedSchemasByTransport combinedQueryEndpoints combinedQuerySchemas maybeAuthEnabled maybeOAuth2Config maybeFileUploadEnabled app.apiInfo app.corsConfig app.healthCheckConfig maybeIntegrationStatus app.readinessConfig app.staticAssetsConfig subscriber
       |> Task.finally cleanupAll
       |> Task.asResult
 
@@ -1737,6 +1791,44 @@ withCors mkConfig app = do
         Just Refl -> EvaluatedCors (mkConfig ())
         Nothing -> DeferredCors mkConfig
   app {corsFactory = Just factory}
+
+
+-- | Serve a directory of static SPA assets from the WebTransport (ADR-0066).
+--
+-- Files are an unmatched-route fallback: every API branch (commands, queries,
+-- health, OAuth2, files, docs) is matched first; only then are files served,
+-- with correct Cache-Control and an optional @index.html@ deep-link fallback.
+--
+-- Use the @\@()@ immediate form when the config does not depend on app config:
+--
+-- @
+-- app = Application.new
+--   |> Application.withTransport WebTransport.server
+--   |> Application.withStaticAssets \@()
+--       (\\_ -> StaticAssets { root = "static", spaFallback = Just "index.html" })
+--   |> Application.withService MyService.service
+-- @
+--
+-- Or config-dependent:
+--
+-- @
+-- app = Application.new
+--   |> Application.withConfig \@AppConfig
+--   |> Application.withTransport WebTransport.server
+--   |> Application.withStaticAssets (\\cfg -> cfg.staticAssetsConfig)
+--   |> Application.withService MyService.service
+-- @
+withStaticAssets ::
+  forall config.
+  (Typeable config) =>
+  (config -> Web.StaticAssets) ->
+  Application ->
+  Application
+withStaticAssets makeAssets app = do
+  let factory = case eqT @config @() of
+        Just Refl -> EvaluatedStaticAssets (makeAssets ())
+        Nothing -> DeferredStaticAssets makeAssets
+  app {staticAssetsFactory = Just factory}
 
 
 -- | Normalize a health check path, defaulting to "health" when empty.

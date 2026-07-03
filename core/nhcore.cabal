@@ -469,6 +469,7 @@ test-suite nhcore-test
     Service.Transport.Web.SwaggerUISpec
     Service.Transport.Web.HealthCheckSpec
     Service.Transport.Web.ReadinessRouteSpec
+    Service.Transport.Web.StaticAssetsSpec
     Service.QueryObjectStore.InMemorySpec
     Service.SnapshotCache.InMemorySpec
     Schema.OpenApiSpec
@@ -505,6 +506,7 @@ test-suite nhcore-test
     Service.Command.CanAccess.PublicAccessFixture
     Service.Command.CanAccess.PermissionFixture
     Service.Transport.Web.CommandAuthSpec
+    Service.Transport.Web.StaticAssetsSpec
     Service.CommandExecutor.AuditLoggingSpec
 
   -- other-extensions:
@@ -613,6 +615,7 @@ test-suite nhcore-test-service
     Service.Command.CanAccess.PublicAccessFixture
     Service.Command.CanAccess.PermissionFixture
     Service.Transport.Web.CommandAuthSpec
+    Service.Transport.Web.StaticAssetsSpec
     Service.CommandExecutor.AuditLoggingSpec
     Service.QueryObjectStore.PostgresSpec
     Service.Query.Subscriber.ReadinessSpec

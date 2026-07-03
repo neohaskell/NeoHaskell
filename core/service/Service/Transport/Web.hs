@@ -6,6 +6,9 @@ module Service.Transport.Web (
   CorsConfig (..),
   HealthCheckConfig (..),
   IntegrationStatus (..),
+  -- | Static asset serving (ADR-0066)
+  StaticAssets (..),
+  serveStaticAsset,
   server,
   isHealthCheckPath,
   buildHealthResponse,
@@ -34,9 +37,12 @@ import Log qualified
 import Data.Aeson qualified as Aeson
 import Data.ByteString qualified as GhcBS
 import Data.ByteString.Lazy qualified as GhcLBS
+import Data.Char (isDigit)
 import Data.IORef qualified as GhcIORef
 import Data.List qualified as GhcList
 import Data.Yaml qualified as Yaml
+import System.Directory qualified as GhcDir
+import System.FilePath qualified as GhcFilePath
 import GHC.TypeLits qualified as GHC
 import Json qualified
 import LinkedList qualified
@@ -145,6 +151,32 @@ data IntegrationStatus = IntegrationStatus
   }
 
 
+-- | Static asset serving configuration for WebTransport (ADR-0066).
+--
+-- When set, unmatched non-API GET requests are served from 'root' on disk,
+-- with correct Cache-Control and an optional SPA deep-link fallback.
+-- Set via 'Application.withStaticAssets'.
+--
+-- Example:
+--
+-- @
+-- StaticAssets
+--   { root = "static"                 -- the folder your build outputs to
+--   , spaFallback = Just "index.html" -- deep links fall back to the SPA shell
+--   }
+-- @
+--
+data StaticAssets = StaticAssets
+  { root :: Text
+  -- ^ Directory path (relative or absolute) whose contents are served.
+  -- Must be an existing, non-empty, readable directory at application startup.
+  , spaFallback :: Maybe Text
+  -- ^ Document served for unmatched paths (e.g., @Just "index.html"@) so
+  -- client-side routing can handle deep links. @Nothing@ → plain 404.
+  }
+  deriving (Show)
+
+
 -- | HTTP/JSON transport using WAI/Warp.
 data WebTransport = WebTransport
   { port :: Int,
@@ -169,7 +201,10 @@ data WebTransport = WebTransport
     readinessConfig :: Maybe ReadinessConfig,
     -- | Readiness probe closure. Built from the live Subscriber in Application.run.
     -- When Nothing, GET /ready returns 404.
-    readinessProbe :: Maybe (Task Text Readiness)
+    readinessProbe :: Maybe (Task Text Readiness),
+    -- | Optional static SPA asset serving. Set via Application.withStaticAssets.
+    -- When Nothing, unmatched paths return 404 (default / opt-in, ADR-0066).
+    staticAssets :: Maybe StaticAssets
   }
 
 
@@ -199,7 +234,8 @@ server =
       healthCheck = Just HealthCheckConfig {healthPath = "health"},
       integrationStatus = Nothing,
       readinessConfig = Nothing,
-      readinessProbe = Nothing
+      readinessProbe = Nothing,
+      staticAssets = Nothing
     }
 
 
@@ -235,9 +271,9 @@ readBodyWithLimit maxSize request = Task.fromIO do
 
       drainBody = do
         chunk <- Wai.getRequestBodyChunk request
-        if GhcBS.null chunk
-          then pure ()
-          else drainBody
+        case GhcBS.null chunk of
+          True -> pure ()
+          False -> drainBody
 
   readChunks
 
@@ -1023,7 +1059,9 @@ instance Transport WebTransport where
         , isReadinessPath pathSegment endpoints.transport ->
             respondReadiness endpoints.transport respond
       _ ->
-        notFound "Not found"
+        case endpoints.transport.staticAssets of
+          Maybe.Nothing -> notFound "Not found"
+          Maybe.Just assets -> serveStaticAsset assets request respond
 
 
   runTransport :: WebTransport -> RunnableTransport WebTransport -> Task Text Unit
@@ -1150,9 +1188,8 @@ isOriginAllowed cors origin = do
   let origins = cors.allowedOrigins
   let lowerOrigin = origin |> Text.toLower
   -- Check for wildcard
-  if Array.contains "*" origins
-    then True
-    else origins |> Array.any (\o -> Text.toLower o == lowerOrigin)
+  Array.contains "*" origins
+    || (origins |> Array.any (\o -> Text.toLower o == lowerOrigin))
 
 
 -- | Build CORS response headers for an allowed origin.
@@ -1184,9 +1221,7 @@ buildCorsHeaders cors origin = do
   -- When reflecting a specific origin (not wildcard), add Vary: Origin
   -- to prevent caches from serving a response with one origin to another
   let varyHeaders :: [(HTTP.HeaderName, GhcBS.ByteString)]
-      varyHeaders = if isWildcard
-        then []
-        else [("Vary", "Origin")]
+      varyHeaders = [("Vary", "Origin") | not isWildcard]
   let maxAgeHeaders :: [(HTTP.HeaderName, GhcBS.ByteString)]
       maxAgeHeaders = case cors.maxAge of
         Maybe.Nothing -> []
@@ -1330,3 +1365,190 @@ unauthorizedResponse authError =
 unauthorizedResponseBody :: Text -> Text
 unauthorizedResponseBody msg =
   Json.object ["error" Json..= msg] |> Json.encodeText
+
+
+-- | Serve a file from a static assets directory with cache-control and
+-- path-traversal guard.
+--
+-- Called as the terminal fallback in Web.hs routing when all API branches
+-- decline to handle the request. Enforces path normalization, prevents
+-- traversal attacks, applies correct Cache-Control, and optionally falls back
+-- to the SPA entry document for client-side deep links.
+--
+-- Return type mirrors the transport handler contract exactly
+-- (@RunnableTransport WebTransport@, Web.hs:422-425): the @respond@
+-- continuation and the result are both @Task Text Wai.ResponseReceived@.
+--
+serveStaticAsset ::
+  StaticAssets ->
+  Wai.Request ->
+  (Wai.Response -> Task Text Wai.ResponseReceived) ->
+  Task Text Wai.ResponseReceived
+serveStaticAsset assets request respond = do
+  let respond404 = respond (Wai.responseLBS HTTP.status404 [] "")
+  -- Only serve GET; everything else → 404
+  case Wai.requestMethod request == "GET" of
+    False -> respond404
+    True -> do
+      -- Decode path as UTF-8 so multibyte characters round-trip correctly.
+      let rawPath =
+            request
+              |> Wai.rawPathInfo
+              |> Bytes.fromLegacy
+              |> Text.fromBytes
+              |> Text.toLinkedList
+              |> GhcFilePath.normalise
+      let pathSegments = GhcFilePath.splitDirectories rawPath
+      let hasDotDot = pathSegments |> GhcList.any (\s -> s == "..")
+      case hasDotDot of
+        True -> respond404
+        False -> do
+          let rootStr = assets.root |> Text.toLinkedList
+          let relPath = case rawPath of
+                '/' : rest -> rest
+                other -> other
+          -- Root path "/" has no relative component — serve SPA fallback directly.
+          case relPath == "" of
+            True -> serveStaticSpaFallback assets rootStr respond404 respond
+            False -> do
+              let fullPath = GhcFilePath.normalise (rootStr GhcFilePath.</> relPath)
+              let rootNorm = GhcFilePath.normalise rootStr
+              case GhcList.isPrefixOf rootNorm fullPath || fullPath == rootNorm of
+                False -> respond404
+                True -> do
+                  isDir <- GhcDir.doesDirectoryExist fullPath |> Task.fromIO
+                  case isDir of
+                    True -> respond404
+                    False -> do
+                      fileExists <- GhcDir.doesFileExist fullPath |> Task.fromIO
+                      case fileExists of
+                        False -> serveStaticSpaFallback assets rootStr respond404 respond
+                        True -> do
+                          -- Case-sensitive guard: on case-insensitive file systems
+                          -- doesFileExist may return True for a differently-cased name.
+                          -- Verify the exact filename appears in the directory listing.
+                          let parentDir = GhcFilePath.takeDirectory fullPath
+                          let reqFileName = GhcFilePath.takeFileName fullPath
+                          dirContents <- GhcDir.listDirectory parentDir |> Task.fromIO
+                          case reqFileName `GhcList.elem` dirContents of
+                            False -> respond404
+                            True -> serveStaticFile fullPath respond
+
+
+-- | Serve a static file, computing Content-Type and Cache-Control from the path.
+serveStaticFile ::
+  GhcFilePath.FilePath ->
+  (Wai.Response -> Task Text Wai.ResponseReceived) ->
+  Task Text Wai.ResponseReceived
+serveStaticFile filePath respond = do
+  let (contentType, cacheControl) = resolveStaticHeaders filePath
+  let headers = [(HTTP.hContentType, contentType), (HTTP.hCacheControl, cacheControl)]
+  respond (Wai.responseFile HTTP.status200 headers filePath Nothing)
+
+
+-- | Attempt to serve the configured SPA fallback document.
+-- Falls through to respond404 when no fallback is configured or the file is absent.
+serveStaticSpaFallback ::
+  StaticAssets ->
+  GhcFilePath.FilePath ->
+  Task Text Wai.ResponseReceived ->
+  (Wai.Response -> Task Text Wai.ResponseReceived) ->
+  Task Text Wai.ResponseReceived
+serveStaticSpaFallback assets rootStr respond404 respond =
+  case assets.spaFallback of
+    Nothing -> respond404
+    Just fallbackDoc -> do
+      let fallbackDocStr = Text.toLinkedList fallbackDoc
+      -- Guard 1: reject absolute paths (</> would discard rootStr entirely).
+      -- Guard 2: reject paths containing ".." segments (normalise does not resolve them).
+      let isAbsolute = GhcFilePath.isAbsolute fallbackDocStr
+      let hasDotDot = GhcFilePath.splitDirectories fallbackDocStr |> GhcList.any (\s -> s == "..")
+      case isAbsolute || hasDotDot of
+        True -> respond404
+        False -> do
+          let fallbackPath = GhcFilePath.normalise (rootStr GhcFilePath.</> fallbackDocStr)
+          let rootNorm = GhcFilePath.normalise rootStr
+          case GhcList.isPrefixOf rootNorm fallbackPath || fallbackPath == rootNorm of
+            False -> respond404
+            True -> do
+              fallbackExists <- GhcDir.doesFileExist fallbackPath |> Task.fromIO
+              case fallbackExists of
+                False -> respond404
+                True -> serveStaticFile fallbackPath respond
+
+
+-- | Compute Content-Type and Cache-Control headers for a static asset path.
+-- Hashed filenames and unknown (octet-stream) MIME types get immutable caching
+-- and no charset suffix. Non-hashed text types get charset and no-cache.
+resolveStaticHeaders :: GhcFilePath.FilePath -> (GhcBS.ByteString, GhcBS.ByteString)
+resolveStaticHeaders filePath =
+  let ext = GhcFilePath.takeExtension filePath
+      fileName = GhcFilePath.takeFileName filePath
+      mimeBase = staticMimeBase ext
+      isOctetStream = mimeBase == "application/octet-stream"
+      isHashed = staticIsHashedAsset fileName
+      immutable = isHashed || isOctetStream
+      contentType = case immutable of
+        True  -> mimeBase
+        False -> staticMimeWithCharset ext
+      cacheControl = case immutable of
+        True  -> "public, max-age=31536000, immutable"
+        False -> "no-cache, must-revalidate"
+  in (contentType, cacheControl)
+
+
+-- | Base MIME type for an extension (no charset suffix).
+-- Unknown extensions default to application/octet-stream (no content-sniffing).
+staticMimeBase :: GhcFilePath.FilePath -> GhcBS.ByteString
+staticMimeBase ext =
+  case ext of
+    ".html"  -> "text/html"
+    ".htm"   -> "text/html"
+    ".js"    -> "application/javascript"
+    ".mjs"   -> "application/javascript"
+    ".css"   -> "text/css"
+    ".svg"   -> "image/svg+xml"
+    ".json"  -> "application/json"
+    ".png"   -> "image/png"
+    ".jpg"   -> "image/jpeg"
+    ".jpeg"  -> "image/jpeg"
+    ".gif"   -> "image/gif"
+    ".webp"  -> "image/webp"
+    ".wasm"  -> "application/wasm"
+    ".ico"   -> "image/x-icon"
+    ".woff"  -> "font/woff"
+    ".woff2" -> "font/woff2"
+    ".txt"   -> "text/plain"
+    ".map"   -> "application/json"
+    _        -> "application/octet-stream"
+
+
+-- | MIME type with charset=utf-8 for text types; falls back to the base MIME
+-- for binary types (images, fonts, wasm) that carry no charset parameter.
+staticMimeWithCharset :: GhcFilePath.FilePath -> GhcBS.ByteString
+staticMimeWithCharset ext =
+  case ext of
+    ".html"  -> "text/html; charset=utf-8"
+    ".htm"   -> "text/html; charset=utf-8"
+    ".js"    -> "application/javascript; charset=utf-8"
+    ".mjs"   -> "application/javascript; charset=utf-8"
+    ".css"   -> "text/css; charset=utf-8"
+    ".json"  -> "application/json; charset=utf-8"
+    ".txt"   -> "text/plain; charset=utf-8"
+    ".map"   -> "application/json; charset=utf-8"
+    other    -> staticMimeBase other
+
+
+-- | Detect hash-named asset: base name ends with .<8+ lowercase hex chars>.
+-- Pattern: anything.<8+ [a-f0-9]>.<extension>
+staticIsHashedAsset :: GhcFilePath.FilePath -> Bool
+staticIsHashedAsset fileName =
+  let (base, _ext) = GhcFilePath.splitExtension fileName
+      dotIdxs = GhcList.elemIndices '.' base
+  in case GhcList.null dotIdxs of
+       True -> False
+       False ->
+         let lastDotPos = GhcList.last dotIdxs
+             hashPart = GhcList.drop (lastDotPos + 1) base
+         in GhcList.length hashPart >= 8
+              && GhcList.all (\c -> (c >= 'a' && c <= 'f') || isDigit c) hashPart
