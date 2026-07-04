@@ -1,12 +1,13 @@
 # `neo`: Deterministic Pipelines, Type-Modeling, Typed-Hole Fill & an Inverted-Control Harness
 
-**Status:** Draft **v3** — supersedes v2 (git history). Consolidation of the full design conversation; for iteration.
+**Status:** Draft **v4** — supersedes v3 (git history). Consolidation of the full design conversation; for iteration.
 **Date:** 2026-07-04
 **Author:** Nick (with Claude)
 **Related:** PR #708 (motivating failure), issue #711, `docs/plans/2026-07-03-onklaud-5-teardown.md`, `feature-pipeline-preview`, `integration-pipeline-preview`, `integrations/AGENTS.md`.
 
 > `[DECIDED]` = settled. `⟡ OPEN` = unresolved. Repo facts verified 2026-07-03/04.
 > **v3 adds:** principle **P8 (piggyback on GHC/Haskell standards)**; a **type-modeling / refinement-types** stage (using `refined`); the **typed-hole-driven fill engine** (GHC holes as oracle) reframed as a **ranked multi-source candidate pool**; the **coercion graph** (`Cast`/`Parse` + `Coercible` firewall); the **resident typechecker** (HLS/ghcide/hie-bios) as an async-worker integration; the decision to **use off-the-shelf models, not train**; and the **event-sourced harness** (free audit/replay/resume). Model rec: **Gemma 4 E4B / Qwen 3.x-Coder**.
+> **v4 changes:** full coercion-graph subtyping is **required** (§7.5, not a v1 subset); the harness **resume** model is simplified to four primitives — pin the base per run · commit-per-unit · envelope-rolls-the-step · one end-of-run rebase-reconcile (§13.3) — retiring the heavier "continuous invalidation" framing.
 
 ---
 
@@ -159,6 +160,7 @@ Refined types are zero-cost newtypes over their base, but **plain type search mi
 - These instances **double as runtime coercions AND search edges**; the synthesis/retrieval engine enumerates them.
 - **Downcast is free via `Coercible`** — **but `Coercible` is bidirectional**, so **hide the constructor + give the type a `nominal` role** (the **firewall**), or `coerce :: Int -> Positive Int` would bypass validation. This is a **correctness/security invariant**, not an optimization. `[DECIDED]`
 - **Don't reimplement Hoogle**: use **local Hoogle** for base type-matching, then a **coercion-expansion pass** over `Cast`/`Parse` instances. `[DECIDED per P8]`
+- **Full subtyping is required, not a v1 subset** `[DECIDED]` — the fill engine carries a real **unification-modulo-refinement-subtyping** pass over the coercion graph (free downcasts, weakenings, partial upcasts), so a hole needing `Int` surfaces refined-Ints (via forgetting) and a hole needing `Positive Int` surfaces `mkPositive` from an in-scope `Int`. It's a small type-inference component; budget it as such.
 
 ### 7.6 Placement
 A distinct **type-modeling phase before scaffolding** (`neo model`): enrich each schema field with a refined type. This is where illegal states become unrepresentable and where the `Char.isDigit`-class of holes is *deleted* — validation lives in the type, run once at the boundary.
@@ -269,7 +271,15 @@ flowchart TD
 ```
 
 ### 13.3 Commands all the way down → an **event-sourced harness** `[DECIDED]`
-Each step is an **atomic command**; the typecheck worker, the LLM fill, and the embedder are **integrations**; the harness is a command composing commands + integrations. Because NeoHaskell is event-sourced, **the harness run is itself event-sourced** → **free audit, replay, and *resume*** (a run that dies at unit 7/12 resumes from the event log; you can inspect every decision and re-run with a different model). `⟡ OPEN: resume semantics — re-validating prior steps against a possibly-changed codebase.`
+Each step is an **atomic command**; the typecheck worker, the LLM fill, and the embedder are **integrations**; the harness is a command composing commands + integrations. Because NeoHaskell is event-sourced, **the harness run is itself event-sourced** → **free audit, replay, and *resume***.
+
+**Resume model — deliberately simple `[DECIDED]`.** Re-running a fast harness on the current world is the baseline; we do **not** build a continuous invalidation engine. The whole model is four primitives:
+- **Pin the base per run** — during a live run the world is frozen, so there is no intra-run drift to track.
+- **Commit-per-unit** — a dead container leaves completed units in git; resume = *continue from the last committed unit* (no re-validation needed, because the pinned base didn't move).
+- **The envelope rolls the step** — the only validity oracle is the envelope (compile + the unit's test); if a step's gate fails, redo *that* step. No fingerprinting, no human-edit tracking, no dependency-dirty graph.
+- **One end-of-run rebase-reconcile** — like a human dev: rebase onto current `main`, run the envelope on the completed units, **keep the survivors, redo the rest.** "The rest" scales by how much survives — one unit (small drift) → re-plan the remainder from the current state (medium) → restart (huge) — decided by the envelope, not a pre-chosen policy.
+
+What this buys over a naive full re-run — **crash recovery** (don't redo committed units) and **stable, minimal diffs** (a reviewer sees "fixed `serveStaticFile`/`serveStaticSpaFallback` for the new `Path.joinPaths`," not a wholesale regeneration) — both fall out *for free* from commit-per-unit + the envelope. For a short feature, just re-run. Revisit finer invalidation only if profiling ever shows the end-of-run re-envelope is itself the bottleneck.
 
 ### 13.4 Why 2–4× / why no BS
 *Faster:* exploration eliminated; units parallel; plan once; synthesis + cheap models. *No BS:* the LLM never decides control-flow or structure; every unit bounded + verified; vanilla caught by the capability-aware lint; plan verified vs real code.
@@ -328,7 +338,7 @@ flowchart TD
 
 ## 17. Decisions & open questions
 
-**Decided (this round adds):** P8 (piggyback on GHC/Haskell standards); use **`refined`** (not a bespoke lib), `Either→Result` wrap; **`Nat` + negative-predicate-instances + `Symbol`-decimals + fixed-point `Decimal`** (no custom numeric kind); friendly **runtime** error messages per instance; auto-validation at JSON/command boundaries; **`Cast`/`Parse` coercion graph + `Coercible` firewall + local-Hoogle expansion**; **real GHC typed holes** as the fill oracle; **ranked multi-source candidate pool**; refinement-hole-fits as one shallow source; **resident typechecker on HLS/ghcide/hie-bios**; **off-the-shelf models, log self-labels, no training**; **Gemma 4 E4B / Qwen-Coder**; long-hole-name intent (+ preventive key→description store); **event-sourced harness with resume**. (Plus all v2 decisions.)
+**Decided (this round adds):** P8 (piggyback on GHC/Haskell standards); use **`refined`** (not a bespoke lib), `Either→Result` wrap; **`Nat` + negative-predicate-instances + `Symbol`-decimals + fixed-point `Decimal`** (no custom numeric kind); friendly **runtime** error messages per instance; auto-validation at JSON/command boundaries; **`Cast`/`Parse` coercion graph + `Coercible` firewall + local-Hoogle expansion**; **real GHC typed holes** as the fill oracle; **ranked multi-source candidate pool**; refinement-hole-fits as one shallow source; **resident typechecker on HLS/ghcide/hie-bios**; **off-the-shelf models, log self-labels, no training**; **Gemma 4 E4B / Qwen-Coder**; long-hole-name intent (+ preventive key→description store); **event-sourced harness** with a **simple resume model** (pin base · commit-per-unit · envelope-rolls-the-step · end-of-run rebase-reconcile — no continuous invalidation engine); **full coercion-graph subtyping** (unification-modulo-refinement). (Plus all v2 decisions.)
 
 **Open (`⟡`):**
 1. Abstention tuning for a cheap consumer.
@@ -336,8 +346,6 @@ flowchart TD
 3. Internal retrieval at thousands of entries (scoped lexical/Hoogle vs neural).
 4. Restore the integration deep-review phase.
 5. Extend-vs-ring-fence thresholds; recursion-depth guard value.
-6. Harness **resume** re-validation against a changed codebase.
-7. Coercion-graph engine scope (how much subtyping to support in v1).
 
 ---
 
