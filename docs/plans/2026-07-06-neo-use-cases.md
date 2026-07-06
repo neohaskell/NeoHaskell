@@ -7,3 +7,7 @@
 ## 3. User app — scaffold an `Invoice` entity (issue → mark-paid) with refined fields, `decide`, and events from a spec
 
 ## 4. In-place capability resolution — `neo find` surfaces Core symbols and `neo fill` completes typed holes in an existing module
+
+## 5. Bug fix — resolve a defect in the NeoHaskell internal codebase
+
+## 6. Bug fix — resolve a defect in a user's app
