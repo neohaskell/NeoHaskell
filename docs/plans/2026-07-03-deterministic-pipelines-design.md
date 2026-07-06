@@ -1,13 +1,14 @@
 # `neo`: Deterministic Pipelines, Type-Modeling, Typed-Hole Fill & an Inverted-Control Harness
 
-**Status:** Draft **v4** — supersedes v3 (git history). Consolidation of the full design conversation; for iteration.
-**Date:** 2026-07-04
+**Status:** Draft **v5** — supersedes v4 (git history). Consolidation of the full design conversation; for iteration.
+**Date:** 2026-07-06
 **Author:** Nick (with Claude)
 **Related:** PR #708 (motivating failure), issue #711, `docs/plans/2026-07-03-onklaud-5-teardown.md`, `feature-pipeline-preview`, `integration-pipeline-preview`, `integrations/AGENTS.md`.
 
 > `[DECIDED]` = settled. `⟡ OPEN` = unresolved. Repo facts verified 2026-07-03/04.
 > **v3 adds:** principle **P8 (piggyback on GHC/Haskell standards)**; a **type-modeling / refinement-types** stage (using `refined`); the **typed-hole-driven fill engine** (GHC holes as oracle) reframed as a **ranked multi-source candidate pool**; the **coercion graph** (`Cast`/`Parse` + `Coercible` firewall); the **resident typechecker** (HLS/ghcide/hie-bios) as an async-worker integration; the decision to **use off-the-shelf models, not train**; and the **event-sourced harness** (free audit/replay/resume). Model rec: **Gemma 4 E4B / Qwen 3.x-Coder**.
 > **v4 changes:** full coercion-graph subtyping is **required** (§7.5, not a v1 subset); the harness **resume** model is simplified to four primitives — pin the base per run · commit-per-unit · envelope-rolls-the-step · one end-of-run rebase-reconcile (§13.3) — retiring the heavier "continuous invalidation" framing.
+> **v5 changes:** the last five open questions are resolved (§17 open list → 0). Retrieval is a **three-layer model** — hard *surface/context* pre-filter · *type-unification as a score, not a gate* · the *compiler* as the real post-filter (§10), with normalized top-1/top-2 margin abstention. The external index ships **bundled + independently versioned + auto-updatable** (§10). The integration deep-review becomes **two atomic commands** — deterministic `neo lint` + semantic `neo review` (§12). The gap rule is now the **repo/PR boundary**: in-repo gaps are healed in the same PR, cross-repo gaps ring-fence — both under a hard **depth-1** guard (§14.3), which upgrades the #708 replay to *heal-in-PR* (Appendix A).
 
 ---
 
@@ -218,11 +219,22 @@ The §8 loop's speed hinges entirely on **fast incremental typechecking** — `c
 ## 10. Retrieval (one source in the pool) + the model
 
 - **Embed English, not Haskell** `[DECIDED]` (Haskell is low-resource; asymmetric query/passage).
-- **Consumer is a cheap model** → retrieval must be **precise, few high-confidence candidates**; Hoogle/types as hard pre-filter matter more.
-- **Brute-force cosine** `[DECIDED]`: exactness, no ANN staleness, and single-pass hybrid scoring (cosine + lexical + type-context filter) enabling abstention. Normalize → dot. Storage: plain SQLite / flat file — **not `sqlite-vector`** (production-restricted license).
+- **Consumer is a cheap model** → retrieval must be **precise, few high-confidence candidates**.
+- **Brute-force cosine** `[DECIDED]`: exactness, no ANN staleness, single-pass hybrid scoring enabling abstention. Normalize → dot. Storage: plain SQLite / flat file — **not `sqlite-vector`** (production-restricted license).
 - **Embedder = nix-bundled MIT binary via subprocess** (`onnxruntime`/`llama.cpp`) — sidesteps the AGPL `hs-onnxruntime-capi`. Model: `bge-small-en-v1.5` (Apache, ~34 MB int8). `[DECIDED]`
-- **Hoogle** = hard arbiter for the symbol subset (exact name/type; "nothing unifies" = safe abstention).
-- **Abstention:** prefer top-1/top-2 **margin** over an absolute cosine floor; calibrate with synthetic pairs. `⟡ OPEN: tuning for a 3B consumer.`
+
+#### 10.0 The three-layer model `[DECIDED]` — type is a *score*, not a gate
+Ranking is **not** "type-filter then cosine" nor "cosine then type-filter." It is three layers, of which only two are hard gates:
+
+1. **Hard pre-filter — surface/context (lossless).** Every catalog entry is tagged with the surfaces it is legal in (`command`/`decide`, `update`/state-fold, `integration`/`ToAction`, or `universal`). A `Task`-returning integration action *cannot* appear in a pure `decide`; dropping wrong-surface entries **before** cosine loses nothing and cleans up top-k. This is the safe "before."
+2. **Soft mid-score — cosine(English) + type-unification boost + lexical.** Type match is a **boost, not a gate**. Exact unification with the hole type gets a large bump; unify-via-coercion a smaller one; a semantically-perfect-but-type-mismatched entry still appears (ranked low) so the LLM can adapt it. This preserves **recall on compositions**: when the answer is a *chain* (`Response.body |> Json.getField "id" |> ChargeId.parse`), no single entry unifies with the whole hole type — a hard type pre-filter would return **empty** and force a hint-less escalation, while English ranking surfaces the *building blocks*. Conversely, the type-boost gives the *precision* of a pre-filter on monomorphic single-symbol holes (`Char → Bool`): it floats `Char.isHexDigit` above the near-tie `Text.isHexString` without ever gating the pool.
+3. **Hard post-filter — the compiler.** The only source of type-truth is the resident typecheck of the *picked* candidate in the hole (coercion-graph-aware). GHC is the real post-filter; retrieval only ranks.
+
+- **Hoogle** = hard arbiter for the symbol subset (exact name/type; "nothing unifies" = safe abstention) — it feeds the layer-2 type-boost, it does not gate layer 1.
+- **Abstention** `[DECIDED]`: **min-max normalize the surviving candidates' scores** to `[0,1]` (`(x − min)/(max − min)`) and judge the **normalized top-1/top-2 margin** — relative within *this* query's set, not an absolute cosine floor. The degenerate case `max − min < ε` (everything near-tied) *is* the abstain signal — don't hand a small model a coin-flip. For v1 we do not tune a threshold: hand the model the top-k that **typecheck**, let the envelope disambiguate; the normalized margin only decides *how many* to hand it. Revisit only if it misbehaves.
+
+#### 10.2 Shipped index — bundled, versioned, auto-updatable `[DECIDED]`
+The external CLI **bundles** the embedder + `id→vector` index (34 MB is noise against the Nix closure — not worth an opt-in download). But the index is a **separately-versioned artifact**, not welded to the CLI release: it carries an **embedder-version + catalog-schema manifest**; the CLI **refuses a mismatched index** (a stale embedder against a fresh catalog = confidently-wrong similarities — the worst failure) and triggers `neo index update`. This decouples "re-embedded the catalog" from "cut a new binary" and gives an auto-update channel.
 
 ### 10.1 The fill/agent model `[DECIDED-direction]` — off-the-shelf, not bespoke
 **Do not train our own** — the Copilot Codex→GPT lesson holds; NeoHaskell's corpus is tiny, infra/serving/rot aren't free, and the envelope already gives correctness (a fine-tune only reduces bounce iterations). This also follows from P8. **Log the self-labeled `(hole, type, pool) → fill` pairs** (nearly free; the compiler labels them) so a future LoRA is *possible* if telemetry ever proves a persistent failure — evidence-gated, not a plan.
@@ -241,7 +253,14 @@ Ladder: **spec → type-model (§7) → deterministic scaffold (a named-typed-ho
 
 ## 12. Integrations — modality-pluggable scaffolding
 
-Two-persona shell (Facade + `Request` + `Response` + `Internal`) is **modality-invariant**; only `Internal.hs`'s `ToAction` is transport-specific. Integrations are **impure** → the fill pool leans on retrieval + LLM, not synthesis. **Reality:** all current integrations route through AI/HTTP; `core/system/Subprocess.hs` is unused; zero inline-c/python/java — **CLI/FFI are greenfield**. **Build transport layers first** (`Integration.Subprocess`, then `Integration.Foreign`) `[DECIDED order]`. `neo generate integration --transport http|cli|ffi-c|ffi-python|ffi-java --spec`. Templateable fraction: HTTP ~80% > CLI ~55% > FFI (shell only; marshalling is the hole). `⟡ OPEN`: restore the integration pipeline's dropped deep-review phase (secrets/auth/network).
+Two-persona shell (Facade + `Request` + `Response` + `Internal`) is **modality-invariant**; only `Internal.hs`'s `ToAction` is transport-specific. Integrations are **impure** → the fill pool leans on retrieval + LLM, not synthesis. **Reality:** all current integrations route through AI/HTTP; `core/system/Subprocess.hs` is unused; zero inline-c/python/java — **CLI/FFI are greenfield**. **Build transport layers first** (`Integration.Subprocess`, then `Integration.Foreign`) `[DECIDED order]`. `neo generate integration --transport http|cli|ffi-c|ffi-python|ffi-java --spec`. Templateable fraction: HTTP ~80% > CLI ~55% > FFI (shell only; marshalling is the hole).
+
+### 12.1 Two review gates `[DECIDED]` — `neo lint` (deterministic) + `neo review` (semantic)
+The dropped integration deep-review returns as **two atomic commands**, not one phase — two independently-runnable, independently-composable gates (also exposed as Agent tools), because compile+test is a strong oracle for *correctness* but a poor one for *secret hygiene / auth / SSRF*.
+- **`neo lint` — mechanical, deterministic, cheap, always-on.** The rules the AST/compiler can decide with certainty *(this is the envelope's capability-lint)*: no `show`/`log` on a `Redacted` field; secrets only via `${ENV}` interpolation (never string literals in URLs/headers); typed `Url` over raw strings; capability-blocklist (`Data.Char.*`, `GhcFilePath.*`, …). The #708-class rules live here — in code, not in a model.
+- **`neo review` — semantic, LLM, judgment.** Only the residue lint cannot decide: a retry loop leaking an idempotency key across attempts, an error message reconstructing a secret by concatenation, a subtly wrong auth flow (SSRF via user-controlled redirect).
+
+User/core surfaces run `neo lint` on every fill (fast); the **integration surface makes both mandatory** (weakest envelope for secret hygiene). Two commands ⇒ two independent verdicts, not one blended one.
 
 ---
 
@@ -298,8 +317,12 @@ The **plan is the single bottleneck** (verify it hard before fan-out; don't chea
 ### 14.2 The marker mechanism `[DECIDED]`
 `-- NEO-GAP(#123): GhcFilePath.normalise pending Core Path.normalise`. `neo gaps scan` finds markers; `neo gaps heal` checks whether the issue is closed / the symbol now exists → swaps vanilla → Core → runs the test.
 
-### 14.3 Outputs
-`(a) extend Core` (eagerly for anything reusable) or `(b) promote a recurring pattern → a function or refined type`; ring-fence controlled vanilla only for one-off/exotic. `⟡ OPEN: extend-vs-ring-fence thresholds.`
+### 14.3 The repo-boundary rule `[DECIDED]` — in-repo heals, cross-repo ring-fences
+The boundary between "fix it directly" and "ring-fence" is the **repo/PR boundary**, not Core-vs-feature — because the two cases have different blast radii:
+- **In-repo (the gap ships in the same PR).** #708 is a NeoHaskell-internal feature and `Path.normalise` is a NeoHaskell **Core** gap → same repo → **implement `Path.normalise` in Core in the same PR.** One reviewer sees the feature *and* the Core addition; the envelope covers both; nothing sprawls across repos. Outputs: `(a) extend Core` or `(b) promote a recurring pattern → a function or refined type`.
+- **Cross-repo (a user project needs a NeoHaskell change).** Jess's app wants a refined `SafePath` that belongs in Core; she cannot ship a NeoHaskell change from her repo → **ring-fence** (`-- NEO-GAP` + controlled vanilla) + file the upstream issue + continue; the marker heals when the fix lands upstream (§14.2).
+
+**Depth-1 is a hard guard on both.** "Fix directly" applies to the *immediate* gap only. A gap discovered *inside* that gap is always ring-fenced/filed — **even in-repo** — never recursed into. One run heals one layer of gap, never a transitive tree; that bounds a single PR's blast radius to what a human reviewer can hold in their head.
 
 ---
 
@@ -338,14 +361,11 @@ flowchart TD
 
 ## 17. Decisions & open questions
 
-**Decided (this round adds):** P8 (piggyback on GHC/Haskell standards); use **`refined`** (not a bespoke lib), `Either→Result` wrap; **`Nat` + negative-predicate-instances + `Symbol`-decimals + fixed-point `Decimal`** (no custom numeric kind); friendly **runtime** error messages per instance; auto-validation at JSON/command boundaries; **`Cast`/`Parse` coercion graph + `Coercible` firewall + local-Hoogle expansion**; **real GHC typed holes** as the fill oracle; **ranked multi-source candidate pool**; refinement-hole-fits as one shallow source; **resident typechecker on HLS/ghcide/hie-bios**; **off-the-shelf models, log self-labels, no training**; **Gemma 4 E4B / Qwen-Coder**; long-hole-name intent (+ preventive key→description store); **event-sourced harness** with a **simple resume model** (pin base · commit-per-unit · envelope-rolls-the-step · end-of-run rebase-reconcile — no continuous invalidation engine); **full coercion-graph subtyping** (unification-modulo-refinement). (Plus all v2 decisions.)
+**Decided (this round adds):** P8 (piggyback on GHC/Haskell standards); use **`refined`** (not a bespoke lib), `Either→Result` wrap; **`Nat` + negative-predicate-instances + `Symbol`-decimals + fixed-point `Decimal`** (no custom numeric kind); friendly **runtime** error messages per instance; auto-validation at JSON/command boundaries; **`Cast`/`Parse` coercion graph + `Coercible` firewall + local-Hoogle expansion**; **real GHC typed holes** as the fill oracle; **ranked multi-source candidate pool**; refinement-hole-fits as one shallow source; **resident typechecker on HLS/ghcide/hie-bios**; **off-the-shelf models, log self-labels, no training**; **Gemma 4 E4B / Qwen-Coder**; long-hole-name intent (+ preventive key→description store); **event-sourced harness** with a **simple resume model** (pin base · commit-per-unit · envelope-rolls-the-step · end-of-run rebase-reconcile — no continuous invalidation engine); **full coercion-graph subtyping** (unification-modulo-refinement).
 
-**Open (`⟡`):**
-1. Abstention tuning for a cheap consumer.
-2. Does the external CLI need the neural index, or Hoogle + component-synthesis + lexical for v1?
-3. Internal retrieval at thousands of entries (scoped lexical/Hoogle vs neural).
-4. Restore the integration deep-review phase.
-5. Extend-vs-ring-fence thresholds; recursion-depth guard value.
+**v5 resolves the last five (§10, §12, §14.3):** retrieval is a **three-layer model** (hard surface pre-filter · type-unification as a *score* not a gate · compiler as the real post-filter) with **normalized top-1/top-2 margin** abstention (no v1 threshold — envelope disambiguates); external index is **bundled + independently versioned + auto-updatable** (embedder-version manifest, refuse-on-mismatch); the integration deep-review is **two atomic gates** — deterministic `neo lint` + semantic `neo review`; internal retrieval scale is a **precision** concern handled by the layer-1 surface filter + layer-2 type-boost (not a speed concern); and the gap rule is the **repo/PR boundary** (in-repo heals in-PR, cross-repo ring-fences) under a hard **depth-1** guard. (Plus all v2 decisions.)
+
+**Open (`⟡`):** none — the v5 round resolved the last five (see above). Remaining uncertainty is empirical, not architectural, and is validated by building: the layer-2 type-boost weights and the abstention margin are *tuned against telemetry*, not decided on paper; the templateable fractions (HTTP ~80% / CLI ~55% / FFI shell-only) are *measured* in Phase 4; the 2–4× and BS-rate claims are *proven on the shadow scoreboard* (§15). The design is at a build boundary — **Phase 0** (§18) is the next move.
 
 ---
 
@@ -362,7 +382,9 @@ flowchart TD
 ---
 
 ## Appendix A — the #708 acceptance test
-Replaying static-assets, `neo` must — before a line is written, blocking otherwise — surface `Char.isDigit`/`isHexDigit` (not `Data.Char.*`, even aliased), `File.exists`/`readText`, `Array.takeIf`/`map`, `Path.joinPaths` (not `GhcFilePath.</>`), **and flag** `Path.normalise`/`isAbsolute`/`splitDirectories` as **Core gaps** — where the traversal bug entered. (Type-modeling should additionally push path inputs toward a refined `SafePath`.)
+Replaying static-assets, `neo` must — before a line is written, blocking otherwise — surface `Char.isDigit`/`isHexDigit` (not `Data.Char.*`, even aliased), `File.exists`/`readText`, `Array.takeIf`/`map`, `Path.joinPaths` (not `GhcFilePath.</>`), and identify `Path.normalise`/`isAbsolute`/`splitDirectories` as **Core gaps** — where the traversal bug entered. (Type-modeling should additionally push path inputs toward a refined `SafePath`.)
+
+**v5 upgrade — heal-in-PR, not ring-fence.** #708 is an *in-repo* feature, so by the §14.3 repo-boundary rule the Core gaps are **implemented in Core in the same PR** (depth-1), not flagged-and-faked-inline. The stronger success criterion: the replay **adds `Path.normalise`/`isAbsolute`/`splitDirectories` to Core** alongside the feature — because the original #708 sprawl happened *precisely because* those missing functions were faked with vanilla `GhcFilePath.*` inline instead of added properly. A depth-1 guard still applies: any gap discovered *inside* that Core work is ring-fenced/filed, not recursed into.
 
 ## Appendix B — Onklaud 5 cross-reference
 Mechanics adopted/rejected are detailed in `docs/plans/2026-07-03-onklaud-5-teardown.md`.
