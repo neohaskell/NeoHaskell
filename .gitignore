@@ -80,3 +80,5 @@ installer/target/
 *.vsix
 
 .ruff_cache
+# Phase 0: untracked local pipeline-state archive (Phase 1 will manage telemetry/ properly)
+/telemetry/archive/

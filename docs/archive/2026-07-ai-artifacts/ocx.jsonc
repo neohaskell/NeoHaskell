@@ -1,0 +1,12 @@
+// ARCHIVAL KNOWLEDGE — DO NOT USE OR REFERENCE.
+// Superseded by codemap/ + root AGENTS.md. Deleted once pipeline verified (Phase 6).
+{
+  "$schema": "https://ocx.kdco.dev/schema.json",
+  "registries": {
+    "kdco": {
+      "url": "https://registry.kdco.dev"
+    }
+  },
+  "lockRegistries": false,
+  "skipCompatCheck": false
+}
