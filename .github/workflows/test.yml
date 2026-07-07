@@ -53,6 +53,34 @@ jobs:
           retention-days: 1
           if-no-files-found: error
 
+  codemap-sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: build
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          persist-credentials: false
+      - uses: DeterminateSystems/determinate-nix-action@v3.21.2
+        with:
+          extra-conf: |
+            accept-flake-config = true
+            extra-substituters = https://cache.iog.io https://neohaskell.cachix.org
+            extra-trusted-public-keys = hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ= neohaskell.cachix.org-1:mo2cLaGbwqbrxs9xhqKK8jeNsn3osi7t6XoAmxSZssc=
+      - uses: DeterminateSystems/magic-nix-cache-action@v14
+      - uses: actions/download-artifact@v7
+        with:
+          name: dist-newstyle
+          path: dist-newstyle
+      - name: Regenerate codemap artifacts (same flow as local ./dev codemap)
+        run: CODEMAP_PROJECT=cabal.project ./dev codemap
+      - name: Sync check — committed codemap must match regenerated
+        run: |
+          git diff --exit-code codemap/ || {
+            echo "::error::codemap out of sync with the code — run ./dev codemap and commit the result"
+            exit 1
+          }
+
   test-core:
     needs: [build]
     runs-on: ubuntu-latest

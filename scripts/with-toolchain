@@ -9,13 +9,14 @@
 #   scripts/with-toolchain cabal build all
 #   scripts/with-toolchain ghcid --version
 #
-# Resolution order:
-#   1. inside nix develop AND the command exists -> run directly, zero overhead
-#      (the command check matters: IN_NIX_SHELL can be inherited from a STALE
-#      shell that predates a flake change — e.g. a shell from before ghcid was
-#      added. Trust the env only if it can actually serve the request.)
-#   2. nix available                             -> nix develop --command …
-#   3. no nix                                    -> host tools + loud warning
+# Resolution: nix available -> ALWAYS `nix develop --command` (~0.4s warm);
+# no nix -> host tools + loud warning.
+#
+# There is deliberately NO "already in a shell" fast path: an inherited
+# IN_NIX_SHELL can be stale (predating flake changes), and "the command
+# exists on PATH" proves nothing for ubiquitous tools (bash, python3) whose
+# shell versions differ (e.g. python3-with-pyyaml). The fast path caused
+# three real failures and saved 0.4s. Correct beats fast.
 #
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -25,9 +26,7 @@ if [ $# -eq 0 ]; then
   exit 2
 fi
 
-if [ -n "${IN_NIX_SHELL:-}" ] && command -v "$1" >/dev/null 2>&1; then
-  exec "$@"
-elif command -v nix >/dev/null 2>&1; then
+if command -v nix >/dev/null 2>&1; then
   exec nix develop --command "$@"
 else
   echo "with-toolchain: nix not found — falling back to host tools (version-drift risk)" >&2

@@ -87,3 +87,9 @@ installer/target/
 .ghcid-errors.txt
 /telemetry/.current-run.json
 /telemetry/golden/
+
+# Phase 3: symbol reference DB (build artifact)
+.hiedb
+.hiedb-shm
+.hiedb-wal
+__pycache__/

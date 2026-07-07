@@ -1,0 +1,212 @@
+# NeoHaskell capability map (pipeline Phase 3) — the localization ontology.
+#
+# Curated, CI-gated (codemap/check.py): every exposed module must be owned by
+# exactly one capability; every glob must match real files; aliases must be
+# unique. Seeded 2026-07-08 from the Phase 0 salvage (verified claims only).
+#
+# Routing contract: agents select capability IDs from THIS CLOSED LIST — never
+# invent paths. `aliases` bridge intent vocabulary to code ("serve a SPA" →
+# http-transport). For NEW code, use extension-points.yaml instead.
+#
+# Risk tags drive Phase 5 review gates: security-sensitive → security design
+# review; perf-sensitive → perf design review + nightly benchmarks.
+
+capabilities:
+  # ─── nhcore: primitives ────────────────────────────────────────────────
+  - id: core-primitives
+    owns: [core/core/*.hs]
+    responsibility: The NeoHaskell prelude surface — Text, Array, Map, Maybe, Result, Task, Int, Float, Char, Bytes, Uuid, DateTime, Console, Log, plus Core.hs re-exports. Wrappers over vanilla; the dialect's vocabulary.
+    aliases: [prelude, primitives, text, string, array, list, map, dictionary, maybe, optional, result, task, effect, uuid, datetime, logging, console]
+    tests: [core/test-core/**]
+
+  - id: traits
+    owns: [core/traits/*.hs]
+    responsibility: The typeclass layer — Mappable(Functor), Thenable(Monad), Appendable, Combinable, Default, ToText, Collection (36 *Impl methods), Documented.
+    aliases: [typeclass, instances, functor, monad, semigroup, monoid, collection interface]
+    tests: [core/test-core/**]
+
+  - id: concurrency
+    owns: [core/concurrency/*.hs]
+    responsibility: Concurrency primitives — AsyncTask(async), Channel(unagi), ConcurrentVar(MVar), Lock, AtomicVar, ConcurrentMap(stm-containers), DurableChannel, Stream.
+    aliases: [async, threads, channel, mvar, stm, parallel, locking]
+    tests: [core/test-core/**]
+    perf-sensitive: true
+
+  - id: system
+    owns: [core/system/*.hs]
+    responsibility: OS interaction — File, Path, Directory, Time, Environment, Subprocess.
+    aliases: [filesystem, file io, paths, env vars, shell, subprocess, clock]
+    tests: [core/test-core/**]
+
+  - id: http-client
+    owns: [core/http/**/*.hs, core/http/*.hs]
+    responsibility: Outbound HTTP client (Http.get/post, request building, internal plumbing). NOT the server side — that's http-transport.
+    aliases: [http requests, rest client, fetch, curl, api call outbound]
+    tests: [core/test-core/**]
+    security-sensitive: true
+
+  - id: json
+    owns: [core/json/*.hs]
+    responsibility: Json encode/decode wrapper over Aeson.
+    aliases: [json, serialization, encoding, decoding, aeson]
+    tests: [core/test-core/**]
+
+  - id: schema
+    owns: [core/schema/**]
+    responsibility: Schema derivation — JsonSchema, OpenApi generation from types.
+    aliases: [openapi, json schema, api docs, schema derivation]
+    tests: [core/test-core/**]
+
+  - id: auth
+    owns: [core/auth/**]
+    responsibility: AuthN/AuthZ — OAuth2 (providers, transaction/secret stores, rate limiter, token refresh, routes), JWT/JWKS/claims, middleware, discovery, URL validation.
+    aliases: [authentication, authorization, oauth, jwt, login, tokens, secrets, sso]
+    tests: [core/test-auth/**]
+    security-sensitive: true
+
+  - id: config
+    owns: [core/config/**]
+    responsibility: Typed app configuration — Config.field/envVar/secret (Redacted), TH builder.
+    aliases: [configuration, env config, settings, secrets config]
+    tests: [core/test-core/**]
+    security-sensitive: true
+
+  - id: language-tooling
+    owns: [core/neoql/**, core/parser/**, core/layout/**, core/syntax/**, core/decimal/*.hs, core/options-parser/*.hs, core/meta/*.hs]
+    responsibility: Language-adjacent tooling — NeoQL query language, parser combinators, layout rendering, syntax helpers, Decimal, CLI options parser, TypeName meta.
+    aliases: [neoql, parsing, query language, cli options, decimal numbers]
+    tests: [core/test-core/**]
+
+  # ─── nhcore: event-sourcing/CQRS service layer ────────────────────────
+  - id: event-store
+    owns: [core/service/Service/EventStore/**, core/service/Service/EventStore.hs, core/service/Service/Event/**, core/service/Service/Event.hs]
+    responsibility: Append-only event log — InMemory/Postgres/Simple backends, stream positions, InsertionType, optimistic concurrency, subscriptions, notifications.
+    aliases: [persistence, event log, streams, append, event sourcing storage, postgres events, subscriptions]
+    tests: [core/testlib/Test/Service/EventStore/**, core/test-service/**, core/test/Service/EventStore/**]
+    perf-sensitive: true
+    security-sensitive: true
+
+  - id: commands
+    owns: [core/service/Service/Command/**, core/service/Service/Command.hs, core/service/Service/CommandExecutor/**, core/service/Service/CommandExecutor.hs, core/service/Decider.hs]
+    responsibility: Command side of CQRS — Command typeclass (decideImpl/getEntityIdImpl), Decider monad (acceptNew/acceptExisting/acceptAfter/reject), executor with optimistic-concurrency retry (max 10, exp backoff).
+    aliases: [command handling, write side, decide, business rules, mutations]
+    tests: [core/testlib/Test/Service/Command/**, core/testlib/Test/Service/CommandHandler/**, core/test-service/**]
+    perf-sensitive: true
+
+  - id: entities
+    owns: [core/service/Service/Entity/**, core/service/Service/Entity.hs, core/service/Service/EntityFetcher/**, core/service/Service/EntityFetcher.hs, core/service/Service/SnapshotCache/**, core/service/Service/SnapshotCache.hs, core/service/EventVariantOf.hs]
+    responsibility: Entity reconstruction — EntityOf/EventOf type families, initialStateImpl/updateImpl, fetch from event stream, snapshot caching.
+    aliases: [aggregate, entity state, fold events, snapshots, rehydration]
+    tests: [core/testlib/Test/Service/EntityFetcher/**, core/testlib/Test/Service/SnapshotCache/**]
+    perf-sensitive: true
+
+  - id: queries
+    owns: [core/service/Service/Query/**, core/service/Service/Query.hs, core/service/Service/QueryObjectStore/**, core/service/Service/QueryObjectStore.hs]
+    responsibility: Read side of CQRS — QueryOf.combine, EntitiesOf, Registry/Subscriber/Updater, rebuildAll, pagination, query object stores (InMemory/Postgres).
+    aliases: [read models, projections, views, query side, pagination, rebuild]
+    tests: [core/testlib/Test/Service/QueryObjectStore/**, core/test/Service/Query/**, core/test-service/**]
+    perf-sensitive: true
+
+  - id: http-transport
+    owns: [core/service/Service/Transport/**, core/service/Service/Transport.hs, core/service/Service/Response.hs]
+    responsibility: Exposes commands/queries to the outside — Web (HTTP routes, request decoding, response encoding, SwaggerUI, readiness), MCP (JSON-RPC protocol), CLI transports.
+    aliases: [web, rest, api, endpoint, SPA, static assets, frontend, serve, routes, mcp server, cli transport, swagger, cors]
+    tests: [core/test-service/**, testbed/tests/**]
+    security-sensitive: true
+
+  - id: integration-runtime
+    owns: [core/service/Integration.hs, core/service/Integration/**, core/service/Service/Integration/**, core/service/Service/OutboundIntegration/**]
+    responsibility: Integration runtime — Outbound (react to events) / Inbound (external → commands), ToAction, dispatcher, timers, lifecycle, shim emit.
+    aliases: [integration dispatch, outbound events, inbound triggers, timers, webhooks in]
+    tests: [core/test-service/**, core/test-integration/**]
+
+  - id: file-upload
+    owns: [core/service/Service/FileUpload/**]
+    responsibility: File upload/download — blob stores (Local), lifecycle, routes, resolver, web wiring, file state store (Postgres).
+    aliases: [uploads, files, blobs, attachments, download, filestore]
+    tests: [core/testlib/Test/Service/FileUpload/**, core/test-service/**]
+    security-sensitive: true
+
+  - id: service-wiring
+    owns: [core/service/Service/Application/**, core/service/Service/Application.hs, core/service/Service.hs, core/service/Service/ServiceDefinition/**, core/service/Service/ServiceDefinition.hs, core/service/Service/AccessControl.hs, core/service/Service/Auth.hs, core/service/Service/Error.hs, core/service/Trigger.hs]
+    responsibility: Application orchestration — Application.new/withEventStore/withService/withQuery/withOutbound/withInbound/run, service definitions, access control (canAccess/canView), service-level auth glue.
+    aliases: [app wiring, main, bootstrap, service definition, access control, permissions]
+    tests: [core/test-service/**]
+    security-sensitive: true
+
+  - id: service-th
+    owns: [core/service/Service/TH/**]  # per-domain TH.hs files belong to their domain capability
+    responsibility: Template Haskell derivation — deriveQuery and friends; boilerplate generation for commands/events/queries.
+    aliases: [template haskell, deriving, codegen, boilerplate]
+    tests: [core/test-service/**]
+
+  - id: postgres-infra
+    owns: [core/service/Service/Infra/**]
+    responsibility: Postgres infrastructure — connection config, SSL modes, session plumbing shared by event store and query stores.
+    aliases: [database connection, postgres config, connection pool, ssl]
+    tests: [core/test-service/**]
+    security-sensitive: true
+
+  - id: testlib
+    owns: [core/testlib/**]
+    responsibility: Shared test machinery — Test.Spec DSL, AppSpec scenarios, per-subsystem spec suites reused by InMemory and Postgres backends, JWT test helpers, CompileTime checks.
+    aliases: [test utilities, spec dsl, test helpers, appspec]
+    tests: [core/test-core/**]
+
+  # ─── nhintegrations ────────────────────────────────────────────────────
+  - id: outbound-integrations
+    owns: [integrations/**]
+    responsibility: Concrete outbound integrations — Brevo (email), OpenRouter (LLM), Acs, Agent, Audio, AzureAI, Ocr, Oura, Pdf, shared Http auth/retry with ${VAR} secret interpolation. Two-persona layout — Foo.hs facade + Foo/{Request,Response,Internal}.hs (ADR-0008/0015).
+    aliases: [email, brevo, llm, openrouter, azure, ocr, pdf, oura, external services, third party apis]
+    tests: [integrations/test/**]
+    security-sensitive: true
+
+  # ─── other packages ────────────────────────────────────────────────────
+  - id: testbed
+    owns: [testbed/**]
+    responsibility: Reference app + acceptance tests — Cart/Stock/Document/Examples bounded contexts, hurl suites against localhost:8080; the user-contract executable. Definition-of-done gate.
+    aliases: [reference app, acceptance tests, hurl, example app, e2e, user contract]
+    tests: [testbed/tests/**]
+
+  - id: lsp
+    owns: [lsp/**]
+    responsibility: NeoHaskell language server.
+    aliases: [language server, ide support, editor integration]
+    tests: []
+
+  - id: dev-pipeline
+    owns: [scripts/**, codemap/**, telemetry/**, dev, cabal.project.dev, .claude/**]  # workflows (incl. checks.yml) belong to ci-cd — exactly-once
+    responsibility: The Continuous Generation pipeline itself — ./dev verbs, dialect gates, codemap, telemetry, hooks, skills, governance checks.
+    aliases: [pipeline, tooling, dev scripts, ci checks, hooks, skills, lint config]
+    tests: []
+
+  # ─── non-Haskell surfaces ──────────────────────────────────────────────
+  - id: website
+    owns: [website/**]
+    responsibility: Astro/Starlight docs site (monorepo dir, NOT a separate repo) — English source in src/content/docs/, locale auto-translation via translate.yml (locales currently disabled pending docs revamp).
+    aliases: [docs site, documentation website, starlight, astro, translations]
+    tests: []
+
+  - id: installer
+    owns: [installer/**]
+    responsibility: Rust installer (neo-install binary).
+    aliases: [install, installer binary, rust installer]
+    tests: []
+
+  - id: ide-extension
+    owns: [ide/**]
+    responsibility: VSCode extension.
+    aliases: [vscode, editor extension]
+    tests: []
+
+  - id: ci-cd
+    owns: [.github/workflows/*.yml, flake.nix, nix/**, docker-compose.yml, cabal.project]  # cloud-setup.sh is under scripts/** (dev-pipeline) — exactly-once
+    responsibility: Build/CI/CD — GitHub workflows (test matrix, cachix, installer, translate, claude), nix flake + hix config, Postgres compose.
+    aliases: [ci, github actions, nix, flake, build system, cachix, docker]
+    tests: []
+
+  - id: governance-docs
+    owns: [docs/**, AGENTS.md, CLAUDE.md, README.md, LICENSE]
+    responsibility: Plans, ADRs (docs/decisions/), archived knowledge (docs/archive/ — DO NOT USE), agent guide, contributor guide.
+    aliases: [adr, decisions, plans, agent docs, readme, archive]
+    tests: []

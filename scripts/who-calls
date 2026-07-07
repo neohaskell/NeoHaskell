@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+#
+# Who references this symbol? (pipeline Phase 3 — plan-time edit-set expansion:
+# "I'm changing this signature; what breaks?")
+#
+# Output is joined against codemap/capabilities.yaml so results read as
+# capabilities, not bare file lists.
+#
+# Usage:
+#   ./dev who-calls insert            # by symbol name
+#   ./dev who-calls insert Service.EventStore.Core   # narrowed by defining module
+#
+set -euo pipefail
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+cd "${SCRIPT_DIR}/.."
+
+NAME="${1:?usage: who-calls <symbol> [module]}"
+
+if [ ! -f .hiedb ]; then
+  echo "who-calls: no index — run ./dev hiedb first" >&2
+  exit 2
+fi
+
+# Args travel as argv end-to-end (never interpolated into a shell string).
+if [ $# -ge 2 ]; then
+  "${SCRIPT_DIR}/with-toolchain" hiedb -D .hiedb name-refs "${NAME}" "$2"
+else
+  "${SCRIPT_DIR}/with-toolchain" hiedb -D .hiedb name-refs "${NAME}"
+fi | "${SCRIPT_DIR}/with-toolchain" python3 codemap/join-refs.py

@@ -1,0 +1,4 @@
+# doc-ratchet: counters may DECREASE only (CI-enforced by check.py).
+# Source-derived (platform-independent) — see generate.py.
+undocumented_modules: 212
+undocumented_exports: 562

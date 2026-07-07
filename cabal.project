@@ -3,3 +3,7 @@ packages:
   testbed/*.cabal
   integrations/nhintegrations.cabal
   lsp/*.cabal
+
+-- Pipeline Phase 3: emit .hie files for the symbol reference DB (hiedb).
+program-options
+  ghc-options: -fwrite-ide-info

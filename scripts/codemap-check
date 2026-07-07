@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+#
+# Codemap validity gate (pipeline Phase 3). Same check locally and in CI:
+# local  -> pinned dev-shell python (with-toolchain)
+# CI     -> PYTHON=python3 (runner python + pinned pyyaml), same check.py
+#
+# Usage: ./dev codemap-check
+#
+set -euo pipefail
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+cd "${SCRIPT_DIR}/.."
+
+if [ -n "${PYTHON:-}" ]; then
+  exec "${PYTHON}" codemap/check.py "$@"
+fi
+exec "${SCRIPT_DIR}/with-toolchain" python3 codemap/check.py "$@"

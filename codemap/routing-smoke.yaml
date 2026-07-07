@@ -1,0 +1,30 @@
+# Routing smoke set (pipeline Phase 3). Protocol: codemap/README.md.
+# A fresh-context agent routes each `request` using ONLY capabilities.yaml +
+# extension-points.yaml (never reading `expected`), then compares. Bar: >=8/10.
+# vocabulary-gap: true marks probes whose wording shares no tokens with the
+# owning module names (the "serve a SPA" class — the aliases must carry them).
+
+cases:
+  - request: "serve a SPA from the application"
+    expected: http-transport
+    vocabulary-gap: true
+  - request: "cart items disappear when two users add simultaneously"
+    expected: event-store
+    vocabulary-gap: true
+  - request: "add a rate limit to OAuth token refresh"
+    expected: auth
+  - request: "the CartSummary projection shows stale totals after rebuild"
+    expected: queries
+  - request: "send a Slack message when a stock reservation fails"
+    expected: new-outbound-integration
+  - request: "add a percentage type with bounded arithmetic"
+    expected: new-core-primitive
+  - request: "file downloads time out for files over 100MB"
+    expected: file-upload
+  - request: "expose the service over gRPC"
+    expected: new-transport-feature
+  - request: "commands intermittently fail with concurrency conflicts under load"
+    expected: commands
+  - request: "make the acceptance suite start Postgres automatically"
+    expected: testbed
+    vocabulary-gap: true

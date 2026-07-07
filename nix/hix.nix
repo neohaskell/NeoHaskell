@@ -24,6 +24,14 @@
     haskell-language-server = "latest";
     cabal-gild = "latest";
     ghcid = "latest"; # powers scripts/dev-loop (agent + human inner loop)
+    hiedb = "latest"; # symbol reference DB — powers ./dev who-calls (codemap)
   };
-  shell.buildInputs = with pkgs; [ git nixfmt-classic postgresql hurl poppler_utils ];
+  shell.buildInputs = with pkgs; [
+    git
+    nixfmt-classic
+    postgresql
+    hurl
+    poppler_utils
+    (python3.withPackages (ps: [ ps.pyyaml ])) # codemap tooling (check.py)
+  ];
 }
