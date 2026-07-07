@@ -22,6 +22,10 @@ usage: ./dev <verb> [args]
                           default suite: nhcore-test-core)
   refresh [target]      re-warm the -O0 build after pull/branch switch;
                           prints modules-rebuilt (cache health)
+  doctest               run the doctest suite
+  test-all              run every test suite (colored human runner)
+  doctor                harness self-check: every script has a verb or a
+                          reasoned exemption; no dangling verbs (CI-enforced)
   exec <cmd> [args]     run any command with the pinned toolchain
                           (e.g. ./dev exec ghc --version)
 
@@ -33,11 +37,14 @@ VERB="${1:-}"
 [ $# -gt 0 ] && shift
 
 case "${VERB}" in
-  watch)   exec scripts/watch "$@" ;;
-  check)   exec scripts/check "$@" ;;
-  test)    exec scripts/test-match "$@" ;;
-  refresh) exec scripts/refresh-dev-cache "$@" ;;
-  exec)    exec scripts/with-toolchain "$@" ;;
+  watch)    exec scripts/watch "$@" ;;
+  check)    exec scripts/check "$@" ;;
+  test)     exec scripts/test-match "$@" ;;
+  refresh)  exec scripts/refresh-dev-cache "$@" ;;
+  doctest)  exec scripts/run-doctest "$@" ;;
+  test-all) exec scripts/run-all-tests.sh "$@" ;;
+  doctor)   exec scripts/doctor "$@" ;;
+  exec)     exec scripts/with-toolchain "$@" ;;
   ""|help|-h|--help) usage ;;
   *)
     echo "dev: unknown verb '${VERB}'" >&2

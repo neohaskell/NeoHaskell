@@ -1,0 +1,21 @@
+# Fast governance checks (pipeline Phase 1+). Pure bash, no toolchain —
+# feedback in seconds, long before the build workflows finish.
+#
+# Currently: ./dev doctor — enforces "every pipeline asset registers a ./dev
+# verb or carries a reasoned exemption" (see scripts/doctor for the contract).
+# Phase 2 adds the dialect hlint gate as a separate job (needs the toolchain).
+name: checks
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  doctor:
+    name: dev doctor (verb registration)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - run: ./dev doctor
