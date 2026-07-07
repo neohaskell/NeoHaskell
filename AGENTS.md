@@ -69,7 +69,7 @@ Route requests via `codemap/` (CI-gated capability ontology + extension points) 
 
 Training-data APIs don't exist here. Resolve symbols at **plan time** into a `uses:` list; execution transcribes:
 - `codemap/api-hot.md` — frequency-ranked card (what this repo actually calls, with doctest examples)
-- `./dev api "Text -> Maybe Uuid"` — hoogle type search, two passes: dialect surface first (`Uuid.fromText`); vanilla shown ONLY when no wrapper matches, with escape-hatch guidance
+- `./dev api "Text -> Maybe Uuid"` — hoogle type search: NeoHaskell surface ranked top, vanilla always below with disclaimer + escape-hatch guidance and dialect respellings (String→Text, IO→Task)
 - `codemap/phrasebook.md` — doctest-verified usage patterns (thin coverage = the doc backlog, by design)
 - GHC "not in scope" in `./dev check` output = invented API — resolve via `./dev api`, recorded as telemetry `invented-api`
 

@@ -3,12 +3,15 @@
 # Two-pass API search (pipeline Phase 4; two-pass design per Nick 2026-07-08).
 # Engine: hoogle for BOTH passes; the filtering is two databases:
 #
-#   PASS 1 — .hoogle-neo.hoo    : ONLY nhcore + nhintegrations (the dialect).
-#            If this hits, vanilla is never shown.
-#   PASS 2 — .hoogle-vanilla.hoo: deps + boot libs, shown ONLY when pass 1 is
-#            empty. When no wrapper exists, seeing the vanilla function is
-#            exactly what informs the escape-hatch decision (.hlint.yaml
-#            `within:` + belongs-in note; rule of three → Core primitive).
+#   PASS 1 — .hoogle-neo.hoo    : ONLY nhcore + nhintegrations (the dialect),
+#            ranked on top.
+#   PASS 2 — .hoogle-vanilla.hoo: deps + boot libs, ALWAYS shown below with a
+#            disclaimer (revised 2026-07-08: fuzzy type matches in pass 1 —
+#            "String -> IO ()" → setGlobalConfig — were suppressing the
+#            vanilla results that held the real answer, e.g. putStrLn).
+#            Seeing the vanilla function informs the escape-hatch decision
+#            (.hlint.yaml `within:` + belongs-in note; rule of three →
+#            Core primitive) — or reveals the dialect respelling to query.
 #
 # Databases are local build artifacts (gitignored), rebuilt by ./dev codemap
 # or lazily here when missing.
@@ -31,18 +34,27 @@ if [ ! -f "${NEO_DB}" ] || [ ! -f "${VAN_DB}" ]; then
   "${SCRIPT_DIR}/build-hoogle-dbs"
 fi
 
-# ── pass 1: the NeoHaskell surface ─────────────────────────────────────────
-RESULT=$("${SCRIPT_DIR}/with-toolchain" hoogle --database="${NEO_DB}" "$@" | head -15)
-if [ -n "${RESULT}" ] && ! echo "${RESULT}" | grep -q "^No results found"; then
-  echo "${RESULT}"
-  exit 0
+# ── pass 1: the NeoHaskell surface (top of the list) ───────────────────────
+NEO=$("${SCRIPT_DIR}/with-toolchain" hoogle --database="${NEO_DB}" "$@" | head -10)
+NEO_HIT=1
+if [ -z "${NEO}" ] || echo "${NEO}" | grep -q "^No results found"; then
+  NEO_HIT=0
 fi
 
-# ── pass 2: vanilla (secondary, clearly labelled) ──────────────────────────
-echo "── vanilla results (second pass — no NeoHaskell wrapper matched) ──────"
-echo "   Escape hatch before using any of these: register the module in"
-echo "   .hlint.yaml within: (justification + belongs-in note);"
-echo "   rule of three → propose a Core primitive instead."
+if [ "${NEO_HIT}" = "1" ]; then
+  echo "── NeoHaskell surface ──────────────────────────────────────────────────"
+  echo "${NEO}"
+else
+  echo "── NeoHaskell surface: no matches ──────────────────────────────────────"
+fi
+
+# ── pass 2: vanilla (always shown, bottom, disclaimered) ───────────────────
 echo ""
-"${SCRIPT_DIR}/with-toolchain" hoogle --database="${VAN_DB}" "$@" | head -10
-exit 3
+echo "── vanilla (deps + boot libs) — prefer the NeoHaskell results above ────"
+echo "   Using one of these anyway? Escape hatch first: .hlint.yaml within:"
+echo "   (justification + belongs-in note); rule of three → Core primitive."
+echo "   Dialect respellings for queries: String→Text · IO a→Task err a ·"
+echo "   [a]→Array a · Either→Result."
+"${SCRIPT_DIR}/with-toolchain" hoogle --database="${VAN_DB}" "$@" | head -6
+
+if [ "${NEO_HIT}" = "1" ]; then exit 0; else exit 3; fi
