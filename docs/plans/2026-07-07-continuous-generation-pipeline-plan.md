@@ -23,10 +23,12 @@
 | Invented-API events (GHC "not in scope") per PR | unmeasured | measured, trending ↓ |
 | Style violations reaching CI | unmeasured | 0 (caught at edit-hook/hlint layer) |
 
-## Governing rule (the anti-rot constitution)
+## Governing rules (the anti-rot constitution)
 
 > **No agent-visible document without a CI check or a generation source.**
 > Every asset in this plan is either compiler/script-generated (with a regenerate-and-diff sync check) or human-curated (with a structural validity check). Anything else gets archived.
+
+> **Every pipeline tool is a human tool.** (Added 2026-07-07, panel-reviewed.) Same script, same environment, same build flavor for agents and humans — parity is what makes agent failures reproducible by a human in minutes. Non-interactive by default; TTY niceties never break the agent path. Telemetry records *pipeline runs only* — ad-hoc human use never emits. **Human-runnable is an acceptance criterion for every pipeline asset** (codemap checker, routing smoke, benchmarks, all of them).
 
 ---
 
