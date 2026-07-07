@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+#
+# Link-free targeted test run (pipeline Phase 1).
+#
+# Runs hspec's --match inside `cabal repl` so the test executable is never
+# linked (linking is the dominant fixed cost of `cabal test` for a one-spec
+# check). Uses the dev build flavor (-O0).
+#
+# Usage:
+#   scripts/test-match "pattern"                    # default suite: nhcore-test-core
+#   scripts/test-match "EventStore" nhcore-test-service
+#
+# Exit code: 0 iff the matched specs all passed (hspec summary parsed —
+# ghci itself always exits 0, so we cannot rely on its exit code).
+#
+set -euo pipefail
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+cd "${SCRIPT_DIR}/.."
+
+PATTERN="${1:?usage: scripts/test-match \"pattern\" [suite]}"
+SUITE="${2:-nhcore-test-core}"
+
+# PATTERN lands inside a Haskell string literal in ghci's `:main --match "…"`,
+# so embedded backslashes/quotes must be escaped or the match string silently
+# garbles — the exact vacuous-result failure this script exists to prevent.
+ESCAPED="${PATTERN//\\/\\\\}"
+ESCAPED="${ESCAPED//\"/\\\"}"
+
+OUTPUT=$(printf ':main --match "%s"\n' "${ESCAPED}" \
+  | "${SCRIPT_DIR}/with-toolchain" cabal repl "${SUITE}" --project-file=cabal.project.dev -v0 2>&1) || true
+
+echo "${OUTPUT}"
+
+# hspec summary line: "N examples, M failures". ", 0 failures" is unambiguous —
+# but "0 examples, 0 failures" means NOTHING ran (typo'd pattern / wrong suite),
+# and a verification tool must never report vacuous success.
+if echo "${OUTPUT}" | grep -qE '^0 examples,'; then
+  echo "test-match: no specs matched \"${PATTERN}\" in ${SUITE} — check the pattern/suite" >&2
+  exit 1
+elif echo "${OUTPUT}" | grep -q ", 0 failures"; then
+  exit 0
+else
+  echo "test-match: failures detected (or no summary line found)" >&2
+  exit 1
+fi

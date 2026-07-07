@@ -34,6 +34,24 @@ cabal test                      # all suites (Postgres needed: docker-compose up
 ./testbed/scripts/run-tests.sh  # acceptance tests (auto-starts the app)
 ```
 
+## Fast inner loop (measured 2026-07-07 — use this in repair loops, NOT cabal build)
+
+Single entrypoint: **`./dev`** (no-args lists all verbs; same tools for humans and agents, deliberately):
+
+```bash
+./dev watch                  # start resident typecheck watcher → .ghcid-errors.txt (once per session)
+./dev check                  # quick typecheck status (instant from watcher; one-shot fallback)
+./dev test "pattern" [suite] # link-free hspec --match (~4-9s; default suite nhcore-test-core)
+./dev refresh                # re-warm -O0 build after pull/switch; prints modules-rebuilt
+./dev exec <cmd>             # any command with the pinned toolchain
+```
+
+- Repair-loop protocol: edit → wait ~2s → **`./dev check`** (measured: error feedback 0.6s, recovery 1.9s). Never spawn `cabal build` inside the loop.
+- You do NOT need to be inside `nix develop`: every verb self-provisions the pinned toolchain (~0.4s warm overhead).
+- Everything uses the dev flavor (`cabal.project.dev`, `-O0`); full nhcore -O0 build = 249 modules / ~54s on this machine.
+- Pipeline telemetry: `scripts/telemetry.py` (schema: `telemetry/SCHEMA.md`, frozen v1). Every pipeline run emits one line to `telemetry/runs.jsonl`. Telemetry is pipeline-only: never emit lines for ad-hoc runs.
+- These are the same commands humans use (README "Fast inner loop") — parity is deliberate; don't create agent-only variants.
+
 - Test discovery: **only `nhcore-test` uses hspec-discover**; `nhcore-test-core`, `-auth`, `-service`, `-integration` register specs manually in their `Main.hs` — new spec modules must be added there AND to the cabal `other-modules`.
 - Postgres-dependent specs self-gate on `POSTGRES_AVAILABLE=true`.
 - ⚠ **hlint does NOT run in CI**, and the current `.hlint.yaml` does not encode NeoHaskell style — do not treat hlint output as style guidance until the Phase 2 rebuild lands.

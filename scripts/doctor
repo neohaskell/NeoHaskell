@@ -1,0 +1,65 @@
+#!/usr/bin/env bash
+#
+# Harness self-check (pipeline governance). Enforces the rule:
+#   "every pipeline asset registers a verb in ./dev or it doesn't ship"
+# by making its domain enumerable: pipeline asset := file in scripts/.
+#
+# Checks (all bidirectional set-comparisons, no hope involved):
+#   1. every `exec scripts/X` in ./dev points to an existing, executable script
+#   2. every file in scripts/ is either registered in ./dev or explicitly
+#      exempted below WITH a reason (exemptions are a reviewable diff)
+#   3. no stale exemptions (exempt + registered = contradiction)
+#
+# Run: ./dev doctor        CI: .github/workflows/checks.yml (seconds, no nix)
+#
+set -euo pipefail
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+cd "${SCRIPT_DIR}/.."
+
+# Exemptions: script -> reason. Adding one is a visible, reviewable diff.
+EXEMPT_NAMES=(
+  "telemetry.py:pipeline-only by doctrine — a discoverable verb would invite ad-hoc emission"
+  "cloud-setup.sh:Claude-web environment setup; invoked by the platform, not by developers"
+  "install.sh:end-user installer (curl-piped); not a repo dev tool"
+)
+
+fail=0
+err() { echo "doctor: FAIL — $*" >&2; fail=1; }
+
+# Registered scripts = targets of `exec scripts/…` lines in ./dev.
+registered=$(grep -oE 'exec scripts/[A-Za-z0-9._-]+' dev | sed 's|exec scripts/||' | sort -u)
+
+# 1. Dangling verbs / missing executable bit.
+for s in ${registered}; do
+  if [ ! -f "scripts/${s}" ]; then
+    err "./dev registers 'scripts/${s}' but it does not exist (dangling verb)"
+  elif [ ! -x "scripts/${s}" ]; then
+    err "scripts/${s} is registered but not executable (chmod +x)"
+  fi
+done
+[ -x dev ] || err "./dev itself is not executable"
+
+# 2. Unregistered scripts + 3. stale exemptions.
+for f in scripts/*; do
+  name=$(basename "${f}")
+  # (no special case for doctor itself — it must be registered like anything else)
+  exempt_reason=""
+  for e in "${EXEMPT_NAMES[@]}"; do
+    if [ "${e%%:*}" = "${name}" ]; then exempt_reason="${e#*:}"; fi
+  done
+  if echo "${registered}" | grep -qx "${name}"; then
+    if [ -n "${exempt_reason}" ]; then
+      err "scripts/${name} is BOTH registered and exempted — remove the stale exemption"
+    fi
+  else
+    if [ -z "${exempt_reason}" ]; then
+      err "scripts/${name} has no ./dev verb and no exemption — register it or exempt it with a reason"
+    fi
+  fi
+done
+
+if [ "${fail}" -eq 0 ]; then
+  count=$(echo "${registered}" | wc -l | tr -d ' ')
+  echo "doctor: OK — ${count} verbs registered, $(ls scripts/ | wc -l | tr -d ' ') scripts accounted for, ${#EXEMPT_NAMES[@]} exemptions (all reasoned)"
+fi
+exit "${fail}"

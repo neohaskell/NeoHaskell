@@ -23,6 +23,7 @@
     hspec-discover = "latest";
     haskell-language-server = "latest";
     cabal-gild = "latest";
+    ghcid = "latest"; # powers scripts/dev-loop (agent + human inner loop)
   };
   shell.buildInputs = with pkgs; [ git nixfmt-classic postgresql hurl poppler_utils ];
 }

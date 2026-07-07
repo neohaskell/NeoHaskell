@@ -80,6 +80,30 @@ To run manually:
 hlint .
 ```
 
+> ⚠ The current hlint configuration does not yet encode NeoHaskell's dialect
+> rules and does not run in CI — don't treat its output as style guidance.
+> The dialect-first rebuild is tracked in
+> [#715](https://github.com/neohaskell/NeoHaskell/issues/715) (Phase 2).
+
+## Fast inner loop
+
+The same tools the CI/agent pipeline uses work on demand for humans (they are
+the *same scripts* on purpose — if you can't reproduce what the pipeline saw,
+you can't debug it). One entrypoint, run `./dev` for the full menu:
+
+```sh
+./dev watch                          # resident typecheck watcher (ghcid, -O0)
+./dev check                          # instant typecheck status
+./dev test "EventStore"              # run only matching specs, no linking (~4-9s)
+./dev test "insert" nhcore-test-service   # pick a suite
+./dev refresh                        # re-warm the -O0 build after pull/branch switch
+./dev exec ghc --version             # anything else, with the pinned toolchain
+```
+
+Typecheck feedback lands in under a second once the watcher is running. You
+don't need to be inside `nix develop`: every verb enters it on demand (pinned
+toolchain from any bare shell). Measured baselines: `telemetry/SCHEMA.md`.
+
 ## Running Tests
 
 The core library tests are split into domain-specific suites that run in parallel on CI:

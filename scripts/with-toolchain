@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+#
+# Run a command with the pinned project toolchain (pipeline Phase 1).
+#
+# Callers (scripts/dev-loop, test-match, refresh-dev-cache — and you) do NOT
+# need to be inside `nix develop`: this wrapper enters it on demand, so the
+# same script works from a bare host shell, an agent session, or CI.
+#
+#   scripts/with-toolchain cabal build all
+#   scripts/with-toolchain ghcid --version
+#
+# Resolution order:
+#   1. inside nix develop AND the command exists -> run directly, zero overhead
+#      (the command check matters: IN_NIX_SHELL can be inherited from a STALE
+#      shell that predates a flake change — e.g. a shell from before ghcid was
+#      added. Trust the env only if it can actually serve the request.)
+#   2. nix available                             -> nix develop --command …
+#   3. no nix                                    -> host tools + loud warning
+#
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+if [ $# -eq 0 ]; then
+  echo "usage: scripts/with-toolchain <command> [args…]" >&2
+  exit 2
+fi
+
+if [ -n "${IN_NIX_SHELL:-}" ] && command -v "$1" >/dev/null 2>&1; then
+  exec "$@"
+elif command -v nix >/dev/null 2>&1; then
+  exec nix develop --command "$@"
+else
+  echo "with-toolchain: nix not found — falling back to host tools (version-drift risk)" >&2
+  exec "$@"
+fi
