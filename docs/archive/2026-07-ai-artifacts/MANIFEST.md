@@ -17,15 +17,15 @@ Salvage record (claim-by-claim verdicts, skills ranking): [`SALVAGE.md`](SALVAGE
 
 | Original path | Kind | Reason | Salvage | Surviving content went to |
 |---|---|---|---|---|
-| `CLAUDE.md` | knowledge | False claims (hlint-in-CI, test auto-discovery, phantom transpiler/CLI components) | mostly valid | Style table + verified commands → root `AGENTS.md`; structure facts → `codemap/` (Phase 3) |
-| `core/AGENTS.md` | knowledge | Maps 10 of 18 source dirs; stale counts; inverted test-discovery claim | WHERE-TO-LOOK + trait/Task/concurrency facts valid | `codemap/capabilities.yaml` seed (Phase 3) |
-| `core/service/AGENTS.md` | knowledge | Incomplete tree (omits ~14 modules/dirs); otherwise highest quality of the set | nearly all valid | `codemap/capabilities.yaml` seed (Phase 3) |
-| `testbed/AGENTS.md` | knowledge | Omits 2 newer bounded contexts | mostly valid | `codemap/` seed (Phase 3) |
-| `integrations/AGENTS.md` | knowledge | Omits Acs + AzureAI | mostly valid | `codemap/` seed (Phase 3) |
-| `website/AGENTS.md` | knowledge | Wrong repo identity; stale sidebar; undocumented locale-disable | workflow claims valid | `codemap/` seed (Phase 3) |
-| `context/TODO.md` | knowledge | Dead planning doc (2025-11-17); describes shipped work as "awaiting implementation"; superseded API designs | InsertionType + file-list facts | `codemap/` seed (Phase 3) |
-| `context/collections.md` | knowledge | Aspirational API spec reality diverged from (~23 of ~40 functions absent) | convention rules only | Phase 3/4 doc work |
-| `context/documentation.md` | knowledge | `prop>` doctests unused; "no Haddock" contradicted by codebase | doctest rule | doc-ratchet rules (Phase 3) |
+| `CLAUDE.md` | knowledge | False claims (hlint-in-CI, test auto-discovery, phantom transpiler/CLI components) | mostly valid | Style table + verified commands → root `AGENTS.md`; structure facts → `codemap/capabilities.yaml` (landed 2026-07-08) |
+| `core/AGENTS.md` | knowledge | Maps 10 of 18 source dirs; stale counts; inverted test-discovery claim | WHERE-TO-LOOK + trait/Task/concurrency facts valid | `codemap/capabilities.yaml` (core-primitives, traits, concurrency, system capabilities — landed 2026-07-08) |
+| `core/service/AGENTS.md` | knowledge | Incomplete tree (omits ~14 modules/dirs); otherwise highest quality of the set | nearly all valid | `codemap/capabilities.yaml` (event-store, commands, entities, queries, http-transport, service-wiring — landed 2026-07-08) |
+| `testbed/AGENTS.md` | knowledge | Omits 2 newer bounded contexts | mostly valid | `codemap/capabilities.yaml` (testbed capability) + extension-points.yaml |
+| `integrations/AGENTS.md` | knowledge | Omits Acs + AzureAI | mostly valid | `codemap/capabilities.yaml` (outbound-integrations) + new-outbound-integration extension point |
+| `website/AGENTS.md` | knowledge | Wrong repo identity; stale sidebar; undocumented locale-disable | workflow claims valid | `codemap/capabilities.yaml` (website capability) |
+| `context/TODO.md` | knowledge | Dead planning doc (2025-11-17); describes shipped work as "awaiting implementation"; superseded API designs | InsertionType + file-list facts | `codemap/capabilities.yaml` (event-store responsibility text) |
+| `context/collections.md` | knowledge | Aspirational API spec reality diverged from (~23 of ~40 functions absent) | convention rules only | doc-ratchet rules (codemap/.doc-ratchet, landed 2026-07-08) |
+| `context/documentation.md` | knowledge | `prop>` doctests unused; "no Haddock" contradicted by codebase | doctest rule | doc-ratchet counters (codemap/.doc-ratchet, landed 2026-07-08) |
 | `opencode.jsonc`, `ocx.jsonc`, `ocx.lock` | tool config | Retired tool (opencode) — dead configs confuse agents | none | — |
 | `.claude/skills/*` → `claude-skills/` (all 14 skills, 153 files) | knowledge | Full-sweep decision: no quarantine-in-place; all skills rebuilt from scratch in Phases 2–5 | see SALVAGE.md Part 2 | hlint rules + hooks (Phase 2), implementer skill (Phase 2), ADR template + spec-gate flow + review checklists (Phase 5), QA rubrics (Phase 5) |
 

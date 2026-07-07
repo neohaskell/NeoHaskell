@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+#
+# (Re)build the symbol reference database (pipeline Phase 3).
+#
+# .hie files are emitted by GHC (-fwrite-ide-info, set in cabal.project) into
+# dist-newstyle during any build; hiedb indexes them into .hiedb (gitignored —
+# build artifact, never committed).
+#
+# Usage: ./dev hiedb   (run after significant code changes; ./dev who-calls
+#        will tell you if the index is missing)
+#
+set -euo pipefail
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+cd "${SCRIPT_DIR}/.."
+
+echo "hiedb: building (dev flavor) so .hie files are current…"
+"${SCRIPT_DIR}/with-toolchain" cabal build all --project-file=cabal.project.dev -j 2>&1 | tail -1
+
+echo "hiedb: indexing…"
+"${SCRIPT_DIR}/with-toolchain" hiedb -D .hiedb index dist-newstyle --quiet
+echo "hiedb: done → .hiedb"

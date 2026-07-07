@@ -1,0 +1,55 @@
+# Extension points (pipeline Phase 3) — where things that DON'T EXIST YET go.
+#
+# Localization for new code is not search, it's lookup: match the request's
+# intent against `triggers`, then follow the row. Every row names where to
+# create, where to register, where tests go, and which skill drives the work.
+# CI-gated by codemap/check.py (paths and skills must exist).
+
+extension-points:
+  - kind: new-core-primitive
+    triggers: [new data type, new wrapper, promote exception to primitive, missing core function]
+    create: [core/core/<Name>.hs]
+    register: ["core/nhcore.cabal exposed-modules", "core/core/Core.hs re-exports (if prelude-level)"]
+    tests: [core/test-core/<Name>Spec.hs]
+    notes: hspec-discover picks the spec up automatically (nhcore-test-core is MANUAL — register in core/test-core/Main.hs too). Wrap vanilla, never re-export it raw. Add doctest examples.
+    skill: neohaskell-implementer
+
+  - kind: new-command
+    triggers: [new mutation, new business operation, write operation, new use case verb]
+    create: ["testbed/src/<Context>/Commands/<Name>.hs (app-level) or core/service/Service/Command/ (framework-level)"]
+    register: ["the context's Service.hs wiring", "nhtestbed.cabal / nhcore.cabal"]
+    tests: ["testbed/tests/commands/<name>.hurl (app)", "core/testlib/Test/Service/Command/** (framework)"]
+    notes: Command typeclass — decideImpl/getEntityIdImpl + EntityOf family; decisions via Decider (acceptNew/acceptExisting/reject).
+    skill: neohaskell-implementer
+
+  - kind: new-query
+    triggers: [new read model, new projection, new view, report, listing endpoint]
+    create: ["testbed/src/<Context>/Queries/<Name>.hs (app-level) or core/service/Service/Query/ (framework-level)"]
+    register: ["the context's Service.hs wiring via withQuery", "deriveQuery TH"]
+    tests: ["testbed/tests/queries/<name>.hurl (app)", "core/testlib/Test/Service/QueryObjectStore/** (framework)"]
+    notes: EntitiesOf family + QueryOf.combine; rebuilds via Subscriber.rebuildAll.
+    skill: neohaskell-implementer
+
+  - kind: new-transport-feature
+    triggers: [serve, expose over http, new endpoint kind, static content, SPA, new protocol, streaming responses]
+    create: ["core/service/Service/Transport/<Feature>.hs or core/service/Service/Transport/Web/<Feature>.hs"]
+    register: ["core/service/Service/Transport.hs", "core/nhcore.cabal exposed-modules", "core/service/Service/Application/Transports.hs wiring"]
+    tests: ["core/test-service/ (register in Main.hs + other-modules)", "testbed/tests/** acceptance"]
+    notes: security-sensitive capability — Phase 5 design review applies.
+    skill: neohaskell-implementer
+
+  - kind: new-outbound-integration
+    triggers: [send email, call external service, notify, third-party api, llm provider]
+    create: ["integrations/Integration/<Name>.hs facade + integrations/Integration/<Name>/{Request,Response,Internal}.hs"]
+    register: [integrations/nhintegrations.cabal exposed-modules]
+    tests: [integrations/test/Integration/<Name>Spec.hs]
+    notes: two-persona layout per ADR-0008/ADR-0015; secrets via ${ENV_VAR} interpolation → AuthenticationError; security-sensitive.
+    skill: neohaskell-implementer
+
+  - kind: new-pipeline-asset
+    triggers: [new dev tool, new gate, new check, new script, new skill, new hook rule]
+    create: ["scripts/<verb-implementation> or .claude/hooks/ or .claude/skills/<name>/SKILL.md"]
+    register: ["dev (verb — MANDATORY, doctor-enforced)", ".github/workflows/checks.yml if a CI gate"]
+    tests: ["scripts/doctor self-checks", ".claude/hooks/dialect-guard-cases.json for hook rules"]
+    notes: governing rules apply — every tool is a human tool; every rule names its gate; hook rules need blocking+passing cases.
+    skill: neohaskell-dialect-rules

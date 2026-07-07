@@ -1,0 +1,3 @@
+# doc-ratchet: counters may DECREASE only (CI-enforced by check.py)
+undocumented_modules: 194
+undocumented_exports: 1727

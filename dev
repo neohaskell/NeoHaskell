@@ -26,6 +26,11 @@ usage: ./dev <verb> [args]
   test-all              run every test suite (colored human runner)
   lint [paths]          dialect gate: hlint with the dialect-first config
                           (same as CI; escape hatch documented in .hlint.yaml)
+  codemap               regenerate codemap artifacts (signatures, MAP.md, ratchet)
+  codemap-check         validate the codemap (ownership, globs, aliases, ratchet)
+  hiedb                 (re)build the symbol reference DB
+  who-calls <sym> [mod] symbol references, grouped by capability
+  where-defined <sym>   symbol definition site, capability-tagged
   doctor                harness self-check: every script has a verb or a
                           reasoned exemption; no dangling verbs (CI-enforced)
   exec <cmd> [args]     run any command with the pinned toolchain
@@ -46,6 +51,11 @@ case "${VERB}" in
   doctest)  exec scripts/run-doctest "$@" ;;
   test-all) exec scripts/run-all-tests.sh "$@" ;;
   lint)     exec scripts/lint "$@" ;;
+  codemap)  exec scripts/refresh-codemap "$@" ;;
+  codemap-check) exec scripts/with-toolchain python3 codemap/check.py "$@" ;;
+  hiedb)    exec scripts/refresh-hiedb "$@" ;;
+  who-calls) exec scripts/who-calls "$@" ;;
+  where-defined) exec scripts/where-defined "$@" ;;
   doctor)   exec scripts/doctor "$@" ;;
   exec)     exec scripts/with-toolchain "$@" ;;
   ""|help|-h|--help) usage ;;

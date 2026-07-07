@@ -53,6 +53,34 @@ jobs:
           retention-days: 1
           if-no-files-found: error
 
+  codemap-sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: build
+    steps:
+      - uses: actions/checkout@v7
+      - uses: DeterminateSystems/determinate-nix-action@v3.21.2
+        with:
+          extra-conf: |
+            accept-flake-config = true
+            extra-substituters = https://cache.iog.io https://neohaskell.cachix.org
+            extra-trusted-public-keys = hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ= neohaskell.cachix.org-1:mo2cLaGbwqbrxs9xhqKK8jeNsn3osi7t6XoAmxSZssc=
+      - uses: DeterminateSystems/magic-nix-cache-action@v14
+      - uses: actions/download-artifact@v7
+        with:
+          name: dist-newstyle
+          path: dist-newstyle
+      - name: Regenerate codemap artifacts (signatures, MAP.md, ratchet)
+        run: |
+          nix develop --command bash -c \
+            "cabal haddock lib:nhcore lib:nhintegrations --haddock-hoogle -v0 >/dev/null && python3 codemap/generate.py"
+      - name: Sync check — committed codemap must match regenerated
+        run: |
+          git diff --exit-code codemap/ || {
+            echo "::error::codemap out of sync with the code — run ./dev codemap and commit the result"
+            exit 1
+          }
+
   test-core:
     needs: [build]
     runs-on: ubuntu-latest
