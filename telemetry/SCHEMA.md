@@ -73,6 +73,10 @@ transcript.md   # session transcript or stage summaries (miner input)
 | No-op `cabal build` overhead | 0.3s | — |
 
 Notes: GHC recompilation checking is content-hash based (touch ≠ rebuild;
-interface-preserving edits don't cascade). ghcid resolved via PATH, falling back
-to `nix shell nixpkgs#ghcid` (not in the flake dev shell — adding it there is a
-CI-cache decision deferred to Nick).
+interface-preserving edits don't cascade). All loop scripts self-provision the
+pinned toolchain via `scripts/with-toolchain` (enters `nix develop` on demand;
+ghcid ships in the flake dev shell) — callers never need to be inside the shell.
+Wrapper overhead: ~0.4s warm eval. Caveat: if `dist-newstyle` was built under a
+different environment than the wrapper's shell (config-hash mismatch), the first
+ghcid load re-interprets all modules (minutes, one-time per flavor) instead of
+loading warm `.o` files; reloads are sub-second either way.

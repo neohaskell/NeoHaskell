@@ -14,20 +14,16 @@
 #   scripts/dev-loop lib:nhtestbed  # watch another target
 #
 set -euo pipefail
-cd "$(dirname "$0")/.."
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+cd "${SCRIPT_DIR}/.."
 
 TARGET="${1:-lib:nhcore}"
 OUT=".ghcid-errors.txt"
 
 echo "dev-loop: watching ${TARGET} (dev flavor, -O0); errors -> ${OUT}"
 
-if command -v ghcid >/dev/null 2>&1; then
-  exec ghcid \
-    --command "cabal repl ${TARGET} --project-file=cabal.project.dev" \
-    --outputfile "${OUT}"
-else
-  echo "dev-loop: ghcid not on PATH — running via 'nix shell nixpkgs#ghcid' (first run may download)" >&2
-  exec nix shell nixpkgs#ghcid --command ghcid \
-    --command "cabal repl ${TARGET} --project-file=cabal.project.dev" \
-    --outputfile "${OUT}"
-fi
+# with-toolchain enters `nix develop` on demand — ghcid and cabal come from the
+# pinned dev shell, so this works from any bare shell (agent or human).
+exec "${SCRIPT_DIR}/with-toolchain" ghcid \
+  --command "cabal repl ${TARGET} --project-file=cabal.project.dev" \
+  --outputfile "${OUT}"

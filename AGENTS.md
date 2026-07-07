@@ -43,6 +43,7 @@ scripts/refresh-dev-cache           # warm dist-newstyle after pull/branch switc
 ```
 
 - Repair-loop protocol: edit → wait ~2s → **read `.ghcid-errors.txt`** (measured: error feedback 0.6s, recovery 1.9s; empty/"All good" = typechecks). Never spawn `cabal build` inside the loop.
+- You do NOT need to be inside `nix develop`: every script self-provisions the pinned toolchain via `scripts/with-toolchain` (enters the dev shell on demand, ~0.4s warm).
 - All three scripts use the dev flavor (`cabal.project.dev`, `-O0`); full nhcore -O0 build = 249 modules / ~54s on this machine.
 - Pipeline telemetry: `scripts/telemetry.py` (schema: `telemetry/SCHEMA.md`, frozen v1). Every pipeline run emits one line to `telemetry/runs.jsonl`. Telemetry is pipeline-only: never emit lines for ad-hoc runs.
 - These are the same commands humans use (README "Fast inner loop") — parity is deliberate; don't create agent-only variants.

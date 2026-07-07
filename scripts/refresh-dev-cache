@@ -11,13 +11,14 @@
 # Usage: scripts/refresh-dev-cache [target]   (default: all)
 #
 set -euo pipefail
-cd "$(dirname "$0")/.."
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+cd "${SCRIPT_DIR}/.."
 
 TARGET="${1:-all}"
 LOG=$(mktemp)
 
 SECONDS=0
-cabal build "${TARGET}" --project-file=cabal.project.dev -j 2>&1 | tee "${LOG}" | tail -3
+"${SCRIPT_DIR}/with-toolchain" cabal build "${TARGET}" --project-file=cabal.project.dev -j 2>&1 | tee "${LOG}" | tail -3
 ELAPSED=${SECONDS}
 
 REBUILT=$(grep -cE '^\[[ 0-9]+ of [ 0-9]+\] Compiling' "${LOG}" || true)

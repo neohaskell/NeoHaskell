@@ -100,8 +100,10 @@ scripts/refresh-dev-cache            # re-warm the -O0 build after pull/branch s
 ```
 
 All of these build with `cabal.project.dev` (`-O0`) — typecheck feedback lands
-in under a second once `dev-loop` is running. Full details and measured
-baselines: `telemetry/SCHEMA.md`.
+in under a second once `dev-loop` is running. You don't need to be inside
+`nix develop`: the scripts enter it on demand via `scripts/with-toolchain`
+(pinned toolchain from any bare shell). Full details and measured baselines:
+`telemetry/SCHEMA.md`.
 
 ## Running Tests
 

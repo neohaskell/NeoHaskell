@@ -14,13 +14,14 @@
 # ghci itself always exits 0, so we cannot rely on its exit code).
 #
 set -euo pipefail
-cd "$(dirname "$0")/.."
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+cd "${SCRIPT_DIR}/.."
 
 PATTERN="${1:?usage: scripts/test-match \"pattern\" [suite]}"
 SUITE="${2:-nhcore-test-core}"
 
 OUTPUT=$(printf ':main --match "%s"\n' "${PATTERN}" \
-  | cabal repl "${SUITE}" --project-file=cabal.project.dev -v0 2>&1) || true
+  | "${SCRIPT_DIR}/with-toolchain" cabal repl "${SUITE}" --project-file=cabal.project.dev -v0 2>&1) || true
 
 echo "${OUTPUT}"
 
