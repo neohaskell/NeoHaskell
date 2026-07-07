@@ -92,3 +92,4 @@ installer/target/
 .hiedb
 .hiedb-shm
 .hiedb-wal
+__pycache__/
