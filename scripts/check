@@ -25,6 +25,12 @@ if [ -f "${OUT}" ]; then
   if [ ! -s "${OUT}" ] || grep -q "All good" "${OUT}"; then
     exit 0
   else
+    # invented-API telemetry signal: "not in scope"/"Variable not in scope"
+    # errors usually mean a hallucinated symbol — resolve with ./dev api
+    INVENTED=$(grep -ci "not in scope" "${OUT}" || true)
+    if [ "${INVENTED}" -gt 0 ]; then
+      echo "check: invented-api-events=${INVENTED} (symbol not in scope — resolve with ./dev api \"<name or type>\"; record via telemetry.py)" >&2
+    fi
     exit 1
   fi
 else

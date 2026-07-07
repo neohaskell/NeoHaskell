@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+#
+# Search the NeoHaskell API surface (pipeline Phase 4) — type-directed or by
+# name, over codemap/signatures/ only (never GHC libs; that noise is
+# anti-dialect). THE tool for "what turns X into Y" — use it instead of
+# inventing a function name.
+#
+# Usage:
+#   ./dev api "Text -> Maybe Int"
+#   ./dev api toInt
+#
+set -euo pipefail
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+cd "${SCRIPT_DIR}/.."
+exec "${SCRIPT_DIR}/with-toolchain" python3 codemap/api-search.py "$@"

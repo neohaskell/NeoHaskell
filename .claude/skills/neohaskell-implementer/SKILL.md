@@ -47,6 +47,23 @@ no Core wrapper exists for what you need and it's not core enough to build one?
 - NEVER reimplement a banned thing with allowed vocabulary — that is strictly
   worse than the exception.
 
+## API discipline (Phase 4): transcribe, never recall
+
+Your training data contains vanilla Haskell APIs; this repo doesn't. Before
+calling ANY function you didn't just read:
+
+1. The plan's `uses:` list (plan-time resolved symbols) — transcribe those.
+2. `codemap/api-hot.md` — the frequency-ranked card of what this repo
+   actually calls, with verified examples.
+3. `./dev api "<type or name>"` — type-directed search over OUR surface
+   ("Text -> Maybe Uuid" → `Uuid.fromText`). Use it the moment you feel
+   yourself *remembering* an API instead of *reading* one.
+4. `codemap/phrasebook.md` — doctest-verified usage patterns.
+
+If `./dev check` reports `invented-api-events=N` ("not in scope"), that is a
+hallucinated symbol: resolve via `./dev api`, and the pipeline records the
+event (telemetry `invented-api` label) — do not guess twice.
+
 ## Repair loop (protocol, not suggestion)
 
 ```

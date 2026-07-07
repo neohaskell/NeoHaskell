@@ -153,7 +153,7 @@ def main() -> int:
                 err(f"doc-ratchet regression: {key} rose {prev.group(1)} → {now} (document what you touched)")
 
     # 6. generated artifacts present
-    for p in ("codemap/MAP.md", "codemap/signatures"):
+    for p in ("codemap/MAP.md", "codemap/signatures", "codemap/api-hot.md", "codemap/phrasebook.md"):
         if not (ROOT / p).exists():
             err(f"generated artifact missing: {p} (run ./dev codemap)")
 

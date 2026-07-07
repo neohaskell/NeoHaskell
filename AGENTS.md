@@ -65,6 +65,14 @@ Route requests via `codemap/` (CI-gated capability ontology + extension points) 
 - Blast radius → `./dev who-calls <symbol> [module]` (capability-grouped; `./dev hiedb` builds the index)
 - Validity → `./dev codemap-check` (CI-gated: ownership exactly-once, alias uniqueness, doc-ratchet)
 
+## API knowledge (Phase 4) — transcribe, never recall
+
+Training-data APIs don't exist here. Resolve symbols at **plan time** into a `uses:` list; execution transcribes:
+- `codemap/api-hot.md` — frequency-ranked card (what this repo actually calls, with doctest examples)
+- `./dev api "Text -> Maybe Uuid"` — type-directed search over OUR surface only → `Uuid.fromText`
+- `codemap/phrasebook.md` — doctest-verified usage patterns (thin coverage = the doc backlog, by design)
+- GHC "not in scope" in `./dev check` output = invented API — resolve via `./dev api`, recorded as telemetry `invented-api`
+
 ## Dialect enforcement (Phase 2, live since 2026-07-07)
 
 Three layers, in feedback order:

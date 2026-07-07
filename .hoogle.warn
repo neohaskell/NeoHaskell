@@ -1,0 +1,106 @@
+nhcore:510:failed to parse: lens :: forall {k} (r :: Row k) (r' :: Row k) (f :: k -> Type). SubRow r r' => Record f r -> (Record f r', Record f r' -> Record f r)
+nhcore:511:failed to parse: merge :: forall {k} (f :: k -> Type) (r :: Row k) (r' :: Row k). Record f r -> Record f r' -> Record f (Merge r r')
+nhcore:512:failed to parse: insert :: forall {b} (n :: Symbol) f (a :: b) (r :: Row b). Field n -> f a -> Record f r -> Record f ((n ':= a) ': r)
+nhcore:513:failed to parse: ap :: forall {k} (f :: k -> Type) (g :: k -> Type) (r :: Row k). Record (f -.-> g) r -> Record f r -> Record g r
+nhcore:514:failed to parse: map :: forall {k} f g (r :: Row k). (forall (x :: k). () => f x -> g x) -> Record f r -> Record g r
+nhcore:515:failed to parse: zip :: forall {k} (f :: k -> Type) (r :: Row k) (g :: k -> Type). Record f r -> Record g r -> Record (Product f g) r
+nhcore:516:failed to parse: zipWith :: forall {k} f g h (r :: Row k). (forall (x :: k). () => f x -> g x -> h x) -> Record f r -> Record g r -> Record h r
+nhcore:517:failed to parse: toList :: forall {k} (r :: Row k) a. KnownFields r => Record (K a :: k -> Type) r -> [(String, a)]
+nhcore:550:failed to parse: sequenceA :: forall {k} m (f :: k -> Type) (r :: Row k). Applicative m => Record (m :.: f) r -> m (Record f r)
+nhcore:551:failed to parse: empty :: forall {k} (f :: k -> Type). Record f ('[] :: [Pair Symbol k])
+nhcore:552:failed to parse: pure :: forall {k} (r :: Row k) f. KnownFields r => (forall (x :: k). () => f x) -> Record f r
+nhcore:553:failed to parse: get :: forall {k} (n :: Symbol) (r :: Row k) (a :: k) f. RowHasField n r a => Field n -> Record f r -> f a
+nhcore:556:failed to parse: set :: forall {k} (n :: Symbol) (r :: Row k) (a :: k) f. RowHasField n r a => Field n -> f a -> Record f r -> Record f r
+nhcore:562:failed to parse: mapM :: forall {k} m f g (r :: Row k). Applicative m => (forall (x :: k). () => f x -> m (g x)) -> Record f r -> m (Record g r)
+nhcore:570:failed to parse: zipWithM :: forall {k} m f g h (r :: Row k). Applicative m => (forall (x :: k). () => f x -> g x -> m (h x)) -> Record f r -> Record g r -> m (Record h r)
+nhcore:595:failed to parse: Dict :: forall {k} (c :: k -> Constraint) (a :: k). c a => Dict c a
+nhcore:600:failed to parse: applyPending :: forall {k} (f :: k -> Type) (r :: Row k). Record f r -> Record f r
+nhcore:601:failed to parse: cmap :: forall {k} (r :: Row k) c f g. AllFields r c => Proxy c -> (forall (x :: k). c x => f x -> g x) -> Record f r -> Record g r
+nhcore:602:failed to parse: cmapM :: forall {k} m (r :: Row k) c f g. (Applicative m, AllFields r c) => Proxy c -> (forall (x :: k). c x => f x -> m (g x)) -> Record f r -> m (Record g r)
+nhcore:603:failed to parse: collapse :: forall {k} a (r :: Row k). Record (K a :: k -> Type) r -> [a]
+nhcore:604:failed to parse: cpure :: forall {k} (r :: Row k) c f. AllFields r c => Proxy c -> (forall (x :: k). c x => f x) -> Record f r
+nhcore:605:failed to parse: czipWith :: forall {k} (r :: Row k) c f g h. AllFields r c => Proxy c -> (forall (x :: k). c x => f x -> g x -> h x) -> Record f r -> Record g r -> Record h r
+nhcore:606:failed to parse: czipWithM :: forall {k} m (r :: Row k) c f g h. (Applicative m, AllFields r c) => Proxy c -> (forall (x :: k). c x => f x -> g x -> m (h x)) -> Record f r -> Record g r -> m (Record h r)
+nhcore:607:failed to parse: distribute :: forall {k} m (r :: Row k) (f :: k -> Type). (Functor m, KnownFields r) => m (Record f r) -> Record (m :.: f) r
+nhcore:609:failed to parse: inject :: forall {k} (r :: Row k) (r' :: Row k) (f :: k -> Type). SubRow r r' => Record f r' -> Record f r -> Record f r
+nhcore:610:failed to parse: insertA :: forall {b} m (n :: Symbol) f (a :: b) (r :: Row b). Applicative m => Field n -> m (f a) -> m (Record f r) -> m (Record f ((n ':= a) ': r))
+nhcore:611:failed to parse: letInsertAs :: forall {k} (r :: Row k) (r' :: Row k) f (n :: Symbol) (a :: k). Proxy r -> Field n -> f a -> Record f r' -> (forall (r'' :: [Pair Symbol k]). Let r'' ((n ':= a) ': r') => Record f r'' -> Record f r) -> Record f r
+nhcore:612:failed to parse: letRecordT :: forall {k} (r :: Row k) (f :: k -> Type). (forall (r' :: Row k). Let r' r => Proxy r' -> Record f r) -> Record f r
+nhcore:613:failed to parse: project :: forall {k} (r :: Row k) (r' :: Row k) (f :: k -> Type). SubRow r r' => Record f r -> Record f r'
+nhcore:614:failed to parse: reflectAllFields :: forall {k} (c :: k -> Constraint) (r :: Row k). Record (Dict c) r -> Reflected (AllFields r c)
+nhcore:615:failed to parse: reflectKnownFields :: forall {k} (r :: Row k). Record (K String :: k -> Type) r -> Reflected (KnownFields r)
+nhcore:616:failed to parse: reflectSubRow :: forall {k} (r :: Row k) (r' :: Row k). Record (InRow r) r' -> Reflected (SubRow r r')
+nhcore:617:failed to parse: reifyAllFields :: forall {k} (r :: Row k) (c :: k -> Constraint) proxy. AllFields r c => proxy c -> Record (Dict c) r
+nhcore:618:failed to parse: reifyKnownFields :: forall {k} (r :: Row k) proxy. KnownFields r => proxy r -> Record (K String :: k -> Type) r
+nhcore:619:failed to parse: reifySubRow :: forall {k} (r' :: Row k) (r :: Row k). (KnownFields r', SubRow r r') => Record (InRow r) r'
+nhcore:621:failed to parse: someRecord :: forall {k} (f :: k -> Type). [(String, Some f)] -> SomeRecord f
+nhcore:624:failed to parse: type ContextRecord = Record :: k -> Type -> Row k -> Type
+nhcore:1775:failed to parse:     -- | The <a>Item</a> type function returns the type of items of the
+nhcore:1776:failed to parse:     --   structure <tt>l</tt>.
+nhcore:1777:failed to parse:     type Item l;
+nhcore:1778:failed to parse: }
+nhcore:1861:failed to parse: type HasCallStack = ?callStack :: CallStack
+nhcore:4804:failed to parse: new :: forall value {w}. Task w (ConcurrentVar value)
+nhcore:4847:failed to parse: withTimeout :: forall value {w}. Int -> Lock -> Task w value -> Task w (Result Text value)
+nhcore:4883:failed to parse: new :: forall value {w}. Task w (Channel value)
+nhcore:5316:failed to parse:     type Response request;
+nhcore:5317:failed to parse: }
+nhcore:6577:failed to parse: new :: forall value {w}. Task w (DurableChannel value)
+nhcore:6633:failed to parse: ($dmname) :: Documented value => Text
+nhcore:6637:failed to parse: ($dmdescription) :: Documented value => Text
+nhcore:6641:failed to parse: ($dmexamples) :: Documented value => Array value
+nhcore:6645:failed to parse: ($dmdeprecated) :: Documented value => Bool
+nhcore:6673:failed to parse: new :: forall key value {w}. Task w (ConcurrentMap key value)
+nhcore:10150:failed to parse: getTypeName :: forall {k} (a :: k). Typeable a => Text
+nhcore:10789:failed to parse:     -- | The type of identifier used for this entity.
+nhcore:10790:failed to parse:     --   
+nhcore:10791:failed to parse:     --   Defaults to <a>Uuid</a> but can be overridden for entities that use
+nhcore:10792:failed to parse:     --   different ID types.
+nhcore:10793:failed to parse:     type EntityIdType entity;
+nhcore:10795:failed to parse: }
+nhcore:11126:failed to parse: ($dmtoSchema) :: (ToSchema value, Generic value, GToSchema (Rep value)) => Schema
+nhcore:12408:failed to parse:     -- | Whether this command supports multi-tenancy.
+nhcore:12409:failed to parse:     --   
+nhcore:12410:failed to parse:     --   When True, <a>getEntityIdImpl</a> and <a>decideImpl</a> receive a
+nhcore:12411:failed to parse:     --   tenant UUID as first argument.
+nhcore:12412:failed to parse:     type IsMultiTenant command :: Bool;
+nhcore:12414:failed to parse: }
+nhcore:12583:failed to parse:     -- | The type of identifier used for this entity.
+nhcore:12584:failed to parse:     --   
+nhcore:12585:failed to parse:     --   Defaults to <a>Uuid</a> but can be overridden for entities that use
+nhcore:12586:failed to parse:     --   different ID types.
+nhcore:12587:failed to parse:     type EntityIdType entity;
+nhcore:12589:failed to parse: }
+nhcore:12772:failed to parse:     -- | The request type for this transport.
+nhcore:12773:failed to parse:     type Request transport;
+nhcore:12775:failed to parse:     -- | The response type for this transport.
+nhcore:12776:failed to parse:     type Response transport;
+nhcore:12778:failed to parse:     -- | The assembled, runnable representation of this transport.
+nhcore:12779:failed to parse:     type RunnableTransport transport;
+nhcore:12780:failed to parse: }
+nhcore:13400:failed to parse:     -- | The event type this handler processes.
+nhcore:13401:failed to parse:     --   
+nhcore:13402:failed to parse:     --   Set by the TH macro to 'EventOf (EntityOf handler)' — the entity's
+nhcore:13403:failed to parse:     --   full event ADT.
+nhcore:13404:failed to parse:     type HandledEvent handler;
+nhcore:13405:failed to parse: }
+nhcore:14063:failed to parse:     -- | Whether this command supports multi-tenancy.
+nhcore:14064:failed to parse:     --   
+nhcore:14065:failed to parse:     --   When True, <a>getEntityIdImpl</a> and <a>decideImpl</a> receive a
+nhcore:14066:failed to parse:     --   tenant UUID as first argument.
+nhcore:14067:failed to parse:     type IsMultiTenant command :: Bool;
+nhcore:14069:failed to parse: }
+nhcore:14340:failed to parse: ($dmtoSchema) :: (ToSchema value, Generic value, GToSchema (Rep value)) => Schema
+nhcore:14365:failed to parse:     -- | The type of identifier used for this entity.
+nhcore:14366:failed to parse:     --   
+nhcore:14367:failed to parse:     --   Defaults to <a>Uuid</a> but can be overridden for entities that use
+nhcore:14368:failed to parse:     --   different ID types.
+nhcore:14369:failed to parse:     type EntityIdType entity;
+nhcore:14371:failed to parse: }
+nhcore:15003:failed to parse: ($dmrnf) :: (NFData a, Generic a, GNFData Zero (Rep a)) => a -> ()
+nhcore:16448:failed to parse: field :: forall {k} (fieldType :: k). Typeable fieldType => Text -> FieldDef
+nhcore:16464:failed to parse: enum :: forall {k} (enumType :: k). Typeable enumType => Text -> FieldDef
+nhcore:16498:failed to parse: nested :: forall {k} (nestedType :: k). Typeable nestedType => Text -> FieldDef
+nhcore:16723:failed to parse: field :: forall {k} (fieldType :: k). Typeable fieldType => Text -> FieldDef
+nhcore:16739:failed to parse: enum :: forall {k} (enumType :: k). Typeable enumType => Text -> FieldDef
+nhcore:16773:failed to parse: nested :: forall {k} (nestedType :: k). Typeable nestedType => Text -> FieldDef

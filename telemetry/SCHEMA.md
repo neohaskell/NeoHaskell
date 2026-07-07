@@ -42,6 +42,11 @@ Every pipeline run emits **exactly one JSON line** appended to `telemetry/runs.j
 `wrong-intent | wrong-localization | dialect-violation | invented-api | test-failure |
 spec-drift | flaky-infra | timeout | human-rejected-spec | human-rejected-pr | other`
 
+**invented-api counting (Phase 4):** `./dev check` reports
+`invented-api-events=N` when typecheck errors contain "not in scope" — the
+repair loop records these via the `invented-api` failure label / stage
+`repair_rounds`. Baseline = mean over the first 5 instrumented pipeline runs.
+
 `other` REQUIRES a `failure_note` field and must be re-classified (or the taxonomy
 extended with a schema bump) at the weekly review. Free-text labels are forbidden —
 they make trends unmeasurable.
