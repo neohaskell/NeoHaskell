@@ -64,12 +64,17 @@ RULES = [
      re.compile(r"^\s*import\s+[A-Z][A-Za-z0-9.]*\s*$"),
      "Unqualified open import — use `import Foo (Foo); import Foo qualified`."),
     # NOT in hlint (usage-vs-definition undecidable there); backstop: GHC/review.
-    # Lookahead exempts definitions (`pure = …`, `pure x = …`) but not `==`.
+    # Definition exemption lives in exempt() — covers point-free, plain-arg,
+    # and pattern-matching instance methods (`pure (Just x) = …`, `pure [] = …`).
     ("no-pure-return",
-     re.compile(r"\b(pure|return)\b(?!\s*\w*\s*=(?!=))"),
+     re.compile(r"\b(pure|return)\b"),
      "`pure`/`return` are banned in NeoHaskell code — use `Task.yield`. "
      "(Defining them in instances is fine: `pure = ...` / `pure x = ...`.)"),
 ]
+
+# Instance-method definition shapes for pure/return: point-free, single var,
+# constructor, parenthesized pattern, list pattern — followed by `=` (not `==`).
+PURE_DEF = re.compile(r"^\s*(pure|return)\s*(\w+|\(.*?\)|\[\s*\])?\s*=(?!=)")
 
 # Multi-line pseudo-rule (checked per blob, not per line).
 CASE_BOOL_ID = "no-case-bool"
@@ -116,6 +121,8 @@ def exempt(rule_id: str, line: str, path: str) -> bool:
         return True
     if rule_id == "no-either" and path.endswith("core/core/Result.hs"):
         return True
+    if rule_id == "no-pure-return" and PURE_DEF.match(line):
+        return True
     return False
 
 
@@ -135,12 +142,16 @@ def check(tool: str, payload: dict):
                 break  # one rule per line is enough
 
     for blob in new_blobs(tool, payload):
-        if "HOOK-ALLOW" in blob:
-            continue
-        if CASE_BOOL.search(blob):
-            violations.append((CASE_BOOL_ID,
-                               "`case cond of True/False` is an anti-pattern — use if-then-else.", ""))
-            break
+        for m in CASE_BOOL.finditer(blob):
+            # Scope the escape hatch to the matched construct's own lines —
+            # a stray HOOK-ALLOW elsewhere in the edit must not silence this.
+            start = blob.rfind("\n", 0, m.start()) + 1
+            end_nl = blob.find("\n", m.end())
+            span = blob[start:(end_nl if end_nl != -1 else len(blob))]
+            if "HOOK-ALLOW" not in span:
+                violations.append((CASE_BOOL_ID,
+                                   "`case cond of True/False` is an anti-pattern — use if-then-else.", ""))
+                return violations
     return violations
 
 
