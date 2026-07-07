@@ -1,61 +1,115 @@
-# HLint configuration file
-# https://github.com/ndmitchell/hlint
-##########################
-
-# This file contains a template configuration file, which is typically
-# placed as .hlint.yaml in the root of your project
-
-# Specify additional command line arguments
+# HLint configuration — NeoHaskell dialect-first (pipeline Phase 2)
 #
+# Inverted 2026-07-07: this config ENCODES the dialect instead of merely muting
+# default hints. Three layers:
+#   1. modules: restrictions — vanilla modules allowed only in their Core
+#      wrapper / grandfathered boundary modules. `within:` lists were GENERATED
+#      from actual imports on 2026-07-07 (current usage grandfathered; NEW
+#      vanilla imports fail). Escape hatch: no Core wrapper for what you need?
+#      Add your module to `within:` WITH a justification comment and a
+#      `belongs-in:` note (the Core module the wrapper would live in).
+#      Rule of three: 3 exceptions for the same symbol = promote a primitive.
+#   2. functions: restrictions — banned partials/operators, grandfathered.
+#   3. ignores — default hlint hints that push TOWARD vanilla idioms
+#      (anti-dialect); each carries its triage verdict.
+#
+# Gate: ./dev lint (local) and .github/workflows/checks.yml (CI).
+# pure/return are NOT restricted here — instance definitions must define them;
+# the edit-time hook (.claude/hooks/dialect-guard.py) covers new-code usage.
+
 - arguments: [--color, --cpp-simple, -XQuasiQuotes]
 
-# Control which extensions/flags/modules/functions can be used
-#
-# - extensions:
-#   - default: false # all extension are banned by default
-#   - name: [PatternGuards, ViewPatterns] # only these listed extensions can be used
-#   - {name: CPP, within: CrossPlatform} # CPP can only be used in a given module
-#
-# - flags:
-#   - {name: -w, within: []} # -w is allowed nowhere
-#
-# - modules:
-#   - {name: [Data.Set, Data.HashSet], as: Set} # if you import Data.Set qualified, it must be as 'Set'
-#   - {name: Control.Arrow, within: []} # Certain modules are banned entirely
-#
-# - functions:
-#   - {name: (.), within: []} # Cannot use (.) at all
+# --- 1. Module restrictions (vanilla -> Core wrapper) ------------------------
+- modules:
+    # Core Text
+    - {name: [Data.Text, Data.Text.IO, Data.Text.Encoding, Data.Text.Lazy, Data.Text.Lazy.Encoding, Data.Text.Internal.Search],
+       within: [Auth.Jwt, Auth.MiddlewareSpec, Basics, Config.TH, Console, Decimal, File, Json, Log, NeoHaskell.LSP.State, Service.Transport.Mcp.Protocol, Service.Transport.WebSpec, Task, Test.Auth.Jwt.Core, Text, ToText, Uuid],
+       message: "Use Core `Text` (import Text qualified). New exceptions need a justification + belongs-in note here."}
+    # Core Char
+    - {name: [Data.Char],
+       within: [Auth.UrlValidation, Char, Config.TH, Decimal, Layout.Internal.Render, NeoQL.Parser, Service.FileUpload.ContentDedupSpec, Service.Integration.Selection],
+       message: "Use Core `Char`. New exceptions need a justification + belongs-in note here."}
+    # Array/LinkedList
+    - {name: [Data.List],
+       within: [Auth.Hostname, ConcurrentMap, Http.ClientSpec, LinkedList, Parser.Internal.Error, Service.CommandExecutor.TH, Service.Integration.AdapterSpec, Service.Integration.Selection, Service.Integration.TestFixtures, Service.Query.TH, Service.Transport.Web, Test.Service.EventStore.Subscriptions.Spec, Version],
+       message: "Use Core `Array` or `LinkedList`. New exceptions need a justification + belongs-in note here."}
+    # Core Map
+    - {name: [Data.Map, Data.Map.Strict],
+       within: [Auth.Jwt, Main, Map, NeoHaskell.LSP.Handlers, NeoHaskell.LSP.State, Service.Integration.DispatchRegistry],
+       message: "Use Core `Map`. New exceptions need a justification + belongs-in note here."}
+    # Core Maybe
+    - {name: [Data.Maybe],
+       within: [Config.BuilderSpec, Config.InputValidationSpec, Config.TH, Integration.Oura.SyncAllSpec, LinkedList, Maybe, Service.Integration.Selection],
+       message: "Use Core `Maybe`. New exceptions need a justification + belongs-in note here."}
+    # Result
+    - {name: [Data.Either],
+       within: [AsyncTask, Auth.OAuth2.StateToken, Auth.UrlValidation, Command, Config, Config.THSpec, Directory, Environment, Http.Client, Http.Client.Internal, Json, NeoQL.Parser, Parser, Parser.Internal, RedactedSpec, Service.Integration.Dispatcher, Task, TaskSpec],
+       message: "Use `Result err val`, never Either. New exceptions need a justification + belongs-in note here."}
+    # Core Set
+    - {name: [Data.Set],
+       within: [Parser, Parser.Internal.Error, Set, SetSpec],
+       message: "Use Core `Set`. New exceptions need a justification + belongs-in note here."}
+    # Array (vector)
+    - {name: [Data.Vector, Data.Vector.Mutable],
+       within: [Array, Collection, Service.EventStore.Postgres.Sessions],
+       message: "Use Core `Array`. New exceptions need a justification + belongs-in note here."}
+    # Core IO/Console/File
+    - {name: [System.IO],
+       within: [Auth.OAuth2.Client, Auth.UrlValidation, Http.Client, Http.Client.Internal, Main, NeoHaskell.LSP.Handlers, Service.Application, Service.ApplicationSpec, Service.Transport.Mcp],
+       message: "Use Core `IO`/`Console`/`File`. New exceptions need a justification + belongs-in note here."}
+    # Environment
+    - {name: [System.Environment],
+       within: [Command, Config, Console, Environment, Log, Main, Service.Integration.Selection],
+       message: "Use Core `Environment`. New exceptions need a justification + belongs-in note here."}
+    # Directory/Path
+    - {name: [System.Directory],
+       within: [Directory, Environment, File, Integration.Pdf.ExtractText.Internal, Subprocess],
+       message: "Use Core `Directory`/`Path`. New exceptions need a justification + belongs-in note here."}
+    # Json
+    - {name: [Data.Aeson, Data.Aeson.Key, Data.Aeson.KeyMap, Data.Aeson.Types, Data.Aeson.Encoding],
+       within: [Auth.Config, Auth.Jwt, Auth.OAuth2.Types, Basics, Command, Config.TH, Config.THSpec, Decimal, DecimalSpec, Integration, Json, NeoQL.Execute, Redacted, RedactedSpec, Schema.JsonSchema, Schema.OpenApi, Service.FileUpload.Core, Service.FileUpload.Routes, Service.Query.PaginationSpec, Service.TH.Boilerplate, Service.Transport.Mcp.JsonRpc, Service.Transport.Mcp.Protocol, Service.Transport.Web, Service.Transport.Web.HealthCheckSpec, Service.Transport.Web.ReadinessRouteSpec, Set, Test.Auth.Jwt.Core],
+       message: "Use Core `Json`. New exceptions need a justification + belongs-in note here."}
+    # no GHC.Base
+    - {name: [GHC.Base],
+       within: [Basics, Service.CommandExecutor.TH, Service.OutboundIntegration.TH, Service.Query.TH, TypeName],
+       message: "Never import GHC internals — use Core/Basics. New exceptions need a justification + belongs-in note here."}
 
-# Add custom hints for this project
-#
-# Will suggest replacing "wibbleMany [myvar]" with "wibbleOne myvar"
-# - error: {lhs: "wibbleMany [x]", rhs: wibbleOne x}
-# - error: {lhs: "[x]", rhs: Array.wrap x}
+# --- 2. Function restrictions ------------------------------------------------
+- functions:
+    - {name: fromJust, within: [], message: "No partial functions — pattern match or use Maybe.withDefault"}
+    - {name: undefined, within: [Basics, Schema, Service.CommandExecutor.TH, Test.CompileTime, TypeName], message: "No undefined — use typed holes while developing, Task.throw at runtime"}
+    # NOTE: `error` is deliberately NOT restricted — hlint matches bare names,
+    # colliding with Log.error, record fields, etc. (101 false hits on triage).
+    # NoImplicitPrelude already fences Prelude.error; the edit-time hook catches
+    # `error "` textually in new code.
 
-# The hints are named by the string they display in warning messages.
-# For example, if you see a warning starting like
-#
-# Main.hs:116:51: Warning: Redundant ==
-#
-# You can refer to that hint with `{name: Redundant ==}` (see below).
+# --- 3. Teaching rewrite hints -----------------------------------------------
+- error: {lhs: "a $ b", rhs: "b |> a", name: "NeoHaskell: use |> pipelines, never $"}
 
-# Turn on hints that are off by default
-#
-# Ban "module X(module X) where", to require a real export list
-# - warn: {name: Use explicit module export list}
-#
-# Replace a $ b $ c with a . b $ c
-# - group: {name: dollar, enabled: true}
-#
-# Generalise map to fmap, ++ to <>
-# - group: {name: generalise, enabled: true}
-#
-# Warn on use of partial functions
-# - group: {name: partial, enabled: true}
-
-# Ignore some builtin hints
-# - ignore: {name: Use let}
-# - ignore: {name: Use const, within: SpecialModule} # Only within certain modules
+# --- 4. Default hints that fight the dialect (triage 2026-07-07) --------------
+# Each verdict: why the DEFAULT hint is wrong for NeoHaskell.
+- ignore: {name: Use lambda-case}          # pushes \case; dialect wants explicit `case x of` (50 hits)
+- ignore: {name: Redundant lambda}         # pushes point-free; dialect prefers explicit lambdas (17)
+- ignore: {name: Use isDigit}              # pushes Data.Char; use Core Char (11)
+- ignore: {name: Use isAsciiUpper}         # same (5)
+- ignore: {name: Use isAsciiLower}         # same (3)
+- ignore: {name: Replace case with fromMaybe} # pushes Data.Maybe combinators over explicit case (9)
+- ignore: {name: Use first}                # pushes Bifunctor; dialect uses explicit patterns (5)
+- ignore: {name: Use snd}                  # pushes accessors over patterns (3)
+- ignore: {name: Use fst}                  # same (2)
+- ignore: {name: Use tuple-section}        # TupleSections idiom, anti-dialect (3)
+- ignore: {name: Use unless}               # Control.Monad vanilla (2)
+- ignore: {name: Use id}                   # neutral, 1 occurrence — revisit
+- ignore: {name: Use guards}               # dialect prefers explicit if/case over guards (1)
+- ignore: {name: Use otherwise}            # guards-related, same verdict (1)
+- ignore: {name: Use record patterns}      # dialect prefers explicit fields (1)
+- ignore: {name: Use list comprehension}   # dialect prefers Array.map/takeIf pipelines (1)
+- ignore: {name: Use infix}                # backtick infix is anti-pipeline (1)
+- ignore: {name: Redundant as}             # hygiene, 1 occurrence — revisit
+- ignore: {name: Use fewer imports}        # hygiene, 1 occurrence — revisit
+- ignore: {name: Unused LANGUAGE pragma}   # hygiene, 1 occurrence — revisit
+- ignore: {name: Redundant if}             # real smell, 1 occurrence — revisit after Phase 2
+# Pre-existing ignores (kept; same anti-dialect rationale):
 - ignore: { name: Eta reduce }
 - ignore: { name: Redundant bracket }
 - ignore: { name: Use newtype instead of data }
@@ -63,16 +117,10 @@
 - ignore: { name: Avoid lambda using `infix` }
 - ignore: { name: Avoid lambda }
 - ignore: { name: Use /= }
-- ignore: {name: Use isNothing}
+- ignore: { name: Use isNothing }
 - ignore: { name: Use <$> }
 - ignore: { name: Replace case with maybe }
 - ignore: { name: Use when }
-- ignore: { name: Use lambda case }
 - ignore: { name: Use bimap }
 - ignore: { name: Use uncurry }
 - ignore: { name: Redundant id }
-# Define some custom infix operators
-# - fixity: infixr 3 ~^#^~
-
-# To generate a suitable file for HLint do:
-# $ hlint --default > .hlint.yaml

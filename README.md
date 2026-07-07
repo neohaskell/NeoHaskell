@@ -74,16 +74,17 @@ This project uses the fourmolu formatter for consistent Haskell code styling. Wh
 ## Linting
 
 This project uses hlint, it will automatically be run in VSCode by the recommended extension.
-To run manually:
+To run manually (same paths and config as the CI gate):
 
 ```sh
-hlint .
+./dev lint
 ```
 
-> ⚠ The current hlint configuration does not yet encode NeoHaskell's dialect
-> rules and does not run in CI — don't treat its output as style guidance.
-> The dialect-first rebuild is tracked in
-> [#715](https://github.com/neohaskell/NeoHaskell/issues/715) (Phase 2).
+> Since 2026-07-07 the hlint config is **dialect-first**: it encodes
+> NeoHaskell's style rules (vanilla modules restricted to their Core wrappers,
+> banned partials, `$` → `|>` teaching hints) and runs as a CI gate.
+> `./dev lint` runs the exact same check locally. No Core wrapper for what you
+> need? The escape hatch is documented at the top of `.hlint.yaml`.
 
 ## Fast inner loop
 

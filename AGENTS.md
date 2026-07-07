@@ -54,7 +54,17 @@ Single entrypoint: **`./dev`** (no-args lists all verbs; same tools for humans a
 
 - Test discovery: **only `nhcore-test` uses hspec-discover**; `nhcore-test-core`, `-auth`, `-service`, `-integration` register specs manually in their `Main.hs` — new spec modules must be added there AND to the cabal `other-modules`.
 - Postgres-dependent specs self-gate on `POSTGRES_AVAILABLE=true`.
-- ⚠ **hlint does NOT run in CI**, and the current `.hlint.yaml` does not encode NeoHaskell style — do not treat hlint output as style guidance until the Phase 2 rebuild lands.
+
+## Dialect enforcement (Phase 2, live since 2026-07-07)
+
+Three layers, in feedback order:
+1. **Edit hook** (`.claude/hooks/dialect-guard.py`, ~50ms): rejects `$`, `where`-as-let-substitute (declaration `where` — module/class/instance/data/GADT/type-family — is fine), `Either`, `pure`/`return`, vanilla/unqualified imports, `case`-of-Bool — on added lines, quoting the rule. False positive? `-- HOOK-ALLOW: <reason>` on the line. Adding/changing rules → `neohaskell-dialect-rules` skill (case coverage is CI-enforced via `./dev doctor`).
+2. **`./dev lint`** (seconds; CI gate in `checks.yml`): dialect-first `.hlint.yaml` — vanilla modules restricted to Core wrappers + grandfathered boundaries (generated 2026-07-07).
+3. **GHC** (`./dev check`): `NoImplicitPrelude`.
+
+**Escape hatch:** no Core wrapper for what you need? Add your module to the `.hlint.yaml` `within:` list with a justification + `belongs-in:` note. Rule of three: third exception for a symbol = promote a Core primitive. Never reimplement a banned thing with allowed vocabulary.
+
+Implementing any `.hs` change? Use the `neohaskell-implementer` skill (copy-adapt discipline + repair protocol).
 
 ## Non-negotiable
 
