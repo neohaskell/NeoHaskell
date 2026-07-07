@@ -19,4 +19,7 @@ echo "codemap: generating hoogle signatures (cabal haddock)…"
   --haddock-hoogle --project-file="${CODEMAP_PROJECT:-cabal.project.dev}" -v0 >/dev/null
 
 echo "codemap: splitting + rendering…"
-exec "${SCRIPT_DIR}/with-toolchain" python3 codemap/generate.py
+"${SCRIPT_DIR}/with-toolchain" python3 codemap/generate.py
+
+echo "codemap: refreshing ./dev api hoogle databases…"
+exec "${SCRIPT_DIR}/build-hoogle-dbs"

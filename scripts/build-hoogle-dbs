@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+#
+# Build the two ./dev api databases (pipeline Phase 4):
+#   .hoogle-neo.hoo     — nhcore + nhintegrations only (pass 1, the dialect)
+#   .hoogle-vanilla.hoo — ghc-pkg world: deps + boot libs (pass 2, fallback)
+#
+# Called by ./dev codemap (after signature regeneration) and lazily by
+# ./dev api when the databases are missing. Local artifacts, gitignored.
+#
+set -euo pipefail
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+cd "${SCRIPT_DIR}/.."
+
+"${SCRIPT_DIR}/with-toolchain" bash -euo pipefail -c '
+  NHTXT=$(find dist-newstyle -name "nhcore.txt" -path "*doc*" | sort | tail -1)
+  INTTXT=$(find dist-newstyle -name "nhintegrations.txt" -path "*doc*" | sort | tail -1)
+  if [ -z "${NHTXT}" ] || [ -z "${INTTXT}" ]; then
+    echo "build-hoogle-dbs: hoogle txts missing — run ./dev codemap first" >&2
+    exit 2
+  fi
+  mkdir -p .hoogle-src
+  cp "${NHTXT}" "${INTTXT}" .hoogle-src/
+  hoogle generate --database=.hoogle-neo.hoo --local=.hoogle-src >/dev/null
+  hoogle generate --database=.hoogle-vanilla.hoo --local >/dev/null
+'
+echo "build-hoogle-dbs: .hoogle-neo.hoo + .hoogle-vanilla.hoo ready"

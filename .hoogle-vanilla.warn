@@ -1,0 +1,375 @@
+Cabal-syntax:90:failed to parse: ($dmpack) :: (Newtype o n, Coercible o n) => o -> n
+Cabal-syntax:92:failed to parse: ($dmunpack) :: (Newtype o n, Coercible n o) => n -> o
+Cabal-syntax:138:failed to parse: typeRep :: forall {k} proxy (a :: k). Typeable a => proxy a -> TypeRep
+Cabal-syntax:281:failed to parse: ($dmstructure) :: (Structured a, Generic a, GStructured (Rep a)) => Proxy a -> Structure
+Cabal-syntax:301:failed to parse: nominalStructure :: forall {k} (a :: k). Typeable a => Proxy a -> Structure
+Cabal-syntax:302:failed to parse: containerStructure :: forall {k} (f :: Type -> k) a. (Typeable f, Structured a) => Proxy (f a) -> Structure
+Cabal-syntax:696:failed to parse: class a ~# b => (a :: k) ~ (b :: k)
+Cabal-syntax:4087:failed to parse: typeRep :: forall {k} proxy (a :: k). Typeable a => proxy a -> TypeRep
+Cabal-syntax:4255:failed to parse: ($dmrnf) :: (NFData a, Generic a, GNFData Zero (Rep a)) => a -> ()
+Cabal-syntax:4297:failed to parse: ($dmput) :: (Binary t, Generic t, GBinaryPut (Rep t)) => t -> Put
+Cabal-syntax:4301:failed to parse: ($dmget) :: (Binary t, Generic t, GBinaryGet (Rep t)) => Get t
+Cabal-syntax:7298:failed to parse: type Getting r s a = LensLike Const r :: Type -> Type s s a a
+Cabal-syntax:7299:failed to parse: type AGetter s a = LensLike Const a :: Type -> Type s s a a
+Cabal-syntax:13865:failed to parse:     type Key a;
+Cabal-syntax:13866:failed to parse: }
+base:587:failed to parse: type HasCallStack = ?callStack :: CallStack
+base:1937:failed to parse: rightSection :: forall {n :: Multiplicity} {o :: Multiplicity} a b c. (a %n -> b %o -> c) -> b %o -> a %n -> c
+base:1938:failed to parse: leftSection :: forall {n :: Multiplicity} a b. (a %n -> b) -> a %n -> b
+base:3837:failed to parse: data [] a
+base:8968:failed to parse: class a ~# b => (a :: k) ~ (b :: k)
+base:8969:failed to parse: infix 4 ~
+base:8981:failed to parse: class a ~# b => (a :: k0) ~~ (b :: k1)
+base:8990:failed to parse: Refl :: forall {k} (a :: k). a :~: a
+base:8997:failed to parse: HRefl :: forall {k1} (a :: k1). a :~~: a
+base:9001:failed to parse: sym :: forall {k} (a :: k) (b :: k). (a :~: b) -> b :~: a
+base:9004:failed to parse: trans :: forall {k} (a :: k) (b :: k) (c :: k). (a :~: b) -> (b :~: c) -> a :~: c
+base:9010:failed to parse: gcastWith :: forall {k} (a :: k) (b :: k) r. (a :~: b) -> (a ~ b => r) -> r
+base:9013:failed to parse: apply :: forall {k1} {k2} (f :: k1 -> k2) (g :: k1 -> k2) (a :: k1) (b :: k1). (f :~: g) -> (a :~: b) -> f a :~: g b
+base:9016:failed to parse: inner :: forall {k1} {k2} (f :: k1 -> k2) (a :: k1) (g :: k1 -> k2) (b :: k1). (f a :~: g b) -> a :~: b
+base:9020:failed to parse: outer :: forall {k1} {k2} (f :: k1 -> k2) (a :: k1) (g :: k1 -> k2) (b :: k1). (f a :~: g b) -> f :~: g
+base:9054:failed to parse: instance forall k1 k2 (a :: k1) (b :: k2). (a GHC.Types.~~ b) => GHC.Enum.Bounded (a Data.Type.Equality.:~~: b)
+base:9056:failed to parse: instance forall k1 k2 (a :: k1) (b :: k2). (a GHC.Types.~~ b) => GHC.Enum.Enum (a Data.Type.Equality.:~~: b)
+base:9062:failed to parse: instance forall k1 k2 (a :: k1) (b :: k2). (a GHC.Types.~~ b) => GHC.Read.Read (a Data.Type.Equality.:~~: b)
+base:9080:failed to parse: Coercion :: forall {k} (a :: k) (b :: k). Coercible a b => Coercion a b
+base:9086:failed to parse: gcoerceWith :: forall {k} (a :: k) (b :: k) r. Coercion a b -> (Coercible a b => r) -> r
+base:9089:failed to parse: sym :: forall {k} (a :: k) (b :: k). Coercion a b -> Coercion b a
+base:9092:failed to parse: trans :: forall {k} (a :: k) (b :: k) (c :: k). Coercion a b -> Coercion b c -> Coercion a c
+base:9095:failed to parse: repr :: forall {k} (a :: k) (b :: k). (a :~: b) -> Coercion a b
+base:9136:failed to parse: (<<<) :: forall {k} cat (b :: k) (c :: k) (a :: k). Category cat => cat b c -> cat a b -> cat a c
+base:9140:failed to parse: (>>>) :: forall {k} cat (a :: k) (b :: k) (c :: k). Category cat => cat a b -> cat b c -> cat a c
+base:11206:failed to parse: unsafeEqualityProof :: forall {k} (a :: k) (b :: k). UnsafeEquality a b
+base:11217:failed to parse: UnsafeRefl :: forall {k} (a :: k). UnsafeEquality a a
+base:12244:failed to parse: LTI :: forall {k} (a :: k) (b :: k). Compare a b ~ 'LT => OrderingI a b
+base:12245:failed to parse: EQI :: forall {k} (a :: k). Compare a a ~ 'EQ => OrderingI a a
+base:12246:failed to parse: GTI :: forall {k} (a :: k) (b :: k). Compare a b ~ 'GT => OrderingI a b
+base:12249:failed to parse: type (x :: t) <= (y :: t) = Assert x <=? y LeErrMsg x y :: Constraint
+base:12257:failed to parse: type (x :: t) >= (y :: t) = Assert x >=? y GeErrMsg x y :: Constraint
+base:12265:failed to parse: type (x :: t) > (y :: t) = Assert x >? y GtErrMsg x y :: Constraint
+base:12273:failed to parse: type (x :: t) < (y :: t) = Assert x <? y LtErrMsg x y :: Constraint
+base:12387:failed to parse: type (x :: t) <= (y :: t) = Assert x <=? y LeErrMsg x y :: Constraint
+base:12544:failed to parse: LTI :: forall {k} (a :: k) (b :: k). Compare a b ~ 'LT => OrderingI a b
+base:12545:failed to parse: EQI :: forall {k} (a :: k). Compare a a ~ 'EQ => OrderingI a a
+base:12546:failed to parse: GTI :: forall {k} (a :: k) (b :: k). Compare a b ~ 'GT => OrderingI a b
+base:12718:failed to parse: type (x :: t) <= (y :: t) = Assert x <=? y LeErrMsg x y :: Constraint
+base:12898:failed to parse: type UAddr = URec Ptr () :: k -> Type
+base:12901:failed to parse: type UChar = URec Char :: k -> Type
+base:12904:failed to parse: type UDouble = URec Double :: k -> Type
+base:12907:failed to parse: type UFloat = URec Float :: k -> Type
+base:12910:failed to parse: type UInt = URec Int :: k -> Type
+base:12913:failed to parse: type UWord = URec Word :: k -> Type
+base:12916:failed to parse: type Rec0 = K1 R :: Type -> k -> Type
+base:12922:failed to parse: type D1 = M1 D :: Meta -> k -> Type -> k -> Type
+base:12925:failed to parse: type C1 = M1 C :: Meta -> k -> Type -> k -> Type
+base:12928:failed to parse: type S1 = M1 S :: Meta -> k -> Type -> k -> Type
+base:13095:failed to parse:     -- | Generic representation type
+base:13096:failed to parse:     type Rep a :: Type -> Type;
+base:13097:failed to parse: }
+base:13117:failed to parse:     -- | Generic representation type
+base:13118:failed to parse:     type Rep1 (f :: k -> Type) :: k -> Type;
+base:13119:failed to parse: }
+base:13210:failed to parse: Generically1 :: forall {k} (f :: k -> Type) (a :: k). f a -> Generically1 f a
+base:18241:failed to parse: typeRep :: forall {k} (a :: k). Typeable a => TypeRep a
+base:18263:failed to parse: Refl :: forall {k} (a :: k). a :~: a
+base:18270:failed to parse: HRefl :: forall {k1} (a :: k1). a :~~: a
+base:18349:failed to parse: typeRepTyCon :: forall {k} (a :: k). TypeRep a -> TyCon
+base:18353:failed to parse: rnfTypeRep :: forall {k} (a :: k). TypeRep a -> ()
+base:18363:failed to parse: splitApps :: forall {k} (a :: k). TypeRep a -> (TyCon, [SomeTypeRep])
+base:18371:failed to parse: someTypeRep :: forall {k} proxy (a :: k). Typeable a => proxy a -> SomeTypeRep
+base:18430:failed to parse: typeRep :: forall {k} proxy (a :: k). Typeable a => proxy a -> TypeRep
+base:18438:failed to parse: Refl :: forall {k} (a :: k). a :~: a
+base:18445:failed to parse: HRefl :: forall {k1} (a :: k1). a :~~: a
+base:18452:failed to parse: eqT :: forall {k} (a :: k) (b :: k). (Typeable a, Typeable b) => Maybe (a :~: b)
+base:18455:failed to parse: heqT :: forall {k1} {k2} (a :: k1) (b :: k2). (Typeable a, Typeable b) => Maybe (a :~~: b)
+base:18458:failed to parse: decT :: forall {k} (a :: k) (b :: k). (Typeable a, Typeable b) => Either ((a :~: b) -> Void) (a :~: b)
+base:18461:failed to parse: hdecT :: forall {k1} {k2} (a :: k1) (b :: k2). (Typeable a, Typeable b) => Either ((a :~~: b) -> Void) (a :~~: b)
+base:18464:failed to parse: gcast :: forall {k} (a :: k) (b :: k) c. (Typeable a, Typeable b) => c a -> Maybe (c b)
+base:18467:failed to parse: gcast1 :: forall {k1} {k2} c (t :: k2 -> k1) (t' :: k2 -> k1) (a :: k2). (Typeable t, Typeable t') => c (t a) -> Maybe (c (t' a))
+base:18470:failed to parse: gcast2 :: forall {k1} {k2} {k3} c (t :: k2 -> k3 -> k1) (t' :: k2 -> k3 -> k1) (a :: k2) (b :: k3). (Typeable t, Typeable t') => c (t a b) -> Maybe (c (t' a b))
+base:25869:failed to parse: type HasCallStack = ?callStack :: CallStack
+base:28622:failed to parse: (>>>) :: forall {k} cat (a :: k) (b :: k) (c :: k). Category cat => cat a b -> cat b c -> cat a c
+base:28626:failed to parse: (<<<) :: forall {k} cat (b :: k) (c :: k) (a :: k). Category cat => cat b c -> cat a b -> cat a c
+base:33182:failed to parse:     -- | The <a>Item</a> type function returns the type of items of the
+base:33183:failed to parse:     --   structure <tt>l</tt>.
+base:33184:failed to parse:     type Item l;
+base:33185:failed to parse: }
+base:38065:failed to parse: class a ~# b => (a :: k) ~ (b :: k)
+base:38066:failed to parse: infix 4 ~
+base:38089:failed to parse: typeRepFingerprint :: forall {k} (a :: k). TypeRep a -> Fingerprint
+base:40970:failed to parse: class forall a. () => Functor p a => Bifunctor (p :: Type -> Type -> Type)
+base:43754:failed to parse: instance forall i j (a :: i) (b :: j). (Data.Typeable.Internal.Typeable i, Data.Typeable.Internal.Typeable j, Data.Typeable.Internal.Typeable a, Data.Typeable.Internal.Typeable b, a GHC.Types.~~ b) => Data.Data.Data (a Data.Type.Equality.:~~: b)
+base:44018:failed to parse: data [] a
+base:44034:failed to parse: class a ~# b => (a :: k0) ~~ (b :: k1)
+base:44040:failed to parse: class a ~# b => (a :: k) ~ (b :: k)
+base:44041:failed to parse: infix 4 ~
+base:44248:failed to parse: type ZeroBitRep = 'TupleRep '[] :: [RuntimeRep]
+base:48363:failed to parse: addrToAny# :: forall {l :: Levity} (a :: TYPE ('BoxedRep l)). Addr# -> (# a #)
+base:48376:failed to parse: keepAlive# :: forall {l :: Levity} {r :: RuntimeRep} (a :: TYPE ('BoxedRep l)) d (b :: TYPE r). a -> State# d -> (State# d -> b) -> b
+base:48389:failed to parse: reallyUnsafePtrEquality# :: forall {l :: Levity} {k :: Levity} (a :: TYPE ('BoxedRep l)) (b :: TYPE ('BoxedRep k)). a -> b -> Int#
+base:48450:failed to parse: stableNameToInt# :: forall {l :: Levity} (a :: TYPE ('BoxedRep l)). StableName# a -> Int#
+base:48451:failed to parse: makeStableName# :: forall {l :: Levity} (a :: TYPE ('BoxedRep l)). a -> State# RealWorld -> (# State# RealWorld, StableName# a #)
+base:48452:failed to parse: eqStablePtr# :: forall {l :: Levity} (a :: TYPE ('BoxedRep l)). StablePtr# a -> StablePtr# a -> Int#
+base:48453:failed to parse: deRefStablePtr# :: forall {l :: Levity} (a :: TYPE ('BoxedRep l)). StablePtr# a -> State# RealWorld -> (# State# RealWorld, a #)
+base:48454:failed to parse: makeStablePtr# :: forall {l :: Levity} (a :: TYPE ('BoxedRep l)). a -> State# RealWorld -> (# State# RealWorld, StablePtr# a #)
+base:48455:failed to parse: touch# :: forall {l :: Levity} (a :: TYPE ('BoxedRep l)) d. a -> State# d -> State# d
+base:48463:failed to parse: finalizeWeak# :: forall {l :: Levity} (a :: TYPE ('BoxedRep l)) b. Weak# a -> State# RealWorld -> (# State# RealWorld, Int#, State# RealWorld -> (# State# RealWorld, b #) #)
+base:48464:failed to parse: deRefWeak# :: forall {l :: Levity} (a :: TYPE ('BoxedRep l)). Weak# a -> State# RealWorld -> (# State# RealWorld, Int#, a #)
+base:48472:failed to parse: addCFinalizerToWeak# :: forall {k :: Levity} (b :: TYPE ('BoxedRep k)). Addr# -> Addr# -> Int# -> Addr# -> Weak# b -> State# RealWorld -> (# State# RealWorld, Int# #)
+base:48473:failed to parse: mkWeakNoFinalizer# :: forall {l :: Levity} {k :: Levity} (a :: TYPE ('BoxedRep l)) (b :: TYPE ('BoxedRep k)). a -> b -> State# RealWorld -> (# State# RealWorld, Weak# b #)
+base:48481:failed to parse: mkWeak# :: forall {l :: Levity} {k :: Levity} (a :: TYPE ('BoxedRep l)) (b :: TYPE ('BoxedRep k)) c. a -> b -> (State# RealWorld -> (# State# RealWorld, c #)) -> State# RealWorld -> (# State# RealWorld, Weak# b #)
+base:48510:failed to parse: forkOn# :: forall {q :: RuntimeRep} (a :: TYPE q). Int# -> (State# RealWorld -> (# State# RealWorld, a #)) -> State# RealWorld -> (# State# RealWorld, ThreadId# #)
+base:48511:failed to parse: fork# :: forall {q :: RuntimeRep} (a :: TYPE q). (State# RealWorld -> (# State# RealWorld, a #)) -> State# RealWorld -> (# State# RealWorld, ThreadId# #)
+base:48525:failed to parse: writeIOPort# :: forall {l :: Levity} d (a :: TYPE ('BoxedRep l)). IOPort# d a -> a -> State# d -> (# State# d, Int# #)
+base:48531:failed to parse: readIOPort# :: forall {l :: Levity} d (a :: TYPE ('BoxedRep l)). IOPort# d a -> State# d -> (# State# d, a #)
+base:48534:failed to parse: newIOPort# :: forall {l :: Levity} d (a :: TYPE ('BoxedRep l)). State# d -> (# State# d, IOPort# d a #)
+base:48537:failed to parse: isEmptyMVar# :: forall {l :: Levity} d (a :: TYPE ('BoxedRep l)). MVar# d a -> State# d -> (# State# d, Int# #)
+base:48542:failed to parse: tryReadMVar# :: forall {l :: Levity} d (a :: TYPE ('BoxedRep l)). MVar# d a -> State# d -> (# State# d, Int#, a #)
+base:48547:failed to parse: readMVar# :: forall {l :: Levity} d (a :: TYPE ('BoxedRep l)). MVar# d a -> State# d -> (# State# d, a #)
+base:48551:failed to parse: tryPutMVar# :: forall {l :: Levity} d (a :: TYPE ('BoxedRep l)). MVar# d a -> a -> State# d -> (# State# d, Int# #)
+base:48555:failed to parse: putMVar# :: forall {l :: Levity} d (a :: TYPE ('BoxedRep l)). MVar# d a -> a -> State# d -> State# d
+base:48560:failed to parse: tryTakeMVar# :: forall {l :: Levity} d (a :: TYPE ('BoxedRep l)). MVar# d a -> State# d -> (# State# d, Int#, a #)
+base:48564:failed to parse: takeMVar# :: forall {l :: Levity} d (a :: TYPE ('BoxedRep l)). MVar# d a -> State# d -> (# State# d, a #)
+base:48567:failed to parse: newMVar# :: forall {l :: Levity} d (a :: TYPE ('BoxedRep l)). State# d -> (# State# d, MVar# d a #)
+base:48570:failed to parse: writeTVar# :: forall {l :: Levity} d (a :: TYPE ('BoxedRep l)). TVar# d a -> a -> State# d -> State# d
+base:48574:failed to parse: readTVarIO# :: forall {l :: Levity} d (a :: TYPE ('BoxedRep l)). TVar# d a -> State# d -> (# State# d, a #)
+base:48578:failed to parse: readTVar# :: forall {l :: Levity} d (a :: TYPE ('BoxedRep l)). TVar# d a -> State# d -> (# State# d, a #)
+base:48581:failed to parse: newTVar# :: forall {l :: Levity} (a :: TYPE ('BoxedRep l)) d. a -> State# d -> (# State# d, TVar# d a #)
+base:48582:failed to parse: catchSTM# :: forall {l :: Levity} (a :: TYPE ('BoxedRep l)) b. (State# RealWorld -> (# State# RealWorld, a #)) -> (b -> State# RealWorld -> (# State# RealWorld, a #)) -> State# RealWorld -> (# State# RealWorld, a #)
+base:48583:failed to parse: catchRetry# :: forall {l :: Levity} (a :: TYPE ('BoxedRep l)). (State# RealWorld -> (# State# RealWorld, a #)) -> (State# RealWorld -> (# State# RealWorld, a #)) -> State# RealWorld -> (# State# RealWorld, a #)
+base:48584:failed to parse: retry# :: forall {l :: Levity} (a :: TYPE ('BoxedRep l)). State# RealWorld -> (# State# RealWorld, a #)
+base:48585:failed to parse: atomically# :: forall {l :: Levity} (a :: TYPE ('BoxedRep l)). (State# RealWorld -> (# State# RealWorld, a #)) -> State# RealWorld -> (# State# RealWorld, a #)
+base:48588:failed to parse: control0# :: forall {r :: RuntimeRep} a (b :: TYPE r). PromptTag# a -> (((State# RealWorld -> (# State# RealWorld, b #)) -> State# RealWorld -> (# State# RealWorld, a #)) -> State# RealWorld -> (# State# RealWorld, a #)) -> State# RealWorld -> (# State# RealWorld, b #)
+base:48603:failed to parse: unmaskAsyncExceptions# :: forall {q :: RuntimeRep} (a :: TYPE q). (State# RealWorld -> (# State# RealWorld, a #)) -> State# RealWorld -> (# State# RealWorld, a #)
+base:48612:failed to parse: maskUninterruptible# :: forall {q :: RuntimeRep} (a :: TYPE q). (State# RealWorld -> (# State# RealWorld, a #)) -> State# RealWorld -> (# State# RealWorld, a #)
+base:48621:failed to parse: maskAsyncExceptions# :: forall {q :: RuntimeRep} (a :: TYPE q). (State# RealWorld -> (# State# RealWorld, a #)) -> State# RealWorld -> (# State# RealWorld, a #)
+base:48622:failed to parse: raiseIO# :: forall {l :: Levity} {r :: RuntimeRep} (a :: TYPE ('BoxedRep l)) (b :: TYPE r). a -> State# RealWorld -> (# State# RealWorld, b #)
+base:48625:failed to parse: raiseDivZero# :: forall {r :: RuntimeRep} (b :: TYPE r). (# #) -> b
+base:48628:failed to parse: raiseOverflow# :: forall {r :: RuntimeRep} (b :: TYPE r). (# #) -> b
+base:48631:failed to parse: raiseUnderflow# :: forall {r :: RuntimeRep} (b :: TYPE r). (# #) -> b
+base:48634:failed to parse: raise# :: forall {l :: Levity} {r :: RuntimeRep} (a :: TYPE ('BoxedRep l)) (b :: TYPE r). a -> b
+base:48642:failed to parse: catch# :: forall {q :: RuntimeRep} {k :: Levity} (a :: TYPE q) (b :: TYPE ('BoxedRep k)). (State# RealWorld -> (# State# RealWorld, a #)) -> (b -> State# RealWorld -> (# State# RealWorld, a #)) -> State# RealWorld -> (# State# RealWorld, a #)
+base:48655:failed to parse: casMutVar# :: forall {l :: Levity} d (a :: TYPE ('BoxedRep l)). MutVar# d a -> a -> a -> State# d -> (# State# d, Int#, a #)
+base:48689:failed to parse: atomicSwapMutVar# :: forall {l :: Levity} d (a :: TYPE ('BoxedRep l)). MutVar# d a -> a -> State# d -> (# State# d, a #)
+base:48692:failed to parse: writeMutVar# :: forall {l :: Levity} d (a :: TYPE ('BoxedRep l)). MutVar# d a -> a -> State# d -> State# d
+base:48695:failed to parse: readMutVar# :: forall {l :: Levity} d (a :: TYPE ('BoxedRep l)). MutVar# d a -> State# d -> (# State# d, a #)
+base:48699:failed to parse: newMutVar# :: forall {l :: Levity} (a :: TYPE ('BoxedRep l)) d. a -> State# d -> (# State# d, MutVar# d a #)
+base:49953:failed to parse: casSmallArray# :: forall {l :: Levity} d (a :: TYPE ('BoxedRep l)). SmallMutableArray# d a -> Int# -> a -> a -> State# d -> (# State# d, Int#, a #)
+base:49961:failed to parse: thawSmallArray# :: forall {l :: Levity} (a :: TYPE ('BoxedRep l)) d. SmallArray# a -> Int# -> Int# -> State# d -> (# State# d, SmallMutableArray# d a #)
+base:49969:failed to parse: freezeSmallArray# :: forall {l :: Levity} d (a :: TYPE ('BoxedRep l)). SmallMutableArray# d a -> Int# -> Int# -> State# d -> (# State# d, SmallArray# a #)
+base:49977:failed to parse: cloneSmallMutableArray# :: forall {l :: Levity} d (a :: TYPE ('BoxedRep l)). SmallMutableArray# d a -> Int# -> Int# -> State# d -> (# State# d, SmallMutableArray# d a #)
+base:49985:failed to parse: cloneSmallArray# :: forall {l :: Levity} (a :: TYPE ('BoxedRep l)). SmallArray# a -> Int# -> Int# -> SmallArray# a
+base:49997:failed to parse: copySmallMutableArray# :: forall {l :: Levity} d (a :: TYPE ('BoxedRep l)). SmallMutableArray# d a -> Int# -> SmallMutableArray# d a -> Int# -> Int# -> State# d -> State# d
+base:50007:failed to parse: copySmallArray# :: forall {l :: Levity} (a :: TYPE ('BoxedRep l)) d. SmallArray# a -> Int# -> SmallMutableArray# d a -> Int# -> Int# -> State# d -> State# d
+base:50010:failed to parse: unsafeThawSmallArray# :: forall {l :: Levity} (a :: TYPE ('BoxedRep l)) d. SmallArray# a -> State# d -> (# State# d, SmallMutableArray# d a #)
+base:50013:failed to parse: unsafeFreezeSmallArray# :: forall {l :: Levity} d (a :: TYPE ('BoxedRep l)). SmallMutableArray# d a -> State# d -> (# State# d, SmallArray# a #)
+base:50019:failed to parse: indexSmallArray# :: forall {l :: Levity} (a :: TYPE ('BoxedRep l)). SmallArray# a -> Int# -> (# a #)
+base:50024:failed to parse: getSizeofSmallMutableArray# :: forall {l :: Levity} d (a :: TYPE ('BoxedRep l)). SmallMutableArray# d a -> State# d -> (# State# d, Int# #)
+base:50030:failed to parse: sizeofSmallMutableArray# :: forall {l :: Levity} d (a :: TYPE ('BoxedRep l)). SmallMutableArray# d a -> Int#
+base:50033:failed to parse: sizeofSmallArray# :: forall {l :: Levity} (a :: TYPE ('BoxedRep l)). SmallArray# a -> Int#
+base:50038:failed to parse: writeSmallArray# :: forall {l :: Levity} d (a :: TYPE ('BoxedRep l)). SmallMutableArray# d a -> Int# -> a -> State# d -> State# d
+base:50044:failed to parse: readSmallArray# :: forall {l :: Levity} d (a :: TYPE ('BoxedRep l)). SmallMutableArray# d a -> Int# -> State# d -> (# State# d, a #)
+base:50056:failed to parse: shrinkSmallMutableArray# :: forall {l :: Levity} d (a :: TYPE ('BoxedRep l)). SmallMutableArray# d a -> Int# -> State# d -> State# d
+base:50061:failed to parse: newSmallArray# :: forall {l :: Levity} (a :: TYPE ('BoxedRep l)) d. Int# -> a -> State# d -> (# State# d, SmallMutableArray# d a #)
+base:50076:failed to parse: casArray# :: forall {l :: Levity} d (a :: TYPE ('BoxedRep l)). MutableArray# d a -> Int# -> a -> a -> State# d -> (# State# d, Int#, a #)
+base:50084:failed to parse: thawArray# :: forall {l :: Levity} (a :: TYPE ('BoxedRep l)) d. Array# a -> Int# -> Int# -> State# d -> (# State# d, MutableArray# d a #)
+base:50092:failed to parse: freezeArray# :: forall {l :: Levity} d (a :: TYPE ('BoxedRep l)). MutableArray# d a -> Int# -> Int# -> State# d -> (# State# d, Array# a #)
+base:50100:failed to parse: cloneMutableArray# :: forall {l :: Levity} d (a :: TYPE ('BoxedRep l)). MutableArray# d a -> Int# -> Int# -> State# d -> (# State# d, MutableArray# d a #)
+base:50108:failed to parse: cloneArray# :: forall {l :: Levity} (a :: TYPE ('BoxedRep l)). Array# a -> Int# -> Int# -> Array# a
+base:50118:failed to parse: copyMutableArray# :: forall {l :: Levity} d (a :: TYPE ('BoxedRep l)). MutableArray# d a -> Int# -> MutableArray# d a -> Int# -> Int# -> State# d -> State# d
+base:50128:failed to parse: copyArray# :: forall {l :: Levity} (a :: TYPE ('BoxedRep l)) d. Array# a -> Int# -> MutableArray# d a -> Int# -> Int# -> State# d -> State# d
+base:50131:failed to parse: unsafeThawArray# :: forall {l :: Levity} (a :: TYPE ('BoxedRep l)) d. Array# a -> State# d -> (# State# d, MutableArray# d a #)
+base:50134:failed to parse: unsafeFreezeArray# :: forall {l :: Levity} d (a :: TYPE ('BoxedRep l)). MutableArray# d a -> State# d -> (# State# d, Array# a #)
+base:50145:failed to parse: indexArray# :: forall {l :: Levity} (a :: TYPE ('BoxedRep l)). Array# a -> Int# -> (# a #)
+base:50148:failed to parse: sizeofMutableArray# :: forall {l :: Levity} d (a :: TYPE ('BoxedRep l)). MutableArray# d a -> Int#
+base:50151:failed to parse: sizeofArray# :: forall {l :: Levity} (a :: TYPE ('BoxedRep l)). Array# a -> Int#
+base:50156:failed to parse: writeArray# :: forall {l :: Levity} d (a :: TYPE ('BoxedRep l)). MutableArray# d a -> Int# -> a -> State# d -> State# d
+base:50162:failed to parse: readArray# :: forall {l :: Levity} d (a :: TYPE ('BoxedRep l)). MutableArray# d a -> Int# -> State# d -> (# State# d, a #)
+base:50167:failed to parse: newArray# :: forall {l :: Levity} (a :: TYPE ('BoxedRep l)) d. Int# -> a -> State# d -> (# State# d, MutableArray# d a #)
+base:50854:failed to parse: rightSection :: forall {q :: RuntimeRep} {r :: RuntimeRep} {s :: RuntimeRep} {n :: Multiplicity} {o :: Multiplicity} (a :: TYPE q) (b :: TYPE r) (c :: TYPE s). (a %n -> b %o -> c) -> b %o -> a %n -> c
+base:50855:failed to parse: leftSection :: forall {q :: RuntimeRep} {r :: RuntimeRep} {n :: Multiplicity} (a :: TYPE q) (b :: TYPE r). (a %n -> b) -> a %n -> b
+base:50859:failed to parse: proxy# :: forall {k} (a :: k). Proxy# a
+base:50875:failed to parse: seq :: forall {r :: RuntimeRep} a (b :: TYPE r). a -> b -> b
+base:50939:failed to parse: eqStableName# :: forall {k :: Levity} {l :: Levity} (a :: TYPE ('BoxedRep k)) (b :: TYPE ('BoxedRep l)). StableName# a -> StableName# b -> Int#
+base:50942:failed to parse: sameArray# :: forall {l :: Levity} (a :: TYPE ('BoxedRep l)). Array# a -> Array# a -> Int#
+base:50945:failed to parse: sameMutableArray# :: forall {l :: Levity} s (a :: TYPE ('BoxedRep l)). MutableArray# s a -> MutableArray# s a -> Int#
+base:50948:failed to parse: sameSmallArray# :: forall {l :: Levity} (a :: TYPE ('BoxedRep l)). SmallArray# a -> SmallArray# a -> Int#
+base:50951:failed to parse: sameSmallMutableArray# :: forall {l :: Levity} s (a :: TYPE ('BoxedRep l)). SmallMutableArray# s a -> SmallMutableArray# s a -> Int#
+base:50960:failed to parse: sameMVar# :: forall {l :: Levity} s (a :: TYPE ('BoxedRep l)). MVar# s a -> MVar# s a -> Int#
+base:50963:failed to parse: sameMutVar# :: forall {l :: Levity} s (a :: TYPE ('BoxedRep l)). MutVar# s a -> MutVar# s a -> Int#
+base:50966:failed to parse: sameTVar# :: forall {l :: Levity} s (a :: TYPE ('BoxedRep l)). TVar# s a -> TVar# s a -> Int#
+base:50969:failed to parse: sameIOPort# :: forall {l :: Levity} s (a :: TYPE ('BoxedRep l)). IOPort# s a -> IOPort# s a -> Int#
+base:51035:failed to parse:     -- | The <a>Item</a> type function returns the type of items of the
+base:51036:failed to parse:     --   structure <tt>l</tt>.
+base:51037:failed to parse:     type Item l;
+base:51038:failed to parse: }
+base:51225:failed to parse: oneShot :: forall {q :: RuntimeRep} {r :: RuntimeRep} (a :: TYPE q) (b :: TYPE r). (a -> b) -> a -> b
+base:51326:failed to parse: coerce :: forall {k :: RuntimeRep} (a :: TYPE k) (b :: TYPE k). Coercible a b => a -> b
+base:51342:failed to parse: withDict :: forall {rr :: RuntimeRep} (r :: TYPE rr). WithDict cls meth => meth -> (cls => r) -> r
+base:52126:failed to parse: showFixed :: forall {k} (a :: k). HasResolution a => Bool -> Fixed a -> String
+base:52445:failed to parse: class forall a. Eq a => Eq f a => Eq1 (f :: Type -> Type)
+base:52453:failed to parse: ($dmliftEq) :: forall (f' :: Type -> Type -> Type) c a b. (Eq1 f, f ~ f' c, Eq2 f', Eq c) => (a -> b -> Bool) -> f a -> f b -> Bool
+base:52470:failed to parse: class (Eq1 f, forall a. Ord a => Ord f a) => Ord1 (f :: Type -> Type)
+base:52478:failed to parse: ($dmliftCompare) :: forall (f' :: Type -> Type -> Type) c a b. (Ord1 f, f ~ f' c, Ord2 f', Ord c) => (a -> b -> Ordering) -> f a -> f b -> Ordering
+base:52516:failed to parse: class forall a. Read a => Read f a => Read1 (f :: Type -> Type)
+base:52574:failed to parse: class forall a. Show a => Show f a => Show1 (f :: Type -> Type)
+base:52580:failed to parse: ($dmliftShowsPrec) :: forall (f' :: Type -> Type -> Type) b a. (Show1 f, f ~ f' b, Show2 f', Show b) => (Int -> a -> ShowS) -> ([a] -> ShowS) -> Int -> f a -> ShowS
+base:52593:failed to parse: class forall a. Eq a => Eq1 f a => Eq2 (f :: Type -> Type -> Type)
+base:52607:failed to parse: class (Eq2 f, forall a. Ord a => Ord1 f a) => Ord2 (f :: Type -> Type -> Type)
+base:52636:failed to parse: class forall a. Read a => Read1 f a => Read2 (f :: Type -> Type -> Type)
+base:52682:failed to parse: class forall a. Show a => Show1 f a => Show2 (f :: Type -> Type -> Type)
+binary:830:failed to parse: ($dmput) :: (Binary t, Generic t, GBinaryPut (Rep t)) => t -> Put
+binary:834:failed to parse: ($dmget) :: (Binary t, Generic t, GBinaryGet (Rep t)) => Get t
+deepseq:151:failed to parse: ($dmrnf) :: (NFData a, Generic a, GNFData Zero (Rep a)) => a -> ()
+deepseq:284:failed to parse: class forall a. NFData a => NFData f a => NFData1 (f :: Type -> Type)
+deepseq:292:failed to parse: ($dmliftRnf) :: (NFData1 f, Generic1 f, GNFData One (Rep1 f)) => (a -> ()) -> f a -> ()
+deepseq:300:failed to parse: class forall a. NFData a => NFData1 p a => NFData2 (p :: Type -> Type -> Type)
+ghc:217:failed to parse: class a ~# b => (a :: k) ~ (b :: k)
+ghc:11574:failed to parse: type HasCallStack = ?callStack :: CallStack
+ghc:12630:failed to parse:     type Line doc = (r :: Type) | r -> doc;
+ghc:12631:failed to parse: }
+ghc:14971:failed to parse:     type ElemOf set;
+ghc:14972:failed to parse: }
+ghc:14993:failed to parse:     type KeyOf (map :: Type -> Type);
+ghc:14994:failed to parse: }
+ghc:16931:failed to parse: seekBin :: forall {k} (a :: k). BinHandle -> Bin a -> IO ()
+ghc:16932:failed to parse: tellBin :: forall {k} (a :: k). BinHandle -> IO (Bin a)
+ghc:16933:failed to parse: castBin :: forall {k1} {k2} (a :: k1) (b :: k2). Bin a -> Bin b
+ghc:19789:failed to parse: RenderJs :: !JsRender doc => RenderJs doc -> JStat -> doc -> !JsRender doc => RenderJs doc -> JExpr -> doc -> !JsRender doc => RenderJs doc -> JVal -> doc -> !JsRender doc => RenderJs doc -> Ident -> doc -> RenderJs doc
+ghc:19790:failed to parse: renderJsS :: RenderJs doc -> !JsRender doc => RenderJs doc -> JStat -> doc
+ghc:19791:failed to parse: renderJsE :: RenderJs doc -> !JsRender doc => RenderJs doc -> JExpr -> doc
+ghc:19792:failed to parse: renderJsV :: RenderJs doc -> !JsRender doc => RenderJs doc -> JVal -> doc
+ghc:19793:failed to parse: renderJsI :: RenderJs doc -> !JsRender doc => RenderJs doc -> Ident -> doc
+ghc:33713:failed to parse:     type Key (m :: Type -> Type);
+ghc:33714:failed to parse: }
+ghc:35328:failed to parse:     type Key (m :: Type -> Type);
+ghc:35329:failed to parse: }
+ghc:41353:failed to parse:     type Key (m :: Type -> Type);
+ghc:41354:failed to parse: }
+ghc:47363:failed to parse:     -- | Type of configuration options for the diagnostic.
+ghc:47364:failed to parse:     type DiagnosticOpts a;
+ghc:47365:failed to parse: }
+ghc:48226:failed to parse:     -- | Type of configuration options for the diagnostic.
+ghc:48227:failed to parse:     type DiagnosticOpts a;
+ghc:48228:failed to parse: }
+ghc:64470:failed to parse: instance (TypeError ...) => GHC.Types.Error.Codes.HasType ty orig f
+ghc:65162:failed to parse:     -- | See Note [Body in DisambECP]
+ghc:65163:failed to parse:     type Body b :: Type -> Type;
+ghc:65165:failed to parse:     -- | Infix operator representation
+ghc:65166:failed to parse:     type InfixOp b;
+ghc:65168:failed to parse:     -- | Function argument representation
+ghc:65169:failed to parse:     type FunArg b;
+ghc:65170:failed to parse: }
+ghc-prim:142:failed to parse: data [] a
+ghc-prim:190:failed to parse: class a ~# b => (a :: k) ~ (b :: k)
+ghc-prim:191:failed to parse: infix 4 ~
+ghc-prim:203:failed to parse: class a ~# b => (a :: k0) ~~ (b :: k1)
+ghc-prim:353:failed to parse: type ZeroBitRep = 'TupleRep '[] :: [RuntimeRep]
+ghc-prim:454:failed to parse: sameArray# :: forall {l :: Levity} (a :: TYPE ('BoxedRep l)). Array# a -> Array# a -> Int#
+ghc-prim:457:failed to parse: sameMutableArray# :: forall {l :: Levity} s (a :: TYPE ('BoxedRep l)). MutableArray# s a -> MutableArray# s a -> Int#
+ghc-prim:460:failed to parse: sameSmallArray# :: forall {l :: Levity} (a :: TYPE ('BoxedRep l)). SmallArray# a -> SmallArray# a -> Int#
+ghc-prim:463:failed to parse: sameSmallMutableArray# :: forall {l :: Levity} s (a :: TYPE ('BoxedRep l)). SmallMutableArray# s a -> SmallMutableArray# s a -> Int#
+ghc-prim:472:failed to parse: sameMutVar# :: forall {l :: Levity} s (a :: TYPE ('BoxedRep l)). MutVar# s a -> MutVar# s a -> Int#
+ghc-prim:475:failed to parse: sameTVar# :: forall {l :: Levity} s (a :: TYPE ('BoxedRep l)). TVar# s a -> TVar# s a -> Int#
+ghc-prim:478:failed to parse: sameMVar# :: forall {l :: Levity} s (a :: TYPE ('BoxedRep l)). MVar# s a -> MVar# s a -> Int#
+ghc-prim:481:failed to parse: sameIOPort# :: forall {l :: Levity} s (a :: TYPE ('BoxedRep l)). IOPort# s a -> IOPort# s a -> Int#
+ghc-prim:487:failed to parse: eqStableName# :: forall {k :: Levity} {l :: Levity} (a :: TYPE ('BoxedRep k)) (b :: TYPE ('BoxedRep l)). StableName# a -> StableName# b -> Int#
+ghc-prim:1243:failed to parse: newArray# :: forall {l :: Levity} (a :: TYPE ('BoxedRep l)) d. Int# -> a -> State# d -> (# State# d, MutableArray# d a #)
+ghc-prim:1249:failed to parse: readArray# :: forall {l :: Levity} d (a :: TYPE ('BoxedRep l)). MutableArray# d a -> Int# -> State# d -> (# State# d, a #)
+ghc-prim:1254:failed to parse: writeArray# :: forall {l :: Levity} d (a :: TYPE ('BoxedRep l)). MutableArray# d a -> Int# -> a -> State# d -> State# d
+ghc-prim:1257:failed to parse: sizeofArray# :: forall {l :: Levity} (a :: TYPE ('BoxedRep l)). Array# a -> Int#
+ghc-prim:1260:failed to parse: sizeofMutableArray# :: forall {l :: Levity} d (a :: TYPE ('BoxedRep l)). MutableArray# d a -> Int#
+ghc-prim:1271:failed to parse: indexArray# :: forall {l :: Levity} (a :: TYPE ('BoxedRep l)). Array# a -> Int# -> (# a #)
+ghc-prim:1274:failed to parse: unsafeFreezeArray# :: forall {l :: Levity} d (a :: TYPE ('BoxedRep l)). MutableArray# d a -> State# d -> (# State# d, Array# a #)
+ghc-prim:1277:failed to parse: unsafeThawArray# :: forall {l :: Levity} (a :: TYPE ('BoxedRep l)) d. Array# a -> State# d -> (# State# d, MutableArray# d a #)
+ghc-prim:1287:failed to parse: copyArray# :: forall {l :: Levity} (a :: TYPE ('BoxedRep l)) d. Array# a -> Int# -> MutableArray# d a -> Int# -> Int# -> State# d -> State# d
+ghc-prim:1297:failed to parse: copyMutableArray# :: forall {l :: Levity} d (a :: TYPE ('BoxedRep l)). MutableArray# d a -> Int# -> MutableArray# d a -> Int# -> Int# -> State# d -> State# d
+ghc-prim:1305:failed to parse: cloneArray# :: forall {l :: Levity} (a :: TYPE ('BoxedRep l)). Array# a -> Int# -> Int# -> Array# a
+ghc-prim:1313:failed to parse: cloneMutableArray# :: forall {l :: Levity} d (a :: TYPE ('BoxedRep l)). MutableArray# d a -> Int# -> Int# -> State# d -> (# State# d, MutableArray# d a #)
+ghc-prim:1321:failed to parse: freezeArray# :: forall {l :: Levity} d (a :: TYPE ('BoxedRep l)). MutableArray# d a -> Int# -> Int# -> State# d -> (# State# d, Array# a #)
+ghc-prim:1329:failed to parse: thawArray# :: forall {l :: Levity} (a :: TYPE ('BoxedRep l)) d. Array# a -> Int# -> Int# -> State# d -> (# State# d, MutableArray# d a #)
+ghc-prim:1344:failed to parse: casArray# :: forall {l :: Levity} d (a :: TYPE ('BoxedRep l)). MutableArray# d a -> Int# -> a -> a -> State# d -> (# State# d, Int#, a #)
+ghc-prim:1351:failed to parse: newSmallArray# :: forall {l :: Levity} (a :: TYPE ('BoxedRep l)) d. Int# -> a -> State# d -> (# State# d, SmallMutableArray# d a #)
+ghc-prim:1363:failed to parse: shrinkSmallMutableArray# :: forall {l :: Levity} d (a :: TYPE ('BoxedRep l)). SmallMutableArray# d a -> Int# -> State# d -> State# d
+ghc-prim:1369:failed to parse: readSmallArray# :: forall {l :: Levity} d (a :: TYPE ('BoxedRep l)). SmallMutableArray# d a -> Int# -> State# d -> (# State# d, a #)
+ghc-prim:1374:failed to parse: writeSmallArray# :: forall {l :: Levity} d (a :: TYPE ('BoxedRep l)). SmallMutableArray# d a -> Int# -> a -> State# d -> State# d
+ghc-prim:1377:failed to parse: sizeofSmallArray# :: forall {l :: Levity} (a :: TYPE ('BoxedRep l)). SmallArray# a -> Int#
+ghc-prim:1385:failed to parse: sizeofSmallMutableArray# :: forall {l :: Levity} d (a :: TYPE ('BoxedRep l)). SmallMutableArray# d a -> Int#
+ghc-prim:1390:failed to parse: getSizeofSmallMutableArray# :: forall {l :: Levity} d (a :: TYPE ('BoxedRep l)). SmallMutableArray# d a -> State# d -> (# State# d, Int# #)
+ghc-prim:1396:failed to parse: indexSmallArray# :: forall {l :: Levity} (a :: TYPE ('BoxedRep l)). SmallArray# a -> Int# -> (# a #)
+ghc-prim:1399:failed to parse: unsafeFreezeSmallArray# :: forall {l :: Levity} d (a :: TYPE ('BoxedRep l)). SmallMutableArray# d a -> State# d -> (# State# d, SmallArray# a #)
+ghc-prim:1402:failed to parse: unsafeThawSmallArray# :: forall {l :: Levity} (a :: TYPE ('BoxedRep l)) d. SmallArray# a -> State# d -> (# State# d, SmallMutableArray# d a #)
+ghc-prim:1412:failed to parse: copySmallArray# :: forall {l :: Levity} (a :: TYPE ('BoxedRep l)) d. SmallArray# a -> Int# -> SmallMutableArray# d a -> Int# -> Int# -> State# d -> State# d
+ghc-prim:1424:failed to parse: copySmallMutableArray# :: forall {l :: Levity} d (a :: TYPE ('BoxedRep l)). SmallMutableArray# d a -> Int# -> SmallMutableArray# d a -> Int# -> Int# -> State# d -> State# d
+ghc-prim:1432:failed to parse: cloneSmallArray# :: forall {l :: Levity} (a :: TYPE ('BoxedRep l)). SmallArray# a -> Int# -> Int# -> SmallArray# a
+ghc-prim:1440:failed to parse: cloneSmallMutableArray# :: forall {l :: Levity} d (a :: TYPE ('BoxedRep l)). SmallMutableArray# d a -> Int# -> Int# -> State# d -> (# State# d, SmallMutableArray# d a #)
+ghc-prim:1448:failed to parse: freezeSmallArray# :: forall {l :: Levity} d (a :: TYPE ('BoxedRep l)). SmallMutableArray# d a -> Int# -> Int# -> State# d -> (# State# d, SmallArray# a #)
+ghc-prim:1456:failed to parse: thawSmallArray# :: forall {l :: Levity} (a :: TYPE ('BoxedRep l)) d. SmallArray# a -> Int# -> Int# -> State# d -> (# State# d, SmallMutableArray# d a #)
+ghc-prim:1462:failed to parse: casSmallArray# :: forall {l :: Levity} d (a :: TYPE ('BoxedRep l)). SmallMutableArray# d a -> Int# -> a -> a -> State# d -> (# State# d, Int#, a #)
+ghc-prim:2785:failed to parse: newMutVar# :: forall {l :: Levity} (a :: TYPE ('BoxedRep l)) d. a -> State# d -> (# State# d, MutVar# d a #)
+ghc-prim:2788:failed to parse: readMutVar# :: forall {l :: Levity} d (a :: TYPE ('BoxedRep l)). MutVar# d a -> State# d -> (# State# d, a #)
+ghc-prim:2791:failed to parse: writeMutVar# :: forall {l :: Levity} d (a :: TYPE ('BoxedRep l)). MutVar# d a -> a -> State# d -> State# d
+ghc-prim:2794:failed to parse: atomicSwapMutVar# :: forall {l :: Levity} d (a :: TYPE ('BoxedRep l)). MutVar# d a -> a -> State# d -> (# State# d, a #)
+ghc-prim:2838:failed to parse: casMutVar# :: forall {l :: Levity} d (a :: TYPE ('BoxedRep l)). MutVar# d a -> a -> a -> State# d -> (# State# d, Int#, a #)
+ghc-prim:2846:failed to parse: catch# :: forall {q :: RuntimeRep} {k :: Levity} (a :: TYPE q) (b :: TYPE ('BoxedRep k)). (State# RealWorld -> (# State# RealWorld, a #)) -> (b -> State# RealWorld -> (# State# RealWorld, a #)) -> State# RealWorld -> (# State# RealWorld, a #)
+ghc-prim:2849:failed to parse: raise# :: forall {l :: Levity} {r :: RuntimeRep} (a :: TYPE ('BoxedRep l)) (b :: TYPE r). a -> b
+ghc-prim:2852:failed to parse: raiseUnderflow# :: forall {r :: RuntimeRep} (b :: TYPE r). (# #) -> b
+ghc-prim:2855:failed to parse: raiseOverflow# :: forall {r :: RuntimeRep} (b :: TYPE r). (# #) -> b
+ghc-prim:2858:failed to parse: raiseDivZero# :: forall {r :: RuntimeRep} (b :: TYPE r). (# #) -> b
+ghc-prim:2859:failed to parse: raiseIO# :: forall {l :: Levity} {r :: RuntimeRep} (a :: TYPE ('BoxedRep l)) (b :: TYPE r). a -> State# RealWorld -> (# State# RealWorld, b #)
+ghc-prim:2868:failed to parse: maskAsyncExceptions# :: forall {q :: RuntimeRep} (a :: TYPE q). (State# RealWorld -> (# State# RealWorld, a #)) -> State# RealWorld -> (# State# RealWorld, a #)
+ghc-prim:2877:failed to parse: maskUninterruptible# :: forall {q :: RuntimeRep} (a :: TYPE q). (State# RealWorld -> (# State# RealWorld, a #)) -> State# RealWorld -> (# State# RealWorld, a #)
+ghc-prim:2885:failed to parse: unmaskAsyncExceptions# :: forall {q :: RuntimeRep} (a :: TYPE q). (State# RealWorld -> (# State# RealWorld, a #)) -> State# RealWorld -> (# State# RealWorld, a #)
+ghc-prim:2898:failed to parse: control0# :: forall {r :: RuntimeRep} a (b :: TYPE r). PromptTag# a -> (((State# RealWorld -> (# State# RealWorld, b #)) -> State# RealWorld -> (# State# RealWorld, a #)) -> State# RealWorld -> (# State# RealWorld, a #)) -> State# RealWorld -> (# State# RealWorld, b #)
+ghc-prim:2900:failed to parse: atomically# :: forall {l :: Levity} (a :: TYPE ('BoxedRep l)). (State# RealWorld -> (# State# RealWorld, a #)) -> State# RealWorld -> (# State# RealWorld, a #)
+ghc-prim:2901:failed to parse: retry# :: forall {l :: Levity} (a :: TYPE ('BoxedRep l)). State# RealWorld -> (# State# RealWorld, a #)
+ghc-prim:2902:failed to parse: catchRetry# :: forall {l :: Levity} (a :: TYPE ('BoxedRep l)). (State# RealWorld -> (# State# RealWorld, a #)) -> (State# RealWorld -> (# State# RealWorld, a #)) -> State# RealWorld -> (# State# RealWorld, a #)
+ghc-prim:2903:failed to parse: catchSTM# :: forall {l :: Levity} (a :: TYPE ('BoxedRep l)) b. (State# RealWorld -> (# State# RealWorld, a #)) -> (b -> State# RealWorld -> (# State# RealWorld, a #)) -> State# RealWorld -> (# State# RealWorld, a #)
+ghc-prim:2906:failed to parse: newTVar# :: forall {l :: Levity} (a :: TYPE ('BoxedRep l)) d. a -> State# d -> (# State# d, TVar# d a #)
+ghc-prim:2910:failed to parse: readTVar# :: forall {l :: Levity} d (a :: TYPE ('BoxedRep l)). TVar# d a -> State# d -> (# State# d, a #)
+ghc-prim:2914:failed to parse: readTVarIO# :: forall {l :: Levity} d (a :: TYPE ('BoxedRep l)). TVar# d a -> State# d -> (# State# d, a #)
+ghc-prim:2917:failed to parse: writeTVar# :: forall {l :: Levity} d (a :: TYPE ('BoxedRep l)). TVar# d a -> a -> State# d -> State# d
+ghc-prim:2925:failed to parse: newMVar# :: forall {l :: Levity} d (a :: TYPE ('BoxedRep l)). State# d -> (# State# d, MVar# d a #)
+ghc-prim:2929:failed to parse: takeMVar# :: forall {l :: Levity} d (a :: TYPE ('BoxedRep l)). MVar# d a -> State# d -> (# State# d, a #)
+ghc-prim:2934:failed to parse: tryTakeMVar# :: forall {l :: Levity} d (a :: TYPE ('BoxedRep l)). MVar# d a -> State# d -> (# State# d, Int#, a #)
+ghc-prim:2938:failed to parse: putMVar# :: forall {l :: Levity} d (a :: TYPE ('BoxedRep l)). MVar# d a -> a -> State# d -> State# d
+ghc-prim:2942:failed to parse: tryPutMVar# :: forall {l :: Levity} d (a :: TYPE ('BoxedRep l)). MVar# d a -> a -> State# d -> (# State# d, Int# #)
+ghc-prim:2947:failed to parse: readMVar# :: forall {l :: Levity} d (a :: TYPE ('BoxedRep l)). MVar# d a -> State# d -> (# State# d, a #)
+ghc-prim:2952:failed to parse: tryReadMVar# :: forall {l :: Levity} d (a :: TYPE ('BoxedRep l)). MVar# d a -> State# d -> (# State# d, Int#, a #)
+ghc-prim:2955:failed to parse: isEmptyMVar# :: forall {l :: Levity} d (a :: TYPE ('BoxedRep l)). MVar# d a -> State# d -> (# State# d, Int# #)
+ghc-prim:2963:failed to parse: newIOPort# :: forall {l :: Levity} d (a :: TYPE ('BoxedRep l)). State# d -> (# State# d, IOPort# d a #)
+ghc-prim:2969:failed to parse: readIOPort# :: forall {l :: Levity} d (a :: TYPE ('BoxedRep l)). IOPort# d a -> State# d -> (# State# d, a #)
+ghc-prim:2974:failed to parse: writeIOPort# :: forall {l :: Levity} d (a :: TYPE ('BoxedRep l)). IOPort# d a -> a -> State# d -> (# State# d, Int# #)
+ghc-prim:3002:failed to parse: fork# :: forall {q :: RuntimeRep} (a :: TYPE q). (State# RealWorld -> (# State# RealWorld, a #)) -> State# RealWorld -> (# State# RealWorld, ThreadId# #)
+ghc-prim:3003:failed to parse: forkOn# :: forall {q :: RuntimeRep} (a :: TYPE q). Int# -> (State# RealWorld -> (# State# RealWorld, a #)) -> State# RealWorld -> (# State# RealWorld, ThreadId# #)
+ghc-prim:3040:failed to parse: mkWeak# :: forall {l :: Levity} {k :: Levity} (a :: TYPE ('BoxedRep l)) (b :: TYPE ('BoxedRep k)) c. a -> b -> (State# RealWorld -> (# State# RealWorld, c #)) -> State# RealWorld -> (# State# RealWorld, Weak# b #)
+ghc-prim:3041:failed to parse: mkWeakNoFinalizer# :: forall {l :: Levity} {k :: Levity} (a :: TYPE ('BoxedRep l)) (b :: TYPE ('BoxedRep k)). a -> b -> State# RealWorld -> (# State# RealWorld, Weak# b #)
+ghc-prim:3049:failed to parse: addCFinalizerToWeak# :: forall {k :: Levity} (b :: TYPE ('BoxedRep k)). Addr# -> Addr# -> Int# -> Addr# -> Weak# b -> State# RealWorld -> (# State# RealWorld, Int# #)
+ghc-prim:3050:failed to parse: deRefWeak# :: forall {l :: Levity} (a :: TYPE ('BoxedRep l)). Weak# a -> State# RealWorld -> (# State# RealWorld, Int#, a #)
+ghc-prim:3058:failed to parse: finalizeWeak# :: forall {l :: Levity} (a :: TYPE ('BoxedRep l)) b. Weak# a -> State# RealWorld -> (# State# RealWorld, Int#, State# RealWorld -> (# State# RealWorld, b #) #)
+ghc-prim:3059:failed to parse: touch# :: forall {l :: Levity} (a :: TYPE ('BoxedRep l)) d. a -> State# d -> State# d
+ghc-prim:3062:failed to parse: makeStablePtr# :: forall {l :: Levity} (a :: TYPE ('BoxedRep l)). a -> State# RealWorld -> (# State# RealWorld, StablePtr# a #)
+ghc-prim:3063:failed to parse: deRefStablePtr# :: forall {l :: Levity} (a :: TYPE ('BoxedRep l)). StablePtr# a -> State# RealWorld -> (# State# RealWorld, a #)
+ghc-prim:3064:failed to parse: eqStablePtr# :: forall {l :: Levity} (a :: TYPE ('BoxedRep l)). StablePtr# a -> StablePtr# a -> Int#
+ghc-prim:3065:failed to parse: makeStableName# :: forall {l :: Levity} (a :: TYPE ('BoxedRep l)). a -> State# RealWorld -> (# State# RealWorld, StableName# a #)
+ghc-prim:3066:failed to parse: stableNameToInt# :: forall {l :: Levity} (a :: TYPE ('BoxedRep l)). StableName# a -> Int#
+ghc-prim:3133:failed to parse: reallyUnsafePtrEquality# :: forall {l :: Levity} {k :: Levity} (a :: TYPE ('BoxedRep l)) (b :: TYPE ('BoxedRep k)). a -> b -> Int#
+ghc-prim:3150:failed to parse: keepAlive# :: forall {l :: Levity} {r :: RuntimeRep} (a :: TYPE ('BoxedRep l)) d (b :: TYPE r). a -> State# d -> (State# d -> b) -> b
+ghc-prim:3161:failed to parse: addrToAny# :: forall {l :: Levity} (a :: TYPE ('BoxedRep l)). Addr# -> (# a #)
+ghc-prim:3243:failed to parse: proxy# :: forall {k} (a :: k). Proxy# a
+ghc-prim:3259:failed to parse: seq :: forall {r :: RuntimeRep} a (b :: TYPE r). a -> b -> b
+ghc-prim:3320:failed to parse: coerce :: forall {k :: RuntimeRep} (a :: TYPE k) (b :: TYPE k). Coercible a b => a -> b
+ghc-prim:7216:failed to parse: withDict :: forall {rr :: RuntimeRep} (r :: TYPE rr). WithDict cls meth => meth -> (cls => r) -> r
+ghc-prim:7279:failed to parse: oneShot :: forall {q :: RuntimeRep} {r :: RuntimeRep} (a :: TYPE q) (b :: TYPE r). (a -> b) -> a -> b
+mtl:253:failed to parse: liftCallCC :: (MonadTrans t, Monad m, forall (m' :: Type -> Type). Monad m' => Monad (t m')) => CallCC m (t m a) b -> CallCC (t m) a b
+mtl:403:failed to parse: mapContT :: forall {k} m (r :: k) a. (m r -> m r) -> ContT r m a -> ContT r m a
+mtl:412:failed to parse: withContT :: forall {k} b m (r :: k) a. ((b -> m r) -> a -> m r) -> ContT r m a -> ContT r m b
+template-haskell:414:failed to parse: ($dmlift) :: forall m. (Lift t, r ~ LiftedRep, Quote m) => t -> m Exp
+template-haskell:2985:failed to parse: type CodeQ = Code Q :: TYPE r -> Type
+template-haskell:3360:failed to parse: type CodeQ = Code Q :: TYPE r -> Type
+transformers:148:failed to parse: class forall (m :: Type -> Type). Monad m => Monad t m => MonadTrans (t :: Type -> Type -> Type -> Type)
+transformers:252:failed to parse: mapContT :: forall {k} m (r :: k) a. (m r -> m r) -> ContT r m a -> ContT r m a
+transformers:261:failed to parse: withContT :: forall {k} b m (r :: k) a. ((b -> m r) -> a -> m r) -> ContT r m a -> ContT r m b
+transformers:277:failed to parse: callCC :: forall {k} a (r :: k) (m :: k -> Type) b. ((a -> ContT r m b) -> ContT r m a) -> ContT r m a
+transformers:457:failed to parse: mapIdentityT :: forall {k1} {k2} m (a :: k1) n (b :: k2). (m a -> n b) -> IdentityT m a -> IdentityT n b
+transformers:460:failed to parse: liftCatch :: forall {k} e m (a :: k). Catch e m a -> Catch e (IdentityT m) a
+transformers:2425:failed to parse: type Errors e = Lift Constant e :: Type -> Type

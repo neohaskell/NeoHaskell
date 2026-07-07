@@ -26,6 +26,10 @@
     ghcid = "latest"; # powers scripts/dev-loop (agent + human inner loop)
     hiedb = "latest"; # symbol reference DB — powers ./dev who-calls (codemap)
   };
+  # Kill haskell.nix's hoogle-with-packages wrapper: it injects its own
+  # --database flag, silently overriding ./dev api's databases (root cause of
+  # "--local ignored", diagnosed 2026-07-08). We run the raw nixpkgs binary.
+  shell.withHoogle = false;
   shell.buildInputs = with pkgs; [
     git
     nixfmt-classic
@@ -33,5 +37,9 @@
     hurl
     poppler_utils
     (python3.withPackages (ps: [ ps.pyyaml ])) # codemap tooling (check.py)
+    # nixpkgs' hoogle build — NOT shell.tools: the haskell.nix-built hoogle
+    # 5.0.18.4 silently ignores --local=DIR txt dirs (verified 2026-07-08);
+    # the nixpkgs build of the same version indexes them correctly.
+    haskellPackages.hoogle
   ];
 }

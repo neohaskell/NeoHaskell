@@ -1,15 +1,48 @@
 #!/usr/bin/env bash
 #
-# Search the NeoHaskell API surface (pipeline Phase 4) — type-directed or by
-# name, over codemap/signatures/ only (never GHC libs; that noise is
-# anti-dialect). THE tool for "what turns X into Y" — use it instead of
-# inventing a function name.
+# Two-pass API search (pipeline Phase 4; two-pass design per Nick 2026-07-08).
+# Engine: hoogle for BOTH passes; the filtering is two databases:
+#
+#   PASS 1 — .hoogle-neo.hoo    : ONLY nhcore + nhintegrations (the dialect).
+#            If this hits, vanilla is never shown.
+#   PASS 2 — .hoogle-vanilla.hoo: deps + boot libs, shown ONLY when pass 1 is
+#            empty. When no wrapper exists, seeing the vanilla function is
+#            exactly what informs the escape-hatch decision (.hlint.yaml
+#            `within:` + belongs-in note; rule of three → Core primitive).
+#
+# Databases are local build artifacts (gitignored), rebuilt by ./dev codemap
+# or lazily here when missing.
 #
 # Usage:
-#   ./dev api "Text -> Maybe Int"
-#   ./dev api toInt
+#   ./dev api "Text -> Maybe Uuid"    # type-directed
+#   ./dev api toInt                   # by name
 #
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "${SCRIPT_DIR}/.."
-exec "${SCRIPT_DIR}/with-toolchain" python3 codemap/api-search.py "$@"
+
+[ $# -ge 1 ] || { echo "usage: ./dev api \"<type or name>\"" >&2; exit 2; }
+
+NEO_DB=".hoogle-neo.hoo"
+VAN_DB=".hoogle-vanilla.hoo"
+
+if [ ! -f "${NEO_DB}" ] || [ ! -f "${VAN_DB}" ]; then
+  echo "api: building hoogle databases (one-time; refreshed by ./dev codemap)…" >&2
+  "${SCRIPT_DIR}/build-hoogle-dbs"
+fi
+
+# ── pass 1: the NeoHaskell surface ─────────────────────────────────────────
+RESULT=$("${SCRIPT_DIR}/with-toolchain" hoogle --database="${NEO_DB}" "$@" | head -15)
+if [ -n "${RESULT}" ] && ! echo "${RESULT}" | grep -q "^No results found"; then
+  echo "${RESULT}"
+  exit 0
+fi
+
+# ── pass 2: vanilla (secondary, clearly labelled) ──────────────────────────
+echo "── vanilla results (second pass — no NeoHaskell wrapper matched) ──────"
+echo "   Escape hatch before using any of these: register the module in"
+echo "   .hlint.yaml within: (justification + belongs-in note);"
+echo "   rule of three → propose a Core primitive instead."
+echo ""
+"${SCRIPT_DIR}/with-toolchain" hoogle --database="${VAN_DB}" "$@" | head -10
+exit 3

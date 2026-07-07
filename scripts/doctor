@@ -21,6 +21,7 @@ EXEMPT_NAMES=(
   "telemetry.py:pipeline-only by doctrine — a discoverable verb would invite ad-hoc emission"
   "cloud-setup.sh:Claude-web environment setup; invoked by the platform, not by developers"
   "install.sh:end-user installer (curl-piped); not a repo dev tool"
+  "build-hoogle-dbs:internal plumbing — invoked by ./dev api and ./dev codemap, not a user verb"
 )
 
 fail=0
