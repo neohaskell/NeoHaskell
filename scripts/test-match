@@ -20,7 +20,13 @@ cd "${SCRIPT_DIR}/.."
 PATTERN="${1:?usage: scripts/test-match \"pattern\" [suite]}"
 SUITE="${2:-nhcore-test-core}"
 
-OUTPUT=$(printf ':main --match "%s"\n' "${PATTERN}" \
+# PATTERN lands inside a Haskell string literal in ghci's `:main --match "…"`,
+# so embedded backslashes/quotes must be escaped or the match string silently
+# garbles — the exact vacuous-result failure this script exists to prevent.
+ESCAPED="${PATTERN//\\/\\\\}"
+ESCAPED="${ESCAPED//\"/\\\"}"
+
+OUTPUT=$(printf ':main --match "%s"\n' "${ESCAPED}" \
   | "${SCRIPT_DIR}/with-toolchain" cabal repl "${SUITE}" --project-file=cabal.project.dev -v0 2>&1) || true
 
 echo "${OUTPUT}"

@@ -20,6 +20,14 @@ cd "${SCRIPT_DIR}/.."
 TARGET="${1:-lib:nhcore}"
 OUT=".ghcid-errors.txt"
 
+# TARGET is spliced into ghcid's --command STRING (shell-evaluated), unlike the
+# other scripts where targets travel as argv. Restrict to cabal target syntax
+# so metacharacters can't reach the shell.
+if ! [[ "${TARGET}" =~ ^[A-Za-z0-9:._-]+$ ]]; then
+  echo "watch: invalid target '${TARGET}' (allowed charset: [A-Za-z0-9:._-])" >&2
+  exit 2
+fi
+
 echo "watch: watching ${TARGET} (dev flavor, -O0); errors -> ${OUT}"
 
 # with-toolchain enters `nix develop` on demand — ghcid and cabal come from the

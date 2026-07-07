@@ -16,8 +16,8 @@ usage: ./dev <verb> [args]
 
   watch [target]        start the resident typecheck watcher (ghcid, -O0);
                           writes errors to .ghcid-errors.txt (default: lib:nhcore)
-  check                 quick typecheck status — reads the watcher's file
-                          (instant), or one-shot typecheck if no watcher
+  check [target]        quick typecheck status — reads the watcher's file
+                          (instant), or one-shot typecheck of target if no watcher
   test "pattern" [suite]  run only matching specs, link-free (~4-9s;
                           default suite: nhcore-test-core)
   refresh [target]      re-warm the -O0 build after pull/branch switch;
