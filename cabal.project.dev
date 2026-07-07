@@ -1,0 +1,10 @@
+-- Fast dev flavor for the agent inner loop (pipeline Phase 1).
+-- Usage: cabal build --project-file=cabal.project.dev <target>
+--        (scripts/dev-loop and scripts/test-match use this automatically)
+--
+-- Rationale: the repair loop must never pay -O1 compile times. The bake job
+-- and all pool worktrees build with THIS flavor so dist-newstyle stays valid
+-- for the loop (optimization level is part of the build-config hash).
+import: cabal.project
+
+optimization: 0

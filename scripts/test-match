@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+#
+# Link-free targeted test run (pipeline Phase 1).
+#
+# Runs hspec's --match inside `cabal repl` so the test executable is never
+# linked (linking is the dominant fixed cost of `cabal test` for a one-spec
+# check). Uses the dev build flavor (-O0).
+#
+# Usage:
+#   scripts/test-match "pattern"                    # default suite: nhcore-test-core
+#   scripts/test-match "EventStore" nhcore-test-service
+#
+# Exit code: 0 iff the matched specs all passed (hspec summary parsed —
+# ghci itself always exits 0, so we cannot rely on its exit code).
+#
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+PATTERN="${1:?usage: scripts/test-match \"pattern\" [suite]}"
+SUITE="${2:-nhcore-test-core}"
+
+OUTPUT=$(printf ':main --match "%s"\n' "${PATTERN}" \
+  | cabal repl "${SUITE}" --project-file=cabal.project.dev -v0 2>&1) || true
+
+echo "${OUTPUT}"
+
+# hspec summary line: "N examples, M failures". ", 0 failures" is unambiguous.
+if echo "${OUTPUT}" | grep -q ", 0 failures"; then
+  exit 0
+else
+  echo "test-match: failures detected (or no summary line found)" >&2
+  exit 1
+fi

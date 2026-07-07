@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+#
+# Refresh this worktree's warm dist-newstyle against current HEAD using the
+# dev flavor, and report the cache-health metric (pipeline Phase 1).
+#
+# Run after `git pull` / branch switch on a long-lived (pool) worktree.
+# A healthy refresh rebuilds only the modules your branch actually touches;
+# a spike in modules-rebuilt means the cache flavor drifted (wrong flags,
+# GHC version change) — investigate before trusting loop latency numbers.
+#
+# Usage: scripts/refresh-dev-cache [target]   (default: all)
+#
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+TARGET="${1:-all}"
+LOG=$(mktemp)
+
+SECONDS=0
+cabal build "${TARGET}" --project-file=cabal.project.dev -j 2>&1 | tee "${LOG}" | tail -3
+ELAPSED=${SECONDS}
+
+REBUILT=$(grep -cE '^\[[ 0-9]+ of [ 0-9]+\] Compiling' "${LOG}" || true)
+echo "refresh-dev-cache: modules-rebuilt=${REBUILT} elapsed=${ELAPSED}s target=${TARGET}"
+rm -f "${LOG}"

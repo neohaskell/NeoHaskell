@@ -21,7 +21,15 @@
 #
 set -euo pipefail
 
-# Only run inside the remote (Claude Code on the web) environment.
+# --- 0. Warm Postgres for the test suites (local + remote, best-effort) -----
+# Service/integration suites gate on POSTGRES_AVAILABLE; keeping the container
+# warm removes a ~10s cold-start from the verification loop (pipeline Phase 1).
+# Backgrounded and failure-tolerant: no docker => no-op.
+if command -v docker >/dev/null 2>&1; then
+  (cd "${CLAUDE_PROJECT_DIR:-$(pwd)}" && docker compose up -d >/dev/null 2>&1 || true) &
+fi
+
+# Only run the rest inside the remote (Claude Code on the web) environment.
 if [ "${CLAUDE_CODE_REMOTE:-}" != "true" ]; then
   exit 0
 fi

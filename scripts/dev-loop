@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+#
+# Persistent typecheck loop (pipeline Phase 1 — see docs/plans/2026-07-07-continuous-generation-pipeline-plan.md).
+#
+# Starts ghcid on a target (default: the nhcore library) using the dev build
+# flavor (cabal.project.dev, -O0) and continuously writes current errors to
+# .ghcid-errors.txt at the repo root.
+#
+# The agent repair loop NEVER spawns `cabal build`: after an edit it waits ~2s
+# and reads .ghcid-errors.txt. Empty file (or "All good") = typechecks.
+#
+# Usage:
+#   scripts/dev-loop                # watch lib:nhcore
+#   scripts/dev-loop lib:nhtestbed  # watch another target
+#
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+TARGET="${1:-lib:nhcore}"
+OUT=".ghcid-errors.txt"
+
+echo "dev-loop: watching ${TARGET} (dev flavor, -O0); errors -> ${OUT}"
+
+if command -v ghcid >/dev/null 2>&1; then
+  exec ghcid \
+    --command "cabal repl ${TARGET} --project-file=cabal.project.dev" \
+    --outputfile "${OUT}"
+else
+  echo "dev-loop: ghcid not on PATH — running via 'nix shell nixpkgs#ghcid' (first run may download)" >&2
+  exec nix shell nixpkgs#ghcid --command ghcid \
+    --command "cabal repl ${TARGET} --project-file=cabal.project.dev" \
+    --outputfile "${OUT}"
+fi

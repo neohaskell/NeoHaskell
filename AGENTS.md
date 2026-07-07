@@ -34,6 +34,18 @@ cabal test                      # all suites (Postgres needed: docker-compose up
 ./testbed/scripts/run-tests.sh  # acceptance tests (auto-starts the app)
 ```
 
+## Fast inner loop (measured 2026-07-07 — use this in repair loops, NOT cabal build)
+
+```bash
+scripts/dev-loop                    # persistent ghcid typecheck → .ghcid-errors.txt
+scripts/test-match "pattern" [suite]# link-free hspec --match in cabal repl (~9s; default suite nhcore-test-core)
+scripts/refresh-dev-cache           # warm dist-newstyle after pull/branch switch; prints modules-rebuilt
+```
+
+- Repair-loop protocol: edit → wait ~2s → **read `.ghcid-errors.txt`** (measured: error feedback 0.6s, recovery 1.9s; empty/"All good" = typechecks). Never spawn `cabal build` inside the loop.
+- All three scripts use the dev flavor (`cabal.project.dev`, `-O0`); full nhcore -O0 build = 249 modules / ~54s on this machine.
+- Pipeline telemetry: `scripts/telemetry.py` (schema: `telemetry/SCHEMA.md`, frozen v1). Every pipeline run emits one line to `telemetry/runs.jsonl`.
+
 - Test discovery: **only `nhcore-test` uses hspec-discover**; `nhcore-test-core`, `-auth`, `-service`, `-integration` register specs manually in their `Main.hs` — new spec modules must be added there AND to the cabal `other-modules`.
 - Postgres-dependent specs self-gate on `POSTGRES_AVAILABLE=true`.
 - ⚠ **hlint does NOT run in CI**, and the current `.hlint.yaml` does not encode NeoHaskell style — do not treat hlint output as style guidance until the Phase 2 rebuild lands.
