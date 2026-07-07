@@ -30,6 +30,13 @@
   # --database flag, silently overriding ./dev api's databases (root cause of
   # "--local ignored", diagnosed 2026-07-08). We run the raw nixpkgs binary.
   shell.withHoogle = false;
+
+  # Fingerprint for scripts/with-toolchain's verified fast path: commands run
+  # directly (no nested `nix develop`) only when this matches the current
+  # hash of the shell-defining files. scripts/toolchain-fp = single source.
+  shell.shellHook = ''
+    export NEOHASKELL_SHELL_FP=$(scripts/toolchain-fp 2>/dev/null || true)
+  '';
   shell.buildInputs = with pkgs; [
     git
     nixfmt-classic

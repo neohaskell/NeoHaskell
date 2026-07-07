@@ -9,21 +9,30 @@
 #   scripts/with-toolchain cabal build all
 #   scripts/with-toolchain ghcid --version
 #
-# Resolution: nix available -> ALWAYS `nix develop --command` (~0.4s warm);
-# no nix -> host tools + loud warning.
-#
-# There is deliberately NO "already in a shell" fast path: an inherited
-# IN_NIX_SHELL can be stale (predating flake changes), and "the command
-# exists on PATH" proves nothing for ubiquitous tools (bash, python3) whose
-# shell versions differ (e.g. python3-with-pyyaml). The fast path caused
-# three real failures and saved 0.4s. Correct beats fast.
+# Resolution:
+#   1. FINGERPRINT-VERIFIED fast path (added 2026-07-08): the flake shellHook
+#      exports NEOHASKELL_SHELL_FP = hash of the shell-defining files
+#      (scripts/toolchain-fp, the single source). If the env's fingerprint
+#      matches the CURRENT hash AND the command exists -> run directly,
+#      instant. A config change or a stale/foreign shell mismatches -> re-enter.
+#      (The old trust-based fast path — "IN_NIX_SHELL is set" — caused three
+#      real failures and was removed; this one verifies instead of trusting.)
+#   2. nix available -> `nix develop --command` (~0.4s warm eval).
+#   3. no nix -> host tools + loud warning.
 #
 set -euo pipefail
-cd "$(dirname "$0")/.."
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+cd "${SCRIPT_DIR}/.."
 
 if [ $# -eq 0 ]; then
   echo "usage: scripts/with-toolchain <command> [args…]" >&2
   exit 2
+fi
+
+if [ -n "${NEOHASKELL_SHELL_FP:-}" ] \
+   && [ "${NEOHASKELL_SHELL_FP}" = "$("${SCRIPT_DIR}/toolchain-fp")" ] \
+   && command -v "$1" >/dev/null 2>&1; then
+  exec "$@"
 fi
 
 if command -v nix >/dev/null 2>&1; then

@@ -22,6 +22,7 @@ EXEMPT_NAMES=(
   "cloud-setup.sh:Claude-web environment setup; invoked by the platform, not by developers"
   "install.sh:end-user installer (curl-piped); not a repo dev tool"
   "build-hoogle-dbs:internal plumbing — invoked by ./dev api and ./dev codemap, not a user verb"
+  "toolchain-fp:internal plumbing — fingerprint for with-toolchain fast path + flake shellHook"
 )
 
 fail=0

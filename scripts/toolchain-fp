@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+#
+# Toolchain fingerprint (single source — used by BOTH the flake shellHook and
+# scripts/with-toolchain). Hash of the files that define the dev shell: if
+# they change, the fingerprint changes, and with-toolchain re-enters
+# `nix develop` instead of trusting a stale environment.
+#
+set -euo pipefail
+cd "$(dirname "$0")/.."
+cat flake.nix flake.lock nix/hix.nix 2>/dev/null | shasum -a 256 | cut -d' ' -f1

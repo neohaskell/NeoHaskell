@@ -27,6 +27,13 @@ cd "${SCRIPT_DIR}/.."
 
 [ $# -ge 1 ] || { echo "usage: ./dev api \"<type or name>\"" >&2; exit 2; }
 
+# Load the toolchain env ONCE for the whole script: re-exec ourselves inside
+# nix develop; with-toolchain's fingerprint fast path then makes every inner
+# call direct (instant). Already inside a current env -> no re-exec at all.
+if [ "${NEOHASKELL_SHELL_FP:-}" != "$("${SCRIPT_DIR}/toolchain-fp")" ]; then
+  exec "${SCRIPT_DIR}/with-toolchain" "$0" "$@"
+fi
+
 NEO_DB=".hoogle-neo.hoo"
 VAN_DB=".hoogle-vanilla.hoo"
 
