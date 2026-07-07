@@ -58,7 +58,9 @@ jobs:
     timeout-minutes: 30
     needs: build
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          persist-credentials: false
       - uses: DeterminateSystems/determinate-nix-action@v3.21.2
         with:
           extra-conf: |
@@ -70,10 +72,8 @@ jobs:
         with:
           name: dist-newstyle
           path: dist-newstyle
-      - name: Regenerate codemap artifacts (signatures, MAP.md, ratchet)
-        run: |
-          nix develop --command bash -c \
-            "cabal haddock lib:nhcore lib:nhintegrations --haddock-hoogle -v0 >/dev/null && python3 codemap/generate.py"
+      - name: Regenerate codemap artifacts (same flow as local ./dev codemap)
+        run: CODEMAP_PROJECT=cabal.project ./dev codemap
       - name: Sync check — committed codemap must match regenerated
         run: |
           git diff --exit-code codemap/ || {

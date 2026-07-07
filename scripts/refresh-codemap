@@ -13,8 +13,10 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "${SCRIPT_DIR}/.."
 
 echo "codemap: generating hoogle signatures (cabal haddock)…"
+# CODEMAP_PROJECT lets CI reuse its default-flavor build (locally the dev
+# flavor is the warm one). Output is flavor-independent.
 "${SCRIPT_DIR}/with-toolchain" cabal haddock lib:nhcore lib:nhintegrations \
-  --haddock-hoogle --project-file=cabal.project.dev -v0 >/dev/null
+  --haddock-hoogle --project-file="${CODEMAP_PROJECT:-cabal.project.dev}" -v0 >/dev/null
 
 echo "codemap: splitting + rendering…"
 exec "${SCRIPT_DIR}/with-toolchain" python3 codemap/generate.py

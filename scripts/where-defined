@@ -14,6 +14,6 @@ if [ ! -f .hiedb ]; then
   exit 2
 fi
 
-"${SCRIPT_DIR}/with-toolchain" bash -c "
-  hiedb -D .hiedb name-def '${NAME}' | python3 codemap/join-refs.py
-"
+# Args travel as argv end-to-end (never interpolated into a shell string).
+"${SCRIPT_DIR}/with-toolchain" hiedb -D .hiedb name-def "${NAME}" \
+  | "${SCRIPT_DIR}/with-toolchain" python3 codemap/join-refs.py

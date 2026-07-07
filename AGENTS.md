@@ -57,11 +57,11 @@ Single entrypoint: **`./dev`** (no-args lists all verbs; same tools for humans a
 
 ## Localization (Phase 3, live since 2026-07-08) — lookup, not search
 
-Route requests via `codemap/` (30 CI-gated capabilities + 6 extension points) — use the `neohaskell-localizer` skill at plan time. Never explore the tree to find where things live:
+Route requests via `codemap/` (CI-gated capability ontology + extension points) — use the `neohaskell-localizer` skill at plan time. Never explore the tree to find where things live:
 
 - Existing code → `codemap/capabilities.yaml` (closed ID list; aliases bridge intent vocabulary)
 - New code → `codemap/extension-points.yaml` (create/register/tests per kind)
-- API discovery → grep `codemap/signatures/*.txt` (generated, 3327 exports; never open source files for this)
+- API discovery → grep `codemap/signatures/*.txt` (generated API surface; never open source files for this)
 - Blast radius → `./dev who-calls <symbol> [module]` (capability-grouped; `./dev hiedb` builds the index)
 - Validity → `./dev codemap-check` (CI-gated: ownership exactly-once, alias uniqueness, doc-ratchet)
 

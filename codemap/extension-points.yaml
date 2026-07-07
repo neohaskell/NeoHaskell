@@ -14,20 +14,31 @@ extension-points:
     notes: hspec-discover picks the spec up automatically (nhcore-test-core is MANUAL — register in core/test-core/Main.hs too). Wrap vanilla, never re-export it raw. Add doctest examples.
     skill: neohaskell-implementer
 
-  - kind: new-command
-    triggers: [new mutation, new business operation, write operation, new use case verb]
-    create: ["testbed/src/<Context>/Commands/<Name>.hs (app-level) or core/service/Service/Command/ (framework-level)"]
-    register: ["the context's Service.hs wiring", "nhtestbed.cabal / nhcore.cabal"]
-    tests: ["testbed/tests/commands/<name>.hurl (app)", "core/testlib/Test/Service/Command/** (framework)"]
-    notes: Command typeclass — decideImpl/getEntityIdImpl + EntityOf family; decisions via Decider (acceptNew/acceptExisting/reject).
+  - kind: new-command-machinery
+    triggers: [new mutation semantics, command execution behavior, decider capability, write-side framework feature]
+    create: [core/service/Service/Command/ or core/service/Service/CommandExecutor/]
+    register: ["core/nhcore.cabal exposed-modules"]
+    tests: ["core/testlib/Test/Service/Command/**", "testbed demo command exercising it (see notes)"]
+    notes: >-
+      User-app commands live in USER apps, not this repo. Internally, new
+      command-side work is framework machinery (core/service) — and testbed is
+      a DEMO app doubling as the integration test, so framework features get a
+      demo command in testbed/src/<Context>/Commands/ + hurl coverage in
+      testbed/tests/commands/ to prove the feature end-to-end. Command
+      typeclass — decideImpl/getEntityIdImpl + EntityOf; Decider monad.
     skill: neohaskell-implementer
 
-  - kind: new-query
-    triggers: [new read model, new projection, new view, report, listing endpoint]
-    create: ["testbed/src/<Context>/Queries/<Name>.hs (app-level) or core/service/Service/Query/ (framework-level)"]
-    register: ["the context's Service.hs wiring via withQuery", "deriveQuery TH"]
-    tests: ["testbed/tests/queries/<name>.hurl (app)", "core/testlib/Test/Service/QueryObjectStore/** (framework)"]
-    notes: EntitiesOf family + QueryOf.combine; rebuilds via Subscriber.rebuildAll.
+  - kind: new-query-machinery
+    triggers: [new read model semantics, projection behavior, query registry feature, read-side framework feature]
+    create: [core/service/Service/Query/ or core/service/Service/QueryObjectStore/]
+    register: ["core/nhcore.cabal exposed-modules"]
+    tests: ["core/testlib/Test/Service/QueryObjectStore/**", "testbed demo query exercising it (see notes)"]
+    notes: >-
+      Same testbed doctrine as new-command-machinery: user-app queries live in
+      user apps; testbed queries exist as demos + integration tests for
+      framework features (testbed/src/<Context>/Queries/ + hurl in
+      testbed/tests/queries/). EntitiesOf + QueryOf.combine; rebuilds via
+      Subscriber.rebuildAll.
     skill: neohaskell-implementer
 
   - kind: new-transport-feature

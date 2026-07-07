@@ -52,7 +52,7 @@ case "${VERB}" in
   test-all) exec scripts/run-all-tests.sh "$@" ;;
   lint)     exec scripts/lint "$@" ;;
   codemap)  exec scripts/refresh-codemap "$@" ;;
-  codemap-check) exec scripts/with-toolchain python3 codemap/check.py "$@" ;;
+  codemap-check) exec scripts/codemap-check "$@" ;;
   hiedb)    exec scripts/refresh-hiedb "$@" ;;
   who-calls) exec scripts/who-calls "$@" ;;
   where-defined) exec scripts/where-defined "$@" ;;

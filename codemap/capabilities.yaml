@@ -175,7 +175,7 @@ capabilities:
     tests: []
 
   - id: dev-pipeline
-    owns: [scripts/**, codemap/**, telemetry/**, dev, cabal.project.dev, .claude/**, .github/workflows/checks.yml]
+    owns: [scripts/**, codemap/**, telemetry/**, dev, cabal.project.dev, .claude/**]  # workflows (incl. checks.yml) belong to ci-cd — exactly-once
     responsibility: The Continuous Generation pipeline itself — ./dev verbs, dialect gates, codemap, telemetry, hooks, skills, governance checks.
     aliases: [pipeline, tooling, dev scripts, ci checks, hooks, skills, lint config]
     tests: []
@@ -200,7 +200,7 @@ capabilities:
     tests: []
 
   - id: ci-cd
-    owns: [.github/workflows/*.yml, flake.nix, nix/**, docker-compose.yml, scripts/cloud-setup.sh, cabal.project]
+    owns: [.github/workflows/*.yml, flake.nix, nix/**, docker-compose.yml, cabal.project]  # cloud-setup.sh is under scripts/** (dev-pipeline) — exactly-once
     responsibility: Build/CI/CD — GitHub workflows (test matrix, cachix, installer, translate, claude), nix flake + hix config, Postgres compose.
     aliases: [ci, github actions, nix, flake, build system, cachix, docker]
     tests: []

@@ -15,7 +15,6 @@ Enforces (CI: checks.yml `codemap` job; local: ./dev codemap-check):
 Incomplete is allowed; wrong is not.
 """
 
-import fnmatch
 import re
 import subprocess
 import sys
@@ -63,9 +62,7 @@ def owned_by(path: str, caps) -> list:
     owners = []
     for c in caps:
         for g in c["owns"]:
-            # ** matches across dirs; fnmatch's * doesn't cross "/", so expand
-            if fnmatch.fnmatch(path, g) or fnmatch.fnmatch(path, g.replace("**/", "**")) \
-               or re.fullmatch(glob_to_re(g), path):
+            if re.fullmatch(glob_to_re(g), path):
                 owners.append(c["id"])
                 break
     return owners
@@ -109,6 +106,13 @@ def main() -> int:
             rx = re.compile(glob_to_re(g))
             if not any(rx.fullmatch(f) for f in tracked):
                 err(f"capability '{c['id']}' glob '{g}' matches no tracked file (ghost entry)")
+
+    # 2b. exactly-once for ALL owned files, not just Haskell modules
+    #     (catches e.g. a workflow file owned by two capabilities)
+    for f in tracked:
+        owners = owned_by(f, caps)
+        if len(owners) > 1:
+            err(f"file {f} owned by multiple capabilities: {owners}")
 
     # 3. alias uniqueness
     seen = {}

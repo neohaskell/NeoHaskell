@@ -210,48 +210,6 @@ instance GHC.Generics.Generic (Integration.Agent.Types.Request command)
 instance GHC.Show.Show Integration.Agent.Types.CommandTool
 
 
--- | # Integration.Agent — Provider-Agnostic AI Agent via Tool Calling
---   
---   <h2>Two-Persona Model</h2>
---   
---   <ul>
---   <li><b>Jess (Integration User)</b>: Configures agents with pure
---   records. No JSON, no HTTP, no provider details visible.</li>
---   </ul>
---   
---   <ul>
---   <li><b>Nick (Integration Developer)</b>: Implements <tt>ToAction</tt>
---   in <a>Integration.Agent.Internal</a>.</li>
---   </ul>
---   
---   <h2>Quick Start</h2>
---   
---   <pre>
---   import Integration qualified
---   import Integration.Agent qualified as Agent
---   
---   cartIntegrations :: CartEntity -&gt; CartEvent -&gt; Integration.Outbound
---   cartIntegrations cart event = case event of
---     CustomerAsked question -&gt; Integration.batch
---       [ Agent.agent
---           question
---           [ Agent.commandTool @AddItem
---           , Agent.commandTool @RemoveItem
---           ]
---           "anthropic/claude-3.5-sonnet"
---           (\err -&gt; AgentFailed { cartId = cart.id, error = err })
---           |&gt; Integration.outbound
---       ]
---     _ -&gt; Integration.none
---   </pre>
---   
---   <h2>Data Privacy Notice</h2>
---   
---   The user prompt is sent to third-party AI providers via OpenRouter. Do
---   not include PII, credentials, or confidential business data in prompts
---   unless appropriate data processing agreements are in place. See
---   ADR-0045 for security and privacy considerations.
-
 module Integration.Agent
 
 -- | Provider-agnostic AI agent request.
@@ -350,33 +308,7 @@ CommandTool :: Text -> Text -> Value -> CommandTool
 --   <li>Timeout: 120 seconds</li>
 --   </ul>
 defaultConfig :: Config
-
--- | Extract a tool definition from a command type.
---   
---   Uses <a>NameOf</a> for the wire name, <a>Documented</a> for the
---   description, and <a>ToSchema</a> for the JSON Schema. The full tool
---   definition JSON is pre-computed once and stored in
---   <a>toolDefinition</a>.
---   
---   For best performance, bind at module level (creates a CAF):
---   
---   <pre>
---   addItemTool :: CommandTool
---   addItemTool = Agent.commandTool @AddItem
---   </pre>
 commandTool :: forall command (name :: Symbol). (ToSchema command, Documented command, NameOf command ~ name, KnownSymbol name) => CommandTool
-
--- | Smart constructor for an Agent.Request with default config.
---   
---   <pre>
---   Agent.agent
---     customerMessage
---     [ Agent.commandTool @AddItem
---     , Agent.commandTool @RemoveItem
---     ]
---     "anthropic/claude-3.5-sonnet"
---     (\err -&gt; AgentFailed { error = err })
---   </pre>
 agent :: Text -> Array CommandTool -> Text -> (Text -> command) -> Request command
 
 
@@ -716,39 +648,6 @@ instance Data.Aeson.Types.ToJSON.ToJSON Integration.Brevo.Request.Body
 instance Data.Aeson.Types.ToJSON.ToJSON Integration.Brevo.Request.Recipient
 instance Data.Aeson.Types.ToJSON.ToJSON Integration.Brevo.Request.Sender
 
-
--- | Brevo transactional email integration for NeoHaskell.
---   
---   Send transactional emails (sign-up confirmations, password resets,
---   receipts, notifications) via Brevo's REST API.
---   
---   <h2>Quick Start</h2>
---   
---   <pre>
---   import Integration qualified
---   import Integration.Brevo qualified as Brevo
---   
---   Brevo.send
---     (Brevo.sender "noreply<tt>myapp.com")
---     (Brevo.recipient "user</tt>example.com")
---     "Welcome to MyApp"
---     (Brevo.HtmlBody "<a>h1</a>Welcome<a>/h1</a>")
---     (\response -&gt; EmailSent { messageId = response.messageId })
---     (\err -&gt; EmailFailed { reason = err })
---     |&gt; Integration.outbound
---   </pre>
---   
---   <h2>Configuration</h2>
---   
---   Add to your <tt>Config.hs</tt>:
---   
---   <pre>
---   Config.field @(Redacted Text) "brevoApiKey"
---     |&gt; Config.doc "Brevo transactional email API key"
---     |&gt; Config.required
---     |&gt; Config.envVar <a>BREVO_API_KEY</a>
---     |&gt; Config.secret
---   </pre>
 
 module Integration.Brevo
 
@@ -1615,32 +1514,9 @@ noRetry :: Retry
 withRetries :: Int -> Retry
 
 
--- | Internal implementation for Brevo transactional email integration.
---   
---   This module contains the transformation from <a>Request</a> to
---   <a>Request</a>, the single Redacted.unwrap site for the API key, and
---   the <a>BrevoResponseHandler</a> HTTP response dispatcher.
---   
---   <b>This module is not re-exported from <a>Brevo</a>.</b>
-
 module Integration.Brevo.Internal
-
--- | Transform a Brevo Request into an Http.Request, encoding the body as
---   JSON and constructing the Authorization header.
---   
---   This is the single site where the apiKey Redacted wrapper is
---   unwrapped. No other unwrapping is allowed.
 toHttpRequest :: Request command -> Request command
-
--- | Encode a Brevo Request to the JSON shape expected by the Brevo API.
---   
---   Optional fields (<tt>cc</tt>, <tt>bcc</tt>, <tt>replyTo</tt>,
---   <tt>tags</tt>) are omitted entirely when empty / Nothing, matching
---   Brevo's wire contract.
 encodeRequest :: Request command -> Text
-
--- | Handle Brevo's HTTP response: success (201 with messageId) or error
---   (401<i>402</i>429<i>4xx</i>5xx with sanitized error text).
 data BrevoResponseHandler command
 BrevoResponseHandler :: (Response -> command) -> (Text -> command) -> BrevoResponseHandler command
 [onSuccess] :: BrevoResponseHandler command -> Response -> command
@@ -1731,41 +1607,6 @@ AcsResponseHandler :: (Response -> command) -> (Text -> command) -> AcsResponseH
 [onError] :: AcsResponseHandler command -> Text -> command
 instance (Data.Aeson.Types.ToJSON.ToJSON command, GHC.TypeLits.KnownSymbol (Service.Command.Core.NameOf command)) => Integration.ToAction (Integration.Acs.Request.Request command)
 
-
--- | Azure Communication Services transactional email integration for
---   NeoHaskell.
---   
---   Send transactional emails (sign-up confirmations, password resets,
---   receipts, notifications) via an ACS Email resource.
---   
---   <h2>Quick Start</h2>
---   
---   <pre>
---   import Integration qualified
---   import Integration.Acs qualified as Acs
---   
---   Acs.send
---     "<a>https://my-acs.communication.azure.com"</a>
---     (Acs.sender "noreply<tt>myapp.com")
---     (Acs.recipient "user</tt>example.com")
---     "Your order is confirmed"
---     (Acs.HtmlBody "<a>h1</a>Thank you<a>/h1</a>")
---     (\r -&gt; EmailSent { operationId = r.operationId })
---     (\e -&gt; EmailFailed { reason = e })
---     |&gt; Integration.outbound
---   </pre>
---   
---   <h2>Configuration</h2>
---   
---   Add to your <tt>Config.hs</tt>:
---   
---   <pre>
---   Config.field @(Redacted Text) "acsAccessToken"
---     |&gt; Config.doc "ACS Entra ID Bearer token (scope <a>https://communication.azure.com/.default)"</a>
---     |&gt; Config.required
---     |&gt; Config.envVar <a>ACS_ACCESS_TOKEN</a>
---     |&gt; Config.secret
---   </pre>
 
 module Integration.Acs
 
@@ -2655,89 +2496,6 @@ instance (Data.Aeson.Types.ToJSON.ToJSON command, GHC.TypeLits.KnownSymbol (Serv
 instance Data.Aeson.Types.ToJSON.ToJSON Integration.OpenRouter.Internal.RequestBody
 
 
--- | # OpenRouter API Integration
---   
---   This integration provides access to 300+ AI models through the
---   OpenRouter API, piggybacking on the existing HTTP integration.
---   
---   <h2>Two-Persona Model</h2>
---   
---   Following the NeoHaskell integration pattern:
---   
---   <ul>
---   <li><b>Jess (Integration User)</b>: Configures requests with
---   <a>Request</a> records. No HTTP details, no JSON encoding, no error
---   handling boilerplate.</li>
---   <li><b>Nick (Integration Developer)</b>: Implements transformation to
---   <a>Request</a> in <a>Integration.OpenRouter.Internal</a>.</li>
---   </ul>
---   
---   <h2>Quick Start</h2>
---   
---   <pre>
---   import Integration qualified
---   import Integration.OpenRouter qualified as OpenRouter
---   import Integration.OpenRouter.Message qualified as Message
---   
---   -- In your integrations:
---   askAi :: Text -&gt; Integration.Action
---   askAi question =
---     OpenRouter.chatCompletion
---       [Message.user question]
---       "anthropic/claude-3.5-sonnet"
---       (\response -&gt; GotAiResponse {response})
---       (\err -&gt; AiError {err})
---       |&gt; Integration.outbound
---   </pre>
---   
---   <h2>Configuration</h2>
---   
---   Set your API key in the environment:
---   
---   <pre>
---   export OPENROUTER_API_KEY=sk-or-v1-xxxxx
---   </pre>
---   
---   <h2>Available Models</h2>
---   
---   See <a>https://openrouter.ai/models</a> for the full list. Common
---   choices:
---   
---   <ul>
---   <li><tt>"anthropic/claude-3.5-sonnet"</tt> - Fast, capable</li>
---   <li><tt>"openai/gpt-4o"</tt> - OpenAI's latest</li>
---   <li><tt>"meta-llama/llama-3.1-70b-instruct"</tt> - Open source</li>
---   <li><tt>"google/gemini-pro-1.5"</tt> - Google's multimodal model</li>
---   </ul>
---   
---   <h2>Advanced Configuration</h2>
---   
---   For custom configuration options, use the <a>Request</a> record
---   directly:
---   
---   <pre>
---   Integration.outbound OpenRouter.Request
---     { messages = conversationHistory
---     , model = "openai/gpt-4o"
---     , config = OpenRouter.defaultConfig
---         { temperature = Just 0.9      -- More creative
---         , maxTokens = Just 2000       -- Longer responses
---         , referer = Just "<a>https://myapp.com"</a>  -- For rankings
---         , title = Just <a>MyApp</a>        -- For rankings
---         }
---     , onSuccess = handleResponse
---     , onError = handleError
---     }
---   </pre>
---   
---   <h2>Known Limitations (v1)</h2>
---   
---   <ul>
---   <li>No streaming support</li>
---   <li>No tool/function calling These will be added in future
---   versions.</li>
---   </ul>
-
 module Integration.OpenRouter
 
 -- | Chat completion request configuration.
@@ -3068,27 +2826,10 @@ userWithAttachment :: Text -> Text -> Text -> Message
 toHttpRequest :: Request command -> Request command
 
 
--- | Internal implementation for AI document/image transcription
---   integration.
---   
---   This module contains Nick's code - the <tt>ToAction</tt> instance,
---   file retrieval, base64 encoding, prompt building, and OpenRouter
---   orchestration.
---   
---   <b>This module is not exported to Jess.</b>
-
 module Integration.Ocr.Ai.Internal
-
--- | Build the system prompt based on extraction mode and config.
 buildSystemPrompt :: Config -> Text
-
--- | Build the extraction prompt (user message text).
 buildExtractionPrompt :: Config -> Text
-
--- | Convert FileAccessError to IntegrationError.
 fileAccessToIntegrationError :: FileAccessError -> IntegrationError
-
--- | Convert IntegrationError to Text for the onError callback.
 integrationErrorToText :: IntegrationError -> Text
 instance (Data.Aeson.Types.ToJSON.ToJSON command, GHC.TypeLits.KnownSymbol (Service.Command.Core.NameOf command)) => Integration.ToAction (Integration.Ocr.Ai.Request command)
 
@@ -3298,42 +3039,6 @@ instance GHC.Show.Show Integration.AzureAI.Internal.RequestBody
 instance (Data.Aeson.Types.ToJSON.ToJSON command, GHC.TypeLits.KnownSymbol (Service.Command.Core.NameOf command)) => Integration.ToAction (Integration.AzureAI.Request.Request command)
 instance Data.Aeson.Types.ToJSON.ToJSON Integration.AzureAI.Internal.RequestBody
 
-
--- | Azure AI Foundry chat completions integration for NeoHaskell.
---   
---   Provides access to Azure AI Foundry's Model Inference API for chat
---   completions, including GPT-4o and other Azure-hosted models.
---   
---   <h2>Quick Start</h2>
---   
---   <pre>
---   import Integration qualified
---   import Integration.AzureAI qualified as AzureAI
---   
---   case AzureAI.azureEndpoint "<a>https://my-res.openai.azure.com"</a> of
---     Result.Ok endpoint -&gt;
---       AzureAI.chatCompletion
---         endpoint
---         [AzureAI.system "Be concise.", AzureAI.user question]
---         "gpt-4o"
---         (\response -&gt; GotAnswer { response })
---         (\err -&gt; AiError { err })
---         |&gt; Integration.outbound
---     Result.Err reason -&gt;
---       Integration.none
---   </pre>
---   
---   <h2>Configuration</h2>
---   
---   Add to your <tt>Config.hs</tt>:
---   
---   <pre>
---   Config.field @(Redacted Text) "azureAiApiKey"
---     |&gt; Config.doc "Azure AI API key (from the Azure Portal)"
---     |&gt; Config.required
---     |&gt; Config.envVar <a>AZURE_AI_API_KEY</a>
---     |&gt; Config.secret
---   </pre>
 
 module Integration.AzureAI
 
@@ -3666,97 +3371,23 @@ system :: Text -> Message
 userWithAttachment :: Text -> Text -> Text -> Message
 
 
--- | Internal implementation for AI audio transcription integration.
---   
---   This module contains Nick's code - the <tt>ToAction</tt> instance,
---   file retrieval, base64 encoding, prompt building, and OpenRouter
---   orchestration.
---   
---   <b>This module is not exported to Jess.</b>
-
 module Integration.Audio.Transcribe.Internal
-
--- | Build the system prompt based on config.
---   
---   Exported for testing.
---   
---   Behavior: 1. If config.systemPrompt is Just custom, return custom (no
---   modification) 2. Otherwise, build from base prompt + optional language
---   hint + optional duration hint 3. CRITICAL: maxDurationSeconds values
---   &lt;= 0 MUST be treated as Nothing (ignored)
 buildSystemPrompt :: Config -> Text
-
--- | Build the transcription prompt (user message text).
---   
---   Exported for testing.
---   
---   This is the text sent alongside the audio attachment. Unlike OCR which
---   varies by ExtractionMode, audio always uses the same prompt.
 buildTranscriptionPrompt :: Config -> Text
-
--- | Convert FileAccessError to IntegrationError.
---   
---   Exported for testing.
---   
---   CRITICAL: All FileRef and internal message values MUST be discarded
---   with _. Error messages use generic "Audio file access failed: ..."
---   prefix. This prevents leaking internal identifiers to the onError
---   callback.
 fileAccessToIntegrationError :: FileAccessError -> IntegrationError
-
--- | Convert IntegrationError to Text for the onError callback.
---   
---   Exported for testing.
 integrationErrorToText :: IntegrationError -> Text
 instance (Data.Aeson.Types.ToJSON.ToJSON command, GHC.TypeLits.KnownSymbol (Service.Command.Core.NameOf command)) => Integration.ToAction (Integration.Audio.Transcribe.Request command)
 
 
--- | Internal implementation for Integration.Agent.
---   
---   This module contains Nick's code — the <tt>ToAction</tt> instance,
---   HTTP request construction, and tool-call response parsing.
---   
---   <b>This module is not part of Jess's API.</b>
-
 module Integration.Agent.Internal
-
--- | Parse the first tool call from an OpenRouter response. Returns Err if
---   choices is empty or the first choice has no tool calls.
 parseFirstToolCall :: Response -> Result Text ToolCall
-
--- | Validate that the AI-returned tool name is in the registered tools
---   list. Defence against prompt injection (F-1 from ADR-0045). Tool name
---   in error messages is truncated to 100 chars.
 validateToolName :: Array CommandTool -> ToolCall -> Result Text ToolCall
-
--- | Decode the tool call arguments as the target command type. Unwraps the
---   Redacted arguments text, then JSON-decodes as command. Tool name in
---   error messages is truncated to 100 chars (F-6 sanitisation).
 decodeArguments :: FromJSON command => ToolCall -> Result Text command
-
--- | Build the messages array from config and user prompt. Prepends a
---   system message if config.systemPrompt is Just.
 buildMessages :: Config -> Text -> Array Message
-
--- | Build the OpenRouter RequestBody including tools and tool_choice. Sets
---   tool_choice = "required" unconditionally.
 buildAgentRequestBody :: Request command -> RequestBody
-
--- | Handle an HTTP response from the OpenRouter API for an agent request.
---   Parses the response body, extracts the first tool call, validates the
---   tool name, and decodes arguments as the command type. Pure function —
---   returns command directly (Http.Request.onSuccess contract).
 handleAgentHttpSuccess :: FromJSON command => Request command -> Response -> command
-
--- | Handle an HTTP transport error by delegating to onError.
 handleAgentHttpError :: Request command -> Text -> command
-
--- | Execute the full agent pipeline: build HTTP request, run it, parse
---   tool call response, validate, decode, emit command.
 executeAgent :: (ToJSON command, FromJSON command, KnownSymbol (NameOf command)) => ActionContext -> Request command -> Task IntegrationError (Maybe CommandPayload)
-
--- | Base URL for OpenRouter API. Defined once, shared with
---   OpenRouter.Internal.
 openRouterBaseUrl :: Text
 instance (Data.Aeson.Types.ToJSON.ToJSON command, Data.Aeson.Types.FromJSON.FromJSON command, GHC.TypeLits.KnownSymbol (Service.Command.Core.NameOf command)) => Integration.ToAction (Integration.Agent.Types.Request command)
 
@@ -4533,84 +4164,6 @@ instance (Data.Aeson.Types.ToJSON.ToJSON command, GHC.TypeLits.KnownSymbol (Serv
 instance Data.Aeson.Types.ToJSON.ToJSON Integration.Oura.SyncAll.SyncResult
 
 
--- | # Integration.Oura
---   
---   Oura Ring API integration for health and sleep data.
---   
---   <h2>Quick Start</h2>
---   
---   <pre>
---   import Integration.Oura qualified as Oura
---   
---   ouraIntegration entity event = case event of
---     UserRequestedSync userId -&gt; Integration.batch
---       [ Integration.outbound Oura.DailySleep
---           { userId = userId
---           , startDate = "2024-01-01"
---           , endDate = "2024-01-07"
---           , onSuccess = OuraSleepReceived
---           , onError = Just OuraError
---           }
---       ]
---     _ -&gt; Integration.none
---   </pre>
---   
---   <h2>OAuth2 Setup</h2>
---   
---   <pre>
---   import Integration.Oura qualified as Oura
---   import Auth.OAuth2.Types (mkClientSecret, mkRedirectUri, ClientId (..))
---   import Auth.SecretStore (TokenKey (..))
---   
---   -- NOTE: OAuth2 callback URL is <i>callback</i>{provider}
---   app = do
---     redirectUri &lt;- case mkRedirectUri "<a>http://localhost:3000/callback/oura"</a> of
---       Ok uri -&gt; Task.yield uri
---       Err err -&gt; Task.throw [fmt|Invalid redirect URI: #{toText err}|]
---     Application.new
---       |&gt; Application.withAuth authServerUrl []
---       |&gt; Application.withOAuth2 <a>OAUTH2_HMAC_KEY</a>
---            [ Oura.makeOuraConfig
---                (ClientId "your-client-id")
---                (mkClientSecret "your-client-secret")
---                redirectUri
---                -- TokenKey has no ToJSON - unwrap to Text
---                (\userId tokenKey -&gt; do
---                  let (TokenKey keyText) = tokenKey
---                  Integration.encodeCommand (OuraConnected userId keyText))
---                (\userId err -&gt; Integration.encodeCommand (OuraConnectionFailed userId (toText err)))
---                (\userId -&gt; Integration.encodeCommand (OuraDisconnected userId))
---                "/settings"
---                "/settings?error=oura"
---            ]
---   </pre>
---   
---   <h2>Periodic Sync Example</h2>
---   
---   Timer.every is an INBOUND integration - it emits commands on a
---   schedule. The command handler then triggers the outbound Oura fetch.
---   
---   <pre>
---   import Integration.Timer qualified as Timer
---   
---   ouraSyncTimer :: Integration.Inbound
---   ouraSyncTimer = Timer.every Timer.Every
---     { interval = Timer.hours 1
---     , toCommand = \tickCount -&gt; SyncOuraData
---         { userId = "user-123"
---         , requestedAt = tickCount
---         }
---     }
---   
---   -- In command handler:
---   handleCommand (SyncOuraData {userId}) = Integration.batch
---     [ Integration.outbound Oura.DailySleep
---         { userId = userId, startDate = "2024-01-01", endDate = "2024-01-07"
---         , onSuccess = OuraSleepReceived, onError = Just OuraError
---         }
---     ]
---   </pre>
-
 module Integration.Oura
 
 -- | Create an OAuth2ProviderConfig for Oura Ring integration.
@@ -5314,77 +4867,11 @@ instance Data.Aeson.Types.ToJSON.ToJSON Integration.Pdf.ExtractText.Layout
 instance Data.Aeson.Types.ToJSON.ToJSON Integration.Pdf.ExtractText.PdfMetadata
 
 
--- | # PDF Integration
---   
---   This module provides PDF processing integrations for NeoHaskell.
---   
---   <h2>Available Integrations</h2>
---   
---   <ul>
---   <li><a>Integration.Pdf.ExtractText</a> - Local CLI-based text
---   extraction (fast, free, requires poppler-utils). Re-exported from this
---   module.</li>
---   <li><a>Integration.Ocr.Ai</a> - AI-powered multimodal transcription
---   (handles scanned docs, OCR, summarization — requires OpenRouter API
---   key). Must be imported separately: <tt>import Integration.Ocr.Ai
---   qualified as OcrAi</tt></li>
---   </ul>
---   
---   <h2>Quick Start</h2>
---   
---   <pre>
---   import Integration.Pdf.ExtractText qualified as PdfExtract
---   
---   -- Configure extraction
---   Integration.outbound PdfExtract.Request
---     { fileRef = uploadedFile
---     , config = PdfExtract.defaultConfig
---     , onSuccess = \result -&gt; RecordText { text = result.text }
---     , onError = \err -&gt; ExtractionFailed { error = err }
---     }
---   </pre>
---   
---   <h2>Requirements</h2>
---   
---   <h3>Local Text Extraction</h3>
---   
---   The <tt>Integration.Pdf.ExtractText</tt> integration requires
---   poppler-utils:
---   
---   <pre>
---   # Ubuntu/Debian
---   apt-get install poppler-utils
---   
---   # macOS
---   brew install poppler
---   
---   # Nix
---   nix-shell -p poppler_utils
---   </pre>
---   
---   <h3>AI Transcription</h3>
---   
---   The <tt>Integration.Ocr.Ai</tt> integration requires an OpenRouter API
---   key. See <a>https://openrouter.ai/keys</a> for API key setup.
-
 module Integration.Pdf
 
 
--- | Internal implementation for PDF text extraction integration.
---   
---   This module contains Nick's code - the <tt>ToAction</tt> instance,
---   subprocess execution, temp file handling, and metadata parsing.
---   
---   <b>This module is not exported to Jess.</b>
-
 module Integration.Pdf.ExtractText.Internal
-
--- | Build pdftotext command arguments.
 buildPdftotextArgs :: Config -> Path -> Array Text
-
--- | Parse pdfinfo output into PdfMetadata.
 parsePdfInfo :: Text -> PdfMetadata
-
--- | Extract page count from pdfinfo output.
 extractPageCount :: Text -> Int
 instance (Data.Aeson.Types.ToJSON.ToJSON command, GHC.TypeLits.KnownSymbol (Service.Command.Core.NameOf command)) => Integration.ToAction (Integration.Pdf.ExtractText.Request command)

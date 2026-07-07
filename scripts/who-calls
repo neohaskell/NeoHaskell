@@ -8,21 +8,22 @@
 #
 # Usage:
 #   ./dev who-calls insert            # by symbol name
-#   ./dev who-calls insert Service.EventStore.Core   # narrowed by module
+#   ./dev who-calls insert Service.EventStore.Core   # narrowed by defining module
 #
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "${SCRIPT_DIR}/.."
 
 NAME="${1:?usage: who-calls <symbol> [module]}"
-MODULE="${2:-}"
 
 if [ ! -f .hiedb ]; then
   echo "who-calls: no index — run ./dev hiedb first" >&2
   exit 2
 fi
 
-# hiedb name-refs prints "Module:line:col-..." lines; join to capabilities.
-"${SCRIPT_DIR}/with-toolchain" bash -c "
-  hiedb -D .hiedb name-refs '${NAME}' ${MODULE:+'${MODULE}'} | python3 codemap/join-refs.py
-"
+# Args travel as argv end-to-end (never interpolated into a shell string).
+if [ $# -ge 2 ]; then
+  "${SCRIPT_DIR}/with-toolchain" hiedb -D .hiedb name-refs "${NAME}" "$2"
+else
+  "${SCRIPT_DIR}/with-toolchain" hiedb -D .hiedb name-refs "${NAME}"
+fi | "${SCRIPT_DIR}/with-toolchain" python3 codemap/join-refs.py

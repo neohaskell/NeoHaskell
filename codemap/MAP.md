@@ -44,8 +44,8 @@ vocabulary); for NEW code use the extension points. Full contract: codemap/READM
 | kind | create | register | tests |
 |---|---|---|---|
 | `new-core-primitive` | `core/core/<Name>.hs` | `core/nhcore.cabal exposed-modules`, `core/core/Core.hs re-exports (if prelude-level)` | `core/test-core/<Name>Spec.hs` |
-| `new-command` | `testbed/src/<Context>/Commands/<Name>.hs (app-level) or core/service/Service/Command/ (framework-level)` | `the context's Service.hs wiring`, `nhtestbed.cabal / nhcore.cabal` | `testbed/tests/commands/<name>.hurl (app)` |
-| `new-query` | `testbed/src/<Context>/Queries/<Name>.hs (app-level) or core/service/Service/Query/ (framework-level)` | `the context's Service.hs wiring via withQuery`, `deriveQuery TH` | `testbed/tests/queries/<name>.hurl (app)` |
+| `new-command-machinery` | `core/service/Service/Command/ or core/service/Service/CommandExecutor/` | `core/nhcore.cabal exposed-modules` | `core/testlib/Test/Service/Command/**` |
+| `new-query-machinery` | `core/service/Service/Query/ or core/service/Service/QueryObjectStore/` | `core/nhcore.cabal exposed-modules` | `core/testlib/Test/Service/QueryObjectStore/**` |
 | `new-transport-feature` | `core/service/Service/Transport/<Feature>.hs or core/service/Service/Transport/Web/<Feature>.hs` | `core/service/Service/Transport.hs`, `core/nhcore.cabal exposed-modules`, `core/service/Service/Application/Transports.hs wiring` | `core/test-service/ (register in Main.hs + other-modules)` |
 | `new-outbound-integration` | `integrations/Integration/<Name>.hs facade + integrations/Integration/<Name>/{Request,Response,Internal}.hs` | `integrations/nhintegrations.cabal exposed-modules` | `integrations/test/Integration/<Name>Spec.hs` |
 | `new-pipeline-asset` | `scripts/<verb-implementation> or .claude/hooks/ or .claude/skills/<name>/SKILL.md` | `dev (verb — MANDATORY, doctor-enforced)`, `.github/workflows/checks.yml if a CI gate` | `scripts/doctor self-checks` |

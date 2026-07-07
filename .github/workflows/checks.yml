@@ -40,8 +40,11 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           persist-credentials: false
-      - run: python3 -c "import yaml" || pip3 install pyyaml
-      - run: python3 codemap/check.py
+      # Same check.py as ./dev codemap-check; runner python + pinned pyyaml
+      # (pulling the full nix dev shell for a YAML check is not worth 40m —
+      # the PYTHON override is the sanctioned CI path, like lint's HLINT=).
+      - run: python3 -c "import yaml" 2>/dev/null || pip3 install pyyaml==6.0.3
+      - run: PYTHON=python3 ./dev codemap-check
 
   lint:
     name: hlint (dialect gate)

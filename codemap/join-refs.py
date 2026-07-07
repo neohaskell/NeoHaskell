@@ -20,7 +20,22 @@ def module_to_capability():
                              text=True, cwd=ROOT).stdout.splitlines()
 
     def glob_to_re(g):
-        return re.compile(g.replace(".", r"\.").replace("**", "\x00").replace("*", "[^/]*").replace("\x00", ".*"))
+        out = ""
+        i = 0
+        while i < len(g):
+            if g[i:i+2] == "**":
+                out += ".*"
+                i += 2
+            elif g[i] == "*":
+                out += "[^/]*"
+                i += 1
+            elif g[i] in ".+()[]{}^$?":
+                out += "\\" + g[i]
+                i += 1
+            else:
+                out += g[i]
+                i += 1
+        return re.compile(out)
 
     globs = [(c["id"], [glob_to_re(g) for g in c["owns"]]) for c in caps]
     mapping = {}
