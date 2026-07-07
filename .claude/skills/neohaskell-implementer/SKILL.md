@@ -56,11 +56,11 @@ calling ANY function you didn't just read:
 2. `codemap/api-hot.md` — the frequency-ranked card of what this repo
    actually calls, with verified examples.
 3. `./dev api "<type or name>"` — hoogle type search: the NeoHaskell
-   surface ranked top, vanilla ALWAYS below with a disclaimer (the
-   vanilla hit often reveals the dialect respelling — "String -> IO ()"
-   finds putStrLn below, and respelled "Text -> Task err Unit" finds
-   `Console.print` on top). Use it the moment you feel yourself
-   *remembering* an API instead of *reading* one.
+   surface ranked top, vanilla ALWAYS below with a disclaimer. Query
+   in dialect types — respell vanilla vocabulary using the AGENTS.md
+   style table (the single source of that mapping) and search again.
+   Use it the moment you feel yourself *remembering* an API instead
+   of *reading* one.
 4. `codemap/phrasebook.md` — doctest-verified usage patterns.
 
 If `./dev check` reports `invented-api-events=N` ("not in scope"), that is a

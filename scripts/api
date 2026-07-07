@@ -11,7 +11,8 @@
 #            vanilla results that held the real answer, e.g. putStrLn).
 #            Seeing the vanilla function informs the escape-hatch decision
 #            (.hlint.yaml `within:` + belongs-in note; rule of three →
-#            Core primitive) — or reveals the dialect respelling to query.
+#            Core primitive) — or reveals what to respell (per the AGENTS.md
+#            style table, the single source of the vanilla→dialect mapping).
 #
 # Databases are local build artifacts (gitignored), rebuilt by ./dev codemap
 # or lazily here when missing.
@@ -53,8 +54,6 @@ echo ""
 echo "── vanilla (deps + boot libs) — prefer the NeoHaskell results above ────"
 echo "   Using one of these anyway? Escape hatch first: .hlint.yaml within:"
 echo "   (justification + belongs-in note); rule of three → Core primitive."
-echo "   Dialect respellings for queries: String→Text · IO a→Task err a ·"
-echo "   [a]→Array a · Either→Result."
 "${SCRIPT_DIR}/with-toolchain" hoogle --database="${VAN_DB}" "$@" | head -6
 
 if [ "${NEO_HIT}" = "1" ]; then exit 0; else exit 3; fi
