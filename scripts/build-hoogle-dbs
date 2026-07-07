@@ -12,13 +12,16 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "${SCRIPT_DIR}/.."
 
 "${SCRIPT_DIR}/with-toolchain" bash -euo pipefail -c '
-  NHTXT=$(find dist-newstyle -name "nhcore.txt" -path "*doc*" | sort | tail -1)
-  INTTXT=$(find dist-newstyle -name "nhintegrations.txt" -path "*doc*" | sort | tail -1)
+  # newest by mtime (multiple build flavors can each hold a copy; lexical
+  # sort could pick a stale flavor)
+  NHTXT=$(find dist-newstyle -name "nhcore.txt" -path "*doc*" -exec ls -t {} + | head -1)
+  INTTXT=$(find dist-newstyle -name "nhintegrations.txt" -path "*doc*" -exec ls -t {} + | head -1)
   if [ -z "${NHTXT}" ] || [ -z "${INTTXT}" ]; then
     echo "build-hoogle-dbs: hoogle txts missing — run ./dev codemap first" >&2
     exit 2
   fi
   mkdir -p .hoogle-src
+  rm -f .hoogle-src/*.txt   # stale staging entries would get indexed too
   cp "${NHTXT}" "${INTTXT}" .hoogle-src/
   hoogle generate --database=.hoogle-neo.hoo --local=.hoogle-src >/dev/null
   hoogle generate --database=.hoogle-vanilla.hoo --local >/dev/null

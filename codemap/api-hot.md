@@ -20,23 +20,23 @@ full surface: codemap/signatures/ · type-directed search: ./dev api "<type>"
 ## Array
 - `fromLinkedList :: LinkedList a -> Array a`  <!-- 298 call sites -->
 - `length :: Array a -> Int`  <!-- 281 call sites -->
-  - `>>> length (Array (Data.Vector.fromList [1,2,3] :: Data.Vector.Vector Int))` → `3
+  - `>>> length (Array (Data.Vector.fromList [1,2,3] :: Data.Vector.Vector Int))` → `3`
 - `empty :: Array a`  <!-- 260 call sites -->
-  - `>>> empty :: Array Int` → `Array []
+  - `>>> empty :: Array Int` → `Array []`
 - `map :: (a -> b) -> Array a -> Array b`  <!-- 214 call sites -->
-  - `>>> map sqrt (fromLinkedList [1,4,9] :: Array Float)` → `Array [1.0,2.0,3.0]
+  - `>>> map sqrt (fromLinkedList [1,4,9] :: Array Float)` → `Array [1.0,2.0,3.0]`
 - `toLinkedList :: Array a -> LinkedList a`  <!-- 75 call sites -->
-  - `>>> toLinkedList (fromLinkedList [3,5,8] :: Array Int)` → `[3,5,8]
+  - `>>> toLinkedList (fromLinkedList [3,5,8] :: Array Int)` → `[3,5,8]`
 - `get :: Int -> Array a -> Maybe a`  <!-- 72 call sites -->
-  - `>>> get 0 (fromLinkedList [0,1,2] :: Array Int)` → `Just 0
+  - `>>> get 0 (fromLinkedList [0,1,2] :: Array Int)` → `Just 0`
 - `takeIf :: (a -> Bool) -> Array a -> Array a`  <!-- 59 call sites -->
-  - `>>> takeIf Basics.isEven (fromLinkedList [1,2,3,4,5,6] :: Array Int)` → `Array [2,4,6]
+  - `>>> takeIf Basics.isEven (fromLinkedList [1,2,3,4,5,6] :: Array Int)` → `Array [2,4,6]`
 - `wrap :: a -> Array a`  <!-- 53 call sites -->
-  - `>>> wrap (0 :: Int)` → `Array [0]
+  - `>>> wrap (0 :: Int)` → `Array [0]`
 - `push :: a -> Array a -> Array a`  <!-- 52 call sites -->
-  - `>>> push 3 (fromLinkedList [1,2] :: Array Int)` → `Array [1,2,3]
+  - `>>> push 3 (fromLinkedList [1,2] :: Array Int)` → `Array [1,2,3]`
 - `contains :: Eq value => value -> Array value -> Bool`  <!-- 46 call sites -->
-  - `>>> contains 2 (fromLinkedList [1,2,3] :: Array Int)` → `True
+  - `>>> contains 2 (fromLinkedList [1,2,3] :: Array Int)` → `True`
 
 ## Text
 - `contains :: Text -> Text -> Bool`  <!-- 449 call sites -->
@@ -137,25 +137,25 @@ full surface: codemap/signatures/ · type-directed search: ./dev api "<type>"
 
 ## Set
 - `contains :: Ord value => value -> Set value -> Bool`  <!-- 65 call sites -->
-  - `>>> contains 2 (fromLinkedList [1,2,3] :: Set Int)` → `True
+  - `>>> contains 2 (fromLinkedList [1,2,3] :: Set Int)` → `True`
 - `fromLinkedList :: Ord value => LinkedList value -> Set value`  <!-- 53 call sites -->
-  - `>>> fromLinkedList [1,2,3,2,1] :: Set Int` → `Set [1,2,3]
+  - `>>> fromLinkedList [1,2,3,2,1] :: Set Int` → `Set [1,2,3]`
 - `size :: Set value -> Int`  <!-- 26 call sites -->
-  - `>>> size (fromLinkedList [1,2,3] :: Set Int)` → `3
+  - `>>> size (fromLinkedList [1,2,3] :: Set Int)` → `3`
 - `empty :: Ord value => Set value`  <!-- 16 call sites -->
-  - `>>> empty :: Set Int` → `Set []
+  - `>>> empty :: Set Int` → `Set []`
 - `isEmpty :: Set value -> Bool`  <!-- 12 call sites -->
-  - `>>> isEmpty empty` → `True
+  - `>>> isEmpty empty` → `True`
 - `intersection :: Ord value => Set value -> Set value -> Set value`  <!-- 10 call sites -->
-  - `>>> intersection (fromLinkedList [1,2,3] :: Set Int) (fromLinkedList [2,3,4] :: Set Int)` → `Set [2,3]
+  - `>>> intersection (fromLinkedList [1,2,3] :: Set Int) (fromLinkedList [2,3,4] :: Set Int)` → `Set [2,3]`
 - `union :: Ord value => Set value -> Set value -> Set value`  <!-- 10 call sites -->
-  - `>>> union (fromLinkedList [1,2] :: Set Int) (fromLinkedList [2,3] :: Set Int)` → `Set [1,2,3]
+  - `>>> union (fromLinkedList [1,2] :: Set Int) (fromLinkedList [2,3] :: Set Int)` → `Set [1,2,3]`
 - `insert :: Ord value => value -> Set value -> Set value`  <!-- 8 call sites -->
-  - `>>> insert 4 (fromLinkedList [1,2,3] :: Set Int)` → `Set [1,2,3,4]
+  - `>>> insert 4 (fromLinkedList [1,2,3] :: Set Int)` → `Set [1,2,3,4]`
 - `difference :: Ord value => Set value -> Set value -> Set value`  <!-- 6 call sites -->
-  - `>>> difference (fromLinkedList [1,2,3] :: Set Int) (fromLinkedList [2,3,4] :: Set Int)` → `Set [1]
+  - `>>> difference (fromLinkedList [1,2,3] :: Set Int) (fromLinkedList [2,3,4] :: Set Int)` → `Set [1]`
 - `fromArray :: Ord value => Array value -> Set value`  <!-- 6 call sites -->
-  - `>>> fromArray ([1,2,3,2,1] :: Array Int) :: Set Int` → `Set [1,2,3]
+  - `>>> fromArray ([1,2,3,2,1] :: Array Int) :: Set Int` → `Set [1,2,3]`
 
 ## Stream
 - `toArray :: Stream value -> Task Text (Array value)`  <!-- 77 call sites -->

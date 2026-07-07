@@ -114,10 +114,18 @@ DOCTEST_START = re.compile(r"^\s*--\s+>>>\s?(.*)")
 DOCTEST_CONT = re.compile(r"^\s*--\s?(?!\s*>>>)(.*)")
 
 
+_TRACKED_CACHE = None
+
+
 def _tracked_hs():
-    import subprocess
-    return [f for f in subprocess.run(["git", "ls-files", "*.hs"], capture_output=True,
-            text=True, cwd=ROOT).stdout.splitlines() if not f.startswith("docs/archive/")]
+    global _TRACKED_CACHE
+    if _TRACKED_CACHE is None:
+        import subprocess
+        _TRACKED_CACHE = [f for f in subprocess.run(
+            ["git", "ls-files", "*.hs"], capture_output=True,
+            text=True, cwd=ROOT).stdout.splitlines()
+            if not f.startswith("docs/archive/")]
+    return _TRACKED_CACHE
 
 
 def _signature_index():
@@ -125,7 +133,7 @@ def _signature_index():
     generated signature files; ambiguous last-segments resolved by preferring
     the module whose full name equals the alias (core modules: Text, Array…)."""
     idx = {}
-    for txt in SIG.glob("*.txt"):
+    for txt in sorted(SIG.glob("*.txt")):
         module = None
         for line in txt.read_text(encoding="utf-8").splitlines():
             m = re.match(r"^module ([A-Za-z0-9.]+)", line)
@@ -217,8 +225,10 @@ def hot_card():
         for n, fn, sig in sorted(fns, key=lambda t: (-t[0], t[1]))[:10]:
             out.append(f"- `{sig}`  <!-- {n} call sites -->")
             ex = _doctest_for(src, fn) if src else None
-            if ex:
-                out.append(f"  - `{ex[0]}` → `{ex[1] if len(ex) > 1 else ''}`".rstrip(" `→"))
+            if ex and len(ex) > 1:
+                out.append(f"  - `{ex[0]}` → `{ex[1]}`")
+            elif ex:
+                out.append(f"  - `{ex[0]}`")
             entries += 1
         out.append("")
     (ROOT / "codemap" / "api-hot.md").write_text("\n".join(out).strip() + "\n", encoding="utf-8")

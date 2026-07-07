@@ -43,7 +43,9 @@ if [ ! -f "${NEO_DB}" ] || [ ! -f "${VAN_DB}" ]; then
 fi
 
 # ── pass 1: the NeoHaskell surface (top of the list) ───────────────────────
-NEO=$("${SCRIPT_DIR}/with-toolchain" hoogle --database="${NEO_DB}" "$@" | head -10)
+# capture in full, slice afterwards — `hoogle | head` under pipefail dies
+# with SIGPIPE (141) the moment a query has more results than the slice
+NEO=$("${SCRIPT_DIR}/with-toolchain" hoogle --database="${NEO_DB}" --count=10 "$@")
 NEO_HIT=1
 if [ -z "${NEO}" ] || echo "${NEO}" | grep -q "^No results found"; then
   NEO_HIT=0
@@ -61,6 +63,6 @@ echo ""
 echo "── vanilla (deps + boot libs) — prefer the NeoHaskell results above ────"
 echo "   Using one of these anyway? Escape hatch first: .hlint.yaml within:"
 echo "   (justification + belongs-in note); rule of three → Core primitive."
-"${SCRIPT_DIR}/with-toolchain" hoogle --database="${VAN_DB}" "$@" | head -6
+"${SCRIPT_DIR}/with-toolchain" hoogle --database="${VAN_DB}" --count=6 "$@"
 
 if [ "${NEO_HIT}" = "1" ]; then exit 0; else exit 3; fi

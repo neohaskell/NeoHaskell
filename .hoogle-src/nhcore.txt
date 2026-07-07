@@ -2,9 +2,7 @@
 -- See Hoogle, http://www.haskell.org/hoogle/
 
 
--- | Core Library for NeoHaskell
---   
---   NeoHaskell is a dialect of Haskell that is focused on
+-- | NeoHaskell is a dialect of Haskell that is focused on
 --   newcomer-friendliness and productivity.
 @package nhcore
 @version 0.9.1
