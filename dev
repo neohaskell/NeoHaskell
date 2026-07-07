@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+#
+# Developer entrypoint — dispatches the shared human/agent dev tools.
+# (Pipeline doctrine: every pipeline tool is a human tool; every new pipeline
+# asset registers a verb here or it doesn't ship.)
+#
+# Implementations live in scripts/; all of them self-provision the pinned
+# toolchain via scripts/with-toolchain — no need to be inside `nix develop`.
+#
+set -euo pipefail
+cd "$(dirname "$0")"
+
+usage() {
+  cat <<'EOF'
+usage: ./dev <verb> [args]
+
+  watch [target]        start the resident typecheck watcher (ghcid, -O0);
+                          writes errors to .ghcid-errors.txt (default: lib:nhcore)
+  check                 quick typecheck status — reads the watcher's file
+                          (instant), or one-shot typecheck if no watcher
+  test "pattern" [suite]  run only matching specs, link-free (~4-9s;
+                          default suite: nhcore-test-core)
+  refresh [target]      re-warm the -O0 build after pull/branch switch;
+                          prints modules-rebuilt (cache health)
+  exec <cmd> [args]     run any command with the pinned toolchain
+                          (e.g. ./dev exec ghc --version)
+
+Measured baselines: telemetry/SCHEMA.md
+EOF
+}
+
+VERB="${1:-}"
+[ $# -gt 0 ] && shift
+
+case "${VERB}" in
+  watch)   exec scripts/watch "$@" ;;
+  check)   exec scripts/check "$@" ;;
+  test)    exec scripts/test-match "$@" ;;
+  refresh) exec scripts/refresh-dev-cache "$@" ;;
+  exec)    exec scripts/with-toolchain "$@" ;;
+  ""|help|-h|--help) usage ;;
+  *)
+    echo "dev: unknown verb '${VERB}'" >&2
+    usage >&2
+    exit 2
+    ;;
+esac

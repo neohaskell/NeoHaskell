@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Persistent typecheck loop (pipeline Phase 1 — see docs/plans/2026-07-07-continuous-generation-pipeline-plan.md).
+# Resident typecheck watcher (pipeline Phase 1 — see docs/plans/2026-07-07-continuous-generation-pipeline-plan.md).
 #
 # Starts ghcid on a target (default: the nhcore library) using the dev build
 # flavor (cabal.project.dev, -O0) and continuously writes current errors to
@@ -10,8 +10,8 @@
 # and reads .ghcid-errors.txt. Empty file (or "All good") = typechecks.
 #
 # Usage:
-#   scripts/dev-loop                # watch lib:nhcore
-#   scripts/dev-loop lib:nhtestbed  # watch another target
+#   ./dev watch                # watch lib:nhcore
+#   ./dev watch lib:nhtestbed  # watch another target
 #
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -20,7 +20,7 @@ cd "${SCRIPT_DIR}/.."
 TARGET="${1:-lib:nhcore}"
 OUT=".ghcid-errors.txt"
 
-echo "dev-loop: watching ${TARGET} (dev flavor, -O0); errors -> ${OUT}"
+echo "watch: watching ${TARGET} (dev flavor, -O0); errors -> ${OUT}"
 
 # with-toolchain enters `nix develop` on demand — ghcid and cabal come from the
 # pinned dev shell, so this works from any bare shell (agent or human).

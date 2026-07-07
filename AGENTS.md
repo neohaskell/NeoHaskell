@@ -36,15 +36,19 @@ cabal test                      # all suites (Postgres needed: docker-compose up
 
 ## Fast inner loop (measured 2026-07-07 — use this in repair loops, NOT cabal build)
 
+Single entrypoint: **`./dev`** (no-args lists all verbs; same tools for humans and agents, deliberately):
+
 ```bash
-scripts/dev-loop                    # persistent ghcid typecheck → .ghcid-errors.txt
-scripts/test-match "pattern" [suite] # link-free hspec --match in cabal repl (~9s; default suite nhcore-test-core)
-scripts/refresh-dev-cache           # warm dist-newstyle after pull/branch switch; prints modules-rebuilt
+./dev watch                  # start resident typecheck watcher → .ghcid-errors.txt (once per session)
+./dev check                  # quick typecheck status (instant from watcher; one-shot fallback)
+./dev test "pattern" [suite] # link-free hspec --match (~4-9s; default suite nhcore-test-core)
+./dev refresh                # re-warm -O0 build after pull/switch; prints modules-rebuilt
+./dev exec <cmd>             # any command with the pinned toolchain
 ```
 
-- Repair-loop protocol: edit → wait ~2s → **read `.ghcid-errors.txt`** (measured: error feedback 0.6s, recovery 1.9s; empty/"All good" = typechecks). Never spawn `cabal build` inside the loop.
-- You do NOT need to be inside `nix develop`: every script self-provisions the pinned toolchain via `scripts/with-toolchain` (enters the dev shell on demand, ~0.4s warm).
-- All three scripts use the dev flavor (`cabal.project.dev`, `-O0`); full nhcore -O0 build = 249 modules / ~54s on this machine.
+- Repair-loop protocol: edit → wait ~2s → **`./dev check`** (measured: error feedback 0.6s, recovery 1.9s). Never spawn `cabal build` inside the loop.
+- You do NOT need to be inside `nix develop`: every verb self-provisions the pinned toolchain (~0.4s warm overhead).
+- Everything uses the dev flavor (`cabal.project.dev`, `-O0`); full nhcore -O0 build = 249 modules / ~54s on this machine.
 - Pipeline telemetry: `scripts/telemetry.py` (schema: `telemetry/SCHEMA.md`, frozen v1). Every pipeline run emits one line to `telemetry/runs.jsonl`. Telemetry is pipeline-only: never emit lines for ad-hoc runs.
 - These are the same commands humans use (README "Fast inner loop") — parity is deliberate; don't create agent-only variants.
 

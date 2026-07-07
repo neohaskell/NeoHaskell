@@ -33,7 +33,7 @@ Every pipeline run emits **exactly one JSON line** appended to `telemetry/runs.j
   amending this schema (bump `schema`).
 - `waiting_on_human_s` — total seconds parked on a human gate. Kept separate so
   work-time metrics stay honest.
-- `modules_rebuilt_after_restore` — cache-health metric from `scripts/refresh-dev-cache`
+- `modules_rebuilt_after_restore` — cache-health metric from `./dev refresh`
   at run start (null if not refreshed).
 - `outcome` — `ok | parked | failed | abandoned`.
 
@@ -63,10 +63,10 @@ transcript.md   # session transcript or stage summaries (miner input)
 
 | Measurement | Value | Target |
 |---|---|---|
-| ghcid error feedback after edit (`scripts/dev-loop`) | **0.55s** | <5s ✓ |
+| ghcid error feedback after edit (watcher + `./dev check`) | **0.55s** | <5s ✓ |
 | ghcid recovery to "All good" | 1.9s | — |
 | ghcid initial load (249 modules, warm .o) | ~60s (once per session) | — |
-| `scripts/test-match "Text"` (nhcore-test-core) | **9.2s** | <30s ✓ |
+| `./dev test "Text"` (nhcore-test-core) | **9.2s** | <30s ✓ |
 | Full nhcore -O0 build (cold flavor) | 54s / 249 modules | — |
 | Incremental: leaf module edit | 1 module / 4.9s | — |
 | Incremental: comment-level edit to core/core/Text.hs | 6 modules / 6.2s | — |
