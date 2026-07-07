@@ -38,7 +38,7 @@ cabal test                      # all suites (Postgres needed: docker-compose up
 
 ```bash
 scripts/dev-loop                    # persistent ghcid typecheck → .ghcid-errors.txt
-scripts/test-match "pattern" [suite]# link-free hspec --match in cabal repl (~9s; default suite nhcore-test-core)
+scripts/test-match "pattern" [suite] # link-free hspec --match in cabal repl (~9s; default suite nhcore-test-core)
 scripts/refresh-dev-cache           # warm dist-newstyle after pull/branch switch; prints modules-rebuilt
 ```
 

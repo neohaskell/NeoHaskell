@@ -25,6 +25,9 @@ Every pipeline run emits **exactly one JSON line** appended to `telemetry/runs.j
 }
 ```
 
+- `run_id` — must match `^[A-Za-z0-9][A-Za-z0-9._-]*$` (enforced by the emitter;
+  it is also the `telemetry/golden/<run_id>/` directory name). Convention:
+  `YYYY-MM-DD-NNN`.
 - `stages` — canonical stage names: `intake`, `localize`, `spec`, `design-review`,
   `plan`, `test-writing`, `implement`, `verify`, `pr`, `ci`. Add stages only by
   amending this schema (bump `schema`).

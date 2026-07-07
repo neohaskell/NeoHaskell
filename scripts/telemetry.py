@@ -18,6 +18,7 @@ Usage:
 import argparse
 import datetime
 import json
+import re
 import shutil
 import sys
 from pathlib import Path
@@ -39,6 +40,23 @@ FAILURE_LABELS = [
 ]
 
 
+# De-facto run-id format (documented in telemetry/SCHEMA.md): also guards the
+# telemetry/golden/<run_id>/ filesystem path against traversal/absolute values.
+RUN_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
+
+
+def validate_run_id(run_id: str) -> str:
+    if not RUN_ID_RE.fullmatch(run_id):
+        sys.exit(f"telemetry: invalid run-id {run_id!r} (must match {RUN_ID_RE.pattern})")
+    return run_id
+
+
+def non_negative(value: int, flag: str) -> int:
+    if value < 0:
+        sys.exit(f"telemetry: {flag} must be >= 0")
+    return value
+
+
 def now() -> str:
     return datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
@@ -55,6 +73,7 @@ def save(run: dict) -> None:
 
 
 def cmd_start(args) -> None:
+    validate_run_id(args.run_id)
     if CURRENT.exists():
         sys.exit(f"telemetry: run already in progress ({CURRENT}); finish it first")
     save({
@@ -82,17 +101,19 @@ def cmd_stage(args) -> None:
     else:
         stage["stop"] = now()
         if args.repair_rounds is not None:
-            stage["repair_rounds"] = args.repair_rounds
+            stage["repair_rounds"] = non_negative(args.repair_rounds, "--repair-rounds")
     save(run)
 
 
 def cmd_wait(args) -> None:
+    non_negative(args.seconds, "--seconds")
     run = load()
     run["waiting_on_human_s"] += args.seconds
     save(run)
 
 
 def cmd_rebuilt(args) -> None:
+    non_negative(args.count, "--count")
     run = load()
     run["modules_rebuilt_after_restore"] = args.count
     save(run)
@@ -102,8 +123,12 @@ def cmd_finish(args) -> None:
     run = load()
     if args.outcome not in OUTCOMES:
         sys.exit(f"telemetry: outcome must be one of {OUTCOMES}")
+    if args.failure_label is not None and args.failure_label not in FAILURE_LABELS:
+        sys.exit(f"telemetry: failure-label must be from the closed taxonomy: {', '.join(FAILURE_LABELS)}")
+    if args.outcome == "ok" and args.failure_label is not None:
+        sys.exit("telemetry: 'ok' runs must not carry a failure-label")
     if args.outcome in ("failed", "parked"):
-        if args.failure_label not in FAILURE_LABELS:
+        if args.failure_label is None:
             sys.exit(f"telemetry: failed/parked runs need --failure-label from: {', '.join(FAILURE_LABELS)}")
         if args.failure_label == "other" and not args.failure_note:
             sys.exit("telemetry: failure-label 'other' REQUIRES --failure-note (re-classified at weekly review)")
@@ -124,6 +149,7 @@ def cmd_golden(args) -> None:
         if not CURRENT.exists():
             sys.exit("telemetry: --run-id required when no run is in progress")
         run_id = json.loads(CURRENT.read_text())["run_id"]
+    validate_run_id(run_id)
     dest = GOLDEN / run_id
     dest.mkdir(parents=True, exist_ok=True)
     shutil.copy(args.request_file, dest / "request.md")

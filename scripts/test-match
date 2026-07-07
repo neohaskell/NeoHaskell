@@ -24,8 +24,13 @@ OUTPUT=$(printf ':main --match "%s"\n' "${PATTERN}" \
 
 echo "${OUTPUT}"
 
-# hspec summary line: "N examples, M failures". ", 0 failures" is unambiguous.
-if echo "${OUTPUT}" | grep -q ", 0 failures"; then
+# hspec summary line: "N examples, M failures". ", 0 failures" is unambiguous —
+# but "0 examples, 0 failures" means NOTHING ran (typo'd pattern / wrong suite),
+# and a verification tool must never report vacuous success.
+if echo "${OUTPUT}" | grep -qE '^0 examples,'; then
+  echo "test-match: no specs matched \"${PATTERN}\" in ${SUITE} — check the pattern/suite" >&2
+  exit 1
+elif echo "${OUTPUT}" | grep -q ", 0 failures"; then
   exit 0
 else
   echo "test-match: failures detected (or no summary line found)" >&2
