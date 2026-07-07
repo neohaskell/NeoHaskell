@@ -69,7 +69,8 @@ RULES = [
     ("no-pure-return",
      re.compile(r"\b(pure|return)\b"),
      "`pure`/`return` are banned in NeoHaskell code — use `Task.yield`. "
-     "(Defining them in instances is fine: `pure = ...` / `pure x = ...`.)"),
+     "(Defining them in instances is fine: `pure = ...`, `pure x = ...`, "
+     "or pattern-matching forms like `pure Nothing = ...`.)"),
 ]
 
 # Instance-method definition shapes for pure/return: point-free, single var,
