@@ -74,10 +74,10 @@ This project uses the fourmolu formatter for consistent Haskell code styling. Wh
 ## Linting
 
 This project uses hlint, it will automatically be run in VSCode by the recommended extension.
-To run manually:
+To run manually (same paths and config as the CI gate):
 
 ```sh
-hlint .
+./dev lint
 ```
 
 > Since 2026-07-07 the hlint config is **dialect-first**: it encodes

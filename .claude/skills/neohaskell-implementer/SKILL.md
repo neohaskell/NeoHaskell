@@ -6,8 +6,10 @@ description: Write NeoHaskell (not vanilla Haskell) code in this repo — copy-a
 # NeoHaskell implementer
 
 Rebuilt 2026-07-07 (Phase 2 of the pipeline plan; predecessor archived in
-`docs/archive/2026-07-ai-artifacts/claude-skills/`). Every claim here is
-enforced by a gate — nothing in this file is advisory.
+`docs/archive/2026-07-ai-artifacts/claude-skills/`). The dialect rules below
+are mechanically gated (hook → hlint → GHC); the working discipline
+(copy-adapt, repair protocol, circuit breaker) is protocol — followed because
+it works, verified at review.
 
 ## The one structural rule: copy-adapt, never blank-buffer
 

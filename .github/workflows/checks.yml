@@ -47,4 +47,4 @@ jobs:
           echo "ccabc8802a58154699a3583b8dddc5ea2e6d65753a62c45c0e80088ebb16b42b  hlint.tar.gz" | sha256sum -c -
           tar xzf hlint.tar.gz
       - name: Dialect gate
-        run: ./hlint-3.10/hlint core integrations testbed lsp
+        run: HLINT=./hlint-3.10/hlint ./dev lint

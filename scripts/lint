@@ -18,8 +18,13 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "${SCRIPT_DIR}/.."
 
+# THE single source of the lint path list (CI reuses this script via HLINT=…).
 if [ $# -eq 0 ]; then
   set -- core integrations testbed lsp
 fi
 
+# HLINT override lets CI supply its pinned standalone binary without nix.
+if [ -n "${HLINT:-}" ]; then
+  exec "${HLINT}" "$@"
+fi
 exec "${SCRIPT_DIR}/with-toolchain" hlint "$@"

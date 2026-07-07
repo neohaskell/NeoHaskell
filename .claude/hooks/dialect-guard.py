@@ -15,7 +15,13 @@ Precision rules:
 - A line containing HOOK-ALLOW is skipped (escape hatch for false positives;
   hlint and GHC remain the real gates).
 
-Exit 2 + {"block": true} on stderr = rejection (Claude Code hook contract).
+Payload arrives as stdin JSON ({tool_name, tool_input}) per the official hook
+contract; CLAUDE_TOOL_* env vars are read as a fallback for older runtimes.
+Exit 2 = rejection; stderr is fed back to the model (the teaching moment).
+
+THE LAW/TEACHER SPLIT: this hook is the fast teacher, .hlint.yaml is the law.
+Each rule below names its canonical gate — on disagreement the gate wins and
+this file gets corrected (that's what HOOK-ALLOW is for).
 """
 
 import json
@@ -24,21 +30,29 @@ import re
 import sys
 
 RULES = [
+    # canonical gate: .hlint.yaml "NeoHaskell: use |> pipelines" rewrite hint
     (re.compile(r"(^|[^$])\$\s|\s\$$"),
      "`$` is banned — use `x |> f` pipelines. (Style table, AGENTS.md)"),
+    # NOT expressible in hlint (declaration syntax); canonical gate: review
     (re.compile(r"\bwhere\b"),
      "`where` clauses are banned — use `do let`. (module/class/instance/data headers are fine)"),
+    # NOT expressible in hlint (type name); backstop: Data.Either module restriction
     (re.compile(r"\bEither\b"),
      "`Either` is banned — use `Result err val`."),
+    # canonical gate: .hlint.yaml modules: restrictions (grandfathered within:)
     (re.compile(r"^\s*import\s+(qualified\s+)?(Data|GHC\.Base|System|Control\.Monad)\b"),
      "Vanilla import — use the Core wrapper (Text/Array/Map/Char/File/...). "
      "No wrapper exists? Register an exception in .hlint.yaml `within:` with a "
      "justification + `belongs-in:` note (rule of three promotes a primitive)."),
+    # NOT expressible in hlint generically; canonical gate: review
     (re.compile(r"^\s*import\s+[A-Z][A-Za-z0-9.]*\s*$"),
      "Unqualified open import — use `import Foo (Foo); import Foo qualified`."),
-    (re.compile(r"\b(pure|return)\b(?!\s*=)"),
+    # NOT in hlint (usage-vs-definition undecidable there); backstop: GHC/review.
+    # Negative lookahead exempts definitions: `pure = ...` AND `pure x = ...`
+    # (but not `==` comparisons).
+    (re.compile(r"\b(pure|return)\b(?!\s*\w*\s*=(?!=))"),
      "`pure`/`return` are banned in NeoHaskell code — use `Task.yield`. "
-     "(Defining them in instances is fine: `pure = ...`.)"),
+     "(Defining them in instances is fine: `pure = ...` / `pure x = ...`.)"),
 ]
 
 CASE_BOOL = re.compile(r"case[^\n]*\bof\b[^\n]*\n\s*(True|False)\s*->")
@@ -71,13 +85,28 @@ def new_blobs(tool: str, payload: dict):
     return []
 
 
+def read_event():
+    """Official contract: JSON on stdin ({tool_name, tool_input}).
+    Fallback: CLAUDE_TOOL_* env vars (older runtimes / manual testing)."""
+    tool, payload = "", {}
+    if not sys.stdin.isatty():
+        try:
+            event = json.loads(sys.stdin.read() or "{}")
+            tool = event.get("tool_name", "")
+            payload = event.get("tool_input", {}) or {}
+        except json.JSONDecodeError:
+            pass
+    if not tool:
+        tool = os.environ.get("CLAUDE_TOOL_NAME", "")
+        try:
+            payload = json.loads(os.environ.get("CLAUDE_TOOL_INPUT", "") or "{}")
+        except json.JSONDecodeError:
+            payload = {}
+    return tool, payload
+
+
 def main() -> int:
-    tool = os.environ.get("CLAUDE_TOOL_NAME", "")
-    raw = os.environ.get("CLAUDE_TOOL_INPUT", "")
-    try:
-        payload = json.loads(raw) if raw else {}
-    except json.JSONDecodeError:
-        return 0  # malformed input is not this guard's problem
+    tool, payload = read_event()
 
     path = payload.get("file_path", "")
     if not path.endswith(".hs") or "docs/archive/" in path:
@@ -112,7 +141,7 @@ def main() -> int:
             + "\n\nFix the pattern, or if this is a false positive/deliberate exception, "
             "add `-- HOOK-ALLOW: <reason>` on the line (hlint + GHC remain the real gates)."
         )
-        print(json.dumps({"block": True, "message": msg}), file=sys.stderr)
+        print(msg, file=sys.stderr)
         return 2
     return 0
 
