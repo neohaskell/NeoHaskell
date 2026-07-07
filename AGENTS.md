@@ -58,7 +58,7 @@ Single entrypoint: **`./dev`** (no-args lists all verbs; same tools for humans a
 ## Dialect enforcement (Phase 2, live since 2026-07-07)
 
 Three layers, in feedback order:
-1. **Edit hook** (`.claude/hooks/dialect-guard.py`, ~50ms): rejects `$`, `where` clauses, `Either`, `pure`/`return`, vanilla/unqualified imports, `case`-of-Bool — on added lines, quoting the rule. False positive? `-- HOOK-ALLOW: <reason>` on the line.
+1. **Edit hook** (`.claude/hooks/dialect-guard.py`, ~50ms): rejects `$`, `where`-as-let-substitute (declaration `where` — module/class/instance/data/GADT/type-family — is fine), `Either`, `pure`/`return`, vanilla/unqualified imports, `case`-of-Bool — on added lines, quoting the rule. False positive? `-- HOOK-ALLOW: <reason>` on the line. Adding/changing rules → `neohaskell-dialect-rules` skill (case coverage is CI-enforced via `./dev doctor`).
 2. **`./dev lint`** (seconds; CI gate in `checks.yml`): dialect-first `.hlint.yaml` — vanilla modules restricted to Core wrappers + grandfathered boundaries (generated 2026-07-07).
 3. **GHC** (`./dev check`): `NoImplicitPrelude`.
 

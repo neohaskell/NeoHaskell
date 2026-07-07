@@ -6,58 +6,83 @@ Rejects vanilla-Haskell patterns in Write/Edit/MultiEdit payloads targeting
 or GHC (the build). The teaching layer: every rejection quotes the rule and
 the escape hatch.
 
+THE LAW/TEACHER SPLIT: this hook is the fast teacher, .hlint.yaml is the law.
+Each rule names its canonical gate — on disagreement the gate wins and this
+file gets corrected (that's what HOOK-ALLOW is for).
+
 Precision rules:
 - Only ADDED lines are checked (Edit: lines in new_string not in old_string),
   so editing near existing grandfathered code never trips the guard.
 - Comment-only lines are skipped ("returns the result" prose is fine).
-- `module|class|instance|data|newtype ... where` is legal Haskell structure,
-  not a where-clause.
+- `where` is banned only as a let-substitute (function-level where-clause);
+  it is legal as part of module/class/instance/data/newtype/GADT/closed
+  type family declarations.
 - A line containing HOOK-ALLOW is skipped (escape hatch for false positives;
   hlint and GHC remain the real gates).
 
-Payload arrives as stdin JSON ({tool_name, tool_input}) per the official hook
-contract; CLAUDE_TOOL_* env vars are read as a fallback for older runtimes.
-Exit 2 = rejection; stderr is fed back to the model (the teaching moment).
+EXTENDING THIS HOOK — see the `neohaskell-dialect-rules` skill. Contract:
+every rule has an `id`, and .claude/hooks/dialect-guard-cases.json MUST
+contain at least one blocking case (`expect_rules` includes the id) and one
+passing case (`pass_rules` includes the id). `--self-test` enforces this and
+runs in CI via `./dev doctor`.
 
-THE LAW/TEACHER SPLIT: this hook is the fast teacher, .hlint.yaml is the law.
-Each rule below names its canonical gate — on disagreement the gate wins and
-this file gets corrected (that's what HOOK-ALLOW is for).
+Payload: stdin JSON ({tool_name, tool_input}) per the official hook contract;
+CLAUDE_TOOL_* env vars as fallback. Exit 2 = rejection; stderr is fed back
+to the model.
 """
 
 import json
 import os
 import re
 import sys
+from pathlib import Path
 
+# (id, compiled regex, message). Comment above each rule = its canonical gate.
 RULES = [
-    # canonical gate: .hlint.yaml "NeoHaskell: use |> pipelines" rewrite hint
-    (re.compile(r"(^|[^$])\$\s|\s\$$"),
+    # gate: .hlint.yaml "NeoHaskell: use |> pipelines" rewrite hint
+    ("no-dollar",
+     re.compile(r"(^|[^$])\$\s|\s\$$"),
      "`$` is banned — use `x |> f` pipelines. (Style table, AGENTS.md)"),
-    # NOT expressible in hlint (declaration syntax); canonical gate: review
-    (re.compile(r"\bwhere\b"),
-     "`where` clauses are banned — use `do let`. (module/class/instance/data headers are fine)"),
+    # NOT expressible in hlint (declaration syntax); gate: review.
+    # Exemption logic: STRUCTURE_WHERE below.
+    ("no-where-clause",
+     re.compile(r"\bwhere\b"),
+     "`where` is banned as a let-substitute — use `do let`. "
+     "(where in module/class/instance/data/GADT/type-family declarations is fine)"),
     # NOT expressible in hlint (type name); backstop: Data.Either module restriction
-    (re.compile(r"\bEither\b"),
+    ("no-either",
+     re.compile(r"\bEither\b"),
      "`Either` is banned — use `Result err val`."),
-    # canonical gate: .hlint.yaml modules: restrictions (grandfathered within:)
-    (re.compile(r"^\s*import\s+(qualified\s+)?(Data|GHC\.Base|System|Control\.Monad)\b"),
+    # gate: .hlint.yaml modules: restrictions (grandfathered within:)
+    ("no-vanilla-import",
+     re.compile(r"^\s*import\s+(qualified\s+)?(Data|GHC\.Base|System|Control\.Monad)\b"),
      "Vanilla import — use the Core wrapper (Text/Array/Map/Char/File/...). "
      "No wrapper exists? Register an exception in .hlint.yaml `within:` with a "
      "justification + `belongs-in:` note (rule of three promotes a primitive)."),
-    # NOT expressible in hlint generically; canonical gate: review
-    (re.compile(r"^\s*import\s+[A-Z][A-Za-z0-9.]*\s*$"),
+    # NOT expressible in hlint generically; gate: review
+    ("no-open-import",
+     re.compile(r"^\s*import\s+[A-Z][A-Za-z0-9.]*\s*$"),
      "Unqualified open import — use `import Foo (Foo); import Foo qualified`."),
     # NOT in hlint (usage-vs-definition undecidable there); backstop: GHC/review.
-    # Negative lookahead exempts definitions: `pure = ...` AND `pure x = ...`
-    # (but not `==` comparisons).
-    (re.compile(r"\b(pure|return)\b(?!\s*\w*\s*=(?!=))"),
+    # Lookahead exempts definitions (`pure = …`, `pure x = …`) but not `==`.
+    ("no-pure-return",
+     re.compile(r"\b(pure|return)\b(?!\s*\w*\s*=(?!=))"),
      "`pure`/`return` are banned in NeoHaskell code — use `Task.yield`. "
      "(Defining them in instances is fine: `pure = ...` / `pure x = ...`.)"),
 ]
 
+# Multi-line pseudo-rule (checked per blob, not per line).
+CASE_BOOL_ID = "no-case-bool"
 CASE_BOOL = re.compile(r"case[^\n]*\bof\b[^\n]*\n\s*(True|False)\s*->")
-STRUCTURE_WHERE = re.compile(r"^\s*(module|class|instance|data|newtype)\b|deriving")
+
+# Declaration heads where `where` is legal Haskell structure. Includes `type`
+# (closed type families: `type family F a where`). Known limitation: a
+# multi-line declaration head whose continuation line carries the `where`
+# (e.g. constraints spanning lines) needs HOOK-ALLOW — documented in the skill.
+STRUCTURE_WHERE = re.compile(r"^\s*(module|class|instance|data|newtype|type)\b|deriving")
 COMMENT_LINE = re.compile(r"^\s*--")
+
+CASES_FILE = Path(__file__).parent / "dialect-guard-cases.json"
 
 
 def added_lines(tool: str, payload: dict):
@@ -85,6 +110,40 @@ def new_blobs(tool: str, payload: dict):
     return []
 
 
+def exempt(rule_id: str, line: str, path: str) -> bool:
+    """Per-rule exemption logic — keyed by rule id, never by message text."""
+    if rule_id == "no-where-clause" and STRUCTURE_WHERE.search(line):
+        return True
+    if rule_id == "no-either" and path.endswith("core/core/Result.hs"):
+        return True
+    return False
+
+
+def check(tool: str, payload: dict):
+    """Returns [(rule_id, message, offending_line)] — pure, testable."""
+    path = payload.get("file_path", "")
+    if not path.endswith(".hs") or "docs/archive/" in path:
+        return []
+
+    violations = []
+    for line in added_lines(tool, payload):
+        if COMMENT_LINE.match(line) or "HOOK-ALLOW" in line:
+            continue
+        for rule_id, rx, msg in RULES:
+            if rx.search(line) and not exempt(rule_id, line, path):
+                violations.append((rule_id, msg, line.strip()[:100]))
+                break  # one rule per line is enough
+
+    for blob in new_blobs(tool, payload):
+        if "HOOK-ALLOW" in blob:
+            continue
+        if CASE_BOOL.search(blob):
+            violations.append((CASE_BOOL_ID,
+                               "`case cond of True/False` is an anti-pattern — use if-then-else.", ""))
+            break
+    return violations
+
+
 def read_event():
     """Official contract: JSON on stdin ({tool_name, tool_input}).
     Fallback: CLAUDE_TOOL_* env vars (older runtimes / manual testing)."""
@@ -105,39 +164,57 @@ def read_event():
     return tool, payload
 
 
+def self_test() -> int:
+    """Run the committed case file AND enforce rule coverage:
+    every rule id needs >=1 blocking case (expect_rules) and >=1 passing
+    case (pass_rules). Adding a rule without cases fails CI."""
+    cases = json.loads(CASES_FILE.read_text())
+    all_ids = {r[0] for r in RULES} | {CASE_BOOL_ID}
+    blocked_cov, pass_cov, fails = set(), set(), 0
+
+    for case in cases:
+        fired = {v[0] for v in check(case["tool"], case["tool_input"])}
+        expect = set(case.get("expect_rules", []))
+        if expect:
+            if not expect <= fired:
+                print(f"self-test FAIL {case['name']}: expected {sorted(expect)}, fired {sorted(fired)}")
+                fails += 1
+            blocked_cov |= expect
+        else:
+            if fired:
+                print(f"self-test FAIL {case['name']}: expected pass, fired {sorted(fired)}")
+                fails += 1
+            pass_cov |= set(case.get("pass_rules", []))
+
+    for missing, kind in ((all_ids - blocked_cov, "blocking"), (all_ids - pass_cov, "passing")):
+        for rule_id in sorted(missing):
+            print(f"self-test FAIL coverage: rule '{rule_id}' has no {kind} case in {CASES_FILE.name}")
+            fails += 1
+
+    if fails == 0:
+        print(f"dialect-guard self-test: OK — {len(cases)} cases, {len(all_ids)} rules fully covered")
+    return 1 if fails else 0
+
+
 def main() -> int:
+    if len(sys.argv) > 1 and sys.argv[1] == "--self-test":
+        return self_test()
+
     tool, payload = read_event()
-
-    path = payload.get("file_path", "")
-    if not path.endswith(".hs") or "docs/archive/" in path:
-        return 0
-
-    violations = []
-    for line in added_lines(tool, payload):
-        if COMMENT_LINE.match(line) or "HOOK-ALLOW" in line:
-            continue
-        for rx, msg in RULES:
-            if rx.search(line):
-                if "where" in msg and STRUCTURE_WHERE.search(line):
-                    continue
-                if "Either" in msg and path.endswith("core/core/Result.hs"):
-                    continue
-                violations.append(f"  {msg}\n    ↳ {line.strip()[:100]}")
-                break  # one rule per line is enough
-
-    for blob in new_blobs(tool, payload):
-        if "HOOK-ALLOW" in blob:
-            continue
-        if CASE_BOOL.search(blob):
-            violations.append("  `case cond of True/False` is an anti-pattern — use if-then-else.")
-            break
+    violations = check(tool, payload)
 
     if violations:
         seen = set()
-        unique = [v for v in violations if not (v in seen or seen.add(v))][:6]
+        lines = []
+        for rule_id, msg, offending in violations:
+            key = (rule_id, offending)
+            if key in seen:
+                continue
+            seen.add(key)
+            lines.append(f"  [{rule_id}] {msg}" + (f"\n    ↳ {offending}" if offending else ""))
         msg = (
             "NeoHaskell dialect guard — edit rejected:\n"
-            + "\n".join(unique)
+            + "\n".join(lines[:6])
             + "\n\nFix the pattern, or if this is a false positive/deliberate exception, "
             "add `-- HOOK-ALLOW: <reason>` on the line (hlint + GHC remain the real gates)."
         )

@@ -69,6 +69,12 @@ if [ -d .claude/skills ]; then
   done < <(grep -rhoE '\./dev [a-z-]+' .claude/skills/*/SKILL.md 2>/dev/null | sort -u)
 fi
 
+# 5. Dialect-guard self-test: every hook rule must have blocking AND passing
+#    cases in dialect-guard-cases.json (a rule without cases fails here).
+if [ -f .claude/hooks/dialect-guard.py ]; then
+  python3 .claude/hooks/dialect-guard.py --self-test || fail=1
+fi
+
 if [ "${fail}" -eq 0 ]; then
   count=$(echo "${registered}" | wc -l | tr -d ' ')
   skills=$(ls -d .claude/skills/*/ 2>/dev/null | wc -l | tr -d ' ')
