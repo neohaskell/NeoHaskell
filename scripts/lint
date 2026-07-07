@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+#
+# Dialect lint gate (pipeline Phase 2). Runs hlint with the dialect-first
+# config (.hlint.yaml): vanilla-module restrictions with grandfathered
+# boundaries, banned partials, teaching rewrite hints.
+#
+# Same config as CI (.github/workflows/checks.yml) — if it passes here, it
+# passes there. Exit non-zero on any hint.
+#
+# Usage:
+#   ./dev lint                 # everything
+#   ./dev lint core/core       # a subtree
+#
+# No Core wrapper for what you need? Register an exception in .hlint.yaml
+# `within:` with a justification comment and a `belongs-in:` note.
+#
+set -euo pipefail
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+cd "${SCRIPT_DIR}/.."
+
+if [ $# -eq 0 ]; then
+  set -- core integrations testbed lsp
+fi
+
+exec "${SCRIPT_DIR}/with-toolchain" hlint "$@"

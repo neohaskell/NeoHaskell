@@ -24,6 +24,8 @@ usage: ./dev <verb> [args]
                           prints modules-rebuilt (cache health)
   doctest               run the doctest suite
   test-all              run every test suite (colored human runner)
+  lint [paths]          dialect gate: hlint with the dialect-first config
+                          (same as CI; escape hatch documented in .hlint.yaml)
   doctor                harness self-check: every script has a verb or a
                           reasoned exemption; no dangling verbs (CI-enforced)
   exec <cmd> [args]     run any command with the pinned toolchain
@@ -43,6 +45,7 @@ case "${VERB}" in
   refresh)  exec scripts/refresh-dev-cache "$@" ;;
   doctest)  exec scripts/run-doctest "$@" ;;
   test-all) exec scripts/run-all-tests.sh "$@" ;;
+  lint)     exec scripts/lint "$@" ;;
   doctor)   exec scripts/doctor "$@" ;;
   exec)     exec scripts/with-toolchain "$@" ;;
   ""|help|-h|--help) usage ;;

@@ -58,8 +58,20 @@ for f in scripts/*; do
   fi
 done
 
+# 4. Skills are agent-visible docs (governing rule: no doc without a gate) —
+#    every `./dev <verb>` a SKILL.md references must actually be registered.
+if [ -d .claude/skills ]; then
+  while IFS= read -r ref; do
+    verb=$(echo "${ref}" | sed 's|.*\./dev ||' | awk '{print $1}')
+    if ! grep -qE "^\s*${verb}\)" dev; then
+      err "a SKILL.md references './dev ${verb}' but that verb is not registered in ./dev"
+    fi
+  done < <(grep -rhoE '\./dev [a-z-]+' .claude/skills/*/SKILL.md 2>/dev/null | sort -u)
+fi
+
 if [ "${fail}" -eq 0 ]; then
   count=$(echo "${registered}" | wc -l | tr -d ' ')
-  echo "doctor: OK — ${count} verbs registered, $(ls scripts/ | wc -l | tr -d ' ') scripts accounted for, ${#EXEMPT_NAMES[@]} exemptions (all reasoned)"
+  skills=$(ls -d .claude/skills/*/ 2>/dev/null | wc -l | tr -d ' ')
+  echo "doctor: OK — ${count} verbs registered, $(ls scripts/ | wc -l | tr -d ' ') scripts accounted for, ${#EXEMPT_NAMES[@]} exemptions (all reasoned), ${skills} skills verb-checked"
 fi
 exit "${fail}"

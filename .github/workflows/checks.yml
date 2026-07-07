@@ -1,9 +1,12 @@
 # Fast governance checks (pipeline Phase 1+). Pure bash, no toolchain —
 # feedback in seconds, long before the build workflows finish.
 #
-# Currently: ./dev doctor — enforces "every pipeline asset registers a ./dev
-# verb or carries a reasoned exemption" (see scripts/doctor for the contract).
-# Phase 2 adds the dialect hlint gate as a separate job (needs the toolchain).
+# Jobs:
+#   doctor — enforces "every pipeline asset registers a ./dev verb or carries
+#            a reasoned exemption" (see scripts/doctor for the contract).
+#   lint   — the NeoHaskell dialect gate: hlint with the dialect-first
+#            .hlint.yaml (vanilla-module restrictions, banned partials,
+#            teaching hints). Standalone pinned binary — no nix needed.
 name: checks
 
 on:
@@ -28,3 +31,20 @@ jobs:
         with:
           persist-credentials: false
       - run: ./dev doctor
+
+  lint:
+    name: hlint (dialect gate)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Install hlint 3.10 (pinned binary + checksum)
+        run: |
+          curl -sSfL -o hlint.tar.gz \
+            https://github.com/ndmitchell/hlint/releases/download/v3.10/hlint-3.10-x86_64-linux.tar.gz
+          echo "ccabc8802a58154699a3583b8dddc5ea2e6d65753a62c45c0e80088ebb16b42b  hlint.tar.gz" | sha256sum -c -
+          tar xzf hlint.tar.gz
+      - name: Dialect gate
+        run: ./hlint-3.10/hlint core integrations testbed lsp
