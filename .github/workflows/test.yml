@@ -4,6 +4,9 @@ on:
   pull_request:
     branches:
       - main
+    # ready_for_review is NOT a default activity type — without it, flipping
+    # a draft to ready would never re-trigger the suite the guard skipped
+    types: [opened, synchronize, reopened, ready_for_review]
     paths:
       - "core/**"
       - "testbed/**"
@@ -25,7 +28,15 @@ permissions:
   contents: read
 
 jobs:
+  # DRAFT-PR CI GUARD (pipeline Phase 5, task 3): a draft PR is a parked spec
+  # awaiting the maintainer's gate decision — burning ~1h of build+test on it
+  # is waste. The heavy jobs skip on drafts (dependents skip transitively);
+  # ci-gate accepts the skips only while the PR stays a draft. Marking the PR
+  # ready-for-review re-triggers the full matrix. checks.yml (doctor, codemap,
+  # lint, spec) still runs on drafts — seconds, and it is what validates the
+  # spec itself.
   build:
+    if: github.event_name == 'push' || github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -95,6 +106,7 @@ jobs:
   # (build-free: doctest interprets sources against the dev-shell GHC's
   # package DB, so no dist-newstyle artifact is needed).
   doctest:
+    if: github.event_name == 'push' || github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -265,6 +277,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check all tests passed
+        env:
+          IS_DRAFT: ${{ github.event_name == 'pull_request' && github.event.pull_request.draft }}
         run: |
           results=(
             "${{ needs.doctest.result }}"
@@ -275,6 +289,11 @@ jobs:
             "${{ needs.test-hurl.result }}"
           )
           for r in "${results[@]}"; do
+            # skipped is acceptable ONLY under the draft-PR guard — a parked
+            # spec hasn't earned a green gate, it just hasn't burned CI yet
+            if [[ "$r" == "skipped" && "$IS_DRAFT" == "true" ]]; then
+              continue
+            fi
             if [[ "$r" != "success" ]]; then
               echo "::error::Test job failed with result: $r"
               exit 1

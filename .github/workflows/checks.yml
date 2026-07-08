@@ -11,6 +11,9 @@ name: checks
 
 on:
   pull_request:
+    # ready_for_review included so the spec job's drift gate fires the moment
+    # a draft (parked spec) is promoted — default types would miss the flip
+    types: [opened, synchronize, reopened, ready_for_review]
   push:
     branches: [main]
 
@@ -45,6 +48,28 @@ jobs:
       # the PYTHON override is the sanctioned CI path, like lint's HLINT=).
       - run: python3 -c "import yaml" 2>/dev/null || pip3 install pyyaml==6.0.3
       - run: PYTHON=python3 ./dev codemap-check
+
+  spec:
+    name: spec check (contract-delta gate)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+          # spec-drift --pr diffs against the merge base — needs history
+          fetch-depth: 0
+      # Structure gate: every committed spec (incl. TEMPLATE.md, which is a
+      # validated instance) parses and machine-joins. Runs on drafts too —
+      # this is what the maintainer's gate decision reads.
+      - run: ./dev spec-check
+      # Drift gate: at PR-READY only, the specs this PR touches must be
+      # honored by the generated API surface (codemap-sync proves committed
+      # signatures == code; this proves signatures == promise). A draft is
+      # still implementing its spec — drift there is expected, not an error.
+      - name: Spec drift (PR-ready only)
+        if: github.event_name == 'pull_request' && github.event.pull_request.draft == false
+        run: ./dev spec-drift --pr origin/${{ github.base_ref }}
 
   lint:
     name: hlint (dialect gate)

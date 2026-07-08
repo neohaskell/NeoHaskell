@@ -71,11 +71,20 @@ if [ -d .claude/skills ]; then
   done < <(grep -rhoE '\./dev [a-z-]+' .claude/skills/*/SKILL.md 2>/dev/null | sort -u)
 fi
 
-# 5. Dialect-guard self-test: every hook rule must have blocking AND passing
-#    cases in dialect-guard-cases.json (a rule without cases fails here).
+# 5. Hook self-tests: every hook rule/scenario must have blocking AND passing
+#    cases in its committed cases file (a rule without cases fails here).
 if [ -f .claude/hooks/dialect-guard.py ]; then
   python3 .claude/hooks/dialect-guard.py --self-test || fail=1
 fi
+if [ -f .claude/hooks/expectation-guard.py ]; then
+  python3 .claude/hooks/expectation-guard.py --self-test || fail=1
+fi
+
+# 5b. Phase 5 validator self-tests (spec gate + resume contract): fixture
+#     mutations must keep failing for the right reasons — a validator that
+#     stops rejecting is a gate that silently opened.
+scripts/spec-check --self-test || fail=1
+scripts/pipeline-state --self-test || fail=1
 
 # 6. invented-api counter self-test (Phase 4): ./dev check's counter is
 #    anchored to GHC error text + error-index codes; this fixture runs the

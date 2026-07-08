@@ -1,0 +1,300 @@
+#!/usr/bin/env python3
+"""Pipeline run state — the binding resume contract (Phase 5, task 2).
+
+`.pipeline/state.json` (local, gitignored) is what makes the draft-PR gate
+resumable: it records the run's plan (resolved capability IDs, file paths,
+symbols), the current stage, and the approvals received. **Resume never
+re-plans** — a run continued after the maintainer's signal picks up the
+recorded plan verbatim; if the plan is wrong, the run is parked and re-entered
+from the top, visibly.
+
+Stage names are the telemetry schema v2 canonical list (telemetry/SCHEMA.md)
+— one vocabulary across state, telemetry lines, and the pipeline skill.
+
+Commands:
+  init --run-id ID --request REF [--branch B]   start a run (refuses to clobber)
+  status                                        human-readable summary
+  advance                                       move to the next stage
+  set KEY VALUE                                 dotted path; VALUE parsed as JSON,
+                                                falling back to string
+  approve STAGE --by WHO [--via HOW]            record a human approval
+  park --label LABEL [--note NOTE]              park with a taxonomy label
+  resume                                        clear parked (plan is kept — the contract)
+  validate                                      schema check (also runs on save)
+  --self-test                                   full lifecycle in a temp dir (doctor/CI)
+
+Run: ./dev pipeline <command>
+"""
+
+import argparse
+import json
+import sys
+import tempfile
+from datetime import datetime, timezone
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+STATE_DIR = ROOT / ".pipeline"
+
+# telemetry/SCHEMA.md stage enum, in pipeline order. Changing it there means
+# changing it here in the same PR (both quote schema v2).
+STAGES = ["intake", "localize", "spec", "design-review", "plan",
+          "test-writing", "implement", "verify", "pr", "ci"]
+
+# telemetry/SCHEMA.md failure-label taxonomy v1 (closed).
+LABELS = {"wrong-intent", "wrong-localization", "dialect-violation", "invented-api",
+          "test-failure", "spec-drift", "flaky-infra", "timeout",
+          "human-rejected-spec", "human-rejected-pr", "other"}
+
+
+def now():
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def state_file(state_dir):
+    return state_dir / "state.json"
+
+
+def validate(state):
+    errs = []
+    for key in ("schema", "run_id", "request_ref", "stage", "parked", "plan",
+                "approvals", "history"):
+        if key not in state:
+            errs.append(f"missing key `{key}`")
+    if errs:
+        return errs
+    if state["stage"] not in STAGES:
+        errs.append(f"stage `{state['stage']}` not in {STAGES}")
+    if not isinstance(state["parked"], bool):
+        errs.append("`parked` must be a bool")
+    if state["parked"] and state.get("park", {}).get("label") not in LABELS:
+        errs.append(f"parked runs need a `park.label` from the taxonomy {sorted(LABELS)}")
+    plan = state["plan"]
+    for key in ("touches", "files", "uses"):
+        if not isinstance(plan.get(key), list):
+            errs.append(f"`plan.{key}` must be a list")
+    return errs
+
+
+def load(state_dir):
+    f = state_file(state_dir)
+    if not f.exists():
+        print(f"pipeline-state: no run in progress ({f} missing) — use `init`", file=sys.stderr)
+        sys.exit(2)
+    state = json.loads(f.read_text())
+    errs = validate(state)
+    if errs:
+        for e in errs:
+            print(f"pipeline-state: INVALID state — {e}", file=sys.stderr)
+        sys.exit(1)
+    return state
+
+
+def save(state_dir, state):
+    errs = validate(state)
+    if errs:
+        for e in errs:
+            print(f"pipeline-state: refusing to save invalid state — {e}", file=sys.stderr)
+        sys.exit(1)
+    state_dir.mkdir(exist_ok=True)
+    state_file(state_dir).write_text(json.dumps(state, indent=2) + "\n")
+
+
+def cmd_init(args, state_dir):
+    f = state_file(state_dir)
+    if f.exists() and not args.force:
+        print(f"pipeline-state: {f} exists — finish or park the current run first "
+              "(or --force to discard it)", file=sys.stderr)
+        return 2
+    state = {
+        "schema": 1,
+        "run_id": args.run_id,
+        "request_ref": args.request,
+        "branch": args.branch,
+        "stage": "intake",
+        "parked": False,
+        "park": None,
+        "spec_path": None,
+        "pr_number": None,
+        "plan": {"touches": [], "files": [], "uses": []},
+        "approvals": {},
+        "history": [{"stage": "intake", "entered": now()}],
+    }
+    save(state_dir, state)
+    print(f"pipeline-state: run {args.run_id} started at stage `intake`")
+    return 0
+
+
+def cmd_status(state_dir):
+    s = load(state_dir)
+    parked = f" [PARKED: {s['park']['label']}]" if s["parked"] else ""
+    print(f"run {s['run_id']} ({s['request_ref']})  stage: {s['stage']}{parked}")
+    print(f"  branch: {s.get('branch')}  spec: {s.get('spec_path')}  PR: {s.get('pr_number')}")
+    print(f"  plan: {len(s['plan']['touches'])} capabilities, "
+          f"{len(s['plan']['files'])} files, {len(s['plan']['uses'])} symbols")
+    if s["approvals"]:
+        for stage, a in s["approvals"].items():
+            print(f"  approved {stage}: by {a['by']} via {a.get('via', '?')} at {a['at']}")
+    print(f"  history: {' -> '.join(h['stage'] for h in s['history'])}")
+    return 0
+
+
+def cmd_advance(state_dir):
+    s = load(state_dir)
+    if s["parked"]:
+        print("pipeline-state: run is parked — `resume` first", file=sys.stderr)
+        return 1
+    i = STAGES.index(s["stage"])
+    if i + 1 >= len(STAGES):
+        print(f"pipeline-state: already at final stage `{s['stage']}`", file=sys.stderr)
+        return 1
+    if STAGES[i + 1] == "design-review" and "spec" not in s["approvals"]:
+        print("pipeline-state: cannot advance past `spec` without a recorded spec "
+              "approval (`approve spec --by …`) — the gate is the contract", file=sys.stderr)
+        return 1
+    s["stage"] = STAGES[i + 1]
+    s["history"].append({"stage": s["stage"], "entered": now()})
+    save(state_dir, s)
+    print(f"pipeline-state: -> {s['stage']}")
+    return 0
+
+
+def cmd_set(args, state_dir):
+    s = load(state_dir)
+    try:
+        value = json.loads(args.value)
+    except json.JSONDecodeError:
+        value = args.value
+    node, *rest = args.key.split(".")
+    target = s
+    while rest:
+        target = target[node]
+        node, *rest = rest
+    target[node] = value
+    save(state_dir, s)
+    print(f"pipeline-state: {args.key} = {json.dumps(value)}")
+    return 0
+
+
+def cmd_approve(args, state_dir):
+    s = load(state_dir)
+    s["approvals"][args.stage] = {"by": args.by, "via": args.via, "at": now()}
+    save(state_dir, s)
+    print(f"pipeline-state: `{args.stage}` approved by {args.by} via {args.via}")
+    return 0
+
+
+def cmd_park(args, state_dir):
+    if args.label not in LABELS:
+        print(f"pipeline-state: label `{args.label}` not in the closed taxonomy "
+              f"{sorted(LABELS)}", file=sys.stderr)
+        return 2
+    s = load(state_dir)
+    s["parked"] = True
+    s["park"] = {"label": args.label, "note": args.note, "at": now()}
+    save(state_dir, s)
+    print(f"pipeline-state: parked at `{s['stage']}` ({args.label})")
+    return 0
+
+
+def cmd_resume(state_dir):
+    s = load(state_dir)
+    if not s["parked"]:
+        print("pipeline-state: run is not parked", file=sys.stderr)
+        return 1
+    s["parked"], s["park"] = False, None
+    save(state_dir, s)
+    print(f"pipeline-state: resumed at `{s['stage']}` — plan is binding, no re-planning")
+    return 0
+
+
+def self_test():
+    with tempfile.TemporaryDirectory() as tmp:
+        d = Path(tmp)
+        fails = 0
+
+        def run(label, fn, want):
+            nonlocal fails
+            got = fn()
+            if got != want:
+                print(f"self-test FAIL {label}: exit {got}, want {want}")
+                fails += 1
+
+        ns = argparse.Namespace(run_id="t-001", request="issue#0", branch="b", force=False)
+        run("init", lambda: cmd_init(ns, d), 0)
+        run("init-refuses-clobber", lambda: cmd_init(ns, d), 2)
+        run("advance-to-localize", lambda: cmd_advance(d), 0)
+        run("advance-to-spec", lambda: cmd_advance(d), 0)
+        run("gate-blocks-unapproved", lambda: cmd_advance(d), 1)
+        run("approve-spec", lambda: cmd_approve(
+            argparse.Namespace(stage="spec", by="nick", via="pr-comment"), d), 0)
+        run("advance-past-gate", lambda: cmd_advance(d), 0)
+        run("park-bad-label", lambda: cmd_park(
+            argparse.Namespace(label="vibes", note=""), d), 2)
+        run("park", lambda: cmd_park(
+            argparse.Namespace(label="timeout", note="stage budget"), d), 0)
+        run("advance-while-parked", lambda: cmd_advance(d), 1)
+        run("resume", lambda: cmd_resume(d), 0)
+        run("set-pr", lambda: cmd_set(argparse.Namespace(key="pr_number", value="721"), d), 0)
+        run("set-plan", lambda: cmd_set(argparse.Namespace(
+            key="plan.touches", value='["auth"]'), d), 0)
+        state = json.loads(state_file(d).read_text())
+        if state["pr_number"] != 721 or state["plan"]["touches"] != ["auth"]:
+            print(f"self-test FAIL set: {state['pr_number']}, {state['plan']['touches']}")
+            fails += 1
+
+        if fails == 0:
+            print("pipeline-state self-test: OK — lifecycle, gate, park taxonomy covered")
+        return 1 if fails else 0
+
+
+def main():
+    if len(sys.argv) > 1 and sys.argv[1] == "--self-test":
+        return self_test()
+
+    p = argparse.ArgumentParser(prog="pipeline-state")
+    sub = p.add_subparsers(dest="cmd", required=True)
+    pi = sub.add_parser("init")
+    pi.add_argument("--run-id", required=True)
+    pi.add_argument("--request", required=True)
+    pi.add_argument("--branch", default=None)
+    pi.add_argument("--force", action="store_true")
+    sub.add_parser("status")
+    sub.add_parser("advance")
+    ps = sub.add_parser("set")
+    ps.add_argument("key")
+    ps.add_argument("value")
+    pa = sub.add_parser("approve")
+    pa.add_argument("stage")
+    pa.add_argument("--by", required=True)
+    pa.add_argument("--via", default="pr-comment")
+    pp = sub.add_parser("park")
+    pp.add_argument("--label", required=True)
+    pp.add_argument("--note", default="")
+    sub.add_parser("resume")
+    sub.add_parser("validate")
+    args = p.parse_args()
+
+    if args.cmd == "init":
+        return cmd_init(args, STATE_DIR)
+    if args.cmd == "status":
+        return cmd_status(STATE_DIR)
+    if args.cmd == "advance":
+        return cmd_advance(STATE_DIR)
+    if args.cmd == "set":
+        return cmd_set(args, STATE_DIR)
+    if args.cmd == "approve":
+        return cmd_approve(args, STATE_DIR)
+    if args.cmd == "park":
+        return cmd_park(args, STATE_DIR)
+    if args.cmd == "resume":
+        return cmd_resume(STATE_DIR)
+    if args.cmd == "validate":
+        load(STATE_DIR)
+        print("pipeline-state: valid")
+        return 0
+    return 2
+
+
+if __name__ == "__main__":
+    sys.exit(main())

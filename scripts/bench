@@ -1,0 +1,99 @@
+#!/usr/bin/env python3
+"""Nightly benchmark harness (pipeline Phase 5, task 9) — non-blocking by design.
+
+Times the perf-tagged suites (seed: the EventStore volume/magnitude suites,
+`core/testlib/Test/Service/EventStore/`) against the budgets committed in
+telemetry/bench-budgets.json. Runs NIGHTLY (nightly-bench.yml) and on demand
+(`./dev bench`) — never per-PR: per-PR perf assurance is the risk-tiered
+design review (spec-check --plan routes it); this harness is the measurement
+that catches what review reasoning missed.
+
+Behavior per entry:
+  budget_s: null  -> calibration mode: measure, record, never fail
+  budget_s: N     -> measured > N = breach -> exit 1 (in the nightly workflow
+                     that failure IS the notification: a next-morning fix
+                     task, never a PR blocker)
+  requires: postgres and POSTGRES_AVAILABLE != true -> skipped, with a warning
+
+Suites run COMPILED via `cabal test` (default project, -O1) — the dev-flavor
+repl runner (./dev test) is interpreted and would time the interpreter, not
+the code. Results land in .bench-results.json (gitignored; the workflow
+uploads it as the run's evidence artifact — telemetry/runs.jsonl stays
+pipeline-only by doctrine).
+
+Run: ./dev bench    CI: .github/workflows/nightly-bench.yml (schedule + manual)
+"""
+
+import json
+import os
+import subprocess
+import sys
+import time
+from datetime import datetime, timezone
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+BUDGETS = ROOT / "telemetry" / "bench-budgets.json"
+RESULTS = ROOT / ".bench-results.json"
+
+
+def run_entry(entry):
+    cmd = [str(ROOT / "scripts" / "with-toolchain"), "cabal", "test", entry["suite"],
+           "--test-options", f'--match "{entry["match"]}"']
+    start = time.monotonic()
+    proc = subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True)
+    elapsed = round(time.monotonic() - start, 1)
+    return elapsed, proc
+
+
+def main():
+    config = json.loads(BUDGETS.read_text())
+    results, breaches, failures = [], [], []
+
+    for entry in config["entries"]:
+        name = entry["name"]
+        if entry.get("requires") == "postgres" and os.environ.get("POSTGRES_AVAILABLE") != "true":
+            print(f"bench: SKIP {name} — requires postgres (set POSTGRES_AVAILABLE=true)")
+            results.append({"name": name, "status": "skipped"})
+            continue
+
+        print(f"bench: running {name} ({entry['suite']} --match \"{entry['match']}\")…")
+        elapsed, proc = run_entry(entry)
+        budget = entry.get("budget_s")
+
+        if proc.returncode != 0:
+            print(f"bench: FAIL {name} — suite failed (exit {proc.returncode}); "
+                  "timing is meaningless on a red suite", file=sys.stderr)
+            print(proc.stdout[-2000:], file=sys.stderr)
+            failures.append(name)
+            results.append({"name": name, "status": "suite-failed", "elapsed_s": elapsed})
+            continue
+
+        status = "calibration" if budget is None else ("breach" if elapsed > budget else "ok")
+        if status == "breach":
+            print(f"bench: BREACH {name} — {elapsed}s > budget {budget}s", file=sys.stderr)
+            breaches.append(name)
+        else:
+            budget_txt = f"budget {budget}s" if budget is not None else "calibrating (no budget yet)"
+            print(f"bench: {name} — {elapsed}s ({budget_txt})")
+        results.append({"name": name, "status": status,
+                        "elapsed_s": elapsed, "budget_s": budget})
+
+    RESULTS.write_text(json.dumps({
+        "at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "mode": config["mode"],
+        "results": results,
+    }, indent=2) + "\n")
+    print(f"bench: results written to {RESULTS.name}")
+
+    if failures:
+        return 2
+    if breaches:
+        print(f"bench: {len(breaches)} budget breach(es) — this is the notification; "
+              "file the fix task, do not block PRs on it", file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

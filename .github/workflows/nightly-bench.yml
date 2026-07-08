@@ -1,0 +1,70 @@
+# Nightly benchmarks (pipeline Phase 5, task 9) — NON-BLOCKING by design:
+# schedule + manual dispatch only, never wired to pull_request. A budget
+# breach fails this run, and that failure is the notification (next-morning
+# fix task); PR-time perf assurance is the design review, not a benchmark.
+#
+# Telemetry: the uploaded bench-results artifact is the run's evidence
+# (telemetry/runs.jsonl stays pipeline-only by doctrine); the weekly review
+# reads the artifact trend and owns budget calibration
+# (telemetry/bench-budgets.json).
+name: nightly-bench
+
+on:
+  schedule:
+    - cron: "0 3 * * *"
+  workflow_dispatch: # the human-tool parity path: run it on demand
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  bench:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          persist-credentials: false
+      - uses: DeterminateSystems/determinate-nix-action@v3.21.2
+        with:
+          extra-conf: |
+            accept-flake-config = true
+            extra-substituters = https://cache.iog.io https://neohaskell.cachix.org
+            extra-trusted-public-keys = hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ= neohaskell.cachix.org-1:mo2cLaGbwqbrxs9xhqKK8jeNsn3osi7t6XoAmxSZssc=
+      - uses: DeterminateSystems/magic-nix-cache-action@v14
+      # Same cache key family as test.yml's build job — warm restores keep the
+      # nightly build cost near-zero on quiet days
+      - uses: actions/cache@v6
+        with:
+          path: dist-newstyle
+          key: ${{ runner.os }}-cabal-${{ hashFiles('**/*.cabal', 'cabal.project') }}
+          restore-keys: |
+            ${{ runner.os }}-cabal-
+      - name: Start PostgreSQL
+        run: |
+          docker run -d --name neohaskell_postgres \
+            -e POSTGRES_USER=neohaskell \
+            -e POSTGRES_PASSWORD=neohaskell \
+            -e POSTGRES_DB=neohaskell \
+            -p 5432:5432 \
+            postgres:16-alpine \
+            postgres -c max_connections=200
+          for i in $(seq 1 30); do
+            pg_isready -h 127.0.0.1 -U neohaskell && break || sleep 1
+          done
+          if ! pg_isready -h 127.0.0.1 -U neohaskell; then
+            echo "::error::PostgreSQL failed to start within 30 seconds"
+            exit 1
+          fi
+        env:
+          PGPASSWORD: neohaskell
+      - name: Run benchmark suites against budgets
+        run: LOG_LEVEL=Warn POSTGRES_AVAILABLE=true ./dev bench
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: bench-results-${{ github.run_id }}
+          path: .bench-results.json
+          retention-days: 90
+          if-no-files-found: error

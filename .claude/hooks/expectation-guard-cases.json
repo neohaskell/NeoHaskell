@@ -1,0 +1,160 @@
+[
+  {
+    "name": "edit-rewrites-shouldBe-value",
+    "tag": "edit-expectation",
+    "tool": "Edit",
+    "tool_input": {
+      "file_path": "core/test-core/TextSpec.hs",
+      "old_string": "      Text.length result |> shouldBe 5",
+      "new_string": "      Text.length result |> shouldBe 6"
+    },
+    "expect_block": true
+  },
+  {
+    "name": "edit-deletes-expectation",
+    "tag": "edit-expectation",
+    "tool": "Edit",
+    "tool_input": {
+      "file_path": "core/test-core/TextSpec.hs",
+      "old_string": "      result |> shouldBe expected\n      count |> shouldBe 3",
+      "new_string": "      result |> shouldBe expected"
+    },
+    "expect_block": true
+  },
+  {
+    "name": "edit-adds-new-expectation-keeps-old",
+    "tag": "edit-expectation",
+    "tool": "Edit",
+    "tool_input": {
+      "file_path": "core/test-core/TextSpec.hs",
+      "old_string": "      result |> shouldBe expected",
+      "new_string": "      result |> shouldBe expected\n      count |> shouldBe 3"
+    },
+    "expect_block": false
+  },
+  {
+    "name": "edit-moves-expectation-unchanged",
+    "tag": "edit-expectation",
+    "tool": "Edit",
+    "tool_input": {
+      "file_path": "core/test-service/EventStoreSpec.hs",
+      "old_string": "      events |> shouldBe expected\n      -- old comment",
+      "new_string": "      -- new comment\n      events |> shouldBe expected"
+    },
+    "expect_block": false
+  },
+  {
+    "name": "edit-reindents-expectation-only",
+    "tag": "edit-expectation",
+    "tool": "Edit",
+    "tool_input": {
+      "file_path": "core/test-core/TextSpec.hs",
+      "old_string": "      result |> shouldBe expected",
+      "new_string": "        result |> shouldBe expected"
+    },
+    "expect_block": false
+  },
+  {
+    "name": "edit-nontest-file-with-shouldBe-prose",
+    "tag": "non-test-file",
+    "tool": "Edit",
+    "tool_input": {
+      "file_path": "core/core/Task.hs",
+      "old_string": "-- the result shouldBe forwarded",
+      "new_string": "-- forwarded"
+    },
+    "expect_block": false
+  },
+  {
+    "name": "edit-testbed-hurl-assert-changed",
+    "tag": "hurl-assertion",
+    "tool": "Edit",
+    "tool_input": {
+      "file_path": "testbed/test/create-user.hurl",
+      "old_string": "status == 201",
+      "new_string": "status == 200"
+    },
+    "expect_block": true
+  },
+  {
+    "name": "edit-hurl-new-block-appended",
+    "tag": "hurl-assertion",
+    "tool": "Edit",
+    "tool_input": {
+      "file_path": "testbed/test/create-user.hurl",
+      "old_string": "status == 201",
+      "new_string": "status == 201\njsonpath \"$.id\" exists"
+    },
+    "expect_block": false
+  },
+  {
+    "name": "write-overwrites-spec-losing-expectation",
+    "tag": "write-overwrite",
+    "tool": "Write",
+    "tool_input": {
+      "file_path": "core/test-core/UuidSpec.hs",
+      "content": "spec = it \"parses\" do\n  result |> shouldBe uuid\n"
+    },
+    "disk_content": "spec = it \"parses\" do\n  result |> shouldBe uuid\n  version |> shouldBe 4\n",
+    "expect_block": true
+  },
+  {
+    "name": "write-new-spec-file-no-prior-content",
+    "tag": "write-overwrite",
+    "tool": "Write",
+    "tool_input": {
+      "file_path": "core/test-core/NewFeatureSpec.hs",
+      "content": "spec = it \"works\" do\n  result |> shouldBe expected\n"
+    },
+    "disk_content": "",
+    "expect_block": false
+  },
+  {
+    "name": "multiedit-one-edit-rewrites-expectation",
+    "tag": "multiedit",
+    "tool": "MultiEdit",
+    "tool_input": {
+      "file_path": "core/test-auth/JwtSpec.hs",
+      "edits": [
+        {"old_string": "import Jwt qualified", "new_string": "import Jwt qualified\nimport Claims qualified"},
+        {"old_string": "  claims |> shouldBe expected", "new_string": "  claims |> shouldSatisfy isValid"}
+      ]
+    },
+    "expect_block": true
+  },
+  {
+    "name": "multiedit-only-nonexpectation-edits",
+    "tag": "multiedit",
+    "tool": "MultiEdit",
+    "tool_input": {
+      "file_path": "core/test-auth/JwtSpec.hs",
+      "edits": [
+        {"old_string": "import Jwt qualified", "new_string": "import Jwt qualified\nimport Claims qualified"}
+      ]
+    },
+    "expect_block": false
+  },
+  {
+    "name": "approved-run-may-edit-expectation",
+    "tag": "approval-marker",
+    "tool": "Edit",
+    "tool_input": {
+      "file_path": "core/test-core/TextSpec.hs",
+      "old_string": "      result |> shouldBe 5",
+      "new_string": "      result |> shouldBe 6"
+    },
+    "approved": true,
+    "expect_block": false
+  },
+  {
+    "name": "archive-copies-are-exempt",
+    "tag": "non-test-file",
+    "tool": "Edit",
+    "tool_input": {
+      "file_path": "docs/archive/2026-07-ai-artifacts/core/testSpec.hs",
+      "old_string": "  x |> shouldBe 1",
+      "new_string": "  x |> shouldBe 2"
+    },
+    "expect_block": false
+  }
+]

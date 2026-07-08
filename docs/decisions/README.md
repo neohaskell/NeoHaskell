@@ -75,6 +75,8 @@ ADRs document significant architectural decisions made during the development of
 | [0063](0063-per-stream-subscription-connection-release.md) | Release Per-Stream Subscription Connections on Unsubscribe | Proposed |
 | [0064](0064-optional-sslmode-tls-hardening.md) | Optional `sslmode` TLS Hardening for Postgres Connections | Proposed |
 | [0065](0065-acs-email-integration.md) | Azure Communication Services Email Integration | Proposed |
+| [0066](0066-two-database-api-search.md) | Two-database API search (`./dev api`) | Accepted |
+| [0067](0067-contract-delta-spec-gate.md) | Contract-delta spec gate and resumable draft-PR flow | Proposed |
 
 ## Creating New ADRs
 
