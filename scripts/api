@@ -15,7 +15,9 @@
 #            style table, the single source of the vanilla→dialect mapping).
 #
 # Databases are local build artifacts (gitignored), rebuilt by ./dev codemap
-# or lazily here when missing.
+# or lazily here when missing or stale (older than the committed, CI-sync-
+# gated codemap/signatures/*.txt — tying freshness to a gated source is what
+# keeps a fresh clone or post-pull checkout from serving yesterday's surface).
 #
 # Usage:
 #   ./dev api "Text -> Maybe Uuid"    # type-directed
@@ -37,8 +39,18 @@ fi
 NEO_DB=".hoogle-neo.hoo"
 VAN_DB=".hoogle-vanilla.hoo"
 
+REBUILD=0
 if [ ! -f "${NEO_DB}" ] || [ ! -f "${VAN_DB}" ]; then
-  echo "api: building hoogle databases (one-time; refreshed by ./dev codemap)…" >&2
+  REBUILD=1
+else
+  # staleness: the committed signatures are the CI-sync-gated truth; a DB
+  # older than any of them was built against a previous API surface
+  for sig in codemap/signatures/*.txt; do
+    if [ "${sig}" -nt "${NEO_DB}" ]; then REBUILD=1; fi
+  done
+fi
+if [ "${REBUILD}" = "1" ]; then
+  echo "api: (re)building hoogle databases (missing or older than codemap/signatures)…" >&2
   "${SCRIPT_DIR}/build-hoogle-dbs"
 fi
 

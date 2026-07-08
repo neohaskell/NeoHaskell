@@ -93,3 +93,10 @@ installer/target/
 .hiedb-shm
 .hiedb-wal
 __pycache__/
+
+# Phase 4: ./dev api hoogle databases (local build artifacts — rebuilt by
+# ./dev codemap or lazily by ./dev api; platform-unstable, never commit)
+/.hoogle-*.hoo
+/.hoogle*.warn
+/.hoogle-src/
+/.hoogle-vanilla-src/
