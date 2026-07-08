@@ -98,9 +98,12 @@ jobs:
           if-no-files-found: error
 
   codemap-sync:
+    # Runs LAST — only after build AND every test suite is green — so it is the
+    # final confirmation right before merge (and the codemap regen isn't spent on
+    # a PR that's already failing). Enforced through ci-gate below.
+    needs: [build, doctest, test-core, test-auth, test-integration, test-service, test-hurl]
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    needs: build
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
@@ -314,7 +317,7 @@ jobs:
   # check, and passes cleanly when there is nothing to check.
   ci-gate:
     if: always()
-    needs: [changes, build, doctest, test-core, test-auth, test-integration, test-service, test-hurl]
+    needs: [changes, build, doctest, test-core, test-auth, test-integration, test-service, test-hurl, codemap-sync]
     runs-on: ubuntu-latest
     steps:
       - name: Check all tests passed
@@ -336,6 +339,8 @@ jobs:
           if [[ "$IS_DRAFT" == "true" || "$COMPILED" != "true" ]]; then
             allow_skip=true
           fi
+          # codemap-sync last — it only runs after the others, so if a test
+          # failed the real failure surfaces before codemap-sync's skip.
           results=(
             "build=${{ needs.build.result }}"
             "doctest=${{ needs.doctest.result }}"
@@ -344,6 +349,7 @@ jobs:
             "test-integration=${{ needs.test-integration.result }}"
             "test-service=${{ needs.test-service.result }}"
             "test-hurl=${{ needs.test-hurl.result }}"
+            "codemap-sync=${{ needs.codemap-sync.result }}"
           )
           for entry in "${results[@]}"; do
             job="${entry%%=*}"; r="${entry#*=}"
