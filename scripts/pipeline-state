@@ -15,8 +15,12 @@ Commands:
   init --run-id ID --request REF [--branch B]   start a run (refuses to clobber)
   status                                        human-readable summary
   advance                                       move to the next stage
-  set KEY VALUE                                 dotted path; VALUE parsed as JSON,
-                                                falling back to string
+  set KEY VALUE                                 data keys only (spec_path,
+                                                pr_number, branch, plan.* while
+                                                planning); VALUE parsed as JSON,
+                                                falling back to string. Lifecycle
+                                                state only moves via the gate
+                                                commands below.
   approve STAGE --by WHO [--via HOW]            record a human approval
   park --label LABEL [--note NOTE]              park with a taxonomy label
   resume                                        clear parked (plan is kept — the contract)
@@ -63,15 +67,23 @@ def validate(state):
             errs.append(f"missing key `{key}`")
     if errs:
         return errs
+    # container shapes first — a scalar smuggled into park/plan/approvals must
+    # be a clean validation failure, not an AttributeError mid-save
+    for key, want in (("plan", dict), ("approvals", dict), ("history", list)):
+        if not isinstance(state[key], want):
+            errs.append(f"`{key}` must be a {want.__name__}")
+    if state.get("park") is not None and not isinstance(state["park"], dict):
+        errs.append("`park` must be null or an object")
+    if errs:
+        return errs
     if state["stage"] not in STAGES:
         errs.append(f"stage `{state['stage']}` not in {STAGES}")
     if not isinstance(state["parked"], bool):
         errs.append("`parked` must be a bool")
-    if state["parked"] and state.get("park", {}).get("label") not in LABELS:
+    if state["parked"] and (state["park"] or {}).get("label") not in LABELS:
         errs.append(f"parked runs need a `park.label` from the taxonomy {sorted(LABELS)}")
-    plan = state["plan"]
     for key in ("touches", "files", "uses"):
-        if not isinstance(plan.get(key), list):
+        if not isinstance(state["plan"].get(key), list):
             errs.append(f"`plan.{key}` must be a list")
     return errs
 
@@ -159,13 +171,33 @@ def cmd_advance(state_dir):
     return 0
 
 
+# `set` is for run DATA only. Lifecycle state moves through its dedicated,
+# gate-checking commands (advance/approve/park/resume) — allowing `set stage`
+# would let a run fast-forward past the spec gate silently.
+SETTABLE = {"spec_path", "pr_number", "branch"}
+# The plan is written during planning and BINDING afterwards (resume never
+# re-plans): plan.* writes are refused once the run passes `plan`.
+PLAN_WRITABLE_STAGES = {"intake", "localize", "spec", "design-review", "plan"}
+
+
 def cmd_set(args, state_dir):
     s = load(state_dir)
+    node, *rest = args.key.split(".")
+    if node == "plan":
+        if s["stage"] not in PLAN_WRITABLE_STAGES:
+            print(f"pipeline-state: refusing `set {args.key}` at stage `{s['stage']}` "
+                  "— the plan is binding after planning; if it is wrong, `park "
+                  "--label wrong-localization` and re-enter", file=sys.stderr)
+            return 2
+    elif node not in SETTABLE:
+        print(f"pipeline-state: `{node}` is not settable — lifecycle state moves via "
+              "advance/approve/park/resume; settable data keys: "
+              f"{sorted(SETTABLE)} + plan.*", file=sys.stderr)
+        return 2
     try:
         value = json.loads(args.value)
     except json.JSONDecodeError:
         value = args.value
-    node, *rest = args.key.split(".")
     target = s
     while rest:
         target = target[node]
@@ -178,6 +210,11 @@ def cmd_set(args, state_dir):
 
 def cmd_approve(args, state_dir):
     s = load(state_dir)
+    if s["stage"] != args.stage:
+        print(f"pipeline-state: cannot approve `{args.stage}` while the run is at "
+              f"`{s['stage']}` — approvals are recorded at the gate, not pre-seeded",
+              file=sys.stderr)
+        return 1
     s["approvals"][args.stage] = {"by": args.by, "via": args.via, "at": now()}
     save(state_dir, s)
     print(f"pipeline-state: `{args.stage}` approved by {args.by} via {args.via}")
@@ -242,6 +279,18 @@ def self_test():
         if state["pr_number"] != 721 or state["plan"]["touches"] != ["auth"]:
             print(f"self-test FAIL set: {state['pr_number']}, {state['plan']['touches']}")
             fails += 1
+        # lifecycle is sealed: `set` must not move stages, pre-seed approvals,
+        # or re-plan after planning
+        run("set-stage-denied", lambda: cmd_set(
+            argparse.Namespace(key="stage", value="ci"), d), 2)
+        run("set-approvals-denied", lambda: cmd_set(
+            argparse.Namespace(key="approvals.pr", value='{"by":"x"}'), d), 2)
+        run("approve-wrong-stage", lambda: cmd_approve(
+            argparse.Namespace(stage="spec", by="nick", via="pr-comment"), d), 1)
+        run("advance-to-plan", lambda: cmd_advance(d), 0)
+        run("advance-to-test-writing", lambda: cmd_advance(d), 0)
+        run("replan-after-plan-denied", lambda: cmd_set(
+            argparse.Namespace(key="plan.touches", value='["json"]'), d), 2)
 
         if fails == 0:
             print("pipeline-state self-test: OK — lifecycle, gate, park taxonomy covered")

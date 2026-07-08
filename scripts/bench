@@ -26,6 +26,7 @@ Run: ./dev bench    CI: .github/workflows/nightly-bench.yml (schedule + manual)
 
 import json
 import os
+import re
 import subprocess
 import sys
 import time
@@ -36,14 +37,26 @@ ROOT = Path(__file__).resolve().parent.parent
 BUDGETS = ROOT / "telemetry" / "bench-budgets.json"
 RESULTS = ROOT / ".bench-results.json"
 
+# hspec summary: "N examples, M failures" — 0 examples means the match hit
+# nothing and the "timing" is just build overhead (vacuous, must fail loudly;
+# same protection scripts/test-match has)
+SUMMARY = re.compile(r"(\d+) examples?, \d+ failures?")
+
 
 def run_entry(entry):
+    # one --test-option per token: no quoting/splitting layer to get wrong,
+    # and match patterns with spaces stay intact
     cmd = [str(ROOT / "scripts" / "with-toolchain"), "cabal", "test", entry["suite"],
-           "--test-options", f'--match "{entry["match"]}"']
+           "--test-option=--match", f"--test-option={entry['match']}"]
     start = time.monotonic()
     proc = subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True)
     elapsed = round(time.monotonic() - start, 1)
     return elapsed, proc
+
+
+def examples_run(proc):
+    m = SUMMARY.search(proc.stdout) or SUMMARY.search(proc.stderr)
+    return int(m.group(1)) if m else None
 
 
 def main():
@@ -65,8 +78,19 @@ def main():
             print(f"bench: FAIL {name} — suite failed (exit {proc.returncode}); "
                   "timing is meaningless on a red suite", file=sys.stderr)
             print(proc.stdout[-2000:], file=sys.stderr)
+            print(proc.stderr[-2000:], file=sys.stderr)
             failures.append(name)
             results.append({"name": name, "status": "suite-failed", "elapsed_s": elapsed})
+            continue
+
+        examples = examples_run(proc)
+        if not examples:
+            print(f"bench: FAIL {name} — match \"{entry['match']}\" ran "
+                  f"{'no summary-reporting' if examples is None else '0'} examples; "
+                  "the measurement is vacuous (typo'd pattern or renamed suite?)",
+                  file=sys.stderr)
+            failures.append(name)
+            results.append({"name": name, "status": "vacuous", "elapsed_s": elapsed})
             continue
 
         status = "calibration" if budget is None else ("breach" if elapsed > budget else "ok")
@@ -76,8 +100,8 @@ def main():
         else:
             budget_txt = f"budget {budget}s" if budget is not None else "calibrating (no budget yet)"
             print(f"bench: {name} — {elapsed}s ({budget_txt})")
-        results.append({"name": name, "status": status,
-                        "elapsed_s": elapsed, "budget_s": budget})
+        results.append({"name": name, "status": status, "elapsed_s": elapsed,
+                        "budget_s": budget, "examples": examples})
 
     RESULTS.write_text(json.dumps({
         "at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),

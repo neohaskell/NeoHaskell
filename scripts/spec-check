@@ -36,6 +36,10 @@ import re
 import sys
 from pathlib import Path
 
+sys.dont_write_bytecode = True  # no scripts/__pycache__/ (doctor scans scripts/)
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import speclib  # noqa: E402 — shared delta grammar with spec-drift
+
 ROOT = Path(__file__).resolve().parent.parent
 CHANGES = ROOT / "docs" / "changes"
 CAPABILITIES = ROOT / "codemap" / "capabilities.yaml"
@@ -43,7 +47,6 @@ CAPABILITIES = ROOT / "codemap" / "capabilities.yaml"
 KINDS = {"feature", "bug", "refactor"}
 LEVELS = {"unit", "integration", "acceptance"}
 FILENAME = re.compile(r"^\d{3}-[a-z0-9][a-z0-9-]*\.md$")
-DELTA_LINE = re.compile(r"^([+-])\s+([A-Za-z][\w.]*):\s+(.+)$")
 CRITERION_ID = re.compile(r"^C(\d+)$")
 ADR_LINK = re.compile(r"decisions/\d{4}-[a-z0-9-]+\.md")
 TRIGGER_FLAGS = ("breaking", "new-dependency", "new-capability", "new-extension-point")
@@ -90,7 +93,9 @@ def parse_header(block):
     line-based (stdlib only). Returns (dict, [errors])."""
     header, errs = {}, []
     for raw in block.splitlines():
-        line = raw.split("#", 1)[0].rstrip()
+        # YAML comment = `#` preceded by whitespace (or line start) — a bare
+        # split on "#" would truncate `issue: issue#712` to `issue`
+        line = re.split(r"(?:^|\s)#", raw, maxsplit=1)[0].rstrip()
         if not line.strip():
             continue
         m = re.match(r"^([a-z-]+):\s*(.+)$", line)
@@ -136,7 +141,7 @@ def check_spec(text, name, caps):
         if not isinstance(header.get(flag), bool):
             errs.append(f"{name}: header needs `{flag}: true|false`")
 
-    delta = fenced_block(text, "diff signatures")
+    delta = speclib.delta_block(text)
     if delta is None:
         errs.append(f"{name}: missing ```diff signatures``` contract-delta block "
                     "(empty block = no-API-change promise, still required)")
@@ -145,7 +150,7 @@ def check_spec(text, name, caps):
     for line in delta.splitlines():
         if not line.strip():
             continue
-        m = DELTA_LINE.match(line)
+        m = speclib.DELTA_LINE.match(line)
         if not m:
             errs.append(f"{name}: bad contract-delta line `{line.strip()}` "
                         "(want `<+|-> <Module>: <signature>`)")
@@ -261,6 +266,12 @@ def self_test():
             fails += 1
 
     expect("valid", VALID_FIXTURE, None)
+    # regression: `issue#712` must survive comment stripping (only
+    # whitespace-preceded `#` starts a YAML comment)
+    header, _ = parse_header("issue: issue#712  # trailing comment")
+    if header.get("issue") != "issue#712":
+        print(f"self-test FAIL issue-hash: parsed `{header.get('issue')}`, want `issue#712`")
+        fails += 1
     expect("bad-kind", VALID_FIXTURE.replace("kind: feature", "kind: epic"), "`kind` must be")
     expect("unknown-capability",
            VALID_FIXTURE.replace("[core-primitives]", "[warp-drive]"), "unknown capability")
@@ -291,7 +302,7 @@ def self_test():
         fails += 1
 
     if fails == 0:
-        print("spec-check self-test: OK — 11 fixture mutations + plan joins covered")
+        print("spec-check self-test: OK — fixture mutations, header parsing, plan joins covered")
     return 1 if fails else 0
 
 

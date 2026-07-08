@@ -25,14 +25,16 @@ Exit: 0 = honored, 1 = drift, 2 = usage/missing input.
 Run: ./dev spec-drift    CI: .github/workflows/checks.yml `spec` job
 """
 
-import re
 import subprocess
 import sys
 from pathlib import Path
 
+sys.dont_write_bytecode = True  # no scripts/__pycache__/ (doctor scans scripts/)
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import speclib  # noqa: E402 — shared delta grammar with spec-check
+
 ROOT = Path(__file__).resolve().parent.parent
 SIGNATURES = ROOT / "codemap" / "signatures"
-DELTA_LINE = re.compile(r"^([+-])\s+([A-Za-z][\w.]*):\s+(.+)$")
 
 
 def load_surface():
@@ -49,12 +51,12 @@ def load_surface():
 
 
 def delta_lines(text):
-    m = re.search(r"```diff signatures\n(.*?)```", text, re.DOTALL)
-    if m is None:
+    block = speclib.delta_block(text)
+    if block is None:
         return None
     out = []
-    for line in m.group(1).splitlines():
-        dm = DELTA_LINE.match(line)
+    for line in block.splitlines():
+        dm = speclib.DELTA_LINE.match(line)
         if dm:
             out.append((dm.group(1), dm.group(2), " ".join(dm.group(3).split())))
     return out
@@ -77,11 +79,15 @@ def check(path, surface):
 
 def pr_specs(base):
     """Specs added/modified on this branch vs the merge base."""
-    out = subprocess.run(
+    proc = subprocess.run(
         ["git", "diff", "--name-only", "--diff-filter=AM", f"{base}...HEAD",
          "--", "docs/changes/"],
-        cwd=ROOT, capture_output=True, text=True, check=True).stdout
-    return [ROOT / p for p in out.splitlines() if p.endswith(".md")]
+        cwd=ROOT, capture_output=True, text=True)
+    if proc.returncode != 0:
+        print(f"spec-drift: git diff against `{base}` failed — bad base ref? "
+              f"({proc.stderr.strip()})", file=sys.stderr)
+        sys.exit(2)
+    return [ROOT / p for p in proc.stdout.splitlines() if p.endswith(".md")]
 
 
 def main():

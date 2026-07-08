@@ -69,7 +69,11 @@ jobs:
       # still implementing its spec — drift there is expected, not an error.
       - name: Spec drift (PR-ready only)
         if: github.event_name == 'pull_request' && github.event.pull_request.draft == false
-        run: ./dev spec-drift --pr origin/${{ github.base_ref }}
+        env:
+          # env-var indirection, not inline ${{ }} in run: — the standard
+          # template-injection defense-in-depth for workflow expressions
+          BASE_REF: ${{ github.base_ref }}
+        run: ./dev spec-drift --pr "origin/${BASE_REF}"
 
   lint:
     name: hlint (dialect gate)

@@ -23,6 +23,7 @@ EXEMPT_NAMES=(
   "install.sh:end-user installer (curl-piped); not a repo dev tool"
   "build-hoogle-dbs:internal plumbing — invoked by ./dev api and ./dev codemap, not a user verb"
   "toolchain-fp:internal plumbing — fingerprint for with-toolchain fast path + flake shellHook"
+  "speclib.py:shared parsing module imported by spec-check and spec-drift — never executed"
 )
 
 fail=0
@@ -43,6 +44,7 @@ done
 
 # 2. Unregistered scripts + 3. stale exemptions.
 for f in scripts/*; do
+  [ -f "${f}" ] || continue  # stray dirs (e.g. a __pycache__) are not scripts
   name=$(basename "${f}")
   # (no special case for doctor itself — it must be registered like anything else)
   exempt_reason=""
