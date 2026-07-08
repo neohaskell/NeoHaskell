@@ -3,7 +3,11 @@
 
 Validates docs/changes/*.md — the spec a draft PR opens with and the
 maintainer approves at the gate. The template (docs/changes/TEMPLATE.md) is
-itself a validated instance, so template and validator cannot drift.
+itself a validated instance, so the template's machine-read parts (header
+keys, fence infos, `## section` names, criteria cells) cannot drift from the
+validator. (The criteria table's column *labels* are documentation — parsed
+positionally, not asserted; design-review records, `*-review.md`, are not
+specs and are skipped.)
 
 Checks (all mechanical — a spec that passes is machine-joinable):
   1. filename: NNN-slug.md (3-digit, kebab), TEMPLATE.md exempt
@@ -25,6 +29,9 @@ Modes:
   spec-check --plan FILE      emit the mechanical joins as JSON:
                               required design reviews (touches x risk tags)
                               + test-impact globs (touches x tests:)
+  spec-check --reviews-pr [BASE]  PR-ready gate: every design review a changed
+                              spec routes must have its committed record
+                              (NNN-slug.<kind>-review.md, backlinking the spec)
   spec-check --self-test      embedded fixture + mutation coverage (doctor/CI)
 
 Run: ./dev spec-check    CI: .github/workflows/checks.yml `spec` job
@@ -50,6 +57,13 @@ FILENAME = re.compile(r"^\d{3}-[a-z0-9][a-z0-9-]*\.md$")
 CRITERION_ID = re.compile(r"^C(\d+)$")
 ADR_LINK = re.compile(r"decisions/\d{4}-[a-z0-9-]+\.md")
 TRIGGER_FLAGS = ("breaking", "new-dependency", "new-capability", "new-extension-point")
+
+
+def is_spec_file(name):
+    """A validatable spec in docs/changes/: excludes the README index and
+    design-review records (`*-review.md`). TEMPLATE.md IS a validated instance,
+    so it stays in."""
+    return name != "README.md" and not speclib.is_review_record(name)
 
 
 def load_capabilities():
@@ -168,14 +182,22 @@ def check_spec(text, name, caps):
         rows = []
         for line in crit.splitlines():
             cells = [c.strip() for c in line.strip().strip("|").split("|")]
-            if len(cells) >= 4 and CRITERION_ID.match(cells[0]):
+            # recognize a criterion by its ID cell regardless of width, so a
+            # row missing the Level column reports the real problem instead of
+            # silently vanishing into "no criteria rows"
+            if cells and CRITERION_ID.match(cells[0]):
                 rows.append(cells)
         if not rows:
             errs.append(f"{name}: criteria table needs at least one `| Cn | … |` row")
         for i, cells in enumerate(rows, start=1):
-            cid, _behavior, test, level = cells[0], cells[1], cells[2], cells[3]
+            cid = cells[0]
             if int(CRITERION_ID.match(cid).group(1)) != i:
                 errs.append(f"{name}: criteria IDs must be sequential — row {i} is `{cid}`")
+            if len(cells) < 4:
+                errs.append(f"{name}: {cid} row needs 4 columns "
+                            "(ID|Behavior|Proving test|Level)")
+                continue
+            _behavior, test, level = cells[1], cells[2], cells[3]
             if not test or test == "—":
                 errs.append(f"{name}: {cid} names no proving test")
             if level not in LEVELS:
@@ -209,6 +231,58 @@ def plan_joins(text, caps):
         reviews.append("perf")
     globs = sorted({g for t in touches for g in caps[t]["tests"]})
     return {"touches": touches, "design_reviews": reviews, "test_impact_globs": globs}
+
+
+def review_obligations(text, spec_name, caps):
+    """(kind, record filename) pairs a spec's routing requires — one per entry
+    in plan_joins' `design_reviews`; empty when routing is empty."""
+    reviews = plan_joins(text, caps)["design_reviews"]
+    return [(r, speclib.review_record_name(spec_name, r)) for r in reviews]
+
+
+def missing_review_records(spec_name, spec_text, caps, record_exists, record_text):
+    """Pure gate core: given callbacks to test a record's existence and read
+    its text, return [error strings] for missing or non-backlinking records.
+    Callback-driven so the gate is testable without a git checkout."""
+    errs = []
+    for kind, record_name in review_obligations(spec_text, spec_name, caps):
+        if not record_exists(record_name):
+            errs.append(f"{spec_name}: routes a `{kind}` design review but its record "
+                        f"`{record_name}` is missing — run the neohaskell-{kind}"
+                        "-design-review skill and commit the record next to the spec")
+        elif spec_name not in record_text(record_name):
+            errs.append(f"{record_name}: does not backlink its spec `{spec_name}` "
+                        "(the record must name the spec it reviews)")
+    return errs
+
+
+def reviews_pr(base, caps):
+    """PR-ready review-record gate over the specs this branch changed vs `base`.
+    Returns an exit code (0 honored, 1 missing/unlinked, 2 bad base)."""
+    try:
+        specs = speclib.changed_specs(ROOT, base)
+    except speclib.GitDiffError as e:
+        print(f"spec-check: git diff against `{base}` failed — bad base ref? ({e})",
+              file=sys.stderr)
+        return 2
+    specs = [p for p in specs if is_spec_file(p.name) and p.name != "TEMPLATE.md"]
+    if not specs:
+        print(f"spec-check: no specs changed vs {base} — no review records to check")
+        return 0
+    errs = []
+    for spec in specs:
+        if not spec.exists():
+            continue  # spec deleted on the branch — nothing to require
+        errs += missing_review_records(
+            spec.name, spec.read_text(), caps,
+            record_exists=lambda n, d=spec.parent: (d / n).exists(),
+            record_text=lambda n, d=spec.parent: (d / n).read_text() if (d / n).exists() else "")
+    for e in errs:
+        print(f"spec-check: FAIL — {e}", file=sys.stderr)
+    if errs:
+        return 1
+    print(f"spec-check: OK — design-review records present for {len(specs)} changed spec(s)")
+    return 0
 
 
 # ── self-test ────────────────────────────────────────────────────────────────
@@ -292,6 +366,11 @@ def self_test():
            VALID_FIXTURE.replace("## User impact\n\nNone.\n", "## User impact\n\n"),
            "User impact")
 
+    expect("short-criteria-row",
+           VALID_FIXTURE.replace("| C1 | slugifies | `TextSpec` \"slugifies\" | unit |",
+                                 "| C1 | slugifies | `TextSpec` \"slugifies\" |"),
+           "row needs 4 columns")
+
     joins = plan_joins(
         VALID_FIXTURE.replace("[core-primitives]", "[auth, concurrency]"), caps)
     if joins["design_reviews"] != ["security", "perf"]:
@@ -301,8 +380,39 @@ def self_test():
         print("self-test FAIL plan-joins: expected test globs for auth+concurrency")
         fails += 1
 
+    # Fix 1: is_spec_file excludes README + review records, keeps specs + template
+    for nm, want in (("067-x.md", True), ("TEMPLATE.md", True),
+                     ("README.md", False), ("067-x.security-review.md", False)):
+        if is_spec_file(nm) is not want:
+            print(f"self-test FAIL is_spec_file({nm}): want {want}")
+            fails += 1
+
+    # Fix 2: review-record obligations + the missing/backlink gate (pure, no git)
+    auth_spec = VALID_FIXTURE.replace("[core-primitives]", "[auth]")
+    if [n for _, n in review_obligations(auth_spec, "067-x.md", caps)] != \
+            ["067-x.security-review.md"]:
+        print("self-test FAIL review-obligations: [auth] should owe the security record")
+        fails += 1
+    if review_obligations(VALID_FIXTURE, "001-x.md", caps):
+        print("self-test FAIL review-obligations: untagged spec owes nothing")
+        fails += 1
+    if not missing_review_records("067-x.md", auth_spec, caps,
+                                  lambda n: False, lambda n: ""):
+        print("self-test FAIL review-gate: absent record must error")
+        fails += 1
+    if missing_review_records("067-x.md", auth_spec, caps,
+                              lambda n: n == "067-x.security-review.md",
+                              lambda n: "Spec: docs/changes/067-x.md"):
+        print("self-test FAIL review-gate: present backlinked record must pass")
+        fails += 1
+    if not missing_review_records("067-x.md", auth_spec, caps,
+                                  lambda n: True, lambda n: "no reference"):
+        print("self-test FAIL review-gate: record without a backlink must error")
+        fails += 1
+
     if fails == 0:
-        print("spec-check self-test: OK — fixture mutations, header parsing, plan joins covered")
+        print("spec-check self-test: OK — fixture mutations, header parsing, "
+              "plan joins, spec-file filter, review-record gate covered")
     return 1 if fails else 0
 
 
@@ -317,14 +427,28 @@ def main():
         if len(args) != 2:
             print("usage: spec-check --plan <spec-file>", file=sys.stderr)
             return 2
-        print(json.dumps(plan_joins(Path(args[1]).read_text(), caps), indent=2))
+        spec = Path(args[1])
+        if not spec.exists():
+            print(f"spec-check: no such spec {spec}", file=sys.stderr)
+            return 2
+        print(json.dumps(plan_joins(spec.read_text(), caps), indent=2))
         return 0
 
-    files = [Path(a) for a in args] if args else sorted(
-        p for p in CHANGES.glob("*.md") if p.name != "README.md")
+    if args and args[0] == "--reviews-pr":
+        base = args[1] if len(args) > 1 else "origin/main"
+        return reviews_pr(base, caps)
+
+    files = [Path(a) for a in args] if args else sorted(CHANGES.glob("*.md"))
+    files = [p for p in files if is_spec_file(p.name)]
     if not files:
         print("spec-check: no specs to validate")
         return 0
+
+    missing = [p for p in files if not p.exists()]
+    if missing:
+        for p in missing:
+            print(f"spec-check: no such spec {p}", file=sys.stderr)
+        return 2
 
     errors = []
     for path in files:

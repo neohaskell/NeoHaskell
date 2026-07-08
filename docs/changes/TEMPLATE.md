@@ -1,10 +1,11 @@
 # Change NNN: <imperative title>
 
 <!-- This template is ITSELF a valid spec instance: CI validates it with
-     `./dev spec-check` (checks.yml `spec` job), so the template can never
-     drift from the validator. Copy it to docs/changes/NNN-slug.md (next
-     3-digit number) as the FIRST commit of a draft PR — the spec is the
-     contract the maintainer approves before implementation starts. -->
+     `./dev spec-check` (checks.yml `spec` job), so its machine-read parts
+     (header keys, fence infos, `## section` names, criteria cells) can't drift
+     from the validator. Copy it to docs/changes/NNN-slug.md (next 3-digit
+     number) as the FIRST commit of a draft PR — the spec is the contract the
+     maintainer approves before implementation starts. -->
 
 One paragraph of intent: what the requester asked for, in their vocabulary.
 
@@ -52,5 +53,5 @@ Not required — no trigger (breaking / new-dependency / new-capability /
 new-extension-point all false).
 
 <!-- When any trigger flag is true, this section MUST link the decision,
-     e.g. [ADR-0067](../decisions/0067-slug.md) — the ADR is part of the
+     e.g. [ADR-00NN](../decisions/00NN-slug.md) — the ADR is part of the
      spec the maintainer reviews at the gate, and lands with the merge. -->

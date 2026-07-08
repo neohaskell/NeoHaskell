@@ -50,6 +50,11 @@ LABELS = {"wrong-intent", "wrong-localization", "dialect-violation", "invented-a
           "test-failure", "spec-drift", "flaky-infra", "timeout",
           "human-rejected-spec", "human-rejected-pr", "other"}
 
+# The plan sub-fields `set plan.<field>` may write — also what validate checks.
+# The plan is the binding resume contract: an unlisted field is a typo, not a
+# new key, so it is rejected rather than silently stored.
+PLAN_FIELDS = ("touches", "files", "uses")
+
 
 def now():
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -82,7 +87,7 @@ def validate(state):
         errs.append("`parked` must be a bool")
     if state["parked"] and (state["park"] or {}).get("label") not in LABELS:
         errs.append(f"parked runs need a `park.label` from the taxonomy {sorted(LABELS)}")
-    for key in ("touches", "files", "uses"):
+    for key in PLAN_FIELDS:
         if not isinstance(state["plan"].get(key), list):
             errs.append(f"`plan.{key}` must be a list")
     return errs
@@ -93,7 +98,15 @@ def load(state_dir):
     if not f.exists():
         print(f"pipeline-state: no run in progress ({f} missing) — use `init`", file=sys.stderr)
         sys.exit(2)
-    state = json.loads(f.read_text())
+    try:
+        state = json.loads(f.read_text())
+    except json.JSONDecodeError:
+        # a truncated/partial write must not traceback — the resume contract's
+        # own storage failing should give an actionable message, not a stack
+        print(f"pipeline-state: {f} is corrupt (truncated/partial write?) — delete it "
+              "and `init` a fresh run; resume from the recorded stage is lost, so "
+              "re-localize", file=sys.stderr)
+        sys.exit(1)
     errs = validate(state)
     if errs:
         for e in errs:
@@ -109,7 +122,13 @@ def save(state_dir, state):
             print(f"pipeline-state: refusing to save invalid state — {e}", file=sys.stderr)
         sys.exit(1)
     state_dir.mkdir(exist_ok=True)
-    state_file(state_dir).write_text(json.dumps(state, indent=2) + "\n")
+    # write-to-temp then atomic replace: an interrupted write (crash, Ctrl-C,
+    # full disk) can leave a stray state.json.tmp but never a truncated
+    # state.json — the binding resume contract stays readable
+    f = state_file(state_dir)
+    tmp = f.with_name(f.name + ".tmp")
+    tmp.write_text(json.dumps(state, indent=2) + "\n")
+    tmp.replace(f)
 
 
 def cmd_init(args, state_dir):
@@ -182,19 +201,29 @@ PLAN_WRITABLE_STAGES = {"intake", "localize", "spec", "design-review", "plan"}
 
 def cmd_set(args, state_dir):
     s = load(state_dir)
-    node, *rest = args.key.split(".")
+    # Validate key depth/shape up front — a typo in the plan sub-field
+    # (`plan.touchs`) or an over-deep key (`plan.a.b`, `spec_path.x`) must be a
+    # clean exit-2 rejection, never a silently-stored junk key or a raw
+    # KeyError traceback. The plan is read back verbatim on resume.
+    parts = args.key.split(".")
+    node = parts[0]
     if node == "plan":
-        if not rest:
-            print("pipeline-state: use `set plan.<field>` not `set plan` — a "
-                  "wholesale replacement would silently drop the other plan "
-                  "fields", file=sys.stderr)
+        if len(parts) != 2 or parts[1] not in PLAN_FIELDS:
+            print(f"pipeline-state: `set {args.key}` — plan writes are "
+                  f"`set plan.<field>` with <field> in {sorted(PLAN_FIELDS)}",
+                  file=sys.stderr)
             return 2
         if s["stage"] not in PLAN_WRITABLE_STAGES:
             print(f"pipeline-state: refusing `set {args.key}` at stage `{s['stage']}` "
                   "— the plan is binding after planning; if it is wrong, `park "
                   "--label wrong-localization` and re-enter", file=sys.stderr)
             return 2
-    elif node not in SETTABLE:
+    elif node in SETTABLE:
+        if len(parts) != 1:
+            print(f"pipeline-state: `{node}` is a scalar key — `set {node}` takes "
+                  "no sub-field", file=sys.stderr)
+            return 2
+    else:
         print(f"pipeline-state: `{node}` is not settable — lifecycle state moves via "
               "advance/approve/park/resume; settable data keys: "
               f"{sorted(SETTABLE)} + plan.*", file=sys.stderr)
@@ -203,11 +232,10 @@ def cmd_set(args, state_dir):
         value = json.loads(args.value)
     except json.JSONDecodeError:
         value = args.value
-    target = s
-    while rest:
-        target = target[node]
-        node, *rest = rest
-    target[node] = value
+    if node == "plan":
+        s["plan"][parts[1]] = value
+    else:
+        s[node] = value
     save(state_dir, s)
     print(f"pipeline-state: {args.key} = {json.dumps(value)}")
     return 0
@@ -292,6 +320,13 @@ def self_test():
             argparse.Namespace(key="plan", value='{"touches":[]}'), d), 2)
         run("set-approvals-denied", lambda: cmd_set(
             argparse.Namespace(key="approvals.pr", value='{"by":"x"}'), d), 2)
+        # Fix 5: plan-field typos and over-deep keys are rejected, not stored
+        run("set-plan-bad-field", lambda: cmd_set(
+            argparse.Namespace(key="plan.touchs", value='["auth"]'), d), 2)
+        run("set-plan-deep-key", lambda: cmd_set(
+            argparse.Namespace(key="plan.a.b", value='"x"'), d), 2)
+        run("set-scalar-deep-key", lambda: cmd_set(
+            argparse.Namespace(key="spec_path.x", value='"y"'), d), 2)
         run("approve-wrong-stage", lambda: cmd_approve(
             argparse.Namespace(stage="spec", by="nick", via="pr-comment"), d), 1)
         run("advance-to-plan", lambda: cmd_advance(d), 0)
@@ -299,8 +334,21 @@ def self_test():
         run("replan-after-plan-denied", lambda: cmd_set(
             argparse.Namespace(key="plan.touches", value='["json"]'), d), 2)
 
+        # Fix 6: a truncated state file exits cleanly (exit 1), never tracebacks.
+        # Runs last — it clobbers the valid state file on purpose.
+        state_file(d).write_text('{"schema": 1, "run_i')
+        try:
+            load(d)
+            code = 0
+        except SystemExit as e:
+            code = e.code
+        if code != 1:
+            print(f"self-test FAIL corrupt-state: load() exit {code}, want 1")
+            fails += 1
+
         if fails == 0:
-            print("pipeline-state self-test: OK — lifecycle, gate, park taxonomy covered")
+            print("pipeline-state self-test: OK — lifecycle, gate, park taxonomy, "
+                  "plan-field guard, corrupt-file recovery covered")
         return 1 if fails else 0
 
 

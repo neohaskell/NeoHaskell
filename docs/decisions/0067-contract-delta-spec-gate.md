@@ -54,7 +54,10 @@ its proving test and declaring `unit|integration|acceptance`).
 
 Honesty is cross-checked, not trusted: a `-` line in the delta forces
 `breaking: true`; trigger flags force a linked ADR; `TEMPLATE.md` is itself
-a validated instance so template and validator cannot drift.
+a validated instance, so the template's machine-read parts (header keys, fence
+infos, `## section` names, criteria cells) cannot drift from the validator.
+Design-review records (`*-review.md`) share the directory but are not specs —
+both validators skip them.
 
 ### 2. The gate is a draft PR; the continue signal is maintainer-only
 
@@ -87,20 +90,29 @@ implementing its spec, drift there is expected.
 `spec-check --plan` joins `touches:` with capability risk tags: intersecting
 `security-sensitive`/`perf-sensitive` routes the run through the
 corresponding design-review skill *after spec approval, before
-implementation*; review records are committed next to the spec (the
-compliance audit trail). Untagged specs skip reviews entirely. Perf
-*measurement* is `./dev bench` against `telemetry/bench-budgets.json`,
-nightly and never PR-blocking; budgets start null (calibration) and are set
-from observed medians by the weekly review.
+implementation*; review records are committed next to the spec as
+`NNN-slug.<kind>-review.md` (the compliance audit trail). Untagged specs skip
+reviews entirely. That the record exists when routing fired is enforced at
+PR-ready by `spec-check --reviews-pr` (checks.yml `spec` job), so the audit
+artifact is gated, not merely prosed. Perf *measurement* is `./dev bench`
+against `telemetry/bench-budgets.json`, nightly and never PR-blocking; budgets
+start null (calibration) and are set from observed medians by the weekly review.
 
-### 6. Expectations are protected mechanically
+### 6. Expectations are protected in two layers
 
-A PreToolUse hook (`expectation-guard.py`, same self-test contract as the
-dialect guard) blocks edits that remove or reword existing test expectation
-lines unless `.pipeline/allow-expectation-edits` (a maintainer-authorized,
-never-committed marker) exists. There is deliberately no inline escape
-hatch: changing recorded expectations is exactly the action that must pass
-through a human.
+Changing recorded test expectations is exactly the action that must pass
+through a human, so it is guarded twice. **Locally**, a PreToolUse hook
+(`expectation-guard.py`, same self-test contract as the dialect guard) is the
+fast teacher: it blocks edits that remove or reword existing expectation lines
+unless the maintainer-authored, never-committed marker
+`.pipeline/allow-expectation-edits` exists (no inline escape hatch), and it
+fails loud-open on unparseable input rather than silently disabling itself.
+**In CI** — the enforced backstop — the `expectations` job census-diffs the
+committed test files against the merge base and blocks a net-removed/reworded
+expectation unless a maintainer applied the `expectations-approved` PR label.
+Operating on the committed result covers the rename / non-test-path /
+Bash-mutation cases the local hook's path+payload matcher cannot, and the label
+— unlike the local marker — is not agent-writable.
 
 ## Consequences
 

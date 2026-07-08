@@ -74,6 +74,35 @@ jobs:
           # template-injection defense-in-depth for workflow expressions
           BASE_REF: ${{ github.base_ref }}
         run: ./dev spec-drift --pr "origin/${BASE_REF}"
+      # Review-record gate: at PR-ready, every design review a changed spec
+      # ROUTES (touches ∩ risk tags) must have its committed record — the
+      # compliance audit trail the ADR requires, now enforced not just prosed.
+      - name: Design-review records present (PR-ready only)
+        if: github.event_name == 'pull_request' && github.event.pull_request.draft == false
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: ./dev spec-check --reviews-pr "origin/${BASE_REF}"
+
+  expectations:
+    name: expectation guard (test-contract diff)
+    # PRs only (drafts included — weakening a test is never OK); never on push.
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+          # census-diffs committed test files against the merge base
+          fetch-depth: 0
+      - name: Expectation census (maintainer label overrides)
+        env:
+          BASE_REF: ${{ github.base_ref }}
+          # a maintainer-only PR label — labels need write access, so the agent
+          # cannot self-apply it (unlike the local, gitignored marker). This is
+          # the load-bearing approval signal.
+          EXPECTATIONS_APPROVED: ${{ contains(github.event.pull_request.labels.*.name, 'expectations-approved') }}
+        run: python3 .claude/hooks/expectation-guard.py --pr-diff "origin/${BASE_REF}"
 
   lint:
     name: hlint (dialect gate)

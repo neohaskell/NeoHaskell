@@ -25,7 +25,6 @@ Exit: 0 = honored, 1 = drift, 2 = usage/missing input.
 Run: ./dev spec-drift    CI: .github/workflows/checks.yml `spec` job
 """
 
-import subprocess
 import sys
 from pathlib import Path
 
@@ -62,36 +61,75 @@ def delta_lines(text):
     return out
 
 
-def check(path, surface):
+def check_text(name, text, surface):
+    """Pure: does `text`'s contract delta hold against `surface`? Testable."""
     errs = []
-    lines = delta_lines(path.read_text())
+    lines = delta_lines(text)
     if lines is None:
-        return [f"{path.name}: no ```diff signatures``` block (run ./dev spec-check first)"]
+        return [f"{name}: no ```diff signatures``` block (run ./dev spec-check first)"]
     for sign, module, entry in lines:
         present = entry in surface.get(module, set())
         if sign == "+" and not present:
-            errs.append(f"{path.name}: promised `+ {module}: {entry}` — not in the "
+            errs.append(f"{name}: promised `+ {module}: {entry}` — not in the "
                         f"generated surface (module {'exists' if module in surface else 'MISSING'})")
         if sign == "-" and present:
-            errs.append(f"{path.name}: promised removal `- {module}: {entry}` — still present")
+            errs.append(f"{name}: promised removal `- {module}: {entry}` — still present")
     return errs
 
 
+def check(path, surface):
+    return check_text(path.name, path.read_text(), surface)
+
+
 def pr_specs(base):
-    """Specs added/modified on this branch vs the merge base."""
-    proc = subprocess.run(
-        ["git", "diff", "--name-only", "--diff-filter=AM", f"{base}...HEAD",
-         "--", "docs/changes/"],
-        cwd=ROOT, capture_output=True, text=True)
-    if proc.returncode != 0:
-        print(f"spec-drift: git diff against `{base}` failed — bad base ref? "
-              f"({proc.stderr.strip()})", file=sys.stderr)
+    """Specs added/modified on this branch vs the merge base — shared with
+    spec-check's review-record gate via speclib.changed_specs."""
+    try:
+        return speclib.changed_specs(ROOT, base)
+    except speclib.GitDiffError as e:
+        print(f"spec-drift: git diff against `{base}` failed — bad base ref? ({e})",
+              file=sys.stderr)
         sys.exit(2)
-    return [ROOT / p for p in proc.stdout.splitlines() if p.endswith(".md")]
+
+
+def self_test():
+    fails = 0
+    surface = {"Text": {"slugify :: Text -> Text"}}
+
+    def expect(label, text, want_ok):
+        nonlocal fails
+        errs = check_text("fixture.md", text, surface)
+        if want_ok and errs:
+            print(f"self-test FAIL {label}: expected honored, got {errs}")
+            fails += 1
+        elif not want_ok and not errs:
+            print(f"self-test FAIL {label}: expected drift, got none")
+            fails += 1
+
+    expect("honored-plus", "```diff signatures\n+ Text: slugify :: Text -> Text\n```", True)
+    expect("drift-plus-absent",
+           "```diff signatures\n+ Text: explode :: Text -> Array Text\n```", False)
+    expect("honored-minus-absent",
+           "```diff signatures\n- Text: explode :: Text -> Array Text\n```", True)
+    expect("drift-minus-present",
+           "```diff signatures\n- Text: slugify :: Text -> Text\n```", False)
+
+    # Fix 1: design-review records are not specs — the drift filter skips them
+    for nm, is_rec in (("067-x.security-review.md", True),
+                       ("067-x.perf-review.md", True), ("067-x.md", False)):
+        if speclib.is_review_record(nm) is not is_rec:
+            print(f"self-test FAIL is_review_record({nm}): want {is_rec}")
+            fails += 1
+
+    if fails == 0:
+        print("spec-drift self-test: OK — honored/drift +/- and review-record filter covered")
+    return 1 if fails else 0
 
 
 def main():
     args = sys.argv[1:]
+    if args and args[0] == "--self-test":
+        return self_test()
     if not args:
         print(__doc__.strip().splitlines()[0], file=sys.stderr)
         print("usage: spec-drift <spec.md> […] | spec-drift --pr [BASE]", file=sys.stderr)
@@ -106,14 +144,16 @@ def main():
     else:
         files = [Path(a) for a in args]
 
-    files = [f for f in files if f.name not in ("TEMPLATE.md", "README.md")]
+    files = [f for f in files
+             if f.name not in ("TEMPLATE.md", "README.md")
+             and not speclib.is_review_record(f.name)]
     missing = [f for f in files if not f.exists()]
     if missing:
         for f in missing:
             print(f"spec-drift: no such spec {f}", file=sys.stderr)
         return 2
     if not files:
-        print("spec-drift: only template/readme in scope — nothing to check")
+        print("spec-drift: only template/readme/review-records in scope — nothing to check")
         return 0
 
     surface = load_surface()

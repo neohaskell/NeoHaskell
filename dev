@@ -34,12 +34,13 @@ usage: ./dev <verb> [args]
   api <query>           search the NeoHaskell API surface — by type
                           ("Text -> Int") or by name (toInt)
   spec-check [files]    validate contract-delta specs in docs/changes/
-                          (--plan <spec> prints review + test-impact joins)
+                          (--plan <spec> prints review + test-impact joins;
+                          --reviews-pr [base] gates design-review records)
   spec-drift <spec|--pr>  verify the generated API surface honors a spec's
                           promised contract delta (PR-ready gate)
   pipeline <cmd>        pipeline run state (.pipeline/state.json): init,
-                          status, advance, approve, park, resume — the
-                          resume-never-replans contract
+                          status, advance, set, approve, park, resume,
+                          validate — the resume-never-replans contract
   bench                 run the perf suites against telemetry/bench-budgets.json
                           (nightly in CI; needs POSTGRES_AVAILABLE=true for
                           the Postgres entries)

@@ -62,16 +62,16 @@ for f in scripts/*; do
   fi
 done
 
-# 4. Skills are agent-visible docs (governing rule: no doc without a gate) —
-#    every `./dev <verb>` a SKILL.md references must actually be registered.
-if [ -d .claude/skills ]; then
-  while IFS= read -r ref; do
-    verb=$(echo "${ref}" | sed 's|.*\./dev ||' | awk '{print $1}')
-    if ! grep -qE "^\s*${verb}\)" dev; then
-      err "a SKILL.md references './dev ${verb}' but that verb is not registered in ./dev"
-    fi
-  done < <(grep -rhoE '\./dev [a-z-]+' .claude/skills/*/SKILL.md 2>/dev/null | sort -u)
-fi
+# 4. Agent-visible docs (governing rule: no doc without a gate) — every
+#    `./dev <verb>` referenced in a SKILL.md, AGENTS.md, or CLAUDE.md must
+#    actually be registered, so a verb rename can't make the most-read docs
+#    lie silently (AGENTS.md is loaded into every session).
+while IFS= read -r ref; do
+  verb=$(echo "${ref}" | sed 's|.*\./dev ||' | awk '{print $1}')
+  if ! grep -qE "^\s*${verb}\)" dev; then
+    err "an agent-visible doc references './dev ${verb}' but that verb is not registered in ./dev"
+  fi
+done < <(grep -rhoE '\./dev [a-z-]+' .claude/skills/*/SKILL.md AGENTS.md CLAUDE.md 2>/dev/null | sort -u)
 
 # 5. Hook self-tests: every hook rule/scenario must have blocking AND passing
 #    cases in its committed cases file (a rule without cases fails here).
@@ -86,6 +86,7 @@ fi
 #     mutations must keep failing for the right reasons — a validator that
 #     stops rejecting is a gate that silently opened.
 scripts/spec-check --self-test || fail=1
+scripts/spec-drift --self-test || fail=1
 scripts/pipeline-state --self-test || fail=1
 
 # 6. invented-api counter self-test (Phase 4): ./dev check's counter is
