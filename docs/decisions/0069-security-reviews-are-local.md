@@ -55,5 +55,8 @@ benchmark budgets, not how to break the system.
   ever committed, purge it from history (`git filter-branch`/`filter-repo` +
   force-push the unmerged branch) — the gitignore prevents recurrence.
 - Migration: the first real security review (change 001, issue #713) was pushed
-  before this ADR; it was untracked, gitignored, and purged from the branch
-  history as the reference remediation.
+  before this ADR. It was untracked and gitignored, so it is absent from the
+  PR's tip — a **squash-merge** collapses the branch to one commit whose diff has
+  no security record, keeping `main` clean. (An intermediate branch commit still
+  holds it until the branch is deleted; for a higher-sensitivity review, purge
+  with `git filter-repo`/`filter-branch` + force-push before merge instead.)
