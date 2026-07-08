@@ -98,10 +98,11 @@ jobs:
           if-no-files-found: error
 
   codemap-sync:
-    # Runs LAST — only after build AND every test suite is green — so it is the
-    # final confirmation right before merge (and the codemap regen isn't spent on
-    # a PR that's already failing). Enforced through ci-gate below.
-    needs: [build, doctest, test-core, test-auth, test-integration, test-service, test-hurl]
+    # Runs in PARALLEL with the test suites (needs only build's artifact) so it
+    # adds no wall-clock, and is ENFORCED as a merge gate via ci-gate below — a
+    # separate runner, so parallelism is free. (If a test fails the regen was
+    # spent for nothing, but that costs a runner-minute, not PR latency.)
+    needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -339,8 +340,8 @@ jobs:
           if [[ "$IS_DRAFT" == "true" || "$COMPILED" != "true" ]]; then
             allow_skip=true
           fi
-          # codemap-sync last — it only runs after the others, so if a test
-          # failed the real failure surfaces before codemap-sync's skip.
+          # codemap-sync runs in parallel; listed last so a test failure is the
+          # first error reported when several jobs fail together.
           results=(
             "build=${{ needs.build.result }}"
             "doctest=${{ needs.doctest.result }}"
