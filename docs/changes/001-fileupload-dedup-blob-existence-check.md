@@ -68,3 +68,14 @@ new-extension-point all false). The design choice (re-store under the existing
 blob key rather than falling through to a fresh upload, which would collide with
 the owner+content-hash unique constraint and re-return the stale ref) is
 recorded here and in the implementation comment, not as an ADR.
+
+**Completeness (from the security + design-alternative review lenses):** the
+missing-blob guard (`ensureBlobPresent`) is applied at **all four** sites that
+return a pre-existing `FileRef` — the two dedup branches (Pending/Confirmed) and
+the two 23505 concurrent-race retry branches in `normalUploadFlow` — since the
+race-retry path returns a stored `blobKey` with the same absent check and is the
+same defect class. The race branches only fire under the Postgres unique
+constraint, so they are covered structurally by the shared helper (proven by
+C1–C4 on the in-memory store) rather than by a separate, non-deterministic
+concurrency criterion. `handleDownloadImpl`'s `File blob is missing from storage`
+remains a detect-only backstop, unchanged.
