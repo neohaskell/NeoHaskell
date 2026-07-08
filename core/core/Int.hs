@@ -50,8 +50,11 @@ toInt64 = Prelude.fromIntegral
 
 -- | Generate a random integer within the full range of Int.
 --
--- >>> randomValue <- Int.getRandom
--- >>> -- randomValue is now a random Int
+-- Random values have no deterministic doctest; use it inside a 'Task'
+-- pipeline:
+--
+-- > Int.getRandom
+-- >   |> Task.andThen (\randomValue -> Console.print [fmt|#{randomValue}|])
 getRandom :: Task _ Int
 getRandom = do
   value <- Task.fromIO Random.randomIO
@@ -61,11 +64,13 @@ getRandom = do
 -- | Generate a random integer between two bounds (inclusive).
 -- The first parameter is the lower bound, the second is the upper bound.
 --
--- >>> diceRoll <- Int.getRandomBetween 1 6
--- >>> -- diceRoll is now a random number between 1 and 6 (inclusive)
+-- > Int.getRandomBetween 1 6
+-- >   |> Task.andThen (\diceRoll -> Console.print [fmt|rolled #{diceRoll}|])
 --
--- >>> percentChance <- Int.getRandomBetween 0 100
--- >>> -- percentChance is now a random percentage
+-- Equal bounds pin the result, which also makes it doctest-checkable:
+--
+-- >>> Task.runNoErrors (Int.getRandomBetween 5 5)
+-- 5
 getRandomBetween :: Int -> Int -> Task _ Int
 getRandomBetween minValue maxValue = do
   let lowerBound = min minValue maxValue
@@ -84,19 +89,15 @@ getRandomBetween minValue maxValue = do
 --
 -- >>> 3 |> Int.powerOf 2
 -- 8
--- -- 2^3 = 8
 --
 -- >>> 10 |> Int.powerOf 2
 -- 1024
--- -- 2^10 = 1024
 --
 -- >>> 0 |> Int.powerOf 5
 -- 1
--- -- 5^0 = 1
 --
 -- >>> (-1) |> Int.powerOf 2
 -- 1
--- -- Negative exponent treated as 0
 powerOf :: Int -> Int -> Int
 powerOf base exponent = go (max 0 exponent) 1
   where

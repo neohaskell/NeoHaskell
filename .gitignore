@@ -100,3 +100,7 @@ __pycache__/
 /.hoogle*.warn
 /.hoogle-src/
 /.hoogle-vanilla-src/
+
+# Phase 4: doctest gate — scripts/run-doctest writes + removes these; a
+# stray one would silently reconfigure every later ghci/ghcid session
+.ghc.environment.*

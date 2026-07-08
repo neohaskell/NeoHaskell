@@ -25,6 +25,9 @@
     cabal-gild = "latest";
     ghcid = "latest"; # powers scripts/dev-loop (agent + human inner loop)
     hiedb = "latest"; # symbol reference DB — powers ./dev who-calls (codemap)
+    doctest = "latest"; # doctest gate (./dev doctest; CI: test.yml doctest
+    # job) — MUST be a shell.tool, not a nixpkgs buildInput: doctest links
+    # the GHC lib API and only works built against the project's own GHC.
   };
   # Kill haskell.nix's hoogle-with-packages wrapper: it injects its own
   # --database flag, silently overriding ./dev api's databases (root cause of
