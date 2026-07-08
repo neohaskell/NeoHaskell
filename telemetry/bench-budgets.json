@@ -1,0 +1,21 @@
+{
+  "schema": 1,
+  "mode": "compiled `cabal test` (default project, not the -O0 dev flavor) — timings are only comparable within this mode",
+  "calibration": "a null budget_s records the measured time and never fails the run; after >=3 nightly datapoints, set budget_s to ~2x the median observed seconds and commit the number (the weekly telemetry review owns this)",
+  "entries": [
+    {
+      "name": "eventstore-inmemory",
+      "suite": "nhcore-test-service",
+      "match": "Service.EventStore.InMemory",
+      "requires": null,
+      "budget_s": null
+    },
+    {
+      "name": "eventstore-postgres",
+      "suite": "nhcore-test-service",
+      "match": "Service.EventStore.Postgres",
+      "requires": "postgres",
+      "budget_s": null
+    }
+  ]
+}

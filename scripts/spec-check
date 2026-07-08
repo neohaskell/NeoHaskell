@@ -1,0 +1,467 @@
+#!/usr/bin/env python3
+"""Contract-delta spec validator (pipeline Phase 5).
+
+Validates docs/changes/*.md — the spec a draft PR opens with and the
+maintainer approves at the gate. The template (docs/changes/TEMPLATE.md) is
+itself a validated instance, so the template's machine-read parts (header
+keys, fence infos, `## section` names, criteria cells) cannot drift from the
+validator. (The criteria table's column *labels* are documentation — parsed
+positionally, not asserted; design-review records, `*-review.md`, are not
+specs and are skipped.)
+
+Checks (all mechanical — a spec that passes is machine-joinable):
+  1. filename: NNN-slug.md (3-digit, kebab), TEMPLATE.md exempt
+  2. the ```yaml spec``` header block parses; `kind` in the closed enum;
+     `touches` non-empty and every ID exists in codemap/capabilities.yaml
+     (the closed localization ontology — the mechanical join for test-impact
+     and design-review routing)
+  3. the ```diff signatures``` contract-delta block exists; every non-empty
+     line is `<+|-> <Module>: <entry>` in codemap/signatures vocabulary
+  4. honesty cross-check: any `-` line forces `breaking: true`
+  5. criteria table: >=1 row, IDs sequential C1..Cn, proving test non-empty,
+     level in {unit, integration, acceptance}
+  6. `## User impact` section present and non-empty
+  7. ADR trigger: breaking / new-dependency / new-capability /
+     new-extension-point -> the `## ADR` section must link docs/decisions/
+
+Modes:
+  spec-check [files…]         validate (default: all docs/changes/*.md)
+  spec-check --plan FILE      emit the mechanical joins as JSON:
+                              required design reviews (touches x risk tags)
+                              + test-impact globs (touches x tests:)
+  spec-check --reviews-pr [BASE]  PR-ready gate: every design review a changed
+                              spec routes must have its committed record
+                              (NNN-slug.<kind>-review.md, backlinking the spec)
+  spec-check --self-test      embedded fixture + mutation coverage (doctor/CI)
+
+Run: ./dev spec-check    CI: .github/workflows/checks.yml `spec` job
+(python3 stdlib only — capabilities.yaml is regex-scanned, no pyyaml)
+"""
+
+import json
+import re
+import sys
+from pathlib import Path
+
+sys.dont_write_bytecode = True  # no scripts/__pycache__/ (doctor scans scripts/)
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import speclib  # noqa: E402 — shared delta grammar with spec-drift
+
+ROOT = Path(__file__).resolve().parent.parent
+CHANGES = ROOT / "docs" / "changes"
+CAPABILITIES = ROOT / "codemap" / "capabilities.yaml"
+
+KINDS = {"feature", "bug", "refactor"}
+LEVELS = {"unit", "integration", "acceptance"}
+FILENAME = re.compile(r"^\d{3}-[a-z0-9][a-z0-9-]*\.md$")
+CRITERION_ID = re.compile(r"^C(\d+)$")
+ADR_LINK = re.compile(r"decisions/\d{4}-[a-z0-9-]+\.md")
+TRIGGER_FLAGS = ("breaking", "new-dependency", "new-capability", "new-extension-point")
+
+
+def is_spec_file(name):
+    """A validatable spec in docs/changes/: excludes the README index and
+    design-review records (`*-review.md`). TEMPLATE.md IS a validated instance,
+    so it stays in."""
+    return name != "README.md" and not speclib.is_review_record(name)
+
+
+def load_capabilities():
+    """Regex-scan capabilities.yaml: id -> {risk tags, test globs}.
+    Line-based on purpose — the file is CI-gated by codemap/check.py, so the
+    shapes scanned here are stable."""
+    caps, current = {}, None
+    for line in CAPABILITIES.read_text().splitlines():
+        m = re.match(r"^\s*-\s+id:\s+(\S+)", line)
+        if m:
+            current = m.group(1)
+            caps[current] = {"security": False, "perf": False, "tests": []}
+            continue
+        if current is None:
+            continue
+        if re.match(r"^\s*security-sensitive:\s*true", line):
+            caps[current]["security"] = True
+        elif re.match(r"^\s*perf-sensitive:\s*true", line):
+            caps[current]["perf"] = True
+        else:
+            m = re.match(r"^\s*tests:\s*\[(.*)\]", line)
+            if m:
+                caps[current]["tests"] = [g.strip() for g in m.group(1).split(",") if g.strip()]
+    return caps
+
+
+def fenced_block(text, info):
+    """Content of the ```<info>``` fence, or None."""
+    m = re.search(rf"```{re.escape(info)}\n(.*?)```", text, re.DOTALL)
+    return m.group(1) if m else None
+
+
+def section(text, title):
+    """Body of a `## title` section, or None."""
+    m = re.search(rf"^## {re.escape(title)}\n(.*?)(?=^## |\Z)", text, re.DOTALL | re.MULTILINE)
+    return m.group(1) if m else None
+
+
+def parse_header(block):
+    """The ```yaml spec``` block is a flat known-shape mapping — parsed
+    line-based (stdlib only). Returns (dict, [errors])."""
+    header, errs = {}, []
+    for raw in block.splitlines():
+        # YAML comment = `#` preceded by whitespace (or line start) — a bare
+        # split on "#" would truncate `issue: issue#712` to `issue`
+        line = re.split(r"(?:^|\s)#", raw, maxsplit=1)[0].rstrip()
+        if not line.strip():
+            continue
+        m = re.match(r"^([a-z-]+):\s*(.+)$", line)
+        if not m:
+            errs.append(f"header: unparseable line `{raw.strip()}`")
+            continue
+        key, val = m.group(1), m.group(2).strip()
+        if key == "touches":
+            lm = re.match(r"^\[(.*)\]$", val)
+            if not lm:
+                errs.append("header: `touches` must be a [flow, list]")
+                continue
+            header[key] = [t.strip() for t in lm.group(1).split(",") if t.strip()]
+        elif val in ("true", "false"):
+            header[key] = val == "true"
+        else:
+            header[key] = val
+    return header, errs
+
+
+def check_spec(text, name, caps):
+    """Returns [errors] — pure, testable."""
+    errs = []
+
+    block = fenced_block(text, "yaml spec")
+    if block is None:
+        return [f"{name}: missing ```yaml spec``` header block"]
+    header, header_errs = parse_header(block)
+    errs += [f"{name}: {e}" for e in header_errs]
+
+    if not header.get("issue"):
+        errs.append(f"{name}: header needs `issue:` (issue#NNN or adhoc:<slug>)")
+    if header.get("kind") not in KINDS:
+        errs.append(f"{name}: `kind` must be one of {sorted(KINDS)}, got `{header.get('kind')}`")
+    touches = header.get("touches", [])
+    if not touches:
+        errs.append(f"{name}: `touches` must name at least one capability ID")
+    for t in touches:
+        if t not in caps:
+            errs.append(f"{name}: `touches` names unknown capability `{t}` "
+                        "(closed list: codemap/capabilities.yaml)")
+    for flag in TRIGGER_FLAGS:
+        if not isinstance(header.get(flag), bool):
+            errs.append(f"{name}: header needs `{flag}: true|false`")
+
+    delta = speclib.delta_block(text)
+    if delta is None:
+        errs.append(f"{name}: missing ```diff signatures``` contract-delta block "
+                    "(empty block = no-API-change promise, still required)")
+        delta = ""
+    has_removal = False
+    for line in delta.splitlines():
+        if not line.strip():
+            continue
+        m = speclib.DELTA_LINE.match(line)
+        if not m:
+            errs.append(f"{name}: bad contract-delta line `{line.strip()}` "
+                        "(want `<+|-> <Module>: <signature>`)")
+            continue
+        if m.group(1) == "-":
+            has_removal = True
+    if has_removal and header.get("breaking") is not True:
+        errs.append(f"{name}: contract delta removes a signature but `breaking: false` "
+                    "— removals ARE breaking (honesty cross-check)")
+
+    crit = section(text, "Criteria")
+    if crit is None:
+        errs.append(f"{name}: missing `## Criteria` section")
+    else:
+        rows = []
+        for line in crit.splitlines():
+            cells = [c.strip() for c in line.strip().strip("|").split("|")]
+            # recognize a criterion by its ID cell regardless of width, so a
+            # row missing the Level column reports the real problem instead of
+            # silently vanishing into "no criteria rows"
+            if cells and CRITERION_ID.match(cells[0]):
+                rows.append(cells)
+        if not rows:
+            errs.append(f"{name}: criteria table needs at least one `| Cn | … |` row")
+        for i, cells in enumerate(rows, start=1):
+            cid = cells[0]
+            if int(CRITERION_ID.match(cid).group(1)) != i:
+                errs.append(f"{name}: criteria IDs must be sequential — row {i} is `{cid}`")
+            if len(cells) < 4:
+                errs.append(f"{name}: {cid} row needs 4 columns "
+                            "(ID|Behavior|Proving test|Level)")
+                continue
+            _behavior, test, level = cells[1], cells[2], cells[3]
+            if not test or test == "—":
+                errs.append(f"{name}: {cid} names no proving test")
+            if level not in LEVELS:
+                errs.append(f"{name}: {cid} level `{level}` not in {sorted(LEVELS)} "
+                            "(a boundary-crossing behavior must declare integration/acceptance)")
+
+    impact = section(text, "User impact")
+    if impact is None or not impact.strip():
+        errs.append(f"{name}: missing or empty `## User impact` section "
+                    "(\"None\" is acceptable; silence is not)")
+
+    triggered = [f for f in TRIGGER_FLAGS if header.get(f) is True]
+    if triggered:
+        adr = section(text, "ADR")
+        if adr is None or not ADR_LINK.search(adr):
+            errs.append(f"{name}: ADR trigger fired ({', '.join(triggered)}) but the "
+                        "`## ADR` section links no docs/decisions/NNNN-slug.md")
+
+    return errs
+
+
+def plan_joins(text, caps):
+    """The mechanical joins the pipeline consumes: touches -> required design
+    reviews (risk tags) + test-impact globs."""
+    header, _ = parse_header(fenced_block(text, "yaml spec") or "")
+    touches = [t for t in header.get("touches", []) if t in caps]
+    reviews = []
+    if any(caps[t]["security"] for t in touches):
+        reviews.append("security")
+    if any(caps[t]["perf"] for t in touches):
+        reviews.append("perf")
+    globs = sorted({g for t in touches for g in caps[t]["tests"]})
+    return {"touches": touches, "design_reviews": reviews, "test_impact_globs": globs}
+
+
+def review_obligations(text, spec_name, caps):
+    """(kind, record filename) pairs a spec's routing requires — one per entry
+    in plan_joins' `design_reviews`; empty when routing is empty."""
+    reviews = plan_joins(text, caps)["design_reviews"]
+    return [(r, speclib.review_record_name(spec_name, r)) for r in reviews]
+
+
+def missing_review_records(spec_name, spec_text, caps, record_exists, record_text):
+    """Pure gate core: given callbacks to test a record's existence and read
+    its text, return [error strings] for missing or non-backlinking records.
+    Callback-driven so the gate is testable without a git checkout."""
+    errs = []
+    for kind, record_name in review_obligations(spec_text, spec_name, caps):
+        if not record_exists(record_name):
+            errs.append(f"{spec_name}: routes a `{kind}` design review but its record "
+                        f"`{record_name}` is missing — run the neohaskell-{kind}"
+                        "-design-review skill and commit the record next to the spec")
+        elif spec_name not in record_text(record_name):
+            errs.append(f"{record_name}: does not backlink its spec `{spec_name}` "
+                        "(the record must name the spec it reviews)")
+    return errs
+
+
+def reviews_pr(base, caps):
+    """PR-ready review-record gate over the specs this branch changed vs `base`.
+    Returns an exit code (0 honored, 1 missing/unlinked, 2 bad base)."""
+    try:
+        specs = speclib.changed_specs(ROOT, base)
+    except speclib.GitDiffError as e:
+        print(f"spec-check: git diff against `{base}` failed — bad base ref? ({e})",
+              file=sys.stderr)
+        return 2
+    specs = [p for p in specs if is_spec_file(p.name) and p.name != "TEMPLATE.md"]
+    if not specs:
+        print(f"spec-check: no specs changed vs {base} — no review records to check")
+        return 0
+    errs = []
+    for spec in specs:
+        if not spec.exists():
+            continue  # spec deleted on the branch — nothing to require
+        errs += missing_review_records(
+            spec.name, spec.read_text(), caps,
+            record_exists=lambda n, d=spec.parent: (d / n).exists(),
+            record_text=lambda n, d=spec.parent: (d / n).read_text() if (d / n).exists() else "")
+    for e in errs:
+        print(f"spec-check: FAIL — {e}", file=sys.stderr)
+    if errs:
+        return 1
+    print(f"spec-check: OK — design-review records present for {len(specs)} changed spec(s)")
+    return 0
+
+
+# ── self-test ────────────────────────────────────────────────────────────────
+
+VALID_FIXTURE = """# Change 001: example
+
+Intent paragraph.
+
+```yaml spec
+issue: issue#712
+kind: feature
+touches: [core-primitives]
+breaking: false
+new-dependency: false
+new-capability: false
+new-extension-point: false
+```
+
+## Contract delta
+
+```diff signatures
++ Text: slugify :: Text -> Text
+```
+
+## Criteria
+
+| ID | Behavior | Proving test | Level |
+|----|----------|--------------|-------|
+| C1 | slugifies | `TextSpec` "slugifies" | unit |
+| C2 | rejects empty | `TextSpec` "rejects empty" | unit |
+
+## User impact
+
+None.
+
+## ADR
+
+Not required.
+"""
+
+
+def self_test():
+    caps = load_capabilities()
+    fails = 0
+
+    def expect(label, text, want_error_containing):
+        nonlocal fails
+        errs = check_spec(text, "fixture", caps)
+        if want_error_containing is None:
+            if errs:
+                print(f"self-test FAIL {label}: expected valid, got {errs}")
+                fails += 1
+        elif not any(want_error_containing in e for e in errs):
+            print(f"self-test FAIL {label}: no error containing `{want_error_containing}` in {errs}")
+            fails += 1
+
+    expect("valid", VALID_FIXTURE, None)
+    # regression: `issue#712` must survive comment stripping (only
+    # whitespace-preceded `#` starts a YAML comment)
+    header, _ = parse_header("issue: issue#712  # trailing comment")
+    if header.get("issue") != "issue#712":
+        print(f"self-test FAIL issue-hash: parsed `{header.get('issue')}`, want `issue#712`")
+        fails += 1
+    expect("bad-kind", VALID_FIXTURE.replace("kind: feature", "kind: epic"), "`kind` must be")
+    expect("unknown-capability",
+           VALID_FIXTURE.replace("[core-primitives]", "[warp-drive]"), "unknown capability")
+    expect("removal-not-breaking",
+           VALID_FIXTURE.replace("+ Text: slugify", "- Text: slugify"), "removals ARE breaking")
+    expect("triggered-without-adr",
+           VALID_FIXTURE.replace("breaking: false", "breaking: true")
+                        .replace("+ Text: slugify", "- Text: slugify"), "links no docs/decisions")
+    expect("bad-level", VALID_FIXTURE.replace("| unit |", "| mocked |", 1), "not in")
+    expect("gap-in-ids", VALID_FIXTURE.replace("| C2 |", "| C7 |"), "sequential")
+    expect("no-delta-block",
+           re.sub(r"```diff signatures\n.*?```", "", VALID_FIXTURE, flags=re.DOTALL),
+           "contract-delta block")
+    expect("bad-delta-line",
+           VALID_FIXTURE.replace("+ Text: slugify :: Text -> Text", "+ added a function"),
+           "bad contract-delta line")
+    expect("no-impact",
+           VALID_FIXTURE.replace("## User impact\n\nNone.\n", "## User impact\n\n"),
+           "User impact")
+
+    expect("short-criteria-row",
+           VALID_FIXTURE.replace("| C1 | slugifies | `TextSpec` \"slugifies\" | unit |",
+                                 "| C1 | slugifies | `TextSpec` \"slugifies\" |"),
+           "row needs 4 columns")
+
+    joins = plan_joins(
+        VALID_FIXTURE.replace("[core-primitives]", "[auth, concurrency]"), caps)
+    if joins["design_reviews"] != ["security", "perf"]:
+        print(f"self-test FAIL plan-joins: expected both reviews, got {joins}")
+        fails += 1
+    if not joins["test_impact_globs"]:
+        print("self-test FAIL plan-joins: expected test globs for auth+concurrency")
+        fails += 1
+
+    # Fix 1: is_spec_file excludes README + review records, keeps specs + template
+    for nm, want in (("067-x.md", True), ("TEMPLATE.md", True),
+                     ("README.md", False), ("067-x.security-review.md", False)):
+        if is_spec_file(nm) is not want:
+            print(f"self-test FAIL is_spec_file({nm}): want {want}")
+            fails += 1
+
+    # Fix 2: review-record obligations + the missing/backlink gate (pure, no git)
+    auth_spec = VALID_FIXTURE.replace("[core-primitives]", "[auth]")
+    if [n for _, n in review_obligations(auth_spec, "067-x.md", caps)] != \
+            ["067-x.security-review.md"]:
+        print("self-test FAIL review-obligations: [auth] should owe the security record")
+        fails += 1
+    if review_obligations(VALID_FIXTURE, "001-x.md", caps):
+        print("self-test FAIL review-obligations: untagged spec owes nothing")
+        fails += 1
+    if not missing_review_records("067-x.md", auth_spec, caps,
+                                  lambda n: False, lambda n: ""):
+        print("self-test FAIL review-gate: absent record must error")
+        fails += 1
+    if missing_review_records("067-x.md", auth_spec, caps,
+                              lambda n: n == "067-x.security-review.md",
+                              lambda n: "Spec: docs/changes/067-x.md"):
+        print("self-test FAIL review-gate: present backlinked record must pass")
+        fails += 1
+    if not missing_review_records("067-x.md", auth_spec, caps,
+                                  lambda n: True, lambda n: "no reference"):
+        print("self-test FAIL review-gate: record without a backlink must error")
+        fails += 1
+
+    if fails == 0:
+        print("spec-check self-test: OK — fixture mutations, header parsing, "
+              "plan joins, spec-file filter, review-record gate covered")
+    return 1 if fails else 0
+
+
+def main():
+    args = sys.argv[1:]
+    if args and args[0] == "--self-test":
+        return self_test()
+
+    caps = load_capabilities()
+
+    if args and args[0] == "--plan":
+        if len(args) != 2:
+            print("usage: spec-check --plan <spec-file>", file=sys.stderr)
+            return 2
+        spec = Path(args[1])
+        if not spec.exists():
+            print(f"spec-check: no such spec {spec}", file=sys.stderr)
+            return 2
+        print(json.dumps(plan_joins(spec.read_text(), caps), indent=2))
+        return 0
+
+    if args and args[0] == "--reviews-pr":
+        base = args[1] if len(args) > 1 else "origin/main"
+        return reviews_pr(base, caps)
+
+    files = [Path(a) for a in args] if args else sorted(CHANGES.glob("*.md"))
+    files = [p for p in files if is_spec_file(p.name)]
+    if not files:
+        print("spec-check: no specs to validate")
+        return 0
+
+    missing = [p for p in files if not p.exists()]
+    if missing:
+        for p in missing:
+            print(f"spec-check: no such spec {p}", file=sys.stderr)
+        return 2
+
+    errors = []
+    for path in files:
+        if path.name != "TEMPLATE.md" and not FILENAME.match(path.name):
+            errors.append(f"{path.name}: filename must be NNN-slug.md (3-digit, kebab-case)")
+        errors += check_spec(path.read_text(), path.name, caps)
+
+    for e in errors:
+        print(f"spec-check: FAIL — {e}", file=sys.stderr)
+    if not errors:
+        print(f"spec-check: OK — {len(files)} spec(s) valid")
+    return 1 if errors else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

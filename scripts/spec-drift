@@ -1,0 +1,173 @@
+#!/usr/bin/env python3
+"""Spec-drift check (pipeline Phase 5, task 7).
+
+At PR-ready: verify the code's actual public API surface honors the spec's
+promised contract delta — a mismatch is flagged mechanically BEFORE the
+maintainer reviews. The join is exact: contract-delta lines are written in
+codemap/signatures vocabulary, and codemap/signatures/*.txt is the CI-sync-
+gated truth (test.yml codemap-sync regenerates and diffs it), so checking
+against the committed files IS checking against the code.
+
+Semantics per delta line:
+  `+ Module: entry`  the entry must EXIST in Module's signature section
+  `- Module: entry`  the entry must be ABSENT from Module's section
+An empty delta block passes trivially — the no-API-change promise is checked
+by the same mechanism (any surface change would fail codemap-sync instead).
+
+Usage:
+  spec-drift <spec.md> […]   check specific specs
+  spec-drift --pr [BASE]     check the specs this branch adds/modifies vs
+                             the merge base (default: origin/main) — the CI
+                             mode; passes trivially when the diff has none
+  (docs/changes/TEMPLATE.md is always skipped — its delta is a placeholder)
+
+Exit: 0 = honored, 1 = drift, 2 = usage/missing input.
+Run: ./dev spec-drift    CI: .github/workflows/checks.yml `spec` job
+"""
+
+import sys
+from pathlib import Path
+
+sys.dont_write_bytecode = True  # no scripts/__pycache__/ (doctor scans scripts/)
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import speclib  # noqa: E402 — shared delta grammar with spec-check
+
+ROOT = Path(__file__).resolve().parent.parent
+SIGNATURES = ROOT / "codemap" / "signatures"
+
+
+def load_surface():
+    """module -> set of normalized entry lines, across all signature files."""
+    surface, module = {}, None
+    for f in sorted(SIGNATURES.glob("*.txt")):
+        for line in f.read_text().splitlines():
+            if line.startswith("module "):
+                module = line[len("module "):].strip()
+                surface.setdefault(module, set())
+            elif module and line.strip() and not line.startswith("--"):
+                surface[module].add(" ".join(line.split()))
+    return surface
+
+
+def delta_lines(text):
+    block = speclib.delta_block(text)
+    if block is None:
+        return None
+    out = []
+    for line in block.splitlines():
+        dm = speclib.DELTA_LINE.match(line)
+        if dm:
+            out.append((dm.group(1), dm.group(2), " ".join(dm.group(3).split())))
+    return out
+
+
+def check_text(name, text, surface):
+    """Pure: does `text`'s contract delta hold against `surface`? Testable."""
+    errs = []
+    lines = delta_lines(text)
+    if lines is None:
+        return [f"{name}: no ```diff signatures``` block (run ./dev spec-check first)"]
+    for sign, module, entry in lines:
+        present = entry in surface.get(module, set())
+        if sign == "+" and not present:
+            errs.append(f"{name}: promised `+ {module}: {entry}` — not in the "
+                        f"generated surface (module {'exists' if module in surface else 'MISSING'})")
+        if sign == "-" and present:
+            errs.append(f"{name}: promised removal `- {module}: {entry}` — still present")
+    return errs
+
+
+def check(path, surface):
+    return check_text(path.name, path.read_text(), surface)
+
+
+def pr_specs(base):
+    """Specs added/modified on this branch vs the merge base — shared with
+    spec-check's review-record gate via speclib.changed_specs."""
+    try:
+        return speclib.changed_specs(ROOT, base)
+    except speclib.GitDiffError as e:
+        print(f"spec-drift: git diff against `{base}` failed — bad base ref? ({e})",
+              file=sys.stderr)
+        sys.exit(2)
+
+
+def self_test():
+    fails = 0
+    surface = {"Text": {"slugify :: Text -> Text"}}
+
+    def expect(label, text, want_ok):
+        nonlocal fails
+        errs = check_text("fixture.md", text, surface)
+        if want_ok and errs:
+            print(f"self-test FAIL {label}: expected honored, got {errs}")
+            fails += 1
+        elif not want_ok and not errs:
+            print(f"self-test FAIL {label}: expected drift, got none")
+            fails += 1
+
+    expect("honored-plus", "```diff signatures\n+ Text: slugify :: Text -> Text\n```", True)
+    expect("drift-plus-absent",
+           "```diff signatures\n+ Text: explode :: Text -> Array Text\n```", False)
+    expect("honored-minus-absent",
+           "```diff signatures\n- Text: explode :: Text -> Array Text\n```", True)
+    expect("drift-minus-present",
+           "```diff signatures\n- Text: slugify :: Text -> Text\n```", False)
+
+    # Fix 1: design-review records are not specs — the drift filter skips them
+    for nm, is_rec in (("067-x.security-review.md", True),
+                       ("067-x.perf-review.md", True), ("067-x.md", False)):
+        if speclib.is_review_record(nm) is not is_rec:
+            print(f"self-test FAIL is_review_record({nm}): want {is_rec}")
+            fails += 1
+
+    if fails == 0:
+        print("spec-drift self-test: OK — honored/drift +/- and review-record filter covered")
+    return 1 if fails else 0
+
+
+def main():
+    args = sys.argv[1:]
+    if args and args[0] == "--self-test":
+        return self_test()
+    if not args:
+        print(__doc__.strip().splitlines()[0], file=sys.stderr)
+        print("usage: spec-drift <spec.md> […] | spec-drift --pr [BASE]", file=sys.stderr)
+        return 2
+
+    if args[0] == "--pr":
+        base = args[1] if len(args) > 1 else "origin/main"
+        files = pr_specs(base)
+        if not files:
+            print(f"spec-drift: no specs changed vs {base} — nothing to check")
+            return 0
+    else:
+        files = [Path(a) for a in args]
+
+    files = [f for f in files
+             if f.name not in ("TEMPLATE.md", "README.md")
+             and not speclib.is_review_record(f.name)]
+    missing = [f for f in files if not f.exists()]
+    if missing:
+        for f in missing:
+            print(f"spec-drift: no such spec {f}", file=sys.stderr)
+        return 2
+    if not files:
+        print("spec-drift: only template/readme/review-records in scope — nothing to check")
+        return 0
+
+    surface = load_surface()
+    errors = [e for f in files for e in check(f, surface)]
+    for e in errors:
+        print(f"spec-drift: FAIL — {e}", file=sys.stderr)
+    if errors:
+        print("spec-drift: the spec is the approved contract — either finish the "
+              "implementation or (with maintainer sign-off) amend the spec in the "
+              "same PR.", file=sys.stderr)
+        return 1
+    print(f"spec-drift: OK — {len(files)} spec(s) honored by the generated surface")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

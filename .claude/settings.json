@@ -27,6 +27,11 @@
             "type": "command",
             "command": "python3 $CLAUDE_PROJECT_DIR/.claude/hooks/dialect-guard.py",
             "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "python3 $CLAUDE_PROJECT_DIR/.claude/hooks/expectation-guard.py",
+            "timeout": 10
           }
         ]
       }

@@ -1,0 +1,404 @@
+#!/usr/bin/env python3
+"""Pipeline run state — the binding resume contract (Phase 5, task 2).
+
+`.pipeline/state.json` (local, gitignored) is what makes the draft-PR gate
+resumable: it records the run's plan (resolved capability IDs, file paths,
+symbols), the current stage, and the approvals received. **Resume never
+re-plans** — a run continued after the maintainer's signal picks up the
+recorded plan verbatim; if the plan is wrong, the run is parked and re-entered
+from the top, visibly.
+
+Stage names are the telemetry schema v2 canonical list (telemetry/SCHEMA.md)
+— one vocabulary across state, telemetry lines, and the pipeline skill.
+
+Commands:
+  init --run-id ID --request REF [--branch B]   start a run (refuses to clobber)
+  status                                        human-readable summary
+  advance                                       move to the next stage
+  set KEY VALUE                                 data keys only (spec_path,
+                                                pr_number, branch, plan.* while
+                                                planning); VALUE parsed as JSON,
+                                                falling back to string. Lifecycle
+                                                state only moves via the gate
+                                                commands below.
+  approve STAGE --by WHO [--via HOW]            record a human approval
+  park --label LABEL [--note NOTE]              park with a taxonomy label
+  resume                                        clear parked (plan is kept — the contract)
+  validate                                      schema check (also runs on save)
+  --self-test                                   full lifecycle in a temp dir (doctor/CI)
+
+Run: ./dev pipeline <command>
+"""
+
+import argparse
+import json
+import sys
+import tempfile
+from datetime import datetime, timezone
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+STATE_DIR = ROOT / ".pipeline"
+
+# telemetry/SCHEMA.md stage enum, in pipeline order. Changing it there means
+# changing it here in the same PR (both quote schema v2).
+STAGES = ["intake", "localize", "spec", "design-review", "plan",
+          "test-writing", "implement", "verify", "pr", "ci"]
+
+# telemetry/SCHEMA.md failure-label taxonomy v1 (closed).
+LABELS = {"wrong-intent", "wrong-localization", "dialect-violation", "invented-api",
+          "test-failure", "spec-drift", "flaky-infra", "timeout",
+          "human-rejected-spec", "human-rejected-pr", "other"}
+
+# The plan sub-fields `set plan.<field>` may write — also what validate checks.
+# The plan is the binding resume contract: an unlisted field is a typo, not a
+# new key, so it is rejected rather than silently stored.
+PLAN_FIELDS = ("touches", "files", "uses")
+
+
+def now():
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def state_file(state_dir):
+    return state_dir / "state.json"
+
+
+def validate(state):
+    errs = []
+    for key in ("schema", "run_id", "request_ref", "stage", "parked", "plan",
+                "approvals", "history"):
+        if key not in state:
+            errs.append(f"missing key `{key}`")
+    if errs:
+        return errs
+    # container shapes first — a scalar smuggled into park/plan/approvals must
+    # be a clean validation failure, not an AttributeError mid-save
+    for key, want in (("plan", dict), ("approvals", dict), ("history", list)):
+        if not isinstance(state[key], want):
+            errs.append(f"`{key}` must be a {want.__name__}")
+    if state.get("park") is not None and not isinstance(state["park"], dict):
+        errs.append("`park` must be null or an object")
+    if errs:
+        return errs
+    if state["stage"] not in STAGES:
+        errs.append(f"stage `{state['stage']}` not in {STAGES}")
+    if not isinstance(state["parked"], bool):
+        errs.append("`parked` must be a bool")
+    if state["parked"] and (state["park"] or {}).get("label") not in LABELS:
+        errs.append(f"parked runs need a `park.label` from the taxonomy {sorted(LABELS)}")
+    for key in PLAN_FIELDS:
+        if not isinstance(state["plan"].get(key), list):
+            errs.append(f"`plan.{key}` must be a list")
+    return errs
+
+
+def load(state_dir):
+    f = state_file(state_dir)
+    if not f.exists():
+        print(f"pipeline-state: no run in progress ({f} missing) — use `init`", file=sys.stderr)
+        sys.exit(2)
+    try:
+        state = json.loads(f.read_text())
+    except json.JSONDecodeError:
+        # a truncated/partial write must not traceback — the resume contract's
+        # own storage failing should give an actionable message, not a stack
+        print(f"pipeline-state: {f} is corrupt (truncated/partial write?) — delete it "
+              "and `init` a fresh run; resume from the recorded stage is lost, so "
+              "re-localize", file=sys.stderr)
+        sys.exit(1)
+    errs = validate(state)
+    if errs:
+        for e in errs:
+            print(f"pipeline-state: INVALID state — {e}", file=sys.stderr)
+        sys.exit(1)
+    return state
+
+
+def save(state_dir, state):
+    errs = validate(state)
+    if errs:
+        for e in errs:
+            print(f"pipeline-state: refusing to save invalid state — {e}", file=sys.stderr)
+        sys.exit(1)
+    state_dir.mkdir(exist_ok=True)
+    # write-to-temp then atomic replace: an interrupted write (crash, Ctrl-C,
+    # full disk) can leave a stray state.json.tmp but never a truncated
+    # state.json — the binding resume contract stays readable
+    f = state_file(state_dir)
+    tmp = f.with_name(f.name + ".tmp")
+    tmp.write_text(json.dumps(state, indent=2) + "\n")
+    tmp.replace(f)
+
+
+def cmd_init(args, state_dir):
+    f = state_file(state_dir)
+    if f.exists() and not args.force:
+        print(f"pipeline-state: {f} exists — finish or park the current run first "
+              "(or --force to discard it)", file=sys.stderr)
+        return 2
+    state = {
+        "schema": 1,
+        "run_id": args.run_id,
+        "request_ref": args.request,
+        "branch": args.branch,
+        "stage": "intake",
+        "parked": False,
+        "park": None,
+        "spec_path": None,
+        "pr_number": None,
+        "plan": {"touches": [], "files": [], "uses": []},
+        "approvals": {},
+        "history": [{"stage": "intake", "entered": now()}],
+    }
+    save(state_dir, state)
+    print(f"pipeline-state: run {args.run_id} started at stage `intake`")
+    return 0
+
+
+def cmd_status(state_dir):
+    s = load(state_dir)
+    parked = f" [PARKED: {s['park']['label']}]" if s["parked"] else ""
+    print(f"run {s['run_id']} ({s['request_ref']})  stage: {s['stage']}{parked}")
+    print(f"  branch: {s.get('branch')}  spec: {s.get('spec_path')}  PR: {s.get('pr_number')}")
+    print(f"  plan: {len(s['plan']['touches'])} capabilities, "
+          f"{len(s['plan']['files'])} files, {len(s['plan']['uses'])} symbols")
+    if s["approvals"]:
+        for stage, a in s["approvals"].items():
+            print(f"  approved {stage}: by {a['by']} via {a.get('via', '?')} at {a['at']}")
+    print(f"  history: {' -> '.join(h['stage'] for h in s['history'])}")
+    return 0
+
+
+def cmd_advance(state_dir):
+    s = load(state_dir)
+    if s["parked"]:
+        print("pipeline-state: run is parked — `resume` first", file=sys.stderr)
+        return 1
+    i = STAGES.index(s["stage"])
+    if i + 1 >= len(STAGES):
+        print(f"pipeline-state: already at final stage `{s['stage']}`", file=sys.stderr)
+        return 1
+    if STAGES[i + 1] == "design-review" and "spec" not in s["approvals"]:
+        print("pipeline-state: cannot advance past `spec` without a recorded spec "
+              "approval (`approve spec --by …`) — the gate is the contract", file=sys.stderr)
+        return 1
+    s["stage"] = STAGES[i + 1]
+    s["history"].append({"stage": s["stage"], "entered": now()})
+    save(state_dir, s)
+    print(f"pipeline-state: -> {s['stage']}")
+    return 0
+
+
+# `set` is for run DATA only. Lifecycle state moves through its dedicated,
+# gate-checking commands (advance/approve/park/resume) — allowing `set stage`
+# would let a run fast-forward past the spec gate silently.
+SETTABLE = {"spec_path", "pr_number", "branch"}
+# The plan is written during planning and BINDING afterwards (resume never
+# re-plans): plan.* writes are refused once the run passes `plan`.
+PLAN_WRITABLE_STAGES = {"intake", "localize", "spec", "design-review", "plan"}
+
+
+def cmd_set(args, state_dir):
+    s = load(state_dir)
+    # Validate key depth/shape up front — a typo in the plan sub-field
+    # (`plan.touchs`) or an over-deep key (`plan.a.b`, `spec_path.x`) must be a
+    # clean exit-2 rejection, never a silently-stored junk key or a raw
+    # KeyError traceback. The plan is read back verbatim on resume.
+    parts = args.key.split(".")
+    node = parts[0]
+    if node == "plan":
+        if len(parts) != 2 or parts[1] not in PLAN_FIELDS:
+            print(f"pipeline-state: `set {args.key}` — plan writes are "
+                  f"`set plan.<field>` with <field> in {sorted(PLAN_FIELDS)}",
+                  file=sys.stderr)
+            return 2
+        if s["stage"] not in PLAN_WRITABLE_STAGES:
+            print(f"pipeline-state: refusing `set {args.key}` at stage `{s['stage']}` "
+                  "— the plan is binding after planning; if it is wrong, `park "
+                  "--label wrong-localization` and re-enter", file=sys.stderr)
+            return 2
+    elif node in SETTABLE:
+        if len(parts) != 1:
+            print(f"pipeline-state: `{node}` is a scalar key — `set {node}` takes "
+                  "no sub-field", file=sys.stderr)
+            return 2
+    else:
+        print(f"pipeline-state: `{node}` is not settable — lifecycle state moves via "
+              "advance/approve/park/resume; settable data keys: "
+              f"{sorted(SETTABLE)} + plan.*", file=sys.stderr)
+        return 2
+    try:
+        value = json.loads(args.value)
+    except json.JSONDecodeError:
+        value = args.value
+    if node == "plan":
+        s["plan"][parts[1]] = value
+    else:
+        s[node] = value
+    save(state_dir, s)
+    print(f"pipeline-state: {args.key} = {json.dumps(value)}")
+    return 0
+
+
+def cmd_approve(args, state_dir):
+    s = load(state_dir)
+    if s["stage"] != args.stage:
+        print(f"pipeline-state: cannot approve `{args.stage}` while the run is at "
+              f"`{s['stage']}` — approvals are recorded at the gate, not pre-seeded",
+              file=sys.stderr)
+        return 1
+    s["approvals"][args.stage] = {"by": args.by, "via": args.via, "at": now()}
+    save(state_dir, s)
+    print(f"pipeline-state: `{args.stage}` approved by {args.by} via {args.via}")
+    return 0
+
+
+def cmd_park(args, state_dir):
+    if args.label not in LABELS:
+        print(f"pipeline-state: label `{args.label}` not in the closed taxonomy "
+              f"{sorted(LABELS)}", file=sys.stderr)
+        return 2
+    s = load(state_dir)
+    s["parked"] = True
+    s["park"] = {"label": args.label, "note": args.note, "at": now()}
+    save(state_dir, s)
+    print(f"pipeline-state: parked at `{s['stage']}` ({args.label})")
+    return 0
+
+
+def cmd_resume(state_dir):
+    s = load(state_dir)
+    if not s["parked"]:
+        print("pipeline-state: run is not parked", file=sys.stderr)
+        return 1
+    s["parked"], s["park"] = False, None
+    save(state_dir, s)
+    print(f"pipeline-state: resumed at `{s['stage']}` — plan is binding, no re-planning")
+    return 0
+
+
+def self_test():
+    with tempfile.TemporaryDirectory() as tmp:
+        d = Path(tmp)
+        fails = 0
+
+        def run(label, fn, want):
+            nonlocal fails
+            got = fn()
+            if got != want:
+                print(f"self-test FAIL {label}: exit {got}, want {want}")
+                fails += 1
+
+        ns = argparse.Namespace(run_id="t-001", request="issue#0", branch="b", force=False)
+        run("init", lambda: cmd_init(ns, d), 0)
+        run("init-refuses-clobber", lambda: cmd_init(ns, d), 2)
+        run("advance-to-localize", lambda: cmd_advance(d), 0)
+        run("advance-to-spec", lambda: cmd_advance(d), 0)
+        run("gate-blocks-unapproved", lambda: cmd_advance(d), 1)
+        run("approve-spec", lambda: cmd_approve(
+            argparse.Namespace(stage="spec", by="nick", via="pr-comment"), d), 0)
+        run("advance-past-gate", lambda: cmd_advance(d), 0)
+        run("park-bad-label", lambda: cmd_park(
+            argparse.Namespace(label="vibes", note=""), d), 2)
+        run("park", lambda: cmd_park(
+            argparse.Namespace(label="timeout", note="stage budget"), d), 0)
+        run("advance-while-parked", lambda: cmd_advance(d), 1)
+        run("resume", lambda: cmd_resume(d), 0)
+        run("set-pr", lambda: cmd_set(argparse.Namespace(key="pr_number", value="721"), d), 0)
+        run("set-plan", lambda: cmd_set(argparse.Namespace(
+            key="plan.touches", value='["auth"]'), d), 0)
+        state = json.loads(state_file(d).read_text())
+        if state["pr_number"] != 721 or state["plan"]["touches"] != ["auth"]:
+            print(f"self-test FAIL set: {state['pr_number']}, {state['plan']['touches']}")
+            fails += 1
+        # lifecycle is sealed: `set` must not move stages, pre-seed approvals,
+        # or re-plan after planning
+        run("set-stage-denied", lambda: cmd_set(
+            argparse.Namespace(key="stage", value="ci"), d), 2)
+        run("set-bare-plan-denied", lambda: cmd_set(
+            argparse.Namespace(key="plan", value='{"touches":[]}'), d), 2)
+        run("set-approvals-denied", lambda: cmd_set(
+            argparse.Namespace(key="approvals.pr", value='{"by":"x"}'), d), 2)
+        # Fix 5: plan-field typos and over-deep keys are rejected, not stored
+        run("set-plan-bad-field", lambda: cmd_set(
+            argparse.Namespace(key="plan.touchs", value='["auth"]'), d), 2)
+        run("set-plan-deep-key", lambda: cmd_set(
+            argparse.Namespace(key="plan.a.b", value='"x"'), d), 2)
+        run("set-scalar-deep-key", lambda: cmd_set(
+            argparse.Namespace(key="spec_path.x", value='"y"'), d), 2)
+        run("approve-wrong-stage", lambda: cmd_approve(
+            argparse.Namespace(stage="spec", by="nick", via="pr-comment"), d), 1)
+        run("advance-to-plan", lambda: cmd_advance(d), 0)
+        run("advance-to-test-writing", lambda: cmd_advance(d), 0)
+        run("replan-after-plan-denied", lambda: cmd_set(
+            argparse.Namespace(key="plan.touches", value='["json"]'), d), 2)
+
+        # Fix 6: a truncated state file exits cleanly (exit 1), never tracebacks.
+        # Runs last — it clobbers the valid state file on purpose.
+        state_file(d).write_text('{"schema": 1, "run_i')
+        try:
+            load(d)
+            code = 0
+        except SystemExit as e:
+            code = e.code
+        if code != 1:
+            print(f"self-test FAIL corrupt-state: load() exit {code}, want 1")
+            fails += 1
+
+        if fails == 0:
+            print("pipeline-state self-test: OK — lifecycle, gate, park taxonomy, "
+                  "plan-field guard, corrupt-file recovery covered")
+        return 1 if fails else 0
+
+
+def main():
+    if len(sys.argv) > 1 and sys.argv[1] == "--self-test":
+        return self_test()
+
+    p = argparse.ArgumentParser(prog="pipeline-state")
+    sub = p.add_subparsers(dest="cmd", required=True)
+    pi = sub.add_parser("init")
+    pi.add_argument("--run-id", required=True)
+    pi.add_argument("--request", required=True)
+    pi.add_argument("--branch", default=None)
+    pi.add_argument("--force", action="store_true")
+    sub.add_parser("status")
+    sub.add_parser("advance")
+    ps = sub.add_parser("set")
+    ps.add_argument("key")
+    ps.add_argument("value")
+    pa = sub.add_parser("approve")
+    pa.add_argument("stage")
+    pa.add_argument("--by", required=True)
+    pa.add_argument("--via", default="pr-comment")
+    pp = sub.add_parser("park")
+    pp.add_argument("--label", required=True)
+    pp.add_argument("--note", default="")
+    sub.add_parser("resume")
+    sub.add_parser("validate")
+    args = p.parse_args()
+
+    if args.cmd == "init":
+        return cmd_init(args, STATE_DIR)
+    if args.cmd == "status":
+        return cmd_status(STATE_DIR)
+    if args.cmd == "advance":
+        return cmd_advance(STATE_DIR)
+    if args.cmd == "set":
+        return cmd_set(args, STATE_DIR)
+    if args.cmd == "approve":
+        return cmd_approve(args, STATE_DIR)
+    if args.cmd == "park":
+        return cmd_park(args, STATE_DIR)
+    if args.cmd == "resume":
+        return cmd_resume(STATE_DIR)
+    if args.cmd == "validate":
+        load(STATE_DIR)
+        print("pipeline-state: valid")
+        return 0
+    return 2
+
+
+if __name__ == "__main__":
+    sys.exit(main())

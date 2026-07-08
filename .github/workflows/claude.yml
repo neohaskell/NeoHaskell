@@ -12,11 +12,24 @@ on:
 
 jobs:
   claude:
+    # MAINTAINER-ONLY (pipeline Phase 5): this workflow is the pipeline's
+    # continue signal — a maintainer comment (e.g. "@claude continue") on a
+    # parked draft PR is what authorizes resuming past the spec gate. The
+    # author-association check makes that signal unforgeable: comments from
+    # anyone who is not an org OWNER/MEMBER are ignored entirely (which also
+    # closes the standing hole of any passer-by invoking the action).
     if: |
-      (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@claude')) ||
-      (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@claude')) ||
-      (github.event_name == 'pull_request_review' && contains(github.event.review.body, '@claude')) ||
-      (github.event_name == 'issues' && (contains(github.event.issue.body, '@claude') || contains(github.event.issue.title, '@claude')))
+      (
+        (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@claude')) ||
+        (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@claude')) ||
+        (github.event_name == 'pull_request_review' && contains(github.event.review.body, '@claude')) ||
+        (github.event_name == 'issues' && (contains(github.event.issue.body, '@claude') || contains(github.event.issue.title, '@claude')))
+      ) && (
+        (github.event_name == 'issue_comment' && contains(fromJSON('["OWNER", "MEMBER"]'), github.event.comment.author_association)) ||
+        (github.event_name == 'pull_request_review_comment' && contains(fromJSON('["OWNER", "MEMBER"]'), github.event.comment.author_association)) ||
+        (github.event_name == 'pull_request_review' && contains(fromJSON('["OWNER", "MEMBER"]'), github.event.review.author_association)) ||
+        (github.event_name == 'issues' && contains(fromJSON('["OWNER", "MEMBER"]'), github.event.issue.author_association))
+      )
     runs-on: ubuntu-latest
     permissions:
       contents: read

@@ -11,6 +11,9 @@ name: checks
 
 on:
   pull_request:
+    # ready_for_review included so the spec job's drift gate fires the moment
+    # a draft (parked spec) is promoted — default types would miss the flip
+    types: [opened, synchronize, reopened, ready_for_review]
   push:
     branches: [main]
 
@@ -45,6 +48,61 @@ jobs:
       # the PYTHON override is the sanctioned CI path, like lint's HLINT=).
       - run: python3 -c "import yaml" 2>/dev/null || pip3 install pyyaml==6.0.3
       - run: PYTHON=python3 ./dev codemap-check
+
+  spec:
+    name: spec check (contract-delta gate)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+          # spec-drift --pr diffs against the merge base — needs history
+          fetch-depth: 0
+      # Structure gate: every committed spec (incl. TEMPLATE.md, which is a
+      # validated instance) parses and machine-joins. Runs on drafts too —
+      # this is what the maintainer's gate decision reads.
+      - run: ./dev spec-check
+      # Drift gate: at PR-READY only, the specs this PR touches must be
+      # honored by the generated API surface (codemap-sync proves committed
+      # signatures == code; this proves signatures == promise). A draft is
+      # still implementing its spec — drift there is expected, not an error.
+      - name: Spec drift (PR-ready only)
+        if: github.event_name == 'pull_request' && github.event.pull_request.draft == false
+        env:
+          # env-var indirection, not inline ${{ }} in run: — the standard
+          # template-injection defense-in-depth for workflow expressions
+          BASE_REF: ${{ github.base_ref }}
+        run: ./dev spec-drift --pr "origin/${BASE_REF}"
+      # Review-record gate: at PR-ready, every design review a changed spec
+      # ROUTES (touches ∩ risk tags) must have its committed record — the
+      # compliance audit trail the ADR requires, now enforced not just prosed.
+      - name: Design-review records present (PR-ready only)
+        if: github.event_name == 'pull_request' && github.event.pull_request.draft == false
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: ./dev spec-check --reviews-pr "origin/${BASE_REF}"
+
+  expectations:
+    name: expectation guard (test-contract diff)
+    # PRs only (drafts included — weakening a test is never OK); never on push.
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+          # census-diffs committed test files against the merge base
+          fetch-depth: 0
+      - name: Expectation census (maintainer label overrides)
+        env:
+          BASE_REF: ${{ github.base_ref }}
+          # a maintainer-only PR label — labels need write access, so the agent
+          # cannot self-apply it (unlike the local, gitignored marker). This is
+          # the load-bearing approval signal.
+          EXPECTATIONS_APPROVED: ${{ contains(github.event.pull_request.labels.*.name, 'expectations-approved') }}
+        run: python3 .claude/hooks/expectation-guard.py --pr-diff "origin/${BASE_REF}"
 
   lint:
     name: hlint (dialect gate)

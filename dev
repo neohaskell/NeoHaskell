@@ -33,6 +33,17 @@ usage: ./dev <verb> [args]
   where-defined <sym>   symbol definition site, capability-tagged
   api <query>           search the NeoHaskell API surface — by type
                           ("Text -> Int") or by name (toInt)
+  spec-check [files]    validate contract-delta specs in docs/changes/
+                          (--plan <spec> prints review + test-impact joins;
+                          --reviews-pr [base] gates design-review records)
+  spec-drift <spec|--pr>  verify the generated API surface honors a spec's
+                          promised contract delta (PR-ready gate)
+  pipeline <cmd>        pipeline run state (.pipeline/state.json): init,
+                          status, advance, set, approve, park, resume,
+                          validate — the resume-never-replans contract
+  bench                 run the perf suites against telemetry/bench-budgets.json
+                          (nightly in CI; needs POSTGRES_AVAILABLE=true for
+                          the Postgres entries)
   doctor                harness self-check: every script has a verb or a
                           reasoned exemption; no dangling verbs (CI-enforced)
   exec <cmd> [args]     run any command with the pinned toolchain
@@ -59,6 +70,10 @@ case "${VERB}" in
   who-calls) exec scripts/who-calls "$@" ;;
   where-defined) exec scripts/where-defined "$@" ;;
   api)      exec scripts/api "$@" ;;
+  spec-check) exec scripts/spec-check "$@" ;;
+  spec-drift) exec scripts/spec-drift "$@" ;;
+  pipeline) exec scripts/pipeline-state "$@" ;;
+  bench)    exec scripts/bench "$@" ;;
   doctor)   exec scripts/doctor "$@" ;;
   exec)     exec scripts/with-toolchain "$@" ;;
   ""|help|-h|--help) usage ;;
