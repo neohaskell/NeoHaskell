@@ -91,10 +91,19 @@ pipeline succeeding at honesty, not failing at work. Labels are the closed
 taxonomy (SCHEMA.md); `other` requires `failure_note` and a weekly-review
 reclassification.
 
+**Closing a non-`ok` run carries the class-fix (Phase 6, enforced).**
+`scripts/telemetry.py finish --outcome {parked,failed} --failure-label <l>
+--asset-delta <type>:<destination>` — the delta is the fix for the *class*
+(a new alias, phrasebook entry, hlint rule, hook, hot-card line…) that ships
+alongside the retry. `none:<reason>` is the honest escape when no asset applies;
+the emitter refuses to close a failed/parked run without one.
+
 ## Resume contract
 
 `./dev pipeline status` → resume at the recorded stage with the recorded
 plan. Never re-derive `touches:`/`files:`/`uses:` on resume. If reality
 contradicts the plan (file moved, API changed under you), park with
 `wrong-localization` — the asset fix (alias, capability, extension point)
-ships with the retry, per the failure→asset-delta protocol (Phase 6).
+ships with the retry, per the failure→asset-delta protocol (ADR-0068). Log the
+aids you consult while working (`scripts/telemetry.py consult --asset
+<kind>:<name>`) so the weekly miner can PRUNE what nothing uses.
