@@ -53,7 +53,7 @@ import DateTime qualified
 import Map (Map)
 import Maybe (Maybe (..))
 import Result (Result (..))
-import Service.FileUpload.BlobStore (BlobStore (..))
+import Service.FileUpload.BlobStore (BlobKey, BlobStore (..))
 import Service.FileUpload.Core (
   ContentHash (..),
   FileAccessError (..),
@@ -280,6 +280,8 @@ handleUploadImpl config blobStore stateStore ownerHash filename contentType cont
         |> Task.mapError (\_ -> "Failed to retrieve file state")
       case existingState of
         Just (Pending pendingFile) -> do
+          -- Heal in place if the deduplicated blob was lost (issue #713)
+          ensureBlobPresent blobStore pendingFile.metadata.blobKey content
           Task.yield UploadResponse
             { fileRef = fileRef
             , blobKey = pendingFile.metadata.blobKey
@@ -289,6 +291,8 @@ handleUploadImpl config blobStore stateStore ownerHash filename contentType cont
             , expiresAt = DateTime.fromEpochSeconds pendingFile.expiresAt
             }
         Just (Confirmed confirmedFile) -> do
+          -- Heal in place if the deduplicated blob was lost (issue #713)
+          ensureBlobPresent blobStore confirmedFile.metadata.blobKey content
           now <- DateTime.now |> Task.mapError (\_ -> "Failed to get time")
           Task.yield UploadResponse
             { fileRef = fileRef
@@ -372,7 +376,10 @@ normalUploadFlow config blobStore stateStore ownerHash filename contentType cont
               existingState <- stateStore.getState existingFileRef
                 |> Task.mapError (\err -> [fmt|Failed to get state after retry: #{err}|])
               case existingState of
-                Just (Pending pendingFile) ->
+                Just (Pending pendingFile) -> do
+                  -- Same defect class as #713: the race winner's blob may also
+                  -- be missing, so heal in place before returning its ref.
+                  ensureBlobPresent blobStore pendingFile.metadata.blobKey content
                   Task.yield UploadResponse
                     { fileRef = existingFileRef
                     , blobKey = pendingFile.metadata.blobKey
@@ -382,6 +389,7 @@ normalUploadFlow config blobStore stateStore ownerHash filename contentType cont
                     , expiresAt = DateTime.fromEpochSeconds pendingFile.expiresAt
                     }
                 Just (Confirmed confirmedFile) -> do
+                  ensureBlobPresent blobStore confirmedFile.metadata.blobKey content
                   retryNow <- DateTime.now |> Task.mapError (\_ -> "Failed to get time")
                   Task.yield UploadResponse
                     { fileRef = existingFileRef
@@ -407,6 +415,35 @@ normalUploadFlow config blobStore stateStore ownerHash filename contentType cont
               Log.critical "Failed to cleanup blob after state update failure"
                 |> Task.ignoreError
           Task.throw "Failed to record upload state"
+
+
+-- | Guard a deduplication match against blob loss (issue #713).
+--
+-- Before returning an existing 'FileRef', verify its blob is still present in
+-- the 'BlobStore'; if it is missing — or its presence cannot be confirmed (the
+-- existence check itself errored) — re-store the caller's content under the
+-- SAME blob key so the returned reference is never dangling. Healing in place
+-- (same key, no state-store write) preserves dedup identity and is robust on
+-- every backend: unlike falling through to a fresh upload, it cannot collide
+-- with the (owner, content_hash) unique constraint and re-return the stale ref.
+--
+-- The re-stored bytes are the caller's own content, matched to the existing
+-- entry by the same owner-scoped content hash, so healing never crosses owners
+-- or writes different content. 'BlobStore.store' overwrites idempotently, so a
+-- redundant re-store (e.g. after a transient existence-check error) is harmless.
+ensureBlobPresent :: BlobStore -> BlobKey -> Bytes -> Task Text Unit
+ensureBlobPresent blobStore blobKey content = do
+  existsResult <- blobStore.exists blobKey |> Task.asResult
+  let blobPresent = case existsResult of
+        Ok present -> present
+        Err _ -> False -- presence unknown: treat as missing and heal (re-store is idempotent)
+  if blobPresent
+    then pass
+    else do
+      Log.warn "Deduplicated blob missing from storage; self-healing by re-storing content"
+        |> Task.ignoreError
+      blobStore.store blobKey content
+        |> Task.mapError (\_ -> "Failed to restore missing file content. Please retry.")
 
 
 -- | Convert upload error to text.
