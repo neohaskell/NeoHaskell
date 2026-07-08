@@ -39,47 +39,42 @@ Array []
 *… 81 more doctests in the source module*
 ### Float
 ```haskell
->>> Float.toInt 3.7 == 3
+>>> Float.toInt 3.7
+3
 ```
 ```haskell
->>> Float.toInt 3.2 == 3
+>>> Float.toInt 3.2
+3
 ```
 ```haskell
->>> Float.toInt (-3.7) == -3
+>>> Float.toInt (-3.7)
+-3
 ```
 ```haskell
->>> Float.toInt (-3.2) == -3
+>>> Float.toInt (-3.2)
+-3
 ```
 ### Int
 ```haskell
->>> randomValue <- Int.getRandom
-```
-```haskell
->>> -- randomValue is now a random Int
-```
-```haskell
->>> diceRoll <- Int.getRandomBetween 1 6
-```
-```haskell
->>> -- diceRoll is now a random number between 1 and 6 (inclusive)
-```
-```haskell
->>> percentChance <- Int.getRandomBetween 0 100
-```
-```haskell
->>> -- percentChance is now a random percentage
+>>> Task.runNoErrors (Int.getRandomBetween 5 5)
+5
 ```
 ```haskell
 >>> 3 |> Int.powerOf 2
 8
--- 2^3 = 8
 ```
 ```haskell
 >>> 10 |> Int.powerOf 2
 1024
--- 2^10 = 1024
 ```
-*… 2 more doctests in the source module*
+```haskell
+>>> 0 |> Int.powerOf 5
+1
+```
+```haskell
+>>> (-1) |> Int.powerOf 2
+1
+```
 ### Set
 ```haskell
 >>> empty :: Set Int
@@ -147,4 +142,4 @@ Err "unknown DB_SSL_MODE \"requre\"; expected one of: unset, disable, allow, pre
 ```
 
 ---
-*35 examples · modules with ZERO doctests: 316 (the documentation backlog — see codemap/.doc-ratchet)*
+*32 examples · modules with ZERO doctests: 316 (the documentation backlog — see codemap/.doc-ratchet)*

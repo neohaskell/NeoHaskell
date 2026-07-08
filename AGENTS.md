@@ -5,7 +5,7 @@
      Localization assets are being rebuilt in codemap/ (see docs/plans/2026-07-07-continuous-generation-pipeline-plan.md, tracker #715).
      Old guidance docs live in docs/archive/2026-07-ai-artifacts/ — ARCHIVAL, do not use. -->
 
-Newcomer-friendly Haskell dialect. Monorepo: core library (`core/` → `nhcore`), reference app + acceptance tests (`testbed/` → `nhtestbed`), outbound integrations (`integrations/` → `nhintegrations`), LSP (`lsp/`), Rust installer (`installer/` → `neo-install`), VSCode extension (`ide/`), Astro website (`website/`). Architecture: event-sourcing + CQRS in `core/service/`.
+Newcomer-friendly Haskell dialect. Monorepo: core library (`core/` → `nhcore`), reference app + acceptance tests (`testbed/` → `nhtestbed`), outbound integrations (`integrations/` → `nhintegrations`), Rust installer (`installer/` → `neo-install`), VSCode extension (`ide/`), Astro website (`website/`). Architecture: event-sourcing + CQRS in `core/service/`. (LSP package removed 2026-07-08 — unused.)
 
 ## Style (mandatory)
 

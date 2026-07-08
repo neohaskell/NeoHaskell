@@ -31,7 +31,6 @@ vocabulary); for NEW code use the extension points. Full contract: codemap/READM
 | `testlib` | Shared test machinery | `core/testlib/**` |  |
 | `outbound-integrations` | Concrete outbound integrations | `integrations/**` | 🔒 |
 | `testbed` | Reference app + acceptance tests | `testbed/**` |  |
-| `lsp` | NeoHaskell language server. | `lsp/**` |  |
 | `dev-pipeline` | The Continuous Generation pipeline itself | `scripts/**`… |  |
 | `website` | Astro/Starlight docs site (monorepo dir, NOT a separate repo) | `website/**` |  |
 | `installer` | Rust installer (neo-install binary). | `installer/**` |  |

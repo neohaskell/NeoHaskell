@@ -73,7 +73,7 @@ codemap/signatures/ · type-directed search: ./dev api "<type>"
 
 ## Map
 - `set :: (Eq key, Ord key) => key -> value -> Map key value -> Map key value`  <!-- 57 call sites -->
-- `empty :: Map k a`  <!-- 56 call sites -->
+- `empty :: Map k a`  <!-- 54 call sites -->
 - `get :: (Eq key, Ord key) => key -> Map key value -> Maybe value`  <!-- 41 call sites -->
 - `entries :: Map key value -> Array (key, value)`  <!-- 20 call sites -->
 - `length :: Map key value -> Int`  <!-- 11 call sites -->
