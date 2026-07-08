@@ -7,6 +7,12 @@
 
 Newcomer-friendly Haskell dialect. Monorepo: core library (`core/` → `nhcore`), reference app + acceptance tests (`testbed/` → `nhtestbed`), outbound integrations (`integrations/` → `nhintegrations`), Rust installer (`installer/` → `neo-install`), VSCode extension (`ide/`), Astro website (`website/`). Architecture: event-sourcing + CQRS in `core/service/`. (LSP package removed 2026-07-08 — unused.)
 
+## HARD RULE
+
+Under no circumstance you will begin exploring the codebase. Exploring the codebase without first exhausting the guiding principles and tools here will result in immediate interruption and termination.
+
+The only exception to this tool if if you COMPLETELY EXHAUSTED all the resources here and still havent found what you were looking for. In that case, you will have to take a note for mentioning it in the step 6 of the pipeline.
+
 ## Style (mandatory)
 
 | Use | Never |
