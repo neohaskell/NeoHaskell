@@ -25,11 +25,12 @@ capability ontology, extension points, generated API signatures, symbol DB.
    acceptance tests too. (Index: `./dev hiedb`; caveat: record-field
    accessors may not resolve via name-refs — fall back to grep for those.)
 6. **Resolve symbols (Phase 4)**: for every API the task will call, resolve
-   the exact name NOW — `codemap/api-hot.md` first (the ~160 functions that
-   dominate real usage, with call-site counts), then `./dev api "<type>"` for
-   type-directed lookup ("what turns Text into Uuid" → `Uuid.fromText`), then
-   `codemap/phrasebook.md` for verified usage examples. The executor
-   transcribes these; it must never recall from training data.
+   the exact name NOW — `codemap/api-hot.md` first (the frequency-ranked
+   card of what this repo actually calls, with call-site counts), then
+   `./dev api "<type>"` for type-directed lookup ("what turns Text into
+   Uuid" → `Uuid.fromText`), then `codemap/phrasebook.md` for verified
+   usage examples. The executor transcribes these; it must never recall
+   from training data.
 7. **Emit into the plan**: exact file paths, `uses:` (resolved symbols), the
    `touches:` capability list (drives test-impact + Phase 5 risk gates via
    `security-sensitive`/`perf-sensitive` tags).
@@ -40,7 +41,7 @@ Request: *"cart items disappear when two users add simultaneously"*
 
 ```yaml
 touches: [event-store]            # step 1-2: capability lookup
-files:                            # step 3: from owns-globs + signatures grep
+files:                            # step 2 owns-globs + step 4 signatures grep
   - core/service/Service/EventStore/Postgres/Internal.hs
   - core/testlib/Test/Service/EventStore/OptimisticConcurrency/Spec.hs
 uses:                             # step 6: resolved via api-hot + ./dev api
@@ -48,7 +49,11 @@ uses:                             # step 6: resolved via api-hot + ./dev api
   - Service.Event.InsertAfter     # InsertionType for concurrency control
   - Task.mapError
   - Test.Spec conventions from the OptimisticConcurrency suite
-blast-radius: ./dev who-calls insert Service.EventStore.Core
+# blast-radius: `insert` is a RECORD FIELD (call sites use dot-access,
+# store.insert) — who-calls cannot resolve it, so this is the step-5
+# fallback in action: grep '.insert' instead. For plain functions:
+# ./dev who-calls InsertAfter Service.Event  →  19 refs, capability-grouped
+blast-radius: git grep -n '\.insert' core/service core/testlib
 risk: [perf-sensitive, security-sensitive]   # from capability tags
 ```
 

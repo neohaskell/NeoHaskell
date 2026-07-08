@@ -30,7 +30,7 @@ Newcomer-friendly Haskell dialect. Monorepo: core library (`core/` → `nhcore`)
 cabal build all                 # everything
 cabal test nhcore-test-core     # core primitives only (no Postgres)
 cabal test                      # all suites (Postgres needed: docker-compose up -d)
-./scripts/run-doctest           # doctests
+./dev doctest                   # doctest gate (CI: test.yml doctest job)
 ./testbed/scripts/run-tests.sh  # acceptance tests (auto-starts the app)
 ```
 
@@ -68,10 +68,10 @@ Route requests via `codemap/` (CI-gated capability ontology + extension points) 
 ## API knowledge (Phase 4) — transcribe, never recall
 
 Training-data APIs don't exist here. Resolve symbols at **plan time** into a `uses:` list; execution transcribes:
-- `codemap/api-hot.md` — frequency-ranked card (what this repo actually calls, with doctest examples)
-- `./dev api "Text -> Maybe Uuid"` — hoogle type search: NeoHaskell surface ranked top, vanilla always below with disclaimer + escape-hatch guidance. Query in dialect types (per the style table above) to hit the surface directly
-- `codemap/phrasebook.md` — doctest-verified usage patterns (thin coverage = the doc backlog, by design)
-- GHC "not in scope" in `./dev check` output = invented API — resolve via `./dev api`, recorded as telemetry `invented-api`
+- `codemap/api-hot.md` — frequency-ranked card (what this repo actually calls, with doctest examples; cut modules listed in the card trailer)
+- `./dev api "Text -> Maybe Uuid"` — hoogle type search: NeoHaskell surface ranked top; vanilla (dependency closure + boot libs) below with disclaimer + escape-hatch guidance whenever it has results (omitted when empty; exit 3 = vanilla-only). Query in dialect types (per the style table above) to hit the surface directly
+- `codemap/phrasebook.md` — doctest-verified usage patterns (gate: test.yml `doctest` job; thin coverage = the doc backlog, ratcheted via `undocumented_doctest_modules`)
+- GHC "not in scope" in `./dev check` output = invented API — resolve via `./dev api`; pipeline runs record per-stage `invented_api_events` (telemetry schema v2)
 
 ## Dialect enforcement (Phase 2, live since 2026-07-07)
 

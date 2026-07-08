@@ -72,7 +72,15 @@ jobs:
         with:
           name: dist-newstyle
           path: dist-newstyle
-      - name: Regenerate codemap artifacts (same flow as local ./dev codemap)
+      # Hackage hoogle txts for the ./dev api vanilla DB (dep-closure mined;
+      # see ADR-0066) — cached so the fetch is a no-op on warm runs.
+      - uses: actions/cache@v6
+        with:
+          path: .hoogle-vanilla-src
+          key: ${{ runner.os }}-hoogle-vanilla-${{ hashFiles('flake.lock', '**/*.cabal') }}
+          restore-keys: |
+            ${{ runner.os }}-hoogle-vanilla-
+      - name: Regenerate codemap + build/smoke-check hoogle DBs (canary — same flow as local ./dev codemap)
         run: CODEMAP_PROJECT=cabal.project ./dev codemap
       - name: Sync check — committed codemap must match regenerated
         run: |
