@@ -86,6 +86,13 @@ Any request that should end in a PR runs the `neohaskell-pipeline` skill. The sh
 - **Expectation guard** (`.claude/hooks/expectation-guard.py`): removing/rewording an existing test expectation is blocked twice — locally by the hook (maintainer marker `.pipeline/allow-expectation-edits`) and in CI by the `expectations` census job (maintainer `expectations-approved` PR label, which the agent can't self-apply). Adding tests never needs either.
 - **Benchmarks**: nightly only (`./dev bench` vs `telemetry/bench-budgets.json`, nightly-bench.yml) — never PR-blocking.
 
+## Release tail + learning loop (Phase 6) — [ADR-0068](docs/decisions/0068-failure-asset-delta-and-learning-loop.md)
+
+- **Definition of done**: criteria green at their declared levels (`./dev spec-check --criteria <spec>` emits them; the tier lint rejects an `acceptance` criterion with no `.hurl` test) + `./dev testbed` acceptance green + spec-drift trivial. Post-merge, `dod.yml` flags a `Test`-suite failure on `main` as a **revert-candidate** (notify-only, never auto-reverts).
+- **Kill switch**: a maintainer comments `/revert` on a merged PR → `revert.yml` (OWNER/MEMBER-gated) runs `./dev revert <sha>` to open a revert PR. Never merges it.
+- **Changelog**: generated from specs — `./dev changelog` (breaking = a removed signature line ⇒ mandatory migration note); `--check` gates it at PR-ready. Never hand-write `CHANGELOG.md`.
+- **Learning loop**: closing a failed/parked run records a class-fix (`telemetry.py finish --asset-delta`, enforced); log consulted aids (`telemetry.py consult`); the weekly `./dev retrospect` digest + `neohaskell-retrospective-miner` skill turn recurring friction into ≤5 contract-validated recommendations (`telemetry/recommendations.jsonl`). **Activation** (first real weekly review, first miner report, archive sunset) waits on real runs accumulating.
+
 ## Dialect enforcement (Phase 2, live since 2026-07-07)
 
 Three layers, in feedback order:

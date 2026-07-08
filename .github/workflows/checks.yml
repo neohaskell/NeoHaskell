@@ -82,6 +82,14 @@ jobs:
         env:
           BASE_REF: ${{ github.base_ref }}
         run: ./dev spec-check --reviews-pr "origin/${BASE_REF}"
+      # Changelog gate: at PR-ready, every changed spec must have a CHANGELOG.md
+      # entry (breaking ones with a migration note) — the changelog is generated,
+      # not hand-written (Phase 6, task 3).
+      - name: Changelog entries present (PR-ready only)
+        if: github.event_name == 'pull_request' && github.event.pull_request.draft == false
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: ./dev changelog --check "origin/${BASE_REF}"
 
   expectations:
     name: expectation guard (test-contract diff)

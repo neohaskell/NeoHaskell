@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+#
+# Testbed acceptance suite (Hurl) as a ./dev verb (pipeline Phase 6, task 1).
+# `testbed/scripts/run-tests.sh` was CI-only; the constitution requires every
+# pipeline asset to be a human tool, so this exposes it. Delegates under the
+# pinned toolchain (auto-enters `nix develop` on demand — no shell needed).
+#
+set -euo pipefail
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+cd "${SCRIPT_DIR}/.."
+exec scripts/with-toolchain ./testbed/scripts/run-tests.sh "$@"

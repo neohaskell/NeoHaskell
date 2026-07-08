@@ -1,0 +1,45 @@
+# Kill switch (pipeline Phase 6, task 2; ADR-0068) — MAINTAINER-TRIGGERED.
+#
+# A maintainer comments `/revert` on a MERGED PR → this opens a revert PR (it
+# never merges it). The author-association gate mirrors claude.yml: a comment
+# from anyone who is not an org OWNER/MEMBER is ignored entirely, so the ability
+# to trigger a revert is unforgeable. `/revert` is a distinct command from
+# claude.yml's `@claude` trigger, so the two never double-fire.
+name: revert
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  revert:
+    if: >-
+      github.event.issue.pull_request &&
+      startsWith(github.event.comment.body, '/revert') &&
+      contains(fromJSON('["OWNER", "MEMBER"]'), github.event.comment.author_association)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          # full history so `git revert` can resolve the merge commit
+          fetch-depth: 0
+      - name: Open a revert PR for the merged change
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR: ${{ github.event.issue.number }}
+          BASE: ${{ github.event.repository.default_branch }}
+        run: |
+          set -euo pipefail
+          SHA=$(gh pr view "${PR}" --json mergeCommit -q '.mergeCommit.oid')
+          if [ -z "${SHA}" ] || [ "${SHA}" = "null" ]; then
+            gh pr comment "${PR}" --body "revert: PR #${PR} is not merged — nothing to revert."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          ./dev revert "${SHA}" --base "${BASE}"

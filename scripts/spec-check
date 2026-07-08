@@ -32,6 +32,8 @@ Modes:
   spec-check --reviews-pr [BASE]  PR-ready gate: every design review a changed
                               spec routes must have its committed record
                               (NNN-slug.<kind>-review.md, backlinking the spec)
+  spec-check --criteria FILE  emit the criteria table as JSON [{id, behavior,
+                              test, level}] — the DoD gate's input (Phase 6)
   spec-check --self-test      embedded fixture + mutation coverage (doctor/CI)
 
 Run: ./dev spec-check    CI: .github/workflows/checks.yml `spec` job
@@ -130,6 +132,30 @@ def parse_header(block):
     return header, errs
 
 
+def criteria_cells(text):
+    """Raw criterion rows (list of cell-lists) from the `## Criteria` table, or
+    None when the section is absent. Shared by validation and `--criteria`."""
+    crit = section(text, "Criteria")
+    if crit is None:
+        return None
+    rows = []
+    for line in crit.splitlines():
+        cells = [c.strip() for c in line.strip().strip("|").split("|")]
+        # recognize a criterion by its ID cell regardless of width, so a row
+        # missing a column reports the real problem, not "no criteria rows"
+        if cells and CRITERION_ID.match(cells[0]):
+            rows.append(cells)
+    return rows
+
+
+def parse_criteria(text):
+    """Machine-readable criteria: [{id, behavior, test, level}] for complete
+    rows — the DoD gate's input (Phase 6). Malformed rows are dropped here and
+    caught by check_spec's validation."""
+    return [{"id": c[0], "behavior": c[1], "test": c[2], "level": c[3]}
+            for c in (criteria_cells(text) or []) if len(c) >= 4]
+
+
 def check_spec(text, name, caps):
     """Returns [errors] — pure, testable."""
     errs = []
@@ -175,18 +201,10 @@ def check_spec(text, name, caps):
         errs.append(f"{name}: contract delta removes a signature but `breaking: false` "
                     "— removals ARE breaking (honesty cross-check)")
 
-    crit = section(text, "Criteria")
-    if crit is None:
+    rows = criteria_cells(text)
+    if rows is None:
         errs.append(f"{name}: missing `## Criteria` section")
     else:
-        rows = []
-        for line in crit.splitlines():
-            cells = [c.strip() for c in line.strip().strip("|").split("|")]
-            # recognize a criterion by its ID cell regardless of width, so a
-            # row missing the Level column reports the real problem instead of
-            # silently vanishing into "no criteria rows"
-            if cells and CRITERION_ID.match(cells[0]):
-                rows.append(cells)
         if not rows:
             errs.append(f"{name}: criteria table needs at least one `| Cn | … |` row")
         for i, cells in enumerate(rows, start=1):
@@ -203,6 +221,17 @@ def check_spec(text, name, caps):
             if level not in LEVELS:
                 errs.append(f"{name}: {cid} level `{level}` not in {sorted(LEVELS)} "
                             "(a boundary-crossing behavior must declare integration/acceptance)")
+            # DoD tier lint (Phase 6): the proving test's shape must match its
+            # declared level, so a boundary behavior can't be "proven" by a unit
+            # test (and vice-versa).
+            tl = test.lower()
+            has_hurl = ".hurl" in tl or "hurl" in tl or "testbed/tests" in tl
+            if level == "acceptance" and not has_hurl:
+                errs.append(f"{name}: {cid} is `acceptance` but its proving test `{test}` "
+                            "names no .hurl acceptance test (testbed/tests/**)")
+            if level == "unit" and has_hurl:
+                errs.append(f"{name}: {cid} is `unit` but names a .hurl test "
+                            "— that is acceptance-level, not unit")
 
     impact = section(text, "User impact")
     if impact is None or not impact.strip():
@@ -370,6 +399,22 @@ def self_test():
            VALID_FIXTURE.replace("| C1 | slugifies | `TextSpec` \"slugifies\" | unit |",
                                  "| C1 | slugifies | `TextSpec` \"slugifies\" |"),
            "row needs 4 columns")
+    # Phase 6: DoD tier lint — an acceptance criterion must name a .hurl test
+    expect("acceptance-needs-hurl",
+           VALID_FIXTURE.replace("| C1 | slugifies | `TextSpec` \"slugifies\" | unit |",
+                                 "| C1 | slugifies | `TextSpec` \"slugifies\" | acceptance |"),
+           "names no .hurl acceptance test")
+    # a real acceptance test (.hurl) at acceptance level passes the tier lint
+    expect("acceptance-with-hurl",
+           VALID_FIXTURE.replace("| C1 | slugifies | `TextSpec` \"slugifies\" | unit |",
+                                 "| C1 | slugifies | `commands/slug.hurl` | acceptance |"),
+           None)
+    # Phase 6: machine-readable criteria (the DoD gate's input)
+    crit = parse_criteria(VALID_FIXTURE)
+    if [c["id"] for c in crit] != ["C1", "C2"] or crit[0]["level"] != "unit" \
+            or crit[0]["test"] != '`TextSpec` "slugifies"':
+        print(f"self-test FAIL parse-criteria: {crit}")
+        fails += 1
 
     joins = plan_joins(
         VALID_FIXTURE.replace("[core-primitives]", "[auth, concurrency]"), caps)
@@ -432,6 +477,17 @@ def main():
             print(f"spec-check: no such spec {spec}", file=sys.stderr)
             return 2
         print(json.dumps(plan_joins(spec.read_text(), caps), indent=2))
+        return 0
+
+    if args and args[0] == "--criteria":
+        if len(args) != 2:
+            print("usage: spec-check --criteria <spec-file>", file=sys.stderr)
+            return 2
+        spec = Path(args[1])
+        if not spec.exists():
+            print(f"spec-check: no such spec {spec}", file=sys.stderr)
+            return 2
+        print(json.dumps(parse_criteria(spec.read_text()), indent=2))
         return 0
 
     if args and args[0] == "--reviews-pr":

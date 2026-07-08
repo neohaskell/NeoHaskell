@@ -89,6 +89,9 @@ scripts/spec-check --self-test || fail=1
 scripts/spec-drift --self-test || fail=1
 scripts/pipeline-state --self-test || fail=1
 scripts/telemetry.py --self-test || fail=1
+scripts/changelog --self-test || fail=1
+scripts/revert --self-test || fail=1
+scripts/retrospect --self-test || fail=1
 
 # 6. invented-api counter self-test (Phase 4): ./dev check's counter is
 #    anchored to GHC error text + error-index codes; this fixture runs the

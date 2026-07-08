@@ -1,0 +1,248 @@
+#!/usr/bin/env python3
+"""Retrospective harness + weekly-review digest (Phase 6, tasks 5+6; ADR-0068).
+
+Deterministic half of the learning loop: it reads `telemetry/runs.jsonl`, prints
+the weekly-review digest (stage times, failure labels, invented-API trend vs the
+first-5-runs baseline, waiting-on-human split, asset usage), and validates the
+frontier-model miner's recommendations against the closed contract before they
+land in `telemetry/recommendations.jsonl`. The judgement half is the
+`neohaskell-retrospective-miner` skill; this is the gate around it.
+
+Modes:
+  retrospect [--since YYYY-MM-DD]   print the weekly digest (miner + review input)
+  retrospect --record '<json>'      validate one recommendation against the
+                                    contract; append to recommendations.jsonl if OK
+  retrospect --self-test            fixtures (doctor/CI)
+
+Run: ./dev retrospect
+"""
+
+import json
+import sys
+from datetime import datetime
+from pathlib import Path
+
+sys.dont_write_bytecode = True
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import telemetry  # noqa: E402 — single source of the delta-type taxonomy
+
+ROOT = Path(__file__).resolve().parent.parent
+RUNS = ROOT / "telemetry" / "runs.jsonl"
+RECOMMENDATIONS = ROOT / "telemetry" / "recommendations.jsonl"
+
+
+def load_runs(path):
+    if not path.exists():
+        return []
+    return [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
+
+
+def _ts(s):
+    return datetime.strptime(s, "%Y-%m-%dT%H:%M:%SZ")
+
+
+def stage_seconds(stage):
+    if stage.get("start") and stage.get("stop"):
+        return (_ts(stage["stop"]) - _ts(stage["start"])).total_seconds()
+    return None
+
+
+def invented(run):
+    return sum(int(s.get("invented_api_events", 0) or 0) for s in run.get("stages", {}).values())
+
+
+def invented_baseline(all_runs):
+    """Mean invented-API events over the first 5 runs with outcome in {ok, failed}
+    (SCHEMA.md durable definition)."""
+    eligible = [r for r in all_runs if r.get("outcome") in ("ok", "failed")][:5]
+    if not eligible:
+        return None
+    return sum(invented(r) for r in eligible) / len(eligible)
+
+
+def digest(runs, all_runs):
+    """Markdown weekly digest for `runs` (the window), with the invented-API
+    baseline computed over `all_runs` (history)."""
+    lines = [f"# Weekly telemetry digest — {len(runs)} run(s)", ""]
+    if not runs:
+        lines.append("_No runs in the window. The loop activates once real runs land._")
+        return "\n".join(lines) + "\n"
+
+    outcomes = {}
+    labels = {}
+    stage_secs = {}
+    waits = []
+    assets = {}
+    for r in runs:
+        outcomes[r.get("outcome")] = outcomes.get(r.get("outcome"), 0) + 1
+        if r.get("failure_label"):
+            labels[r["failure_label"]] = labels.get(r["failure_label"], 0) + 1
+        waits.append(r.get("waiting_on_human_s", 0) or 0)
+        for name, st in r.get("stages", {}).items():
+            sec = stage_seconds(st)
+            if sec is not None:
+                stage_secs.setdefault(name, []).append(sec)
+        for a in r.get("assets_consulted", []) or []:
+            assets[a] = assets.get(a, 0) + 1
+
+    lines += ["## Outcomes", ""]
+    lines += [f"- {k}: {v}" for k, v in sorted(outcomes.items(), key=lambda kv: str(kv[0]))]
+    lines += ["", "## Failure labels", ""]
+    lines += ([f"- {k}: {v}" for k, v in sorted(labels.items(), key=lambda kv: -kv[1])]
+              or ["- (none)"])
+
+    lines += ["", "## Stage time (mean seconds)", ""]
+    for name in telemetry.STAGES:
+        secs = stage_secs.get(name)
+        if secs:
+            lines.append(f"- {name}: {sum(secs) / len(secs):.0f}s (n={len(secs)})")
+
+    base = invented_baseline(all_runs)
+    win = [invented(r) for r in runs]
+    win_mean = sum(win) / len(win) if win else 0
+    lines += ["", "## Invented-API trend", ""]
+    if base is None:
+        lines.append(f"- window mean {win_mean:.2f}; baseline not yet established "
+                     "(need 5 ok/failed runs)")
+    else:
+        arrow = "↓" if win_mean < base else ("↑" if win_mean > base else "→")
+        lines.append(f"- baseline {base:.2f} → window {win_mean:.2f} {arrow}")
+
+    lines += ["", "## Waiting-on-human", "",
+              f"- total {sum(waits)}s across {len(waits)} run(s) "
+              f"(mean {sum(waits) / len(waits):.0f}s)"]
+    lines += ["", "## Assets consulted (frequency — never-consulted are PRUNE candidates)", ""]
+    lines += ([f"- {k}: {v}" for k, v in sorted(assets.items(), key=lambda kv: -kv[1])]
+              or ["- (none logged — wire `telemetry.py consult` into the stages)"])
+    lines += ["", "## Benchmarks", "",
+              "- trend lives in the nightly `bench-results` artifact (nightly-bench.yml, "
+              "90-day retention); calibrate `telemetry/bench-budgets.json` here."]
+    return "\n".join(lines) + "\n"
+
+
+REQUIRED = ("week", "friction", "evidence", "delta_type", "destination", "estimated_saving_s")
+
+
+def validate_recommendation(rec):
+    """Contract enforcement (ADR-0068). Returns [errors]; empty = accept."""
+    errs = []
+    for k in REQUIRED:
+        if k not in rec:
+            errs.append(f"missing required field `{k}`")
+    if errs:
+        return errs
+    if rec["delta_type"] not in telemetry.DELTA_TYPES:
+        errs.append(f"delta_type `{rec['delta_type']}` is out of taxonomy "
+                    f"({', '.join(telemetry.DELTA_TYPES)}) — escalate to the maintainer, "
+                    "never auto-record (ADR-0068 rule c)")
+    ev = rec.get("evidence")
+    if not isinstance(ev, list) or len({str(e).split(':')[0] for e in ev}) < 2:
+        errs.append("evidence must cite >=2 INDEPENDENT runs (rule b: no one-off deltas)")
+    if not str(rec.get("friction", "")).strip():
+        errs.append("friction must be a cited observation (rule a)")
+    try:
+        if float(rec["estimated_saving_s"]) <= 0:
+            errs.append("estimated_saving_s must be a measured, positive cost (rule a)")
+    except (TypeError, ValueError):
+        errs.append("estimated_saving_s must be a number of seconds (rule a)")
+    return errs
+
+
+def cmd_record(raw):
+    try:
+        rec = json.loads(raw)
+    except json.JSONDecodeError as e:
+        print(f"retrospect: --record needs a JSON object ({e})", file=sys.stderr)
+        return 2
+    errs = validate_recommendation(rec)
+    if errs:
+        for e in errs:
+            print(f"retrospect: REJECT — {e}", file=sys.stderr)
+        return 1
+    rec.setdefault("status", "proposed")
+    rec.setdefault("validated", None)
+    RECOMMENDATIONS.parent.mkdir(parents=True, exist_ok=True)
+    with RECOMMENDATIONS.open("a") as f:
+        f.write(json.dumps(rec, separators=(",", ":")) + "\n")
+    print(f"retrospect: recorded recommendation ({rec['delta_type']} -> {rec['destination']})")
+    return 0
+
+
+def self_test():
+    import tempfile
+    fails = 0
+
+    def check(label, cond):
+        nonlocal fails
+        if not cond:
+            print(f"retrospect self-test FAIL {label}")
+            fails += 1
+
+    # digest math on a synthetic history (6 runs so the baseline is defined)
+    def run(rid, outcome, label, inv, wait):
+        return {"schema": 3, "run_id": rid, "outcome": outcome, "failure_label": label,
+                "waiting_on_human_s": wait, "assets_consulted": ["alias:auth"],
+                "stages": {"implement": {"start": "2026-07-09T10:00:00Z",
+                                         "stop": "2026-07-09T10:10:00Z",
+                                         "invented_api_events": inv}}}
+    hist = [run(f"2026-07-0{i}-001", "ok", None, 0, 0) for i in range(1, 6)]  # baseline 0
+    window = [run("2026-07-09-001", "failed", "invented-api", 2, 300),
+              run("2026-07-09-002", "ok", None, 0, 0)]
+    d = digest(window, hist + window)
+    check("digest-outcomes", "failed: 1" in d and "ok: 1" in d)
+    check("digest-labels", "invented-api: 1" in d)
+    check("digest-baseline", "baseline 0.00 → window 1.00 ↑" in d)
+    check("digest-stage", "implement: 600s" in d)
+    check("digest-empty", "No runs in the window" in digest([], []))
+
+    good = {"week": "2026-W28", "friction": "invented Text.explode",
+            "evidence": ["2026-07-09-001:implement", "2026-07-09-002:implement"],
+            "delta_type": "hot-card", "destination": "codemap/api-hot.md",
+            "estimated_saving_s": 120}
+    check("rec-valid", validate_recommendation(good) == [])
+    check("rec-out-of-taxonomy",
+          any("out of taxonomy" in e for e in validate_recommendation({**good, "delta_type": "vibes"})))
+    check("rec-single-run",
+          any(">=2 INDEPENDENT" in e for e in
+              validate_recommendation({**good, "evidence": ["2026-07-09-001:x", "2026-07-09-001:y"]})))
+    check("rec-no-saving",
+          any("estimated_saving_s" in e for e in validate_recommendation({**good, "estimated_saving_s": 0})))
+    check("rec-missing-field",
+          any("missing required" in e for e in validate_recommendation({"week": "x"})))
+
+    # record round-trip against a temp file
+    global RECOMMENDATIONS
+    with tempfile.TemporaryDirectory() as tmp:
+        RECOMMENDATIONS = Path(tmp) / "recommendations.jsonl"
+        check("record-ok", cmd_record(json.dumps(good)) == 0)
+        check("record-bad", cmd_record(json.dumps({**good, "delta_type": "vibes"})) == 1)
+        check("record-appended", len(RECOMMENDATIONS.read_text().splitlines()) == 1)
+
+    if fails == 0:
+        print("retrospect self-test: OK — digest math, baseline trend, recommendation contract covered")
+    return 1 if fails else 0
+
+
+def main():
+    args = sys.argv[1:]
+    if args and args[0] == "--self-test":
+        return self_test()
+    if args and args[0] == "--record":
+        if len(args) < 2:
+            print("usage: retrospect --record '<json>'", file=sys.stderr)
+            return 2
+        return cmd_record(args[1])
+    since = None
+    if args and args[0] == "--since":
+        if len(args) < 2:
+            print("usage: retrospect --since YYYY-MM-DD", file=sys.stderr)
+            return 2
+        since = args[1]
+    all_runs = load_runs(RUNS)
+    window = [r for r in all_runs if since is None or str(r.get("run_id", "")) >= since]
+    print(digest(window, all_runs))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
