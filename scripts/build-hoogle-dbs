@@ -1,29 +1,30 @@
 #!/usr/bin/env bash
 #
 # Build the two ./dev api databases (pipeline Phase 4):
-#   .hoogle-neo.hoo     — nhcore + nhintegrations only (pass 1, the dialect)
-#   .hoogle-vanilla.hoo — ghc-pkg world: deps + boot libs (pass 2, fallback)
+#   .hoogle-neo.hoo     — nhcore + nhintegrations (pass 1, the dialect),
+#                         indexed DIRECTLY from the committed, CI-sync-gated
+#                         codemap/signatures/*.txt. Building from the gated
+#                         artifact (not from dist-newstyle haddock output)
+#                         means the DB can never drift from the surface CI
+#                         verified, and a fresh clone can use ./dev api with
+#                         zero cabal build.
+#   .hoogle-vanilla.hoo — the ghc-pkg world (pass 2, fallback).
 #
 # Called by ./dev codemap (after signature regeneration) and lazily by
-# ./dev api when the databases are missing. Local artifacts, gitignored.
+# ./dev api when the databases are missing or older than the signatures.
+# Local artifacts, gitignored.
 #
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "${SCRIPT_DIR}/.."
 
+if ! ls codemap/signatures/*.txt >/dev/null 2>&1; then
+  echo "build-hoogle-dbs: codemap/signatures/*.txt missing — run ./dev codemap first" >&2
+  exit 2
+fi
+
 "${SCRIPT_DIR}/with-toolchain" bash -euo pipefail -c '
-  # newest by mtime (multiple build flavors can each hold a copy; lexical
-  # sort could pick a stale flavor)
-  NHTXT=$(find dist-newstyle -name "nhcore.txt" -path "*doc*" -exec ls -t {} + | head -1)
-  INTTXT=$(find dist-newstyle -name "nhintegrations.txt" -path "*doc*" -exec ls -t {} + | head -1)
-  if [ -z "${NHTXT}" ] || [ -z "${INTTXT}" ]; then
-    echo "build-hoogle-dbs: hoogle txts missing — run ./dev codemap first" >&2
-    exit 2
-  fi
-  mkdir -p .hoogle-src
-  rm -f .hoogle-src/*.txt   # stale staging entries would get indexed too
-  cp "${NHTXT}" "${INTTXT}" .hoogle-src/
-  hoogle generate --database=.hoogle-neo.hoo --local=.hoogle-src >/dev/null
+  hoogle generate --database=.hoogle-neo.hoo --local=codemap/signatures >/dev/null
   hoogle generate --database=.hoogle-vanilla.hoo --local >/dev/null
 '
 echo "build-hoogle-dbs: .hoogle-neo.hoo + .hoogle-vanilla.hoo ready"

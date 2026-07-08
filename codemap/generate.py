@@ -15,6 +15,7 @@ committed artifact is platform-independent and the CI sync check can be exact.
 """
 
 import glob
+import os
 import re
 import sys
 from pathlib import Path
@@ -35,12 +36,27 @@ def bucket(module: str) -> str:
 
 def split_hoogle():
     txts = {}
-    for pattern, name in [("**/nhcore-*/**/nhcore.txt", "nhcore"),
-                          ("**/nhintegrations-*/**/nhintegrations.txt", "nhintegrations")]:
-        hits = glob.glob(str(ROOT / "dist-newstyle" / pattern), recursive=True)
-        if not hits:
-            sys.exit(f"codemap: no hoogle txt for {name} — run cabal haddock --haddock-hoogle first")
-        txts[name] = Path(sorted(hits)[-1]).read_text(encoding="utf-8")
+    # refresh-codemap resolves the exact txts its haddock run just produced
+    # and passes them via env; the glob is only a fallback for standalone
+    # invocations. Selection is newest-by-mtime, NEVER lexical: multiple
+    # build flavors/GHC versions coexist under dist-newstyle and lexical
+    # order picks stale flavors (nhcore-0.9.1 sorts after nhcore-0.10.0).
+    # The pattern is rooted at dist-newstyle/build to exclude debris dirs.
+    for env, pattern, name in [
+            ("CODEMAP_NHCORE_TXT", "build/**/nhcore-*/**/nhcore.txt", "nhcore"),
+            ("CODEMAP_NHINTEGRATIONS_TXT",
+             "build/**/nhintegrations-*/**/nhintegrations.txt", "nhintegrations")]:
+        explicit = os.environ.get(env, "")
+        if explicit:
+            path = Path(explicit)
+            if not path.is_file():
+                sys.exit(f"codemap: {env}={explicit} does not exist")
+        else:
+            hits = glob.glob(str(ROOT / "dist-newstyle" / pattern), recursive=True)
+            if not hits:
+                sys.exit(f"codemap: no hoogle txt for {name} — run cabal haddock --haddock-hoogle first")
+            path = Path(max(hits, key=lambda p: Path(p).stat().st_mtime))
+        txts[name] = path.read_text(encoding="utf-8")
 
     SIG.mkdir(parents=True, exist_ok=True)
     # canonical structure: {bucket: {module: sorted entries}} — haddock's
