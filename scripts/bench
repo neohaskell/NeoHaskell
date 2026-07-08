@@ -43,15 +43,20 @@ RESULTS = ROOT / ".bench-results.json"
 SUMMARY = re.compile(r"(\d+) examples?, \d+ failures?")
 
 
-def run_entry(entry):
+def run_entry(entry, timeout=1800):
     # one --test-option per token: no quoting/splitting layer to get wrong,
-    # and match patterns with spaces stay intact
+    # and match patterns with spaces stay intact. Per-entry timeout so one
+    # hung suite yields a recorded failure and the remaining entries still
+    # run, instead of the job-level timeout killing the whole night's data.
     cmd = [str(ROOT / "scripts" / "with-toolchain"), "cabal", "test", entry["suite"],
            "--test-option=--match", f"--test-option={entry['match']}"]
     start = time.monotonic()
-    proc = subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True)
-    elapsed = round(time.monotonic() - start, 1)
-    return elapsed, proc
+    try:
+        proc = subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True,
+                              timeout=timeout)
+    except subprocess.TimeoutExpired:
+        return round(time.monotonic() - start, 1), None
+    return round(time.monotonic() - start, 1), proc
 
 
 def examples_run(proc):
@@ -73,6 +78,13 @@ def main():
         print(f"bench: running {name} ({entry['suite']} --match \"{entry['match']}\")…")
         elapsed, proc = run_entry(entry)
         budget = entry.get("budget_s")
+
+        if proc is None:
+            print(f"bench: FAIL {name} — timed out after {elapsed}s; "
+                  "continuing with the remaining entries", file=sys.stderr)
+            failures.append(name)
+            results.append({"name": name, "status": "timeout", "elapsed_s": elapsed})
+            continue
 
         if proc.returncode != 0:
             print(f"bench: FAIL {name} — suite failed (exit {proc.returncode}); "

@@ -184,6 +184,11 @@ def cmd_set(args, state_dir):
     s = load(state_dir)
     node, *rest = args.key.split(".")
     if node == "plan":
+        if not rest:
+            print("pipeline-state: use `set plan.<field>` not `set plan` — a "
+                  "wholesale replacement would silently drop the other plan "
+                  "fields", file=sys.stderr)
+            return 2
         if s["stage"] not in PLAN_WRITABLE_STAGES:
             print(f"pipeline-state: refusing `set {args.key}` at stage `{s['stage']}` "
                   "— the plan is binding after planning; if it is wrong, `park "
@@ -283,6 +288,8 @@ def self_test():
         # or re-plan after planning
         run("set-stage-denied", lambda: cmd_set(
             argparse.Namespace(key="stage", value="ci"), d), 2)
+        run("set-bare-plan-denied", lambda: cmd_set(
+            argparse.Namespace(key="plan", value='{"touches":[]}'), d), 2)
         run("set-approvals-denied", lambda: cmd_set(
             argparse.Namespace(key="approvals.pr", value='{"by":"x"}'), d), 2)
         run("approve-wrong-stage", lambda: cmd_approve(
