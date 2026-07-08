@@ -58,11 +58,15 @@ else
   echo "── NeoHaskell surface: no matches ──────────────────────────────────────"
 fi
 
-# ── pass 2: vanilla (always shown, bottom, disclaimered) ───────────────────
-echo ""
-echo "── vanilla (deps + boot libs) — prefer the NeoHaskell results above ────"
-echo "   Using one of these anyway? Escape hatch first: .hlint.yaml within:"
-echo "   (justification + belongs-in note); rule of three → Core primitive."
-"${SCRIPT_DIR}/with-toolchain" hoogle --database="${VAN_DB}" --count=6 "$@"
+# ── pass 2: vanilla (bottom, disclaimered; omitted entirely when empty) ────
+VAN=$("${SCRIPT_DIR}/with-toolchain" hoogle --database="${VAN_DB}" --count=6 "$@")
+if [ -n "${VAN}" ] && ! echo "${VAN}" | grep -q "^No results found"; then
+  echo ""
+  echo "── vanilla (deps + boot libs) — prefer the NeoHaskell results above ────"
+  echo "   Using one of these anyway? Escape hatch first: .hlint.yaml within:"
+  echo "   (justification + belongs-in note); rule of three → Core primitive."
+  echo "${VAN}"
+  [ "${NEO_HIT}" = "1" ] && exit 0 || exit 3
+fi
 
-if [ "${NEO_HIT}" = "1" ]; then exit 0; else exit 3; fi
+if [ "${NEO_HIT}" = "1" ]; then exit 0; else exit 1; fi
