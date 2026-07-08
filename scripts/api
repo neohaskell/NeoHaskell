@@ -4,11 +4,13 @@
 # Engine: hoogle for BOTH passes; the filtering is two databases:
 #
 #   PASS 1 — .hoogle-neo.hoo    : ONLY nhcore + nhintegrations (the dialect),
-#            ranked on top.
-#   PASS 2 — .hoogle-vanilla.hoo: deps + boot libs, ALWAYS shown below with a
-#            disclaimer (revised 2026-07-08: fuzzy type matches in pass 1 —
-#            "String -> IO ()" → setGlobalConfig — were suppressing the
-#            vanilla results that held the real answer, e.g. putStrLn).
+#            ranked on top. Indexed from the CI-sync-gated codemap/signatures.
+#   PASS 2 — .hoogle-vanilla.hoo: the REAL dependency closure + boot libs
+#            (Hackage-mined; see build-hoogle-dbs), shown below with a
+#            disclaimer whenever it has results — the section is omitted
+#            entirely when empty (revised 2026-07-08: fuzzy type matches in
+#            pass 1 — "String -> IO ()" → setGlobalConfig — were suppressing
+#            the vanilla results that held the real answer, e.g. putStrLn).
 #            Seeing the vanilla function informs the escape-hatch decision
 #            (.hlint.yaml `within:` + belongs-in note; rule of three →
 #            Core primitive) — or reveals what to respell (per the AGENTS.md
