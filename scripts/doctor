@@ -77,6 +77,24 @@ if [ -f .claude/hooks/dialect-guard.py ]; then
   python3 .claude/hooks/dialect-guard.py --self-test || fail=1
 fi
 
+# 6. invented-api counter self-test (Phase 4): ./dev check's counter is
+#    anchored to GHC error text + error-index codes; this fixture runs the
+#    REAL scripts/check code path against a canned GHC 9.8 error so that a
+#    GHC bump breaking BOTH matches fails here loudly — instead of the
+#    pipeline's headline metric silently reading 0 forever.
+FIXTURE=$(mktemp)
+FIXTURE_ERR=$(mktemp)
+printf '%s\n' \
+  "core/core/Text.hs:42:12: error: [GHC-88464]" \
+  "    Variable not in scope: Text.explode :: Text -> Array Text" \
+  > "${FIXTURE}"
+if CHECK_ERRORS_FILE="${FIXTURE}" scripts/check >/dev/null 2>"${FIXTURE_ERR}"; then
+  err "invented-api self-test: scripts/check exited 0 on a not-in-scope fixture"
+elif ! grep -q "invented-api-events=1" "${FIXTURE_ERR}"; then
+  err "invented-api self-test: expected invented-api-events=1 from the fixture (GHC wording drift? fix scripts/check's count_invented)"
+fi
+rm -f "${FIXTURE}" "${FIXTURE_ERR}"
+
 if [ "${fail}" -eq 0 ]; then
   count=$(echo "${registered}" | wc -l | tr -d ' ')
   skills=$(ls -d .claude/skills/*/ 2>/dev/null | wc -l | tr -d ' ')

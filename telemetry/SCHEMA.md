@@ -1,4 +1,9 @@
-# Telemetry schema v1 — FROZEN 2026-07-07
+# Telemetry schema v2 — FROZEN 2026-07-08
+
+v1 (frozen 2026-07-07) was bumped BEFORE the first real instrumented run —
+the only v1 line in `runs.jsonl` is the Phase-1 schema-validation dummy —
+to add per-stage `invented_api_events` (Phase 4 task 6). Extension always
+requires a schema bump; this is that mechanism working as designed.
 
 Every pipeline run emits **exactly one JSON line** appended to `telemetry/runs.jsonl`
 (committed). Lines are emitted by `scripts/telemetry.py` — never hand-written.
@@ -7,7 +12,7 @@ Every pipeline run emits **exactly one JSON line** appended to `telemetry/runs.j
 
 ```json
 {
-  "schema": 1,
+  "schema": 2,
   "run_id": "2026-07-07-001",
   "request_ref": "issue#712 | adhoc:<slug>",
   "stages": {
@@ -15,7 +20,8 @@ Every pipeline run emits **exactly one JSON line** appended to `telemetry/runs.j
       "start": "2026-07-07T14:03:22Z",
       "stop": "2026-07-07T14:05:10Z",
       "model": "sonnet",
-      "repair_rounds": 1
+      "repair_rounds": 1,
+      "invented_api_events": 0
     }
   },
   "waiting_on_human_s": 340,
@@ -43,9 +49,20 @@ Every pipeline run emits **exactly one JSON line** appended to `telemetry/runs.j
 spec-drift | flaky-infra | timeout | human-rejected-spec | human-rejected-pr | other`
 
 **invented-api counting (Phase 4):** `./dev check` reports
-`invented-api-events=N` when typecheck errors contain "not in scope" — the
-repair loop records these via the `invented-api` failure label / stage
-`repair_rounds`. Baseline = mean over the first 5 instrumented pipeline runs.
+`invented-api-events=N` on typecheck failures — N is line-based and
+approximate: `max(count of "not in scope" lines, count of GHC error-index
+codes GHC-88464/GHC-76037)`, so a GHC rewording cannot silently zero the
+metric (the error-index codes are stable by design; a `./dev doctor`
+fixture self-test breaks loudly if BOTH stop matching). The pipeline runner
+records N per stage via
+`telemetry.py stage --name <s> --event stop --invented-api-events N`
+(schema field `stages.<name>.invented_api_events`, default 0).
+
+**Baseline (durable definition):** the invented-API baseline is the mean of
+`sum(stages.*.invented_api_events)` over the **first 5 runs with
+`outcome` in {ok, failed}** — parked and abandoned runs are excluded
+(their stages are incomplete). The falling-trend claim (plan Phase 4) is
+measured against that number. No historical replay.
 
 `other` REQUIRES a `failure_note` field and must be re-classified (or the taxonomy
 extended with a schema bump) at the weekly review. Free-text labels are forbidden —
