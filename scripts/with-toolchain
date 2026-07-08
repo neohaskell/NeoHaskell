@@ -10,13 +10,20 @@
 #   scripts/with-toolchain ghcid --version
 #
 # Resolution:
-#   1. FINGERPRINT-VERIFIED fast path (added 2026-07-08): the flake shellHook
-#      exports NEOHASKELL_SHELL_FP = hash of the shell-defining files
-#      (scripts/toolchain-fp, the single source). If the env's fingerprint
-#      matches the CURRENT hash AND the command exists -> run directly,
-#      instant. A config change or a stale/foreign shell mismatches -> re-enter.
-#      (The old trust-based fast path — "IN_NIX_SHELL is set" — caused three
-#      real failures and was removed; this one verifies instead of trusting.)
+#   1. FINGERPRINT-VERIFIED fast path (added 2026-07-08, hardened same day):
+#      the flake shellHook exports NEOHASKELL_SHELL_FP = hash of the
+#      shell-defining files (scripts/toolchain-fp, the single source) AND
+#      NEOHASKELL_SHELL_PATH = the shell's PATH at entry. If the env's
+#      fingerprint matches the CURRENT hash, the command is run with the
+#      WITNESS PATH restored — so a session whose PATH was later re-prepended
+#      with host paths (tmux panes, rc files, direnv copies) still resolves
+#      the pinned binaries, not the host's. A config change, a stale/foreign
+#      shell, or a missing witness -> re-enter nix develop.
+#      (History: the trust-based "IN_NIX_SHELL is set" fast path caused three
+#      real failures and was removed; the first fingerprint version verified
+#      the config files but still trusted the session's PATH — the
+#      python3-with-pyyaml failure class. This one restores the recorded
+#      PATH instead of trusting the current one.)
 #   2. nix available -> `nix develop --command` (~0.4s warm eval).
 #   3. no nix -> host tools + loud warning.
 #
@@ -31,8 +38,9 @@ fi
 
 if [ -n "${NEOHASKELL_SHELL_FP:-}" ] \
    && [ "${NEOHASKELL_SHELL_FP}" = "$("${SCRIPT_DIR}/toolchain-fp")" ] \
-   && command -v "$1" >/dev/null 2>&1; then
-  exec "$@"
+   && [ -n "${NEOHASKELL_SHELL_PATH:-}" ] \
+   && PATH="${NEOHASKELL_SHELL_PATH}" command -v "$1" >/dev/null 2>&1; then
+  PATH="${NEOHASKELL_SHELL_PATH}" exec "$@"
 fi
 
 if command -v nix >/dev/null 2>&1; then

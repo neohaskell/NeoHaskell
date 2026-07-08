@@ -25,16 +25,30 @@
 #   ./dev api "Text -> Maybe Uuid"    # type-directed
 #   ./dev api toInt                   # by name
 #
+# Exit codes:
+#   0 = NeoHaskell surface has matches
+#   1 = no matches anywhere
+#   2 = usage error
+#   3 = ONLY vanilla matches (escape-hatch decision territory)
+#
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "${SCRIPT_DIR}/.."
 
-[ $# -ge 1 ] || { echo "usage: ./dev api \"<type or name>\"" >&2; exit 2; }
+usage() { echo "usage: ./dev api \"<type or name>\"   (exit: 0 neo hit, 1 none, 2 usage, 3 vanilla-only)" >&2; exit 2; }
+[ $# -ge 1 ] || usage
+case "$1" in -*) usage ;; esac   # a leading dash would be eaten as a hoogle flag
 
 # Load the toolchain env ONCE for the whole script: re-exec ourselves inside
 # nix develop; with-toolchain's fingerprint fast path then makes every inner
 # call direct (instant). Already inside a current env -> no re-exec at all.
-if [ "${NEOHASKELL_SHELL_FP:-}" != "$("${SCRIPT_DIR}/toolchain-fp")" ]; then
+# Guarded: only re-exec when nix can actually change the environment, and
+# never twice — with-toolchain's no-nix fallback execs "$@" verbatim, which
+# would re-run this script and loop forever (found 2026-07-08).
+if [ -z "${NEOHASKELL_API_REENTERED:-}" ] \
+   && command -v nix >/dev/null 2>&1 \
+   && [ "${NEOHASKELL_SHELL_FP:-}" != "$("${SCRIPT_DIR}/toolchain-fp")" ]; then
+  export NEOHASKELL_API_REENTERED=1
   exec "${SCRIPT_DIR}/with-toolchain" "$0" "$@"
 fi
 

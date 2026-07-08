@@ -37,8 +37,20 @@
   # Fingerprint for scripts/with-toolchain's verified fast path: commands run
   # directly (no nested `nix develop`) only when this matches the current
   # hash of the shell-defining files. scripts/toolchain-fp = single source.
+  # Path is repo-root-anchored (a cwd-relative path breaks when nix develop
+  # is entered from a subdirectory); an empty FP is warned about, not
+  # swallowed — it silently disables the fast path.
+  # NEOHASKELL_SHELL_PATH is the PATH WITNESS: with-toolchain restores it on
+  # the fast path so later PATH mutations in the session (tmux panes, rc
+  # files) cannot swap in host binaries behind a matching fingerprint.
   shell.shellHook = ''
-    export NEOHASKELL_SHELL_FP=$(scripts/toolchain-fp 2>/dev/null || true)
+    _nh_root=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
+    export NEOHASKELL_SHELL_FP=$("$_nh_root/scripts/toolchain-fp" 2>/dev/null || true)
+    if [ -z "$NEOHASKELL_SHELL_FP" ]; then
+      echo "with-toolchain: warning — toolchain fingerprint unavailable; fast path disabled (every call re-enters nix develop)" >&2
+    fi
+    export NEOHASKELL_SHELL_PATH="$PATH"
+    unset _nh_root
   '';
   shell.buildInputs = with pkgs; [
     git

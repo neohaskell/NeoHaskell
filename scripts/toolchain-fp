@@ -2,9 +2,35 @@
 #
 # Toolchain fingerprint (single source — used by BOTH the flake shellHook and
 # scripts/with-toolchain). Hash of the files that define the dev shell: if
-# they change, the fingerprint changes, and with-toolchain re-enters
+# any changes, the fingerprint changes, and with-toolchain re-enters
 # `nix develop` instead of trusting a stale environment.
+#
+# Inputs (stable sorted order; globbed so a new nix module or cabal file is
+# hashed automatically — no hand-maintained list to rot):
+#   - the flake trio: flake.nix, flake.lock, nix/*.nix
+#   - the cabal files haskell.nix computes the package plan from — a
+#     build-depends edit changes the shell's package DB, so it must
+#     invalidate the fast path (this was the fail-open hole: dependency
+#     edits are the MOST frequent shell-defining change)
+#   - cabal.project + cabal.project.dev (package list, program-options)
+#
+# Hash tool: sha256sum (coreutils, always present on Linux) with shasum
+# fallback (macOS ships it; a missing hasher must not silently disable
+# verification — with-toolchain treats an empty FP as "re-enter").
 #
 set -euo pipefail
 cd "$(dirname "$0")/.."
-cat flake.nix flake.lock nix/hix.nix 2>/dev/null | shasum -a 256 | cut -d' ' -f1
+
+# shellcheck disable=SC2046 # globs are intentionally word-split, sorted
+{
+  cat flake.nix flake.lock 2>/dev/null
+  cat $(ls nix/*.nix 2>/dev/null | sort) 2>/dev/null
+  cat cabal.project cabal.project.dev 2>/dev/null
+  cat $(ls ./*/*.cabal 2>/dev/null | sort) 2>/dev/null
+} | {
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum
+  else
+    shasum -a 256
+  fi
+} | cut -d' ' -f1
