@@ -2,3 +2,4 @@
 # Source-derived (platform-independent) — see generate.py.
 undocumented_modules: 212
 undocumented_exports: 562
+undocumented_doctest_modules: 316

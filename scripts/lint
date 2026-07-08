@@ -20,7 +20,7 @@ cd "${SCRIPT_DIR}/.."
 
 # THE single source of the lint path list (CI reuses this script via HLINT=…).
 if [ $# -eq 0 ]; then
-  set -- core integrations testbed lsp
+  set -- core integrations testbed
 fi
 
 # HLINT override lets CI supply its pinned standalone binary without nix.

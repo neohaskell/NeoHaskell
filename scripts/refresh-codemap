@@ -19,4 +19,20 @@ echo "codemap: generating hoogle signatures (cabal haddock)…"
   --haddock-hoogle --project-file="${CODEMAP_PROJECT:-cabal.project.dev}" -v0 >/dev/null
 
 echo "codemap: splitting + rendering…"
-exec "${SCRIPT_DIR}/with-toolchain" python3 codemap/generate.py
+# Resolve the EXACT txts the haddock run above produced and hand them to
+# generate.py — discovery heuristics over dist-newstyle (lexical or mtime)
+# have twice picked stale flavors when multiple build dirs coexist.
+resolve_newest() { # $1 = txt filename; newest-by-mtime under dist-newstyle/build
+  local newest="" f
+  while IFS= read -r f; do
+    if [ -z "${newest}" ] || [ "${f}" -nt "${newest}" ]; then newest="${f}"; fi
+  done < <(find dist-newstyle/build -name "$1" -path "*doc*" 2>/dev/null)
+  echo "${newest}"
+}
+CODEMAP_NHCORE_TXT="$(resolve_newest nhcore.txt)"
+CODEMAP_NHINTEGRATIONS_TXT="$(resolve_newest nhintegrations.txt)"
+export CODEMAP_NHCORE_TXT CODEMAP_NHINTEGRATIONS_TXT
+"${SCRIPT_DIR}/with-toolchain" python3 codemap/generate.py
+
+echo "codemap: refreshing ./dev api hoogle databases…"
+exec "${SCRIPT_DIR}/build-hoogle-dbs"

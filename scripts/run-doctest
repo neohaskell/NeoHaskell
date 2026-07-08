@@ -1,3 +1,111 @@
-#!/bin/bash
+#!/usr/bin/env bash
+#
+# Doctest gate (local: ./dev doctest; CI: test.yml `doctest` job).
+#
+# Coverage: ALL doctests in ALL project packages — files are DISCOVERED by
+# grep per package (nhcore, nhintegrations, nhtestbed), so a new doctest
+# anywhere joins the gate automatically and doctest-free packages cost
+# nothing. This matters because the phrasebook mines nhcore AND
+# nhintegrations: an unexecuted doctest there would be taught as
+# "verified" — the exact lie class this gate exists to kill.
+#
+# doctest interprets the target files directly with the GHC API — no cabal
+# build involved:
+#   - dependencies come from the dev-shell GHC's package DB (haskell.nix
+#     shellFor preloads the full dependency closure). The DB is passed
+#     explicitly because the doctest binary's baked-in ghc-paths GHC has a
+#     BARE global db (verified 2026-07-08: 0 project deps visible).
+#   - project-internal imports resolve via -i source dirs (downstream
+#     packages get their project deps' dirs too — nhcore is not in any
+#     package DB, it IS the project).
+#   - `cabal repl --with-ghc=doctest` does NOT work here: nhcore depends on
+#     the Cabal LIBRARY, --with-ghc changes the configuration hash, and the
+#     inplace dep rebuilds never exist for that plan ("cannot satisfy
+#     -package-id Cabal-3.10.3.0-inplace", verified 2026-07-08).
+#   - -i dirs and -X extensions are DERIVED from each package's cabal file
+#     at runtime (both block and inline hs-source-dirs forms), so this
+#     script cannot drift from the cabal files.
+#
+# The doctest binary is a shell.tool in nix/hix.nix — built against the
+# project's own GHC (doctest links the GHC API; version match is required).
+#
+set -euo pipefail
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+cd "${SCRIPT_DIR}/.."
 
-cabal install doctest --overwrite-policy=always && cabal build all && cabal repl --build-depends=QuickCheck --build-depends=template-haskell --with-ghc=doctest --repl-options='-w -Wdefault'
+# Enter the toolchain env ONCE (same guarded pattern as scripts/api):
+# only when nix can actually change the environment, and never twice —
+# with-toolchain's no-nix fallback execs "$@" verbatim, which would re-run
+# this script and loop forever.
+if [ -z "${NEOHASKELL_DOCTEST_REENTERED:-}" ] \
+   && command -v nix >/dev/null 2>&1 \
+   && [ "${NEOHASKELL_SHELL_FP:-}" != "$("${SCRIPT_DIR}/toolchain-fp")" ]; then
+  export NEOHASKELL_DOCTEST_REENTERED=1
+  exec "${SCRIPT_DIR}/with-toolchain" "$0" "$@"
+fi
+
+command -v doctest >/dev/null 2>&1 || {
+  echo "run-doctest: doctest not on PATH — the nix dev shell provides it (nix/hix.nix shell.tools)" >&2
+  exit 2
+}
+
+# Library source dirs from a cabal file — FIRST hs-source-dirs stanza
+# (the library's, in all three packages), both layouts:
+#   block:  "  hs-source-dirs:" + indented entries
+#   inline: "  hs-source-dirs: src" / "hs-source-dirs: a, b"
+srcdirs() {
+  awk '
+    /^[ \t]*hs-source-dirs:[ \t]*[^ \t]/ {
+      sub(/^[ \t]*hs-source-dirs:[ \t]*/, ""); gsub(/,/, " "); print; exit
+    }
+    /^[ \t]*hs-source-dirs:[ \t]*$/ { blk = 1; next }
+    # entries are bare dir tokens — a colon means the NEXT cabal field
+    # started (build-depends: etc.), which must end the block, not become
+    # a bogus -i flag
+    blk && /^[ \t]+[A-Za-z0-9._\/-]+[ \t]*$/ { printf " %s", $1; next }
+    blk { print ""; exit }
+    END { if (blk) print "" }
+  ' "$1"
+}
+
+# default-extensions from the first block in a cabal file.
+exts() {
+  awk '
+    /^[ \t]*default-extensions:[ \t]*$/ { blk = 1; next }
+    blk && /^[ \t]+[A-Z][A-Za-z0-9]*[ \t]*$/ { print $1; next }
+    blk { exit }
+  ' "$1"
+}
+
+PKGDB="-package-db=$(ghc --print-libdir)/package.conf.d"
+fail=0
+ran=0
+
+run_pkg() { # $1 = cabal file, $2 = package dir, $3 = extra -i dirs (project deps)
+  local files srcs="" ex="" d e
+  files=$(git grep -l -- '>>>' -- "$2" 2>/dev/null | grep '\.hs$' | tr '\n' ' ' || true)
+  if [ -z "${files// /}" ]; then return 0; fi
+  for d in $(srcdirs "$1"); do srcs="${srcs} -i$2/${d}"; done
+  for d in $3; do srcs="${srcs} -i${d}"; done
+  for e in $(exts "$1"); do ex="${ex} -X${e}"; done
+  if [ -z "${srcs// /}" ] || [ -z "${ex// /}" ]; then
+    echo "run-doctest: could not derive -i/-X flags from $1 (layout changed?)" >&2
+    return 2
+  fi
+  ran=1
+  echo "doctest [$2]: ${files}"
+  # shellcheck disable=SC2086 # srcs/ex/files are intentionally word-split
+  doctest ${srcs} ${ex} "${PKGDB}" -w ${files}
+}
+
+CORE_DIRS=$(for d in $(srcdirs core/nhcore.cabal); do printf "core/%s " "${d}"; done)
+INT_DIRS=$(for d in $(srcdirs integrations/nhintegrations.cabal); do printf "integrations/%s " "${d}"; done)
+
+run_pkg core/nhcore.cabal core "" || fail=1
+run_pkg integrations/nhintegrations.cabal integrations "${CORE_DIRS}" || fail=1
+run_pkg testbed/nhtestbed.cabal testbed "${CORE_DIRS} ${INT_DIRS}" || fail=1
+
+if [ "${ran}" -eq 0 ]; then
+  echo "doctest: no modules with doctest examples in any package — nothing to do"
+fi
+exit "${fail}"

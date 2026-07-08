@@ -5,7 +5,7 @@
      Localization assets are being rebuilt in codemap/ (see docs/plans/2026-07-07-continuous-generation-pipeline-plan.md, tracker #715).
      Old guidance docs live in docs/archive/2026-07-ai-artifacts/ — ARCHIVAL, do not use. -->
 
-Newcomer-friendly Haskell dialect. Monorepo: core library (`core/` → `nhcore`), reference app + acceptance tests (`testbed/` → `nhtestbed`), outbound integrations (`integrations/` → `nhintegrations`), LSP (`lsp/`), Rust installer (`installer/` → `neo-install`), VSCode extension (`ide/`), Astro website (`website/`). Architecture: event-sourcing + CQRS in `core/service/`.
+Newcomer-friendly Haskell dialect. Monorepo: core library (`core/` → `nhcore`), reference app + acceptance tests (`testbed/` → `nhtestbed`), outbound integrations (`integrations/` → `nhintegrations`), Rust installer (`installer/` → `neo-install`), VSCode extension (`ide/`), Astro website (`website/`). Architecture: event-sourcing + CQRS in `core/service/`. (LSP package removed 2026-07-08 — unused.)
 
 ## Style (mandatory)
 
@@ -30,7 +30,7 @@ Newcomer-friendly Haskell dialect. Monorepo: core library (`core/` → `nhcore`)
 cabal build all                 # everything
 cabal test nhcore-test-core     # core primitives only (no Postgres)
 cabal test                      # all suites (Postgres needed: docker-compose up -d)
-./scripts/run-doctest           # doctests
+./dev doctest                   # doctest gate (CI: test.yml doctest job)
 ./testbed/scripts/run-tests.sh  # acceptance tests (auto-starts the app)
 ```
 
@@ -49,7 +49,7 @@ Single entrypoint: **`./dev`** (no-args lists all verbs; same tools for humans a
 - Repair-loop protocol: edit → wait ~2s → **`./dev check`** (measured: error feedback 0.6s, recovery 1.9s). Never spawn `cabal build` inside the loop.
 - You do NOT need to be inside `nix develop`: every verb self-provisions the pinned toolchain (~0.4s warm overhead).
 - Everything uses the dev flavor (`cabal.project.dev`, `-O0`); full nhcore -O0 build = 249 modules / ~54s on this machine.
-- Pipeline telemetry: `scripts/telemetry.py` (schema: `telemetry/SCHEMA.md`, frozen v1). Every pipeline run emits one line to `telemetry/runs.jsonl`. Telemetry is pipeline-only: never emit lines for ad-hoc runs.
+- Pipeline telemetry: `scripts/telemetry.py` (schema: `telemetry/SCHEMA.md`, frozen v2). Every pipeline run emits one line to `telemetry/runs.jsonl`. Telemetry is pipeline-only: never emit lines for ad-hoc runs.
 - These are the same commands humans use (README "Fast inner loop") — parity is deliberate; don't create agent-only variants.
 
 - Test discovery: **only `nhcore-test` uses hspec-discover**; `nhcore-test-core`, `-auth`, `-service`, `-integration` register specs manually in their `Main.hs` — new spec modules must be added there AND to the cabal `other-modules`.
@@ -64,6 +64,14 @@ Route requests via `codemap/` (CI-gated capability ontology + extension points) 
 - API discovery → grep `codemap/signatures/*.txt` (generated API surface; never open source files for this)
 - Blast radius → `./dev who-calls <symbol> [module]` (capability-grouped; `./dev hiedb` builds the index)
 - Validity → `./dev codemap-check` (CI-gated: ownership exactly-once, alias uniqueness, doc-ratchet)
+
+## API knowledge (Phase 4) — transcribe, never recall
+
+Training-data APIs don't exist here. Resolve symbols at **plan time** into a `uses:` list; execution transcribes:
+- `codemap/api-hot.md` — frequency-ranked card (what this repo actually calls, with doctest examples; cut modules listed in the card trailer)
+- `./dev api "Text -> Maybe Uuid"` — hoogle type search: NeoHaskell surface ranked top; vanilla (dependency closure + boot libs) below with disclaimer + escape-hatch guidance whenever it has results (omitted when empty; exit 3 = vanilla-only). Query in dialect types (per the style table above) to hit the surface directly
+- `codemap/phrasebook.md` — doctest-verified usage patterns (gate: test.yml `doctest` job; thin coverage = the doc backlog, ratcheted via `undocumented_doctest_modules`)
+- GHC "not in scope" in `./dev check` output = invented API — resolve via `./dev api`; pipeline runs record per-stage `invented_api_events` (telemetry schema v2)
 
 ## Dialect enforcement (Phase 2, live since 2026-07-07)
 

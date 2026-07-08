@@ -72,7 +72,15 @@ jobs:
         with:
           name: dist-newstyle
           path: dist-newstyle
-      - name: Regenerate codemap artifacts (same flow as local ./dev codemap)
+      # Hackage hoogle txts for the ./dev api vanilla DB (dep-closure mined;
+      # see ADR-0066) — cached so the fetch is a no-op on warm runs.
+      - uses: actions/cache@v6
+        with:
+          path: .hoogle-vanilla-src
+          key: ${{ runner.os }}-hoogle-vanilla-${{ hashFiles('flake.lock', '**/*.cabal') }}
+          restore-keys: |
+            ${{ runner.os }}-hoogle-vanilla-
+      - name: Regenerate codemap + build/smoke-check hoogle DBs (canary — same flow as local ./dev codemap)
         run: CODEMAP_PROJECT=cabal.project ./dev codemap
       - name: Sync check — committed codemap must match regenerated
         run: |
@@ -80,6 +88,26 @@ jobs:
             echo "::error::codemap out of sync with the code — run ./dev codemap and commit the result"
             exit 1
           }
+
+  # Doctest gate (pipeline Phase 4): the examples on codemap/api-hot.md and
+  # codemap/phrasebook.md are mined from source doctests — THIS job is what
+  # makes their "doctest-gated" claim true. Runner: scripts/run-doctest
+  # (build-free: doctest interprets sources against the dev-shell GHC's
+  # package DB, so no dist-newstyle artifact is needed).
+  doctest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: DeterminateSystems/determinate-nix-action@v3.21.2
+        with:
+          extra-conf: |
+            accept-flake-config = true
+            extra-substituters = https://cache.iog.io https://neohaskell.cachix.org
+            extra-trusted-public-keys = hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ= neohaskell.cachix.org-1:mo2cLaGbwqbrxs9xhqKK8jeNsn3osi7t6XoAmxSZssc=
+      - uses: DeterminateSystems/magic-nix-cache-action@v14
+      - name: Run doctest suite
+        run: ./dev doctest
 
   test-core:
     needs: [build]
@@ -233,12 +261,13 @@ jobs:
 
   ci-gate:
     if: always()
-    needs: [test-core, test-auth, test-integration, test-service, test-hurl]
+    needs: [doctest, test-core, test-auth, test-integration, test-service, test-hurl]
     runs-on: ubuntu-latest
     steps:
       - name: Check all tests passed
         run: |
           results=(
+            "${{ needs.doctest.result }}"
             "${{ needs.test-core.result }}"
             "${{ needs.test-auth.result }}"
             "${{ needs.test-integration.result }}"

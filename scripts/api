@@ -1,0 +1,100 @@
+#!/usr/bin/env bash
+#
+# Two-pass API search (pipeline Phase 4; two-pass design per Nick 2026-07-08).
+# Engine: hoogle for BOTH passes; the filtering is two databases:
+#
+#   PASS 1 — .hoogle-neo.hoo    : ONLY nhcore + nhintegrations (the dialect),
+#            ranked on top. Indexed from the CI-sync-gated codemap/signatures.
+#   PASS 2 — .hoogle-vanilla.hoo: the REAL dependency closure + boot libs
+#            (Hackage-mined; see build-hoogle-dbs), shown below with a
+#            disclaimer whenever it has results — the section is omitted
+#            entirely when empty (revised 2026-07-08: fuzzy type matches in
+#            pass 1 — "String -> IO ()" → setGlobalConfig — were suppressing
+#            the vanilla results that held the real answer, e.g. putStrLn).
+#            Seeing the vanilla function informs the escape-hatch decision
+#            (.hlint.yaml `within:` + belongs-in note; rule of three →
+#            Core primitive) — or reveals what to respell (per the AGENTS.md
+#            style table, the single source of the vanilla→dialect mapping).
+#
+# Databases are local build artifacts (gitignored), rebuilt by ./dev codemap
+# or lazily here when missing or stale (older than the committed, CI-sync-
+# gated codemap/signatures/*.txt — tying freshness to a gated source is what
+# keeps a fresh clone or post-pull checkout from serving yesterday's surface).
+#
+# Usage:
+#   ./dev api "Text -> Maybe Uuid"    # type-directed
+#   ./dev api toInt                   # by name
+#
+# Exit codes:
+#   0 = NeoHaskell surface has matches
+#   1 = no matches anywhere
+#   2 = usage error
+#   3 = ONLY vanilla matches (escape-hatch decision territory)
+#
+set -euo pipefail
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+cd "${SCRIPT_DIR}/.."
+
+usage() { echo "usage: ./dev api \"<type or name>\"   (exit: 0 neo hit, 1 none, 2 usage, 3 vanilla-only)" >&2; exit 2; }
+[ $# -ge 1 ] || usage
+case "$1" in -*) usage ;; esac   # a leading dash would be eaten as a hoogle flag
+
+# Load the toolchain env ONCE for the whole script: re-exec ourselves inside
+# nix develop; with-toolchain's fingerprint fast path then makes every inner
+# call direct (instant). Already inside a current env -> no re-exec at all.
+# Guarded: only re-exec when nix can actually change the environment, and
+# never twice — with-toolchain's no-nix fallback execs "$@" verbatim, which
+# would re-run this script and loop forever (found 2026-07-08).
+if [ -z "${NEOHASKELL_API_REENTERED:-}" ] \
+   && command -v nix >/dev/null 2>&1 \
+   && [ "${NEOHASKELL_SHELL_FP:-}" != "$("${SCRIPT_DIR}/toolchain-fp")" ]; then
+  export NEOHASKELL_API_REENTERED=1
+  exec "${SCRIPT_DIR}/with-toolchain" "$0" "$@"
+fi
+
+NEO_DB=".hoogle-neo.hoo"
+VAN_DB=".hoogle-vanilla.hoo"
+
+REBUILD=0
+if [ ! -f "${NEO_DB}" ] || [ ! -f "${VAN_DB}" ]; then
+  REBUILD=1
+else
+  # staleness: the committed signatures are the CI-sync-gated truth; a DB
+  # older than any of them was built against a previous API surface
+  for sig in codemap/signatures/*.txt; do
+    if [ "${sig}" -nt "${NEO_DB}" ]; then REBUILD=1; fi
+  done
+fi
+if [ "${REBUILD}" = "1" ]; then
+  echo "api: (re)building hoogle databases (missing or older than codemap/signatures)…" >&2
+  "${SCRIPT_DIR}/build-hoogle-dbs"
+fi
+
+# ── pass 1: the NeoHaskell surface (top of the list) ───────────────────────
+# capture in full, slice afterwards — `hoogle | head` under pipefail dies
+# with SIGPIPE (141) the moment a query has more results than the slice
+NEO=$("${SCRIPT_DIR}/with-toolchain" hoogle --database="${NEO_DB}" --count=10 "$@")
+NEO_HIT=1
+if [ -z "${NEO}" ] || echo "${NEO}" | grep -q "^No results found"; then
+  NEO_HIT=0
+fi
+
+if [ "${NEO_HIT}" = "1" ]; then
+  echo "── NeoHaskell surface ──────────────────────────────────────────────────"
+  echo "${NEO}"
+else
+  echo "── NeoHaskell surface: no matches ──────────────────────────────────────"
+fi
+
+# ── pass 2: vanilla (bottom, disclaimered; omitted entirely when empty) ────
+VAN=$("${SCRIPT_DIR}/with-toolchain" hoogle --database="${VAN_DB}" --count=6 "$@")
+if [ -n "${VAN}" ] && ! echo "${VAN}" | grep -q "^No results found"; then
+  echo ""
+  echo "── vanilla (deps + boot libs) — prefer the NeoHaskell results above ────"
+  echo "   Using one of these anyway? Escape hatch first: .hlint.yaml within:"
+  echo "   (justification + belongs-in note); rule of three → Core primitive."
+  echo "${VAN}"
+  [ "${NEO_HIT}" = "1" ] && exit 0 || exit 3
+fi
+
+if [ "${NEO_HIT}" = "1" ]; then exit 0; else exit 1; fi

@@ -1,0 +1,100 @@
+#!/usr/bin/env bash
+#
+# Build the two ./dev api databases (pipeline Phase 4):
+#   .hoogle-neo.hoo     — nhcore + nhintegrations (pass 1, the dialect),
+#                         indexed DIRECTLY from the committed, CI-sync-gated
+#                         codemap/signatures/*.txt. Building from the gated
+#                         artifact (not from dist-newstyle haddock output)
+#                         means the DB can never drift from the surface CI
+#                         verified, and a fresh clone can use ./dev api with
+#                         zero cabal build.
+#   .hoogle-vanilla.hoo — the REAL dependency closure + boot libs (pass 2).
+#                         The dev-shell GHC package DB IS the closure
+#                         (haskell.nix shellFor preloads it); per-package
+#                         hoogle txts are fetched from Hackage (docs are
+#                         built there; local dep builds have doHaddock=false)
+#                         into .hoogle-vanilla-src/, cached by pkg-version.
+#                         Compiler-internal packages (ghc, ghc-prim, rts…)
+#                         are EXCLUDED — GHC.Utils.* answers to dep-shaped
+#                         queries were anti-guidance for the escape hatch.
+#
+# Ends with SMOKE ASSERTIONS — the canary for the thrice-diagnosed
+# "DB builds fine but contains the wrong thing" class (haskell.nix hoogle
+# wrapper overriding --database; hoogle 5.0.18.4 ignoring --local; boot-only
+# vanilla DB — all 2026-07-08). A silent regression in any of these now
+# fails the build instead of serving wrong-but-confident answers.
+#
+# Called by ./dev codemap (after signature regeneration) and lazily by
+# ./dev api when the databases are missing or older than the signatures.
+# Local artifacts, gitignored.
+#
+set -euo pipefail
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+cd "${SCRIPT_DIR}/.."
+
+if ! ls codemap/signatures/*.txt >/dev/null 2>&1; then
+  echo "build-hoogle-dbs: codemap/signatures/*.txt missing — run ./dev codemap first" >&2
+  exit 2
+fi
+
+# .hoogle-neo.warn budget: hoogle 5 cannot parse a handful of legitimate
+# signature shapes (implicit params, some class members) — 13 today. A count
+# above this means the parser or our canonicalization regressed and symbols
+# silently vanished from ./dev api (the Record.lens class of failure).
+WARN_BUDGET=20
+
+"${SCRIPT_DIR}/with-toolchain" bash -euo pipefail -c '
+  # ── pass 1: the dialect, straight from the gated signatures ─────────────
+  hoogle generate --database=.hoogle-neo.hoo --local=codemap/signatures >/dev/null
+
+  # ── pass 2: dependency closure + boot libs, Hackage-mined ───────────────
+  mkdir -p .hoogle-vanilla-src
+  EXCLUDE="^(ghc|ghc-prim|ghc-internal|ghc-boot|ghc-boot-th|ghc-heap|ghc-bignum|ghc-experimental|ghci|rts|system-cxx-std-lib|integer-gmp|hpc|libiserv|iserv)-[0-9]"
+  MISSING=0
+  for pkgid in $(ghc-pkg list --simple-output); do
+    if echo "${pkgid}" | grep -qE "${EXCLUDE}"; then continue; fi
+    f=".hoogle-vanilla-src/${pkgid}.txt"
+    if [ ! -s "${f}" ]; then
+      pkg="${pkgid%-*}"
+      if ! curl -fsS --max-time 30 \
+           "https://hackage.haskell.org/package/${pkgid}/docs/${pkg}.txt" \
+           -o "${f}" 2>/dev/null; then
+        rm -f "${f}"
+        MISSING=$((MISSING + 1))
+      fi
+    fi
+  done
+  if [ "${MISSING}" -gt 0 ]; then
+    echo "build-hoogle-dbs: ${MISSING} packages without a fetchable Hackage hoogle txt (skipped)" >&2
+  fi
+  hoogle generate --database=.hoogle-vanilla.hoo --local=.hoogle-vanilla-src >/dev/null
+
+  # ── smoke assertions (capture-then-grep: hoogle|grep -q would SIGPIPE) ──
+  NEO=$(hoogle --database=.hoogle-neo.hoo --count=5 "Task.yield")
+  if ! echo "${NEO}" | grep -q "Task yield ::"; then
+    echo "build-hoogle-dbs: SMOKE FAILED — neo DB does not answer Task.yield" >&2
+    exit 3
+  fi
+  INTFN=$(grep -m1 -E "^[a-z][A-Za-z0-9_]* ::" codemap/signatures/nhintegrations.txt | cut -d" " -f1)
+  NEOINT=$(hoogle --database=.hoogle-neo.hoo --count=5 "${INTFN}")
+  if echo "${NEOINT}" | grep -q "^No results found"; then
+    echo "build-hoogle-dbs: SMOKE FAILED — neo DB missing nhintegrations symbol ${INTFN}" >&2
+    exit 3
+  fi
+  VAN=$(hoogle --database=.hoogle-vanilla.hoo --count=8 "toJSON")
+  if ! echo "${VAN}" | grep -q "Data.Aeson"; then
+    echo "build-hoogle-dbs: SMOKE FAILED — vanilla DB does not know Data.Aeson (dep closure missing)" >&2
+    exit 3
+  fi
+  if echo "${VAN}" | grep -q "GHC\.Utils"; then
+    echo "build-hoogle-dbs: SMOKE FAILED — vanilla DB serves GHC compiler internals" >&2
+    exit 3
+  fi
+'
+
+if [ -f .hoogle-neo.warn ] && [ "$(wc -l < .hoogle-neo.warn)" -gt "${WARN_BUDGET}" ]; then
+  echo "build-hoogle-dbs: SMOKE FAILED — .hoogle-neo.warn has $(wc -l < .hoogle-neo.warn) parse failures (budget ${WARN_BUDGET}); dialect symbols are silently invisible to ./dev api" >&2
+  exit 3
+fi
+
+echo "build-hoogle-dbs: .hoogle-neo.hoo + .hoogle-vanilla.hoo ready (smoke-checked)"

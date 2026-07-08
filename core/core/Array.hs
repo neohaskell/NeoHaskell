@@ -176,9 +176,9 @@ isEmpty = unwrap .> Data.Vector.null
 
 -- | Return the length of an array.
 --
--- >>> length (Array (Data.Vector.fromList [1,2,3] :: Data.Vector.Vector Int))
+-- >>> length ([1,2,3] :: Array Int)
 -- 3
--- >>> length empty
+-- >>> length (empty :: Array Int)
 -- 0
 length :: Array a -> Int
 length = unwrap .> Data.Vector.length
@@ -186,9 +186,9 @@ length = unwrap .> Data.Vector.length
 
 -- | The indices that are valid for subscripting the collection, in ascending order.
 --
--- >>> indices (Array (Data.Vector.fromList [1,2,3] :: Data.Vector.Vector Int))
+-- >>> indices ([10,20,30] :: Array Int)
 -- Array [0,1,2]
--- >>> indices empty
+-- >>> indices (empty :: Array Int)
 -- Array []
 indices :: Array a -> Array Int
 indices =
@@ -309,9 +309,9 @@ push a (Array vector) =
   Array (Data.Vector.snoc vector a)
 
 
--- | Prepends an element onto the end of an array.
+-- | Prepends an element onto the front of an array.
 --
--- >>> push 3 (fromLinkedList [1,2] :: Array Int)
+-- >>> pushBack 3 (fromLinkedList [1,2] :: Array Int)
 -- Array [3,1,2]
 pushBack :: a -> Array a -> Array a
 pushBack a (Array vector) =
@@ -403,7 +403,7 @@ append (Array other) (Array self) =
 
 -- | Prepend two arrays to a new one.
 --
--- >>> (repeat 2 42) |> append (repeat 3 81) :: Array Int
+-- >>> (repeat 2 42) |> prepend (repeat 3 81) :: Array Int
 -- Array [81,81,81,42,42]
 prepend :: Array a -> Array a -> Array a
 prepend (Array other) (Array self) =

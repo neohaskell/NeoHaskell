@@ -23,7 +23,7 @@
 - modules:
     # Core Text
     - {name: [Data.Text, Data.Text.IO, Data.Text.Encoding, Data.Text.Lazy, Data.Text.Lazy.Encoding, Data.Text.Internal.Search],
-       within: [Auth.Jwt, Auth.MiddlewareSpec, Basics, Config.TH, Console, Decimal, File, Json, Log, NeoHaskell.LSP.State, Service.Transport.Mcp.Protocol, Service.Transport.WebSpec, Task, Test.Auth.Jwt.Core, Text, ToText, Uuid],
+       within: [Auth.Jwt, Auth.MiddlewareSpec, Basics, Config.TH, Console, Decimal, File, Json, Log, Service.Transport.Mcp.Protocol, Service.Transport.WebSpec, Task, Test.Auth.Jwt.Core, Text, ToText, Uuid],
        message: "Use Core `Text` (import Text qualified). New exceptions need a justification + belongs-in note here."}
     # Core Char
     - {name: [Data.Char],
@@ -35,7 +35,7 @@
        message: "Use Core `Array` or `LinkedList`. New exceptions need a justification + belongs-in note here."}
     # Core Map
     - {name: [Data.Map, Data.Map.Strict],
-       within: [Auth.Jwt, Main, Map, NeoHaskell.LSP.Handlers, NeoHaskell.LSP.State, Service.Integration.DispatchRegistry],
+       within: [Auth.Jwt, Main, Map, Service.Integration.DispatchRegistry],
        message: "Use Core `Map`. New exceptions need a justification + belongs-in note here."}
     # Core Maybe
     - {name: [Data.Maybe],
@@ -55,7 +55,7 @@
        message: "Use Core `Array`. New exceptions need a justification + belongs-in note here."}
     # Core IO/Console/File
     - {name: [System.IO],
-       within: [Auth.OAuth2.Client, Auth.UrlValidation, Http.Client, Http.Client.Internal, Main, NeoHaskell.LSP.Handlers, Service.Application, Service.ApplicationSpec, Service.Transport.Mcp],
+       within: [Auth.OAuth2.Client, Auth.UrlValidation, Http.Client, Http.Client.Internal, Main, Service.Application, Service.ApplicationSpec, Service.Transport.Mcp],
        message: "Use Core `IO`/`Console`/`File`. New exceptions need a justification + belongs-in note here."}
     # Environment
     - {name: [System.Environment],

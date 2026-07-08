@@ -31,6 +31,8 @@ usage: ./dev <verb> [args]
   hiedb                 (re)build the symbol reference DB
   who-calls <sym> [mod] symbol references, grouped by capability
   where-defined <sym>   symbol definition site, capability-tagged
+  api <query>           search the NeoHaskell API surface — by type
+                          ("Text -> Int") or by name (toInt)
   doctor                harness self-check: every script has a verb or a
                           reasoned exemption; no dangling verbs (CI-enforced)
   exec <cmd> [args]     run any command with the pinned toolchain
@@ -56,6 +58,7 @@ case "${VERB}" in
   hiedb)    exec scripts/refresh-hiedb "$@" ;;
   who-calls) exec scripts/who-calls "$@" ;;
   where-defined) exec scripts/where-defined "$@" ;;
+  api)      exec scripts/api "$@" ;;
   doctor)   exec scripts/doctor "$@" ;;
   exec)     exec scripts/with-toolchain "$@" ;;
   ""|help|-h|--help) usage ;;

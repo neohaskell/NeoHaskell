@@ -168,12 +168,6 @@ capabilities:
     aliases: [reference app, acceptance tests, hurl, example app, e2e, user contract]
     tests: [testbed/tests/**]
 
-  - id: lsp
-    owns: [lsp/**]
-    responsibility: NeoHaskell language server.
-    aliases: [language server, ide support, editor integration]
-    tests: []
-
   - id: dev-pipeline
     owns: [scripts/**, codemap/**, telemetry/**, dev, cabal.project.dev, .claude/**]  # workflows (incl. checks.yml) belong to ci-cd — exactly-once
     responsibility: The Continuous Generation pipeline itself — ./dev verbs, dialect gates, codemap, telemetry, hooks, skills, governance checks.

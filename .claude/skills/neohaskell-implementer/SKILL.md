@@ -47,6 +47,36 @@ no Core wrapper exists for what you need and it's not core enough to build one?
 - NEVER reimplement a banned thing with allowed vocabulary — that is strictly
   worse than the exception.
 
+## API discipline (Phase 4): transcribe, never recall
+
+Your training data contains vanilla Haskell APIs; this repo doesn't. Before
+calling ANY function you didn't just read:
+
+1. The plan's `uses:` list (plan-time resolved symbols) — transcribe those.
+2. `codemap/api-hot.md` — the frequency-ranked card of what this repo
+   actually calls, with verified examples.
+3. `./dev api "<type or name>"` — hoogle type search: the NeoHaskell
+   surface ranked top; vanilla (real dependency closure + boot libs) below
+   with a disclaimer whenever it has results — the section is omitted when
+   empty. Exit codes: 0 neo hit, 1 none, 2 usage, 3 vanilla-only (escape-
+   hatch territory). Query in dialect types — respell vanilla vocabulary
+   using the AGENTS.md style table (the single source of that mapping) and
+   search again. Use it the moment you feel yourself *remembering* an API
+   instead of *reading* one.
+4. `codemap/phrasebook.md` — doctest-verified usage patterns (gate:
+   test.yml `doctest` job).
+
+The line the localizer's "execution never searches" doctrine draws:
+**"search" means exploring the tree/source to find where things live —
+plan-time only. `./dev api`, the hot card, and the phrasebook are LOOKUPS
+and are allowed while implementing; recalling an API from training data
+never is.**
+
+If `./dev check` reports `invented-api-events=N` ("not in scope"), that is a
+hallucinated symbol: resolve via `./dev api`, and the pipeline records the
+count (per-stage `invented_api_events`, schema v2; `invented-api` failure
+label when it kills the run) — do not guess twice.
+
 ## Repair loop (protocol, not suggestion)
 
 ```

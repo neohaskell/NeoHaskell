@@ -11,10 +11,14 @@ import Prelude qualified
 
 -- | Convert a float to an integer by truncating towards zero.
 --
--- >>> Float.toInt 3.7 == 3
--- >>> Float.toInt 3.2 == 3
--- >>> Float.toInt (-3.7) == -3
--- >>> Float.toInt (-3.2) == -3
+-- >>> Float.toInt 3.7
+-- 3
+-- >>> Float.toInt 3.2
+-- 3
+-- >>> Float.toInt (-3.7)
+-- -3
+-- >>> Float.toInt (-3.2)
+-- -3
 toInt :: Float -> Int
 toInt =
   Prelude.truncate

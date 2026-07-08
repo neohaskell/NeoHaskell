@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Pipeline telemetry emitter (Phase 1). Schema: telemetry/SCHEMA.md (v1, frozen).
+"""Pipeline telemetry emitter (Phase 1). Schema: telemetry/SCHEMA.md (v2, frozen).
 
 One JSON line per pipeline run, appended to telemetry/runs.jsonl. Never
 hand-written — pipeline scripts call this tool.
@@ -7,7 +7,7 @@ hand-written — pipeline scripts call this tool.
 Usage:
   telemetry.py start   --run-id 2026-07-07-001 --request "issue#712"
   telemetry.py stage   --name implement --event start [--model sonnet]
-  telemetry.py stage   --name implement --event stop  [--repair-rounds 2]
+  telemetry.py stage   --name implement --event stop  [--repair-rounds 2] [--invented-api-events 3]
   telemetry.py wait    --seconds 340            # add waiting-on-human time
   telemetry.py rebuilt --count 4                # cache-health metric
   telemetry.py finish  --outcome ok
@@ -77,7 +77,7 @@ def cmd_start(args) -> None:
     if CURRENT.exists():
         sys.exit(f"telemetry: run already in progress ({CURRENT}); finish it first")
     save({
-        "schema": 1,
+        "schema": 2,
         "run_id": args.run_id,
         "request_ref": args.request,
         "stages": {},
@@ -91,9 +91,10 @@ def cmd_start(args) -> None:
 
 def cmd_stage(args) -> None:
     if args.name not in STAGES:
-        sys.exit(f"telemetry: unknown stage '{args.name}' (schema v1 stages: {', '.join(STAGES)})")
+        sys.exit(f"telemetry: unknown stage '{args.name}' (schema v2 stages: {', '.join(STAGES)})")
     run = load()
-    stage = run["stages"].setdefault(args.name, {"start": None, "stop": None, "model": None, "repair_rounds": 0})
+    stage = run["stages"].setdefault(args.name, {"start": None, "stop": None, "model": None,
+                                                 "repair_rounds": 0, "invented_api_events": 0})
     if args.event == "start":
         stage["start"] = now()
         if args.model:
@@ -102,6 +103,9 @@ def cmd_stage(args) -> None:
         stage["stop"] = now()
         if args.repair_rounds is not None:
             stage["repair_rounds"] = non_negative(args.repair_rounds, "--repair-rounds")
+        if args.invented_api_events is not None:
+            stage["invented_api_events"] = non_negative(args.invented_api_events,
+                                                        "--invented-api-events")
     save(run)
 
 
@@ -175,6 +179,7 @@ def main() -> None:
     s.add_argument("--event", required=True, choices=["start", "stop"])
     s.add_argument("--model")
     s.add_argument("--repair-rounds", type=int)
+    s.add_argument("--invented-api-events", type=int)
     s.set_defaults(fn=cmd_stage)
 
     s = sub.add_parser("wait")
