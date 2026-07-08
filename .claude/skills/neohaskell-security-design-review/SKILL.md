@@ -1,6 +1,6 @@
 ---
 name: neohaskell-security-design-review
-description: Design-time security review of an approved contract-delta spec, before implementation. Runs when the spec's touches list intersects security-sensitive capabilities. Produces the committed review record the PR carries (compliance audit trail).
+description: Design-time security review of an approved contract-delta spec, before implementation. Runs when the spec's touches list intersects security-sensitive capabilities. Produces a LOCAL-only review record (gitignored, never pushed — a security review maps attack surface); enforced on the dev machine, not in CI.
 ---
 
 # Security design review (risk-tiered, design-time)
@@ -8,7 +8,10 @@ description: Design-time security review of an approved contract-delta spec, bef
 Rebuilt 2026-07-08 (Phase 5; predecessors archived in
 `docs/archive/2026-07-ai-artifacts/claude-skills/`). NeoHaskell serves
 national-level European infrastructure: security compliance is a hard
-requirement, and the committed review record is the audit-trail artifact.
+requirement, and the review record is the audit-trail artifact — but it is kept
+**local, never pushed** (a public repo would hand the attack-surface analysis to
+attackers). The audit trail lives on the maintainer's machine / secure store, not
+the public git history. See [ADR-0069](../../../docs/decisions/0069-security-reviews-are-local.md).
 
 ## When this runs (mechanical, not judgment)
 
@@ -76,10 +79,13 @@ Every finding must survive all four questions, or it is demoted to
    `Redacted` on values already in public logs. Control-cascades on a change
    touching no secret and no boundary are security theater — reject them.
 
-## Output (the committed record)
+## Output (the LOCAL record — never commit)
 
-Write `docs/changes/NNN-slug.security-review.md` on the PR branch — it lands
-with the merge; that commit is the audit trail. Format:
+Write `docs/changes/NNN-slug.security-review.md` on your local working tree. It
+is **gitignored** (ADR-0069) — do NOT commit or push it; a security review maps
+attack surface and must never enter public git history. The pipeline enforces
+its presence on your machine via `./dev spec-check --reviews-local` before the PR
+flips to ready; CI never sees it (`--reviews-pr` gates only perf reviews). Format:
 
 ```markdown
 # Security design review: <spec title>
@@ -94,5 +100,6 @@ Spec: docs/changes/NNN-slug.md | Capabilities: <security-sensitive ones> | Date:
 
 Blockers either amend the plan (`./dev pipeline set plan.files …` + note in
 the record) or park the run for the maintainer (`./dev pipeline park --label
-human-rejected-spec --note …`). Zero-finding reviews still commit the record
-— "reviewed, nothing found" is audit data.
+human-rejected-spec --note …`). Zero-finding reviews still write the local record
+— "reviewed, nothing found" is audit data — it just stays local like every other
+security review.

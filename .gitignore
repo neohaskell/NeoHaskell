@@ -107,3 +107,10 @@ __pycache__/
 
 # Phase 5: nightly bench evidence (uploaded as a CI artifact, never committed)
 /.bench-results.json
+
+# Security design-review records (ADR-0069): a security review enumerates a
+# change's attack surface — committing it to a public repo hands that map to
+# attackers. It stays LOCAL, never pushed; the pipeline enforces its presence on
+# the developer's machine via `./dev spec-check --reviews-local`. Perf reviews
+# are not sensitive → committed + CI-gated via `--reviews-pr`.
+docs/changes/*.security-review.md

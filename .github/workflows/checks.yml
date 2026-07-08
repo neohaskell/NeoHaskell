@@ -74,9 +74,11 @@ jobs:
           # template-injection defense-in-depth for workflow expressions
           BASE_REF: ${{ github.base_ref }}
         run: ./dev spec-drift --pr "origin/${BASE_REF}"
-      # Review-record gate: at PR-ready, every design review a changed spec
-      # ROUTES (touches ∩ risk tags) must have its committed record — the
-      # compliance audit trail the ADR requires, now enforced not just prosed.
+      # Review-record gate: at PR-ready, every COMMITTED design review a changed
+      # spec ROUTES (touches ∩ perf-sensitive) must have its committed record.
+      # Security reviews are local-only (gitignored, never pushed — they map
+      # attack surface; ADR-0069), enforced on the dev machine via
+      # `spec-check --reviews-local`, so CI's --reviews-pr gates only perf.
       - name: Design-review records present (PR-ready only)
         if: github.event_name == 'pull_request' && github.event.pull_request.draft == false
         env:

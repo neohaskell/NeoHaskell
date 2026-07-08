@@ -46,9 +46,13 @@ intake ─ localize ─ spec ─▶ DRAFT PR ══ GATE 1 (maintainer) ══�
    without it), then `./dev pipeline advance`.
 5. **design-review** — `./dev spec-check --plan <spec>` → `design_reviews`.
    `security` → `neohaskell-security-design-review` skill; `perf` →
-   `neohaskell-performance-design-review`. Review records are committed to
-   the PR branch (`NNN-slug.<kind>-review.md`). Empty list → skip (stage
-   recorded with ~0 duration; the skip is the risk-tiering working).
+   `neohaskell-performance-design-review`. **Perf** records are committed to
+   the PR branch (`NNN-slug.perf-review.md`); **security** records
+   (`NNN-slug.security-review.md`) are **local-only — gitignored, never pushed**
+   (they map attack surface; ADR-0069), enforced before PR-ready by
+   `./dev spec-check --reviews-local` (CI's `--reviews-pr` gates only perf).
+   Empty list → skip (stage recorded with ~0 duration; the skip is the
+   risk-tiering working).
 6. **plan** — order the work: which files in what sequence, which neighbor
    module each copy-adapts from (`neohaskell-implementer` discipline).
 7. **test-writing** — tests FIRST, from the criteria table, red before any

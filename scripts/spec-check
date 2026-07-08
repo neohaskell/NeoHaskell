@@ -29,9 +29,14 @@ Modes:
   spec-check --plan FILE      emit the mechanical joins as JSON:
                               required design reviews (touches x risk tags)
                               + test-impact globs (touches x tests:)
-  spec-check --reviews-pr [BASE]  PR-ready gate: every design review a changed
-                              spec routes must have its committed record
-                              (NNN-slug.<kind>-review.md, backlinking the spec)
+  spec-check --reviews-pr [BASE]  PR-ready CI gate: every COMMITTED design review
+                              (perf) a changed spec routes must have its committed
+                              record (NNN-slug.perf-review.md, backlinking the spec)
+  spec-check --reviews-local [BASE]  local gate (dev machine, not CI): every
+                              LOCAL-ONLY design review (security) a changed spec
+                              routes must have its gitignored record on disk —
+                              a security review maps attack surface and is never
+                              pushed (ADR-0069)
   spec-check --criteria FILE  emit the criteria table as JSON [{id, behavior,
                               test, level}] — a spec-authoring/review aid
   spec-check --criteria-tests [BASE]  PR-ready DoD gate: every criterion in a
@@ -273,25 +278,42 @@ def review_obligations(text, spec_name, caps):
     return [(r, speclib.review_record_name(spec_name, r)) for r in reviews]
 
 
-def missing_review_records(spec_name, spec_text, caps, record_exists, record_text):
-    """Pure gate core: given callbacks to test a record's existence and read
-    its text, return [error strings] for missing or non-backlinking records.
-    Callback-driven so the gate is testable without a git checkout."""
+# Kinds whose record is COMMITTED next to the spec (CI-gated). Security reviews
+# are excluded — they are local-only (see speclib.LOCAL_ONLY_REVIEW_KINDS / ADR-0069).
+COMMITTED_REVIEW_KINDS = tuple(k for k in speclib.REVIEW_KINDS
+                               if k not in speclib.LOCAL_ONLY_REVIEW_KINDS)
+
+
+def missing_review_records(spec_name, spec_text, caps, record_exists, record_text, kinds):
+    """Pure gate core: given callbacks to test a record's existence and read its
+    text, return [error strings] for missing or non-backlinking records. `kinds`
+    restricts which review kinds this gate enforces — committed kinds and
+    local-only (security) kinds are checked by different gates but share this
+    core. Callback-driven so the gate is testable without a git checkout."""
     errs = []
     for kind, record_name in review_obligations(spec_text, spec_name, caps):
+        if kind not in kinds:
+            continue
         if not record_exists(record_name):
+            locality = ("kept LOCAL (it is gitignored — a security review maps attack "
+                        "surface and must never be pushed; see ADR-0069)"
+                        if kind in speclib.LOCAL_ONLY_REVIEW_KINDS
+                        else "committed next to the spec")
             errs.append(f"{spec_name}: routes a `{kind}` design review but its record "
                         f"`{record_name}` is missing — run the neohaskell-{kind}"
-                        "-design-review skill and commit the record next to the spec")
+                        f"-design-review skill; the record must be {locality}")
         elif spec_name not in record_text(record_name):
             errs.append(f"{record_name}: does not backlink its spec `{spec_name}` "
                         "(the record must name the spec it reviews)")
     return errs
 
 
-def reviews_pr(base, caps):
-    """PR-ready review-record gate over the specs this branch changed vs `base`.
-    Returns an exit code (0 honored, 1 missing/unlinked, 2 bad base)."""
+def _reviews_gate(base, caps, kinds, label):
+    """Review-record gate over the specs this branch changed vs `base`, for the
+    given review `kinds`. Returns an exit code (0 honored, 1 missing/unlinked,
+    2 bad base). Existence is filesystem-based, so the local-only (security) gate
+    finds a gitignored record on the developer's disk while the committed gate
+    finds a tracked one."""
     try:
         specs = speclib.changed_specs(ROOT, base)
     except speclib.GitDiffError as e:
@@ -300,7 +322,7 @@ def reviews_pr(base, caps):
         return 2
     specs = [p for p in specs if is_spec_file(p.name) and p.name != "TEMPLATE.md"]
     if not specs:
-        print(f"spec-check: no specs changed vs {base} — no review records to check")
+        print(f"spec-check: no specs changed vs {base} — no {label} review records to check")
         return 0
     errs = []
     for spec in specs:
@@ -309,13 +331,29 @@ def reviews_pr(base, caps):
         errs += missing_review_records(
             spec.name, spec.read_text(), caps,
             record_exists=lambda n, d=spec.parent: (d / n).exists(),
-            record_text=lambda n, d=spec.parent: (d / n).read_text() if (d / n).exists() else "")
+            record_text=lambda n, d=spec.parent: (d / n).read_text() if (d / n).exists() else "",
+            kinds=kinds)
     for e in errs:
         print(f"spec-check: FAIL — {e}", file=sys.stderr)
     if errs:
         return 1
-    print(f"spec-check: OK — design-review records present for {len(specs)} changed spec(s)")
+    print(f"spec-check: OK — {label} design-review records present for {len(specs)} changed spec(s)")
     return 0
+
+
+def reviews_pr(base, caps):
+    """PR-ready gate (CI): every COMMITTED design review (perf) a changed spec
+    routes has its committed record. Security reviews are local-only and checked
+    by `reviews_local` on the developer's machine, never in CI (ADR-0069)."""
+    return _reviews_gate(base, caps, COMMITTED_REVIEW_KINDS, "committed")
+
+
+def reviews_local(base, caps):
+    """Local gate (developer machine, not CI): every LOCAL-ONLY design review
+    (security) a changed spec routes has its gitignored record present on disk.
+    The pipeline runs this before flipping a PR to ready — the security review
+    is enforced without ever being pushed."""
+    return _reviews_gate(base, caps, speclib.LOCAL_ONLY_REVIEW_KINDS, "local")
 
 
 # ── criterion-test-exists gate (Phase 6 DoD) ──────────────────────────────────
@@ -539,8 +577,9 @@ def self_test():
             print(f"self-test FAIL is_spec_file({nm}): want {want}")
             fails += 1
 
-    # Fix 2: review-record obligations + the missing/backlink gate (pure, no git)
-    auth_spec = VALID_FIXTURE.replace("[core-primitives]", "[auth]")
+    # Fix 2: review-record obligations + the split missing/backlink gate (pure, no git)
+    auth_spec = VALID_FIXTURE.replace("[core-primitives]", "[auth]")       # security-sensitive
+    perf_spec = VALID_FIXTURE.replace("[core-primitives]", "[concurrency]")  # perf-sensitive
     if [n for _, n in review_obligations(auth_spec, "067-x.md", caps)] != \
             ["067-x.security-review.md"]:
         print("self-test FAIL review-obligations: [auth] should owe the security record")
@@ -548,18 +587,34 @@ def self_test():
     if review_obligations(VALID_FIXTURE, "001-x.md", caps):
         print("self-test FAIL review-obligations: untagged spec owes nothing")
         fails += 1
-    if not missing_review_records("067-x.md", auth_spec, caps,
-                                  lambda n: False, lambda n: ""):
-        print("self-test FAIL review-gate: absent record must error")
+    # security is LOCAL-ONLY: the COMMITTED gate (perf) must NOT require it, so an
+    # absent security record never fails --reviews-pr (it is never in CI's tree).
+    if missing_review_records("067-x.md", auth_spec, caps, lambda n: False, lambda n: "",
+                              kinds=COMMITTED_REVIEW_KINDS):
+        print("self-test FAIL review-gate: committed gate must ignore local-only security")
         fails += 1
+    # ...but the LOCAL gate DOES require the security record present on disk
+    if not missing_review_records("067-x.md", auth_spec, caps, lambda n: False, lambda n: "",
+                                  kinds=speclib.LOCAL_ONLY_REVIEW_KINDS):
+        print("self-test FAIL review-gate: local gate must require the security record")
+        fails += 1
+    # a present + backlinked local security record passes the local gate
     if missing_review_records("067-x.md", auth_spec, caps,
                               lambda n: n == "067-x.security-review.md",
-                              lambda n: "Spec: docs/changes/067-x.md"):
-        print("self-test FAIL review-gate: present backlinked record must pass")
+                              lambda n: "Spec: docs/changes/067-x.md",
+                              kinds=speclib.LOCAL_ONLY_REVIEW_KINDS):
+        print("self-test FAIL review-gate: present backlinked security record must pass")
         fails += 1
+    # a local security record without a backlink still errors
     if not missing_review_records("067-x.md", auth_spec, caps,
-                                  lambda n: True, lambda n: "no reference"):
-        print("self-test FAIL review-gate: record without a backlink must error")
+                                  lambda n: True, lambda n: "no reference",
+                                  kinds=speclib.LOCAL_ONLY_REVIEW_KINDS):
+        print("self-test FAIL review-gate: security record without a backlink must error")
+        fails += 1
+    # perf reviews ARE committed-gated: the committed gate requires the perf record
+    if not missing_review_records("068-y.md", perf_spec, caps, lambda n: False, lambda n: "",
+                                  kinds=COMMITTED_REVIEW_KINDS):
+        print("self-test FAIL review-gate: committed gate must require the perf record")
         fails += 1
 
     if fails == 0:
@@ -600,6 +655,10 @@ def main():
     if args and args[0] == "--reviews-pr":
         base = args[1] if len(args) > 1 else "origin/main"
         return reviews_pr(base, caps)
+
+    if args and args[0] == "--reviews-local":
+        base = args[1] if len(args) > 1 else "origin/main"
+        return reviews_local(base, caps)
 
     if args and args[0] == "--criteria-tests":
         base = args[1] if len(args) > 1 else "origin/main"
