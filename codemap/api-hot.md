@@ -2,219 +2,270 @@
      actual call sites; examples mined from source doctests (CI-verified). -->
 # API hot card — the NeoHaskell you actually use
 
-Ranked by real call-site frequency. Consult BEFORE writing code;
-full surface: codemap/signatures/ · type-directed search: ./dev api "<type>"
+Production call sites only (testbed/src counts as production — the
+reference app is the user-usage proxy; spec/test code is ranked
+separately below). Consult BEFORE writing code; full surface:
+codemap/signatures/ · type-directed search: ./dev api "<type>"
 
 ## Task
-- `mapError :: (err1 -> err2) -> Task err1 value -> Task err2 value`  <!-- 939 call sites -->
-- `yield :: value -> Task w value`  <!-- 937 call sites -->
-- `asResult :: Task err value -> Task err2 (Result err value)`  <!-- 346 call sites -->
-- `throw :: err -> Task err w`  <!-- 300 call sites -->
-- `ignoreError :: Task err Unit -> Task w Unit`  <!-- 232 call sites -->
-- `fromIO :: IO value -> Task w value`  <!-- 221 call sites -->
-- `mapArray :: (element -> Task err output) -> Array element -> Task err (Array output)`  <!-- 128 call sites -->
-- `map :: (input -> output) -> Task err input -> Task err output`  <!-- 101 call sites -->
-- `andThen :: (input -> Task err output) -> Task err input -> Task err output`  <!-- 91 call sites -->
-- `forEach :: (element -> Task err Unit) -> Array element -> Task err Unit`  <!-- 86 call sites -->
+- `yield :: value -> Task w value`  <!-- 526 call sites -->
+- `ignoreError :: Task err Unit -> Task w Unit`  <!-- 230 call sites -->
+- `mapError :: (err1 -> err2) -> Task err1 value -> Task err2 value`  <!-- 213 call sites -->
+- `throw :: err -> Task err w`  <!-- 202 call sites -->
+- `fromIO :: IO value -> Task w value`  <!-- 131 call sites -->
+- `asResult :: Task err value -> Task err2 (Result err value)`  <!-- 78 call sites -->
+- `forEach :: (element -> Task err Unit) -> Array element -> Task err Unit`  <!-- 26 call sites -->
+- `fromFailableIO :: Exception exception => IO result -> Task exception result`  <!-- 24 call sites -->
+- `map :: (input -> output) -> Task err input -> Task err output`  <!-- 23 call sites -->
+- `runResult :: Task err value -> IO (Result err value)`  <!-- 13 call sites -->
 
 ## Array
-- `fromLinkedList :: LinkedList a -> Array a`  <!-- 298 call sites -->
-- `length :: Array a -> Int`  <!-- 281 call sites -->
-  - `>>> length (Array (Data.Vector.fromList [1,2,3] :: Data.Vector.Vector Int))` → `3`
-- `empty :: Array a`  <!-- 260 call sites -->
-  - `>>> empty :: Array Int` → `Array []`
-- `map :: (a -> b) -> Array a -> Array b`  <!-- 214 call sites -->
+- `map :: (a -> b) -> Array a -> Array b`  <!-- 100 call sites -->
   - `>>> map sqrt (fromLinkedList [1,4,9] :: Array Float)` → `Array [1.0,2.0,3.0]`
-- `toLinkedList :: Array a -> LinkedList a`  <!-- 75 call sites -->
+- `fromLinkedList :: LinkedList a -> Array a`  <!-- 92 call sites -->
+- `empty :: Array a`  <!-- 66 call sites -->
+  - `>>> empty :: Array Int` → `Array []`
+- `toLinkedList :: Array a -> LinkedList a`  <!-- 59 call sites -->
   - `>>> toLinkedList (fromLinkedList [3,5,8] :: Array Int)` → `[3,5,8]`
-- `get :: Int -> Array a -> Maybe a`  <!-- 72 call sites -->
-  - `>>> get 0 (fromLinkedList [0,1,2] :: Array Int)` → `Just 0`
-- `takeIf :: (a -> Bool) -> Array a -> Array a`  <!-- 59 call sites -->
-  - `>>> takeIf Basics.isEven (fromLinkedList [1,2,3,4,5,6] :: Array Int)` → `Array [2,4,6]`
-- `wrap :: a -> Array a`  <!-- 53 call sites -->
-  - `>>> wrap (0 :: Int)` → `Array [0]`
-- `push :: a -> Array a -> Array a`  <!-- 52 call sites -->
+- `push :: a -> Array a -> Array a`  <!-- 35 call sites -->
   - `>>> push 3 (fromLinkedList [1,2] :: Array Int)` → `Array [1,2,3]`
-- `contains :: Eq value => value -> Array value -> Bool`  <!-- 46 call sites -->
-  - `>>> contains 2 (fromLinkedList [1,2,3] :: Array Int)` → `True`
+- `takeIf :: (a -> Bool) -> Array a -> Array a`  <!-- 32 call sites -->
+  - `>>> takeIf Basics.isEven (fromLinkedList [1,2,3,4,5,6] :: Array Int)` → `Array [2,4,6]`
+- `isEmpty :: Array a -> Bool`  <!-- 30 call sites -->
+  - `>>> isEmpty empty` → `True`
+- `length :: Array a -> Int`  <!-- 29 call sites -->
+  - `>>> length (Array (Data.Vector.fromList [1,2,3] :: Data.Vector.Vector Int))` → `3`
+- `append :: Array a -> Array a -> Array a`  <!-- 24 call sites -->
+  - `>>> (repeat 2 42) |> append (repeat 3 81) :: Array Int` → `Array [42,42,81,81,81]`
+- `reduce :: (a -> b -> b) -> b -> Array a -> b`  <!-- 23 call sites -->
+  - `>>> reduce (+) 0 (repeat 3 5 :: Array Int)` → `15`
 
 ## Text
-- `contains :: Text -> Text -> Bool`  <!-- 449 call sites -->
-- `fromLinkedList :: LinkedList Char -> Text`  <!-- 146 call sites -->
-- `toBytes :: Text -> Bytes`  <!-- 130 call sites -->
-- `toLinkedList :: Text -> LinkedList Char`  <!-- 107 call sites -->
-- `length :: Text -> Int`  <!-- 57 call sites -->
-- `repeat :: Int -> Text -> Text`  <!-- 37 call sites -->
-- `replace :: Text -> Text -> Text -> Text`  <!-- 36 call sites -->
-- `trim :: Text -> Text`  <!-- 29 call sites -->
-- `isEmpty :: Text -> Bool`  <!-- 28 call sites -->
-- `joinWith :: Text -> Array Text -> Text`  <!-- 28 call sites -->
-
-## Parser
-- `run :: Parser value -> Text -> Result ParseError value`  <!-- 247 call sites -->
-- `char :: Char -> Parser Char`  <!-- 169 call sites -->
-- `text :: Text -> Parser Text`  <!-- 80 call sites -->
-- `yield :: value -> Parser value`  <!-- 42 call sites -->
-- `formatError :: ParseError -> Text`  <!-- 40 call sites -->
-- `spaces :: Parser Unit`  <!-- 37 call sites -->
-- `choice :: Array (Parser value) -> Parser value`  <!-- 29 call sites -->
-- `map :: (input -> output) -> Parser input -> Parser output`  <!-- 25 call sites -->
-- `keepRight :: Parser leading -> Parser value -> Parser value`  <!-- 24 call sites -->
-- `backtrack :: Parser value -> Parser value`  <!-- 17 call sites -->
+- `fromLinkedList :: LinkedList Char -> Text`  <!-- 90 call sites -->
+- `toLinkedList :: Text -> LinkedList Char`  <!-- 78 call sites -->
+- `toBytes :: Text -> Bytes`  <!-- 61 call sites -->
+- `replace :: Text -> Text -> Text -> Text`  <!-- 34 call sites -->
+- `trim :: Text -> Text`  <!-- 27 call sites -->
+- `fromBytes :: Bytes -> Text`  <!-- 26 call sites -->
+- `joinWith :: Text -> Array Text -> Text`  <!-- 26 call sites -->
+- `isEmpty :: Text -> Bool`  <!-- 25 call sites -->
+- `append :: Text -> Text -> Text`  <!-- 23 call sites -->
+- `toLower :: Text -> Text`  <!-- 20 call sites -->
 
 ## Json
-- `toJSON :: ToJSON a => a -> Value`  <!-- 244 call sites -->
-- `object :: [(Text, Value)] -> Value`  <!-- 208 call sites -->
-- `decodeText :: FromJSON value => Text -> Result Text value`  <!-- 142 call sites -->
-- `encodeText :: ToJSON value => value -> Text`  <!-- 142 call sites -->
-- `encode :: ToJSON value => value -> Value`  <!-- 72 call sites -->
-- `null :: Value`  <!-- 58 call sites -->
-- `yield :: value -> Parser value`  <!-- 47 call sites -->
-- `decode :: FromJSON value => Value -> Result Text value`  <!-- 43 call sites -->
-- `withObject :: Text -> (Object -> Parser value) -> Value -> Parser value`  <!-- 38 call sites -->
-- `decodeBytes :: FromJSON value => Bytes -> Result Text value`  <!-- 8 call sites -->
+- `object :: [(Text, Value)] -> Value`  <!-- 103 call sites -->
+- `toJSON :: ToJSON a => a -> Value`  <!-- 98 call sites -->
+- `yield :: value -> Parser value`  <!-- 44 call sites -->
+- `withObject :: Text -> (Object -> Parser value) -> Value -> Parser value`  <!-- 35 call sites -->
+- `encode :: ToJSON value => value -> Value`  <!-- 28 call sites -->
+- `encodeText :: ToJSON value => value -> Text`  <!-- 25 call sites -->
+- `decode :: FromJSON value => Value -> Result Text value`  <!-- 19 call sites -->
+- `decodeBytes :: FromJSON value => Bytes -> Result Text value`  <!-- 6 call sites -->
+- `decodeText :: FromJSON value => Text -> Result Text value`  <!-- 5 call sites -->
+- `null :: Value`  <!-- 4 call sites -->
 
-## Layout
-- `text :: Text -> Blueprint annotation`  <!-- 244 call sites -->
-- `render :: Blueprint ann -> Text`  <!-- 48 call sites -->
-- `joinTight :: Array (Blueprint ann) -> Blueprint ann`  <!-- 38 call sites -->
-- `defaultRenderOptions :: RenderOptions`  <!-- 28 call sites -->
-- `renderWith :: RenderOptions -> Blueprint ann -> Text`  <!-- 28 call sites -->
-- `trySingleLine :: Blueprint ann -> Blueprint ann`  <!-- 21 call sites -->
-- `withAnnotation :: ann -> Blueprint ann -> Blueprint ann`  <!-- 16 call sites -->
-- `empty :: Blueprint annotation`  <!-- 15 call sites -->
-- `hardLine :: Blueprint annotation`  <!-- 15 call sites -->
-- `joinWords :: Array (Blueprint ann) -> Blueprint ann`  <!-- 14 call sites -->
+## Log
+- `debug :: HasCallStack => Text -> Task w Unit`  <!-- 115 call sites -->
+- `warn :: HasCallStack => Text -> Task w Unit`  <!-- 65 call sites -->
+- `withScope :: Array (Text, Text) -> Task err value -> Task err value`  <!-- 56 call sites -->
+- `info :: HasCallStack => Text -> Task w Unit`  <!-- 33 call sites -->
+- `critical :: HasCallStack => Text -> Task w Unit`  <!-- 10 call sites -->
 
 ## Map
-- `empty :: Map k a`  <!-- 224 call sites -->
-- `set :: (Eq key, Ord key) => key -> value -> Map key value -> Map key value`  <!-- 66 call sites -->
-- `get :: (Eq key, Ord key) => key -> Map key value -> Maybe value`  <!-- 50 call sites -->
-- `length :: Map key value -> Int`  <!-- 41 call sites -->
-- `fromArray :: (Eq key, Ord key) => Array (key, value) -> Map key value`  <!-- 39 call sites -->
-- `entries :: Map key value -> Array (key, value)`  <!-- 21 call sites -->
-- `values :: Map key value -> Array value`  <!-- 12 call sites -->
-- `getOrElse :: (Eq key, Ord key) => key -> value -> Map key value -> value`  <!-- 8 call sites -->
+- `set :: (Eq key, Ord key) => key -> value -> Map key value -> Map key value`  <!-- 57 call sites -->
+- `empty :: Map k a`  <!-- 56 call sites -->
+- `get :: (Eq key, Ord key) => key -> Map key value -> Maybe value`  <!-- 41 call sites -->
+- `entries :: Map key value -> Array (key, value)`  <!-- 20 call sites -->
+- `length :: Map key value -> Int`  <!-- 11 call sites -->
+- `values :: Map key value -> Array value`  <!-- 9 call sites -->
+- `getOrElse :: (Eq key, Ord key) => key -> value -> Map key value -> value`  <!-- 7 call sites -->
 - `remove :: Ord key => key -> Map key value -> Map key value`  <!-- 7 call sites -->
-- `mapValues :: (valueA -> valueB) -> Map key valueA -> Map key valueB`  <!-- 3 call sites -->
+- `fromArray :: (Eq key, Ord key) => Array (key, value) -> Map key value`  <!-- 4 call sites -->
+- `mapValues :: (valueA -> valueB) -> Map key valueA -> Map key valueB`  <!-- 2 call sites -->
+
+## Parser
+- `char :: Char -> Parser Char`  <!-- 32 call sites -->
+- `yield :: value -> Parser value`  <!-- 32 call sites -->
+- `spaces :: Parser Unit`  <!-- 28 call sites -->
+- `choice :: Array (Parser value) -> Parser value`  <!-- 18 call sites -->
+- `map :: (input -> output) -> Parser input -> Parser output`  <!-- 15 call sites -->
+- `text :: Text -> Parser Text`  <!-- 13 call sites -->
+- `backtrack :: Parser value -> Parser value`  <!-- 9 call sites -->
+- `alphaNum :: Parser Char`  <!-- 8 call sites -->
+- `notFollowedBy :: Parser value -> Parser Unit`  <!-- 7 call sites -->
+- `whitespace :: Parser Unit`  <!-- 7 call sites -->
 
 ## ConcurrentVar
-- `modify :: (value -> value) -> ConcurrentVar value -> Task w Unit`  <!-- 126 call sites -->
-- `containing :: value -> Task w (ConcurrentVar value)`  <!-- 113 call sites -->
-- `peek :: ConcurrentVar value -> Task w value`  <!-- 98 call sites -->
-- `get :: ConcurrentVar value -> Task w value`  <!-- 43 call sites -->
-- `set :: value -> ConcurrentVar value -> Task w ()`  <!-- 18 call sites -->
-- `new :: forall value {w}. Task w (ConcurrentVar value)`  <!-- 16 call sites -->
-- `swap :: value -> ConcurrentVar value -> Task w value`  <!-- 8 call sites -->
+- `modify :: (value -> value) -> ConcurrentVar value -> Task w Unit`  <!-- 38 call sites -->
+- `containing :: value -> Task w (ConcurrentVar value)`  <!-- 29 call sites -->
+- `peek :: ConcurrentVar value -> Task w value`  <!-- 27 call sites -->
 - `modifyReturning :: (value -> Task Never (value, a)) -> ConcurrentVar value -> Task w a`  <!-- 7 call sites -->
+- `swap :: value -> ConcurrentVar value -> Task w value`  <!-- 5 call sites -->
+- `get :: ConcurrentVar value -> Task w value`  <!-- 4 call sites -->
+- `set :: value -> ConcurrentVar value -> Task w ()`  <!-- 3 call sites -->
+- `new :: forall value {w}. Task w (ConcurrentVar value)`  <!-- 2 call sites -->
+
+## Bytes
+- `unwrap :: Bytes -> ByteString`  <!-- 41 call sites -->
+- `fromLegacy :: ByteString -> Bytes`  <!-- 29 call sites -->
+- `toLazyLegacy :: Bytes -> LazyByteString`  <!-- 16 call sites -->
+- `length :: Bytes -> Int`  <!-- 3 call sites -->
+- `pack :: [Word8] -> Bytes`  <!-- 3 call sites -->
+- `toBase64 :: Bytes -> Bytes`  <!-- 3 call sites -->
+- `dropEnd :: Int -> Bytes -> Bytes`  <!-- 2 call sites -->
+- `isSuffixOf :: Bytes -> Bytes -> Bool`  <!-- 2 call sites -->
+- `splitOnce :: Bytes -> Bytes -> Maybe (Bytes, Bytes)`  <!-- 2 call sites -->
+- `fromLazyLegacy :: LazyByteString -> Bytes`  <!-- 1 call sites -->
+
+## Maybe
+- `withDefault :: a -> Maybe a -> a`  <!-- 56 call sites -->
+- `map :: (a -> b) -> Maybe a -> Maybe b`  <!-- 11 call sites -->
+- `getOrDie :: HasCallStack => Maybe a -> a`  <!-- 8 call sites -->
+- `andThen :: (a -> Maybe b) -> Maybe a -> Maybe b`  <!-- 3 call sites -->
+
+## Integration
+- `action :: (ActionContext -> Task IntegrationError (Maybe CommandPayload)) -> Action`  <!-- 26 call sites -->
+- `outbound :: ToAction config => config -> Action`  <!-- 17 call sites -->
+- `emitCommand :: forall command (name :: Symbol). (ToJSON command, name ~ NameOf command, KnownSymbol name) => command -> Task IntegrationError (Maybe CommandPayload)`  <!-- 10 call sites -->
+- `toAction :: ToAction config => config -> Action`  <!-- 6 call sites -->
+- `fromMap :: Map Text ValidatedOAuth2ProviderConfig -> ImmutableProviderRegistry`  <!-- 4 call sites -->
+- `runAction :: ActionContext -> Action -> Task IntegrationError (Maybe CommandPayload)`  <!-- 4 call sites -->
+- `batch :: Array Action -> Outbound`  <!-- 2 call sites -->
+- `getActions :: Outbound -> Array Action`  <!-- 1 call sites -->
+- `inbound :: forall command (name :: Symbol). (ToJSON command, name ~ NameOf command, KnownSymbol name) => InboundConfig command -> Inbound`  <!-- 1 call sites -->
+- `lookup :: Text -> ImmutableProviderRegistry -> Maybe ValidatedOAuth2ProviderConfig`  <!-- 1 call sites -->
+
+## Config
+- `get :: (Typeable config, HasCallStack) => config`  <!-- 13 call sites -->
+- `defaultsTo :: Lift value => value -> FieldDef -> FieldDef`  <!-- 12 call sites -->
+- `doc :: Text -> FieldDef -> FieldDef`  <!-- 12 call sites -->
+- `envVar :: Text -> FieldDef -> FieldDef`  <!-- 10 call sites -->
+- `field :: forall {k} (fieldType :: k). Typeable fieldType => Text -> FieldDef`  <!-- 10 call sites -->
+- `required :: FieldDef -> FieldDef`  <!-- 2 call sites -->
+- `cliLong :: Text -> FieldDef -> FieldDef`  <!-- 1 call sites -->
+- `cliShort :: Char -> FieldDef -> FieldDef`  <!-- 1 call sites -->
+- `load :: HasParser config => Task Text config`  <!-- 1 call sites -->
+- `secret :: FieldDef -> FieldDef`  <!-- 1 call sites -->
+
+## Var
+- `set :: value -> Var value -> Task err Unit`  <!-- 23 call sites -->
+- `get :: Var value -> Task err value`  <!-- 19 call sites -->
+- `new :: value -> Task err (Var value)`  <!-- 13 call sites -->
+- `decrement :: Num number => Var number -> Task err Unit`  <!-- 2 call sites -->
+
+## LinkedList
+- `map :: (a -> b) -> LinkedList a -> LinkedList b`  <!-- 15 call sites -->
+- `any :: (a -> Bool) -> LinkedList a -> Bool`  <!-- 6 call sites -->
+- `filter :: (a -> Bool) -> LinkedList a -> LinkedList a`  <!-- 5 call sites -->
+- `reverse :: LinkedList a -> LinkedList a`  <!-- 5 call sites -->
+- `length :: LinkedList a -> Int`  <!-- 3 call sites -->
+- `find :: (a -> Bool) -> LinkedList a -> Maybe a`  <!-- 2 call sites -->
+- `get :: Int -> LinkedList a -> Maybe a`  <!-- 2 call sites -->
+- `head :: LinkedList a -> Maybe a`  <!-- 2 call sites -->
+- `all :: (a -> Bool) -> LinkedList a -> Bool`  <!-- 1 call sites -->
+- `concat :: LinkedList (LinkedList a) -> LinkedList a`  <!-- 1 call sites -->
+
+## AsyncTask
+- `sleep :: Int -> Task w Unit`  <!-- 16 call sites -->
+- `run :: Show err => Task err result -> Task err (AsyncTask err result)`  <!-- 11 call sites -->
+- `runConcurrently :: Show err => (Task err a, Task err b) -> Task err (a, b)`  <!-- 8 call sites -->
+- `cancel :: AsyncTask err result -> Task Text Unit`  <!-- 5 call sites -->
+- `runAllIgnoringErrors :: Show err => Array (Task err a) -> Task w Unit`  <!-- 2 call sites -->
+- `waitCatch :: Show err => AsyncTask err result -> Task err2 (Result Text result)`  <!-- 2 call sites -->
+- `race :: Show err => Task err a -> Task err b -> Task err (RaceWinner a b)`  <!-- 1 call sites -->
+
+## Path
+- `toLinkedList :: Path -> LinkedList Char`  <!-- 18 call sites -->
+- `fromText :: Text -> Maybe Path`  <!-- 9 call sites -->
+- `toText :: Path -> Text`  <!-- 8 call sites -->
+- `append :: Path -> Path -> Path`  <!-- 3 call sites -->
+- `joinPaths :: Array Path -> Path`  <!-- 3 call sites -->
+- `fromLinkedList :: LinkedList Char -> Maybe Path`  <!-- 2 call sites -->
+- `endsWith :: Text -> Path -> Bool`  <!-- 1 call sites -->
 
 ## Uuid
-- `generate :: Task w Uuid`  <!-- 190 call sites -->
-- `nil :: Uuid`  <!-- 98 call sites -->
-- `toText :: Uuid -> Text`  <!-- 37 call sites -->
+- `generate :: Task w Uuid`  <!-- 21 call sites -->
+- `toText :: Uuid -> Text`  <!-- 8 call sites -->
+- `nil :: Uuid`  <!-- 6 call sites -->
 - `toLegacy :: Uuid -> UUID`  <!-- 5 call sites -->
 - `fromLegacy :: UUID -> Uuid`  <!-- 2 call sites -->
 - `fromText :: Text -> Maybe Uuid`  <!-- 1 call sites -->
 
-## Log
-- `debug :: HasCallStack => Text -> Task w Unit`  <!-- 117 call sites -->
-- `warn :: HasCallStack => Text -> Task w Unit`  <!-- 68 call sites -->
-- `withScope :: Array (Text, Text) -> Task err value -> Task err value`  <!-- 61 call sites -->
-- `info :: HasCallStack => Text -> Task w Unit`  <!-- 42 call sites -->
-- `critical :: HasCallStack => Text -> Task w Unit`  <!-- 12 call sites -->
-
-## Service.Application
-- `new :: Application`  <!-- 95 call sites -->
-- `runWith :: EventStore Value -> Application -> Task Text Unit`  <!-- 25 call sites -->
-- `run :: Application -> Task Text Unit`  <!-- 17 call sites -->
-- `withIntegration :: (Integration request, Typeable request, Typeable (Response request), Inspectable request) => Application -> Application`  <!-- 11 call sites -->
-- `withEventStore :: (Typeable config, EventStoreConfig eventStoreConfig) => (config -> eventStoreConfig) -> Application -> Application`  <!-- 10 call sites -->
-- `withFileUpload :: Typeable config => (config -> FileUploadConfig) -> Application -> Application`  <!-- 10 call sites -->
-- `withDispatcherConfig :: Typeable config => (config -> DispatcherConfig) -> Application -> Application`  <!-- 9 call sites -->
-- `withAuth :: Typeable config => (config -> Text) -> Application -> Application`  <!-- 8 call sites -->
-- `withOAuth2Provider :: Typeable config => (config -> OAuth2ProviderConfig) -> Application -> Application`  <!-- 8 call sites -->
-- `withHealthCheck :: Typeable config => (config -> Text) -> Application -> Application`  <!-- 7 call sites -->
-
-## Set
-- `contains :: Ord value => value -> Set value -> Bool`  <!-- 65 call sites -->
-  - `>>> contains 2 (fromLinkedList [1,2,3] :: Set Int)` → `True`
-- `fromLinkedList :: Ord value => LinkedList value -> Set value`  <!-- 53 call sites -->
-  - `>>> fromLinkedList [1,2,3,2,1] :: Set Int` → `Set [1,2,3]`
-- `size :: Set value -> Int`  <!-- 26 call sites -->
-  - `>>> size (fromLinkedList [1,2,3] :: Set Int)` → `3`
-- `empty :: Ord value => Set value`  <!-- 16 call sites -->
-  - `>>> empty :: Set Int` → `Set []`
-- `isEmpty :: Set value -> Bool`  <!-- 12 call sites -->
-  - `>>> isEmpty empty` → `True`
-- `intersection :: Ord value => Set value -> Set value -> Set value`  <!-- 10 call sites -->
-  - `>>> intersection (fromLinkedList [1,2,3] :: Set Int) (fromLinkedList [2,3,4] :: Set Int)` → `Set [2,3]`
-- `union :: Ord value => Set value -> Set value -> Set value`  <!-- 10 call sites -->
-  - `>>> union (fromLinkedList [1,2] :: Set Int) (fromLinkedList [2,3] :: Set Int)` → `Set [1,2,3]`
-- `insert :: Ord value => value -> Set value -> Set value`  <!-- 8 call sites -->
-  - `>>> insert 4 (fromLinkedList [1,2,3] :: Set Int)` → `Set [1,2,3,4]`
-- `difference :: Ord value => Set value -> Set value -> Set value`  <!-- 6 call sites -->
-  - `>>> difference (fromLinkedList [1,2,3] :: Set Int) (fromLinkedList [2,3,4] :: Set Int)` → `Set [1]`
-- `fromArray :: Ord value => Array value -> Set value`  <!-- 6 call sites -->
-  - `>>> fromArray ([1,2,3,2,1] :: Array Int) :: Set Int` → `Set [1,2,3]`
-
-## Stream
-- `toArray :: Stream value -> Task Text (Array value)`  <!-- 77 call sites -->
-- `writeItem :: value -> Stream value -> Task error Unit`  <!-- 44 call sites -->
-- `new :: forall value error. Task error (Stream value)`  <!-- 32 call sites -->
-- `end :: Stream value -> Task error Unit`  <!-- 18 call sites -->
-- `readNext :: Stream value -> Task Text (Maybe value)`  <!-- 18 call sites -->
-- `fromArray :: Array value -> Task error (Stream value)`  <!-- 14 call sites -->
-- `consume :: (accumulator -> value -> Task Text accumulator) -> accumulator -> Stream value -> Task Text accumulator`  <!-- 7 call sites -->
-- `mapStream :: (valueA -> valueB) -> Stream valueA -> Task error (Stream valueB)`  <!-- 7 call sites -->
-- `pushError :: Text -> Stream value -> Task error Unit`  <!-- 5 call sites -->
-- `consumeMaybe :: (accumulator -> value -> Task Text accumulator) -> accumulator -> Stream value -> Task Text (Maybe accumulator)`  <!-- 2 call sites -->
-
-## AsyncTask
-- `sleep :: Int -> Task w Unit`  <!-- 90 call sites -->
-- `run :: Show err => Task err result -> Task err (AsyncTask err result)`  <!-- 52 call sites -->
-- `waitFor :: Show err => AsyncTask err result -> Task err result`  <!-- 37 call sites -->
-- `runConcurrently :: Show err => (Task err a, Task err b) -> Task err (a, b)`  <!-- 17 call sites -->
-- `cancel :: AsyncTask err result -> Task Text Unit`  <!-- 7 call sites -->
-- `race :: Show err => Task err a -> Task err b -> Task err (RaceWinner a b)`  <!-- 7 call sites -->
-- `runAllIgnoringErrors :: Show err => Array (Task err a) -> Task w Unit`  <!-- 5 call sites -->
-- `waitCatch :: Show err => AsyncTask err result -> Task err2 (Result Text result)`  <!-- 3 call sites -->
-
-## Integration
-- `action :: (ActionContext -> Task IntegrationError (Maybe CommandPayload)) -> Action`  <!-- 31 call sites -->
-- `getActions :: Outbound -> Array Action`  <!-- 30 call sites -->
-- `outbound :: ToAction config => config -> Action`  <!-- 29 call sites -->
-- `emitCommand :: forall command (name :: Symbol). (ToJSON command, name ~ NameOf command, KnownSymbol name) => command -> Task IntegrationError (Maybe CommandPayload)`  <!-- 15 call sites -->
-- `fromMap :: Map Text ValidatedOAuth2ProviderConfig -> ImmutableProviderRegistry`  <!-- 15 call sites -->
-- `runAction :: ActionContext -> Action -> Task IntegrationError (Maybe CommandPayload)`  <!-- 14 call sites -->
-- `batch :: Array Action -> Outbound`  <!-- 9 call sites -->
-- `none :: Outbound`  <!-- 9 call sites -->
-- `inbound :: forall command (name :: Symbol). (ToJSON command, name ~ NameOf command, KnownSymbol name) => InboundConfig command -> Inbound`  <!-- 7 call sites -->
-- `toAction :: ToAction config => config -> Action`  <!-- 7 call sites -->
-
-## Result
-- `isErr :: Result a b -> Bool`  <!-- 108 call sites -->
-- `isOk :: Result a b -> Bool`  <!-- 44 call sites -->
-- `map :: (a -> value) -> Result x a -> Result x value`  <!-- 14 call sites -->
-- `fromEither :: Either a b -> Result a b`  <!-- 10 call sites -->
-- `withDefault :: a -> Result b a -> a`  <!-- 3 call sites -->
-- `fromMaybe :: a -> Maybe b -> Result a b`  <!-- 2 call sites -->
-- `toEither :: Result a b -> Either a b`  <!-- 1 call sites -->
-- `toMaybe :: Result a b -> Maybe b`  <!-- 1 call sites -->
-
 ## ConcurrentMap
-- `new :: forall key value {w}. Task w (ConcurrentMap key value)`  <!-- 58 call sites -->
-- `set :: (Hashable key, Eq key) => key -> value -> ConcurrentMap key value -> Task w Unit`  <!-- 39 call sites -->
-- `get :: (Hashable key, Eq key) => key -> ConcurrentMap key value -> Task w (Maybe value)`  <!-- 25 call sites -->
-- `remove :: (Hashable key, Eq key) => key -> ConcurrentMap key value -> Task w Unit`  <!-- 9 call sites -->
-- `length :: ConcurrentMap key value -> Task w Int`  <!-- 8 call sites -->
-- `entries :: ConcurrentMap key value -> Task w (Array (key, value))`  <!-- 5 call sites -->
-- `getOrInsert :: (Hashable key, Eq key) => key -> value -> ConcurrentMap key value -> Task w (value, Maybe value)`  <!-- 5 call sites -->
+- `new :: forall key value {w}. Task w (ConcurrentMap key value)`  <!-- 10 call sites -->
+- `get :: (Hashable key, Eq key) => key -> ConcurrentMap key value -> Task w (Maybe value)`  <!-- 7 call sites -->
+- `getOrInsert :: (Hashable key, Eq key) => key -> value -> ConcurrentMap key value -> Task w (value, Maybe value)`  <!-- 4 call sites -->
+- `remove :: (Hashable key, Eq key) => key -> ConcurrentMap key value -> Task w Unit`  <!-- 4 call sites -->
+- `set :: (Hashable key, Eq key) => key -> value -> ConcurrentMap key value -> Task w Unit`  <!-- 4 call sites -->
+- `entries :: ConcurrentMap key value -> Task w (Array (key, value))`  <!-- 3 call sites -->
 - `forEachChunked :: (Hashable key, Eq key) => Int -> (key -> value -> Task w Unit) -> ConcurrentMap key value -> Task w Unit`  <!-- 3 call sites -->
-- `clear :: ConcurrentMap key value -> Task w Unit`  <!-- 2 call sites -->
-- `contains :: (Hashable key, Eq key) => key -> ConcurrentMap key value -> Task w Bool`  <!-- 2 call sites -->
+- `removeIf :: (Hashable key, Eq key) => key -> (value -> Bool) -> ConcurrentMap key value -> Task w (Maybe value)`  <!-- 2 call sites -->
+- `clear :: ConcurrentMap key value -> Task w Unit`  <!-- 1 call sites -->
+- `getOrInsertIfM :: (Hashable key, Eq key) => key -> value -> (value -> STM Bool) -> ConcurrentMap key value -> Task w (value, Maybe value)`  <!-- 1 call sites -->
 
-## Maybe
-- `withDefault :: a -> Maybe a -> a`  <!-- 64 call sites -->
-- `getOrDie :: HasCallStack => Maybe a -> a`  <!-- 60 call sites -->
-- `map :: (a -> b) -> Maybe a -> Maybe b`  <!-- 18 call sites -->
-- `andThen :: (a -> Maybe b) -> Maybe a -> Maybe b`  <!-- 3 call sites -->
+---
+
+# Test-code usage — the spec-writing API
+
+Ranked from call sites in spec/test files only. Reach for these
+when WRITING TESTS; they are not feature-code frequency signal.
+
+## Task
+- `mapError :: (err1 -> err2) -> Task err1 value -> Task err2 value`  <!-- 726 test call sites -->
+- `yield :: value -> Task w value`  <!-- 411 test call sites -->
+- `asResult :: Task err value -> Task err2 (Result err value)`  <!-- 268 test call sites -->
+- `mapArray :: (element -> Task err output) -> Array element -> Task err (Array output)`  <!-- 118 test call sites -->
+- `throw :: err -> Task err w`  <!-- 98 test call sites -->
+- `fromIO :: IO value -> Task w value`  <!-- 90 test call sites -->
+- `andThen :: (input -> Task err output) -> Task err input -> Task err output`  <!-- 89 test call sites -->
+- `map :: (input -> output) -> Task err input -> Task err output`  <!-- 78 test call sites -->
+
+## Array
+- `length :: Array a -> Int`  <!-- 252 test call sites -->
+- `fromLinkedList :: LinkedList a -> Array a`  <!-- 206 test call sites -->
+- `empty :: Array a`  <!-- 194 test call sites -->
+- `map :: (a -> b) -> Array a -> Array b`  <!-- 114 test call sites -->
+- `get :: Int -> Array a -> Maybe a`  <!-- 69 test call sites -->
+- `wrap :: a -> Array a`  <!-- 44 test call sites -->
+- `initialize :: Int -> (Int -> a) -> Array a`  <!-- 43 test call sites -->
+- `contains :: Eq value => value -> Array value -> Bool`  <!-- 37 test call sites -->
+
+## Parser
+- `run :: Parser value -> Text -> Result ParseError value`  <!-- 247 test call sites -->
+- `char :: Char -> Parser Char`  <!-- 137 test call sites -->
+- `text :: Text -> Parser Text`  <!-- 67 test call sites -->
+- `formatError :: ParseError -> Text`  <!-- 40 test call sites -->
+- `keepRight :: Parser leading -> Parser value -> Parser value`  <!-- 24 test call sites -->
+- `pair :: Parser left -> Parser right -> Parser (left, right)`  <!-- 16 test call sites -->
+- `decimal :: Parser Int`  <!-- 14 test call sites -->
+- `anyChar :: Parser Char`  <!-- 11 test call sites -->
+
+## Text
+- `contains :: Text -> Text -> Bool`  <!-- 432 test call sites -->
+- `toBytes :: Text -> Bytes`  <!-- 69 test call sites -->
+- `fromLinkedList :: LinkedList Char -> Text`  <!-- 56 test call sites -->
+- `length :: Text -> Int`  <!-- 40 test call sites -->
+- `repeat :: Int -> Text -> Text`  <!-- 36 test call sites -->
+- `toLinkedList :: Text -> LinkedList Char`  <!-- 29 test call sites -->
+- `startsWith :: Text -> Text -> Bool`  <!-- 15 test call sites -->
+- `all :: (Char -> Bool) -> Text -> Bool`  <!-- 10 test call sites -->
+
+## Layout
+- `text :: Text -> Blueprint annotation`  <!-- 230 test call sites -->
+- `render :: Blueprint ann -> Text`  <!-- 48 test call sites -->
+- `joinTight :: Array (Blueprint ann) -> Blueprint ann`  <!-- 38 test call sites -->
+- `defaultRenderOptions :: RenderOptions`  <!-- 28 test call sites -->
+- `renderWith :: RenderOptions -> Blueprint ann -> Text`  <!-- 28 test call sites -->
+- `trySingleLine :: Blueprint ann -> Blueprint ann`  <!-- 21 test call sites -->
+- `withAnnotation :: ann -> Blueprint ann -> Blueprint ann`  <!-- 16 test call sites -->
+- `empty :: Blueprint annotation`  <!-- 15 test call sites -->
+
+## Json
+- `toJSON :: ToJSON a => a -> Value`  <!-- 146 test call sites -->
+- `decodeText :: FromJSON value => Text -> Result Text value`  <!-- 137 test call sites -->
+- `encodeText :: ToJSON value => value -> Text`  <!-- 117 test call sites -->
+- `object :: [(Text, Value)] -> Value`  <!-- 105 test call sites -->
+- `null :: Value`  <!-- 54 test call sites -->
+- `encode :: ToJSON value => value -> Value`  <!-- 44 test call sites -->
+- `decode :: FromJSON value => Value -> Result Text value`  <!-- 24 test call sites -->
+- `withObject :: Text -> (Object -> Parser value) -> Value -> Parser value`  <!-- 3 test call sites -->
