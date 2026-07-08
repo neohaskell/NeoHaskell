@@ -76,7 +76,8 @@ ADRs document significant architectural decisions made during the development of
 | [0064](0064-optional-sslmode-tls-hardening.md) | Optional `sslmode` TLS Hardening for Postgres Connections | Proposed |
 | [0065](0065-acs-email-integration.md) | Azure Communication Services Email Integration | Proposed |
 | [0066](0066-two-database-api-search.md) | Two-database API search (`./dev api`) | Accepted |
-| [0067](0067-contract-delta-spec-gate.md) | Contract-delta spec gate and resumable draft-PR flow | Proposed |
+| [0067](0067-contract-delta-spec-gate.md) | Contract-delta spec gate and resumable draft-PR flow | Accepted |
+| [0068](0068-failure-asset-delta-and-learning-loop.md) | Failure→asset-delta protocol and the learning loop | Accepted |
 
 ## Creating New ADRs
 

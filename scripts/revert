@@ -1,0 +1,144 @@
+#!/usr/bin/env python3
+"""Kill switch — revert a merged change (Phase 6, task 2; ADR-0068).
+
+Maintainer-triggered, notify-only: this creates a revert branch + PR; it never
+merges. Human tool AND the callee of `.github/workflows/revert.yml` (which gates
+on the maintainer author-association before invoking it).
+
+Usage:
+  revert <commit> [--base main] [--no-pr]   revert <commit>, open a revert PR
+  revert <commit> --dry-run                 create the revert branch, no push/PR
+  revert --self-test                        temp-repo dry run (doctor/CI)
+
+Run: ./dev revert <commit>
+"""
+
+import argparse
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+
+
+def git(args, cwd, check=True):
+    p = subprocess.run(["git", *args], cwd=cwd, text=True, capture_output=True)
+    if check and p.returncode != 0:
+        sys.exit(f"revert: `git {' '.join(args)}` failed: {p.stderr.strip() or p.stdout.strip()}")
+    return p
+
+
+def do_revert(commit, base, dry_run, cwd=ROOT, open_pr=True):
+    if git(["cat-file", "-e", f"{commit}^{{commit}}"], cwd, check=False).returncode != 0:
+        sys.exit(f"revert: no such commit {commit!r}")
+    sha = git(["rev-parse", "--short", commit], cwd).stdout.strip()
+    branch = f"revert/{sha}"
+    if base:
+        git(["fetch", "origin", base], cwd)
+    git(["checkout", "-b", branch, f"origin/{base}" if base else "HEAD"], cwd)
+    rev = git(["revert", "--no-edit", commit], cwd, check=False)
+    if rev.returncode != 0:
+        # A conflicting revert must not leave a half-reverted branch (or push one):
+        # abort the in-progress revert, then exit with recovery guidance. Same clean
+        # failure for the human path and the revert.yml workflow step.
+        git(["revert", "--abort"], cwd, check=False)
+        where = f"origin/{base}" if base else "the base branch"
+        sys.exit(f"revert: `git revert {sha}` did not apply cleanly — it conflicts with {where}. "
+                 f"Aborted; nothing was pushed. Resolve manually: check out a fresh branch off "
+                 f"{where}, run `git revert {commit}`, fix the conflicts, then push.\n"
+                 f"{(rev.stderr or rev.stdout).strip()}")
+    if dry_run:
+        print(f"revert: [dry-run] revert commit for {sha} created on {branch} (no push/PR)")
+        return 0
+    git(["push", "origin", branch], cwd)
+    if not open_pr:
+        print(f"revert: pushed {branch} for {sha} (no PR requested)")
+        return 0
+    pr = subprocess.run(
+        ["gh", "pr", "create", "--base", base or "main", "--head", branch,
+         "--title", f"Revert {sha}",
+         "--body", f"Automated revert of `{commit}` (kill switch — ADR-0068). "
+                   "A maintainer triggered this; a maintainer merges it."],
+        cwd=cwd, text=True, capture_output=True)
+    if pr.returncode != 0:
+        # the branch is pushed but the PR failed — surface it, don't claim success
+        sys.exit(f"revert: pushed {branch} but `gh pr create` failed: "
+                 f"{(pr.stderr or pr.stdout).strip()} — open the PR manually from {branch}")
+    print(f"revert: opened revert PR for {sha} ({branch})")
+    return 0
+
+
+def self_test():
+    fails = 0
+    with tempfile.TemporaryDirectory() as tmp:
+        d = Path(tmp)
+        git(["init", "-q", "-b", "main"], d)
+        git(["config", "user.email", "t@t"], d)
+        git(["config", "user.name", "t"], d)
+        (d / "f.txt").write_text("v1\n")
+        git(["add", "."], d)
+        git(["commit", "-qm", "A"], d)
+        (d / "f.txt").write_text("v2\n")
+        git(["add", "."], d)
+        git(["commit", "-qm", "B"], d)
+        bad_commit = git(["rev-parse", "HEAD"], d).stdout.strip()
+
+        if do_revert(bad_commit, base=None, dry_run=True, cwd=d) != 0:
+            print("revert self-test FAIL: dry-run returned nonzero")
+            fails += 1
+        if (d / "f.txt").read_text() != "v1\n":
+            print(f"revert self-test FAIL: content not restored ({(d / 'f.txt').read_text()!r})")
+            fails += 1
+        cur = git(["branch", "--show-current"], d).stdout.strip()
+        if not cur.startswith("revert/"):
+            print(f"revert self-test FAIL: branch is {cur!r}, want revert/<sha>")
+            fails += 1
+        try:
+            do_revert("deadbeefcafe", base=None, dry_run=True, cwd=d)
+            print("revert self-test FAIL: a bogus commit was accepted")
+            fails += 1
+        except SystemExit:
+            pass
+
+        # a conflicting revert aborts cleanly — no unmerged paths, nothing pushed
+        git(["checkout", "-q", "main"], d)
+        (d / "f.txt").write_text("conflict-base\n")
+        git(["commit", "-qam", "C"], d)
+        mid = git(["rev-parse", "HEAD"], d).stdout.strip()
+        (d / "f.txt").write_text("conflict-top\n")
+        git(["commit", "-qam", "D"], d)
+        try:
+            do_revert(mid, base=None, dry_run=True, cwd=d)
+            print("revert self-test FAIL: a conflicting revert was not detected")
+            fails += 1
+        except SystemExit as e:
+            if "did not apply cleanly" not in str(e):
+                print(f"revert self-test FAIL: unexpected conflict message: {e}")
+                fails += 1
+        porcelain = git(["status", "--porcelain"], d).stdout
+        if any(line[:2] in ("UU", "AA", "DD") for line in porcelain.splitlines()):
+            print(f"revert self-test FAIL: conflict left unmerged paths: {porcelain!r}")
+            fails += 1
+
+    if fails == 0:
+        print("revert self-test: OK — revert branch created, content restored, bad commit "
+              "rejected, conflicting revert aborted cleanly")
+    return 1 if fails else 0
+
+
+def main():
+    args = sys.argv[1:]
+    if args and args[0] == "--self-test":
+        return self_test()
+    p = argparse.ArgumentParser(prog="revert")
+    p.add_argument("commit")
+    p.add_argument("--base", default="main")
+    p.add_argument("--dry-run", action="store_true")
+    p.add_argument("--no-pr", action="store_true")
+    a = p.parse_args(args)
+    return do_revert(a.commit, a.base, a.dry_run, open_pr=not a.no_pr)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -34,8 +34,10 @@ usage: ./dev <verb> [args]
   api <query>           search the NeoHaskell API surface — by type
                           ("Text -> Int") or by name (toInt)
   spec-check [files]    validate contract-delta specs in docs/changes/
-                          (--plan <spec> prints review + test-impact joins;
-                          --reviews-pr [base] gates design-review records)
+                          (--plan <spec>: review + test-impact joins;
+                          --reviews-pr [base]: gate design-review records;
+                          --criteria <spec>: criteria table as JSON;
+                          --criteria-tests [base]: gate criterion proving-tests exist)
   spec-drift <spec|--pr>  verify the generated API surface honors a spec's
                           promised contract delta (PR-ready gate)
   pipeline <cmd>        pipeline run state (.pipeline/state.json): init,
@@ -44,6 +46,16 @@ usage: ./dev <verb> [args]
   bench                 run the perf suites against telemetry/bench-budgets.json
                           (nightly in CI; needs POSTGRES_AVAILABLE=true for
                           the Postgres entries)
+  testbed               run the testbed acceptance suite (Hurl) via the toolchain
+  changelog <spec|--check|--append>  changelog entries from contract-delta specs
+                          (breaking = a removed signature line; --check gates CI)
+  revert <commit>       kill switch: open a revert PR for a merged change
+                          (--dry-run to stage it locally without pushing)
+  retrospect [--since D] weekly telemetry digest + recommendation recorder
+                          (--record '<json>'; --set/--prune-golden lifecycle)
+  telemetry <cmd>       pipeline run telemetry (runs.jsonl): start, stage, wait,
+                          rebuilt, consult, finish, golden — pipeline-only by
+                          doctrine (see telemetry/SCHEMA.md); never for ad-hoc runs
   doctor                harness self-check: every script has a verb or a
                           reasoned exemption; no dangling verbs (CI-enforced)
   exec <cmd> [args]     run any command with the pinned toolchain
@@ -74,6 +86,11 @@ case "${VERB}" in
   spec-drift) exec scripts/spec-drift "$@" ;;
   pipeline) exec scripts/pipeline-state "$@" ;;
   bench)    exec scripts/bench "$@" ;;
+  testbed)  exec scripts/testbed "$@" ;;
+  changelog) exec scripts/changelog "$@" ;;
+  revert)   exec scripts/revert "$@" ;;
+  retrospect) exec scripts/retrospect "$@" ;;
+  telemetry) exec scripts/telemetry.py "$@" ;;
   doctor)   exec scripts/doctor "$@" ;;
   exec)     exec scripts/with-toolchain "$@" ;;
   ""|help|-h|--help) usage ;;

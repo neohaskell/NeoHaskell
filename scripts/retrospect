@@ -1,0 +1,462 @@
+#!/usr/bin/env python3
+"""Retrospective harness + weekly-review digest (Phase 6, tasks 5+6; ADR-0068).
+
+Deterministic half of the learning loop: it reads `telemetry/runs.jsonl`, prints
+the weekly-review digest (stage times, failure labels, invented-API trend vs the
+first-5-runs baseline, waiting-on-human split, asset usage), and validates the
+frontier-model miner's recommendations against the closed contract before they
+land in `telemetry/recommendations.jsonl`. The judgement half is the
+`neohaskell-retrospective-miner` skill; this is the gate around it.
+
+Modes:
+  retrospect [--since YYYY-MM-DD]   print the weekly digest (miner + review input)
+  retrospect --record '<json>'      validate one recommendation against the
+                                    contract; append to recommendations.jsonl if OK
+  retrospect --set '<week>' '<friction-substr>' --status implemented|pruned
+                                    [--validated true|false]   flip a recorded
+                                    recommendation's lifecycle in place (rule d)
+  retrospect --prune-golden [--weeks 4]   delete golden dirs older than the window
+  retrospect --self-test            fixtures (doctor/CI)
+
+Run: ./dev retrospect
+"""
+
+import json
+import re
+import shutil
+import sys
+from datetime import datetime
+from pathlib import Path
+
+sys.dont_write_bytecode = True
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import telemetry  # noqa: E402 — single source of the delta-type taxonomy
+
+ROOT = Path(__file__).resolve().parent.parent
+RUNS = ROOT / "telemetry" / "runs.jsonl"
+RECOMMENDATIONS = ROOT / "telemetry" / "recommendations.jsonl"
+GOLDEN = ROOT / "telemetry" / "golden"
+
+# schema <= 1 is the Phase-1 pre-instrumentation dummy — not a real pipeline run.
+DUMMY_SCHEMA_MAX = 1
+WEEK_RE = re.compile(r"^\d{4}-W\d{2}$")
+STATUSES = ("proposed", "implemented", "pruned")
+
+
+def load_runs(path, include_dummy=False):
+    """Real pipeline runs from a runs.jsonl. A malformed line is skipped with a
+    stderr warning (one bad hand-edit must not crash the whole digest); the
+    Phase-1 schema-v1 dummy is excluded unless `include_dummy` — the loop
+    activates only once real (schema>=2) runs land."""
+    if not path.exists():
+        return []
+    runs = []
+    for i, line in enumerate(path.read_text().splitlines(), start=1):
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            rec = json.loads(line)
+        except json.JSONDecodeError as e:
+            print(f"retrospect: skipping malformed runs.jsonl line {i} ({e})", file=sys.stderr)
+            continue
+        if not include_dummy and int(rec.get("schema", 0) or 0) <= DUMMY_SCHEMA_MAX:
+            continue
+        runs.append(rec)
+    return runs
+
+
+def _ts(s):
+    return datetime.strptime(s, "%Y-%m-%dT%H:%M:%SZ")
+
+
+def stage_seconds(stage):
+    if stage.get("start") and stage.get("stop"):
+        return (_ts(stage["stop"]) - _ts(stage["start"])).total_seconds()
+    return None
+
+
+def invented(run):
+    return sum(int(s.get("invented_api_events", 0) or 0) for s in run.get("stages", {}).values())
+
+
+def invented_baseline(all_runs):
+    """Mean invented-API events over the first 5 runs with outcome in {ok, failed}
+    (SCHEMA.md durable definition)."""
+    eligible = [r for r in all_runs if r.get("outcome") in ("ok", "failed")][:5]
+    if not eligible:
+        return None
+    return sum(invented(r) for r in eligible) / len(eligible)
+
+
+def golden_dirs(root=None):
+    g = root if root is not None else GOLDEN
+    return sorted(p for p in g.iterdir() if p.is_dir()) if g.exists() else []
+
+
+def _newest_mtime(d):
+    """Newest mtime under a golden dir (its own if empty) — the pruning clock."""
+    return max([f.stat().st_mtime for f in d.rglob("*")] + [d.stat().st_mtime])
+
+
+def golden_report():
+    dirs = golden_dirs()
+    if not dirs:
+        return ["- (none)"]
+    oldest = min(dirs, key=_newest_mtime)
+    when = datetime.fromtimestamp(_newest_mtime(oldest)).strftime("%Y-%m-%d")
+    return [f"- {len(dirs)} dir(s); oldest `{oldest.name}` (last touched {when})",
+            "- prune with `./dev retrospect --prune-golden [--weeks 4]`"]
+
+
+def cmd_prune_golden(weeks, root=None):
+    """Delete golden dirs older than `weeks` (retention gate for SCHEMA's policy)."""
+    if weeks <= 0:
+        print("retrospect: --weeks must be a positive integer", file=sys.stderr)
+        return 2
+    cutoff = datetime.now().timestamp() - weeks * 7 * 86400
+    dirs = golden_dirs(root)
+    pruned = 0
+    for d in dirs:
+        if _newest_mtime(d) < cutoff:
+            shutil.rmtree(d)
+            pruned += 1
+    print(f"retrospect: pruned {pruned}/{len(dirs)} golden dir(s) older than {weeks} week(s)")
+    return 0
+
+
+def digest(runs, all_runs):
+    """Markdown weekly digest for `runs` (the window), with the invented-API
+    baseline computed over `all_runs` (history)."""
+    lines = [f"# Weekly telemetry digest — {len(runs)} real run(s) (schema-v1 dummy excluded)", ""]
+    if not runs:
+        lines.append("_No real runs in the window. The loop activates once real runs land — "
+                     "do not mine the schema-v1 dummy._")
+        lines += ["", "## Golden artifacts", ""] + golden_report()
+        return "\n".join(lines) + "\n"
+
+    outcomes = {}
+    labels = {}
+    stage_secs = {}
+    waits = []
+    assets = {}
+    for r in runs:
+        outcomes[r.get("outcome")] = outcomes.get(r.get("outcome"), 0) + 1
+        if r.get("failure_label"):
+            labels[r["failure_label"]] = labels.get(r["failure_label"], 0) + 1
+        waits.append(r.get("waiting_on_human_s", 0) or 0)
+        stages = r.get("stages", {})
+        if isinstance(stages, dict):
+            for name, st in stages.items():
+                if not isinstance(st, dict):
+                    continue
+                sec = stage_seconds(st)
+                if sec is not None:
+                    stage_secs.setdefault(name, []).append(sec)
+        consulted = r.get("assets_consulted", []) or []
+        if isinstance(consulted, list):
+            for a in consulted:
+                assets[a] = assets.get(a, 0) + 1
+
+    lines += ["## Outcomes", ""]
+    lines += [f"- {k}: {v}" for k, v in sorted(outcomes.items(), key=lambda kv: str(kv[0]))]
+    lines += ["", "## Failure labels", ""]
+    lines += ([f"- {k}: {v}" for k, v in sorted(labels.items(), key=lambda kv: -kv[1])]
+              or ["- (none)"])
+
+    lines += ["", "## Stage time (mean seconds)", ""]
+    for name in telemetry.STAGES:
+        secs = stage_secs.get(name)
+        if secs:
+            lines.append(f"- {name}: {sum(secs) / len(secs):.0f}s (n={len(secs)})")
+
+    base = invented_baseline(all_runs)
+    win = [invented(r) for r in runs]
+    win_mean = sum(win) / len(win) if win else 0
+    lines += ["", "## Invented-API trend", ""]
+    if base is None:
+        lines.append(f"- window mean {win_mean:.2f}; baseline not yet established "
+                     "(need 5 ok/failed runs)")
+    else:
+        arrow = "↓" if win_mean < base else ("↑" if win_mean > base else "→")
+        lines.append(f"- baseline {base:.2f} → window {win_mean:.2f} {arrow}")
+
+    lines += ["", "## Waiting-on-human", "",
+              f"- total {sum(waits)}s across {len(waits)} run(s) "
+              f"(mean {sum(waits) / len(waits):.0f}s)"]
+    lines += ["", "## Assets consulted (frequency — never-consulted are PRUNE candidates)", ""]
+    lines += ([f"- {k}: {v}" for k, v in sorted(assets.items(), key=lambda kv: -kv[1])]
+              or ["- (none logged — wire `./dev telemetry consult` into the stages)"])
+    lines += ["", "## Golden artifacts", ""] + golden_report()
+    lines += ["", "## Benchmarks", "",
+              "- trend lives in the nightly `bench-results` artifact (nightly-bench.yml, "
+              "90-day retention); calibrate `telemetry/bench-budgets.json` here."]
+    return "\n".join(lines) + "\n"
+
+
+REQUIRED = ("week", "friction", "evidence", "delta_type", "destination", "estimated_saving_s")
+
+
+def validate_recommendation(rec):
+    """Contract enforcement (ADR-0068). Returns [errors]; empty = accept."""
+    errs = []
+    for k in REQUIRED:
+        if k not in rec:
+            errs.append(f"missing required field `{k}`")
+    if errs:
+        return errs
+    if rec["delta_type"] not in telemetry.DELTA_TYPES:
+        errs.append(f"delta_type `{rec['delta_type']}` is out of taxonomy "
+                    f"({', '.join(telemetry.DELTA_TYPES)}) — escalate to the maintainer, "
+                    "never auto-record (ADR-0068 rule c)")
+    if not WEEK_RE.match(str(rec.get("week", ""))):
+        errs.append("week must be an ISO week `YYYY-Www` (e.g. 2026-W28)")
+    ev = rec.get("evidence")
+    if not isinstance(ev, list) or len({str(e).split(':')[0] for e in ev}) < 2:
+        errs.append("evidence must cite >=2 INDEPENDENT runs (rule b: no one-off deltas)")
+    if not str(rec.get("friction", "")).strip():
+        errs.append("friction must be a cited observation (rule a)")
+    # a PRUNE saves surface, not seconds — 0 is legitimate; everything else must be
+    # a measured positive cost (rule a).
+    is_prune = rec.get("delta_type") == "PRUNE"
+    try:
+        saving = float(rec["estimated_saving_s"])
+        if saving < 0 or (saving == 0 and not is_prune):
+            errs.append("estimated_saving_s must be a measured, positive cost (rule a); "
+                        "only a PRUNE delta (surface reduction) may be 0")
+    except (TypeError, ValueError):
+        errs.append("estimated_saving_s must be a number of seconds (rule a)")
+    return errs
+
+
+def _load_recs():
+    """Recommendations, tolerant of a malformed line (one bad hand-edit must not
+    crash the weekly review) — mirrors load_runs()."""
+    if not RECOMMENDATIONS.exists():
+        return []
+    out = []
+    for i, line in enumerate(RECOMMENDATIONS.read_text().splitlines(), start=1):
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            out.append(json.loads(line))
+        except json.JSONDecodeError as e:
+            print(f"retrospect: skipping malformed recommendations.jsonl line {i} ({e})",
+                  file=sys.stderr)
+    return out
+
+
+def cmd_set(week, friction_substr, status, validated):
+    """The sanctioned lifecycle mutator (rule d): flip status/validated on a
+    recorded recommendation in place, so recommendations.jsonl is never
+    hand-edited and rule (d)'s PRUNE path can actually fire."""
+    if status not in STATUSES:
+        print(f"retrospect: --status must be one of {STATUSES}", file=sys.stderr)
+        return 2
+    recs = _load_recs()
+    n = 0
+    for rec in recs:
+        if rec.get("week") == week and friction_substr.lower() in str(rec.get("friction", "")).lower():
+            rec["status"] = status
+            if validated is not None:
+                rec["validated"] = validated
+            n += 1
+    if n == 0:
+        print(f"retrospect: no recommendation matched week={week!r} friction~={friction_substr!r}",
+              file=sys.stderr)
+        return 1
+    RECOMMENDATIONS.write_text("".join(json.dumps(r, separators=(",", ":")) + "\n" for r in recs))
+    extra = f", validated={validated}" if validated is not None else ""
+    print(f"retrospect: updated {n} recommendation(s) -> status={status}{extra}")
+    return 0
+
+
+def cmd_record(raw):
+    try:
+        rec = json.loads(raw)
+    except json.JSONDecodeError as e:
+        print(f"retrospect: --record needs a JSON object ({e})", file=sys.stderr)
+        return 2
+    errs = validate_recommendation(rec)
+    if errs:
+        for e in errs:
+            print(f"retrospect: REJECT — {e}", file=sys.stderr)
+        return 1
+    # ≤5 recommendations per week (the miner's contract cap; SCHEMA.md)
+    same_week = sum(1 for r in _load_recs() if r.get("week") == rec["week"])
+    if same_week >= 5:
+        print(f"retrospect: REJECT — week {rec['week']} already has {same_week} recommendations "
+              "(≤5/week cap); prune or supersede one first", file=sys.stderr)
+        return 1
+    rec.setdefault("status", "proposed")
+    rec.setdefault("validated", None)
+    RECOMMENDATIONS.parent.mkdir(parents=True, exist_ok=True)
+    with RECOMMENDATIONS.open("a") as f:
+        f.write(json.dumps(rec, separators=(",", ":")) + "\n")
+    print(f"retrospect: recorded recommendation ({rec['delta_type']} -> {rec['destination']})")
+    return 0
+
+
+def self_test():
+    import tempfile
+    fails = 0
+
+    def check(label, cond):
+        nonlocal fails
+        if not cond:
+            print(f"retrospect self-test FAIL {label}")
+            fails += 1
+
+    # digest math on a synthetic history (6 runs so the baseline is defined)
+    def run(rid, outcome, label, inv, wait):
+        return {"schema": 3, "run_id": rid, "outcome": outcome, "failure_label": label,
+                "waiting_on_human_s": wait, "assets_consulted": ["alias:auth"],
+                "stages": {"implement": {"start": "2026-07-09T10:00:00Z",
+                                         "stop": "2026-07-09T10:10:00Z",
+                                         "invented_api_events": inv}}}
+    hist = [run(f"2026-07-0{i}-001", "ok", None, 0, 0) for i in range(1, 6)]  # baseline 0
+    window = [run("2026-07-09-001", "failed", "invented-api", 2, 300),
+              run("2026-07-09-002", "ok", None, 0, 0)]
+    d = digest(window, hist + window)
+    check("digest-outcomes", "failed: 1" in d and "ok: 1" in d)
+    check("digest-labels", "invented-api: 1" in d)
+    check("digest-baseline", "baseline 0.00 → window 1.00 ↑" in d)
+    check("digest-stage", "implement: 600s" in d)
+    check("digest-empty", "No real runs in the window" in digest([], []))
+
+    good = {"week": "2026-W28", "friction": "invented Text.explode",
+            "evidence": ["2026-07-09-001:implement", "2026-07-09-002:implement"],
+            "delta_type": "hot-card", "destination": "codemap/api-hot.md",
+            "estimated_saving_s": 120}
+    check("rec-valid", validate_recommendation(good) == [])
+    check("rec-out-of-taxonomy",
+          any("out of taxonomy" in e for e in validate_recommendation({**good, "delta_type": "vibes"})))
+    check("rec-single-run",
+          any(">=2 INDEPENDENT" in e for e in
+              validate_recommendation({**good, "evidence": ["2026-07-09-001:x", "2026-07-09-001:y"]})))
+    check("rec-no-saving",
+          any("estimated_saving_s" in e for e in validate_recommendation({**good, "estimated_saving_s": 0})))
+    check("rec-missing-field",
+          any("missing required" in e for e in validate_recommendation({"week": "x"})))
+    check("rec-bad-week",
+          any("ISO week" in e for e in validate_recommendation({**good, "week": "2026-28"})))
+    # a PRUNE delta may legitimately claim 0 seconds (surface reduction, not time)
+    check("rec-prune-zero-ok",
+          validate_recommendation({**good, "delta_type": "PRUNE", "estimated_saving_s": 0}) == [])
+
+    # round-trips against temp files (records, lifecycle, cap, load, golden prune)
+    import os
+    global RECOMMENDATIONS, RUNS, GOLDEN
+    with tempfile.TemporaryDirectory() as tmp:
+        tmpp = Path(tmp)
+        RECOMMENDATIONS = tmpp / "recommendations.jsonl"
+        check("record-ok", cmd_record(json.dumps(good)) == 0)
+        check("record-bad", cmd_record(json.dumps({**good, "delta_type": "vibes"})) == 1)
+        check("record-appended", len(RECOMMENDATIONS.read_text().splitlines()) == 1)
+        # a malformed ledger line must be skipped, not crash the review
+        with RECOMMENDATIONS.open("a") as f:
+            f.write("{not json\n")
+        check("load-recs-tolerates-malformed", len(_load_recs()) == 1)
+
+        # --set flips lifecycle in place (rule d), and reports no-match honestly
+        check("set-ok", cmd_set("2026-W28", "Text.explode", "implemented", True) == 0)
+        after = _load_recs()[0]
+        check("set-applied", after.get("status") == "implemented" and after.get("validated") is True)
+        check("set-nomatch", cmd_set("2026-W28", "no-such-friction", "pruned", None) == 1)
+
+        # ≤5/week cap: fill 2026-W40 to five, reject the sixth
+        for i in range(4):  # +1 already recorded under W28, so use a fresh week
+            cmd_record(json.dumps({**good, "week": "2026-W40", "friction": f"f{i}",
+                                   "evidence": [f"2026-10-0{i}-001:x", f"2026-10-0{i}-002:x"]}))
+        cmd_record(json.dumps({**good, "week": "2026-W40", "friction": "f4",
+                               "evidence": ["2026-10-05-001:x", "2026-10-05-002:x"]}))
+        check("cap-6th-rejected",
+              cmd_record(json.dumps({**good, "week": "2026-W40", "friction": "f5",
+                                     "evidence": ["2026-10-06-001:x", "2026-10-06-002:x"]})) == 1)
+
+        # load_runs: skip a malformed line, exclude the schema-v1 dummy, keep real runs
+        RUNS = tmpp / "runs.jsonl"
+        RUNS.write_text(
+            json.dumps({"schema": 1, "run_id": "2026-07-07-001", "outcome": "ok"}) + "\n"
+            + "{ not valid json\n"
+            + json.dumps({"schema": 3, "run_id": "2026-07-09-001", "outcome": "ok", "stages": {}}) + "\n")
+        loaded = load_runs(RUNS)
+        check("load-skips-dummy-and-malformed", [r["run_id"] for r in loaded] == ["2026-07-09-001"])
+
+        # --prune-golden removes dirs older than the window, keeps fresh ones
+        GOLDEN = tmpp / "golden"
+        oldd, fresh = GOLDEN / "2026-01-01-001", GOLDEN / "2026-07-09-001"
+        oldd.mkdir(parents=True)
+        (oldd / "verdict.md").write_text("old\n")
+        fresh.mkdir(parents=True)
+        (fresh / "verdict.md").write_text("fresh\n")
+        stale = datetime.now().timestamp() - 100 * 86400
+        os.utime(oldd, (stale, stale))
+        os.utime(oldd / "verdict.md", (stale, stale))
+        check("prune-golden-ok", cmd_prune_golden(4) == 0)
+        check("prune-removed-old", not oldd.exists())
+        check("prune-kept-fresh", fresh.exists())
+
+    if fails == 0:
+        print("retrospect self-test: OK — digest math, baseline trend, recommendation contract, "
+              "week/PRUNE rules, --set lifecycle, ≤5/week cap, malformed/dummy skip, golden prune covered")
+    return 1 if fails else 0
+
+
+def main():
+    args = sys.argv[1:]
+    if args and args[0] == "--self-test":
+        return self_test()
+    if args and args[0] == "--record":
+        if len(args) < 2:
+            print("usage: retrospect --record '<json>'", file=sys.stderr)
+            return 2
+        return cmd_record(args[1])
+    if args and args[0] == "--prune-golden":
+        weeks = 4
+        rest = args[1:]
+        if rest and rest[0] == "--weeks" and len(rest) > 1:
+            rest = rest[1:]
+        if rest:
+            try:
+                weeks = int(rest[0])
+            except ValueError:
+                print("usage: retrospect --prune-golden [--weeks N]", file=sys.stderr)
+                return 2
+        return cmd_prune_golden(weeks)
+    if args and args[0] == "--set":
+        rest = args[1:]
+        if "--status" not in rest:
+            print("usage: retrospect --set '<week>' '<friction-substr>' "
+                  "--status implemented|pruned [--validated true|false]", file=sys.stderr)
+            return 2
+        si = rest.index("--status")
+        pos = rest[:si]
+        if len(pos) != 2:
+            print("usage: retrospect --set '<week>' '<friction-substr>' --status …", file=sys.stderr)
+            return 2
+        status = rest[si + 1] if len(rest) > si + 1 else ""
+        validated = None
+        if "--validated" in rest:
+            vi = rest.index("--validated")
+            vv = (rest[vi + 1] if len(rest) > vi + 1 else "").lower()
+            validated = {"true": True, "false": False}.get(vv)
+            if validated is None:
+                print("retrospect: --validated must be true|false", file=sys.stderr)
+                return 2
+        return cmd_set(pos[0], pos[1], status, validated)
+    since = None
+    if args and args[0] == "--since":
+        if len(args) < 2:
+            print("usage: retrospect --since YYYY-MM-DD", file=sys.stderr)
+            return 2
+        since = args[1]
+    all_runs = load_runs(RUNS)
+    window = [r for r in all_runs if since is None or str(r.get("run_id", "")) >= since]
+    print(digest(window, all_runs))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

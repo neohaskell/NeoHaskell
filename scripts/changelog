@@ -1,0 +1,254 @@
+#!/usr/bin/env python3
+"""Changelog generator from contract-delta specs (Phase 6, task 3).
+
+The changelog is DERIVED from `docs/changes/*.md`, not hand-written — the same
+generated-or-gated discipline as the rest of the pipeline. Breaking-change is
+**mechanical**: any `-` (removed/changed) line in a spec's `diff signatures`
+delta makes the entry breaking, and a breaking entry REQUIRES a migration note
+(the spec's `## User impact` must be non-empty).
+
+Modes:
+  changelog <spec.md> …    print the entry for each spec (stdout)
+  changelog --append SPEC…  insert entries under `## [Unreleased]` in CHANGELOG.md
+                            (idempotent — skips a spec whose entry already exists)
+  changelog --check [BASE]  every spec this branch adds/modifies vs BASE
+                            (default origin/main) must have a CHANGELOG entry and,
+                            if breaking, a migration note — the PR-ready gate
+  changelog --self-test     fixtures (doctor/CI)
+
+Run: ./dev changelog    CI: .github/workflows/checks.yml `spec` job
+"""
+
+import sys
+import re
+from pathlib import Path
+
+sys.dont_write_bytecode = True
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import speclib  # noqa: E402 — shared delta grammar + changed-spec enumeration
+
+ROOT = Path(__file__).resolve().parent.parent
+CHANGELOG = ROOT / "CHANGELOG.md"
+UNRELEASED = "## [Unreleased]"
+
+
+def section(text, title):
+    m = re.search(rf"^## {re.escape(title)}\n(.*?)(?=^## |\Z)", text, re.DOTALL | re.MULTILINE)
+    return m.group(1).strip() if m else ""
+
+
+def spec_title(text, fallback):
+    for line in text.splitlines():
+        if line.startswith("# "):
+            return line[2:].strip()
+    return fallback
+
+
+def delta(text):
+    """(list of raw delta lines, breaking?) — breaking iff any `-` line."""
+    lines, breaking = [], False
+    for line in (speclib.delta_block(text) or "").splitlines():
+        m = speclib.DELTA_LINE.match(line)
+        if m:
+            lines.append(f"{m.group(1)} {m.group(2)}: {m.group(3)}")
+            if m.group(1) == "-":
+                breaking = True
+    return lines, breaking
+
+
+# A breaking change must carry a REAL migration note. These placeholder answers
+# (case-insensitive, trailing punctuation/whitespace trimmed) do NOT count — an
+# agent under time pressure must not slip a breaking release past the gate with
+# `TBD`/`N/A`. Non-breaking specs may legitimately say "None." (TEMPLATE.md allows it).
+MIGRATION_PLACEHOLDERS = {
+    "", "none", "n/a", "na", "tbd", "tba", "-", "–", "—", "todo", "to do",
+    "pending", "none yet", "nothing", "not applicable",
+}
+
+
+def is_placeholder_impact(impact):
+    """True when `## User impact` is empty or a bare placeholder, not a migration note."""
+    return (impact or "").strip().strip(".").strip().lower() in MIGRATION_PLACEHOLDERS
+
+
+def entry_for(spec_path):
+    """(id, markdown-entry, [errors]) for one spec. id = filename stem."""
+    text = spec_path.read_text()
+    sid = spec_path.stem
+    title = spec_title(text, sid)
+    impact = section(text, "User impact")
+    lines, breaking = delta(text)
+    errs = []
+    if breaking and is_placeholder_impact(impact):
+        errs.append(f"{spec_path.name}: BREAKING (delta removes a signature) but `## User "
+                    "impact` has no migration note — a breaking change must tell users how to move "
+                    "(a placeholder like `TBD`/`N/A`/`None` does not count)")
+    tag = "  **[BREAKING]**" if breaking else ""
+    body = [f"### {sid} — {title}{tag}", ""]
+    body.append(impact or "_No user impact recorded._")
+    if lines:
+        body += ["", "API delta:", ""] + [f"- `{line}`" for line in lines]
+    return sid, "\n".join(body) + "\n", errs
+
+
+def entry_present(changelog_text, sid):
+    return re.search(rf"^### {re.escape(sid)} — ", changelog_text, re.MULTILINE) is not None
+
+
+def real_specs(paths):
+    return [p for p in paths
+            if p.name not in ("TEMPLATE.md", "README.md") and not speclib.is_review_record(p.name)]
+
+
+def cmd_check(base):
+    try:
+        specs = real_specs(speclib.changed_specs(ROOT, base))
+    except speclib.GitDiffError as e:
+        print(f"changelog: git diff against `{base}` failed — bad base ref? ({e})", file=sys.stderr)
+        return 2
+    if not specs:
+        print(f"changelog: no specs changed vs {base} — nothing to check")
+        return 0
+    text = CHANGELOG.read_text() if CHANGELOG.exists() else ""
+    errs = []
+    for spec in specs:
+        if not spec.exists():
+            continue
+        sid, _entry, entry_errs = entry_for(spec)
+        errs += entry_errs
+        if not entry_present(text, sid):
+            errs.append(f"{spec.name}: no CHANGELOG.md entry — run `./dev changelog --append "
+                        f"docs/changes/{spec.name}` (the changelog is generated, not hand-written)")
+    for e in errs:
+        print(f"changelog: FAIL — {e}", file=sys.stderr)
+    if errs:
+        return 1
+    print(f"changelog: OK — {len(specs)} changed spec(s) have entries")
+    return 0
+
+
+def cmd_append(specs):
+    if not CHANGELOG.exists():
+        print(f"changelog: {CHANGELOG.name} missing — create it first", file=sys.stderr)
+        return 2
+    text = CHANGELOG.read_text()
+    if UNRELEASED not in text:
+        print(f"changelog: {CHANGELOG.name} has no `{UNRELEASED}` section", file=sys.stderr)
+        return 2
+    added = []
+    for spec in specs:
+        sid, entry, errs = entry_for(spec)
+        if errs:
+            for e in errs:
+                print(f"changelog: FAIL — {e}", file=sys.stderr)
+            return 1
+        if entry_present(text, sid):
+            continue  # idempotent
+        text = text.replace(UNRELEASED, f"{UNRELEASED}\n\n{entry.rstrip()}", 1)
+        added.append(sid)
+    CHANGELOG.write_text(text)
+    print(f"changelog: appended {len(added)} entry(ies) ({', '.join(added) or 'none — all present'})")
+    return 0
+
+
+VALID = """# Change 099: add slugify
+
+```yaml spec
+issue: adhoc:x
+kind: feature
+touches: [core-primitives]
+breaking: false
+new-dependency: false
+new-capability: false
+new-extension-point: false
+```
+
+## Contract delta
+
+```diff signatures
++ Text: slugify :: Text -> Text
+```
+
+## User impact
+
+None.
+"""
+
+
+def self_test():
+    import tempfile
+    fails = 0
+
+    def check(label, cond):
+        nonlocal fails
+        if not cond:
+            print(f"changelog self-test FAIL {label}")
+            fails += 1
+
+    with tempfile.TemporaryDirectory() as tmp:
+        sp = Path(tmp) / "099-add-slugify.md"
+        sp.write_text(VALID)
+        sid, entry, errs = entry_for(sp)
+        check("non-breaking-clean", not errs)
+        check("non-breaking-no-tag", "[BREAKING]" not in entry)
+        check("id", sid == "099-add-slugify")
+
+        # a removal is breaking AND, with an empty impact, must demand migration
+        bp = Path(tmp) / "100-drop-x.md"
+        bp.write_text(VALID.replace("+ Text: slugify :: Text -> Text", "- Text: slugify :: Text -> Text"))
+        _sid, bentry, berrs = entry_for(bp)
+        check("breaking-tagged", "[BREAKING]" in bentry)
+        check("breaking-needs-migration", any("migration" in e for e in berrs))
+
+        # with a real migration note, the breaking entry is clean
+        mp = Path(tmp) / "101-drop-y.md"
+        mp.write_text(VALID.replace("+ Text: slugify :: Text -> Text", "- Text: slugify :: Text -> Text")
+                      .replace("None.", "Removed `slugify`; call `Text.toSlug` instead."))
+        _s, _m, merrs = entry_for(mp)
+        check("breaking-with-migration-clean", not merrs)
+
+        # a PLACEHOLDER impact does NOT satisfy the migration gate on a breaking change
+        for i, placeholder in enumerate(("TBD", "N/A", "-", "None yet.", "TODO", "pending")):
+            pp = Path(tmp) / f"20{i}-drop-z.md"
+            pp.write_text(VALID.replace("+ Text: slugify :: Text -> Text", "- Text: slugify :: Text -> Text")
+                          .replace("None.", placeholder))
+            _p, _pe, perrs = entry_for(pp)
+            check(f"breaking-placeholder-rejected:{placeholder}", any("migration" in e for e in perrs))
+
+        # entry_present detects a rendered entry
+        check("entry-present", entry_present(f"# Changelog\n\n## [Unreleased]\n\n{entry}", "099-add-slugify"))
+        check("entry-absent", not entry_present("# Changelog\n\n## [Unreleased]\n", "099-add-slugify"))
+
+    # is_placeholder_impact unit coverage (empty + a real note)
+    check("placeholder-empty", is_placeholder_impact("") and is_placeholder_impact("  none.  "))
+    check("placeholder-real-note", not is_placeholder_impact("Call `Text.toSlug` instead."))
+
+    if fails == 0:
+        print("changelog self-test: OK — breaking detection, migration gate, entry presence covered")
+    return 1 if fails else 0
+
+
+def main():
+    args = sys.argv[1:]
+    if args and args[0] == "--self-test":
+        return self_test()
+    if args and args[0] == "--check":
+        return cmd_check(args[1] if len(args) > 1 else "origin/main")
+    if args and args[0] == "--append":
+        return cmd_append([Path(a) for a in args[1:]])
+    if not args:
+        print("usage: changelog <spec.md>… | --append SPEC… | --check [BASE] | --self-test",
+              file=sys.stderr)
+        return 2
+    for a in args:
+        _sid, entry, errs = entry_for(Path(a))
+        for e in errs:
+            print(f"changelog: FAIL — {e}", file=sys.stderr)
+        if errs:
+            return 1
+        print(entry)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

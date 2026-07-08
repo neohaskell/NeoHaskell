@@ -18,7 +18,6 @@ cd "${SCRIPT_DIR}/.."
 
 # Exemptions: script -> reason. Adding one is a visible, reviewable diff.
 EXEMPT_NAMES=(
-  "telemetry.py:pipeline-only by doctrine — a discoverable verb would invite ad-hoc emission"
   "cloud-setup.sh:Claude-web environment setup; invoked by the platform, not by developers"
   "install.sh:end-user installer (curl-piped); not a repo dev tool"
   "build-hoogle-dbs:internal plumbing — invoked by ./dev api and ./dev codemap, not a user verb"
@@ -88,6 +87,17 @@ fi
 scripts/spec-check --self-test || fail=1
 scripts/spec-drift --self-test || fail=1
 scripts/pipeline-state --self-test || fail=1
+scripts/telemetry.py --self-test || fail=1
+scripts/changelog --self-test || fail=1
+scripts/revert --self-test || fail=1
+scripts/retrospect --self-test || fail=1
+
+# 5c. Wiring gate: the DoD criterion-test-exists gate must have a CI caller, so
+#     the "criteria green at their declared levels" claim is a live gate, not a
+#     documented-but-dead emitter (Phase 6 review finding M4).
+if ! grep -q 'spec-check --criteria-tests' .github/workflows/checks.yml; then
+  err "spec-check --criteria-tests is not wired into .github/workflows/checks.yml (dead DoD gate)"
+fi
 
 # 6. invented-api counter self-test (Phase 4): ./dev check's counter is
 #    anchored to GHC error text + error-index codes; this fixture runs the

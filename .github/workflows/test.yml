@@ -7,12 +7,11 @@ on:
     # ready_for_review is NOT a default activity type — without it, flipping
     # a draft to ready would never re-trigger the suite the guard skipped
     types: [opened, synchronize, reopened, ready_for_review]
-    paths:
-      - "core/**"
-      - "testbed/**"
-      - "integrations/**"
-      - "nix/**"
-      - ".github/workflows/**"
+    # NB: no workflow-level `paths:` on pull_request. A REQUIRED check must always
+    # report — a path-filtered workflow that never runs leaves its check pending
+    # forever and blocks tooling-only PRs. Path gating moves to the `changes` job
+    # below: heavy jobs SKIP when nothing compiled changed, and `ci-gate` (always
+    # runs) accepts those skips, so it is a sound required check.
   push:
     branches:
       - main
@@ -35,8 +34,42 @@ jobs:
   # ready-for-review re-triggers the full matrix. checks.yml (doctor, codemap,
   # lint, spec) still runs on drafts — seconds, and it is what validates the
   # spec itself.
+  # Path gating at the JOB level (not the workflow level — see the note under
+  # `on:`). `compiled` is true when a PR touches anything that can change a
+  # build/test outcome; on push it is always true (the push paths filter already
+  # ensured that). Cheap (~15s) so it can run on every PR.
+  changes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      compiled: ${{ steps.detect.outputs.compiled }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - id: detect
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT" = "push" ]; then
+            echo "compiled=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          PATTERN='^(core/|testbed/|integrations/|nix/|\.github/workflows/|cabal\.project|flake\.nix|flake\.lock)'
+          if git diff --name-only "origin/${BASE_REF}...HEAD" | grep -qE "$PATTERN"; then
+            echo "compiled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "compiled=false" >> "$GITHUB_OUTPUT"
+          fi
+
   build:
-    if: github.event_name == 'push' || github.event.pull_request.draft == false
+    needs: changes
+    if: >-
+      (github.event_name == 'push' || github.event.pull_request.draft == false)
+      && needs.changes.outputs.compiled == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -65,9 +98,13 @@ jobs:
           if-no-files-found: error
 
   codemap-sync:
+    # Runs in PARALLEL with the test suites (needs only build's artifact) so it
+    # adds no wall-clock, and is ENFORCED as a merge gate via ci-gate below — a
+    # separate runner, so parallelism is free. (If a test fails the regen was
+    # spent for nothing, but that costs a runner-minute, not PR latency.)
+    needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    needs: build
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
@@ -106,7 +143,10 @@ jobs:
   # (build-free: doctest interprets sources against the dev-shell GHC's
   # package DB, so no dist-newstyle artifact is needed).
   doctest:
-    if: github.event_name == 'push' || github.event.pull_request.draft == false
+    needs: changes
+    if: >-
+      (github.event_name == 'push' || github.event.pull_request.draft == false)
+      && needs.changes.outputs.compiled == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -271,31 +311,55 @@ jobs:
       - name: Run integration tests
         run: nix develop --command ./testbed/scripts/run-tests.sh
 
+  # THE REQUIRED CHECK. `if: always()` + no workflow paths filter ⇒ this always
+  # runs and reports a real conclusion on every PR, so it is safe to require in
+  # branch protection (unlike the individual, path-skipped jobs). It enforces
+  # "the project compiles AND tests pass" whenever there is a compiled surface to
+  # check, and passes cleanly when there is nothing to check.
   ci-gate:
     if: always()
-    needs: [doctest, test-core, test-auth, test-integration, test-service, test-hurl]
+    needs: [changes, build, doctest, test-core, test-auth, test-integration, test-service, test-hurl, codemap-sync]
     runs-on: ubuntu-latest
     steps:
       - name: Check all tests passed
         env:
           IS_DRAFT: ${{ github.event_name == 'pull_request' && github.event.pull_request.draft }}
+          COMPILED: ${{ needs.changes.outputs.compiled }}
+          CHANGES_RESULT: ${{ needs.changes.result }}
         run: |
+          # Fail closed if path-detection itself failed — otherwise a compiled PR
+          # could skip everything and pass on a bad `compiled` reading.
+          if [[ "$CHANGES_RESULT" != "success" ]]; then
+            echo "::error::changes-detection job did not succeed ($CHANGES_RESULT)"
+            exit 1
+          fi
+          # Skips are acceptable ONLY when there is genuinely nothing to test: a
+          # draft PR (parked spec) or a PR that changed no compiled surface.
+          # Otherwise every build/test job must be success.
+          allow_skip=false
+          if [[ "$IS_DRAFT" == "true" || "$COMPILED" != "true" ]]; then
+            allow_skip=true
+          fi
+          # codemap-sync runs in parallel; listed last so a test failure is the
+          # first error reported when several jobs fail together.
           results=(
-            "${{ needs.doctest.result }}"
-            "${{ needs.test-core.result }}"
-            "${{ needs.test-auth.result }}"
-            "${{ needs.test-integration.result }}"
-            "${{ needs.test-service.result }}"
-            "${{ needs.test-hurl.result }}"
+            "build=${{ needs.build.result }}"
+            "doctest=${{ needs.doctest.result }}"
+            "test-core=${{ needs.test-core.result }}"
+            "test-auth=${{ needs.test-auth.result }}"
+            "test-integration=${{ needs.test-integration.result }}"
+            "test-service=${{ needs.test-service.result }}"
+            "test-hurl=${{ needs.test-hurl.result }}"
+            "codemap-sync=${{ needs.codemap-sync.result }}"
           )
-          for r in "${results[@]}"; do
-            # skipped is acceptable ONLY under the draft-PR guard — a parked
-            # spec hasn't earned a green gate, it just hasn't burned CI yet
-            if [[ "$r" == "skipped" && "$IS_DRAFT" == "true" ]]; then
+          for entry in "${results[@]}"; do
+            job="${entry%%=*}"; r="${entry#*=}"
+            if [[ "$r" == "skipped" && "$allow_skip" == "true" ]]; then
               continue
             fi
             if [[ "$r" != "success" ]]; then
-              echo "::error::Test job failed with result: $r"
+              echo "::error::$job did not pass (result: $r)"
               exit 1
             fi
           done
+          echo "ci-gate: all build/test jobs passed (or correctly skipped — nothing to test)"

@@ -1,0 +1,60 @@
+# Kill switch (pipeline Phase 6, task 2; ADR-0068) — MAINTAINER-TRIGGERED.
+#
+# A maintainer comments `/revert` on a MERGED PR → this opens a revert PR (it
+# never merges it). The author-association gate mirrors claude.yml: a comment
+# from anyone who is not an org OWNER/MEMBER is ignored entirely, so the ability
+# to trigger a revert is unforgeable. NeoHaskell is org-owned, so OWNER/MEMBER is
+# the maintainer set (COLLABORATOR = outside collaborators, deliberately excluded).
+# The trigger is an exact `/revert` (or `/revert <args>`) — not a `/revert…`
+# prefix — and claude.yml excludes `/revert` comments from its `@claude` handler,
+# so the two workflows are disjoint and never double-fire on one comment.
+name: revert
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+# One revert run per PR at a time — two quick `/revert` comments must not race
+# on creating the same revert branch.
+concurrency:
+  group: revert-${{ github.event.issue.number }}
+  cancel-in-progress: true
+
+jobs:
+  revert:
+    if: >-
+      github.event.issue.pull_request &&
+      (github.event.comment.body == '/revert' || startsWith(github.event.comment.body, '/revert ')) &&
+      contains(fromJSON('["OWNER", "MEMBER"]'), github.event.comment.author_association)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          # full history so `git revert` can resolve the merge commit
+          fetch-depth: 0
+          # don't leave the token in .git/config for every later step; the push
+          # below authenticates via an explicit tokenized remote instead
+          persist-credentials: false
+      - name: Open a revert PR for the merged change
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.issue.number }}
+          BASE: ${{ github.event.repository.default_branch }}
+        run: |
+          set -euo pipefail
+          SHA=$(gh pr view "${PR}" --json mergeCommit -q '.mergeCommit.oid')
+          if [ -z "${SHA}" ] || [ "${SHA}" = "null" ]; then
+            gh pr comment "${PR}" --body "revert: PR #${PR} is not merged — nothing to revert."
+            exit 0
+          fi
+          # explicit push auth (persist-credentials:false above) — scoped to this job
+          git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${REPO}.git"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          ./dev revert "${SHA}" --base "${BASE}"

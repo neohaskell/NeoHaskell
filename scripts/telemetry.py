@@ -1,18 +1,25 @@
 #!/usr/bin/env python3
-"""Pipeline telemetry emitter (Phase 1). Schema: telemetry/SCHEMA.md (v2, frozen).
+"""Pipeline telemetry emitter (Phase 1; schema v3 Phase 6). Schema: telemetry/SCHEMA.md.
 
 One JSON line per pipeline run, appended to telemetry/runs.jsonl. Never
 hand-written — pipeline scripts call this tool.
 
-Usage:
-  telemetry.py start   --run-id 2026-07-07-001 --request "issue#712"
-  telemetry.py stage   --name implement --event start [--model sonnet]
-  telemetry.py stage   --name implement --event stop  [--repair-rounds 2] [--invented-api-events 3]
-  telemetry.py wait    --seconds 340            # add waiting-on-human time
-  telemetry.py rebuilt --count 4                # cache-health metric
-  telemetry.py finish  --outcome ok
-  telemetry.py finish  --outcome failed --failure-label invented-api [--failure-note "..."]
-  telemetry.py golden  --request-file R --spec-file S --diff-file D --verdict "..." [--transcript-file T]
+Usage (via the `./dev telemetry` verb — this file has no PATH entry):
+  ./dev telemetry start   --run-id 2026-07-07-001 --request "issue#712"
+  ./dev telemetry stage   --name implement --event start [--model sonnet]
+  ./dev telemetry stage   --name implement --event stop  [--repair-rounds 2] [--invented-api-events 3]
+  ./dev telemetry wait    --seconds 340            # add waiting-on-human time
+  ./dev telemetry rebuilt --count 4                # cache-health metric
+  ./dev telemetry consult --asset alias:auth       # usage accounting (Phase 6, task 5e)
+  ./dev telemetry finish  --outcome ok
+  ./dev telemetry finish  --outcome parked --failure-label timeout --asset-delta alias:codemap/capabilities.yaml
+  ./dev telemetry golden  --request-file R --spec-file S --diff-file D --verdict "..." [--transcript-file T]
+  ./dev telemetry --self-test                      # doctor/CI
+
+A failed/parked run MUST carry --asset-delta (the class-fix ships with the
+instance-fix, Phase 6 task 4). Schema bumps (new fields) are documented in
+telemetry/SCHEMA.md — this emitter writes the current version; readers tolerate
+older ones.
 """
 
 import argparse
@@ -38,6 +45,14 @@ FAILURE_LABELS = [
     "test-failure", "spec-drift", "flaky-infra", "timeout",
     "human-rejected-spec", "human-rejected-pr", "other",
 ]
+# Delta-type taxonomy v1 (closed; Phase 6). Single source — SCHEMA.md and the
+# retrospective miner reference it; `none` = a justified no-asset (destination
+# carries the reason). Each maps to a real destination file (see the miner skill).
+DELTA_TYPES = [
+    "alias", "extension-point", "phrasebook", "hot-card", "hlint-rule",
+    "hook", "cli-utility", "skill-edit", "telemetry-label", "PRUNE", "none",
+]
+CURRENT_SCHEMA = 3
 
 
 # De-facto run-id format (documented in telemetry/SCHEMA.md): also guards the
@@ -72,26 +87,52 @@ def save(run: dict) -> None:
     CURRENT.write_text(json.dumps(run, indent=2))
 
 
+def run_id_recorded(run_id: str) -> bool:
+    """True if run_id already appears in the committed ledger. Two parallel
+    worktree pipelines can each pick `<date>-001` (the per-worktree
+    `.current-run.json` guard can't see across worktrees); a collision would
+    corrupt the first-5-runs baseline and clobber golden/<run_id>/. Guard here,
+    and let `runs.jsonl merge=union` (.gitattributes) handle the append merge."""
+    if not RUNS.exists():
+        return False
+    for line in RUNS.read_text().splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            if json.loads(line).get("run_id") == run_id:
+                return True
+        except json.JSONDecodeError:
+            continue
+    return False
+
+
 def cmd_start(args) -> None:
     validate_run_id(args.run_id)
     if CURRENT.exists():
         sys.exit(f"telemetry: run already in progress ({CURRENT}); finish it first")
+    if run_id_recorded(args.run_id):
+        sys.exit(f"telemetry: run-id {args.run_id!r} is already recorded in runs.jsonl — pick a "
+                 "unique suffix (e.g. `-b`) so parallel worktree runs don't collide "
+                 "(baseline + golden/<run_id>/ key on run_id)")
     save({
-        "schema": 2,
+        "schema": CURRENT_SCHEMA,
         "run_id": args.run_id,
         "request_ref": args.request,
         "stages": {},
         "waiting_on_human_s": 0,
         "modules_rebuilt_after_restore": None,
+        "assets_consulted": [],
         "outcome": None,
         "failure_label": None,
+        "asset_delta": None,
     })
     print(f"telemetry: started run {args.run_id}")
 
 
 def cmd_stage(args) -> None:
     if args.name not in STAGES:
-        sys.exit(f"telemetry: unknown stage '{args.name}' (schema v2 stages: {', '.join(STAGES)})")
+        sys.exit(f"telemetry: unknown stage '{args.name}' (stage vocabulary: {', '.join(STAGES)})")
     run = load()
     stage = run["stages"].setdefault(args.name, {"start": None, "stop": None, "model": None,
                                                  "repair_rounds": 0, "invented_api_events": 0})
@@ -123,6 +164,40 @@ def cmd_rebuilt(args) -> None:
     save(run)
 
 
+CONSULT_RE = re.compile(r"^[a-z][a-z0-9-]*:.+$")
+
+
+def cmd_consult(args) -> None:
+    """Usage accounting (Phase 6 task 5e): record that this run consulted an
+    asset, so the miner can recommend PRUNE for never-consulted ones."""
+    if not CONSULT_RE.fullmatch(args.asset):
+        sys.exit(f"telemetry: --asset must be '<kind>:<name>' (kebab kind), got {args.asset!r}")
+    run = load()
+    consulted = run.setdefault("assets_consulted", [])
+    if args.asset not in consulted:
+        consulted.append(args.asset)
+    save(run)
+
+
+def parse_asset_delta(raw: str) -> dict:
+    """`<type>:<destination>[:<ref>]` — the class-fix that ships with a failed
+    run. type from the closed taxonomy; destination = the asset file. For
+    `none`, everything after the first colon is the justification and is kept
+    whole (a reason may itself contain colons — it is never split into `ref`)."""
+    dtype, sep, rest = raw.partition(":")
+    if dtype not in DELTA_TYPES:
+        sys.exit(f"telemetry: asset-delta type must be from the closed taxonomy: {', '.join(DELTA_TYPES)}")
+    if not sep or not rest:
+        sys.exit("telemetry: --asset-delta needs '<type>:<destination>' "
+                 "(destination = the asset file, or the justification for 'none')")
+    if dtype == "none":
+        return {"type": dtype, "destination": rest, "ref": None}
+    dest, _, ref = rest.partition(":")
+    if not dest:
+        sys.exit("telemetry: --asset-delta needs a non-empty destination")
+    return {"type": dtype, "destination": dest, "ref": ref or None}
+
+
 def cmd_finish(args) -> None:
     run = load()
     if args.outcome not in OUTCOMES:
@@ -136,15 +211,25 @@ def cmd_finish(args) -> None:
             sys.exit(f"telemetry: failed/parked runs need --failure-label from: {', '.join(FAILURE_LABELS)}")
         if args.failure_label == "other" and not args.failure_note:
             sys.exit("telemetry: failure-label 'other' REQUIRES --failure-note (re-classified at weekly review)")
+    delta = parse_asset_delta(args.asset_delta) if args.asset_delta is not None else None
+    if args.outcome in ("failed", "parked") and delta is None:
+        sys.exit(f"telemetry: {args.outcome} runs need --asset-delta <type>:<dest> — the "
+                 "class-fix ships with the instance-fix (Phase 6). Types: "
+                 f"{', '.join(DELTA_TYPES)}; use 'none:<reason>' if genuinely no asset applies")
     run["outcome"] = args.outcome
     run["failure_label"] = args.failure_label
+    run["asset_delta"] = delta
     if args.failure_note:
         run["failure_note"] = args.failure_note
     RUNS.parent.mkdir(parents=True, exist_ok=True)
     with RUNS.open("a") as f:
         f.write(json.dumps(run, separators=(",", ":")) + "\n")
     CURRENT.unlink()
-    print(f"telemetry: run {run['run_id']} recorded -> {RUNS.relative_to(ROOT)}")
+    try:
+        where = RUNS.relative_to(ROOT)
+    except ValueError:
+        where = RUNS  # self-test redirects RUNS to a temp dir outside the repo
+    print(f"telemetry: run {run['run_id']} recorded -> {where}")
 
 
 def cmd_golden(args) -> None:
@@ -165,7 +250,133 @@ def cmd_golden(args) -> None:
     print(f"telemetry: golden task archived -> {dest.relative_to(ROOT)}")
 
 
+def self_test() -> int:
+    """Exercises schema-v3 fields, usage accounting, and the asset-delta
+    enforcement in a temp dir (doctor/CI). Same contract as the other guards."""
+    global CURRENT, RUNS, GOLDEN
+    import tempfile
+    fails = 0
+
+    def ns(**kw):
+        return argparse.Namespace(**kw)
+
+    def check(label, fn, want_exit):
+        nonlocal fails
+        exited = False
+        try:
+            fn()
+        except SystemExit as e:
+            exited = e.code not in (None, 0)
+        if exited != want_exit:
+            print(f"telemetry self-test FAIL {label}: exited={exited}, want_exit={want_exit}")
+            fails += 1
+
+    with tempfile.TemporaryDirectory() as tmp:
+        t = Path(tmp)
+        CURRENT, RUNS, GOLDEN = t / ".current-run.json", t / "runs.jsonl", t / "golden"
+
+        check("start", lambda: cmd_start(ns(run_id="t-001", request="issue#0")), False)
+        cur = json.loads(CURRENT.read_text())
+        if cur.get("schema") != CURRENT_SCHEMA or cur.get("asset_delta") is not None \
+                or cur.get("assets_consulted") != []:
+            print(f"telemetry self-test FAIL start-shape: {cur}")
+            fails += 1
+        check("consult-ok", lambda: cmd_consult(ns(asset="alias:auth")), False)
+        check("consult-bad", lambda: cmd_consult(ns(asset="nocolon")), True)
+        # non-ok outcomes require an asset delta from the closed taxonomy
+        check("finish-parked-no-delta", lambda: cmd_finish(
+            ns(outcome="parked", failure_label="timeout", failure_note=None, asset_delta=None)), True)
+        check("finish-bad-delta-type", lambda: cmd_finish(
+            ns(outcome="parked", failure_label="timeout", failure_note=None, asset_delta="bogus:x")), True)
+        check("finish-parked-ok", lambda: cmd_finish(
+            ns(outcome="parked", failure_label="timeout", failure_note=None,
+               asset_delta="alias:codemap/capabilities.yaml")), False)
+        line = json.loads(RUNS.read_text().splitlines()[-1])
+        if (line.get("asset_delta") or {}).get("type") != "alias" \
+                or line.get("assets_consulted") != ["alias:auth"]:
+            print(f"telemetry self-test FAIL finish-line: {line}")
+            fails += 1
+        # C: a run-id already recorded in the ledger is refused (parallel-worktree guard)
+        check("start-dup-runid", lambda: cmd_start(ns(run_id="t-001", request="issue#0")), True)
+        # H: a `none:<reason>` justification keeps its colons (never split into ref);
+        #    a typed delta still splits an optional trailing ref
+        nd = parse_asset_delta("none:blocked on upstream: see PR #9")
+        if nd["destination"] != "blocked on upstream: see PR #9" or nd["ref"] is not None:
+            print(f"telemetry self-test FAIL none-colon: {nd}")
+            fails += 1
+        td = parse_asset_delta("alias:codemap/capabilities.yaml:PR#12")
+        if td["destination"] != "codemap/capabilities.yaml" or td["ref"] != "PR#12":
+            print(f"telemetry self-test FAIL delta-ref: {td}")
+            fails += 1
+        # ok runs do not require an asset delta
+        check("start2", lambda: cmd_start(ns(run_id="t-002", request="issue#0")), False)
+        check("finish-ok", lambda: cmd_finish(
+            ns(outcome="ok", failure_label=None, failure_note=None, asset_delta=None)), False)
+
+    # anti-rot: the failure-label taxonomy is duplicated in scripts/pipeline-state
+    # (LABELS) — a drift there means a run the emitter accepts, the state machine
+    # rejects (or vice-versa). Assert parity so the two can't silently diverge.
+    ps = (ROOT / "scripts" / "pipeline-state").read_text()
+    m = re.search(r"LABELS\s*=\s*\{(.*?)\}", ps, re.DOTALL)
+    ps_labels = set(re.findall(r'"([^"]+)"', m.group(1))) if m else set()
+    if ps_labels != set(FAILURE_LABELS):
+        print(f"telemetry self-test FAIL label-parity: telemetry={sorted(FAILURE_LABELS)} "
+              f"vs pipeline-state={sorted(ps_labels)}")
+        fails += 1
+
+    # anti-rot: schema-version parity. CURRENT_SCHEMA is the single source; a bump
+    # that misses a doc silently lies to the most-read agent surface (AGENTS.md is
+    # loaded every session). Every `schema v<N>`/`frozen v<N>` claim must equal it.
+    # (Version *history* in SCHEMA.md is written bare — `v1 → v2` — so it is not a
+    # claim and not matched here.)
+    SKILLS = ROOT / ".claude" / "skills"
+    version_docs = [
+        ROOT / "telemetry" / "SCHEMA.md",
+        ROOT / "AGENTS.md",
+        SKILLS / "neohaskell-pipeline" / "SKILL.md",
+        SKILLS / "neohaskell-retrospective-miner" / "SKILL.md",
+    ]
+    ver_re = re.compile(r"(?:schema|frozen)\s+v(\d+)", re.IGNORECASE)
+    for doc in version_docs:
+        if not doc.exists():
+            continue
+        for n in sorted(set(ver_re.findall(doc.read_text()))):
+            if int(n) != CURRENT_SCHEMA:
+                print(f"telemetry self-test FAIL schema-version-parity: "
+                      f"{doc.relative_to(ROOT)} claims v{n}, CURRENT_SCHEMA={CURRENT_SCHEMA}")
+                fails += 1
+
+    # anti-rot: delta-type taxonomy prose parity. DELTA_TYPES is the single source;
+    # the miner skill restates it as a `|`-list and SCHEMA.md as a `·`-list — both
+    # must agree or the taxonomy the docs teach drifts from what `finish` enforces.
+    miner = SKILLS / "neohaskell-retrospective-miner" / "SKILL.md"
+    if miner.exists():
+        mm = re.search(r"`delta_type`\s*∈\s*`([^`]+)`", miner.read_text())
+        skill_types = {t.strip() for t in mm.group(1).split("|") if t.strip()} if mm else set()
+        if skill_types != set(DELTA_TYPES):
+            print(f"telemetry self-test FAIL delta-type-parity(miner skill): "
+                  f"telemetry={sorted(DELTA_TYPES)} vs skill={sorted(skill_types)}")
+            fails += 1
+    schema_md = ROOT / "telemetry" / "SCHEMA.md"
+    if schema_md.exists():
+        sec = re.search(r"## Delta-type taxonomy.*?(?=\n## |\Z)", schema_md.read_text(), re.DOTALL)
+        block = sec.group(0) if sec else ""
+        missing = [t for t in DELTA_TYPES if f"`{t}`" not in block]
+        if missing:
+            print(f"telemetry self-test FAIL delta-type-parity(SCHEMA.md): "
+                  f"taxonomy block missing {missing}")
+            fails += 1
+
+    if fails == 0:
+        print("telemetry self-test: OK — schema-v3 fields, usage accounting, asset-delta "
+              "enforcement, run-id collision guard, none-colon justification, and "
+              "label/schema-version/delta-type parity covered")
+    return 1 if fails else 0
+
+
 def main() -> None:
+    if len(sys.argv) > 1 and sys.argv[1] == "--self-test":
+        sys.exit(self_test())
     p = argparse.ArgumentParser(description=__doc__)
     sub = p.add_subparsers(dest="cmd", required=True)
 
@@ -190,10 +401,15 @@ def main() -> None:
     s.add_argument("--count", type=int, required=True)
     s.set_defaults(fn=cmd_rebuilt)
 
+    s = sub.add_parser("consult")
+    s.add_argument("--asset", required=True)
+    s.set_defaults(fn=cmd_consult)
+
     s = sub.add_parser("finish")
     s.add_argument("--outcome", required=True)
     s.add_argument("--failure-label")
     s.add_argument("--failure-note")
+    s.add_argument("--asset-delta")
     s.set_defaults(fn=cmd_finish)
 
     s = sub.add_parser("golden")

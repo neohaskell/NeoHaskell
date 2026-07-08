@@ -18,9 +18,11 @@ jobs:
     # author-association check makes that signal unforgeable: comments from
     # anyone who is not an org OWNER/MEMBER are ignored entirely (which also
     # closes the standing hole of any passer-by invoking the action).
+    # A `/revert` comment is the kill switch (revert.yml), NOT a @claude trigger —
+    # excluded here so the two workflows stay disjoint even for `/revert @claude`.
     if: |
       (
-        (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@claude')) ||
+        (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@claude') && !startsWith(github.event.comment.body, '/revert')) ||
         (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@claude')) ||
         (github.event_name == 'pull_request_review' && contains(github.event.review.body, '@claude')) ||
         (github.event_name == 'issues' && (contains(github.event.issue.body, '@claude') || contains(github.event.issue.title, '@claude')))
