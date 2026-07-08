@@ -49,7 +49,7 @@ Single entrypoint: **`./dev`** (no-args lists all verbs; same tools for humans a
 - Repair-loop protocol: edit → wait ~2s → **`./dev check`** (measured: error feedback 0.6s, recovery 1.9s). Never spawn `cabal build` inside the loop.
 - You do NOT need to be inside `nix develop`: every verb self-provisions the pinned toolchain (~0.4s warm overhead).
 - Everything uses the dev flavor (`cabal.project.dev`, `-O0`); full nhcore -O0 build = 249 modules / ~54s on this machine.
-- Pipeline telemetry: `scripts/telemetry.py` (schema: `telemetry/SCHEMA.md`, frozen v1). Every pipeline run emits one line to `telemetry/runs.jsonl`. Telemetry is pipeline-only: never emit lines for ad-hoc runs.
+- Pipeline telemetry: `scripts/telemetry.py` (schema: `telemetry/SCHEMA.md`, frozen v2). Every pipeline run emits one line to `telemetry/runs.jsonl`. Telemetry is pipeline-only: never emit lines for ad-hoc runs.
 - These are the same commands humans use (README "Fast inner loop") — parity is deliberate; don't create agent-only variants.
 
 - Test discovery: **only `nhcore-test` uses hspec-discover**; `nhcore-test-core`, `-auth`, `-service`, `-integration` register specs manually in their `Main.hs` — new spec modules must be added there AND to the cabal `other-modules`.

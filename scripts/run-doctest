@@ -59,7 +59,10 @@ srcdirs() {
       sub(/^[ \t]*hs-source-dirs:[ \t]*/, ""); gsub(/,/, " "); print; exit
     }
     /^[ \t]*hs-source-dirs:[ \t]*$/ { blk = 1; next }
-    blk && /^[ \t]+[^ \t]/ { printf " %s", $1; next }
+    # entries are bare dir tokens — a colon means the NEXT cabal field
+    # started (build-depends: etc.), which must end the block, not become
+    # a bogus -i flag
+    blk && /^[ \t]+[A-Za-z0-9._\/-]+[ \t]*$/ { printf " %s", $1; next }
     blk { print ""; exit }
     END { if (blk) print "" }
   ' "$1"
