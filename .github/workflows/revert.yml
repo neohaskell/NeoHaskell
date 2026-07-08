@@ -18,6 +18,12 @@ permissions:
   contents: write
   pull-requests: write
 
+# One revert run per PR at a time — two quick `/revert` comments must not race
+# on creating the same revert branch.
+concurrency:
+  group: revert-${{ github.event.issue.number }}
+  cancel-in-progress: true
+
 jobs:
   revert:
     if: >-
@@ -31,9 +37,13 @@ jobs:
         with:
           # full history so `git revert` can resolve the merge commit
           fetch-depth: 0
+          # don't leave the token in .git/config for every later step; the push
+          # below authenticates via an explicit tokenized remote instead
+          persist-credentials: false
       - name: Open a revert PR for the merged change
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
           PR: ${{ github.event.issue.number }}
           BASE: ${{ github.event.repository.default_branch }}
         run: |
@@ -43,6 +53,8 @@ jobs:
             gh pr comment "${PR}" --body "revert: PR #${PR} is not merged — nothing to revert."
             exit 0
           fi
+          # explicit push auth (persist-credentials:false above) — scoped to this job
+          git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${REPO}.git"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           ./dev revert "${SHA}" --base "${BASE}"

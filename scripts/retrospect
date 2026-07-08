@@ -230,13 +230,20 @@ def validate_recommendation(rec):
 
 
 def _load_recs():
+    """Recommendations, tolerant of a malformed line (one bad hand-edit must not
+    crash the weekly review) — mirrors load_runs()."""
     if not RECOMMENDATIONS.exists():
         return []
     out = []
-    for line in RECOMMENDATIONS.read_text().splitlines():
+    for i, line in enumerate(RECOMMENDATIONS.read_text().splitlines(), start=1):
         line = line.strip()
-        if line:
+        if not line:
+            continue
+        try:
             out.append(json.loads(line))
+        except json.JSONDecodeError as e:
+            print(f"retrospect: skipping malformed recommendations.jsonl line {i} ({e})",
+                  file=sys.stderr)
     return out
 
 
@@ -347,6 +354,10 @@ def self_test():
         check("record-ok", cmd_record(json.dumps(good)) == 0)
         check("record-bad", cmd_record(json.dumps({**good, "delta_type": "vibes"})) == 1)
         check("record-appended", len(RECOMMENDATIONS.read_text().splitlines()) == 1)
+        # a malformed ledger line must be skipped, not crash the review
+        with RECOMMENDATIONS.open("a") as f:
+            f.write("{not json\n")
+        check("load-recs-tolerates-malformed", len(_load_recs()) == 1)
 
         # --set flips lifecycle in place (rule d), and reports no-match honestly
         check("set-ok", cmd_set("2026-W28", "Text.explode", "implemented", True) == 0)

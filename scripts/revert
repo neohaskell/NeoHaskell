@@ -52,13 +52,19 @@ def do_revert(commit, base, dry_run, cwd=ROOT, open_pr=True):
         print(f"revert: [dry-run] revert commit for {sha} created on {branch} (no push/PR)")
         return 0
     git(["push", "origin", branch], cwd)
-    if open_pr:
-        subprocess.run(
-            ["gh", "pr", "create", "--base", base or "main", "--head", branch,
-             "--title", f"Revert {sha}",
-             "--body", f"Automated revert of `{commit}` (kill switch — ADR-0068). "
-                       "A maintainer triggered this; a maintainer merges it."],
-            cwd=cwd)
+    if not open_pr:
+        print(f"revert: pushed {branch} for {sha} (no PR requested)")
+        return 0
+    pr = subprocess.run(
+        ["gh", "pr", "create", "--base", base or "main", "--head", branch,
+         "--title", f"Revert {sha}",
+         "--body", f"Automated revert of `{commit}` (kill switch — ADR-0068). "
+                   "A maintainer triggered this; a maintainer merges it."],
+        cwd=cwd, text=True, capture_output=True)
+    if pr.returncode != 0:
+        # the branch is pushed but the PR failed — surface it, don't claim success
+        sys.exit(f"revert: pushed {branch} but `gh pr create` failed: "
+                 f"{(pr.stderr or pr.stdout).strip()} — open the PR manually from {branch}")
     print(f"revert: opened revert PR for {sha} ({branch})")
     return 0
 

@@ -364,8 +364,10 @@ def _hurl_exists(token):
 
 
 def _module_exists(mod):
+    # exact stem match (like _hurl_exists) — a substring match would let a
+    # criterion naming `FooSpec` be "satisfied" by an unrelated `FooBarSpec`
     for root in (ROOT / "core", ROOT / "testbed"):
-        if root.exists() and any(mod in p.stem for p in root.rglob("*.hs")):
+        if root.exists() and any(p.stem == mod for p in root.rglob("*.hs")):
             return True
     return False
 
