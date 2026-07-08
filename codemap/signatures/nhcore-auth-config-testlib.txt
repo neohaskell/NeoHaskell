@@ -613,14 +613,14 @@ cliShort :: Char -> FieldDef -> FieldDef
 defaultsTo :: Lift value => value -> FieldDef -> FieldDef
 defineConfig :: Text -> [FieldDef] -> Q [Dec]
 doc :: Text -> FieldDef -> FieldDef
-enum :: forall {k} (enumType :: k). Typeable enumType => Text -> FieldDef
+enum :: forall k (enumType :: k). Typeable enumType => Text -> FieldDef
 envPrefix :: Text -> FieldDef -> FieldDef
 envVar :: Text -> FieldDef -> FieldDef
-field :: forall {k} (fieldType :: k). Typeable fieldType => Text -> FieldDef
+field :: forall k (fieldType :: k). Typeable fieldType => Text -> FieldDef
 get :: (Typeable config, HasCallStack) => config
 load :: HasParser config => Task Text config
 loadWithVersion :: HasParser config => Version -> Text -> Task Text config
-nested :: forall {k} (nestedType :: k). Typeable nestedType => Text -> FieldDef
+nested :: forall k (nestedType :: k). Typeable nestedType => Text -> FieldDef
 required :: FieldDef -> FieldDef
 secret :: FieldDef -> FieldDef
 testWithConfig :: config -> ((?config :: config) => result) -> result
@@ -630,11 +630,11 @@ cliLong :: Text -> FieldDef -> FieldDef
 cliShort :: Char -> FieldDef -> FieldDef
 defaultsTo :: Lift value => value -> FieldDef -> FieldDef
 doc :: Text -> FieldDef -> FieldDef
-enum :: forall {k} (enumType :: k). Typeable enumType => Text -> FieldDef
+enum :: forall k (enumType :: k). Typeable enumType => Text -> FieldDef
 envPrefix :: Text -> FieldDef -> FieldDef
 envVar :: Text -> FieldDef -> FieldDef
-field :: forall {k} (fieldType :: k). Typeable fieldType => Text -> FieldDef
-nested :: forall {k} (nestedType :: k). Typeable nestedType => Text -> FieldDef
+field :: forall k (fieldType :: k). Typeable fieldType => Text -> FieldDef
+nested :: forall k (nestedType :: k). Typeable nestedType => Text -> FieldDef
 required :: FieldDef -> FieldDef
 secret :: FieldDef -> FieldDef
 
@@ -761,7 +761,6 @@ validateTokenFormat :: AuthConfig -> Text -> Task err (Result AuthError UserClai
 validateTokenWithKeys :: AuthConfig -> Array JWK -> Text -> Task err (Result AuthError UserClaims)
 
 module Test.CompileTime
-($dmrnf) :: (NFData a, Generic a, GNFData Zero (Rep a)) => a -> ()
 class NFData a
 rnf :: NFData a => a -> ()
 shouldNotTypecheck :: (HasCallStack, NFData value) => (() ~ () => value) -> Task Text Unit

@@ -69,8 +69,9 @@ def split_hoogle():
         current = None
         for line in text.split("\n"):
             # pure API surface — doc/blank lines dropped (doc emission is
-            # platform-dependent; see module docstring)
-            if line.startswith("--") or not line.strip():
+            # platform-dependent; see module docstring). lstrip: haddock
+            # also emits INDENTED doc lines inside class blocks.
+            if line.lstrip().startswith("--") or not line.strip():
                 continue
             m = re.match(r"^module ([A-Za-z0-9.]+)", line)
             if m:
@@ -78,6 +79,23 @@ def split_hoogle():
                 stats["modules"] += 1
             if current is None:
                 continue
+            # hoogle-parseability canonicalization (the signature files are
+            # ALSO the ./dev api pass-1 index — see build-hoogle-dbs):
+            #   - stray brace lines from multi-line class/record blocks
+            #   - dictionary-function artifacts (($dm…))
+            #   - GHC inferred-kind binders (forall {k}. — hoogle 5 cannot
+            #     parse braces in binder position; 43 symbols were invisible)
+            #   - trailing ';' on class members (type Item l;)
+            stripped = line.strip()
+            if stripped in ("{", "}", "};") or stripped.startswith("($dm"):
+                continue
+            line = line.strip().rstrip(";")
+            while "forall" in line:
+                debraced = re.sub(r"(forall[^.]*?)\{([^}]+)\}",
+                                  lambda mm: mm.group(1) + mm.group(2), line)
+                if debraced == line:
+                    break
+                line = debraced
             key = "nhintegrations" if pkg == "nhintegrations" else bucket(current)
             buckets.setdefault(key, {}).setdefault(current, [])
             if not m:
@@ -125,9 +143,20 @@ def ratchet_from_source():
     return undoc_mods, undoc_exports
 
 
-QUALIFIED_CALL = re.compile(r"\b([A-Z][A-Za-z0-9]*)\.([a-z][A-Za-z0-9_']*)")
+# Full dotted qualifier chain (Data.Set.union → qualifier "Data.Set.",
+# fn "union") — matching the WHOLE chain kills the dotted-tail phantom
+# where Data.Text.x used to count as Text.x.
+QUALIFIED_CALL = re.compile(r"((?:[A-Z][A-Za-z0-9_]*\.)+)([a-z][A-Za-z0-9_']*)")
+STRING_LIT = re.compile(r'"(?:[^"\\]|\\.)*"')
+LINE_COMMENT = re.compile(r"\s--\s.*$")
+IMPORT_QUALIFIED = re.compile(
+    r"^import\s+(?:\"[^\"]+\"\s+)?"           # PackageImports
+    r"(?:qualified\s+)?([A-Z][A-Za-z0-9.]*)"  # module (prefix style)
+    r"(?:\s+qualified)?"                      # ImportQualifiedPost style
+    r"(?:\s+as\s+([A-Z][A-Za-z0-9.]*))?")
 DOCTEST_START = re.compile(r"^\s*--\s+>>>\s?(.*)")
 DOCTEST_CONT = re.compile(r"^\s*--\s?(?!\s*>>>)(.*)")
+MODULE_DECL = re.compile(r"^module\s+([A-Za-z0-9.]+)", re.MULTILINE)
 
 
 _TRACKED_CACHE = None
@@ -137,17 +166,22 @@ def _tracked_hs():
     global _TRACKED_CACHE
     if _TRACKED_CACHE is None:
         import subprocess
-        _TRACKED_CACHE = [f for f in subprocess.run(
-            ["git", "ls-files", "*.hs"], capture_output=True,
-            text=True, cwd=ROOT).stdout.splitlines()
-            if not f.startswith("docs/archive/")]
+        proc = subprocess.run(["git", "ls-files", "*.hs"], capture_output=True,
+                              text=True, cwd=ROOT)
+        if proc.returncode != 0 or not proc.stdout.strip():
+            # fail CLOSED: an empty file list would silently emit hollow
+            # artifacts that downstream checks then bless
+            sys.exit(f"codemap: git ls-files failed (rc={proc.returncode}) "
+                     "— refusing to generate from an empty file list")
+        _TRACKED_CACHE = [f for f in proc.stdout.splitlines()
+                          if not f.startswith("docs/archive/")]
     return _TRACKED_CACHE
 
 
 def _signature_index():
-    """{(module_last_segment, fn_name): (full_module, sig_line)} from the
-    generated signature files; ambiguous last-segments resolved by preferring
-    the module whose full name equals the alias (core modules: Text, Array…)."""
+    """{(full_module, fn_name): sig_line} from the generated signature files.
+    Keyed by FULL module name — call sites are resolved through each file's
+    own imports, so no last-segment collision guessing is needed."""
     idx = {}
     for txt in sorted(SIG.glob("*.txt")):
         module = None
@@ -158,16 +192,74 @@ def _signature_index():
                 continue
             s = re.match(r"^([a-z_][A-Za-z0-9_']*) ::", line)
             if s and module:
-                key = (module.split(".")[-1], s.group(1))
-                best = idx.get(key)
-                # prefer exact alias==full-module (e.g. Text over Data-like nested)
-                if best is None or module == key[0]:
-                    idx[key] = (module, line)
+                idx.setdefault((module, s.group(1)), line)
     return idx
 
 
+def _file_alias_map(text: str):
+    """{qualifier: full_module} from one file's import lines. A no-`as`
+    qualified import is usable only under its full dotted name, so it maps
+    to itself. Unresolvable qualifiers are SKIPPED by the counter (never
+    guessed) — the only common case is self-qualification, which is
+    excluded as a self-count anyway."""
+    aliases = {}
+    for line in text.splitlines():
+        if not line.startswith("import"):
+            continue
+        m = IMPORT_QUALIFIED.match(line)
+        if m:
+            full, as_name = m.group(1), m.group(2)
+            aliases[as_name or full] = full
+    return aliases
+
+
+# Vocabulary that must never appear in a TAUGHT example (the executor
+# transcribes these verbatim): vanilla/internal spellings the dialect
+# gates reject. The doctest still RUNS — it is only excluded from mining.
+BANNED_IN_EXAMPLES = re.compile(
+    r"(\s\$\s|\bpure\b|\breturn\b|\bEither\b|\bData\.[A-Z]|\bPrelude\.|\bGHC\.)")
+
+
+def _mine_doctests(lines):
+    """Coalesce doctest lines into SESSIONS: consecutive >>> commands plus
+    their expected-output lines form ONE example (a shredded multi-line
+    session teaches nonsense). Returns only lint-clean sessions — mined
+    examples must be executable-and-checked to be taught: sessions with no
+    expected output, ghci binds (<-), comment-only commands, or dialect-
+    banned vocabulary are dropped here (doctest still executes them)."""
+    sessions, current = [], None
+    for line in lines:
+        dm = DOCTEST_START.match(line)
+        if dm:
+            if current is None:
+                current = []
+                sessions.append(current)
+            current.append(">>> " + dm.group(1))
+        elif current is not None:
+            cm = DOCTEST_CONT.match(line)
+            if cm and cm.group(1).strip():
+                current.append(cm.group(1).strip())
+            else:
+                current = None
+
+    def clean(sess):
+        cmds = [s[4:] for s in sess if s.startswith(">>> ")]
+        results = [s for s in sess if not s.startswith(">>> ")]
+        if not results:
+            return False
+        if any("<-" in c for c in cmds):
+            return False
+        if all(c.lstrip().startswith("--") for c in cmds):
+            return False
+        if any(BANNED_IN_EXAMPLES.search(c) for c in cmds):
+            return False
+        return True
+
+    return [s for s in sessions if clean(s)]
+
+
 def _doctest_for(path: Path, fn: str):
-    """First doctest example from the doc block immediately above `fn ::`."""
+    """First lint-clean doctest session from the doc block above `fn ::`."""
     try:
         lines = path.read_text(encoding="utf-8").splitlines()
     except Exception:
@@ -183,28 +275,18 @@ def _doctest_for(path: Path, fn: str):
                 block.append(lines[j])
                 j -= 1
             block.reverse()
-            example = []
-            for b in block:
-                dm = DOCTEST_START.match(b)
-                if dm:
-                    example = [">>> " + dm.group(1)]
-                elif example:
-                    cm = DOCTEST_CONT.match(b)
-                    if cm and cm.group(1).strip():
-                        example.append(cm.group(1).strip())
-                        break  # first result line is enough
-            if example:
-                return example
-            return None
+            sessions = _mine_doctests(block)
+            return sessions[0] if sessions else None
     return None
 
 
-def _module_file(full_module: str):
-    rel = full_module.replace(".", "/") + ".hs"
-    for f in _tracked_hs():
-        if f.endswith("/" + rel) or f == rel:
-            return ROOT / f
-    return None
+def _module_paths():
+    """Exact {module: source path} from the cabal-file-derived module list —
+    NEVER by path-suffix scanning (which resolved 'Config' to the wrong
+    package and mined doctests from the wrong file)."""
+    sys.path.insert(0, str(ROOT / "codemap"))
+    from check import exposed_modules
+    return {mod: ROOT / path for mod, path in exposed_modules()}
 
 
 TEST_PATH = re.compile(r"(^|/)(test[s]?|test-[a-z]+|testlib)/|Spec\.hs$")
@@ -216,67 +298,106 @@ def _is_test_file(path: str) -> bool:
     return bool(TEST_PATH.search(path))
 
 
+PROD_MODULE_CAP = 24   # sized to the plan's 300-500-line card budget
+PROD_FN_CAP = 10
+TEST_MODULE_CAP = 8
+TEST_FN_CAP = 8
+
+
 def hot_card():
     """codemap/api-hot.md — frequency-ranked API card, SPLIT (per Nick,
     2026-07-08): production call sites rank the main card (a thoroughly
     tested function is not necessarily a much-used one); test-code call
     sites get their own section (spec-writing API is real signal for the
-    test-writing activity, not for feature code)."""
+    test-writing activity, not for feature code).
+
+    Attribution is import-resolved per file: each qualifier maps to the
+    full module named by that file's own import lines — never by
+    last-segment guessing (which merged five different InMemory stores
+    into one number). String literals, inline comments, and a module's
+    own internal self-references are excluded from counts."""
     import collections
     prod_counts = collections.Counter()
     test_counts = collections.Counter()
     for f in _tracked_hs():
         bucket_counter = test_counts if _is_test_file(f) else prod_counts
         text = (ROOT / f).read_text(encoding="utf-8", errors="ignore")
+        aliases = _file_alias_map(text)
+        own = MODULE_DECL.search(text)
+        own_module = own.group(1) if own else None
         for line in text.splitlines():
             if line.lstrip().startswith("--") or line.lstrip().startswith("import"):
                 continue
-            for alias, fn in QUALIFIED_CALL.findall(line):
-                bucket_counter[(alias, fn)] += 1
+            line = STRING_LIT.sub('""', line)
+            line = LINE_COMMENT.sub("", line)
+            for qual, fn in QUALIFIED_CALL.findall(line):
+                full = aliases.get(qual.rstrip("."))
+                if full is None or full == own_module:
+                    continue  # unresolvable (never guess) or self-count
+                bucket_counter[(full, fn)] += 1
 
     idx = _signature_index()
 
     def group(counts):
         per_module = collections.defaultdict(list)
-        for (alias, fn), n in counts.items():
-            hit = idx.get((alias, fn))
-            if hit:
-                per_module[hit[0]].append((n, fn, hit[1]))
+        for (full, fn), n in counts.items():
+            sig = idx.get((full, fn))
+            if sig:
+                per_module[full].append((n, fn, sig))
         return sorted(per_module.items(),
                       key=lambda kv: (-sum(n for n, _, _ in kv[1]), kv[0]))
 
+    def cut_trailer(grouped, cap):
+        cut = grouped[cap:]
+        if not cut:
+            return "*cut: nothing — every ranked module is on the card*"
+        tops = ", ".join(f"{m} ({sum(n for n, _, _ in fns)})" for m, fns in cut[:5])
+        return (f"*cut: {len(cut)} more modules ({tops}, …) — "
+                "full surface: codemap/signatures/*")
+
     out = ["<!-- GENERATED by ./dev codemap — do not edit. Frequency-ranked from",
-           "     actual call sites; examples mined from source doctests (CI-verified). -->",
+           "     actual call sites; examples mined from source doctests and",
+           "     executed by the CI doctest gate (test.yml `doctest` job). -->",
            "# API hot card — the NeoHaskell you actually use", "",
            "Production call sites only (testbed/src counts as production — the",
            "reference app is the user-usage proxy; spec/test code is ranked",
            "separately below). Consult BEFORE writing code; full surface:",
            "codemap/signatures/ · type-directed search: ./dev api \"<type>\"", ""]
     entries = 0
-    for module, fns in group(prod_counts)[:18]:
+    prod_grouped = group(prod_counts)
+    src_paths = _module_paths()
+    for module, fns in prod_grouped[:PROD_MODULE_CAP]:
         out.append(f"## {module}")
-        src = _module_file(module)
-        for n, fn, sig in sorted(fns, key=lambda t: (-t[0], t[1]))[:10]:
+        src = src_paths.get(module)
+        for n, fn, sig in sorted(fns, key=lambda t: (-t[0], t[1]))[:PROD_FN_CAP]:
             out.append(f"- `{sig}`  <!-- {n} call sites -->")
             ex = _doctest_for(src, fn) if src else None
-            if ex and len(ex) > 1:
-                out.append(f"  - `{ex[0]}` → `{ex[1]}`")
-            elif ex:
-                out.append(f"  - `{ex[0]}`")
+            if ex:
+                cmd = ex[0]
+                result = next((r for r in ex[1:] if not r.startswith(">>> ")), None)
+                more = " …" if len(ex) > 2 else ""
+                if result:
+                    out.append(f"  - `{cmd}` → `{result}`{more}")
+                else:
+                    out.append(f"  - `{cmd}`{more}")
             entries += 1
         out.append("")
+    out.append(cut_trailer(prod_grouped, PROD_MODULE_CAP))
+    out.append("")
 
     out += ["---", "", "# Test-code usage — the spec-writing API",
             "", "Ranked from call sites in spec/test files only. Reach for these",
             "when WRITING TESTS; they are not feature-code frequency signal.", ""]
-    for module, fns in group(test_counts)[:6]:
+    test_grouped = group(test_counts)
+    for module, fns in test_grouped[:TEST_MODULE_CAP]:
         out.append(f"## {module}")
-        for n, fn, sig in sorted(fns, key=lambda t: (-t[0], t[1]))[:8]:
+        for n, fn, sig in sorted(fns, key=lambda t: (-t[0], t[1]))[:TEST_FN_CAP]:
             out.append(f"- `{sig}`  <!-- {n} test call sites -->")
             entries += 1
         out.append("")
+    out.append(cut_trailer(test_grouped, TEST_MODULE_CAP))
     (ROOT / "codemap" / "api-hot.md").write_text("\n".join(out).strip() + "\n", encoding="utf-8")
-    return entries
+    return entries, len(prod_grouped[PROD_MODULE_CAP:]) + len(test_grouped[TEST_MODULE_CAP:])
 
 
 def phrasebook():
@@ -289,19 +410,7 @@ def phrasebook():
     no_doctests = []
     for mod, path in exposed_modules():
         lines = (ROOT / path).read_text(encoding="utf-8", errors="ignore").splitlines()
-        examples = []
-        current = None
-        for line in lines:
-            dm = DOCTEST_START.match(line)
-            if dm:
-                current = [">>> " + dm.group(1)]
-                examples.append(current)
-            elif current is not None:
-                cm = DOCTEST_CONT.match(line)
-                if cm and cm.group(1).strip():
-                    current.append(cm.group(1).strip())
-                else:
-                    current = None
+        examples = _mine_doctests(lines)
         owners = owned_by(path, caps)
         cap = owners[0] if owners else "(unmapped)"
         if examples:
@@ -310,7 +419,8 @@ def phrasebook():
             no_doctests.append(mod)
 
     out = ["<!-- GENERATED by ./dev codemap — do not edit. Mined from source",
-           "     doctests (executed by ./dev doctest — these examples cannot lie). -->",
+           "     doctests; every example here is executed by ./dev doctest",
+           "     (CI: test.yml `doctest` job). -->",
            "# NeoHaskell phrasebook — verified usage examples", ""]
     total = 0
     for cap in sorted(sections):
@@ -319,14 +429,16 @@ def phrasebook():
             out.append(f"### {mod}")
             for ex in sections[cap][mod][:8]:
                 out.append("```haskell")
-                out.extend(ex[:4])
+                out.extend(ex[:6])
+                if len(ex) > 6:
+                    out.append(f"-- … (+{len(ex) - 6} more lines in the source doctest)")
                 out.append("```")
                 total += 1
             extra = len(sections[cap][mod]) - 8
             if extra > 0:
-                out.append(f"*… {extra} more doctests in the source module*")
+                out.append(f"*… {extra} more doctest sessions in the source module*")
         out.append("")
-    out.append(f"---\n*{total} examples · modules with ZERO doctests: "
+    out.append(f"---\n*{total} example sessions · modules with ZERO doctests: "
                f"{len(no_doctests)} (the documentation backlog — see codemap/.doc-ratchet)*")
     (ROOT / "codemap" / "phrasebook.md").write_text("\n".join(out).strip() + "\n", encoding="utf-8")
     return total, len(no_doctests)
@@ -358,21 +470,22 @@ def main():
     stats = split_hoogle()
     ncap, next_ = render_map()
     undoc_mods, undoc_exports = ratchet_from_source()
-    hot_entries = hot_card()
+    hot_entries, hot_cut = hot_card()
     phrases, no_doc = phrasebook()
     ratchet = (ROOT / "codemap" / ".doc-ratchet")
     ratchet.write_text(
         "# doc-ratchet: counters may DECREASE only (CI-enforced by check.py).\n"
         "# Source-derived (platform-independent) — see generate.py.\n"
         f"undocumented_modules: {undoc_mods}\n"
-        f"undocumented_exports: {undoc_exports}\n")
+        f"undocumented_exports: {undoc_exports}\n"
+        f"undocumented_doctest_modules: {no_doc}\n")
     print(f"codemap: {stats['modules']} modules / {stats['exports']} exports → "
           f"{len(list(SIG.glob('*.txt')))} signature files; "
           f"{ncap} capabilities + {next_} extension points → MAP.md; "
           f"ratchet(source-derived): {undoc_mods} undocumented modules, "
-          f"{undoc_exports} undocumented exports; "
-          f"hot card: {hot_entries} entries; phrasebook: {phrases} examples "
-          f"({no_doc} modules without doctests)")
+          f"{undoc_exports} undocumented exports, {no_doc} without doctests; "
+          f"hot card: {hot_entries} entries ({hot_cut} modules cut — see card "
+          f"trailer); phrasebook: {phrases} example sessions")
 
 
 if __name__ == "__main__":

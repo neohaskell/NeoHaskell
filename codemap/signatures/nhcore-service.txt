@@ -287,17 +287,6 @@ withFiles :: Map FileRef ResolvedFile -> RequestContext -> RequestContext
 module Service.Command
 
 module Service.Command.Core
-    --   
-    --   Defaults to <a>Uuid</a> but can be overridden for entities that use
-    --   When True, <a>getEntityIdImpl</a> and <a>decideImpl</a> receive a
-    --   different ID types.
-    --   tenant UUID as first argument.
-    -- | The type of identifier used for this entity.
-    -- | Whether this command supports multi-tenancy.
-    type EntityIdType entity = Uuid;
-    type EntityIdType entity;
-    type IsMultiTenant command :: Bool;
-    type IsMultiTenant command = 'False;
 AcceptCommand :: InsertionType -> Array event -> CommandResult event
 DecisionContext :: Task Text Uuid -> DecisionContext
 RejectCommand :: Text -> CommandResult event
@@ -346,6 +335,10 @@ instance Service.Command.Core.KnownMultiTenant 'GHC.Types.False
 instance Service.Command.Core.KnownMultiTenant 'GHC.Types.True
 runDecision :: HasCallStack => DecisionContext -> Decision a -> Task Text (CommandResult a)
 sbool :: KnownMultiTenant b => SBool b
+type EntityIdType entity
+type EntityIdType entity = Uuid
+type IsMultiTenant command :: Bool
+type IsMultiTenant command = 'False
 type family AppendSymbols (xs :: [Symbol]) (ys :: [Symbol]) :: [Symbol]
 type family DecideFunction (isTenant :: Bool) command entity event
 type family EntityOf command
@@ -355,7 +348,6 @@ type family NameOf t :: Symbol
 type family NamesOf (types :: [Type]) :: [Symbol]
 type family TransportsOf commandType :: [Type]
 updateImpl :: Entity entity => EventOf entity -> entity -> entity
-}
 
 module Service.CommandExecutor
 
@@ -394,20 +386,15 @@ instance GHC.Show.Show Service.CommandExecutor.TH.MultiTenancyMode
 module Service.Entity
 
 module Service.Entity.Core
-    --   
-    --   Defaults to <a>Uuid</a> but can be overridden for entities that use
-    --   different ID types.
-    -- | The type of identifier used for this entity.
-    type EntityIdType entity = Uuid;
-    type EntityIdType entity;
 class Entity entity where {
 class Event event
 getEventEntityIdImpl :: Event event => event -> EntityIdType (EntityOf event)
 initialStateImpl :: Entity entity => entity
+type EntityIdType entity
+type EntityIdType entity = Uuid
 type family EntityOf command
 type family EventOf entityType
 updateImpl :: Entity entity => EventOf entity -> entity -> entity
-}
 
 module Service.EntityFetcher
 
@@ -1274,12 +1261,11 @@ sslModeToText :: SslMode -> Maybe Text
 textToSslMode :: Text -> Result Text SslMode
 
 module Service.Integration.Adapter
-    type Response request;
 class Integration request where {
 mkDispatcher :: (Integration request, Inspectable request) => Selection -> request -> Task IntegrationError (Response request)
 runFake :: Integration request => request -> Task IntegrationError (Response request)
 runReal :: Integration request => request -> Task IntegrationError (Response request)
-}
+type Response request
 
 module Service.Integration.DispatchRegistry
 data DispatchRegistry
@@ -1376,14 +1362,9 @@ data OutboundRunner
 data WorkerState
 
 module Service.OutboundIntegration.Core
-    --   
-    --   Set by the TH macro to 'EventOf (EntityOf handler)' — the entity's
-    --   full event ADT.
-    -- | The event type this handler processes.
-    type HandledEvent handler;
 class OutboundIntegration handler where {
 handleEventImpl :: OutboundIntegration handler => EntityOf handler -> HandledEvent handler -> Outbound
-}
+type HandledEvent handler
 
 module Service.OutboundIntegration.TH
 outboundIntegration :: Name -> DecsQ
@@ -1664,12 +1645,6 @@ emitJsonAndDerivingBoilerplate :: Name -> DecsQ
 emitStockDeriving :: Name -> Name -> DecsQ
 
 module Service.Transport
-    -- | The assembled, runnable representation of this transport.
-    -- | The request type for this transport.
-    -- | The response type for this transport.
-    type Request transport;
-    type Response transport;
-    type RunnableTransport transport;
 EndpointSchema :: Maybe Schema -> Schema -> Text -> Bool -> Maybe Text -> EndpointSchema
 Endpoints :: transport -> Map Text EndpointHandler -> Map Text QueryEndpointHandler -> Map Text EndpointSchema -> Map Text EndpointSchema -> Endpoints transport
 [commandEndpoints] :: Endpoints transport -> Map Text EndpointHandler
@@ -1692,7 +1667,9 @@ instance GHC.Show.Show Service.Transport.EndpointSchema
 runTransport :: Transport transport => transport -> RunnableTransport transport -> Task Text Unit
 type EndpointHandler = RequestContext -> Bytes -> (CommandResponse, Bytes) -> Task Text Unit -> Task Text Unit
 type QueryEndpointHandler = Maybe UserClaims -> Maybe Expr -> QueryPageRequest -> Task QueryEndpointError Text
-}
+type Request transport
+type Response transport
+type RunnableTransport transport
 
 module Service.Transport.Cli
 CliTransport :: Text -> Text -> Text -> CliTransport

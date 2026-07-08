@@ -122,9 +122,6 @@ peekSTM :: AtomicVar value -> STM value
 set :: value -> AtomicVar value -> Task w Unit
 
 module Basics
-    --   structure <tt>l</tt>.
-    -- | The <a>Item</a> type function returns the type of items of the
-    type Item l;
 (!=) :: Eq a => a -> a -> Bool
 (&&) :: Bool -> Bool -> Bool
 (*) :: Num number => number -> number -> number
@@ -260,13 +257,13 @@ turns :: Float -> Float
 type Float = Double
 type HasCallStack = ?callStack :: CallStack
 type Int = Int
+type Item l
 type Never = Void
 type Order = Ordering
 type Type = TYPE LiftedRep
 type Unit = ()
 unit :: Unit
 xor :: Bool -> Bool -> Bool
-}
 
 module Bytes
 INTERNAL_CORE_BYTES_CONSTRUCTOR :: ByteString -> Bytes
@@ -303,7 +300,7 @@ instance TypeName.Inspectable value => GHC.Show.Show (Channel.Channel value)
 instance TypeName.Inspectable value => GHC.Show.Show (Control.Concurrent.Chan.Unagi.Internal.InChan value)
 instance TypeName.Inspectable value => GHC.Show.Show (Control.Concurrent.Chan.Unagi.Internal.OutChan value)
 isBounded :: Channel value -> Bool
-new :: forall value {w}. Task w (Channel value)
+new :: forall value w. Task w (Channel value)
 newBounded :: Int -> Task Text (Channel value)
 read :: Channel value -> Task w value
 tryRead :: Channel value -> Task w (Maybe value)
@@ -461,7 +458,7 @@ getOrInsertIf :: (Hashable key, Eq key) => key -> value -> (value -> Bool) -> Co
 getOrInsertIfM :: (Hashable key, Eq key) => key -> value -> (value -> STM Bool) -> ConcurrentMap key value -> Task w (value, Maybe value)
 keys :: ConcurrentMap key value -> Task w (Array key)
 length :: ConcurrentMap key value -> Task w Int
-new :: forall key value {w}. Task w (ConcurrentMap key value)
+new :: forall key value w. Task w (ConcurrentMap key value)
 remove :: (Hashable key, Eq key) => key -> ConcurrentMap key value -> Task w Unit
 removeIf :: (Hashable key, Eq key) => key -> (value -> Bool) -> ConcurrentMap key value -> Task w (Maybe value)
 removeIfM :: (Hashable key, Eq key) => key -> (value -> STM Bool) -> ConcurrentMap key value -> Task w (Maybe value)
@@ -475,7 +472,7 @@ data ConcurrentVar value
 get :: ConcurrentVar value -> Task w value
 modify :: (value -> value) -> ConcurrentVar value -> Task w Unit
 modifyReturning :: (value -> Task Never (value, a)) -> ConcurrentVar value -> Task w a
-new :: forall value {w}. Task w (ConcurrentVar value)
+new :: forall value w. Task w (ConcurrentVar value)
 peek :: ConcurrentVar value -> Task w value
 set :: value -> ConcurrentVar value -> Task w ()
 swap :: value -> ConcurrentVar value -> Task w value
@@ -486,18 +483,6 @@ print :: Text -> Task w Unit
 readLine :: IO Text
 
 module Core
-    --   
-    --   Defaults to <a>Uuid</a> but can be overridden for entities that use
-    --   When True, <a>getEntityIdImpl</a> and <a>decideImpl</a> receive a
-    --   different ID types.
-    --   tenant UUID as first argument.
-    -- | The type of identifier used for this entity.
-    -- | Whether this command supports multi-tenancy.
-    type EntityIdType entity = Uuid;
-    type EntityIdType entity;
-    type IsMultiTenant command :: Bool;
-    type IsMultiTenant command = 'False;
-($dmtoSchema) :: (ToSchema value, Generic value, GToSchema (Rep value)) => Schema
 (++) :: Appendable appendable => appendable -> appendable -> appendable
 AcceptCommand :: InsertionType -> Array event -> CommandResult event
 AnyStreamState :: InsertionType
@@ -568,6 +553,10 @@ initialStateImpl :: Entity entity => entity
 path :: QuasiQuoter
 toSchema :: ToSchema value => Schema
 toStreamId :: ToStreamId idType => idType -> StreamId
+type EntityIdType entity
+type EntityIdType entity = Uuid
+type IsMultiTenant command :: Bool
+type IsMultiTenant command = 'False
 type LinkedList a = [a]
 type Record (r :: Row Type) = Record I r
 type Text = Text
@@ -578,7 +567,6 @@ type family IsMultiTenant command :: Bool
 type family NameOf t :: Symbol
 updateImpl :: Entity entity => EventOf entity -> entity -> entity
 version :: QuasiQuoter
-}
 
 module DateTime
 addSeconds :: Int64 -> DateTime -> DateTime
@@ -670,10 +658,6 @@ removeRecursive :: Path -> Task Error Unit
 walk :: Path -> Task Error (Array Path)
 
 module Documented
-($dmdeprecated) :: Documented value => Bool
-($dmdescription) :: Documented value => Text
-($dmexamples) :: Documented value => Array value
-($dmname) :: Documented value => Text
 class Inspectable value => Documented value
 deprecated :: Documented value => Bool
 description :: Documented value => Text
@@ -686,7 +670,7 @@ data DurableChannel value
 getAndTransform :: (Array value -> Array value) -> DurableChannel value -> Task w (Array value)
 last :: DurableChannel value -> Task w (Maybe value)
 modify :: (Array value -> Array value) -> DurableChannel value -> Task w Unit
-new :: forall value {w}. Task w (DurableChannel value)
+new :: forall value w. Task w (DurableChannel value)
 read :: DurableChannel value -> Task w value
 write :: Array value -> DurableChannel value -> Task w Unit
 writeWithIndex :: (Int -> Array value) -> DurableChannel value -> Task w Int
@@ -938,7 +922,7 @@ data Lock
 new :: Task w Lock
 release :: Lock -> Task w Unit
 with :: Lock -> Task Never value -> Task w value
-withTimeout :: forall value {w}. Int -> Lock -> Task w value -> Task w (Result Text value)
+withTimeout :: forall value w. Int -> Lock -> Task w value -> Task w (Result Text value)
 
 module Log
 Debug :: Level
@@ -1158,14 +1142,14 @@ I :: a -> I a
 K :: a -> K a (b :: k)
 Pair :: f a -> g a -> Product (f :: k -> Type) (g :: k -> Type) (a :: k)
 Proxy :: Proxy (t :: k)
-[Dict] :: forall {k} (c :: k -> Constraint) (a :: k). c a => Dict c a
+[Dict] :: forall k (c :: k -> Constraint) (a :: k). c a => Dict c a
 [InRow] :: forall k (n :: Symbol) (r :: Row k) (a :: k). (KnownSymbol n, RowHasField n r a) => Proxy n -> InRow r a
 [Reflected] :: forall c. c => Reflected c
 [SomeRecord] :: forall k (r :: Row k) (f :: k -> Type). KnownFields r => Record (Product (InRow r) f) r -> SomeRecord f
 [Some] :: forall k (f :: k -> Type) (x :: k). f x -> Some f
 [apFn] :: (-.->) (f :: k -> Type) (g :: k -> Type) (a :: k) -> f a -> g a
-ap :: forall {k} (f :: k -> Type) (g :: k -> Type) (r :: Row k). Record (f -.-> g) r -> Record f r -> Record g r
-applyPending :: forall {k} (f :: k -> Type) (r :: Row k). Record f r -> Record f r
+ap :: forall k (f :: k -> Type) (g :: k -> Type) (r :: Row k). Record (f -.-> g) r -> Record f r -> Record g r
+applyPending :: forall k (f :: k -> Type) (r :: Row k). Record f r -> Record f r
 castEqual :: Equal a b => a -> b
 class AllFields (r :: Row k) (c :: k -> Constraint)
 class HasField (x :: k) r a | x r -> a
@@ -1175,12 +1159,12 @@ class KnownSymbol (n :: Symbol)
 class RowHasField (n :: Symbol) (r :: Row k) (a :: k) | n r -> a
 class SubRow (r :: Row k) (r' :: Row k)
 class f g x => Compose (f :: k -> Constraint) (g :: k1 -> k) (x :: k1)
-cmap :: forall {k} (r :: Row k) c f g. AllFields r c => Proxy c -> (forall (x :: k). c x => f x -> g x) -> Record f r -> Record g r
-cmapM :: forall {k} m (r :: Row k) c f g. (Applicative m, AllFields r c) => Proxy c -> (forall (x :: k). c x => f x -> m (g x)) -> Record f r -> m (Record g r)
-collapse :: forall {k} a (r :: Row k). Record (K a :: k -> Type) r -> [a]
-cpure :: forall {k} (r :: Row k) c f. AllFields r c => Proxy c -> (forall (x :: k). c x => f x) -> Record f r
-czipWith :: forall {k} (r :: Row k) c f g h. AllFields r c => Proxy c -> (forall (x :: k). c x => f x -> g x -> h x) -> Record f r -> Record g r -> Record h r
-czipWithM :: forall {k} m (r :: Row k) c f g h. (Applicative m, AllFields r c) => Proxy c -> (forall (x :: k). c x => f x -> g x -> m (h x)) -> Record f r -> Record g r -> m (Record h r)
+cmap :: forall k (r :: Row k) c f g. AllFields r c => Proxy c -> (forall (x :: k). c x => f x -> g x) -> Record f r -> Record g r
+cmapM :: forall k m (r :: Row k) c f g. (Applicative m, AllFields r c) => Proxy c -> (forall (x :: k). c x => f x -> m (g x)) -> Record f r -> m (Record g r)
+collapse :: forall k a (r :: Row k). Record (K a :: k -> Type) r -> [a]
+cpure :: forall k (r :: Row k) c f. AllFields r c => Proxy c -> (forall (x :: k). c x => f x) -> Record f r
+czipWith :: forall k (r :: Row k) c f g h. AllFields r c => Proxy c -> (forall (x :: k). c x => f x -> g x -> h x) -> Record f r -> Record g r -> Record h r
+czipWithM :: forall k m (r :: Row k) c f g h. (Applicative m, AllFields r c) => Proxy c -> (forall (x :: k). c x => f x -> g x -> m (h x)) -> Record f r -> Record g r -> m (Record h r)
 data Dict (c :: k -> Constraint) (a :: k)
 data Field (n :: Symbol)
 data InRow (r :: Row k) (a :: k)
@@ -1189,39 +1173,39 @@ data Proxy (t :: k)
 data Reflected c
 data Some (f :: k -> Type)
 data SomeRecord (f :: k -> Type)
-distribute :: forall {k} m (r :: Row k) (f :: k -> Type). (Functor m, KnownFields r) => m (Record f r) -> Record (m :.: f) r
+distribute :: forall k m (r :: Row k) (f :: k -> Type). (Functor m, KnownFields r) => m (Record f r) -> Record (m :.: f) r
 distribute' :: forall m (r :: Row Type). (Functor m, KnownFields r) => m (Record I r) -> Record m r
-empty :: forall {k} (f :: k -> Type). Record f ('[] :: [Pair Symbol k])
-get :: forall {k} (n :: Symbol) (r :: Row k) (a :: k) f. RowHasField n r a => Field n -> Record f r -> f a
+empty :: forall k (f :: k -> Type). Record f ('[] :: [Pair Symbol k])
+get :: forall k (n :: Symbol) (r :: Row k) (a :: k) f. RowHasField n r a => Field n -> Record f r -> f a
 hasField :: HasField x r a => r -> (a -> r, a)
 hashVal :: KnownHash s => proxy s -> Int
-inject :: forall {k} (r :: Row k) (r' :: Row k) (f :: k -> Type). SubRow r r' => Record f r' -> Record f r -> Record f r
-insert :: forall {b} (n :: Symbol) f (a :: b) (r :: Row b). Field n -> f a -> Record f r -> Record f ((n ':= a) ': r)
-insertA :: forall {b} m (n :: Symbol) f (a :: b) (r :: Row b). Applicative m => Field n -> m (f a) -> m (Record f r) -> m (Record f ((n ':= a) ': r))
-lens :: forall {k} (r :: Row k) (r' :: Row k) (f :: k -> Type). SubRow r r' => Record f r -> (Record f r', Record f r' -> Record f r)
-letInsertAs :: forall {k} (r :: Row k) (r' :: Row k) f (n :: Symbol) (a :: k). Proxy r -> Field n -> f a -> Record f r' -> (forall (r'' :: [Pair Symbol k]). Let r'' ((n ':= a) ': r') => Record f r'' -> Record f r) -> Record f r
-letRecordT :: forall {k} (r :: Row k) (f :: k -> Type). (forall (r' :: Row k). Let r' r => Proxy r' -> Record f r) -> Record f r
-map :: forall {k} f g (r :: Row k). (forall (x :: k). () => f x -> g x) -> Record f r -> Record g r
-mapM :: forall {k} m f g (r :: Row k). Applicative m => (forall (x :: k). () => f x -> m (g x)) -> Record f r -> m (Record g r)
-merge :: forall {k} (f :: k -> Type) (r :: Row k) (r' :: Row k). Record f r -> Record f r' -> Record f (Merge r r')
+inject :: forall k (r :: Row k) (r' :: Row k) (f :: k -> Type). SubRow r r' => Record f r' -> Record f r -> Record f r
+insert :: forall b (n :: Symbol) f (a :: b) (r :: Row b). Field n -> f a -> Record f r -> Record f ((n ':= a) ': r)
+insertA :: forall b m (n :: Symbol) f (a :: b) (r :: Row b). Applicative m => Field n -> m (f a) -> m (Record f r) -> m (Record f ((n ':= a) ': r))
+lens :: forall k (r :: Row k) (r' :: Row k) (f :: k -> Type). SubRow r r' => Record f r -> (Record f r', Record f r' -> Record f r)
+letInsertAs :: forall k (r :: Row k) (r' :: Row k) f (n :: Symbol) (a :: k). Proxy r -> Field n -> f a -> Record f r' -> (forall (r'' :: [Pair Symbol k]). Let r'' ((n ':= a) ': r') => Record f r'' -> Record f r) -> Record f r
+letRecordT :: forall k (r :: Row k) (f :: k -> Type). (forall (r' :: Row k). Let r' r => Proxy r' -> Record f r) -> Record f r
+map :: forall k f g (r :: Row k). (forall (x :: k). () => f x -> g x) -> Record f r -> Record g r
+mapM :: forall k m f g (r :: Row k). Applicative m => (forall (x :: k). () => f x -> m (g x)) -> Record f r -> m (Record g r)
+merge :: forall k (f :: k -> Type) (r :: Row k) (r' :: Row k). Record f r -> Record f r' -> Record f (Merge r r')
 newtype ( (f :: k -> Type) -.-> (g :: k -> Type) ) (a :: k)
 newtype ( (f :: l -> Type) :.: (g :: k -> l) ) (p :: k)
 newtype I a
 newtype K a (b :: k)
 pattern (:=) :: () => a -> b -> Pair a b
-project :: forall {k} (r :: Row k) (r' :: Row k) (f :: k -> Type). SubRow r r' => Record f r -> Record f r'
-pure :: forall {k} (r :: Row k) f. KnownFields r => (forall (x :: k). () => f x) -> Record f r
-reflectAllFields :: forall {k} (c :: k -> Constraint) (r :: Row k). Record (Dict c) r -> Reflected (AllFields r c)
-reflectKnownFields :: forall {k} (r :: Row k). Record (K String :: k -> Type) r -> Reflected (KnownFields r)
-reflectSubRow :: forall {k} (r :: Row k) (r' :: Row k). Record (InRow r) r' -> Reflected (SubRow r r')
-reifyAllFields :: forall {k} (r :: Row k) (c :: k -> Constraint) proxy. AllFields r c => proxy c -> Record (Dict c) r
-reifyKnownFields :: forall {k} (r :: Row k) proxy. KnownFields r => proxy r -> Record (K String :: k -> Type) r
-reifySubRow :: forall {k} (r' :: Row k) (r :: Row k). (KnownFields r', SubRow r r') => Record (InRow r) r'
-sequenceA :: forall {k} m (f :: k -> Type) (r :: Row k). Applicative m => Record (m :.: f) r -> m (Record f r)
+project :: forall k (r :: Row k) (r' :: Row k) (f :: k -> Type). SubRow r r' => Record f r -> Record f r'
+pure :: forall k (r :: Row k) f. KnownFields r => (forall (x :: k). () => f x) -> Record f r
+reflectAllFields :: forall k (c :: k -> Constraint) (r :: Row k). Record (Dict c) r -> Reflected (AllFields r c)
+reflectKnownFields :: forall k (r :: Row k). Record (K String :: k -> Type) r -> Reflected (KnownFields r)
+reflectSubRow :: forall k (r :: Row k) (r' :: Row k). Record (InRow r) r' -> Reflected (SubRow r r')
+reifyAllFields :: forall k (r :: Row k) (c :: k -> Constraint) proxy. AllFields r c => proxy c -> Record (Dict c) r
+reifyKnownFields :: forall k (r :: Row k) proxy. KnownFields r => proxy r -> Record (K String :: k -> Type) r
+reifySubRow :: forall k (r' :: Row k) (r :: Row k). (KnownFields r', SubRow r r') => Record (InRow r) r'
+sequenceA :: forall k m (f :: k -> Type) (r :: Row k). Applicative m => Record (m :.: f) r -> m (Record f r)
 sequenceA' :: forall m (r :: Row Type). Applicative m => Record m r -> m (Record I r)
-set :: forall {k} (n :: Symbol) (r :: Row k) (a :: k) f. RowHasField n r a => Field n -> f a -> Record f r -> Record f r
-someRecord :: forall {k} (f :: k -> Type). [(String, Some f)] -> SomeRecord f
-toList :: forall {k} (r :: Row k) a. KnownFields r => Record (K a :: k -> Type) r -> [(String, a)]
+set :: forall k (n :: Symbol) (r :: Row k) (a :: k) f. RowHasField n r a => Field n -> f a -> Record f r -> Record f r
+someRecord :: forall k (f :: k -> Type). [(String, Some f)] -> SomeRecord f
+toList :: forall k (r :: Row k) a. KnownFields r => Record (K a :: k -> Type) r -> [(String, a)]
 type ContextRecord = Record :: k -> Type -> Row k -> Type
 type Record (r :: Row Type) = Record I r
 type Row k = [Pair Symbol k]
@@ -1229,9 +1213,9 @@ type family FieldTypes (f :: k -> Type) (r :: Row k) :: [(Symbol, Type)]
 type family Merge :: Row k -> Row k -> Row k
 type family SimpleFieldTypes (r :: Row Type) :: [(Symbol, Type)]
 unI :: I a -> a
-zip :: forall {k} (f :: k -> Type) (r :: Row k) (g :: k -> Type). Record f r -> Record g r -> Record (Product f g) r
-zipWith :: forall {k} f g h (r :: Row k). (forall (x :: k). () => f x -> g x -> h x) -> Record f r -> Record g r -> Record h r
-zipWithM :: forall {k} m f g h (r :: Row k). Applicative m => (forall (x :: k). () => f x -> g x -> m (h x)) -> Record f r -> Record g r -> m (Record h r)
+zip :: forall k (f :: k -> Type) (r :: Row k) (g :: k -> Type). Record f r -> Record g r -> Record (Product f g) r
+zipWith :: forall k f g h (r :: Row k). (forall (x :: k). () => f x -> g x -> h x) -> Record f r -> Record g r -> Record h r
+zipWithM :: forall k m f g h (r :: Row k). Applicative m => (forall (x :: k). () => f x -> g x -> m (h x)) -> Record f r -> Record g r -> m (Record h r)
 
 module Redacted
 data Redacted value
@@ -1263,7 +1247,6 @@ toMaybe :: Result a b -> Maybe b
 withDefault :: a -> Result b a -> a
 
 module Schema
-($dmtoSchema) :: (ToSchema value, Generic value, GToSchema (Rep value)) => Schema
 FieldSchema :: Text -> Schema -> Bool -> Text -> FieldSchema
 SArray :: Schema -> Schema
 SBool :: Schema
@@ -1657,7 +1640,7 @@ module Unknown
 apply :: Unknown -> Unknown -> Maybe Unknown
 data Unknown
 fromValue :: Typeable value => value -> Unknown
-getTypeName :: forall {k} (a :: k). Typeable a => Text
+getTypeName :: forall k (a :: k). Typeable a => Text
 getUnknownTypeName :: Unknown -> Text
 instance (Unknown.Convertible a, Unknown.Convertible b) => GHC.Show.Show (a -> b)
 instance GHC.Show.Show Unknown.Unknown
