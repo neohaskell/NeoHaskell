@@ -33,7 +33,11 @@ Modes:
                               spec routes must have its committed record
                               (NNN-slug.<kind>-review.md, backlinking the spec)
   spec-check --criteria FILE  emit the criteria table as JSON [{id, behavior,
-                              test, level}] — the DoD gate's input (Phase 6)
+                              test, level}] — a spec-authoring/review aid
+  spec-check --criteria-tests [BASE]  PR-ready DoD gate: every criterion in a
+                              changed spec must name a proving test that RESOLVES
+                              (a real .hurl under testbed/tests, or a *.hs spec
+                              module) — a criterion can't cite a test never written
   spec-check --self-test      embedded fixture + mutation coverage (doctor/CI)
 
 Run: ./dev spec-check    CI: .github/workflows/checks.yml `spec` job
@@ -225,7 +229,7 @@ def check_spec(text, name, caps):
             # declared level, so a boundary behavior can't be "proven" by a unit
             # test (and vice-versa).
             tl = test.lower()
-            has_hurl = ".hurl" in tl or "hurl" in tl or "testbed/tests" in tl
+            has_hurl = ".hurl" in tl or "testbed/tests" in tl
             if level == "acceptance" and not has_hurl:
                 errs.append(f"{name}: {cid} is `acceptance` but its proving test `{test}` "
                             "names no .hurl acceptance test (testbed/tests/**)")
@@ -311,6 +315,83 @@ def reviews_pr(base, caps):
     if errs:
         return 1
     print(f"spec-check: OK — design-review records present for {len(specs)} changed spec(s)")
+    return 0
+
+
+# ── criterion-test-exists gate (Phase 6 DoD) ──────────────────────────────────
+# "DoD = criteria green at their declared levels" is enforced by (a) the tier
+# lint above binding level→test-shape at spec time, (b) the whole `Test` suite
+# (all levels incl. the acceptance test-hurl job) green on main, and (c) THIS
+# gate: every criterion's named proving test must actually RESOLVE to a file, so
+# a criterion can't cite a test that was never written. It does not re-run tests
+# post-merge (see AGENTS.md / ADR-0068) — it checks existence, like reviews_pr.
+
+HURL_REF = re.compile(r"([\w./-]+\.hurl)")
+SPEC_MODULE_REF = re.compile(r"\b([A-Z][A-Za-z0-9]*Spec)\b")
+
+
+def criterion_test_refs(test_cell):
+    """Concrete, checkable references in a proving-test cell:
+    [('hurl', '<path>.hurl'), …] or [('spec-module', 'FooSpec'), …]. A cell with
+    no concrete reference yields [] — nothing mechanically checkable, so the gate
+    conservatively passes it (a human still reviews the criterion)."""
+    hurls = [("hurl", m) for m in HURL_REF.findall(test_cell)]
+    if hurls:
+        return hurls
+    return [("spec-module", m) for m in SPEC_MODULE_REF.findall(test_cell)]
+
+
+def unresolved_criteria_tests(spec_name, spec_text, hurl_exists, module_exists):
+    """Pure gate core: given callbacks resolving a `.hurl` path and a spec module,
+    return [errors] for criteria whose named proving test cannot be found.
+    Callback-driven so it is testable without a repo tree."""
+    errs = []
+    for c in parse_criteria(spec_text):
+        for kind, token in criterion_test_refs(c["test"]):
+            if kind == "hurl" and not hurl_exists(token):
+                errs.append(f"{spec_name}: {c['id']} names acceptance test `{token}` but no "
+                            "such .hurl exists under testbed/tests/ — write it (red first)")
+            elif kind == "spec-module" and not module_exists(token):
+                errs.append(f"{spec_name}: {c['id']} names test module `{token}` but no matching "
+                            "`*.hs` spec file exists in core/ or testbed/ — write it (red first)")
+    return errs
+
+
+def _hurl_exists(token):
+    base = token.split("/")[-1]
+    tdir = ROOT / "testbed" / "tests"
+    return tdir.exists() and any(p.name == base for p in tdir.rglob("*.hurl"))
+
+
+def _module_exists(mod):
+    for root in (ROOT / "core", ROOT / "testbed"):
+        if root.exists() and any(mod in p.stem for p in root.rglob("*.hs")):
+            return True
+    return False
+
+
+def criteria_tests_pr(base):
+    """PR-ready gate: every criterion in a changed spec names a proving test that
+    RESOLVES. Mirrors reviews_pr. Exit 0 ok / 1 unresolved / 2 bad base."""
+    try:
+        specs = speclib.changed_specs(ROOT, base)
+    except speclib.GitDiffError as e:
+        print(f"spec-check: git diff against `{base}` failed — bad base ref? ({e})", file=sys.stderr)
+        return 2
+    specs = [p for p in specs if is_spec_file(p.name) and p.name != "TEMPLATE.md"]
+    if not specs:
+        print(f"spec-check: no specs changed vs {base} — no criteria tests to check")
+        return 0
+    errs = []
+    for spec in specs:
+        if not spec.exists():
+            continue
+        errs += unresolved_criteria_tests(spec.name, spec.read_text(), _hurl_exists, _module_exists)
+    for e in errs:
+        print(f"spec-check: FAIL — {e}", file=sys.stderr)
+    if errs:
+        return 1
+    print(f"spec-check: OK — criteria proving-tests resolve for {len(specs)} changed spec(s)")
     return 0
 
 
@@ -416,6 +497,30 @@ def self_test():
         print(f"self-test FAIL parse-criteria: {crit}")
         fails += 1
 
+    # Phase 6: criterion-test-exists gate (pure, callback-driven like reviews_pr)
+    if criterion_test_refs("`commands/slug.hurl`") != [("hurl", "commands/slug.hurl")]:
+        print("self-test FAIL refs-hurl"); fails += 1
+    if criterion_test_refs('`TextSpec` "x"') != [("spec-module", "TextSpec")]:
+        print("self-test FAIL refs-module"); fails += 1
+    if criterion_test_refs("manual QA — see notes") != []:
+        print("self-test FAIL refs-freetext"); fails += 1
+    hurl_spec = VALID_FIXTURE.replace('`TextSpec` "slugifies"', "`commands/slug.hurl`") \
+                             .replace("| C1 | slugifies | `commands/slug.hurl` | unit |",
+                                      "| C1 | slugifies | `commands/slug.hurl` | acceptance |")
+    # resolvable refs pass; a missing .hurl and a missing module each error
+    if unresolved_criteria_tests("x.md", hurl_spec, lambda t: True, lambda m: True):
+        print("self-test FAIL criteria-tests: resolvable refs should pass"); fails += 1
+    if not any(".hurl" in e for e in
+               unresolved_criteria_tests("x.md", hurl_spec, lambda t: False, lambda m: True)):
+        print("self-test FAIL criteria-tests: missing .hurl must error"); fails += 1
+    if not any("test module" in e for e in
+               unresolved_criteria_tests("x.md", VALID_FIXTURE, lambda t: True, lambda m: False)):
+        print("self-test FAIL criteria-tests: missing spec module must error"); fails += 1
+    freetext = VALID_FIXTURE.replace('`TextSpec` "slugifies"', "manual QA") \
+                            .replace('`TextSpec` "rejects empty"', "manual QA")
+    if unresolved_criteria_tests("x.md", freetext, lambda t: False, lambda m: False):
+        print("self-test FAIL criteria-tests: free-text cell must not hard-fail"); fails += 1
+
     joins = plan_joins(
         VALID_FIXTURE.replace("[core-primitives]", "[auth, concurrency]"), caps)
     if joins["design_reviews"] != ["security", "perf"]:
@@ -456,8 +561,8 @@ def self_test():
         fails += 1
 
     if fails == 0:
-        print("spec-check self-test: OK — fixture mutations, header parsing, "
-              "plan joins, spec-file filter, review-record gate covered")
+        print("spec-check self-test: OK — fixture mutations, header parsing, plan joins, "
+              "spec-file filter, review-record gate, criterion-test-exists gate covered")
     return 1 if fails else 0
 
 
@@ -493,6 +598,10 @@ def main():
     if args and args[0] == "--reviews-pr":
         base = args[1] if len(args) > 1 else "origin/main"
         return reviews_pr(base, caps)
+
+    if args and args[0] == "--criteria-tests":
+        base = args[1] if len(args) > 1 else "origin/main"
+        return criteria_tests_pr(base)
 
     files = [Path(a) for a in args] if args else sorted(CHANGES.glob("*.md"))
     files = [p for p in files if is_spec_file(p.name)]

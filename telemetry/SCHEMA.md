@@ -1,4 +1,8 @@
-# Telemetry schema v3 — FROZEN 2026-07-08
+# Telemetry schema v3 (current)
+
+A version's field shape is frozen; adding a field mints a new version (see the
+history below) — that is the mechanism, not a smell. The emitter always writes
+the current version; readers tolerate older ones.
 
 Version history (extension always requires a bump — that is the mechanism, not a
 smell): v1 → v2 added per-stage `invented_api_events` (Phase 4); v2 → v3 (Phase 6)
@@ -8,7 +12,7 @@ is the Phase-1 schema-validation dummy. **Readers tolerate older versions**
 (missing v3 fields read as their defaults); the emitter always writes v3.
 
 Every pipeline run emits **exactly one JSON line** appended to `telemetry/runs.jsonl`
-(committed). Lines are emitted by `scripts/telemetry.py` — never hand-written.
+(committed). Lines are emitted by `./dev telemetry` — never hand-written.
 
 ## Run record
 
@@ -47,12 +51,12 @@ Every pipeline run emits **exactly one JSON line** appended to `telemetry/runs.j
   at run start (null if not refreshed).
 - `assets_consulted` (v3) — list of `<kind>:<name>` an aid the run actually
   looked at (e.g. `alias:auth`, `hot-card:Text.toLower`, `phrasebook:strings`).
-  Emitted via `telemetry.py consult --asset <kind>:<name>` at localize/plan/
+  Emitted via `./dev telemetry consult --asset <kind>:<name>` at localize/plan/
   implement. Powers the miner's PRUNE recommendations: an asset no run consults
   is a removal candidate (task 5e). Descriptive, not a gate — kinds are kebab.
 - `outcome` — `ok | parked | failed | abandoned`.
 - `asset_delta` (v3) — the class-fix a non-`ok` run ships alongside the instance
-  fix (`{type, destination, ref}` or null). `telemetry.py finish` **requires** it
+  fix (`{type, destination, ref}` or null). `./dev telemetry finish` **requires** it
   for `failed`/`parked` outcomes (task 4). `type` is from the delta-type taxonomy
   below; `destination` is the asset file (or, for `none`, the justification).
 
@@ -68,7 +72,7 @@ codes GHC-88464/GHC-76037)`, so a GHC rewording cannot silently zero the
 metric (the error-index codes are stable by design; a `./dev doctor`
 fixture self-test breaks loudly if BOTH stop matching). The pipeline runner
 records N per stage via
-`telemetry.py stage --name <s> --event stop --invented-api-events N`
+`./dev telemetry stage --name <s> --event stop --invented-api-events N`
 (schema field `stages.<name>.invented_api_events`, default 0).
 
 **Baseline (durable definition):** the invented-API baseline is the mean of
@@ -85,7 +89,8 @@ they make trends unmeasurable.
 
 The asset kinds the failure→asset-delta protocol and the retrospective miner may
 target (single source: `DELTA_TYPES` in `scripts/telemetry.py`; enforced by
-`telemetry.py finish`). Each maps to a real destination file:
+`./dev telemetry finish`, and `telemetry.py --self-test` asserts this prose stays
+in sync with that list). Each maps to a real destination file:
 
 `alias` → `codemap/capabilities.yaml` · `extension-point` → `codemap/extension-points.yaml`
 · `phrasebook` → `codemap/phrasebook.md` · `hot-card` → `codemap/api-hot.md`
@@ -131,9 +136,12 @@ transcript.md   # session transcript or stage summaries (miner input)
 ```
 
 **Retention policy (decided Phase 6):** golden dirs are **local and gitignored**
-working material for the weekly miner — pruned after **4 weeks** (`./dev retrospect`
-reports the window). The committed `runs.jsonl` is the durable trend record; no
-golden artifact is committed (avoids bloating the repo with transcripts/diffs).
+working material for the weekly miner. `./dev retrospect` reports the golden
+inventory (dir count + oldest mtime); `./dev retrospect --prune-golden [--weeks 4]`
+deletes dirs older than the window and is run at the weekly review (the "4 weeks"
+retention is that command, not a bare promise). The committed `runs.jsonl` is the
+durable trend record; no golden artifact is committed (avoids bloating the repo
+with transcripts/diffs).
 
 ## Inner-loop baseline (measured 2026-07-07, Apple Silicon, GHC 9.8.4, -O0 dev flavor)
 

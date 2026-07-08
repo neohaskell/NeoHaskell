@@ -1,15 +1,19 @@
 # Definition-of-done gate (pipeline Phase 6, task 1) — POST-MERGE, NOTIFY-ONLY.
 #
-# The suites already run on push-to-main (Test.yml). This watches their result:
-# if `Test` fails on `main` — a merged change is NOT green at its declared levels
-# — the merge is flagged as a **revert-candidate** and a notification is posted.
+# Watches the post-merge suites on `main`: both "Test" (Linux: doctest + all
+# nhcore suites incl. the acceptance test-hurl job) and "Test macOS" (Darwin
+# subset). If EITHER concludes `failure` on a push to `main`, the merge is
+# flagged as a **revert-candidate** and a notification is posted. NB: both
+# workflows carry a `paths:` filter, so a pure-tooling merge (only scripts/,
+# docs/, telemetry/, .claude/) triggers neither and this gate correctly no-ops
+# for it — there is no compiled surface to regress.
 # It NEVER auto-reverts (ADR-0068); the kill switch (`/revert`, revert.yml) is a
 # separate, deliberate maintainer action.
 name: dod
 
 on:
   workflow_run:
-    workflows: ["Test"]
+    workflows: ["Test", "Test macOS"]
     types: [completed]
 
 permissions:
@@ -31,15 +35,21 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
           SHA: ${{ github.event.workflow_run.head_sha }}
+          WORKFLOW: ${{ github.event.workflow_run.name }}
           RUN_URL: ${{ github.event.workflow_run.html_url }}
         run: |
           set -euo pipefail
-          # squash-merge commit subjects end with "(#NNN)"
-          MSG=$(gh api "repos/${REPO}/commits/${SHA}" -q '.commit.message' | head -1)
-          NUM=$(printf '%s' "$MSG" | grep -oE '#[0-9]+' | tail -1 | tr -d '#' || true)
-          BODY=$(printf '%s' "⚠️ **DoD gate**: the \`Test\` suite failed on \`main\` after this merged (\`${SHA}\`) — the change is not green at its declared levels. Marked **revert-candidate**. Verify the criteria, or trigger the kill switch by commenting \`/revert\`. Notify-only — nothing was reverted. Run: ${RUN_URL}")
+          # Resolve the PR that produced this commit from the commit→PRs association
+          # (exact), falling back to the last "#NNN" in the squash subject.
+          NUM=$(gh api "repos/${REPO}/commits/${SHA}/pulls" -q '.[0].number' 2>/dev/null || true)
+          if [ -z "${NUM}" ]; then
+            MSG=$(gh api "repos/${REPO}/commits/${SHA}" -q '.commit.message' | head -1)
+            NUM=$(printf '%s' "$MSG" | grep -oE '#[0-9]+' | tail -1 | tr -d '#' || true)
+          fi
+          BODY=$(printf '%s' "⚠️ **DoD gate**: the \`${WORKFLOW}\` suite failed on \`main\` after this merged (\`${SHA}\`) — the change is not green at its declared levels. Marked **revert-candidate**. Verify the criteria, or trigger the kill switch by commenting \`/revert\`. Notify-only — nothing was reverted. Run: ${RUN_URL}")
           if [ -n "${NUM}" ]; then
-            gh pr edit "${NUM}" --add-label revert-candidate || echo "note: create the 'revert-candidate' label to enable auto-labelling"
+            gh label create revert-candidate --color B60205 --description "Post-merge DoD suite failure; candidate for /revert" 2>/dev/null || true
+            gh pr edit "${NUM}" --add-label revert-candidate || echo "note: could not label PR #${NUM}"
             gh pr comment "${NUM}" --body "${BODY}"
           else
             gh issue create --title "DoD gate failed on main (${SHA})" --body "${BODY}"

@@ -56,6 +56,21 @@ def delta(text):
     return lines, breaking
 
 
+# A breaking change must carry a REAL migration note. These placeholder answers
+# (case-insensitive, trailing punctuation/whitespace trimmed) do NOT count — an
+# agent under time pressure must not slip a breaking release past the gate with
+# `TBD`/`N/A`. Non-breaking specs may legitimately say "None." (TEMPLATE.md allows it).
+MIGRATION_PLACEHOLDERS = {
+    "", "none", "n/a", "na", "tbd", "tba", "-", "–", "—", "todo", "to do",
+    "pending", "none yet", "nothing", "not applicable",
+}
+
+
+def is_placeholder_impact(impact):
+    """True when `## User impact` is empty or a bare placeholder, not a migration note."""
+    return (impact or "").strip().strip(".").strip().lower() in MIGRATION_PLACEHOLDERS
+
+
 def entry_for(spec_path):
     """(id, markdown-entry, [errors]) for one spec. id = filename stem."""
     text = spec_path.read_text()
@@ -64,9 +79,10 @@ def entry_for(spec_path):
     impact = section(text, "User impact")
     lines, breaking = delta(text)
     errs = []
-    if breaking and (not impact or impact.lower() in ("none.", "none")):
+    if breaking and is_placeholder_impact(impact):
         errs.append(f"{spec_path.name}: BREAKING (delta removes a signature) but `## User "
-                    "impact` has no migration note — a breaking change must tell users how to move")
+                    "impact` has no migration note — a breaking change must tell users how to move "
+                    "(a placeholder like `TBD`/`N/A`/`None` does not count)")
     tag = "  **[BREAKING]**" if breaking else ""
     body = [f"### {sid} — {title}{tag}", ""]
     body.append(impact or "_No user impact recorded._")
@@ -191,9 +207,21 @@ def self_test():
         _s, _m, merrs = entry_for(mp)
         check("breaking-with-migration-clean", not merrs)
 
+        # a PLACEHOLDER impact does NOT satisfy the migration gate on a breaking change
+        for i, placeholder in enumerate(("TBD", "N/A", "-", "None yet.", "TODO", "pending")):
+            pp = Path(tmp) / f"20{i}-drop-z.md"
+            pp.write_text(VALID.replace("+ Text: slugify :: Text -> Text", "- Text: slugify :: Text -> Text")
+                          .replace("None.", placeholder))
+            _p, _pe, perrs = entry_for(pp)
+            check(f"breaking-placeholder-rejected:{placeholder}", any("migration" in e for e in perrs))
+
         # entry_present detects a rendered entry
         check("entry-present", entry_present(f"# Changelog\n\n## [Unreleased]\n\n{entry}", "099-add-slugify"))
         check("entry-absent", not entry_present("# Changelog\n\n## [Unreleased]\n", "099-add-slugify"))
+
+    # is_placeholder_impact unit coverage (empty + a real note)
+    check("placeholder-empty", is_placeholder_impact("") and is_placeholder_impact("  none.  "))
+    check("placeholder-real-note", not is_placeholder_impact("Call `Text.toSlug` instead."))
 
     if fails == 0:
         print("changelog self-test: OK — breaking detection, migration gate, entry presence covered")

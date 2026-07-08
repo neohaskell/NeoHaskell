@@ -49,7 +49,7 @@ Single entrypoint: **`./dev`** (no-args lists all verbs; same tools for humans a
 - Repair-loop protocol: edit → wait ~2s → **`./dev check`** (measured: error feedback 0.6s, recovery 1.9s). Never spawn `cabal build` inside the loop.
 - You do NOT need to be inside `nix develop`: every verb self-provisions the pinned toolchain (~0.4s warm overhead).
 - Everything uses the dev flavor (`cabal.project.dev`, `-O0`); full nhcore -O0 build = 249 modules / ~54s on this machine.
-- Pipeline telemetry: `scripts/telemetry.py` (schema: `telemetry/SCHEMA.md`, frozen v2). Every pipeline run emits one line to `telemetry/runs.jsonl`. Telemetry is pipeline-only: never emit lines for ad-hoc runs.
+- Pipeline telemetry: `./dev telemetry` (emitter `scripts/telemetry.py`; schema `telemetry/SCHEMA.md`, frozen v3). Every pipeline run emits one line to `telemetry/runs.jsonl`. Telemetry is pipeline-only: never emit lines for ad-hoc runs.
 - These are the same commands humans use (README "Fast inner loop") — parity is deliberate; don't create agent-only variants.
 
 - Test discovery: **only `nhcore-test` uses hspec-discover**; `nhcore-test-core`, `-auth`, `-service`, `-integration` register specs manually in their `Main.hs` — new spec modules must be added there AND to the cabal `other-modules`.
@@ -71,27 +71,29 @@ Training-data APIs don't exist here. Resolve symbols at **plan time** into a `us
 - `codemap/api-hot.md` — frequency-ranked card (what this repo actually calls, with doctest examples; cut modules listed in the card trailer)
 - `./dev api "Text -> Maybe Uuid"` — hoogle type search: NeoHaskell surface ranked top; vanilla (dependency closure + boot libs) below with disclaimer + escape-hatch guidance whenever it has results (omitted when empty; exit 3 = vanilla-only). Query in dialect types (per the style table above) to hit the surface directly
 - `codemap/phrasebook.md` — doctest-verified usage patterns (gate: test.yml `doctest` job; thin coverage = the doc backlog, ratcheted via `undocumented_doctest_modules`)
-- GHC "not in scope" in `./dev check` output = invented API — resolve via `./dev api`; pipeline runs record per-stage `invented_api_events` (telemetry schema v2)
+- GHC "not in scope" in `./dev check` output = invented API — resolve via `./dev api`; pipeline runs record per-stage `invented_api_events` (telemetry schema v3)
 
 ## Change flow (Phase 5) — spec-gated, two human touchpoints
 
-Any request that should end in a PR runs the `neohaskell-pipeline` skill. The shape (ADR-0067):
+Any request that should end in a PR runs the `neohaskell-pipeline` skill. The shape (ADR-0067).
+(The pipeline-bootstrap PRs — plan Phases 0–6, which *build* this gate — necessarily precede it and
+are the one exemption; the spec gate applies to every subsequent change request.)
 
 - **Spec first**: `docs/changes/NNN-slug.md` from `TEMPLATE.md` — promised API diff (signatures vocabulary), `touches:` capability IDs, criteria C1..Cn each naming its proving test + level (`unit|integration|acceptance`). Bugs: C1 = the failing repro, committed red. Validate: `./dev spec-check` (CI: checks.yml `spec` job).
 - **Gate 1 = draft PR** (spec only; heavy CI skipped on drafts). Continue signal = maintainer `@claude` comment (claude.yml ignores non-maintainers). Record it: `./dev pipeline approve spec --by <who>` — advancing without it is refused.
 - **Resume contract**: `.pipeline/state.json` via `./dev pipeline` (init/status/advance/set/approve/park/resume/validate). Resume never re-plans; plan wrong → park (`wrong-localization`) + fix the asset.
 - **Risk-tiered design reviews** (post-approval, pre-implementation): `./dev spec-check --plan <spec>` routes to `neohaskell-security-design-review` / `neohaskell-performance-design-review` when `touches:` hits risk-tagged capabilities; review records (`NNN-slug.<kind>-review.md`) are committed next to the spec, and their presence is gated at PR-ready by `./dev spec-check --reviews-pr`.
 - **Verification order**: criteria tests red → implement → green at declared levels → test-impact suites (from `--plan`) → `./dev lint` + `./dev spec-drift <spec>` → full suite once at PR-ready.
-- **Failure policy**: per-stage time-boxes (skill has the table) → retry once → escalate tier → `./dev pipeline park --label <taxonomy>` + structured report. A parked report beats a wrong PR. Closing a failed/parked run records a class-fix — `telemetry.py finish … --asset-delta <type>:<dest>` (enforced; `none:<reason>` if none), per [ADR-0068](docs/decisions/0068-failure-asset-delta-and-learning-loop.md).
+- **Failure policy**: per-stage time-boxes (skill has the table) → retry once → escalate tier → `./dev pipeline park --label <taxonomy>` + structured report. A parked report beats a wrong PR. Closing a failed/parked run records a class-fix — `./dev telemetry finish … --asset-delta <type>:<dest>` (enforced; `none:<reason>` if none), per [ADR-0068](docs/decisions/0068-failure-asset-delta-and-learning-loop.md).
 - **Expectation guard** (`.claude/hooks/expectation-guard.py`): removing/rewording an existing test expectation is blocked twice — locally by the hook (maintainer marker `.pipeline/allow-expectation-edits`) and in CI by the `expectations` census job (maintainer `expectations-approved` PR label, which the agent can't self-apply). Adding tests never needs either.
 - **Benchmarks**: nightly only (`./dev bench` vs `telemetry/bench-budgets.json`, nightly-bench.yml) — never PR-blocking.
 
 ## Release tail + learning loop (Phase 6) — [ADR-0068](docs/decisions/0068-failure-asset-delta-and-learning-loop.md)
 
-- **Definition of done**: criteria green at their declared levels (`./dev spec-check --criteria <spec>` emits them; the tier lint rejects an `acceptance` criterion with no `.hurl` test) + `./dev testbed` acceptance green + spec-drift trivial. Post-merge, `dod.yml` flags a `Test`-suite failure on `main` as a **revert-candidate** (notify-only, never auto-reverts).
+- **Definition of done** (three gates, all at spec/PR-ready — not a post-merge per-criterion re-run): the **tier lint** binds each criterion's level to its test shape (`acceptance` ⇒ names a `.hurl`); `./dev spec-check --criteria-tests` proves every criterion's named test **exists** (a real `.hurl` or `*.hs` spec module — no citing a test never written); and the whole `Test` suite (all levels incl. the acceptance `test-hurl` job) + `./dev testbed` go green with spec-drift trivial. Post-merge, `dod.yml` flags a `Test`/`Test macOS` failure on `main` as a **revert-candidate** (notify-only, never auto-reverts). (`./dev spec-check --criteria <spec>` dumps the table as JSON — an authoring aid, not itself the gate.)
 - **Kill switch**: a maintainer comments `/revert` on a merged PR → `revert.yml` (OWNER/MEMBER-gated) runs `./dev revert <sha>` to open a revert PR. Never merges it.
 - **Changelog**: generated from specs — `./dev changelog` (breaking = a removed signature line ⇒ mandatory migration note); `--check` gates it at PR-ready. Never hand-write `CHANGELOG.md`.
-- **Learning loop**: closing a failed/parked run records a class-fix (`telemetry.py finish --asset-delta`, enforced); log consulted aids (`telemetry.py consult`); the weekly `./dev retrospect` digest + `neohaskell-retrospective-miner` skill turn recurring friction into ≤5 contract-validated recommendations (`telemetry/recommendations.jsonl`). **Activation** (first real weekly review, first miner report, archive sunset) waits on real runs accumulating.
+- **Learning loop**: closing a failed/parked run records a class-fix (`./dev telemetry finish --asset-delta`, enforced); log consulted aids (`./dev telemetry consult`); the weekly `./dev retrospect` digest + `neohaskell-retrospective-miner` skill turn recurring friction into ≤5 contract-validated recommendations (`telemetry/recommendations.jsonl`). **Activation** (first real weekly review, first miner report, archive sunset) waits on real runs accumulating.
 
 ## Dialect enforcement (Phase 2, live since 2026-07-07)
 

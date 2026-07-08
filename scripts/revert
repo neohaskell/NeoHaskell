@@ -37,7 +37,17 @@ def do_revert(commit, base, dry_run, cwd=ROOT, open_pr=True):
     if base:
         git(["fetch", "origin", base], cwd)
     git(["checkout", "-b", branch, f"origin/{base}" if base else "HEAD"], cwd)
-    git(["revert", "--no-edit", commit], cwd)
+    rev = git(["revert", "--no-edit", commit], cwd, check=False)
+    if rev.returncode != 0:
+        # A conflicting revert must not leave a half-reverted branch (or push one):
+        # abort the in-progress revert, then exit with recovery guidance. Same clean
+        # failure for the human path and the revert.yml workflow step.
+        git(["revert", "--abort"], cwd, check=False)
+        where = f"origin/{base}" if base else "the base branch"
+        sys.exit(f"revert: `git revert {sha}` did not apply cleanly — it conflicts with {where}. "
+                 f"Aborted; nothing was pushed. Resolve manually: check out a fresh branch off "
+                 f"{where}, run `git revert {commit}`, fix the conflicts, then push.\n"
+                 f"{(rev.stderr or rev.stdout).strip()}")
     if dry_run:
         print(f"revert: [dry-run] revert commit for {sha} created on {branch} (no push/PR)")
         return 0
@@ -85,8 +95,29 @@ def self_test():
         except SystemExit:
             pass
 
+        # a conflicting revert aborts cleanly — no unmerged paths, nothing pushed
+        git(["checkout", "-q", "main"], d)
+        (d / "f.txt").write_text("conflict-base\n")
+        git(["commit", "-qam", "C"], d)
+        mid = git(["rev-parse", "HEAD"], d).stdout.strip()
+        (d / "f.txt").write_text("conflict-top\n")
+        git(["commit", "-qam", "D"], d)
+        try:
+            do_revert(mid, base=None, dry_run=True, cwd=d)
+            print("revert self-test FAIL: a conflicting revert was not detected")
+            fails += 1
+        except SystemExit as e:
+            if "did not apply cleanly" not in str(e):
+                print(f"revert self-test FAIL: unexpected conflict message: {e}")
+                fails += 1
+        porcelain = git(["status", "--porcelain"], d).stdout
+        if any(line[:2] in ("UU", "AA", "DD") for line in porcelain.splitlines()):
+            print(f"revert self-test FAIL: conflict left unmerged paths: {porcelain!r}")
+            fails += 1
+
     if fails == 0:
-        print("revert self-test: OK — revert branch created, content restored, bad commit rejected")
+        print("revert self-test: OK — revert branch created, content restored, bad commit "
+              "rejected, conflicting revert aborted cleanly")
     return 1 if fails else 0
 
 

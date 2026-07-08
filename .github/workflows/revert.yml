@@ -3,8 +3,11 @@
 # A maintainer comments `/revert` on a MERGED PR → this opens a revert PR (it
 # never merges it). The author-association gate mirrors claude.yml: a comment
 # from anyone who is not an org OWNER/MEMBER is ignored entirely, so the ability
-# to trigger a revert is unforgeable. `/revert` is a distinct command from
-# claude.yml's `@claude` trigger, so the two never double-fire.
+# to trigger a revert is unforgeable. NeoHaskell is org-owned, so OWNER/MEMBER is
+# the maintainer set (COLLABORATOR = outside collaborators, deliberately excluded).
+# The trigger is an exact `/revert` (or `/revert <args>`) — not a `/revert…`
+# prefix — and claude.yml excludes `/revert` comments from its `@claude` handler,
+# so the two workflows are disjoint and never double-fire on one comment.
 name: revert
 
 on:
@@ -19,7 +22,7 @@ jobs:
   revert:
     if: >-
       github.event.issue.pull_request &&
-      startsWith(github.event.comment.body, '/revert') &&
+      (github.event.comment.body == '/revert' || startsWith(github.event.comment.body, '/revert ')) &&
       contains(fromJSON('["OWNER", "MEMBER"]'), github.event.comment.author_association)
     runs-on: ubuntu-latest
     timeout-minutes: 10

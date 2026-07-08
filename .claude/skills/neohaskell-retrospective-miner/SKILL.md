@@ -42,7 +42,10 @@ dummy line today); with no data there is nothing to mine.
   review, never `--record` it.
 - **Validation over time (rule d):** an implemented delta is `validated` against
   its claimed metric over subsequent weeks; no movement makes it a `PRUNE`
-  candidate in turn. The weekly review flips `status`/`validated`.
+  candidate in turn. The weekly review flips `status`/`validated` with
+  `./dev retrospect --set '<week>' '<friction-substr>' --status implemented|pruned
+  [--validated true|false]` — the sanctioned rewriter, so the file stays
+  append-plus-gated-edit, never hand-edited.
 - **Removal is first-class (rule e):** the digest's "assets consulted" frequency
   plus the asset inventory surface never-consulted assets — recommend `PRUNE`.
 
@@ -60,6 +63,6 @@ field carries the justification.
 
 The review picks **1–2** recorded recommendations to implement that week (the
 maintainer's call); the rest stay `proposed` for re-evaluation. The instance-fix
-and the class-fix ship together (`telemetry.py finish --asset-delta` already
+and the class-fix ship together (`./dev telemetry finish --asset-delta` already
 recorded the class-fix for each failed run this week — the miner generalizes
 across runs, it does not replace the per-run delta).

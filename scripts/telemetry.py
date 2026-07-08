@@ -4,17 +4,17 @@
 One JSON line per pipeline run, appended to telemetry/runs.jsonl. Never
 hand-written — pipeline scripts call this tool.
 
-Usage:
-  telemetry.py start   --run-id 2026-07-07-001 --request "issue#712"
-  telemetry.py stage   --name implement --event start [--model sonnet]
-  telemetry.py stage   --name implement --event stop  [--repair-rounds 2] [--invented-api-events 3]
-  telemetry.py wait    --seconds 340            # add waiting-on-human time
-  telemetry.py rebuilt --count 4                # cache-health metric
-  telemetry.py consult --asset alias:auth       # usage accounting (Phase 6, task 5e)
-  telemetry.py finish  --outcome ok
-  telemetry.py finish  --outcome parked --failure-label timeout --asset-delta alias:codemap/capabilities.yaml
-  telemetry.py golden  --request-file R --spec-file S --diff-file D --verdict "..." [--transcript-file T]
-  telemetry.py --self-test                      # doctor/CI
+Usage (via the `./dev telemetry` verb — this file has no PATH entry):
+  ./dev telemetry start   --run-id 2026-07-07-001 --request "issue#712"
+  ./dev telemetry stage   --name implement --event start [--model sonnet]
+  ./dev telemetry stage   --name implement --event stop  [--repair-rounds 2] [--invented-api-events 3]
+  ./dev telemetry wait    --seconds 340            # add waiting-on-human time
+  ./dev telemetry rebuilt --count 4                # cache-health metric
+  ./dev telemetry consult --asset alias:auth       # usage accounting (Phase 6, task 5e)
+  ./dev telemetry finish  --outcome ok
+  ./dev telemetry finish  --outcome parked --failure-label timeout --asset-delta alias:codemap/capabilities.yaml
+  ./dev telemetry golden  --request-file R --spec-file S --diff-file D --verdict "..." [--transcript-file T]
+  ./dev telemetry --self-test                      # doctor/CI
 
 A failed/parked run MUST carry --asset-delta (the class-fix ships with the
 instance-fix, Phase 6 task 4). Schema bumps (new fields) are documented in
@@ -87,10 +87,34 @@ def save(run: dict) -> None:
     CURRENT.write_text(json.dumps(run, indent=2))
 
 
+def run_id_recorded(run_id: str) -> bool:
+    """True if run_id already appears in the committed ledger. Two parallel
+    worktree pipelines can each pick `<date>-001` (the per-worktree
+    `.current-run.json` guard can't see across worktrees); a collision would
+    corrupt the first-5-runs baseline and clobber golden/<run_id>/. Guard here,
+    and let `runs.jsonl merge=union` (.gitattributes) handle the append merge."""
+    if not RUNS.exists():
+        return False
+    for line in RUNS.read_text().splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            if json.loads(line).get("run_id") == run_id:
+                return True
+        except json.JSONDecodeError:
+            continue
+    return False
+
+
 def cmd_start(args) -> None:
     validate_run_id(args.run_id)
     if CURRENT.exists():
         sys.exit(f"telemetry: run already in progress ({CURRENT}); finish it first")
+    if run_id_recorded(args.run_id):
+        sys.exit(f"telemetry: run-id {args.run_id!r} is already recorded in runs.jsonl — pick a "
+                 "unique suffix (e.g. `-b`) so parallel worktree runs don't collide "
+                 "(baseline + golden/<run_id>/ key on run_id)")
     save({
         "schema": CURRENT_SCHEMA,
         "run_id": args.run_id,
@@ -108,7 +132,7 @@ def cmd_start(args) -> None:
 
 def cmd_stage(args) -> None:
     if args.name not in STAGES:
-        sys.exit(f"telemetry: unknown stage '{args.name}' (schema v2 stages: {', '.join(STAGES)})")
+        sys.exit(f"telemetry: unknown stage '{args.name}' (stage vocabulary: {', '.join(STAGES)})")
     run = load()
     stage = run["stages"].setdefault(args.name, {"start": None, "stop": None, "model": None,
                                                  "repair_rounds": 0, "invented_api_events": 0})
@@ -157,17 +181,21 @@ def cmd_consult(args) -> None:
 
 def parse_asset_delta(raw: str) -> dict:
     """`<type>:<destination>[:<ref>]` — the class-fix that ships with a failed
-    run. type from the closed taxonomy; destination = the asset file (or, for
-    `none`, the justification)."""
-    parts = raw.split(":", 2)
-    dtype = parts[0]
+    run. type from the closed taxonomy; destination = the asset file. For
+    `none`, everything after the first colon is the justification and is kept
+    whole (a reason may itself contain colons — it is never split into `ref`)."""
+    dtype, sep, rest = raw.partition(":")
     if dtype not in DELTA_TYPES:
         sys.exit(f"telemetry: asset-delta type must be from the closed taxonomy: {', '.join(DELTA_TYPES)}")
-    dest = parts[1] if len(parts) > 1 else ""
-    if not dest:
+    if not sep or not rest:
         sys.exit("telemetry: --asset-delta needs '<type>:<destination>' "
                  "(destination = the asset file, or the justification for 'none')")
-    return {"type": dtype, "destination": dest, "ref": parts[2] if len(parts) > 2 else None}
+    if dtype == "none":
+        return {"type": dtype, "destination": rest, "ref": None}
+    dest, _, ref = rest.partition(":")
+    if not dest:
+        sys.exit("telemetry: --asset-delta needs a non-empty destination")
+    return {"type": dtype, "destination": dest, "ref": ref or None}
 
 
 def cmd_finish(args) -> None:
@@ -268,6 +296,18 @@ def self_test() -> int:
                 or line.get("assets_consulted") != ["alias:auth"]:
             print(f"telemetry self-test FAIL finish-line: {line}")
             fails += 1
+        # C: a run-id already recorded in the ledger is refused (parallel-worktree guard)
+        check("start-dup-runid", lambda: cmd_start(ns(run_id="t-001", request="issue#0")), True)
+        # H: a `none:<reason>` justification keeps its colons (never split into ref);
+        #    a typed delta still splits an optional trailing ref
+        nd = parse_asset_delta("none:blocked on upstream: see PR #9")
+        if nd["destination"] != "blocked on upstream: see PR #9" or nd["ref"] is not None:
+            print(f"telemetry self-test FAIL none-colon: {nd}")
+            fails += 1
+        td = parse_asset_delta("alias:codemap/capabilities.yaml:PR#12")
+        if td["destination"] != "codemap/capabilities.yaml" or td["ref"] != "PR#12":
+            print(f"telemetry self-test FAIL delta-ref: {td}")
+            fails += 1
         # ok runs do not require an asset delta
         check("start2", lambda: cmd_start(ns(run_id="t-002", request="issue#0")), False)
         check("finish-ok", lambda: cmd_finish(
@@ -284,9 +324,53 @@ def self_test() -> int:
               f"vs pipeline-state={sorted(ps_labels)}")
         fails += 1
 
+    # anti-rot: schema-version parity. CURRENT_SCHEMA is the single source; a bump
+    # that misses a doc silently lies to the most-read agent surface (AGENTS.md is
+    # loaded every session). Every `schema v<N>`/`frozen v<N>` claim must equal it.
+    # (Version *history* in SCHEMA.md is written bare — `v1 → v2` — so it is not a
+    # claim and not matched here.)
+    SKILLS = ROOT / ".claude" / "skills"
+    version_docs = [
+        ROOT / "telemetry" / "SCHEMA.md",
+        ROOT / "AGENTS.md",
+        SKILLS / "neohaskell-pipeline" / "SKILL.md",
+        SKILLS / "neohaskell-retrospective-miner" / "SKILL.md",
+    ]
+    ver_re = re.compile(r"(?:schema|frozen)\s+v(\d+)", re.IGNORECASE)
+    for doc in version_docs:
+        if not doc.exists():
+            continue
+        for n in sorted(set(ver_re.findall(doc.read_text()))):
+            if int(n) != CURRENT_SCHEMA:
+                print(f"telemetry self-test FAIL schema-version-parity: "
+                      f"{doc.relative_to(ROOT)} claims v{n}, CURRENT_SCHEMA={CURRENT_SCHEMA}")
+                fails += 1
+
+    # anti-rot: delta-type taxonomy prose parity. DELTA_TYPES is the single source;
+    # the miner skill restates it as a `|`-list and SCHEMA.md as a `·`-list — both
+    # must agree or the taxonomy the docs teach drifts from what `finish` enforces.
+    miner = SKILLS / "neohaskell-retrospective-miner" / "SKILL.md"
+    if miner.exists():
+        mm = re.search(r"`delta_type`\s*∈\s*`([^`]+)`", miner.read_text())
+        skill_types = {t.strip() for t in mm.group(1).split("|") if t.strip()} if mm else set()
+        if skill_types != set(DELTA_TYPES):
+            print(f"telemetry self-test FAIL delta-type-parity(miner skill): "
+                  f"telemetry={sorted(DELTA_TYPES)} vs skill={sorted(skill_types)}")
+            fails += 1
+    schema_md = ROOT / "telemetry" / "SCHEMA.md"
+    if schema_md.exists():
+        sec = re.search(r"## Delta-type taxonomy.*?(?=\n## |\Z)", schema_md.read_text(), re.DOTALL)
+        block = sec.group(0) if sec else ""
+        missing = [t for t in DELTA_TYPES if f"`{t}`" not in block]
+        if missing:
+            print(f"telemetry self-test FAIL delta-type-parity(SCHEMA.md): "
+                  f"taxonomy block missing {missing}")
+            fails += 1
+
     if fails == 0:
-        print("telemetry self-test: OK — schema v3 fields, usage accounting, "
-              "asset-delta enforcement, label-taxonomy parity covered")
+        print("telemetry self-test: OK — schema-v3 fields, usage accounting, asset-delta "
+              "enforcement, run-id collision guard, none-colon justification, and "
+              "label/schema-version/delta-type parity covered")
     return 1 if fails else 0
 
 

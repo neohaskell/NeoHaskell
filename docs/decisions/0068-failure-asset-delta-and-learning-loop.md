@@ -4,7 +4,7 @@
 
 ## Status
 
-Proposed
+Accepted
 
 ## Context
 
@@ -30,7 +30,7 @@ there is no schema for recommendations or usage.
 
 ### 1. A non-`ok` run must record an asset delta
 
-`telemetry.py finish --outcome {failed,parked}` now **requires**
+`./dev telemetry finish --outcome {failed,parked}` now **requires**
 `--asset-delta <type>:<destination>[:<ref>]`, validated against a closed
 **delta-type taxonomy v1**: `alias | extension-point | phrasebook | hot-card |
 hlint-rule | hook | cli-utility | skill-edit | telemetry-label | PRUNE | none`.
@@ -47,7 +47,7 @@ protocol is measurable, not aspirational.
 
 ### 2. Usage accounting powers removal, not just addition
 
-`telemetry.py consult --asset <kind>:<name>` records what a run actually looked at
+`./dev telemetry consult --asset <kind>:<name>` records what a run actually looked at
 (`assets_consulted`, schema v3). An asset no run consults is a PRUNE candidate —
 the loop can *shrink* the surface, not only grow it. Descriptive, not a gate.
 

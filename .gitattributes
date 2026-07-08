@@ -1,3 +1,9 @@
 
 # Use bd merge for beads JSONL files
 .beads/issues.jsonl merge=beads
+
+# Append-only pipeline ledgers: parallel worktree pipelines append concurrently,
+# so union-merge (a git built-in — no driver install needed) keeps both sides'
+# lines instead of conflicting. run_id uniqueness is guarded in telemetry.py start.
+telemetry/runs.jsonl merge=union
+telemetry/recommendations.jsonl merge=union
