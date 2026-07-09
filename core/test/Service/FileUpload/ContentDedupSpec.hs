@@ -403,6 +403,25 @@ spec = do
               |> Task.mapError (\e -> [fmt|exists failed: #{show e}|])
             blobPresent |> shouldBe True
 
+        it "dedup surfaces a generic error (no dangling ref) when re-store fails" \_ -> do
+          withTestDedupEnv \env -> do
+            let content = "self-heal store-failure content" |> Text.toBytes
+            response1 <- uploadFile env "owner1" "file.txt" "text/plain" content
+            env.blobStore.delete response1.blobKey
+              |> Task.mapError (\e -> [fmt|delete failed: #{show e}|])
+            -- Blob is gone AND the re-store fails: the upload must surface a
+            -- generic error, never a dangling ref (the error detail is logged
+            -- server-side, not returned to the client).
+            let faultingBlobStore =
+                  (env.blobStore)
+                    { store = \_ _ -> Task.throw (StorageError "injected store failure") }
+            result <-
+              handleUploadImpl env.config faultingBlobStore env.stateStore "owner1" "file.txt" "text/plain" content
+                |> Task.asResult
+            case result of
+              Ok _ -> fail "expected re-store failure to surface as an error, not a dangling ref"
+              Err msg -> (Text.contains "restore" msg) |> shouldBe True
+
 
 -- ==========================================================================
 -- Test Infrastructure

@@ -434,16 +434,28 @@ normalUploadFlow config blobStore stateStore ownerHash filename contentType cont
 ensureBlobPresent :: BlobStore -> BlobKey -> Bytes -> Task Text Unit
 ensureBlobPresent blobStore blobKey content = do
   existsResult <- blobStore.exists blobKey |> Task.asResult
-  let blobPresent = case existsResult of
-        Ok present -> present
-        Err _ -> False -- presence unknown: treat as missing and heal (re-store is idempotent)
+  blobPresent <- case existsResult of
+    Ok present -> Task.yield present
+    Err existsErr -> do
+      -- Presence unknown: keep the real error in the server log, then treat as
+      -- missing and heal (re-store is idempotent).
+      Log.warn [fmt|Dedup blob existence check errored (#{show existsErr}); treating as missing|]
+        |> Task.ignoreError
+      Task.yield False
   if blobPresent
     then pass
     else do
-      Log.warn "Deduplicated blob missing from storage; self-healing by re-storing content"
+      Log.warn "Deduplicated blob unavailable; self-healing by re-storing content"
         |> Task.ignoreError
-      blobStore.store blobKey content
-        |> Task.mapError (\_ -> "Failed to restore missing file content. Please retry.")
+      storeResult <- blobStore.store blobKey content |> Task.asResult
+      case storeResult of
+        Ok _ -> pass
+        Err storeErr -> do
+          -- The BlobStoreError (e.g. StorageError "disk full") stays in the
+          -- server log; the client only ever sees a generic message (S8).
+          Log.critical [fmt|Failed to re-store blob during dedup self-heal: #{show storeErr}|]
+            |> Task.ignoreError
+          Task.throw "Failed to restore missing file content. Please retry."
 
 
 -- | Convert upload error to text.

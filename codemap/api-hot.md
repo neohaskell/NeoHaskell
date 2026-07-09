@@ -9,12 +9,12 @@ separately below). Consult BEFORE writing code; full surface:
 codemap/signatures/ · type-directed search: ./dev api "<type>"
 
 ## Task
-- `yield :: value -> Task w value`  <!-- 526 call sites -->
-- `ignoreError :: Task err Unit -> Task w Unit`  <!-- 231 call sites -->
-- `mapError :: (err1 -> err2) -> Task err1 value -> Task err2 value`  <!-- 214 call sites -->
-- `throw :: err -> Task err w`  <!-- 202 call sites -->
+- `yield :: value -> Task w value`  <!-- 528 call sites -->
+- `ignoreError :: Task err Unit -> Task w Unit`  <!-- 233 call sites -->
+- `mapError :: (err1 -> err2) -> Task err1 value -> Task err2 value`  <!-- 213 call sites -->
+- `throw :: err -> Task err w`  <!-- 203 call sites -->
 - `fromIO :: IO value -> Task w value`  <!-- 131 call sites -->
-- `asResult :: Task err value -> Task err2 (Result err value)`  <!-- 79 call sites -->
+- `asResult :: Task err value -> Task err2 (Result err value)`  <!-- 80 call sites -->
 - `forEach :: (element -> Task err Unit) -> Array element -> Task err Unit`  <!-- 26 call sites -->
 - `fromFailableIO :: Exception exception => IO result -> Task exception result`  <!-- 24 call sites -->
 - `map :: (input -> output) -> Task err input -> Task err output`  <!-- 22 call sites -->
@@ -67,10 +67,10 @@ codemap/signatures/ · type-directed search: ./dev api "<type>"
 
 ## Log
 - `debug :: HasCallStack => Text -> Task w Unit`  <!-- 115 call sites -->
-- `warn :: HasCallStack => Text -> Task w Unit`  <!-- 66 call sites -->
+- `warn :: HasCallStack => Text -> Task w Unit`  <!-- 67 call sites -->
 - `withScope :: Array (Text, Text) -> Task err value -> Task err value`  <!-- 56 call sites -->
 - `info :: HasCallStack => Text -> Task w Unit`  <!-- 33 call sites -->
-- `critical :: HasCallStack => Text -> Task w Unit`  <!-- 10 call sites -->
+- `critical :: HasCallStack => Text -> Task w Unit`  <!-- 11 call sites -->
 
 ## Map
 - `set :: (Eq key, Ord key) => key -> value -> Map key value -> Map key value`  <!-- 57 call sites -->
@@ -269,11 +269,11 @@ Ranked from call sites in spec/test files only. Reach for these
 when WRITING TESTS; they are not feature-code frequency signal.
 
 ## Task
-- `mapError :: (err1 -> err2) -> Task err1 value -> Task err2 value`  <!-- 734 test call sites -->
+- `mapError :: (err1 -> err2) -> Task err1 value -> Task err2 value`  <!-- 735 test call sites -->
 - `yield :: value -> Task w value`  <!-- 407 test call sites -->
-- `asResult :: Task err value -> Task err2 (Result err value)`  <!-- 268 test call sites -->
+- `asResult :: Task err value -> Task err2 (Result err value)`  <!-- 269 test call sites -->
 - `mapArray :: (element -> Task err output) -> Array element -> Task err (Array output)`  <!-- 118 test call sites -->
-- `throw :: err -> Task err w`  <!-- 97 test call sites -->
+- `throw :: err -> Task err w`  <!-- 98 test call sites -->
 - `fromIO :: IO value -> Task w value`  <!-- 90 test call sites -->
 - `andThen :: (input -> Task err output) -> Task err input -> Task err output`  <!-- 89 test call sites -->
 - `map :: (input -> output) -> Task err input -> Task err output`  <!-- 78 test call sites -->
@@ -289,8 +289,8 @@ when WRITING TESTS; they are not feature-code frequency signal.
 - `contains :: Eq value => value -> Array value -> Bool`  <!-- 37 test call sites -->
 
 ## Text
-- `contains :: Text -> Text -> Bool`  <!-- 432 test call sites -->
-- `toBytes :: Text -> Bytes`  <!-- 73 test call sites -->
+- `contains :: Text -> Text -> Bool`  <!-- 433 test call sites -->
+- `toBytes :: Text -> Bytes`  <!-- 74 test call sites -->
 - `fromLinkedList :: LinkedList Char -> Text`  <!-- 56 test call sites -->
 - `length :: Text -> Int`  <!-- 40 test call sites -->
 - `repeat :: Int -> Text -> Text`  <!-- 35 test call sites -->
