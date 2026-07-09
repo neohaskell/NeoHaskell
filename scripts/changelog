@@ -127,13 +127,32 @@ def cmd_check(base):
     return 0
 
 
+# `## [Unreleased]` also appears INSIDE this file's header prose (in backticks,
+# documenting the release-promotion ritual), so a bare substring replace lands
+# the entry in that sentence and splits it. Anchor on the real HEADING line only.
+UNRELEASED_HEADING = re.compile(rf"^{re.escape(UNRELEASED)}$", re.MULTILINE)
+
+
+def has_unreleased_heading(text):
+    return UNRELEASED_HEADING.search(text) is not None
+
+
+def insert_under_unreleased(text, entry):
+    """Insert `entry` immediately under the `## [Unreleased]` heading line.
+    Returns (new_text, inserted?). Uses a function replacement so `entry`'s
+    backslashes/backticks are never interpreted as regex backreferences."""
+    if not has_unreleased_heading(text):
+        return text, False
+    return UNRELEASED_HEADING.sub(lambda _m: f"{UNRELEASED}\n\n{entry.rstrip()}", text, count=1), True
+
+
 def cmd_append(specs):
     if not CHANGELOG.exists():
         print(f"changelog: {CHANGELOG.name} missing — create it first", file=sys.stderr)
         return 2
     text = CHANGELOG.read_text()
-    if UNRELEASED not in text:
-        print(f"changelog: {CHANGELOG.name} has no `{UNRELEASED}` section", file=sys.stderr)
+    if not has_unreleased_heading(text):
+        print(f"changelog: {CHANGELOG.name} has no `{UNRELEASED}` section heading", file=sys.stderr)
         return 2
     added = []
     for spec in specs:
@@ -144,7 +163,7 @@ def cmd_append(specs):
             return 1
         if entry_present(text, sid):
             continue  # idempotent
-        text = text.replace(UNRELEASED, f"{UNRELEASED}\n\n{entry.rstrip()}", 1)
+        text, _ok = insert_under_unreleased(text, entry)
         added.append(sid)
     CHANGELOG.write_text(text)
     print(f"changelog: appended {len(added)} entry(ies) ({', '.join(added) or 'none — all present'})")
@@ -218,6 +237,18 @@ def self_test():
         # entry_present detects a rendered entry
         check("entry-present", entry_present(f"# Changelog\n\n## [Unreleased]\n\n{entry}", "099-add-slugify"))
         check("entry-absent", not entry_present("# Changelog\n\n## [Unreleased]\n", "099-add-slugify"))
+
+        # cmd_append must anchor on the `## [Unreleased]` HEADING, not the inline
+        # mention in the header prose (regression: a bare str.replace split the
+        # header sentence and buried the entry inside the prose).
+        with_prose = ("# Changelog\n\n"
+                      "at release, rename `## [Unreleased]` to `## [X.Y.Z]`.\n\n"
+                      "## [Unreleased]\n")
+        inserted, ok = insert_under_unreleased(with_prose, "### 099-x — demo")
+        check("append-anchored", ok)
+        check("append-prose-intact", "rename `## [Unreleased]` to `## [X.Y.Z]`." in inserted)
+        check("append-under-heading",
+              re.search(r"^## \[Unreleased\]\n\n### 099-x — demo", inserted, re.MULTILINE) is not None)
 
     # is_placeholder_impact unit coverage (empty + a real note)
     check("placeholder-empty", is_placeholder_impact("") and is_placeholder_impact("  none.  "))

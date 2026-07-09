@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Pipeline telemetry emitter (Phase 1; schema v3 Phase 6). Schema: telemetry/SCHEMA.md.
+"""Pipeline telemetry emitter (Phase 1; schema v4 Phase 6). Schema: telemetry/SCHEMA.md.
 
 One JSON line per pipeline run, appended to telemetry/runs.jsonl. Never
 hand-written — pipeline scripts call this tool.
@@ -12,6 +12,7 @@ Usage (via the `./dev telemetry` verb — this file has no PATH entry):
   ./dev telemetry rebuilt --count 4                # cache-health metric
   ./dev telemetry consult --asset alias:auth       # usage accounting (Phase 6, task 5e)
   ./dev telemetry finish  --outcome ok
+  ./dev telemetry finish  --outcome ok --improvement cli-utility:scripts/changelog  # class-fix shipped on success (v4)
   ./dev telemetry finish  --outcome parked --failure-label timeout --asset-delta alias:codemap/capabilities.yaml
   ./dev telemetry golden  --request-file R --spec-file S --diff-file D --verdict "..." [--transcript-file T]
   ./dev telemetry --self-test                      # doctor/CI
@@ -52,7 +53,7 @@ DELTA_TYPES = [
     "alias", "extension-point", "phrasebook", "hot-card", "hlint-rule",
     "hook", "cli-utility", "skill-edit", "telemetry-label", "PRUNE", "none",
 ]
-CURRENT_SCHEMA = 3
+CURRENT_SCHEMA = 4
 
 
 # De-facto run-id format (documented in telemetry/SCHEMA.md): also guards the
@@ -126,6 +127,7 @@ def cmd_start(args) -> None:
         "outcome": None,
         "failure_label": None,
         "asset_delta": None,
+        "improvements": [],
     })
     print(f"telemetry: started run {args.run_id}")
 
@@ -216,9 +218,20 @@ def cmd_finish(args) -> None:
         sys.exit(f"telemetry: {args.outcome} runs need --asset-delta <type>:<dest> — the "
                  "class-fix ships with the instance-fix (Phase 6). Types: "
                  f"{', '.join(DELTA_TYPES)}; use 'none:<reason>' if genuinely no asset applies")
+    # `improvements` (v4): class-fixes a run ships alongside SUCCESS — the loop
+    # learns from ok runs, not only failures. Optional, any outcome, repeatable.
+    # `none` is meaningless here (an improvement IS an asset change), so reject it.
+    improvements = []
+    for raw in getattr(args, "improvement", None) or []:
+        imp = parse_asset_delta(raw)
+        if imp["type"] == "none":
+            sys.exit("telemetry: --improvement names a real asset change, never 'none' "
+                     "('none' is only for a failed run's --asset-delta justification)")
+        improvements.append(imp)
     run["outcome"] = args.outcome
     run["failure_label"] = args.failure_label
     run["asset_delta"] = delta
+    run["improvements"] = improvements
     if args.failure_note:
         run["failure_note"] = args.failure_note
     RUNS.parent.mkdir(parents=True, exist_ok=True)
@@ -278,7 +291,7 @@ def self_test() -> int:
         check("start", lambda: cmd_start(ns(run_id="t-001", request="issue#0")), False)
         cur = json.loads(CURRENT.read_text())
         if cur.get("schema") != CURRENT_SCHEMA or cur.get("asset_delta") is not None \
-                or cur.get("assets_consulted") != []:
+                or cur.get("assets_consulted") != [] or cur.get("improvements") != []:
             print(f"telemetry self-test FAIL start-shape: {cur}")
             fails += 1
         check("consult-ok", lambda: cmd_consult(ns(asset="alias:auth")), False)
@@ -312,6 +325,20 @@ def self_test() -> int:
         check("start2", lambda: cmd_start(ns(run_id="t-002", request="issue#0")), False)
         check("finish-ok", lambda: cmd_finish(
             ns(outcome="ok", failure_label=None, failure_note=None, asset_delta=None)), False)
+        # v4: an ok run may record `improvements` (class-fixes shipped on success)
+        check("start3", lambda: cmd_start(ns(run_id="t-003", request="issue#0")), False)
+        check("finish-ok-improvement", lambda: cmd_finish(
+            ns(outcome="ok", failure_label=None, failure_note=None, asset_delta=None,
+               improvement=["cli-utility:scripts/changelog", "skill-edit:.claude/skills/x/SKILL.md"])), False)
+        imp_line = json.loads(RUNS.read_text().splitlines()[-1])
+        if [i["type"] for i in imp_line.get("improvements", [])] != ["cli-utility", "skill-edit"]:
+            print(f"telemetry self-test FAIL improvements: {imp_line}")
+            fails += 1
+        # `none` is a failed-run asset-delta justification, never a valid improvement
+        check("start4", lambda: cmd_start(ns(run_id="t-004", request="issue#0")), False)
+        check("finish-improvement-none-rejected", lambda: cmd_finish(
+            ns(outcome="ok", failure_label=None, failure_note=None, asset_delta=None,
+               improvement=["none:whatever"])), True)
 
     # anti-rot: the failure-label taxonomy is duplicated in scripts/pipeline-state
     # (LABELS) — a drift there means a run the emitter accepts, the state machine
@@ -368,7 +395,7 @@ def self_test() -> int:
             fails += 1
 
     if fails == 0:
-        print("telemetry self-test: OK — schema-v3 fields, usage accounting, asset-delta "
+        print("telemetry self-test: OK — schema-v4 fields, usage accounting, asset-delta "
               "enforcement, run-id collision guard, none-colon justification, and "
               "label/schema-version/delta-type parity covered")
     return 1 if fails else 0
@@ -410,6 +437,8 @@ def main() -> None:
     s.add_argument("--failure-label")
     s.add_argument("--failure-note")
     s.add_argument("--asset-delta")
+    s.add_argument("--improvement", action="append",
+                   help="class-fix shipped by this (successful) run: <type>:<dest>; repeatable")
     s.set_defaults(fn=cmd_finish)
 
     s = sub.add_parser("golden")

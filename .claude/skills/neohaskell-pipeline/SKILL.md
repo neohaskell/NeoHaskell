@@ -8,7 +8,7 @@ description: Orchestrate a NeoHaskell change end-to-end through the spec-gated p
 Exactly **two human gates**: spec approval (draft PR) and final PR review.
 Everything between them is mechanical or agent-run, resumable from
 `.pipeline/state.json`, and telemetered. Stage names below are the telemetry
-schema v3 canon (`telemetry/SCHEMA.md`) — state, telemetry lines, and this
+schema v4 canon (`telemetry/SCHEMA.md`) — state, telemetry lines, and this
 skill share one vocabulary.
 
 ## Stage flow
@@ -46,9 +46,13 @@ intake ─ localize ─ spec ─▶ DRAFT PR ══ GATE 1 (maintainer) ══�
    without it), then `./dev pipeline advance`.
 5. **design-review** — `./dev spec-check --plan <spec>` → `design_reviews`.
    `security` → `neohaskell-security-design-review` skill; `perf` →
-   `neohaskell-performance-design-review`. Review records are committed to
-   the PR branch (`NNN-slug.<kind>-review.md`). Empty list → skip (stage
-   recorded with ~0 duration; the skip is the risk-tiering working).
+   `neohaskell-performance-design-review`. **Perf** records are committed to
+   the PR branch (`NNN-slug.perf-review.md`); **security** records
+   (`NNN-slug.security-review.md`) are **local-only — gitignored, never pushed**
+   (they map attack surface; ADR-0069), enforced before PR-ready by
+   `./dev spec-check --reviews-local` (CI's `--reviews-pr` gates only perf).
+   Empty list → skip (stage recorded with ~0 duration; the skip is the
+   risk-tiering working).
 6. **plan** — order the work: which files in what sequence, which neighbor
    module each copy-adapts from (`neohaskell-implementer` discipline).
 7. **test-writing** — tests FIRST, from the criteria table, red before any
@@ -74,9 +78,16 @@ intake ─ localize ─ spec ─▶ DRAFT PR ══ GATE 1 (maintainer) ══�
 11. **ci** — watch checks; bot comments triaged (fix real findings; push
     back with evidence on wrong ones). Merge is the maintainer's.
 
-After merge: `./dev telemetry finish` (outcome `ok`), golden archive
-(`telemetry/golden/<run_id>/`: request.md, spec.md, final.diff, verdict.md,
-transcript.md).
+Close-out (at **PR-ready**, before the merge — NOT after): `./dev telemetry
+finish` (outcome `ok`) appends the run's line to `telemetry/runs.jsonl`, and
+`./dev telemetry golden` writes `telemetry/golden/<run_id>/` (request.md,
+spec.md, final.diff, verdict.md, transcript.md). `runs.jsonl` is **tracked**
+(`.gitattributes merge=union`), so commit it **into the PR** — it lands on
+`main` via the squash-merge; there is no post-merge job to commit it (and
+`main` is push-protected). The golden archive is **gitignored** — a local
+reference artifact, never pushed (like the security review). Do this once CI is
+green and the maintainer has approved; if a post-merge regression flips it,
+`dod.yml` marks it a revert-candidate.
 
 ## Failure policy (time-boxes → retry → escalate → park)
 

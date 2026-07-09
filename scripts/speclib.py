@@ -21,6 +21,13 @@ DELTA_LINE = re.compile(r"^([+-])\s+([A-Za-z][\w.]*):\s+(.+)$")
 # tags security-sensitive / perf-sensitive → "security" / "perf").
 REVIEW_KINDS = ("security", "perf")
 
+# Security review records enumerate a change's attack surface — committing them
+# to a public repo hands that map to attackers. They are LOCAL-ONLY (gitignored,
+# never pushed) and enforced on the developer's machine via
+# `spec-check --reviews-local`; perf reviews are not sensitive and stay committed
+# as the audit trail, gated in CI via `--reviews-pr`. See ADR-0069.
+LOCAL_ONLY_REVIEW_KINDS = ("security",)
+
 
 class GitDiffError(Exception):
     """`git diff` failed while enumerating changed specs (bad base ref, or not

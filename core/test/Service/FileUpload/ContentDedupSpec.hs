@@ -6,7 +6,7 @@ import Data.Char (isDigit)
 import Directory qualified
 import Log qualified
 import "nhcore" Path qualified
-import Service.FileUpload.BlobStore (BlobStore)
+import Service.FileUpload.BlobStore (BlobStore (..), BlobStoreError (..))
 import Service.FileUpload.BlobStore.Local (LocalBlobStoreConfig (..), createBlobStore)
 import Service.FileUpload.Core (
   BlobKey (..),
@@ -333,6 +333,94 @@ spec = do
             (Text.length response2.filename > 0) |> shouldBe True
             (Text.length response2.contentType > 0) |> shouldBe True
             (response2.sizeBytes > 0) |> shouldBe True
+
+      -- ==========================================================================
+      -- Blob Loss Self-Heal (issue #713)
+      --
+      -- Dedup must never return a FileRef whose blob has been lost. Before
+      -- returning a match, the blob's presence is verified; if it is missing
+      -- (or its presence cannot be confirmed), the content is re-stored under
+      -- the SAME blob key so the reference is healed in place — no new FileRef,
+      -- no state mutation, robust for both in-memory and Postgres backends.
+      -- ==========================================================================
+      describe "Blob Loss Self-Heal (issue #713)" do
+        it "dedup self-heals a missing Pending blob on re-upload" \_ -> do
+          withTestDedupEnv \env -> do
+            let content = "self-heal pending content" |> Text.toBytes
+            response1 <- uploadFile env "owner1" "file.txt" "text/plain" content
+            -- Simulate blob loss (ephemeral dir, GC, backend switch, manual delete)
+            env.blobStore.delete response1.blobKey
+              |> Task.mapError (\e -> [fmt|delete failed: #{show e}|])
+            -- Re-upload the same content — dedup must not return a dangling ref
+            response2 <- uploadFile env "owner1" "file.txt" "text/plain" content
+            blobPresent <- env.blobStore.exists response2.blobKey
+              |> Task.mapError (\e -> [fmt|exists failed: #{show e}|])
+            blobPresent |> shouldBe True
+
+        it "dedup self-heals a missing Confirmed blob on re-upload" \_ -> do
+          withTestDedupEnv \env -> do
+            let content = "self-heal confirmed content" |> Text.toBytes
+            response1 <- uploadFile env "owner1" "file.txt" "text/plain" content
+            let confirmEvent = FileConfirmed FileConfirmedData
+                  { fileRef = response1.fileRef
+                  , confirmedByRequestId = "req-heal"
+                  , confirmedAt = 1700000100
+                  }
+            env.stateStore.updateState response1.fileRef confirmEvent
+            env.blobStore.delete response1.blobKey
+              |> Task.mapError (\e -> [fmt|delete failed: #{show e}|])
+            response2 <- uploadFile env "owner1" "file.txt" "text/plain" content
+            blobPresent <- env.blobStore.exists response2.blobKey
+              |> Task.mapError (\e -> [fmt|exists failed: #{show e}|])
+            blobPresent |> shouldBe True
+
+        it "dedup self-heal preserves FileRef/blobKey and restores exact content" \_ -> do
+          withTestDedupEnv \env -> do
+            let content = "self-heal identity content" |> Text.toBytes
+            response1 <- uploadFile env "owner1" "file.txt" "text/plain" content
+            env.blobStore.delete response1.blobKey
+              |> Task.mapError (\e -> [fmt|delete failed: #{show e}|])
+            response2 <- uploadFile env "owner1" "file.txt" "text/plain" content
+            response2.fileRef |> shouldBe response1.fileRef
+            response2.blobKey |> shouldBe response1.blobKey
+            restored <- env.blobStore.retrieve response2.blobKey
+              |> Task.mapError (\e -> [fmt|retrieve failed: #{show e}|])
+            computeContentHash restored |> shouldBe (computeContentHash content)
+
+        it "dedup self-heals when the existence check errors" \_ -> do
+          withTestDedupEnv \env -> do
+            let content = "self-heal on exists-error content" |> Text.toBytes
+            response1 <- uploadFile env "owner1" "file.txt" "text/plain" content
+            env.blobStore.delete response1.blobKey
+              |> Task.mapError (\e -> [fmt|delete failed: #{show e}|])
+            -- Make the existence check itself fail; heal must still occur
+            let faultingBlobStore =
+                  (env.blobStore)
+                    { exists = \_ -> Task.throw (StorageError "injected exists failure") }
+            response2 <-
+              handleUploadImpl env.config faultingBlobStore env.stateStore "owner1" "file.txt" "text/plain" content
+            blobPresent <- env.blobStore.exists response2.blobKey
+              |> Task.mapError (\e -> [fmt|exists failed: #{show e}|])
+            blobPresent |> shouldBe True
+
+        it "dedup surfaces a generic error (no dangling ref) when re-store fails" \_ -> do
+          withTestDedupEnv \env -> do
+            let content = "self-heal store-failure content" |> Text.toBytes
+            response1 <- uploadFile env "owner1" "file.txt" "text/plain" content
+            env.blobStore.delete response1.blobKey
+              |> Task.mapError (\e -> [fmt|delete failed: #{show e}|])
+            -- Blob is gone AND the re-store fails: the upload must surface a
+            -- generic error, never a dangling ref (the error detail is logged
+            -- server-side, not returned to the client).
+            let faultingBlobStore =
+                  (env.blobStore)
+                    { store = \_ _ -> Task.throw (StorageError "injected store failure") }
+            result <-
+              handleUploadImpl env.config faultingBlobStore env.stateStore "owner1" "file.txt" "text/plain" content
+                |> Task.asResult
+            case result of
+              Ok _ -> fail "expected re-store failure to surface as an error, not a dangling ref"
+              Err msg -> (Text.contains "restore" msg) |> shouldBe True
 
 
 -- ==========================================================================

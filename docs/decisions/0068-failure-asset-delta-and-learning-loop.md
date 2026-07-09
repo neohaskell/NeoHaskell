@@ -97,6 +97,23 @@ only once **all** hold: Phase 5 + Phase 6 exit criteria met; one real feature an
 one real bug shipped end-to-end through the pipeline; `runs.jsonl` carries those
 real runs. `git mv` preserved history, so deletion loses nothing.
 
+## Amendment (2026-07-09): successful runs also feed the loop (schema v4)
+
+The original protocol captured a class-fix only on a **failed/parked** close
+(`--asset-delta`, enforced). The first real runs exposed a blind spot: an `ok`
+run can *itself improve the pipeline* — during #713 the run shipped a
+changelog-generator fix, the security-reviews-local policy (ADR-0069), and a
+telemetry-doc correction, none of which the loop recorded, because `asset_delta`
+is null on success. "Every failure makes the pipeline better" missed "every
+success can too."
+
+Fix (schema **v4**): a new `improvements` field (list of `{type, destination,
+ref}`, same taxonomy as `asset_delta` minus `none`) records class-fixes shipped
+by any run, via optional repeatable `./dev telemetry finish … --improvement
+<type>:<dest>`. `./dev retrospect` surfaces them ("Improvements shipped") — a
+destination recurring there is a proven friction point for the miner. The
+failure-path `--asset-delta` enforcement is unchanged.
+
 ## References
 
 - [#715](https://github.com/neohaskell/NeoHaskell/issues/715)
