@@ -1,4 +1,4 @@
-# Telemetry schema v3 (current)
+# Telemetry schema v4 (current)
 
 A version's field shape is frozen; adding a field mints a new version (see the
 history below) — that is the mechanism, not a smell. The emitter always writes
@@ -7,9 +7,11 @@ the current version; readers tolerate older ones.
 Version history (extension always requires a bump — that is the mechanism, not a
 smell): v1 → v2 added per-stage `invented_api_events` (Phase 4); v2 → v3 (Phase 6)
 adds `asset_delta` (the class-fix a failed run ships, task 4) and
-`assets_consulted` (usage accounting, task 5e). The only v1 line in `runs.jsonl`
-is the Phase-1 schema-validation dummy. **Readers tolerate older versions**
-(missing v3 fields read as their defaults); the emitter always writes v3.
+`assets_consulted` (usage accounting, task 5e); v3 → v4 adds `improvements` (the
+class-fixes an `ok` run ships — the loop learns from successes, not only failures;
+ADR-0068 amendment). The only v1 line in `runs.jsonl` is the Phase-1
+schema-validation dummy. **Readers tolerate older versions** (missing fields read
+as their defaults); the emitter always writes v4.
 
 Every pipeline run emits **exactly one JSON line** appended to `telemetry/runs.jsonl`
 (committed). Lines are emitted by `./dev telemetry` — never hand-written.
@@ -18,7 +20,7 @@ Every pipeline run emits **exactly one JSON line** appended to `telemetry/runs.j
 
 ```json
 {
-  "schema": 3,
+  "schema": 4,
   "run_id": "2026-07-07-001",
   "request_ref": "issue#712 | adhoc:<slug>",
   "stages": {
@@ -35,7 +37,8 @@ Every pipeline run emits **exactly one JSON line** appended to `telemetry/runs.j
   "assets_consulted": ["alias:auth", "phrasebook:task-validation"],
   "outcome": "ok",
   "failure_label": null,
-  "asset_delta": null
+  "asset_delta": null,
+  "improvements": [{"type": "cli-utility", "destination": "scripts/changelog", "ref": null}]
 }
 ```
 
@@ -59,6 +62,13 @@ Every pipeline run emits **exactly one JSON line** appended to `telemetry/runs.j
   fix (`{type, destination, ref}` or null). `./dev telemetry finish` **requires** it
   for `failed`/`parked` outcomes (task 4). `type` is from the delta-type taxonomy
   below; `destination` is the asset file (or, for `none`, the justification).
+- `improvements` (v4) — a list of `{type, destination, ref}` class-fixes a run
+  shipped **on the way to success** (the same taxonomy as `asset_delta`, minus
+  `none`). Where `asset_delta` closes a *failure* class, `improvements` captures
+  the pipeline getting better on an `ok` run — so those wins reach the weekly
+  miner instead of vanishing. Emitted via one or more
+  `./dev telemetry finish … --improvement <type>:<dest>` (optional, any outcome).
+  Defaults to `[]`. ADR-0068 amendment.
 
 ## Failure-label taxonomy v1 (closed enum)
 

@@ -8,7 +8,7 @@ description: Orchestrate a NeoHaskell change end-to-end through the spec-gated p
 Exactly **two human gates**: spec approval (draft PR) and final PR review.
 Everything between them is mechanical or agent-run, resumable from
 `.pipeline/state.json`, and telemetered. Stage names below are the telemetry
-schema v3 canon (`telemetry/SCHEMA.md`) — state, telemetry lines, and this
+schema v4 canon (`telemetry/SCHEMA.md`) — state, telemetry lines, and this
 skill share one vocabulary.
 
 ## Stage flow

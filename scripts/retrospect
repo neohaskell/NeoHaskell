@@ -140,6 +140,7 @@ def digest(runs, all_runs):
     stage_secs = {}
     waits = []
     assets = {}
+    improvements = {}
     for r in runs:
         outcomes[r.get("outcome")] = outcomes.get(r.get("outcome"), 0) + 1
         if r.get("failure_label"):
@@ -157,6 +158,12 @@ def digest(runs, all_runs):
         if isinstance(consulted, list):
             for a in consulted:
                 assets[a] = assets.get(a, 0) + 1
+        # v4: class-fixes shipped by ok runs — surfaced so the miner sees wins,
+        # not only failures. A destination recurring here is a proven friction point.
+        for imp in (r.get("improvements", []) or []):
+            if isinstance(imp, dict):
+                key = f"{imp.get('type')}:{imp.get('destination')}"
+                improvements[key] = improvements.get(key, 0) + 1
 
     lines += ["## Outcomes", ""]
     lines += [f"- {k}: {v}" for k, v in sorted(outcomes.items(), key=lambda kv: str(kv[0]))]
@@ -187,6 +194,9 @@ def digest(runs, all_runs):
     lines += ["", "## Assets consulted (frequency — never-consulted are PRUNE candidates)", ""]
     lines += ([f"- {k}: {v}" for k, v in sorted(assets.items(), key=lambda kv: -kv[1])]
               or ["- (none logged — wire `./dev telemetry consult` into the stages)"])
+    lines += ["", "## Improvements shipped (class-fixes from successful runs — recurring dest = friction)", ""]
+    lines += ([f"- {k}: {v}" for k, v in sorted(improvements.items(), key=lambda kv: -kv[1])]
+              or ["- (none)"])
     lines += ["", "## Golden artifacts", ""] + golden_report()
     lines += ["", "## Benchmarks", "",
               "- trend lives in the nightly `bench-results` artifact (nightly-bench.yml, "
@@ -324,6 +334,12 @@ def self_test():
     check("digest-baseline", "baseline 0.00 → window 1.00 ↑" in d)
     check("digest-stage", "implement: 600s" in d)
     check("digest-empty", "No real runs in the window" in digest([], []))
+    # v4: improvements from ok runs surface in the digest (class-fixes from success)
+    imp_run = {**run("2026-07-09-003", "ok", None, 0, 0),
+               "improvements": [{"type": "cli-utility", "destination": "scripts/changelog", "ref": None}]}
+    di = digest([imp_run], [imp_run])
+    check("digest-improvements-header", "Improvements shipped" in di)
+    check("digest-improvements-row", "cli-utility:scripts/changelog: 1" in di)
 
     good = {"week": "2026-W28", "friction": "invented Text.explode",
             "evidence": ["2026-07-09-001:implement", "2026-07-09-002:implement"],
