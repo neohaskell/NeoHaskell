@@ -11,8 +11,7 @@ Newcomer-friendly Haskell dialect. Monorepo: core library (`core/` → `nhcore`)
 
 Under no circumstance you will begin exploring the codebase. Exploring the codebase without first exhausting the guiding principles and tools here will result in immediate interruption and termination.
 
-The only exception to this tool if if you COMPLETELY EXHAUSTED all the resources here and still havent found what you were looking for. In that case, you will have to take a note for mentioning it in the step 6 of the pipeline.
-
+The only exception to this rule is if you COMPLETELY EXHAUST all the resources here and still haven't found what you were looking for. In that case, you will have to take a note to mention it in step 6 of the pipeline.
 ## Style (mandatory)
 
 | Use | Never |
