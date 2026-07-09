@@ -78,9 +78,16 @@ intake ─ localize ─ spec ─▶ DRAFT PR ══ GATE 1 (maintainer) ══�
 11. **ci** — watch checks; bot comments triaged (fix real findings; push
     back with evidence on wrong ones). Merge is the maintainer's.
 
-After merge: `./dev telemetry finish` (outcome `ok`), golden archive
-(`telemetry/golden/<run_id>/`: request.md, spec.md, final.diff, verdict.md,
-transcript.md).
+Close-out (at **PR-ready**, before the merge — NOT after): `./dev telemetry
+finish` (outcome `ok`) appends the run's line to `telemetry/runs.jsonl`, and
+`./dev telemetry golden` writes `telemetry/golden/<run_id>/` (request.md,
+spec.md, final.diff, verdict.md, transcript.md). `runs.jsonl` is **tracked**
+(`.gitattributes merge=union`), so commit it **into the PR** — it lands on
+`main` via the squash-merge; there is no post-merge job to commit it (and
+`main` is push-protected). The golden archive is **gitignored** — a local
+reference artifact, never pushed (like the security review). Do this once CI is
+green and the maintainer has approved; if a post-merge regression flips it,
+`dod.yml` marks it a revert-candidate.
 
 ## Failure policy (time-boxes → retry → escalate → park)
 
