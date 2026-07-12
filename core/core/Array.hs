@@ -25,6 +25,8 @@ module Array (
   set,
   push,
   append,
+  dropLast,
+  dropRight,
   slice,
 
   -- * LinkedLists
@@ -573,6 +575,36 @@ drop n (Array vector) = Array (Data.Vector.drop n vector)
 -- Array []
 indexed :: Array a -> Array (Int, a)
 indexed (Array vector) = Array (Data.Vector.indexed vector)
+
+
+-- | 移除最后一个元素。若数组为空，返回空数组。
+--
+-- >>> dropLast (fromLinkedList [1,2,3] :: Array Int)
+-- Array [1,2]
+-- >>> dropLast (fromLinkedList [] :: Array Int)
+-- Array []
+dropLast :: Array a -> Array a
+dropLast arr@(Array vector)
+  | Data.Vector.null vector = arr
+  | otherwise = Array (Data.Vector.init vector)
+
+
+-- | 移除末尾的 @n@ 个元素。若 @n <= 0@ 返回原数组；
+--   若 @n >= length@ 返回空数组。
+--
+-- >>> dropRight 2 (fromLinkedList [1,2,3] :: Array Int)
+-- Array [1]
+-- >>> dropRight 0 (fromLinkedList [1,2,3] :: Array Int)
+-- Array [1,2,3]
+-- >>> dropRight 5 (fromLinkedList [1,2,3] :: Array Int)
+-- Array []
+dropRight :: Int -> Array a -> Array a
+dropRight n arr =
+  let len = length arr
+      keep = max 0 (len - n)
+   in if keep == len
+        then arr
+        else Array (Data.Vector.take keep (unwrap arr))
 
 
 -- | Zip two arrays into a new array of tuples.
