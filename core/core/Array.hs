@@ -584,7 +584,7 @@ indexed (Array vector) = Array (Data.Vector.indexed vector)
 -- Array [1,2]
 -- >>> dropLast (fromLinkedList [] :: Array Int)
 -- Array []
-dropLast :: Array a -> Array a
+dropLast :: Array element -> Array element
 dropLast arr =
   if isEmpty arr
     then arr
@@ -601,7 +601,7 @@ dropLast arr =
 -- Array [1,2,3]
 -- >>> dropRight 5 (fromLinkedList [1,2,3] :: Array Int)
 -- Array []
-dropRight :: Int -> Array a -> Array a
+dropRight :: Int -> Array element -> Array element
 dropRight n arr = do
   let len = length arr
       keep = max 0 (len - n)
