@@ -55,7 +55,7 @@ Array []
 >>> wrap (0 :: Int)
 Array [0]
 ```
-*… 37 more doctest sessions in the source module*
+*… 39 more doctest sessions in the source module*
 ### Float
 ```haskell
 >>> Float.toInt 3.7

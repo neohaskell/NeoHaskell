@@ -280,8 +280,8 @@ when WRITING TESTS; they are not feature-code frequency signal.
 
 ## Array
 - `length :: Array a -> Int`  <!-- 252 test call sites -->
-- `fromLinkedList :: LinkedList a -> Array a`  <!-- 206 test call sites -->
-- `empty :: Array a`  <!-- 194 test call sites -->
+- `fromLinkedList :: LinkedList a -> Array a`  <!-- 214 test call sites -->
+- `empty :: Array a`  <!-- 198 test call sites -->
 - `map :: (a -> b) -> Array a -> Array b`  <!-- 114 test call sites -->
 - `get :: Int -> Array a -> Maybe a`  <!-- 69 test call sites -->
 - `wrap :: a -> Array a`  <!-- 44 test call sites -->
