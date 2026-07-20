@@ -74,7 +74,7 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7.0.0
-      - uses: DeterminateSystems/determinate-nix-action@v3.21.5
+      - uses: DeterminateSystems/determinate-nix-action@v3.21.7
         with:
           extra-conf: |
             accept-flake-config = true
@@ -109,7 +109,7 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
           persist-credentials: false
-      - uses: DeterminateSystems/determinate-nix-action@v3.21.5
+      - uses: DeterminateSystems/determinate-nix-action@v3.21.7
         with:
           extra-conf: |
             accept-flake-config = true
@@ -151,7 +151,7 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7.0.0
-      - uses: DeterminateSystems/determinate-nix-action@v3.21.5
+      - uses: DeterminateSystems/determinate-nix-action@v3.21.7
         with:
           extra-conf: |
             accept-flake-config = true
@@ -167,7 +167,7 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7.0.0
-      - uses: DeterminateSystems/determinate-nix-action@v3.21.5
+      - uses: DeterminateSystems/determinate-nix-action@v3.21.7
         with:
           extra-conf: |
             accept-flake-config = true
@@ -187,7 +187,7 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7.0.0
-      - uses: DeterminateSystems/determinate-nix-action@v3.21.5
+      - uses: DeterminateSystems/determinate-nix-action@v3.21.7
         with:
           extra-conf: |
             accept-flake-config = true
@@ -207,7 +207,7 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7.0.0
-      - uses: DeterminateSystems/determinate-nix-action@v3.21.5
+      - uses: DeterminateSystems/determinate-nix-action@v3.21.7
         with:
           extra-conf: |
             accept-flake-config = true
@@ -227,7 +227,7 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7.0.0
-      - uses: DeterminateSystems/determinate-nix-action@v3.21.5
+      - uses: DeterminateSystems/determinate-nix-action@v3.21.7
         with:
           extra-conf: |
             accept-flake-config = true
@@ -271,7 +271,7 @@ jobs:
     timeout-minutes: 40
     steps:
       - uses: actions/checkout@v7.0.0
-      - uses: DeterminateSystems/determinate-nix-action@v3.21.5
+      - uses: DeterminateSystems/determinate-nix-action@v3.21.7
         with:
           extra-conf: |
             accept-flake-config = true
