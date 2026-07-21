@@ -47,13 +47,6 @@ result
 !.opencode/agents/
 !.opencode/skills/
 
-cli-next/default.nix
-
-cli-next/cabal.project
-
-cli-next/.launcher/
-
-cli-next/neo-sandbox.cabal
 uploads/
 
 # Planning files
