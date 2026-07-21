@@ -28,6 +28,7 @@ usage: ./dev <verb> [args]
                           (same as CI; escape hatch documented in .hlint.yaml)
   codemap               regenerate codemap artifacts (signatures, MAP.md, ratchet)
   codemap-check         validate the codemap (ownership, globs, aliases, ratchet)
+  adr-check             validate the ADR index in docs/decisions/README.md
   hiedb                 (re)build the symbol reference DB
   who-calls <sym> [mod] symbol references, grouped by capability
   where-defined <sym>   symbol definition site, capability-tagged
@@ -78,6 +79,7 @@ case "${VERB}" in
   lint)     exec scripts/lint "$@" ;;
   codemap)  exec scripts/refresh-codemap "$@" ;;
   codemap-check) exec scripts/codemap-check "$@" ;;
+  adr-check) exec scripts/adr-index-check "$@" ;;
   hiedb)    exec scripts/refresh-hiedb "$@" ;;
   who-calls) exec scripts/who-calls "$@" ;;
   where-defined) exec scripts/where-defined "$@" ;;

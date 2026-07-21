@@ -3,7 +3,7 @@
 **Status:** Draft **v5** — supersedes v4 (git history). Consolidation of the full design conversation; for iteration.
 **Date:** 2026-07-06
 **Author:** Nick (with Claude)
-**Related:** PR #708 (motivating failure), issue #711, `docs/plans/2026-07-03-onklaud-5-teardown.md`, `feature-pipeline-preview`, `integration-pipeline-preview`, `integrations/AGENTS.md`.
+**Related:** PR #708 (motivating failure), issue #711, `integrations/AGENTS.md`.
 
 > `[DECIDED]` = settled. `⟡ OPEN` = unresolved. Repo facts verified 2026-07-03/04.
 > **v3 adds:** principle **P8 (piggyback on GHC/Haskell standards)**; a **type-modeling / refinement-types** stage (using `refined`); the **typed-hole-driven fill engine** (GHC holes as oracle) reframed as a **ranked multi-source candidate pool**; the **coercion graph** (`Cast`/`Parse` + `Coercible` firewall); the **resident typechecker** (HLS/ghcide/hie-bios) as an async-worker integration; the decision to **use off-the-shelf models, not train**; and the **event-sourced harness** (free audit/replay/resume). Model rec: **Gemma 4 E4B / Qwen 3.x-Coder**.
@@ -37,7 +37,7 @@ Principles: **codebase = source of truth**; **determinism from the envelope**; *
 
 ## 2. Prior art — Onklaud 5
 
-Full study: `docs/plans/2026-07-03-onklaud-5-teardown.md`. **Keep:** escalating-cost cascade; pre-resolution; learned-failure memory. **Reject:** word-subset matching (false positives), hand-curated tables (drift), prose-grep gates (theater), inability to abstain. **Invariant:** *types and generated facts arbitrate; fuzzy search only widens recall; a miss routes to "verify," never a guess.*
+**Keep:** escalating-cost cascade; pre-resolution; learned-failure memory. **Reject:** word-subset matching (false positives), hand-curated tables (drift), prose-grep gates (theater), inability to abstain. **Invariant:** *types and generated facts arbitrate; fuzzy search only widens recall; a miss routes to "verify," never a guess.*
 
 ---
 
@@ -385,10 +385,6 @@ flowchart TD
 Replaying static-assets, `neo` must — before a line is written, blocking otherwise — surface `Char.isDigit`/`isHexDigit` (not `Data.Char.*`, even aliased), `File.exists`/`readText`, `Array.takeIf`/`map`, `Path.joinPaths` (not `GhcFilePath.</>`), and identify `Path.normalise`/`isAbsolute`/`splitDirectories` as **Core gaps** — where the traversal bug entered. (Type-modeling should additionally push path inputs toward a refined `SafePath`.)
 
 **v5 upgrade — heal-in-PR, not ring-fence.** #708 is an *in-repo* feature, so by the §14.3 repo-boundary rule the Core gaps are **implemented in Core in the same PR** (depth-1), not flagged-and-faked-inline. The stronger success criterion: the replay **adds `Path.normalise`/`isAbsolute`/`splitDirectories` to Core** alongside the feature — because the original #708 sprawl happened *precisely because* those missing functions were faked with vanilla `GhcFilePath.*` inline instead of added properly. A depth-1 guard still applies: any gap discovered *inside* that Core work is ring-fenced/filed, not recursed into.
-
-## Appendix B — Onklaud 5 cross-reference
-Mechanics adopted/rejected are detailed in `docs/plans/2026-07-03-onklaud-5-teardown.md`.
-
 ## Appendix C — glossary
 - **`neo`** — the unifying NeoHaskell CLI; commands = Agent tools = CLI.
 - **Substrate** — generated capability catalog + type catalog + structure map + cookbook + vectors.

@@ -76,9 +76,6 @@ node_modules/
 # Rust / Cargo (installer)
 installer/target/
 
-# VSCode extension packaging
-*.vsix
-
 .ruff_cache
 # Phase 0: untracked local pipeline-state archive (Phase 1 will manage telemetry/ properly)
 /telemetry/archive/

@@ -90,12 +90,10 @@ flaky post-merge check must not churn good work; a human owns the revert decisio
   ships now, self-tested on fixtures; activation (first weekly review on real data,
   first miner report, archive sunset) is a checklist gated on accumulated runs.
 
-## Archive-sunset checklist (task 7, deferred)
+## Archive-sunset outcome (task 7, completed 2026-07-21)
 
-`docs/archive/2026-07-ai-artifacts/` is deleted (dedicated PR, maintainer-approved)
-only once **all** hold: Phase 5 + Phase 6 exit criteria met; one real feature and
-one real bug shipped end-to-end through the pipeline; `runs.jsonl` carries those
-real runs. `git mv` preserved history, so deletion loses nothing.
+The temporary AI-artifact archive was removed with maintainer approval after its
+useful material had been salvaged. Git history preserves the original files.
 
 ## Amendment (2026-07-09): successful runs also feed the loop (schema v4)
 

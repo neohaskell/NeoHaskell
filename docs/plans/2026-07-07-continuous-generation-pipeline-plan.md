@@ -54,10 +54,10 @@
 
 **Tasks:**
 
-1. **Salvage pass (before any move).** For each knowledge doc, extract claims into `docs/archive/2026-07-ai-artifacts/SALVAGE.md` with a verdict each: `valid` (verified against the repo/workflows today), `invalid`, `unverifiable`. Valid claims are the seed corpus for Phase 3's codemap bootstrap. Invalid claims form the rot taxonomy (informs which CI checks matter).
-2. **Skill salvage ranking.** No keep-set — **all 14 skills are archived**; replacements are rebuilt from scratch in Phases 2–5. The triage's only job is salvage priority: which skills' content feeds the new artifacts first (expected high-value: `neohaskell-style-guide` → hlint rules + hook messages + stub style table; `neohaskell-implementer` → Phase 2 copy-adapt skill; feature pipeline → Phase 5 flow). Salvage verdicts recorded per skill in `SALVAGE.md` like the docs.
+1. **Salvage pass (before any move).** For each knowledge doc, extract claims into a salvage manifest with a verdict each: `valid` (verified against the repo/workflows today), `invalid`, `unverifiable`. Valid claims seed Phase 3's codemap bootstrap. Invalid claims form the rot taxonomy (informs which CI checks matter). The temporary repository archive was removed after Phase 6; git history preserves it.
+2. **Skill salvage ranking.** No keep-set: **all 14 skills were archived temporarily** and replacements rebuilt from scratch in Phases 2–5. The triage's only job was salvage priority: which skills' content fed the new artifacts first (expected high-value: `neohaskell-style-guide` → hlint rules + hook messages + stub style table; `neohaskell-implementer` → Phase 2 copy-adapt skill; feature pipeline → Phase 5 flow).
 3. **Atomic archive PR** containing all of:
-   - `git mv` archived files → `docs/archive/2026-07-ai-artifacts/` (mirroring original structure; history/blame preserved).
+   - `git mv` archived files into a temporary repository archive (mirroring original structure; history/blame preserved).
    - **Every archived file gets a banner prepended as its first lines:** `ARCHIVAL KNOWLEDGE — DO NOT USE OR REFERENCE. Superseded by codemap/ + CLAUDE.md. Scheduled for deletion once the pipeline is verified (Phase 6).` Same banner at the top of `MANIFEST.md`.
    - `MANIFEST.md`: original path, kind, reason, salvage verdict summary, where surviving content went, and the **sunset clause** (deleted after Phase 6 verification; `git mv` means git history preserves everything, so deletion loses nothing).
    - New minimal `CLAUDE.md` stub (~30 lines): style table (re-verified), build/test commands (each one executed before writing), pointer to `codemap/` (marked "coming — Phase 3"), pointer to the archive. **Every claim verified the day it's written.**
@@ -101,7 +101,7 @@
 **Tasks:**
 
 1. **Invert `.hlint.yaml` to dialect-first.** Add `modules:` restrictions (Data.Text/Data.Map/Data.Char/Data.List… allowed only `within:` their Core wrapper), `functions:` restrictions (`($)`, `head/tail/fromJust/error/undefined`; `pure`/`return` with `within:` exceptions for Core Task internals), rewrite rules with teaching messages (`f $ x` → `x |> f`). Keep the existing ignore list (correct defense against vanilla-pushing default hints).
-2. **Repo-wide triage run:** `hlint core integrations testbed lsp`; classify remaining default-hint noise; extend ignores in the same PR so the gate lands green.
+2. **Repo-wide triage run:** `hlint core integrations testbed`; classify remaining default-hint noise; extend ignores in the same PR so the gate lands green. (The `lsp` package this step originally also linted was removed 2026-07-08 as unused, so it is no longer part of the triage set.)
 3. **Add the missing CI step** to `test.yml` (hlint currently does **not** run in CI — CLAUDE.md's claim was false). Early, build-free, seconds-cheap.
 4. **PreToolUse edit hook** (`.claude/hooks/`): deny-list regexes on `*.hs` Write/Edit payloads — `\$`, `\bwhere\b`, `\bEither\b`, `\bpure\b`, `\breturn\b`, `import Data\.`, `import .* \(\.\.\)`, `case .* of\s+True` — rejection message quotes the exact style rule. ~50ms feedback.
 5. **Copy-adapt rule** into `neohaskell-implementer`: no `.hs` file is ever created from a blank buffer; new files start from the nearest-neighbor module or the extension-point template (Phase 3).
@@ -146,7 +146,7 @@ codemap/
 6. **hiedb:** add `-fwrite-ide-info -hiedir=.hie` to the shared ghc-options blocks; `scripts/refresh-hiedb` (build + index); `scripts/who-calls` / `scripts/where-defined` wrappers whose output is joined against `capabilities.yaml` (`12 refs — http-transport: 3, testbed: 9`). `.hie/`, `.hiedb` gitignored.
 7. **Routing procedure** documented in the planning skill: capability match (closed enum, cheap model OK) → skeletons confirm at symbol level → hiedb expands edit set → **exact paths written into the plan; execution never searches**. Low confidence or empty match → escalate model tier, never retry the cheap one.
 8. **Routing smoke set:** `codemap/routing-smoke.yaml` — 10 committed request→expected-capability pairs, ≥2 of them vocabulary-gap probes ("serve a SPA" class). `scripts/routing-smoke` runs them through the router; pass bar ≥8/10. Run on every PR that changes `capabilities.yaml`/`extension-points.yaml` (scripted gate, not a hard CI job — it calls an LLM).
-9. **Manifest back-fill:** update `docs/archive/2026-07-ai-artifacts/MANIFEST.md` "where surviving content went" entries now that codemap destinations exist — the manifest must not stay born-stale.
+9. **Manifest back-fill:** update the temporary archive manifest's "where surviving content went" entries once codemap destinations exist. Completed before the archive sunset.
 
 **Exit criteria:** `check.py` green in CI; signatures committed + sync-checked; who-calls returns capability-tagged output; routing smoke set passes ≥8/10; MANIFEST destinations back-filled.
 **Size:** 2–3 days. **Depends on:** Phase 0 (salvage). **Blocks:** Phases 4, 5.
@@ -215,9 +215,9 @@ codemap/
    where delta type is a **closed taxonomy**: `alias | extension-point | phrasebook | hot-card | hlint-rule | hook | cli-utility | skill-edit | telemetry-label | PRUNE`.
    Rules: (a) recommendations without a cited friction event and measured cost are discarded — LLM counterfactuals are hypotheses, not findings; (b) action only on friction recurring across ≥2 independent runs; (c) out-of-taxonomy proposals (new CLI utilities, new asset kinds) are ontology-expansion decisions for Nick, never automatic; (d) implemented deltas are validated against their claimed metric over subsequent runs — no movement = prune candidate; (e) usage accounting tracks which assets runs actually consult, so the miner can recommend **removal**, not just addition. Nick implements 1–2 per week.
 6. **Weekly telemetry review:** 30 minutes; stage-time distribution, failure labels, invented-API trend, retrospective-miner recommendations triage; output = next week's asset deltas (1–2 picked, rest backlogged or discarded).
-7. **Archive sunset:** once Phase 5 and Phase 6 exit criteria are met and the pipeline is verified working end-to-end, **delete `docs/archive/2026-07-ai-artifacts/`** in a dedicated PR (Nick approves). Safe by construction: the Phase 0 `git mv` preserved full history, so deletion loses nothing recoverable.
+7. **Archive sunset:** completed 2026-07-21 after maintainer approval. The Phase 0 `git mv` preserved full history, so deletion lost nothing recoverable.
 
-**Exit criteria:** revert drill executed; first weekly review held on real data; first retrospective-miner report produced under the recommendation contract; archive sunset executed (or explicitly deferred by Nick).
+**Exit criteria:** revert drill executed; first weekly review held on real data; first retrospective-miner report produced under the recommendation contract; archive sunset executed.
 **Size:** 1–2 days + standing cadence. **Depends on:** Phase 5.
 
 ---

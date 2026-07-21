@@ -1,10 +1,9 @@
-use assert_cmd::Command;
+use assert_cmd::cargo::cargo_bin_cmd;
 use predicates::prelude::*;
 
 #[test]
 fn test_help_output() {
-    Command::cargo_bin("neo-install")
-        .unwrap()
+    cargo_bin_cmd!("neo-install")
         .arg("--help")
         .assert()
         .success()
@@ -17,8 +16,7 @@ fn test_help_output() {
 
 #[test]
 fn test_version_output() {
-    Command::cargo_bin("neo-install")
-        .unwrap()
+    cargo_bin_cmd!("neo-install")
         .arg("--version")
         .assert()
         .success()
@@ -27,8 +25,7 @@ fn test_version_output() {
 
 #[test]
 fn test_dry_run_exits_zero() {
-    Command::cargo_bin("neo-install")
-        .unwrap()
+    cargo_bin_cmd!("neo-install")
         .arg("--dry-run")
         .assert()
         .success();
@@ -36,8 +33,7 @@ fn test_dry_run_exits_zero() {
 
 #[test]
 fn test_dry_run_verbose_exits_zero() {
-    Command::cargo_bin("neo-install")
-        .unwrap()
+    cargo_bin_cmd!("neo-install")
         .args(["--dry-run", "--verbose"])
         .assert()
         .success();
@@ -45,8 +41,7 @@ fn test_dry_run_verbose_exits_zero() {
 
 #[test]
 fn test_dry_run_force_exits_zero() {
-    Command::cargo_bin("neo-install")
-        .unwrap()
+    cargo_bin_cmd!("neo-install")
         .args(["--dry-run", "--force"])
         .assert()
         .success();
@@ -56,8 +51,7 @@ fn test_dry_run_force_exits_zero() {
 fn test_no_nix_in_default_output() {
     // Run with --dry-run and verify stdout doesn't contain "Nix"
     // (stderr may contain debug info, but stdout should be clean)
-    let output = Command::cargo_bin("neo-install")
-        .unwrap()
+    let output = cargo_bin_cmd!("neo-install")
         .arg("--dry-run")
         .output()
         .unwrap();
@@ -72,8 +66,7 @@ fn test_no_nix_in_default_output() {
 
 #[test]
 fn test_source_header_printed() {
-    Command::cargo_bin("neo-install")
-        .unwrap()
+    cargo_bin_cmd!("neo-install")
         .arg("--dry-run")
         .assert()
         .success()
@@ -84,8 +77,7 @@ fn test_source_header_printed() {
 
 #[test]
 fn test_invalid_flag_fails() {
-    Command::cargo_bin("neo-install")
-        .unwrap()
+    cargo_bin_cmd!("neo-install")
         .arg("--nonexistent-flag")
         .assert()
         .failure();

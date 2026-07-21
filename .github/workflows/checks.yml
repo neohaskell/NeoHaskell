@@ -49,6 +49,18 @@ jobs:
       - run: python3 -c "import yaml" 2>/dev/null || pip3 install pyyaml==6.0.3
       - run: PYTHON=python3 ./dev codemap-check
 
+  adr-index:
+    name: adr index (decisions README faithful)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      # Pure-stdlib python check: every docs/decisions/NNNN-*.md is indexed
+      # exactly once with a status matching its own `## Status` section.
+      - run: ./dev adr-check
+
   spec:
     name: spec check (contract-delta gate)
     runs-on: ubuntu-latest

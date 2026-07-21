@@ -2,9 +2,14 @@
 set -e
 
 # NeoHaskell Installer Bootstrap
-# Source: https://github.com/neohaskell/neo-installer
+# Source: https://github.com/neohaskell/NeoHaskell
+#
+# The installer ships from the NeoHaskell monorepo: its release job
+# (.github/workflows/installer-ci.yml) publishes assets named
+# 'installer-neo-install-<target>' on 'installer-v*' tags. Pin a specific
+# release with NEO_INSTALLER_VERSION=installer-vX.Y.Z.
 
-REPO="neohaskell/neo-installer"
+REPO="neohaskell/NeoHaskell"
 VERSION="${NEO_INSTALLER_VERSION:-latest}"
 
 detect_platform() {
@@ -25,10 +30,12 @@ detect_platform() {
 
 PLATFORM=$(detect_platform)
 
+ASSET="installer-neo-install-${PLATFORM}"
+
 if [ "$VERSION" = "latest" ]; then
-  DOWNLOAD_URL="https://github.com/${REPO}/releases/latest/download/neo-install-${PLATFORM}"
+  DOWNLOAD_URL="https://github.com/${REPO}/releases/latest/download/${ASSET}"
 else
-  DOWNLOAD_URL="https://github.com/${REPO}/releases/download/${VERSION}/neo-install-${PLATFORM}"
+  DOWNLOAD_URL="https://github.com/${REPO}/releases/download/${VERSION}/${ASSET}"
 fi
 
 echo "🔍 Source: https://github.com/${REPO}"

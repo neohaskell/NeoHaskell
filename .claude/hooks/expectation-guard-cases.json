@@ -145,16 +145,5 @@
     },
     "approved": true,
     "expect_block": false
-  },
-  {
-    "name": "archive-copies-are-exempt",
-    "tag": "non-test-file",
-    "tool": "Edit",
-    "tool_input": {
-      "file_path": "docs/archive/2026-07-ai-artifacts/core/testSpec.hs",
-      "old_string": "  x |> shouldBe 1",
-      "new_string": "  x |> shouldBe 2"
-    },
-    "expect_block": false
   }
 ]

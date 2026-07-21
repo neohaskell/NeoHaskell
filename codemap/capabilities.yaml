@@ -187,12 +187,6 @@ capabilities:
     aliases: [install, installer binary, rust installer]
     tests: []
 
-  - id: ide-extension
-    owns: [ide/**]
-    responsibility: VSCode extension.
-    aliases: [vscode, editor extension]
-    tests: []
-
   - id: ci-cd
     owns: [.github/workflows/*.yml, flake.nix, nix/**, docker-compose.yml, cabal.project]  # cloud-setup.sh is under scripts/** (dev-pipeline) — exactly-once
     responsibility: Build/CI/CD — GitHub workflows (test matrix, cachix, installer, translate, claude), nix flake + hix config, Postgres compose.
@@ -201,6 +195,6 @@ capabilities:
 
   - id: governance-docs
     owns: [docs/**, AGENTS.md, CLAUDE.md, README.md, LICENSE]
-    responsibility: Plans, ADRs (docs/decisions/), archived knowledge (docs/archive/ — DO NOT USE), agent guide, contributor guide.
+    responsibility: Plans, ADRs (docs/decisions/), agent guide, contributor guide.
     aliases: [adr, decisions, plans, agent docs, readme, archive]
     tests: []

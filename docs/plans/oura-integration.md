@@ -1,9 +1,35 @@
 # Oura Integration Implementation Plan
 
-**Status**: Proposed
+**Status**: ✅ Implemented — superseded by the shipped code (kept as historical design context)
 **Author**: DevEx Lead
 **Date**: 2026-01-28
 **Related**: ADR-0010 (OAuth2 Provider), ADR-0015 (HTTP Outbound)
+
+---
+
+> **Implementation note (2026-07).** This plan has been delivered and, in
+> places, superseded by the actual implementation. The shipped code — not this
+> document — is the source of truth. Grounding pointers:
+>
+> - **Phase 1 (HTTP foundation):** `integrations/Integration/Http.hs` and
+>   `integrations/Integration/Http/` (`Request`, `Response`, `Auth`, `Retry`,
+>   `Internal`), with specs under `integrations/test/Integration/Http/`.
+> - **Phase 2 (OAuth2 token refresh):** `core/auth/Auth/OAuth2/TokenRefresh.hs`
+>   (spec: `core/test/Auth/OAuth2/TokenRefreshSpec.hs`).
+> - **Phase 3 (Oura package):** `integrations/Integration/Oura.hs` +
+>   `integrations/Integration/Oura/`. The shipped surface **expanded well beyond
+>   this plan** — 17 request types (Sleep, Activity, Readiness, HeartRate,
+>   Workout, Session, PersonalInfo, DailyStress, DailySpO2, DailyResilience,
+>   DailyCardiovascularAge, VO2Max, EnhancedTag, SleepTime, RestModePeriod,
+>   RingConfiguration, SleepPeriod) plus `SyncAll`, rather than the 5 sketched
+>   here. Specs live under `integrations/test/Integration/Oura/`.
+> - **Phase 4 (domain wiring):** provider config via `Oura.makeOuraConfig` /
+>   `Oura.ouraProvider` and scheduled sync via `Integration.Timer.every`, as
+>   documented in the `Integration.Oura` module haddock.
+>
+> Naming and module boundaries below (e.g. the `RateLimiter` type sketch, the
+> `withValidToken` signature) are illustrative of the original design and do not
+> all match the final code — read the modules above for current APIs.
 
 ---
 
