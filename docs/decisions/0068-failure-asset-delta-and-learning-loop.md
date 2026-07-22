@@ -88,7 +88,9 @@ flaky post-merge check must not churn good work; a human owns the revert decisio
 
 - The miner and weekly review need **real runs**; there are none yet. The tooling
   ships now, self-tested on fixtures; activation (first weekly review on real data,
-  first miner report, archive sunset) is a checklist gated on accumulated runs.
+  first miner report) is a checklist gated on accumulated runs. The archive sunset
+  was the one activation item not gated on run volume — it is done (see
+  "Archive-sunset outcome" above, completed 2026-07-21).
 
 ## Archive-sunset outcome (task 7, completed 2026-07-21)
 

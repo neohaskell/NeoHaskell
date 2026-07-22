@@ -16,8 +16,15 @@ it works, verified at review.
 real NeoHaskell produces NeoHaskell; a model facing an empty buffer produces
 Stack Overflow Haskell. Before writing:
 
-1. Find the nearest-neighbor module (same architectural shape: command,
-   entity, query, transport feature, integration, Core primitive, spec).
+1. Copy-adapt from the **plan-resolved** nearest-neighbor module — the one the
+   localizer pinned at plan time (pipeline step 6 records "which neighbor
+   module each copy-adapts from"). Which module to copy is a "where things
+   live" question, so implementation never searches the tree for one (AGENTS.md
+   HARD RULE). Plan didn't pin one? Exhaust the documented aids first (codemap
+   capability map, `api-hot.md`, `./dev api`, `phrasebook.md`); only then a
+   narrowly bounded lookup, recorded back in the plan at step 6. The neighbor
+   shares the target's architectural shape (command, entity, query, transport
+   feature, integration, Core primitive, spec).
 2. Copy its skeleton — imports block, module header, structure.
 3. Adapt. Your imports section should look like the neighbor's, not like
    your training data.

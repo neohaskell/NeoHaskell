@@ -35,7 +35,7 @@ vocabulary); for NEW code use the extension points. Full contract: codemap/READM
 | `website` | Astro/Starlight docs site (monorepo dir, NOT a separate repo) | `website/**` |  |
 | `installer` | Rust installer (neo-install binary). | `installer/**` |  |
 | `ci-cd` | Build/CI/CD | `.github/workflows/*.yml`… |  |
-| `governance-docs` | Plans, ADRs, agent guide, contributor guide | `docs/**`… |  |
+| `governance-docs` | Plans, ADRs (docs/decisions/), agent guide, contributor guide. | `docs/**`… |  |
 
 ## Extension points (where NEW things go)
 

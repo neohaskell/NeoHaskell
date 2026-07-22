@@ -6,7 +6,7 @@ description: Design-time performance review of an approved contract-delta spec, 
 # Performance design review (risk-tiered, design-time)
 
 Rebuilt 2026-07-08 (Phase 5). The predecessors' blanket-INLINE/UNPACK advice was CORRECTED against GHC reality during
-salvage; this file is the fixed version). Target: ~50k req/s event-sourcing
+salvage; this file is the fixed version. Target: ~50k req/s event-sourcing
 services. Hot-path budgets: command intake <1ms, event apply <0.5ms, query
 <0.2ms, event persistence <1ms.
 
