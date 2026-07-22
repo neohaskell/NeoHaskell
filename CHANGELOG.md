@@ -13,6 +13,18 @@ has been cut yet — everything accrues under Unreleased until the first tag.)
 
 ## [Unreleased]
 
+### 002-task-control-flow-dialect-rules — Change 002: Enforce Task control-flow dialect — `|> discard`, `Task.when`, `Task.unless`
+
+Not breaking. No public signature or wire-format change — the migrated `if …
+pass` blocks and their `Task.when`/`Task.unless` replacements are behaviourally
+identical (`Task.when c a` runs `a` iff `c`, `Task.unless c a` runs `a` iff not
+`c`, each otherwise doing nothing — exactly like the `if`/`pass` forms). New Task
+code is nudged toward the dialect idioms at edit
+time (rule 1) and at `./dev lint`/CI (rules 2–3). Existing non-dialect parser
+and `Q`-monad code is deliberately preserved via added-lines grandfathering and
+a scoped ignore. Testbed: no acceptance-test change — this is a source-dialect
+and tooling change with no HTTP-observable behaviour.
+
 ### 001-fileupload-dedup-blob-existence-check — Change 001: Verify the blob still exists before returning a dedup match on file upload
 
 Not breaking. No signature or wire-format change; `UploadResponse` still omits
