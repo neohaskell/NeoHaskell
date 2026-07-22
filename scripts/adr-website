@@ -1,19 +1,26 @@
 #!/usr/bin/env python3
-"""Generate the website ADR landing page from the audited ADR index.
+"""Generate the website ADR landing pages from the audited ADR index.
 
 Source of truth: docs/decisions/README.md (validated file-by-file by
 scripts/adr-index-check — every NNNN-*.md appears exactly once with a status
 matching its own `## Status` section). This script transcribes that audited
-index into website/src/content/docs/adrs/index.mdx as a real, linked list —
-so the website never carries a hand-maintained, unaudited copy that can drift.
+index into the website ADR landing pages as a real, linked list — so the
+website never carries a hand-maintained, unaudited copy that can drift.
+
+Six pages are owned and synchronized: the English canonical page and one
+translated page per locale (es, fr, hy, ja, ru). Each locale keeps its own
+translated title, description, and explanatory intro; below that intro every
+page renders the SAME canonical ADR table. ADR source records are written in
+English, so the table carries English titles/statuses and links out to each
+record on GitHub — a short note on each localized page says so.
 
 Chain of trust:
   docs/decisions/*.md  --(adr-index-check)-->  docs/decisions/README.md
-                       --(this script)------>  website/.../adrs/index.mdx
+                       --(this script)------>  website/.../adrs/index.mdx (x6)
 
 Modes:
-  adr-website            (re)write the website page from the index
-  adr-website --check    fail (exit 1) if the committed page is out of sync
+  adr-website            (re)write every website page from the index
+  adr-website --check    fail (exit 1) if any committed page is out of sync
   adr-website --self-test  fixtures (doctor/CI)
 
 Run:  ./dev adr-website          CI: .github/workflows/checks.yml (adr-index job)
@@ -25,7 +32,8 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 INDEX = REPO_ROOT / "docs" / "decisions" / "README.md"
-PAGE = REPO_ROOT / "website" / "src" / "content" / "docs" / "adrs" / "index.mdx"
+DOCS = REPO_ROOT / "website" / "src" / "content" / "docs"
+PAGE = DOCS / "adrs" / "index.mdx"  # English canonical page
 
 # ADR sources are linked to their canonical location on GitHub — the website
 # lists the decisions and links out, it does not duplicate 69 ADR bodies.
@@ -40,6 +48,67 @@ GENERATED_NOTICE = (
     "edit by hand.\n    Regenerate: ./dev adr-website   Verify (CI): ./dev "
     "adr-website --check */}"
 )
+
+# Translated pages. Each locale keeps its own title/description/intro; the ADR
+# table itself is canonical English (ADR records are English), and `note`
+# explains that on the page in the reader's language.
+LOCALES = [
+    {
+        "lang": "es",
+        "title": "Registros de Decisiones Arquitectónicas",
+        "description": "Registros de decisiones arquitectónicas significativas en NeoHaskell.",
+        "intro": [
+            "Esta sección documenta las principales elecciones arquitectónicas realizadas durante el desarrollo de NeoHaskell y la razón detrás de cada decisión.",
+            "Los ADRs siguen el formato: contexto, decisión y consecuencias.",
+        ],
+        "note": "Los registros ADR de origen se mantienen en inglés, por lo que la tabla siguiente muestra los títulos y estados canónicos en inglés, con un enlace a cada fuente en GitHub.",
+    },
+    {
+        "lang": "fr",
+        "title": "Dossiers de Décisions Architecturales",
+        "description": "Dossiers des décisions architecturales significatives dans NeoHaskell.",
+        "intro": [
+            "Cette section documente les choix architecturaux clés effectués pendant le développement de NeoHaskell et la logique derrière chaque décision.",
+            "Les ADR suivent le format : contexte, décision, et conséquences.",
+        ],
+        "note": "Les enregistrements ADR d'origine sont tenus en anglais ; le tableau ci-dessous affiche donc les titres et statuts canoniques en anglais, avec un lien vers chaque source sur GitHub.",
+    },
+    {
+        "lang": "hy",
+        "title": "Կառուցվածքային Որոշումների Ձայնագրություններ",
+        "description": "NeoHaskell-ի նշանակալի ճարտարապետական որոշումների ձայնագրություններ։",
+        "intro": [
+            "Այս բաժինը նկարագրում է NeoHaskell-ի մշակման ընթացքում կատարված հիմնական ճարտարապետական ընտրությունները և յուրաքանչյուր որոշման հիմքում ընկած պատճառաբանությունը։",
+            "ADRs-ը հետևում են ձևաչափին. համատեքստ, որոշում և հետևանքներ։",
+        ],
+        "note": "ADR-ի սկզբնաղբյուր գրառումները պահվում են անգլերենով, ուստի ստորև բերված աղյուսակը ցույց է տալիս կանոնական վերնագրերն ու կարգավիճակներն անգլերենով՝ հղում կատարելով GitHub-ի յուրաքանչյուր աղբյուրին։",
+    },
+    {
+        "lang": "ja",
+        "title": "アーキテクチャ決定記録",
+        "description": "NeoHaskellにおける重要なアーキテクチャ上の決定の記録。",
+        "intro": [
+            "このセクションでは、NeoHaskellの開発中に行われた主要なアーキテクチャの選択と、その各決定の背後にある理由を記録します。",
+            "ADRは、コンテキスト、決定、そしてその結果という形式に従います。",
+        ],
+        "note": "ADRの原本は英語で管理されているため、以下の表は正規のタイトルとステータスを英語で示し、GitHub上の各ソースにリンクしています。",
+    },
+    {
+        "lang": "ru",
+        "title": "Записи о принятых архитектурных решениях",
+        "description": "Записи о значительных архитектурных решениях в NeoHaskell.",
+        "intro": [
+            "Этот раздел документирует ключевые архитектурные выборы, сделанные во время разработки NeoHaskell, и обоснование каждого решения.",
+            "ADRs следуют формату: контекст, решение и последствия.",
+        ],
+        "note": "Исходные записи ADR ведутся на английском языке, поэтому в таблице ниже приведены канонические заголовки и статусы на английском со ссылкой на каждый источник на GitHub.",
+    },
+]
+
+
+def locale_page(lang):
+    """Filesystem path of a locale's ADR landing page."""
+    return DOCS / lang / "adrs" / "index.mdx"
 
 
 def parse_index(text):
@@ -57,8 +126,16 @@ def parse_index(text):
     return entries
 
 
+def table_lines(entries):
+    """The canonical ADR table — identical on every page (English source)."""
+    out = ["| ADR | Title | Status |", "| --- | ----- | ------ |"]
+    for num, filename, title, status in entries:
+        out.append(f"| [{num}]({SOURCE_BASE}/{filename}) | {title} | {status} |")
+    return out
+
+
 def render(entries):
-    """Deterministic MDX for the ADR landing page."""
+    """Deterministic MDX for the English (canonical) ADR landing page."""
     lines = [
         "---",
         "title: Architecture Decision Records",
@@ -82,36 +159,85 @@ def render(entries):
         "",
         GENERATED_NOTICE,
         "",
-        "| ADR | Title | Status |",
-        "| --- | ----- | ------ |",
     ]
-    for num, filename, title, status in entries:
-        lines.append(f"| [{num}]({SOURCE_BASE}/{filename}) | {title} | {status} |")
+    lines += table_lines(entries)
     lines.append("")
     return "\n".join(lines)
 
 
+def render_localized(loc, entries):
+    """Deterministic MDX for a translated ADR landing page.
+
+    Keeps the locale's translated title/description/intro, then a translated
+    note and the canonical (English-source) ADR table.
+    """
+    lines = [
+        "---",
+        f"title: {loc['title']}",
+        f"description: {loc['description']}",
+        "---",
+        "",
+    ]
+    for para in loc["intro"]:
+        lines.append(para)
+        lines.append("")
+    lines.append(GENERATED_NOTICE)
+    lines.append("")
+    lines.append(loc["note"])
+    lines.append("")
+    lines += table_lines(entries)
+    lines.append("")
+    return "\n".join(lines)
+
+
+def owned_pages():
+    """Every (path, wanted-content) pair this script owns — English + locales."""
+    entries = parse_index(INDEX.read_text(encoding="utf-8"))
+    pages = [(PAGE, render(entries))]
+    for loc in LOCALES:
+        pages.append((locale_page(loc["lang"]), render_localized(loc, entries)))
+    return pages
+
+
+def _adr_count(content):
+    return content.count("| [")
+
+
 def build():
+    """The English canonical page (kept for callers/tests that want just it)."""
     return render(parse_index(INDEX.read_text(encoding="utf-8")))
 
 
 def cmd_write():
-    content = build()
-    PAGE.write_text(content, encoding="utf-8")
-    n = content.count("| [")
-    print(f"adr-website: wrote {PAGE.relative_to(REPO_ROOT)} — {n} ADRs listed")
+    pages = owned_pages()
+    for path, content in pages:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content, encoding="utf-8")
+    n = _adr_count(pages[0][1])
+    print(f"adr-website: wrote {len(pages)} pages — {n} ADRs each")
     return 0
 
 
 def cmd_check():
-    want = build()
-    have = PAGE.read_text(encoding="utf-8") if PAGE.exists() else ""
-    if want == have:
-        n = want.count("| [")
-        print(f"adr-website: OK — website ADR list in sync ({n} ADRs)")
+    pages = owned_pages()
+    missing = []
+    drift = []
+    for path, want in pages:
+        if not path.exists():
+            missing.append(path)
+            continue
+        if path.read_text(encoding="utf-8") != want:
+            drift.append(path)
+    if not missing and not drift:
+        n = _adr_count(pages[0][1])
+        print(f"adr-website: OK — {len(pages)} ADR pages in sync ({n} ADRs each)")
         return 0
-    print("adr-website: FAIL — website ADR page is out of sync with "
+    print("adr-website: FAIL — website ADR pages are out of sync with "
           "docs/decisions/README.md", file=sys.stderr)
+    for path in missing:
+        print(f"  missing:  {path.relative_to(REPO_ROOT)}", file=sys.stderr)
+    for path in drift:
+        print(f"  drifted:  {path.relative_to(REPO_ROOT)}", file=sys.stderr)
     print("  regenerate with: ./dev adr-website", file=sys.stderr)
     return 1
 
@@ -149,6 +275,29 @@ def self_test():
     check("carries a generated banner", "GENERATED by scripts/adr-website" in out)
     check("has valid frontmatter", out.startswith("---\ntitle: Architecture Decision Records"))
     check("render is deterministic", render(entries) == out)
+
+    # Localized generation: every locale keeps its own translated framing but
+    # shares the canonical English ADR table.
+    check("five translated locales configured", len(LOCALES) == 5)
+    check("owns six pages total (English + five locales)", len(owned_pages()) == 6)
+    for loc in LOCALES:
+        lout = render_localized(loc, entries)
+        tag = loc["lang"]
+        check(f"[{tag}] keeps translated title in frontmatter",
+              f"title: {loc['title']}" in lout)
+        check(f"[{tag}] keeps translated description in frontmatter",
+              f"description: {loc['description']}" in lout)
+        check(f"[{tag}] keeps translated intro prose", loc["intro"][0] in lout)
+        check(f"[{tag}] explains the table is English-source", loc["note"] in lout)
+        check(f"[{tag}] renders the canonical table with GitHub links",
+              f"{SOURCE_BASE}/0001-initial-architecture-baseline.md" in lout)
+        check(f"[{tag}] carries a generated banner",
+              "GENERATED by scripts/adr-website" in lout)
+        check(f"[{tag}] has valid frontmatter",
+              lout.startswith(f"---\ntitle: {loc['title']}"))
+        check(f"[{tag}] shares the English row count",
+              _adr_count(lout) == _adr_count(out))
+        check(f"[{tag}] render is deterministic", render_localized(loc, entries) == lout)
 
     print("adr-website: self-test", "OK" if ok else "FAILED")
     return 0 if ok else 1
