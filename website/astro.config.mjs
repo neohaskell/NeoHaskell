@@ -45,7 +45,11 @@ export default defineConfig({
 				},
 				{
 					label: 'Architecture Decision Records',
-					link: '/adrs/',
+					// Collapsible group, folded by default — the 70 records shouldn't
+					// crowd the sidebar until the reader opens the section. Starlight
+					// still auto-expands the group when the current page is one of the
+					// ADRs, so a record is never hidden from its own page.
+					collapsed: true,
 					translations: {
 						es: 'Registros de Decisiones Arquitectónicas',
 						fr: 'Dossiers de Décisions Architecturales',
@@ -53,6 +57,11 @@ export default defineConfig({
 						ja: 'アーキテクチャ決定記録',
 						ru: 'Записи об архитектурных решениях',
 					},
+					// Every page under src/content/docs/adrs/ is surfaced as a nested
+					// entry by autogenerate. Nothing is listed by hand: adding an ADR to
+					// docs/decisions/ regenerates its page before dev/build/check and it
+					// appears here automatically.
+					items: [{ autogenerate: { directory: 'adrs' } }],
 				},
 			],
 		}),
