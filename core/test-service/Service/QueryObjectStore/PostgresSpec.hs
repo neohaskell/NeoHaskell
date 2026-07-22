@@ -156,9 +156,8 @@ postgresTests = do
           |> Task.asResult
       case result of
         Ok (Just got) ->
-          if got == second
-            then pass
-            else fail [fmt|second write was dropped; got #{toText (show got)}|]
+          Task.unless (got == second) do
+            fail [fmt|second write was dropped; got #{toText (show got)}|]
         Ok Nothing -> fail "Expected Just (second state) but got Nothing"
         Err err -> fail [fmt|Expected Just state but got error: #{err}|]
 
