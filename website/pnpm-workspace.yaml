@@ -1,0 +1,8 @@
+# pnpm 11 reads dependency build-script approvals here (they are no longer read
+# from the "pnpm" field in package.json). Astro's toolchain needs esbuild's and
+# sharp's install scripts to run so their prebuilt native binaries are linked;
+# without this allowlist, `pnpm install`/`pnpm build` abort on
+# ERR_PNPM_IGNORED_BUILDS.
+allowBuilds:
+  esbuild: true
+  sharp: true

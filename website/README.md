@@ -1,12 +1,23 @@
 # NeoHaskell Documentation
 
-Documentation website for [NeoHaskell](https://github.com/neohaskell/neohaskell), built with [Astro Starlight](https://starlight.astro.build/).
+The documentation site for [NeoHaskell](https://github.com/neohaskell/NeoHaskell),
+built with [Astro Starlight](https://starlight.astro.build/).
 
-## Development
+This is a deliberately small scaffold: a home page, a getting-started page, and an
+Architecture Decision Records index generated from the repository's decision log.
+
+## Prerequisites
+
+- [Node.js](https://nodejs.org/) 22.12 or newer (required by Astro 7)
+- [pnpm](https://pnpm.io/) — the version is pinned via the `packageManager` field in
+  `package.json` (use [Corepack](https://nodejs.org/api/corepack.html) or install it
+  manually)
+
+## Develop
 
 ```bash
 pnpm install
-pnpm run dev
+pnpm dev
 ```
 
 Open [localhost:4321](http://localhost:4321) to view the site.
@@ -14,28 +25,26 @@ Open [localhost:4321](http://localhost:4321) to view the site.
 ## Build
 
 ```bash
-pnpm run build
-pnpm run preview
+pnpm build      # production build into ./dist
+pnpm preview    # serve the production build locally
+pnpm check      # type-check and validate content collections
 ```
 
 ## Content
 
-Documentation source files live in `src/content/docs/`. Only edit the English source files — translations are auto-generated into locale subdirectories (e.g., `es/`, `ru/`).
+Documentation source files live in `src/content/docs/`:
 
-### Sections
+| Path | Content |
+|------|---------|
+| `index.mdx` | Home page |
+| `getting-started/index.mdx` | Setup pointer to the repository |
+| `adrs/index.mdx` | **Generated** — do not edit by hand |
 
-| Directory | Content |
-|-----------|---------|
-| `getting-started/` | Setup and first steps |
-| `concepts/` | Core NeoHaskell concepts |
-| `guides/` | Step-by-step tutorials |
-| `reference/` | API reference |
-| `adrs/` | Architecture Decision Records |
-
-## Translations
-
-Translations to Spanish, Russian, Armenian, French, and Japanese are handled automatically by a GitHub Action on push to `main`. Do not edit translation files manually.
+The ADR index is generated from `docs/decisions/README.md` by `scripts/adr-website`
+(run `./dev adr-website` from the repository root; CI verifies it is in sync with
+`./dev adr-website --check`).
 
 ## License
 
-See the [NeoHaskell repository](https://github.com/neohaskell/neohaskell) for license information.
+See the [NeoHaskell repository](https://github.com/neohaskell/NeoHaskell) for license
+information.

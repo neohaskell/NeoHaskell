@@ -68,7 +68,6 @@ docs/plans/
 # Node.js / pnpm (website)
 node_modules/
 .astro/
-.genaiscript/
 
 # Rust / Cargo (installer)
 installer/target/
