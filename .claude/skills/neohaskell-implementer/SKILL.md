@@ -31,6 +31,15 @@ Stack Overflow Haskell. Before writing:
 3. Adapt. Your imports section should look like the neighbor's, not like
    your training data.
 
+**Creating or editing a concept (query, command, event, outbound integration)?**
+These are declared through a Template Haskell marker — **load the
+`neohaskell-concept-derivation` skill and follow it**: use the marker
+(`deriveQuery` / `command` / `event` / `outboundIntegration`) and author only
+the required companion functions and business-logic instances; never hand-write
+the `Show`/`Generic`/JSON/`ToSchema`/`NameOf`/`EntitiesOf`/`Query`/`KnownHash`
+instances the marker emits. Do not copy the boilerplate of a pre-marker module.
+(Entities are the exception — no marker; hand-write their `Entity` instance.)
+
 ## Dialect (gates: edit hook → hlint → GHC)
 
 The style table lives in `AGENTS.md` — read it. Enforcement layers you will

@@ -2,45 +2,40 @@ module Service.Query.DefinitionSpec where
 
 import ConcurrentVar qualified
 import Core
-import Json qualified
+import Service.AccessControl (AccessError, UserClaims)
+import Service.AccessControl qualified as AccessControl
 import Service.EventStore.InMemory qualified as EventStoreInMemory
 import Service.Query.Definition (QueryDefinition (..), createDefinitionWithStore)
+import Service.Query.TH (deriveQuery)
 import Service.QueryObjectStore.Core (QueryObjectStore)
 import Service.QueryObjectStore.InMemory qualified as QOSInMemory
 import Task qualified
 import Test
 
 
--- | A minimal zero-entity query fixture.
+-- | A minimal zero-entity query fixture, derived the canonical way.
 --
 -- It exists only to exercise the generic wiring in 'createDefinitionWithStore'.
--- With @EntitiesOf = '[]@ the entity machinery (fetchers, updaters, event
--- store) is the trivial 'WireEntities' base case, so the wiring test needs no
--- Postgres and no derived entities — just enough of a 'Query' to type-resolve.
+-- Per the neohaskell-concept-derivation skill the type carries NO hand-written
+-- boilerplate: 'deriveQuery' emits Show, Generic, the JSON instances, ToSchema,
+-- @NameOf = "StoreWiringQuery"@, @EntitiesOf = '[]@ (zero entities → the trivial
+-- 'WireEntities' base case, so no Postgres or entity fixtures are needed),
+-- 'Query', and 'KnownHash'. Only the required 'canAccess'/'canView' companion
+-- functions are authored here.
 data StoreWiringQuery = StoreWiringQuery
   { probe :: Int
   }
-  deriving (Eq, Show, Generic)
 
 
-instance Json.ToJSON StoreWiringQuery
+canAccess :: Maybe UserClaims -> Maybe AccessError
+canAccess = AccessControl.publicAccess
 
 
-instance Json.FromJSON StoreWiringQuery
+canView :: Maybe UserClaims -> StoreWiringQuery -> Maybe AccessError
+canView = AccessControl.publicView
 
 
-instance ToSchema StoreWiringQuery
-
-
-type instance NameOf StoreWiringQuery = "store-wiring-probe"
-
-
-type instance EntitiesOf StoreWiringQuery = '[]
-
-
-instance Query StoreWiringQuery where
-  canAccessImpl _ = Nothing
-  canViewImpl _ _ = Nothing
+deriveQuery ''StoreWiringQuery []
 
 
 -- | Wire the fixture query through 'createDefinitionWithStore' with a spy store
@@ -72,11 +67,10 @@ spec = do
             QOSInMemory.new |> Task.mapError toText
       let definition = wireWithSpy spyFactory
       eventStore <- EventStoreInMemory.new |> Task.mapError toText
-      _ <-
-        definition.wireQuery eventStore
-          |> Task.asResult
+      definition.wireQuery eventStore
+        |> Task.asResult
+        |> discard
       capturedName <- captured |> ConcurrentVar.peek
       let expectedName = definition.queryName
-      if capturedName == expectedName && capturedName != "__trait__" && capturedName != ""
-        then pass
-        else fail [fmt|store factory received "#{capturedName}"; expected the query's own name "#{expectedName}" (not the "__trait__" sentinel)|]
+      Task.unless (capturedName == expectedName && capturedName != "__trait__" && capturedName != "") do
+        fail [fmt|store factory received "#{capturedName}"; expected the query's own name "#{expectedName}" (not the "__trait__" sentinel)|]
