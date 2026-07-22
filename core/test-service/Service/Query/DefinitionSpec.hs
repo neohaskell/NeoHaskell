@@ -1,14 +1,14 @@
 module Service.Query.DefinitionSpec where
 
 import ConcurrentVar qualified
-import Core  -- HOOK-ALLOW: Core is the NeoHaskell prelude, imported unqualified by every module (re-exports Query, NameOf, EntitiesOf)
+import Core
 import Json qualified
 import Service.EventStore.InMemory qualified as EventStoreInMemory
 import Service.Query.Definition (QueryDefinition (..), createDefinitionWithStore)
 import Service.QueryObjectStore.Core (QueryObjectStore)
 import Service.QueryObjectStore.InMemory qualified as QOSInMemory
 import Task qualified
-import Test  -- HOOK-ALLOW: Test is the spec DSL, imported unqualified by every spec module
+import Test
 
 
 -- | A minimal zero-entity query fixture.
