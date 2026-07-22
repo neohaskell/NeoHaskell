@@ -78,8 +78,10 @@ RULES = [
     # (Syntax/**, NeoQL/**) are path-exempt in exempt() — `_ <- p` is idiomatic
     # there and must not be churned. Existing sites are grandfathered by the
     # added-lines-only scope; this teaches new code.
+    # `<-\s*(\S|$)` also catches the multiline form `_ <-` with the action on an
+    # indented continuation line (the `_ <-` line is added on its own).
     ("no-discard-bind",
-     re.compile(r"^\s*_\s*<-\s+\S"),
+     re.compile(r"^\s*_\s*<-\s*(\S|$)"),
      "Discarded action — write `action |> discard`, not `_ <- action`. "
      "(`discard :: Mappable m => m a -> m ()`.) Parser combinators are exempt; "
      "genuine non-Task use? add `-- HOOK-ALLOW: <reason>`."),
@@ -137,8 +139,10 @@ def exempt(rule_id: str, line: str, path: str) -> bool:
     if rule_id == "no-pure-return" and PURE_DEF.match(line):
         return True
     # Parser combinator packages: `_ <- Parser.char …` is idiomatic sequencing,
-    # not a Task discard — leave them (backstop for `no-discard-bind`).
-    if rule_id == "no-discard-bind" and ("/syntax/" in path or "/neoql/" in path):
+    # not a Task discard — leave them (backstop for `no-discard-bind`). Matched
+    # exactly (`core/syntax/`, `core/neoql/`) so a near-miss dir like
+    # `core/syntaxtree/` is NOT exempted.
+    if rule_id == "no-discard-bind" and ("core/syntax/" in path or "core/neoql/" in path):
         return True
     return False
 
