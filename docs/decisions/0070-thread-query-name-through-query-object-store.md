@@ -7,7 +7,10 @@
 
 ## Status
 
-Accepted
+Proposed
+
+<!-- Stays Proposed through Gate 1 (spec approval). Flipped to Accepted as part
+     of implementation, once the maintainer has approved the contract. -->
 
 ## Context
 
