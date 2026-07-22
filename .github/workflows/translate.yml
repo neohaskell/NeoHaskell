@@ -106,7 +106,7 @@ jobs:
         working-directory: website
         run: |
           for lang in es ru hy fr ja; do
-            find src/content/docs -maxdepth 3 -name "*.${lang}.mdx" -o -name "*.${lang}.md" | while read file; do
+            find src/content/docs -maxdepth 3 \( -name "*.${lang}.mdx" -o -name "*.${lang}.md" \) | while read file; do
               ext="${file##*.}"
               # Strip the .lang.ext suffix to get the base name
               base=$(basename "$file" ".${lang}.${ext}")
