@@ -15,10 +15,10 @@ codemap/signatures/ · type-directed search: ./dev api "<type>"
 - `throw :: err -> Task err w`  <!-- 203 call sites -->
 - `fromIO :: IO value -> Task w value`  <!-- 131 call sites -->
 - `asResult :: Task err value -> Task err2 (Result err value)`  <!-- 80 call sites -->
+- `when :: Bool -> Task err Unit -> Task err Unit`  <!-- 29 call sites -->
 - `forEach :: (element -> Task err Unit) -> Array element -> Task err Unit`  <!-- 26 call sites -->
 - `fromFailableIO :: Exception exception => IO result -> Task exception result`  <!-- 24 call sites -->
 - `map :: (input -> output) -> Task err input -> Task err output`  <!-- 22 call sites -->
-- `runResult :: Task err value -> IO (Result err value)`  <!-- 13 call sites -->
 
 ## Array
 - `map :: (a -> b) -> Array a -> Array b`  <!-- 100 call sites -->
