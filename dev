@@ -29,8 +29,10 @@ usage: ./dev <verb> [args]
   codemap               regenerate codemap artifacts (signatures, MAP.md, ratchet)
   codemap-check         validate the codemap (ownership, globs, aliases, ratchet)
   adr-check             validate the ADR index in docs/decisions/README.md
-  adr-website [--check]  (re)generate the website ADR landing page from that
-                          index (--check: fail if the page is out of sync)
+  adr-website [--check]  (re)generate the website ADR pages — landing + one page
+                          per ADR — from docs/decisions/ (also runs from pnpm
+                          predev/prebuild/precheck; --check: fail if the tracked
+                          landing page is out of sync)
   hiedb                 (re)build the symbol reference DB
   who-calls <sym> [mod] symbol references, grouped by capability
   where-defined <sym>   symbol definition site, capability-tagged

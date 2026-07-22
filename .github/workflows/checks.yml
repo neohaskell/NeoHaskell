@@ -63,8 +63,11 @@ jobs:
       # Pure-stdlib python check: every docs/decisions/NNNN-*.md is indexed
       # exactly once with a status matching its own `## Status` section.
       - run: ./dev adr-check
-      # Drift gate: the website ADR landing page is generated from that same
-      # (now-audited) index — fail if it was hand-edited or left stale.
+      # Drift gate: the website ADR pages are generated from that same
+      # (now-audited) index by website/scripts/generate-adrs.mjs (Node, on the
+      # runner's default toolchain — no pnpm install, the generator is zero-dep).
+      # Regenerates the gitignored per-ADR pages (proving each still transcribes)
+      # and fails if the tracked landing page was hand-edited or left stale.
       - run: ./dev adr-website --check
 
   spec:

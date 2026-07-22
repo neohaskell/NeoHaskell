@@ -17,9 +17,43 @@ export default defineConfig({
 					href: 'https://github.com/neohaskell/NeoHaskell',
 				},
 			],
+			// English is the source locale (content lives at the docs root); the
+			// non-English locales are kept in sync by .github/workflows/translate.yml.
+			// Pages missing a translation fall back to the English source — which is
+			// why the canonical-English ADR records render everywhere without being
+			// duplicated per locale.
+			defaultLocale: 'root',
+			locales: {
+				root: { label: 'English', lang: 'en' },
+				es: { label: 'Español', lang: 'es' },
+				fr: { label: 'Français', lang: 'fr' },
+				hy: { label: 'Հայերեն', lang: 'hy' },
+				ja: { label: '日本語', lang: 'ja' },
+				ru: { label: 'Русский', lang: 'ru' },
+			},
 			sidebar: [
-				{ label: 'Getting Started', link: '/getting-started/' },
-				{ label: 'Architecture Decision Records', link: '/adrs/' },
+				{
+					label: 'Getting Started',
+					link: '/getting-started/',
+					translations: {
+						es: 'Comenzando',
+						fr: 'Commencer',
+						hy: 'Սկսել',
+						ja: 'はじめに',
+						ru: 'Начало работы',
+					},
+				},
+				{
+					label: 'Architecture Decision Records',
+					link: '/adrs/',
+					translations: {
+						es: 'Registros de Decisiones Arquitectónicas',
+						fr: 'Dossiers de Décisions Architecturales',
+						hy: 'Կառուցվածքային Որոշումների Ձայնագրություններ',
+						ja: 'アーキテクチャ決定記録',
+						ru: 'Записи об архитектурных решениях',
+					},
+				},
 			],
 		}),
 	],

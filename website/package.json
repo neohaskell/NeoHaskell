@@ -7,10 +7,14 @@
     "node": ">=22.12.0"
   },
   "scripts": {
+    "generate:adrs": "node scripts/generate-adrs.mjs",
+    "predev": "node scripts/generate-adrs.mjs",
     "dev": "astro dev",
     "start": "astro dev",
+    "prebuild": "node scripts/generate-adrs.mjs",
     "build": "astro build",
     "preview": "astro preview",
+    "precheck": "node scripts/generate-adrs.mjs",
     "check": "astro check",
     "astro": "astro"
   },

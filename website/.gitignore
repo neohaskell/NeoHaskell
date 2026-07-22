@@ -19,3 +19,11 @@ pnpm-debug.log*
 
 # macOS-specific files
 .DS_Store
+
+# translation cache
+.genaiscript/
+
+# Generated ADR detail pages — one per docs/decisions/NNNN-*.md, written by
+# scripts/generate-adrs.mjs on every predev/prebuild/precheck. The ADR landing
+# page (adrs/index.mdx) is the only tracked file in that directory.
+src/content/docs/adrs/*.md

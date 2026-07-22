@@ -41,8 +41,10 @@ rest:
   regeneration.
 
 Architecture decisions live in `docs/decisions/` (indexed in
-`docs/decisions/README.md`; the website's ADR page is generated from that index
-with `./dev adr-website`).
+`docs/decisions/README.md`). The website turns each record into its own page
+automatically: the generator runs on `pnpm dev`/`build`/`check` (no manual step),
+and `./dev adr-website` regenerates or (with `--check`) verifies the tracked ADR
+landing page.
 
 ## Installing the required tools
 

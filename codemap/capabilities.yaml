@@ -177,8 +177,8 @@ capabilities:
   # ─── non-Haskell surfaces ──────────────────────────────────────────────
   - id: website
     owns: [website/**]
-    responsibility: Astro/Starlight docs site (monorepo dir, NOT a separate repo) — English source in src/content/docs/; the ADR index page is generated from docs/decisions/README.md by scripts/adr-website.
-    aliases: [docs site, documentation website, starlight, astro]
+    responsibility: Astro/Starlight docs site (monorepo dir, NOT a separate repo) — English source in src/content/docs/, locale translations (es/fr/hy/ja/ru) via translate.yml; the ADR landing page + per-ADR pages are generated from docs/decisions/ by website/scripts/generate-adrs.mjs (npm predev/prebuild/precheck, or ./dev adr-website).
+    aliases: [docs site, documentation website, starlight, astro, translations, adr website]
     tests: []
 
   - id: installer
@@ -189,7 +189,7 @@ capabilities:
 
   - id: ci-cd
     owns: [.github/workflows/*.yml, flake.nix, nix/**, docker-compose.yml, cabal.project]  # cloud-setup.sh is under scripts/** (dev-pipeline) — exactly-once
-    responsibility: Build/CI/CD — GitHub workflows (test matrix, cachix, installer, claude), nix flake + hix config, Postgres compose.
+    responsibility: Build/CI/CD — GitHub workflows (test matrix, cachix, installer, translate, claude), nix flake + hix config, Postgres compose.
     aliases: [ci, github actions, nix, flake, build system, cachix, docker]
     tests: []
 
