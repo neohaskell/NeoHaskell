@@ -322,9 +322,8 @@ insertGo ops cfg payload =
 
     let insertionsCount = insertions |> Array.length
 
-    if insertionsCount > 100
-      then Task.throw (CoreInsertionError PayloadTooLarge)
-      else pass
+    Task.when (insertionsCount > 100) do
+      Task.throw (CoreInsertionError PayloadTooLarge)
 
     latestPositions <-
       Sessions.selectLatestEventInStream payload.entityName payload.streamId
@@ -605,10 +604,7 @@ performReadAllStreamEvents
                   |> AllEvent
                   |> Result.Ok
           remainingLimit <- Var.get remainingLimitRef
-          if remainingLimit <= 0
-            then
-              pass
-            else do
+          Task.unless (remainingLimit <= 0) do
               case evt of
                 Ok goodEvent -> do
                   stream |> Stream.writeItem goodEvent
@@ -928,10 +924,7 @@ performReadStreamEvents
                   |> Result.Ok
 
           remainingLimit <- Var.get remainingLimitRef
-          if remainingLimit <= 0
-            then
-              pass
-            else do
+          Task.unless (remainingLimit <= 0) do
               case evt of
                 Ok goodEvent -> do
                   stream |> Stream.writeItem goodEvent

@@ -371,5 +371,77 @@
   "pass_rules": [
    "no-case-bool"
   ]
+ },
+ {
+  "name": "discarded Task bind blocked",
+  "tool": "Edit",
+  "tool_input": {
+   "file_path": "core/service/Service/Foo.hs",
+   "old_string": "",
+   "new_string": "  _ <- store.get uuid"
+  },
+  "expect_rules": [
+   "no-discard-bind"
+  ]
+ },
+ {
+  "name": "named bind passes (no-discard-bind)",
+  "tool": "Edit",
+  "tool_input": {
+   "file_path": "core/service/Service/Foo.hs",
+   "old_string": "",
+   "new_string": "  x <- store.get uuid"
+  },
+  "pass_rules": [
+   "no-discard-bind"
+  ]
+ },
+ {
+  "name": "parser-package discarded bind passes (no-discard-bind path-exempt)",
+  "tool": "Edit",
+  "tool_input": {
+   "file_path": "core/syntax/Syntax/Function.hs",
+   "old_string": "",
+   "new_string": "  _ <- Parser.char '('"
+  },
+  "pass_rules": [
+   "no-discard-bind"
+  ]
+ },
+ {
+  "name": "list-comprehension generator passes (no-discard-bind)",
+  "tool": "Edit",
+  "tool_input": {
+   "file_path": "core/service/Service/Foo.hs",
+   "old_string": "",
+   "new_string": "  let ys = [ f x | _ <- xs ]"
+  },
+  "pass_rules": [
+   "no-discard-bind"
+  ]
+ },
+ {
+  "name": "multiline discarded bind blocked (action on continuation line)",
+  "tool": "Edit",
+  "tool_input": {
+   "file_path": "core/service/Service/Foo.hs",
+   "old_string": "",
+   "new_string": "  _ <-\n    store.get uuid"
+  },
+  "expect_rules": [
+   "no-discard-bind"
+  ]
+ },
+ {
+  "name": "near-miss path stays blocked (no-discard-bind exemption is exact)",
+  "tool": "Edit",
+  "tool_input": {
+   "file_path": "core/syntaxtree/Foo.hs",
+   "old_string": "",
+   "new_string": "  _ <- store.get uuid"
+  },
+  "expect_rules": [
+   "no-discard-bind"
+  ]
  }
 ]

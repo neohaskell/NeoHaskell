@@ -2094,29 +2094,24 @@ initializeFileUpload fileConfig = do
 validateFileUploadConfig :: Text -> Int64 -> Int64 -> Int64 -> Task Text ()
 validateFileUploadConfig blobDir maxSize pendingTtl cleanupInterval = do
   -- Validate blob store directory path
-  if Text.isEmpty blobDir
-    then Task.throw "blobStoreDir cannot be empty"
-    else pass
+  Task.when (Text.isEmpty blobDir) do
+    Task.throw "blobStoreDir cannot be empty"
 
   -- Validate size limit
-  if maxSize <= 0
-    then Task.throw [fmt|maxFileSizeBytes must be positive, got: #{maxSize}|]
-    else pass
+  Task.when (maxSize <= 0) do
+    Task.throw [fmt|maxFileSizeBytes must be positive, got: #{maxSize}|]
 
   -- Validate TTL
-  if pendingTtl <= 0
-    then Task.throw [fmt|pendingTtlSeconds must be positive, got: #{pendingTtl}|]
-    else pass
+  Task.when (pendingTtl <= 0) do
+    Task.throw [fmt|pendingTtlSeconds must be positive, got: #{pendingTtl}|]
 
   -- Validate cleanup interval
-  if cleanupInterval <= 0
-    then Task.throw [fmt|cleanupIntervalSeconds must be positive, got: #{cleanupInterval}|]
-    else pass
+  Task.when (cleanupInterval <= 0) do
+    Task.throw [fmt|cleanupIntervalSeconds must be positive, got: #{cleanupInterval}|]
 
   -- Validate cleanup runs before TTL expires (otherwise files could expire without cleanup)
-  if cleanupInterval >= pendingTtl
-    then Task.throw [fmt|cleanupIntervalSeconds (#{cleanupInterval}) must be less than pendingTtlSeconds (#{pendingTtl})|]
-    else pass
+  Task.when (cleanupInterval >= pendingTtl) do
+    Task.throw [fmt|cleanupIntervalSeconds (#{cleanupInterval}) must be less than pendingTtlSeconds (#{pendingTtl})|]
 
   Task.yield ()
 
