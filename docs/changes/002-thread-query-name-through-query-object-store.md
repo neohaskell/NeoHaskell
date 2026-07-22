@@ -47,15 +47,19 @@ name flows from the one place that structurally knows it.
 ## Criteria
 
 `kind: bug` → C1 is the failing reproduction test, committed red in the draft
-PR. All three cross the real Postgres boundary (rows in `query_object_store`
-keyed by `(query_name, instance_uuid)`), so they are `integration` and self-gate
-on `POSTGRES_AVAILABLE=true`.
+PR. C1–C3 cross the real Postgres boundary (rows in `query_object_store` keyed
+by `(query_name, instance_uuid)`), so they are `integration` and self-gate on
+`POSTGRES_AVAILABLE=true`. C4 pins the automatic wiring — that
+`createDefinitionWithStore` hands the query's real `NameOf query` to the store
+factory rather than a constant — with an in-process spy factory that crosses no
+external boundary, so it is `unit`.
 
 | ID | Behavior | Proving test | Level |
 |----|----------|--------------|-------|
 | C1 | Two Postgres stores built with **distinct** query names, writing the **same** instance UUID with different state, each read back their **own** state — no cross-query overwrite (the collision the issue reports) | `Service.QueryObjectStore.PostgresSpec` "distinct query names isolate rows for the same instance uuid (#734)" | integration |
 | C2 | `getAll` on a store returns only the rows written under **its own** query name, not rows a different query wrote for the same table | `Service.QueryObjectStore.PostgresSpec` "getAll is scoped to the store's own query name (#734)" | integration |
 | C3 | Single-query behavior preserved — `get` / `atomicUpdate` (insert, overwrite, delete) / `getAll` still round-trip correctly once state is keyed by the threaded query name | `Service.QueryObjectStore.PostgresSpec` "state round-trips under the threaded query name" | integration |
+| C4 | The **automatic wiring** passes the query's own name to the store factory — `createDefinitionWithStore` supplies `NameOf query` (not `"__trait__"` or empty) to the supplied factory, so the correct name reaches a Postgres store in production wiring, not only in manually-constructed stores. A spy factory captures the name it is handed | `Service.Query.DefinitionSpec` "passes NameOf query to the supplied store factory (#734)" | unit |
 
 ## User impact
 
@@ -89,6 +93,13 @@ with ≥2 queries per entity, which the default testbed app does not wire; cover
 at the integration level. The existing `PostgresSpec` single-store tests keep
 running (their `mkStore` helper supplies a fixed default query name), so the
 refactor's regression surface stays green.
+
+**Wiring coverage (review follow-up):** the store-level isolation criteria
+(C1/C2) prove that *manually named* Postgres stores do not collide, but not that
+the application actually threads the right name into the store. C4 closes that
+gap: it drives `createDefinitionWithStore` with a spy store factory and asserts
+the factory is handed `NameOf query`, not the `"__trait__"` sentinel — a fast
+`unit` test (no Postgres) that exercises the exact wiring hop the fix adds.
 
 ## ADR
 
