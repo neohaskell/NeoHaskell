@@ -22,8 +22,27 @@ If you want to learn about NeoHaskell itself, checkout
 This guide is intended to streamline the process of
 contributing to the NeoHaskell tooling.
 
-The repository will be a mono-repo that contains all the
-different parts of NeoHaskell.
+The repository is a mono-repo that contains all the
+different parts of NeoHaskell:
+
+- `core/` → `nhcore` — the core library (event-sourcing + CQRS in `core/service/`)
+- `testbed/` → `nhtestbed` — reference app + acceptance tests
+- `integrations/` → `nhintegrations` — outbound integrations
+- `installer/` → `neo-install` — the Rust installer
+- `website/` — the Astro documentation site
+
+This README is the canonical guide for **human contributors**: environment
+setup, the full build/test commands, and Postgres. Two companion guides own the
+rest:
+
+- **`AGENTS.md`** — the agent contract: hard rules, dialect style, and the
+  spec-gated change pipeline.
+- **`codemap/README.md`** — localization routing, API discovery, and codemap
+  regeneration.
+
+Architecture decisions live in `docs/decisions/` (indexed in
+`docs/decisions/README.md`; the website's ADR page is generated from that index
+with `./dev adr-website`).
 
 ## Installing the required tools
 

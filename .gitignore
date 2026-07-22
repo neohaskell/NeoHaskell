@@ -56,6 +56,10 @@ feature-progress.md
 .pipeline/
 .integration-pipeline/
 docs/architecture/
+# AI-authored plan/design drafts stay local (sources archived out-of-repo); the
+# audited, shipped record is docs/decisions/ (ADRs) + docs/changes/ (specs).
+docs/plan/
+docs/plans/
 
 # Locally recorded integration fixtures (never commit — may contain real sandbox responses)
 **/tests/fixtures/local/

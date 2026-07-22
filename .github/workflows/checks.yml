@@ -34,6 +34,9 @@ jobs:
         with:
           persist-credentials: false
       - run: ./dev doctor
+      # Static workflow wiring: hidden-artifact upload opt-in + retrospect
+      # loop stays deterministic/report-only (pure stdlib, no toolchain).
+      - run: ./dev workflow-check
 
   codemap:
     name: codemap check (localization ontology)
@@ -60,6 +63,9 @@ jobs:
       # Pure-stdlib python check: every docs/decisions/NNNN-*.md is indexed
       # exactly once with a status matching its own `## Status` section.
       - run: ./dev adr-check
+      # Drift gate: the website ADR landing page is generated from that same
+      # (now-audited) index — fail if it was hand-edited or left stale.
+      - run: ./dev adr-website --check
 
   spec:
     name: spec check (contract-delta gate)

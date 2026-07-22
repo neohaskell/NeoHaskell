@@ -66,5 +66,9 @@ jobs:
         with:
           name: bench-results-${{ github.run_id }}
           path: .bench-results.json
+          # .bench-results.json is a dotfile; upload-artifact excludes hidden
+          # files by default, which silently produced empty artifacts (run
+          # 29894978953). Opt in explicitly so the evidence actually uploads.
+          include-hidden-files: true
           retention-days: 90
           if-no-files-found: error

@@ -27,6 +27,23 @@ never searches.
 5. **Write exact paths + symbols into the plan.** Low confidence or empty
    match → escalate model tier; never guess.
 
+## API discovery (Phase 4) — transcribe, never recall
+
+Training-data APIs do not exist in this repo. Resolve symbols at **plan time**
+into the plan's `uses:` list; execution transcribes them, never recalls:
+
+- `codemap/api-hot.md` — frequency-ranked card of what this repo actually calls,
+  with doctest examples (cut modules listed in the card trailer).
+- `./dev api "Text -> Maybe Uuid"` — hoogle type search: the NeoHaskell surface
+  ranks first; vanilla (dependency closure + boot libs) ranks below with a
+  disclaimer whenever present (omitted when empty; exit 3 = vanilla-only).
+  Query in dialect types (per AGENTS.md's style table) to hit the surface directly.
+- `codemap/phrasebook.md` — doctest-verified usage patterns (gate: test.yml
+  `doctest` job; thin coverage is the doc backlog, ratcheted via
+  `undocumented_doctest_modules`).
+- GHC "not in scope" in `./dev check` output = an invented API — resolve it via
+  `./dev api`; pipeline runs record this per stage as `invented_api_events`.
+
 ## Routing smoke protocol (map-change PRs)
 
 `routing-smoke.yaml` holds request → expected-capability pairs (including
