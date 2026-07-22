@@ -131,6 +131,30 @@ fn bootstrap_default_does_not_use_repo_wide_latest_release() {
     );
 }
 
+#[test]
+fn bootstrap_stages_download_in_mktemp_not_predictable_path() {
+    // A fixed /tmp/neo-install path is a TOCTOU/symlink hazard: another local
+    // user can pre-create or swap the file between download, chmod, and exec.
+    // The download must land in an unpredictable mktemp file instead, and no
+    // executable line may reference the old hardcoded path.
+    let bootstrap = read("scripts/bootstrap.sh");
+    assert!(
+        bootstrap.contains("mktemp"),
+        "bootstrap.sh must stage the downloaded installer via mktemp"
+    );
+    let offending: Vec<&str> = bootstrap
+        .lines()
+        .filter(|l| !l.trim_start().starts_with('#'))
+        .filter(|l| l.contains("/tmp/neo-install"))
+        .collect();
+    assert!(
+        offending.is_empty(),
+        "bootstrap.sh must not reference a hardcoded /tmp/neo-install path in \
+         executable code — download, chmod, and exec must use the mktemp file. \
+         Offending lines: {offending:?}"
+    );
+}
+
 /// Load bootstrap.sh's shell functions without running the installer, then run
 /// `newest_installer_tag` with `stdin` as the GitHub "list releases" payload.
 /// Returns the function's stdout (the selected tag, or empty).
@@ -195,5 +219,104 @@ fn bootstrap_latest_emits_nothing_when_no_installer_release_exists() {
         newest_installer_tag(releases),
         "",
         "no 'installer-v*' release present → nothing should be selected"
+    );
+}
+
+/// Source bootstrap.sh, redefine its `fetch_releases_page` network seam so it
+/// serves the given per-page fixtures (page 1 = `pages[0]`, …) with an empty
+/// `[]` array past the last one (mirroring the GitHub API), then run
+/// `resolve_latest_installer_tag`. Returns its stdout (the selected tag, or
+/// empty). No network, no download, no install side effect.
+fn resolve_latest_installer_tag_paged(pages: &[&str]) -> String {
+    let bootstrap = crate_dir().join("scripts/bootstrap.sh");
+    // Build a POSIX `case` that maps a page number to its fixture JSON via a
+    // quoted heredoc, defaulting to the empty-array terminator.
+    let mut cases = String::new();
+    for (i, body) in pages.iter().enumerate() {
+        cases.push_str(&format!(
+            "{page}) cat <<'NEO_EOF'\n{body}\nNEO_EOF\n;;\n",
+            page = i + 1,
+            body = body
+        ));
+    }
+    cases.push_str("*) printf '[]\\n' ;;\n");
+    let script = format!(
+        "export NEO_BOOTSTRAP_SOURCE_ONLY=1\n\
+         . \"$1\"\n\
+         fetch_releases_page() {{ case \"$1\" in\n{cases}esac; }}\n\
+         resolve_latest_installer_tag\n"
+    );
+    let out = Command::new("sh")
+        .arg("-c")
+        .arg(script)
+        .arg("sh") // $0
+        .arg(bootstrap.to_str().expect("bootstrap path is valid UTF-8"))
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .expect("spawn sh to source bootstrap.sh");
+    assert!(
+        out.status.success(),
+        "resolve_latest_installer_tag exited non-zero; stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    String::from_utf8_lossy(&out.stdout).trim().to_string()
+}
+
+#[test]
+fn bootstrap_latest_resolves_installer_release_on_second_page() {
+    // GitHub paginates releases newest-first across ALL tags. With more than one
+    // page (100) of newer non-installer releases ahead of it, the newest
+    // installer release lands on a later page; the resolver must page past the
+    // first to find it rather than giving up after page one.
+    let page1 = r#"[
+      {"tag_name": "core-v9.9.9"},
+      {"tag_name": "core-v9.9.8"}
+    ]"#;
+    let page2 = r#"[
+      {"tag_name": "installer-v3.1.0", "name": "installer (newest installer)"},
+      {"tag_name": "installer-v3.0.0", "name": "installer (older)"},
+      {"tag_name": "core-v5.0.0"}
+    ]"#;
+    assert_eq!(
+        resolve_latest_installer_tag_paged(&[page1, page2]),
+        "installer-v3.1.0",
+        "the newest 'installer-v*' release on page two must be resolved when \
+         page one holds only newer non-installer releases"
+    );
+}
+
+#[test]
+fn bootstrap_latest_stops_at_empty_page_without_installer_release() {
+    // Page one has only core releases; page two is the empty-array terminator
+    // the GitHub API returns past the last page. The resolver must stop there
+    // and select nothing (so the caller fails loudly) rather than looping.
+    let page1 = r#"[{"tag_name": "core-v1.0.0"}]"#;
+    assert_eq!(
+        resolve_latest_installer_tag_paged(&[page1]),
+        "",
+        "no installer release across all pages → nothing selected"
+    );
+}
+
+#[test]
+fn bootstrap_latest_propagates_release_api_failure() {
+    let bootstrap = crate_dir().join("scripts/bootstrap.sh");
+    let out = Command::new("sh")
+        .arg("-c")
+        .arg(
+            "export NEO_BOOTSTRAP_SOURCE_ONLY=1\n\
+             . \"$1\"\n\
+             fetch_releases_page() { return 42; }\n\
+             resolve_latest_installer_tag",
+        )
+        .arg("sh")
+        .arg(bootstrap.to_str().expect("bootstrap path is valid UTF-8"))
+        .output()
+        .expect("spawn sh to test release API failure propagation");
+    assert!(
+        !out.status.success(),
+        "release API/network failure must propagate as non-zero, not masquerade as an empty release stream"
     );
 }

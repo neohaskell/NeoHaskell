@@ -46,12 +46,36 @@ newest_installer_tag() {
     | head -n 1
 }
 
-# resolve_latest_installer_tag: query the repo's releases and pick the newest
-# 'installer-v*' one. per_page=100 so the newest installer release is on the
-# first page even behind a run of newer core releases.
+# fetch_releases_page: print the GitHub "list releases" JSON for page $1 (100
+# per page, newest-first). Factored out as the single network seam so the
+# consistency tests can redefine it with in-memory fixtures — no download —
+# while production always hits the real GitHub API.
+fetch_releases_page() {
+  curl -fsSL "https://api.github.com/repos/${REPO}/releases?per_page=100&page=$1"
+}
+
+# resolve_latest_installer_tag: page through the repo's releases (newest-first)
+# and print the newest 'installer-v*' tag. GitHub paginates across ALL tags, so
+# a run of more than 100 newer non-installer releases can push the newest
+# installer release onto a later page — keep fetching until an 'installer-v*'
+# tag turns up or an empty page ends the stream. Prints nothing when no
+# installer release exists, so the caller fails loudly instead of building a
+# URL that would 404.
 resolve_latest_installer_tag() {
-  curl -fsSL "https://api.github.com/repos/${REPO}/releases?per_page=100" \
-    | newest_installer_tag
+  page=1
+  while :; do
+    body=$(fetch_releases_page "$page") || return 1
+    case "$body" in
+      *'"tag_name"'*) ;; # page has releases — inspect it below
+      *) return 0 ;;     # empty/last page → stop; nothing found
+    esac
+    tag=$(printf '%s\n' "$body" | newest_installer_tag)
+    if [ -n "$tag" ]; then
+      printf '%s\n' "$tag"
+      return 0
+    fi
+    page=$((page + 1))
+  done
 }
 
 main() {
@@ -73,14 +97,20 @@ main() {
   echo "🔍 Source: https://github.com/${REPO}"
   echo "📦 Downloading neo-install ${VERSION} for ${PLATFORM}..."
 
-  curl -fsSL "$DOWNLOAD_URL" -o /tmp/neo-install
-  chmod +x /tmp/neo-install
-  /tmp/neo-install "$@"
+  # Stage the download in an unpredictable temp file (mktemp) with a cleanup
+  # trap: a fixed /tmp path lets another local user pre-create or swap the file
+  # between download, chmod, and exec (TOCTOU/symlink hijack).
+  tmpfile=$(mktemp "${TMPDIR:-/tmp}/neo-install.XXXXXX") || exit 1
+  trap 'rm -f "$tmpfile"' 0
+  curl -fsSL "$DOWNLOAD_URL" -o "$tmpfile"
+  chmod +x "$tmpfile"
+  "$tmpfile" "$@"
 }
 
 # Run the installer only when executed directly. The consistency tests source
 # this file with NEO_BOOTSTRAP_SOURCE_ONLY=1 to load the functions above and
-# exercise newest_installer_tag without any download or install side effect.
+# exercise newest_installer_tag / resolve_latest_installer_tag (redefining
+# fetch_releases_page with fixtures) without any download or install side effect.
 if [ "${NEO_BOOTSTRAP_SOURCE_ONLY:-0}" != "1" ]; then
   main "$@"
 fi
