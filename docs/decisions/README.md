@@ -83,6 +83,7 @@ ADRs document significant architectural decisions made during the development of
 | [0067](0067-contract-delta-spec-gate.md) | Contract-delta spec gate and resumable draft-PR flow | Accepted |
 | [0068](0068-failure-asset-delta-and-learning-loop.md) | Failure→asset-delta protocol and the learning loop | Accepted |
 | [0069](0069-security-reviews-are-local.md) | Security design-review records are local-only, never pushed | Accepted |
+| [0070](0070-maintainer-codemap-regeneration.md) | Maintainer-triggered codemap regeneration onto a contributor PR | Proposed |
 
 <!-- adr-index: this table is validated by scripts/adr-index-check (./dev adr-check,
      CI job `adr-index` in checks.yml) — every NNNN-*.md file must appear exactly
