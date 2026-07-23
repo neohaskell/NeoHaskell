@@ -27,7 +27,9 @@ data InMemoryQueryObjectStoreConfig = InMemoryQueryObjectStoreConfig
 
 
 instance QueryObjectStoreConfig InMemoryQueryObjectStoreConfig where
-  createQueryObjectStore _ = new |> Task.mapError toText
+  -- The query name is ignored: each 'new' allocates an independent
+  -- ConcurrentVar map, so in-memory stores never shared a namespace (#734).
+  createQueryObjectStore _ _ = new |> Task.mapError toText
 
 
 -- | Create a new in-memory QueryObjectStore.

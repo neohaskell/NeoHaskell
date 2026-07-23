@@ -48,7 +48,7 @@ testConfig = def
 
 -- | Typed helper to resolve the polymorphic `query` variable.
 createTestStore :: Task QueryObjectStoreError (QueryObjectStore Json.Value)
-createTestStore = PostgresQOS.newFromConfig testConfig
+createTestStore = PostgresQOS.newFromConfig testConfig "readiness-test"
 
 
 spec :: Spec Unit

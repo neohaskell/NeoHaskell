@@ -88,7 +88,7 @@ createDefinition ::
   ) =>
   QueryDefinition
 createDefinition =
-  createDefinitionWithStore @query (InMemory.new |> Task.mapError toText)
+  createDefinitionWithStore @query (\_ -> InMemory.new |> Task.mapError toText)
 
 
 -- | Create a QueryDefinition for a query type with a custom store factory.
@@ -96,16 +96,18 @@ createDefinition =
 -- This automatically wires all entities listed in 'EntitiesOf query'.
 -- The query name is derived from 'NameOf query' (kebab-case).
 --
--- The store factory is a Task that creates a QueryObjectStore for the query type.
--- This allows using different storage backends (in-memory, PostgreSQL, etc.).
+-- The store factory receives the query name (@NameOf query@) and returns a Task
+-- that creates a QueryObjectStore for the query type. Threading the name lets
+-- shared-storage backends (PostgreSQL) key each query's rows separately (#734 /
+-- ADR-0070); backends that ignore it (in-memory) simply drop the argument.
 --
 -- Example:
 --
 -- @
 -- -- Using in-memory store (same as createDefinition):
--- cartSummaryDef = createDefinitionWithStore \@CartSummary (InMemory.new |> Task.mapError toText)
+-- cartSummaryDef = createDefinitionWithStore \@CartSummary (\\_ -> InMemory.new |> Task.mapError toText)
 --
--- -- Using a custom store factory:
+-- -- Using a custom store factory that keys storage by the query name:
 -- cartSummaryDef = createDefinitionWithStore \@CartSummary myPostgresStoreFactory
 -- @
 createDefinitionWithStore ::
@@ -119,7 +121,7 @@ createDefinitionWithStore ::
     GHC.KnownSymbol queryName,
     WireEntities entities query
   ) =>
-  Task Text (QueryObjectStore query) ->
+  (Text -> Task Text (QueryObjectStore query)) ->
   QueryDefinition
 createDefinitionWithStore storeFactory = do
   let queryNameText =
@@ -140,8 +142,9 @@ createDefinitionWithStore storeFactory = do
     { queryName = queryNameText,
       querySchema = schema,
       wireQuery = \rawEventStore -> do
-        -- 1. Create QueryObjectStore using the provided factory
-        queryStore <- storeFactory
+        -- 1. Create QueryObjectStore using the provided factory, handing it the
+        --    query's own name so shared-storage backends isolate its rows (#734).
+        queryStore <- storeFactory queryNameText
 
         -- 2. Wire all entities and collect their registries
         registry <- wireEntities @entities @query queryNameText rawEventStore queryStore

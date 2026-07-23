@@ -589,7 +589,7 @@ withQuery ::
 withQuery app = do
   let storeFactory = case app.queryObjectStoreConfig of
         Just (QueryObjectStoreConfigValue config) -> createQueryObjectStore config
-        Nothing -> InMemory.new |> Task.mapError toText
+        Nothing -> \_ -> InMemory.new |> Task.mapError toText
   let definition = Definition.createDefinitionWithStore @query storeFactory
   app {queryDefinitions = app.queryDefinitions |> Array.push definition}
 

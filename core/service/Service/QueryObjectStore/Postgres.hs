@@ -86,28 +86,33 @@ instance Default PostgresQueryObjectStoreConfig where
 
 
 instance Core.QueryObjectStoreConfig PostgresQueryObjectStoreConfig where
-  createQueryObjectStore config =
-    newFromConfig config
+  createQueryObjectStore config queryName =
+    newFromConfig config queryName
       |> Task.mapError toText
 
 
 -- | Create a Postgres-backed QueryObjectStore from the given config.
 --
--- Use qualified at call sites: @PostgresQueryObjectStore.newFromConfig cfg@.
+-- The @queryName@ (@NameOf query@) is threaded into every row this store
+-- reads/writes, so multiple queries over the same entity persist independently
+-- under the @(query_name, instance_uuid)@ primary key (#734 / ADR-0070).
+--
+-- Use qualified at call sites: @PostgresQueryObjectStore.newFromConfig cfg name@.
 newFromConfig
   :: forall query.
      (Json.FromJSON query, Json.ToJSON query)
   => PostgresQueryObjectStoreConfig
+  -> Text
   -> Task QueryObjectStoreError (QueryObjectStore query)
-newFromConfig config = do
+newFromConfig config queryName = do
   pool <- acquirePool config
   initializeTable pool
     |> Task.andThen (\_ ->
         Task.yield
           QueryObjectStore
-            { get = getImpl pool
-            , atomicUpdate = atomicUpdateImpl pool
-            , getAll = getAllImpl pool
+            { get = getImpl pool queryName
+            , atomicUpdate = atomicUpdateImpl pool queryName
+            , getAll = getAllImpl pool queryName
             })
 
 
@@ -199,40 +204,24 @@ createTableSession =
     |]
 
 
--- | Namespace used by the QueryObjectStore trait implementations.
---
--- Why this exists (deferred trait extension):
--- The QueryObjectStore trait in Service.QueryObjectStore.Core was designed
--- before ADR-0059's checkpoint feature. Its get / atomicUpdate / getAll
--- signatures take only an instance Uuid — there is no query_name parameter.
--- ADR-0059 added the (query_name, instance_uuid) composite primary key for
--- checkpoint rows, but extending the trait to thread query_name through every
--- method is a larger refactor (touches Core.hs, InMemory.hs, Postgres.hs,
--- Application.hs, and every test fixture).
---
--- This namespace is the impedance bridge: trait rows are written here under
--- a fixed sentinel so they never collide with checkpoint rows (which carry
--- the real query name set by Subscriber.rebuildFrom via the CheckpointStore
--- helpers resumeFromCheckpoint and deleteStaleHash). When the trait is
--- properly extended in a follow-up, this namespace and these trait-only
--- helpers can be deleted.
-traitNamespace :: Text
-traitNamespace = "__trait__"
-
-
 -- | Get a single query instance by UUID.
 --
--- Looks up state under the traitNamespace so trait rows are isolated
--- from checkpoint rows written by rebuildFrom checkpoint helpers.
+-- Looks up state under the store's own query name (@NameOf query@), so distinct
+-- queries over the same entity never read each other's rows — the collision the
+-- @"__trait__"@ sentinel used to cause (#734 / ADR-0070). The name matches the
+-- one @Subscriber.rebuildFrom@ writes on the checkpoint pathway, so trait state
+-- and checkpoints now share one namespace per query, as the
+-- @(query_name, instance_uuid)@ PK intends.
 getImpl
   :: forall query.
      (Json.FromJSON query)
   => Pool
+  -> Text
   -> Uuid
   -> Task Error (Maybe query)
-getImpl pool uuid = do
+getImpl pool queryName uuid = do
   let rawUuid = Uuid.toLegacy uuid
-  result <- runPool pool (selectJsonSession traitNamespace rawUuid)
+  result <- runPool pool (selectJsonSession queryName rawUuid)
     |> Task.mapError (\e -> StorageError (toText (show e)))
   case result of
     Nothing -> Task.yield Nothing
@@ -244,23 +233,21 @@ getImpl pool uuid = do
 
 -- | Atomically update a query instance.
 --
--- Uses INSERT ... ON CONFLICT (query_name, instance_uuid) DO UPDATE with
--- CAS-on-position semantics per ADR-0059 §"atomicUpdateStatement":
--- the row is updated only if the incoming position is strictly greater than
--- the stored position. This prevents lost writes (H2).
---
--- Writes under traitNamespace so these rows are isolated from per-query
--- checkpoint rows that carry a real query name.
+-- Uses INSERT ... ON CONFLICT (query_name, instance_uuid) DO UPDATE, keyed by
+-- the store's own query name (@NameOf query@). Concurrent updates to distinct
+-- queries over the same entity therefore never overwrite each other — the
+-- lost-write / cross-query collision the @"__trait__"@ sentinel caused (#734).
 atomicUpdateImpl
   :: forall query.
      (Json.FromJSON query, Json.ToJSON query)
   => Pool
+  -> Text
   -> Uuid
   -> (Maybe query -> Maybe query)
   -> Task Error Unit
-atomicUpdateImpl pool uuid updateFn = do
+atomicUpdateImpl pool queryName uuid updateFn = do
   let rawUuid = Uuid.toLegacy uuid
-  maybeJson <- runPool pool (selectJsonSession traitNamespace rawUuid)
+  maybeJson <- runPool pool (selectJsonSession queryName rawUuid)
     |> Task.mapError (\e -> StorageError (toText (show e)))
   maybeExisting <- case maybeJson of
     Nothing -> Task.yield Nothing
@@ -270,22 +257,26 @@ atomicUpdateImpl pool uuid updateFn = do
         Ok val -> Task.yield (Just val)
   case updateFn maybeExisting of
     Nothing ->
-      runPool pool (deleteSession traitNamespace rawUuid)
+      runPool pool (deleteSession queryName rawUuid)
         |> Task.mapError (\e -> StorageError (toText (show e)))
     Just newVal -> do
       let encoded = Json.encode newVal
-      runPool pool (upsertSession traitNamespace rawUuid encoded)
+      runPool pool (upsertSession queryName rawUuid encoded)
         |> Task.mapError (\e -> StorageError (toText (show e)))
 
 
--- | Get all query instances in the traitNamespace.
+-- | Get all instances stored under the store's own query name (@NameOf query@).
+--
+-- Returns only this query's rows, not every query's rows sharing the table —
+-- the @getAll@ leakage the @"__trait__"@ sentinel caused (#734).
 getAllImpl
   :: forall query.
      (Json.FromJSON query)
   => Pool
+  -> Text
   -> Task Error (Array query)
-getAllImpl pool = do
-  jsonValues <- runPool pool (selectAllSession traitNamespace)
+getAllImpl pool queryName = do
+  jsonValues <- runPool pool (selectAllSession queryName)
     |> Task.mapError (\e -> StorageError (toText (show e)))
   let buildResult =
         jsonValues
@@ -335,7 +326,8 @@ deleteSession queryName rawUuid = do
 -- Hazard H2 (lost-write CAS) is enforced on the checkpoint pathway via
 -- 'CheckpointStore' helpers, which carry a real advancing position.
 -- query_hash is stored alongside state to keep the row shape consistent
--- with checkpoint rows, but is empty in the trait namespace.
+-- with checkpoint rows, but is empty for these per-instance rows — only the
+-- checkpoint marker (nil UUID) carries a real hash.
 upsertSession :: Text -> UUID.UUID -> Json.Value -> Session.Session ()
 upsertSession queryName rawUuid jsonVal = do
   let sql =
@@ -354,10 +346,18 @@ upsertSession queryName rawUuid jsonVal = do
   Session.statement (queryName, rawUuid, jsonVal) stmt
 
 
--- | SELECT all state_json values for a given query_name namespace.
+-- | SELECT all per-instance state_json values for a query name.
+--
+-- Excludes the reserved nil-UUID checkpoint marker row (see
+-- 'writeCheckpointSession'): trait rows and the checkpoint marker now share one
+-- query_name (#734 / ADR-0070), so the marker's placeholder @'{}'@ state must
+-- not leak into getAll — it is not a query instance.
 selectAllSession :: Text -> Session.Session (Array Json.Value)
 selectAllSession queryName = do
-  let sql = "SELECT state_json FROM query_object_store WHERE query_name = $1"
+  let sql =
+        "SELECT state_json FROM query_object_store \
+        \WHERE query_name = $1 \
+        \  AND instance_uuid <> '00000000-0000-0000-0000-000000000000'"
   let encoder = Encoders.param (Encoders.nonNullable Encoders.text)
   let decoder = Decoders.rowList (Decoders.column (Decoders.nonNullable Decoders.jsonb))
   let stmt = Statement (sql |> Text.toBytes |> Bytes.unwrap) encoder decoder True
@@ -433,8 +433,9 @@ deleteStaleHashImpl pool queryName queryHash = do
 
 -- | Persist a checkpoint row for (query_name, query_hash, position).
 --
--- The nil UUID is the checkpoint marker key — one row per query, isolated
--- from the trait's per-instance rows written under '__trait__'.
+-- The nil UUID is the checkpoint marker key — one row per query, isolated by
+-- that reserved UUID from the trait's per-instance rows, which share the same
+-- query_name since #734 (getAll filters the marker out).
 writeCheckpointImpl :: Pool -> Text -> Text -> Int64 -> Task QueryObjectStoreError Unit
 writeCheckpointImpl pool queryName queryHash position =
   runPool pool (writeCheckpointSession queryName queryHash position)
