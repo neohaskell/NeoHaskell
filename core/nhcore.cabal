@@ -587,6 +587,7 @@ test-suite nhcore-test-service
     Service.Integration.TestFixtures
     Service.Integration.WireupSpec
     Service.MockTransport
+    Service.Query.DefinitionSpec
     Service.Query.EndpointSpec
     Service.Query.PaginationSpec
     Service.Query.RegistrySpec

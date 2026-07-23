@@ -59,10 +59,12 @@ RULES = [
      "Vanilla import — use the Core wrapper (Text/Array/Map/Char/File/...). "
      "No wrapper exists? Register an exception in .hlint.yaml `within:` with a "
      "justification + `belongs-in:` note (rule of three promotes a primitive)."),
-    # NOT expressible in hlint generically; gate: review
+    # NOT expressible in hlint generically; gate: review.
+    # Canonical-open-import exemption (Core/Test) lives in exempt().
     ("no-open-import",
      re.compile(r"^\s*import\s+[A-Z][A-Za-z0-9.]*\s*$"),
-     "Unqualified open import — use `import Foo (Foo); import Foo qualified`."),
+     "Unqualified open import — use `import Foo (Foo); import Foo qualified`. "
+     "(`import Core` and `import Test` — the canonical NeoHaskell open imports — are allowed.)"),
     # NOT in hlint (usage-vs-definition undecidable there); backstop: GHC/review.
     # Definition exemption lives in exempt() — covers point-free, plain-arg,
     # and pattern-matching instance methods (`pure (Just x) = …`, `pure [] = …`).
@@ -101,6 +103,13 @@ CASE_BOOL = re.compile(r"case[^\n]*\bof\b[^\n]*\n\s*(True|False)\s*->")
 # (e.g. constraints spanning lines) needs HOOK-ALLOW — documented in the skill.
 STRUCTURE_WHERE = re.compile(r"^\s*(module|class|instance|data|newtype|type)\b|deriving")
 COMMENT_LINE = re.compile(r"^\s*--")
+
+# Canonical NeoHaskell open imports: `Core` (the prelude) and `Test` (the spec
+# DSL) are imported unqualified by every module by convention, so no-open-import
+# must not flag them. Narrow allow-list keyed by module name — any other bare
+# `import Foo` still trips the rule. Exemption logic lives in exempt().
+CANONICAL_OPEN_IMPORTS = {"Core", "Test"}
+OPEN_IMPORT_MODULE = re.compile(r"^\s*import\s+([A-Z][A-Za-z0-9.]*)\s*$")
 
 CASES_FILE = Path(__file__).parent / "dialect-guard-cases.json"
 
@@ -144,6 +153,10 @@ def exempt(rule_id: str, line: str, path: str) -> bool:
     # `core/syntaxtree/` is NOT exempted.
     if rule_id == "no-discard-bind" and ("core/syntax/" in path or "core/neoql/" in path):
         return True
+    if rule_id == "no-open-import":
+        m = OPEN_IMPORT_MODULE.match(line)
+        if m and m.group(1) in CANONICAL_OPEN_IMPORTS:
+            return True
     return False
 
 

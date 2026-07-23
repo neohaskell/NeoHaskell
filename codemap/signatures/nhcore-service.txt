@@ -1395,7 +1395,7 @@ QueryDefinition :: Text -> Schema -> (EventStore Value -> Task Text (QueryRegist
 [wireQuery] :: QueryDefinition -> EventStore Value -> Task Text (QueryRegistry, (Text, QueryEndpointHandler, EndpointSchema))
 class WireEntities (entities :: [Type]) query
 createDefinition :: forall query (queryName :: Symbol) (entities :: [Type]). (Query query, ToSchema query, ToJSON query, FromJSON query, queryName ~ NameOf query, entities ~ EntitiesOf query, KnownSymbol queryName, WireEntities entities query) => QueryDefinition
-createDefinitionWithStore :: forall query (queryName :: Symbol) (entities :: [Type]). (Query query, ToSchema query, ToJSON query, FromJSON query, queryName ~ NameOf query, entities ~ EntitiesOf query, KnownSymbol queryName, WireEntities entities query) => Task Text (QueryObjectStore query) -> QueryDefinition
+createDefinitionWithStore :: forall query (queryName :: Symbol) (entities :: [Type]). (Query query, ToSchema query, ToJSON query, FromJSON query, queryName ~ NameOf query, entities ~ EntitiesOf query, KnownSymbol queryName, WireEntities entities query) => (Text -> Task Text (QueryObjectStore query)) -> QueryDefinition
 data QueryDefinition
 instance (Service.Entity.Core.Entity entity, Service.Query.Core.Query query, Service.Query.Core.QueryOf entity query, Data.Aeson.Types.FromJSON.FromJSON (Service.Entity.Core.EventOf entity), Data.Aeson.Types.ToJSON.ToJSON (Service.Entity.Core.EventOf entity), GHC.TypeLits.KnownSymbol (Service.Command.Core.NameOf entity), Service.Query.Definition.WireEntities rest query) => Service.Query.Definition.WireEntities (entity : rest) query
 instance Service.Query.Definition.WireEntities '[] query
@@ -1506,7 +1506,7 @@ StorageError :: Text -> Error
 [getAll] :: QueryObjectStore query -> Task Error (Array query)
 [get] :: QueryObjectStore query -> Uuid -> Task Error (Maybe query)
 class QueryObjectStoreConfig config
-createQueryObjectStore :: (QueryObjectStoreConfig config, FromJSON query, ToJSON query) => config -> Task Text (QueryObjectStore query)
+createQueryObjectStore :: (QueryObjectStoreConfig config, FromJSON query, ToJSON query) => config -> Text -> Task Text (QueryObjectStore query)
 data Error
 data QueryObjectStore query
 instance GHC.Classes.Eq Service.QueryObjectStore.Core.Error
@@ -1548,7 +1548,7 @@ instance GHC.Classes.Eq Service.QueryObjectStore.Postgres.QueryObjectStoreError
 instance GHC.Generics.Generic Service.QueryObjectStore.Postgres.QueryObjectStoreError
 instance GHC.Show.Show Service.QueryObjectStore.Postgres.QueryObjectStoreError
 instance Service.QueryObjectStore.Core.QueryObjectStoreConfig Service.QueryObjectStore.Postgres.PostgresQueryObjectStoreConfig
-newFromConfig :: (FromJSON query, ToJSON query) => PostgresQueryObjectStoreConfig -> Task QueryObjectStoreError (QueryObjectStore query)
+newFromConfig :: (FromJSON query, ToJSON query) => PostgresQueryObjectStoreConfig -> Text -> Task QueryObjectStoreError (QueryObjectStore query)
 
 module Service.Response
 Accepted :: Text -> CommandResponse
