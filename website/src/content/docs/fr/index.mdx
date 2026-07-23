@@ -1,38 +1,25 @@
 ---
 title: NeoHaskell
-description: Une approche moderne du Haskell pour construire des logiciels fiables.
+description: Un dialecte de Haskell accessible aux débutants, avec event sourcing garanti par le compilateur.
 template: splash
 hero:
-  tagline: Une approche moderne du Haskell pour construire des logiciels fiables.
+  tagline: Un dialecte de Haskell accessible aux débutants. Écrivez votre logique métier avec les garanties du compilateur ; tout le reste se branche autour.
   actions:
-    - text: Get Started
-      link: /getting-started/
+    - text: Commencer
+      link: /fr/getting-started/
       icon: right-arrow
-    - text: GitHub
-      link: https://github.com/neohaskell/neohaskell
+    - text: Voir sur GitHub
+      link: https://github.com/neohaskell/NeoHaskell
       icon: external
       variant: minimal
-
 ---
 
-import { Card, CardGrid } from '@astrojs/starlight/components';
+## Qu'est-ce que NeoHaskell ?
 
-## Explorez NeoHaskell
+NeoHaskell est un dialecte de Haskell conçu pour les débutants et les pragmatiques. Il fait de l'event sourcing une fonctionnalité du langage : événements, entités, commandes, requêtes, services et intégrations sont des primitives du langage, pas des motifs de bibliothèque. Si une transition d'état est incorrecte, le programme ne compile pas.
 
-<CardGrid stagger>
-  <Card title="Commencer" icon="rocket">
-    Configurez votre environnement et écrivez votre premier programme NeoHaskell.
-  </Card>
+## Où aller ensuite
 
-  <Card title="Concepts de base" icon="open-book">
-    Découvrez les idées fondamentales derrière NeoHaskell.
-  </Card>
-
-  <Card title="Guides" icon="pencil">
-    Des tutoriels étape par étape pour des tâches courantes.
-  </Card>
-
-  <Card title="Référence API" icon="setting">
-    Documentation de référence détaillée pour l'API NeoHaskell.
-  </Card>
-</CardGrid>
+- **[Commencer](/fr/getting-started/)** — configurez un projet NeoHaskell.
+- **[Dossiers de Décisions Architecturales](/fr/adrs/)** — les décisions derrière le langage.
+- **[NeoHaskell sur GitHub](https://github.com/neohaskell/NeoHaskell)** — code, tickets et documentation complète.

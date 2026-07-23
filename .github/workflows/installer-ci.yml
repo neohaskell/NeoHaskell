@@ -4,10 +4,10 @@
 # NOTE: GitHub Actions path filters do NOT apply to tag-based triggers, so the
 # 'installer-v*' tag prefix is the sole disambiguation for installer releases.
 #
-# NOTE: installer/.github/workflows/integration.yml is intentionally NOT migrated
-# here. That workflow installs Nix on the CI runner (~30 min, real system changes)
-# and is too expensive for automated monorepo CI. It remains at
-# installer/.github/workflows/integration.yml as a manual-trigger reference.
+# Scope: lint, unit tests, and cross-target release builds only. This repository
+# does not maintain a fresh-install workflow: installing Nix mutates the runner
+# and takes roughly 30 minutes. Release-specific fresh-install validation remains
+# an explicit maintainer decision outside automated CI.
 name: Installer CI
 
 on:

@@ -5,8 +5,7 @@ description: Write NeoHaskell (not vanilla Haskell) code in this repo — copy-a
 
 # NeoHaskell implementer
 
-Rebuilt 2026-07-07 (Phase 2 of the pipeline plan; predecessor archived in
-`docs/archive/2026-07-ai-artifacts/claude-skills/`). The dialect rules below
+Rebuilt 2026-07-07 (Phase 2 of the pipeline plan). The dialect rules below
 are mechanically gated (hook → hlint → GHC); the working discipline
 (copy-adapt, repair protocol, circuit breaker) is protocol — followed because
 it works, verified at review.
@@ -17,8 +16,17 @@ it works, verified at review.
 real NeoHaskell produces NeoHaskell; a model facing an empty buffer produces
 Stack Overflow Haskell. Before writing:
 
-1. Find the nearest-neighbor module (same architectural shape: command,
-   entity, query, transport feature, integration, Core primitive, spec).
+1. Copy-adapt from the **plan-resolved** nearest-neighbor module — the one the
+   localizer pinned at plan time (pipeline step 6 records "which neighbor
+   module each copy-adapts from"). Which module to copy is a "where things
+   live" question, so implementation never searches the tree for one (AGENTS.md
+   HARD RULE). Plan didn't pin one? The neighbor is a planning output, never an
+   implementation-time lookup: **stop, park the run (`wrong-localization`), and
+   return to planning** so the localizer pins it and records it at step 6.
+   Resume never re-plans (AGENTS.md), so discovering or looking up a missing
+   neighbor here is never allowed — fix the localization asset and re-enter.
+   The neighbor shares the target's architectural shape (command, entity,
+   query, transport feature, integration, Core primitive, spec).
 2. Copy its skeleton — imports block, module header, structure.
 3. Adapt. Your imports section should look like the neighbor's, not like
    your training data.

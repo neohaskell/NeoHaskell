@@ -1,0 +1,53 @@
+# Weekly telemetry retrospective (Phase 6 learning loop; ADR-0068) —
+# the DETERMINISTIC half only.
+#
+# What this workflow does automatically:
+#   - runs the existing `./dev retrospect` against COMMITTED telemetry
+#     (telemetry/runs.jsonl) — the same script humans run locally,
+#   - publishes the markdown digest to the GitHub step summary and as a
+#     retained artifact (weekly-review input),
+#   - reports golden-artifact status (the digest's "Golden artifacts" section).
+#
+# What it deliberately does NOT do:
+#   - it does NOT invoke the `neohaskell-retrospective-miner` skill or any LLM,
+#     and it never writes to telemetry/recommendations.jsonl. Turning friction
+#     into recommendations is the frontier-model miner's judgement, gated by
+#     `./dev retrospect --record`/`--set` — a human/agent action, never CI.
+#   - it does NOT push, commit, or prune anything in the repo. Golden dirs live
+#     under telemetry/golden/ which is gitignored (local-only), so there is
+#     nothing to prune in a fresh checkout; actual pruning
+#     (`./dev retrospect --prune-golden`) stays a human action on the dev
+#     machine. This workflow only REPORTS.
+name: retrospect
+
+on:
+  schedule:
+    # Mondays 06:00 UTC — input for the weekly review.
+    - cron: "0 6 * * 1"
+  workflow_dispatch: # human-tool parity: run the digest on demand
+
+permissions:
+  contents: read
+
+jobs:
+  digest:
+    name: telemetry digest (deterministic)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      # `./dev retrospect` is pure-stdlib python (imports scripts/telemetry.py);
+      # no nix toolchain needed — the runner python3 is enough.
+      - name: Generate deterministic retrospective digest
+        run: ./dev retrospect | tee retrospect-digest.md
+      - name: Publish digest to the run summary
+        run: cat retrospect-digest.md >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        if: always()
+        with:
+          name: retrospect-digest-${{ github.run_id }}
+          path: retrospect-digest.md
+          retention-days: 90
+          if-no-files-found: error

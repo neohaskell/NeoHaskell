@@ -19,7 +19,6 @@ cd "${SCRIPT_DIR}/.."
 # Exemptions: script -> reason. Adding one is a visible, reviewable diff.
 EXEMPT_NAMES=(
   "cloud-setup.sh:Claude-web environment setup; invoked by the platform, not by developers"
-  "install.sh:end-user installer (curl-piped); not a repo dev tool"
   "build-hoogle-dbs:internal plumbing — invoked by ./dev api and ./dev codemap, not a user verb"
   "toolchain-fp:internal plumbing — fingerprint for with-toolchain fast path + flake shellHook"
   "speclib.py:shared parsing module imported by spec-check and spec-drift — never executed"
@@ -91,6 +90,9 @@ scripts/telemetry.py --self-test || fail=1
 scripts/changelog --self-test || fail=1
 scripts/revert --self-test || fail=1
 scripts/retrospect --self-test || fail=1
+scripts/workflow-check --self-test || fail=1
+scripts/adr-website --self-test || fail=1
+scripts/adr-index-check --self-test || fail=1
 
 # 5c. Wiring gate: the DoD criterion-test-exists gate must have a CI caller, so
 #     the "criteria green at their declared levels" claim is a live gate, not a

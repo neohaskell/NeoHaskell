@@ -1,0 +1,197 @@
+#!/usr/bin/env python3
+"""Validate the ADR index in docs/decisions/README.md against the actual ADR files.
+
+Contract (governing rule: no doc without a gate):
+  1. Every `docs/decisions/NNNN-*.md` file is listed exactly once in the index.
+  2. Every index row links a file that exists (and whose number matches the link).
+  3. Each row's status matches the ADR file's own `## Status` section
+     (compared by lifecycle keyword: Accepted / Proposed / Deprecated /
+     Superseded / Rejected, so decorations like "Accepted (Implemented)" are fine).
+  4. No two ADR files share the same NNNN number — a collision would let one
+     file silently shadow the other in the index.
+
+Run:  ./dev adr-check          CI: .github/workflows/checks.yml (seconds, no nix)
+      ./dev adr-check --self-test   fixture coverage (doctor/CI)
+
+Exit 0 = index is faithful; exit 1 = drift (with a precise diff on stderr).
+"""
+
+import re
+import sys
+import tempfile
+from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+DECISIONS = REPO_ROOT / "docs" / "decisions"
+
+LIFECYCLE = ("Accepted", "Proposed", "Deprecated", "Superseded", "Rejected")
+# Informal synonyms some older ADRs use in their `## Status` section, mapped to
+# the canonical lifecycle keyword the index uses.
+ALIASES = {"implemented": "Accepted", "done": "Accepted"}
+FILE_RE = re.compile(r"^(\d{4})-.*\.md$")
+# | [0069](0069-security-reviews-are-local.md) | Title … | Accepted |
+ROW_RE = re.compile(
+    r"^\|\s*\[(\d{4})\]\(([^)]+)\)\s*\|.*\|\s*([^|]+?)\s*\|\s*$"
+)
+
+
+def lifecycle_of(text):
+    """First lifecycle keyword in `text` (case-insensitive), or None."""
+    for word in re.findall(r"[A-Za-z]+", text):
+        lower = word.lower()
+        for kw in LIFECYCLE:
+            if lower == kw.lower():
+                return kw
+        if lower in ALIASES:
+            return ALIASES[lower]
+    return None
+
+
+def file_status(path):
+    """The lifecycle keyword declared in the file's `## Status` section."""
+    lines = path.read_text(encoding="utf-8").splitlines()
+    for i, line in enumerate(lines):
+        if re.match(r"^#+\s*Status\b", line.strip(), re.IGNORECASE):
+            for follow in lines[i + 1 :]:
+                if follow.strip():
+                    return lifecycle_of(follow)
+            break
+    return None
+
+
+def collect_files(decisions_dir):
+    """ADR files in `decisions_dir` as number -> filename, plus an error for any
+    two files that share one NNNN number. The collision is caught BEFORE the
+    dict assignment, so a duplicate is reported instead of one file silently
+    overwriting the other."""
+    files = {}
+    errors = []
+    for p in sorted(decisions_dir.glob("*.md")):
+        m = FILE_RE.match(p.name)
+        if not m:
+            continue
+        num = m.group(1)
+        if num in files:
+            errors.append(
+                f"ADR number {num} is used by two files: '{files[num]}' and "
+                f"'{p.name}' — renumber one (NNNN must be unique)"
+            )
+            continue  # keep the first; do not let the later file shadow it
+        files[num] = p.name
+    return files, errors
+
+
+def check(decisions_dir, index_path):
+    """Validate `index_path` against the ADR files in `decisions_dir`.
+    Returns (errors, indexed_file_count)."""
+    files, errors = collect_files(decisions_dir)
+
+    # Indexed rows: number -> (linked_filename, status_cell), tracking dupes
+    rows = {}
+    seen = []
+    for line in index_path.read_text(encoding="utf-8").splitlines():
+        m = ROW_RE.match(line)
+        if not m:
+            continue
+        num, link, status = m.group(1), m.group(2).strip(), m.group(3).strip()
+        seen.append(num)
+        rows[num] = (link, status)
+
+    dupes = sorted({n for n in seen if seen.count(n) > 1})
+    for n in dupes:
+        errors.append(f"ADR {n} is indexed more than once")
+
+    for num, name in sorted(files.items()):
+        if num not in rows:
+            errors.append(f"ADR {num} ({name}) exists on disk but is missing from the index")
+            continue
+        link, status_cell = rows[num]
+        if link != name:
+            errors.append(f"ADR {num} index link points to '{link}', but the file is '{name}'")
+        want = file_status(decisions_dir / name)
+        got = lifecycle_of(status_cell)
+        if want is None:
+            errors.append(f"ADR {num} ({name}) has no parseable `## Status` section")
+        elif got != want:
+            errors.append(
+                f"ADR {num} status mismatch: index says '{status_cell}' "
+                f"(→ {got}) but {name} declares '{want}'"
+            )
+
+    for num in sorted(rows):
+        if num not in files:
+            errors.append(f"index lists ADR {num} but no matching file exists in docs/decisions/")
+
+    return errors, len(files)
+
+
+def self_test():
+    """Fixture coverage (doctor/CI): a duplicate ADR number must fail, and a
+    clean unique index must pass. Runs entirely against temp dirs so it never
+    reads or mutates the real docs/decisions/ tree."""
+    fails = 0
+
+    def write_adr(d, name, status):
+        (d / name).write_text(
+            f"# {name}\n\n## Status\n\n{status}\n", encoding="utf-8"
+        )
+
+    def write_index(d, rows):
+        body = ["# ADR index", "", "| ADR | Title | Status |", "|---|---|---|"]
+        body.extend(rows)
+        (d / "README.md").write_text("\n".join(body) + "\n", encoding="utf-8")
+
+    # Case 1 — a clean, unique index passes.
+    with tempfile.TemporaryDirectory() as td:
+        d = Path(td)
+        write_adr(d, "0001-alpha.md", "Accepted")
+        write_adr(d, "0002-beta.md", "Proposed")
+        write_index(d, [
+            "| [0001](0001-alpha.md) | Alpha | Accepted |",
+            "| [0002](0002-beta.md) | Beta | Proposed |",
+        ])
+        errors, count = check(d, d / "README.md")
+        if errors:
+            print(f"adr-index-check self-test FAIL unique-case: expected no errors, got {errors}", file=sys.stderr)
+            fails += 1
+        elif count != 2:
+            print(f"adr-index-check self-test FAIL unique-case: expected 2 indexed files, got {count}", file=sys.stderr)
+            fails += 1
+
+    # Case 2 — two files reusing NNNN is rejected (the regression: a plain dict
+    # would silently drop one; the check must name both).
+    with tempfile.TemporaryDirectory() as td:
+        d = Path(td)
+        write_adr(d, "0001-alpha.md", "Accepted")
+        write_adr(d, "0001-beta.md", "Accepted")
+        write_index(d, ["| [0001](0001-alpha.md) | Alpha | Accepted |"])
+        errors, _ = check(d, d / "README.md")
+        if not any("used by two files" in e for e in errors):
+            print(f"adr-index-check self-test FAIL dup-case: expected a duplicate-number error, got {errors}", file=sys.stderr)
+            fails += 1
+
+    if fails:
+        print("adr-index-check self-test: FAIL", file=sys.stderr)
+        return 1
+    print("adr-index-check self-test: OK — duplicate ADR number rejected, unique index accepted")
+    return 0
+
+
+def main(argv=None):
+    argv = list(sys.argv[1:] if argv is None else argv)
+    if "--self-test" in argv:
+        return self_test()
+
+    errors, count = check(DECISIONS, DECISIONS / "README.md")
+    if errors:
+        print("adr-index-check: FAIL", file=sys.stderr)
+        for e in errors:
+            print(f"  - {e}", file=sys.stderr)
+        return 1
+
+    print(f"adr-index-check: OK — {count} ADRs indexed exactly once, statuses consistent")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

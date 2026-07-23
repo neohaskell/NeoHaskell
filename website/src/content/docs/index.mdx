@@ -1,129 +1,34 @@
 ---
 title: NeoHaskell
-description: The core language. Write your business logic with compiler guarantees. Everything else plugs in around it.
+description: A newcomer-friendly dialect of Haskell with compiler-enforced event sourcing.
 template: splash
 hero:
-  tagline: The core language. Your business logic, with guarantees. Everything else plugs in.
+  tagline: A newcomer-friendly dialect of Haskell. Write your business logic with compiler guarantees; everything else plugs in around it.
   actions:
-    - text: Get started
-      link: /getting-started/installation/
-      icon: right-arrow
-    - text: Why NeoHaskell?
-      link: /concepts/why-neohaskell/
-      icon: open-book
-      variant: minimal
-    - text: GitHub
-      link: https://github.com/neohaskell/neohaskell
+    - text: View on GitHub
+      link: https://github.com/neohaskell/NeoHaskell
       icon: external
+    - text: Architecture Decision Records
+      link: /adrs/
+      icon: open-book
       variant: minimal
 ---
 
-import { Card, CardGrid, Aside } from '@astrojs/starlight/components';
+## What is NeoHaskell?
 
-## Every application has two parts
+NeoHaskell is a dialect of Haskell designed for beginners and pragmatists. It makes
+event sourcing a first-class language feature: events, entities, commands, queries,
+services, and integrations are language primitives, not library patterns. If a state
+transition is wrong, the program does not compile.
 
-**The shell** — HTTP routing, database connections, file I/O, external APIs. Important, but interchangeable. You can swap your web framework, your database, your queue. The product still works.
+You write the **core** — the business rules that make your product yours. NeoHaskell
+handles the **shell** around them: HTTP endpoints, JSON schemas, CLI parsers, event
+persistence, and a complete audit trail.
 
-**The core** — Your business logic. The rules that make your product yours. *"Premium customers get 15% off orders over $500."* *"If payment fails twice, escalate to support."* *"An account cannot go negative."* This is what you cannot swap out. This is your competitive advantage.
+## Where to go next
 
-Most languages mix these together. Your pricing rule lives next to your HTTP handler, which lives next to your ORM call. When the rule changes, you are touching three layers and hoping you don't break the plumbing.
-
-**NeoHaskell keeps them separate.** You write the core. The shell plugs in.
-
-## What it looks like
-
-You describe what happens in your domain:
-
-```haskell
-data DepositMoney = DepositMoney
-  { accountId :: Uuid
-  , amount :: Int
-  }
-```
-
-You describe how to handle it:
-
-```haskell
-decide cmd account _ctx = case account of
-  Nothing ->
-    Decider.reject "Account does not exist"
-  Just _ ->
-    if cmd.amount <= 0
-      then Decider.reject "Deposit amount must be positive"
-      else
-        Decider.acceptExisting
-          [ MoneyDeposited
-              { entityId = cmd.accountId
-              , amount = cmd.amount
-              }
-          ]
-```
-
-The shell is handled for you:
-
-- HTTP endpoint — generated.
-- JSON schema and OpenAPI spec — generated.
-- CLI parser — generated.
-- Event persistence — automatic.
-- State reconstruction — automatic.
-- Audit trail — automatic.
-
-You wrote the business rule. NeoHaskell handled the plumbing.
-
-## Why your core deserves its own language
-
-**If it compiles, the logic is structurally correct.** Add a new rule to your domain and forget to handle it somewhere? The compiler tells you exactly where before the program runs. Not a test. Not a code reviewer. The compiler.
-
-**In an era of AI-assisted coding, your core is the last line of defense.** AI is great at writing shell code — routing, boilerplate, CRUD. But when it writes core logic without guardrails, mistakes hide in the part of your system that matters most. NeoHaskell is the guardrail. The compiler validates the assistant's output so you don't have to review every line by hand.
-
-**Your core should be readable.** Business logic that reads like business language. When rules change, you see exactly what to update — because the rules are the code, not a layer buried inside framework abstractions.
-
-**Your core should be auditable.** Every state change is recorded as an immutable fact. Every decision is traceable. Complete history — no audit logger required, no history table to maintain. Ready for debugging, compliance, or feeding into your analytics pipeline.
-
-## Two starting points
-
-<CardGrid>
-  <Card title="I want to build something new" icon="rocket">
-    NeoHaskell provides the core language and pre-built integrations for the shell. HTTP server, database, auth — ready to use. Full application, minimal setup.
-
-    **[Get started →](/getting-started/installation/)**
-  </Card>
-  <Card title="I want to integrate with my existing system" icon="setting">
-    Your existing Python / JS / Java / Go system becomes the shell. NeoHaskell becomes the core. They talk via HTTP. Clean separation. No rewrite.
-
-    **[Why NeoHaskell? →](/concepts/why-neohaskell/)**
-  </Card>
-</CardGrid>
-
-## Learn by building
-
-The [NeoBank tutorial](/tutorial/) takes you from zero to a working banking service — accounts, transactions, transfers, and a complete audit trail. Six parts, about 200 lines of core logic. It will feel like enterprise software. The tutorial teaches you the language by building something real, not by lecturing you about type theory.
-
-**[Start the tutorial →](/tutorial/)**
-
-## Already know a language?
-
-<CardGrid>
-  <Card title="JavaScript or TypeScript" icon="seti:javascript">
-    [How your JS/TS mental model maps to NeoHaskell →](/coming-from/javascript/)
-  </Card>
-  <Card title="Python" icon="seti:python">
-    [How your Python mental model maps to NeoHaskell →](/coming-from/python/)
-  </Card>
-  <Card title="Go" icon="seti:go">
-    [How your Go mental model maps to NeoHaskell →](/coming-from/go/)
-  </Card>
-  <Card title="CRUD systems" icon="seti:db">
-    [How CRUD concepts translate to NeoHaskell →](/coming-from/crud/)
-  </Card>
-</CardGrid>
-
-More language-specific pages live in the [Coming From...](/coming-from/) section of the sidebar.
-
-## The promise
-
-Every page in this documentation is written to hold up one promise: **you should never feel like you need permission to be here.** If you have ever written a switch statement, a REST handler, or a form validation function, you already know how to think in NeoHaskell — you just need the syntax.
-
-Start with the [quickstart](/getting-started/installation/) if you want to feel the language in your hands. Start with [the tutorial](/tutorial/) if you want to build something real. Start with [Why NeoHaskell?](/concepts/why-neohaskell/) if you want to understand the reasoning.
-
-Welcome in.
+- **[Getting started](/getting-started/)** — set up a NeoHaskell project.
+- **[Architecture Decision Records](/adrs/)** — the decisions behind the language,
+  generated from the repository's decision log.
+- **[NeoHaskell on GitHub](https://github.com/neohaskell/NeoHaskell)** — source, issues,
+  and the full documentation in the repository.

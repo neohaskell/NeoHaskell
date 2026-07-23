@@ -306,15 +306,6 @@
   "pass_rules": []
  },
  {
-  "name": "archived hs ignored",
-  "tool": "Write",
-  "tool_input": {
-   "file_path": "docs/archive/2026-07-ai-artifacts/x.hs",
-   "content": "foo $ bar"
-  },
-  "pass_rules": []
- },
- {
   "name": "pure with constructor pattern passes (instance)",
   "tool": "Edit",
   "tool_input": {

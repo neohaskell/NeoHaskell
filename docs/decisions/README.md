@@ -70,6 +70,10 @@ ADRs document significant architectural decisions made during the development of
 | [0054](0054-multi-tenant-command-query-support.md) | Multi-Tenant Support for Commands and Queries | Accepted |
 | [0055](0055-declarative-integrations-with-fakes.md) | Declarative Integrations with Real/Fake Parity | Proposed |
 | [0056](0056-request-context-timestamp-as-datetime.md) | Retype `RequestContext.timestamp` as `DateTime` | Proposed |
+| [0057](0057-th-marker-boilerplate.md) | Fold JSON + `deriving` boilerplate into `command`, `event`, `deriveQuery` | Accepted |
+| [0058](0058-per-command-auth-options.md) | Per-Command Access Control via `canAccess` | Proposed |
+| [0059](0059-async-query-rebuild-with-persistent-checkpoints.md) | Async Query Rebuild with Persistent Checkpoints | Proposed |
+| [0060](0060-postgres-pool-budget.md) | Explicit Postgres Connection-Pool Budget for Flexible Server B1ms | Proposed |
 | [0061](0061-listener-reconnect-catchup.md) | Replay from Last globalPosition on LISTEN/NOTIFY Listener Reconnect | Proposed |
 | [0062](0062-shared-connection-settings-builder.md) | Single Shared Postgres Connection-Settings Builder | Proposed |
 | [0063](0063-per-stream-subscription-connection-release.md) | Release Per-Stream Subscription Connections on Unsubscribe | Proposed |
@@ -78,6 +82,11 @@ ADRs document significant architectural decisions made during the development of
 | [0066](0066-two-database-api-search.md) | Two-database API search (`./dev api`) | Accepted |
 | [0067](0067-contract-delta-spec-gate.md) | Contract-delta spec gate and resumable draft-PR flow | Accepted |
 | [0068](0068-failure-asset-delta-and-learning-loop.md) | Failure→asset-delta protocol and the learning loop | Accepted |
+| [0069](0069-security-reviews-are-local.md) | Security design-review records are local-only, never pushed | Accepted |
+
+<!-- adr-index: this table is validated by scripts/adr-index-check (./dev adr-check,
+     CI job `adr-index` in checks.yml) — every NNNN-*.md file must appear exactly
+     once with a status matching its `## Status` section. -->
 
 ## Creating New ADRs
 

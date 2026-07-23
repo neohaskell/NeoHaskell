@@ -177,20 +177,14 @@ capabilities:
   # ─── non-Haskell surfaces ──────────────────────────────────────────────
   - id: website
     owns: [website/**]
-    responsibility: Astro/Starlight docs site (monorepo dir, NOT a separate repo) — English source in src/content/docs/, locale auto-translation via translate.yml (locales currently disabled pending docs revamp).
-    aliases: [docs site, documentation website, starlight, astro, translations]
+    responsibility: Astro/Starlight docs site (monorepo dir, NOT a separate repo) — English source in src/content/docs/, locale translations (es/fr/hy/ja/ru) via translate.yml; the ADR landing page + per-ADR pages are generated from docs/decisions/ by website/scripts/generate-adrs.mjs (npm predev/prebuild/precheck, or ./dev adr-website).
+    aliases: [docs site, documentation website, starlight, astro, translations, adr website]
     tests: []
 
   - id: installer
     owns: [installer/**]
     responsibility: Rust installer (neo-install binary).
     aliases: [install, installer binary, rust installer]
-    tests: []
-
-  - id: ide-extension
-    owns: [ide/**]
-    responsibility: VSCode extension.
-    aliases: [vscode, editor extension]
     tests: []
 
   - id: ci-cd
@@ -201,6 +195,6 @@ capabilities:
 
   - id: governance-docs
     owns: [docs/**, AGENTS.md, CLAUDE.md, README.md, LICENSE]
-    responsibility: Plans, ADRs (docs/decisions/), archived knowledge (docs/archive/ — DO NOT USE), agent guide, contributor guide.
+    responsibility: Plans, ADRs (docs/decisions/), agent guide, contributor guide.
     aliases: [adr, decisions, plans, agent docs, readme, archive]
     tests: []

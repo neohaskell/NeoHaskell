@@ -1,0 +1,244 @@
+#!/usr/bin/env python3
+"""Static wiring checks for the root GitHub workflows (pure stdlib, no nix).
+
+Two contracts, both learned from real breakage:
+
+  1. Hidden-artifact upload (root cause of nightly-bench run 29894978953):
+     `actions/upload-artifact` excludes dotfiles by default, so uploading a
+     hidden path (e.g. `.bench-results.json`) silently produced an empty
+     artifact. Any upload step whose `path:` is hidden MUST set
+     `include-hidden-files: true`.
+
+  2. retrospect.yml wiring (Phase 6 learning loop, deterministic half):
+     the automated digest must stay deterministic and side-effect-free — it
+     runs `./dev retrospect`, publishes to the step summary + an artifact,
+     is schedule- AND dispatch-triggered, and must NOT push/commit, invoke the
+     LLM miner, or write recommendations.
+
+Run:  ./dev workflow-check          CI: .github/workflows/checks.yml
+      ./dev workflow-check --self-test   (doctor/CI)
+"""
+
+import re
+import sys
+from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+WORKFLOWS = REPO_ROOT / ".github" / "workflows"
+
+UPLOAD_RE = re.compile(r"uses:\s*actions/upload-artifact")
+
+
+def _indent(line):
+    return len(line) - len(line.lstrip(" "))
+
+
+def upload_steps(text):
+    """Each `actions/upload-artifact` step as {paths: [...], include_hidden: bool}.
+
+    Block boundaries are indentation-based: a step owns every following line
+    indented deeper than its `- uses:` line.
+    """
+    lines = text.splitlines()
+    steps = []
+    i = 0
+    while i < len(lines):
+        if not UPLOAD_RE.search(lines[i]):
+            i += 1
+            continue
+        base = _indent(lines[i])
+        block = []
+        j = i + 1
+        while j < len(lines):
+            if lines[j].strip() and _indent(lines[j]) <= base:
+                break
+            block.append(lines[j])
+            j += 1
+        steps.append({"paths": _paths(block),
+                      "include_hidden": _include_hidden(block)})
+        i = j
+    return steps
+
+
+def _include_hidden(block):
+    return any(re.match(r"\s*include-hidden-files:\s*true\b", ln) for ln in block)
+
+
+def _paths(block):
+    paths = []
+    for k, ln in enumerate(block):
+        m = re.match(r"(\s*)path:\s*(.*)$", ln)
+        if not m:
+            continue
+        indent, value = len(m.group(1)), m.group(2).strip()
+        if value in ("|", ">", "|-", ">-", "|+", ">+", ""):
+            # block scalar / list: gather the deeper-indented entries
+            for follow in block[k + 1:]:
+                if follow.strip() and _indent(follow) <= indent:
+                    break
+                entry = follow.strip().lstrip("- ").strip()
+                if entry:
+                    paths.append(entry)
+        else:
+            paths.append(value)
+    return paths
+
+
+def is_hidden_path(path):
+    """A path is hidden if any real component starts with '.' (not . or ..)."""
+    for part in path.split("/"):
+        if part.startswith(".") and part not in (".", ".."):
+            return True
+    return False
+
+
+def check_hidden_artifacts(name, text):
+    errs = []
+    for step in upload_steps(text):
+        for p in step["paths"]:
+            if is_hidden_path(p) and not step["include_hidden"]:
+                errs.append(
+                    f"{name}: uploads hidden path '{p}' without "
+                    "`include-hidden-files: true` (artifact would be empty)")
+    return errs
+
+
+def strip_comments(text):
+    """Drop YAML comments so banned-token scans see executable content only —
+    the workflow's own docstring-comments legitimately name what it must NOT do."""
+    out = []
+    for line in text.splitlines():
+        if line.lstrip().startswith("#"):
+            continue
+        # trailing ` # comment` (heuristic: space-hash outside quotes is rare here)
+        if " #" in line:
+            line = line[:line.index(" #")]
+        out.append(line)
+    return "\n".join(out)
+
+
+def check_retrospect(name, text):
+    errs = []
+    required = {
+        "schedule:": "no `schedule:` trigger (weekly review input)",
+        "workflow_dispatch:": "no `workflow_dispatch:` trigger (on-demand parity)",
+        "./dev retrospect": "does not run `./dev retrospect`",
+        "GITHUB_STEP_SUMMARY": "does not publish to the GitHub step summary",
+        "upload-artifact": "does not upload the digest as an artifact",
+    }
+    for needle, why in required.items():
+        if needle not in text:
+            errs.append(f"{name}: {why}")
+    code = strip_comments(text)
+    # No direct pushes / commits — this loop is report-only.
+    for banned in ("git push", "git commit", "git -C", "peter-evans/create-pull-request"):
+        if banned in code:
+            errs.append(f"{name}: must not push/commit ('{banned}' present) — the "
+                        "loop is report-only")
+    # Must not pretend to run the miner or fabricate recommendations.
+    for banned in ("recommendations.jsonl", "retrospect --record",
+                   "retrospective-miner", "--record"):
+        if banned in code:
+            errs.append(f"{name}: must not invoke the miner / write recommendations "
+                        f"('{banned}' present) — that is a human/agent action")
+    return errs
+
+
+def run(root=WORKFLOWS):
+    errs = []
+    for wf in sorted(root.glob("*.yml")):
+        text = wf.read_text(encoding="utf-8")
+        errs += check_hidden_artifacts(wf.name, text)
+        if wf.name == "retrospect.yml":
+            errs += check_retrospect(wf.name, text)
+    retro = root / "retrospect.yml"
+    if not retro.exists():
+        errs.append("retrospect.yml is missing (deterministic learning-loop digest)")
+    return errs
+
+
+def self_test():
+    ok = True
+
+    def check(name, cond):
+        nonlocal ok
+        print(f"  {'ok  ' if cond else 'FAIL'} {name}")
+        ok = ok and cond
+
+    hidden_bad = (
+        "      - uses: actions/upload-artifact@v7\n"
+        "        with:\n"
+        "          name: r\n"
+        "          path: .bench-results.json\n"
+        "          retention-days: 90\n"
+    )
+    check("hidden path without opt-in is flagged",
+          check_hidden_artifacts("f.yml", hidden_bad))
+
+    hidden_ok = hidden_bad.replace(
+        "          retention-days: 90\n",
+        "          include-hidden-files: true\n          retention-days: 90\n")
+    check("hidden path with include-hidden-files passes",
+          not check_hidden_artifacts("f.yml", hidden_ok))
+
+    visible = hidden_bad.replace(".bench-results.json", "dist-newstyle/out.txt")
+    check("visible path is not flagged", not check_hidden_artifacts("f.yml", visible))
+
+    multiline = (
+        "      - uses: actions/upload-artifact@v7\n"
+        "        with:\n"
+        "          path: |\n"
+        "            normal.txt\n"
+        "            .hidden.json\n"
+    )
+    check("hidden entry inside a `path: |` block is flagged",
+          check_hidden_artifacts("f.yml", multiline))
+
+    check("component classifier: dotfile is hidden", is_hidden_path(".bench-results.json"))
+    check("component classifier: ./x is not hidden", not is_hidden_path("./x/y.txt"))
+    check("component classifier: nested dotdir is hidden", is_hidden_path("a/.b/c"))
+
+    good_retro = (
+        "on:\n  schedule:\n    - cron: '0 6 * * 1'\n  workflow_dispatch:\n"
+        "jobs:\n  d:\n    steps:\n"
+        "      - run: ./dev retrospect | tee retrospect-digest.md\n"
+        "      - run: cat retrospect-digest.md >> \"$GITHUB_STEP_SUMMARY\"\n"
+        "      - uses: actions/upload-artifact@v7\n        with:\n"
+        "          name: d\n          path: retrospect-digest.md\n"
+    )
+    check("well-wired retrospect passes", not check_retrospect("retrospect.yml", good_retro))
+    check("missing workflow_dispatch is flagged",
+          check_retrospect("retrospect.yml", good_retro.replace("  workflow_dispatch:\n", "")))
+    check("a git push is flagged",
+          check_retrospect("retrospect.yml", good_retro + "      - run: git push\n"))
+    check("writing recommendations is flagged",
+          check_retrospect("retrospect.yml",
+                           good_retro + "      - run: ./dev retrospect --record '{}'\n"))
+    check("banned token inside a comment is NOT flagged",
+          not check_retrospect("retrospect.yml",
+                               "# it must not git push or write recommendations.jsonl\n"
+                               + good_retro))
+
+    print("workflow-check: self-test", "OK" if ok else "FAILED")
+    return 0 if ok else 1
+
+
+def main(argv):
+    if argv and argv[0] == "--self-test":
+        return self_test()
+    if argv:
+        print(f"usage: workflow-check [--self-test]  (got {argv!r})", file=sys.stderr)
+        return 2
+    errs = run()
+    if errs:
+        print("workflow-check: FAIL", file=sys.stderr)
+        for e in errs:
+            print(f"  - {e}", file=sys.stderr)
+        return 1
+    n = len(list(WORKFLOWS.glob("*.yml")))
+    print(f"workflow-check: OK — {n} workflows wired correctly")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

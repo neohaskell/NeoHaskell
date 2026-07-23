@@ -28,6 +28,11 @@ usage: ./dev <verb> [args]
                           (same as CI; escape hatch documented in .hlint.yaml)
   codemap               regenerate codemap artifacts (signatures, MAP.md, ratchet)
   codemap-check         validate the codemap (ownership, globs, aliases, ratchet)
+  adr-check             validate the ADR index in docs/decisions/README.md
+  adr-website [--check]  (re)generate the website ADR pages — landing + one page
+                          per ADR — from docs/decisions/ (also runs from pnpm
+                          predev/prebuild/precheck; --check: fail if the tracked
+                          landing page is out of sync)
   hiedb                 (re)build the symbol reference DB
   who-calls <sym> [mod] symbol references, grouped by capability
   where-defined <sym>   symbol definition site, capability-tagged
@@ -56,6 +61,8 @@ usage: ./dev <verb> [args]
   telemetry <cmd>       pipeline run telemetry (runs.jsonl): start, stage, wait,
                           rebuilt, consult, finish, golden — pipeline-only by
                           doctrine (see telemetry/SCHEMA.md); never for ad-hoc runs
+  workflow-check        static wiring checks for .github/workflows (hidden
+                          artifacts, retrospect loop; CI-enforced)
   doctor                harness self-check: every script has a verb or a
                           reasoned exemption; no dangling verbs (CI-enforced)
   exec <cmd> [args]     run any command with the pinned toolchain
@@ -78,6 +85,8 @@ case "${VERB}" in
   lint)     exec scripts/lint "$@" ;;
   codemap)  exec scripts/refresh-codemap "$@" ;;
   codemap-check) exec scripts/codemap-check "$@" ;;
+  adr-check) exec scripts/adr-index-check "$@" ;;
+  adr-website) exec scripts/adr-website "$@" ;;
   hiedb)    exec scripts/refresh-hiedb "$@" ;;
   who-calls) exec scripts/who-calls "$@" ;;
   where-defined) exec scripts/where-defined "$@" ;;
@@ -91,6 +100,7 @@ case "${VERB}" in
   revert)   exec scripts/revert "$@" ;;
   retrospect) exec scripts/retrospect "$@" ;;
   telemetry) exec scripts/telemetry.py "$@" ;;
+  workflow-check) exec scripts/workflow-check "$@" ;;
   doctor)   exec scripts/doctor "$@" ;;
   exec)     exec scripts/with-toolchain "$@" ;;
   ""|help|-h|--help) usage ;;

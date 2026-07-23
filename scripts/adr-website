@@ -1,0 +1,49 @@
+#!/usr/bin/env python3
+"""(Re)generate / verify the website's ADR pages.
+
+Thin delegator to the website's deterministic generator,
+`website/scripts/generate-adrs.mjs`, which is the single source of truth. That
+same generator runs automatically from the npm lifecycle (`pnpm predev`,
+`prebuild`, `precheck`), so `pnpm dev`/`build`/`check` expose docs/decisions
+with no manual prerequisite — and `./dev adr-website --check` gates exactly what
+the website build produces (the check contract matches the lifecycle behavior).
+
+The generator writes two things under website/src/content/docs/adrs/:
+  • index.mdx   the TRACKED ADR landing page (links to the internal pages below)
+  • <slug>.md   one GITIGNORED Starlight page per docs/decisions/NNNN-*.md ADR
+
+Modes (forwarded verbatim to the generator):
+  adr-website              (re)write index.mdx + one page per ADR
+  adr-website --check      fail (exit 1) if the tracked index.mdx is out of sync
+  adr-website --self-test  generator unit fixtures (doctor/CI)
+
+Run:  ./dev adr-website          CI: .github/workflows/checks.yml (adr-index job)
+"""
+
+import os
+import shutil
+import sys
+from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+GENERATOR = REPO_ROOT / "website" / "scripts" / "generate-adrs.mjs"
+
+
+def main(argv):
+    if not GENERATOR.exists():
+        print(f"adr-website: FAIL — generator missing: {GENERATOR.relative_to(REPO_ROOT)}",
+              file=sys.stderr)
+        return 1
+    node = shutil.which("node")
+    if node is None:
+        print("adr-website: FAIL — `node` is required to (re)generate the website "
+              "ADR pages but was not found on PATH (the website toolchain provides "
+              "it; e.g. `nix develop` or a Node install)", file=sys.stderr)
+        return 1
+    # Replace this process with node so its exit code and output pass straight
+    # through — there is exactly one generator, in one language.
+    os.execv(node, [node, str(GENERATOR), *argv])
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))
