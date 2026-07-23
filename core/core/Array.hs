@@ -25,6 +25,8 @@ module Array (
   set,
   push,
   append,
+  dropLast,
+  dropRight,
   slice,
 
   -- * LinkedLists
@@ -573,6 +575,39 @@ drop n (Array vector) = Array (Data.Vector.drop n vector)
 -- Array []
 indexed :: Array a -> Array (Int, a)
 indexed (Array vector) = Array (Data.Vector.indexed vector)
+
+
+-- | Remove the last element of an array.
+-- Returns the original array when it is empty.
+--
+-- >>> dropLast (fromLinkedList [1,2,3] :: Array Int)
+-- Array [1,2]
+-- >>> dropLast (fromLinkedList [] :: Array Int)
+-- Array []
+dropLast :: Array element -> Array element
+dropLast arr =
+  if isEmpty arr
+    then arr
+    else take (length arr - 1) arr
+
+
+-- | Remove the last @n@ elements from an array.
+-- When @n <= 0@, returns the original array.
+-- When @n >= length@, returns an empty array.
+--
+-- >>> dropRight 2 (fromLinkedList [1,2,3] :: Array Int)
+-- Array [1]
+-- >>> dropRight 0 (fromLinkedList [1,2,3] :: Array Int)
+-- Array [1,2,3]
+-- >>> dropRight 5 (fromLinkedList [1,2,3] :: Array Int)
+-- Array []
+dropRight :: Int -> Array element -> Array element
+dropRight n arr = do
+  let len = length arr
+      keep = max 0 (len - n)
+  if keep == len
+    then arr
+    else take keep arr
 
 
 -- | Zip two arrays into a new array of tuples.
