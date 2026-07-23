@@ -1,6 +1,6 @@
 # Performance design review: Thread the query name through the QueryObjectStore factory
 
-Spec: docs/changes/002-thread-query-name-through-query-object-store.md | Capabilities: queries (perf-sensitive), service-wiring | Date: 2026-07-23
+Spec: docs/changes/003-thread-query-name-through-query-object-store.md | Capabilities: queries (perf-sensitive), service-wiring | Date: 2026-07-23
 
 Design-time review of the approved contract delta (no code yet). Committed on
 the PR branch; gated at PR-ready by `./dev spec-check --reviews-pr`.

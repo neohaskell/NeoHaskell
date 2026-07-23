@@ -1,4 +1,4 @@
-# Change 002: Thread the real query name through the QueryObjectStore so multiple queries per entity stop colliding
+# Change 003: Thread the real query name through the QueryObjectStore so multiple queries per entity stop colliding
 
 `Service.QueryObjectStore.Postgres` persists **every** query's state under one
 hardcoded `query_name` (`traitNamespace = "__trait__"`), keyed only by
