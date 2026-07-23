@@ -269,9 +269,9 @@ Ranked from call sites in spec/test files only. Reach for these
 when WRITING TESTS; they are not feature-code frequency signal.
 
 ## Task
-- `mapError :: (err1 -> err2) -> Task err1 value -> Task err2 value`  <!-- 735 test call sites -->
+- `mapError :: (err1 -> err2) -> Task err1 value -> Task err2 value`  <!-- 758 test call sites -->
 - `yield :: value -> Task w value`  <!-- 407 test call sites -->
-- `asResult :: Task err value -> Task err2 (Result err value)`  <!-- 269 test call sites -->
+- `asResult :: Task err value -> Task err2 (Result err value)`  <!-- 273 test call sites -->
 - `mapArray :: (element -> Task err output) -> Array element -> Task err (Array output)`  <!-- 118 test call sites -->
 - `throw :: err -> Task err w`  <!-- 98 test call sites -->
 - `fromIO :: IO value -> Task w value`  <!-- 90 test call sites -->
@@ -286,7 +286,7 @@ when WRITING TESTS; they are not feature-code frequency signal.
 - `get :: Int -> Array a -> Maybe a`  <!-- 69 test call sites -->
 - `wrap :: a -> Array a`  <!-- 44 test call sites -->
 - `initialize :: Int -> (Int -> a) -> Array a`  <!-- 43 test call sites -->
-- `contains :: Eq value => value -> Array value -> Bool`  <!-- 37 test call sites -->
+- `contains :: Eq value => value -> Array value -> Bool`  <!-- 41 test call sites -->
 
 ## Text
 - `contains :: Text -> Text -> Bool`  <!-- 433 test call sites -->
@@ -329,17 +329,17 @@ when WRITING TESTS; they are not feature-code frequency signal.
 - `withObject :: Text -> (Object -> Parser value) -> Value -> Parser value`  <!-- 3 test call sites -->
 
 ## ConcurrentVar
-- `modify :: (value -> value) -> ConcurrentVar value -> Task w Unit`  <!-- 88 test call sites -->
-- `containing :: value -> Task w (ConcurrentVar value)`  <!-- 84 test call sites -->
-- `peek :: ConcurrentVar value -> Task w value`  <!-- 71 test call sites -->
+- `modify :: (value -> value) -> ConcurrentVar value -> Task w Unit`  <!-- 89 test call sites -->
+- `containing :: value -> Task w (ConcurrentVar value)`  <!-- 85 test call sites -->
+- `peek :: ConcurrentVar value -> Task w value`  <!-- 72 test call sites -->
 - `get :: ConcurrentVar value -> Task w value`  <!-- 39 test call sites -->
 - `set :: value -> ConcurrentVar value -> Task w ()`  <!-- 15 test call sites -->
 - `new :: forall value w. Task w (ConcurrentVar value)`  <!-- 14 test call sites -->
 - `swap :: value -> ConcurrentVar value -> Task w value`  <!-- 3 test call sites -->
 
 ## Uuid
-- `generate :: Task w Uuid`  <!-- 169 test call sites -->
-- `nil :: Uuid`  <!-- 92 test call sites -->
+- `generate :: Task w Uuid`  <!-- 174 test call sites -->
+- `nil :: Uuid`  <!-- 93 test call sites -->
 - `toText :: Uuid -> Text`  <!-- 29 test call sites -->
 
 *cut: 134 more modules (Map (257), Service.Application (250), Set (233), Stream (190), AsyncTask (171), …) — full surface: codemap/signatures/*

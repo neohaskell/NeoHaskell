@@ -47,12 +47,15 @@ name flows from the one place that structurally knows it.
 ## Criteria
 
 `kind: bug` → C1 is the failing reproduction test, committed red in the draft
-PR. C1–C3 cross the real Postgres boundary (rows in `query_object_store` keyed
-by `(query_name, instance_uuid)`), so they are `integration` and self-gate on
-`POSTGRES_AVAILABLE=true`. C4 pins the automatic wiring — that
+PR. C1–C3 and C5 cross the real Postgres boundary (rows in `query_object_store`
+keyed by `(query_name, instance_uuid)`), so they are `integration` and self-gate
+on `POSTGRES_AVAILABLE=true`. C4 pins the automatic wiring — that
 `createDefinitionWithStore` hands the query's real `NameOf query` to the store
 factory rather than a constant — with an in-process spy factory that crosses no
-external boundary, so it is `unit`.
+external boundary, so it is `unit`. C5 is a downstream-safety criterion the fix
+necessitates: unifying the trait's per-instance rows and the checkpoint marker
+under one `query_name` (the intent of #734) means `getAll` must skip the
+reserved nil-UUID marker row.
 
 | ID | Behavior | Proving test | Level |
 |----|----------|--------------|-------|
@@ -60,6 +63,7 @@ external boundary, so it is `unit`.
 | C2 | `getAll` on a store returns only the rows written under **its own** query name, not rows a different query wrote for the same table | `Service.QueryObjectStore.PostgresSpec` "getAll is scoped to the store's own query name (#734)" | integration |
 | C3 | Single-query behavior preserved — `get` / `atomicUpdate` (insert, overwrite, delete) / `getAll` still round-trip correctly once state is keyed by the threaded query name | `Service.QueryObjectStore.PostgresSpec` "state round-trips under the threaded query name" | integration |
 | C4 | The **automatic wiring** passes the query's own name to the store factory — `createDefinitionWithStore` supplies `NameOf query` (not `"__trait__"` or empty) to the supplied factory, so the correct name reaches a Postgres store in production wiring, not only in manually-constructed stores. A spy factory captures the name it is handed | `Service.Query.DefinitionSpec` "passes NameOf query to the supplied store factory (#734)" | unit |
+| C5 | `getAll` excludes the reserved **nil-UUID checkpoint marker** row. Because the fix makes the trait's per-instance state and the checkpoint marker (`Subscriber.rebuildFrom` via `CheckpointStore`) share one `query_name`, `getAll` must return only real instances — never the marker's placeholder state, which would otherwise surface a bogus row at `GET /queries/{name}` for any checkpointed query | `Service.QueryObjectStore.PostgresSpec` "getAll excludes the reserved nil-uuid checkpoint marker row (#734)" | integration |
 
 ## User impact
 
@@ -100,6 +104,19 @@ the application actually threads the right name into the store. C4 closes that
 gap: it drives `createDefinitionWithStore` with a spy store factory and asserts
 the factory is handed `NameOf query`, not the `"__trait__"` sentinel — a fast
 `unit` test (no Postgres) that exercises the exact wiring hop the fix adds.
+
+**Checkpoint coexistence (implementation follow-up, C5):** before the fix the
+trait's per-instance rows lived under `"__trait__"` while the checkpoint marker
+(`Subscriber.rebuildFrom` via `CheckpointStore`, keyed by the reserved nil UUID)
+lived under the real `query_name` — two different partitions. Threading the real
+name unifies them under one `query_name`, isolated only by `instance_uuid` (real
+vs nil). `get`/`atomicUpdate` are unaffected (they use real instance UUIDs), and
+`resumeFromCheckpoint`/`deleteStaleHash` stay correct (they filter by
+`query_hash`, which trait rows leave empty; `deleteStaleHash` only fires before a
+full replay-from-0 that rebuilds those rows). The one place that needed a guard
+is `getAll`, which now excludes the nil-UUID marker so a checkpointed query's
+`GET /queries/{name}` never surfaces the marker's placeholder state — proven by
+C5.
 
 ## ADR
 

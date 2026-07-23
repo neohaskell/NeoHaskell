@@ -74,4 +74,8 @@ class QueryObjectStoreConfig config where
   createQueryObjectStore ::
     (Json.FromJSON query, Json.ToJSON query) =>
     config ->
+    -- | The query name (@NameOf query@) — threaded so shared-storage backends
+    -- (Postgres) key each query's rows separately; per-store-isolated backends
+    -- (in-memory) ignore it. See ADR-0070 / #734.
+    Text ->
     Task Text (QueryObjectStore query)

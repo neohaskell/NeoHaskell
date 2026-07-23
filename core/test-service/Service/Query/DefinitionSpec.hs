@@ -39,17 +39,14 @@ deriveQuery ''StoreWiringQuery []
 
 
 -- | Wire the fixture query through 'createDefinitionWithStore' with a spy store
--- factory.
+-- factory that captures the name it is handed.
 --
--- Until #734 is fixed 'createDefinitionWithStore' takes an already-built store
--- (@Task Text (QueryObjectStore query)@) and cannot thread the query name, so we
--- model the buggy reality by pre-feeding the "__trait__" sentinel the Postgres
--- trait actually used. The fix changes the factory to @Text -> Task ...@ and
--- 'createDefinitionWithStore' supplies the real query name; this helper then
--- becomes @createDefinitionWithStore \@StoreWiringQuery spy@ and the assertion
--- goes green. Only this helper flips red->green — the test body does not.
+-- Since #734 / ADR-0070 'createDefinitionWithStore' hands the store factory the
+-- query's real name (@NameOf query@), so the spy records @"StoreWiringQuery"@,
+-- not the old @"__trait__"@ sentinel. The wiring test (C4) asserts exactly that;
+-- only this helper flipped red->green — the test body did not.
 wireWithSpy :: (Text -> Task Text (QueryObjectStore StoreWiringQuery)) -> QueryDefinition
-wireWithSpy spy = createDefinitionWithStore @StoreWiringQuery (spy "__trait__")
+wireWithSpy spy = createDefinitionWithStore @StoreWiringQuery spy
 
 
 spec :: Spec Unit

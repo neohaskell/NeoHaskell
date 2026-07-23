@@ -29,20 +29,20 @@ testConfig =
     }
 
 
--- | Concrete-typed helper so all tests have an unambiguous query type.
+-- | Concrete-typed helper so all tests have an unambiguous query type. Supplies
+-- a fixed default query name; the single-store tests below don't care which.
 mkStore :: PostgresQueryObjectStoreConfig -> Task QueryObjectStoreError (QueryObjectStore Json.Value)
-mkStore = PostgresQOS.newFromConfig
+mkStore config = PostgresQOS.newFromConfig config "test-query"
 
 
--- | Build a QueryObjectStore that SHOULD be scoped to @queryName@.
+-- | Build a QueryObjectStore scoped to @queryName@.
 --
--- Until #734 is fixed the Postgres trait hardcodes @query_name = "__trait__"@,
--- so the name cannot be threaded and this deliberately ignores it — which is
--- exactly the defect the "cross-query isolation (#734)" tests pin (C1/C2 red).
--- The fix flips this helper to thread the name and the assertions go green;
--- only this one helper changes, the test bodies do not.
+-- Threads the query name through 'newFromConfig' (#734 / ADR-0070), so two
+-- stores built with distinct names key their rows separately under the
+-- @(query_name, instance_uuid)@ primary key. The cross-query isolation tests
+-- (C1/C2) rely on this; the test bodies never changed — only this helper did.
 mkStoreNamed :: PostgresQueryObjectStoreConfig -> Text -> Task QueryObjectStoreError (QueryObjectStore Json.Value)
-mkStoreNamed config _queryName = PostgresQOS.newFromConfig config
+mkStoreNamed = PostgresQOS.newFromConfig
 
 
 -- | A simple JSON value suitable for use as test query state.
@@ -402,3 +402,32 @@ postgresTests = do
           |> Task.mapError storeErrorToText
       Task.unless (afterInsert == Just (simpleState "v1") && afterOverwrite == Just (simpleState "v2") && afterDelete == Nothing) do
         fail [fmt|round-trip broken: insert=#{toText (show afterInsert)} overwrite=#{toText (show afterOverwrite)} delete=#{toText (show afterDelete)}|]
+
+    it "getAll excludes the reserved nil-uuid checkpoint marker row (#734)" \_ -> do
+      -- Downstream safety: since #734 the checkpoint marker (written by
+      -- Subscriber.rebuildFrom via CheckpointStore, keyed by the nil UUID) shares
+      -- the query name with trait rows. getAll must return only real instances,
+      -- never the marker's placeholder state — otherwise a checkpointed query's
+      -- GET /queries/{name} would surface a bogus row.
+      store <- mkStoreNamed testConfig "marker-exclusion-query" |> Task.mapError mkErrorToText
+      realId <- Uuid.generate
+      let realRow = simpleState "real-instance-row-734"
+      let markerRow = simpleState "marker-should-be-hidden-734"
+      store.atomicUpdate realId (\_ -> Just realRow)
+        |> Task.mapError storeErrorToText
+        |> discard
+      -- write a row under the reserved nil UUID, exactly as the checkpoint marker does
+      store.atomicUpdate Uuid.nil (\_ -> Just markerRow)
+        |> Task.mapError storeErrorToText
+        |> discard
+      result <-
+        store.getAll
+          |> Task.mapError storeErrorToText
+          |> Task.asResult
+      case result of
+        Ok rows -> do
+          Task.when (rows |> Array.contains markerRow) do
+            fail [fmt|getAll surfaced the reserved nil-uuid checkpoint marker: #{toText (show rows)}|]
+          Task.unless (rows |> Array.contains realRow) do
+            fail [fmt|getAll dropped the real instance row: #{toText (show rows)}|]
+        Err err -> fail [fmt|getAll failed: #{err}|]
