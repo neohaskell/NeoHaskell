@@ -13,6 +13,24 @@ has been cut yet — everything accrues under Unreleased until the first tag.)
 
 ## [Unreleased]
 
+### 003-crypto-hmac-sign-verify — Change 003: Add Crypto module with HMAC-SHA256 signWith/verifyWith
+
+None breaking. New public module `Crypto`; no existing signatures change.
+`Auth.OAuth2.StateToken` keeps its private `HmacKey` for now — migrating it
+onto `Crypto.HmacKey` is a possible follow-up refactor, deliberately out of
+scope here. Signature wire format is lowercase hex (the common webhook
+header convention, e.g. GitHub/Stripe style); `verifyWith` is
+case-insensitive on input.
+
+API delta:
+
+- `+ Crypto: data HmacKey`
+- `+ Crypto: hmacKeyFromText :: Text -> Result Text HmacKey`
+- `+ Crypto: hmacKeyFromBytes :: Bytes -> Result Text HmacKey`
+- `+ Crypto: generateHmacKey :: Task err HmacKey`
+- `+ Crypto: signWith :: HmacKey -> Bytes -> Text`
+- `+ Crypto: verifyWith :: HmacKey -> Text -> Bytes -> Bool`
+
 ### 002-task-control-flow-dialect-rules — Change 002: Enforce Task control-flow dialect — `|> discard`, `Task.when`, `Task.unless`
 
 Not breaking. No public signature or wire-format change — the migrated `if …
