@@ -172,6 +172,7 @@ library
     ConcurrentVar
     Console
     Core
+    Crypto
     DateTime
     Decimal
     Decider
@@ -425,6 +426,7 @@ test-suite nhcore-test
     Http.ClientSpec
     Http.ClientRawSpec
     ConcurrentMapSpec
+    CryptoSpec
     Command.FromSchemaSpec
     Integration.CommandSpec
     Integration.ContextSpec
@@ -683,6 +685,7 @@ test-suite nhcore-test-core
     Config.RuntimeSafetySpec
     Config.SecretSpec
     Config.THSpec
+    CryptoSpec
     DecimalSpec
     EventVariantOfSpec
     Http.ClientRawSpec

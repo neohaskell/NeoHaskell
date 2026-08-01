@@ -5,6 +5,7 @@ import Prelude (IO)
 import AsyncTask.RaceSpec qualified
 import Command.FromSchemaSpec qualified
 import ConcurrentMapSpec qualified
+import CryptoSpec qualified
 import DecimalSpec qualified
 import EventVariantOfSpec qualified
 import Config.ApplicationSpec qualified
@@ -49,6 +50,7 @@ main = Hspec.hspec do
   Hspec.describe "AsyncTask.Race" AsyncTask.RaceSpec.spec
   Hspec.describe "Command.FromSchema" Command.FromSchemaSpec.spec
   Hspec.describe "ConcurrentMap" ConcurrentMapSpec.spec
+  Hspec.describe "Crypto" CryptoSpec.spec
   Hspec.describe "Decimal" DecimalSpec.spec
   Hspec.describe "EventVariantOf" EventVariantOfSpec.spec
   Hspec.describe "Config.Application" Config.ApplicationSpec.spec

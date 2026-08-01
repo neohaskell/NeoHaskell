@@ -568,6 +568,16 @@ type family NameOf t :: Symbol
 updateImpl :: Entity entity => EventOf entity -> entity -> entity
 version :: QuasiQuoter
 
+module Crypto
+data HmacKey
+generateHmacKey :: Task err HmacKey
+hmacKeyFromBytes :: Bytes -> Result Text HmacKey
+hmacKeyFromText :: Text -> Result Text HmacKey
+instance GHC.Classes.Eq Crypto.HmacKey
+instance GHC.Show.Show Crypto.HmacKey
+signWith :: HmacKey -> Bytes -> Text
+verifyWith :: HmacKey -> Text -> Bytes -> Bool
+
 module DateTime
 addSeconds :: Int64 -> DateTime -> DateTime
 data DateTime
