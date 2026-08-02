@@ -31,7 +31,6 @@ new-extension-point: false
 + Crypto: signWith :: HmacKey -> Bytes -> Text
 + Crypto: verifyWith :: HmacKey -> Text -> Bytes -> Bool
 + Bytes: getRandom :: Int -> Task w Bytes
-+ Bytes.Internal: newtype Bytes
 ```
 
 Review feedback (maintainer): `Crypto` must not reach for raw `ByteString`
@@ -40,7 +39,8 @@ through `Bytes.length`, and secure random generation is exposed as
 `Bytes.getRandom` (mirroring the `Int.getRandom` API), which
 `Crypto.generateHmacKey` consumes. To let `Bytes` depend on `Task` without
 an import cycle (`Task` → `Text` → `Bytes`), the `Bytes` newtype moved to
-the new internal module `Bytes.Internal`; the public `Bytes` API is
+the new hidden internal module `Bytes.Internal` (listed under
+`other-modules`, not part of the public API); the public `Bytes` API is
 unchanged (`Bytes (..)` is re-exported as before).
 
 ## Criteria
@@ -58,13 +58,14 @@ unchanged (`Bytes (..)` is re-exported as before).
 
 None breaking. New public module `Crypto` and new `Bytes.getRandom`
 primitive (secure random bytes, mirroring `Int.getRandom`); no existing
-signatures change. The `Bytes` newtype now lives in the internal module
-`Bytes.Internal` purely to break an import cycle — `Bytes` re-exports it,
-so no imports change for applications. `Auth.OAuth2.StateToken` keeps its
-private `HmacKey` for now — migrating it onto `Crypto.HmacKey` is a
-possible follow-up refactor, deliberately out of scope here. Signature
-wire format is lowercase hex (the common webhook header convention, e.g.
-GitHub/Stripe style); `verifyWith` is case-insensitive on input.
+signatures change. The `Bytes` newtype now lives in the hidden internal
+module `Bytes.Internal` purely to break an import cycle; it is not
+importable by applications. The public `Bytes` API is unchanged (`Bytes
+(..)` is re-exported as before). `Auth.OAuth2.StateToken` keeps its private
+`HmacKey` for now — migrating it onto `Crypto.HmacKey` is a possible
+follow-up refactor, deliberately out of scope here. Signature wire format
+is lowercase hex (the common webhook header convention, e.g. GitHub/Stripe
+style); `verifyWith` is case-insensitive on input.
 
 ## ADR
 

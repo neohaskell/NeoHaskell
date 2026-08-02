@@ -158,7 +158,6 @@ library
     Auth.UrlValidation
     Basics
     Bytes
-    Bytes.Internal
     Channel
     Char
     Collection
@@ -373,6 +372,7 @@ library
     Version
 
   other-modules:
+    Bytes.Internal
     Parser.Internal
     Parser.Internal.Error
     Parser.Internal.Types
