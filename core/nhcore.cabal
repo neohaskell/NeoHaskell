@@ -158,6 +158,7 @@ library
     Auth.UrlValidation
     Basics
     Bytes
+    Bytes.Internal
     Channel
     Char
     Collection
@@ -425,6 +426,7 @@ test-suite nhcore-test
     Auth.UrlValidationSpec
     Http.ClientSpec
     Http.ClientRawSpec
+    BytesSpec
     ConcurrentMapSpec
     CryptoSpec
     Command.FromSchemaSpec
@@ -685,6 +687,7 @@ test-suite nhcore-test-core
     Config.RuntimeSafetySpec
     Config.SecretSpec
     Config.THSpec
+    BytesSpec
     CryptoSpec
     DecimalSpec
     EventVariantOfSpec

@@ -50,11 +50,9 @@ module Crypto (
 import Basics
 import Bytes (Bytes)
 import Bytes qualified
-import IO qualified
 
 import Crypto.Hash qualified as Hash
 import Crypto.MAC.HMAC qualified as HMAC
-import Crypto.Random qualified as Random
 import Data.ByteArray qualified as BA
 import Data.ByteArray.Encoding qualified as Encoding
 import Data.ByteString qualified as BS
@@ -99,10 +97,9 @@ hmacKeyFromText secret =
 -- The secret must be at least 32 bytes (256 bits) for security.
 hmacKeyFromBytes :: Bytes -> Result Text HmacKey
 hmacKeyFromBytes secret = do
-  let secretBytes = Bytes.unwrap secret
-  let len = BS.length secretBytes
+  let len = Bytes.length secret
   if len >= 32
-    then Ok (HmacKey secretBytes)
+    then Ok (HmacKey (Bytes.unwrap secret))
     else Err [fmt|HMAC key must be at least 32 bytes, got #{len}|]
 
 
@@ -115,9 +112,9 @@ hmacKeyFromBytes secret = do
 -- verify signatures issued before a restart, and no other party can
 -- verify signatures made with it.
 generateHmacKey :: Task err HmacKey
-generateHmacKey = Task.fromIO do
-  randomBytes <- Random.getRandomBytes 32
-  IO.yield (HmacKey randomBytes)
+generateHmacKey = do
+  randomBytes <- Bytes.getRandom 32
+  Task.yield (HmacKey (Bytes.unwrap randomBytes))
 
 
 -- | Sign a message with HMAC-SHA256.

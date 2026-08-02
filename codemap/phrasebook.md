@@ -56,6 +56,15 @@ Array []
 Array [0]
 ```
 *… 37 more doctest sessions in the source module*
+### Bytes
+```haskell
+>>> [1, 2, 3] |> Bytes.pack |> Bytes.length
+3
+```
+```haskell
+>>> Bytes.empty |> Bytes.length
+0
+```
 ### Float
 ```haskell
 >>> Float.toInt 3.7
@@ -149,4 +158,4 @@ Ok SslModeUnset
 ```
 
 ---
-*24 example sessions · modules with ZERO doctests: 316 (the documentation backlog — see codemap/.doc-ratchet)*
+*26 example sessions · modules with ZERO doctests: 316 (the documentation backlog — see codemap/.doc-ratchet)*

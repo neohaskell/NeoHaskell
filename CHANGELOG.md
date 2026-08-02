@@ -15,12 +15,15 @@ has been cut yet — everything accrues under Unreleased until the first tag.)
 
 ### 003-crypto-hmac-sign-verify — Change 003: Add Crypto module with HMAC-SHA256 signWith/verifyWith
 
-None breaking. New public module `Crypto`; no existing signatures change.
-`Auth.OAuth2.StateToken` keeps its private `HmacKey` for now — migrating it
-onto `Crypto.HmacKey` is a possible follow-up refactor, deliberately out of
-scope here. Signature wire format is lowercase hex (the common webhook
-header convention, e.g. GitHub/Stripe style); `verifyWith` is
-case-insensitive on input.
+None breaking. New public module `Crypto` and new `Bytes.getRandom`
+primitive (secure random bytes, mirroring `Int.getRandom`); no existing
+signatures change. The `Bytes` newtype now lives in the internal module
+`Bytes.Internal` purely to break an import cycle — `Bytes` re-exports it,
+so no imports change for applications. `Auth.OAuth2.StateToken` keeps its
+private `HmacKey` for now — migrating it onto `Crypto.HmacKey` is a
+possible follow-up refactor, deliberately out of scope here. Signature
+wire format is lowercase hex (the common webhook header convention, e.g.
+GitHub/Stripe style); `verifyWith` is case-insensitive on input.
 
 API delta:
 
@@ -30,6 +33,8 @@ API delta:
 - `+ Crypto: generateHmacKey :: Task err HmacKey`
 - `+ Crypto: signWith :: HmacKey -> Bytes -> Text`
 - `+ Crypto: verifyWith :: HmacKey -> Text -> Bytes -> Bool`
+- `+ Bytes: getRandom :: Int -> Task w Bytes`
+- `+ Bytes.Internal: newtype Bytes`
 
 ### 002-task-control-flow-dialect-rules — Change 002: Enforce Task control-flow dialect — `|> discard`, `Task.when`, `Task.unless`
 

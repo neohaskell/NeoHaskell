@@ -8,6 +8,8 @@ module Bytes (
   empty,
   replicate,
   pack,
+  -- * Random Generation
+  getRandom,
   -- * Searching
   findSubstring,
   splitOn,
@@ -28,16 +30,16 @@ module Bytes (
 ) where
 
 import Basics
+import Bytes.Internal (Bytes (..))
+import Crypto.Random qualified as Random
 import Data.ByteString qualified as ByteString
 import Data.ByteString.Base64 qualified as Base64
 import Data.ByteString.Lazy (LazyByteString)
 import Data.ByteString.Search qualified as ByteStringSearch
 import Data.Word (Word8)
+import Task (Task)
+import Task qualified
 import Prelude qualified as GhcPrelude
-
-
-newtype Bytes = INTERNAL_CORE_BYTES_CONSTRUCTOR ByteString.ByteString
-  deriving (Eq, Show, Ord, Generic, IsString)
 
 
 unwrap :: Bytes -> ByteString.ByteString
@@ -62,6 +64,13 @@ toLazyLegacy bytes =
     |> ByteString.fromStrict
 
 
+-- | Get the number of bytes.
+--
+-- >>> [1, 2, 3] |> Bytes.pack |> Bytes.length
+-- 3
+--
+-- >>> Bytes.empty |> Bytes.length
+-- 0
 length :: Bytes -> GhcPrelude.Int
 length (INTERNAL_CORE_BYTES_CONSTRUCTOR bs) =
   ByteString.length bs
@@ -81,6 +90,23 @@ pack :: [Word8] -> Bytes
 pack ws =
   ByteString.pack ws
     |> INTERNAL_CORE_BYTES_CONSTRUCTOR
+
+
+-- | Generate cryptographically secure random bytes.
+--
+-- The parameter is the number of bytes to generate. Randomness comes
+-- from the operating system's secure source, so the result is suitable
+-- for secrets like keys and tokens. Sizes below zero yield empty bytes.
+--
+-- Random values have no deterministic doctest; use it inside a 'Task'
+-- pipeline:
+--
+-- > Bytes.getRandom 32
+-- >   |> Task.andThen (\randomBytes -> ...)
+getRandom :: GhcPrelude.Int -> Task _ Bytes
+getRandom size = do
+  randomBytes <- Task.fromIO (Random.getRandomBytes (GhcPrelude.max 0 size))
+  Task.yield (INTERNAL_CORE_BYTES_CONSTRUCTOR randomBytes)
 
 
 -- | Find the first occurrence of a pattern in bytes.

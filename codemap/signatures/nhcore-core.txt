@@ -275,11 +275,7 @@ empty :: Bytes
 findSubstring :: Bytes -> Bytes -> Maybe Int
 fromLazyLegacy :: LazyByteString -> Bytes
 fromLegacy :: ByteString -> Bytes
-instance Data.String.IsString Bytes.Bytes
-instance GHC.Classes.Eq Bytes.Bytes
-instance GHC.Classes.Ord Bytes.Bytes
-instance GHC.Generics.Generic Bytes.Bytes
-instance GHC.Show.Show Bytes.Bytes
+getRandom :: Int -> Task w Bytes
 isPrefixOf :: Bytes -> Bytes -> Bool
 isSuffixOf :: Bytes -> Bytes -> Bool
 length :: Bytes -> Int
@@ -293,6 +289,15 @@ takeEnd :: Int -> Bytes -> Bytes
 toBase64 :: Bytes -> Bytes
 toLazyLegacy :: Bytes -> LazyByteString
 unwrap :: Bytes -> ByteString
+
+module Bytes.Internal
+INTERNAL_CORE_BYTES_CONSTRUCTOR :: ByteString -> Bytes
+instance Data.String.IsString Bytes.Internal.Bytes
+instance GHC.Classes.Eq Bytes.Internal.Bytes
+instance GHC.Classes.Ord Bytes.Internal.Bytes
+instance GHC.Generics.Generic Bytes.Internal.Bytes
+instance GHC.Show.Show Bytes.Internal.Bytes
+newtype Bytes
 
 module Channel
 data Channel value
