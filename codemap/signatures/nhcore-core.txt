@@ -267,11 +267,6 @@ xor :: Bool -> Bool -> Bool
 
 module Bytes
 INTERNAL_CORE_BYTES_CONSTRUCTOR :: ByteString -> Bytes
-instance Data.String.IsString Bytes.Bytes
-instance GHC.Classes.Eq Bytes.Bytes
-instance GHC.Classes.Ord Bytes.Bytes
-instance GHC.Generics.Generic Bytes.Bytes
-instance GHC.Show.Show Bytes.Bytes
 append :: Bytes -> Bytes -> Bytes
 concat :: [Bytes] -> Bytes
 drop :: Int -> Bytes -> Bytes
