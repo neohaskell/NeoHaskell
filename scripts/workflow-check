@@ -245,12 +245,20 @@ def check_codemap_regen(name, text):
         E(f"{name}: missing `publish` job")
     if not res:
         E(f"{name}: missing `resolve` job (pins the exact PR head + editability)")
-    if gen and not re.search(r"needs:.*\bresolve\b", gen):
+    if gen and not re.search(r"^    needs:.*\bresolve\b", gen, re.M):
         E(f"{name}: generate job must `needs: resolve` (consume the pinned head)")
-    if pub and not re.search(r"needs:.*\bresolve\b", pub):
+    if pub and not re.search(r"^    needs:.*\bresolve\b", pub, re.M):
         E(f"{name}: publish job must `needs: resolve` (consume the pinned head)")
+    if pub and not re.search(r"^    needs:.*\bgenerate\b", pub, re.M):
+        E(f"{name}: publish job must `needs: generate` (consume generated artifacts)")
     # 5. generate is untrusted: contents:read and NO secret (property OR index).
-    if not re.search(r"permissions:\s*\n\s*contents:\s*read\s*$", gen, re.M):
+    gen_permissions = re.search(
+        r"^    permissions:\s*\n((?:^      [^\n]*\n?)*)", gen, re.M)
+    permission_lines = (
+        [line.strip() for line in gen_permissions.group(1).splitlines() if line.strip()]
+        if gen_permissions else []
+    )
+    if permission_lines != ["contents: read"]:
         E(f"{name}: generate job is not `contents: read`-only")
     if _SECRETS_REF.search(gen):
         E(f"{name}: generate job references a secret (secrets.X or secrets['X']) "
@@ -260,7 +268,7 @@ def check_codemap_regen(name, text):
         E(f"{name}: {_PUBLISH_TOKEN} is exposed outside the publish job")
     if _PUBLISH_TOKEN not in pub:
         E(f"{name}: publish job does not use {_PUBLISH_TOKEN}")
-    if not re.search(r"environment:\s*codemap-publish\b", pub):
+    if not re.search(r"^    environment:\s*codemap-publish\s*$", pub, re.M):
         E(f"{name}: publish job is not gated by the codemap-publish Environment")
     # 7. runtime main-ref guard (defense in depth).
     if "refs/heads/main" not in pub:
@@ -470,6 +478,16 @@ def self_test():
             good_cmr.replace(resolve_block, ""))
     cmr_bad("generate not depending on resolve is flagged",
             good_cmr.replace("  generate:\n    needs: resolve\n", "  generate:\n"))
+    cmr_bad("publish not depending on generate is flagged",
+            good_cmr.replace("    needs: [resolve, generate]\n", "    needs: resolve\n"))
+    cmr_bad("nested environment property cannot spoof job Environment gating",
+            good_cmr.replace("    environment: codemap-publish\n",
+                             "    env:\n      environment: codemap-publish\n"))
+    cmr_bad("extra generate write permission is flagged",
+            good_cmr.replace(
+                "  generate:\n    needs: resolve\n    permissions:\n      contents: read\n",
+                "  generate:\n    needs: resolve\n    permissions:\n"
+                "      contents: read\n      issues: write\n"))
     cmr_bad("an automatic push trigger is flagged",
             good_cmr.replace("  workflow_dispatch:\n", "  workflow_dispatch:\n  push:\n    branches: [main]\n"))
     cmr_bad("a schedule trigger is flagged",
