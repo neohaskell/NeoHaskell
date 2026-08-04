@@ -13,6 +13,25 @@ has been cut yet — everything accrues under Unreleased until the first tag.)
 
 ## [Unreleased]
 
+### 003-maintainer-codemap-regeneration — Change 003: Maintainer-triggered codemap regeneration onto a contributor PR
+
+Not breaking. No public signature or wire-format change. New capability for
+maintainers only: a manually-dispatched workflow on `main`. Contributors see
+their PR branch receive one `chore: regenerate codemap` fast-forward commit after
+Nick approves the protected environment; a no-op (codemap already current) leaves
+the branch untouched and the run succeeds. Every unsupported or unsafe condition
+(maintainer edits disabled, org-owned fork, metadata race, symlink under
+`codemap/`, out-of-allowlist manifest/diff, non-fast-forward) fails with an
+actionable Actions summary and mutates nothing — **no fallback PR is ever
+created**. Testbed: no acceptance-test change — this is CI/tooling with no
+HTTP-observable behavior. One-time maintainer setup is **mandatory and
+load-bearing**: the `codemap-publish` Environment with **required reviewer Nick**
+AND **deployment branches = `main` only**, plus the `CODEMAP_PUBLISH_TOKEN` secret
+— a maintainer classic `public_repo` PAT (broad public-repo blast radius
+documented; dedicated bot identity recommended; expiry ≤90d; revoke-on-exposure)
+— documented in ADR-0070 and the workflow header. Without any of these the
+workflow fails closed at `publish`.
+
 ### 002-task-control-flow-dialect-rules — Change 002: Enforce Task control-flow dialect — `|> discard`, `Task.when`, `Task.unless`
 
 Not breaking. No public signature or wire-format change — the migrated `if …

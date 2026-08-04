@@ -1,0 +1,351 @@
+# Maintainer-triggered codemap regeneration onto a contributor PR (ADR-0070).
+#
+# A contributor opens a PR against `main` but cannot run `./dev codemap`, so the
+# generated codemap (codemap/MAP.md, codemap/.doc-ratchet, codemap/signatures/*.txt)
+# drifts and the `codemap` CI gate is red. A maintainer runs THIS workflow from
+# the Actions panel on `main`, enters the PR number, approves the protected
+# `codemap-publish` Environment, and the regenerated codemap is fast-forward
+# committed directly onto the contributor's PR branch. No fallback PR.
+#
+# ── TRUST BOUNDARY (why three jobs) ──────────────────────────────────────────
+# The contributor controls the checked-out tree (./dev codemap, build, generated
+# bytes). So no write credential may coexist with executing contributor code:
+#   resolve  (trusted)   — pin the exact PR head via the API; validate open/base/
+#                          fork-editability. contents+PR read. No write, no secret.
+#   generate (UNTRUSTED) — checkout the pinned head SHA, `contents: read`, NO
+#                          secret/write credential; run ./dev codemap; upload only
+#                          the allowlisted outputs + a manifest as an artifact.
+#   publish  (trusted)   — Environment-gated (required reviewer + main-only, below);
+#                          SOLE holder of the push credential; runs NO contributor
+#                          script/hook/build. Re-verifies metadata, validates the
+#                          artifact + tree (symlink reject, allowlist, manifest),
+#                          gates the staged diff to codemap-only, fast-forward
+#                          commits+pushes (never --force).
+#
+# ── MANDATORY ONE-TIME SETUP (load-bearing; without it this is unsafe) ────────
+# 1. Create a GitHub Environment named `codemap-publish` with:
+#      • Required reviewers = Nick (the human approval gate), and
+#      • Deployment branches and tags = "Selected branches" → `main` ONLY.
+#    The branch policy is the LOAD-BEARING secret guard: `workflow_dispatch` can
+#    be dispatched against any ref, and a workflow modified on another ref could
+#    delete the runtime `github.ref` check below — but GitHub refuses to release
+#    the Environment (and its secret) to any job whose ref is not `main`,
+#    regardless of that ref's workflow contents. The runtime ref check is
+#    defense-in-depth only.
+# 2. Add an Environment secret `CODEMAP_PUBLISH_TOKEN` to `codemap-publish`:
+#      • A maintainer-owned CLASSIC personal access token, minimum practical
+#        scope for the current public base+fork case: `public_repo`.
+#        (A fine-grained PAT cannot select a third party's fork; a GitHub App is
+#        not installed on the fork; the Actions GITHUB_TOKEN is base-scoped —
+#        none reach a contributor fork. The classic PAT acts with the maintainer
+#        identity that "Allow edits by maintainers" grants push to the fork PR
+#        head branch.)
+#      • BLAST RADIUS (documented, accepted): `public_repo` can push to every
+#        public repo the token owner can write to. Mitigate by minting it on a
+#        DEDICATED low-privilege maintainer/bot identity, collaborator only where
+#        needed — not a primary account.
+#      • ROTATION: expiry ≤90 days + a calendar reminder. REVOCATION: GitHub →
+#        Settings → Developer settings → Personal access tokens → Revoke, then
+#        rotate this secret. The token lives only in this main-gated Environment,
+#        so revoking it fully de-authorizes the workflow.
+#   No secret value is ever committed; publish authenticates ephemerally (an
+#   `http.extraHeader` scoped to the single push), never persisting it in a
+#   remote URL or committed file.
+#
+# ── OPERATIONAL CREDENTIAL VALIDATION (spec criterion C8) ─────────────────────
+# The disposable-fork credential spike needs two GitHub identities the CI harness
+# lacks, so per the maintainer decision (2026-08-04) it is NOT a pre-merge gate.
+# The FIRST maintainer-approved production run on a real reviewed fork PR is the
+# end-to-end credential validation: if GitHub denies the fast-forward push, the
+# publish step fails clearly here — no fallback PR, no --force, and no remote
+# mutation (the failure is on `git push`; nothing runs after it).
+name: codemap-regen
+
+on:
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: "Open PR number (base branch must be main) to regenerate the codemap for"
+        required: true
+        type: string
+
+# Default to no permissions; each job elevates to its own minimum.
+permissions: {}
+
+# One regeneration per PR at a time; never cancel a publish mid-push.
+concurrency:
+  group: codemap-regen-${{ github.event.inputs.pr }}
+  cancel-in-progress: false
+
+jobs:
+  # ── resolve (trusted): pin the exact target, validate editability ──────────
+  resolve:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      head_sha: ${{ steps.pin.outputs.head_sha }}
+      head_repo: ${{ steps.pin.outputs.head_repo }}
+      head_ref: ${{ steps.pin.outputs.head_ref }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - name: Guard — dispatched from main only (defense in depth)
+        env:
+          REF: ${{ github.ref }}
+        run: |
+          set -euo pipefail
+          if [ "$REF" != "refs/heads/main" ]; then
+            echo "❌ codemap-regen must be dispatched from main (got $REF). The codemap-publish Environment's main-only policy is the real guard." | tee -a "$GITHUB_STEP_SUMMARY" >&2
+            exit 1
+          fi
+      - name: Resolve and pin PR head via the API
+        id: pin
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.inputs.pr }}
+        run: |
+          set -euo pipefail
+          fail() { echo "❌ $*" | tee -a "$GITHUB_STEP_SUMMARY" >&2; exit 1; }
+          case "$PR" in ''|*[!0-9]*) fail "PR input '$PR' is not a number";; esac
+          gh api "repos/${REPO}/pulls/${PR}" > pr.json
+          python3 - pr.json > pinned.json <<'PY'
+          import json, sys
+          pr = json.load(open(sys.argv[1]))
+          head = pr["head"]["repo"] or {}
+          out = {
+            "head_sha": pr["head"]["sha"],
+            "head_repo": (head.get("full_name") or ""),
+            "head_ref": pr["head"]["ref"],
+            "head_owner_type": ((head.get("owner") or {}).get("type") or ""),
+            "head_clone_url": (head.get("clone_url") or ""),
+            "state": pr["state"],
+            "base_ref": pr["base"]["ref"],
+            "maintainer_can_modify": bool(pr.get("maintainer_can_modify")),
+          }
+          json.dump(out, sys.stdout)
+          PY
+          # Fail fast on a non-open / wrong-base / non-editable target: comparing
+          # the pinned snapshot to itself runs the same editability checks publish
+          # will re-run against a fresh re-fetch.
+          python3 scripts/codemap-regen-guard.py check-metadata \
+            --pinned pinned.json --fresh pinned.json \
+            --base main --base-repo "$REPO" \
+            || fail "PR #$PR is not an open, main-based, maintainer-editable user-fork/same-repo target (no fallback)"
+          # Export the fields generate/publish need (scalars; PR-controlled values
+          # are consumed downstream via env, never inline in a run: script).
+          {
+            echo "head_sha=$(python3 -c 'import json;print(json.load(open("pinned.json"))["head_sha"])')"
+            echo "head_repo=$(python3 -c 'import json;print(json.load(open("pinned.json"))["head_repo"])')"
+            echo "head_ref=$(python3 -c 'import json;print(json.load(open("pinned.json"))["head_ref"])')"
+          } >> "$GITHUB_OUTPUT"
+      - name: Upload pinned metadata (consumed by publish's race guard)
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: codemap-regen-pinned
+          path: pinned.json
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 1
+
+  # ── generate (UNTRUSTED): run the contributor's ./dev codemap, upload bytes ─
+  generate:
+    needs: resolve
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # contents:read only — NO secrets, NO write credential in this job.
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout the exact untrusted PR head SHA (data only)
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          repository: ${{ needs.resolve.outputs.head_repo }}
+          ref: ${{ needs.resolve.outputs.head_sha }}
+          persist-credentials: false
+          fetch-depth: 1
+      - uses: DeterminateSystems/determinate-nix-action@2a0be2498974c2b6327e19780488744384637d88 # v3.21.7
+        with:
+          extra-conf: |
+            accept-flake-config = true
+            extra-substituters = https://cache.iog.io https://neohaskell.cachix.org
+            extra-trusted-public-keys = hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ= neohaskell.cachix.org-1:mo2cLaGbwqbrxs9xhqKK8jeNsn3osi7t6XoAmxSZssc=
+      - uses: DeterminateSystems/magic-nix-cache-action@908b263ff629f4cc17666315b7fd3ec127c6244d # v14
+      - name: Regenerate the codemap (runs contributor code — no secret here)
+        run: ./dev codemap
+      - name: Collect ONLY the allowlisted generated outputs + a manifest
+        run: |
+          set -euo pipefail
+          rm -rf out && mkdir -p out/codemap/signatures
+          : > out/manifest.txt
+          collect() {
+            local f="$1"
+            if [ -f "$f" ] && [ ! -L "$f" ]; then
+              mkdir -p "out/$(dirname "$f")"
+              cp "$f" "out/$f"
+              printf '%s\n' "$f" >> out/manifest.txt
+            fi
+          }
+          collect codemap/MAP.md
+          collect codemap/.doc-ratchet
+          for f in codemap/signatures/*.txt; do
+            [ -e "$f" ] || continue
+            collect "$f"
+          done
+          echo "Collected $(grep -c . out/manifest.txt) generated file(s)."
+      - name: Upload the generated codemap artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: codemap-regen-output
+          path: out
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 1
+
+  # ── publish (trusted, Environment-gated): validate + fast-forward commit ────
+  publish:
+    needs: [resolve, generate]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # The human + main-only gate. Its secret is the ONLY write credential, and
+    # exists only in this job.
+    environment: codemap-publish
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - name: Guard — dispatched from main only (defense in depth)
+        env:
+          REF: ${{ github.ref }}
+        run: |
+          set -euo pipefail
+          if [ "$REF" != "refs/heads/main" ]; then
+            echo "❌ publish ref is $REF, not main. (The Environment main-only policy is the real guard.)" | tee -a "$GITHUB_STEP_SUMMARY" >&2
+            exit 1
+          fi
+      - name: Checkout TRUSTED main (guard script + git plumbing only)
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - name: Checkout the pinned contributor head as DATA (no code runs)
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          repository: ${{ needs.resolve.outputs.head_repo }}
+          ref: ${{ needs.resolve.outputs.head_sha }}
+          persist-credentials: false
+          fetch-depth: 1
+          path: _head
+      - name: Download pinned metadata + generated artifact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: codemap-regen-pinned
+          path: _pinned
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: codemap-regen-output
+          path: _art
+      - name: Re-verify PR metadata (TOCTOU race + editability)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.inputs.pr }}
+        run: |
+          set -euo pipefail
+          fail() { echo "❌ $*" | tee -a "$GITHUB_STEP_SUMMARY" >&2; exit 1; }
+          gh api "repos/${REPO}/pulls/${PR}" > pr.json
+          python3 - pr.json > fresh.json <<'PY'
+          import json, sys
+          pr = json.load(open(sys.argv[1])); head = pr["head"]["repo"] or {}
+          json.dump({
+            "head_sha": pr["head"]["sha"],
+            "head_repo": (head.get("full_name") or ""),
+            "head_ref": pr["head"]["ref"],
+            "head_owner_type": ((head.get("owner") or {}).get("type") or ""),
+            "state": pr["state"], "base_ref": pr["base"]["ref"],
+            "maintainer_can_modify": bool(pr.get("maintainer_can_modify")),
+          }, sys.stdout)
+          PY
+          python3 scripts/codemap-regen-guard.py check-metadata \
+            --pinned _pinned/pinned.json --fresh fresh.json \
+            --base main --base-repo "$REPO" \
+            || fail "PR #$PR changed since generation or is no longer maintainer-editable — aborting with no mutation (no fallback)"
+      - name: Reject symlinks under codemap/ in the contributor tree
+        run: |
+          set -euo pipefail
+          python3 scripts/codemap-regen-guard.py check-symlinks _head \
+            || { echo "❌ symlink under codemap/ in the contributor tree — aborting" | tee -a "$GITHUB_STEP_SUMMARY" >&2; exit 1; }
+      - name: Validate artifact + manifest, apply allowlist, stage codemap-only
+        id: apply
+        env:
+          GIT_AUTHOR_NAME: neohaskell-codemap-bot
+          GIT_AUTHOR_EMAIL: codemap-bot@users.noreply.github.com
+          GIT_COMMITTER_NAME: neohaskell-codemap-bot
+          GIT_COMMITTER_EMAIL: codemap-bot@users.noreply.github.com
+        run: |
+          set -euo pipefail
+          fail() { echo "❌ $*" | tee -a "$GITHUB_STEP_SUMMARY" >&2; exit 1; }
+          # Trusted guard computes the copy/delete plan (allowlist + manifest);
+          # publish executes only those explicit paths — no contributor code.
+          python3 scripts/codemap-regen-guard.py reconcile \
+            --artifact _art --manifest _art/manifest.txt --worktree _head > plan.txt \
+            || fail "artifact/manifest failed allowlist validation — aborting"
+          # git in _head with hooks + credential helpers disabled; no contributor
+          # config is sourced.
+          GIT="git -C _head -c core.hooksPath=/dev/null -c credential.helper= -c core.fileMode=false"
+          while read -r verb path; do
+            case "$verb" in
+              copy)
+                mkdir -p "_head/$(dirname "$path")"
+                cp "_art/$path" "_head/$path"
+                $GIT add -- "$path" ;;
+              delete)
+                $GIT rm -q -- "$path" ;;
+              *) fail "unexpected plan verb '$verb'";;
+            esac
+          done < plan.txt
+          $GIT diff --cached --name-status > staged.txt || true
+          set +e
+          python3 scripts/codemap-regen-guard.py check-staged-diff staged.txt
+          code=$?
+          set -e
+          if [ "$code" = "3" ]; then
+            echo "✅ codemap already current for PR #${{ github.event.inputs.pr }} — no commit needed (no-op success)." | tee -a "$GITHUB_STEP_SUMMARY"
+            echo "noop=true" >> "$GITHUB_OUTPUT"
+          elif [ "$code" = "0" ]; then
+            $GIT commit -q -m "chore: regenerate codemap"
+            echo "noop=false" >> "$GITHUB_OUTPUT"
+          else
+            fail "staged diff contains a non-codemap path — aborting with no commit"
+          fi
+      - name: Fast-forward push onto the contributor PR branch (never forced)
+        if: steps.apply.outputs.noop == 'false'
+        env:
+          CODEMAP_PUBLISH_TOKEN: ${{ secrets.CODEMAP_PUBLISH_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.inputs.pr }}
+          HEAD_REPO: ${{ needs.resolve.outputs.head_repo }}
+          HEAD_REF: ${{ needs.resolve.outputs.head_ref }}
+          PINNED_SHA: ${{ needs.resolve.outputs.head_sha }}
+        run: |
+          set -euo pipefail
+          fail() { echo "❌ $*" | tee -a "$GITHUB_STEP_SUMMARY" >&2; exit 1; }
+          # Immediate pre-push remote-head recheck: the branch tip must still be
+          # exactly the pinned SHA, or a fast-forward would be unsafe / a race.
+          REMOTE_SHA=$(gh api "repos/${REPO}/pulls/${PR}" -q '.head.sha')
+          if [ "$REMOTE_SHA" != "$PINNED_SHA" ]; then
+            fail "remote head moved ($PINNED_SHA -> $REMOTE_SHA) before push — aborting, no force, no mutation"
+          fi
+          # Ephemeral auth: the token lives only in an -c http.extraHeader for this
+          # single push, never in a persisted remote URL or committed file.
+          AUTH=$(printf 'x-access-token:%s' "$CODEMAP_PUBLISH_TOKEN" | base64 | tr -d '\n')
+          if git -C _head -c http.extraHeader="Authorization: Basic ${AUTH}" \
+               push "https://github.com/${HEAD_REPO}.git" "HEAD:refs/heads/${HEAD_REF}"; then
+            echo "✅ Pushed regenerated codemap onto ${HEAD_REPO}:${HEAD_REF} (PR #${PR}, fast-forward)." | tee -a "$GITHUB_STEP_SUMMARY"
+          else
+            fail "push to ${HEAD_REPO}:${HEAD_REF} was rejected (non-fast-forward, or credential lacks the fork write grant). No fallback PR, no forced push, no mutation."
+          fi

@@ -91,6 +91,7 @@ scripts/changelog --self-test || fail=1
 scripts/revert --self-test || fail=1
 scripts/retrospect --self-test || fail=1
 scripts/workflow-check --self-test || fail=1
+scripts/codemap-regen-guard.py --self-test >/dev/null || fail=1
 scripts/adr-website --self-test || fail=1
 scripts/adr-index-check --self-test || fail=1
 

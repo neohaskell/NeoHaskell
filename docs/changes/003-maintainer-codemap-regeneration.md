@@ -149,14 +149,16 @@ maintainers only: a manually-dispatched workflow on `main`. Contributors see
 their PR branch receive one `chore: regenerate codemap` fast-forward commit after
 Nick approves the protected environment; a no-op (codemap already current) leaves
 the branch untouched and the run succeeds. Every unsupported or unsafe condition
-(maintainer edits disabled, org-owned fork, metadata race, bad artifact,
-unexpected diff, non-fast-forward) fails with an actionable Actions summary and
-mutates nothing — **no fallback PR is ever created**. Testbed: no acceptance-test
-change — this is CI/tooling with no HTTP-observable behavior. One-time maintainer
-setup is **mandatory and load-bearing**: the `codemap-publish` Environment with
-**required reviewer Nick** AND **deployment branches = `main` only**, plus the
-`CODEMAP_PUBLISH_TOKEN` secret whose exact type is fixed by the C8 feasibility
-spike — documented in ADR-0070 and the workflow header. Without any of these the
+(maintainer edits disabled, org-owned fork, metadata race, symlink under
+`codemap/`, out-of-allowlist manifest/diff, non-fast-forward) fails with an
+actionable Actions summary and mutates nothing — **no fallback PR is ever
+created**. Testbed: no acceptance-test change — this is CI/tooling with no
+HTTP-observable behavior. One-time maintainer setup is **mandatory and
+load-bearing**: the `codemap-publish` Environment with **required reviewer Nick**
+AND **deployment branches = `main` only**, plus the `CODEMAP_PUBLISH_TOKEN` secret
+— a maintainer classic `public_repo` PAT (broad public-repo blast radius
+documented; dedicated bot identity recommended; expiry ≤90d; revoke-on-exposure)
+— documented in ADR-0070 and the workflow header. Without any of these the
 workflow fails closed at `publish`.
 
 ## ADR

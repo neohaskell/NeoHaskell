@@ -144,6 +144,119 @@ def check_retrospect(name, text):
     return errs
 
 
+# ── codemap-regen.yml: maintainer codemap-regeneration security contract ──────
+# (ADR-0070) The trust boundary and no-fallback behavior are load-bearing and
+# unreviewable in YAML by eye — assert them statically. Criteria C2/C3/C7.
+CODEMAP_REGEN = "codemap-regen.yml"
+_SHA40 = re.compile(r"@[0-9a-f]{40}\b")
+_PUBLISH_TOKEN = "CODEMAP_PUBLISH_TOKEN"
+
+
+def _on_block(text):
+    """The `on:` block text (trigger list), for trigger assertions."""
+    lines = text.splitlines()
+    out, capturing = [], False
+    for ln in lines:
+        if re.match(r"^on:\s*$", ln):
+            capturing = True
+            continue
+        if capturing:
+            if ln and not ln.startswith((" ", "\t")):
+                break
+            out.append(ln)
+    return "\n".join(out)
+
+
+def job_blocks(text):
+    """Map each top-level job name under `jobs:` to its block text
+    (indentation-delimited), so per-job assertions don't bleed across jobs."""
+    lines = text.splitlines()
+    blocks, cur, buf, in_jobs = {}, None, [], False
+    for ln in lines:
+        if re.match(r"^jobs:\s*$", ln):
+            in_jobs = True
+            continue
+        if not in_jobs:
+            continue
+        m = re.match(r"^  ([A-Za-z0-9_-]+):\s*$", ln)
+        if m:
+            if cur is not None:
+                blocks[cur] = "\n".join(buf)
+            cur, buf = m.group(1), []
+            continue
+        if ln and not ln.startswith(" "):
+            break
+        buf.append(ln)
+    if cur is not None:
+        blocks[cur] = "\n".join(buf)
+    return blocks
+
+
+def check_codemap_regen(name, text):
+    errs = []
+    E = errs.append
+    on = _on_block(text)
+    # 1. manual dispatch only — no injection-prone auto/target triggers.
+    if "pull_request_target" in text:
+        E(f"{name}: uses pull_request_target — forbidden (injection surface)")
+    if "workflow_dispatch" not in on:
+        E(f"{name}: no workflow_dispatch trigger (must be manual dispatch)")
+    if re.search(r"^\s*pull_request:", on, re.M):
+        E(f"{name}: has an automatic pull_request trigger (must be manual only)")
+    # 2. every third-party action pinned by full commit SHA.
+    for m in re.finditer(r"uses:\s*(\S+)", text):
+        ref = m.group(1)
+        if ref.startswith(("./", "docker://")):
+            continue
+        if not _SHA40.search(ref):
+            E(f"{name}: action '{ref}' is not pinned by a full 40-char commit SHA")
+    # 3. no fallback PR anywhere.
+    for banned in ("gh pr create", "create-pull-request"):
+        if banned in text:
+            E(f"{name}: opens a fallback PR ('{banned}') — forbidden (fail closed)")
+    jobs = job_blocks(text)
+    gen, pub, res = jobs.get("generate", ""), jobs.get("publish", ""), jobs.get("resolve", "")
+    if not gen:
+        E(f"{name}: missing `generate` job")
+    if not pub:
+        E(f"{name}: missing `publish` job")
+    # 4. generate is untrusted: contents:read and NO secret / write credential.
+    if not re.search(r"permissions:\s*\n\s*contents:\s*read\s*$", gen, re.M):
+        E(f"{name}: generate job is not `contents: read`-only")
+    if "secrets." in gen:
+        E(f"{name}: generate job references a secret — it must hold none")
+    # 5. the publish token is isolated to publish, which is Environment-gated.
+    if _PUBLISH_TOKEN in gen or _PUBLISH_TOKEN in res:
+        E(f"{name}: {_PUBLISH_TOKEN} is exposed outside the publish job")
+    if _PUBLISH_TOKEN not in pub:
+        E(f"{name}: publish job does not use {_PUBLISH_TOKEN}")
+    if not re.search(r"environment:\s*codemap-publish\b", pub):
+        E(f"{name}: publish job is not gated by the codemap-publish Environment")
+    # 6. runtime main-ref guard (defense in depth) + documented mandatory policy.
+    if "refs/heads/main" not in pub:
+        E(f"{name}: publish job lacks a runtime main-ref guard")
+    if "Deployment branches" not in text:
+        E(f"{name}: does not document the mandatory codemap-publish main-only "
+          "deployment-branch policy (the load-bearing secret guard)")
+    # 7. publish runs NO contributor/build code.
+    for banned in ("./dev ", "nix develop", "cabal ", "make "):
+        if banned in pub:
+            E(f"{name}: publish job runs '{banned.strip()}' — it must execute no "
+              "contributor or build code")
+    # 8. every publish checkout is credential-less.
+    n_checkout = len(re.findall(r"uses:\s*actions/checkout", pub))
+    n_nopersist = len(re.findall(r"persist-credentials:\s*false", pub))
+    if n_nopersist < n_checkout:
+        E(f"{name}: a publish checkout does not set persist-credentials: false")
+    # 9. fast-forward only, ephemeral auth.
+    if re.search(r"--force|force-with-lease|push\s+-f\b|push[^\n]*\s\+\S", pub):
+        E(f"{name}: publish force-pushes — must be fast-forward only")
+    if "http.extraHeader" not in pub:
+        E(f"{name}: publish does not use ephemeral http.extraHeader auth "
+          "(token must not persist in a remote URL)")
+    return errs
+
+
 def run(root=WORKFLOWS):
     errs = []
     for wf in sorted(root.glob("*.yml")):
@@ -151,9 +264,13 @@ def run(root=WORKFLOWS):
         errs += check_hidden_artifacts(wf.name, text)
         if wf.name == "retrospect.yml":
             errs += check_retrospect(wf.name, text)
+        if wf.name == CODEMAP_REGEN:
+            errs += check_codemap_regen(wf.name, text)
     retro = root / "retrospect.yml"
     if not retro.exists():
         errs.append("retrospect.yml is missing (deterministic learning-loop digest)")
+    if not (root / CODEMAP_REGEN).exists():
+        errs.append(f"{CODEMAP_REGEN} is missing (maintainer codemap-regeneration capability)")
     return errs
 
 
@@ -218,6 +335,87 @@ def self_test():
           not check_retrospect("retrospect.yml",
                                "# it must not git push or write recommendations.jsonl\n"
                                + good_retro))
+
+    # ── codemap-regen.yml security contract ──────────────────────────────────
+    pin = "actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0"
+    good_cmr = (
+        "# Deployment branches and tags: main ONLY (mandatory codemap-publish setup)\n"
+        "name: codemap-regen\n"
+        "on:\n"
+        "  workflow_dispatch:\n"
+        "    inputs:\n"
+        "      pr:\n"
+        "        type: string\n"
+        "permissions: {}\n"
+        "jobs:\n"
+        "  resolve:\n"
+        "    permissions:\n"
+        "      contents: read\n"
+        "      pull-requests: read\n"
+        "    steps:\n"
+        f"      - uses: {pin}\n"
+        "        with:\n"
+        "          persist-credentials: false\n"
+        "  generate:\n"
+        "    needs: resolve\n"
+        "    permissions:\n"
+        "      contents: read\n"
+        "    steps:\n"
+        f"      - uses: {pin}\n"
+        "        with:\n"
+        "          persist-credentials: false\n"
+        "      - run: ./dev codemap\n"
+        "  publish:\n"
+        "    needs: [resolve, generate]\n"
+        "    environment: codemap-publish\n"
+        "    permissions:\n"
+        "      contents: read\n"
+        "    steps:\n"
+        "      - env:\n"
+        "          REF: r\n"
+        "        run: |\n"
+        "          if [ \"$REF\" != \"refs/heads/main\" ]; then exit 1; fi\n"
+        f"      - uses: {pin}\n"
+        "        with:\n"
+        "          persist-credentials: false\n"
+        "      - env:\n"
+        "          CODEMAP_PUBLISH_TOKEN: t\n"
+        "        run: |\n"
+        "          git -C _head -c http.extraHeader=\"Authorization: Basic x\" push url HEAD:refs/heads/b\n"
+    )
+
+    def cmr_bad(name, mutated):
+        check(name, bool(check_codemap_regen("codemap-regen.yml", mutated)))
+
+    check("well-formed codemap-regen passes",
+          not check_codemap_regen("codemap-regen.yml", good_cmr))
+    cmr_bad("unpinned action is flagged", good_cmr.replace(f"{pin}", "actions/checkout@v7", 1))
+    cmr_bad("pull_request_target is flagged",
+            good_cmr.replace("  workflow_dispatch:\n", "  workflow_dispatch:\n  pull_request_target:\n"))
+    cmr_bad("secret in the generate job is flagged",
+            good_cmr.replace("      - run: ./dev codemap\n",
+                             "      - run: echo ${{ secrets.GITHUB_TOKEN }}\n"))
+    cmr_bad("publish without the Environment is flagged",
+            good_cmr.replace("    environment: codemap-publish\n", ""))
+    cmr_bad("fallback PR is flagged",
+            good_cmr.replace("push url HEAD:refs/heads/b\n",
+                             "push url HEAD:refs/heads/b\n          gh pr create\n"))
+    cmr_bad("missing runtime main-ref guard is flagged",
+            good_cmr.replace("          if [ \"$REF\" != \"refs/heads/main\" ]; then exit 1; fi\n",
+                             "          true\n"))
+    cmr_bad("force push is flagged",
+            good_cmr.replace("push url HEAD:refs/heads/b", "push --force url HEAD:refs/heads/b"))
+    cmr_bad("publish token leaked into generate is flagged",
+            good_cmr.replace("      - run: ./dev codemap\n",
+                             "      - run: echo $CODEMAP_PUBLISH_TOKEN\n"))
+    cmr_bad("publish running ./dev (contributor code) is flagged",
+            good_cmr.replace("          git -C _head",
+                             "          ./dev codemap\n          git -C _head"))
+    cmr_bad("publish checkout persisting credentials is flagged",
+            good_cmr.replace(
+                "      - env:\n          REF: r\n",
+                "      - uses: " + pin + "\n        with:\n          persist-credentials: true\n"
+                "      - env:\n          REF: r\n"))
 
     print("workflow-check: self-test", "OK" if ok else "FAILED")
     return 0 if ok else 1
