@@ -17,7 +17,10 @@ on:
     paths:
       - 'installer/**'
   pull_request:
-    branches: [main]
+    # Neo CLI monorepo migration (bootstrap): installer PRs targeting the
+    # staging integration branch get the same required installer CI as PRs to
+    # main. main behavior is unchanged — this only ADDS the integration base.
+    branches: [main, integration/neo-monorepo]
     paths:
       - 'installer/**'
 
