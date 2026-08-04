@@ -1,8 +1,8 @@
 # neo IDE frontend — agent guide
 
 The Vite/React frontend for `neo ide`. Built into `dist/` and embedded into the
-Rust binary via `rust-embed`. See the repo-root `CLAUDE.md` for build/test
-commands (everything runs inside `nix develop --command`).
+Rust binary via `rust-embed`. Use the repo-root `neo-cli-ide` skill for
+authoritative build, test and screenshot commands from the monorepo root.
 
 ## Styling is centralized — this is a HARD RULE
 

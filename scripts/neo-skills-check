@@ -7,19 +7,19 @@ the discoverable `neo-cli-*` skills. Prose drifts silently; this check is the
 executable regression that keeps it honest.
 
 Contract (governing rule: no doc without a gate):
-  1. MISSING SKILLS — every required `neo-cli-*` skill exists with a parseable
+  1. MISSING SKILLS - every required `neo-cli-*` skill exists with a parseable
      frontmatter whose `name:` matches its directory and whose `description:` is
      non-trivial. Every `.claude/skills/*/SKILL.md` (not just the neo ones) must
      have a valid name+description.
-  2. STALE DELETED-FILE REFS — no active agent-guidance file may reference the
+  2. STALE DELETED-FILE REFS - no active agent-guidance file may reference the
      retired standalone Ralph-loop assets (STATE.md, NEXT_STEP.md,
      IMPLEMENTATION_PLAN.md, ralph.sh). They were deleted; a reference is a lie.
-  3. ROUTING DRIFT — root `AGENTS.md` routes `neo/**` to `neo/AGENTS.md` and
+  3. ROUTING DRIFT - root `AGENTS.md` routes `neo/**` to `neo/AGENTS.md` and
      names every `neo-cli-*` skill; `neo/AGENTS.md` cross-references those skills;
      `neo/CLAUDE.md` points at `neo/AGENTS.md`.
-  4. ONE SOURCE OF TRUTH — the consolidated nested skills must not linger under
+  4. ONE SOURCE OF TRUTH - the consolidated nested skills must not linger under
      `neo/.claude/skills/` (they now live at repo-root as `neo-cli-*`).
-  5. CROSS-REF INTEGRITY — every `neo-cli-<x>` token mentioned in any active
+  5. CROSS-REF INTEGRITY - every `neo-cli-<x>` token mentioned in any active
      guidance file resolves to a real skill directory (no typos / dangling refs).
 
 Run:  ./dev neo-skills-check              CI: via ./dev doctor (seconds, no nix)
@@ -48,7 +48,7 @@ REQUIRED_SKILLS = (
 BANNED_REFS = ("STATE.md", "NEXT_STEP.md", "IMPLEMENTATION_PLAN.md", "ralph.sh")
 
 # Nested skills that were folded into the root `neo-cli-*` skills. They must not
-# survive under neo/.claude/skills — two copies is two sources of truth.
+# survive under neo/.claude/skills - two copies is two sources of truth.
 CONSOLIDATED_NESTED = (
     "running-neo-tests",
     "error-messages-instruct-llms",
@@ -61,7 +61,7 @@ SKILL_REF_RE = re.compile(r"neo-cli-[a-z0-9-]+")
 def parse_frontmatter(text):
     """Return the {key: value} of a leading `---` YAML-ish frontmatter block, or
     None if the file has no frontmatter. Only simple `key: value` scalars are
-    read — enough for `name:` and `description:`."""
+    read - enough for `name:` and `description:`."""
     lines = text.splitlines()
     if not lines or lines[0].strip() != "---":
         return None
@@ -118,7 +118,7 @@ def check(root):
         if len(desc) < 40:
             errors.append(
                 f"{skill_md.relative_to(root)}: description missing or too short "
-                f"(<40 chars) — write a real 'Use when …' trigger sentence"
+                f"(<40 chars) - write a real 'Use when …' trigger sentence"
             )
 
     # --- 1b. Every REQUIRED neo-cli skill exists.
@@ -126,7 +126,7 @@ def check(root):
         md = skills_dir / req / "SKILL.md"
         if not md.is_file():
             errors.append(
-                f".claude/skills/{req}/SKILL.md is missing — the Neo CLI guidance "
+                f".claude/skills/{req}/SKILL.md is missing - the Neo CLI guidance "
                 f"layer requires it (localize/implement/test/ide coverage)"
             )
 
@@ -138,7 +138,7 @@ def check(root):
         for banned in BANNED_REFS:
             if banned in text:
                 errors.append(
-                    f"{path.relative_to(root)} references deleted file `{banned}` — "
+                    f"{path.relative_to(root)} references deleted file `{banned}` - "
                     f"remove it (STATE/NEXT_STEP/IMPLEMENTATION_PLAN/ralph.sh no longer exist)"
                 )
 
@@ -177,7 +177,7 @@ def check(root):
     for name in CONSOLIDATED_NESTED:
         if (nested / name).exists():
             errors.append(
-                f"neo/.claude/skills/{name} still exists — it was consolidated into "
+                f"neo/.claude/skills/{name} still exists - it was consolidated into "
                 f"a root `neo-cli-*` skill; delete the nested duplicate"
             )
 
@@ -195,7 +195,7 @@ def check(root):
 
 # --------------------------------------------------------------------------- #
 # Self-test: a good fixture tree passes; each mutation fails for its own reason.
-# Runs entirely in temp dirs — never reads or mutates the real repo.
+# Runs entirely in temp dirs - never reads or mutates the real repo.
 # --------------------------------------------------------------------------- #
 
 def _build_good_tree(root):
@@ -237,14 +237,14 @@ def self_test():
             print(f"neo-skills-check self-test FAIL: {msg}", file=sys.stderr)
             fails += 1
 
-    # Case 0 — a clean tree passes.
+    # Case 0 - a clean tree passes.
     with tempfile.TemporaryDirectory() as td:
         root = Path(td)
         _build_good_tree(root)
         errors = check(root)
         expect(not errors, f"clean tree should pass, got {errors}")
 
-    # Case 1 — a missing required skill fails.
+    # Case 1 - a missing required skill fails.
     with tempfile.TemporaryDirectory() as td:
         root = Path(td)
         _build_good_tree(root)
@@ -254,7 +254,7 @@ def self_test():
         expect(any("neo-cli-testing" in e and "missing" in e for e in errors),
                f"missing skill should fail, got {errors}")
 
-    # Case 2 — a stale deleted-file reference fails.
+    # Case 2 - a stale deleted-file reference fails.
     with tempfile.TemporaryDirectory() as td:
         root = Path(td)
         _build_good_tree(root)
@@ -267,7 +267,7 @@ def self_test():
         expect(any("STATE.md" in e for e in errors),
                f"stale STATE.md reference should fail, got {errors}")
 
-    # Case 3 — routing drift (root AGENTS.md stops naming a skill) fails.
+    # Case 3 - routing drift (root AGENTS.md stops naming a skill) fails.
     with tempfile.TemporaryDirectory() as td:
         root = Path(td)
         _build_good_tree(root)
@@ -280,7 +280,7 @@ def self_test():
         expect(any("neo-cli-ide" in e and "routing" in e for e in errors),
                f"root AGENTS.md dropping a skill should fail, got {errors}")
 
-    # Case 4 — a lingering consolidated nested skill fails (one-source-of-truth).
+    # Case 4 - a lingering consolidated nested skill fails (one-source-of-truth).
     with tempfile.TemporaryDirectory() as td:
         root = Path(td)
         _build_good_tree(root)
@@ -291,7 +291,7 @@ def self_test():
         expect(any("running-neo-tests" in e and "nested" in e for e in errors),
                f"lingering nested duplicate should fail, got {errors}")
 
-    # Case 5 — a dangling neo-cli-* cross-reference fails.
+    # Case 5 - a dangling neo-cli-* cross-reference fails.
     with tempfile.TemporaryDirectory() as td:
         root = Path(td)
         _build_good_tree(root)
@@ -307,7 +307,7 @@ def self_test():
     if fails:
         print("neo-skills-check self-test: FAIL", file=sys.stderr)
         return 1
-    print("neo-skills-check self-test: OK — clean tree passes; missing-skill, "
+    print("neo-skills-check self-test: OK - clean tree passes; missing-skill, "
           "stale-ref, routing-drift, nested-dup, and dangling-ref mutations each rejected")
     return 0
 
@@ -325,7 +325,7 @@ def main(argv=None):
         return 1
 
     n = len(REQUIRED_SKILLS)
-    print(f"neo-skills-check: OK — {n} neo-cli-* skills present, routing intact, "
+    print(f"neo-skills-check: OK - {n} neo-cli-* skills present, routing intact, "
           f"no stale state/plan refs, one source of truth")
     return 0
 
