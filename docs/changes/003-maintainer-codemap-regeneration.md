@@ -90,20 +90,22 @@ GitHub refuses the environment+secret to any job whose ref isn't `main`,
 regardless of that ref's workflow contents. A runtime `github.ref` check remains
 as **defense in depth only** and is not claimed to protect the secret alone.
 
-**Auth is a feasibility gate, not a settled fact.** The upstream `GITHUB_TOKEN`
-cannot push to a contributor fork, and a **fine-grained PAT scoped to the upstream
-repo is likely insufficient** (a third party's fork cannot normally be selected
-in its scope, so `maintainer_can_modify` does not obviously grant it push); a
-GitHub App installed only upstream also cannot reach the fork. The **hypothesis**
-is a maintainer-owned **classic PAT** with the narrowest scope that still honors
-"Allow edits by maintainers" (e.g. `public_repo`). This **must be proven by a
-disposable real user-owned fork spike** (criterion C8, `integration`) **before
-implementation is accepted** — recording no secret value and cleaning up the
-disposable branch. The spike fixes the exact minimum-viable credential type and
-its rotation/revocation guidance; it is stored as the `codemap-publish`
-Environment secret `CODEMAP_PUBLISH_TOKEN`, exposed **solely** to `publish`, and
-**no secret is committed**. If the spike cannot prove a safe path, the
-implementation is **parked**, not invented. ADR-0070 records this gate.
+**Auth (decided; validated by the first run).** The Actions `GITHUB_TOKEN` and a
+fine-grained PAT/GitHub-App scoped to the upstream repo cannot reach a contributor
+fork; the credential is a maintainer-owned **classic PAT** with the minimum
+practical scope for the current public base+fork case — **`public_repo`** — which
+acts with the maintainer's identity that "Allow edits by maintainers" grants push
+to the fork PR head. It is stored **only** as the `main`-restricted
+`codemap-publish` Environment secret `CODEMAP_PUBLISH_TOKEN`, exposed solely to
+`publish`, used ephemerally (never baked into `origin`/committed). Its **broad
+public-repo blast radius is documented and accepted**, with a **dedicated
+low-privilege bot identity** recommended when practical, expiry **≤90 days**, and
+revoke-on-exposure. Per the maintainer decision of 2026-08-04, the disposable-fork
+credential spike is **no longer a pre-implementation blocker** (it needs two
+identities the harness lacks); instead the **first Environment-approved production
+run on the reviewed PR #724 is the end-to-end credential validation** — a GitHub
+denial fails clearly and safely with **no fallback PR and no remote mutation**.
+ADR-0070 §5 records this.
 
 **Fail-closed, no fallback PR.** Maintainer edits disabled on a fork, insufficient
 permissions, an org-owned/unsupported fork, a metadata race (head SHA/repo/branch/
@@ -121,13 +123,13 @@ inline `${{ }}`, matching the repo's existing template-injection defense.
 ## Criteria
 
 C1–C7 are `unit` — metadata/manifest/diff validation in a harness self-test plus
-static-wiring assertions on the workflow. C8 is `integration` and cannot be
-satisfied by a mock: it is the credential **feasibility gate** — a real
-authenticated fast-forward push to a disposable user-owned fork. The end-to-end
-production push against a real contributor PR still cannot run in CI (needs a live
-fork + the maintainer secret), so its constituent guarantees are proven at the
-seams the runner *can* check (the trusted guard's decisions and the workflow's
-static shape) plus the one-off C8 spike that proves the credential.
+static-wiring assertions on the workflow, covering **all pre-push safety**. C8 is
+an **operational** criterion (level `integration`): the maintainer-approved
+**first production run** on the reviewed PR #724 validates the credential's
+PR-specific fork-write grant end to end. It is **not** a pre-implementation or
+PR-ready blocker (maintainer decision 2026-08-04 — the real spike needs two
+identities the CI harness lacks); a push denial fails safe with no mutation and no
+fallback. Its proof is that first run against a committed runbook, not a CI test.
 
 | ID | Behavior | Proving test | Level |
 |----|----------|--------------|-------|
@@ -138,7 +140,7 @@ static shape) plus the one-off C8 spike that proves the credential.
 | C5 | The manifest permits allowlisted **additions**, encodes allowlisted **deletions/renames** (a tracked `codemap/signatures/*.txt` absent from the manifest is removed), and **rejects any manifest entry outside the allowlist**; only allowlisted paths are ever copied/staged | `./dev codemap-regen-guard --self-test` manifest add / delete / out-of-allowlist cases | unit |
 | C6 | The final `git diff --cached --name-status` gate passes only when every staged path is in the codemap allowlist: a real allowlisted change commits once (`chore: regenerate codemap`, deterministic identity), an empty staged diff is a **successful no-op** (no commit), any non-allowlisted staged path fails | `./dev codemap-regen-guard --self-test` staged-diff-allowlist / no-op / unexpected-path cases | unit |
 | C7 | `publish` runs **no contributor script, hook, or build command**: it checks out the pinned SHA with `persist-credentials: false`, git hooks disabled, and credential helpers disabled, invoking no `./dev`/build/hook from the contributor tree; the remote head is re-checked immediately before a **fast-forward-only, never-force** push, which fails clearly on a race/non-fast-forward | `./dev workflow-check` (`--self-test`) no-contributor-exec + fast-forward-push assertions | unit |
-| C8 | **Auth feasibility gate:** a real authenticated fast-forward push to a disposable user-owned fork with "Allow edits by maintainers" enabled succeeds using the selected minimum-viable credential, proving the credential type end to end and documenting its blast radius / rotation / revocation; it records no secret value and cleans up the disposable branch. If unprovable, the run parks rather than shipping an invented credential | disposable user-owned-fork push spike, recorded in the PR (no mock) | integration |
+| C8 | **Auth operational validation (not a pre-push blocker):** the first maintainer-approved production run on the reviewed contributor PR #724 fast-forward-commits the regenerated codemap using the classic `public_repo` PAT, validating the PR-specific fork-write grant end to end; a GitHub push denial fails clearly and safely with no fallback and no remote mutation. Blast radius / rotation / revocation are documented in the workflow runbook | first Environment-approved production run on PR #724, per the workflow-header runbook | integration |
 
 ## User impact
 

@@ -7,12 +7,14 @@
 
 ## Status
 
-Proposed
+Accepted
 
-<!-- Becomes `Accepted` only after Nick's explicit spec approval is recorded via
-     the pipeline (`./dev pipeline approve spec`). At Gate 1 this is a proposal
-     under review, and two load-bearing questions are still open: the credential
-     feasibility gate (§5) and the mandatory Environment branch policy (§4a). -->
+<!-- Spec approved by Nick at Gate 1 (recorded 2026-07-23 via
+     `./dev pipeline approve spec --by Nick --via discord`). The credential gate
+     (§5) was amended by explicit maintainer decision (2026-08-04): C8 is
+     validated operationally by the first production run, not a pre-implementation
+     blocker. The mandatory Environment `main`-only policy (§4a) remains
+     load-bearing setup. -->
 
 ## Context
 
@@ -160,40 +162,56 @@ workflow on a non-`main` ref is a **mandatory GitHub configuration**, not YAML:
 This one-time setup is documented in the workflow header and here; without it the
 capability is unsafe and the ADR's guarantees do not hold.
 
-### 5. Auth is a **feasibility gate**, not a settled fact (spike required)
+### 5. Auth: a maintainer classic PAT (`public_repo`), validated by the first production run
 
-The credential that can push to a *contributor-owned fork* is an **open question
-that must be proven by a real integration spike before implementation is
-accepted** — it is deliberately not encoded here as known-working:
+The credential that can push to a *contributor-owned fork* was investigated as a
+pre-implementation feasibility spike. The verified finding: the required test
+(pusher ≠ fork-owner on a **disposable** fork) needs two GitHub identities, which
+the automation harness does not have — a same-account push would be a false
+positive. Non-mutating `git push --dry-run` (SSH and HTTPS OAuth) against the real
+reviewed fork PR (#724, `XiayiZhang/NeoHaskell`, head `5d128045`,
+`maintainer_can_modify=true`) both authenticated and returned `Everything
+up-to-date`, but the REST/GraphQL API reports only repository-level read on the
+contributor fork — so a dry-run cannot conclusively prove the **PR-specific
+`maintainer_can_modify` write grant** without a real update.
 
-- A **fine-grained PAT** selected for the *upstream* repository is **likely
-  insufficient**: fine-grained PATs are scoped to repositories the token owner
-  owns or is granted, and a third party's fork cannot normally be selected in
-  that scope — so "Allow edits by maintainers" does **not** obviously make an
-  upstream-scoped fine-grained PAT able to push to the fork branch.
-- A **GitHub App** installed only on the upstream repo **cannot access the fork**
-  either (installations are per-repository); it qualifies *only* if it can
-  demonstrably reach the contributor fork.
-- The **hypothesis to prove** is that the minimum viable credential is a
-  maintainer-owned **classic PAT** with the narrowest scope that still honors
-  `maintainer_can_modify` (e.g. `public_repo` for public forks) — the same
-  mechanism `git`/`gh` use when a maintainer pushes to a PR branch locally.
+**Maintainer decision (2026-08-04, via Discord — supersedes the earlier blocking
+gate):** C8 is **no longer a blocking pre-implementation feasibility gate**. The
+credential mechanism is decided from GitHub's documented model and validated
+operationally by the first real run:
 
-**Feasibility gate (blocks implementation acceptance):** a disposable, real
-**user-owned fork** with "Allow edits by maintainers" enabled must be used to
-prove the exact credential type and the authenticated **fast-forward push path**
-end to end (criterion C8, `integration`). The spike records **no secret value**,
-and cleans up the disposable branch/state. Based on the spike, the ADR/spec name
-the exact minimum-viable credential and document its real **scope / blast radius,
-rotation, and revocation**. The secret is stored as the `codemap-publish`
-Environment secret **`CODEMAP_PUBLISH_TOKEN`**; **no secret value is ever
-committed**, and it is **not persisted in Git config or a remote URL** where
-avoidable — publish uses a **trusted ephemeral authentication mechanism**
-appropriate to the credential the spike proves (e.g. an `http.extraheader`
-scoped to the single push, or a short-lived tokened remote removed after use),
-not a token baked into `origin`. **If the spike cannot prove a safe credential
-path, the implementation is parked** (`./dev pipeline park`), not shipped with an
-invented credential.
+- **Credential:** a maintainer-owned **classic PAT** with the minimum practical
+  scope for the current **public** base+fork case — **`public_repo`**. (A
+  fine-grained PAT can't select a third party's fork; a GitHub App isn't installed
+  on the fork; the Actions `GITHUB_TOKEN` is base-scoped — none reach the fork.
+  The classic PAT acts with the maintainer's identity, which "Allow edits by
+  maintainers" grants push to the fork PR head branch.)
+- **Storage:** the `codemap-publish` Environment secret **`CODEMAP_PUBLISH_TOKEN`**
+  only (the Environment is `main`-restricted, §4a). **No secret value is ever
+  committed**, and it is not persisted in Git config or a remote URL where
+  avoidable — publish authenticates ephemerally (an `http.extraheader` scoped to
+  the single push, cleared after), not a token baked into `origin`.
+- **Blast radius (documented, accepted):** a classic `public_repo` PAT can push to
+  **every public repository the token owner can write to** — a broad radius on a
+  personal account. Mitigation, **recommended when practical:** mint it on a
+  **dedicated low-privilege maintainer/bot identity** that is a collaborator only
+  where needed, not Nick's primary account.
+- **Rotation / revocation:** set a short expiry (**≤90 days**) with a calendar
+  rotation reminder; revoke immediately on any suspected exposure
+  (GitHub → Settings → Developer settings → Personal access tokens → Revoke), and
+  rotate the Environment secret. Because the token lives only in the `main`-gated
+  Environment, revocation fully de-authorizes the workflow.
+
+**Operational validation (not a code/PR-ready blocker).** The **first
+maintainer-approved production run** on the actual reviewed contributor PR
+(#724) is the end-to-end credential validation. If GitHub **denies** the
+fast-forward push, the publish step **fails clearly and safely** — no fallback
+PR, no force, and **no remote mutation** (the failure is on `git push`, after
+which nothing else runs). C8 is therefore represented as an **operational
+post-merge validation / runbook** criterion, exercised by that first run, not a
+pre-push automated test. All *pre-push* safety (metadata pin/recheck, symlink
+rejection, allowlist+manifest, staged-diff gate, fast-forward-only) remains fully
+covered by automated unit/static criteria (C1–C7).
 
 ### 6. Fail closed, never a fallback PR
 
@@ -231,10 +249,13 @@ nobody re-checks.
 - **The Environment branch policy is load-bearing, not cosmetic.** `main`-only
   deployment branches are what actually deny the secret to a modified workflow on
   another ref; the runtime ref check is only defense in depth (§4a).
-- **Authentication is an unresolved feasibility gate (§5).** Whether *any*
-  credential can fast-forward-push to a contributor fork must be proven by a
-  disposable-fork spike (C8) before implementation is accepted; if it cannot, the
-  implementation is parked rather than shipped with an invented credential.
+- **Authentication is decided, validated by the first run (§5).** The credential
+  is a maintainer classic `public_repo` PAT in the `main`-gated Environment; its
+  broad public-repo blast radius is accepted with a dedicated-bot-identity
+  recommendation, expiry ≤90d, and revoke-on-exposure. The PR-specific fork write
+  grant is confirmed by the **first Environment-approved production run** (#724);
+  a denial fails safe with no mutation and no fallback — C8 is operational
+  validation, not a pre-implementation blocker (maintainer decision 2026-08-04).
 - **One-time setup cost:** the maintainer must create the `codemap-publish`
   Environment with **required reviewer = Nick** AND **deployment branches =
   `main` only**, plus the `CODEMAP_PUBLISH_TOKEN` secret (type fixed by the C8
