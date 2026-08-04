@@ -1,0 +1,45 @@
+/* Slice column background with a sticky top label bar. Body is click-through
+   (canvas.css); the header bar (.em-pointer-auto) captures clicks. */
+.column {
+  width: 100%;
+  height: 100%;
+  position: relative;
+  border: 1px solid var(--mantine-color-default-border);
+  transition: border-color 0.15s ease;
+}
+.columnHighlighted {
+  border-color: var(--em-command);
+}
+
+.header {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10;
+  cursor: pointer;
+  border-bottom: 1px solid var(--mantine-color-default-border);
+  background: var(--mantine-color-body);
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+.headerHighlighted {
+  border-bottom-color: var(--em-command);
+  background: color-mix(in srgb, var(--em-command) 16%, var(--mantine-color-body));
+}
+
+.label {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 0 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--mantine-color-dimmed);
+}
+.labelHighlighted {
+  color: var(--em-command);
+}

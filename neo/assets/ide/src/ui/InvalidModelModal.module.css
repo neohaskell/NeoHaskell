@@ -1,0 +1,4 @@
+/* Error list item accent. */
+.errorItem {
+  border-left: 2px solid var(--mantine-color-red-5);
+}

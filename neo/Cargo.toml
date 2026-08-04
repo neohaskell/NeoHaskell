@@ -1,0 +1,78 @@
+[package]
+name = "neo"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+# CLI parsing
+clap = { version = "4", features = ["derive", "env"] }
+
+# TUI
+ratatui = { version = "0.30", features = ["crossterm"] }
+crossterm = "0.28"
+tui-big-text = "0.7"
+
+# Async
+tokio = { version = "1", features = ["full"] }
+
+# HTTP
+reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
+
+# HTTP server (for `neo ide`)
+axum = { version = "0.7", default-features = false, features = ["http1", "tokio", "ws"] }
+
+# Stream extensions used by the `neo ide` WebSocket loop (axum's WS gives us a
+# Stream + Sink; we pull SinkExt/StreamExt directly so we don't depend on axum
+# re-exporting them).
+futures-util = { version = "0.3", default-features = false, features = ["std"] }
+
+# Static asset embedding (for `neo ide`)
+rust-embed = { version = "8", features = ["mime-guess"] }
+mime_guess = "2"
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Error handling
+miette = { version = "7", features = ["fancy"] }
+thiserror = "2"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Fuzzy matching
+nucleo = "0.5"
+
+# File watching
+notify = "7"
+walkdir = "2"
+
+# Semver
+semver = "1"
+nodejs-semver = "4"
+
+# Regex (used by `src/interpret/` to match interpreter patterns against subprocess output)
+regex = "1"
+
+# Templates
+minijinja = "2"
+
+# Archive
+flate2 = "1"
+tar = "0.4"
+tempfile = "3"
+
+# Git
+gix = { version = "0.70", default-features = false, features = ["basic", "index"] }
+
+# JSON Schema validation (used by `neo ide` to validate `event-model.json`)
+jsonschema = { version = "0.30", default-features = false }
+
+[dev-dependencies]
+insta = { version = "1", features = ["yaml"] }
+assert_cmd = "2"
+predicates = "3"
+# WebSocket client used only by integration/e2e tests against `neo ide`.
+tokio-tungstenite = "0.24"
