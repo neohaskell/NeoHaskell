@@ -1,0 +1,30 @@
+/* Translucent feature band drawn behind the graph. Body is pointer-transparent;
+   only the label chip captures clicks. */
+.band {
+  width: 100%;
+  height: 100%;
+  position: relative;
+  border-radius: var(--mantine-radius-lg);
+  border: 2px solid var(--em-feature);
+  background: color-mix(in srgb, var(--em-feature) 10%, transparent);
+  pointer-events: none;
+}
+
+/* The feature title sits ABOVE the frame's top edge (negative top), like a tab. */
+.chip {
+  position: absolute;
+  left: 4px;
+  top: -28px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  pointer-events: auto;
+}
+
+.label {
+  font-size: 14px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--em-feature);
+}

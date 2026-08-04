@@ -1,0 +1,19 @@
+/* Dashed circular "+" affordance placed on the canvas (add slice / add entity). */
+.btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 1px dashed var(--mantine-color-default-border);
+  background: var(--mantine-color-body);
+  color: var(--mantine-color-dimmed);
+  cursor: pointer;
+  transition: color 0.12s ease, border-color 0.12s ease, background-color 0.12s ease;
+}
+.btn:hover {
+  border-color: var(--em-feature);
+  color: var(--em-feature);
+  background: color-mix(in srgb, var(--em-feature) 12%, var(--mantine-color-body));
+}

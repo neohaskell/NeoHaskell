@@ -1,0 +1,106 @@
+cabal-version: 3.4
+name: {{ name }}
+version: {{ version }}
+{% if description %}description: {{ description }}{% endif %}
+homepage: https://neohaskell.org
+license: {{ license }}
+author: {{ author }}
+category: Development
+build-type: Simple
+
+-- This file is managed by NeoCLI and should not be modified manually.
+
+common common_cfg
+  ghc-options:
+    -Wall
+    -Wno-orphans
+    -threaded
+    -fno-warn-partial-type-signatures
+    -fno-warn-name-shadowing
+    -Werror
+
+  default-extensions:
+    ApplicativeDo
+    BlockArguments
+    DataKinds
+    DeriveDataTypeable
+    DuplicateRecordFields
+    ImportQualifiedPost
+    ImpredicativeTypes
+    NamedFieldPuns
+    NoFieldSelectors
+    NoImplicitPrelude
+    OverloadedLabels
+    OverloadedLists
+    OverloadedRecordDot
+    OverloadedStrings
+    PackageImports
+    PartialTypeSignatures
+    QualifiedDo
+    QuasiQuotes
+    Strict
+    TemplateHaskell
+    TypeApplications
+    TypeFamilies
+    TypeOperators
+
+  build-depends:
+    base,
+    nhcore,
+    nhintegrations,
+    aeson,
+    bytestring,
+    text,
+    uuid
+{% for dep, ver in dependencies %}
+    , {{ dep }} {{ ver }}
+{% endfor %}
+
+library
+  import: common_cfg
+  exposed-modules:
+{% for module in modules %}
+    {{ module }}
+{% endfor %}
+  hs-source-dirs: src
+  default-language: GHC2021
+
+{% if not is_library %}
+executable {{ name }}
+  import: common_cfg
+  main-is: Launcher.hs
+  build-depends:
+    base,
+    {{ name }}
+  hs-source-dirs: launcher
+  default-language: GHC2021
+{% endif %}
+-- Every NeoCLI project ships a test-suite by default so `neo test` is always
+-- available (see cabal.project's `tests: True`). Reconcile keeps `tests/Spec.hs`
+-- (the hspec-discover driver) present and lists every sibling spec below. Haskell
+-- specs and `.hurl` e2e scenarios share the `tests/` directory.
+test-suite {{ name }}-test
+  import: common_cfg
+  type: exitcode-stdio-1.0
+  main-is: Spec.hs
+  hs-source-dirs: tests
+  -- Spec.hs is the hspec-discover driver; the `hspec-discover` executable is
+  -- provided on PATH by the haskell.nix dev shell (matching how nhcore is tested).
+  -- Declaring it via `build-tool-depends` instead makes cabal's solver reject the
+  -- installed hspec-discover library (Cabal-7107), so it is intentionally omitted.
+  build-depends:
+    base,
+    {{ name }},
+    hspec,
+    QuickCheck,
+    quickcheck-instances
+{% if test_modules %}
+  other-modules:
+{% for module in test_modules %}
+    {{ module }}
+{% endfor %}
+{% endif %}
+  default-language: GHC2021
+  ghc-options:
+    -rtsopts
+    -with-rtsopts=-N

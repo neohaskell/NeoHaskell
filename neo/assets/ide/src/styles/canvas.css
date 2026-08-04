@@ -1,0 +1,67 @@
+/* React Flow canvas internals — the one place plain CSS is allowed, because
+   these target React Flow's own generated DOM (.react-flow__*) which we don't
+   render ourselves. Colors come from the theme via CSS vars (see
+   cssVariablesResolver in src/theme.ts). No component styling here. */
+
+.react-flow {
+  --xy-edge-stroke-selected: var(--em-selection);
+  --xy-edge-stroke-selected-default: var(--em-selection);
+  background-color: var(--em-canvas-bg);
+}
+
+.react-flow__edge.selected .react-flow__edge-path,
+.react-flow__edge.selectable:focus .react-flow__edge-path,
+.react-flow__edge.selectable:focus-visible .react-flow__edge-path {
+  stroke: var(--em-selection) !important;
+}
+
+.react-flow__edge.selected marker,
+.react-flow__edge.selectable:focus marker,
+.react-flow__edge.selectable:focus-visible marker {
+  fill: var(--em-selection) !important;
+}
+
+/* Background grid dots follow the scheme. */
+.react-flow__background .react-flow__background-pattern {
+  color: var(--em-grid-dot);
+}
+
+/* Background lane/column nodes are click-through; only their labels capture
+   clicks. `.em-pointer-auto` replaces the former Tailwind `pointer-events-auto`
+   utility these nodes relied on. */
+.react-flow__node-entityLane,
+.react-flow__node-sliceColumn {
+  pointer-events: none !important;
+}
+
+.react-flow__node-entityLane .em-pointer-auto,
+.react-flow__node-sliceColumn .em-pointer-auto {
+  pointer-events: auto !important;
+}
+
+/* Connection handles fade in on node hover / while connecting. */
+.react-flow__handle {
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.react-flow__node:hover .react-flow__handle,
+.react-flow__handle.connecting {
+  opacity: 1;
+}
+
+/* Validation flash for lane/column nodes (replaces Tailwind animate-flash-red). */
+@keyframes em-flash {
+  0%,
+  100% {
+    background-color: transparent;
+  }
+  25%,
+  75% {
+    background-color: color-mix(in srgb, var(--em-event) 22%, transparent);
+  }
+}
+
+.em-flash {
+  animation: em-flash 0.6s ease-in-out;
+}

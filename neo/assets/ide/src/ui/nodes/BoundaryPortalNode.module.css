@@ -1,0 +1,36 @@
+/* Cross-feature edge stub. Dashed feature-indigo card; clickable to hop. */
+.portal {
+  box-sizing: border-box;
+  position: relative;
+  min-width: 120px;
+  max-width: 200px;
+  padding: 8px 12px;
+  border-radius: var(--mantine-radius-md);
+  border: 2px dashed var(--em-feature);
+  background: color-mix(in srgb, var(--em-feature) 12%, var(--mantine-color-body));
+  color: var(--em-feature);
+  font-size: 12px;
+  cursor: pointer;
+  box-shadow: var(--mantine-shadow-xs);
+  transition: background-color 0.15s ease;
+}
+.portal:hover {
+  background: color-mix(in srgb, var(--em-feature) 22%, var(--mantine-color-body));
+}
+
+.label {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.meta {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  opacity: 0.8;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

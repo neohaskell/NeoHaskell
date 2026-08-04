@@ -1,0 +1,270 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://neohaskell.org/schemas/event-model.v1.json",
+  "title": "EventModel",
+  "type": "object",
+  "required": ["id", "name", "chapters", "entities", "nodes", "edges", "slices", "layout"],
+  "additionalProperties": false,
+  "properties": {
+    "id": { "type": "string", "minLength": 1 },
+    "name": { "type": "string" },
+    "chapters": { "type": "array", "items": { "$ref": "#/$defs/Chapter" } },
+    "submodels": { "type": "array", "items": { "$ref": "#/$defs/Submodel" } },
+    "entities": { "type": "array", "items": { "$ref": "#/$defs/Entity" } },
+    "slices": { "type": "array", "items": { "$ref": "#/$defs/Slice" } },
+    "nodes": { "type": "array", "items": { "$ref": "#/$defs/ModelNode" } },
+    "edges": { "type": "array", "items": { "$ref": "#/$defs/ModelEdge" } },
+    "layout": { "$ref": "#/$defs/Layout" }
+  },
+  "$defs": {
+    "Entity": {
+      "type": "object",
+      "required": ["id", "name", "order"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "name": { "type": "string" },
+        "order": { "type": "number" }
+      }
+    },
+    "Slice": {
+      "type": "object",
+      "required": ["id", "name", "chapterId", "order"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "name": { "type": "string" },
+        "chapterId": { "type": ["string", "null"] },
+        "order": { "type": "number" }
+      }
+    },
+    "Chapter": {
+      "type": "object",
+      "required": ["id", "name", "order"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "name": { "type": "string" },
+        "order": { "type": "number" },
+        "submodelId": { "type": ["string", "null"] }
+      }
+    },
+    "Submodel": {
+      "type": "object",
+      "required": ["id", "name", "order"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "name": { "type": "string" },
+        "order": { "type": "number" }
+      }
+    },
+    "ModelNode": {
+      "oneOf": [
+        { "$ref": "#/$defs/EventNode" },
+        { "$ref": "#/$defs/CommandNode" },
+        { "$ref": "#/$defs/QueryNode" },
+        { "$ref": "#/$defs/IntegrationNode" },
+        { "$ref": "#/$defs/UIPlaceholderNode" }
+      ]
+    },
+    "EventNode": {
+      "type": "object",
+      "required": ["id", "type", "name", "entityId", "sliceId"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "type": { "const": "event" },
+        "name": { "type": "string" },
+        "entityId": { "type": ["string", "null"] },
+        "sliceId": { "type": ["string", "null"] },
+        "fields": { "type": "array", "items": { "$ref": "#/$defs/Field" } }
+      }
+    },
+    "CommandNode": {
+      "type": "object",
+      "required": ["id", "type", "name", "entityId", "sliceId"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "type": { "const": "command" },
+        "name": { "type": "string" },
+        "entityId": { "type": ["string", "null"] },
+        "sliceId": { "type": ["string", "null"] },
+        "fields": { "type": "array", "items": { "$ref": "#/$defs/Field" } }
+      }
+    },
+    "QueryNode": {
+      "type": "object",
+      "required": ["id", "type", "name", "sliceId"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "type": { "const": "query" },
+        "name": { "type": "string" },
+        "sliceId": { "type": ["string", "null"] },
+        "fields": { "type": "array", "items": { "$ref": "#/$defs/Field" } }
+      }
+    },
+    "IntegrationNode": {
+      "type": "object",
+      "required": ["id", "type", "name", "kind", "sliceId"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "type": { "const": "integration" },
+        "name": { "type": "string" },
+        "kind": { "enum": ["inbound", "outbound"] },
+        "sliceId": { "type": ["string", "null"] },
+        "fields": { "type": "array", "items": { "$ref": "#/$defs/Field" } }
+      }
+    },
+    "UIPlaceholderNode": {
+      "type": "object",
+      "required": ["id", "type", "name", "sliceId"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "type": { "const": "uiPlaceholder" },
+        "name": { "type": "string" },
+        "sliceId": { "type": ["string", "null"] },
+        "fields": { "type": "array", "items": { "$ref": "#/$defs/Field" } }
+      }
+    },
+    "ModelEdge": {
+      "oneOf": [
+        { "$ref": "#/$defs/CommandProducesEvent" },
+        { "$ref": "#/$defs/EventFeedsQuery" },
+        { "$ref": "#/$defs/EventTriggersIntegration" },
+        { "$ref": "#/$defs/IntegrationTriggersCommand" },
+        { "$ref": "#/$defs/CommandFromUI" },
+        { "$ref": "#/$defs/QueryToUI" }
+      ]
+    },
+    "CommandProducesEvent": {
+      "type": "object",
+      "required": ["id", "type", "sourceId", "targetId"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "type": { "const": "commandProducesEvent" },
+        "sourceId": { "type": "string", "minLength": 1 },
+        "targetId": { "type": "string", "minLength": 1 },
+        "sourceHandle": { "type": ["string", "null"] },
+        "targetHandle": { "type": ["string", "null"] }
+      }
+    },
+    "EventFeedsQuery": {
+      "type": "object",
+      "required": ["id", "type", "sourceId", "targetId"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "type": { "const": "eventFeedsQuery" },
+        "sourceId": { "type": "string", "minLength": 1 },
+        "targetId": { "type": "string", "minLength": 1 },
+        "sourceHandle": { "type": ["string", "null"] },
+        "targetHandle": { "type": ["string", "null"] }
+      }
+    },
+    "EventTriggersIntegration": {
+      "type": "object",
+      "required": ["id", "type", "sourceId", "targetId"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "type": { "const": "eventTriggersIntegration" },
+        "sourceId": { "type": "string", "minLength": 1 },
+        "targetId": { "type": "string", "minLength": 1 },
+        "sourceHandle": { "type": ["string", "null"] },
+        "targetHandle": { "type": ["string", "null"] }
+      }
+    },
+    "IntegrationTriggersCommand": {
+      "type": "object",
+      "required": ["id", "type", "sourceId", "targetId"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "type": { "const": "integrationTriggersCommand" },
+        "sourceId": { "type": "string", "minLength": 1 },
+        "targetId": { "type": "string", "minLength": 1 },
+        "sourceHandle": { "type": ["string", "null"] },
+        "targetHandle": { "type": ["string", "null"] }
+      }
+    },
+    "CommandFromUI": {
+      "type": "object",
+      "required": ["id", "type", "sourceId", "targetId"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "type": { "const": "commandFromUI" },
+        "sourceId": { "type": "string", "minLength": 1 },
+        "targetId": { "type": "string", "minLength": 1 },
+        "sourceHandle": { "type": ["string", "null"] },
+        "targetHandle": { "type": ["string", "null"] }
+      }
+    },
+    "QueryToUI": {
+      "type": "object",
+      "required": ["id", "type", "sourceId", "targetId"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "type": { "const": "queryToUI" },
+        "sourceId": { "type": "string", "minLength": 1 },
+        "targetId": { "type": "string", "minLength": 1 },
+        "sourceHandle": { "type": ["string", "null"] },
+        "targetHandle": { "type": ["string", "null"] }
+      }
+    },
+    "Layout": {
+      "type": "object",
+      "required": ["nodePositions", "viewport"],
+      "additionalProperties": false,
+      "properties": {
+        "nodePositions": {
+          "type": "object",
+          "additionalProperties": { "$ref": "#/$defs/NodePosition" }
+        },
+        "viewport": { "$ref": "#/$defs/Viewport" },
+        "bySubmodel": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": { "$ref": "#/$defs/NodePosition" }
+          }
+        }
+      }
+    },
+    "Field": {
+      "type": "object",
+      "required": ["name", "type"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string" },
+        "type": { "type": "string" }
+      }
+    },
+    "NodePosition": {
+      "type": "object",
+      "required": ["x", "y"],
+      "additionalProperties": false,
+      "properties": {
+        "x": { "type": "number" },
+        "y": { "type": "number" }
+      }
+    },
+    "Viewport": {
+      "type": "object",
+      "required": ["x", "y", "zoom"],
+      "additionalProperties": false,
+      "properties": {
+        "x": { "type": "number" },
+        "y": { "type": "number" },
+        "zoom": { "type": "number" }
+      }
+    }
+  }
+}
