@@ -15,6 +15,14 @@ Two contracts, both learned from real breakage:
      is schedule- AND dispatch-triggered, and must NOT push/commit, invoke the
      LLM miner, or write recommendations.
 
+  3. Neo CLI monorepo migration bootstrap (test.yml required gate): scoped PRs
+     stage on `integration/neo-monorepo` before the final merge to `main`, so
+     the required Test gate must (a) trigger on PRs whose base is that branch,
+     and (b) classify a neo/** change as compiled — otherwise a neo-only PR
+     reads compiled=false and ci-gate accepts every skip, a green no-op gate
+     that falsely claims neo was tested. This check freezes both invariants so
+     they cannot silently regress before neo is imported.
+
 Run:  ./dev workflow-check          CI: .github/workflows/checks.yml
       ./dev workflow-check --self-test   (doctor/CI)
 """
@@ -27,6 +35,12 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 WORKFLOWS = REPO_ROOT / ".github" / "workflows"
 
 UPLOAD_RE = re.compile(r"uses:\s*actions/upload-artifact")
+
+# The required merge gate + the base branches it must cover, and the surfaces
+# its changed-path classifier must treat as compiled. See contract 3 above.
+REQUIRED_GATE = "test.yml"
+GATE_BASE_BRANCHES = ("main", "integration/neo-monorepo")
+COMPILED_SURFACES = ("neo/",)
 
 
 def _indent(line):
@@ -297,6 +311,81 @@ def check_codemap_regen(name, text):
     return errs
 
 
+def pull_request_branches(text):
+    """The `branches:` list under the `on: pull_request:` block, or None if the
+    trigger has no branch filter (runs on every base). Handles both the block
+    form (`branches:` then `- x` lines) and the inline form (`branches: [x, y]`).
+    """
+    lines = text.splitlines()
+    for i, ln in enumerate(lines):
+        if not re.match(r"^\s+pull_request:\s*$", ln):
+            continue
+        base = _indent(ln)
+        j = i + 1
+        while j < len(lines):
+            cur = lines[j]
+            if cur.strip() and _indent(cur) <= base:
+                break  # left the pull_request block without finding branches:
+            bm = re.match(r"(\s*)branches:\s*(.*)$", cur)
+            if bm:
+                inline = bm.group(2).strip()
+                if inline.startswith("["):
+                    return [x.strip() for x in inline.strip("[]").split(",") if x.strip()]
+                if inline and inline not in ("|", ">", "|-", ">-"):
+                    return [inline]
+                bind = _indent(cur)
+                items = []
+                k = j + 1
+                while k < len(lines):
+                    nxt = lines[k]
+                    if nxt.strip() and _indent(nxt) <= bind:
+                        break
+                    dm = re.match(r"\s*-\s*(\S.*?)\s*$", nxt)
+                    if dm:
+                        items.append(dm.group(1).strip())
+                    k += 1
+                return items
+            j += 1
+        return None
+    return None
+
+
+def classifier_pattern(text):
+    """The changed-path classifier regex in the `changes` job (PATTERN='…')."""
+    m = re.search(r"PATTERN='([^']*)'", text)
+    return m.group(1) if m else None
+
+
+def check_required_gate(name, text):
+    """test.yml is the required merge gate. Two bootstrap invariants (contract 3):
+    it must trigger on PRs to every GATE_BASE_BRANCHES base, and its classifier
+    must count every COMPILED_SURFACES entry as compiled so neo work can't slip
+    through a no-op skip."""
+    errs = []
+    prb = pull_request_branches(text)
+    if prb is None:
+        errs.append(f"{name}: no `on: pull_request: branches:` filter — cannot "
+                    "confirm the required gate targets "
+                    f"{', '.join(GATE_BASE_BRANCHES)}")
+    else:
+        for req in GATE_BASE_BRANCHES:
+            if req not in prb:
+                errs.append(f"{name}: pull_request does not target '{req}' — the "
+                            "required Test gate would never run on PRs based on it")
+    pat = classifier_pattern(text)
+    if pat is None:
+        errs.append(f"{name}: no changed-path classifier (PATTERN='…') found — "
+                    "cannot confirm neo/** classifies as compiled")
+    else:
+        for surface in COMPILED_SURFACES:
+            if surface not in pat:
+                errs.append(
+                    f"{name}: changed-path classifier lacks '{surface}' — a "
+                    f"'{surface}'-only PR reads compiled=false and ci-gate accepts "
+                    "every skip (a green no-op gate that claims it was tested)")
+    return errs
+
+
 def run(root=WORKFLOWS):
     errs = []
     for wf in sorted(root.glob("*.yml")):
@@ -306,11 +395,16 @@ def run(root=WORKFLOWS):
             errs += check_retrospect(wf.name, text)
         if wf.name == CODEMAP_REGEN:
             errs += check_codemap_regen(wf.name, text)
+        if wf.name == REQUIRED_GATE:
+            errs += check_required_gate(wf.name, text)
     retro = root / "retrospect.yml"
     if not retro.exists():
         errs.append("retrospect.yml is missing (deterministic learning-loop digest)")
     if not (root / CODEMAP_REGEN).exists():
         errs.append(f"{CODEMAP_REGEN} is missing (maintainer codemap-regeneration capability)")
+    gate = root / REQUIRED_GATE
+    if not gate.exists():
+        errs.append(f"{REQUIRED_GATE} is missing (the required Test merge gate)")
     return errs
 
 
@@ -500,6 +594,36 @@ def self_test():
     cmr_bad("indexed-secret access in generate is flagged",
             good_cmr.replace("      - run: ./dev codemap\n",
                              "      - run: echo ${{ secrets['GITHUB_TOKEN'] }}\n"))
+    good_gate = (
+        "on:\n  pull_request:\n    branches:\n"
+        "      - main\n      - integration/neo-monorepo\n"
+        "    types: [opened]\n  push:\n    branches:\n      - main\n"
+        "jobs:\n  changes:\n    steps:\n      - run: |\n"
+        "          PATTERN='^(core/|testbed/|integrations/|neo/|nix/)'\n"
+    )
+    check("well-wired required gate passes", not check_required_gate("test.yml", good_gate))
+    check("pull_request branches extracted (block form)",
+          pull_request_branches(good_gate) == ["main", "integration/neo-monorepo"])
+    check("missing integration base is flagged",
+          check_required_gate("test.yml",
+                              good_gate.replace("      - integration/neo-monorepo\n", "")))
+    check("missing main base is flagged",
+          check_required_gate("test.yml", good_gate.replace("      - main\n", "")))
+    check("neo/ absent from classifier is flagged",
+          check_required_gate("test.yml", good_gate.replace("neo/|", "")))
+    check("no pull_request branches filter is flagged",
+          check_required_gate("test.yml",
+                              "on:\n  pull_request:\n    types: [opened]\n"
+                              "jobs:\n  changes:\n    steps:\n"
+                              "      - run: PATTERN='^(neo/)'\n"))
+    inline_gate = (
+        "on:\n  pull_request:\n    branches: [main, integration/neo-monorepo]\n"
+        "    paths:\n      - 'x/**'\n"
+    )
+    check("pull_request branches extracted (inline form)",
+          pull_request_branches(inline_gate) == ["main", "integration/neo-monorepo"])
+    check("push branches are not mistaken for pull_request branches",
+          pull_request_branches("on:\n  push:\n    branches:\n      - main\n") is None)
 
     print("workflow-check: self-test", "OK" if ok else "FAILED")
     return 0 if ok else 1
