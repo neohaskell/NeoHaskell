@@ -307,7 +307,7 @@ jobs:
               *) fail "unexpected plan verb '$verb'";;
             esac
           done < plan.txt
-          $GIT diff --cached --name-status > staged.txt || true
+          $GIT diff --cached --name-status > staged.txt
           set +e
           python3 scripts/codemap-regen-guard.py check-staged-diff staged.txt
           code=$?

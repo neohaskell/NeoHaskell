@@ -74,7 +74,7 @@ The workflow is therefore two jobs:
 **Generated-output allowlist** (exactly what `./dev codemap` writes and git
 tracks; the hoogle `.hoogle-*` DBs are gitignored and never collected):
 
-```
+```text
 codemap/MAP.md
 codemap/.doc-ratchet
 codemap/signatures/*.txt
@@ -122,14 +122,11 @@ inline `${{ }}`, matching the repo's existing template-injection defense.
 
 ## Criteria
 
-C1–C7 are `unit` — metadata/manifest/diff validation in a harness self-test plus
-static-wiring assertions on the workflow, covering **all pre-push safety**. C8 is
-an **operational** criterion (level `integration`): the maintainer-approved
-**first production run** on the reviewed PR #724 validates the credential's
-PR-specific fork-write grant end to end. It is **not** a pre-implementation or
-PR-ready blocker (maintainer decision 2026-08-04 — the real spike needs two
-identities the CI harness lacks); a push denial fails safe with no mutation and no
-fallback. Its proof is that first run against a committed runbook, not a CI test.
+All criteria are `unit` — metadata/manifest/diff validation in a harness
+self-test plus static-wiring assertions on the workflow, covering **all pre-push
+safety**. The credential's live fork-write grant is not a CI-provable test; it is
+an operational requirement validated by the first production run (see **Operational
+validation** below), deliberately kept out of this proving-test table.
 
 | ID | Behavior | Proving test | Level |
 |----|----------|--------------|-------|
@@ -140,7 +137,20 @@ fallback. Its proof is that first run against a committed runbook, not a CI test
 | C5 | The manifest permits allowlisted **additions**, encodes allowlisted **deletions/renames** (a tracked `codemap/signatures/*.txt` absent from the manifest is removed), and **rejects any manifest entry outside the allowlist**; only allowlisted paths are ever copied/staged | `./dev codemap-regen-guard --self-test` manifest add / delete / out-of-allowlist cases | unit |
 | C6 | The final `git diff --cached --name-status` gate passes only when every staged path is in the codemap allowlist: a real allowlisted change commits once (`chore: regenerate codemap`, deterministic identity), an empty staged diff is a **successful no-op** (no commit), any non-allowlisted staged path fails | `./dev codemap-regen-guard --self-test` staged-diff-allowlist / no-op / unexpected-path cases | unit |
 | C7 | `publish` runs **no contributor script, hook, or build command**: it checks out the pinned SHA with `persist-credentials: false`, git hooks disabled, and credential helpers disabled, invoking no `./dev`/build/hook from the contributor tree; the remote head is re-checked immediately before a **fast-forward-only, never-force** push, which fails clearly on a race/non-fast-forward | `./dev workflow-check` (`--self-test`) no-contributor-exec + fast-forward-push assertions | unit |
-| C8 | **Auth operational validation (not a pre-push blocker):** the first maintainer-approved production run on the reviewed contributor PR #724 fast-forward-commits the regenerated codemap using the classic `public_repo` PAT, validating the PR-specific fork-write grant end to end; a GitHub push denial fails clearly and safely with no fallback and no remote mutation. Blast radius / rotation / revocation are documented in the workflow runbook | first Environment-approved production run on PR #724, per the workflow-header runbook | integration |
+
+## Operational validation
+
+One requirement cannot be a CI-provable proving test, so it lives here rather
+than in the criteria table above: **the live fork-write credential grant.** A
+disposable-fork spike would need two GitHub identities the CI harness lacks, so
+per the maintainer decision (2026-08-04) it is **not** a pre-implementation or
+PR-ready blocker. Instead, the **first maintainer-approved production run** on a
+real reviewed fork PR (e.g. #724) fast-forward-commits the regenerated codemap
+using the classic `public_repo` PAT and thereby validates the PR-specific
+fork-write grant end to end. A GitHub push denial **fails clearly and safely**
+with no fallback and no remote mutation. The credential's blast radius, rotation,
+and revocation are documented in the workflow-header runbook
+(`.github/workflows/codemap-regen.yml`).
 
 ## User impact
 
@@ -163,10 +173,13 @@ workflow fails closed at `publish`.
 
 ## ADR
 
-[ADR-0070](../decisions/0070-maintainer-codemap-regeneration.md) — the two-job
-trust boundary (data-only artifact seam), the Environment-gated publish with the
-maintainer credential isolated from contributor code, the fail-closed
-no-fallback-PR policy, and the fine-grained-PAT auth (with the GitHub-App
-migration path). Triggered by "significant new infrastructure" (the
+[ADR-0070](../decisions/0070-maintainer-codemap-regeneration.md) — the
+generate→publish job split (no write credential coexists with contributor code),
+the Environment-gated publish that runs no contributor code, the fail-closed
+no-fallback-PR policy, and the credential decision: a maintainer-owned **classic
+PAT** with the minimum practical **`public_repo`** scope for the current public
+base+fork case. (A GitHub App is a separate future path, viable only if it can
+reach the contributor fork; a fine-grained PAT cannot select a third party's
+fork.) Triggered by "significant new infrastructure" (the
 `docs/decisions/README.md` ADR-required list) even though no
 breaking/new-dependency/new-capability/new-extension-point flag fires.

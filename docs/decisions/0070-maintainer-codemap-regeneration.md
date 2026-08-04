@@ -85,7 +85,7 @@ Checks out the **exact pinned head SHA**, `persist-credentials: false`,
 `permissions: contents: read`, **no `secrets` in scope**. Runs `./dev codemap`.
 Collects **only** the enumerated allowlist —
 
-```
+```text
 codemap/MAP.md
 codemap/.doc-ratchet
 codemap/signatures/*.txt

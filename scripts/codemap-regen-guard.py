@@ -121,7 +121,9 @@ def reconcile_plan(manifest_paths, artifact_paths, worktree_sig_paths):
     - every manifest and artifact entry must be allowlisted;
     - the artifact must be exactly the manifest set (no unlisted/again-missing);
     - deletes = allowlisted signatures tracked in the worktree but absent from
-      the manifest (a stale/renamed `codemap/signatures/*.txt`)."""
+      the manifest (a stale/renamed `codemap/signatures/*.txt`). Non-allowlisted
+      files that merely live under `codemap/signatures/` (e.g. a `notes.md`) are
+      NOT ours to touch — they are filtered out and never planned for deletion."""
     errs = []
     for p in manifest_paths:
         if not is_allowlisted(p):
@@ -139,7 +141,8 @@ def reconcile_plan(manifest_paths, artifact_paths, worktree_sig_paths):
         errs.append(f"manifest lists a file absent from the artifact: {p!r}")
     if errs:
         return None, errs
-    deletes = sorted(p for p in worktree_sig_paths if p not in manifest_set)
+    deletes = sorted(p for p in worktree_sig_paths
+                     if is_allowlisted(p) and p not in manifest_set)
     return {"copy": sorted(artifact_set), "delete": deletes}, []
 
 
@@ -330,6 +333,15 @@ def self_test():
           plan and plan["copy"] == sorted(manifest))
     check("reconcile deletes stale signature absent from manifest",
           plan and plan["delete"] == ["codemap/signatures/stale.txt"])
+    plan_nm, errs_nm = reconcile_plan(
+        manifest, list(manifest),
+        worktree_sig_paths=["codemap/signatures/nhcore-core.txt",
+                            "codemap/signatures/stale.txt",
+                            "codemap/signatures/notes.md"])
+    check("reconcile ignores a non-allowlisted file under signatures/ "
+          "(never deletes notes.md) while still deleting the stale .txt",
+          not errs_nm and plan_nm
+          and plan_nm["delete"] == ["codemap/signatures/stale.txt"])
     _, errs2 = reconcile_plan(
         manifest + ["core/core/Text.hs"], list(manifest), [])
     check("reconcile rejects out-of-allowlist manifest entry",

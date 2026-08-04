@@ -195,13 +195,18 @@ def job_blocks(text):
 def check_codemap_regen(name, text):
     errs = []
     E = errs.append
+    # `code` drops comments so "must-not-appear" substring scans see executable
+    # content only — the runbook header legitimately names what it must NOT do
+    # (fallback PR, ./dev, etc.). Presence markers that ARE comments (the
+    # main-only policy doc) are checked against raw `text` below.
+    code = strip_comments(text)
     on = _on_block(text)
     # 1. manual dispatch only — no injection-prone auto/target triggers.
-    if "pull_request_target" in text:
+    if "pull_request_target" in code:
         E(f"{name}: uses pull_request_target — forbidden (injection surface)")
     if "workflow_dispatch" not in on:
         E(f"{name}: no workflow_dispatch trigger (must be manual dispatch)")
-    if re.search(r"^\s*pull_request:", on, re.M):
+    if re.search(r"^\s*pull_request:", _on_block(code), re.M):
         E(f"{name}: has an automatic pull_request trigger (must be manual only)")
     # 2. every third-party action pinned by full commit SHA.
     for m in re.finditer(r"uses:\s*(\S+)", text):
@@ -210,12 +215,13 @@ def check_codemap_regen(name, text):
             continue
         if not _SHA40.search(ref):
             E(f"{name}: action '{ref}' is not pinned by a full 40-char commit SHA")
-    # 3. no fallback PR anywhere.
+    # 3. no fallback PR anywhere (executable content only).
     for banned in ("gh pr create", "create-pull-request"):
-        if banned in text:
+        if banned in code:
             E(f"{name}: opens a fallback PR ('{banned}') — forbidden (fail closed)")
     jobs = job_blocks(text)
     gen, pub, res = jobs.get("generate", ""), jobs.get("publish", ""), jobs.get("resolve", "")
+    code_pub = strip_comments(pub)
     if not gen:
         E(f"{name}: missing `generate` job")
     if not pub:
@@ -238,9 +244,9 @@ def check_codemap_regen(name, text):
     if "Deployment branches" not in text:
         E(f"{name}: does not document the mandatory codemap-publish main-only "
           "deployment-branch policy (the load-bearing secret guard)")
-    # 7. publish runs NO contributor/build code.
+    # 7. publish runs NO contributor/build code (executable content only).
     for banned in ("./dev ", "nix develop", "cabal ", "make "):
-        if banned in pub:
+        if banned in code_pub:
             E(f"{name}: publish job runs '{banned.strip()}' — it must execute no "
               "contributor or build code")
     # 8. every publish checkout is credential-less.
@@ -248,10 +254,10 @@ def check_codemap_regen(name, text):
     n_nopersist = len(re.findall(r"persist-credentials:\s*false", pub))
     if n_nopersist < n_checkout:
         E(f"{name}: a publish checkout does not set persist-credentials: false")
-    # 9. fast-forward only, ephemeral auth.
-    if re.search(r"--force|force-with-lease|push\s+-f\b|push[^\n]*\s\+\S", pub):
+    # 9. fast-forward only, ephemeral auth (executable content only).
+    if re.search(r"--force|force-with-lease|push\s+-f\b|push[^\n]*\s\+\S", code_pub):
         E(f"{name}: publish force-pushes — must be fast-forward only")
-    if "http.extraHeader" not in pub:
+    if "http.extraHeader" not in code_pub:
         E(f"{name}: publish does not use ephemeral http.extraHeader auth "
           "(token must not persist in a remote URL)")
     return errs
@@ -416,6 +422,15 @@ def self_test():
                 "      - env:\n          REF: r\n",
                 "      - uses: " + pin + "\n        with:\n          persist-credentials: true\n"
                 "      - env:\n          REF: r\n"))
+    cmr_bad("missing workflow_dispatch trigger is flagged",
+            good_cmr.replace("workflow_dispatch", "repository_dispatch"))
+    cmr_bad("missing CODEMAP_PUBLISH_TOKEN in publish is flagged",
+            good_cmr.replace("          CODEMAP_PUBLISH_TOKEN: t\n", "          OTHER: t\n"))
+    cmr_bad("missing main-only Environment-policy documentation is flagged",
+            good_cmr.replace(
+                "# Deployment branches and tags: main ONLY (mandatory codemap-publish setup)\n", ""))
+    cmr_bad("missing ephemeral-auth (http.extraHeader) is flagged",
+            good_cmr.replace('-c http.extraHeader="Authorization: Basic x" ', ""))
 
     print("workflow-check: self-test", "OK" if ok else "FAILED")
     return 0 if ok else 1
