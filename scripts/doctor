@@ -91,11 +91,12 @@ scripts/changelog --self-test || fail=1
 scripts/revert --self-test || fail=1
 scripts/retrospect --self-test || fail=1
 scripts/workflow-check --self-test || fail=1
-# Quiet on success (35 cases), but surface the captured output on failure.
+# Quiet on success, but surface the captured output on failure.
 if ! crg_out=$(scripts/codemap-regen-guard.py --self-test 2>&1); then
   printf '%s\n' "${crg_out}"
   fail=1
 fi
+scripts/neo-skills-check --self-test || fail=1
 scripts/adr-website --self-test || fail=1
 scripts/adr-index-check --self-test || fail=1
 

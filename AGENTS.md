@@ -3,12 +3,16 @@
 <!-- Governing rule: no agent-visible document without a CI check or a generation
      source. `./dev doctor` validates registered `./dev` verbs named here. -->
 
-Newcomer-friendly Haskell dialect. Monorepo: core library (`core/` → `nhcore`), reference app + acceptance tests (`testbed/` → `nhtestbed`), outbound integrations (`integrations/` → `nhintegrations`), Rust installer (`installer/` → `neo-install`), Astro website (`website/`). Architecture: event-sourcing + CQRS in `core/service/`. (LSP package removed 2026-07-08 — unused.)
+Newcomer-friendly Haskell dialect. Monorepo: core library (`core/` → `nhcore`), reference app + acceptance tests (`testbed/` → `nhtestbed`), outbound integrations (`integrations/` → `nhintegrations`), Rust installer (`installer/` → `neo-install`), Rust Neo CLI (`neo/` → the `neo` binary), Astro website (`website/`). Architecture: event-sourcing + CQRS in `core/service/`. (LSP package removed 2026-07-08 — unused.)
 
 This file is the **agent-specific contract**: the hard rule, dialect style, and the pipeline/verification gates. Two companion guides own the rest — do not duplicate them here:
 
 - **`README.md`** — environment setup, the full build/test commands, Postgres, human contributor workflow.
 - **`codemap/README.md`** — localization routing, API discovery (`codemap/api-hot.md`, `./dev api`, `phrasebook.md`), and codemap regeneration.
+
+## Rust `neo/**` — separate contract (do not apply Haskell rules here)
+
+`neo/**` is the imported Rust Neo CLI, not NeoHaskell dialect code. Everything below in this file — the HARD RULE, the mandatory dialect style table, the spec-gated pipeline, dialect enforcement, and codemap localization — governs the Haskell trees (`core/`, `testbed/`, `integrations/`) and **does not apply under `neo/**`**. Route all `neo/**` work through **`neo/AGENTS.md`** and its skills: **`neo-cli-localizer`** (locate command/subsystem), **`neo-cli-implementer`** (Rust conventions + error/output contract + interactive-vs-CI), **`neo-cli-testing`** (unit/integration/e2e/smoke layers), **`neo-cli-ide`** (Vite frontend + embedded `dist/` sync + screen critique). Monorepo governance still binds `neo/**`: branch off `main`, ADRs, one-source-of-truth docs, ship-with-tests, and the starter↔upstream cross-component gate. `./dev neo-skills-check` (run by `./dev doctor` + CI) keeps this routing honest.
 
 ## HARD RULE
 

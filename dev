@@ -66,6 +66,9 @@ usage: ./dev <verb> [args]
                           doctrine (see telemetry/SCHEMA.md); never for ad-hoc runs
   workflow-check        static wiring checks for .github/workflows (hidden
                           artifacts, retrospect loop; CI-enforced)
+  neo-skills-check      validate the Rust `neo/**` agent-guidance layer:
+                          neo-cli-* skills, neo/** routing, no stale state/plan
+                          refs, one source of truth (via ./dev doctor + CI)
   doctor                harness self-check: every script has a verb or a
                           reasoned exemption; no dangling verbs (CI-enforced)
   exec <cmd> [args]     run any command with the pinned toolchain
@@ -105,6 +108,7 @@ case "${VERB}" in
   retrospect) exec scripts/retrospect "$@" ;;
   telemetry) exec scripts/telemetry.py "$@" ;;
   workflow-check) exec scripts/workflow-check "$@" ;;
+  neo-skills-check) exec scripts/neo-skills-check "$@" ;;
   doctor)   exec scripts/doctor "$@" ;;
   exec)     exec scripts/with-toolchain "$@" ;;
   ""|help|-h|--help) usage ;;
