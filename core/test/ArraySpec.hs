@@ -3,6 +3,7 @@
 module ArraySpec where
 
 import Array qualified
+import Core
 import Test
 
 spec :: Spec Unit
@@ -10,20 +11,24 @@ spec = do
   describe "Array" do
     describe "dropLast" do
       it "removes the final element" \_ -> do
-        Array.fromLinkedList [1, 2, 3] |> Array.dropLast |> shouldBe (Array.fromLinkedList [1, 2])
+        let array = Array.fromLinkedList [1, 2, 3] :: Array.Array Int
+        array |> Array.dropLast |> shouldBe (Array.fromLinkedList [1, 2])
 
       it "returns the same empty array" \_ -> do
         Array.empty |> Array.dropLast |> shouldBe (Array.empty :: Array.Array Int)
 
     describe "dropRight" do
       it "drops the last n elements" \_ -> do
-        Array.fromLinkedList [1, 2, 3, 4] |> Array.dropRight 2 |> shouldBe (Array.fromLinkedList [1, 2])
+        let array = Array.fromLinkedList [1, 2, 3, 4] :: Array.Array Int
+        array |> Array.dropRight 2 |> shouldBe (Array.fromLinkedList [1, 2])
 
       it "returns the original array when n is non-positive" \_ -> do
-        Array.fromLinkedList [1, 2, 3] |> Array.dropRight 0 |> shouldBe (Array.fromLinkedList [1, 2, 3])
-        Array.fromLinkedList [1, 2, 3] |> Array.dropRight (-1) |> shouldBe (Array.fromLinkedList [1, 2, 3])
-        Array.fromLinkedList [1, 2, 3] |> Array.dropRight (minBound :: Int) |> shouldBe (Array.fromLinkedList [1, 2, 3])
+        let array = Array.fromLinkedList [1, 2, 3] :: Array.Array Int
+        array |> Array.dropRight 0 |> shouldBe array
+        array |> Array.dropRight (-1) |> shouldBe array
+        array |> Array.dropRight (minValue :: Int) |> shouldBe array
 
       it "returns an empty array when n is at least the length" \_ -> do
-        Array.fromLinkedList [1, 2, 3] |> Array.dropRight 3 |> shouldBe (Array.empty :: Array.Array Int)
-        Array.fromLinkedList [1, 2, 3] |> Array.dropRight 5 |> shouldBe (Array.empty :: Array.Array Int)
+        let array = Array.fromLinkedList [1, 2, 3] :: Array.Array Int
+        array |> Array.dropRight 3 |> shouldBe Array.empty
+        array |> Array.dropRight 5 |> shouldBe Array.empty
