@@ -17,6 +17,10 @@ spec = do
       it "returns the same empty array" \_ -> do
         Array.empty |> Array.dropLast |> shouldBe (Array.empty :: Array.Array Int)
 
+      it "returns an empty array for a single-element array" \_ -> do
+        let array = Array.fromLinkedList [1] :: Array.Array Int
+        array |> Array.dropLast |> shouldBe Array.empty
+
     describe "dropRight" do
       it "drops the last n elements" \_ -> do
         let array = Array.fromLinkedList [1, 2, 3, 4] :: Array.Array Int
@@ -32,3 +36,4 @@ spec = do
         let array = Array.fromLinkedList [1, 2, 3] :: Array.Array Int
         array |> Array.dropRight 3 |> shouldBe Array.empty
         array |> Array.dropRight 5 |> shouldBe Array.empty
+        (Array.empty :: Array.Array Int) |> Array.dropRight 1 |> shouldBe Array.empty
