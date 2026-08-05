@@ -442,9 +442,7 @@ ensureBlobPresent blobStore blobKey content = do
       Log.warn [fmt|Dedup blob existence check errored (#{show existsErr}); treating as missing|]
         |> Task.ignoreError
       Task.yield False
-  if blobPresent
-    then pass
-    else do
+  Task.unless blobPresent do
       Log.warn "Deduplicated blob unavailable; self-healing by re-storing content"
         |> Task.ignoreError
       storeResult <- blobStore.store blobKey content |> Task.asResult
@@ -584,10 +582,9 @@ cleanupLoop intervalMs stateStore blobStore stateMap = do
         Log.warn [fmt|Cleanup error: #{err}|] 
           |> Task.ignoreError
       Result.Ok count -> 
-        if count > 0
-          then Log.info [fmt|Cleaned up #{count} expired files|] 
+        Task.when (count > 0) do
+          Log.info [fmt|Cleaned up #{count} expired files|]
             |> Task.ignoreError
-          else pass
   
   -- Loop forever
   cleanupLoop intervalMs stateStore blobStore stateMap
@@ -613,8 +610,7 @@ cleanupExpiredFiles stateStore blobStore stateMap = do
   let processEntry fileRef state = do
         case state of
           Pending pendingFile -> do
-            if nowEpoch > pendingFile.expiresAt
-              then do
+            Task.when (nowEpoch > pendingFile.expiresAt) do
                 -- Try to delete the blob (best effort, log failures)
                 deleteResult <- blobStore.delete pendingFile.metadata.blobKey
                   |> Task.asResult
@@ -643,7 +639,6 @@ cleanupExpiredFiles stateStore blobStore stateMap = do
                         _ <- ConcurrentVar.modify (\n -> n + 1) counter
                           |> Task.asResult
                         pass
-              else pass  -- Not expired yet
           _ -> pass  -- Skip non-pending files
   
   -- Process in chunks of 100 entries

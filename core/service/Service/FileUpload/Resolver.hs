@@ -136,23 +136,20 @@ resolveFromState blobStore requestOwner fileRef state = case state of
         let blobKey = metadata.blobKey
 
         -- Check ownership
-        if ownerHash != requestOwner
-          then Task.throw (NotOwner fileRef)
-          else pass
+        Task.when (ownerHash != requestOwner) do
+          Task.throw (NotOwner fileRef)
 
         -- Check expiry
         now <- DateTime.now |> Task.mapError (\_ -> StorageError "Failed to get current time")
         let expiresAtDateTime = DateTime.fromEpochSeconds expiresAt
-        if now >= expiresAtDateTime
-          then Task.throw (FileExpired fileRef)
-          else pass
+        Task.when (now >= expiresAtDateTime) do
+          Task.throw (FileExpired fileRef)
 
         -- Check blob exists
         blobExists <- blobStore.exists blobKey
           |> Task.mapError (\_ -> StorageError "Failed to check blob existence")
-        if not blobExists
-          then Task.throw (BlobMissing fileRef)
-          else pass
+        Task.when (not blobExists) do
+          Task.throw (BlobMissing fileRef)
 
         -- Build resolved file
         Task.yield ResolvedFile
@@ -173,16 +170,14 @@ resolveFromState blobStore requestOwner fileRef state = case state of
         let blobKey = metadata.blobKey
 
         -- Check ownership
-        if ownerHash != requestOwner
-          then Task.throw (NotOwner fileRef)
-          else pass
+        Task.when (ownerHash != requestOwner) do
+          Task.throw (NotOwner fileRef)
 
         -- Confirmed files don't expire, but check blob exists
         blobExists <- blobStore.exists blobKey
           |> Task.mapError (\_ -> StorageError "Failed to check blob existence")
-        if not blobExists
-          then Task.throw (BlobMissing fileRef)
-          else pass
+        Task.when (not blobExists) do
+          Task.throw (BlobMissing fileRef)
 
         -- Build resolved file
         Task.yield ResolvedFile

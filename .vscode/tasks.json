@@ -3,9 +3,9 @@
   "tasks": [
     {
       "type": "process",
-      "command": "cabal",
-      "args": ["build", "all"],
-      "label": "cabal: build all",
+      "command": "./dev",
+      "args": ["check"],
+      "label": "dev: check (typecheck)",
       "presentation": {
         "echo": true,
         "reveal": "silent",
@@ -22,31 +22,30 @@
     },
     {
       "type": "process",
-      "command": "cabal",
-      "args": ["test", "core"],
-      "label": "cabal: test core",
+      "command": "./dev",
+      "args": ["test", "${input:testPattern}"],
+      "label": "dev: test (focused core)",
       "presentation": {
         "echo": true,
-        "reveal": "silent",
+        "reveal": "always",
         "focus": false,
         "panel": "shared",
         "showReuseMessage": true,
         "clear": false
       },
       "group": {
-        "kind": "test",
-        "isDefault": true
+        "kind": "test"
       },
       "problemMatcher": []
     },
     {
       "type": "process",
-      "command": "cabal",
-      "args": ["test", "all"],
-      "label": "cabal: test all",
+      "command": "./dev",
+      "args": ["test-all"],
+      "label": "dev: test-all (every suite)",
       "presentation": {
         "echo": true,
-        "reveal": "silent",
+        "reveal": "always",
         "focus": false,
         "panel": "shared",
         "showReuseMessage": true,
@@ -57,6 +56,14 @@
         "isDefault": true
       },
       "problemMatcher": []
+    }
+  ],
+  "inputs": [
+    {
+      "id": "testPattern",
+      "type": "promptString",
+      "description": "hspec --match pattern for ./dev test (default suite: nhcore-test-core)",
+      "default": "EventStore"
     }
   ]
 }

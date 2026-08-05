@@ -101,8 +101,8 @@ module Text (
 import Array (Array)
 import Array qualified
 import Basics
-import Bytes (Bytes)
-import Bytes qualified
+import Bytes.Internal (Bytes)
+import Bytes.Internal qualified as Bytes
 import Char (Char)
 import Control.Monad.Fail qualified as GHC
 import Data.FileEmbed qualified as FileEmbed

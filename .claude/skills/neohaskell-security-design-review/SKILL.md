@@ -5,8 +5,7 @@ description: Design-time security review of an approved contract-delta spec, bef
 
 # Security design review (risk-tiered, design-time)
 
-Rebuilt 2026-07-08 (Phase 5; predecessors archived in
-`docs/archive/2026-07-ai-artifacts/claude-skills/`). NeoHaskell serves
+Rebuilt 2026-07-08 (Phase 5). NeoHaskell serves
 national-level European infrastructure: security compliance is a hard
 requirement, and the review record is the audit-trail artifact — but it is kept
 **local, never pushed** (a public repo would hand the attack-surface analysis to

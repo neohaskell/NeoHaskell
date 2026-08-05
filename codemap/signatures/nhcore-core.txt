@@ -277,11 +277,7 @@ empty :: Bytes
 findSubstring :: Bytes -> Bytes -> Maybe Int
 fromLazyLegacy :: LazyByteString -> Bytes
 fromLegacy :: ByteString -> Bytes
-instance Data.String.IsString Bytes.Bytes
-instance GHC.Classes.Eq Bytes.Bytes
-instance GHC.Classes.Ord Bytes.Bytes
-instance GHC.Generics.Generic Bytes.Bytes
-instance GHC.Show.Show Bytes.Bytes
+getRandom :: Int -> Task w Bytes
 isPrefixOf :: Bytes -> Bytes -> Bool
 isSuffixOf :: Bytes -> Bytes -> Bool
 length :: Bytes -> Int
@@ -569,6 +565,16 @@ type family IsMultiTenant command :: Bool
 type family NameOf t :: Symbol
 updateImpl :: Entity entity => EventOf entity -> entity -> entity
 version :: QuasiQuoter
+
+module Crypto
+data HmacKey
+generateHmacKey :: Task err HmacKey
+hmacKeyFromBytes :: Bytes -> Result Text HmacKey
+hmacKeyFromText :: Text -> Result Text HmacKey
+instance GHC.Classes.Eq Crypto.HmacKey
+instance GHC.Show.Show Crypto.HmacKey
+signWith :: HmacKey -> Bytes -> Text
+verifyWith :: HmacKey -> Text -> Bytes -> Bool
 
 module DateTime
 addSeconds :: Int64 -> DateTime -> DateTime

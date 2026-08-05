@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Resident typecheck watcher (pipeline Phase 1 — see docs/plans/2026-07-07-continuous-generation-pipeline-plan.md).
+# Resident typecheck watcher (pipeline Phase 1).
 #
 # Starts ghcid on a target (default: the nhcore library) using the dev build
 # flavor (cabal.project.dev, -O0) and continuously writes current errors to

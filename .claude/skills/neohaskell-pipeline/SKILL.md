@@ -39,11 +39,17 @@ intake ─ localize ─ spec ─▶ DRAFT PR ══ GATE 1 (maintainer) ══�
    — it's part of what the maintainer approves.
 4. **GATE 1** — open a **draft PR** whose diff is the spec (+ADR, +red repro).
    Park: `./dev pipeline park` is NOT used here — waiting on the gate is
-   `waiting_on_human_s`, not a failure. The continue signal is a maintainer
-   comment (`@claude` + instruction) — `claude.yml` ignores non-maintainers
-   (author-association check). On approval: `./dev pipeline approve spec
-   --by <who> --via pr-comment` (advance past `spec` is mechanically blocked
-   without it), then `./dev pipeline advance`.
+   `waiting_on_human_s`, not a failure. **How approval arrives (server-local
+   canonical flow):** the orchestrator runs in a persistent local Claude/tmux
+   session on the server, so GitHub Actions is never responsible for resuming
+   it. Approval is delivered out-of-band — through RAMSYS/Discord or direct
+   local interaction — and the orchestrator records it and resumes the *same*
+   tmux session in place. Recording IS the authorization: `./dev pipeline
+   approve <gate> --by <who> --via <channel>` (e.g. `approve spec --by Nick
+   --via discord`, or `--via local`) writes it into `.pipeline/state.json`,
+   which is the authorization record; advancing past a gate is mechanically
+   blocked without it, then `./dev pipeline advance`. A GitHub PR comment is
+   optional *communication* only — never the mechanism that resumes local work.
 5. **design-review** — `./dev spec-check --plan <spec>` → `design_reviews`.
    `security` → `neohaskell-security-design-review` skill; `perf` →
    `neohaskell-performance-design-review`. **Perf** records are committed to

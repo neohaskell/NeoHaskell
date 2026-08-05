@@ -43,11 +43,9 @@ instance EventStoreConfig SimpleEventStore where
 new :: SimpleEventStore -> Task Text (EventStore Json.Value)
 new config = do
   store <- newEmptyStreamStore
-  if config.persistent
-    then do
-      loadEventsFromDisk config.basePath store
-        |> Task.mapError toText
-    else pass
+  Task.when config.persistent do
+    loadEventsFromDisk config.basePath store
+      |> Task.mapError toText
   let eventStore =
         EventStore
           { insert = insertImpl config store,
@@ -269,13 +267,11 @@ insertImpl ::
 insertImpl config store payload = do
   let insertionsCount = payload.insertions |> Array.length
 
-  if insertionsCount <= 0
-    then Task.throw (InsertionError EmptyPayload)
-    else pass
+  Task.when (insertionsCount <= 0) do
+    Task.throw (InsertionError EmptyPayload)
 
-  if insertionsCount > 100
-    then Task.throw (InsertionError PayloadTooLarge)
-    else pass
+  Task.when (insertionsCount > 100) do
+    Task.throw (InsertionError PayloadTooLarge)
 
   let entityName = payload.entityName
   let streamId = payload.streamId
@@ -355,9 +351,8 @@ insertImpl config store payload = do
 
   -- Persist to disk if persistent mode is enabled. Done outside the lock so a
   -- slow disk write does not block readers and never crosses an async boundary.
-  if config.persistent && not (Array.isEmpty eventsToNotify)
-    then persistEvents config entityName streamId eventsToNotify |> Task.ignoreError
-    else pass
+  Task.when (config.persistent && not (Array.isEmpty eventsToNotify)) do
+    persistEvents config entityName streamId eventsToNotify |> Task.ignoreError
 
   case result of
     Ok success -> Task.yield success
@@ -723,9 +718,8 @@ truncateStreamImpl config store entityName streamId position = do
   case maybeErr of
     Nothing -> do
       -- Rewrite JSONL file if persistent
-      if config.persistent
-        then rewriteStreamFile config store entityName streamId
-        else pass
+      Task.when config.persistent do
+        rewriteStreamFile config store entityName streamId
     Just err -> Task.throw err
 
 

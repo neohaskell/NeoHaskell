@@ -1,79 +1,24 @@
 ---
 title: Getting Started
-description: The fastest path from "I heard about NeoHaskell" to "I have a working project."
-sidebar:
-  order: 0
+description: How to set up a NeoHaskell project.
 ---
 
-import { Card, CardGrid } from '@astrojs/starlight/components';
+NeoHaskell lives in the [neohaskell/NeoHaskell](https://github.com/neohaskell/NeoHaskell)
+monorepo. This documentation site is intentionally small; the authoritative setup,
+build, and test instructions live in the repository's `README.md`.
 
-You are here because you want to write some NeoHaskell. This section is designed as a linear path — five pages, each a natural next step from the previous. Work through them in order and you'll be fluent in about an hour.
+## Quick start
 
-<CardGrid>
-  <Card title="1. Installation" icon="rocket">
-    Install Determinate Nix, clone the template, run `nix develop`. Five minutes, three commands.
+1. Install [Determinate Nix](https://determinate.systems/nix).
+2. Clone the repository and enter its development shell:
 
-    [Start →](/getting-started/installation/)
-  </Card>
-  <Card title="2. Your first events" icon="add-document">
-    Write a piggy bank in four files. See the compiler catch a bug you would have shipped in any loose language.
+   ```bash
+   git clone https://github.com/neohaskell/NeoHaskell.git
+   cd NeoHaskell
+   nix develop
+   ```
 
-    [Start →](/getting-started/first-events/)
-  </Card>
-  <Card title="3. Reading NeoHaskell" icon="open-book">
-    A dictionary-style tour of the syntax for developers coming from JS, Python, or Go.
+3. Run `./dev` to list the available build and test commands.
 
-    [Start →](/getting-started/reading-neohaskell/)
-  </Card>
-  <Card title="4. Syntax warm-up" icon="pencil">
-    Ten exercises to build muscle memory for records, pipes, pattern matching, and `do` blocks.
-
-    [Start →](/getting-started/syntax-warmup/)
-  </Card>
-  <Card title="5. Using AI" icon="pen">
-    Get the most out of your AI assistant. Includes a ready-to-paste system prompt.
-
-    [Start →](/getting-started/using-ai/)
-  </Card>
-  <Card title="Cheat sheet" icon="document">
-    One-page reference. Bookmark it.
-
-    [Open →](/getting-started/cheat-sheet/)
-  </Card>
-</CardGrid>
-
-## Which order should I read them in?
-
-**If you are impatient and want to write code now:**
-
-1. Installation
-2. Your first events
-3. Cheat sheet (keep it open)
-4. Jump into [the NeoBank tutorial](/tutorial/)
-
-**If you prefer to understand the syntax before touching it:**
-
-1. Installation
-2. Reading NeoHaskell
-3. Syntax warm-up
-4. Your first events
-5. [NeoBank tutorial](/tutorial/)
-
-**If you are using an AI assistant:**
-
-1. Installation
-2. Using AI (paste the system prompt into your assistant)
-3. Your first events (with the assistant as your pair)
-4. [NeoBank tutorial](/tutorial/)
-
-Both paths end in the same place: you know the basics, and you're ready for the tutorial.
-
-## What you'll know by the end
-
-- How to set up a NeoHaskell project from scratch.
-- How to read any NeoHaskell file without prior functional-programming experience.
-- The core moves: records, pattern matching, pipes, `do` blocks, `Maybe`, `Result`, `Task`.
-- How to write your first command, entity, and event.
-- How to use AI assistants productively.
-
-When you finish this section, your next stop is [**Build NeoBank**](/tutorial/) — the full tutorial that teaches you the language by building a real banking service.
+For the full workflow — Postgres, the test suite, and the contribution process — see
+the [repository README](https://github.com/neohaskell/NeoHaskell#readme).

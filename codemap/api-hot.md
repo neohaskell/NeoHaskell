@@ -9,16 +9,16 @@ separately below). Consult BEFORE writing code; full surface:
 codemap/signatures/ · type-directed search: ./dev api "<type>"
 
 ## Task
-- `yield :: value -> Task w value`  <!-- 528 call sites -->
+- `yield :: value -> Task w value`  <!-- 530 call sites -->
 - `ignoreError :: Task err Unit -> Task w Unit`  <!-- 233 call sites -->
 - `mapError :: (err1 -> err2) -> Task err1 value -> Task err2 value`  <!-- 213 call sites -->
 - `throw :: err -> Task err w`  <!-- 203 call sites -->
-- `fromIO :: IO value -> Task w value`  <!-- 131 call sites -->
+- `fromIO :: IO value -> Task w value`  <!-- 132 call sites -->
 - `asResult :: Task err value -> Task err2 (Result err value)`  <!-- 80 call sites -->
+- `when :: Bool -> Task err Unit -> Task err Unit`  <!-- 29 call sites -->
 - `forEach :: (element -> Task err Unit) -> Array element -> Task err Unit`  <!-- 26 call sites -->
 - `fromFailableIO :: Exception exception => IO result -> Task exception result`  <!-- 24 call sites -->
 - `map :: (input -> output) -> Task err input -> Task err output`  <!-- 22 call sites -->
-- `runResult :: Task err value -> IO (Result err value)`  <!-- 13 call sites -->
 
 ## Array
 - `map :: (a -> b) -> Array a -> Array b`  <!-- 100 call sites -->
@@ -44,14 +44,14 @@ codemap/signatures/ · type-directed search: ./dev api "<type>"
 ## Text
 - `fromLinkedList :: LinkedList Char -> Text`  <!-- 90 call sites -->
 - `toLinkedList :: Text -> LinkedList Char`  <!-- 78 call sites -->
-- `toBytes :: Text -> Bytes`  <!-- 61 call sites -->
+- `toBytes :: Text -> Bytes`  <!-- 64 call sites -->
 - `replace :: Text -> Text -> Text -> Text`  <!-- 33 call sites -->
+- `fromBytes :: Bytes -> Text`  <!-- 27 call sites -->
 - `trim :: Text -> Text`  <!-- 27 call sites -->
-- `fromBytes :: Bytes -> Text`  <!-- 26 call sites -->
 - `joinWith :: Text -> Array Text -> Text`  <!-- 26 call sites -->
 - `isEmpty :: Text -> Bool`  <!-- 25 call sites -->
 - `append :: Text -> Text -> Text`  <!-- 22 call sites -->
-- `toLower :: Text -> Text`  <!-- 19 call sites -->
+- `toLower :: Text -> Text`  <!-- 20 call sites -->
 
 ## Json
 - `object :: [(Text, Value)] -> Value`  <!-- 102 call sites -->
@@ -107,10 +107,11 @@ codemap/signatures/ · type-directed search: ./dev api "<type>"
 - `new :: forall value w. Task w (ConcurrentVar value)`  <!-- 2 call sites -->
 
 ## Bytes
-- `unwrap :: Bytes -> ByteString`  <!-- 41 call sites -->
-- `fromLegacy :: ByteString -> Bytes`  <!-- 29 call sites -->
+- `unwrap :: Bytes -> ByteString`  <!-- 46 call sites -->
+- `fromLegacy :: ByteString -> Bytes`  <!-- 30 call sites -->
 - `toLazyLegacy :: Bytes -> LazyByteString`  <!-- 16 call sites -->
-- `length :: Bytes -> Int`  <!-- 3 call sites -->
+- `length :: Bytes -> Int`  <!-- 4 call sites -->
+  - `>>> [1, 2, 3] |> Bytes.pack |> Bytes.length` → `3`
 - `pack :: [Word8] -> Bytes`  <!-- 3 call sites -->
 - `toBase64 :: Bytes -> Bytes`  <!-- 3 call sites -->
 - `dropEnd :: Int -> Bytes -> Bytes`  <!-- 2 call sites -->
@@ -289,10 +290,10 @@ when WRITING TESTS; they are not feature-code frequency signal.
 - `contains :: Eq value => value -> Array value -> Bool`  <!-- 37 test call sites -->
 
 ## Text
-- `contains :: Text -> Text -> Bool`  <!-- 433 test call sites -->
-- `toBytes :: Text -> Bytes`  <!-- 74 test call sites -->
+- `contains :: Text -> Text -> Bool`  <!-- 435 test call sites -->
+- `toBytes :: Text -> Bytes`  <!-- 89 test call sites -->
 - `fromLinkedList :: LinkedList Char -> Text`  <!-- 56 test call sites -->
-- `length :: Text -> Int`  <!-- 40 test call sites -->
+- `length :: Text -> Int`  <!-- 41 test call sites -->
 - `repeat :: Int -> Text -> Text`  <!-- 35 test call sites -->
 - `toLinkedList :: Text -> LinkedList Char`  <!-- 29 test call sites -->
 - `startsWith :: Text -> Text -> Bool`  <!-- 15 test call sites -->
@@ -342,4 +343,4 @@ when WRITING TESTS; they are not feature-code frequency signal.
 - `nil :: Uuid`  <!-- 92 test call sites -->
 - `toText :: Uuid -> Text`  <!-- 29 test call sites -->
 
-*cut: 134 more modules (Map (257), Service.Application (250), Set (233), Stream (190), AsyncTask (171), …) — full surface: codemap/signatures/*
+*cut: 135 more modules (Map (257), Service.Application (250), Set (233), Stream (190), AsyncTask (171), …) — full surface: codemap/signatures/*

@@ -337,9 +337,7 @@ newWithLifecycleConfig dispatcherConfig store runners lifecycleRunners endpoints
           }
 
   -- Start reaper if we have lifecycle runners and reaper is enabled
-  if not dispatcherConfig.enableReaper
-    then pass
-    else do
+  Task.unless (not dispatcherConfig.enableReaper) do
       reaper <- startReaper dispatcher
       reaperTaskVar |> ConcurrentVar.modify (\_ -> Just reaper)
 
@@ -376,9 +374,7 @@ dispatch dispatcher event =
           let matchingStatelessRunners =
                 dispatcher.outboundRunners
                   |> Array.takeIf (\runner -> runner.entityTypeName == eventEntityName)
-          if Array.isEmpty matchingStatelessRunners
-            then pass
-            else do
+          Task.unless (Array.isEmpty matchingStatelessRunners) do
               worker <- getOrCreateStatelessWorker dispatcher streamId
               writeWorkerMessageWithTimeout dispatcher streamId (ProcessEvent event) worker.channel
 
@@ -386,9 +382,7 @@ dispatch dispatcher event =
           let matchingLifecycleRunners =
                 dispatcher.lifecycleRunners
                   |> Array.takeIf (\runner -> runner.entityTypeName == eventEntityName)
-          if Array.isEmpty matchingLifecycleRunners
-            then pass
-            else do
+          Task.unless (Array.isEmpty matchingLifecycleRunners) do
               lifecycleWorker <- getOrCreateLifecycleWorker dispatcher streamId eventEntityName
               -- Update last activity time
               currentTime <- getCurrentTimeMs
@@ -949,8 +943,7 @@ startReaper dispatcher = do
                 -- 3. Send Stop (worker drains queue then exits)
                 lastActivity <- worker.lastActivityTime |> ConcurrentVar.peek
                 let idleTime = currentTime - lastActivity
-                if idleTime > dispatcher.config.idleTimeoutMs
-                  then do
+                Task.when (idleTime > dispatcher.config.idleTimeoutMs) do
                     -- Capture the worker ID we're trying to remove
                     let capturedWorkerId = worker.workerId
                     -- Step 1: Mark as Draining so dispatcher won't use this worker
@@ -971,15 +964,13 @@ startReaper dispatcher = do
                       Nothing ->
                         -- Worker was replaced, don't send Stop to the new one
                         pass
-                  else pass
 
             -- Reap idle STATELESS workers (same logic, simpler - no Draining status)
             dispatcher.entityWorkers
               |> ConcurrentMap.forEachChunked reaperChunkSize \streamId worker -> do
                 lastActivity <- worker.lastActivityTime |> ConcurrentVar.peek
                 let idleTime = currentTime - lastActivity
-                if idleTime > dispatcher.config.idleTimeoutMs
-                  then do
+                Task.when (idleTime > dispatcher.config.idleTimeoutMs) do
                     -- Capture the worker ID we're trying to remove
                     let capturedWorkerId = worker.workerId
                     -- Atomically remove ONLY IF the worker ID matches
@@ -996,7 +987,6 @@ startReaper dispatcher = do
                       Nothing ->
                         -- Worker was replaced, don't send Stop to the new one
                         pass
-                  else pass
 
             -- Continue reaping
             reaperLoop

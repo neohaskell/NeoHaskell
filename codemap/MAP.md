@@ -34,9 +34,8 @@ vocabulary); for NEW code use the extension points. Full contract: codemap/READM
 | `dev-pipeline` | The Continuous Generation pipeline itself | `scripts/**`… |  |
 | `website` | Astro/Starlight docs site (monorepo dir, NOT a separate repo) | `website/**` |  |
 | `installer` | Rust installer (neo-install binary). | `installer/**` |  |
-| `ide-extension` | VSCode extension. | `ide/**` |  |
 | `ci-cd` | Build/CI/CD | `.github/workflows/*.yml`… |  |
-| `governance-docs` | Plans, ADRs (docs/decisions/), archived knowledge (docs/archive/ | `docs/**`… |  |
+| `governance-docs` | Plans, ADRs (docs/decisions/), agent guide, contributor guide. | `docs/**`… |  |
 
 ## Extension points (where NEW things go)
 

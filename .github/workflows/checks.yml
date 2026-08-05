@@ -30,17 +30,20 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - run: ./dev doctor
+      # Static workflow wiring: hidden-artifact upload opt-in + retrospect
+      # loop stays deterministic/report-only (pure stdlib, no toolchain).
+      - run: ./dev workflow-check
 
   codemap:
     name: codemap check (localization ontology)
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       # Same check.py as ./dev codemap-check; runner python + pinned pyyaml
@@ -49,12 +52,30 @@ jobs:
       - run: python3 -c "import yaml" 2>/dev/null || pip3 install pyyaml==6.0.3
       - run: PYTHON=python3 ./dev codemap-check
 
+  adr-index:
+    name: adr index (decisions README faithful)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # Pure-stdlib python check: every docs/decisions/NNNN-*.md is indexed
+      # exactly once with a status matching its own `## Status` section.
+      - run: ./dev adr-check
+      # Drift gate: the website ADR pages are generated from that same
+      # (now-audited) index by website/scripts/generate-adrs.mjs (Node, on the
+      # runner's default toolchain — no pnpm install, the generator is zero-dep).
+      # Regenerates the gitignored per-ADR pages (proving each still transcribes)
+      # and fails if the tracked landing page was hand-edited or left stale.
+      - run: ./dev adr-website --check
+
   spec:
     name: spec check (contract-delta gate)
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           # spec-drift --pr diffs against the merge base — needs history
@@ -108,7 +129,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           # census-diffs committed test files against the merge base
@@ -127,7 +148,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - name: Install hlint 3.10 (pinned binary + checksum)

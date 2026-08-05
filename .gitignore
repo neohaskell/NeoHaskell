@@ -47,13 +47,6 @@ result
 !.opencode/agents/
 !.opencode/skills/
 
-cli-next/default.nix
-
-cli-next/cabal.project
-
-cli-next/.launcher/
-
-cli-next/neo-sandbox.cabal
 uploads/
 
 # Planning files
@@ -63,6 +56,10 @@ feature-progress.md
 .pipeline/
 .integration-pipeline/
 docs/architecture/
+# AI-authored plan/design drafts stay local (sources archived out-of-repo); the
+# audited, shipped record is docs/decisions/ (ADRs) + docs/changes/ (specs).
+docs/plan/
+docs/plans/
 
 # Locally recorded integration fixtures (never commit — may contain real sandbox responses)
 **/tests/fixtures/local/
@@ -75,9 +72,6 @@ node_modules/
 
 # Rust / Cargo (installer)
 installer/target/
-
-# VSCode extension packaging
-*.vsix
 
 .ruff_cache
 # Phase 0: untracked local pipeline-state archive (Phase 1 will manage telemetry/ properly)

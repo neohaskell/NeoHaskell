@@ -85,6 +85,15 @@
 
 # --- 3. Teaching rewrite hints -----------------------------------------------
 - error: {lhs: "a $ b", rhs: "b |> a", name: "NeoHaskell: use |> pipelines, never $"}
+# Task control flow (change 002). These key on the LITERAL `pass` (the dialect
+# no-op, `Basics.pass :: Applicable f => f ()`) so they fire on dialect Task code
+# and NOT on `pure ()`/`return ()` legacy or non-Task Applicatives. In hlint
+# hints single-char names are wildcards (`c`, `a`) and multi-char names are
+# literals (`pass`). Residual risk — a non-Task Applicative that spells its no-op
+# `pass` inside an `if` — is caught by GHC (Task.when/unless are Task-typed) and
+# the escape hatch `{- HLINT ignore "NeoHaskell: use Task.when" -}`.
+- error: {lhs: "if c then a else pass", rhs: "Task.when c a", name: "NeoHaskell: use Task.when"}
+- error: {lhs: "if c then pass else a", rhs: "Task.unless c a", name: "NeoHaskell: use Task.unless"}
 
 # --- 4. Default hints that fight the dialect (triage 2026-07-07) --------------
 # Each verdict: why the DEFAULT hint is wrong for NeoHaskell.
@@ -98,7 +107,10 @@
 - ignore: {name: Use snd}                  # pushes accessors over patterns (3)
 - ignore: {name: Use fst}                  # same (2)
 - ignore: {name: Use tuple-section}        # TupleSections idiom, anti-dialect (3)
-- ignore: {name: Use unless}               # Control.Monad vanilla (2)
+# `Use when`/`Use unless` builtins removed (change 002): replaced by the exact
+# `NeoHaskell: use Task.when/unless` rewrites above (keyed on `pass`). The
+# builtin is muted only where non-Task boundary code uses `pure ()`/`return ()`
+# — see the scoped ignores in section 5.
 - ignore: {name: Use id}                   # neutral, 1 occurrence — revisit
 - ignore: {name: Use guards}               # dialect prefers explicit if/case over guards (1)
 - ignore: {name: Use otherwise}            # guards-related, same verdict (1)
@@ -120,7 +132,15 @@
 - ignore: { name: Use isNothing }
 - ignore: { name: Use <$> }
 - ignore: { name: Replace case with maybe }
-- ignore: { name: Use when }
 - ignore: { name: Use bimap }
 - ignore: { name: Use uncurry }
 - ignore: { name: Redundant id }
+
+# --- 5. Scoped mutes for non-Task boundary code (change 002) ------------------
+# The `Use when`/`Use unless` builtins suggest vanilla `Control.Monad.when/unless`
+# (import-banned) on legacy `pure ()`/`return ()`-in-`if`. In these NON-Task
+# modules Task.when/unless do not type-apply (Console = IO, Transport.Web = WAI
+# IO, OutboundIntegration.TH = TH `Q`), so the builtin is muted HERE ONLY. The
+# dialect rule in section 3 keys on `pass` and covers every Task-context `if`.
+- ignore: {name: Use when, within: [Console, Service.OutboundIntegration.TH]}
+- ignore: {name: Use unless, within: [Service.Transport.Web]}
